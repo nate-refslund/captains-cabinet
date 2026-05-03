@@ -1006,6 +1006,17 @@ _(none)_
 
 ---
 
+### FW-077 — `trigger_send` bg-subshell env leak via job-control "Done" message ✓ SHIPPED
+- **Status:** SHIPPED — PR #84 merged 2026-04-28 (commit `9304332`). 38/38 trigger tests + 12/12 hook regression GREEN; manual env-leak repro produces clean output post-fix.
+- **Problem:** When `trigger_send` fires (notify-officer.sh, push notifications, etc.) it spawns `( source memory.sh && memory_queue_embed ... ) &`. That subshell's sourced env exports `NEON_CONNECTION_STRING` + `NEON_STAGING_CONNECTION_STRING`. Pre-fix: when the bg job exited, bash's job-control `[1]+ Done <last-export-line>` message printed the full export line (including the password) to the parent shell's stdout — captured into the calling officer's session JSONL log on every fan-out.
+- **Fix shipped:** Added `>/dev/null 2>&1` redirect + `disown` to the bg subshell spawn site in `cabinet/scripts/lib/triggers.sh`. Job-control message no longer fires; memory queue functionality intact.
+- **Going-forward pattern:** any future bg subshell that sources `cabinet/.env` or any env-rich helper MUST use the same redirect+disown pair, otherwise bash's `Done` printing surfaces exported vars at subshell-exit time. Recorded in CTO memory `feedback_neon_leak_via_memory_queue.md`.
+- **Historical exposure scope:** Officer session JSONLs prior to PR #84 contain the NEON connection string. Per Captain msg 2365 (A8 refinement #2 in `shared/interfaces/captain-patterns.md`, 2026-05-01), in-cabinet log appearance is inside the cabinet trust boundary — **NOT** cause for rotation. Forward-looking fix is sufficient; historical sweeps are optional cleanup, not a security imperative.
+- **Owner:** CTO.
+- **Source:** Trigger leak audit 2026-04-28; CTO authored + reviewed + merged PR #84.
+
+---
+
 ### FW-054 — shellcheck static-analysis CI gate (hooks + lib, severity=error)
 - **Status:** SHIPPED 2026-04-24 (commit `b85711b`, CI run `24887679206` green). All 12 hook + lib scripts pass `shellcheck --severity=error --shell=bash` clean on first run; no real bugs surfaced.
 - **Problem:** 71 bash scripts in `cabinet/scripts/` with zero static-analysis gate. `bash -n` syntax check runs in CI but only catches parse errors — SC-class error patterns (SC2064 trap-in-subshell, SC2090 array-quoting, SC2094 read/write same file, SC2181 `$?` after complex chain, SC2068 unquoted array expansion in critical paths) slip through. Any future regression introducing one of these silent-failure classes would ship unflagged.
