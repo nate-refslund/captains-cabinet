@@ -1234,3 +1234,163 @@ _(none)_
 - **Build:** Phase 1 (~3-4h) classifier (Sonnet) + hook draft generator + skill draft generator + audit log JSONL; Phase 2 (~1-2h) 4th-loop integration + Captain ratify path (yes/no/edit) + jq-merge to settings.json + sync-framework propagation.
 - **Owner:** CTO build, CPO spec.
 - **Source:** Captain msg 2024 — extend encode-offer beyond memory-file into operational enforcement.
+
+---
+
+### FW-082 — `cabinet-bootstrap.sh` substrate (Spec 034 v3 Phase 4a + v4 substrate-gap fold) (P0)
+- **Status:** IN BUILD 2026-04-29 (CTO-led, ~1187 LOC, last touched 2026-04-29 20:36 UTC; hotfix-3 / hotfix-4 / hotfix-5 markers in source). Spec 034 v3 §4a defines AC #65-73; Spec 034 v4 amendment (2026-04-29 evening) extends with AC #76-83 substrate-gap fold + inherit-vs-wipe enumeration table.
+- **Spec:** `shared/interfaces/product-specs/034-cabinet-provisioning-dashboard.md` v3 §4a + v4 amendment.
+- **Problem:** Spec 034 v2/v3 `cabinet-spawn.sh` (FW-080) ships project-into-current-cabinet only. Step Network = separate cabinet (Captain msg 2155 isolation bet) requires new-cabinet-bootstrap primitive — fresh redis + postgres per cabinet, FW-005 secret distribution, two-phase peers.yml commit, preset validate.sh hard-gate, captain-memory split init. Surfaced by 2026-04-29 wizard dry-run (CoS confirmed interpretation b).
+- **Substrate gaps surfaced 2026-04-29 evening spawn run** (folded into Spec 034 v4 ACs #76-83): PRODUCT_REPO_ROOT detection via cwd/CABINET_ROOT not hardcoded; GITHUB_PAT propagation Sensed→new cabinet env; Single_ceo TOKEN_VAR resolution (TELEGRAM_<UPPER_PROJECT_SLUG>_CEO_TOKEN); AUTO_START_OFFICERS entrypoint logic + test harness (didn't trigger today); inherit-cleanup wipe step per v4 §4a table; env-file cache invalidation in create-project.sh; psql + docker-cli in officer image (couples to FW-085).
+- **Build phasing:** ~4-6h script + state file + dry-run mode (4a.1); ~2-3h two-phase peers.yml across N cabinets (4a.2); ~2-3h FW-005 secret generation + distribution (4a.3); ~2h test harness + dry-run pass (4a.4); ~1-2h Step Network bootstrap dry-run + Captain-attended live spawn (4a.5). Total ~10-15h CTO + Captain-attended spawn window.
+- **Owner:** CTO build, CPO spec, CoS orchestration.
+- **Source:** Captain msg 2155 (3-cabinet portfolio greenlit 2026-04-27); 2026-04-29 wizard dry-run interpretation gap (CoS-confirmed); 2026-04-29 evening spawn run (CoS msg @ 20:56 UTC routed substrate-gap fold to v4).
+
+---
+
+### FW-085 — Dockerfile.officer + bootstrap-runner image split (P0, **PATH A RATIFIED**)
+- **Status:** PATH A RATIFIED 2026-04-30 06:29 UTC (Captain msg 2281, CoS-routed). CTO building per Path A. CPO adversary review (Spec 034 v4 §82.1) folded.
+- **Problem:** officer image ships without psql (officers can't run direct DB queries for /tasks ops, retro queries, Spec 039 archive verification) and without docker-cli (cabinet-bootstrap.sh runtime needs docker for compose-up cycles). Surfaced during 2026-04-29 Step Network spawn run.
+- **Path A (RATIFIED — minimal-attack-surface):** ship psql in default Dockerfile.officer; QUARANTINE docker-cli to a separate `Dockerfile.bootstrap-runner` image (one-shot, ephemeral, never connected to officer DM surface). Officer image stays small + safe; bootstrap-runner runs once per new cabinet via `docker run --rm`.
+- **Why Path A:** docker-cli + write socket = host root via `docker run --privileged --pid=host --net=host` OR `docker exec <neighbor>` cross-container code execution OR `docker cp <container>:<path> /tmp/` exfiltration. Removing docker-cli from runtime officer image entirely eliminates the privilege-escalation surface. psql risk lower (officer Postgres role excludes DDL grants per Spec 037 + 038 implication; v4 AC #82 makes explicit).
+- **Acceptance:** CTO PR description calls out Path A explicitly; COO adversary review on FW-085 PR before merge focuses on bootstrap-runner image scope (socket mount surface, one-shot lifecycle, namespace isolation); Spec 034 v4 §82.1 referenced as gate; cabinet-decisions.md 2026-04-30 entry referenced.
+- **Owner:** CTO build, CPO spec/adversary, COO ratify.
+- **Source:** CoS msg @ 2026-04-29 20:56 UTC routed substrate-gap fold + adversary-review request; Captain msg 2281 (2026-04-30 06:29 UTC) ratified Path A; Spec 034 v4 §82.1 carries the full review.
+
+---
+
+### FW-086 — Substrate-drift detector (real-fire smoke harness vs dry-run divergence) (P1, sequenced after FW-082+085)
+- **Status:** SPEC-PENDING. Triggered by CRO brief `2026-04-29-testenv-vs-runtime-reality.md` (decision ask #4). CPO ADOPTING — sequenced after FW-082 (cabinet-bootstrap) + FW-085 (Dockerfile patches) ship + Step Network spawn fires successfully (need a baseline of "what real-fire substrate looks like when it works").
+- **Problem:** Today's Step Network spawn surfaced 8 substrate gaps that all passed unit tests + DRY_RUN. Pattern: dry-run validates intent, not substrate behavior. Need a recurring real-fire smoke harness that runs canonical triggers (spawn, library auto-populate, AUTO_START_OFFICERS, captain-decisions split, FW-005 secret distribution) against a disposable target cabinet with telemetry-only sinks (no Telegram DMs, no Linear writes, but real Redis + tmux + container + MCP processes). Outputs a JSON diff vs dry-run baseline; alerts CoS on divergence.
+- **Build:** Phase 1 (~3-4h) — define `test-cabinet` slug + telemetry-only sink env (`CABINET_HOOK_TEST_MODE=1` extension covering ALL state-mutating sinks per CRO brief Layer 3 recommendation). Phase 2 (~4-6h) — wire spawn pipeline real-fire harness; cron daily; diff vs prior-run baseline; alert on anomaly (file ownership delta, supervisor restart count >baseline, Redis pub-sub latency >threshold, permission-prompt presence). Phase 3 (~2h) — crash-budget dashboard view (per-officer restart-count over 12h window) per CRO Layer 3.
+- **Spec:** future Spec 049 or Spec 034 v5 Phase 4b extension (sequence decision after FW-082+085 lands; if FW-086 narrowly extends 034's scope, fold as v5; if it's broader observability, separate spec).
+- **Owner:** CPO spec, CTO build, CRO adversary on substrate-test scope, COO crash-budget thresholds.
+- **Source:** CRO brief 2026-04-29-testenv-vs-runtime-reality.md decision ask #4 — directly couples to Spec 034 v4 AC #79 (AUTO_START_OFFICERS test harness) and AC #83 (cabinet-bootstrap test harness) but extends to general substrate-drift detection.
+
+---
+
+### FW-087 — Project discovery procedure: 3-layer post-create-project sweep (P1, Spec 034 v5 substrate, post-Stephie-alive)
+- **Status:** SPEC-PENDING. Surfaced by CoS msg 2026-04-30 06:29 UTC as one of two new substrate items for Spec 034 v5. Sequenced post-Stephie-alive (Step Network's first project = stephie-mcp) — need a real project bootstrap to validate the sweep before specing.
+- **Problem:** when `create-project.sh` brings a new project online, officers don't have a structured way to discover the project's full context (codebase shape, product/market positioning, domain/regulatory landscape). Today's flow: officers piece it together ad-hoc from manifests, README, Captain DMs, scattered notes. Need a 3-layer sweep that runs once at project create-time + outputs to Library tagged project-scoped, so officers query at session-start instead of re-discovering.
+- **3-layer sweep design:**
+   - **Layer 1 — Codebase audit:** clone repo, parse package manifests (package.json / pyproject.toml / Cargo.toml / Gemfile / go.mod / etc.), README, commit history (last 30 days commit messages + PR titles), `.claude/` inventory (existing agents, hooks, settings — useful for security-review per FW-088), test surface, deploy targets. **Status:** PARTIAL — `cabinet/scripts/library-discovery-fetch.sh` covers website + codebase fetch; manifest-parse + commit-history extraction needs adding.
+   - **Layer 2 — Product/market discovery:** website (homepage + product pages + /pricing + /about), competitor scan (3-5 named competitors per CRO research playbook), user persona inferred from copy + community signals, value-prop extraction. **Status:** CRO research playbook needed — CRO authors per project per Captain ratification.
+   - **Layer 3 — Domain context:** industry overview, regulatory landscape (e.g., political-ad transparency for politiske-annoncer, MCP catalog policies for stephie-mcp), competitive tech landscape, ongoing trend signals via 4h CRO sweep. **Status:** ONGOING — couples to existing CRO 4h research-sweep cadence; project-scoped subset needed.
+- **Output:** all three layers write to `library_records` with `context_slug=<project-slug>` + tag like `project-discovery-layer-1` / `-2` / `-3` + appropriate decay tag (Layer 1 evergreen until repo restructure; Layer 2 fast-moving; Layer 3 fast-moving + 4h-sweep refresh).
+- **Officer query at session-start:** every officer's session-start checklist queries `library_search` with `context_slug=$CABINET_ACTIVE_PROJECT + tags:project-discovery-*` + injects key findings into Tier 2 working notes. Existing Spec 042 (tool-call-retrievable-patterns-intents) substrate generalizes; add project-discovery namespace to the query.
+- **Build phasing:** Phase 1 (~3-4h) — extend library-discovery-fetch.sh with manifest-parse + commit-history Layer 1; Phase 2 (~2-3h) — CRO research playbook draft + adversary review for Layer 2 (Captain ratification on per-project research scope); Phase 3 (~2h) — Layer 3 4h-sweep extension scoped per project; Phase 4 (~1-2h) — officer session-start checklist update + library-record retrieval pattern.
+- **Sequencing:** post-Stephie-alive. Step Network bootstrap fires → stephie-mcp project comes online → Layer 1 sweep runs (testing the codebase-audit pattern) → if green, drafts Spec 034 v5 amendment with Layer 2 + 3 ACs.
+- **Owner:** CPO spec, CTO + CRO build, CoS orchestration.
+- **Source:** CoS msg @ 2026-04-30 06:29 UTC routed two v5 substrate follow-ups; first project bootstrap (stephie-mcp) gates the spec drafting.
+
+---
+
+### FW-088 — Officer Claude session location architecture (cwd + .claude/ inheritance + third-party hardening) (P0, Spec 034 v5 substrate, post-Stephie-alive but BEFORE first non-trivial project work)
+- **Status:** SPEC-PENDING. Surfaced by CoS msg 2026-04-30 06:29 UTC as one of two new substrate items for Spec 034 v5. **P0** because security-review-needed (third-party `.claude/` shouldn't auto-fire); **post-Stephie-alive** because need pool window working to validate the cwd architecture; **before first non-trivial project work** because if security review surfaces a bypass, fixing it before officers start touching project repos prevents a class of compromises.
+- **Problem:** officers operate from the cabinet root today. With pool architecture (per Spec 034 v3 §2b.4 + v4), each (officer, project) tmux window needs the right Claude Code session location:
+   - **CEO (CoS-as-CEO under single_ceo bot mode per AC #62/74/75):** stays at cabinet root, NEVER cd's into project repo; project context comes from Library queries (data, not Claude Code config). Rationale: CEO routes Captain DMs across multiple projects per cabinet; one cwd-bound session would lock CEO into one project. Library queries are project-scoped; CEO's data layer is per-project but config layer (cabinet `.claude/`) is shared.
+   - **CTO/CPO/CRO/COO:** pool window cwd = project root (per `$CABINET_ACTIVE_PROJECT`). Inherits the project's `.claude/` (agents, hooks, settings) naturally. Officer-specific config (cabinet `.claude/agents/<role>.md`) layered atop project's config via Claude Code's existing `.claude/` precedence rules.
+   - **Coding agents** spawned via Agent / Crew: inherit cwd from spawning officer (already the default — explicitly memorialize as AC).
+- **Pool window `--project` flag substrate:** the pool's window-creation primitive (per Spec 034 v3 §2b.4 + v4 AUTO_START_OFFICERS) MUST set CWD on session start, not just env vars. tmux pane spawn typically sets CWD via `tmux new-window -c <path>`; pool-spawn substrate needs equivalent for Claude Code session.
+- **Security review surface — third-party .claude/ hardening (P0 carve):** when an officer cd's into a project repo whose `.claude/` was authored by someone outside the Cabinet (e.g., open-source repo with malicious agents/hooks), Claude Code today auto-fires those hooks/agents. **This is a privilege-escalation surface for any cabinet that adopts third-party project repos.** Mitigation: cabinet whitelist gating — `cabinet/scripts/whitelist-project-claude.sh` records SHA256 hash of project's `.claude/` tree on first cd; subsequent cd's verify hash matches; mismatch blocks session start until Captain ratifies the diff. Implementation: pre-tool-use hook checks `cabinet:project-claude-hash:<slug>` Redis key against current `.claude/` tree hash; mismatch → exits non-zero with surfaced diff for Captain review.
+- **Build phasing:** Phase 1 (~2-3h) — pool window `--project` flag CWD-set primitive (CTO substrate); Phase 2 (~3-4h) — third-party .claude/ hash-whitelist substrate (`whitelist-project-claude.sh` + pre-tool-use gate); Phase 3 (~1-2h) — CEO-vs-other-officer cwd discipline encoded in role-defs + skill (cabinet-root-cwd discipline for CEO, project-root-cwd for others); Phase 4 (~1h) — Spec 034 v5 ACs covering all of above.
+- **Sequencing:** post-Stephie-alive (Step Network must spawn first to validate pool windows). BUT before first non-trivial project work that touches project's `.claude/` — security review window before officers start running tools in third-party repos. Spec 034 v5 amendment gates first-real-cd-into-project session.
+- **Owner:** CPO spec, CTO build, COO security-review on third-party hardening surface.
+- **Source:** CoS msg @ 2026-04-30 06:29 UTC routed two v5 substrate follow-ups; security-review-needed for third-party `.claude/` flagged explicitly.
+
+---
+
+### FW-089 — `cabinet-bootstrap.sh` `.env` idempotency: preserve operator-set values on re-run (P0, FW-082 hotfix-8)
+- **Status:** SPEC-PENDING. Surfaced 2026-04-30 11:23 UTC during Step Network spawn. cabinet-bootstrap.sh re-run regenerated `/opt/founders-cabinet/spawned-cabinets/step-network-cabinet/cabinet/.env` and **wiped Captain's manually-added 5 stephie_* Telegram tokens**. Recovery required reading session JSONL log for token values.
+- **Problem:** bootstrap's .env-write step is idempotent in INTENT (write the cabinet template) but DESTRUCTIVE on operator-set keys (any key the operator added since last bootstrap is lost). Pattern bites whenever an officer re-runs bootstrap to apply a hotfix — operator's Telegram tokens, GitHub PAT, project-specific secrets all vanish. Captain re-ran bootstrap today via FW-085 path-A re-spawn after hotfix-7; tokens were lost; cos couldn't start; required full session-log recovery.
+- **Fix options:**
+   - **Option A (preferred):** bootstrap MERGES with existing .env. Reads existing file, parses key=value pairs, only writes keys not already present. Operator-set values preserved.
+   - **Option B:** bootstrap writes only `.env.example` (template); operator's live `.env` is the operator's responsibility, never overwritten by framework.
+   - **Option C:** bootstrap snapshots existing `.env` to `.env.bak.<timestamp>` before regen. Recovery is `cp .env.bak.<latest> .env`.
+- **Acceptance criteria:** running `cabinet-bootstrap.sh` against a cabinet where `cabinet/.env` already has operator-set keys MUST NOT lose those keys. Test: pre-set `TEST_OPERATOR_KEY=preserved-value`, run bootstrap, assert key still present + same value.
+- **Owner:** CPO spec extension (Spec 034 v5 likely), CTO build.
+- **Source:** Step Network spawn 2026-04-30 11:42-12:00 UTC recovery sequence; tasks.md #153.
+
+---
+
+### FW-090 — `start-officer.sh` single_ceo CEO_TOKEN candidate-list lookup: bot-name-aware fallback (P1)
+- **Status:** SPEC-PENDING. Surfaced 2026-04-30 11:42 UTC during Step Network spawn.
+- **Problem:** `start-officer.sh` single_ceo mode tries CEO_TOKEN candidates in this order: `TELEGRAM_<ACTIVE_SLUG>_CEO_TOKEN`, `TELEGRAM_<CABINET_ID>_CEO_TOKEN`, `TELEGRAM_CEO_TOKEN`. Captains create bots with PROJECT-aligned naming via @BotFather (e.g., `@stephie_ceo_bot` for `stephie-mcp` project) which suggests env var `TELEGRAM_STEPHIE_CEO_TOKEN`. Neither STEPHIE_MCP (project-slug-uppercase) nor STEP_NETWORK (cabinet-id-uppercase) matches the bot-name `stephie`. Today's workaround: manually add `TELEGRAM_STEP_NETWORK_CEO_TOKEN` alias (cabinet-id-aligned) to env. Brittle if cabinet operator names a bot creatively.
+- **Fix options:**
+   - **Option A (preferred):** add 4th candidate that derives from bot @username. start-officer.sh queries Telegram getMe via available token if any TELEGRAM_*_TOKEN present; uses bot @username (uppercased + underscored) as candidate. Eliminates the manual-alias dance.
+   - **Option B:** explicit `bot_username` field in preset config; start-officer.sh reads it as 4th candidate.
+   - **Option C:** documented operator pattern — bootstrap requires operator to set `TELEGRAM_<CABINET_ID>_CEO_TOKEN` regardless of bot @username; the cabinet-id alias becomes the canonical name.
+- **Acceptance criteria:** an operator who creates bot `@arbitrary_name_bot` and sets only `TELEGRAM_ARBITRARY_NAME_CEO_TOKEN` in cabinet/.env — single_ceo mode start-officer.sh resolves the token without manual aliases.
+- **Owner:** CTO. Lightweight fix.
+- **Source:** Step Network spawn 2026-04-30 11:38 UTC supervisor.log "no CEO bot token found" with candidate list mismatching bot naming; tasks.md #154.
+
+---
+
+### FW-091 — Cross-cabinet `ACTIVE_SLUG` bleed: spawned cabinets inherit framework-root active-project pointer (P1)
+- **Status:** SPEC-PENDING. Surfaced 2026-04-30 12:00 UTC during Step Network spawn diagnosis.
+- **Problem:** spawned cabinet (`/opt/founders-cabinet/spawned-cabinets/<slug>-cabinet/`) has its own `instance/config/active-project.txt` and `instance/config/projects/`. But `start-officer.sh` candidate list at one point read `ACTIVE_SLUG=sensed` — meaning some script (entrypoint? assemble-config? start-officer itself?) was reading the ROOT framework's `instance/config/active-project.txt` (`/opt/founders-cabinet/instance/config/active-project.txt` = "sensed") instead of the spawned cabinet's. Cross-cabinet env bleed: spawned cabinet inherits Sensed defaults instead of own config.
+- **Symptom in logs:** `start-officer.sh: single_ceo mode — no CEO bot token found in env. Tried (in order): TELEGRAM_SENSED_CEO_TOKEN TELEGRAM_STEP_NETWORK_CEO_TOKEN TELEGRAM_CEO_TOKEN`. The leading `SENSED` is wrong for a step-network cabinet — ACTIVE_SLUG must come from CABINET_ROOT, not from the framework root.
+- **Fix:** every script reading active-project state MUST read `$CABINET_ROOT/instance/config/active-project.txt`, never `/opt/founders-cabinet/instance/config/active-project.txt`. Audit:
+   - `cabinet/scripts/assemble-config.sh` — already uses CABINET_ROOT correctly per inspection.
+   - `cabinet/scripts/start-officer.sh` — needs audit (where does ACTIVE_SLUG come from in the candidate-list block?).
+   - `cabinet/scripts/entrypoint.sh` — `ACTIVE_SLUG=$(cat /opt/founders-cabinet/instance/config/active-project.txt)` line — HARDCODED FRAMEWORK PATH (should be `$CABINET_ROOT/...` when CABINET_ROOT is set).
+- **Acceptance criteria:** spawned cabinet with `instance/config/active-project.txt = stephie-mcp` → all scripts in spawned cabinet's container resolve ACTIVE_SLUG=stephie-mcp regardless of what the framework root's active-project.txt says.
+- **Owner:** CTO. Multi-script audit + path replacement.
+- **Source:** Step Network spawn supervisor.log 2026-04-30 11:25-12:00 UTC; tasks.md #155.
+
+---
+
+### FW-092 — Plugin install via marketplace, NOT file copy (P0, Spec 035 Phase C extension)
+- **Status:** SPEC-PENDING. Surfaced 2026-04-30 12:24 UTC after 90-minute diagnostic during Step Network spawn.
+- **Problem:** copying `/home/cabinet/.claude/plugins/cache/<plugin>` (and `installed_plugins.json`) from one claude-auth Docker volume to another **fails Claude Code's plugin source verification**. Verbatim error from `mcp-logs-plugin-telegram-telegram/<id>.jsonl`: `"Channel notifications skipped: you asked for plugin:telegram@claude-plugins-official but the installed telegram plugin is from an unknown source"`. The plugin's MCP server spawns and tools register, BUT incoming `notifications/claude/channel` push notifications (the mechanism that injects `<channel source="plugin:telegram:telegram">` tags into officer sessions) are silently dropped.
+- **Today's recovery sequence (97 min):** (1) seed plugin via `cp -a` from sensed → cos shows `plugin not installed` → (2) seed access.json → cos shows `Listening` BUT no bot.pid → (3) explicit telegram MCP entry in cabinet-root .mcp.json → cos has tools but `Channel notifications skipped` → (4) rename to `plugin:telegram:telegram` in .mcp.json → still `... unknown source` → (5) **delete copied plugin install + send `/plugin install telegram@claude-plugins-official` to cos pane** → marketplace install succeeded → (6) `/reload-plugins` → log says `Channel notifications registered`. Captain DM round-trip works.
+- **Spec 035 Phase C MUST replace file-copy with marketplace install:**
+   - Bootstrap step "seed-claude-state" runs `claude plugin install <plugin>@<marketplace>` via Claude CLI (NOT `cp -a`).
+   - Reset `officialMarketplaceAutoInstalled: false` in `/home/cabinet/.claude.json` if the cabinet was previously started without plugins, so auto-install re-runs.
+   - Verify install via `claude /mcp` listing showing `plugin:<name>:<name>` (channel-format name) — NOT just the bare server name.
+- **Acceptance criteria:** spawning a fresh cabinet via cabinet-bootstrap.sh + first cos start → plugin polling daemon alive (bot.pid present) AND `mcp-logs-plugin-<plugin>-<plugin>/<id>.jsonl` shows `"Channel notifications registered"` (not "skipped"). End-to-end: Captain DM @cabinet's-CEO-bot → `<channel source="plugin:telegram:telegram">` tag arrives in cos session within 5 seconds → cos can react + reply.
+- **Owner:** CTO. **P0 because today's spawn took 4+ hours largely due to this single gap.**
+- **Source:** Step Network spawn diagnostic 2026-04-30 11:42-12:31 UTC; tasks.md #102 (Spec 035 Phase C). Full audit trail in `/var/log/cabinet/cos-actions.jsonl` for that window.
+
+
+---
+
+### FW-093 — Spec 035 Phase C bundle: cabinet-bootstrap seed-claude-state (P0, Captain ratified 2026-05-01)
+- **Status:** SPEC-PENDING. Captain ratified bundling 2026-05-01 05:08 UTC (msg 2357: "Promote") in response to retro proposal.
+- **Problem:** Step Network spawn 2026-04-30 took 4+ hours largely because each substrate gap surfaced sequentially — fixed 5 in series rather than catching them in one bootstrap function. The gaps cluster around "first claude session in spawned cabinet" — they have a natural bundling boundary.
+- **Bundle scope (single bootstrap step `seed-claude-state` between volume-create and compose-up):**
+   - **(a) Plugin install via marketplace** (FW-092 P0): `claude /plugin install <plugin>@<marketplace>` for each declared cabinet plugin. NOT `cp -a` — fails source verification.
+   - **(b) access.json seed** for each officer state dir: copy from spawning cabinet's allowlist or generate from preset config; ensure Captain user_id whitelisted.
+   - **(c) cabinet/.env operator-value preservation** (FW-089): bootstrap MERGES with existing .env, never overwrites operator-set keys.
+   - **(d) .mcp.json templating** (FW-091): replace hardcoded `redis://redis:6379` with `redis://redis-<cabinet-slug>:6379` per spawned cabinet at template-emit time.
+   - **(e) active-project pointer init**: write `instance/config/active-project.txt` (or leave empty if no project provisioned yet); reset Redis `cabinet:active-project` key. NEVER inherit framework root's pointer.
+   - **(f) Reset `officialMarketplaceAutoInstalled: false`** in `~/.claude.json` so plugin auto-install re-fires on next session.
+- **Spec target:** Spec 035 Phase C → bundled implementation. CPO drafts; CTO builds. Real-fire validation: spawn a `test-cabinet` slug end-to-end via the new bundle; observe zero substrate gaps (vs today's 5-gap parade).
+- **Dependencies:** FW-082 cabinet-bootstrap.sh (parent — already in flight); FW-085 bootstrap-runner image (parent — Path A ratified). FW-093 inserts AS a step in FW-082's sequence.
+- **Acceptance criteria:** spawning a fresh cabinet produces a working CEO bot with Captain DM round-trip on first try; `/mcp` listing shows all expected MCPs connected; `mcp-logs-plugin-<plugin>-<plugin>/<id>.jsonl` shows `"Channel notifications registered"`; redis-trigger-channel resolves to the spawned cabinet's redis (not framework root's). Real-fire smoke (FW-086) = green.
+- **Owner:** CPO spec, CTO build, COO adversary review.
+- **Source:** Step Network spawn diagnostic 2026-04-30 11:23-12:31 UTC; Captain ratification 2026-05-01 msg 2357. Supersedes individual tracking of FW-089/091/092 — they fold into this bundle.
+
+
+---
+
+### FW-094 — Bind-mount framework-shared paths in spawned cabinets (P1, folds into FW-088 architecture)
+- **Status:** SPEC-PENDING. Surfaced 2026-05-01 22:01 UTC by CPO A11 audit follow-up: framework-side fix to cabinet/cron/*.sh string didn't propagate to spawned step-network cabinet because cabinet-bootstrap.sh CLONES framework files at spawn time. Frozen-at-bootstrap design.
+- **Problem:** spawned cabinets diverge from framework over time. Today's example: A11 cron text fix in source `cabinet/cron/backlog-refine.sh` + `cabinet/cron/research-sweep.sh` did NOT propagate to `spawned-cabinets/step-network-cabinet/cabinet/cron/*.sh`. Manual surgical re-edit needed (done 22:05 UTC). Every framework-side substrate fix has the same drift surface.
+- **Two design options (CPO):**
+   - **(a) sync-framework.sh extension** — cron-driven OR post-merge hook on source pulls framework/, presets/, selected `cabinet/*` paths. Pull-based, keeps separate state per spawn. Drift between sync ticks; complexity in conflict resolution.
+   - **(b) bind-mount framework-universal paths into spawned cabinet** — extend FW-082 hotfix-4 pattern (which already bind-mounts /opt/founders-cabinet into officer container). Spawned cabinet reads `cabinet/cron/`, `cabinet/scripts/lib/`, `framework/`, `presets/<active>/` from the source mount. Only `instance/`, `cabinet/.env`, `cabinet/env/`, `cabinet/agents/` (and similar per-cabinet overlays) live on per-spawn disk. Free propagation. Same security surface as today (root-owned framework files, officer-writable instance state).
+- **CoS recommendation:** **option (b)**. Reversibility-first (unmount = revert). Zero ongoing sync overhead. Matches existing volume-mount precedent. Single source of truth for framework-universal code paths. Per-cabinet drift only happens where intended (instance/* + cabinet/.env operator-managed values).
+- **Sequencing:** folds into **FW-088 v5 substrate** (officer Claude session location architecture). FW-088 already needs to enumerate "what's framework-shared vs cabinet-local" for cwd + .claude/ inheritance — bind-mount-vs-clone is the same partition question. Single spec covers both. CPO concurs.
+- **Acceptance criteria:** future framework-side fix to any of `cabinet/cron/`, `cabinet/scripts/lib/`, `framework/`, `presets/<preset>/` IS visible in all spawned cabinets without re-running bootstrap or sync script. Per-cabinet `instance/` + `cabinet/.env` retained. Test: edit a `cabinet/cron/*.sh` string, observe propagation in <1s to spawned cabinet's view.
+- **Owner:** CPO spec extension (FW-088 v5), CTO build, COO adversary on bind-mount security surface.
+- **Source:** CPO trigger 2026-05-01 22:01 UTC after A11 cron-fix propagation gap surfaced.
+
+---
+
+### FW-094 update — cron source confirmed: Dockerfile.watchdog COPIES at build time
+- **Diagnostic chain (CPO 2026-05-02 10:03 UTC):** even after fixing both source + spawned cron files, the 10:00 UTC tick still emitted OLD text. CPO whole-FS grep clean. ps shows no cron in any officer container.
+- **Root cause confirmed:** `cabinet/Dockerfile.watchdog:21-24` `COPY cron/briefing.sh|research-sweep.sh|backlog-refine.sh|retrospective.sh /opt/watchdog/`. Watchdog image was built ~2026-04-29 (Up 5 days per docker ps yesterday). Image has frozen pre-fix copies at `/opt/watchdog/*.sh`. cron daemon inside watchdog runs the frozen copies. File edits to `cabinet/cron/*.sh` don't propagate to the running container without rebuild.
+- **Same class as:** memory `feedback_hook_shipped_vs_active.md` (settings.json doesn't hot-reload) + memory `feedback_check_deploy_freshness_first.md` (stale image > stale code as cause of "X broken after merge Y" bugs).
+- **Immediate fix:** rebuild watchdog image + restart container. Without host-MCP available (still down), CTO via shell OR Captain. Once host-agent is back, CoS can do via `mcp__host__host__rebuild_service('sensed-watchdog')`.
+- **Architectural fix (folds into FW-094 main):** bind-mount `/opt/founders-cabinet/cabinet/cron/` into the watchdog container at `/opt/watchdog/` (or change cron schedule to point at the source path directly). Then file edits propagate live, no rebuild needed. Acceptance criterion gets stricter: 'edit cron string, observe propagation in <60s on next tick (no daemon restart)'. v5 substrate AC adds: 'cron container reads cron/ scripts from bind-mount, not COPY at build'.

@@ -9,7 +9,7 @@ REDIS_URL="${REDIS_URL:-redis://redis:6379}"
 REDIS_HOST=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f1)
 REDIS_PORT=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f2)
 
-TRIGGER_MSG="[$TIMESTAMP] Scheduled research sweep. Review current product priorities in shared/backlog.md and Notion Product Hub, identify relevant research questions, and produce a research brief to Notion Research Hub."
+TRIGGER_MSG="[$TIMESTAMP] Scheduled research sweep. Review current product priorities in shared/backlog.md, identify relevant research questions, and produce a research brief to shared/interfaces/research-briefs/ (Library if persistent value)."
 
 # PRIMARY: Push to Redis Stream
 . /opt/founders-cabinet/cabinet/scripts/lib/triggers.sh

@@ -9,7 +9,7 @@ REDIS_URL="${REDIS_URL:-redis://redis:6379}"
 REDIS_HOST=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f1)
 REDIS_PORT=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f2)
 
-TRIGGER_MSG="[$TIMESTAMP] Scheduled backlog refinement. Review Linear issues, incorporate recent research briefs from Notion Research Hub, update priorities in shared/backlog.md, and ensure top items have specs in Notion Product Hub."
+TRIGGER_MSG="[$TIMESTAMP] Scheduled backlog refinement. Review /tasks for new items + status drift, incorporate recent research briefs from shared/interfaces/research-briefs/, update priorities in shared/backlog.md, and ensure top items have specs in shared/interfaces/product-specs/."
 
 # PRIMARY: Push to Redis Stream
 . /opt/founders-cabinet/cabinet/scripts/lib/triggers.sh
