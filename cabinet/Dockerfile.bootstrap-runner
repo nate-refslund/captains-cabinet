@@ -1,0 +1,24 @@
+# bootstrap-runner image build context — FW-085 Path A
+# Privileged container with docker-cli + psql; used only at bootstrap time.
+
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y \
+    ca-certificates curl git gnupg jq postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN install -m 0755 -d /etc/apt/keyrings \
+ && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
+ && chmod a+r /etc/apt/keyrings/docker.gpg \
+ && ARCH=$(dpkg --print-architecture) \
+ && . /etc/os-release \
+ && echo "deb [arch=${ARCH} signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable" > /etc/apt/sources.list.d/docker.list \
+ && apt-get update \
+ && apt-get install -y docker-ce-cli docker-compose-plugin \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/founders-cabinet
+
+ENTRYPOINT ["bash", "/opt/founders-cabinet/cabinet/scripts/cabinet-bootstrap.sh"]
