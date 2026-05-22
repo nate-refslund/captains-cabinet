@@ -25,7 +25,7 @@ Cabinet (this repo)
 Your Product Repo (mounted at /workspace/product)
 ```
 
-Each Officer runs as a persistent Claude Code session with Telegram Channels. They read strategy from Notion, execute tasks from Linear, write code in your repo, and report back via Telegram.
+Each Officer runs as a persistent Claude Code session with Telegram Channels. They read strategy from the **Library** (Cabinet-native structured knowledge), pick up work from **/tasks** (Cabinet-native task backlog), write code in your repo, and report back via Telegram. Notion and Linear remain as legacy adapters for teams that prefer them — configured in `instance/config/product.yml`.
 
 Officer sets are fully configurable per deployment — add, remove, or rename Officers in `instance/config/platform.yml`. The framework is officer-agnostic.
 
@@ -40,22 +40,23 @@ git clone https://github.com/YOUR-GITHUB-USERNAME/captains-cabinet.git
 cd captains-cabinet
 ```
 
-### 2. Set Up Notion
+### 2. Set Up the Library + /tasks (defaults)
 
-The bootstrap script creates the entire Cabinet HQ workspace structure automatically:
+The bootstrap script seeds the Library starter Spaces (Business Brain, Specs, Research, Decisions, Captain Patterns, Customer Success, Compliance, etc.) and provisions the `officer_tasks` table:
 
 ```bash
-export NOTION_API_KEY="your-notion-internal-integration-token"
-bash cabinet/scripts/bootstrap-notion.sh "YourProductName"
+bash cabinet/scripts/bootstrap-cabinet.sh "YourProductName"
 ```
 
-This creates all pages and databases and writes the IDs to `instance/config/product.yml`. Then add your strategy docs (vision, brand guidelines, etc.) to the Business Brain section.
+This runs the migrations against your Neon database and writes the IDs to `instance/config/product.yml`. Then add your strategy docs (vision, brand guidelines, etc.) as records in the Business Brain Space via the `/library` dashboard route.
+
+**Optional: legacy Notion / Linear integration.** If your team already lives in Notion or Linear, run `bash cabinet/scripts/bootstrap-notion.sh "YourProductName"` and/or set the Linear workspace in `instance/config/product.yml`. Officers will read from those surfaces and migrate content into the Library over time.
 
 ### 3. Configure Your Product and Platform
 
 Edit two config files:
 
-- `instance/config/product.yml` — what you're building: product name, Notion IDs, Linear workspace, Neon project, voice settings, Telegram bots
+- `instance/config/product.yml` — what you're building: product name, Neon project, voice settings, Telegram bots, optional Notion / Linear IDs if using legacy adapters
 - `instance/config/platform.yml` — how the Cabinet operates: timezone, accountability tone, communication preferences, briefing cadence, officer set (fulltime vs consultant)
 
 ### 4. Set Up Telegram Bots
@@ -96,12 +97,39 @@ docker exec -it cabinet-officers bash
 |-----------|---------|
 | **Officers** | Persistent Claude Code CLI sessions in tmux, one per domain |
 | **Crew** | Agent Teams spawned by Officers for parallel execution |
-| **Notion** | Business brain — strategy, research, decisions (default; replaceable — see `instance/config/product.yml`) |
-| **Linear** | Execution backlog — what to build (default; replaceable — see GitHub #16) |
-| **Neon (PostgreSQL + pgvector)** | Two layers: (1) **Cabinet Memory** — universal semantic search over all Cabinet-produced text. Query via `bash cabinet/scripts/search-memory.sh "<query>"`. (2) **The Library** — user-defined structured Spaces for business brain, decisions, issues, etc. Accessed via the `/library` dashboard route and the `library` MCP server. |
-| **Redis** | Kill switch, rate limits, state flags |
+| **Library** (default) | Cabinet-native structured knowledge — user-defined **Spaces** (Business Brain, Specs, Decisions, Research, Customer Success, etc.) containing typed **records**. Semantic search via pgvector, `[[wiki-links]]` between records, automatic backlinks, graph view. Accessed via the `/library` dashboard route or the `library` MCP server. **Canonical business-brain since 2026-04-26.** |
+| **/tasks** (default) | Cabinet-native task backlog — Postgres `officer_tasks` table. Officer assignment, WIP=1 per officer (enforced), `due_at` timestamps with auto-triggers to the assigned officer when due, status (todo / in_progress / blocked / done). Accessed via the `/tasks` dashboard route or direct Postgres queries. **Canonical backlog since 2026-04-26.** |
+| **Neon (Cabinet Memory)** | Universal semantic search over all Cabinet-produced text (logs, briefings, experience records, decisions). Query via `bash cabinet/scripts/search-memory.sh "<query>"`. |
+| **Notion** (legacy adapter) | Optional business-brain integration for teams already using Notion. Configured in `instance/config/product.yml`. Treated as read-only archive post-Library cutover. |
+| **Linear** (legacy adapter) | Optional task backlog for teams already using Linear. Configured in `instance/config/product.yml`. Treated as read-only archive post-/tasks cutover. |
+| **Redis** | Kill switch, rate limits, state flags, officer-to-officer triggers |
 | **Watchdog** | Health checks, cost tracking, cron triggers, alerts |
 | **Telegram** | Captain's command interface |
+
+### Library — how it works
+
+The Library is the Cabinet's structured knowledge store. Think of it as a typed database with the UX of Notion but native to the Cabinet stack.
+
+- **Spaces** are top-level containers. The framework ships starter Spaces (Business Brain, Specs, Research, Decisions, Captain Patterns, Customer Success, Compliance, etc.) and you create your own.
+- **Records** live inside Spaces with structured fields (title, body, status, owner, tags) plus free-form Markdown content.
+- **Wiki-links** — write `[[Spec 050]]` or `[[Captain Pattern A11]]` in any record body and the Library auto-resolves the link to the target record.
+- **Backlinks** — every record shows which other records link to it, automatically.
+- **Semantic search** — pgvector (Voyage AI embeddings) lets officers ask "where did we decide X" or "what specs touch the audit log" and get relevant records ranked by meaning, not keywords.
+- **Graph view** — visual map of records and their wiki-link relationships. Useful for spotting orphaned records or clusters.
+- **Access** — officers query via the `library` MCP server (read-anywhere, write-into-their-Space); operators view + edit via the `/library` dashboard route.
+
+### /tasks — how it works
+
+`/tasks` is the Cabinet's task backlog, replacing Linear for teams that don't already have it.
+
+- **Officer assignment** — every task has exactly one assigned officer (CoS, CTO, CPO, etc.). The officer owns the work.
+- **WIP=1 enforced** — each officer has at most one task `in_progress` at any time. Forces sequential execution per officer, prevents multitasking degradation.
+- **Status** — `todo` → `in_progress` → `done` (plus `blocked` for waiting-on-input). Officers move their own tasks through states.
+- **Due dates** — `due_at` timestamps trigger an auto-DM to the assigned officer when the deadline arrives. No forgotten work.
+- **Context slugs** — tasks tag which project/cabinet they belong to (e.g., `sensed`, `cabinet-framework`, `personal-cabinet`). Filters the dashboard view per context.
+- **Access** — officers query via direct Postgres `officer_tasks` queries or `cabinet/scripts/tasks.sh`; operators view + manage via the `/tasks` dashboard route.
+
+Both surfaces ship as part of the framework — no external SaaS dependency.
 
 ## The Five Pillars
 
@@ -117,7 +145,7 @@ Captain's Cabinet is preset-aware. The framework is universal; a **preset** adap
 
 Shipped presets:
 
-- **`work`** (default) — product-team shape. CoS + CTO + CPO + CRO + COO as officers. Linear or Library backlog. Notion or Library business brain. Product repo mounted as workspace. Default for anyone building and shipping something.
+- **`work`** (default) — product-team shape. CoS + CTO + CPO + CRO + COO as officers. **/tasks** backlog + **Library** business brain as defaults; Linear and Notion available as legacy adapters. Product repo mounted as workspace. Default for anyone building and shipping something.
 - **`personal`** — placeholder. Populates with coaching-style agents (Physical Coach, Mindfulness Coach) in Phase 2.
 - **`_template`** — skeleton for creating a new preset. See `memory/skills/create-preset.md` for the full workflow.
 
@@ -206,21 +234,22 @@ Default cadences in `CLAUDE.md`:
 Ship with the repo in `memory/skills/`. Officers follow these as baseline procedures. The learning loop can improve them by writing evolved versions to `memory/skills/evolved/` — foundation files are never modified directly.
 
 ### What to Customize After Forking
-1. `instance/config/product.yml` — your product name, Notion IDs, Linear workspace, Telegram bots, voice settings
+1. `instance/config/product.yml` — your product name, Telegram bots, voice settings, optional Notion/Linear IDs if you use the legacy adapters
 2. `instance/config/platform.yml` — your timezone, accountability tone, briefing cadence, officer set (fulltime vs consultant)
 3. `cabinet/.env` — all API keys and tokens (copy from `cabinet/.env.example`)
 4. `cabinet/officer-capabilities.conf` — map your officers to capabilities (deploys_code, reviews_specs, etc.)
-5. `constitution/CONSTITUTION.md` — your operating principles (optional)
+5. `cabinet/starter-spaces/` — Library Space templates (Business Brain, Specs, Research, Decisions, etc.) seeded on first run; edit to match your domain
 6. `.claude/agents/*.md` — officer identity if you add domain-specific context (optional)
 
 ## Requirements
 
 - **Server:** Ubuntu 24.04 with Docker (Hetzner CPX31 recommended)
 - **Claude:** Max 20x subscription ($200/mo) for 4–5 Officers
-- **Notion:** Business plan (for MCP integration)
+- **Neon:** PostgreSQL + pgvector account (powers Library, /tasks, and Memory)
+- **Notion:** Business plan — optional (only if you use the legacy business-brain adapter)
 - **Telegram:** One bot token per Officer (default 5) + group chat
-- **APIs (required):** Linear, Neon, Voyage AI, Perplexity, Brave Search, Exa
-- **APIs (optional):** ElevenLabs (voice messages), Google Gemini (image generation)
+- **APIs (required):** Neon (Postgres + pgvector — powers Library, /tasks, Memory), Voyage AI (embeddings), Perplexity, Brave Search, Exa
+- **APIs (optional):** Notion (legacy business-brain adapter), Linear (legacy task adapter), ElevenLabs (voice messages), Google Gemini (image generation)
 
 ## Safety
 
