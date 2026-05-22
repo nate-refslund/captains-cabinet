@@ -40,17 +40,17 @@ git clone https://github.com/YOUR-GITHUB-USERNAME/captains-cabinet.git
 cd captains-cabinet
 ```
 
-### 2. Set Up the Library + /tasks (defaults)
+### 2. Provision the Cabinet (Library + /tasks + state)
 
-The bootstrap script seeds the Library starter Spaces (Business Brain, Specs, Research, Decisions, Captain Patterns, Customer Success, Compliance, etc.) and provisions the `officer_tasks` table:
+The cabinet-bootstrap script provisions a brand-new Cabinet end-to-end: runs the Neon SQL migrations (Library schema, `officer_tasks` table, Cabinet Memory), seeds the starter Library Spaces (Business Brain, Specs, Research, Decisions, Captain Patterns, Customer Success, Compliance, etc.), and registers the cabinet with its preset.
 
 ```bash
-bash cabinet/scripts/bootstrap-cabinet.sh "YourProductName"
+bash cabinet/scripts/cabinet-bootstrap.sh "YourProductName" --preset work --captain-name "YourName"
 ```
 
-This runs the migrations against your Neon database and writes the IDs to `instance/config/product.yml`. Then add your strategy docs (vision, brand guidelines, etc.) as records in the Business Brain Space via the `/library` dashboard route.
+Re-runs are idempotent. Then add your strategy docs (vision, brand guidelines, etc.) as records in the Business Brain Space via the `/library` dashboard route.
 
-**Optional: legacy Notion / Linear integration.** If your team already lives in Notion or Linear, run `bash cabinet/scripts/bootstrap-notion.sh "YourProductName"` and/or set the Linear workspace in `instance/config/product.yml`. Officers will read from those surfaces and migrate content into the Library over time.
+**Optional: legacy Notion / Linear integration.** If your team already lives in Notion or Linear, run `bash cabinet/scripts/bootstrap-notion.sh "YourProductName"` and/or set the Linear workspace in `instance/config/product.yml`. Officers will read from those surfaces and migrate content into the Library over time via `migrate-notion-to-library.sh` and `import-linear-to-library.sh`.
 
 ### 3. Configure Your Product and Platform
 
@@ -112,7 +112,7 @@ The Library is the Cabinet's structured knowledge store. Think of it as a typed 
 
 - **Spaces** are top-level containers. The framework ships starter Spaces (Business Brain, Specs, Research, Decisions, Captain Patterns, Customer Success, Compliance, etc.) and you create your own.
 - **Records** live inside Spaces with structured fields (title, body, status, owner, tags) plus free-form Markdown content.
-- **Wiki-links** — write `[[Spec 050]]` or `[[Captain Pattern A11]]` in any record body and the Library auto-resolves the link to the target record.
+- **Wiki-links** — write `[[Onboarding Spec]]` or `[[Decision: Pricing Tiers]]` in any record body and the Library auto-resolves the link to the target record.
 - **Backlinks** — every record shows which other records link to it, automatically.
 - **Semantic search** — pgvector (Voyage AI embeddings) lets officers ask "where did we decide X" or "what specs touch the audit log" and get relevant records ranked by meaning, not keywords.
 - **Graph view** — visual map of records and their wiki-link relationships. Useful for spotting orphaned records or clusters.
@@ -127,7 +127,7 @@ The Library is the Cabinet's structured knowledge store. Think of it as a typed 
 - **Status** — `todo` → `in_progress` → `done` (plus `blocked` for waiting-on-input). Officers move their own tasks through states.
 - **Due dates** — `due_at` timestamps trigger an auto-DM to the assigned officer when the deadline arrives. No forgotten work.
 - **Context slugs** — tasks tag which project/cabinet they belong to (e.g., `sensed`, `cabinet-framework`, `personal-cabinet`). Filters the dashboard view per context.
-- **Access** — officers query via direct Postgres `officer_tasks` queries or `cabinet/scripts/tasks.sh`; operators view + manage via the `/tasks` dashboard route.
+- **Access** — officers query their work via `cabinet/scripts/my-tasks.sh` or direct Postgres `officer_tasks` queries; operators view + manage via the `/tasks` dashboard route.
 
 Both surfaces ship as part of the framework — no external SaaS dependency.
 
@@ -135,8 +135,15 @@ Both surfaces ship as part of the framework — no external SaaS dependency.
 
 1. **Dynamic Roles** — Officers are markdown files, not code. Restructure the org in one message.
 2. **The Operator as Captain** — You set direction, the Cabinet figures out how. Works for founders, employees, team leads, solo operators — anyone running a system that benefits from always-on AI delegation.
-3. **Memory That Compounds** — Three tiers: always-loaded constitution, working notes, episodic recall.
-4. **Self-Improvement Loops** — Three nested loops: Task (per-task log entries), Reflection (event-triggered — after compaction or completion milestones), Evolution (cross-officer retro every 5 reflections or 48h, whichever first). Foundation skills ship with the repo and improve over time.
+3. **Memory That Compounds** — Three tiers: always-loaded constitution, working notes, episodic recall. Plus the **Library** for structured knowledge and Cabinet Memory for universal semantic search.
+4. **Self-Improvement Loops** — Five nested loops:
+   - **Task** — per-task experience records.
+   - **Reflection** — event-triggered (after compaction or completion milestones).
+   - **Evolution** — cross-officer retro every 5 reflections or 48h, whichever first.
+   - **Captain-pattern listener** (4th loop, inline) — every officer scans Captain DMs for meta-signals ("we should always X", "let's track Y so we don't forget") and offers to encode as standing behavior; auto-encodes on the second occurrence. Patterns persist in `shared/interfaces/captain-patterns.md` and are loaded at every session start.
+   - **Captain-intent inference** (5th loop, proactive) — every officer hypothesizes the Captain's latent WHY before composing any Captain-facing outbound and shapes the reply around the WHY, not just the surface WHAT. Inferred intents persist in `shared/interfaces/captain-intents.md`.
+
+   Foundation skills ship with the repo (`memory/skills/*.md` with YAML frontmatter per the open SKILL.md spec) and improve over time via evolved overlays (`memory/skills/evolved/`).
 5. **Safety Boundaries** — Hard limits enforced by hooks and Redis. Read-only constitution. Kill switch.
 
 ## Presets — adapting the Cabinet to different use cases
@@ -146,7 +153,7 @@ Captain's Cabinet is preset-aware. The framework is universal; a **preset** adap
 Shipped presets:
 
 - **`work`** (default) — product-team shape. CoS + CTO + CPO + CRO + COO as officers. **/tasks** backlog + **Library** business brain as defaults; Linear and Notion available as legacy adapters. Product repo mounted as workspace. Default for anyone building and shipping something.
-- **`personal`** — placeholder. Populates with coaching-style agents (Physical Coach, Mindfulness Coach) in Phase 2.
+- **`personal`** — coaching-shape practice. 4 coaches (Physical, Mindfulness, Spiritual, Financial) + Personal Assistant orchestrator. Configured for personal-life domains rather than product work; separate Telegram bots + Library Spaces + Postgres-backed `/tasks`. Captain runs a Personal Cabinet alongside a Work Cabinet for full-life coverage.
 - **`_template`** — skeleton for creating a new preset. See `memory/skills/create-preset.md` for the full workflow.
 
 A preset defines:
@@ -172,7 +179,7 @@ captains-cabinet/
 │   └── README.md
 ├── presets/                 # Use-case configurations (work, personal, custom)
 │   ├── work/                    # Default preset: product-team shape (CoS/CTO/CPO/CRO/COO)
-│   ├── personal/                # Placeholder — populates in Phase 2
+│   ├── personal/                # Coaching-shape preset (4 coaches + Personal Assistant orchestrator)
 │   ├── _template/               # Skeleton for creating a new preset
 │   └── README.md
 ├── instance/                # This deployment's specifics
@@ -180,7 +187,7 @@ captains-cabinet/
 │   ├── memory/tier2/            # Officer working notes (per-role)
 │   └── agents/                  # Per-deployment agent overlays (optional; loaded last)
 ├── cabinet/
-│   ├── scripts/             # Cabinet tooling: hooks, supervisor, load-preset.sh, library.sh, memory.sh, etc.
+│   ├── scripts/             # Cabinet tooling: hooks, supervisor, load-preset.sh, cabinet-bootstrap.sh, search-memory.sh, my-tasks.sh, etc.
 │   ├── sql/                 # Schema files: cabinet_memory.sql, library.sql
 │   ├── cron/                # Scheduled triggers (briefings, research sweeps, retro)
 │   ├── channels/            # MCP plugins (redis-trigger-channel, library-mcp)
@@ -188,7 +195,7 @@ captains-cabinet/
 │   ├── dashboard/           # Next.js operator dashboard
 │   └── Dockerfile.officer   # Per-officer container image
 ├── .claude/agents/          # Derived: populated by load-preset.sh from presets/ + instance/agents/ overlays (gitignored)
-├── constitution/            # Legacy constitution (still present during Phase 0; runtime reads from /tmp/cabinet-runtime/)
+├── constitution/            # Legacy constitution files; runtime reads from /tmp/cabinet-runtime/ populated by load-preset.sh
 ├── memory/
 │   ├── skills/              # Foundation + promoted skills (procedures, quality gates)
 │   ├── golden-evals/        # Validation scenarios for Cabinet changes
@@ -201,6 +208,37 @@ captains-cabinet/
 ## Customization
 
 Everything is configured in `instance/config/product.yml` and `cabinet/.env`. Key options:
+
+### Model Routing — Sonnet orchestrator + Opus advisor
+
+Officers run as **Sonnet 4.6** by default (set via `--model` flag in `cabinet/scripts/start-officer.sh`). They escalate to **Opus 4.7** only on hard sub-problems via two mechanisms:
+
+- `bash cabinet/scripts/advisor-crew.sh --task "..." --context <file>` — single synthesized response (Sonnet executor + Opus advisor).
+- `Task(model="opus", prompt="...")` — independent Opus subagent with its own context, used for adversarial reviews, fresh-context audits, or multi-step subloops.
+
+Triggers and the escalation trigger list live in `memory/skills/evolved/opus-escalation.md`. Cap: 10 escalations per officer per 24h, tracked in Redis at `cabinet:opus-escalations:<officer>:<YYYY-MM-DD>`. The economics: roughly 1/5 the cost of Opus-on-everything for frontier-quality output, with explicit escalation when the work genuinely warrants it.
+
+Rollback: `CABINET_MODEL=claude-opus-4-7 bash cabinet/scripts/start-officer.sh <officer>` returns one officer to Opus-default; flip the default in `start-officer.sh` for fleet-wide rollback.
+
+### Captain decisions, patterns, intents — the institutional-memory triplet
+
+Three shared interfaces persist what the Captain has said and what officers have inferred:
+
+- `shared/interfaces/captain-decisions.md` — append-only log of every Captain decision with the WHY. Officers must check this before any design / feature / UI work. The receiving officer logs decisions in real-time.
+- `shared/interfaces/captain-patterns.md` — explicit standing behaviors from Captain feedback. Auto-encoded on second occurrence per the 4th loop. Officers re-read on every Captain DM.
+- `shared/interfaces/captain-intents.md` — inferred latent goals (5th loop). Officers hypothesize the WHY behind every Captain-facing outbound and shape replies around it.
+
+Together these three files mean officers don't re-litigate decisions, don't re-ask Captain things he's already answered, and shape their work around the latent goals Captain hasn't explicitly stated.
+
+### Host access (CoS-only)
+
+The Coordinating Officer (CoS) has scoped host-machine access via a privileged `host-agent` running as a separate systemd service. Six tools available: `run`, `rebuild_service`, `restart_officer`, `tail_logs`, `edit_file`, `read_file`. Auth via `SO_PEERCRED` on a Unix socket at `/run/cabinet/host-agent.sock`; CoS UID-pinned at 60001. Every action audited to `/var/log/cabinet/cos-actions.jsonl`. Kill-switch via `/run/cabinet/host-agent.paused` halts immediately.
+
+This lets the CoS rebuild Docker services, restart officers, tail container logs, and patch host-side scripts without round-tripping every action through the Captain. Other officers do NOT have host access — they propose changes through the CoS.
+
+### Tech Radar
+
+`shared/interfaces/tech-radar.md` — living document tracking tools the Cabinet is watching, evaluating, trialling, or has rejected (with reasons). Research Officer maintains it; the CoS reviews entries in cross-officer retros to surface adoption opportunities.
 
 ### Voice Messages (optional)
 Officers can send voice messages alongside text via ElevenLabs TTS. Each officer has their own voice.
@@ -226,12 +264,17 @@ Officers can generate images via Google Gemini (Nano Banana 2) and send them thr
 
 ### Improvement Cadences
 Default cadences in `CLAUDE.md`:
-- **Individual reflection:** event-triggered (after compaction or completion milestones — don't reflect on nothing)
-- **Cross-officer retro:** event-triggered (fires at 5 accumulated reflections or 48h since last — whichever first)
-- **Evolution loop:** runs alongside retro (Phase 1 retro, Phase 2 skill promotion)
+- **Individual reflection:** event-triggered (after compaction or completion milestones — don't reflect on nothing).
+- **Cross-officer retro:** event-triggered (fires at 5 accumulated reflections or 48h since last — whichever first).
+- **Evolution loop:** runs alongside retro (Phase 1 retro, Phase 2 skill promotion).
+- **Captain-pattern listener (4th loop):** inline on every Captain DM. No cadence — fires on signal.
+- **Captain-intent inference (5th loop):** pre-reply WHY scan on every Captain-facing outbound. No cadence — fires on every reply.
 
 ### Foundation Skills
-Ship with the repo in `memory/skills/`. Officers follow these as baseline procedures. The learning loop can improve them by writing evolved versions to `memory/skills/evolved/` — foundation files are never modified directly.
+Ship with the repo in `memory/skills/` following the open **SKILL.md spec** (YAML frontmatter for discovery + progressive disclosure: `name` + `description` load at session start, full body loads only when a task matches the description trigger). Officers follow these as baseline procedures. The learning loop can improve them by writing evolved versions to `memory/skills/evolved/` — foundation files are never modified directly, evolved versions take precedence.
+
+### Cabinet operating speed (no calendar months)
+The Cabinet operates at AI speed, not human team speed. When planning milestones, sequence by **dependencies and validation gates**, not calendar time. Real human-speed bottlenecks: Captain decisions, real-world user feedback. Everything else ships in minutes to hours. Document phases as "after launch + N active users with N+ signals" — not "3-6 months."
 
 ### What to Customize After Forking
 1. `instance/config/product.yml` — your product name, Telegram bots, voice settings, optional Notion/Linear IDs if you use the legacy adapters
@@ -267,5 +310,7 @@ Ship with the repo in `memory/skills/`. Officers follow these as baseline proced
 Free to fork, self-host, modify, and use internally. Commercial hosted/managed offerings competing with the Licensor's paid service are reserved to the Licensor until the Change Date (4 years after each version's publication), at which point that version converts to Apache 2.0.
 
 Short version: if you're a team running the Cabinet for your own organization — whether as a founder, an employee, a solo operator, or anything in between — go ahead. If you want to sell a hosted Cabinet-as-a-Service to third parties, reach out.
+
+**Naming.** The open-source framework you're reading about is **Captain's Cabinet**. A commercial product built on top of this framework — currently in development under refslund.ai — uses the shorter **Cabinet** name. The two are intentionally distinct: this repo (Captain's Cabinet) is the framework you fork and run yourself; **Cabinet** is the commercial productization (installer, billing, customer dashboard, support). Both exist; only this repo is open-source.
 
 See `captains-cabinet-guide.md` for the full framework theory.
