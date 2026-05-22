@@ -464,8 +464,18 @@ The Cabinet uses **local MCP servers with API tokens** (configured in `.mcp.json
 
 ## Model Routing
 
-- **Officers:** Opus 4.7 for strategic thinking and complex decisions
-- **Crew (Agent Teams):** Sonnet 4.6 for execution. Set explicitly in spawn prompts.
+The Cabinet uses a tiered model strategy: cheap models drive the agent loop, expensive models advise on hard sub-problems. Frontier quality at ~1/5 the cost of Opus-default (Captain ratified 2026-05-18 msg 2540).
+
+- **Officers (orchestrator default):** Sonnet 4.6. Set via `--model` at session start in `cabinet/scripts/start-officer.sh`. Officers drive the loop: read tasks, coordinate, execute, reply to Captain, route work.
+- **Officers (escalation to Opus 4.7):** Spawn an Opus advisor when work matches a trigger in `memory/skills/evolved/opus-escalation.md`. Two mechanisms:
+  - `bash cabinet/scripts/advisor-crew.sh --task "..." --context <file>` — Sonnet executor + Opus advisor, single synthesized response. Preferred for one-shot consultations.
+  - `Task(model="opus", prompt="...")` — independent Opus subagent with its own context. Preferred for adversarial reviews, fresh-context audits, multi-step subloops.
+- **Crew (Agent Teams):** Sonnet 4.6 for execution. Unchanged. Set explicitly in TeamCreate prompts.
+- **Cost cap:** No officer may exceed 10 Opus escalations per 24h without CoS approval. Counter at Redis `cabinet:opus-escalations:<officer>:<YYYY-MM-DD>`.
+
+**When NOT to escalate:** routine Captain DMs, briefings, status updates, Linear/Notion writes, scheduled sweeps, decisions covered by an existing skill or captain-decision. Sonnet is default; escalation is the exception.
+
+**Rollback:** `CABINET_MODEL=claude-opus-4-7 bash cabinet/scripts/start-officer.sh <officer>` returns one officer to Opus-default. Fleet rollback: change the default in `start-officer.sh`.
 
 ## Compact Instructions
 

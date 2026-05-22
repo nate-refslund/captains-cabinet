@@ -238,13 +238,16 @@ if [ -d "/home/cabinet/.claude/projects/$ENCODED_PATH" ]; then
 fi
 
 # Build the claude command — use --continue only if a prior session exists
-# Model pinned to claude-opus-4-7 (Captain approved fleet-wide Apr 16) —
-# 1M context is standard in 4.7 (no tier suffix). Override via CABINET_MODEL env.
+# Officer orchestrator model: Sonnet 4.6 (Captain ratified 2026-05-18 msg 2540).
+# Sonnet drives the agent loop; officers escalate to Opus 4.7 via
+# cabinet/scripts/advisor-crew.sh or Task(model="opus") per triggers in
+# memory/skills/evolved/opus-escalation.md. Frontier quality at ~1/5 the cost.
+# Override via CABINET_MODEL env (e.g., CABINET_MODEL=claude-opus-4-7 for rollback).
 #
 # FW-084 bot mode gating:
 #   - multi_officer OR (single_ceo AND IS_CEO_OFFICER): include --channels plugin:telegram
 #   - single_ceo AND non-CEO: omit telegram plugin entirely (officer is Telegram-dark)
-MODEL="${CABINET_MODEL:-claude-opus-4-7}"
+MODEL="${CABINET_MODEL:-claude-sonnet-4-6}"
 _BASE_FLAGS="--model $MODEL --dangerously-load-development-channels server:redis-trigger-channel --dangerously-skip-permissions --effort max"
 if [ "$BOT_MODE" = "single_ceo" ] && [ "$IS_CEO_OFFICER" = false ]; then
   # Non-CEO in single_ceo mode: no Telegram plugin. Officer operates headless —

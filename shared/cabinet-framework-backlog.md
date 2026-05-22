@@ -1394,3 +1394,202 @@ _(none)_
 - **Same class as:** memory `feedback_hook_shipped_vs_active.md` (settings.json doesn't hot-reload) + memory `feedback_check_deploy_freshness_first.md` (stale image > stale code as cause of "X broken after merge Y" bugs).
 - **Immediate fix:** rebuild watchdog image + restart container. Without host-MCP available (still down), CTO via shell OR Captain. Once host-agent is back, CoS can do via `mcp__host__host__rebuild_service('sensed-watchdog')`.
 - **Architectural fix (folds into FW-094 main):** bind-mount `/opt/founders-cabinet/cabinet/cron/` into the watchdog container at `/opt/watchdog/` (or change cron schedule to point at the source path directly). Then file edits propagate live, no rebuild needed. Acceptance criterion gets stricter: 'edit cron string, observe propagation in <60s on next tick (no daemon restart)'. v5 substrate AC adds: 'cron container reads cron/ scripts from bind-mount, not COPY at build'.
+
+---
+
+### FW-095 — /self-review 4-gate composition + Stagehand v3 visual-UAT + workflow discipline (Spec 049) (P0)
+- **Status:** SPEC v2 LANDED 2026-05-18 22:00 UTC. CPO self-review + CTO tech review parallel-folded (17 findings resolved in single pass). CRO + CoS adversary reviews queued (parallel per A7); v3 fold post-adversary; COO adversary post-v3; v3.1 ship-ready.
+- **Spec:** `shared/interfaces/product-specs/049-self-review-stagehand-visual-uat.md`.
+- **Problem:** existing `/self-review` 10-point skill is robust on code-level concerns but has 3 gaps: no visual-UAT gate, no per-task token+step ceiling, atomic-commit + conventional-commit discipline informal. CRO competitor brief confirmed: Cursor/Devin/Copilot/Aider all skip visual-UAT in May 2026 — Cabinet-novel differentiated bet. CoS frontier brief pivoted implementation from naive screenshot+vision to production-grade Stagehand v3 (DOM+CDP+action-cache, 89% WebVoyager, MIT-licensed).
+- **Build scope:** 4-gate /self-review (tests + security-scan + agent-self-diff-critique + Stagehand-visual-UAT) + atomic-commit + conventional-commit + per-task step/token ceiling + `.cabinet/agent-instructions.md` per-project + anti-Devin constitutional posture.
+- **Phasing:** v3 + v3.1 review fold (~3-4h) → Phases 2-6 parallel-friendly (~22-30h CTO total) → Phase 7 test harness → Phase 8 e2e validation. Critical path runs v3 → v3.1 → 5-phase parallel → test → validation.
+- **Substrate dependencies:** Cabinet's Next.js dashboard already provides Node.js ≥20; pnpm via npx + gitleaks bootstrap-host PATH (CTO Option (b)); isolated Stagehand v3 install at `cabinet/scripts/visual-uat/node_modules/`; new Layer-2 pre-tool-use hook for conventional-commit; `migrate-active-task.sh` for state-file upgrade.
+- **Owner:** CTO build, CPO spec, CRO+CoS adversary review (parallel), COO adversary (sequential post-CRO+CoS).
+- **Source:** Captain msg 2540 (2026-05-18 21:34 UTC, CoS-routed) ratified 3 frontier moves (Sonnet+Opus routing, SKILL.md adoption, Stagehand pivot) + greenlit Spec 049 drafting; 3-brief convergent seed (CoS scoping + CRO competitor + CoS frontier — all 2026-05-18); CPO self-review + CTO tech review parallel-fold 21:39-22:00 UTC.
+
+---
+
+## Commercial Cabinet (refslund.ai) — Spec 050 sub-specs
+
+> **Parent spec:** `shared/interfaces/product-specs/050-commercial-cabinet-build-plan.md` (v1.0, 2026-05-20).
+> **Status:** Spec 050 awaiting Captain ratification. FW-096…FW-113 are children — drafted but pending Phase-gate ratification before CPO authors detail-specs.
+
+### FW-096 — LiteLLM proxy + per-officer virtual keys + daily $/officer hard cap (P1)
+- **Status:** SPEC-PENDING. Parent Spec 050 §3 Phase 1.
+- **Problem:** customer signups via refslund.ai today require giving us their Anthropic key OR exposing ours. Neither works. We need a proxy that issues per-officer virtual keys, enforces daily $ caps, and stays in EU.
+- **Scope:** LiteLLM Proxy deployment (EU region), per-officer virtual key issuance tied to customer's Stripe subscription, daily-$-per-officer hard cap (config: $10/Lite, $25/Pro, $50/Scale defaults), cap-breach → officer pause + Captain DM with override option, cache header propagation for 90% prompt-cache hit.
+- **Effort:** ~40h CTO (LiteLLM config + cap-enforcement layer + customer-key issuance API).
+- **Depends on:** FW-099 (Stripe wiring for subscription→virtual-key issuance).
+- **Risks:** Anthropic terms (see Spec 050 §13 risk 1).
+- **Owner:** CTO build, CPO spec, CoS review, COO adversary.
+
+### FW-097 — Customer audit log: every officer access to customer data, queryable (P1)
+- **Status:** SPEC-PENDING. Parent Spec 050 §3 Phase 1, Gap H.
+- **Problem:** customers need to answer their DPO's question "what did your AI access today?" In the current Cabinet, audit data lives across JSONL logs, Redis triggers, Postgres. No single queryable audit surface.
+- **Scope:** new local Postgres schema `customer_audit_log` (officer × timestamp × tool × resource × customer-data-category × cost-cents × outcome), instrumentation in all officer tool-use hooks to write a row per access, dashboard `/audit` route with filters + CSV export, retention configurable (default 90 days, customer can extend).
+- **Effort:** ~25h CTO + ~10h CPO spec.
+- **Depends on:** none (parallelizable with FW-096).
+- **Risks:** schema needs to NOT include the data itself (PII minimization Art. 5) — only the category + access timestamp.
+- **Owner:** CTO build, CPO spec, COO adversary on GDPR minimization.
+
+### FW-098 — Concierge install runbook + cabinet-bootstrap.sh hardening for customer MacMini (P1)
+- **Status:** SPEC-PENDING. Parent Spec 050 §3 Phase 1, Gap A.
+- **Problem:** Nate has done 1 spawn already (step-network) and the substrate gaps surfaced sequentially (FW-093 captures bundle). For a customer MacMini install, we need a documented runbook that takes <4h end-to-end, with explicit checkpoints.
+- **Scope:** runbook covering: pre-flight (macOS version check, FileVault on, Apple ID for Apple Developer agent token), Postgres.app install, Redis install, repo clone, .env preparation, bot creation walkthrough (BotFather taps), first-officer hire, smoke test (Captain DM round-trip), customer-acceptance checklist.
+- **Effort:** ~15h CTO + ~10h CPO documentation.
+- **Depends on:** FW-082/088 substrate fixes landing first.
+- **Risks:** every step that requires Nate-only execution becomes a sales bottleneck — flag those explicitly in the runbook as "Nate-required" vs. "customer-self-serve."
+- **Owner:** CTO build, CPO spec, CoS review.
+
+### FW-099 — refslund.ai signup + Stripe Token Billing wiring (P1)
+- **Status:** SPEC-PENDING. Parent Spec 050 §3 Phase 1, Gap B.
+- **Problem:** no signup surface today. refslund.ai is a domain Nate owns but not yet a product front door.
+- **Scope:** refslund.ai homepage with "Hire an Officer" CTA → signup flow → Stripe Checkout (subscription product per tier) → success → email with install instructions + LiteLLM virtual key for first officer. Stripe webhook → LiteLLM virtual key provisioning (FW-096 integration).
+- **Effort:** ~30h CTO (Next.js page + Stripe + webhook) + ~5h CPO copy.
+- **Depends on:** FW-096 (virtual key API).
+- **Risks:** Stripe Token Billing setup requires Stripe account in tax-collecting mode for Danish VAT — confirm Nate's Stripe account ready or file as founder-action.
+- **Owner:** CTO build, CPO spec, CoS review.
+
+### FW-100 — GDPR baseline: ROPA + DPIA + DPA + erasure command + sub-processor list (P1)
+- **Status:** SPEC-PENDING. Parent Spec 050 §3 Phase 1 + §8.
+- **Problem:** without GDPR baseline, no EU customer's DPO will sign. Research finding 5 confirms €6-8K Danish-lawyer review is the realistic cost.
+- **Scope:** ROPA template (customer fills in their controller specifics), DPIA template (we pre-fill the high-risk-processing analysis), DPA template (refslund.ai ↔ customer), erasure CLI command (`cabinet wipe --confirm` → signed JSON deletion receipt with pre-wipe inventory hash), sub-processor list page at refslund.ai/sub-processors. Danish lawyer review of all artifacts before first paying customer.
+- **Effort:** ~20h CPO (templates) + ~10h CTO (erasure command + signing) + ~€6-8K external legal.
+- **Depends on:** parallelizable with FW-096/097/099.
+- **Risks:** DPO sign-off is customer-side bottleneck — make templates as fill-in-the-blank as possible.
+- **Owner:** CPO spec + template authoring, CTO build erasure command, CoS review, external Danish lawyer review.
+
+### FW-101 — Customer dashboard MVP: officer activity feed + spend + audit log viewer (P1)
+- **Status:** SPEC-PENDING. Parent Spec 050 §3 Phase 1, Gaps D + H.
+- **Problem:** customers need a single pane to (1) see what their officer did, (2) see what it spent, (3) audit data access. Today Cabinet dashboard exists but is Captain-internal.
+- **Scope:** new `customer-dashboard` route group with: activity feed (officer × timestamp × summary, last 24h default), spend-per-officer per day chart, audit log viewer (FW-097 surface), officer status (running / paused / cap-breach). Local-only (binds to 127.0.0.1, no public exposure).
+- **Effort:** ~50h CTO + ~15h CPO spec + ~10h CPO UI copy.
+- **Depends on:** FW-096 (spend data), FW-097 (audit log).
+- **Risks:** UX scope can balloon — hold to "answers 3 questions" Phase 1.
+- **Owner:** CTO build, CPO spec, CoS review, COO adversary on local-bind security.
+
+### FW-102 — Notarized .pkg installer + Sparkle 2 auto-update + signed binary pipeline (P2)
+- **Status:** SPEC-PENDING. Parent Spec 050 §3 Phase 2, Gaps A + G.
+- **Problem:** Phase 1 ships concierge install; Phase 2 must convert that into a customer-self-install .pkg. Research finding 1 confirms Notarized .pkg + Sparkle 2 is the only viable distribution.
+- **Scope:** Apple Developer ID enrollment (founder-action), pkgbuild + productbuild scripts, notarization pipeline (xcrun notarytool), Sparkle 2 EdDSA-signed appcast, "Check for updates" menu in dashboard, signed-binary distribution server (S3 + CloudFront), staging-channel rollout (1% → 10% → 100%).
+- **Effort:** ~60h CTO + ~20h CPO spec + Apple Developer Program $99/yr.
+- **Depends on:** FW-098 (runbook proves the install actually works manually before .pkg-ifying it).
+- **Risks:** macOS signature regressions (Spec 050 §13 risk 2). Notarization queue stalls — warm queue in Phase 1 by submitting dummy pkg.
+- **Owner:** CTO build, CPO spec, CoS review.
+
+### FW-103 — Hire-an-officer wizard (GUI, no YAML) (P2)
+- **Status:** SPEC-PENDING. Parent Spec 050 §3 Phase 2, Gap C.
+- **Problem:** today, hiring an officer means editing YAML in `presets/<preset>/agents/`. Customers won't and shouldn't. Need a wizard.
+- **Scope:** dashboard `/hire` route. Wizard steps: (1) pick role from gallery (CFO, CTO, PO, CMO, COO custom-named), (2) name your officer ("Maya, my CFO"), (3) set autonomy boundaries (slider: ask-first / propose-act / autonomous-with-audit), (4) connect tools (Stripe, Gmail, Calendar — OAuth flows where available), (5) hire confirmation → spawn officer container → Captain DM "Maya is ready, here's her bot." Generates YAML behind the scenes; YAML still authoritative file system source-of-truth.
+- **Effort:** ~80h CTO + ~30h CPO spec + ~15h CPO UI design.
+- **Depends on:** FW-101 (dashboard exists), FW-098/102 (officer-spawn primitive works).
+- **Risks:** OAuth flows per tool are high per-tool effort — ship Phase 2 with 3 tools (Stripe, Gmail, Calendar), add more in Phase 3.
+- **Owner:** CTO build, CPO spec + UI, CoS review, COO adversary on autonomy-boundary semantics.
+
+### FW-104 — Customer-grade Screenpipe integration (retrospective observability, 7d, FileVault) (P2)
+- **Status:** SPEC-PENDING. Parent Spec 050 §3 Phase 2, Gap D.
+- **Problem:** customers want "what did my Cabinet see in the last week" beyond the audit log — full screen-context retrospective. Research finding 3 confirms Screenpipe is now customer-grade (May 2026).
+- **Scope:** Screenpipe bundled in .pkg (FW-102), LaunchDaemon with StartCalendarInterval 03:00 local daily-restart (defensive against memory leak return), allow-apps: `["Cabinet*", "Terminal", "Code"]`, deny-apps: `["1Password*", "Banking*", "*Health*"]`, 7-day retention default, FileVault required pre-install check, consent flow at install, dashboard `/observability` route with timeline + search. Pin to v2.4.243 SHA initially; fork-fallback documented as backlog contingency.
+- **Effort:** ~40h CTO + ~15h CPO spec + ~10h CPO UI.
+- **Depends on:** FW-102 (.pkg distribution), FW-101 (dashboard).
+- **Risks:** Screenpipe upstream cadence is fast — pin SHA + manual update cycle.
+- **Owner:** CTO build, CPO spec, CoS review, COO adversary on consent + erasure flows.
+
+### FW-105 — Customer-facing CU layer: Stagehand v3 primary + Browser Use + Apple Vision + Claude CU escape hatch (P2)
+- **Status:** SPEC-PENDING. Parent Spec 050 §3 Phase 2, Gap E. Builds on Spec 049 v3.2 visual-UAT.
+- **Problem:** customers will ask their officers to do things APIs can't reach. Need a tiered CU layer with cost-aware routing.
+- **Scope:** CUProvider abstract interface, Stagehand v3 cached as default ($0), Browser Use v3 for DOM extraction ($0.01-0.05/task), Apple Vision OCR for read-only ($0), Claude CU as escape hatch behind HITL gate (5% of cases, $0.01-0.03/action with Captain-DM approval for unattended use). Decision matrix in code per Spec 050 §5 Visual-CU table. Action budgets enforced per-officer per-month (Lite 120K, Pro 360K, Scale 720K).
+- **Effort:** ~60h CTO + ~20h CPO spec.
+- **Depends on:** Spec 049 v3.2 landing (Stagehand v3 already substrate).
+- **Risks:** Claude CU escape hatch is the failure-mode surface (5% of cases × low reliability × highest cost) — instrument heavily.
+- **Owner:** CTO build, CPO spec, COO adversary on HITL gate semantics.
+
+### FW-106 — Production telemetry extension to Spec 049 (per-officer step/token budgets in customer dashboard) (P2)
+- **Status:** SPEC-PENDING. Parent Spec 050 §3 Phase 2, Gap D.
+- **Problem:** Spec 049 ships per-task step/token ceilings for internal officers. Customers need to see those budgets visually + adjust them per officer.
+- **Scope:** dashboard `/officer/<id>` page extends with: step/token budget sliders, current-cycle usage gauge, historical chart (last 30 days), budget-breach alert configuration. Spec 049 instrumentation surfaces the data; this spec adds the customer-facing surface.
+- **Effort:** ~30h CTO + ~10h CPO spec.
+- **Depends on:** Spec 049 v3.2 landing, FW-101 (dashboard).
+- **Risks:** none material.
+- **Owner:** CTO build, CPO spec, CoS review.
+
+### FW-107 — Self-serve onboarding: refslund.ai signup → download → install → first-officer in single flow (P2)
+- **Status:** SPEC-PENDING. Parent Spec 050 §3 Phase 2.
+- **Problem:** Phase 1 ends with concierge install. Phase 2 must convert to self-serve: customer never talks to Nate to get running.
+- **Scope:** refslund.ai post-signup flow: (1) download .pkg with customer-tied install token, (2) run installer, (3) installer phones home with token → dashboard auto-authenticates, (4) hire-an-officer wizard launches, (5) first-officer-hired event → success page + welcome email. End-to-end target: 30 min for non-technical customer.
+- **Effort:** ~35h CTO + ~15h CPO spec + ~10h CPO copy/UX.
+- **Depends on:** FW-099, FW-102, FW-103. Final P2 integration spec.
+- **Risks:** first-customer install will reveal bugs — Phase 2 has a 3-customer-pilot gate before public open-signup.
+- **Owner:** CTO build, CPO spec + UX, CoS review.
+
+### FW-108 — Monitor-connected mode: live officer activity stream on MacMini display (P3)
+- **Status:** PROPOSED. Parent Spec 050 §3 Phase 3, Gap F.
+- **Problem:** when customer's MacMini has a monitor attached (executive desk vs. headless server), they want to see their officers working — like a stock-ticker for AI agents. Headless mode = no display, dashboard-only access.
+- **Scope:** detect display-attached state at boot, if attached, run a borderless full-screen Electron/SwiftUI app showing live activity feed + current officer + last action. Read-only, no interaction. Auto-hide if display disconnects.
+- **Effort:** ~50h CTO (Electron or SwiftUI app + IPC to dashboard backend).
+- **Depends on:** Phase 1+2 complete.
+- **Risks:** SwiftUI vs Electron is a build-vs-buy decision — defer to Phase 3 spec authoring.
+- **Owner:** CTO + CPO spec.
+
+### FW-109 — Bedrock Authorized Reseller migration (P3, revenue-gated ≥$100K ARR)
+- **Status:** PROPOSED. Parent Spec 050 §3 Phase 3.
+- **Problem:** Anthropic direct API reseller is terms-of-service ambiguous. At ≥$100K ARR, switch to Bedrock Authorized Reseller path (Frankfurt eu-central-1) for both compliance clarity and EU residency.
+- **Scope:** apply to Bedrock Authorized Reseller program (3-6 weeks gating), switch LiteLLM proxy backend from Anthropic-direct to Bedrock, Frankfurt routing. No customer-visible change.
+- **Effort:** ~40h CTO + reseller-program application time.
+- **Depends on:** revenue gate. Don't start until ≥10 paying customers exist.
+- **Risks:** Anthropic-direct still works for now; this is a hardening upgrade not a blocker.
+- **Owner:** CTO build, CoS coordinates application.
+
+### FW-110 — Multi-officer org orchestration UI (P3)
+- **Status:** PROPOSED. Parent Spec 050 §3 Phase 3.
+- **Problem:** customers will buy multiple officers (CTO + CFO + PO). They want to see handoffs + coordination, like an org chart for AI.
+- **Scope:** dashboard `/org` route with officer graph, handoff visualization (Redis trigger flows), per-officer status, "ask the org what happened" cross-officer query.
+- **Effort:** ~60h CTO + ~20h CPO spec.
+- **Depends on:** ≥2 paying multi-officer customers exist for validation.
+- **Risks:** scope-explodes easily — strict 3-question UX target.
+- **Owner:** CTO + CPO.
+
+### FW-111 — EU AI Act high-risk readiness (Annex III compliance layer) (P3)
+- **Status:** PROPOSED. Parent Spec 050 §3 Phase 3, Gap H.
+- **Problem:** Aug 2, 2026 EU AI Act high-risk deadline. If any customer uses an officer for HR / credit / Annex III decisions, additional obligations apply. Phase 1 ToS excludes these; Phase 3 enables them if revenue justifies.
+- **Scope:** decision-classification (officer flags Annex III decisions), Annex III audit-trail (immutable, longer retention), human-oversight required-step gate, fundamental-rights-impact-assessment template.
+- **Effort:** ~50h CTO + ~30h CPO spec + ~€5-10K Danish lawyer review.
+- **Depends on:** revenue + customer demand gate.
+- **Risks:** if we ship before Aug 2026 we're early-mover; if any customer uses Annex III before this ships, we're non-compliant.
+- **Owner:** CPO spec + lawyer review, CTO build, CoS coordinates.
+
+### FW-112 — Colima → apple/container migration (P4, when apple/container 1.0 ships)
+- **Status:** PROPOSED. Parent Spec 050 §3 Phase 4.
+- **Problem:** Colima is interim. apple/container is Apple's official Linux-container-on-macOS path, Apache 2.0, no Docker Desktop licensing. Migrate when 1.0 ships (estimated 12-18 months from May 2026).
+- **Scope:** replace Colima invocations with apple/container in cabinet-bootstrap + officer spawn paths. Likely drop-in given both are OCI-compatible.
+- **Effort:** ~30h CTO + ~10h CPO spec.
+- **Depends on:** apple/container 1.0 GA.
+- **Risks:** API surface may shift pre-1.0.
+- **Owner:** CTO + CPO.
+
+### FW-113 — Hosted-Cabinet option (P4, for customers who don't want a MacMini)
+- **Status:** PROPOSED. Parent Spec 050 §3 Phase 4.
+- **Problem:** some customers want officers without managing their own hardware. Hosted-Cabinet = refslund.ai-managed Cabinet instance in EU datacenter, customer accesses via web.
+- **Scope:** TBD — full Phase 4 spec authoring required. Likely Hetzner / Scaleway Frankfurt VM per customer + same .pkg-style architecture inside.
+- **Effort:** ~150h CTO + ~50h CPO spec + ongoing hosting cost (~$50/customer/mo).
+- **Depends on:** ≥20 customers existing + demand signal for hosted option.
+- **Risks:** changes the compliance posture (we become a processor, not just a software vendor). Re-runs the GDPR review.
+- **Owner:** CTO + CPO + external lawyer.
+
+---
+
+### FW-114 — COO-as-DPO role-def amendment (Spec 055 v4 H1 Captain ratification gate) (P0)
+- **Status:** SPEC-PENDING — gates Spec 055 v4 H1 Captain ratification (07:00 morning briefing 2026-05-21). CoS-owned coordination per Captain msg 2583 multi-officer-process-as-legal-review framing.
+- **Problem:** Spec 055 v3 ratified CoS-as-DPO. CRO adversary review v4 surfaced Article 38(6) violation per CJEU C-453/21 + Belgian DPA Proximus €50k precedent — structural conflict, not scale-dependent. CPO recommends COO-as-DPO (compliance-adversary lane already; doesn't coordinate ratification; doesn't determine processing means). Captain ratifies in 07:00 briefing.
+- **Build scope:** COO role-def (`presets/work/agents/coo.md`) amendment adding DPO duties appendix: contact = dpo@refslund.ai routed to COO; Article 17 erasure coordination; Article 33/34 breach notification; Article 15 access-request fulfillment; sub-processor list maintenance per Article 28(2); supervisory authority cooperation per Article 31; quarterly DPO retrospective. Cross-officer notification: CRO + CPO + CTO + CoS each read updated COO role-def at session start.
+- **Owner:** CoS coordination + Captain ratification + CPO drafts COO role-def amendment.
+- **Source:** Spec 055 v4 H1 fold; CRO adversary review brief 2026-05-20-spec051-055-cro-adversary-review.md.
+
+---
+
+### FW-115 — Anthropic value-add defense-prep dossier + quarterly ToS-tracking sweep (Spec 055 v4 H3 implementation) (P1)
+- **Status:** SPEC-PENDING — ongoing workstream once Captain ratifies H3 calculated-bet at 07:00 morning briefing.
+- **Problem:** Anthropic's 2026 commercial terms restrict "single subscription authenticate API access on behalf of third-party end users." Cabinet's value-add carve-out interpretation = strategic posture but operational risk (Anthropic enforces → all customers lose service). A13 (don't seek permission pre-leverage) anchors NO outreach; but DOES require defense preparation if Anthropic asks.
+- **Build scope:** (1) Defense-dossier artifact at `shared/interfaces/legal/anthropic-value-add-architecture.md` (Library Compliance Space mirror per A11) — value-add architecture documentation (officer workflows, audit logs, governance, Telegram-DM-as-interface, multi-tenancy, hash-chain integrity), customer-base evidence, technical-implementation-not-pure-resale evidence. CPO authors; CRO + CoS adversary review. (2) CRO quarterly Anthropic ToS-tracking sweep folds into existing 4h research-sweep cadence (no new cron); material ToS changes trigger COO + Captain review. (3) Contingency plan documented in Spec 051 AC #8 (proxy-degraded state on Anthropic enforcement; customer notification + service-pause + refund).
+- **Owner:** CPO drafts defense-dossier + CRO quarterly sweep + CTO Spec 051 contingency confirms.
+- **Source:** Spec 055 v4 H3 fold; CRO adversary review 2026-05-20.

@@ -1,8 +1,11 @@
 # Sensed Product Backlog — Prioritized View
 
-> Maintained by CPO. Last updated: 2026-04-16 09:27 UTC.
-> Captain testing: ACTIVE. All launch engineering complete. Sole blocker: SEN-508 TestFlight upload (commitment #4 missed, still Todo).
-> Phase 2 execution started: Spec 023 shipped Apr 13, Spec 029 in progress Apr 16.
+> Maintained by CPO. Last refinement: 2026-04-29 22:00 UTC (cron).
+> Phase: TestFlight live + Captain testing + PostHog Phase-0 wired (PR #559 SEN-567 merged 2026-04-25). PMF gate v1.1 D14≥40% landed.
+> Phase 1 prereqs queued: 3 in-app prompts spec, AI proto-pattern surfacing OPPORTUNITY (post-Captain greenlight), cross-cultural symbol research (CRO standby).
+> Today's velocity: framework-side (Spec 034 v4 substrate-gap fold + FW-082/085/086 + 2 CRO briefs triaged). Sensed sprint board unchanged today.
+
+> **Note:** Linear is READ-ONLY archive post-Spec-039 cutover (2026-04-26). Canonical task store is Postgres `officer_tasks` (Spec 038). Shipped/blocked items below are historical references for context; current state is in /tasks dashboard.
 
 ---
 
