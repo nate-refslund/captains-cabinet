@@ -27,6 +27,8 @@ deploy-mac.sh substitutes ${HOUR} from instance/config/platform.yml.captain_time
     <key>REDIS_PORT</key><string>6379</string>
     <key>CABINET_SOURCE_REPO</key><string>${REPO_ROOT}</string>
     <key>PATH</key><string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>LANG</key><string>en_US.UTF-8</string>
+    <key>LC_ALL</key><string>en_US.UTF-8</string>
   </dict>
 
   <key>StartCalendarInterval</key>

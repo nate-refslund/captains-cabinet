@@ -26,6 +26,8 @@ Fires every 5 minutes per Spec 064 v1.1 Checkpoint 7.6.
     <key>REDIS_PORT</key><string>6379</string>
     <key>CABINET_SOURCE_REPO</key><string>${REPO_ROOT}</string>
     <key>PATH</key><string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>LANG</key><string>en_US.UTF-8</string>
+    <key>LC_ALL</key><string>en_US.UTF-8</string>
   </dict>
 
   <key>StartInterval</key>

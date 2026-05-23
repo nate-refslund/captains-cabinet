@@ -10,6 +10,14 @@
 #
 # Per Spec 064 v1.1 Checkpoints 7.6 + v1.1 CTO #3 (TTL-based, no BSD/GNU date
 # divergence) + v1.1 CTO #7 (dedup-clear on recovery).
+#
+# Detection latency math (audit-fix 2026-05-23 — document the worst case):
+# - Officer heartbeat writer SETEXes 900s TTL on every tool-use.
+# - Watchdog fires every 300s (StartInterval=300 in plist).
+# - If officer dies right after a heartbeat, TTL expires in 900s + next watchdog
+#   tick in up to 300s = up to 20 min before alert fires. Acceptable for
+#   non-safety-critical officer monitoring; tighten only if real ops show
+#   the 20-min window misses critical incidents.
 
 set -uo pipefail
 

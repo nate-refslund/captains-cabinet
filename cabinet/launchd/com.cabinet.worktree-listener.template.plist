@@ -25,6 +25,8 @@ Per Spec 063 v1.1 Checkpoint 6.3.
     <key>USER</key><string>${USER}</string>
     <key>CABINET_SOURCE_REPO</key><string>${REPO_ROOT}</string>
     <key>PATH</key><string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>LANG</key><string>en_US.UTF-8</string>
+    <key>LC_ALL</key><string>en_US.UTF-8</string>
   </dict>
 
   <key>KeepAlive</key>

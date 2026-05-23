@@ -16,10 +16,13 @@
 set -uo pipefail   # no -e: tail processes may die; we want the others to keep going
 
 LOG_DIR="${CABINET_LOG_DIR:-$HOME/Library/Logs/cabinet}"
-OFFICERS=("${@:-cos cto cpo cro coo}")
-# If passed as space-separated single string, split:
-if [ "${#OFFICERS[@]}" -eq 1 ] && [[ "${OFFICERS[0]}" == *" "* ]]; then
-  read -ra OFFICERS <<< "${OFFICERS[0]}"
+# Audit-fix 2026-05-23: dropped "single-string-space-split" branch — no caller
+# passes officers as one quoted arg. Default to all 5 if no args; otherwise
+# standard "$@" semantics.
+if [ $# -eq 0 ]; then
+  OFFICERS=(cos cto cpo cro coo)
+else
+  OFFICERS=("$@")
 fi
 
 if [ ! -d "$LOG_DIR" ]; then

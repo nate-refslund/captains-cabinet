@@ -39,6 +39,13 @@ MSG="$MSG
 
 Total: \$$TOTAL_DOLLARS"
 
+# Audit-fix 2026-05-23: timezone caveat documented.
+# launchd's StartCalendarInterval Hour=23 fires at 23:00 LOCAL (the user's TZ,
+# as set by `systemsetup -gettimezone`). Phase 1 Checkpoint 1.1 sets the Mac to
+# Europe/Berlin → 23:00 fire = 23:00 Berlin = 21:00 UTC. The plist Hour IS
+# Captain-tz-aware as long as Phase 1.1 set the system TZ correctly. If running
+# on a Mac with a different system TZ, manually adjust the plist Hour.
+
 # send-to-group.sh takes message as positional arg, NOT --stdin
 bash "$REPO_ROOT/cabinet/scripts/send-to-group.sh" "$MSG" 2>/dev/null || \
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) cost-summary: send-to-group failed; message was: $MSG" >&2

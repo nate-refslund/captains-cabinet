@@ -86,7 +86,9 @@ redis-cli CONFIG GET appendonly   # should show "yes"
 ```bash
 # Find the latest stable cua-driver release on GitHub
 PINNED_TAG=$(gh release list --repo trycua/cua --limit 1 --json tagName --jq '.[0].tagName')
-echo "$PINNED_TAG" > ~/work/captains-cabinet/cabinet/config/cua-driver-version.txt
+# Audit-fix 2026-05-23: pin file goes to /tmp here; Checkpoint 1.12 moves it
+# into the cloned repo (the repo path doesn't exist yet at this checkpoint).
+echo "$PINNED_TAG" > /tmp/cua-driver-version.txt
 
 # Install via gh release download — match the pinned tag exactly
 gh release download "$PINNED_TAG" --repo trycua/cua --pattern '*macOS*' --dir ~/Downloads/
@@ -165,6 +167,10 @@ git checkout mac-native
 # Restore captain-rules from Hetzner export tarball
 tar -xzf ~/cabinet-import/host-state.tar.gz -C /tmp/cabinet-import
 cp /tmp/cabinet-import/shared/interfaces/captain-*.md shared/interfaces/
+
+# Move the Checkpoint 1.6 cua-driver pin into the repo (chicken-egg unblock)
+mkdir -p cabinet/config
+mv /tmp/cua-driver-version.txt cabinet/config/cua-driver-version.txt
 
 # Verify Phase 1 baseline state
 # (Smoke-test each tool installed in 1.4-1.11)

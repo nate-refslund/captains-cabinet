@@ -46,6 +46,10 @@ Variables substituted by deploy-mac.sh via envsubst BEFORE writing to ~/Library/
     <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     <key>OFFICER_NAME</key>
     <string>${OFFICER}</string>
+    <key>LANG</key>
+    <string>en_US.UTF-8</string>
+    <key>LC_ALL</key>
+    <string>en_US.UTF-8</string>
   </dict>
 
   <key>KeepAlive</key>
