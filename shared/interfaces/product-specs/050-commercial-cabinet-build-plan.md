@@ -177,14 +177,15 @@ Captain proposed 3-4 months to commercial-ready. **Calibrated answer: 3 months t
 
 **Acceptance criteria:** revenue-gated; scope to be re-validated when 10 paying customers exist.
 
-### Phase 4 (v3, months 11+): apple/container + hosted optionality
+### Phase 4 (v3, months 11+): hosted optionality
 
 **Scope:**
 
 | ID | Item | Maps to gap |
 |---|---|---|
-| FW-112 | Colima → apple/container migration (when apple/container ships 1.0) | A (cleaner runtime) |
 | FW-113 | Hosted-Cabinet option for customers who don't want a MacMini | go-to-market |
+
+(v1.2.1: FW-112 Colima → apple/container REMOVED — under v1.2 two-tier architecture, Customer Mac is full-native; no Colima to migrate from. apple/container deferred indefinitely as it's moot for the customer-Mac tier.)
 
 ---
 
@@ -215,12 +216,14 @@ A3 = build-our-own beats add-a-dependency, with carve-outs for genuinely commodi
 | Billing | **Buy: Stripe Token Billing** | Card-on-file + metered billing is commodity. Stripe is incumbent. |
 | Notarization / signing | **Buy: Apple Developer Program** | No build alternative. |
 | Auto-updater | **Buy: Sparkle 2** | Mature OSS, EdDSA-signed, every-Mac-app uses it. |
-| Container runtime (interim) | **Buy: Colima** | OSS, MIT. |
-| Container runtime (P4) | **Buy: apple/container** | Apache 2.0, Apple-maintained. |
-| Visual-CU primary | **Buy: Stagehand v3** (already in Spec 049) | Best-in-class, MIT. |
+| Postgres on Customer Mac (Tier 2) | **Buy: Postgres.app** | Native macOS, no Docker. Hosts Library + /tasks + Cabinet Memory locally. (v1.2 native shift.) |
+| Redis on Customer Mac (Tier 2) | **Buy: Homebrew `redis`** | Native macOS, no Docker. AOF persistence enabled. (v1.2 native shift.) |
+| Officer session supervisor (Tier 2) | **Build: native launchd plists** | Wraps Claude Code sessions per officer. Replaces Linux Docker tmux+supervisor pattern. (v1.2 native shift.) |
+| Visual-CU primary | **Buy: Stagehand v3** (already in Spec 049) | Best-in-class, MIT. Headless Chrome — runs native on macOS, not Docker-coupled. |
 | Visual-CU DOM agent | **Buy: Browser Use v3** | OSS, Fortune-500 traction. |
 | Visual-CU OCR | **Buy: Apple Vision API** | Native, free, fast. |
 | Visual-CU LLM fallback | **Buy: Claude CU** (escape hatch only) | Beta-grade, gate behind HITL. |
+| Native macOS GUI driver (Lead-only) | **Buy: cua-driver** | Pinned-version curl install per Spec 058 v1.1 Checkpoint 1.6. Scoped to CoS (Lead) only per Mac Migration Directive. (v1.2 new entry.) |
 | Retrospective observability | **Buy: Screenpipe** | Now customer-grade (research finding 3). |
 | Audit log | **Build** | Cabinet-specific shape (officer × tool × customer-data-type × cost). No buy fits. |
 | Hire-an-officer wizard | **Build** | This IS the product UX; differentiation. |
@@ -297,8 +300,9 @@ This is a B2B SMB price point ("company hires a Cabinet"), NOT a solo-founder ho
    │        │ spawns                                                     │
    │        ▼                                                            │
    │  ┌──────────────────────┐    ┌─────────────────────┐                │
-   │  │ Officer containers   │◄──►│ Postgres.app (local)│                │
-   │  │ (Colima → apple/cnt) │    │ Redis (local)       │                │
+   │  │ Officer sessions     │◄──►│ Postgres.app (local)│                │
+   │  │ (launchd-managed,    │    │ Redis (brew, AOF)   │                │
+   │  │  Claude Code native) │    │                     │                │
    │  └──────────┬───────────┘    └─────────────────────┘                │
    │             │                                                       │
    │             ▼                                                       │
@@ -373,6 +377,9 @@ These are temptations to avoid:
 | **Generic global SMB AI-app positioning** | CRO research finding: 95%-of-AI-orgs-stuck-in-pilot risk in the saturated global SMB space. Danish-first defuses by entering a less-saturated geographic wedge. | Captain msg 2565 |
 | **Per-officer daily caps** | Captain chose per-cabinet daily cap ($50/day total) over per-officer caps — simpler customer story; the cabinet IS the customer's "team". | Captain msg 2565 |
 | **4-tier pricing (Starter/Standard/Senior/Executive)** | CPO originally proposed 4 tiers; Captain collapsed to ONE tier (25k base + 5k/employee, max 7) for customer-story simplicity. | Captain msg 2565 |
+| **Docker on Customer Mac (Tier 2)** | Captain Q5 (msg 2603) ratified full native for the customer-Mac tier. Postgres.app + Homebrew Redis + launchd-managed officer sessions. No Colima, no Docker Desktop, no apple/container. | Captain msg 2603 + Mac Migration Directive msg 2599 |
+| **Native-ifying refslund.ai backend (Tier 1)** | Backend services (LiteLLM proxy, audit sidecar, Stripe webhooks, customer dashboard) STAY Docker on Hetzner. Customer-isolation + uptime + scale concerns outweigh native simplification at the SaaS layer. v1.2 two-tier split is by design. | CPO cross-spec impact analysis 2026-05-22 |
+| **FileVault disabled for commercial customers** | STEP-internal fleet (Captain's own Cabinet) disables FileVault per Captain Q1 msg 2603. Commercial customers in EU MUST enable FileVault for GDPR Article 32 at-rest encryption with Screenpipe captures. Two postures by design. | Captain msg 2603 + Spec 055 v6 |
 
 ---
 
