@@ -60,6 +60,11 @@ pg_dump --version  # must show 17.x — if 16.x wins, fix PATH
 # npm-installed tools (per Spec 058 v1.1 CTO #1 + #3)
 npm install -g @anthropic-ai/claude-code neonctl
 
+# Python — system Python3 is fine; psycopg2 needed for worktree-listener.sh
+# (Postgres NOTIFY consumer). Audit-fix 2026-05-23: bash psql -c "LISTEN..." can't
+# stream NOTIFY payloads; need psycopg2 in the listener.
+pip3 install --user psycopg2-binary
+
 # gh authentication (needed BEFORE Checkpoint 1.6 cua-driver pinned-tag pull)
 gh auth login   # follow prompts; pick HTTPS + browser OAuth
 ```
