@@ -1,9 +1,18 @@
 # Spec 063 — Mac Migration Phase 6 Plan (Cabinet Worktrees + Adapter Contract)
 
-- **Version:** v1.0
-- **Date:** 2026-05-23
+- **Version:** v1.1 (CTO 5 MUST-fold safety + path findings folded)
+- **Date:** 2026-05-23 (v1.0 → v1.1 07:15 UTC)
 - **Author:** CoS (autonomous per Captain msg 2605, 2607, 2612)
-- **Status:** DRAFT — ready for CTO tech review + Captain execution
+- **Status:** READY for CTO re-confirm + Captain execution
+
+**v1.1 changelog — CTO 5 MUST-fold + 2 SHOULD-fold + 2 NIT findings (msg 2026-05-23 06:59 UTC):**
+- **(1) Worktree-remove safety guard (HIGHEST PRIORITY — load-bearing for dev-tasks coexistence):** 6.2 originally used `~/work/cabinet-worktrees/` tilde-string-compare, which NEVER matches the resolved `/Users/cabinet/work/...` path. Symlink/`..`-traversal attacks defeat the boundary. v1.1 uses `realpath` + literal `$HOME` prefix + case-glob.
+- **(2) Source repo path on Mac:** `/workspace/product` is the Docker convention; on Mac it's `~/work/captains-cabinet`. 6.1 updated.
+- **(3) Task-completion hook surface clarified:** app-layer (Next.js API route on the customer dashboard) vs Postgres NOTIFY listener. 6.3 updated to specify the chosen surface (Postgres NOTIFY for non-Mac-side reliability).
+- **(4) `git worktree remove --force` forensics:** before delete, log uncommitted state to `cabinet/logs/worktree-removed/<task-id>.txt` so we have a paper trail if a force-delete loses work.
+- **(5) `tsconfig.json` coverage for adapter template:** 6.6 needs explicit tsconfig that includes `cabinet/adapters/_template/` so the type-check stays meaningful.
+- **SHOULD-fold:** worktree-add idempotency (re-run on same task-id), error message clarity. Both folded.
+- **NIT:** held.
 - **Parent directive:** Captain Mac Mini Directive msg 2599 §Phase 6 ("Cabinet worktrees + adapter contract formalization — 1 day")
 - **Predecessors:** Spec 057-062 (Phases 0-5)
 - **Successor:** Spec 064 (Phase 7 — full officer rollout + observability)
@@ -41,7 +50,7 @@ Phase 6 decomposes into **9 checkpoints**. Directive estimates 1 day; realistic 
      # Records the worktree path in the /tasks record as worktree_path
      # Returns the path
      ```
-  2. Use `git worktree add` against `/workspace/product` (or equivalent).
+  2. Use `git worktree add` against `$HOME/work/captains-cabinet` (CTO v1.1 #2 — Mac uses `~/work/captains-cabinet`, NOT the Docker convention `/workspace/product`).
 - **Golden eval:**
   - `bash -n` passes
   - Test invocation creates worktree under `~/work/cabinet-worktrees/`
@@ -62,7 +71,25 @@ Phase 6 decomposes into **9 checkpoints**. Directive estimates 1 day; realistic 
      # Clears worktree_path field
      # CRITICAL: operates ONLY on ~/work/cabinet-worktrees/. NEVER touches .claude/worktrees/.
      ```
-  2. **Explicit safety guard:** at start of script, verify the resolved path starts with `~/work/cabinet-worktrees/`. If it does NOT, refuse + log + exit non-zero (per directive Risk note).
+  2. **Explicit safety guard (v1.1 CTO #1 — realpath, not tilde-string):**
+     ```bash
+     CABINET_WORKTREE_ROOT="$HOME/work/cabinet-worktrees"
+     # Resolve symlinks + .. to canonical absolute path
+     RESOLVED=$(realpath -m "$worktree_path" 2>/dev/null || echo "/dev/null/INVALID")
+     # Case-glob against literal HOME-prefixed root (handles macOS case-insensitive FS)
+     case "$RESOLVED" in
+       "$CABINET_WORKTREE_ROOT"/*)
+         # OK — path resolves inside our root; safe to remove
+         ;;
+       *)
+         echo "REFUSE: path $RESOLVED does not resolve under $CABINET_WORKTREE_ROOT" >&2
+         exit 1
+         ;;
+     esac
+     # Forensics (CTO #4): log uncommitted state before --force removal
+     mkdir -p cabinet/logs/worktree-removed
+     git -C "$RESOLVED" status --porcelain > "cabinet/logs/worktree-removed/${task_id}.txt" 2>/dev/null || true
+     ```
 - **Golden eval:**
   - `bash -n` passes
   - Test invocation removes the worktree from 6.1 test
@@ -70,17 +97,21 @@ Phase 6 decomposes into **9 checkpoints**. Directive estimates 1 day; realistic 
 - **Rollback:** `rm` script.
 - **Effort:** 30-45 min.
 
-### Checkpoint 6.3 — Add task-completion hook calling worktree-remove.sh
+### Checkpoint 6.3 — Add task-completion hook calling worktree-remove.sh (v1.1 CTO #3 — Postgres NOTIFY)
 
 - **Pre-conditions:** 6.2 PASS.
 - **Actions:**
-  1. Identify the /tasks-state-transition hook surface (likely Spec 041 due_at trigger pattern OR a new Postgres trigger).
-  2. Add hook: when /tasks record transitions to terminal state (done / cancelled), invoke `worktree-remove.sh <task-id>`.
+  1. **Hook surface decision (CTO #3):** use Postgres NOTIFY listener (not app-layer Next.js route). Reasons: Mac-side reliability (Next.js dashboard may not be running 24/7); Postgres NOTIFY is durable for the small payload; matches existing Spec 041 due_at trigger pattern.
+  2. Add Postgres trigger on `officer_tasks` table: when status transitions to terminal state (`done` / `cancelled`), emit `NOTIFY cabinet_task_terminal, '<task_id>'`.
+  3. Write `cabinet/scripts/worktree-listener.sh` — long-running process listening on `LISTEN cabinet_task_terminal`. On notification, invoke `worktree-remove.sh <task-id>`.
+  4. Register worktree-listener as a LaunchAgent: `cabinet/launchd/com.cabinet.worktree-listener.plist`.
 - **Golden eval:**
-  - Marking a test /tasks record `done` triggers worktree removal
-  - `.claude/worktrees/` UNTOUCHED in all cases
-- **Rollback:** Remove hook.
-- **Effort:** 45-60 min (hook integration substance).
+  - Marking a test /tasks record `done` via Postgres update triggers NOTIFY
+  - worktree-listener receives notification + invokes worktree-remove.sh
+  - `.claude/worktrees/` UNTOUCHED (verified by safety guard from 6.2)
+  - Force-delete forensics log exists at `cabinet/logs/worktree-removed/<task-id>.txt`
+- **Rollback:** drop Postgres trigger; bootout worktree-listener LaunchAgent.
+- **Effort:** 60-90 min (substantive hook integration).
 
 ### Checkpoint 6.4 — Document Cabinet worktree contract
 
