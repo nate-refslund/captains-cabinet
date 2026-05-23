@@ -66,11 +66,15 @@ else
   git worktree add -b "$BRANCH" "$WORKTREE_PATH" master
 fi
 
-# Update /tasks record's worktree_path field (best-effort — don't fail if Neon unreachable)
+# Update /tasks record's worktree_path field (best-effort — don't fail if Neon unreachable).
+# Audit-fix 2026-05-23: psql -v binding to prevent SQL injection on TASK_ID + WORKTREE_PATH.
 if [ -n "${NEON_CONNECTION_STRING:-}" ]; then
-  psql "$NEON_CONNECTION_STRING" -q -c \
-    "UPDATE officer_tasks SET worktree_path = '$WORKTREE_PATH' WHERE id = $TASK_ID;" \
-    >/dev/null 2>&1 || echo "worktree-add.sh: /tasks update failed (non-fatal)" >&2
+  psql "$NEON_CONNECTION_STRING" -q \
+    -v task_id="$TASK_ID" \
+    -v wt_path="$WORKTREE_PATH" \
+    <<'SQLEOF' >/dev/null 2>&1 || echo "worktree-add.sh: /tasks update failed (non-fatal)" >&2
+UPDATE officer_tasks SET worktree_path = :'wt_path' WHERE id = :'task_id';
+SQLEOF
 fi
 
 echo "$WORKTREE_PATH"

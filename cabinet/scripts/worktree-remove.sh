@@ -28,23 +28,38 @@ if [ -z "${NEON_CONNECTION_STRING:-}" ]; then
   exit 1
 fi
 
-WORKTREE_PATH=$(psql "$NEON_CONNECTION_STRING" -tA -c \
-  "SELECT worktree_path FROM officer_tasks WHERE id = $TASK_ID;" 2>/dev/null)
+# Audit-fix 2026-05-23: psql -v binding to prevent SQL injection on TASK_ID.
+WORKTREE_PATH=$(psql "$NEON_CONNECTION_STRING" -tA -v task_id="$TASK_ID" <<'SQLEOF' 2>/dev/null
+SELECT worktree_path FROM officer_tasks WHERE id = :'task_id';
+SQLEOF
+)
 
 if [ -z "$WORKTREE_PATH" ] || [ "$WORKTREE_PATH" = "NULL" ]; then
   echo "worktree-remove.sh: task $TASK_ID has no worktree_path — nothing to remove" >&2
   exit 0
 fi
 
-# Resolve symlinks + .. traversal to canonical absolute path
-# realpath -m: 'missing' mode (does not fail if path doesn't exist)
-RESOLVED=$(realpath -m "$WORKTREE_PATH" 2>/dev/null || echo "/dev/null/INVALID")
-ROOT_RESOLVED=$(realpath -m "$CABINET_WORKTREE_ROOT" 2>/dev/null || echo "/dev/null/INVALID")
+# Resolve symlinks + .. traversal to canonical absolute path.
+# Audit-fix 2026-05-23: drop dead `|| echo "/dev/null/INVALID"` fallback.
+# `realpath -m` ('missing' mode) exits 0 even for nonexistent paths, so the
+# fallback was unreachable code obscuring intent.
+RESOLVED=$(realpath -m "$WORKTREE_PATH")
+ROOT_RESOLVED=$(realpath -m "$CABINET_WORKTREE_ROOT")
+
+# Audit-fix 2026-05-23: explicit bare-root reject BEFORE the case-glob. Without
+# this, if WORKTREE_PATH resolves to exactly $CABINET_WORKTREE_ROOT, the
+# `"$ROOT_RESOLVED"/*` glob WOULDN'T match (because there's no slash-suffix)
+# — BUT a future regex slip could miss this. Belt + suspenders.
+if [ "$RESOLVED" = "$ROOT_RESOLVED" ]; then
+  echo "worktree-remove.sh: REFUSE — resolved path IS the worktree root ($ROOT_RESOLVED)" >&2
+  echo "  Refuse to remove the root container; specify a worktree under it." >&2
+  exit 1
+fi
 
 # Case-glob against literal HOME-prefixed root (handles macOS case-insensitive FS)
 case "$RESOLVED" in
   "$ROOT_RESOLVED"/*)
-    # OK — path resolves inside our root; safe to remove
+    # OK — path resolves inside our root + has at least one trailing segment; safe to remove
     ;;
   *)
     echo "worktree-remove.sh: REFUSE — path $RESOLVED does not resolve under $ROOT_RESOLVED" >&2
@@ -75,10 +90,10 @@ git -C "$SOURCE_REPO" worktree remove --force "$RESOLVED" 2>/dev/null || {
   rm -rf "$RESOLVED"
 }
 
-# Clear the worktree_path field
-psql "$NEON_CONNECTION_STRING" -q -c \
-  "UPDATE officer_tasks SET worktree_path = NULL WHERE id = $TASK_ID;" \
-  >/dev/null 2>&1 || true
+# Clear the worktree_path field (psql -v binding per same SQL-injection fix).
+psql "$NEON_CONNECTION_STRING" -q -v task_id="$TASK_ID" <<'SQLEOF' >/dev/null 2>&1 || true
+UPDATE officer_tasks SET worktree_path = NULL WHERE id = :'task_id';
+SQLEOF
 
 echo "worktree-remove.sh: removed $RESOLVED (forensics: $FORENSICS_FILE)"
 exit 0
