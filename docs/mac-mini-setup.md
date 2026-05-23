@@ -49,7 +49,8 @@ pmset -g
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
 # CRITICAL — node FIRST (required for npm-installed Claude Code + neonctl)
-brew install node gh jq tailscale postgresql@17 redis screenpipe apcupsd
+# gettext provides envsubst (used by deploy-mac.sh for plist template substitution)
+brew install node gh jq tailscale postgresql@17 redis screenpipe apcupsd gettext
 
 # postgresql@17 is keg-only; ensure PATH:
 echo 'export PATH="/opt/homebrew/opt/postgresql@17/bin:$PATH"' >> ~/.zprofile
@@ -209,6 +210,7 @@ Mostly hands-off. Captain joins for:
 
 If any Phase 1 checkpoint fails, halt + investigate + fix before continuing. Common failure modes:
 - 1.4 `pg_dump 16.x` wins → fix `~/.zprofile` PATH order
+- 1.4 `envsubst: command not found` → `brew install gettext` (gettext is keg-only on Mac; may need PATH addition: `echo 'export PATH="/opt/homebrew/opt/gettext/bin:$PATH"' >> ~/.zprofile`)
 - 1.5 Redis doesn't survive reboot → verify `appendonly yes` actually wrote to redis.conf
 - 1.8 Accessibility prompt re-fires after reboot → 1.10 code-signing wasn't done (skip 1.10 and you'll be stuck in a loop)
 - 1.9 Tailscale auth-key expired → generate a new one from the Tailscale admin console
