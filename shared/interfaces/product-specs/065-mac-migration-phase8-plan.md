@@ -1,9 +1,19 @@
 # Spec 065 — Mac Migration Phase 8 Plan (Documentation + Release)
 
-- **Version:** v1.0
-- **Date:** 2026-05-23 (07:50 UTC)
+- **Version:** v1.1 (CTO 6 MUST-fold)
+- **Date:** 2026-05-23 (v1.0 07:50 UTC → v1.1 07:55 UTC)
 - **Author:** CoS (autonomous per Captain msg 2605, 2607, 2612)
-- **Status:** DRAFT — ready for CTO tech review + Captain execution
+- **Status:** READY for CTO re-confirm + Captain execution
+
+**v1.1 changelog — CTO 6 MUST-fold findings (msg 2026-05-23 07:10 UTC):**
+- **(1) README dual-edit eliminated 8.1:** v1.0 said "edit root AND Mac-deployed copy." Wrong — Mac copy is a `git pull` consequence, not a separate edit target. Single source of truth: `/opt/founders-cabinet/README.md` on master. Mac picks it up via pull.
+- **(2) Phase 0 vs Phase 8 snapshot purpose 8.5:** Spec 057 Phase 0 snapshot = pre-cutover rollback target. Phase 8 snapshot = Hetzner-suspension state. Different purposes; both kept. 8.5 clarifies.
+- **(3) pg17 client explicit 8.5:** `pg_dump` invocation must use the pg17 client from Homebrew (Phase 1 1.4) for Neon Postgres 17 compatibility (Phase 0 had pg_dump 16 vs Neon 17 incident).
+- **(4) BotFather rollback 8.5:** revoke is one-way — to restore Hetzner officers we must regenerate new tokens + update Hetzner `.env`. Procedure made explicit.
+- **(5) Tag uniqueness check 8.4:** `git tag -l v1-mac-native` MUST be empty before `git tag -a v1-mac-native ...` to avoid overwriting an existing tag.
+- **(6) Clone skip-list 8.2:** `docs/mac-mini-clone.md` clarifies that Apple Developer Program enrollment is one-time per developer account — Macs 2-3 inherit (no re-enrollment). Same for BotFather bots, ElevenLabs voice IDs, etc.
+
+**Cross-spec META (caught during Phase 8 drafting):** `shared/interfaces/captain-patterns.md` + `captain-intents.md` + `captain-decisions.md` are gitignored runtime state on the Hetzner deployment. On Mac cutover they regenerate blank from `cabinet-bootstrap.sh`. Phase 0 (Spec 057) host-state tarball + Phase 8 export-state.sh manifest MUST include these 3 files. Folded forward to Spec 057 v1.1 (separate spec amendment).
 
 - **Parent directive:** Captain Mac Mini Directive msg 2599 §Phase 8 ("Documentation + release — 0.5 day")
 - **Predecessors:** Spec 057-064 (Phases 0-7)
@@ -35,12 +45,13 @@ Phase 8 decomposes into **7 checkpoints**. Directive estimates 0.5 day; realisti
 ### Checkpoint 8.1 — Update root `README.md` for native-Mac deployment
 
 - **Pre-conditions:** Phase 7 complete.
-- **Actions:**
-  1. Edit `/opt/founders-cabinet/README.md` (root) and the deployed copy on Mac (`~/work/captains-cabinet/README.md`):
+- **Actions (v1.1 CTO #1 — single-edit):**
+  1. Edit `/opt/founders-cabinet/README.md` ONLY (master branch source of truth). Mac copy at `~/work/captains-cabinet/README.md` picks up the change via `git pull` on next sync — NOT a separate edit target.
      - Update "Quick start" section to describe Mac mini deployment as canonical
      - Add "Hetzner Docker deployment (legacy/dev SaaS)" subsection beneath
      - Reference Spec 058 setup process (Phase 1 unbox+install) as the new bootstrap path
      - Reference Spec 050 v1.2 Tier 1 (refslund.ai backend Docker) vs Tier 2 (Customer Mac native) two-tier architecture
+  2. After commit + push to `mac-native` (and merge to master), run `git pull` on Mac to sync — verifies single-source-of-truth flow.
 - **Golden eval:**
   - README's "Quick start" section first paragraph mentions Mac mini + launchd
   - Hetzner Docker referenced only as "legacy" or "dev/SaaS"
@@ -57,6 +68,13 @@ Phase 8 decomposes into **7 checkpoints**. Directive estimates 0.5 day; realisti
      - Snapshot the validated 1-cabinet image (via Time Machine + Restic per Spec 058 + 057)
      - On new Mac mini: restore from snapshot OR re-run mac-mini-setup.md
      - Decision: re-run setup.md is preferred (idempotent + verified) over snapshot-restore (couples macOS user state to deployment state)
+     - **(v1.1 CTO #6) Skip-list for Macs 2-3 (one-time setup steps inherited from Mac 1):**
+       - Apple Developer Program enrollment — one per developer account, NOT per machine
+       - BotFather bot creation — bots are tokens, not per-machine. CoS bot already created on Mac 1; reuse.
+       - ElevenLabs voice IDs — voices are account-scoped, not per-machine. Reuse.
+       - Neon Postgres project — single project shared across the fleet
+       - Tailscale account — single account, Macs 2-3 join the same tailnet via auth-key
+     - **Per-machine setup steps for Macs 2-3:** unbox + FileVault disable + Homebrew + pmset + permissions grant + Tailscale join (via auth-key) + LaunchAgent install + apcupsd (UPS-specific).
   3. Update `docs/migration-phaseN-baseline.md` index file (or create `docs/README.md` index pointing to all phase baselines)
 - **Golden eval:**
   - `docs/mac-mini-setup.md` exists with all Phase 1 + Phase 2 substeps
@@ -82,8 +100,15 @@ Phase 8 decomposes into **7 checkpoints**. Directive estimates 0.5 day; realisti
 ### Checkpoint 8.4 — Tag `v1-mac-native` release
 
 - **Pre-conditions:** 8.1-8.3 PASS.
-- **Actions:**
-  1. From `mac-native` branch:
+- **Actions (v1.1 CTO #5 — uniqueness check first):**
+  1. **Uniqueness check before tag creation** — refuse to clobber an existing tag:
+     ```bash
+     if git tag -l v1-mac-native | grep -q .; then
+       echo "ABORT: tag v1-mac-native already exists. Bump to v1.1-mac-native or delete the stale tag first."
+       exit 1
+     fi
+     ```
+  2. From `mac-native` branch:
      ```bash
      git tag -a v1-mac-native -m "Mac mini native deployment — canonical for this Captain.
      
@@ -113,13 +138,22 @@ Phase 8 decomposes into **7 checkpoints**. Directive estimates 0.5 day; realisti
 - **Pre-conditions:** 8.4 PASS; v1-mac-native release tag landed; soak validates Mac is canonical.
 - **Actions (Captain hands-on or CoS-coordinated):**
   1. On Hetzner host, stop all officer containers (don't destroy): `docker stop $(docker ps -q --filter "name=cabinet-")` — keeps state intact
-  2. Snapshot Hetzner Postgres + Redis state: `pg_dump` + `redis-cli BGSAVE` (per Spec 057 Checkpoint 0.4)
-  3. Tag Hetzner state in git: `git tag -a v0-hetzner-suspended -m "Hetzner cabinet suspended <date>; rollback target."` on whatever Hetzner commit was last live
-  4. Document rollback procedure in `docs/hetzner-rollback.md`:
+  2. **(v1.1 CTO #2 — snapshot purpose distinction)** This Phase 8 snapshot captures the *Hetzner-suspension* state — *what Hetzner looks like at the moment we stopped*. Distinct from Spec 057 Phase 0 snapshot which captured the *pre-cutover* state. Both kept; they answer different rollback questions ("undo the cutover" vs "restore the last-known-good Hetzner").
+  3. Snapshot Hetzner Postgres + Redis state (v1.1 CTO #3 — explicit pg17 client):
+     ```bash
+     # MUST use pg17 client (Homebrew Phase 1 install) — Neon is Postgres 17
+     /opt/homebrew/opt/postgresql@17/bin/pg_dump "$NEON_CONNECTION_STRING" > hetzner-suspend-postgres.sql
+     redis-cli -h <hetzner-redis> BGSAVE  # then scp the .rdb snapshot off-Hetzner
+     ```
+  4. Tag Hetzner state in git: `git tag -a v0-hetzner-suspended -m "Hetzner cabinet suspended <date>; rollback target."` on whatever Hetzner commit was last live
+  5. Document rollback procedure in `docs/hetzner-rollback.md` (v1.1 CTO #4 — BotFather is one-way):
      - Restore Postgres + Redis from snapshots (Spec 057 paths)
      - `docker start` all containers
-     - Re-revoke Mac CoS BotFather token + re-enable 4 Hetzner bot tokens (Phase 3 reverse)
-     - Estimated rollback time: 30-60 min
+     - **BotFather note:** revoking a token is one-way. To restore Hetzner officers we must:
+       1. `/mybots` → for each of 4 officer bots → **"API Token" → "Generate new token"** (creates fresh token; old one stays revoked)
+       2. Update Hetzner `cabinet/.env` with the 4 new tokens (CTO_TOKEN, CPO_TOKEN, CRO_TOKEN, COO_TOKEN)
+       3. Restart Hetzner officers so they pick up new tokens
+     - Estimated rollback time: 30-60 min total (BotFather + .env + restart adds ~15 min vs naive `docker start` alone)
 - **Golden eval:**
   - Hetzner containers stopped (verified via `docker ps` from Hetzner host or via Captain)
   - `v0-hetzner-suspended` tag landed

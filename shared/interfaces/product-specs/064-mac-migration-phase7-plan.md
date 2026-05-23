@@ -1,9 +1,18 @@
 # Spec 064 — Mac Migration Phase 7 Plan (Full Officer Rollout + Observability)
 
-- **Version:** v1.0
-- **Date:** 2026-05-23 (07:35 UTC)
+- **Version:** v1.1 (CTO 7 MUST-fold)
+- **Date:** 2026-05-23 (v1.0 07:35 UTC → v1.1 07:50 UTC)
 - **Author:** CoS (autonomous per Captain msg 2605, 2607, 2612)
-- **Status:** DRAFT — ready for CTO tech review + Captain execution
+- **Status:** READY for CTO re-confirm + Captain execution
+
+**v1.1 changelog — CTO 7 MUST-fold findings (msg 2026-05-23 07:10 UTC):**
+- **(1) Log path 7.5:** `/var/log/cabinet/` is Linux-FHS; Mac convention + matching Spec 059 plist `StandardOutPath`/`StandardErrorPath` is `~/Library/Logs/cabinet/`. Updated.
+- **(2) newsyslog ownership 7.5:** hardcoded `cabinet:staff` won't work on Captain machines with a different username. `envsubst` against `$USER` + auto-detect primary group via `id -gn`.
+- **(3) Heartbeat check 7.6:** date-parsing differs BSD vs GNU (`date -j -f` vs `date -d`). Switch to TTL-based: heartbeat writer SETEX with 900s TTL → watchdog just checks EXISTS. No date math.
+- **(4) CRO schedule 7.2:** launchd `StartInterval=14400` (every 4h) is simpler + behaves more like cron than 6-entry `StartCalendarInterval`. Updated.
+- **(5) send-to-group.sh 7.7:** `--stdin` flag doesn't exist on the current script. Switch to inline-quote pattern (compose string in shell, pass as single arg).
+- **(6) post-tool-use.sh portability 7.5:** Spec 064 inherits assumption that post-tool-use writes to Redis from the officer LaunchAgent's environment. Phase 7.4 verify step added: `$REDIS_HOST` reachable from inside each LaunchAgent's environment (default localhost:6379 on Mac per Spec 058 1.5).
+- **(7) Alert dedup clear 7.6:** the dedup key (`cabinet:alert:heartbeat-stale:$o`) had 1h TTL but never explicitly cleared on recovery. If officer recovers in 30 min then re-fails 45 min later, the second failure is silently suppressed. Fix: clear the dedup key on first successful heartbeat after a known-stale state.
 
 - **Parent directive:** Captain Mac Mini Directive msg 2599 §Phase 7 ("Full officer rollout + observability — 1-2 days")
 - **Predecessors:** Spec 057-063 (Phases 0-6)
@@ -58,7 +67,7 @@ Phase 7 decomposes into **10 checkpoints**. Directive estimates 1-2 days; realis
 - **Actions:**
   1. CRO is `consultant` type per `instance/config/platform.yml` (not fulltime) — Phase 1 cron schedule fires it
   2. Either: (a) launchd `StartCalendarInterval` mimicking Hetzner cron schedule (every 4h research sweep), OR (b) keep Hetzner-cron equivalent on Mac via `cabinet/cron/research-sweep.sh` + LaunchAgent
-  3. Decision: use (b) — research-sweep LaunchAgent fires every 4h (matches Hetzner)
+  3. Decision: use (b) — research-sweep LaunchAgent fires every 4h via `StartInterval=14400` (v1.1 CTO #4 — simpler than 6-entry StartCalendarInterval, behaves like cron)
   4. Verify next-fire timestamp via `launchctl print`
 - **Golden eval:**
   - CRO LaunchAgent registered (NOT KeepAlive — consultant fires on schedule)
@@ -103,21 +112,35 @@ Phase 7 decomposes into **10 checkpoints**. Directive estimates 1-2 days; realis
 ### Checkpoint 7.5 — Stand up log aggregation (Mac unified logs)
 
 - **Pre-conditions:** 7.4 PASS.
-- **Actions:**
-  1. Each officer LaunchAgent already writes stdout + stderr to `/var/log/cabinet/<officer>.{out,err}.log` per Spec 059 plist (`StandardOutPath` + `StandardErrorPath`)
+- **Actions (v1.1 CTO #1 + #2 + #6 — Mac log convention + USER envsubst + REDIS env):**
+  1. Each officer LaunchAgent writes stdout + stderr to `~/Library/Logs/cabinet/<officer>.{out,err}.log` per Spec 059 plist (`StandardOutPath` + `StandardErrorPath`) — Mac convention, NOT Linux-FHS `/var/log/`
   2. Add `cabinet/scripts/log-tail-all.sh`:
      ```bash
      #!/bin/bash
      # log-tail-all.sh — multi-tail all officer logs
+     LOG_DIR="$HOME/Library/Logs/cabinet"
      for o in cos cto cpo cro coo; do
-       (tail -f "/var/log/cabinet/$o.out.log" | sed "s/^/[$o] /" &)
+       (tail -f "$LOG_DIR/$o.out.log" | sed "s/^/[$o] /" &)
      done
      wait
      ```
-  3. Verify rotation: macOS `newsyslog` rotates `/var/log/*` by default; add custom rule for `/var/log/cabinet/*.log` rotation at 100MB / 7 days:
+  3. Verify rotation: macOS `newsyslog` rotates `/var/log/*` by default — for user-scoped `~/Library/Logs/cabinet/*.log` add a custom rule using `envsubst` to bind to the actual user (NOT hardcoded `cabinet:staff` which assumes username `cabinet`):
+     ```bash
+     USER_NAME=$(id -un)
+     USER_GROUP=$(id -gn)
+     LOG_USER_PATH="$HOME/Library/Logs/cabinet/*.log"
+     # /etc/newsyslog.d/cabinet.conf (sudo-installed):
+     envsubst <<EOF | sudo tee /etc/newsyslog.d/cabinet.conf
+     $LOG_USER_PATH  $USER_NAME:$USER_GROUP  644  7  102400  *  Z
+     EOF
      ```
-     # /etc/newsyslog.d/cabinet.conf
-     /var/log/cabinet/*.log  cabinet:staff  644  7  102400  *  Z
+  4. **(v1.1 CTO #6 — post-tool-use Mac portability)** Verify `$REDIS_HOST` resolves from inside the LaunchAgent's environment (typically `localhost` per Spec 058 1.5 Homebrew Redis). Each LaunchAgent plist needs the env var explicitly:
+     ```xml
+     <key>EnvironmentVariables</key>
+     <dict>
+       <key>REDIS_HOST</key><string>localhost</string>
+       <key>REDIS_PORT</key><string>6379</string>
+     </dict>
      ```
 - **Golden eval:**
   - log-tail-all.sh streams 5 officer logs (4 fulltime continuously + 1 consultant during fire)
@@ -128,21 +151,23 @@ Phase 7 decomposes into **10 checkpoints**. Directive estimates 1-2 days; realis
 ### Checkpoint 7.6 — Heartbeat alerts (silent-officer detection)
 
 - **Pre-conditions:** 7.5 PASS.
-- **Actions:**
-  1. Write `cabinet/cron/heartbeat-watchdog.sh`:
+- **Actions (v1.1 CTO #3 + #7 — TTL-based check + dedup-clear on recovery):**
+  1. Convert heartbeat writer to TTL pattern (no more date-parsing — BSD vs GNU `date` divergence eliminated). Officer's heartbeat tool-use writes `SETEX cabinet:heartbeat:$o 900 "$(date -u +%s)"` (15-min TTL). Watchdog just checks `EXISTS`:
      ```bash
      #!/bin/bash
      # heartbeat-watchdog.sh — every 5 min, check fulltime officer heartbeats
-     # If >15min stale, DM Captain via CoS Telegram + log incident
+     # TTL-based (no date math): if heartbeat key doesn't exist, stale.
+     # Dedup with 1h TTL; CLEAR dedup key on recovery so re-failures alert promptly.
      for o in cos cto cpo coo; do
-       LAST=$(redis-cli GET "cabinet:heartbeat:$o" || echo "")
-       if [ -z "$LAST" ]; then continue; fi
-       AGE=$(( $(date +%s) - $(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$LAST" +%s 2>/dev/null || echo 0) ))
-       if [ "$AGE" -gt 900 ]; then
+       EXISTS=$(redis-cli EXISTS "cabinet:heartbeat:$o")
+       if [ "$EXISTS" = "0" ]; then
          # Stale — alert (deduped by Redis 1h TTL key)
          if redis-cli SET "cabinet:alert:heartbeat-stale:$o" 1 NX EX 3600 | grep -q OK; then
-           bash cabinet/scripts/send-to-group.sh "[HEARTBEAT] $o stale ${AGE}s — check launchctl"
+           bash cabinet/scripts/send-to-group.sh "[HEARTBEAT] $o stale — check launchctl"
          fi
+       else
+         # Officer is alive — clear any prior stale-alert dedup so re-failures alert promptly
+         redis-cli DEL "cabinet:alert:heartbeat-stale:$o" > /dev/null
        fi
      done
      ```
@@ -160,15 +185,17 @@ Phase 7 decomposes into **10 checkpoints**. Directive estimates 1-2 days; realis
 - **Pre-conditions:** 7.6 PASS.
 - **Actions:**
   1. Cost-tracking logging already on (Spec 059 v1.1 split — logging always on, enforcement gated). Counters in Redis: `cabinet:cost:daily:<officer>:<YYYY-MM-DD>` + `cabinet:cost:monthly:<officer>:<YYYY-MM>`
-  2. Write `cabinet/cron/cost-summary.sh` — daily 23:00 local digest:
+  2. Write `cabinet/cron/cost-summary.sh` — daily 23:00 local digest (v1.1 CTO #5 — inline-quote not `--stdin`):
      ```bash
      # cost-summary.sh — daily 23:00 → HQ group
      TODAY=$(date +%Y-%m-%d)
-     echo "💰 Cabinet cost summary $TODAY"
+     MSG="💰 Cabinet cost summary $TODAY"
      for o in cos cto cpo cro coo; do
        DAILY=$(redis-cli GET "cabinet:cost:daily:$o:$TODAY" || echo "0")
-       echo "  $o: \$$DAILY"
-     done | bash cabinet/scripts/send-to-group.sh --stdin
+       MSG="$MSG\n  $o: \$$DAILY"
+     done
+     # send-to-group.sh takes the message as a positional arg, NOT --stdin
+     bash cabinet/scripts/send-to-group.sh "$(printf "%b" "$MSG")"
      ```
   3. Register as LaunchAgent at 23:00 local: `cabinet/launchd/com.cabinet.cost-summary.plist`
   4. (Optional, Phase 7 nice-to-have) Dashboard `/cost` route on customer-dashboard reads same Redis keys. Defer if time-constrained.
