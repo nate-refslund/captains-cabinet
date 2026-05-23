@@ -40,11 +40,17 @@ Phase 3 decomposes into **8 checkpoints**. Most are config/role-def edits + one 
 ### Checkpoint 3.1 — Captain action: revoke 4 officer bot tokens via BotFather
 
 - **Pre-conditions:** Phase 2 complete; Mac mini running CoS as LaunchAgent.
+- **Pre-flight (v1.1 CTO #2 — Hetzner-side token-collision):** Hetzner cabinet still has those 4 bot tokens active in its `.env` until separately retired. Before revoking on Mac side, confirm ONE of:
+  - (a) Hetzner cabinet is fully shut down (containers stopped, no officer sessions running), OR
+  - (b) Hetzner cabinet's `cabinet/.env` has had the 4 tokens removed/scrubbed and Hetzner officers reloaded so they cannot poll
+  
+  Otherwise Hetzner officers will continue polling the revoked tokens → 409 errors flood logs + Telegram-side rate limiting could affect the still-active CoS bot.
 - **Actions (Captain hands-on):**
   1. Open Telegram on phone/desktop, message `@BotFather`
   2. `/mybots` → select `cabinet-cto-bot` → "API Token" → "Revoke current token" → confirm
   3. Repeat for `cabinet-cpo-bot`, `cabinet-cro-bot`, `cabinet-coo-bot`
 - **Golden eval:**
+  - Pre-flight passed (Hetzner shut down OR tokens scrubbed)
   - For each revoked bot: trying to use the old token returns HTTP 401 from Telegram Bot API
   - `cabinet-cos-bot` token still works (NOT revoked)
 - **Rollback:** BotFather lets you regenerate a token; if Captain wants to re-enable a bot, regenerate. But the directive says revoke, so rollback is rare.
@@ -60,12 +66,21 @@ Phase 3 decomposes into **8 checkpoints**. Most are config/role-def edits + one 
      - Voice section: remove `voices.cto`, `voices.cpo`, `voices.cro`, `voices.coo` — keep only `voices.cos`
   2. Run preset loader to regenerate the runtime config: `bash cabinet/scripts/load-preset.sh`
   3. Verify `/tmp/cabinet-runtime/product.yml` reflects the collapsed config.
+  4. **Reload CoS (v1.1 CTO #1) — running session won't see new config without restart:**
+     ```bash
+     bash cabinet/scripts/reload-officer-mac.sh cos
+     # equivalent to:
+     #   launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.cabinet.officer.cos.plist
+     #   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.cabinet.officer.cos.plist
+     ```
+     The reload helper is extracted as cross-spec META (used here, in Spec 061 4.5, and in later phases).
 - **Golden eval:**
   - `grep -c 'cabinet-cto-bot\|cabinet-cpo-bot\|cabinet-cro-bot\|cabinet-coo-bot' instance/config/product.yml` returns 0
   - `grep -c 'voices.cto\|voices.cpo\|voices.cro\|voices.coo' instance/config/product.yml` returns 0
   - `grep -c 'cabinet-cos-bot' instance/config/product.yml` returns ≥1
-- **Rollback:** `git revert` restores 4-bot config.
-- **Effort:** 15 min.
+  - CoS LaunchAgent restart confirmed by `launchctl print gui/$(id -u)/com.cabinet.officer.cos` showing fresh PID
+- **Rollback:** `git revert` restores 4-bot config; reload-officer-mac.sh again.
+- **Effort:** 15-20 min.
 - **Note:** `master` branch unchanged (Hetzner cabinet keeps multi-bot for now; Mac-native is the Lead-only deployment).
 
 ### Checkpoint 3.3 — Update `cabinet/officer-capabilities.conf` (telegram_bot capability)
