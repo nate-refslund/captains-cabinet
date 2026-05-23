@@ -103,15 +103,27 @@ Phase 0 decomposes into **8 checkpoints**. Each has: pre-conditions, actions, go
 - **Rollback:** snapshots don't mutate prod.
 - **Effort:** 10 minutes.
 
-### Checkpoint 0.6 — Host-state snapshot (cabinet/.env + /etc/cabinet + audit logs)
+### Checkpoint 0.6 — Host-state snapshot (cabinet/.env + /etc/cabinet + audit logs + captain-rules)
 
-- **Pre-conditions:** export-state.sh shipped (commit 4e1a01a, already on master).
+- **Pre-conditions:** export-state.sh shipped (commit 4e1a01a, already on master). **v1.1 amendment:** export-state.sh updated to include captain-rules runtime files (commit on mac-native; verify present before running).
 - **Actions:**
   1. Run on Hetzner host: `bash cabinet/scripts/export-state.sh /tmp/cabinet-phase0-snapshots/host-state.tar.gz --include-claude-auth --include-redis-dump`
-  2. (The `--include-claude-auth` here is redundant with 0.5 but keeps the tarball self-contained; same for `--include-redis-dump` overlapping 0.4. Safe duplicate.)
-- **Golden eval:** Tarball extracts cleanly; manifest text file present; `cabinet/.env` recoverable + non-empty.
+  2. The tarball now packages (v1.1 amendment):
+     - `cabinet/.env` (API keys, tokens, Neon URL)
+     - `/etc/cabinet/` (host-agent secrets)
+     - `/var/log/cabinet/` (audit logs, default ON)
+     - `/etc/systemd/system/cabinet-*.service` (reference for launchd port)
+     - `/etc/cron.d/cabinet-*` + `/var/spool/cron/crontabs/*` (cron entries)
+     - **`shared/interfaces/captain-patterns.md` + `captain-intents.md` + `captain-decisions.md` (NEW v1.1 — gitignored runtime state that regenerates blank on cutover)**
+     - `officer-claude-auth/` (per-officer ~/.claude via --include-claude-auth)
+     - Redis dump (via --include-redis-dump)
+  3. (The `--include-claude-auth` here is redundant with 0.5 but keeps the tarball self-contained; same for `--include-redis-dump` overlapping 0.4. Safe duplicate.)
+- **Golden eval:**
+  - Tarball extracts cleanly; manifest text file present; `cabinet/.env` recoverable + non-empty
+  - **v1.1:** `tar -tzf host-state.tar.gz | grep 'shared/interfaces/captain-' | wc -l` returns 3 (the 3 captain-rules files)
 - **Rollback:** snapshots don't mutate prod.
 - **Effort:** 5-10 minutes.
+- **Mac-side restore-path (v1.1):** before first officer session start in Phase 2, `cp ~/cabinet-import/shared/interfaces/captain-*.md $REPO_ROOT/shared/interfaces/`. Otherwise officers boot blank.
 
 ### Checkpoint 0.7 — Current Cabinet golden-eval baseline
 
