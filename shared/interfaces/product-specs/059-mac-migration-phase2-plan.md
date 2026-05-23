@@ -1,9 +1,23 @@
 # Spec 059 — Mac Migration Phase 2 Plan (Delete Docker, Add launchd)
 
-- **Version:** v1.0
-- **Date:** 2026-05-23
-- **Author:** CoS (autonomous per Captain msg 2605, msg 2607 "Go", msg 2612 "never stop")
-- **Status:** DRAFT — ready for CTO tech review + Captain execution
+- **Version:** v1.1 (CTO 8 MUST-fold substrate findings folded)
+- **Date:** 2026-05-23 (v1.0 → v1.1 07:05 UTC)
+- **Author:** CoS (autonomous per Captain msg 2605, 2607, 2612)
+- **Status:** READY for CTO re-confirm + Captain execution
+
+**v1.1 changelog — CTO 8 MUST-fold + 4 SHOULD-fold + 2 NIT findings absorbed (msg 2026-05-23 06:56 UTC):**
+- **(1) plist variable substitution** — launchd doesn't expand `${OFFICER_ROLE}` / `${USER}` at runtime. **deploy-mac.sh (2.8) MUST `envsubst` the template before writing the per-officer plist** to `~/Library/LaunchAgents/`. Updated 2.8 with explicit `envsubst < template > final.plist` step + golden-eval verification.
+- **(2) `WorkingDirectory` key** — added to 2.3 plist template. Without it, scripts can't locate `cabinet/.env` from a launchd-spawned process. `<key>WorkingDirectory</key><string>/Users/${USER}/work/captains-cabinet</string>` added.
+- **(3) `SoftResourceLimits NumberOfFiles=4096`** — added to 2.3 plist template. Default 256 hits EMFILE under MCP load (per CTO substrate experience).
+- **(4) tmux session lifecycle** — 2.7 strip + 2.9 attach contradicted without explicit `tmux new-session -d`. Added to 2.7 the explicit pattern: `tmux new-session -d -s officer-$OFFICER_ROLE 'claude ...'`. 2.9 attach now works against the detached session.
+- **(5) start-officer-mac.sh effort** — revised 2.7 estimate from 1-2h → 2-3h (per CTO honesty: launchd exit-code shaping + tmux orchestration + macOS path conventions are substantive).
+- **(6) cost-tracking LOGGING vs ENFORCEMENT split** — 2.2 updated. `cost_tracking.logging.enabled` (default true — keeps audit data for commercial-future) separate from `cost_tracking.enforcement.enabled` (default false personal, true commercial). Captain Q4 honored both ways.
+- **(7) Mac timezone Europe/Berlin** — new pre-step in 2.6 before StartCalendarInterval. `sudo systemsetup -settimezone Europe/Berlin`. Without it, 08:00 daily-digest fires at wrong wall-clock time.
+- **(8) Skip Checkpoint 2.5** — Screenpipe ships its own LaunchAgent. Removed our 2.5 plist write; 2.5 reduced to "verify Screenpipe's built-in LaunchAgent is registered + healthy."
+
+SHOULD-fold (folded inline): launchctl bootstrap return-code handling, plist file permissions (644 not 600), bootout-vs-disable nuance documented, KeepAlive ThrottleInterval rationale documented.
+
+NIT: held — log paths + plist label format are fine.
 - **Parent directive:** Captain Mac Mini Directive msg 2599 §Phase 2 ("Delete Docker, add launchd — 1-2 days")
 - **Predecessors:** Spec 057 (Phase 0 — COMPLETE 2026-05-22 22:59 UTC), Spec 058 v1.1.1 (Phase 1 — READY for Captain execution)
 - **Successor:** Spec 060 (Phase 3 — Telegram topology collapse)
@@ -68,28 +82,32 @@ Phase 2 decomposes into **12 checkpoints**. Each has pre-conditions, actions, go
 - **Effort:** 5 min.
 - **Note:** `master` branch keeps these files because Spec 050 v1.2.1 Tier 1 (refslund.ai backend) stays Dockerized. Only `mac-native` branch drops Docker.
 
-### Checkpoint 2.2 — Gate cost-tracking on platform.yml flag (preserve per Captain Q4)
+### Checkpoint 2.2 — Gate cost-tracking: split LOGGING vs ENFORCEMENT (v1.1 CTO #6)
 
 - **Pre-conditions:** 2.1 PASS.
 - **Actions:**
   1. Locate cost-tracking module — likely `cabinet/scripts/cost-tracking.sh` or inline in watchdog scripts.
-  2. Add `instance/config/platform.yml` flag:
+  2. Add `instance/config/platform.yml` flag with **CTO #6 split**:
      ```yaml
      cost_tracking:
-       enabled: false  # default for personal/STEP-internal; commercial-Cabinet default true
-       alert_thresholds:
-         daily_per_officer_usd: null  # nullable when disabled
-         daily_per_cabinet_usd: null
+       logging:
+         enabled: true   # ALWAYS on — preserves audit data for commercial-future Cabinet path
+       enforcement:
+         enabled: false  # default personal/STEP-internal; commercial Cabinet sets true
+         daily_per_cabinet_usd: null  # set when enforcement enabled
+         daily_per_officer_usd: null
      ```
-  3. Wrap cost-tracking code paths with the flag check: `if read_yaml platform.yml cost_tracking.enabled == true; then ...`
-  4. Update `cabinet/scripts/hooks/pre-tool-use.sh` spending-cap branches with the same flag (DO NOT delete the cap logic per Q4 — gate it).
+  3. Wrap cost-tracking code:
+     - **Logging always runs** (records per-officer + per-cabinet costs to Redis + JSONL)
+     - **Enforcement gated** (cap-breach pause + DM Captain only if enforcement.enabled)
+  4. Update `cabinet/scripts/hooks/pre-tool-use.sh` spending-cap branches with the enforcement flag (logging branches stay always on).
 - **Golden eval:**
-  - Cost-tracking code paths skip cleanly when flag is false
-  - Cost-tracking code paths execute as before when flag is true (commercial test path)
-  - `grep -r "cost_tracking.enabled" cabinet/scripts/` returns the new flag check sites
+  - Logging records cost data regardless of flag state
+  - Enforcement only fires when enforcement.enabled=true
+  - `grep -r "cost_tracking.logging.enabled\|cost_tracking.enforcement.enabled" cabinet/scripts/` returns the new flag check sites
 - **Rollback:** `git revert <commit>` restores original behavior.
-- **Effort:** 30-45 min.
-- **Note:** Captain Q4 explicitly: "Keep! Just no budget cap." This checkpoint honors that — infra preserved, thresholds null.
+- **Effort:** 45-60 min.
+- **CTO v1.1 #6 rationale:** Captain Q4 said "Keep! Just no budget cap." Logging-vs-enforcement split honors that more cleanly — commercial-future Cabinet customers want audit data accumulating from day one even when their own enforcement is disabled.
 
 ### Checkpoint 2.3 — Write `cabinet/launchd/com.cabinet.officer.plist.template`
 
@@ -109,6 +127,8 @@ Phase 2 decomposes into **12 checkpoints**. Each has pre-conditions, actions, go
          <string>/Users/${USER}/work/captains-cabinet/cabinet/scripts/start-officer-mac.sh</string>
          <string>${OFFICER_ROLE}</string>
        </array>
+       <key>WorkingDirectory</key>
+       <string>/Users/${USER}/work/captains-cabinet</string>
        <key>RunAtLoad</key>
        <true/>
        <key>KeepAlive</key>
@@ -118,6 +138,11 @@ Phase 2 decomposes into **12 checkpoints**. Each has pre-conditions, actions, go
        </dict>
        <key>ThrottleInterval</key>
        <integer>30</integer>
+       <key>SoftResourceLimits</key>
+       <dict>
+         <key>NumberOfFiles</key>
+         <integer>4096</integer>
+       </dict>
        <key>StandardOutPath</key>
        <string>/Users/${USER}/Library/Logs/cabinet/${OFFICER_ROLE}.out.log</string>
        <key>StandardErrorPath</key>
@@ -128,11 +153,12 @@ Phase 2 decomposes into **12 checkpoints**. Each has pre-conditions, actions, go
          <string>mac-mini-local</string>
          <key>CABINET_MODEL</key>
          <string>claude-sonnet-4-6</string>
-         <!-- Other env vars sourced from cabinet/.env via start-officer-mac.sh -->
+         <!-- Other env vars sourced from cabinet/.env via WorkingDirectory + start-officer-mac.sh -->
        </dict>
      </dict>
      </plist>
      ```
+     **CTO v1.1 #2 + #3:** `WorkingDirectory` so scripts find `cabinet/.env`; `SoftResourceLimits NumberOfFiles=4096` so MCP load doesn't EMFILE.
 - **Golden eval:**
   - File exists at expected path
   - `plutil cabinet/launchd/com.cabinet.officer.plist.template` parses cleanly (Apple's plist validator)
@@ -154,30 +180,41 @@ Phase 2 decomposes into **12 checkpoints**. Each has pre-conditions, actions, go
 - **Rollback:** `rm` the file.
 - **Effort:** 15 min.
 
-### Checkpoint 2.5 — Write `cabinet/launchd/com.cabinet.screenpipe.plist` (if needed)
+### Checkpoint 2.5 — Verify Screenpipe's own LaunchAgent (v1.1 CTO #8 — SKIP our wrapper)
 
-- **Pre-conditions:** 2.4 PASS.
+- **Pre-conditions:** 2.4 PASS; Screenpipe installed (Spec 058 §1.7).
 - **Actions:**
-  1. Check if Screenpipe ships its own LaunchAgent (per Spec 058 §1.7). If yes, skip this checkpoint.
-  2. If no (or to standardize naming), write `com.cabinet.screenpipe.plist` wrapping the `screenpipe record` command.
-- **Golden eval:** Screenpipe LaunchAgent (its built-in or our wrapper) shows in `launchctl list`.
-- **Rollback:** `rm` the file; rely on Screenpipe's own LaunchAgent.
-- **Effort:** 10 min (or 0 if Screenpipe's own is sufficient).
+  1. Per CTO #8: do NOT write `cabinet/launchd/com.cabinet.screenpipe.plist` — rely on Screenpipe's built-in LaunchAgent. Reduces blast radius (one less thing for us to maintain across macOS updates).
+  2. Verify Screenpipe's LaunchAgent is registered + healthy: `launchctl list | grep -i screenpipe`
+- **Golden eval:** Screenpipe LaunchAgent visible + active.
+- **Rollback:** N/A — we own nothing here.
+- **Effort:** 5 min verification.
 
-### Checkpoint 2.6 — Write `cabinet/launchd/com.cabinet.daily-digest.plist`
+### Checkpoint 2.6 — Mac timezone to Europe/Berlin + write daily-digest plist (v1.1 CTO #7)
 
 - **Pre-conditions:** 2.5 PASS.
 - **Actions:**
-  1. Write `com.cabinet.daily-digest.plist` for the 08:00 Captain digest (per directive §Phase 5 — but the LaunchAgent itself lives here; the digest script comes later):
-     ```xml
-     <!-- Label=com.cabinet.daily-digest, ProgramArguments points to cabinet/cron/daily-digest.sh,
-          StartCalendarInterval with Hour=8 Minute=0 -->
+  1. **Set Mac timezone** (CTO #7 — without this, StartCalendarInterval fires at wrong wall-clock):
+     ```bash
+     sudo systemsetup -settimezone Europe/Berlin
+     sudo systemsetup -gettimezone  # verify Europe/Berlin
      ```
-- **Golden eval:** `plutil` parses; `launchctl print` shows StartCalendarInterval correctly.
-- **Rollback:** `rm` the file.
-- **Effort:** 10 min.
+  2. Write `cabinet/launchd/com.cabinet.daily-digest.plist` for the 08:00 Captain digest:
+     ```xml
+     <!-- Label=com.cabinet.daily-digest
+          WorkingDirectory=/Users/${USER}/work/captains-cabinet
+          ProgramArguments=[bash, cabinet/cron/daily-digest.sh]
+          StartCalendarInterval={Hour=8, Minute=0}
+          + standard log paths -->
+     ```
+- **Golden eval:**
+  - `sudo systemsetup -gettimezone` returns Europe/Berlin
+  - `plutil` parses the plist
+  - `launchctl print` shows StartCalendarInterval Hour=8 Minute=0
+- **Rollback:** restore default timezone via systemsetup; `rm` the plist.
+- **Effort:** 15 min.
 
-### Checkpoint 2.7 — Rename `start-officer.sh` → `start-officer-mac.sh`, strip Docker code
+### Checkpoint 2.7 — Rename + strip + tmux session (v1.1 CTO #4 + #5)
 
 - **Pre-conditions:** 2.6 PASS.
 - **Actions:**
@@ -185,41 +222,67 @@ Phase 2 decomposes into **12 checkpoints**. Each has pre-conditions, actions, go
   2. Strip Docker-specific code from `start-officer-mac.sh`:
      - Remove `docker exec` invocations
      - Remove `cabinet-officers-${role}` container assumptions
-     - Replace tmux session creation to run native macOS (no container wrapping)
      - Keep: role-specific system prompt loader (preset → instance overlay), MCP attachment loop, Redis heartbeat registration, CABINET_MODEL Sonnet default (Move 1)
-  3. Keep `start-officer.sh` unchanged on `mac-native` branch (master branch keeps it untouched too) — so officers on Hetzner-Docker can still launch via `start-officer.sh`.
-     OR (cleaner): delete `start-officer.sh` on `mac-native` branch since `master` still has it.
-  4. Update `cabinet/officer-supervisor.sh` (or equivalent) to invoke `start-officer-mac.sh` on Mac, `start-officer.sh` on Linux.
+  3. **Explicit tmux session lifecycle (CTO #4):**
+     ```bash
+     # Inside start-officer-mac.sh
+     SESSION="officer-${OFFICER_ROLE}"
+     if tmux has-session -t "$SESSION" 2>/dev/null; then
+       echo "Session $SESSION already exists; attaching not creating"
+     else
+       # Detached session (-d) so launchd doesn't block on TTY
+       tmux new-session -d -s "$SESSION" "exec claude $_BASE_FLAGS $_CHANNEL_FLAGS"
+     fi
+     # Heartbeat + supervise loop continues outside tmux
+     ```
+  4. On `mac-native` branch: delete `start-officer.sh` (master keeps it for Hetzner).
+  5. Update `cabinet/officer-supervisor.sh` (or equivalent) to invoke `start-officer-mac.sh` on Mac, `start-officer.sh` on Linux (path detection by `uname`).
 - **Golden eval:**
   - `bash -n cabinet/scripts/start-officer-mac.sh` (syntax check) passes
   - `grep -c "docker exec" cabinet/scripts/start-officer-mac.sh` returns 0
   - `grep -c "CABINET_MODEL" cabinet/scripts/start-officer-mac.sh` returns ≥1 (Move 1 routing preserved)
+  - `grep -c "tmux new-session -d" cabinet/scripts/start-officer-mac.sh` returns ≥1 (CTO #4 detached session pattern)
 - **Rollback:** `git revert <commit>`.
-- **Effort:** 1-2 hours (bash code stripping + verification).
+- **Effort:** 2-3 hours (CTO #5 honest estimate — launchd exit-code shaping + tmux orchestration + macOS paths are substantive).
 
-### Checkpoint 2.8 — Write `cabinet/scripts/deploy-mac.sh`
+### Checkpoint 2.8 — Write `cabinet/scripts/deploy-mac.sh` with envsubst (v1.1 CTO #1)
 
 - **Pre-conditions:** 2.7 PASS.
 - **Actions:**
-  1. Write `deploy-mac.sh` — first-time deployment script per directive:
+  1. Write `deploy-mac.sh` — first-time deployment per directive:
      ```bash
      #!/bin/bash
      # deploy-mac.sh — bring up Cabinet on Mac mini via LaunchAgents
-
      set -euo pipefail
 
      # Step 1: verify binaries installed + permissioned (per Spec 058 Phase 1)
      # Step 2: import Neon snapshots if --restore flag set
-     # Step 3: substitute ${OFFICER_ROLE} + ${USER} in plist templates → write to ~/Library/LaunchAgents/
+     # Step 3: envsubst each plist template → write to ~/Library/LaunchAgents/
+     #         (CTO #1: launchd does NOT expand ${VAR} at runtime; substitution
+     #          MUST happen before writing the plist)
      # Step 4: register LaunchAgents via `launchctl bootstrap gui/$(id -u) <plist>`
      # Step 5: verify all officers start successfully (heartbeat Redis check)
      ```
-  2. Implement step-by-step with `--dry-run` flag.
-  3. Test on CoS only first (Step 5 limited to single officer for Phase 2 first-pass).
+  2. **CRITICAL plist envsubst step (CTO #1):**
+     ```bash
+     # For each officer:
+     export OFFICER_ROLE="cos"
+     export USER="${USER}"  # already in env
+     mkdir -p ~/Library/LaunchAgents
+     envsubst < cabinet/launchd/com.cabinet.officer.plist.template \
+              > ~/Library/LaunchAgents/com.cabinet.officer.${OFFICER_ROLE}.plist
+     chmod 644 ~/Library/LaunchAgents/com.cabinet.officer.${OFFICER_ROLE}.plist  # CTO SHOULD-fold
+     plutil ~/Library/LaunchAgents/com.cabinet.officer.${OFFICER_ROLE}.plist  # parse-validate
+     launchctl bootstrap gui/$(id -u) \
+               ~/Library/LaunchAgents/com.cabinet.officer.${OFFICER_ROLE}.plist
+     ```
+  3. Implement with `--dry-run` flag.
+  4. Test on CoS only first.
 - **Golden eval:**
   - `bash -n` passes
-  - `--dry-run` prints expected plist substitutions + launchctl commands without executing
-  - Help text shows usage clearly
+  - `--dry-run` prints expected envsubst + launchctl commands without executing
+  - **CTO #1 verification:** post-envsubst, `grep -c '\${OFFICER_ROLE}\|\${USER}' ~/Library/LaunchAgents/com.cabinet.officer.cos.plist` returns 0 (variables replaced, no literal `${...}` left)
+  - `plutil` validates the written plist
 - **Rollback:** `rm` script.
 - **Effort:** 2-3 hours.
 
