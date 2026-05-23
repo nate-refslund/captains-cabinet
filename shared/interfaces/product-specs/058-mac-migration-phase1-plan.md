@@ -229,7 +229,7 @@ Phase 1 decomposes into **10 checkpoints**. Most need Captain's hands at the Mac
 - **Actions:**
   1. Identify UPS model — most APC + CyberPower UPSes work with apcupsd or NUT
   2. Install: `brew install apcupsd` (or `brew install nut` for NUT, depending on UPS)
-  3. Configure `/etc/apcupsd/apcupsd.conf` per UPS docs (USB device + battery thresholds)
+  3. Configure `/opt/homebrew/etc/apcupsd/apcupsd.conf` per UPS docs (Apple Silicon Homebrew path; CTO v1.1.1 fix — Linux uses `/etc/apcupsd/` but macOS Homebrew installs to `/opt/homebrew/etc/`)
   4. Start service: `sudo apcupsd` or via launchd
   5. Test: `apcaccess` reports UPS status
 - **Golden eval:**
