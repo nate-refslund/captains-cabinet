@@ -1,0 +1,19 @@
+# Cabinet Adapter Configuration
+#
+# Per Spec 063 v1.1 Checkpoint 6.7. Default-off until each adapter integration-tested.
+# Per A11 (Captain ratification): Library + /tasks are canonical. Adapters are
+# bidirectional mirrors to external systems, not source of truth.
+#
+# To enable an adapter:
+#   1. cd cabinet/adapters/<adapter-name>/ — verify README + adapter.ts + field-mapping.yml
+#   2. Run integration test (round-trip create Cabinet→external→Cabinet)
+#   3. Flip enabled: true here
+#   4. Restart officer Cabinet (load-preset.sh picks up the new config)
+
+adapters:
+  notion:
+    enabled: false       # legacy mirror — Hetzner: on, Mac native: off (post-cutover)
+  linear:
+    enabled: false       # legacy mirror — Spec-039 ETL retired Linear as source-of-truth
+  github-issues:
+    enabled: false       # Cabinet framework backlog (FW-* tickets, future)
