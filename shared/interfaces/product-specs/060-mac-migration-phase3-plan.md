@@ -1,9 +1,14 @@
 # Spec 060 — Mac Migration Phase 3 Plan (Telegram Topology Collapse)
 
-- **Version:** v1.0
-- **Date:** 2026-05-23
+- **Version:** v1.1 (CTO 3 MUST-fold reload + BotFather + constitution-placement)
+- **Date:** 2026-05-23 (v1.0 → v1.1 07:20 UTC)
 - **Author:** CoS (autonomous per Captain msg 2605, 2607, 2612)
-- **Status:** DRAFT — ready for CTO tech review + Captain execution
+- **Status:** READY for CTO re-confirm + Captain execution
+
+**v1.1 changelog — CTO MUST-fold findings (msg 2026-05-23 06:58 UTC):**
+- **(1) Bootout/bootstrap after product.yml edit (3.2).** Running CoS won't see the new product.yml config without restart. Added explicit `launchctl bootout` + `launchctl bootstrap` cycle as a sub-step. Helper script `cabinet/scripts/reload-officer-mac.sh` extracted (cross-spec META — used in 3.2 + 4.5b + later phases).
+- **(2) BotFather revoke Hetzner-side token-collision pre-flight (3.1).** Hetzner cabinet still has those 4 bot tokens active in its `.env` until separately retired. Pre-flight: confirm Hetzner cabinet has been shut down OR its bot tokens already revoked before revoking on Mac side. Otherwise Hetzner officers DM-collide with revoked tokens → 409 errors.
+- **(3) Constitution-clause placement: framework, not preset (3.5).** Lead-only Telegram clause goes in `framework/constitution-base.md` per Mac Migration Directive Part 3. (Same answer applies to Phase 4 + Phase 5 constitution clauses — bundled cross-spec ratification.)
 - **Parent directive:** Captain Mac Mini Directive msg 2599 §Phase 3 ("Telegram topology collapse — 0.5 day")
 - **Predecessors:** Spec 057 (Phase 0), Spec 058 v1.1.1 (Phase 1), Spec 059 (Phase 2)
 - **Successor:** Spec 061 (Phase 4 — cua-driver + Lead enforcement)

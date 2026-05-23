@@ -1,9 +1,21 @@
 # Spec 061 — Mac Migration Phase 4 Plan (cua-driver + Lead Enforcement)
 
-- **Version:** v1.0
-- **Date:** 2026-05-23
+- **Version:** v1.1 (CTO 4 MUST-fold MCP-merge + permission + constitution-placement)
+- **Date:** 2026-05-23 (v1.0 → v1.1 07:20 UTC)
 - **Author:** CoS (autonomous per Captain msg 2605, 2607, 2612)
-- **Status:** DRAFT — ready for CTO tech review + Captain execution
+- **Status:** READY for CTO re-confirm + Captain execution
+
+**v1.1 changelog — CTO MUST-fold findings (msg 2026-05-23 06:58 UTC):**
+- **(1) HIGHEST PRIORITY: 4.3 jq MCP-merge strategy.** v1.0 used `jq -s '.[0] * .[1]'` which is SHALLOW merge — silently OVERWRITES framework `mcpServers` (loses notion + linear + neon + library + etc.) with CoS overlay (only cua-driver). v1.1 uses explicit deep-merge preserving framework MCPs:
+  ```bash
+  jq -s '.[0] as $base | .[1] as $overlay
+         | $base * $overlay
+         | .mcpServers = ($base.mcpServers + $overlay.mcpServers)' \
+     .mcp.json instance/agents/${OFFICER}/mcp.json
+  ```
+- **(2) cua-driver permission persistence in LaunchAgent context.** macOS sometimes loses Screen Recording grants for processes launched via launchd vs Terminal. 4.6 adds an explicit re-grant check + retry.
+- **(3) Constitution-clause placement: framework, not preset.** Per Mac Migration Directive Part 3 the Lead-only computer-use clause goes in `framework/constitution-base.md`. 4.4 explicit. (Same answer applies to Phase 3 Lead-only Telegram + Phase 5 if more clauses arise — bundled here for cross-spec ratification.)
+- **(4) reload-officer-mac.sh helper extraction.** Used 3x (Phase 2 bootout/bootstrap, Phase 3 product.yml-reload, Phase 4 mcp.json-reload). Cross-spec META: extract into `cabinet/scripts/reload-officer-mac.sh` and reference from each. Added as Checkpoint 4.5b.
 - **Parent directive:** Captain Mac Mini Directive msg 2599 §Phase 4 ("cua-driver + Lead enforcement — 1 day")
 - **Predecessors:** Spec 057-060 (Phases 0-3)
 - **Successor:** Spec 062 (Phase 5 — Screenpipe integration)
@@ -73,7 +85,19 @@ Phase 4 decomposes into **7 checkpoints**. Directive estimates 1 day; realistic 
   1. In `start-officer-mac.sh`, gate MCP-overlay merge on `read_capability $OFFICER_ROLE drives_computer`:
      - If `drives_computer=true` → merge `instance/agents/$OFFICER_ROLE/mcp.json` into the framework-level `.mcp.json` for that officer's Claude Code invocation
      - If `drives_computer=false` → use framework-level `.mcp.json` only (no cua-driver MCP)
-  2. Use `jq -s '.[0] * .[1]'` or similar to merge JSON cleanly.
+  2. **Use jq deep-merge preserving framework MCPs (v1.1 CTO #1 CRITICAL):**
+     ```bash
+     # Shallow merge (.[0] * .[1]) would OVERWRITE framework mcpServers with overlay-only.
+     # Deep-merge preserves framework MCPs + adds overlay MCPs (e.g. cua-driver):
+     jq -s '.[0] as $base | .[1] as $overlay
+            | $base * $overlay
+            | .mcpServers = ($base.mcpServers + $overlay.mcpServers)' \
+        .mcp.json instance/agents/${OFFICER}/mcp.json \
+        > /tmp/merged-mcp-${OFFICER}.json
+     # Verify cua-driver AND framework MCPs (notion/linear/neon/library/etc) all present
+     jq -e '.mcpServers | has("cua-driver") and has("notion") and has("library")' \
+        /tmp/merged-mcp-${OFFICER}.json
+     ```
 - **Golden eval:**
   - `bash -n start-officer-mac.sh` passes
   - Dry-run with `OFFICER_ROLE=cos` shows merged mcp.json includes cua-driver

@@ -1,9 +1,14 @@
 # Spec 062 — Mac Migration Phase 5 Plan (Screenpipe Integration)
 
-- **Version:** v1.0
-- **Date:** 2026-05-23
+- **Version:** v1.1 (CTO 3 MUST-fold pin + token-budget + constitution-placement)
+- **Date:** 2026-05-23 (v1.0 → v1.1 07:20 UTC)
 - **Author:** CoS (autonomous per Captain msg 2605, 2607, 2612)
-- **Status:** DRAFT — ready for CTO tech review + Captain execution
+- **Status:** READY for CTO re-confirm + Captain execution
+
+**v1.1 changelog — CTO MUST-fold findings (msg 2026-05-23 06:58 UTC):**
+- **(1) Pin screenpipe-mcp version (5.1).** Same discipline as cua-driver (Spec 058 1.6). `npx -y screenpipe-mcp@<pinned-tag>` not `@latest`. Record pinned tag at `cabinet/config/screenpipe-mcp-version.txt`.
+- **(2) Daily-digest Sonnet token budget (5.4).** 24h cross-reference of screenpipe activity + officer session JSONLs likely exceeds Sonnet 4.6 200K context window without pre-aggregation. Add pre-aggregation step: group + summarize per-app per-hour BEFORE handing to Sonnet, so Sonnet receives an aggregated digest input not raw events.
+- **(3) Constitution-clause placement: framework, not preset.** Same bundled ratification as Phase 3 + Phase 4. Phase 5 doesn't add a new constitution clause (digest cadence + Screenpipe scope are config not constitution) so this is a no-op for this spec — noted for cross-spec coherence.
 - **Parent directive:** Captain Mac Mini Directive msg 2599 §Phase 5 ("Screenpipe integration — 1 day")
 - **Predecessors:** Spec 057-061 (Phases 0-4)
 - **Successor:** Spec 063 (Phase 6 — Cabinet worktrees + adapter contract)
@@ -34,13 +39,18 @@ Phase 5 decomposes into **9 checkpoints**. Directive estimates 1 day; realistic 
 
 - **Pre-conditions:** Screenpipe installed + permissioned (Spec 058 1.7 + 1.8).
 - **Actions:**
-  1. Edit `.mcp.json`:
+  1. **Pin screenpipe-mcp version (v1.1 CTO #1):** resolve latest stable tag via npm + record:
+     ```bash
+     PINNED_TAG=$(npm view screenpipe-mcp version)
+     echo "$PINNED_TAG" > cabinet/config/screenpipe-mcp-version.txt
+     ```
+  2. Edit `.mcp.json` using pinned tag (NOT `@latest`):
      ```json
      {
        "mcpServers": {
          "screenpipe": {
            "command": "npx",
-           "args": ["-y", "screenpipe-mcp@latest"],
+           "args": ["-y", "screenpipe-mcp@<PINNED_TAG>"],
            "transport": "stdio"
          }
        }
@@ -88,19 +98,21 @@ Phase 5 decomposes into **9 checkpoints**. Directive estimates 1 day; realistic 
 
 - **Pre-conditions:** 5.3 PASS.
 - **Actions:**
-  1. Write `cabinet/cron/daily-digest.sh`:
+  1. Write `cabinet/cron/daily-digest.sh` with PRE-AGGREGATION (v1.1 CTO #2 — Sonnet 200K budget):
      ```bash
      #!/bin/bash
      # daily-digest.sh — Captain morning digest at 08:00 local time
-     # Aggregates last 24h of screenpipe activity + officer session JSONLs
-     # → Claude Sonnet 4.6 generates reader-friendly digest → HQ group
+     # Pre-aggregates 24h activity + session JSONLs BEFORE Sonnet to fit 200K context.
 
      set -euo pipefail
 
-     # Step 1: Query screenpipe MCP for last 24h activity grouped by app + window title
-     # Step 2: Cross-reference with ~/.claude/projects/*.jsonl officer session logs
-     # Step 3: Hand consolidated raw events to Claude Sonnet 4.6 with digest prompt
-     # Step 4: Post result to HQ group via send-to-group.sh
+     # Step 1: Query screenpipe MCP for last 24h, aggregated per-app per-hour
+     #         (NOT raw events — 24h × 6 apps × hourly = ~144 buckets, fits comfortably)
+     # Step 2: Aggregate officer session JSONLs per-officer per-hour (tool call counts,
+     #         file-modify counts, no raw content) — keeps under 50K tokens total
+     # Step 3: Hand AGGREGATED summary (not raw) to Claude Sonnet 4.6 with digest prompt
+     #         → reader-friendly output
+     # Step 4: Post to HQ group via send-to-group.sh
      ```
   2. Use the Captain reader-friendly tone (msg 2583): plain language, no IDs/jargon.
   3. Include opt-out path: `~/.cabinet/digest-disabled` flag file checked first.
