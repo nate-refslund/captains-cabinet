@@ -1,0 +1,35 @@
+{
+  "_comment": "Mac native .mcp.json — paths + Redis DNS resolved for Mac. Reviewer audit 2026-05-23 caught Docker DNS (redis://redis:6379) + /opt/ paths in master .mcp.json. start-officer-mac.sh will copy this to .mcp.json on first run (and deep-merge with instance/agents/<officer>/mcp.json if drives_computer=true).",
+  "mcpServers": {
+    "notion": {
+      "command": "npx",
+      "args": ["-y", "@notionhq/notion-mcp-server"],
+      "env": { "NOTION_TOKEN": "${NOTION_API_KEY}" }
+    },
+    "neon": {
+      "command": "bash",
+      "args": ["-c", "npx -y @neondatabase/mcp-server-neon start $NEON_API_KEY"],
+      "env": { "NEON_API_KEY": "${NEON_API_KEY}" }
+    },
+    "linear": {
+      "command": "npx",
+      "args": ["-y", "@mseep/linear-mcp"],
+      "env": { "LINEAR_API_KEY": "${LINEAR_API_KEY}" }
+    },
+    "vercel": {
+      "command": "npx",
+      "args": ["-y", "@robinson_ai_systems/vercel-mcp"],
+      "env": { "VERCEL_TOKEN": "${VERCEL_API_KEY}" }
+    },
+    "redis-trigger-channel": {
+      "command": "bun",
+      "args": ["run", "${HOME}/work/captains-cabinet/cabinet/channels/redis-trigger-channel/index.ts"],
+      "env": { "OFFICER_NAME": "${OFFICER_NAME}", "REDIS_URL": "redis://localhost:6379" }
+    },
+    "library": {
+      "command": "bun",
+      "args": ["run", "${HOME}/work/captains-cabinet/cabinet/channels/library-mcp/index.ts"],
+      "env": { "OFFICER_NAME": "${OFFICER_NAME}" }
+    }
+  }
+}

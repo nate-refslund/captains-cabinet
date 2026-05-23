@@ -28,12 +28,22 @@ mkdir -p "$LOGS_DIR"
 cd "$REPO_ROOT"
 
 # Source .env (TELEGRAM tokens, NEON_CONNECTION_STRING, etc.)
+# Audit-fix 2026-05-23: drop silent 2>/dev/null — surface a WARN to stderr so
+# missing/unreadable .env produces a visible diagnostic in officer.err.log.
 if [ -f "cabinet/.env" ]; then
-  set -a; source cabinet/.env 2>/dev/null; set +a
+  set -a; source cabinet/.env; set +a
+else
+  echo "[WARN] start-officer-mac.sh: cabinet/.env not found at $REPO_ROOT/cabinet/.env — officer will boot without secrets" >&2
 fi
 
-# Assemble runtime constitution + safety + preset (idempotent)
+# Assemble runtime constitution + safety + preset (idempotent).
+# Audit-fix 2026-05-23: capture exit status via PIPESTATUS — `tail` always exits 0.
 bash cabinet/scripts/load-preset.sh 2>&1 | tail -3 >&2
+LOAD_PRESET_RC="${PIPESTATUS[0]}"
+if [ "$LOAD_PRESET_RC" -ne 0 ]; then
+  echo "[ERROR] start-officer-mac.sh: load-preset.sh exited $LOAD_PRESET_RC — runtime constitution may be incomplete" >&2
+  # Don't abort — let officer try to boot anyway, but logged for debug
+fi
 
 # ===========================================================
 # Capability resolution (Spec 060 + Spec 061 capability gates)
@@ -52,20 +62,33 @@ HAS_TELEGRAM=$(read_capability "$OFFICER" "telegram_bot")
 HAS_CUA_DRIVER=$(read_capability "$OFFICER" "drives_computer")
 
 # ===========================================================
-# MCP config — framework .mcp.json + (if drives_computer) overlay
+# MCP config — Mac base + (if drives_computer) overlay
 # ===========================================================
 # Per Spec 061 v1.1 CTO #1 CRITICAL: jq DEEP-MERGE preserving framework mcpServers.
 # Shallow merge would silently overwrite notion/linear/neon/library with overlay-only.
-MERGED_MCP_PATH="/tmp/cabinet-merged-mcp-${OFFICER}.json"
+# Audit-fix 2026-05-23: base is .mcp.json.mac-native (Mac-resolved paths + localhost
+# Redis), NOT .mcp.json (which has Docker DNS + /opt paths from Hetzner). Mac-side
+# always uses the .mac-native base. Audit-fix: umask 077 on /tmp output (secret hygiene).
+MCP_BASE=".mcp.json.mac-native"
+[ ! -f "$MCP_BASE" ] && MCP_BASE=".mcp.json"   # graceful fallback if mac-native variant missing
+
+MERGED_MCP_PATH="$HOME/Library/Caches/cabinet/merged-mcp-${OFFICER}.json"
+mkdir -p "$(dirname "$MERGED_MCP_PATH")"
+
 if [ "$HAS_CUA_DRIVER" = "true" ] && [ -f "instance/agents/$OFFICER/mcp.json" ]; then
-  jq -s '.[0] as $base | .[1] as $overlay
-         | $base * $overlay
-         | .mcpServers = ($base.mcpServers + $overlay.mcpServers)' \
-     .mcp.json "instance/agents/$OFFICER/mcp.json" \
-     > "$MERGED_MCP_PATH"
+  ( umask 077
+    jq -s '.[0] as $base | .[1] as $overlay
+           | $base * $overlay
+           | .mcpServers = ($base.mcpServers + $overlay.mcpServers)' \
+       "$MCP_BASE" "instance/agents/$OFFICER/mcp.json" \
+       > "$MERGED_MCP_PATH"
+  )
   MCP_FLAG="--mcp-config $MERGED_MCP_PATH"
+elif [ "$MCP_BASE" = ".mcp.json.mac-native" ]; then
+  # Mac-native base is the source of truth; pass it explicitly even without overlay
+  MCP_FLAG="--mcp-config $REPO_ROOT/$MCP_BASE"
 else
-  MCP_FLAG=""  # Claude Code reads .mcp.json by default
+  MCP_FLAG=""  # Claude Code reads .mcp.json by default (Hetzner fallback)
 fi
 
 # ===========================================================
@@ -94,6 +117,12 @@ redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" \
 
 # Export OFFICER_NAME for hooks (stop-hook.sh + post-tool-use.sh etc.)
 export OFFICER_NAME="$OFFICER"
+
+# Audit-fix 2026-05-23: per memory feedback_telegram_state_dir.md, each officer
+# needs a distinct TELEGRAM_STATE_DIR or Telegram polling state collides across
+# officers. Linux start-officer.sh sets this at line 280; mirror on Mac.
+export TELEGRAM_STATE_DIR="$HOME/Library/Application Support/cabinet/telegram-state/$OFFICER"
+mkdir -p "$TELEGRAM_STATE_DIR"
 
 # ===========================================================
 # tmux session + claude launch
@@ -134,17 +163,26 @@ done
 # Brief settle
 sleep 2
 
-# Send boot prompt — tells the officer to initialize + announce
-tmux send-keys -t "$SESSION_NAME" "You are $OFFICER. Read your role definition at .claude/agents/$OFFICER.md and your session start checklist. Read your foundation skills in memory/skills/. Read your tier 2 notes in instance/memory/tier2/$OFFICER/. Then announce yourself on the warroom: bash $REPO_ROOT/cabinet/scripts/send-to-group.sh '<b>$OFFICER online (Mac native).</b> Session started. Checking for pending work.' — then check for pending triggers and overdue work immediately." Enter
+# Send boot prompt — tells the officer to initialize + announce.
+# Audit-fix 2026-05-23: use C-m (carriage return) not Enter; same fix as line 127
+# loop. Per master start-officer.sh PROMPT_REGEX block.
+tmux send-keys -t "$SESSION_NAME" "You are $OFFICER. Read your role definition at .claude/agents/$OFFICER.md and your session start checklist. Read your foundation skills in memory/skills/. Read your tier 2 notes in instance/memory/tier2/$OFFICER/. Then announce yourself on the warroom: bash $REPO_ROOT/cabinet/scripts/send-to-group.sh '<b>$OFFICER online (Mac native).</b> Session started. Checking for pending work.' — then check for pending triggers and overdue work immediately." C-m
 
 echo "start-officer-mac.sh: $OFFICER started in tmux session $SESSION_NAME (model=$MODEL, telegram=$HAS_TELEGRAM, cua_driver=$HAS_CUA_DRIVER)"
 
-# LaunchAgent keeps the script alive (KeepAlive) — wait forever so launchd
-# treats this as a long-running process. Without this, launchd KeepAlive
-# loop would restart immediately on script exit.
-while true; do
-  # Re-stamp heartbeat every 10 min (TTL is 15 min so we have margin)
-  sleep 600
-  redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" \
-    SETEX "cabinet:heartbeat:$OFFICER" 900 "$(date -u +%s)" > /dev/null 2>&1 || true
-done
+# Audit-fix 2026-05-23: drop infinite while-true heartbeat loop. The in-session
+# claude tool-use hook (stop-hook.sh + post-tool-use.sh) already writes heartbeat
+# on every officer action — that's the canonical writer. A second writer here
+# would double-stamp + mask the case where the in-session writer is broken.
+# LaunchAgent KeepAlive needs the wrapper to stay alive: tmux session keeps
+# its process alive in the background, so wait on the tmux session ID.
+TMUX_SESSION_PID=$(tmux display-message -p -t "$SESSION_NAME" "#{pid}" 2>/dev/null)
+if [ -n "$TMUX_SESSION_PID" ]; then
+  # Wait for the tmux session process to exit (which it shouldn't unless
+  # claude inside crashes — at which point we want LaunchAgent KeepAlive to
+  # restart us, so exit non-zero).
+  while kill -0 "$TMUX_SESSION_PID" 2>/dev/null; do
+    sleep 30
+  done
+  exit 1   # tmux session died — let KeepAlive restart us
+fi
