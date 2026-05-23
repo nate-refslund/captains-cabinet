@@ -1,9 +1,22 @@
 # Spec 058 — Mac Migration Phase 1 Plan (Mac Base Setup)
 
-- **Version:** v1.1 (CTO tech review folded — install mechanics corrected)
-- **Date:** 2026-05-22 (v1.0 23:02 UTC) → 2026-05-23 (v1.1 05:10 UTC)
+- **Version:** v1.2 (CRO F2 TCC code-signing trap fold — CRITICAL pre-Phase 4 substrate dependency)
+- **Date:** 2026-05-22 (v1.0 23:02) → 2026-05-23 (v1.1 05:10 → v1.2 08:05 UTC)
 - **Author:** CoS (autonomous per Captain msg 2605+2607)
-- **Status:** READY for Captain execution (v1.0 had bugs CTO caught — DO NOT execute v1.0 against the Mac)
+- **Status:** READY for Captain execution (v1.0 had bugs CTO caught — DO NOT execute v1.0 against the Mac). v1.2 adds code-signing + notarization pre-flight.
+
+**v1.2 changelog — CRO Finding F2 (Mac-native pre-staging brief 2026-05-23):**
+- **(1) TCC code-signing trap (NEW Checkpoint 1.10).** macOS Transparency-Consent-Control keys permissions to **code-signing identifier**, NOT binary path. Bare-name binaries (e.g. unsigned `claude` from npm) don't persist permissions across launches → customer Mac restart loses Accessibility/Screen-Recording consent → repeating permission prompts = install-first-impression disaster. Phase 4 cua-driver depends on this. Fix in Phase 1 BEFORE Phase 4 ships:
+  - Apple Developer Program already enrolled (Captain msg 2576) — use that cert
+  - Pre-flight: install `Developer ID Application` certificate via Apple Developer portal → import into Keychain
+  - For each officer-spawning binary (Claude Code wrapper + cua-driver + tmux launcher), wrap into a code-signed app bundle with reverse-DNS Bundle ID (`dk.refslund.cabinet.officer.{cos,cto,cpo,cro,coo}`)
+  - Notarize via `xcrun notarytool` (one-time per binary version)
+  - Verify TCC permission persists across reboot before Phase 4
+- **(2) macOS Sequoia → 26 Tahoe TCC cache regression (NEW sub-step in 1.8).** In-process caches don't invalidate when TCC DB rolls forward during OS update. Add officer-restart-on-OS-update protocol: cron-like LaunchAgent watching for `sw_vers -productVersion` change → reboot officers when major OS version bumps. Folds into Spec 064 Phase 7 observability later.
+- **Predecessor:** v1.1 stands; v1.2 is purely additive (1.10 new checkpoint + 1.8 sub-step).
+- **CRO trigger:** 2026-05-23 07:16 UTC pre-staging brief shared/interfaces/research-briefs/2026-05-23-mac-native-cabinet-pre-staging.md F2.
+
+**v1.1 changelog — CTO 7 MUST-fold + 1 SHOULD-fold + 1 NIT findings absorbed (msg 2026-05-22 23:08 UTC):**
 
 **v1.1 changelog — CTO 7 MUST-fold + 1 SHOULD-fold + 1 NIT findings absorbed (msg 2026-05-22 23:08 UTC):**
 - **(1) `claude-code` NOT a Homebrew formula.** Anthropic distributes via npm. Checkpoint 1.4 swapped: `npm install -g @anthropic-ai/claude-code`. Node prerequisite added (#4).

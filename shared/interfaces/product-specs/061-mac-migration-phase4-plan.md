@@ -1,9 +1,16 @@
 # Spec 061 — Mac Migration Phase 4 Plan (cua-driver + Lead Enforcement)
 
-- **Version:** v1.1 (CTO 4 MUST-fold MCP-merge + permission + constitution-placement)
-- **Date:** 2026-05-23 (v1.0 → v1.1 07:20 UTC)
+- **Version:** v1.2 (CRO F2 TCC code-signing dependency surfaced)
+- **Date:** 2026-05-23 (v1.0 → v1.1 07:20 → v1.2 08:05 UTC)
 - **Author:** CoS (autonomous per Captain msg 2605, 2607, 2612)
-- **Status:** READY for CTO re-confirm + Captain execution
+- **Status:** READY for CTO re-confirm + Captain execution. **Phase 4 BLOCKED until Spec 058 v1.2 Checkpoint 1.10 (TCC code-signing) is complete.**
+
+**v1.2 changelog — CRO Finding F2 dependency (Mac-native pre-staging brief 2026-05-23):**
+- **(1) Pre-condition: code-signed + notarized officer binaries (Spec 058 v1.2 Checkpoint 1.10).** Without code-signing, TCC permissions (Accessibility + Screen Recording) don't persist across launches → cua-driver re-prompts on every restart → unusable. Phase 4 4.5 + 4.6 explicitly require Spec 058 1.10 PASS as a hard pre-condition. **Stop-the-line gate added.**
+- **(2) cua-driver re-grant retry tolerates ONE permission loss but not recurring loss.** v1.1 Action #2 added a re-grant check + retry; v1.2 clarifies that recurring loss means code-signing is broken (NOT a retry problem) → escalate to Spec 058 1.10 rework.
+- **CRO trigger:** 2026-05-23 07:16 UTC pre-staging brief F2.
+
+**v1.1 changelog — CTO MUST-fold findings (msg 2026-05-23 06:58 UTC):**
 
 **v1.1 changelog — CTO MUST-fold findings (msg 2026-05-23 06:58 UTC):**
 - **(1) HIGHEST PRIORITY: 4.3 jq MCP-merge strategy.** v1.0 used `jq -s '.[0] * .[1]'` which is SHALLOW merge — silently OVERWRITES framework `mcpServers` (loses notion + linear + neon + library + etc.) with CoS overlay (only cua-driver). v1.1 uses explicit deep-merge preserving framework MCPs:
