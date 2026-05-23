@@ -209,9 +209,18 @@ if [ "${CABINET_STOP_GUARD_DISABLED:-0}" != "1" ] \
   CURRENT_CTX_PCT=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HGET "cabinet:cost:tokens:$OFFICER" last_context_pct 2>/dev/null)
   [[ "$CURRENT_CTX_PCT" =~ ^[0-9]+$ ]] || CURRENT_CTX_PCT=0
 
-  # Pending-work signals
-  PENDING_TRIGGERS=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" XLEN "cabinet:triggers:$OFFICER" 2>/dev/null)
-  [[ "$PENDING_TRIGGERS" =~ ^[0-9]+$ ]] || PENDING_TRIGGERS=0
+  # Pending-work signals — use consumer-group XPENDING via triggers.sh trigger_count.
+  # XLEN counts total stream entries (incl. ACK'd until XTRIM); XPENDING returns
+  # only delivered-but-not-ACK'd, which is the actual "work remaining" signal.
+  # (CPO 2026-05-23 07:34 UTC caught XLEN false-positive when stream was 222 +
+  # unread was 0 due to active ACK'ing on long-running session.)
+  PENDING_TRIGGERS=0
+  if [ -r /opt/founders-cabinet/cabinet/scripts/lib/triggers.sh ]; then
+    # shellcheck source=/dev/null
+    . /opt/founders-cabinet/cabinet/scripts/lib/triggers.sh 2>/dev/null
+    PENDING_TRIGGERS=$(trigger_count "$OFFICER" 2>/dev/null | grep -o '[0-9]*' | head -1)
+    [[ "$PENDING_TRIGGERS" =~ ^[0-9]+$ ]] || PENDING_TRIGGERS=0
+  fi
 
   if [ "$CURRENT_CTX_PCT" -ge "$GUARD_THRESHOLD" ] 2>/dev/null \
      && [ "$PENDING_TRIGGERS" -gt 0 ] 2>/dev/null; then
