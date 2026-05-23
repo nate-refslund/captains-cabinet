@@ -10,4 +10,8 @@
 
 MESSAGE="${1:?Usage: send-to-group.sh \"message\"}"
 
-exec bash /opt/founders-cabinet/cabinet/scripts/send-to-warroom.sh sensed "$MESSAGE"
+# Resolve sibling script path via $BASH_SOURCE so this works on Hetzner Docker
+# (/opt/founders-cabinet/) AND on Mac native (~/work/captains-cabinet/) without
+# branching on host. Reviewer audit caught hardcoded Docker path 2026-05-23.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec bash "$SCRIPT_DIR/send-to-warroom.sh" sensed "$MESSAGE"
