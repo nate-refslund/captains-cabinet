@@ -323,14 +323,20 @@ tmux send-keys -t "cabinet:$WINDOW" \
   #      prepare-claude-state.sh on container start, but handled defensively
   #      in case the .claude.json template missed this officer's path
   PANE="cabinet:$WINDOW"
-  PROMPT_REGEX="(I am using this for local development|Continue (as-is|conversation)|Summari[sz]e|Trust the (files|hooks)|Do you trust|Choose your theme|Welcome to Claude)"
+  # Extended 2026-05-23 per task #136 — settings.json edit prompts wedge officers
+  # (see feedback_unstick_settings_edit_prompt memory). Two changes:
+  # (1) regex now matches settings.json + claude.json edit/allow prompts
+  # (2) all auto-respond keystrokes use C-m (carriage return) instead of Enter
+  #     keysym — some Claude Code TUI prompts require \r not \n.
+  PROMPT_REGEX="(I am using this for local development|Continue (as-is|conversation)|Summari[sz]e|Trust the (files|hooks)|Do you trust|Choose your theme|Welcome to Claude|edit .*\.claude/settings\.json|allow .*\.claude/settings\.json|Edit .*settings\.json|update .*\.claude/settings|Allow Claude to (edit|modify))"
   DEADLINE=$(($(date +%s) + 45))   # 45s budget for all startup prompts
 
   while [ $(date +%s) -lt $DEADLINE ]; do
     sleep 2
     pane_output=$(tmux capture-pane -t "$PANE" -p 2>/dev/null | tail -30)
     if echo "$pane_output" | grep -qE "$PROMPT_REGEX"; then
-      tmux send-keys -t "$PANE" Enter
+      # C-m (carriage return) instead of Enter — some TUI prompts require \r
+      tmux send-keys -t "$PANE" C-m
       sleep 1   # let the UI redraw before checking again
     elif echo "$pane_output" | grep -qE "(Try.*for new ideas|tab.*complete|Bypassing Permissions|^\s*>\s*$)"; then
       # Stable prompt indicators — Claude Code is ready for user input
