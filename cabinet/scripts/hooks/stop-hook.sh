@@ -181,5 +181,60 @@ SQLEOF
   fi
 fi
 
+# ============================================================
+# 4. SELF-STOP-ON-CONTEXT GUARD (Captain pattern A14 — msg 2605/2612/2614)
+# ============================================================
+# Captain has corrected this 3 times: officers self-stopping during long runs
+# because "context window seems full" — even though pre/post-compact hooks
+# preserve state across auto-compaction. The pattern is BEHAVIORAL (encoded
+# in A14) but A14 alone doesn't catch it in the moment. This guard makes
+# the fix STRUCTURAL: when an officer tries to stop with context high AND
+# pending work signals, the hook injects a continuation reminder back into
+# the conversation via Claude Code's Stop-hook decision:block protocol.
+#
+# Disable with: CABINET_STOP_GUARD_DISABLED=1
+# Tune threshold (default 70): CABINET_STOP_GUARD_CTX_PCT=80
+# Tune block cap per session (default 5): CABINET_STOP_GUARD_MAX_BLOCKS=8
+# Test-mode short-circuit: CABINET_HOOK_TEST_MODE=1 (skips block)
+
+if [ "${CABINET_STOP_GUARD_DISABLED:-0}" != "1" ] \
+   && [ "${CABINET_HOOK_TEST_MODE:-0}" != "1" ] \
+   && [ "$OFFICER" != "unknown" ]; then
+
+  GUARD_THRESHOLD=${CABINET_STOP_GUARD_CTX_PCT:-70}
+  GUARD_MAX_BLOCKS=${CABINET_STOP_GUARD_MAX_BLOCKS:-5}
+
+  # Pull the freshly-stored context_pct from the cost-tracking HSET above.
+  # (If no LAST_ENTRY this turn, fall back to whatever was last stored.)
+  CURRENT_CTX_PCT=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HGET "cabinet:cost:tokens:$OFFICER" last_context_pct 2>/dev/null)
+  [[ "$CURRENT_CTX_PCT" =~ ^[0-9]+$ ]] || CURRENT_CTX_PCT=0
+
+  # Pending-work signals
+  PENDING_TRIGGERS=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" XLEN "cabinet:triggers:$OFFICER" 2>/dev/null)
+  [[ "$PENDING_TRIGGERS" =~ ^[0-9]+$ ]] || PENDING_TRIGGERS=0
+
+  if [ "$CURRENT_CTX_PCT" -ge "$GUARD_THRESHOLD" ] 2>/dev/null \
+     && [ "$PENDING_TRIGGERS" -gt 0 ] 2>/dev/null; then
+
+    # Session-scoped block counter (avoid infinite loop if pending stays > 0)
+    SESSION_BLOCK_KEY="cabinet:stop-guard:blocks:${OFFICER}:${SESSION_ID:-nosession}"
+    BLOCKS_SO_FAR=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET "$SESSION_BLOCK_KEY" 2>/dev/null)
+    [[ "$BLOCKS_SO_FAR" =~ ^[0-9]+$ ]] || BLOCKS_SO_FAR=0
+
+    if [ "$BLOCKS_SO_FAR" -lt "$GUARD_MAX_BLOCKS" ] 2>/dev/null; then
+      # Increment + TTL 24h (sessions don't outlive a day)
+      redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" INCR "$SESSION_BLOCK_KEY" > /dev/null 2>&1
+      redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" EXPIRE "$SESSION_BLOCK_KEY" 86400 > /dev/null 2>&1
+
+      # Emit decision:block JSON to stdout (Claude Code Stop-hook protocol).
+      # Reason gets injected as a system message + model continues.
+      REASON="Context is at ${CURRENT_CTX_PCT}% with ${PENDING_TRIGGERS} pending triggers in your stream. The pre-compact + post-compact hooks already preserve state across auto-compaction — compaction is a feature, not a stop signal. Per A14 (don't self-stop on capacity concerns) + Captain msg 2614: continue processing pending work. If context fills, auto-compaction fires and your state survives via the snapshot in instance/memory/tier2/${OFFICER}/.session-state.json. (Block ${BLOCKS_SO_FAR}/${GUARD_MAX_BLOCKS} for session — past this cap the hook allows the stop in case something is genuinely stuck.)"
+
+      jq -n --arg r "$REASON" '{decision: "block", reason: $r}'
+      exit 0
+    fi
+  fi
+fi
+
 # Always exit 0
 exit 0
