@@ -1,9 +1,20 @@
 # Spec 058 — Mac Migration Phase 1 Plan (Mac Base Setup)
 
-- **Version:** v1.0
-- **Date:** 2026-05-22
+- **Version:** v1.1 (CTO tech review folded — install mechanics corrected)
+- **Date:** 2026-05-22 (v1.0 23:02 UTC) → 2026-05-23 (v1.1 05:10 UTC)
 - **Author:** CoS (autonomous per Captain msg 2605+2607)
-- **Status:** DRAFT — ready for Captain execution
+- **Status:** READY for Captain execution (v1.0 had bugs CTO caught — DO NOT execute v1.0 against the Mac)
+
+**v1.1 changelog — CTO 7 MUST-fold + 1 SHOULD-fold + 1 NIT findings absorbed (msg 2026-05-22 23:08 UTC):**
+- **(1) `claude-code` NOT a Homebrew formula.** Anthropic distributes via npm. Checkpoint 1.4 swapped: `npm install -g @anthropic-ai/claude-code`. Node prerequisite added (#4).
+- **(2) `postgresql@17` is keg-only.** Added PATH export to `~/.zprofile` + explicit `pg_dump --version` verification ensuring 17.x not 16.x wins.
+- **(3) `neonctl` is npm-only**, not Homebrew. Moved to `npm install -g neonctl` after node.
+- **(4) `node` added** to 1.4 brew formula list (prerequisite for #1 + #3).
+- **(5) macOS Remote Login (SSH) off by default.** New sub-step in 1.9 enables `sudo systemsetup -setremotelogin on` BEFORE Tailscale SSH verification.
+- **(6) Redis durability.** New sub-step in 1.5 enables `appendonly yes` in `/opt/homebrew/etc/redis.conf` for AOF persistence; reboot test verifies survival.
+- **(7) `apcupsd` macOS path clarified.** Homebrew formula; alternative `nut` if UPS doesn't enumerate.
+- **(SHOULD-fold) gh auth ordering.** `gh auth login` moved into 1.4 right after `brew install gh` since 1.6 cua-driver pin uses `gh release list`.
+- **(NIT) permission-grant simplification.** Held — over-up-front grants vs trigger-by-app is fine.
 - **Parent directive:** Captain Mac Mini Directive msg 2599 §Phase 1
 - **Predecessor:** Spec 057 (Phase 0 plan) — COMPLETE 2026-05-22 22:59 UTC
 - **Spec class:** Migration phase plan
@@ -78,42 +89,71 @@ Phase 1 decomposes into **10 checkpoints**. Most need Captain's hands at the Mac
 - **Rollback:** `sudo pmset -a sleep 1 displaysleep 10 disksleep 10 powernap 1 autorestart 0 wake_on_lan 0` restores defaults.
 - **Effort:** 2 min.
 
-### Checkpoint 1.4 — Install Homebrew + core CLI tools
+### Checkpoint 1.4 — Install Homebrew + core CLI tools (v1.1 CTO fold)
 
 - **Pre-conditions:** power management set; Ethernet active.
 - **Actions:**
   1. Install Homebrew: `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"`
-  2. Add brew to PATH per installer instructions (typically `~/.zprofile`)
-  3. Install all CLI tools:
+  2. Add brew to PATH per installer instructions (run the two lines the installer prints, typically appending to `~/.zprofile` and `eval`-ing `shellenv`).
+  3. Install Homebrew CLIs:
      ```bash
-     brew install claude-code redis restic cloudflared tmux jq git gh
-     brew install postgresql@17 neonctl
+     brew install node redis restic cloudflared tmux jq git gh
+     brew install postgresql@17
      brew install --cask tailscale
+     # postgresql@17 is keg-only (CTO #2) — add to PATH explicitly
+     echo 'export PATH="/opt/homebrew/opt/postgresql@17/bin:$PATH"' >> ~/.zprofile
+     source ~/.zprofile
+     ```
+  4. Authenticate `gh` BEFORE 1.6 (CTO SHOULD-fold — 1.6 cua-driver pin uses `gh release list`):
+     ```bash
+     gh auth login --git-protocol https --web
+     ```
+  5. Install npm-distributed CLIs (CTO #1 + #3 — these are NOT Homebrew formulas):
+     ```bash
+     npm install -g @anthropic-ai/claude-code
+     npm install -g neonctl
      ```
 - **Golden eval:**
-  - `claude --version` returns ≥2.1.119 (current stable per cabinet baseline)
+  - `which claude && claude --version` returns ≥2.1.119 (path under npm global, NOT brew)
+  - `which pg_dump && pg_dump --version` returns 17.x with path under `/opt/homebrew/opt/postgresql@17/bin/` (CRITICAL — if it shows 16.x, the PATH didn't apply; re-source `~/.zprofile`)
+  - `which neonctl && neonctl --version` returns (path under npm global)
   - `redis-cli --version` returns ≥7.x
   - `restic version` returns
   - `cloudflared --version` returns
   - `tmux -V` returns
-  - `pg_dump --version` returns 17.x (CRITICAL for Phase 0 deferred work)
-  - `neonctl --version` returns (CRITICAL for Phase 0.3)
-  - `jq --version`, `git --version`, `gh --version` return
-- **Rollback:** `brew uninstall <pkg>` for any that conflict; entire Homebrew uninstall is documented at brew.sh.
-- **Effort:** 30-45 min (depends on download speed).
-- **Note (CoS critical-analysis #2 residual):** pg17 install resolves the Hetzner-side pg_dump version mismatch from Phase 0.2.
+  - `gh auth status` shows logged-in state
+  - `jq --version`, `git --version`, `node --version`, `npm --version` return
+- **Rollback:** `brew uninstall <pkg>` for brew-installed; `npm uninstall -g @anthropic-ai/claude-code neonctl` for npm-installed; full Homebrew uninstall documented at brew.sh.
+- **Effort:** 30-45 min (download-speed bound).
+- **CTO v1.1 #1+#2+#3+#4 + gh ordering — all folded above.**
 
-### Checkpoint 1.5 — Start Redis as service
+### Checkpoint 1.5 — Start Redis as service with durability (v1.1 CTO #6 fold)
 
 - **Pre-conditions:** redis installed.
 - **Actions:**
-  1. `brew services start redis`
+  1. Enable AOF persistence — Cabinet state would be lost on reboot without this (CTO #6):
+     ```bash
+     CONFIG=/opt/homebrew/etc/redis.conf
+     cp "$CONFIG" "$CONFIG.default"   # backup
+     sed -i '' 's/^appendonly no$/appendonly yes/' "$CONFIG"
+     sed -i '' 's/^# appendfsync everysec$/appendfsync everysec/' "$CONFIG" 2>/dev/null || true
+     grep -E '^appendonly|^appendfsync' "$CONFIG"  # verify
+     ```
+  2. `brew services start redis`
 - **Golden eval:**
   - `redis-cli ping` returns `PONG`
   - `brew services list | grep redis` shows `started`
-  - Reboot the Mac (`sudo reboot`) and verify Redis auto-starts after login.
-- **Rollback:** `brew services stop redis`.
-- **Effort:** 5 min + reboot test.
+  - `redis-cli CONFIG GET appendonly` returns `appendonly yes`
+  - Survives-reboot test:
+    ```bash
+    redis-cli SET migration:phase1:1.5:test "before-reboot"
+    sudo reboot
+    # After auto-login:
+    redis-cli GET migration:phase1:1.5:test  # must return "before-reboot"
+    redis-cli DEL migration:phase1:1.5:test
+    ```
+- **Rollback:** `brew services stop redis`; restore config from `$CONFIG.default`.
+- **Effort:** 10 min + reboot test.
 
 ### Checkpoint 1.6 — Install cua-driver (PINNED VERSION per CoS critical-analysis #7)
 
@@ -163,18 +203,25 @@ Phase 1 decomposes into **10 checkpoints**. Most need Captain's hands at the Mac
 - **Rollback:** Revoke individually in System Settings.
 - **Effort:** 10-15 min.
 
-### Checkpoint 1.9 — Tailscale for remote access
+### Checkpoint 1.9 — Tailscale for remote access (v1.1 CTO #5 — enable SSH first)
 
 - **Pre-conditions:** Tailscale cask installed.
 - **Actions:**
-  1. Launch Tailscale app
-  2. Sign in with your Tailscale account
-  3. Approve the Mac mini in Tailscale admin console
+  1. **Enable macOS Remote Login** — off by default per CTO #5, blocks the SSH verification step:
+     ```bash
+     sudo systemsetup -setremotelogin on
+     sudo systemsetup -getremotelogin  # verify "Remote Login: On"
+     ```
+  2. Launch Tailscale app
+  3. Sign in with your Tailscale account
+  4. Approve the Mac mini in Tailscale admin console
 - **Golden eval:**
+  - `sudo systemsetup -getremotelogin` returns "On"
   - `tailscale status` shows the Mac mini IP
-  - From another device on your Tailnet, `ssh <user>@<mac-tailscale-ip>` connects
-- **Rollback:** Tailscale logout from app.
-- **Effort:** 10 min.
+  - From another device on your Tailnet: `ssh <user>@<mac-tailscale-ip>` connects (the SSH verification CTO #5 unblocks)
+  - CoS can SSH from the Hetzner-side Cabinet via Tailscale to run remaining golden evals (post-1.9 verification automation)
+- **Rollback:** `sudo systemsetup -setremotelogin off`; Tailscale logout from app.
+- **Effort:** 10-15 min.
 
 ### Checkpoint 1.10 — UPS + apcupsd/NUT for graceful shutdown
 
