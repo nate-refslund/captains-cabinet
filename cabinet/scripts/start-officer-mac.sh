@@ -146,12 +146,20 @@ tmux send-keys -t "$SESSION_NAME" "$CLAUDE_CMD" C-m
 # Wait for prompt / settings.json prompts (PROMPT_REGEX from master start-officer.sh)
 # ===========================================================
 PROMPT_REGEX="(I am using this for local development|Continue (as-is|conversation)|Summari[sz]e|Trust the (files|hooks)|Do you trust|Choose your theme|Welcome to Claude|edit .*\.claude/settings\.json|allow .*\.claude/settings\.json|Edit .*settings\.json|update .*\.claude/settings|Allow Claude to (edit|modify))"
+# Stale-session resume prompt (CC added post-2026-05): "1. Resume from summary / 2. Resume full session as-is"
+# Must send "2" + C-m, not just C-m which would select option 1
+SELECT2_REGEX="(Resume from summary|Resume full session as-is)"
 DEADLINE=$(($(date +%s) + 45))
 
 while [ $(date +%s) -lt $DEADLINE ]; do
   sleep 2
   pane_output=$(tmux capture-pane -t "$SESSION_NAME" -p 2>/dev/null | tail -30)
-  if echo "$pane_output" | grep -qE "$PROMPT_REGEX"; then
+  if echo "$pane_output" | grep -qE "$SELECT2_REGEX"; then
+    tmux send-keys -t "$SESSION_NAME" "2"
+    sleep 0.5
+    tmux send-keys -t "$SESSION_NAME" C-m
+    sleep 1
+  elif echo "$pane_output" | grep -qE "$PROMPT_REGEX"; then
     # C-m carriage return (per master start-officer.sh fix)
     tmux send-keys -t "$SESSION_NAME" C-m
     sleep 1

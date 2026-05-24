@@ -314,22 +314,31 @@ tmux send-keys -t "cabinet:$WINDOW" \
   # poll the pane for known prompts and Enter through them, then break out
   # once we see the stable input prompt.
   #
-  # Known prompts we auto-confirm (default = Enter):
+  # Known prompts we auto-confirm:
   #   1. "--dangerously-load-development-channels" warning
-  #      ("I am using this for local development" / "Exit")
-  #   2. Resume conversation prompt when --continue is used
-  #      ("Continue as-is" / "Summarize and continue") — defaults to as-is
-  #   3. Folder/hook trust dialogs — should be pre-suppressed by
-  #      prepare-claude-state.sh on container start, but handled defensively
-  #      in case the .claude.json template missed this officer's path
+  #      ("I am using this for local development" / "Exit") — Enter
+  #   2. Old-style resume prompt when --continue is used
+  #      ("Continue as-is" / "Summarize and continue") — Enter (selects as-is)
+  #   3. Folder/hook trust dialogs — handled defensively
+  #   4. New-style stale-session prompt (CC added post-2026-05):
+  #      "This session is Xh old and Y tokens. 1. Resume from summary
+  #       2. Resume full session as-is  3. Don't ask me again"
+  #      Must send "2" + Enter (not just Enter, which selects option 1)
   PANE="cabinet:$WINDOW"
   PROMPT_REGEX="(I am using this for local development|Continue (as-is|conversation)|Summari[sz]e|Trust the (files|hooks)|Do you trust|Choose your theme|Welcome to Claude)"
+  # Stale-session resume prompt — needs "2" not just Enter
+  SELECT2_REGEX="(Resume from summary|Resume full session as-is)"
   DEADLINE=$(($(date +%s) + 45))   # 45s budget for all startup prompts
 
   while [ $(date +%s) -lt $DEADLINE ]; do
     sleep 2
     pane_output=$(tmux capture-pane -t "$PANE" -p 2>/dev/null | tail -30)
-    if echo "$pane_output" | grep -qE "$PROMPT_REGEX"; then
+    if echo "$pane_output" | grep -qE "$SELECT2_REGEX"; then
+      tmux send-keys -t "$PANE" "2"
+      sleep 0.5
+      tmux send-keys -t "$PANE" Enter
+      sleep 1
+    elif echo "$pane_output" | grep -qE "$PROMPT_REGEX"; then
       tmux send-keys -t "$PANE" Enter
       sleep 1   # let the UI redraw before checking again
     elif echo "$pane_output" | grep -qE "(Try.*for new ideas|tab.*complete|Bypassing Permissions|^\s*>\s*$)"; then
