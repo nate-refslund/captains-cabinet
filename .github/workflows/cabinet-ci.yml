@@ -334,6 +334,14 @@ jobs:
         # CABINET_ERASURE_NO_CHATTR=1 suppresses chattr (no root required in CI).
         run: bash /opt/founders-cabinet/cabinet/tests/test-customer-erasure.sh
 
+      - name: Shell unit tests — install-customer-cabinet.sh (FW-098 / Spec 053 v4.1)
+        # 26 assertions: §A slug-injection guard, §B install-token validation (valid/
+        # missing/non-JWT/expired/missing-claim), §C secret presence + NO value-leak to
+        # stdout, §D dry-run no-mutation, §E --confirm .env injection + chmod 600 +
+        # per-customer TELEGRAM key, §F first-boot ANTHROPIC-absent gate FAIL, §G idempotent.
+        # Hermetic: CABINET_INSTALL_ROOT→mktemp; INSTALL_SKIP_{CLONE,BOOTSTRAP,OFFICERS}=1.
+        run: bash /opt/founders-cabinet/cabinet/tests/test-install-customer-cabinet.sh
+
       - name: Framework backlog drift audit (advisory)
         # Surfaces FW-series entries with Status: Proposed/Paused older than
         # threshold (default: Proposed≥7d, Paused≥14d). Advisory only — exits

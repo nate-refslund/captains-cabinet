@@ -83,13 +83,13 @@ This runbook codifies the 4-hour Day-0 install Nate executes per customer in Pha
 - [ ] Audit DB query: `sqlite3 ~/Library/Application Support/Cabinet/audit.sqlite 'SELECT * FROM officer_actions ORDER BY ts DESC LIMIT 10;'` returns entries.
 - [ ] Test cap pause: temporarily set $0.50/day cap (override-via-CLI), trigger an Opus call, verify cabinet pauses + DM warns customer + auto-resume after officer-bumps-cap.
 - [ ] Restore $50/day cap.
-- [ ] Run erasure dry-run: `bash ~/cabinet/cabinet/scripts/cabinet-wipe.sh --dry-run`; verify signed deletion receipt JSON renders (FW-100).
+- [ ] Run erasure dry-run: `bash ~/cabinet/cabinet/scripts/customer-erasure.sh <customer-slug> --dry-run`; verify the deletion receipt JSON renders (FW-100; Phase-1 receipt is unsigned — signing is Phase-2).
 
 ### 1.7 Handoff briefing (~30 min)
 
 - [ ] Walk customer through dashboard: activity feed, daily spend, audit log viewer, "Check for updates" placeholder (Sparkle ships FW-102).
 - [ ] Explain $50/day cap: what happens at cap, how to extend one-shot, when to consider tier upgrade.
-- [ ] Demo erasure command: customer initiates wipe, sees signed receipt, understands what gets deleted vs preserved.
+- [ ] Demo erasure command (`customer-erasure.sh`): customer sees the deletion receipt (Phase-1 unsigned), understands what gets pseudonymized (audit log) vs deleted vs legal-hold-retained (Stripe billing).
 - [ ] Set escalation expectations: refslund.ai support email + Captain phone for Phase 1 customers; Day-7 + Day-30 check-in scheduled.
 - [ ] Customer countersigns concierge install completion form (FW-100 template).
 
