@@ -304,79 +304,15 @@ tmux send-keys -t "cabinet:$WINDOW" \
   "export $EXPORT_VARS && cd $OFFICER_DIR && $CLAUDE_CMD" \
   Enter
 
-# Wait for Claude Code to initialize, auto-confirm any startup prompts,
-# then send the boot prompt.
+# Wait for Claude Code to initialize, auto-confirm any startup prompts, then
+# send the boot prompt. The prompt-handling + boot-submit logic is shared with
+# start-officer-mac.sh via lib/officer-boot.sh (officer_boot_drive) so a fix
+# lands ONCE for both platforms — see that file for the full rationale.
 (
-  # Smart prompt detection: capture the tmux pane and respond to whichever
-  # startup gates Claude Code shows us. Replaces fragile fixed sleeps —
-  # poll the pane for known prompts and confirm through them, then break out
-  # once we see the stable input prompt.
-  #
-  # Known prompts we auto-confirm (all via C-m carriage return — Enter does
-  # not reliably register on cold CC sessions; see boot-prompt submit below):
-  #   1. "--dangerously-load-development-channels" warning
-  #      ("I am using this for local development" / "Exit") — C-m (option 1)
-  #   2. Old-style resume prompt when --continue is used
-  #      ("Continue as-is" / "Summarize and continue") — C-m (selects as-is)
-  #   3. Folder/hook trust dialogs — handled defensively
-  #   4. New-style stale-session prompt (CC added post-2026-05):
-  #      "This session is Xh old and Y tokens. 1. Resume from summary
-  #       2. Resume full session as-is  3. Don't ask me again"
-  #      Send "2" + C-m → "Resume full session as-is" (Captain msg 2726
-  #      2026-05-24: keep full context; Opus 4.7's 1M window has headroom
-  #      and auto-compact carries context cleanly into the new session).
-  #
-  # DEADLINE is 120s (was 45s): cold Opus 4.7 starts load slower, and the
-  # stale-session prompt can appear well past 45s — the old budget timed out
-  # before the prompt rendered, leaking it to the Captain (msgs 2718-2726).
-  PANE="cabinet:$WINDOW"
-  PROMPT_REGEX="(I am using this for local development|Continue (as-is|conversation)|Summari[sz]e|Trust the (files|hooks)|Do you trust|Choose your theme|Welcome to Claude)"
-  # Stale-session resume prompt — send "2" (resume full session as-is)
-  SELECT2_REGEX="(Resume from summary|Resume full session as-is)"
-  STABLE_REGEX="(Try.*for new ideas|tab.*complete|Bypassing Permissions|esc to interrupt|^[[:space:]]*>[[:space:]]*$)"
-  DEADLINE=$(($(date +%s) + 120))
-
-  while [ $(date +%s) -lt $DEADLINE ]; do
-    sleep 2
-    # Strip blank/whitespace-only lines BEFORE tail: Claude Code renders modal
-    # startup prompts (dev-channel warning, stale-session resume) at the TOP of
-    # the pane and pads the rest of the terminal height with blank lines. A raw
-    # `tail -30` on a 57-row pane then captures only the blank padding and never
-    # sees the menu — so the handler never dismissed it (Captain msgs 2718-2726;
-    # proven 2026-05-24: tail-30 NO-MATCH vs strip-blank+tail-40 MATCH). This was
-    # intermittent (depended on how much non-blank content was already on screen),
-    # which is why some officers came up clean and others stuck.
-    pane_output=$(tmux capture-pane -t "$PANE" -p 2>/dev/null | grep -v '^[[:space:]]*$' | tail -40)
-    if echo "$pane_output" | grep -qE "$SELECT2_REGEX"; then
-      tmux send-keys -t "$PANE" "2"
-      sleep 0.5
-      tmux send-keys -t "$PANE" C-m
-      sleep 1
-    elif echo "$pane_output" | grep -qE "$PROMPT_REGEX"; then
-      tmux send-keys -t "$PANE" C-m
-      sleep 1   # let the UI redraw before checking again
-    elif echo "$pane_output" | grep -qE "$STABLE_REGEX"; then
-      # Stable prompt indicators — Claude Code is ready for user input
-      break
-    fi
-  done
-
-  # Brief settle window before sending the boot prompt
-  sleep 2
-
-  # Send boot prompt — tells the officer to initialize and announce.
-  # Submit the text, then C-m separately. CC sometimes leaves typed text in
-  # the input buffer unsubmitted (Captain msgs 2718/2724 — "prompt kept but
-  # not sent"); verify by checking for "esc to interrupt" (only shown while
-  # CC is actively processing) and re-send C-m once if it didn't register.
-  tmux send-keys -t "$PANE" "You are $OFFICER. Read your role definition at .claude/agents/$OFFICER.md and your session start checklist. Read your foundation skills in memory/skills/. Read your tier 2 notes in instance/memory/tier2/$OFFICER/. Then announce yourself on the warroom: bash /opt/founders-cabinet/cabinet/scripts/send-to-group.sh '<b>$OFFICER online.</b> Session started. Checking for pending work.' — then check for pending triggers and overdue work immediately."
-  sleep 0.5
-  tmux send-keys -t "$PANE" C-m
-  sleep 3
-  if ! tmux capture-pane -t "$PANE" -p 2>/dev/null | grep -v '^[[:space:]]*$' | tail -6 | grep -q "esc to interrupt"; then
-    tmux send-keys -t "$PANE" C-m   # boot prompt didn't submit — nudge once
-  fi
-
+  # shellcheck source=lib/officer-boot.sh
+  source /opt/founders-cabinet/cabinet/scripts/lib/officer-boot.sh
+  BOOT_PROMPT="You are $OFFICER. Read your role definition at .claude/agents/$OFFICER.md and your session start checklist. Read your foundation skills in memory/skills/. Read your tier 2 notes in instance/memory/tier2/$OFFICER/. Then announce yourself on the warroom: bash /opt/founders-cabinet/cabinet/scripts/send-to-group.sh '<b>$OFFICER online.</b> Session started. Checking for pending work.' — then check for pending triggers and overdue work immediately."
+  officer_boot_drive "cabinet:$WINDOW" "$BOOT_PROMPT"
   # No permanent /loop needed — Redis Trigger Channel delivers all triggers
   # and scheduled work instantly. /loop is available for ad-hoc use only.
 ) &
