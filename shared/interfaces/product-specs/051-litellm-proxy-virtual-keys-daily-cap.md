@@ -1,6 +1,8 @@
 # Spec 051: LiteLLM Proxy + Virtual Keys + Per-Cabinet Daily Cap (FW-096 Phase 1 Priority 1)
 
-**Version:** v7 (AC #7 cap-status source: enforcer team-budget, not JSONL re-sum) — v6 superseded
+**Version:** v7.1 (AC #6 producer path-pin to merged FW-096) — v7 superseded
+
+**v7.1 changelog — proxy-audit producer path-pin (CTO FW-097 pre-build cross-spec, 2026-05-24):** CTO flagged that AC #6 + the §audit-log-emission intro said the producer writes `cabinet/logs/proxy-audit/<slug>.jsonl`, but the MERGED FW-096 `audit_logger.py` (ce61fca, L14/L44-47/L55) writes `proxy/logs/proxy-audit/<slug>.jsonl` via the `LITELLM_AUDIT_LOG_ROOT` env (default `<proxy>/logs/proxy-audit/`). If the FW-097 sidecar read the stale `cabinet/logs/` path it would ingest an empty stream. Aligned both 051 sites to the shipped path (code wins — merged + PASS=25) and pinned `LITELLM_AUDIT_LOG_ROOT` as the single shared config the producer writes and FW-097 reads. Clarified the raw per-request PRODUCER stream (`proxy/logs/proxy-audit/`) is distinct from the FW-097 hash-chained SSOT (`proxy/logs/audit/`, Spec 052) — different files by design. Also corrected AC #6 retention "7 years cold" → "5y general / 10y tax-relevant" per Spec 055 v7.3 H4 (msg 2742) stale-figure propagation. Spec 052 v3.2 pins the matching consumer side.
 
 **v7 changelog — dashboard cap-status source corrected (FW-096 PR #99 review, 2026-05-24):** CTO self-finding #1 confirmed against the branch: `audit_logger.py:117` `cap_pct_used = cost_raw / cap_usd × 100` is a **per-request** ratio, explicitly informational (L39-41), NOT cumulative. AC #7 + FW-101 dependency previously sourced the headline cap-status (today's spend, cap-remaining, cap-pct progress bar) from a **proxy-audit JSONL `cost_raw_usd` sum** — which can **drift from the LiteLLM team-budget counter that actually fires the 80%/100% gates** (a dropped/late audit line → bar shows headroom while the customer is 429'd). v7 splits AC #7 by purpose: **headline cap-status reads the LiteLLM team-budget current-spend** (the authoritative enforcer number); **attribution surfaces** (per-officer table, 7-day trend) read the JSONL aggregate. Caught at substrate review BEFORE FW-101 builds the dashboard. Cap-enforcement substrate (FW-096) itself APPROVED unchanged — this is a downstream dashboard-source correction.
 
@@ -113,7 +115,7 @@ Routing logic configurable per officer in `.cabinet/agent-instructions.md → ll
 
 ### Audit log emission (integrates with FW-097)
 
-Every proxy request emits JSONL to `cabinet/logs/proxy-audit/<cabinet-slug>.jsonl` with:
+Every proxy request emits JSONL to `proxy/logs/proxy-audit/<cabinet-slug>.jsonl` (the path the merged FW-096 `audit_logger.py` writes; root configurable via the `LITELLM_AUDIT_LOG_ROOT` env var, default `<proxy>/logs/proxy-audit/`) with:
 
 ```json
 {
@@ -149,7 +151,7 @@ FW-097 substrate consumes this stream for customer audit-trail + retro analytics
 
 5. **Margin enforcement AC** — proxy applies markup configurable in `proxy/config.yaml → margin_pct` per-model. Default markup = 100% (customer pays 2× Anthropic raw cost) per derivable margin math: $50/day cap × 30 = $1500/mo Anthropic raw cost; min revenue 25k DKK ≈ $3500/mo → 133% gross margin pre-other-costs. Markup transparent in audit-log entry (`cost_raw_usd` + `cost_marked_up_usd` + `margin_pct` fields, USD-denominated per CTO #4). Customer dashboard shows `cost_marked_up_usd` AND its FX-converted DKK display (rate-locked at signup, refreshed weekly per CTO #4 per-billing-cycle FX timing). Raw cost is internal.
 
-6. **Audit-log emission AC** — every proxy request produces a JSONL line per schema above to `cabinet/logs/proxy-audit/<cabinet-slug>.jsonl`. Log retained per FW-100 GDPR baseline retention policy (default 90 days hot, 7 years cold archive for billing reconciliation). FW-097 substrate consumes this stream for customer-facing audit-trail surface.
+6. **Audit-log emission AC** — every proxy request produces a JSONL line per schema above to `proxy/logs/proxy-audit/<cabinet-slug>.jsonl`. **Path-pin (FW-096 merged ce61fca):** this producer dir is the single shared config `LITELLM_AUDIT_LOG_ROOT` (default `<proxy>/logs/proxy-audit/`) that the FW-096 `audit_logger.py` writes AND the FW-097 sidecar reads — both MUST resolve the same env var or FW-097 ingests an empty stream. This is the raw per-request PRODUCER stream, distinct from the FW-097 hash-chained SSOT at `proxy/logs/audit/<cabinet-slug>.jsonl` (Spec 052, the consumer's own file — different by design). Log retained per FW-100 GDPR baseline retention policy (default 90 days hot, 5y general / 10y tax-relevant cold per Spec 055 v7.3 H4). FW-097 substrate consumes this stream for the customer-facing audit-trail surface.
 
 7. **Customer dashboard visibility AC** — FW-101 dashboard sources from TWO surfaces, by purpose:
    - **Headline cap-status** (today's spend, cap remaining, cap-pct-used progress bar) reads the **LiteLLM team-budget current-spend** for `team_id=cabinet` (LiteLLM `/team/info` or equivalent) — this is the **authoritative enforcer number** that the 80% (`CAP_APPROACH`/`X-Cap-Warning`) and 100% (`CAP_HIT`/HTTP 429) gates fire on. The progress bar MUST track the same counter that blocks, or the customer sees headroom while being 429'd. **Do NOT derive headline cap-status from a JSONL `cost_raw_usd` sum** — a dropped/late audit line drifts the bar away from the enforcer.
