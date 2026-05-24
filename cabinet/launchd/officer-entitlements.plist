@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  officer-entitlements.plist  (Spec 058 Phase 1, Checkpoint 1.8 Part A)
+
+  Hardened-runtime entitlements for the Node/V8 "claude" binary only. Applied via
+  the codesign "entitlements" flag when signing the claude bundle under hardened
+  runtime. Claude Code runs on Node.js; V8 JIT-compiles JS at runtime, needing
+  writable+executable memory that the hardened runtime blocks by default. Signing
+  claude under hardened runtime without these entitlements crashes it at launch
+  (the classic Node/Electron notarization trap).
+
+  Apply to: claude bundle.   Do NOT apply to: cua-driver (native), tmux (native).
+  screenpipe ships pre-signed and notarized; do not re-wrap it.
+-->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+</dict>
+</plist>
