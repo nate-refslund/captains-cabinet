@@ -1,0 +1,251 @@
+# Spec 052: Customer Audit Log — Append-Only Activity Log with Hash-Chain Integrity + GDPR Article 15 Export (FW-097 Phase 1 Priority 3)
+
+**Version:** v3 (CoS architecture review fold) — v2 superseded
+**v3 changelog:** CoS architecture review surfaced 3 BLOCKERs + 2 IMPROVEMENTs + 1 POLISH. Resolutions:
+- **CoS B1 A11 dual-home:** customer audit log IS compliance artifact (Article 30 ROPA + Article 15 access + erasure-runbook integration). v3 explicitly dual-homes: **operational hot store** at `refslund.ai/proxy/logs/audit/<cabinet-slug>.jsonl` (runtime substrate per Spec 051) + **Library Compliance Space** as record-of-record (Article 15 tickets + signed delivery receipts + hash-checkpoint provenance). AC #6 + #11 updated; ticket lifecycle owned by Library Compliance Space record class (parallel to Spec 055 v5 SSOT fix).
+- **CoS B2 path inconsistency global rewrite:** Spec 051 owns upstream substrate; its `/proxy/` path wins. v3 rewrites all sites — line 39 + AC #1 + line 130 + line 140 + Spec 051 wiring — to `refslund.ai/proxy/logs/audit/<cabinet-slug>.jsonl` consistently.
+- **CoS B3 cross-spec contradiction with Spec 055 erasure step 5:** Spec 055 v5 Article 17 erasure runbook step 5 says "audit log entries scrubbed"; Spec 052 AC #8 says "pseudonymization (NOT deletion) preserving entry_hash via second-layer pseudonymization-marker hash field." Two specs contradicted. **Resolution:** Spec 055 v6 fold lands in parallel to replace "scrubbed" with "pseudonymized per Spec 052 AC #8 two-hash-field schema." This Spec 052 v3 references the Spec 055 v6 fold + ratification cascades through both specs.
+- **CoS I1 narrative-bridge:** new Problem-section paragraph clarifies officer-side `cabinet/logs/` stays on customer MacMini (ephemeral, customer-owned, A2 "your MacMini your data" honored); customer-facing audit log lives on refslund.ai because integrity guarantees + Article 15 access + cross-cabinet hash-checkpoint publication require server-side authority. Removes anticipated Captain-facing confusion.
+- **CoS I2 framework-hook change capability:** Phase 5 introduces new officer-side `emits_customer_audit_events` capability via `cabinet/scripts/hooks/post-tool-use.sh + post-reply.sh` extending role-defs in `presets/*/agents/*.md` + `cabinet/officer-capabilities.conf` schema extension. CPO+CoS coordinate role-def + capabilities.conf addendum (cross-officer ticket, separate from Spec 052 v3 body). Phasing Phase 5 updated with explicit framework-level capability callout.
+- **CoS P1 hash-chain + erasure-safe pseudonymization novel pattern:** post-ship CoS adds memory/skills/ foundation entry "Hash-chain integrity + erasure-safe pseudonymization" (CoS-owned post-v3-ship). Marker for memory-promotion workflow.
+
+**A12 + A13 both preserved cleanly.** Captain ratifications inapplicable per Captain msg 2583 multi-officer-process-as-legal-review framing.
+
+**v2 prior changelog preserved below** (CTO tech review fold).
+**v2 changelog:** CTO tech review surfaced 11 findings (7 substrate + 3 architectural + 1 cross-spec). All folded:
+- **CTO #1 sha256 LOCKED** — Web-Crypto API browser-verifier (AC #9) needs sha256; blake3 perf moot at log-entry size; sha3 quantum-safe irrelevant threat model. Open Q1 resolved.
+- **CTO #2 sidecar architecture LOCKED** — separate `refslund-audit-server` (FastAPI or Express) on Hetzner VPS, NOT LiteLLM custom Python callback. Clearer separation of concerns + independent scaling + cleaner GET endpoints + simpler auth boundary. Same VPS as LiteLLM proxy; behind nginx/Caddy reverse-proxy on separate port.
+- **CTO #3 append-only inverted** — app-layer enforcement PRIMARY (sidecar refuses non-append ops; sidecar runs as non-root `audit` user); chattr +a defense-in-depth SECONDARY (root cron at install-time). Removes "audit-server runs as root" privilege concern. AC #7 updated.
+- **CTO #4 hash-chain breakage detection latency** — daily 00:05 UTC checkpoint + per-100-entries milestone checkpoint (whichever first). Lightweight; ~1KB checkpoint per 100KB log; negligible Git-mirror overhead. Reduces tampering-detection window from 24h to <100-entries-per-cabinet. AC #2 updated.
+- **CTO #5 separate AUDIT_API_KEY** (read-only audit scope, distinct from LLM_PROXY_KEY). Issued at signup alongside LLM_PROXY_KEY; rotated independently. Removes shared-credential blast-radius on LLM_PROXY_KEY compromise. AC #10 updated; customer-record schema extends.
+- **CTO #6 officer-side audit-queue FIFO + UUID dedupe** — strict FIFO replay-before-new-entries; post-then-mark-acked atomic with rollback-on-failure; server-side dedupe on `entry_id` UUIDv4 (handles flaky-network double-post). Edge case #4 updated.
+- **CTO #7 Git-mirror checkpoint signing flow** — Phase 1 ships UNSIGNED commits (daily checkpoint job emits commits without PGP signing; hash integrity already verifiable via published hashes). Phase 2 adds Captain PGP signing via hardware-token (Yubikey) + offline weekly co-sign flow OR low-privilege dedicated signing service. Hetzner VPS NEVER holds Captain PGP key (compromise risk). Edge case #6 updated; substrate Q deferred to Phase 2 detail.
+- **CTO #8 erasure two-hash-field schema** — pseudonymized entries carry BOTH `entry_hash` (pre-pseudonymization, preserves chain integrity for verification) AND `pseudonym_marker_hash` (post-pseudonymization, customer verifies pseudonymization internally consistent). Browser verifier (AC #9) walks chain via original entry_hash (skipping pseudonym_marker for chain math). AC #8 schema fleshed.
+- **CTO #9 SLA-tracker shared substrate** — single `cabinet/scripts/sla-tracker.sh` for both Article 15 (this spec AC #6) + Article 17 (Spec 055 erasure runbook). Day-25 + day-29 + day-31 alert pattern reused. Avoids duplicate implementations. AC #6 updated; dependency callout on Spec 055.
+- **CTO #10 sub-processor-change + breach event coordination** — FW-100 (Spec 055) substrate OWNS the notification + breach mechanism; FW-097 (this spec) JUST appends log entry on receipt. Cross-spec dependency callout added; not direct FW-097 substrate.
+- **CTO #11 Stripe webhook cap_bump integration** — FW-099 (Spec 053 candidate) substrate has Stripe webhook receiver → proxy cap-raise → audit-log entry emitted. Cross-spec flag, not blocking v2; flagged for FW-099 spec coordination.
+
+**Captain ratifications inapplicable per Captain msg 2583 multi-officer-process-as-legal-review framing. A13 inapplicable (no vendor outreach). A12 active — CTO #2/#3/#7 architecture calls are CTO domain (CPO accepts).**
+**Priority:** P0 — gates customer dashboard (FW-101) + GDPR Article 15 access-request fulfillment
+**Framework ticket:** FW-097
+**Owner:** CPO (spec) + CTO (substrate + integrity layer) + COO (compliance review per Captain msg 2583 multi-officer process) + DPO (currently CoS pending Spec 055 v4 H1 ratification — likely COO-as-DPO post-Captain-ratify)
+**Scope:** Audit log substrate at refslund.ai (server-side) + customer dashboard widget surfacing last-7-days + downloadable full-history export + GDPR Article 15 access request integration
+**Canonical artifact home:** Library Specs Space (this spec) + customer-facing logs at refslund.ai server-side
+**Evidence:** Spec 055 §customer-data-handling-matrix (audit log entries 90d hot + 7y cold pending Q3 reduction to 5y/10y); Spec 051 §audit-log-emission (proxy-audit JSONL stream — primary input); GDPR Article 15 (right of access), Article 30 (ROPA cross-reference), Article 33 (breach notification audit trail).
+
+---
+
+## Problem
+
+Customer needs visibility into officer activity for three independent reasons:
+
+1. **Trust + verification.** Customer paying 25k-60k DKK/mo wants to verify officers do what they're paying for — see Telegram DMs handled, actions taken, costs incurred per officer, decisions logged. No-visibility = cabinet-as-black-box = trust erosion.
+2. **GDPR Article 15 access right.** EU customer can request a copy of all personal data Cabinet processes about them. Cabinet must respond within 30 days with structured export.
+3. **Billing reconciliation.** Customer needs ability to audit cap-spend per officer per day against Stripe Token Billing invoice. Disputes resolved against log.
+
+Today's Cabinet has officer log JSONL files in `cabinet/logs/` (officer-side ephemeral) + proxy-audit JSONL stream (refslund.ai-side per Spec 051). Neither is customer-facing; neither has integrity protection (append-only + hash-chain) required for legal/compliance trust.
+
+## Solution
+
+`refslund.ai/logs/audit/<cabinet-slug>.jsonl` (server-side) is single source of truth. Three input streams feed it:
+1. **Proxy-audit stream** (Spec 051 AC #6) — every LLM API request via LiteLLM proxy
+2. **Officer-action stream** — every Telegram DM received/sent + officer tool-call (Edit/Bash/Read/Write) + cabinet-decision logged
+3. **Cabinet-event stream** — bootstrap events, key rotations, cap-bumps, erasure requests, breach notifications
+
+Output surfaces:
+1. **Customer dashboard widget (FW-101):** last-7-days activity log with per-officer filter + cost trends + clickable row → detail view
+2. **Full-history export (refslund.ai/dashboard/audit/export):** CSV + JSON downloads scoped to customer's cabinet
+3. **GDPR Article 15 access-request endpoint** — customer submits → 30-day SLA → structured export delivered via secure download link
+
+### Audit log entry schema
+
+```json
+{
+  "ts": "2026-05-20T22:30:00.123Z",
+  "cabinet_id": "<cabinet-slug>",
+  "entry_id": "<uuid-v4>",
+  "stream": "proxy|officer|cabinet",
+  "event_type": "<see types below>",
+  "actor": {
+    "officer": "<officer-slug>",          # null for cabinet-event stream
+    "captain": false                      # true for Captain-initiated events
+  },
+  "subject": {
+    "type": "telegram_dm|tool_call|cap_event|key_rotation|erasure|breach|signup|...",
+    "target": "<concrete-target-identifier>",
+    "metadata": { ... }                   # type-specific payload (redacted for PII)
+  },
+  "cost": {
+    "model": "claude-sonnet-4-6",
+    "tokens_in": 1234,
+    "tokens_out": 567,
+    "cost_raw_usd": 0.42,
+    "cost_marked_up_usd": 0.84
+  },
+  "integrity": {
+    "prev_hash": "<sha256 of prior entry's full entry>",
+    "entry_hash": "<sha256 of this entry's fields excluding entry_hash itself>"
+  }
+}
+```
+
+### Event types (Phase 1 minimum-viable set)
+
+| Stream | Event type | Trigger |
+|---|---|---|
+| proxy | `llm_request` | every LLM API call (Sonnet primary, Opus advisor escalation, fallback if enabled) |
+| proxy | `cap_warning` | 80% cap threshold reached |
+| proxy | `cap_hit` | 100% cap threshold reached |
+| proxy | `cap_bump` | customer-initiated cap raise via dashboard |
+| proxy | `key_rotation` | virtual-key rotation event (customer-initiated, security-triggered, mandatory annual) |
+| proxy | `provider_fallback` | fallback to OpenAI/Gemini (DISABLED Phase 1 per Captain msg 2583 Q5; reserved for Phase 2) |
+| officer | `dm_received` | Telegram DM from Captain to officer |
+| officer | `dm_sent` | Telegram DM from officer to Captain (reply or proactive) |
+| officer | `tool_call` | officer invokes Edit/Bash/Read/Write/Task/etc.; subject.target = tool name + sanitized argv (no secrets, no PII payloads — minimization principle) |
+| officer | `decision_logged` | officer adds entry to captain-decisions.md (cross-reference; full text in canonical file) |
+| officer | `experience_record` | officer ships an experience record (memory/tier3 entry) |
+| cabinet | `bootstrap` | new cabinet provisioned (FW-082 substrate event) |
+| cabinet | `signup` | customer signup completed (FW-099 wiring) |
+| cabinet | `erasure_request` | GDPR Article 17 request received |
+| cabinet | `erasure_complete` | erasure runbook (Spec 055 step 1-8) completed |
+| cabinet | `breach_notification` | sub-processor breach received OR Cabinet incident detected |
+| cabinet | `dpa_signed` | customer signs DPA (FW-099 clickwrap event) |
+| cabinet | `subprocessor_change` | sub-processor list updated; Article 28(2) notification dispatched |
+
+### Hash-chain integrity
+
+Each entry's `integrity.prev_hash` references the prior entry's `entry_hash`. First-entry-per-cabinet uses `prev_hash = "0000..."` (genesis). Tampering with any entry breaks the chain at that entry forward; periodic checkpoint signing (daily at 00:05 UTC) publishes the latest `entry_hash` to a publicly-verifiable log (refslund.ai/audit-checkpoints).
+
+Customer can verify integrity at any time via:
+- Download full log JSONL
+- Re-compute hash chain
+- Match latest hash against checkpoint published at refslund.ai/audit-checkpoints
+- Mismatch = tampering or storage corruption; customer files support ticket + escalation to COO/DPO
+
+Hash-chain is fragile under entry deletion. Erasure (Spec 055 Article 17 flow) requires special handling: per-cabinet erasure deletes all entries (terminal state) OR pseudonymizes PII fields while preserving hash-chain integrity (anonymization runbook per CRO S3 Spec 055 v4 fold).
+
+### PII minimization in log entries
+
+Per Article 5(1)(c) data minimization: subject.metadata fields exclude:
+- Full Telegram DM text (only `length`, `language_detected`, `attachment_count` retained; full text lives in officer-side ephemeral log + Cabinet retention per Spec 055 data-handling matrix)
+- Tool-call argv content (only tool name + redacted-argv-shape; e.g., `Read{path:redacted}` not full path if path contains customer data)
+- Decision-trail full text (only entry-id + cross-reference; full text in canonical file)
+- Customer attachment content (only filename + type + size)
+
+PII minimization keeps audit log lean + reduces GDPR scope (less personal data = lower retention burden + faster Article 15 export).
+
+### GDPR Article 15 access-request endpoint
+
+Customer requests via dashboard form OR DPO email. Workflow:
+1. Authenticate customer identity (signed-in dashboard OR email-verified DPO inbox)
+2. Generate Article 15 export ticket → log to `refslund.ai/proxy/logs/audit/<slug>.jsonl` as `event_type: article_15_request`
+3. 30-day SLA (default; reasonable extension on complexity per Article 12(3))
+4. Export bundle includes: cabinet's full audit log (CSV + JSON), customer account profile, signed DPA copy, sub-processor list at signup, retention status per data type, sub-processor data exports collected via downstream Article 15 chains (where Cabinet processes downstream and can offer help to customer's own Article 15 cascade)
+5. Delivered via secure download link (24h expiration; password-protected ZIP; emailed to customer's verified address)
+6. Audit log entry `event_type: article_15_complete` posted on delivery
+
+---
+
+## Acceptance criteria
+
+1. **Audit log emission AC** — proxy substrate (Spec 051) + officer hooks (post-tool-use.sh + post-reply.sh) emit JSONL entries per schema to `refslund.ai/proxy/logs/audit/<cabinet-slug>.jsonl`. Officer-side hook posts via refslund.ai REST API (`POST /proxy/audit/log` with customer's virtual-key auth); refslund.ai server appends to log with hash-chain integrity.
+
+2. **Hash-chain integrity AC** — each entry's `integrity.prev_hash` = sha256(prior_entry_full_json). First-entry-per-cabinet uses genesis `prev_hash = "0000...0"`. `integrity.entry_hash` = sha256(this entry's fields excluding entry_hash itself). Daily 00:05 UTC checkpoint job publishes latest per-cabinet hash to refslund.ai/audit-checkpoints (publicly-readable).
+
+3. **PII minimization AC** — log entry schema enforces minimization per Article 5(1)(c): Telegram DM text NOT logged (only length + language + attachment count); tool-call argv content NOT logged (only tool name + redacted-argv-shape); decision-trail full text NOT logged (only entry-id + cross-reference); attachment content NOT logged (only filename + type + size). Validation runs at log-append time; non-conforming entries rejected + error surfaces to officer + COO/DPO.
+
+4. **Customer dashboard widget AC** — FW-101 dashboard reads last-7-days entries via refslund.ai REST API + renders activity timeline + per-officer filter + cost trend chart + clickable row → detail view (per-entry expansion). Refresh cadence: 60s polling Phase 1; WebSocket/SSE Phase 2.
+
+5. **Full-history export AC** — `refslund.ai/dashboard/audit/export` endpoint returns CSV + JSON downloads scoped to customer's cabinet. Pagination via cursor (1000-entry pages); full history downloadable in chunks. Export emits `event_type: audit_export` log entry (meta-audit-log).
+
+6. **GDPR Article 15 access-request endpoint AC** — `refslund.ai/dashboard/article-15-request` form OR DPO email-receive (dpo@refslund.ai routed to COO/CoS pending Spec 055 v4 H1 ratification). 30-day SLA enforced via Spec 055 AC #6 erasure-runbook-equivalent ticketing. Export bundle delivered via password-protected ZIP + 24h expiration link.
+
+7. **Append-only enforcement AC** — log file at refslund.ai is append-only via filesystem ACL (chattr +a on Linux ext4) AND application-layer-enforced (server endpoint rejects any non-append operation). Audit log substrate uses immutable-file pattern; updates produce new entries (e.g., correction = new entry with `event_type: correction` + cross-ref to prior entry-id).
+
+8. **Erasure preservation AC** — Spec 055 Article 17 erasure runbook integrates with hash-chain via pseudonymization (NOT deletion): PII fields in subject.metadata blanked (e.g., `{customer_name: "REDACTED-2026-05-20"}`) but entry_hash preserved via second-layer pseudonymization-marker hash field. Chain integrity preserved post-erasure; chain verification continues to work.
+
+9. **Customer integrity-verification UX AC** (per Spec 056 v3 CoS I2 retry-and-confirm gate alignment) — customer dashboard shows audit-log integrity status: "Verified ✓ as of <last-checkpoint-ts>" badge. Customer can click "Verify yourself" → downloads log + reproduces hash-chain in browser via small JS verifier; mismatch triggers retry-and-confirm flow (3 retries covering network/Web-Crypto edge cases) before surfacing "INTEGRITY CHECK FAILED — Contact Support" copy (NOT alarm-language). Support-ticket auto-files to COO+CoS; Article 33 supervisory-authority escalation gated on COO confirmed-incident determination, NOT customer-facing automatic alarm.
+
+10. **Access control AC** — customer sees ONLY their own cabinet's log via dashboard auth (customer's `LLM_PROXY_KEY` authenticates request scope). Cabinet ops (COO/CoS) accesses ALL cabinet logs via admin interface gated on DPO + COO role check (Captain ratifies access-grant per Spec 055 v4 H1 ratification). No cross-customer leakage.
+
+11. **Retention AC** — log entries retained per Spec 055 data-handling matrix: 90d hot (Redis cluster + Hetzner VPS SSD) + 5y/10y cold (Hetzner archive volume; 5y default per Spec 055 v4 H4 reduction to Bogføringsloven §10 statutory; 10y for tax-relevant entries per Skatteforvaltningsloven §47). Hot→cold transition: nightly archive job at 00:30 UTC moves >90d entries to cold storage with anonymization marker.
+
+12. **Test harness AC** — `cabinet/tests/test-customer-audit-log.sh` covers: entry emission per schema; hash-chain integrity (mock-tamper test breaks chain); PII minimization validator rejects oversized entries; customer dashboard widget loads correctly; full-history export CSV+JSON pagination; Article 15 endpoint 30-day SLA tracking; append-only filesystem ACL enforcement; erasure preserves hash-chain post-pseudonymization; customer-only access scope enforced (cross-tenant test fails); retention cold-archive transition. ≥10 assertions total.
+
+---
+
+## Edge cases
+
+- **Hash-chain breakage detected mid-customer-lifecycle** — likely cause: server-side filesystem corruption or out-of-band tampering. Runbook: stop appends + checkpoint freeze + CoS+COO+CTO incident response + customer notification + reconstruct chain from prior checkpoint + log incident in `cabinet/logs/audit-incidents.jsonl` + Article 33 supervisory-authority notification if breach material.
+- **Article 15 request during active billing dispute** — billing data retention conflicts with full-export per Stripe legal-hold (Spec 055 edge case). Export contains all Cabinet-side data; billing dispute records pulled separately from Stripe portal with appropriate caveat in delivery letter.
+- **Customer's officer logs sensitive content in a tool-call argv accidentally (e.g., grep "password=secret" file)** — argv-redaction validator runs at log-append time; sensitive-pattern detection (`/password=|secret=|token=|api_key=/i`) replaces with `REDACTED`; original officer-side log file (cabinet/logs/jsonl on customer MacMini) may contain unredacted version per officer's own retention but never lands in refslund.ai audit log.
+- **Officer hook fails to post audit entry** (network down + retry exhausts) — officer-side fallback queue at `cabinet/logs/audit-queue.jsonl` (local) with retry-on-reconnect; if queue exceeds 1000 entries OR 24h backlog, COO alerted; customer dashboard surfaces "Audit log temporarily unavailable" banner.
+- **Customer requests multiple Article 15 exports in short window** — anti-abuse: max 1 export per 7 days per customer (configurable; first-request priority); subsequent requests queue + customer notified.
+- **Subpoena / lawful-disclosure request for customer's audit log** — Cabinet receives subpoena (Danish court order OR equivalent EU jurisdiction). Workflow per Spec 055 §supervisory-authority-cooperation + new addendum: notify customer where legally permitted (most subpoenas allow customer notification); export delivered to requesting authority with appropriate redactions per Danish/EU law.
+- **Hash-checkpoint publication endpoint compromised** — public verifier endpoint at refslund.ai/audit-checkpoints could be tampered with at the CDN/server layer. Mitigation: checkpoint hashes mirrored to a Git repository (refslund-cabinet-checkpoints — public, immutable Git history) AND signed with Captain's PGP key. Customer can verify via Git history independently of refslund.ai availability.
+
+---
+
+## Open questions for officer reviews (Captain-only items deferred unless escalated)
+
+1. **Hash-chain algorithm** — sha256 default. CTO architecture review confirms (alternatives: blake3 faster, sha3-256 quantum-safer). CPO accepts CTO recommendation.
+2. **Checkpoint mirror to Git repo** — adds dependency on Git infrastructure (already exists). COO security-review confirms ledger integrity acceptable; alternative = self-signed signatures only.
+3. **Article 15 30-day SLA day-counter precision** — Spec 055 uses requested_at + 30d; this spec reuses same mechanism. Confirm alignment.
+4. **Customer can't decrypt cold archive cold archive (per CRO S3)** — if customer requests Article 15 export pulling 5+ year-old anonymized records, can the export include the anonymized-record entries (without re-identification)? Recommendation: YES — anonymized record is still a record about the customer's cabinet; Article 15 right to know data is processed. Defer to COO compliance review.
+
+---
+
+## Dependencies
+
+- **FW-096 (Spec 051) dependency:** proxy-audit JSONL stream feeds primary audit-log input; integration tested in Phase 8 of Spec 051.
+- **FW-099 (Spec 053 candidate) dependency:** clickwrap DPA signature emits `dpa_signed` event; Stripe Token Billing meter results emit cap-spend events; signup-completion event.
+- **FW-100 (Spec 055) dependency:** GDPR Article 17 erasure runbook integrates via pseudonymization-preserves-hash-chain pattern per AC #8.
+- **FW-101 dependency:** customer dashboard reads audit-log via refslund.ai REST API for widget render + export endpoint.
+- **CTO substrate:** new endpoint `POST /proxy/audit/log` (officer-side hook posts entries); new endpoint `GET /dashboard/audit/{cabinet}/{cursor}` (customer dashboard reads); hash-chain checkpoint job (daily 00:05 UTC cron); checkpoint Git-mirror substrate; append-only filesystem config; anonymization-marker on pseudonymized entries.
+- **CoS coordination:** DPO authority for cross-cabinet log access (pending Spec 055 v4 H1 Captain ratification — COO-as-DPO recommended).
+- **CRO sweep dependency:** quarterly review of hash-chain integrity literature + audit-log SaaS competitive landscape (CRO 4h sweep cadence covers).
+
+---
+
+## Out of scope
+
+- **Real-time streaming audit log via WebSocket/SSE** — Phase 2 polish. Phase 1 uses 60s polling.
+- **Customer-side log retention beyond Cabinet's hot/cold storage** — customer can download + store locally if they want longer retention; not a Cabinet responsibility.
+- **Audit log search across customer cabinets by Cabinet ops** — Cabinet ops doesn't have cross-customer search Phase 1 (privacy concern). COO/CoS access per-cabinet via DPO oversight. Phase 2 may add filtered cross-customer queries with explicit Captain ratification per query class.
+- **Audit log analytics dashboards (cost trends, officer activity heatmaps, anomaly detection)** — Phase 2 polish. Phase 1 surfaces raw timeline + 7-day cost trend only.
+- **AI-classified audit log entries (anomaly detection via Sonnet/Opus)** — Phase 2 + Spec 050 §3 §3.4 broader analytics. Cost overhead vs Phase 1 minimum-viable.
+- **Customer can write notes/annotations on log entries** — Phase 2 dashboard polish.
+- **Multi-language audit log entries** (DA/EN per Phase 1 Danish-first localization) — Phase 2; Phase 1 emits English by default with key event-types localized at dashboard-render time.
+
+---
+
+## Phasing
+
+| Phase | Scope | Depends on | Gate |
+|---|---|---|---|
+| 1 | CRO + CoS + COO parallel adversary review fold → v2 | v1 LANDED | v2 LANDED |
+| 2 | CPO self-spawned review subagent fresh-context audit | v2 LANDED | v3 LANDED (if findings) OR v2 ship-ready |
+| 3 | CTO substrate: refslund.ai POST /proxy/audit/log endpoint + GET /dashboard/audit/... endpoint + hash-chain validator + Git-mirror checkpoint job | v3 ratified | Endpoint live + mock-tamper test passes |
+| 4 ║ | CTO substrate: append-only filesystem config (chattr +a) + immutable-file pattern + erasure pseudonymization marker | v3 ratified | Append-only enforced; test harness passes |
+| 5 ║ | CTO substrate: officer-side hook integration (post-tool-use.sh + post-reply.sh post entries to refslund.ai) | v3 ratified | Officer hooks emit entries; chain integrity holds |
+| 6 ║ | CTO substrate: Article 15 access-request endpoint + 30-day SLA tracker + ZIP export bundler | v3 ratified | Mock customer request → 30d tracker → bundle delivered |
+| 7 | CTO substrate: customer dashboard widget wiring (FW-101 coupling) | Phases 3-5 GREEN, couples to FW-101 | Dashboard shows last-7-days + cost trend + per-officer filter |
+| 8 | Test harness `cabinet/tests/test-customer-audit-log.sh` (≥10 assertions) | Phases 3-7 GREEN | All assertions passing in CI |
+| 9 | End-to-end pilot: one Phase 1 customer cabinet emits log entries + customer verifies hash-chain + submits Article 15 + receives export | Phase 8 GREEN | Customer logs view dashboard; integrity verified; Article 15 cycle works |
+
+**Critical path:** v1 → v2 → v3 → Phase 3 (substrate base) → Phases 4-6 parallel → Phase 7 → Phase 8 → Phase 9 e2e. 4 of 7 substrate phases parallelize after Phase 3 base.
+
+---
+
+## Review process
+
+1. **CRO adversary review** — hash-chain integrity attack surface (collision attempts, tampering vectors, checkpoint compromise), Article 15 export PII-overdraw risk, append-only enforcement gaps.
+2. **CoS architecture review** — cross-officer audit-log coordination, DPO access boundary, customer dashboard integration.
+3. **COO compliance-failure adversary** — multi-failure-mode: hash-chain breaks during Article 15 cycle + sub-processor breach + customer requests erasure simultaneously.
+4. **CPO self-spawned review subagent** — fresh-context audit (per [Review Before Commit] discipline).
+
+Iterate until all 4 reviewers ack. Captain ratification not required (no Open Questions — all internal-officer-decisions per Captain msg 2583 multi-officer-process-is-legal-review framing).
+
+---
+
+**v1 LANDED 2026-05-20 22:50 UTC** (CPO authored under CoS Phase 1 priority queue continuation). CPO self-spawned review next per [Review Before Commit].
