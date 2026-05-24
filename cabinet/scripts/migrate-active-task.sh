@@ -8,11 +8,19 @@
 # Phase 2a gate).
 #
 # Schema (Spec 049 v3.1, §"Per-task token+step ceiling" + lifecycle + ACs
-# #5/#14/#20): schema_version, agentSteps, agentTokensTotal, agentStepCap,
-# agentTokenCap, visualUatCost, selfReviewPassed, selfReviewPassedAt,
-# selfReviewPassedSha, selfReviewIterationCount, gate4BuildHash,
-# checkpointBuildHash, atomic_commit_override. Pre-049 fields (issueId, branch,
-# any sub-issue tracking) are preserved untouched.
+# #5/#8/#14/#20): schema_version, agentSteps, agentTokensTotal, agentStepCap,
+# agentTokenCap, agentStepBaseline, agentTokenBaseline, visualUatCost,
+# selfReviewPassed, selfReviewPassedAt, selfReviewPassedSha,
+# selfReviewIterationCount, gate4BuildHash, checkpointBuildHash,
+# atomic_commit_override. Pre-049 fields (issueId, branch, any sub-issue
+# tracking) are preserved untouched.
+#
+# Baselines (agentStepBaseline / agentTokenBaseline, null until /pickup-task
+# snapshots them): the C1 sources are CUMULATIVE per-officer, not per-task —
+# `cabinet:toolcalls:$OFFICER` (steps) and the daily HSET `<role>_input +
+# <role>_output` (tokens; NOT _cost_micro — that's micro-USD cost → visualUatCost).
+# So per-task usage = current cumulative MINUS the baseline snapshotted at
+# /pickup-task. agentSteps/agentTokensTotal hold those deltas.
 #
 # Project-specific cap VALUES (agentStepCap/agentTokenCap/visual_uat caps) are
 # set from `.cabinet/agent-instructions.md → agent_caps` at /pickup-task CREATE
@@ -54,6 +62,8 @@ read -r -d '' V2_DEFAULTS <<JSON || true
   "agentTokensTotal": 0,
   "agentStepCap": ${DEF_STEP_CAP},
   "agentTokenCap": ${DEF_TOKEN_CAP},
+  "agentStepBaseline": null,
+  "agentTokenBaseline": null,
   "visualUatCost": 0,
   "selfReviewPassed": false,
   "selfReviewPassedAt": null,
@@ -67,7 +77,7 @@ JSON
 
 # Required v2 keys for --validate (caps may legitimately be re-tuned, presence is
 # what the gate checks).
-REQUIRED_KEYS='["schema_version","agentSteps","agentTokensTotal","agentStepCap","agentTokenCap","visualUatCost","selfReviewPassed","selfReviewPassedAt","selfReviewPassedSha","selfReviewIterationCount","gate4BuildHash","checkpointBuildHash","atomic_commit_override"]'
+REQUIRED_KEYS='["schema_version","agentSteps","agentTokensTotal","agentStepCap","agentTokenCap","agentStepBaseline","agentTokenBaseline","visualUatCost","selfReviewPassed","selfReviewPassedAt","selfReviewPassedSha","selfReviewIterationCount","gate4BuildHash","checkpointBuildHash","atomic_commit_override"]'
 
 if [ ! -f "$TARGET" ]; then
   echo "migrate-active-task.sh: no state file at $TARGET" >&2
