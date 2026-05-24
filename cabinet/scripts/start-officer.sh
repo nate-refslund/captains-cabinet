@@ -162,6 +162,11 @@ if [ "$BOT_MODE" = "single_ceo" ]; then
       _CEO_TOKEN_CANDIDATES+=("TELEGRAM_${_CABINET_UPPER}_CEO_TOKEN")
     fi
     _CEO_TOKEN_CANDIDATES+=("TELEGRAM_CEO_TOKEN")
+    # Fallback: the CEO officer's own multi_officer token (TELEGRAM_<CEO>_TOKEN).
+    # Lets a legacy multi_officer cabinet flip to single_ceo without provisioning
+    # a dedicated CEO token — the CEO officer keeps the token it already polls with.
+    _CEO_OFFICER_UPPER="$(echo "${CEO_OFFICER^^}" | tr "-" "_")"
+    _CEO_TOKEN_CANDIDATES+=("TELEGRAM_${_CEO_OFFICER_UPPER}_TOKEN")
 
     BOT_TOKEN=""
     CEO_TOKEN_VAR=""
