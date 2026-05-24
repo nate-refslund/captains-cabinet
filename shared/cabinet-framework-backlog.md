@@ -1593,3 +1593,14 @@ _(none)_
 - **Build scope:** (1) Defense-dossier artifact at `shared/interfaces/legal/anthropic-value-add-architecture.md` (Library Compliance Space mirror per A11) — value-add architecture documentation (officer workflows, audit logs, governance, Telegram-DM-as-interface, multi-tenancy, hash-chain integrity), customer-base evidence, technical-implementation-not-pure-resale evidence. CPO authors; CRO + CoS adversary review. (2) CRO quarterly Anthropic ToS-tracking sweep folds into existing 4h research-sweep cadence (no new cron); material ToS changes trigger COO + Captain review. (3) Contingency plan documented in Spec 051 AC #8 (proxy-degraded state on Anthropic enforcement; customer notification + service-pause + refund).
 - **Owner:** CPO drafts defense-dossier + CRO quarterly sweep + CTO Spec 051 contingency confirms.
 - **Source:** Spec 055 v4 H3 fold; CRO adversary review 2026-05-20.
+
+---
+
+### FW-116 — Claude Code built-in tasks → officer_tasks (/tasks) mirror (P1)
+- **Status:** v1 SHIPPED 2026-05-24 (commit 91717e2 on mac-native); Spec 066 written for the record + design contract. v1.1 (context-sentinel fix + tagging-discipline layer) + v1.2 (dashboard view) pending.
+- **Problem:** officers use CC built-in tasks (TaskCreate/Update) as their live working list, but the canonical cross-officer backlog is `officer_tasks` (/tasks) since the Spec 039 Linear cutover. Without a bridge they diverge — /tasks goes stale, double-entry tax, no cross-officer/historic view.
+- **Build scope (v1 shipped):** PostToolUse hook `post-task-mirror.sh` (matcher TaskCreate|TaskUpdate, fail-safe/backgrounded) + shared idempotent `lib/task-mirror-upsert.sql` (pooler-safe SET LOCAL trigger-suspend) + `backfill-cc-tasks.sh`. One-way (Captain never authors); mirror everything incl deletes→cancelled; metadata→typed columns. ~141 CoS tasks backfilled.
+- **Open (v1.1/v1.2):** (1) **CTO #3 context_slug NOT-NULL fix** — mirror writes `unassigned` sentinel not NULL (hook/SQL edit + one-time backfill of existing NULL rows); (2) tagging-discipline layer (auto-inference + SOFT nudge, not hard enforcement per Captain D4); (3) dashboard view (source badge + project filter/unassigned bucket + founder-action view + history).
+- **Spec:** `shared/interfaces/product-specs/066-cc-tasks-officer-tasks-mirror.md`.
+- **Owner:** CoS (hook + SQL — shipped), CPO (spec + metadata/tagging design), CTO (dashboard view).
+- **Source:** Captain msgs 2749-2755 (feature directive + 5 decisions); CTO dashboard-feasibility input 2026-05-24.
