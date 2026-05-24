@@ -1,14 +1,15 @@
 # Spec 061 — Mac Migration Phase 4 Plan (cua-driver + Lead Enforcement)
 
-- **Version:** v1.2 (CRO F2 TCC code-signing dependency surfaced)
-- **Date:** 2026-05-23 (v1.0 → v1.1 07:20 → v1.2 08:05 UTC)
-- **Author:** CoS (autonomous per Captain msg 2605, 2607, 2612)
-- **Status:** READY for CTO re-confirm + Captain execution. **Phase 4 BLOCKED until Spec 058 v1.2 Checkpoint 1.10 (TCC code-signing) is complete.**
+- **Version:** v1.2.1 (CRO/CoS stop-the-line: v1.2 code-signing pre-condition was changelog-only — never inserted into 4.5/4.6 bodies; also corrected phantom "Spec 058 Checkpoint 1.10" ref → real location is 058 Checkpoint 1.8)
+- **Date:** 2026-05-23 (v1.0 → v1.1 07:20 → v1.2 08:05) → 2026-05-24 (v1.2.1 08:35 UTC)
+- **Author:** CoS drafted (autonomous per Captain msg 2605, 2607, 2612); CPO authored v1.2.1 body fix (spec domain; CoS coordinated stop-the-line)
+- **Status:** READY for CTO re-confirm + Captain execution. **Phase 4 BLOCKED until Spec 058 Checkpoint 1.8 (code-sign + notarize + reboot-TCC-persistence golden eval) PASSES** — now enforced in the 4.5/4.6 checkpoint BODIES, not just this header.
 
-**v1.2 changelog — CRO Finding F2 dependency (Mac-native pre-staging brief 2026-05-23):**
-- **(1) Pre-condition: code-signed + notarized officer binaries (Spec 058 v1.2 Checkpoint 1.10).** Without code-signing, TCC permissions (Accessibility + Screen Recording) don't persist across launches → cua-driver re-prompts on every restart → unusable. Phase 4 4.5 + 4.6 explicitly require Spec 058 1.10 PASS as a hard pre-condition. **Stop-the-line gate added.**
-- **(2) cua-driver re-grant retry tolerates ONE permission loss but not recurring loss.** v1.1 Action #2 added a re-grant check + retry; v1.2 clarifies that recurring loss means code-signing is broken (NOT a retry problem) → escalate to Spec 058 1.10 rework.
-- **CRO trigger:** 2026-05-23 07:16 UTC pre-staging brief F2.
+**v1.2.1 changelog — fold-claim-vs-execute fix (CRO stop-the-line + CoS verify, 2026-05-24):**
+- **The miss:** v1.2 claimed "Phase 4 4.5 + 4.6 explicitly require Spec 058 1.10 PASS as a hard pre-condition. Stop-the-line gate added" — but the 058-dependency lived ONLY in this header/changelog. Checkpoint 4.5 body pre-cond read "4.1-4.4 PASS" (no 058 gate); 4.6 referenced 058 1.8 only in its stop-the-line, not its pre-conditions. AND the cited "Checkpoint 1.10" was wrong — 058 1.10 is UPS; code-signing now lives in **058 Checkpoint 1.8** (fixed in 058 v1.2.1 same pass).
+- **The fix:** 4.5 + 4.6 body pre-conditions now hard-gate on "Spec 058 Checkpoint 1.8 code-signing + reboot-TCC-persistence golden eval PASS." All 058 refs corrected 1.10 → 1.8. This is the matching end of the 058↔061 F2 dependency pair.
+- **(2) carried from v1.2:** cua-driver re-grant retry tolerates ONE permission loss but not recurring loss → recurring loss means code-signing is broken (NOT a retry problem) → escalate to Spec 058 Checkpoint 1.8 rework.
+- **CRO trigger:** 2026-05-23 07:16 UTC pre-staging brief F2; CoS stop-the-line 2026-05-24 08:25 UTC.
 
 **v1.1 changelog — CTO MUST-fold findings (msg 2026-05-23 06:58 UTC):**
 
@@ -22,7 +23,7 @@
   ```
 - **(2) cua-driver permission persistence in LaunchAgent context.** macOS sometimes loses Screen Recording grants for processes launched via launchd vs Terminal. 4.6 adds an explicit re-grant check + retry.
 - **(3) Constitution-clause placement: framework, not preset.** Per Mac Migration Directive Part 3 the Lead-only computer-use clause goes in `framework/constitution-base.md`. 4.4 explicit. (Same answer applies to Phase 3 Lead-only Telegram + Phase 5 if more clauses arise — bundled here for cross-spec ratification.)
-- **(4) reload-officer-mac.sh helper extraction.** Used 3x (Phase 2 bootout/bootstrap, Phase 3 product.yml-reload, Phase 4 mcp.json-reload). Cross-spec META: extract into `cabinet/scripts/reload-officer-mac.sh` and reference from each. Added as Checkpoint 4.5b.
+- **(4) reload-officer-mac.sh helper extraction.** Used 3x (Phase 2 bootout/bootstrap, Phase 3 product.yml-reload, Phase 4 mcp.json-reload). Cross-spec META: extract into `cabinet/scripts/reload-officer-mac.sh`. **CREATED in Spec 059 Checkpoint 2.9b** (earliest use); 4.5 calls it. (v1.2 mis-claimed "Added as Checkpoint 4.5b" — no such body ever existed; fixed 2026-05-24 by creating it in a real 059 checkpoint before first call.)
 - **Parent directive:** Captain Mac Mini Directive msg 2599 §Phase 4 ("cua-driver + Lead enforcement — 1 day")
 - **Predecessors:** Spec 057-060 (Phases 0-3)
 - **Successor:** Spec 062 (Phase 5 — Screenpipe integration)
@@ -142,7 +143,7 @@ Phase 4 decomposes into **7 checkpoints**. Directive estimates 1 day; realistic 
 
 ### Checkpoint 4.5 — Bootstrap CoS with cua-driver overlay (re-load)
 
-- **Pre-conditions:** 4.1-4.4 PASS.
+- **Pre-conditions:** 4.1-4.4 PASS. **HARD GATE (F2): Spec 058 Checkpoint 1.8 code-sign + notarize + reboot-TCC-persistence golden eval PASSED.** Without it, cua-driver's Accessibility/Screen-Recording consent evaporates on the next restart and this overlay is unusable. If 058 1.8 is not green, STOP — do not start Phase 4.
 - **Actions:**
   1. Bootout existing CoS LaunchAgent (from Phase 2): `launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.cabinet.officer.cos.plist`
   2. Re-bootstrap with updated start-officer-mac.sh (which now merges cua-driver MCP for CoS): `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.cabinet.officer.cos.plist`
@@ -156,7 +157,7 @@ Phase 4 decomposes into **7 checkpoints**. Directive estimates 1 day; realistic 
 
 ### Checkpoint 4.6 — End-to-end Figma test (the directive's gate test)
 
-- **Pre-conditions:** 4.5 PASS; Figma installed on Mac (or any native-macOS app for the test); some Sensed wireframes in Figma.
+- **Pre-conditions:** 4.5 PASS (inherits the F2 hard gate: Spec 058 Checkpoint 1.8 code-signing + reboot-TCC-persistence PASSED); Figma installed on Mac (or any native-macOS app for the test); some Sensed wireframes in Figma. If cua-driver re-prompts for Screen Recording/Accessibility during this test, the 058 1.8 signing is broken — halt per the stop-the-line below.
 - **Actions:**
   1. Captain (via Telegram) DMs CoS: "Open Figma, find yesterday's wireframes for Sensed, and tell me what you see."
   2. Watch CoS:

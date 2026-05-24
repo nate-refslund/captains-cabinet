@@ -1,9 +1,13 @@
 # Spec 059 — Mac Migration Phase 2 Plan (Delete Docker, Add launchd)
 
-- **Version:** v1.1 (CTO 8 MUST-fold substrate findings folded)
-- **Date:** 2026-05-23 (v1.0 → v1.1 07:05 UTC)
-- **Author:** CoS (autonomous per Captain msg 2605, 2607, 2612)
+- **Version:** v1.1.1 (added Checkpoint 2.9b — reload-officer-mac.sh creation, 061-B fold-gap fix)
+- **Date:** 2026-05-23 (v1.0 → v1.1 07:05) → 2026-05-24 (v1.1.1 08:38 UTC)
+- **Author:** CoS drafted (autonomous per Captain msg 2605, 2607, 2612); CPO added 2.9b (061-B fix; spec domain)
 - **Status:** READY for CTO re-confirm + Captain execution
+
+**v1.1.1 changelog — 061-B fold-gap fix (CRO/CoS stop-the-line, 2026-05-24):**
+- **New Checkpoint 2.9b — Create `cabinet/scripts/reload-officer-mac.sh`.** The helper is called in 060 Checkpoint 3.2 + 061 Checkpoint 4.5, and changelogs claimed it was "Added as Checkpoint 4.5b" — but no such body ever existed, so execution would fail at the first call (060 3.2). Created here in Phase 2 (earliest use). 060 + 061 changelog refs corrected to point here.
+- **LaunchAgent Label namespace:** stays `com.cabinet.officer.*` (NOT renamed to dk.refslund). Per CTO: TCC keys on the binary code-signing identifier (set in 058 1.8 to dk.refslund.cabinet.officer.*), which is orthogonal to the launchd Label; renaming would churn shipped code (28a2143 + 5783274) for cosmetic-only gain. No body change.
 
 **v1.1 changelog — CTO 8 MUST-fold + 4 SHOULD-fold + 2 NIT findings absorbed (msg 2026-05-23 06:56 UTC):**
 - **(1) plist variable substitution** — launchd doesn't expand `${OFFICER_ROLE}` / `${USER}` at runtime. **deploy-mac.sh (2.8) MUST `envsubst` the template before writing the per-officer plist** to `~/Library/LaunchAgents/`. Updated 2.8 with explicit `envsubst < template > final.plist` step + golden-eval verification.
@@ -302,6 +306,38 @@ Phase 2 decomposes into **12 checkpoints**. Each has pre-conditions, actions, go
   - After pkill, heartbeat resumes within 30s (KeepAlive triggers ThrottleInterval'd restart)
 - **Rollback:** `launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.cabinet.officer.cos.plist`; `rm` the LaunchAgent.
 - **Effort:** 1-2 hours (debug-loop expected).
+
+### Checkpoint 2.9b — Create `cabinet/scripts/reload-officer-mac.sh` helper
+
+> **v1.1.1 fix:** this helper is CALLED in 060 Checkpoint 3.2 + 061 Checkpoint 4.5, and its creation was claimed in changelogs ("Added as Checkpoint 4.5b") but NO checkpoint body ever created it → execution would fail at the first call in 060 3.2. Created here in Phase 2 — the earliest use, where the bootout/bootstrap pattern is first introduced (2.8/2.9).
+
+- **Pre-conditions:** 2.8 (deploy-mac.sh) PASS — establishes the bootout/bootstrap pattern this helper centralizes.
+- **Actions:**
+  1. Write `cabinet/scripts/reload-officer-mac.sh`:
+     ```bash
+     #!/bin/bash
+     # reload-officer-mac.sh <officer-role> — bootout + re-bootstrap one officer LaunchAgent.
+     # Centralizes the restart cycle used by deploy-mac.sh (Phase 2), 060 3.2 (product.yml reload),
+     # 061 4.5 (mcp.json overlay reload), and later phases.
+     set -euo pipefail
+     ROLE="${1:?usage: reload-officer-mac.sh <officer-role>}"
+     PLIST="$HOME/Library/LaunchAgents/com.cabinet.officer.${ROLE}.plist"
+     [ -f "$PLIST" ] || { echo "reload-officer-mac.sh: plist not found: $PLIST" >&2; exit 1; }
+     launchctl bootout "gui/$(id -u)" "$PLIST" 2>/dev/null || true   # tolerate not-currently-loaded
+     launchctl bootstrap "gui/$(id -u)" "$PLIST"
+     sleep 5
+     HB=$(redis-cli GET "cabinet:heartbeat:${ROLE}" 2>/dev/null || true)
+     [ -n "$HB" ] && echo "reload-officer-mac.sh: ${ROLE} heartbeat OK ($HB)" \
+                  || { echo "reload-officer-mac.sh: WARN ${ROLE} no heartbeat yet (may still be starting)" >&2; }
+     ```
+  2. `chmod +x cabinet/scripts/reload-officer-mac.sh`
+  3. (Optional DRY refactor) deploy-mac.sh Step 4 bootout/bootstrap MAY call this helper instead of inline `launchctl` — not required for Phase 2 pass.
+- **Golden eval:**
+  - `bash -n cabinet/scripts/reload-officer-mac.sh` passes
+  - `reload-officer-mac.sh cos` (after 2.9 CoS bootstrap) bootouts + re-bootstraps CoS; heartbeat resumes within 30s
+  - Missing-role arg → usage error + non-zero exit; missing plist → clear error + non-zero exit
+- **Rollback:** `rm cabinet/scripts/reload-officer-mac.sh`.
+- **Effort:** 20-30 min.
 
 ### Checkpoint 2.10 — Phase 2 baseline doc + commit to mac-native
 
