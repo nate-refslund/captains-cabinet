@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+Worktree-listener LaunchAgent template.
+Long-running Postgres LISTEN on cabinet_task_terminal channel.
+Per Spec 063 v1.1 Checkpoint 6.3.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.cabinet.worktree-listener</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>${REPO_ROOT}/cabinet/scripts/worktree-listener.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>${REPO_ROOT}</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key><string>${HOME}</string>
+    <key>USER</key><string>${USER}</string>
+    <key>CABINET_SOURCE_REPO</key><string>${REPO_ROOT}</string>
+    <key>PATH</key><string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>LANG</key><string>en_US.UTF-8</string>
+    <key>LC_ALL</key><string>en_US.UTF-8</string>
+  </dict>
+
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+
+  <key>StandardOutPath</key>
+  <string>${HOME}/Library/Logs/cabinet/worktree-listener.out.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>${HOME}/Library/Logs/cabinet/worktree-listener.err.log</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+</dict>
+</plist>

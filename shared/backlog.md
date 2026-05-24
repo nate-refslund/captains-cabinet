@@ -22,17 +22,19 @@
 
 > All specs ready (v1.1 CTO-reviewed). Captain executes phases sequentially. CoS provides runbook + SSH verification gates.
 
+> **Phase labels below verified against actual spec headers 2026-05-24 08:05 UTC** (CTO caught earlier drift where the table carried a pre-reorg phase plan). Spec headers are source of truth.
+
 | Phase | Spec | Status | Estimated time |
 |-------|------|--------|----------------|
 | Phase 0 — Host state capture | 057 | ✓ COMPLETE 2026-05-22 | Done |
-| Phase 1 — Mac base setup (binaries + TCC) | 058 v1.2 | **READY for Captain execution** | ~3-4h Captain |
+| Phase 1 — Mac base setup (binaries + TCC code-signing) | 058 v1.2 | **READY for Captain execution** | ~3-4h Captain |
 | Phase 2 — Delete Docker, add launchd | 059 v1.1 | **READY** (awaits Phase 1 complete) | ~2-4h CTO + Captain |
 | Phase 3 — Telegram topology collapse | 060 | READY | ~1-2h |
-| Phase 4 — Library + /tasks substrate | 061 | READY | ~2-3h |
-| Phase 5 — Neon + LiteLLM cutover | 062 | READY | ~2-3h |
-| Phase 6 — Step Network cabinet spawn | 063 | READY | ~2h |
-| Phase 7 — 48h soak + observability | 064 | READY | 48h soak |
-| Phase 8 — Docs + release tag | 065 v1.1 | READY | ~3-4h |
+| Phase 4 — cua-driver + Lead Enforcement | 061 | READY | ~2-3h |
+| Phase 5 — Screenpipe Integration | 062 | READY | ~2-3h |
+| Phase 6 — Cabinet Worktrees + Adapter Contract | 063 | READY | ~2h |
+| Phase 7 — Full Officer Rollout + Observability (48h soak) | 064 | READY | 48h soak |
+| Phase 8 — Documentation + Release | 065 v1.1 | READY | ~3-4h |
 
 **Key dependency (from Spec 058 v1.2 CRO fold):** Phase 1 step 1.10 requires Apple Developer ID certificate import before any officer binary is code-signed. Apple Developer Program already enrolled (Captain msg 2576). TCC permission persistence across restarts depends on this — do not defer.
 

@@ -132,10 +132,8 @@ fi
 # ============================================================
 # These 3 files accumulate behavioral knowledge during officer sessions via
 # captain-rule-encoder.sh + per-officer encoding from the 4th + 5th improvement
-# loops. They are gitignored — without explicit export here, the Mac cutover
-# regenerates them blank from cabinet-bootstrap.sh. (Cross-fold per Spec 057 v1.1
-# amendment on mac-native; replicated here so Hetzner-side Phase 0 export
-# from master picks them up too.)
+# loops. They are gitignored (see Spec 057 v1.1) — without explicit export here,
+# the Mac cutover regenerates them blank from cabinet-bootstrap.sh.
 for crf in captain-patterns.md captain-intents.md captain-decisions.md; do
   stage_copy "shared/interfaces/$crf" "$REPO_ROOT/shared/interfaces/$crf" "shared/interfaces/$crf"
 done

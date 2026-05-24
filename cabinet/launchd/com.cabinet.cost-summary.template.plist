@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+Cost-summary LaunchAgent template.
+Fires daily at 23:00 Captain timezone per Spec 064 v1.1 Checkpoint 7.7.
+deploy-mac.sh substitutes ${HOUR} from instance/config/platform.yml.captain_timezone offset.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.cabinet.cost-summary</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>${REPO_ROOT}/cabinet/cron/cost-summary.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>${REPO_ROOT}</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key><string>${HOME}</string>
+    <key>USER</key><string>${USER}</string>
+    <key>REDIS_HOST</key><string>localhost</string>
+    <key>REDIS_PORT</key><string>6379</string>
+    <key>CABINET_SOURCE_REPO</key><string>${REPO_ROOT}</string>
+    <key>PATH</key><string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>LANG</key><string>en_US.UTF-8</string>
+    <key>LC_ALL</key><string>en_US.UTF-8</string>
+  </dict>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>23</integer>
+    <key>Minute</key><integer>0</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>${HOME}/Library/Logs/cabinet/cost-summary.out.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>${HOME}/Library/Logs/cabinet/cost-summary.err.log</string>
+
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>

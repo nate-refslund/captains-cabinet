@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+Officer LaunchAgent template.
+
+Per Spec 059 v1.1 Checkpoint 2.3 + Captain ratifications:
+- KeepAlive: SuccessfulExit=false + ThrottleInterval=30 (NOT Crashed=true) — restart on any non-zero exit (msg 2603 decision 1)
+- WorkingDirectory key (CTO v1.1 #2 — without this, scripts can't locate cabinet/.env)
+- SoftResourceLimits NumberOfFiles=4096 (CTO v1.1 #3 — default 256 hits EMFILE under MCP load)
+- EnvironmentVariables REDIS_HOST + REDIS_PORT (Spec 064 v1.1 CTO #6 — Mac portability)
+- StandardOutPath/ErrorPath ~/Library/Logs/cabinet/ (Mac convention, NOT /var/log/)
+- Label uses reverse-DNS bundle ID (Spec 058 v1.2 CRO F2 — TCC code-signing pairing)
+
+Variables substituted by deploy-mac.sh via envsubst BEFORE writing to ~/Library/LaunchAgents/:
+- ${USER}        — invoking user (id -un)
+- ${HOME}        — user home dir
+- ${OFFICER}     — officer slug (cos, cto, cpo, cro, coo)
+- ${REPO_ROOT}   — path to captains-cabinet repo (default ~/work/captains-cabinet)
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.cabinet.officer.${OFFICER}</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>${REPO_ROOT}/cabinet/scripts/start-officer-mac.sh</string>
+    <string>${OFFICER}</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>${REPO_ROOT}</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>${HOME}</string>
+    <key>USER</key>
+    <string>${USER}</string>
+    <key>REDIS_HOST</key>
+    <string>localhost</string>
+    <key>REDIS_PORT</key>
+    <string>6379</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>OFFICER_NAME</key>
+    <string>${OFFICER}</string>
+    <key>LANG</key>
+    <string>en_US.UTF-8</string>
+    <key>LC_ALL</key>
+    <string>en_US.UTF-8</string>
+  </dict>
+
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+
+  <key>SoftResourceLimits</key>
+  <dict>
+    <key>NumberOfFiles</key>
+    <integer>4096</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>${HOME}/Library/Logs/cabinet/${OFFICER}.out.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>${HOME}/Library/Logs/cabinet/${OFFICER}.err.log</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>ProcessType</key>
+  <string>Interactive</string>
+</dict>
+</plist>
