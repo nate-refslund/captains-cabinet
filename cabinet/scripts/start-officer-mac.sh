@@ -45,6 +45,9 @@ if [ "$LOAD_PRESET_RC" -ne 0 ]; then
   # Don't abort — let officer try to boot anyway, but logged for debug
 fi
 
+# Dep audit — non-blocking, logs any missing tools to stderr
+bash "$REPO_ROOT/cabinet/scripts/check-deps.sh" 2>&1 | tee -a "$LOGS_DIR/officer-$OFFICER.out.log" || true
+
 # ===========================================================
 # Capability resolution (Spec 060 + Spec 061 capability gates)
 # ===========================================================

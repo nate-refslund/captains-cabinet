@@ -71,6 +71,9 @@ exec su cabinet -s /bin/bash -c '
   echo "  create-officer.sh <args>               — Create a new officer"
   echo ""
 
+  # Dep audit — non-blocking, logs any missing tools to stdout
+  bash /opt/founders-cabinet/cabinet/scripts/check-deps.sh || true
+
   # Start the officer supervisor (auto-restart on crash)
   nohup bash /opt/founders-cabinet/cabinet/scripts/officer-supervisor.sh \
     >> /opt/founders-cabinet/memory/logs/supervisor.log 2>&1 &
