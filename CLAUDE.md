@@ -464,22 +464,17 @@ The Cabinet uses **local MCP servers with API tokens** (configured in `.mcp.json
 
 ## Model Routing
 
-The Cabinet uses a tiered model strategy: cheap models drive the agent loop, expensive models advise on hard sub-problems. Frontier quality at ~1/5 the cost of Opus-default (Captain ratified 2026-05-18 msg 2540).
+The Cabinet uses a tiered model strategy: Opus 4.7 drives the officer loop at max effort; Sonnet 4.6 handles parallel subagent work (Captain ratified 2026-05-24 msg 2687 upgrade from Sonnet default).
 
-- **Officers (orchestrator default):** Sonnet 4.6. Set via `--model` at session start in `cabinet/scripts/start-officer.sh`. Officers drive the loop: read tasks, coordinate, execute, reply to Captain, route work.
-- **Officers (escalation to Opus 4.7):** Spawn an Opus advisor when work matches a trigger in `memory/skills/evolved/opus-escalation.md`. Two mechanisms:
-  - `bash cabinet/scripts/advisor-crew.sh --task "..." --context <file>` — Sonnet executor + Opus advisor, single synthesized response. Preferred for one-shot consultations.
-  - `Task(model="opus", prompt="...")` — independent Opus subagent with its own context. Preferred for adversarial reviews, fresh-context audits, multi-step subloops.
-- **Crew (Agent Teams):** Sonnet 4.6 for execution. Unchanged. Set explicitly in TeamCreate prompts.
-- **Cost cap:** No officer may exceed 10 Opus escalations per 24h without CoS approval. Counter at Redis `cabinet:opus-escalations:<officer>:<YYYY-MM-DD>`.
+- **Officers (orchestrator default):** Opus 4.7 + `--effort max`. Set via `--model` at session start in `cabinet/scripts/start-officer.sh`. Officers drive the loop: read tasks, coordinate, execute, reply to Captain, route work.
+- **Subagents + Crew (Agent Teams):** Sonnet 4.6. Set explicitly in Task() and TeamCreate prompts. Cost-efficient for parallel execution work that doesn't need orchestrator judgment.
+- **Opus advisor consultation:** Use `bash cabinet/scripts/advisor-crew.sh --task "..." --context <file>` for one-shot consultations. Use `Task(model="opus", prompt="...")` for adversarial reviews, fresh-context audits, multi-step subloops.
 
-**When NOT to escalate:** routine Captain DMs, briefings, status updates, Linear/Notion writes, scheduled sweeps, decisions covered by an existing skill or captain-decision. Sonnet is default; escalation is the exception.
-
-**Rollback:** `CABINET_MODEL=claude-opus-4-7 bash cabinet/scripts/start-officer.sh <officer>` returns one officer to Opus-default. Fleet rollback: change the default in `start-officer.sh`.
+**Rollback:** `CABINET_MODEL=claude-sonnet-4-6 bash cabinet/scripts/start-officer.sh <officer>` downgrades one officer. Fleet rollback: change the default in `start-officer.sh`.
 
 ## Compact Instructions
 
-When compaction runs, the summary must preserve: current task (+ Linear IDs), recent Captain decisions this session, in-progress coordination (triggers sent/received, handoffs), blockers, schedule state (last briefing/reflection/retro), and founder-action commitments with deadlines.
+When compaction runs, preserve everything that exists only in working memory — if it's not already written to code, a task tracker, or a shared artifact, it must be in the summary. The test: could the next session resume without a fresh brief from the Captain? If not, add more.
 
 The `post-compact.sh` hook injects your skill-refresh list and pre-compaction state — follow its instructions when they arrive, including re-reading your tier2 working notes and checking pending triggers via the Redis Channel.
 

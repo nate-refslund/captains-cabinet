@@ -1,103 +1,126 @@
-# Sensed Product Backlog — Prioritized View
+# Cabinet Framework + Sensed Product Backlog — Prioritized View
 
-> Maintained by CPO. Last refinement: 2026-04-29 22:00 UTC (cron).
-> Phase: TestFlight live + Captain testing + PostHog Phase-0 wired (PR #559 SEN-567 merged 2026-04-25). PMF gate v1.1 D14≥40% landed.
-> Phase 1 prereqs queued: 3 in-app prompts spec, AI proto-pattern surfacing OPPORTUNITY (post-Captain greenlight), cross-cultural symbol research (CRO standby).
-> Today's velocity: framework-side (Spec 034 v4 substrate-gap fold + FW-082/085/086 + 2 CRO briefs triaged). Sensed sprint board unchanged today.
+> Maintained by CPO. Last refinement: 2026-05-23 22:00 UTC (cron).
+> **Active phase: Mac Migration (Specs 057-065 ready for Captain execution) + Phase 1 commercial pipeline (FW-096-115) + Spec 049 v3.1 COO adversary fold.**
+> Sensed: TestFlight live + PostHog Phase-0 wired (PR #559, 2026-04-25). Sensed backlog is stable — no new CTO work queued for Sensed until Mac migration phases are complete.
+> Research absorbed this cycle: CRO competitive sweep (Devin $20 price collapse + Anthropic enforcement), audience psychology digest (trust-gap #1 for SMB + predictable pricing wins + 85%/15% framing), Anthropic ToS Q1 sweep (value-add carve-out strengthened + Claude Marketplace opportunity), Mac-native pre-staging (TCC code-signing already folded into Spec 058 v1.2), Claude Code daily catchup (S2 effort.level hooks + P1 /code-review → Spec 049 Gate 3 boundary clarification needed).
 
 > **Note:** Linear is READ-ONLY archive post-Spec-039 cutover (2026-04-26). Canonical task store is Postgres `officer_tasks` (Spec 038). Shipped/blocked items below are historical references for context; current state is in /tasks dashboard.
 
 ---
 
-## Current Phase: Captain Testing + Iteration
+## P0 — Blocking (resolve before anything else)
 
-### Shipped Today (Apr 7) — 20+ items
-- Positioning: "You sensed something. You're not the only one."
-- Testimonials: meditation + dream + synchronicity (replaced UAP/historical)
-- Journal copy: "or just keep it to yourself as a journal"
-- Date picker: "When did this happen?"
-- 7-day free trial system (Spec 020) — paywall, downgrade, activation, notifications (73 tests)
-- HealthKit State of Mind (Spec 018) — OFIC → Apple Health sync
-- Social login Google + Apple (Spec 019)
-- Signal editing UI
-- In-app review prompt after discovery
-- Grounding flow after intense submissions
-- Date fuzzing in public views
-- Epistemic disclaimers near clusters
-- Pricing glassmorphism + table alignment
-- /signal category card glassmorphism
-- PillHeader transparency + rounded corners
-- Footer consistency on /terms + /privacy
-- Legal page dates → April 2, 2026
-- Pricing nav link + button width
-- A11Y quick wins (15 fixes)
-- Brand voice error messages
-- Sitemap all 17 categories + slug fixes
-- OG images (homepage, /signal, /pricing, categories)
-- JSON-LD structured data
-- SEO descriptions for all categories
-
-### Nate Action Items (founder-action label in Linear)
-- ~~SEN-502: Google OAuth credentials~~ ✓ Done
-- ~~SEN-503: Apple Sign In credentials~~ ✓ Done
-- **SEN-508: TestFlight upload via Transporter (~30 min)** — P1, 4th commitment: 20:00 CEST Apr 14 (misses: Apr 11, 12, 13)
-- ~~SEN-509: Create IAP products in App Store Connect~~ ✓ Done
-- ~~SEN-510: Enter SDK privacy labels~~ ✓ Done
-- ~~SEN-514: Configure 7-day trial introductory offer~~ ✓ Done
-- ~~SEN-515: StoreKit 2 introductory offer~~ ✓ Done
-- SEN-504: Run Apple reviewer test account seed script — P2, Backlog
-
-### Shipped Today (Apr 7 cont.) — CPO-initiated + Captain testing
-- SEN-516: Trial activation prompts wired (PR #489) — P1, was dead code
-- SEN-478: Analytics instrumentation — 12 events (PR #490)
-- SEN-517: Web post-submission discovery moment (PR #492)
-- SEN-518: Signal quota visibility — progress bar + Sensed+ nudge (PR #493)
-- SEN-521: P0 cron route fix + UMAP batch recompute (PR #495)
-- SEN-520: iPhone SE responsive overflow fix (PR #497)
-- SEN-522: Duplicate title suffix fix (PR #500-501)
-- Pricing glassmorphism root cause: will-change-transform + filter:blur(0px) (PRs #496-498)
-- Header nav: logo only, no text wrapping (PR #499)
-- Filter removal from stagger animations (PR #502)
-
-### Shipped Apr 8-9
-- SEN-523: Name removed from registration — email + password only
-- GlassCard: Reusable frosted glass component (consistent across all pages)
-- SEN-493: Apple reviewer seed account script
-- Category buttons glass blur fix (animation-fill-mode barrier)
-- Pricing animation keyframes fix (filter:blur removed)
-- Hourly health check cron with Telegram alerting
-
-### Post-Launch Phase 2A — Specs Ready
-| Item | Priority | Linear | Spec | Status |
-|------|----------|--------|------|--------|
-| Daily engagement hook (backend) | High | SEN-519 | Spec 023 | ✓ Shipped Apr 13 (PRs #533+534) |
-| Implementation intentions onboarding | Medium | TBD | Spec 024 | Ready to queue |
-| Sensing rhythm (gentle streak alternative) | Medium | TBD | Spec 025 | Gated on SEN-376 (visual constellation) |
-| Echo chamber mitigation | Medium | SEN-511 | Spec 026 | Ready to queue (Layer 1+2 first ship) |
-
-### Post-Launch Phase 2B — Specs Ready
-| Item | Priority | Linear | Spec | Status |
-|------|----------|--------|------|--------|
-| Dual dates + dual locations | Medium | TBD | Spec 028 | Ready to queue (no OFIC v2 needed) |
-| Neutral reflection mechanic | Medium | TBD | Spec 029 | **In Progress** (CTO picked up Apr 16) |
-| Earth Map Strava-model locations | Medium | SEN-513 | Spec 030 | Ready to queue (XL, 10-15 days) |
-| Dynamic cluster naming | — | SEN-512 | Spec 027 | Next in CTO queue after 029 |
-
-### Post-Launch Backlog (CTO-driven, no CPO spec needed)
-| Item | Priority | Linear |
-|------|----------|--------|
-| Inner Map GPU-native nebula renderer | Medium | SEN-376 |
+| Item | FW# | Spec | Owner | Status | Blocker |
+|------|-----|------|-------|--------|---------|
+| COO-as-DPO role-def amendment | FW-114 | — | CoS coord + CPO draft | **PENDING Captain ratification** | Gates Spec 055 v4 final ship + all customer GDPR commitments |
+| Spec 049 v3.1 (COO adversary fold) | FW-095 | 049 v3.0.2 | COO adversary → CPO fold | **COO adversary PENDING** | Gates CTO Phase 2a build start |
 
 ---
 
-## Captain Decisions (key — updated Apr 13)
-- Launch quality-gated, not date-gated
-- Positioning: "You sensed something. You're not the only one." (changed from "So did they")
-- Founding member: 5000 spots, wave-based (500/wave), $4.99/mo
-- 7-day free trial: card required (Apple mandate), genuine free tier fallback
-- AI invisible in user-facing copy
-- Real data only — zero fake claims
-- Reddit day 1: Apr 6, 2026
-- Dual dates + dual locations: Phase 2
-- No lawyer budget — compliance internal
-- Notion strategic docs: real-time sync by CPO
+## P0 — Mac Migration (Captain execution queue, sequential)
+
+> All specs ready (v1.1 CTO-reviewed). Captain executes phases sequentially. CoS provides runbook + SSH verification gates.
+
+| Phase | Spec | Status | Estimated time |
+|-------|------|--------|----------------|
+| Phase 0 — Host state capture | 057 | ✓ COMPLETE 2026-05-22 | Done |
+| Phase 1 — Mac base setup (binaries + TCC) | 058 v1.2 | **READY for Captain execution** | ~3-4h Captain |
+| Phase 2 — Delete Docker, add launchd | 059 v1.1 | **READY** (awaits Phase 1 complete) | ~2-4h CTO + Captain |
+| Phase 3 — Telegram topology collapse | 060 | READY | ~1-2h |
+| Phase 4 — Library + /tasks substrate | 061 | READY | ~2-3h |
+| Phase 5 — Neon + LiteLLM cutover | 062 | READY | ~2-3h |
+| Phase 6 — Step Network cabinet spawn | 063 | READY | ~2h |
+| Phase 7 — 48h soak + observability | 064 | READY | 48h soak |
+| Phase 8 — Docs + release tag | 065 v1.1 | READY | ~3-4h |
+
+**Key dependency (from Spec 058 v1.2 CRO fold):** Phase 1 step 1.10 requires Apple Developer ID certificate import before any officer binary is code-signed. Apple Developer Program already enrolled (Captain msg 2576). TCC permission persistence across restarts depends on this — do not defer.
+
+---
+
+## P1 — Commercial Phase 1 (spec pipeline, Captain-facing)
+
+> These specs are drafted (tasks #28-33 complete). CTO implementation blocked on Mac migration completing first (substrate changes). CPO spec lookahead continues in parallel.
+
+| Item | FW# | Spec | Status | Notes |
+|------|-----|------|--------|-------|
+| LiteLLM proxy + virtual keys + daily cap | FW-096 | 051 v5 | Spec COMPLETE | CTO impl after Phase 5 (Neon/LiteLLM cutover) |
+| Customer audit log | FW-097 | 052 v3 | Spec COMPLETE | CTO impl Phase 1b |
+| Concierge install runbook | FW-098 | 053 v3 | Spec COMPLETE | Customer templates also complete (see below) |
+| refslund.ai signup + Stripe billing | FW-099 | 054 v3 | Spec COMPLETE | CTO impl Phase 2 |
+| GDPR baseline (ROPA/DPA/DPIA/erasure) | FW-100 | 055 v4 | **Gated on FW-114** | COO-as-DPO ratification required first |
+| Customer dashboard MVP | FW-101 | 056 v2 | Spec COMPLETE | CTO impl Phase 1b |
+
+### Customer templates (all complete, ready for first-customer use)
+| Template | File | Status |
+|----------|------|--------|
+| Discovery call script | cabinet/customer-templates/discovery-call-script.md | ✓ Ready |
+| Welcome Day 0 email | cabinet/customer-templates/welcome-day-0.md | ✓ Ready |
+| Pre-install checklist | (in Spec 053 §Stage 3) | ✓ Ready |
+| Install-day GDPR walkthrough | cabinet/customer-templates/install-day-gdpr-walkthrough.md | ✓ Ready |
+| Week-1 cheat sheet | cabinet/customer-templates/cheat-sheet-week-1.md | ✓ Ready |
+| Day-7 check-in | cabinet/customer-templates/check-in-day-7.md | ✓ Ready |
+| Concierge offboarding script | cabinet/customer-templates/concierge-offboarding-script.md | ✓ Ready |
+
+---
+
+## P1 — CPO spec pipeline (lookahead, no CTO blocked on these yet)
+
+### Spec 049 v3.1 amendments (fold research cycle findings)
+- **P1a.** Gate 3 adversary spawns: specify `xhigh` effort level (from Claude Code P2 update — new xhigh tier). Currently unspecified in Gate 3 subagent prompt.
+- **P1b.** `/code-review` vs Gate 3 boundary: Claude Code's new `/code-review` command overlaps with Gate 3 (officer-spawned diff critique). Need explicit boundary note in spec — Gate 3 = CPO-owned officer-spawned adversary; `/code-review` = direct user-invokable. NOT consolidated. Document in Phase 1 skills section.
+- **P1c.** Spec 049 Phase 2a ready to start after v3.1 COO adversary fold clears (task #27 completes).
+
+### FW-115 H3 defense-dossier (CPO authors)
+- Draft `shared/interfaces/legal/anthropic-value-add-architecture.md`
+- Five-criterion mapping: multi-stage pipeline, proprietary data, custom post-processing, domain-specific logic, integrations meaningless without product layer (Anthropic's own published definition — Q1 ToS sweep)
+- Sections: architecture overview, officer-workflow evidence, audit-log chain, governance layer, Captain pattern absorption, Telegram-DM-as-interface, multi-tenancy model
+- CRO + CoS adversary review before Library Compliance Space record
+- **Trigger:** wait for 1+ paying customer (A13 leverage posture). But draft now so it's ready.
+
+### Spec 053 v3 amendment candidates (from audience psychology brief 2026-05-23)
+1. **Stage 1 discovery call framing**: add "here's what Cabinet does reliably today / here's what's R&D-grade" honest-disclosure beat. Trust-by-honesty > trust-by-marketing (Wharton April 2026 + M1 Anthropic enforcement context).
+2. **Stage 5 post-install cheat sheet**: focus on 3-5 *meaningful goals* in week 1 (not feature tour). Wharton: users accomplish goals, don't wander features.
+3. **Anti-autonomous positioning**: Stage 1 script should NOT say "Cabinet will run your business autonomously." Instead: "augmented executive layer with officer-in-loop on architecture and the bigger calls." Devin/Cursor are foils (see competitive sweep M2 pricing); Cabinet is a different category. 85%/15% honest framing belongs here.
+4. **Devin objection-handling**: customer will cite "$20/mo Devin" in discovery calls. Prepared answer: vertical-anchored exec-layer service vs generic dev agent. Not 1:1 comparable. Add to discovery call script FAQ section.
+
+---
+
+## P2 — Phase 2 commercial spec lookahead
+
+| Item | FW# | Priority | Spec needed | Notes |
+|------|-----|----------|-------------|-------|
+| Notarized .pkg installer + Sparkle 2 | FW-102 | P2 | Yes — CPO spec | Gated on FW-098 runbook proving install works |
+| Hire-an-officer wizard (GUI) | FW-103 | P2 | Yes | Phase 2 onboarding |
+| Screenpipe integration (7d, FileVault) | FW-104 | P2 | Yes | After mac-native Phase 7 soak |
+| Customer-facing CU layer (Stagehand v3) | FW-105 | P2 | Yes — Spec 049 successor | After FW-095 ships |
+| Self-serve onboarding (refslund.ai → install) | FW-107 | P2 | Yes | Folds FW-099 + FW-102 |
+| Claude Marketplace partnership watch | — | Watch | No spec yet | Monitor GA + partner program docs |
+
+---
+
+## Sensed — Stable (no new CPO work needed this cycle)
+
+> Sensed backlog is stable pending Mac migration. TestFlight live. No new Sensed CTO work should queue until mac-native Phase 7 soak clears. PMF gate v1.1 (D14≥40%) stands.
+
+| Item | Priority | Spec | Status |
+|------|----------|------|--------|
+| Implementation intentions onboarding | Medium | Spec 024 | Ready to queue (post-migration) |
+| Echo chamber mitigation | Medium | Spec 026 | Ready to queue |
+| Dual dates + dual locations | Medium | Spec 028 | Ready to queue |
+| Neutral reflection mechanic | Medium | Spec 029 | In Progress (CTO — paused for migration) |
+| Dynamic cluster naming | — | Spec 027 | Next after 029 |
+| Earth Map Strava-model locations | Medium | Spec 030 | XL, queue post-migration |
+
+---
+
+## Captain Decisions (key — updated 2026-05-23)
+- Mac migration: 8-phase native (Captain msg 2599), 1-cabinet-then-clone-to-3 fleet plan (msg 2603)
+- LaunchAgent pattern for all officers; LaunchDaemon for background workers
+- Cost tracking: logging always ON, enforcement OFF for personal/STEP-internal, ON for commercial customers (Spec 059 §2.2)
+- COO-as-DPO: pending ratification (Article 38(6) conflict with CoS-as-DPO)
+- H3 value-add carve-out: calculated-bet posture (no Anthropic outreach pre-leverage per A13)
+- Devin price collapse ($500→$20): update discovery-call objection-handling, not a pricing adjustment
+- Spec 049 COO adversary review: final gate before CTO Phase 2a build starts
+- Sensed launch: quality-gated (TestFlight live; PMF gate D14≥40% target)
+- Pricing (Cabinet): 25k DKK base + 5k DKK/employee — predictable bundled subscription, not ACU metered
