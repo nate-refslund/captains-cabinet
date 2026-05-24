@@ -889,8 +889,10 @@ if [ "$TOOL_NAME" = "Edit" ] || [ "$TOOL_NAME" = "Write" ]; then
       exit 2
       ;;
     *"cabinet/docker-compose"*|*"Dockerfile"*)
-      echo "BLOCKED: Infrastructure files cannot be modified by Officers" >&2
-      exit 2
+      if [ "${OFFICER:-}" != "cos" ]; then
+        echo "BLOCKED: Infrastructure files cannot be modified by Officers — route to CoS" >&2
+        exit 2
+      fi
       ;;
     *"instance/memory/tier2/"*)
       # Officers can only write to their OWN tier2 directory

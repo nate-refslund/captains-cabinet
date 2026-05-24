@@ -19,7 +19,7 @@ OFFICER="${1:?Usage: start-officer-mac.sh <officer>}"
 REPO_ROOT="${CABINET_SOURCE_REPO:-$HOME/work/captains-cabinet}"
 LOGS_DIR="$HOME/Library/Logs/cabinet"
 SESSION_NAME="officer-$OFFICER"
-MODEL="${CABINET_MODEL:-claude-sonnet-4-6}"
+MODEL="${CABINET_MODEL:-claude-opus-4-7}"
 REDIS_HOST="${REDIS_HOST:-localhost}"
 REDIS_PORT="${REDIS_PORT:-6379}"
 
@@ -137,7 +137,7 @@ tmux kill-session -t "$SESSION_NAME" 2>/dev/null || true
 tmux new-session -d -s "$SESSION_NAME" -x 220 -y 50
 
 # Build the claude invocation
-CLAUDE_CMD="cd $REPO_ROOT && claude --model $MODEL $MCP_FLAG $TELEGRAM_FLAG --dangerously-skip-permissions"
+CLAUDE_CMD="cd $REPO_ROOT && claude --model $MODEL $MCP_FLAG $TELEGRAM_FLAG --dangerously-skip-permissions --effort max"
 
 # Send the launch command into the tmux session
 tmux send-keys -t "$SESSION_NAME" "$CLAUDE_CMD" C-m
