@@ -1,0 +1,22 @@
+{
+  "_spec": "Spec 049 AC #18 — single source of truth for USD cost conversion of Gate-4 visual-UAT vision calls. Read by stagehand-runner (Node side) + cabinet/scripts/lib/model-pricing.sh.",
+  "_source": "Published Anthropic pricing (anthropic.com/pricing + console.anthropic.com). NO live validation (M4: no machine-readable pricing API; a scrape on the hot path was itself the drift it claimed to prevent). Drift is caught ONLY by the staleness assertion below — refresh manually when WARN fires.",
+  "_verify_on_refresh": "Re-confirm every rate against console.anthropic.com billing before bumping pricing_as_of. Rates below are best-known as of pricing_as_of and are intentionally treated as stale-able.",
+  "pricing_as_of": "2026-05-24",
+  "staleness_warn_days": 30,
+  "currency": "USD",
+  "rate_unit": "per_million_tokens",
+  "cache_multipliers": {
+    "_comment": "Applied to the model's INPUT rate. Anthropic-uniform across current models. write_1h is the 1h-TTL cache-write surcharge (the Cabinet runs ENABLE_PROMPT_CACHING_1H); write_5m is the default 5m TTL.",
+    "write_5m": 1.25,
+    "write_1h": 2.0,
+    "read": 0.1
+  },
+  "default_model": "claude-opus-4-7",
+  "models": {
+    "claude-opus-4-7": { "input": 15.0, "output": 75.0 },
+    "claude-opus-4-6": { "input": 15.0, "output": 75.0 },
+    "claude-sonnet-4-6": { "input": 3.0, "output": 15.0 },
+    "claude-haiku-4-5": { "input": 1.0, "output": 5.0 }
+  }
+}
