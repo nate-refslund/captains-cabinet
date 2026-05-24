@@ -70,7 +70,7 @@ Officers tag a CC task by setting keys in its `metadata` object. The mirror maps
 
 | metadata key | officer_tasks column | Accepted values | Default if absent |
 |--------------|---------------------|-----------------|-------------------|
-| `project` (or `context_slug`) | `context_slug` | any context slug (`sensed`, `cabinet-framework`, …) | `$CABINET_ACTIVE_PROJECT`, else **`unassigned` sentinel — NEVER NULL** (see CTO #3 resolution) |
+| `project` (or `context_slug`) | `context_slug` | any context slug (`sensed`, `cabinet-framework`, …) | `$CABINET_ACTIVE_PROJECT`, else **`untagged` sentinel — NEVER NULL** (see CTO #3 resolution) |
 | `due` (or `due_at` / `due_date`) | `due_at` + `due_date` | ISO-8601 prefix `YYYY-MM-DD…` (bad format dropped) | keep existing |
 | `priority` | `priority` | `P0` \| `P1` \| `P2` \| `P3` (else dropped) | keep existing |
 | `founder_action` | `founder_action` | `true` \| `false` | keep existing (insert default `false`) |
@@ -82,15 +82,15 @@ Officers tag a CC task by setting keys in its `metadata` object. The mirror maps
 
 `OfficerTask.context_slug` is typed non-null (`lib/tasks.ts:48`, "NOT NULL per AC #21; every row has a validated slug"). The v1 mirror writes NULL on untagged tasks (the ~141 backfilled CoS rows), which conflicts with the type → latent UI null-crash (board grouping / filter / sort assume `string`).
 
-**Decision: the mirror NEVER writes NULL `context_slug` — untagged resolves to a reserved `unassigned` sentinel slug.** Chosen over CTO option (b) relax-type-to-`string|null` because:
+**Decision: the mirror NEVER writes NULL `context_slug` — untagged resolves to a reserved `untagged` sentinel slug.** Chosen over CTO option (b) relax-type-to-`string|null` because:
 - Holds the existing NOT-NULL invariant + filter/grouping/sort logic intact — no consumer null-safety audit, no UI-crash surface (CTO's preferred (a)).
 - Faithful to "officer working-tasks may legitimately be project-less" (CTO (b)'s concern) — but represents project-less as an **explicit, queryable, nudge-able value** rather than an ambiguous NULL.
-- Distinct from `adhoc` (a *real* context = genuinely-cross-project work). `unassigned` = "untagged, needs triage" — it's exactly what the soft-nudge prompts the officer to fix.
+- Distinct from `adhoc` (a *real* context = genuinely-cross-project work). `untagged` = "untagged, needs triage" — it's exactly what the soft-nudge prompts the officer to fix.
 
 **Implementation (v1.1 correction — small):**
-- Hook + backfill: replace the `NULLIF(:'proj','')→NULL` default with `unassigned` when both `metadata.project` and `$CABINET_ACTIVE_PROJECT` are empty. (CoS owns the hook/SQL edit.)
-- One-time data fix: `UPDATE officer_tasks SET context_slug='unassigned' WHERE external_source='claude-tasks' AND context_slug IS NULL;` (the ~141 existing rows).
-- `lib/tasks.ts` type stays `string` (invariant preserved); CTO adds the `unassigned` bucket to grouping.
+- Hook + backfill: replace the `NULLIF(:'proj','')→NULL` default with `untagged` when both `metadata.project` and `$CABINET_ACTIVE_PROJECT` are empty. (CoS owns the hook/SQL edit.)
+- One-time data fix: `UPDATE officer_tasks SET context_slug='untagged' WHERE external_source='claude-tasks' AND context_slug IS NULL;` (the ~141 existing rows).
+- `lib/tasks.ts` type stays `string` (invariant preserved); CTO adds the `untagged` bucket to grouping.
 
 ## Tagging-discipline layer (design requirement — NOT in v1; CPO design, CoS implements)
 
@@ -112,7 +112,7 @@ Specifically nudge when: (a) no `project` AND `$CABINET_ACTIVE_PROJECT` unset �
 ## Dashboard requirements (CTO owns the view)
 
 `/tasks` must surface the mirrored tasks as the cross-officer backlog:
-- **Group by `context_slug`** (project lens) with an **`unassigned` bucket** (filter `context_slug='unassigned'` — the sentinel for untagged tasks; also a signal the nudge isn't landing). Per CTO #2: the existing `?context=` filter + `COALESCE(context_slug,'')` already supports this; the `unassigned` sentinel is a concrete filterable value (cleaner than empty-string/NULL matching).
+- **Group by `context_slug`** (project lens) with an **`untagged` bucket** (filter `context_slug='untagged'` — the sentinel for untagged tasks; also a signal the nudge isn't landing). Per CTO #2: the existing `?context=` filter + `COALESCE(context_slug,'')` already supports this; the `untagged` sentinel is a concrete filterable value (cleaner than empty-string/NULL matching).
 - **Filter by `officer_slug`, `status`, `priority`, `founder_action`, `type`.**
 - **Show `external_source='claude-tasks'`** provenance (distinguish mirrored-from-CC vs any legacy/ETL rows) — read-only badge.
 - **Founder-action view:** all `founder_action=true` tasks across officers with `due_date`, days-overdue (feeds CoS accountability loop + morning briefing).
@@ -131,7 +131,7 @@ Specifically nudge when: (a) no `project` AND `$CABINET_ACTIVE_PROJECT` unset �
 8. **TaskCreate id parse** — the `#<n>` from the TaskCreate response string is correctly extracted as the task id (not a `#<n>` embedded in the subject).
 9. **Backfill** — `backfill-cc-tasks.sh <officer> <session>` seeds existing tasks idempotently + reports counts.
 10. **Soft nudge never blocks** (tagging-discipline layer) — an untagged or founder-without-due task still mirrors successfully; the nudge is advisory-only (no non-zero exit, no rejection).
-11. **context_slug NOT-NULL invariant holds (CTO #3)** — every mirror-written row has a non-null `context_slug` (active project, explicit tag, or `unassigned` sentinel). Eval: mirror an untagged task with `$CABINET_ACTIVE_PROJECT` unset → assert `context_slug='unassigned'`, NOT NULL. One-time backfill sets existing NULL rows to `unassigned`.
+11. **context_slug NOT-NULL invariant holds (CTO #3)** — every mirror-written row has a non-null `context_slug` (active project, explicit tag, or `untagged` sentinel). Eval: mirror an untagged task with `$CABINET_ACTIVE_PROJECT` unset → assert `context_slug='untagged'`, NOT NULL. One-time backfill sets existing NULL rows to `untagged`.
 
 ## Edge cases
 
@@ -139,7 +139,7 @@ Specifically nudge when: (a) no `project` AND `$CABINET_ACTIVE_PROJECT` unset �
 - **Pooler GUC leak** — the headline risk; SET LOCAL + explicit transaction (AC #7). A plain SET here would silently disable authoring triggers cabinet-wide.
 - **TaskCreate response format change** — if CC ever returns a JSON `{id}` instead of the `"Task #<n>…"` string, the `.id`/`.task.id` fallback catches it.
 - **Multi-session** — task store is `~/.claude/tasks/<session>/`; the hook reads the live session's record. Backfill is per-session (officer runs once per session they want seeded). Cross-session history accrues in officer_tasks via external_ref.
-- **Untagged task** — lands with `context_slug` = active project, else the `unassigned` sentinel (never NULL, per CTO #3); surfaced in the dashboard `unassigned` bucket + nudged to tag properly.
+- **Untagged task** — lands with `context_slug` = active project, else the `untagged` sentinel (never NULL, per CTO #3); surfaced in the dashboard `untagged` bucket + nudged to tag properly.
 - **Bad due format** — ISO-prefix guard drops it (no malformed timestamptz cast).
 - **Officer renames a task** — title always overwrites (not sticky), so the mirror tracks renames.
 
@@ -160,8 +160,8 @@ Specifically nudge when: (a) no `project` AND `$CABINET_ACTIVE_PROJECT` unset �
 ## Phasing
 
 - **v1 (SHIPPED, 91717e2):** mirror hook + shared upsert + backfill + status/metadata mapping + pooler-safe suspend. ~141 CoS tasks backfilled.
-- **v1.1 (next):** (a) context-sentinel fix — mirror writes `unassigned` not NULL (CoS hook/SQL edit + one-time backfill of ~141 NULL rows) per CTO #3; (b) tagging-discipline layer (auto-inference + soft nudge) — CPO finalizes inference rules, CoS implements as a companion PostToolUse advisory.
-- **v1.2:** dashboard view (CTO) per requirements above (source badge + project filter/unassigned bucket + founder-action view + history).
+- **v1.1 (next):** (a) context-sentinel fix — mirror writes `untagged` not NULL (CoS hook/SQL edit + one-time backfill of ~141 NULL rows) per CTO #3; (b) tagging-discipline layer (auto-inference + soft nudge) — CPO finalizes inference rules, CoS implements as a companion PostToolUse advisory.
+- **v1.2:** dashboard view (CTO) per requirements above (source badge + project filter/untagged bucket + founder-action view + history).
 
 ## Review process
 
