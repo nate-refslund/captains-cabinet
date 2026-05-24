@@ -1,6 +1,7 @@
 # Spec 052: Customer Audit Log — Append-Only Activity Log with Hash-Chain Integrity + GDPR Article 15 Export (FW-097 Phase 1 Priority 3)
 
-**Version:** v3 (CoS architecture review fold) — v2 superseded
+**Version:** v3.1 (DPO-state propagation: COO-as-DPO ratified) — v3 superseded
+**v3.1 changelog — COO-as-DPO ratification propagated (decision-propagation-audit, 2026-05-24):** Spec 055 H1 ratified COO-as-DPO (Captain msg 2737, FW-114 applied, Spec 055 now v7.3 with the entire legal track closed), but Spec 052's live references still said "DPO currently CoS pending Spec 055 v4 H1 ratification" in 4 places — Owner line, AC #6 (Article 15 email routing), AC #10 (cross-cabinet access control), and the CoS-coordination dependency. The FW-097 audit-log build would have routed Article 15 requests + admin access-grants to the wrong owner. Fixed all 4 to COO-as-DPO (Spec 055 v7.1 H1). AC #10 additionally notes the DPO=COO dual-role collapse and preserves the Captain access-grant ratification as the independent second control for cross-cabinet access (separation-of-duties retained). Caught by a version-cite sweep across the Phase-1 commercial spec set (050-056).
 **v3 changelog:** CoS architecture review surfaced 3 BLOCKERs + 2 IMPROVEMENTs + 1 POLISH. Resolutions:
 - **CoS B1 A11 dual-home:** customer audit log IS compliance artifact (Article 30 ROPA + Article 15 access + erasure-runbook integration). v3 explicitly dual-homes: **operational hot store** at `refslund.ai/proxy/logs/audit/<cabinet-slug>.jsonl` (runtime substrate per Spec 051) + **Library Compliance Space** as record-of-record (Article 15 tickets + signed delivery receipts + hash-checkpoint provenance). AC #6 + #11 updated; ticket lifecycle owned by Library Compliance Space record class (parallel to Spec 055 v5 SSOT fix).
 - **CoS B2 path inconsistency global rewrite:** Spec 051 owns upstream substrate; its `/proxy/` path wins. v3 rewrites all sites — line 39 + AC #1 + line 130 + line 140 + Spec 051 wiring — to `refslund.ai/proxy/logs/audit/<cabinet-slug>.jsonl` consistently.
@@ -28,7 +29,7 @@
 **Captain ratifications inapplicable per Captain msg 2583 multi-officer-process-as-legal-review framing. A13 inapplicable (no vendor outreach). A12 active — CTO #2/#3/#7 architecture calls are CTO domain (CPO accepts).**
 **Priority:** P0 — gates customer dashboard (FW-101) + GDPR Article 15 access-request fulfillment
 **Framework ticket:** FW-097
-**Owner:** CPO (spec) + CTO (substrate + integrity layer) + COO (compliance review per Captain msg 2583 multi-officer process) + DPO (currently CoS pending Spec 055 v4 H1 ratification — likely COO-as-DPO post-Captain-ratify)
+**Owner:** CPO (spec) + CTO (substrate + integrity layer) + COO (compliance review per Captain msg 2583 multi-officer process) + DPO = COO (Spec 055 v7.1 H1 ratified, Captain msg 2737 2026-05-24; FW-114 applied — CoS-as-DPO retired)
 **Scope:** Audit log substrate at refslund.ai (server-side) + customer dashboard widget surfacing last-7-days + downloadable full-history export + GDPR Article 15 access request integration
 **Canonical artifact home:** Library Specs Space (this spec) + customer-facing logs at refslund.ai server-side
 **Evidence:** Spec 055 §customer-data-handling-matrix (audit log entries 90d hot + 7y cold pending Q3 reduction to 5y/10y); Spec 051 §audit-log-emission (proxy-audit JSONL stream — primary input); GDPR Article 15 (right of access), Article 30 (ROPA cross-reference), Article 33 (breach notification audit trail).
@@ -158,7 +159,7 @@ Customer requests via dashboard form OR DPO email. Workflow:
 
 5. **Full-history export AC** — `refslund.ai/dashboard/audit/export` endpoint returns CSV + JSON downloads scoped to customer's cabinet. Pagination via cursor (1000-entry pages); full history downloadable in chunks. Export emits `event_type: audit_export` log entry (meta-audit-log).
 
-6. **GDPR Article 15 access-request endpoint AC** — `refslund.ai/dashboard/article-15-request` form OR DPO email-receive (dpo@refslund.ai routed to COO/CoS pending Spec 055 v4 H1 ratification). 30-day SLA enforced via Spec 055 AC #6 erasure-runbook-equivalent ticketing. Export bundle delivered via password-protected ZIP + 24h expiration link.
+6. **GDPR Article 15 access-request endpoint AC** — `refslund.ai/dashboard/article-15-request` form OR DPO email-receive (dpo@refslund.ai → COO-as-DPO per Spec 055 v7.1 H1 ratification, msg 2737). 30-day SLA enforced via Spec 055 AC #6 erasure-runbook-equivalent ticketing. Export bundle delivered via password-protected ZIP + 24h expiration link.
 
 7. **Append-only enforcement AC** — log file at refslund.ai is append-only via filesystem ACL (chattr +a on Linux ext4) AND application-layer-enforced (server endpoint rejects any non-append operation). Audit log substrate uses immutable-file pattern; updates produce new entries (e.g., correction = new entry with `event_type: correction` + cross-ref to prior entry-id).
 
@@ -166,7 +167,7 @@ Customer requests via dashboard form OR DPO email. Workflow:
 
 9. **Customer integrity-verification UX AC** (per Spec 056 v3 CoS I2 retry-and-confirm gate alignment) — customer dashboard shows audit-log integrity status: "Verified ✓ as of <last-checkpoint-ts>" badge. Customer can click "Verify yourself" → downloads log + reproduces hash-chain in browser via small JS verifier; mismatch triggers retry-and-confirm flow (3 retries covering network/Web-Crypto edge cases) before surfacing "INTEGRITY CHECK FAILED — Contact Support" copy (NOT alarm-language). Support-ticket auto-files to COO+CoS; Article 33 supervisory-authority escalation gated on COO confirmed-incident determination, NOT customer-facing automatic alarm.
 
-10. **Access control AC** — customer sees ONLY their own cabinet's log via dashboard auth (customer's `LLM_PROXY_KEY` authenticates request scope). Cabinet ops (COO/CoS) accesses ALL cabinet logs via admin interface gated on DPO + COO role check (Captain ratifies access-grant per Spec 055 v4 H1 ratification). No cross-customer leakage.
+10. **Access control AC** — customer sees ONLY their own cabinet's log via dashboard auth (customer's `LLM_PROXY_KEY` authenticates request scope). Cabinet ops accesses ALL cabinet logs via admin interface gated on COO-as-DPO authorization + Captain-ratified access-grant (Spec 055 v7.1 H1 ratified). NOTE: with DPO=COO the former "DPO + COO" dual-role check collapses to one officer, so the Captain access-grant ratification is the independent second control that preserves cross-cabinet-access separation-of-duties. No cross-customer leakage.
 
 11. **Retention AC** — log entries retained per Spec 055 data-handling matrix: 90d hot (Redis cluster + Hetzner VPS SSD) + 5y/10y cold (Hetzner archive volume; 5y default per Spec 055 v4 H4 reduction to Bogføringsloven §10 statutory; 10y for tax-relevant entries per Skatteforvaltningsloven §47). Hot→cold transition: nightly archive job at 00:30 UTC moves >90d entries to cold storage with anonymization marker.
 
@@ -202,7 +203,7 @@ Customer requests via dashboard form OR DPO email. Workflow:
 - **FW-100 (Spec 055) dependency:** GDPR Article 17 erasure runbook integrates via pseudonymization-preserves-hash-chain pattern per AC #8.
 - **FW-101 dependency:** customer dashboard reads audit-log via refslund.ai REST API for widget render + export endpoint.
 - **CTO substrate:** new endpoint `POST /proxy/audit/log` (officer-side hook posts entries); new endpoint `GET /dashboard/audit/{cabinet}/{cursor}` (customer dashboard reads); hash-chain checkpoint job (daily 00:05 UTC cron); checkpoint Git-mirror substrate; append-only filesystem config; anonymization-marker on pseudonymized entries.
-- **CoS coordination:** DPO authority for cross-cabinet log access (pending Spec 055 v4 H1 Captain ratification — COO-as-DPO recommended).
+- **CoS coordination:** COO-as-DPO holds authority for cross-cabinet log access; CoS coordinates the Captain access-grant ratification (Spec 055 v7.1 H1 ratified, msg 2737).
 - **CRO sweep dependency:** quarterly review of hash-chain integrity literature + audit-log SaaS competitive landscape (CRO 4h sweep cadence covers).
 
 ---

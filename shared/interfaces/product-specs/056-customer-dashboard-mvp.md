@@ -71,7 +71,7 @@
 **Owner:** CPO (spec) + CTO (Next.js subroute substrate) + COO-as-DPO (per Spec 055 v6 H1; compliance link review) + CoS (Captain ratification coordination)
 **Scope:** Customer-facing dashboard at `refslund.ai/dashboard` + subroutes (/audit, /pre-install per Spec 053+054 CTO #4, /erasure, /legal-links); read-only spend visibility + audit log surface + cap-bump CTA + erasure request UI; Phase 1 MVP surface
 **Canonical artifact home:** Library Specs Space (this spec) + customer dashboard render is Next.js subroute at refslund.ai
-**Evidence:** Spec 051 v5 (per-cabinet spend tracking + cap-bump UX); Spec 052 v3 (audit log dashboard widget + customer hash-chain verification UI); Spec 053 v3 (Stage 4 install dashboard walkthrough + Stage 5 post-install handoff video); Spec 054 v1 (pre-install form subroute per CTO #4); Spec 055 v6 (DPA + sub-processor list + erasure request flow + privacy policy public-page MDX rendering); Captain msg 2565 + design-standards taste anchor (zajno.com-level bar Phase 1 minimum-viable, not overbuilt).
+**Evidence:** Spec 051 v7 (per-cabinet spend tracking + cap-bump UX + cap-status enforcer source); Spec 052 v3.1 (audit log dashboard widget + customer hash-chain verification UI); Spec 053 v4 (Stage 4 install dashboard walkthrough + Stage 5 post-install handoff video); Spec 054 v2 (pre-install form subroute per CTO #4); Spec 055 v7.3 (DPA + sub-processor list + erasure request flow + privacy policy public-page MDX rendering); Captain msg 2565 + design-standards taste anchor (zajno.com-level bar Phase 1 minimum-viable, not overbuilt).
 
 ---
 
