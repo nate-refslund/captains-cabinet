@@ -1636,3 +1636,11 @@ _(none)_
 - **Follow-up:** fixture-based `/check-runs` test in cabinet CI (live-validated only so far).
 - **Owner:** CTO (fix shipped + follow-up test).
 - **Source:** 2026-05-24 — hit merging Sensed PR #560 (green check-runs invisible to `/status`).
+
+### FW-120 — per-cabinet AUDIT_API_KEY→cabinet_id scoping (customer-#2 cross-customer-isolation HARD GATE) (P1)
+- **Status:** OPEN — **HARD GATE before customer #2.** Deferred from FW-097 (the 1-customer Phase-1 pilot is leak-free: one cabinet = nothing to leak to). NOT a blocker for the pilot.
+- **Problem:** FW-097 audit-server `_authorize_read` (proxy/audit-server/app.py) accepts the single shared `AUDIT_API_KEY` for ANY `cabinet_id` (admin-level read); per-customer key→cabinet scoping is deferred. The GET `/dashboard/audit/{cabinet_id}/{cursor}` endpoint trusts the caller-supplied `cabinet_id`. Once a 2nd cabinet exists, a customer-held key + a changed path param reads another customer's log = GDPR breach + Spec 052 AC #10 "no cross-customer leakage" violation.
+- **Phase-1 interim mitigation (Spec 056/FW-101):** backend-mediation — the dashboard backend holds the `AUDIT_API_KEY` and supplies `cabinet_id` from the authenticated customer session; the customer/browser NEVER holds the raw key. Must be true in the FW-101 dashboard build.
+- **Fix (this gate):** per-customer key→`cabinet_id` binding (config-map before the full DB per CTO) enforced inside `_authorize_read` so a key authorizes exactly its own cabinet. MUST ship before customer #2 is provisioned.
+- **Owner:** CTO (build the binding) + COO-as-DPO (GDPR compliance sign-off) + CoS (gate-tracking so it surfaces before customer #2). CPO authored the gate.
+- **Source:** 2026-05-24 — FW-097 PR #100 review finding #1 (CPO review + Phase-1 conditional-accept compliance call); also documented in Spec 052 v3.3 AC #10.
