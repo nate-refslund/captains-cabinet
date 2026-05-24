@@ -52,11 +52,11 @@ refslund.ai is a **three-offering professional practice** running on top of Capt
 2. **Teach & advise** — workshops, courses, architect engagements. Lead source + credibility.
 3. **Crew sprint** — hourly project work in Solo / Pair / Trio / Quad sizes. Tertiary.
 
-**Cabinet's role:** the underlying infrastructure. Customers install Cabinet on a MacMini (sold or self-supplied), or use a hosted instance once one exists. The open-source Cabinet framework stays **BSL 1.1**. Commercial-only features (proxy, billing, customer dashboard, audit UI) live in a **private satellite repo** so the BSL terms can stay clean and licensing-isolated.
+**Cabinet's role:** the underlying infrastructure. Customers install Cabinet on a MacMini (sold or self-supplied), or use a hosted instance once one exists. The open-source Cabinet framework stays **BSL 1.1**. The commercial-customer-facing surfaces live in a **private satellite repo** so customer-facing business logic stays unexposed.
 
-**Two products, one codebase relationship:**
-- `captains-cabinet` (BSL 1.1, public) — the framework. Anyone can run it.
-- `refslund-cabinet-commercial` (private) — proxy, billing, audit UI, customer wizards, installer pipeline. Imports the framework as a dependency. Customers never see this repo; they see the installer and the dashboard.
+**Repo-home split (resolves the Spec 050↔051 contradiction CTO flagged 2026-05-24 — Spec 051 line 16 governs the substrate):**
+- `captains-cabinet` (BSL 1.1, public) — the framework, INCLUDING the **proxy SUBSTRATE** (FW-096: LiteLLM routing/config schema, per-cabinet cap-enforcement, audit-log emission, key-rotation, test harness). This is generic framework plumbing any cabinet can run — NOT the commercial secret. FW-096 substrate lands HERE; it is NOT blocked on the private repo.
+- `refslund-cabinet-commercial` (private) — the **commercial-customer-facing layer**: signup (FW-099 customer surface), customer dashboard + audit UI (FW-101), billing integration (Stripe→subscription), customer wizards, installer pipeline, **and the margin-markup VALUES** (the pricing config — the actual commercial differentiation). Imports the framework as a dependency. Customers never see this repo. (Earlier "proxy → private" framing was over-broad: the proxy CODE is framework-public per Spec 051; only the margin VALUES + hosted-billing integration are private.)
 
 **Why this matters now:** every hour Nate spends today bolting Cabinet onto each new customer is an hour not invoiced and a moat that competitors can erode while we hand-tune. Phase 1 of this plan converts the **first paying customer** from a 40-hour bespoke setup into a 4-hour assisted setup. Phase 2 converts that into a 30-minute self-serve install.
 
