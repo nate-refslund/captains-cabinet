@@ -314,6 +314,16 @@ jobs:
         # (keys aren't set in fresh CI redis anyway); hook itself reads REDIS_URL.
         run: bash /opt/founders-cabinet/cabinet/scripts/run-hook-regression.sh
 
+      - name: Spec 049 regression harness
+        # PARTIAL (Phase 7 scaffold): asserts the shipped Spec 049 components —
+        # Phase-2a migrate-active-task + ceiling cap-event-chain, and the 4 Gate-4
+        # leaves (model-pricing AC#18, cache-hash AC#14, page-allowlist AC#15,
+        # semaphore AC#13). Redis-backed sections (ceiling counters, semaphore)
+        # self-skip when redis is unavailable; the file-pure sections always run.
+        # 54 assertions green at ship. Runner-core / C3 / JF assertions extend it
+        # as those phases land.
+        run: bash /opt/founders-cabinet/cabinet/tests/test-spec-049.sh
+
       - name: Framework backlog drift audit (advisory)
         # Surfaces FW-series entries with Status: Proposed/Paused older than
         # threshold (default: Proposed≥7d, Paused≥14d). Advisory only — exits
