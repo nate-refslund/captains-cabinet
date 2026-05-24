@@ -28,7 +28,7 @@ WITH upd AS (
      SET title          = :'title',
          description    = :'desc',
          status         = :'st',
-         context_slug   = COALESCE(NULLIF(:'proj',''), context_slug),
+         context_slug   = COALESCE(NULLIF(:'proj',''), context_slug, 'untagged'),
          due_at         = COALESCE(NULLIF(:'due','')::timestamptz, due_at),
          due_date       = COALESCE(NULLIF(:'due','')::date, due_date),
          priority       = COALESCE(NULLIF(:'prio',''), priority),
@@ -44,10 +44,12 @@ WITH upd AS (
 INSERT INTO officer_tasks
   (officer_slug, title, description, status, context_slug, due_at, due_date, priority,
    founder_action, type, external_source, external_ref, started_at, completed_at, cancelled_at)
-SELECT :'officer', :'title', :'desc', :'st', NULLIF(:'proj',''), NULLIF(:'due','')::timestamptz,
+SELECT :'officer', :'title', :'desc', :'st', COALESCE(NULLIF(:'proj',''), 'untagged'), NULLIF(:'due','')::timestamptz,
        NULLIF(:'due','')::date, NULLIF(:'prio',''), COALESCE(NULLIF(:'founder','')::boolean, false),
        COALESCE(NULLIF(:'ttype',''), 'task'), 'claude-tasks', :'extref',
        CASE WHEN :'st' IN ('wip','done') THEN now() END,
        CASE WHEN :'st' = 'done' THEN now() END,
        CASE WHEN :'st' = 'cancelled' THEN now() END
 WHERE NOT EXISTS (SELECT 1 FROM upd);
+
+COMMIT;
