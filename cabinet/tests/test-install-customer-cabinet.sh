@@ -123,6 +123,29 @@ install_run "$IROOT" "$MOCK_CUSTOMER_SLUG" --confirm >/dev/null 2>&1
 CNT="$(grep -c "^LLM_PROXY_KEY=" "$IROOT/cabinet/.env" 2>/dev/null || echo 99)"
 [ "$CNT" -eq 1 ] && pass || fail "re-run duplicated LLM_PROXY_KEY (count=$CNT, expect 1)"
 
+# ════════════════════════════════════════════════════════════════════════════════
+section "§H — Opus-review hardening: newline-injection + gate-bypass (BUG-1/BUG-2)"
+# BUG-1: a NEWLINE in an injected secret value must be REFUSED (else it plants an arbitrary
+# .env line — e.g. a raw ANTHROPIC key bypassing the gate — and breaks idempotency).
+NLROOT="$TMP/nl-root"
+LLM_PROXY_KEY="$(printf 'realkey\nANTHROPIC_API_KEY=sk-bypass')" install_run "$NLROOT" "$MOCK_CUSTOMER_SLUG" --confirm >/dev/null 2>&1
+[ "$?" -ne 0 ] && pass || fail "BUG-1: newline-bearing secret value must be refused (got exit 0)"
+if [ -f "$NLROOT/cabinet/.env" ] && grep -qiE '^[[:space:]]*(export[[:space:]]+)?ANTHROPIC_API_KEY[[:space:]]*=' "$NLROOT/cabinet/.env"; then
+    fail "BUG-1: newline injection planted a raw ANTHROPIC key in .env"
+else
+    pass
+fi
+# BUG-2: the first-boot gate must catch raw ANTHROPIC keys in tolerant forms a dotenv loader honors.
+for variant in ' ANTHROPIC_API_KEY=sk-x' 'export ANTHROPIC_API_KEY=sk-x' 'anthropic_api_key=sk-x'; do
+    GROOT="$TMP/gate-$RANDOM"; mkdir -p "$GROOT/cabinet"
+    printf '%s\n' "$variant" > "$GROOT/cabinet/.env"
+    install_run "$GROOT" "$MOCK_CUSTOMER_SLUG" --confirm >/dev/null 2>&1
+    [ "$?" -ne 0 ] && pass || fail "BUG-2: gate missed raw-key variant: [$variant]"
+done
+# Belt-and-suspenders: a tampered install token carrying a newline is rejected (not written).
+REFSLUND_INSTALL_TOKEN="$(printf 'h.payload\nANTHROPIC_API_KEY=sk.s')" install_run "$TMP/tok-nl" "$MOCK_CUSTOMER_SLUG" --confirm >/dev/null 2>&1
+[ "$?" -ne 0 ] && pass || fail "tampered install token with newline must be rejected"
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 printf '\n════════════════════════════════════════════════════════════════════\n'
 printf '  FW-098 / Spec 053 v4.1 — install-customer-cabinet harness\n'

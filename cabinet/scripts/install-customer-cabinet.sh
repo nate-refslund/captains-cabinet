@@ -183,12 +183,19 @@ fi
 
 # ── Step 4: inject secrets into cabinet/.env (values never echoed; chmod 600) ──────
 step "Step 4 — inject secrets into ${ENV_FILE}"
-mkdir -p "$(dirname "$ENV_FILE")"
-touch "$ENV_FILE"; chmod 600 "$ENV_FILE"
+mkdir -p "$(dirname "$ENV_FILE")" || die "could not create $(dirname "$ENV_FILE")."
+touch "$ENV_FILE" || die "could not create ${ENV_FILE}."
+chmod 600 "$ENV_FILE" || die "could not chmod 600 ${ENV_FILE}."
 # env_upsert <KEY> <VALUE> — replace the KEY= line if present else append; writes the
 # value straight to the file (never to stdout). Atomic via temp + mv.
 env_upsert() {
     local key="$1" value="$2" tmp
+    # BUG-1 (Opus review): refuse a newline/CR in any injected value — it would plant an
+    # arbitrary extra cabinet/.env line (e.g. a raw ANTHROPIC_API_KEY that bypasses the
+    # first-boot gate) and break idempotency. Also guards the install-token write (line below).
+    case "$value" in
+        *$'\n'*|*$'\r'*) die "refusing to inject ${key}: value contains a newline/CR (would corrupt cabinet/.env)." ;;
+    esac
     tmp="$(mktemp)"
     grep -v "^${key}=" "$ENV_FILE" > "$tmp" 2>/dev/null || true
     printf '%s=%s\n' "$key" "$value" >> "$tmp"
@@ -209,7 +216,7 @@ if [ -n "${INSTALL_SKIP_BOOTSTRAP:-}" ]; then
     log "INSTALL_SKIP_BOOTSTRAP set — skipping real bootstrap call."
 elif [ -x "$BOOTSTRAP" ]; then
     log "Running: cabinet-bootstrap.sh ${CUSTOMER_SLUG} --preset ${PRESET}"
-    bash "$BOOTSTRAP" "$CUSTOMER_SLUG" --preset "$PRESET" || die "cabinet-bootstrap.sh failed for ${CUSTOMER_SLUG}."
+    bash "$BOOTSTRAP" "$CUSTOMER_SLUG" --preset "$PRESET" || die "cabinet-bootstrap.sh failed for ${CUSTOMER_SLUG}. Secrets remain in ${ENV_FILE} (mode 600) — rerun the install or remove the file."
     log "Stack provisioned."
 else
     die "cabinet-bootstrap.sh not found/executable at ${BOOTSTRAP}."
@@ -231,7 +238,9 @@ EXIT_CODE=0
 # SECURITY: a raw ANTHROPIC_API_KEY in cabinet/.env would bypass the proxy (→ no $50/day
 # cap, no audit log). All LLM traffic MUST flow through the proxy via LLM_PROXY_KEY.
 # Scope: cabinet/.env ONLY (Spec 053 053-04 — customer's own ~/.env is out of scope).
-if grep -q "^ANTHROPIC_API_KEY=" "$ENV_FILE"; then
+# BUG-2 (Opus review): tolerate leading whitespace, an `export ` prefix, and case — a dotenv
+# loader honors all of these, so a narrow ^ANTHROPIC_API_KEY= anchor is a weak gate.
+if grep -qiE '^[[:space:]]*(export[[:space:]]+)?ANTHROPIC_API_KEY[[:space:]]*=' "$ENV_FILE"; then
     warn "VALIDATION FAIL: raw ANTHROPIC_API_KEY present in ${ENV_FILE} — this bypasses the proxy cap + audit. Remove it; officers must use LLM_PROXY_KEY only."
     EXIT_CODE=1
 else
