@@ -143,7 +143,7 @@ CoS-validated T-1 day before install per Spec 053 Stage 3.
 
 2. **Stripe pricing structure AC** — Stripe Checkout configured with base price 25,000 DKK + per-employee surcharge 5,000 DKK × employee_count. employee_count slider (1-7) updates total live. Total in DKK + USD-equivalent shown (informational only; customer charged DKK).
 
-3. **Token Billing meter wiring AC** — Stripe Token Billing meter created per customer at signup; meter_id stored in customer record. Daily cron at 00:05 UTC reads FW-096 proxy-audit JSONL for prior-day cap-spend per cabinet → reports to Stripe meter. Monthly invoice reconciles meter against included quota; overage = $0 if within $50/day USD cap; cap-bump one-shots invoiced separately.
+3. **Token Billing meter wiring AC** — Stripe Token Billing meter created per customer at signup; meter_id stored in customer record. Daily cron at 00:10 UTC reads FW-096 proxy-audit JSONL for prior-day cap-spend per cabinet → reports to Stripe meter (00:10 not 00:05 per v2 CTO #4 — avoids colliding with the Spec 052 hash-chain checkpoint at 00:05 UTC). Monthly invoice reconciles meter against included quota; overage = $0 if within $50/day USD cap; cap-bump one-shots invoiced separately.
 
 4. **DPA clickwrap AC (per Spec 055 v6 CTO #1)** — Step 2 captures DPA acceptance with timestamp + IP + document_hash; persisted to customer record + Library Compliance Space record. eIDAS-compliant. DPA document versioned at refslund.ai/legal/dpa with hash-anchored URL (e.g., `?v=2026-05-20-v1`); old versions archived; customer signs current version.
 

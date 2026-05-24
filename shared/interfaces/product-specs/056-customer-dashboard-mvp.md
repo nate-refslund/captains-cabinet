@@ -198,7 +198,7 @@ If cap-bump exceeds $100 USD: dashboard surfaces Captain-decisions log notice (p
 
 ## Acceptance criteria
 
-1. **Overview subpage AC** — `/dashboard` renders today's spend (USD primary + DKK display) + cap-remaining + 7-day trend (stacked-bar chart per officer) + per-officer-7d-spend breakdown + recent-activity feed (last 24h, 10 entries) + cap-bump CTA + compliance-link footer. 60s polling refresh.
+1. **Overview subpage AC** — `/dashboard` renders today's spend (USD primary + DKK display) + cap-remaining + 7-day trend (stacked-bar chart per officer) + per-officer-7d-spend breakdown + recent-activity feed (last 24h, 10 entries) + cap-bump CTA + compliance-link footer. 60s polling refresh. **Cap-status source:** today's-spend / cap-remaining / cap-pct progress bar read the LiteLLM team-budget current-spend (enforcer counter, per Spec 051 AC #7 v7); 7-day trend + per-officer breakdown read proxy-audit JSONL aggregates.
 
 2. **Audit subpage AC** — `/dashboard/audit` reads Spec 052 audit log via AUDIT_API_KEY scoped GET endpoint; default filter last-7-days + all officers; filter panel for date range + officer + event type; row-click expands detail view; integrity-status badge top-right; "Verify yourself" link triggers browser-side JS sha256 chain walker; Article 15 export CTA emits Spec 052 audit-log entry + 30-day SLA tracker initiated.
 
@@ -248,7 +248,7 @@ No Open Questions Phase 1 — design-taste subjective + Library + /tasks canonic
 
 ## Dependencies
 
-- **Spec 051 v5 dependency:** proxy-audit JSONL aggregates feed overview spend + cap-status + per-officer breakdown.
+- **Spec 051 v7 dependency:** headline **cap-status** (today's spend total, cap-remaining, cap-pct progress bar) reads the **LiteLLM team-budget current-spend** for `team_id=cabinet` — the authoritative enforcer counter that fires the 80%/100% gates (per Spec 051 AC #7 v7). **Attribution** (per-officer breakdown, 7-day trend) reads **proxy-audit JSONL aggregates**. Do NOT derive cap-status from a JSONL `cost_raw_usd` re-sum — it drifts from the enforcer and shows headroom while the customer is 429'd.
 - **Spec 052 v3 dependency:** audit log JSONL feeds audit subpage; AUDIT_API_KEY auth; hash-chain checkpoint endpoint for integrity verifier.
 - **Spec 053 v3 dependency:** pre-install subpage couples to Stage 3 checklist + Stage 4 install-day flow.
 - **Spec 054 v1 dependency:** pre-install form CTO #4 fold per CoS architecture review; Stripe portal API for billing subpage; customer-record schema for auth + scoping.
