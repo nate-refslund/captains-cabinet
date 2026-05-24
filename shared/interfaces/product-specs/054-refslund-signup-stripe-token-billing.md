@@ -27,7 +27,7 @@ CoS architecture fold:
 **A12 + A13 preserved cleanly both reviews.** Captain ratifications inapplicable per multi-officer-process-as-legal-review framing EXCEPT new CTO #11 FOUNDER ACTION (DK VAT registration) which CoS surfaces in 07:00 morning briefing alongside Spec 055 v4 H1+H3+H4.
 **Priority:** P0 — gates customer signup live; wires DPA + Annex III attestation + sub-processor list ratification + Stripe billing per Captain msg 2565 pricing
 **Framework ticket:** FW-099
-**Owner:** CPO (spec) + CTO (substrate + Stripe wiring) + COO-as-DPO (per Spec 055 v4 H1 pending Captain ratify; compliance integration) + CoS (Captain ratification pipeline)
+**Owner:** CPO (spec) + CTO (substrate + Stripe wiring) + COO-as-DPO (RATIFIED Captain msg 2737; compliance integration) + CoS (Captain ratification pipeline)
 **Scope:** refslund.ai signup wizard + Stripe Checkout + Stripe Token Billing meter + DPA clickwrap + Annex III attestation + sub-processor list ratification + Stripe webhook receivers (signup completion, cap-bump, subscription state changes) + customer-record schema
 **Canonical artifact home:** Library Specs Space (this spec) + Library Compliance Space (signed customer DPAs + Annex III attestations)
 **Evidence:** Captain msg 2565 (pricing 25k DKK base + 5k DKK/employee, max 7 employees, $50/day USD cap, Danish-first Phase 1); Spec 051 v5 (virtual key issuance at signup completion); Spec 052 v3 (AUDIT_API_KEY issuance at signup; signup audit-log entry); Spec 053 v2 (Stripe webhook → welcome email + Captain note + install scheduling); Spec 055 v6 (DPA + Annex III + sub-processor list signed at signup; Library Compliance Space record-of-record).

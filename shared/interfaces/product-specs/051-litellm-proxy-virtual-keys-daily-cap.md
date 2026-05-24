@@ -59,7 +59,7 @@ LiteLLM (open-source MIT-licensed proxy server, BerriAI; production-grade, matur
 
 `refslund.ai/proxy` (LiteLLM proxy server hosted on Cabinet infrastructure) sits between officer Claude/OpenAI/etc. API calls and the actual provider. Each customer cabinet gets one virtual key issued at signup. Proxy enforces:
 
-- Per-cabinet daily-spend cap (DKK denominated; configurable at signup; default = Captain-ratified ceiling per Captain msg 2565 — actual figure TBD pending Captain clarification, see §Open Questions below)
+- Per-cabinet daily-spend cap: **$50 USD/day TOTAL per cabinet** (Captain msg 2565, captain-decisions.md 2026-05-20 13:58 UTC — RESOLVED, not pending; configurable at signup, this is the default ceiling)
 - Per-cabinet audit log emitted to customer-audit substrate (FW-097)
 - Margin markup on Anthropic raw cost (Cabinet's pricing model; transparent to customer in dashboard)
 - Provider routing (Anthropic primary; OpenAI/Gemini fallback on Anthropic outage; Sonnet+Opus-advisor pattern per Captain msg 2540)
