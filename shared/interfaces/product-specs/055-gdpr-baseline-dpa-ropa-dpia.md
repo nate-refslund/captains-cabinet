@@ -1,6 +1,8 @@
 # Spec 055: GDPR Baseline — DPA + ROPA + DPIA + Sub-Processor List + Annex III ToS Exclusion (FW-100 Phase 1 Priority 2)
 
-**Version:** v7.3.1 (line-85 leftover-contradiction fix) — v7.3 superseded
+**Version:** v7.3.2 (flow step-5 "scrubbed"→"pseudonymized" — completes the v6 fold) — v7.3.1 superseded
+
+**v7.3.2 changelog — §Right-to-erasure flow step 5 aligned (FW-100 PR #101 review, 2026-05-24):** the v6 changelog claimed it rewrote flow step 5 from "audit log entries scrubbed" to "pseudonymized per Spec 052 AC #8," but only AC #6 got the fix — the §Right-to-erasure flow body (step 5) still said "scrubbed" (fold-claim-vs-execute leftover, caught reviewing the FW-100 erasure runbook which correctly pseudonymizes via FW-097 `erasure.pseudonymize_cabinet`). Step 5 now matches AC #6 + the merged code: pseudonymized (NOT deleted), entry_hash preserved + pseudonym_marker_hash verified per AC #8(ii).
 
 **v7.3.1 changelog — re-eval-trigger leftover fixed (decision-propagation-audit, 2026-05-24):** the §phasing "risk-class re-evaluation trigger" (line 85) still asserted "CoS-as-reviewer + CoS-as-DPO is defensible at Phase 1 scale" — a posture the H1 ratification (v7.1, msg 2737) explicitly REJECTED for the Article 38(6) conflict. Reworded to "COO-as-DPO (Article 38(6)-clean) + cabinet-multi-officer-review-as-counsel," preserving the valid Phase-2 (5+ customer) external-counsel/human-DPO re-evaluation trigger. Caught by a cabinet-wide stale-DPO grep that also synced live refs in Spec 052 (v3.1), 054, 056 to the ratified COO-as-DPO.
 
@@ -223,7 +225,7 @@ Cabinet erasure runbook (`cabinet/scripts/customer-erasure.sh`):
    - ElevenLabs: voice messages already 30-day TTL'd; force-delete if active
    - Cloudflare: edge cache flush + log retention purge
    - Hetzner: customer storage volumes deleted
-5. Hot-storage purge: audit log entries scrubbed; account profile deleted; cabinet config archived for billing reconciliation then anonymized
+5. Hot-storage purge: audit log entries **pseudonymized per Spec 052 AC #8 two-hash-field schema (NOT deleted** — original `entry_hash` preserved for chain-integrity verification + `pseudonym_marker_hash` added + verified per Spec 052 AC #8(ii)); account profile deleted; cabinet config archived for billing reconciliation then anonymized
 6. Cold-storage handling: 5-year compliance hold (10y for tax-relevant records) preserved (anonymized), legal basis = Article 6(1)(c) compliance with legal obligation (Bogføringsloven §10 5y / Skatteforvaltningsloven §47 10y) + Article 17(3)(b) — retention required for legal claims defense. (Reduced from 7y per Captain msg 2742.)
 7. Erasure completion notification to customer with audit-trail receipt
 8. Audit-log of erasure event (high-priority entry)
