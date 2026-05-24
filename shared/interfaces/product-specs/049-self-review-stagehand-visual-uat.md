@@ -172,11 +172,13 @@ New substrate: per-task counter tracked in `.claude/active-task.json`:
   "agentSteps": 0,
   "agentTokensTotal": 0,
   "agentStepCap": 200,
-  "agentTokenCap": 10000000
+  "agentTokenCap": 10000000,
+  "agentStepBaseline": null,
+  "agentTokenBaseline": null
 }
 ```
 
-Defaults configurable per project in `.cabinet/agent-instructions.md`.
+`agentSteps`/`agentTokensTotal` are **deltas** computed against the per-task baselines (C1): `agentStepBaseline` = the `cabinet:toolcalls:$OFFICER` value snapshotted at `/pickup-task`; `agentTokenBaseline` = the wrapper HSET `<role>_input` + `<role>_output` sum at `/pickup-task` (token-count, NOT `_cost_micro`). Both `null` until the snapshot fires. `agentSteps = current toolcalls − agentStepBaseline`; `agentTokensTotal = current (_input+_output) − agentTokenBaseline`. Storing the baselines IN the per-task state file (vs a separate Redis key) keeps all per-task state in one store with the right lifecycle (deleted post-merge) — CTO decision 2026-05-24, commit 40323fb. Defaults configurable per project in `.cabinet/agent-instructions.md`.
 
 **Cap event-chain priority (resolves CoS ARCH-2):** consolidated structured events, NOT separate-per-cap events.
 - **At ≥80% of any cap (warning):** agent emits single `CAP_APPROACH` event with structured payload listing ALL triggered caps and their percentages (e.g., `{caps: [{name: "agentTokenCap", pct: 84}, {name: "visualUatCost", pct: 81}]}`). Officer prompted to extend, downscope, or abandon.
