@@ -416,6 +416,81 @@ section "§B.12 — chattr guard: CABINET_ERASURE_NO_CHATTR=1 honoured (no chatt
 CHATTR_OUT="$(CABINET_ERASURE_NO_CHATTR=1 erasure "${CABINET_ID_DRY}" --dry-run 2>&1)"
 assert_not_contains "no chattr error in output" "$CHATTR_OUT" "chattr:"
 
+# ════════════════════════════════════════════════════════════════════════════════
+# §C — security + failure-injection (Opus review SG-1: the happy-path harness was
+#      blind to BUG-1 cabinet_id injection + BUG-2 false-complete-on-failure)
+# ════════════════════════════════════════════════════════════════════════════════
+
+section "§C.1 — cabinet_id injection is rejected at entry (Opus BUG-1/RCE)"
+
+SENTINEL="${TMP}/PWNED_SENTINEL"
+
+# (a) python-literal break-out + os.system — the exact RCE class the reviewer proved.
+rm -f "$SENTINEL"
+INJECT_PY="x'); import os; os.system('touch ${SENTINEL}'); ('"
+erasure "$INJECT_PY" --confirm >/dev/null 2>&1
+INJ_RC=$?
+if [ "$INJ_RC" -ne 0 ]; then pass; else fail "python-injection cabinet_id must be rejected (got exit 0)"; fi
+if [ ! -f "$SENTINEL" ]; then pass; else fail "RCE: python-injection sentinel was created — cabinet_id NOT validated!"; fi
+
+# (b) shell-metacharacter break-out.
+rm -f "$SENTINEL"
+erasure "evil; touch ${SENTINEL}" --confirm >/dev/null 2>&1
+SH_RC=$?
+if [ "$SH_RC" -ne 0 ]; then pass; else fail "shell-metachar cabinet_id must be rejected (got exit 0)"; fi
+if [ ! -f "$SENTINEL" ]; then pass; else fail "RCE: shell-metachar sentinel was created!"; fi
+
+# (c) path-traversal (cross-tenant / outside-root read).
+erasure "../../etc/passwd" --confirm >/dev/null 2>&1
+if [ "$?" -ne 0 ]; then pass; else fail "path-traversal cabinet_id must be rejected"; fi
+
+# (d) uppercase rejected (strict lowercase slug).
+erasure "UpperCaseCabinet" --confirm >/dev/null 2>&1
+if [ "$?" -ne 0 ]; then pass; else fail "uppercase cabinet_id must be rejected"; fi
+
+# (e) the rejection is explicit.
+REJECT_MSG="$(erasure "bad;id" --confirm 2>&1 || true)"
+assert_contains "rejection names invalid cabinet_id" "$REJECT_MSG" "invalid cabinet_id"
+
+# (f) regression guard — a legitimate slug is NOT over-rejected.
+VALID_MSG="$(erasure "valid-cabinet-123" --dry-run 2>&1 || true)"
+assert_not_contains "valid slug not over-rejected" "$VALID_MSG" "invalid cabinet_id"
+
+section "§C.2 — corrupt-log erasure fails CLOSED, never false-completes (Opus BUG-2)"
+
+CABINET_ID_FAIL="test-erasure-failcabinet"
+SSOT_FAIL="${LITELLM_AUDIT_LOG_ROOT}/audit/${CABINET_ID_FAIL}.jsonl"
+
+# Seed one valid PII entry, then append a CORRUPT (non-JSON) line so pseudonymize
+# reports errors>0 AND the post-erasure chain verify fails.
+py -c "
+import hashchain
+hashchain.append({
+    'ts': '2026-02-01T00:00:00Z', 'cabinet_id': '${CABINET_ID_FAIL}',
+    'entry_id': 'fail-1', 'stream': 'cabinet', 'event_type': 'signup',
+    'actor': {'officer': None, 'captain': True},
+    'subject': {'type': 'cap_event', 'target': 'signup', 'metadata': {'customer_name': 'Fail User', 'email': 'fail@example.com'}},
+    'cost': {},
+})
+" 2>/dev/null
+printf 'THIS IS NOT VALID JSON {{{ broken\n' >> "${SSOT_FAIL}"
+
+FAIL_OUT="$(erasure "${CABINET_ID_FAIL}" --confirm 2>&1)"
+FAIL_RC=$?
+
+# (a) fail-closed: must exit non-zero (no false-complete).
+if [ "$FAIL_RC" -ne 0 ]; then pass; else fail "corrupt-log erasure must exit non-zero (got 0 — false-complete!)"; fi
+# (b) CoS is alerted to the failure.
+assert_contains "failure alerts CoS" "$FAIL_OUT" "erasure-FAILED"
+# (c) receipt is marked failed, not pseudonymized-success.
+FAIL_RECEIPT="$(find "${CABINET_ERASURE_RECEIPT_DIR}" -name "*${CABINET_ID_FAIL}*-receipt.json" 2>/dev/null | head -1)"
+assert_file_exists "failure receipt exists" "${FAIL_RECEIPT}"
+assert_eq "receipt status is failed"        "$(jq -r '.status'           "${FAIL_RECEIPT}" 2>/dev/null)" "failed"
+assert_eq "receipt erasure_verified false"  "$(jq -r '.erasure_verified' "${FAIL_RECEIPT}" 2>/dev/null)" "false"
+# (d) SLA ticket is LEFT OPEN for retry (never marked done on failure).
+FAIL_TICKET_ID="$(jq -r '.ticket_id' "${FAIL_RECEIPT}" 2>/dev/null)"
+assert_eq "SLA ticket left OPEN on failure" "$(jq -r '.status' "${CABINET_GDPR_TICKET_DIR}/${FAIL_TICKET_ID}.json" 2>/dev/null)" "open"
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 
 printf '\n════════════════════════════════════════════════════════════════════\n'

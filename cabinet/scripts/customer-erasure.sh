@@ -42,6 +42,7 @@ AUDIT_LOG_ROOT="${LITELLM_AUDIT_LOG_ROOT:-${CABINET_ROOT}/proxy/logs}"
 RECEIPT_DIR="${CABINET_ERASURE_RECEIPT_DIR:-${AUDIT_LOG_ROOT}/erasure}"
 TEST_MODE="${CABINET_HOOK_TEST_MODE:-0}"
 SLA_TRACKER="${CABINET_ROOT}/cabinet/scripts/sla-tracker.sh"
+NOTIFY_SCRIPT="${CABINET_ROOT}/cabinet/scripts/notify-officer.sh"
 
 # ── Parse args ────────────────────────────────────────────────────────────────
 
@@ -63,6 +64,17 @@ if [ -z "$CABINET_ID" ]; then
     exit 1
 fi
 
+# SECURITY (Opus review BUG-1/4/5): cabinet_id is interpolated into file paths,
+# into three python3 -c invocations, and into notify-officer message text (which
+# the trigger system later shell-evaluates). Validate it as a strict slug BEFORE
+# any use — a charset-restricted slug cannot break out of a quoted python literal,
+# carry shell metacharacters / command-substitution, or contain path-traversal.
+# Same slug convention as triggers.sh / start-officer.sh. Reject anything else.
+if ! [[ "$CABINET_ID" =~ ^[a-z0-9][a-z0-9-]{0,63}$ ]]; then
+    echo "ERROR: invalid cabinet_id '$CABINET_ID' — must be a lowercase alphanumeric/hyphen slug (1-64 chars, matching ^[a-z0-9][a-z0-9-]{0,63})." >&2
+    exit 1
+fi
+
 # Dry-run always wins over --confirm
 if [ "$DRY_RUN" -eq 1 ]; then
     CONFIRM=0
@@ -73,6 +85,9 @@ if [ "$CONFIRM" -eq 1 ] && [ "$DRY_RUN" -eq 0 ]; then
     MUTATE=1
 fi
 
+# Overall exit code — flipped to 1 by a failed/unverified erasure (Opus review BUG-2).
+EXIT_CODE=0
+
 SSOT="${AUDIT_LOG_ROOT}/audit/${CABINET_ID}.jsonl"
 REQUESTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
@@ -82,6 +97,15 @@ log()  { echo "[erasure] $*"; }
 info() { echo "[erasure] INFO:    $*"; }
 warn() { echo "[erasure] WARNING: $*" >&2; }
 step() { echo; echo "══════ Step $* ══════"; }
+
+# BUG-3 (Opus review): re-apply the append-only flag on ANY exit so a
+# mid-pseudonymization failure under `set -euo pipefail` cannot leave the audit
+# log permanently mutable (the chattr -a / +a pair straddles the python call).
+_restore_chattr() {
+    if command -v chattr >/dev/null 2>&1 && [ -z "${CABINET_ERASURE_NO_CHATTR:-}" ] && [ -f "${SSOT}" ]; then
+        chattr +a "${SSOT}" 2>/dev/null || true
+    fi
+}
 
 # ── Plan header ───────────────────────────────────────────────────────────────
 
@@ -216,8 +240,10 @@ log
 log "Audit log pseudonymization (FW-097 erasure.py — Spec 052 AC#8 two-hash schema):"
 
 if [ "$MUTATE" -eq 1 ] && [ -f "${SSOT}" ]; then
-    # Lift chattr +a append-only flag (deploy-gated; guarded by CABINET_ERASURE_NO_CHATTR)
+    # Lift chattr +a append-only flag (deploy-gated; guarded by CABINET_ERASURE_NO_CHATTR).
+    # Arm the EXIT trap FIRST (BUG-3) so +a is restored even if pseudonymize throws.
     if command -v chattr >/dev/null 2>&1 && [ -z "${CABINET_ERASURE_NO_CHATTR:-}" ]; then
+        trap _restore_chattr EXIT
         chattr -a "${SSOT}" 2>/dev/null || true
     fi
 
@@ -229,6 +255,19 @@ print(result['errors'])
 ")"
     ENTRIES_PROCESSED="$(echo "${ERASURE_RESULT}" | head -1)"
     ENTRIES_ERRORED="$(echo "${ERASURE_RESULT}" | tail -1)"
+
+    # BUG-5 (Opus review): the python stdout MUST be two integers. Anything else
+    # means a malformed result — never interpolate a non-integer into the Step-8
+    # python / Step-7 jq (injection + half-done exit under set -e). Coerce to a
+    # failure signal (errors=1 drives the BUG-2 success gate to fail-closed).
+    if ! [[ "${ENTRIES_PROCESSED}" =~ ^[0-9]+$ ]]; then
+        warn "Non-integer entries_processed='${ENTRIES_PROCESSED}' — treating as erasure failure."
+        ENTRIES_PROCESSED=0
+    fi
+    if ! [[ "${ENTRIES_ERRORED}" =~ ^[0-9]+$ ]]; then
+        warn "Non-integer entries_errored='${ENTRIES_ERRORED}' — treating as erasure failure."
+        ENTRIES_ERRORED=1
+    fi
     log "Pseudonymization result: processed=${ENTRIES_PROCESSED} errors=${ENTRIES_ERRORED}"
 
     # Re-apply chattr +a
@@ -267,6 +306,17 @@ log "  This step wires to FW-099 (Stripe) + FW-101 (backend) when built."
 log "  Action: log erasure_request=true against cabinet_id in customer DB."
 log "  Phase-1: no-op with this log line. Profile deletion is MANUAL in Hetzner/DB."
 
+# ── Erasure success gate (Opus review BUG-2) ─────────────────────────────────
+# A failed pseudonymization (errors>0) or a broken post-erasure hash-chain must
+# NOT be recorded as a completed erasure. Steps 7-8 branch on this: on failure the
+# receipt is marked failed, the SLA ticket is left OPEN for retry, CoS is alerted,
+# and the run exits 1. No-SSOT (nothing to erase) is trivially OK.
+ERASURE_OK=1
+if [ "$MUTATE" -eq 1 ] && [ -f "${SSOT}" ]; then
+    [ "${ENTRIES_ERRORED}" -eq 0 ]        || ERASURE_OK=0
+    [ "${CHAIN_VERIFIED_POST}" = "true" ] || ERASURE_OK=0
+fi
+
 # ── Step 6: Cold-storage handling ─────────────────────────────────────────────
 
 step "6 — Cold-storage handling"
@@ -289,7 +339,10 @@ if [ "$MUTATE" -eq 1 ]; then
     mkdir -p "${RECEIPT_DIR}"
     RECEIPT_FILE="${RECEIPT_DIR}/${TICKET_ID}-receipt.json"
 
+    if [ "$ERASURE_OK" -eq 1 ]; then ERASURE_STATUS="completed"; else ERASURE_STATUS="failed"; fi
+
     jq -n \
+        --arg status            "${ERASURE_STATUS}" \
         --arg ticket_id         "${TICKET_ID}" \
         --arg cabinet_id        "${CABINET_ID}" \
         --arg requested_at      "${REQUESTED_AT}" \
@@ -301,6 +354,8 @@ if [ "$MUTATE" -eq 1 ]; then
         --arg chain_verified    "${CHAIN_VERIFIED_POST}" \
         --arg el_status         "${ELEVENLABS_STATUS}" \
         '{
+            status:                 $status,
+            erasure_verified:       ($status == "completed"),
             ticket_id:              $ticket_id,
             cabinet_id:             $cabinet_id,
             request_type:           "erasure",
@@ -349,6 +404,7 @@ if [ "$MUTATE" -eq 1 ]; then
     echo "  entries_processed      : ${ENTRIES_PROCESSED}"
     echo "  entries_errored        : ${ENTRIES_ERRORED}"
     echo "  chain_verified_post    : ${CHAIN_VERIFIED_POST}"
+    echo "  erasure status         : ${ERASURE_STATUS}"
     echo "  receipt_file           : ${RECEIPT_FILE}"
     echo "  signed                 : false (Phase-1)"
     echo "  ─────────────────────────────────────────────────────────────────────"
@@ -362,16 +418,24 @@ fi
 step "8 — Tamper-evident erasure audit event + SLA completion"
 
 if [ "$MUTATE" -eq 1 ]; then
-    # Append the gdpr_erasure_completed event AFTER pseudonymization
-    # so the erasure itself is tamper-evidently logged.
-    # chattr toggle is deploy-gated; guard it:
-    if command -v chattr >/dev/null 2>&1 && [ -z "${CABINET_ERASURE_NO_CHATTR:-}" ]; then
-        chattr -a "${SSOT}" 2>/dev/null || true
-    fi
-
-    # Convert bash "true"/"false" string to Python True/False literal
+    # Convert bash "true"/"false" to a Python bool literal for the metadata.
     PY_CHAIN_VERIFIED="True"
     [ "${CHAIN_VERIFIED_POST}" = "true" ] || PY_CHAIN_VERIFIED="False"
+
+    # BUG-2: record an ACCURATE event — completed only when the erasure verified,
+    # otherwise a failure event. The SLA ticket is NEVER marked done on failure.
+    if [ "$ERASURE_OK" -eq 1 ]; then
+        ERASURE_EVENT="gdpr_erasure_completed"
+    else
+        ERASURE_EVENT="gdpr_erasure_failed"
+    fi
+
+    # Append the erasure event AFTER pseudonymization so it is tamper-evidently
+    # logged. chattr toggle is deploy-gated; guard it (the EXIT trap restores +a).
+    if command -v chattr >/dev/null 2>&1 && [ -z "${CABINET_ERASURE_NO_CHATTR:-}" ]; then
+        trap _restore_chattr EXIT
+        chattr -a "${SSOT}" 2>/dev/null || true
+    fi
 
     PYTHONPATH="${AUDIT_SERVER}" python3 -c "
 import hashchain
@@ -380,7 +444,7 @@ hashchain.append({
     'cabinet_id': '${CABINET_ID}',
     'entry_id':   'gdpr-erasure-${TICKET_ID}',
     'stream':     'cabinet',
-    'event_type': 'gdpr_erasure_completed',
+    'event_type': '${ERASURE_EVENT}',
     'actor': {
         'officer': 'cto-erasure-runbook',
         'captain': False
@@ -392,20 +456,34 @@ hashchain.append({
             'ticket_id':       '${TICKET_ID}',
             'request_type':    'erasure',
             'entries_processed': ${ENTRIES_PROCESSED},
+            'entries_errored':   ${ENTRIES_ERRORED},
             'chain_verified':  ${PY_CHAIN_VERIFIED}
         }
     },
     'cost': {}
 })
-"
-    log "Appended gdpr_erasure_completed event to audit log."
+" || warn "Could not append ${ERASURE_EVENT} audit event."
+    log "Appended ${ERASURE_EVENT} event to audit log."
 
     if command -v chattr >/dev/null 2>&1 && [ -z "${CABINET_ERASURE_NO_CHATTR:-}" ]; then
         chattr +a "${SSOT}" 2>/dev/null || true
     fi
 
-    # Complete the SLA ticket
-    CABINET_HOOK_TEST_MODE="${TEST_MODE}" bash "${SLA_TRACKER}" complete "${TICKET_ID}"
+    if [ "$ERASURE_OK" -eq 1 ]; then
+        # Success: complete the SLA ticket.
+        CABINET_HOOK_TEST_MODE="${TEST_MODE}" bash "${SLA_TRACKER}" complete "${TICKET_ID}"
+    else
+        # Failure: leave the SLA ticket OPEN (stays on the board for retry), alert
+        # CoS, and fail the run. No false-complete (Opus review BUG-2).
+        EXIT_CODE=1
+        warn "Erasure FAILED for cabinet ${CABINET_ID}: errors=${ENTRIES_ERRORED} chain_verified=${CHAIN_VERIFIED_POST}."
+        warn "SLA ticket ${TICKET_ID} left OPEN for retry; receipt marked failed."
+        if [ "${TEST_MODE}" = "1" ]; then
+            echo "WOULD-NOTIFY cos: erasure-FAILED ${TICKET_ID}"
+        else
+            bash "${NOTIFY_SCRIPT}" cos "GDPR erasure FAILED: ticket ${TICKET_ID} cabinet ${CABINET_ID} — errors ${ENTRIES_ERRORED}, chain_verified ${CHAIN_VERIFIED_POST}. SLA ticket left open; manual intervention required." 2>/dev/null || true
+        fi
+    fi
 else
     log "(DRY-RUN) Would append gdpr_erasure_completed event to: ${SSOT}"
     log "(DRY-RUN) Would complete SLA ticket: ${TICKET_ID}"
@@ -418,7 +496,11 @@ echo "╔═══════════════════════�
 echo "║  Erasure runbook complete                                            ║"
 echo "╚══════════════════════════════════════════════════════════════════════╝"
 echo "  Cabinet ID : ${CABINET_ID}"
-echo "  Mode       : $([ "$MUTATE" -eq 1 ] && echo 'EXECUTED' || echo 'DRY-RUN (no mutations performed)')"
+if [ "$MUTATE" -eq 1 ]; then
+    echo "  Mode       : $([ "$EXIT_CODE" -eq 0 ] && echo 'EXECUTED (erasure verified)' || echo 'FAILED (erasure NOT verified — see warnings above)')"
+else
+    echo "  Mode       : DRY-RUN (no mutations performed)"
+fi
 if [ "$MUTATE" -eq 1 ]; then
     echo "  Receipt    : ${RECEIPT_FILE}"
 fi
@@ -437,4 +519,4 @@ if [ "$MUTATE" -eq 0 ]; then
     echo "  Run with --confirm to execute the erasure."
 fi
 
-exit 0
+exit ${EXIT_CODE}
