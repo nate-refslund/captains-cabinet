@@ -434,9 +434,9 @@ Each sub-spec gets full Spec 049 4-gate /self-review treatment + visual-UAT for 
 
 ### Pending Captain ratification
 1. **A12 captain-pattern wording** — PROPOSED in `shared/interfaces/captain-patterns.md` ("Officer-in-loop on architecture; agents execute well-defined slices"). Spec 049 AC#12 anchors here. Captain ratification = wording finalization.
-2. **Sub-processor list freeze for Phase 1** — Anthropic-only vs OpenAI/Gemini pre-enabled. Surfaced from Spec 055 v2 Q5 (absorbed into FW-096 Q1). Single Captain decision spans both specs.
-3. **EU-law counsel identification** — Spec 055 v2 Q1 (Phase 5a gate-blocking). Long-lead-time; Captain identifies the counsel.
-4. **DPO appointment path** — Spec 055 v2 Q2 (Phase 5a gate-blocking). Captain serves / external contractor / defer to Phase 2.
+2. ✅ **Sub-processor list freeze for Phase 1** — RESOLVED msg 2583 Q5: Anthropic-only Phase 1 (OpenAI/Gemini fallback disabled). Spec 055 v7.
+3. ✅ **EU-law counsel identification** — RESOLVED msg 2583 Q1: NO external counsel Phase 1; cabinet multi-officer review process (CPO→CoS→CRO→COO) substitutes. Re-evaluate at 5+ paying customers. Spec 055 v7.
+4. ✅ **DPO appointment path** — RESOLVED msg 2737 (2026-05-24): COO-as-DPO (Article 38(6) fix; designation holds while COO passive, active duties at customer #1). Spec 055 v7.1; FW-114 applied.
 5. **Private commercial repo creation** — `refslund-cabinet-commercial` private repo for proxy/dashboard/audit code. Confirms BSL 1.1 licensing isolation.
 6. **Mac Mini image distribution choice** — CTO P1 BLOCKER #3: bundled 2GB pkg (offline-first, matches "your MacMini your data") vs first-launch registry pull (network dep, smaller pkg). Recommend bundled.
 7. **OrbStack vs Colima for Phase 2** — CTO P2 #8: proprietary-polished UX vs OSS-purity tradeoff.
