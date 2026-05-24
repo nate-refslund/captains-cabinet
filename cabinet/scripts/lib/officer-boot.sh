@@ -15,6 +15,13 @@
 #   source .../lib/officer-boot.sh
 #   officer_boot_drive "<tmux-target>" "<boot-prompt-text>"
 
+# _obd_send <send-keys args...> — tmux send-keys, guarded so a failed send (e.g.
+# the pane died mid-boot) can't abort the caller under `set -euo pipefail`.
+# start-officer-mac.sh sources + calls officer_boot_drive in the FOREGROUND with
+# set -e, so a bare `tmux send-keys` to a dead pane (exit 1) would abort the boot;
+# start-officer.sh runs it in a backgrounded subshell without set -e.
+_obd_send() { tmux send-keys "$@" 2>/dev/null || true; }
+
 # officer_boot_drive <tmux-target> <boot-prompt-text>
 #   Polls the freshly-launched Claude Code pane, auto-confirms known startup
 #   prompts, then submits the boot prompt and verifies it registered.
@@ -48,12 +55,12 @@ officer_boot_drive() {
     # was the intermittent "officer stuck on a startup prompt" bug.
     pane_output=$(tmux capture-pane -t "$pane" -p 2>/dev/null | grep -v '^[[:space:]]*$' | tail -40)
     if echo "$pane_output" | grep -qE "$SELECT2_REGEX"; then
-      tmux send-keys -t "$pane" "2"
+      _obd_send -t "$pane" "2"
       sleep 0.5
-      tmux send-keys -t "$pane" C-m
+      _obd_send -t "$pane" C-m
       sleep 1
     elif echo "$pane_output" | grep -qE "$PROMPT_REGEX"; then
-      tmux send-keys -t "$pane" C-m
+      _obd_send -t "$pane" C-m
       sleep 1
     elif echo "$pane_output" | grep -qE "$STABLE_REGEX"; then
       break
@@ -62,14 +69,15 @@ officer_boot_drive() {
 
   # Brief settle, then submit the boot prompt (text, then C-m separately).
   sleep 2
-  tmux send-keys -t "$pane" "$boot_prompt"
+  _obd_send -t "$pane" "$boot_prompt"
   sleep 0.5
-  tmux send-keys -t "$pane" C-m
+  _obd_send -t "$pane" C-m
   # Verify it submitted. "esc to interrupt" only shows while CC is actively
   # processing; its absence means the text is still sitting unsent in the input
   # buffer (Captain msgs 2718/2724 — "prompt kept but not sent"). Nudge once.
   sleep 3
   if ! tmux capture-pane -t "$pane" -p 2>/dev/null | grep -v '^[[:space:]]*$' | tail -6 | grep -q "esc to interrupt"; then
-    tmux send-keys -t "$pane" C-m
+    _obd_send -t "$pane" C-m
   fi
+  return 0
 }
