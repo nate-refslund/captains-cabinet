@@ -324,6 +324,16 @@ jobs:
         # as those phases land.
         run: bash /opt/founders-cabinet/cabinet/tests/test-spec-049.sh
 
+      - name: Shell unit tests — customer-erasure.sh + sla-tracker.sh (FW-100 / Spec 055 AC#6)
+        # 42 assertions across §A (sla-tracker: create/check/idempotency/breach/complete)
+        # and §B (customer-erasure: 8-step Article-17 runbook — PII pseudonymization,
+        # hash-chain integrity pre/post, receipt fields, gdpr_erasure_completed event,
+        # SLA ticket lifecycle, dry-run no-mutation, sub-processor cascade, chattr guard).
+        # Fully hermetic: LITELLM_AUDIT_LOG_ROOT/CABINET_GDPR_TICKET_DIR/CABINET_ERASURE_RECEIPT_DIR
+        # all point into mktemp; CABINET_HOOK_TEST_MODE=1 suppresses real notify;
+        # CABINET_ERASURE_NO_CHATTR=1 suppresses chattr (no root required in CI).
+        run: bash /opt/founders-cabinet/cabinet/tests/test-customer-erasure.sh
+
       - name: Framework backlog drift audit (advisory)
         # Surfaces FW-series entries with Status: Proposed/Paused older than
         # threshold (default: Proposed≥7d, Paused≥14d). Advisory only — exits
