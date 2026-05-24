@@ -1604,3 +1604,35 @@ _(none)_
 - **Spec:** `shared/interfaces/product-specs/066-cc-tasks-officer-tasks-mirror.md`.
 - **Owner:** CoS (hook + SQL — shipped), CPO (spec + metadata/tagging design), CTO (dashboard view).
 - **Source:** Captain msgs 2749-2755 (feature directive + 5 decisions); CTO dashboard-feasibility input 2026-05-24.
+
+---
+
+### FW-117 — redis-trigger-channel emitted a duplicate `source=` tag attribute (COO lockdown root cause) (P1)
+- **Status:** FIXED in code 2026-05-24 (commit bf48122 on mac-native); activates per-officer on next session restart (channel server reloads `index.ts`).
+- **Problem:** `cabinet/channels/redis-trigger-channel/index.ts` set `meta.source = "redis"`, but the harness ALSO injects `source="redis-trigger-channel"` (the channel name) when rendering the `<channel>` tag → TWO `source=` attributes (malformed). Benign for most officers (treated as awareness data), but COO's injection-defense correctly flagged the malformed tag as tampering and used it to reject ALL triggers (31 consecutive, incl. a legitimate Captain lift) → COO made itself unreachable via the trigger channel AND refused console + file-verification fallbacks, blocking the entire commercial Phase 1 build for ~14h.
+- **Fix:** renamed `meta.source` → `meta.transport` — single well-formed `source=` attr, no info loss.
+- **Follow-up:** (1) confirm each officer's channel reloads the fix on next restart; (2) golden eval asserting the `<channel>` tag carries exactly one `source=`; (3) **COO-resilience gap** — the lockdown revealed COO has NO sanctioned non-Telegram reactivation path (only a Captain Telegram DM to its own bot lifts it). A single malformed-channel event can therefore strand COO + block builds. Design a cryptographically-verifiable out-of-band reactivation (e.g., Captain-signed token COO can verify offline) so robustness doesn't depend solely on Telegram being up.
+- **Owner:** CoS (fix shipped); CPO + COO (resilience design).
+- **Source:** 2026-05-24 COO lockdown incident.
+
+---
+
+### FW-118 — telegram plugin: duplicate bot instance on restart → Captain pairing-flap + crash-loop (P1)
+- **Status:** OPEN — root-caused 2026-05-24; manual orphan-kill mitigation destabilized into a crash-loop (telegram MCP disconnected from the CoS session; recovery = clean CoS restart). Needs proper single-instance enforcement.
+- **Problem:** On officer session restart OR telegram-MCP transport reconnect, Claude Code spawns a NEW telegram `bun` process but the OLD one is not killed → two+ processes long-poll the SAME bot token → Telegram 409 Conflict → the instances alternate handling the Captain's inbound messages. One has loaded `access.json` (delivers), the other raced/started fresh (demands pairing) → Captain sees intermittent "Pairing required — `/telegram:access pair <code>`" that "sometimes goes away by itself" (whichever instance wins that message). The plugin's `bot.pid` single-instance guard does NOT prevent it (stale `bot.pid` pointed at a dead PID). Killing the orphan `bun run` wrapper left its reparented child server alive holding the poll; rapid respawns crash-looped.
+- **Repro:** restart an officer (or trigger an MCP reconnect) within a session; observe ≥2 `bun … telegram … start` procs sharing one `OFFICER_NAME`/`TELEGRAM_STATE_DIR`.
+- **Fix scope:** (1) before spawning the telegram MCP on (re)start, kill any existing telegram bun for that `OFFICER_NAME`/state_dir (start-officer.sh / officer-boot.sh), OR hard-enforce the plugin's `bot.pid` guard (refuse-or-takeover if a LIVE pid holds the lock). (2) Ensure clean shutdown SIGTERMs the actual server child, not just the `bun run` wrapper (the child got orphaned/reparented and survived). (3) Health check: alert if >1 telegram bun per officer.
+- **Workaround:** clean CoS session restart (`/cos restart` from admin bot) yields a single instance — zero competing pollers.
+- **Owner:** CTO (start-officer.sh / officer-boot.sh + plugin guard); CoS coordinates.
+- **Source:** 2026-05-24 Captain pairing-flap report + CoS live diagnosis.
+- **ROOT-CAUSE UPDATE (2026-05-24 PM):** the real cause is NOT just orphan-on-restart — telegram is loaded TWICE per launch: (1) `--channels plugin:telegram@claude-plugins-official` in start-officer.sh AND (2) `"telegram@claude-plugins-official": true` in `~/.claude/settings.json` enabledPlugins. Claude Code spawns 2 `bun run … start` wrappers → 2 `server.ts` pollers → 409 fight → flap. **PERSISTS across session + `tmux kill-window` restarts** (the double-load fires every launch — proven). **Real fix:** load telegram via ONE mechanism — test removing the `--channels` flag OR the enabledPlugins entry, verifying inbound `<channel>` tags AND the `mcp__plugin_telegram_telegram__reply` tool both survive; settings.json is shared (all officers) so test on one officer first or bake into the Docker rebuild. Band-aid shipped: SIGKILL guard in cache `…/telegram/0.0.6/server.ts` ~L69 (not durable across plugin reinstall). The earlier "Workaround: clean restart yields single instance" line above is WRONG — restarts still double-load. Restart officers via `tmux kill-window`, never `kill <claude-pid>` (leaves a stale shell → supervisor won't relaunch → stale officer; cost a manual tmux kill 2026-05-24).
+
+---
+
+### FW-119 — verify-deploy.sh CI-green merge gate blind to Checks API + bad token extraction (P1)
+- **Status:** FIXED 2026-05-24 (commit b0a4127, mac-native), live-validated; follow-up = add a fixture-based check-runs test to cabinet CI.
+- **Problem:** two compounding bugs. (1) verify-deploy.sh polled only the legacy `/commits/{sha}/status` (combined statuses), blind to the Checks API `/check-runs` where GitHub Actions + Vercel report → state stayed `pending` → false-timeout on green CI. (2) GITHUB_TOKEN was sed-extracted from the origin URL → bad token on clean credential-helper remotes (401 → unknown → pending).
+- **Fix:** reads BOTH `/status` + `/check-runs`, prefers `GITHUB_PAT`, and gates on an explicit allowlist `VERIFY_REQUIRED_CHECKS` (default: Build, Lint, Test) matching check-run names AND status contexts. KEY discovery: Sensed `main` has NO branch protection + chronically-red NON-gating checks (sync, QA Explorer) → a naive aggregate-all would report failure on nearly every commit, so allowlist-gating was required, not optional. Tested: green commits (2926e38, 5f6fd57) pass fast (noise ignored); gating on QA Explorer returns FAILED fast.
+- **Follow-up:** fixture-based `/check-runs` test in cabinet CI (live-validated only so far).
+- **Owner:** CTO (fix shipped + follow-up test).
+- **Source:** 2026-05-24 — hit merging Sensed PR #560 (green check-runs invisible to `/status`).
