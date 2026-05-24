@@ -1,6 +1,8 @@
 # Spec 055: GDPR Baseline — DPA + ROPA + DPIA + Sub-Processor List + Annex III ToS Exclusion (FW-100 Phase 1 Priority 2)
 
-**Version:** v7.3 (H1 + H3 + H4 RATIFIED — ENTIRE LEGAL TRACK CLOSED) — v6 superseded
+**Version:** v7.3.1 (line-85 leftover-contradiction fix) — v7.3 superseded
+
+**v7.3.1 changelog — re-eval-trigger leftover fixed (decision-propagation-audit, 2026-05-24):** the §phasing "risk-class re-evaluation trigger" (line 85) still asserted "CoS-as-reviewer + CoS-as-DPO is defensible at Phase 1 scale" — a posture the H1 ratification (v7.1, msg 2737) explicitly REJECTED for the Article 38(6) conflict. Reworded to "COO-as-DPO (Article 38(6)-clean) + cabinet-multi-officer-review-as-counsel," preserving the valid Phase-2 (5+ customer) external-counsel/human-DPO re-evaluation trigger. Caught by a cabinet-wide stale-DPO grep that also synced live refs in Spec 052 (v3.1), 054, 056 to the ratified COO-as-DPO.
 
 **v7.3 changelog — H3 Captain ratification (2026-05-24, msg 2744 "accept then"):** Anthropic value-add-wrapper risk **ACCEPTED — ship the DPA/ToS language as-is** (CPO/CoS Option (a)). **This closes the entire legal/compliance track: H1 ✓ COO-as-DPO + H4 ✓ 5y/10y retention + H3 ✓ wrapper-risk-accepted.** Risk-register rationale baked into AC #18 below: (1) **standard category risk** — building a product on the API is permitted usage, not raw resale; (2) **low legal exposure** — value-add carve-out is well-grounded (Anthropic's own 5-criterion definition maps cleanly; FW-115 defense dossier ready at `shared/interfaces/legal/anthropic-value-add-architecture.md`); (3) **dependency mitigated** — LiteLLM proxy (FW-096) provides a per-cabinet cost cap (bounds spend, can pause to $0) + reversible provider-fallback, plus proxy-degraded contingency (Spec 051 AC #8: customer notify + service-pause + refund); (4) **transparency** — Anthropic named as sub-processor in the list + DPA. Phase-1 business-risk call via cabinet multi-officer review (not external counsel per msg 2583 Q1); revisit at 5+ paying customers (msg 2583 re-evaluation gate). **GDPR baseline (FW-100) now unblocked end-to-end for CPO+COO build** — ROPA/DPIA/DPA/erasure all on 5y/10y basis + DPO contact = COO.
 
@@ -82,7 +84,7 @@
 
 **Phase 5a "gate-blocking" status REMOVED** — Q1+Q2 RESOLVED collapse Phase 5a. New phasing skips counsel-work, parallel-starts substrate phases earlier.
 
-**CoS-as-DPO + Cabinet-as-counsel risk-class re-evaluation trigger:** at 5+ paying customers, CoS flags for re-evaluation — CoS-as-reviewer + CoS-as-DPO is defensible at Phase 1 scale (<5 customers Danish concierge), may need external counsel + human DPO at Phase 2 scale (self-serve + EU expansion). Captain rate-limited; this is the responsible risk-class boundary acknowledged by Captain.
+**DPO + Cabinet-as-counsel risk-class re-evaluation trigger:** at 5+ paying customers, CoS flags for re-evaluation — COO-as-DPO (Article 38(6)-clean, ratified msg 2737) + cabinet-multi-officer-review-as-counsel is defensible at Phase 1 scale (<5 customers Danish concierge), may need external counsel + human DPO at Phase 2 scale (self-serve + EU expansion). Captain rate-limited; this is the responsible risk-class boundary acknowledged by Captain.
 
 **v2 prior changelog preserved below** (CPO self-review + CTO tech review fold).
 **v2 changelog:** CPO self-review surfaced 4 BLOCKERs + 5 IMPROVEMENTs + 4 POLISH. Resolutions:

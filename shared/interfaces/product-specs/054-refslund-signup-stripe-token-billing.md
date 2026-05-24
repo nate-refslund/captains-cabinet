@@ -234,7 +234,7 @@ No Open Questions Phase 1 — all decisions internal-officer process per Captain
 
 1. **CRO adversary review** — Stripe webhook attack surface + clickwrap-enforceability adversarial audit + cap-bump abuse patterns + customer-record schema PII minimization.
 2. **CoS architecture review** — customer-record state-machine integrity, Library Compliance Space integration, failure-mode runbook completeness.
-3. **COO-as-DPO (pending Spec 055 v4 H1 Captain ratify) compliance review** — DPA + Annex III + sub-processor list clickwrap enforceability per eIDAS; PII handling at signup; right-to-erasure scope at customer cancellation.
+3. **COO-as-DPO compliance review (Spec 055 v7.1 H1 ratified, msg 2737)** — DPA + Annex III + sub-processor list clickwrap enforceability per eIDAS; PII handling at signup; right-to-erasure scope at customer cancellation.
 4. **COO adversary** — multi-failure-mode: Stripe webhook fails mid-flight + customer-record state desync + DPA template version transition + sub-processor list change simultaneously.
 5. **CPO self-spawned review subagent** — fresh-context audit before commit.
 

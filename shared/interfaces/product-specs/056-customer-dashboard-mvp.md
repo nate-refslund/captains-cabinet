@@ -68,7 +68,7 @@
 **A12 + A13 preserved cleanly.** Captain ratifications inapplicable per Captain msg 2583 multi-officer-process framing.
 **Priority:** P0 — gates customer post-install handoff (Spec 053 Stage 4 dashboard walkthrough) + customer self-service for spend/audit/erasure
 **Framework ticket:** FW-101
-**Owner:** CPO (spec) + CTO (Next.js subroute substrate) + COO-as-DPO (per Spec 055 v6 H1; compliance link review) + CoS (Captain ratification coordination)
+**Owner:** CPO (spec) + CTO (Next.js subroute substrate) + COO-as-DPO (Spec 055 v7.1 H1 ratified; compliance link review) + CoS (Captain ratification coordination)
 **Scope:** Customer-facing dashboard at `refslund.ai/dashboard` + subroutes (/audit, /pre-install per Spec 053+054 CTO #4, /erasure, /legal-links); read-only spend visibility + audit log surface + cap-bump CTA + erasure request UI; Phase 1 MVP surface
 **Canonical artifact home:** Library Specs Space (this spec) + customer dashboard render is Next.js subroute at refslund.ai
 **Evidence:** Spec 051 v7 (per-cabinet spend tracking + cap-bump UX + cap-status enforcer source); Spec 052 v3.1 (audit log dashboard widget + customer hash-chain verification UI); Spec 053 v4 (Stage 4 install dashboard walkthrough + Stage 5 post-install handoff video); Spec 054 v2 (pre-install form subroute per CTO #4); Spec 055 v7.3 (DPA + sub-processor list + erasure request flow + privacy policy public-page MDX rendering); Captain msg 2565 + design-standards taste anchor (zajno.com-level bar Phase 1 minimum-viable, not overbuilt).
@@ -255,7 +255,7 @@ No Open Questions Phase 1 — design-taste subjective + Library + /tasks canonic
 - **Spec 055 v6 dependency:** legal-links subpage aggregates DPA + Annex III + sub-processor list + privacy policy + data-handling matrix from Library Compliance Space + refslund.ai/legal/* MDX pages.
 - **CTO substrate:** Next.js subroute structure under refslund.ai/dashboard + 6 subpages + magic-link auth + AUDIT_API_KEY backend scoping + browser-side sha256 verifier (Web-Crypto API) + Stripe portal session API + chart library (Recharts or similar; build-vs-buy = use mature MIT-licensed lib per A3 carve-out for visualization complexity).
 - **CoS coordination:** customer-record state-machine + Library Customer-Success Space integration + design-taste review.
-- **COO-as-DPO (pending Spec 055 v4 H1 Captain ratify):** legal-links subpage content review + erasure form review + audit log retention transparency.
+- **COO-as-DPO (Spec 055 v7.1 H1 ratified):** legal-links subpage content review + erasure form review + audit log retention transparency.
 
 ---
 
@@ -296,7 +296,7 @@ No Open Questions Phase 1 — design-taste subjective + Library + /tasks canonic
 
 1. **CRO adversary review** — UX adversarial audit (customer confusion patterns, dark-pattern check on cap-bump CTA, accessibility per WCAG AA), spend-chart edge cases, integrity verifier UX clarity.
 2. **CoS architecture review** — cross-spec integration coherence (Spec 051/052/053/054/055 all consume dashboard surface), design-taste qualitative review per Captain zajno.com-level bar.
-3. **COO-as-DPO (pending Spec 055 v4 H1)** legal-links + erasure form + audit log retention transparency review.
+3. **COO-as-DPO (Spec 055 v7.1 H1 ratified)** legal-links + erasure form + audit log retention transparency review.
 4. **COO adversary** — multi-failure-mode: dashboard unavailable + cap-hit + customer requests erasure + payment-failed simultaneously.
 5. **CPO self-spawned review subagent** — fresh-context audit before commit.
 
