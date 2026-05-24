@@ -85,7 +85,14 @@ async function pushToSession(content: string, messageId: string): Promise<void> 
       params: {
         content: content,
         meta: {
-          source: "redis",
+          // NOTE: key is "transport" not "source" — the harness already injects
+          // source="redis-trigger-channel" (the channel name) when rendering the
+          // <channel> tag. A meta key named "source" produced a DUPLICATE source=
+          // attribute (malformed tag), which COO's injection-defense correctly
+          // flagged as tampering and used to reject ALL triggers (2026-05-24
+          // lockdown — 31 rejections incl. a legitimate Captain lift). Keep this
+          // key distinct from any attribute the harness auto-injects.
+          transport: "redis",
           stream: STREAM_KEY,
           message_id: messageId,
           officer: OFFICER,
