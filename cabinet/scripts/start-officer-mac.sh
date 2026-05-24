@@ -150,13 +150,23 @@ tmux send-keys -t "$SESSION_NAME" "$CLAUDE_CMD" C-m
 # ===========================================================
 PROMPT_REGEX="(I am using this for local development|Continue (as-is|conversation)|Summari[sz]e|Trust the (files|hooks)|Do you trust|Choose your theme|Welcome to Claude|edit .*\.claude/settings\.json|allow .*\.claude/settings\.json|Edit .*settings\.json|update .*\.claude/settings|Allow Claude to (edit|modify))"
 # Stale-session resume prompt (CC added post-2026-05): "1. Resume from summary / 2. Resume full session as-is"
-# Must send "2" + C-m, not just C-m which would select option 1
+# Send "2" + C-m → "Resume full session as-is" (Captain msg 2726 2026-05-24:
+# keep full context; Opus 4.7's 1M window has headroom and auto-compact carries
+# context cleanly into the new session). Bare C-m would select option 1.
 SELECT2_REGEX="(Resume from summary|Resume full session as-is)"
-DEADLINE=$(($(date +%s) + 45))
+STABLE_REGEX="(Try.*for new ideas|tab.*complete|Bypassing Permissions|esc to interrupt|^[[:space:]]*>[[:space:]]*$)"
+# DEADLINE 120s (was 45s): cold Opus 4.7 starts load slower, and the stale-session
+# prompt can appear well past 45s — the old budget timed out before it rendered,
+# leaking prompts to the Captain (msgs 2718-2726).
+DEADLINE=$(($(date +%s) + 120))
 
 while [ $(date +%s) -lt $DEADLINE ]; do
   sleep 2
-  pane_output=$(tmux capture-pane -t "$SESSION_NAME" -p 2>/dev/null | tail -30)
+  # Strip blank/whitespace-only lines BEFORE tail: CC renders modal startup
+  # prompts at the TOP of the pane and pads the rest with blank lines, so a raw
+  # tail -30 on a tall pane captures only padding and misses the menu (Captain
+  # msgs 2718-2726; proven 2026-05-24). Match the Docker start-officer.sh fix.
+  pane_output=$(tmux capture-pane -t "$SESSION_NAME" -p 2>/dev/null | grep -v '^[[:space:]]*$' | tail -40)
   if echo "$pane_output" | grep -qE "$SELECT2_REGEX"; then
     tmux send-keys -t "$SESSION_NAME" "2"
     sleep 0.5
@@ -166,7 +176,7 @@ while [ $(date +%s) -lt $DEADLINE ]; do
     # C-m carriage return (per master start-officer.sh fix)
     tmux send-keys -t "$SESSION_NAME" C-m
     sleep 1
-  elif echo "$pane_output" | grep -qE "(Try.*for new ideas|tab.*complete|Bypassing Permissions|^\s*>\s*$)"; then
+  elif echo "$pane_output" | grep -qE "$STABLE_REGEX"; then
     break
   fi
 done
@@ -175,9 +185,17 @@ done
 sleep 2
 
 # Send boot prompt — tells the officer to initialize + announce.
-# Audit-fix 2026-05-23: use C-m (carriage return) not Enter; same fix as line 127
-# loop. Per master start-officer.sh PROMPT_REGEX block.
-tmux send-keys -t "$SESSION_NAME" "You are $OFFICER. Read your role definition at .claude/agents/$OFFICER.md and your session start checklist. Read your foundation skills in memory/skills/. Read your tier 2 notes in instance/memory/tier2/$OFFICER/. Then announce yourself on the warroom: bash $REPO_ROOT/cabinet/scripts/send-to-group.sh '<b>$OFFICER online (Mac native).</b> Session started. Checking for pending work.' — then check for pending triggers and overdue work immediately." C-m
+# Submit the text, then C-m separately, then verify it registered. CC sometimes
+# leaves typed text in the input buffer unsubmitted (Captain msgs 2718/2724 —
+# "prompt kept but not sent"); "esc to interrupt" only shows while CC is actively
+# processing, so its absence means the submit didn't take — re-send C-m once.
+tmux send-keys -t "$SESSION_NAME" "You are $OFFICER. Read your role definition at .claude/agents/$OFFICER.md and your session start checklist. Read your foundation skills in memory/skills/. Read your tier 2 notes in instance/memory/tier2/$OFFICER/. Then announce yourself on the warroom: bash $REPO_ROOT/cabinet/scripts/send-to-group.sh '<b>$OFFICER online (Mac native).</b> Session started. Checking for pending work.' — then check for pending triggers and overdue work immediately."
+sleep 0.5
+tmux send-keys -t "$SESSION_NAME" C-m
+sleep 3
+if ! tmux capture-pane -t "$SESSION_NAME" -p 2>/dev/null | grep -v '^[[:space:]]*$' | tail -6 | grep -q "esc to interrupt"; then
+  tmux send-keys -t "$SESSION_NAME" C-m   # boot prompt didn't submit — nudge once
+fi
 
 echo "start-officer-mac.sh: $OFFICER started in tmux session $SESSION_NAME (model=$MODEL, telegram=$HAS_TELEGRAM, cua_driver=$HAS_CUA_DRIVER)"
 
