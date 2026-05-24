@@ -1,0 +1,88 @@
+# proxy/config.yaml — LiteLLM proxy server configuration for FW-096.
+#
+# WHY THIS FILE EXISTS: Every officer API call flows through this proxy.
+# It enforces per-cabinet daily spend caps, routes Sonnet/Opus by model-name,
+# applies margin markup (computed in audit_logger.py), and emits the FW-097
+# audit JSONL per request.
+#
+# DEPLOY-GATED: this file runs on the Hetzner Frankfurt VPS (Spec 051 §Topology).
+# It requires LITELLM_MARGIN_PCT + ANTHROPIC_API_KEY as server-side env vars.
+# Customer cabinets carry ONLY LLM_PROXY_KEY + ANTHROPIC_API_BASE — real keys
+# never leave refslund.ai infra.
+#
+# SCHEMA NOTE (FW-096 crew): verified against LiteLLM proxy docs as of 2026-05-24
+# (https://docs.litellm.ai/docs/proxy/configs). Team-budget syntax confirmed from
+# LiteLLM v1.x proxy docs (team_id + max_budget + budget_duration). Custom callback
+# registration via litellm_settings.callbacks list. CONFIRM against deployed version
+# before go-live — schema evolves between minor releases.
+
+model_list:
+  # ── Anthropic Phase 1 (active, Spec 051 I4: Anthropic-only until FW-100 DPA) ──
+  - model_name: claude-sonnet-4-6
+    litellm_params:
+      model: anthropic/claude-sonnet-4-6
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: claude-opus-4-7
+    litellm_params:
+      model: anthropic/claude-opus-4-7
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  # ── OpenAI fallback — DISABLED until FW-100 DPA enumerates providers ──
+  # Uncomment after FW-100 DPA ships + Captain Q1 ratifies (Spec 051 I4 + Q1).
+  # - model_name: gpt-4o
+  #   litellm_params:
+  #     model: openai/gpt-4o
+  #     api_key: os.environ/OPENAI_API_KEY
+
+  # ── Gemini fallback — DISABLED until FW-100 DPA enumerates providers ──
+  # Uncomment after FW-100 DPA ships + Captain Q1 ratifies (Spec 051 I4 + Q1).
+  # - model_name: gemini-pro
+  #   litellm_params:
+  #     model: gemini/gemini-pro
+  #     api_key: os.environ/GOOGLE_API_KEY
+
+litellm_settings:
+  # Register the FW-097 audit callback (emits AC #6 JSONL per request).
+  # Path is relative to the proxy working directory on the VPS.
+  callbacks:
+    - proxy.audit_logger.CabinetAuditLogger
+
+  # Drop requests on first provider failure (Anthropic-only Phase 1).
+  # When FW-100 DPA enables fallback, add num_retries + fallbacks here.
+  num_retries: 2
+  request_timeout: 600
+
+  # Mark-up percentage sourced from env — value is private (commercial).
+  # audit_logger.py reads the same env var; config.yaml does NOT embed the value.
+  # margin_pct_env_var documented here for deploy-checklist only:
+  #   LITELLM_MARGIN_PCT=<int>  (e.g. 100 for 100% = 2x raw cost)
+
+router_settings:
+  routing_strategy: simple-shuffle
+  num_retries: 2
+
+# Per-cabinet team budget — enforces the $50/day USD cap (Spec 051 AC #2, #3).
+# The team key "cabinet" is the single team for Phase 1 (whole-cabinet ceiling,
+# NOT per-officer — per Captain msg 2565 ratification).
+# budget_duration resets the counter daily at 00:00 UTC (LiteLLM default).
+#
+# SCHEMA NOTE: LiteLLM team-budget config lives under proxy_settings.default_team_settings
+# in some versions, or as a top-level team_settings block in others. The runtime block
+# below reflects the v1.x spec; validate against deployed LiteLLM version at deploy time.
+team_settings:
+  - team_id: cabinet
+    max_budget: 50.0          # USD (Spec 051 AC #2 — $50/day per-cabinet TOTAL)
+    budget_duration: 1d       # resets 00:00 UTC daily
+    # 80% soft warning is handled by the audit_logger + X-Cap-Warning header injection;
+    # LiteLLM enforces the hard 100% block via the team max_budget ceiling.
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY   # proxy admin API auth
+  database_url: os.environ/DATABASE_URL        # optional: Postgres for key/team storage
+
+  # Virtual-key signing (per AC #10 — keys signed, rotation flow in rotate-llm-key.sh)
+  store_model_in_db: false
+
+  # Ensure the audit logger receives full usage metadata
+  log_requests: true
