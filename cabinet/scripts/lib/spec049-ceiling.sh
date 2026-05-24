@@ -23,13 +23,63 @@
 : "${REDIS_PORT:=6379}"
 : "${CABINET_CEILING_EVENT_LOG:=${CABINET_ROOT:-/opt/founders-cabinet}/cabinet/logs/spec049-cap-events.jsonl}"
 
-# Resolve the active-task.json for the current project. Arg 1 wins; else
-# <cwd>/.claude/active-task.json (per-project per Spec 049 lifecycle).
+# Resolve the active-task.json for the current project (per-project, Spec 049
+# lifecycle). Order: (1) explicit arg; (2) cwd-local — covers skills run from the
+# project root; (3) WORKSPACE_ROOT-based — covers the post-tool-use hook (cwd may
+# differ). WORKSPACE_ROOT (create-project.sh contract) defaults to /workspace NOW
+# and ports to the Mac-native HOME/opt path later via start-officer-mac.sh — so
+# this is migration-proof: NEVER hardcode /workspace or any literal Mac path (CoS).
+# pool mode = $WORKSPACE_ROOT/$CABINET_ACTIVE_PROJECT ; single = $WORKSPACE_ROOT/product.
 _s49_state_path() {
-  if [ -n "${1:-}" ]; then echo "$1"; else echo "./.claude/active-task.json"; fi
+  if [ -n "${1:-}" ]; then echo "$1"; return; fi
+  if [ -f "./.claude/active-task.json" ]; then echo "./.claude/active-task.json"; return; fi
+  local wsroot proj
+  wsroot="${WORKSPACE_ROOT:-/workspace}"
+  proj="${CABINET_ACTIVE_PROJECT:-}"
+  if [ -n "$proj" ]; then
+    echo "$wsroot/$proj/.claude/active-task.json"
+  else
+    echo "$wsroot/product/.claude/active-task.json"
+  fi
 }
 
 _s49_redis() { redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" "$@" 2>/dev/null; }
+
+# Snapshot the per-task baselines at /pickup-task: agentStepBaseline = current
+# cumulative cabinet:toolcalls:$OFFICER; agentTokenBaseline = current daily HSET
+# <role>_input+<role>_output. Called once at task create so agentSteps/
+# agentTokensTotal can be computed as deltas. Idempotent-safe: only writes if the
+# baselines are still null (won't clobber an in-progress task's anchor on re-run).
+# Fail-safe: no state/redis/jq → no-op return 0.
+# Usage: spec049_snapshot_baseline [active-task-path] [officer]
+spec049_snapshot_baseline() {
+  local state officer date toolcalls inp out have_step have_tok tmp
+  state="$(_s49_state_path "${1:-}")"
+  officer="${2:-${OFFICER_NAME:-${OFFICER:-}}}"
+  command -v jq >/dev/null 2>&1 || return 0
+  [ -f "$state" ] || return 0
+  jq -e . "$state" >/dev/null 2>&1 || return 0
+  [ -n "$officer" ] || return 0
+  # Don't re-anchor a task that already has baselines (idempotent).
+  have_step="$(jq -r '.agentStepBaseline // empty' "$state" 2>/dev/null)"
+  have_tok="$(jq -r '.agentTokenBaseline // empty' "$state" 2>/dev/null)"
+  [ -z "$have_step" ] || [ -z "$have_tok" ] || return 0
+
+  date="$(date -u +%Y-%m-%d)"
+  toolcalls="$(_s49_redis GET "cabinet:toolcalls:$officer")"; toolcalls="${toolcalls:-0}"
+  inp="$(_s49_redis HGET "cabinet:cost:tokens:daily:$date" "${officer}_input")"; inp="${inp:-0}"
+  out="$(_s49_redis HGET "cabinet:cost:tokens:daily:$date" "${officer}_output")"; out="${out:-0}"
+  case "$toolcalls$inp$out" in *[!0-9]*) return 0;; esac
+
+  tmp="$(mktemp "${state}.s49b.XXXXXX")" || return 0
+  if jq --argjson s "$toolcalls" --argjson t "$(( inp + out ))" \
+       '.agentStepBaseline=$s | .agentTokenBaseline=$t' "$state" > "$tmp" 2>/dev/null; then
+    mv "$tmp" "$state"
+  else
+    rm -f "$tmp"
+  fi
+  return 0
+}
 
 # Recompute agentSteps + agentTokensTotal as deltas from the snapshotted baselines
 # and write them back. No-op (0) if state/baselines/redis/jq unavailable.

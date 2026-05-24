@@ -567,5 +567,21 @@ fi
 # Section 12 removed — session snapshots now triggered by context window
 # percentage (50/75/90%) in stop-hook.sh instead of blind tool-call count.
 
+# ============================================================
+# 13. SPEC 049 PER-TASK STEP/TOKEN CEILING — counter refresh
+# ============================================================
+# Refresh agentSteps/agentTokensTotal deltas in the active task's state file so the
+# live cap-event-chain (CAP_APPROACH@80%) reflects current usage. The gate-BLOCK
+# itself runs in /self-review + /ship-pr (they recompute + check_caps). The source
+# is FILE-EXISTS-GATED so a missing/half-deployed lib can never break this hook for
+# any officer; the lib's functions are themselves fail-safe (no-op on no active-task
+# / null baselines / redis-down / non-numeric). Placed AFTER all critical paths
+# (heartbeat §0, trigger delivery §4) so it can never delay them. Spec 049 Phase 2a.
+_S49_LIB="${CABINET_ROOT:-/opt/founders-cabinet}/cabinet/scripts/lib/spec049-ceiling.sh"
+if [ -f "$_S49_LIB" ]; then
+  # shellcheck source=/dev/null
+  . "$_S49_LIB" 2>/dev/null && spec049_update_counters "" "$OFFICER" 2>/dev/null || true
+fi
+
 # Always exit 0 — post-hooks should never block
 exit 0
