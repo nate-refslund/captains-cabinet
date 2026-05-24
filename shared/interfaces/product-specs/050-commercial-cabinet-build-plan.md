@@ -25,7 +25,7 @@
 - **§13 risks updated.** Anthropic terms risk unchanged (still under A13 value-add posture). macOS update risk WIDENED — both cua-driver SPI breakage AND any breakage in our native services (Postgres.app + Redis launchd + officer launchd) are within the customer-Mac macOS-upgrade blast radius. Hold customer-Mac macOS upgrades on a tested-stable channel.
 - **§14 compounds with Mac Migration Directive** — Captain's own Cabinet (the directive's target) is the dogfood ground for commercial Cabinet's customer-Mac tier. Same architecture. Tier 1 (refslund.ai backend) is orthogonal to the directive.
 
-**Spec 049 v3.2 visual-UAT impact (CPO flag #3 — fold note for COO adversary):** Spec 049 designed Stagehand v3 Gate 4 for officer-side execution. cua-driver scope-to-CoS-only means either (a) CoS executes Gate 4 as shared-service-on-other-officers'-behalf, OR (b) Stagehand v3 is wired such that other officers can invoke it without cua-driver (headless Chrome standalone). Stagehand v3 IS headless Chrome standalone — doesn't actually need cua-driver. So Gate 4 stays per-officer; cua-driver-scope-to-CoS is for native-macOS-GUI actions, not headless web. Worth a one-line fold note in Spec 049 v3.2 to clarify the distinction.
+**Spec 049 Gate-4 cua-driver distinction (CPO flag #3 — RESOLVED):** Spec 049 Gate 4 (Stagehand v3) is headless-Chrome standalone — it does NOT need cua-driver, so Gate 4 stays per-officer (cua-driver-scope-to-CoS, Mac-migration Phase 4, is for native-macOS-GUI actions, not headless web). Confirmed in Spec 049 v3.1 (Gate 4 = per-officer headless Stagehand; the COO adversary surfaced no cua-driver dependency). No separate v3.2 — ast-grep collapsed into v3.1 (C4).
 
 **v1.1 changelog (Captain msg 2565 + 2568 + 2576+2579 absorbed):**
 - **Positioning:** Path A (generic Cabinet positioning) **+ Danish-first geographic phasing**. NOT vertical-anchored (Path B rejected — STEP Network competitive conflict). NOT pure-generic Path A (CRO saturation risk).
@@ -40,21 +40,6 @@
 - **Three-layer naming locked:** "Cabinet" (commercial product), "Captain's Cabinet" (open-source framework), "refslund.ai" (practice).
 - **Anthropic outreach DROPPED** per A13 captain-pattern (msg 2568) — "Don't seek permission from gatekeepers before you have leverage." Phase 1 ships under value-add carve-out interpretation. Revisit at 5-10 paying customers with leverage + a story.
 - **Apple Developer Program enrollment COMPLETE** (Captain msg 2576) — unblocks .pkg notarization pipeline at Phase 2 start.
-- **Captain comms discipline (msg 2576+2579 — CoS-only feedback memory):** milestone-DMs surface each material artifact ship on long-running Captain-assigned tasks; CoS-only scope.
-
-**v1.1 changelog (Captain msg 2565 + 2568 + 2576+2579 absorbed):**
-- **Positioning:** Path A (generic Cabinet positioning) **+ Danish-first geographic phasing**. NOT vertical-anchored (Path B rejected — STEP Network competitive conflict). NOT pure-generic Path A (CRO saturation risk).
-- **Pricing model:** Collapsed 4-tier (2.5k/5k/10k/15k DKK) → **ONE tier: 25,000 DKK base + 5,000 DKK per employee, max 7 employees per cabinet** (25-60k DKK/mo range per cabinet).
-- **Caps:** Per-tier daily caps ($10/$25/$50) → **$50/day per-cabinet TOTAL across all officers** (not per-officer).
-- **Phase 1 customer profile:** Danish-only, within physical reach (Odense, Copenhagen, rest of DK), Nate-supervised concierge install.
-- **Phase 2 positioning shift:** "EU-resident, GDPR-native AI organization" — Nordic opportunistic.
-- **Phase 3 trigger:** 20 Danish Cabinets OR 1M DKK/mo MRR (whichever first).
-- **Localization:** DA primary, EN secondary Phase 1.
-- **Compliance posture:** DK + EU baseline (GDPR + EU AI Act limited-risk transparency). Annex III high-risk use cases (HR/credit decisions) **EXCLUDED from Phase 1 ToS**.
-- **No vertical employee role catalogs Phase 1** — role-agnostic with CFO/CTO/COO/etc. as examples in marketing.
-- **Three-layer naming locked:** "Cabinet" (commercial product), "Captain's Cabinet" (open-source framework), "refslund.ai" (practice).
-- **Anthropic outreach DROPPED** per A13 captain-pattern (msg 2568) — "Don't seek permission from gatekeepers before you have leverage." Phase 1 ships under value-add carve-out interpretation. Revisit at 5-10 paying customers with leverage + a story.
-- **Apple Developer Program enrollment COMPLETE** (Captain msg 2576) — unblocks .pkg notarization pipeline at Phase 2 start (~weeks 9-12).
 - **Captain comms discipline (msg 2576+2579 — CoS-only feedback memory):** milestone-DMs surface each material artifact ship on long-running Captain-assigned tasks; CoS-only scope.
 
 ---
@@ -108,7 +93,7 @@ Captain proposed 3-4 months to commercial-ready. **Calibrated answer: 3 months t
 
 | ID | Item | Maps to gap |
 |---|---|---|
-| FW-096 | LiteLLM proxy + per-officer virtual keys + daily $/officer hard cap | B (API key abstraction), economics |
+| FW-096 | LiteLLM proxy + per-officer virtual keys (attribution) + **$50/day per-CABINET total hard cap** (LiteLLM team-budget; team=cabinet) | B (API key abstraction), economics |
 | FW-097 | Customer audit log (every officer access to customer data, queryable) | H (audit/compliance) |
 | FW-098 | Concierge install runbook + cabinet-bootstrap.sh hardening for customer MacMini | A (MacMini installer, manual-grade) |
 | FW-099 | refslund.ai signup + Stripe Token Billing wiring | B (key abstraction) |
@@ -116,13 +101,13 @@ Captain proposed 3-4 months to commercial-ready. **Calibrated answer: 3 months t
 | FW-101 | Customer dashboard MVP: officer activity feed, daily spend, audit log viewer | D (observability), H |
 
 **Acceptance criteria (Phase 1 gate):**
-- A1: a paying customer can run 1 officer (Sonnet-only, 2,500 DKK tier) on their MacMini for 30 days with zero Nate intervention beyond install.
-- A2: per-officer daily Anthropic cost is hard-capped at $10/day; cap breach pauses the officer and DMs Nate.
+- A1: a paying customer can run their cabinet (one-tier 25k DKK base + 5k/employee, Sonnet-default officers) on their MacMini for 30 days with zero Nate intervention beyond install. (The superseded 2,500 DKK / per-officer-tier model is GONE — one tier, per §6/§9.)
+- A2: cabinet-total daily Anthropic cost is hard-capped at **$50/day per CABINET** (LiteLLM team-budget, team=cabinet; per-officer virtual keys are for attribution only, NOT per-officer caps — those are explicitly rejected §9). **Breach pauses the CABINET (all officers' keys blocked by the exhausted team budget — at a cabinet-total cap there is no single offender, and pausing only the top spender wouldn't stop the breach) + notifies the customer (CoS DM) with the Spec 056 cap-bump as the override path.**
 - A3: customer can query "what did my Cabinet do in the last 24h" via dashboard and get a complete answer from the audit log.
 - A4: GDPR erasure command produces a signed deletion receipt customer can hand to their DPO.
 - A5: install is documented as a runbook Nate can execute in <4 hours per customer (concierge OK, self-serve NOT required this phase).
 
-**Dependencies:** Move 1 routing (shipped). Spec 049 v3.2 visual-UAT (in COO adversary). FW-082/088 substrate (in flight).
+**Dependencies:** Move 1 routing (shipped). Spec 049 **v3.1 LANDED** (222be1c — COO adversary 21 findings folded + ast-grep collapsed; Phase 2a ceiling MERGED via Sensed PR #560 + founders-cabinet substrate; 4 Gate-4 leaves shipped: model-pricing/cache-hash/page-allowlist/semaphore; **Gate-4 runner core gated on the one-time Stagehand v3 install — CoS provisioning**). FW-082/088 substrate (in flight). No separate Spec 049 v3.2 — ast-grep collapsed into v3.1 (C4).
 
 **Risks (Phase 1):**
 - **Anthropic reseller terms.** Pass-through wrapping is restricted; multi-officer orchestration likely qualifies as value-add. Get written confirmation from Anthropic's partnerships email before first invoice. If unclear → Bedrock route via FW-103, slips P1 by 4-6 weeks.
@@ -132,7 +117,7 @@ Captain proposed 3-4 months to commercial-ready. **Calibrated answer: 3 months t
 **Crew delegation pattern (Nate's evening/weekend reality):**
 - CTO (Nate-supervised) authors LiteLLM config + Stripe wiring (architecture).
 - Crew agents execute: dashboard scaffold, audit log schema migration, GDPR template authoring.
-- Spec 049 4-gate /self-review runs on every PR. Visual-UAT proves dashboard works before merge.
+- Spec 049 4-gate /self-review runs on every PR. **Note (CTO B6):** Gate 4 (Stagehand visual-UAT runner core) is gated on the one-time Stagehand v3 install (CoS provisioning) — so early FW-101 dashboard PRs run the existing 10-point /self-review (Gates 1-3) now; Gate-4 visual-UAT lands + applies to FW-101 once the runner core ships post-install. Not a blocker for early FW-101 work, just the sequencing.
 
 ### Phase 2 (months 3-4): unblock SELF-SERVE installation
 
@@ -439,7 +424,7 @@ Each sub-spec gets full Spec 049 4-gate /self-review treatment + visual-UAT for 
 4. ✅ **DPO appointment path** — RESOLVED msg 2737 (2026-05-24): COO-as-DPO (Article 38(6) fix; designation holds while COO passive, active duties at customer #1). Spec 055 v7.1; FW-114 applied.
 5. **Private commercial repo creation** — `refslund-cabinet-commercial` private repo for proxy/dashboard/audit code. Confirms BSL 1.1 licensing isolation.
 6. **Mac Mini image distribution choice** — CTO P1 BLOCKER #3: bundled 2GB pkg (offline-first, matches "your MacMini your data") vs first-launch registry pull (network dep, smaller pkg). Recommend bundled.
-7. **OrbStack vs Colima for Phase 2** — CTO P2 #8: proprietary-polished UX vs OSS-purity tradeoff.
+7. ~~**OrbStack vs Colima for Phase 2**~~ → **MOOT** per v1.2.1 full-native (customer-Mac runs native, no Docker/container runtime; FW-112 Colima→apple/container removed). No container-runtime choice to make.
 
 ### Founder-action items
 - ✅ Apple Developer Program enrolled (Captain msg 2576).
@@ -470,4 +455,4 @@ Each sub-spec gets full Spec 049 4-gate /self-review treatment + visual-UAT for 
 
 ---
 
-**End of Spec 050 v1.1 (2026-05-20 22:30 UTC).** Next amendment v1.2 fires on next Captain ratification of pending items (§12 pending list).
+**End of Spec 050 v1.2 (full-native architecture absorbed; §3 reconciled to the ratified $50/day-per-cabinet + one-tier model 2026-05-24 per CTO B1 review).** Next amendment fires on next Captain ratification of the remaining §12 pending items (A12 wording, commercial repo, Mac image-dist).
