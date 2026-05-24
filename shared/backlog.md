@@ -1,7 +1,7 @@
 # Cabinet Framework + Sensed Product Backlog — Prioritized View
 
-> Maintained by CPO. Last refinement: 2026-05-24 10:00 UTC (cron — light pass; no new research briefs since 22:00, heavy reframe done that tick).
-> **Active phase: Mac Migration (Specs 057-065 ready; Phase 1 mid-execution Captain-hands-on) + Phase 1 commercial pipeline (FW-096-115) + Spec 049 v3.1 COO adversary fold.**
+> Maintained by CPO. Last refinement: 2026-05-24 22:00 UTC (cron — Phase-1 commercial substrate progress: FW-096/097/100 MERGED + FW-098 building + FW-120 gate filed; both P0 blockers cleared; legal track closed; no new research briefs since 05-23).
+> **Active phase: Phase 1 commercial substrate BUILDING (FW-096/097/100 merged on mac-native; FW-098 building; FW-099/101 queued) + Mac Migration (Specs 057-065 ready; Phase 1 mid-execution Captain-hands-on). Legal/compliance track CLOSED (Spec 055 v7.3 H1/H3/H4). Spec 049 at v3.2.**
 > **Two new Phase-1 tracking artifacts (CPO, this cycle):** `cabinet-customer-1-readiness.md` (pre-sale GO rollup — "can we TAKE customer #1") + `cabinet-phase-1-validation-gate.md` (post-sale PMF gate — "are we good after customers 1-5"). Complementary bookends; the readiness checklist is the single source of truth for customer-#1 prerequisites.
 > Sensed: TestFlight live + PostHog Phase-0 wired (PR #559, 2026-04-25). Sensed backlog is stable — no new CTO work queued for Sensed until Mac migration phases are complete.
 > Research absorbed (prior cycle, still current): CRO competitive sweep (Devin $20 + Anthropic enforcement), audience psychology digest (trust-gap #1 + 85/15 framing), Anthropic ToS Q1 sweep (value-add carve-out strengthened), Mac-native pre-staging (TCC code-signing — now folded into Spec 058 1.8 body + committed e8af6e9), Claude Code daily catchup (Spec 049 v3.2 ast-grep + /code-review boundary, staged).
@@ -12,10 +12,12 @@
 
 ## P0 — Blocking (resolve before anything else)
 
-| Item | FW# | Spec | Owner | Status | Blocker |
-|------|-----|------|-------|--------|---------|
-| COO-as-DPO **designation** | FW-114 | 055 v7 §H1 | CoS surfaces + CPO applies | **PINNED for briefing — clean one-word ask** | Gates Spec 055 GDPR ship + all customer GDPR. **Cheapest unblock on the board.** Ask resolved: designation holds while COO passive (DPO voluntary at Phase 1 per 055 v7 I2; active duties ramp at customer #1). Amendment staged → applies same turn (task #34). |
-| Spec 049 v3.1 (COO adversary fold) | FW-095 | 049 v3.0.2 | COO adversary → CPO fold | **COO adversary PENDING** (dispatched 2026-05-23 22:08) | Gates CTO Phase 2a build start. v3.2 ast-grep ACs also staged (task #35). |
+> **✅ BOTH P0 BLOCKERS CLEARED 2026-05-24 — no blocking items on the board.**
+
+| Item | FW# | Spec | Owner | Status | Resolution |
+|------|-----|------|-------|--------|------------|
+| COO-as-DPO designation | FW-114 | 055 v7.3 §H1 | done | ✅ **RESOLVED** | Captain msg 2737 ratified COO-as-DPO; amendment applied (task #34). Spec 055 GDPR ship unblocked; legal track CLOSED (v7.3 H1/H3/H4). DPO active duties ramp at customer #1. |
+| Spec 049 adversary fold | FW-095 | 049 v3.2 | done | ✅ **RESOLVED** | COO injection-locked → Opus-substitute adversary folded v3.1 (21 findings); v3.2 ast-grep ACs landed (task #35). CTO Phase 2a build unblocked + delivered. |
 
 ---
 
@@ -43,16 +45,17 @@
 
 ## P1 — Commercial Phase 1 (spec pipeline, Captain-facing)
 
-> These specs are drafted (tasks #28-33 complete). CTO implementation blocked on Mac migration completing first (substrate changes). CPO spec lookahead continues in parallel.
+> Specs drafted (tasks #28-33). **CTO build is UNDERWAY — NOT blocked on Mac migration** (the substrate is repo-side proxy/audit-server code, independent of the Mac cutover). FW-096/097/100 already MERGED to mac-native 2026-05-24; reviews run CTO↔CPO per substrate. CPO spec lookahead continues in parallel.
 
 | Item | FW# | Spec | Status | Notes |
 |------|-----|------|--------|-------|
-| LiteLLM proxy + virtual keys + daily cap | FW-096 | 051 v5 | Spec COMPLETE | CTO impl after Phase 5 (Neon/LiteLLM cutover) |
-| Customer audit log | FW-097 | 052 v3 | Spec COMPLETE | CTO impl Phase 1b |
-| Concierge install runbook | FW-098 | 053 v3 | Spec COMPLETE | Customer templates also complete (see below) |
-| refslund.ai signup + Stripe billing | FW-099 | 054 v3 | Spec COMPLETE | CTO impl Phase 2 |
-| GDPR baseline (ROPA/DPA/DPIA/erasure) | FW-100 | 055 v7 | **Gated on FW-114** | COO-as-DPO ratification required first |
-| Customer dashboard MVP | FW-101 | 056 v2 | Spec COMPLETE | CTO impl Phase 1b |
+| LiteLLM proxy + virtual keys + daily cap | FW-096 | 051 v7.1 | ✅ **MERGED** (ce61fca) | team-budget $50/day cap-enforcement + cabinet-pause; cap-status reads the enforcer counter. Cap-reaction (officer-side 429→Spec-049 events) deferred — CTO designs next. |
+| Customer audit log | FW-097 | 052 v3.3 | ✅ **MERGED** (ef73f23) | hash-chain + two-hash erasure + marker-verify (§9b); proxy-audit path-pinned to LITELLM_AUDIT_LOG_ROOT. Sidecar deploy = Phase-2 Hetzner-gated. |
+| Concierge install runbook | FW-098 | 053 v4 | 🔨 **CTO BUILDING** | Customer templates complete (below). Full review routes to CPO when PR lands. |
+| refslund.ai signup + Stripe billing | FW-099 | 054 v2 | Spec COMPLETE | Gated on the private commercial repo (§12 founder-action, CoS-tracked); CTO Phase 2. |
+| GDPR baseline (ROPA/DPA/DPIA/erasure) | FW-100 | 055 v7.3.2 | ✅ **MERGED** (fc1a496) | customer-erasure.sh 8-step + sla-tracker; legal track CLOSED. DPO Article-17 sign-off = customer-#1 gate (CoS-tracked). |
+| Customer dashboard MVP | FW-101 | 056 | Spec COMPLETE — **next CTO build** | cap-status from enforcer team-budget; backend-mediated AUDIT_API_KEY (per FW-097 review). |
+| Per-cabinet AUDIT_API_KEY→cabinet scoping | FW-120 | 052 v3.3 AC#10 | OPEN — **HARD GATE before customer #2** | Phase-1 = backend-mediation (leak-free, 1 cabinet); CoS + COO-as-DPO tracked. |
 
 ### Customer templates (all complete, ready for first-customer use)
 | Template | File | Status |
@@ -121,7 +124,7 @@
 - Mac migration: 8-phase native (Captain msg 2599), 1-cabinet-then-clone-to-3 fleet plan (msg 2603)
 - LaunchAgent pattern for all officers; LaunchDaemon for background workers
 - Cost tracking: logging always ON, enforcement OFF for personal/STEP-internal, ON for commercial customers (Spec 059 §2.2)
-- COO-as-DPO: pending ratification (Article 38(6) conflict with CoS-as-DPO)
+- COO-as-DPO: ✅ RESOLVED msg 2737 (2026-05-24) — COO appointed DPO; CoS-as-DPO retired (Article 38(6) conflict). Retention 5y/10y (msg 2742); Anthropic wrapper risk accepted (msg 2744). Entire legal track closed (Spec 055 v7.3).
 - H3 value-add carve-out: calculated-bet posture (no Anthropic outreach pre-leverage per A13)
 - Devin price collapse ($500→$20): update discovery-call objection-handling, not a pricing adjustment
 - Spec 049 COO adversary review: final gate before CTO Phase 2a build starts
