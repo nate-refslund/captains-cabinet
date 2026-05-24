@@ -172,6 +172,22 @@ def verify(cabinet_id: str) -> tuple[bool, int | None]:
                             "hashchain.verify: entry_hash mismatch at entry %d for %s", idx, cabinet_id
                         )
                         return False, idx
+                else:
+                    # Pseudonymized (erased) entry: the original entry_hash can't be
+                    # recomputed (content changed post-erasure), so the chain link trusts
+                    # the stored entry_hash — BUT the pseudonym_marker_hash MUST match the
+                    # current pseudonymized content, else post-erasure tampering goes
+                    # undetected (Spec 052 AC#8/#9; CTO review finding #2). marker =
+                    # sha256(entry minus pseudonym_marker_hash), same canonical encoding
+                    # erasure.py used to compute it.
+                    stored_marker = entry.get("pseudonym_marker_hash", "")
+                    marker_body = {k: v for k, v in entry.items() if k != "pseudonym_marker_hash"}
+                    computed_marker = hashlib.sha256(_canonical_json(marker_body)).hexdigest()
+                    if computed_marker != stored_marker:
+                        logger.warning(
+                            "hashchain.verify: pseudonym_marker_hash mismatch at entry %d for %s", idx, cabinet_id
+                        )
+                        return False, idx
 
                 prev_hash = stored_entry_hash
     except Exception as exc:  # noqa: BLE001

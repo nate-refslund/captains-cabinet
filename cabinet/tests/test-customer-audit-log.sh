@@ -326,6 +326,32 @@ print(f'marker={has_marker} original_hash={has_original_hash}')
 assert_contains "pseudonym_marker_hash present" "$MARKER_OUT" "marker=True"
 assert_contains "original entry_hash preserved" "$MARKER_OUT" "original_hash=True"
 
+# ── 9b. Erasure: tampering a pseudonymized entry BREAKS verify via marker (CTO #2 fix) ──
+section "9b. Erasure: marker-tamper breaks verify"
+TAMPER_OUT="$(py -c "
+import sys, os, json, pathlib
+sys.path.insert(0,'${AUDIT_SERVER}')
+os.environ['LITELLM_AUDIT_LOG_ROOT'] = '${AUDIT_ROOT}'
+import hashchain, erasure
+slug = 'test-cabinet-marker-tamper'
+hashchain.append({
+    'ts':'2026-01-01T00:00:00Z','cabinet_id':slug,'entry_id':'mt1','stream':'cabinet',
+    'event_type':'signup','actor':{'officer':None,'captain':True},
+    'subject':{'type':'cap_event','target':'t','metadata':{'customer_name':'Tamper User'}},'cost':{},
+})
+log_path = pathlib.Path('${AUDIT_ROOT}') / 'audit' / f'{slug}.jsonl'
+erasure.pseudonymize_cabinet(slug, log_path)
+ok_clean, _ = hashchain.verify(slug)
+# Post-erasure tamper: change content but KEEP the stale pseudonym_marker_hash
+entry = json.loads(log_path.read_text().strip().splitlines()[0])
+entry['subject']['metadata']['customer_name'] = 'ATTACKER-INJECTED'
+log_path.write_text(json.dumps(entry, separators=(',',':'))+'\n')
+ok_tampered, bad_idx = hashchain.verify(slug)
+print(f'clean={ok_clean} tampered={ok_tampered} bad_idx={bad_idx}')
+" 2>&1)"
+assert_contains "verify passes on clean pseudonymized entry" "$TAMPER_OUT" "clean=True"
+assert_contains "verify FAILS on tampered pseudonymized entry (marker-check, CTO #2)" "$TAMPER_OUT" "tampered=False"
+
 # ── 10. Pagination: cursor-based read returns correct page ───────────────────
 section "10. Pagination: cursor-based read"
 PAGER_OUT="$(py -c "

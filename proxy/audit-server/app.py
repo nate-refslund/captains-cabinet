@@ -9,7 +9,12 @@ WHY THIS EXISTS: Provides two endpoints for the Spec 052 customer audit log:
 
 AUTH:
   POST endpoint: AUDIT_API_KEY env var (write-side; shared between proxy and server).
-  GET endpoint: customer's own AUDIT_API_KEY (customer-scoped; reads ONLY their cabinet).
+  GET endpoint: Phase-1 uses the SHARED AUDIT_API_KEY = admin-level (reads ANY cabinet
+    by the cabinet_id path param — the param is TRUSTED). Customer-scoping (Spec 052
+    AC#10) is NOT enforced here in Phase-1; it requires (a) FW-101 dashboard BACKEND-
+    mediation — the key stays backend-only, NEVER customer/browser-held, cabinet_id
+    from the authenticated session; (b) per-cabinet key→cabinet_id binding before
+    customer #2 (hard onboarding gate, CPO+COO/DPO tracked).
   These are distinct from LLM_PROXY_KEY (separate credential blast radius per CTO #5).
 
 APPEND-ONLY (AC #7):
@@ -212,8 +217,11 @@ async def get_audit_log(
     Read a customer's audit log, cursor-paginated (1000 entries/page).
 
     cursor = 0 for first page; subsequent pages use next_cursor from prior response.
-    Customer sees ONLY their own cabinet's log (AC #10 — cross-tenant read FAILS).
-    Auth: Authorization: Bearer <customer's AUDIT_API_KEY>
+    Phase-1: the SHARED AUDIT_API_KEY authorizes reads for ANY cabinet (admin-level);
+    the cabinet_id path param is TRUSTED. Customer-scoping (Spec 052 AC#10) is enforced
+    by FW-101 BACKEND-mediation (key backend-only + cabinet_id from the authenticated
+    session) + per-cabinet key→cabinet_id binding before customer #2 — NOT yet here.
+    Auth: Authorization: Bearer <AUDIT_API_KEY>
     """
     provided_key = _parse_bearer(authorization)
     if not _authorize_read(cabinet_id, provided_key):
