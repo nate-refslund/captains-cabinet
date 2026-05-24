@@ -60,6 +60,8 @@ _llm_routing_parse_key() {
 # Print the model name to use for the given officer + tool_call_depth.
 # Usage: llm_routing_select_model <officer> <tool_call_depth>
 llm_routing_select_model() {
+  # NOTE: <officer> is RESERVED for a Phase-1.x per-officer llm_routing override. Phase 1
+  # uses cabinet-level config, so the arg is accepted but not yet used for per-officer lookup.
   local officer="${1:-}" depth="${2:-0}"
   local instructions_file mode threshold opus sonnet
 

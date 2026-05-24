@@ -16,7 +16,7 @@ Retain per FW-100 GDPR baseline (90d hot, 7yr cold archive for billing reconcili
 
 SCHEMA (AC #6):
   ts, cabinet_id, officer, request_id, model, provider,
-  tokens_in, tokens_out, cost_raw_usd, cost_marked_up_usd, margin_pct, cap_pct_used
+  tokens_in, tokens_out, cost_raw_usd, cost_marked_up_usd, margin_pct, request_pct_of_cap
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 _MARGIN_PCT: int = int(os.environ.get("LITELLM_MARGIN_PCT", "100"))
 
 # Daily cap in USD — must match proxy/config.yaml team_settings.max_budget.
-# Used for cap_pct_used computation in audit log (informational; enforcement
+# Used for request_pct_of_cap computation in audit log (informational; enforcement
 # is proxy-side via LiteLLM team-budget).
 _CAP_USD: float = float(os.environ.get("LITELLM_CAP_USD", "50.0"))
 
@@ -113,8 +113,11 @@ class CabinetAuditLogger:
             margin_pct = _MARGIN_PCT
             cost_marked_up = compute_markup(cost_raw, margin_pct)
 
-            # Cap usage percentage (informational — enforcement is team-budget)
-            cap_pct = round((cost_raw / _CAP_USD) * 100, 2) if _CAP_USD > 0 else 0.0
+            # Per-request cost as % of the daily cap — informational ONLY, NOT cumulative.
+            # FW-101 reads LiteLLM team-budget CURRENT-SPEND for authoritative cap-status
+            # (the enforcer is the source of truth; a JSONL cost_raw sum can drift from it).
+            # See Spec 051 AC #7. Do NOT use this field for proximity-to-block.
+            request_pct_of_cap = round((cost_raw / _CAP_USD) * 100, 2) if _CAP_USD > 0 else 0.0
 
             record: dict[str, Any] = {
                 "ts": datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -132,7 +135,7 @@ class CabinetAuditLogger:
                 "cost_raw_usd": cost_raw,
                 "cost_marked_up_usd": cost_marked_up,
                 "margin_pct": margin_pct,
-                "cap_pct_used": cap_pct,
+                "request_pct_of_cap": request_pct_of_cap,
                 "status": status,
             }
             _emit_record(record)

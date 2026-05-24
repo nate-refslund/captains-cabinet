@@ -74,8 +74,9 @@ team_settings:
   - team_id: cabinet
     max_budget: 50.0          # USD (Spec 051 AC #2 — $50/day per-cabinet TOTAL)
     budget_duration: 1d       # resets 00:00 UTC daily
-    # 80% soft warning is handled by the audit_logger + X-Cap-Warning header injection;
-    # LiteLLM enforces the hard 100% block via the team max_budget ceiling.
+    # LiteLLM enforces the hard 100% block HERE via the team max_budget ceiling.
+    # The 80% soft-warning (X-Cap-Warning header -> CAP_APPROACH) is part of the DEFERRED
+    # cap-reaction piece (officer-side observation of proxy responses) — NOT built yet.
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY   # proxy admin API auth
