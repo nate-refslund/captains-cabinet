@@ -1,11 +1,12 @@
 # Cabinet Framework + Sensed Product Backlog — Prioritized View
 
-> Maintained by CPO. Last refinement: 2026-05-23 22:00 UTC (cron).
-> **Active phase: Mac Migration (Specs 057-065 ready for Captain execution) + Phase 1 commercial pipeline (FW-096-115) + Spec 049 v3.1 COO adversary fold.**
+> Maintained by CPO. Last refinement: 2026-05-24 10:00 UTC (cron — light pass; no new research briefs since 22:00, heavy reframe done that tick).
+> **Active phase: Mac Migration (Specs 057-065 ready; Phase 1 mid-execution Captain-hands-on) + Phase 1 commercial pipeline (FW-096-115) + Spec 049 v3.1 COO adversary fold.**
+> **Two new Phase-1 tracking artifacts (CPO, this cycle):** `cabinet-customer-1-readiness.md` (pre-sale GO rollup — "can we TAKE customer #1") + `cabinet-phase-1-validation-gate.md` (post-sale PMF gate — "are we good after customers 1-5"). Complementary bookends; the readiness checklist is the single source of truth for customer-#1 prerequisites.
 > Sensed: TestFlight live + PostHog Phase-0 wired (PR #559, 2026-04-25). Sensed backlog is stable — no new CTO work queued for Sensed until Mac migration phases are complete.
-> Research absorbed this cycle: CRO competitive sweep (Devin $20 price collapse + Anthropic enforcement), audience psychology digest (trust-gap #1 for SMB + predictable pricing wins + 85%/15% framing), Anthropic ToS Q1 sweep (value-add carve-out strengthened + Claude Marketplace opportunity), Mac-native pre-staging (TCC code-signing already folded into Spec 058 v1.2), Claude Code daily catchup (S2 effort.level hooks + P1 /code-review → Spec 049 Gate 3 boundary clarification needed).
+> Research absorbed (prior cycle, still current): CRO competitive sweep (Devin $20 + Anthropic enforcement), audience psychology digest (trust-gap #1 + 85/15 framing), Anthropic ToS Q1 sweep (value-add carve-out strengthened), Mac-native pre-staging (TCC code-signing — now folded into Spec 058 1.8 body + committed e8af6e9), Claude Code daily catchup (Spec 049 v3.2 ast-grep + /code-review boundary, staged).
 
-> **Note:** Linear is READ-ONLY archive post-Spec-039 cutover (2026-04-26). Canonical task store is Postgres `officer_tasks` (Spec 038). Shipped/blocked items below are historical references for context; current state is in /tasks dashboard.
+> **Note:** Linear is READ-ONLY archive post-Spec-039 cutover (2026-04-26). Canonical task store is Postgres `officer_tasks` (Spec 038) + `shared/cabinet-framework-backlog.md` (FW-series). Do not write to Linear.
 
 ---
 
@@ -13,8 +14,8 @@
 
 | Item | FW# | Spec | Owner | Status | Blocker |
 |------|-----|------|-------|--------|---------|
-| COO-as-DPO role-def amendment | FW-114 | — | CoS coord + CPO draft | **PENDING Captain ratification** | Gates Spec 055 v4 final ship + all customer GDPR commitments |
-| Spec 049 v3.1 (COO adversary fold) | FW-095 | 049 v3.0.2 | COO adversary → CPO fold | **COO adversary PENDING** | Gates CTO Phase 2a build start |
+| COO-as-DPO **designation** | FW-114 | 055 v7 §H1 | CoS surfaces + CPO applies | **PINNED for briefing — clean one-word ask** | Gates Spec 055 GDPR ship + all customer GDPR. **Cheapest unblock on the board.** Ask resolved: designation holds while COO passive (DPO voluntary at Phase 1 per 055 v7 I2; active duties ramp at customer #1). Amendment staged → applies same turn (task #34). |
+| Spec 049 v3.1 (COO adversary fold) | FW-095 | 049 v3.0.2 | COO adversary → CPO fold | **COO adversary PENDING** (dispatched 2026-05-23 22:08) | Gates CTO Phase 2a build start. v3.2 ast-grep ACs also staged (task #35). |
 
 ---
 
@@ -27,16 +28,16 @@
 | Phase | Spec | Status | Estimated time |
 |-------|------|--------|----------------|
 | Phase 0 — Host state capture | 057 | ✓ COMPLETE 2026-05-22 | Done |
-| Phase 1 — Mac base setup (binaries + TCC code-signing) | 058 v1.2 | **READY for Captain execution** | ~3-4h Captain |
-| Phase 2 — Delete Docker, add launchd | 059 v1.1 | **READY** (awaits Phase 1 complete) | ~2-4h CTO + Captain |
+| Phase 1 — Mac base setup (binaries + TCC code-signing) | 058 v1.2.1 | **MID-EXECUTION (Captain hands-on)** | ~3-4h Captain |
+| Phase 2 — Delete Docker, add launchd | 059 v1.1.1 | **READY** (awaits Phase 1 complete) | ~2-4h CTO + Captain |
 | Phase 3 — Telegram topology collapse | 060 | READY | ~1-2h |
-| Phase 4 — cua-driver + Lead Enforcement | 061 | READY | ~2-3h |
+| Phase 4 — cua-driver + Lead Enforcement | 061 v1.2.1 | READY (hard-gated on 058 1.8) | ~2-3h |
 | Phase 5 — Screenpipe Integration | 062 | READY | ~2-3h |
 | Phase 6 — Cabinet Worktrees + Adapter Contract | 063 | READY | ~2h |
 | Phase 7 — Full Officer Rollout + Observability (48h soak) | 064 | READY | 48h soak |
 | Phase 8 — Documentation + Release | 065 v1.1 | READY | ~3-4h |
 
-**Key dependency (from Spec 058 v1.2 CRO fold):** Phase 1 step 1.10 requires Apple Developer ID certificate import before any officer binary is code-signed. Apple Developer Program already enrolled (Captain msg 2576). TCC permission persistence across restarts depends on this — do not defer.
+**Key dependency (058 v1.2.1, committed e8af6e9 + CTO entitlements 7f2844d):** Phase 1 **Checkpoint 1.8** (code-sign + notarize officer binaries) must pass before Phase 4 cua-driver. Apple Developer Program enrolled (Captain msg 2576). Captain **must not mark Phase 1 complete** until 1.8's reboot-TCC-persistence + JIT-launch golden evals pass (the F2 gate). The Node `claude` binary signs WITH JIT entitlements (`officer-entitlements.plist`, committed) — hardened runtime without them crashes at launch.
 
 ---
 
@@ -50,7 +51,7 @@
 | Customer audit log | FW-097 | 052 v3 | Spec COMPLETE | CTO impl Phase 1b |
 | Concierge install runbook | FW-098 | 053 v3 | Spec COMPLETE | Customer templates also complete (see below) |
 | refslund.ai signup + Stripe billing | FW-099 | 054 v3 | Spec COMPLETE | CTO impl Phase 2 |
-| GDPR baseline (ROPA/DPA/DPIA/erasure) | FW-100 | 055 v4 | **Gated on FW-114** | COO-as-DPO ratification required first |
+| GDPR baseline (ROPA/DPA/DPIA/erasure) | FW-100 | 055 v7 | **Gated on FW-114** | COO-as-DPO ratification required first |
 | Customer dashboard MVP | FW-101 | 056 v2 | Spec COMPLETE | CTO impl Phase 1b |
 
 ### Customer templates (all complete, ready for first-customer use)
