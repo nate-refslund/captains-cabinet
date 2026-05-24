@@ -1,6 +1,7 @@
 # Spec 053: Concierge Install + Customer Onboarding Flow (FW-098 Phase 1 Priority 4)
 
-**Version:** v4 (CRO multi-spec adversary H5 BLOCKER + spec-specific findings fold) — v3 superseded
+**Version:** v4.1 (a9fd5a8 scope correction: runbook skeleton shipped, install script greenfield) — v4 superseded
+**v4.1 changelog — install-script overclaim corrected (CTO FW-098 pre-build verify, 2026-05-24):** the spec claimed in 5 places (framework-ticket line, Evidence, Stage-4 substrate-execution block, Stage-4 AC, Dependencies) that commit a9fd5a8 shipped `cabinet/scripts/install-customer-cabinet.sh` + first-boot validation. VERIFIED against a9fd5a8: it shipped ONLY the 144-line markdown runbook `cabinet/runbooks/concierge-install-cabinet.md` (1 file) — the automation script was never committed on any branch and is not on disk. FW-098 CTO substrate is therefore GREENFIELD (build the install script + ANTHROPIC_API_KEY-absent validation + the CTO #5 shared mock `cabinet/tests/mocks/refslund-customer-mock.sh`), not a hardening pass. All 5 sites corrected to distinguish the shipped markdown runbook from the greenfield script. (Note: the CTO #1 changelog at line 31 was already correct — it split the two artifacts; only the downstream references overclaimed.)
 **v4 changelog:** CRO multi-spec adversary review (2026-05-21 17:10 UTC) surfaced 1 NEW HIGH-RISK H5 BLOCKER + 12 spec-specific findings. v4 folds:
 - **H5 BLOCKER iCloud Drive sub-processor:** Spec 053 Stage 3 pre-install checklist (line 90) required "Apple ID signed in + iCloud Drive enabled (for backup)" — but iCloud is US-based sub-processor NOT in Spec 055 v6 sub-processor list = Article 28(2) undisclosed-sub-processor violation. **v4 fix per CRO + CoS recommended Option (a): REMOVE iCloud Drive requirement from pre-install checklist.** Cabinet does NOT enroll customer's MacMini in iCloud Drive backup for cabinet data. Cabinet-managed backup = Time Machine to local disk (Phase 1) OR Hetzner-volume-snapshot (Phase 2 polish). Customer's own iCloud usage outside `cabinet/*` directories unaffected. AC #3 + Stage 3 checklist updated. **Signup-live gate-blocker RESOLVED at spec layer; no Captain ratification needed for Option (a) — clean removal, not addition.**
 - **053-02 Customer-Success Space access control:** AC #8 schema extended — multi-tenant access via role-check (Captain + CoS + COO-as-DPO full read; CRO + CTO + CPO needed-to-know view for cross-customer pattern analysis only); PII redaction applied to non-DPO views (customer name + email + Captain personal notes pseudonymized in officer-coordination retro views).
@@ -39,11 +40,11 @@
 
 **Captain ratifications inapplicable per Captain msg 2583 multi-officer-process-as-legal-review framing. A12 active — CTO #1/#2/#4 architecture calls are CTO domain (CPO accepts). A13 inapplicable (no vendor outreach paths).**
 **Priority:** P0 — gates customer-to-cabinet handoff post-signup
-**Framework ticket:** FW-098 — CTO authored substrate runbook v0.1 (commit a9fd5a8 — install script + first-boot validation); this spec adds CPO customer-facing onboarding flow
-**Owner:** CPO (customer-facing onboarding flow + check-in cadence) + CTO (substrate runbook v0.1 already shipped) + Captain (personally performs Phase 1 concierge installs per msg 2565 Danish-first within-physical-reach)
+**Framework ticket:** FW-098 — commit a9fd5a8 shipped ONLY the markdown runbook skeleton (`cabinet/runbooks/concierge-install-cabinet.md`, 144 lines); the automation script `install-customer-cabinet.sh` + first-boot validation are GREENFIELD CTO substrate (FW-098 build, in progress). This spec adds the CPO customer-facing onboarding flow.
+**Owner:** CPO (customer-facing onboarding flow + check-in cadence) + CTO (runbook skeleton a9fd5a8 shipped; install script greenfield + building) + Captain (personally performs Phase 1 concierge installs per msg 2565 Danish-first within-physical-reach)
 **Scope:** Customer-facing journey from refslund.ai signup → live cabinet → Day-30 retention check; Captain-supervised concierge install for Phase 1 (Danish customers within physical reach: Odense / Copenhagen / rest of DK)
 **Canonical artifact home:** Library Specs Space (this spec) + Library Customer-Success Space (per-customer journey records)
-**Evidence:** Captain msg 2565 (2026-05-20 13:58 UTC — Danish-only Phase 1, within physical reach, Nate-supervised concierge install); CTO substrate runbook commit a9fd5a8 v0.1 (cabinet/scripts/install-customer-cabinet.sh + validation steps); Spec 050 commercial-direction master Phase 1 customer profile.
+**Evidence:** Captain msg 2565 (2026-05-20 13:58 UTC — Danish-only Phase 1, within physical reach, Nate-supervised concierge install); CTO runbook skeleton commit a9fd5a8 v0.1 (`cabinet/runbooks/concierge-install-cabinet.md` — markdown ONLY; the `cabinet/scripts/install-customer-cabinet.sh` automation script is greenfield CTO build, NOT yet shipped); Spec 050 commercial-direction master Phase 1 customer profile.
 
 ---
 
@@ -115,8 +116,8 @@ CoS validates checklist completion T-1 day before install; flags any blocker; re
 
 Captain physically present (or video screen-share for DK-remote — Captain msg 2565 prefers physical-reach but accepts video for DK-customers outside Odense/Copenhagen).
 
-**Substrate execution (per CTO runbook v0.1 commit a9fd5a8):**
-1. Captain SSHs into customer Mac → runs `cabinet/scripts/install-customer-cabinet.sh <customer-slug>` (the substrate runbook)
+**Substrate execution (FW-098 install script — greenfield CTO build; the a9fd5a8 markdown runbook is the human-followed companion, not the executable):**
+1. Captain SSHs into customer Mac → runs `cabinet/scripts/install-customer-cabinet.sh <customer-slug>` (the FW-098 automation script — greenfield CTO build, NOT shipped in a9fd5a8)
 2. Script clones cabinet framework + provisions instance config + injects LLM_PROXY_KEY + AUDIT_API_KEY (per Spec 052 CTO #5) + Telegram bot tokens + Stripe webhook secret
 3. Script validates `grep -q ANTHROPIC_API_KEY cabinet/.env` returns FAIL (raw key absent per Spec 051 install-validation)
 4. Officer roster spawns; CoS (CEO archetype per single_ceo Telegram bot mode) initiates first heartbeat
@@ -175,7 +176,7 @@ Captain msg 2583 H3 + Spec 055 §customer-data-handling matrix: customer can can
 
 3. **Stage 3 pre-install-checklist AC** — checklist email template at `shared/interfaces/customer-templates/pre-install-checklist.md`; customer-facing form at refslund.ai/dashboard/pre-install collects responses; CoS validates T-1 day before install + flags blockers.
 
-4. **Stage 4 install-day AC** — Captain executes CTO substrate runbook v0.1 (cabinet/scripts/install-customer-cabinet.sh per CTO commit a9fd5a8) + 60-90min customer-facing session per detailed flow above. End-state: customer Telegram-DMs CoS officer; officer responds; spend visible in dashboard; DPA + policy walkthrough complete.
+4. **Stage 4 install-day AC** — Captain executes the FW-098 install script `cabinet/scripts/install-customer-cabinet.sh` (greenfield CTO build — NOT in a9fd5a8, which shipped only the markdown runbook) + 60-90min customer-facing session per detailed flow above. End-state: customer Telegram-DMs CoS officer; officer responds; spend visible in dashboard; DPA + policy walkthrough complete.
 
 5. **Stage 5 post-install-handoff AC** — within 24h of install: customer receives Loom-style video walkthrough (template + Captain-personal recording) + cheat-sheet PDF (`shared/interfaces/customer-templates/cheat-sheet-week-1.pdf` — CPO authors) + first-week usage suggestions tailored to discovery-call notes + Captain personal contact info.
 
@@ -218,7 +219,7 @@ No Open Questions Phase 1 — all decisions internal-officer process per Captain
 
 ## Dependencies
 
-- **CTO substrate runbook v0.1** (commit a9fd5a8) — primary install-day execution layer; CPO spec doesn't duplicate; cross-references runbook for install-day Stage 4.
+- **CTO runbook skeleton v0.1** (commit a9fd5a8 — `cabinet/runbooks/concierge-install-cabinet.md`, markdown) + **FW-098 install script** (`cabinet/scripts/install-customer-cabinet.sh` — greenfield CTO build): the script is the primary install-day execution layer, the runbook is its human-followed companion. CPO spec doesn't duplicate; cross-references both for install-day Stage 4.
 - **FW-096 (Spec 051) dependency** — virtual key + AUDIT_API_KEY injection at install (Stage 4); proxy live for first officer DM cycle.
 - **FW-097 (Spec 052) dependency** — audit-log emission validation during install + post-install dashboard widget.
 - **FW-099 (Spec 053 candidate) dependency** — Stripe signup webhook triggers welcome flow (Stage 2); billing portal access verified during install (Stage 4).
