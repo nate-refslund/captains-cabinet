@@ -408,6 +408,15 @@ Cost-cap default ($5/task) is a config-edit reversal per A1 — NOT Captain-gate
 
 ---
 
+## Cross-project propagation (CoS framework-structure decision, 2026-05-24)
+
+Spec 049 is FW-095 — a framework feature for EVERY project, but the 3 skills (`self-review`/`ship-pr`/`pickup-task`) currently exist as per-project copies in each project's `.claude/skills/` (no template). Decided rollout (CoS owns the mechanism; CPO owns the config contract):
+
+- **Skill CODE is framework-canonical + uniform** (the 4-gate logic + caps are quality-infra, identical across projects) → propagated via **FW-094 bind-mount** (single source of truth), NOT per-project forked copies. (Manual per-project application would re-create the exact frozen-at-bootstrap drift FW-094 exists to kill — self-defeating.)
+- **Project-SPECIFIC behavior** (which pages to visually review, allowed paths, caps, `WORKSPACE_ROOT`) stays in per-project `.cabinet/agent-instructions.md` (CRO F6). **One shared skill, varied by config.**
+- **Sequencing (gated on Sensed validation):** (1) NOW — 049 ships to Sensed with project-local skills; dogfood the 4-gate /self-review; validate. (2) AFTER Sensed validation — canonicalize the 3 skills + wire FW-094 bind-mount. (3) project #2 inherits automatically. Do NOT templatize pre-validation (would propagate a still-churning skill).
+- **Ownership:** CoS = FW-094 canonicalization + bind-mount; **CPO = the per-project config contract spec** (defines exactly what's framework-canonical vs per-project config) — authored when Sensed validation passes. Tracked on the board (049 cross-project propagation → FW-094, gated on Sensed validation).
+
 ## Out of scope
 
 - **Full computer-use agent loop** (Cursor/Devin-style autonomous "go fix the bug"). Defer until: (a) leaves beta, (b) PolAds e2e flow Playwright can't cover, (c) budget for $1-5/run nondeterministic runs is justified. Per CoS scoping brief Section 2.
