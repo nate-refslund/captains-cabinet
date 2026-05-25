@@ -64,6 +64,10 @@
           {
             "type": "command",
             "command": "bash /opt/founders-cabinet/cabinet/scripts/hooks/captain-posture-warroom.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash /opt/founders-cabinet/cabinet/scripts/hooks/pre-tool-use-conventional-commit.sh"
           }
         ]
       },

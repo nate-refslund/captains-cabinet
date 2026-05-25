@@ -167,6 +167,98 @@ else
 fi
 
 # ───────────────────────────────────────────────────────────────────────────
+section "AC #7 — C3 conventional-commit hook (FW-029 corpus + adversary 1+2 pins)"
+if [ -r "$LIB/git-commit-argv.sh" ]; then
+  # shellcheck source=/dev/null
+  source "$LIB/git-commit-argv.sh"
+  _det() { gca_invokes_git_commit "$1" && echo Y || echo N; }
+  _val() { local s; s="$(gca_commit_subject "$1")"; if [ $? -eq 0 ]; then gca_validate_subject "$s" && echo Y || echo N; else echo skip; fi; }
+  _nv()  { gca_has_no_verify "$1" && echo Y || echo N; }
+  # detection: real invocations (incl. adversary 1+2 forms) MUST fire
+  eq "C3 det feat"            "$(_det 'git commit -m "feat: x"')" "Y"
+  eq "C3 det global-flag"     "$(_det 'git -c u=x commit -m "fix: y"')" "Y"
+  eq "C3 det chain"           "$(_det 'cd /r && git commit -m "test: z"')" "Y"
+  eq "C3 det VAR-prefix"      "$(_det 'GIT_X=1 git commit -m "perf: a"')" "Y"
+  eq "C3 det bash-c"          "$(_det 'bash -c "git commit -m bad"')" "Y"
+  eq "C3 det eval (advA1)"    "$(_det 'eval "git commit -m bad"')" "Y"
+  eq "C3 det command (advA2)" "$(_det 'command git commit -m bad')" "Y"
+  eq "C3 det subshell"        "$(_det '(git commit -m bad)')" "Y"
+  eq "C3 det multiline (advP2h)" "$(_det "$(printf 'cd /r\ngit commit -m bad')")" "Y"
+  eq "C3 det leading-space (Opus#1 HIGH)" "$(_det ' git commit -m bad')" "Y"
+  eq "C3 det leading-tab (Opus#1 HIGH)"   "$(_det "$(printf '\tgit commit -m bad')")" "Y"
+  # detection: FP-guards (substring mentions) MUST NOT fire
+  eq "C3 FP echo"             "$(_det 'echo "git commit -m bad"')" "N"
+  eq "C3 FP grep-pipe"        "$(_det 'cat l | grep "git commit"')" "N"
+  eq "C3 FP git-log"          "$(_det 'git log --grep="git commit"')" "N"
+  eq "C3 FP committed"        "$(_det 'git committed -m x')" "N"
+  eq "C3 FP printf"           "$(_det 'printf "git commit -m x"')" "N"
+  eq "C3 FP leading-space-echo (Opus#1 no-overcorrect)" "$(_det '   echo hello git commit')" "N"
+  # subject validation: pos + neg
+  eq "C3 valid feat-scope"    "$(_val 'git commit -m "feat(auth): login"')" "Y"
+  eq "C3 invalid no-type"     "$(_val 'git commit -m "added stuff"')" "N"
+  eq "C3 invalid cap-type"    "$(_val 'git commit -m "Fix: x"')" "N"
+  eq "C3 invalid bad-type"    "$(_val 'git commit -m "feature(x): y"')" "N"
+  eq "C3 -am extract+validate (advA3)" "$(_val 'git commit -am "nope"')" "N"
+  c3c="git commit -m \$'refactor(core): x\\n\\nbody'"
+  eq "C3 ansi-c subject"      "$(gca_commit_subject "$c3c")" "refactor(core): x"
+  c3f="git commit -m \"see 'git commit -m foo' here\""
+  eq "C3 FP2 outer-mention"   "$(_val "$c3f")" "N"
+  eq "C3 reuse -c skip"       "$(_val 'git commit -c HEAD~1')" "skip"
+  # --no-verify / -n
+  eq "C3 nv --no-verify"      "$(_nv 'git commit -m "feat: x" --no-verify')" "Y"
+  eq "C3 nv -n"               "$(_nv 'git commit -n -m "feat: x"')" "Y"
+  eq "C3 nv -n-in-msg NOT (advA4)" "$(_nv 'git commit -m "handle the -n flag"')" "N"
+  # Opus ship-gate folds (#1 -nm cluster, #2 -Sm/-mattached, #5 sudo/timeout prefixes)
+  eq "C3 nv -nm cluster (Opus#1)"   "$(_nv 'git commit -nm "feat: x"')" "Y"
+  eq "C3 nv -sm NOT-no-verify (Opus#1 FP)" "$(_nv 'git commit -sm "fix: ok"')" "N"
+  # CPO PR#104 review FP fix: -n scoped to the commit's own flags (chained-command + wrapper-prefix)
+  eq "C3 nv FP head-n chain (CPO)"  "$(_nv 'head -n 5 CHANGELOG && git commit -m "feat: x"')" "N"
+  eq "C3 nv FP grep-n chain (CPO)"  "$(_nv 'grep -n TODO && git commit -m "fix: y"')" "N"
+  eq "C3 nv FP tail-n semicolon (CPO)" "$(_nv 'tail -n 20 log; git commit -m "fix: z"')" "N"
+  eq "C3 nv FP sort-n chain (CPO)"  "$(_nv 'sort -n nums && git commit -m "feat: q"')" "N"
+  eq "C3 nv FP sudo-n prefix (CPO)" "$(_nv 'sudo -n git commit -m "feat: r"')" "N"
+  eq "C3 nv FP nice-n prefix (CPO)" "$(_nv 'nice -n 10 git commit -m "feat: s"')" "N"
+  eq "C3 nv FP trailing-head-n (CPO)" "$(_nv 'git commit -m "feat: x" && head -n 5 f')" "N"
+  eq "C3 nv mixed FP+real-nm still Y (CPO)" "$(_nv 'head -n 5 && git commit -nm "x"')" "Y"
+  eq "C3 nv mixed real-nv+trailing-FP still Y (CPO)" "$(_nv 'git commit --no-verify && head -n 5')" "Y"
+  # Opus adversary HIGH#1 (leading whitespace defeats anchor) + MEDIUM#4 (backtick command-sub scope)
+  eq "C3 nv leading-space (Opus#1 HIGH)" "$(_nv ' git commit -n -m "feat: x"')" "Y"
+  c3bt='git commit -m "feat: x" `head -n 5 f`'
+  eq "C3 nv backtick head-n FP (Opus#4)" "$(_nv "$c3bt")" "N"
+  c3bt2='git commit -nm "x" `echo hi`'
+  eq "C3 nv backtick-adjacent real-nm still Y (Opus#4)" "$(_nv "$c3bt2")" "Y"
+  # Opus HIGH#5 regression-guard: strip backtick BODY (not split on it) so a real no-verify AFTER the
+  # sub is preserved; a no-verify INSIDE the sub (an arg to the sub's command) is correctly dropped.
+  c3bt3='git commit `true` --no-verify -m "x"'
+  eq "C3 nv real-nv AFTER backtick (Opus#5 HIGH regr)" "$(_nv "$c3bt3")" "Y"
+  c3bt4='git commit -m "x" `echo hi` -n'
+  eq "C3 nv real-n trailing backtick (Opus#5 HIGH regr)" "$(_nv "$c3bt4")" "Y"
+  c3bt5='git commit -m "x" `foo --no-verify`'
+  eq "C3 nv no-verify INSIDE backtick NOT (Opus#5)" "$(_nv "$c3bt5")" "N"
+  eq "C3 -Sm uppercase extract (Opus#2)"   "$(_val 'git commit -Sm "nope"')" "N"
+  eq "C3 -mattached extract (Opus#2)"      "$(_val 'git commit -mbadmsg')" "N"
+  eq "C3 det sudo-prefix (Opus#5)"   "$(_det 'sudo git commit -m bad')" "Y"
+  eq "C3 det timeout-prefix (Opus#5)" "$(_det 'timeout 5 git commit -m bad')" "Y"
+  eq "C3 FP sudo-apt-install (Opus#5)" "$(_det 'sudo apt install git')" "N"
+  # hook behavior: warn-mode (default) NEVER blocks; enforce blocks; log leaks no message content
+  HOOK="$SCRIPTS/hooks/pre-tool-use-conventional-commit.sh"
+  if [ -x "$HOOK" ] && command -v jq >/dev/null 2>&1; then
+    _hj() { jq -nc --arg c "$1" '{tool_name:"Bash",tool_input:{command:$c}}'; }
+    eq "C3 hook warn bad rc0"   "$(_hj 'git commit -m bad' | CONVENTIONAL_COMMIT_LOG="$TMP/c3.jsonl" bash "$HOOK" >/dev/null 2>&1; echo $?)" "0"
+    eq "C3 hook warn good rc0"  "$(_hj 'git commit -m "feat: x"' | CONVENTIONAL_COMMIT_LOG="$TMP/c3.jsonl" bash "$HOOK" >/dev/null 2>&1; echo $?)" "0"
+    eq "C3 hook enforce bad rc2" "$(_hj 'git commit -m bad' | CONVENTIONAL_COMMIT_MODE=enforce CONVENTIONAL_COMMIT_LOG="$TMP/c3.jsonl" bash "$HOOK" >/dev/null 2>&1; echo $?)" "2"
+    eq "C3 hook non-commit rc0" "$(_hj 'ls -la' | bash "$HOOK" >/dev/null 2>&1; echo $?)" "0"
+    eq "C3 hook disabled rc0"   "$(_hj 'git commit -m bad' | CONVENTIONAL_COMMIT_ENABLED=0 bash "$HOOK" >/dev/null 2>&1; echo $?)" "0"
+    _hj 'git commit -m "SECRETLEAKCANARY42"' | CONVENTIONAL_COMMIT_LOG="$TMP/leak.jsonl" bash "$HOOK" >/dev/null 2>&1
+    eq "C3 hook log no msg-content leak" "$(grep -F SECRETLEAKCANARY42 "$TMP/leak.jsonl" 2>/dev/null | wc -l | tr -d ' ')" "0"
+  else
+    echo "  ⚠ SKIP hook-behavior (hook or jq unavailable)"
+  fi
+else
+  echo "  ⚠ SKIP (git-commit-argv.sh not found)"
+fi
+
+# ───────────────────────────────────────────────────────────────────────────
 echo
 echo "════════════════════════════════════════════"
 echo "Spec 049 harness (PARTIAL — shipped components): PASS=$PASS FAIL=$FAIL"
