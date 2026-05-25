@@ -334,6 +334,13 @@ jobs:
         # CABINET_ERASURE_NO_CHATTR=1 suppresses chattr (no root required in CI).
         run: bash /opt/founders-cabinet/cabinet/tests/test-customer-erasure.sh
 
+      - name: Shell unit tests — ff-pull-main.sh (#192 shared-checkout FF-pull backstop)
+        # 9 assertions: clean+behind fast-forwards; untracked-only STILL ff (tracked-only
+        # clean-gate, NOT porcelain — the #192 gotcha re .claude/worktrees/ + spawned-cabinets/);
+        # dirty-unstaged / dirty-staged / diverged / wrong-branch all SKIP (never clobber);
+        # up-to-date no-op exit 0. Hermetic: bare remote + local clone in mktemp; no /opt, no network.
+        run: bash /opt/founders-cabinet/cabinet/tests/test-ff-pull-main.sh
+
       - name: Shell unit tests — install-customer-cabinet.sh (FW-098 / Spec 053 v4.1)
         # 26 assertions: §A slug-injection guard, §B install-token validation (valid/
         # missing/non-JWT/expired/missing-claim), §C secret presence + NO value-leak to
