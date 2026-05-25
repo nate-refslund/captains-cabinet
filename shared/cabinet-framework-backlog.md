@@ -1651,3 +1651,13 @@ _(none)_
 - **Fix (this gate):** per-customer key→`cabinet_id` binding (config-map before the full DB per CTO) enforced inside `_authorize_read` so a key authorizes exactly its own cabinet. MUST ship before customer #2 is provisioned.
 - **Owner:** CTO (build the binding) + COO-as-DPO (GDPR compliance sign-off) + CoS (gate-tracking so it surfaces before customer #2). CPO authored the gate.
 - **Source:** 2026-05-24 — FW-097 PR #100 review finding #1 (CPO review + Phase-1 conditional-accept compliance call); also documented in Spec 052 v3.3 AC #10.
+
+### FW-121 — refslund.ai backend deploy: Hetzner docker-compose stack + Cloudflare-origin (P1, Captain-gated on #191)
+- **Status:** OPEN — buildable-now as automation (scripts); VALIDATES at VPS-provision (#191, Captain founder-action). Preparatory; not customer-#1-blocking until the VPS exists.
+- **Shape (CPO+CTO confirmed 2026-05-25, verified against specs):** net-new deploy automation for the refslund.ai SaaS backend (no existing deploy infra). A **docker-compose stack** per **Spec 050 line 16** (Hetzner-Docker baseline — "Docker stays" for the SaaS layer; the Mac-native migration is STEP-internal ONLY): LiteLLM proxy (FW-096) + audit-server uvicorn (FW-097) + ingest sidecar + Redis (cap-tracking state). **NOT bare systemd** (my earlier loose routing was wrong; Spec 050 mandates Docker for the backend).
+- **TLS/DNS:** Cloudflare terminates public TLS for `proxy.refslund.ai` (+ audit/dashboard subdomains) → forwards to the origin VPS; **Caddy** (or nginx — CTO's pick) is the LOCAL origin reverse-proxy routing to internal service ports (Spec 051 CTO#7 + §Topology; Spec 052 CTO#2). NOT Caddy-as-public-TLS (that is Cloudflare's job).
+- **Provisioning script:** install Docker; secret-safe env inject (never echo; chmod 600); `compose up`; **append-only audit dir** (Spec 052 AC#7 `chattr +a` at install-time); **non-root `audit` user** (Spec 052 CTO#3).
+- **Spec basis (CPO-verified):** Spec 050 line 16, Spec 051 §Topology + CTO#1/#7, Spec 052 CTO#2/#3 + AC#7.
+- **Dependencies:** Hetzner Frankfurt VPS (#191, Captain founder-action) + CTO Hetzner-vs-Fly.io ratification (Spec 051 line 91). Deploys the FW-096 + FW-097 substrate.
+- **Owner:** CTO (build) + CPO (spec-conformance review at PR). **Corrects the Spec 051 line-44 "FW-098 Phase 2" mis-reference** — FW-098 is the customer-Mac install, NOT the backend deploy.
+- **Source:** 2026-05-25 — CTO on-deck scoping after the commercial code substrate completed; 3-point shape confirmed by CPO against Spec 050/051/052.
