@@ -466,6 +466,36 @@ step_set_active_preset() {
 }
 
 # ---------------------------------------------------------------------------
+# Step 7b — Apply preset capability_grants to the cabinet's conf (Spec 052 CoS I2)
+# ---------------------------------------------------------------------------
+# Reads the preset's optional capability_grants block and appends the per-officer grant lines to
+# the GENERATED cabinet's officer-capabilities.conf (the cloned one — NEVER /opt's dev conf).
+# Preset-driven (Option B, CTO-ratified): grants live with the preset, no hardcoded preset-name
+# checks. Fail-safe: no-op if the lib / preset / conf is absent, or if no block is declared.
+step_apply_capability_grants() {
+  local cabinet_dir="${CABINET_BOOTSTRAP_ROOT}/${CABINET_SLUG}-cabinet"
+  local preset_yml="$cabinet_dir/presets/$PRESET_SLUG/preset.yml"
+  local conf="$cabinet_dir/cabinet/officer-capabilities.conf"
+  local lib="$cabinet_dir/cabinet/scripts/lib/apply-capability-grants.sh"
+
+  if [ "$DRY_RUN" = "1" ]; then
+    dry "Would apply preset capability_grants from $preset_yml to $conf (preset-driven, Spec 052 CoS I2)"
+    return 0
+  fi
+
+  if [ ! -f "$lib" ] || [ ! -f "$preset_yml" ] || [ ! -f "$conf" ]; then
+    info "capability_grants: lib/preset/conf absent — skipping (no-op)"
+    return 0
+  fi
+  # shellcheck source=/dev/null
+  if . "$lib" 2>/dev/null && apply_capability_grants "$preset_yml" "$conf"; then
+    info "Applied preset capability_grants to $conf"
+  else
+    info "capability_grants: none declared / skipped"
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # Step 8 — Initialize instance directories (AC #65, #69)
 # ---------------------------------------------------------------------------
 step_init_instance_dirs() {
@@ -1197,6 +1227,7 @@ if [ "$DRY_RUN" = "1" ]; then
   step_create_cabinet_dir
   step_clone_framework
   step_set_active_preset
+  step_apply_capability_grants
   step_init_instance_dirs
   step_generate_peer_secrets
   step_queue_peer_env_updates
@@ -1234,6 +1265,7 @@ run_step "validate-preset-gate"  step_validate_preset_gate
 run_step "create-cabinet-dir"    step_create_cabinet_dir
 run_step "clone-framework"       step_clone_framework
 run_step "set-active-preset"     step_set_active_preset
+run_step "apply-capability-grants" step_apply_capability_grants
 run_step "init-instance-dirs"    step_init_instance_dirs
 run_step "generate-peer-secrets" step_generate_peer_secrets
 run_step "queue-peer-env"        step_queue_peer_env_updates
