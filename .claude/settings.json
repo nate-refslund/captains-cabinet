@@ -101,6 +101,10 @@
           {
             "type": "command",
             "command": "bash /opt/founders-cabinet/cabinet/scripts/hooks/post-reply-memory.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash /opt/founders-cabinet/cabinet/scripts/hooks/post-reply-audit.sh"
           }
         ]
       },
