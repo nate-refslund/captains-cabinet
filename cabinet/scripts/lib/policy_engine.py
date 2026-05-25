@@ -671,17 +671,19 @@ _WRITE_PATTERNS = [
     # Pattern 1: redirect stdout/stderr to path (>, >>, >|)
     r">{1,2}\|?\s*[\"']?{path}",
     # Pattern 2: sed -i (inplace edit) with path as file arg
-    r"sed\b[^;&|]*(?:-[a-zA-Z]*i[^\s]*|--in-place(?:=[^\s]*)?)[^;&|]*\s[\"']?{path}",
-    # Pattern 3: tee writing to path
-    r"tee\b[^;&|]*\s[\"']?{path}",
+    # Single-dash -i (with optional suffix like .bak): -i, -i.bak, -Ei, -ni
+    # Long form --in-place only. Excludes --posix, --regexp-extended etc.
+    r"sed\b(?:[^;&|]|'[^']*'|\"[^\"]*\")*(?:(?<![-])-[a-zA-Z]*i(?:\.[^\s]*)?(?:\s|$)|--in-place(?:=[^\s]*)?)(?:[^;&|]|'[^']*'|\"[^\"]*\")*\s[\"']?{path}",
+    # Pattern 3: tee writing to path (exclude input redirects: < before path)
+    r"tee\b[^;&|]*(?<!<)\s[\"']?{path}",
     # Pattern 4: cp/mv/rsync with path as last arg (destination)
     r"(?:cp|mv|rsync)\b[^;&|]*\s[\"']?{path}[^\s;&|\"']*[\"']?\s*(?:$|[;&|<>])",
     # Pattern 5a: cp/mv with -t flag (target directory)
     r"(?:cp|mv)\b[^;&|]*-[a-zA-Z]*t\s*[\"']?{path}",
     # Pattern 5b: cp/mv/rsync with --target-directory
     r"(?:cp|mv|rsync)\b[^;&|]*--target-directory[=\s]+[\"']?{path}",
-    # Pattern 6: patch with path as file arg
-    r"patch\b[^;&|]*\s[\"']?{path}",
+    # Pattern 6: patch with path as file arg (exclude input redirects)
+    r"patch\b[^;&|]*(?<!<)\s[\"']?{path}",
     # Pattern 7: perl -i (inplace edit) with path
     r"perl\b[^;&|]*(?:-[^\sIi]*i[^\s]*|--in-place(?:=[^\s]*)?)[^;&|]*\s*[\"']?{path}",
     # Pattern 8: tar extract/create to path via -C or --directory

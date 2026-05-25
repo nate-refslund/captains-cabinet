@@ -323,16 +323,14 @@ else
 fi
 
 # ============================================================
-# 6. LAYER 1 GATE — CTO must run Crew review before push/merge
+# 6-7 PREPROCESSING — variables needed by the Layer 1 and CI Green gates below
 # ============================================================
-# Stateful workflow gate: requires Redis key cabinet:layer1:cto:reviewed
-# to be set before push/merge is allowed. The gate CONSUMES the key
-# on use (DEL after pass) so a fresh review is required each time.
-# This stays in bash because it needs Redis state, not just policy rules.
-if [ "$OFFICER" = "cto" ] && [ "$TOOL_NAME" = "Bash" ]; then
-  CMD=$(echo "$TOOL_INPUT" | jq -r '.command // empty' 2>/dev/null)
-  # Preprocessing for gate regex (minimal subset from v3.7.2 section 3b)
-  CMD_NORM=$(printf '%s' "$CMD" | sed -e 's/\\"/"/g' -e "s/\\\\'/'/g")
+# These preprocessing steps were originally part of section 3b (prohibited
+# actions regex). Sections 3-5 now use the typed policy engine, but sections
+# 6-7 (stateful workflow gates) still need these shell-parsing variables.
+if [ "$TOOL_NAME" = "Bash" ]; then
+  _L1_CMD=$(echo "$TOOL_INPUT" | jq -r '.command // empty' 2>/dev/null)
+  CMD_NORM=$(printf '%s' "$_L1_CMD" | sed -e 's/\\"/"/g' -e "s/\\\\'/'/g")
   CMD_UNQUOTED=$(printf '%s' "$CMD_NORM" \
     | sed -e "s/\\\$'\\([^']*\\)'/\\1/g" -e "s/'\\([^']*\\)'/\\1/g" -e 's/"\([^"$`]*\)"/\1/g' \
     | perl -0777 -pe 's/<<([A-Za-z_]\w*)\n.*?\n\1(?=\n|\z)//gs' 2>/dev/null)
@@ -342,18 +340,315 @@ if [ "$OFFICER" = "cto" ] && [ "$TOOL_NAME" = "Bash" ]; then
   if echo "$CMD_MASKED" | grep -qE "(^|[;&|({)}\`!]|&&|\|\|)[[:space:]]*([A-Za-z_]+['\"\`]|['\"\`][A-Za-z_])"; then
     HAS_SPLICE=1
   fi
+fi
+
+# ============================================================
+# 6. LAYER 1 GATE — CTO must run Crew review before push/merge
+# ============================================================
+# FW-029: two-phase guard to prevent substring-amplification.
+# The old single-regex check matched ANY CMD containing `git push main`
+# as a substring — including `git commit -m "...git push main..."`
+# heredoc bodies, `echo "git push main"` debug prints, and
+# `cat /tmp/log | grep 'git push main'` — each of which CONSUMED the
+# cabinet:layer1:cto:reviewed key via the DEL on match, forcing a re-SET
+# before the actual push. Same amplification class as FW-028, but with
+# state-consumption semantics.
+#
+# Phase 1 (anchor): CMD must START with a deploy SUBCOMMAND —
+#   git push / gh pr / gh api / curl — optionally prefixed by
+#   priv-esc / env VAR=X / timeout. Subcommand-level narrowing rejects
+#   `git commit`, `git log`, `gh pr view` etc. at Phase 1 so substring
+#   action matches on their -m/--grep bodies cannot trip the gate.
+# FW-041 (hotfix 2026-04-22 — Rule 4 class from FW-034): BOTH phases
+#   extended to accept `git -FLAG [VALUE] push` and `gh -FLAG [VALUE]
+#   pr merge`. GNU `git` accepts global flags (-C <path>, -c key=val,
+#   --git-dir=<path>, --work-tree=<path>, --namespace=<ns>) BETWEEN
+#   `git` and the subcommand; `gh` accepts (-R owner/repo, --repo
+#   owner/repo). Pre-hotfix Phase 1 required subcommand immediately
+#   after `git`/`gh`, AND Phase 2 required literal `git push` / `gh pr
+#   merge` — so `git -C /path push origin main` and `gh -R owner/repo
+#   pr merge N` bypassed BOTH phases (fail-open — gate silently not
+#   consulted). Fix: identical optional repeated `(-FLAG [VALUE] )*`
+#   group between tool and subcommand at BOTH phases. Each flag group
+#   requires leading `-` on the flag and non-`-` leading char on the
+#   value, so non-deploy subcommands like `git commit -m "..."` —
+#   where `commit` doesn't start with `-` — still correctly fall out
+#   of the flag-repeat and fail the `push` verb check. Phase 1 `gh`
+#   alternation ALSO narrowed from `(pr|api)` to `(pr merge|api)` —
+#   read-only `gh pr view/list/checkout/status` are not write actions
+#   and have no business passing Phase 1.
+# FW-041 hotfix-4 (2026-04-24 — regression close: d752992 silent revert
+#   of ff11e85 escape-aware rich flag-value atom). Commit d752992
+#   ("FW-040 Hotfix 5") silently bundled a widened VAR_ASSIGN value
+#   class AND reverted ff11e85's flag-value atom back to plain
+#   exclusive-alternation `[^-][^[:space:]]*|'[^']*'|"[^"]*"`. Plain
+#   exclusive-alt cannot match `alias.x='val with space'` because the
+#   unquoted alt stops at the space INSIDE the quote span — 3 HIGH
+#   attack forms silently bypassed the live gate:
+#     (a) `git -C $'path space' push origin main` (ANSI-C quoted path)
+#     (b) `git -c alias.x='val with space' push origin main` (SQ embed)
+#     (c) `git -c alias.x="val with space" push origin main` (DQ embed)
+#   Fix: restore ff11e85's rich chain-of-atoms at all 21 occurrences
+#   across 4 gate regex lines (Layer 1 Phase 1, Phase 2a, Phase 2b,
+#   CI Green Phase 1). Atom structure:
+#     ([^-[:space:]'"]|'([^'\\]|\\.)*'|"([^"\\]|\\.)*"|\$'([^'\\]|\\.)*')
+#     ([^[:space:]'"]|'([^'\\]|\\.)*'|"([^"\\]|\\.)*"|\$'([^'\\]|\\.)*')*
+#   Escape-aware quote span `([^'\\]|\\.)*` absorbs `\'`/`\"` inside
+#   the quote as 2 chars instead of terminating early. ANSI-C alt
+#   `\$'([^'\\]|\\.)*'` handles bash `$'…'` (distinct quote context
+#   from `'…'`). Sonnet adversary Pass-1+2 on fix: 0 bugs, 0 new FPs,
+#   6 scope-gaps deferred to FW-051, BONUS coverage of `$"…"`
+#   localized-string. EVAL-014 regression pins added: 8 new positives
+#   (HF2-A1/A2/A3 + HF2-B1/B2 + HF4-C1/C2/C3) + 5 new FP guards
+#   (git -c color.ui, user.name SQ/DQ, ANSI-C dir/email). Gotcha for
+#   future hotfix authors: when widening one atom (VAR_ASSIGN value
+#   class etc), `git show` every predecessor hotfix touching the same
+#   regex before shipping — silent atom-revert pattern is easy to
+#   reintroduce when the diff widens adjacent atoms.
+# FW-043 (hotfix 2026-04-23 — COO + Sonnet empirical adversary on FW-041 ship):
+#   6 bypass forms silently skipped Phase 1 because the anchor was
+#   LINE-START-ONLY (`^[[:space:]]*` + `head -n1`), not statement-start.
+#   Forms: (a) `cd /tmp && git push origin main` — chain prefix,
+#   (b) multiline `echo ok\ngit push origin main` — head -n1 eats
+#   line 1, (c) `(git push origin main)` — subshell paren prefix,
+#   (d) `true && git push origin main` — always-succeed chain,
+#   (e) `: ; git push origin main` — null-command + semi,
+#   (f) `{ git push origin main; }` — brace-group prefix (Sonnet
+#   pass-1 against initial fix). Fix for both Layer 1 + CI Green
+#   gate: (1) remove `head -n1` — grep's line-mode handles
+#   multiline naturally (each line checked independently against
+#   the anchor, which still uses `^`). (2) Widen anchor prefix
+#   from `^[[:space:]]*` to `(^|[;&|({\`][[:space:]]*)` — accepts
+#   bare line-start OR a preceding shell statement-boundary char
+#   (semi, amp, pipe, open-paren, open-brace, backtick) + whitespace.
+#   Trade-off: false-positives when a boundary char appears INSIDE
+#   a quoted string followed by literal `git push origin main` text,
+#   e.g., `git commit -m "staged && git push origin main"` would fire
+#   the gate (Phase 2 already substring-matched; Phase 1 now also
+#   matches at `&&` inside quotes). Accepted as fail-closed trade
+#   (over-block vs FW-041's silent fail-open); FP rate ~rare in
+#   officer workflow, gate prompt tells CTO to set the reviewed
+#   key + retry. Also extends Layer 1 Phase 2 trailing-terminator
+#   class from `[[:space:];]|$` to `[[:space:];&|(){}\`]|$` so
+#   trailing shell-chain chars (incl. close-brace/close-paren)
+#   after `main`/`master` also match. Heredoc body FP (line-mode
+#   grep sees `git push origin main` as its own line) also
+#   accepted as fail-closed per same rationale.
+#   FW-041 Phase 2 scope-gap (quoted-space flag value) remains
+#   open — still tracked as FW-041 Phase 2.
+# FW-045 (hotfix-6 2026-04-23 — COO Pass-2 empirical adversary on f7a231b):
+#   17/20 probes against the FW-043 statement-boundary prefix bypassed
+#   Phase 1. Four HIGH classes, 14 addressable forms:
+#   (1) prefix-consumer gap — 8 POSIX command-modifier wrappers
+#   absent from alternation: `exec|time|nohup|nice|ionice|coproc|stdbuf
+#   |unbuffer cmd`. Fix: unified flag-tolerant branch
+#   `(exec|time|nohup|nice|ionice|coproc|stdbuf|unbuffer)(
+#   [[:space:]]+-[^[:space:]]+([[:space:]]+[^-][^[:space:]]*)?)*[[:space:]]+`
+#   (same flag pattern as FW-041 for git/gh — handles `nice -n 10 cmd`,
+#   `ionice -c 3 -n 5 cmd`, `stdbuf -oL cmd`, bare `nohup cmd`).
+#   (2) inline VAR=val prefix — `GIT_TRACE=1 git push`, `FOO=bar
+#   BAZ=qux git push`. THE canonical POSIX idiom. Existing `env`
+#   branch only handles `env VAR=val cmd`, not bare assignment. Fix:
+#   prepend `[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+` to
+#   alternation — 1+ iterations handled by outer `*`.
+#   (3) boundary class gap — `!` (bash negation: `! cmd` returns
+#   !exit-code). Added to class. (`<`/`>` redirects handled as prefix
+#   consumer, not boundary, since they take an arg: `>/tmp/out cmd` =
+#   redirect-then-run-cmd.) Fix: boundary class extended from
+#   `[;&|({\`]` to `[;&|({\`!]`; redirect branch
+#   `[<>][[:space:]]*[^[:space:]]+[[:space:]]+` added to prefix-consumer.
+#   (4) wrapper-exec with quote-body — `bash -c 'git push'`, `sh -c`,
+#   `zsh -c`, `eval 'git push'`, bare `eval git push`. Fix: two new
+#   prefix-consumer branches `(bash|sh|zsh)[[:space:]]+-c[[:space:]]+
+#   ['"]?` and `eval[[:space:]]+['"]?` (optional quote absorbs through
+#   the opening delimiter — engine re-anchors at `git push` inside the
+#   quoted body).
+#   CRITICAL Phase 2 co-change: `bash -c 'git push origin main'`
+#   ends with `'` after `main`, which was NOT in Phase 2 trailing
+#   terminator class — Phase 2 then failed to match even after Phase 1
+#   succeeded. Phase 2 trailing class extended from `[[:space:];&|(){}<>\`]`
+#   to `[[:space:];&|(){}<>'"\`]` — adds quote chars as valid post-`main`
+#   terminators. (Pattern 1 from memory: "Phase 2 action regex must
+#   mirror Phase 1 anchor flag-tolerance" — FW-045 re-confirmed: any
+#   wrapper form that introduces a new post-`main` context needs Phase
+#   2 trailing class extension. 5th instance in FW-029-family work.)
+#   Sonnet Pass-3 additions (same commit, 9 new findings — HIGH: H-1
+#   `bash -x -c`, H-2 ANSI-C `$'...'`, H-3 `)` boundary, H-4 `}` boundary;
+#   MEDIUM: M-1 bare `env` (no VAR=val), M-2 Phase 2 asymmetry (`main!`,
+#   `main^`, `main~`, `main#comment`), M-3 digit-prefix redirect
+#   `2>/dev/null`, M-4 `timeout --preserve-status 30s`; plus `setsid` +
+#   `wget` tool additions):
+#   - Boundary class `[;&|({\`!]` → `[;&|({)}\`!]` (adds close-paren
+#     for case-arm end, close-brace for function-body end).
+#   - `env` branch: flag-tolerant idiom `env([[:space:]]+-[^[:space:]]+
+#     ([[:space:]]+[^-][^[:space:]]*)?)*[[:space:]]+` replaces
+#     VAR=val-required form (bare-env now matches; inline VAR=val
+#     handled by separate `[A-Za-z_]…=[…]` branch).
+#   - `timeout` branch: pre-duration flag-tolerance (`timeout -k 5s
+#     --preserve-status 30s cmd`).
+#   - Wrapper list: add `setsid` (session leader).
+#   - `bash|sh|zsh` branch: flag-tolerant before `-c` (`bash -x -c`,
+#     `bash --norc -c`), ANSI-C absorber `(\$?['\''"])?` handles
+#     `bash -c $'…'`.
+#   - Redirect branch: digit-prefix `[0-9]?[<>]` handles `2>/dev/null cmd`
+#     and `1>/tmp/out cmd`.
+#   - Command alternation: add `wget[[:space:]]` (parallel to curl).
+#   - Phase 2 trailing class: add `!#\\^~` to post-`main|master`
+#     terminators (`main!`, `main#comment` shell-comment strip, `main^1`
+#     git-ancestor, `main~2` git-ancestor, `main\\foo` backslash).
+#   Sonnet Pass-4 additions (fresh-context re-review after Pass-3 fix —
+#   4 real bypasses confirmed empirically; 2 Pass-4 findings were
+#   false-positives: `<(cmd)` process sub already fires via existing
+#   `(` boundary, and `main:refs/heads/main` fires via greedy `.*main$`):
+#   - Wrapper alternation: add `command` and `builtin` — POSIX builtin
+#     modifiers (`command cmd` bypasses aliases; `builtin cmd` forces
+#     shell builtin). Real bypasses: `command git push origin main`.
+#   - Shell -c alternation: extend `(bash|sh|zsh)` →
+#     `([^[:space:]]*/)?(bash|sh|zsh|fish|ksh|dash|ash|csh|tcsh|mksh)`. Real bypass:
+#     `fish -c 'git push origin main'`. All POSIX-family shells take
+#     `-c CMD_STRING`, so gap covered by common alt-shells.
+#   COO Pass-5 additions (fresh-context empirical post-Pass-4 — 6 real
+#   bypasses in one HIGH class confirmed on e588850, all canonical bash
+#   compound-statement keywords; 2 additional MEDIUM stdin-shell forms
+#   documented as scope-gap):
+#   - Prefix-consumer alt: add `(then|do|else|elif)[[:space:]]+` branch.
+#     No flag-tolerance — bash reserved words do NOT take flags. Closes
+#     `if ci_green; then git push origin main; fi` canonical conditional
+#     push, `while <cond>; do git push origin main; done` retry loop,
+#     `for x in a b; do git push origin main; done` batch, `until` wait-
+#     then-push, `elif`/`else` branches. The reserved word follows a `;`
+#     (or newline) statement-boundary — anchor fires at `;`, but prior
+#     regex had no alt to consume `then|do|else|elif`, so scan halted.
+#   Remaining scope-gaps (acknowledged, NOT fixable by flat regex):
+#   (a) xargs-construct `echo origin main | xargs git push` — lexical
+#   disaggregation across pipe, main is LHS arg not RHS refspec.
+#   (b) variable expansion `X=git; $X push` — already tracked as FW-040
+#   Phase B P8.
+#   (c) dot-source `. /tmp/push.sh` + `source /tmp/push.sh` — hook can't
+#   scan file contents.
+#   (d) perl/python -e / awk 'system(…)' shell-out — not in wrapper
+#   alternation; same filesystem-escape class as dot-source, deferred
+#   to FW-040 Phase B shell-parse-aware gate.
+#   (e) shell-stdin-mode `bash <<<"git push …"` here-string + `echo ...
+#   | bash -s` explicit-stdin-read — same dataflow-decoupled class as
+#   xargs and dot-source (the `git push` text is carried across a
+#   stdin boundary, flat regex can't bridge). Deferred to FW-040 Phase
+#   B. Pass-5 MEDIUM #2.
+#   FP surface expansion (accepted fail-closed, same class as FW-043 FP-1):
+#   commit bodies or inline text containing wrapper-name or inline-VAR
+#   token adjacent to literal `git push origin main` text WILL fire the
+#   gate. Example: commit msg "nohup git push origin main for CI" →
+#   trips. Also: `git push --force-with-lease origin main` now fires
+#   (was already in flag-tolerant scope but worth calling out — ACK
+#   re-SET retry works). Pass-6 Sonnet widening: multi-line `-m` commit
+#   bodies with a line starting `then git push origin main` / `do git
+#   push …` / `else …` / `elif …` now also fire (new reserved-word
+#   branch matches at `^` anchor on the second line). Same class, same
+#   workaround. Mitigation: `cabinet:layer1:cto:reviewed` re-SET after
+#   gate-block → retry-commit workflow (same as FW-043).
+# Phase 2 (action regex): actual push-to-main-or-master / pr-merge pattern.
+# AND-composed so both must pass to trip the gate.
+# Action regex covers BOTH `main` (Sensed product repo) and `master`
+# (framework repo default) — CTO pushes to both.
+# FW-044 (2026-04-24): Phase 2b — unified positional regex.
+# Covers `gh api <DELETE> refs(/|%2[Ff])heads(/|%2[Ff])(main|master)` + branch-protection
+# endpoint + curl DELETE + wget DELETE analogs. Structure: statement-boundary
+# anchor (^|[;&|({)}`!]) on gh/curl/wget prevents the pattern from matching
+# inside quoted echo bodies (`gh api user && echo "gh api -X DELETE refs/heads/main"`
+# → inside `"…"`, no boundary char precedes the inner `gh api` → no match).
+# Env-var prefix wrapper `([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*`
+# absorbs inline POSIX assignments before gh/curl/wget (`GH_TOKEN=abc gh api
+# -X DELETE refs/heads/main` — Pass-2 MEDIUM-C fix, canonical auth-override).
+# Clause-exclusion [^;&|#]* between anchor and DELETE/ref signals stops at
+# `;`/`&`/`|`/`#` → compound-command FPs (`gh api user && git commit -m
+# "…DELETE refs/heads/main…"`) don't cross clauses. Case-insensitive
+# [Dd][Ee][Ll][Ee][Tt][Ee] + fused flag `(-X|--method|--request)[=[:space:]]*`
+# covers -XDELETE, -X DELETE, -X=DELETE, --method DELETE, --method=DELETE,
+# --request DELETE, and quoted "DELETE"/'DELETE' variants (adversary A2/A5/A6).
+# Trailing-slash `(main|master)/?` handles ref with/without trailing slash
+# (Pass-1 B1). Branch-protection endpoint
+# `branches(/|%2[Ff])(main|master)(/|%2[Ff])protection` — same destructive verb class — blocked
+# as OR-alternative (Pass-1 D1). curl + wget anchors handle raw REST calls
+# that bypass gh (Pass-1 C3 + Pass-2 HIGH-B wget --method=DELETE).
+# Terminator set includes `?` (Pass-2 HIGH-A: `?v=1` query string on ref URL).
+# Order-agnostic: flag-before-ref AND ref-before-flag both covered by the two
+# top-level alternatives inside the trailing group.
+# Branch disambiguation via terminator [[:space:];&|(){}<>'"`!#\^~/?] — trailing
+# char `l`/`.`/`-`/`s` NOT in set so mainline/main.md/main-feature/mastership
+# correctly pass through.
+# FW-044 hotfix-1 (2026-04-24): close 14 HIGH bypasses from COO Pass-1
+# adversary across two root causes:
+#   ROOT CAUSE 1 (PA-F class, 11 bypasses): Phase 2b prefix-absorber was a
+#     strict SUBSET of Phase 1's — Phase 2b only absorbed VAR_ASSIGN plus
+#     env-var-only prefix, so AND-composed gate `phase1 && (phase2a||phase2b)`
+#     fired false on every wrapper Phase 1 absorbed but Phase 2b didn't
+#     (`eval`, `bash -c`, `sh -c`, `nohup`, `time`, `exec`, `sudo`, `env CMD`,
+#     `timeout 5`, `command`, `stdbuf -o0` before `gh api -X DELETE
+#     refs/heads/main`). Fix: replace narrow Phase 2b prefix absorber with
+#     full Phase 1 alternation (sudo/env/timeout/exec/time/nohup/nice/ionice/
+#     coproc/stdbuf/unbuffer/setsid/command/builtin/VAR_ASSIGN/shell-c/eval/
+#     redirect/then-do).
+#   ROOT CAUSE 2 (PA-E class, 3 bypasses): VAR_ASSIGN value class
+#     `[^[:space:]]+` truncated quoted values at the first space —
+#     `PATH="foo bar" gh api -X DELETE refs/heads/main` broke Phase 1 at
+#     the `foo` → `bar` boundary. Fix: widen value class to
+#     `('...'|"..."|[^[:space:]]+)` then extend to include ANSI-C quoting
+#     `\'...'` (Pass-2 P2-A2). Applied at Phase 1 AND Phase 2b for parity.
+# Hotfix-1 Pass-2 adversary: 1 additional bypass closed (ANSI-C quoted
+# VAR_ASSIGN value). 15 total HIGH bypasses closed in hotfix-1. Remaining
+# deferrals to FW-051:
+#   - `FOO=''hello world''` bash adjacent-quoted-string concatenation
+#     (Pass-2 P2-A1) — same class as `-X 'DE''LETE'` quote-concat. No
+#     CMD_NORM preprocessing at Layer 1.
+#   - `eval "PATH=\"foo bar\" gh api -X DELETE refs/heads/main"` (Pass-1
+#     CA1) — backslash-escaped quotes inside quoted eval body need
+#     CMD_NORM preprocessing; same class.
+# Hotfix-1 Pass-3 identified 3 orthogonal scope-gaps also deferred to
+# FW-051:
+#   - full-path shell `/bin/bash -c "..."` (shell alternation has no slash)
+#   - fused flag `bash -lc "..."` (no `-lc` branch; only `-c`)
+#   - wrapper indirection `./wrapper.sh` / `$(command -v gh)` (no
+#     indirection absorber)
+# Deferred to FW-051: Layer 1 quoted-splice (`"gh" api`), subshell-eval splice
+# (`$(echo gh) api`), URL-encoded refs (`refs%2fheads%2fmain`), wildcard refs
+# (`refs/heads/m*`), heredoc body scan, Pass-2 MEDIUM-D quote-concat DELETE
+# (`-X 'DE''LETE'`). Same root class as FW-042 pre-v3.7.2 BSQ — Layer 1 does
+# not apply CMD_NORM.
+if [ "$OFFICER" = "cto" ] && [ "$TOOL_NAME" = "Bash" ]; then
+  CMD=$(echo "$TOOL_INPUT" | jq -r '.command // empty' 2>/dev/null)
+  # FW-051 (2026-04-24): reuse Section 3b CMD_NORM / CMD_UNQUOTED preprocessing
+  # to defeat no-preprocessing bypass classes. Strip adjacent empty-quote pairs
+  # (`''`, `""`) that fuse neighbor tokens at bash exec (PA-D1/D2), and strip
+  # backtick command-substitution wrappers (`` `gh` `` → `gh`) that fuse to
+  # expose the inner token at command position (Sonnet adversary Pass A HIGH,
+  # same class as deferred AC-3 `$(echo gh)`). The HAS_SPLICE-gated
+  # CMD_UNQUOTED secondary scan catches command-position quoted splice like
+  # `"gh" api`, `g"h" api`. Regex also extended: shell alternation accepts
+  # leading path (`/bin/bash`), `env` preamble atom also accepts leading path
+  # (`/usr/bin/env bash -c` — Sonnet adversary Pass A CRITICAL), `-c` flag
+  # widened to `-[A-Za-z]*c[A-Za-z]*` (catches `-lc`, `-xc`, compound flags),
+  # refs and branches patterns accept `%2[Ff]` URL-encoded separator.
   CMD_L1_NORM=$(printf '%s' "$CMD_NORM" | sed -e "s/''//g" -e 's/""//g' -e 's/`\([^`]*\)`/\1/g')
   CMD_L1_UNQUOTED=$(printf '%s' "$CMD_UNQUOTED" | sed -e "s/''//g" -e 's/""//g' -e 's/`\([^`]*\)`/\1/g')
   L1_P1='(^|[;&|({)}`!])[[:space:]]*(sudo[[:space:]]+|([^[:space:]]*/)?env([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+|timeout([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+[0-9]+[smhd]?[[:space:]]+|(exec|time|nohup|nice|ionice|coproc|stdbuf|unbuffer|setsid|command|builtin)([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=(\$'\''[^'\'']*'\''|'\''[^'\'']*'\''|"[^"]*"|[^[:space:]]+)[[:space:]]+|([^[:space:]]*/)?(bash|sh|zsh|fish|ksh|dash|ash|csh|tcsh|mksh)([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+-[A-Za-z]*c[A-Za-z]*[[:space:]]+(\$?['\''"])?|eval[[:space:]]+['\''"]?|[0-9]?[<>][[:space:]]*[^[:space:]]+[[:space:]]+|(then|do|else|elif)[[:space:]]+)*(git[[:space:]]+(-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?[[:space:]]+)*push|gh[[:space:]]+(-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?[[:space:]]+)*(pr[[:space:]]+merge|api)|curl[[:space:]]|wget[[:space:]])'
-  L1_P2A='(^|[;&|({)}`!])[[:space:]]*(sudo[[:space:]]+|([^[:space:]]*/)?env([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+|timeout([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+[0-9]+[smhd]?[[:space:]]+|(exec|time|nohup|nice|ionice|coproc|stdbuf|unbuffer|setsid|command|builtin)([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=(\$'\''[^'\'']*'\''|'\''[^'\'']*'\''|"[^"]*"|[^[:space:]]+)[[:space:]]+|([^[:space:]]*/)?(bash|sh|zsh|fish|ksh|dash|ash|csh|tcsh|mksh)([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+-[A-Za-z]*c[A-Za-z]*[[:space:]]+(\$?['\''"])?|eval[[:space:]]+['\''"]?|[0-9]?[<>][[:space:]]*[^[:space:]]+[[:space:]]+|(then|do|else|elif)[[:space:]]+)*git[[:space:]]+(-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?[[:space:]]+)*push[[:space:]]+([^[:space:]]+[[:space:]]+)*(main|master)([[:space:];&|(){}\`]|$)'
-  L1_P2B='(^|[;&|({)}`!])[[:space:]]*(sudo[[:space:]]+|([^[:space:]]*/)?env([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+|timeout([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+[0-9]+[smhd]?[[:space:]]+|(exec|time|nohup|nice|ionice|coproc|stdbuf|unbuffer|setsid|command|builtin)([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=(\$'\''[^'\'']*'\''|'\''[^'\'']*'\''|"[^"]*"|[^[:space:]]+)[[:space:]]+|([^[:space:]]*/)?(bash|sh|zsh|fish|ksh|dash|ash|csh|tcsh|mksh)([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+-[A-Za-z]*c[A-Za-z]*[[:space:]]+(\$?['\''"])?|eval[[:space:]]+['\''"]?|[0-9]?[<>][[:space:]]*[^[:space:]]+[[:space:]]+|(then|do|else|elif)[[:space:]]+)*gh[[:space:]]+(-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?[[:space:]]+)*pr[[:space:]]+merge([[:space:];&|(){}\`]|$)'
+  L1_P2A='git[[:space:]]+(-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?[[:space:]]+)*push.*(main|master)([[:space:];&|(){}<>'\''"`!#\\^~]|$)|gh[[:space:]]+(-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?[[:space:]]+)*pr[[:space:]]+merge'
+  L1_P2B='(^|[;&|({)}`!])[[:space:]]*(sudo[[:space:]]+|([^[:space:]]*/)?env([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+|timeout([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+[0-9]+[smhd]?[[:space:]]+|(exec|time|nohup|nice|ionice|coproc|stdbuf|unbuffer|setsid|command|builtin)([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=(\$'\''[^'\'']*'\''|'\''[^'\'']*'\''|"[^"]*"|[^[:space:]]+)[[:space:]]+|([^[:space:]]*/)?(bash|sh|zsh|fish|ksh|dash|ash|csh|tcsh|mksh)([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+-[A-Za-z]*c[A-Za-z]*[[:space:]]+(\$?['\''"])?|eval[[:space:]]+['\''"]?|[0-9]?[<>][[:space:]]*[^[:space:]]+[[:space:]]+|(then|do|else|elif)[[:space:]]+)*(gh[[:space:]]+(-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?[[:space:]]+)*api[[:space:]]|curl([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]|wget([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]])[^;&|#]*((-X|--method|--request)[=[:space:]]*["'\'']?[Dd][Ee][Ll][Ee][Tt][Ee]["'\'']?[^;&|#]*(refs(/|%2[Ff])heads(/|%2[Ff])(main|master)([[:space:];&|(){}<>'\''"`!#\\^~/?]|$)|branches(/|%2[Ff])(main|master)(/|%2[Ff])protection([[:space:];&|(){}<>'\''"`!#\\^~?]|$))|(refs(/|%2[Ff])heads(/|%2[Ff])(main|master)([[:space:];&|(){}<>'\''"`!#\\^~/?]|$)|branches(/|%2[Ff])(main|master)(/|%2[Ff])protection([[:space:];&|(){}<>'\''"`!#\\^~?]|$))[^;&|#]*(-X|--method|--request)[=[:space:]]*["'\'']?[Dd][Ee][Ll][Ee][Tt][Ee]["'\'']?)'
+  # Triple-scan: (1) RAW $CMD preserves escape-aware atom semantics for
+  # backslash-escaped quote flag values (e.g. `git -c alias.x='va\'l' push`
+  # where CMD_NORM's \' → ' collapse breaks the 'single-quoted' atom);
+  # (2) CMD_L1_NORM applies normalization + empty-quote-pair strip to catch
+  # no-preprocessing bypass classes; (3) HAS_SPLICE-gated CMD_L1_UNQUOTED
+  # secondary catches command-position quoted splice.
   if { echo "$CMD" | grep -qE "$L1_P1" && \
-       { echo "$CMD" | grep -qE "$L1_P2A" || echo "$CMD" | grep -qE "$L1_P2B"; }; } \
+       { echo "$CMD" | grep -qE "$L1_P2A" || \
+         echo "$CMD" | grep -qE "$L1_P2B"; }; } \
      || { echo "$CMD_L1_NORM" | grep -qE "$L1_P1" && \
-          { echo "$CMD_L1_NORM" | grep -qE "$L1_P2A" || echo "$CMD_L1_NORM" | grep -qE "$L1_P2B"; }; } \
+          { echo "$CMD_L1_NORM" | grep -qE "$L1_P2A" || \
+            echo "$CMD_L1_NORM" | grep -qE "$L1_P2B"; }; } \
      || { [ "$HAS_SPLICE" = "1" ] && \
           echo "$CMD_L1_UNQUOTED" | grep -qE "$L1_P1" && \
-          { echo "$CMD_L1_UNQUOTED" | grep -qE "$L1_P2A" || echo "$CMD_L1_UNQUOTED" | grep -qE "$L1_P2B"; }; }; then
+          { echo "$CMD_L1_UNQUOTED" | grep -qE "$L1_P2A" || \
+            echo "$CMD_L1_UNQUOTED" | grep -qE "$L1_P2B"; }; }; then
     REVIEWED=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET "cabinet:layer1:cto:reviewed" 2>/dev/null)
     if [ -z "$REVIEWED" ] || [ "$REVIEWED" = "(nil)" ]; then
       echo "LAYER 1 GATE: Spawn a Crew agent to review your diff before pushing/merging. After review, run: redis-cli -h redis -p 6379 SET cabinet:layer1:cto:reviewed 1 EX 300" >&2
@@ -366,12 +661,23 @@ fi
 # ============================================================
 # 7. CI GREEN GATE — CTO must verify CI before merge
 # ============================================================
+# FW-029: same two-phase guard as Layer 1. Prevents echoes of
+# `pulls/N/merge` URLs (in docs, logs, debug prints) from consuming
+# the cabinet:layer1:cto:ci-green key. Anchor narrowed to deploy
+# subcommand (git push / gh pr / gh api / curl) so `git commit -m
+# "...pulls/42/merge..."` bodies cannot pass Phase 1.
 if [ "$OFFICER" = "cto" ] && [ "$TOOL_NAME" = "Bash" ]; then
   CMD=$(echo "$TOOL_INPUT" | jq -r '.command // empty' 2>/dev/null)
+  # FW-051 (2026-04-24): same CMD_L1_NORM / CMD_L1_UNQUOTED preprocessing as
+  # Section 6 (empty-quote-pair + backtick-substitution strip). L1_P1 is
+  # reused as Phase 1 (deploy-subcommand anchor); the Phase 2 check is
+  # `pulls/[0-9]+/merge` URL literal.
   CMD_L1_NORM=$(printf '%s' "$CMD_NORM" | sed -e "s/''//g" -e 's/""//g' -e 's/`\([^`]*\)`/\1/g')
   CMD_L1_UNQUOTED=$(printf '%s' "$CMD_UNQUOTED" | sed -e "s/''//g" -e 's/""//g' -e 's/`\([^`]*\)`/\1/g')
   S7_P1='(^|[;&|({)}`!])[[:space:]]*(sudo[[:space:]]+|([^[:space:]]*/)?env([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+|timeout([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+[0-9]+[smhd]?[[:space:]]+|(exec|time|nohup|nice|ionice|coproc|stdbuf|unbuffer|setsid|command|builtin)([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=(\$'\''[^'\'']*'\''|'\''[^'\'']*'\''|"[^"]*"|[^[:space:]]+)[[:space:]]+|([^[:space:]]*/)?(bash|sh|zsh|fish|ksh|dash|ash|csh|tcsh|mksh)([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+-[A-Za-z]*c[A-Za-z]*[[:space:]]+(\$?['\''"])?|eval[[:space:]]+['\''"]?|[0-9]?[<>][[:space:]]*[^[:space:]]+[[:space:]]+|(then|do|else|elif)[[:space:]]+)*(git[[:space:]]+(-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?[[:space:]]+)*push|gh[[:space:]]+(-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?[[:space:]]+)*(pr[[:space:]]+merge|api)|curl[[:space:]]|wget[[:space:]])'
   S7_PULLS='pulls/[0-9]+/merge'
+  # Triple-scan: (1) RAW $CMD for escape-aware atoms, (2) CMD_L1_NORM for
+  # empty-quote-pair bypass, (3) HAS_SPLICE-gated CMD_L1_UNQUOTED for splice.
   if { echo "$CMD" | grep -qE "$S7_P1" && echo "$CMD" | grep -qE "$S7_PULLS"; } \
      || { echo "$CMD_L1_NORM" | grep -qE "$S7_P1" && echo "$CMD_L1_NORM" | grep -qE "$S7_PULLS"; } \
      || { [ "$HAS_SPLICE" = "1" ] && \
@@ -385,7 +691,6 @@ if [ "$OFFICER" = "cto" ] && [ "$TOOL_NAME" = "Bash" ]; then
     redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" DEL "cabinet:layer1:cto:ci-green" > /dev/null 2>&1
   fi
 fi
-
 # ============================================================
 # 8. CONTEXT_SLUG VALIDATION + CAPACITY COUPLING (Phase 1 CP2)
 # ============================================================
