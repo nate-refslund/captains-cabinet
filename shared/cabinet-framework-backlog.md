@@ -1451,7 +1451,14 @@ _(none)_
 - **Owner:** CTO build, CPO spec, CoS review.
 
 ### FW-100 — GDPR baseline: ROPA + DPIA + DPA + erasure command + sub-processor list (P1)
-- **Status:** SPEC-PENDING. Parent Spec 050 §3 Phase 1 + §8.
+- **Status:** Substrate partially shipped 2026-05-24/25 (CTO eng pieces complete; templates + lawyer review pending). Parent Spec 050 §3 Phase 1 + §8.
+- **Substrate progress:**
+  - ✓ Erasure CLI — customer-erasure.sh + sla-tracker.sh + 56-assertion harness merged fc1a496 (Spec 055 AC#6; Opus adversary review caught RCE + false-complete pre-merge).
+  - ✓ Breach-notification simulator — breach-notification.sh merged 49b8c14 (Spec 055 Phase 9 GDPR Art 33/34; Opus review fixed 6 silent fail-UNSAFE paths, 37/37 + 2 adversary passes).
+  - ⏳ ROPA / DPIA / DPA templates — CPO + legal pending.
+  - ⏳ Danish-lawyer review (€6-8K) — Captain-action, gated on customer-#1 approach.
+  - ⏳ Sub-processor list page (refslund.ai/sub-processors) — public-marketing repo pending.
+  - Customer-#1 DPO gates (Art-17 erasure sign-off + Art 33/34 breach tabletop) tracked in officer_tasks #185 (COO-as-DPO walkthrough at install).
 - **Problem:** without GDPR baseline, no EU customer's DPO will sign. Research finding 5 confirms €6-8K Danish-lawyer review is the realistic cost.
 - **Scope:** ROPA template (customer fills in their controller specifics), DPIA template (we pre-fill the high-risk-processing analysis), DPA template (refslund.ai ↔ customer), erasure CLI command (`cabinet wipe --confirm` → signed JSON deletion receipt with pre-wipe inventory hash), sub-processor list page at refslund.ai/sub-processors. Danish lawyer review of all artifacts before first paying customer.
 - **Effort:** ~20h CPO (templates) + ~10h CTO (erasure command + signing) + ~€6-8K external legal.
