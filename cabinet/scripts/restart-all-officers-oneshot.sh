@@ -19,7 +19,8 @@ echo "=== $(date -u +%FT%TZ) — restart-all-officers-oneshot fired ===" >> "$LO
 # Restart both officer containers. supervisor inside each respawns the claude
 # sessions with --continue, preserving conversation history. New sessions
 # read settings.json fresh, so the new hooks become active.
-for container in sensed-officers personal-cabinet-officers; do
+# List your officer containers here (one per project/cabinet)
+for container in cabinet-officers; do
   if docker ps --format '{{.Names}}' | grep -q "^${container}$"; then
     echo "Restarting $container..." >> "$LOG"
     docker restart "$container" >> "$LOG" 2>&1 || echo "WARN: restart $container failed" >> "$LOG"

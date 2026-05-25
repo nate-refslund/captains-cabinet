@@ -534,8 +534,8 @@ step_notify_cos() {
      which project briefs, decision logs, and playbooks CRO seeds into the
      Library for ${SLUG}. Auto-populate awaits your ratification.
   2. Tasks provider connection — configure tasks_provider in
-     instance/config/projects/${SLUG}.yml (Linear / Asana / Monday / Sensed-tasks
-     per preset). Default: Sensed-tasks (/tasks Postgres).
+     instance/config/projects/${SLUG}.yml (Linear / Asana / Monday / Cabinet-tasks
+     per preset). Default: Cabinet-tasks (/tasks Postgres).
   3. Telegram bot adoption — add officer bots to a group chat for ${SLUG}
      and fill TELEGRAM_HQ_CHAT_ID in cabinet/env/${SLUG}.env.
      Non-blocking: Cabinet is active; adopt bots when convenient (morning to-do).

@@ -16,7 +16,7 @@
 #
 # Example:
 #   create-officer.sh cmo "Chief Marketing Officer" "Marketing, growth, brand" \
-#     sensed_cmo_bot 1234567890:AAH... \
+#     my_cmo_bot 1234567890:AAH... \
 #     --voice-id "abc123" --voice-prompt "Speaks like an excited marketer" \
 #     --voice-stability 0.4 --voice-speed 1.1 \
 #     --interface "marketing-briefs"

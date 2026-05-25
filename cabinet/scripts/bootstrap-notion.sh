@@ -8,7 +8,7 @@
 #   - jq installed
 #
 # Usage: ./bootstrap-notion.sh [product-name]
-# Example: ./bootstrap-notion.sh "Sensed"
+# Example: ./bootstrap-notion.sh "MyProduct"
 
 set -e
 
