@@ -98,7 +98,7 @@ assert_contains "T2.2 error mentions git URL shape" "$out" "git URL"
 echo ""
 echo "T3: DRY_RUN=1 prints planned actions"
 
-out=$(DRY_RUN=1 bash "$SPAWN" "step-network" "https://github.com/nate-step/step-network" 2>&1); rc=$?
+out=$(DRY_RUN=1 bash "$SPAWN" "step-network" "https://github.com/example-org/step-network" 2>&1); rc=$?
 assert_exit "T3.1 dry-run exits 0" "$rc" 0
 assert_contains "T3.1 dry-run mentions DRY RUN" "$out" "DRY RUN"
 assert_contains "T3.2 dry-run shows provision step" "$out" "Would invoke"
@@ -214,7 +214,7 @@ assert_not_contains "T7.2 GITHUB_PAT not echoed in output" "$out" "super-secret-
 echo ""
 echo "T8: Valid hyphenated slug"
 
-out=$(DRY_RUN=1 bash "$SPAWN" "step-network" "https://github.com/nate-step/step-network" 2>&1); rc=$?
+out=$(DRY_RUN=1 bash "$SPAWN" "step-network" "https://github.com/example-org/step-network" 2>&1); rc=$?
 assert_exit "T8.1 hyphenated slug exits 0" "$rc" 0
 assert_contains "T8.2 slug appears in plan output" "$out" "step-network"
 

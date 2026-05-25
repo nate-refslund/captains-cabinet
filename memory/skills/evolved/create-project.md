@@ -23,7 +23,7 @@ Ask the Captain for:
 - **Project name** (e.g., "NewCo")
 - **Slug** (lowercase, e.g., "newco")
 - **Description** (one-line elevator pitch)
-- **GitHub org/repo name** (e.g., "nate-step/newco")
+- **GitHub org/repo name** (e.g., "your-org/newco")
 
 ### 2. Create Notion Structure (MCP tools)
 
