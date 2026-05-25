@@ -1,0 +1,28 @@
+# proxy/.dockerignore — FW-121. The refslund-audit-server image builds with context = proxy/
+# (compose `context: ..`). The Dockerfile needs ONLY audit-server/ + deploy/requirements.txt +
+# deploy/ingest-loop.sh — everything else, ESPECIALLY secrets, must stay out of the image layers
+# (H1 defense-in-depth: secrets must never bake into a built image even if present in the context).
+
+# Secrets (must never enter an image layer):
+deploy/.env
+deploy/origin-certs/
+**/*.pem
+**/*.key
+
+# Runtime data (audit logs) — never bake into an image:
+deploy/data/
+
+# Deploy tooling not needed inside the image:
+deploy/docker-compose.yml
+deploy/provision.sh
+deploy/Caddyfile
+deploy/refslund-backend.service
+deploy/README.md
+
+# litellm-only files (not used by the audit-server image):
+config.yaml
+audit_logger.py
+
+# cruft:
+**/__pycache__/
+**/.git
