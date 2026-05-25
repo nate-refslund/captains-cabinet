@@ -40,7 +40,10 @@ gca_invokes_git_commit() {
     # accepts the heredoc-body FP (warn-mode bounds it; under-detection is the worse failure).
     local NL=$'\n'
     local boundary='(^|[;&|(){}`'"${NL}"'][[:space:]]*)'
-    local prefix='((env|nohup|nice|time|exec|stdbuf|ionice|setsid|eval|command|builtin)([[:space:]]+-[^[:space:]]+([[:space:]]+[^-][^[:space:]]*)?)*[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*'
+    # wrapper arg-consumer accepts -flag [value] AND a bare positional (timeout's duration, nice N).
+    # ERE backtracking keeps `sudo git commit` working (consume zero); the wrapper allow-list +
+    # the trailing `git ... commit` requirement prevent false detections (e.g. `sudo apt install git`).
+    local prefix='((env|nohup|nice|time|timeout|exec|stdbuf|ionice|setsid|eval|command|builtin|sudo|doas|chronic)([[:space:]]+(-[^[:space:]]+([[:space:]]+[^-][^[:space:]]*)?|[^-][^[:space:]]*))*[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*'
     local gitcommit='git([[:space:]]+-[^[:space:]]+([[:space:]]+[^-][^[:space:]]*)?)*[[:space:]]+commit([[:space:]]|$)'
     local re="${boundary}${prefix}${gitcommit}"
     [[ "$cmd" =~ $re ]] && return 0
@@ -70,15 +73,15 @@ _gca_dash_c_arg() {
 # skip) / 2 = present but UNEXTRACTABLE -> caller treats as fail-closed (warn).
 gca_commit_subject() {
     local cmd="$1" v
-    local mflag='(-[a-z]*m|--message)'
+    local mflag='(-[a-zA-Z]*m|--message)'
     # -m / --message  'single-quoted'
     local re; re="(^|[[:space:]])${mflag}[[:space:]]+${_GCA_Q}([^${_GCA_Q}]*)${_GCA_Q}"
     if [[ "$cmd" =~ $re ]]; then printf '%s' "${BASH_REMATCH[3]%%$'\n'*}"; return 0; fi
     # -m / --message  "double-quoted" (escape-aware)
-    re='(^|[[:space:]])(-[a-z]*m|--message)[[:space:]]+"(([^"\\]|\\.)*)"'
+    re='(^|[[:space:]])(-[a-zA-Z]*m|--message)[[:space:]]+"(([^"\\]|\\.)*)"'
     if [[ "$cmd" =~ $re ]]; then v="${BASH_REMATCH[3]}"; printf '%s' "${v%%$'\n'*}"; return 0; fi
     # -m / --message  $'ansi-c'  (subject = up to the first \n ESCAPE in source)
-    re='(^|[[:space:]])(-[a-z]*m|--message)[[:space:]]+\$'"$_GCA_Q"'(([^'"$_GCA_Q"'\\]|\\.)*)'"$_GCA_Q"
+    re='(^|[[:space:]])(-[a-zA-Z]*m|--message)[[:space:]]+\$'"$_GCA_Q"'(([^'"$_GCA_Q"'\\]|\\.)*)'"$_GCA_Q"
     if [[ "$cmd" =~ $re ]]; then v="${BASH_REMATCH[3]}"; printf '%s' "${v%%\\n*}"; return 0; fi
     # --message=VALUE / -m=VALUE  (= form: SQ / DQ / bare)
     re='(^|[[:space:]])(--message|-m)='"$_GCA_Q"'([^'"$_GCA_Q"']*)'"$_GCA_Q"
@@ -88,8 +91,17 @@ gca_commit_subject() {
     re='(^|[[:space:]])(--message|-m)=([^[:space:]]+)'
     if [[ "$cmd" =~ $re ]]; then printf '%s' "${BASH_REMATCH[3]}"; return 0; fi
     # -m / --message  bare single token (rare)
-    re='(^|[[:space:]])(-[a-z]*m|--message)[[:space:]]+([^-'"$_GCA_Q"'"[:space:]][^[:space:]]*)'
+    re='(^|[[:space:]])(-[a-zA-Z]*m|--message)[[:space:]]+([^-'"$_GCA_Q"'"[:space:]][^[:space:]]*)'
     if [[ "$cmd" =~ $re ]]; then printf '%s' "${BASH_REMATCH[3]}"; return 0; fi
+    # ATTACHED value (no space): -mfoo / -Smfoo / -am'foo' / -am"foo" (Opus ship-gate finding #2).
+    # Restricted arg-less cluster [asqvueponiSG] before m so the greedy match cannot eat message
+    # letters (the -mbadmsg→"sg" trap). Placed AFTER the space forms so `-m "x"` wins first.
+    re='(^|[[:space:]])-[asqvueponiSG]*m'"$_GCA_Q"'([^'"$_GCA_Q"']*)'"$_GCA_Q"
+    if [[ "$cmd" =~ $re ]]; then printf '%s' "${BASH_REMATCH[2]%%$'\n'*}"; return 0; fi
+    re='(^|[[:space:]])-[asqvueponiSG]*m"(([^"\\]|\\.)*)"'
+    if [[ "$cmd" =~ $re ]]; then v="${BASH_REMATCH[2]}"; printf '%s' "${v%%$'\n'*}"; return 0; fi
+    re='(^|[[:space:]])-[asqvueponiSG]*m([^-'"$_GCA_Q"'"=[:space:]][^[:space:]]*)'
+    if [[ "$cmd" =~ $re ]]; then printf '%s' "${BASH_REMATCH[2]}"; return 0; fi
     # -F / --file FILE -> first line (fail-closed if unreadable)
     re='(^|[[:space:]])(-F|--file)(=|[[:space:]]+)'"$_GCA_Q"'?([^'"$_GCA_Q"'"[:space:]]+)'"$_GCA_Q"'?'
     if [[ "$cmd" =~ $re ]]; then
@@ -115,7 +127,9 @@ gca_has_no_verify() {
     stripped="$(printf '%s' "$cmd" | sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g")"
     local re_long='(^|[[:space:]])--no-verify([[:space:]]|=|$)'
     [[ "$stripped" =~ $re_long ]] && return 0
-    local re_short='(^|[[:space:]])-n([[:space:]]|$)'
+    # -n standalone OR inside a combined short-flag cluster (-nm, -anm) — Opus ship-gate #1:
+    # `git commit -nm "x"` skips the hook AND sets the message; standalone -n missed it.
+    local re_short='(^|[[:space:]])-[a-zA-Z]*n[a-zA-Z]*([[:space:]]|=|$)'
     [[ "$stripped" =~ $re_short ]] && return 0
     return 1
 }

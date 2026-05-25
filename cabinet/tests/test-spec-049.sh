@@ -205,6 +205,14 @@ if [ -r "$LIB/git-commit-argv.sh" ]; then
   eq "C3 nv --no-verify"      "$(_nv 'git commit -m "feat: x" --no-verify')" "Y"
   eq "C3 nv -n"               "$(_nv 'git commit -n -m "feat: x"')" "Y"
   eq "C3 nv -n-in-msg NOT (advA4)" "$(_nv 'git commit -m "handle the -n flag"')" "N"
+  # Opus ship-gate folds (#1 -nm cluster, #2 -Sm/-mattached, #5 sudo/timeout prefixes)
+  eq "C3 nv -nm cluster (Opus#1)"   "$(_nv 'git commit -nm "feat: x"')" "Y"
+  eq "C3 nv -sm NOT-no-verify (Opus#1 FP)" "$(_nv 'git commit -sm "fix: ok"')" "N"
+  eq "C3 -Sm uppercase extract (Opus#2)"   "$(_val 'git commit -Sm "nope"')" "N"
+  eq "C3 -mattached extract (Opus#2)"      "$(_val 'git commit -mbadmsg')" "N"
+  eq "C3 det sudo-prefix (Opus#5)"   "$(_det 'sudo git commit -m bad')" "Y"
+  eq "C3 det timeout-prefix (Opus#5)" "$(_det 'timeout 5 git commit -m bad')" "Y"
+  eq "C3 FP sudo-apt-install (Opus#5)" "$(_det 'sudo apt install git')" "N"
   # hook behavior: warn-mode (default) NEVER blocks; enforce blocks; log leaks no message content
   HOOK="$SCRIPTS/hooks/pre-tool-use-conventional-commit.sh"
   if [ -x "$HOOK" ] && command -v jq >/dev/null 2>&1; then
