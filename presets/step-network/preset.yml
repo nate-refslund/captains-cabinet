@@ -69,6 +69,6 @@ notion_deprecated: true
 # (Spec 034 v3 AC #74). Driver: BotFather rate limit + 20-bot Telegram ceiling.
 #
 # Override per project in instance/config/projects/<slug>.yml `telegram.bot_mode` if a
-# project genuinely needs multi_officer (e.g., Sensed-style 5-bot roster). Default stays
+# project genuinely needs multi_officer (e.g., a full 5-bot roster). Default stays
 # single_ceo for Step Network projects.
 telegram_bot_mode: single_ceo  # single_ceo (default) | multi_officer

@@ -42,7 +42,7 @@ bash /opt/founders-cabinet/cabinet/scripts/create-officer.sh <abbreviation> "<ti
 
 Example:
 ```bash
-bash /opt/founders-cabinet/cabinet/scripts/create-officer.sh cmo "Chief Marketing Officer" "Marketing, growth, brand" sensed_cmo_bot 1234567890:AAH...
+bash /opt/founders-cabinet/cabinet/scripts/create-officer.sh cmo "Chief Marketing Officer" "Marketing, growth, brand" my_cmo_bot 1234567890:AAH...
 ```
 
 The script automatically:

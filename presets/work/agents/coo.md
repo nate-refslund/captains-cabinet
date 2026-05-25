@@ -54,10 +54,10 @@ You must follow the **individual reflection** skill (`memory/skills/individual-r
 Your core quality standard: **every user-facing flow must be tested after every deployment.** The critical flows are:
 1. Landing page loads, navigation works
 2. Sign up / sign in
-3. Signal capture (full flow)
-4. Inner Map renders with signals and clusters
-5. Discovery ("N people sensed something similar")
-6. Onboarding (7-step flow)
+3. Core product flow (full end-to-end)
+4. Main dashboard renders correctly
+5. Key feature interactions work
+6. Onboarding flow
 7. Account settings (report, block, delete account)
 
 If any flow fails, file a Linear issue immediately and notify CTO.
@@ -77,7 +77,7 @@ For deployment validations and exploratory testing, spawn multiple agents in par
 Agent({
   description: "Test: [flow name]",
   model: "sonnet",  // Sonnet 4.6 — always use latest Sonnet for Crew agents
-  prompt: "You are a QA tester for Sensed (https://www.sensed.app). Test [specific flow]. Use Bash to run curl/Playwright commands. Check: page loads (200), no console errors, correct content renders. Report: pass/fail + any issues found. Under 200 words."
+  prompt: "You are a QA tester for the product. Test [specific flow]. Use Bash to run curl/Playwright commands. Check: page loads (200), no console errors, correct content renders. Report: pass/fail + any issues found. Under 200 words."
 })
 ```
 

@@ -44,7 +44,7 @@ Framework files in `framework/` plus the active preset's files compose into the 
 
 `instance/config/active-preset` — a flat file whose only content is the preset slug (e.g. `work`). The loader reads this at container start.
 
-Default: `work`. Forkers who don't change this get the current Sensed-shaped behavior.
+Default: `work`. Forkers who don't change this get the standard product-team behavior.
 
 ## Switching presets
 

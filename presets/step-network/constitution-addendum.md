@@ -38,7 +38,7 @@ The pool model has explicit constraints:
 
 Captain decisions affecting a single project go to that project's `captain-decisions.md` scope (cabinet-local file). Cabinet-wide decisions affecting all Step Network projects go to the cabinet's `captain-decisions.md`. Framework-universal decisions go to `framework/captain-decisions-framework.md` (Spec 034 v3 §3.6).
 
-When a decision spans multiple projects within Step Network, log to the cabinet-local file with `affected_projects:` field listing each project. Cross-cabinet decisions (e.g., affecting Sensed cabinet too) escalate via CoS to the framework-global file.
+When a decision spans multiple projects within Step Network, log to the cabinet-local file with `affected_projects:` field listing each project. Cross-cabinet decisions (e.g., affecting another cabinet) escalate via CoS to the framework-global file.
 
 ## Aggregate Briefing
 

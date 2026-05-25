@@ -3,7 +3,7 @@
 **Status:** promoted
 **Created by:** CoS + Captain
 **Date:** 2026-04-02
-**Validated against:** Sensed project setup
+**Validated against:** initial project setup
 **Usage count:** 0
 
 ## When to Use

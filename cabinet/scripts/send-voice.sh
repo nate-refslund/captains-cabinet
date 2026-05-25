@@ -125,7 +125,7 @@ Placement: before or after the dialogue segment they modify. Use them at natural
 ## Text normalization (critical for TTS)
 - Prices: \"\$4.99\" becomes \"four ninety-nine\"
 - Percentages: \"30%\" becomes \"thirty percent\"
-- URLs: \"sensed.app\" becomes \"sensed dot app\"
+- URLs: \"example.app\" becomes \"example dot app\"
 - Abbreviations: \"API\" becomes \"A P I\", \"PR\" becomes \"pull request\"
 - Version numbers: \"v3\" becomes \"version three\"
 - Counts: \"6/6\" becomes \"six out of six\", \"4h\" becomes \"four hours\"
