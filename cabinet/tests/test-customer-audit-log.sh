@@ -460,7 +460,12 @@ if ssot_path.exists():
     # FW-096-only fields should NOT be at the top level
     no_status_toplevel = 'status' not in entry
     no_pct_toplevel = 'request_pct_of_cap' not in entry
-    print(f'ingested={result[\"ingested\"]} stream={has_stream} event={has_event} cost={has_cost} chain={has_chain} no_status={no_status_toplevel} no_pct={no_pct_toplevel}')
+    # #234: proxy-only metadata keys must SURVIVE the union allow-list (regression guard —
+    # the client allow-list alone would wrongly drop these proxy-stream fields)
+    md = entry.get('subject',{}).get('metadata',{})
+    pct_in_meta = 'request_pct_of_cap' in md
+    status_in_meta = 'fw096_status' in md
+    print(f'ingested={result[\"ingested\"]} stream={has_stream} event={has_event} cost={has_cost} chain={has_chain} no_status={no_status_toplevel} no_pct={no_pct_toplevel} pct_meta={pct_in_meta} status_meta={status_in_meta}')
 else:
     print('ssot_missing')
 " 2>&1)"
@@ -471,6 +476,8 @@ assert_contains "cost block with tokens_in" "$INGEST_OUT" "cost=True"
 assert_contains "hash-chain present on ingest" "$INGEST_OUT" "chain=True"
 assert_contains "status NOT top-level (carried as metadata)" "$INGEST_OUT" "no_status=True"
 assert_contains "request_pct_of_cap NOT top-level" "$INGEST_OUT" "no_pct=True"
+assert_contains "request_pct_of_cap survives in metadata (union allow-list)" "$INGEST_OUT" "pct_meta=True"
+assert_contains "fw096_status survives in metadata (union allow-list)" "$INGEST_OUT" "status_meta=True"
 
 # ── 14. Schema: required fields present on a well-formed entry ────────────────
 section "14. Schema validator: required fields check"
@@ -495,6 +502,123 @@ ok, reason = is_valid_entry_schema(entry)
 print(f'valid={ok} reason={reason!r}')
 " 2>&1)"
 assert_contains "well-formed entry passes schema" "$SCHEMA_OUT" "valid=True"
+
+# ── 15. PII validator: deny-list blind spots closed by allow-list (#234) ──────
+# The original deny-list missed nested keys, case-variant keys, arbitrary keys, and
+# non-DM-event PII. The fail-closed allow-list + recursive/case-insensitive forbidden
+# reject close all four. Each sub-case asserts reject (fail-loud) or drop (minimize).
+section "15. Allow-list closes deny-list blind spots (#234, Spec 052 v3.4 AC#3)"
+BLINDSPOT_OUT="$(py -c "
+import sys
+sys.path.insert(0,'${AUDIT_SERVER}')
+from validator import validate_and_minimize, ValidationError
+
+def check(meta, event_type='tool_call', subject_type='tool_call'):
+    entry = {
+        'ts':'t','cabinet_id':'x','entry_id':'e','stream':'officer',
+        'event_type':event_type,
+        'actor':{'officer':'cos','captain':False},
+        'subject':{'type':subject_type,'target':'t','metadata':meta},
+        'cost':{},'integrity':{'prev_hash':'0'*64,'entry_hash':'a'},
+    }
+    try:
+        r = validate_and_minimize(entry)
+        return 'ok', r['subject'].get('metadata') or {}
+    except ValidationError:
+        return 'reject', {}
+
+# Blind spot 1: nested forbidden key -> REJECT (recursive)
+nested, _ = check({'msg': {'body': 'PII text'}})
+# Blind spot 2: case-variant forbidden key -> REJECT (case-insensitive)
+case, _ = check({'Text': 'PII'})
+# Blind spot 2b: case-variant forbidden key nested in a list -> REJECT
+inlist, _ = check({'attachments': [{'Content': 'bytes'}]})
+# Blind spot 3: arbitrary unknown (non-forbidden) key -> DROP (accept), keep allow-listed sibling
+arb, arb_meta = check({'customer_email': 'nate@example.com', 'length': 5})
+arb_dropped = 'customer_email' not in arb_meta
+len_kept = arb_meta.get('length') == 5
+# Nested object under an ALLOWED key, no forbidden key inside -> DROP the key (accept)
+nd, nd_meta = check({'path': {'nested': 'x'}})
+nested_dropped = 'path' not in nd_meta
+# Over-length string under an allowed key -> DROP (accept)
+ol, ol_meta = check({'path': 'x'*300})
+overlong_dropped = 'path' not in ol_meta
+# Allow-listed scalars survive untouched
+okk, ok_meta = check({'command_head': 'git status', 'count': 3})
+scalar_kept = ok_meta.get('command_head') == 'git status' and ok_meta.get('count') == 3
+# Blind spot 4: forbidden key in a NON-DM event -> REJECT (old deny-list only checked DM events)
+nonDM, _ = check({'body': 'PII'}, event_type='experience_record', subject_type='cabinet_event')
+
+print(f'nested={nested} case={case} inlist={inlist} arb={arb} arb_dropped={arb_dropped} '
+      f'len_kept={len_kept} nested_dropped={nested_dropped} overlong_dropped={overlong_dropped} '
+      f'scalar_kept={scalar_kept} nonDM={nonDM}')
+" 2>&1)"
+assert_contains "nested forbidden key rejected (recursive)"          "$BLINDSPOT_OUT" "nested=reject"
+assert_contains "case-variant forbidden key rejected"               "$BLINDSPOT_OUT" "case=reject"
+assert_contains "forbidden key nested in list rejected"             "$BLINDSPOT_OUT" "inlist=reject"
+assert_contains "arbitrary unknown key accepted (drop-minimize)"    "$BLINDSPOT_OUT" "arb=ok"
+assert_contains "arbitrary unknown key dropped from metadata"       "$BLINDSPOT_OUT" "arb_dropped=True"
+assert_contains "allow-listed sibling key kept"                     "$BLINDSPOT_OUT" "len_kept=True"
+assert_contains "nested object under allowed key dropped"           "$BLINDSPOT_OUT" "nested_dropped=True"
+assert_contains "over-length string under allowed key dropped"      "$BLINDSPOT_OUT" "overlong_dropped=True"
+assert_contains "allow-listed scalars survive"                      "$BLINDSPOT_OUT" "scalar_kept=True"
+assert_contains "forbidden key in non-DM event rejected"            "$BLINDSPOT_OUT" "nonDM=reject"
+
+# ── 16. PII validator: whole-entry coverage — actor/cost/target (#234 F1/F2) ──
+# The fix extends minimization beyond subject.metadata: actor + cost are key-allow-listed
+# to their typed schemas, and subject.target is secret-redacted (all events) + length-bound.
+section "16. Whole-entry minimization: actor/cost/target (#234 Opus F1/F2)"
+WHOLE_OUT="$(py -c "
+import sys
+sys.path.insert(0,'${AUDIT_SERVER}')
+from validator import validate_and_minimize, ValidationError, MAX_VALUE_LEN
+
+def vfull(actor=None, cost=None, target='t', event_type='tool_call', subject_type='tool_call'):
+    entry = {
+        'ts':'t','cabinet_id':'x','entry_id':'e','stream':'officer','event_type':event_type,
+        'actor': actor if actor is not None else {'officer':'cos','captain':False},
+        'subject':{'type':subject_type,'target':target,'metadata':{}},
+        'cost': cost if cost is not None else {},
+        'integrity':{'prev_hash':'0'*64,'entry_hash':'a'},
+    }
+    try:
+        return 'ok', validate_and_minimize(entry)
+    except ValidationError:
+        return 'reject', None
+
+# F1: forbidden key in actor / cost -> REJECT (was previously uninspected)
+a_forbid, _ = vfull(actor={'officer':'cos','captain':False,'text':'PII in actor'})
+c_forbid, _ = vfull(cost={'model':'m','body':'PII in cost'})
+# F1: arbitrary key in actor / cost -> DROP, typed schema kept
+a_arb, ar = vfull(actor={'officer':'cos','captain':False,'customer':'Nate Real Name'})
+a_arb_dropped = a_arb=='ok' and 'customer' not in ar['actor'] and ar['actor'].get('officer')=='cos'
+c_arb, cr = vfull(cost={'model':'m','tokens_in':5,'injected':'PII'})
+c_arb_dropped = c_arb=='ok' and 'injected' not in cr['cost'] and cr['cost'].get('tokens_in')==5
+# F1: actor.officer == None preserved (captain-action entry, not dropped)
+a_none, anr = vfull(actor={'officer':None,'captain':True})
+officer_none_kept = a_none=='ok' and 'officer' in anr['actor'] and anr['actor']['officer'] is None
+# F2: secret in target on NON-tool_call event -> redacted (was tool_call-gated)
+t_sec, tr = vfull(target='token=sk-leak-123', event_type='dm_received', subject_type='telegram_dm')
+target_redacted = t_sec=='ok' and 'sk-leak-123' not in tr['subject']['target'] and 'REDACTED' in tr['subject']['target']
+# F2: over-length target -> bounded to MAX_VALUE_LEN
+t_long, tlr = vfull(target='x'*400)
+target_bounded = t_long=='ok' and len(tlr['subject']['target'])==MAX_VALUE_LEN
+# FP guard: proxy model-name target passes through unchanged
+t_model, tmr = vfull(target='claude-3-5-sonnet-20241022', event_type='llm_request')
+model_unchanged = t_model=='ok' and tmr['subject']['target']=='claude-3-5-sonnet-20241022'
+
+print(f'a_forbid={a_forbid} c_forbid={c_forbid} a_arb_dropped={a_arb_dropped} c_arb_dropped={c_arb_dropped} '
+      f'officer_none_kept={officer_none_kept} target_redacted={target_redacted} '
+      f'target_bounded={target_bounded} model_unchanged={model_unchanged}')
+" 2>&1)"
+assert_contains "forbidden key in actor rejected"              "$WHOLE_OUT" "a_forbid=reject"
+assert_contains "forbidden key in cost rejected"               "$WHOLE_OUT" "c_forbid=reject"
+assert_contains "arbitrary actor key dropped, schema kept"     "$WHOLE_OUT" "a_arb_dropped=True"
+assert_contains "arbitrary cost key dropped, schema kept"      "$WHOLE_OUT" "c_arb_dropped=True"
+assert_contains "actor.officer None preserved"                 "$WHOLE_OUT" "officer_none_kept=True"
+assert_contains "secret in non-tool_call target redacted"      "$WHOLE_OUT" "target_redacted=True"
+assert_contains "over-length target bounded"                   "$WHOLE_OUT" "target_bounded=True"
+assert_contains "proxy model-name target unchanged (no FP)"    "$WHOLE_OUT" "model_unchanged=True"
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 printf '\n════════════════════════════════════\n'

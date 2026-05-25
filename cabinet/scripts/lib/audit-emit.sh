@@ -30,7 +30,8 @@
 # path keys are ever emitted; any other key (free-text like text/body/note/dm/…) is DROPPED. A new
 # event type needing a new safe key must add it here (a deliberate, GDPR-reviewed step). Values are
 # additionally scalar-only + length-bounded so even an allow-listed key cannot carry nested data or
-# free text. (The server validator.py is a secondary backstop — tracked follow-up to harden it too.)
+# free text. (The server proxy/audit-server/validator.py is the secondary backstop — hardened to the
+# same fail-closed allow-list in #234; KEEP THE TWO ALLOW-LISTS IN SYNC when adding a new safe key.)
 _AUDIT_ALLOWED_KEYS='["length","attachment_count","language_detected","direction","path","command_head","request_id","entry_id","model","provider","status","severity","rotated_by","by","event","event_name","count","ticket_id","_truncated"]'
 _AUDIT_MAX_METADATA_BYTES=4096
 _AUDIT_MAX_VALUE_LEN=256
