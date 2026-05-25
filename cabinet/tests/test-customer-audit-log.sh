@@ -620,6 +620,35 @@ assert_contains "secret in non-tool_call target redacted"      "$WHOLE_OUT" "tar
 assert_contains "over-length target bounded"                   "$WHOLE_OUT" "target_bounded=True"
 assert_contains "proxy model-name target unchanged (no FP)"    "$WHOLE_OUT" "model_unchanged=True"
 
+# ── 17. Allow-list sync enforcement: client (audit-emit.sh) <-> server (validator.py) ──
+# CPO #234-review follow-up: the two allow-lists are DUPLICATED with a manual "keep in sync"
+# comment. A one-sided edit would SILENTLY drift — a server stripping a client-emitted key =
+# audit-trail DATA LOSS (the GDPR field vanishes, no error). This ENFORCES the invariant: the
+# server officer-subset (all keys minus the 2 proxy-only keys) MUST equal the client list, and
+# the server-only set MUST be exactly the 2 proxy keys (no unreviewed server-only additions).
+section "17. Allow-list sync: client audit-emit.sh <-> server validator.py (#234 CPO follow-up)"
+SYNC_OUT="$(CABINET_ROOT="${CABINET_ROOT}" AUDIT_SERVER="${AUDIT_SERVER}" python3 <<'PYEOF'
+import os, sys, json, re, pathlib
+sys.path.insert(0, os.environ['AUDIT_SERVER'])
+import validator
+PROXY_ONLY = {'request_pct_of_cap', 'fw096_status'}
+server_all = set(validator._ALLOWED_METADATA_KEYS)
+server_officer = server_all - PROXY_ONLY
+emit = pathlib.Path(os.environ['CABINET_ROOT'], 'cabinet/scripts/lib/audit-emit.sh').read_text()
+m = re.search(r"_AUDIT_ALLOWED_KEYS='(\[.*?\])'", emit)
+client = set(json.loads(m.group(1))) if m else set()
+print(f"client_parsed={'yes' if m else 'no'} "
+      f"subset_match={server_officer == client} "
+      f"server_only_exact={(server_all - client) == PROXY_ONLY} "
+      f"drift_server_only={sorted(server_officer - client)} "
+      f"drift_client_only={sorted(client - server_officer)} "
+      f"server_only={sorted(server_all - client)}")
+PYEOF
+)"
+assert_contains "client allow-list parsed from audit-emit.sh"          "$SYNC_OUT" "client_parsed=yes"
+assert_contains "client<->server officer allow-lists in sync (no drift)" "$SYNC_OUT" "subset_match=True"
+assert_contains "server-only keys are exactly the 2 proxy keys"        "$SYNC_OUT" "server_only_exact=True"
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 printf '\n════════════════════════════════════\n'
 printf '  PASS: %d   FAIL: %d   TOTAL: %d\n' "$PASS" "$FAIL" "$((PASS + FAIL))"
