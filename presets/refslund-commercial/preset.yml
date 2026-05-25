@@ -18,6 +18,17 @@ agent_archetypes:
   - coo-dpo              # Operations + GDPR Article-17/33/34 walkthroughs at install (DPO role)
   - cro                  # Research + competitive intelligence + daily monitors
 
+# Capability grants applied to the GENERATED customer-cabinet officer-capabilities.conf at
+# install (CTO-ratified Option B: declarative preset.yml block; cabinet-bootstrap.sh / load-preset.sh
+# reads it during install). Keys are runtime officer SLUGS (cos-lead→cos, coo-dpo→coo, cro→cro),
+# NOT archetype names. emits_customer_audit_events = the officer's actions are emitted to the
+# customer's GDPR audit-trail (Spec 052 streams 2+3). All 3 commercial officers emit — every
+# officer action belongs in the customer's trail, no silent officer. No-op until CTO ships the reader.
+capability_grants:
+  cos: [emits_customer_audit_events]
+  coo: [emits_customer_audit_events]
+  cro: [emits_customer_audit_events]
+
 # Terminology defaults — customer-facing flavor.
 terminology:
   agent_role: officer
