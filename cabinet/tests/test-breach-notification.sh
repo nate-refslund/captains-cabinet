@@ -103,6 +103,53 @@ OUT="$(run_breach --scenario-file "$(mk_scenario true high)" 2>&1)"
 R="$(report_of "$OUT")"
 jq -e '.gaps_flagged | index("art33-required-but-no-cabinets") != null' "$R" >/dev/null 2>&1 && pass || fail "should flag gap: Art33 required but no cabinets"
 
+# ════════════════════════════════════════════════════════════════════════════
+section "§H — Opus-review FAIL-SAFE regressions (under-notify / missed-cabinet)"
+mk_raw()     { local f="$T/raw-$RANDOM.json"; printf '%s' "$1" > "$f"; echo "$f"; }
+seed_proxy() { mkdir -p "$T/proxy-audit"; printf '{"ts":"%s","cabinet_id":"%s","entry_id":"p-%s","stream":"proxy"}\n' "$2" "$1" "$RANDOM" >> "$T/proxy-audit/$1.jsonl"; }
+B="$(iso '-5 days')"; A="$(iso '-1 hours')"
+
+# BUG-1: missing breach_occurred_at must NOT invert the window + drop all cabinets.
+rm -f "$T/audit"/*.jsonl "$T/proxy-audit"/*.jsonl 2>/dev/null; seed_audit "cab-nobreach" "$(iso '-2 days')"
+R="$(report_of "$(run_breach --scenario-file "$(mk_raw "$(jq -n --arg a "$A" '{source:"x",awareness_at:$a,involves_personal_data:false,severity:"low"}')")" 2>&1)")"
+jq -e '.affected_cabinets|index("cab-nobreach")!=null' "$R" >/dev/null 2>&1 && pass || fail "BUG-1: missing breach time must not drop cabinets (all-time window)"
+
+# BUG-2: fractional .NNNZ ts (canonical FW-097 schema) must parse + window, not collapse to 0.
+rm -f "$T/audit"/*.jsonl "$T/proxy-audit"/*.jsonl 2>/dev/null; seed_audit "cab-frac" "$(iso '-2 days' | sed 's/Z$/.500Z/')"
+R="$(report_of "$(run_breach --scenario-file "$(mk_scenario false low)" 2>&1)")"
+jq -e '.affected_cabinets|index("cab-frac")!=null' "$R" >/dev/null 2>&1 && pass || fail "BUG-2: fractional ts must be parsed + windowed (not dropped)"
+
+# BUG-3: missing awareness_at must flag GAP + UNKNOWN deadline (no fabricated 'now+72h').
+R="$(report_of "$(run_breach --scenario-file "$(mk_raw "$(jq -n --arg b "$B" '{source:"x",breach_occurred_at:$b,involves_personal_data:false,severity:"low"}')")" 2>&1)")"
+jq -e '.gaps_flagged|index("awareness-time-unknown")!=null' "$R" >/dev/null 2>&1 && pass || fail "BUG-3: missing awareness_at must flag GAP"
+[ "$(jq -r '.article_33.clock_72h_deadline' "$R")" = "UNKNOWN" ] && pass || fail "BUG-3: missing awareness_at -> deadline UNKNOWN"
+
+# BUG-4: ambiguous classification inputs must fail SAFE (escalate, not carve-out).
+R="$(report_of "$(run_breach --scenario-file "$(mk_raw "$(jq -n --arg a "$A" --arg b "$B" '{source:"x",breach_occurred_at:$b,awareness_at:$a,severity:"high"}')")" 2>&1)")"
+[ "$(jq -r '.article_33.supervisory_notification_required' "$R")" = "true" ] && pass || fail "BUG-4a: omitted involves_personal_data + high must escalate"
+R="$(report_of "$(run_breach --scenario-file "$(mk_raw "$(jq -n --arg a "$A" --arg b "$B" '{source:"x",breach_occurred_at:$b,awareness_at:$a,involves_personal_data:true}')")" 2>&1)")"
+[ "$(jq -r '.article_33.supervisory_notification_required' "$R")" = "true" ] && pass || fail "BUG-4b: omitted severity (PD true) must default high -> Art33"
+R="$(report_of "$(run_breach --scenario-file "$(mk_raw "$(jq -n --arg a "$A" --arg b "$B" '{source:"x",breach_occurred_at:$b,awareness_at:$a,involves_personal_data:"yes",severity:"high"}')")" 2>&1)")"
+[ "$(jq -r '.article_33.supervisory_notification_required' "$R")" = "true" ] && pass || fail "BUG-4c: involves_personal_data 'yes' must be treated as PII"
+
+# BUG-5: case/term-variant high severity must still trigger Art 34.
+R="$(report_of "$(run_breach --scenario-file "$(mk_scenario true HIGH)" 2>&1)")"
+[ "$(jq -r '.article_34.data_subject_notification_required' "$R")" = "true" ] && pass || fail "BUG-5a: uppercase HIGH must trigger Art34"
+R="$(report_of "$(run_breach --scenario-file "$(mk_scenario true critical)" 2>&1)")"
+[ "$(jq -r '.article_34.data_subject_notification_required' "$R")" = "true" ] && pass || fail "BUG-5b: 'critical' must trigger Art34"
+
+# BUG-7: a malformed audit line must not hide a cabinet (skip bad lines).
+rm -f "$T/audit"/*.jsonl "$T/proxy-audit"/*.jsonl 2>/dev/null
+seed_audit "cab-mal" "$(iso '-2 days')"; printf 'THIS IS NOT JSON {{{\n' >> "$T/audit/cab-mal.jsonl"; seed_audit "cab-mal" "$(iso '-2 days')"
+R="$(report_of "$(run_breach --scenario-file "$(mk_scenario false low)" 2>&1)")"
+jq -e '.affected_cabinets|index("cab-mal")!=null' "$R" >/dev/null 2>&1 && pass || fail "BUG-7: malformed line must not hide a cabinet"
+
+# BUG-6: audit/ empty -> fall back to the raw proxy-audit/ stream + flag the GAP.
+rm -f "$T/audit"/*.jsonl "$T/proxy-audit"/*.jsonl 2>/dev/null; seed_proxy "cab-proxyonly" "$(iso '-2 days')"
+R="$(report_of "$(run_breach --scenario-file "$(mk_scenario false low)" 2>&1)")"
+jq -e '.affected_cabinets|index("cab-proxyonly")!=null' "$R" >/dev/null 2>&1 && pass || fail "BUG-6: audit/ empty must fall back to proxy-audit/"
+jq -e '.gaps_flagged|index("audit-ssot-empty-used-proxy-audit")!=null' "$R" >/dev/null 2>&1 && pass || fail "BUG-6: should flag audit-ssot-empty GAP"
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 printf '\n════════════════════════════════════════════════════════════════════\n'
 printf '  Spec 055 AC#12 / CTO#9 — breach-notification tabletop harness\n'

@@ -63,6 +63,7 @@ for ((i=1; i<=$#; i++)); do
 done
 
 command -v jq >/dev/null 2>&1 || die "jq is required."
+GAPS=""   # compliance gaps surfaced for DPO review (appended through the steps below)
 
 _now_epoch() {
     if [ -n "$NOW_OVERRIDE" ]; then
@@ -71,7 +72,12 @@ _now_epoch() {
         date -u +%s
     fi
 }
-_iso_to_epoch() { date -u -d "$1" +%s 2>/dev/null || date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "$1" +%s 2>/dev/null || echo ""; }
+_iso_to_epoch() {
+    # BUG-1/3 (Opus review): GNU `date -d ""` returns NOW — never let blank input parse to a
+    # time, else missing-field guards downstream silently misfire. Empty/blank -> "" so they fire.
+    local s="${1:-}"; [ -z "${s//[[:space:]]/}" ] && { echo ""; return; }
+    date -u -d "$s" +%s 2>/dev/null || date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "$s" +%s 2>/dev/null || echo ""
+}
 _epoch_to_iso() { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "?"; }
 
 echo
@@ -106,17 +112,24 @@ fi
 SRC="$(echo "$SCENARIO" | jq -r '.source // "unknown"')"
 AWARE_AT="$(echo "$SCENARIO" | jq -r '.awareness_at // empty')"
 BREACH_AT="$(echo "$SCENARIO" | jq -r '.breach_occurred_at // empty')"
-INVOLVES_PD="$(echo "$SCENARIO" | jq -r '.involves_personal_data // false')"
-SEVERITY="$(echo "$SCENARIO" | jq -r '.severity // "low"')"
-log "  source=${SRC} severity=${SEVERITY} involves_personal_data=${INVOLVES_PD}"
+# BUG-4 (Opus review): fail SAFE on ambiguous inputs (GDPR Art 33(1) = notify-when-uncertain).
+# involves_personal_data: ONLY an explicit false/no/0 means no-PII; absent/unrecognized -> assume PII.
+INVOLVES_PD_RAW="$(echo "$SCENARIO" | jq -r 'if has("involves_personal_data") then (.involves_personal_data | tostring) else "unset" end' | tr 'A-Z' 'a-z')"
+case "$INVOLVES_PD_RAW" in false|no|0) PD_NO_RISK=1 ;; *) PD_NO_RISK=0 ;; esac
+# severity: normalize to lowercase; absent/unknown -> HIGH (fail-safe escalate).
+SEV_RAW="$(echo "$SCENARIO" | jq -r '.severity // "unset"' | tr 'A-Z' 'a-z')"
+case "$SEV_RAW" in low|medium|high|critical|severe) SEVERITY="$SEV_RAW" ;; *) SEVERITY="high" ;; esac
+[ "$SEV_RAW" = "unset" ] && GAPS="${GAPS}severity-unset-defaulted-high;"
+[ "$INVOLVES_PD_RAW" = "unset" ] && GAPS="${GAPS}involves-pd-unset-assumed-true;"
+log "  source=${SRC} severity=${SEVERITY} (raw:${SEV_RAW}) personal_data=$([ "$PD_NO_RISK" -eq 1 ] && echo no || echo assumed-yes)"
 log "  breach_occurred_at=${BREACH_AT:-unknown}  awareness_at=${AWARE_AT:-unknown}"
 
 # ── Step 2: Art 33 clock — 72h from CONFIRMED awareness ──────────────────────
 hr; log "Step 2 — Article 33 clock (72h from confirmed awareness)"
 AWARE_EPOCH="$(_iso_to_epoch "${AWARE_AT:-}")"
 if [ -z "$AWARE_EPOCH" ]; then
-    warn "awareness_at missing/unparseable — clock cannot start; flagging as a GAP."
-    DEADLINE_ISO="UNKNOWN"; HOURS_LEFT="UNKNOWN"
+    warn "awareness_at missing/unparseable — clock cannot start; flagging as a GAP (incident may already be overdue)."
+    DEADLINE_ISO="UNKNOWN"; HOURS_LEFT="UNKNOWN"; GAPS="${GAPS}awareness-time-unknown;"
 else
     DEADLINE_EPOCH=$(( AWARE_EPOCH + 72*3600 ))
     DEADLINE_ISO="$(_epoch_to_iso "$DEADLINE_EPOCH")"
@@ -132,41 +145,64 @@ hr; log "Step 3 — Article 33(1) risk-to-rights-and-freedoms decision tree"
 #   - personal data + severity low         -> LOW (document, monitor)
 #   - personal data + severity medium/high -> RISK -> Art 33 required; HIGH -> Art 34 too
 RISK_LEVEL="low"; ART33_REQUIRED="false"; ART34_REQUIRED="false"; RATIONALE=""
-if [ "$INVOLVES_PD" != "true" ]; then
-    RISK_LEVEL="none"; RATIONALE="No personal data involved (Cabinet retains token counts + metadata only; no prompts/completions). Unlikely to result in a risk to rights/freedoms — Article 33(1) carve-out applies. Document + monitor; no supervisory or data-subject notification."
+if [ "$PD_NO_RISK" -eq 1 ]; then
+    RISK_LEVEL="none"; RATIONALE="No personal data involved (explicit). Cabinet retains token counts + metadata only (no prompts/completions). Unlikely to result in a risk to rights/freedoms — Article 33(1) carve-out. Document + monitor."
 elif [ "$SEVERITY" = "low" ]; then
-    RISK_LEVEL="low"; RATIONALE="Personal data involved but low severity — assess case-by-case; default document + monitor. If reassessed upward, escalate to the RISK path."
+    RISK_LEVEL="low"; RATIONALE="Personal data + low severity — document + monitor; reassess upward if new facts emerge."
 else
+    # BUG-5: medium / high / critical / severe (incl. fail-safe-escalated unknowns) -> Art 33 required.
     RISK_LEVEL="$SEVERITY"; ART33_REQUIRED="true"; RATIONALE="Personal data + ${SEVERITY} severity — likely a risk to rights/freedoms. Article 33 supervisory notification REQUIRED within 72h."
-    [ "$SEVERITY" = "high" ] && ART34_REQUIRED="true" && RATIONALE="${RATIONALE} HIGH risk — Article 34 data-subject notification ALSO required without undue delay."
+    case "$SEVERITY" in
+        high|critical|severe) ART34_REQUIRED="true"; RATIONALE="${RATIONALE} HIGH risk — Article 34 data-subject notification ALSO required without undue delay." ;;
+    esac
 fi
 log "  risk_level=${RISK_LEVEL}  art_33_required=${ART33_REQUIRED}  art_34_required=${ART34_REQUIRED}"
 log "  rationale: ${RATIONALE}"
 
-# ── Step 4: identify affected cabinets from the FW-097 audit log ─────────────
-hr; log "Step 4 — affected-cabinet identification (FW-097 audit log)"
+# ── Step 4: identify affected cabinets (FW-097 audit SSOT + proxy-audit fallback) ──
+hr; log "Step 4 — affected-cabinet identification"
 declare -a AFFECTED=()
-GAPS=""
-if [ ! -d "$AUDIT_DIR" ]; then
-    warn "audit dir ${AUDIT_DIR} not found — cannot enumerate affected cabinets (GAP)."
-    GAPS="${GAPS}audit-dir-missing;"
-else
-    win_start="$(_iso_to_epoch "${BREACH_AT:-}")"; [ -z "$win_start" ] && win_start=0
-    win_end="${AWARE_EPOCH:-$NOW_EPOCH}"
+PROXY_AUDIT_DIR="${AUDIT_LOG_ROOT}/proxy-audit"
+win_start="$(_iso_to_epoch "${BREACH_AT:-}")"; [ -z "$win_start" ] && win_start=0   # BUG-1: missing breach time -> all-time window (fail-safe over-identify)
+win_end="${AWARE_EPOCH:-$NOW_EPOCH}"
+# Count entries in [win_start, win_end] for one file. BUG-7: skip malformed lines. BUG-2:
+# parse fractional/offset ts (strip to bare-Z); UNPARSEABLE ts -> fail-SAFE (count as in-window).
+_window_hits() {
+    jq -R 'fromjson? // empty' "$1" 2>/dev/null | jq -r --argjson s "$win_start" --argjson e "$win_end" '
+        (.ts // "") as $ts
+        | ($ts | if (type != "string") or (. == "") then null
+                 else (try fromdateiso8601 catch (try (.[0:19] + "Z" | fromdateiso8601) catch null)) end) as $t
+        | if   $t == null             then (.entry_id // "unparsed-failsafe")
+          elif ($t >= $s and $t <= $e) then (.entry_id // "in")
+          else empty end' 2>/dev/null | wc -l
+}
+declare -A _SEEN=()
+_scan_dir() {
+    local dir="$1"; [ -d "$dir" ] || return 0
     shopt -s nullglob
-    for f in "${AUDIT_DIR}"/*.jsonl; do
+    local f slug hits
+    for f in "$dir"/*.jsonl; do
+        [ -f "$f" ] || continue
         slug="$(basename "$f" .jsonl)"
-        # count entries in the breach window (any proxy/LLM activity = potentially in-scope)
-        hits="$(jq -r --argjson s "$win_start" --argjson e "$win_end" '
-            select((.ts // "" | if . == "" then 0 else (try (sub("Z$";"Z") | fromdateiso8601) catch 0) end) as $t | $t >= $s and $t <= $e) | .entry_id' "$f" 2>/dev/null | wc -l)"
-        if [ "${hits:-0}" -gt 0 ]; then
-            AFFECTED+=("$slug")
-            log "  affected: ${slug} (${hits} audit entries in breach window)"
-        fi
+        [ -n "${_SEEN[$slug]:-}" ] && continue
+        hits="$(_window_hits "$f")"
+        if [ "${hits:-0}" -gt 0 ]; then _SEEN[$slug]=1; AFFECTED+=("$slug"); log "  affected: ${slug} (${hits} entries in window)"; fi
     done
     shopt -u nullglob
-    [ "${#AFFECTED[@]}" -eq 0 ] && log "  no cabinets with activity in the breach window."
+}
+_count_jsonl() { local d="$1" n=0 g; [ -d "$d" ] || { echo 0; return; }; shopt -s nullglob; for g in "$d"/*.jsonl; do [ -f "$g" ] && n=$((n+1)); done; shopt -u nullglob; echo "$n"; }
+N_AUDIT="$(_count_jsonl "$AUDIT_DIR")"; N_PROXY="$(_count_jsonl "$PROXY_AUDIT_DIR")"
+if [ "$N_AUDIT" -eq 0 ] && [ "$N_PROXY" -eq 0 ]; then
+    warn "no audit data in ${AUDIT_DIR} or ${PROXY_AUDIT_DIR} — cannot enumerate affected cabinets (GAP)."
+    GAPS="${GAPS}audit-data-missing;"
+elif [ "$N_AUDIT" -eq 0 ] && [ "$N_PROXY" -gt 0 ]; then
+    # BUG-6: the FW-097 sidecar (audit/) is Phase-2 Hetzner-gated; fall back to the raw proxy-audit/ stream.
+    warn "audit/ SSOT empty (FW-097 sidecar Phase-2-gated) — falling back to the raw proxy-audit/ stream."
+    GAPS="${GAPS}audit-ssot-empty-used-proxy-audit;"
 fi
+_scan_dir "$AUDIT_DIR"
+_scan_dir "$PROXY_AUDIT_DIR"
+[ "${#AFFECTED[@]}" -eq 0 ] && log "  no cabinets with activity in the window."
 
 # ── Step 5: SIMULATE the notification cascade (logs only — sends nothing) ─────
 hr; log "Step 5 — cascade SIMULATION (nothing sent)"
