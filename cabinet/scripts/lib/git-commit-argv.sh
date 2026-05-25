@@ -116,20 +116,31 @@ gca_commit_subject() {
 }
 
 # ── --no-verify / -n detection on git commit/push ────────────────────────────
-# returns 0 if present. NOTE (v1 limitation, warn-mode-bounded): a `-n` token INSIDE a quoted
-# message body can false-positive; the FP-rate JSONL surfaces it + an adversary pass will strip
-# quoted spans before this check. --no-verify (long form) is low-FP.
+# returns 0 if --no-verify (or a -n cluster) is a flag of the GIT-COMMIT invocation ITSELF.
+# Scoped to the commit's OWN flags (CPO PR#104 review FP fix): a -n on a chained non-git command
+# (head -n / grep -n / tail -n / sort -n) or a wrapper prefix (sudo -n / nice -n git commit) does
+# NOT count. Quoted spans are stripped first so a -n INSIDE the message body doesn't count (advA4).
+# (Remaining warn-mode-bounded edge: escaped-quote-in-DQ message body — disclosed, low-frequency.)
 gca_has_no_verify() {
-    local cmd="$1" stripped
-    # strip quoted spans first so a -n / --no-verify INSIDE a commit message body does not
-    # false-positive (adversary A4). Naive SQ/DQ strip is sufficient for the common FP; an
-    # escaped-quote-in-DQ edge remains (warn-mode bounds it).
+    local cmd="$1" stripped seg flags
     stripped="$(printf '%s' "$cmd" | sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g")"
+    # Split on statement boundaries (consume surrounding space). For the segment that invokes
+    # git commit, check no-verify only on the part AFTER the `commit` token — so a -n belonging to a
+    # chained command or a wrapper prefix, which lives in another segment or before `commit`, is excluded.
+    local split
+    split="$(printf '%s' "$stripped" | sed -E 's/[[:space:]]*(\&\&|\|\||;|\&|\||\(|\)|\{|\})[[:space:]]*/\n/g')"
     local re_long='(^|[[:space:]])--no-verify([[:space:]]|=|$)'
-    [[ "$stripped" =~ $re_long ]] && return 0
-    # -n standalone OR inside a combined short-flag cluster (-nm, -anm) — Opus ship-gate #1:
-    # `git commit -nm "x"` skips the hook AND sets the message; standalone -n missed it.
+    # -n standalone OR inside a combined short-flag cluster (-nm, -anm) — Opus ship-gate #1.
     local re_short='(^|[[:space:]])-[a-zA-Z]*n[a-zA-Z]*([[:space:]]|=|$)'
-    [[ "$stripped" =~ $re_short ]] && return 0
+    while IFS= read -r seg; do
+        [ -n "$seg" ] || continue
+        gca_invokes_git_commit "$seg" || continue
+        # commit's own flags = after the `commit` subcommand token. Greedy `.*$` + the required
+        # leading space land on the real subcommand (a "commit" inside an unquoted word/path isn't
+        # a space-preceded token at end-of-segment).
+        if [[ "$seg" =~ [[:space:]]commit([[:space:]].*)?$ ]]; then flags="${BASH_REMATCH[1]}"; else flags="$seg"; fi
+        [[ "$flags" =~ $re_long ]] && return 0
+        [[ "$flags" =~ $re_short ]] && return 0
+    done <<< "$split"
     return 1
 }

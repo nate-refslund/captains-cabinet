@@ -23,8 +23,11 @@ UNEXTRACTABLE → FAIL-CLOSED (warn). Never fail-open (never silently treat an u
 commit as compliant).
 
 ## --no-verify contract (`gca_has_no_verify`)
-Detect `--no-verify` or standalone `-n` token on a `git commit`/`git push` (flag token at a
-word boundary, NOT inside a quoted message body) → block-with-surfaced-reason.
+Detect `--no-verify` or a `-n`-cluster flag of the **git-commit invocation ITSELF** → block-with-
+surfaced-reason. SCOPED to the commit's own flags (the part after the `commit` token, within the
+git-commit statement): a `-n` on a chained non-git command (`head -n` / `grep -n` / `tail -n` /
+`sort -n`) or a wrapper prefix (`sudo -n` / `nice -n` git commit), or inside a quoted message body,
+does NOT count (CPO PR#104 review — the review-FP lens complement to the adversary bypass passes).
 
 ---
 
@@ -74,3 +77,17 @@ word boundary, NOT inside a quoted message body) → block-with-surfaced-reason.
 > extract the FIRST `-m`/`--message` value as the subject; the inner mention lives INSIDE that
 > value, so validating the outer value (which starts "see '…") correctly yields invalid→warn
 > without a separate inner match.
+
+## NO-VERIFY SCOPE GUARDS — `gca_has_no_verify` must scope to the commit's own flags (CPO PR#104)
+Detection is still Y (it IS a git commit) — these assert `no_verify=N` (the `-n` is NOT the commit's).
+| # | command | no_verify | why |
+|---|---------|-----------|-----|
+| V1 | `head -n 5 CHANGELOG && git commit -m "feat: x"` | N | `-n` belongs to `head`, a chained command |
+| V2 | `grep -n TODO && git commit -m "fix: y"` | N | `grep -n` chained |
+| V3 | `tail -n 20 log; git commit -m "fix: z"` | N | `tail -n` chained (`;` boundary) |
+| V4 | `sort -n nums && git commit -m "feat: q"` | N | `sort -n` chained |
+| V5 | `sudo -n git commit -m "feat: r"` | N | `-n` is the `sudo` prefix flag, before `commit` |
+| V6 | `nice -n 10 git commit -m "feat: s"` | N | `-n` is the `nice` prefix flag |
+| V7 | `git commit -m "feat: x" && head -n 5 f` | N | trailing chained `head -n` |
+| V8 | `head -n 5 && git commit -nm "x"` | **Y** | regression-guard: the commit's OWN `-nm` is still detected alongside an FP source |
+| V9 | `git commit --no-verify && head -n 5` | **Y** | regression-guard: real `--no-verify` on the commit, FP source trails |

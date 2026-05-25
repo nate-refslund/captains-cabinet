@@ -208,6 +208,16 @@ if [ -r "$LIB/git-commit-argv.sh" ]; then
   # Opus ship-gate folds (#1 -nm cluster, #2 -Sm/-mattached, #5 sudo/timeout prefixes)
   eq "C3 nv -nm cluster (Opus#1)"   "$(_nv 'git commit -nm "feat: x"')" "Y"
   eq "C3 nv -sm NOT-no-verify (Opus#1 FP)" "$(_nv 'git commit -sm "fix: ok"')" "N"
+  # CPO PR#104 review FP fix: -n scoped to the commit's own flags (chained-command + wrapper-prefix)
+  eq "C3 nv FP head-n chain (CPO)"  "$(_nv 'head -n 5 CHANGELOG && git commit -m "feat: x"')" "N"
+  eq "C3 nv FP grep-n chain (CPO)"  "$(_nv 'grep -n TODO && git commit -m "fix: y"')" "N"
+  eq "C3 nv FP tail-n semicolon (CPO)" "$(_nv 'tail -n 20 log; git commit -m "fix: z"')" "N"
+  eq "C3 nv FP sort-n chain (CPO)"  "$(_nv 'sort -n nums && git commit -m "feat: q"')" "N"
+  eq "C3 nv FP sudo-n prefix (CPO)" "$(_nv 'sudo -n git commit -m "feat: r"')" "N"
+  eq "C3 nv FP nice-n prefix (CPO)" "$(_nv 'nice -n 10 git commit -m "feat: s"')" "N"
+  eq "C3 nv FP trailing-head-n (CPO)" "$(_nv 'git commit -m "feat: x" && head -n 5 f')" "N"
+  eq "C3 nv mixed FP+real-nm still Y (CPO)" "$(_nv 'head -n 5 && git commit -nm "x"')" "Y"
+  eq "C3 nv mixed real-nv+trailing-FP still Y (CPO)" "$(_nv 'git commit --no-verify && head -n 5')" "Y"
   eq "C3 -Sm uppercase extract (Opus#2)"   "$(_val 'git commit -Sm "nope"')" "N"
   eq "C3 -mattached extract (Opus#2)"      "$(_val 'git commit -mbadmsg')" "N"
   eq "C3 det sudo-prefix (Opus#5)"   "$(_det 'sudo git commit -m bad')" "Y"
