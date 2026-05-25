@@ -12,6 +12,9 @@ HOOK_INPUT=$(cat)
 TOOL_NAME=$(echo "$HOOK_INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
 TOOL_INPUT=$(echo "$HOOK_INPUT" | jq -c '.tool_input // {}' 2>/dev/null)
 
+# Resolve CABINET_ROOT from this hook's location (hooks/ → scripts/ → cabinet/ → repo root)
+CABINET_ROOT="${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../../.." 2>/dev/null && pwd)}"
+
 REDIS_URL="${REDIS_URL:-redis://redis:6379}"
 REDIS_HOST=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f1)
 REDIS_PORT=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f2)
@@ -318,6 +321,71 @@ if [ -f "$POLICY_ENGINE" ]; then
 else
   echo "pre-tool-use: WARN policy engine not found at $POLICY_ENGINE, skipping typed policy checks" >&2
 fi
+
+# ============================================================
+# 6. LAYER 1 GATE — CTO must run Crew review before push/merge
+# ============================================================
+# Stateful workflow gate: requires Redis key cabinet:layer1:cto:reviewed
+# to be set before push/merge is allowed. The gate CONSUMES the key
+# on use (DEL after pass) so a fresh review is required each time.
+# This stays in bash because it needs Redis state, not just policy rules.
+if [ "$OFFICER" = "cto" ] && [ "$TOOL_NAME" = "Bash" ]; then
+  CMD=$(echo "$TOOL_INPUT" | jq -r '.command // empty' 2>/dev/null)
+  # Preprocessing for gate regex (minimal subset from v3.7.2 section 3b)
+  CMD_NORM=$(printf '%s' "$CMD" | sed -e 's/\\"/"/g' -e "s/\\\\'/'/g")
+  CMD_UNQUOTED=$(printf '%s' "$CMD_NORM" \
+    | sed -e "s/\\\$'\\([^']*\\)'/\\1/g" -e "s/'\\([^']*\\)'/\\1/g" -e 's/"\([^"$`]*\)"/\1/g' \
+    | perl -0777 -pe 's/<<([A-Za-z_]\w*)\n.*?\n\1(?=\n|\z)//gs' 2>/dev/null)
+  CMD_MASKED=$(printf '%s' "$CMD_NORM" \
+    | sed -e "s/\\\$'[^']*'/\$'x'/g" -e "s/'[^']*'/'x'/g" -e 's/"[^"$`]*"/"x"/g')
+  HAS_SPLICE=0
+  if echo "$CMD_MASKED" | grep -qE "(^|[;&|({)}\`!]|&&|\|\|)[[:space:]]*([A-Za-z_]+['\"\`]|['\"\`][A-Za-z_])"; then
+    HAS_SPLICE=1
+  fi
+  CMD_L1_NORM=$(printf '%s' "$CMD_NORM" | sed -e "s/''//g" -e 's/""//g' -e 's/`\([^`]*\)`/\1/g')
+  CMD_L1_UNQUOTED=$(printf '%s' "$CMD_UNQUOTED" | sed -e "s/''//g" -e 's/""//g' -e 's/`\([^`]*\)`/\1/g')
+  L1_P1='(^|[;&|({)}`!])[[:space:]]*(sudo[[:space:]]+|([^[:space:]]*/)?env([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+|timeout([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+[0-9]+[smhd]?[[:space:]]+|(exec|time|nohup|nice|ionice|coproc|stdbuf|unbuffer|setsid|command|builtin)([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=(\$'\''[^'\'']*'\''|'\''[^'\'']*'\''|"[^"]*"|[^[:space:]]+)[[:space:]]+|([^[:space:]]*/)?(bash|sh|zsh|fish|ksh|dash|ash|csh|tcsh|mksh)([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+-[A-Za-z]*c[A-Za-z]*[[:space:]]+(\$?['\''"])?|eval[[:space:]]+['\''"]?|[0-9]?[<>][[:space:]]*[^[:space:]]+[[:space:]]+|(then|do|else|elif)[[:space:]]+)*(git[[:space:]]+(-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?[[:space:]]+)*push|gh[[:space:]]+(-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?[[:space:]]+)*(pr[[:space:]]+merge|api)|curl[[:space:]]|wget[[:space:]])'
+  L1_P2A='(^|[;&|({)}`!])[[:space:]]*(sudo[[:space:]]+|([^[:space:]]*/)?env([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+|timeout([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+[0-9]+[smhd]?[[:space:]]+|(exec|time|nohup|nice|ionice|coproc|stdbuf|unbuffer|setsid|command|builtin)([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=(\$'\''[^'\'']*'\''|'\''[^'\'']*'\''|"[^"]*"|[^[:space:]]+)[[:space:]]+|([^[:space:]]*/)?(bash|sh|zsh|fish|ksh|dash|ash|csh|tcsh|mksh)([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+-[A-Za-z]*c[A-Za-z]*[[:space:]]+(\$?['\''"])?|eval[[:space:]]+['\''"]?|[0-9]?[<>][[:space:]]*[^[:space:]]+[[:space:]]+|(then|do|else|elif)[[:space:]]+)*git[[:space:]]+(-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?[[:space:]]+)*push[[:space:]]+([^[:space:]]+[[:space:]]+)*(main|master)([[:space:];&|(){}\`]|$)'
+  L1_P2B='(^|[;&|({)}`!])[[:space:]]*(sudo[[:space:]]+|([^[:space:]]*/)?env([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+|timeout([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+[0-9]+[smhd]?[[:space:]]+|(exec|time|nohup|nice|ionice|coproc|stdbuf|unbuffer|setsid|command|builtin)([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=(\$'\''[^'\'']*'\''|'\''[^'\'']*'\''|"[^"]*"|[^[:space:]]+)[[:space:]]+|([^[:space:]]*/)?(bash|sh|zsh|fish|ksh|dash|ash|csh|tcsh|mksh)([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+-[A-Za-z]*c[A-Za-z]*[[:space:]]+(\$?['\''"])?|eval[[:space:]]+['\''"]?|[0-9]?[<>][[:space:]]*[^[:space:]]+[[:space:]]+|(then|do|else|elif)[[:space:]]+)*gh[[:space:]]+(-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?[[:space:]]+)*pr[[:space:]]+merge([[:space:];&|(){}\`]|$)'
+  if { echo "$CMD" | grep -qE "$L1_P1" && \
+       { echo "$CMD" | grep -qE "$L1_P2A" || echo "$CMD" | grep -qE "$L1_P2B"; }; } \
+     || { echo "$CMD_L1_NORM" | grep -qE "$L1_P1" && \
+          { echo "$CMD_L1_NORM" | grep -qE "$L1_P2A" || echo "$CMD_L1_NORM" | grep -qE "$L1_P2B"; }; } \
+     || { [ "$HAS_SPLICE" = "1" ] && \
+          echo "$CMD_L1_UNQUOTED" | grep -qE "$L1_P1" && \
+          { echo "$CMD_L1_UNQUOTED" | grep -qE "$L1_P2A" || echo "$CMD_L1_UNQUOTED" | grep -qE "$L1_P2B"; }; }; then
+    REVIEWED=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET "cabinet:layer1:cto:reviewed" 2>/dev/null)
+    if [ -z "$REVIEWED" ] || [ "$REVIEWED" = "(nil)" ]; then
+      echo "LAYER 1 GATE: Spawn a Crew agent to review your diff before pushing/merging. After review, run: redis-cli -h redis -p 6379 SET cabinet:layer1:cto:reviewed 1 EX 300" >&2
+      exit 2
+    fi
+    redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" DEL "cabinet:layer1:cto:reviewed" > /dev/null 2>&1
+  fi
+fi
+
+# ============================================================
+# 7. CI GREEN GATE — CTO must verify CI before merge
+# ============================================================
+if [ "$OFFICER" = "cto" ] && [ "$TOOL_NAME" = "Bash" ]; then
+  CMD=$(echo "$TOOL_INPUT" | jq -r '.command // empty' 2>/dev/null)
+  CMD_L1_NORM=$(printf '%s' "$CMD_NORM" | sed -e "s/''//g" -e 's/""//g' -e 's/`\([^`]*\)`/\1/g')
+  CMD_L1_UNQUOTED=$(printf '%s' "$CMD_UNQUOTED" | sed -e "s/''//g" -e 's/""//g' -e 's/`\([^`]*\)`/\1/g')
+  S7_P1='(^|[;&|({)}`!])[[:space:]]*(sudo[[:space:]]+|([^[:space:]]*/)?env([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+|timeout([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+[0-9]+[smhd]?[[:space:]]+|(exec|time|nohup|nice|ionice|coproc|stdbuf|unbuffer|setsid|command|builtin)([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=(\$'\''[^'\'']*'\''|'\''[^'\'']*'\''|"[^"]*"|[^[:space:]]+)[[:space:]]+|([^[:space:]]*/)?(bash|sh|zsh|fish|ksh|dash|ash|csh|tcsh|mksh)([[:space:]]+-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?)*[[:space:]]+-[A-Za-z]*c[A-Za-z]*[[:space:]]+(\$?['\''"])?|eval[[:space:]]+['\''"]?|[0-9]?[<>][[:space:]]*[^[:space:]]+[[:space:]]+|(then|do|else|elif)[[:space:]]+)*(git[[:space:]]+(-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?[[:space:]]+)*push|gh[[:space:]]+(-[^[:space:]]+([[:space:]]+([^-[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')([^[:space:]'\''"]|'\''([^'\''\\]|\\.)*'\''|"([^"\\]|\\.)*"|\$'\''([^'\''\\]|\\.)*'\'')*)?[[:space:]]+)*(pr[[:space:]]+merge|api)|curl[[:space:]]|wget[[:space:]])'
+  S7_PULLS='pulls/[0-9]+/merge'
+  if { echo "$CMD" | grep -qE "$S7_P1" && echo "$CMD" | grep -qE "$S7_PULLS"; } \
+     || { echo "$CMD_L1_NORM" | grep -qE "$S7_P1" && echo "$CMD_L1_NORM" | grep -qE "$S7_PULLS"; } \
+     || { [ "$HAS_SPLICE" = "1" ] && \
+          echo "$CMD_L1_UNQUOTED" | grep -qE "$S7_P1" && \
+          echo "$CMD_L1_UNQUOTED" | grep -qE "$S7_PULLS"; }; then
+    CI_VERIFIED=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET "cabinet:layer1:cto:ci-green" 2>/dev/null)
+    if [ -z "$CI_VERIFIED" ] || [ "$CI_VERIFIED" = "(nil)" ]; then
+      echo "CI GREEN GATE: Run 'bash /opt/founders-cabinet/cabinet/scripts/verify-deploy.sh ci <commit-sha>' and confirm CI is green before merging. After CI passes, run: redis-cli -h redis -p 6379 SET cabinet:layer1:cto:ci-green 1 EX 300" >&2
+      exit 2
+    fi
+    redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" DEL "cabinet:layer1:cto:ci-green" > /dev/null 2>&1
+  fi
+fi
+
 # ============================================================
 # 8. CONTEXT_SLUG VALIDATION + CAPACITY COUPLING (Phase 1 CP2)
 # ============================================================
