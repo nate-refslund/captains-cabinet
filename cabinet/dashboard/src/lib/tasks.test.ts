@@ -10,7 +10,7 @@
 //
 // validateContextSlug uses CONTEXTS_DIR (defaults to
 // /opt/founders-cabinet/instance/config/contexts) which contains the real
-// adhoc/personal/sensed YAMLs — those give us a happy-path check without
+// adhoc/personal YAMLs — those give us a happy-path check without
 // any fs mocking.
 
 import { describe, it, expect } from 'vitest'
@@ -111,7 +111,7 @@ describe('coerceWipCapError — errcode gate', () => {
   it('returns WipCapExceededError when code=23514 + WIP limit substring', () => {
     const err = {
       code: '23514',
-      message: 'WIP limit (3) exceeded for officer cto in context sensed',
+      message: 'WIP limit (3) exceeded for officer cto in context adhoc',
     }
     const coerced = coerceWipCapError(err, 'cto')
     expect(coerced).toBeInstanceOf(WipCapExceededError)
@@ -160,7 +160,7 @@ describe('validateContextSlug — regex + fs.access', () => {
   })
 
   it('throws on uppercase slug (regex rejects)', async () => {
-    await expect(validateContextSlug('Sensed')).rejects.toThrow('is invalid')
+    await expect(validateContextSlug('Adhoc')).rejects.toThrow('is invalid')
   })
 
   it('throws on slug with underscore (regex rejects)', async () => {
@@ -168,7 +168,7 @@ describe('validateContextSlug — regex + fs.access', () => {
   })
 
   it('throws on slug starting with dash (regex requires alnum first)', async () => {
-    await expect(validateContextSlug('-sensed')).rejects.toThrow('is invalid')
+    await expect(validateContextSlug('-adhoc')).rejects.toThrow('is invalid')
   })
 
   it('throws on slug with path traversal', async () => {
@@ -185,23 +185,23 @@ describe('validateContextSlug — regex + fs.access', () => {
   })
 
   it('throws on valid regex but missing YAML file', async () => {
-    // 'nosuch' matches the regex but contexts dir only has adhoc/personal/sensed
+    // 'nosuch' matches the regex but contexts dir only has adhoc/personal
     await expect(validateContextSlug('nosuch')).rejects.toThrow('not found')
   })
 
-  it('resolves to trimmed slug for sensed (real YAML exists)', async () => {
-    const result = await validateContextSlug('sensed')
-    expect(result).toBe('sensed')
+  it('resolves to trimmed slug for adhoc (real YAML exists)', async () => {
+    const result = await validateContextSlug('adhoc')
+    expect(result).toBe('adhoc')
   })
 
-  it('resolves for adhoc + personal (all 3 real contexts)', async () => {
+  it('resolves for adhoc + personal (both real contexts)', async () => {
     expect(await validateContextSlug('adhoc')).toBe('adhoc')
     expect(await validateContextSlug('personal')).toBe('personal')
   })
 
   it('trims whitespace before validation + returns trimmed', async () => {
-    const result = await validateContextSlug('  sensed  ')
-    expect(result).toBe('sensed')
+    const result = await validateContextSlug('  adhoc  ')
+    expect(result).toBe('adhoc')
   })
 
   it('accepts single-char slug (regex min length 1)', async () => {

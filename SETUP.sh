@@ -65,7 +65,7 @@ echo "[6/6] Setting up repos..."
 
 # Cabinet framework
 if [ ! -d /opt/founders-cabinet ]; then
-  git clone https://github.com/nate-step/founders-cabinet.git /opt/founders-cabinet
+  git clone https://github.com/YOUR-ORG/captains-cabinet.git /opt/founders-cabinet
   echo "  Cloned founders-cabinet"
 else
   echo "  /opt/founders-cabinet already exists, pulling..."

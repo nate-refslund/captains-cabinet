@@ -233,7 +233,7 @@ jobs:
           cd /opt/founders-cabinet/cabinet/scripts/gates
           python3 -m pytest tests/ -v
 
-      # Cutover tests removed — Sensed-specific migration tooling deleted in rebuild.
+      # Cutover tests removed — product-specific migration tooling deleted in rebuild.
 
       - name: Python tests — MCP server (FW-005)
         # 20 tests: stdio + HTTP transport, bearer auth, error handling.

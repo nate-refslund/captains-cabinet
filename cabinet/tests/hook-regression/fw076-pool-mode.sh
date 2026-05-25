@@ -30,7 +30,7 @@ probe() {
 }
 
 # ------------------------------------------------------------------
-# SLUG: sensed
+# SLUG: myapp
 # ------------------------------------------------------------------
 echo "=== BLOCK: slug=myapp (must BLOCK for non-CTO) ==="
 probe "myapp P1 redirect"           'echo x > /workspace/myapp/README.md'                         BLOCK
@@ -95,13 +95,13 @@ probe "FP5 cat myapp read"          'cat /workspace/myapp/src/app.ts'           
 probe "FP6 grep myapp read"         'grep "foo" /workspace/myapp/src/app.ts'                     ALLOW
 # cd + ls: no write op → ALLOW
 probe "FP7 cd myapp + ls"           'cd /workspace/myapp && ls'                                  ALLOW
-# tee writing to /tmp, reading from sensed → ALLOW
+# tee writing to /tmp, reading from myapp → ALLOW
 probe "FP8 cat myapp | tee /tmp"    'cat /workspace/myapp/x | tee /tmp/y'                        ALLOW
-# cp reading FROM sensed, writing to /tmp → ALLOW
+# cp reading FROM myapp, writing to /tmp → ALLOW
 probe "FP9 cp myapp -> /tmp"        'cp /workspace/myapp/x /tmp/y'                               ALLOW
-# git log in sensed: read-only git op → ALLOW
+# git log in myapp: read-only git op → ALLOW
 probe "FP10 git log myapp"          'git -C /workspace/myapp log --oneline'                      ALLOW
-# rsync reading FROM sensed to /tmp → ALLOW (rsync -t = --times, not --target)
+# rsync reading FROM myapp to /tmp → ALLOW (rsync -t = --times, not --target)
 probe "FP11 rsync myapp -> /tmp"    'rsync -rt /workspace/myapp/ /tmp/dst'                       ALLOW
 
 # CTO bypass: same command that would block non-CTO must pass for CTO

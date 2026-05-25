@@ -81,8 +81,8 @@ The bottleneck is always a dependency (data, decision, validation), never engine
 |--------|---------|---------------|
 | **Notion** | Business brain — strategy, brand, research, decisions | MCP tools: `notion-search`, `notion-fetch`, `notion-create-pages`, `notion-update-page` |
 | **Linear** | **READ-ONLY ARCHIVE post-Spec-039 cutover (2026-04-26)** — Canonical backlog is now `/tasks` (Postgres `officer_tasks`). Linear retained for audit. **Do not write to Linear.** | GraphQL API read-only |
-| **/tasks** | **Canonical task backlog** — Sensed product, Cabinet framework (FW-*), Personal Cabinet (post-spawn). 560 Linear rows + Captain mapping live as of 2026-04-26 06:25 UTC | Dashboard `/tasks` route OR direct Postgres `officer_tasks` queries |
-| **GitHub Issues** | **Cabinet framework backlog** — infrastructure, officer system, meta-features | `gh` CLI or GitHub API on `nate-step/founders-cabinet` |
+| **/tasks** | **Canonical task backlog** — product work, Cabinet framework (FW-*), and additional contexts. | Dashboard `/tasks` route OR direct Postgres `officer_tasks` queries |
+| **GitHub Issues** | **Cabinet framework backlog** — infrastructure, officer system, meta-features | `gh` CLI or GitHub API on the framework repo |
 | **Git repo** | Code — the product itself | Git CLI in `/workspace/product` |
 
 **Important:** Keep these separate. Cabinet framework improvements go to GitHub Issues on the founders-cabinet repo. Product features/bugs go to Linear. This prevents CPO (who manages Linear for product) from having to triage framework work.

@@ -26,8 +26,8 @@ TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN not set}"
 WARROOMS_FILE="/opt/founders-cabinet/instance/config/warrooms.yml"
 
 # Resolve chat_id for the requested context. Fall back to
-# $TELEGRAM_HQ_CHAT_ID when context=sensed and the mapping file is
-# absent (back-compat with pre-CP7 setups).
+# $TELEGRAM_HQ_CHAT_ID when the mapping file is absent or the context
+# is not found (back-compat).
 resolve_chat_id() {
   local ctx="$1"
   if [ -f "$WARROOMS_FILE" ]; then

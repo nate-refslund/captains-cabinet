@@ -23,7 +23,7 @@ const ICON_FOR_HREF: Record<string, () => React.ReactElement> = {
   '/costs': CostsIcon,
   '/crons': CronsIcon,
   '/library': LibraryIcon,
-  'https://terminal.sensed.app': TerminalIcon,
+  'https://terminal.example.com': TerminalIcon,
 }
 
 function DashboardIcon() {

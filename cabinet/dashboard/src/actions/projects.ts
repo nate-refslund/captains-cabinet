@@ -39,7 +39,7 @@ export async function getActiveProject(): Promise<string> {
     const redisValue = await redis.get('cabinet:active-project')
     if (redisValue) return redisValue
     const { stdout } = await dockerExec('cat /opt/founders-cabinet/instance/config/active-project.txt 2>/dev/null || echo demo')
-    return stdout.trim() || 'sensed'
+    return stdout.trim() || 'demo'
   } catch {
     return 'demo'
   }

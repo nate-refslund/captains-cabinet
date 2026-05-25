@@ -34,8 +34,8 @@ describe('getConfig — mock path', () => {
 
   it('product section has name + captain_name + repo', () => {
     const { product } = mod.getConfig() as { product: Record<string, string> }
-    expect(product.name).toBe('Sensed')
-    expect(product.captain_name).toBe('Nate')
+    expect(product.name).toBe('My Product')
+    expect(product.captain_name).toBe('Captain')
     expect(typeof product.repo).toBe('string')
   })
 })
@@ -102,9 +102,9 @@ describe('getOfficerConfig(role) — known roles', () => {
 describe('getGlobalConfig — merged product + voice + image + embeddings', () => {
   it('product block contains captain_name + name + description', () => {
     const { product } = mod.getGlobalConfig()
-    expect(product.name).toBe('Sensed')
-    expect(product.captain_name).toBe('Nate')
-    expect(product.description).toContain('Dual-map')
+    expect(product.name).toBe('My Product')
+    expect(product.captain_name).toBe('Captain')
+    expect(product.description).toContain('product description')
   })
 
   it('voice.enabled is boolean', () => {
@@ -157,8 +157,8 @@ describe('getNotionConfig — string-only database IDs', () => {
 describe('getLinearConfig — team_key + workspace_url', () => {
   it('returns both fields from mock', () => {
     const result = mod.getLinearConfig()
-    expect(result.team_key).toBe('SEN')
-    expect(result.workspace_url).toBe('https://linear.app/sensed')
+    expect(result.team_key).toBe('TEAM')
+    expect(result.workspace_url).toBe('https://linear.app/your-team')
   })
 
   it('has the exact shape (two string fields)', () => {
@@ -170,8 +170,8 @@ describe('getLinearConfig — team_key + workspace_url', () => {
 })
 
 describe('getActiveProjectSlug — mock path', () => {
-  it('returns "sensed" in mock mode', () => {
-    expect(mod.getActiveProjectSlug()).toBe('sensed')
+  it('returns "demo" in mock mode', () => {
+    expect(mod.getActiveProjectSlug()).toBe('demo')
   })
 })
 
@@ -219,9 +219,9 @@ describe('getProjectConfig — active project YAML', () => {
 })
 
 describe('getProjectsList — mock path', () => {
-  it('returns the mock fixture with sensed + demo-project', () => {
+  it('returns the mock fixture with demo + demo-project', () => {
     const result = mod.getProjectsList()
-    expect(result).toContainEqual({ slug: 'sensed', name: 'Sensed' })
+    expect(result).toContainEqual({ slug: 'demo', name: 'My Product' })
     expect(result).toContainEqual({ slug: 'demo-project', name: 'Demo Project' })
   })
 

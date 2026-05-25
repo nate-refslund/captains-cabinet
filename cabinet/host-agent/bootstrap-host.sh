@@ -4,7 +4,7 @@
 # Installs the Cabinet host-agent daemon and admin-bot systemd services.
 # Run once per host as root:
 #
-#   curl -sSL https://raw.githubusercontent.com/nate-step/captains-cabinet/master/cabinet/host-agent/bootstrap-host.sh | sudo bash
+#   curl -sSL https://raw.githubusercontent.com/YOUR-ORG/captains-cabinet/master/cabinet/host-agent/bootstrap-host.sh | sudo bash
 #
 # Or download + verify sha256 (recommended):
 #   curl -sSL .../bootstrap-host.sh -o /tmp/b.sh

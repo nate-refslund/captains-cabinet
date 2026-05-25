@@ -221,12 +221,12 @@ describe('getLatestProdDeploy — timestamp + URL shaping', () => {
     fetchMock.mockResolvedValueOnce(
       mockFetchOnce({
         deployments: [
-          { uid: 'dpl', state: 'READY', createdAt: Date.now(), url: 'sensed-app.vercel.app' },
+          { uid: 'dpl', state: 'READY', createdAt: Date.now(), url: 'my-app.vercel.app' },
         ],
       })
     )
     const result = await getLatestProdDeploy()
-    expect(result.url).toBe('https://sensed-app.vercel.app')
+    expect(result.url).toBe('https://my-app.vercel.app')
   })
 })
 
