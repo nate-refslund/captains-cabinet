@@ -381,4 +381,31 @@ if [ -d "$CABINET_ROOT/instance/agents" ]; then
   done
 fi
 
+# ---------------------------------------------------------------
+# Compile role lineage adaptations into agent definitions
+# ---------------------------------------------------------------
+# If role lineage files exist, the role compiler appends adaptations
+# to the base agent definitions. This enables durable adaptive roles
+# where the role definition evolves over time via append-only lineage.
+ROLE_COMPILER="$CABINET_ROOT/cabinet/scripts/compile-role.py"
+LINEAGE_DIR="$CABINET_ROOT/instance/memory/role-lineage"
+if [ -f "$ROLE_COMPILER" ] && [ -d "$LINEAGE_DIR" ]; then
+  LINEAGE_COUNT=$(find "$LINEAGE_DIR" -name '*.yml' -not -name '.gitkeep' 2>/dev/null | wc -l)
+  if [ "$LINEAGE_COUNT" -gt 0 ]; then
+    log "Compiling role lineage ($LINEAGE_COUNT files)..."
+    for lineage_file in "$LINEAGE_DIR"/*.yml; do
+      [ -f "$lineage_file" ] || continue
+      role=$(basename "$lineage_file" .yml)
+      if [ -f "$AGENTS_DIR/$role.md" ]; then
+        python3 "$ROLE_COMPILER" "$role" \
+          --base-dir "$AGENTS_DIR" \
+          --lineage-dir "$LINEAGE_DIR" \
+          --output-dir "$AGENTS_DIR" 2>/dev/null \
+          && log "Compiled lineage for $role" \
+          || log "WARN: failed to compile lineage for $role"
+      fi
+    done
+  fi
+fi
+
 log "Preset '$ACTIVE_PRESET' loaded successfully"

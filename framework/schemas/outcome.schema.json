@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Outcomes",
+  "description": "Captain-declared desired outcomes with measurable criteria",
+  "type": "object",
+  "required": ["outcomes"],
+  "properties": {
+    "outcomes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "measurable_criteria"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique outcome identifier, e.g. outcome-001"
+          },
+          "name": {
+            "type": "string",
+            "description": "Short name for the outcome"
+          },
+          "description": {
+            "type": "string",
+            "description": "Longer description of the desired outcome"
+          },
+          "measurable_criteria": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "description": "Concrete criteria to determine if outcome is achieved"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["draft", "active", "achieved", "retired"],
+            "default": "draft"
+          },
+          "captain_ratified": {
+            "type": "boolean",
+            "default": false
+          },
+          "ratified_at": {
+            "type": "string",
+            "description": "ISO 8601 date or datetime when captain ratified"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

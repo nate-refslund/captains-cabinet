@@ -1,0 +1,46 @@
+version: 1
+policies:
+  - name: no-production-deploy
+    type: command_contains
+    description: "Block production deployment without Captain approval"
+    tool: Bash
+    patterns: ["vercel deploy", "vercel --prod"]
+    message: "Production deployment requires Captain approval"
+
+  - name: codebase-ownership
+    type: path_block
+    description: "Only CTO can modify product code"
+    tools: [Edit, Write]
+    path_patterns: ["/workspace/*/"]
+    exempt_officers: [cto]
+    message: "Only CTO can modify the active project codebase. Write a spec to shared/interfaces/product-specs/ and notify CTO."
+
+  - name: codebase-git-ownership
+    type: command_contains
+    description: "Only CTO can commit/push to product codebase"
+    tool: Bash
+    patterns_all: ["git commit|git push|git add", "/workspace/"]
+    exempt_officers: [cto]
+    message: "Only CTO can commit/push to the active project codebase."
+
+  - name: codebase-bash-write-ownership
+    type: bash_write_to_path
+    description: "Only CTO can write to product codebase via Bash"
+    path_pattern: "/workspace/[a-z0-9][a-z0-9-]*/"
+    exempt_officers: [cto]
+    message: "Only CTO can modify the active project codebase via Bash."
+
+  - name: infrastructure-files
+    type: path_block
+    description: "Only CoS can modify infrastructure files"
+    tools: [Edit, Write]
+    path_patterns: ["*cabinet/docker-compose*", "*Dockerfile*"]
+    exempt_officers: [cos]
+    message: "Infrastructure files cannot be modified by Officers — route to CoS"
+
+  - name: tier2-isolation
+    type: tier2_isolation
+    description: "Officers can only write to their own tier2 directory"
+    tools: [Edit, Write]
+    base_path: "instance/memory/tier2/"
+    message: "Officers can only write to their own tier2 directory"

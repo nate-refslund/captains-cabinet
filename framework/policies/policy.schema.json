@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Cabinet Policy File",
+  "description": "Schema for Cabinet safety policy YAML files",
+  "type": "object",
+  "required": ["version", "policies"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Schema version (currently only version 1)"
+    },
+    "policies": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/policy"
+      },
+      "minItems": 1
+    }
+  },
+  "$defs": {
+    "policy": {
+      "type": "object",
+      "required": ["name", "type", "message"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "description": "Unique kebab-case policy name"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "binary_block",
+            "destructive_rm",
+            "command_contains",
+            "path_block",
+            "bash_write_to_path",
+            "tier2_isolation"
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable block message shown to the officer"
+        },
+        "binaries": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of binary names to block (binary_block type)"
+        },
+        "tool": {
+          "type": "string",
+          "description": "Tool name this policy applies to (e.g. Bash)"
+        },
+        "tools": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of tool names this policy applies to"
+        },
+        "patterns": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Substring patterns to match (command_contains type)"
+        },
+        "patterns_all": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "All patterns must match; each item can contain | for OR alternatives (command_contains type)"
+        },
+        "case_sensitive": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether pattern matching is case-sensitive"
+        },
+        "path_patterns": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Glob-style path patterns to match (path_block type)"
+        },
+        "path_pattern": {
+          "type": "string",
+          "description": "Regex path pattern (bash_write_to_path type)"
+        },
+        "base_path": {
+          "type": "string",
+          "description": "Base path prefix for tier2 isolation"
+        },
+        "exempt_officers": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Officers exempt from this policy"
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "binary_block" } } },
+          "then": { "required": ["binaries"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "command_contains" } } },
+          "then": {
+            "anyOf": [
+              { "required": ["patterns"] },
+              { "required": ["patterns_all"] }
+            ]
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "path_block" } } },
+          "then": { "required": ["tools", "path_patterns"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "bash_write_to_path" } } },
+          "then": { "required": ["path_pattern"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "tier2_isolation" } } },
+          "then": { "required": ["tools", "base_path"] }
+        }
+      ]
+    }
+  }
+}

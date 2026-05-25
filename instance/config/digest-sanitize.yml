@@ -1,0 +1,32 @@
+# =============================================================
+# Learning Digest Sanitization Rules
+# =============================================================
+# Controls what gets stripped from experience records before
+# publishing as public learning digests.
+
+# Literal string replacements (case-insensitive matching)
+replacements:
+  product_name: "[PRODUCT]"
+  captain_name: "[CAPTAIN]"
+
+# Regex patterns to redact (replaced with the key name in brackets)
+patterns:
+  api_key: '(?i)(api[_-]?key|token|secret|password|credential)\s*[:=]\s*\S+'
+  env_var: '(?i)(DATABASE_URL|NEON_|TELEGRAM_|OPENAI_|ANTHROPIC_|ELEVENLABS_|VOYAGE_|GITHUB_PAT|REDIS_URL)\S*=\S+'
+  bearer_token: '(?i)bearer\s+[a-zA-Z0-9._\-]+'
+  connection_string: '(?i)(postgres|postgresql|redis|mysql|mongodb)://[^\s]+'
+
+# URLs are replaced with domain-only versions
+# e.g., https://api.example.com/v1/secret?key=abc → [URL:api.example.com]
+sanitize_urls: true
+
+# File paths deeper than this are truncated
+# e.g., /opt/founders-cabinet/instance/config/secret.yml → [PATH]/instance/config/secret.yml
+strip_paths_beyond: "/opt/founders-cabinet"
+
+# Notion/Linear/GitHub IDs are replaced with [ID]
+sanitize_external_ids: true
+id_patterns:
+  uuid: '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+  linear_id: '[A-Z]+-[0-9]+'
+  telegram_id: '(?i)(chat_id|telegram)[:\s]+["'']?\d{5,}["'']?'

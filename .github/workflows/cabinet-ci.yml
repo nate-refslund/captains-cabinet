@@ -281,6 +281,34 @@ jobs:
           cd /opt/founders-cabinet/cabinet/dashboard
           npm test
 
+      - name: Python tests — Policy engine
+        run: |
+          cd /opt/founders-cabinet/cabinet/scripts/lib
+          python3 -m pytest tests/test_policy_engine.py -v
+
+      - name: Python tests — Work graph
+        run: |
+          cd /opt/founders-cabinet/cabinet/scripts/lib
+          python3 -m pytest tests/test_work_graph.py -v
+
+      - name: Python tests — OVI computation
+        run: |
+          cd /opt/founders-cabinet/cabinet/scripts/lib
+          python3 -m pytest tests/test_compute_ovi.py -v
+
+      - name: Python tests — Role compiler
+        run: |
+          cd /opt/founders-cabinet/cabinet/scripts/lib
+          python3 -m pytest tests/test_compile_role.py -v
+
+      - name: Python tests — Digest sanitization
+        run: |
+          cd /opt/founders-cabinet/cabinet/scripts/lib
+          python3 -m pytest tests/test_compile_digest.py -v
+
+      - name: Org-level evals
+        run: bash /opt/founders-cabinet/cabinet/scripts/run-org-evals.sh
+
       - name: Golden evals
         # EVAL-023 (FW-047) runs under CABINET_HOOK_TEST_MODE=1 so trigger_send
         # fan-out is suppressed. This step also exercises the full hook-probe

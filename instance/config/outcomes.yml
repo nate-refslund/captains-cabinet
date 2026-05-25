@@ -1,0 +1,21 @@
+outcomes:
+  - id: outcome-001
+    name: "Launch MVP to beta testers"
+    description: "Working app with core features available for testing"
+    measurable_criteria:
+      - "App builds and passes CI"
+      - "Core user flow works end-to-end"
+      - "At least 5 beta testers have access"
+    status: active
+    captain_ratified: true
+    ratified_at: "2026-05-25"
+
+  - id: outcome-002
+    name: "Achieve product-market fit signal"
+    description: "Users demonstrate sustained engagement"
+    measurable_criteria:
+      - "Weekly active users > 100"
+      - "Retention rate > 40% at week 4"
+      - "NPS score > 30"
+    status: draft
+    captain_ratified: false
