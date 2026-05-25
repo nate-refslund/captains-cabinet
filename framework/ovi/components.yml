@@ -1,0 +1,35 @@
+version: 1
+components:
+  - name: task_throughput
+    description: "Tasks completed per measurement period"
+    weight: 0.25
+    source: database
+    query: "SELECT count(*) FROM work_graph_nodes WHERE status='done' AND completed_at > NOW() - interval '7 days'"
+    default_range: [0, 50]
+
+  - name: outcome_progress
+    description: "Fraction of active outcomes with progressing missions"
+    weight: 0.30
+    source: computed
+    default_range: [0, 1]
+
+  - name: captain_attention_cost
+    description: "Captain interventions required (fewer = better)"
+    weight: 0.20
+    source: database
+    direction: inverse
+    query: "SELECT count(*) FROM decision_log WHERE decided_at > NOW() - interval '7 days'"
+    default_range: [0, 20]
+
+  - name: learning_rate
+    description: "Novel experience records per period"
+    weight: 0.15
+    source: database
+    query: "SELECT count(*) FROM experience_records WHERE created_at > NOW() - interval '7 days'"
+    default_range: [0, 30]
+
+  - name: verification_pass_rate
+    description: "Completed tasks passing verification vs total completed"
+    weight: 0.10
+    source: computed
+    default_range: [0, 1]
