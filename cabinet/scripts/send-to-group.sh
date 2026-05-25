@@ -12,7 +12,7 @@ MESSAGE="${1:?Usage: send-to-group.sh \"message\"}"
 # (/opt/founders-cabinet/) AND on Mac native (~/work/captains-cabinet/) without
 # branching on host. Reviewer audit caught hardcoded Docker path 2026-05-23.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CABINET_ROOT="${CABINET_ROOT:-/opt/founders-cabinet}"
+CABINET_ROOT="${CABINET_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
 ACTIVE_CONTEXT="$(cat "$CABINET_ROOT/instance/config/active-project.txt" 2>/dev/null | tr -d '[:space:]')"
 ACTIVE_CONTEXT="${ACTIVE_CONTEXT:-captains-cabinet}"
 exec bash "$SCRIPT_DIR/send-to-warroom.sh" "$ACTIVE_CONTEXT" "$MESSAGE"

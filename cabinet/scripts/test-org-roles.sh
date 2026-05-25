@@ -89,6 +89,22 @@ NODE_ID="$(printf '%s' "$MISSION_JSON" | json_value '.nodes[0].node_id')"
   && pass "active role owns mission/work graph" \
   || fail "mission compile missing ids"
 
+MISSION_2_JSON="$(python3 "$ORG" missions compile "$OUTCOME_ID" \
+  --title "Node mismatch guard fixture" \
+  --node-title "Do not assign across missions" \
+  --owner-role cos \
+  --actor cos)"
+NODE_2_ID="$(printf '%s' "$MISSION_2_JSON" | json_value '.nodes[0].node_id')"
+
+expect_fail "mission hat assignment rejects nodes from another mission" \
+  python3 "$ORG" roles assign-hat \
+    --mission-id "$MISSION_ID" \
+    --node-id "$NODE_2_ID" \
+    --role cos \
+    --hat-name "Cross Mission Bug" \
+    --purpose "Should fail because the node belongs to another mission" \
+    --actor cos
+
 expect_fail "inactive role cannot receive a mission hat" \
   python3 "$ORG" roles assign-hat \
     --mission-id "$MISSION_ID" \
@@ -170,11 +186,32 @@ HAS_CAPABILITY="$(printf '%s' "$SHOW_JSON" | jq 'any(.role.capabilities[]; . == 
   && pass "role projection preserves officer mapping, memory, evals, and evolved capability" \
   || fail "role projection did not preserve expected durable state"
 
+for idx in 1 2 3; do
+  python3 "$ORG" roles record-eval \
+    --role cos \
+    --eval-name "latest-failure-$idx" \
+    --score 0.2 \
+    --failed \
+    --evidence "Regression fixture failure $idx" \
+    --actor evaluator >/dev/null
+done
+RETIRE_JSON="$(python3 "$ORG" roles recommend --role cos --actor evaluator)"
+RETIRE_TYPE="$(printf '%s' "$RETIRE_JSON" | json_value '.recommendation_type')"
+[ "$RETIRE_TYPE" = "retire_role_review" ] \
+  && pass "retire-review recommendation wins after 3 latest failures with no active assignments" \
+  || fail "expected retire_role_review, got $RETIRE_TYPE"
+
 python3 - "$DB" <<'PY'
 import sqlite3
 import sys
 
 conn = sqlite3.connect(sys.argv[1])
+missing_product = conn.execute(
+    "SELECT COUNT(*) FROM role_lineage_events WHERE product_slug IS NULL OR product_slug = ''"
+).fetchone()[0]
+if missing_product:
+    raise SystemExit(f"role lineage rows missing product_slug: {missing_product}")
+
 checks = [
     "UPDATE role_lineage_events SET note='mutated'",
     "DELETE FROM role_lineage_events",
@@ -204,8 +241,8 @@ conn = sqlite3.connect(sys.argv[1])
 print(conn.execute("SELECT COUNT(*) FROM org_events").fetchone()[0])
 PY
 )"
-[ "$EVENT_COUNT" -ge 11 ] \
+[ "$EVENT_COUNT" -ge 18 ] \
   && pass "org_events captured durable role lifecycle ($EVENT_COUNT events)" \
-  || fail "expected at least 11 org events, got $EVENT_COUNT"
+  || fail "expected at least 18 org events, got $EVENT_COUNT"
 
 echo "=== Durable adaptive role eval PASS ==="

@@ -21,7 +21,8 @@
 
 set -uo pipefail
 
-CABINET_ROOT="${CABINET_ROOT:-/opt/founders-cabinet}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CABINET_ROOT="${CABINET_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
 SLUG_ARG=""
 DRY_RUN=0
 
@@ -37,7 +38,12 @@ if [ -n "$SLUG_ARG" ]; then
   DEFAULT_SLUG="$SLUG_ARG"
 else
   DEFAULT_SLUG=$(cat "$CABINET_ROOT/instance/config/active-project.txt" 2>/dev/null | tr -d '[:space:]')
-  DEFAULT_SLUG="${DEFAULT_SLUG:-sensed}"
+  DEFAULT_SLUG="${DEFAULT_SLUG:-captains-cabinet}"
+fi
+
+if ! echo "$DEFAULT_SLUG" | grep -qE '^[a-z0-9][a-z0-9-]*$'; then
+  echo "ERROR: invalid context slug '$DEFAULT_SLUG'" >&2
+  exit 2
 fi
 
 # Verify the slug exists in contexts yaml

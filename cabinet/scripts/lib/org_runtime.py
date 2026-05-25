@@ -34,7 +34,7 @@ def default_db_path() -> Path:
 
 
 def utc_now() -> str:
-    return dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def new_id(prefix: str) -> str:
@@ -137,7 +137,8 @@ class Store:
               verification_summary TEXT,
               completion_event_id TEXT REFERENCES org_events(event_id),
               created_at TEXT NOT NULL,
-              completed_at TEXT
+              completed_at TEXT,
+              UNIQUE(mission_id, node_id)
             );
 
             CREATE TABLE IF NOT EXISTS work_graph_edges (
@@ -186,7 +187,7 @@ class Store:
               product_slug TEXT NOT NULL,
               role_slug TEXT NOT NULL,
               mission_id TEXT REFERENCES missions(mission_id),
-              hat_id TEXT,
+              hat_id TEXT REFERENCES role_hats(hat_id),
               eval_name TEXT NOT NULL,
               score REAL NOT NULL CHECK (score >= 0 AND score <= 1),
               passed INTEGER NOT NULL CHECK (passed IN (0, 1)),
@@ -213,7 +214,7 @@ class Store:
                   'continue_current_role'
                 )
               ),
-              hat_id TEXT,
+              hat_id TEXT REFERENCES role_hats(hat_id),
               basis TEXT NOT NULL,
               recommended_event_id TEXT NOT NULL REFERENCES org_events(event_id),
               created_at TEXT NOT NULL,
@@ -241,17 +242,20 @@ class Store:
               node_id TEXT REFERENCES work_graph_nodes(node_id),
               assigned_to_role TEXT NOT NULL,
               assignment_event_id TEXT REFERENCES org_events(event_id),
-              created_at TEXT NOT NULL
+              created_at TEXT NOT NULL,
+              FOREIGN KEY (mission_id, node_id) REFERENCES work_graph_nodes(mission_id, node_id)
             );
 
             CREATE TABLE IF NOT EXISTS role_lineage_events (
               lineage_id TEXT PRIMARY KEY,
+              product_slug TEXT NOT NULL,
               role_slug TEXT NOT NULL,
               hat_id TEXT REFERENCES role_hats(hat_id),
               event_id TEXT NOT NULL REFERENCES org_events(event_id),
               event_kind TEXT NOT NULL,
               note TEXT NOT NULL,
-              created_at TEXT NOT NULL
+              created_at TEXT NOT NULL,
+              FOREIGN KEY (product_slug, role_slug) REFERENCES org_roles(product_slug, role_slug)
             );
 
             CREATE TABLE IF NOT EXISTS ovi_weeks (
@@ -327,7 +331,40 @@ class Store:
             END;
             """
         )
+        self.conn.execute("DROP TRIGGER IF EXISTS prevent_role_lineage_events_update")
+        self.conn.execute("DROP TRIGGER IF EXISTS prevent_role_lineage_events_delete")
+        self.ensure_column("role_lineage_events", "product_slug", "TEXT")
+        self.conn.execute(
+            """
+            UPDATE role_lineage_events
+               SET product_slug = (
+                 SELECT product_slug FROM org_events
+                  WHERE org_events.event_id = role_lineage_events.event_id
+               )
+             WHERE product_slug IS NULL
+            """
+        )
+        self.conn.executescript(
+            """
+            CREATE TRIGGER IF NOT EXISTS prevent_role_lineage_events_update
+            BEFORE UPDATE ON role_lineage_events
+            BEGIN
+              SELECT RAISE(ABORT, 'organizational history is append-only; append a superseding event instead');
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS prevent_role_lineage_events_delete
+            BEFORE DELETE ON role_lineage_events
+            BEGIN
+              SELECT RAISE(ABORT, 'organizational history is append-only; append a superseding event instead');
+            END;
+            """
+        )
         self.conn.commit()
+
+    def ensure_column(self, table: str, column: str, ddl: str) -> None:
+        columns = {row["name"] for row in self.conn.execute(f"PRAGMA table_info({table})")}
+        if column not in columns:
+            self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
 
     def append_event(
         self,
@@ -676,6 +713,7 @@ def cmd_mission_complete(args: argparse.Namespace) -> None:
 
 def insert_role_lineage(
     store: Store,
+    product_slug: str,
     role_slug: str,
     event_id: str,
     event_kind: str,
@@ -685,10 +723,10 @@ def insert_role_lineage(
     store.conn.execute(
         """
         INSERT INTO role_lineage_events
-          (lineage_id, role_slug, hat_id, event_id, event_kind, note, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+          (lineage_id, product_slug, role_slug, hat_id, event_id, event_kind, note, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (new_id("lineage"), role_slug, hat_id, event_id, event_kind, note, utc_now()),
+        (new_id("lineage"), product_slug, role_slug, hat_id, event_id, event_kind, note, utc_now()),
     )
 
 
@@ -744,7 +782,14 @@ def cmd_roles_define(args: argparse.Namespace) -> None:
             now,
         ),
     )
-    insert_role_lineage(store, args.role, event["event_id"], "role_defined", f"Defined role: {args.name}")
+    insert_role_lineage(
+        store,
+        product_slug,
+        args.role,
+        event["event_id"],
+        "role_defined",
+        f"Defined role: {args.name}",
+    )
     store.conn.commit()
     print_json({**payload, "event_id": event["event_id"]})
 
@@ -792,10 +837,10 @@ def cmd_roles_show(args: argparse.Namespace) -> None:
         SELECT l.*, h.hat_name, h.purpose
           FROM role_lineage_events l
           LEFT JOIN role_hats h ON h.hat_id = l.hat_id
-         WHERE l.role_slug = ?
+         WHERE l.product_slug = ? AND l.role_slug = ?
          ORDER BY l.created_at
         """,
-        (args.role,),
+        (product_slug, args.role),
     )
     print_json(
         {
@@ -845,6 +890,7 @@ def cmd_roles_bind_memory(args: argparse.Namespace) -> None:
     )
     insert_role_lineage(
         store,
+        product_slug,
         args.role,
         event["event_id"],
         "memory_bound",
@@ -915,6 +961,7 @@ def cmd_roles_record_eval(args: argparse.Namespace) -> None:
     )
     insert_role_lineage(
         store,
+        product_slug,
         args.role,
         event["event_id"],
         "eval_recorded",
@@ -941,6 +988,26 @@ def active_mission_assignment_count(store: Store, product_slug: str, role_slug: 
 
 
 def role_recommendation(store: Store, product_slug: str, role_slug: str) -> tuple[str, str | None, str]:
+    latest = store.rows(
+        """
+        SELECT * FROM role_eval_results
+         WHERE product_slug = ? AND role_slug = ?
+         ORDER BY created_at DESC, eval_id DESC
+         LIMIT 3
+        """,
+        (product_slug, role_slug),
+    )
+    if len(latest) == 3:
+        if all(not item["passed"] for item in latest) and active_mission_assignment_count(store, product_slug, role_slug) == 0:
+            return (
+                "retire_role_review",
+                None,
+                "Latest 3 evals failed and the role has no active mission assignments.",
+            )
+        avg_score = sum(float(item["score"]) for item in latest) / 3
+        if avg_score < 0.6:
+            return ("adjust_charter", None, f"Latest 3 evals average {avg_score:.2f}, below 0.60.")
+
     promote = store.row(
         """
         SELECT hat_id, COUNT(*) AS n
@@ -963,26 +1030,6 @@ def role_recommendation(store: Store, product_slug: str, role_slug: str) -> tupl
             promote["hat_id"],
             f"Hat {promote['hat_id']} has {promote['n']} passing evals with score >= 0.8.",
         )
-
-    latest = store.rows(
-        """
-        SELECT * FROM role_eval_results
-         WHERE product_slug = ? AND role_slug = ?
-         ORDER BY created_at DESC, eval_id DESC
-         LIMIT 3
-        """,
-        (product_slug, role_slug),
-    )
-    if len(latest) == 3:
-        if all(not item["passed"] for item in latest) and active_mission_assignment_count(store, product_slug, role_slug) == 0:
-            return (
-                "retire_role_review",
-                None,
-                "Latest 3 evals failed and the role has no active mission assignments.",
-            )
-        avg_score = sum(float(item["score"]) for item in latest) / 3
-        if avg_score < 0.6:
-            return ("adjust_charter", None, f"Latest 3 evals average {avg_score:.2f}, below 0.60.")
 
     return ("continue_current_role", None, "No deterministic promote, adjust, or retire-review condition was met.")
 
@@ -1030,6 +1077,7 @@ def cmd_roles_recommend(args: argparse.Namespace) -> None:
     )
     insert_role_lineage(
         store,
+        product_slug,
         args.role,
         event["event_id"],
         "retire_review_recommended" if recommendation_type == "retire_role_review" else "evolution_recommended",
@@ -1128,6 +1176,7 @@ def cmd_roles_evolve(args: argparse.Namespace) -> None:
     )
     insert_role_lineage(
         store,
+        product_slug,
         args.role,
         event["event_id"],
         "role_evolved",
@@ -1143,8 +1192,12 @@ def cmd_roles_assign_hat(args: argparse.Namespace) -> None:
     if not mission:
         raise SystemExit(f"unknown mission_id: {args.mission_id}")
     require_active_role(store, mission["product_slug"], args.role)
-    if args.node_id and not store.row("SELECT * FROM work_graph_nodes WHERE node_id = ?", (args.node_id,)):
-        raise SystemExit(f"unknown node_id: {args.node_id}")
+    if args.node_id:
+        node = store.row("SELECT * FROM work_graph_nodes WHERE node_id = ?", (args.node_id,))
+        if not node:
+            raise SystemExit(f"unknown node_id: {args.node_id}")
+        if node["mission_id"] != args.mission_id:
+            raise SystemExit(f"node_id {args.node_id} does not belong to mission_id {args.mission_id}")
 
     now = utc_now()
     hat = store.row(
@@ -1172,13 +1225,14 @@ def cmd_roles_assign_hat(args: argparse.Namespace) -> None:
             """,
             (hat_id, mission["product_slug"], args.role, args.hat_name, args.purpose, hat_event_id, now),
         )
-        store.conn.execute(
-            """
-            INSERT INTO role_lineage_events
-              (lineage_id, role_slug, hat_id, event_id, event_kind, note, created_at)
-            VALUES (?, ?, ?, ?, 'hat_created', ?, ?)
-            """,
-            (new_id("lineage"), args.role, hat_id, hat_event_id, f"Created role hat: {args.hat_name}", now),
+        insert_role_lineage(
+            store,
+            mission["product_slug"],
+            args.role,
+            hat_event_id,
+            "hat_created",
+            f"Created role hat: {args.hat_name}",
+            hat_id=hat_id,
         )
 
     assignment_id = args.assignment_id or new_id("assignment")
@@ -1205,13 +1259,14 @@ def cmd_roles_assign_hat(args: argparse.Namespace) -> None:
         """,
         (assignment_id, args.mission_id, hat_id, args.node_id, args.role, event["event_id"], now),
     )
-    store.conn.execute(
-        """
-        INSERT INTO role_lineage_events
-          (lineage_id, role_slug, hat_id, event_id, event_kind, note, created_at)
-        VALUES (?, ?, ?, ?, 'mission_assigned', ?, ?)
-        """,
-        (new_id("lineage"), args.role, hat_id, event["event_id"], f"Assigned to mission {args.mission_id}", now),
+    insert_role_lineage(
+        store,
+        mission["product_slug"],
+        args.role,
+        event["event_id"],
+        "mission_assigned",
+        f"Assigned to mission {args.mission_id}",
+        hat_id=hat_id,
     )
     store.conn.commit()
     print_json({**payload, "hat_created_event_id": hat_event_id, "event_id": event["event_id"]})
@@ -1219,16 +1274,18 @@ def cmd_roles_assign_hat(args: argparse.Namespace) -> None:
 
 def cmd_roles_show_lineage(args: argparse.Namespace) -> None:
     store = Store()
+    product_slug = product_arg(args)
+    require_role(store, product_slug, args.role)
     print_json(
         store.rows(
             """
             SELECT l.*, h.hat_name, h.purpose
               FROM role_lineage_events l
               LEFT JOIN role_hats h ON h.hat_id = l.hat_id
-             WHERE l.role_slug = ?
+             WHERE l.product_slug = ? AND l.role_slug = ?
              ORDER BY l.created_at
             """,
-            (args.role,),
+            (product_slug, args.role),
         )
     )
 
@@ -1569,6 +1626,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--actor", default="cos")
     p.set_defaults(func=cmd_roles_assign_hat)
     p = roles_sub.add_parser("show-lineage")
+    add_common(p)
     p.add_argument("--role", required=True)
     p.set_defaults(func=cmd_roles_show_lineage)
 

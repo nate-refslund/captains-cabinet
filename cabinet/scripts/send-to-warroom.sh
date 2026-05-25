@@ -26,8 +26,10 @@
 CONTEXT="${1:?Usage: send-to-warroom.sh <context_slug> \"message\"}"
 MESSAGE="${2:?Usage: send-to-warroom.sh <context_slug> \"message\"}"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CABINET_ROOT="${CABINET_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
 TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN not set}"
-WARROOMS_FILE="/opt/founders-cabinet/instance/config/warrooms.yml"
+WARROOMS_FILE="$CABINET_ROOT/instance/config/warrooms.yml"
 
 # Resolve chat_id for the requested context. Fall back to $TELEGRAM_HQ_CHAT_ID
 # when the requested context is the active product and the mapping file is
@@ -65,7 +67,7 @@ PY
       else
         if echo "$id" | grep -qE '^\$\{[A-Za-z_][A-Za-z0-9_]*\}$'; then
           var_name=$(echo "$id" | sed 's/^\${//;s/}$//')
-          eval "printf '%s' \"\${$var_name}\""
+          printenv "$var_name"
         else
           echo "$id"
         fi
@@ -74,7 +76,7 @@ PY
     fi
   fi
   local active_ctx
-  active_ctx=$(cat /opt/founders-cabinet/instance/config/active-project.txt 2>/dev/null | tr -d '[:space:]')
+  active_ctx=$(cat "$CABINET_ROOT/instance/config/active-project.txt" 2>/dev/null | tr -d '[:space:]')
   active_ctx="${active_ctx:-captains-cabinet}"
   if [ "$ctx" = "$active_ctx" ] && [ -n "${TELEGRAM_HQ_CHAT_ID:-}" ]; then
     echo "$TELEGRAM_HQ_CHAT_ID"
@@ -104,11 +106,11 @@ else
 fi
 
 # Auto-send voice if enabled (non-blocking)
-CONFIG_FILE="/opt/founders-cabinet/instance/config/product.yml"
+CONFIG_FILE="$CABINET_ROOT/instance/config/product.yml"
 VOICE_ENABLED=$(grep -A1 "^voice:" "$CONFIG_FILE" 2>/dev/null | grep "enabled:" | awk '{print $2}' | tr -d ' ')
 VOICE_MODE=$(grep -A4 "^voice:" "$CONFIG_FILE" 2>/dev/null | grep "mode:" | awk '{print $2}' | tr -d ' ')
 
 if [ "$VOICE_ENABLED" = "true" ] && [ "$VOICE_MODE" = "all" -o "$VOICE_MODE" = "group" ]; then
   PLAIN_TEXT=$(echo "$MESSAGE" | sed 's/<[^>]*>//g')
-  bash /opt/founders-cabinet/cabinet/scripts/send-voice.sh "$CHAT_ID" "$PLAIN_TEXT" &
+  bash "$SCRIPT_DIR/send-voice.sh" "$CHAT_ID" "$PLAIN_TEXT" &
 fi

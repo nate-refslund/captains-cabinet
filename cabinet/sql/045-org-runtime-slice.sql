@@ -99,6 +99,9 @@ CREATE TABLE IF NOT EXISTS work_graph_nodes (
 CREATE INDEX IF NOT EXISTS idx_work_graph_nodes_mission_status
   ON work_graph_nodes(mission_id, status);
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_work_graph_nodes_mission_node
+  ON work_graph_nodes(mission_id, node_id);
+
 CREATE TABLE IF NOT EXISTS work_graph_edges (
   edge_id TEXT PRIMARY KEY,
   mission_id TEXT NOT NULL REFERENCES missions(mission_id),
@@ -211,21 +214,97 @@ CREATE TABLE IF NOT EXISTS mission_role_assignments (
   node_id TEXT REFERENCES work_graph_nodes(node_id),
   assigned_to_role TEXT NOT NULL,
   assignment_event_id UUID REFERENCES org_events(event_id),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT fk_mission_role_assignments_mission_node
+    FOREIGN KEY (mission_id, node_id) REFERENCES work_graph_nodes(mission_id, node_id)
 );
 
 CREATE TABLE IF NOT EXISTS role_lineage_events (
   lineage_id TEXT PRIMARY KEY,
+  product_slug TEXT NOT NULL,
   role_slug TEXT NOT NULL,
   hat_id TEXT REFERENCES role_hats(hat_id),
   event_id UUID NOT NULL REFERENCES org_events(event_id),
   event_kind TEXT NOT NULL,
   note TEXT NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT fk_role_lineage_events_role
+    FOREIGN KEY (product_slug, role_slug) REFERENCES org_roles(product_slug, role_slug)
 );
 
 CREATE INDEX IF NOT EXISTS idx_role_lineage_role_created
-  ON role_lineage_events(role_slug, created_at DESC);
+  ON role_lineage_events(product_slug, role_slug, created_at DESC);
+
+DROP TRIGGER IF EXISTS trg_prevent_role_lineage_update ON role_lineage_events;
+DROP TRIGGER IF EXISTS trg_prevent_role_lineage_delete ON role_lineage_events;
+
+ALTER TABLE role_lineage_events
+  ADD COLUMN IF NOT EXISTS product_slug TEXT;
+
+UPDATE role_lineage_events AS lineage
+   SET product_slug = events.product_slug
+  FROM org_events AS events
+ WHERE lineage.product_slug IS NULL
+   AND lineage.event_id = events.event_id;
+
+ALTER TABLE role_lineage_events
+  ALTER COLUMN product_slug SET NOT NULL;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'role_lineage_events'::regclass
+       AND conname = 'fk_role_lineage_events_role'
+  ) THEN
+    ALTER TABLE role_lineage_events
+      ADD CONSTRAINT fk_role_lineage_events_role
+      FOREIGN KEY (product_slug, role_slug)
+      REFERENCES org_roles(product_slug, role_slug);
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'mission_role_assignments'::regclass
+       AND conname = 'fk_mission_role_assignments_mission_node'
+  ) THEN
+    ALTER TABLE mission_role_assignments
+      ADD CONSTRAINT fk_mission_role_assignments_mission_node
+      FOREIGN KEY (mission_id, node_id)
+      REFERENCES work_graph_nodes(mission_id, node_id);
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'role_eval_results'::regclass
+       AND conname = 'fk_role_eval_results_hat'
+  ) THEN
+    ALTER TABLE role_eval_results
+      ADD CONSTRAINT fk_role_eval_results_hat
+      FOREIGN KEY (hat_id)
+      REFERENCES role_hats(hat_id);
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'role_evolution_recommendations'::regclass
+       AND conname = 'fk_role_evolution_recommendations_hat'
+  ) THEN
+    ALTER TABLE role_evolution_recommendations
+      ADD CONSTRAINT fk_role_evolution_recommendations_hat
+      FOREIGN KEY (hat_id)
+      REFERENCES role_hats(hat_id);
+  END IF;
+END $$;
 
 CREATE OR REPLACE FUNCTION prevent_org_history_mutation()
 RETURNS TRIGGER AS $$

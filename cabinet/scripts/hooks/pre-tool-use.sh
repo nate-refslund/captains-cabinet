@@ -23,7 +23,8 @@ REDIS_PORT=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f2)
 # structured decision to org_events for parity analysis. It NEVER replaces this
 # hook's live allow/block decisions on this branch, and any failure here is
 # intentionally ignored so the safety hook cannot be bricked by telemetry.
-POLICY_SHADOW="/opt/founders-cabinet/cabinet/scripts/policy-shadow.py"
+CABINET_ROOT="${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
+POLICY_SHADOW="$CABINET_ROOT/cabinet/scripts/policy-shadow.py"
 if [ -x "$POLICY_SHADOW" ]; then
   printf '%s' "$HOOK_INPUT" | python3 "$POLICY_SHADOW" >/dev/null 2>/dev/null || true
 fi
