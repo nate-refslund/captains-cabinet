@@ -1,0 +1,30 @@
+# proxy/deploy/Caddyfile — FW-121 LOCAL origin reverse-proxy (Spec 051 §Topology; 052 CTO#2).
+#
+# Cloudflare terminates PUBLIC TLS and proxies to THIS origin. Caddy is the local origin
+# reverse-proxy that routes by hostname to the internal service ports — it is NOT the public
+# TLS authority (that is Cloudflare's job; `auto_https off` keeps Caddy out of ACME).
+#
+# Origin leg = HTTPS using a Cloudflare Origin CA cert (Full-strict: the origin hop is encrypted,
+# the GDPR-correct posture). provision.sh installs the cert+key under ./origin-certs/ (chmod 600).
+# Cloudflare connects to origin :443. A wildcard *.refslund.ai Origin cert covers both subdomains.
+
+{
+	auto_https off
+	admin off
+}
+
+# ── proxy.refslund.ai → LiteLLM proxy (FW-096): the officer-facing /v1 endpoint ──
+proxy.refslund.ai {
+	tls /etc/caddy/origin-certs/origin.pem /etc/caddy/origin-certs/origin.key
+	reverse_proxy litellm:4000
+	encode gzip
+}
+
+# ── audit.refslund.ai → FW-097 audit-server (Spec 052 CTO#2: SEPARATE service/port) ──
+# Officer producers (audit-emit.sh) POST /proxy/audit/log; the FW-101 dashboard backend
+# GETs /dashboard/audit/{cabinet}/{cursor}. AUDIT_API_KEY auth is enforced by the audit-server.
+audit.refslund.ai {
+	tls /etc/caddy/origin-certs/origin.pem /etc/caddy/origin-certs/origin.key
+	reverse_proxy audit-server:8000
+	encode gzip
+}
