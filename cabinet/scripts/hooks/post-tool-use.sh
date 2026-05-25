@@ -583,5 +583,30 @@ if [ -f "$_S49_LIB" ]; then
   . "$_S49_LIB" 2>/dev/null && spec049_update_counters "" "$OFFICER" 2>/dev/null || true
 fi
 
+# ============================================================
+# 14. SPEC 052 PH5 — customer GDPR audit emission (officer-action: tool_call)
+# ============================================================
+# Commercial cabinets ONLY (capability-gated). Emits an officer-action audit entry per tool
+# call to the customer's hash-chained audit log (FW-097 POST /proxy/audit/log). CAPABILITY +
+# FILE-EXISTS gated, and audit-emit.sh is itself fail-safe + NON-BLOCKING (background POST),
+# so it can never break or slow this hook for any officer; non-commercial cabinets (no grant)
+# no-op. NO argv content / NO PII — tool name + a minimal sanitized shape only (Bash carries
+# none; file tools carry the path). Telegram replies are emitted as dm_sent by post-reply-
+# audit.sh (richer length/attachment metadata), so skip them here to avoid a double-emit.
+# Placed AFTER all critical paths (heartbeat/trigger). Spec 052 Phase 5.
+_AUDIT_LIB="${CABINET_ROOT:-/opt/founders-cabinet}/cabinet/scripts/lib/audit-emit.sh"
+if has_capability "emits_customer_audit_events" && [ -f "$_AUDIT_LIB" ] \
+   && [ "$TOOL_NAME" != "mcp__plugin_telegram_telegram__reply" ]; then
+  # shellcheck source=/dev/null
+  if . "$_AUDIT_LIB" 2>/dev/null; then
+    _AUD_MD='{}'
+    case "$TOOL_NAME" in
+      Edit|Write|Read|NotebookEdit)
+        _AUD_MD="$(printf '%s' "$TOOL_INPUT" | jq -c '{path:(.file_path // .notebook_path // "")}' 2>/dev/null || echo '{}')" ;;
+    esac
+    audit_emit_event officer tool_call tool_call "$TOOL_NAME" "$_AUD_MD" 2>/dev/null || true
+  fi
+fi
+
 # Always exit 0 — post-hooks should never block
 exit 0
