@@ -564,7 +564,7 @@ else
     for cmd in \
       "git push origin main" \
       "git push main" \
-      "git push https://x-access-token:FAKE@github.com/STEP-Network/Sensed main" \
+      "git push https://x-access-token:FAKE@github.com/example-org/example-repo main" \
       "git push origin master" \
       "git push origin HEAD:main" \
       "git push origin main; echo done" \
@@ -801,7 +801,7 @@ else
       "git push origin refs/heads/main" \
       "git push origin main; echo done" \
       "git push origin master" \
-      "git push https://x-access-token:FAKE@github.com/STEP-Network/Sensed main" \
+      "git push https://x-access-token:FAKE@github.com/example-org/example-repo main" \
       "sudo git push origin main" \
       "env FOO=bar git push origin main" \
       "env A=1 B=2 git push origin main" \
@@ -1828,7 +1828,7 @@ fi
 # ------------------------------------------------------------------
 # FW-076 (2026-04-29): replaced /workspace/product/ literal with
 # /workspace/[a-z0-9][a-z0-9-]*/ in all 3 write-protection positions.
-# This EVAL pins 3 representative pool slugs (sensed, step-network, a1)
+# This EVAL pins 3 representative pool slugs (myapp, step-network, a1)
 # across the 9 write-operator families to catch any future narrowing that
 # accidentally reverts pool-mode coverage. EVAL-018 still pins the product
 # slug behavior (both must stay GREEN simultaneously).
@@ -1838,16 +1838,16 @@ EV24_FAILURE=""
 
 # Positive cases — must BLOCK (exit 2) for each pool slug
 declare -a EV24_POS=(
-  # sensed slug
-  "echo x > /workspace/sensed/README.md"
-  "sed -i 's/x/y/' /workspace/sensed/src/app.ts"
-  "tee /workspace/sensed/log.md"
-  "cp /tmp/src /workspace/sensed/dst"
-  "cp -t /workspace/sensed/ /tmp/src"
-  "cp --target-directory=/workspace/sensed/ /tmp/src"
-  "patch /workspace/sensed/foo < fix.patch"
-  "perl -i -pe 's/x/y/' /workspace/sensed/file.ts"
-  "tar -xf archive.tar -C /workspace/sensed/"
+  # myapp slug (simple lowercase)
+  "echo x > /workspace/myapp/README.md"
+  "sed -i 's/x/y/' /workspace/myapp/src/app.ts"
+  "tee /workspace/myapp/log.md"
+  "cp /tmp/src /workspace/myapp/dst"
+  "cp -t /workspace/myapp/ /tmp/src"
+  "cp --target-directory=/workspace/myapp/ /tmp/src"
+  "patch /workspace/myapp/foo < fix.patch"
+  "perl -i -pe 's/x/y/' /workspace/myapp/file.ts"
+  "tar -xf archive.tar -C /workspace/myapp/"
   # step-network slug (hyphenated — validates [a-z0-9-]* class)
   "echo x > /workspace/step-network/README.md"
   "sed -i 's/x/y/' /workspace/step-network/src/app.ts"
@@ -1885,11 +1885,11 @@ if [ -z "$EV24_FAILURE" ]; then
     "echo x > /workspace/PROD/README.md"
     "echo x > /workspace/-bad/README.md"
     "echo x > /workspace/.hidden/README.md"
-    "cat /workspace/sensed/src/app.ts"
-    "grep foo /workspace/sensed/src/app.ts"
-    "cat /workspace/sensed/x | tee /tmp/y"
-    "cp /workspace/sensed/x /tmp/y"
-    "rsync -rt /workspace/sensed/ /tmp/dst"
+    "cat /workspace/myapp/src/app.ts"
+    "grep foo /workspace/myapp/src/app.ts"
+    "cat /workspace/myapp/x | tee /tmp/y"
+    "cp /workspace/myapp/x /tmp/y"
+    "rsync -rt /workspace/myapp/ /tmp/dst"
   )
   for EV24_CMD in "${EV24_NEG[@]}"; do
     EV24_JSON=$(jq -cn --arg cmd "$EV24_CMD" '{tool_name:"Bash",tool_input:{command:$cmd}}')
@@ -1904,7 +1904,7 @@ fi
 
 # CTO bypass — CTO must pass on any pool slug
 if [ -z "$EV24_FAILURE" ]; then
-  EV24_CTO_CMD="echo x > /workspace/sensed/README.md"
+  EV24_CTO_CMD="echo x > /workspace/myapp/README.md"
   EV24_CTO_JSON=$(jq -cn --arg cmd "$EV24_CTO_CMD" '{tool_name:"Bash",tool_input:{command:$cmd}}')
   echo "$EV24_CTO_JSON" | OFFICER_NAME=cto bash "$EV24_HOOK" >/dev/null 2>&1
   EV24_CTO_EC=$?

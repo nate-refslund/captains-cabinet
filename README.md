@@ -33,7 +33,7 @@ Officer sets are fully configurable per deployment — add, remove, or rename Of
 
 ### 1. Fork This Repo
 
-Click **Fork** on https://github.com/nate-step/captains-cabinet, then clone your fork:
+Click **Fork** on the repo, then clone your fork:
 
 ```bash
 git clone https://github.com/YOUR-GITHUB-USERNAME/captains-cabinet.git
@@ -126,7 +126,7 @@ The Library is the Cabinet's structured knowledge store. Think of it as a typed 
 - **WIP=1 enforced** — each officer has at most one task `in_progress` at any time. Forces sequential execution per officer, prevents multitasking degradation.
 - **Status** — `todo` → `in_progress` → `done` (plus `blocked` for waiting-on-input). Officers move their own tasks through states.
 - **Due dates** — `due_at` timestamps trigger an auto-DM to the assigned officer when the deadline arrives. No forgotten work.
-- **Context slugs** — tasks tag which project/cabinet they belong to (e.g., `sensed`, `cabinet-framework`, `personal-cabinet`). Filters the dashboard view per context.
+- **Context slugs** — tasks tag which project/cabinet they belong to (e.g., `my-product`, `cabinet-framework`, `personal-cabinet`). Filters the dashboard view per context.
 - **Access** — officers query their work via `cabinet/scripts/my-tasks.sh` or direct Postgres `officer_tasks` queries; operators view + manage via the `/tasks` dashboard route.
 
 Both surfaces ship as part of the framework — no external SaaS dependency.

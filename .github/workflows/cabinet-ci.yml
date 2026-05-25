@@ -321,3 +321,13 @@ jobs:
         # code + stale Proposed status for 7 days unnoticed). Punch-list
         # shows in the CI run log; CTO reacts in the next /loop tick.
         run: bash /opt/founders-cabinet/cabinet/scripts/audit-framework-backlog-drift.sh
+
+      - name: Framework tests — Event ledger + Roles + Missions + OVI + Scenarios
+        run: |
+          cd /opt/founders-cabinet
+          python3 -m pytest framework/ -v
+
+      - name: Framework tests — Policy engine + Work graph
+        run: |
+          cd /opt/founders-cabinet/cabinet/scripts/lib
+          python3 -m pytest tests/ -v
