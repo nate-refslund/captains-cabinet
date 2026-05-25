@@ -25,7 +25,7 @@
 # CONFIG / TEST env (all overridable for hermetic testing):
 #   CABINET_INSTALL_ROOT    where the framework lives (default: $HOME/cabinet)
 #   CABINET_FRAMEWORK_REPO  clone source (default: https://github.com/nate-step/captains-cabinet.git)
-#   CABINET_PRESET          preset for bootstrap (default: work)
+#   CABINET_PRESET          preset for bootstrap (default: refslund-commercial)
 #   INSTALL_SKIP_CLONE      if set, skip the git clone (idempotent / test)
 #   INSTALL_SKIP_BOOTSTRAP  if set, skip the real cabinet-bootstrap.sh call (test)
 #   INSTALL_SKIP_OFFICERS   if set, skip officer spawn (test / Phase-1 manual)
@@ -51,7 +51,7 @@ set -uo pipefail
 CABINET_ROOT_SELF="${CABINET_ROOT:-/opt/founders-cabinet}"  # where THIS script's siblings live (for tests)
 INSTALL_ROOT="${CABINET_INSTALL_ROOT:-$HOME/cabinet}"
 FRAMEWORK_REPO="${CABINET_FRAMEWORK_REPO:-https://github.com/nate-step/captains-cabinet.git}"
-PRESET="${CABINET_PRESET:-work}"
+PRESET="${CABINET_PRESET:-refslund-commercial}"
 
 # ── Logging (secret-safe) ──────────────────────────────────────────────────────
 log()  { echo "[install] $*"; }

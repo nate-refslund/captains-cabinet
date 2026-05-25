@@ -1,0 +1,31 @@
+# presets/refslund-commercial/preset.yml
+# Commercial customer cabinet deployed at customer site via install-customer-cabinet.sh.
+# Single_ceo bot mode (CoS-Lead only), FileVault on, spend caps on, customer-data
+# isolation, GDPR audit emission (Spec 052 streams 2+3, capability emits_customer_audit_events).
+
+name: refslund-commercial
+description: >
+  Commercial customer cabinet. Deployed at customer site via install-customer-cabinet.sh.
+  Single_ceo bot mode (Lead-only Telegram); FileVault on; spend caps on; customer-data
+  isolation; GDPR audit emission. Lean Phase-1 default roster (CoS-Lead + COO-as-DPO + CRO);
+  per-customer CPO/CTO addable via install-time roster wizard (FW-103). Distinct from "work"
+  (STEP-internal multi-officer dev) and "step-network" (multi-project POOL).
+
+# Agent archetypes pre-scaffolded with this preset (Phase-1 default lean roster).
+# CPO/CTO commercial variants ship in Phase-2 when a product-building customer needs them.
+agent_archetypes:
+  - cos-lead             # Coordination + Captain interface (Telegram Lead bot)
+  - coo-dpo              # Operations + GDPR Article-17/33/34 walkthroughs at install (DPO role)
+  - cro                  # Research + competitive intelligence + daily monitors
+
+# Terminology defaults — customer-facing flavor.
+terminology:
+  agent_role: officer
+  work_unit: task
+  output_store: cabinet-library
+
+# Default autonomy level: consent_gated for customer-facing (conservative — irreversible-by-default).
+autonomy_level: consent_gated
+
+# Where the preset expects the primary workspace (overridden per-customer at install).
+workspace_mount: /workspace/customer
