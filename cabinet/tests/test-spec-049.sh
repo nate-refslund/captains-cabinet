@@ -167,6 +167,63 @@ else
 fi
 
 # ───────────────────────────────────────────────────────────────────────────
+section "AC #7 — C3 conventional-commit hook (FW-029 corpus + adversary 1+2 pins)"
+if [ -r "$LIB/git-commit-argv.sh" ]; then
+  # shellcheck source=/dev/null
+  source "$LIB/git-commit-argv.sh"
+  _det() { gca_invokes_git_commit "$1" && echo Y || echo N; }
+  _val() { local s; s="$(gca_commit_subject "$1")"; if [ $? -eq 0 ]; then gca_validate_subject "$s" && echo Y || echo N; else echo skip; fi; }
+  _nv()  { gca_has_no_verify "$1" && echo Y || echo N; }
+  # detection: real invocations (incl. adversary 1+2 forms) MUST fire
+  eq "C3 det feat"            "$(_det 'git commit -m "feat: x"')" "Y"
+  eq "C3 det global-flag"     "$(_det 'git -c u=x commit -m "fix: y"')" "Y"
+  eq "C3 det chain"           "$(_det 'cd /r && git commit -m "test: z"')" "Y"
+  eq "C3 det VAR-prefix"      "$(_det 'GIT_X=1 git commit -m "perf: a"')" "Y"
+  eq "C3 det bash-c"          "$(_det 'bash -c "git commit -m bad"')" "Y"
+  eq "C3 det eval (advA1)"    "$(_det 'eval "git commit -m bad"')" "Y"
+  eq "C3 det command (advA2)" "$(_det 'command git commit -m bad')" "Y"
+  eq "C3 det subshell"        "$(_det '(git commit -m bad)')" "Y"
+  eq "C3 det multiline (advP2h)" "$(_det "$(printf 'cd /r\ngit commit -m bad')")" "Y"
+  # detection: FP-guards (substring mentions) MUST NOT fire
+  eq "C3 FP echo"             "$(_det 'echo "git commit -m bad"')" "N"
+  eq "C3 FP grep-pipe"        "$(_det 'cat l | grep "git commit"')" "N"
+  eq "C3 FP git-log"          "$(_det 'git log --grep="git commit"')" "N"
+  eq "C3 FP committed"        "$(_det 'git committed -m x')" "N"
+  eq "C3 FP printf"           "$(_det 'printf "git commit -m x"')" "N"
+  # subject validation: pos + neg
+  eq "C3 valid feat-scope"    "$(_val 'git commit -m "feat(auth): login"')" "Y"
+  eq "C3 invalid no-type"     "$(_val 'git commit -m "added stuff"')" "N"
+  eq "C3 invalid cap-type"    "$(_val 'git commit -m "Fix: x"')" "N"
+  eq "C3 invalid bad-type"    "$(_val 'git commit -m "feature(x): y"')" "N"
+  eq "C3 -am extract+validate (advA3)" "$(_val 'git commit -am "nope"')" "N"
+  c3c="git commit -m \$'refactor(core): x\\n\\nbody'"
+  eq "C3 ansi-c subject"      "$(gca_commit_subject "$c3c")" "refactor(core): x"
+  c3f="git commit -m \"see 'git commit -m foo' here\""
+  eq "C3 FP2 outer-mention"   "$(_val "$c3f")" "N"
+  eq "C3 reuse -c skip"       "$(_val 'git commit -c HEAD~1')" "skip"
+  # --no-verify / -n
+  eq "C3 nv --no-verify"      "$(_nv 'git commit -m "feat: x" --no-verify')" "Y"
+  eq "C3 nv -n"               "$(_nv 'git commit -n -m "feat: x"')" "Y"
+  eq "C3 nv -n-in-msg NOT (advA4)" "$(_nv 'git commit -m "handle the -n flag"')" "N"
+  # hook behavior: warn-mode (default) NEVER blocks; enforce blocks; log leaks no message content
+  HOOK="$SCRIPTS/hooks/pre-tool-use-conventional-commit.sh"
+  if [ -x "$HOOK" ] && command -v jq >/dev/null 2>&1; then
+    _hj() { jq -nc --arg c "$1" '{tool_name:"Bash",tool_input:{command:$c}}'; }
+    eq "C3 hook warn bad rc0"   "$(_hj 'git commit -m bad' | CONVENTIONAL_COMMIT_LOG="$TMP/c3.jsonl" bash "$HOOK" >/dev/null 2>&1; echo $?)" "0"
+    eq "C3 hook warn good rc0"  "$(_hj 'git commit -m "feat: x"' | CONVENTIONAL_COMMIT_LOG="$TMP/c3.jsonl" bash "$HOOK" >/dev/null 2>&1; echo $?)" "0"
+    eq "C3 hook enforce bad rc2" "$(_hj 'git commit -m bad' | CONVENTIONAL_COMMIT_MODE=enforce CONVENTIONAL_COMMIT_LOG="$TMP/c3.jsonl" bash "$HOOK" >/dev/null 2>&1; echo $?)" "2"
+    eq "C3 hook non-commit rc0" "$(_hj 'ls -la' | bash "$HOOK" >/dev/null 2>&1; echo $?)" "0"
+    eq "C3 hook disabled rc0"   "$(_hj 'git commit -m bad' | CONVENTIONAL_COMMIT_ENABLED=0 bash "$HOOK" >/dev/null 2>&1; echo $?)" "0"
+    _hj 'git commit -m "SECRETLEAKCANARY42"' | CONVENTIONAL_COMMIT_LOG="$TMP/leak.jsonl" bash "$HOOK" >/dev/null 2>&1
+    eq "C3 hook log no msg-content leak" "$(grep -F SECRETLEAKCANARY42 "$TMP/leak.jsonl" 2>/dev/null | wc -l | tr -d ' ')" "0"
+  else
+    echo "  ⚠ SKIP hook-behavior (hook or jq unavailable)"
+  fi
+else
+  echo "  ⚠ SKIP (git-commit-argv.sh not found)"
+fi
+
+# ───────────────────────────────────────────────────────────────────────────
 echo
 echo "════════════════════════════════════════════"
 echo "Spec 049 harness (PARTIAL — shipped components): PASS=$PASS FAIL=$FAIL"
