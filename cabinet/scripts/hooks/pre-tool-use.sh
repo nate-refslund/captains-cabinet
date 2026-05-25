@@ -888,9 +888,19 @@ if [ "$TOOL_NAME" = "Edit" ] || [ "$TOOL_NAME" = "Write" ]; then
       echo "BLOCKED: Environment files cannot be modified by Officers" >&2
       exit 2
       ;;
-    *"cabinet/docker-compose"*|*"Dockerfile"*)
+    *"cabinet/docker-compose"*|*"/cabinet/"*"Dockerfile"*)
+      # FW-042-class anchor fix (CTO flag 2026-05-25 12:14 UTC): the Dockerfile
+      # arm was UNANCHORED (*"Dockerfile"*) and over-matched ANY path containing
+      # "Dockerfile" — including proxy/deploy/Dockerfile.audit-server which is
+      # CTO-owned per FW-121 backlog. Sibling compose arm is cabinet-anchored;
+      # this arm now matches by anchoring "Dockerfile" to a "/cabinet/" prefix
+      # (component-anchored via the leading "/"). Catches all cabinet's own
+      # Dockerfiles (cabinet/Dockerfile.officer + .bootstrap-runner + .watchdog
+      # + cabinet/dashboard/Dockerfile + spawned-cabinets/*/cabinet/Dockerfile*)
+      # and correctly excludes /opt/founders-cabinet/proxy/* Dockerfiles
+      # (which carry no "/cabinet/" substring).
       if [ "${OFFICER:-}" != "cos" ]; then
-        echo "BLOCKED: Infrastructure files cannot be modified by Officers — route to CoS" >&2
+        echo "BLOCKED: Cabinet infrastructure files cannot be modified by non-CoS Officers — route to CoS" >&2
         exit 2
       fi
       ;;
