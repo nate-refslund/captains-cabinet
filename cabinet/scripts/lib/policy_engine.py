@@ -25,6 +25,15 @@ from typing import Any
 # Shell command parsing — the core innovation replacing ~700 lines of regex
 # ---------------------------------------------------------------------------
 
+# Shell control-flow keywords — not binaries, skip and continue to the next token.
+SHELL_CONTROL_KEYWORDS = frozenset({
+    "if", "then", "else", "elif", "fi",
+    "while", "until", "do", "done",
+    "for", "in", "select",
+    "case", "esac",
+    "function", "!",
+})
+
 # Wrapper binaries that execute their arguments (not introspection).
 # When encountered as the command word, we recurse into their arguments.
 EXEC_WRAPPERS = frozenset({
@@ -349,6 +358,10 @@ def _extract_from_statement(tokens: list[str]) -> list[str]:
 
     cmd_word_raw = tokens[i]
     cmd_word = _strip_path(_strip_quotes_and_escapes(cmd_word_raw))
+
+    # Shell control-flow keywords: skip and continue to next token
+    if cmd_word in SHELL_CONTROL_KEYWORDS:
+        return _extract_from_statement(tokens[i + 1:])
 
     # Handle 'command' specially: -v/-V is introspection, -p executes
     if cmd_word == COMMAND_BINARY:
@@ -687,9 +700,15 @@ _WRITE_PATTERNS = [
     # Pattern 7: perl -i (inplace edit) with path
     r"perl\b[^;&|]*(?:-[^\sIi]*i[^\s]*|--in-place(?:=[^\s]*)?)[^;&|]*\s*[\"']?{path}",
     # Pattern 8: tar extract/create to path via -C or --directory
-    r"tar\b[^;&|]*(?:-[a-zA-Z]*C\s*|--directory[=\s]+)[\"']?{path}",
+    # Handles: -C /path, -C/path (no space), -xC /path (bundled), --directory=/path,
+    # --directory /path, --dir=/path (abbreviated)
+    r"tar\b[^;&|]*(?:-[a-zA-Z]*C[=\s]*|--dir(?:ectory)?[=\s]+)[\"']?{path}",
+    # Pattern 8b: tar -fC bundled — -f takes archive arg, -C takes dir arg
+    # Handles: -fC archive dir, -xfC archive dir, -fxC archive dir
+    r"tar\b[^;&|]*-[a-zA-Z]*f[a-zA-Z]*C\s+\S+\s+[\"']?{path}",
     # Pattern 9: tar with -f/--file writing archive to path
-    r"tar\b[^;&|]*(?:-[^\s]*f\s*|--file[=\s]+)[\"']?{path}",
+    # Handles: -f /path, -cf /path (bundled), --file=/path, --file /path
+    r"tar\b[^;&|]*(?:-[a-zA-Z]*f[=\s]*|--file[=\s]+)[\"']?{path}",
 ]
 
 
@@ -703,6 +722,19 @@ def check_bash_write_to_path(command: str, path_pattern: str) -> bool:
         pattern = pattern_template.replace("{path}", path_pattern)
         if re.search(pattern, command):
             return True
+    # Relaxed match: try without trailing slash for tar -C/-f patterns
+    # where the path may not have a trailing slash (e.g., tar -C /workspace/slug)
+    # Only apply to tar patterns to avoid false positives on quoted paths
+    # with spaces (e.g., echo x > "/workspace/foo bar/README.md")
+    relaxed = path_pattern.rstrip("/")
+    if relaxed != path_pattern:
+        relaxed_pat = relaxed + r"(?:/|\s|[\"';&|<>)]|$)"
+        for pattern_template in _WRITE_PATTERNS:
+            if "tar" not in pattern_template:
+                continue
+            pattern = pattern_template.replace("{path}", relaxed_pat)
+            if re.search(pattern, command):
+                return True
     return False
 
 
@@ -803,6 +835,9 @@ def _eval_destructive_rm(
     if not command:
         return None
     if is_destructive_rm(command):
+        return f"BLOCKED: {policy['message']}"
+    expanded = _expand_braces_in_command(command)
+    if expanded != command and is_destructive_rm(expanded):
         return f"BLOCKED: {policy['message']}"
     return None
 
