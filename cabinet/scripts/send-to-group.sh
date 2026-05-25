@@ -1,17 +1,16 @@
 #!/bin/bash
-# send-to-group.sh — Legacy wrapper, auto-routes to sensed-warroom.
+# send-to-group.sh — Legacy wrapper, auto-routes to the default warroom.
 #
-# Phase 1 CP7 (Captain decision 2026-04-16 CD3: auto-migrate existing
-# send-to-group calls to sensed-warroom). Preserves the original CLI
-# signature so every existing caller keeps working. New code should call
-# send-to-warroom.sh directly with an explicit context.
+# Preserves the original CLI signature so every existing caller keeps working.
+# New code should call send-to-warroom.sh directly with an explicit context.
 #
 # Usage: send-to-group.sh "Your message here"
 
 MESSAGE="${1:?Usage: send-to-group.sh \"message\"}"
 
-# Resolve sibling script path via $BASH_SOURCE so this works on Hetzner Docker
-# (/opt/founders-cabinet/) AND on Mac native (~/work/captains-cabinet/) without
-# branching on host. Reviewer audit caught hardcoded Docker path 2026-05-23.
+# Resolve the default warroom context from active-project or fall back to first entry in warrooms.yml
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec bash "$SCRIPT_DIR/send-to-warroom.sh" sensed "$MESSAGE"
+CABINET_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+DEFAULT_CTX=$(cat "$CABINET_ROOT/instance/config/active-project.txt" 2>/dev/null | tr -d '[:space:]')
+DEFAULT_CTX="${DEFAULT_CTX:-default}"
+exec bash "$SCRIPT_DIR/send-to-warroom.sh" "$DEFAULT_CTX" "$MESSAGE"

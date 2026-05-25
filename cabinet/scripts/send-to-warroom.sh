@@ -1,19 +1,15 @@
 #!/bin/bash
 # send-to-warroom.sh — Send a message to a context-scoped Warroom.
 #
-# Phase 1 CP7 (Captain decision 2026-04-16 CD3 "auto-migrate").
-# Existing send-to-group.sh wraps this script with context=sensed so no
+# Existing send-to-group.sh wraps this script with the default context so no
 # legacy call sites break. New callers should prefer send-to-warroom.sh
 # directly with an explicit context.
 #
 # Mapping lives in instance/config/warrooms.yml:
 #
-#     sensed:   "<chat_id>"
-#     step:     "<chat_id>"
-#     personal: "<chat_id>"
+#     myproject: "<chat_id>"
+#     personal:  "<chat_id>"
 #
-# For Phase 1 only the `sensed` warroom exists; it maps to
-# $TELEGRAM_HQ_CHAT_ID so the current container env keeps working.
 # Adding a new warroom: declare the context_slug in
 # instance/config/contexts/<slug>.yml AND add its chat_id here.
 #
@@ -21,7 +17,7 @@
 #   send-to-warroom.sh <context_slug> "<message>"
 #
 # Example:
-#   send-to-warroom.sh sensed "Deploy green. PR 547 shipped."
+#   send-to-warroom.sh myproject "Deploy green. PR 547 shipped."
 
 CONTEXT="${1:?Usage: send-to-warroom.sh <context_slug> \"message\"}"
 MESSAGE="${2:?Usage: send-to-warroom.sh <context_slug> \"message\"}"
@@ -73,7 +69,9 @@ PY
       return 0
     fi
   fi
-  if [ "$ctx" = "sensed" ] && [ -n "${TELEGRAM_HQ_CHAT_ID:-}" ]; then
+  # Fallback: if warrooms.yml lookup failed but TELEGRAM_HQ_CHAT_ID is set,
+  # use it as the default warroom for any context (back-compat).
+  if [ -n "${TELEGRAM_HQ_CHAT_ID:-}" ]; then
     echo "$TELEGRAM_HQ_CHAT_ID"
     return 0
   fi
