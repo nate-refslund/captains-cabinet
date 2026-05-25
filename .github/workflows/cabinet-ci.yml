@@ -200,6 +200,25 @@ jobs:
         # git clones, Docker ops, Redis writes, or Neon connections are made in CI.
         run: bash /opt/founders-cabinet/cabinet/scripts/test-cabinet-bootstrap.sh
 
+      - name: Org runtime vertical-slice eval
+        # Outcome-to-OVI branch 1: proves one Captain-ratified outcome through
+        # mission/work-graph, role hat assignment, verification, OVI publish,
+        # sanitized digest, append-only org_events, and source-event lineage.
+        run: bash /opt/founders-cabinet/cabinet/scripts/test-org-runtime.sh
+
+      - name: Durable adaptive role eval
+        # Branch 2: proves durable role identity, officer-session mapping,
+        # memory binding, role eval evidence, deterministic recommendation,
+        # Captain-ratified evolution, and append-only role history.
+        run: bash /opt/founders-cabinet/cabinet/scripts/test-org-roles.sh
+
+      - name: Typed policy shadow parity eval
+        # Shadow-only typed policy engine observes hook input and records
+        # structured decisions to org_events. This branch compares a focused
+        # fixture set against the live pre-tool-use.sh behavior; it does not
+        # replace hook decisions yet.
+        run: bash /opt/founders-cabinet/cabinet/scripts/test-policy-shadow.sh
+
       - name: Shell unit tests — create-project.sh (FW-078)
         # 25 assertions across 8 test groups: bad slug charset/length rejection,
         # missing repo_url rejection, DRY_RUN=1 plan-only mode (no filesystem

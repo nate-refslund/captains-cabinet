@@ -2,8 +2,8 @@
 # send-to-warroom.sh — Send a message to a context-scoped Warroom.
 #
 # Phase 1 CP7 (Captain decision 2026-04-16 CD3 "auto-migrate").
-# Existing send-to-group.sh wraps this script with context=sensed so no
-# legacy call sites break. New callers should prefer send-to-warroom.sh
+# Existing send-to-group.sh wraps this script with the active product context
+# so no legacy call sites break. New callers should prefer send-to-warroom.sh
 # directly with an explicit context.
 #
 # Mapping lives in instance/config/warrooms.yml:
@@ -12,8 +12,8 @@
 #     step:     "<chat_id>"
 #     personal: "<chat_id>"
 #
-# For Phase 1 only the `sensed` warroom exists; it maps to
-# $TELEGRAM_HQ_CHAT_ID so the current container env keeps working.
+# The active product warroom usually maps to $TELEGRAM_HQ_CHAT_ID so the
+# current container env keeps working.
 # Adding a new warroom: declare the context_slug in
 # instance/config/contexts/<slug>.yml AND add its chat_id here.
 #
@@ -29,8 +29,8 @@ MESSAGE="${2:?Usage: send-to-warroom.sh <context_slug> \"message\"}"
 TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN not set}"
 WARROOMS_FILE="/opt/founders-cabinet/instance/config/warrooms.yml"
 
-# Resolve chat_id for the requested context. Fall back to
-# $TELEGRAM_HQ_CHAT_ID when context=sensed and the mapping file is
+# Resolve chat_id for the requested context. Fall back to $TELEGRAM_HQ_CHAT_ID
+# when the requested context is the active product and the mapping file is
 # absent (back-compat with pre-CP7 setups).
 resolve_chat_id() {
   local ctx="$1"
@@ -73,7 +73,10 @@ PY
       return 0
     fi
   fi
-  if [ "$ctx" = "sensed" ] && [ -n "${TELEGRAM_HQ_CHAT_ID:-}" ]; then
+  local active_ctx
+  active_ctx=$(cat /opt/founders-cabinet/instance/config/active-project.txt 2>/dev/null | tr -d '[:space:]')
+  active_ctx="${active_ctx:-captains-cabinet}"
+  if [ "$ctx" = "$active_ctx" ] && [ -n "${TELEGRAM_HQ_CHAT_ID:-}" ]; then
     echo "$TELEGRAM_HQ_CHAT_ID"
     return 0
   fi

@@ -14,6 +14,8 @@
 --   1. cabinet/init.sql                — internal Docker Postgres: experience_records, decision_log, research_archive, skills
 --   2. cabinet/sql/cabinet_memory.sql   — Neon: cabinet_memory universal search layer
 --   3. cabinet/sql/library.sql          — Neon: library_spaces + library_records
+--   4. cabinet/sql/045-org-runtime-slice.sql
+--                                      — org_events + outcome/mission/OVI projections
 --
 -- Preset-layer schemas (applied after framework by the loader):
 --   presets/<active>/schemas.sql  — additional tables specific to the active preset

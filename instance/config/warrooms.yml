@@ -10,9 +10,10 @@
 #   2. Create a new Telegram group and invite the relevant officer bots.
 #   3. Add the row here. send-to-warroom.sh will resolve it on next call.
 
+captains-cabinet: "${TELEGRAM_HQ_CHAT_ID}"
 sensed:   "${TELEGRAM_HQ_CHAT_ID}"
 # step:     ""
 # personal: ""
-# adhoc is routed to 'sensed' in Phase 1 — ad-hoc Inbox triage happens in the
-# main group rather than a separate channel. Split later if noise warrants.
+# adhoc is routed to the active product warroom — ad-hoc Inbox triage happens
+# in the main group rather than a separate channel. Split later if noise warrants.
 adhoc:    "${TELEGRAM_HQ_CHAT_ID}"

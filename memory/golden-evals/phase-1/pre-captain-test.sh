@@ -111,9 +111,9 @@ inbox_id=$(PROD_PSQL "SELECT id FROM library_spaces WHERE name='Inbox' LIMIT 1")
 
 echo ""
 echo "--- CP7: Multi-warroom routing ---"
-# Expect: send-to-warroom.sh (new) accepts context param, legacy send-to-group.sh auto-maps to sensed-warroom
+# Expect: send-to-warroom.sh accepts context param, legacy send-to-group.sh maps to active product warroom
 [ -f cabinet/scripts/send-to-warroom.sh ] && pass "send-to-warroom.sh exists" || fail "send-to-warroom.sh missing"
-grep -q 'sensed-warroom' cabinet/scripts/send-to-group.sh 2>/dev/null && pass "legacy send-to-group auto-maps" || fail "legacy send-to-group auto-map missing"
+grep -q 'active-project.txt' cabinet/scripts/send-to-group.sh 2>/dev/null && pass "legacy send-to-group maps active product" || fail "legacy send-to-group active-product map missing"
 
 echo ""
 echo "--- CP8: Cabinet MCP prototype ---"

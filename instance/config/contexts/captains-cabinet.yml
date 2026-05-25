@@ -1,0 +1,8 @@
+slug: captains-cabinet
+name: Captain's Cabinet
+capacity: work
+description: |
+  Captain's Cabinet — the framework/runtime product this Cabinet is improving.
+  This is the active single-product context for the outcome-to-OVI vertical
+  slice. Sensed remains preserved as legacy instance history, but is inactive.
+active: true

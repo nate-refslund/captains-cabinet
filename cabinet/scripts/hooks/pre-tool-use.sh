@@ -17,6 +17,18 @@ REDIS_HOST=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f1)
 REDIS_PORT=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f2)
 
 # ============================================================
+# 0. TYPED POLICY SHADOW (Outcome-to-OVI branch)
+# ============================================================
+# Shadow-only: policy-shadow.py observes the same hook input and records a
+# structured decision to org_events for parity analysis. It NEVER replaces this
+# hook's live allow/block decisions on this branch, and any failure here is
+# intentionally ignored so the safety hook cannot be bricked by telemetry.
+POLICY_SHADOW="/opt/founders-cabinet/cabinet/scripts/policy-shadow.py"
+if [ -x "$POLICY_SHADOW" ]; then
+  printf '%s' "$HOOK_INPUT" | python3 "$POLICY_SHADOW" >/dev/null 2>/dev/null || true
+fi
+
+# ============================================================
 # 1. KILL SWITCH CHECK
 # ============================================================
 KILLSWITCH=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET cabinet:killswitch 2>/dev/null)

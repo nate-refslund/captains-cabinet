@@ -1,0 +1,77 @@
+# =============================================================
+# Project: Captain's Cabinet
+# =============================================================
+# Active single-product context for the outcome-to-OVI vertical slice.
+# Sensed config remains present as legacy history but is inactive.
+# =============================================================
+
+product:
+  name: "Captain's Cabinet"
+  description: "Self-organizing AI organization runtime for one product"
+  repo: https://github.com/nate-step/captains-cabinet
+  repo_branch: master
+  mount_path: /workspace/captains-cabinet
+
+notion:
+  cabinet_hq_id: ""
+
+  dashboard:
+    page_id: ""
+    decision_queue_db: ""
+    daily_briefings_db: ""
+    weekly_reports_db: ""
+
+  business_brain:
+    page_id: ""
+    vision_id: ""
+    strategy_brief_id: ""
+    brand_guidelines_id: ""
+    messaging_pillars_id: ""
+    growth_guardrails_id: ""
+    pricing_id: ""
+
+  research_hub:
+    page_id: ""
+    research_briefs_db: ""
+    competitive_intel_db: ""
+    market_trends_db: ""
+
+  product_hub:
+    page_id: ""
+    product_roadmap_db: ""
+    feature_specs_db: ""
+    user_feedback_db: ""
+
+  engineering_hub:
+    page_id: ""
+    architecture_decisions_db: ""
+    tech_debt_db: ""
+
+  cabinet_ops:
+    page_id: ""
+    decision_journal_db: ""
+    improvement_proposals_db: ""
+
+  reference:
+    page_id: ""
+
+  archive:
+    page_id: ""
+
+linear:
+  team_key: ""
+  workspace_url: ""
+
+neon:
+  project: captains-cabinet
+
+telegram:
+  bot_mode: single_ceo
+  ceo_officer: cos
+  ceo_bot: ""
+  officers:
+    cos: ""
+    cto: ""
+    cro: ""
+    cpo: ""
+    coo: ""

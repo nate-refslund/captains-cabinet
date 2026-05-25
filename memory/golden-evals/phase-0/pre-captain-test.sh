@@ -26,9 +26,10 @@ echo "--- 1. Config file reads ---"
 echo ""
 echo "--- 2. Project scripts work ---"
 out=$(bash cabinet/scripts/list-projects.sh 2>&1)
-echo "$out" | grep -q "sensed" && pass "list-projects.sh finds sensed" || fail "list-projects.sh output: $out"
+echo "$out" | grep -q "captains-cabinet" && pass "list-projects.sh finds captains-cabinet" || fail "list-projects.sh output: $out"
+echo "$out" | grep -q "sensed" && pass "list-projects.sh preserves sensed legacy config" || fail "list-projects.sh output: $out"
 active=$(cat instance/config/active-project.txt 2>/dev/null | tr -d '[:space:]')
-[ "$active" = "sensed" ] && pass "active-project.txt reads 'sensed'" || fail "active-project: $active"
+[ "$active" = "captains-cabinet" ] && pass "active-project.txt reads 'captains-cabinet'" || fail "active-project: $active"
 
 echo ""
 echo "--- 3. Preset loader ---"
