@@ -184,12 +184,15 @@ if [ -r "$LIB/git-commit-argv.sh" ]; then
   eq "C3 det command (advA2)" "$(_det 'command git commit -m bad')" "Y"
   eq "C3 det subshell"        "$(_det '(git commit -m bad)')" "Y"
   eq "C3 det multiline (advP2h)" "$(_det "$(printf 'cd /r\ngit commit -m bad')")" "Y"
+  eq "C3 det leading-space (Opus#1 HIGH)" "$(_det ' git commit -m bad')" "Y"
+  eq "C3 det leading-tab (Opus#1 HIGH)"   "$(_det "$(printf '\tgit commit -m bad')")" "Y"
   # detection: FP-guards (substring mentions) MUST NOT fire
   eq "C3 FP echo"             "$(_det 'echo "git commit -m bad"')" "N"
   eq "C3 FP grep-pipe"        "$(_det 'cat l | grep "git commit"')" "N"
   eq "C3 FP git-log"          "$(_det 'git log --grep="git commit"')" "N"
   eq "C3 FP committed"        "$(_det 'git committed -m x')" "N"
   eq "C3 FP printf"           "$(_det 'printf "git commit -m x"')" "N"
+  eq "C3 FP leading-space-echo (Opus#1 no-overcorrect)" "$(_det '   echo hello git commit')" "N"
   # subject validation: pos + neg
   eq "C3 valid feat-scope"    "$(_val 'git commit -m "feat(auth): login"')" "Y"
   eq "C3 invalid no-type"     "$(_val 'git commit -m "added stuff"')" "N"
@@ -218,6 +221,12 @@ if [ -r "$LIB/git-commit-argv.sh" ]; then
   eq "C3 nv FP trailing-head-n (CPO)" "$(_nv 'git commit -m "feat: x" && head -n 5 f')" "N"
   eq "C3 nv mixed FP+real-nm still Y (CPO)" "$(_nv 'head -n 5 && git commit -nm "x"')" "Y"
   eq "C3 nv mixed real-nv+trailing-FP still Y (CPO)" "$(_nv 'git commit --no-verify && head -n 5')" "Y"
+  # Opus adversary HIGH#1 (leading whitespace defeats anchor) + MEDIUM#4 (backtick command-sub scope)
+  eq "C3 nv leading-space (Opus#1 HIGH)" "$(_nv ' git commit -n -m "feat: x"')" "Y"
+  c3bt='git commit -m "feat: x" `head -n 5 f`'
+  eq "C3 nv backtick head-n FP (Opus#4)" "$(_nv "$c3bt")" "N"
+  c3bt2='git commit -nm "x" `echo hi`'
+  eq "C3 nv backtick-adjacent real-nm still Y (Opus#4)" "$(_nv "$c3bt2")" "Y"
   eq "C3 -Sm uppercase extract (Opus#2)"   "$(_val 'git commit -Sm "nope"')" "N"
   eq "C3 -mattached extract (Opus#2)"      "$(_val 'git commit -mbadmsg')" "N"
   eq "C3 det sudo-prefix (Opus#5)"   "$(_det 'sudo git commit -m bad')" "Y"

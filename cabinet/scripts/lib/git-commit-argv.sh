@@ -39,7 +39,10 @@ gca_invokes_git_commit() {
     # adversary pass 2: `cd /repo\ngit commit ...` was missed by string-mode ^). Per FW-043 this
     # accepts the heredoc-body FP (warn-mode bounds it; under-detection is the worse failure).
     local NL=$'\n'
-    local boundary='(^|[;&|(){}`'"${NL}"'][[:space:]]*)'
+    # ^ branch tolerates LEADING WHITESPACE (Opus adversary HIGH): a single leading space/tab before
+    # `git` must not defeat the anchor (indented commands / copy-paste are ubiquitous). Without the
+    # ^[[:space:]]* the ` git commit` form missed BOTH detection and (via the per-segment gate) no-verify.
+    local boundary='(^[[:space:]]*|[;&|(){}`'"${NL}"'][[:space:]]*)'
     # wrapper arg-consumer accepts -flag [value] AND a bare positional (timeout's duration, nice N).
     # ERE backtracking keeps `sudo git commit` working (consume zero); the wrapper allow-list +
     # the trailing `git ... commit` requirement prevent false detections (e.g. `sudo apt install git`).
@@ -127,8 +130,10 @@ gca_has_no_verify() {
     # Split on statement boundaries (consume surrounding space). For the segment that invokes
     # git commit, check no-verify only on the part AFTER the `commit` token — so a -n belonging to a
     # chained command or a wrapper prefix, which lives in another segment or before `commit`, is excluded.
+    # Backtick included (Opus adversary MEDIUM): a `...` command-sub is a boundary, so a -n inside it
+    # (e.g. `git commit -m "x" ` + backtick head -n 5 + backtick) lands in its own segment, not the commit's.
     local split
-    split="$(printf '%s' "$stripped" | sed -E 's/[[:space:]]*(\&\&|\|\||;|\&|\||\(|\)|\{|\})[[:space:]]*/\n/g')"
+    split="$(printf '%s' "$stripped" | sed -E 's/[[:space:]]*(\&\&|\|\||;|\&|\||\(|\)|\{|\}|`)[[:space:]]*/\n/g')"
     local re_long='(^|[[:space:]])--no-verify([[:space:]]|=|$)'
     # -n standalone OR inside a combined short-flag cluster (-nm, -anm) — Opus ship-gate #1.
     local re_short='(^|[[:space:]])-[a-zA-Z]*n[a-zA-Z]*([[:space:]]|=|$)'

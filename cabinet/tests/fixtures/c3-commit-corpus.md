@@ -91,3 +91,5 @@ Detection is still Y (it IS a git commit) — these assert `no_verify=N` (the `-
 | V7 | `git commit -m "feat: x" && head -n 5 f` | N | trailing chained `head -n` |
 | V8 | `head -n 5 && git commit -nm "x"` | **Y** | regression-guard: the commit's OWN `-nm` is still detected alongside an FP source |
 | V9 | `git commit --no-verify && head -n 5` | **Y** | regression-guard: real `--no-verify` on the commit, FP source trails |
+| V10 | `‹space›git commit -n -m "feat: x"` | **Y** | Opus adversary HIGH#1: LEADING WHITESPACE must not defeat the anchor — det=Y AND nv=Y (boundary `^[[:space:]]*`). Indented/copy-pasted commands are ubiquitous; this was a real detection+no-verify miss |
+| V11 | `` git commit -m "feat: x" `head -n 5 f` `` | N | Opus adversary MEDIUM#4: `-n` inside a backtick command-sub is in its own segment, not the commit's → no_verify=N. (`` `…` `` is a split boundary) |
