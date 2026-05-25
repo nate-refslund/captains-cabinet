@@ -126,14 +126,16 @@ gca_commit_subject() {
 # (Remaining warn-mode-bounded edge: escaped-quote-in-DQ message body — disclosed, low-frequency.)
 gca_has_no_verify() {
     local cmd="$1" stripped seg flags
-    stripped="$(printf '%s' "$cmd" | sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g")"
-    # Split on statement boundaries (consume surrounding space). For the segment that invokes
-    # git commit, check no-verify only on the part AFTER the `commit` token — so a -n belonging to a
-    # chained command or a wrapper prefix, which lives in another segment or before `commit`, is excluded.
-    # Backtick included (Opus adversary MEDIUM): a `...` command-sub is a boundary, so a -n inside it
-    # (e.g. `git commit -m "x" ` + backtick head -n 5 + backtick) lands in its own segment, not the commit's.
+    # Strip quoted spans AND backtick command-sub BODIES first. A -n INSIDE a message body (advA4) or
+    # inside a `...` command-sub (Opus MEDIUM#4) must not count. Stripping the backtick BODY (mirroring
+    # the SQ/DQ strip) rather than SPLITTING on the backtick is deliberate (Opus HIGH#5): a split severs
+    # a real --no-verify that FOLLOWS the sub into its own segment -> missed no-verify = the worse direction.
+    stripped="$(printf '%s' "$cmd" | sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g" | sed -E 's/`[^`]*`//g')"
+    # Split on statement boundaries (consume surrounding space). For the segment that invokes git commit,
+    # check no-verify only on the part AFTER the `commit` token — so a -n belonging to a chained command
+    # or a wrapper prefix, which lives in another segment or before `commit`, is excluded.
     local split
-    split="$(printf '%s' "$stripped" | sed -E 's/[[:space:]]*(\&\&|\|\||;|\&|\||\(|\)|\{|\}|`)[[:space:]]*/\n/g')"
+    split="$(printf '%s' "$stripped" | sed -E 's/[[:space:]]*(\&\&|\|\||;|\&|\||\(|\)|\{|\})[[:space:]]*/\n/g')"
     local re_long='(^|[[:space:]])--no-verify([[:space:]]|=|$)'
     # -n standalone OR inside a combined short-flag cluster (-nm, -anm) — Opus ship-gate #1.
     local re_short='(^|[[:space:]])-[a-zA-Z]*n[a-zA-Z]*([[:space:]]|=|$)'

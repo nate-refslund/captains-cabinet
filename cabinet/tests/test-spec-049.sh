@@ -227,6 +227,14 @@ if [ -r "$LIB/git-commit-argv.sh" ]; then
   eq "C3 nv backtick head-n FP (Opus#4)" "$(_nv "$c3bt")" "N"
   c3bt2='git commit -nm "x" `echo hi`'
   eq "C3 nv backtick-adjacent real-nm still Y (Opus#4)" "$(_nv "$c3bt2")" "Y"
+  # Opus HIGH#5 regression-guard: strip backtick BODY (not split on it) so a real no-verify AFTER the
+  # sub is preserved; a no-verify INSIDE the sub (an arg to the sub's command) is correctly dropped.
+  c3bt3='git commit `true` --no-verify -m "x"'
+  eq "C3 nv real-nv AFTER backtick (Opus#5 HIGH regr)" "$(_nv "$c3bt3")" "Y"
+  c3bt4='git commit -m "x" `echo hi` -n'
+  eq "C3 nv real-n trailing backtick (Opus#5 HIGH regr)" "$(_nv "$c3bt4")" "Y"
+  c3bt5='git commit -m "x" `foo --no-verify`'
+  eq "C3 nv no-verify INSIDE backtick NOT (Opus#5)" "$(_nv "$c3bt5")" "N"
   eq "C3 -Sm uppercase extract (Opus#2)"   "$(_val 'git commit -Sm "nope"')" "N"
   eq "C3 -mattached extract (Opus#2)"      "$(_val 'git commit -mbadmsg')" "N"
   eq "C3 det sudo-prefix (Opus#5)"   "$(_det 'sudo git commit -m bad')" "Y"
