@@ -37,8 +37,11 @@ if [ -r "$LIB/audit-emit.sh" ]; then
   ( OFFICER_NAME=cos CABINET_SLUG=acme AUDIT_CAPABILITIES_FILE="$TMP/granted.conf" audit_emit_event officer tool_call tool_call Bash '{}' ); eq "emit config-absent rc0" "$?" "0"
   : > "$CAP"; OFFICER_NAME=cos CABINET_SLUG=acme AUDIT_CAPABILITIES_FILE="$TMP/granted.conf" AUDIT_EMIT_CAPTURE="$CAP" audit_emit_event officer dm_sent telegram_dm '' '{"length":7,"attachment_count":0,"text":"SECRET","body":"x"}'
   eq "emit PII strip + length kept" "$(_jq '(.subject.metadata|has("text")|not) and (.subject.metadata|has("body")|not) and .subject.metadata.length==7')" "Y"
-  : > "$CAP"; BIG="$(jq -nc --arg s "$(head -c 5000 /dev/zero | tr '\0' x)" '{blob:$s}')"; OFFICER_NAME=cos CABINET_SLUG=acme AUDIT_CAPABILITIES_FILE="$TMP/granted.conf" AUDIT_EMIT_CAPTURE="$CAP" audit_emit_event officer tool_call tool_call Read "$BIG"
-  eq "emit oversized cap" "$(_jq '.subject.metadata._truncated==true')" "Y"
+  # Opus ship-gate HIGH fix — allow-list drops nested / case-variant / arbitrary-key PII:
+  : > "$CAP"; OFFICER_NAME=cos CABINET_SLUG=acme AUDIT_CAPABILITIES_FILE="$TMP/granted.conf" AUDIT_EMIT_CAPTURE="$CAP" audit_emit_event officer dm_sent telegram_dm '' '{"length":5,"dm":"SSN 123-45-6789","Text":"PII","msg":{"body":"nested PII"}}'
+  eq "emit allow-list drops arbitrary/case/nested" "$(_jq '.subject.metadata=={"length":5}')" "Y"
+  : > "$CAP"; LONGP="$(printf 'x%.0s' $(seq 1 300))"; OFFICER_NAME=cos CABINET_SLUG=acme AUDIT_CAPABILITIES_FILE="$TMP/granted.conf" AUDIT_EMIT_CAPTURE="$CAP" audit_emit_event officer tool_call tool_call Read "$(jq -nc --arg p "$LONGP" '{path:$p}')"
+  eq "emit value-length bound drops free-text" "$(_jq '(.subject.metadata|has("path")|not)')" "Y"
   : > "$CAP"; OFFICER_NAME=cos CABINET_SLUG=acme AUDIT_CAPABILITIES_FILE="$TMP/granted.conf" AUDIT_EMIT_CAPTURE="$CAP" audit_emit_event cabinet key_rotation cabinet_event proxy-key '{"by":"cos"}'
   eq "emit cabinet-event stream" "$(_jq '.stream=="cabinet" and .event_type=="key_rotation" and .subject.target=="proxy-key" and .subject.metadata.by=="cos"')" "Y"
   : > "$CAP"; OFFICER_NAME=cos AUDIT_CAPABILITIES_FILE="$TMP/granted.conf" AUDIT_EMIT_CAPTURE="$CAP" audit_emit_event officer tool_call tool_call Edit '{}'
@@ -82,6 +85,9 @@ if [ -r "$LIB/apply-capability-grants.sh" ] && [ -r "$PRESETS/refslund-commercia
   printf 'capability_grants:\n  cos: [nope_cap]\n' > "$TMP/u.yml"; cp "$TMP/gconf" "$TMP/gc4"; apply_capability_grants "$TMP/u.yml" "$TMP/gc4" 2>"$TMP/err"
   eq "grant unknown-cap WARN" "$(grep -c 'WARN.*nope_cap' "$TMP/err")" "1"
   eq "grant unknown-cap appended (warn-not-block)" "$(grep -c '^cos:nope_cap$' "$TMP/gc4")" "1"
+  # Opus MEDIUM: a malformed/glob cap must NOT forge bogus officer:filename grants (noglob + identifier-validate)
+  printf 'capability_grants:\n  cos: [*]\n' > "$TMP/star.yml"; printf '# emits_customer_audit_events\ncto:deploys_code\n' > "$TMP/gc5"; ( cd "$TMP" && apply_capability_grants "$TMP/star.yml" "$TMP/gc5" 2>/dev/null )
+  eq "grant malformed/glob cap rejected" "$(grep -c '^cos:' "$TMP/gc5")" "0"
   eq "grant DEV-CONF-UNTOUCHED" "$(md5sum < "$CABINET_ROOT/cabinet/officer-capabilities.conf" 2>/dev/null)" "$DEV"
 else echo "  ⚠ SKIP apply-capability-grants.sh (lib/preset not found)"; fi
 

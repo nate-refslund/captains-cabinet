@@ -48,9 +48,15 @@ apply_capability_grants() {
         off="$(printf '%s' "$line"  | sed -nE 's/^[[:space:]]*([A-Za-z0-9_-]+)[[:space:]]*:[[:space:]]*\[.*/\1/p')"
         caps="$(printf '%s' "$line" | sed -nE 's/^[[:space:]]*[A-Za-z0-9_-]+[[:space:]]*:[[:space:]]*\[([^]]*)\].*/\1/p')"
         [ -n "$off" ] && [ -n "$caps" ] || continue
-        for cap in ${caps//,/ }; do   # comma->space then word-split (capability names are safe identifiers)
+        # noglob (Opus MEDIUM): an unquoted ${caps//,/ } would pathname-expand a `*` cap against cwd,
+        # forging bogus officer:filename grants. set -f for the split; restore the caller's setting.
+        local _had_f=0; case $- in *f*) _had_f=1 ;; esac
+        set -f
+        for cap in ${caps//,/ }; do   # comma->space then word-split
             cap="$(printf '%s' "$cap" | tr -d '[:space:]')"
             [ -n "$cap" ] || continue
+            # validate cap is a bare identifier (like the officer field) — reject malformed/injected caps
+            case "$cap" in *[!A-Za-z0-9_-]*) echo "apply-capability-grants: WARN: skipping malformed capability '$cap'" >&2; continue ;; esac
             # safety: warn (don't block) if the capability isn't documented in the conf header listing
             grep -q "^#.*${cap}" "$conf" 2>/dev/null \
                 || echo "apply-capability-grants: WARN: capability '$cap' not in $conf header listing" >&2
@@ -59,6 +65,7 @@ apply_capability_grants() {
                 printf '%s:%s\n' "$off" "$cap" >> "$conf"
             fi
         done
+        [ "$_had_f" = 1 ] || set +f   # restore caller's glob setting
     done <<< "$block"
     return 0
 }

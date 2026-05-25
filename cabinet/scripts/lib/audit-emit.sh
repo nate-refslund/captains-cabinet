@@ -24,9 +24,16 @@
 #
 # NOTE: a sourced lib must not `set -e`/`set -u` on the caller; all vars are ${x:-} guarded.
 
-# Forbidden metadata keys (mirror validator.py): DM full-text + attachment content. NEVER emitted.
-_AUDIT_FORBIDDEN_KEYS='text,content,body,message,full_text,data,attachment_data,file_content'
+# PII-minimization (Opus ship-gate HIGH): ALLOW-LIST, not deny-list. A deny-list had a blind spot —
+# nested objects ({"msg":{"body":…}}), case-variant keys ({"Text":…}), and arbitrary keys ({"dm":…})
+# all leaked PII past it. The allow-list is fail-CLOSED: only these known-safe identifier/count/enum/
+# path keys are ever emitted; any other key (free-text like text/body/note/dm/…) is DROPPED. A new
+# event type needing a new safe key must add it here (a deliberate, GDPR-reviewed step). Values are
+# additionally scalar-only + length-bounded so even an allow-listed key cannot carry nested data or
+# free text. (The server validator.py is a secondary backstop — tracked follow-up to harden it too.)
+_AUDIT_ALLOWED_KEYS='["length","attachment_count","language_detected","direction","path","command_head","request_id","entry_id","model","provider","status","severity","rotated_by","by","event","event_name","count","ticket_id","_truncated"]'
 _AUDIT_MAX_METADATA_BYTES=4096
+_AUDIT_MAX_VALUE_LEN=256
 
 # audit_emit_event <stream> <event_type> <subject_type> <target> <metadata_json>
 #   stream:        "officer" | "cabinet"
@@ -64,11 +71,17 @@ audit_emit_event() {
     local md
     md="$(printf '%s' "$metadata" | jq -c '.' 2>/dev/null)" || md='{}'
     [ -n "$md" ] || md='{}'
-    # strip forbidden keys (DM full-text + attachment content) regardless of caller — explicit del()
-    # (a dynamic delpaths was buggy: it wiped ALL keys; explicit del leaves non-forbidden keys intact).
-    md="$(printf '%s' "$md" | jq -c \
-            'del(.text, .content, .body, .message, .full_text, .data, .attachment_data, .file_content)' \
-            2>/dev/null)" || md='{}'
+    # ALLOW-LIST filter (fail-closed): keep ONLY allow-listed keys whose value is a SCALAR and (if a
+    # string) within the length bound. Drops nested objects/arrays, case-variant/arbitrary keys, and
+    # free-text values — the deny-list blind spots the Opus ship-gate found. Non-object -> {}.
+    md="$(printf '%s' "$md" | jq -c --argjson allow "$_AUDIT_ALLOWED_KEYS" --argjson maxlen "$_AUDIT_MAX_VALUE_LEN" '
+        if type=="object" then
+          with_entries(select(
+            (.key | IN($allow[]))
+            and (.value | type=="string" or type=="number" or type=="boolean")
+            and (.value | type!="string" or length<=$maxlen)
+          ))
+        else {} end' 2>/dev/null)" || md='{}'
     # cap size -> replace with a marker rather than emit an oversized (server-rejected) payload
     if [ "$(printf '%s' "$md" | wc -c)" -gt "$_AUDIT_MAX_METADATA_BYTES" ]; then
         md='{"_truncated":true}'
