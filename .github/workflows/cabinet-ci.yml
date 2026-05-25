@@ -342,6 +342,14 @@ jobs:
         # Hermetic: CABINET_INSTALL_ROOT→mktemp; INSTALL_SKIP_{CLONE,BOOTSTRAP,OFFICERS}=1.
         run: bash /opt/founders-cabinet/cabinet/tests/test-install-customer-cabinet.sh
 
+      - name: Shell unit tests — breach-notification.sh (Spec 055 AC#12 / CTO#9)
+        # 25 assertions: §A scenario load (default + file), §B Art-33 72h clock (remaining +
+        # overdue), §C Art-33(1) decision tree (none/low/medium/high → Art33/34), §D affected-
+        # cabinet window filter (FW-097 audit log), §E no-send guarantee (sent_anything_real=
+        # false + WOULD-NOTIFY + [SIM]), §F report fields, §G gap flagging. Hermetic:
+        # LITELLM_AUDIT_LOG_ROOT/BREACH_SIM_OUTPUT_DIR→mktemp; CABINET_HOOK_TEST_MODE=1.
+        run: bash /opt/founders-cabinet/cabinet/tests/test-breach-notification.sh
+
       - name: Framework backlog drift audit (advisory)
         # Surfaces FW-series entries with Status: Proposed/Paused older than
         # threshold (default: Proposed≥7d, Paused≥14d). Advisory only — exits
