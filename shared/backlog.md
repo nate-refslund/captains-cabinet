@@ -1,7 +1,7 @@
 # Cabinet Framework + Sensed Product Backlog — Prioritized View
 
-> Maintained by CPO. Last refinement: 2026-05-24 22:00 UTC (cron — Phase-1 commercial substrate progress: FW-096/097/100 MERGED + FW-098 building + FW-120 gate filed; both P0 blockers cleared; legal track closed; no new research briefs since 05-23).
-> **Active phase: Phase 1 commercial substrate BUILDING (FW-096/097/100 merged on mac-native; FW-098 building; FW-099/101 queued) + Mac Migration (Specs 057-065 ready; Phase 1 mid-execution Captain-hands-on). Legal/compliance track CLOSED (Spec 055 v7.3 H1/H3/H4). Spec 049 at v3.2.**
+> Maintained by CPO. Last refinement: 2026-05-25 10:00 UTC (cron — Phase-1 commercial CODE SUBSTRATE COMPLETE: FW-096/097/098/100 + Spec 052 Ph5 + Spec 049 C3 all merged; refslund-commercial preset + role-defs + capability_grants landed. Remaining = 2 Captain founder-actions (#184 private repo, #191 Hetzner VPS) + non-blocking follow-ups. No new research briefs since 05-23).
+> **Active phase: Phase 1 commercial CODE SUBSTRATE COMPLETE — everything buildable is merged + reviewed. The remaining go-live blockers are CAPTAIN founder-actions, not engineering: (1) private commercial repo (board #184) → gates FW-099 signup + FW-101 dashboard; (2) Hetzner Frankfurt VPS (task #191, pending CTO Hetzner-vs-Fly.io ratify) → gates the proxy + audit-server deploy. + Mac Migration (Specs 057-065 ready; Captain-hands-on). Legal track CLOSED (Spec 055 v7.3). Spec 049 Ph5 (C3 conventional-commit hook) done.**
 > **Two new Phase-1 tracking artifacts (CPO, this cycle):** `cabinet-customer-1-readiness.md` (pre-sale GO rollup — "can we TAKE customer #1") + `cabinet-phase-1-validation-gate.md` (post-sale PMF gate — "are we good after customers 1-5"). Complementary bookends; the readiness checklist is the single source of truth for customer-#1 prerequisites.
 > Sensed: TestFlight live + PostHog Phase-0 wired (PR #559, 2026-04-25). Sensed backlog is stable — no new CTO work queued for Sensed until Mac migration phases are complete.
 > Research absorbed (prior cycle, still current): CRO competitive sweep (Devin $20 + Anthropic enforcement), audience psychology digest (trust-gap #1 + 85/15 framing), Anthropic ToS Q1 sweep (value-add carve-out strengthened), Mac-native pre-staging (TCC code-signing — now folded into Spec 058 1.8 body + committed e8af6e9), Claude Code daily catchup (Spec 049 v3.2 ast-grep + /code-review boundary, staged).
@@ -45,17 +45,20 @@
 
 ## P1 — Commercial Phase 1 (spec pipeline, Captain-facing)
 
-> Specs drafted (tasks #28-33). **CTO build is UNDERWAY — NOT blocked on Mac migration** (the substrate is repo-side proxy/audit-server code, independent of the Mac cutover). FW-096/097/100 already MERGED to mac-native 2026-05-24; reviews run CTO↔CPO per substrate. CPO spec lookahead continues in parallel.
+> **Code substrate COMPLETE 2026-05-25** — all repo-side commercial substrate is merged + reviewed (CTO build + Opus adversary rounds + CPO conformance/GDPR/contract review): proxy, audit-server + officer-producers, erasure + breach-sim, install orchestrator, conventional-commit hook. The `refslund-commercial` preset (agents + capability_grants) is landed. **What's left is Captain-gated, not buildable** (see header: #184 private repo, #191 Hetzner VPS). CPO/CTO commercial role-def variants are the Phase-2 add (FW-103 wizard).
 
 | Item | FW# | Spec | Status | Notes |
 |------|-----|------|--------|-------|
 | LiteLLM proxy + virtual keys + daily cap | FW-096 | 051 v7.1 | ✅ **MERGED** (ce61fca) | team-budget $50/day cap-enforcement + cabinet-pause; cap-status reads the enforcer counter. Cap-reaction (officer-side 429→Spec-049 events) deferred — CTO designs next. |
-| Customer audit log | FW-097 | 052 v3.3 | ✅ **MERGED** (ef73f23) | hash-chain + two-hash erasure + marker-verify (§9b); proxy-audit path-pinned to LITELLM_AUDIT_LOG_ROOT. Sidecar deploy = Phase-2 Hetzner-gated. |
-| Concierge install runbook | FW-098 | 053 v4 | 🔨 **CTO BUILDING** | Customer templates complete (below). Full review routes to CPO when PR lands. |
-| refslund.ai signup + Stripe billing | FW-099 | 054 v2 | Spec COMPLETE | Gated on the private commercial repo (§12 founder-action, CoS-tracked); CTO Phase 2. |
-| GDPR baseline (ROPA/DPA/DPIA/erasure) | FW-100 | 055 v7.3.2 | ✅ **MERGED** (fc1a496) | customer-erasure.sh 8-step + sla-tracker; legal track CLOSED. DPO Article-17 sign-off = customer-#1 gate (CoS-tracked). |
-| Customer dashboard MVP | FW-101 | 056 | Spec COMPLETE — **next CTO build** | cap-status from enforcer team-budget; backend-mediated AUDIT_API_KEY (per FW-097 review). |
-| Per-cabinet AUDIT_API_KEY→cabinet scoping | FW-120 | 052 v3.3 AC#10 | OPEN — **HARD GATE before customer #2** | Phase-1 = backend-mediation (leak-free, 1 cabinet); CoS + COO-as-DPO tracked. |
+| Customer audit log (server + officer-producers) | FW-097 / 052 Ph5 | 052 v3.4 | ✅ **MERGED** (ef73f23 + bafb9a8) | hash-chain + two-hash erasure + marker-verify; officer-side producers emit (allow-list PII-min, capability-gated, fail-safe). Sidecar deploy = Hetzner-gated. validator.py allow-list hardening = follow-up #234. |
+| Concierge install runbook + orchestrator | FW-098 | 053 v4.1 | ✅ **MERGED** (PR #102) | install-customer-cabinet.sh (slug-validated, secrets chmod-600, ANTHROPIC-absent gate) + templates. Token signature-verify = Phase-2 self-serve (FW-107). |
+| refslund-commercial preset (agents + grants) | — | — | ✅ **LANDED** (3e53db4 + 97e6e73) | cos-lead/coo-dpo/cro role-defs (single_ceo, consent_gated, audit-emit, customer=Captain) + capability_grants block. coo-dpo PENDING COO-as-DPO compliance validation (customer-#1 gate). |
+| GDPR baseline + erasure + breach-sim | FW-100 | 055 v7.3.2 | ✅ **MERGED** (fc1a496) | customer-erasure.sh 8-step + sla-tracker + breach-notification.sh (Art 33/34 tabletop, fail-safe). DPO Article-17 sign-off = customer-#1 gate. |
+| refslund.ai signup + Stripe billing | FW-099 | 054 v2 | 🔒 **CAPTAIN-GATED** (board #184) | Spec complete; gated on the private commercial repo provisioning. |
+| Customer dashboard MVP | FW-101 | 056 | 🔒 **CAPTAIN-GATED** (board #184) | Spec complete; gated on the private commercial repo. cap-status from enforcer; backend-mediated AUDIT_API_KEY. |
+| Per-cabinet AUDIT_API_KEY→cabinet scoping | FW-120 | 052 AC#10 | OPEN — **HARD GATE before customer #2** | Phase-1 = backend-mediation (leak-free, 1 cabinet); CoS + COO-as-DPO tracked. |
+
+**Customer-#1 go-live blockers = 2 CAPTAIN founder-actions (engineering is DONE):** (1) **#184** private commercial repo → unblocks FW-099 signup + FW-101 dashboard; (2) **#191** Hetzner Frankfurt VPS + proxy.refslund.ai DNS/TLS (pending CTO Hetzner-vs-Fly.io ratify) → unblocks the proxy + audit-server deploy. Both surfaced to Captain by CoS. Non-blocking follow-ups: validator.py server-backstop allow-list (#234, CTO), coo-dpo COO-compliance-validation, cap-reaction design (CTO).
 
 ### Customer templates (all complete, ready for first-customer use)
 | Template | File | Status |
