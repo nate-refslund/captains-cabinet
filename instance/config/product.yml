@@ -5,7 +5,7 @@
 #   instance/config/platform.yml + instance/config/projects/sensed.yml
 # Do not edit directly — edit the source files instead.
 # Active project: sensed
-# Generated: 2026-04-30 11:19:47 UTC
+# Generated: 2026-05-24 19:38:54 UTC
 # =============================================================  
 
 # =============================================================
@@ -90,7 +90,8 @@ neon:
 # Telegram — Project Group Chat
 # =============================================================
 telegram:
-  bot_mode: multi_officer          # Legacy: 5-bot roster (Sensed predates single_ceo default)
+  bot_mode: single_ceo             # Captain 2026-05-24: "only you [CoS] in Telegram, no other bot." CEO-token falls back to TELEGRAM_COS_TOKEN (start-officer.sh candidate list).
+  ceo_officer: cos                 # CoS is the sole Telegram bot; cto/cpo/cro/coo go Telegram-dark (Captain-attention routes via queue → CoS relays)
   officers:
     cos: sensed_cos_bot
     cto: sensed_cto_bot
