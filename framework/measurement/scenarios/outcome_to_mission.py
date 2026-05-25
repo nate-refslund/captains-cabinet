@@ -73,23 +73,23 @@ def _verify(context, results):
     assertions.append(("has_work_graph", graph is not None))
 
     if graph:
-        nodes = graph.get("nodes", [])
+        nodes = list(graph.nodes.values())
         assertions.append(("has_nodes", len(nodes) > 0))
         assertions.append(("nodes_match_criteria",
                           len(nodes) >= len(context["outcome"]["measurable_criteria"])))
 
         # All nodes have assigned roles
-        assigned = [n for n in nodes if n.get("assigned_role")]
+        assigned = [n for n in nodes if n.assigned_role]
         assertions.append(("all_nodes_assigned", len(assigned) == len(nodes)))
 
-        # No cycles in graph
-        assertions.append(("no_cycles", not graph.get("has_cycles", True)))
+        # No cycles in graph (validate returns empty list if valid)
+        assertions.append(("no_cycles", len(graph.validate()) == 0))
 
         # All assigned roles actually exist
         from framework.roles.lifecycle import load_role
         valid_roles = all(
-            load_role(n["assigned_role"]) is not None
-            for n in nodes if n.get("assigned_role")
+            load_role(n.assigned_role) is not None
+            for n in nodes if n.assigned_role
         )
         assertions.append(("assigned_roles_exist", valid_roles))
 

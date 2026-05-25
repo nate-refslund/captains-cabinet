@@ -155,9 +155,10 @@ def _write_to_db(event: dict[str, Any]) -> None:
             )
             conn.commit()
         conn.close()
-    except Exception:
-        # DB write is best-effort — the JSONL log is the guaranteed record
-        pass
+    except Exception as e:
+        # DB write is best-effort — the JSONL log is the guaranteed record.
+        # Log to stderr so failures are visible in hook output.
+        print(f"event-emitter: WARN db write failed: {e}", file=sys.stderr)
 
 
 def replay(

@@ -3,7 +3,7 @@
 #
 # Phase 1 CP2 (Captain 2026-04-16). All records written before CP1 landed
 # have NULL context_slug. This script backfills them with a default slug
-# derived from the active-project config (typically 'sensed').
+# derived from the active-project config.
 #
 # Safe to re-run. Only touches rows where context_slug IS NULL. Does NOT
 # overwrite any row that already has a slug.
@@ -37,7 +37,7 @@ if [ -n "$SLUG_ARG" ]; then
   DEFAULT_SLUG="$SLUG_ARG"
 else
   DEFAULT_SLUG=$(cat "$CABINET_ROOT/instance/config/active-project.txt" 2>/dev/null | tr -d '[:space:]')
-  DEFAULT_SLUG="${DEFAULT_SLUG:-sensed}"
+  DEFAULT_SLUG="${DEFAULT_SLUG:-default}"
 fi
 
 # Verify the slug exists in contexts yaml

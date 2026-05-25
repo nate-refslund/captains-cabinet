@@ -201,7 +201,7 @@ def compile_outcome(
         "id": mission_id,
         "outcome_id": outcome_id,
         "name": outcome.get("name", outcome_id),
-        "status": "active",
+        "status": "planning",
         "work_graph": graph,
     }
 

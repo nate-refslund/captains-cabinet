@@ -33,22 +33,22 @@ export async function switchProject(slug: string): Promise<{ success: boolean; e
 
 export async function getActiveProject(): Promise<string> {
   if (IS_MOCK) {
-    return 'sensed'
+    return 'demo'
   }
   try {
     const redisValue = await redis.get('cabinet:active-project')
     if (redisValue) return redisValue
-    const { stdout } = await dockerExec('cat /opt/founders-cabinet/instance/config/active-project.txt 2>/dev/null || echo sensed')
+    const { stdout } = await dockerExec('cat /opt/founders-cabinet/instance/config/active-project.txt 2>/dev/null || echo demo')
     return stdout.trim() || 'sensed'
   } catch {
-    return 'sensed'
+    return 'demo'
   }
 }
 
 export async function getProjects(): Promise<ProjectInfo[]> {
   if (IS_MOCK) {
     return [
-      { slug: 'sensed', name: 'Sensed', active: true },
+      { slug: 'demo', name: 'My Product', active: true },
       { slug: 'demo-project', name: 'Demo Project', active: false },
     ]
   }
@@ -78,11 +78,11 @@ export async function getProjects(): Promise<ProjectInfo[]> {
       })
 
     if (projects.length === 0) {
-      return [{ slug: 'sensed', name: 'Sensed', active: true }]
+      return [{ slug: 'demo', name: 'My Product', active: true }]
     }
 
     return projects
   } catch {
-    return [{ slug: 'sensed', name: 'Sensed', active: true }]
+    return [{ slug: 'demo', name: 'My Product', active: true }]
   }
 }

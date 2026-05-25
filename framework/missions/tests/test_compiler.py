@@ -121,7 +121,7 @@ class TestCompileOutcome:
         assert mission["id"].startswith("mission-outcome-001-")
         assert mission["outcome_id"] == "outcome-001"
         assert mission["name"] == "Launch MVP"
-        assert mission["status"] == "active"
+        assert mission["status"] == "planning"
         assert isinstance(mission["work_graph"], WorkGraph)
 
     def test_task_count_matches_criteria(self, sample_outcome, sample_roles):

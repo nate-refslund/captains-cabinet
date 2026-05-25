@@ -34,7 +34,7 @@
 # Caller discipline (CRO pilot 2026-04-17):
 #   - Pass --context with stack facts for any stack-specific question.
 #     Without it, the advisor confabulates from common RN/web patterns
-#     (observed: advisor referenced RevenueCat when Sensed uses expo-iap).
+#     (observed: advisor confabulates library choices without project context).
 #     Useful context files: your product's package.json, shared/interfaces/
 #     tech-radar.md, relevant spec or migration plan.
 #   - Budget ~1500-2500 advisor output tokens per call. Opus 4.7 does not
