@@ -123,7 +123,11 @@ gca_commit_subject() {
 # Scoped to the commit's OWN flags (CPO PR#104 review FP fix): a -n on a chained non-git command
 # (head -n / grep -n / tail -n / sort -n) or a wrapper prefix (sudo -n / nice -n git commit) does
 # NOT count. Quoted spans are stripped first so a -n INSIDE the message body doesn't count (advA4).
-# (Remaining warn-mode-bounded edge: escaped-quote-in-DQ message body — disclosed, low-frequency.)
+# Remaining warn-mode-bounded FP edges (over-warn ONLY — never MISS a no-verify; matter solely IF
+# enforce-mode is later flipped, and only on pathological strings): escaped-quote-in-DQ body;
+# token-fusion (a backtick sub mid-flag like -`x`n glues to -n — LOW, self-defeating: real arg
+# errors in git); DQ-backtick interleaving across two DQ strings (MEDIUM, pre-existing = the
+# non-escape-aware DQ strip, not specific to this hook). All confirmed by 3 Opus adversary rounds.
 gca_has_no_verify() {
     local cmd="$1" stripped seg flags
     # Strip quoted spans AND backtick command-sub BODIES first. A -n INSIDE a message body (advA4) or
