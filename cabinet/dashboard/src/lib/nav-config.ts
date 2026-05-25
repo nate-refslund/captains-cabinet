@@ -38,7 +38,7 @@ export const ADVANCED_NAV: NavLink[] = [
   { href: '/costs', label: 'Costs' },
   { href: '/crons', label: 'Crons' },
   { href: '/library', label: 'Library' },
-  { href: '/terminal', label: 'Terminal', external: true },
+  { href: 'https://terminal.example.com', label: 'Terminal', external: true },
 ]
 
 export const CONSUMER_NAV: NavLink[] = [
