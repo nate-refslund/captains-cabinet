@@ -35,8 +35,12 @@ gca_validate_subject() {
 # returns 0 (yes) / 1 (no).
 gca_invokes_git_commit() {
     local cmd="$1"
-    local boundary='(^|[;&|(){}`][[:space:]]*)'
-    local prefix='((env|nohup|nice|time|exec|stdbuf|ionice|setsid)([[:space:]]+-[^[:space:]]+([[:space:]]+[^-][^[:space:]]*)?)*[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*'
+    # statement boundary: line-start OR after ; & | ( ) { } ` OR a NEWLINE (multiline command —
+    # adversary pass 2: `cd /repo\ngit commit ...` was missed by string-mode ^). Per FW-043 this
+    # accepts the heredoc-body FP (warn-mode bounds it; under-detection is the worse failure).
+    local NL=$'\n'
+    local boundary='(^|[;&|(){}`'"${NL}"'][[:space:]]*)'
+    local prefix='((env|nohup|nice|time|exec|stdbuf|ionice|setsid|eval|command|builtin)([[:space:]]+-[^[:space:]]+([[:space:]]+[^-][^[:space:]]*)?)*[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*'
     local gitcommit='git([[:space:]]+-[^[:space:]]+([[:space:]]+[^-][^[:space:]]*)?)*[[:space:]]+commit([[:space:]]|$)'
     local re="${boundary}${prefix}${gitcommit}"
     [[ "$cmd" =~ $re ]] && return 0
@@ -53,6 +57,11 @@ _gca_dash_c_arg() {
     [[ "$cmd" =~ $re_sq ]] && { printf '%s' "${BASH_REMATCH[4]}"; return 0; }
     local re_dq='(^|[;&|(){}`[:space:]])(bash|sh|zsh)[[:space:]]+(-[a-z]*c|--command)[[:space:]]+"(([^"\\]|\\.)*)"'
     [[ "$cmd" =~ $re_dq ]] && { printf '%s' "${BASH_REMATCH[4]}"; return 0; }
+    # eval '<arg>' / eval "<arg>" — eval runs its arg as shell (adversary A1)
+    local re_evsq='(^|[;&|(){}`[:space:]])eval[[:space:]]+'"$_GCA_Q"'([^'"$_GCA_Q"']*)'"$_GCA_Q"
+    [[ "$cmd" =~ $re_evsq ]] && { printf '%s' "${BASH_REMATCH[2]}"; return 0; }
+    local re_evdq='(^|[;&|(){}`[:space:]])eval[[:space:]]+"(([^"\\]|\\.)*)"'
+    [[ "$cmd" =~ $re_evdq ]] && { printf '%s' "${BASH_REMATCH[2]}"; return 0; }
     printf ''
 }
 
@@ -61,15 +70,15 @@ _gca_dash_c_arg() {
 # skip) / 2 = present but UNEXTRACTABLE -> caller treats as fail-closed (warn).
 gca_commit_subject() {
     local cmd="$1" v
-    local mflag='(-m|--message)'
+    local mflag='(-[a-z]*m|--message)'
     # -m / --message  'single-quoted'
     local re; re="(^|[[:space:]])${mflag}[[:space:]]+${_GCA_Q}([^${_GCA_Q}]*)${_GCA_Q}"
     if [[ "$cmd" =~ $re ]]; then printf '%s' "${BASH_REMATCH[3]%%$'\n'*}"; return 0; fi
     # -m / --message  "double-quoted" (escape-aware)
-    re='(^|[[:space:]])(-m|--message)[[:space:]]+"(([^"\\]|\\.)*)"'
+    re='(^|[[:space:]])(-[a-z]*m|--message)[[:space:]]+"(([^"\\]|\\.)*)"'
     if [[ "$cmd" =~ $re ]]; then v="${BASH_REMATCH[3]}"; printf '%s' "${v%%$'\n'*}"; return 0; fi
     # -m / --message  $'ansi-c'  (subject = up to the first \n ESCAPE in source)
-    re='(^|[[:space:]])(-m|--message)[[:space:]]+\$'"$_GCA_Q"'(([^'"$_GCA_Q"'\\]|\\.)*)'"$_GCA_Q"
+    re='(^|[[:space:]])(-[a-z]*m|--message)[[:space:]]+\$'"$_GCA_Q"'(([^'"$_GCA_Q"'\\]|\\.)*)'"$_GCA_Q"
     if [[ "$cmd" =~ $re ]]; then v="${BASH_REMATCH[3]}"; printf '%s' "${v%%\\n*}"; return 0; fi
     # --message=VALUE / -m=VALUE  (= form: SQ / DQ / bare)
     re='(^|[[:space:]])(--message|-m)='"$_GCA_Q"'([^'"$_GCA_Q"']*)'"$_GCA_Q"
@@ -79,7 +88,7 @@ gca_commit_subject() {
     re='(^|[[:space:]])(--message|-m)=([^[:space:]]+)'
     if [[ "$cmd" =~ $re ]]; then printf '%s' "${BASH_REMATCH[3]}"; return 0; fi
     # -m / --message  bare single token (rare)
-    re='(^|[[:space:]])(-m|--message)[[:space:]]+([^-'"$_GCA_Q"'"[:space:]][^[:space:]]*)'
+    re='(^|[[:space:]])(-[a-z]*m|--message)[[:space:]]+([^-'"$_GCA_Q"'"[:space:]][^[:space:]]*)'
     if [[ "$cmd" =~ $re ]]; then printf '%s' "${BASH_REMATCH[3]}"; return 0; fi
     # -F / --file FILE -> first line (fail-closed if unreadable)
     re='(^|[[:space:]])(-F|--file)(=|[[:space:]]+)'"$_GCA_Q"'?([^'"$_GCA_Q"'"[:space:]]+)'"$_GCA_Q"'?'
@@ -99,10 +108,14 @@ gca_commit_subject() {
 # message body can false-positive; the FP-rate JSONL surfaces it + an adversary pass will strip
 # quoted spans before this check. --no-verify (long form) is low-FP.
 gca_has_no_verify() {
-    local cmd="$1"
+    local cmd="$1" stripped
+    # strip quoted spans first so a -n / --no-verify INSIDE a commit message body does not
+    # false-positive (adversary A4). Naive SQ/DQ strip is sufficient for the common FP; an
+    # escaped-quote-in-DQ edge remains (warn-mode bounds it).
+    stripped="$(printf '%s' "$cmd" | sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g")"
     local re_long='(^|[[:space:]])--no-verify([[:space:]]|=|$)'
-    [[ "$cmd" =~ $re_long ]] && return 0
+    [[ "$stripped" =~ $re_long ]] && return 0
     local re_short='(^|[[:space:]])-n([[:space:]]|$)'
-    [[ "$cmd" =~ $re_short ]] && return 0
+    [[ "$stripped" =~ $re_short ]] && return 0
     return 1
 }
