@@ -285,6 +285,24 @@ else
   PASS=$((PASS + 1))
 fi
 
+section "config.yaml: log_requests disabled (M-DPO-2 / Spec 051 v7.3 AC#14)"
+if command -v python3 >/dev/null 2>&1; then
+  logreq_check="$(python3 -c "
+import yaml
+with open('${PROXY_DIR}/config.yaml') as f:
+    cfg = yaml.safe_load(f)
+lr = (cfg.get('general_settings') or {}).get('log_requests', None)
+# MUST be present + False: ON persists customer prompt PII to litellm stdout/docker-log OUTSIDE
+# the erasure-governed SSOT (GDPR Art 5(1)(c) minimization + Art 17). FW-096 callback is
+# independent of this flag, so false is the zero-loss safe default.
+print('ok' if lr is False else f'BAD:log_requests={lr!r}')
+" 2>&1)"
+  eq "config.yaml log_requests is false (M-DPO-2 PII-minimization gate)" "$logreq_check" "ok"
+else
+  printf '  (SKIP: python3 unavailable)\n'
+  PASS=$((PASS + 1))
+fi
+
 # ═══════════════════════════════════════════════════════════════════════════
 section "bash -n syntax check: all new scripts"
 bash -n "$LIB/llm-routing.sh" 2>&1

@@ -85,5 +85,9 @@ general_settings:
   # Virtual-key signing (per AC #10 — keys signed, rotation flow in rotate-llm-key.sh)
   store_model_in_db: false
 
-  # Ensure the audit logger receives full usage metadata
-  log_requests: true
+  # M-DPO-2 (Spec 051 v7.3 AC#14): log_requests MUST be false. The FW-096 audit callback gets its
+  # usage metadata from the callback payload INDEPENDENTLY of this flag (the old "feeds the audit
+  # logger" comment was a false premise, CPO-verified). ON would persist customer prompt content
+  # (PII) to litellm stdout → docker json-log, OUTSIDE the erasure-governed SSOT — breaking GDPR
+  # Art 5(1)(c) minimization + Art 17 erasure. false = safe default, zero functionality loss.
+  log_requests: false
