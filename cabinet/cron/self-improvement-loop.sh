@@ -27,6 +27,25 @@
 #
 # Exits 0 whenever the loop COMPLETES, regardless of how many proposals
 # were applied — "no work to do" is a valid successful outcome.
+#
+# Forwarded flags (anything you pass to this script is forwarded verbatim
+# to the Python driver `python3 -m framework.learning.self_improvement_loop`):
+#
+#   --dry-run            Plan only — write NO events, NO proposal YAMLs, NO
+#                        draft skill files. Safe to run anywhere; produces a
+#                        report of what *would* have been done.
+#   --skip-evals         Bypass scenario + golden eval validation gate.
+#                        Apply learnings without safety checks. For
+#                        development/debugging only — production runs leave
+#                        this OFF.
+#   --json               Emit the structured run report as JSON.
+#   --window-days N      Pattern detection window (default 28).
+#   --min-occurrences N  Minimum cluster size to propose on (default 3).
+#
+# Examples:
+#   ./self-improvement-loop.sh                    # normal run
+#   ./self-improvement-loop.sh --dry-run --json   # preview as JSON
+#   ./self-improvement-loop.sh --skip-evals       # dev/debug auto-apply
 
 set -euo pipefail
 
@@ -37,5 +56,7 @@ cd "$CABINET_ROOT"
 
 echo "=== Self-improvement loop @ $(date -u '+%Y-%m-%dT%H:%M:%SZ') ==="
 
-# Forward extra flags (e.g. --dry-run, --json, --window-days) to the module
+# Forward all flags (--dry-run, --skip-evals, --json, --window-days, etc.)
+# to the Python driver. The driver parses them via argparse and applies the
+# correct gate behavior; see its --help for the full list.
 exec python3 -m framework.learning.self_improvement_loop "$@"

@@ -72,9 +72,21 @@ The loop is conservative by construction:
 CLI::
 
     python3 -m framework.learning.self_improvement_loop                # full loop
-    python3 -m framework.learning.self_improvement_loop --dry-run      # detect+plan, no writes
+    python3 -m framework.learning.self_improvement_loop --dry-run      # detect+plan, NO writes anywhere
     python3 -m framework.learning.self_improvement_loop --json         # JSON report
-    python3 -m framework.learning.self_improvement_loop --skip-evals   # don't re-run role evals
+    python3 -m framework.learning.self_improvement_loop --skip-evals   # auto-apply without running validation evals
+
+``--dry-run`` is the strongest no-side-effects mode: the loop computes
+proposals, hat candidates, and induction clusters in memory and prints a
+summary. It writes NO events to the ledger, NO proposal YAMLs to disk, and
+NO draft skill files. Use this to preview what the loop would do.
+
+``--skip-evals`` short-circuits the validation gate to "always pass" —
+proposals, hat graduations, and skill drafts are applied WITHOUT running
+scenario evals or golden eval shells. Intended for development and
+debugging the loop itself; not for normal operation. The decision is
+recorded in event payloads as ``validation_skipped: true`` so audits can
+distinguish auto-applied-after-validation from auto-applied-without.
 """
 
 from __future__ import annotations
@@ -111,6 +123,25 @@ except ImportError:  # pragma: no cover — defended just in case
 
 
 _TODO_RE = re.compile(r"<TODO:[^>]*>")
+
+
+def _noop_emit(event_type: str, actor: str, payload: dict[str, Any] | None = None,
+               parent_id: str | None = None) -> dict[str, Any]:
+    """Drop-in replacement for ``emit`` that writes nothing.
+
+    Used in ``--dry-run`` mode so the loop can plan without polluting the
+    ledger. Returns a synthetic event dict (only the ``id`` field is used
+    by callers as ``parent_id`` for child events; everything else is a stub).
+    """
+    return {
+        "id": f"dryrun-{uuid.uuid4()}",
+        "event_type": event_type,
+        "actor": actor,
+        "payload": payload or {},
+        "parent_id": parent_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "dry_run": True,
+    }
 
 
 def _cabinet_root() -> Path:
@@ -241,6 +272,8 @@ def _apply_proposal(
     proposal: dict[str, Any],
     parent_event_id: str,
     actor: str,
+    emit_fn: Any = emit,
+    validation_skipped: bool = False,
 ) -> tuple[bool, str]:
     """Apply one concrete proposal to the role on disk.
 
@@ -304,13 +337,14 @@ def _apply_proposal(
     if not changes_applied:
         return False, "nothing concrete to apply"
 
-    emit("role_evolved", actor=actor, parent_id=parent_event_id, payload={
+    emit_fn("role_evolved", actor=actor, parent_id=parent_event_id, payload={
         "role_slug": role_slug,
         "proposal_id": proposal["proposal_id"],
         "failure_type": (proposal.get("trigger") or {}).get("failure_type"),
         "kind": kind,
         "changes_applied": changes_applied,
         "captain_auto_ratified": True,
+        "validation_skipped": validation_skipped,
         "ratification_note": (
             "Captain auto-ratified via self-improvement loop per framework "
             "directive (no manual approval required)."
@@ -346,6 +380,8 @@ def _apply_hat_graduations(
     candidates: list[dict[str, Any]],
     parent_event_id: str,
     actor: str,
+    emit_fn: Any = emit,
+    validation_skipped: bool = False,
 ) -> list[dict[str, Any]]:
     """Promote each hat's capabilities to base capabilities on the role."""
     applied: list[dict[str, Any]] = []
@@ -375,10 +411,11 @@ def _apply_hat_graduations(
                 # adapt_role already idempotent for duplicate caps; ignore and continue
                 continue
         if promoted_caps:
-            emit("role_hat_promoted", actor=actor, parent_id=parent_event_id, payload={
+            emit_fn("role_hat_promoted", actor=actor, parent_id=parent_event_id, payload={
                 **c,
                 "status": "auto_applied",
                 "captain_auto_ratified": True,
+                "validation_skipped": validation_skipped,
                 "capabilities_promoted": promoted_caps,
             })
             applied.append({
@@ -418,17 +455,20 @@ def _apply_skill_inductions(
     drafted_paths: list[Path],
     parent_event_id: str,
     actor: str,
+    emit_fn: Any = emit,
+    validation_skipped: bool = False,
 ) -> list[dict[str, Any]]:
     promoted: list[dict[str, Any]] = []
     for p in drafted_paths:
         ok, reason = _validate_skill_draft(p)
         if not ok:
             continue
-        emit("skill_promoted", actor=actor, parent_id=parent_event_id, payload={
+        emit_fn("skill_promoted", actor=actor, parent_id=parent_event_id, payload={
             "skill_slug": p.stem,
             "skill_path": str(p),
             "status": "draft_promoted",
             "captain_auto_ratified": True,
+            "validation_skipped": validation_skipped,
             "ratification_note": (
                 "Draft skill auto-promoted to tracked draft in memory/skills/evolved/. "
                 "CoS still owns final validation → status:validated before formal use."
@@ -448,28 +488,76 @@ def run_loop(
     min_occurrences: int = 3,
     actor: str = "self_improvement_loop",
     dry_run: bool = False,
+    skip_evals: bool = False,
 ) -> dict[str, Any]:
     """Execute the closed self-improvement loop. Returns a structured report.
 
     The report shape is suitable for ``--json`` CLI output and includes the
     parent loop event id so an auditor can pull every child event with one
     replay filter.
+
+    Args:
+        window_days: rolling window for eval failure patterns.
+        min_occurrences: minimum eval-failure cluster size to propose on.
+        actor: actor slug stamped on emitted events.
+        dry_run: when True, the loop writes NO events, NO proposal YAMLs, and
+            NO draft skill files. The report still lists what *would* have
+            been done. Use this to preview.
+        skip_evals: when True, bypass the scenario + golden-eval validation
+            gate. All applicable proposals/hats/skills auto-apply without
+            running the safety nets. For dev/debug only — production runs
+            must keep validation on. Decision is stamped into emitted event
+            payloads as ``validation_skipped: true``.
     """
+    # Bind emit: dry-run uses a no-op so the loop computes everything in
+    # memory but writes nothing to the ledger.
+    emit_fn = _noop_emit if dry_run else emit
+
     loop_id = str(uuid.uuid4())
-    started = emit("self_improvement_loop_started", actor=actor, payload={
+    started = emit_fn("self_improvement_loop_started", actor=actor, payload={
         "loop_id": loop_id,
         "window_days": window_days,
         "min_occurrences": min_occurrences,
         "dry_run": dry_run,
+        "skip_evals": skip_evals,
     })
     parent_id = started["id"]
 
     # Stage 1 — generate evolution proposals from patterns -------------------
-    proposed = propose_from_patterns(
-        window_days=window_days,
-        min_occurrences=min_occurrences,
-        actor=actor,
-    )
+    # In dry-run we use the read-only pattern detector + build proposals in
+    # memory; the writer (`propose_from_patterns`) both writes YAML and emits
+    # role_charter_changed events, which would violate dry-run's no-writes
+    # contract.
+    proposed: list[tuple[Path | str, dict[str, Any]]]
+    if dry_run:
+        from framework.measurement.eval_pattern_detector import detect_patterns
+        patterns = detect_patterns(
+            window_days=window_days,
+            min_occurrences=min_occurrences,
+        )
+        # Synthesize in-memory proposals using the same template path so the
+        # dry-run report has matching shape — but use a placeholder path so
+        # downstream code that opens the file knows to fall back to the dict.
+        from framework.roles.evolution import draft_amendment
+        proposed = []
+        for pat in patterns:
+            try:
+                amendment = draft_amendment(pat)
+            except Exception:  # noqa: BLE001
+                amendment = {
+                    "proposal_id": f"{pat['role_slug']}-{pat['failure_type']}",
+                    "role_slug": pat["role_slug"],
+                    "trigger": {"failure_type": pat["failure_type"]},
+                    "suggested_change": {},
+                }
+            placeholder = f"<dry-run-proposal-{amendment.get('proposal_id', 'unknown')}>"
+            proposed.append((placeholder, amendment))
+    else:
+        proposed = propose_from_patterns(
+            window_days=window_days,
+            min_occurrences=min_occurrences,
+            actor=actor,
+        )
 
     proposal_report: list[dict[str, Any]] = []
     applied_proposals: list[dict[str, Any]] = []
@@ -479,26 +567,34 @@ def run_loop(
     # per proposal would be quadratic for no value).
     gate_ok = True
     gate_detail: dict[str, Any] = {}
-    if proposed and not dry_run:
+    if proposed and not dry_run and not skip_evals:
         gate_ok, gate_detail = _validation_gate()
+    elif skip_evals:
+        gate_detail = {"skipped": "skip_evals"}
 
     for path, pat in proposed:
-        if _yaml_load is None:
+        if dry_run:
+            # In dry-run, `pat` is the in-memory amendment dict (from
+            # draft_amendment); path is a placeholder string. Skip the
+            # file-read; use the dict directly.
+            proposal = pat
+        elif _yaml_load is None:
             proposal_report.append({
                 "proposal_id": Path(path).stem,
                 "status": "skipped_no_yaml",
             })
             continue
-        try:
-            with open(path) as f:
-                proposal = _yaml_load(f) or {}
-        except Exception as e:  # noqa: BLE001
-            proposal_report.append({
-                "proposal_id": Path(path).stem,
-                "status": "unreadable",
-                "error": str(e),
-            })
-            continue
+        else:
+            try:
+                with open(path) as f:
+                    proposal = _yaml_load(f) or {}
+            except Exception as e:  # noqa: BLE001
+                proposal_report.append({
+                    "proposal_id": Path(path).stem,
+                    "status": "unreadable",
+                    "error": str(e),
+                })
+                continue
 
         concrete, why = _proposal_is_concrete(proposal)
         record: dict[str, Any] = {
@@ -534,7 +630,10 @@ def run_loop(
             proposal_report.append(record)
             continue
 
-        applied, reason = _apply_proposal(proposal, parent_id, actor)
+        applied, reason = _apply_proposal(
+            proposal, parent_id, actor,
+            emit_fn=emit_fn, validation_skipped=skip_evals,
+        )
         if applied:
             _stamp_proposal_status(Path(path), "auto_applied",
                                    "self-improvement-loop: auto-applied (captain-ratified)")
@@ -560,10 +659,13 @@ def run_loop(
         if hat_candidates:
             # Apply each candidate (idempotent inside adapt_role).
             # Re-run gate only if it wasn't already evaluated above.
-            if not proposed:
+            if not proposed and not skip_evals:
                 gate_ok, gate_detail = _validation_gate()
-            if gate_ok:
-                hat_applied = _apply_hat_graduations(hat_candidates, parent_id, actor)
+            if gate_ok or skip_evals:
+                hat_applied = _apply_hat_graduations(
+                    hat_candidates, parent_id, actor,
+                    emit_fn=emit_fn, validation_skipped=skip_evals,
+                )
 
     # Stage 3 — skill induction ---------------------------------------------
     drafted_paths: list[Path] = []
@@ -571,7 +673,10 @@ def run_loop(
     if not dry_run:
         drafted_paths = induce_drafts(actor=actor)
         if drafted_paths:
-            skill_promoted = _apply_skill_inductions(drafted_paths, parent_id, actor)
+            skill_promoted = _apply_skill_inductions(
+                drafted_paths, parent_id, actor,
+                emit_fn=emit_fn, validation_skipped=skip_evals,
+            )
     else:
         # Dry-run: cluster without writing
         from framework.learning.skill_induction import _cluster_records  # noqa: SLF001
@@ -584,12 +689,19 @@ def run_loop(
         drafted_paths = [Path(f"<dry-run-cluster-{i}>") for i, _ in enumerate(clusters)]
 
     # Stage 4 — completion event --------------------------------------------
+    if dry_run:
+        validation_gate_report: dict[str, Any] = {"skipped": "dry_run"}
+    elif skip_evals:
+        validation_gate_report = {"skipped": "skip_evals"}
+    else:
+        validation_gate_report = gate_detail
     summary = {
         "loop_id": loop_id,
         "window_days": window_days,
         "min_occurrences": min_occurrences,
         "dry_run": dry_run,
-        "validation_gate": gate_detail if not dry_run else {"skipped": "dry_run"},
+        "skip_evals": skip_evals,
+        "validation_gate": validation_gate_report,
         "proposals": {
             "generated": len(proposed),
             "auto_applied": len(applied_proposals),
@@ -612,7 +724,7 @@ def run_loop(
             "detail": skill_promoted,
         },
     }
-    emit("self_improvement_loop_completed", actor=actor, parent_id=parent_id, payload=summary)
+    emit_fn("self_improvement_loop_completed", actor=actor, parent_id=parent_id, payload=summary)
     summary["parent_event_id"] = parent_id
     return summary
 
@@ -629,8 +741,19 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--window-days", type=int, default=28)
     parser.add_argument("--min-occurrences", type=int, default=3)
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Detect proposals/candidates without applying changes.")
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help=("Plan only — write NO events, NO proposal YAMLs, NO draft "
+              "skill files. The report describes what would have been done. "
+              "Use to preview a loop run safely."),
+    )
+    parser.add_argument(
+        "--skip-evals", action="store_true",
+        help=("Bypass the validation gate (scenario evals + golden eval "
+              "shells); apply learnings without safety checks. For "
+              "development / debugging the loop itself — NOT for normal "
+              "operation. Emitted events are stamped validation_skipped: true."),
+    )
     parser.add_argument("--json", action="store_true",
                         help="Emit the structured report as JSON to stdout.")
     args = parser.parse_args(argv)
@@ -639,6 +762,7 @@ def main(argv: list[str] | None = None) -> int:
         window_days=args.window_days,
         min_occurrences=args.min_occurrences,
         dry_run=args.dry_run,
+        skip_evals=args.skip_evals,
     )
 
     if args.json:
@@ -648,6 +772,7 @@ def main(argv: list[str] | None = None) -> int:
     print("\n=== Self-improvement loop ===")
     print(f"  loop_id:           {summary['loop_id']}")
     print(f"  dry_run:           {summary['dry_run']}")
+    print(f"  skip_evals:        {summary['skip_evals']}")
     print(f"  proposals:         {summary['proposals']['generated']} generated, "
           f"{summary['proposals']['auto_applied']} auto-applied, "
           f"{summary['proposals']['pending_captain']} pending Captain")
@@ -655,10 +780,12 @@ def main(argv: list[str] | None = None) -> int:
           f"{summary['hat_graduations']['applied']} applied")
     print(f"  skill induction:   {summary['skill_induction']['drafted']} drafted, "
           f"{summary['skill_induction']['promoted']} promoted")
-    if not args.dry_run:
+    if not args.dry_run and not args.skip_evals:
         gate = summary["validation_gate"] or {}
         print(f"  validation gate:   scenario_passed={gate.get('scenario_passed')}, "
               f"golden_passed={gate.get('golden_passed')}")
+    elif args.skip_evals:
+        print("  validation gate:   SKIPPED (--skip-evals)")
     return 0
 
 
