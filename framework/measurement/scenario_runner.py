@@ -10,6 +10,15 @@ Usage:
     python3 -m framework.measurement.scenario_runner
     python3 -m framework.measurement.scenario_runner --scenario outcome_to_mission
     python3 -m framework.measurement.scenario_runner --ci  # lightweight CI mode
+
+Module-identity note
+--------------------
+The registry (`_SCENARIOS`, `register`, `Scenario`, `ScenarioResult`) lives
+in `_scenario_registry` so that the `-m` entrypoint (loaded as `__main__`)
+and importers that go through the canonical package path share ONE module
+object — and therefore one dict. Re-exporting here preserves the existing
+`from framework.measurement.scenario_runner import Scenario, register`
+call sites in scenarios/ and the test suite.
 """
 
 from __future__ import annotations
@@ -19,51 +28,29 @@ import json
 import os
 import sys
 import time
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
 
 # Add framework root to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+from framework.measurement._scenario_registry import (  # noqa: E402
+    Scenario,
+    ScenarioResult,
+    _SCENARIOS,
+    is_discovered,
+    mark_discovered,
+    register,
+)
 
-@dataclass
-class ScenarioResult:
-    name: str
-    passed: bool
-    duration_ms: float
-    assertions: list[dict[str, Any]] = field(default_factory=list)
-    error: str | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "name": self.name,
-            "passed": self.passed,
-            "duration_ms": self.duration_ms,
-            "assertions": self.assertions,
-            "error": self.error,
-        }
-
-
-@dataclass
-class Scenario:
-    """A single organizational capability scenario."""
-    name: str
-    description: str
-    category: str  # outcome, role, mission, policy, memory, recovery
-    setup: Callable[[], dict[str, Any]]  # returns context
-    execute: Callable[[dict[str, Any]], dict[str, Any]]  # returns results
-    verify: Callable[[dict[str, Any], dict[str, Any]], list[tuple[str, bool]]]  # returns (assertion_name, passed) list
-
-
-# Registry of all scenarios
-_SCENARIOS: dict[str, Scenario] = {}
-
-
-def register(scenario: Scenario) -> Scenario:
-    """Register a scenario for the runner."""
-    _SCENARIOS[scenario.name] = scenario
-    return scenario
+__all__ = [
+    "Scenario",
+    "ScenarioResult",
+    "_SCENARIOS",
+    "register",
+    "run_scenario",
+    "run_all",
+    "print_results",
+]
 
 
 def run_scenario(name: str) -> ScenarioResult:
@@ -124,14 +111,16 @@ def run_all(category: str | None = None, ci_mode: bool = False) -> list[Scenario
     return results
 
 
-_discovered = False
-
 def _discover_scenarios():
-    """Auto-discover scenario modules in the scenarios/ directory."""
-    global _discovered
-    if _discovered:
+    """Auto-discover scenario modules in the scenarios/ directory.
+
+    The discovered-flag lives in `_scenario_registry` so the `-m` entry
+    and the canonical-import entry can't double-walk (or, worse, walk
+    against two separate flags and quietly disagree).
+    """
+    if is_discovered():
         return
-    _discovered = True
+    mark_discovered()
 
     scenarios_dir = Path(__file__).parent / "scenarios"
     if not scenarios_dir.exists():

@@ -52,73 +52,47 @@ from framework.events.emitter import emit
 # ---------------------------------------------------------------------------
 
 
-@dataclass
-class RoleEval:
-    """A single eval bound to a specific role.
-
-    Categories: 'capability' (does the role know how to X?), 'authority'
-    (does the role's charter cover X?), 'quality' (does the role's output
-    meet standard X?), 'memory' (does the role correctly use its memory
-    artifacts?).
-    """
-    name: str
-    role_slug: str
-    category: str  # capability | authority | quality | memory
-    description: str
-    setup: Callable[[], dict[str, Any]]
-    execute: Callable[[dict[str, Any]], dict[str, Any]]
-    verify: Callable[[dict[str, Any], dict[str, Any]], list[tuple[str, bool, str]]]
-    # verify returns list of (assertion_name, passed, failure_type)
-    # failure_type is one of: missing_skill | wrong_authority | scope_confusion |
-    # quality_gap | n/a (for passing assertions)
-
-
-@dataclass
-class RoleEvalResult:
-    name: str
-    role_slug: str
-    category: str
-    passed: bool
-    duration_ms: float
-    assertions: list[dict[str, Any]] = field(default_factory=list)
-    error: str | None = None
-    failure_types: list[str] = field(default_factory=list)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "name": self.name,
-            "role_slug": self.role_slug,
-            "category": self.category,
-            "passed": self.passed,
-            "duration_ms": self.duration_ms,
-            "assertions": self.assertions,
-            "error": self.error,
-            "failure_types": self.failure_types,
-        }
-
-
 # ---------------------------------------------------------------------------
 # Registry + discovery
 # ---------------------------------------------------------------------------
+# Parked in framework/measurement/_eval_registry.py so the `python -m`
+# entrypoint and the canonical-package-path importers share ONE registry.
+# Re-exported here so existing call sites (`from
+# framework.measurement.role_eval_runner import register`) keep working
+# unchanged. See _eval_registry.py docstring for the full story.
 
-_EVALS: dict[str, RoleEval] = {}
+from framework.measurement._eval_registry import (  # noqa: E402
+    RoleEval,
+    RoleEvalResult,
+    _EVALS,
+    is_discovered as _is_discovered,
+    mark_discovered as _mark_discovered,
+    register,
+)
 
 
-def register(ev: RoleEval) -> RoleEval:
-    """Register a role eval. Returns the eval for chaining in module scope."""
-    _EVALS[ev.name] = ev
-    return ev
+def _get_discovered() -> bool:
+    return _is_discovered()
 
 
-_discovered = False
+# Backwards-compat shim: legacy code may read/write the module-level
+# `_discovered` directly. Mirror to the registry flag.
+class _DiscoveredProxy:
+    def __bool__(self) -> bool:
+        return _is_discovered()
+
+    def __repr__(self) -> str:
+        return repr(_is_discovered())
+
+
+_discovered = _DiscoveredProxy()
 
 
 def _discover_evals() -> None:
     """Auto-load every .py module in role_evals/ (idempotent)."""
-    global _discovered
-    if _discovered:
+    if _is_discovered():
         return
-    _discovered = True
+    _mark_discovered()
 
     evals_dir = Path(__file__).parent / "role_evals"
     if not evals_dir.exists():

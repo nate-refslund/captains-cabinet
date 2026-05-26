@@ -1,6 +1,8 @@
 """Tests for the scenario eval runner framework."""
 
+import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -10,6 +12,21 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from framework.measurement.scenario_runner import (
     Scenario, register, run_scenario, run_all, _SCENARIOS,
+)
+
+_FRAMEWORK_ROOT = Path(__file__).parent.parent.parent.parent
+
+
+# Known scenarios shipped with the framework. Listed explicitly so
+# `test_dash_m_entrypoint_sees_all_scenarios` (the module-identity
+# regression guard) fails loudly when a new scenario is added without
+# also being discoverable via `python3 -m framework.measurement.scenario_runner`.
+_EXPECTED_SCENARIOS = (
+    "outcome_to_mission",
+    "outcome_to_verified",
+    "policy_enforcement",
+    "role_adaptation",
+    "role_retirement",
 )
 
 
@@ -144,3 +161,77 @@ class TestOrgScenarios:
         """Phase 1 closure: outcome → completed → verified → OVI reflects activity."""
         result = run_scenario("outcome_to_verified")
         assert result.passed, f"Failed assertions: {[a for a in result.assertions if not a['passed']]}"
+
+
+class TestDashMEntrypoint:
+    """Regression guard for the module-identity bug.
+
+    `python3 -m framework.measurement.scenario_runner` loads scenario_runner
+    as `__main__`, while each scenario module's `register()` call imports it
+    via the canonical package path. Without a shared registry module the two
+    paths see different `_SCENARIOS` dicts and the `-m` runner reports zero
+    scenarios — silently breaking the weekly role-eval cron driver.
+    """
+
+    def _run_dash_m(self, *extra_args: str) -> subprocess.CompletedProcess:
+        """Spawn a clean subprocess so we exercise the real `-m` import path."""
+        env = os.environ.copy()
+        # Pytest sets CABINET_ROOT / CABINET_EVENT_LOG_DIR to tmp_path via the
+        # autouse fixture; for the subprocess invocation we just need clean
+        # defaults that won't write into the repo.
+        env.pop("CABINET_ROOT", None)
+        env.pop("CABINET_EVENT_LOG_DIR", None)
+        return subprocess.run(
+            [sys.executable, "-m", "framework.measurement.scenario_runner", *extra_args],
+            cwd=str(_FRAMEWORK_ROOT),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+    def test_dash_m_entrypoint_sees_all_scenarios(self):
+        """The `-m` entrypoint must discover every shipped scenario.
+
+        Prior to the registry extraction this test would observe an empty
+        JSON array because `__main__._SCENARIOS` and the canonical-path
+        `_SCENARIOS` were two different dicts.
+        """
+        result = self._run_dash_m("--json")
+        assert result.returncode in (0, 1), (
+            f"Unexpected exit code {result.returncode}. stderr={result.stderr}"
+        )
+        try:
+            payload = json.loads(result.stdout)
+        except json.JSONDecodeError as e:
+            pytest.fail(
+                f"`-m` runner did not emit valid JSON. "
+                f"stdout={result.stdout!r} stderr={result.stderr!r} err={e}"
+            )
+
+        names = {r["name"] for r in payload}
+        assert len(payload) >= len(_EXPECTED_SCENARIOS), (
+            f"`-m` runner discovered only {len(payload)} scenarios "
+            f"(names={sorted(names)}); expected at least {len(_EXPECTED_SCENARIOS)} "
+            f"({list(_EXPECTED_SCENARIOS)}). This is the module-identity bug "
+            f"resurfacing — see framework/measurement/_scenario_registry.py."
+        )
+        missing = set(_EXPECTED_SCENARIOS) - names
+        assert not missing, f"`-m` runner missed scenarios: {sorted(missing)}"
+
+    def test_registry_is_shared_across_import_paths(self):
+        """`__main__` and canonical imports must reference the same dict.
+
+        Cheaper than spawning a subprocess: any divergence between the two
+        module objects' `_SCENARIOS` would indicate the registry has been
+        re-defined in scenario_runner.py itself instead of re-exported.
+        """
+        from framework.measurement import _scenario_registry
+        from framework.measurement import scenario_runner
+
+        assert scenario_runner._SCENARIOS is _scenario_registry._SCENARIOS, (
+            "scenario_runner._SCENARIOS must be the same object as "
+            "_scenario_registry._SCENARIOS; otherwise the -m entrypoint "
+            "will load _SCENARIOS into __main__ and the canonical path "
+            "into framework.measurement.scenario_runner — two dicts."
+        )
