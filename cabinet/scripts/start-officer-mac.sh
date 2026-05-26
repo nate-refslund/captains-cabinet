@@ -38,15 +38,20 @@ fi
 
 # Assemble runtime constitution + safety + preset (idempotent).
 # Audit-fix 2026-05-23: capture exit status via PIPESTATUS — `tail` always exits 0.
-bash cabinet/scripts/load-preset.sh 2>&1 | tail -3 >&2
-LOAD_PRESET_RC="${PIPESTATUS[0]}"
-if [ "$LOAD_PRESET_RC" -ne 0 ]; then
-  echo "[ERROR] start-officer-mac.sh: load-preset.sh exited $LOAD_PRESET_RC — runtime constitution may be incomplete" >&2
-  # Don't abort — let officer try to boot anyway, but logged for debug
-fi
+# Dry-run skip: in CABINET_MAC_DRY_RUN=1 the fake repo has no load-preset / check-deps;
+# we only need to materialise CLAUDE_CMD so tests can grep it. Side-effecting calls
+# are skipped — the dry-run gate exits 0 long before tmux/redis/boot logic anyway.
+if [ "${CABINET_MAC_DRY_RUN:-0}" != "1" ]; then
+  bash cabinet/scripts/load-preset.sh 2>&1 | tail -3 >&2
+  LOAD_PRESET_RC="${PIPESTATUS[0]}"
+  if [ "$LOAD_PRESET_RC" -ne 0 ]; then
+    echo "[ERROR] start-officer-mac.sh: load-preset.sh exited $LOAD_PRESET_RC — runtime constitution may be incomplete" >&2
+    # Don't abort — let officer try to boot anyway, but logged for debug
+  fi
 
-# Dep audit — non-blocking, logs any missing tools to stderr
-bash "$REPO_ROOT/cabinet/scripts/check-deps.sh" 2>&1 | tee -a "$LOGS_DIR/officer-$OFFICER.out.log" || true
+  # Dep audit — non-blocking, logs any missing tools to stderr
+  bash "$REPO_ROOT/cabinet/scripts/check-deps.sh" 2>&1 | tee -a "$LOGS_DIR/officer-$OFFICER.out.log" || true
+fi
 
 # ===========================================================
 # Capability resolution (Spec 060 + Spec 061 capability gates)
@@ -128,6 +133,42 @@ export TELEGRAM_STATE_DIR="$HOME/Library/Application Support/cabinet/telegram-st
 mkdir -p "$TELEGRAM_STATE_DIR"
 
 # ===========================================================
+# Native --agent probe (CC v2.1.150+: claude --agent <name> runs the whole
+# session as that officer; supersedes the legacy boot-prompt-only approach).
+# ===========================================================
+# Gated by:
+#   * CABINET_USE_NATIVE_AGENT (default on; set to 0 to force-disable)
+#   * presence of .claude/agents/<officer>.md in the repo
+#   * `claude` binary on PATH
+#   * `claude --help` advertising the --agent flag
+AGENT_FLAG=""
+if [ "${CABINET_USE_NATIVE_AGENT:-1}" = "1" ] \
+  && [ -f "$REPO_ROOT/.claude/agents/$OFFICER.md" ] \
+  && command -v claude >/dev/null 2>&1 \
+  && claude --help 2>&1 | grep -q -- '--agent'; then
+  AGENT_FLAG="--agent $OFFICER"
+fi
+
+# Build the claude invocation
+CLAUDE_CMD="cd $REPO_ROOT && claude --model $MODEL $MCP_FLAG $TELEGRAM_FLAG $AGENT_FLAG --dangerously-skip-permissions --effort max"
+
+# ===========================================================
+# Dry-run gate — print plan & exit before any tmux/redis/launch side-effects.
+# Used by cabinet/scripts/test-mac-dry-run.sh to verify flag assembly without a
+# real Mac host. Behaviour: stdout reports the assembled command + whether the
+# native --agent flag was picked up, then exits 0.
+# ===========================================================
+if [ "${CABINET_MAC_DRY_RUN:-0}" = "1" ]; then
+  echo "$CLAUDE_CMD"
+  if [ -n "$AGENT_FLAG" ]; then
+    echo "native_agent=true"
+  else
+    echo "native_agent=false"
+  fi
+  exit 0
+fi
+
+# ===========================================================
 # tmux session + claude launch
 # ===========================================================
 # tmux new-session -d creates detached (no terminal attached) — per CTO v1.1 #4
@@ -138,9 +179,6 @@ tmux kill-session -t "$SESSION_NAME" 2>/dev/null || true
 
 # Start fresh detached session
 tmux new-session -d -s "$SESSION_NAME" -x 220 -y 50
-
-# Build the claude invocation
-CLAUDE_CMD="cd $REPO_ROOT && claude --model $MODEL $MCP_FLAG $TELEGRAM_FLAG --dangerously-skip-permissions --effort max"
 
 # Send the launch command into the tmux session
 tmux send-keys -t "$SESSION_NAME" "$CLAUDE_CMD" C-m
