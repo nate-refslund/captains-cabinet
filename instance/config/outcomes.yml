@@ -1,0 +1,9 @@
+outcomes:
+  - id: outcome-001
+    name: "Example: Ship MVP"
+    description: "Working app available to beta testers"
+    measurable_criteria:
+      - "App builds and passes CI"
+      - "Core user flow works end-to-end"
+    status: active
+    captain_ratified: true

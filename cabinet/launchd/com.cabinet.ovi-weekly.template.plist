@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.cabinet.ovi-weekly</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>__CABINET_ROOT__/framework/ovi/compute.py</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key>
+        <integer>1</integer>
+        <key>Hour</key>
+        <integer>8</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+    <key>WorkingDirectory</key>
+    <string>__CABINET_ROOT__</string>
+    <key>StandardOutPath</key>
+    <string>/tmp/cabinet-ovi.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/cabinet-ovi-error.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>CABINET_ROOT</key>
+        <string>__CABINET_ROOT__</string>
+        <key>CABINET_EVENT_LOG_DIR</key>
+        <string>__CABINET_ROOT__/memory/events</string>
+    </dict>
+</dict>
+</plist>

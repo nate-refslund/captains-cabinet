@@ -39,7 +39,7 @@ run_case "git -c single-quoted space value" 2 "git -c 'user.name=val with space'
 # Double-quoted value with embedded space
 run_case "git -c double-quoted space value" 2 "git -c \"x.y=val with space\" push origin main"
 # gh --repo with quoted value (spec doesn't allow space in owner/repo, but probe anyway)
-run_case "gh -R quoted value" 2 "gh -R 'nate-step/captains-cabinet' pr merge 999"
+run_case "gh -R quoted value" 2 "gh -R 'example-org/my-project' pr merge 999"
 # Edge: multiple -c with one quoted
 run_case "git -c plain + -c quoted" 2 "git -c user.email=a@b -c 'user.name=val space' push origin main"
 

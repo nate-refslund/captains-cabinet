@@ -1,0 +1,6 @@
+# Context Configuration Template
+# Copy to instance/config/contexts/<your-slug>.yml
+
+context_slug: ""                    # Must match filename (e.g. "polads")
+capacity: "work"                    # "work" or "personal"
+project_slug: ""                    # Links to projects/<slug>.yml

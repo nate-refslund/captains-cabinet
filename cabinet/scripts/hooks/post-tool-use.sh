@@ -325,7 +325,7 @@ if has_capability "deploys_code" && [ "$TOOL_NAME" = "Bash" ]; then
   # heredoc bodies (`cat <<EOF\ngit push ...\nEOF`) also don't trip.
   if ! echo "$CMD" | head -n1 | grep -qE '^[[:space:]]*(sudo[[:space:]]+|env([[:space:]]+[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+)+[[:space:]]+|timeout[[:space:]]+[0-9]+[smhd]?[[:space:]]+)*(git|gh|curl)[[:space:]]'; then
     :  # noop — CMD does not start with a deploy-style executable
-  elif echo "$CMD" | grep -qE '/opt/founders-cabinet|/opt/captains-cabinet|nate-step/captains-cabinet|nate-step/founders-cabinet'; then
+  elif echo "$CMD" | grep -qE '/opt/founders-cabinet|/opt/captains-cabinet|captains-cabinet'; then
     :  # noop — cabinet-framework push, not a product deploy
   elif echo "$CMD" | grep -qE 'git push[^&;]*--dry-run|git push[[:space:]]+([^&;]*[[:space:]])?-n([[:space:]]|$)'; then
     :  # noop — --dry-run or short-form -n skip; [^&;] stops the scan at
@@ -368,7 +368,7 @@ if has_capability "deploys_code" && [ "$TOOL_NAME" = "Bash" ]; then
   # `head -n1` restricts to the first line so heredoc bodies don't trip.
   if ! echo "$CMD" | head -n1 | grep -qE '^[[:space:]]*(sudo[[:space:]]+|env([[:space:]]+[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+)+[[:space:]]+|timeout[[:space:]]+[0-9]+[smhd]?[[:space:]]+)*(git|gh|curl)[[:space:]]'; then
     :  # noop — CMD does not start with a deploy-style executable
-  elif echo "$CMD" | grep -qE '/opt/founders-cabinet|/opt/captains-cabinet|nate-step/captains-cabinet|nate-step/founders-cabinet'; then
+  elif echo "$CMD" | grep -qE '/opt/founders-cabinet|/opt/captains-cabinet|captains-cabinet'; then
     :  # noop — cabinet-framework push, not a product deploy
   elif echo "$CMD" | grep -qE 'git push[^&;]*--dry-run|git push[[:space:]]+([^&;]*[[:space:]])?-n([[:space:]]|$)'; then
     :  # noop — --dry-run or short-form -n; skip verify-deploy reminder

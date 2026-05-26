@@ -1,103 +1,15 @@
-# =============================================================
-# Project: [PROJECT NAME]
-# =============================================================
-# Copy this template to instance/config/projects/<slug>.yml
-# Fill in all IDs from your Notion, Linear, and Neon setup.
-# Then run: bash cabinet/scripts/switch-project.sh <slug>
-# =============================================================
+# Project Configuration Template
+# Copy to instance/config/projects/<your-slug>.yml and fill in values.
 
-product:
-  name: ""                        # Product name
-  description: ""                 # One-line description
-  repo: ""                        # GitHub repo URL
-  repo_branch: main               # Default branch
-  mount_path: /workspace/product   # Docker mount path for the product repo
+project_name: ""                    # e.g. "PolAds"
+project_slug: ""                    # e.g. "polads" (lowercase, alphanumeric + hyphens)
+description: ""                     # One-line elevator pitch
 
-# =============================================================
-# Notion — Create these pages/databases in your Notion workspace
-# =============================================================
-# CoS can create this structure automatically via MCP tools.
-# See: memory/skills/evolved/create-project.md
-notion:
-  cabinet_hq_id: ""
+github_repo: ""                     # e.g. "your-org/polads"
+github_default_branch: "main"
 
-  dashboard:
-    page_id: ""
-    decision_queue_db: ""
-    daily_briefings_db: ""
-    weekly_reports_db: ""
+vercel_project_id: ""               # Optional
+neon_project_id: ""                 # Optional
 
-  business_brain:
-    page_id: ""
-    vision_id: ""
-    strategy_brief_id: ""
-    brand_guidelines_id: ""
-    messaging_pillars_id: ""
-    growth_guardrails_id: ""
-    pricing_id: ""
-
-  research_hub:
-    page_id: ""
-    research_briefs_db: ""
-    competitive_intel_db: ""
-    market_trends_db: ""
-
-  product_hub:
-    page_id: ""
-    product_roadmap_db: ""
-    feature_specs_db: ""
-    user_feedback_db: ""
-
-  engineering_hub:
-    page_id: ""
-    architecture_decisions_db: ""
-    tech_debt_db: ""
-
-  cabinet_ops:
-    page_id: ""
-    decision_journal_db: ""
-    improvement_proposals_db: ""
-
-  reference:
-    page_id: ""
-
-  archive:
-    page_id: ""
-
-# =============================================================
-# Linear — Create a team/workspace for this project
-# =============================================================
-linear:
-  team_key: ""                     # e.g. "myapp"
-  workspace_url: ""                # e.g. "https://linear.app/myapp"
-
-# =============================================================
-# Neon — Create a project for this product's database
-# =============================================================
-neon:
-  project: ""                      # Neon project name
-
-# =============================================================
-# Telegram — Bot mode + group chat
-# =============================================================
-# bot_mode: single_ceo (default for new projects) | multi_officer (legacy 5-bot roster)
-#   single_ceo:   ONE bot per project (CEO archetype only). Non-CEO officers route
-#                 Captain-attention via cabinet:captain-attention:<project> queue (AC #74).
-#   multi_officer: Full 5-bot roster — one bot per officer. Legacy default behavior.
-#
-# ceo_officer:  Which officer slug acts as CEO when bot_mode=single_ceo. Default: cos.
-#               The CEO officer polls Telegram; all others are Telegram-dark in single_ceo mode.
-#
-# ceo_bot:      Bot username for the CEO bot (single_ceo mode only — one BotFather tap).
-#
-# In multi_officer mode, populate the officers block with each bot username.
-telegram:
-  bot_mode: single_ceo             # single_ceo (default) | multi_officer (legacy)
-  ceo_officer: cos                 # officer slug that acts as CEO (single_ceo mode only)
-  ceo_bot: ""                      # CEO bot username (single_ceo mode); one BotFather tap
-  officers:                        # Populated in multi_officer mode only
-    cos: ""                        # Same bot username as other projects
-    cto: ""
-    cro: ""
-    cpo: ""
-    coo: ""
+warroom_chat_id: ""                 # Telegram group chat ID for this project
+workspace_path: "/workspace/product"
