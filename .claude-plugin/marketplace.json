@@ -1,0 +1,32 @@
+{
+  "$schema": "https://docs.claude.com/schemas/marketplace.json",
+  "name": "captains-cabinet-marketplace",
+  "description": "Distribution channel for the Captains Cabinet plugin and its preset variants. Authoritative source for plugin install paths.",
+  "owner": {
+    "name": "Captains Cabinet contributors",
+    "url": "https://github.com/nate-step/captains-cabinet"
+  },
+  "plugins": [
+    {
+      "name": "captains-cabinet",
+      "source": {
+        "type": "git",
+        "url": "https://github.com/nate-step/captains-cabinet",
+        "ref": "claude/convergence-v2"
+      },
+      "description": "Full Captains Cabinet plugin: framework + work preset + 5 officers + 16 skills + 11 slash commands + 6 MCP servers.",
+      "tags": ["ai-organization", "officers", "autonomous", "event-sourced"]
+    },
+    {
+      "name": "captains-cabinet-personal",
+      "source": {
+        "type": "git",
+        "url": "https://github.com/nate-step/captains-cabinet",
+        "ref": "claude/convergence-v2",
+        "subdir": "presets/personal"
+      },
+      "description": "Personal Cabinet preset — coaching-focused, lighter governance, Captain triplet only.",
+      "tags": ["ai-organization", "personal", "coaching"]
+    }
+  ]
+}
