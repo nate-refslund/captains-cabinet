@@ -7,9 +7,22 @@
 REDIS_HOST="${REDIS_HOST:-redis}"
 REDIS_PORT="${REDIS_PORT:-6379}"
 TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
-CABINET_ROOT="/opt/founders-cabinet"
 
-. "$CABINET_ROOT/cabinet/scripts/lib/triggers.sh"
+# Resolve CABINET_ROOT — env var wins, otherwise script-relative (cabinet/cron/.. = repo root)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CABINET_ROOT="${CABINET_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
+TRIGGERS_LIB="$CABINET_ROOT/cabinet/scripts/lib/triggers.sh"
+
+if [ ! -f "$TRIGGERS_LIB" ]; then
+  echo "[$TIMESTAMP] retro-trigger.sh FATAL: triggers lib not found at $TRIGGERS_LIB (CABINET_ROOT=$CABINET_ROOT) — retro NOT fired" >&2
+  exit 1
+fi
+# shellcheck source=/dev/null
+. "$TRIGGERS_LIB"
+if ! declare -f trigger_send > /dev/null; then
+  echo "[$TIMESTAMP] retro-trigger.sh FATAL: trigger_send not defined after sourcing $TRIGGERS_LIB — retro NOT fired" >&2
+  exit 1
+fi
 
 # Threshold: 5 reflections since last retro
 THRESHOLD=5
@@ -70,7 +83,14 @@ Phase 2 EVOLUTION: Validate draft skills against golden evals, promote validated
 
 After: redis-cli -h $REDIS_HOST -p $REDIS_PORT SET cabinet:schedule:last-run:cos:retro \"\$(date -u +%Y-%m-%dT%H:%M:%SZ)\" && redis-cli -h $REDIS_HOST -p $REDIS_PORT SET cabinet:reflections:count_at_last_retro \"$REFLECTIONS_NOW\""
 
-  OFFICER_NAME=cron trigger_send cos "$TRIGGER_MSG"
+  # trigger_send writes to stderr on XADD failure; capture stderr so we can
+  # distinguish real success from silent-drop and refuse to print false-positive.
+  _send_err=$(OFFICER_NAME=cron trigger_send cos "$TRIGGER_MSG" 2>&1 >/dev/null)
+  _send_rc=$?
+  if [ "$_send_rc" -ne 0 ] || [ -n "$_send_err" ]; then
+    echo "[$TIMESTAMP] retro-trigger.sh FATAL: trigger_send failed (rc=$_send_rc, err=${_send_err:-none}) — retro NOT fired" >&2
+    exit 1
+  fi
   echo "[$TIMESTAMP] Retro trigger fired: $REASON"
 else
   echo "[$TIMESTAMP] No retro yet: $REFLECTIONS_SINCE/$THRESHOLD reflections, ${HOURS_SINCE_RETRO}h since last (floor: 48h)"
