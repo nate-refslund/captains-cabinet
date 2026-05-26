@@ -7,6 +7,13 @@
   "voice": {
     "enabled": true
   },
+  "statusLine": {
+    "type": "command",
+    "command": "bash",
+    "args": [
+      "${CLAUDE_PROJECT_DIR}/cabinet/scripts/statusline.sh"
+    ]
+  },
   "permissions": {
     "defaultMode": "auto",
     "allow": [
