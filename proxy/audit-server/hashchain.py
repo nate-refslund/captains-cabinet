@@ -27,6 +27,8 @@ import os
 import pathlib
 from typing import Any
 
+from validator import is_valid_cabinet_id
+
 logger = logging.getLogger(__name__)
 
 # SSOT audit log root — distinct from the FW-096 proxy-audit input stream.
@@ -67,6 +69,8 @@ def _last_entry_hash(cabinet_id: str) -> str:
     Read the last entry_hash from the SSOT file.
     Returns GENESIS_HASH if no entries exist yet.
     """
+    if not is_valid_cabinet_id(cabinet_id):
+        return GENESIS_HASH  # #237: non-slug id has no valid log — never build a traversal READ path
     path = _ssot_path(cabinet_id)
     if not path.exists():
         return GENESIS_HASH
@@ -95,6 +99,15 @@ def append(entry_body: dict[str, Any]) -> dict[str, Any]:
     as-is so the caller can choose a fallback path.
     """
     cabinet_id = entry_body.get("cabinet_id", "unknown")
+    # #237 universal write-side chokepoint: the SSOT path is built from cabinet_id
+    # (audit/<cabinet_id>.jsonl). Refuse any non-slug id BEFORE building the path — this covers
+    # EVERY append() caller (ingest's transformed entry, whose cabinet_id comes from the RAW
+    # FW-096 record and is NOT the validated stem; the POST endpoint; erasure re-writes; any
+    # future/direct caller). Fail-safe per this module's contract: log + return entry_body
+    # unwritten (never raise, never write a traversal path like audit/../../etc/x.jsonl).
+    if not is_valid_cabinet_id(cabinet_id):
+        logger.warning("hashchain.append: refusing non-slug cabinet_id %r — no SSOT write (#237)", cabinet_id)
+        return entry_body
     try:
         prev_hash = _last_entry_hash(cabinet_id)
 
@@ -138,6 +151,8 @@ def verify(cabinet_id: str) -> tuple[bool, int | None]:
     The re-computation for pseudonymized entries is skipped; the chain link uses
     the stored entry_hash as-is (it was already verified at append time).
     """
+    if not is_valid_cabinet_id(cabinet_id):
+        return True, None  # #237: non-slug id has no valid log — treat as empty (no traversal READ)
     path = _ssot_path(cabinet_id)
     if not path.exists():
         return True, None  # empty log = trivially valid
