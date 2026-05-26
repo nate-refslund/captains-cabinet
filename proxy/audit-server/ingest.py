@@ -43,7 +43,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from hashchain import append as chain_append
-from validator import validate_and_minimize, ValidationError
+from validator import validate_and_minimize, ValidationError, is_valid_cabinet_id
 
 logger = logging.getLogger(__name__)
 
@@ -138,6 +138,16 @@ def ingest_slug(slug: str) -> dict[str, int]:
 
     Returns {"ingested": N, "skipped": N, "errors": N}.
     """
+    # #237 write-side chokepoint: `slug` reaches THREE path-builds — proxy-audit/<slug>.jsonl
+    # (read, below), .cursors/<slug>.cursor (_cursor_path), and audit/<slug>.jsonl (hashchain
+    # append). It enters from ingest_all as jsonl_file.stem (filesystem-derived) and bypasses the
+    # #236 endpoint validators entirely, so validate it ONCE here — before any path is built — to
+    # cover all three builds + any future caller. A non-slug value (separator, "..", uppercase,
+    # empty) is a traversal / cross-cabinet-escape surface; skip + log rather than write a bad path.
+    if not is_valid_cabinet_id(slug):
+        logger.warning("ingest_slug: refusing non-slug cabinet id %r — skipped, no path built", slug)
+        return {"ingested": 0, "skipped": 0, "errors": 0}
+
     proxy_audit_path = _AUDIT_LOG_ROOT / "proxy-audit" / f"{slug}.jsonl"
     if not proxy_audit_path.exists():
         return {"ingested": 0, "skipped": 0, "errors": 0}
@@ -165,8 +175,27 @@ def ingest_slug(slug: str) -> dict[str, int]:
                         skipped += 1
                         offset += len(line.encode("utf-8"))
                         continue
-                    chain_append(entry)
-                    ingested += 1
+                    # #237: the SSOT write below (chain_append -> hashchain._ssot_path) is keyed
+                    # on entry['cabinet_id'] (from the RAW FW-096 record), NOT the validated
+                    # `slug`. Require them to match so the SSOT path is ALWAYS the already-
+                    # validated slug — a record whose internal cabinet_id differs is a traversal
+                    # attempt or a cross-cabinet/tampered record; skip it (hashchain.append is the
+                    # backstop, but skipping here keeps the ingested/skipped counts honest).
+                    if entry.get("cabinet_id") != slug:
+                        logger.warning("ingest: record cabinet_id %r != file slug %r — skipped",
+                                       entry.get("cabinet_id"), slug)
+                        skipped += 1
+                        offset += len(line.encode("utf-8"))
+                        continue
+                    appended = chain_append(entry)
+                    if appended.get("integrity", {}).get("entry_hash"):
+                        ingested += 1
+                    else:
+                        # append wrote nothing (its own #237 guard refused, or a fail-safe error):
+                        # never count it as ingested. Holds the count honest if the upstream
+                        # slug==cabinet_id invariant ever weakens.
+                        logger.warning("ingest: chain_append wrote nothing for %s — counted as error", slug)
+                        errors += 1
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("ingest: error processing line for %s: %s", slug, exc)
                     errors += 1

@@ -654,15 +654,15 @@ section "18. cabinet_id slug-guard: GET + POST traversal-reject (#236, Spec 052 
 SLUG_OUT="$(py -c "
 import sys, asyncio
 sys.path.insert(0,'${AUDIT_SERVER}')
-from app import AuditEntryRequest, get_audit_log, _is_valid_cabinet_id
+from app import AuditEntryRequest, get_audit_log, is_valid_cabinet_id
 from fastapi import HTTPException
 from pydantic import ValidationError
 
 BAD=['../proxy-audit/x','../../etc/passwd','a/b','a/../b','foo/','.','..','','UPPER','has space','under_score','x'*65,'semi;colon','dot.dot','valid\n','abc\n','a\n../x']
 GOOD=['cabinet-1','abc123','a','x'*64,'refslund-prod']
 
-helper_bad = all(not _is_valid_cabinet_id(b) for b in BAD)
-helper_good = all(_is_valid_cabinet_id(g) for g in GOOD)
+helper_bad = all(not is_valid_cabinet_id(b) for b in BAD)
+helper_good = all(is_valid_cabinet_id(g) for g in GOOD)
 
 def _body(cid):
     return dict(cabinet_id=cid, stream='officer', event_type='tool_call',
@@ -689,6 +689,75 @@ assert_contains "slug helper accepts valid slugs"                      "$SLUG_OU
 assert_contains "POST body cabinet_id rejects traversal (422)"         "$SLUG_OUT" "post_bad=True"
 assert_contains "POST body cabinet_id accepts valid slugs"             "$SLUG_OUT" "post_good=True"
 assert_contains "GET path-param cabinet_id rejects traversal (400)"    "$SLUG_OUT" "get_bad=True"
+
+# ── 19. Ingest write-side chokepoint: non-slug skipped, valid still ingests (#237, 052 v3.8 AC#10/#12) ──
+section "19. Ingest write-side chokepoint: non-slug skipped, no path built (#237, Spec 052 v3.8)"
+INGEST_GUARD_OUT="$(py -c "
+import sys, os, json, pathlib
+sys.path.insert(0,'${AUDIT_SERVER}')
+os.environ['LITELLM_AUDIT_LOG_ROOT'] = '${AUDIT_ROOT}'
+from ingest import ingest_slug, ingest_all
+root = pathlib.Path('${AUDIT_ROOT}')
+proxy_dir = root / 'proxy-audit'; proxy_dir.mkdir(parents=True, exist_ok=True)
+audit_dir = root / 'audit'; cur_dir = audit_dir / '.cursors'
+
+def rec(cid):
+    return json.dumps({'ts':'2026-01-01T00:00:00Z','cabinet_id':cid,'officer':'cto','request_id':'r',
+        'model':'m','provider':'p','tokens_in':1,'tokens_out':1,'cost_raw_usd':0.0,
+        'cost_marked_up_usd':0.0,'margin_pct':0,'request_pct_of_cap':0.0,'status':'success'}) + '\n'
+
+# Drop a NON-slug file in proxy-audit; ingest_all derives slug = jsonl_file.stem. The uppercase
+# stem fails ^[a-z0-9][a-z0-9-]{0,63}, so the chokepoint must skip it (no audit/, no .cursors/).
+bad_stem='BAD-Cabinet'
+good_stem='good-cabinet'
+(proxy_dir / (bad_stem+'.jsonl')).write_text(rec(bad_stem))
+(proxy_dir / (good_stem+'.jsonl')).write_text(rec(good_stem))
+
+res = ingest_all()
+bad_audit  = (audit_dir/(bad_stem+'.jsonl')).exists()
+bad_cursor = (cur_dir/(bad_stem+'.cursor')).exists()
+good_audit = (audit_dir/(good_stem+'.jsonl')).exists()
+bad_ingested = res.get(bad_stem, {}).get('ingested', -1)
+
+# Direct traversal caller (a .stem can't contain '/', but a future/direct caller could):
+# without the chokepoint this APPENDS a chain entry into the proxy-audit SOURCE
+# (audit/../proxy-audit/<x>.jsonl == proxy-audit/<x>.jsonl). Guard must refuse + touch nothing.
+trav_slug = '../proxy-audit/'+good_stem
+before = (proxy_dir/(good_stem+'.jsonl')).read_text()
+trav = ingest_slug(trav_slug)
+after = (proxy_dir/(good_stem+'.jsonl')).read_text()
+trav_zero = (trav == {'ingested':0,'skipped':0,'errors':0})
+trav_no_corrupt = (before == after)
+
+# Deeper gap: the SSOT write is keyed on entry['cabinet_id'] (the RAW record field), NOT the
+# stem. A VALID-stem file carrying a record whose internal cabinet_id is a traversal must NOT
+# write an escaped audit path (closed by the per-record stem-match + the hashchain.append guard).
+mismatch_stem='legit-stem'
+(proxy_dir/(mismatch_stem+'.jsonl')).write_text(rec('../../etc/evil'))
+mres = ingest_slug(mismatch_stem)
+evil_written = (audit_dir/'..'/'..'/'etc'/'evil.jsonl').exists()   # resolves under TMP; never created if guarded
+mismatch_ingested0 = (mres.get('ingested',0)==0)
+
+# Append-guard in ISOLATION — independently regression-pins the universal SSOT-write chokepoint
+# (not just the layered ingest path): a DIRECT chain_append with a traversal cabinet_id, bypassing
+# every ingest-side guard, must still write nothing (hashchain.append refuses at its own guard).
+import hashchain as _hc
+_hc.append({'ts':'t','cabinet_id':'../../etc/pwn','entry_id':'x','stream':'proxy','event_type':'llm_request',
+            'actor':{'officer':'cto','captain':False},'subject':{'type':'tool_call','target':'m','metadata':{}},
+            'cost':{'model':'m','tokens_in':1,'tokens_out':1,'cost_raw_usd':0.0,'cost_marked_up_usd':0.0}})
+append_guard_escaped = (audit_dir/'..'/'..'/'etc'/'pwn.jsonl').exists()
+
+print(f'bad_audit={bad_audit} bad_cursor={bad_cursor} good_audit={good_audit} bad_ingested={bad_ingested} trav_zero={trav_zero} trav_no_corrupt={trav_no_corrupt} evil_written={evil_written} mismatch_ingested0={mismatch_ingested0} append_guard_escaped={append_guard_escaped}')
+" 2>&1)"
+assert_contains "non-slug proxy-audit file: NO audit/<slug>.jsonl written (#237 chokepoint)" "$INGEST_GUARD_OUT" "bad_audit=False"
+assert_contains "non-slug proxy-audit file: NO .cursors/<slug>.cursor written"               "$INGEST_GUARD_OUT" "bad_cursor=False"
+assert_contains "ingest_all reports the non-slug file as ingested=0 (skipped)"               "$INGEST_GUARD_OUT" "bad_ingested=0"
+assert_contains "valid slug alongside STILL ingests (guard not over-blocking)"               "$INGEST_GUARD_OUT" "good_audit=True"
+assert_contains "direct ingest_slug traversal returns zero-counts (refused)"                 "$INGEST_GUARD_OUT" "trav_zero=True"
+assert_contains "direct ingest_slug traversal built NO escaped path (source untouched)"      "$INGEST_GUARD_OUT" "trav_no_corrupt=True"
+assert_contains "record cabinet_id traversal (valid stem): NO escaped audit path written"    "$INGEST_GUARD_OUT" "evil_written=False"
+assert_contains "record cabinet_id != stem: skipped at per-record check (0 ingested)"        "$INGEST_GUARD_OUT" "mismatch_ingested0=True"
+assert_contains "hashchain.append guard in isolation: direct traversal cabinet_id writes nothing" "$INGEST_GUARD_OUT" "append_guard_escaped=False"
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 printf '\n════════════════════════════════════\n'

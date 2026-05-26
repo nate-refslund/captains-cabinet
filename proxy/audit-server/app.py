@@ -55,7 +55,7 @@ from pydantic import BaseModel, Field, field_validator
 
 import hashchain
 import validator as val_module
-from validator import validate_and_minimize, ValidationError
+from validator import validate_and_minimize, ValidationError, is_valid_cabinet_id
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -93,17 +93,10 @@ def _authorize_read(cabinet_id: str, provided_key: str) -> bool:
     return provided_key == _AUDIT_API_KEY
 
 
-import re
-
-# ── cabinet_id slug validation (Spec 052 v3.7 AC#10 — path-traversal reject on BOTH endpoints) ──
-# Mirrors the canonical slug regex in cabinet/scripts/customer-erasure.sh (~L73): lowercase-alnum
-# start, then alnum/hyphen, ≤64 total. Rejects "../", "/", NUL, ".", uppercase, empty — so a
-# cabinet_id can never escape the audit/ dir or reach proxy-audit/, .cursors/, or arbitrary files.
-_CABINET_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}\Z")   # \Z not $ — Python $ matches before a lone trailing \n
-
-
-def _is_valid_cabinet_id(cabinet_id: object) -> bool:
-    return isinstance(cabinet_id, str) and _CABINET_ID_RE.match(cabinet_id) is not None
+# cabinet_id slug validation (#236 GET/POST traversal guard) now lives in validator.py as the
+# single shared is_valid_cabinet_id (imported above) — also used by ingest.py's write-side
+# chokepoint (#237). One copy, no within-Python drift; pre-#237 this was a local
+# _CABINET_ID_RE / _is_valid_cabinet_id duplicated here.
 
 
 # ── Request / response models ───────────────────────────────────────────────
@@ -153,7 +146,7 @@ class AuditEntryRequest(BaseModel):
     def validate_cabinet_id(cls, v: str) -> str:
         # Spec 052 v3.7 AC#10 — reject before the entry is built / hash-chained (POST write-side
         # traversal guard). hashchain.append derives the SSOT path from cabinet_id.
-        if not _is_valid_cabinet_id(v):
+        if not is_valid_cabinet_id(v):
             raise ValueError("cabinet_id must be a slug ^[a-z0-9][a-z0-9-]{0,63}$ (path-traversal rejected)")
         return v
 
@@ -247,7 +240,7 @@ async def get_audit_log(
     """
     # Spec 052 v3.7 AC#10 — slug-validate the path param BEFORE _authorize_read or any path build
     # (read-side traversal guard; a crafted cabinet_id like "../proxy-audit/x" must never reach the join).
-    if not _is_valid_cabinet_id(cabinet_id):
+    if not is_valid_cabinet_id(cabinet_id):
         raise HTTPException(status_code=400, detail="invalid cabinet_id (slug required; path-traversal rejected)")
     provided_key = _parse_bearer(authorization)
     if not _authorize_read(cabinet_id, provided_key):

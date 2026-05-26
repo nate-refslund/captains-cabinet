@@ -252,6 +252,26 @@ def _do_validate(entry: dict[str, Any]) -> dict[str, Any]:
     return entry
 
 
+# ── cabinet_id slug validation (shared writer-side guard — Spec 052 v3.7/v3.8 AC#10/#12) ──
+# THE single Python definition of the cabinet_id slug shape. Imported by BOTH app.py (#236
+# GET/POST endpoint guards) AND ingest.py (#237 write-side ingest chokepoint), so the two
+# CANNOT drift — one copy, structurally (no within-Python parity-test needed).
+# cabinet_id is used to BUILD filesystem paths — audit/<slug>.jsonl (via hashchain),
+# proxy-audit/<slug>.jsonl, .cursors/<slug>.cursor — so a non-slug value is a path-traversal /
+# cross-cabinet-escape surface; it must be rejected BEFORE any path is built.
+# \Z, NOT $: Python's $ also matches just before a lone trailing newline, so r"...$" would
+# ACCEPT "valid\n" (a same-dir phantom file); \Z anchors the true end of the string.
+# Cross-LANGUAGE peer (cannot share one def across languages): the bash slug regex in
+# cabinet/scripts/customer-erasure.sh (~L73) ^[a-z0-9][a-z0-9-]{0,63} — keep the two shapes
+# identical if either changes. The regex is stable, so a bash/python parity-test is optional.
+_CABINET_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}\Z")
+
+
+def is_valid_cabinet_id(cabinet_id: object) -> bool:
+    """True iff cabinet_id is a safe slug (see _CABINET_ID_RE). Type-safe: non-str -> False."""
+    return isinstance(cabinet_id, str) and _CABINET_ID_RE.match(cabinet_id) is not None
+
+
 def is_valid_entry_schema(entry: dict[str, Any]) -> tuple[bool, str]:
     """
     Light schema check: required top-level fields present.
