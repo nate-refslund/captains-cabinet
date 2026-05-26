@@ -1,0 +1,32 @@
+# Layer-separation baseline (FINAL-C — three-layer dependency gate)
+#
+# Each line is `<path>:<rule_id>` — one known cross-layer violation that
+# existed when the gate was first installed. CI fails if a new violation
+# appears that is NOT on this list. The baseline can only shrink (ratchet
+# down) via `bash cabinet/scripts/check-layer-separation.sh --update-baseline`
+# after a cleanup PR. Growing it requires Captain approval.
+#
+# Rule ids:
+#   FRAMEWORK_IMPORTS_INSTANCE — `import instance` / `from instance ...`
+#   FRAMEWORK_IMPORTS_PRESETS  — `import presets`  / `from presets ...`
+#   FRAMEWORK_PATH_INSTANCE    — runtime path coupling Path(...) / "instance"
+#   FRAMEWORK_PATH_PRESETS     — runtime path coupling Path(...) / "presets"
+#   PRESETS_IMPORTS_INSTANCE   — presets code imports instance/ (overlay
+#                                path-string refs are allowed; code deps are not)
+#
+# Snapshot taken: 2026-05-26 (convergence-v2 / FINAL-C)
+framework/events/emitter.py:FRAMEWORK_PATH_INSTANCE
+framework/events/tests/test_emitter.py:FRAMEWORK_PATH_INSTANCE
+framework/learning/self_improvement_loop.py:FRAMEWORK_PATH_INSTANCE
+framework/learning/tests/test_self_improvement_loop.py:FRAMEWORK_PATH_INSTANCE
+framework/measurement/role_evals/cos_compile_mission.py:FRAMEWORK_PATH_INSTANCE
+framework/measurement/role_evals/cos_route_idempotent.py:FRAMEWORK_PATH_INSTANCE
+framework/measurement/role_evals/cpo_decompose_criteria.py:FRAMEWORK_PATH_INSTANCE
+framework/measurement/tests/test_role_evals.py:FRAMEWORK_PATH_INSTANCE
+framework/measurement/tests/test_scenario_runner.py:FRAMEWORK_PATH_INSTANCE
+framework/missions/session_bridge.py:FRAMEWORK_PATH_INSTANCE
+framework/missions/tests/test_session_bridge.py:FRAMEWORK_PATH_INSTANCE
+framework/missions/tests/test_supervisor.py:FRAMEWORK_PATH_INSTANCE
+framework/roles/evolution.py:FRAMEWORK_PATH_INSTANCE
+framework/roles/lifecycle.py:FRAMEWORK_PATH_INSTANCE
+framework/roles/tests/test_lifecycle.py:FRAMEWORK_PATH_INSTANCE

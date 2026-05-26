@@ -146,6 +146,19 @@ jobs:
             /opt/founders-cabinet/cabinet/scripts/lib/*.sh \
             /opt/founders-cabinet/cabinet/scripts/*.sh
 
+      - name: Layer-separation gate (FINAL-C)
+        # Three-layer dependency direction enforcement:
+        #   framework/ → cannot reference instance/ or presets/
+        #   presets/   → cannot import code from instance/
+        #   instance/  → may reference anything
+        # Baseline-ratchet: known violations are committed to
+        # .layer-separation-baseline; CI fails only on NEW violations beyond
+        # the baseline. Cleanup PRs can ratchet the baseline down via
+        # `cabinet/scripts/check-layer-separation.sh --update-baseline`.
+        # Growing the baseline requires Captain approval (file is reviewed
+        # in PR diff). Script also runs locally as a pre-commit safety net.
+        run: bash /opt/founders-cabinet/cabinet/scripts/check-layer-separation.sh
+
       - name: Shell unit tests — triggers.sh
         run: bash /opt/founders-cabinet/cabinet/scripts/test-triggers.sh
 
