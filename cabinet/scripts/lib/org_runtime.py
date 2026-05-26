@@ -422,9 +422,15 @@ class Store:
         payload: dict[str, Any],
         source: str = "cli",
         supersedes_event_id: str | None = None,
+        event_id: str | None = None,
     ) -> dict[str, Any]:
+        # F3: allow caller (e.g. framework.events.emitter) to pass through its
+        # own event_id so the Store ledger and the framework JSONL/Postgres
+        # ledger share a single authoritative id. Default behavior unchanged:
+        # if event_id is None we mint a fresh uuid4 here (matching pre-F3
+        # callers like the org_runtime CLI).
         event = {
-            "event_id": str(uuid.uuid4()),
+            "event_id": event_id or str(uuid.uuid4()),
             "event_type": event_type,
             "product_slug": product_slug,
             "aggregate_type": aggregate_type,

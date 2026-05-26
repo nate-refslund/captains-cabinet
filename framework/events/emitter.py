@@ -68,6 +68,12 @@ VALID_EVENT_TYPES = frozenset({
     "eval_passed",
     "eval_failed",
 
+    # Self-improvement loop (R8) — closed-loop learning pipeline
+    "role_evolved",                       # charter/capability auto-applied via self-improvement
+    "skill_promoted",                     # induced draft skill passed validation gate
+    "self_improvement_loop_started",
+    "self_improvement_loop_completed",
+
     # Learning
     "experience_recorded",
     "digest_published",
@@ -149,22 +155,45 @@ def _write_to_log(event: dict[str, Any]) -> None:
 
 
 def _write_to_db(event: dict[str, Any]) -> None:
-    """Insert event into Postgres org_events table if DATABASE_URL is set."""
+    """Insert event into Postgres org_events table if DATABASE_URL is set.
+
+    Column shape matches cabinet/sql/045-org-runtime-slice.sql (the canonical
+    production schema): event_id, event_type, product_slug, aggregate_type,
+    aggregate_id, actor, source, payload, supersedes_event_id, created_at.
+
+    F3 unification: the same event_id, aggregate_type, aggregate_id and
+    product_slug are used as the org_runtime.Store mirror, so an event has
+    ONE authoritative id across JSONL, Postgres, and the Store SQLite.
+
+    Note: parent_id (a framework-local field) is mapped to
+    supersedes_event_id in the canonical schema. Both express
+    "this event refers to that earlier event."
+    """
     db_url = os.environ.get("DATABASE_URL")
     if not db_url:
         return
+
+    agg_type, agg_id = _resolve_aggregate(event["event_type"], event["payload"])
+    product_slug = _resolve_product_slug()
 
     try:
         import psycopg2
         conn = psycopg2.connect(db_url)
         with conn.cursor() as cur:
             cur.execute(
-                """INSERT INTO org_events (id, event_type, actor, payload, parent_id, created_at)
-                   VALUES (%s, %s, %s, %s, %s, %s)""",
+                """INSERT INTO org_events (
+                       event_id, event_type, product_slug, aggregate_type,
+                       aggregate_id, actor, source, payload,
+                       supersedes_event_id, created_at
+                   ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     event["id"],
                     event["event_type"],
+                    product_slug,
+                    agg_type,
+                    agg_id,
                     event["actor"],
+                    "framework",
                     json.dumps(event["payload"]),
                     event["parent_id"],
                     event["created_at"],
@@ -234,6 +263,10 @@ _AGGREGATE_MAP: dict[str, tuple[str, str]] = {
     "eval_run_started":           ("eval",        "eval_id"),
     "eval_passed":                ("eval",        "eval_id"),
     "eval_failed":                ("eval",        "eval_id"),
+    "role_evolved":               ("role",        "role_slug"),
+    "skill_promoted":             ("skill",       "skill_slug"),
+    "self_improvement_loop_started":   ("self_improvement", "loop_id"),
+    "self_improvement_loop_completed": ("self_improvement", "loop_id"),
     "experience_recorded":        ("experience",  "experience_id"),
     "digest_published":           ("digest",      "digest_id"),
     "memory_claim_created":       ("memory",      "claim_id"),
@@ -305,6 +338,9 @@ def _write_to_store(event: dict[str, Any]) -> None:
     try:
         store = Store()
         agg_type, agg_id = _resolve_aggregate(event["event_type"], event["payload"])
+        # F3 (R4): pass framework's event_id through so Store + JSONL + Postgres
+        # all share ONE authoritative id per logical event. Previously Store
+        # minted its own uuid → divergent ids across ledgers.
         store.append_event(
             event_type=event["event_type"],
             product_slug=_resolve_product_slug(),
@@ -313,6 +349,7 @@ def _write_to_store(event: dict[str, Any]) -> None:
             actor=event["actor"],
             payload=event["payload"],
             source="framework",
+            event_id=event["id"],
         )
     except Exception as e:
         # Best-effort — log to stderr but don't break the caller

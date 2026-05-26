@@ -265,3 +265,314 @@ class TestStoreMirrorGating:
         # JSONL was written
         log_files = list(tmp_path.glob("*.jsonl"))
         assert len(log_files) >= 1
+
+
+# ---------------------------------------------------------------------------
+# F3 / R4: single authoritative event_id + canonical Postgres schema shape
+# ---------------------------------------------------------------------------
+
+
+class TestEventIdPassthrough:
+    """emit() and the Store mirror must agree on event_id.
+
+    Pre-R4 bug: framework minted an event['id'] for JSONL/Postgres while
+    Store.append_event() minted its own uuid → one logical event ended up
+    with TWO ids across ledgers, breaking traceability.
+    """
+
+    def test_store_mirror_uses_same_event_id_as_framework(
+        self, monkeypatch, tmp_path
+    ):
+        import sqlite3
+
+        # Isolate the Store SQLite to a tmp path
+        db_path = tmp_path / "org-runtime-test.sqlite3"
+        monkeypatch.setenv("ORG_RUNTIME_DB", str(db_path))
+        monkeypatch.setenv("CABINET_EVENT_LOG_DIR", str(tmp_path))
+        monkeypatch.setenv("CABINET_FRAMEWORK_STORE_MIRROR", "1")  # force on
+        monkeypatch.setenv("CABINET_PRODUCT_SLUG", "test-product")
+
+        event = emit(
+            "mission_created",
+            actor="cos",
+            payload={"mission_id": "m-r4-test", "title": "R4 unification"},
+        )
+
+        # Read the row Store wrote and assert event_id passthrough
+        conn = sqlite3.connect(str(db_path))
+        try:
+            rows = conn.execute(
+                "SELECT event_id, event_type, actor, aggregate_type, "
+                "aggregate_id, product_slug, source FROM org_events"
+            ).fetchall()
+        finally:
+            conn.close()
+
+        assert len(rows) == 1, "expected exactly one mirrored row"
+        store_event_id = rows[0][0]
+        assert store_event_id == event["id"], (
+            f"Store event_id {store_event_id!r} must equal framework "
+            f"event id {event['id']!r} — they describe the SAME event"
+        )
+
+    def test_store_mirror_propagates_resolved_fields(
+        self, monkeypatch, tmp_path
+    ):
+        """aggregate_type, aggregate_id, product_slug, source must propagate."""
+        import sqlite3
+
+        db_path = tmp_path / "org-runtime-resolve.sqlite3"
+        monkeypatch.setenv("ORG_RUNTIME_DB", str(db_path))
+        monkeypatch.setenv("CABINET_EVENT_LOG_DIR", str(tmp_path))
+        monkeypatch.setenv("CABINET_FRAMEWORK_STORE_MIRROR", "1")
+        monkeypatch.setenv("CABINET_PRODUCT_SLUG", "vertical-slice")
+
+        emit(
+            "work_item_completed",
+            actor="cto",
+            payload={"task_id": "outcome-001-task-007"},
+        )
+
+        conn = sqlite3.connect(str(db_path))
+        try:
+            row = conn.execute(
+                "SELECT aggregate_type, aggregate_id, product_slug, source, "
+                "event_type FROM org_events"
+            ).fetchone()
+        finally:
+            conn.close()
+
+        agg_type, agg_id, product_slug, source, event_type = row
+        assert agg_type == "work_item"
+        assert agg_id == "outcome-001-task-007"
+        assert product_slug == "vertical-slice"
+        assert source == "framework"
+        assert event_type == "work_item_completed"
+
+    def test_store_append_event_default_signature_unchanged(
+        self, monkeypatch, tmp_path
+    ):
+        """When called without event_id (pre-R4 callers), Store still mints
+        its own uuid. R4 must not break existing org_runtime CLI callers."""
+        import sys as _sys
+
+        # Import Store the same way emitter does
+        framework_root = Path(__file__).resolve().parent.parent.parent.parent
+        lib_path = framework_root / "cabinet" / "scripts" / "lib"
+        if str(lib_path) not in _sys.path:
+            _sys.path.insert(0, str(lib_path))
+        from org_runtime import Store  # type: ignore
+
+        db_path = tmp_path / "org-runtime-default.sqlite3"
+        monkeypatch.setenv("ORG_RUNTIME_DB", str(db_path))
+
+        store = Store()
+        event_a = store.append_event(
+            event_type="role_created",
+            product_slug="p",
+            aggregate_type="role",
+            aggregate_id="eng",
+            actor="captain",
+            payload={"slug": "eng"},
+        )
+        event_b = store.append_event(
+            event_type="role_created",
+            product_slug="p",
+            aggregate_type="role",
+            aggregate_id="ops",
+            actor="captain",
+            payload={"slug": "ops"},
+        )
+
+        # No event_id passed → each call gets a fresh uuid (existing behavior)
+        assert event_a["event_id"] != event_b["event_id"]
+        assert len(event_a["event_id"]) == 36  # uuid4 string length
+
+    def test_store_append_event_honors_caller_supplied_event_id(
+        self, monkeypatch, tmp_path
+    ):
+        """When event_id is passed, Store uses it verbatim (R4 contract)."""
+        import sys as _sys
+
+        framework_root = Path(__file__).resolve().parent.parent.parent.parent
+        lib_path = framework_root / "cabinet" / "scripts" / "lib"
+        if str(lib_path) not in _sys.path:
+            _sys.path.insert(0, str(lib_path))
+        from org_runtime import Store  # type: ignore
+
+        db_path = tmp_path / "org-runtime-supplied.sqlite3"
+        monkeypatch.setenv("ORG_RUNTIME_DB", str(db_path))
+
+        store = Store()
+        result = store.append_event(
+            event_type="role_created",
+            product_slug="p",
+            aggregate_type="role",
+            aggregate_id="eng",
+            actor="captain",
+            payload={},
+            event_id="11111111-2222-3333-4444-555555555555",
+        )
+        assert result["event_id"] == "11111111-2222-3333-4444-555555555555"
+
+
+class TestPostgresSchemaAlignment:
+    """_write_to_db must INSERT against the canonical 045 schema columns.
+
+    Pre-R4 bug: emitter wrote (id, event_type, actor, payload, parent_id,
+    created_at) but 045-org-runtime-slice.sql defines (event_id, event_type,
+    product_slug, aggregate_type, aggregate_id, actor, source, payload,
+    supersedes_event_id, created_at). Live writes would fail.
+    """
+
+    REQUIRED_COLUMNS = {
+        "event_id",
+        "event_type",
+        "product_slug",
+        "aggregate_type",
+        "aggregate_id",
+        "actor",
+        "source",
+        "payload",
+        "supersedes_event_id",
+        "created_at",
+    }
+
+    def _capture_sql(self, monkeypatch, tmp_path):
+        """Run emit() against a fake psycopg2 and capture the SQL + params."""
+        import types
+
+        monkeypatch.setenv("CABINET_EVENT_LOG_DIR", str(tmp_path))
+        monkeypatch.setenv("DATABASE_URL", "postgres://fake/db")
+        monkeypatch.setenv("CABINET_FRAMEWORK_STORE_MIRROR", "0")
+        monkeypatch.setenv("CABINET_PRODUCT_SLUG", "pg-test-product")
+
+        captured: dict = {}
+
+        class FakeCursor:
+            def __enter__(self_inner):
+                return self_inner
+
+            def __exit__(self_inner, *a):
+                return False
+
+            def execute(self_inner, sql, params):
+                captured["sql"] = sql
+                captured["params"] = params
+
+        class FakeConn:
+            def cursor(self_inner):
+                return FakeCursor()
+
+            def commit(self_inner):
+                captured["committed"] = True
+
+            def close(self_inner):
+                captured["closed"] = True
+
+        fake_module = types.SimpleNamespace(connect=lambda url: FakeConn())
+        monkeypatch.setitem(sys.modules, "psycopg2", fake_module)
+        return captured
+
+    def test_insert_uses_canonical_045_columns(self, monkeypatch, tmp_path):
+        captured = self._capture_sql(monkeypatch, tmp_path)
+
+        emit(
+            "mission_created",
+            actor="cos",
+            payload={"mission_id": "m-pg-1", "title": "Schema align"},
+        )
+
+        sql = captured["sql"]
+        # Extract the column-list between "(" and ")" after INSERT INTO
+        import re
+
+        m = re.search(r"INSERT INTO org_events\s*\(([^)]+)\)", sql)
+        assert m, f"could not parse INSERT column list from SQL: {sql!r}"
+        cols = {c.strip() for c in m.group(1).split(",")}
+        assert cols == self.REQUIRED_COLUMNS, (
+            f"INSERT column set {cols} != canonical 045 schema "
+            f"{self.REQUIRED_COLUMNS}"
+        )
+
+    def test_insert_params_align_with_column_order(
+        self, monkeypatch, tmp_path
+    ):
+        captured = self._capture_sql(monkeypatch, tmp_path)
+
+        event = emit(
+            "mission_created",
+            actor="cos",
+            payload={"mission_id": "m-pg-2"},
+        )
+
+        sql = captured["sql"]
+        params = captured["params"]
+
+        # 10 placeholders, 10 params
+        assert sql.count("%s") == 10
+        assert len(params) == 10
+
+        # Position 0 = event_id (same as framework event["id"], R4 contract)
+        assert params[0] == event["id"]
+        # Position 1 = event_type
+        assert params[1] == "mission_created"
+        # Position 2 = product_slug
+        assert params[2] == "pg-test-product"
+        # Position 3 = aggregate_type, Position 4 = aggregate_id
+        assert params[3] == "mission"
+        assert params[4] == "m-pg-2"
+        # Position 5 = actor
+        assert params[5] == "cos"
+        # Position 6 = source (framework writes mark themselves)
+        assert params[6] == "framework"
+        # Position 7 = payload JSON (must be a string for psycopg2 jsonb cast)
+        assert isinstance(params[7], str)
+        loaded = json.loads(params[7])
+        assert loaded == {"mission_id": "m-pg-2"}
+        # Position 8 = supersedes_event_id (framework's parent_id → None here)
+        assert params[8] is None
+        # Position 9 = created_at
+        assert params[9] == event["created_at"]
+
+    def test_insert_columns_are_subset_of_045_schema(self):
+        """Cross-check: every column we INSERT into must exist in the
+        canonical 045-org-runtime-slice.sql definition of org_events."""
+        import re
+
+        schema_path = (
+            Path(__file__).resolve().parent.parent.parent.parent
+            / "cabinet"
+            / "sql"
+            / "045-org-runtime-slice.sql"
+        )
+        sql_text = schema_path.read_text()
+
+        # Find the CREATE TABLE block for org_events
+        m = re.search(
+            r"CREATE TABLE IF NOT EXISTS org_events\s*\((.*?)\);",
+            sql_text,
+            flags=re.DOTALL,
+        )
+        assert m, "could not locate org_events CREATE TABLE in 045 schema"
+        body = m.group(1)
+        # Crude column-name extraction: first token of each non-empty,
+        # non-constraint line
+        schema_cols: set[str] = set()
+        for raw_line in body.splitlines():
+            line = raw_line.strip().rstrip(",")
+            if not line:
+                continue
+            upper = line.upper()
+            if upper.startswith(("PRIMARY KEY", "FOREIGN KEY", "CONSTRAINT", "CHECK")):
+                continue
+            token = line.split()[0]
+            schema_cols.add(token)
+
+        assert TestPostgresSchemaAlignment.REQUIRED_COLUMNS.issubset(
+            schema_cols
+        ), (
+            f"Emitter wants to INSERT into "
+            f"{TestPostgresSchemaAlignment.REQUIRED_COLUMNS - schema_cols} "
+            f"which are NOT in 045 org_events columns {schema_cols}"
+        )
