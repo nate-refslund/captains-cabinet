@@ -172,6 +172,13 @@ def build_checkpoint(slug: str, id_map: dict[str, str]) -> dict[str, Any] | None
         logger.warning("checkpoint: opaque-id %r for cabinet %r is not slug-shaped — SKIPPED "
                        "(fail-closed)", public_id, slug)
         return None
+    if public_id == slug:
+        # the map MUST anonymize: a public_id identical to the slug is a non-anonymizing (or
+        # misconfigured) entry — publishing it would leak the slug to the PERMANENT public sink.
+        # The invariant must hold even if the map is wrong, so skip fail-closed.
+        logger.warning("checkpoint: opaque-id == slug for cabinet %r — SKIPPED (non-anonymizing "
+                       "map entry; fail-closed AC #13)", slug)
+        return None
     latest, count = _latest_hash_and_count(slug)
     if count == 0:
         return None  # nothing to anchor yet

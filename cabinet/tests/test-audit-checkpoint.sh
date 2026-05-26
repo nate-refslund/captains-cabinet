@@ -35,7 +35,7 @@ py -c "
 import json, pathlib
 pathlib.Path('$MAP').write_text(json.dumps({
   'valid-cab':'opq-valid-1', 'tamper-cab':'opq-tamper-1', 'git-cab':'opq-git-1',
-  'malformed-map-cab':'NOT_A_SLUG_UPPER'
+  'malformed-map-cab':'NOT_A_SLUG_UPPER', 'selfmap-cab':'selfmap-cab'
 }))
 "
 
@@ -165,6 +165,22 @@ print('skipped='+str('BAD-Cabinet' not in res['published']))
 " 2>&1)"
 assert_contains "non-slug filename not published" "$NS_OUT" "skipped=True"
 
+# ── 6b. fail-closed: opaque-id == slug (non-anonymizing map entry) skipped ──
+section "6b. fail-closed: identity map entry (opaque-id == slug) skipped"
+SELF_OUT="$(py -c "
+import sys; sys.path.insert(0,'${AUDIT_SERVER}')
+import json, pathlib, hashchain, checkpoint
+hashchain.append({'ts':'2026-01-01T00:00:00Z','cabinet_id':'selfmap-cab','entry_id':'s0',
+    'stream':'proxy','event_type':'llm_request','actor':{'officer':'cos','captain':False},
+    'subject':{'type':'tool_call','target':'m','metadata':{}},
+    'cost':{'model':'m','tokens_in':1,'tokens_out':1,'cost_raw_usd':0.0,'cost_marked_up_usd':0.0}})
+res = checkpoint.emit_all()
+slug_file = (pathlib.Path('${PUB}')/'selfmap-cab.json').exists()
+print('not_published='+str('selfmap-cab' not in res['published']), 'no_slug_file='+str(not slug_file))
+" 2>&1)"
+assert_contains "identity-mapped cabinet NOT published (anti-slug-leak)" "$SELF_OUT" "not_published=True"
+assert_contains "no slug-named file from an identity map entry"          "$SELF_OUT" "no_slug_file=True"
+
 # ── 7. git mirror: APPEND-ONLY immutable ledger keyed by OPAQUE id + a commit per checkpoint ──
 section "7. git mirror append-only (opaque-keyed) + commit per checkpoint"
 GIT_OUT="$(py -c "
@@ -226,7 +242,7 @@ assert_contains "empty-commit logged as benign no-op"        "$EC_OUT" "noop_inf
 section "9. privacy invariant: no slug in any served file or git ledger"
 LEAK_OUT="$(
   hits=0
-  for slug in valid-cab tamper-cab git-cab unmapped-cab malformed-map-cab; do
+  for slug in valid-cab tamper-cab git-cab unmapped-cab malformed-map-cab selfmap-cab; do
     if grep -rqF "$slug" "$PUB" "$GIT" 2>/dev/null; then echo "LEAK: $slug"; hits=$((hits+1)); fi
     # also the git COMMIT MESSAGES (zlib-compressed in .git/objects, so grep -r misses them)
     if [ -d "$GIT/.git" ] && git -C "$GIT" log --format=%B 2>/dev/null | grep -qF "$slug"; then echo "LEAK(commit-msg): $slug"; hits=$((hits+1)); fi
