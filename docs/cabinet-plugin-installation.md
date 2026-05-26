@@ -3,6 +3,34 @@
 The Cabinet ships as a Claude Code plugin so a fresh founder can install it
 in one step rather than `git clone + scripts/setup-mac.sh`.
 
+## Plugin packaging status
+
+**Project-only mode (dev preview).** `claude plugin validate .claude-plugin/marketplace.json`
+passes cleanly. `claude plugin validate .claude-plugin/plugin.json` passes with
+one warning that `--strict` treats as an error:
+
+```
+⚠ CLAUDE.md at the plugin root is not loaded as project context.
+  To ship context with your plugin, use a skill (skills/<name>/SKILL.md) instead.
+```
+
+This is intentional. Cabinet's `CLAUDE.md` at the repo root is the canonical
+Captain operating context for direct cabinet operation (`git clone + start-officer.sh`).
+For users installing via the marketplace, the equivalent context ships through
+the `cabinet-intro` skill at `.claude-plugin/skills/cabinet-intro/SKILL.md`,
+which is CC-native discoverable on plugin install.
+
+The warning is unfixable without restructuring cabinet startup. Two paths
+forward — pick one depending on your install:
+
+| Install path | Strict-clean? | Context loading |
+|---|---|---|
+| `git clone` + `scripts/setup-mac.sh` (direct) | N/A | Root `CLAUDE.md` auto-loaded as project context |
+| `claude plugin install captains-cabinet` (plugin) | Warns, doesn't block | `cabinet-intro` skill loaded on demand by officers |
+
+The plugin install path is **dev-preview ready** — it works end-to-end, but
+the strict-validation warning means it's not "marketplace strict-clean" yet.
+
 ## Install via the Cabinet marketplace
 
 ```bash

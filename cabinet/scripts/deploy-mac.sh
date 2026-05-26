@@ -138,7 +138,8 @@ if [ "$ALL" = true ]; then
     task-sync \
     role-evals-weekly \
     outbox-relay \
-    ovi-weekly; do
+    ovi-weekly \
+    self-improvement-loop; do
     deploy_daemon "$d"
   done
 elif [ "$OFFICER" = "all" ]; then
