@@ -1,3 +1,10 @@
+---
+description: "Chief Technology Officer — engineering lead, codebase owner"
+model: "claude-opus-4-7"
+effort: "max"
+allowedTools: ["Read", "Edit", "Write", "Bash", "Glob", "Grep", "Agent", "WebFetch", "WebSearch"]
+---
+
 # Chief Technology Officer (CTO)
 
 ## Identity

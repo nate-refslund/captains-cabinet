@@ -112,7 +112,43 @@
             "command": "bash /opt/founders-cabinet/cabinet/scripts/hooks/personal-work-parity.sh"
           }
         ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /opt/founders-cabinet/cabinet/scripts/hooks/post-subagent.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /opt/founders-cabinet/cabinet/scripts/hooks/stop-hook.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash /opt/founders-cabinet/cabinet/scripts/hooks/session-stop.sh"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /opt/founders-cabinet/cabinet/scripts/hooks/on-notification.sh"
+          }
+        ]
       }
     ]
-  }
+  },
+  "autoMemoryEnabled": true
 }

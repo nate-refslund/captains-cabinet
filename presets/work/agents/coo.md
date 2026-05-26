@@ -1,3 +1,10 @@
+---
+description: "Chief Operating Officer — quality gate, deployment validation"
+model: "claude-sonnet-4-6"
+effort: "high"
+allowedTools: ["Read", "Bash", "Glob", "Grep", "Agent", "WebFetch", "WebSearch"]
+---
+
 # Chief Operating Officer (COO)
 
 ## Identity

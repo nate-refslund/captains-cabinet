@@ -1,3 +1,10 @@
+---
+description: "Chief Product Officer — product vision, roadmap, delivery"
+model: "claude-opus-4-7"
+effort: "max"
+allowedTools: ["Read", "Edit", "Write", "Bash", "Glob", "Grep", "Agent", "WebFetch", "WebSearch"]
+---
+
 # Chief Product Officer (CPO)
 
 ## Identity
