@@ -12,6 +12,13 @@ product:
   repo_branch: master
   mount_path: /workspace/captains-cabinet
 
+activation:
+  status: active
+  mode: existing_repo_path
+  activated_at: ""
+  activation_mission_id: ""
+  notes: "Active framework/runtime project fixture."
+
 notion:
   cabinet_hq_id: ""
 

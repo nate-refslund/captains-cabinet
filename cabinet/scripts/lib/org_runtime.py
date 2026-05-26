@@ -132,6 +132,13 @@ class Store:
               mission_id TEXT NOT NULL REFERENCES missions(mission_id),
               title TEXT NOT NULL,
               owner_role TEXT NOT NULL,
+              acceptance_criteria TEXT NOT NULL DEFAULT '',
+              evidence_required TEXT NOT NULL DEFAULT '',
+              verifier_role TEXT NOT NULL DEFAULT '',
+              risk_level TEXT NOT NULL DEFAULT 'medium',
+              rollback_note TEXT NOT NULL DEFAULT '',
+              budget_note TEXT NOT NULL DEFAULT '',
+              captain_attention_estimate REAL NOT NULL DEFAULT 0,
               status TEXT NOT NULL CHECK (status IN ('queue', 'wip', 'verified')),
               verified_value REAL NOT NULL DEFAULT 0,
               verification_summary TEXT,
@@ -365,6 +372,13 @@ class Store:
         )
         self.conn.execute("DROP TRIGGER IF EXISTS prevent_role_lineage_events_update")
         self.conn.execute("DROP TRIGGER IF EXISTS prevent_role_lineage_events_delete")
+        self.ensure_column("work_graph_nodes", "acceptance_criteria", "TEXT NOT NULL DEFAULT ''")
+        self.ensure_column("work_graph_nodes", "evidence_required", "TEXT NOT NULL DEFAULT ''")
+        self.ensure_column("work_graph_nodes", "verifier_role", "TEXT NOT NULL DEFAULT ''")
+        self.ensure_column("work_graph_nodes", "risk_level", "TEXT NOT NULL DEFAULT 'medium'")
+        self.ensure_column("work_graph_nodes", "rollback_note", "TEXT NOT NULL DEFAULT ''")
+        self.ensure_column("work_graph_nodes", "budget_note", "TEXT NOT NULL DEFAULT ''")
+        self.ensure_column("work_graph_nodes", "captain_attention_estimate", "REAL NOT NULL DEFAULT 0")
         self.ensure_column("role_lineage_events", "product_slug", "TEXT")
         self.conn.execute(
             """
@@ -672,6 +686,206 @@ def cmd_mission_compile(args: argparse.Namespace) -> None:
     print_json({**payload, "state": "compiled", "event_id": event["event_id"]})
 
 
+MISSION_NODE_FIELDS = (
+    "node_id",
+    "title",
+    "owner_role",
+    "acceptance_criteria",
+    "evidence_required",
+    "verifier_role",
+    "risk_level",
+)
+
+
+def load_plan_file(path: str) -> dict[str, Any]:
+    try:
+        data = json.loads(Path(path).read_text())
+    except OSError as exc:
+        raise SystemExit(f"cannot read plan file: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"plan file must be JSON: {exc}") from exc
+    if not isinstance(data, dict):
+        raise SystemExit("plan file must contain a JSON object")
+    return data
+
+
+def require_text(value: Any, field: str) -> str:
+    text = "" if value is None else str(value).strip()
+    if not text:
+        raise SystemExit(f"mission plan node missing required field: {field}")
+    return text
+
+
+def normalized_plan_nodes(plan: dict[str, Any]) -> list[dict[str, Any]]:
+    raw_nodes = plan.get("nodes")
+    if not isinstance(raw_nodes, list) or not raw_nodes:
+        raise SystemExit("mission plan requires a non-empty nodes array")
+    nodes: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for index, raw in enumerate(raw_nodes, start=1):
+        if not isinstance(raw, dict):
+            raise SystemExit(f"mission plan node {index} must be an object")
+        node = {field: require_text(raw.get(field), field) for field in MISSION_NODE_FIELDS}
+        if node["node_id"] in seen:
+            raise SystemExit(f"duplicate node_id in mission plan: {node['node_id']}")
+        seen.add(node["node_id"])
+        node["rollback_note"] = str(raw.get("rollback_note") or "").strip()
+        node["budget_note"] = str(raw.get("budget_note") or "").strip()
+        try:
+            node["captain_attention_estimate"] = float(raw.get("captain_attention_estimate") or 0)
+        except (TypeError, ValueError) as exc:
+            raise SystemExit(f"captain_attention_estimate must be numeric for {node['node_id']}") from exc
+        depends_on = raw.get("depends_on") or []
+        if not isinstance(depends_on, list) or not all(isinstance(item, str) and item.strip() for item in depends_on):
+            raise SystemExit(f"depends_on must be a string array for {node['node_id']}")
+        node["depends_on"] = [item.strip() for item in depends_on]
+        nodes.append(node)
+    return nodes
+
+
+def normalized_plan_edges(plan: dict[str, Any], nodes: list[dict[str, Any]]) -> list[dict[str, str]]:
+    node_ids = {node["node_id"] for node in nodes}
+    edges: list[dict[str, str]] = []
+    for node in nodes:
+        for upstream in node["depends_on"]:
+            if upstream not in node_ids:
+                raise SystemExit(f"depends_on references unknown node_id: {upstream}")
+            edges.append({"from_node_id": upstream, "to_node_id": node["node_id"]})
+    raw_edges = plan.get("edges") or []
+    if not isinstance(raw_edges, list):
+        raise SystemExit("mission plan edges must be an array")
+    for raw in raw_edges:
+        if not isinstance(raw, dict):
+            raise SystemExit("mission plan edge must be an object")
+        edge = {
+            "from_node_id": require_text(raw.get("from_node_id"), "from_node_id"),
+            "to_node_id": require_text(raw.get("to_node_id"), "to_node_id"),
+        }
+        if edge["from_node_id"] not in node_ids or edge["to_node_id"] not in node_ids:
+            raise SystemExit(f"edge references unknown node_id: {edge}")
+        edges.append(edge)
+    deduped: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for edge in edges:
+        key = (edge["from_node_id"], edge["to_node_id"])
+        if key not in seen:
+            seen.add(key)
+            deduped.append(edge)
+    return deduped
+
+
+def cmd_mission_compile_plan(args: argparse.Namespace) -> None:
+    store = Store()
+    outcome = store.row("SELECT * FROM captain_outcomes WHERE outcome_id = ?", (args.outcome_id,))
+    if not outcome:
+        raise SystemExit(f"unknown outcome_id: {args.outcome_id}")
+    if outcome["state"] != "ratified":
+        raise SystemExit("mission plan compilation requires a ratified outcome")
+    plan = load_plan_file(args.plan_file)
+    title = require_text(plan.get("title"), "title")
+    nodes = normalized_plan_nodes(plan)
+    edges = normalized_plan_edges(plan, nodes)
+    for node in nodes:
+        require_active_role(store, outcome["product_slug"], node["owner_role"])
+        require_active_role(store, outcome["product_slug"], node["verifier_role"])
+
+    now = utc_now()
+    mission_id = str(plan.get("mission_id") or args.mission_id or new_id("mission")).strip()
+    payload = {
+        "mission_id": mission_id,
+        "outcome_id": args.outcome_id,
+        "title": title,
+        "nodes": nodes,
+        "edges": edges,
+        "rollback_note": str(plan.get("rollback_note") or "").strip(),
+        "budget_note": str(plan.get("budget_note") or "").strip(),
+        "captain_attention_estimate": sum(float(node["captain_attention_estimate"]) for node in nodes),
+    }
+    event = store.append_event(
+        "mission.plan_compiled", outcome["product_slug"], "mission", mission_id, args.actor, payload
+    )
+    store.conn.execute(
+        """
+        INSERT INTO missions
+          (mission_id, outcome_id, product_slug, title, state, compiled_event_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'compiled', ?, ?, ?)
+        """,
+        (mission_id, args.outcome_id, outcome["product_slug"], title, event["event_id"], now, now),
+    )
+    for node in nodes:
+        store.conn.execute(
+            """
+            INSERT INTO work_graph_nodes
+              (node_id, mission_id, title, owner_role, acceptance_criteria,
+               evidence_required, verifier_role, risk_level, rollback_note,
+               budget_note, captain_attention_estimate, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queue', ?)
+            """,
+            (
+                node["node_id"],
+                mission_id,
+                node["title"],
+                node["owner_role"],
+                node["acceptance_criteria"],
+                node["evidence_required"],
+                node["verifier_role"],
+                node["risk_level"],
+                node["rollback_note"],
+                node["budget_note"],
+                node["captain_attention_estimate"],
+                now,
+            ),
+        )
+    for edge in edges:
+        store.conn.execute(
+            """
+            INSERT INTO work_graph_edges
+              (edge_id, mission_id, from_node_id, to_node_id, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (new_id("edge"), mission_id, edge["from_node_id"], edge["to_node_id"], now),
+        )
+    store.conn.commit()
+    print_json({**payload, "state": "compiled", "event_id": event["event_id"]})
+
+
+def task_packet_for_node(mission: dict[str, Any], node: dict[str, Any]) -> dict[str, Any]:
+    description = textwrap.dedent(
+        f"""\
+        mission_id: {mission['mission_id']}
+        node_id: {node['node_id']}
+        owner_role: {node['owner_role']}
+        acceptance_criteria: {node['acceptance_criteria']}
+        evidence_required: {node['evidence_required']}
+        verifier_role: {node['verifier_role']}
+        risk_level: {node['risk_level']}
+
+        Mission: {mission['title']}
+        Rollback: {node.get('rollback_note') or 'None specified'}
+        Budget: {node.get('budget_note') or 'None specified'}
+        Captain attention estimate: {node.get('captain_attention_estimate') or 0}
+        """
+    ).strip()
+    return {
+        "node_id": node["node_id"],
+        "owner_role": node["owner_role"],
+        "task_subject": node["title"],
+        "task_description": description,
+    }
+
+
+def cmd_mission_native_task_packets(args: argparse.Namespace) -> None:
+    store = Store()
+    mission = store.row("SELECT * FROM missions WHERE mission_id = ?", (args.mission_id,))
+    if not mission:
+        raise SystemExit(f"unknown mission_id: {args.mission_id}")
+    nodes = store.rows(
+        "SELECT * FROM work_graph_nodes WHERE mission_id = ? ORDER BY created_at, node_id",
+        (args.mission_id,),
+    )
+    print_json({"mission": mission, "task_packets": [task_packet_for_node(mission, node) for node in nodes]})
+
+
 def cmd_mission_status(args: argparse.Namespace) -> None:
     store = Store()
     mission = store.row("SELECT * FROM missions WHERE mission_id = ?", (args.mission_id,))
@@ -784,6 +998,77 @@ def cmd_claude_tasks_show(args: argparse.Namespace) -> None:
         (product_slug, args.task_id),
     )
     print_json({"task": task, "events": events})
+
+
+def table_exists(store: Store, table: str) -> bool:
+    row = store.row("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", (table,))
+    return row is not None
+
+
+def cmd_tasks_drift_report(args: argparse.Namespace) -> None:
+    store = Store()
+    product_slug = product_arg(args)
+    legacy_tasks = []
+    if table_exists(store, "officer_tasks"):
+        legacy_tasks = store.rows(
+            """
+            SELECT id, title, status, officer_slug, context_slug, linked_kind, linked_id
+              FROM officer_tasks
+             WHERE context_slug = ?
+             ORDER BY id DESC
+             LIMIT ?
+            """,
+            (product_slug, args.limit),
+        )
+    nodes = store.rows(
+        """
+        SELECT n.node_id, n.title, n.owner_role, n.status, m.mission_id
+          FROM work_graph_nodes n
+          JOIN missions m ON m.mission_id = n.mission_id
+         WHERE m.product_slug = ?
+         ORDER BY n.created_at DESC, n.node_id
+         LIMIT ?
+        """,
+        (product_slug, args.limit),
+    )
+    claude_tasks = store.rows(
+        """
+        SELECT task_id, task_subject, status, node_id, mission_id, owner_role
+          FROM claude_native_tasks
+         WHERE product_slug = ?
+         ORDER BY updated_at DESC, task_id
+         LIMIT ?
+        """,
+        (product_slug, args.limit),
+    )
+    node_ids = {node["node_id"] for node in nodes}
+    claude_node_ids = {task["node_id"] for task in claude_tasks if task.get("node_id")}
+    legacy_node_links = {
+        str(task.get("linked_id"))
+        for task in legacy_tasks
+        if task.get("linked_kind") == "work_graph_node" and task.get("linked_id")
+    }
+    print_json(
+        {
+            "product_slug": product_slug,
+            "legacy_tasks_table_present": table_exists(store, "officer_tasks"),
+            "counts": {
+                "legacy_tasks": len(legacy_tasks),
+                "work_graph_nodes": len(nodes),
+                "claude_native_tasks": len(claude_tasks),
+            },
+            "work_nodes_without_claude_task": sorted(node_ids - claude_node_ids),
+            "work_nodes_without_legacy_task_link": sorted(node_ids - legacy_node_links),
+            "claude_tasks_without_work_node": [
+                task for task in claude_tasks if not task.get("node_id") or task.get("node_id") not in node_ids
+            ],
+            "legacy_tasks_without_work_node_link": [
+                task
+                for task in legacy_tasks
+                if task.get("linked_kind") != "work_graph_node" or str(task.get("linked_id")) not in node_ids
+            ],
+        }
+    )
 
 
 def insert_role_lineage(
@@ -1619,9 +1904,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--owner-role", default="cos")
     p.add_argument("--actor", default="cos")
     p.set_defaults(func=cmd_mission_compile)
+    p = missions_sub.add_parser("compile-plan")
+    p.add_argument("outcome_id")
+    p.add_argument("--plan-file", required=True)
+    p.add_argument("--mission-id")
+    p.add_argument("--actor", default="cos")
+    p.set_defaults(func=cmd_mission_compile_plan)
     p = missions_sub.add_parser("status")
     p.add_argument("mission_id")
     p.set_defaults(func=cmd_mission_status)
+    p = missions_sub.add_parser("native-task-packets")
+    p.add_argument("mission_id")
+    p.set_defaults(func=cmd_mission_native_task_packets)
     p = missions_sub.add_parser("complete")
     p.add_argument("node_id")
     p.add_argument("--verified-value", type=float, required=True)
@@ -1640,6 +1934,13 @@ def build_parser() -> argparse.ArgumentParser:
     add_common(p)
     p.add_argument("task_id")
     p.set_defaults(func=cmd_claude_tasks_show)
+
+    tasks = sub.add_parser("tasks")
+    tasks_sub = tasks.add_subparsers(dest="cmd", required=True)
+    p = tasks_sub.add_parser("drift-report")
+    add_common(p)
+    p.add_argument("--limit", type=int, default=200)
+    p.set_defaults(func=cmd_tasks_drift_report)
 
     roles = sub.add_parser("roles")
     roles_sub = roles.add_subparsers(dest="cmd", required=True)

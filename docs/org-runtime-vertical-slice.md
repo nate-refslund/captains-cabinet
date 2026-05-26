@@ -46,8 +46,9 @@ Main command groups:
 
 - `org-event append/list`
 - `outcomes propose/ratify/list`
-- `missions compile/status/complete`
+- `missions compile/compile-plan/status/native-task-packets/complete`
 - `claude-tasks list/show`
+- `tasks drift-report`
 - `roles define/list/show/bind-memory/evolve/record-eval/recommend`
 - `roles assign-hat/show-lineage`
 - `ovi compute/publish`
@@ -130,3 +131,15 @@ risk_level: <low|medium|high>
 
 Default mode is warn-only. Set `CABINET_TASK_BRIDGE_MODE=enforce` only after
 the warning stream has proven reliable enough for blocking.
+
+## Mission Compiler v2
+
+`missions compile-plan` accepts a JSON mission plan with multiple nodes,
+dependencies, acceptance criteria, evidence requirements, verifier roles, risk,
+rollback notes, budget notes, and Captain-attention estimates. Use
+`missions native-task-packets <mission_id>` to produce Claude Task-ready
+metadata blocks for each work-graph node.
+
+`tasks drift-report` is read-only. It compares legacy `/tasks` rows,
+work-graph nodes, and Claude native task projections before any `/tasks`
+cutover work replaces the legacy source.

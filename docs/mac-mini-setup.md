@@ -189,6 +189,11 @@ PASS Phase 1 → notify CoS (`bash cabinet/scripts/notify-officer.sh cos "Phase 
 
 ### What CoS does autonomously after Phase 1 PASS
 
+0. **Run preflight checks:**
+   ```bash
+   bash cabinet/scripts/mac-preflight.sh
+   bash cabinet/scripts/mac-tcc-gate.sh
+   ```
 1. **Edit `instance/config/product.yml`** (Phase 3 prep: collapse to Lead-only Telegram, voice-only-CoS)
 2. **Substitute plist templates via envsubst:**
    ```bash

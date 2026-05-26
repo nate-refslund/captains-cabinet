@@ -13,6 +13,13 @@ product:
   repo_branch: main
   mount_path: /workspace/product
 
+activation:
+  status: pending
+  mode: existing_repo_url
+  activated_at: ""
+  activation_mission_id: ""
+  notes: "Legacy project config retained for migration history."
+
 # =============================================================
 # Notion — Business Brain
 # =============================================================

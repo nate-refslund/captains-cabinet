@@ -11,8 +11,9 @@ Cabinet, while keeping `org_events` as the durable organization truth.
   the Postgres schema contract.
 - `.claude/skills/*` teaches officers how to create Cabinet-shaped native
   Tasks, inspect org status, compile missions, and publish OVI.
-- `.claude/commands/*` exposes `/org-status`, `/mission-compile`,
-  `/ovi-publish`, and `/role-eval` as project slash commands.
+- `.claude/commands/*` exposes `/activate-project`, `/org-status`,
+  `/mission-compile`, `/ovi-publish`, and `/role-eval` as project slash
+  commands.
 - `.claude/rules/org-runtime-native.md` states the core invariant: Claude Code
   is the working surface, `org_events` is durable truth.
 - `.claude/agents/*.md` now have frontmatter so they can act as native custom
@@ -58,3 +59,18 @@ bash cabinet/scripts/test-org-runtime.sh
   from native Tasks.
 - Extend the mission compiler beyond the current one-node fixture so native
   Tasks are generated from real multi-node missions.
+
+## Activation And Mac Readiness
+
+Use the activation contract for existing projects:
+
+```bash
+bash cabinet/scripts/activate-project.sh <slug> --repo-path <path> --name "<name>" --activate
+```
+
+Use host readiness checks before a Mac cutover:
+
+```bash
+bash cabinet/scripts/mac-preflight.sh
+bash cabinet/scripts/mac-tcc-gate.sh
+```

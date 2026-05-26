@@ -65,7 +65,13 @@ fi
 
 # Inject captain_name into product: section if present
 if [ -n "$CAPTAIN_NAME" ]; then
-  sed -i "/^  mount_path:/a\\  captain_name: ${CAPTAIN_NAME}" "$OUTPUT_FILE.tmp" 2>/dev/null || true
+  awk -v captain="$CAPTAIN_NAME" '
+    { print }
+    /^[[:space:]]*mount_path:/ && injected != 1 {
+      print "  captain_name: " captain
+      injected = 1
+    }
+  ' "$OUTPUT_FILE.tmp" > "$OUTPUT_FILE.tmp2" && mv "$OUTPUT_FILE.tmp2" "$OUTPUT_FILE.tmp"
 fi
 
 mv "$OUTPUT_FILE.tmp" "$OUTPUT_FILE"

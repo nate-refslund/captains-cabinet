@@ -26,4 +26,11 @@ python3 cabinet/scripts/org-runtime.py outcomes ratify <outcome_id> --ratified-b
 python3 cabinet/scripts/org-runtime.py missions compile <outcome_id> --title "<mission>" --node-title "<first node>" --owner-role <role> --actor cos
 ```
 
+For multi-node work, write a JSON plan and use:
+
+```bash
+python3 cabinet/scripts/org-runtime.py missions compile-plan <outcome_id> --plan-file <plan.json> --actor cos
+python3 cabinet/scripts/org-runtime.py missions native-task-packets <mission_id>
+```
+
 Do not ratify a Captain outcome unless the Captain has actually approved it. If approval is not present, propose the outcome and leave it for review.

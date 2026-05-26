@@ -13,6 +13,13 @@ product:
   repo_branch: main               # Default branch
   mount_path: /workspace/product   # Docker mount path for the product repo
 
+activation:
+  status: pending                  # pending | prepared | active
+  mode: existing_repo_url          # existing_repo_url | existing_repo_path
+  activated_at: ""
+  activation_mission_id: ""
+  notes: ""
+
 # =============================================================
 # Notion — Create these pages/databases in your Notion workspace
 # =============================================================

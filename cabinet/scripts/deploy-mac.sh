@@ -38,6 +38,26 @@ done
 
 mkdir -p "$LAUNCHD_DIR" "$LOGS_DIR"
 
+render_template() {
+  local template="$1"
+  if command -v envsubst >/dev/null 2>&1; then
+    OFFICER="$OFFICER_VAR" USER="$(id -un)" HOME="$HOME" REPO_ROOT="$REPO_ROOT" \
+      envsubst '$OFFICER $USER $HOME $REPO_ROOT' < "$template"
+  else
+    OFFICER="$OFFICER_VAR" USER="$(id -un)" HOME="$HOME" REPO_ROOT="$REPO_ROOT" \
+      python3 - "$template" <<'PY'
+import os
+import sys
+from pathlib import Path
+
+text = Path(sys.argv[1]).read_text()
+for key in ("OFFICER", "USER", "HOME", "REPO_ROOT"):
+    text = text.replace("${" + key + "}", os.environ.get(key, ""))
+print(text, end="")
+PY
+  fi
+}
+
 # envsubst-render a template → final plist + bootstrap (or just print if --dry-run)
 deploy_plist() {
   local template="$1" final="$2" label="$3"
@@ -49,8 +69,7 @@ deploy_plist() {
   # Build envsubst input — only substitute the variables we care about
   # (avoids accidentally consuming other env vars in the template)
   local rendered
-  rendered=$(OFFICER="$OFFICER_VAR" USER="$(id -un)" HOME="$HOME" REPO_ROOT="$REPO_ROOT" \
-    envsubst '$OFFICER $USER $HOME $REPO_ROOT' < "$template")
+  rendered=$(render_template "$template")
 
   if $DRY_RUN; then
     echo "=== WOULD-WRITE $final ==="

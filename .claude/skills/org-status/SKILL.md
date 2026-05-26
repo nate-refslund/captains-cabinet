@@ -10,6 +10,7 @@ Use the local org runtime CLI for durable state checks:
 ```bash
 python3 cabinet/scripts/org-runtime.py org-event list --limit 20
 python3 cabinet/scripts/org-runtime.py claude-tasks list --limit 20
+python3 cabinet/scripts/org-runtime.py tasks drift-report
 python3 cabinet/scripts/org-runtime.py roles list
 ```
 

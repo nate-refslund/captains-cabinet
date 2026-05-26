@@ -22,6 +22,7 @@ SESSION_NAME="officer-$OFFICER"
 MODEL="${CABINET_MODEL:-claude-opus-4-7}"
 REDIS_HOST="${REDIS_HOST:-localhost}"
 REDIS_PORT="${REDIS_PORT:-6379}"
+MAC_DRY_RUN="${CABINET_MAC_DRY_RUN:-0}"
 
 mkdir -p "$LOGS_DIR"
 
@@ -36,17 +37,19 @@ else
   echo "[WARN] start-officer-mac.sh: cabinet/.env not found at $REPO_ROOT/cabinet/.env — officer will boot without secrets" >&2
 fi
 
-# Assemble runtime constitution + safety + preset (idempotent).
-# Audit-fix 2026-05-23: capture exit status via PIPESTATUS — `tail` always exits 0.
-bash cabinet/scripts/load-preset.sh 2>&1 | tail -3 >&2
-LOAD_PRESET_RC="${PIPESTATUS[0]}"
-if [ "$LOAD_PRESET_RC" -ne 0 ]; then
-  echo "[ERROR] start-officer-mac.sh: load-preset.sh exited $LOAD_PRESET_RC — runtime constitution may be incomplete" >&2
-  # Don't abort — let officer try to boot anyway, but logged for debug
-fi
+if [ "$MAC_DRY_RUN" != "1" ]; then
+  # Assemble runtime constitution + safety + preset (idempotent).
+  # Audit-fix 2026-05-23: capture exit status via PIPESTATUS — `tail` always exits 0.
+  bash cabinet/scripts/load-preset.sh 2>&1 | tail -3 >&2
+  LOAD_PRESET_RC="${PIPESTATUS[0]}"
+  if [ "$LOAD_PRESET_RC" -ne 0 ]; then
+    echo "[ERROR] start-officer-mac.sh: load-preset.sh exited $LOAD_PRESET_RC — runtime constitution may be incomplete" >&2
+    # Don't abort — let officer try to boot anyway, but logged for debug
+  fi
 
-# Dep audit — non-blocking, logs any missing tools to stderr
-bash "$REPO_ROOT/cabinet/scripts/check-deps.sh" 2>&1 | tee -a "$LOGS_DIR/officer-$OFFICER.out.log" || true
+  # Dep audit — non-blocking, logs any missing tools to stderr
+  bash "$REPO_ROOT/cabinet/scripts/check-deps.sh" 2>&1 | tee -a "$LOGS_DIR/officer-$OFFICER.out.log" || true
+fi
 
 # ===========================================================
 # Capability resolution (Spec 060 + Spec 061 capability gates)
@@ -115,8 +118,10 @@ fi
 # ===========================================================
 # Heartbeat — SETEX 900s TTL per Spec 064 v1.1 CTO #3
 # ===========================================================
-redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" \
-  SETEX "cabinet:heartbeat:$OFFICER" 900 "$(date -u +%s)" > /dev/null 2>&1 || true
+if [ "$MAC_DRY_RUN" != "1" ]; then
+  redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" \
+    SETEX "cabinet:heartbeat:$OFFICER" 900 "$(date -u +%s)" > /dev/null 2>&1 || true
+fi
 
 # Export OFFICER_NAME for hooks (stop-hook.sh + post-tool-use.sh etc.)
 export OFFICER_NAME="$OFFICER"
@@ -126,6 +131,25 @@ export OFFICER_NAME="$OFFICER"
 # officers. Linux start-officer.sh sets this at line 280; mirror on Mac.
 export TELEGRAM_STATE_DIR="$HOME/Library/Application Support/cabinet/telegram-state/$OFFICER"
 mkdir -p "$TELEGRAM_STATE_DIR"
+
+# Build the claude invocation. Prefer native custom agents when the installed
+# Claude Code CLI exposes --agent; otherwise keep the boot-prompt path.
+AGENT_FLAG=""
+if [ "${CABINET_USE_NATIVE_AGENT:-1}" = "1" ] \
+  && [ -f "$REPO_ROOT/.claude/agents/$OFFICER.md" ] \
+  && command -v claude >/dev/null 2>&1 \
+  && claude --help 2>&1 | grep -q -- '--agent'; then
+  AGENT_FLAG="--agent $OFFICER"
+fi
+CLAUDE_CMD="cd $REPO_ROOT && claude $AGENT_FLAG --model $MODEL $MCP_FLAG $TELEGRAM_FLAG --dangerously-skip-permissions --effort max"
+
+if [ "$MAC_DRY_RUN" = "1" ]; then
+  echo "start-officer-mac.sh dry-run:"
+  echo "  officer=$OFFICER"
+  echo "  native_agent=$([ -n "$AGENT_FLAG" ] && echo true || echo false)"
+  echo "  command=$CLAUDE_CMD"
+  exit 0
+fi
 
 # ===========================================================
 # tmux session + claude launch
@@ -138,9 +162,6 @@ tmux kill-session -t "$SESSION_NAME" 2>/dev/null || true
 
 # Start fresh detached session
 tmux new-session -d -s "$SESSION_NAME" -x 220 -y 50
-
-# Build the claude invocation
-CLAUDE_CMD="cd $REPO_ROOT && claude --model $MODEL $MCP_FLAG $TELEGRAM_FLAG --dangerously-skip-permissions --effort max"
 
 # Send the launch command into the tmux session
 tmux send-keys -t "$SESSION_NAME" "$CLAUDE_CMD" C-m

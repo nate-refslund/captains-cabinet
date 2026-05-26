@@ -88,6 +88,13 @@ CREATE TABLE IF NOT EXISTS work_graph_nodes (
   mission_id TEXT NOT NULL REFERENCES missions(mission_id),
   title TEXT NOT NULL,
   owner_role TEXT NOT NULL,
+  acceptance_criteria TEXT NOT NULL DEFAULT '',
+  evidence_required TEXT NOT NULL DEFAULT '',
+  verifier_role TEXT NOT NULL DEFAULT '',
+  risk_level TEXT NOT NULL DEFAULT 'medium',
+  rollback_note TEXT NOT NULL DEFAULT '',
+  budget_note TEXT NOT NULL DEFAULT '',
+  captain_attention_estimate NUMERIC NOT NULL DEFAULT 0,
   status TEXT NOT NULL CHECK (status IN ('queue', 'wip', 'verified')),
   verified_value NUMERIC NOT NULL DEFAULT 0,
   verification_summary TEXT,
@@ -101,6 +108,15 @@ CREATE INDEX IF NOT EXISTS idx_work_graph_nodes_mission_status
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_work_graph_nodes_mission_node
   ON work_graph_nodes(mission_id, node_id);
+
+ALTER TABLE work_graph_nodes
+  ADD COLUMN IF NOT EXISTS acceptance_criteria TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS evidence_required TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS verifier_role TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS risk_level TEXT NOT NULL DEFAULT 'medium',
+  ADD COLUMN IF NOT EXISTS rollback_note TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS budget_note TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS captain_attention_estimate NUMERIC NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS work_graph_edges (
   edge_id TEXT PRIMARY KEY,
