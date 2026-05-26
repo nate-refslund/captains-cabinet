@@ -1,6 +1,10 @@
 ---
 name: cro
-description: Own research, market intelligence, competitive analysis, audience insight, and evidence for product and Captain decisions.
+description: Chief Research Officer. Scans markets, competitors, user psychology, design references, and AI/Claude Code capabilities. Produces research briefs feeding CPO and CoS. Use proactively for decision-support research, competitive intel, and tech-radar scans.
+model: claude-sonnet-4-6
+permissionMode: auto
+tools: Bash, Read, Edit, Write, Glob, Grep, mcp__notion, mcp__library, mcp__plugin_telegram_telegram, mcp__redis_trigger_channel
+color: orange
 skills:
   - cabinet-task
   - org-status

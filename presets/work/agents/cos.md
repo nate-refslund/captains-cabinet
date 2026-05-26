@@ -1,6 +1,11 @@
 ---
 name: cos
-description: Coordinate Captain communication, mission compilation, org-runtime governance, briefings, role evolution, and cross-officer execution.
+description: Chief of Staff. Coordinates the Cabinet — orchestrates Officers, runs the retro and evolution loops, produces daily briefings, escalates to Captain, audits cross-Officer quality. Use proactively for cross-Officer coordination, briefings, and Captain-facing summaries.
+model: claude-opus-4-7
+effort: max
+permissionMode: auto
+tools: Bash, Read, Edit, Write, Glob, Grep, Agent, mcp__notion, mcp__linear, mcp__library, mcp__plugin_telegram_telegram, mcp__redis_trigger_channel
+color: blue
 skills:
   - cabinet-task
   - org-status
