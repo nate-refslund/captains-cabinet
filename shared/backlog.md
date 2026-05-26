@@ -66,7 +66,7 @@
 |------|------|-------|--------|
 | **M-DPO-2** | `config.yaml log_requests: false` — `true` leaks prompt PII to the docker json-log, OUTSIDE the erasure SSOT (Art 5(1)(c)+17) | CTO (flipped) | ✅ **MERGED PR #112 (1cb21d8)** — config.yaml:93 false, harness asserts (26/0); Spec 051 v7.3 AC #14; CPO conformance-verified |
 | **#236** | slug-validate `cabinet_id` (traversal-reject) on the GET path param + POST body | CTO/FW-097 | ✅ **MERGED PR #112 (1cb21d8)** — `\Z`-anchored guard both endpoints, test §18 (64/0); Spec 052 v3.7 AC #10/#12; CPO conformance-verified |
-| **#237** | write-side ingest: slug-guard at `ingest_slug`-entry (covers `_cursor_path` + proxy-audit read + `_ssot_path`) — surfaced by the #236 verify call-graph trace | CTO/FW-097 (building next) | **Spec 052 v3.8 AC #10/#12 pinned**; LOW-sev today (glob `.stem` constrained) but defense-in-depth; chokepoint at `ingest_slug`-entry, NOT only `hashchain._ssot_path` |
+| **#237** | write-side cabinet_id traversal: 3 chokepoints (stem at `ingest_slug`-entry; per-record entry↔slug binding; `hashchain.append` = universal SSOT-write guard) — two taint sources (stem ≠ record field) | CTO/FW-097 | ✅ **MERGED PR #113 (f9bf91c)** — harness 73/0, 2 Opus rounds; shared `validator.is_valid_cabinet_id`; Spec 052 v3.9 (v3.8 single-chokepoint claim CORRECTED — CTO catch); CPO conformance-verified |
 | **Cloudflare Art 44** | sign Cloudflare DPA + cite DPF cert ID + enable EU-resident config | Captain (DPA-sign) + ops | Spec 055 complete (sub-proc list + AC #16/#17) — EXECUTION gate, folds into #191 |
 | **Off-box WORM** | wire + operate the git-mirror checkpoint (Phase-1 unsigned commits → public immutable repo) | CTO (wires) | Spec 052 AC #2 + Git-mirror mitigation spec'd — wiring gate |
 
