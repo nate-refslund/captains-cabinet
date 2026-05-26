@@ -12,9 +12,27 @@ HOOK_INPUT=$(cat)
 TOOL_NAME=$(echo "$HOOK_INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
 TOOL_INPUT=$(echo "$HOOK_INPUT" | jq -c '.tool_input // {}' 2>/dev/null)
 
-REDIS_URL="${REDIS_URL:-redis://redis:6379}"
-REDIS_HOST=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f1)
-REDIS_PORT=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f2)
+# REDIS CONNECTION RESOLUTION (B4 — Mac portability)
+# Honors REDIS_HOST + REDIS_PORT first; REDIS_URL only if neither is set.
+# Rationale: LaunchAgent plists on Mac export REDIS_HOST=localhost +
+# REDIS_PORT=6379 but do NOT set REDIS_URL. The legacy default of
+# REDIS_URL=redis://redis:6379 (Docker DNS) silently broke the kill switch,
+# spending limits, and policy enforcement on Mac whenever REDIS_URL was
+# unset or inherited stale. Explicit REDIS_HOST/REDIS_PORT wins; REDIS_URL
+# is a fallback for callers that only set the URL form. This block touches
+# the Redis connection only — policy/allow/block logic below is unchanged.
+if [ -n "${REDIS_HOST:-}" ] || [ -n "${REDIS_PORT:-}" ]; then
+  REDIS_HOST="${REDIS_HOST:-127.0.0.1}"
+  REDIS_PORT="${REDIS_PORT:-6379}"
+elif [ -n "${REDIS_URL:-}" ]; then
+  REDIS_HOST=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f1)
+  REDIS_PORT=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f2)
+  REDIS_HOST="${REDIS_HOST:-127.0.0.1}"
+  REDIS_PORT="${REDIS_PORT:-6379}"
+else
+  REDIS_HOST="127.0.0.1"
+  REDIS_PORT="6379"
+fi
 
 # ============================================================
 # 0. TYPED POLICY SHADOW (Outcome-to-OVI branch)

@@ -23,6 +23,41 @@ fi
 CABINET_ROOT="${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." 2>/dev/null && pwd)}"
 OFFICER="${OFFICER_NAME:-${CABINET_OFFICER:-unknown}}"
 
+# ============================================================
+# LIVENESS HEARTBEAT AT BOOT (B3 — Liveness vs Activity split)
+# ============================================================
+# Emit a liveness heartbeat the moment the officer session starts so the
+# watchdog has a positive signal even before the first tool call. Without
+# this, an officer that boots and then sits idle for >30min (e.g. waiting
+# for the first Captain DM) would have no liveness key and the watchdog
+# would (wrongly) classify it as dead.
+#
+# Redis env resolution mirrors pre-tool-use.sh / post-tool-use.sh: explicit
+# REDIS_HOST/REDIS_PORT win, REDIS_URL is a fallback, 127.0.0.1:6379 last.
+# Honors REDIS_HOST + REDIS_PORT first; REDIS_URL only if neither is set.
+if [ "$OFFICER" != "unknown" ]; then
+  if [ -n "${REDIS_HOST:-}" ] || [ -n "${REDIS_PORT:-}" ]; then
+    _SS_REDIS_HOST="${REDIS_HOST:-127.0.0.1}"
+    _SS_REDIS_PORT="${REDIS_PORT:-6379}"
+  elif [ -n "${REDIS_URL:-}" ]; then
+    _SS_REDIS_HOST=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f1)
+    _SS_REDIS_PORT=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f2)
+    _SS_REDIS_HOST="${_SS_REDIS_HOST:-127.0.0.1}"
+    _SS_REDIS_PORT="${_SS_REDIS_PORT:-6379}"
+  else
+    _SS_REDIS_HOST="127.0.0.1"
+    _SS_REDIS_PORT="6379"
+  fi
+  _SS_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  # 30min TTL — must match post-tool-use.sh refresh TTL so an officer that
+  # boots and then idles without any tool call gets exactly one liveness
+  # window before the watchdog notices.
+  redis-cli -h "$_SS_REDIS_HOST" -p "$_SS_REDIS_PORT" SET "cabinet:heartbeat:liveness:$OFFICER" "$_SS_TS" EX 1800 > /dev/null 2>&1 || true
+  # Also seed the legacy key so any consumer still reading it sees a fresh
+  # value on boot. Cheap, safe; doesn't affect watchdog logic.
+  redis-cli -h "$_SS_REDIS_HOST" -p "$_SS_REDIS_PORT" SET "cabinet:heartbeat:$OFFICER" "$_SS_TS" EX 900 > /dev/null 2>&1 || true
+fi
+
 TRIPLET_DIR="$CABINET_ROOT/shared/interfaces"
 TIER2_DIR="$CABINET_ROOT/instance/memory/tier2/$OFFICER"
 

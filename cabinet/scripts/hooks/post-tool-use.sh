@@ -9,9 +9,28 @@ TOOL_NAME=$(echo "$HOOK_INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
 TOOL_INPUT=$(echo "$HOOK_INPUT" | jq -c '.tool_input // {}' 2>/dev/null)
 TOOL_OUTPUT=$(echo "$HOOK_INPUT" | jq -c '.tool_response // {}' 2>/dev/null)
 
-REDIS_URL="${REDIS_URL:-redis://redis:6379}"
-REDIS_HOST=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f1)
-REDIS_PORT=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f2)
+# REDIS CONNECTION RESOLUTION (B4 — Mac portability)
+# Honors REDIS_HOST + REDIS_PORT first; REDIS_URL only if neither is set.
+# Rationale: LaunchAgent plists on Mac export REDIS_HOST=localhost +
+# REDIS_PORT=6379 but do NOT set REDIS_URL. The legacy default of
+# REDIS_URL=redis://redis:6379 (Docker DNS) caused silent failure of
+# heartbeat, triggers, cost counters, and the kill switch on Mac when
+# REDIS_URL was inherited from a shell or unset entirely. Explicit
+# REDIS_HOST/REDIS_PORT wins; REDIS_URL is a fallback for callers that
+# only set the URL form (Docker compose, some CI envs).
+if [ -n "${REDIS_HOST:-}" ] || [ -n "${REDIS_PORT:-}" ]; then
+  REDIS_HOST="${REDIS_HOST:-127.0.0.1}"
+  REDIS_PORT="${REDIS_PORT:-6379}"
+elif [ -n "${REDIS_URL:-}" ]; then
+  REDIS_HOST=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f1)
+  REDIS_PORT=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f2)
+  # Defensive: blank-after-parse falls through to safe local default
+  REDIS_HOST="${REDIS_HOST:-127.0.0.1}"
+  REDIS_PORT="${REDIS_PORT:-6379}"
+else
+  REDIS_HOST="127.0.0.1"
+  REDIS_PORT="6379"
+fi
 
 CABINET_ROOT="${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
 
@@ -40,9 +59,48 @@ officers_with() {
 }
 
 # ============================================================
-# 0. HEARTBEAT — proves this Officer is alive
+# 0. HEARTBEAT — activity + liveness (B3 — Liveness vs Activity split)
 # ============================================================
+# Two distinct signals so the watchdog can distinguish "officer is idle"
+# from "officer is dead":
+#
+#   cabinet:heartbeat:activity:<officer>   TTL 3600s (60min)
+#     Set on EVERY tool call. Absence = no tool calls recently. NOT a
+#     death signal — a healthy officer can sit idle for hours waiting
+#     for a Captain DM or scheduled trigger.
+#
+#   cabinet:heartbeat:liveness:<officer>   TTL 1800s (30min)
+#     Set at session boot (session-start.sh) and refreshed here every
+#     N tool calls. Absence = officer process is actually gone. Drives
+#     the watchdog's restart decision.
+#
+# Liveness is refreshed every LIVENESS_REFRESH_INTERVAL tool calls
+# rather than on every call to keep Redis write volume low (a busy
+# officer can do thousands of tool calls per session). Interval of 5
+# combined with TTL of 1800s gives a generous safety margin: even an
+# officer doing one tool call every 5 minutes keeps liveness fresh
+# (5 calls × 5 min = 25 min < 1800s TTL).
+#
+# Legacy key (cabinet:heartbeat:<officer>, 900s TTL) is kept for
+# back-compat with dashboards, cost-summary, and other consumers that
+# read it. Watchdog no longer reads this key — it reads liveness only.
+redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" SET "cabinet:heartbeat:activity:$OFFICER" "$TIMESTAMP" EX 3600 > /dev/null 2>&1
 redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" SET "cabinet:heartbeat:$OFFICER" "$TIMESTAMP" EX 900 > /dev/null 2>&1
+
+# Periodic liveness refresh — read current tool-call counter (also set
+# below in block 7; we INCR there but only READ here so the two blocks
+# don't double-count).
+LIVENESS_REFRESH_INTERVAL=5
+_LIVE_CNT=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET "cabinet:toolcalls:$OFFICER" 2>/dev/null)
+[[ "$_LIVE_CNT" =~ ^[0-9]+$ ]] || _LIVE_CNT=0
+# First tool call of the session (_LIVE_CNT is 0 before block 7 INCRs) and
+# every Nth call thereafter — refresh liveness. The "% N == 0" check fires
+# on the Nth, 2Nth, 3Nth call relative to block 7's post-INCR value, which
+# is one ahead by the time we read here on subsequent calls; the math still
+# works out to ~one liveness refresh per N calls.
+if [ "$_LIVE_CNT" = "0" ] || [ "$((_LIVE_CNT % LIVENESS_REFRESH_INTERVAL))" = "0" ] 2>/dev/null; then
+  redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" SET "cabinet:heartbeat:liveness:$OFFICER" "$TIMESTAMP" EX 1800 > /dev/null 2>&1
+fi
 
 # ============================================================
 # 1. STRUCTURED LOG ENTRY
