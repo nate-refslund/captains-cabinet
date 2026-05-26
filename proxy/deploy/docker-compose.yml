@@ -1,0 +1,166 @@
+# proxy/deploy/docker-compose.yml — FW-121 refslund.ai backend deploy stack.
+#
+# WHY: net-new deploy automation for the refslund.ai SaaS backend. Spec basis:
+#   - Spec 050 L16  — Docker baseline for the SaaS backend ("Docker stays").
+#   - Spec 051 §Topology — proxy.refslund.ai on a Hetzner Frankfurt EU VPS behind
+#     Cloudflare (public TLS terminates at Cloudflare → forwards to THIS origin).
+#   - Spec 052 CTO#2 — audit-server is a SEPARATE service (not a litellm callback).
+#   - Spec 052 CTO#3 + AC#7 — audit-server runs NON-ROOT; append-only is provision-side.
+#
+# CANONICAL LAYOUT (resolves the H2 path contradiction — all 4 artifacts agree):
+#   Compose RUNS from /opt/refslund-backend/proxy/deploy/ (this file's deploy location), so:
+#     ../config.yaml ../audit_logger.py  → /opt/refslund-backend/proxy/{config.yaml,audit_logger.py}
+#     build context ..                   → /opt/refslund-backend/proxy/  (+ ../.dockerignore)
+#     ./Caddyfile ./origin-certs ./data  → under proxy/deploy/
+#   provision.sh DEPLOY_DIR + the systemd unit BOTH point at /opt/refslund-backend/proxy/deploy.
+#
+# SECRET ISOLATION (H1): litellm mounts ONLY the 2 files it imports (config + the callback
+# module) — NOT the whole proxy/ tree — so .env + origin-certs/ (under proxy/deploy/) are never
+# exposed inside the litellm container. ../.dockerignore keeps them out of the build context too.
+# SECRETS never inline here — all via .env (chmod 600, provision.sh validates). See README.
+
+name: refslund-backend
+
+x-logging: &default-logging          # M2: bound every container's logs (no unbounded PII/disk growth)
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  # ── LiteLLM proxy (FW-096) — the proxy.refslund.ai/v1 endpoint ────────────────
+  litellm:
+    image: ghcr.io/berriai/litellm:main-stable   # M3: DEPLOY MUST pin @sha256 after validating config.yaml schema
+    restart: unless-stopped
+    logging: *default-logging
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    working_dir: /app
+    command: ["--config", "/app/proxy/config.yaml", "--port", "4000", "--num_workers", "2"]
+    environment:
+      PYTHONPATH: /app
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY in .env}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY in .env}
+      LITELLM_MARGIN_PCT: ${LITELLM_MARGIN_PCT:-100}
+      LITELLM_CAP_USD: ${LITELLM_CAP_USD:-50.0}
+      DATABASE_URL: ${DATABASE_URL:-}
+      LITELLM_AUDIT_LOG_ROOT: /data/logs/proxy-audit   # FW-096 writes <root>/<slug>.jsonl
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+    volumes:
+      # H1: ONLY the 2 files litellm imports (config + the proxy.audit_logger callback) — NOT
+      # the whole proxy/ tree, so .env / origin-certs/ are never readable in this container.
+      - ../config.yaml:/app/proxy/config.yaml:ro
+      - ../audit_logger.py:/app/proxy/audit_logger.py:ro
+      - ./data/logs:/data/logs          # shared audit volume (bind mount) — litellm writes proxy-audit/
+    depends_on:
+      redis:
+        condition: service_started
+    networks: [backend]
+    expose: ["4000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:4000/health/liveliness',timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  # ── Audit-server (FW-097, Spec 052 CTO#2) — separate service, separate port ───
+  audit-server:
+    build:
+      context: ..                      # build context = proxy/ ; ../.dockerignore excludes secrets/data
+      dockerfile: deploy/Dockerfile.audit-server
+    image: refslund-audit-server:fw121
+    restart: unless-stopped
+    logging: *default-logging
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    user: "10001:10001"                # L2: belt-and-suspenders to the Dockerfile USER (non-root, CTO#3)
+    environment:
+      AUDIT_API_KEY: ${AUDIT_API_KEY:?set AUDIT_API_KEY in .env}
+      LITELLM_AUDIT_LOG_ROOT: /data/logs   # audit-server/ingest read it as the PARENT of audit/+proxy-audit/
+    volumes:
+      - ./data/logs:/data/logs          # reads + APPENDS the SSOT audit/<slug>.jsonl (non-root)
+    networks: [backend]
+    expose: ["8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ── Ingest sidecar — FW-096 proxy-audit stream → Spec 052 SSOT (periodic) ─────
+  ingest:
+    image: refslund-audit-server:fw121 # same image as audit-server; command overrides to the loop
+    restart: unless-stopped
+    logging: *default-logging
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    user: "10001:10001"
+    command: ["/app/ingest-loop.sh"]
+    environment:
+      LITELLM_AUDIT_LOG_ROOT: /data/logs
+      INGEST_INTERVAL: ${INGEST_INTERVAL:-60}
+    volumes:
+      - ./data/logs:/data/logs          # reads proxy-audit/, writes audit/ (hash-chained SSOT)
+    depends_on:
+      audit-server:
+        condition: service_started      # ensure the image is built; ordering only
+    networks: [backend]
+
+  # ── Redis — per-cabinet daily-cap state (Spec 051 L209, survives restart) ─────
+  redis:
+    image: redis:7.4-alpine            # M3: pinned minor
+    restart: unless-stopped
+    logging: *default-logging
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    # L1: require auth — cap-state gates the $50/day ceiling; a bridge-mate compromise must not
+    # read/reset it without the password. requirepass sourced from .env (never inline).
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}"]
+    volumes:
+      - redis-data:/data
+    networks: [backend]
+    expose: ["6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 30s
+      timeout: 3s
+      retries: 5
+
+  # ── Caddy — LOCAL origin reverse-proxy (Cloudflare terminates PUBLIC TLS) ──────
+  caddy:
+    image: caddy:2.8-alpine            # M3: pinned minor
+    restart: unless-stopped
+    logging: *default-logging
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    cap_add: ["NET_BIND_SERVICE"]      # only the cap needed to bind :80/:443
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./origin-certs:/etc/caddy/origin-certs:ro   # Cloudflare Origin CA cert+key (provision.sh, chmod 600)
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      litellm:
+        condition: service_started
+      audit-server:
+        condition: service_started
+    networks: [backend]
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  # GDPR audit logs are a BIND mount (./data/logs, see services above) — NOT a named volume — so
+  # provision.sh's append-only cron can chattr +a the audit/*.jsonl SSOT files (AC#7) on a known
+  # host path + the daily git-mirror checkpoint (Spec 052) + backups can read it directly.
+  redis-data:      # cap-state persistence
+  caddy-data:      # Caddy state
+  caddy-config:

@@ -1,0 +1,7 @@
+# proxy/deploy/requirements.txt — FW-121 audit-server (FW-097) runtime deps.
+# app.py: FastAPI + Header/Query/HTTPException + pydantic v2 (BaseModel, Field, field_validator).
+# uvicorn[standard] for the ASGI server (websockets/httptools extras). Pinned to majors;
+# DEPLOY: re-pin to exact versions (lockfile) after the first VPS build validates.
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.27,<1.0
+pydantic>=2.5,<3.0

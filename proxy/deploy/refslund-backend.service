@@ -1,0 +1,26 @@
+[Unit]
+# proxy/deploy/refslund-backend.service — FW-121 systemd supervisor for REBOOT-SURVIVAL.
+# TEMPLATE: provision.sh substitutes __COMPOSE_DIR__ with the actual deploy dir (the proxy/deploy/
+# path on the VPS) before installing to /etc/systemd/system/ — so the unit path never drifts (H2).
+# Brings the docker-compose stack up on every boot; Docker's per-container `restart: unless-stopped`
+# handles crash-resilience. systemd here owns boot-start/stop, NOT the per-service lifecycle —
+# the services run in Docker (Spec 050 L16), NOT bare systemd. provision.sh installs + enables this.
+Description=refslund.ai backend (FW-121: LiteLLM proxy + audit-server + ingest + Redis + Caddy)
+Documentation=https://github.com/nate-step/captains-cabinet/blob/master/proxy/deploy/README.md
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+# oneshot + RemainAfterExit: `up -d` returns after the stack is started; systemd marks the unit
+# active and re-runs `up -d` on boot. Per-container resilience is Docker's restart policy.
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=__COMPOSE_DIR__
+ExecStart=/usr/bin/docker compose -f __COMPOSE_DIR__/docker-compose.yml up -d --remove-orphans
+ExecStop=/usr/bin/docker compose -f __COMPOSE_DIR__/docker-compose.yml down
+# First boot may pull/build images — allow generous startup.
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target

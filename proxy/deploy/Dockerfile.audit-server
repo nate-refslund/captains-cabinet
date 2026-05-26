@@ -1,0 +1,38 @@
+# proxy/deploy/Dockerfile.audit-server — FW-121: FW-097 audit-server + ingest sidecar image.
+#
+# Build context = proxy/ (compose sets `context: ..`, `dockerfile: deploy/Dockerfile.audit-server`)
+# so this can COPY audit-server/ (the FW-097 modules) + deploy/ (requirements, ingest loop).
+#
+# Spec 052 CTO#3: the audit-server runs as a NON-ROOT `audit` user (app-layer append-only is the
+# PRIMARY enforcement; the process must never run as root). chattr +a on the host audit dir is the
+# SECONDARY defense-in-depth, applied by provision.sh as root (NOT in this image).
+
+FROM python:3.12.7-slim
+
+
+# Non-root audit user (fixed uid so the bind-mount ownership + chattr +a line up at provision time).
+RUN groupadd -r -g 10001 audit \
+ && useradd -r -u 10001 -g audit -s /usr/sbin/nologin audit
+
+WORKDIR /app
+
+# Deps first (layer cache): fastapi + uvicorn + pydantic (app.py uses pydantic v2 field_validator).
+COPY deploy/requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+# FW-097 modules: app.py, validator.py, hashchain.py, erasure.py, ingest.py (+ the ingest loop).
+COPY audit-server/ /app/audit-server/
+COPY deploy/ingest-loop.sh /app/ingest-loop.sh
+RUN chmod +x /app/ingest-loop.sh
+
+# Audit volume mount point, owned by `audit` so the non-root process can create + append the SSOT.
+RUN mkdir -p /data/logs/audit /data/logs/proxy-audit && chown -R audit:audit /data
+VOLUME ["/data/logs"]
+
+WORKDIR /app/audit-server
+USER audit
+EXPOSE 8000
+
+# Default = the FW-097 FastAPI audit-server. The `ingest` service overrides this command with
+# /app/ingest-loop.sh (compose `command:`). app.py self-inserts its dir on sys.path for imports.
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
