@@ -61,9 +61,17 @@
 
 **Customer-#1 go-live = 2 CAPTAIN founder-actions (engineering is DONE):** (1) **#184** private commercial repo → unblocks FW-099 signup + FW-101 dashboard; (2) **#191** Hetzner Frankfurt VPS provisioning + proxy.refslund.ai DNS/TLS → unblocks the proxy + audit-server deploy (FW-121 deploy stack BUILT + spec-conformance-APPROVED PR #108: docker-compose + Caddy-origin-behind-Cloudflare + non-root + per-file-append-only; architecture ratified Hetzner Frankfurt). Both surfaced to Captain by CoS.
 
+**Pre-go-live gates — 4 hard gates (CTO FW-121 DPO-substitute pass, 2026-05-26); land before customer #1 processes real data, concurrent with #184/#191 (NOT Captain decisions):**
+| Gate | What | Owner | Status |
+|------|------|-------|--------|
+| **M-DPO-2** | `config.yaml log_requests: false` — `true` leaks prompt PII to the docker json-log, OUTSIDE the erasure SSOT (Art 5(1)(c)+17) | CPO spec'd+confirmed → CTO flips the 1-line value | **Spec 051 v7.3 AC #14 pinned**; config.yaml is FW-096/CPO scope → NOT flipped in the deploy PR |
+| **#236** | slug-validate `cabinet_id` (traversal-reject) on BOTH the GET path param + POST body | CTO/FW-097 (builds next tick) | **Spec 052 v3.7 AC #10/#12 pinned**; orthogonal to FW-120 key-scoping (both required) |
+| **Cloudflare Art 44** | sign Cloudflare DPA + cite DPF cert ID + enable EU-resident config | Captain (DPA-sign) + ops | Spec 055 complete (sub-proc list + AC #16/#17) — EXECUTION gate, not a spec gap |
+| **Off-box WORM** | wire + operate the git-mirror checkpoint (Phase-1 unsigned commits → public immutable repo) | CTO (wires) | Spec 052 AC #2 + Git-mirror mitigation spec'd — wiring gate |
+
 **COO-path RESOLVED via workaround (2026-05-26 17:10):** COO's injection-defense is durably hardened (rejected even console reactivation, injection-49, post-FW-117) — so rather than block: the **FW-121 security pass = Opus substitute** (CTO proceeds; CPO-approved, atop CTO 2 Opus deploy-rounds + my conformance → FW-121's full gate with the VPS); the **coo-dpo.md DPO-read defers to customer-#1 natural reactivation** (Spec 055 H1 active-duties-ramp — happens when COO's DPO duties ramp at the first install). Neither blocks critical path; the COO-path is OFF the Captain decision list. **Future CPO item (not urgent; coordinated CoS+CPO+CTO under FW-117 f/u 3 / task #80):** COO-resilience design — (a) injection-defense releases on framework-malformation-cleared signals without weakening real-injection resistance; (b) a cryptographic Captain-signed offline-verifiable reactivation token (channel+Telegram-independent).
 
-CLOSED since the prior refinement: allow-list parity (#234 validator.py + #107 sync-guard, Spec 052 v3.6 AC#12), FF-pull drift-backstop (#192/#109). Remaining non-blocking follow-ups: cap-reaction design (CTO), #236 app.py cabinet_id traversal (pre-go-live), the COO-resilience design (above).
+CLOSED since the prior refinement: allow-list parity (#234 validator.py + #107 sync-guard, Spec 052 v3.6 AC#12), FF-pull drift-backstop (#192/#109). Remaining non-blocking follow-ups: cap-reaction design (CTO), the COO-resilience design (above). (The 4 pre-go-live gates incl. #236 are in the gates table above.)
 
 ### Customer templates (all complete, ready for first-customer use)
 | Template | File | Status |
