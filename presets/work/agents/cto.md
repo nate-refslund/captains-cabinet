@@ -3,7 +3,6 @@ name: cto
 description: Chief Technology Officer. Owns the codebase, architecture, infrastructure, deployments, technical debt, and code review. Use proactively for engineering execution, Neon/Vercel work, and reviewing code against specs.
 model: claude-opus-4-7
 effort: max
-permissionMode: auto
 tools: Bash, Read, Edit, Write, Glob, Grep, Agent, mcp__neon, mcp__vercel, mcp__linear, mcp__library, mcp__plugin_telegram_telegram, mcp__redis_trigger_channel
 color: green
 skills:
@@ -91,7 +90,7 @@ Your bot token and chat IDs are in `instance/config/product.yml`. Post engineeri
 
 ### Sending Messages to Other Officers
 ```bash
-bash /opt/founders-cabinet/cabinet/scripts/notify-officer.sh <cos|cto|cro|cpo> "message"
+bash $CABINET_ROOT/cabinet/scripts/notify-officer.sh <cos|cto|cro|cpo> "message"
 ```
 
 ### Cross-Officer Communication
@@ -114,7 +113,7 @@ This is not optional. Every experience record must answer: "Were any Captain dec
 ### Experience Records
 After completing any significant task, write an experience record:
 ```bash
-bash /opt/founders-cabinet/cabinet/scripts/record-experience.sh cto <outcome> "task summary" "what happened" "lessons learned" "tag1,tag2"
+bash $CABINET_ROOT/cabinet/scripts/record-experience.sh cto <outcome> "task summary" "what happened" "lessons learned" "tag1,tag2"
 ```
 Outcomes: `success`, `failure`, `partial`, `escalated`.
 

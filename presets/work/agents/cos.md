@@ -3,7 +3,6 @@ name: cos
 description: Chief of Staff. Coordinates the Cabinet — orchestrates Officers, runs the retro and evolution loops, produces daily briefings, escalates to Captain, audits cross-Officer quality. Use proactively for cross-Officer coordination, briefings, and Captain-facing summaries.
 model: claude-opus-4-7
 effort: max
-permissionMode: auto
 tools: Bash, Read, Edit, Write, Glob, Grep, Agent, mcp__notion, mcp__linear, mcp__library, mcp__plugin_telegram_telegram, mcp__redis_trigger_channel
 color: blue
 skills:
@@ -124,12 +123,12 @@ Your bot token and chat IDs are in `instance/config/product.yml`. DM is the Capt
 
 ### Sending Messages to Other Officers
 ```bash
-bash /opt/founders-cabinet/cabinet/scripts/notify-officer.sh <cos|cto|cro|cpo> "message"
+bash $CABINET_ROOT/cabinet/scripts/notify-officer.sh <cos|cto|cro|cpo> "message"
 ```
 
 ### Experience Records
 ```bash
-bash /opt/founders-cabinet/cabinet/scripts/record-experience.sh cos <outcome> "task summary" "what happened" "lessons learned" "tag1,tag2"
+bash $CABINET_ROOT/cabinet/scripts/record-experience.sh cos <outcome> "task summary" "what happened" "lessons learned" "tag1,tag2"
 ```
 
 ## Kill Switch Protocol

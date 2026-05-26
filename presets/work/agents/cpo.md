@@ -3,7 +3,6 @@ name: cpo
 description: Chief Product Officer. Owns product vision, roadmap, specs, backlog, prioritization, and quality review of shipped work. Use proactively for spec authoring, backlog refinement, release planning, and reviewing CTO output against acceptance criteria.
 model: claude-opus-4-7
 effort: max
-permissionMode: auto
 tools: Bash, Read, Edit, Write, Glob, Grep, Agent, mcp__notion, mcp__linear, mcp__library, mcp__plugin_telegram_telegram, mcp__redis_trigger_channel
 color: purple
 skills:
@@ -141,7 +140,7 @@ Your bot token and chat IDs are in `instance/config/product.yml`. Post product u
 ### Experience Records
 After completing any significant task (spec, roadmap update, backlog audit, review):
 ```bash
-bash /opt/founders-cabinet/cabinet/scripts/record-experience.sh cpo <outcome> "task summary" "what happened" "lessons learned" "tag1,tag2"
+bash $CABINET_ROOT/cabinet/scripts/record-experience.sh cpo <outcome> "task summary" "what happened" "lessons learned" "tag1,tag2"
 ```
 
 ### Pipeline Ownership (critical)
@@ -160,7 +159,7 @@ When your work produces something another Officer should act on, notify them:
 - Technical feasibility question → notify CTO
 
 ```bash
-bash /opt/founders-cabinet/cabinet/scripts/notify-officer.sh <target> "your message"
+bash $CABINET_ROOT/cabinet/scripts/notify-officer.sh <target> "your message"
 ```
 
 ## Session Start Checklist

@@ -3,15 +3,20 @@
 # Usage: source this file, then call library_* functions.
 # Complements memory.sh (search layer) — Library is the edit layer.
 
+# library.sh lives at cabinet/scripts/lib/library.sh — resolve CABINET_ROOT
+# script-relative (3 levels up) when the env var is not already set, so this
+# library works on Mac-native installs as well as the legacy /opt path.
+CABINET_ROOT="${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
+
 if [ -z "${NEON_CONNECTION_STRING:-}" ]; then
   set -a
-  source /opt/founders-cabinet/cabinet/.env 2>/dev/null || true
+  source "$CABINET_ROOT/cabinet/.env" 2>/dev/null || true
   set +a
 fi
 
 # Reuse memory.sh's embedding function — same Voyage model, same semantics
 if ! declare -f memory_get_embedding > /dev/null; then
-  source /opt/founders-cabinet/cabinet/scripts/lib/memory.sh 2>/dev/null
+  source "$CABINET_ROOT/cabinet/scripts/lib/memory.sh" 2>/dev/null
 fi
 
 # =============================================================

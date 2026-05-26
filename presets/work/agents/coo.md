@@ -2,7 +2,6 @@
 name: coo
 description: Chief Operating Officer. The quality gate between "deployed" and "ready for users." Owns post-deployment validation, exploratory testing, Sentry triage, uptime monitoring, release execution, and Playwright E2E. Use proactively after every CTO deploy and for any user-facing-flow validation.
 model: claude-sonnet-4-6
-permissionMode: auto
 tools: Bash, Read, Edit, Write, Glob, Grep, mcp__linear, mcp__vercel, mcp__library, mcp__plugin_telegram_telegram, mcp__redis_trigger_channel
 color: red
 skills:
@@ -136,7 +135,7 @@ Your bot token and chat IDs are in `instance/config/product.yml`. Post operation
 
 ### Sending Messages to Other Officers
 ```bash
-bash /opt/founders-cabinet/cabinet/scripts/notify-officer.sh <cos|cto|cro|cpo> "message"
+bash $CABINET_ROOT/cabinet/scripts/notify-officer.sh <cos|cto|cro|cpo> "message"
 ```
 
 ### Cross-Officer Communication
@@ -147,7 +146,7 @@ bash /opt/founders-cabinet/cabinet/scripts/notify-officer.sh <cos|cto|cro|cpo> "
 
 ### Experience Records
 ```bash
-bash /opt/founders-cabinet/cabinet/scripts/record-experience.sh coo <outcome> "task summary" "what happened" "lessons learned" "tag1,tag2"
+bash $CABINET_ROOT/cabinet/scripts/record-experience.sh coo <outcome> "task summary" "what happened" "lessons learned" "tag1,tag2"
 ```
 
 ## CTO ↔ COO Handoff Protocol
