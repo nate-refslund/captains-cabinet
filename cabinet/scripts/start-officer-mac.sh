@@ -151,7 +151,11 @@ if [ "${CABINET_USE_NATIVE_AGENT:-1}" = "1" ] \
   && claude --help 2>&1 | grep -q -- '--agent'; then
   AGENT_FLAG="--agent $(shell_quote "$OFFICER")"
 fi
-CLAUDE_CMD="cd $(shell_quote "$REPO_ROOT") && CABINET_ROOT=$(shell_quote "$CABINET_ROOT") REPO_ROOT=$(shell_quote "$REPO_ROOT") CABINET_LOG_DIR=$(shell_quote "$CABINET_LOG_DIR") REDIS_URL=$(shell_quote "$REDIS_URL") OFFICER_NAME=$(shell_quote "$OFFICER") TELEGRAM_STATE_DIR=$(shell_quote "$TELEGRAM_STATE_DIR") claude $AGENT_FLAG --model $(shell_quote "$MODEL") $MCP_FLAG $TELEGRAM_FLAG --dangerously-skip-permissions --effort max"
+# F2 (safety posture): removed --dangerously-skip-permissions. The session now
+# respects .claude/settings.json permissions.{defaultMode: auto, allow, deny}.
+# Officers operate autonomously via auto mode + scoped allow/deny + pre-tool-use
+# policy engine; we don't bypass CC's safety layer wholesale anymore.
+CLAUDE_CMD="cd $(shell_quote "$REPO_ROOT") && CABINET_ROOT=$(shell_quote "$CABINET_ROOT") REPO_ROOT=$(shell_quote "$REPO_ROOT") CABINET_LOG_DIR=$(shell_quote "$CABINET_LOG_DIR") REDIS_URL=$(shell_quote "$REDIS_URL") OFFICER_NAME=$(shell_quote "$OFFICER") TELEGRAM_STATE_DIR=$(shell_quote "$TELEGRAM_STATE_DIR") claude $AGENT_FLAG --model $(shell_quote "$MODEL") $MCP_FLAG $TELEGRAM_FLAG --permission-mode auto --effort max"
 
 if [ "$MAC_DRY_RUN" = "1" ]; then
   echo "start-officer-mac.sh dry-run:"
