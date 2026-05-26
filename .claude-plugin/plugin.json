@@ -1,10 +1,11 @@
 {
-  "$schema": "https://docs.claude.com/schemas/plugin.json",
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "captains-cabinet",
+  "displayName": "Captain's Cabinet",
   "version": "0.2.0",
   "description": "An autonomous, self-improving AI organization framework for Claude Code — Captain (founder) + officers (CoS/CTO/CPO/CRO/COO) with event-sourced missions, durable role registry, OVI measurement, and pattern-learning ledger. Three-layer architecture (framework + preset + instance) for product-agnostic deployment.",
   "author": {
-    "name": "Captains Cabinet contributors",
+    "name": "Captain's Cabinet contributors",
     "url": "https://github.com/nate-step/captains-cabinet"
   },
   "homepage": "https://github.com/nate-step/captains-cabinet",
@@ -22,87 +23,22 @@
     "redis",
     "captain"
   ],
-  "requires": {
-    "claudeCode": ">=2.0.0"
-  },
-  "contributes": {
-    "agents": [
-      "presets/work/agents/cos.md",
-      "presets/work/agents/cto.md",
-      "presets/work/agents/cpo.md",
-      "presets/work/agents/cro.md",
-      "presets/work/agents/coo.md"
-    ],
-    "skills": [
-      ".claude/skills/cabinet-task/SKILL.md",
-      ".claude/skills/cabinet-route-tasks/SKILL.md",
-      ".claude/skills/cabinet-work-graph-complete/SKILL.md",
-      ".claude/skills/org-status/SKILL.md",
-      ".claude/skills/mission-compile/SKILL.md",
-      ".claude/skills/ovi-publish/SKILL.md",
-      ".claude/skills/holistic-thinking/SKILL.md",
-      ".claude/skills/production-quality-ownership/SKILL.md",
-      ".claude/skills/telegram-communication/SKILL.md",
-      ".claude/skills/cross-officer-retro/SKILL.md",
-      ".claude/skills/evolution-loop/SKILL.md",
-      ".claude/skills/individual-reflection/SKILL.md",
-      ".claude/skills/agent-team-workflow/SKILL.md",
-      ".claude/skills/deploy-and-verify/SKILL.md",
-      ".claude/skills/engineering-development-loop/SKILL.md",
-      ".claude/skills/spec-quality-gate/SKILL.md"
-    ],
-    "commands": [
-      ".claude/commands/activate-project.md",
-      ".claude/commands/mission-compile.md",
-      ".claude/commands/org-status.md",
-      ".claude/commands/ovi-publish.md",
-      ".claude/commands/role-eval.md",
-      ".claude/commands/cabinet-briefing.md",
-      ".claude/commands/cabinet-retro.md",
-      ".claude/commands/cabinet-research-sweep.md",
-      ".claude/commands/cabinet-route-tasks.md",
-      ".claude/commands/cabinet-backup.md",
-      ".claude/commands/cabinet-work-graph-complete.md"
-    ],
-    "rules": [
-      ".claude/rules/org-runtime-native.md"
-    ],
-    "mcpServers": [
-      ".mcp.json"
-    ],
-    "settings": ".claude/settings.json",
-    "statusLine": "cabinet/scripts/statusline.sh"
-  },
-  "install": {
-    "prerequisites": {
-      "bash": ">=3.2",
-      "python3": ">=3.9",
-      "redis": ">=6.0 (Homebrew: brew install redis)",
-      "tmux": ">=3.0",
-      "jq": ">=1.6",
-      "gettext": ">=0.21 (for envsubst — Homebrew: brew install gettext)",
-      "gh": ">=2.30",
-      "bun": ">=1.0 (for redis-trigger-channel + library MCP servers)"
-    },
-    "postInstall": {
-      "command": "bash",
-      "args": ["cabinet/scripts/setup-mac.sh", "--check"]
-    },
-    "envVars": {
-      "CABINET_ROOT": "Repo root (auto-detected on Mac-native; set explicitly in Docker)",
-      "OFFICER_NAME": "Required at runtime for officers (e.g. cos, cto, cpo, cro, coo)",
-      "REDIS_URL": "redis://127.0.0.1:6379 (Mac-native default)",
-      "ANTHROPIC_AUTH_MODE": "max-oauth (no API key)",
-      "NOTION_API_KEY": "Optional — required for Notion MCP",
-      "LINEAR_API_KEY": "Optional — required for Linear MCP",
-      "NEON_API_KEY": "Optional — required for Neon MCP",
-      "VERCEL_API_KEY": "Optional — required for Vercel MCP"
-    }
-  },
-  "documentation": {
-    "readme": "README.md",
-    "mainGuide": "CLAUDE.md",
-    "deployRunbook": "docs/mac-mini-deploy-runbook.md",
-    "slashCommandsReference": "docs/cabinet-slash-commands.md"
-  }
+  "skills": [
+    "./.claude/skills/",
+    "./.claude-plugin/skills/"
+  ],
+  "commands": [
+    "./.claude/commands/"
+  ],
+  "agents": [
+    "./presets/work/agents/cos.md",
+    "./presets/work/agents/cto.md",
+    "./presets/work/agents/cpo.md",
+    "./presets/work/agents/cro.md",
+    "./presets/work/agents/coo.md",
+    "./presets/work/agents/compliance-officer.md",
+    "./presets/work/agents/executive-assistant.md",
+    "./presets/work/agents/operations-officer.md"
+  ],
+  "mcpServers": "./.mcp.json"
 }

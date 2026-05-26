@@ -1,31 +1,31 @@
 {
-  "$schema": "https://docs.claude.com/schemas/marketplace.json",
+  "$schema": "https://json.schemastore.org/claude-code-marketplace-manifest.json",
   "name": "captains-cabinet-marketplace",
   "description": "Distribution channel for the Captains Cabinet plugin and its preset variants. Authoritative source for plugin install paths.",
   "owner": {
-    "name": "Captains Cabinet contributors",
-    "url": "https://github.com/nate-step/captains-cabinet"
+    "name": "Captains Cabinet contributors"
   },
   "plugins": [
     {
       "name": "captains-cabinet",
       "source": {
-        "type": "git",
-        "url": "https://github.com/nate-step/captains-cabinet",
+        "source": "github",
+        "repo": "nate-step/captains-cabinet",
         "ref": "claude/convergence-v2"
       },
       "description": "Full Captains Cabinet plugin: framework + work preset + 5 officers + 16 skills + 11 slash commands + 6 MCP servers.",
+      "category": "ai-organization",
       "tags": ["ai-organization", "officers", "autonomous", "event-sourced"]
     },
     {
       "name": "captains-cabinet-personal",
       "source": {
-        "type": "git",
-        "url": "https://github.com/nate-step/captains-cabinet",
-        "ref": "claude/convergence-v2",
-        "subdir": "presets/personal"
+        "source": "github",
+        "repo": "nate-step/captains-cabinet",
+        "ref": "claude/convergence-v2"
       },
-      "description": "Personal Cabinet preset — coaching-focused, lighter governance, Captain triplet only.",
+      "description": "Personal Cabinet variant — coaching-focused, lighter governance, Captain triplet only. Selects the personal preset via instance/config/active-preset at first run.",
+      "category": "ai-organization",
       "tags": ["ai-organization", "personal", "coaching"]
     }
   ]
