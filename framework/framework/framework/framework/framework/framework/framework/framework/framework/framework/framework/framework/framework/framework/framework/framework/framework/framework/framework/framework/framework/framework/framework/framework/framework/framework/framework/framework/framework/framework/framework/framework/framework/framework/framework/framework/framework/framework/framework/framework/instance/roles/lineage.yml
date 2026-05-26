@@ -1,0 +1,302 @@
+- role_slug: eng
+  adaptation_type: created
+  description: Role 'Engineering' created
+  approved_by: captain
+  event_id: 79552755-d5d6-42b8-a666-53d9bb0ddfdf
+  timestamp: '2026-05-26T09:16:31.100554+00:00'
+- role_slug: eng
+  adaptation_type: hat_assigned
+  description: Hat 'Onboarding Engineer' assigned
+  approved_by: captain
+  event_id: cced6b8c-8e7f-4b0e-843e-444a61c46b97
+  timestamp: '2026-05-26T09:16:31.101385+00:00'
+- role_slug: eng
+  adaptation_type: created
+  description: Role 'Engineering' created
+  approved_by: captain
+  event_id: 2c625619-b802-4b55-8950-7d96a90a65df
+  timestamp: '2026-05-26T09:16:31.104015+00:00'
+- role_slug: eng
+  adaptation_type: hat_assigned
+  description: Hat 'Analyst' assigned
+  approved_by: captain
+  event_id: 95ad1df6-04a6-406e-a10b-426d03d6bfd3
+  timestamp: '2026-05-26T09:16:31.106268+00:00'
+- role_slug: growth
+  adaptation_type: created
+  description: Role 'Growth' created
+  approved_by: captain
+  event_id: 788fe944-ba11-424b-8f8d-4cfa09d1bba6
+  timestamp: '2026-05-26T09:16:31.112608+00:00'
+- role_slug: growth
+  adaptation_type: retired
+  description: 'Retired: Merged'
+  approved_by: captain
+  event_id: 7e403a63-52c4-4d57-8254-6cc9b3746821
+  timestamp: '2026-05-26T09:16:31.116612+00:00'
+- role_slug: growth
+  adaptation_type: created
+  description: Role 'Growth' created
+  approved_by: captain
+  event_id: 66a5cd8e-e786-492a-a530-4605a63bd268
+  timestamp: '2026-05-26T09:16:31.121280+00:00'
+- role_slug: growth
+  adaptation_type: retired
+  description: 'Retired: Merged'
+  approved_by: captain
+  event_id: 019294b2-0379-441f-9b10-8de6de530ab9
+  timestamp: '2026-05-26T09:16:31.126361+00:00'
+- role_slug: eng
+  adaptation_type: created
+  description: Role 'Engineering' created
+  approved_by: captain
+  event_id: 997089c3-960c-4157-8db9-27bcb6484ec1
+  timestamp: '2026-05-26T09:16:31.134856+00:00'
+- role_slug: eng
+  adaptation_type: charter_change
+  description: v2
+  approved_by: captain
+  event_id: ee19aed0-3686-400f-bde8-5e42255055b9
+  timestamp: '2026-05-26T09:16:31.140971+00:00'
+- role_slug: eng
+  adaptation_type: capability_added
+  description: added X
+  approved_by: captain
+  event_id: b497389b-1d95-436a-a369-0b53edc11b0e
+  timestamp: '2026-05-26T09:16:31.147523+00:00'
+- role_slug: eng
+  adaptation_type: created
+  description: Role 'Engineering' created
+  approved_by: captain
+  event_id: 118b569e-344d-4919-a7c9-69f165bac560
+  timestamp: '2026-05-26T09:16:31.162571+00:00'
+- role_slug: product
+  adaptation_type: created
+  description: Role 'Product' created
+  approved_by: captain
+  event_id: e56fa6ed-f784-425c-85c5-65958d332dc2
+  timestamp: '2026-05-26T09:16:31.169603+00:00'
+- role_slug: growth
+  adaptation_type: created
+  description: Role 'Growth' created
+  approved_by: captain
+  event_id: a5806d43-7e13-4383-bb9e-5d8859844859
+  timestamp: '2026-05-26T09:16:31.206455+00:00'
+- role_slug: growth
+  adaptation_type: retired
+  description: 'Retired: Merged'
+  approved_by: captain
+  event_id: 41647010-05fa-4c25-9026-8fd0aa500c20
+  timestamp: '2026-05-26T09:16:31.215186+00:00'
+- role_slug: eng
+  adaptation_type: created
+  description: Role 'Engineering' created
+  approved_by: captain
+  event_id: e5590c16-9b1f-4b9c-b0a1-ad593b09a25c
+  timestamp: '2026-05-26T09:16:31.230244+00:00'
+- role_slug: eng
+  adaptation_type: charter_change
+  description: v2
+  approved_by: captain
+  event_id: d7eec9f7-00f8-4b96-beab-6701ce90290c
+  timestamp: '2026-05-26T09:16:31.240538+00:00'
+- role_slug: eng
+  adaptation_type: capability_added
+  description: added X
+  approved_by: captain
+  event_id: eeace2f2-c543-48ac-9819-819fb7afa720
+  timestamp: '2026-05-26T09:16:31.250816+00:00'
+- role_slug: eng
+  adaptation_type: created
+  description: Role 'Engineering' created
+  approved_by: captain
+  event_id: 16af4f81-319e-4ed5-8748-9a4c5cdcf147
+  timestamp: '2026-05-26T09:16:31.271809+00:00'
+- role_slug: product
+  adaptation_type: created
+  description: Role 'Product' created
+  approved_by: captain
+  event_id: 900841d3-10ab-4681-af6e-b0c9b22afb45
+  timestamp: '2026-05-26T09:16:31.283102+00:00'
+- role_slug: eng
+  adaptation_type: created
+  description: Role 'Engineering' created
+  approved_by: captain
+  event_id: 89df0df4-2d07-46a6-a115-36ddafbe7a53
+  timestamp: '2026-05-26T09:16:31.298213+00:00'
+- role_slug: eng
+  adaptation_type: created
+  description: Role 'Engineering' created
+  approved_by: captain
+  event_id: 622b738a-dffd-4a2f-9b49-ca375b7ed119
+  timestamp: '2026-05-26T09:16:31.321242+00:00'
+- role_slug: cos
+  adaptation_type: created
+  description: Role 'Chief of Staff' created
+  approved_by: captain
+  event_id: 9d4acdf7-cfc0-4520-ac5e-b25b631380bb
+  timestamp: '2026-05-26T09:16:31.334803+00:00'
+- role_slug: eng
+  adaptation_type: created
+  description: Role 'Engineering' created
+  approved_by: captain
+  event_id: 73aebd1e-9354-4e28-b59c-6f0fed94f0c6
+  timestamp: '2026-05-26T09:16:31.349322+00:00'
+- role_slug: eng
+  adaptation_type: created
+  description: Role 'Engineering' created
+  approved_by: captain
+  event_id: 22bc0dc1-d344-4755-a4df-0ff778dbdd54
+  timestamp: '2026-05-26T09:16:31.364795+00:00'
+- role_slug: eng
+  adaptation_type: charter_change
+  description: Expanded charter
+  approved_by: captain
+  event_id: 555f9798-3650-4b75-8206-4c3d4441f418
+  timestamp: '2026-05-26T09:16:31.379438+00:00'
+- role_slug: eng
+  adaptation_type: created
+  description: Role 'Engineering' created
+  approved_by: captain
+  event_id: 68fe3c29-888d-4c5b-8f3a-e7e4a272122d
+  timestamp: '2026-05-26T09:16:31.394614+00:00'
+- role_slug: eng
+  adaptation_type: capability_added
+  description: Added review cap
+  approved_by: captain
+  event_id: 7f1c8bf5-81ff-42ed-83f8-184e21f362af
+  timestamp: '2026-05-26T09:16:31.410249+00:00'
+- role_slug: eng
+  adaptation_type: created
+  description: Role 'Engineering' created
+  approved_by: captain
+  event_id: 175742b4-c7c0-4e61-a073-de1f0ead4d03
+  timestamp: '2026-05-26T09:16:31.426465+00:00'
+- role_slug: eng
+  adaptation_type: capability_removed
+  description: Removed b
+  approved_by: captain
+  event_id: 9fd5941f-483f-4a26-8d70-3ba49f0b00fb
+  timestamp: '2026-05-26T09:16:31.442969+00:00'
+- role_slug: eng
+  adaptation_type: created
+  description: Role 'Engineering' created
+  approved_by: captain
+  event_id: 648fd8d4-7f66-4a93-b514-68864f8c100f
+  timestamp: '2026-05-26T09:16:31.460377+00:00'
+- role_slug: eng
+  adaptation_type: charter_change
+  description: Expanded
+  approved_by: captain
+  event_id: 1f850dd0-1160-44fb-a336-c46791499449
+  timestamp: '2026-05-26T09:16:31.478200+00:00'
+  evidence: 3 tasks required new scope
+  rationale: Formalizing existing work
+- role_slug: product
+  adaptation_type: created
+  description: Role 'Product' created
+  approved_by: captain
+  event_id: d0c10b3c-d687-4d48-923f-3ce1f11872b6
+  timestamp: '2026-05-26T09:16:31.511913+00:00'
+- role_slug: product
+  adaptation_type: hat_assigned
+  description: Hat 'Activation Strategist' assigned
+  approved_by: captain
+  event_id: c1d59954-7def-4a6f-a763-8d9a916761cb
+  timestamp: '2026-05-26T09:16:31.530469+00:00'
+- role_slug: product
+  adaptation_type: created
+  description: Role 'Product' created
+  approved_by: captain
+  event_id: 457eae5a-e1d1-4ac3-a44a-8be323fc1a25
+  timestamp: '2026-05-26T09:16:31.550980+00:00'
+- role_slug: product
+  adaptation_type: hat_assigned
+  description: Hat 'Strategist' assigned
+  approved_by: captain
+  event_id: a397eed9-5f3e-490f-b189-f3e9c1aad6c7
+  timestamp: '2026-05-26T09:16:31.570490+00:00'
+- role_slug: product
+  adaptation_type: hat_assigned
+  description: Hat 'Researcher' assigned
+  approved_by: captain
+  event_id: de794d01-1070-4717-917a-ca18e2da963c
+  timestamp: '2026-05-26T09:16:31.590645+00:00'
+- role_slug: eng
+  adaptation_type: created
+  description: Role 'Engineering' created
+  approved_by: captain
+  event_id: 879dc4f6-d91c-4134-a653-3bd90edae796
+  timestamp: '2026-05-26T09:16:31.617158+00:00'
+- role_slug: eng
+  adaptation_type: hat_assigned
+  description: Hat 'Onboarding Engineer' assigned
+  approved_by: captain
+  event_id: c4e4f40d-523f-4196-8722-24d00a6e5291
+  timestamp: '2026-05-26T09:16:31.638337+00:00'
+- role_slug: eng
+  adaptation_type: created
+  description: Role 'Engineering' created
+  approved_by: captain
+  event_id: c4517f93-3aff-4ea1-9993-bddc0e7e2e5a
+  timestamp: '2026-05-26T09:16:31.660706+00:00'
+- role_slug: eng
+  adaptation_type: hat_assigned
+  description: Hat 'Analyst' assigned
+  approved_by: captain
+  event_id: b86bf13c-ec95-43fd-9e61-5935412483ec
+  timestamp: '2026-05-26T09:16:31.682970+00:00'
+- role_slug: growth
+  adaptation_type: created
+  description: Role 'Growth' created
+  approved_by: captain
+  event_id: 845d7166-4f08-44b8-8eb9-b53bb6b14657
+  timestamp: '2026-05-26T09:16:31.709570+00:00'
+- role_slug: growth
+  adaptation_type: retired
+  description: 'Retired: Merged'
+  approved_by: captain
+  event_id: 82a804c5-27a9-455d-b88d-56e82f2f344c
+  timestamp: '2026-05-26T09:16:31.733553+00:00'
+- role_slug: growth
+  adaptation_type: created
+  description: Role 'Growth' created
+  approved_by: captain
+  event_id: 8b5a2824-1ee6-41b2-8d8f-ad8f0f4afdad
+  timestamp: '2026-05-26T09:16:31.758249+00:00'
+- role_slug: growth
+  adaptation_type: retired
+  description: 'Retired: Merged'
+  approved_by: captain
+  event_id: 2ed1115a-6621-4815-95e3-07257edac131
+  timestamp: '2026-05-26T09:16:31.783180+00:00'
+- role_slug: eng
+  adaptation_type: created
+  description: Role 'Engineering' created
+  approved_by: captain
+  event_id: fc27a64d-a69b-4e5c-b30a-d4496edc9dc8
+  timestamp: '2026-05-26T09:16:31.823184+00:00'
+- role_slug: eng
+  adaptation_type: charter_change
+  description: v2
+  approved_by: captain
+  event_id: b5cf7bc9-ee54-4c73-bc19-19e82b19cf6a
+  timestamp: '2026-05-26T09:16:31.849430+00:00'
+- role_slug: eng
+  adaptation_type: capability_added
+  description: added X
+  approved_by: captain
+  event_id: 853a727f-1172-418a-a116-e78a0acad53b
+  timestamp: '2026-05-26T09:16:31.875720+00:00'
+- role_slug: eng
+  adaptation_type: created
+  description: Role 'Engineering' created
+  approved_by: captain
+  event_id: 9d60f139-9e6f-4160-8400-55a92c856fa4
+  timestamp: '2026-05-26T09:16:31.922660+00:00'
+- role_slug: product
+  adaptation_type: created
+  description: Role 'Product' created
+  approved_by: captain
+  event_id: 2fbdbbd1-f763-4b23-ab1e-428582837dbb
+  timestamp: '2026-05-26T09:16:31.949589+00:00'
