@@ -56,9 +56,12 @@ fi
 # .cursors lives UNDER audit/ (FW-097 ingest.py) and takes TRUNCATING writes, so it must never be
 # append-only — the append-only cron (step 6) targets audit/*.jsonl FILES only, never the dir/.cursors.
 log "laying out $LOG_ROOT (audit SSOT + proxy-audit) ..."
-mkdir -p "$LOG_ROOT/audit/.cursors" "$LOG_ROOT/proxy-audit"
+mkdir -p "$LOG_ROOT/audit/.cursors" "$LOG_ROOT/proxy-audit" \
+         "$LOG_ROOT/checkpoints" "$LOG_ROOT/checkpoints-git"   # WORM checkpoint served-dir + git mirror (Spec 052)
 chown -R "$AUDIT_UID:$AUDIT_UID" "$LOG_ROOT"
 chmod -R 0750 "$LOG_ROOT"
+# The checkpoint sidecar (runs as audit) git-inits checkpoints-git + wires the public 'origin'
+# remote from AUDIT_CHECKPOINT_REMOTE on first start — no root/su git needed here.
 
 # ── 4. Secrets — validate PRESENCE only (never echo a value) ────────────────────
 [ -f "$ENV_FILE" ] || die "$ENV_FILE missing — create it from the README Environment table (chmod 600)."

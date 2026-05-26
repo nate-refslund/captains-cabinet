@@ -57,6 +57,7 @@ The compose runs from `proxy/deploy/`; provision.sh + the systemd unit both reso
 | `LITELLM_CAP_USD` | — | per-cabinet daily cap (default 50.0; must match `config.yaml`) |
 | `DATABASE_URL` | — | optional Postgres for LiteLLM key/team storage |
 | `INGEST_INTERVAL` | — | seconds between ingest cycles (default 60) |
+| `AUDIT_CHECKPOINT_REMOTE` | — | **WORM public mirror** push URL w/ deploy token (e.g. `https://x-access-token:TOKEN@github.com/ORG/refslund-cabinet-checkpoints.git`). Empty/unset → checkpoints commit LOCALLY only (the off-box anchor is inert until set). Founder-action: create the **public** repo + a write-scoped deploy token. |
 
 > `REDIS_HOST`/`REDIS_PORT` are set in `docker-compose.yml` (internal) — do **not** put them in `.env`.
 
@@ -75,6 +76,18 @@ The compose runs from `proxy/deploy/`; provision.sh + the systemd unit both reso
 - **Secret handling:** `.env` chmod 600; `provision.sh` presence-checks only (never prints values); origin key `chmod 600 root:root`; secret isolation from the litellm container per "Secret isolation (H1)" above.
 - **Network:** only Caddy publishes `:80/:443`; litellm/audit-server/redis are `expose:`-only (intra-bridge). Redis requires `REDIS_PASSWORD` (L1). All services drop caps + `no-new-privileges`.
 - **Audit log root wiring:** litellm reads `LITELLM_AUDIT_LOG_ROOT` as the proxy-audit dir; audit-server/ingest read it as the parent — both into the same bind-mounted `./data/logs` (FW-096 vs FW-097 conventions).
+
+## WORM off-box checkpoint (Spec 052 CTO#4/#7, AC#13)
+
+The `checkpoint` sidecar runs `checkpoint-loop.sh` daily at **00:05 UTC** (non-root `audit` user, same image as audit-server): it reads each cabinet's SSOT and publishes the latest per-cabinet `entry_hash` + count + chain-validity to two sinks, **keyed by an OPAQUE per-cabinet id — never the slug** (AC#13):
+- **Served snapshot** at `data/logs/checkpoints/` → Caddy file_servers it read-only at **`https://refslund.ai/audit-checkpoints/`** (`latest.json` + per-`opaque-id.json`). A customer/auditor matches their browser-recomputed hash against it.
+- **Append-only git mirror** at `data/logs/checkpoints-git/` → pushed to the **public, immutable** `refslund-cabinet-checkpoints` repo (the off-box tamper anchor). **Phase-1 commits are UNSIGNED** (CTO#7; Phase-2 adds offline Captain PGP — the VPS never holds the key).
+
+**Same-filesystem constraint (CPO PR-2 item 1 — do NOT violate):** the served dir, its `.checkpoint-scratch` sibling, and the git mirror all live under the single `./data/logs` bind-mount so the atomic-write `os.replace` stays atomic. If you ever mount `AUDIT_CHECKPOINT_DIR` on its OWN volume (separate fs from its parent), `os.replace` becomes cross-device and `checkpoint.py` **fails LOUD** (logged `EXDEV` error, no torn write) rather than silently corrupting — the fix is to keep them co-located. Do not split the volume.
+
+**FAIL-CLOSED privacy (AC#13):** a cabinet is published ONLY if the FW-098 install wrote its slug→opaque-id mapping to `data/logs/cabinet-id-map.json` (JSON `{slug: opaque-hex}`); an unmapped / malformed / identity (`opaque==slug`) entry is SKIPPED — a bare slug is **never** published to the permanent public sink.
+
+**Founder-action (blocks the public push, NOT the build/deploy):** create the **public** GitHub repo `refslund-cabinet-checkpoints` + a write-scoped deploy token, then set `AUDIT_CHECKPOINT_REMOTE` in `.env`. Until then the sidecar commits the mirror LOCALLY only; the served snapshot still publishes via Caddy.
 
 ## Erasure runbook (GDPR Art 17) — exact invocation for THIS deploy
 
@@ -95,6 +108,7 @@ Verify the receipt's `status: completed` corresponds to a non-empty `processed` 
 - [ ] **HARD GATE — set `config.yaml log_requests: false` before the pilot** (M-DPO-2; `config.yaml` is FW-096/CPO scope → flag CPO to confirm, do NOT silently flip in the deploy PR). With it ON, LiteLLM can persist customer prompt content (PII) to litellm stdout → the docker json-log, OUTSIDE the erasure-governed SSOT — breaking **Art 5(1)(c)** minimization AND **Art 17** erasure (`customer-erasure.sh` only touches `audit/*.jsonl`, never the docker log). The compose `logging:` caps bound DISK (Art 5(1)(e)) but NOT minimization/erasure-coverage. The FW-096 audit callback gets usage metadata independently of this flag, so `false` is the safe default. If kept ON, the docker json-log path MUST be added to the erasure runbook + proven body-free for the pinned litellm version.
 - [ ] Cloudflare SSL = **Full (strict)**; Origin cert covers `*.refslund.ai`.
 - [ ] `AUDIT_LOG_ENDPOINT` on customer cabinets points at `https://audit.refslund.ai/proxy/audit/log`.
+- [ ] **WORM checkpoint (Spec 052):** create the public `refslund-cabinet-checkpoints` repo + a write-scoped deploy token; set `AUDIT_CHECKPOINT_REMOTE` in `.env`. After first run, confirm `https://refslund.ai/audit-checkpoints/latest.json` serves opaque-keyed JSON AND — once a cabinet has logged — that `cabinets[]` is **non-empty** with every `cabinet_public_id` **≠ its slug** (a missing/misconfigured `cabinet-id-map.json` otherwise leaves the anchor silently inert: fail-closed publishes nothing rather than a slug). Confirm the daily 00:05 push lands a commit. Keep `AUDIT_CHECKPOINT_DIR` on the same fs as `./data/logs` (same-fs constraint above).
 
 ## Security review (1 Opus deploy-security round — folds)
 
