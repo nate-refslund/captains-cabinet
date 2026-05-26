@@ -19,12 +19,31 @@ set -u
 # SIGPIPE downstream).
 _INPUT="$(cat 2>/dev/null || true)"
 
-# Hook lives at cabinet/scripts/, repo root is one level up.
-CABINET_ROOT="${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+# Script lives at cabinet/scripts/statusline.sh — repo root is TWO levels up
+# (../.. not ../). The earlier one-level resolution silently broke event-log
+# discovery whenever CABINET_ROOT wasn't already exported.
+CABINET_ROOT="${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 OFFICER="${OFFICER_NAME:-${CABINET_OFFICER:-unknown}}"
 
 # ---- OVI: read the latest snapshot from the local event log ----
-OVI_DIR="$CABINET_ROOT/memory/logs/events"
+# Event-log discovery, in priority order:
+#   1. $CABINET_EVENT_LOG_DIR    — matches framework/events/emitter.py:128 which
+#                                  reads the same env var. Single source of truth.
+#   2. $CABINET_ROOT/memory/logs/events — legacy repo-relative path, retained for
+#                                  Cabinets that have historic events here.
+#   3. /tmp/cabinet-events       — emitter's default when nothing else is set.
+# (F3/event-kernel-unification will collapse this list. Until then we accept
+# all three so the statusline keeps working across the migration.)
+OVI_DIR=""
+for candidate in \
+  "${CABINET_EVENT_LOG_DIR:-}" \
+  "$CABINET_ROOT/memory/logs/events" \
+  "/tmp/cabinet-events"; do
+  if [ -n "$candidate" ] && [ -d "$candidate" ]; then
+    OVI_DIR="$candidate"
+    break
+  fi
+done
 OVI_LINE=""
 if [ -d "$OVI_DIR" ]; then
   # The framework emits ovi_published events with payload.score.

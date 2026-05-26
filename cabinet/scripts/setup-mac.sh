@@ -29,6 +29,12 @@ if [ $# -gt 0 ]; then
 fi
 
 CABINET_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# Export for child scripts (load-preset.sh reads CABINET_ROOT; matches the
+# convention used by cabinet/scripts/start-officer-mac.sh which exports both
+# CABINET_ROOT and REPO_ROOT for parity). Without this, load-preset.sh falls
+# back to its hardcoded default and breaks Mac-native preset loading.
+REPO_ROOT="$CABINET_ROOT"
+export CABINET_ROOT REPO_ROOT
 echo "Cabinet root: $CABINET_ROOT"
 echo ""
 

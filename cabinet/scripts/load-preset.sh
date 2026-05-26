@@ -16,7 +16,11 @@
 
 set -uo pipefail
 
-CABINET_ROOT="${CABINET_ROOT:-/opt/founders-cabinet}"
+# Resolve repo root from this script's location when CABINET_ROOT is unset.
+# Script lives at cabinet/scripts/load-preset.sh, so repo root is two levels up.
+# The container default (/opt/founders-cabinet) is gone — anyone running this
+# in a container should export CABINET_ROOT explicitly (start-officer.sh does).
+CABINET_ROOT="${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)}"
 RUNTIME_DIR="/tmp/cabinet-runtime"
 ACTIVE_PRESET_FILE="$CABINET_ROOT/instance/config/active-preset"
 
