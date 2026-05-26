@@ -68,6 +68,91 @@ def _generate_task_id(outcome_id: str, index: int) -> str:
     return f"{outcome_id}-task-{index:03d}"
 
 
+# Per-criterion rich form (Mission Compiler v2). Folded in from parent codex
+# branch (cabinet/scripts/lib/org_runtime.py MISSION_NODE_FIELDS).
+#
+# When a `measurable_criteria` item is a dict instead of a string, the
+# compiler honors these explicit fields. Required: `title` (or
+# `description`). Everything else is optional with safe defaults.
+_RICH_CRITERION_FIELDS: tuple[str, ...] = (
+    "title",
+    "description",
+    "owner_role",
+    "assigned_role",  # alias for owner_role for backward compat
+    "acceptance_criteria",
+    "evidence_required",
+    "verifier_role",
+    "risk_level",
+    "rollback_note",
+    "budget_note",
+    "captain_attention_estimate",
+    "depends_on",
+    "node_id",  # explicit override of the auto-generated task id
+)
+
+
+def _normalize_criterion(item: Any) -> dict[str, Any]:
+    """Convert a measurable_criteria item (string or object) to a normalized dict.
+
+    Strings become {"title": <string>}. Objects pass through with field
+    validation and defaulting. The returned dict always has at minimum a
+    "title" key.
+    """
+    if isinstance(item, str):
+        return {"title": item}
+    if not isinstance(item, dict):
+        raise ValueError(
+            f"measurable_criteria item must be a string or object, got {type(item).__name__}"
+        )
+
+    normalized: dict[str, Any] = dict(item)
+    # title can be supplied as 'title' or 'description' (parent uses 'title',
+    # legacy convergence used 'description')
+    title = normalized.get("title") or normalized.get("description")
+    if not title or not str(title).strip():
+        raise ValueError(f"measurable_criteria object missing 'title'/'description': {item}")
+    normalized["title"] = str(title).strip()
+
+    # Reject unknown keys early so typos don't get silently swallowed
+    unknown = set(normalized) - set(_RICH_CRITERION_FIELDS)
+    if unknown:
+        raise ValueError(
+            f"measurable_criteria object has unknown fields: {sorted(unknown)}. "
+            f"Allowed: {sorted(_RICH_CRITERION_FIELDS)}"
+        )
+
+    # captain_attention_estimate must coerce to float
+    if "captain_attention_estimate" in normalized:
+        try:
+            normalized["captain_attention_estimate"] = float(
+                normalized["captain_attention_estimate"]
+            )
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"captain_attention_estimate must be numeric: {normalized['captain_attention_estimate']!r}"
+            ) from exc
+
+    # depends_on must be a list of strings if present
+    if "depends_on" in normalized:
+        deps = normalized["depends_on"] or []
+        if not isinstance(deps, list) or not all(isinstance(d, str) for d in deps):
+            raise ValueError(
+                f"depends_on must be a list of strings: {normalized['depends_on']!r}"
+            )
+        normalized["depends_on"] = [d.strip() for d in deps if d.strip()]
+
+    # risk_level constrained set
+    if "risk_level" in normalized:
+        risk = str(normalized["risk_level"]).strip().lower()
+        if risk and risk not in {"low", "medium", "high"}:
+            raise ValueError(
+                f"risk_level must be one of low/medium/high (or empty): {risk!r}"
+            )
+        normalized["risk_level"] = risk
+
+    return normalized
+
+
 def _match_role_for_task(description: str, roles: list[dict[str, Any]]) -> str | None:
     """Match a task description to the best-fitting role based on capabilities.
 
@@ -244,29 +329,81 @@ def compile_outcome(
     if roles is None:
         roles = list_roles(status="active")
 
+    # Normalize criteria — each item becomes a dict with at minimum 'title'.
+    # Rich form supports owner_role, evidence_required, verifier_role, etc.
+    # (Mission Compiler v2 fields folded in from parent codex branch).
+    normalized = [_normalize_criterion(c) for c in criteria]
+
     # Build work graph
     graph = WorkGraph()
 
-    # Create nodes from measurable criteria
-    for i, criterion in enumerate(criteria):
-        task_id = _generate_task_id(outcome_id, i)
-        assigned_role = _match_role_for_task(criterion, roles)
+    # Track explicit node_id → task_id mapping so depends_on references resolve
+    explicit_id_map: dict[str, str] = {}
+
+    # Create nodes from normalized criteria
+    for i, crit in enumerate(normalized):
+        task_id = crit.get("node_id") or _generate_task_id(outcome_id, i)
+        if "node_id" in crit:
+            explicit_id_map[crit["node_id"]] = task_id
+
+        title = crit["title"]
+        # owner_role (parent) or assigned_role (convergence) — fall back to
+        # capability-keyword matching when neither explicit.
+        explicit_owner = crit.get("owner_role") or crit.get("assigned_role")
+        assigned_role = explicit_owner or _match_role_for_task(title, roles)
+
+        # acceptance_criteria can be a string (parent) or list (convergence)
+        ac = crit.get("acceptance_criteria")
+        if ac is None:
+            verification_criteria = [title]
+        elif isinstance(ac, str):
+            verification_criteria = [ac] if ac.strip() else [title]
+        elif isinstance(ac, list):
+            verification_criteria = [str(x) for x in ac if str(x).strip()]
+            if not verification_criteria:
+                verification_criteria = [title]
+        else:
+            raise ValueError(
+                f"acceptance_criteria must be a string or list, got {type(ac).__name__}"
+            )
 
         node = WorkNode(
             id=task_id,
-            description=criterion,
+            description=title,
             assigned_role=assigned_role,
             status=NodeStatus.PENDING,
-            verification_criteria=[criterion],
+            verification_criteria=verification_criteria,
+            evidence_required=str(crit.get("evidence_required", "")),
+            verifier_role=crit.get("verifier_role"),
+            risk_level=str(crit.get("risk_level", "")),
+            rollback_note=str(crit.get("rollback_note", "")),
+            budget_note=str(crit.get("budget_note", "")),
+            captain_attention_estimate=float(crit.get("captain_attention_estimate", 0.0)),
         )
         graph.add_node(node)
 
-    # Add dependency edges
-    dependencies = _infer_dependencies(criteria)
-    for from_idx, to_idx in dependencies:
-        from_id = _generate_task_id(outcome_id, from_idx)
-        to_id = _generate_task_id(outcome_id, to_idx)
-        graph.add_edge(from_id, to_id)
+    # Edges: prefer explicit depends_on when present on ANY criterion, else
+    # fall back to auto-inferred sequential dependencies on the string titles.
+    has_explicit_deps = any("depends_on" in c for c in normalized)
+    if has_explicit_deps:
+        for i, crit in enumerate(normalized):
+            to_id = crit.get("node_id") or _generate_task_id(outcome_id, i)
+            for dep in crit.get("depends_on") or []:
+                # Resolve a depends_on reference — could be an explicit node_id
+                # or an auto-generated task_id from a sibling criterion.
+                from_id = explicit_id_map.get(dep, dep)
+                if from_id not in graph.nodes:
+                    raise ValueError(
+                        f"depends_on references unknown node: {dep!r} (in criterion {to_id})"
+                    )
+                graph.add_edge(from_id, to_id)
+    else:
+        titles = [c["title"] for c in normalized]
+        dependencies = _infer_dependencies(titles)
+        for from_idx, to_idx in dependencies:
+            from_id = _generate_task_id(outcome_id, from_idx)
+            to_id = _generate_task_id(outcome_id, to_idx)
+            graph.add_edge(from_id, to_id)
 
     # Validate graph
     errors = graph.validate()
@@ -279,15 +416,21 @@ def compile_outcome(
 
     # Build mission
     mission_id = f"mission-{outcome_id}-{uuid.uuid4().hex[:8]}"
+    captain_attention_total = sum(
+        float(n.captain_attention_estimate) for n in graph.nodes.values()
+    )
     mission = {
         "id": mission_id,
         "outcome_id": outcome_id,
         "name": outcome.get("name", outcome_id),
         "status": "planning",
         "work_graph": graph,
+        "captain_attention_estimate": captain_attention_total,
     }
 
-    # Emit event
+    # Emit event — includes the v2 task-level fields so downstream consumers
+    # (OVI compute, Captain dashboards, outbox relay) can see the richer plan
+    # without re-loading the graph from disk.
     emit(
         "mission_created",
         actor=actor,
@@ -299,6 +442,11 @@ def compile_outcome(
             "assigned_roles": list({
                 n.assigned_role for n in graph.nodes.values() if n.assigned_role
             }),
+            "verifier_roles": list({
+                n.verifier_role for n in graph.nodes.values() if n.verifier_role
+            }),
+            "risk_levels": [n.risk_level for n in graph.nodes.values() if n.risk_level],
+            "captain_attention_estimate": captain_attention_total,
         },
     )
 

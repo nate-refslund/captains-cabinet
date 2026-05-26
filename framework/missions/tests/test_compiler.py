@@ -510,3 +510,241 @@ class TestApplyStatusFromEvents:
 
         assert graph.nodes["outcome-int-task-000"].status == NodeStatus.DONE
         assert graph.nodes["outcome-int-task-001"].status == NodeStatus.PENDING
+
+
+# ---------------------------------------------------------------------------
+# Tests: Mission Compiler v2 rich-criterion form (folded in from parent codex)
+# ---------------------------------------------------------------------------
+
+
+class TestRichCriteria:
+    """Rich object form of measurable_criteria — Mission Compiler v2 fields."""
+
+    def test_string_criteria_default_v2_fields_to_empty(self, sample_outcome, sample_roles):
+        """Backward compat: string criteria still work; new fields default."""
+        mission = compile_outcome(sample_outcome, roles=sample_roles)
+        for node in mission["work_graph"].nodes.values():
+            assert node.evidence_required == ""
+            assert node.verifier_role is None
+            assert node.risk_level == ""
+            assert node.rollback_note == ""
+            assert node.budget_note == ""
+            assert node.captain_attention_estimate == 0.0
+
+    def test_rich_object_criterion_populates_fields(self, sample_roles):
+        outcome = {
+            "id": "outcome-rich",
+            "name": "Rich Outcome",
+            "measurable_criteria": [
+                {
+                    "title": "Deploy auth service",
+                    "owner_role": "engineering",
+                    "acceptance_criteria": "Live endpoint returning 200 within 50ms",
+                    "evidence_required": "k6 load test output + Vercel deploy log",
+                    "verifier_role": "operations",
+                    "risk_level": "high",
+                    "rollback_note": "Revert via vercel rollback to previous prod alias",
+                    "budget_note": "1 engineer-day",
+                    "captain_attention_estimate": 0.5,
+                },
+            ],
+            "status": "active",
+        }
+        mission = compile_outcome(outcome, roles=sample_roles)
+        nodes = list(mission["work_graph"].nodes.values())
+        assert len(nodes) == 1
+        n = nodes[0]
+        assert n.description == "Deploy auth service"
+        assert n.assigned_role == "engineering"
+        assert n.verification_criteria == ["Live endpoint returning 200 within 50ms"]
+        assert n.evidence_required == "k6 load test output + Vercel deploy log"
+        assert n.verifier_role == "operations"
+        assert n.risk_level == "high"
+        assert n.rollback_note.startswith("Revert via vercel")
+        assert n.budget_note == "1 engineer-day"
+        assert n.captain_attention_estimate == 0.5
+        # Mission-level rollup
+        assert mission["captain_attention_estimate"] == 0.5
+
+    def test_description_alias_for_title(self, sample_roles):
+        outcome = {
+            "id": "outcome-alias",
+            "name": "Alias Test",
+            "measurable_criteria": [
+                {"description": "Legacy convergence used 'description' instead of 'title'"}
+            ],
+            "status": "active",
+        }
+        mission = compile_outcome(outcome, roles=sample_roles)
+        node = next(iter(mission["work_graph"].nodes.values()))
+        assert node.description == "Legacy convergence used 'description' instead of 'title'"
+
+    def test_assigned_role_alias_for_owner_role(self, sample_roles):
+        outcome = {
+            "id": "outcome-alias-owner",
+            "name": "Owner Alias",
+            "measurable_criteria": [
+                {"title": "Anything", "assigned_role": "product"}
+            ],
+            "status": "active",
+        }
+        mission = compile_outcome(outcome, roles=sample_roles)
+        node = next(iter(mission["work_graph"].nodes.values()))
+        assert node.assigned_role == "product"
+
+    def test_acceptance_criteria_list_form(self, sample_roles):
+        outcome = {
+            "id": "outcome-ac-list",
+            "name": "AC List",
+            "measurable_criteria": [
+                {
+                    "title": "Ship signup form",
+                    "acceptance_criteria": [
+                        "Email field validates RFC 5322",
+                        "Password ≥ 12 chars",
+                        "Submit returns 201 on success",
+                    ],
+                }
+            ],
+            "status": "active",
+        }
+        mission = compile_outcome(outcome, roles=sample_roles)
+        node = next(iter(mission["work_graph"].nodes.values()))
+        assert len(node.verification_criteria) == 3
+        assert "Email field validates RFC 5322" in node.verification_criteria
+
+    def test_explicit_depends_on(self, sample_roles):
+        outcome = {
+            "id": "outcome-deps",
+            "name": "Explicit Deps",
+            "measurable_criteria": [
+                {"node_id": "schema", "title": "Provision database schema"},
+                {"node_id": "api", "title": "Build API", "depends_on": ["schema"]},
+                {"node_id": "deploy", "title": "Deploy to prod", "depends_on": ["api"]},
+            ],
+            "status": "active",
+        }
+        mission = compile_outcome(outcome, roles=sample_roles)
+        edges = mission["work_graph"].edges
+        assert ("schema", "api") in edges
+        assert ("api", "deploy") in edges
+        assert len(edges) == 2
+
+    def test_mixed_string_and_object_criteria(self, sample_roles):
+        # Use titles that match role keywords so validate() doesn't reject
+        # unassigned non-root nodes
+        outcome = {
+            "id": "outcome-mixed",
+            "name": "Mixed",
+            "measurable_criteria": [
+                "Build API endpoints with database schema",
+                {
+                    "title": "User signup flow end-to-end",
+                    "risk_level": "medium",
+                },
+            ],
+            "status": "active",
+        }
+        mission = compile_outcome(outcome, roles=sample_roles)
+        nodes = list(mission["work_graph"].nodes.values())
+        assert len(nodes) == 2
+        # First is plain string → defaults
+        assert nodes[0].description.startswith("Build API")
+        assert nodes[0].risk_level == ""
+        # Second is rich → populated
+        assert nodes[1].description.startswith("User signup")
+        assert nodes[1].risk_level == "medium"
+
+    def test_captain_attention_estimate_rollup(self, sample_roles):
+        outcome = {
+            "id": "outcome-att",
+            "name": "Attention Test",
+            "measurable_criteria": [
+                {"title": "T1", "owner_role": "engineering", "captain_attention_estimate": 0.25},
+                {"title": "T2", "owner_role": "engineering", "captain_attention_estimate": 0.5},
+                {"title": "T3", "owner_role": "engineering", "captain_attention_estimate": 1.0},
+            ],
+            "status": "active",
+        }
+        mission = compile_outcome(outcome, roles=sample_roles)
+        assert mission["captain_attention_estimate"] == 1.75
+
+    def test_invalid_risk_level_rejected(self, sample_roles):
+        outcome = {
+            "id": "outcome-bad-risk",
+            "name": "Bad Risk",
+            "measurable_criteria": [{"title": "X", "risk_level": "critical"}],
+            "status": "active",
+        }
+        with pytest.raises(ValueError, match="risk_level"):
+            compile_outcome(outcome, roles=sample_roles)
+
+    def test_missing_title_rejected(self, sample_roles):
+        outcome = {
+            "id": "outcome-no-title",
+            "name": "No Title",
+            "measurable_criteria": [{"owner_role": "engineering"}],
+            "status": "active",
+        }
+        with pytest.raises(ValueError, match="title"):
+            compile_outcome(outcome, roles=sample_roles)
+
+    def test_unknown_field_rejected(self, sample_roles):
+        outcome = {
+            "id": "outcome-bad-field",
+            "name": "Bad Field",
+            "measurable_criteria": [{"title": "X", "wat": "huh"}],
+            "status": "active",
+        }
+        with pytest.raises(ValueError, match="unknown fields"):
+            compile_outcome(outcome, roles=sample_roles)
+
+    def test_depends_on_unknown_node_rejected(self, sample_roles):
+        outcome = {
+            "id": "outcome-bad-dep",
+            "name": "Bad Dep",
+            "measurable_criteria": [
+                {"node_id": "a", "title": "A", "depends_on": ["ghost"]}
+            ],
+            "status": "active",
+        }
+        with pytest.raises(ValueError, match="unknown node"):
+            compile_outcome(outcome, roles=sample_roles)
+
+    def test_explicit_node_id_used_as_task_id(self, sample_roles):
+        outcome = {
+            "id": "outcome-explicit-id",
+            "name": "Explicit ID",
+            "measurable_criteria": [
+                {"node_id": "my-custom-id", "title": "Custom"},
+            ],
+            "status": "active",
+        }
+        mission = compile_outcome(outcome, roles=sample_roles)
+        assert "my-custom-id" in mission["work_graph"].nodes
+
+    def test_event_payload_includes_v2_fields(self, sample_roles, event_log_dir):
+        outcome = {
+            "id": "outcome-evt-v2",
+            "name": "Event V2",
+            "measurable_criteria": [
+                {
+                    "title": "Build it",
+                    "owner_role": "engineering",
+                    "verifier_role": "operations",
+                    "risk_level": "low",
+                    "captain_attention_estimate": 0.1,
+                }
+            ],
+            "status": "active",
+        }
+        compile_outcome(outcome, roles=sample_roles)
+        events = list(event_log_dir.glob("*.jsonl"))
+        assert len(events) >= 1
+        lines = events[0].read_text().strip().split("\n")
+        evt = json.loads(lines[-1])
+        assert evt["event_type"] == "mission_created"
+        payload = evt["payload"]
+        assert "operations" in payload["verifier_roles"]
+        assert "low" in payload["risk_levels"]
+        assert payload["captain_attention_estimate"] == 0.1

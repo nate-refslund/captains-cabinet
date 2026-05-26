@@ -30,6 +30,16 @@ class WorkNode:
     status: NodeStatus = NodeStatus.PENDING
     verification_criteria: list[str] = field(default_factory=list)
     verification_passed: Optional[bool] = None
+    # Mission Compiler v2 fields — folded in from parent codex branch
+    # (cabinet/scripts/lib/org_runtime.py MISSION_NODE_FIELDS). Optional with
+    # safe defaults so simple `measurable_criteria: [string]` outcomes still
+    # compile unchanged.
+    evidence_required: str = ""
+    verifier_role: Optional[str] = None
+    risk_level: str = ""  # "" | "low" | "medium" | "high"
+    rollback_note: str = ""
+    budget_note: str = ""
+    captain_attention_estimate: float = 0.0
 
 
 class WorkGraph:

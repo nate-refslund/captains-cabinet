@@ -26,10 +26,44 @@
           "measurable_criteria": {
             "type": "array",
             "items": {
-              "type": "string"
+              "oneOf": [
+                {
+                  "type": "string",
+                  "description": "Simple criterion — compiler infers role, dependencies, and defaults the other v2 fields"
+                },
+                {
+                  "type": "object",
+                  "description": "Rich criterion with Mission Compiler v2 fields. 'title' (or 'description') is required.",
+                  "anyOf": [
+                    {"required": ["title"]},
+                    {"required": ["description"]}
+                  ],
+                  "properties": {
+                    "node_id": {"type": "string", "description": "Explicit node id; auto-generated when omitted"},
+                    "title": {"type": "string"},
+                    "description": {"type": "string", "description": "Alias for title (legacy)"},
+                    "owner_role": {"type": "string"},
+                    "assigned_role": {"type": "string", "description": "Alias for owner_role"},
+                    "acceptance_criteria": {
+                      "oneOf": [
+                        {"type": "string"},
+                        {"type": "array", "items": {"type": "string"}}
+                      ]
+                    },
+                    "evidence_required": {"type": "string"},
+                    "verifier_role": {"type": "string"},
+                    "risk_level": {"type": "string", "enum": ["", "low", "medium", "high"]},
+                    "rollback_note": {"type": "string"},
+                    "budget_note": {"type": "string"},
+                    "captain_attention_estimate": {"type": "number", "minimum": 0},
+                    "depends_on": {"type": "array", "items": {"type": "string"}}
+                  },
+                  "additionalProperties": false
+                }
+              ]
             },
             "minItems": 1,
-            "description": "Concrete criteria to determine if outcome is achieved"
+            "description": "Concrete criteria to determine if outcome is achieved. Each item can be a simple string OR a rich Mission Compiler v2 object."
           },
           "status": {
             "type": "string",
