@@ -29,7 +29,15 @@ if [ "${RULE_ENCODER_HOOK_ENABLED:-1}" = "0" ]; then
   exit 0
 fi
 
-REPO_ROOT="${REPO_ROOT:-${CABINET_ROOT:-$(cd "$(dirname "$0")/../../.." && pwd)}}"
+# Phase 3 (convergence): resolve REPO_ROOT for both Docker (/opt/founders-cabinet)
+# and Mac-native (script-relative path) without breaking either invocation.
+if [ -z "${REPO_ROOT:-}" ]; then
+  if [ -d "/opt/founders-cabinet" ]; then
+    REPO_ROOT="/opt/founders-cabinet"
+  else
+    REPO_ROOT="${CABINET_ROOT:-$(cd "$(dirname "$0")/../../.." 2>/dev/null && pwd)}"
+  fi
+fi
 SIGNALS_YAML="$REPO_ROOT/cabinet/scripts/captain-rules/encode-signals.yaml"
 CLASSIFIER="$REPO_ROOT/cabinet/scripts/captain-rules/classify-rule.sh"
 PATTERNS_FILE="$REPO_ROOT/shared/interfaces/captain-patterns.md"
@@ -41,6 +49,14 @@ PLATFORM_YML="$REPO_ROOT/instance/config/platform.yml"
 
 OFFICER="${OFFICER_NAME:-${CABINET_OFFICER:-unknown}}"
 NOW_ISO="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+
+# Phase 3 — Redis two-count rule + cross-officer broadcast.
+# When the same pattern signal fires for the SECOND time, the encoder
+# escalates from "log silently" to "broadcast to other officers". Counter
+# lives in Redis at cabinet:patterns:seen:<rule_id> with a 30-day TTL so
+# stale-but-rare patterns don't drift forever.
+REDIS_HOST_LOCAL="${REDIS_HOST:-127.0.0.1}"
+REDIS_PORT_LOCAL="${REDIS_PORT:-6379}"
 
 INPUT="$(cat)"
 [ -z "$INPUT" ] && exit 0
@@ -107,6 +123,22 @@ PYEOF
 # Generate a stable rule_id from the DM body hash for audit trail.
 RULE_ID="C-$(printf '%s' "$DM_BODY" | sha1sum | awk '{print substr($1,1,8)}')"
 
+# Phase 3 — two-count rule. INCR a Redis counter keyed by rule_id. The
+# first sighting gets a normal encode entry; the second sighting (and
+# beyond) ALSO triggers a cross-officer broadcast so other roles refresh
+# their captain-patterns.md cache. Counter is best-effort: any Redis
+# failure falls through silently to the legacy single-sighting behaviour.
+RULE_COUNT=0
+if command -v redis-cli >/dev/null 2>&1; then
+  RULE_COUNT="$(redis-cli -h "$REDIS_HOST_LOCAL" -p "$REDIS_PORT_LOCAL" \
+    INCR "cabinet:patterns:seen:$RULE_ID" 2>/dev/null)"
+  # Set a TTL on first INCR so stale rule_ids don't accumulate forever
+  if [ "$RULE_COUNT" = "1" ]; then
+    redis-cli -h "$REDIS_HOST_LOCAL" -p "$REDIS_PORT_LOCAL" \
+      EXPIRE "cabinet:patterns:seen:$RULE_ID" 2592000 >/dev/null 2>&1 || true
+  fi
+fi
+
 # Append entry to captain-patterns.md using the existing format.
 # Files are gitignored (shared/interfaces/**/*.md); writes are runtime-only.
 mkdir -p "$LOG_DIR" 2>/dev/null
@@ -120,7 +152,28 @@ if [ -w "$PATTERNS_FILE" ] || [ ! -e "$PATTERNS_FILE" ]; then
     printf -- '- **Encoded by:** captain-rule-encoder.sh (Spec 048 v2 Phase 1)\n'
     printf -- '- **Source:** %s\n' "$OFFICER"
     printf -- '- **Classifier verdict:** PENDING (async; check audit log)\n'
+    printf -- '- **Sighting count:** %s (Phase 3 — broadcast on count >= 2)\n' "$RULE_COUNT"
   } >> "$PATTERNS_FILE" 2>/dev/null
+fi
+
+# Phase 3 — cross-officer broadcast on second+ sighting. Each active
+# officer's trigger stream gets one notification telling them to re-read
+# captain-patterns.md. The notify-officer.sh script handles the Redis
+# Stream push + cabinet memory queue. Best-effort: failures don't block
+# the hook.
+if [ -n "$RULE_COUNT" ] && [ "$RULE_COUNT" -ge 2 ] 2>/dev/null; then
+  NOTIFIER="$REPO_ROOT/cabinet/scripts/notify-officer.sh"
+  ACTIVE_OFFICERS_DIR="$REPO_ROOT/instance/roles/active"
+  if [ -x "$NOTIFIER" ] && [ -d "$ACTIVE_OFFICERS_DIR" ]; then
+    BROADCAST_MSG="Captain pattern ${RULE_ID} encoded for the ${RULE_COUNT}th time — re-read shared/interfaces/captain-patterns.md before next Captain DM."
+    for role_yml in "$ACTIVE_OFFICERS_DIR"/*.yml; do
+      [ -f "$role_yml" ] || continue
+      target_slug="$(basename "$role_yml" .yml)"
+      [ "$target_slug" = "$OFFICER" ] && continue
+      REDIS_HOST="$REDIS_HOST_LOCAL" REDIS_PORT="$REDIS_PORT_LOCAL" \
+        bash "$NOTIFIER" "$target_slug" "$BROADCAST_MSG" >/dev/null 2>&1 || true
+    done
+  fi
 fi
 
 # Audit log: pre-classifier entry. Phase 2 will append a follow-up line
