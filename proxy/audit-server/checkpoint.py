@@ -25,6 +25,12 @@ logic is testable + deploy-independent. Mirrors the #192 logic/deploy split.
 FAIL-SAFE: a broken or unreadable single-cabinet chain never aborts the run — it is recorded with
 chain_valid=false (which is itself the alarm) and the sweep continues. Reuses the shared
 validator.is_valid_cabinet_id (#237) so a non-slug SSOT filename can never build an escaped path.
+
+PRIVACY (AC #13): the public sinks are keyed by an OPAQUE per-cabinet id (minted at FW-098 install,
+read from a slug->opaque-id map the install writes to the data dir), NEVER the human slug — keying
+per-slug would publish refslund's enumerable customer list + per-cabinet volume to a PERMANENT
+IMMUTABLE public sink (Art 5(1)(c) minimization; a sole-trader slug is personal data). FAIL-CLOSED:
+a slug with no map entry is SKIPPED — never publish a bare slug. The internal SSOT stays slug-named.
 """
 from __future__ import annotations
 
@@ -71,6 +77,19 @@ _GIT_COMMITTER = ("refslund-checkpoint", "checkpoint@refslund.ai")
 # and the next daily cron tick can never overlap + interleave the append-only ledger writes.
 _LOCKFILE = _AUDIT_LOG_ROOT / ".checkpoint.lock"
 
+# Slug -> opaque-id map (AC #13): the FW-098 install writes this JSON into the data dir; checkpoint
+# keys ALL public output by the opaque id, NEVER the slug. Missing / unreadable / malformed -> {}
+# so every cabinet fail-closed-skips (never publish a bare slug). NON-served (under the root).
+_ID_MAP_FILE = pathlib.Path(
+    os.environ.get("AUDIT_CHECKPOINT_ID_MAP", str(_AUDIT_LOG_ROOT / "cabinet-id-map.json"))
+)
+
+# Non-served scratch dir for atomic-write temp files — kept OUT of the served snapshot dir so a
+# transient .tmp can never be served, but as a SIBLING of it (the served dir's parent) so it is
+# GUARANTEED on the same filesystem -> os.replace stays atomic even if AUDIT_CHECKPOINT_DIR is
+# mounted on its own volume (PR-2 deploy). Derived from the served dir, not the SSOT root.
+_SCRATCH_DIR = _CHECKPOINT_PUBLIC_DIR.parent / ".checkpoint-scratch"
+
 
 def _acquire_lock():
     """Non-blocking exclusive lock; return the open handle (held until closed), or None if another
@@ -86,6 +105,24 @@ def _acquire_lock():
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _load_id_map() -> dict[str, str]:
+    """Load the slug->opaque-id map the FW-098 install writes (AC #13). Missing / not-an-object /
+    unreadable -> {} so EVERY cabinet fail-closed-skips (never publish a bare slug). Never raises."""
+    try:
+        if not _ID_MAP_FILE.exists():
+            logger.warning("checkpoint: id-map %s not found — all cabinets fail-closed-skipped "
+                           "(no public output until the install writes the map)", _ID_MAP_FILE)
+            return {}
+        data = json.loads(_ID_MAP_FILE.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            logger.warning("checkpoint: id-map %s is not a JSON object — fail-closed empty", _ID_MAP_FILE)
+            return {}
+        return {str(k): str(v) for k, v in data.items()}
+    except Exception as exc:  # noqa: BLE001 — any map error fails closed (no publish), never crashes
+        logger.warning("checkpoint: id-map %s unreadable (%s) — fail-closed empty", _ID_MAP_FILE, exc)
+        return {}
 
 
 def _latest_hash_and_count(slug: str) -> tuple[str, int]:
@@ -118,10 +155,22 @@ def _latest_hash_and_count(slug: str) -> tuple[str, int]:
     return last, count
 
 
-def build_checkpoint(slug: str) -> dict[str, Any] | None:
-    """Build a checkpoint record for one cabinet, or None if slug is invalid / has no entries."""
+def build_checkpoint(slug: str, id_map: dict[str, str]) -> dict[str, Any] | None:
+    """Build the PUBLIC checkpoint record for one cabinet, keyed by its OPAQUE id (AC #13), or None
+    if the slug is invalid / unmapped / its opaque id is malformed / it has no entries. The returned
+    record carries `cabinet_public_id` ONLY — never the slug — so nothing published leaks the slug."""
     if not is_valid_cabinet_id(slug):
         logger.warning("checkpoint: skipping non-slug cabinet id %r", slug)
+        return None
+    public_id = id_map.get(slug)
+    if not public_id:
+        logger.warning("checkpoint: no opaque-id mapping for cabinet %r — SKIPPED "
+                       "(fail-closed AC #13; never publish a bare slug)", slug)
+        return None
+    if not is_valid_cabinet_id(public_id):
+        # a poisoned / malformed map entry must never build an escaped public path
+        logger.warning("checkpoint: opaque-id %r for cabinet %r is not slug-shaped — SKIPPED "
+                       "(fail-closed)", public_id, slug)
         return None
     latest, count = _latest_hash_and_count(slug)
     if count == 0:
@@ -130,7 +179,7 @@ def build_checkpoint(slug: str) -> dict[str, Any] | None:
     if not chain_ok:
         logger.error("checkpoint: chain INVALID for %s (first bad index=%s)", slug, bad_idx)
     return {
-        "cabinet_id": slug,
+        "cabinet_public_id": public_id,
         "latest_entry_hash": latest,
         "entry_count": count,
         "chain_valid": bool(chain_ok),
@@ -146,22 +195,40 @@ def emit_all() -> dict[str, Any]:
     mirror. Returns a summary {checkpoint_ts, cabinets:[slug], broken:[slug]}."""
     if not _AUDIT_DIR.exists():
         logger.info("checkpoint: audit dir not found at %s — nothing to checkpoint", _AUDIT_DIR)
-        return {"checkpoint_ts": _utc_now(), "cabinets": [], "broken": []}
+        return {"checkpoint_ts": _utc_now(), "published": [], "broken": []}
 
     lock = _acquire_lock()
     if lock is None:
         logger.warning("checkpoint: another emit run holds the lock — skipping this tick")
-        return {"checkpoint_ts": _utc_now(), "cabinets": [], "broken": [], "skipped": "locked"}
+        return {"checkpoint_ts": _utc_now(), "published": [], "broken": [], "skipped": "locked"}
     try:
-        cabinets: list[dict[str, Any]] = []
-        broken: list[str] = []
+        id_map = _load_id_map()
+        built: list[tuple[str, dict[str, Any]]] = []  # (slug, opaque-keyed public record) pairs
         for jsonl in sorted(_AUDIT_DIR.glob("*.jsonl")):
-            cp = build_checkpoint(jsonl.stem)
-            if cp is None:
-                continue
-            cabinets.append(cp)
-            if not cp["chain_valid"]:
-                broken.append(cp["cabinet_id"])
+            slug = jsonl.stem
+            cp = build_checkpoint(slug, id_map)
+            if cp is not None:
+                built.append((slug, cp))
+
+        # Collision guard (AC #13 defense): the install MUST mint UNIQUE opaque ids. If it ever
+        # mis-mints a duplicate, two cabinets would clobber one served file + interleave one
+        # APPEND-ONLY ledger — silent data loss + a false tamper-alarm PERMANENTLY in the immutable
+        # WORM anchor. Detect a duplicate public_id across this sweep and fail-closed-skip ALL
+        # colliding cabinets (checkpoint is the last line before the immutable sink — never clobber).
+        seen: set[str] = set()
+        dup_ids: set[str] = set()
+        for _slug, cp in built:
+            pid = cp["cabinet_public_id"]
+            (dup_ids if pid in seen else seen).add(pid)
+        if dup_ids:
+            logger.error("checkpoint: DUPLICATE opaque-id(s) %s — skipping ALL colliding cabinets "
+                         "(install must mint unique ids; never clobber the immutable anchor)",
+                         sorted(dup_ids))
+            built = [(s, cp) for s, cp in built if cp["cabinet_public_id"] not in dup_ids]
+
+        cabinets = [cp for _s, cp in built]                       # PUBLIC records -> the manifest
+        published = [s for s, _cp in built]                       # internal: published slugs (log)
+        broken = [s for s, cp in built if not cp["chain_valid"]]  # internal: broken-chain slugs
 
         ts = _utc_now()
         manifest = {"checkpoint_ts": ts, "phase": 1, "signed": False, "cabinets": cabinets}
@@ -172,8 +239,8 @@ def emit_all() -> dict[str, Any]:
 
     if broken:
         logger.error("checkpoint: %d BROKEN chain(s) at checkpoint: %s", len(broken), broken)
-    logger.info("checkpoint: emitted %d cabinet checkpoint(s) at %s", len(cabinets), ts)
-    return {"checkpoint_ts": ts, "cabinets": [c["cabinet_id"] for c in cabinets], "broken": broken}
+    logger.info("checkpoint: published %d cabinet checkpoint(s) at %s", len(published), ts)
+    return {"checkpoint_ts": ts, "published": published, "broken": broken}
 
 
 def _write_public_snapshot(manifest: dict[str, Any]) -> None:
@@ -185,18 +252,20 @@ def _write_public_snapshot(manifest: dict[str, Any]) -> None:
     _atomic_write(_CHECKPOINT_PUBLIC_DIR / "latest.json", json.dumps(manifest, indent=2, sort_keys=True))
     for cp in manifest["cabinets"]:
         _atomic_write(
-            _CHECKPOINT_PUBLIC_DIR / f"{cp['cabinet_id']}.json",
+            _CHECKPOINT_PUBLIC_DIR / f"{cp['cabinet_public_id']}.json",
             json.dumps(cp, indent=2, sort_keys=True),
         )
 
 
 def _atomic_write(path: pathlib.Path, text: str) -> None:
-    tmp = path.with_suffix(path.suffix + ".tmp")
+    # Write the temp in a NON-served scratch dir (not the served snapshot dir) so a transient .tmp
+    # can never be served; os.replace from the same filesystem stays atomic (review minor b).
+    _SCRATCH_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = _SCRATCH_DIR / (path.name + ".tmp")
     try:
         tmp.write_text(text, encoding="utf-8")
         os.replace(tmp, path)
     finally:
-        # Never leave a partial .tmp in the SERVED dir (Caddy file_server could otherwise serve it).
         # After a successful os.replace the tmp is already renamed away, so unlink is a no-op.
         try:
             tmp.unlink()
@@ -228,7 +297,7 @@ def _commit_git_mirror(manifest: dict[str, Any], ts: str) -> None:
     except subprocess.CalledProcessError:
         pass
     for cp in manifest["cabinets"]:
-        ledger = gitdir / f"{cp['cabinet_id']}.checkpoints.jsonl"
+        ledger = gitdir / f"{cp['cabinet_public_id']}.checkpoints.jsonl"
         with ledger.open("a", encoding="utf-8") as fh:  # APPEND-ONLY: never rewrite a line
             fh.write(json.dumps(cp, sort_keys=True) + "\n")
     try:
