@@ -13,9 +13,11 @@ REDIS_URL="${REDIS_URL:-redis://redis:6379}"
 REDIS_HOST=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f1)
 REDIS_PORT=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f2)
 
+CABINET_ROOT="${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
+
 # LOG_DIR is overridable for hermetic tests (FW-075 test harness). Production
 # always uses the canonical path; the env override is opt-in and safe.
-LOG_DIR="${CABINET_LOG_DIR:-/opt/founders-cabinet/memory/logs}"
+LOG_DIR="${CABINET_LOG_DIR:-$CABINET_ROOT/memory/logs}"
 mkdir -p "$LOG_DIR"
 
 TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -27,7 +29,7 @@ OFFICER="${OFFICER_NAME:-unknown}"
 # ============================================================
 # Reads from cabinet/officer-capabilities.conf instead of hardcoding
 # officer names. Founders customize that file for their officer set.
-CAPABILITIES_FILE="/opt/founders-cabinet/cabinet/officer-capabilities.conf"
+CAPABILITIES_FILE="$CABINET_ROOT/cabinet/officer-capabilities.conf"
 
 has_capability() {
   grep -q "^${OFFICER}:${1}$" "$CAPABILITIES_FILE" 2>/dev/null
@@ -248,7 +250,7 @@ if [ "$_CATN_BOT_MODE" = "single_ceo" ] \
    && [ -n "$_CATN_PROJECT" ]; then
   # FW-084 adversary: validate _CATN_PROJECT slug before use in Redis key
   if [[ "$_CATN_PROJECT" =~ ^[a-z0-9][a-z0-9-]*$ ]] && [ "${#_CATN_PROJECT}" -le 32 ]; then
-    _CATN_LIB="/opt/founders-cabinet/cabinet/scripts/lib/captain-attention.sh"
+    _CATN_LIB="$CABINET_ROOT/cabinet/scripts/lib/captain-attention.sh"
     if [ -f "$_CATN_LIB" ]; then
       # Source the library and scan (outputs formatted triage block if entries pending)
       # Errors in the library must not brick the hook — redirect to stderr only
@@ -270,7 +272,7 @@ fi
 # source failure means trigger_read is undefined and the officer stops
 # receiving Captain DMs and cross-officer notifications without any
 # diagnostic surface.
-if ! . /opt/founders-cabinet/cabinet/scripts/lib/triggers.sh; then
+if ! . "$CABINET_ROOT/cabinet/scripts/lib/triggers.sh"; then
   echo "post-tool-use: CRITICAL — triggers.sh failed to load; trigger delivery is broken for $OFFICER" >&2
 fi
 TRIG_MESSAGES=$(trigger_read "$OFFICER" 2>/dev/null)
@@ -286,7 +288,7 @@ if [ -n "$TRIG_MESSAGES" ]; then
   echo "$TRIG_MESSAGES"
   echo ""
   echo "Process these triggers now. Then ACK:"
-  echo "  . /opt/founders-cabinet/cabinet/scripts/lib/triggers.sh && trigger_ack $OFFICER \"$TRIG_IDS\""
+  echo "  . $CABINET_ROOT/cabinet/scripts/lib/triggers.sh && trigger_ack $OFFICER \"$TRIG_IDS\""
 fi
 # ============================================================
 
@@ -439,8 +441,8 @@ fi
 # ============================================================
 # After an officer with logs_captain_decisions capability replies to
 # the Captain's Telegram chat, remind to log decisions.
-CAPTAIN_CHAT_ID="${CAPTAIN_TELEGRAM_CHAT_ID:-$(grep '^captain_telegram_chat_id:' /opt/founders-cabinet/instance/config/platform.yml 2>/dev/null | awk '{print $2}' | tr -d '\"')}"
-CAPTAIN_NAME=$(grep '^captain_name:' /opt/founders-cabinet/instance/config/platform.yml 2>/dev/null | awk '{print $2}' || echo "Captain")
+CAPTAIN_CHAT_ID="${CAPTAIN_TELEGRAM_CHAT_ID:-$(grep '^captain_telegram_chat_id:' "$CABINET_ROOT/instance/config/platform.yml" 2>/dev/null | awk '{print $2}' | tr -d '\"')}"
+CAPTAIN_NAME=$(grep '^captain_name:' "$CABINET_ROOT/instance/config/platform.yml" 2>/dev/null | awk '{print $2}' || echo "Captain")
 
 if has_capability "logs_captain_decisions" && [ "$TOOL_NAME" = "mcp__plugin_telegram_telegram__reply" ]; then
   REPLY_CHAT=$(echo "$TOOL_INPUT" | jq -r '.chat_id // empty' 2>/dev/null)
@@ -547,7 +549,7 @@ if [ "$TOOL_NAME" = "Bash" ]; then
   # echoes of the warning still pollute officer stdout.
   if echo "$CMD" | head -n1 | grep -qE '^[[:space:]]*(sudo[[:space:]]+|env([[:space:]]+[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+)+[[:space:]]+|timeout[[:space:]]+[0-9]+[smhd]?[[:space:]]+)*git[[:space:]]+add([[:space:];]|$)'; then
     # Check if critical infrastructure files are being staged
-    STAGED=$(cd /opt/founders-cabinet && git diff --cached --name-only 2>/dev/null)
+    STAGED=$(cd "$CABINET_ROOT" && git diff --cached --name-only 2>/dev/null)
     if echo "$STAGED" | grep -qE '(hooks/|CLAUDE\.md|\.claude/agents/|scripts/lib/|officer-capabilities|officer-skills/|constitution/)'; then
       echo ""
       echo "⚠️ INFRASTRUCTURE REVIEW GATE: You are staging critical files:"

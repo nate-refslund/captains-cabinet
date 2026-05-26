@@ -42,6 +42,29 @@ MISSING_STATUS="$(python3 "$ORG" claude-tasks show task_missing_1 | jq -r '.task
   && pass "task with missing metadata is still recorded in warn mode" \
   || fail "expected missing-metadata task to be recorded, got status '$MISSING_STATUS'"
 
+export CABINET_TASK_BRIDGE_MODE="enforce"
+ENFORCE_PAYLOAD="$(jq -nc '{
+  hook_event_name: "TaskCreated",
+  session_id: "sess_enforce",
+  task_id: "task_enforce_missing",
+  task_subject: "Enforce metadata",
+  task_description: "Still missing Cabinet metadata",
+  cwd: "/tmp"
+}')"
+set +e
+printf '%s' "$ENFORCE_PAYLOAD" | python3 "$BRIDGE" >"$TMP_DIR/enforce.out" 2>"$TMP_DIR/enforce.err"
+ENFORCE_RC=$?
+set -e
+[ "$ENFORCE_RC" = "2" ] && grep -q "mission_id" "$TMP_DIR/enforce.err" \
+  && pass "enforce mode blocks missing metadata with stderr feedback" \
+  || fail "enforce mode did not block with useful stderr"
+if python3 "$ORG" claude-tasks show task_enforce_missing >/dev/null 2>&1; then
+  fail "enforce mode should not project a task that Claude Code rolls back"
+else
+  pass "enforce mode does not project rolled-back task"
+fi
+export CABINET_TASK_BRIDGE_MODE="warn"
+
 FULL_DESCRIPTION=$'mission_id: mission_alpha\nnode_id: node_alpha\nowner_role: cto\nacceptance_criteria: event is written\nevidence_required: test output\nverifier_role: coo\nrisk_level: low'
 FULL_PAYLOAD="$(jq -nc --arg description "$FULL_DESCRIPTION" '{
   hook_event_name: "TaskCreated",

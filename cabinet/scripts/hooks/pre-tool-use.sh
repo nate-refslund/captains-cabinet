@@ -111,8 +111,8 @@ esac
 
 # -- Parse caps (fail-open + warn on config trouble, contract d) -------
 SPENDING_CONFIG_CACHE="/tmp/cabinet-spending-limits.tsv"
-PLATFORM_YML="/opt/founders-cabinet/instance/config/platform.yml"
-FRAMEWORK_DEFAULTS_YML="/opt/founders-cabinet/framework/defaults/spending-limits.yml"
+PLATFORM_YML="$CABINET_ROOT/instance/config/platform.yml"
+FRAMEWORK_DEFAULTS_YML="$CABINET_ROOT/framework/defaults/spending-limits.yml"
 
 # Rebuild cache when either yaml has been touched since last build, the
 # cache is missing, OR a yaml that was present at last rebuild has been
@@ -1261,7 +1261,7 @@ if [ "$OFFICER" = "cto" ] && [ "$TOOL_NAME" = "Bash" ]; then
           echo "$CMD_L1_UNQUOTED" | grep -qE "$S7_PULLS"; }; then
     CI_VERIFIED=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET "cabinet:layer1:cto:ci-green" 2>/dev/null)
     if [ -z "$CI_VERIFIED" ] || [ "$CI_VERIFIED" = "(nil)" ]; then
-      echo "CI GREEN GATE: Run 'bash /opt/founders-cabinet/cabinet/scripts/verify-deploy.sh ci <commit-sha>' and confirm CI is green before merging. After CI passes, run: redis-cli -h redis -p 6379 SET cabinet:layer1:cto:ci-green 1 EX 300" >&2
+      echo "CI GREEN GATE: Run 'bash $CABINET_ROOT/cabinet/scripts/verify-deploy.sh ci <commit-sha>' and confirm CI is green before merging. After CI passes, run: redis-cli -h $REDIS_HOST -p $REDIS_PORT SET cabinet:layer1:cto:ci-green 1 EX 300" >&2
       exit 2
     fi
     redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" DEL "cabinet:layer1:cto:ci-green" > /dev/null 2>&1
@@ -1280,7 +1280,7 @@ fi
 # when any yaml in the contexts dir is newer than the cache. Keeps the
 # hook fast (~1ms) on every call.
 
-CONTEXTS_DIR="/opt/founders-cabinet/instance/config/contexts"
+CONTEXTS_DIR="$CABINET_ROOT/instance/config/contexts"
 SLUG_CACHE="/tmp/cabinet-context-slugs.tsv"
 
 if [ -d "$CONTEXTS_DIR" ]; then
@@ -1340,7 +1340,7 @@ fi
 # Cache: /tmp/cabinet-mcp-scope.tsv (officer\tcsv-of-mcps), rebuilt when
 # the yaml is newer than the cache. Same pattern as context cache.
 
-MCP_SCOPE_FILE="/opt/founders-cabinet/cabinet/mcp-scope.yml"
+MCP_SCOPE_FILE="$CABINET_ROOT/cabinet/mcp-scope.yml"
 MCP_SCOPE_CACHE="/tmp/cabinet-mcp-scope.tsv"
 
 if [ -f "$MCP_SCOPE_FILE" ] && echo "$TOOL_NAME" | grep -q '^mcp__'; then
@@ -1441,7 +1441,7 @@ fi
 # Tools that DON'T cross Cabinets (local self-query): identify, presence,
 # availability. No peer check for those.
 
-PEERS_FILE="/opt/founders-cabinet/instance/config/peers.yml"
+PEERS_FILE="$CABINET_ROOT/instance/config/peers.yml"
 PEERS_CACHE="/tmp/cabinet-peers.tsv"
 
 if [ -f "$PEERS_FILE" ] && echo "$TOOL_NAME" | grep -q '^mcp__cabinet__'; then

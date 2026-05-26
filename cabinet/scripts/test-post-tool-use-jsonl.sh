@@ -6,11 +6,12 @@
 # correct `project` field. Uses CABINET_LOG_DIR + CABINET_HOOK_TEST_MODE
 # to keep production logs untouched and suppress trigger fan-out.
 #
-# Run: bash /opt/founders-cabinet/cabinet/scripts/test-post-tool-use-jsonl.sh
+# Run: bash cabinet/scripts/test-post-tool-use-jsonl.sh
 
 set -uo pipefail
 
-HOOK="/opt/founders-cabinet/cabinet/scripts/hooks/post-tool-use.sh"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+HOOK="$REPO_ROOT/cabinet/scripts/hooks/post-tool-use.sh"
 TMP_DIR=$(mktemp -d -t fw075-jsonl-XXXX)
 TODAY=$(date -u +%Y-%m-%d)
 
@@ -38,6 +39,8 @@ run_hook() {
   echo "$SAMPLE_INPUT" | env \
     CABINET_LOG_DIR="$TMP_DIR" \
     CABINET_HOOK_TEST_MODE=1 \
+    CABINET_ROOT="$REPO_ROOT" \
+    REDIS_URL="${REDIS_URL:-redis://localhost:6379}" \
     OFFICER_NAME=test-officer \
     CABINET_ACTIVE_PROJECT="$proj" \
     bash "$HOOK" > /dev/null 2>&1

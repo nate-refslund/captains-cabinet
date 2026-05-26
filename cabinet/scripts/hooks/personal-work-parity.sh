@@ -25,7 +25,7 @@ if [ "${PARITY_HOOK_ENABLED:-1}" = "0" ]; then
   exit 0
 fi
 
-REPO_ROOT="${REPO_ROOT:-/opt/founders-cabinet}"
+REPO_ROOT="${REPO_ROOT:-${CABINET_ROOT:-$(cd "$(dirname "$0")/../../.." && pwd)}}"
 LOG_DIR="$REPO_ROOT/cabinet/logs/hook-fires"
 LOG_FILE="$LOG_DIR/personal-work-parity.jsonl"
 
@@ -60,16 +60,19 @@ for pat in "${TRIGGER_PATTERNS[@]}"; do
 done
 [ "$TRIGGERED" = "0" ] && exit 0
 
-# Determine which tree we're in. /opt/founders-cabinet/ = Work; /opt/personal-cabinet/ = Personal.
+# Determine which tree we're in. CABINET_WORK_ROOT defaults to this repo root
+# on Mac-native runs, while the legacy Hetzner path remains recognized.
+WORK_ROOT="${CABINET_WORK_ROOT:-$REPO_ROOT}"
+PERSONAL_ROOT="${CABINET_PERSONAL_ROOT:-/opt/personal-cabinet}"
 TREE=""
-case "$FILE_PATH" in
-  /opt/founders-cabinet/*) TREE="work" ;;
-  /opt/personal-cabinet/*) TREE="personal" ;;
-  *)
-    # Edits outside the known cabinet trees aren't covered by parity.
-    exit 0
-    ;;
-esac
+if [ "${FILE_PATH#$WORK_ROOT/}" != "$FILE_PATH" ] || [ "${FILE_PATH#/opt/founders-cabinet/}" != "$FILE_PATH" ]; then
+  TREE="work"
+elif [ "${FILE_PATH#$PERSONAL_ROOT/}" != "$FILE_PATH" ] || [ "${FILE_PATH#/opt/personal-cabinet/}" != "$FILE_PATH" ]; then
+  TREE="personal"
+else
+  # Edits outside the known cabinet trees aren't covered by parity.
+  exit 0
+fi
 
 TRACKER="/tmp/.cabinet-parity-tracker-$OFFICER"
 
@@ -101,7 +104,11 @@ LOG_LINE="$(jq -cn \
 [ -n "$LOG_LINE" ] && echo "$LOG_LINE" >> "$LOG_FILE"
 
 # Compute the canonical Personal-side path so officer can copy-paste.
-PERSONAL_PATH="$(printf '%s' "$FILE_PATH" | sed 's|^/opt/founders-cabinet/|/opt/personal-cabinet/|')"
+if [ "${FILE_PATH#$WORK_ROOT/}" != "$FILE_PATH" ]; then
+  PERSONAL_PATH="$PERSONAL_ROOT/${FILE_PATH#$WORK_ROOT/}"
+else
+  PERSONAL_PATH="$(printf '%s' "$FILE_PATH" | sed "s|^/opt/founders-cabinet/|$PERSONAL_ROOT/|")"
+fi
 
 WARN="PERSONAL-WORK PARITY REMINDER
 

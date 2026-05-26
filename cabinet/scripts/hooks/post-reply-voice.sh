@@ -5,9 +5,10 @@
 
 HOOK_INPUT=$(cat)
 OFFICER="${OFFICER_NAME:-unknown}"
+CABINET_ROOT="${CABINET_ROOT:-$(cd "$(dirname "$0")/../../.." && pwd)}"
 
 # Check if voice is enabled
-CONFIG_FILE="/opt/founders-cabinet/instance/config/product.yml"
+CONFIG_FILE="$CABINET_ROOT/instance/config/product.yml"
 VOICE_ENABLED=$(grep -A1 "^voice:" "$CONFIG_FILE" 2>/dev/null | grep "enabled:" | awk '{print $2}' | tr -d ' ')
 if [ "$VOICE_ENABLED" != "true" ]; then
   exit 0
@@ -52,7 +53,7 @@ if [ -n "$CAPTAIN_TELEGRAM_ID" ]; then
     fi
   fi
 
-  bash /opt/founders-cabinet/cabinet/scripts/send-voice.sh "$CAPTAIN_TELEGRAM_ID" "$PLAIN_TEXT" "$CAPTAIN_MSG" > /dev/null 2>&1 &
+  bash "$CABINET_ROOT/cabinet/scripts/send-voice.sh" "$CAPTAIN_TELEGRAM_ID" "$PLAIN_TEXT" "$CAPTAIN_MSG" > /dev/null 2>&1 &
 fi
 
 exit 0

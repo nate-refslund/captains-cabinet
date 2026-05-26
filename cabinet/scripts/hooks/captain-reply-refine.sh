@@ -28,7 +28,7 @@ if [ "${REPLY_REFINE_HOOK_ENABLED:-1}" = "0" ]; then
   exit 0
 fi
 
-REPO_ROOT="${REPO_ROOT:-/opt/founders-cabinet}"
+REPO_ROOT="${REPO_ROOT:-${CABINET_ROOT:-$(cd "$(dirname "$0")/../../.." && pwd)}}"
 LOG_DIR="$REPO_ROOT/cabinet/logs"
 AUDIT_LOG="$LOG_DIR/captain-reply-reviews.jsonl"
 ITER_CAP="${REFINE_MAX_CYCLES:-3}"

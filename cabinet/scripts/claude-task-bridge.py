@@ -168,6 +168,19 @@ def emit_system_message(message: str, **extra: Any) -> None:
     print(json.dumps({"systemMessage": message, **extra}, sort_keys=True))
 
 
+def emit_block_message(message: str) -> None:
+    print(message, file=sys.stderr)
+
+
+def metadata_message(missing: list[str]) -> str:
+    return (
+        "Cabinet task metadata missing: "
+        + ", ".join(missing)
+        + ". Add mission_id, node_id, owner_role, acceptance_criteria, "
+        "evidence_required, verifier_role, and risk_level to the Claude Task."
+    )
+
+
 def write_projection(
     store: Store,
     product: str,
@@ -267,7 +280,7 @@ def handle(data: dict[str, Any]) -> int:
     if not task["task_id"]:
         message = "Cabinet task bridge could not record this Claude task because task_id was missing."
         if mode == "enforce":
-            emit_system_message(message, decision="block", reason=message)
+            emit_block_message(message)
             return 2
         emit_system_message(message)
         return 0
@@ -276,6 +289,10 @@ def handle(data: dict[str, Any]) -> int:
     actor = actor_for(data, task)
     status = "completed" if event_name == "TaskCompleted" else "created"
     missing = missing_metadata(task["metadata"]) if status == "created" else []
+    if missing and mode == "enforce":
+        emit_block_message(metadata_message(missing))
+        return 2
+
     payload = {
         "task_id": task["task_id"],
         "session_id": task["session_id"],
@@ -303,15 +320,7 @@ def handle(data: dict[str, Any]) -> int:
     write_projection(store, product, task, event, status, actor)
 
     if missing:
-        message = (
-            "Cabinet task metadata missing: "
-            + ", ".join(missing)
-            + ". Add mission_id, node_id, owner_role, acceptance_criteria, "
-            "evidence_required, verifier_role, and risk_level to the Claude Task."
-        )
-        if mode == "enforce":
-            emit_system_message(message, decision="block", reason=message)
-            return 2
+        message = metadata_message(missing)
         emit_system_message(message, missing_metadata=missing)
     return 0
 

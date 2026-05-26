@@ -17,9 +17,10 @@ CONTEXT="${3:-}"
 ELEVENLABS_API_KEY="${ELEVENLABS_API_KEY:?ELEVENLABS_API_KEY not set}"
 TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN not set}"
 OFFICER="${OFFICER_NAME:-unknown}"
+CABINET_ROOT="${CABINET_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 
 # Read voice config from product.yml
-CONFIG_FILE="/opt/founders-cabinet/instance/config/product.yml"
+CONFIG_FILE="$CABINET_ROOT/instance/config/product.yml"
 
 # --- YAML parsing helpers ---
 # All config reads use awk with section isolation to avoid cross-section bleed.

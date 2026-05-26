@@ -12,11 +12,13 @@
       "Write",
       "Glob",
       "Grep",
-      "mcp__notion*",
-      "mcp__linear*",
-      "mcp__neon*",
-      "mcp__vercel*",
-      "mcp__plugin_telegram*"
+      "mcp__notion",
+      "mcp__linear",
+      "mcp__neon",
+      "mcp__vercel",
+      "mcp__plugin_telegram_telegram",
+      "mcp__library",
+      "mcp__redis_trigger_channel"
     ],
     "deny": [
       "Bash(rm -rf /)",
@@ -35,11 +37,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash /opt/founders-cabinet/cabinet/scripts/hooks/pre-captain-dm.sh"
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/cabinet/scripts/hooks/pre-captain-dm.sh"
+            ]
           },
           {
             "type": "command",
-            "command": "bash /opt/founders-cabinet/cabinet/scripts/hooks/captain-rule-encoder.sh"
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/cabinet/scripts/hooks/captain-rule-encoder.sh"
+            ]
           }
         ]
       }
@@ -50,7 +58,10 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash /opt/founders-cabinet/cabinet/scripts/hooks/pre-tool-use.sh"
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/cabinet/scripts/hooks/pre-tool-use.sh"
+            ]
           }
         ]
       },
@@ -59,11 +70,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash /opt/founders-cabinet/cabinet/scripts/hooks/build-vs-buy-precheck.sh"
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/cabinet/scripts/hooks/build-vs-buy-precheck.sh"
+            ]
           },
           {
             "type": "command",
-            "command": "bash /opt/founders-cabinet/cabinet/scripts/hooks/captain-posture-warroom.sh"
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/cabinet/scripts/hooks/captain-posture-warroom.sh"
+            ]
           }
         ]
       },
@@ -72,7 +89,10 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash /opt/founders-cabinet/cabinet/scripts/hooks/captain-reply-refine.sh"
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/cabinet/scripts/hooks/captain-reply-refine.sh"
+            ]
           }
         ]
       }
@@ -83,7 +103,10 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash /opt/founders-cabinet/cabinet/scripts/hooks/post-tool-use.sh"
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/cabinet/scripts/hooks/post-tool-use.sh"
+            ]
           }
         ]
       },
@@ -92,11 +115,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash /opt/founders-cabinet/cabinet/scripts/hooks/post-reply-voice.sh"
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/cabinet/scripts/hooks/post-reply-voice.sh"
+            ]
           },
           {
             "type": "command",
-            "command": "bash /opt/founders-cabinet/cabinet/scripts/hooks/post-reply-memory.sh"
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/cabinet/scripts/hooks/post-reply-memory.sh"
+            ]
           }
         ]
       },
@@ -105,11 +134,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash /opt/founders-cabinet/cabinet/scripts/hooks/post-file-write-memory.sh"
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/cabinet/scripts/hooks/post-file-write-memory.sh"
+            ]
           },
           {
             "type": "command",
-            "command": "bash /opt/founders-cabinet/cabinet/scripts/hooks/personal-work-parity.sh"
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/cabinet/scripts/hooks/personal-work-parity.sh"
+            ]
           }
         ]
       }
@@ -120,7 +155,10 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PROJECT_DIR:-/opt/founders-cabinet}/cabinet/scripts/claude-task-bridge.py\""
+            "command": "python3",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/cabinet/scripts/claude-task-bridge.py"
+            ]
           }
         ]
       }
@@ -131,7 +169,10 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PROJECT_DIR:-/opt/founders-cabinet}/cabinet/scripts/claude-task-bridge.py\""
+            "command": "python3",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/cabinet/scripts/claude-task-bridge.py"
+            ]
           }
         ]
       }

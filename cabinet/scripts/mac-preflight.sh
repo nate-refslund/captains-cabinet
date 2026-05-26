@@ -17,7 +17,9 @@ if [ -z "${CABINET_ROOT:-}" ]; then
 fi
 
 TMP="$(mktemp)"
-trap 'rm -f "$TMP"' EXIT
+DRY_OUT="$(mktemp)"
+DRY_ERR="$(mktemp)"
+trap 'rm -f "$TMP" "$DRY_OUT" "$DRY_ERR"' EXIT
 
 add_check() {
   local name="$1" status="$2" detail="$3"
@@ -80,10 +82,10 @@ else
   add_check "mcp-mac-native" fail ".mcp.json.mac-native missing"
 fi
 
-if CABINET_SOURCE_REPO="$CABINET_ROOT" bash "$CABINET_ROOT/cabinet/scripts/deploy-mac.sh" --officer cos --dry-run >/tmp/cabinet-deploy-mac-dry-run.out 2>/tmp/cabinet-deploy-mac-dry-run.err; then
+if CABINET_SOURCE_REPO="$CABINET_ROOT" bash "$CABINET_ROOT/cabinet/scripts/deploy-mac.sh" --officer cos --dry-run >"$DRY_OUT" 2>"$DRY_ERR"; then
   add_check "launchd-render" pass "officer plist dry-run rendered"
 else
-  add_check "launchd-render" fail "$(tr '\n' ' ' </tmp/cabinet-deploy-mac-dry-run.err | cut -c1-180)"
+  add_check "launchd-render" fail "$(tr '\n' ' ' <"$DRY_ERR" | cut -c1-180)"
 fi
 
 active_slug="$(tr -d '[:space:]' < "$CABINET_ROOT/instance/config/active-project.txt" 2>/dev/null || true)"

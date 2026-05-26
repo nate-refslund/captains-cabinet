@@ -4,13 +4,14 @@
 # trigger_count. Uses a throwaway test-scoped officer so real streams
 # are not perturbed. Requires redis running on REDIS_HOST:REDIS_PORT.
 #
-# Run: bash /opt/founders-cabinet/cabinet/scripts/test-triggers.sh
+# Run: bash cabinet/scripts/test-triggers.sh
 # Exit 0 on all PASS, 1 on any FAIL.
 
 set -uo pipefail
 
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TEST_OFFICER="test-trg-$$-$(date +%s)"
-TRIG_REDIS_HOST="${REDIS_HOST:-redis}"
+TRIG_REDIS_HOST="${REDIS_HOST:-localhost}"
 TRIG_REDIS_PORT="${REDIS_PORT:-6379}"
 STREAM="cabinet:triggers:${TEST_OFFICER}"
 GROUP="officer-${TEST_OFFICER}"
@@ -61,7 +62,16 @@ cleanup() {
 }
 trap cleanup EXIT
 
-. /opt/founders-cabinet/cabinet/scripts/lib/triggers.sh
+if ! command -v redis-cli >/dev/null 2>&1; then
+  echo "SKIP: redis-cli not installed; trigger integration tests require Redis CLI"
+  exit 0
+fi
+if ! redis-cli -h "$TRIG_REDIS_HOST" -p "$TRIG_REDIS_PORT" ping >/dev/null 2>&1; then
+  echo "SKIP: Redis not reachable at $TRIG_REDIS_HOST:$TRIG_REDIS_PORT"
+  exit 0
+fi
+
+CABINET_ROOT="$REPO_ROOT" . "$REPO_ROOT/cabinet/scripts/lib/triggers.sh"
 
 echo "=== trigger_send ==="
 OFFICER_NAME=sender-a trigger_send "$TEST_OFFICER" "hello from A"

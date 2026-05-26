@@ -5,6 +5,7 @@
 
 HOOK_INPUT=$(cat)
 OFFICER="${OFFICER_NAME:-unknown}"
+CABINET_ROOT="${CABINET_ROOT:-$(cd "$(dirname "$0")/../../.." && pwd)}"
 
 # Extract file path (Write uses .file_path, Edit uses .file_path too)
 FILE_PATH=$(echo "$HOOK_INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
@@ -45,9 +46,9 @@ esac
 # Background: source env + memory lib, queue embed
 (
   set -a
-  source /opt/founders-cabinet/cabinet/.env 2>/dev/null
+  source "$CABINET_ROOT/cabinet/.env" 2>/dev/null
   set +a
-  source /opt/founders-cabinet/cabinet/scripts/lib/memory.sh 2>/dev/null
+  source "$CABINET_ROOT/cabinet/scripts/lib/memory.sh" 2>/dev/null
 
   if ! declare -f memory_queue_embed > /dev/null; then
     exit 0
@@ -76,7 +77,7 @@ esac
   fi
 
   # Generic file: re-embed the whole file
-  rel_path="${FILE_PATH#/opt/founders-cabinet/}"
+  rel_path="${FILE_PATH#$CABINET_ROOT/}"
   mtime=$(date -u -r "$FILE_PATH" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "")
   editor_meta=$(jq -nc --arg officer "$OFFICER" '{edited_by: $officer}')
   memory_queue_embed "$SOURCE_TYPE" "$rel_path" "$OFFICER" "" "$content" "$editor_meta" "$mtime" 2>/dev/null

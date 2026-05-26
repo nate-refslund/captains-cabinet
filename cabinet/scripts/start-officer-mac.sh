@@ -24,6 +24,10 @@ REDIS_HOST="${REDIS_HOST:-localhost}"
 REDIS_PORT="${REDIS_PORT:-6379}"
 MAC_DRY_RUN="${CABINET_MAC_DRY_RUN:-0}"
 
+shell_quote() {
+  printf '%q' "$1"
+}
+
 mkdir -p "$LOGS_DIR"
 
 cd "$REPO_ROOT"
@@ -36,6 +40,12 @@ if [ -f "cabinet/.env" ]; then
 else
   echo "[WARN] start-officer-mac.sh: cabinet/.env not found at $REPO_ROOT/cabinet/.env — officer will boot without secrets" >&2
 fi
+
+export CABINET_ROOT="$REPO_ROOT"
+export REPO_ROOT="$CABINET_ROOT"
+export CABINET_LOG_DIR="${CABINET_LOG_DIR:-$REPO_ROOT/memory/logs}"
+export REDIS_URL="${REDIS_URL:-redis://$REDIS_HOST:$REDIS_PORT}"
+mkdir -p "$CABINET_LOG_DIR"
 
 if [ "$MAC_DRY_RUN" != "1" ]; then
   # Assemble runtime constitution + safety + preset (idempotent).
@@ -89,10 +99,10 @@ if [ "$HAS_CUA_DRIVER" = "true" ] && [ -f "instance/agents/$OFFICER/mcp.json" ];
        "$MCP_BASE" "instance/agents/$OFFICER/mcp.json" \
        > "$MERGED_MCP_PATH"
   )
-  MCP_FLAG="--mcp-config $MERGED_MCP_PATH"
+  MCP_FLAG="--mcp-config $(shell_quote "$MERGED_MCP_PATH")"
 elif [ "$MCP_BASE" = ".mcp.json.mac-native" ]; then
   # Mac-native base is the source of truth; pass it explicitly even without overlay
-  MCP_FLAG="--mcp-config $REPO_ROOT/$MCP_BASE"
+  MCP_FLAG="--mcp-config $(shell_quote "$REPO_ROOT/$MCP_BASE")"
 else
   MCP_FLAG=""  # Claude Code reads .mcp.json by default (Hetzner fallback)
 fi
@@ -139,9 +149,9 @@ if [ "${CABINET_USE_NATIVE_AGENT:-1}" = "1" ] \
   && [ -f "$REPO_ROOT/.claude/agents/$OFFICER.md" ] \
   && command -v claude >/dev/null 2>&1 \
   && claude --help 2>&1 | grep -q -- '--agent'; then
-  AGENT_FLAG="--agent $OFFICER"
+  AGENT_FLAG="--agent $(shell_quote "$OFFICER")"
 fi
-CLAUDE_CMD="cd $REPO_ROOT && claude $AGENT_FLAG --model $MODEL $MCP_FLAG $TELEGRAM_FLAG --dangerously-skip-permissions --effort max"
+CLAUDE_CMD="cd $(shell_quote "$REPO_ROOT") && CABINET_ROOT=$(shell_quote "$CABINET_ROOT") REPO_ROOT=$(shell_quote "$REPO_ROOT") CABINET_LOG_DIR=$(shell_quote "$CABINET_LOG_DIR") REDIS_URL=$(shell_quote "$REDIS_URL") OFFICER_NAME=$(shell_quote "$OFFICER") TELEGRAM_STATE_DIR=$(shell_quote "$TELEGRAM_STATE_DIR") claude $AGENT_FLAG --model $(shell_quote "$MODEL") $MCP_FLAG $TELEGRAM_FLAG --dangerously-skip-permissions --effort max"
 
 if [ "$MAC_DRY_RUN" = "1" ]; then
   echo "start-officer-mac.sh dry-run:"

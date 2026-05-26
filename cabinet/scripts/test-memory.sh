@@ -6,13 +6,14 @@
 # Focuses on the paths where validation bugs would silently corrupt the
 # embedding queue or lose data.
 #
-# Run: bash /opt/founders-cabinet/cabinet/scripts/test-memory.sh
+# Run: bash cabinet/scripts/test-memory.sh
 # Exit 0 on all PASS, 1 on any FAIL.
 
 set -uo pipefail
 
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TEST_QUEUE_KEY="cabinet:test:memory:embed_queue-$$-$(date +%s)"
-MEM_REDIS_HOST="${REDIS_HOST:-redis}"
+MEM_REDIS_HOST="${REDIS_HOST:-localhost}"
 MEM_REDIS_PORT="${REDIS_PORT:-6379}"
 
 PASS=0
@@ -48,7 +49,16 @@ cleanup() {
 }
 trap cleanup EXIT
 
-. /opt/founders-cabinet/cabinet/scripts/lib/memory.sh 2>/dev/null || true
+if ! command -v redis-cli >/dev/null 2>&1; then
+  echo "SKIP: redis-cli not installed; memory queue integration tests require Redis CLI"
+  exit 0
+fi
+if ! redis-cli -h "$MEM_REDIS_HOST" -p "$MEM_REDIS_PORT" ping >/dev/null 2>&1; then
+  echo "SKIP: Redis not reachable at $MEM_REDIS_HOST:$MEM_REDIS_PORT"
+  exit 0
+fi
+
+CABINET_ROOT="$REPO_ROOT" . "$REPO_ROOT/cabinet/scripts/lib/memory.sh" 2>/dev/null || true
 
 # Override the queue key to test-scoped so we don't pollute the real queue
 MEM_QUEUE_KEY="$TEST_QUEUE_KEY"

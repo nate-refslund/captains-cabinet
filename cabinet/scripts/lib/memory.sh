@@ -3,8 +3,10 @@
 # Usage: source this file, then call memory_embed / memory_search / memory_queue_embed
 
 if [ -z "${NEON_CONNECTION_STRING:-}" ]; then
+  MEMORY_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  CABINET_ROOT="${CABINET_ROOT:-$(cd "$MEMORY_LIB_DIR/../../.." && pwd)}"
   set -a
-  source /opt/founders-cabinet/cabinet/.env 2>/dev/null || true
+  source "$CABINET_ROOT/cabinet/.env" 2>/dev/null || true
   set +a
 fi
 

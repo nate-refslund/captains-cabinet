@@ -5,6 +5,7 @@
 
 HOOK_INPUT=$(cat)
 OFFICER="${OFFICER_NAME:-unknown}"
+CABINET_ROOT="${CABINET_ROOT:-$(cd "$(dirname "$0")/../../.." && pwd)}"
 
 # Extract the reply text (same extraction logic as post-reply-voice.sh)
 REPLY_TEXT=$(echo "$HOOK_INPUT" | jq -r '
@@ -27,16 +28,16 @@ if [ -z "$REPLY_TEXT" ] || [ "$REPLY_TEXT" = "null" ]; then
 fi
 
 # Source memory library
-if [ ! -f /opt/founders-cabinet/cabinet/scripts/lib/memory.sh ]; then
+if [ ! -f "$CABINET_ROOT/cabinet/scripts/lib/memory.sh" ]; then
   exit 0
 fi
 
 # Run embed in background so hook doesn't block
 (
   set -a
-  source /opt/founders-cabinet/cabinet/.env 2>/dev/null
+  source "$CABINET_ROOT/cabinet/.env" 2>/dev/null
   set +a
-  source /opt/founders-cabinet/cabinet/scripts/lib/memory.sh
+  source "$CABINET_ROOT/cabinet/scripts/lib/memory.sh"
 
   if ! declare -f memory_queue_embed > /dev/null; then
     exit 0

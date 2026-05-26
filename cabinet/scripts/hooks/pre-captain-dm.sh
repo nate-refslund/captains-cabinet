@@ -22,7 +22,7 @@
 set -u
 
 SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="${REPO_ROOT:-/opt/founders-cabinet}"
+REPO_ROOT="${REPO_ROOT:-${CABINET_ROOT:-$(cd "$SELF_DIR/../../.." && pwd)}}"
 QUERY_SH="$REPO_ROOT/cabinet/scripts/captain-rules/query.sh"
 CAP_FILE="$REPO_ROOT/cabinet/officer-capabilities.conf"
 

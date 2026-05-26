@@ -16,6 +16,8 @@
 
 TRIG_REDIS_HOST="${REDIS_HOST:-redis}"
 TRIG_REDIS_PORT="${REDIS_PORT:-6379}"
+TRIG_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CABINET_ROOT="${CABINET_ROOT:-$(cd "$TRIG_LIB_DIR/../../.." && pwd)}"
 
 # Compute (stream, group, ids_file) for a given target officer based on the
 # caller's CABINET_ACTIVE_PROJECT. Echoes "<stream>|<group>|<ids_file>" —
@@ -74,9 +76,9 @@ trigger_send() {
   # memory.sh's `set -a; source cabinet/.env` (NEON_CONNECTION_STRING +
   # others) into the calling officer's session JSONL. The disown drops the
   # job from the parent's job table entirely so no completion notice fires.
-  if [ -f /opt/founders-cabinet/cabinet/scripts/lib/memory.sh ]; then
+  if [ -f "$CABINET_ROOT/cabinet/scripts/lib/memory.sh" ]; then
     (
-      source /opt/founders-cabinet/cabinet/scripts/lib/memory.sh 2>/dev/null
+      source "$CABINET_ROOT/cabinet/scripts/lib/memory.sh" 2>/dev/null
       if declare -f memory_queue_embed > /dev/null; then
         local source_id="trg-$(date -u +%Y%m%dT%H%M%S)-${sender}-to-${target}"
         local metadata

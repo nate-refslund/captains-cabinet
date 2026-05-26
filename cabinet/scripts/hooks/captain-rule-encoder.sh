@@ -29,7 +29,7 @@ if [ "${RULE_ENCODER_HOOK_ENABLED:-1}" = "0" ]; then
   exit 0
 fi
 
-REPO_ROOT="${REPO_ROOT:-/opt/founders-cabinet}"
+REPO_ROOT="${REPO_ROOT:-${CABINET_ROOT:-$(cd "$(dirname "$0")/../../.." && pwd)}}"
 SIGNALS_YAML="$REPO_ROOT/cabinet/scripts/captain-rules/encode-signals.yaml"
 CLASSIFIER="$REPO_ROOT/cabinet/scripts/captain-rules/classify-rule.sh"
 PATTERNS_FILE="$REPO_ROOT/shared/interfaces/captain-patterns.md"

@@ -24,7 +24,7 @@ if [ "${POSTURE_WARROOM_HOOK_ENABLED:-1}" = "0" ]; then
   exit 0
 fi
 
-REPO_ROOT="${REPO_ROOT:-/opt/founders-cabinet}"
+REPO_ROOT="${REPO_ROOT:-${CABINET_ROOT:-$(cd "$(dirname "$0")/../../.." && pwd)}}"
 LOG_DIR="$REPO_ROOT/cabinet/logs/hook-fires"
 LOG_FILE="$LOG_DIR/captain-posture-warroom.jsonl"
 RULES_YML="$REPO_ROOT/cabinet/scripts/hooks/captain-posture-rules.yaml"
