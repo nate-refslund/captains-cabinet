@@ -22,11 +22,6 @@ SESSION_NAME="officer-$OFFICER"
 MODEL="${CABINET_MODEL:-claude-opus-4-7}"
 REDIS_HOST="${REDIS_HOST:-localhost}"
 REDIS_PORT="${REDIS_PORT:-6379}"
-MAC_DRY_RUN="${CABINET_MAC_DRY_RUN:-0}"
-
-shell_quote() {
-  printf '%q' "$1"
-}
 
 mkdir -p "$LOGS_DIR"
 
@@ -41,25 +36,17 @@ else
   echo "[WARN] start-officer-mac.sh: cabinet/.env not found at $REPO_ROOT/cabinet/.env — officer will boot without secrets" >&2
 fi
 
-export CABINET_ROOT="$REPO_ROOT"
-export REPO_ROOT="$CABINET_ROOT"
-export CABINET_LOG_DIR="${CABINET_LOG_DIR:-$REPO_ROOT/memory/logs}"
-export REDIS_URL="${REDIS_URL:-redis://$REDIS_HOST:$REDIS_PORT}"
-mkdir -p "$CABINET_LOG_DIR"
-
-if [ "$MAC_DRY_RUN" != "1" ]; then
-  # Assemble runtime constitution + safety + preset (idempotent).
-  # Audit-fix 2026-05-23: capture exit status via PIPESTATUS — `tail` always exits 0.
-  bash cabinet/scripts/load-preset.sh 2>&1 | tail -3 >&2
-  LOAD_PRESET_RC="${PIPESTATUS[0]}"
-  if [ "$LOAD_PRESET_RC" -ne 0 ]; then
-    echo "[ERROR] start-officer-mac.sh: load-preset.sh exited $LOAD_PRESET_RC — runtime constitution may be incomplete" >&2
-    # Don't abort — let officer try to boot anyway, but logged for debug
-  fi
-
-  # Dep audit — non-blocking, logs any missing tools to stderr
-  bash "$REPO_ROOT/cabinet/scripts/check-deps.sh" 2>&1 | tee -a "$LOGS_DIR/officer-$OFFICER.out.log" || true
+# Assemble runtime constitution + safety + preset (idempotent).
+# Audit-fix 2026-05-23: capture exit status via PIPESTATUS — `tail` always exits 0.
+bash cabinet/scripts/load-preset.sh 2>&1 | tail -3 >&2
+LOAD_PRESET_RC="${PIPESTATUS[0]}"
+if [ "$LOAD_PRESET_RC" -ne 0 ]; then
+  echo "[ERROR] start-officer-mac.sh: load-preset.sh exited $LOAD_PRESET_RC — runtime constitution may be incomplete" >&2
+  # Don't abort — let officer try to boot anyway, but logged for debug
 fi
+
+# Dep audit — non-blocking, logs any missing tools to stderr
+bash "$REPO_ROOT/cabinet/scripts/check-deps.sh" 2>&1 | tee -a "$LOGS_DIR/officer-$OFFICER.out.log" || true
 
 # ===========================================================
 # Capability resolution (Spec 060 + Spec 061 capability gates)
@@ -99,10 +86,10 @@ if [ "$HAS_CUA_DRIVER" = "true" ] && [ -f "instance/agents/$OFFICER/mcp.json" ];
        "$MCP_BASE" "instance/agents/$OFFICER/mcp.json" \
        > "$MERGED_MCP_PATH"
   )
-  MCP_FLAG="--mcp-config $(shell_quote "$MERGED_MCP_PATH")"
+  MCP_FLAG="--mcp-config $MERGED_MCP_PATH"
 elif [ "$MCP_BASE" = ".mcp.json.mac-native" ]; then
   # Mac-native base is the source of truth; pass it explicitly even without overlay
-  MCP_FLAG="--mcp-config $(shell_quote "$REPO_ROOT/$MCP_BASE")"
+  MCP_FLAG="--mcp-config $REPO_ROOT/$MCP_BASE"
 else
   MCP_FLAG=""  # Claude Code reads .mcp.json by default (Hetzner fallback)
 fi
@@ -128,10 +115,8 @@ fi
 # ===========================================================
 # Heartbeat — SETEX 900s TTL per Spec 064 v1.1 CTO #3
 # ===========================================================
-if [ "$MAC_DRY_RUN" != "1" ]; then
-  redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" \
-    SETEX "cabinet:heartbeat:$OFFICER" 900 "$(date -u +%s)" > /dev/null 2>&1 || true
-fi
+redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" \
+  SETEX "cabinet:heartbeat:$OFFICER" 900 "$(date -u +%s)" > /dev/null 2>&1 || true
 
 # Export OFFICER_NAME for hooks (stop-hook.sh + post-tool-use.sh etc.)
 export OFFICER_NAME="$OFFICER"
@@ -141,29 +126,6 @@ export OFFICER_NAME="$OFFICER"
 # officers. Linux start-officer.sh sets this at line 280; mirror on Mac.
 export TELEGRAM_STATE_DIR="$HOME/Library/Application Support/cabinet/telegram-state/$OFFICER"
 mkdir -p "$TELEGRAM_STATE_DIR"
-
-# Build the claude invocation. Prefer native custom agents when the installed
-# Claude Code CLI exposes --agent; otherwise keep the boot-prompt path.
-AGENT_FLAG=""
-if [ "${CABINET_USE_NATIVE_AGENT:-1}" = "1" ] \
-  && [ -f "$REPO_ROOT/.claude/agents/$OFFICER.md" ] \
-  && command -v claude >/dev/null 2>&1 \
-  && claude --help 2>&1 | grep -q -- '--agent'; then
-  AGENT_FLAG="--agent $(shell_quote "$OFFICER")"
-fi
-# F2 (safety posture): removed --dangerously-skip-permissions. The session now
-# respects .claude/settings.json permissions.{defaultMode: auto, allow, deny}.
-# Officers operate autonomously via auto mode + scoped allow/deny + pre-tool-use
-# policy engine; we don't bypass CC's safety layer wholesale anymore.
-CLAUDE_CMD="cd $(shell_quote "$REPO_ROOT") && CABINET_ROOT=$(shell_quote "$CABINET_ROOT") REPO_ROOT=$(shell_quote "$REPO_ROOT") CABINET_LOG_DIR=$(shell_quote "$CABINET_LOG_DIR") REDIS_URL=$(shell_quote "$REDIS_URL") OFFICER_NAME=$(shell_quote "$OFFICER") TELEGRAM_STATE_DIR=$(shell_quote "$TELEGRAM_STATE_DIR") claude $AGENT_FLAG --model $(shell_quote "$MODEL") $MCP_FLAG $TELEGRAM_FLAG --permission-mode auto --effort max"
-
-if [ "$MAC_DRY_RUN" = "1" ]; then
-  echo "start-officer-mac.sh dry-run:"
-  echo "  officer=$OFFICER"
-  echo "  native_agent=$([ -n "$AGENT_FLAG" ] && echo true || echo false)"
-  echo "  command=$CLAUDE_CMD"
-  exit 0
-fi
 
 # ===========================================================
 # tmux session + claude launch
@@ -176,6 +138,9 @@ tmux kill-session -t "$SESSION_NAME" 2>/dev/null || true
 
 # Start fresh detached session
 tmux new-session -d -s "$SESSION_NAME" -x 220 -y 50
+
+# Build the claude invocation
+CLAUDE_CMD="cd $REPO_ROOT && claude --model $MODEL $MCP_FLAG $TELEGRAM_FLAG --dangerously-skip-permissions --effort max"
 
 # Send the launch command into the tmux session
 tmux send-keys -t "$SESSION_NAME" "$CLAUDE_CMD" C-m
@@ -196,15 +161,61 @@ echo "start-officer-mac.sh: $OFFICER started in tmux session $SESSION_NAME (mode
 # claude tool-use hook (stop-hook.sh + post-tool-use.sh) already writes heartbeat
 # on every officer action — that's the canonical writer. A second writer here
 # would double-stamp + mask the case where the in-session writer is broken.
-# LaunchAgent KeepAlive needs the wrapper to stay alive: tmux session keeps
-# its process alive in the background, so wait on the tmux session ID.
-TMUX_SESSION_PID=$(tmux display-message -p -t "$SESSION_NAME" "#{pid}" 2>/dev/null)
-if [ -n "$TMUX_SESSION_PID" ]; then
-  # Wait for the tmux session process to exit (which it shouldn't unless
-  # claude inside crashes — at which point we want LaunchAgent KeepAlive to
-  # restart us, so exit non-zero).
-  while kill -0 "$TMUX_SESSION_PID" 2>/dev/null; do
-    sleep 30
-  done
-  exit 1   # tmux session died — let KeepAlive restart us
+#
+# Hardening 2026-05-26 (Strategy B): launchd's KeepAlive watches THIS wrapper
+# script. The old logic waited on `tmux display-message #{pid}` — that's the
+# tmux server process tied to the session, NOT the claude inside. If claude
+# crashed to a shell prompt inside tmux, the session stayed alive and launchd
+# saw nothing wrong. Officer "running" but doing nothing.
+#
+# Fix: wait on the tmux PANE pid (the shell that has claude as its child). When
+# claude exits to the shell, OR the shell itself dies, pane_pid disappears and
+# we exit non-zero so launchd restarts us. Also publish that pid to a sentinel
+# file + Redis so heartbeat-watchdog can do a `kill -0` cross-check.
+PANE_PID=$(tmux list-panes -t "$SESSION_NAME" -F '#{pane_pid}' 2>/dev/null | head -1)
+if [ -z "$PANE_PID" ]; then
+  echo "[ERROR] start-officer-mac.sh: tmux pane for $SESSION_NAME has no pane_pid — session likely died during boot" >&2
+  exit 1
 fi
+
+# Sentinel file: persists across the wrapper lifetime; heartbeat-watchdog reads
+# it for `kill -0` liveness probing the actual claude process tree.
+SENTINEL_DIR="$HOME/Library/Caches/cabinet"
+mkdir -p "$SENTINEL_DIR"
+echo "$PANE_PID" > "$SENTINEL_DIR/$OFFICER.pane.pid"
+
+# Also stash in Redis (TTL'd to twice the watchdog interval — 600s — so a dead
+# watchdog can't leave a stale pid claim around forever).
+redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" \
+  SETEX "cabinet:officer:pane-pid:$OFFICER" 600 "$PANE_PID" > /dev/null 2>&1 || true
+
+echo "start-officer-mac.sh: $OFFICER pane_pid=$PANE_PID (sentinel: $SENTINEL_DIR/$OFFICER.pane.pid)"
+
+# Wait on the pane shell. If claude exits to shell, the shell stays — that's
+# still a busted state. So also probe the pane CONTENT for an idle prompt
+# pattern: if we see a bare shell prompt for >2 consecutive checks (60s), the
+# pane is broken even though the PID lives. Exit non-zero to let KeepAlive cycle.
+SHELL_PROMPT_STREAK=0
+while kill -0 "$PANE_PID" 2>/dev/null; do
+  sleep 30
+  # Re-refresh Redis pane-pid TTL so the watchdog always has a live anchor.
+  redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" \
+    SETEX "cabinet:officer:pane-pid:$OFFICER" 600 "$PANE_PID" > /dev/null 2>&1 || true
+  # Detect claude-exited-to-shell. A live CC pane shows "esc to interrupt" or
+  # ">" input cursor in the last few lines. A bare zsh/bash prompt with the
+  # user@host marker means CC died and we're just looking at a shell.
+  PANE_TAIL=$(tmux capture-pane -t "$SESSION_NAME" -p 2>/dev/null | grep -v '^[[:space:]]*$' | tail -5 || true)
+  if echo "$PANE_TAIL" | grep -qE '^[^>]*[%#\$][[:space:]]*$' && \
+     ! echo "$PANE_TAIL" | grep -qE '(esc to interrupt|Bypassing Permissions|^[[:space:]]*>)'; then
+    SHELL_PROMPT_STREAK=$((SHELL_PROMPT_STREAK + 1))
+    if [ "$SHELL_PROMPT_STREAK" -ge 2 ]; then
+      echo "[ERROR] start-officer-mac.sh: $OFFICER claude exited to shell (pane_pid=$PANE_PID still alive) — exiting non-zero for KeepAlive restart" >&2
+      tmux kill-session -t "$SESSION_NAME" 2>/dev/null || true
+      exit 1
+    fi
+  else
+    SHELL_PROMPT_STREAK=0
+  fi
+done
+echo "[INFO] start-officer-mac.sh: $OFFICER pane_pid=$PANE_PID exited — letting KeepAlive cycle" >&2
+exit 1   # pane died — let KeepAlive restart us

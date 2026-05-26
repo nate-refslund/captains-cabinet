@@ -34,40 +34,12 @@
     "deny": [
       "Bash(rm -rf /)",
       "Bash(rm -rf /*)",
-      "Bash(rm -rf $HOME)",
-      "Bash(rm -rf $HOME/*)",
-      "Bash(rm -rf ~)",
-      "Bash(rm -rf ~/*)",
-      "Bash(rm -rf .)",
-      "Bash(rm -rf ..)",
-      "Bash(rm -rf /Users)",
-      "Bash(rm -rf /Users/*)",
       "Bash(rm -rf /System*)",
       "Bash(rm -rf /Library*)",
-      "Bash(rm -rf /Applications*)",
       "Bash(shutdown *)",
       "Bash(reboot *)",
-      "Bash(halt *)",
-      "Bash(poweroff *)",
-      "Bash(docker *)",
-      "Bash(systemctl *)",
-      "Bash(sudo *)",
-      "Bash(diskutil eraseDisk *)",
-      "Bash(diskutil eraseVolume *)",
-      "Bash(diskutil unmountDisk force *)",
       "Bash(dd if=*)",
-      "Bash(mkfs.*)",
-      "Bash(curl * | bash)",
-      "Bash(curl * | sh)",
-      "Bash(wget * | bash)",
-      "Bash(wget * | sh)",
-      "Bash(* | sudo *)",
-      "Bash(launchctl unload /System/*)",
-      "Bash(launchctl bootout system/*)",
-      "Bash(git push --force *)",
-      "Bash(git push -f *)",
-      "Bash(git push --force-with-lease origin master)",
-      "Bash(git push --force-with-lease origin main)"
+      "Bash(mkfs.*)"
     ]
   },
   "hooks": {
@@ -187,18 +159,6 @@
             ]
           }
         ]
-      },
-      {
-        "matcher": "Agent|Task",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash",
-            "args": [
-              "${CLAUDE_PROJECT_DIR}/cabinet/scripts/hooks/post-subagent.sh"
-            ]
-          }
-        ]
       }
     ],
     "SessionStart": [
@@ -266,6 +226,90 @@
             "command": "bash",
             "args": [
               "${CLAUDE_PROJECT_DIR}/cabinet/scripts/hooks/post-compact.sh"
+            ]
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/cabinet/scripts/hooks/on-subagent-start.sh"
+            ]
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/cabinet/scripts/hooks/on-subagent-stop.sh"
+            ]
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/cabinet/scripts/hooks/on-session-end.sh"
+            ]
+          }
+        ]
+      }
+    ],
+    "ConfigChange": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/cabinet/scripts/hooks/on-config-change.sh"
+            ]
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/cabinet/scripts/hooks/on-post-tool-failure.sh"
+            ]
+          }
+        ]
+      }
+    ],
+    "InstructionsLoaded": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/cabinet/scripts/hooks/on-instructions-loaded.sh"
             ]
           }
         ]
