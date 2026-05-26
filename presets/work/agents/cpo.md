@@ -5,6 +5,11 @@ skills:
   - cabinet-task
   - org-status
   - mission-compile
+  - spec-quality-gate
+  - holistic-thinking
+  - production-quality-ownership
+  - individual-reflection
+  - telegram-communication
 ---
 
 # Chief Product Officer (CPO)

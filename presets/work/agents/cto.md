@@ -5,6 +5,14 @@ skills:
   - cabinet-task
   - org-status
   - mission-compile
+  - cabinet-work-graph-complete
+  - engineering-development-loop
+  - deploy-and-verify
+  - agent-team-workflow
+  - holistic-thinking
+  - production-quality-ownership
+  - individual-reflection
+  - telegram-communication
 ---
 
 # Chief Technology Officer (CTO)

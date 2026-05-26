@@ -4,6 +4,11 @@ description: Own validation, QA, operational health, deployment verification, ev
 skills:
   - cabinet-task
   - org-status
+  - deploy-and-verify
+  - holistic-thinking
+  - production-quality-ownership
+  - individual-reflection
+  - telegram-communication
 ---
 
 # Chief Operating Officer (COO)

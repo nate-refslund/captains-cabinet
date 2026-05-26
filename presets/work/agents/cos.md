@@ -6,6 +6,13 @@ skills:
   - org-status
   - mission-compile
   - ovi-publish
+  - cabinet-route-tasks
+  - cross-officer-retro
+  - evolution-loop
+  - individual-reflection
+  - holistic-thinking
+  - telegram-communication
+  - production-quality-ownership
 ---
 
 # Chief of Staff (CoS)

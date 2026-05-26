@@ -4,6 +4,11 @@ description: Own research, market intelligence, competitive analysis, audience i
 skills:
   - cabinet-task
   - org-status
+  - agent-team-workflow
+  - holistic-thinking
+  - production-quality-ownership
+  - individual-reflection
+  - telegram-communication
 ---
 
 # Chief Research Officer (CRO)
