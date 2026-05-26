@@ -58,7 +58,21 @@
             "type": "command",
             "command": "bash",
             "args": [
+              "${CLAUDE_PROJECT_DIR}/cabinet/scripts/hooks/capture-captain-dm.sh"
+            ]
+          },
+          {
+            "type": "command",
+            "command": "bash",
+            "args": [
               "${CLAUDE_PROJECT_DIR}/cabinet/scripts/hooks/captain-rule-encoder.sh"
+            ]
+          },
+          {
+            "type": "command",
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/cabinet/scripts/hooks/session-task-inject.sh"
             ]
           }
         ]

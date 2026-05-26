@@ -5,7 +5,13 @@
 
 set -uo pipefail
 
-source /opt/founders-cabinet/cabinet/scripts/lib/memory.sh
+# Resolve repo root from script location so this works on Mac, Docker, or any
+# checkout path. Fall back to the legacy /opt path only if explicitly set.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CABINET_ROOT="${CABINET_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
+export CABINET_ROOT
+
+source "$CABINET_ROOT/cabinet/scripts/lib/memory.sh"
 
 GROUP="memory-worker"
 CONSUMER="${HOSTNAME:-worker}"

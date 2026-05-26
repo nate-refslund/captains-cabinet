@@ -4,11 +4,17 @@
 #          captain-decisions.md, framework files (CLAUDE.md, agent defs, guide)
 
 set -uo pipefail
+
+# Resolve repo root from script location — works for Mac worktrees and Docker /opt.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CABINET_ROOT="${CABINET_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
+export CABINET_ROOT
+
 # Auto-export env vars so subshells (pipes) inherit them
 set -a
-source /opt/founders-cabinet/cabinet/.env 2>/dev/null
+source "$CABINET_ROOT/cabinet/.env" 2>/dev/null
 set +a
-source /opt/founders-cabinet/cabinet/scripts/lib/memory.sh
+source "$CABINET_ROOT/cabinet/scripts/lib/memory.sh"
 
 # Fail fast if required env is missing (prevents silent queue of unembeddable items)
 : "${NEON_CONNECTION_STRING:?NEON_CONNECTION_STRING is required}"
@@ -83,17 +89,17 @@ queue_file() {
   local content
   content=$(cat "$f")
   [ -z "$(printf '%s' "$content" | tr -d '[:space:]')" ] && return
-  local rel_path="${f#/opt/founders-cabinet/}"
+  local rel_path="${f#${CABINET_ROOT}/}"
   local mtime
   mtime=$(date -u -r "$f" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "")
   memory_queue_embed "$source_type" "$rel_path" "system" "" "$content" "{}" "$mtime" && FW_COUNT=$((FW_COUNT+1))
 }
 
-for f in /opt/founders-cabinet/CLAUDE.md \
-         /opt/founders-cabinet/founders-cabinet-guide.md \
-         /opt/founders-cabinet/.claude/agents/*.md \
-         /opt/founders-cabinet/constitution/*.md \
-         /opt/founders-cabinet/officers/*/CLAUDE.md; do
+for f in "$CABINET_ROOT/CLAUDE.md" \
+         "$CABINET_ROOT/founders-cabinet-guide.md" \
+         "$CABINET_ROOT"/.claude/agents/*.md \
+         "$CABINET_ROOT"/constitution/*.md \
+         "$CABINET_ROOT"/officers/*/CLAUDE.md; do
   queue_file "$f" "framework_file"
 done
 log "framework files queued: $FW_COUNT"
@@ -103,13 +109,13 @@ log "framework files queued: $FW_COUNT"
 # =============================================================
 log "Queueing shared interfaces..."
 SI_COUNT=0
-for f in /opt/founders-cabinet/shared/backlog.md \
-         /opt/founders-cabinet/shared/interfaces/tech-radar.md \
-         /opt/founders-cabinet/instance/memory/tier2/*/working-notes.md; do
+for f in "$CABINET_ROOT/shared/backlog.md" \
+         "$CABINET_ROOT/shared/interfaces/tech-radar.md" \
+         "$CABINET_ROOT"/instance/memory/tier2/*/working-notes.md; do
   if [ -f "$f" ]; then
     content=$(cat "$f")
     [ -z "$(printf '%s' "$content" | tr -d '[:space:]')" ] && continue
-    rel_path="${f#/opt/founders-cabinet/}"
+    rel_path="${f#${CABINET_ROOT}/}"
     mtime=$(date -u -r "$f" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "")
     # tech-radar → tech_radar; backlog → working_note; working-notes → working_note
     case "$rel_path" in
@@ -128,12 +134,12 @@ log "shared interfaces queued: $SI_COUNT"
 # =============================================================
 log "Queueing product specs..."
 SPEC_COUNT=0
-if [ -d /opt/founders-cabinet/shared/interfaces/product-specs ]; then
-  for f in /opt/founders-cabinet/shared/interfaces/product-specs/*.md; do
+if [ -d "$CABINET_ROOT/shared/interfaces/product-specs" ]; then
+  for f in "$CABINET_ROOT"/shared/interfaces/product-specs/*.md; do
     [ ! -f "$f" ] && continue
     content=$(cat "$f")
     [ -z "$(printf '%s' "$content" | tr -d '[:space:]')" ] && continue
-    rel_path="${f#/opt/founders-cabinet/}"
+    rel_path="${f#${CABINET_ROOT}/}"
     mtime=$(date -u -r "$f" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "")
     memory_queue_embed "product_spec" "$rel_path" "system" "" "$content" "{}" "$mtime" && SPEC_COUNT=$((SPEC_COUNT+1))
   done
@@ -144,7 +150,7 @@ log "product specs queued: $SPEC_COUNT"
 # 4. Captain decisions (parse markdown table)
 # =============================================================
 log "Queueing captain decisions..."
-DEC_FILE="/opt/founders-cabinet/shared/interfaces/captain-decisions.md"
+DEC_FILE="$CABINET_ROOT/shared/interfaces/captain-decisions.md"
 if [ -f "$DEC_FILE" ]; then
   # Parse markdown table rows
   row_num=0
@@ -166,11 +172,11 @@ fi
 # 5. Skills
 # =============================================================
 log "Queueing skills..."
-for f in /opt/founders-cabinet/memory/skills/*.md; do
+for f in "$CABINET_ROOT"/memory/skills/*.md; do
   [ ! -f "$f" ] && continue
-  [[ "$(basename $f)" == TEMPLATE* ]] && continue
+  [[ "$(basename "$f")" == TEMPLATE* ]] && continue
   content=$(cat "$f")
-  rel_path=${f#/opt/founders-cabinet/}
+  rel_path=${f#${CABINET_ROOT}/}
   mtime=$(date -u -r "$f" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "")
   memory_queue_embed "skill" "$rel_path" "system" "" "$content" "{}" "$mtime"
 done

@@ -19,7 +19,10 @@ MEM_QUEUE_KEY="cabinet:memory:embed_queue"
 # =============================================================
 memory_get_embedding() {
   local text="$1"
-  [ -z "$VOYAGE_API_KEY" ] && return 1
+  # Use :- to survive `set -u` in callers (pre-captain-dm.sh + worker both
+  # enable it). Without the default, an unset VOYAGE_API_KEY raises rather
+  # than returning a clean 1.
+  [ -z "${VOYAGE_API_KEY:-}" ] && return 1
   # voyage-4-large accepts up to 32K tokens (~128K chars). Cut to 32000 chars
   # keeps well under the limit with headroom for over-tokenization.
   text=$(echo "$text" | tr '\n' ' ' | cut -c1-32000)

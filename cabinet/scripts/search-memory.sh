@@ -24,9 +24,25 @@ if [ -z "$QUERY" ]; then
   exit 1
 fi
 
-source /opt/founders-cabinet/cabinet/scripts/lib/memory.sh
+# Resolve repo root from script location so search works regardless of where
+# the cabinet is checked out (Mac dev worktree, Docker /opt, fresh clone).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CABINET_ROOT="${CABINET_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
+export CABINET_ROOT
+
+source "$CABINET_ROOT/cabinet/scripts/lib/memory.sh"
 
 RESULTS=$(memory_search "$QUERY" "$TYPE" "$OFFICER" "$LIMIT")
+
+# memory_search echoes "Embedding failed" on Voyage/Neon outage. Treat that
+# the same as no results — quiet output, exit 0. Callers (pre-captain-dm
+# semantic recall, retro scans) bail on the "No results found." string.
+case "$RESULTS" in
+  "Embedding failed"*|"Embedding failed")
+    echo "No results found."
+    exit 0
+    ;;
+esac
 
 if [ -z "$(echo "$RESULTS" | tr -d '[:space:]')" ]; then
   echo "No results found."

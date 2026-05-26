@@ -204,13 +204,80 @@ if [ -z "$BLOCK" ]; then
   exit 0
 fi
 
+# Semantic recall layer (additive — runs AFTER the keyword/anchor query
+# above so officers see both surfaces).
+#
+# Calls cabinet/scripts/search-memory.sh with the DM body as the natural-
+# language query, filtered to past Captain-relevant entries. Budget is
+# capped at 500ms via `timeout`: if Voyage/Neon are slow or offline we
+# silently drop the semantic block — the keyword block still ships.
+#
+# Disable knob: SEMANTIC_RECALL_ENABLED=0
+MEMORY_BLOCK=""
+if [ "${SEMANTIC_RECALL_ENABLED:-1}" != "0" ]; then
+  SEARCH_SH="$REPO_ROOT/cabinet/scripts/search-memory.sh"
+  if [ -f "$SEARCH_SH" ]; then
+    # Latency budget: 500ms hard cap. Prefer `timeout`/`gtimeout` (GNU
+    # coreutils — installed in Docker, sometimes missing on bare Mac).
+    # Fallback: backgrounded process + bash sleep + kill. Either way we
+    # never block the officer reply on Voyage/Neon outages.
+    SEARCH_OUT="$(mktemp /tmp/.semantic-recall.$$.XXXXXX 2>/dev/null || echo "/tmp/.semantic-recall.$$.out")"
+    if command -v timeout >/dev/null 2>&1; then
+      timeout 0.5 bash "$SEARCH_SH" \
+        --type telegram_dm,captain_decision,officer_trigger,experience_record,reflection,correction \
+        --officer "$OFFICER" \
+        --limit 5 "$DM_BODY" > "$SEARCH_OUT" 2>/dev/null
+    elif command -v gtimeout >/dev/null 2>&1; then
+      gtimeout 0.5 bash "$SEARCH_SH" \
+        --type telegram_dm,captain_decision,officer_trigger,experience_record,reflection,correction \
+        --officer "$OFFICER" \
+        --limit 5 "$DM_BODY" > "$SEARCH_OUT" 2>/dev/null
+    else
+      # No GNU timeout — DIY: background + wait up to 500ms + kill.
+      bash "$SEARCH_SH" \
+        --type telegram_dm,captain_decision,officer_trigger,experience_record,reflection,correction \
+        --officer "$OFFICER" \
+        --limit 5 "$DM_BODY" > "$SEARCH_OUT" 2>/dev/null &
+      SEARCH_PID=$!
+      # Poll up to 5 × 100ms = 500ms.
+      for _ in 1 2 3 4 5; do
+        if ! kill -0 "$SEARCH_PID" 2>/dev/null; then
+          break
+        fi
+        sleep 0.1
+      done
+      if kill -0 "$SEARCH_PID" 2>/dev/null; then
+        kill -TERM "$SEARCH_PID" 2>/dev/null || true
+        # Give it 50ms to exit gracefully, then nuke.
+        sleep 0.05
+        kill -KILL "$SEARCH_PID" 2>/dev/null || true
+        : > "$SEARCH_OUT"   # discard whatever partial output landed
+      fi
+      wait "$SEARCH_PID" 2>/dev/null || true
+    fi
+    MEMORY_BLOCK="$(cat "$SEARCH_OUT" 2>/dev/null)"
+    rm -f "$SEARCH_OUT" 2>/dev/null
+    # Drop the "No results found." placeholder so we don't inject empty
+    # noise on cold-start systems (no Voyage/Neon, no embeddings yet).
+    if [ "$(printf '%s' "$MEMORY_BLOCK" | tr -d '[:space:]')" = "Noresultsfound." ]; then
+      MEMORY_BLOCK=""
+    fi
+  fi
+fi
+
 # Emit Claude Code hook output: additionalContext gets injected pre-prompt.
-# Wrap the block in <system-reminder> so it lands tier-1. When a voice
-# transcript was captured (Spec 046), prepend it as a separate
-# <system-reminder> block so retrieval reasoning sees both surfaces.
+# Wrap each surface in its own <system-reminder> so they all land tier-1.
+# Order (top → bottom):
+#   1. Voice transcript header (when present, Spec 046)
+#   2. Keyword/anchor retrieval (Spec 042 — the existing $BLOCK)
+#   3. Semantic recall (this PR — top 5 relevant past entries)
+WRAPPED=""
 if [ -n "$VOICE_BLOCK" ]; then
-  WRAPPED="$(printf '<system-reminder>\n%s\n</system-reminder>\n\n<system-reminder>\n%s\n</system-reminder>' "$VOICE_BLOCK" "$BLOCK")"
-else
-  WRAPPED="$(printf '<system-reminder>\n%s\n</system-reminder>' "$BLOCK")"
+  WRAPPED="$(printf '<system-reminder>\n%s\n</system-reminder>\n\n' "$VOICE_BLOCK")"
+fi
+WRAPPED="${WRAPPED}$(printf '<system-reminder>\n%s\n</system-reminder>' "$BLOCK")"
+if [ -n "$MEMORY_BLOCK" ]; then
+  SEMANTIC_HEADER="🧠 SEMANTIC RECALL (top 5 relevant past entries — telegram_dm, captain_decision, officer_trigger, experience_record, reflection, correction):"
+  WRAPPED="$(printf '%s\n\n<system-reminder>\n%s\n\n%s\n</system-reminder>' "$WRAPPED" "$SEMANTIC_HEADER" "$MEMORY_BLOCK")"
 fi
 printf '%s' "$WRAPPED" | jq -R -s '{hookSpecificOutput: {additionalContext: .}}'
