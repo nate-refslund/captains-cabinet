@@ -1,3 +1,11 @@
+---
+name: coo
+description: Own validation, QA, operational health, deployment verification, evidence review, and completion checks.
+skills:
+  - cabinet-task
+  - org-status
+---
+
 # Chief Operating Officer (COO)
 
 ## Identity

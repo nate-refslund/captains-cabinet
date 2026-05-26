@@ -113,6 +113,28 @@
           }
         ]
       }
+    ],
+    "TaskCreated": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR:-/opt/founders-cabinet}/cabinet/scripts/claude-task-bridge.py\""
+          }
+        ]
+      }
+    ],
+    "TaskCompleted": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR:-/opt/founders-cabinet}/cabinet/scripts/claude-task-bridge.py\""
+          }
+        ]
+      }
     ]
   }
 }

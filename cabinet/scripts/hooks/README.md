@@ -1,6 +1,6 @@
 # Cabinet Hooks
 
-Bash hooks wired into Claude Code's lifecycle events (`UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `Stop`). Registered in `.claude/settings.json`.
+Bash hooks wired into Claude Code's lifecycle events (`UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `TaskCreated`, `TaskCompleted`, `PreCompact`, `Stop`). Registered in `.claude/settings.json`.
 
 ## Lifecycle map
 
@@ -18,6 +18,8 @@ Bash hooks wired into Claude Code's lifecycle events (`UserPromptSubmit`, `PreTo
 | PreToolUse (Bash)  | `captain-posture-warroom.sh`          | Spec 047 Phase 1 — soft-warn on Captain Posture violations in warroom posts |
 | PostToolUse (Write/Edit) | `post-file-write-memory.sh`     | Memory-trigger on shared interface edits |
 | PostToolUse (Write/Edit) | `personal-work-parity.sh`       | Spec 043 H3 — soft-warn on Work-tree shared-infra edit without recent Personal counterpart |
+| TaskCreated        | `claude-task-bridge.py`               | Records Claude Code native Tasks to `org_events` and warns when Cabinet metadata is missing |
+| TaskCompleted      | `claude-task-bridge.py`               | Records Claude Code native Task completion to `org_events` and updates `claude_native_tasks` |
 | PreCompact         | `pre-compact.sh`                      | Pre-compaction state snapshot |
 | Stop               | `stop-hook.sh`                        | Session-end cleanup |
 

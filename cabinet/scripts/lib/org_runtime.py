@@ -149,6 +149,38 @@ class Store:
               created_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS claude_native_tasks (
+              product_slug TEXT NOT NULL,
+              task_id TEXT NOT NULL,
+              session_id TEXT,
+              transcript_path TEXT,
+              cwd TEXT,
+              task_subject TEXT NOT NULL DEFAULT '',
+              task_description TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL CHECK (status IN ('created', 'completed')),
+              actor TEXT NOT NULL,
+              teammate_name TEXT,
+              team_name TEXT,
+              mission_id TEXT,
+              node_id TEXT,
+              owner_role TEXT,
+              acceptance_criteria TEXT,
+              evidence_required TEXT,
+              verifier_role TEXT,
+              risk_level TEXT,
+              metadata_json TEXT NOT NULL DEFAULT '{}',
+              created_event_id TEXT REFERENCES org_events(event_id),
+              completed_event_id TEXT REFERENCES org_events(event_id),
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              completed_at TEXT,
+              PRIMARY KEY (product_slug, task_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_claude_native_tasks_mission
+              ON claude_native_tasks(product_slug, mission_id, node_id);
+            CREATE INDEX IF NOT EXISTS idx_claude_native_tasks_status
+              ON claude_native_tasks(product_slug, status, updated_at DESC);
+
             CREATE TABLE IF NOT EXISTS org_roles (
               product_slug TEXT NOT NULL,
               role_slug TEXT NOT NULL,
@@ -422,7 +454,7 @@ class Store:
 
 def row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
     out = dict(row)
-    for key in ("payload_json", "components_json", "capabilities_json"):
+    for key in ("payload_json", "components_json", "capabilities_json", "metadata_json"):
         if key in out:
             out[key.replace("_json", "")] = json.loads(out.pop(key) or "{}")
     for key in ("sanitized", "passed"):
@@ -709,6 +741,49 @@ def cmd_mission_complete(args: argparse.Namespace) -> None:
         )
     store.conn.commit()
     print_json({**payload, "event_id": event["event_id"]})
+
+
+def cmd_claude_tasks_list(args: argparse.Namespace) -> None:
+    store = Store()
+    params: list[Any] = [product_arg(args)]
+    where = "WHERE product_slug = ?"
+    if args.status:
+        where += " AND status = ?"
+        params.append(args.status)
+    params.append(args.limit)
+    print_json(
+        store.rows(
+            f"""
+            SELECT * FROM claude_native_tasks
+             {where}
+             ORDER BY updated_at DESC, task_id
+             LIMIT ?
+            """,
+            params,
+        )
+    )
+
+
+def cmd_claude_tasks_show(args: argparse.Namespace) -> None:
+    store = Store()
+    product_slug = product_arg(args)
+    task = store.row(
+        "SELECT * FROM claude_native_tasks WHERE product_slug = ? AND task_id = ?",
+        (product_slug, args.task_id),
+    )
+    if not task:
+        raise SystemExit(f"unknown Claude native task for {product_slug}: {args.task_id}")
+    events = store.rows(
+        """
+        SELECT * FROM org_events
+         WHERE product_slug = ?
+           AND aggregate_type = 'claude_native_task'
+           AND aggregate_id = ?
+         ORDER BY created_at
+        """,
+        (product_slug, args.task_id),
+    )
+    print_json({"task": task, "events": events})
 
 
 def insert_role_lineage(
@@ -1553,6 +1628,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--verification-summary", required=True)
     p.add_argument("--actor", default="cos")
     p.set_defaults(func=cmd_mission_complete)
+
+    claude_tasks = sub.add_parser("claude-tasks")
+    claude_tasks_sub = claude_tasks.add_subparsers(dest="cmd", required=True)
+    p = claude_tasks_sub.add_parser("list")
+    add_common(p)
+    p.add_argument("--status", choices=("created", "completed"))
+    p.add_argument("--limit", type=int, default=20)
+    p.set_defaults(func=cmd_claude_tasks_list)
+    p = claude_tasks_sub.add_parser("show")
+    add_common(p)
+    p.add_argument("task_id")
+    p.set_defaults(func=cmd_claude_tasks_show)
 
     roles = sub.add_parser("roles")
     roles_sub = roles.add_subparsers(dest="cmd", required=True)

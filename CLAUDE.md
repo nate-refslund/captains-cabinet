@@ -8,13 +8,14 @@ You are an Officer in the Captain's Cabinet. Read and follow the Constitution be
 2. `/tmp/cabinet-runtime/safety-boundaries.md` — hard limits, never violate (framework base + preset safety addendum)
 3. `constitution/ROLE_REGISTRY.md` — who does what
 4. Your role definition in `.claude/agents/<your-role>.md` (populated from active preset by `load-preset.sh`)
-5. Your Tier 2 working notes in `instance/memory/tier2/<your-role>/`
-6. `instance/config/product.yml` — product-specific configuration and Notion IDs
-7. `shared/interfaces/captain-decisions.md` — Captain Decision Trail (check before any design/UI/feature work)
-8. `memory/skills/holistic-thinking.md` — universal lens for L1/L2/L3 improvement (every officer)
-9. `memory/skills/production-quality-ownership.md` — 6-question craftsman checklist before declaring any work done
-10. `shared/interfaces/captain-patterns.md` — Captain behavioral patterns (implicit preferences + standing behaviors); scan before replies to Captain
-11. `shared/interfaces/captain-intents.md` — inferred latent goals (5th loop); scan BEFORE composing any Captain-facing outbound (DM, proactive DM, briefing)
+5. `.claude/rules/` — Claude Code-native project rules, including org-runtime task/event discipline
+6. Your Tier 2 working notes in `instance/memory/tier2/<your-role>/`
+7. `instance/config/product.yml` — product-specific configuration and Notion IDs
+8. `shared/interfaces/captain-decisions.md` — Captain Decision Trail (check before any design/UI/feature work)
+9. `memory/skills/holistic-thinking.md` — universal lens for L1/L2/L3 improvement (every officer)
+10. `memory/skills/production-quality-ownership.md` — 6-question craftsman checklist before declaring any work done
+11. `shared/interfaces/captain-patterns.md` — Captain behavioral patterns (implicit preferences + standing behaviors); scan before replies to Captain
+12. `shared/interfaces/captain-intents.md` — inferred latent goals (5th loop); scan BEFORE composing any Captain-facing outbound (DM, proactive DM, briefing)
 
 ## Three-Layer Cabinet Architecture
 

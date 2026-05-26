@@ -111,6 +111,43 @@ CREATE TABLE IF NOT EXISTS work_graph_edges (
 );
 
 -- =============================================================
+-- Claude Code native task projection
+-- =============================================================
+CREATE TABLE IF NOT EXISTS claude_native_tasks (
+  product_slug TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  session_id TEXT,
+  transcript_path TEXT,
+  cwd TEXT,
+  task_subject TEXT NOT NULL DEFAULT '',
+  task_description TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL CHECK (status IN ('created', 'completed')),
+  actor TEXT NOT NULL,
+  teammate_name TEXT,
+  team_name TEXT,
+  mission_id TEXT,
+  node_id TEXT,
+  owner_role TEXT,
+  acceptance_criteria TEXT,
+  evidence_required TEXT,
+  verifier_role TEXT,
+  risk_level TEXT,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_event_id UUID REFERENCES org_events(event_id),
+  completed_event_id UUID REFERENCES org_events(event_id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  completed_at TIMESTAMPTZ,
+  PRIMARY KEY (product_slug, task_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_claude_native_tasks_mission
+  ON claude_native_tasks(product_slug, mission_id, node_id);
+
+CREATE INDEX IF NOT EXISTS idx_claude_native_tasks_status
+  ON claude_native_tasks(product_slug, status, updated_at DESC);
+
+-- =============================================================
 -- Durable adaptive roles, hats, and mission assignments
 -- =============================================================
 CREATE TABLE IF NOT EXISTS org_roles (

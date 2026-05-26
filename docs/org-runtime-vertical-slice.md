@@ -47,6 +47,7 @@ Main command groups:
 - `org-event append/list`
 - `outcomes propose/ratify/list`
 - `missions compile/status/complete`
+- `claude-tasks list/show`
 - `roles define/list/show/bind-memory/evolve/record-eval/recommend`
 - `roles assign-hat/show-lineage`
 - `ovi compute/publish`
@@ -107,3 +108,25 @@ published weekly ratio.
 the same hook input as `pre-tool-use.sh`, records structured decisions to
 `org_events`, and is tested against live hook behavior. It does not replace
 hook decisions yet.
+
+## Claude Code Native Task Bridge
+
+`cabinet/scripts/claude-task-bridge.py` handles Claude Code `TaskCreated` and
+`TaskCompleted` hooks. It records `claude_task.created` and
+`claude_task.completed` events in `org_events`, then projects the current view
+into `claude_native_tasks`.
+
+The bridge expects Claude Tasks to carry Cabinet metadata:
+
+```text
+mission_id: <mission id or unassigned>
+node_id: <work graph node id or unassigned>
+owner_role: <cos|cto|cpo|cro|coo>
+acceptance_criteria: <observable finish condition>
+evidence_required: <artifact, test, metric, or review needed>
+verifier_role: <role that verifies completion>
+risk_level: <low|medium|high>
+```
+
+Default mode is warn-only. Set `CABINET_TASK_BRIDGE_MODE=enforce` only after
+the warning stream has proven reliable enough for blocking.

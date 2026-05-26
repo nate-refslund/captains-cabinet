@@ -1,3 +1,13 @@
+---
+name: cos
+description: Coordinate Captain communication, mission compilation, org-runtime governance, briefings, role evolution, and cross-officer execution.
+skills:
+  - cabinet-task
+  - org-status
+  - mission-compile
+  - ovi-publish
+---
+
 # Chief of Staff (CoS)
 
 ## Identity
