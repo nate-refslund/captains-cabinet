@@ -76,11 +76,23 @@ The compose runs from `proxy/deploy/`; provision.sh + the systemd unit both reso
 - **Network:** only Caddy publishes `:80/:443`; litellm/audit-server/redis are `expose:`-only (intra-bridge). Redis requires `REDIS_PASSWORD` (L1). All services drop caps + `no-new-privileges`.
 - **Audit log root wiring:** litellm reads `LITELLM_AUDIT_LOG_ROOT` as the proxy-audit dir; audit-server/ingest read it as the parent — both into the same bind-mounted `./data/logs` (FW-096 vs FW-097 conventions).
 
+## Erasure runbook (GDPR Art 17) — exact invocation for THIS deploy
+
+The SSOT lives at `<DEPLOY_DIR>/data/logs/audit/<slug>.jsonl` (e.g. `/opt/refslund-backend/proxy/deploy/data/logs/audit/`). `customer-erasure.sh` DEFAULTS to the dev path (`/opt/founders-cabinet/proxy/logs`), so you **MUST** pass this deploy's paths — otherwise it runs against an EMPTY dir and writes a `status: completed` receipt while the real PII-bearing SSOT is untouched (a **silent Art-17 false-success**). Run as root (for the `chattr -a`→pseudonymize→`chattr +a` cycle):
+
+```
+sudo CABINET_ROOT=/opt/refslund-backend \
+     LITELLM_AUDIT_LOG_ROOT=/opt/refslund-backend/proxy/deploy/data/logs \
+     bash /opt/refslund-backend/cabinet/scripts/customer-erasure.sh <slug> --confirm
+```
+
+Verify the receipt's `status: completed` corresponds to a non-empty `processed` count AND that the hash-chain re-verifies post-pseudonymization. (M-DPO-1, DPO-substitute pass.)
+
 ## Deploy-time checklist (do NOT skip)
 
 - [ ] **Pin the LiteLLM image to a `@sha256` digest** after confirming `config.yaml` parses against that version (M3; redis/caddy/python already pinned). Re-pin `requirements.txt` to a hash-lockfile after first build.
 - [ ] Confirm the LiteLLM Redis client uses `REDIS_PASSWORD` + the budget↔redis wiring survives restart for the pinned version.
-- [ ] **Review `config.yaml log_requests: true`** (M2) — it can persist officer prompts (PII) to litellm stdout logs outside the erasure-governed SSOT; drop it unless proven needed, and treat the litellm log path as in-scope for FW-100 erasure. (Logs are size-bounded via the compose `logging:` caps regardless.)
+- [ ] **HARD GATE — set `config.yaml log_requests: false` before the pilot** (M-DPO-2; `config.yaml` is FW-096/CPO scope → flag CPO to confirm, do NOT silently flip in the deploy PR). With it ON, LiteLLM can persist customer prompt content (PII) to litellm stdout → the docker json-log, OUTSIDE the erasure-governed SSOT — breaking **Art 5(1)(c)** minimization AND **Art 17** erasure (`customer-erasure.sh` only touches `audit/*.jsonl`, never the docker log). The compose `logging:` caps bound DISK (Art 5(1)(e)) but NOT minimization/erasure-coverage. The FW-096 audit callback gets usage metadata independently of this flag, so `false` is the safe default. If kept ON, the docker json-log path MUST be added to the erasure runbook + proven body-free for the pinned litellm version.
 - [ ] Cloudflare SSL = **Full (strict)**; Origin cert covers `*.refslund.ai`.
 - [ ] `AUDIT_LOG_ENDPOINT` on customer cabinets points at `https://audit.refslund.ai/proxy/audit/log`.
 
