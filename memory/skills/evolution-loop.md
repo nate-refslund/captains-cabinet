@@ -46,7 +46,7 @@ CoS runs this every 24 hours, immediately after the cross-officer retro. Tracked
      - Was the failure caused by the skill, or by the officer not following it correctly?
      - If the skill is broken: attempt to fix it first (update the procedure, re-validate)
      - If genuinely obsolete or superseded: mark as `archived` with a reason note
-   - CoS can archive skills autonomously (unlike promotion, which needs Captain approval) — inform Captain in the next briefing
+   - CoS can archive skills autonomously. Promotion is also auto-applied by the self-improvement loop when the validation gate passes (scenario evals + golden eval shells); Captain auto-ratification is stamped on the `skill_promoted` event for audit. Only drafts containing `<TODO:>` markers are held as `pending_captain_approval`.
 
 7. **Review pending improvement proposals:**
    - Check Notion Cabinet Operations for proposals awaiting Captain decision
@@ -81,7 +81,7 @@ The skill library grows with validated procedures. Golden evals expand to cover 
 
 ## Validation Scenarios
 
-- Scenario 1: Draft skill has 3+ successful usage records → validated → Captain approves → promoted
+- Scenario 1: Draft skill has 3+ successful usage records → self-improvement loop runs validation gate → if passed, auto-promoted with `skill_promoted` event carrying `captain_auto_ratified=true` (Captain audits via ledger, doesn't block)
 - Scenario 2: Draft skill fails validation → stays as draft with notes → revisited next cycle
 - Scenario 3: No drafts or proposals ready → evolution loop records "no changes" and completes in under 5 minutes
 - Scenario 4: Promoted skill cited in 2 failure records → marked `under-review` → CoS finds the procedure is outdated → updates and re-validates → stays promoted with fixes
