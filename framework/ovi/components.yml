@@ -1,0 +1,53 @@
+version: 2
+# OVI (Outcome Value Index) — weighted multi-component composite measuring
+# organizational outcome value. Weighted sum, normalized 0–1, weekly snapshot.
+#
+# Phase 1.3 (2026-05-26): Default data source is the event ledger via
+# `framework.ovi.compute.gather_from_events()`. The legacy `database` SQL
+# queries below remain as Phase 1.2+ targets — once mission_supervisor.sh
+# persists missions/work_graph_nodes to Postgres, those queries become the
+# faster, indexed path. Until then, event-replay is authoritative.
+
+components:
+  - name: task_throughput
+    description: "Tasks completed per measurement period"
+    weight: 0.25
+    source: events
+    direction: normal
+    default_range: [0, 50]
+    derivation: "count(work_item_completed events in window)"
+    legacy_db_query: "SELECT count(*) FROM work_graph_nodes WHERE status='done' AND completed_at > NOW() - interval '7 days'"
+
+  - name: outcome_progress
+    description: "Fraction of touched outcomes with at least one task completed"
+    weight: 0.30
+    source: events
+    direction: normal
+    default_range: [0, 1]
+    derivation: "|outcomes_with_completion| / |outcomes_touched| (mission_created OR work_item_completed)"
+
+  - name: captain_attention_cost
+    description: "Captain interventions required (inverse: fewer = better)"
+    weight: 0.20
+    source: events
+    direction: inverse
+    default_range: [0, 20]
+    derivation: "count(captain_decision_logged + captain_boundary_set + captain_outcome_ratified + captain_goal_declared in window)"
+    legacy_db_query: "SELECT count(*) FROM decision_log WHERE decided_at > NOW() - interval '7 days'"
+
+  - name: learning_rate
+    description: "Novel experience records per period"
+    weight: 0.15
+    source: events
+    direction: normal
+    default_range: [0, 30]
+    derivation: "count(experience_recorded events in window)"
+    legacy_db_query: "SELECT count(*) FROM experience_records WHERE created_at > NOW() - interval '7 days'"
+
+  - name: verification_pass_rate
+    description: "Completed tasks passing verification vs total completed"
+    weight: 0.10
+    source: events
+    direction: normal
+    default_range: [0, 1]
+    derivation: "count(work_item_verified) / count(work_item_completed) in window; 0 if no completions"

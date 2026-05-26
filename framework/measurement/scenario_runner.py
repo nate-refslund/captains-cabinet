@@ -1,0 +1,206 @@
+"""Organizational scenario eval runner.
+
+Tests the Cabinet as a SYSTEM, not individual components.
+Each scenario sets up a situation and verifies the org responds correctly.
+
+Unlike golden evals (which test "does the machinery work"), scenario evals
+test "is the organization getting better at achieving goals."
+
+Usage:
+    python3 -m framework.measurement.scenario_runner
+    python3 -m framework.measurement.scenario_runner --scenario outcome_to_mission
+    python3 -m framework.measurement.scenario_runner --ci  # lightweight CI mode
+"""
+
+from __future__ import annotations
+
+import importlib
+import json
+import os
+import sys
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Callable
+
+# Add framework root to path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+
+@dataclass
+class ScenarioResult:
+    name: str
+    passed: bool
+    duration_ms: float
+    assertions: list[dict[str, Any]] = field(default_factory=list)
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "passed": self.passed,
+            "duration_ms": self.duration_ms,
+            "assertions": self.assertions,
+            "error": self.error,
+        }
+
+
+@dataclass
+class Scenario:
+    """A single organizational capability scenario."""
+    name: str
+    description: str
+    category: str  # outcome, role, mission, policy, memory, recovery
+    setup: Callable[[], dict[str, Any]]  # returns context
+    execute: Callable[[dict[str, Any]], dict[str, Any]]  # returns results
+    verify: Callable[[dict[str, Any], dict[str, Any]], list[tuple[str, bool]]]  # returns (assertion_name, passed) list
+
+
+# Registry of all scenarios
+_SCENARIOS: dict[str, Scenario] = {}
+
+
+def register(scenario: Scenario) -> Scenario:
+    """Register a scenario for the runner."""
+    _SCENARIOS[scenario.name] = scenario
+    return scenario
+
+
+def run_scenario(name: str) -> ScenarioResult:
+    """Run a single scenario by name."""
+    _discover_scenarios()
+    if name not in _SCENARIOS:
+        return ScenarioResult(
+            name=name, passed=False, duration_ms=0,
+            error=f"Unknown scenario: {name}"
+        )
+
+    scenario = _SCENARIOS[name]
+    start = time.time()
+
+    try:
+        context = scenario.setup()
+        results = scenario.execute(context)
+        assertions = scenario.verify(context, results)
+
+        assertion_dicts = [
+            {"name": a_name, "passed": a_passed}
+            for a_name, a_passed in assertions
+        ]
+        all_passed = all(a_passed for _, a_passed in assertions)
+
+        return ScenarioResult(
+            name=name,
+            passed=all_passed,
+            duration_ms=(time.time() - start) * 1000,
+            assertions=assertion_dicts,
+        )
+    except Exception as e:
+        return ScenarioResult(
+            name=name,
+            passed=False,
+            duration_ms=(time.time() - start) * 1000,
+            error=str(e),
+        )
+
+
+def run_all(category: str | None = None, ci_mode: bool = False) -> list[ScenarioResult]:
+    """Run all registered scenarios, optionally filtered by category."""
+    # Auto-discover and load scenario modules
+    _discover_scenarios()
+
+    scenarios = list(_SCENARIOS.values())
+    if category:
+        scenarios = [s for s in scenarios if s.category == category]
+    if ci_mode:
+        # In CI mode, only run scenarios marked as lightweight
+        scenarios = [s for s in scenarios if not getattr(s, "heavy", False)]
+
+    results = []
+    for scenario in scenarios:
+        result = run_scenario(scenario.name)
+        results.append(result)
+
+    return results
+
+
+_discovered = False
+
+def _discover_scenarios():
+    """Auto-discover scenario modules in the scenarios/ directory."""
+    global _discovered
+    if _discovered:
+        return
+    _discovered = True
+
+    scenarios_dir = Path(__file__).parent / "scenarios"
+    if not scenarios_dir.exists():
+        return
+
+    for f in sorted(scenarios_dir.glob("*.py")):
+        if f.name.startswith("_"):
+            continue
+        module_name = f"framework.measurement.scenarios.{f.stem}"
+        try:
+            importlib.import_module(module_name)
+        except (ImportError, ModuleNotFoundError):
+            import importlib.util as _ilu
+            spec = _ilu.spec_from_file_location(module_name, f)
+            if spec and spec.loader:
+                mod = _ilu.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+
+
+def print_results(results: list[ScenarioResult]) -> int:
+    """Print results and return exit code (0 = all pass, 1 = failures)."""
+    print(f"\n{'=' * 60}")
+    print(f"  Organizational Scenario Evals")
+    print(f"{'=' * 60}\n")
+
+    passed = 0
+    failed = 0
+
+    for result in results:
+        status = "PASS" if result.passed else "FAIL"
+        print(f"  [{status}] {result.name} ({result.duration_ms:.1f}ms)")
+
+        if not result.passed:
+            if result.error:
+                print(f"        Error: {result.error}")
+            for a in result.assertions:
+                if not a["passed"]:
+                    print(f"        FAIL: {a['name']}")
+
+        if result.passed:
+            passed += 1
+        else:
+            failed += 1
+
+    print(f"\n{'=' * 60}")
+    print(f"  Total: {passed + failed}  |  Pass: {passed}  |  Fail: {failed}")
+    print(f"{'=' * 60}\n")
+
+    return 0 if failed == 0 else 1
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Run organizational scenario evals")
+    parser.add_argument("--scenario", help="Run a specific scenario by name")
+    parser.add_argument("--category", help="Run scenarios in a category")
+    parser.add_argument("--ci", action="store_true", help="CI mode (lightweight only)")
+    parser.add_argument("--json", action="store_true", help="Output JSON")
+    args = parser.parse_args()
+
+    if args.scenario:
+        _discover_scenarios()
+        results = [run_scenario(args.scenario)]
+    else:
+        results = run_all(category=args.category, ci_mode=args.ci)
+
+    if args.json:
+        print(json.dumps([r.to_dict() for r in results], indent=2))
+        sys.exit(0 if all(r.passed for r in results) else 1)
+    else:
+        sys.exit(print_results(results))

@@ -1,0 +1,34 @@
+version: 1
+policies:
+  - name: no-dangerous-binaries
+    type: binary_block
+    description: "Block system-level commands that could damage the host"
+    binaries: [sudo, docker, systemctl, shutdown, reboot, halt]
+    message: "System-level command not permitted"
+
+  - name: no-destructive-filesystem
+    type: destructive_rm
+    description: "Block rm with recursive flag targeting root"
+    message: "Destructive filesystem operation"
+
+  - name: no-destructive-sql
+    type: command_contains
+    description: "Block destructive database operations"
+    tool: Bash
+    patterns: ["DROP TABLE", "DROP DATABASE", "TRUNCATE", "DELETE FROM"]
+    case_sensitive: true
+    message: "Destructive database operation requires Captain approval"
+
+  - name: constitution-readonly
+    type: path_block
+    description: "Constitution files cannot be modified"
+    tools: [Edit, Write]
+    path_patterns: ["*/constitution/*"]
+    message: "Constitution files are read-only. Propose amendments through the self-improvement loop."
+
+  - name: env-file-readonly
+    type: path_block
+    description: "Environment files cannot be modified"
+    tools: [Edit, Write]
+    path_patterns: ["*.env", "*.env.*"]
+    message: "Environment files cannot be modified by Officers"
