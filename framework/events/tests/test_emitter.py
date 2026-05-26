@@ -128,3 +128,140 @@ class TestEventTypes:
         assert "ovi_snapshot_computed" in VALID_EVENT_TYPES
         assert "eval_passed" in VALID_EVENT_TYPES
         assert "eval_failed" in VALID_EVENT_TYPES
+
+
+# ---------------------------------------------------------------------------
+# F3: event-kernel unification (org_runtime.Store mirror)
+# ---------------------------------------------------------------------------
+
+
+from framework.events.emitter import (
+    _resolve_aggregate,
+    _resolve_product_slug,
+    _write_to_store,
+    _AGGREGATE_MAP,
+)
+
+
+class TestAggregateResolution:
+    """_resolve_aggregate maps framework event_type → Store (agg_type, agg_id)."""
+
+    def test_mission_created_uses_mission_id(self):
+        agg_type, agg_id = _resolve_aggregate(
+            "mission_created", {"mission_id": "m-1", "name": "Launch"}
+        )
+        assert agg_type == "mission"
+        assert agg_id == "m-1"
+
+    def test_work_item_uses_task_id(self):
+        agg_type, agg_id = _resolve_aggregate(
+            "work_item_completed", {"task_id": "outcome-001-task-003"}
+        )
+        assert agg_type == "work_item"
+        assert agg_id == "outcome-001-task-003"
+
+    def test_role_event_uses_slug(self):
+        agg_type, agg_id = _resolve_aggregate("role_created", {"slug": "engineering"})
+        assert agg_type == "role"
+        assert agg_id == "engineering"
+
+    def test_ovi_uses_period(self):
+        agg_type, agg_id = _resolve_aggregate(
+            "ovi_snapshot_computed", {"period": "2026-W21"}
+        )
+        assert agg_type == "ovi"
+        assert agg_id == "2026-W21"
+
+    def test_missing_payload_key_falls_back_to_id(self):
+        # Use a captain_decision_logged event; expected key is "decision_id"
+        # but payload only has "id"
+        agg_type, agg_id = _resolve_aggregate(
+            "captain_decision_logged", {"id": "decision-42"}
+        )
+        assert agg_type == "captain"
+        assert agg_id == "decision-42"
+
+    def test_unmapped_event_type_uses_prefix(self):
+        # Not in _AGGREGATE_MAP — should derive aggregate_type from prefix
+        agg_type, agg_id = _resolve_aggregate("custom_unknown_event", {"id": "x"})
+        assert agg_type == "custom"
+        assert agg_id == "x"
+
+    def test_completely_missing_id_returns_unknown(self):
+        agg_type, agg_id = _resolve_aggregate("mission_created", {})
+        assert agg_type == "mission"
+        assert agg_id == "unknown"
+
+    def test_all_valid_event_types_covered(self):
+        """Every event type in VALID_EVENT_TYPES should have an aggregate mapping
+        OR have a sensible prefix fallback."""
+        for et in VALID_EVENT_TYPES:
+            agg_type, _ = _resolve_aggregate(et, {})
+            assert agg_type, f"{et} produced empty aggregate_type"
+
+
+class TestProductSlugResolution:
+    def test_env_var_wins(self, monkeypatch):
+        monkeypatch.setenv("CABINET_PRODUCT_SLUG", "myproduct")
+        assert _resolve_product_slug() == "myproduct"
+
+    def test_active_project_file(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("CABINET_PRODUCT_SLUG", raising=False)
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        cfg = tmp_path / "instance" / "config"
+        cfg.mkdir(parents=True)
+        (cfg / "active-project.txt").write_text("alpha-project\n")
+        assert _resolve_product_slug() == "alpha-project"
+
+    def test_default_when_nothing_set(self, monkeypatch):
+        monkeypatch.delenv("CABINET_PRODUCT_SLUG", raising=False)
+        monkeypatch.delenv("CABINET_ROOT", raising=False)
+        assert _resolve_product_slug() == "default"
+
+    def test_empty_active_project_falls_back(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("CABINET_PRODUCT_SLUG", raising=False)
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        cfg = tmp_path / "instance" / "config"
+        cfg.mkdir(parents=True)
+        (cfg / "active-project.txt").write_text("   \n")  # whitespace only
+        assert _resolve_product_slug() == "default"
+
+
+class TestStoreMirrorGating:
+    """_write_to_store should skip cleanly under test/disabled conditions."""
+
+    def test_skips_under_pytest(self, monkeypatch):
+        # PYTEST_CURRENT_TEST is set by pytest during test runs; emit() should
+        # auto-skip the Store write so the dev cache isn't polluted.
+        monkeypatch.delenv("CABINET_FRAMEWORK_STORE_MIRROR", raising=False)
+        # Even if we pass a "valid"-looking event, no Store import / write happens
+        event = {
+            "id": "test-id",
+            "event_type": "mission_created",
+            "actor": "test",
+            "payload": {"mission_id": "m-test"},
+            "parent_id": None,
+            "created_at": "2026-05-26T00:00:00Z",
+        }
+        # Should not raise + should be a no-op
+        _write_to_store(event)
+
+    def test_force_off_short_circuits(self, monkeypatch):
+        monkeypatch.setenv("CABINET_FRAMEWORK_STORE_MIRROR", "0")
+        event = {
+            "id": "x", "event_type": "mission_created", "actor": "t",
+            "payload": {}, "parent_id": None, "created_at": "x",
+        }
+        # Should not raise — explicit force-off
+        _write_to_store(event)
+
+    def test_emit_does_not_crash_when_store_disabled(self, monkeypatch, tmp_path):
+        # Full emit() with store mirror disabled — confirms F3 doesn't break
+        # the JSONL/DB writes when Store is unavailable.
+        monkeypatch.setenv("CABINET_EVENT_LOG_DIR", str(tmp_path))
+        monkeypatch.setenv("CABINET_FRAMEWORK_STORE_MIRROR", "0")
+        event = emit("role_created", actor="cap", payload={"slug": "eng"})
+        assert event["event_type"] == "role_created"
+        # JSONL was written
+        log_files = list(tmp_path.glob("*.jsonl"))
+        assert len(log_files) >= 1

@@ -97,7 +97,15 @@ def emit(
     """Emit an organizational event.
 
     Returns the event dict (with generated id and timestamp).
-    Writes to the event log file and optionally to Postgres.
+    Writes (in order):
+      1. JSONL ledger (always) — append-only, $CABINET_EVENT_LOG_DIR/events-YYYY-MM-DD.jsonl
+      2. Postgres org_events table (optional) — only if DATABASE_URL is set
+      3. org_runtime.Store SQLite ledger (F3 unification) — best-effort mirror so
+         dashboard, claude-task-bridge, and CLI reads see the same events as
+         framework code (scenario evals, mission compiler, OVI compute).
+
+    The Store mirror is auto-disabled during pytest runs (PYTEST_CURRENT_TEST
+    set) to avoid polluting the dev cache. Override via CABINET_FRAMEWORK_STORE_MIRROR.
     """
     if event_type not in VALID_EVENT_TYPES:
         raise ValueError(
@@ -119,6 +127,10 @@ def emit(
 
     # Write to Postgres if available
     _write_to_db(event)
+
+    # F3: mirror to org_runtime.Store so dashboard + claude-task-bridge + CLI
+    # see the same events as framework code (the unification fix).
+    _write_to_store(event)
 
     return event
 
@@ -164,6 +176,147 @@ def _write_to_db(event: dict[str, Any]) -> None:
         # DB write is best-effort — the JSONL log is the guaranteed record.
         # Log to stderr so failures are visible in hook output.
         print(f"event-emitter: WARN db write failed: {e}", file=sys.stderr)
+
+
+# ----------------------------------------------------------------------------
+# F3: Org-runtime Store mirror (event-kernel unification)
+# ----------------------------------------------------------------------------
+#
+# org_runtime.py has its own append-only ledger in a local SQLite file at
+# cabinet/cache/org-runtime.sqlite3 (path overridable via ORG_RUNTIME_DB).
+# Pre-F3, framework code emitted to JSONL but the dashboard /
+# claude-task-bridge / org_runtime CLI all read from the Store. The two
+# ledgers diverged → mission events from framework never surfaced in
+# Captain-facing UI.
+#
+# Fix: framework emit() ALSO calls Store.append_event() so the Store is
+# the single source of truth. JSONL stays as the always-on debug mirror.
+#
+# Auto-disabled during pytest (PYTEST_CURRENT_TEST set) to avoid polluting
+# the dev cache. Override via CABINET_FRAMEWORK_STORE_MIRROR:
+#   "1" = force on (even in tests)
+#   "0" = force off (even in live runs)
+#   unset = on outside pytest, off inside
+
+# Map framework event_type → org_runtime aggregate. The payload key holds the
+# aggregate_id (e.g. mission_created.payload.mission_id). Falls back to "id"
+# or "unknown" if neither key is present.
+_AGGREGATE_MAP: dict[str, tuple[str, str]] = {
+    "mission_created":            ("mission",     "mission_id"),
+    "mission_activated":          ("mission",     "mission_id"),
+    "mission_completed":          ("mission",     "mission_id"),
+    "mission_failed":             ("mission",     "mission_id"),
+    "work_item_created":          ("work_item",   "task_id"),
+    "work_item_assigned":         ("work_item",   "task_id"),
+    "work_item_started":          ("work_item",   "task_id"),
+    "work_item_completed":        ("work_item",   "task_id"),
+    "work_item_failed":           ("work_item",   "task_id"),
+    "work_item_verified":         ("work_item",   "task_id"),
+    "role_created":               ("role",        "slug"),
+    "role_charter_changed":       ("role",        "slug"),
+    "role_capability_added":      ("role",        "slug"),
+    "role_capability_removed":    ("role",        "slug"),
+    "role_authority_changed":     ("role",        "slug"),
+    "role_suspended":             ("role",        "slug"),
+    "role_reactivated":           ("role",        "slug"),
+    "role_retired":               ("role",        "slug"),
+    "role_hat_assigned":          ("role",        "slug"),
+    "role_hat_removed":           ("role",        "slug"),
+    "role_hat_promoted":          ("role",        "slug"),
+    "captain_goal_declared":      ("captain",     "goal_id"),
+    "captain_outcome_ratified":   ("captain",     "outcome_id"),
+    "captain_decision_logged":    ("captain",     "decision_id"),
+    "captain_boundary_set":       ("captain",     "boundary_id"),
+    "policy_evaluated":           ("policy",      "policy_id"),
+    "policy_blocked":             ("policy",      "policy_id"),
+    "policy_updated":             ("policy",      "policy_id"),
+    "ovi_snapshot_computed":      ("ovi",         "period"),
+    "eval_run_started":           ("eval",        "eval_id"),
+    "eval_passed":                ("eval",        "eval_id"),
+    "eval_failed":                ("eval",        "eval_id"),
+    "experience_recorded":        ("experience",  "experience_id"),
+    "digest_published":           ("digest",      "digest_id"),
+    "memory_claim_created":       ("memory",      "claim_id"),
+    "memory_claim_superseded":    ("memory",      "claim_id"),
+    "outbox_queued":              ("outbox",      "outbox_id"),
+    "outbox_dispatched":          ("outbox",      "outbox_id"),
+    "outbox_failed":              ("outbox",      "outbox_id"),
+    "session_started":            ("session",     "session_id"),
+    "session_ended":              ("session",     "session_id"),
+    "kill_switch_activated":      ("system",      "killswitch_id"),
+    "kill_switch_deactivated":    ("system",      "killswitch_id"),
+    "spending_limit_reached":     ("system",      "limit_id"),
+}
+
+
+def _resolve_aggregate(event_type: str, payload: dict[str, Any]) -> tuple[str, str]:
+    """Derive (aggregate_type, aggregate_id) for the Store schema."""
+    spec = _AGGREGATE_MAP.get(event_type)
+    if spec:
+        agg_type, key = spec
+        agg_id = payload.get(key) or payload.get("id") or "unknown"
+        return (agg_type, str(agg_id))
+    # Unmapped event — derive aggregate_type from the prefix
+    agg_type = event_type.split("_", 1)[0] or "event"
+    return (agg_type, str(payload.get("id", "unknown")))
+
+
+def _resolve_product_slug() -> str:
+    """Resolve product_slug for the Store schema (env > active-project.txt > 'default')."""
+    slug = os.environ.get("CABINET_PRODUCT_SLUG")
+    if slug:
+        return slug
+    cabinet_root = os.environ.get("CABINET_ROOT")
+    if cabinet_root:
+        try:
+            active_project = Path(cabinet_root) / "instance" / "config" / "active-project.txt"
+            if active_project.exists():
+                slug = active_project.read_text().strip()
+                if slug:
+                    return slug
+        except (IOError, OSError):
+            pass
+    return "default"
+
+
+def _write_to_store(event: dict[str, Any]) -> None:
+    """Mirror event into org_runtime.Store SQLite ledger (F3 unification).
+
+    Best-effort: silently degrades if Store is unimportable or write fails.
+    The JSONL ledger remains as the guaranteed record.
+    """
+    # Mirror policy: force-on/off override, else auto-skip inside pytest
+    mirror = os.environ.get("CABINET_FRAMEWORK_STORE_MIRROR")
+    if mirror == "0":
+        return
+    if mirror != "1" and os.environ.get("PYTEST_CURRENT_TEST"):
+        return  # auto-disable during pytest unless forced on
+
+    # Lazy import — only attempt if mirror is enabled
+    try:
+        framework_root = Path(__file__).resolve().parent.parent.parent
+        lib_path = framework_root / "cabinet" / "scripts" / "lib"
+        if str(lib_path) not in sys.path:
+            sys.path.insert(0, str(lib_path))
+        from org_runtime import Store  # type: ignore
+    except ImportError:
+        return
+
+    try:
+        store = Store()
+        agg_type, agg_id = _resolve_aggregate(event["event_type"], event["payload"])
+        store.append_event(
+            event_type=event["event_type"],
+            product_slug=_resolve_product_slug(),
+            aggregate_type=agg_type,
+            aggregate_id=agg_id,
+            actor=event["actor"],
+            payload=event["payload"],
+            source="framework",
+        )
+    except Exception as e:
+        # Best-effort — log to stderr but don't break the caller
+        print(f"event-emitter: WARN store mirror failed: {e}", file=sys.stderr)
 
 
 def replay(
