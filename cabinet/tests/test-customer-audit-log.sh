@@ -649,6 +649,47 @@ assert_contains "client allow-list parsed from audit-emit.sh"          "$SYNC_OU
 assert_contains "client<->server officer allow-lists in sync (no drift)" "$SYNC_OUT" "subset_match=True"
 assert_contains "server-only keys are exactly the 2 proxy keys"        "$SYNC_OUT" "server_only_exact=True"
 
+# ── 18. cabinet_id slug-guard — path-traversal reject on BOTH endpoints (#236, 052 v3.7 AC#10) ──
+section "18. cabinet_id slug-guard: GET + POST traversal-reject (#236, Spec 052 v3.7 AC#10)"
+SLUG_OUT="$(py -c "
+import sys, asyncio
+sys.path.insert(0,'${AUDIT_SERVER}')
+from app import AuditEntryRequest, get_audit_log, _is_valid_cabinet_id
+from fastapi import HTTPException
+from pydantic import ValidationError
+
+BAD=['../proxy-audit/x','../../etc/passwd','a/b','a/../b','foo/','.','..','','UPPER','has space','under_score','x'*65,'semi;colon','dot.dot','valid\n','abc\n','a\n../x']
+GOOD=['cabinet-1','abc123','a','x'*64,'refslund-prod']
+
+helper_bad = all(not _is_valid_cabinet_id(b) for b in BAD)
+helper_good = all(_is_valid_cabinet_id(g) for g in GOOD)
+
+def _body(cid):
+    return dict(cabinet_id=cid, stream='officer', event_type='tool_call',
+                actor={'officer':'cos','captain':False}, subject={'type':'tool_call','target':'t','metadata':{}})
+def post_rejects(cid):
+    try: AuditEntryRequest(**_body(cid)); return False
+    except ValidationError: return True
+def post_accepts(cid):
+    try: AuditEntryRequest(**_body(cid)); return True
+    except ValidationError: return False
+post_bad = all(post_rejects(b) for b in BAD)
+post_good = all(post_accepts(g) for g in GOOD)
+
+def get_rejects(cid):
+    try: asyncio.run(get_audit_log(cid, 0, 1000, 'Bearer x')); return False
+    except HTTPException as e: return e.status_code == 400
+    except Exception: return False
+get_bad = all(get_rejects(b) for b in BAD)
+
+print(f'helper_bad={helper_bad} helper_good={helper_good} post_bad={post_bad} post_good={post_good} get_bad={get_bad}')
+" 2>&1)"
+assert_contains "slug helper rejects all traversal/invalid inputs"     "$SLUG_OUT" "helper_bad=True"
+assert_contains "slug helper accepts valid slugs"                      "$SLUG_OUT" "helper_good=True"
+assert_contains "POST body cabinet_id rejects traversal (422)"         "$SLUG_OUT" "post_bad=True"
+assert_contains "POST body cabinet_id accepts valid slugs"             "$SLUG_OUT" "post_good=True"
+assert_contains "GET path-param cabinet_id rejects traversal (400)"    "$SLUG_OUT" "get_bad=True"
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 printf '\n════════════════════════════════════\n'
 printf '  PASS: %d   FAIL: %d   TOTAL: %d\n' "$PASS" "$FAIL" "$((PASS + FAIL))"
