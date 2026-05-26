@@ -138,6 +138,7 @@ If genuinely irreversible (payments, public announcements, production DELETE, co
 
 Hook: warn-only. Disable via GATE_LANGUAGE_HOOK_ENABLED=0."
 
-# Emit the additionalContext JSON for next-turn injection.
-jq -n --arg ctx "$WARN" '{additionalContext: $ctx}'
+# Emit the additionalContext JSON for next-turn injection
+# (Sprint A G4: hookSpecificOutput is the documented CC contract).
+jq -n --arg ctx "$WARN" '{hookSpecificOutput: {additionalContext: $ctx}}'
 exit 0

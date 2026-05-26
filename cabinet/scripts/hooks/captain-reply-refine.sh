@@ -60,8 +60,10 @@ DRAFT_LEN="${#DRAFT}"
 # Run H1 + H2 against the same PreToolUse JSON; capture additionalContext.
 H1_RAW="$(printf '%s' "$INPUT" | bash "$H1" 2>/dev/null || true)"
 H2_RAW="$(printf '%s' "$INPUT" | bash "$H2" 2>/dev/null || true)"
-H1_CTX="$(printf '%s' "$H1_RAW" | jq -r '.additionalContext // empty' 2>/dev/null)"
-H2_CTX="$(printf '%s' "$H2_RAW" | jq -r '.additionalContext // empty' 2>/dev/null)"
+# Sprint A G4: accept both wrapped (hookSpecificOutput.additionalContext)
+# and flat (additionalContext) forms during/after the wrapping migration.
+H1_CTX="$(printf '%s' "$H1_RAW" | jq -r '.hookSpecificOutput.additionalContext // .additionalContext // empty' 2>/dev/null)"
+H2_CTX="$(printf '%s' "$H2_RAW" | jq -r '.hookSpecificOutput.additionalContext // .additionalContext // empty' 2>/dev/null)"
 
 if [ -z "$H1_CTX" ] && [ -z "$H2_CTX" ]; then
   exit 0
@@ -110,7 +112,7 @@ $FLAG_BLOCK"
     '{ts:$ts, officer:$officer, iter_n:$iter, draft:$draft, flags:$flags, outcome:$outcome}' 2>/dev/null)"
   [ -n "$AUDIT_LINE" ] && echo "$AUDIT_LINE" >> "$AUDIT_LOG"
 
-  jq -n --arg ctx "$WARN" '{additionalContext: $ctx}'
+  jq -n --arg ctx "$WARN" '{hookSpecificOutput: {additionalContext: $ctx}}'
   rm -f "$ITER_FILE" 2>/dev/null
   exit 0
 fi
@@ -153,5 +155,5 @@ AUDIT_LINE="$(jq -cn \
   '{ts:$ts, officer:$officer, iter_n:$iter, draft:$draft, flags:$flags, suggested_rewrite:$suggested_rewrite, outcome:$outcome}' 2>/dev/null)"
 [ -n "$AUDIT_LINE" ] && echo "$AUDIT_LINE" >> "$AUDIT_LOG"
 
-jq -n --arg ctx "$WARN" '{additionalContext: $ctx}'
+jq -n --arg ctx "$WARN" '{hookSpecificOutput: {additionalContext: $ctx}}'
 exit 0

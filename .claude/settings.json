@@ -4,7 +4,11 @@
   },
   "enableAllProjectMcpServers": true,
   "cleanupPeriodDays": 60,
+  "voice": {
+    "enabled": true
+  },
   "permissions": {
+    "defaultMode": "auto",
     "allow": [
       "Bash(*)",
       "Read",
@@ -144,6 +148,88 @@
             "command": "bash",
             "args": [
               "${CLAUDE_PROJECT_DIR}/cabinet/scripts/hooks/personal-work-parity.sh"
+            ]
+          }
+        ]
+      },
+      {
+        "matcher": "Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/cabinet/scripts/hooks/post-subagent.sh"
+            ]
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/cabinet/scripts/hooks/session-start.sh"
+            ]
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/cabinet/scripts/hooks/session-stop.sh"
+            ]
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/cabinet/scripts/hooks/on-notification.sh"
+            ]
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/cabinet/scripts/hooks/pre-compact.sh"
+            ]
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/cabinet/scripts/hooks/post-compact.sh"
             ]
           }
         ]

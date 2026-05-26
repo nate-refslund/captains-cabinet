@@ -104,5 +104,5 @@ If you haven't: pause, run the quickdraw, then decide.
 
 Hook: warn-only. Disable via BUILD_VS_BUY_HOOK_ENABLED=0."
 
-jq -n --arg ctx "$WARN" '{additionalContext: $ctx}'
+jq -n --arg ctx "$WARN" '{hookSpecificOutput: {additionalContext: $ctx}}'
 exit 0

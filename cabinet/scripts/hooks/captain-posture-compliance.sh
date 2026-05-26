@@ -159,5 +159,5 @@ If the violation is intentional (Captain explicitly asked for the spec ID): over
 
 Hook: warn-only. Disable via CAPTAIN_POSTURE_HOOK_ENABLED=0."
 
-jq -n --arg ctx "$WARN" '{additionalContext: $ctx}'
+jq -n --arg ctx "$WARN" '{hookSpecificOutput: {additionalContext: $ctx}}'
 exit 0

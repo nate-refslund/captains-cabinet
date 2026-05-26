@@ -129,5 +129,5 @@ has the canonical sync direction + skip-conditions.
 
 Hook: warn-only. Disable via PARITY_HOOK_ENABLED=0."
 
-jq -n --arg ctx "$WARN" '{additionalContext: $ctx}'
+jq -n --arg ctx "$WARN" '{hookSpecificOutput: {additionalContext: $ctx}}'
 exit 0
