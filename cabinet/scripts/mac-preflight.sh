@@ -61,10 +61,14 @@ else
 fi
 
 if command -v pg_dump >/dev/null 2>&1; then
-  if pg_dump --version 2>/dev/null | grep -qE ' 17\.'; then
-    add_check "pg_dump-17" pass "$(pg_dump --version)"
+  # pg_dump version check: accept >= 17 (Neon currently runs PG 17). pg_dump
+  # is generally forward-compatible: pg_dump 18.x → PG 17 server works in
+  # practice, so we don't pin to exactly 17.
+  PGD_MAJOR="$(pg_dump --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -1 | cut -d. -f1)"
+  if [ -n "$PGD_MAJOR" ] && [ "$PGD_MAJOR" -ge 17 ]; then
+    add_check "pg_dump" pass "$(pg_dump --version)"
   else
-    add_check "pg_dump-17" fail "$(pg_dump --version 2>/dev/null || echo unknown)"
+    add_check "pg_dump" fail "$(pg_dump --version 2>/dev/null || echo unknown) (need >= 17)"
   fi
 fi
 

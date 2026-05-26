@@ -110,6 +110,17 @@ else
   fi
 fi
 
+# Enable AOF durability for unattended Mac operation (cabinet needs ~1s
+# data-loss tolerance for triggers / counters / heartbeats / memory queue).
+# Idempotent; no-op if already enabled.
+echo ""
+echo "=== Step 2.5: Enable Redis AOF (durability) ==="
+if bash "$CABINET_ROOT/cabinet/scripts/enable-redis-aof.sh" 2>&1 | tail -3; then
+  ok "Redis AOF check complete"
+else
+  warn "Redis AOF enable failed — run manually: bash cabinet/scripts/enable-redis-aof.sh"
+fi
+
 echo ""
 echo "=== Step 3: Install Python dependencies ==="
 pip3 install --quiet pyyaml psycopg2-binary requests pytest 2>/dev/null
@@ -131,6 +142,19 @@ if [ -f "$CABINET_ROOT/cabinet/scripts/load-preset.sh" ]; then
   ok "Preset loaded"
 else
   warn "load-preset.sh not found, skipping"
+fi
+
+echo ""
+echo "=== Step 5.5: Bootstrap durable roles ==="
+# Seed the 5 active officers into org_roles + instance/roles/active/ so
+# mission compilation can find role owners. Idempotent — no-op if already
+# seeded. Without this, outcome → mission compilation fails with
+# "unknown role for <product>: cos".
+if [ -f "$CABINET_ROOT/cabinet/scripts/bootstrap-roles.sh" ]; then
+  bash "$CABINET_ROOT/cabinet/scripts/bootstrap-roles.sh" 2>&1 | tail -10
+  ok "Roles bootstrapped"
+else
+  warn "bootstrap-roles.sh not found, skipping (mission compilation will fail until you seed roles manually)"
 fi
 
 echo ""

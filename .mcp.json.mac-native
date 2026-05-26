@@ -23,12 +23,12 @@
     },
     "redis-trigger-channel": {
       "command": "bun",
-      "args": ["run", "${HOME}/work/captains-cabinet/cabinet/channels/redis-trigger-channel/index.ts"],
+      "args": ["run", "${CABINET_SOURCE_REPO}/cabinet/channels/redis-trigger-channel/index.ts"],
       "env": { "OFFICER_NAME": "${OFFICER_NAME}", "REDIS_URL": "redis://localhost:6379" }
     },
     "library": {
       "command": "bun",
-      "args": ["run", "${HOME}/work/captains-cabinet/cabinet/channels/library-mcp/index.ts"],
+      "args": ["run", "${CABINET_SOURCE_REPO}/cabinet/channels/library-mcp/index.ts"],
       "env": { "OFFICER_NAME": "${OFFICER_NAME}" }
     }
   }

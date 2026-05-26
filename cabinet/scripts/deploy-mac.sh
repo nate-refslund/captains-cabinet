@@ -16,7 +16,13 @@
 
 set -euo pipefail
 
-REPO_ROOT="${CABINET_SOURCE_REPO:-$HOME/work/captains-cabinet}"
+# Honor either CABINET_SOURCE_REPO (canonical Mac install path) or CABINET_ROOT
+# (worktree / dev override). Fall back to script-relative if neither set.
+REPO_ROOT="${CABINET_SOURCE_REPO:-${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}}"
+# Re-export both so child scripts (sync-agents.sh, envsubst, etc.) see a
+# consistent value regardless of which variable the operator set.
+export CABINET_SOURCE_REPO="$REPO_ROOT"
+export CABINET_ROOT="$REPO_ROOT"
 LAUNCHD_DIR="$HOME/Library/LaunchAgents"
 LOGS_DIR="$HOME/Library/Logs/cabinet"
 TEMPLATES_DIR="$REPO_ROOT/cabinet/launchd"
