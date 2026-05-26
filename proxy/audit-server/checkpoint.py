@@ -34,6 +34,7 @@ a slug with no map entry is SKIPPED — never publish a bare slug. The internal 
 """
 from __future__ import annotations
 
+import errno
 import fcntl
 import json
 import logging
@@ -271,7 +272,20 @@ def _atomic_write(path: pathlib.Path, text: str) -> None:
     tmp = _SCRATCH_DIR / (path.name + ".tmp")
     try:
         tmp.write_text(text, encoding="utf-8")
-        os.replace(tmp, path)
+        try:
+            os.replace(tmp, path)
+        except OSError as exc:
+            if exc.errno == errno.EXDEV:
+                # scratch + served on DIFFERENT filesystems -> os.replace is not atomic across
+                # devices. Fail LOUD (not a silent torn/partial write): the deploy MUST keep
+                # AUDIT_CHECKPOINT_DIR on the same fs as its parent (where the scratch sibling
+                # lives). Re-raise so the run aborts publishing NOTHING rather than a torn file
+                # (CPO PR-2 item 1). The checkpoint-loop logs it + retries next cycle.
+                logger.error("checkpoint: scratch %s and served dir %s are on DIFFERENT filesystems "
+                             "— os.replace cannot be atomic; fix the deploy so AUDIT_CHECKPOINT_DIR "
+                             "shares a filesystem with its parent. NOT writing %s.",
+                             _SCRATCH_DIR, path.parent, path.name)
+            raise
     finally:
         # After a successful os.replace the tmp is already renamed away, so unlink is a no-op.
         try:

@@ -28,3 +28,20 @@ audit.refslund.ai {
 	reverse_proxy audit-server:8000
 	encode gzip
 }
+
+# ── refslund.ai/audit-checkpoints → public WORM checkpoint snapshots (Spec 052 AC#2/#13) ──
+# Static file_server over the OPAQUE-keyed checkpoint JSON ONLY. The .git mirror is NOT mounted into
+# Caddy (compose mounts just ./data/logs/checkpoints :ro), so Caddy can NEVER serve a .git/. Public
+# + read-only; the snapshots carry NO slug + NO PII (opaque ids per AC#13) — they are integrity
+# anchors a customer/auditor matches their browser-recomputed hash against.
+refslund.ai {
+	tls /etc/caddy/origin-certs/origin.pem /etc/caddy/origin-certs/origin.key
+	handle_path /audit-checkpoints/* {
+		root * /srv/audit-checkpoints
+		file_server
+	}
+	handle {
+		respond 404
+	}
+	encode gzip
+}

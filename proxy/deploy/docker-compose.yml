@@ -110,6 +110,28 @@ services:
         condition: service_started      # ensure the image is built; ordering only
     networks: [backend]
 
+  # ── Checkpoint — daily WORM off-box checkpoint emitter (Spec 052 CTO#4/#7; opaque-keyed AC#13) ──
+  checkpoint:
+    image: refslund-audit-server:fw121 # same image as audit-server; command overrides to the daily loop
+    restart: unless-stopped
+    logging: *default-logging
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    user: "10001:10001"
+    command: ["/app/checkpoint-loop.sh"]
+    environment:
+      LITELLM_AUDIT_LOG_ROOT: /data/logs
+      AUDIT_CHECKPOINT_DIR: /data/logs/checkpoints           # served snapshot (Caddy file_server; opaque-keyed)
+      AUDIT_CHECKPOINT_GIT_DIR: /data/logs/checkpoints-git    # append-only public git mirror (loop git-inits it)
+      AUDIT_CHECKPOINT_ID_MAP: /data/logs/cabinet-id-map.json # FW-098 install writes the slug->opaque map here
+      AUDIT_CHECKPOINT_REMOTE: ${AUDIT_CHECKPOINT_REMOTE:-}   # public mirror push URL (token); empty => local commit only
+    volumes:
+      - ./data/logs:/data/logs          # reads audit/ SSOT; writes checkpoints/ + checkpoints-git/ (same fs => atomic)
+    depends_on:
+      audit-server:
+        condition: service_started      # ensure the image is built; ordering only
+    networks: [backend]
+
   # ── Redis — per-cabinet daily-cap state (Spec 051 L209, survives restart) ─────
   redis:
     image: redis:7.4-alpine            # M3: pinned minor
@@ -144,6 +166,7 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./origin-certs:/etc/caddy/origin-certs:ro   # Cloudflare Origin CA cert+key (provision.sh, chmod 600)
+      - ./data/logs/checkpoints:/srv/audit-checkpoints:ro  # served WORM checkpoints ONLY (opaque-keyed AC#13; NEVER the .git mirror)
       - caddy-data:/data
       - caddy-config:/config
     depends_on:

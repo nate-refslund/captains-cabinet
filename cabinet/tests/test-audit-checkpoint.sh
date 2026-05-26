@@ -274,6 +274,30 @@ assert_contains "colliding cab-x fail-closed skipped" "$COLL_OUT" "x_skipped=Tru
 assert_contains "colliding cab-y fail-closed skipped" "$COLL_OUT" "y_skipped=True"
 assert_contains "no clobbered opq-dup file published" "$COLL_OUT" "no_dup_file=True"
 
+# ── 11. cross-device os.replace (EXDEV): _atomic_write fails LOUD + re-raises (CPO PR-2 item 1) ──
+section "11. atomic-write cross-fs (EXDEV) fails loud, never a silent torn write"
+EXDEV_OUT="$(py -c "
+import sys; sys.path.insert(0,'${AUDIT_SERVER}')
+import os, errno, io, logging, pathlib, checkpoint
+buf=io.StringIO(); h=logging.StreamHandler(buf)
+lg=logging.getLogger('checkpoint'); lg.addHandler(h); lg.setLevel(logging.ERROR)
+orig=os.replace
+def fake(a,b):
+    raise OSError(errno.EXDEV,'cross-device link')
+os.replace=fake
+raised=False
+try:
+    checkpoint._atomic_write(pathlib.Path('${PUB}')/'exdev.json','{}')
+except OSError as e:
+    raised=(e.errno==errno.EXDEV)
+finally:
+    os.replace=orig
+log=buf.getvalue()
+print('raised='+str(raised), 'loud='+str('DIFFERENT filesystems' in log))
+" 2>&1)"
+assert_contains "cross-fs EXDEV re-raises (no silent torn write)"   "$EXDEV_OUT" "raised=True"
+assert_contains "cross-fs EXDEV logged loud (different filesystems)" "$EXDEV_OUT" "loud=True"
+
 # ── Summary ─────────────────────────────────────────────────────────────────────
 printf '\n════════════════════════════════════\n'
 printf '  PASS: %d   FAIL: %d   TOTAL: %d\n' "$PASS" "$FAIL" "$((PASS + FAIL))"
