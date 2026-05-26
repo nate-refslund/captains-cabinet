@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# role-evals-weekly.sh — Weekly role eval cron: run all evals + scan for
-# failure patterns that warrant role-charter evolution proposals.
+# role-evals-weekly.sh — Weekly role eval cron: run all evals, scan for
+# failure patterns that warrant role-charter evolution proposals, then
+# CLOSE THE LOOP by handing control to the self-improvement loop driver
+# which auto-applies validated learnings.
 #
-# Phase 2 of the convergence plan. Cadence: weekly via launchd (see
-# `cabinet/launchd/com.cabinet.role-evals-weekly.template.plist`).
+# Phase 2 of the convergence plan + R8 (close the loop). Cadence: weekly
+# via launchd (see `cabinet/launchd/com.cabinet.role-evals-weekly.template.plist`).
 #
 # Flow:
 #   1. Run every registered role eval via `framework.measurement.role_eval_runner`
@@ -11,11 +13,19 @@
 #   2. Scan the last 4 weeks of eval_failed events for clusters via
 #      `framework.measurement.eval_pattern_detector` — surfaces patterns
 #      worth a charter amendment.
-#   3. Print a structured summary; logs flow to ~/Library/Logs/cabinet/
+#   3. Hand off to `cabinet/cron/self-improvement-loop.sh` which:
+#         - drafts role evolution proposals from the patterns
+#         - runs the scenario + golden eval validation gate
+#         - AUTO-APPLIES validated proposals (no Captain wait — framework
+#           directive; the loop logs `captain_auto_ratified: true` for audit)
+#         - proposes + auto-applies hat graduations
+#         - induces + promotes draft skills
+#         - emits self_improvement_loop_completed bracketing the run
+#   4. Print a structured summary; logs flow to ~/Library/Logs/cabinet/
 #      (when invoked from the LaunchAgent).
 #
 # Exits 0 even if individual evals fail — the runner records eval_failed
-# events, and pattern detection is the consumption signal, not exit code.
+# events, and the loop is the consumer of that signal.
 
 set -euo pipefail
 
@@ -32,7 +42,15 @@ python3 -m framework.measurement.role_eval_runner || true
 echo ""
 echo "=== Pattern detection (window=28d, min_occurrences=3) ==="
 
-# Step 2: Scan for failure patterns
-python3 -m framework.measurement.eval_pattern_detector
+# Step 2: Scan for failure patterns (read-only signal for the loop driver)
+python3 -m framework.measurement.eval_pattern_detector || true
+
+echo ""
+echo "=== Self-improvement loop (proposals → validate → auto-apply) ==="
+
+# Step 3: Close the loop. The driver handles its own failure modes; if it
+# returns non-zero we still exit 0 here so the LaunchAgent doesn't loop on
+# transient module failures (the events themselves are the audit signal).
+"$SCRIPT_DIR/self-improvement-loop.sh" || echo "self-improvement-loop returned non-zero (loop completion is best-effort)"
 
 exit 0
