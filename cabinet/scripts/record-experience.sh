@@ -19,6 +19,8 @@ WHAT_HAPPENED="${4:?Description of what happened required}"
 LESSONS="${5:-}"
 TAGS="${6:-}"
 
+CABINET_ROOT="${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+
 TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 DATE=$(date -u +%Y-%m-%d)
 RECORD_ID=$(date +%s)-$$
@@ -32,7 +34,7 @@ esac
 # ============================================================
 # 1. Write markdown file to Tier 3 (filesystem)
 # ============================================================
-RECORD_DIR="/opt/founders-cabinet/memory/tier3/experience-records"
+RECORD_DIR="$CABINET_ROOT/memory/tier3/experience-records"
 mkdir -p "$RECORD_DIR"
 RECORD_FILE="$RECORD_DIR/${DATE}-${OFFICER}-${RECORD_ID}.md"
 

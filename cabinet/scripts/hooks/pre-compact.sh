@@ -8,7 +8,9 @@ TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 REDIS_HOST="${REDIS_HOST:-redis}"
 REDIS_PORT="${REDIS_PORT:-6379}"
 
-STATE_DIR="/opt/founders-cabinet/instance/memory/tier2/$OFFICER"
+CABINET_ROOT="${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
+
+STATE_DIR="$CABINET_ROOT/instance/memory/tier2/$OFFICER"
 STATE_FILE="$STATE_DIR/.session-state.json"
 mkdir -p "$STATE_DIR"
 
@@ -16,7 +18,7 @@ mkdir -p "$STATE_DIR"
 # 1. Collect Redis operational state
 # ============================================================
 TOOL_CALLS=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET "cabinet:toolcalls:$OFFICER" 2>/dev/null | grep -o '[0-9]*' || echo "0")
-. /opt/founders-cabinet/cabinet/scripts/lib/triggers.sh 2>/dev/null
+. "$CABINET_ROOT/cabinet/scripts/lib/triggers.sh" 2>/dev/null
 TRIGGER_COUNT=$(trigger_count "$OFFICER" 2>/dev/null | grep -o '[0-9]*' || echo "0")
 
 # Collect schedule timestamps — use jq for safe JSON construction
@@ -44,10 +46,10 @@ jq -n \
 # 3. Store to PostgreSQL for cross-session persistence (best-effort)
 # ============================================================
 # Source env if NEON_CONNECTION_STRING not already set
-[ -z "$NEON_CONNECTION_STRING" ] && source /opt/founders-cabinet/cabinet/.env 2>/dev/null
+[ -z "$NEON_CONNECTION_STRING" ] && source "$CABINET_ROOT/cabinet/.env" 2>/dev/null
 
 if [ -n "$NEON_CONNECTION_STRING" ]; then
-  NOTES_FILE="/opt/founders-cabinet/instance/memory/tier2/$OFFICER/working-notes.md"
+  NOTES_FILE="$CABINET_ROOT/instance/memory/tier2/$OFFICER/working-notes.md"
   WORKING_NOTES=""
   [ -f "$NOTES_FILE" ] && WORKING_NOTES=$(tail -c 3000 "$NOTES_FILE")
 

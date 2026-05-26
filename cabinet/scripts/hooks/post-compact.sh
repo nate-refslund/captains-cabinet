@@ -5,6 +5,8 @@
 
 OFFICER="${OFFICER_NAME:-unknown}"
 
+CABINET_ROOT="${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
+
 cat <<REFRESH
 ⚠️ CONTEXT COMPACTED — ESSENTIAL SKILL REFRESH REQUIRED
 
@@ -21,7 +23,7 @@ OFFICER-SPECIFIC — also read:
 REFRESH
 
 # Load officer-specific skill refresh from per-officer file (officer-agnostic)
-SKILLS_FILE="/opt/founders-cabinet/cabinet/officer-skills/${OFFICER}.txt"
+SKILLS_FILE="$CABINET_ROOT/cabinet/officer-skills/${OFFICER}.txt"
 if [ -f "$SKILLS_FILE" ]; then
   cat "$SKILLS_FILE"
 else
@@ -34,7 +36,7 @@ echo ""
 # ============================================================
 # SESSION STATE RECOVERY — inject pre-compaction operational state
 # ============================================================
-STATE_FILE="/opt/founders-cabinet/instance/memory/tier2/${OFFICER}/.session-state.json"
+STATE_FILE="$CABINET_ROOT/instance/memory/tier2/${OFFICER}/.session-state.json"
 if [ -f "$STATE_FILE" ] && PARSED=$(jq '.' "$STATE_FILE" 2>/dev/null); then
   CAPTURED=$(echo "$PARSED" | jq -r '.captured_at // "unknown"')
   TOOL_CT=$(echo "$PARSED" | jq -r '.tool_calls // 0')
@@ -81,11 +83,11 @@ echo "Surface L2/L3 ideas to CoS via notify-officer.sh."
 echo "After: redis-cli -h redis -p 6379 INCR cabinet:reflections:count"
 echo ""
 echo "THEN:"
-echo "1. Check for pending triggers (hook auto-delivers, but manual: source /opt/founders-cabinet/cabinet/scripts/lib/triggers.sh && trigger_read ${OFFICER})"
+echo "1. Check for pending triggers (hook auto-delivers, but manual: source ${CABINET_ROOT}/cabinet/scripts/lib/triggers.sh && trigger_read ${OFFICER})"
 echo "2. Re-create your /loop (safety net — will skip if already running):"
 
 # Read the officer's loop prompt from file
-LOOP_FILE="/opt/founders-cabinet/cabinet/loop-prompts/${OFFICER}.txt"
+LOOP_FILE="$CABINET_ROOT/cabinet/loop-prompts/${OFFICER}.txt"
 if [ -f "$LOOP_FILE" ]; then
   LOOP_PROMPT=$(cat "$LOOP_FILE" | tr '\n' ' ' | head -c 200)
   echo "   /loop 5m ${LOOP_PROMPT}..."

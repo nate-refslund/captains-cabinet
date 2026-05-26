@@ -8,8 +8,10 @@
 TARGET="${1:?Usage: notify-officer.sh <cos|cto|cro|cpo|coo> \"message\"}"
 MESSAGE="${2:?Usage: notify-officer.sh <officer> \"message\"}"
 
+CABINET_ROOT="${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+
 # Source shared trigger library
-. /opt/founders-cabinet/cabinet/scripts/lib/triggers.sh
+. "$CABINET_ROOT/cabinet/scripts/lib/triggers.sh"
 
 trigger_send "$TARGET" "$MESSAGE"
 

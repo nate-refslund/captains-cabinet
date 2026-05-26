@@ -19,9 +19,19 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { spawn } from "node:child_process";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const LIBRARY_SH = "/opt/founders-cabinet/cabinet/scripts/lib/library.sh";
-const ENV_FILE = "/opt/founders-cabinet/cabinet/.env";
+// Resolve the cabinet repo root. Prefer CLAUDE_PROJECT_DIR (set by the
+// Claude Code harness), fall back to a script-relative resolution. This
+// file lives at <repo>/cabinet/channels/library-mcp/index.ts, so the
+// repo root is three directories above.
+const CABINET_ROOT =
+  process.env.CLAUDE_PROJECT_DIR ||
+  resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+
+const LIBRARY_SH = `${CABINET_ROOT}/cabinet/scripts/lib/library.sh`;
+const ENV_FILE = `${CABINET_ROOT}/cabinet/.env`;
 
 // ---------------------------------------------------------------
 // Shell helper — sources .env + library.sh then calls a function.
