@@ -29,12 +29,33 @@ LOG_DIR="$HOME/Library/Logs/cabinet"
 
 # Plists shipped in cabinet/launchd/ — verify each is present in
 # ~/Library/LaunchAgents and registered with launchctl.
-EXPECTED_PLISTS=(
-  "com.cabinet.heartbeat-watchdog"
-  "com.cabinet.cost-summary"
-  "com.cabinet.ovi-weekly"
-  "com.cabinet.worktree-listener"
-)
+#
+# Source of truth: every template at cabinet/launchd/*.template.plist
+# (excluding com.cabinet.officer.template.plist, which is per-officer and
+# expanded dynamically below). Anything deploy-mac.sh can render, the
+# verifier must check for.
+EXPECTED_PLISTS=()
+if [ -d "$CABINET_ROOT/cabinet/launchd" ]; then
+  while IFS= read -r tpl; do
+    base="$(basename "$tpl" .template.plist)"
+    [ "$base" = "com.cabinet.officer" ] && continue   # per-officer; handled below
+    EXPECTED_PLISTS+=("$base")
+  done < <(find "$CABINET_ROOT/cabinet/launchd" -maxdepth 1 -type f -name '*.template.plist' | sort)
+fi
+
+# Fallback if no templates were discovered (e.g., misconfigured CABINET_ROOT)
+if [ "${#EXPECTED_PLISTS[@]}" -eq 0 ]; then
+  EXPECTED_PLISTS=(
+    "com.cabinet.heartbeat-watchdog"
+    "com.cabinet.cost-summary"
+    "com.cabinet.ovi-weekly"
+    "com.cabinet.worktree-listener"
+    "com.cabinet.mission-supervisor"
+    "com.cabinet.task-sync"
+    "com.cabinet.role-evals-weekly"
+    "com.cabinet.outbox-relay"
+  )
+fi
 
 # Officer plists are per-officer (com.cabinet.officer.<slug>) — discovered
 # dynamically from instance/roles/active/

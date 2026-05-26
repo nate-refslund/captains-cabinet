@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+Outbox-relay LaunchAgent template.
+Dispatches pending outbox entries to their adapters (Monday/Jira/Linear/
+Asana/GitHub/Notion). Replay-based idempotency.
+Fires every 60 seconds per Phase 1.4 of the convergence plan.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.cabinet.outbox-relay</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>${REPO_ROOT}/cabinet/cron/outbox-relay.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>${REPO_ROOT}</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key><string>${HOME}</string>
+    <key>USER</key><string>${USER}</string>
+    <key>REDIS_HOST</key><string>127.0.0.1</string>
+    <key>REDIS_PORT</key><string>6379</string>
+    <key>CABINET_ROOT</key><string>${REPO_ROOT}</string>
+    <key>CABINET_SOURCE_REPO</key><string>${REPO_ROOT}</string>
+    <key>OFFICER_NAME</key><string>outbox_relay</string>
+    <key>PATH</key><string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>LANG</key><string>en_US.UTF-8</string>
+    <key>LC_ALL</key><string>en_US.UTF-8</string>
+  </dict>
+
+  <key>StartInterval</key>
+  <integer>60</integer>
+
+  <key>StandardOutPath</key>
+  <string>${HOME}/Library/Logs/cabinet/outbox-relay.out.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>${HOME}/Library/Logs/cabinet/outbox-relay.err.log</string>
+
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>

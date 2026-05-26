@@ -38,6 +38,17 @@ done
 
 mkdir -p "$LAUNCHD_DIR" "$LOGS_DIR"
 
+# Populate .claude/agents/ from preset before LaunchAgent boots officers.
+# start-officer-mac.sh probes for $REPO_ROOT/.claude/agents/$OFFICER.md to gate
+# its --agent flag; without this, native_agent=false on every fresh deployment.
+# load-preset.sh also does this inline, but at deploy time we may not have a Neon
+# connection yet — sync-agents.sh is the agent-only step that runs unconditionally.
+# Idempotent; safe to re-run; runs on --dry-run too because it has no side
+# effects beyond .claude/agents/ which is a generated directory.
+if ! bash "$REPO_ROOT/cabinet/scripts/sync-agents.sh" 2>&1; then
+  echo "deploy-mac.sh: sync-agents.sh failed — officers will boot without --agent flag" >&2
+fi
+
 render_template() {
   local template="$1"
   if command -v envsubst >/dev/null 2>&1; then
@@ -117,7 +128,19 @@ deploy_daemon() {
 # Execute
 if [ "$ALL" = true ]; then
   for o in cos cto cpo cro coo; do deploy_officer "$o"; done
-  for d in heartbeat-watchdog cost-summary worktree-listener; do deploy_daemon "$d"; done
+  # All non-officer daemon templates. Mirrors cabinet/launchd/*.template.plist
+  # minus the per-officer template. Keep in sync with verify-launchagents.sh.
+  for d in \
+    heartbeat-watchdog \
+    cost-summary \
+    worktree-listener \
+    mission-supervisor \
+    task-sync \
+    role-evals-weekly \
+    outbox-relay \
+    ovi-weekly; do
+    deploy_daemon "$d"
+  done
 elif [ "$OFFICER" = "all" ]; then
   for o in cos cto cpo cro coo; do deploy_officer "$o"; done
 elif [ -n "$OFFICER" ]; then
