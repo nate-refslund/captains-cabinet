@@ -3,7 +3,18 @@
 import { dockerExec, getEnvVars as dockerGetEnvVars } from '@/lib/docker'
 import { revalidatePath } from 'next/cache'
 
-const ENV_PATH = '/opt/founders-cabinet/cabinet/.env'
+// Path to cabinet/.env INSIDE the cabinet-officers container (or the
+// equivalent location when the dashboard runs Mac-native). Override via
+// CABINET_ENV_PATH env var. Default keeps backward compatibility with the
+// Docker deployment that ships /opt/founders-cabinet today; the Mac-native
+// dashboard reads CABINET_ROOT (set by deploy-mac.sh / start-officer-mac.sh)
+// and resolves to ${CABINET_ROOT}/cabinet/.env so the env-var editor
+// actually writes the file the cabinet reads.
+const ENV_PATH = (
+  process.env.CABINET_ENV_PATH ||
+  (process.env.CABINET_ROOT ? `${process.env.CABINET_ROOT}/cabinet/.env` : null) ||
+  '/opt/founders-cabinet/cabinet/.env'
+)
 
 export async function getEnvVarsAction(): Promise<Record<string, string>> {
   return dockerGetEnvVars()
