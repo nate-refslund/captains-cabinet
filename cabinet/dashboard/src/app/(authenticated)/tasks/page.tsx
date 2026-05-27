@@ -95,7 +95,16 @@ export default async function TasksPage() {
             Per-officer work front — WIP={WIP_CAP} cap, DB-enforced trigger
           </p>
         </div>
-        <TasksClientRefresh />
+        <div className="flex items-center gap-3">
+          <a
+            href="/tasks/subagents"
+            className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white"
+            title="Every Agent() / Task tool call from officer sessions"
+          >
+            Subagent activity →
+          </a>
+          <TasksClientRefresh />
+        </div>
       </div>
 
       {/* All-officers rollup strip (Spec 038 v1.2 AC #19) — captainCount
