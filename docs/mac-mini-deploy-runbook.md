@@ -42,7 +42,7 @@ mkdir -p ~/work
 cd ~/work
 git clone https://github.com/nate-step/captains-cabinet.git
 cd captains-cabinet
-git checkout claude/convergence    # OR master once Phase 9 merge is done
+git checkout claude/convergence-v2    # OR master once this branch is merged
 ```
 
 ## 3. Cabinet bootstrap
@@ -138,7 +138,7 @@ After signing + notarization, these consents persist across reboots.
 ## 7. Deploy LaunchAgents
 
 ```bash
-CABINET_ROOT="$(pwd)" bash cabinet/scripts/deploy-mac.sh
+CABINET_ROOT="$(pwd)" bash cabinet/scripts/deploy-mac.sh --all
 ```
 
 This `envsubst`-substitutes paths into the plist templates in `cabinet/launchd/` and registers them in `~/Library/LaunchAgents/`:
@@ -146,7 +146,12 @@ This `envsubst`-substitutes paths into the plist templates in `cabinet/launchd/`
 - `com.cabinet.officer.<slug>.plist` (per officer)
 - `com.cabinet.heartbeat-watchdog.plist`
 - `com.cabinet.cost-summary.plist`
+- `com.cabinet.mission-supervisor.plist`
+- `com.cabinet.task-sync.plist`
+- `com.cabinet.role-evals-weekly.plist`
+- `com.cabinet.outbox-relay.plist`
 - `com.cabinet.ovi-weekly.plist`
+- `com.cabinet.self-improvement-loop.plist`
 - `com.cabinet.worktree-listener.plist`
 
 Verify all registered + running:

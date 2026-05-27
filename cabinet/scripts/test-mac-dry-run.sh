@@ -39,6 +39,14 @@ printf '%s' "$OUT" | grep -q 'native_agent=true' \
 printf '%s' "$OUT" | grep -q -- '--agent cos' \
   && pass "start-officer-mac includes native agent flag" \
   || fail "native agent flag missing from command"
+printf '%s' "$OUT" | grep -q "cd $FAKE_REPO" \
+  && pass "start-officer-mac uses CABINET_SOURCE_REPO root" \
+  || fail "CABINET_SOURCE_REPO root missing from command"
+
+OUT="$(PATH="$FAKE_BIN:$PATH" CABINET_MAC_DRY_RUN=1 bash "$FAKE_REPO/cabinet/scripts/start-officer-mac.sh" cos 2>/dev/null)"
+printf '%s' "$OUT" | grep -q "cd $FAKE_REPO" \
+  && pass "start-officer-mac falls back to script-relative root" \
+  || fail "script-relative repo root fallback missing"
 
 cat > "$FAKE_BIN/claude" <<'SH'
 #!/bin/sh
@@ -55,7 +63,10 @@ printf '%s' "$OUT" | grep -q 'native_agent=false' \
   && pass "start-officer-mac falls back without --agent support" \
   || fail "fallback mode was not reported"
 
-CABINET_SOURCE_REPO="$REPO_ROOT" bash "$REPO_ROOT/cabinet/scripts/deploy-mac.sh" --officer cos --dry-run >/dev/null
+CABINET_SOURCE_REPO="$REPO_ROOT" bash "$REPO_ROOT/cabinet/scripts/deploy-mac.sh" --officer cos --dry-run > "$TMP_DIR/deploy.out"
+grep -q '<key>CABINET_SOURCE_REPO</key>' "$TMP_DIR/deploy.out" \
+  && grep -q '<key>CABINET_ROOT</key>' "$TMP_DIR/deploy.out" \
+  || fail "officer plist did not export Cabinet root env vars"
 pass "deploy-mac dry-run renders without envsubst dependency"
 
 echo "=== Mac dry-run eval PASS ==="

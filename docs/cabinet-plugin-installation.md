@@ -76,7 +76,7 @@ The plugin install lands the code. Captain-physical work still required:
 5. **TCC permissions** — System Settings → Privacy & Security → grant Terminal
    the access claude-code needs
 6. **Tailscale install + sign-in** — manual sudo step
-7. **Deploy LaunchAgents** — `bash cabinet/scripts/deploy-mac.sh`
+7. **Deploy LaunchAgents** — `bash cabinet/scripts/deploy-mac.sh --all`
 8. **72h soak + crash test + power-cycle test**
 
 See `docs/mac-mini-deploy-runbook.md` for the full Captain-physical runbook

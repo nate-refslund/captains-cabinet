@@ -16,7 +16,9 @@
 set -euo pipefail
 
 OFFICER="${1:?Usage: start-officer-mac.sh <officer>}"
-REPO_ROOT="${CABINET_SOURCE_REPO:-$HOME/work/captains-cabinet}"
+REPO_ROOT="${CABINET_SOURCE_REPO:-${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}}"
+export CABINET_SOURCE_REPO="$REPO_ROOT"
+export CABINET_ROOT="$REPO_ROOT"
 LOGS_DIR="$HOME/Library/Logs/cabinet"
 SESSION_NAME="officer-$OFFICER"
 MODEL="${CABINET_MODEL:-claude-opus-4-7}"

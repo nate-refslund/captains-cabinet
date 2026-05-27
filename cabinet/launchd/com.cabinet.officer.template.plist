@@ -42,6 +42,10 @@ Variables substituted by deploy-mac.sh via envsubst BEFORE writing to ~/Library/
     <string>localhost</string>
     <key>REDIS_PORT</key>
     <string>6379</string>
+    <key>CABINET_ROOT</key>
+    <string>${REPO_ROOT}</string>
+    <key>CABINET_SOURCE_REPO</key>
+    <string>${REPO_ROOT}</string>
     <key>PATH</key>
     <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     <key>OFFICER_NAME</key>

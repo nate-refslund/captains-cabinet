@@ -35,7 +35,7 @@ need_cmd() {
   fi
 }
 
-for cmd in brew node npm claude git gh jq python3 redis-cli pg_dump tmux launchctl; do
+for cmd in brew node npm bun claude git gh jq python3 redis-cli pg_dump tmux launchctl; do
   need_cmd "$cmd"
 done
 

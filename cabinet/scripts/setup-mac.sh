@@ -63,7 +63,10 @@ check_dep "tmux" tmux || MISSING=1
 check_dep "jq" jq || MISSING=1
 check_dep "Python 3" python3 || MISSING=1
 check_dep "Redis CLI" redis-cli || MISSING=1
+check_dep "Node.js" node || MISSING=1
+check_dep "npm" npm || MISSING=1
 check_dep "Claude Code" claude || MISSING=1
+check_dep "Bun" bun || MISSING=1
 # Convergence Phase 9: envsubst is needed by deploy-mac.sh to render plists.
 # Ships in gettext on Homebrew; macOS does not include it by default.
 check_dep "envsubst (gettext)" envsubst || MISSING=1
@@ -89,6 +92,9 @@ if [ "$MISSING" -eq 1 ]; then
   command -v jq > /dev/null 2>&1 || brew install jq
   command -v python3 > /dev/null 2>&1 || brew install python3
   command -v redis-cli > /dev/null 2>&1 || brew install redis
+  command -v node > /dev/null 2>&1 || brew install node
+  command -v npm > /dev/null 2>&1 || brew install node
+  command -v bun > /dev/null 2>&1 || brew install oven-sh/bun/bun
   command -v envsubst > /dev/null 2>&1 || brew install gettext
   command -v gh > /dev/null 2>&1 || brew install gh
   echo ""
@@ -208,5 +214,5 @@ echo "  1. Copy cabinet/.env.example → cabinet/.env (fill in API keys)"
 echo "  2. Set your project in instance/config/active-project.txt"
 echo "  3. Create instance/config/projects/<slug>.yml (see _template.yml)"
 echo "  4. Declare outcomes in instance/config/outcomes.yml"
-echo "  5. Start an officer: bash cabinet/scripts/start-officer.sh cos"
+echo "  5. Deploy LaunchAgents: CABINET_ROOT=\"\$(pwd)\" bash cabinet/scripts/deploy-mac.sh --all"
 echo "==========================================="
