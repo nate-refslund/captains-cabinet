@@ -145,7 +145,8 @@ if [ "$ALL" = true ]; then
     role-evals-weekly \
     outbox-relay \
     ovi-weekly \
-    self-improvement-loop; do
+    self-improvement-loop \
+    chrome-profile; do
     deploy_daemon "$d"
   done
 elif [ "$OFFICER" = "all" ]; then

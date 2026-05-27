@@ -206,13 +206,78 @@ else
 fi
 
 echo ""
+echo "=== Step 9: Install Captain-layer tools (screenpipe, cua, browsers) ==="
+# Installs: screenpipe (brew), chrome-devtools-mcp + @playwright/mcp + Stagehand
+# (npm), cua-driver (npm/brew). Idempotent. Warns but doesn't fail on
+# individual install errors so Captain can fix gaps without restarting.
+if [ -f "$CABINET_ROOT/cabinet/scripts/install-mac-tools.sh" ]; then
+  bash "$CABINET_ROOT/cabinet/scripts/install-mac-tools.sh" 2>&1 | tail -25
+  ok "Captain-layer tools install complete"
+else
+  warn "install-mac-tools.sh not found, skipping (officers won't have screenpipe/cua/browsers)"
+fi
+
+echo ""
+echo "=== Step 10: Bootstrap dedicated Cabinet Chrome profile ==="
+# Creates ~/.cabinet-chrome-profile and launches Chrome with --remote-debugging
+# bound to 127.0.0.1:9222 ONLY (Corridor security invariant). Captain will need
+# to log into Linear/Monday/Notion/Gmail ONCE in this Chrome window — those
+# sessions then persist forever for all officer chrome-devtools MCP usage.
+if [ -f "$CABINET_ROOT/cabinet/scripts/start-cabinet-chrome.sh" ]; then
+  bash "$CABINET_ROOT/cabinet/scripts/start-cabinet-chrome.sh" 2>&1 | tail -15
+  ok "Cabinet Chrome profile started (sign into product platforms in the new window)"
+else
+  warn "start-cabinet-chrome.sh not found, skipping"
+fi
+
+echo ""
+echo "=== Step 11: Grant macOS Privacy permissions (interactive) ==="
+# macOS TCC requires user clicks; this opens System Settings panes + tells
+# Captain which apps need Allow. Skip-able via env var for unattended re-runs.
+if [ "${SKIP_MAC_PERMISSIONS:-0}" = "1" ]; then
+  warn "SKIP_MAC_PERMISSIONS=1 — skipping interactive grant. Run later: bash cabinet/scripts/grant-mac-permissions.sh"
+elif [ -f "$CABINET_ROOT/cabinet/scripts/grant-mac-permissions.sh" ]; then
+  bash "$CABINET_ROOT/cabinet/scripts/grant-mac-permissions.sh" 2>&1
+  ok "Permission grants complete (verify with: cua-driver check_permissions)"
+else
+  warn "grant-mac-permissions.sh not found, skipping"
+fi
+
+echo ""
+echo "=== Step 12: Verify Captain-layer MCP wiring ==="
+if [ -f "$CABINET_ROOT/.mcp.json.mac-native" ]; then
+  CAPTAIN_MCPS=$(python3 -c "
+import json
+with open('$CABINET_ROOT/.mcp.json.mac-native') as f:
+    d = json.load(f)
+servers = d.get('mcpServers', {})
+captain_layer = ['screenpipe', 'chrome_devtools', 'playwright', 'cua']
+present = [s for s in captain_layer if s in servers]
+missing = [s for s in captain_layer if s not in servers]
+print('present=' + ','.join(present))
+print('missing=' + ','.join(missing) if missing else 'missing=none')
+" 2>/dev/null)
+  echo "  $CAPTAIN_MCPS" | head -5
+  if echo "$CAPTAIN_MCPS" | grep -q "missing=none"; then
+    ok "All 4 Captain-layer MCPs declared in .mcp.json.mac-native"
+  else
+    warn "Some Captain-layer MCPs missing from .mcp.json.mac-native"
+  fi
+else
+  warn ".mcp.json.mac-native not found"
+fi
+
+echo ""
 echo "==========================================="
 echo "  Setup complete!"
 echo ""
-echo "  Next steps:"
-echo "  1. Copy cabinet/.env.example → cabinet/.env (fill in API keys)"
-echo "  2. Set your project in instance/config/active-project.txt"
-echo "  3. Create instance/config/projects/<slug>.yml (see _template.yml)"
-echo "  4. Declare outcomes in instance/config/outcomes.yml"
-echo "  5. Deploy LaunchAgents: CABINET_ROOT=\"\$(pwd)\" bash cabinet/scripts/deploy-mac.sh --all"
+echo "  Next steps for Captain:"
+echo "  1. Copy cabinet/.env.example → cabinet/.env (fill API keys, esp."
+echo "     ANTHROPIC_API_KEY for cua backend if not using Max OAuth)"
+echo "  2. Sign into Linear/Monday/Notion/Gmail in the Cabinet Chrome"
+echo "     window that just opened — these sessions persist for officer use"
+echo "  3. Set your project in instance/config/active-project.txt"
+echo "  4. Create instance/config/projects/<slug>.yml (see _template.yml)"
+echo "  5. Declare outcomes in instance/config/outcomes.yml"
+echo "  6. Deploy LaunchAgents: CABINET_ROOT=\"\$(pwd)\" bash cabinet/scripts/deploy-mac.sh --all"
 echo "==========================================="

@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  com.cabinet.chrome-profile.plist — auto-starts the dedicated Cabinet Chrome
+  profile at login + restarts on crash. Bound to 127.0.0.1:9222 only.
+
+  Wraps cabinet/scripts/start-cabinet-chrome.sh which is idempotent (no-op
+  if Cabinet Chrome is already responsive on the debug port).
+
+  Variables substituted by deploy-mac.sh via envsubst BEFORE writing to
+  ~/Library/LaunchAgents/:
+    ${REPO_ROOT}  — absolute path to the cabinet repo
+    ${HOME}       — Captain's home dir
+    ${USER}       — Captain's username
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.cabinet.chrome-profile</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>${REPO_ROOT}/cabinet/scripts/start-cabinet-chrome.sh</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>${HOME}</string>
+    <key>USER</key>
+    <string>${USER}</string>
+    <key>CABINET_ROOT</key>
+    <string>${REPO_ROOT}</string>
+    <key>CABINET_SOURCE_REPO</key>
+    <string>${REPO_ROOT}</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+
+  <key>WorkingDirectory</key>
+  <string>${REPO_ROOT}</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+
+  <key>StandardOutPath</key>
+  <string>${HOME}/Library/Logs/cabinet/chrome-profile.out.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>${HOME}/Library/Logs/cabinet/chrome-profile.err.log</string>
+</dict>
+</plist>

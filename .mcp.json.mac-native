@@ -30,6 +30,31 @@
       "command": "bun",
       "args": ["run", "${CABINET_SOURCE_REPO}/cabinet/channels/library-mcp/index.ts"],
       "env": { "OFFICER_NAME": "${OFFICER_NAME}" }
+    },
+    "_comment_captain_layer": "Below: Captain-layer tools (screen memory, browser hands, native Mac hands). Wired via setup-mac.sh Steps 9-12. Officer access gated by per-officer tools: allowlist in presets/work/agents/*.md — CoS sees everything; CTO/COO see playwright; others request via CoS.",
+    "screenpipe": {
+      "command": "npx",
+      "args": ["-y", "screenpipe-mcp@latest"],
+      "env": { "OFFICER_NAME": "${OFFICER_NAME}" }
+    },
+    "chrome_devtools": {
+      "command": "npx",
+      "args": ["-y", "chrome-devtools-mcp@latest", "--browserUrl", "http://127.0.0.1:9222"],
+      "env": { "OFFICER_NAME": "${OFFICER_NAME}" }
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest"],
+      "env": { "OFFICER_NAME": "${OFFICER_NAME}" }
+    },
+    "cua": {
+      "command": "cua-driver",
+      "args": ["mcp", "--claude-code-computer-use-compat"],
+      "env": {
+        "OFFICER_NAME": "${OFFICER_NAME}",
+        "CUA_MODEL_BACKEND": "${CUA_MODEL_BACKEND:-anthropic}",
+        "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}"
+      }
     }
   }
 }
