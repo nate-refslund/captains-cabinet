@@ -26,7 +26,30 @@
 CONTEXT="${1:?Usage: send-to-warroom.sh <context_slug> \"message\"}"
 MESSAGE="${2:?Usage: send-to-warroom.sh <context_slug> \"message\"}"
 
-TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN not set}"
+# Resolve the warroom bot token. The CEO officer gets TELEGRAM_BOT_TOKEN injected
+# by start-officer.sh; non-CEO officers (Telegram-dark in single_ceo mode) do NOT,
+# so a bare warroom announce from their Bash tool fails with "not set" (every
+# officer hits this on the session-start announce). When the token is absent,
+# self-resolve the calling officer's OWN bot token from cabinet/.env via
+# OFFICER_NAME (exported on all start-officer paths). Officer bots can SEND to the
+# warroom even when Telegram-dark — sending needs only group membership (which
+# every officer bot has), not a running poller. Fall back to the CEO officer's
+# token. .env path derived relative to this script for host-agnostic operation
+# (Docker /opt + Mac ~/work).
+if [ -z "${TELEGRAM_BOT_TOKEN:-}" ]; then
+  _ENV_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.env"
+  _resolve_warroom_token() {  # $1 = officer slug → prints token value (empty on miss)
+    { [ -n "$1" ] && [ -f "$_ENV_FILE" ]; } || return 0
+    local uc val
+    uc=$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')
+    val=$(grep -E "^TELEGRAM_${uc}_TOKEN=" "$_ENV_FILE" | head -1 | cut -d= -f2-)
+    val="${val%\"}"; val="${val#\"}"; val="${val%\'}"; val="${val#\'}"
+    printf '%s' "$val"
+  }
+  TELEGRAM_BOT_TOKEN=$(_resolve_warroom_token "${OFFICER_NAME:-}")
+  [ -z "$TELEGRAM_BOT_TOKEN" ] && TELEGRAM_BOT_TOKEN=$(_resolve_warroom_token "${CABINET_CEO_OFFICER:-cos}")
+fi
+TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN not set and not resolvable from cabinet/.env}"
 WARROOMS_FILE="/opt/founders-cabinet/instance/config/warrooms.yml"
 
 # Resolve chat_id for the requested context. Fall back to
