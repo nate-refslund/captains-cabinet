@@ -44,6 +44,21 @@ ok()   { echo -e "  ${GREEN}[OK]${NC} $1"; }
 warn() { echo -e "  ${YELLOW}[WARN]${NC} $1"; }
 fail() { echo -e "  ${RED}[FAIL]${NC} $1"; }
 
+echo "=== Step 0: API key wizard (interactive) ==="
+# Walks Captain through tiered API keys (critical / recommended / optional),
+# opens signup URLs, masks paste input, writes cabinet/.env at chmod 600.
+# Idempotent — skips already-filled keys. Skip-able via env var for CI.
+if [ "${SKIP_ENV_WIZARD:-0}" = "1" ]; then
+  warn "SKIP_ENV_WIZARD=1 — skipping interactive wizard. Run later: bash cabinet/scripts/setup-env.sh"
+elif [ -f "$CABINET_ROOT/cabinet/.env" ] && bash "$CABINET_ROOT/cabinet/scripts/setup-env.sh" --check >/dev/null 2>&1; then
+  ok ".env critical keys already present (skipping wizard; re-run via setup-env.sh --force)"
+elif [ -f "$CABINET_ROOT/cabinet/scripts/setup-env.sh" ]; then
+  bash "$CABINET_ROOT/cabinet/scripts/setup-env.sh"
+else
+  warn "setup-env.sh not found — fill cabinet/.env manually before continuing"
+fi
+
+echo ""
 echo "=== Step 1: Check prerequisites ==="
 
 check_dep() {
