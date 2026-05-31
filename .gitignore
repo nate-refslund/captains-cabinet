@@ -94,3 +94,6 @@ cabinet/logs/*
 # Hook cache (Spec 046 voice transcripts; future caches per hook spec)
 cabinet/cache/*
 !cabinet/cache/.gitkeep
+
+# CoS-installed external tooling (Spec 049 unblock: Stagehand v3 + gitleaks + ast-grep)
+cabinet/tools/

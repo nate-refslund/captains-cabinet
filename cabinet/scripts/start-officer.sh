@@ -289,6 +289,17 @@ if [ "$POOL_MODE" = true ]; then
   EXPORT_VARS="$EXPORT_VARS CABINET_ACTIVE_PROJECT=$ACTIVE_SLUG"
 fi
 
+# Spec 049 unblock (CoS infra installs 2026-05-31, task #198):
+# Stagehand v3 + gitleaks + ast-grep live under cabinet/tools/ (already bind-
+# mounted into officers via /opt/founders-cabinet). Expose to officer sessions:
+#   - STAGEHAND_ROOT: env-pathed runner location (per CTO no-hardcode principle,
+#     spec-049-build-state.md line 85-87 — same CABINET_ROOT/WORKSPACE_ROOT pattern).
+#   - CABINET_TOOLS_BIN: location of gitleaks + ast-grep binaries (officer code
+#     either calls by full path or prepends to PATH at use).
+# PATH prepend is applied inline in the launch command rather than via EXPORT_VARS
+# (a bare PATH=... in EXPORT_VARS would overwrite the container's existing PATH).
+EXPORT_VARS="$EXPORT_VARS STAGEHAND_ROOT=${CABINET_ROOT:-/opt/founders-cabinet}/cabinet/tools/stagehand CABINET_TOOLS_BIN=${CABINET_ROOT:-/opt/founders-cabinet}/cabinet/tools/bin"
+
 # Test hook: CABINET_TEST_DRY_RUN=1 dumps resolved arg-derived contracts and
 # exits before any side-effectful tmux/claude calls. Used by the FW-073
 # test harness to pin arg parsing + back-compat without spawning real sessions.
@@ -306,7 +317,7 @@ tmux kill-window -t "cabinet:$WINDOW" 2>/dev/null
 # Start Claude Code session
 tmux new-window -t cabinet -n "$WINDOW"
 tmux send-keys -t "cabinet:$WINDOW" \
-  "export $EXPORT_VARS && cd $OFFICER_DIR && $CLAUDE_CMD" \
+  "export $EXPORT_VARS && export PATH=\"\$CABINET_TOOLS_BIN:\$PATH\" && cd $OFFICER_DIR && $CLAUDE_CMD" \
   Enter
 
 # Wait for Claude Code to initialize, auto-confirm any startup prompts, then
