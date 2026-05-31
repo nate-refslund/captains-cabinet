@@ -313,6 +313,17 @@ node "$RUNNER_JS" \
 NODE_RC=$?
 set -e
 
+# F1 post-node marker: written ONLY when STAGEHAND_RUNNER_FORCE_NODE_FAIL=1.
+# The harness (NEW-7 toggle-test) checks this marker to confirm the shell's
+# post-node code ran despite node exiting 1. Without the set +e / set -e bracket
+# (F1 fix), the shell would die on node's exit 1 and never reach this line.
+# Toggle-test: remove `set +e` before `node` → shell dies here → harness FAILS.
+if [ "${STAGEHAND_RUNNER_FORCE_NODE_FAIL:-0}" = "1" ] && command -v jq >/dev/null 2>&1 && [ -f "$STATE_FILE" ]; then
+  jq '.visualUatLastError = "force-node-fail-post-node-reached"' \
+    "$STATE_FILE" > "${STATE_FILE}.f1marker.tmp" 2>/dev/null \
+    && mv "${STATE_FILE}.f1marker.tmp" "$STATE_FILE" || true
+fi
+
 # After Node returns, release the semaphore (Node may have released already on
 # wait-points, re-acquired, and returned with it held — release here is always
 # owner-checked + idempotent).
@@ -337,18 +348,17 @@ if [ "$START_BUILD_HASH" != "UNKNOWN" ] && [ "$END_BUILD_HASH" != "UNKNOWN" ] &&
     echo "stagehand-runner: ERROR: build-instability-after-2-reruns (S49_RERUN=$S49_RERUN); capping to INDETERMINATE" >&2
     if command -v jq >/dev/null 2>&1 && [ -f "$STATE_FILE" ]; then
       TMP_STATE="$(mktemp "${STATE_FILE}.s49capd.XXXXXX")"
-      if jq '.STATE.visualUatLastError = "build-instability-after-2-reruns" |
+      # NEW-6: use top-level .visualUatLastError (not .STATE.visualUatLastError).
+      # migrate-active-task.sh v3 defaults place visualUatLastError at top-level;
+      # writing to .STATE.visualUatLastError creates a phantom nested object and
+      # leaves the real top-level field unchanged (state file remains malformed).
+      if jq '.visualUatLastError = "build-instability-after-2-reruns" |
              .selfReviewPassed = false | .selfReviewPassedSha = null |
              .selfReviewPassedAt = null | .gate4BuildHash = null | .checkpointBuildHash = null' \
           "$STATE_FILE" > "$TMP_STATE" 2>/dev/null; then
         mv "$TMP_STATE" "$STATE_FILE"
       else
         rm -f "$TMP_STATE"
-        # Fallback write using printf+jq without the nested .STATE path
-        jq '.visualUatLastError = "build-instability-after-2-reruns" |
-            .selfReviewPassed = false | .selfReviewPassedSha = null |
-            .selfReviewPassedAt = null | .gate4BuildHash = null | .checkpointBuildHash = null' \
-          "$STATE_FILE" > "${STATE_FILE}.tmp2" 2>/dev/null && mv "${STATE_FILE}.tmp2" "$STATE_FILE" || true
       fi
     fi
     # Emit audit event.

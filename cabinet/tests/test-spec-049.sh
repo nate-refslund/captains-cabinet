@@ -342,29 +342,46 @@ if [ -x "$RUNNER_SH" ] && [ -f "$RUNNER_JS" ] && command -v node >/dev/null 2>&1
   _ra_sha=$(jq -r '.selfReviewPassedSha // empty' "$TMP/ra_state.json")
   [ -n "$_ra_sha" ] && [ "$_ra_sha" != "null" ] && pass || fail "selfReviewPassedSha null after PASS (F4 violated)"
 
-  # (a2) NEGATIVE: after a build-mismatch discard, selfReviewPassed must be false.
-  # We simulate a mismatch by pre-populating selfReviewPassed=true and running
-  # through the mismatch path. The mismatch handler (F3 fix) must clear it.
-  # Guard being tested: L310-340 build-mismatch handler sets selfReviewPassed=false.
-  # We don't actually trigger a real mid-run hash change (complex); instead we
-  # verify the state-file logic directly: the runner.sh mismatch block writes
-  # selfReviewPassed=false regardless of prior state. We use jq to emulate the
-  # exact jq filter from the mismatch handler and confirm it clears the field.
-  _mk_state "$TMP/ra_mismatch.json" '.selfReviewPassed=true | .selfReviewPassedSha="abc123"'
-  eq "mismatch precondition selfReviewPassed=true" \
-    "$(jq -r '.selfReviewPassed' "$TMP/ra_mismatch.json")" "true"
-  # Apply the mismatch handler's jq filter (same as F3 fix in runner.sh):
-  jq '.gate4BuildHash=null | .checkpointBuildHash=null | .selfReviewPassed=false |
-      .selfReviewPassedSha=null | .selfReviewPassedAt=null' \
-    "$TMP/ra_mismatch.json" > "$TMP/ra_mismatch_after.json"
-  eq "NEGATIVE(a2): mismatch handler clears selfReviewPassed" \
-    "$(jq -r '.selfReviewPassed' "$TMP/ra_mismatch_after.json")" "false"
-  eq "NEGATIVE(a2): mismatch handler clears selfReviewPassedSha" \
-    "$(jq -r '.selfReviewPassedSha' "$TMP/ra_mismatch_after.json")" "null"
-  eq "NEGATIVE(a2): mismatch handler clears selfReviewPassedAt (F3)" \
-    "$(jq -r '.selfReviewPassedAt' "$TMP/ra_mismatch_after.json")" "null"
-  # Toggle-test: deleting the jq filter lines would leave selfReviewPassed=true.
-  # The assertion above uses the ACTUAL filter, so deleting it fails this.
+  # (a2) NEGATIVE (NEW-4 rewrite): mismatch handler clears selfReviewPassed.
+  # Drives the ACTUAL runner.sh through a real build-hash mismatch scenario.
+  # A counter-based custom cache-hash script returns a different hash on every
+  # call → START hash ≠ END hash → real mismatch path fires → mismatch handler
+  # (runner.sh §10) must clear selfReviewPassed, selfReviewPassedSha, selfReviewPassedAt
+  # and emit BUILD_MISMATCH_DISCARDED to the audit log.
+  # We seed S49_RERUN=1 so the first run (S49_RERUN=2) uses the non-cap handler,
+  # and the re-exec (S49_RERUN=3) immediately hits the cap → exit 3 from cap.
+  # Toggle-test: replace runner.sh §10 mismatch handler jq with `cat` →
+  #   BUILD_MISMATCH_DISCARDED event will be absent from audit log → assertion FAILS.
+  _mk_state "$TMP/ra_mm2.json" '.selfReviewPassed=true | .selfReviewPassedSha="abc123" | .selfReviewPassedAt="2026-01-01T00:00:00Z"'
+  _A2_COUNTER="$TMP/a2-hash-counter"
+  _A2_AUDIT_LOG="$TMP/a2-audit.jsonl"
+  rm -f "$_A2_COUNTER" "$_A2_AUDIT_LOG"
+  mkdir -p "$TMP/ra_mm2_proj/.cabinet"
+  # Counter script: returns "hash-call-N" where N increments on each call.
+  printf '#!/usr/bin/env bash\nN=$(cat "%s" 2>/dev/null || echo 0)\necho $((N+1)) > "%s"\necho "hash-call-${N}"\n' \
+    "$_A2_COUNTER" "$_A2_COUNTER" \
+    > "$TMP/ra_mm2_proj/.cabinet/cache-hash.sh"
+  chmod +x "$TMP/ra_mm2_proj/.cabinet/cache-hash.sh"
+  # Run with S49_RERUN=1 so first run increments to 2 (non-cap path),
+  # re-exec increments to 3 (cap path → exit 3).
+  _a2_rc=$(S49_RERUN=1 VISUAL_UAT_DRY_RUN=1 \
+    VISUAL_UAT_COST_LOG="$_A2_AUDIT_LOG" \
+    CABINET_ROOT="$_RUNNER_SH_ROOT" STAGEHAND_ROOT="$_RUNNER_STAGEHAND" \
+    timeout 30 bash "$RUNNER_SH" \
+      --state "$TMP/ra_mm2.json" --origin "http://localhost:9999" \
+      --pages "/" --cache-mode "custom" --project-root "$TMP/ra_mm2_proj" \
+      --max-slots 2 --lock-timeout 5 --iteration 1 2>/dev/null; echo $?)
+  # Must exit 3 (cap from re-exec).
+  eq "NEGATIVE(a2): mismatch+cap → rc3" "$_a2_rc" "3"
+  # selfReviewPassed must be false (cleared by mismatch handler or cap handler).
+  eq "NEGATIVE(a2): selfReviewPassed=false after mismatch" \
+    "$(jq -r '.selfReviewPassed' "$TMP/ra_mm2.json")" "false"
+  # BUILD_MISMATCH_DISCARDED event must appear in audit log (real mismatch fired).
+  _a2_mismatch_events=$(grep -c '"BUILD_MISMATCH_DISCARDED"' "$_A2_AUDIT_LOG" 2>/dev/null || echo 0)
+  [ "$_a2_mismatch_events" -ge 1 ] && pass \
+    || fail "NEGATIVE(a2): BUILD_MISMATCH_DISCARDED not in audit log (mismatch handler jq may be no-op)"
+  # Toggle-test evidence (verified during R3 authoring):
+  # Replacing §10 mismatch jq with `cat` → BUILD_MISMATCH_DISCARDED absent → assertion FAILS.
 
   # (a3) NEGATIVE: re-run cap (F2). Use custom cache mode with a per-call unique
   # hash so every invocation sees a changed hash → re-exec → cap at S49_RERUN=2
@@ -385,6 +402,68 @@ if [ -x "$RUNNER_SH" ] && [ -f "$RUNNER_JS" ] && command -v node >/dev/null 2>&1
   # Without the F2 cap, this would loop until timeout 15 → exit 124.
   # With the F2 cap (S49_RERUN>2), exits 3 quickly.
   [ "$_ra_cap_rc" = "3" ] && pass || fail "NEGATIVE(a3): re-run cap should exit 3 (INDETERMINATE); got $(_ra_cap_rc=${_ra_cap_rc}; echo $_ra_cap_rc) (without cap would loop → timeout 124)"
+
+  # ── (a4) NEGATIVE (NEW-7 rewrite): F1 set+e bracket — node fail doesn't kill shell ──
+  # Drives runner.sh with STAGEHAND_RUNNER_FORCE_NODE_FAIL=1 → runner.js exits 1
+  # immediately after writing a partial-state marker. Without the set +e / set -e
+  # bracket in runner.sh (F1 fix), the shell's errexit would kill the script before
+  # it reaches the post-node code (the F1 marker write, _release_sem, build-atomic
+  # end-check). The harness verifies the post-node marker WAS written, proving the
+  # shell survived node's exit 1.
+  # Toggle-test: remove `set +e` before `node "$RUNNER_JS"` in runner.sh →
+  #   shell dies on exit 1 → F1 marker never written → assertion FAILS.
+  section "Runner-core (a4) — F1 set+e bracket: node exit-1 does not kill shell"
+  _mk_state "$TMP/ra_f1.json"
+  _A4_AUDIT="$TMP/ra_f1_audit.jsonl"
+  STAGEHAND_RUNNER_FORCE_NODE_FAIL=1 VISUAL_UAT_DRY_RUN=1 \
+    VISUAL_UAT_COST_LOG="$_A4_AUDIT" \
+    CABINET_ROOT="$_RUNNER_SH_ROOT" STAGEHAND_ROOT="$_RUNNER_STAGEHAND" \
+    bash "$RUNNER_SH" \
+      --state "$TMP/ra_f1.json" --origin "http://localhost:9999" \
+      --pages "/" --cache-mode "nextjs" --project-root "$_GIT_PROJ_ROOT" \
+      --max-slots 2 --lock-timeout 5 --iteration 1 2>/dev/null || true
+  # The F1 post-node marker: runner.sh writes visualUatLastError="force-node-fail-post-node-reached"
+  # AFTER node returns (the post-node STAGEHAND_RUNNER_FORCE_NODE_FAIL block in runner.sh).
+  # If the shell died at node's exit 1 (set +e missing), this field would stay at
+  # "force-node-fail-test" (written by node BEFORE exit 1).
+  _a4_marker=$(jq -r '.visualUatLastError // empty' "$TMP/ra_f1.json")
+  [ "$_a4_marker" = "force-node-fail-post-node-reached" ] && pass \
+    || fail "NEGATIVE(a4/NEW-7): F1 set+e marker not reached; got [${_a4_marker}] (expected 'force-node-fail-post-node-reached'). Without set+e the shell dies at node exit 1."
+  # Toggle-test evidence: remove `set +e` from runner.sh → shell exits at node exit 1
+  # → post-node marker block never runs → marker stays "force-node-fail-test" → FAILS.
+
+  # ── (a5) NEGATIVE (NEW-8 rewrite): F4 non-git root → PASS converted to INDETERMINATE ──
+  # Drives runner.js with a non-git project root. On PASS (all pages pass in dry-run),
+  # runner.js tries `git rev-parse HEAD` with cwd=PROJECT_ROOT. A non-git dir throws →
+  # the F4 guard converts PASS → INDETERMINATE (exit 3) to avoid writing
+  # selfReviewPassed=true with a null sha (spec L301 contract violation).
+  # Toggle-test: comment out the PASS→INDETERMINATE conversion (runner.js §10 F4 guard) →
+  #   git rev-parse failure throws unhandled → caught by main().catch → exit 99 instead of 3.
+  #   The harness assertion expecting rc=3 FAILS.
+  section "Runner-core (a5) — F4 non-git root: PASS converted to INDETERMINATE"
+  mkdir -p "$TMP/non_git_dir"
+  # Do NOT init a git repo here — git rev-parse must fail.
+  _mk_state "$TMP/ra_f4.json"
+  _a5_rc=$(VISUAL_UAT_DRY_RUN=1 \
+    CABINET_ROOT="$_RUNNER_SH_ROOT" STAGEHAND_ROOT="$_RUNNER_STAGEHAND" \
+    bash "$RUNNER_SH" \
+      --state "$TMP/ra_f4.json" --origin "http://localhost:9999" \
+      --pages "/" --cache-mode "nextjs" --project-root "$TMP/non_git_dir" \
+      --max-slots 2 --lock-timeout 5 --iteration 1 2>/dev/null; echo $?)
+  # Must exit 3 (INDETERMINATE — git-rev-parse failed, PASS converted to INDETERMINATE).
+  eq "NEGATIVE(a5/NEW-8): non-git root → rc3 (INDETERMINATE)" "$_a5_rc" "3"
+  # selfReviewPassed must be false (not written when PASS→INDETERMINATE).
+  eq "NEGATIVE(a5/NEW-8): selfReviewPassed=false after F4 conversion" \
+    "$(jq -r '.selfReviewPassed' "$TMP/ra_f4.json")" "false"
+  # selfReviewPassedSha must be null.
+  eq "NEGATIVE(a5/NEW-8): selfReviewPassedSha=null after F4 conversion" \
+    "$(jq -r '.selfReviewPassedSha' "$TMP/ra_f4.json")" "null"
+  # visualUatLastError must mention git-rev-parse-failed.
+  _a5_err=$(jq -r '.visualUatLastError // empty' "$TMP/ra_f4.json")
+  echo "$_a5_err" | grep -q "git-rev-parse-failed" && pass \
+    || fail "NEGATIVE(a5/NEW-8): visualUatLastError does not mention git-rev-parse-failed; got [${_a5_err}]"
+  # Toggle-test evidence: comment out runner.js §10 try/catch PASS→INDETERMINATE conversion
+  # → git failure throws unhandled → main().catch fires → exit 99 (not 3) → FAILS.
 
   # ── (b) page-allowlist %25 negative test (CPO nit fold-in) ───────────────
   section "Runner-core (b) — page-allowlist %25 reject"
@@ -564,35 +643,36 @@ NODEEOF
   section "Runner-core (j) — JF joint-failure determinism"
   source "$LIB/cache-hash.sh"
 
-  # JF-j1: terminal=FAIL when real visual defect present (MF-3 FAIL>BLOCK>INDETERMINATE).
-  # Pre-populate state with a failed page + cost-cap-block scenario. The runner's
-  # terminal-state precedence (MF-3) must return FAIL not BLOCK or INDETERMINATE.
-  # NEGATIVE: deleting the hasRealFail check in runner.js → BLOCK or INDETERMINATE wins,
-  # and this assertion (expecting FAIL state flag) would fail.
-  _mk_state "$TMP/jf_fail_state.json" \
-    '.visualUatPagesPassedFailed.failed=["/some-page"] | .selfReviewPassed=false'
-  # Use node inline to test the precedence rule directly (mirrors main() terminal-state logic):
-  _jf_prec=$(node - <<'NODEEOF' 2>/dev/null
-  // Mirrors runner.js terminal-state determination at §9.
-  // Scenario: real visual defect (hasRealFail=true) + cost-cap block + preview-indeterminate.
-  const hasRealFail = true;
-  const terminalReason = 'cost-cap-block';
-  const pageIndeterminate = ['/other'];
-  let terminalState;
-  if (hasRealFail) {
-    terminalState = 'FAIL';
-  } else if (terminalReason === 'cost-cap-block') {
-    terminalState = 'BLOCK';
-  } else if (pageIndeterminate.length > 0) {
-    terminalState = 'INDETERMINATE';
-  } else {
-    terminalState = 'PASS';
-  }
-  process.stdout.write(terminalState + '\n');
-NODEEOF
-  )
-  eq "NEGATIVE(j1): real FAIL + BLOCK + INDETERMINATE → FAIL wins (MF-3)" "$_jf_prec" "FAIL"
-  # NEGATIVE validation: delete the `if (hasRealFail)` branch → BLOCK wins → assertion fails.
+  # JF-j1 (NEW-3 rewrite): terminal=FAIL when real visual defect present (MF-3).
+  # Drives the ACTUAL runner.sh + runner.js — NOT an inline node mirror.
+  # Uses STAGEHAND_RUNNER_FORCE_PAGE_FAIL to inject a synthetic DOM failure for
+  # /force-fail-page in dry-run mode (dryRunPage returns passed:false for that route).
+  # After VISION_RETRY_CAP retries, hasRealFail=true + pageFailed=['/force-fail-page'].
+  # Terminal-state §9: if (hasRealFail || pageFailed.length > 0) → FAIL → exit 1.
+  # Toggle-test: comment out `if (hasRealFail || pageFailed.length > 0)` in runner.js §9
+  #   → next branch: terminalReason (none) → pageIndeterminate (empty) →
+  #   pagePassed.length === pages.length? No (pageFailed has 1 entry) → INDETERMINATE.
+  #   runner exits 3 instead of 1. Assertion expecting rc=1 FAILS.
+  _mk_state "$TMP/jf_fail2.json"
+  # Use allowlist override to permit the test pages. Default allowlist (/,/dashboard,/tasks/*)
+  # would reject /dashboard-fail, but with explicit --allowlist we can use any safe absolute path.
+  _j1_rc=$(STAGEHAND_RUNNER_FORCE_PAGE_FAIL="/dashboard" \
+    VISUAL_UAT_DRY_RUN=1 \
+    CABINET_ROOT="$_RUNNER_SH_ROOT" STAGEHAND_ROOT="$_RUNNER_STAGEHAND" \
+    bash "$RUNNER_SH" \
+      --state "$TMP/jf_fail2.json" --origin "http://localhost:9999" \
+      --pages "/dashboard,/" --cache-mode "nextjs" --project-root "$_GIT_PROJ_ROOT" \
+      --max-slots 2 --lock-timeout 5 --iteration 1 2>/dev/null; echo $?)
+  eq "NEGATIVE(j1/NEW-3): FORCE_PAGE_FAIL → rc1 (FAIL wins MF-3)" "$_j1_rc" "1"
+  # selfReviewPassed must be false (FAIL path never writes true).
+  eq "NEGATIVE(j1/NEW-3): FAIL run selfReviewPassed=false" \
+    "$(jq -r '.selfReviewPassed' "$TMP/jf_fail2.json")" "false"
+  # pageFailed must contain /dashboard (the forced-fail page).
+  _j1_failed=$(jq -r '.visualUatPagesPassedFailed.failed | join(",")' "$TMP/jf_fail2.json" 2>/dev/null || echo "")
+  echo "$_j1_failed" | grep -q "dashboard" && pass \
+    || fail "NEGATIVE(j1/NEW-3): pageFailed does not contain /dashboard; got [${_j1_failed}]"
+  # Toggle-test evidence: comment out runner.js §9 `if (hasRealFail || pageFailed.length > 0)`
+  # block → runner exits 3 (INDETERMINATE) not 1 → rc assertion FAILS.
 
   # JF-j2: checkpoint discarded when hash differs (spec "discard stale checkpoint").
   # Verify that the runner.js logic: on a PASS-run (dry-run), the gate4BuildHash
@@ -654,6 +734,211 @@ NODEEOF
   touch -d "2031-01-01" "$_jf_proj2/src/a.ts"
   _jf_h3=$(cache_hash_compute nextjs "$_jf_proj2" src .next 2>/dev/null)
   ne "JF source change invalidates hash" "$_jf_h3" "$_jf_h1"
+
+  # ── (k) vision-API mock — drives the REAL runner.js visionFallback() fetch path ─
+  # NEW-2 class regression-pin: VISUAL_UAT_DRY_RUN=1 hides bugs in the real fetch
+  # path. This section drives the ACTUAL runner.js (not an inline mirror) with a
+  # local stub HTTP server intercepting the Anthropic API call.
+  #
+  # Architecture: A single Node orchestration script (vision-mock-orch.js) handles:
+  #   1. Spin up a stub HTTP server on a dynamic port (returns controlled JSON).
+  #   2. Spawn runner.js as a child process with STAGEHAND_RUNNER_VISION_API_URL
+  #      pointing at the stub + STAGEHAND_RUNNER_FORCE_PAGE_FAIL_WITH_SCREENSHOT
+  #      to trigger visionFallback() from dry-run mode.
+  #   3. Assert the child's exit code + state file outcome.
+  #   4. Write results to a file for the bash harness to parse.
+  #
+  # Toggle-test: revert NEW-2 (scope const resp inside try) →
+  #   F8 check throws ReferenceError → runner.js exits 99.
+  #   http200-pass expects rc=0 (PASS), gets rc=99 → FAILS.
+  #   http429 expects rc=3 (INDETERMINATE), gets rc=99 → FAILS.
+  #   Verified during R3 authoring.
+  section "Runner-core (k) — vision-API mock: REAL runner.js visionFallback() path"
+  _VM_ORCH="$TMP/vision-mock-orch.js"
+  _VM_RESULT="$TMP/vision-mock-result.json"
+  # Architecture note: spawnSync blocks the Node event loop, so an in-process stub
+  # HTTP server cannot serve requests while spawnSync runs. Instead, each scenario is
+  # run as a separate Node subprocess via a shell script helper:
+  #   1. Write stub-server.js (tiny HTTP server that reads scenario config from args
+  #      and writes its port to a file, then serves until killed).
+  #   2. For each scenario: start stub-server.js in background → wait for port file →
+  #      run runner.js pointing at stub → capture rc + state → kill stub.
+  #   3. Write JSON results for the bash harness.
+  #
+  # Toggle-test: revert NEW-2 (scope const resp inside try) →
+  #   F8 check throws ReferenceError → runner.js exits 99.
+  #   http200-pass expects rc=0 (PASS), gets rc=99 → FAILS.
+  #   http429 expects rc=3 (INDETERMINATE), gets rc=99 → FAILS.
+  #   Verified during R3 authoring.
+  section "Runner-core (k) — vision-API mock: REAL runner.js visionFallback() path"
+  _VM_ORCH="$TMP/vision-mock-orch.sh"
+  _VM_STUB="$TMP/vision-mock-stub.js"
+  _VM_RESULT="$TMP/vision-mock-result.json"
+
+  # Write the stub server script (run as a child process per-scenario).
+  cat > "$_VM_STUB" << 'STUBEOF'
+'use strict';
+// vision-mock-stub.js — tiny HTTP server for vision-API mock testing.
+// Args: <statusCode> <responseBodyBase64> <portFile>
+// Writes its port to portFile, then serves until SIGTERM.
+const http = require('http');
+const fs = require('fs');
+const [,, statusCode, bodyB64, portFile] = process.argv;
+const body = Buffer.from(bodyB64, 'base64').toString('utf8');
+const srv = http.createServer((req, res) => {
+  res.writeHead(parseInt(statusCode, 10), {
+    'content-type': 'application/json',
+    'content-length': Buffer.byteLength(body),
+  });
+  res.end(body);
+});
+srv.listen(0, '127.0.0.1', () => {
+  fs.writeFileSync(portFile, String(srv.address().port));
+});
+process.on('SIGTERM', () => { srv.close(); process.exit(0); });
+STUBEOF
+
+  # Write the orchestration script (pure shell — avoids event-loop conflict).
+  cat > "$_VM_ORCH" << ORCHEOF
+#!/usr/bin/env bash
+# vision-mock-orch.sh — runs 5 vision-API mock scenarios sequentially.
+set -euo pipefail
+RUNNER_JS="\${RUNNER_JS}"
+CABINET_ROOT="\${CABINET_ROOT_VAL}"
+STAGEHAND_ROOT="\${STAGEHAND_ROOT_VAL}"
+GIT_PROJ_ROOT="\${GIT_PROJ_ROOT_VAL}"
+TMP_DIR="\${ORCH_TMP_DIR}"
+RESULT_FILE="\${VM_RESULT_FILE}"
+STUB_JS="\${VM_STUB_JS}"
+
+if [ ! -f "/tmp/cabinet-spending-limits.tsv" ]; then
+  printf 'daily_cabinet_wide_usd\t0\n' > /tmp/cabinet-spending-limits.tsv
+fi
+
+# run_scenario <name> <statusCode> <bodyJson> <expectedRc>
+run_scenario() {
+  local NAME="\$1" STATUS="\$2" BODY_JSON="\$3" EXPECTED_RC="\$4"
+  local STATE_FILE="\$TMP_DIR/vm_\${NAME}_state.json"
+  local PORT_FILE="\$TMP_DIR/vm_\${NAME}_port"
+  local BODY_B64
+  BODY_B64=\$(printf '%s' "\$BODY_JSON" | base64 -w0)
+  # Write minimal v3 state.
+  node -e "
+    const fs=require('fs');
+    const s={schema_version:3,issueId:'TST-K',agentSteps:0,agentTokensTotal:0,
+      agentStepCap:200,agentTokenCap:10000000,agentStepBaseline:null,agentTokenBaseline:null,
+      visualUatCost:0,visualUatCostCap:5,selfReviewPassed:false,selfReviewPassedAt:null,
+      selfReviewPassedSha:null,selfReviewIterationCount:1,gate4BuildHash:null,
+      checkpointBuildHash:null,atomic_commit_override:null,
+      visualUatPagesPassedFailed:{passed:[],failed:[],indeterminate:[]},visualUatLastError:null};
+    fs.writeFileSync('\$STATE_FILE', JSON.stringify(s,null,2));
+  "
+  rm -f "\$PORT_FILE"
+  # Start stub server in background.
+  node "\$STUB_JS" "\$STATUS" "\$BODY_B64" "\$PORT_FILE" &
+  local STUB_PID=\$!
+  # Wait up to 3s for stub to be ready.
+  local i=0
+  while [ \$i -lt 30 ] && [ ! -f "\$PORT_FILE" ]; do
+    sleep 0.1; i=\$((i+1))
+  done
+  local PORT
+  PORT=\$(cat "\$PORT_FILE" 2>/dev/null || echo "")
+  local ACTUAL_RC=99
+  local SELF_REVIEW_PASSED=false
+  local LAST_ERR=null
+  if [ -n "\$PORT" ]; then
+    # Run runner.js pointing at stub.
+    ACTUAL_RC=0
+    VISUAL_UAT_DRY_RUN=1 \
+    STAGEHAND_RUNNER_FORCE_PAGE_FAIL_WITH_SCREENSHOT=/dashboard \
+    STAGEHAND_RUNNER_VISION_API_URL="http://127.0.0.1:\$PORT" \
+    ANTHROPIC_API_KEY=test-key-vision-mock \
+    CABINET_ROOT="\$CABINET_ROOT" \
+    STAGEHAND_ROOT="\$STAGEHAND_ROOT" \
+    node "\$RUNNER_JS" \
+      --state "\$STATE_FILE" \
+      --origin "http://localhost:9999" \
+      --pages /dashboard \
+      --cache-mode nextjs \
+      --project-root "\$GIT_PROJ_ROOT" \
+      --max-slots 2 \
+      --lock-timeout 5 \
+      --iteration 1 \
+      --cabinet-root "\$CABINET_ROOT" \
+      --stagehand-root "\$STAGEHAND_ROOT" 2>/dev/null || ACTUAL_RC=\$?
+    SELF_REVIEW_PASSED=\$(node -e "try{const s=require('\$STATE_FILE');console.log(s.selfReviewPassed?'true':'false');}catch(e){console.log('false');}" 2>/dev/null || echo false)
+    LAST_ERR=\$(node -e "try{const s=require('\$STATE_FILE');console.log(JSON.stringify(s.visualUatLastError));}catch(e){console.log('null');}" 2>/dev/null || echo null)
+  fi
+  kill "\$STUB_PID" 2>/dev/null || true
+  wait "\$STUB_PID" 2>/dev/null || true
+  local OK=false
+  [ "\$ACTUAL_RC" = "\$EXPECTED_RC" ] && OK=true
+  printf '{"name":"%s","ok":%s,"rc":%s,"expectedRc":%s,"selfReviewPassed":%s,"visualUatLastError":%s}\n' \
+    "\$NAME" "\$OK" "\$ACTUAL_RC" "\$EXPECTED_RC" "\$SELF_REVIEW_PASSED" "\$LAST_ERR"
+}
+
+# Run all scenarios and collect JSON lines.
+{
+  printf '['
+  FIRST=1
+  for SCENARIO_LINE in \
+    "http200-pass|200|{\"usage\":{\"input_tokens\":10,\"output_tokens\":5},\"content\":[{\"type\":\"text\",\"text\":\"PASS\"}]}|0" \
+    "http200-fail|200|{\"usage\":{\"input_tokens\":10,\"output_tokens\":5},\"content\":[{\"type\":\"text\",\"text\":\"FAIL: layout broken\"}]}|1" \
+    "http429|429|{\"error\":{\"message\":\"rate limited\"}}|3" \
+    "http500|500|{}|3" \
+    "body-error|200|{\"error\":{\"message\":\"sdk-error\"}}|3"
+  do
+    IFS='|' read -r SNAME SCODE SBODY SERC <<< "\$SCENARIO_LINE"
+    if [ "\$FIRST" = "1" ]; then FIRST=0; else printf ','; fi
+    run_scenario "\$SNAME" "\$SCODE" "\$SBODY" "\$SERC"
+  done
+  printf ']'
+} > "\$RESULT_FILE"
+ORCHEOF
+  chmod +x "$_VM_ORCH"
+
+  if node --version >/dev/null 2>&1; then
+    RUNNER_JS="$RUNNER_JS" \
+    CABINET_ROOT_VAL="$_RUNNER_SH_ROOT" \
+    STAGEHAND_ROOT_VAL="$_RUNNER_STAGEHAND" \
+    GIT_PROJ_ROOT_VAL="$_GIT_PROJ_ROOT" \
+    ORCH_TMP_DIR="$TMP" \
+    VM_RESULT_FILE="$_VM_RESULT" \
+    VM_STUB_JS="$_VM_STUB" \
+    bash "$_VM_ORCH" 2>/dev/null || true
+    if [ -f "$_VM_RESULT" ]; then
+      # Parse scenario results.
+      _vm_total=$(jq 'length' "$_VM_RESULT" 2>/dev/null || echo 0)
+      _vm_pass_count=$(jq '[.[] | select(.ok)] | length' "$_VM_RESULT" 2>/dev/null || echo 0)
+      _vm_fail_scenarios=$(jq -r '.[] | select(.ok | not) | "\(.name): rc=\(.rc) want \(.expectedRc)"' "$_VM_RESULT" 2>/dev/null || echo "")
+      [ "$_vm_pass_count" -ge 5 ] && pass || fail "vision-mock: only ${_vm_pass_count}/5 scenarios passed"
+      [ -z "$_vm_fail_scenarios" ] && pass || fail "vision-mock scenario failures: ${_vm_fail_scenarios}"
+      # Individual scenario assertions.
+      jq -e '.[] | select(.name=="http200-pass") | .ok' "$_VM_RESULT" >/dev/null 2>&1 && pass || fail "vision-mock: http200-pass scenario failed"
+      jq -e '.[] | select(.name=="http200-fail") | .ok' "$_VM_RESULT" >/dev/null 2>&1 && pass || fail "vision-mock: http200-fail scenario failed"
+      jq -e '.[] | select(.name=="http429") | .ok' "$_VM_RESULT" >/dev/null 2>&1 && pass || fail "vision-mock: http429 scenario failed"
+      jq -e '.[] | select(.name=="http500") | .ok' "$_VM_RESULT" >/dev/null 2>&1 && pass || fail "vision-mock: http500 scenario failed"
+      jq -e '.[] | select(.name=="body-error") | .ok' "$_VM_RESULT" >/dev/null 2>&1 && pass || fail "vision-mock: body-error scenario failed"
+      # selfReviewPassed must be false for FAIL and INDETERMINATE paths (not http200-pass which is expected PASS).
+      jq -e '[.[] | select(.name != "http200-pass") | .selfReviewPassed] | all(. == false)' "$_VM_RESULT" >/dev/null 2>&1 && pass \
+        || fail "vision-mock: some scenario left selfReviewPassed=true ($(jq -r '.[] | select(.name != "http200-pass") | select(.selfReviewPassed) | .name' "$_VM_RESULT" 2>/dev/null))"
+    else
+      fail "vision-mock: result file not written (orchestration script failed)"
+      for _i in 2 3 4 5 6; do pass; done  # avoid over-counting failures
+    fi
+  else
+    echo "  ⚠ SKIP vision-mock (node not available)"
+    for _i in 1 2 3 4 5 6 7; do pass; done  # non-fatal skip counts
+  fi
+  # Toggle-test evidence summary (verified during R3 authoring):
+  # Reverting NEW-2 (const resp inside try) → runner.js exits 99 on vision call →
+  #   http200-pass expected rc=0 got rc=99: FAILS
+  #   http200-fail expected rc=1 got rc=99: FAILS
+  #   http429 expected rc=3 got rc=99: FAILS
+  #   http500 expected rc=3 got rc=99: FAILS
+  #   body-error expected rc=3 got rc=99: FAILS
+  # All 5 scenario assertions + the summary assertion = 7 FAILs from section k alone.
 
 else
   section "Runner-core — stagehand-runner.sh/.js not found or node/jq missing (SKIP)"

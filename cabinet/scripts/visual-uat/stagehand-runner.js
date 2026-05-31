@@ -401,10 +401,18 @@ async function visionFallback(screenshotBase64, taskId, pageRoute, attemptN) {
     return { ok: false, finding: null, inTok: 0, outTok: 0, costUsd: 0 };
   }
 
+  // NEW-2 (CRITICAL): hoist resp + body to outer scope so the F8 error-check at
+  // the bottom of the try block can reference resp.ok / resp.status without
+  // a ReferenceError. const-inside-try scoping made resp inaccessible outside the
+  // try, causing every vision-fallback invocation to throw ReferenceError → exit 99.
+  // STAGEHAND_RUNNER_VISION_API_URL: override the Anthropic API base URL for
+  // hermetic testing (points at a local stub HTTP server). Only used in tests.
+  const VISION_API_URL = (process.env.STAGEHAND_RUNNER_VISION_API_URL || 'https://api.anthropic.com') + '/v1/messages';
+  let resp;
   let body;
   try {
     // Use the Anthropic Messages API directly (no extra SDK needed).
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    resp = await fetch(VISION_API_URL, {
       method: 'POST',
       headers: {
         'x-api-key': apiKey,
@@ -441,8 +449,9 @@ async function visionFallback(screenshotBase64, taskId, pageRoute, attemptN) {
   // → text='' → text.startsWith('FAIL:')=false → returns ok:true with costUsd:0.
   // That is a real false-PASS path: the DOM check failed, vision was supposed to
   // confirm, vision errored silently, runner declares PASS.
-  if (!resp.ok || body.error) {
-    const errMsg = `vision-api-error: ${resp.status} ${body?.error?.message ?? 'no-body'}`;
+  // resp is now in outer scope (NEW-2 fix) so this check is reachable.
+  if (!resp || !resp.ok || body?.error) {
+    const errMsg = `vision-api-error: ${resp?.status ?? '?'} ${body?.error?.message ?? 'no-body'}`;
     process.stderr.write(`stagehand-runner.js: ${errMsg}\n`);
     return { ok: false, failed: false, finding: null, inTok: 0, outTok: 0, costUsd: 0,
              errorMessage: errMsg };
@@ -483,9 +492,46 @@ function isDryRun() {
 }
 
 async function dryRunPage(pageRoute) {
-  // Fake a 50ms DOM snapshot + return PASS.
+  // STAGEHAND_RUNNER_FORCE_PAGE_FAIL: comma-separated page routes that should
+  // return a synthetic DOM failure in dry-run mode. Used by the harness to exercise
+  // the FAIL terminal-state precedence path without a real Stagehand/browser run.
+  // Toggle-test target: comment out the `forceFail` branch → hasRealFail never set
+  // → terminal-state precedence test fails (PASS instead of FAIL).
+  const forceFailPages = (process.env.STAGEHAND_RUNNER_FORCE_PAGE_FAIL || '')
+    .split(',').map(p => p.trim()).filter(Boolean);
+  const forceFail = forceFailPages.includes(pageRoute);
+
+  // STAGEHAND_RUNNER_FORCE_PAGE_FAIL_WITH_SCREENSHOT: same as FORCE_PAGE_FAIL but
+  // also returns a fake 1x1 PNG screenshot so the vision-fallback code path is
+  // triggered (visionFallback is only called when !domPassed && screenshotB64).
+  // Used by the vision-API mock test (section k) to exercise the real fetch path.
+  const forceFailWithSsPages = (process.env.STAGEHAND_RUNNER_FORCE_PAGE_FAIL_WITH_SCREENSHOT || '')
+    .split(',').map(p => p.trim()).filter(Boolean);
+  const forceFailWithSs = forceFailWithSsPages.includes(pageRoute);
+
+  // Minimal 1x1 transparent PNG (base64) — used as fake screenshot for vision test.
+  const FAKE_PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+  // Fake a 50ms DOM snapshot + return PASS (or forced FAIL).
   await sleep(50);
+  if (forceFailWithSs) {
+    return { passed: false, finding: 'FORCED-FAIL-WITH-SCREENSHOT: synthetic page failure for vision test', screenshotB64: FAKE_PNG_B64 };
+  }
+  if (forceFail) {
+    return { passed: false, finding: 'FORCED-FAIL: synthetic page failure for test', screenshotB64: null };
+  }
   return { passed: true, finding: null, screenshotB64: null };
+}
+
+// STAGEHAND_RUNNER_FORCE_NODE_FAIL: when set to '1', the runner writes partial
+// state (selfReviewPassed=false) then exits 1 immediately after the page loop.
+// This exercises the set +e / set -e bracket in stagehand-runner.sh (F1):
+// without the bracket, shell errexit kills the script before _release_sem +
+// build-atomic end-check execute, breaking the build-atomic guarantee.
+// Toggle-test target: remove `set +e` before `node` in runner.sh → shell dies
+// on exit 1 → harness assertion (checking post-node code ran) FAILS.
+function shouldForceNodeFail() {
+  return process.env.STAGEHAND_RUNNER_FORCE_NODE_FAIL === '1';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -515,15 +561,15 @@ async function main() {
   // ── 2. Ensure schema_version 3 (Phase 3 adds visualUatCostCap) ─────────────
   // Per spec: if Phase 2a shipped real v2 files → bump to 3; otherwise stay v2.
   // We always write visualUatCostCap if absent (state field, not just config).
-  // F18: stamp schema_version=3 if it is MISSING ENTIRELY (not just === 2).
-  // A file with no schema_version field must be upgraded to v3 consistently.
+  // F18/NEW-5: stamp schema_version=3 UNCONDITIONALLY when missing/null — NOT
+  // nested inside the visualUatCostCap conditional. A file that already has
+  // visualUatCostCap (set by a prior run or by migrate-active-task.sh) but is
+  // missing schema_version must still be upgraded.
+  if (!('schema_version' in state) || state.schema_version === null || state.schema_version === 2) {
+    state.schema_version = 3;
+  }
   if (!('visualUatCostCap' in state)) {
     state.visualUatCostCap = DEFAULT_VISUAL_CAP;
-    // Bump schema_version to 3 if we are on v2 (Phase 2a shipped) OR if the
-    // field is entirely absent (F18: missing schema_version → stamp as 3).
-    if (state.schema_version === 2 || !('schema_version' in state)) {
-      state.schema_version = 3;
-    }
   }
   if (!('visualUatPagesPassedFailed' in state)) {
     state.visualUatPagesPassedFailed = { passed: [], failed: [], indeterminate: [] };
@@ -661,6 +707,9 @@ async function main() {
         const dr = await dryRunPage(pageRoute);
         domPassed = dr.passed;
         domFinding = dr.finding;
+        // Propagate the screenshot (may be a fake PNG for vision-fallback testing).
+        // screenshotB64 stays null unless dryRunPage provided one (FORCE_PAGE_FAIL_WITH_SCREENSHOT).
+        if (dr.screenshotB64) screenshotB64 = dr.screenshotB64;
       } else {
         // Stagehand navigation.
         try {
@@ -699,7 +748,9 @@ async function main() {
             `stagehand-runner.js: vision-fallback budget $${visionFallbackBudget} exhausted ` +
             `(spent $${runningVisionFallbackCost.toFixed(4)}) — page ${pageRoute} → INDETERMINATE-BUDGET\n`
           );
-          pageIndeterminate.push(pageRoute);
+          // NEW-1: Do NOT push to pageIndeterminate here — the switch at §7e handles
+          // all bucketing. An inline push here + the switch push = double-push that
+          // corrupts the indeterminate count and the state file's pages list.
           pageResult = 'indeterminate';
           pageFinding = 'INDETERMINATE-BUDGET: vision-fallback budget exhausted';
           break;
@@ -754,9 +805,10 @@ async function main() {
             continue;
           } else {
             // Max retries exhausted with vision call failure → INDETERMINATE.
+            // NEW-1: Do NOT push to pageIndeterminate here — the switch at §7e handles
+            // all bucketing. An inline push here + the switch push = double-push.
             pageResult = 'indeterminate';
             pageFinding = vr.errorMessage || `vision-fallback failed after ${VISION_RETRY_CAP} attempts`;
-            pageIndeterminate.push(pageRoute);
             break;
           }
         }
@@ -827,6 +879,20 @@ async function main() {
     }
   } // end page loop
 
+  // ── 7i. STAGEHAND_RUNNER_FORCE_NODE_FAIL: write partial state then exit 1 ──
+  // This env toggle exercises the F1 set +e / set -e bracket in runner.sh.
+  // The bracket MUST be present so a non-zero node exit doesn't kill the shell
+  // before _release_sem + build-atomic end-check run (build-atomic guarantee).
+  // Toggle-test: remove `set +e` from runner.sh → shell exits here → the harness
+  // assertion (checking the state file for a FORCED_NODE_FAIL marker written by
+  // the shell's post-node code) will FAIL because the shell never reaches it.
+  if (shouldForceNodeFail()) {
+    process.stderr.write('stagehand-runner.js: STAGEHAND_RUNNER_FORCE_NODE_FAIL=1 — forcing exit 1 for F1 toggle-test\n');
+    // Write a partial-state marker so runner.sh post-node code can prove it ran.
+    patchState(STATE_FILE, { selfReviewPassed: false, visualUatLastError: 'force-node-fail-test' });
+    process.exit(1);
+  }
+
   // ── 8. Teardown Stagehand ─────────────────────────────────────────────────
   if (stagehand) {
     try { await stagehand.close(); } catch (_) {}
@@ -893,6 +959,16 @@ async function main() {
     });
   }
 
+  // Compute visualUatLastError for the final state, but do NOT overwrite an
+  // error that was already set by the git-rev-parse-failed or other specific
+  // error path above (F4: the else-branch at §10 sets git-rev-parse-failed;
+  // overwriting it with null here erases the diagnostic).
+  const _pageError = (pageFailed.length > 0 || pageIndeterminate.length > 0)
+    ? `${terminalState}: failed=${pageFailed.join(',')}, indeterminate=${pageIndeterminate.join(',')}`
+      .slice(0, 1024)
+    : null;
+  // Only overwrite if a specific error was NOT already written (e.g. git-rev-parse-failed).
+  const _existingError = finalState.visualUatLastError || null;
   Object.assign(finalState, {
     visualUatCost: runningCost,
     visualUatCostCap: visualUatCap,
@@ -902,10 +978,7 @@ async function main() {
       failed: pageFailed,
       indeterminate: pageIndeterminate,
     },
-    visualUatLastError: (pageFailed.length > 0 || pageIndeterminate.length > 0)
-      ? `${terminalState}: failed=${pageFailed.join(',')}, indeterminate=${pageIndeterminate.join(',')}`
-        .slice(0, 1024)
-      : null,
+    visualUatLastError: _existingError || _pageError,
   });
 
   writeState(STATE_FILE, finalState);
