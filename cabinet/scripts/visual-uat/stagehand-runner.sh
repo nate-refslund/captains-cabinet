@@ -65,9 +65,16 @@
 #   CONVENTIONAL_COMMIT_LOG  (not used here; present for env completeness)
 #   VISUAL_UAT_COST_LOG override for the JSONL audit log path
 #   VISUAL_UAT_DRY_RUN  set to 1 to skip Stagehand + emit fake results (tests)
+#   STAGEHAND_RUNNER_FORCE_PREVIEW_DOWN  set to 1 to force preview-unavailable (F21 test)
+#   S49_RERUN           re-run counter (incremented at boot, exported across exec)
 #
 # NEVER hardcode framework/workspace paths. All paths via env + CABINET_ROOT.
 set -euo pipefail
+
+# F2 — re-run cap: prevent unbounded re-exec livelock on build-hash instability.
+# S49_RERUN is exported across re-invocations so the counter survives exec "$0".
+S49_RERUN=$(( ${S49_RERUN:-0} + 1 ))
+export S49_RERUN
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 0. Boot constants (no hardcodes)
@@ -279,6 +286,12 @@ model_pricing_staleness_check 2>&1 | grep -E "^WARN" >&2 || true
 NODE_OUT_FILE="$(mktemp "/tmp/vuat-node-out.XXXXXX")"
 trap 'rm -f "$NODE_OUT_FILE"; _release_sem' EXIT INT TERM
 
+# F1: bracket node invocation with set +e / set -e so that a non-zero exit from
+# Node does NOT trigger the shell's errexit and kill the script before we reach
+# the build-atomic end-check, semaphore release, and JSONL audit emit. Without
+# this bracket, FAIL/BLOCK/INDETERMINATE exits from Node cause the shell to die
+# at L282 and skip everything below — violating the build-atomic guarantee.
+set +e
 node "$RUNNER_JS" \
   --state          "$STATE_FILE" \
   --origin         "$ORIGIN" \
@@ -298,6 +311,7 @@ node "$RUNNER_JS" \
   --officer        "$OFFICER" \
   > "$NODE_OUT_FILE" 2>&1
 NODE_RC=$?
+set -e
 
 # After Node returns, release the semaphore (Node may have released already on
 # wait-points, re-acquired, and returned with it held — release here is always
@@ -313,19 +327,76 @@ END_BUILD_HASH="$(cache_hash_compute "$CACHE_MODE" "$PROJECT_ROOT" "${CACHE_PATH
 if [ "$START_BUILD_HASH" != "UNKNOWN" ] && [ "$END_BUILD_HASH" != "UNKNOWN" ] && \
    [ "$START_BUILD_HASH" != "$END_BUILD_HASH" ]; then
   echo "stagehand-runner: WARN: build changed mid-run (start=$START_BUILD_HASH end=$END_BUILD_HASH) — discarding partial results + full re-run required (cost spent counts)" >&2
-  # Annotate state file: clear gate4BuildHash + checkpointBuildHash to force re-run.
+
+  # F2: re-run cap. Track recursive re-exec count via S49_RERUN (incremented at
+  # script top, exported so it survives exec). Cap at 2 re-runs to prevent
+  # unbounded livelock on hash-churn (malicious cache-hash.sh, mtime jitter,
+  # git-deps ref churn under load). On overrun: write INDETERMINATE to state +
+  # emit audit + exit 3 (INDETERMINATE — no state change).
+  if [ "$S49_RERUN" -gt 2 ]; then
+    echo "stagehand-runner: ERROR: build-instability-after-2-reruns (S49_RERUN=$S49_RERUN); capping to INDETERMINATE" >&2
+    if command -v jq >/dev/null 2>&1 && [ -f "$STATE_FILE" ]; then
+      TMP_STATE="$(mktemp "${STATE_FILE}.s49capd.XXXXXX")"
+      if jq '.STATE.visualUatLastError = "build-instability-after-2-reruns" |
+             .selfReviewPassed = false | .selfReviewPassedSha = null |
+             .selfReviewPassedAt = null | .gate4BuildHash = null | .checkpointBuildHash = null' \
+          "$STATE_FILE" > "$TMP_STATE" 2>/dev/null; then
+        mv "$TMP_STATE" "$STATE_FILE"
+      else
+        rm -f "$TMP_STATE"
+        # Fallback write using printf+jq without the nested .STATE path
+        jq '.visualUatLastError = "build-instability-after-2-reruns" |
+            .selfReviewPassed = false | .selfReviewPassedSha = null |
+            .selfReviewPassedAt = null | .gate4BuildHash = null | .checkpointBuildHash = null' \
+          "$STATE_FILE" > "${STATE_FILE}.tmp2" 2>/dev/null && mv "${STATE_FILE}.tmp2" "$STATE_FILE" || true
+      fi
+    fi
+    # Emit audit event.
+    if command -v jq >/dev/null 2>&1; then
+      jq -nc --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+             --arg officer "$OFFICER" \
+             --arg start "$START_BUILD_HASH" \
+             --arg end "$END_BUILD_HASH" \
+        '{ts:$ts,event:"BUILD_INSTABILITY_CAP",rerun_count:3,start_hash:$start,end_hash:$end,officer:$officer}' \
+        >> "$COST_LOG" 2>/dev/null || true
+    fi
+    # F25: clean tmp file before exit (trap fires on EXIT but make explicit).
+    rm -f "$NODE_OUT_FILE" || true
+    exit 3
+  fi
+
+  # Annotate state file: clear gate4BuildHash + checkpointBuildHash + selfReviewPassed
+  # to force a clean re-run. Also null selfReviewPassedAt (F3: was missing).
   if command -v jq >/dev/null 2>&1 && [ -f "$STATE_FILE" ]; then
     TMP_STATE="$(mktemp "${STATE_FILE}.s49reset.XXXXXX")"
-    if jq '.gate4BuildHash=null | .checkpointBuildHash=null | .selfReviewPassed=false | .selfReviewPassedSha=null' \
+    if jq '.gate4BuildHash=null | .checkpointBuildHash=null | .selfReviewPassed=false |
+           .selfReviewPassedSha=null | .selfReviewPassedAt=null' \
         "$STATE_FILE" > "$TMP_STATE" 2>/dev/null; then
       mv "$TMP_STATE" "$STATE_FILE"
     else
       rm -f "$TMP_STATE"
     fi
   fi
+
+  # F3: emit BUILD_MISMATCH_DISCARDED audit event to visual-uat-cost.jsonl.
+  if command -v jq >/dev/null 2>&1; then
+    jq -nc --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+           --arg officer "$OFFICER" \
+           --arg start "$START_BUILD_HASH" \
+           --arg end "$END_BUILD_HASH" \
+           --argjson rerun "$S49_RERUN" \
+      '{ts:$ts,event:"BUILD_MISMATCH_DISCARDED",rerun_n:$rerun,start_hash:$start,end_hash:$end,officer:$officer}' \
+      >> "$COST_LOG" 2>/dev/null || true
+  fi
+
+  # F25: clean the NODE_OUT_FILE tmpfile BEFORE exec. exec() destroys the EXIT
+  # trap, so the 'rm -f "$NODE_OUT_FILE"' trap installed above will NOT fire on
+  # re-exec. Each re-run would otherwise leak a /tmp file.
+  rm -f "$NODE_OUT_FILE" || true
+
   # Re-run: discard current results, re-invoke the gate.
   # Cost spent (already written by Node to state file) is preserved.
-  # Forward the new START_BUILD_HASH so the re-run has the correct anchor.
+  # S49_RERUN is exported so the counter increments correctly on each re-exec.
   exec "$0" \
     --state          "$STATE_FILE" \
     --origin         "$ORIGIN" \

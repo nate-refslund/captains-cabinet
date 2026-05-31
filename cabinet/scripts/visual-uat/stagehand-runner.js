@@ -182,14 +182,22 @@ function semRenew(key, owner, ttl) {
 }
 
 // model_pricing_cost wrapper.
-function pricingCost(model, inTok, outTok, cacheWriteTok, cacheReadTok) {
+// F7: throw on model-pricing.sh failure so the caller (vision-fallback site)
+// can catch it and surface as INDETERMINATE — NEVER silently return 0, which
+// would disable the cost-cap entirely (cap never fires if every call costs 0).
+// F11: default tier='1h' — the cabinet runs ENABLE_PROMPT_CACHING_1H=1, so
+// the 1h cache multipliers apply to all vision calls.
+function pricingCost(model, inTok, outTok, cacheWriteTok, cacheReadTok, tier='1h') {
   const r = shellLib('model-pricing.sh', 'model_pricing_cost',
-    model, inTok, outTok, cacheWriteTok || 0, cacheReadTok || 0);
-  if (r.ok) {
-    const n = parseFloat(r.stdout);
-    return isFinite(n) ? n : 0;
+    model, inTok, outTok, cacheWriteTok || 0, cacheReadTok || 0, tier);
+  if (!r.ok) {
+    throw new Error(`model_pricing_cost failed: ${r.stderr || 'unknown error'} (model=${model})`);
   }
-  return 0;
+  const n = parseFloat(r.stdout);
+  if (!isFinite(n)) {
+    throw new Error(`model_pricing_cost returned non-finite: "${r.stdout}" (model=${model})`);
+  }
+  return n;
 }
 
 // cache_hash_compute wrapper (used for checkpointBuildHash re-checks).
@@ -225,8 +233,18 @@ function redisCmd(...redisArgs) {
  * Check FW-002 cabinet daily cap: sum all *_cost_micro fields in
  * cabinet:cost:tokens:daily:<today>. Returns true if budget is available.
  * Fail-open: if Redis unavailable, return true (don't block on infra absence).
+ * Throws if the spending-limits.tsv is missing (INDETERMINATE setup-error) —
+ * propagated to main() which maps setup-error → exit 99.
  */
 function fw002BudgetAvailable(additionalUsd) {
+  // F10: readCabinetCapUsd now throws on missing file (INDETERMINATE setup-error).
+  // Let the throw propagate so main() can map it → exit 99. Do NOT catch it here.
+  const cabinetCapUsd = readCabinetCapUsd();
+  if (cabinetCapUsd === null) {
+    // Unlimited (explicit 0 or key absent) — emit WARN and proceed.
+    process.stderr.write('stagehand-runner.js: WARN: CABINET_CAP_UNLIMITED — daily_cabinet_wide_usd=0 or key absent; no FW-002 gate enforced\n');
+    return true;
+  }
   try {
     const today = new Date().toISOString().slice(0, 10);
     const hkey = `cabinet:cost:tokens:daily:${today}`;
@@ -239,9 +257,6 @@ function fw002BudgetAvailable(additionalUsd) {
       const n = parseInt(v || '0', 10);
       if (isFinite(n)) totalMicro += n;
     }
-    // Read cabinet-wide cap from spending limits config (TSV cache written by pre-tool-use.sh).
-    const cabinetCapUsd = readCabinetCapUsd();
-    if (cabinetCapUsd <= 0) return true; // unlimited
     const totalUsd = totalMicro / 1_000_000;
     return (totalUsd + additionalUsd) < cabinetCapUsd;
   } catch (e) {
@@ -250,16 +265,32 @@ function fw002BudgetAvailable(additionalUsd) {
   }
 }
 
+// F10: readCabinetCapUsd — three explicit states:
+//   throws Error  → file missing → INDETERMINATE setup-error (caller exits 99)
+//   returns null  → key absent OR value === 0 (explicit unlimited) → proceed-with-WARN
+//   returns number → enforce cap
+// The previous silent-300-fallback masked a real config error (missing TSV is a
+// setup failure that should surface as INDETERMINATE, not a $300 "default").
+// The 0-as-unlimited path was also broken: 0 <= 0 is always true, so fw002BudgetAvailable
+// would treat unlimited as "cap exceeded" if we passed 0 to the comparison.
 function readCabinetCapUsd() {
   const cachePath = '/tmp/cabinet-spending-limits.tsv';
-  try {
-    const rows = fs.readFileSync(cachePath, 'utf8').split('\n');
-    for (const row of rows) {
-      const [key, val] = row.split('\t');
-      if (key === 'daily_cabinet_wide_usd') return parseFloat(val) || 0;
+  if (!fs.existsSync(cachePath)) {
+    throw new Error('cabinet-spending-limits.tsv missing — INDETERMINATE setup-error');
+  }
+  const rows = fs.readFileSync(cachePath, 'utf8').split('\n');
+  for (const row of rows) {
+    const [key, val] = row.split(/\s+/);
+    if (key === 'daily_cabinet_wide_usd') {
+      const parsed = parseFloat(val);
+      if (Number.isNaN(parsed)) {
+        throw new Error(`cabinet-cap parse-failure: "${val}" — INDETERMINATE setup-error`);
+      }
+      if (parsed === 0) return null; // explicit unlimited — proceed-with-WARN
+      return parsed;
     }
-  } catch (_) {}
-  return 300; // framework default
+  }
+  return null; // key absent — treat as unlimited-with-WARN (distinct from missing file)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -401,7 +432,20 @@ async function visionFallback(screenshotBase64, taskId, pageRoute, attemptN) {
     body = await resp.json();
   } catch (e) {
     process.stderr.write(`stagehand-runner.js: vision-fallback API error: ${e.message}\n`);
-    return { ok: false, finding: null, inTok: 0, outTok: 0, costUsd: 0 };
+    return { ok: false, failed: false, finding: null, inTok: 0, outTok: 0, costUsd: 0,
+             errorMessage: `vision-api-network-error: ${e.message}` };
+  }
+
+  // F8: check HTTP status and API error body BEFORE reading usage/content.
+  // Without this, HTTP 429/401/500 → body.usage=undefined → inTok=0, costUsd=0
+  // → text='' → text.startsWith('FAIL:')=false → returns ok:true with costUsd:0.
+  // That is a real false-PASS path: the DOM check failed, vision was supposed to
+  // confirm, vision errored silently, runner declares PASS.
+  if (!resp.ok || body.error) {
+    const errMsg = `vision-api-error: ${resp.status} ${body?.error?.message ?? 'no-body'}`;
+    process.stderr.write(`stagehand-runner.js: ${errMsg}\n`);
+    return { ok: false, failed: false, finding: null, inTok: 0, outTok: 0, costUsd: 0,
+             errorMessage: errMsg };
   }
 
   const usage = body.usage || {};
@@ -409,7 +453,18 @@ async function visionFallback(screenshotBase64, taskId, pageRoute, attemptN) {
   const outTok = usage.output_tokens || 0;
   const cacheReadTok = usage.cache_read_input_tokens || 0;
   const cacheWriteTok = usage.cache_creation_input_tokens || 0;
-  const costUsd = pricingCost(VISION_MODEL, inTok, outTok, cacheWriteTok, cacheReadTok);
+
+  // F7: pricingCost now throws on failure. Catch here and return ok:false with
+  // errorMessage so the caller can mark the page INDETERMINATE (not silently
+  // accept costUsd=0 which disables the cost-cap).
+  let costUsd;
+  try {
+    costUsd = pricingCost(VISION_MODEL, inTok, outTok, cacheWriteTok, cacheReadTok);
+  } catch (pricingErr) {
+    process.stderr.write(`stagehand-runner.js: model-pricing failed: ${pricingErr.message}\n`);
+    return { ok: false, failed: false, finding: null, inTok, outTok, costUsd: 0,
+             errorMessage: `model-pricing-failed: ${pricingErr.message}` };
+  }
 
   const text = (body.content || []).map(b => b.text || '').join('');
   const failed = text.startsWith('FAIL:');
@@ -460,10 +515,13 @@ async function main() {
   // ── 2. Ensure schema_version 3 (Phase 3 adds visualUatCostCap) ─────────────
   // Per spec: if Phase 2a shipped real v2 files → bump to 3; otherwise stay v2.
   // We always write visualUatCostCap if absent (state field, not just config).
+  // F18: stamp schema_version=3 if it is MISSING ENTIRELY (not just === 2).
+  // A file with no schema_version field must be upgraded to v3 consistently.
   if (!('visualUatCostCap' in state)) {
     state.visualUatCostCap = DEFAULT_VISUAL_CAP;
-    // Only bump schema_version if we are on v2 (Phase 2a shipped).
-    if (state.schema_version === 2) {
+    // Bump schema_version to 3 if we are on v2 (Phase 2a shipped) OR if the
+    // field is entirely absent (F18: missing schema_version → stamp as 3).
+    if (state.schema_version === 2 || !('schema_version' in state)) {
       state.schema_version = 3;
     }
   }
@@ -496,9 +554,17 @@ async function main() {
 
   // In dry-run mode: skip the actual preview probe (no network calls needed).
   // Dry-run is for hermetic testing of state-machine logic; preview is assumed available.
+  // F21: STAGEHAND_RUNNER_FORCE_PREVIEW_DOWN=1 forces the probe to return unavailable
+  // regardless of actual state, allowing tests to exercise the first-iter INDETERMINATE
+  // and second-iter FAIL paths without a real network call or 90s poll wait.
   let probeResult;
-  if (isDryRun()) {
+  if (isDryRun() && process.env.STAGEHAND_RUNNER_FORCE_PREVIEW_DOWN !== '1') {
     probeResult = { available: true, semKey: currentSemKey };
+  } else if (process.env.STAGEHAND_RUNNER_FORCE_PREVIEW_DOWN === '1') {
+    // Force preview-down path: release semaphore (MF-5 discipline even in test)
+    // then immediately return unavailable (skip the 3×30s poll).
+    semRelease(currentSemKey, SEM_OWNER);
+    probeResult = { available: false, semKey: null };
   } else {
     probeResult = await probePreviewAvailability(ORIGIN, currentSemKey, SEM_OWNER);
     currentSemKey = probeResult.semKey; // may be null if re-acquire failed or preview down
@@ -678,15 +744,21 @@ async function main() {
             domPassed = true;
             domFinding = null;
           }
-        } else if (attempt < VISION_RETRY_CAP) {
-          // Vision call failed — retry.
-          await sleep(1000);
-          continue;
         } else {
-          // Max retries exhausted with vision call failure → INDETERMINATE.
-          pageResult = 'indeterminate';
-          pageFinding = `vision-fallback failed after ${VISION_RETRY_CAP} attempts`;
-          break;
+          // F7/F8: vision call returned ok:false (HTTP error, API error, or pricing
+          // failure). Treat as INDETERMINATE for this page — we cannot accept the
+          // page as PASS when the vision check itself errored.
+          if (attempt < VISION_RETRY_CAP) {
+            // Retry on transient errors (429, network blip).
+            await sleep(1000);
+            continue;
+          } else {
+            // Max retries exhausted with vision call failure → INDETERMINATE.
+            pageResult = 'indeterminate';
+            pageFinding = vr.errorMessage || `vision-fallback failed after ${VISION_RETRY_CAP} attempts`;
+            pageIndeterminate.push(pageRoute);
+            break;
+          }
         }
       }
 
@@ -781,19 +853,38 @@ async function main() {
   const finalState = readState(STATE_FILE) || {};
 
   if (terminalState === 'PASS') {
-    // selfReviewPassedSha bound to git HEAD at pass time (AC #5 M5).
-    let passedSha = null;
+    // F4: selfReviewPassedSha bound to git HEAD at pass time (AC #5 M5).
+    // If git rev-parse fails, we MUST NOT write selfReviewPassed=true with a
+    // null sha — the spec contract is "PASS attests to exactly one
+    // gate4BuildHash + selfReviewPassedSha" (spec L301). A null sha breaks
+    // the /ship-pr Phase 0 HEAD-match guard. Instead: convert to INDETERMINATE.
+    let passedSha;
     try {
       passedSha = execSync('git rev-parse HEAD', { encoding: 'utf8', cwd: PROJECT_ROOT }).trim();
+      if (!passedSha) throw new Error('empty rev-parse output');
     } catch (e) {
-      process.stderr.write(`stagehand-runner.js: git rev-parse HEAD failed: ${e.message}\n`);
+      process.stderr.write(`stagehand-runner.js: git rev-parse HEAD failed: ${e.message} — converting PASS to INDETERMINATE (selfReviewPassedSha cannot be null)\n`);
+      // Convert PASS → INDETERMINATE. Fall through to the non-PASS branch.
+      terminalState = 'INDETERMINATE';
+      passedSha = null;
     }
-    Object.assign(finalState, {
-      selfReviewPassed: true,
-      selfReviewPassedSha: passedSha,
-      selfReviewPassedAt: new Date().toISOString(),
-      gate4BuildHash: START_BUILD_HASH,
-    });
+
+    if (terminalState === 'PASS' && passedSha) {
+      Object.assign(finalState, {
+        selfReviewPassed: true,
+        selfReviewPassedSha: passedSha,
+        selfReviewPassedAt: new Date().toISOString(),
+        gate4BuildHash: START_BUILD_HASH,
+      });
+    } else {
+      // git rev-parse failed: write INDETERMINATE state (not PASS).
+      Object.assign(finalState, {
+        selfReviewPassed: false,
+        selfReviewPassedSha: null,
+        selfReviewPassedAt: null,
+        visualUatLastError: `git-rev-parse-failed: ${terminalState}`,
+      });
+    }
   } else {
     // On non-PASS: clear selfReviewPassed (never leave stale true).
     Object.assign(finalState, {

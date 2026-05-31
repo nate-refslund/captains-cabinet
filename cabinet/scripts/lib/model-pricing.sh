@@ -20,22 +20,32 @@ _mp_epoch() {
   date -u -d "$1" +%s 2>/dev/null || date -u -j -f "%Y-%m-%d" "$1" +%s 2>/dev/null
 }
 
-# Resolve a model string to a table key: exact match, else the LONGEST prefix match
-# (so a dated id like claude-opus-4-7-20260101 maps to the claude-opus-4-7 entry).
+# Resolve a model string to a table key: exact match, OR a dated-suffix match
+# where the model ID ends in -YYYYMMDD (exactly 8 decimal digits).
+# F26: the old longest-prefix match would silently map a future model like
+# claude-opus-4-70 to the claude-opus-4-7 entry (claude-opus-4-7 is a prefix
+# of claude-opus-4-70). The new pattern requires either an exact hit or the
+# suffix after the key is exactly "-NNNNNNNN" (an 8-digit date suffix), which
+# prevents false-positive matches on genuinely different models.
 _mp_key() {
-  local model="$1" keys k best=""
+  local model="$1" keys k
   command -v jq >/dev/null 2>&1 || return 1
   [ -f "$MODEL_PRICING_JSON" ] || return 1
+  # 1. Exact match — fastest path.
   if jq -e --arg m "$model" '.models[$m]' "$MODEL_PRICING_JSON" >/dev/null 2>&1; then
     echo "$model"; return 0
   fi
+  # 2. Dated-suffix match: accept <key>-YYYYMMDD (exactly 8 digits, no more).
+  # e.g. claude-opus-4-7-20260101 matches key claude-opus-4-7.
   keys="$(jq -r '.models | keys[]' "$MODEL_PRICING_JSON" 2>/dev/null)" || return 1
   for k in $keys; do
-    case "$model" in
-      "$k"*) [ "${#k}" -gt "${#best}" ] && best="$k" ;;
+    # The suffix must be a hyphen followed by exactly 8 decimal digits and nothing else.
+    local suffix="${model#"$k"}"
+    case "$suffix" in
+      -[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9])
+        echo "$k"; return 0 ;;
     esac
   done
-  [ -n "$best" ] && { echo "$best"; return 0; }
   return 1
 }
 
