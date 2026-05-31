@@ -886,7 +886,7 @@ async function main() {
   // Toggle-test: remove `set +e` from runner.sh → shell exits here → the harness
   // assertion (checking the state file for a FORCED_NODE_FAIL marker written by
   // the shell's post-node code) will FAIL because the shell never reaches it.
-  if (shouldForceNodeFail()) {
+  if (isDryRun() && shouldForceNodeFail()) {
     process.stderr.write('stagehand-runner.js: STAGEHAND_RUNNER_FORCE_NODE_FAIL=1 — forcing exit 1 for F1 toggle-test\n');
     // Write a partial-state marker so runner.sh post-node code can prove it ran.
     patchState(STATE_FILE, { selfReviewPassed: false, visualUatLastError: 'force-node-fail-test' });
@@ -941,6 +941,8 @@ async function main() {
         selfReviewPassedSha: passedSha,
         selfReviewPassedAt: new Date().toISOString(),
         gate4BuildHash: START_BUILD_HASH,
+        // Clear any intra-run error on clean PASS — scopes _existingError carryover to within-run only.
+        visualUatLastError: null,
       });
     } else {
       // git rev-parse failed: write INDETERMINATE state (not PASS).
