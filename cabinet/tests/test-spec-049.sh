@@ -754,23 +754,6 @@ NODEEOF
   #   http429 expects rc=3 (INDETERMINATE), gets rc=99 → FAILS.
   #   Verified during R3 authoring.
   section "Runner-core (k) — vision-API mock: REAL runner.js visionFallback() path"
-  _VM_ORCH="$TMP/vision-mock-orch.js"
-  _VM_RESULT="$TMP/vision-mock-result.json"
-  # Architecture note: spawnSync blocks the Node event loop, so an in-process stub
-  # HTTP server cannot serve requests while spawnSync runs. Instead, each scenario is
-  # run as a separate Node subprocess via a shell script helper:
-  #   1. Write stub-server.js (tiny HTTP server that reads scenario config from args
-  #      and writes its port to a file, then serves until killed).
-  #   2. For each scenario: start stub-server.js in background → wait for port file →
-  #      run runner.js pointing at stub → capture rc + state → kill stub.
-  #   3. Write JSON results for the bash harness.
-  #
-  # Toggle-test: revert NEW-2 (scope const resp inside try) →
-  #   F8 check throws ReferenceError → runner.js exits 99.
-  #   http200-pass expects rc=0 (PASS), gets rc=99 → FAILS.
-  #   http429 expects rc=3 (INDETERMINATE), gets rc=99 → FAILS.
-  #   Verified during R3 authoring.
-  section "Runner-core (k) — vision-API mock: REAL runner.js visionFallback() path"
   _VM_ORCH="$TMP/vision-mock-orch.sh"
   _VM_STUB="$TMP/vision-mock-stub.js"
   _VM_RESULT="$TMP/vision-mock-result.json"
@@ -879,17 +862,19 @@ run_scenario() {
 }
 
 # Run all scenarios and collect JSON lines.
+# Use ASCII RS (0x1e) as separator — safe against JSON body values containing '|'.
+RS=\$(printf '\036')
 {
   printf '['
   FIRST=1
   for SCENARIO_LINE in \
-    "http200-pass|200|{\"usage\":{\"input_tokens\":10,\"output_tokens\":5},\"content\":[{\"type\":\"text\",\"text\":\"PASS\"}]}|0" \
-    "http200-fail|200|{\"usage\":{\"input_tokens\":10,\"output_tokens\":5},\"content\":[{\"type\":\"text\",\"text\":\"FAIL: layout broken\"}]}|1" \
-    "http429|429|{\"error\":{\"message\":\"rate limited\"}}|3" \
-    "http500|500|{}|3" \
-    "body-error|200|{\"error\":{\"message\":\"sdk-error\"}}|3"
+    "http200-pass\${RS}200\${RS}{\"usage\":{\"input_tokens\":10,\"output_tokens\":5},\"content\":[{\"type\":\"text\",\"text\":\"PASS\"}]}\${RS}0" \
+    "http200-fail\${RS}200\${RS}{\"usage\":{\"input_tokens\":10,\"output_tokens\":5},\"content\":[{\"type\":\"text\",\"text\":\"FAIL: layout broken\"}]}\${RS}1" \
+    "http429\${RS}429\${RS}{\"error\":{\"message\":\"rate limited\"}}\${RS}3" \
+    "http500\${RS}500\${RS}{}\${RS}3" \
+    "body-error\${RS}200\${RS}{\"error\":{\"message\":\"sdk-error\"}}\${RS}3"
   do
-    IFS='|' read -r SNAME SCODE SBODY SERC <<< "\$SCENARIO_LINE"
+    IFS="\$RS" read -r SNAME SCODE SBODY SERC <<< "\$SCENARIO_LINE"
     if [ "\$FIRST" = "1" ]; then FIRST=0; else printf ','; fi
     run_scenario "\$SNAME" "\$SCODE" "\$SBODY" "\$SERC"
   done
@@ -925,7 +910,14 @@ ORCHEOF
         || fail "vision-mock: some scenario left selfReviewPassed=true ($(jq -r '.[] | select(.name != "http200-pass") | select(.selfReviewPassed) | .name' "$_VM_RESULT" 2>/dev/null))"
     else
       fail "vision-mock: result file not written (orchestration script failed)"
-      for _i in 2 3 4 5 6; do pass; done  # avoid over-counting failures
+      fail "vision-mock: scenario-pass-count check skipped (orch-failed)"
+      fail "vision-mock: scenario-fail-list check skipped (orch-failed)"
+      fail "vision-mock: http200-pass skipped (orch-failed)"
+      fail "vision-mock: http200-fail skipped (orch-failed)"
+      fail "vision-mock: http429 skipped (orch-failed)"
+      fail "vision-mock: http500 skipped (orch-failed)"
+      fail "vision-mock: body-error skipped (orch-failed)"
+      fail "vision-mock: selfReviewPassed check skipped (orch-failed)"
     fi
   else
     echo "  ⚠ SKIP vision-mock (node not available)"
@@ -939,6 +931,93 @@ ORCHEOF
   #   http500 expected rc=3 got rc=99: FAILS
   #   body-error expected rc=3 got rc=99: FAILS
   # All 5 scenario assertions + the summary assertion = 7 FAILs from section k alone.
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  section "Runner-core (l) — AC #24 Redis-service-down semantics"
+  # Spec 049 v3.2 AC #24: explicitly toggle-tested per [[negative-assertion-harness-pattern]].
+  # Two cases:
+  #   l1: cap-dep missing → exit 99 INDETERMINATE (runner.js readCabinetCapUsd throws)
+  #       Tested by: running with FORCE_PAGE_FAIL_WITH_SCREENSHOT (triggers vision path →
+  #       fw002BudgetAvailable → readCabinetCapUsd) + TSV hidden → exit 99.
+  #       Toggle-test: comment out `throw` in readCabinetCapUsd missing-file branch →
+  #       runner defaults to unlimited (null return) → proceeds → exit 0 → l1 FAILS.
+  #   l2: semaphore-Redis-down → fail-open + WARN (runner.sh L242-247)
+  #       Tested by: pointing REDIS_HOST to unreachable port, dry-run PASS expected.
+  #       Toggle-test: comment out PING short-circuit in runner.sh L242-247 →
+  #       no WARN emitted → l2 grep-assertion FAILS.
+  #   Both toggle-tests verified before commit (see EVIDENCE TABLE in PR body).
+
+  _l_state="$TMP/ac24-state.json"
+  _l1_tsv_hidden=0
+
+  # ── l1: cap-dep missing → exit 99 INDETERMINATE ────────────────────────────
+  # AC #24(a): proceeding without cap-knowledge is an irreversible-spend risk (ARCH-2).
+  # Trigger path: FORCE_PAGE_FAIL_WITH_SCREENSHOT → screenshotB64 set → vision block
+  # entered → fw002BudgetAvailable → readCabinetCapUsd → throws on missing TSV → exit 99.
+  # Guard under test: runner.js readCabinetCapUsd() throw on missing /tmp/cabinet-spending-limits.tsv
+  printf '{"issueId":"test-ac24-l1","selfReviewPassed":false}' > "$_l_state"
+  _l1_tsv="/tmp/cabinet-spending-limits.tsv"
+  _l1_tsv_bak="$TMP/ac24-spending-limits-bak.tsv"
+  _l1_err="$TMP/ac24-l1.err"
+  _l1_rc=0
+  if [ -f "$_l1_tsv" ]; then
+    cp "$_l1_tsv" "$_l1_tsv_bak"
+    rm -f "$_l1_tsv"
+    _l1_tsv_hidden=1
+  fi
+  VISUAL_UAT_DRY_RUN=1 \
+  STAGEHAND_RUNNER_FORCE_PAGE_FAIL_WITH_SCREENSHOT="/dashboard" \
+  CABINET_ROOT="$_RUNNER_SH_ROOT" STAGEHAND_ROOT="$_RUNNER_STAGEHAND" \
+  OFFICER=test-ac24 \
+    timeout 30 bash "$RUNNER_SH" \
+      --state "$_l_state" \
+      --origin "http://localhost:19998" \
+      --pages "/dashboard" \
+      --cache-mode git-deps \
+      --project-root "$_GIT_PROJ_ROOT" \
+    2>"$_l1_err" || _l1_rc=$?
+  # Restore TSV immediately after run.
+  [ "$_l1_tsv_hidden" -eq 1 ] && cp "$_l1_tsv_bak" "$_l1_tsv"
+  # Assert: exit 99 (INDETERMINATE setup-error — cap dep missing).
+  [ "$_l1_rc" -eq 99 ] && pass || fail "AC #24 l1: missing TSV expected exit 99, got exit $_l1_rc (stderr: $(head -3 "$_l1_err" 2>/dev/null | tr '\n' '|'))"
+  # Assert: stderr contains evidence of missing cap dep.
+  grep -qi "spending-limits\|cabinet-spending\|INDETERMINATE setup-error" "$_l1_err" 2>/dev/null && pass \
+    || fail "AC #24 l1: expected spending-limits error in stderr (got: $(head -5 "$_l1_err" 2>/dev/null | tr '\n' '|'))"
+
+  # ── l2: semaphore-Redis-down → fail-open + WARN ────────────────────────────
+  # AC #24(b): semaphore is resource-protection only (Spec 034 §2b.4), not correctness.
+  # On Redis-PING-fail: warn + proceed; do not block the run.
+  # Guard under test: runner.sh L237-248 PING short-circuit block.
+  printf '{"issueId":"test-ac24-l2","selfReviewPassed":false}' > "$_l_state"
+  _l2_err="$TMP/ac24-l2.err"
+  _l2_rc=0
+  VISUAL_UAT_DRY_RUN=1 \
+  REDIS_HOST=127.0.0.1 REDIS_PORT=19999 \
+  CABINET_ROOT="$_RUNNER_SH_ROOT" STAGEHAND_ROOT="$_RUNNER_STAGEHAND" \
+  OFFICER=test-ac24 \
+    timeout 30 bash "$RUNNER_SH" \
+      --state "$_l_state" \
+      --origin "http://localhost:19998" \
+      --pages "/dashboard" \
+      --cache-mode git-deps \
+      --project-root "$_GIT_PROJ_ROOT" \
+    2>"$_l2_err" || _l2_rc=$?
+  # Assert: exit 0 (dry-run PASS — Redis-down triggers fail-open semaphore skip, not abort).
+  [ "$_l2_rc" -eq 0 ] && pass || fail "AC #24 l2: Redis-down expected exit 0 (fail-open), got exit $_l2_rc (stderr: $(head -3 "$_l2_err" 2>/dev/null | tr '\n' '|'))"
+  # Assert: WARN in stderr confirming the fail-open branch was taken.
+  grep -qi "redis unavailable" "$_l2_err" 2>/dev/null && pass \
+    || fail "AC #24 l2: expected 'Redis unavailable' WARN in stderr (got: $(head -5 "$_l2_err" 2>/dev/null | tr '\n' '|'))"
+  # Slot-key sentinel: with Redis down at 19999, no slot keys can have been written.
+  # Verify by attempting a KEYS check on the live Redis (if available) that no new slot keys exist.
+  # If live Redis also unavailable, the WARN assertion above is sufficient (fail-open taken = no key write).
+  _l2_redis_live=0
+  redis-cli -h "${REDIS_HOST_DEFAULT:-redis}" -p "${REDIS_PORT_DEFAULT:-6379}" PING >/dev/null 2>&1 && _l2_redis_live=1 || true
+  if [ "$_l2_redis_live" -eq 1 ]; then
+    _l2_slot_keys=$(redis-cli -h "${REDIS_HOST_DEFAULT:-redis}" -p "${REDIS_PORT_DEFAULT:-6379}" KEYS "cabinet:visual-uat:slot:*" 2>/dev/null | grep "test-ac24" || true)
+    [ -z "$_l2_slot_keys" ] && pass || fail "AC #24 l2: unexpected slot keys after Redis-down run: $_l2_slot_keys"
+  else
+    pass  # live Redis unavailable — no slot-key check possible, WARN assertion suffices
+  fi
 
 else
   section "Runner-core — stagehand-runner.sh/.js not found or node/jq missing (SKIP)"
