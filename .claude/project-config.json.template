@@ -1,0 +1,53 @@
+{
+  "_comment": "Template for .claude/project-config.json — consumed by the dev-tasks plugin (STEP-Network/dev-tasks). Copy to .claude/project-config.json and fill in REQUIRED fields. Schema: https://raw.githubusercontent.com/STEP-Network/dev-tasks/main/plugin/schemas/project-config.schema.json",
+  "$schema": "https://raw.githubusercontent.com/STEP-Network/dev-tasks/main/plugin/schemas/project-config.schema.json",
+  "version": "1",
+  "git": {
+    "defaultBase": "claude/convergence-v2",
+    "hotfixBase": "claude/convergence-v2",
+    "branchConvention": "feat/<slug>",
+    "worktreeRoot": ".claude/worktrees",
+    "autoMergePolicy": {
+      "claude/convergence-v2": "never"
+    },
+    "protectedBranches": [
+      "main",
+      "master",
+      "claude/convergence-v2"
+    ]
+  },
+  "monday": {
+    "_help": "Set productId to your Monday Products-board item ID. v1MilestoneEpicIds = top-level epics that gate version releases. Run /dev-tasks:doctor after first install to verify.",
+    "productId": "REQUIRED_FILL_THIS_IN",
+    "v1MilestoneEpicIds": []
+  },
+  "environments": {
+    "uat": {
+      "url": "https://uat.captains-cabinet.example.com"
+    }
+  },
+  "i18n": {
+    "enabled": false
+  },
+  "ci": {
+    "provider": "github-actions",
+    "requiredChecks": [
+      "test",
+      "lint",
+      "Layer-separation gate"
+    ],
+    "previewUrlPattern": "^https://"
+  },
+  "rules": {
+    "extraRules": []
+  },
+  "hooks": {
+    "_help": "Opt-in dev-tasks hooks. Cabinet officers run inside the cabinet's own hook chain (pre-tool-use.sh, post-tool-use.sh, etc.), so be conservative about which dev-tasks hooks you enable — they fire IN ADDITION to cabinet hooks. Recommended initial set: just the safety + task-state guards.",
+    "enabled": [
+      "task-state-guard",
+      "protect-sensitive-files",
+      "pre-commit-secrets-scan",
+      "rule-autoload"
+    ]
+  }
+}

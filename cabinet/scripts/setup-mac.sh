@@ -283,6 +283,19 @@ else
 fi
 
 echo ""
+echo "=== Step 13: Install required Claude plugins ==="
+# Installs Claude Code plugins declared in instance/config/required-plugins.yml
+# (if present). For STEP-Network this includes dev-tasks (Monday + GitHub +
+# Vercel workflow). User-level install — one install covers all 5 officers.
+# Idempotent; warns + continues on individual install failures.
+if [ -f "$CABINET_ROOT/cabinet/scripts/install-plugins.sh" ]; then
+  bash "$CABINET_ROOT/cabinet/scripts/install-plugins.sh" 2>&1 | tail -20
+  ok "Plugin install pass complete"
+else
+  warn "install-plugins.sh not found, skipping (no Claude plugins will be installed)"
+fi
+
+echo ""
 echo "==========================================="
 echo "  Setup complete!"
 echo ""

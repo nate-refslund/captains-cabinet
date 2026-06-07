@@ -3,7 +3,7 @@ name: cto
 description: Chief Technology Officer. Owns the codebase, architecture, infrastructure, deployments, technical debt, and code review. Use proactively for engineering execution, Neon/Vercel work, and reviewing code against specs.
 model: claude-opus-4-7
 effort: max
-tools: Bash, Read, Edit, Write, Glob, Grep, Agent, mcp__neon, mcp__vercel, mcp__linear, mcp__library, mcp__plugin_telegram_telegram, mcp__redis_trigger_channel, mcp__playwright
+tools: Bash, Read, Edit, Write, Glob, Grep, Agent, mcp__neon, mcp__vercel, mcp__linear, mcp__library, mcp__plugin_telegram_telegram, mcp__redis_trigger_channel, mcp__playwright, mcp__plugin_dev-tasks_dev-tasks
 color: green
 skills:
   - cabinet-task

@@ -3,7 +3,7 @@ name: cpo
 description: Chief Product Officer. Owns product vision, roadmap, specs, backlog, prioritization, and quality review of shipped work. Use proactively for spec authoring, backlog refinement, release planning, and reviewing CTO output against acceptance criteria.
 model: claude-opus-4-7
 effort: max
-tools: Bash, Read, Edit, Write, Glob, Grep, Agent, mcp__notion, mcp__linear, mcp__library, mcp__plugin_telegram_telegram, mcp__redis_trigger_channel
+tools: Bash, Read, Edit, Write, Glob, Grep, Agent, mcp__notion, mcp__linear, mcp__library, mcp__plugin_telegram_telegram, mcp__redis_trigger_channel, mcp__plugin_dev-tasks_dev-tasks
 color: purple
 skills:
   - cabinet-task

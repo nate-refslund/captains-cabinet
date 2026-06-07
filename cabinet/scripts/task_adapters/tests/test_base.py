@@ -73,11 +73,15 @@ class TestGetAdapter:
         assert adapter.destination == "github-issues"
         assert adapter.repo == "owner/repo"
 
-    def test_monday_returns_skeleton(self):
-        adapter = get_adapter({
-            "tasks": {"system": "monday", "config": {"board_id": 1234567}}
-        })
-        assert adapter.destination == "monday"
+    def test_monday_raises_with_dev_tasks_message(self):
+        """The cabinet's Monday adapter was removed in favor of the
+        STEP-Network/dev-tasks Claude plugin. Officers use the plugin's
+        mcp__dev-tasks tools directly. The factory must explicitly tell
+        the operator to use the plugin instead."""
+        with pytest.raises(ValueError, match="dev-tasks"):
+            get_adapter({
+                "tasks": {"system": "monday", "config": {"board_id": 1234567}}
+            })
 
     def test_jira_returns_skeleton(self):
         adapter = get_adapter({
@@ -107,7 +111,7 @@ class TestAdapterContract:
 
     @pytest.mark.parametrize("config", [
         {"tasks": {"system": "github-issues", "config": {"repo": "o/r"}}},
-        {"tasks": {"system": "monday", "config": {"board_id": 1}}},
+        # monday excluded — see TestGetAdapter.test_monday_raises_with_dev_tasks_message
         {"tasks": {"system": "jira", "config": {"domain": "c", "email": "e", "project_key": "P"}}},
         {"tasks": {"system": "linear", "config": {"team_id": "t"}}},
         {"tasks": {"system": "asana", "config": {"workspace_id": "w", "project_gid": "p"}}},
@@ -125,12 +129,13 @@ class TestAdapterContract:
 class TestSkeletonsRaiseNotImplemented:
     """Skeleton adapters should explicitly NotImplementedError on the write path."""
 
-    def test_monday_push_raises(self):
-        adapter = get_adapter({
-            "tasks": {"system": "monday", "config": {"board_id": 1}}
-        })
-        with pytest.raises(NotImplementedError):
-            adapter.push(CanonicalTask(canonical_id="x", title="t"))
+    def test_monday_factory_raises_value_error(self):
+        """Monday adapter is removed entirely; factory raises ValueError
+        directing the operator to the dev-tasks plugin."""
+        with pytest.raises(ValueError, match="dev-tasks"):
+            get_adapter({
+                "tasks": {"system": "monday", "config": {"board_id": 1}}
+            })
 
     def test_jira_pull_raises(self):
         adapter = get_adapter({

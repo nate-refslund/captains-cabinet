@@ -338,11 +338,11 @@ prompt_key "LINEAR_API_KEY" \
   "RECOMMENDED" \
   "CPO (backlog), CTO (issue ops), CoS (cross-officer)"
 
-prompt_key "MONDAY_API_KEY" \
-  "Monday.com API key. Use if your team is on monday.com instead of Linear." \
+prompt_key "MONDAY_API_TOKEN" \
+  "Monday.com personal API token. Drives the STEP-Network/dev-tasks Claude plugin (44 MCP tools + 15 workflow skills). Replaces the cabinet's own Monday adapter (which was removed in favor of the plugin)." \
   "https://developer.monday.com/api-reference/docs/authentication" \
   "OPTIONAL" \
-  "CPO (if monday board is your backlog)"
+  "dev-tasks plugin → CPO (backlog), CTO (issues), CoS (cross-officer)"
 
 prompt_key "JIRA_API_KEY" \
   "Jira API key. Use if your team is on Jira." \
