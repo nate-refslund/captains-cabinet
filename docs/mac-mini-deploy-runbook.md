@@ -146,13 +146,21 @@ This `envsubst`-substitutes paths into the plist templates in `cabinet/launchd/`
 - `com.cabinet.officer.<slug>.plist` (per officer)
 - `com.cabinet.heartbeat-watchdog.plist`
 - `com.cabinet.cost-summary.plist`
+- `com.cabinet.worktree-listener.plist`
 - `com.cabinet.mission-supervisor.plist`
 - `com.cabinet.task-sync.plist`
 - `com.cabinet.role-evals-weekly.plist`
 - `com.cabinet.outbox-relay.plist`
 - `com.cabinet.ovi-weekly.plist`
 - `com.cabinet.self-improvement-loop.plist`
-- `com.cabinet.worktree-listener.plist`
+- `com.cabinet.chrome-profile.plist` (Captain-layer authenticated browser)
+- `com.cabinet.dashboard.plist` (control panel + office-display server on `:3100`)
+
+`com.cabinet.dashboard-kiosk.plist` is **opt-in** (needs a physical monitor) — deploy it separately on the office Mac mini:
+
+```bash
+bash cabinet/scripts/deploy-mac.sh --daemon dashboard-kiosk
+```
 
 Verify all registered + running:
 

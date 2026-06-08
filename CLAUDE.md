@@ -183,6 +183,18 @@ Stale Linear state breaks accountability across the Cabinet. The board is the si
 
 This is a universal Cabinet rule, not a per-deployment preference. Every Officer, every project, every Cabinet.
 
+## Docs Must Track the Code (docs-as-you-build)
+
+When you rename, delete, move, or add a script, config file, slash command, MCP server, LaunchAgent, skill, or feature — **update every doc and reference that names it, in the same change.** Not in a follow-up, not "later." Stale docs are a defect, exactly like a broken test: they mislead the next officer (and the next Captain) into acting on a reality that no longer exists.
+
+Concretely, in the same commit that changes an artifact:
+- Update the runbooks, READMEs, and any `docs/*.md` that reference it by name.
+- Update count claims (skills / commands / MCP servers / officers) in `.claude-plugin/*.json` when you add or remove one.
+- Update `CLAUDE.md` / skill bodies that name a renamed script or path.
+- Grep for the old name before you finish: `grep -rn "<old-name>" docs/ cabinet/ .claude/ *.md` — zero hits outside historical records (changelogs, dated analysis snapshots, which are deliberately frozen).
+
+If a change is large enough that doc-sync is non-trivial, that's a signal to fan out a quick read-only staleness pass (parallel finders over `docs/`, manifests, and references) and apply fixes before declaring done — not to skip it. Universal Cabinet rule: every Officer, every project, every Cabinet.
+
 ## Founder Accountability Protocol
 
 Founder-action items (Captain has to do something manually: credentials, upload, migration, approval) block the whole product. Officers track them as accountability partners, not passive reporters.

@@ -41,8 +41,9 @@ claude plugin install captains-cabinet --source captains-cabinet-marketplace
 The plugin manifest (`.claude-plugin/plugin.json`) declares:
 
 - **5 agent definitions** (cos / cto / cpo / cro / coo) from the `work` preset
-- **16 skills** — 6 cabinet-specific (cabinet-task, cabinet-route-tasks,
-  cabinet-work-graph-complete, org-status, mission-compile, ovi-publish) +
+- **18 skills** — 8 cabinet-specific (cabinet-task, cabinet-route-tasks,
+  cabinet-work-graph-complete, org-status, mission-compile, ovi-publish,
+  capability-gap, extend-cabinet) +
   10 lifted foundation skills (holistic-thinking, production-quality-ownership,
   telegram-communication, cross-officer-retro, evolution-loop,
   individual-reflection, agent-team-workflow, deploy-and-verify,

@@ -47,8 +47,8 @@ Same gate as Mac 1 Phase 7 soak: 48h under real workload with all 5 officers act
 ## Fleet positioning
 
 After 3 Macs validated:
-- **Mac 1** = Sensed product Cabinet (canonical image source)
-- **Mac 2** = Refslund.ai backend Cabinet (commercial Phase 1)
+- **Mac 1** = primary product Cabinet (canonical image source)
+- **Mac 2** = second product Cabinet (commercial Phase 1)
 - **Mac 3** = Reserve / staging (failover for either, or experimental preset deployments)
 
 Per Captain Mac Migration Directive (msg 2599) — exact role per Mac decided at Phase 8 sign-off.

@@ -209,16 +209,16 @@ captains-cabinet/
 
 Everything is configured in `instance/config/product.yml` and `cabinet/.env`. Key options:
 
-### Model Routing — Sonnet orchestrator + Opus advisor
+### Model Routing — Opus orchestrator + Sonnet subagents
 
-Officers run as **Sonnet 4.6** by default (set via `--model` flag in `cabinet/scripts/start-officer.sh`). They escalate to **Opus 4.7** only on hard sub-problems via two mechanisms:
+Officers run as **Opus 4.7** with `--effort max` by default (set via `--model` in `cabinet/scripts/start-officer.sh`). They drive the loop: read tasks, coordinate, execute, reply to the Captain, route work. Parallel subagent and Agent-Team (crew) work runs on **Sonnet 4.6** for cost-efficiency on execution that doesn't need orchestrator judgment.
 
-- `bash cabinet/scripts/advisor-crew.sh --task "..." --context <file>` — single synthesized response (Sonnet executor + Opus advisor).
+For deep sub-problems an officer consults Opus explicitly:
+
+- `bash cabinet/scripts/advisor-crew.sh --task "..." --context <file>` — one-shot synthesized consultation.
 - `Task(model="opus", prompt="...")` — independent Opus subagent with its own context, used for adversarial reviews, fresh-context audits, or multi-step subloops.
 
-Triggers and the escalation trigger list live in `memory/skills/evolved/opus-escalation.md`. Cap: 10 escalations per officer per 24h, tracked in Redis at `cabinet:opus-escalations:<officer>:<YYYY-MM-DD>`. The economics: roughly 1/5 the cost of Opus-on-everything for frontier-quality output, with explicit escalation when the work genuinely warrants it.
-
-Rollback: `CABINET_MODEL=claude-opus-4-7 bash cabinet/scripts/start-officer.sh <officer>` returns one officer to Opus-default; flip the default in `start-officer.sh` for fleet-wide rollback.
+Rollback: `CABINET_MODEL=claude-sonnet-4-6 bash cabinet/scripts/start-officer.sh <officer>` downgrades one officer to Sonnet; flip the default in `start-officer.sh` for fleet-wide rollback.
 
 ### Captain decisions, patterns, intents — the institutional-memory triplet
 
