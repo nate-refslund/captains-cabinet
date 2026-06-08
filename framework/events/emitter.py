@@ -74,6 +74,15 @@ VALID_EVENT_TYPES = frozenset({
     "self_improvement_loop_started",
     "self_improvement_loop_completed",
 
+    # Self-extension loop — capability gaps → auto-skill or propose-then-approve
+    "capability_gap_recorded",            # officer hit a wall, or loop inferred one
+    "capability_gap_merged",              # dedup: a recurring gap, hit_count incremented
+    "capability_gap_classified",          # routed: procedure | tool | integration
+    "capability_gap_proposed",            # tool/integration gap → proposal sent to Captain
+    "capability_gap_approved",            # Captain approved the proposal (install gate key)
+    "capability_gap_declined",            # Captain declined (with reason → learning)
+    "capability_gap_resolved",            # gap closed (auto-skilled OR built+installed)
+
     # Learning
     "experience_recorded",
     "digest_published",

@@ -1006,6 +1006,68 @@ def cmd_claude_tasks_show(args: argparse.Namespace) -> None:
     print_json({"task": task, "events": events})
 
 
+# ---------------------------------------------------------------------------
+# Capability gaps (self-extension loop) — delegates to framework.learning
+# ---------------------------------------------------------------------------
+
+def _capability_gaps():
+    """Import the framework capability_gaps module (repo root on sys.path)."""
+    import sys as _sys
+    from pathlib import Path as _Path
+    repo_root = str(_Path(__file__).resolve().parents[3])
+    if repo_root not in _sys.path:
+        _sys.path.insert(0, repo_root)
+    from framework.learning import capability_gaps as cg  # noqa
+    return cg
+
+
+def cmd_gaps_list(args: argparse.Namespace) -> None:
+    cg = _capability_gaps()
+    os.environ.setdefault("CABINET_PRODUCT_SLUG", product_arg(args))
+    gaps = cg.project_gaps(product_slug=product_arg(args))
+    if getattr(args, "status", None):
+        gaps = [g for g in gaps if g["status"] == args.status]
+    print_json(gaps)
+
+
+def cmd_gaps_show(args: argparse.Namespace) -> None:
+    cg = _capability_gaps()
+    for g in cg.project_gaps(product_slug=product_arg(args)):
+        if g["gap_id"] == args.gap_id:
+            print_json(g)
+            return
+    raise SystemExit(f"unknown capability gap: {args.gap_id}")
+
+
+def cmd_gaps_propose(args: argparse.Namespace) -> None:
+    cg = _capability_gaps()
+    touches = [t.strip() for t in (args.touches or "").split(",") if t.strip()]
+    ev = cg.propose_gap(args.gap_id, summary=args.summary, approach=args.approach,
+                        touches=touches, actor=args.actor, product_slug=product_arg(args))
+    print_json({"proposed": args.gap_id, "event_id": ev.get("id")})
+
+
+def cmd_gaps_approve(args: argparse.Namespace) -> None:
+    cg = _capability_gaps()
+    ev = cg.approve_gap(args.gap_id, actor=args.actor, note=args.note or "",
+                        product_slug=product_arg(args))
+    print_json({"approved": args.gap_id, "event_id": ev.get("id")})
+
+
+def cmd_gaps_decline(args: argparse.Namespace) -> None:
+    cg = _capability_gaps()
+    ev = cg.decline_gap(args.gap_id, reason=args.reason or "", actor=args.actor,
+                        product_slug=product_arg(args))
+    print_json({"declined": args.gap_id, "event_id": ev.get("id")})
+
+
+def cmd_gaps_resolve(args: argparse.Namespace) -> None:
+    cg = _capability_gaps()
+    ev = cg.resolve_gap(args.gap_id, resolution=args.resolution, actor=args.actor,
+                        product_slug=product_arg(args))
+    print_json({"resolved": args.gap_id, "resolution": args.resolution, "event_id": ev.get("id")})
+
+
 def table_exists(store: Store, table: str) -> bool:
     row = store.row("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", (table,))
     return row is not None
@@ -1947,6 +2009,44 @@ def build_parser() -> argparse.ArgumentParser:
     add_common(p)
     p.add_argument("--limit", type=int, default=200)
     p.set_defaults(func=cmd_tasks_drift_report)
+
+    gaps = sub.add_parser("gaps")
+    gaps_sub = gaps.add_subparsers(dest="cmd", required=True)
+    p = gaps_sub.add_parser("list")
+    add_common(p)
+    p.add_argument("--status")
+    p.add_argument("--json", action="store_true", help="(output is always JSON; flag accepted for callers)")
+    p.set_defaults(func=cmd_gaps_list)
+    p = gaps_sub.add_parser("show")
+    add_common(p)
+    p.add_argument("gap_id")
+    p.set_defaults(func=cmd_gaps_show)
+    p = gaps_sub.add_parser("propose")
+    add_common(p)
+    p.add_argument("gap_id")
+    p.add_argument("--summary", required=True)
+    p.add_argument("--approach", required=True)
+    p.add_argument("--touches", default="")
+    p.add_argument("--actor", default="cabinet")
+    p.set_defaults(func=cmd_gaps_propose)
+    p = gaps_sub.add_parser("approve")
+    add_common(p)
+    p.add_argument("gap_id")
+    p.add_argument("--note", default="")
+    p.add_argument("--actor", default="captain")
+    p.set_defaults(func=cmd_gaps_approve)
+    p = gaps_sub.add_parser("decline")
+    add_common(p)
+    p.add_argument("gap_id")
+    p.add_argument("--reason", default="")
+    p.add_argument("--actor", default="captain")
+    p.set_defaults(func=cmd_gaps_decline)
+    p = gaps_sub.add_parser("resolve")
+    add_common(p)
+    p.add_argument("gap_id")
+    p.add_argument("--resolution", required=True)
+    p.add_argument("--actor", default="cabinet")
+    p.set_defaults(func=cmd_gaps_resolve)
 
     roles = sub.add_parser("roles")
     roles_sub = roles.add_subparsers(dest="cmd", required=True)

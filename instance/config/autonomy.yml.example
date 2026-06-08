@@ -1,0 +1,57 @@
+# autonomy.yml — the self-extension autonomy gradient.
+#
+# Governs how far the Cabinet may go ON ITS OWN when it detects a capability
+# gap (a wall an officer hit / a recurring manual workaround the loop inferred).
+#
+# Copy to autonomy.yml and tune. If absent, the conservative DEFAULTS below
+# apply. The gradient can only LOOSEN within the per-kind ceilings — it can
+# NEVER override the hard floor (see `hard_ceiling`).
+#
+# Two-axis model:
+#   kind      what the gap needs:
+#               procedure   — a reusable how-to (a skill). Text/data. Low blast.
+#               tool        — a single new capability (likely an MCP server).
+#                             Code + maybe creds + network. High blast.
+#               integration — a whole external system hookup (MCP + auth + config).
+#                             Highest blast.
+#   action    what the cabinet does for that kind:
+#               auto        — build + apply WITHOUT asking. Only ever safe when a
+#                             validation gate (evals) stands in for human review.
+#               propose     — draft it + DM the Captain a plain-language yes/no.
+#                             Nothing installs until an approval event exists.
+#               off         — don't even propose (record the gap, surface it, stop).
+
+defaults:
+  procedure: auto       # auto-skilled, but ONLY if it passes the eval gate
+  tool: propose         # never auto-installs code; Captain taps yes/no
+  integration: propose  # same
+
+# Graduation — the "slowly toward auto-autonomy" knob.
+# After `auto_after_clean_approvals` approvals in a kind, with NO incident,
+# that kind MAY be promoted from `propose` to `auto`. Set 0 to disable
+# graduation entirely (stay at the defaults forever). Graduation NEVER lifts
+# the hard ceiling below.
+graduation:
+  enabled: false                 # off until you trust it; flip on post-activation
+  auto_after_clean_approvals: 10 # e.g. after 10 clean 'tool' approvals, tool→auto
+  reset_on_incident: true        # any declined-as-unsafe / rollback resets the count
+
+# Hard ceiling — NON-NEGOTIABLE. Any gap whose proposal touches one of these
+# stays `propose` forever, regardless of `defaults` or `graduation`. The gate
+# (framework/learning/capability_gaps.can_install) fails CLOSED on these +
+# on any ambiguity. This is what makes the rest safe to automate.
+hard_ceiling:
+  always_propose_if_touches:
+    - secrets          # reads/writes API keys, tokens, credentials
+    - spending         # anything that can incur cost / billing
+    - external_comms   # sends email / messages / posts on the org's behalf
+    - production        # touches prod deploy / prod data
+    - network_write    # POST/PUT/DELETE to external services (not read-only)
+    - credentials_grant # creates new auth scopes / OAuth grants
+
+# Classifier safety: when the cabinet can't tell whether a gap is a procedure
+# (auto-skill) or needs code (propose), it ERRS TOWARD propose. A wrongly
+# auto-skilled tool-gap wastes a draft; a wrongly proposed procedure costs the
+# Captain one extra tap. Erring toward human-in-loop is the safe direction.
+classifier:
+  ambiguous_defaults_to: propose

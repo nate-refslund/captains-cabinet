@@ -688,6 +688,16 @@ def run_loop(
         )
         drafted_paths = [Path(f"<dry-run-cluster-{i}>") for i, _ in enumerate(clusters)]
 
+    # Stage 3.5 — route open capability gaps (self-extension) ----------------
+    # procedure gaps → auto_skilling; tool/integration gaps → proposal to the
+    # Captain. NOTHING installs here — installs wait for an explicit approval
+    # (capability_gaps.can_install, fail-closed). Isolated: never breaks the loop.
+    try:
+        from framework.learning.capability_gaps import route_open_gaps
+        gap_routing = route_open_gaps(dry_run=dry_run)
+    except Exception as exc:  # noqa: BLE001
+        gap_routing = {"error": str(exc), "auto_skilling": [], "proposed": [], "skipped": []}
+
     # Stage 4 — completion event --------------------------------------------
     if dry_run:
         validation_gate_report: dict[str, Any] = {"skipped": "dry_run"}
@@ -722,6 +732,11 @@ def run_loop(
             "drafted": len(drafted_paths),
             "promoted": len(skill_promoted),
             "detail": skill_promoted,
+        },
+        "capability_gaps": {
+            "auto_skilling": len(gap_routing.get("auto_skilling", [])),
+            "proposed_to_captain": len(gap_routing.get("proposed", [])),
+            "skipped": len(gap_routing.get("skipped", [])),
         },
     }
     emit_fn("self_improvement_loop_completed", actor=actor, parent_id=parent_id, payload=summary)
