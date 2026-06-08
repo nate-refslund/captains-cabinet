@@ -72,6 +72,26 @@ The cabinet's own `task_adapters/monday.py` was removed in favor of this
 plugin — for Monday users, the plugin is strictly better than a homegrown
 adapter.
 
+## Creating your own (skills, MCPs, plugins, officers, presets)
+
+You don't have to consume only what exists — the Cabinet is built to be
+extended by you. The `extend-cabinet` skill (`/extend-cabinet`, shipped in
+`.claude/skills/`) is the full router; the short version:
+
+| Create a… | How |
+|---|---|
+| **Skill** (auto) | The cabinet induces its own from experience — `skill_induction.py` drafts to `memory/skills/evolved/`, `evolution-loop` validates + promotes. This is the Hermes-style self-building loop, already running. |
+| **Skill** (manual) | Drop `.claude/skills/<name>/SKILL.md` (auto-discovered), or use the first-party `skill-creator` skill for a guided scaffold + evals. |
+| **MCP server** | Build with the first-party `mcp-builder` (or `vercel-mcp-builder`), declare it under `mcps:` here, grant via an `instance/agents/<o>.md` overlay. |
+| **Plugin** | Scaffold with the first-party `create-cowork-plugin`, then declare under `plugins:` here. The cabinet itself ships as a plugin — read `.claude-plugin/plugin.json` as a worked example. |
+| **Officer** | `bash cabinet/scripts/create-officer.sh <abbrev> <title> <domain> <bot-user> <bot-token>` |
+| **Preset** | The `create-preset` skill (`memory/skills/create-preset.md`) — a whole use-case bundle under `presets/<name>/`. |
+
+**Rule of thumb:** don't rebuild what's first-party (`skill-creator`,
+`mcp-builder`, `create-cowork-plugin`); don't hand-author what the cabinet
+can induce from experience. Reserve manual authoring for net-new capability,
+then feed it back so the induction loop learns from it.
+
 ## Removing an extension
 
 Delete its entry from `extensions.yml` and re-run `install-extensions.sh`.

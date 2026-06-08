@@ -69,6 +69,20 @@ plugins: []
   #   description: What it does
   #   required_env: []
   #   optional: true
+  #
+  # Recommended — first-party CREATOR skills, if you want the Captain to
+  # author their own skills / MCPs / plugins on demand (the cabinet does NOT
+  # rebuild these — see the `extend-cabinet` skill). They ship in Anthropic's
+  # skills plugin and may already be in your `/skills` list. To pin them per
+  # cabinet, look up the owning plugin + marketplace with
+  # `claude plugin marketplace list`, then add an entry like:
+  # - name: <anthropic-skills-plugin>      # provides skill-creator + mcp-builder
+  #   marketplace: <its-marketplace>
+  #   source: <its-source>
+  #   description: First-party creators — skill-creator, mcp-builder
+  #   required_env: []
+  #   optional: true
+  # (create-cowork-plugin lives in the cowork-plugin-management plugin.)
 
 # ──────────────────────────────────────────────────────────────────────────
 # mcps: — standalone MCP servers (merged into every officer's .mcp.json)
