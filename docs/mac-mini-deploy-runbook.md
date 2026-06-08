@@ -162,6 +162,26 @@ bash cabinet/scripts/verify-launchagents.sh
 
 Exit 0 = pass. Re-deploy if any fail.
 
+### 7.1 Interactive one-time steps (login / OAuth) `[CAPTAIN]`
+
+Officers run unattended with full host shell access, so they self-install
+plugins/MCPs via the `claude plugin` / `claude mcp` CLI. The only things they
+*can't* do alone are inherently-interactive auth prompts — `gh auth login`
+(needed once for private plugin marketplaces like STEP-Network/dev-tasks),
+`claude /login` if you're not using an API key, OAuth device-code pastes.
+
+Do those once by attaching to a live officer session and typing as the user:
+
+```bash
+tmux attach -t officer-cos     # or officer-cto, etc.
+# …run the interactive command, complete the auth…
+# DETACH with:  Ctrl-b  then  d     ← do NOT press Ctrl-C (that kills the officer)
+```
+
+After detaching, the officer keeps running with the new auth. This is also how
+you'd run any ad-hoc command (including a REPL `/`-command) in an officer's
+exact environment.
+
 ## 8. Tailscale (remote access) `[CAPTAIN]`
 
 The Mac Mini needs remote SSH for the Captain to check in, especially during the 72h soak.
