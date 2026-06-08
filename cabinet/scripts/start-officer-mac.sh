@@ -85,13 +85,25 @@ MCP_BASE=".mcp.json.mac-native"
 MERGED_MCP_PATH="$HOME/Library/Caches/cabinet/merged-mcp-${OFFICER}.json"
 mkdir -p "$(dirname "$MERGED_MCP_PATH")"
 
-if [ "$HAS_CUA_DRIVER" = "true" ] && [ -f "instance/agents/$OFFICER/mcp.json" ]; then
+# Build the MCP overlay stack (highest precedence last):
+#   base                                .mcp.json.mac-native (curated core)
+#   + instance/config/extra-mcps.json   captain-declared extras (ALL officers;
+#                                       rendered by install-extensions.sh)
+#   + instance/agents/<o>/mcp.json      per-officer overlay (e.g. cua-driver)
+# Deep-merge preserves base mcpServers; later layers add/override by key.
+EXTRA_MCPS="instance/config/extra-mcps.json"
+PER_OFFICER_MCP="instance/agents/$OFFICER/mcp.json"
+
+MCP_LAYERS=("$MCP_BASE")
+[ -f "$EXTRA_MCPS" ] && MCP_LAYERS+=("$EXTRA_MCPS")
+[ "$HAS_CUA_DRIVER" = "true" ] && [ -f "$PER_OFFICER_MCP" ] && MCP_LAYERS+=("$PER_OFFICER_MCP")
+
+if [ "${#MCP_LAYERS[@]}" -gt 1 ]; then
+  # jq reduce: fold each overlay's mcpServers into the accumulator.
   ( umask 077
-    jq -s '.[0] as $base | .[1] as $overlay
-           | $base * $overlay
-           | .mcpServers = ($base.mcpServers + $overlay.mcpServers)' \
-       "$MCP_BASE" "instance/agents/$OFFICER/mcp.json" \
-       > "$MERGED_MCP_PATH"
+    jq -s 'reduce .[1:][] as $o (.[0];
+             . * $o | .mcpServers = (.mcpServers + ($o.mcpServers // {})))' \
+       "${MCP_LAYERS[@]}" > "$MERGED_MCP_PATH"
   )
   MCP_FLAG="--mcp-config $MERGED_MCP_PATH"
 elif [ "$MCP_BASE" = ".mcp.json.mac-native" ]; then

@@ -283,16 +283,18 @@ else
 fi
 
 echo ""
-echo "=== Step 13: Install required Claude plugins ==="
-# Installs Claude Code plugins declared in instance/config/required-plugins.yml
-# (if present). For STEP-Network this includes dev-tasks (Monday + GitHub +
-# Vercel workflow). User-level install — one install covers all 5 officers.
+echo "=== Step 13: Install declared Claude extensions (plugins + MCPs) ==="
+# Installs Claude Code extensions declared in instance/config/extensions.yml
+# (if present). The Cabinet ships UNIVERSAL — no third-party extensions are
+# installed unless you declare them. Plugins install user-level (one install
+# covers all 5 officers); extra MCP servers render to extra-mcps.json which
+# start-officer-mac.sh merges into each officer's .mcp.json at boot.
 # Idempotent; warns + continues on individual install failures.
-if [ -f "$CABINET_ROOT/cabinet/scripts/install-plugins.sh" ]; then
-  bash "$CABINET_ROOT/cabinet/scripts/install-plugins.sh" 2>&1 | tail -20
-  ok "Plugin install pass complete"
+if [ -f "$CABINET_ROOT/cabinet/scripts/install-extensions.sh" ]; then
+  bash "$CABINET_ROOT/cabinet/scripts/install-extensions.sh" 2>&1 | tail -20
+  ok "Extension install pass complete"
 else
-  warn "install-plugins.sh not found, skipping (no Claude plugins will be installed)"
+  warn "install-extensions.sh not found, skipping (no extensions installed)"
 fi
 
 echo ""

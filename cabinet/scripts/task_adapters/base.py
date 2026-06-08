@@ -168,14 +168,14 @@ def get_adapter(project_config: dict[str, Any]) -> TaskAdapter:
         # workflow skills). Officers reach Monday via the plugin's
         # mcp__dev-tasks tools, NOT through this adapter interface.
         #
-        # Configure dev-tasks via instance/config/required-plugins.yml +
+        # Configure dev-tasks via instance/config/extensions.yml +
         # .claude/project-config.json. For non-STEP Monday integrations,
         # restore the old adapter: `git show <pre-plugin-commit>:cabinet/scripts/task_adapters/monday.py`
         raise ValueError(
             "Monday adapter removed — use STEP-Network/dev-tasks plugin. "
             "Set tasks.system to 'github-issues' (cabinet default) or "
-            "'linear', and configure dev-tasks via required-plugins.yml + "
-            ".claude/project-config.json."
+            "'linear', and declare dev-tasks in instance/config/extensions.yml "
+            "+ .claude/project-config.json."
         )
     if system == "jira":
         from cabinet.scripts.task_adapters.jira import JiraAdapter

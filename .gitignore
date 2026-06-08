@@ -106,3 +106,10 @@ cabinet/logs/*
 # Hook cache (Spec 046 voice transcripts; future caches per hook spec)
 cabinet/cache/*
 !cabinet/cache/.gitkeep
+
+# Deployment-specific extension choices (templates are .example, tracked).
+# Each deployment activates its own — keep the universal product clean.
+instance/config/extensions.yml
+instance/config/required-plugins.yml
+instance/config/extra-mcps.json
+.claude/project-config.json

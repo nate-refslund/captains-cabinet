@@ -1,0 +1,102 @@
+# extensions.yml — Claude Code extensions the Cabinet installs at setup.
+#
+# The Captain's Cabinet is a UNIVERSAL product. By default it installs NO
+# third-party extensions — every entry below is a commented example. Copy
+# this file to `extensions.yml` (drop the .example) and uncomment / add the
+# plugins, MCP servers, and skills YOUR deployment wants.
+#
+#   cp instance/config/extensions.yml.example instance/config/extensions.yml
+#   $EDITOR instance/config/extensions.yml
+#   bash cabinet/scripts/install-extensions.sh
+#
+# This is the same install surface as Claude Desktop / Claude Code — it just
+# makes your choices DECLARATIVE + IDEMPOTENT so a fresh clone (or a new
+# Mac mini) re-applies exactly the extensions you picked. The installer runs
+# the native `claude plugin ...` / `claude mcp add ...` commands under the
+# hood; nothing proprietary.
+#
+# Three kinds of extension:
+#   plugins:  Claude Code plugins (bundle skills + agents + hooks + MCP +
+#             slash commands). Installed via `claude plugin marketplace add`
+#             + `claude plugin install`. User-level (~/.claude/plugins/) —
+#             one install covers all 5 officer sessions.
+#   mcps:     standalone MCP servers. Merged into the cabinet's
+#             instance/config/extra-mcps.json, which start-officer-mac.sh
+#             deep-merges into every officer's .mcp.json at boot.
+#   skills:   note only — skills are easiest to add by dropping a
+#             <name>/SKILL.md into .claude/skills/ (file-drop, no installer),
+#             or they come bundled inside a plugin you install above.
+#
+# GRANTING officers access to what you install:
+#   Officer tool access is scoped per-officer in presets/work/agents/<o>.md.
+#   To give an officer a newly-installed plugin/MCP tool WITHOUT editing the
+#   universal preset, drop an overlay at instance/agents/<officer>.md with an
+#   extended `tools:` list — sync-agents.sh merges it over the preset
+#   baseline (highest precedence). That keeps the universal preset clean
+#   while letting each deployment grant exactly what it needs.
+
+# ──────────────────────────────────────────────────────────────────────────
+# plugins: — Claude Code plugins
+# ──────────────────────────────────────────────────────────────────────────
+# Fields per plugin:
+#   name          plugin name (matches the plugin's manifest)
+#   marketplace   marketplace registered when source is added
+#   source        `claude plugin marketplace add <source>` arg — <org>/<repo>
+#                 for GitHub-hosted, or a local path for dev
+#   description   free-text for the install log
+#   required_env  env vars the plugin expects (warn only — install proceeds;
+#                 a missing var is a runtime issue only when officers use it)
+#   optional      true = warn + continue on failure; false = abort setup
+plugins: []
+  # Example — STEP-Network's dev-tasks plugin (Monday.com + GitHub + Vercel
+  # workflow: 44 Monday MCP tools, 15 skills like /dev-tasks:pickup-task +
+  # /dev-tasks:ship-pr, 4 subagents, 34 hooks). STEP-internal; needs gh auth
+  # with STEP-Network membership + MONDAY_API_TOKEN. Uncomment if that's YOUR
+  # stack — it hard-fails on non-STEP repos by design, so don't enable it
+  # unless you're a STEP product.
+  #
+  # - name: dev-tasks
+  #   marketplace: dev-tasks-marketplace
+  #   source: STEP-Network/dev-tasks          # <org>/<repo> or a local path
+  #   description: STEP-Network Monday + GitHub + Vercel workflow
+  #   required_env: [MONDAY_API_TOKEN]
+  #   optional: false                          # false = abort setup on failure
+  #
+  # Example — any public marketplace plugin (same shape):
+  # - name: some-plugin
+  #   marketplace: some-marketplace
+  #   source: some-org/some-plugin-repo
+  #   description: What it does
+  #   required_env: []
+  #   optional: true
+
+# ──────────────────────────────────────────────────────────────────────────
+# mcps: — standalone MCP servers (merged into every officer's .mcp.json)
+# ──────────────────────────────────────────────────────────────────────────
+# The cabinet already ships a curated core MCP set in .mcp.json.mac-native
+# (notion, neon, linear, vercel, library, redis-channel) + the Captain-layer
+# set (screenpipe, chrome_devtools, playwright, cua). Use this section ONLY
+# for ADDITIONAL servers specific to your deployment.
+mcps: []
+  # Example — a generic stdio MCP server:
+  # - name: my_service
+  #   command: npx
+  #   args: ["-y", "@some-scope/my-mcp-server@latest"]
+  #   env:
+  #     MY_SERVICE_TOKEN: "${MY_SERVICE_TOKEN}"   # read from cabinet/.env
+  #
+  # Example — an HTTP/SSE MCP server:
+  # - name: remote_service
+  #   transport: sse
+  #   url: "https://mcp.example.com/sse"
+  #   env:
+  #     AUTHORIZATION: "Bearer ${REMOTE_TOKEN}"
+
+# ──────────────────────────────────────────────────────────────────────────
+# skills: — informational (skills are file-drop or plugin-bundled)
+# ──────────────────────────────────────────────────────────────────────────
+# To add a standalone skill, drop it at .claude/skills/<name>/SKILL.md
+# (markdown with frontmatter — see the cabinet's own .claude/skills/ for the
+# format). Auto-discovered by Claude Code; no installer needed. Most skills,
+# though, come bundled inside the plugins you list above.
+skills: []
