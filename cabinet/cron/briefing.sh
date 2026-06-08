@@ -14,7 +14,7 @@ REDIS_URL="${REDIS_URL:-redis://redis:6379}"
 REDIS_HOST=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f1)
 REDIS_PORT=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f2)
 
-TRIGGER_MSG="[$TIMESTAMP] Daily $BRIEFING_TYPE briefing due. Compile status from all Officers and send briefing to Warroom Telegram group. Include: progress since last briefing, current blockers, upcoming priorities, decisions needed from Captain."
+TRIGGER_MSG="[$TIMESTAMP] Daily $BRIEFING_TYPE briefing due. Compile status from all Officers and send briefing to Warroom Telegram group. Include: progress since last briefing, current blockers, upcoming priorities, decisions needed from Captain. CAPABILITY GAPS: run 'python3 cabinet/scripts/org-runtime.py gaps list' — if any gaps are status=pending_captain, surface them in the decisions-needed section as 'N capability proposal(s) awaiting your approve/decline at /gaps' with each need + proposed approach + any hard-ceiling touches; also note how many gaps were auto-resolved as skills since the last briefing. Omit the section entirely if there are zero gaps."
 
 # Resolve CABINET_ROOT — env var wins, otherwise script-relative (cabinet/cron/.. = repo root)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
