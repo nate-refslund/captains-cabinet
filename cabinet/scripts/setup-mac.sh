@@ -298,6 +298,25 @@ else
 fi
 
 echo ""
+echo "=== Step 14: Build the dashboard (office wall-display + control panel) ==="
+# Pre-build so the com.cabinet.dashboard LaunchAgent starts instantly instead
+# of building on first boot. Best-effort: a build failure here doesn't block
+# setup (start-dashboard.sh will retry the build at launch).
+DASH_DIR="$CABINET_ROOT/cabinet/dashboard"
+if [ -d "$DASH_DIR" ] && command -v npm >/dev/null 2>&1; then
+  if [ "$CHECK_ONLY" -eq 0 ]; then
+    echo "  Building Next.js dashboard (npm ci + build, ~1-2 min)..."
+    ( cd "$DASH_DIR" \
+      && { [ -d node_modules ] || npm ci >/dev/null 2>&1; } \
+      && npm run build >/dev/null 2>&1 ) \
+      && ok "Dashboard built (serve: cabinet/scripts/start-dashboard.sh → :3100/display)" \
+      || warn "Dashboard build failed — start-dashboard.sh will retry at launch"
+  fi
+else
+  warn "Dashboard dir or npm missing — skipping build"
+fi
+
+echo ""
 echo "==========================================="
 echo "  Setup complete!"
 echo ""

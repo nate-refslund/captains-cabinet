@@ -34,11 +34,22 @@ LOG_DIR="$HOME/Library/Logs/cabinet"
 # (excluding com.cabinet.officer.template.plist, which is per-officer and
 # expanded dynamically below). Anything deploy-mac.sh can render, the
 # verifier must check for.
+# Opt-in daemons: present as templates but NOT expected on every deployment.
+# dashboard-kiosk needs a physical monitor (office-display deployments only);
+# headless servers intentionally skip it.
+OPTIONAL_PLISTS=("com.cabinet.dashboard-kiosk")
+is_optional() {
+  local p="$1"
+  for o in "${OPTIONAL_PLISTS[@]}"; do [ "$p" = "$o" ] && return 0; done
+  return 1
+}
+
 EXPECTED_PLISTS=()
 if [ -d "$CABINET_ROOT/cabinet/launchd" ]; then
   while IFS= read -r tpl; do
     base="$(basename "$tpl" .template.plist)"
     [ "$base" = "com.cabinet.officer" ] && continue   # per-officer; handled below
+    is_optional "$base" && continue                   # opt-in; not required
     EXPECTED_PLISTS+=("$base")
   done < <(find "$CABINET_ROOT/cabinet/launchd" -maxdepth 1 -type f -name '*.template.plist' | sort)
 fi

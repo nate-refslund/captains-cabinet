@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  com.cabinet.dashboard.plist — runs the Cabinet dashboard (Next.js) Mac-native
+  on http://localhost:3100. Office wall-display at /display. KeepAlive restarts
+  it on crash. envsubst substitutes ${REPO_ROOT}/${HOME}/${USER} at deploy time.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.cabinet.dashboard</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>${REPO_ROOT}/cabinet/scripts/start-dashboard.sh</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>${HOME}</string>
+    <key>USER</key>
+    <string>${USER}</string>
+    <key>CABINET_ROOT</key>
+    <string>${REPO_ROOT}</string>
+    <key>CABINET_SOURCE_REPO</key>
+    <string>${REPO_ROOT}</string>
+    <key>CABINET_RUNTIME_MODE</key>
+    <string>native</string>
+    <key>REDIS_URL</key>
+    <string>redis://localhost:6379</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+
+  <key>WorkingDirectory</key>
+  <string>${REPO_ROOT}/cabinet/dashboard</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+
+  <key>StandardOutPath</key>
+  <string>${HOME}/Library/Logs/cabinet/dashboard.out.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>${HOME}/Library/Logs/cabinet/dashboard.err.log</string>
+</dict>
+</plist>

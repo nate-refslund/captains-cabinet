@@ -6,11 +6,63 @@ const prefix = process.env.CABINET_PREFIX || 'cabinet'
 const container = `${prefix}-officers`
 const IS_MOCK = process.env.MOCK_DATA === 'true' || !process.env.REDIS_URL
 
+// ---------------------------------------------------------------------------
+// Runtime mode: Docker (Hetzner) vs Mac-native (Mac mini).
+// ---------------------------------------------------------------------------
+// Docker deployment: the dashboard runs INSIDE a container and exec's into the
+// sibling `${prefix}-officers` container. Commands resolve against /opt/...
+//
+// Mac-native deployment: the dashboard runs as a plain Node process on the same
+// Mac mini as the officers + Redis + the cabinet repo. There is no container —
+// commands must run LOCALLY with cwd = CABINET_ROOT so relative paths like
+// `cabinet/scripts/org-runtime.py` resolve. This is what powers the office
+// wall-display + the rest of the dashboard on the Mac mini.
+//
+// Mode resolution: explicit CABINET_RUNTIME_MODE wins; else infer native when
+// CABINET_ROOT is set (deploy-mac.sh / start-officer-mac.sh export it).
+const RUNTIME_MODE: 'native' | 'docker' =
+  process.env.CABINET_RUNTIME_MODE === 'native'
+    ? 'native'
+    : process.env.CABINET_RUNTIME_MODE === 'docker'
+      ? 'docker'
+      : process.env.CABINET_ROOT
+        ? 'native'
+        : 'docker'
+
+const CABINET_ROOT = process.env.CABINET_ROOT || '/opt/founders-cabinet'
+
+// cabinet/.env path — parametrized so Mac-native reads the local repo's .env
+// and Docker reads the container's /opt path. CABINET_ENV_PATH overrides both.
+const ENV_PATH =
+  process.env.CABINET_ENV_PATH ||
+  (RUNTIME_MODE === 'native' ? `${CABINET_ROOT}/cabinet/.env` : '/opt/founders-cabinet/cabinet/.env')
+
+export const isNativeRuntime = () => RUNTIME_MODE === 'native'
+
+/**
+ * Run a shell command against the cabinet runtime.
+ *
+ * - Docker mode: `docker exec -u cabinet <container> bash -c '<cmd>'`
+ * - Native mode: runs the command directly in a shell with cwd = CABINET_ROOT.
+ *
+ * Mock mode (no REDIS_URL / MOCK_DATA=true) short-circuits for local dev.
+ */
 export async function dockerExec(command: string): Promise<{ stdout: string; stderr: string }> {
   if (IS_MOCK) {
     console.log(`[mock docker] Would exec: ${command}`)
     return { stdout: 'mock: command executed', stderr: '' }
   }
+
+  if (RUNTIME_MODE === 'native') {
+    // Run locally in the cabinet repo. No container wrapper.
+    const { stdout, stderr } = await exec(command, {
+      cwd: CABINET_ROOT,
+      shell: '/bin/bash',
+      maxBuffer: 1024 * 1024 * 16,
+    })
+    return { stdout: stdout.trim(), stderr: stderr.trim() }
+  }
+
   const escaped = command.replace(/'/g, "'\\''")
   const { stdout, stderr } = await exec(
     `docker exec -u cabinet ${container} bash -c '${escaped}'`
@@ -23,6 +75,17 @@ export async function getTmuxWindows(): Promise<string[]> {
     return ['cos', 'cto', 'cpo', 'cro', 'coo']
   }
   try {
+    if (RUNTIME_MODE === 'native') {
+      // Mac-native: one tmux SESSION per officer, named "officer-<slug>".
+      const { stdout } = await dockerExec(
+        `tmux list-sessions -F '#{session_name}' 2>/dev/null || true`
+      )
+      return stdout
+        .split('\n')
+        .filter((w) => w.startsWith('officer-'))
+        .map((w) => w.replace('officer-', ''))
+    }
+    // Docker: one session "cabinet" with one WINDOW per officer.
     const { stdout } = await dockerExec(
       'tmux list-windows -t cabinet -F "#{window_name}" 2>/dev/null'
     )
@@ -41,20 +104,21 @@ export async function isClaudeAlive(role: string): Promise<boolean> {
     return role !== 'coo'
   }
   try {
-    // Get the pane PID for this officer's tmux window
+    // Resolve the pane PID. Native = session officer-<role>; Docker = window
+    // cabinet:officer-<role>.
+    const target = RUNTIME_MODE === 'native' ? `officer-${role}` : `cabinet:officer-${role}`
     const { stdout: panePid } = await dockerExec(
-      `tmux list-panes -t cabinet:officer-${role} -F '#{pane_pid}' 2>/dev/null`
+      `tmux list-panes -t ${target} -F '#{pane_pid}' 2>/dev/null | head -1`
     )
     if (!panePid || panePid === 'mock: command executed') return false
-
     const pid = panePid.trim()
     if (!pid) return false
 
-    // Check if there's a claude process as a child of the pane shell
+    // Find a claude/node child of the pane shell. pgrep -P is portable across
+    // macOS + Linux (ps --ppid is Linux-only).
     const { stdout: children } = await dockerExec(
-      `ps --ppid ${pid} -o comm= 2>/dev/null`
+      `pgrep -P ${pid} -l 2>/dev/null || ps -o comm= -p $(pgrep -P ${pid} 2>/dev/null) 2>/dev/null || true`
     )
-    // Claude Code runs as "claude" or "node" process
     const procs = children.toLowerCase()
     return procs.includes('claude') || procs.includes('node')
   } catch {
@@ -101,6 +165,21 @@ export async function getCronSchedule(): Promise<CronJob[]> {
     ]
   }
   try {
+    if (RUNTIME_MODE === 'native') {
+      // Mac-native schedules are LaunchAgents, not crontab. List the cabinet
+      // plists registered with launchd.
+      const { stdout } = await dockerExec(
+        `launchctl list 2>/dev/null | grep -i 'com.cabinet' || true`
+      )
+      const lines = stdout.trim().split('\n').filter(Boolean)
+      return lines.map((line: string) => {
+        // launchctl list cols: PID  Status  Label
+        const parts = line.trim().split(/\s+/)
+        const label = parts[parts.length - 1] || line
+        const name = label.replace('com.cabinet.', '')
+        return { schedule: 'launchd', command: label, description: name }
+      })
+    }
     const watchdogContainer = `${prefix}-watchdog`
     const { stdout } = await exec(
       `docker exec ${watchdogContainer} crontab -l 2>/dev/null`
@@ -142,7 +221,7 @@ export async function getEnvVars(): Promise<Record<string, string>> {
   }
   try {
     const { stdout } = await dockerExec(
-      `grep -v '^#' /opt/founders-cabinet/cabinet/.env | grep -v '^$'`
+      `grep -v '^#' '${ENV_PATH}' | grep -v '^$'`
     )
     const vars: Record<string, string> = {}
     for (const line of stdout.split('\n')) {
@@ -165,10 +244,10 @@ export async function isTelegramConnected(role: string): Promise<boolean> {
     return role !== 'coo'
   }
   try {
-    // Read the bot token from .env inside the container
+    // Read the bot token from .env (path is runtime-mode aware)
     const upperRole = role.toUpperCase()
     const { stdout: token } = await dockerExec(
-      `grep "^TELEGRAM_${upperRole}_TOKEN=" /opt/founders-cabinet/cabinet/.env 2>/dev/null | cut -d= -f2`
+      `grep "^TELEGRAM_${upperRole}_TOKEN=" '${ENV_PATH}' 2>/dev/null | cut -d= -f2`
     )
     const trimmedToken = token.trim()
     if (!trimmedToken || trimmedToken === 'mock: command executed') return false

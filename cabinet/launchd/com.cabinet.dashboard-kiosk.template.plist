@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  com.cabinet.dashboard-kiosk.plist — opens the office wall-display fullscreen
+  in Chrome kiosk mode on the Mac mini's monitor. Waits for the dashboard to be
+  up, then launches. KeepAlive relaunches if the kiosk window is closed (e.g.
+  after a power blip). This is a GUI LaunchAgent (needs the user's login session
+  + an attached display). envsubst substitutes ${REPO_ROOT}/${HOME}/${USER}.
+
+  To DISABLE the wall display (headless Mac mini, or you don't want kiosk):
+    launchctl bootout gui/$(id -u)/com.cabinet.dashboard-kiosk
+    rm ~/Library/LaunchAgents/com.cabinet.dashboard-kiosk.plist
+  The dashboard server (com.cabinet.dashboard) keeps running for Tailscale
+  access regardless.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.cabinet.dashboard-kiosk</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>${REPO_ROOT}/cabinet/scripts/start-dashboard-kiosk.sh</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>${HOME}</string>
+    <key>USER</key>
+    <string>${USER}</string>
+    <key>CABINET_ROOT</key>
+    <string>${REPO_ROOT}</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+
+  <key>ThrottleInterval</key>
+  <integer>60</integer>
+
+  <key>StandardOutPath</key>
+  <string>${HOME}/Library/Logs/cabinet/dashboard-kiosk.out.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>${HOME}/Library/Logs/cabinet/dashboard-kiosk.err.log</string>
+</dict>
+</plist>

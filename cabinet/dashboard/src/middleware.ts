@@ -30,6 +30,16 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
+  // The office wall-display (/display) is READ-ONLY status — no controls, no
+  // secrets, no kill switch. It's meant to render on the Mac mini's monitor in
+  // kiosk Chrome without a login step. Allow it unauthenticated. Sensitive
+  // routes (env vars, governance, kill switch) remain behind auth. Exposure is
+  // limited to whoever can already reach the dashboard host (office LAN /
+  // tailnet) — the same audience authorized for the cabinet anyway.
+  if (request.nextUrl.pathname.startsWith('/display')) {
+    return NextResponse.next()
+  }
+
   const cookie = request.cookies.get('cabinet_session')
   if (!cookie) {
     return NextResponse.redirect(new URL('/login', request.url))

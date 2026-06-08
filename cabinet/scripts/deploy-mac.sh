@@ -146,9 +146,15 @@ if [ "$ALL" = true ]; then
     outbox-relay \
     ovi-weekly \
     self-improvement-loop \
-    chrome-profile; do
+    chrome-profile \
+    dashboard; do
     deploy_daemon "$d"
   done
+  # dashboard-kiosk is OPT-IN (needs a physical monitor on the Mac mini).
+  # Office-display deployments add it explicitly:
+  #   bash cabinet/scripts/deploy-mac.sh --daemon dashboard-kiosk
+  # Headless servers skip it; the dashboard server above stays reachable
+  # over Tailscale at http://<host>:3100 regardless.
 elif [ "$OFFICER" = "all" ]; then
   for o in cos cto cpo cro coo; do deploy_officer "$o"; done
 elif [ -n "$OFFICER" ]; then
