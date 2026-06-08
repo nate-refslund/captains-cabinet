@@ -41,6 +41,8 @@ export interface CapabilityGap {
   last_seen: string
   recorded_by: string
   resolution: string | null
+  touches?: string[]
+  proposal?: { summary?: string; approach?: string }
 }
 
 /**

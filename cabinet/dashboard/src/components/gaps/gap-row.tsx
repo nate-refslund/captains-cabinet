@@ -11,6 +11,7 @@
  */
 
 import type { CapabilityGap, GapKind, GapStatus } from '@/lib/capability-gaps'
+import GapApproval from '@/components/gaps/gap-approval'
 
 function relTime(iso: string): string {
   try {
@@ -133,12 +134,30 @@ export function GapRow({ gap }: { gap: CapabilityGap }) {
             <span>
               recorded by: <span className="text-zinc-300">{gap.recorded_by || '—'}</span>
             </span>
+            {gap.touches && gap.touches.length > 0 && (
+              <span className="text-amber-500/80">
+                touches: {gap.touches.join(', ')}
+              </span>
+            )}
             {gap.resolution && (
               <span>
                 resolution: <span className="text-zinc-300">{gap.resolution}</span>
               </span>
             )}
           </div>
+
+          {/* Pending proposal → show the proposed approach + Approve/Decline */}
+          {needsCaptain && (
+            <div className="mt-3 rounded border border-amber-900/40 bg-amber-950/20" style={{ padding: '10px' }}>
+              {gap.proposal?.approach && (
+                <p className="text-xs text-zinc-300">
+                  <span className="font-medium text-amber-300">Proposed: </span>
+                  {gap.proposal.approach}
+                </p>
+              )}
+              <GapApproval gapId={gap.gap_id} />
+            </div>
+          )}
         </div>
       </div>
     </div>
