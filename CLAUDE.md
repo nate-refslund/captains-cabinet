@@ -458,8 +458,6 @@ Only the following MCP servers are used by the Cabinet. Do NOT use any other MCP
 - **Library** — this Cabinet's structured knowledge (Spaces/records: briefs, specs, decisions, playbooks). Accessed via the `library` MCP or the dashboard `/library` route.
 - **Cabinet** — inter-Cabinet comms (identify, presence, availability, send_message, request_handoff). Currently stdio-only; cross-container transport blocked by FW-005.
 - **Vercel** — Hosting and deployment (preview, production)
-- **Library** — this Cabinet's structured knowledge (Spaces + records: briefs, specs, decisions, playbooks). Accessed via the `library` MCP or the dashboard `/library` route.
-- **Cabinet** — inter-Cabinet comms (identify, presence, availability, send_message, request_handoff). Currently stdio-only; cross-container transport tracked as FW-005.
 - **Brain** — Nate's screenpipe brain bridge (vault search, person intel, commitments, `queue_draft` outbound gate, reasoning log). Declared in `instance/config/extensions.yml` → rendered to `instance/config/extra-mcps.json`; scoped per officer in `cabinet/mcp-scope.yml`. Usage rules are MANDATORY: `.claude/rules/brain-bridge.md` (vault is read-first Nate-truth; `queue_draft` is the only outbound path; vault writes only via `append_agent_inbox`).
 
 If a task seems to require a tool outside this list, escalate to the Captain rather than using an unauthorized MCP.
