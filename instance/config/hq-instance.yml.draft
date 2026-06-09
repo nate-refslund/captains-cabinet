@@ -1,0 +1,67 @@
+# =============================================================
+# DRAFT for Nate review — HQ (MacBook) cabinet instance identity
+# =============================================================
+# P2 prep (clone-convergence plan). NOTHING reads this file yet — instance
+# identity is set via ENVIRONMENT VARIABLES, validated by
+# cabinet/scripts/load-preset.sh (CABINET_ID validator, Phase 1 CP9b).
+# This file is the declared source-of-truth values to export at activation.
+#
+# ACTIVATION (manual, NOT done by this draft):
+#   export CABINET_MODE=multi
+#   export CABINET_ID=hq-macbook
+# in the instance env (cabinet/.env or the LaunchAgent EnvironmentVariables)
+# BEFORE load-preset.sh / start-officer-mac.sh runs. In multi mode the boot
+# ABORTS if CABINET_ID is unset — it will not silently join 'main'.
+#
+# THE MAC MINI SOAK INSTANCE KEEPS ITS OWN ID. It runs vanilla convergence-v2
+# in single mode (cabinet_id 'main' today). Never share cabinet_id across
+# machines: split-cabinet.sh restamps DB rows by cabinet_id, and a shared id
+# would merge the two fleets' records irreversibly.
+
+cabinet_id: hq-macbook
+cabinet_mode: multi
+machine: nates-macbook-pro
+description: >
+  Second cabinet instance of the same repo/branch (convergence-v2) on the
+  MacBook: brain MCP bridge + multi-project (polads, stephie, stepnetwork,
+  system-self, adhoc) + comms via the queue_draft approval gate. Roster:
+  CoS persistent (Fable 5), CTO/CPO/CRO/COO on-demand consultants with
+  idle-stop. Quota choreography: Mini missions overnight, HQ fleet by day.
+
+# -------------------------------------------------------------
+# Warroom — Telegram group for HQ broadcast
+# -------------------------------------------------------------
+# TOKEN-TBD: Nate creates the HQ group + invites the bots, then sets the
+# chat id in cabinet/.env. Never put the literal id/token in this file.
+# Wire-up at activation: add per-context rows in instance/config/warrooms.yml
+# pointing at ${TELEGRAM_HQ_CHAT_ID} (rows for the new contexts are NOT added
+# yet — contexts ship inactive).
+warroom:
+  chat_id_env: TELEGRAM_HQ_CHAT_ID   # value lives in cabinet/.env (TOKEN-TBD)
+
+# -------------------------------------------------------------
+# Officer bots — distinct from the Mini soak instance's bots
+# -------------------------------------------------------------
+# TOKEN-TBD: Nate provides new BotFather bots for HQ (do NOT reuse the Mini's
+# tokens — two pollers on one token steal each other's updates). Usernames go
+# here once created; tokens go ONLY in cabinet/.env under the env var names
+# listed. bot_mode single_ceo means only the CoS bot polls Telegram; the
+# other officers stay Telegram-dark and route Captain attention via CoS.
+telegram:
+  bot_mode: single_ceo
+  ceo_officer: cos
+  ceo_bot: ""                          # TOKEN-TBD — HQ CoS bot username
+  bot_token_envs:
+    cos: TELEGRAM_BOT_TOKEN_HQ_COS     # TOKEN-TBD in cabinet/.env
+    # cto/cpo/cro/coo: not needed in single_ceo mode; add env names here
+    # only if bot_mode is ever switched to multi_officer.
+
+# -------------------------------------------------------------
+# Notes
+# -------------------------------------------------------------
+# - Redis: per-machine instance (HQ uses the MacBook's local Redis;
+#   the Mini has its own). No shared Redis between instances.
+# - Event ledger: CABINET_EVENT_LOG_DIR default is
+#   ~/Library/Application Support/cabinet/events (durable, per-machine).
+# - peers.yml: if HQ and the Mini ever need to talk, each declares the
+#   other as a peer with consented_by_captain=true — not configured here.

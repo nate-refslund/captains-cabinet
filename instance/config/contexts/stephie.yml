@@ -1,0 +1,9 @@
+slug: stephie
+name: STEPhie
+capacity: work
+description: |
+  STEPhie — STEP Network's MCP tool suite + AI chatbot/banner-creator
+  platform (ai.step.dk / ai.stepnetwork.dk). Repo STEP-Network/stephie-mcp
+  (pnpm/Turborepo monorepo, 82 tools across adsales/CRM/ops/support).
+  Declared for the HQ (MacBook) instance; inactive until P2 activation.
+active: false

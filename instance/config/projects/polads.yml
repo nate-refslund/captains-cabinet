@@ -1,0 +1,106 @@
+# =============================================================
+# Project: PolAds
+# =============================================================
+# P2 prep draft for the HQ (MacBook) instance. status: pending —
+# nothing activates until switch-project/activate-project is run by Nate.
+# Repo identity from the screenpipe codebase pillar
+# (~/.screenpipe/pipes/_shared/codebase_config.py, Monday product 2723505568).
+# =============================================================
+
+product:
+  name: PolAds
+  description: "EU political advertisement transparency platform (polads.eu, EU Reg 2025/1410)"
+  repo: https://github.com/STEP-Network/v0-politiske-annoncer
+  repo_branch: main                # staging branch also active (staging -> xtest.polads.eu)
+  mount_path: /workspace/product   # mac-native local checkout path decided at activation
+
+activation:
+  status: pending
+  mode: existing_repo_url
+  activated_at: ""
+  activation_mission_id: ""
+  notes: "HQ instance P2 prep — Nate activates; outcomes drafted in instance/config/outcomes.yml.draft"
+
+# =============================================================
+# Notion — not used for PolAds (knowledge lives in the brain vault
+# 9-Codebases/PolAds/ + Monday docs). IDs stay empty intentionally.
+# =============================================================
+notion:
+  cabinet_hq_id: ""
+
+  dashboard:
+    page_id: ""
+    decision_queue_db: ""
+    daily_briefings_db: ""
+    weekly_reports_db: ""
+
+  business_brain:
+    page_id: ""
+    vision_id: ""
+    strategy_brief_id: ""
+    brand_guidelines_id: ""
+    messaging_pillars_id: ""
+    growth_guardrails_id: ""
+    pricing_id: ""
+
+  research_hub:
+    page_id: ""
+    research_briefs_db: ""
+    competitive_intel_db: ""
+    market_trends_db: ""
+
+  product_hub:
+    page_id: ""
+    product_roadmap_db: ""
+    feature_specs_db: ""
+    user_feedback_db: ""
+
+  engineering_hub:
+    page_id: ""
+    architecture_decisions_db: ""
+    tech_debt_db: ""
+
+  cabinet_ops:
+    page_id: ""
+    decision_journal_db: ""
+    improvement_proposals_db: ""
+
+  reference:
+    page_id: ""
+
+  archive:
+    page_id: ""
+
+# =============================================================
+# Linear — NOT used. PolAds tracking lives on Monday.com.
+# =============================================================
+linear:
+  team_key: ""
+  workspace_url: ""
+
+# =============================================================
+# Neon — PolAds production database
+# =============================================================
+neon:
+  project: politiske-annoncer      # Neon project id restless-king-62586913
+
+# =============================================================
+# Tasks — DELIBERATELY ABSENT. No tasks: block / task-sync adapter for
+# this project: the dev-tasks plugin (Monday.com) is the sanctioned task
+# route per the clone-convergence plan (P2: "leave task-sync disabled").
+# Do not add a Monday adapter here — that duplication is by-design avoided.
+# =============================================================
+
+# =============================================================
+# Telegram — single_ceo (HQ default); bot via hq-instance.yml.draft
+# =============================================================
+telegram:
+  bot_mode: single_ceo
+  ceo_officer: cos
+  ceo_bot: ""                      # TOKEN-TBD — see instance/config/hq-instance.yml.draft
+  officers:
+    cos: ""
+    cto: ""
+    cro: ""
+    cpo: ""
+    coo: ""
