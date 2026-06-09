@@ -128,12 +128,13 @@ outcomes:
         title: "Implement the four feedback-round-1 fixes in the Banner Creator"
         owner_role: cto
         acceptance_criteria:
-          - "Image-handling bug on image-click fixed"
-          - "Sudden-logout bug fixed"
+          - "Image-click: the image-handling repro documented in Sofie's round-1 feedback (Monday 2959309890) is re-run step-for-step on the preview deployment and no longer reproduces — pass = the documented broken behavior does not occur"
+          - "Sudden-logout: the logout repro from Monday 2959309890 no longer reproduces AND a continuous 30-minute active editing session on the preview deployment completes with zero unprompted logouts (soak bar adjustable by Captain at ratification)"
           - "Upload-new-image works inside Image Sequence"
           - "Duplicate-element shortcut + button added"
+          - "Each fix lands with a regression test covering its repro (same bar as polads-001-uat)"
           - "All four verified on a preview deployment before any production step"
-        evidence_required: "PR links on STEP-Network/stephie-mcp + preview deployment URL with verification notes"
+        evidence_required: "PR links on STEP-Network/stephie-mcp + passing regression tests + preview deployment URL with verification notes"
         verifier_role: cpo
         risk_level: medium
         rollback_note: "Per-fix git revert; preview-only until stephie-001-deploy"
@@ -185,8 +186,9 @@ outcomes:
         owner_role: coo
         depends_on: [stepnet-001-e2e]
         acceptance_criteria:
-          - "All vercel.json cron jobs (daily / 15-min Monday syncs) reviewed over a 7-day window: zero unexplained failures"
-          - "Any failing job gets a written diagnosis; fixes proposed, not auto-applied"
+          - "All vercel.json cron jobs (daily / 15-min Monday syncs) enumerated, and every run in the 7-day window classified pass/fail from Vercel logs"
+          - "Every failure row is paired with a written diagnosis (cause + proposed fix); a failure lacking a diagnosis fails this criterion — the pairing is the check, no judgment word"
+          - "Fixes are proposed, not auto-applied"
         evidence_required: "Cron run audit summary (job, schedule, last 7 days status) from Vercel logs"
         verifier_role: cto
         risk_level: low
@@ -283,6 +285,10 @@ outcomes:
   # ===========================================================
   # LANE: adhoc — standing intake (propose-only)
   # ===========================================================
+  # RATIFICATION NOTE — deliberately NON-TERMINATING: this standing outcome
+  # can never reach 'achieved' under the outcome lifecycle; once activated it
+  # stays open indefinitely until the Captain explicitly retires it (set
+  # status back to draft/retired or delete it). Ratify knowing that.
   - id: outcome-adhoc-001
     name: "Standing intake: CoS triages Captain-dropped tasks into proposals"
     description: >
@@ -290,6 +296,8 @@ outcomes:
       Nate's-Todos board (5098236573), classifies items into lanes, and
       files PROPOSALS only — never auto-claims, never executes without
       Captain approval. Gather-then-decide applies to every item.
+      Deliberately non-terminating: this outcome never reaches 'achieved'
+      and stays open until the Captain explicitly retires it.
     status: draft
     captain_ratified: false
     measurable_criteria:

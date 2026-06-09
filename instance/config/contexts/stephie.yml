@@ -1,3 +1,8 @@
+# DECLARATION NOTE (not activation): committing this file makes the slug
+# immediately valid in pre-tool-use.sh's context_slug cache — the cache is
+# built from instance/config/contexts/*.yml filenames and does NOT filter on
+# active: false. No warroom rows, no officer routing, no activity start from
+# this file alone; those require explicit P2 activation by the Captain.
 slug: stephie
 name: STEPhie
 capacity: work
