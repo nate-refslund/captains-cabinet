@@ -195,20 +195,30 @@ interface UsageSummary {
   advisorCallCount: number;
 }
 
-// Pricing constants (microdollars per token)
-// Opus 4.7: $15/MTok in, $75/MTok out, $3.75/MTok cache_write, $0.30/MTok cache_read
-const ADVISOR_INPUT_MICRO = 15;
-const ADVISOR_OUTPUT_MICRO = 75;
-const ADVISOR_CACHE_WRITE_MICRO_NUM = 3750; // divide by 1000
-const ADVISOR_CACHE_READ_MICRO_NUM = 300;   // divide by 1000
+// Pricing (microdollars per token == $/MTok; fractional cache rates scaled as N/1000).
+// Keyed off the model id, matching cabinet/scripts/hooks/stop-hook.sh exactly:
+//   Fable 5:    $10/MTok in, $50/MTok out, $12.50/MTok cache_write, $1.00/MTok cache_read
+//   Opus:       $15/MTok in, $75/MTok out, $3.75/MTok cache_write, $0.30/MTok cache_read
+//   Sonnet 4.6 (default): $3/MTok in, $15/MTok out, $0.75/MTok cache_write, $0.06/MTok cache_read
+interface ModelPricing {
+  inputMicro: number;
+  outputMicro: number;
+  cacheWriteMicroNum: number; // divide by 1000
+  cacheReadMicroNum: number;  // divide by 1000
+}
 
-// Sonnet 4.6: $3/MTok in, $15/MTok out, $0.75/MTok cache_write, $0.06/MTok cache_read
-const EXECUTOR_INPUT_MICRO = 3;
-const EXECUTOR_OUTPUT_MICRO = 15;
-const EXECUTOR_CACHE_WRITE_MICRO_NUM = 750; // divide by 1000
-const EXECUTOR_CACHE_READ_MICRO_NUM = 60;   // divide by 1000
+function pricingFor(model: string): ModelPricing {
+  if (model.includes("fable")) {
+    return { inputMicro: 10, outputMicro: 50, cacheWriteMicroNum: 12500, cacheReadMicroNum: 1000 };
+  }
+  if (model.includes("opus")) {
+    return { inputMicro: 15, outputMicro: 75, cacheWriteMicroNum: 3750, cacheReadMicroNum: 300 };
+  }
+  // Default to Sonnet pricing (matches stop-hook.sh fallback)
+  return { inputMicro: 3, outputMicro: 15, cacheWriteMicroNum: 750, cacheReadMicroNum: 60 };
+}
 
-function parseUsage(usage: any): UsageSummary {
+function parseUsage(usage: any, advisorModel: string, executorModel: string): UsageSummary {
   const summary: UsageSummary = {
     executorInput: 0, executorOutput: 0, executorCacheWrite: 0, executorCacheRead: 0,
     advisorInput: 0, advisorOutput: 0, advisorCacheWrite: 0, advisorCacheRead: 0,
@@ -248,17 +258,20 @@ function parseUsage(usage: any): UsageSummary {
   }
 
   // Cost calculations (integer microdollar math, matching stop-hook.sh pattern exactly)
+  const executorPricing = pricingFor(executorModel);
+  const advisorPricing = pricingFor(advisorModel);
+
   summary.executorCostMicro =
-    summary.executorInput * EXECUTOR_INPUT_MICRO +
-    summary.executorOutput * EXECUTOR_OUTPUT_MICRO +
-    Math.floor(summary.executorCacheWrite * EXECUTOR_CACHE_WRITE_MICRO_NUM / 1000) +
-    Math.floor(summary.executorCacheRead * EXECUTOR_CACHE_READ_MICRO_NUM / 1000);
+    summary.executorInput * executorPricing.inputMicro +
+    summary.executorOutput * executorPricing.outputMicro +
+    Math.floor(summary.executorCacheWrite * executorPricing.cacheWriteMicroNum / 1000) +
+    Math.floor(summary.executorCacheRead * executorPricing.cacheReadMicroNum / 1000);
 
   summary.advisorCostMicro =
-    summary.advisorInput * ADVISOR_INPUT_MICRO +
-    summary.advisorOutput * ADVISOR_OUTPUT_MICRO +
-    Math.floor(summary.advisorCacheWrite * ADVISOR_CACHE_WRITE_MICRO_NUM / 1000) +
-    Math.floor(summary.advisorCacheRead * ADVISOR_CACHE_READ_MICRO_NUM / 1000);
+    summary.advisorInput * advisorPricing.inputMicro +
+    summary.advisorOutput * advisorPricing.outputMicro +
+    Math.floor(summary.advisorCacheWrite * advisorPricing.cacheWriteMicroNum / 1000) +
+    Math.floor(summary.advisorCacheRead * advisorPricing.cacheReadMicroNum / 1000);
 
   summary.totalCostMicro = summary.executorCostMicro + summary.advisorCostMicro;
 
@@ -447,9 +460,9 @@ async function main() {
   // Extract text result
   const result = extractResult(data);
 
-  // Parse usage
-  const usage = parseUsage(data.usage);
+  // Parse usage (cost rates keyed off the actual advisor/executor models)
   const advisorModel = process.env.ADVISOR_MODEL || "claude-fable-5";
+  const usage = parseUsage(data.usage, advisorModel, args.executor);
 
   // Write costs to Redis (best-effort — never blocks result)
   await writeAdvisorCosts(args.officer, usage, advisorModel);

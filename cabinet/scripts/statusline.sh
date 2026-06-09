@@ -27,8 +27,9 @@ OFFICER="${OFFICER_NAME:-${CABINET_OFFICER:-unknown}}"
 
 # ---- OVI: read the latest snapshot from the local event log ----
 # Event-log discovery, in priority order:
-#   1. $CABINET_EVENT_LOG_DIR    — matches framework/events/emitter.py:128 which
-#                                  reads the same env var. Single source of truth.
+#   1. $CABINET_EVENT_LOG_DIR    — matches framework/events/emitter.py
+#                                  _event_log_dir(), which reads the same env
+#                                  var. Single source of truth.
 #   2. $CABINET_ROOT/memory/logs/events — legacy repo-relative path, retained for
 #                                  Cabinets that have historic events here.
 #   3. ~/Library/Application Support/cabinet/events — emitter's durable default
