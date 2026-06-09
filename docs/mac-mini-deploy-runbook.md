@@ -45,24 +45,36 @@ cd captains-cabinet
 git checkout claude/convergence-v2    # OR master once this branch is merged
 ```
 
-## 3. Cabinet bootstrap
+## 3. Cabinet bootstrap (orchestrator)
 
 ```bash
 bash cabinet/scripts/setup-mac.sh
 ```
 
-This installs missing Homebrew deps (tmux, jq, python3, redis), starts Redis, installs Python deps, creates required directories, loads the preset, verifies the policy engine, and runs the framework test suite. Idempotent — safe to re-run.
+`setup-mac.sh` is the single interactive orchestrator. In order it: runs the
+**API-key wizard** (Step 0 — `setup-env.sh`, which walks you through every
+required + optional key, opens signup pages, masks paste input, and writes
+`cabinet/.env` at `chmod 600` — no hand-editing), installs missing Homebrew
+deps (tmux, jq, python3, redis), starts Redis (+ enables AOF), creates required
+directories, bootstraps officer roles, installs the Captain-layer Mac tool
+stack, launches the Cabinet Chrome (sign into Linear/Notion/etc. when it
+opens), prompts for TCC grants, installs any declared extensions
+(`instance/config/extensions.yml`), builds the dashboard, loads the preset,
+verifies the policy engine, and runs the framework test suite. Idempotent.
 
 Verify: `bash cabinet/scripts/setup-mac.sh --check` returns exit 0.
 
+> The wizard already created `cabinet/.env`. To re-run it later (add/replace
+> keys): `bash cabinet/scripts/setup-env.sh --force`. To bootstrap headless
+> (CI/clone) and fill `.env` yourself: `SKIP_ENV_WIZARD=1 bash cabinet/scripts/setup-mac.sh`.
+
 ## 4. Configuration
 
-1. Copy the env example:
-   ```bash
-   cp cabinet/.env.example cabinet/.env
-   ```
-2. `[CAPTAIN]` fill in API keys: `NEON_API_KEY`, `NOTION_API_KEY`, `ELEVENLABS_API_KEY` (if voice enabled), `GEMINI_API_KEY` (if image gen enabled), `MONDAY_API_TOKEN` / `JIRA_API_TOKEN` / etc. depending on the task system you'll use.
-3. Set Captain identity in `instance/config/platform.yml`:
+1. Keys are already set by the Step 0 wizard above (`NEON` / `NOTION` /
+   `ELEVENLABS` if voice / `GEMINI` if image-gen / `MONDAY_API_TOKEN` etc. for
+   your task system, plus officer Telegram bot tokens + Captain chat id). Re-run
+   `bash cabinet/scripts/setup-env.sh --force` to change any.
+2. Set Captain identity in `instance/config/platform.yml`:
    ```yaml
    captain_name: "<your-name>"
    captain_telegram_chat_id: <id>
