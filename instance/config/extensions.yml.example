@@ -92,6 +92,15 @@ plugins: []
 # set (screenpipe, chrome_devtools, playwright, cua). Use this section ONLY
 # for ADDITIONAL servers specific to your deployment.
 mcps: []
+  # Example — Nate's deployment: the screenpipe brain bridge (Obsidian vault
+  # search, person intel, commitments, queue_draft outbound gate, reasoning
+  # log). Local stdio server, no env/secrets. If you enable it, also grant it
+  # per-officer in cabinet/mcp-scope.yml and read .claude/rules/brain-bridge.md
+  # — those rules are mandatory for any officer using it.
+  # - name: brain
+  #   command: /opt/homebrew/bin/python3.12
+  #   args: ["/Users/nate/.screenpipe/pipes/brain-mcp/server.py"]
+  #
   # Example — a generic stdio MCP server:
   # - name: my_service
   #   command: npx

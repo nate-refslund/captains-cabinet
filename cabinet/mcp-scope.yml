@@ -23,12 +23,18 @@
 #
 # Add a new MCP: list it here under the relevant agents. The hook
 # re-reads on every cache-refresh cycle (same pattern as contexts).
+#
+# brain (2026-06-10): Nate's screenpipe brain bridge — vault search, person
+# intel, commitments, queue_draft outbound gate, reasoning log. Declared in
+# instance/config/extensions.yml → rendered to instance/config/extra-mcps.json
+# (merged into every officer's .mcp.json at boot). All five officers get it;
+# usage rules are MANDATORY: .claude/rules/brain-bridge.md.
 
 cabinet: main
 
 agents:
   cos:
-    mcps: [notion, linear, library, telegram, host]
+    mcps: [notion, linear, library, telegram, host, brain]
     rationale: >
       Coordination and briefings. Not code; CoS does not touch Neon or
       Vercel directly — that's CTO/COO. Library for Phase 1 inbox and
@@ -38,28 +44,28 @@ agents:
       no other officer is allowed host MCP access.
 
   cto:
-    mcps: [neon, vercel, linear, library, telegram]
+    mcps: [neon, vercel, linear, library, telegram, brain]
     rationale: >
       Engineering domain. Schema/migrations on Neon, deploys on Vercel,
       specs tracked in Linear, framework work and experience records in
       Library. No Notion — CTO should not be writing business strategy.
 
   cpo:
-    mcps: [notion, linear, library, telegram]
+    mcps: [notion, linear, library, telegram, brain]
     rationale: >
       Specs, prioritization, product strategy. Notion for business brain
       reads; Linear for backlog management; Library for specs + decision
       queue records.
 
   cro:
-    mcps: [notion, library, telegram]
+    mcps: [notion, library, telegram, brain]
     rationale: >
       Research and competitive intel. Notion for research publication;
       Library for research-brief records. No Linear — CRO does not own
       execution tickets. No Neon/Vercel — CRO does not touch production.
 
   coo:
-    mcps: [neon, vercel, linear, library, telegram]
+    mcps: [neon, vercel, linear, library, telegram, brain]
     rationale: >
       Deploy validation, uptime monitoring, Sentry error triage. Neon
       for health queries; Vercel for deployment state; Linear for bugs;
