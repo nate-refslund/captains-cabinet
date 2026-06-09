@@ -9,7 +9,7 @@
  * Environment:
  *   ANTHROPIC_API_KEY        — required
  *   ADVISOR_BETA_VERSION     — default advisor-tool-2026-03-01
- *   ADVISOR_MODEL            — default claude-opus-4-7
+ *   ADVISOR_MODEL            — default claude-fable-5
  *   OFFICER_NAME             — for cost attribution (or --officer flag)
  *   REDIS_HOST / REDIS_PORT  — default redis / 6379
  */
@@ -140,7 +140,7 @@ interface AdvisorToolDef {
 }
 
 function buildRequestBody(args: Args, context: string): object {
-  const advisorModel = process.env.ADVISOR_MODEL || "claude-opus-4-7";
+  const advisorModel = process.env.ADVISOR_MODEL || "claude-fable-5";
 
   const advisorTool: AdvisorToolDef = {
     type: "advisor_20260301",
@@ -449,7 +449,7 @@ async function main() {
 
   // Parse usage
   const usage = parseUsage(data.usage);
-  const advisorModel = process.env.ADVISOR_MODEL || "claude-opus-4-7";
+  const advisorModel = process.env.ADVISOR_MODEL || "claude-fable-5";
 
   // Write costs to Redis (best-effort — never blocks result)
   await writeAdvisorCosts(args.officer, usage, advisorModel);

@@ -21,7 +21,8 @@ export CABINET_SOURCE_REPO="$REPO_ROOT"
 export CABINET_ROOT="$REPO_ROOT"
 LOGS_DIR="$HOME/Library/Logs/cabinet"
 SESSION_NAME="officer-$OFFICER"
-MODEL="${CABINET_MODEL:-claude-opus-4-7}"
+# CABINET_MODEL=claude-fable-5[1m] is available as an opt-in override once verified interactively.
+MODEL="${CABINET_MODEL:-claude-fable-5}"
 REDIS_HOST="${REDIS_HOST:-localhost}"
 REDIS_PORT="${REDIS_PORT:-6379}"
 

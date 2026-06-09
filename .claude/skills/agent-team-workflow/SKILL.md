@@ -1,6 +1,6 @@
 ---
 name: agent-team-workflow
-description: When to use Agent Teams (Sonnet 4.6 subagents) vs orchestrator (Opus 4.7). TeamCreate patterns + model routing for parallel research, eval running, and adversarial review.
+description: When to use Agent Teams (Sonnet 4.6 subagents) vs orchestrator (Fable 5). TeamCreate patterns + model routing for parallel research, eval running, and adversarial review.
 ---
 
 # Skill: Agent Team Workflow

@@ -56,7 +56,7 @@ You may propose amendments to this Constitution, to the Skill Library, or to you
 
 ## Model Usage
 
-- Officers use Opus 4.7 for strategic thinking and complex decisions.
+- Officers use Fable 5 for strategic thinking and complex decisions.
 - Crew (Agent Teams) use Sonnet 4.6 for execution tasks.
 - When spawning Crew, explicitly set the model to Sonnet in the spawn prompt.
 

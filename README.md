@@ -209,14 +209,14 @@ captains-cabinet/
 
 Everything is configured in `instance/config/product.yml` and `cabinet/.env`. Key options:
 
-### Model Routing — Opus orchestrator + Sonnet subagents
+### Model Routing — Fable orchestrator + Sonnet subagents
 
-Officers run as **Opus 4.7** with `--effort max` by default (set via `--model` in `cabinet/scripts/start-officer.sh`). They drive the loop: read tasks, coordinate, execute, reply to the Captain, route work. Parallel subagent and Agent-Team (crew) work runs on **Sonnet 4.6** for cost-efficiency on execution that doesn't need orchestrator judgment.
+Officers run as **Fable 5** (`claude-fable-5`) with `--effort max` by default (set via `--model` in `cabinet/scripts/start-officer.sh`). They drive the loop: read tasks, coordinate, execute, reply to the Captain, route work. Parallel subagent and Agent-Team (crew) work runs on **Sonnet 4.6** for cost-efficiency on execution that doesn't need orchestrator judgment.
 
-For deep sub-problems an officer consults Opus explicitly:
+For deep sub-problems an officer consults Fable explicitly:
 
-- `bash cabinet/scripts/advisor-crew.sh --task "..." --context <file>` — one-shot synthesized consultation.
-- `Task(model="opus", prompt="...")` — independent Opus subagent with its own context, used for adversarial reviews, fresh-context audits, or multi-step subloops.
+- `bash cabinet/scripts/advisor-crew.sh --task "..." --context <file>` — one-shot synthesized consultation (Fable 5 advisor + Sonnet 4.6 executor).
+- `Task(model="fable", prompt="...")` — independent Fable subagent with its own context, used for adversarial reviews, fresh-context audits, or multi-step subloops.
 
 Rollback: `CABINET_MODEL=claude-sonnet-4-6 bash cabinet/scripts/start-officer.sh <officer>` downgrades one officer to Sonnet; flip the default in `start-officer.sh` for fleet-wide rollback.
 

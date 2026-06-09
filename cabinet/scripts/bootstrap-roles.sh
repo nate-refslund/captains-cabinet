@@ -132,9 +132,9 @@ EOF
 }
 
 # Officer slug | Title                       | Model               | Capabilities                                                                                | Authority level
-seed_role cos "Chief of Staff"               claude-opus-4-7      "logs_captain_decisions,reviews_specs,reviews_implementations,validates_deployments"        captain_proxy
-seed_role cto "Chief Technology Officer"     claude-opus-4-7      "deploys_code,reviews_implementations,engineering_execution"                                 mission_executor
-seed_role cpo "Chief Product Officer"        claude-opus-4-7      "reviews_specs,product_strategy,backlog_management"                                          mission_executor
+seed_role cos "Chief of Staff"               claude-fable-5       "logs_captain_decisions,reviews_specs,reviews_implementations,validates_deployments"        captain_proxy
+seed_role cto "Chief Technology Officer"     claude-fable-5       "deploys_code,reviews_implementations,engineering_execution"                                 mission_executor
+seed_role cpo "Chief Product Officer"        claude-fable-5       "reviews_specs,product_strategy,backlog_management"                                          mission_executor
 seed_role cro "Chief Research Officer"       claude-sonnet-4-6    "reviews_research,market_intelligence,research_sweep"                                        mission_executor
 seed_role coo "Chief Operating Officer"      claude-sonnet-4-6    "validates_deployments,operational_health,quality_gate"                                      mission_executor
 

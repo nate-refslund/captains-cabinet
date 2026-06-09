@@ -86,7 +86,7 @@ fi
 #       surface, not disappear.
 #
 # Source of truth for realized spend: cabinet:cost:tokens:daily:$DATE HSET,
-# written by stop-hook.sh from API usage × Opus 4.7 pricing. Legacy
+# written by stop-hook.sh from API usage × model pricing (Fable 5 / Opus / Sonnet). Legacy
 # cabinet:cost:daily:$DATE byte-count estimate is no longer consulted;
 # CTO's 14:18 2026-04-17 fix corrected the formula.
 #

@@ -45,9 +45,13 @@ if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
 
     # Calculate dollar cost in microdollars (millionths of a dollar) for integer math
     # $/MTok = microdollars per token. Cache prices are fractional, so scale via nanodollars.
+    # Fable 5:   $10/MTok in, $50/MTok out, $12.50/MTok cache_write (1.25x in, 5m TTL), $1.00/MTok cache_read (0.1x in)
     # Opus 4.6:  $15/MTok in, $75/MTok out, $3.75/MTok cache_write, $0.30/MTok cache_read
     # Sonnet 4.6: $3/MTok in, $15/MTok out, $0.75/MTok cache_write, $0.06/MTok cache_read
     case "$MODEL" in
+      *fable*)
+        COST_MICRO=$(( INPUT_TOKENS * 10 + OUTPUT_TOKENS * 50 + CACHE_WRITE * 12500 / 1000 + CACHE_READ * 1000 / 1000 ))
+        ;;
       *opus*)
         COST_MICRO=$(( INPUT_TOKENS * 15 + OUTPUT_TOKENS * 75 + CACHE_WRITE * 3750 / 1000 + CACHE_READ * 300 / 1000 ))
         ;;

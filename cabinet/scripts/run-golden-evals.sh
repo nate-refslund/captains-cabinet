@@ -277,26 +277,26 @@ fi
 # the transcript parse, or the HSET pipeline loses a field — pre-tool-use
 # reads 0, every cap reads as unhit, and FW-002 silently fails open.
 #
-# This eval simulates one stop-hook invocation with a canned Opus
+# This eval simulates one stop-hook invocation with a canned Fable 5
 # transcript (known token counts) and asserts the HSET fields populated
 # with the exact expected values. Any drift in the jq extraction, the
 # HINCRBY fields, or the COST_MICRO math flips the assertion.
 #
-# Canned Opus turn: input=1000, output=500, cache_write=200, cache_read=3000.
-# Expected cost_micro per stop-hook.sh line 52 Opus case:
-#   1000*15 + 500*75 + 200*3750/1000 + 3000*300/1000
-# = 15000 + 37500 + 750 + 900 = 54150 microdollars.
+# Canned Fable turn: input=1000, output=500, cache_write=200, cache_read=3000.
+# Expected cost_micro per stop-hook.sh Fable case (line ~52):
+#   1000*10 + 500*50 + 200*12500/1000 + 3000*1000/1000
+# = 10000 + 25000 + 2500 + 3000 = 40500 microdollars.
 #
 # Uses a fake officer "evaltest" (no real tier2 dir, no collision with
 # live officers). HDEL cleanup in both the inline path and the EXIT trap.
 #
 # Scope — what this eval does NOT cover:
-#   * Sonnet pricing path (stop-hook line 56) — officers run Opus per
-#     CLAUDE.md, so Opus is the primary drift surface. Extend with a
-#     second fixture if Sonnet becomes an officer model.
+#   * Sonnet/Opus pricing paths (stop-hook lines ~54-60) — officers run
+#     Fable 5 per CLAUDE.md, so Fable is the primary drift surface.
+#     Extend with a second fixture if Sonnet/Opus becomes an officer model.
 #   * Unknown-model silent fallthrough to Sonnet pricing (stop-hook
-#     lines 54-57 default case) — a new model like claude-opus-5 would
-#     silently use Sonnet (5x cheaper) pricing, under-reporting cost.
+#     default case) — a new model family matching neither *fable* nor
+#     *opus* would silently use Sonnet (cheaper) pricing, under-reporting cost.
 #     Proper fix is a stderr warn in stop-hook for unrecognized models;
 #     filed as a latent drift concern, not what this eval catches.
 #   * New-field schema additions (e.g. Claude Code adds a 6th usage
@@ -347,7 +347,7 @@ if [ -f "$STOP_HOOK" ]; then
   done
   EVAL_TX="/tmp/eval-transcript-$$.jsonl"
   cat > "$EVAL_TX" <<'EOT'
-{"type":"assistant","message":{"model":"claude-opus-4-7","usage":{"input_tokens":1000,"output_tokens":500,"cache_creation_input_tokens":200,"cache_read_input_tokens":3000}}}
+{"type":"assistant","message":{"model":"claude-fable-5","usage":{"input_tokens":1000,"output_tokens":500,"cache_creation_input_tokens":200,"cache_read_input_tokens":3000}}}
 EOT
   echo "{\"session_id\":\"eval-session\",\"transcript_path\":\"$EVAL_TX\"}" \
     | OFFICER_NAME=evaltest bash "$STOP_HOOK" > /dev/null 2>&1
@@ -377,10 +377,10 @@ EOT
     ACTUAL_COST=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HGET "$EVAL_KEY" evaltest_cost_micro 2>/dev/null)
     if [ "$ACTUAL_INPUT" = "1000" ] && [ "$ACTUAL_OUTPUT" = "500" ] && \
        [ "$ACTUAL_CW" = "200" ] && [ "$ACTUAL_CR" = "3000" ] && \
-       [ "$ACTUAL_COST" = "54150" ]; then
-      pass "stop-hook writes cost HSET correctly (all 5 fields, cost_micro=54150)"
+       [ "$ACTUAL_COST" = "40500" ]; then
+      pass "stop-hook writes cost HSET correctly (all 5 fields, cost_micro=40500)"
     else
-      fail "stop-hook cost-write drift (input=$ACTUAL_INPUT/1000 output=$ACTUAL_OUTPUT/500 cache_write=$ACTUAL_CW/200 cache_read=$ACTUAL_CR/3000 cost_micro=$ACTUAL_COST/54150)"
+      fail "stop-hook cost-write drift (input=$ACTUAL_INPUT/1000 output=$ACTUAL_OUTPUT/500 cache_write=$ACTUAL_CW/200 cache_read=$ACTUAL_CR/3000 cost_micro=$ACTUAL_COST/40500)"
     fi
     # Inline cleanup — HDEL the key we actually wrote to. Trap still sweeps
     # both dates on interrupt.

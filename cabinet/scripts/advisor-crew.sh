@@ -1,7 +1,7 @@
 #!/bin/bash
 # advisor-crew.sh — Advisor-tool beta wrapper for Cabinet Crew tasks
 #
-# Invokes Anthropic's advisor-tool beta: claude-sonnet-4-6 executor + claude-opus-4-7 advisor.
+# Invokes Anthropic's advisor-tool beta: claude-sonnet-4-6 executor + claude-fable-5 advisor.
 # Prints synthesized result to stdout. Prints usage summary to stderr. Exits 0 on success.
 #
 # Usage:
@@ -24,7 +24,7 @@
 # Environment:
 #   ANTHROPIC_API_KEY    — required (loaded from cabinet/.env if not set)
 #   ADVISOR_BETA_VERSION — override beta header (default: advisor-tool-2026-03-01)
-#   ADVISOR_MODEL        — override advisor model (default: claude-opus-4-7)
+#   ADVISOR_MODEL        — override advisor model (default: claude-fable-5)
 #   OFFICER_NAME         — set automatically in officer sessions; --officer flag overrides
 #
 # Cost tracking:
