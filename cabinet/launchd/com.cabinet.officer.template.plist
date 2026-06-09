@@ -38,6 +38,8 @@ Variables substituted by deploy-mac.sh via envsubst BEFORE writing to ~/Library/
     <string>${HOME}</string>
     <key>USER</key>
     <string>${USER}</string>
+    <key>CABINET_EVENT_LOG_DIR</key>
+    <string>${HOME}/Library/Application Support/cabinet/events</string>
     <key>REDIS_HOST</key>
     <string>localhost</string>
     <key>REDIS_PORT</key>

@@ -23,6 +23,7 @@ deploy-mac.sh substitutes ${HOUR} from instance/config/platform.yml.captain_time
   <dict>
     <key>HOME</key><string>${HOME}</string>
     <key>USER</key><string>${USER}</string>
+    <key>CABINET_EVENT_LOG_DIR</key><string>${HOME}/Library/Application Support/cabinet/events</string>
     <key>REDIS_HOST</key><string>localhost</string>
     <key>REDIS_PORT</key><string>6379</string>
     <key>CABINET_SOURCE_REPO</key><string>${REPO_ROOT}</string>

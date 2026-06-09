@@ -24,6 +24,7 @@ Fires every 15 minutes per Phase 5 of the convergence plan.
   <dict>
     <key>HOME</key><string>${HOME}</string>
     <key>USER</key><string>${USER}</string>
+    <key>CABINET_EVENT_LOG_DIR</key><string>${HOME}/Library/Application Support/cabinet/events</string>
     <key>REDIS_HOST</key><string>127.0.0.1</string>
     <key>REDIS_PORT</key><string>6379</string>
     <key>CABINET_ROOT</key><string>${REPO_ROOT}</string>

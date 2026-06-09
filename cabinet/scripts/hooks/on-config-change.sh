@@ -28,7 +28,7 @@ echo "on-config-change: $OFFICER config_source=$CONFIG_SOURCE at $TIMESTAMP" >&2
 # state change worth replaying. We do NOT use a dedicated event type yet —
 # emitter.py VALID_EVENT_TYPES is the gate; piggybacking on captain_decision_logged
 # would mis-classify. So we append to a dedicated config-drift JSONL log instead.
-DRIFT_LOG_DIR="${CABINET_EVENT_LOG_DIR:-/tmp/cabinet-events}"
+DRIFT_LOG_DIR="${CABINET_EVENT_LOG_DIR:-$HOME/Library/Application Support/cabinet/events}"
 mkdir -p "$DRIFT_LOG_DIR" 2>/dev/null
 DRIFT_LOG="$DRIFT_LOG_DIR/config-drift-$(date -u +%Y-%m-%d).jsonl"
 

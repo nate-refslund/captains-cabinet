@@ -21,7 +21,7 @@
 #   OFFICER_NAME       — actor for the emitted event (defaults to "system")
 #   CABINET_ROOT       — repo root (defaults to script's two-levels-up)
 #   DATABASE_URL       — if set, also UPDATEs work_graph_nodes row (best-effort)
-#   CABINET_EVENT_LOG_DIR — event log target (defaults to /tmp/cabinet-events)
+#   CABINET_EVENT_LOG_DIR — event log target (defaults to ~/Library/Application Support/cabinet/events)
 
 set -euo pipefail
 

@@ -27,7 +27,7 @@
 #   CABINET_ROOT       — repo root (default: ../.. from this script)
 #   REDIS_HOST         — Redis host (default: 127.0.0.1 for Mac, 'redis' in Docker)
 #   REDIS_PORT         — Redis port (default: 6379)
-#   CABINET_EVENT_LOG_DIR — event log path (default: /tmp/cabinet-events)
+#   CABINET_EVENT_LOG_DIR — event log path (default: ~/Library/Application Support/cabinet/events)
 #   OFFICER_NAME       — actor label used when emitting events (default: mission_supervisor)
 
 set -euo pipefail

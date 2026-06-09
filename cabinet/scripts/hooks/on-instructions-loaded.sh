@@ -27,7 +27,7 @@ echo "on-instructions-loaded: $OFFICER file=$(basename "$FILE_PATH") memory_type
 
 # Append to an instructions-load JSONL log so the learning loop can answer
 # "which rules were active in session X?" deterministically.
-LOAD_LOG_DIR="${CABINET_EVENT_LOG_DIR:-/tmp/cabinet-events}"
+LOAD_LOG_DIR="${CABINET_EVENT_LOG_DIR:-$HOME/Library/Application Support/cabinet/events}"
 mkdir -p "$LOAD_LOG_DIR" 2>/dev/null
 LOAD_LOG="$LOAD_LOG_DIR/instructions-loaded-$(date -u +%Y-%m-%d).jsonl"
 

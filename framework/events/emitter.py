@@ -150,12 +150,22 @@ def emit(
     return event
 
 
+def _event_log_dir() -> Path:
+    """Resolve the JSONL event-ledger directory.
+
+    CABINET_EVENT_LOG_DIR always wins when set. The default is a durable
+    per-user location — /tmp/cabinet-events (the old default) is wiped on
+    reboot/periodic cleanup, which silently truncated the event ledger.
+    """
+    return Path(os.environ.get(
+        "CABINET_EVENT_LOG_DIR",
+        os.path.expanduser("~/Library/Application Support/cabinet/events"),
+    ))
+
+
 def _write_to_log(event: dict[str, Any]) -> None:
     """Append event to the local JSONL event log."""
-    log_dir = Path(os.environ.get(
-        "CABINET_EVENT_LOG_DIR",
-        "/tmp/cabinet-events"
-    ))
+    log_dir = _event_log_dir()
     log_dir.mkdir(parents=True, exist_ok=True)
 
     log_file = log_dir / f"events-{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.jsonl"
@@ -377,10 +387,7 @@ def replay(
         event_types: filter to these event types
         actor: filter to this actor
     """
-    log_dir = Path(os.environ.get(
-        "CABINET_EVENT_LOG_DIR",
-        "/tmp/cabinet-events"
-    ))
+    log_dir = _event_log_dir()
     if not log_dir.exists():
         return []
 

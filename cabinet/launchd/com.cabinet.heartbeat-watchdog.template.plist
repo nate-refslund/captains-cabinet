@@ -22,6 +22,7 @@ Fires every 5 minutes per Spec 064 v1.1 Checkpoint 7.6.
   <dict>
     <key>HOME</key><string>${HOME}</string>
     <key>USER</key><string>${USER}</string>
+    <key>CABINET_EVENT_LOG_DIR</key><string>${HOME}/Library/Application Support/cabinet/events</string>
     <key>REDIS_HOST</key><string>localhost</string>
     <key>REDIS_PORT</key><string>6379</string>
     <key>CABINET_SOURCE_REPO</key><string>${REPO_ROOT}</string>

@@ -34,7 +34,7 @@ redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" \
   > /dev/null 2>&1 || true
 
 # Append to failure JSONL for the learning loop replay path.
-FAIL_LOG_DIR="${CABINET_EVENT_LOG_DIR:-/tmp/cabinet-events}"
+FAIL_LOG_DIR="${CABINET_EVENT_LOG_DIR:-$HOME/Library/Application Support/cabinet/events}"
 mkdir -p "$FAIL_LOG_DIR" 2>/dev/null
 FAIL_LOG="$FAIL_LOG_DIR/tool-failures-$(date -u +%Y-%m-%d).jsonl"
 

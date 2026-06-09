@@ -22,6 +22,8 @@
     <string>${HOME}</string>
     <key>USER</key>
     <string>${USER}</string>
+    <key>CABINET_EVENT_LOG_DIR</key>
+    <string>${HOME}/Library/Application Support/cabinet/events</string>
     <key>CABINET_ROOT</key>
     <string>${REPO_ROOT}</string>
     <key>CABINET_SOURCE_REPO</key>

@@ -31,13 +31,17 @@ OFFICER="${OFFICER_NAME:-${CABINET_OFFICER:-unknown}}"
 #                                  reads the same env var. Single source of truth.
 #   2. $CABINET_ROOT/memory/logs/events — legacy repo-relative path, retained for
 #                                  Cabinets that have historic events here.
-#   3. /tmp/cabinet-events       — emitter's default when nothing else is set.
+#   3. ~/Library/Application Support/cabinet/events — emitter's durable default
+#                                  when nothing else is set.
+#   4. /tmp/cabinet-events       — emitter's pre-durability default, retained for
+#                                  Cabinets with historic events there.
 # (F3/event-kernel-unification will collapse this list. Until then we accept
-# all three so the statusline keeps working across the migration.)
+# all four so the statusline keeps working across the migration.)
 OVI_DIR=""
 for candidate in \
   "${CABINET_EVENT_LOG_DIR:-}" \
   "$CABINET_ROOT/memory/logs/events" \
+  "$HOME/Library/Application Support/cabinet/events" \
   "/tmp/cabinet-events"; do
   if [ -n "$candidate" ] && [ -d "$candidate" ]; then
     OVI_DIR="$candidate"
