@@ -101,9 +101,13 @@ MCP_LAYERS=("$MCP_BASE")
 
 if [ "${#MCP_LAYERS[@]}" -gt 1 ]; then
   # jq reduce: fold each overlay's mcpServers into the accumulator.
+  # Final pass strips pseudo-server keys starting with "_" (comment/doc
+  # entries like "_comment" in overlay files) — Claude Code would try to
+  # boot them as real MCP servers otherwise.
   ( umask 077
     jq -s 'reduce .[1:][] as $o (.[0];
-             . * $o | .mcpServers = (.mcpServers + ($o.mcpServers // {})))' \
+             . * $o | .mcpServers = (.mcpServers + ($o.mcpServers // {})))
+           | .mcpServers |= with_entries(select(.key|startswith("_")|not))' \
        "${MCP_LAYERS[@]}" > "$MERGED_MCP_PATH"
   )
   MCP_FLAG="--mcp-config $MERGED_MCP_PATH"
@@ -119,24 +123,47 @@ fi
 # ===========================================================
 # Lead-only (per Spec 060 v1.1): only officers with telegram_bot=true get a bot token.
 # Non-Lead officers run Telegram-dark (no --channels plugin:telegram).
+#
+# CANONICAL env var: TELEGRAM_<OFFICER_UPPER>_TOKEN (e.g. TELEGRAM_COS_TOKEN).
+# Fallbacks, tried in order, first non-empty wins:
+#   1. TELEGRAM_<OFFICER_UPPER>_TOKEN       canonical
+#   2. TELEGRAM_BOT_TOKEN_<OFFICER_UPPER>   legacy generator/docs name
+#   3. TELEGRAM_BOT_TOKEN                   bare name — safe to inherit here
+#      because this whole branch is gated on the telegram_bot capability
+# Hyphenated slugs (e.g. polads-ceo) map '-' -> '_' for the var name.
 TELEGRAM_FLAG=""
 if [ "$HAS_TELEGRAM" = "true" ]; then
-  OFFICER_UPPER=$(echo "$OFFICER" | tr '[:lower:]' '[:upper:]')
+  OFFICER_UPPER=$(echo "$OFFICER" | tr '[:lower:]-' '[:upper:]_')
   TOKEN_VAR="TELEGRAM_${OFFICER_UPPER}_TOKEN"
+  ALT_TOKEN_VAR="TELEGRAM_BOT_TOKEN_${OFFICER_UPPER}"
   BOT_TOKEN="${!TOKEN_VAR:-}"
+  RESOLVED_VAR="$TOKEN_VAR"
+  if [ -z "$BOT_TOKEN" ]; then
+    BOT_TOKEN="${!ALT_TOKEN_VAR:-}"
+    RESOLVED_VAR="$ALT_TOKEN_VAR"
+  fi
+  if [ -z "$BOT_TOKEN" ] && [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
+    BOT_TOKEN="$TELEGRAM_BOT_TOKEN"
+    RESOLVED_VAR="TELEGRAM_BOT_TOKEN"
+  fi
   if [ -n "$BOT_TOKEN" ]; then
     export TELEGRAM_BOT_TOKEN="$BOT_TOKEN"
     TELEGRAM_FLAG="--channels plugin:telegram@claude-plugins-official"
+    echo "start-officer-mac.sh: $OFFICER telegram token resolved from \$$RESOLVED_VAR" >&2
   else
-    echo "start-officer-mac.sh: telegram_bot=true but $TOKEN_VAR not set in env" >&2
+    cat >&2 <<TOKERR
+[ERROR] start-officer-mac.sh: officer '$OFFICER' has the telegram_bot capability
+[ERROR]   but NO bot token candidate is set. Tried, in order:
+[ERROR]     1. $TOKEN_VAR        (canonical)
+[ERROR]     2. $ALT_TOKEN_VAR    (legacy generator name)
+[ERROR]     3. TELEGRAM_BOT_TOKEN          (bare fallback)
+[ERROR]   Set the canonical var in cabinet/.env:
+[ERROR]     $TOKEN_VAR=<bot token from BotFather>
+[ERROR]   Continuing WITHOUT --channels — this officer boots Telegram-dark
+[ERROR]   until the token is set and the officer is restarted.
+TOKERR
   fi
 fi
-
-# ===========================================================
-# Heartbeat — SETEX 900s TTL per Spec 064 v1.1 CTO #3
-# ===========================================================
-redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" \
-  SETEX "cabinet:heartbeat:$OFFICER" 900 "$(date -u +%s)" > /dev/null 2>&1 || true
 
 # Export OFFICER_NAME for hooks (stop-hook.sh + post-tool-use.sh etc.)
 export OFFICER_NAME="$OFFICER"
@@ -182,6 +209,14 @@ if [ "${CABINET_MAC_DRY_RUN:-0}" = "1" ]; then
   fi
   exit 0
 fi
+
+# ===========================================================
+# Heartbeat — SETEX 900s TTL per Spec 064 v1.1 CTO #3
+# ===========================================================
+# Below the dry-run gate ON PURPOSE: --dry-run must write nothing (no Redis
+# keys, no tmux, no files) — it only prints the assembled command.
+redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" \
+  SETEX "cabinet:heartbeat:$OFFICER" 900 "$(date -u +%s)" > /dev/null 2>&1 || true
 
 # ===========================================================
 # tmux session + claude launch

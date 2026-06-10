@@ -348,7 +348,10 @@ def render_project(lane: dict, integrations: dict) -> str:
 
     tg = integrations.get("telegram") or {}
     ceo_bot = str(tg.get("ceo_bot") or "")
-    token_env = str(tg.get("bot_token_env") or "TELEGRAM_BOT_TOKEN_COS")
+    # Canonical token var name: TELEGRAM_<OFFICER_UPPER>_TOKEN — what
+    # start-officer-mac.sh resolves first (TELEGRAM_BOT_TOKEN_<UPPER> is a
+    # supported legacy fallback).
+    token_env = str(tg.get("bot_token_env") or "TELEGRAM_COS_TOKEN")
 
     return f"""# =============================================================
 # Project: {name}
@@ -738,7 +741,7 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
 
     # ---- next steps ----
     tg = integrations.get("telegram") or {}
-    token_env = str(tg.get("bot_token_env") or "TELEGRAM_BOT_TOKEN_COS")
+    token_env = str(tg.get("bot_token_env") or "TELEGRAM_COS_TOKEN")
     preset = "portfolio" if org_shape == "portfolio" else ("work" if org_shape == "functional" else "<your-preset>")
     print("\nNext steps (in order):")
     print(f"  1. echo {preset} > instance/config/active-preset")
@@ -747,7 +750,12 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
         print("     - cabinet/mcp-scope.yml: list each lane CEO under agents:")
         print("     - cabinet/officer-capabilities.conf: add each lane CEO's rows")
         print("  3. Create the Chair bot via BotFather; put the TOKEN ONLY in")
-        print(f"     cabinet/.env as {token_env}=... (config keeps TOKEN-TBD)")
+        print(f"     cabinet/.env as {token_env}=... (canonical name:")
+        print("     TELEGRAM_<OFFICER_UPPER>_TOKEN; config keeps TOKEN-TBD).")
+        print("     Multi-cabinet deployments also set CABINET_MODE=multi +")
+        print("     CABINET_ID=<deployment-id> in cabinet/.env — outcomes.yml")
+        print("     missions only compile when CABINET_ID matches their")
+        print("     deployment key.")
         print("  4. bash cabinet/scripts/bootstrap-roles.sh --roster instance/config/roster.yml")
         print("  5. bash cabinet/scripts/grant-mac-permissions.sh   # TCC grants (interactive)")
         print("  6. bash cabinet/scripts/load-preset.sh && deploy the Chair only")
