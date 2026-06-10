@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://captains-cabinet.dev/schemas/consequence-event.schema.json",
+  "title": "Consequence Event",
+  "description": "ONE normalized 'action + reviewed consequence' event. Every acting surface (perception pipes, cabinet officers, crew subagents) emits this same shape, so proposal rates, outcome quality, and review verdicts are queryable across the whole estate with one query. Graduation math reads ONLY this ledger. See docs/consequence-ledger.md for source mappings and adoption.",
+  "type": "object",
+  "required": ["ts", "actor", "lane", "action", "subject"],
+  "properties": {
+    "ts": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the action happened (ISO 8601, UTC preferred)."
+    },
+    "actor": {
+      "type": "object",
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["pipe", "officer", "crew"],
+          "description": "Which estate acted: a perception pipe, a cabinet officer, or a crew subagent."
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable actor identifier — pipe name (e.g. 'commitment-ledger'), officer slug (e.g. 'cos'), or crew agent id."
+        }
+      },
+      "additionalProperties": false
+    },
+    "lane": {
+      "type": ["string", "null"],
+      "description": "Lane / context slug the action belongs to (matches instance/config/contexts/<slug>.yml). null when the action is estate-wide."
+    },
+    "action": {
+      "type": "string",
+      "minLength": 1,
+      "description": "What was done, verb-first kebab/snake form (e.g. 'drafted-reply', 'auto-closed-commitment', 'claimed-task', 'deployed-preview')."
+    },
+    "subject": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Who/what the action concerned — a person handle, thread id, board item, commit, outcome node."
+    },
+    "refs": {
+      "type": "array",
+      "items": {"type": "string"},
+      "default": [],
+      "description": "Links/ids grounding the event: message ids, board item ids, PR URLs, vault note paths, org_events event_id."
+    },
+    "proposal": {
+      "type": "object",
+      "required": ["required"],
+      "description": "The approval-gate half. Absent or required:false for actions below the proposal bar (pure reads, reflex bookkeeping).",
+      "properties": {
+        "required": {
+          "type": "boolean",
+          "description": "Whether this action class gates on human approval (propose-first posture or hard ceiling)."
+        },
+        "decision": {
+          "type": ["string", "null"],
+          "enum": ["approved", "edited", "rejected", "expired", null],
+          "description": "The human's decision at the gate. null = still pending (or not required). 'edited' = approved with changes — counts as a correction for graduation math."
+        },
+        "decided_at": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "When the decision landed. null while pending."
+        }
+      },
+      "additionalProperties": false
+    },
+    "outcome": {
+      "type": "object",
+      "required": ["status"],
+      "description": "What actually happened after the action executed.",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["ok", "failed", "unknown"],
+          "description": "'ok' = executed and held; 'failed' = executed and broke/bounced/was reverted; 'unknown' = not yet resolvable."
+        },
+        "evidence": {
+          "type": ["string", "null"],
+          "description": "Pointer or short note proving the status — test run, deploy id, sent-message ref, resolver note. null when status is 'unknown'."
+        }
+      },
+      "additionalProperties": false
+    },
+    "review": {
+      "type": "object",
+      "required": ["verdict"],
+      "description": "The reviewed half — filled later by the reasoning-review / architect loop comparing expectation to reality.",
+      "properties": {
+        "verdict": {
+          "type": "string",
+          "enum": ["confirmed", "wrong", "unknown"],
+          "description": "'confirmed' = the action's expectation matched reality; 'wrong' = it did not (lesson material); 'unknown' = reviewer could not determine."
+        },
+        "reviewed_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "lesson_ref": {
+          "type": ["string", "null"],
+          "description": "Pointer to the written lesson when verdict is 'wrong' (e.g. a lessons file anchor). null otherwise."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
