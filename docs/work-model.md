@@ -2,7 +2,7 @@
 
 > Captain-agreed 2026-06-10. The contract for how the Cabinet's hq instance
 > classifies and moves work. Referenced by `instance/config/outcomes.yml`
-> (header) and the clone-convergence plan (P2/P3). Products are **lanes**,
+> (header) and the clone-convergence plan (R2/R3). Products are **lanes**,
 > not outcomes — a product never "finishes"; only outcomes do.
 
 ## The three work classes
@@ -14,7 +14,7 @@ exactly one of:
 |---|---|---|---|
 | **STREAM** | Continuous product work: bugs, tasks, small features | Monday Tasks board **5091706356** (per-product filter via the dev-tasks plugin) | claim → execute → close back to Monday; never ends |
 | **MISSIONS** | Bounded, Captain-ratified state changes | `instance/config/outcomes.yml` (rolling window, 1–2 active per lane) | draft → active → achieved → retired |
-| **INTAKE** | Classification machinery feeding the other two | Scheduled CoS routine (cron trigger, P3) | runs forever; never an outcome |
+| **INTAKE** | Classification machinery feeding the other two | Scheduled CoS routine (cron trigger, R3) | runs forever; never an outcome |
 
 Never collapse these. Stream wrapped in outcomes produces zombie missions;
 intake wrapped in an outcome produces a mission that can never achieve.
@@ -31,8 +31,8 @@ intake wrapped in an outcome produces a mission that can never achieve.
 - **Autonomy**: propose-first per the autonomy manifest (vault
   `6-Areas/autonomy-manifest.md`) until a lane graduates — status writes and
   claims are proposed to the Captain, then applied. Graduation lifts
-  propose-first for stream writes only; the P4 hard ceiling
-  (external_comms / production deploys / spend) never lifts.
+  propose-first for stream writes only; the hard ceiling (R4:
+  external_comms / production deploys / spend) never lifts.
 - Stream items are **never wrapped in outcomes**. If a cluster of stream
   items amounts to a verifiable state change *and* needs orchestration
   structure (see the campaign test under MISSIONS), that's a candidate for
@@ -117,7 +117,7 @@ as plain stream.
 
 ## INTAKE — machinery, never a mission
 
-A scheduled CoS routine (cron trigger; implemented in P3 of the
+A scheduled CoS routine (cron trigger; implemented in R3 of the
 clone-convergence plan — `docs/clone-convergence-plan-2026-06-09.md`):
 
 1. **Sweep** sources: Monday Nate's-Todos board **5098236573** + any
@@ -127,8 +127,9 @@ clone-convergence plan — `docs/clone-convergence-plan-2026-06-09.md`):
    recent activity) *before* proposing — never propose from a stale view.
 4. **Propose-only** via the brain MCP `ask_nate` human gate. Approved items
    become **stream tasks** (routed to the lane's Monday backlog) or
-   **outcome proposals** (handed to CPO for the renewal loop). No
-   auto-claiming, no execution, no Monday writes without per-item approval.
+   **outcome proposals** (handed to the lane's product-owner role for the
+   renewal loop). No auto-claiming, no execution, no Monday writes without
+   per-item approval.
 
 Intake is **removed from `outcomes.yml`** (formerly `outcome-adhoc-001`)
 and is never re-added as an outcome.
