@@ -56,13 +56,13 @@ outcomes:
   - id: outcome-polads-001
     name: "PolAds v1.0 staging closeout and production release"
     description: >
-      Close the staging/UAT blockers on xtest.polads.eu and ship the v1.0
+      Close the staging/UAT blockers on test.polads.eu and ship the v1.0
       production release of polads.eu (EU Reg 2025/1410 transparency portal).
       Grounded in: staging CI broken since 2026-05-14 blocking all PR merges
       (Monday 2924046344), open UAT bug class (Monday 2955117972, 2955147585,
       PR #158 label-export font omission), v1.0 production target June 2026.
-    status: draft
-    captain_ratified: false
+    status: active
+    captain_ratified: true
     measurable_criteria:
       - node_id: polads-001-ci
         title: "Unblock staging CI — Test job + Hook Tests green"
@@ -75,7 +75,7 @@ outcomes:
         risk_level: medium
         rollback_note: "CI-config-only changes; revert the workflow commit to restore prior state"
       - node_id: polads-001-uat
-        title: "Close the open UAT bug class on xtest.polads.eu"
+        title: "Close the open UAT bug class on test.polads.eu"
         owner_role: cto
         depends_on: [polads-001-ci]
         acceptance_criteria:
@@ -83,7 +83,7 @@ outcomes:
           - "Places address autocomplete shows full city/postal/country after selection (Monday 2955147585)"
           - "PNG/JPG label exports render text correctly on the Vercel serverless runtime (PR #158 resvg font class)"
           - "Each fix lands with a regression test"
-        evidence_required: "Merged PR links + passing regression tests + UAT retest note on xtest.polads.eu"
+        evidence_required: "Merged PR links + passing regression tests + UAT retest note on test.polads.eu"
         verifier_role: cpo
         risk_level: medium
         rollback_note: "Per-fix revert via git; staging-only until polads-001-prod"
@@ -102,46 +102,9 @@ outcomes:
         captain_attention_estimate: 0.5
         budget_note: "No new spend; existing Vercel/Neon plans"
 
-  # SLOT 2/2 for lane polads — on achieved: renewal loop proposes successor
-  - id: outcome-polads-002
-    name: "PolAds Stack Auth staging configuration complete"
-    description: >
-      Finish the in-progress Stack Auth setup for PolAds staging
-      (app.stack-auth.com project, 36 users): Emails & Webhooks for the
-      polads.eu app are the remaining open items (todos-live 2026-06-09).
-    status: draft
-    captain_ratified: false
-    measurable_criteria:
-      - node_id: polads-002-config
-        title: "Wire up Stack Auth Emails & Webhooks for the polads.eu staging app"
-        owner_role: cto
-        acceptance_criteria:
-          - "Email (magic-link) templates configured and sending for the staging project"
-          - "Stack Auth webhook receiver (app/api/webhooks/stack-auth/route.ts) receives and verifies staging events"
-          - "PROPOSE-ONLY: third-party dashboard changes proposed to Captain before applying (config touches a live auth provider)"
-        evidence_required: "Stack Auth dashboard state (screenshot/notes) + webhook delivery log entry"
-        verifier_role: coo
-        risk_level: high
-        rollback_note: "Stack Auth config is dashboard-revertible; previous settings documented before change"
-        captain_attention_estimate: 0.25
-      - node_id: polads-002-e2e
-        title: "Magic-link sign-in verified end-to-end on staging"
-        owner_role: cto
-        depends_on: [polads-002-config]
-        acceptance_criteria:
-          - "A full magic-link sign-in round-trip succeeds on xtest.polads.eu (request -> email -> session)"
-          - "Covered by a Playwright E2E or a documented manual verification script"
-        evidence_required: "E2E run output or verification transcript"
-        verifier_role: cpo
-        risk_level: low
-
-  # SLOT queue for lane polads — the window is 2 ACTIVE per lane: ratify at
-  # most two of polads-001/002/003; the third stays draft as the renewal
-  # queue's next-up. On achieved: renewal loop proposes successor.
-  # OVERLAP NOTE: polads-001-uat covers the older May UAT bug class
-  # (Monday 2955117972, 2955147585, PR #158 font export); polads-003 covers
-  # the June 2026 feedback wave (ids below). Both bounded, disjoint item
-  # sets — no double-count: each Monday item belongs to exactly one outcome.
+  # SLOT 2/2 for lane polads (slot freed by the Captain's deletion of the
+  # Stack Auth outcome, 2026-06-10) — still DRAFT: Captain may ratify to fill
+  # the window. On achieved: renewal loop proposes successor.
   - id: outcome-polads-003
     name: "June UAT feedback wave closed on test.polads.eu"
     description: >
@@ -204,8 +167,8 @@ outcomes:
       (Monday 2959309890), deploy to ai.stepnetwork.dk, and queue her the
       promised retest ping. Spec the canvas drag/reposition tool — her
       biggest current blocker ("ikke nok frihed til at flytte rundt").
-    status: draft
-    captain_ratified: false
+    status: active
+    captain_ratified: true
     measurable_criteria:
       - node_id: stephie-001-fixes
         title: "Implement the four feedback-round-1 fixes in the Banner Creator"
@@ -252,8 +215,8 @@ outcomes:
       onboarding wizard -> Monday.com sync path works and that the scheduled
       sync jobs are not failing silently. Read-mostly; a safe first mission
       for this lane (repo STEP-Network/step-network-website).
-    status: draft
-    captain_ratified: false
+    status: active
+    captain_ratified: true
     measurable_criteria:
       - node_id: stepnet-001-e2e
         title: "E2E coverage green for onboarding wizard -> Monday sync"
@@ -288,8 +251,8 @@ outcomes:
       cabinet/scripts/policy-shadow.py) from shadow to enforcing in
       pre-tool-use, with CI parity proof first (plan P4 item, pulled forward
       as system-self work).
-    status: draft
-    captain_ratified: false
+    status: active
+    captain_ratified: true
     measurable_criteria:
       - node_id: sys-001-parity
         title: "CI parity proof: shadow decisions match pre-tool-use.sh on the hook-regression corpus"
@@ -333,8 +296,8 @@ outcomes:
       the screenpipe inbox path (draft_lib / inbox-triage) so no LLM sees
       raw inbound mail content unscreened. screenpipe edits follow the
       house convention: timestamped backups, not git.
-    status: draft
-    captain_ratified: false
+    status: active
+    captain_ratified: true
     measurable_criteria:
       - node_id: sys-002-module
         title: "Quarantine module: trust-scoring + injection sanitization with pytest corpus"
@@ -379,3 +342,7 @@ outcomes:
   # the draft->active->achieved->retired lifecycle and pollutes OVI.
   # See docs/work-model.md (Intake) and the P3 intake routine in
   # docs/clone-convergence-plan-2026-06-09.md.
+  # CAPTAIN APPROVAL 2026-06-10: Nate ratified standing intake (as the
+  # then-outcome adhoc-001); that approval carries over to this routine —
+  # build it in P3 without re-asking. Per-item proposals still gate via
+  # ask_nate as specified.
