@@ -2,7 +2,10 @@
 # FW-044 harness: gh api -X DELETE refs/heads/main bypass
 # 47 probes: 4 ACs + 6 flag-variants + 7 safe + 4 branch-disambig + 4 splice
 # + 5 data-position + 9 adversary + 8 review-agent FPs
-HOOK=/opt/founders-cabinet/cabinet/scripts/hooks/pre-tool-use.sh
+# Resolve HOOK relative to this script's repo root (works in main repo or any worktree)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+HOOK="$REPO_ROOT/cabinet/scripts/hooks/pre-tool-use.sh"
 PASS=0; FAIL=0
 
 probe() {

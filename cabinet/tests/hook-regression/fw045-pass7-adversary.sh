@@ -9,7 +9,10 @@
 #   - Reserved-word as literal text (false positive check)
 # Runtime metachar construction to avoid FW-040 #2 quoted-literal meta-trigger.
 
-HOOK=/opt/founders-cabinet/cabinet/scripts/hooks/pre-tool-use.sh
+# Resolve HOOK relative to this script's repo root (works in main repo or any worktree)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+HOOK="$REPO_ROOT/cabinet/scripts/hooks/pre-tool-use.sh"
 AMP="&"
 PIPE="|"
 SEMI=";"

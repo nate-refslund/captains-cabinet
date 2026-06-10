@@ -4,7 +4,10 @@
 # Pass-2 (Opus self-probe): f-with-letters-before-C variants (-fxC, -xfzC, -fzxC)
 # 29 probes: 6 fC-attack + 9 metachar-attack + 4 fC-legit + 3 anchor-FP-legit
 # + 6 pass-2 attacks + 1 pass-2 legit
-HOOK=/opt/founders-cabinet/cabinet/scripts/hooks/pre-tool-use.sh
+# Resolve HOOK relative to this script's repo root (works in main repo or any worktree)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+HOOK="$REPO_ROOT/cabinet/scripts/hooks/pre-tool-use.sh"
 PASS=0; FAIL=0
 
 probe() {

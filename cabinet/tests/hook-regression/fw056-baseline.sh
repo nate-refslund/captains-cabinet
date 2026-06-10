@@ -3,7 +3,10 @@
 # 29 probes: 12 9a-attack + 2 9a-FP + 6 9a-legit + 7 9b-attack + 2 9b-legit
 #
 # Closes the long-standing /tmp-only FW-040 hotfix harness gap (task #141 missed it).
-HOOK=/opt/founders-cabinet/cabinet/scripts/hooks/pre-tool-use.sh
+# Resolve HOOK relative to this script's repo root (works in main repo or any worktree)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+HOOK="$REPO_ROOT/cabinet/scripts/hooks/pre-tool-use.sh"
 PASS=0; FAIL=0
 
 probe() {

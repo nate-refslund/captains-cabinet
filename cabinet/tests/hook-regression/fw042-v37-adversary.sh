@@ -19,7 +19,10 @@
 #   EVAL-compound — eval 'echo ok; sudo ls' (compound-statement before kw)
 #   ENV-S — env -S'sudo ls' (glued short-flag-quote)
 set -u
-HOOK="${HOOK_OVERRIDE:-/opt/founders-cabinet/cabinet/scripts/hooks/pre-tool-use.sh}"
+# Resolve HOOK relative to this script's repo root (works in main repo or any worktree)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+HOOK="${HOOK_OVERRIDE:-$REPO_ROOT/cabinet/scripts/hooks/pre-tool-use.sh}"
 PASS=0; FAIL=0
 
 redis-cli -h redis -p 6379 DEL "cabinet:killswitch" >/dev/null 2>&1

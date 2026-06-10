@@ -23,7 +23,10 @@
 #          the data-position pass-through is the general FW-042 v3.7.1
 #          contract, not a notify-officer-specific carve-out.
 
-HOOK=/opt/founders-cabinet/cabinet/scripts/hooks/pre-tool-use.sh
+# Resolve HOOK relative to this script's repo root (works in main repo or any worktree)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+HOOK="$REPO_ROOT/cabinet/scripts/hooks/pre-tool-use.sh"
 PASS=0
 FAIL=0
 

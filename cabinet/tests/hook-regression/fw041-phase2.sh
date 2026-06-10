@@ -4,7 +4,10 @@
 # the Layer 1 gate by feeding the command through pre-tool-use.sh's jq +
 # regex pipeline — same way Claude Code invokes the hook in production.
 set -u
-HOOK="/opt/founders-cabinet/cabinet/scripts/hooks/pre-tool-use.sh"
+# Resolve HOOK relative to this script's repo root (works in main repo or any worktree)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+HOOK="$REPO_ROOT/cabinet/scripts/hooks/pre-tool-use.sh"
 FAIL=0
 PASS=0
 

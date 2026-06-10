@@ -4,7 +4,10 @@
 #                   AC-5 = exit 0 (benign heredoc, correctly passes)
 #                   AC-12 = verified via EVAL-014
 
-HOOK=/opt/founders-cabinet/cabinet/scripts/hooks/pre-tool-use.sh
+# Resolve HOOK relative to this script's repo root (works in main repo or any worktree)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+HOOK="$REPO_ROOT/cabinet/scripts/hooks/pre-tool-use.sh"
 
 probe() {
   local label="$1"; local cmd="$2"; local expect="$3"

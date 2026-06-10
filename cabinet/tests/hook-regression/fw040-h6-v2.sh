@@ -2,7 +2,10 @@
 # FW-040 hotfix-6 v2 harness: Pattern 8 -Ti/-Wi/-0777i variants + Pattern 9a/9b regression
 # 30 probes: 3 Sonnet-pass-2 perl-uppercase + 5 -I FP-sanity + 12 Pattern-8-attack
 # + 4 Pattern-8 FP control + 4 Pattern-9b regression + 2 Pattern-9a regression
-HOOK=/opt/founders-cabinet/cabinet/scripts/hooks/pre-tool-use.sh
+# Resolve HOOK relative to this script's repo root (works in main repo or any worktree)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+HOOK="$REPO_ROOT/cabinet/scripts/hooks/pre-tool-use.sh"
 PASS=0; FAIL=0
 probe() {
   local label="$1" cmd="$2" expected="$3"

@@ -906,13 +906,35 @@ if [ "$OFFICER" != "cto" ] && [ "$OFFICER" != "unknown" ]; then
 fi
 
 # ============================================================
-# 5. CONSTITUTION PROTECTION
+# 5. CONSTITUTION + GERMLINE PROTECTION
 # ============================================================
 if [ "$TOOL_NAME" = "Edit" ] || [ "$TOOL_NAME" = "Write" ]; then
   FILE_PATH=$(echo "$TOOL_INPUT" | jq -r '.file_path // .path // empty' 2>/dev/null)
+  # Collapse repeated slashes before matching (scoped to this section).
+  # Without this, exact-file germline patterns (suffix-anchored, e.g.
+  # *"cabinet/mcp-scope.yml") are bypassable via `lib//mcp-scope.yml`
+  # path forms. tr -s '/' is purely collapsing — every pre-existing arm
+  # below matches the same or strictly safer on the normalized path
+  # (e.g. tier2 double-slash false-blocks self-writes today; collapsed
+  # paths resolve correctly).
+  FILE_PATH=$(printf '%s' "$FILE_PATH" | tr -s '/')
   case "$FILE_PATH" in
     *"constitution/"*)
       echo "BLOCKED: Constitution files are read-only. Propose amendments through the self-improvement loop." >&2
+      exit 2
+      ;;
+    # GERMLINE SET (2026-06-10) — the files that JUDGE officer/loop
+    # behavior: golden evals, the typed policy engine + its policies, MCP
+    # scope, capability routing, the brain-bridge and courses-of-action
+    # rules, and the autonomy gradient. Read-only for EVERY officer and
+    # loop (including cos): no loop may edit its own judge. Officers/loops
+    # PROPOSE germline changes (improvement proposal / founder-action);
+    # only the Captain applies them. Directory entries are contains-matched
+    # (trailing slash keeps e.g. memory/golden-evals-notes.md editable);
+    # single files are suffix-anchored so siblings like
+    # instance/config/autonomy.yml.example stay editable.
+    *"memory/golden-evals/"*|*"framework/policies/"*|*"cabinet/scripts/lib/policy_engine.py"|*"cabinet/mcp-scope.yml"|*"cabinet/officer-capabilities.conf"|*".claude/rules/brain-bridge.md"|*".claude/rules/courses-of-action.md"|*"instance/config/autonomy.yml")
+      echo "BLOCKED: Germline file — read-only for officers and loops (no loop may edit its own judge). Propose the change to the Captain; only the Captain applies germline edits." >&2
       exit 2
       ;;
     *".env"*)

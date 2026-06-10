@@ -2,7 +2,10 @@
 # FW-040 Hotfix 5 harness: perl -i inplace-edit + tar -xf -C write-gate scope-gaps
 # 48 probes: 11 perl-attack + 7 perl-legit + 13 tar-attack + 7 tar-legit
 # + 5 cross-pattern regression + 5 data-position FP
-HOOK=/opt/founders-cabinet/cabinet/scripts/hooks/pre-tool-use.sh
+# Resolve HOOK relative to this script's repo root (works in main repo or any worktree)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+HOOK="$REPO_ROOT/cabinet/scripts/hooks/pre-tool-use.sh"
 PASS=0; FAIL=0
 
 probe() {
