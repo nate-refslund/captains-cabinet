@@ -461,6 +461,7 @@ def compile_from_yaml(
     """Read an outcomes YAML file and compile all active outcomes into missions.
 
     The YAML file should conform to framework/schemas/outcome.schema.json:
+        deployment: my-cabinet-id   # optional gate (see below)
         outcomes:
           - id: outcome-001
             name: ...
@@ -473,7 +474,9 @@ def compile_from_yaml(
         roles: optional list of role dicts; if None, queries from lifecycle
 
     Returns:
-        List of Mission dicts (one per active outcome)
+        List of Mission dicts (one per active outcome). Empty (with one
+        stderr warning, no exception) when the file pins a `deployment`
+        that does not match this cabinet's CABINET_ID env (default "main").
     """
     path = Path(path)
     if not path.exists():
@@ -484,6 +487,25 @@ def compile_from_yaml(
 
     if not data or "outcomes" not in data:
         raise ValueError(f"Invalid outcomes file: missing 'outcomes' key in {path}")
+
+    # Deployment gate (cross-deployment leak guard). A live outcomes file is
+    # git-tracked, so any other deployment pulling the branch would compile
+    # this machine's missions and double-execute its tasks. When the file
+    # pins a `deployment`, only the cabinet whose CABINET_ID matches it
+    # compiles; everyone else skips the whole file with one warning.
+    # Absent field = compile everywhere (back-compat).
+    deployment = data.get("deployment")
+    if deployment is not None:
+        cabinet_id = os.environ.get("CABINET_ID", "main")
+        if str(deployment) != cabinet_id:
+            print(
+                f"mission-compiler: skipping {path}: file is pinned to "
+                f"deployment '{deployment}' but this cabinet is "
+                f"'{cabinet_id}' (CABINET_ID) — refusing to compile another "
+                f"deployment's outcomes",
+                file=sys.stderr,
+            )
+            return []
 
     outcomes = data["outcomes"]
     missions: list[dict[str, Any]] = []

@@ -305,6 +305,59 @@ class TestCompileFromYaml:
 
 
 # ---------------------------------------------------------------------------
+# Tests: deployment gate (cross-deployment leak guard)
+# ---------------------------------------------------------------------------
+
+
+def _write_pinned_outcomes(tmp_path, deployment: str | None) -> Path:
+    """One active single-criterion outcome, optionally pinned to a deployment."""
+    header = f"deployment: {deployment}\n" if deployment else ""
+    f = tmp_path / "outcomes-gated.yml"
+    f.write_text(header + """outcomes:
+  - id: outcome-gated
+    name: Gated outcome
+    measurable_criteria:
+      - Build API endpoints
+    status: active
+""")
+    return f
+
+
+class TestDeploymentGate:
+    def test_mismatch_skips_whole_file(
+        self, tmp_path, sample_roles, monkeypatch, capsys, event_log_dir,
+    ):
+        monkeypatch.delenv("CABINET_ID", raising=False)  # defaults to "main"
+        f = _write_pinned_outcomes(tmp_path, "other-machine")
+
+        missions = compile_from_yaml(f, roles=sample_roles)
+
+        assert missions == []  # skipped, not raised
+        err = capsys.readouterr().err
+        assert "other-machine" in err and "main" in err  # names both values
+        # No mission_created events for another deployment's outcomes
+        assert list(event_log_dir.glob("events-*.jsonl")) == []
+
+    def test_match_compiles(self, tmp_path, sample_roles, monkeypatch):
+        monkeypatch.setenv("CABINET_ID", "other-machine")
+        f = _write_pinned_outcomes(tmp_path, "other-machine")
+
+        missions = compile_from_yaml(f, roles=sample_roles)
+
+        assert len(missions) == 1
+        assert missions[0]["outcome_id"] == "outcome-gated"
+
+    def test_absent_field_always_compiles(self, tmp_path, sample_roles, monkeypatch):
+        """Back-compat: files without a deployment pin compile everywhere."""
+        monkeypatch.setenv("CABINET_ID", "whatever-machine")
+        f = _write_pinned_outcomes(tmp_path, None)
+
+        missions = compile_from_yaml(f, roles=sample_roles)
+
+        assert len(missions) == 1
+
+
+# ---------------------------------------------------------------------------
 # Tests: helper functions
 # ---------------------------------------------------------------------------
 

@@ -58,6 +58,15 @@
 # Lanes: polads | stephie-stepnetwork | system-self
 # (lane is encoded in the outcome id/description; the schema has no lane key)
 
+# DEPLOYMENT GATE — this file is pinned to the hq-macbook cabinet. The
+# compiler (compile_from_yaml) skips the WHOLE file with a stderr warning
+# on any deployment whose CABINET_ID env does not equal this value, so
+# another machine pulling this branch (e.g. the Mac Mini soak) never
+# compiles hq's missions and never double-executes cos-owned system-self
+# tasks. hq must run with CABINET_ID=hq-macbook for these outcomes to
+# compile (default CABINET_ID is "main").
+deployment: hq-macbook
+
 outcomes:
   # ===========================================================
   # LANE: polads — STEP-Network/v0-politiske-annoncer
