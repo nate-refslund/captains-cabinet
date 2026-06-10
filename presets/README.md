@@ -16,6 +16,8 @@ A preset is **not** a separate codebase, a fork, or an alternate framework. It's
 | Preset | Status | Description |
 |--------|--------|-------------|
 | `work/` | Active | Product-team shape: CoS / CTO / CPO / CRO / COO, Linear-or-Library backlog, Notion-or-Library business brain, product repo workspace. |
+| `portfolio/` | Active | Portfolio shape: one persistent Chair (id `cos`, single Telegram bot) + one on-demand CEO officer per lane, generated from `agents/_lane-ceo.md.template` into `instance/agents/`. Functional depth via hats + hat graduation and Sonnet crew, not extra fulltime officers. |
+| `step-network/` | Active | Multi-project pool shape: the work-preset officer roster shared across related projects, pre-warmed tmux session pool, single_ceo bot mode. |
 | `personal/` | Placeholder | Coaching / life-operator shape. Empty until Phase 2 of the Cabinet v2 arc populates it. |
 | `_template/` | Template | Skeleton for creating a new preset. Copy to `presets/<your-name>/` and customize. |
 

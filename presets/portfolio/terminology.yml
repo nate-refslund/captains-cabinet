@@ -1,0 +1,32 @@
+# presets/portfolio/terminology.yml
+# Term mappings for the portfolio preset.
+# Mirrors the work preset's vocabulary; the long-running body of work is a
+# "lane" (one product/venture per lane CEO) instead of a single "product".
+
+agent_role: officer
+agents: officers
+
+captain_title: Captain
+captain_context: leadership
+
+crew_title: Crew
+crew_context: agent team
+
+# The generic "work unit" — what a ticket/issue/task is called in this preset
+work_unit: task
+work_units: tasks
+
+# What the long-running body of work is called
+work_body: lane
+alternate_work_bodies:  # acceptable synonyms when speaking about one lane
+  - product
+  - venture
+  - program
+  - engagement
+
+# What we call the authoritative backlog surface — each lane configures its
+# own task-board provider in instance/config (the preset names no vendor).
+backlog: per-lane task board (provider configured per lane in instance/)
+
+# What we call the authoritative business-context surface
+business_brain: the Library Business Brain Space (or the deployment's configured knowledge provider)

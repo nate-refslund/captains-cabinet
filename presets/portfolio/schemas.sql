@@ -1,0 +1,12 @@
+-- presets/portfolio/schemas.sql
+-- Additional database tables specific to the portfolio preset.
+-- Applied by the preset loader after the framework base schemas.
+-- Additive-only per Captain directive 2026-04-16 — never DROP or MUTATE
+-- existing framework tables.
+--
+-- The portfolio preset adds NO tables today. Lane scoping reuses the
+-- framework's context_slug column (one context per lane), the mission and
+-- role state live in the org-runtime event ledger + Store, and the
+-- captain-attention queue lives in Redis. Add portfolio-specific tables
+-- here (CREATE TABLE IF NOT EXISTS ... with cabinet_id + context_slug
+-- columns) only when a durable, queryable surface is actually needed.

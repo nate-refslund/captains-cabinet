@@ -1,0 +1,61 @@
+# presets/portfolio/preset.yml
+# Portfolio preset — one persistent Chair + per-lane CEO officers, for a
+# Captain running a PORTFOLIO of products/ventures (lanes) under one Cabinet.
+#
+# Differs from `work` (five functional officers on one product) and from
+# `step-network` (functional officers pooled across projects): the portfolio
+# roster is ORGANIZATIONAL, not functional. One Chair coordinates; one CEO
+# officer owns each lane end-to-end. Functional depth comes from HATS
+# (framework/roles/lifecycle.py assign_hat + framework/roles/hat_graduation.py
+# graduation on usage evidence), not from extra fulltime officers, and from
+# Sonnet crew subagents for execution + fresh-context review.
+
+name: portfolio
+description: >
+  Portfolio shape. One persistent Chair (reuses officer id `cos` — display
+  name "Chair") as the single human surface and cross-lane coordinator, plus
+  one on-demand CEO officer per lane who owns that lane end-to-end (stream
+  tasks + Captain-ratified missions), wears functional hats, and spawns
+  Sonnet crew for execution and fresh-context review. Lane CEOs are
+  Telegram-dark; the Chair's bot is the only Captain-facing channel.
+
+# Naming convention — functional titles ("Chair", "<Lane> CEO").
+naming_style: functional
+
+# Agent archetypes. ONLY the Chair ships as a concrete role definition;
+# lane CEOs are GENERATED per deployment from agents/_lane-ceo.md.template
+# into instance/agents/<lane-slug>-ceo.md by the cabinet-init interview
+# (lane name/slug/repo/boards are deployment specifics and never live in
+# the preset). Generated lane CEOs are hired by listing them under
+# `agents:` in cabinet/mcp-scope.yml, same as any officer.
+agent_archetypes:
+  - cos   # Chair — intake, briefings, founder accountability, comms triage,
+          # cross-lane coordination, verification of high-blast lane steps.
+          # Reuses officer id `cos` (see agents/cos.md header for the
+          # id-reuse decision).
+  # - <lane-slug>-ceo  # generated from agents/_lane-ceo.md.template per lane
+
+# Default terminology for this preset. See terminology.yml for the full map.
+terminology:
+  agent_role: officer
+  work_unit: task
+  output_store: shared_interfaces
+  backlog: lane_boards   # each lane's task board, configured per lane in instance/
+  scope_unit: lane       # portfolio speaks in "lanes" (a product/venture per CEO)
+
+# Default autonomy. Portfolio lanes start propose-first: stream writes and
+# proposals gate on the Captain until a lane graduates on evidence. The hard
+# ceiling (production deploys / external comms / spend) NEVER lifts — see
+# safety-addendum.md.
+autonomy_level: propose_first
+
+# Where this preset expects lane workspaces (instance config overrides).
+# Each lane's repo lives at /workspace/lanes/<lane-slug>/ in container
+# deployments; Mac-native deployments point lanes at real checkout paths
+# via instance/config/projects/<lane-slug>.yml.
+workspace_mount: /workspace/lanes
+
+# Telegram bot mode — single-bot Chair surface. ONLY the Chair's bot polls
+# Telegram; lane CEOs are Telegram-dark and route Captain-attention through
+# the Chair (captain-attention queue) and the warroom broadcast.
+telegram_bot_mode: single_ceo
