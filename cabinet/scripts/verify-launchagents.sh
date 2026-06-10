@@ -69,11 +69,20 @@ if [ "${#EXPECTED_PLISTS[@]}" -eq 0 ]; then
 fi
 
 # Officer plists are per-officer (com.cabinet.officer.<slug>) — discovered
-# dynamically from instance/roles/active/
+# dynamically from instance/roles/active/. Consultant roles (officer_type:
+# consultant) are on-demand sessions started via start-officer-mac.sh — no
+# persistent LaunchAgent is expected for them, so they are skipped here
+# (reported as INFO below) instead of false-failing the verification.
+SKIPPED_CONSULTANTS=""
 if [ -d "$CABINET_ROOT/instance/roles/active" ]; then
   for role_yml in "$CABINET_ROOT/instance/roles/active"/*.yml; do
     [ -f "$role_yml" ] || continue
     slug="$(basename "$role_yml" .yml)"
+    otype="$(awk -F': *' '$1=="officer_type"{print $2; exit}' "$role_yml" | tr -d '[:space:]')"
+    if [ "$otype" = "consultant" ]; then
+      SKIPPED_CONSULTANTS="$SKIPPED_CONSULTANTS $slug"
+      continue
+    fi
     EXPECTED_PLISTS+=("com.cabinet.officer.${slug}")
   done
 fi
@@ -143,6 +152,9 @@ if [ "$JSON_OUT" -eq 0 ]; then
   echo "=== Cabinet LaunchAgent Verification ==="
   echo "  LaunchAgents dir: $LAUNCH_AGENTS_DIR"
   echo "  Cabinet logs dir: $LOG_DIR ($log_dir_status)"
+  if [ -n "$SKIPPED_CONSULTANTS" ]; then
+    echo "  INFO: consultant officers skipped (on-demand, no persistent agent expected):$SKIPPED_CONSULTANTS"
+  fi
   echo ""
 fi
 

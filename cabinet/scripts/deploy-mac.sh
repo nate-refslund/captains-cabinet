@@ -9,8 +9,15 @@
 #   bash cabinet/scripts/deploy-mac.sh --officer all           # deploy all 5 officers
 #   bash cabinet/scripts/deploy-mac.sh --daemon <name>         # deploy a non-officer service
 #                                                              #   (heartbeat-watchdog, cost-summary, worktree-listener)
+#   bash cabinet/scripts/deploy-mac.sh --officer X --daemon Y  # both in one invocation
 #   bash cabinet/scripts/deploy-mac.sh --all                   # deploy everything
 #   bash cabinet/scripts/deploy-mac.sh --dry-run               # show what would be done, don't execute
+#   bash cabinet/scripts/deploy-mac.sh --officer X --force     # override the consultant guard
+#
+# Consultant guard: --officer <name> refuses roles whose
+# instance/roles/active/<name>.yml says officer_type: consultant —
+# consultants are on-demand sessions (start-officer-mac.sh) and a KeepAlive
+# LaunchAgent would pin them always-on. --force overrides.
 #
 # Per Spec 059 v1.1 Checkpoint 2.8 (envsubst + WorkingDirectory + SoftResourceLimits + KeepAlive ratifications).
 
@@ -31,6 +38,7 @@ OFFICER=""
 DAEMON=""
 ALL=false
 DRY_RUN=false
+FORCE=false
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -38,6 +46,7 @@ while [ $# -gt 0 ]; do
     --daemon)  DAEMON="${2:?--daemon requires a name}"; shift 2 ;;
     --all)     ALL=true; shift ;;
     --dry-run) DRY_RUN=true; shift ;;
+    --force)   FORCE=true; shift ;;
     *) echo "deploy-mac.sh: unknown flag '$1'" >&2; exit 64 ;;
   esac
 done
@@ -49,9 +58,11 @@ mkdir -p "$LAUNCHD_DIR" "$LOGS_DIR"
 # its --agent flag; without this, native_agent=false on every fresh deployment.
 # load-preset.sh also does this inline, but at deploy time we may not have a Neon
 # connection yet — sync-agents.sh is the agent-only step that runs unconditionally.
-# Idempotent; safe to re-run; runs on --dry-run too because it has no side
-# effects beyond .claude/agents/ which is a generated directory.
-if ! bash "$REPO_ROOT/cabinet/scripts/sync-agents.sh" 2>&1; then
+# Idempotent; safe to re-run. Skipped on --dry-run: a dry run must not mutate
+# anything, including the generated .claude/agents/ directory.
+if $DRY_RUN; then
+  echo "deploy-mac.sh: --dry-run — skipping sync-agents.sh (no writes)"
+elif ! bash "$REPO_ROOT/cabinet/scripts/sync-agents.sh" 2>&1; then
   echo "deploy-mac.sh: sync-agents.sh failed — officers will boot without --agent flag" >&2
 fi
 
@@ -131,6 +142,27 @@ deploy_daemon() {
     "com.cabinet.$daemon"
 }
 
+# Consultant guard — a persistent KeepAlive LaunchAgent contradicts the
+# on-demand consultant lifecycle. Consultants are started per trigger via
+# start-officer-mac.sh; deploying one needs an explicit --force.
+guard_consultant() {
+  local officer="$1"
+  local role_yml="$REPO_ROOT/instance/roles/active/$officer.yml"
+  [ -f "$role_yml" ] || return 0
+  local otype
+  otype=$(awk -F': *' '$1=="officer_type"{print $2; exit}' "$role_yml" | tr -d '[:space:]')
+  if [ "$otype" = "consultant" ] && [ "$FORCE" != true ]; then
+    cat >&2 <<EOF
+deploy-mac.sh: refusing --officer $officer — instance/roles/active/$officer.yml
+  says officer_type: consultant. Consultants are on-demand sessions, started
+  per trigger via:  bash cabinet/scripts/start-officer-mac.sh $officer
+  A persistent KeepAlive LaunchAgent would pin them always-on.
+  Override deliberately with: deploy-mac.sh --officer $officer --force
+EOF
+    exit 2
+  fi
+}
+
 # Execute
 if [ "$ALL" = true ]; then
   for o in cos cto cpo cro coo; do deploy_officer "$o"; done
@@ -155,15 +187,27 @@ if [ "$ALL" = true ]; then
   #   bash cabinet/scripts/deploy-mac.sh --daemon dashboard-kiosk
   # Headless servers skip it; the dashboard server above stays reachable
   # over Tailscale at http://<host>:3100 regardless.
-elif [ "$OFFICER" = "all" ]; then
-  for o in cos cto cpo cro coo; do deploy_officer "$o"; done
-elif [ -n "$OFFICER" ]; then
-  deploy_officer "$OFFICER"
-elif [ -n "$DAEMON" ]; then
-  deploy_daemon "$DAEMON"
 else
-  echo "Usage: deploy-mac.sh [--officer <name>|all] [--daemon <name>] [--all] [--dry-run]" >&2
-  exit 64
+  # --officer and --daemon are independent selectors and may be combined in
+  # one invocation (previously the elif chain silently dropped --daemon
+  # whenever --officer was present).
+  DEPLOYED_ANY=false
+  if [ "$OFFICER" = "all" ]; then
+    for o in cos cto cpo cro coo; do deploy_officer "$o"; done
+    DEPLOYED_ANY=true
+  elif [ -n "$OFFICER" ]; then
+    guard_consultant "$OFFICER"
+    deploy_officer "$OFFICER"
+    DEPLOYED_ANY=true
+  fi
+  if [ -n "$DAEMON" ]; then
+    deploy_daemon "$DAEMON"
+    DEPLOYED_ANY=true
+  fi
+  if [ "$DEPLOYED_ANY" = false ]; then
+    echo "Usage: deploy-mac.sh [--officer <name>|all] [--daemon <name>] [--all] [--dry-run] [--force]" >&2
+    exit 64
+  fi
 fi
 
 exit 0
