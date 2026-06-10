@@ -15,6 +15,11 @@ Design choices:
 - **Idempotent.** Re-running the supervisor never re-routes a task that
   has already been assigned. Safe to schedule every minute.
 
+- **Roster-gated.** A task whose assigned_role is not in the active roster
+  is never routed (and never marked assigned — that would black-hole it):
+  it gets one deduped `work_item_unroutable` ledger event plus a stderr
+  warning per pass, and resurfaces automatically once the role is created.
+
 - **Separation of concerns.** This module returns *routing decisions* as
   plain dicts. The shell wrapper in `cabinet/cron/mission-supervisor.sh`
   calls `trigger_send` to push Redis Stream messages. Tests can exercise
@@ -46,6 +51,7 @@ if _FRAMEWORK_ROOT not in sys.path:
 from framework.events.emitter import emit, replay
 from framework.missions.compiler import compile_from_yaml
 from framework.missions.session_bridge import _outcomes_path
+from framework.roles.lifecycle import list_roles
 
 
 def already_assigned_ids() -> set[str]:
@@ -56,6 +62,20 @@ def already_assigned_ids() -> set[str]:
         if tid:
             assigned.add(tid)
     return assigned
+
+
+def already_unroutable_ids() -> set[str]:
+    """Replay work_item_unroutable events to collect task IDs already flagged.
+
+    Same dedup pattern as already_assigned_ids: one ledger event per task,
+    no matter how many supervisor passes observe the same ghost role.
+    """
+    flagged: set[str] = set()
+    for ev in replay(event_types=["work_item_unroutable"]):
+        tid = (ev.get("payload") or {}).get("task_id")
+        if tid:
+            flagged.add(tid)
+    return flagged
 
 
 def find_unassigned_ready_tasks(
@@ -79,6 +99,15 @@ def find_unassigned_ready_tasks(
         return []
 
     assigned = already_assigned_ids()
+    flagged_unroutable = already_unroutable_ids()
+
+    # Roster check: the compiler stamps an explicit owner_role verbatim with
+    # no validation, so a typo'd or not-yet-created role would otherwise be
+    # routed into a black hole (work_item_assigned is emitted before delivery
+    # and already_assigned_ids() excludes the task forever after).
+    active_slugs: set[str] = {
+        role.get("slug") for role in list_roles(status="active") if role.get("slug")
+    }
 
     decisions: list[dict[str, Any]] = []
     for mission in missions:
@@ -88,6 +117,28 @@ def find_unassigned_ready_tasks(
                 # No officer to route to — Captain may need to add a role
                 # with matching capabilities. Surface that gap later via OVI;
                 # silently skip for now.
+                continue
+            if node.assigned_role not in active_slugs:
+                # Ghost role: skip WITHOUT emitting work_item_assigned so the
+                # task resurfaces automatically once the role exists. Record
+                # the gap once in the ledger (deduped by replay) and warn on
+                # every pass while it persists — stderr only, never stdout
+                # (the --json contract reserves stdout for routing decisions).
+                print(
+                    f"mission-supervisor: WARN task {node.id} is assigned to "
+                    f"role '{node.assigned_role}' which is not in the active "
+                    f"roster — skipping (create the role to route it)",
+                    file=sys.stderr,
+                )
+                if node.id not in flagged_unroutable:
+                    emit("work_item_unroutable", actor=compile_actor, payload={
+                        "task_id": node.id,
+                        "mission_id": mission["id"],
+                        "outcome_id": mission["outcome_id"],
+                        "assigned_role": node.assigned_role,
+                        "description": node.description,
+                    })
+                    flagged_unroutable.add(node.id)
                 continue
             if node.id in assigned:
                 continue
