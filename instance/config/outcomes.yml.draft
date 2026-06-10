@@ -1,7 +1,7 @@
 # =============================================================
 # DRAFT for Nate review — rename to outcomes.yml to activate
 # =============================================================
-# P2 prep (clone-convergence plan, docs/clone-convergence-plan-2026-06-09.md).
+# R2 prep (clone-convergence plan, docs/clone-convergence-plan-2026-06-09.md).
 # Authored 2026-06-10 from live grounding:
 #   - 9-Codebases/{PolAds,STEPhie,stepnetwork-dk}/architecture.md + deployment.md
 #   - 0-Inbox/todos-live.md (open work as of 2026-06-09)
@@ -11,17 +11,26 @@
 # Schema: framework/schemas/outcome.schema.json (Mission Compiler v2 rich
 # criteria). Validated with jsonschema before commit.
 #
-# SAFETY — double gate, nothing activates from this file:
-#   1. The compiler reads instance/config/outcomes.yml only; this is a .draft.
-#   2. Every outcome below is status: draft / captain_ratified: false — the
-#      compiler skips anything not status: active. Renaming alone compiles
-#      NOTHING; Nate must also flip status per outcome he ratifies.
+# SAFETY — the .draft filename is the LIVE gate; while this file is named
+# *.draft nothing compiles. Read both gates before renaming:
+#   1. FILENAME gate: the compiler (framework/missions/session_bridge.py)
+#      reads instance/config/outcomes.yml ONLY. This is a .draft, so the
+#      compiler never sees it as-is.
+#   2. STATUS gate: the compiler compiles only outcomes with status: active
+#      (captain_ratified is a human record the compiler does NOT read).
+#      The Captain ratification pass (2026-06-10) ALREADY set 5 of the 6
+#      outcomes below to status: active / captain_ratified: true
+#      (polads-001, stephie-001, stepnetwork-001, system-self-001,
+#      system-self-002); only outcome-polads-003 is still status: draft.
+#      So renaming this file to outcomes.yml is NOT a no-op — it ACTIVATES
+#      those 5 pre-ratified outcomes immediately. Rename only when you intend
+#      exactly that; to hold one back, flip its status to draft first.
 #
 # AUTONOMY CEILING (applies to every criterion marked risk_level: high):
 #   external_comms / production deploys / spending are ALWAYS propose-only.
 #   Outbound messages go via the brain MCP queue_draft -> Telegram approval;
 #   production deploys and enforcement flips need explicit Captain approval.
-#   This mirrors the P4 hard ceiling — graduation never lifts these here.
+#   This mirrors the R4 hard ceiling — graduation never lifts these here.
 #
 # WORK MODEL (Captain-agreed 2026-06-10) — products are LANES, not outcomes.
 # Three work classes per lane; full contract: docs/work-model.md.
@@ -254,7 +263,7 @@ outcomes:
     description: >
       Promote cabinet/scripts/lib/policy_engine.py (shadow evaluator:
       cabinet/scripts/policy-shadow.py) from shadow to enforcing in
-      pre-tool-use, with CI parity proof first (plan P4 item, pulled forward
+      pre-tool-use, with CI parity proof first (plan R4 item, pulled forward
       as system-self work).
     status: active
     captain_ratified: true
@@ -297,7 +306,7 @@ outcomes:
   - id: outcome-system-self-002
     name: "Inbound-mail quarantine pass before LLM exposure"
     description: >
-      P4 EchoLeak-class defense: trust-scoring + injection-sanitization in
+      R4 EchoLeak-class defense: trust-scoring + injection-sanitization in
       the screenpipe inbox path (draft_lib / inbox-triage) so no LLM sees
       raw inbound mail content unscreened. screenpipe edits follow the
       house convention: timestamped backups, not git.
@@ -345,9 +354,9 @@ outcomes:
   # lane -> propose-only via brain ask_nate -> approved items become
   # stream tasks or outcome proposals). A never-achievable outcome breaks
   # the draft->active->achieved->retired lifecycle and pollutes OVI.
-  # See docs/work-model.md (Intake) and the P3 intake routine in
+  # See docs/work-model.md (Intake) and the R3 intake routine in
   # docs/clone-convergence-plan-2026-06-09.md.
   # CAPTAIN APPROVAL 2026-06-10: Nate ratified standing intake (as the
   # then-outcome adhoc-001); that approval carries over to this routine —
-  # build it in P3 without re-asking. Per-item proposals still gate via
+  # build it in R3 without re-asking. Per-item proposals still gate via
   # ask_nate as specified.
