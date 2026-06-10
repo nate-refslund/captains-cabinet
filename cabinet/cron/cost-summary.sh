@@ -9,6 +9,17 @@
 set -uo pipefail
 
 REPO_ROOT="${CABINET_SOURCE_REPO:-$HOME/work/captains-cabinet}"
+
+# Source cabinet/.env (Telegram tokens etc.) if present — launchd/cron runs
+# get no login environment, so without this every Telegram send dies
+# token-less. set -a exports the vars to child scripts (send-to-group.sh /
+# send-to-warroom.sh and helpers).
+if [ -f "$REPO_ROOT/cabinet/.env" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "$REPO_ROOT/cabinet/.env"
+  set +a
+fi
 REDIS_HOST="${REDIS_HOST:-localhost}"
 REDIS_PORT="${REDIS_PORT:-6379}"
 
@@ -17,7 +28,23 @@ TZ_NAME=$(grep captain_timezone "$REPO_ROOT/instance/config/platform.yml" 2>/dev
 TZ_NAME="${TZ_NAME:-UTC}"
 TODAY=$(TZ="$TZ_NAME" date +%Y-%m-%d)
 
-OFFICERS=("cos" "cto" "cpo" "cro" "coo")
+# Officer roster — derived from instance/roles/active/*.yml (seeded by
+# bootstrap-roles.sh) so the digest tracks the REAL roster (portfolio lane
+# CEOs included, retired roles dropped). Consultants stay listed — they
+# spend tokens too.
+OFFICERS=()
+ROLES_DIR="$REPO_ROOT/instance/roles/active"
+if [ -d "$ROLES_DIR" ]; then
+  for role_yml in "$ROLES_DIR"/*.yml; do
+    [ -f "$role_yml" ] || continue
+    OFFICERS+=("$(basename "$role_yml" .yml)")
+  done
+fi
+if [ "${#OFFICERS[@]}" -eq 0 ]; then
+  # Fallback ONLY when instance/roles/active/ is empty/missing (deployment
+  # not bootstrapped yet): legacy hardcoded functional five.
+  OFFICERS=("cos" "cto" "cpo" "cro" "coo")
+fi
 MSG="💰 Cabinet cost summary $TODAY"
 
 TOTAL_MICRO=0

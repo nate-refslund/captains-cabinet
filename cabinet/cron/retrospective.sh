@@ -3,6 +3,19 @@
 # Runs every 3 days via cron
 [ -f /etc/environment.cabinet ] && source /etc/environment.cabinet
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CABINET_ROOT="${CABINET_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
+# Source cabinet/.env (Telegram tokens etc.) if present — launchd/cron runs
+# get no login environment, so without this every Telegram send dies
+# token-less. set -a exports the vars to child scripts (send-to-group.sh /
+# send-to-warroom.sh and helpers).
+if [ -f "$CABINET_ROOT/cabinet/.env" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "$CABINET_ROOT/cabinet/.env"
+  set +a
+fi
+
 TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
 
 REDIS_URL="${REDIS_URL:-redis://redis:6379}"

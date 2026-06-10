@@ -28,7 +28,15 @@ MESSAGE="${2:?Usage: send-to-warroom.sh <context_slug> \"message\"}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CABINET_ROOT="${CABINET_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
-TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN not set}"
+# Token: bare TELEGRAM_BOT_TOKEN is exported only inside telegram_bot-capable
+# officer sessions. Telegram-dark officers, cron daemons, and ad-hoc shells
+# post via the Chair's bot — fall back to TELEGRAM_COS_TOKEN (canonical
+# TELEGRAM_<OFFICER_UPPER>_TOKEN name for the cos/Chair officer).
+TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-${TELEGRAM_COS_TOKEN:-}}"
+if [ -z "$TELEGRAM_BOT_TOKEN" ]; then
+  echo "ERROR: send-to-warroom.sh: neither TELEGRAM_BOT_TOKEN nor TELEGRAM_COS_TOKEN is set (cabinet/.env not sourced?)" >&2
+  exit 1
+fi
 WARROOMS_FILE="$CABINET_ROOT/instance/config/warrooms.yml"
 
 # Resolve chat_id for the requested context. Fall back to $TELEGRAM_HQ_CHAT_ID

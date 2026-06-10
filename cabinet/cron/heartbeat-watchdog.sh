@@ -50,6 +50,17 @@
 set -uo pipefail
 
 REPO_ROOT="${CABINET_SOURCE_REPO:-$HOME/work/captains-cabinet}"
+
+# Source cabinet/.env (Telegram tokens etc.) if present — launchd/cron runs
+# get no login environment, so without this every Telegram send dies
+# token-less. set -a exports the vars to child scripts (send-to-group.sh /
+# send-to-warroom.sh and helpers).
+if [ -f "$REPO_ROOT/cabinet/.env" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "$REPO_ROOT/cabinet/.env"
+  set +a
+fi
 REDIS_HOST="${REDIS_HOST:-localhost}"
 REDIS_PORT="${REDIS_PORT:-6379}"
 SENTINEL_DIR="$HOME/Library/Caches/cabinet"
@@ -57,9 +68,27 @@ SENTINEL_DIR="$HOME/Library/Caches/cabinet"
 # Rate-limit: max N restarts per officer per hour.
 RESTART_CAP_PER_HOUR=3
 
-# Fulltime officer roster — consultant officers (e.g. CRO if configured consultant) excluded.
-# Reads from instance/config/platform.yml ideally; hardcoded default for now.
-FULLTIME_OFFICERS=("cos" "cto" "cpo" "coo")
+# Fulltime officer roster — derived from instance/roles/active/*.yml
+# (officer_type: field written by bootstrap-roles.sh). Consultants are
+# on-demand sessions and must NOT be watchdog-restarted; an absent
+# officer_type defaults to fulltime (pre-officer_type ymls).
+FULLTIME_OFFICERS=()
+ROLES_DIR="$REPO_ROOT/instance/roles/active"
+if [ -d "$ROLES_DIR" ]; then
+  for role_yml in "$ROLES_DIR"/*.yml; do
+    [ -f "$role_yml" ] || continue
+    otype=$(awk -F': *' '$1=="officer_type"{print $2; exit}' "$role_yml" | tr -d '[:space:]')
+    if [ "${otype:-fulltime}" != "consultant" ]; then
+      FULLTIME_OFFICERS+=("$(basename "$role_yml" .yml)")
+    fi
+  done
+fi
+if [ "${#FULLTIME_OFFICERS[@]}" -eq 0 ]; then
+  # Fallback ONLY when instance/roles/active/ is empty/missing (deployment
+  # not bootstrapped yet): legacy hardcoded functional-four so existing
+  # un-bootstrapped deployments keep watchdog coverage.
+  FULLTIME_OFFICERS=("cos" "cto" "cpo" "coo")
+fi
 
 restart_officer() {
   local o="$1" reason="$2" alert_now="${3:-1}"

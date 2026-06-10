@@ -51,6 +51,17 @@ done
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CABINET_ROOT="${CABINET_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
 
+# Source cabinet/.env (Telegram tokens etc.) if present — launchd/cron runs
+# get no login environment, so without this every Telegram send dies
+# token-less. set -a exports the vars to child scripts (send-to-group.sh /
+# send-to-warroom.sh and helpers).
+if [ -f "$CABINET_ROOT/cabinet/.env" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "$CABINET_ROOT/cabinet/.env"
+  set +a
+fi
+
 # Redis defaults to localhost on Mac. The lib/triggers.sh default is 'redis'
 # (Docker container DNS). Force IPv4 localhost unless caller overrides.
 export REDIS_HOST="${REDIS_HOST:-127.0.0.1}"
