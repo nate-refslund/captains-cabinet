@@ -85,7 +85,7 @@ fi
 # 4b. Lane-CEO template still carries its placeholders (a template with
 # substituted values means deployment data leaked into the preset).
 template="$PRESET_DIR/agents/_lane-ceo.md.template"
-for marker in '{{LANE_NAME}}' '{{LANE_SLUG}}' '{{REPO}}' '{{BOARDS}}'; do
+for marker in '{{LANE_NAME}}' '{{LANE_SLUG}}' '{{REPO}}' '{{BOARDS}}' '{{MODEL}}'; do
   if ! grep -qF "$marker" "$template"; then
     fail "_lane-ceo.md.template missing placeholder: $marker"
   fi

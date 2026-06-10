@@ -14,6 +14,7 @@ from cabinet.scripts.task_adapters.base import (
     CanonicalTask,
     TaskAdapter,
     SyncResult,
+    NoOpTaskAdapter,
     get_adapter,
 )
 
@@ -58,9 +59,21 @@ class TestSyncResult:
 
 
 class TestGetAdapter:
-    def test_missing_system_raises(self):
-        with pytest.raises(ValueError, match="missing tasks.system"):
-            get_adapter({})
+    def test_missing_tasks_block_returns_noop(self):
+        """A project with no tasks block is a clean no-op, never an error.
+
+        The active captains-cabinet project has no tasks block BY DESIGN
+        (plugin-routed lanes omit it); raising here crash-looped the 900s
+        task-sync launchd job."""
+        adapter = get_adapter({})
+        assert isinstance(adapter, NoOpTaskAdapter)
+        assert adapter.destination == "none"
+
+    @pytest.mark.parametrize("system", ["none", "plugin", "dev-tasks", "plugin:dev-tasks"])
+    def test_no_sync_systems_return_noop(self, system):
+        adapter = get_adapter({"tasks": {"system": system}})
+        assert isinstance(adapter, NoOpTaskAdapter)
+        assert adapter.system == system
 
     def test_unknown_system_raises(self):
         with pytest.raises(ValueError, match="Unknown task system"):
@@ -124,6 +137,61 @@ class TestAdapterContract:
         for method_name in ("health_check", "pull", "push", "delete", "link"):
             assert hasattr(adapter, method_name)
             assert callable(getattr(adapter, method_name))
+
+
+class TestNoOpAdapter:
+    """The no-op adapter must be a complete, harmless TaskAdapter."""
+
+    def test_contract_and_noop_behaviour(self):
+        adapter = get_adapter({})
+        assert isinstance(adapter, TaskAdapter)
+        assert adapter.health_check() is True
+        assert adapter.pull() == []
+        assert adapter.push(CanonicalTask(canonical_id="x", title="t")) == ""
+        assert adapter.delete("123") is None
+        assert adapter.link("x", "123") is None
+
+    def test_info_line_goes_to_stderr(self, capsys):
+        get_adapter({})
+        captured = capsys.readouterr()
+        assert "no external task system" in captured.err
+        assert captured.out == ""  # stdout stays clean for runner JSON
+
+
+class TestRunnerNoOp:
+    """task_sync_runner must return cleanly (exit 0) for no-sync projects."""
+
+    def _seed_project(self, tmp_path, monkeypatch, project_yaml: str) -> None:
+        config = tmp_path / "instance" / "config"
+        (config / "projects").mkdir(parents=True)
+        (config / "active-project.txt").write_text("test-proj\n")
+        (config / "projects" / "test-proj.yml").write_text(project_yaml)
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        monkeypatch.setenv("CABINET_EVENT_LOG_DIR", str(tmp_path / "events"))
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+
+    def test_runner_clean_for_missing_tasks_block(self, tmp_path, monkeypatch):
+        """Current live shape: project config with NO tasks block at all."""
+        self._seed_project(tmp_path, monkeypatch, "product:\n  name: Test Proj\n")
+        from cabinet.scripts import task_sync_runner
+
+        result = task_sync_runner.run_sync()
+        assert result.errors == []
+        assert result.pulled == 0
+        assert result.destination == "none"
+
+        assert task_sync_runner.main([]) == 0  # exit code 0, no crash-loop
+
+    def test_runner_clean_for_plugin_system(self, tmp_path, monkeypatch):
+        self._seed_project(
+            tmp_path, monkeypatch,
+            "product:\n  name: Test Proj\ntasks:\n  system: plugin\n",
+        )
+        from cabinet.scripts import task_sync_runner
+
+        result = task_sync_runner.run_sync()
+        assert result.errors == []
+        assert task_sync_runner.main([]) == 0
 
 
 class TestSkeletonsRaiseNotImplemented:

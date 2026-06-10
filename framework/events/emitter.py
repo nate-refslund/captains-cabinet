@@ -52,6 +52,7 @@ VALID_EVENT_TYPES = frozenset({
     # Work graph
     "work_item_created",
     "work_item_assigned",
+    "work_item_unroutable",  # ready task whose assigned_role is not in the active roster
     "work_item_started",
     "work_item_completed",
     "work_item_failed",
@@ -256,6 +257,7 @@ _AGGREGATE_MAP: dict[str, tuple[str, str]] = {
     "mission_failed":             ("mission",     "mission_id"),
     "work_item_created":          ("work_item",   "task_id"),
     "work_item_assigned":         ("work_item",   "task_id"),
+    "work_item_unroutable":       ("work_item",   "task_id"),
     "work_item_started":          ("work_item",   "task_id"),
     "work_item_completed":        ("work_item",   "task_id"),
     "work_item_failed":           ("work_item",   "task_id"),

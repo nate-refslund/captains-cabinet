@@ -5,6 +5,10 @@
   "type": "object",
   "required": ["outcomes"],
   "properties": {
+    "deployment": {
+      "type": "string",
+      "description": "Optional deployment gate: when set, only the cabinet whose CABINET_ID matches this value compiles the file. Prevents a git-tracked live mission file from being compiled (and its tasks double-executed) by other deployments pulling the same branch."
+    },
     "outcomes": {
       "type": "array",
       "items": {

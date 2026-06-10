@@ -98,7 +98,7 @@ LANE_CEO_CAPABILITIES = "[deploys_code, logs_captain_decisions]"
 DEFAULT_MODEL = "claude-fable-5"
 
 LANE_CEO_TEMPLATE_REL = "presets/portfolio/agents/_lane-ceo.md.template"
-TEMPLATE_PLACEHOLDERS = ("{{LANE_NAME}}", "{{LANE_SLUG}}", "{{REPO}}", "{{BOARDS}}")
+TEMPLATE_PLACEHOLDERS = ("{{LANE_NAME}}", "{{LANE_SLUG}}", "{{REPO}}", "{{BOARDS}}", "{{MODEL}}")
 
 
 class GenerationError(Exception):
@@ -449,7 +449,7 @@ telegram:
 """
 
 
-def render_agent(template_text: str, lane: dict) -> str:
+def render_agent(template_text: str, lane: dict, model: str) -> str:
     if not template_text.startswith("---\n"):
         raise GenerationError(f"unexpected template shape: {LANE_CEO_TEMPLATE_REL} must start with '---'")
 
@@ -478,6 +478,9 @@ def render_agent(template_text: str, lane: dict) -> str:
         "{{LANE_SLUG}}": lane["slug"],
         "{{REPO}}": ", ".join(repos) if repos else "(no repo declared)",
         "{{BOARDS}}": ", ".join(boards) if boards else "(no boards declared)",
+        # Same officer_model value render_roster stamps into roster.yml —
+        # the agent frontmatter and the roster must never disagree.
+        "{{MODEL}}": model,
     }
     for placeholder, value in substitutions.items():
         rendered = rendered.replace(placeholder, value)
@@ -686,7 +689,7 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
         for lane in lanes:
             outputs.append((
                 _instance_path(root, "agents", f"{lane['slug']}-ceo.md"),
-                render_agent(template_text, lane), "agent-md",
+                render_agent(template_text, lane, model), "agent-md",
             ))
         outputs.append((
             _instance_path(root, "config", "roster.yml"),

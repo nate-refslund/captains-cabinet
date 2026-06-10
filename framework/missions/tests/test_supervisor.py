@@ -16,6 +16,7 @@ from framework.missions.supervisor import (
     find_unassigned_ready_tasks,
     route_pending_tasks,
     already_assigned_ids,
+    already_unroutable_ids,
 )
 from framework.events.emitter import emit, replay
 
@@ -63,6 +64,33 @@ def seeded_roles(tmp_path):
                 capabilities=["product", "writes_specs"])
     create_role("operations", "Operations", "Run reliable infra",
                 capabilities=["validates_deployments", "monitors_systems"])
+
+
+@pytest.fixture
+def ghost_outcomes_yml(tmp_path):
+    """Outcome with one ghost-role task and one in-roster control task.
+
+    `depends_on: []` on the first criterion switches the compiler to
+    explicit-deps mode, so no sequential edges are inferred and BOTH tasks
+    are immediately ready.
+    """
+    yml = tmp_path / "instance" / "config" / "outcomes.yml"
+    yml.write_text("""outcomes:
+  - id: outcome-ghost
+    name: Ghost routing
+    description: For ghost-role supervisor tests
+    measurable_criteria:
+      - node_id: ghost-task
+        title: Task owned by a role that does not exist
+        owner_role: ghost-role
+        depends_on: []
+      - node_id: control-task
+        title: Task owned by an in-roster role
+        owner_role: engineering
+    status: active
+    captain_ratified: true
+""")
+    return yml
 
 
 # ---------------------------------------------------------------------------
@@ -197,6 +225,99 @@ class TestRoutePendingTasks:
         decisions = route_pending_tasks(outcomes_path=outcomes_yml)
         # All nodes will have assigned_role = None, so nothing to route
         assert decisions == []
+
+
+# ---------------------------------------------------------------------------
+# mission_created emission policy (projection vs materialization)
+# ---------------------------------------------------------------------------
+
+
+class TestMissionEventEmission:
+    def test_dry_run_emits_zero_mission_created(self, outcomes_yml, seeded_roles):
+        """--dry-run is a pure projection — zero ledger spam."""
+        decisions = route_pending_tasks(outcomes_path=outcomes_yml, dry_run=True)
+        assert len(decisions) >= 1  # the projection still finds work
+        assert replay(event_types=["mission_created"]) == []
+
+    def test_find_unassigned_defaults_to_projection(self, outcomes_yml, seeded_roles):
+        find_unassigned_ready_tasks(outcomes_path=outcomes_yml)
+        assert replay(event_types=["mission_created"]) == []
+
+    def test_real_routing_pass_still_emits_mission_created(
+        self, outcomes_yml, seeded_roles,
+    ):
+        """The non-dry-run routing pass is the single materializing compile."""
+        route_pending_tasks(outcomes_path=outcomes_yml)
+        events = replay(event_types=["mission_created"])
+        assert len(events) == 1  # one active outcome in the fixture
+        assert events[0]["payload"]["outcome_id"] == "outcome-test"
+
+
+# ---------------------------------------------------------------------------
+# Ghost roles (assigned_role not in the active roster)
+# ---------------------------------------------------------------------------
+
+
+class TestGhostRoleRouting:
+    def test_ghost_role_skipped_and_unroutable_emitted(
+        self, ghost_outcomes_yml, seeded_roles, capsys,
+    ):
+        decisions = route_pending_tasks(outcomes_path=ghost_outcomes_yml)
+        routed_ids = [d["task_id"] for d in decisions]
+
+        # In-roster control routes; ghost-role task is skipped
+        assert "control-task" in routed_ids
+        assert "ghost-task" not in routed_ids
+
+        # No work_item_assigned for the ghost task — it must stay routable
+        assigned = replay(event_types=["work_item_assigned"])
+        assert "ghost-task" not in {
+            (e.get("payload") or {}).get("task_id") for e in assigned
+        }
+
+        # Exactly one work_item_unroutable event, carrying the ghost role
+        unroutable = replay(event_types=["work_item_unroutable"])
+        assert len(unroutable) == 1
+        payload = unroutable[0]["payload"]
+        assert payload["task_id"] == "ghost-task"
+        assert payload["assigned_role"] == "ghost-role"
+        assert payload["outcome_id"] == "outcome-ghost"
+
+        # Warning goes to stderr, never stdout (--json contract)
+        captured = capsys.readouterr()
+        assert "ghost-role" in captured.err
+        assert "ghost-role" not in captured.out
+
+    def test_unroutable_emission_idempotent_on_rerun(
+        self, ghost_outcomes_yml, seeded_roles,
+    ):
+        route_pending_tasks(outcomes_path=ghost_outcomes_yml)
+        route_pending_tasks(outcomes_path=ghost_outcomes_yml)
+        route_pending_tasks(outcomes_path=ghost_outcomes_yml)
+
+        unroutable = replay(event_types=["work_item_unroutable"])
+        assert len(unroutable) == 1  # deduped via replay, like already_assigned_ids
+        assert already_unroutable_ids() == {"ghost-task"}
+
+    def test_skipped_task_routes_after_role_is_seeded(
+        self, ghost_outcomes_yml, seeded_roles,
+    ):
+        first = route_pending_tasks(outcomes_path=ghost_outcomes_yml)
+        assert "ghost-task" not in [d["task_id"] for d in first]
+
+        # Captain creates the missing role — the task must resurface
+        from framework.roles.lifecycle import create_role
+        create_role("ghost-role", "Ghost", "Now exists",
+                    capabilities=["engineering"])
+
+        second = route_pending_tasks(outcomes_path=ghost_outcomes_yml)
+        routed = {d["task_id"]: d["officer"] for d in second}
+        assert routed.get("ghost-task") == "ghost-role"
+
+        assigned = replay(event_types=["work_item_assigned"])
+        assert "ghost-task" in {
+            (e.get("payload") or {}).get("task_id") for e in assigned
+        }
 
 
 # ---------------------------------------------------------------------------

@@ -308,6 +308,7 @@ def compile_outcome(
     outcome: dict[str, Any],
     actor: str = "compiler",
     roles: list[dict[str, Any]] | None = None,
+    emit_event: bool = True,
 ) -> dict[str, Any]:
     """Compile a single outcome into a Mission with an executable work graph.
 
@@ -315,6 +316,12 @@ def compile_outcome(
         outcome: dict with id, name, description, measurable_criteria, status
         actor: who is compiling (for event emission)
         roles: optional list of role dicts; if None, queries from lifecycle
+        emit_event: when False, skip the mission_created ledger event.
+            Projection/dry-run compiles (session-bridge task injection,
+            supervisor --dry-run) re-derive the graph every few minutes;
+            emitting on each of those floods the ledger with junk events
+            that replay() then rereads on every tick. Only a compile whose
+            result is acted on should emit.
 
     Returns:
         Mission dict with: id, outcome_id, name, status, work_graph (WorkGraph)
@@ -430,25 +437,27 @@ def compile_outcome(
 
     # Emit event — includes the v2 task-level fields so downstream consumers
     # (OVI compute, Captain dashboards, outbox relay) can see the richer plan
-    # without re-loading the graph from disk.
-    emit(
-        "mission_created",
-        actor=actor,
-        payload={
-            "mission_id": mission_id,
-            "outcome_id": outcome_id,
-            "name": mission["name"],
-            "task_count": len(criteria),
-            "assigned_roles": list({
-                n.assigned_role for n in graph.nodes.values() if n.assigned_role
-            }),
-            "verifier_roles": list({
-                n.verifier_role for n in graph.nodes.values() if n.verifier_role
-            }),
-            "risk_levels": [n.risk_level for n in graph.nodes.values() if n.risk_level],
-            "captain_attention_estimate": captain_attention_total,
-        },
-    )
+    # without re-loading the graph from disk. Skipped for projection/dry-run
+    # compiles (emit_event=False) so they never spam the ledger.
+    if emit_event:
+        emit(
+            "mission_created",
+            actor=actor,
+            payload={
+                "mission_id": mission_id,
+                "outcome_id": outcome_id,
+                "name": mission["name"],
+                "task_count": len(criteria),
+                "assigned_roles": list({
+                    n.assigned_role for n in graph.nodes.values() if n.assigned_role
+                }),
+                "verifier_roles": list({
+                    n.verifier_role for n in graph.nodes.values() if n.verifier_role
+                }),
+                "risk_levels": [n.risk_level for n in graph.nodes.values() if n.risk_level],
+                "captain_attention_estimate": captain_attention_total,
+            },
+        )
 
     return mission
 
@@ -457,10 +466,12 @@ def compile_from_yaml(
     path: str | Path,
     actor: str = "compiler",
     roles: list[dict[str, Any]] | None = None,
+    emit_event: bool = True,
 ) -> list[dict[str, Any]]:
     """Read an outcomes YAML file and compile all active outcomes into missions.
 
     The YAML file should conform to framework/schemas/outcome.schema.json:
+        deployment: my-cabinet-id   # optional gate (see below)
         outcomes:
           - id: outcome-001
             name: ...
@@ -471,9 +482,14 @@ def compile_from_yaml(
         path: path to the outcomes YAML file
         actor: who is compiling (for event emission)
         roles: optional list of role dicts; if None, queries from lifecycle
+        emit_event: when False, suppress mission_created ledger events for
+            every compiled outcome (projection/dry-run compiles — see
+            compile_outcome)
 
     Returns:
-        List of Mission dicts (one per active outcome)
+        List of Mission dicts (one per active outcome). Empty (with one
+        stderr warning, no exception) when the file pins a `deployment`
+        that does not match this cabinet's CABINET_ID env (default "main").
     """
     path = Path(path)
     if not path.exists():
@@ -485,6 +501,25 @@ def compile_from_yaml(
     if not data or "outcomes" not in data:
         raise ValueError(f"Invalid outcomes file: missing 'outcomes' key in {path}")
 
+    # Deployment gate (cross-deployment leak guard). A live outcomes file is
+    # git-tracked, so any other deployment pulling the branch would compile
+    # this machine's missions and double-execute its tasks. When the file
+    # pins a `deployment`, only the cabinet whose CABINET_ID matches it
+    # compiles; everyone else skips the whole file with one warning.
+    # Absent field = compile everywhere (back-compat).
+    deployment = data.get("deployment")
+    if deployment is not None:
+        cabinet_id = os.environ.get("CABINET_ID", "main")
+        if str(deployment) != cabinet_id:
+            print(
+                f"mission-compiler: skipping {path}: file is pinned to "
+                f"deployment '{deployment}' but this cabinet is "
+                f"'{cabinet_id}' (CABINET_ID) — refusing to compile another "
+                f"deployment's outcomes",
+                file=sys.stderr,
+            )
+            return []
+
     outcomes = data["outcomes"]
     missions: list[dict[str, Any]] = []
 
@@ -494,7 +529,8 @@ def compile_from_yaml(
         if status != "active":
             continue
 
-        mission = compile_outcome(outcome, actor=actor, roles=roles)
+        mission = compile_outcome(outcome, actor=actor, roles=roles,
+                                  emit_event=emit_event)
         missions.append(mission)
 
     return missions
