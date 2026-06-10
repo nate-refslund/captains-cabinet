@@ -145,8 +145,11 @@ outcomes:
   - id: outcome-polads-003
     name: "June UAT feedback wave closed on test.polads.eu"
     description: >
-      Close the June 2026 UAT feedback wave on the PolAds Beta version epic
-      (Monday 2833952138): all 5 Critical items fixed and verified on the
+      Close the June 2026 UAT feedback wave, anchored on the PolAds Beta
+      version epic (Monday 2833952138) — three cited triage items
+      (2975934613, 2968573291, 2979382320) sit on the Live version
+      (2738006659) / Maintenance & Hotfixes (2743409388) epics and are
+      included by id: all 5 Critical items fixed and verified on the
       preview/test deployment, every remaining wave item triaged out of
       Needs Refinement, and Monday closed back via the dev-tasks plugin.
       Grounded ONLY in live Monday data pulled 2026-06-10.
@@ -171,7 +174,7 @@ outcomes:
         title: "Every remaining June-wave item triaged — zero left in Needs Refinement"
         owner_role: cpo
         acceptance_criteria:
-          - "Each remaining wave item — Missing: 2979083289 (Proff.dk auto-fill), 2979083232 (simplify address entry), 2979096043 (cursor hover), 2979103985 (contact-vs-booking email clarity), 2979102931 (sign-agreement text), 2979103189 (email-code login tedium), 2979083204 (register-button timing), 2979083180 (field contrast), 2979142477 (empty partnership footer), 2979121193 (AI form-filling idea), 2979108633 (do-i-need-to-register quiz); Medium: 2979382320 (NME logo colours/wording), 2975934613 (EU Repository feedback), 2968573291 (test.polAd.eu language alignment) — is refined with priority + estimate, declined with a written reason, or folded into an epic"
+          - "Each remaining wave item — Missing: 2979083289 (Proff.dk auto-fill), 2979083232 (simplify address entry), 2979096043 (cursor hover), 2979103985 (contact-vs-booking email clarity), 2979102931 (sign-agreement text), 2979103189 (email-code login tedium), 2979083204 (register-button timing), 2979083180 (field contrast), 2979142477 (empty partnership footer), 2979121193 (AI form-filling idea), 2979108633 (do-i-need-to-register quiz), 2975934613 (EU Repository feedback); Medium: 2979382320 (NME logo colours/wording), 2968573291 (test.polAd.eu language alignment) — is refined with priority + estimate, declined with a written reason, or folded into an epic"
           - "Zero June-wave items remain in 'Needs Refinement' on the Beta version epic (Monday 2833952138) — catch-all for any wave item not cited above"
         evidence_required: "Per-item disposition list (refined / declined / folded) with Monday ids"
         verifier_role: coo
