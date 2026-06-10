@@ -35,11 +35,13 @@
 #      describes a verifiable STATE CHANGE, never an activity. Lifecycle:
 #      draft -> active (Captain-ratified) -> achieved -> retired. Products
 #      never finish — outcomes do: when one achieves, its slot refills via
-#      the RENEWAL LOOP (CPO's 12h backlog-refine drafts a successor from
-#      the Monday epic queue + stream pressure -> proposes to the Captain
-#      on Telegram -> Captain ratifies -> successor goes active). Marking
-#      'achieved': CoS proposes when every criterion carries verified
-#      evidence; Captain confirms.
+#      the RENEWAL LOOP (the lane's product-owner role — the lane-CEO in
+#      the portfolio preset, CPO in the functional preset — drafts a
+#      successor from its lane's epic queue + stream pressure -> the
+#      coordinating role (Chair/CoS) consolidates the proposal into its
+#      briefing's decision queue -> Captain ratifies -> successor goes
+#      active). Marking 'achieved': CoS proposes when every criterion
+#      carries verified evidence; Captain confirms.
 #   3. INTAKE — machinery, not a mission: a scheduled CoS routine (cron
 #      trigger -> sweep Monday Nate's-Todos 5098236573 + unclassified
 #      stream items -> classify to lane -> propose-only via brain

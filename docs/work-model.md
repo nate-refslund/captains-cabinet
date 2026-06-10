@@ -84,17 +84,23 @@ Bad examples:
 
 **Lifecycle**: `draft → active (Captain-ratified) → achieved → retired`.
 
-**Renewal loop** — slots refill, products never finish:
-1. An outcome's criteria all carry verified evidence → **CoS proposes
-   `achieved`** to the Captain; Captain confirms.
-2. The freed slot triggers succession: **CPO's existing 12h backlog-refine
-   routine drafts a successor** from the Monday epic queue + stream pressure
+**Renewal loop** — slots refill, products never finish. The loop is
+defined by role *functions*, not roster titles (the coordinating role is
+CoS in the functional preset, the Chair in the portfolio preset; the
+lane's product-owner role is the CPO in the functional preset, the
+lane-CEO in the portfolio preset):
+1. An outcome's criteria all carry verified evidence → **the coordinating
+   role proposes `achieved`** to the Captain; Captain confirms.
+2. The freed slot triggers succession: **the lane's product-owner role
+   drafts a successor** from its lane's epic queue + stream pressure
    (what the lane's stream is straining against).
-3. CPO **proposes the successor to the Captain (Telegram)**; **Captain
-   ratifies**; the successor goes active in the freed slot.
+3. **The coordinating role consolidates the proposal into its briefing's
+   decision queue**; **the Captain ratifies**; the successor goes active
+   in the freed slot.
 
-Roles in one line: CPO proposes successors, CoS proposes `achieved` on
-verified evidence, the Captain ratifies both. At AI speed these are
+Roles in one line: the lane's product-owner role proposes successors, the
+coordinating role proposes `achieved` on verified evidence and carries
+both to the Captain, the Captain ratifies. At AI speed these are
 **gates, not calendars** — succession happens minutes after confirmation,
 not at sprint boundaries.
 
@@ -140,3 +146,85 @@ and is never re-added as an outcome.
   not outcomes. Continuous work (stream, intake) belongs to the lane's
   standing machinery; `outcomes.yml` is reserved for bounded state changes
   the Captain can ratify, verify, and retire. One file, one semantics.
+
+## Pipe disposition — the perception estate
+
+> Convergence contract for deployments that pair the Cabinet with a
+> perception estate (scheduled pipes feeding a personal knowledge vault).
+> Role wording is by FUNCTION: *the coordinating role* is CoS in the
+> functional preset and the Chair in the portfolio preset; *the lane's
+> product-owner role* is the CPO in the functional preset and the
+> lane-CEO in the portfolio preset.
+
+Every perception pipe gets exactly one disposition:
+
+**KEEP-CAPTURE** — the senses. Pipes whose job is getting reality into
+the vault and keeping the machinery observable: message/email/calendar
+sync, OCR/transcript capture, embeddings indexing, identity/speaker
+resolution, pipe-health monitoring — **including the Telegram bot as
+approval-gate infrastructure** (the human gate every proposal rides
+through is capture-side plumbing, not judgment). The Cabinet never
+replaces capture; it consumes it.
+
+**KEEP-REFLEX** — deterministic bookkeeping that acts on *state, never on
+people*: commitment extraction + evidence-gated auto-close, completion
+tracking (marking done things done in their source systems), routing
+time-bound items onto the reminder/task surfaces, the task ledger, and
+feedback/correction detection. Reflexes are cheap, legible, and have no
+judgment to migrate. They adopt the consequence-event shape
+(`docs/consequence-ledger.md`) but stay where they are.
+
+**MIGRATE-TO-CABINET** — judgment and human-facing composition. These
+move to officers, because they need the investigation bar and
+course-of-action discipline (`.claude/rules/courses-of-action.md`) that
+one-shot pipes structurally cannot meet:
+
+- Reply drafting → officers, outbound exclusively via the brain bridge's
+  `queue_draft` approval gate.
+- Commitment nudges → the coordinating role's founder-accountability
+  protocol (single owner, no pile-on).
+- "What needs you now" digests → the coordinating role.
+- The morning/evening brief family → the coordinating role's scheduled
+  briefings.
+- Pre-meeting briefs → the coordinating role's calendar routine.
+- Relationship radar → a coordinating-role routine (decision-aware, as
+  today).
+- Inbox-triage *proposals* and decision dialogues → the coordinating
+  role; the deterministic detection halves stay perception-side as
+  reflexes.
+- Research/idea pipes → lane research crews (spawned subagents under the
+  lane's owner role).
+
+**Retirement rule** — per-pipe shadow parity, never big-bang: a migrating
+pipe keeps running while its Cabinet replacement shadows it; only when
+the replacement demonstrates parity on real traffic does the perception
+side's architect loop retire the pipe. One pipe at a time, each
+retirement reversible by re-enabling the pipe.
+
+## Proposal hygiene
+
+> Applies to every proposal-emitting surface — officers and surviving
+> pipes alike. The operating pattern is
+> `.claude/rules/courses-of-action.md`; this section is its work-model
+> contract. Rationale: under one-card-per-*action*, the measured result
+> was a **51% unanswered proposal backlog** — attention died of
+> fragmentation, not volume.
+
+- **Urgency tiers** — every proposal carries exactly one:
+  - `ping-now`: time-critical; would be wrong or worthless by tomorrow.
+  - `batch-into-next-briefing`: the DEFAULT. Rides the next scheduled
+    briefing's decision queue.
+  - `FYI-digest`: no decision needed; folded into the digest section.
+- **ONE card per situation, showing the full course of action** — the
+  whole plan-chain the situation needs (reply → task → follow-up →
+  close commitment), with a per-step gate so the Captain can approve,
+  edit, or skip each step. Never split one situation across multiple
+  pings; never propose step 1 while silently planning the rest.
+- **Stale proposals auto-expire into the briefing** — a proposal not
+  acted on by the next scheduled briefing folds into that briefing's
+  decision queue as one line with a link (and its consequence event
+  records `proposal.decision: expired`). It is not re-pinged as a fresh
+  message.
+- **Never re-ask answered items** — check the decision trail and prior
+  proposals first; if the Captain already answered in any channel, apply
+  the answer and cite it.
