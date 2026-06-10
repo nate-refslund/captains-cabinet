@@ -104,7 +104,10 @@ outcomes:
 
   # SLOT 2/2 for lane polads (slot freed by the Captain's deletion of the
   # Stack Auth outcome, 2026-06-10) — still DRAFT: Captain may ratify to fill
-  # the window. On achieved: renewal loop proposes successor.
+  # the window. BOOTSTRAP MISSION: runs once; recurring UAT waves afterwards
+  # flow through the STREAM with stream SLOs (docs/work-model.md — "Recurring
+  # waves"), never as new monthly outcomes. On achieved: renewal proposes a
+  # successor only if something genuinely campaign-shaped exists.
   - id: outcome-polads-003
     name: "June UAT feedback wave closed on test.polads.eu"
     description: >

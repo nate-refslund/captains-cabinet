@@ -34,18 +34,38 @@ intake wrapped in an outcome produces a mission that can never achieve.
   propose-first for stream writes only; the P4 hard ceiling
   (external_comms / production deploys / spend) never lifts.
 - Stream items are **never wrapped in outcomes**. If a cluster of stream
-  items amounts to a verifiable state change, that's a candidate for a
-  mission slot via the renewal loop — the items move under the outcome, not
-  the other way around.
+  items amounts to a verifiable state change *and* needs orchestration
+  structure (see the campaign test under MISSIONS), that's a candidate for
+  a mission slot via the renewal loop — the items move under the outcome,
+  not the other way around.
+- **Stream SLOs** (control loops, not missions): standing quality bars —
+  e.g. "Critical items triaged within 24h", "Needs-Refinement queue ≤ N" —
+  are invariants to keep true, not state changes to achieve. They are
+  monitored by the CoS briefing + intake routines and flagged on breach;
+  they never appear in `outcomes.yml`.
 
 ## MISSIONS — the rolling window
 
 `outcomes.yml` holds a **rolling window of 1–2 active bounded outcomes per
 lane**. It is not a roadmap, not a backlog mirror, not a wish list.
+**The window is a cap, not a quota** — a lane with zero active outcomes is
+healthy (officers work the stream); the renewal loop proposes a successor
+only when something campaign-shaped exists. Silence is a valid state.
 
-**Inclusion test**: the outcome describes a **verifiable state change**,
-never an activity. Ask: "can a verifier look at evidence and say *the world
-changed from X to Y*?" If the honest phrasing is "keep doing X", it fails.
+**Inclusion test** (prong 1): the outcome describes a **verifiable state
+change**, never an activity. Ask: "can a verifier look at evidence and say
+*the world changed from X to Y*?" If the honest phrasing is "keep doing X",
+it fails.
+
+**Campaign test** (prong 2 — both must pass, Captain-refined 2026-06-10):
+the work needs **orchestration structure the stream cannot give** —
+ordering between steps, verification gates, risk-tiered approvals,
+cross-role handoffs. A batch of stream items with a bow on it is NOT a
+mission: Critical bugs get pulled from the stream because they are
+Critical, not because an outcome wraps them. Expected density: a handful
+of genuine campaigns per product per year (launches, migrations,
+compliance pushes, big features) — proposed *to* the Captain, never
+authored *by* him.
 
 Good examples:
 - *"PolAds v1.0 staging closeout and production release"* — the world
@@ -77,6 +97,17 @@ Roles in one line: CPO proposes successors, CoS proposes `achieved` on
 verified evidence, the Captain ratifies both. At AI speed these are
 **gates, not calendars** — succession happens minutes after confirmation,
 not at sprint boundaries.
+
+**Recurring waves are stream, not monthly missions.** UAT/feedback waves
+recur; authoring "June wave", "July wave", … outcomes forever would be
+pure ceremony (Captain-attention waste). `outcome-polads-003` runs **once
+as a bootstrap mission** — maximally legible work while the fleet earns
+trust — and its retirement is the handover: subsequent wave items flow
+through the stream, and the recurring quality bar lives as **stream SLOs**
+(see STREAM), never as new outcomes. The outcome layer is also the
+**autonomy ramp**: early on, more work is mission-shaped because missions
+are verifiable and legible; as lanes graduate, proportionally more flows
+as plain stream.
 
 ## INTAKE — machinery, never a mission
 
