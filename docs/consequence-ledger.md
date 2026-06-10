@@ -95,15 +95,15 @@ Three row shapes share that file today:
   `edited→edited`, `skipped→rejected`; `outcome` maps `held→ok`,
   `broken→failed`, `pending→unknown`; `action_id` → `subject`,
   `content_hash` → `refs[]`.
-- **Shadow rows** `{ts, lane, action_id, mode: shadow, would_text, nate_text,
-  match, resolved_ts}` → a shadow is an action that was *not* surfaced:
-  `proposal.required: true, decision: null`; resolution maps
-  `match: true→review.verdict: confirmed`, `match: false→wrong` (the
+- **Shadow rows** `{ts, lane, action_id, mode: shadow, would_text,
+  <captain>_text, match, resolved_ts}` → a shadow is an action that was
+  *not* surfaced: `proposal.required: true, decision: null`; resolution
+  maps `match: true→review.verdict: confirmed`, `match: false→wrong` (the
   captain's real action is the ground truth the would-action is scored
-  against).
-- **Triage proposals** `{ts, action_id, subject, sender, proposed, nate,
-  match}` → `action: "proposed-triage"`, `proposal.decision` from the
-  captain's confirmation, `review.verdict` from `match`.
+  against; the source names its captain-decision fields after the captain).
+- **Triage proposals** `{ts, action_id, subject, sender, proposed,
+  <captain>, match}` → `action: "proposed-triage"`, `proposal.decision`
+  from the captain's confirmation, `review.verdict` from `match`.
 
 `blast`/`rung`/`goal` are autonomy-engine internals; they remain in the
 source row and travel as a `refs[]` pointer, not as schema fields — the
