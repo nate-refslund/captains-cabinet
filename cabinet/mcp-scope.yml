@@ -27,8 +27,9 @@
 # brain (2026-06-10): Nate's screenpipe brain bridge — vault search, person
 # intel, commitments, queue_draft outbound gate, reasoning log. Declared in
 # instance/config/extensions.yml → rendered to instance/config/extra-mcps.json
-# (merged into every officer's .mcp.json at boot). All five officers get it;
-# usage rules are MANDATORY: .claude/rules/brain-bridge.md.
+# (merged into every officer's .mcp.json at boot). Every hired officer gets
+# it (functional roster + portfolio lane CEOs); usage rules are MANDATORY:
+# .claude/rules/brain-bridge.md.
 
 cabinet: main
 
@@ -70,6 +71,31 @@ agents:
       Deploy validation, uptime monitoring, Sentry error triage. Neon
       for health queries; Vercel for deployment state; Linear for bugs;
       Library for operational artifacts.
+
+  # Portfolio roster lane CEOs (preset `portfolio`, hq deployment).
+  # Role defs are generated from presets/portfolio/agents/_lane-ceo.md.template
+  # into instance/agents/<slug>-ceo.md (instance overlay — the preset agents
+  # dir intentionally has no file for them). Scope = the cto-like set + brain:
+  # a lane CEO owns its lane end-to-end (schema/migrations, deploys-to-gate,
+  # backlog, framework records) and is bound by .claude/rules/brain-bridge.md
+  # + .claude/rules/courses-of-action.md. telegram stays in-scope for warroom
+  # broadcast only — lane CEOs are Telegram-dark (no bot, no Captain DM;
+  # attention routes via the Chair's captain-attention queue).
+  polads-ceo:
+    mcps: [neon, vercel, linear, library, telegram, brain]
+    rationale: >
+      Lane CEO — engineering-grade scope for the lane (cto-like set) plus
+      brain for gather-then-decide and the queue_draft outbound gate.
+      Production deploys and external comms remain propose-only (hard
+      ceiling) regardless of scope.
+
+  stephie-ceo:
+    mcps: [neon, vercel, linear, library, telegram, brain]
+    rationale: >
+      Lane CEO — engineering-grade scope for the lane (cto-like set) plus
+      brain for gather-then-decide and the queue_draft outbound gate.
+      Production deploys and external comms remain propose-only (hard
+      ceiling) regardless of scope.
 
 # Scaffolded agents (not hired, scope reserved):
 scaffolds:

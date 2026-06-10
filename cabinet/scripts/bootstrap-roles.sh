@@ -1,5 +1,5 @@
 #!/bin/bash
-# bootstrap-roles.sh — seed the 5 active officers into org_roles + instance/roles/active/
+# bootstrap-roles.sh — seed the active officer roster into org_roles + instance/roles/active/
 #
 # Without this, mission compilation fails:
 #   $ python3 cabinet/scripts/org-runtime.py roles list --product-slug X
@@ -8,9 +8,10 @@
 #   unknown role for X: cos
 #
 # The cabinet has THREE places where role definitions live:
-#   1. presets/work/agents/<slug>.md         (Claude Code agent definitions,
+#   1. presets/<preset>/agents/<slug>.md     (Claude Code agent definitions,
 #                                             copied to .claude/agents by
-#                                             sync-agents.sh)
+#                                             sync-agents.sh; instance/agents/
+#                                             overlays for generated roles)
 #   2. instance/roles/active/<slug>.yml      (durable role config + lineage
 #                                             pointer; read by notify-officer,
 #                                             captain-rule-encoder broadcast,
@@ -22,9 +23,27 @@
 # sync-agents.sh handles (1). This script handles (2) and (3). Idempotent:
 # if a role is already seeded in either surface, this leaves it alone.
 #
+# ROSTER SOURCE — two paths:
+#   default            the built-in 5-officer functional seed (work preset:
+#                      cos/cto/cpo/cro/coo). Unchanged behavior.
+#   --roster <yml>     PORTFOLIO PATH: seed the roster declared in an
+#                      instance config file (e.g. instance/config/hq-instance.yml)
+#                      instead of the built-in seed. The file must carry a
+#                      top-level `roster:` block; per role (2-space key,
+#                      4-space fields):
+#                        roster:
+#                          cos:
+#                            title: Chair
+#                            model: claude-fable-5
+#                            capabilities: [cap1, cap2]
+#                            authority_level: captain_proxy
+#                      Unknown per-role keys (type:, telegram:, …) are
+#                      ignored here — they belong to other consumers.
+#
 # Usage:
 #   bash cabinet/scripts/bootstrap-roles.sh                       # uses active product slug
 #   bash cabinet/scripts/bootstrap-roles.sh --product-slug X      # explicit override
+#   bash cabinet/scripts/bootstrap-roles.sh --roster instance/config/hq-instance.yml
 
 set -euo pipefail
 
@@ -35,17 +54,25 @@ export CABINET_ROOT
 # Read active product slug from instance/config/active-project.txt unless
 # overridden via --product-slug.
 PRODUCT_SLUG=""
+ROSTER_FILE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --product-slug) PRODUCT_SLUG="$2"; shift 2 ;;
     --product-slug=*) PRODUCT_SLUG="${1#--product-slug=}"; shift ;;
+    --roster) ROSTER_FILE="$2"; shift 2 ;;
+    --roster=*) ROSTER_FILE="${1#--roster=}"; shift ;;
     -h|--help)
-      sed -n '1,30p' "$0" | sed 's/^# \{0,1\}//' >&2
+      sed -n '1,48p' "$0" | sed 's/^# \{0,1\}//' >&2
       exit 0
       ;;
     *) echo "[bootstrap-roles] unknown arg: $1" >&2; exit 2 ;;
   esac
 done
+
+if [ -n "$ROSTER_FILE" ] && [ ! -f "$ROSTER_FILE" ]; then
+  echo "[bootstrap-roles] --roster file not found: $ROSTER_FILE" >&2
+  exit 2
+fi
 
 if [ -z "$PRODUCT_SLUG" ]; then
   ACTIVE_PROJECT_FILE="$CABINET_ROOT/instance/config/active-project.txt"
@@ -131,12 +158,66 @@ EOF
   fi
 }
 
-# Officer slug | Title                       | Model               | Capabilities                                                                                | Authority level
-seed_role cos "Chief of Staff"               claude-fable-5       "logs_captain_decisions,reviews_specs,reviews_implementations,validates_deployments"        captain_proxy
-seed_role cto "Chief Technology Officer"     claude-fable-5       "deploys_code,reviews_implementations,engineering_execution"                                 mission_executor
-seed_role cpo "Chief Product Officer"        claude-fable-5       "reviews_specs,product_strategy,backlog_management"                                          mission_executor
-seed_role cro "Chief Research Officer"       claude-sonnet-4-6    "reviews_research,market_intelligence,research_sweep"                                        mission_executor
-seed_role coo "Chief Operating Officer"      claude-sonnet-4-6    "validates_deployments,operational_health,quality_gate"                                      mission_executor
+if [ -n "$ROSTER_FILE" ]; then
+  # ---- PORTFOLIO PATH: roster-driven seed from instance config ----
+  # awk emits one TAB-separated line per role: slug \t title \t model \t
+  # caps(csv) \t authority. Same fixed-indent walking style as
+  # load-preset.sh's list_hired_agents / peers.yml validator: top-level
+  # `roster:` opens the section; any other top-level key closes it;
+  # 2-space keys are role slugs; 4-space `key: value` lines are fields.
+  echo "[bootstrap-roles] roster file: $ROSTER_FILE"
+  ROSTER_TSV=$(awk '
+    function emit() {
+      if (slug != "") printf "%s\t%s\t%s\t%s\t%s\n", slug, title, model, caps, auth
+    }
+    /^roster:[[:space:]]*$/ { section = 1; next }
+    /^[A-Za-z_#-]/          { if (section && slug != "") { emit(); slug = "" } ; section = 0 }
+    section && /^  [a-z0-9][a-z0-9-]*:[[:space:]]*$/ {
+      emit()
+      slug = $0; sub(/^  /, "", slug); sub(/:.*$/, "", slug)
+      title = ""; model = ""; caps = ""; auth = ""
+      next
+    }
+    section && slug != "" && /^    [a-z_]+:/ {
+      line = $0; sub(/^    /, "", line)
+      key = line; sub(/:.*$/, "", key)
+      val = line; sub(/^[a-z_]+:[[:space:]]*/, "", val)
+      sub(/[[:space:]]*(#.*)?$/, "", val)        # strip trailing comment
+      gsub(/^"|"$/, "", val)
+      if (key == "title")            title = val
+      else if (key == "model")       model = val
+      else if (key == "authority_level") auth = val
+      else if (key == "capabilities") {
+        gsub(/[\[\]]/, "", val); gsub(/[[:space:]]/, "", val)
+        caps = val
+      }
+      # unknown keys (type:, telegram:, …) intentionally ignored
+    }
+    END { emit() }
+  ' "$ROSTER_FILE")
+
+  if [ -z "$ROSTER_TSV" ]; then
+    echo "[bootstrap-roles] no roles found under 'roster:' in $ROSTER_FILE" >&2
+    exit 2
+  fi
+
+  while IFS=$'\t' read -r slug title model caps auth; do
+    [ -z "$slug" ] && continue
+    if [ -z "$title" ] || [ -z "$model" ] || [ -z "$caps" ] || [ -z "$auth" ]; then
+      echo "[bootstrap-roles] roster role '$slug' missing required field(s) — need title/model/capabilities/authority_level (got title='$title' model='$model' capabilities='$caps' authority_level='$auth')" >&2
+      exit 2
+    fi
+    seed_role "$slug" "$title" "$model" "$caps" "$auth"
+  done <<< "$ROSTER_TSV"
+else
+  # ---- DEFAULT PATH: built-in functional seed (unchanged) ----
+  # Officer slug | Title                       | Model               | Capabilities                                                                                | Authority level
+  seed_role cos "Chief of Staff"               claude-fable-5       "logs_captain_decisions,reviews_specs,reviews_implementations,validates_deployments"        captain_proxy
+  seed_role cto "Chief Technology Officer"     claude-fable-5       "deploys_code,reviews_implementations,engineering_execution"                                 mission_executor
+  seed_role cpo "Chief Product Officer"        claude-fable-5       "reviews_specs,product_strategy,backlog_management"                                          mission_executor
+  seed_role cro "Chief Research Officer"       claude-sonnet-4-6    "reviews_research,market_intelligence,research_sweep"                                        mission_executor
+  seed_role coo "Chief Operating Officer"      claude-sonnet-4-6    "validates_deployments,operational_health,quality_gate"                                      mission_executor
+fi
 
 echo "[bootstrap-roles] done. Verify:"
 echo "  python3 cabinet/scripts/org-runtime.py roles list --product-slug $PRODUCT_SLUG"
