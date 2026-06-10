@@ -1,60 +1,118 @@
 # =============================================================
 # DRAFT for Nate review — HQ (MacBook) cabinet instance identity
 # =============================================================
-# P2 prep (clone-convergence plan). NOTHING reads this file yet — instance
+# PORTFOLIO ROSTER REWRITE (Captain-decided redesign 2026-06-10): the hq
+# deployment moves from 5 functional officers (cos/cto/cpo/cro/coo) to a
+# portfolio roster — one persistent Chair + per-lane CEO consultants.
+# Functional depth comes from hats + hat_graduation and Sonnet crew, per
+# presets/portfolio/. NOTHING reads this file automatically — instance
 # identity is set via ENVIRONMENT VARIABLES, validated by
 # cabinet/scripts/load-preset.sh (CABINET_ID validator, Phase 1 CP9b).
-# This file is the declared source-of-truth values to export at activation.
+# This file is the declared source-of-truth values to export/seed at
+# activation.
 #
 # ACTIVATION (manual, NOT done by this draft):
-#   export CABINET_MODE=multi
-#   export CABINET_ID=hq-macbook
-# in the instance env (cabinet/.env or the LaunchAgent EnvironmentVariables)
-# BEFORE load-preset.sh / start-officer-mac.sh runs. In multi mode the boot
-# ABORTS if CABINET_ID is unset — it will not silently join 'main'.
+#   1. export CABINET_MODE=multi
+#      export CABINET_ID=hq-macbook
+#      in the instance env (cabinet/.env or the LaunchAgent
+#      EnvironmentVariables) BEFORE load-preset.sh / start-officer-mac.sh
+#      runs. In multi mode the boot ABORTS if CABINET_ID is unset — it
+#      will not silently join 'main'.
+#   2. echo portfolio > instance/config/active-preset   (preset switch)
+#   3. Generate the lane-CEO role defs from
+#      presets/portfolio/agents/_lane-ceo.md.template into
+#      instance/agents/polads-ceo.md + instance/agents/stephie-ceo.md
+#      (cabinet-init interview substitutes LANE_NAME/LANE_SLUG/REPO/BOARDS).
+#   4. Seed the roster below:
+#      bash cabinet/scripts/bootstrap-roles.sh --roster instance/config/hq-instance.yml
+#      Bootstrap seeds EXACTLY these three roles — cos (Chair),
+#      polads-ceo, stephie-ceo. No cto/cpo/cro/coo rows on this instance.
 #
-# THE MAC MINI SOAK INSTANCE KEEPS ITS OWN ID. It runs vanilla convergence-v2
-# in single mode (cabinet_id 'main' today). Never share cabinet_id across
-# machines: split-cabinet.sh restamps DB rows by cabinet_id, and a shared id
-# would merge the two fleets' records irreversibly.
+# THE MAC MINI SOAK INSTANCE KEEPS ITS OWN ID. It runs vanilla
+# convergence-v2 in single mode (cabinet_id 'main' today) with the default
+# 5-officer seed. Never share cabinet_id across machines: split-cabinet.sh
+# restamps DB rows by cabinet_id, and a shared id would merge the two
+# fleets' records irreversibly.
 
 cabinet_id: hq-macbook
 cabinet_mode: multi
 machine: nates-macbook-pro
+preset: portfolio
 description: >
   Second cabinet instance of the same repo/branch (convergence-v2) on the
-  MacBook: brain MCP bridge + multi-project (polads, stephie, stepnetwork,
-  system-self, adhoc) + comms via the queue_draft approval gate. Roster:
-  CoS persistent (Fable 5), CTO/CPO/CRO/COO on-demand consultants with
-  idle-stop. Quota choreography: Mini missions overnight, HQ fleet by day.
+  MacBook: brain MCP bridge + portfolio of lanes (polads,
+  stephie-stepnetwork, system-self) + comms via the queue_draft approval
+  gate. Roster: Chair persistent (Fable 5, single bot), lane CEOs
+  on-demand consultants with idle-stop, Telegram-dark, surfaced via the
+  Chair + warroom. Quota choreography: Mini missions overnight, HQ fleet
+  by day.
+
+# -------------------------------------------------------------
+# Roster — seeded by bootstrap-roles.sh --roster (this file)
+# -------------------------------------------------------------
+# Parser contract (bootstrap-roles.sh): 2-space role keys, 4-space
+# title/model/capabilities/authority_level fields; type:/telegram: are
+# read by humans + the supervisor config, ignored by bootstrap.
+# capabilities mirror cabinet/officer-capabilities.conf where they
+# overlap; mcp scope lives in cabinet/mcp-scope.yml (agents: cos,
+# polads-ceo, stephie-ceo).
+roster:
+  cos:
+    title: Chair
+    type: fulltime                 # persistent session; supervisor auto-restarts
+    model: claude-fable-5
+    capabilities: [logs_captain_decisions, reviews_specs, reviews_implementations, validates_deployments]
+    authority_level: captain_proxy
+    # display name "Chair"; id stays cos — hooks/capabilities/heartbeats/
+    # scope are keyed on it (see presets/portfolio/agents/cos.md header).
+  polads-ceo:
+    title: PolAds CEO
+    type: consultant               # on-demand; spawned per trigger/mission, idle-stop
+    model: claude-fable-5
+    capabilities: [deploys_code, logs_captain_decisions]
+    authority_level: mission_executor
+    # telegram-dark: no bot; Captain attention via the Chair's
+    # captain-attention queue + warroom broadcast.
+  stephie-ceo:
+    title: STEPhie & Website CEO   # lane stephie-stepnetwork (two repos, one lane)
+    type: consultant
+    model: claude-fable-5
+    capabilities: [deploys_code, logs_captain_decisions]
+    authority_level: mission_executor
+    # telegram-dark, surfaced via Chair + warroom (same as polads-ceo).
 
 # -------------------------------------------------------------
 # Warroom — Telegram group for HQ broadcast
 # -------------------------------------------------------------
-# TOKEN-TBD: Nate creates the HQ group + invites the bots, then sets the
-# chat id in cabinet/.env. Never put the literal id/token in this file.
+# TOKEN-TBD: Nate creates the HQ group + invites the Chair bot, then sets
+# the chat id in cabinet/.env. Never put the literal id/token in this file.
 # Wire-up at activation: add per-context rows in instance/config/warrooms.yml
 # pointing at ${TELEGRAM_HQ_CHAT_ID} (rows for the new contexts are NOT added
-# yet — contexts ship inactive).
+# yet — contexts ship inactive). Lane CEOs post lane updates here — it is
+# their only outward surface besides the Chair's queue.
 warroom:
   chat_id_env: TELEGRAM_HQ_CHAT_ID   # value lives in cabinet/.env (TOKEN-TBD)
 
 # -------------------------------------------------------------
-# Officer bots — distinct from the Mini soak instance's bots
+# Telegram — single-bot Chair surface (portfolio preset default)
 # -------------------------------------------------------------
-# TOKEN-TBD: Nate provides new BotFather bots for HQ (do NOT reuse the Mini's
-# tokens — two pollers on one token steal each other's updates). Usernames go
-# here once created; tokens go ONLY in cabinet/.env under the env var names
-# listed. bot_mode single_ceo means only the CoS bot polls Telegram; the
-# other officers stay Telegram-dark and route Captain attention via CoS.
+# TOKEN-TBD: Nate provides ONE new BotFather bot for the HQ Chair (do NOT
+# reuse the Mini's tokens — two pollers on one token steal each other's
+# updates). Username goes here once created; the token goes ONLY in
+# cabinet/.env under the env var name listed. bot_mode single_ceo with
+# ceo_officer cos means only the Chair's bot polls Telegram; lane CEOs are
+# Telegram-dark and route Captain attention via the Chair
+# (captain-attention queue), surfaced in DMs with attribution and in the
+# warroom.
 telegram:
   bot_mode: single_ceo
-  ceo_officer: cos
-  ceo_bot: ""                          # TOKEN-TBD — HQ CoS bot username
+  ceo_officer: cos                   # the Chair (id-reuse)
+  ceo_bot: ""                        # TOKEN-TBD — HQ Chair bot username
   bot_token_envs:
-    cos: TELEGRAM_BOT_TOKEN_HQ_COS     # TOKEN-TBD in cabinet/.env
-    # cto/cpo/cro/coo: not needed in single_ceo mode; add env names here
-    # only if bot_mode is ever switched to multi_officer.
+    cos: TELEGRAM_BOT_TOKEN_HQ_COS   # TOKEN-TBD in cabinet/.env
+    # polads-ceo / stephie-ceo: deliberately NO env names — Telegram-dark
+    # in single_ceo mode. Add names here only if bot_mode is ever switched
+    # to multi_officer.
 
 # -------------------------------------------------------------
 # Notes
@@ -65,3 +123,5 @@ telegram:
 #   ~/Library/Application Support/cabinet/events (durable, per-machine).
 # - peers.yml: if HQ and the Mini ever need to talk, each declares the
 #   other as a peer with consented_by_captain=true — not configured here.
+# - Outcomes: instance/config/outcomes.yml.draft is already remapped to
+#   this roster (owners cos/polads-ceo/stephie-ceo; cross-lane verifiers).
