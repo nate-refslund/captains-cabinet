@@ -145,6 +145,32 @@ class TestGetNextTask:
         task = get_next_task("engineering", cabinet_root=str(cabinet_root))
         assert task is None
 
+    def test_projection_compile_emits_no_mission_created(
+        self, outcomes_dir, sample_roles, monkeypatch, event_log_dir,
+    ):
+        """get_next_task is a projection — it must never spam the ledger.
+
+        This runs from session hooks every few minutes; before the
+        emit_event flag it wrote mission_created on every invocation.
+        """
+        cabinet_root = _write_outcomes(outcomes_dir, """outcomes:
+  - id: outcome-001
+    name: "Ship MVP"
+    measurable_criteria:
+      - "Database schema created and API endpoints built"
+    status: active
+""")
+        monkeypatch.setattr(
+            "framework.missions.compiler.list_roles",
+            lambda status="active": sample_roles,
+        )
+
+        task = get_next_task("engineering", cabinet_root=str(cabinet_root))
+        assert task is not None  # the projection itself still works
+
+        # ...but zero events were written to the ledger
+        assert list(event_log_dir.glob("events-*.jsonl")) == []
+
 
 # ---------------------------------------------------------------------------
 # Tests: format_task_for_session

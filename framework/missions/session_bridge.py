@@ -65,7 +65,13 @@ def get_next_task(
         return None
 
     try:
-        missions = compile_from_yaml(outcomes_file, actor="session_bridge", roles=None)
+        # Projection compile: this runs from session hooks every few minutes
+        # purely to FIND the next task. emit_event=False keeps it from
+        # spamming mission_created into the ledger on every invocation —
+        # materialization events belong to the supervisor's real routing pass.
+        missions = compile_from_yaml(
+            outcomes_file, actor="session_bridge", roles=None, emit_event=False,
+        )
     except (FileNotFoundError, ValueError):
         return None
 

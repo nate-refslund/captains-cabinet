@@ -81,8 +81,17 @@ def already_unroutable_ids() -> set[str]:
 def find_unassigned_ready_tasks(
     outcomes_path: str | Path | None = None,
     compile_actor: str = "mission_supervisor",
+    emit_mission_events: bool = False,
 ) -> list[dict[str, Any]]:
     """Find work-graph tasks that are ready and not yet assigned.
+
+    Args:
+        outcomes_path: optional path to outcomes.yml
+        compile_actor: actor label for the compile (and unroutable events)
+        emit_mission_events: pass-through to compile_from_yaml(emit_event=…).
+            Defaults False — this function is a projection. Only the real
+            (non-dry-run) routing pass in route_pending_tasks sets it True,
+            because that is the single compile whose missions are acted on.
 
     Returns:
         list of routing decisions:
@@ -94,7 +103,10 @@ def find_unassigned_ready_tasks(
         return []
 
     try:
-        missions = compile_from_yaml(path, actor=compile_actor, roles=None)
+        missions = compile_from_yaml(
+            path, actor=compile_actor, roles=None,
+            emit_event=emit_mission_events,
+        )
     except (FileNotFoundError, ValueError):
         return []
 
@@ -171,6 +183,11 @@ def route_pending_tasks(
     decisions = find_unassigned_ready_tasks(
         outcomes_path=outcomes_path,
         compile_actor=actor,
+        # The real routing pass is the ONE compile that materializes
+        # missions (its mission_ids land in durable work_item_assigned
+        # events) — it keeps emitting mission_created. Dry-run is a pure
+        # projection and stays silent.
+        emit_mission_events=not dry_run,
     )
 
     if dry_run:

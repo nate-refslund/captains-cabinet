@@ -228,6 +228,32 @@ class TestRoutePendingTasks:
 
 
 # ---------------------------------------------------------------------------
+# mission_created emission policy (projection vs materialization)
+# ---------------------------------------------------------------------------
+
+
+class TestMissionEventEmission:
+    def test_dry_run_emits_zero_mission_created(self, outcomes_yml, seeded_roles):
+        """--dry-run is a pure projection — zero ledger spam."""
+        decisions = route_pending_tasks(outcomes_path=outcomes_yml, dry_run=True)
+        assert len(decisions) >= 1  # the projection still finds work
+        assert replay(event_types=["mission_created"]) == []
+
+    def test_find_unassigned_defaults_to_projection(self, outcomes_yml, seeded_roles):
+        find_unassigned_ready_tasks(outcomes_path=outcomes_yml)
+        assert replay(event_types=["mission_created"]) == []
+
+    def test_real_routing_pass_still_emits_mission_created(
+        self, outcomes_yml, seeded_roles,
+    ):
+        """The non-dry-run routing pass is the single materializing compile."""
+        route_pending_tasks(outcomes_path=outcomes_yml)
+        events = replay(event_types=["mission_created"])
+        assert len(events) == 1  # one active outcome in the fixture
+        assert events[0]["payload"]["outcome_id"] == "outcome-test"
+
+
+# ---------------------------------------------------------------------------
 # Ghost roles (assigned_role not in the active roster)
 # ---------------------------------------------------------------------------
 
