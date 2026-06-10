@@ -195,10 +195,11 @@ Relay the generator's printed list, expanded:
 6. `bash cabinet/scripts/load-preset.sh`, then deploy selectively —
    `deploy-mac.sh` for the coordinating role only; lane CEOs are
    on-demand consultants and need no persistent deploy.
-7. Ratify seed outcomes. NOTE: the repo ships a LIVE
-   `instance/config/outcomes.yml` gated to the `hq-macbook` deployment —
-   its missions only compile where `CABINET_ID=hq-macbook`, so it is
-   inert everywhere else (the repo no longer ships an
+7. Ratify seed outcomes. NOTE: the repo may ship a LIVE
+   `instance/config/outcomes.yml` pinned to another deployment via its
+   top-level `deployment:` key — the compiler refuses any file whose
+   `deployment` value differs from this machine's `CABINET_ID`, so a
+   pinned file is inert everywhere else (the repo no longer ships an
    `outcomes.yml.draft`; the draft file from phase 5 is just this
    interview's staging scratch). A new deployment REPLACES the shipped
    `outcomes.yml` with its own ratified outcomes (`status: active` +
