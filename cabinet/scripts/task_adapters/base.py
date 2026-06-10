@@ -137,6 +137,49 @@ class TaskAdapter(ABC):
 
 
 # ---------------------------------------------------------------------------
+# No-op adapter — projects with no external task system
+# ---------------------------------------------------------------------------
+
+#: tasks.system values that mean "nothing to sync": the lane's board is
+#: reached through a Claude plugin (e.g. dev-tasks MCP tools) or task sync is
+#: deliberately disabled. Any "plugin:<name>" value counts as plugin-routed.
+NO_SYNC_SYSTEMS = frozenset({"none", "plugin", "dev-tasks"})
+
+
+class NoOpTaskAdapter(TaskAdapter):
+    """Clean no-op for projects without an external task system.
+
+    Returned by get_adapter() when the project config has no `tasks:` block
+    or declares a no-sync system (NO_SYNC_SYSTEMS / "plugin:<name>").
+    Plugin-routed lanes deliberately omit tasks.system — officers reach the
+    board through the plugin's MCP tools — so the 900s task-sync cycle has
+    nothing to do and must exit 0 instead of crash-looping on ValueError.
+    """
+
+    destination = "none"
+    auth_env_var = ""
+
+    def __init__(self, tasks_block: dict[str, Any], system: str | None = None) -> None:
+        super().__init__(tasks_block or {})
+        self.system = system
+
+    def health_check(self) -> bool:
+        return True  # nothing to reach — always healthy
+
+    def pull(self) -> list[CanonicalTask]:
+        return []  # nothing external to read
+
+    def push(self, task: CanonicalTask) -> str:
+        return task.external_id or ""  # nowhere to write — keep idempotent shape
+
+    def delete(self, external_id: str) -> None:
+        return None
+
+    def link(self, canonical_id: str, external_id: str) -> None:
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Adapter factory
 # ---------------------------------------------------------------------------
 
@@ -144,19 +187,32 @@ class TaskAdapter(ABC):
 def get_adapter(project_config: dict[str, Any]) -> TaskAdapter:
     """Instantiate the right adapter based on project_config['tasks']['system'].
 
+    A missing `tasks:` block, or tasks.system in NO_SYNC_SYSTEMS (or any
+    "plugin:<name>"), returns a NoOpTaskAdapter: plugin-routed lanes omit
+    the block by design, and the task-sync runner must treat that as a
+    clean no-op (one info line, exit 0) — not a config error that
+    crash-loops the 900s launchd cycle.
+
     Args:
-        project_config: full project YAML dict (must contain `tasks: {system: ...}`)
+        project_config: full project YAML dict (a `tasks: {system: ...}`
+            block selects an external adapter; absent block = no-op)
 
     Raises:
         ValueError: if the system slug is unknown.
     """
     tasks_block = project_config.get("tasks") or {}
     system = tasks_block.get("system")
-    if not system:
-        raise ValueError(
-            "Project config missing tasks.system. "
-            "Must be one of: github-issues, monday, jira, linear, asana"
+    if not system or str(system) in NO_SYNC_SYSTEMS or str(system).startswith("plugin:"):
+        reason = (
+            f"tasks.system={system!r} is plugin-routed/disabled" if system
+            else "no tasks block configured"
         )
+        print(
+            f"task-sync: INFO {reason} — no external task system to sync; "
+            f"clean no-op",
+            file=sys.stderr,
+        )
+        return NoOpTaskAdapter(tasks_block, system=system)
 
     # Local imports to avoid mandatory deps for unused adapters
     if system == "github-issues":
