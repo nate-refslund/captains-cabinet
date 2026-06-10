@@ -120,8 +120,10 @@ placeholders only:
 
 - **Telegram bot** (the single human surface): create ONE bot via
   BotFather (`/newbot`), record the bot USERNAME in the answers, and
-  put the token ONLY in `cabinet/.env` under the chosen env-var name
-  (e.g. `TELEGRAM_BOT_TOKEN_COS=...`). Never reuse a token another
+  put the token ONLY in `cabinet/.env` under the chosen env-var name —
+  canonical: `TELEGRAM_<OFFICER_UPPER>_TOKEN` (e.g.
+  `TELEGRAM_COS_TOKEN=...`; legacy `TELEGRAM_BOT_TOKEN_<UPPER>` still
+  resolves as a fallback). Never reuse a token another
   poller uses — two pollers on one token steal each other's updates.
   Optional warroom group: create the group, invite the bot, store the
   group chat id env name the same way.
@@ -180,16 +182,29 @@ Relay the generator's printed list, expanded:
    add each `<slug>-ceo` under `agents:` in `cabinet/mcp-scope.yml`
    and add its capability rows to `cabinet/officer-capabilities.conf`.
 3. Bot token into `cabinet/.env` under the recorded env-var name
-   (config keeps `TOKEN-TBD`).
+   (canonical `TELEGRAM_<OFFICER_UPPER>_TOKEN`, e.g.
+   `TELEGRAM_COS_TOKEN`; config keeps `TOKEN-TBD`). Multi-cabinet
+   deployments also set `CABINET_MODE=multi` + `CABINET_ID=<id>` in
+   `cabinet/.env` — in multi mode boot aborts without a CABINET_ID,
+   and the outcomes deployment gate compiles missions only when
+   CABINET_ID matches.
 4. `bash cabinet/scripts/bootstrap-roles.sh --roster instance/config/roster.yml`
-   (functional shape: plain `bootstrap-roles.sh`).
+   (functional shape: plain `bootstrap-roles.sh`; add `--prune` to
+   retire roles left over from a previous roster).
 5. `bash cabinet/scripts/grant-mac-permissions.sh` (TCC, interactive).
 6. `bash cabinet/scripts/load-preset.sh`, then deploy selectively —
    `deploy-mac.sh` for the coordinating role only; lane CEOs are
    on-demand consultants and need no persistent deploy.
-7. Ratify seed outcomes: the captain flips chosen drafts in
-   `instance/config/outcomes.yml.draft` to `status: active` +
-   `captain_ratified: true`, then renames the file to `outcomes.yml`.
+7. Ratify seed outcomes. NOTE: the repo ships a LIVE
+   `instance/config/outcomes.yml` gated to the `hq-macbook` deployment —
+   its missions only compile where `CABINET_ID=hq-macbook`, so it is
+   inert everywhere else (the repo no longer ships an
+   `outcomes.yml.draft`; the draft file from phase 5 is just this
+   interview's staging scratch). A new deployment REPLACES the shipped
+   `outcomes.yml` with its own ratified outcomes (`status: active` +
+   `captain_ratified: true`) carrying its own CABINET_ID as the
+   deployment key — or no deployment key at all for a single-cabinet
+   setup.
 
 Close by restating what is and isn't live: roles seeded, nothing
 polling, no lane active, no outcome compiled — each activation is a

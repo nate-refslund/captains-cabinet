@@ -1593,3 +1593,12 @@ _(none)_
 - **Build scope:** (1) Defense-dossier artifact at `shared/interfaces/legal/anthropic-value-add-architecture.md` (Library Compliance Space mirror per A11) — value-add architecture documentation (officer workflows, audit logs, governance, Telegram-DM-as-interface, multi-tenancy, hash-chain integrity), customer-base evidence, technical-implementation-not-pure-resale evidence. CPO authors; CRO + CoS adversary review. (2) CRO quarterly Anthropic ToS-tracking sweep folds into existing 4h research-sweep cadence (no new cron); material ToS changes trigger COO + Captain review. (3) Contingency plan documented in Spec 051 AC #8 (proxy-degraded state on Anthropic enforcement; customer notification + service-pause + refund).
 - **Owner:** CPO drafts defense-dossier + CRO quarterly sweep + CTO Spec 051 contingency confirms.
 - **Source:** Spec 055 v4 H3 fold; CRO adversary review 2026-05-20.
+
+---
+
+### FW-116 — Germline write gate: bash-redirection gap for constitution/ + germline files (P2, documented deferral)
+- **Status:** KNOWN GAP — deliberately deferred (documented 2026-06-10 during the convergence-v2 fix pass).
+- **Problem:** `pre-tool-use.sh` §5 (CONSTITUTION + GERMLINE PROTECTION) gates ONLY `Edit`/`Write` tool calls by inspecting `tool_input.file_path` — `constitution/`, `memory/golden-evals/`, `framework/policies/`, `policy_engine.py`, `mcp-scope.yml`, `officer-capabilities.conf`, brain-bridge/courses-of-action rules, `autonomy.yml`. The Bash tool path is NOT covered for these targets: `echo > constitution/X.md`, `tee`, `sed -i`, `cp`/`mv` into germline paths pass the hook (the §4 Bash write-regex gate covers `/workspace/product/` only). An officer or loop can therefore bypass its own judge files via shell redirection.
+- **Why deferred:** the §4-style Bash regex gate is the highest-FP-risk hook surface in the repo (see FW-040 lineage); extending it to germline paths needs the same adversary-pass treatment, not a quick regex. Edit/Write covers the dominant officer write path today; the bash hole is documented rather than half-closed.
+- **Build scope (when picked up):** extend the §4 anchored write-pattern gate to a second path-class (constitution/ + germline set), reusing the FW-040 hardened patterns with `/workspace/product/` swapped for the germline path alternation; add hook-regression harness cases (germline-readonly.sh extension) for redirection, tee, sed -i, cp/mv, tar forms.
+- **Owner:** CoS coordination + CTO implementation + adversary pass before enabling.

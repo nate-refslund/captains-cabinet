@@ -2,7 +2,7 @@
 # immediately valid in pre-tool-use.sh's context_slug cache — the cache is
 # built from instance/config/contexts/*.yml filenames and does NOT filter on
 # active: false. No warroom rows, no officer routing, no activity start from
-# this file alone; those require explicit P2 activation by the Captain.
+# this file alone; those require explicit R2 activation by the Captain.
 slug: stepnetwork
 name: stepnetwork.dk
 capacity: work
@@ -11,5 +11,5 @@ description: |
   Repo STEP-Network/step-network-website (Next.js 16, Neon via
   @vercel/postgres, Monday.com sync via webhooks + cron). Pairs with the
   stephie context as the stephie-stepnetwork lane.
-  Declared for the HQ (MacBook) instance; inactive until P2 activation.
+  Declared for the HQ (MacBook) instance; inactive until R2 activation.
 active: false

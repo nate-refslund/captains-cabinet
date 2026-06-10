@@ -85,14 +85,46 @@ New `~/.screenpipe/pipes/brain-mcp/server.py` — FastMCP **stdio** server (HTTP
   for pipes, officers, and crew.
 
 ### R2 — Activate the hq instance (Chair only)
-- Run **cabinet-init** for hq → answers file → generated contexts/projects/
-  lane-CEO role defs/platform officers block/roster snippet.
-- Captain-blocking steps (the ONLY two): create the ONE Chair bot token
-  (BotFather → `cabinet/.env`) + TCC grants (`grant-mac-permissions.sh`).
-- `bootstrap-roles.sh --roster` (seeds Chair + lane CEOs), then deploy the
-  **Chair only** (`deploy-mac.sh` selective — skip kiosk; point the
-  screenpipe MCP entry at the existing instance, no brew re-install). Lane
-  CEOs stay on-demand consultants, Telegram-dark.
+
+This runbook and the ACTIVATION STEPS header of
+`instance/config/hq-instance.yml.draft` are the SAME runbook — keep them in
+agreement. Contexts/projects/lane-CEO role defs/roster are already
+generated; what remains is, in order:
+
+1. **`cabinet/.env`** (chmod 600, gitignored) gets all four of:
+   `TELEGRAM_COS_TOKEN` (the ONE Chair bot from BotFather — canonical name
+   `TELEGRAM_<OFFICER_UPPER>_TOKEN`; legacy `TELEGRAM_BOT_TOKEN_COS` still
+   resolves), `TELEGRAM_HQ_CHAT_ID`, `CABINET_MODE=multi`,
+   `CABINET_ID=hq-macbook`. The deployment gate REQUIRES
+   `CABINET_ID=hq-macbook` — `outcomes.yml` missions only compile when
+   CABINET_ID matches their deployment key; any other value compiles ZERO
+   missions.
+2. **Preset:** `instance/config/active-preset` already says `portfolio`
+   (deployment-local file, gitignored — nothing to do).
+3. **Lane-CEO role defs** already rendered (local, gitignored):
+   `instance/agents/polads-ceo.md` + `instance/agents/stephie-ceo.md`.
+4. **Bootstrap:** `bash cabinet/scripts/bootstrap-roles.sh --roster
+   instance/config/roster.yml --prune` — seeds/updates EXACTLY cos (Chair)
+   + polads-ceo + stephie-ceo; `--prune` retires any leftover
+   cto/cpo/cro/coo rows (yml archived, org_roles → retired).
+5. **TCC:** `bash cabinet/scripts/grant-mac-permissions.sh` (interactive —
+   with the bot token, the only Captain-blocking steps).
+6. **Deploy:** `deploy-mac.sh --officer cos`, then
+   `--daemon mission-supervisor`, `--daemon outbox-relay`, optionally
+   heartbeat-watchdog + cost-summary (cron scripts now source
+   `cabinet/.env` themselves). SKIP task-sync (no-op for plugin-routed
+   lanes — pointless) and SKIP worktree-listener unless
+   `NEON_CONNECTION_STRING` is set (30s crash-loop otherwise). Skip kiosk;
+   point the screenpipe MCP entry at the existing instance, no brew
+   re-install.
+7. **Lane CEOs start on demand** (consultants, Telegram-dark):
+   `start-officer-mac.sh polads-ceo` when their trigger stream fills
+   (mission-supervisor stderr/ledger shows the routing).
+8. **Verify with ground truth:** `tmux attach -t officer-cos` +
+   `redis-cli XLEN cabinet:triggers:<officer>` — NOT verify-launchagents.sh
+   as the gate (it only knows to skip consultants once bootstrap has
+   stamped officer_type; tmux + XLEN is authoritative).
+
 - **Gate:** Chair session live on its bot; lane CEOs spawnable; no pipe
   retired, nothing else changed.
 

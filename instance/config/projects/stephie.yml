@@ -1,7 +1,7 @@
 # =============================================================
 # Project: STEPhie
 # =============================================================
-# P2 prep draft for the HQ (MacBook) instance. status: pending —
+# R2 prep draft for the HQ (MacBook) instance. status: pending —
 # nothing activates until switch-project/activate-project is run by Nate.
 # Repo identity from the screenpipe codebase pillar
 # (~/.screenpipe/pipes/_shared/codebase_config.py, Monday product 2730518827).
@@ -22,7 +22,7 @@ activation:
   mode: existing_repo_url
   activated_at: ""
   activation_mission_id: ""
-  notes: "HQ instance P2 prep — Nate activates; outcomes drafted in instance/config/outcomes.yml.draft"
+  notes: "HQ instance R2 prep — Nate activates; outcomes live in instance/config/outcomes.yml (gated to CABINET_ID=hq-macbook)"
 
 # =============================================================
 # Notion — not used for STEPhie (knowledge lives in the brain vault
@@ -90,7 +90,7 @@ neon:
 # =============================================================
 # Tasks — DELIBERATELY ABSENT. No tasks: block / task-sync adapter for
 # this project: the dev-tasks plugin (Monday.com) is the sanctioned task
-# route per the clone-convergence plan (P2: "leave task-sync disabled").
+# route per the clone-convergence plan (R2: "leave task-sync disabled").
 # Do not add a Monday adapter here — that duplication is by-design avoided.
 # =============================================================
 

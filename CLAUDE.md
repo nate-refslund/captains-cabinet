@@ -133,7 +133,11 @@ The cabinet has three existing improvement loops — per-task reflection, event-
 **Post-confirm encoding.** Write the pattern to `shared/interfaces/captain-patterns.md` using the format in that file's header. Include the Captain evidence (quoted message + date) and the underlying principle. Then broadcast to active officers:
 
 ```bash
-for o in cos cto cpo coo cro; do
+# Roster-derived (preset-agnostic): iterate the seeded roles, not a
+# hardcoded officer list.
+for role_yml in "${CABINET_ROOT:-/opt/founders-cabinet}"/instance/roles/active/*.yml; do
+  [ -f "$role_yml" ] || continue
+  o="$(basename "$role_yml" .yml)"
   [ "$o" = "<self>" ] && continue
   bash /opt/founders-cabinet/cabinet/scripts/notify-officer.sh "$o" "New Captain pattern encoded in shared/interfaces/captain-patterns.md: <pattern-name>. Re-read the file before your next Captain reply."
 done

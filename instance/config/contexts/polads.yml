@@ -2,7 +2,7 @@
 # immediately valid in pre-tool-use.sh's context_slug cache — the cache is
 # built from instance/config/contexts/*.yml filenames and does NOT filter on
 # active: false. No warroom rows, no officer routing, no activity start from
-# this file alone; those require explicit P2 activation by the Captain.
+# this file alone; those require explicit R2 activation by the Captain.
 slug: polads
 name: PolAds
 capacity: work
@@ -11,5 +11,5 @@ description: |
   (EU Regulation 2025/1410). Repo STEP-Network/v0-politiske-annoncer
   (Vercel app v0-politiske-annoncer, Neon politiske-annoncer). Current
   class of work: v1.0 production push + UAT closeout on xtest.polads.eu.
-  Declared for the HQ (MacBook) instance; inactive until P2 activation.
+  Declared for the HQ (MacBook) instance; inactive until R2 activation.
 active: false

@@ -1,22 +1,46 @@
 # Role Registry
 
-*Last updated: 2026-04-05 — Infrastructure expansion*
+*Last updated: 2026-06-10 — Preset-derived roster reframe*
 
 ---
 
-## Active Officers
+## Active Officers — preset-derived
 
-| Officer | Role | Domain | Status |
-|---------|------|--------|--------|
-| Chief of Staff (CoS) | Orchestrator | Captain comms, org management, briefings, hooks ownership, pipeline monitoring, infrastructure | Active |
-| Chief Technology Officer (CTO) | Engineering Lead | Codebase, architecture, deploys, infrastructure, captain decision logging | Active |
-| Chief Research Officer (CRO) | Intelligence Lead | 10 research streams, pgvector storage, tech radar, research action pipeline | Active |
-| Chief Product Officer (CPO) | Product Lead | Product backlog, specs, prioritization, UX, pipeline ownership, proactive product audits | Active |
-| Chief Operating Officer (COO) | Operational Lead | Exploratory testing, Sentry triage, deployment validation, Playwright E2E, quality gate | Active |
+The officer roster is **derived from the active preset + instance roster**,
+not hardcoded here. Per deployment, the operational source of truth is
+`instance/roles/active/*.yml` — seeded and refreshed by
+`cabinet/scripts/bootstrap-roles.sh` (from `instance/config/roster.yml`
+when present, otherwise the built-in functional seed), with
+`officer_type:` distinguishing always-on **fulltime** officers from
+on-demand **consultants**.
+
+### `work` preset (functional, single product)
+
+| Officer | Role | Domain |
+|---------|------|--------|
+| Chief of Staff (CoS) | Orchestrator | Captain comms, org management, briefings, hooks ownership, pipeline monitoring, infrastructure |
+| Chief Technology Officer (CTO) | Engineering Lead | Codebase, architecture, deploys, infrastructure, captain decision logging |
+| Chief Research Officer (CRO) | Intelligence Lead | Research streams, pgvector storage, tech radar, research action pipeline |
+| Chief Product Officer (CPO) | Product Lead | Product backlog, specs, prioritization, UX, pipeline ownership, proactive product audits |
+| Chief Operating Officer (COO) | Operational Lead | Exploratory testing, Sentry triage, deployment validation, Playwright E2E, quality gate |
+
+### `portfolio` preset (multi-lane)
+
+| Officer | Role | Domain |
+|---------|------|--------|
+| Chair (officer id `cos`) | Orchestrator — fulltime, the ONLY Telegram-bot officer | Captain comms, intake, briefings, cross-lane coordination, captain-attention queue |
+| `<lane>-ceo` (one per lane, e.g. `polads-ceo`, `stephie-ceo`) | Lane CEO — on-demand consultant, Telegram-dark | The lane end-to-end: stream + missions, codebase, boards, quality; functional depth via hats + Sonnet crew |
+
+Other presets (`step-network`, `personal`, custom) declare their own
+rosters the same way: preset agents + instance roster →
+`bootstrap-roles.sh` → `instance/roles/active/`.
 
 ## Role Definitions
 
-Each Officer's full role definition lives in `.claude/agents/<role>.md`. These are loaded into the Officer's context at session start.
+Each Officer's full role definition lives in `.claude/agents/<role>.md`,
+populated by the preset loader from `presets/<active>/agents/` with
+`instance/agents/` overlays (e.g. generated lane-CEO defs). These are
+loaded into the Officer's context at session start.
 
 ## Shared Interfaces
 
