@@ -66,17 +66,17 @@ outcomes:
     measurable_criteria:
       - node_id: polads-001-ci
         title: "Unblock staging CI — Test job + Hook Tests green"
-        owner_role: cto
+        owner_role: polads-ceo
         acceptance_criteria:
           - "'Test' job and 'Hook Tests' pass on the staging branch for 3 consecutive PR runs (broken since 2026-05-14, Monday 2924046344)"
           - "No open PR on staging is merge-blocked by these two jobs"
         evidence_required: "Links to 3 consecutive green GitHub Actions runs on staging PRs"
-        verifier_role: coo
+        verifier_role: stephie-ceo
         risk_level: medium
         rollback_note: "CI-config-only changes; revert the workflow commit to restore prior state"
       - node_id: polads-001-uat
         title: "Close the open UAT bug class on test.polads.eu"
-        owner_role: cto
+        owner_role: polads-ceo
         depends_on: [polads-001-ci]
         acceptance_criteria:
           - "Sponsor 'EU eligibility category' no longer hard-blocks submission on 'Same as the advertiser' (Monday 2955117972)"
@@ -84,19 +84,19 @@ outcomes:
           - "PNG/JPG label exports render text correctly on the Vercel serverless runtime (PR #158 resvg font class)"
           - "Each fix lands with a regression test"
         evidence_required: "Merged PR links + passing regression tests + UAT retest note on test.polads.eu"
-        verifier_role: cpo
+        verifier_role: stephie-ceo
         risk_level: medium
         rollback_note: "Per-fix revert via git; staging-only until polads-001-prod"
       - node_id: polads-001-prod
         title: "Ship v1.0 to production (polads.eu)"
-        owner_role: cto
+        owner_role: polads-ceo
         depends_on: [polads-001-uat]
         acceptance_criteria:
           - "Production deployment READY on Vercel app v0-politiske-annoncer"
           - "Post-deploy smoke pass: public search, transparency-notice detail, registration entry"
           - "PROPOSE-ONLY: deploy executes only after explicit Captain approval (production hard ceiling)"
         evidence_required: "Vercel production deployment id + smoke-check transcript + Captain approval record"
-        verifier_role: coo
+        verifier_role: cos
         risk_level: high
         rollback_note: "Vercel instant rollback: promote the previous READY production deployment"
         captain_attention_estimate: 0.5
@@ -124,7 +124,7 @@ outcomes:
     measurable_criteria:
       - node_id: polads-003-critical
         title: "All 5 Critical June-wave items fixed + verified on the preview/test deployment"
-        owner_role: cto
+        owner_role: polads-ceo
         acceptance_criteria:
           - "[Publisher] NME logo link no longer leads to a Forbidden page — links to newsmediaeurope.eu (Monday 2979108084)"
           - "[Publisher] Chatbot knows and answers from the DPA document (Monday 2979102928)"
@@ -133,28 +133,28 @@ outcomes:
           - "[Publisher] No content overflow when expanding hierarchy items (Monday 2979104881)"
           - "Each fix verified on the preview/test deployment (test.polads.eu), with regression coverage where testable"
         evidence_required: "Merged PR links + regression tests + per-item verification notes on the preview/test deployment"
-        verifier_role: cpo
+        verifier_role: stephie-ceo
         risk_level: medium
         rollback_note: "Per-fix git revert; preview/test only — production ships via polads-001-prod's gate"
       - node_id: polads-003-triage
         title: "Every remaining June-wave item triaged — zero left in Needs Refinement"
-        owner_role: cpo
+        owner_role: polads-ceo
         acceptance_criteria:
           - "Each remaining wave item — Missing: 2979083289 (Proff.dk auto-fill), 2979083232 (simplify address entry), 2979096043 (cursor hover), 2979103985 (contact-vs-booking email clarity), 2979102931 (sign-agreement text), 2979103189 (email-code login tedium), 2979083204 (register-button timing), 2979083180 (field contrast), 2979142477 (empty partnership footer), 2979121193 (AI form-filling idea), 2979108633 (do-i-need-to-register quiz), 2975934613 (EU Repository feedback); Medium: 2979382320 (NME logo colours/wording), 2968573291 (test.polAd.eu language alignment) — is refined with priority + estimate, declined with a written reason, or folded into an epic"
           - "Zero June-wave items remain in 'Needs Refinement' on the Beta version epic (Monday 2833952138) — catch-all for any wave item not cited above"
         evidence_required: "Per-item disposition list (refined / declined / folded) with Monday ids"
-        verifier_role: coo
+        verifier_role: stephie-ceo
         risk_level: low
         rollback_note: "Triage is metadata-only; dispositions revertible per item"
       - node_id: polads-003-closeback
         title: "Monday closed back via the dev-tasks plugin with per-item status updates"
-        owner_role: cpo
+        owner_role: polads-ceo
         depends_on: [polads-003-critical, polads-003-triage]
         acceptance_criteria:
           - "Every June-wave item carries its final status in Monday, written via the dev-tasks plugin"
           - "PROPOSE-FIRST: each status write is proposed to the Captain before applying, until the polads lane graduates per the autonomy manifest"
         evidence_required: "Monday status trail + proposal/approval records for the writes"
-        verifier_role: coo
+        verifier_role: stephie-ceo
         risk_level: medium
         rollback_note: "Monday status changes are item-scoped and manually revertible"
 
@@ -175,7 +175,7 @@ outcomes:
     measurable_criteria:
       - node_id: stephie-001-fixes
         title: "Implement the four feedback-round-1 fixes in the Banner Creator"
-        owner_role: cto
+        owner_role: stephie-ceo
         acceptance_criteria:
           - "Image-click: the image-handling repro documented in Sofie's round-1 feedback (Monday 2959309890) is re-run step-for-step on the preview deployment and no longer reproduces — pass = the documented broken behavior does not occur"
           - "Sudden-logout: the logout repro from Monday 2959309890 no longer reproduces AND a continuous 30-minute active editing session on the preview deployment completes with zero unprompted logouts (soak bar adjustable by Captain at ratification)"
@@ -184,12 +184,12 @@ outcomes:
           - "Each fix lands with a regression test covering its repro (same bar as polads-001-uat)"
           - "All four verified on a preview deployment before any production step"
         evidence_required: "PR links on STEP-Network/stephie-mcp + passing regression tests + preview deployment URL with verification notes"
-        verifier_role: cpo
+        verifier_role: polads-ceo
         risk_level: medium
         rollback_note: "Per-fix git revert; preview-only until stephie-001-deploy"
       - node_id: stephie-001-deploy
         title: "Deploy fixes to ai.stepnetwork.dk and queue the retest ping to Sofie"
-        owner_role: cto
+        owner_role: stephie-ceo
         depends_on: [stephie-001-fixes]
         acceptance_criteria:
           - "Fixes live on ai.stepnetwork.dk"
@@ -202,7 +202,7 @@ outcomes:
         captain_attention_estimate: 0.5
       - node_id: stephie-001-dragspec
         title: "Spec the canvas drag/reposition (hand) tool"
-        owner_role: cpo
+        owner_role: stephie-ceo
         acceptance_criteria:
           - "Spec covers element repositioning on the canvas, referencing Sofie's screen recordings (Optagelse 2026-06-03 150638.mp4, Flyt logo.mp4)"
           - "Measurable acceptance criteria + effort estimate included; spec is a proposal, not an implementation commitment"
@@ -223,24 +223,24 @@ outcomes:
     measurable_criteria:
       - node_id: stepnet-001-e2e
         title: "E2E coverage green for onboarding wizard -> Monday sync"
-        owner_role: cto
+        owner_role: stephie-ceo
         acceptance_criteria:
           - "Playwright E2E exercising the dynamic onboarding wizard through submission passes locally and in CI"
           - "Monday sync assertion uses a test board/mocked client — no writes to live Monday boards from tests"
         evidence_required: "Green E2E run link + test file paths"
-        verifier_role: coo
+        verifier_role: polads-ceo
         risk_level: medium
         rollback_note: "Test-only changes; revert commits"
       - node_id: stepnet-001-cron
         title: "Scheduled sync jobs audited — no silent failures"
-        owner_role: coo
+        owner_role: stephie-ceo
         depends_on: [stepnet-001-e2e]
         acceptance_criteria:
           - "All vercel.json cron jobs (daily / 15-min Monday syncs) enumerated, and every run in the 7-day window classified pass/fail from Vercel logs"
           - "Every failure row is paired with a written diagnosis (cause + proposed fix); a failure lacking a diagnosis fails this criterion — the pairing is the check, no judgment word"
           - "Fixes are proposed, not auto-applied"
         evidence_required: "Cron run audit summary (job, schedule, last 7 days status) from Vercel logs"
-        verifier_role: cto
+        verifier_role: polads-ceo
         risk_level: low
 
   # ===========================================================
@@ -259,36 +259,36 @@ outcomes:
     measurable_criteria:
       - node_id: sys-001-parity
         title: "CI parity proof: shadow decisions match pre-tool-use.sh on the hook-regression corpus"
-        owner_role: cto
+        owner_role: cos
         acceptance_criteria:
           - "test-policy-shadow.sh + hook-regression suite produce a decision-diff report over the full corpus"
           - "100% agreement on allow/block for rules the typed engine covers; every disagreement triaged with a written disposition"
         evidence_required: "Parity report artifact + green CI/eval run"
-        verifier_role: cos
+        verifier_role: polads-ceo
         risk_level: low
         rollback_note: "Analysis only; no behavior change"
       - node_id: sys-001-enforce
         title: "Flip the policy engine to enforcing behind an env flag"
-        owner_role: cto
+        owner_role: cos
         depends_on: [sys-001-parity]
         acceptance_criteria:
           - "Enforcing mode gated by a single env flag; shadow remains the default until flipped"
           - "PROPOSE-ONLY: the flip happens only after explicit Captain approval (changes live enforcement on officer sessions)"
           - "Decision logging to org_events continues in both modes"
         evidence_required: "PR link + flag documentation + Captain approval record"
-        verifier_role: cos
+        verifier_role: polads-ceo
         risk_level: high
         rollback_note: "Unset the env flag -> instant revert to shadow mode; no state migration"
         captain_attention_estimate: 0.25
       - node_id: sys-001-soak
         title: "Post-flip soak: zero false blocks across 48h of officer sessions"
-        owner_role: coo
+        owner_role: cos
         depends_on: [sys-001-enforce]
         acceptance_criteria:
           - "48h enforcing-mode soak with zero false-positive blocks (legitimate officer actions blocked)"
           - "Any false block reverts the flag and files a parity-gap finding"
         evidence_required: "org_events policy-decision extract + soak summary"
-        verifier_role: cos
+        verifier_role: polads-ceo
         risk_level: low
 
   # SLOT 2/2 for lane system-self — on achieved: renewal loop proposes successor
@@ -304,34 +304,34 @@ outcomes:
     measurable_criteria:
       - node_id: sys-002-module
         title: "Quarantine module: trust-scoring + injection sanitization with pytest corpus"
-        owner_role: cto
+        owner_role: cos
         acceptance_criteria:
           - "Module in ~/.screenpipe/pipes/_shared scores sender trust and sanitizes/flags injection patterns before content reaches any LLM call"
           - "pytest corpus covers known injection shapes (instruction smuggling, tool-call coercion, link-exfil patterns)"
         evidence_required: "Module + passing pytest output; pre-change backup path noted"
-        verifier_role: cos
+        verifier_role: stephie-ceo
         risk_level: medium
         rollback_note: "Restore from ~/.screenpipe/state/backups-YYYYMMDD copy of touched files"
       - node_id: sys-002-wire
         title: "Quarantine wired into draft-reply/inbox paths in shadow-log mode"
-        owner_role: cto
+        owner_role: cos
         depends_on: [sys-002-module]
         acceptance_criteria:
           - "Every inbound mail passes the quarantine before any LLM call in draft-reply / inbox-triage"
           - "Decisions logged (allow/sanitize/quarantine) without changing behavior until reviewed — shadow first, same pattern as the policy engine"
         evidence_required: "Wiring diff + shadow-decision log sample from a real run"
-        verifier_role: coo
+        verifier_role: stephie-ceo
         risk_level: medium
         rollback_note: "Quarantine call is a single guarded entry point; bypass flag restores prior path"
       - node_id: sys-002-redteam
         title: "Red-team eval: injection corpus neutralized"
-        owner_role: cro
+        owner_role: cos
         depends_on: [sys-002-wire]
         acceptance_criteria:
           - "Adversarial corpus (EchoLeak-class + fresh variants) run through the pipeline: zero injections reach an LLM unsanitized"
           - "Findings report with per-case disposition"
         evidence_required: "Red-team report + corpus + run output"
-        verifier_role: cos
+        verifier_role: stephie-ceo
         risk_level: low
 
   # ===========================================================
