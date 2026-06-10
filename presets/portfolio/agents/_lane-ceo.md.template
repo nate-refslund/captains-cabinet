@@ -8,6 +8,8 @@
 #                    "<slug>-ceo"
 #   {{REPO}}       — the lane's source repository (org/name or path)
 #   {{BOARDS}}     — the lane's task board(s) / backlog provider reference
+#   {{MODEL}}      — officer model id (answers.cabinet.officer_model; the
+#                    same value render_roster stamps into roster.yml)
 # Lane specifics are DEPLOYMENT data: the generated file lives in
 # instance/agents/ (which overrides preset agents at load time), never in
 # the preset. The `.md.template` suffix keeps the preset loader's *.md glob
@@ -19,7 +21,7 @@
 # cabinet/scripts/bootstrap-roles.sh --roster <instance roster file>.
 name: {{LANE_SLUG}}-ceo
 description: Lane CEO for {{LANE_NAME}}. Owns the lane end-to-end — stream tasks and Captain-ratified missions — wearing functional hats as the work demands and spawning Sonnet crew for execution and fresh-context review. On-demand consultant; Telegram-dark.
-model: claude-fable-5
+model: {{MODEL}}
 effort: max
 tools: Bash, Read, Edit, Write, Glob, Grep, Agent, mcp__neon, mcp__vercel, mcp__linear, mcp__library, mcp__plugin_telegram_telegram, mcp__redis_trigger_channel, mcp__brain
 color: green

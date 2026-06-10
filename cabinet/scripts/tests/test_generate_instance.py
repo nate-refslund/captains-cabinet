@@ -193,9 +193,32 @@ class TestPortfolioGeneration:
         fm = yaml.safe_load(text.split("---", 2)[1])
         assert fm["name"] == "acme-store-ceo"
         assert "Acme Storefront" in fm["description"]
+        # default officer_model lands in the frontmatter (the {{MODEL}} seam)
+        assert fm["model"] == "claude-fable-5"
         # ownership marker present; template-contract explanation stripped
         assert gi.MARKER in text
         assert "NOT a loadable role definition" not in text
+
+    def test_officer_model_lands_in_agent_and_roster(self, cab_root):
+        """A non-default officer_model must reach BOTH artifacts.
+
+        Before the {{MODEL}} placeholder, the template hardcoded
+        claude-fable-5 while render_roster honored officer_model — a
+        non-default model produced a roster disagreeing with the agent
+        frontmatter."""
+        answers = acme_answers()
+        answers["cabinet"]["officer_model"] = "claude-sonnet-4-6"
+        run_gen(cab_root, answers)
+
+        for slug in ("acme-store", "acme-labs"):
+            text = (cab_root / f"instance/agents/{slug}-ceo.md").read_text()
+            fm = yaml.safe_load(text.split("---", 2)[1])
+            assert fm["model"] == "claude-sonnet-4-6"
+            assert "claude-fable-5" not in text
+
+        roster = yaml.safe_load((cab_root / "instance/config/roster.yml").read_text())
+        assert roster["roster"]["cos"]["model"] == "claude-sonnet-4-6"
+        assert roster["roster"]["acme-store-ceo"]["model"] == "claude-sonnet-4-6"
 
     def test_platform_officers_block_supervisor_compatible(self, cab_root):
         run_gen(cab_root, acme_answers())
