@@ -5,7 +5,8 @@
 # Authored 2026-06-10 from live grounding:
 #   - 9-Codebases/{PolAds,STEPhie,stepnetwork-dk}/architecture.md + deployment.md
 #   - 0-Inbox/todos-live.md (open work as of 2026-06-09)
-#   - Monday item ids cited inline where the work is already tracked.
+#   - Monday item ids cited inline where the work is already tracked
+#     (June UAT wave pulled live via dev-tasks 2026-06-10).
 #
 # Schema: framework/schemas/outcome.schema.json (Mission Compiler v2 rich
 # criteria). Validated with jsonschema before commit.
@@ -22,13 +23,36 @@
 #   production deploys and enforcement flips need explicit Captain approval.
 #   This mirrors the P4 hard ceiling — graduation never lifts these here.
 #
-# Lanes: polads | stephie-stepnetwork | system-self | adhoc
+# WORK MODEL (Captain-agreed 2026-06-10) — products are LANES, not outcomes.
+# Three work classes per lane; full contract: docs/work-model.md.
+#   1. STREAM — continuous product work. The Monday Tasks board 5091706356
+#      (per-product filter via the dev-tasks plugin) is the canonical
+#      backlog; officers claim, execute, close back to Monday. Stream work
+#      is NEVER wrapped in outcomes. Propose-first per the autonomy
+#      manifest (vault 6-Areas/autonomy-manifest.md) until a lane graduates.
+#   2. MISSIONS — this file. A ROLLING WINDOW of 1-2 active bounded
+#      outcomes per lane — not a roadmap. Inclusion test: the outcome
+#      describes a verifiable STATE CHANGE, never an activity. Lifecycle:
+#      draft -> active (Captain-ratified) -> achieved -> retired. Products
+#      never finish — outcomes do: when one achieves, its slot refills via
+#      the RENEWAL LOOP (CPO's 12h backlog-refine drafts a successor from
+#      the Monday epic queue + stream pressure -> proposes to the Captain
+#      on Telegram -> Captain ratifies -> successor goes active). Marking
+#      'achieved': CoS proposes when every criterion carries verified
+#      evidence; Captain confirms.
+#   3. INTAKE — machinery, not a mission: a scheduled CoS routine (cron
+#      trigger -> sweep Monday Nate's-Todos 5098236573 + unclassified
+#      stream items -> classify to lane -> propose-only via brain
+#      ask_nate). Removed from this file — see docs/work-model.md (Intake).
+#
+# Lanes: polads | stephie-stepnetwork | system-self
 # (lane is encoded in the outcome id/description; the schema has no lane key)
 
 outcomes:
   # ===========================================================
   # LANE: polads — STEP-Network/v0-politiske-annoncer
   # ===========================================================
+  # SLOT 1/2 for lane polads — on achieved: renewal loop proposes successor
   - id: outcome-polads-001
     name: "PolAds v1.0 staging closeout and production release"
     description: >
@@ -78,6 +102,7 @@ outcomes:
         captain_attention_estimate: 0.5
         budget_note: "No new spend; existing Vercel/Neon plans"
 
+  # SLOT 2/2 for lane polads — on achieved: renewal loop proposes successor
   - id: outcome-polads-002
     name: "PolAds Stack Auth staging configuration complete"
     description: >
@@ -110,10 +135,65 @@ outcomes:
         verifier_role: cpo
         risk_level: low
 
+  # SLOT queue for lane polads — the window is 2 ACTIVE per lane: ratify at
+  # most two of polads-001/002/003; the third stays draft as the renewal
+  # queue's next-up. On achieved: renewal loop proposes successor.
+  # OVERLAP NOTE: polads-001-uat covers the older May UAT bug class
+  # (Monday 2955117972, 2955147585, PR #158 font export); polads-003 covers
+  # the June 2026 feedback wave (ids below). Both bounded, disjoint item
+  # sets — no double-count: each Monday item belongs to exactly one outcome.
+  - id: outcome-polads-003
+    name: "June UAT feedback wave closed on test.polads.eu"
+    description: >
+      Close the June 2026 UAT feedback wave on the PolAds Beta version epic
+      (Monday 2833952138): all 5 Critical items fixed and verified on the
+      preview/test deployment, every remaining wave item triaged out of
+      Needs Refinement, and Monday closed back via the dev-tasks plugin.
+      Grounded ONLY in live Monday data pulled 2026-06-10.
+    status: draft
+    captain_ratified: false
+    measurable_criteria:
+      - node_id: polads-003-critical
+        title: "All 5 Critical June-wave items fixed + verified on the preview/test deployment"
+        owner_role: cto
+        acceptance_criteria:
+          - "[Publisher] NME logo link no longer leads to a Forbidden page — links to newsmediaeurope.eu (Monday 2979108084)"
+          - "[Publisher] Chatbot knows and answers from the DPA document (Monday 2979102928)"
+          - "[Citizen] 'Search advertisements' button works (Monday 2979116873)"
+          - "[General] Header flag/language options work on Windows (Monday 2979117218)"
+          - "[Publisher] No content overflow when expanding hierarchy items (Monday 2979104881)"
+          - "Each fix verified on the preview/test deployment (test.polads.eu), with regression coverage where testable"
+        evidence_required: "Merged PR links + regression tests + per-item verification notes on the preview/test deployment"
+        verifier_role: cpo
+        risk_level: medium
+        rollback_note: "Per-fix git revert; preview/test only — production ships via polads-001-prod's gate"
+      - node_id: polads-003-triage
+        title: "Every remaining June-wave item triaged — zero left in Needs Refinement"
+        owner_role: cpo
+        acceptance_criteria:
+          - "Each remaining wave item — Missing: 2979083289 (Proff.dk auto-fill), 2979083232 (simplify address entry), 2979096043 (cursor hover), 2979103985 (contact-vs-booking email clarity), 2979102931 (sign-agreement text), 2979103189 (email-code login tedium), 2979083204 (register-button timing), 2979083180 (field contrast), 2979142477 (empty partnership footer), 2979121193 (AI form-filling idea), 2979108633 (do-i-need-to-register quiz); Medium: 2979382320 (NME logo colours/wording), 2975934613 (EU Repository feedback), 2968573291 (test.polAd.eu language alignment) — is refined with priority + estimate, declined with a written reason, or folded into an epic"
+          - "Zero June-wave items remain in 'Needs Refinement' on the Beta version epic (Monday 2833952138) — catch-all for any wave item not cited above"
+        evidence_required: "Per-item disposition list (refined / declined / folded) with Monday ids"
+        verifier_role: coo
+        risk_level: low
+        rollback_note: "Triage is metadata-only; dispositions revertible per item"
+      - node_id: polads-003-closeback
+        title: "Monday closed back via the dev-tasks plugin with per-item status updates"
+        owner_role: cpo
+        depends_on: [polads-003-critical, polads-003-triage]
+        acceptance_criteria:
+          - "Every June-wave item carries its final status in Monday, written via the dev-tasks plugin"
+          - "PROPOSE-FIRST: each status write is proposed to the Captain before applying, until the polads lane graduates per the autonomy manifest"
+        evidence_required: "Monday status trail + proposal/approval records for the writes"
+        verifier_role: coo
+        risk_level: medium
+        rollback_note: "Monday status changes are item-scoped and manually revertible"
+
   # ===========================================================
   # LANE: stephie-stepnetwork — STEP-Network/stephie-mcp +
   #                             STEP-Network/step-network-website
   # ===========================================================
+  # SLOT 1/2 for lane stephie-stepnetwork — on achieved: renewal loop proposes successor
   - id: outcome-stephie-001
     name: "STEPhie Banner Creator feedback round 1 closed with Sofie"
     description: >
@@ -161,6 +241,7 @@ outcomes:
         verifier_role: cos
         risk_level: low
 
+  # SLOT 2/2 for lane stephie-stepnetwork — on achieved: renewal loop proposes successor
   - id: outcome-stepnetwork-001
     name: "stepnetwork.dk publisher-onboarding pipeline verified healthy"
     description: >
@@ -196,6 +277,7 @@ outcomes:
   # ===========================================================
   # LANE: system-self — cabinet + screenpipe self-maintenance
   # ===========================================================
+  # SLOT 1/2 for lane system-self — on achieved: renewal loop proposes successor
   - id: outcome-system-self-001
     name: "Typed policy engine promoted from shadow to enforcing"
     description: >
@@ -240,6 +322,7 @@ outcomes:
         verifier_role: cos
         risk_level: low
 
+  # SLOT 2/2 for lane system-self — on achieved: renewal loop proposes successor
   - id: outcome-system-self-002
     name: "Inbound-mail quarantine pass before LLM exposure"
     description: >
@@ -283,44 +366,13 @@ outcomes:
         risk_level: low
 
   # ===========================================================
-  # LANE: adhoc — standing intake (propose-only)
+  # INTAKE — not an outcome (removed 2026-06-10)
   # ===========================================================
-  # RATIFICATION NOTE — deliberately NON-TERMINATING: this standing outcome
-  # can never reach 'achieved' under the outcome lifecycle; once activated it
-  # stays open indefinitely until the Captain explicitly retires it (set
-  # status back to draft/retired or delete it). Ratify knowing that.
-  - id: outcome-adhoc-001
-    name: "Standing intake: CoS triages Captain-dropped tasks into proposals"
-    description: >
-      Standing (non-terminating) intake outcome: CoS sweeps the Monday
-      Nate's-Todos board (5098236573), classifies items into lanes, and
-      files PROPOSALS only — never auto-claims, never executes without
-      Captain approval. Gather-then-decide applies to every item.
-      Deliberately non-terminating: this outcome never reaches 'achieved'
-      and stays open until the Captain explicitly retires it.
-    status: draft
-    captain_ratified: false
-    measurable_criteria:
-      - node_id: adhoc-001-sweep
-        title: "Triage sweep operational over Monday Nate's-Todos board 5098236573"
-        owner_role: cos
-        acceptance_criteria:
-          - "CoS reads open board items (read-only via the dev-tasks/Monday route), classifies each into a lane/context"
-          - "Each candidate becomes a proposal through the brain MCP human gate (ask_nate) with gather-then-decide evidence attached"
-          - "PROPOSE-ONLY: no execution, claiming, or status change without explicit Captain approval"
-        evidence_required: "Reasoning-log (log_reasoning) entries + Telegram proposal records for at least 3 real items"
-        verifier_role: coo
-        risk_level: low
-        rollback_note: "Read-only sweep; proposals are discardable at the Telegram gate"
-      - node_id: adhoc-001-loop
-        title: "Approved proposals route to a lane and close back to Monday"
-        owner_role: cos
-        depends_on: [adhoc-001-sweep]
-        acceptance_criteria:
-          - "An approved item is routed into the matching lane's mission/work-graph"
-          - "On completion, Monday status is updated via the dev-tasks plugin and the action is logged (log_reasoning + record_run)"
-          - "Zero Monday writes occur without a prior explicit Captain approval for that item"
-        evidence_required: "One end-to-end trace: proposal -> approval -> execution -> Monday closure -> reasoning log"
-        verifier_role: coo
-        risk_level: medium
-        rollback_note: "Monday status changes are manually revertible; dev-tasks writes are item-scoped"
+  # The standing adhoc intake (formerly an outcome here) is MACHINERY,
+  # not a mission: a scheduled CoS routine (cron trigger -> sweep Monday
+  # Nate's-Todos 5098236573 + unclassified stream items -> classify to
+  # lane -> propose-only via brain ask_nate -> approved items become
+  # stream tasks or outcome proposals). A never-achievable outcome breaks
+  # the draft->active->achieved->retired lifecycle and pollutes OVI.
+  # See docs/work-model.md (Intake) and the P3 intake routine in
+  # docs/clone-convergence-plan-2026-06-09.md.

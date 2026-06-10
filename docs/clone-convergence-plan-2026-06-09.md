@@ -63,7 +63,7 @@ New `~/.screenpipe/pipes/brain-mcp/server.py` — FastMCP **stdio** server (HTTP
 
 ### P2 — MacBook "hq" cabinet instance (1–2 days)
 - Instance config: distinct `cabinet_id`, new officer bot tokens, `instance/config/contexts/{polads,stephie,stepnetwork,system-self,adhoc}.yml`, `instance/config/projects/*.yml`.
-- Author `instance/config/outcomes.yml` (schema ready at `framework/schemas/outcome.schema.json`): 1–2 active outcomes per lane to start; `bootstrap-roles.sh`.
+- Author `instance/config/outcomes.yml` (schema ready at `framework/schemas/outcome.schema.json`): rolling window of 1–2 active bounded outcomes per lane per `docs/work-model.md` (stream/missions/intake — standing intake is a CoS routine, not an outcome); `bootstrap-roles.sh`.
 - Roster profile: CoS LaunchAgent KeepAlive (persistent, Fable 5); CTO/CPO/CRO/COO **on-demand** (no KeepAlive plists; spawned by CoS / mission-supervisor trigger, idle-stop 30 min — mechanism exists in post-tool-use idle detection).
 - `deploy-mac.sh` selective: skip kiosk; include chrome-profile (Monday/Vercel logins); **skip setup-mac Step 9 screenpipe brew-install** — point the `screenpipe` MCP entry at the existing instance (`localhost:3030` + auth key).
 - dev-tasks plugin via `instance/config/extensions.yml` (the sanctioned Monday route — no Monday adapter by design); leave task-sync disabled or `github-issues` only.
@@ -71,7 +71,7 @@ New `~/.screenpipe/pipes/brain-mcp/server.py` — FastMCP **stdio** server (HTTP
 - **Gate:** one real mission per lane completes with `work_item_completed/verified` events; quota burn over the soak day measured and acceptable.
 
 ### P3 — Work-intake loop (1–2 days)
-- Monday "Nate's Todos" (board 5098236573) + Tasks board → CoS adhoc proposals (gather-then-decide; propose via `ask_nate`, never auto-claim).
+- Monday "Nate's Todos" (board 5098236573) + Tasks board → CoS **intake routine** (scheduled cron sweep — machinery, not an outcome; see `docs/work-model.md` Intake): classify to lane, gather-then-decide, propose via `ask_nate`, never auto-claim.
 - Completions write back: Monday status via dev-tasks plugin + `log_reasoning` + `record_run` — so reasoning-review/architect govern officers like pipes.
 - Cabinet status → morning-brief fuel file (`0-Inbox/brief-fuel-cabinet.md`); ask-my-brain cites officer work.
 - New vault pillars the clone needs (flagged missing in vault analysis): `7-Resources/Runbooks/`, `4-Projects/projects-status.md`, and the **live autonomy manifest** (`0-Self/autonomy-manifest.md`) — single table of lane → ceiling → graduation state, consumed by both screenpipe lanes and cabinet `autonomy.yml`.
