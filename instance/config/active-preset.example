@@ -1,0 +1,10 @@
+# instance/config/active-preset is DEPLOYMENT-LOCAL (gitignored): each machine
+# picks its own preset without dirtying git pulls on the others (the Mini soak
+# runs `work`, hq runs `portfolio`).
+#
+# The real file must contain ONLY the preset slug (load-preset.sh reads the
+# whole file as the slug — do NOT copy this commented example verbatim):
+#   echo work > instance/config/active-preset
+# Slugs ship in presets/: work | portfolio | step-network | personal.
+# Default below is the functional five-officer `work` preset:
+work
