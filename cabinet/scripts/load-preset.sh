@@ -355,17 +355,44 @@ if [ -d "$PRESET_DIR/agents" ]; then
       done
       log "Populated agents from preset: $copied hired (per mcp-scope.yml), $skipped staged"
 
-      # Mark every hired agent as expected-active in Redis so officer-supervisor
-      # auto-respawns them after restart + sends Captain the restart-alert.
-      # Single source of truth stays mcp-scope.yml `agents:`; this is just
-      # propagation into Redis so the supervisor's existing expected-active
-      # mechanism applies to preset-loaded rosters, not only to officers
-      # explicitly created via create-officer.sh (which sets the key in Step 8).
+      # Partition hired slugs by whether a role definition exists in the
+      # ACTIVE preset ∪ instance overlay. mcp-scope.yml is shared across
+      # deployments (e.g. the functional five stay listed for the Mini's
+      # work preset while hq runs portfolio), so a hired slug with no
+      # definition here is NOT an error — but it must not become an
+      # expected-active ghost in Redis, and a stale .claude/agents/<slug>.md
+      # derived from a previously-active preset must not keep booting it.
+      HIRED_DEFINED=""
+      HIRED_MISSING=""
+      for slug in $HIRED; do
+        if [ -f "$PRESET_DIR/agents/$slug.md" ] || [ -f "$CABINET_ROOT/instance/agents/$slug.md" ]; then
+          HIRED_DEFINED="$HIRED_DEFINED $slug"
+        else
+          HIRED_MISSING="$HIRED_MISSING $slug"
+          # Delete ONLY the stale derived copy for this hired slug —
+          # .claude/agents/ is generated (gitignored); other files untouched.
+          if [ -f "$AGENTS_DIR/$slug.md" ]; then
+            rm -f "$AGENTS_DIR/$slug.md"
+            log "Removed stale derived agent .claude/agents/$slug.md (no definition in preset '$ACTIVE_PRESET' ∪ instance overlay)"
+          fi
+        fi
+      done
+      if [ -n "$HIRED_MISSING" ]; then
+        log "INFO: hired in mcp-scope.yml but no role definition in preset '$ACTIVE_PRESET' ∪ instance overlay — skipped (not expected-active):$HIRED_MISSING"
+      fi
+
+      # Mark every DEFINED hired agent as expected-active in Redis so
+      # officer-supervisor auto-respawns them after restart + sends Captain
+      # the restart-alert. Single source of truth stays mcp-scope.yml
+      # `agents:` ∩ available definitions; this is just propagation into
+      # Redis so the supervisor's existing expected-active mechanism applies
+      # to preset-loaded rosters, not only to officers explicitly created
+      # via create-officer.sh (which sets the key in Step 8).
       if command -v redis-cli >/dev/null 2>&1; then
         REDIS_HOST_LP="${REDIS_HOST:-redis}"
         REDIS_PORT_LP="${REDIS_PORT:-6379}"
         marked=0
-        for slug in $HIRED; do
+        for slug in $HIRED_DEFINED; do
           if redis-cli -h "$REDIS_HOST_LP" -p "$REDIS_PORT_LP" SET "cabinet:officer:expected:$slug" "active" >/dev/null 2>&1; then
             marked=$((marked + 1))
           fi
