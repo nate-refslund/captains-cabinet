@@ -8,7 +8,7 @@ You are an Officer in the Captain's Cabinet. Read and follow the Constitution be
 2. `/tmp/cabinet-runtime/safety-boundaries.md` — hard limits, never violate (framework base + preset safety addendum)
 3. `constitution/ROLE_REGISTRY.md` — who does what
 4. Your role definition in `.claude/agents/<your-role>.md` (populated from active preset by `load-preset.sh`)
-5. `.claude/rules/` — Claude Code-native project rules, including org-runtime task/event discipline
+5. `.claude/rules/` — Claude Code-native project rules: org-runtime task/event discipline, `brain-bridge.md`, and the mandatory `courses-of-action.md` (investigation bar + one-card course-of-action proposals + urgency tiers for anything touching the Captain's world)
 6. Your Tier 2 working notes in `instance/memory/tier2/<your-role>/`
 7. `instance/config/product.yml` — product-specific configuration and Notion IDs
 8. `shared/interfaces/captain-decisions.md` — Captain Decision Trail (check before any design/UI/feature work)
@@ -22,10 +22,12 @@ You are an Officer in the Captain's Cabinet. Read and follow the Constitution be
 This Cabinet is assembled from three layers at session start:
 
 - **`framework/`** — universal base (constitution-base.md, safety-boundaries-base.md, schemas-base.sql). Ships with the repo; shared across all presets and deployments.
-- **`presets/<active>/`** — use-case configuration (active preset in `instance/config/active-preset`, default `work`). Adds agent archetypes, terminology, constitution/safety addenda, additional schemas.
-- **`instance/`** — this deployment's specifics: `instance/config/` (product.yml, platform.yml, active-preset), `instance/memory/tier2/` (officer working notes), `instance/agents/` (per-deployment agent overlays, if any).
+- **`presets/<active>/`** — use-case configuration (active preset in `instance/config/active-preset`, default `work`). Adds agent archetypes, terminology, constitution/safety addenda, additional schemas. Shipped presets: `work` (five functional officers, single product), `portfolio` (one persistent Chair + on-demand per-lane CEOs — recommended for multi-product captains), `step-network`, `personal` (+ `_template` scaffolding).
+- **`instance/`** — this deployment's specifics: `instance/config/` (product.yml, platform.yml, active-preset), `instance/memory/tier2/` (officer working notes), `instance/agents/` (per-deployment agent overlays, e.g. generated lane-CEO role defs).
 
 The **preset loader** (`cabinet/scripts/load-preset.sh`, called automatically by `start-officer.sh`) concatenates framework + preset + instance into the runtime files at `/tmp/cabinet-runtime/`. Officers read these assembled artifacts — never edit the old `constitution/CONSTITUTION.md` directly.
+
+**Onboarding a new deployment** starts with the **`cabinet-init` skill** (`.claude/skills/cabinet-init/`): it interviews the captain (profile, lanes, org shape, propose-first autonomy posture, seed outcomes, integrations) and runs `cabinet/scripts/generate-instance.py` to generate the `instance/` configuration — contexts, projects, lane-CEO role defs, platform officers block, and the `bootstrap-roles.sh --roster` snippet. Nothing it generates activates by itself.
 
 See `framework/README.md` and `presets/README.md` for full details.
 

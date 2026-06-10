@@ -13,7 +13,7 @@
         "repo": "nate-step/captains-cabinet",
         "ref": "claude/convergence-v2"
       },
-      "description": "Full Captains Cabinet plugin: framework + work preset + 5 officers + 18 skills + 11 slash commands + 6 MCP servers.",
+      "description": "Full Captains Cabinet plugin: framework + work preset + 5 officers + 19 skills + 11 slash commands + 6 MCP servers.",
       "category": "ai-organization",
       "tags": ["ai-organization", "officers", "autonomous", "event-sourced"]
     },
