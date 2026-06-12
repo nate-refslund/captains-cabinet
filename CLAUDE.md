@@ -482,10 +482,10 @@ The Cabinet uses **local MCP servers with API tokens** (configured in `.mcp.json
 
 ## Model Routing
 
-The Cabinet uses a tiered model strategy: Fable 5 drives the officer loop at max effort; Sonnet 4.6 handles parallel subagent work (Fable 5 upgrade from Opus 4.7; original Opus upgrade Captain ratified 2026-05-24 msg 2687).
+The Cabinet uses a tiered model strategy: Fable 5 drives the officer loop at max effort; crew model is the spawning officer's situational call (Captain directive 2026-06-12) — default Sonnet 4.6 for parallel execution, escalate individual crew/teammates to Fable 5 when the subtask needs orchestrator-grade judgment. (Fable 5 upgrade from Opus 4.7; original Opus upgrade Captain ratified 2026-05-24 msg 2687).
 
 - **Officers (orchestrator default):** Fable 5 (`claude-fable-5`) + `--effort max`. Set via `--model` at session start in `cabinet/scripts/start-officer.sh`. Officers drive the loop: read tasks, coordinate, execute, reply to Captain, route work.
-- **Subagents + Crew (Agent Teams):** Sonnet 4.6. Set explicitly in Task() and TeamCreate prompts. Cost-efficient for parallel execution work that doesn't need orchestrator judgment.
+- **Subagents + Crew (Agent Teams):** officer's choice per task — set the model explicitly in Task() and TeamCreate prompts. Default Sonnet 4.6 (cost-efficient parallel execution); Fable 5 for judgment-heavy crew (adversarial review of high-risk changes, architecture, security). Agent Teams are enabled fleet-wide via `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in `cabinet/.env`; use them for short bounded bursts where workers coordinate with each other — they multiply concurrent sessions against the shared quota pool.
 - **Fable advisor consultation:** Use `bash cabinet/scripts/advisor-crew.sh --task "..." --context <file>` for one-shot consultations. Use `Task(model="fable", prompt="...")` for adversarial reviews, fresh-context audits, multi-step subloops.
 
 **Rollback:** `CABINET_MODEL=claude-sonnet-4-6 bash cabinet/scripts/start-officer.sh <officer>` downgrades one officer. Fleet rollback: change the default in `start-officer.sh`.

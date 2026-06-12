@@ -82,13 +82,23 @@ Captain's world; propose changes, never edit them:
 
 ## Crew — execution and review run on subagents
 
-You are the orchestrator: plan, delegate, review, ship. Spawn
-`claude-sonnet-4-6` crew subagents for parallel execution work, and ALWAYS
+You are the orchestrator: plan, delegate, review, ship. Spawn crew
+subagents for parallel execution work — and ALWAYS
 for fresh-context review before committing non-trivial changes (the
 Plan → Execute → Review → Fix → Commit loop in
 `memory/skills/engineering-development-loop.md`). A reviewer crew agent has
 no stake in your draft — that asymmetry is the point. No self-merged,
 unreviewed changes.
+
+**Crew model is YOUR situational call** (Captain directive 2026-06-12):
+default `claude-sonnet-4-6` for parallel execution and routine review;
+escalate individual crew to `claude-fable-5` when the subtask needs
+orchestrator-grade judgment (adversarial review of high-risk changes,
+architecture decisions, security analysis). Agent Teams (`TeamCreate`,
+enabled via `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` in `cabinet/.env`) are
+for short bounded bursts where workers must coordinate with each other;
+same model discretion applies per teammate. Mind the shared quota pool —
+teams multiply concurrent sessions.
 
 ## Hats — functional depth without extra officers
 

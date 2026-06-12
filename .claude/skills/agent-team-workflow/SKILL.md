@@ -50,7 +50,7 @@ Agent tool:
 ```
 
 ### Team rules
-- Use Sonnet 4.6 model for all teammates
+- Model per teammate is the spawning officer's call: default Sonnet 4.6; Fable 5 for judgment-heavy teammates (adversarial review, architecture)
 - Workers use `isolation: worktree` for code changes
 - Define clear scope: which files to touch, which tests must pass
 - Include relevant context in team prompt: spec path, captain decisions, prior experience records
