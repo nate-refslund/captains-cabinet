@@ -207,13 +207,20 @@ def _write_to_log(event: dict[str, Any]) -> None:
     never collides with the org_events ledger written by events/emitter.py
     into the same CABINET_EVENT_LOG_DIR.
 
-    Path safety: the basename is fixed and non-user-controlled — the only
-    variable part is a strftime('%Y-%m-%d') date (digits + hyphens), so no
-    caller input can traverse out of the resolved log dir.
+    Path safety (Corridor guardrail, minimal + consistent with
+    framework/events/emitter.py's plain-env log-dir posture): the operator-set
+    dir is resolved once with .resolve() and the ledger file is anchored under
+    that resolved base, so the write always lands inside the intended dir. The
+    basename is itself fixed and non-user-controlled — the only variable part is
+    a strftime('%Y-%m-%d') date (digits + hyphens) — so no caller input can
+    traverse out either. _consequence_log_dir()'s contract is unchanged (it
+    still honors CABINET_EVENT_LOG_DIR verbatim); the resolve happens here, at
+    the point of use.
     """
     log_dir = _consequence_log_dir()
     log_dir.mkdir(parents=True, exist_ok=True)
-    log_file = log_dir / (
+    base = log_dir.resolve()
+    log_file = base / (
         "consequence-events-"
         + datetime.now(timezone.utc).strftime("%Y-%m-%d") + ".jsonl"
     )

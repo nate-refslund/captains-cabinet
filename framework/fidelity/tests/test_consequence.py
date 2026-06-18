@@ -401,3 +401,65 @@ class TestComputeRatios:
         ledger = read_ledger()
         cells = compute_ratios(ledger=ledger)
         assert cells[("officer:cos", "polads", "drafted-reply")].sample_count == 1
+
+
+class TestPathSafetyGuards:
+    """Corridor guardrails folded into F0 (beyond the plan, minimal):
+    (1) the write path anchors the ledger under the RESOLVED log dir;
+    (2) the reader skips any consequence-events-*.jsonl symlink whose real
+        path escapes the resolved log dir, rather than following it.
+    """
+
+    def test_write_lands_inside_resolved_log_dir(self, event_log_dir):
+        emit_consequence(
+            ts="2026-06-18T08:00:00+00:00",
+            actor={"kind": "officer", "id": "cos"},
+            lane="polads", action="drafted-reply", subject="t1",
+        )
+        files = list(Path(event_log_dir).resolve().glob("consequence-events-*.jsonl"))
+        assert len(files) == 1
+        # the written file's real path is strictly under the resolved base
+        base = Path(event_log_dir).resolve()
+        assert base in files[0].resolve().parents
+
+    def test_reader_skips_symlink_escaping_log_dir(self, event_log_dir, tmp_path):
+        # event_log_dir IS tmp_path, so the "outside" target must live in a
+        # genuinely separate dir to actually escape the fence.
+        # A legitimate in-dir ledger row...
+        emit_consequence(
+            ts="2026-06-18T08:00:00+00:00",
+            actor={"kind": "officer", "id": "cos"},
+            lane="polads", action="drafted-reply", subject="t1",
+        )
+        # ...and an outside-the-fence file that a planted symlink points at.
+        outside_dir = tmp_path.parent / (tmp_path.name + "-outside")
+        outside_dir.mkdir()
+        outside = outside_dir / "outside-secret.jsonl"
+        outside.write_text(
+            '{"ts":"2026-06-18T09:00:00+00:00",'
+            '"actor":{"kind":"officer","id":"evil"},'
+            '"lane":null,"action":"exfil","subject":"leak","refs":[]}\n'
+        )
+        link = Path(event_log_dir) / "consequence-events-9999-99-99.jsonl"
+        link.symlink_to(outside)
+
+        events = read_ledger()
+        # the symlink that escapes the resolved log dir is NOT followed
+        assert [e["subject"] for e in events] == ["t1"]
+        assert all(e["actor"]["id"] != "evil" for e in events)
+
+    def test_reader_follows_symlink_that_stays_inside_log_dir(self, event_log_dir):
+        # A symlink whose target is genuinely inside the fence is fine.
+        emit_consequence(
+            ts="2026-06-18T08:00:00+00:00",
+            actor={"kind": "officer", "id": "cos"},
+            lane="polads", action="drafted-reply", subject="real",
+        )
+        real = list(Path(event_log_dir).glob("consequence-events-2*.jsonl"))[0]
+        link = Path(event_log_dir) / "consequence-events-1111-11-11.jsonl"
+        link.symlink_to(real.name)  # relative link, stays in-dir
+
+        events = read_ledger()
+        # both the real file and the in-dir symlink resolve to the same row;
+        # identity dedup collapses them to one.
+        assert [e["subject"] for e in events] == ["real"]
