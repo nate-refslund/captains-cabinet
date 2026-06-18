@@ -197,3 +197,67 @@ def _validate_invariants(event: dict[str, Any]) -> None:
             raise ConsequenceValidationError(
                 "review.lesson_ref must be null unless verdict is 'wrong'"
             )
+
+
+def _write_to_log(event: dict[str, Any]) -> None:
+    """Append one consequence event to the daily JSONL ledger (UTC date).
+
+    Filename family is consequence-events-* (NOT events-*) so this ledger
+    never collides with the org_events ledger written by events/emitter.py
+    into the same CABINET_EVENT_LOG_DIR.
+
+    Path safety: the basename is fixed and non-user-controlled — the only
+    variable part is a strftime('%Y-%m-%d') date (digits + hyphens), so no
+    caller input can traverse out of the resolved log dir.
+    """
+    log_dir = _consequence_log_dir()
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / (
+        "consequence-events-"
+        + datetime.now(timezone.utc).strftime("%Y-%m-%d") + ".jsonl"
+    )
+    with open(log_file, "a") as f:
+        f.write(json.dumps(event, default=str) + "\n")
+
+
+def emit_consequence(
+    *,
+    ts: str,
+    actor: dict[str, Any],
+    lane: str | None,
+    action: str,
+    subject: str,
+    refs: list[str] | None = None,
+    proposal: dict[str, Any] | None = None,
+    outcome: dict[str, Any] | None = None,
+    review: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Validate then append-write ONE consequence event to the JSONL ledger.
+
+    Keyword-only by design: the schema field set is wide and order-free, and
+    every caller (F1 fidelity_events builder, live officers via the brain
+    bridge, surviving pipes) must name fields explicitly. `refs` defaults to
+    []. The three optional objects (proposal/outcome/review) are emitted only
+    when provided — a None section is dropped, not written as null, so the
+    ledger carries exactly the lifecycle phase the caller has reached.
+    Enrichment appends a SUPERSEDING event with the same
+    (actor, action, subject, ts) identity; the reader takes the last write.
+    """
+    event: dict[str, Any] = {
+        "ts": ts,
+        "actor": actor,
+        "lane": lane,
+        "action": action,
+        "subject": subject,
+        "refs": list(refs) if refs is not None else [],
+    }
+    if proposal is not None:
+        event["proposal"] = proposal
+    if outcome is not None:
+        event["outcome"] = outcome
+    if review is not None:
+        event["review"] = review
+
+    validate_consequence(event)  # raises before any write
+    _write_to_log(event)
+    return event

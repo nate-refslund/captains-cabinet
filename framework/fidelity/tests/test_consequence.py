@@ -15,6 +15,7 @@ from framework.fidelity.consequence import (
     SCHEMA,
     ConsequenceValidationError,
     validate_consequence,
+    emit_consequence,
     _consequence_log_dir,
 )
 
@@ -150,3 +151,67 @@ class TestInvariants:
         ev = _act_event(review={"verdict": "wrong",
                                 "lesson_ref": "lessons.md#anchor"})
         assert validate_consequence(ev) is None
+
+
+class TestEmit:
+    def test_emit_returns_validated_event(self, event_log_dir):
+        ev = emit_consequence(
+            ts="2026-06-18T08:00:00+00:00",
+            actor={"kind": "officer", "id": "cos"},
+            lane="polads",
+            action="drafted-reply",
+            subject="thread-abc",
+            refs=["msg-1"],
+            proposal={"required": True, "decision": None, "decided_at": None},
+        )
+        assert ev["action"] == "drafted-reply"
+        assert ev["actor"] == {"kind": "officer", "id": "cos"}
+
+    def test_emit_defaults_refs_to_empty_list(self, event_log_dir):
+        ev = emit_consequence(
+            ts="2026-06-18T08:00:00+00:00",
+            actor={"kind": "pipe", "id": "commitment-ledger"},
+            lane=None,
+            action="auto-closed-commitment",
+            subject="cmt-1",
+        )
+        assert ev["refs"] == []
+
+    def test_emit_omits_none_optional_objects(self, event_log_dir):
+        ev = emit_consequence(
+            ts="2026-06-18T08:00:00+00:00",
+            actor={"kind": "pipe", "id": "x"},
+            lane=None, action="a", subject="s",
+        )
+        assert "proposal" not in ev
+        assert "outcome" not in ev
+        assert "review" not in ev
+
+    def test_emit_writes_to_consequence_events_file(self, event_log_dir):
+        emit_consequence(
+            ts="2026-06-18T08:00:00+00:00",
+            actor={"kind": "officer", "id": "cos"},
+            lane="polads", action="drafted-reply", subject="t1",
+        )
+        emit_consequence(
+            ts="2026-06-18T08:01:00+00:00",
+            actor={"kind": "officer", "id": "cos"},
+            lane="polads", action="drafted-reply", subject="t2",
+        )
+        files = list(Path(event_log_dir).glob("consequence-events-*.jsonl"))
+        assert len(files) == 1
+        # must NOT collide with the org_events ledger filename family
+        assert not list(Path(event_log_dir).glob("events-2*.jsonl"))
+        with open(files[0]) as f:
+            lines = [json.loads(l) for l in f if l.strip()]
+        assert len(lines) == 2
+        assert {l["subject"] for l in lines} == {"t1", "t2"}
+
+    def test_emit_rejects_invalid_event_before_writing(self, event_log_dir):
+        with pytest.raises(ConsequenceValidationError):
+            emit_consequence(
+                ts="2026-06-18T08:00:00+00:00",
+                actor={"kind": "alien", "id": "ufo"},  # bad kind
+                lane=None, action="a", subject="s",
+            )
+        assert list(Path(event_log_dir).glob("consequence-events-*.jsonl")) == []
