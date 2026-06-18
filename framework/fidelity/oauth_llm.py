@@ -1,0 +1,71 @@
+"""OAuth-only headless Claude call for the fidelity harness.
+
+The locked architecture (docs/fidelity-harness-design-2026-06-18.md §59-72)
+reaches Claude via the OAuth/Code path everywhere — the judge runs as a
+`claude -p` headless agent billing the Max pool (CLAUDE_CODE_OAUTH_TOKEN in
+CI). There is NO ANTHROPIC_API_KEY. This module is the drop-in replacement for
+retrodiction's curl+x-api-key raw_llm / call_llm, preserving the
+(payload, system) call shape so JUDGE_SYSTEM and judge_decision are reused
+verbatim.
+"""
+
+from __future__ import annotations
+
+import os
+import subprocess
+from typing import Any
+
+from framework.fidelity.retro import parse_json_block
+
+_DEFAULT_MODEL = "claude-sonnet-4-6"
+_TIMEOUT_S = 185
+
+
+class OAuthUnavailableError(RuntimeError):
+    """Raised when neither an interactive OAuth login nor
+    CLAUDE_CODE_OAUTH_TOKEN is available for headless invocation."""
+
+
+def _build_argv(system: str, model: str) -> list[str]:
+    """Construct the `claude -p` headless argv. The system prompt is appended
+    (never a positional); the user payload is piped on stdin by the caller. No
+    API-key flag is ever added — auth is OAuth (token in env or logged-in
+    session)."""
+    return [
+        "claude", "-p",
+        "--model", model,
+        "--append-system-prompt", system,
+        "--output-format", "text",
+    ]
+
+
+def oauth_raw_llm(payload: str, system: str, max_tokens: int = 1500,
+                  model: str = _DEFAULT_MODEL) -> str | None:
+    """Plain-text Claude call via `claude -p` (OAuth). Drop-in for
+    retrodiction.raw_llm — same (payload, system) shape. Returns text or None.
+    max_tokens is accepted for signature parity; `claude -p` manages its own
+    output budget."""
+    argv = _build_argv(system, model)
+    # Inherit env so CLAUDE_CODE_OAUTH_TOKEN (CI) or the local OAuth session is
+    # used. Strip ANTHROPIC_API_KEY so a stray key can never silently bill the
+    # pay-as-you-go path instead of the Max pool.
+    env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
+    try:
+        r = subprocess.run(
+            argv, input=payload, capture_output=True, text=True,
+            timeout=_TIMEOUT_S, env=env,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return None
+    if r.returncode != 0:
+        return None
+    out = (r.stdout or "").strip()
+    return out or None
+
+
+def oauth_json_llm(payload: str, system: str, max_tokens: int = 400,
+                   model: str = _DEFAULT_MODEL) -> dict[str, Any] | None:
+    """JSON Claude call via OAuth. Drop-in for cl.call_llm — pass as the `llm=`
+    arg to retrodiction.judge_decision. Returns the parsed dict or None."""
+    text = oauth_raw_llm(payload, system, max_tokens=max_tokens, model=model)
+    return parse_json_block(text)
