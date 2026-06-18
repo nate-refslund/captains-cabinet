@@ -2374,7 +2374,7 @@
 - Test: `/Users/nate/captains-cabinet/framework/fidelity/tests/test_officer_prompt.py`
 
 **Interfaces:**
-- Consumes: `framework.fidelity.types.Case`; the officer role definition file at `cabinet/.claude/agents/<role>.md` (resolved relative to repo root via `CABINET_ROOT` env, default the repo root two levels up from `framework/`).
+- Consumes: `framework.fidelity.types.Case`; the officer role definition file at `.claude/agents/<role>.md` — the runtime-populated charter dir set by `load-preset.sh` as `$CABINET_ROOT/.claude/agents` (resolved relative to repo root via `CABINET_ROOT` env, default the repo root two levels up from `framework/`).
 - Produces:
   - `role_definition(officer_role) -> str` — read the role def md; return its text, or a minimal fallback header if the file is absent (never crash the eval).
   - `build_eval_system(case, officer_role) -> str` — role definition + a one-line decision-type context block (`lane`, `decision_type`, counterparty). The held-out reply is NEVER included.
@@ -2480,12 +2480,14 @@
    _REPO_ROOT = Path(
        os.environ.get("CABINET_ROOT", str(Path(__file__).resolve().parents[2]))
    )
-   _AGENTS_DIR = _REPO_ROOT / "cabinet" / ".claude" / "agents"
+   _AGENTS_DIR = _REPO_ROOT / ".claude" / "agents"
 
 
    def role_definition(officer_role: str) -> str:
-       """Read cabinet/.claude/agents/<role>.md. If absent (eval running before
-       the preset is loaded), return a minimal header — never crash the eval."""
+       """Read .claude/agents/<role>.md (the runtime-populated officer charter
+       dir, set by load-preset.sh as $CABINET_ROOT/.claude/agents). If absent
+       (eval running before the preset is loaded), return a minimal header —
+       never crash the eval."""
        f = _AGENTS_DIR / f"{officer_role}.md"
        if f.exists():
            return f.read_text(errors="replace")

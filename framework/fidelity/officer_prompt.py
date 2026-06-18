@@ -16,12 +16,14 @@ from framework.fidelity.types import Case
 _REPO_ROOT = Path(
     os.environ.get("CABINET_ROOT", str(Path(__file__).resolve().parents[2]))
 )
-_AGENTS_DIR = _REPO_ROOT / "cabinet" / ".claude" / "agents"
+_AGENTS_DIR = _REPO_ROOT / ".claude" / "agents"
 
 
 def role_definition(officer_role: str) -> str:
-    """Read cabinet/.claude/agents/<role>.md. If absent (eval running before
-    the preset is loaded), return a minimal header — never crash the eval."""
+    """Read .claude/agents/<role>.md (the runtime-populated officer charter dir,
+    set by load-preset.sh as $CABINET_ROOT/.claude/agents). If absent (eval
+    running before the preset is loaded), return a minimal header — never crash
+    the eval."""
     f = _AGENTS_DIR / f"{officer_role}.md"
     if f.exists():
         return f.read_text(errors="replace")

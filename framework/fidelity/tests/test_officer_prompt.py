@@ -32,6 +32,35 @@ class TestRoleDefinition:
         out = officer_prompt.role_definition("nonexistent-role-xyz")
         assert isinstance(out, str) and "nonexistent-role-xyz" in out
 
+    def test_existing_role_loads_charter_from_agents_dir(self, tmp_path,
+                                                          monkeypatch):
+        """Happy path: when .claude/agents/<role>.md exists, its real charter
+        text is returned (not the fallback stub). Guards the wrong-path bug:
+        the dir must match load-preset.sh's $CABINET_ROOT/.claude/agents."""
+        sentinel = "SENTINEL-CHAIR-OF-STAFF-CHARTER-12345"
+        (tmp_path / "cos.md").write_text(
+            f"# Chief of Staff\n{sentinel}\n")
+        monkeypatch.setattr(officer_prompt, "_AGENTS_DIR", tmp_path)
+        out = officer_prompt.role_definition("cos")
+        assert sentinel in out
+        assert "Role definition file not found" not in out
+
+    def test_build_eval_system_includes_real_charter(self, tmp_path,
+                                                     monkeypatch):
+        """The assembled eval system prompt must carry the officer's actual
+        charter, not just the decision-context block."""
+        sentinel = "SENTINEL-CHAIR-OF-STAFF-CHARTER-12345"
+        (tmp_path / "cos.md").write_text(
+            f"# Chief of Staff\n{sentinel}\n")
+        monkeypatch.setattr(officer_prompt, "_AGENTS_DIR", tmp_path)
+        s = officer_prompt.build_eval_system(_case(), "cos")
+        assert sentinel in s
+
+    def test_agents_dir_matches_runtime_populated_path(self):
+        """The module's default _AGENTS_DIR must end in .claude/agents (no extra
+        'cabinet' segment) so it matches the dir load-preset.sh populates."""
+        assert officer_prompt._AGENTS_DIR.parts[-2:] == (".claude", "agents")
+
 
 class TestBuildEvalSystem:
     def test_includes_lane_and_decision_type(self):
