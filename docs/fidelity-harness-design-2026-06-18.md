@@ -22,6 +22,25 @@ current-Nate and filtered through endorsement labels. "Better than Nate" =
 his best self executed consistently, which falls out of scoring against
 *endorsed* (not raw) decisions.
 
+**Intent-fidelity, not surface-fidelity (Captain clarification, 2026-06-18).**
+The unit of fidelity is the *intent behind* the action — not its surface text,
+not even its literal decision. Worked example from the first live run: a Teams
+reply that was just a pasted Husqvarna-mower URL is not "share this string" —
+the intent was *find a robotic mower with no boundary-wire (LiDAR instead) that
+handles the 3000+ m² lawn at the new house (Mosevråvej)*; that link is one
+fitting option among few. A faithful clone must therefore **(a) gather the full
+context before deciding** — the conversation's real goal *plus* real-world facts
+screenpipe already captures (the house and its details) — and **(b) be credited
+for a different or even *better* action that serves the same intent** (e.g.
+researching and proposing fitting options, that link among them). Two
+load-bearing consequences: the officer-under-test must **gather context before
+deciding** (brain bridge + screenpipe capture, leak-guarded to the cutoff), and
+the judge must score **intent-alignment** — crediting on-intent divergence — not
+surface match. **F1 deliberately measured surface-only with a context-starved
+officer**, which is exactly why its baseline reads low and is *not* the real
+number. **F4 is re-centered on intent-fidelity + full-context gathering** (see
+the F-phasing below) — that is where the real fidelity lives.
+
 ## Relationship to prior art (reuse, don't rebuild)
 
 The fidelity scorer already exists: `~/.screenpipe/pipes/retrodiction/`
