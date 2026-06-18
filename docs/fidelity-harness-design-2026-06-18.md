@@ -41,6 +41,63 @@ officer**, which is exactly why its baseline reads low and is *not* the real
 number. **F4 is re-centered on intent-fidelity + full-context gathering** (see
 the F-phasing below) — that is where the real fidelity lives.
 
+**Intent is structured: `missions/goals × core` (Captain, 2026-06-18).** An
+intention is not free-floating — it is Nate's relevant *mission/goal* expressed
+through his *core* (values, voice, behaviour, principles). The clone forms an
+action by blending the two: *what am I pursuing here* (the mower for the new
+house; shipping PolAds v1) **×** *who I am* (the core — the screenpipe
+`nate-model` + voice profile). The officer should gather/recall the relevant
+mission-or-goal and reason from the core, then act; the judge scores **that
+blend**, not the surface. **Foundation-first:** nail this foundation — a
+faithful model of the *core* and the *missions*, and the foundational
+principles (business, human psychology, decision-making) the actions rest on —
+*before* tool and scoring specifics. Get the foundation right and the specifics
+follow; over-index on tools and the clone is a mimic, not a mind. This reframes
+every downstream piece (the gathered context includes the active mission/goal;
+the intent rubric is `mission × core` alignment; "better than Nate" = the same
+core serving the same mission, executed more consistently).
+
+**Layering — the layers are not co-equal (Captain, 2026-06-18).**
+*Mission/intention* is the strategic direction (the driver); *values* are the
+principles that judge; *behaviour/habits* are the repeated actions that pattern
+how Nate executes; *voice* is only the **formulation of the final output** —
+the surface phrasing, applied last. Therefore fidelity weights the **substance**
+— does the action serve the mission, consistent with values + behaviour — **far
+above voice/style.** Concretely, this *inverts* the inherited retrodiction
+channel emphasis: the **DECISION/intent channel dominates** the score; the
+**STYLE (voice) channel is a light confirmation** that the output is formulated
+like Nate; **MECHANICS lighter still.** (This is why the Husqvarna draft's good
+Danish voice was never the issue — the gap was the *decision serving the
+mission*. A clone with perfect voice and wrong intent is a failure; a clone with
+right intent and plain voice is a near-pass that the voice layer finishes.)
+
+**Evidence check + self-corrections (2026-06-18, triangulated research).**
+External literature validates intent>surface (behavioral cloning of surface
+actions fails under distribution shift; intent/IRL recovers the objective and
+generalizes; frontier framing: *behavior underdetermines intention* — target
+behavior AND intent, where motivational structure = drives/values/priorities →
+intentions → behavior, "inverse constitution learning" recovers values from
+behavior). Three corrections that OVERRIDE earlier prose here:
+1. **predictive ≠ inferential** — a clone that predicts Nate's *surface output*
+   better is NOT necessarily better at *inferring his intent*; optimizing
+   surface-fidelity as the target can actively mislead. (So F1's surface baseline
+   is not merely incomplete — it is the wrong objective.)
+2. **voice is not "just formulation"** — stylometry shows writing style is a
+   *behavioral biometric* (identity fingerprint). The scoring still weights
+   DECISION/intent over voice, but voice is a **separate authenticity axis**
+   (right intent + tone-deaf voice still fails the human) — score the two
+   separately, never collapse or dismiss voice.
+3. **fitness = intent-served, NOT correction-count** — "minimize Captain
+   corrections" is gameable (rewards timidity/avoidance, erodes corrigibility,
+   the opposite of replace-me). Fitness = outcome-held + review-confirmed (the
+   consequence ledger's positive signal); correction-rate is at most a secondary
+   negative, with an explicit corrigibility guard.
+Self-improvement mechanism, per the evidence: a **verified, curated learnings
+memory + structural gates** (tests, validation-feedback), NOT more injected
+rules (curse-of-instructions: compliance decays ~exponentially with instruction
+count; context rot ~3k tokens). Bloat actively degrades the very judgment we are
+trying to raise.
+
 ## Relationship to prior art (reuse, don't rebuild)
 
 The fidelity scorer already exists: `~/.screenpipe/pipes/retrodiction/`
