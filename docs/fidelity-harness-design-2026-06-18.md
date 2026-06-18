@@ -50,9 +50,9 @@ re-derive it. F's new work is the six gaps below.
    Seed exists (`corrected` tag on `5-Reflections/Decisions/` notes); F wires
    it + grows it via WHY-mining and scenario elicitation.
 4. **Consequence-event emitter** — the normalized `(actor, lane, action-class)`
-   schema exists (`framework/schemas/consequence-event.schema.json`) but has no
-   emitter. F builds it (shared infra; F is the first consumer) so graduation
-   math is single-source.
+   schema exists (`framework/schemas/consequence-event.schema.json`); the emitter
+   is built in `framework/fidelity/consequence.py` (shared infra; F is the
+   first consumer) so graduation math is single-source.
 5. **Grader hardening** — one judge on one rubric today → ensemble /
    perspective-diverse rubrics + calibration against Nate's own
    `match/partial/divergent` labels.
@@ -144,8 +144,13 @@ Each unit: **purpose · interface · depends-on.** All live under
 - **Purpose:** emit `consequence-event` records (existing schema) from (a) F eval
   runs and (b) **live** officer actions (`proposal.decision` from the gate,
   `outcome.status`, `review.verdict`). Makes graduation single-source.
-- **Interface:** `emit(event)`; validates against the JSON schema; append-only
-  JSONL + (optionally) Postgres, mirroring `framework/events/emitter.py`.
+- **Interface (built):** `emit_consequence(**fields)` + `validate_consequence(event)`
+  + `read_ledger(since)` + `compute_ratios(since) -> {(actor,lane,action): GraduationRatios}`
+  in `framework/fidelity/consequence.py`. Append-only JSONL only, distinct
+  filename family `consequence-events-YYYY-MM-DD.jsonl` (never collides with
+  events/emitter.py's `events-*.jsonl` in the same dir). Validation is
+  hand-rolled (no `jsonschema` dep on system Python 3.9.6); Postgres deferred
+  until a consumer needs it.
 - **Depends-on:** the schema; the event store.
 
 ### 6. `aggregate.py` — fidelity matrix + drift (wraps retrodiction)
@@ -262,7 +267,10 @@ there for scoring, never via brain search. Quote caps mirror retrodiction's
 
 ## F-internal phasing (for the implementation plan)
 
-- **F0** — `consequence.py` emitter + ledger reader (shared infra; unblocks all).
+- **F0** — `consequence.py` emitter + ledger reader (shared infra; unblocks all)
+  — **built**: `framework/fidelity/consequence.py`
+  (`emit_consequence`/`validate_consequence`/`read_ledger`/`compute_ratios`,
+  `GraduationRatios`).
 - **F1** — `officer_runner.py` + `scorer.py` over the **reply** cell; validate vs
   the 176 paired set + baseline.
 - **F2** — `aggregate.py` + drift + `graduation.py` (reply cell first).

@@ -128,15 +128,22 @@ normalized projection the graduation math reads.
 - **Append-only JSONL**, one file per estate side, both conforming to the
   same schema: the perception side writes alongside its existing state
   files; the cabinet writes under its durable event-log dir
-  (`CABINET_EVENT_LOG_DIR`). Enrichment (decision/outcome/review landing
-  later) is an appended superseding event carrying the same
+  (`CABINET_EVENT_LOG_DIR`) using the distinct filename family
+  `consequence-events-YYYY-MM-DD.jsonl` (never collides with the
+  `events-*.jsonl` org_events ledger `framework/events/emitter.py` writes in
+  the same dir). Enrichment (decision/outcome/review landing later) is an
+  appended superseding event carrying the same
   `actor + action + subject + ts` identity — consumers take the last
   write per identity, the same convention the autonomy resolver uses
-  today.
+  today. The cabinet read path `read_ledger` collapses that identity tuple
+  last-write-wins; `compute_ratios` derives the three graduation ratios per
+  `(actor, lane, action)` cell (→ `GraduationRatios`).
 - **Validation**: emitters validate against
   `framework/schemas/consequence-event.schema.json` before writing
   (`additionalProperties: false` everywhere — drift fails loud, which is
   the point of normalizing).
+
+> Built: `framework/fidelity/consequence.py` — `emit_consequence` validates (hand-rolled, no jsonschema dep) then appends to `consequence-events-YYYY-MM-DD.jsonl`; `read_ledger` + `compute_ratios` are the graduation read path.
 
 ## Adoption (R3 of the convergence roadmap)
 
