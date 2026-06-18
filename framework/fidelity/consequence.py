@@ -364,3 +364,87 @@ def read_ledger(since: str | None = None) -> list[dict[str, Any]]:
         events = [e for e in events if e.get("ts", "") >= since]
     events.sort(key=lambda e: e.get("ts", ""))
     return events
+
+
+@dataclass
+class GraduationRatios:
+    """The three graduation ratios for one (actor, lane, action) cell.
+
+    The raw counts are dataclass FIELDS; the three rates are computed
+    @property accessors (float | None) over them — a field and a same-named
+    property cannot coexist. A rate is None when its denominator is 0 — an
+    UNMEASURED dimension. Per docs/fidelity-harness-design-2026-06-18.md
+    §"No-silent-caps", an unmeasured cell must read as a visible None, never a
+    silent 0.0/1.0.
+    """
+    approved: int = 0
+    edited: int = 0
+    rejected: int = 0
+    ok: int = 0
+    failed: int = 0
+    confirmed: int = 0
+    wrong: int = 0
+    sample_count: int = 0
+
+    @property
+    def approval_unchanged_rate(self) -> float | None:
+        denom = self.approved + self.edited + self.rejected
+        return (self.approved / denom) if denom else None
+
+    @property
+    def outcome_held_rate(self) -> float | None:
+        denom = self.ok + self.failed
+        return (self.ok / denom) if denom else None
+
+    @property
+    def review_confirmed_rate(self) -> float | None:
+        denom = self.confirmed + self.wrong
+        return (self.confirmed / denom) if denom else None
+
+
+def compute_ratios(
+    since: str | None = None,
+    ledger: list[dict[str, Any]] | None = None,
+) -> dict[tuple[str, str | None, str], GraduationRatios]:
+    """Compute the three graduation ratios per (actor, lane, action) cell.
+
+    The consequence ledger is the ONLY input (no per-source special-casing).
+    Events are read deduped via read_ledger() unless an explicit `ledger` is
+    passed. Per cell:
+      - approval-unchanged = approved / (approved + edited + rejected)
+      - outcome-held       = ok / (ok + failed)
+      - review-confirmed   = confirmed / (confirmed + wrong)
+    Pending/expired proposals, unknown outcomes, and unknown verdicts are
+    excluded from their denominators (not counted as failures).
+    """
+    events = ledger if ledger is not None else read_ledger(since=since)
+
+    cells: dict[tuple[str, str | None, str], GraduationRatios] = {}
+    for ev in events:
+        actor = ev.get("actor") or {}
+        actor_id = f"{actor.get('kind')}:{actor.get('id')}"
+        key = (actor_id, ev.get("lane"), ev.get("action", ""))
+        cell = cells.setdefault(key, GraduationRatios())
+        cell.sample_count += 1
+
+        decision = (ev.get("proposal") or {}).get("decision")
+        if decision == "approved":
+            cell.approved += 1
+        elif decision == "edited":
+            cell.edited += 1
+        elif decision == "rejected":
+            cell.rejected += 1
+
+        status = (ev.get("outcome") or {}).get("status")
+        if status == "ok":
+            cell.ok += 1
+        elif status == "failed":
+            cell.failed += 1
+
+        verdict = (ev.get("review") or {}).get("verdict")
+        if verdict == "confirmed":
+            cell.confirmed += 1
+        elif verdict == "wrong":
+            cell.wrong += 1
+
+    return cells

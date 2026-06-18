@@ -302,3 +302,102 @@ class TestReadLedgerDedup:
         events = read_ledger()
         assert len(events) == 1
         assert events[0]["subject"] == "t1"
+
+
+class TestComputeRatios:
+    def _emit_decided(self, ts, subject, decision, status, verdict,
+                      actor=None, lane="polads", action="drafted-reply"):
+        actor = actor or {"kind": "officer", "id": "cos"}
+        outcome = None
+        if status is not None:
+            outcome = {"status": status,
+                       "evidence": None if status == "unknown" else "ev"}
+        review = None
+        if verdict is not None:
+            review = {"verdict": verdict}
+        emit_consequence(
+            ts=ts, actor=actor, lane=lane, action=action, subject=subject,
+            proposal={"required": True, "decision": decision,
+                      "decided_at": "2026-06-18T08:05:00+00:00"
+                      if decision else None},
+            outcome=outcome, review=review,
+        )
+
+    def test_approval_unchanged_rate(self, event_log_dir):
+        # 2 approved, 1 edited, 1 rejected → 2/4 = 0.5
+        self._emit_decided("2026-06-18T08:00:00+00:00", "a", "approved", None, None)
+        self._emit_decided("2026-06-18T08:01:00+00:00", "b", "approved", None, None)
+        self._emit_decided("2026-06-18T08:02:00+00:00", "c", "edited", None, None)
+        self._emit_decided("2026-06-18T08:03:00+00:00", "d", "rejected", None, None)
+        cell = compute_ratios()[("officer:cos", "polads", "drafted-reply")]
+        assert cell.sample_count == 4
+        assert cell.approval_unchanged_rate == 0.5
+        assert cell.approved == 2 and cell.edited == 1 and cell.rejected == 1
+
+    def test_pending_and_expired_excluded_from_approval_denominator(self, event_log_dir):
+        self._emit_decided("2026-06-18T08:00:00+00:00", "a", "approved", None, None)
+        self._emit_decided("2026-06-18T08:01:00+00:00", "b", "expired", None, None)
+        self._emit_decided("2026-06-18T08:02:00+00:00", "c", None, None, None)  # pending
+        cell = compute_ratios()[("officer:cos", "polads", "drafted-reply")]
+        assert cell.approval_unchanged_rate == 1.0  # 1 approved / 1 decided
+
+    def test_outcome_held_rate(self, event_log_dir):
+        # 3 ok, 1 failed, 1 unknown → 3/4 = 0.75 (unknown excluded)
+        self._emit_decided("2026-06-18T08:00:00+00:00", "a", "approved", "ok", None)
+        self._emit_decided("2026-06-18T08:01:00+00:00", "b", "approved", "ok", None)
+        self._emit_decided("2026-06-18T08:02:00+00:00", "c", "approved", "ok", None)
+        self._emit_decided("2026-06-18T08:03:00+00:00", "d", "approved", "failed", None)
+        self._emit_decided("2026-06-18T08:04:00+00:00", "e", "approved", "unknown", None)
+        cell = compute_ratios()[("officer:cos", "polads", "drafted-reply")]
+        assert cell.outcome_held_rate == 0.75
+        assert cell.ok == 3 and cell.failed == 1
+
+    def test_review_confirmed_rate(self, event_log_dir):
+        # 1 confirmed, 1 wrong, 1 unknown → 1/2 = 0.5
+        self._emit_decided("2026-06-18T08:00:00+00:00", "a", "approved", "ok", "confirmed")
+        self._emit_decided("2026-06-18T08:01:00+00:00", "b", "approved", "ok", "wrong")
+        self._emit_decided("2026-06-18T08:02:00+00:00", "c", "approved", "ok", "unknown")
+        cell = compute_ratios()[("officer:cos", "polads", "drafted-reply")]
+        assert cell.review_confirmed_rate == 0.5
+        assert cell.confirmed == 1 and cell.wrong == 1
+
+    def test_unmeasured_cell_rates_are_none(self, event_log_dir):
+        emit_consequence(
+            ts="2026-06-18T08:00:00+00:00",
+            actor={"kind": "pipe", "id": "x"}, lane=None,
+            action="auto-closed-commitment", subject="cmt-1",
+        )
+        cell = compute_ratios()[("pipe:x", None, "auto-closed-commitment")]
+        assert cell.approval_unchanged_rate is None
+        assert cell.outcome_held_rate is None
+        assert cell.review_confirmed_rate is None
+        assert cell.sample_count == 1
+
+    def test_cells_split_by_actor_lane_action(self, event_log_dir):
+        self._emit_decided("2026-06-18T08:00:00+00:00", "a", "approved", None, None,
+                           actor={"kind": "officer", "id": "cos"}, lane="polads")
+        self._emit_decided("2026-06-18T08:01:00+00:00", "b", "approved", None, None,
+                           actor={"kind": "officer", "id": "cto"}, lane="stephie")
+        self._emit_decided("2026-06-18T08:02:00+00:00", "c", "approved", None, None,
+                           actor={"kind": "officer", "id": "cos"}, lane="polads",
+                           action="triaged-board")
+        cells = compute_ratios()
+        assert ("officer:cos", "polads", "drafted-reply") in cells
+        assert ("officer:cto", "stephie", "drafted-reply") in cells
+        assert ("officer:cos", "polads", "triaged-board") in cells
+        assert len(cells) == 3
+
+    def test_dedup_applied_before_counting(self, event_log_dir):
+        self._emit_decided("2026-06-18T08:00:00+00:00", "a", None, None, None)
+        self._emit_decided("2026-06-18T08:00:00+00:00", "a", "approved", "ok", "confirmed")
+        cell = compute_ratios()[("officer:cos", "polads", "drafted-reply")]
+        assert cell.sample_count == 1
+        assert cell.approval_unchanged_rate == 1.0
+        assert cell.outcome_held_rate == 1.0
+        assert cell.review_confirmed_rate == 1.0
+
+    def test_compute_accepts_explicit_ledger(self, event_log_dir):
+        self._emit_decided("2026-06-18T08:00:00+00:00", "a", "approved", "ok", "confirmed")
+        ledger = read_ledger()
+        cells = compute_ratios(ledger=ledger)
+        assert cells[("officer:cos", "polads", "drafted-reply")].sample_count == 1
