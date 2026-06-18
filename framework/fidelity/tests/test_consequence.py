@@ -215,3 +215,90 @@ class TestEmit:
                 lane=None, action="a", subject="s",
             )
         assert list(Path(event_log_dir).glob("consequence-events-*.jsonl")) == []
+
+
+from framework.fidelity.consequence import (
+    _identity,
+    read_ledger,
+    compute_ratios,
+    GraduationRatios,
+)
+
+
+class TestReadLedgerDedup:
+    def test_identity_tuple_shape(self):
+        ev = _act_event()
+        assert _identity(ev) == (
+            "officer:cos", "drafted-reply", "thread-abc",
+            "2026-06-18T08:00:00+00:00",
+        )
+
+    def test_empty_log_returns_empty(self, event_log_dir):
+        assert read_ledger() == []
+
+    def test_enrichment_supersedes_same_identity(self, event_log_dir):
+        emit_consequence(
+            ts="2026-06-18T08:00:00+00:00",
+            actor={"kind": "officer", "id": "cos"},
+            lane="polads", action="drafted-reply", subject="thread-abc",
+            proposal={"required": True, "decision": None, "decided_at": None},
+        )
+        emit_consequence(
+            ts="2026-06-18T08:00:00+00:00",
+            actor={"kind": "officer", "id": "cos"},
+            lane="polads", action="drafted-reply", subject="thread-abc",
+            proposal={"required": True, "decision": "approved",
+                      "decided_at": "2026-06-18T08:05:00+00:00"},
+            outcome={"status": "ok", "evidence": "sent-xyz"},
+        )
+        events = read_ledger()
+        assert len(events) == 1  # collapsed to last write
+        assert events[0]["proposal"]["decision"] == "approved"
+        assert events[0]["outcome"]["status"] == "ok"
+
+    def test_distinct_identities_not_collapsed(self, event_log_dir):
+        emit_consequence(
+            ts="2026-06-18T08:00:00+00:00",
+            actor={"kind": "officer", "id": "cos"},
+            lane="polads", action="drafted-reply", subject="t1",
+        )
+        emit_consequence(
+            ts="2026-06-18T08:00:00+00:00",
+            actor={"kind": "officer", "id": "cos"},
+            lane="polads", action="drafted-reply", subject="t2",
+        )
+        assert len(read_ledger()) == 2
+
+    def test_since_filter_inclusive(self, event_log_dir):
+        emit_consequence(
+            ts="2026-06-18T07:00:00+00:00",
+            actor={"kind": "pipe", "id": "x"}, lane=None,
+            action="a", subject="old",
+        )
+        emit_consequence(
+            ts="2026-06-18T09:00:00+00:00",
+            actor={"kind": "pipe", "id": "x"}, lane=None,
+            action="a", subject="new",
+        )
+        events = read_ledger(since="2026-06-18T08:00:00+00:00")
+        assert [e["subject"] for e in events] == ["new"]
+
+    def test_ignores_colocated_org_events_row(self, event_log_dir):
+        # A valid consequence row...
+        emit_consequence(
+            ts="2026-06-18T08:00:00+00:00",
+            actor={"kind": "officer", "id": "cos"},
+            lane="polads", action="drafted-reply", subject="t1",
+        )
+        # ...and a hand-written org_events-shaped row (string actor) that
+        # could only co-exist if the filenames collided. The reader must
+        # skip it, not crash on actor.get('kind').
+        bad = ('{"id":"e1","event_type":"mission_created",'
+               '"actor":"captain","payload":{},"created_at":'
+               '"2026-06-18T08:00:00+00:00"}')
+        f = list(Path(event_log_dir).glob("consequence-events-*.jsonl"))[0]
+        with open(f, "a") as fh:
+            fh.write(bad + "\n")
+        events = read_ledger()
+        assert len(events) == 1
+        assert events[0]["subject"] == "t1"

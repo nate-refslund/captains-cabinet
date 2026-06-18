@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -261,3 +262,105 @@ def emit_consequence(
     validate_consequence(event)  # raises before any write
     _write_to_log(event)
     return event
+
+
+def _is_consequence_row(event: Any) -> bool:
+    """True only for a row shaped like a consequence event (dict actor with a
+    kind). Lets read_ledger skip a co-located org_events row (string actor)
+    defensively, even though the distinct filename family makes a real
+    collision impossible."""
+    return (
+        isinstance(event, dict)
+        and isinstance(event.get("actor"), dict)
+        and "action" in event
+        and "subject" in event
+    )
+
+
+def _identity(event: dict[str, Any]) -> tuple[str, str, str, str]:
+    """The last-write-wins identity tuple: (actor, action, subject, ts).
+
+    actor is flattened to 'kind:id' so the full actor object participates in
+    the identity exactly as docs/consequence-ledger.md specifies. Enrichment
+    events carry the SAME tuple as the original; the reader keeps the last.
+    """
+    actor = event.get("actor")
+    if isinstance(actor, dict):
+        actor_id = f"{actor.get('kind')}:{actor.get('id')}"
+    else:
+        actor_id = f"{actor}:"  # defensive — non-dict actor never collides
+    return (actor_id, event.get("action", ""), event.get("subject", ""),
+            event.get("ts", ""))
+
+
+def _safe_ledger_files(log_dir: Path) -> list[Path]:
+    """Return the consequence-events-*.jsonl files inside log_dir, refusing any
+    whose resolved real path escapes the resolved log dir.
+
+    Corridor guardrail (beyond the plan, minimal + consistent with
+    framework/events/emitter.py's plain-env log-dir posture): the log dir is
+    operator-set, so we resolve it once and only read ledger files that
+    genuinely live under it. A symlink planted in the dir that points outside
+    the intended directory is skipped rather than followed — the glob never
+    crosses the fence. We do not rewrite the _consequence_log_dir() contract
+    (its return value still honors CABINET_EVENT_LOG_DIR verbatim); the fence
+    is enforced here, at read time, where the untrusted file set is consumed.
+    """
+    base = log_dir.resolve()
+    safe: list[Path] = []
+    for log_file in sorted(log_dir.glob("consequence-events-*.jsonl")):
+        try:
+            real = log_file.resolve()
+        except OSError:
+            continue  # broken/cyclic symlink — skip, never crash
+        # real must be base itself or strictly under it.
+        if real == base or base in real.parents:
+            safe.append(log_file)
+    return safe
+
+
+def read_ledger(since: str | None = None) -> list[dict[str, Any]]:
+    """Read the consequence ledger, deduped by identity (last-write-wins).
+
+    Reads every consequence-events-*.jsonl in $CABINET_EVENT_LOG_DIR, skips
+    any non-consequence row, sorts chronologically by ts (ISO strings sort
+    lexicographically), collapses each identity tuple to its LAST write, and
+    returns the surviving events. `since` keeps only events with ts >= since
+    (inclusive). Missing dir → []. The JSONL is the guaranteed record; this is
+    the single read path graduation math uses.
+
+    Symlinked ledger files that resolve outside the (resolved) log dir are
+    skipped — relying on local file perms + the in-dir fence, never following a
+    link that bypasses the intended directory (see _safe_ledger_files).
+    """
+    log_dir = _consequence_log_dir()
+    if not log_dir.exists():
+        return []
+
+    rows: list[dict[str, Any]] = []
+    for log_file in _safe_ledger_files(log_dir):
+        with open(log_file) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    ev = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if _is_consequence_row(ev):
+                    rows.append(ev)
+
+    # Stable sort by ts so last-write-wins respects chronology; equal-ts
+    # writes keep file+line read order (a later enrichment line still wins).
+    rows.sort(key=lambda e: e.get("ts", ""))
+
+    collapsed: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+    for ev in rows:
+        collapsed[_identity(ev)] = ev  # later assignment overwrites earlier
+
+    events = list(collapsed.values())
+    if since is not None:
+        events = [e for e in events if e.get("ts", "") >= since]
+    events.sort(key=lambda e: e.get("ts", ""))
+    return events
