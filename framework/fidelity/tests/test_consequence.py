@@ -109,3 +109,44 @@ class TestValidateStructure:
         ev = _act_event(review={"verdict": "right"})
         with pytest.raises(ConsequenceValidationError, match="review.verdict"):
             validate_consequence(ev)
+
+
+class TestInvariants:
+    def test_evidence_must_be_null_when_unknown(self):
+        ev = _act_event(outcome={"status": "unknown", "evidence": "leaked"})
+        with pytest.raises(ConsequenceValidationError, match="evidence"):
+            validate_consequence(ev)
+
+    def test_evidence_required_when_ok(self):
+        ev = _act_event(outcome={"status": "ok", "evidence": None})
+        with pytest.raises(ConsequenceValidationError, match="evidence"):
+            validate_consequence(ev)
+
+    def test_evidence_required_when_failed(self):
+        ev = _act_event(outcome={"status": "failed"})
+        with pytest.raises(ConsequenceValidationError, match="evidence"):
+            validate_consequence(ev)
+
+    def test_unknown_outcome_with_null_evidence_passes(self):
+        ev = _act_event(outcome={"status": "unknown", "evidence": None})
+        assert validate_consequence(ev) is None
+
+    def test_decision_must_be_null_when_not_required(self):
+        ev = _act_event(proposal={"required": False, "decision": "approved"})
+        with pytest.raises(ConsequenceValidationError, match="decision"):
+            validate_consequence(ev)
+
+    def test_below_bar_action_required_false_passes(self):
+        ev = _act_event(proposal={"required": False, "decision": None})
+        assert validate_consequence(ev) is None
+
+    def test_lesson_ref_only_when_wrong(self):
+        ev = _act_event(review={"verdict": "confirmed",
+                                "lesson_ref": "lessons.md#anchor"})
+        with pytest.raises(ConsequenceValidationError, match="lesson_ref"):
+            validate_consequence(ev)
+
+    def test_lesson_ref_allowed_when_wrong(self):
+        ev = _act_event(review={"verdict": "wrong",
+                                "lesson_ref": "lessons.md#anchor"})
+        assert validate_consequence(ev) is None
