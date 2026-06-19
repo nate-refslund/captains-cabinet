@@ -62,3 +62,72 @@ def format_situation(case: Case, last_cap: int = 1500, cap: int = 600) -> str:
         lines.append(f"[{(m.get('date') or '')[:16]} {m.get('source', '')}] "
                      f"{who}: {body[:limit]}")
     return "\n".join(lines)
+
+
+# F4 §1.2 / §5: reconstruct a leak-safe as-of-cutoff intent (mission/goal ×
+# core) for the judge to score against. Each field ≤500 chars to keep the
+# judge payload lean.
+_INTENT_FIELD_CAP = 500
+_INTENT_WINDOW = 5  # last ≤5 messages of thread_before ONLY
+
+
+def intent_and_context(case: Case) -> dict:
+    """Reconstruct the as-of-cutoff intent the officer should serve, expressed
+    as ``mission/goal × core``, from the **last ≤5 messages of
+    ``case.thread_before`` ONLY**.
+
+    PURE function: no MCP calls, no network, no filesystem reads. It NEVER
+    reads ``case.real_reply`` — that is the held-out ground truth, and reading
+    it would leak the answer into the thing the officer is graded against
+    (design §1.2, anti-leak boundary). The latent real-world facts a situation
+    implicates (the house, the lawn size) enter the harness ONLY through the
+    leak-guarded ``gather_cutoff_context`` path at officer time (§5) — never
+    baked in here.
+
+    Returns ``{"reconstructed_intent": str, "mission_or_goal": str}``; both
+    fields are capped at ≤500 chars.
+    """
+    # Window: last ≤5 messages of thread_before ONLY (never real_reply).
+    window = case.thread_before[-_INTENT_WINDOW:]
+
+    # The mission/goal is grounded in the counterparty's most recent ask: the
+    # latest received message in the window (what they actually want from Nate).
+    last_received = next(
+        (_clean(m.get("text") or "") for m in reversed(window)
+         if m.get("direction") == "received" and _clean(m.get("text") or "")),
+        "",
+    )
+    # Thread topic context: Nate's own latest stated position in the window,
+    # so the goal carries the situation's substance, not just the bare ask.
+    last_sent = next(
+        (_clean(m.get("text") or "") for m in reversed(window)
+         if m.get("direction") == "sent" and _clean(m.get("text") or "")),
+        "",
+    )
+
+    if last_received and last_sent:
+        goal = (f"Respond to {case.person}'s request — \"{last_received}\" — "
+                f"in light of Nate's stated context: \"{last_sent}\".")
+    elif last_received:
+        goal = f"Respond to {case.person}'s request: \"{last_received}\"."
+    elif last_sent:
+        goal = (f"Continue the thread with {case.person} from Nate's last "
+                f"point: \"{last_sent}\".")
+    else:
+        # Thin/empty thread — name the gap rather than invent intent.
+        goal = (f"Reply to {case.person} on a {case.channel} thread with no "
+                f"recoverable pre-cutoff content.")
+    mission_or_goal = goal[:_INTENT_FIELD_CAP]
+
+    # Core: who Nate is in this lane — language + channel + standing style.
+    # This is the second axis of mission × core; it carries no thread facts
+    # of its own, only atemporal style priors, so it never leaks.
+    core = (f"decisive, concrete and low-ceremony; replies in {case.language} "
+            f"on {case.channel}; gives a direct recommendation over hedging")
+    reconstructed_intent = (
+        f"Goal: {mission_or_goal} Core: {core}")[:_INTENT_FIELD_CAP]
+
+    return {
+        "reconstructed_intent": reconstructed_intent,
+        "mission_or_goal": mission_or_goal,
+    }
