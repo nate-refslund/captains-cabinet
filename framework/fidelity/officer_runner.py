@@ -256,24 +256,44 @@ class BrainAdapter:
             self._context_lib = context_lib
         return self._context_lib
 
-    def _srv(self):
-        if self._server is None:
-            import server  # brain MCP server module
-            self._server = server
-        return self._server
-
     def gather_vault(self, handle: str) -> dict:
         # sources=["vault"] EXACTLY — Tier-1 only; brief is discarded upstream.
         return self._ctx().gather(handle, sources=["vault"])
 
+    # The brain MCP *server* module (server.py) imports fastmcp and runs
+    # standalone on Python 3.12, so it is NOT importable in-process here
+    # (cabinet 3.9.6 has no fastmcp). The eval harness therefore calls the
+    # SAME underlying libs the server wraps (draft_lib / commitments_lib / a
+    # vault read), which DO import under 3.9.6 (the _shared dir is on sys.path
+    # via retro.py). An injected ``server`` (tests) is still honored if present.
+
     def person_intel(self, slug: str) -> str:
-        return self._srv().person_intel(slug)
+        if self._server is not None:
+            return self._server.person_intel(slug)
+        import draft_lib
+        return draft_lib.person_intel(slug)
 
     def open_commitments(self, direction: str) -> list:
-        return self._srv().open_commitments(direction)
+        if self._server is not None:
+            return self._server.open_commitments(direction)
+        import commitments_lib
+        rows = commitments_lib.load_all()
+        _closed = {"closed", "done", "resolved", "dropped", "cancelled",
+                   "fulfilled"}
+        return [fm for fm in rows.values()
+                if fm.get("direction") == direction
+                and str(fm.get("status", "")).strip().lower() not in _closed]
 
     def read_note(self, path: str) -> str:
-        return self._srv().read_note(path)
+        if self._server is not None:
+            return self._server.read_note(path)
+        import os
+        from pathlib import Path
+        vreal = os.path.realpath(Path.home() / "Obsidian" / "screenpipe-brain")
+        resolved = os.path.realpath(os.path.join(vreal, path))
+        if resolved != vreal and not resolved.startswith(vreal + os.sep):
+            raise PermissionError(f"refused path outside vault: {path!r}")
+        return Path(resolved).read_text(encoding="utf-8", errors="replace")
 
 
 def gather_cutoff_context(case: Case, *, brain=None,
