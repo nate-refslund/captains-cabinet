@@ -89,8 +89,18 @@ def oauth_raw_llm(payload: str, system: str, max_tokens: int = 1500,
 
 
 def oauth_json_llm(payload: str, system: str, max_tokens: int = 400,
-                   model: str = _DEFAULT_MODEL) -> dict[str, Any] | None:
+                   model: str = _DEFAULT_MODEL, attempts: int = 2
+                   ) -> dict[str, Any] | None:
     """JSON Claude call via OAuth. Drop-in for cl.call_llm — pass as the `llm=`
-    arg to retrodiction.judge_decision. Returns the parsed dict or None."""
-    text = oauth_raw_llm(payload, system, max_tokens=max_tokens, model=model)
-    return parse_json_block(text)
+    arg to retrodiction.judge_decision. Returns the parsed dict or None.
+
+    Retries once on an unparseable/empty result: `claude -p` is occasionally
+    non-deterministic about emitting clean JSON (this surfaced live as an
+    intermittent intent_verdict='error'). A single retry absorbs that transient
+    flake; a persistent failure still returns None (the caller's error path)."""
+    for _ in range(max(1, attempts)):
+        text = oauth_raw_llm(payload, system, max_tokens=max_tokens, model=model)
+        parsed = parse_json_block(text)
+        if parsed is not None:
+            return parsed
+    return None

@@ -88,3 +88,18 @@ class TestJsonLlm:
         monkeypatch.setattr(oauth_llm, "oauth_raw_llm",
                             lambda p, s, max_tokens=400, model="claude-sonnet-4-6": "not json")
         assert oauth_llm.oauth_json_llm("p", "s") is None
+
+    def test_retries_once_on_transient_unparseable(self, monkeypatch):
+        # Transient flake: first call returns non-JSON, second returns valid —
+        # the retry must absorb it (this was the live intent_verdict='error').
+        verdict = {"verdict": "match"}
+        calls = {"n": 0}
+
+        def flaky(p, s, max_tokens=400, model="claude-sonnet-4-6"):
+            calls["n"] += 1
+            return "garbage" if calls["n"] == 1 else "```json\n" + json.dumps(verdict) + "\n```"
+
+        monkeypatch.setattr(oauth_llm, "oauth_raw_llm", flaky)
+        out = oauth_llm.oauth_json_llm("p", "s")
+        assert out == verdict
+        assert calls["n"] == 2  # retried exactly once
