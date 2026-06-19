@@ -108,7 +108,13 @@ published weekly ratio.
 `cabinet/scripts/policy-shadow.py` is shadow-only on this branch. It observes
 the same hook input as `pre-tool-use.sh`, records structured decisions to
 `org_events`, and is tested against live hook behavior. It does not replace
-hook decisions yet.
+hook decisions yet. As of T7 it ALSO records the typed authority-matrix verdict
+(`auto | auto_with_veto_window | notify_after | propose_only | always_gated`)
+as a second `policy.shadow_decision` event tagged
+`policy_version: authority-shadow-v1`, reusing the engine's shared
+`classify_action`/`risk_of`/`resolve_verdict` so the shadow verdict is identical
+to what `_eval_authority_matrix` would gate on. Both emissions are shadow-only —
+the script never blocks (always exits 0) and adds no live behavior change.
 
 ## Claude Code Native Task Bridge
 

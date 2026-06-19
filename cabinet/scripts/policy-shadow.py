@@ -20,8 +20,23 @@ sys.path.insert(0, str(SCRIPT_DIR / "lib"))
 
 from org_runtime import Store  # noqa: E402
 
+# policy_engine sets up the repo-root sys.path (honoring CABINET_ROOT) so the
+# shared framework.authority classifier/lane resolve — we reuse its bootstrap
+# rather than re-rolling path math here (one source of truth, no dynamic path
+# resolution in the shadow). Imported lazily-tolerant: if the engine is absent
+# the authority emission is skipped and the regex shadow is unaffected.
+try:  # pragma: no cover - import-time wiring, exercised via the shadow tests
+    import policy_engine  # noqa: E402
+except Exception:  # noqa: BLE001 - shadow must stay importable regardless
+    policy_engine = None  # type: ignore[assignment]
+
 
 PRODUCT = os.environ.get("ORG_RUNTIME_PRODUCT", "captains-cabinet")
+
+# T7 [FIX-2 Stage 0]: the authority-matrix shadow emits the typed VERDICT under
+# its own policy_version so the parity harness can exercise it independently of
+# the legacy regex shadow (which keeps "shadow-v1"). SHADOW ONLY — never blocks.
+AUTHORITY_SHADOW_VERSION = "authority-shadow-v1"
 
 
 def read_input() -> dict[str, Any]:
@@ -91,34 +106,130 @@ def decision(hook: dict[str, Any]) -> dict[str, Any]:
     return {"decision": "allow", "reason": "no_shadow_rule_matched", "officer": officer, "policy_version": "shadow-v1"}
 
 
+def _find_authority_policy() -> dict[str, Any] | None:
+    """Return the single authority_matrix policy from the layered policy stack,
+    or None if the engine/policies are unavailable. Reads via the engine's
+    `load_policies()` (yaml.safe_load only, no shell, no dynamic path math).
+    """
+    if policy_engine is None:
+        return None
+    try:
+        for policy in policy_engine.load_policies():
+            if isinstance(policy, dict) and policy.get("type") == "authority_matrix":
+                return policy
+    except Exception:  # noqa: BLE001 - shadow must never raise
+        return None
+    return None
+
+
+def authority_decision(hook: dict[str, Any]) -> dict[str, Any] | None:
+    """Compute the SHADOW authority-matrix verdict for a tool call.
+
+    Reuses the engine's shared `classify_action` / `risk_of` / `read_cell_state`
+    / `resolve_verdict` (one source of truth — the verdict here is identical to
+    what `_eval_authority_matrix` would gate on). Returns a typed verdict record
+    (NOT a block) or None when authority cannot be evaluated.
+
+    FAIL-SAFE spine (mirrors the gate): hard-ceiling risk_class -> always_gated;
+    unknown/unmapped action_type or unmeasured cell -> propose_only. In A0
+    `read_cell_state` is stubbed to "unmeasured", so a real officer action never
+    resolves to `auto`. SHADOW ONLY — this never blocks.
+    """
+    if policy_engine is None or hook.get("_error"):
+        return None
+    policy = _find_authority_policy()
+    if policy is None:
+        return None
+
+    tool_name = str(hook.get("tool_name") or "")
+    tool_input = hook.get("tool_input") if isinstance(hook.get("tool_input"), dict) else {}
+    officer = os.environ.get("OFFICER") or os.environ.get("OFFICER_NAME") or "unknown"
+
+    classify_action = getattr(policy_engine, "classify_action", None)
+    resolve_lane = getattr(policy_engine, "resolve_lane", None)
+    if classify_action is None or resolve_lane is None:
+        return None
+
+    try:
+        action_type = classify_action(tool_name, tool_input)
+        risk_class = policy_engine.risk_of(action_type, policy.get("risk_classes"))
+
+        if risk_class is None:
+            # Unknown / ambiguous / unmapped action -> fail-safe propose_only.
+            verdict = "propose_only"
+            state = None
+        elif isinstance(policy.get("hard_ceiling"), list) and risk_class in policy["hard_ceiling"]:
+            # Hard ceiling short-circuit — ignores confidence, fail-closed.
+            verdict = "always_gated"
+            state = None
+        else:
+            lane = resolve_lane()
+            state = policy_engine.read_cell_state(officer, lane, action_type)
+            verdict = policy_engine.resolve_verdict(policy.get("verdicts"), risk_class, state)
+    except Exception:  # noqa: BLE001 - shadow must never raise
+        return None
+
+    return {
+        "decision": "shadow",  # never a live allow/block — this is a verdict record
+        "verdict": verdict,
+        "action_type": action_type,
+        "risk_class": risk_class,
+        "confidence_state": state,
+        "officer": officer,
+        "policy_version": AUTHORITY_SHADOW_VERSION,
+    }
+
+
+def _append_shadow_event(result: dict[str, Any], hook: dict[str, Any]) -> None:
+    """Append one shadow decision record to org_events. Caller guards failures."""
+    store = Store()
+    payload = {
+        "shadow_decision": result,
+        "tool_name": hook.get("tool_name"),
+        "tool_input": hook.get("tool_input"),
+    }
+    store.append_event(
+        "policy.shadow_decision",
+        PRODUCT,
+        "policy_shadow",
+        f"{result['officer']}:{hook.get('tool_name', 'unknown')}",
+        result["officer"],
+        payload,
+        source="pre-tool-use-shadow",
+    )
+
+
 def maybe_record(result: dict[str, Any], hook: dict[str, Any]) -> None:
     if os.environ.get("ORG_POLICY_SHADOW_RECORD", "1") == "0":
         return
     try:
-        store = Store()
-        payload = {
-            "shadow_decision": result,
-            "tool_name": hook.get("tool_name"),
-            "tool_input": hook.get("tool_input"),
-        }
-        store.append_event(
-            "policy.shadow_decision",
-            PRODUCT,
-            "policy_shadow",
-            f"{result['officer']}:{hook.get('tool_name', 'unknown')}",
-            result["officer"],
-            payload,
-            source="pre-tool-use-shadow",
-        )
+        _append_shadow_event(result, hook)
     except Exception as exc:  # noqa: BLE001 - shadow path must never block tools.
         if os.environ.get("ORG_POLICY_SHADOW_VERBOSE") == "1":
             print(f"policy-shadow: WARN failed to record event: {exc}", file=sys.stderr)
+
+
+def maybe_record_authority(hook: dict[str, Any]) -> None:
+    """Compute + record the authority-matrix shadow verdict, fully guarded so a
+    failure NEVER affects the regex shadow path or blocks a tool."""
+    if os.environ.get("ORG_POLICY_SHADOW_RECORD", "1") == "0":
+        return
+    try:
+        result = authority_decision(hook)
+        if result is None:
+            return
+        _append_shadow_event(result, hook)
+    except Exception as exc:  # noqa: BLE001 - shadow path must never block tools.
+        if os.environ.get("ORG_POLICY_SHADOW_VERBOSE") == "1":
+            print(f"policy-shadow: WARN failed to record authority verdict: {exc}", file=sys.stderr)
 
 
 def main() -> int:
     hook = read_input()
     result = decision(hook)
     maybe_record(result, hook)
+    # T7: ALSO emit the typed authority-matrix verdict (shadow-only, guarded).
+    maybe_record_authority(hook)
     print(json.dumps(result, sort_keys=True))
     return 0
 
