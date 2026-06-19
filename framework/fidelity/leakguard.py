@@ -5,10 +5,12 @@ The officer-under-test must see NOTHING timestamped >= cutoff_ts. The brain
 bridge has no cutoff parameter today, so the guard is implemented OUTSIDE the
 MCP. F1 uses two LIVE guards: (1) assert the reconstructed thread is strictly
 pre-cutoff, and (2) post-scan the officer's decision text for leaked
-post-cutoff signals. filter_mcp_result is the THIRD guard, built + tested here
-but reserved for F4 when the live brain chain is wired (F1 has no live MCP
-chain). Any breach hard-fails the case — we never silently score a leaked case
-(§238).
+post-cutoff signals. filter_mcp_result is the THIRD guard: built + tested here
+and now LIVE on the F4 path (officer_runner.gather_cutoff_context runs every
+admitted brain source through it). It only fences structured, ts-keyed
+records — un-fenceable sources (brief prose, mtime-only search hits, dated
+dossier sections) are excluded at the source, never relied on this guard. Any
+breach hard-fails the case — we never silently score a leaked case (§238).
 """
 
 from __future__ import annotations
@@ -17,8 +19,13 @@ import re
 import sys
 from typing import Any
 
-# Keys whose value is a timestamp we compare against the cutoff.
-_TS_KEYS = ("ts", "date", "edit_date", "reply_ts", "created_at", "resolved_ts")
+# Keys whose value is a timestamp we compare against the cutoff. The
+# commitment keys (source_date, due, resolved_ts) are included so the F4
+# open_commitments source is genuinely guard-walkable (design §2.1) — a
+# commitment whose source_date / due / resolved_ts is at-or-after the cutoff
+# is a post-cutoff record and must be dropped.
+_TS_KEYS = ("ts", "date", "edit_date", "reply_ts", "created_at",
+            "resolved_ts", "source_date", "due")
 _ISO_RE = re.compile(
     r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{2}:?\d{2}|Z)?"
 )
@@ -42,9 +49,12 @@ def filter_mcp_result(result: Any, cutoff_ts: str) -> Any:
     ISO timestamps sort lexicographically, so string compare is correct for
     same-offset UTC. Logs each redaction to stderr for the audit trail.
 
-    F4 hook: this is the live-MCP-result redactor. F1 does NOT call it
-    (no live brain chain); F1's live guards are assert_thread_pre_cutoff +
-    scan_for_leaks."""
+    This is the live-MCP-result redactor. It is LIVE on the F4 path
+    (officer_runner.gather_cutoff_context runs every admitted brain source
+    through it); the F1 path (run_case gather=None) does not gather and so
+    relies only on assert_thread_pre_cutoff + scan_for_leaks. It fences only
+    structured, ts-keyed records — un-fenceable sources are excluded before
+    they reach this guard."""
     if isinstance(result, dict):
         ts = _item_ts(result)
         if ts is not None and ts >= cutoff_ts:

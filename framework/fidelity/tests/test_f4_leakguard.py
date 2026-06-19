@@ -145,7 +145,21 @@ class TestTier2Unreachable:
                         f"Tier-2 leak: gather called with sources={sources}")
                 return {"hits": [], "brief": ""}
 
-        brain = officer_runner.BrainAdapter(context_lib=TrapContextLib())
+        class StubServer:
+            @staticmethod
+            def person_intel(slug):
+                return ""
+
+            @staticmethod
+            def open_commitments(direction):
+                return []
+
+            @staticmethod
+            def read_note(path):  # pragma: no cover - not exercised here
+                raise AssertionError("read_note should not be called")
+
+        brain = officer_runner.BrainAdapter(
+            context_lib=TrapContextLib(), server=StubServer())
         # Should not raise — vault-only scoping holds.
         out = officer_runner.gather_cutoff_context(_case(), brain=brain)
         assert "vault_hits" in out
