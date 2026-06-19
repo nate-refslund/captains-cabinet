@@ -835,6 +835,8 @@ def evaluate_policy(
         return _eval_bash_write_to_path(policy, tool_name, tool_input)
     elif ptype == "tier2_isolation":
         return _eval_tier2_isolation(policy, tool_name, tool_input, officer)
+    elif ptype == "authority_matrix":
+        return _eval_authority_matrix(policy, tool_name, tool_input, officer)
     else:
         return None
 
@@ -981,6 +983,147 @@ def _eval_tier2_isolation(
 
 
 # ---------------------------------------------------------------------------
+# Authority matrix policy type [T6] — fail-safe, shadow-capable
+# ---------------------------------------------------------------------------
+# Turns the matrix DATA (framework/policies/authority-matrix.yml, validated by
+# framework/authority/matrix.py) into a per-action verdict and returns a block
+# message (force propose-only / gated) or None (allow). Design:
+# docs/authority-matrix-design-2026-06-19.md §1 Component 2 + §3.
+#
+# THE FAIL-SAFE SPINE (Corridor-confirmed; the design's error-handling
+# inventory):
+#   * HARD CEILING short-circuit — the hard_ceiling risk_classes
+#     (external_comms, deploy_prod, spend, secrets, network_write,
+#     credentials_grant) are ALWAYS gated, ignoring confidence entirely.
+#   * Unknown / unmeasured / ambiguous -> propose_only. An unknown action_type
+#     (classify_action -> AMBIGUOUS, or anything not mapped) has no risk_class
+#     and proposes. A missing/absent cell verdict resolves to propose_only.
+#   * read_cell_state is STUBBED to "unmeasured" in A0 (F2 graduation.py is not
+#     built). So EVERY non-ceiling cell resolves propose_only and the gate
+#     NEVER returns auto/None in A0 — autonomy lights up cell-by-cell only when
+#     F's graduation states arrive.
+#   * Defensive .get() throughout — a malformed/empty policy dict proposes,
+#     never auto. No exception escapes to the caller.
+#
+# SHADOW-ONLY: this eval is a pure decision function. T6 wires it into
+# evaluate_policy()'s dispatch but adds NO new live exit-2 to pre-tool-use.sh —
+# the verdict is consumed in shadow (policy-shadow.py, a later task) until the
+# Captain-gated CABINET_AUTHORITY_ENFORCING flip. main()'s live loop enforces
+# only the LEGACY typed rules; authority_matrix policies are not part of the
+# framework floor that main() blocks on.
+
+def risk_of(action_type: str, risk_classes: Any) -> str | None:
+    """Map an `action_type` enum string to its `risk_class`, or None.
+
+    None means "no risk_class" — an unknown / ambiguous / unmapped action
+    type. The caller treats None as fail-safe propose_only. Defensive: a
+    malformed `risk_classes` structure yields None, never raises.
+    """
+    if not isinstance(risk_classes, dict):
+        return None
+    for rc_name, rc in risk_classes.items():
+        if not isinstance(rc, dict):
+            continue
+        ats = rc.get("action_types")
+        if isinstance(ats, list) and action_type in ats:
+            return rc_name
+    return None
+
+
+def resolve_verdict(verdicts: Any, risk_class: str, state: str) -> str:
+    """Resolve a (risk_class, confidence_state) cell to a verdict string.
+
+    Supports the "*" wildcard row (hard-ceiling rows ship as {"*": ...}).
+    FAIL-SAFE: any absent risk_class, absent state (with no wildcard), or
+    malformed table resolves to "propose_only" — never auto.
+    """
+    if not isinstance(verdicts, dict):
+        return "propose_only"
+    row = verdicts.get(risk_class)
+    if not isinstance(row, dict):
+        return "propose_only"
+    if state in row:
+        return row[state]
+    if "*" in row:
+        return row["*"]
+    return "propose_only"
+
+
+def read_cell_state(officer: str, lane: str | None, action_type: str) -> str:
+    """Read F's PRECOMPUTED per-cell graduation state.
+
+    STUBBED in A0: F2 (`framework/fidelity/graduation.py`) does not exist yet,
+    so there is no confidence source — every cell reads "unmeasured" (the
+    fail-safe state that forces propose_only at the gate). When F2 lands, this
+    becomes `graduation.evaluate((f"officer:{officer}", lane, action_type))`
+    wrapped fail-safe: any absence/exception -> "unmeasured" (block), never a
+    graduated state that would unlock auto.
+    """
+    return "unmeasured"
+
+
+def _eval_authority_matrix(
+    policy: dict, tool_name: str, tool_input: dict, officer: str
+) -> str | None:
+    """Authority-matrix verdict for a tool call. Returns a block message
+    (propose-only / gated) or None (allow).
+
+    In A0 this returns a block for EVERY action: ceiling classes gate; all
+    other cells resolve propose_only because read_cell_state is stubbed to
+    "unmeasured". It NEVER returns None (auto) in A0. See the section header
+    for the full fail-safe contract.
+    """
+    message = policy.get("message", "below the autonomy bar — proposing instead")
+
+    # The shared classifier/lane resolver are imported at module load from
+    # framework.authority. If absent (deployment without the framework on the
+    # path), fail-safe to propose_only rather than crashing the gate.
+    if classify_action is None or resolve_lane is None:
+        return f"PROPOSE-ONLY (classifier unavailable) — {message}"
+
+    action_type = classify_action(tool_name, tool_input)
+    risk_classes = policy.get("risk_classes")
+    risk_class = risk_of(action_type, risk_classes)
+
+    # 1. Unknown / ambiguous / unmapped action_type -> fail-safe propose_only.
+    if risk_class is None:
+        return (
+            f"PROPOSE-ONLY (unclassified action '{action_type}') — {message}"
+        )
+
+    # 2. HARD CEILING short-circuit — ignores confidence, fail-closed [FIX-7].
+    hard_ceiling = policy.get("hard_ceiling")
+    if isinstance(hard_ceiling, list) and risk_class in hard_ceiling:
+        if risk_class == "external_comms":
+            return (
+                "GATED (hard ceiling: external_comms) — draft via queue_draft, "
+                "never auto."
+            )
+        return (
+            f"GATED (hard ceiling: {risk_class}) — propose to Captain; "
+            f"no auto path."
+        )
+
+    # 3. Read F's PRECOMPUTED cell state (stubbed -> "unmeasured" in A0).
+    lane = resolve_lane()
+    state = read_cell_state(officer, lane, action_type)
+    verdict = resolve_verdict(policy.get("verdicts"), risk_class, state)
+
+    # 4. Any non-auto verdict blocks. In A0 `state` is always "unmeasured", so
+    #    every non-ceiling cell lands here as propose_only. The classifier and
+    #    auto_with_veto_window verdicts are UNREACHABLE in A0 (they require a
+    #    graduated/eligible cell); when reached in a later cycle they also
+    #    block-or-redirect rather than fire — but in A0 we never see them.
+    if verdict != "auto":
+        return f"PROPOSE-ONLY ({risk_class}, confidence={state}) — {message}"
+
+    # 5. auto verdict -> allow. UNREACHABLE in A0 (no cell graduates without
+    #    F). Returned for the post-enforcing-flip cycle; the gate never gets
+    #    here while read_cell_state is stubbed.
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Policy loading
 # ---------------------------------------------------------------------------
 
@@ -1057,8 +1200,22 @@ def main() -> None:
     cabinet_root = os.environ.get("CABINET_ROOT", "/opt/founders-cabinet")
     policies = load_policies(cabinet_root)
 
+    # NO-LIVE-BEHAVIOR-CHANGE gate [T6, A0 shadow-only]. The authority_matrix
+    # verdict is reachable via evaluate_policy() (the shadow harness calls it
+    # directly to RECORD verdicts), but main() — the live hook entry — must NOT
+    # exit-2 on an authority verdict until the Captain-gated enforcing flip.
+    # CABINET_AUTHORITY_ENFORCING defaults "0": authority_matrix policies are
+    # skipped by the live loop, so authority adds no new live block. The legacy
+    # typed rules (binary_block / destructive_rm / command_contains / path_block
+    # / bash_write_to_path / tier2_isolation) are unaffected and still enforce.
+    # This flag is independent of the legacy-engine enforcing flag; flipping it
+    # is a later, Captain-approved cycle (design §7 Cycle 2).
+    authority_enforcing = os.environ.get("CABINET_AUTHORITY_ENFORCING", "0") == "1"
+
     # Evaluate each policy
     for policy in policies:
+        if policy.get("type") == "authority_matrix" and not authority_enforcing:
+            continue  # shadow-only in A0 — do not live-block on the verdict
         result = evaluate_policy(policy, tool_name, tool_input, officer)
         if result:
             print(result, file=sys.stderr)

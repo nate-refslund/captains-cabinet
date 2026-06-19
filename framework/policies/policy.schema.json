@@ -37,7 +37,8 @@
             "command_contains",
             "path_block",
             "bash_write_to_path",
-            "tier2_isolation"
+            "tier2_isolation",
+            "authority_matrix"
           ]
         },
         "description": {
@@ -93,6 +94,39 @@
           "type": "array",
           "items": { "type": "string" },
           "description": "Officers exempt from this policy"
+        },
+        "risk_classes": {
+          "type": "object",
+          "description": "authority_matrix: action_type -> risk_class map (validated by framework/authority/matrix.py against the shared classifier enum)"
+        },
+        "hard_ceiling": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "authority_matrix: risk_classes that are always-gated regardless of confidence (the six HARD_CEILING_TOUCHES members)"
+        },
+        "ceiling_frozenset_map": {
+          "type": "object",
+          "description": "authority_matrix: hard_ceiling risk_class -> HARD_CEILING_TOUCHES frozenset member (coverage CI-asserted)"
+        },
+        "verdicts": {
+          "type": "object",
+          "description": "authority_matrix: risk_class -> { confidence_state -> verdict } table (hard-ceiling rows use the \"*\" wildcard)"
+        },
+        "veto_window_minutes": {
+          "type": "integer",
+          "description": "authority_matrix: internal_comms deferred-send delay (minutes)"
+        },
+        "deploy": {
+          "type": "object",
+          "description": "authority_matrix: mechanical low-risk deploy classifier globs (NON-PROD only)"
+        },
+        "bars": {
+          "type": "object",
+          "description": "authority_matrix: per-decision-type graduation bar (F2 imports these)"
+        },
+        "cooldown_days": {
+          "type": "object",
+          "description": "authority_matrix: anti-flap demotion cooldown windows"
         }
       },
       "allOf": [
@@ -120,6 +154,10 @@
         {
           "if": { "properties": { "type": { "const": "tier2_isolation" } } },
           "then": { "required": ["tools", "base_path"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "authority_matrix" } } },
+          "then": { "required": ["risk_classes", "verdicts", "hard_ceiling", "ceiling_frozenset_map"] }
         }
       ]
     }

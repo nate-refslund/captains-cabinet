@@ -1456,3 +1456,405 @@ class TestEdgeCases:
         assert "sudo" in binaries
         assert "docker" in binaries
         assert "systemctl" in binaries
+
+
+# ===================================================================
+# 6. AUTHORITY MATRIX POLICY TYPE [T6] — fail-safe, shadow-capable
+# ===================================================================
+# Design: docs/authority-matrix-design-2026-06-19.md §1 Component 2 + §3
+# read_cell_state + the fail-safe inventory. The authority_matrix eval turns
+# matrix data into a per-action verdict and returns a block message (force
+# propose-only / gated) or None (allow). In A0 the confidence read is STUBBED
+# to "unmeasured" (F2 graduation.py is not built), so EVERY cell resolves to a
+# block: non-ceiling rows -> propose_only, ceiling rows -> always_gated. The
+# gate NEVER returns auto/None in A0. SHADOW-ONLY: this adds no live exit-2.
+
+from policy_engine import (  # noqa: E402
+    _eval_authority_matrix,
+    risk_of,
+    resolve_verdict,
+    read_cell_state,
+)
+
+# Import the validated, shipped matrix floor so tests run against the REAL
+# production data (the loader/validator is matrix.py, shipped in T5).
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+
+def _load_real_matrix_policy() -> dict:
+    """Return the single authority_matrix policy from the shipped framework
+    floor (validated by matrix.py on load)."""
+    from framework.authority import matrix as M  # noqa: E402
+
+    return M.matrix_policy(M.load_matrix())
+
+
+def _real_hard_ceiling_members() -> set:
+    """The six HARD_CEILING_TOUCHES members (the code-level backstop)."""
+    from framework.learning.capability_gaps import HARD_CEILING_TOUCHES  # noqa: E402
+
+    return set(HARD_CEILING_TOUCHES)
+
+
+# Mapping from a hard-ceiling risk_class -> a tool call that classify_action
+# positively resolves into that risk_class. Used to prove each ceiling member
+# gates end-to-end through classify_action -> risk_of -> hard-ceiling.
+_CEILING_PROBES = {
+    "external_comms": (
+        "mcp__brain__queue_draft",
+        {"recipient": "outsider@gmail.com", "body": "hi", "channel": "teams"},
+    ),
+    "deploy_prod": ("Bash", {"command": "git push origin main"}),
+    "spend": ("Bash", {"command": "stripe charge --amount 5000"}),
+    "secrets": ("Write", {"file_path": "/workspace/product/.env", "content": "X=1"}),
+    "network_write": (
+        "mcp__some__create_post",
+        {},
+    ),
+    "credentials_grant": ("Bash", {"command": "oauth grant token"}),
+}
+
+
+class TestRiskOf:
+    """enum action_type -> risk_class resolution."""
+
+    def test_known_action_type_resolves(self):
+        pol = _load_real_matrix_policy()
+        assert risk_of("local_edit", pol["risk_classes"]) == "reversible"
+        assert risk_of("internal_message", pol["risk_classes"]) == "internal_comms"
+        assert risk_of("git_push_main", pol["risk_classes"]) == "deploy_prod"
+        assert risk_of("env_write", pol["risk_classes"]) == "secrets"
+        assert risk_of("mcp_post", pol["risk_classes"]) == "network_write"
+        assert risk_of("oauth_grant", pol["risk_classes"]) == "credentials_grant"
+
+    def test_unknown_action_type_returns_none(self):
+        pol = _load_real_matrix_policy()
+        assert risk_of("ambiguous", pol["risk_classes"]) is None
+        assert risk_of("not_a_real_action_type", pol["risk_classes"]) is None
+
+    def test_malformed_risk_classes_returns_none(self):
+        # Defensive: a non-dict / missing structure must not raise — fail-safe.
+        assert risk_of("local_edit", {}) is None
+        assert risk_of("local_edit", None) is None  # type: ignore[arg-type]
+        assert risk_of("local_edit", {"reversible": {}}) is None
+        assert risk_of("local_edit", {"reversible": {"action_types": "nope"}}) is None
+
+
+class TestResolveVerdict:
+    """verdict-table resolution incl. the '*' wildcard rows."""
+
+    def test_explicit_state_resolution(self):
+        pol = _load_real_matrix_policy()
+        v = pol["verdicts"]
+        assert resolve_verdict(v, "reversible", "graduated") == "auto"
+        assert resolve_verdict(v, "reversible", "unmeasured") == "propose_only"
+        assert resolve_verdict(v, "reversible", "eligible") == "propose_only"
+        assert resolve_verdict(v, "reversible", "demote") == "propose_only"
+        assert resolve_verdict(v, "internal_comms", "graduated") == "auto_with_veto_window"
+        assert resolve_verdict(v, "internal_comms", "unmeasured") == "propose_only"
+        assert resolve_verdict(v, "deploy_nonprod", "graduated") == "classifier"
+        assert resolve_verdict(v, "deploy_nonprod", "unmeasured") == "propose_only"
+
+    def test_wildcard_row_resolution(self):
+        pol = _load_real_matrix_policy()
+        v = pol["verdicts"]
+        # Hard-ceiling rows are {"*": always_gated} — every state hits the wildcard.
+        for state in ("unmeasured", "propose_only", "eligible", "graduated", "demote"):
+            assert resolve_verdict(v, "external_comms", state) == "always_gated"
+            assert resolve_verdict(v, "deploy_prod", state) == "always_gated"
+            assert resolve_verdict(v, "spend", state) == "always_gated"
+            assert resolve_verdict(v, "secrets", state) == "always_gated"
+            assert resolve_verdict(v, "network_write", state) == "always_gated"
+            assert resolve_verdict(v, "credentials_grant", state) == "always_gated"
+
+    def test_missing_cell_fails_safe_to_propose_only(self):
+        # An absent risk_class or absent state must NOT raise and must NOT
+        # resolve to auto — fail-safe to propose_only.
+        v = {"reversible": {"graduated": "auto"}}
+        assert resolve_verdict(v, "reversible", "unmeasured") == "propose_only"
+        assert resolve_verdict(v, "nonexistent", "graduated") == "propose_only"
+        assert resolve_verdict({}, "reversible", "graduated") == "propose_only"
+        assert resolve_verdict(None, "reversible", "graduated") == "propose_only"  # type: ignore[arg-type]
+
+
+class TestReadCellState:
+    """read_cell_state is STUBBED to 'unmeasured' in A0 (F2 not built)."""
+
+    def test_always_unmeasured(self):
+        assert read_cell_state("cto", "polads", "local_edit") == "unmeasured"
+        assert read_cell_state("cos", None, "internal_message") == "unmeasured"
+        assert read_cell_state("cro", "stephie", "git_push_nonmain") == "unmeasured"
+
+    def test_unmeasured_even_with_weird_inputs(self):
+        # Fail-safe: any input still reads unmeasured (no graduation source yet).
+        assert read_cell_state("", "", "") == "unmeasured"
+        assert read_cell_state(None, None, None) == "unmeasured"  # type: ignore[arg-type]
+
+
+class TestEvalAuthorityMatrix:
+    """The eval end-to-end: verdict resolution + the fail-safe spine."""
+
+    def test_reversible_unmeasured_proposes(self):
+        pol = _load_real_matrix_policy()
+        # A plain local edit -> reversible -> unmeasured (stub) -> propose_only.
+        result = _eval_authority_matrix(
+            pol, "Edit", {"file_path": "/workspace/product/src/foo.ts"}, "cto"
+        )
+        assert result is not None
+        assert "PROPOSE-ONLY" in result
+        assert "reversible" in result
+
+    def test_internal_comms_unmeasured_proposes(self):
+        pol = _load_real_matrix_policy()
+        result = _eval_authority_matrix(
+            pol,
+            "mcp__brain__queue_draft",
+            {"recipient": "sean@stepnetwork.dk", "body": "hi", "channel": "teams"},
+            "cos",
+        )
+        # internal_comms graduated -> auto_with_veto_window, but stub state is
+        # unmeasured -> propose_only. Must NOT auto / veto-enqueue in A0.
+        assert result is not None
+        assert "PROPOSE-ONLY" in result
+
+    def test_deploy_nonprod_unmeasured_proposes(self):
+        pol = _load_real_matrix_policy()
+        result = _eval_authority_matrix(
+            pol, "Bash", {"command": "git push origin feature/x"}, "cto"
+        )
+        # deploy_nonprod graduated/eligible -> classifier; unmeasured ->
+        # propose_only. Never reaches the classifier branch in A0.
+        assert result is not None
+        assert "PROPOSE-ONLY" in result
+
+    def test_all_six_hard_ceiling_members_gate(self):
+        """Every one of the six HARD_CEILING_TOUCHES members gates regardless
+        of confidence — the hard-ceiling short-circuit [FIX-7]."""
+        pol = _load_real_matrix_policy()
+        ceiling_classes = set(pol["hard_ceiling"])
+        # Sanity: the matrix's hard_ceiling covers all six frozenset members
+        # (by the ceiling_frozenset_map; the risk_classes themselves are 6).
+        assert len(ceiling_classes) == 6
+        for risk_class, (tool_name, tool_input) in _CEILING_PROBES.items():
+            assert risk_class in ceiling_classes, risk_class
+            result = _eval_authority_matrix(pol, tool_name, tool_input, "cto")
+            assert result is not None, f"{risk_class} must gate"
+            assert "GATED" in result, f"{risk_class}: {result}"
+            assert risk_class in result, f"{risk_class}: {result}"
+
+    def test_external_comms_directs_to_queue_draft(self):
+        pol = _load_real_matrix_policy()
+        result = _eval_authority_matrix(
+            pol,
+            "mcp__brain__queue_draft",
+            {"recipient": "outsider@example.com", "body": "x", "channel": "email"},
+            "cos",
+        )
+        assert result is not None
+        assert "GATED" in result
+        assert "external_comms" in result
+        assert "queue_draft" in result
+
+    def test_unknown_action_type_proposes(self):
+        pol = _load_real_matrix_policy()
+        # An ambiguous tool call -> classify_action returns AMBIGUOUS ->
+        # risk_of returns None -> fail-safe propose_only.
+        result = _eval_authority_matrix(
+            pol, "SomeRandomTool", {"weird": "payload"}, "cto"
+        )
+        assert result is not None
+        assert "PROPOSE-ONLY" in result
+
+    def test_gate_never_returns_auto_in_a0(self):
+        """The CORE A0 invariant: across a broad sample of action types, the
+        gate NEVER returns None (auto/allow) — every cell proposes or gates,
+        because read_cell_state is stubbed to 'unmeasured'."""
+        pol = _load_real_matrix_policy()
+        probes = [
+            ("Edit", {"file_path": "/workspace/product/a.ts"}),
+            ("Write", {"file_path": "/workspace/product/b.ts", "content": "x"}),
+            ("Read", {"file_path": "/workspace/product/c.ts"}),
+            ("Bash", {"command": "ls -la"}),
+            ("Bash", {"command": "git push origin feature/x"}),
+            ("Bash", {"command": "git push origin main"}),
+            ("Bash", {"command": "vercel deploy"}),
+            ("Bash", {"command": "vercel --prod"}),
+            ("Bash", {"command": "stripe charge --amount 100"}),
+            ("Bash", {"command": "cat /workspace/product/.env"}),
+            ("Bash", {"command": "oauth grant token"}),
+            (
+                "mcp__brain__queue_draft",
+                {"recipient": "sean@stepnetwork.dk", "channel": "teams"},
+            ),
+            (
+                "mcp__brain__queue_draft",
+                {"recipient": "out@example.com", "channel": "email"},
+            ),
+            ("mcp__monday_com__change_item_column_values", {}),
+            ("mcp__some__create_post", {}),
+            ("SomeRandomTool", {"x": 1}),
+        ]
+        for tool_name, tool_input in probes:
+            result = _eval_authority_matrix(pol, tool_name, tool_input, "cto")
+            assert result is not None, (
+                f"A0 gate returned auto/allow for {tool_name} {tool_input} — "
+                f"fail-closed invariant violated"
+            )
+
+    def test_malformed_policy_fails_safe(self):
+        """A malformed/empty policy dict must NOT raise and must NOT allow —
+        defensive .get() with fail-safe defaults."""
+        # Missing risk_classes/verdicts/hard_ceiling entirely.
+        result = _eval_authority_matrix(
+            {}, "Edit", {"file_path": "/x.ts"}, "cto"
+        )
+        assert result is not None
+        assert "PROPOSE-ONLY" in result
+
+    def test_dispatch_via_evaluate_policy(self):
+        """evaluate_policy() routes authority_matrix to the eval."""
+        pol = _load_real_matrix_policy()
+        # A reversible action in A0 -> propose_only (block message).
+        result = evaluate_policy(
+            pol, "Edit", {"file_path": "/workspace/product/a.ts"}, "cto"
+        )
+        assert result is not None
+        assert "PROPOSE-ONLY" in result
+        # A hard-ceiling action -> gated.
+        result = evaluate_policy(
+            pol, "Bash", {"command": "git push origin main"}, "cto"
+        )
+        assert result is not None
+        assert "GATED" in result
+
+    def test_exempt_officer_still_bypasses(self):
+        """The shared exempt_officers gate in evaluate_policy applies to
+        authority_matrix too (consistency with the other types)."""
+        pol = dict(_load_real_matrix_policy())
+        pol["exempt_officers"] = ["cto"]
+        result = evaluate_policy(
+            pol, "Bash", {"command": "git push origin main"}, "cto"
+        )
+        assert result is None  # exempt -> no policy decision
+
+    def test_ceiling_coverage_matches_frozenset(self):
+        """The matrix's hard-ceiling rows cover all six HARD_CEILING_TOUCHES
+        members and each gates — ties the gate to the code-level backstop."""
+        from framework.authority import matrix as M  # noqa: E402
+
+        pol = _load_real_matrix_policy()
+        covered = M.ceiling_members(pol)
+        assert covered == _real_hard_ceiling_members()
+
+
+class TestAuthorityMatrixNoLiveBlock:
+    """A0 is SHADOW-ONLY: the eval is reachable as a library function and via
+    evaluate_policy, but the live hook (pre-tool-use.sh) must NOT add a new
+    exit-2 that blocks a real action on the authority verdict. This guards the
+    'no live behavior change' invariant at the source-text level."""
+
+    def test_pre_tool_use_has_no_authority_exit2(self):
+        hook = (_REPO_ROOT / "cabinet" / "scripts" / "hooks" / "pre-tool-use.sh").read_text()
+        # The hook may reference the enforcing flag in a comment/future stub,
+        # but must NOT yet evaluate the authority_matrix verdict to exit 2.
+        assert "_eval_authority_matrix" not in hook
+        assert "evaluate_policy" not in hook
+
+    def test_main_does_not_block_on_authority_matrix(self):
+        """main() loading a real matrix floor must exit 0 on a reversible
+        action — main() only enforces the LEGACY typed rules; the authority
+        verdict is shadow-only (consumed by policy-shadow.py in a later task),
+        so authority_matrix policies are skipped by main()'s live loop."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fw_dir = Path(tmpdir) / "framework" / "policies"
+            fw_dir.mkdir(parents=True)
+            # Copy ONLY the authority matrix into the temp framework dir.
+            real_matrix = (
+                _REPO_ROOT / "framework" / "policies" / "authority-matrix.yml"
+            ).read_text()
+            (fw_dir / "authority-matrix.yml").write_text(real_matrix)
+            instance_dir = Path(tmpdir) / "instance" / "config"
+            instance_dir.mkdir(parents=True)
+            (instance_dir / "active-preset").write_text("work")
+
+            input_json = json.dumps({
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "/workspace/product/a.ts"},
+            })
+
+            from io import StringIO
+            from policy_engine import main
+
+            with patch.dict(os.environ, {"CABINET_ROOT": tmpdir, "OFFICER": "cto"}):
+                with patch("sys.stdin", StringIO(input_json)):
+                    with pytest.raises(SystemExit) as exc_info:
+                        main()
+                    # A0 shadow-only: main() does NOT live-block on authority.
+                    assert exc_info.value.code == 0
+
+    def test_main_default_env_is_shadow(self):
+        """With CABINET_AUTHORITY_ENFORCING UNSET (the default), main() must
+        not live-block on a hard-ceiling authority action — the flag defaults
+        to shadow."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fw_dir = Path(tmpdir) / "framework" / "policies"
+            fw_dir.mkdir(parents=True)
+            real_matrix = (
+                _REPO_ROOT / "framework" / "policies" / "authority-matrix.yml"
+            ).read_text()
+            (fw_dir / "authority-matrix.yml").write_text(real_matrix)
+            instance_dir = Path(tmpdir) / "instance" / "config"
+            instance_dir.mkdir(parents=True)
+            (instance_dir / "active-preset").write_text("work")
+
+            input_json = json.dumps({
+                "tool_name": "Bash",
+                "tool_input": {"command": "git push origin main"},
+            })
+
+            from io import StringIO
+            from policy_engine import main
+
+            env = {"CABINET_ROOT": tmpdir, "OFFICER": "cto"}
+            with patch.dict(os.environ, env, clear=False):
+                os.environ.pop("CABINET_AUTHORITY_ENFORCING", None)
+                with patch("sys.stdin", StringIO(input_json)):
+                    with pytest.raises(SystemExit) as exc_info:
+                        main()
+                    assert exc_info.value.code == 0
+
+    def test_main_enforcing_flag_blocks_authority(self):
+        """The shadow->enforcing seam is real: with
+        CABINET_AUTHORITY_ENFORCING=1, main() DOES exit-2 on a hard-ceiling
+        authority action. (Default is 0 = shadow; the flip is a later
+        Captain-gated cycle. This proves the flag is load-bearing, not dead.)"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fw_dir = Path(tmpdir) / "framework" / "policies"
+            fw_dir.mkdir(parents=True)
+            real_matrix = (
+                _REPO_ROOT / "framework" / "policies" / "authority-matrix.yml"
+            ).read_text()
+            (fw_dir / "authority-matrix.yml").write_text(real_matrix)
+            instance_dir = Path(tmpdir) / "instance" / "config"
+            instance_dir.mkdir(parents=True)
+            (instance_dir / "active-preset").write_text("work")
+
+            input_json = json.dumps({
+                "tool_name": "Bash",
+                "tool_input": {"command": "git push origin main"},
+            })
+
+            from io import StringIO
+            from policy_engine import main
+
+            with patch.dict(os.environ, {
+                "CABINET_ROOT": tmpdir,
+                "OFFICER": "cto",
+                "CABINET_AUTHORITY_ENFORCING": "1",
+            }):
+                with patch("sys.stdin", StringIO(input_json)):
+                    with pytest.raises(SystemExit) as exc_info:
+                        main()
+                    assert exc_info.value.code == 2
