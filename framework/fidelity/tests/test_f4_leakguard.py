@@ -15,6 +15,8 @@ the actual gather_cutoff_context pipeline with NO live MCP / network.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 
 from framework.fidelity import officer_runner
@@ -318,6 +320,76 @@ class TestReadNotePathValidation:
             officer_runner.gather_cutoff_context(
                 _case(), brain=brain, read_paths=["1-Daily/2026-06-11.md"])
         assert not any(c[0] == "read_note" for c in brain.calls)
+
+
+class TestRealVaultHitShape:
+    """The REAL fence proof. The other vault-hit tests feed an ISO-STRING ``ts``
+    — a shape that NEVER occurs via the real adapter. context_lib.gather emits
+    each vault hit as {"ref": <path>, "ts": <datetime from mtime>, "text", ...}
+    (context_lib.py:144-147, _fetch_vault). So the LOAD-BEARING fence on vault
+    hits is _content_ts's PATH-DATE extraction (over-exclusion-by-default); the
+    datetime/mtime ts must NEVER admit a hit. These drive gather_cutoff_context
+    with the real shape to prove exactly that."""
+
+    BRIEF = ("BRIEF_PROSE: Nate already replied with the Husqvarna URL on "
+             "2026-06-11 (un-fenceable summary that must never reach the officer)")
+
+    @staticmethod
+    def _real_hit(ref, text, *, mtime_iso="2026-07-01T00:00:00+00:00"):
+        # Mirror context_lib._fetch_vault (context_lib.py:144-147): ts is a
+        # DATETIME derived from mtime (the wrong clock — always set POST-cutoff
+        # here to prove it never admits a hit on its own), path keyed under
+        # `ref`. NO per-hit `brief` — the real hit shape has none; the brief is
+        # the TOP-LEVEL gather_context field (set via FakeBrain(brief=...)).
+        return {
+            "source": "vault", "ref": ref,
+            "heading": "", "text": text,
+            "base_score": 0.8,
+            "ts": datetime.fromisoformat(mtime_iso),  # datetime, NOT a str
+        }
+
+    def test_pre_cutoff_daily_note_admitted_via_path_date(self):
+        # (a) ref = pre-cutoff daily-note path + datetime ts → ADMITTED via
+        # _content_ts path-date (NOT via the datetime ts, which is post-cutoff).
+        hit = self._real_hit("1-Daily/2026-05-12.md",
+                             "new house at Mosevraavej, big lawn ~3000 m2")
+        brain = FakeBrain(vault_hits=[hit], brief=self.BRIEF)
+        ctx = officer_runner.gather_cutoff_context(_case(), brain=brain)
+        assert len(ctx["vault_hits"]) == 1
+        # the hit's text survives (admitted, not just present-but-empty)
+        assert any("3000 m2" in (h.get("text") or "")
+                   for h in ctx["vault_hits"])
+
+    def test_non_dated_path_with_datetime_ts_excluded(self):
+        # (b) ref = a NON-dated path + datetime ts → EXCLUDED. No derivable
+        # content-ts; the datetime (mtime) ts must NOT admit it — mtime is the
+        # wrong clock. This is the over-exclusion fence in action.
+        hit = self._real_hit("3-People/sobuc/conversations.md",
+                             "SOBUC_CONTENT must be excluded (mtime-only)")
+        brain = FakeBrain(vault_hits=[hit], brief=self.BRIEF)
+        ctx = officer_runner.gather_cutoff_context(_case(), brain=brain)
+        assert ctx["vault_hits"] == []
+        assert "SOBUC_CONTENT" not in repr(ctx)
+
+    def test_post_cutoff_daily_note_path_excluded(self):
+        # (c) ref = a POST-cutoff daily-note path → EXCLUDED (path date >= cutoff).
+        hit = self._real_hit("1-Daily/2026-07-01.md",
+                             "FUTURE_DAILY content must be excluded")
+        brain = FakeBrain(vault_hits=[hit], brief=self.BRIEF)
+        ctx = officer_runner.gather_cutoff_context(_case(), brain=brain)
+        assert ctx["vault_hits"] == []
+        assert "FUTURE_DAILY" not in repr(ctx)
+
+    def test_gather_context_brief_never_in_output(self):
+        # (d) the top-level gather_context `brief` (un-fenceable post-cutoff
+        # prose) is never present in the output — even with an admitted hit,
+        # gather_cutoff_context reads only vault["hits"], never vault["brief"].
+        hit = self._real_hit("1-Daily/2026-05-12.md", "admissible content")
+        brain = FakeBrain(vault_hits=[hit], brief=self.BRIEF)
+        ctx = officer_runner.gather_cutoff_context(_case(), brain=brain)
+        assert "BRIEF_PROSE" not in repr(ctx)
+        assert "Husqvarna" not in repr(ctx)
+        assert "brief" not in ctx
 
 
 class TestSafeShape:
