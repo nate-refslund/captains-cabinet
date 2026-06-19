@@ -434,6 +434,35 @@ class TestReadNotePathValidation:
                 _case(), brain=brain, read_paths=["1-Daily/2026-06-11.md"])
         assert not any(c[0] == "read_note" for c in brain.calls)
 
+    def test_read_note_scrubs_slash_and_compact_dated_lines(self):
+        # Audit finding #2b: _scrub_iso_lines must use the SAME broad dated-line
+        # matching as _static_frontmatter (ISO + slash + compact + full
+        # timestamps). A pre-cutoff daily note (filename passes the path gate)
+        # whose BODY carries post-cutoff dates in the slash or compact form must
+        # have those lines scrubbed — exactly like the ISO form already is.
+        # The scrub is conservative (drops ANY dated line, since a single date
+        # string can't be reliably cutoff-compared); undated pre-cutoff content
+        # lines survive.
+        brain = FakeBrain(notes={
+            "1-Daily/2026-05-12.md":
+                "Looked at mowers for the new house lawn (~3000 m2).\n"
+                "Follow-up 2026/06/11 with Husqvarna (SLASH LEAK)\n"
+                "Ordered backup blade 20260611 (COMPACT LEAK)\n"
+                "Plan: pick a model and order it before the weekend.\n",
+        })
+        ctx = officer_runner.gather_cutoff_context(
+            _case(), brain=brain, read_paths=["1-Daily/2026-05-12.md"])
+        notes = ctx.get("notes", [])
+        body = " ".join(n.get("text", "") for n in notes)
+        # the post-cutoff slash- and compact-dated lines are both scrubbed
+        assert "SLASH LEAK" not in body
+        assert "COMPACT LEAK" not in body
+        assert "2026/06/11" not in body
+        assert "20260611" not in body
+        # …and the undated content lines survive (the scrub is line-scoped)
+        assert "3000 m2" in body
+        assert "pick a model and order it" in body
+
 
 class TestRealVaultHitShape:
     """The REAL fence proof. The other vault-hit tests feed an ISO-STRING ``ts``

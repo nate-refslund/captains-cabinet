@@ -125,12 +125,16 @@ EVAL_MODE_RULES_GATHER = (
 # An ISO date (date-only or full datetime) anywhere in a string/path.
 _DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 # Any common date form anywhere in a line — ISO (2026-05-12), slash
-# (2026/05/12), or compact (20260512). Used ONLY for stripping dated lines from
-# static frontmatter; broader than _DATE_RE on purpose (a dossier line can be
-# dated in any of these forms, and any of them may be post-cutoff). The compact
-# \d{8} alternative is anchored to a non-digit boundary so it doesn't fire on
-# long id/number runs.
+# (2026/05/12), or compact (20260512). Used for stripping dated lines from
+# static frontmatter AND read_note bodies; broader than _DATE_RE on purpose (a
+# dated line can use any of these forms, and any of them may be post-cutoff).
+# The compact \d{8} alternative is anchored to a non-digit boundary so it
+# doesn't fire on long id/number runs.
 _DATE_FORMS = r"(?:\d{4}-\d{2}-\d{2}|\d{4}/\d{2}/\d{2}|(?<!\d)\d{8}(?!\d))"
+# Per-line searcher over the broad date forms (no line anchors) — for scrubbing
+# a single line at a time (read_note body). _DATED_LINE_RE below is the
+# MULTILINE whole-line variant used for bulk-stripping frontmatter.
+_DATE_FORMS_RE = re.compile(_DATE_FORMS)
 # A full line carrying a date in any of those forms — stripped from static
 # frontmatter (any such line is content-dated and may be post-cutoff).
 _DATED_LINE_RE = re.compile(rf"^.*{_DATE_FORMS}.*$", re.MULTILINE)
@@ -236,13 +240,19 @@ def _validate_read_path(path: str, cutoff_ts: str) -> str:
 
 
 def _scrub_iso_lines(text: str) -> str:
-    """Drop any line of read_note output carrying an ISO date (a post-cutoff
-    date line would leak). Conservative: a daily note can still carry a future
-    follow-up line even when its own filename is pre-cutoff."""
+    """Drop any line of read_note output carrying a date in ANY common form —
+    ISO (2026-05-12), slash (2026/05/12), or compact (20260512) — since a
+    post-cutoff date line would leak. Conservative: a daily note can still carry
+    a future follow-up line even when its own filename is pre-cutoff, and that
+    future line can be written in any of these forms.
+
+    Uses the SAME broad date matching as _static_frontmatter (audit finding
+    #2b): an ISO-only scrub here let a slash/compact post-cutoff line through
+    while the frontmatter path already caught it."""
     if not text:
         return ""
     return "\n".join(ln for ln in str(text).splitlines()
-                     if not _DATE_RE.search(ln)).strip()
+                     if not _DATE_FORMS_RE.search(ln)).strip()
 
 
 class BrainAdapter:
