@@ -222,6 +222,7 @@ from framework.fidelity.consequence import (
     read_ledger,
     compute_ratios,
     GraduationRatios,
+    UNSTAMPED_ACTION_TYPE,
 )
 
 
@@ -398,8 +399,17 @@ class TestActionTypeField:
 
 
 class TestComputeRatios:
+    """T3 [FIX-1 steps 3-4]: cells are keyed on (actor_id, lane, ACTION_TYPE),
+    not the free-text `action`. The free-text `action` is retained on the event
+    as a descriptive field but is no longer the cell key. The matrix gate keys
+    verdicts on the action_type enum, so the ledger must agree.
+
+    Helper stamps a real action_type (default 'internal_message') AND a free-text
+    `action`; the cell key uses the action_type, proving the re-key."""
+
     def _emit_decided(self, ts, subject, decision, status, verdict,
-                      actor=None, lane="polads", action="drafted-reply"):
+                      actor=None, lane="polads", action="drafted-reply",
+                      action_type="internal_message"):
         actor = actor or {"kind": "officer", "id": "cos"}
         outcome = None
         if status is not None:
@@ -410,6 +420,7 @@ class TestComputeRatios:
             review = {"verdict": verdict}
         emit_consequence(
             ts=ts, actor=actor, lane=lane, action=action, subject=subject,
+            action_type=action_type,
             proposal={"required": True, "decision": decision,
                       "decided_at": "2026-06-18T08:05:00+00:00"
                       if decision else None},
@@ -422,7 +433,7 @@ class TestComputeRatios:
         self._emit_decided("2026-06-18T08:01:00+00:00", "b", "approved", None, None)
         self._emit_decided("2026-06-18T08:02:00+00:00", "c", "edited", None, None)
         self._emit_decided("2026-06-18T08:03:00+00:00", "d", "rejected", None, None)
-        cell = compute_ratios()[("officer:cos", "polads", "drafted-reply")]
+        cell = compute_ratios()[("officer:cos", "polads", "internal_message")]
         assert cell.sample_count == 4
         assert cell.approval_unchanged_rate == 0.5
         assert cell.approved == 2 and cell.edited == 1 and cell.rejected == 1
@@ -431,7 +442,7 @@ class TestComputeRatios:
         self._emit_decided("2026-06-18T08:00:00+00:00", "a", "approved", None, None)
         self._emit_decided("2026-06-18T08:01:00+00:00", "b", "expired", None, None)
         self._emit_decided("2026-06-18T08:02:00+00:00", "c", None, None, None)  # pending
-        cell = compute_ratios()[("officer:cos", "polads", "drafted-reply")]
+        cell = compute_ratios()[("officer:cos", "polads", "internal_message")]
         assert cell.approval_unchanged_rate == 1.0  # 1 approved / 1 decided
 
     def test_outcome_held_rate(self, event_log_dir):
@@ -441,7 +452,7 @@ class TestComputeRatios:
         self._emit_decided("2026-06-18T08:02:00+00:00", "c", "approved", "ok", None)
         self._emit_decided("2026-06-18T08:03:00+00:00", "d", "approved", "failed", None)
         self._emit_decided("2026-06-18T08:04:00+00:00", "e", "approved", "unknown", None)
-        cell = compute_ratios()[("officer:cos", "polads", "drafted-reply")]
+        cell = compute_ratios()[("officer:cos", "polads", "internal_message")]
         assert cell.outcome_held_rate == 0.75
         assert cell.ok == 3 and cell.failed == 1
 
@@ -450,7 +461,7 @@ class TestComputeRatios:
         self._emit_decided("2026-06-18T08:00:00+00:00", "a", "approved", "ok", "confirmed")
         self._emit_decided("2026-06-18T08:01:00+00:00", "b", "approved", "ok", "wrong")
         self._emit_decided("2026-06-18T08:02:00+00:00", "c", "approved", "ok", "unknown")
-        cell = compute_ratios()[("officer:cos", "polads", "drafted-reply")]
+        cell = compute_ratios()[("officer:cos", "polads", "internal_message")]
         assert cell.review_confirmed_rate == 0.5
         assert cell.confirmed == 1 and cell.wrong == 1
 
@@ -459,31 +470,48 @@ class TestComputeRatios:
             ts="2026-06-18T08:00:00+00:00",
             actor={"kind": "pipe", "id": "x"}, lane=None,
             action="auto-closed-commitment", subject="cmt-1",
+            action_type="task_status_move",
         )
-        cell = compute_ratios()[("pipe:x", None, "auto-closed-commitment")]
+        cell = compute_ratios()[("pipe:x", None, "task_status_move")]
         assert cell.approval_unchanged_rate is None
         assert cell.outcome_held_rate is None
         assert cell.review_confirmed_rate is None
         assert cell.sample_count == 1
 
-    def test_cells_split_by_actor_lane_action(self, event_log_dir):
+    def test_cells_split_by_actor_lane_action_type(self, event_log_dir):
+        # Same free-text action, DIFFERENT action_type → distinct cells (proves
+        # the key is action_type, not the free-text action).
         self._emit_decided("2026-06-18T08:00:00+00:00", "a", "approved", None, None,
-                           actor={"kind": "officer", "id": "cos"}, lane="polads")
+                           actor={"kind": "officer", "id": "cos"}, lane="polads",
+                           action="drafted-reply", action_type="internal_message")
         self._emit_decided("2026-06-18T08:01:00+00:00", "b", "approved", None, None,
-                           actor={"kind": "officer", "id": "cto"}, lane="stephie")
+                           actor={"kind": "officer", "id": "cto"}, lane="stephie",
+                           action="drafted-reply", action_type="internal_message")
         self._emit_decided("2026-06-18T08:02:00+00:00", "c", "approved", None, None,
                            actor={"kind": "officer", "id": "cos"}, lane="polads",
-                           action="triaged-board")
+                           action="drafted-reply", action_type="board_status")
         cells = compute_ratios()
-        assert ("officer:cos", "polads", "drafted-reply") in cells
-        assert ("officer:cto", "stephie", "drafted-reply") in cells
-        assert ("officer:cos", "polads", "triaged-board") in cells
+        assert ("officer:cos", "polads", "internal_message") in cells
+        assert ("officer:cto", "stephie", "internal_message") in cells
+        assert ("officer:cos", "polads", "board_status") in cells
         assert len(cells) == 3
+
+    def test_same_action_type_different_free_text_action_merges(self, event_log_dir):
+        # Two events with the SAME (actor, lane, action_type) but DIFFERENT
+        # free-text action collapse into ONE cell — the free-text action is
+        # descriptive only, not part of the key.
+        self._emit_decided("2026-06-18T08:00:00+00:00", "a", "approved", None, None,
+                           action="drafted-reply-to-sean", action_type="internal_message")
+        self._emit_decided("2026-06-18T08:01:00+00:00", "b", "approved", None, None,
+                           action="drafted-reply-to-lisa", action_type="internal_message")
+        cells = compute_ratios()
+        assert list(cells.keys()) == [("officer:cos", "polads", "internal_message")]
+        assert cells[("officer:cos", "polads", "internal_message")].sample_count == 2
 
     def test_dedup_applied_before_counting(self, event_log_dir):
         self._emit_decided("2026-06-18T08:00:00+00:00", "a", None, None, None)
         self._emit_decided("2026-06-18T08:00:00+00:00", "a", "approved", "ok", "confirmed")
-        cell = compute_ratios()[("officer:cos", "polads", "drafted-reply")]
+        cell = compute_ratios()[("officer:cos", "polads", "internal_message")]
         assert cell.sample_count == 1
         assert cell.approval_unchanged_rate == 1.0
         assert cell.outcome_held_rate == 1.0
@@ -493,7 +521,67 @@ class TestComputeRatios:
         self._emit_decided("2026-06-18T08:00:00+00:00", "a", "approved", "ok", "confirmed")
         ledger = read_ledger()
         cells = compute_ratios(ledger=ledger)
-        assert cells[("officer:cos", "polads", "drafted-reply")].sample_count == 1
+        assert cells[("officer:cos", "polads", "internal_message")].sample_count == 1
+
+
+class TestComputeRatiosUnstampedSentinel:
+    """T3 back-compat: a ledger row with NO action_type (the unstamped/legacy
+    default — action_type is an OPTIONAL schema field) is keyed under the fixed
+    VISIBLE sentinel UNSTAMPED_ACTION_TYPE, never under its free-text action.
+
+    Fail-closed rationale: a free-text action could literally equal an
+    action_type enum value (e.g. 'local_edit'); falling back to the free text
+    would silently conflate an unstamped event into a MEASURED graduation cell
+    and let a cell light up autonomy on unstamped noise. The sentinel keeps
+    unstamped data in one visible bucket that can never graduate, preserving the
+    fail-closed spine + no-silent-caps (the bucket is visible, not silently 0/1).
+    """
+
+    def test_unstamped_event_keyed_under_sentinel(self, event_log_dir):
+        emit_consequence(
+            ts="2026-06-18T08:00:00+00:00",
+            actor={"kind": "pipe", "id": "x"}, lane=None,
+            action="auto-closed-commitment", subject="cmt-1",
+        )  # no action_type → unstamped
+        cells = compute_ratios()
+        assert ("pipe:x", None, UNSTAMPED_ACTION_TYPE) in cells
+        # and NOT keyed under the free-text action
+        assert ("pipe:x", None, "auto-closed-commitment") not in cells
+        assert cells[("pipe:x", None, UNSTAMPED_ACTION_TYPE)].sample_count == 1
+
+    def test_unstamped_free_text_cannot_conflate_into_measured_cell(self, event_log_dir):
+        # An unstamped event whose free-text action collides with an action_type
+        # enum value ('local_edit') must NOT join the stamped 'local_edit' cell.
+        emit_consequence(  # stamped local_edit
+            ts="2026-06-18T08:00:00+00:00",
+            actor={"kind": "officer", "id": "cos"}, lane="polads",
+            action="edited-config", subject="s1", action_type="local_edit",
+        )
+        emit_consequence(  # unstamped, free text literally 'local_edit'
+            ts="2026-06-18T08:01:00+00:00",
+            actor={"kind": "officer", "id": "cos"}, lane="polads",
+            action="local_edit", subject="s2",
+        )
+        cells = compute_ratios()
+        # the stamped cell holds exactly its own event...
+        assert cells[("officer:cos", "polads", "local_edit")].sample_count == 1
+        # ...and the unstamped event lives in the sentinel bucket, NOT conflated
+        assert cells[("officer:cos", "polads", UNSTAMPED_ACTION_TYPE)].sample_count == 1
+
+    def test_sentinel_is_not_a_real_action_type(self, event_log_dir):
+        # the sentinel must be disjoint from the classifier's enum so it can
+        # never be mistaken for a measurable cell by the gate.
+        assert UNSTAMPED_ACTION_TYPE not in ACTION_TYPES
+
+    def test_unstamped_events_aggregate_into_one_visible_bucket(self, event_log_dir):
+        for i, subj in enumerate(("a", "b", "c")):
+            emit_consequence(
+                ts=f"2026-06-18T08:0{i}:00+00:00",
+                actor={"kind": "pipe", "id": "y"}, lane="polads",
+                action=f"free-{subj}", subject=subj,
+            )
+        cells = compute_ratios()
+        assert cells[("pipe:y", "polads", UNSTAMPED_ACTION_TYPE)].sample_count == 3
 
 
 class TestPathSafetyGuards:

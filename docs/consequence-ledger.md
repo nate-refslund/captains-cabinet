@@ -144,7 +144,12 @@ normalized projection the graduation math reads.
   write per identity, the same convention the autonomy resolver uses
   today. The cabinet read path `read_ledger` collapses that identity tuple
   last-write-wins; `compute_ratios` derives the three graduation ratios per
-  `(actor, lane, action)` cell (→ `GraduationRatios`).
+  `(actor, lane, action_type)` cell (→ `GraduationRatios`) — keyed on the
+  `action_type` enum (the shared classifier's stamp), NOT the free-text
+  `action`, so the ledger and the authority gate agree on the cell. A row with
+  no `action_type` (unstamped/legacy) buckets under the visible
+  `__unstamped__` sentinel rather than its free-text action, so unstamped noise
+  can never conflate into a measured cell (fail-closed) `[FIX-1]`.
 - **Validation**: emitters validate against
   `framework/schemas/consequence-event.schema.json` before writing
   (`additionalProperties: false` everywhere — drift fails loud, which is
@@ -163,8 +168,8 @@ normalized projection the graduation math reads.
   reviewers may backfill high-value rows opportunistically, but the
   graduation window restarts on normalized data — clean evidence beats
   long dirty evidence.
-- **Graduation math reads ONLY this ledger.** Per (actor, lane, action
-  class): approval-unchanged rate, outcome-held rate, review-confirmed
+- **Graduation math reads ONLY this ledger.** Per (actor, lane,
+  action_type): approval-unchanged rate, outcome-held rate, review-confirmed
   rate over a rolling window. The autonomy engine's thresholds stay where
   they are configured; this ledger is the single input feed. No more
   per-source special-casing.

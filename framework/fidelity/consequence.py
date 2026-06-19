@@ -410,9 +410,25 @@ def read_ledger(since: str | None = None) -> list[dict[str, Any]]:
     return events
 
 
+# [FIX-1 step 3] Sentinel cell-key component for a ledger row that carries NO
+# action_type (the unstamped / legacy default — action_type is an OPTIONAL
+# schema field). Unstamped rows are keyed under this fixed, VISIBLE sentinel
+# instead of falling back to their free-text `action`: a free-text string could
+# literally equal an action_type enum value (e.g. "local_edit"), and a fallback
+# would silently conflate an unstamped event into a MEASURED graduation cell —
+# letting a cell light up autonomy on unstamped noise. The sentinel keeps
+# unstamped data in one visible bucket that can NEVER graduate (the gate keys
+# verdicts on real action_type enum values only), preserving the fail-closed
+# spine and no-silent-caps (the bucket is visible, not silently 0/1). It is
+# deliberately disjoint from the classifier's ACTION_TYPES enum (a leading
+# "__" the classifier never emits), so the gate can never read it as a
+# measurable cell.
+UNSTAMPED_ACTION_TYPE = "__unstamped__"
+
+
 @dataclass
 class GraduationRatios:
-    """The three graduation ratios for one (actor, lane, action) cell.
+    """The three graduation ratios for one (actor, lane, action_type) cell.
 
     The raw counts are dataclass FIELDS; the three rates are computed
     @property accessors (float | None) over them — a field and a same-named
@@ -450,7 +466,22 @@ def compute_ratios(
     since: str | None = None,
     ledger: list[dict[str, Any]] | None = None,
 ) -> dict[tuple[str, str | None, str], GraduationRatios]:
-    """Compute the three graduation ratios per (actor, lane, action) cell.
+    """Compute the three graduation ratios per (actor, lane, action_type) cell.
+
+    [FIX-1 steps 3-4] Cells key on the `action_type` ENUM (stamped at emit time
+    by the shared framework.authority.classifier.classify_action), NOT the
+    free-text `action`. The matrix gate keys verdicts on action_type, so the
+    ledger must agree — keying on the free text would forever miss the gate's
+    lookup and autonomy could never light up. The raw `action` is retained on
+    the event as a DESCRIPTIVE field but is no longer part of the cell key.
+
+    Back-compat (the SAFE option): a row with NO action_type (the unstamped /
+    legacy default) is keyed under the fixed visible sentinel
+    UNSTAMPED_ACTION_TYPE — never under its free-text action. A fallback to the
+    free text could collide with an action_type enum value and silently
+    conflate unstamped noise into a measured cell that could then graduate; the
+    sentinel keeps unstamped rows in one visible bucket that can never graduate
+    (fail-closed + no-silent-caps).
 
     The consequence ledger is the ONLY input (no per-source special-casing).
     Events are read deduped via read_ledger() unless an explicit `ledger` is
@@ -467,7 +498,11 @@ def compute_ratios(
     for ev in events:
         actor = ev.get("actor") or {}
         actor_id = f"{actor.get('kind')}:{actor.get('id')}"
-        key = (actor_id, ev.get("lane"), ev.get("action", ""))
+        # [FIX-1] Key on the action_type enum; an absent/None action_type (an
+        # unstamped/legacy row) is bucketed under the sentinel, never its
+        # free-text action — see UNSTAMPED_ACTION_TYPE for the fail-closed why.
+        action_type = ev.get("action_type") or UNSTAMPED_ACTION_TYPE
+        key = (actor_id, ev.get("lane"), action_type)
         cell = cells.setdefault(key, GraduationRatios())
         cell.sample_count += 1
 
