@@ -92,3 +92,122 @@ class TestFormatSituation:
     def test_sent_messages_labelled_nate(self):
         s = officer_prompt.format_situation(_case())
         assert "Nate:" in s
+
+
+def _mower_case():
+    """A richer multi-message thread to exercise intent reconstruction:
+    >5 messages so the <=5 last-message window is provably enforced, with a
+    distinctive earliest message ('SECRET-OLDEST-MARKER') that must NOT appear
+    when only the last 5 are read."""
+    msgs = []
+    msgs.append({
+        "direction": "received", "who": "Bo <b@x>",
+        "date": "2026-05-01T08:00:00+00:00", "source": "msgraph",
+        "text": "SECRET-OLDEST-MARKER: hej, helt andet emne her."})
+    msgs.append({
+        "direction": "sent", "who": "Nate",
+        "date": "2026-05-02T08:00:00+00:00", "source": "msgraph",
+        "text": "Vi har koebt nyt hus paa Mosevraavej."})
+    msgs.append({
+        "direction": "received", "who": "Bo <b@x>",
+        "date": "2026-05-03T08:00:00+00:00", "source": "msgraph",
+        "text": "Stor graesplaene der, ikke?"})
+    msgs.append({
+        "direction": "sent", "who": "Nate",
+        "date": "2026-05-04T08:00:00+00:00", "source": "msgraph",
+        "text": "Ja, 3000 m2. Ingen kanttraad tak."})
+    msgs.append({
+        "direction": "received", "who": "Bo <b@x>",
+        "date": "2026-05-05T08:00:00+00:00", "source": "msgraph",
+        "text": "Vil du have hjaelp til at finde en robotplaeneklipper?"})
+    return Case.from_retro_case({
+        "case_id": "mower12345", "reply_key": "k", "slug": "bo",
+        "person": "Bo", "channel": "msgraph", "language": "da",
+        "reply_ts": "2026-05-06T12:00:00+00:00", "subject": "mower",
+        "n_prior": 5, "thread_before": msgs,
+        "real_reply": "Her er en Husqvarna-mejetaerskerlink HEMMELIGT-SVAR.",
+    })
+
+
+class TestIntentAndContext:
+    def test_returns_two_string_fields(self):
+        out = officer_prompt.intent_and_context(_case())
+        assert set(out.keys()) == {"reconstructed_intent", "mission_or_goal"}
+        assert isinstance(out["reconstructed_intent"], str)
+        assert isinstance(out["mission_or_goal"], str)
+
+    def test_derives_from_thread_content(self):
+        """Intent must be textually grounded in thread_before — the
+        counterparty's actual ask reaches the reconstructed intent."""
+        out = officer_prompt.intent_and_context(_mower_case())
+        blob = (out["reconstructed_intent"] + " " + out["mission_or_goal"]).lower()
+        assert "robotplaeneklipper" in blob
+
+    def test_never_reads_real_reply(self):
+        """The held-out reply is the ground truth — its text (and the SECRET
+        marker embedded in it) must NEVER surface in the reconstructed intent."""
+        c = _mower_case()
+        out = officer_prompt.intent_and_context(c)
+        joined = out["reconstructed_intent"] + " " + out["mission_or_goal"]
+        assert "HEMMELIGT-SVAR" not in joined
+        assert "Husqvarna" not in joined
+
+    def test_only_last_five_messages(self):
+        """Derived from the LAST <=5 messages of thread_before ONLY — an
+        earlier (6th-from-last) message must not leak through."""
+        out = officer_prompt.intent_and_context(_mower_case())
+        joined = out["reconstructed_intent"] + " " + out["mission_or_goal"]
+        assert "SECRET-OLDEST-MARKER" not in joined
+
+    def test_field_char_caps(self):
+        """Each field is capped at <=500 chars to keep the judge payload lean
+        (design §1.2). Hold against a pathologically long thread."""
+        long_msg = {
+            "direction": "received", "who": "Bo <b@x>",
+            "date": "2026-05-05T08:00:00+00:00", "source": "msgraph",
+            "text": "robotplaeneklipper " + ("x" * 5000)}
+        c = Case.from_retro_case({
+            "case_id": "long123456", "reply_key": "k", "slug": "bo",
+            "person": "Bo", "channel": "msgraph", "language": "da",
+            "reply_ts": "2026-05-06T12:00:00+00:00", "subject": "s",
+            "n_prior": 1, "thread_before": [long_msg],
+            "real_reply": "x",
+        })
+        out = officer_prompt.intent_and_context(c)
+        assert len(out["reconstructed_intent"]) <= 500
+        assert len(out["mission_or_goal"]) <= 500
+
+    def test_empty_thread_does_not_crash(self):
+        c = Case.from_retro_case({
+            "case_id": "empty12345", "reply_key": "k", "slug": "bo",
+            "person": "Bo", "channel": "msgraph", "language": "da",
+            "reply_ts": "2026-05-06T12:00:00+00:00", "subject": "s",
+            "n_prior": 0, "thread_before": [],
+            "real_reply": "x",
+        })
+        out = officer_prompt.intent_and_context(c)
+        assert isinstance(out["reconstructed_intent"], str)
+        assert isinstance(out["mission_or_goal"], str)
+
+    def test_pure_no_mcp_or_network(self, monkeypatch):
+        """Pure function: no MCP/network/filesystem. Sabotage the obvious
+        escape hatches — any attempt to use them would raise here."""
+        import socket
+        monkeypatch.setattr(
+            socket, "socket",
+            lambda *a, **k: (_ for _ in ()).throw(
+                AssertionError("intent_and_context made a network call")))
+        # role_definition is the only fs read in this module; it must not be
+        # touched by a pure thread-only reconstruction.
+        monkeypatch.setattr(
+            officer_prompt, "role_definition",
+            lambda *a, **k: (_ for _ in ()).throw(
+                AssertionError("intent_and_context read a role file")))
+        out = officer_prompt.intent_and_context(_mower_case())
+        assert isinstance(out, dict)
+
+    def test_reflects_language_and_core(self):
+        """The 'core' half should encode the channel/language so the judge
+        scores mission × core, not mission alone."""
+        out = officer_prompt.intent_and_context(_mower_case())
+        assert "da" in out["reconstructed_intent"].lower()
