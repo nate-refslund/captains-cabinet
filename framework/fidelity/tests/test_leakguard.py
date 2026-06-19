@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 
 from framework.fidelity import leakguard
@@ -137,7 +139,51 @@ class TestFilterMcpResult:
         assert leakguard.filter_mcp_result([cmt], CUTOFF) == [cmt]
 
 
-class TestThreadCutoffAssertion:
+class TestDatetimeTypedTimestamps:
+    """Audit finding #2a. _item_ts must coerce a datetime/date-typed timestamp
+    to an ISO string before the cutoff compare, and scan ALL _TS_KEYS (not stop
+    at the first) so an earlier empty/wrong-typed key can't shadow a later
+    post-cutoff key. A datetime ts >= cutoff MUST be caught and the record
+    dropped by the fence; mtime/datetime values silently bypassing the cutoff
+    was the leak."""
+
+    POST_DT = datetime(2026, 6, 11, 9, 0, 0, tzinfo=timezone.utc)
+    PRE_DT = datetime(2026, 6, 9, 8, 0, 0, tzinfo=timezone.utc)
+
+    def test_datetime_ts_post_cutoff_is_dropped(self):
+        # (a) a DATETIME-typed ts >= cutoff must be DROPPED — previously it
+        # failed isinstance(v, str) and silently bypassed the fence.
+        rec = {"id": "d1", "ts": self.POST_DT, "text": "datetime post-cutoff (leak)"}
+        assert leakguard.filter_mcp_result([rec], CUTOFF) == []
+
+    def test_commitment_empty_source_date_datetime_resolved_ts_dropped(self):
+        # (b) empty source_date (earlier key) must NOT shadow a post-cutoff
+        # datetime resolved_ts (later key). _item_ts must keep scanning and the
+        # post-cutoff resolved_ts must gate the drop.
+        cmt = {"commitment_id": "c5", "text": "resolved after cutoff (leak)",
+               "source_date": "", "resolved_ts": self.POST_DT, "status": "resolved"}
+        assert leakguard.filter_mcp_result([cmt], CUTOFF) == []
+
+    def test_pre_cutoff_datetime_ts_is_kept(self):
+        # (c) a pre-cutoff DATETIME ts is legitimate as-of-cutoff content and
+        # must be KEPT (coercion must not over-drop).
+        rec = {"id": "d2", "ts": self.PRE_DT, "text": "datetime pre-cutoff (ok)"}
+        out = leakguard.filter_mcp_result([rec], CUTOFF)
+        assert len(out) == 1 and out[0]["id"] == "d2"
+
+    def test_date_typed_value_post_cutoff_is_dropped(self):
+        # date (not datetime) post-cutoff must also coerce + gate.
+        from datetime import date
+        rec = {"id": "d3", "source_date": date(2026, 6, 11), "text": "date leak"}
+        assert leakguard.filter_mcp_result([rec], CUTOFF) == []
+
+    def test_item_ts_returns_gating_candidate_when_any_post_cutoff(self):
+        # _item_ts contract: with multiple candidates, it returns one that gates
+        # (>= cutoff) when any candidate is post-cutoff — a pre-cutoff earlier
+        # key must not be returned in preference to a post-cutoff later key.
+        item = {"ts": self.PRE_DT, "resolved_ts": self.POST_DT}
+        got = leakguard._item_ts(item)
+        assert got is not None and got >= CUTOFF
     def test_clean_thread_passes(self):
         leakguard.assert_thread_pre_cutoff(_retro_case()["thread_before"], CUTOFF)
 

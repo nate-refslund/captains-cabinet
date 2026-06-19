@@ -362,11 +362,23 @@ def gather_cutoff_context(case: Case, *, brain=None,
     raw_hits = vault.get("hits", []) or []
     # Pre-filter on a real CONTENT timestamp strictly before the cutoff; a hit
     # with no derivable content ts is un-fenceable -> excluded.
+    #
+    # A real vault hit carries ``ts`` as an mtime-derived DATETIME (the WRONG
+    # clock — context_lib._fetch_vault). _content_ts ignores that mtime and
+    # derives the authoritative content ts (content_ts / legacy ISO ts /
+    # path-date). Now that leakguard._item_ts coerces datetime values, an
+    # admitted hit whose mtime ts is post-cutoff would be falsely DROPPED by the
+    # downstream fence. So we STAMP the authoritative content ts onto a COPY of
+    # the hit (overwriting the wrong-clock mtime) before fencing — the fence
+    # then operates on the correct, pre-cutoff content clock. (_content_ts has
+    # already proven cts < cutoff for everything in ``pre``.)
     pre = []
     for h in raw_hits:
         cts = _content_ts(h)
         if cts is not None and cts < cutoff:
-            pre.append(h)
+            stamped = dict(h)
+            stamped["ts"] = cts
+            pre.append(stamped)
     vault_hits = leakguard.filter_mcp_result(pre, cutoff)
 
     # --- commitments (both directions; genuinely ts-keyed) -----------------

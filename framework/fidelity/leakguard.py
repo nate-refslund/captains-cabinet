@@ -15,6 +15,7 @@ breach hard-fails the case — we never silently score a leaked case (§238).
 
 from __future__ import annotations
 
+import datetime as _dt
 import re
 import sys
 from typing import Any
@@ -36,6 +37,14 @@ _TS_KEYS = ("ts", "date", "edit_date", "reply_ts", "created_at",
 _ISO_RE = re.compile(
     r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{2}:?\d{2}|Z)?"
 )
+# Anchored ISO date-or-datetime, used ONLY for the _item_ts candidate gate so a
+# bare ``date`` (which ``date.isoformat()`` renders as YYYY-MM-DD, no ``T``) is
+# still a fence-able content timestamp. _ISO_RE itself stays datetime-only — it
+# is relied on by scan_for_leaks / _content_ts / the thread assertion, which
+# must not start matching bare dates embedded in free text.
+_ITEM_TS_RE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{2}:?\d{2}|Z)?)?$"
+)
 
 
 class LeakageDetectedError(RuntimeError):
@@ -44,11 +53,35 @@ class LeakageDetectedError(RuntimeError):
 
 
 def _item_ts(item: dict) -> str | None:
+    """Return the gating content-creation timestamp for a record, or None.
+
+    Audit finding #2a fixed two bugs:
+      (a) a DATETIME/date-typed value (e.g. an mtime-derived ts, or a
+          ``resolved_ts`` carried as a ``datetime``) failed ``isinstance(v, str)``
+          and silently bypassed the cutoff fence (returned None -> not dropped).
+          Each value is now coerced to ISO via ``.isoformat()`` before the
+          ``_ISO_RE`` check.
+      (b) the old loop returned on the FIRST key examined, so an empty / wrong
+          earlier key (e.g. an empty ``source_date``) shadowed a later
+          post-cutoff key (e.g. ``resolved_ts``), letting a leaked record
+          through. We now scan ALL keys and collect every valid candidate.
+
+    ISO timestamps (same-offset UTC) sort lexicographically, so returning the
+    MAX candidate makes "any candidate >= cutoff is catchable" without giving
+    ``_item_ts`` the cutoff: if the latest candidate is >= cutoff the fence
+    drops the record; if the latest is < cutoff every candidate is, so the
+    record is legitimately kept. (``due`` is excluded from ``_TS_KEYS`` so a
+    future due date never gates — see the module note above.)"""
+    candidates: list[str] = []
     for k in _TS_KEYS:
         v = item.get(k)
-        if isinstance(v, str) and _ISO_RE.match(v):
-            return v
-    return None
+        if isinstance(v, (_dt.datetime, _dt.date)):
+            v = v.isoformat()
+        if isinstance(v, str) and _ITEM_TS_RE.match(v):
+            candidates.append(v)
+    if not candidates:
+        return None
+    return max(candidates)
 
 
 def filter_mcp_result(result: Any, cutoff_ts: str) -> Any:
