@@ -43,6 +43,21 @@ def _case():
     })
 
 
+# A held-out reply that SHARES topic words with the thread ("lon"/"snakke") and
+# with the gather context ("fredag"), but carries a distinctive verbatim phrase
+# that must never surface in the prompt. This makes the real_reply leak checks
+# non-trivial: the `not in` assertion can only pass because the harness withholds
+# the reply, not because the reply's vocabulary is absent from the prompt.
+_DISTINCTIVE_REPLY_PHRASE = "lad os tage lon-snakken fredag kl 14 HEMMELIGT-SVAR-99"
+
+
+def _topic_overlap_case():
+    c = _case()
+    c.real_reply = _DISTINCTIVE_REPLY_PHRASE
+    c.ground_truth = {"real_reply": _DISTINCTIVE_REPLY_PHRASE}
+    return c
+
+
 def _capture_llm():
     """Return (fake_llm, seen) — the fake records system+payload it is called
     with and returns a clean draft."""
@@ -94,7 +109,6 @@ class TestGatherNoneIsF1:
         assert "Return ONLY the reply text" in seen["system"]
         # no context block appended to the payload
         assert "CONTEXT (gathered as-of cutoff" not in seen["payload"]
-        assert "no live MCP" or True  # readability anchor
 
     def test_real_reply_never_in_prompt_none_arm(self):
         case = _case()
@@ -102,6 +116,22 @@ class TestGatherNoneIsF1:
         officer_runner.run_case(case, "chair", llm=fake)
         assert case.real_reply not in seen["system"]
         assert case.real_reply not in seen["payload"]
+
+    def test_topic_overlapping_real_reply_never_verbatim_none_arm(self):
+        # Harden the leak check: a real_reply whose TOPIC words ("lon", "fredag")
+        # DO appear in the thread must still never appear VERBATIM in the prompt.
+        # This proves the `not in` assertion isn't trivially true because the
+        # reply's vocabulary is disjoint from the prompt.
+        case = _topic_overlap_case()
+        fake, seen = _capture_llm()
+        officer_runner.run_case(case, "chair", llm=fake)
+        blob = seen["system"] + seen["payload"]
+        # the held-out reply, verbatim, is absent from both halves
+        assert case.real_reply not in seen["system"]
+        assert case.real_reply not in seen["payload"]
+        assert _DISTINCTIVE_REPLY_PHRASE not in blob
+        # …yet its topic words ARE present (so the `not in` check is non-trivial)
+        assert "lon" in blob.lower()
 
 
 def _fake_gather_factory(captured):
@@ -186,3 +216,22 @@ class TestGatherSetInjectsContextAndRules:
                                 gather=_fake_gather_factory(captured))
         assert case.real_reply not in seen["system"]
         assert case.real_reply not in seen["payload"]
+
+    def test_gather_set_topic_overlapping_real_reply_never_verbatim(self):
+        # Same hardening on the gather arm: even when the gathered context block
+        # is appended to the payload, a topic-overlapping held-out reply never
+        # appears verbatim. The context block IS present (proving the payload is
+        # the right haystack), so the `not in` check is non-trivial.
+        case = _topic_overlap_case()
+        fake, seen = _capture_llm()
+        captured = []
+        officer_runner.run_case(case, "chair", llm=fake,
+                                gather=_fake_gather_factory(captured))
+        blob = seen["system"] + seen["payload"]
+        assert case.real_reply not in seen["system"]
+        assert case.real_reply not in seen["payload"]
+        assert _DISTINCTIVE_REPLY_PHRASE not in blob
+        # the gathered context block really is in the payload (right haystack)
+        assert "CONTEXT (gathered as-of cutoff" in seen["payload"]
+        # …and the reply's topic words ARE present (non-trivial `not in`)
+        assert "lon" in blob.lower()
