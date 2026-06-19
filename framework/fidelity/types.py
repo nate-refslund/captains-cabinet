@@ -29,6 +29,10 @@ class Case:
     language: str = ""
     thread_before: list[dict] = field(default_factory=list)
     real_reply: str = ""
+    # F4 §1.6: reconstructed as-of-cutoff intent (mission/goal × core). Default
+    # "", computed lazily by intent_and_context at score time if empty. NEVER
+    # populated from real_reply (the held-out ground truth) — anti-leak boundary.
+    intent: str = ""
 
     @classmethod
     def from_retro_case(cls, rc: dict, lane: str = "send-1to1-reply",

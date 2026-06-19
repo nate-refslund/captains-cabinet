@@ -47,6 +47,30 @@ class TestCaseModel:
         assert rc["real_reply"] == "Ja, lad os tage det fredag."
         assert rc["thread_before"] == c.thread_before
 
+    def test_intent_defaults_empty(self):
+        # F4 §1.6: Case.intent is a new field, default "".
+        c = Case.from_retro_case(_retro_case())
+        assert c.intent == ""
+
+    def test_from_retro_case_leaves_intent_empty(self):
+        # F4 §1.6/§8: from_retro_case leaves intent "" (computed lazily later,
+        # never eagerly populated here).
+        rc = _retro_case()
+        c = Case.from_retro_case(rc)
+        assert c.intent == ""
+
+    def test_intent_never_set_from_real_reply(self):
+        # F4 §1.6: intent must NEVER be populated from real_reply (the held-out
+        # ground truth). Even with a long, distinctive real_reply, intent stays
+        # decoupled — it is not the reply text, nor any substring derived from it.
+        rc = _retro_case()
+        rc["real_reply"] = "SECRET_HELD_OUT_GROUND_TRUTH lad os modes fredag kl 14"
+        c = Case.from_retro_case(rc)
+        assert c.intent == ""
+        assert c.real_reply == "SECRET_HELD_OUT_GROUND_TRUTH lad os modes fredag kl 14"
+        assert "SECRET_HELD_OUT_GROUND_TRUTH" not in c.intent
+        assert c.intent != c.real_reply
+
     def test_officer_decision_shape(self):
         d = OfficerDecision(decision="draft text", rationale="why", chain=[])
         assert d.decision == "draft text"
