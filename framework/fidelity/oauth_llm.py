@@ -75,6 +75,16 @@ def oauth_raw_llm(payload: str, system: str, max_tokens: int = 1500,
     # used. Strip ANTHROPIC_API_KEY so a stray key can never silently bill the
     # pay-as-you-go path instead of the Max pool.
     env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
+    # Optional CLEAN EVAL HOME (user-global leak hardening, task #5). Point
+    # CABINET_EVAL_HOME at a HOME where a DEDICATED clone Claude account is
+    # logged in and which carries NO personal ~/.claude/CLAUDE.md /
+    # screenpipe-memories.md / ~/.claude.json — that closes the user-global
+    # context leak (the project/.remember leak is already closed by _eval_cwd).
+    # Unset = inherit the real HOME: project context is still cwd-isolated, but
+    # user-global memory loads, so live scores are NOT yet graduation-clean.
+    _eval_home = os.environ.get("CABINET_EVAL_HOME")
+    if _eval_home and os.path.isdir(_eval_home):
+        env["HOME"] = _eval_home
     try:
         r = subprocess.run(
             argv, input=payload, capture_output=True, text=True,

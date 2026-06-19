@@ -51,6 +51,35 @@ class TestRawLlm:
         monkeypatch.setattr(oauth_llm.subprocess, "run", fake_run)
         assert oauth_llm.oauth_raw_llm("p", "s") is None
 
+    def test_eval_home_override_when_set(self, monkeypatch, tmp_path):
+        """CABINET_EVAL_HOME (when set to a real dir) overrides HOME for the
+        eval claude -p so a dedicated clean clone account / HOME can close the
+        user-global ~/.claude/CLAUDE.md leak. Unset = real HOME inherited."""
+        import os
+        captured = {}
+
+        def fake_run(argv, **kw):
+            captured["home"] = kw.get("env", {}).get("HOME")
+            return subprocess.CompletedProcess(argv, 0, stdout="ok", stderr="")
+
+        monkeypatch.setattr(oauth_llm.subprocess, "run", fake_run)
+        monkeypatch.setenv("CABINET_EVAL_HOME", str(tmp_path))
+        oauth_llm.oauth_raw_llm("p", "s")
+        assert captured["home"] == str(tmp_path)
+
+    def test_eval_home_not_overridden_when_unset(self, monkeypatch):
+        import os
+        captured = {}
+
+        def fake_run(argv, **kw):
+            captured["home"] = kw.get("env", {}).get("HOME")
+            return subprocess.CompletedProcess(argv, 0, stdout="ok", stderr="")
+
+        monkeypatch.setattr(oauth_llm.subprocess, "run", fake_run)
+        monkeypatch.delenv("CABINET_EVAL_HOME", raising=False)
+        oauth_llm.oauth_raw_llm("p", "s")
+        assert captured["home"] == os.environ.get("HOME")
+
     def test_runs_in_isolated_cwd_not_project(self, monkeypatch):
         """LEAK ISOLATION (regression guard): the eval `claude -p` must run in
         an isolated temp cwd, NEVER the cabinet project root — otherwise it
