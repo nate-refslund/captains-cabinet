@@ -22,17 +22,22 @@ _DEFAULT_MODEL = "claude-sonnet-4-6"
 _TIMEOUT_S = 185
 
 # LEAK ISOLATION (verified 2026-06-19): `claude -p` is a full Claude Code agent
-# that auto-discovers the project's CLAUDE.md, .remember/ session buffer, and
-# SessionStart hooks from its cwd. Run from the cabinet, the eval LLM (officer
-# AND judge) therefore inherits POST-CUTOFF, this-session context — an
-# out-of-band leak that bypasses the payload-level cutoff fence entirely (a bare
-# `claude -p` from the cabinet returned the held-out answer, citing .remember).
-# We run the eval LLM from a CLEAN temp cwd so it auto-discovers no project
-# context, while leaving HOME intact so keychain/OAuth auth still works.
-# RESIDUAL (graduation-blocker, see task #5 + design §leak): the user-global
-# ~/.claude/CLAUDE.md still loads regardless of cwd; --bare would skip it but
-# also disables keychain reads (kills OAuth). Hardening = a surrogate HOME that
-# exposes only the auth marker, not CLAUDE.md.
+# that auto-discovers BOTH (a) project context — CLAUDE.md, .remember/ session
+# buffer, SessionStart hooks from its cwd — and (b) user-global context —
+# ~/.claude/CLAUDE.md (screenpipe-memories) + ~/.claude.json. Run from the
+# cabinet, the eval LLM (officer AND judge) inherits POST-CUTOFF, this-session
+# context — an out-of-band leak past the payload-level cutoff fence (a bare
+# `claude -p` from the cabinet returned the held-out answer, citing .remember;
+# and the user-global memory leaked "what is PolAds"). BOTH tiers are now closed:
+#   (a) PROJECT tier: run the eval LLM from a CLEAN temp cwd (_eval_cwd) so it
+#       auto-discovers no project CLAUDE.md/.remember/hooks.
+#   (b) USER-GLOBAL tier: pass `--setting-sources project,local` so the `user`
+#       source (~/.claude/CLAUDE.md + memory) is NOT loaded. Verified: the
+#       PolAds probe returns UNKNOWN with the flag, AUTH_OK still works — HOME is
+#       left intact so the macOS keychain / OAuth is untouched (overriding HOME
+#       breaks the keychain, the dead end the earlier CABINET_EVAL_HOME approach
+#       hit). No clean-HOME, no separate login, no keychain risk.
+_SETTING_SOURCES = "project,local"  # drop `user` -> no user-global CLAUDE.md/memory
 _EVAL_CWD = None
 
 
@@ -60,6 +65,7 @@ def _build_argv(system: str, model: str) -> list[str]:
         "claude", "-p",
         "--model", model,
         "--append-system-prompt", system,
+        "--setting-sources", _SETTING_SOURCES,  # drop user-global memory (leak)
         "--output-format", "text",
     ]
 
@@ -74,21 +80,16 @@ def oauth_raw_llm(payload: str, system: str, max_tokens: int = 1500,
     # Inherit env so CLAUDE_CODE_OAUTH_TOKEN (CI) or the local OAuth session is
     # used. Strip ANTHROPIC_API_KEY so a stray key can never silently bill the
     # pay-as-you-go path instead of the Max pool.
+    # Strip ANTHROPIC_API_KEY so a stray key can never silently bill the
+    # pay-as-you-go path instead of the Max pool. HOME is left INTACT — the
+    # macOS keychain / OAuth is HOME-anchored, and overriding it breaks auth
+    # (the keychain-not-found dead end). The user-global leak is closed by the
+    # --setting-sources flag in _build_argv, not by a fake HOME.
     env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
-    # Optional CLEAN EVAL HOME (user-global leak hardening, task #5). Point
-    # CABINET_EVAL_HOME at a HOME where a DEDICATED clone Claude account is
-    # logged in and which carries NO personal ~/.claude/CLAUDE.md /
-    # screenpipe-memories.md / ~/.claude.json — that closes the user-global
-    # context leak (the project/.remember leak is already closed by _eval_cwd).
-    # Unset = inherit the real HOME: project context is still cwd-isolated, but
-    # user-global memory loads, so live scores are NOT yet graduation-clean.
-    _eval_home = os.environ.get("CABINET_EVAL_HOME")
-    if _eval_home and os.path.isdir(_eval_home):
-        env["HOME"] = _eval_home
     try:
         r = subprocess.run(
             argv, input=payload, capture_output=True, text=True,
-            timeout=_TIMEOUT_S, env=env, cwd=_eval_cwd(),  # leak isolation
+            timeout=_TIMEOUT_S, env=env, cwd=_eval_cwd(),  # project-tier isolation
         )
     except (subprocess.TimeoutExpired, FileNotFoundError):
         return None

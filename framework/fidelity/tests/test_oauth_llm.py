@@ -51,10 +51,21 @@ class TestRawLlm:
         monkeypatch.setattr(oauth_llm.subprocess, "run", fake_run)
         assert oauth_llm.oauth_raw_llm("p", "s") is None
 
-    def test_eval_home_override_when_set(self, monkeypatch, tmp_path):
-        """CABINET_EVAL_HOME (when set to a real dir) overrides HOME for the
-        eval claude -p so a dedicated clean clone account / HOME can close the
-        user-global ~/.claude/CLAUDE.md leak. Unset = real HOME inherited."""
+    def test_drops_user_setting_source_to_close_global_leak(self):
+        # USER-GLOBAL leak fix: --setting-sources project,local omits `user`, so
+        # ~/.claude/CLAUDE.md (screenpipe-memories) + memory are NOT loaded.
+        # Verified live 2026-06-19: PolAds probe -> UNKNOWN with the flag,
+        # AUTH_OK still works (HOME/keychain untouched).
+        argv = oauth_llm._build_argv("SYS", "claude-sonnet-4-6")
+        assert "--setting-sources" in argv
+        i = argv.index("--setting-sources")
+        sources = argv[i + 1].split(",")
+        assert "user" not in sources, "the `user` source leaks ~/.claude/CLAUDE.md"
+        assert "project" in sources and "local" in sources
+
+    def test_does_not_override_home(self, monkeypatch):
+        # HOME must stay intact — the macOS keychain/OAuth is HOME-anchored;
+        # overriding it breaks auth (keychain-not-found). No CABINET_EVAL_HOME.
         import os
         captured = {}
 
@@ -63,20 +74,6 @@ class TestRawLlm:
             return subprocess.CompletedProcess(argv, 0, stdout="ok", stderr="")
 
         monkeypatch.setattr(oauth_llm.subprocess, "run", fake_run)
-        monkeypatch.setenv("CABINET_EVAL_HOME", str(tmp_path))
-        oauth_llm.oauth_raw_llm("p", "s")
-        assert captured["home"] == str(tmp_path)
-
-    def test_eval_home_not_overridden_when_unset(self, monkeypatch):
-        import os
-        captured = {}
-
-        def fake_run(argv, **kw):
-            captured["home"] = kw.get("env", {}).get("HOME")
-            return subprocess.CompletedProcess(argv, 0, stdout="ok", stderr="")
-
-        monkeypatch.setattr(oauth_llm.subprocess, "run", fake_run)
-        monkeypatch.delenv("CABINET_EVAL_HOME", raising=False)
         oauth_llm.oauth_raw_llm("p", "s")
         assert captured["home"] == os.environ.get("HOME")
 
