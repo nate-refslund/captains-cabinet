@@ -6,12 +6,14 @@
 # instance/config/autonomy.yml. Edit/Write must BLOCK (exit 2) for EVERY
 # officer (including cos): no loop may edit its own judge.
 #
-# 21 BLOCK probes (9 germline classes incl. the suffix-anchored
-# framework/authority/ judge modules classifier.py + lane.py + matrix.py, x
-# Edit/Write/officer/path-form variants + constitution regression pin +
-# double-slash normalization) + 10 ALLOW probes (false-positive guards:
-# siblings, evolved skills, own tier2, non-germline hooks, shared interfaces,
-# the authority judges' own editable tests incl. test_matrix.py).
+# 24 BLOCK probes (9 germline classes incl. the suffix-anchored
+# framework/authority/ judge modules classifier.py + lane.py + matrix.py and the
+# authority-matrix.yml DATA file (T8), x Edit/Write/officer/path-form variants +
+# constitution regression pin + double-slash normalization) + 11 ALLOW probes
+# (false-positive guards: siblings, evolved skills, own tier2, non-germline
+# hooks, shared interfaces, the authority judges' own editable tests incl.
+# test_matrix.py, and a preset/instance authority-matrix overlay which is NOT
+# the germline floor).
 #
 # Accepted FP (documented, fail-closed): staging a germline-named file
 # under a mirrored directory tail (e.g. /tmp/cabinet/mcp-scope.yml) is
@@ -72,6 +74,14 @@ probe "G18 abs-path authority judge (cro)"  cro Edit  '/opt/founders-cabinet/fra
 # schema-checks authority-matrix.yml; suffix-anchored like the other judges.
 probe "G18b Edit authority matrix.py (cto)" cto Edit  'framework/authority/matrix.py'                              BLOCK
 probe "G18c Write authority matrix.py (cos!)" cos Write 'framework/authority/matrix.py'                            BLOCK
+# authority-matrix.yml — the matrix-as-DATA floor (T8). The single source of
+# truth for verdicts/bars/ceilings the gate reads; an officer editing it could
+# silently widen autonomy or drop a hard ceiling, so the framework floor is
+# germline. Covered by the framework/policies/ dir-match; these probes PIN that
+# coverage so a future edit to the germline glob that drops it is caught [FIX-8].
+probe "G20 Edit authority-matrix.yml (cto)" cto Edit  'framework/policies/authority-matrix.yml'                    BLOCK
+probe "G21 Write authority-matrix.yml (cos!)" cos Write 'framework/policies/authority-matrix.yml'                  BLOCK
+probe "G22 abs-path authority-matrix.yml (cro)" cro Edit '/opt/founders-cabinet/framework/policies/authority-matrix.yml' BLOCK
 # Regression pin: pre-existing constitution protection unchanged
 probe "G19 constitution pin (cto)"         cto Edit  'constitution/CONSTITUTION.md'                                BLOCK
 
@@ -100,6 +110,11 @@ probe "FP7 other lib file (cto)"           cto Edit  'cabinet/scripts/lib/trigge
 probe "FP8 authority test file (cro)"      cro Write 'framework/authority/tests/test_classifier.py'                ALLOW
 probe "FP8b matrix test file (cro)"        cro Write 'framework/authority/tests/test_matrix.py'                    ALLOW
 probe "FP9 authority sibling note (cro)"   cro Write 'framework/authority-notes.md'                                ALLOW
+# Only the framework FLOOR authority-matrix.yml is germline. The instance/preset
+# overlays are the captain-tunable lane->risk bindings + per-cell bar overrides
+# (design Component 1) and are NOT in the germline set — an officer proposing
+# instance lane bindings is allowed work, so the instance overlay stays editable.
+probe "FP10 instance authority-matrix overlay (cos)" cos Write 'instance/config/policies/authority-matrix.yml'    ALLOW
 
 echo ""
 echo "=== Summary: PASS=$PASS  FAIL=$FAIL ==="
