@@ -19,13 +19,20 @@ import re
 import sys
 from typing import Any
 
-# Keys whose value is a timestamp we compare against the cutoff. The
-# commitment keys (source_date, due, resolved_ts) are included so the F4
+# Keys whose value is a CONTENT-CREATION timestamp we compare against the
+# cutoff. The commitment keys (source_date, resolved_ts) are included so the F4
 # open_commitments source is genuinely guard-walkable (design §2.1) — a
-# commitment whose source_date / due / resolved_ts is at-or-after the cutoff
-# is a post-cutoff record and must be dropped.
+# commitment whose source_date / resolved_ts is at-or-after the cutoff is a
+# post-cutoff record and must be dropped.
+#
+# `due` is DELIBERATELY EXCLUDED: a due date is legitimate as-of-cutoff
+# knowledge (Nate can know "this is due next Friday" at the cutoff), NOT a
+# content-creation timestamp. Including it wrongly DROPS a genuinely open
+# commitment whose source_date is empty and whose due is in the future —
+# _item_ts returns the FIRST matching key, so an empty source_date is skipped
+# and the future `due` is taken as the record's timestamp, failing the fence.
 _TS_KEYS = ("ts", "date", "edit_date", "reply_ts", "created_at",
-            "resolved_ts", "source_date", "due")
+            "resolved_ts", "source_date")
 _ISO_RE = re.compile(
     r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{2}:?\d{2}|Z)?"
 )

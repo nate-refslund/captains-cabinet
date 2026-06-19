@@ -101,6 +101,41 @@ class TestFilterMcpResult:
         result = {"voice": "tone notes with no timestamp"}
         assert leakguard.filter_mcp_result(result, CUTOFF) == result
 
+    def test_open_commitment_empty_source_date_future_due_is_kept(self):
+        # An open commitment whose source_date is empty but whose `due` is in
+        # the future is legitimate as-of-cutoff knowledge — it must be KEPT.
+        # `due` is NOT a content-creation key (design §2.1); only source_date /
+        # resolved_ts fence a commitment. With `due` excluded from _TS_KEYS,
+        # _item_ts finds no creation timestamp (empty source_date is skipped),
+        # so the record survives the fence.
+        cmt = {"commitment_id": "c1", "text": "send the deck",
+               "source_date": "", "due": "2026-12-31T09:00:00+00:00",
+               "status": "open"}
+        out = leakguard.filter_mcp_result([cmt], CUTOFF)
+        assert len(out) == 1
+        assert out[0]["commitment_id"] == "c1"
+
+    def test_commitment_source_date_at_or_after_cutoff_is_dropped(self):
+        # source_date >= cutoff is a post-cutoff content-creation record → drop.
+        cmt = {"commitment_id": "c2", "text": "AFTER promise (leak)",
+               "source_date": CUTOFF, "due": "2026-12-31T09:00:00+00:00",
+               "status": "open"}
+        assert leakguard.filter_mcp_result([cmt], CUTOFF) == []
+
+    def test_commitment_resolved_ts_at_or_after_cutoff_is_dropped(self):
+        # resolved_ts >= cutoff means the commitment was resolved after the
+        # cutoff — knowing that is a leak → drop.
+        cmt = {"commitment_id": "c3", "text": "resolved after cutoff (leak)",
+               "source_date": "2026-05-01T09:00:00+00:00",
+               "resolved_ts": "2026-06-11T09:00:00+00:00", "status": "resolved"}
+        assert leakguard.filter_mcp_result([cmt], CUTOFF) == []
+
+    def test_due_alone_in_future_never_drops_a_record(self):
+        # Belt: a record whose ONLY ts-like field is a future `due` is never
+        # fenced out — `due` is excluded from _TS_KEYS entirely.
+        cmt = {"id": "c4", "due": "2099-01-01T00:00:00+00:00", "text": "open"}
+        assert leakguard.filter_mcp_result([cmt], CUTOFF) == [cmt]
+
 
 class TestThreadCutoffAssertion:
     def test_clean_thread_passes(self):
