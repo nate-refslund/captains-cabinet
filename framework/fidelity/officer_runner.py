@@ -144,16 +144,24 @@ _NOTES_SECTION_RE = re.compile(
 
 def _content_ts(hit: dict) -> str | None:
     """Derive a CONTENT timestamp for a vault hit, in order:
-      (a) an ISO-string ``ts`` field (gather_context emits ts.isoformat(),
-          brain server.py:209-212);
-      (b) a date parsed from the note path / daily-note name
+      (a) the index's per-chunk ``content_ts`` — when the content was
+          authored/occurred, ISO-8601, emitted by the brain embeddings index
+          (~62% coverage with honest NULLs). The CORRECT content clock; this is
+          the field that lets conversation chunks (no date in their path) be
+          fenced + admitted, instead of being silently excluded;
+      (b) a legacy ISO-string ``ts`` field, if present (gather_context emits
+          ts.isoformat());
+      (c) a date parsed from the note path / daily-note name
           (e.g. ``1-Daily/2026-05-12.md`` -> ``2026-05-12``).
-    If neither yields a content date, return None -> the hit is treated as
+    If none yields a content date, return None -> the hit is treated as
     un-fenceable and EXCLUDED. There is NO ``mtime`` fallback, ever: mtime is
     file-EDIT time (the wrong clock) and a raw float never matches _ISO_RE, so
     the guard would silently pass every such hit through (design §2.3, B3)."""
     if not isinstance(hit, dict):
         return None
+    cts = hit.get("content_ts")
+    if isinstance(cts, str) and leakguard._ISO_RE.match(cts):
+        return cts
     ts = hit.get("ts")
     if isinstance(ts, str) and leakguard._ISO_RE.match(ts):
         return ts
@@ -289,7 +297,14 @@ class BrainAdapter:
             return self._server.read_note(path)
         import os
         from pathlib import Path
-        vreal = os.path.realpath(Path.home() / "Obsidian" / "screenpipe-brain")
+        # Source of truth is the pinned OBSIDIAN_VAULT_PATH (screenpipe's
+        # embeddings plist now exports it); fall back to the TRUE on-disk
+        # lowercase casing (verified: ~/obsidian/screenpipe-brain). Hardcoding
+        # capital "Obsidian" only resolved via case-insensitive FS — the same
+        # case-folding dependence we removed on the index side.
+        vault = (os.environ.get("OBSIDIAN_VAULT_PATH")
+                 or str(Path.home() / "obsidian" / "screenpipe-brain"))
+        vreal = os.path.realpath(vault)
         resolved = os.path.realpath(os.path.join(vreal, path))
         if resolved != vreal and not resolved.startswith(vreal + os.sep):
             raise PermissionError(f"refused path outside vault: {path!r}")

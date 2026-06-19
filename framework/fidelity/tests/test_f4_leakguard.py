@@ -193,6 +193,42 @@ class TestSearchBrainMtimeNotTrusted:
             {"path": "5-Reflections/voice.md", "mtime": 1_900_000_000.0}) is None
         assert officer_runner._content_ts({}) is None
 
+
+class TestContentTsPreferred:
+    """The brain index now emits a per-chunk `content_ts` (ISO, the true
+    authored/event time). _content_ts MUST prefer it — this is what lets a
+    conversation chunk (NO date in its path) be fenced + admitted instead of
+    silently excluded (the vault_hits=0 fix)."""
+
+    def test_content_ts_admits_a_pathless_conversation_chunk(self):
+        # 3-People conversation: no date in the path; previously -> None
+        # (excluded). With content_ts it returns the real authored time.
+        hit = {"ref": "3-People/sobuc/conversations.md", "heading": "msg",
+               "content_ts": "2026-05-12T09:00:00+00:00",
+               "mtime": 1_900_000_000.0}
+        assert officer_runner._content_ts(hit) == "2026-05-12T09:00:00+00:00"
+
+    def test_content_ts_preferred_over_path_date(self):
+        # content_ts wins over a (possibly misleading) date in the path.
+        hit = {"path": "1-Daily/2026-01-01.md",
+               "content_ts": "2026-05-12T09:00:00+00:00"}
+        assert officer_runner._content_ts(hit) == "2026-05-12T09:00:00+00:00"
+
+    def test_absent_content_ts_falls_back_to_path_date(self):
+        # back-compat: no content_ts -> existing path-date behavior.
+        assert officer_runner._content_ts(
+            {"path": "1-Daily/2026-05-12.md"}).startswith("2026-05-12")
+
+    def test_non_iso_content_ts_ignored(self):
+        # a junk/non-ISO content_ts must not be trusted; falls through.
+        assert officer_runner._content_ts(
+            {"content_ts": "not-a-date", "ref": "3-People/x/conversations.md"}) is None
+
+    def test_pathless_chunk_with_no_content_ts_still_excluded(self):
+        # the fail-safe still holds: no content_ts + no path date -> excluded.
+        assert officer_runner._content_ts(
+            {"ref": "3-People/x/conversations.md", "mtime": 1_900_000_000.0}) is None
+
     def test_vault_hit_at_or_after_cutoff_dropped(self):
         # A vault hit with an ISO content ts >= cutoff is dropped by the
         # pre-filter (strict <) AND by filter_mcp_result (belt + suspenders).
