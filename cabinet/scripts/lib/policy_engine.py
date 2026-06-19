@@ -21,6 +21,35 @@ import sys
 from pathlib import Path
 from typing import Any
 
+
+# ---------------------------------------------------------------------------
+# Shared authority classifier (the F+A join key) [FIX-1]
+# ---------------------------------------------------------------------------
+# The policy engine is invoked STANDALONE by pre-tool-use.sh — not as part of
+# the `framework` package — so the repo root is not already on sys.path. Put it
+# there (honoring CABINET_ROOT where the framework lives in deployment, else
+# walking up from this file: lib -> scripts -> cabinet -> repo root) so the gate
+# and the consequence emitter share the ONE canonical classify_action /
+# resolve_lane. No duplicate copy: single source of truth.
+def _authority_root() -> Path:
+    env_root = os.environ.get("CABINET_ROOT")
+    if env_root and (Path(env_root) / "framework" / "authority").is_dir():
+        return Path(env_root)
+    return Path(__file__).resolve().parent.parent.parent.parent
+
+
+_AUTH_ROOT = _authority_root()
+if str(_AUTH_ROOT) not in sys.path:
+    sys.path.insert(0, str(_AUTH_ROOT))
+
+try:  # pragma: no cover - exercised via test_authority_join.py
+    from framework.authority.classifier import classify_action  # noqa: E402
+    from framework.authority.lane import resolve_lane  # noqa: E402
+except Exception:  # pragma: no cover - keep the engine importable if absent
+    classify_action = None  # type: ignore[assignment]
+    resolve_lane = None  # type: ignore[assignment]
+
+
 # ---------------------------------------------------------------------------
 # Shell command parsing — the core innovation replacing ~700 lines of regex
 # ---------------------------------------------------------------------------

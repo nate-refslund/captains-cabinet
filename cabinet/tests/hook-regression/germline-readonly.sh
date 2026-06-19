@@ -6,10 +6,12 @@
 # instance/config/autonomy.yml. Edit/Write must BLOCK (exit 2) for EVERY
 # officer (including cos): no loop may edit its own judge.
 #
-# 16 BLOCK probes (8 germline classes x Edit/Write/officer/path-form
-# variants + constitution regression pin + double-slash normalization) +
-# 7 ALLOW probes (false-positive guards: siblings, evolved skills, own
-# tier2, non-germline hooks, shared interfaces).
+# 19 BLOCK probes (9 germline classes incl. the suffix-anchored
+# framework/authority/ judge modules classifier.py + lane.py, x
+# Edit/Write/officer/path-form variants + constitution regression pin +
+# double-slash normalization) + 9 ALLOW probes (false-positive guards:
+# siblings, evolved skills, own tier2, non-germline hooks, shared interfaces,
+# the authority judges' own editable tests).
 #
 # Accepted FP (documented, fail-closed): staging a germline-named file
 # under a mirrored directory tail (e.g. /tmp/cabinet/mcp-scope.yml) is
@@ -59,8 +61,15 @@ probe "G13 abs-path golden-evals (cro)"    cro Write '/opt/founders-cabinet/memo
 # Double-slash normalization (suffix-anchor bypass closed by tr -s '/')
 probe "G14 dbl-slash policy_engine (cto)"  cto Edit  'cabinet/scripts/lib//policy_engine.py'                       BLOCK
 probe "G15 dbl-slash autonomy.yml (cos)"   cos Write 'instance/config//autonomy.yml'                               BLOCK
+# Authority judge modules — the shared classifier/lane join key (T1), each
+# suffix-anchored as an exact file (like policy_engine.py) so the modules are
+# germline but their tests stay editable. Future judges
+# (thermostat/veto/deploy_classifier) get added by name when created [FIX-8].
+probe "G16 Edit authority classifier (cto)" cto Edit  'framework/authority/classifier.py'                          BLOCK
+probe "G17 Write authority lane (cos!)"     cos Write 'framework/authority/lane.py'                                 BLOCK
+probe "G18 abs-path authority judge (cro)"  cro Edit  '/opt/founders-cabinet/framework/authority/classifier.py'    BLOCK
 # Regression pin: pre-existing constitution protection unchanged
-probe "G16 constitution pin (cto)"         cto Edit  'constitution/CONSTITUTION.md'                                BLOCK
+probe "G19 constitution pin (cto)"         cto Edit  'constitution/CONSTITUTION.md'                                BLOCK
 
 # ------------------------------------------------------------------
 # ALLOW: false-positive guards (must NOT block)
@@ -81,6 +90,11 @@ probe "FP5 non-germline hook (cos)"        cos Edit  'cabinet/scripts/hooks/post
 probe "FP6 captain-decisions.md (cos)"     cos Write 'shared/interfaces/captain-decisions.md'                      ALLOW
 # Other lib files are not the judge — only policy_engine.py is germline
 probe "FP7 other lib file (cto)"           cto Edit  'cabinet/scripts/lib/triggers.sh'                             ALLOW
+# Authority judges are suffix-anchored (classifier.py / lane.py) — their TESTS
+# are the officers' verification surface and stay editable (mirrors how
+# cabinet/scripts/lib/tests/ stays editable while policy_engine.py is germline)
+probe "FP8 authority test file (cro)"      cro Write 'framework/authority/tests/test_classifier.py'                ALLOW
+probe "FP9 authority sibling note (cro)"   cro Write 'framework/authority-notes.md'                                ALLOW
 
 echo ""
 echo "=== Summary: PASS=$PASS  FAIL=$FAIL ==="
