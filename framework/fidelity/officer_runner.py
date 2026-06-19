@@ -29,7 +29,27 @@ from framework.fidelity.oauth_llm import oauth_raw_llm
 from framework.fidelity.officer_prompt import build_eval_system, format_situation
 from framework.fidelity.types import Case, OfficerDecision
 
-EVAL_MODE_RULES = """
+# ---------------------------------------------------------------------------
+# EVAL_MODE_RULES — conditional on whether context-gathering ran (design §4).
+#
+# F1 had a single block that BOTH said "you have NO knowledge / do not consult"
+# AND "return ONLY the reply text". F4 makes it conditional so the A/B arms
+# never contradict each other:
+#   - The STRICT cutoff boundary is ALWAYS applied (both arms). It is the
+#     sacred fence; it holds whether or not context was gathered.
+#   - The "use the gathered context / propose options (incl. options IN the
+#     reply text)" permission + a reconciled output line are appended ONLY when
+#     gather is set.
+#
+# EVAL_MODE_RULES is kept BYTE-IDENTICAL to F1 (= strict body + F1's original
+# "Return ONLY the reply text" line) so run_case(..., gather=None) reproduces
+# the F1 prompt exactly. The gather arm is built from the shared strict body
+# (_EVAL_MODE_STRICT) + the gather permission + the reconciled output line.
+# ---------------------------------------------------------------------------
+
+# Shared strict body — the cutoff boundary, WITHOUT any output-format line. Both
+# arms start from this. {cutoff_ts} is .format()-substituted at call time.
+_EVAL_MODE_STRICT = """
 
 # EVALUATION MODE (held-out blind test)
 You are in EVALUATION MODE. Your drafts, board updates, and commitments will be
@@ -39,10 +59,44 @@ NOT call queue_draft, do NOT write to any board, do NOT send anything.
 
 You have NO knowledge of events at or after {cutoff_ts}. Do not consult or
 reference anything timestamped at or after that moment (search results, vault
-notes, commitments, decisions). This is a blind evaluation.
+notes, commitments, decisions). This is a blind evaluation."""
+
+# F1's output-format line (context-starved arm): return only the reply text.
+_F1_OUTPUT_LINE = """
 
 Return ONLY the reply text Nate would have sent at that moment — no JSON, no
 commentary, no subject line."""
+
+# EVAL_MODE_RULES — the gather=None (F1) block. Byte-identical to F1's original.
+EVAL_MODE_RULES = _EVAL_MODE_STRICT + _F1_OUTPUT_LINE
+
+# Gather-arm permission (design §4): the context block was gathered as-of the
+# cutoff and is safe to use; reason about the real goal and propose the fitting
+# course of action — including options — IN the reply text. No new system
+# authority is granted over the cutoff fence above; this only permits use of
+# the already-leak-guarded context appended to the USER message.
+_EVAL_MODE_GATHER_PERMISSION = """
+
+The CONTEXT block below was gathered as-of the cutoff and is safe to use. You
+may reason about the situation's real goal and propose the fitting course of action
+— including options — in your reply. Serve the intent, not just the literal
+ask."""
+
+# Reconciled output line (gather arm): replaces F1's "Return ONLY the reply
+# text" so proposing options does not invite JSON/scaffolding — options go IN
+# the message text.
+_EVAL_MODE_GATHER_OUTPUT_LINE = """
+
+Return only the message you would send Nate's counterparty — no JSON, no meta-commentary,
+no subject line. If the best response proposes options, put them in that message."""
+
+# EVAL_MODE_RULES_GATHER — the gather!=None block: strict boundary + permission
+# + reconciled output line. {cutoff_ts} substituted at call time.
+EVAL_MODE_RULES_GATHER = (
+    _EVAL_MODE_STRICT
+    + _EVAL_MODE_GATHER_PERMISSION
+    + _EVAL_MODE_GATHER_OUTPUT_LINE
+)
 
 
 # ===========================================================================
@@ -277,11 +331,82 @@ def _decision_evidence(decision: OfficerDecision) -> str:
     return f"chainhash:{h}"
 
 
+# Per-record cap for rendered context lines (design §2.4: the context block is
+# appended OUTSIDE format_situation's body caps, with its own per-record cap).
+_CTX_RECORD_CAP = 400
+
+
+def _render_context_block(ctx: dict) -> str:
+    """Render the already-leak-guarded gather_cutoff_context dict (design §2.2)
+    to a compact, ts-tagged context block for the USER message (design §2.4).
+
+    This adds NO new source and reads NO new field — it is a pure deterministic
+    render of the structured, fenced dict gather_cutoff_context returned (whose
+    every admitted record was content-timestamped before the cutoff and passed
+    through leakguard.filter_mcp_result upstream). ``thread`` is not re-rendered
+    here — format_situation already carries it. Empty/thinned sections render an
+    explicit "(no admissible pre-cutoff context for X)" line, so the officer
+    sees the thinness rather than a silent gap."""
+    lines = ["", "# CONTEXT (gathered as-of cutoff, leak-guarded — safe to use)"]
+
+    vault_hits = ctx.get("vault_hits") or []
+    lines.append("\n## Vault (pre-cutoff content only)")
+    if vault_hits:
+        for h in vault_hits:
+            ts = str(h.get("ts") or "")[:16]
+            ref = h.get("path") or h.get("ref") or h.get("heading") or ""
+            text = str(h.get("text") or "").strip()[:_CTX_RECORD_CAP]
+            lines.append(f"[{ts} {ref}] {text}")
+    else:
+        lines.append("(no admissible pre-cutoff context for vault)")
+
+    commitments = ctx.get("commitments") or []
+    lines.append("\n## Open commitments (fenced)")
+    if commitments:
+        for c in commitments:
+            sd = str(c.get("source_date") or "")[:16]
+            due = c.get("due") or ""
+            text = str(c.get("text") or "").strip()[:_CTX_RECORD_CAP]
+            due_s = f" due:{due}" if due else ""
+            lines.append(f"[{sd}{due_s}] {text}")
+    else:
+        lines.append("(no admissible pre-cutoff context for commitments)")
+
+    notes = ctx.get("notes") or []
+    if notes:
+        lines.append("\n## Pre-cutoff notes")
+        for n in notes:
+            body = str(n.get("text") or "").strip()[:_CTX_RECORD_CAP]
+            lines.append(f"[{n.get('path', '')}] {body}")
+
+    person_static = (ctx.get("person_static") or "").strip()
+    lines.append("\n## Counterparty (atemporal frontmatter)")
+    lines.append(person_static if person_static
+                 else "(no admissible pre-cutoff context for counterparty)")
+
+    excluded = ctx.get("excluded") or []
+    if excluded:
+        lines.append("\n## Excluded (un-fenceable; not gathered)")
+        lines.append("; ".join(str(e) for e in excluded))
+
+    return "\n".join(lines)
+
+
 def run_case(case: Case, officer_role: str, llm=oauth_raw_llm,
-             emit_events: bool = True) -> OfficerDecision:
+             emit_events: bool = True, gather=None) -> OfficerDecision:
     """Drive the officer blind on one Case; return the captured OfficerDecision.
     Hard-fails (LeakageDetectedError) + emits a leak event on any cutoff
-    breach."""
+    breach.
+
+    ``gather`` is the A/B context-lift control (design §1.3, §8):
+      - ``gather=None`` (default) reproduces F1 BYTE-FOR-BYTE — context-starved
+        officer, strict EVAL_MODE_RULES, payload == format_situation(case).
+      - ``gather=gather_cutoff_context`` (the F4 path) calls ``gather(case)``,
+        renders the already-leak-guarded dict to a context block appended AFTER
+        format_situation in the USER message (no new system authority), and
+        swaps in the conditional EVAL_MODE_RULES_GATHER (strict boundary +
+        permission to use the context / propose options + reconciled output
+        line). The gathered dict is the ONLY difference between the two arms."""
     # 1. PRE-execution guard: reconstructed thread must be strictly pre-cutoff.
     try:
         leakguard.assert_thread_pre_cutoff(case.thread_before, case.cutoff_ts)
@@ -291,9 +416,18 @@ def run_case(case: Case, officer_role: str, llm=oauth_raw_llm,
         raise
 
     # 2. Build the eval prompt (role def + eval rules + cutoff); drive blind.
+    #    EVAL_MODE_RULES is conditional on whether gathering ran (design §4):
+    #    the gather=None arm is byte-identical to F1.
+    rules = EVAL_MODE_RULES if gather is None else EVAL_MODE_RULES_GATHER
     system = build_eval_system(case, officer_role) + \
-        EVAL_MODE_RULES.format(cutoff_ts=case.cutoff_ts)
+        rules.format(cutoff_ts=case.cutoff_ts)
     user_msg = format_situation(case)
+    if gather is not None:
+        # Gather + render the leak-guarded context, appended AFTER the situation
+        # (design §2.4) so it inherits no new system-prompt authority. This adds
+        # no new source — gather already enforced exclusion-by-default + fencing.
+        ctx = gather(case)
+        user_msg = user_msg + "\n" + _render_context_block(ctx)
     draft = llm(user_msg, system) or ""
 
     decision = OfficerDecision(
