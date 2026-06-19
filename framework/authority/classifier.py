@@ -227,15 +227,20 @@ def _classify_bash(command: str) -> str:
     low = cmd.lower()
 
     # --- CEILING: secrets (.env / secret-store access) --------------------
-    # vercel env add / set → writing a secret into the platform env store.
-    if re.search(r"\bvercel\b.*\benv\b\s+(add|set|create)", low):
+    # vercel env mutation (add/set/create/rm/remove) → platform secret write;
+    # `vercel env pull` exfiltrates the secret set to a local file → read.
+    if re.search(r"\bvercel\b.*\benv\b\s+(add|set|create|rm|remove)", low):
         return "env_write"
-    # Direct read of a .env file.
-    if re.search(r"\b(cat|less|more|head|tail|bat|xxd|od)\b", low) and _DOTENV_CMD_RE.search(low):
+    if re.search(r"\bvercel\b.*\benv\b\s+pull\b", low):
         return "secret_read"
-    # Write/redirect into a .env file.
-    if _DOTENV_CMD_RE.search(low) and re.search(r">>?|\btee\b|\bcp\b|\bmv\b", low):
-        return "secret_write"
+    # ANY touch of a .env path is a secrets-ceiling action — fail CLOSED so a
+    # secrets resource NEVER falls through to local_edit (auto-eligible). A
+    # write / in-place editor verb (sed -i, dd, truncate, tee, redirects, cp,
+    # mv, install, python open(...,'w')) → secret_write; else a read.
+    if _DOTENV_CMD_RE.search(low):
+        if re.search(r">>?|\btee\b|\bcp\b|\bmv\b|\bsed\b\s+-i|\bdd\b|\btruncate\b|\binstall\b|open\([^)]*['\"]w", low):
+            return "secret_write"
+        return "secret_read"
 
     # --- CEILING: credentials_grant (oauth / token grant) -----------------
     if re.search(r"\boauth\b.*\bgrant\b|\bgrant\b.*\boauth\b", low):
@@ -306,12 +311,15 @@ def _classify_git_push(command: str) -> str:
     # positionals are typically [remote, refspec]. The refspec (last) carries
     # the branch; if absent, it's a bare push → default branch → prod.
     if len(positionals) >= 2:
-        refspec = positionals[-1]
-        m = _BRANCH_REFSPEC_RE.search(refspec)
-        branch = m.group(1) if m else refspec
+        # Strip a force-push '+' prefix + surrounding quotes BEFORE the branch
+        # match: `git push origin +main` is still a (history-REWRITING) push to
+        # main. The bare `+branch` refspec form previously leaked to nonprod.
+        refspec = positionals[-1].strip("'\"").lstrip("+")
         # strip a "src:dst" — the destination (after ':') is the branch pushed
-        if ":" in branch:
-            branch = branch.rsplit(":", 1)[-1]
+        if ":" in refspec:
+            refspec = refspec.rsplit(":", 1)[-1]
+        m = _BRANCH_REFSPEC_RE.search(refspec)
+        branch = (m.group(1) if m else refspec).lstrip("+")
         if branch in ("main", "master"):
             return "git_push_main"
         return "git_push_nonmain"
@@ -319,7 +327,7 @@ def _classify_git_push(command: str) -> str:
     if len(positionals) == 1:
         # Could be just a remote (`git push origin`) → bare push to tracked
         # branch → conservative prod; OR a branch on the default remote.
-        only = positionals[0]
+        only = positionals[0].strip("'\"").lstrip("+")
         if only in ("main", "master"):
             return "git_push_main"
         if only in ("origin", "upstream") or "/" not in only:

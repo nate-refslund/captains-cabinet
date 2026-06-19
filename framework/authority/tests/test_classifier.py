@@ -461,3 +461,62 @@ class TestResolveLane:
                     os.environ.pop(k, None)
                 else:
                     os.environ[k] = v
+
+
+class TestT1CeilingLeakFixes:
+    """Regression for the T1 re-verify findings (the 529-skipped verify, run
+    later): ceiling actions that previously leaked into auto-eligible classes
+    (git_push_nonmain / local_edit) must now classify into the prod/secrets
+    ceiling. The invariant under test: NONE of these resolves to `local_edit`
+    or `git_push_nonmain` (the auto-eligible classes)."""
+
+    @pytest.mark.parametrize("cmd", [
+        "git push origin +main",
+        "git push origin +master",
+        "git push --force origin +main",
+        "git push -f origin +master",
+        "git push origin '+refs/heads/main'",
+        "git push origin +HEAD:main",
+    ])
+    def test_force_push_to_prod_branch_is_prod(self, cmd):
+        # BLOCKER fix: the '+' force-push refspec must not defeat the main/master
+        # match — a force push REWRITES prod history, the most destructive op.
+        assert classify_action("Bash", {"command": cmd}) == "git_push_main"
+
+    @pytest.mark.parametrize("cmd,expected", [
+        ("vercel env rm SECRET_KEY production", "env_write"),
+        ("vercel env remove SECRET_KEY", "env_write"),
+        ("vercel env pull .env.local", "secret_read"),
+    ])
+    def test_vercel_env_mutation_and_exfil_are_secrets(self, cmd, expected):
+        # MAJOR fix: rm (delete) + pull (exfiltrate to disk) are secrets-ceiling.
+        assert classify_action("Bash", {"command": cmd}) == expected
+
+    @pytest.mark.parametrize("cmd", [
+        "sed -i 's/A=1/A=2/' /app/.env",
+        "dd of=/app/.env if=/tmp/x",
+        "truncate -s0 /app/.env",
+    ])
+    def test_programmatic_dotenv_write_is_secret_write(self, cmd):
+        # MAJOR fix: in-place editors writing a .env are secret_write, not
+        # local_edit.
+        assert classify_action("Bash", {"command": cmd}) == "secret_write"
+
+    def test_grep_dotenv_is_a_read_not_local_edit(self):
+        # A .env touch with no write verb is at least a secret_read (ceiling),
+        # never local_edit (the fail-closed .env rule).
+        assert classify_action(
+            "Bash", {"command": "grep API_KEY /app/.env"}) == "secret_read"
+
+    @pytest.mark.parametrize("cmd", [
+        "git push origin +main",
+        "vercel env rm SECRET_KEY",
+        "vercel env pull .env.local",
+        "sed -i 's/x/y/' /app/.env",
+        "dd of=/app/.env if=/tmp/x",
+    ])
+    def test_none_of_these_is_auto_eligible(self, cmd):
+        # The core safety invariant: no ceiling/prod action lands in an
+        # auto-eligible class.
+        out = classify_action("Bash", {"command": cmd})
+        assert out not in ("local_edit", "git_push_nonmain")
