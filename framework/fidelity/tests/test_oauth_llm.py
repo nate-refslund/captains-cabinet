@@ -51,6 +51,28 @@ class TestRawLlm:
         monkeypatch.setattr(oauth_llm.subprocess, "run", fake_run)
         assert oauth_llm.oauth_raw_llm("p", "s") is None
 
+    def test_runs_in_isolated_cwd_not_project(self, monkeypatch):
+        """LEAK ISOLATION (regression guard): the eval `claude -p` must run in
+        an isolated temp cwd, NEVER the cabinet project root — otherwise it
+        auto-discovers CLAUDE.md / .remember (post-cutoff, this-session
+        context = an out-of-band leak past the payload-level cutoff fence).
+        Verified live 2026-06-19: cabinet-cwd leaked the held-out answer;
+        clean-cwd returned UNKNOWN."""
+        import os
+        captured = {}
+
+        def fake_run(argv, **kw):
+            captured["cwd"] = kw.get("cwd")
+            return subprocess.CompletedProcess(argv, 0, stdout="ok", stderr="")
+
+        monkeypatch.setattr(oauth_llm.subprocess, "run", fake_run)
+        oauth_llm.oauth_raw_llm("payload", "system")
+        cwd = captured["cwd"]
+        assert cwd and os.path.isdir(cwd), "eval claude -p must run with an explicit temp cwd"
+        assert "fidelity_eval_clean" in os.path.basename(cwd)
+        assert not os.path.exists(os.path.join(cwd, "CLAUDE.md")), "cwd must not expose a CLAUDE.md"
+        assert not os.path.exists(os.path.join(cwd, ".remember")), "cwd must not expose .remember"
+
 
 class TestJsonLlm:
     def test_parses_json_verdict(self, monkeypatch):

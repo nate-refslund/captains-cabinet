@@ -13,12 +13,37 @@ from __future__ import annotations
 
 import os
 import subprocess
+import tempfile
 from typing import Any
 
 from framework.fidelity.retro import parse_json_block
 
 _DEFAULT_MODEL = "claude-sonnet-4-6"
 _TIMEOUT_S = 185
+
+# LEAK ISOLATION (verified 2026-06-19): `claude -p` is a full Claude Code agent
+# that auto-discovers the project's CLAUDE.md, .remember/ session buffer, and
+# SessionStart hooks from its cwd. Run from the cabinet, the eval LLM (officer
+# AND judge) therefore inherits POST-CUTOFF, this-session context — an
+# out-of-band leak that bypasses the payload-level cutoff fence entirely (a bare
+# `claude -p` from the cabinet returned the held-out answer, citing .remember).
+# We run the eval LLM from a CLEAN temp cwd so it auto-discovers no project
+# context, while leaving HOME intact so keychain/OAuth auth still works.
+# RESIDUAL (graduation-blocker, see task #5 + design §leak): the user-global
+# ~/.claude/CLAUDE.md still loads regardless of cwd; --bare would skip it but
+# also disables keychain reads (kills OAuth). Hardening = a surrogate HOME that
+# exposes only the auth marker, not CLAUDE.md.
+_EVAL_CWD = None
+
+
+def _eval_cwd() -> str:
+    """A clean working dir for the eval `claude -p`, isolated from the cabinet
+    project context (CLAUDE.md / .remember / SessionStart hooks). Created once
+    per process; empty by construction so no CLAUDE.md is auto-discovered."""
+    global _EVAL_CWD
+    if _EVAL_CWD is None or not os.path.isdir(_EVAL_CWD):
+        _EVAL_CWD = tempfile.mkdtemp(prefix="fidelity_eval_clean_")
+    return _EVAL_CWD
 
 
 class OAuthUnavailableError(RuntimeError):
@@ -53,7 +78,7 @@ def oauth_raw_llm(payload: str, system: str, max_tokens: int = 1500,
     try:
         r = subprocess.run(
             argv, input=payload, capture_output=True, text=True,
-            timeout=_TIMEOUT_S, env=env,
+            timeout=_TIMEOUT_S, env=env, cwd=_eval_cwd(),  # leak isolation
         )
     except (subprocess.TimeoutExpired, FileNotFoundError):
         return None
