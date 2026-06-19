@@ -98,3 +98,95 @@ action_type=..., endorsement=case.endorsement)` after `scorer_fn(...)` returns,
 so the scored rows actually land in the ledger. That is a small wiring change in
 a non-germline file; flagged here so it is not forgotten, but left for explicit
 sign-off since it changes what the live batch writes.
+
+---
+
+## T5/D1 — Thread `gather` + `intent_ctx` into `run_f1.run_batch` (live intent axis)
+
+**Not germline** (`framework/fidelity/run_f1.py` is a normal module), but a
+scoring-path BEHAVIOR change, so parked here per the rails rather than applied
+overnight. This supersedes/extends the T3 "not yet wired" note above: where T3
+flags only the missing `emit_case_scored` call, D1 also threads the gather arm
+and the intent context so the live batch's scored rows carry a REAL
+`intent_verdict` (not `""`).
+
+**Source:** T5 live e2e smoke (`docs/overnight-e2e-result.md`). The smoke
+already does the `emit_case_scored` + graduation read OUTSIDE `run_batch` (in
+`run_e2e_smoke.run_smoke`), and it proved the chain runs live. But because
+`run_batch` calls `scorer.score()` with no `intent_ctx`, the live scored row
+came back `intent_verdict=""` (decision-only / F1) → `review_confirmed_rate`
+stays `unknown` → graduation stays `unmeasured`. To exercise the intent axis on
+the live batch, thread it through:
+
+```diff
+--- a/framework/fidelity/run_f1.py
++++ b/framework/fidelity/run_f1.py
+@@ def run_batch(officer_role: str = "cos", n_cases: int = 24, people_dir=None,
+-def run_batch(officer_role: str = "cos", n_cases: int = 24, people_dir=None,
+-              runner=run_case, scorer_fn=score, baseline_llm=oauth_raw_llm,
+-              emit_events: bool = True) -> dict:
+-    """Drive -> score -> aggregate over the reply cell."""
+-    cases = build_cases(n=n_cases, people_dir=people_dir)
+-    centroids = author_centroid(exclude_keys={c.situation_ref for c in cases})
+-
+-    scores, n_leaked = [], 0
+-    for case in cases:
+-        try:
+-            decision = runner(case, officer_role, emit_events=emit_events)
+-        except leakguard.LeakageDetectedError:
+-            n_leaked += 1  # hard-failed + leak event already emitted in run_case
+-            continue
+-        baseline_draft = baseline_llm(_baseline_payload(case), BASELINE_SYSTEM) or ""
+-        cs = scorer_fn(case, decision, baseline_draft, centroids)
+-        scores.append(cs)
++def run_batch(officer_role: str = "cos", n_cases: int = 24, people_dir=None,
++              runner=run_case, scorer_fn=score, baseline_llm=oauth_raw_llm,
++              emit_events: bool = True, gather=None, with_intent: bool = False) -> dict:
++    """Drive -> score -> aggregate over the reply cell.
++
++    ``gather`` (default None) keeps the F1 context-starved arm byte-for-byte;
++    pass ``officer_runner.gather_cutoff_context`` for the F4 gather arm.
++    ``with_intent`` (default False) threads the reconstructed intent + the
++    leak-guarded cutoff context into ``score()`` so the intent axis (and thus
++    review_confirmed_rate) becomes measurable. Both default OFF -> F1 path."""
++    from framework.fidelity.officer_runner import gather_cutoff_context
++    cases = build_cases(n=n_cases, people_dir=people_dir)
++    centroids = author_centroid(exclude_keys={c.situation_ref for c in cases})
++
++    scores, n_leaked = [], 0
++    for case in cases:
++        try:
++            decision = runner(case, officer_role, emit_events=emit_events,
++                              gather=gather)
++        except leakguard.LeakageDetectedError:
++            n_leaked += 1  # hard-failed + leak event already emitted in run_case
++            continue
++        baseline_draft = baseline_llm(_baseline_payload(case), BASELINE_SYSTEM) or ""
++        intent_ctx = None
++        if with_intent:
++            ctx = (gather or gather_cutoff_context)(case)
++            intent_ctx = {"reconstructed_intent": case.intent,
++                          "full_cutoff_context": ctx}
++        cs = scorer_fn(case, decision, baseline_draft, centroids,
++                       intent_ctx=intent_ctx)
++        scores.append(cs)
+```
+
+**Caveats to weigh before applying:**
+- The default `runner=run_case` accepts `gather=`, and `scorer_fn=score`
+  accepts `intent_ctx=`, so the production defaults are compatible. BUT the
+  `test_run_f1.py` stubs (`runner` lambda, `scorer_fn` def) have fixed
+  signatures — add `gather=None` to the runner stub and `intent_ctx=None` to
+  the scorer_fn stub in the SAME change, or those unit tests break.
+- With `with_intent=True` this doubles the per-case OAuth judge cost (decision
+  pass + intent pass) and adds a live gather per case. Fine for a small
+  validation batch; budget it for the full ~266-case universe.
+- Optionally also fold the `emit_case_scored` call (the T3 note above) INTO
+  `run_batch` so the batch itself lands scored rows — then `run_e2e_smoke`
+  could drop its own emit loop. Left as a separate decision: keeping emit OUT
+  of `run_batch` keeps the batch a pure scorer and lets the caller decide
+  whether to persist (the smoke persists to an isolated ledger; a dry analysis
+  run might not). Your call on where the emit belongs.
+- After applying, re-run the T5 live smoke — the scored row should carry a real
+  `intent_verdict`, and graduation should leave `unmeasured` once samples
+  accumulate.
