@@ -184,15 +184,29 @@ jobs:
         run: bash /opt/founders-cabinet/cabinet/tests/start-officer/test-args.sh
 
       - name: Shell unit tests — start-officer CABINET_LANE export (T4 / authority FIX-4)
-        # 4 assertions: pool mode (--project) exports CABINET_LANE=<slug> (the
+        # 6 assertions: pool mode (--project) exports CABINET_LANE=<slug> (the
         # load-bearing source framework/authority/lane.py resolve_lane() reads
         # first); CABINET_LANE tracks CABINET_ACTIVE_PROJECT (one source of
         # truth); legacy mode without a slug does NOT export an empty lane
         # (fail-safe fall-through to PROJECT/None → unmeasured cell); a poisoned
-        # CABINET_LANE is scrubbed by the defensive unset. Pins the lane
+        # CABINET_LANE env is scrubbed by the defensive unset; a poisoned
+        # active-project.txt CONTENT (shell metachars + cmd-subst) is rejected by
+        # the legacy slug allowlist with no CABINET_LANE export and no injection
+        # side-effect (closes the `export $EXPORT_VARS` RCE seam). Pins the lane
         # dimension of the F+A cell tuple so the authority gate's per-lane bars
         # and instance lane→risk-class bindings are not silently nulled.
         run: bash /opt/founders-cabinet/cabinet/tests/start-officer/test-lane-export.sh
+
+      - name: Shell unit tests — start-officer-mac.sh dry-run (T4 / authority FIX-4)
+        # Mac-native launch flag assembly + CABINET_LANE export contract: native
+        # --agent probe, CABINET_SOURCE_REPO vs script-relative root, telegram
+        # gate fallback, CABINET_LANE export from active-project.txt, fail-safe
+        # omission when absent, and the slug-allowlist REJECTION path (malformed
+        # + cmd-separator active-project.txt → no CABINET_LANE, no injection
+        # side-effect). Previously unwired in CI — the Mac CABINET_LANE + slug
+        # validation assertions never ran on PRs. deploy-mac --dry-run is
+        # exercised too (renders plist via the python3 fallback; no launchctl).
+        run: bash /opt/founders-cabinet/cabinet/scripts/test-mac-dry-run.sh
 
       - name: Shell unit tests — post-tool-use.sh JSONL project field (FW-075)
         # 9 assertions: project field surfaces in JSONL when CABINET_ACTIVE_PROJECT

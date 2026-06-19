@@ -69,6 +69,19 @@ if [ "$POOL_MODE" = true ]; then
   fi
 else
   ACTIVE_SLUG=$(cat "$CABINET_ROOT/instance/config/active-project.txt" 2>/dev/null | tr -d '[:space:]')
+  # [FIX-4 hardening] Legacy ACTIVE_SLUG flows into CABINET_LANE → EXPORT_VARS →
+  # the unquoted `export $EXPORT_VARS` in the tmux send-keys string. Whitespace
+  # stripping alone does NOT remove `;`, `&&`, `$()`, or backticks, so a poisoned
+  # active-project.txt (gitignored, normally written by bootstrap-project.sh with
+  # a clean slug) would be a shell-injection / RCE seam in the Docker path. Mirror
+  # the --project allowlist (pool mode, above) and the Mac script's read: reject
+  # any non-conforming value by CLEARING it. Empty ACTIVE_SLUG is the fail-safe —
+  # no CABINET_LANE export → resolve_lane falls through to PROJECT/None →
+  # unmeasured cell → propose-only at the gate.
+  if [ -n "$ACTIVE_SLUG" ] && { ! [[ "$ACTIVE_SLUG" =~ ^[a-z0-9][a-z0-9-]*$ ]] || [ "${#ACTIVE_SLUG}" -gt 32 ]; }; then
+    echo "start-officer.sh: active-project.txt slug must match [a-z0-9][a-z0-9-]* (≤32) (got '$ACTIVE_SLUG')" >&2
+    ACTIVE_SLUG=""
+  fi
 fi
 if [ -n "$ACTIVE_SLUG" ] && [ -f "$CABINET_ROOT/cabinet/env/${ACTIVE_SLUG}.env" ]; then
   set -a; source "$CABINET_ROOT/cabinet/env/${ACTIVE_SLUG}.env" 2>/dev/null; set +a
@@ -296,10 +309,12 @@ if [ "$POOL_MODE" = true ]; then
 fi
 # [FIX-4] Export the resolved lane in BOTH pool and legacy modes — wherever a
 # project/active-context slug exists, the authority gate's resolve_lane() must
-# see it. ACTIVE_SLUG is already constrained (pool mode: slug regex
-# [a-z0-9][a-z0-9-]*; legacy: whitespace-stripped value from the repo-controlled
-# active-project.txt), so it is safe to word-split out of EXPORT_VARS. When
-# empty (legacy, no active-project.txt) it is NOT exported (fail-safe).
+# see it. ACTIVE_SLUG is allowlist-constrained in BOTH modes (pool mode: slug
+# regex [a-z0-9][a-z0-9-]* ≤32, line 29; legacy: same regex applied to the
+# active-project.txt value, line 73 — non-conforming values are cleared), so it
+# carries no shell metacharacters and is safe to word-split out of the unquoted
+# `export $EXPORT_VARS`. When empty (legacy, no/invalid active-project.txt) it is
+# NOT exported (fail-safe → resolve_lane falls through to PROJECT/None).
 if [ -n "$ACTIVE_SLUG" ]; then
   EXPORT_VARS="$EXPORT_VARS CABINET_LANE=$ACTIVE_SLUG"
 fi

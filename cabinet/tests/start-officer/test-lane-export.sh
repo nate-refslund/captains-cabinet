@@ -14,6 +14,9 @@
 #   - legacy mode (no active-project.txt) does NOT leak a CABINET_LANE export
 #     (so resolve_lane falls through to PROJECT/None — fail-safe to unmeasured)
 #   - a poisoned CABINET_LANE=... in legacy mode is scrubbed (defensive unset)
+#   - a poisoned active-project.txt CONTENT (shell metachars / cmd-subst) is
+#     rejected by the legacy slug allowlist: no CABINET_LANE export, no
+#     injection side-effect (closes the `export $EXPORT_VARS` RCE seam)
 #
 # Run: bash cabinet/tests/start-officer/test-lane-export.sh
 
@@ -91,6 +94,51 @@ elif echo "$output" | grep -q 'CABINET_LANE'; then
   fail "L3: poisoned CABINET_LANE LEAKED into EXPORT_VARS — defensive unset missing"
 else
   pass "L3: poisoned CABINET_LANE scrubbed in legacy mode (defensive unset held)"
+fi
+
+# ----------------------------------------------------------------------------
+# L4: Legacy-mode CONTENT injection — a poisoned active-project.txt carrying
+#     shell metacharacters is the actual RCE vector (the slug flows through
+#     CABINET_LANE → the unquoted `export $EXPORT_VARS` in the tmux send-keys
+#     string). The slug allowlist on the legacy read (start-officer.sh) must
+#     reject it: ACTIVE_SLUG cleared → no CABINET_LANE export → no side-effect.
+#     This is distinct from L3 (poisoned INHERITED env, scrubbed by unset);
+#     L3 alone gave false confidence that injection was covered.
+# ----------------------------------------------------------------------------
+APROJ="$ROOT/instance/config/active-project.txt"
+SENTINEL="$(mktemp -u "${TMPDIR:-/tmp}/cabinet-lane-inject.XXXXXX")"
+# Guard: only run if no real active-project.txt is present (don't clobber).
+if [ -f "$APROJ" ]; then
+  echo "SKIP: L4 — instance/config/active-project.txt exists; not clobbering it"
+else
+  _l4_cleanup() { rm -f "$APROJ" "$SENTINEL"; }
+  # Variant a: command-separator + IFS-evasion side-effect.
+  printf 'foo;touch %s\n' "$SENTINEL" > "$APROJ"
+  output=$(bash "$SCRIPT" cto 2>&1)
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    fail "L4a: metachar active-project.txt invocation exited rc=$rc — $output"
+  elif echo "$output" | grep -q 'CABINET_LANE'; then
+    fail "L4a: metachar slug LEAKED a CABINET_LANE export — allowlist missing on legacy read"
+  elif [ -e "$SENTINEL" ]; then
+    fail "L4a: injection side-effect FIRED (sentinel created) — RCE seam open"
+  else
+    pass "L4a: metachar active-project.txt rejected (no CABINET_LANE, no side-effect)"
+  fi
+  # Variant b: command-substitution.
+  printf 'foo$(touch %s)\n' "$SENTINEL" > "$APROJ"
+  output=$(bash "$SCRIPT" cto 2>&1)
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    fail "L4b: cmd-subst active-project.txt invocation exited rc=$rc — $output"
+  elif echo "$output" | grep -q 'CABINET_LANE'; then
+    fail "L4b: cmd-subst slug LEAKED a CABINET_LANE export — allowlist missing"
+  elif [ -e "$SENTINEL" ]; then
+    fail "L4b: cmd-subst injection side-effect FIRED — RCE seam open"
+  else
+    pass "L4b: cmd-subst active-project.txt rejected (no CABINET_LANE, no side-effect)"
+  fi
+  _l4_cleanup
 fi
 
 echo
