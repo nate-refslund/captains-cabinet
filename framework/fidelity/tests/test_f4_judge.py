@@ -113,14 +113,17 @@ class TestHallucinatedGroundForcedDivergent:
                 "intent_verdict": "intent-aligned",
                 "intent_rationale": "serves the mower goal",
                 "intent_what_diverged": "",
-                "intent_grounded_fact": ("From Bo at 2026-05-05: wants help "
-                                         "finding a robotplaeneklipper."),
+                "intent_grounded_fact": ("From Bo at 2026-05-05: finde en "
+                                         "robotplaeneklipper."),
             }
 
         monkeypatch.setattr(scorer, "oauth_json_llm", fake_oauth_json)
         out = scorer.judge_with_oauth(
             _mower_case_dict(),
-            clone_draft="Jeg anbefaler en LiDAR-robotplaeneklipper til 3000 m2.",
+            # An on-intent draft naturally echoes the goal vocabulary (robotic
+            # mower, no boundary wire, the 3000 m2 lawn) — well above the floor.
+            clone_draft=("Til din 3000 m2 lawn anbefaler jeg en robotic "
+                         "robotplaeneklipper helt uden boundary wire."),
             reconstructed_intent=_MOWER_INTENT,
             full_cutoff_context=_MOWER_CTX,
         )
@@ -170,8 +173,10 @@ class TestOfftopicForcedDivergent:
 
 class TestGroundingHelper:
     def test_substring_match_passes(self):
+        # The mandated citation form quotes an EXCERPT drawn from the material;
+        # the excerpt here is a verbatim substring of the thread.
         assert scorer._grounding_ok(
-            "wants a robotplaeneklipper",
+            "From Bo at 2026-05-05: finde en robotplaeneklipper",
             ctx_text="",
             thread_text="Bo: vil du have hjaelp til at finde en "
                         "robotplaeneklipper?") is True
