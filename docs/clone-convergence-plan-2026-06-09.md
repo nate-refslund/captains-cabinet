@@ -18,6 +18,93 @@ Nate runs two mature, mutually-unaware systems: the **screenpipe estate** (58 pi
 
 Base: extend `convergence-v2` in place. No fork. The `funny-fermi-8daf32` worktree = master = obsolete (its untracked analysis docs are tracked in v2); fast-forward `master` → v2 for hygiene.
 
+> **2026-06-19 RE-ANCHOR (read this first; the prose below is the frozen
+> 2026-06-09/06-10 snapshot — preserved, not rewritten).** The program decomposed
+> into four tracks — **F** (fidelity/training harness, `docs/fidelity-harness-design-2026-06-18.md`),
+> **A** (authority matrix + policy engine, `docs/authority-matrix-design-2026-06-19.md`),
+> **R** (this operational roadmap, R1–R5), **P** (productize install flavors +
+> private-data layer). Two things in the snapshot are now superseded by F + A
+> *as actually built*, and the change is load-bearing for every gate below.
+>
+> **(a) Graduation/autonomy is no longer the static 15/90/14 ramp.** Locked
+> decision #1's "15 samples / 90% / 14 clean days" was the screenpipe
+> `autonomy_lib` ramp; it is **superseded by F's measured per-(lane × action_type)
+> fidelity gated through A's authority matrix.** There is now exactly **one bar**,
+> and it lives in `framework/policies/authority-matrix.yml → bars` (the matrix is
+> the single source of truth; F2's `graduation.py` *imports* it, never hardcodes
+> its own — `[FIX-1 reconcile]`):
+>
+> | decision-type | match_rate | samples | max divergent / last 10 | recency-clean days | cooldown (demote) |
+> |---|---|---|---|---|---|
+> | **default** | ≥ 0.85 | ≥ 20 | ≤ 1 | ≥ 14 | 14d |
+> | **internal_comms** | ≥ 0.90 | ≥ 30 | 0 | ≥ 21 | 21d |
+> | **deploy_nonprod** | ≥ 0.95 | ≥ 30 | 0 | ≥ 21 | 21d |
+>
+> The default row mirrors the old 15/90/14 ramp *at the floor* (samples ≥ 20,
+> match ≥ 0.85, recency-clean ≥ 14d) but is **finer**: per-(lane × action_type),
+> with irreversible types tightened, plus a hard ceiling F can never lift
+> (`external_comms`/`deploy_prod`/`spend`/`secrets`/`network_write`/
+> `credentials_grant` = `always-gated` regardless of confidence). Fitness =
+> `outcome_held × review_confirmed` (positive signal), **not** correction-count
+> (gameable — F design correction #3). A cell with no/low ground truth is a
+> visible **`unmeasured`** state that **cannot graduate** — never a silent pass.
+> So whenever the snapshot or R-gates below say "earn per lane / 15·90·14",
+> read it as "earn per (lane × action_type) against the authority-matrix bar,
+> measured by F, gated by A."
+>
+> **(b) Current built state (don't re-plan what shipped).**
+> - **F0** — consequence ledger built: `framework/fidelity/consequence.py`
+>   (`emit_consequence`/`validate_consequence`/`read_ledger`/`compute_ratios`,
+>   `GraduationRatios`); append-only `consequence-events-YYYY-MM-DD.jsonl`.
+> - **F1** — officer-under-test runner + scorer built (`officer_runner.py`,
+>   `scorer.py`); F1 deliberately measured **surface-only with a context-starved
+>   officer**, so its low baseline is *not* the real number.
+> - **F4** — **intent-fidelity + leak isolation built**: `officer_runner.py`'s
+>   `gather_cutoff_context` (the gather arm serves *intent, not literal surface*;
+>   `gather=None` reproduces F1 byte-for-byte) fenced by `leakguard.py`
+>   (`assert_thread_pre_cutoff` + `scan_for_leaks` + `filter_mcp_result`; a breach
+>   **hard-fails** the case). Scoring weights the DECISION/intent channel far
+>   above voice (voice is a *separate authenticity axis*, never collapsed).
+> - **`content_ts` consumed** by the cutoff fence (equal-ts counts as a leak,
+>   mirroring retrodiction's `test_cutoff_no_post_reply_leakage`).
+> - **Shared `action_type` taxonomy** is the join key across F and A:
+>   `framework/authority/classifier.py` (`classify_action`/`ACTION_TYPES`) +
+>   `lane.py` (`resolve_lane`) — ONE classifier stamps the consequence event
+>   *and* drives the gate, so the ledger and the verdict table agree.
+> - **A0 fail-safe gate shadow-only**: `framework/policies/authority-matrix.yml`
+>   floor + `framework/authority/matrix.py` loader/validator (fail-closed) built;
+>   `policy-shadow.py` re-wired to emit the typed authority verdict
+>   (`policy_version: authority-shadow-v1`) **without ever blocking**. Confidence
+>   is stubbed to `unmeasured` → everything proposes. The judge modules +
+>   matrix-data floor are germline-registered (read-only to officers) and
+>   CI-asserted.
+>
+> **(c) The real critical path (not engineering velocity).** The bottleneck to
+> a *trustworthy* gate is **measurement coverage + a clean eval login**, not more
+> code:
+> - **Clean-HOME eval login** — `officer_runner` drives the production officer via
+>   the OAuth `claude -p` path; the offline batch evaluator needs a clean-HOME /
+>   `CLAUDE_CODE_OAUTH_TOKEN` login so eval runs bill to the Max pool without
+>   colliding with interactive/officer sessions.
+> - **pi-agent gather-query + content coverage** — F4's intent scoring is only as
+>   good as the context the officer can gather as-of cutoff (the Husqvarna/
+>   Mosevråvej worked example): the brain-bridge gather path + screenpipe capture
+>   must actually surface the conversation's real goal *and* the real-world facts.
+>   Thin capture = thin intent = an unfairly low or unmeasurable cell.
+> - **The enforce-flip stays Captain-gated.** A's `CABINET_AUTHORITY_ENFORCING`
+>   default is `0` (shadow); the flip is itself **propose-only** — the engine
+>   cannot enable its own enforcement, and even enforcing-on means *enforcing the
+>   fail-safe* (all propose-only) until F graduates a cell. Auto is double-gated
+>   behind BOTH the flip AND F graduation.
+>
+> **(d) R1–R5's good bones are intact** — activate hq (R2), shadow pipes for
+> *per-pipe* parity retirement (never big-bang; R3), comms migration via
+> `queue_draft` as the only outbound path (R4), lane-CEOs take stream + missions
+> (R5). What changed is the *gate definition*: every "shadow parity → cutover"
+> and "graduate per lane" gate below now resolves against F's measured cells +
+> A's matrix bar, recorded in the consequence ledger — see the per-R notes
+> inline ("**[2026-06-19]**").
+
 ---
 
 ## Model routing change (first commit — upstream so the Mini soak inherits it)
@@ -84,6 +171,13 @@ New `~/.screenpipe/pipes/brain-mcp/server.py` — FastMCP **stdio** server (HTTP
   + `docs/consequence-ledger.md`) — one normalized action+consequence shape
   for pipes, officers, and crew.
 
+> **[2026-06-19]** This consequence schema is the seam F built on: **F0** shipped
+> the emitter/reader (`framework/fidelity/consequence.py`) over it, and the
+> `[FIX-1]` re-key added a first-class `action_type` enum field (stamped by the
+> shared `framework/authority/classifier.py` `classify_action`) so the ledger
+> keys cells on `(actor, lane, action_type)` — the exact tuple A's gate reads.
+> The schema is no longer an R1 deliverable to design; it is built and consumed.
+
 ### R2 — Activate the hq instance (Chair only)
 
 This runbook and the ACTIVATION STEPS header of
@@ -143,6 +237,15 @@ generated; what remains is, in order:
 - **Gate:** briefing/digest quality at parity for 1–2 weeks; first pipes
   retired; ledger populated from both estates.
 
+> **[2026-06-19]** "Parity" and "graduation math" here now resolve against the
+> built ledger: surviving pipes + officers emit `consequence-event` records via
+> F0's `emit_consequence`, and the per-pipe retirement gate reads
+> `compute_ratios((actor, lane, action_type))` — not an ad-hoc tally. The
+> "graduation math reads only this ledger" promise is realized by F2's
+> `graduation.evaluate`, which applies the single `authority-matrix.yml → bars`
+> bar (above). Until F2 lands, every cell reads `unmeasured` → propose-only, so
+> R3 can run intake/briefing in shadow without any cell auto-graduating.
+
 ### R4 — Comms migration (draft-reply → officers)
 - Reply drafting moves to officers under the **courses-of-action** rule
   (investigation bar, one card per situation, urgency tiers) with **shadow
@@ -161,6 +264,18 @@ generated; what remains is, in order:
 - **Gate:** officer drafts at shadow parity; draft pipe retired; gate
   traffic flowing through the thinned bot.
 
+> **[2026-06-19]** This R4 paragraph predates A's design and is *realized* by it,
+> not replaced. The "hard ceiling enforced in cabinet hooks AND autonomy config"
+> is now A's authority matrix: `external_comms` is `always-gated` with
+> `queue_draft` as the *only* outbound path; `internal_comms` graduates only to
+> `auto-with-veto-window` (block-then-redirect into a 7-min deferred-send queue,
+> never fire-and-forget). "Officer drafts at shadow parity" is measured by **F's
+> reply cell** (intent-fidelity, F4), and "promoted shadow → enforcing" is A's
+> Cycle-2 flip behind `CABINET_AUTHORITY_ENFORCING` — **Captain-gated, propose-
+> only, instant-revert** (independent of the Cycle-1 legacy-engine flip,
+> `outcome-system-self-001`). Inbound quarantine + the typed policy engine are
+> A's enforcement seam, shipped shadow-only at A0.
+
 ### R5 — Lane-CEOs take stream + missions; the estate settles
 - Lane CEOs work their lanes end-to-end: stream (claim → execute →
   close-back, propose-first until graduation) + Captain-ratified missions
@@ -177,6 +292,17 @@ generated; what remains is, in order:
 - **Gate:** two lanes' missions complete concurrently without context
   bleed; weekly output share produced by the system with zero quality
   flags trends up.
+
+> **[2026-06-19]** "Graduation per lane from consequence-ledger evidence; the
+> hard ceiling never lifts" is now precise: per **(lane × action_type)** cell,
+> F2's `graduation.evaluate` against the `authority-matrix.yml → bars` bar
+> (default 0.85/20/1/14, tighter for irreversible types), gated by A; the six
+> hard-ceiling classes stay `always-gated` forever. A demoting **thermostat**
+> (A's Component 4, hard-gated after F2/F6) flips any cell back to propose-only
+> on a bad call / drift spike / divergent cluster / colleague-friction / false-
+> positive block, sticky for the cooldown window. "Weekly output share with zero
+> quality flags trends up" is the `outcome_held × review_confirmed` fitness
+> signal, read from the same ledger.
 
 ---
 
@@ -195,6 +321,19 @@ generated; what remains is, in order:
 - **R2:** `test-recovery.sh` passes; Chair live on its bot; `bootstrap-roles.sh --roster` seeded exactly the declared roster; cost-summary shows Fable-5 pricing rows.
 - **R3/R4:** shadow-parity comparisons recorded per pipe before retirement; consequence-ledger events visible from BOTH estates (officers + surviving pipes); gate traffic through the thinned bot.
 - Each phase ends with `run-golden-evals.sh` + the cabinet CI suite locally.
+
+> **[2026-06-19] F/A verification bar (supersedes the implicit static ramp for autonomy).**
+> Any R-gate that grants autonomy now verifies against the *measured* gate, not a
+> hand-counted streak: (1) F's batch evaluator produces a per-(lane × action_type)
+> fidelity cell that **clears the `authority-matrix.yml → bars` bar** (default
+> 0.85/20/1/14; irreversible types tighter); (2) A's authority-verdict parity
+> corpus shows the shadow verdict matches the intended matrix with ~0 wrongful
+> safe-action blocks; (3) the consequence ledger carries `action_type`-keyed
+> events from both estates; (4) the prod-never-auto + full-six hard-ceiling
+> coverage CI tests are green; (5) the enforce-flip is a Captain-approved
+> course-of-action card, not an autonomous toggle. "Unmeasured cell cannot
+> graduate" and "external_comms/spend/secrets/network_write/credentials_grant/
+> deploy_prod never auto" are golden evals (`memory/golden-evals/eval-011..015`).
 
 ## Risks (mitigations in-plan)
 
