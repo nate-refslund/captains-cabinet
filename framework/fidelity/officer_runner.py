@@ -124,11 +124,22 @@ EVAL_MODE_RULES_GATHER = (
 
 # An ISO date (date-only or full datetime) anywhere in a string/path.
 _DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
-# A full line carrying an ISO timestamp/date — stripped from static frontmatter
-# and read_note output (any such line is content-dated and may be post-cutoff).
-_DATED_LINE_RE = re.compile(r"^.*\d{4}-\d{2}-\d{2}.*$", re.MULTILINE)
-_NOTES_SECTION_RE = re.compile(r"^##+\s*Notes from replies.*\Z",
-                               re.IGNORECASE | re.MULTILINE | re.DOTALL)
+# Any common date form anywhere in a line — ISO (2026-05-12), slash
+# (2026/05/12), or compact (20260512). Used ONLY for stripping dated lines from
+# static frontmatter; broader than _DATE_RE on purpose (a dossier line can be
+# dated in any of these forms, and any of them may be post-cutoff). The compact
+# \d{8} alternative is anchored to a non-digit boundary so it doesn't fire on
+# long id/number runs.
+_DATE_FORMS = r"(?:\d{4}-\d{2}-\d{2}|\d{4}/\d{2}/\d{2}|(?<!\d)\d{8}(?!\d))"
+# A full line carrying a date in any of those forms — stripped from static
+# frontmatter (any such line is content-dated and may be post-cutoff).
+_DATED_LINE_RE = re.compile(rf"^.*{_DATE_FORMS}.*$", re.MULTILINE)
+# The dated "Notes from replies" section: from its heading up to (but NOT
+# including) the NEXT ##-level heading — so a legitimate atemporal section that
+# happens to follow it survives. \Z is the fallback when it is the last section.
+_NOTES_SECTION_RE = re.compile(
+    r"^##+\s*Notes from replies.*?(?=^##+\s|\Z)",
+    re.IGNORECASE | re.MULTILINE | re.DOTALL)
 
 
 def _content_ts(hit: dict) -> str | None:
@@ -159,14 +170,17 @@ def _static_frontmatter(person_intel_md) -> str:
 
     Defends Blocker 4: the live dossier absorbs ``## Notes from replies``
     derived from the held-out reply (a case-specific leak). We drop that whole
-    section AND any individual line carrying an ISO date — only timeless
-    attribute lines survive."""
+    section AND any individual line carrying a date (ISO / slash / compact) —
+    only timeless attribute lines survive."""
     if not person_intel_md:
         return ""
     text = str(person_intel_md)
-    # Drop the dated "Notes from replies" section (to end of document).
+    # Drop the dated "Notes from replies" section, anchored to the NEXT ##-level
+    # heading (not end-of-doc) so a legitimate atemporal section placed after it
+    # survives the strip.
     text = _NOTES_SECTION_RE.sub("", text)
-    # Drop any remaining line that carries an ISO date (could be post-cutoff).
+    # Drop any remaining line that carries a date in any common form (could be
+    # post-cutoff).
     text = _DATED_LINE_RE.sub("", text)
     # Collapse the blank lines the strips leave behind.
     lines = [ln.rstrip() for ln in text.splitlines()]

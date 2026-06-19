@@ -246,6 +246,52 @@ class TestPersonIntelDatedSectionStripped:
         assert officer_runner._static_frontmatter("") == ""
         assert officer_runner._static_frontmatter(None) == ""
 
+    def test_notes_section_anchored_to_next_heading_atemporal_survives(self):
+        # 'Notes from replies' is bounded by the NEXT ##-level heading, so a
+        # legitimate atemporal section AFTER it survives. The slash-dated line in
+        # the Notes block is dropped; a compact-dated line is dropped too; the
+        # ## Contact attributes survive.
+        dossier = (
+            "role: VP Product\n"
+            "relationship: manager\n"
+            "\n"
+            "## Notes from replies\n"
+            "- 2026/06/11: Nate agreed to the Husqvarna mower (SLASH LEAK).\n"
+            "- 20260611 compact-dated note (COMPACT LEAK).\n"
+            "\n"
+            "## Contact\n"
+            "primary_email: ulrik@x\n"
+            "phone: +45 12 34 56 78\n"
+        )
+        out = officer_runner._static_frontmatter(dossier)
+        # atemporal section after Notes survives
+        assert "## Contact" in out
+        assert "primary_email: ulrik@x" in out
+        assert "+45 12 34 56 78" in out
+        # the role frontmatter still survives
+        assert "role: VP Product" in out
+        # the dated Notes lines are gone (slash + compact forms both stripped)
+        assert "Husqvarna" not in out
+        assert "2026/06/11" not in out
+        assert "20260611" not in out
+        assert "COMPACT LEAK" not in out
+        assert "Notes from replies" not in out
+
+    def test_static_frontmatter_strips_slash_and_compact_dates(self):
+        # Broadened date forms: slash-dated and compact-dated lines anywhere are
+        # stripped, not only ISO-hyphen dates.
+        md = ("role: x\n"
+              "Last sync 2026/06/11 with Nate (SLASH LEAK)\n"
+              "Backfilled 20260611 (COMPACT LEAK)\n"
+              "relationship: peer\n")
+        out = officer_runner._static_frontmatter(md)
+        assert "role: x" in out
+        assert "relationship: peer" in out
+        assert "SLASH LEAK" not in out
+        assert "COMPACT LEAK" not in out
+        assert "2026/06/11" not in out
+        assert "20260611" not in out
+
 
 class TestCommitmentsFenced:
     def test_commitments_fenced(self):
