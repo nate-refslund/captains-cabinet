@@ -304,6 +304,99 @@ class TestReadLedgerDedup:
         assert events[0]["subject"] == "t1"
 
 
+from framework.authority.classifier import ACTION_TYPES
+
+
+class TestActionTypeField:
+    """T2 [FIX-1 steps 1-2]: action_type is a first-class OPTIONAL field on the
+    consequence event — string (a member of the classifier's ACTION_TYPES enum)
+    or null, additive, additionalProperties:false preserved. The brain-bridge
+    emitter stamps it via the SAME classify_action() the gate uses; absent when
+    not supplied."""
+
+    def test_valid_action_type_passes(self):
+        ev = _act_event(action_type="local_edit")
+        assert validate_consequence(ev) is None
+
+    def test_ceiling_action_type_passes(self):
+        # a positively-classified ceiling value is a legal action_type
+        ev = _act_event(action_type="external_message")
+        assert validate_consequence(ev) is None
+
+    def test_ambiguous_action_type_passes(self):
+        # the visible propose-defaulting backstop is itself a legal value
+        ev = _act_event(action_type="ambiguous")
+        assert validate_consequence(ev) is None
+
+    def test_action_type_may_be_null(self):
+        ev = _act_event(action_type=None)
+        assert validate_consequence(ev) is None
+
+    def test_event_without_action_type_still_passes(self):
+        # field is OPTIONAL — its absence is the unstamped default
+        ev = _act_event()
+        assert "action_type" not in ev
+        assert validate_consequence(ev) is None
+
+    def test_unknown_action_type_value_raises(self):
+        ev = _act_event(action_type="nuke_prod")
+        with pytest.raises(ConsequenceValidationError, match="action_type"):
+            validate_consequence(ev)
+
+    def test_non_string_action_type_raises(self):
+        ev = _act_event(action_type=42)
+        with pytest.raises(ConsequenceValidationError, match="action_type"):
+            validate_consequence(ev)
+
+    def test_additional_props_still_rejected_with_action_type_present(self):
+        # adding the new known field does NOT loosen additionalProperties:false
+        ev = _act_event(action_type="local_edit", surprise="boom")
+        with pytest.raises(ConsequenceValidationError, match="additional"):
+            validate_consequence(ev)
+
+    def test_enum_is_sourced_from_classifier(self):
+        # single source of truth: the schema enum must equal the classifier's
+        # ACTION_TYPES (no drifting duplicated literal list).
+        action_type_prop = SCHEMA["properties"]["action_type"]
+        schema_values = {v for v in action_type_prop["enum"] if v is not None}
+        assert schema_values == set(ACTION_TYPES)
+        assert None in action_type_prop["enum"]  # null allowed
+
+    def test_emit_persists_action_type(self, event_log_dir):
+        ev = emit_consequence(
+            ts="2026-06-18T08:00:00+00:00",
+            actor={"kind": "officer", "id": "cos"},
+            lane="polads", action="drafted-reply", subject="t1",
+            action_type="external_message",
+        )
+        assert ev["action_type"] == "external_message"
+        events = read_ledger()
+        assert len(events) == 1
+        assert events[0]["action_type"] == "external_message"
+
+    def test_emit_omits_action_type_when_none(self, event_log_dir):
+        # same omit-when-None discipline as proposal/outcome/review: a None
+        # action_type is DROPPED, never written as a literal null.
+        ev = emit_consequence(
+            ts="2026-06-18T08:00:00+00:00",
+            actor={"kind": "officer", "id": "cos"},
+            lane="polads", action="drafted-reply", subject="t1",
+        )
+        assert "action_type" not in ev
+        events = read_ledger()
+        assert "action_type" not in events[0]
+
+    def test_emit_rejects_bad_action_type_before_writing(self, event_log_dir):
+        with pytest.raises(ConsequenceValidationError, match="action_type"):
+            emit_consequence(
+                ts="2026-06-18T08:00:00+00:00",
+                actor={"kind": "officer", "id": "cos"},
+                lane="polads", action="drafted-reply", subject="t1",
+                action_type="nuke_prod",
+            )
+        assert list(Path(event_log_dir).glob("consequence-events-*.jsonl")) == []
+
+
 class TestComputeRatios:
     def _emit_decided(self, ts, subject, decision, status, verdict,
                       actor=None, lane="polads", action="drafted-reply"):

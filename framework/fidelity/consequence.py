@@ -29,6 +29,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from framework.authority.classifier import ACTION_TYPES
+
 
 _SCHEMA_PATH = (
     Path(__file__).resolve().parent.parent
@@ -58,10 +60,15 @@ _ACTOR_KINDS = {"pipe", "officer", "crew"}
 _PROPOSAL_DECISIONS = {"approved", "edited", "rejected", "expired", None}
 _OUTCOME_STATUSES = {"ok", "failed", "unknown"}
 _REVIEW_VERDICTS = {"confirmed", "wrong", "unknown"}
+# [FIX-1] The action_type enum is sourced from the ONE shared classifier
+# (framework/authority/classifier.py) so the schema, this validator, the
+# emit-time stamp, and the gate's verdict lookup can never drift apart. A None
+# action_type is the unstamped/unmeasured default.
+_ACTION_TYPES = set(ACTION_TYPES) | {None}
 
 # Allowed keys per object (additionalProperties:false everywhere).
 _ROOT_KEYS = {"ts", "actor", "lane", "action", "subject",
-              "refs", "proposal", "outcome", "review"}
+              "action_type", "refs", "proposal", "outcome", "review"}
 _ROOT_REQUIRED = ("ts", "actor", "lane", "action", "subject")
 _ACTOR_KEYS = {"kind", "id"}
 _PROPOSAL_KEYS = {"required", "decision", "decided_at"}
@@ -102,6 +109,20 @@ def validate_consequence(event: dict[str, Any]) -> None:
     # lane: string | null
     if event["lane"] is not None and not isinstance(event["lane"], str):
         raise ConsequenceValidationError("lane must be a string or null")
+
+    # action_type: optional enum string | null [FIX-1]. When present, it must
+    # be a member of the shared classifier's ACTION_TYPES (or null). This is
+    # the one source of truth — a value the classifier cannot emit is rejected.
+    if "action_type" in event:
+        at = event["action_type"]
+        if at is not None and not isinstance(at, str):
+            raise ConsequenceValidationError(
+                "action_type must be a string or null"
+            )
+        if at not in _ACTION_TYPES:
+            raise ConsequenceValidationError(
+                f"action_type must be one of {sorted(a for a in _ACTION_TYPES if a)} or null"
+            )
 
     # actor
     actor = event["actor"]
@@ -235,6 +256,7 @@ def emit_consequence(
     lane: str | None,
     action: str,
     subject: str,
+    action_type: str | None = None,
     refs: list[str] | None = None,
     proposal: dict[str, Any] | None = None,
     outcome: dict[str, Any] | None = None,
@@ -245,11 +267,24 @@ def emit_consequence(
     Keyword-only by design: the schema field set is wide and order-free, and
     every caller (F1 fidelity_events builder, live officers via the brain
     bridge, surviving pipes) must name fields explicitly. `refs` defaults to
-    []. The three optional objects (proposal/outcome/review) are emitted only
-    when provided — a None section is dropped, not written as null, so the
+    []. The optional objects (action_type/proposal/outcome/review) are emitted
+    only when provided — a None value is dropped, not written as null, so the
     ledger carries exactly the lifecycle phase the caller has reached.
     Enrichment appends a SUPERSEDING event with the same
     (actor, action, subject, ts) identity; the reader takes the last write.
+
+    `action_type` [FIX-1] is the first-class action-type enum the authority
+    gate reads and graduation math keys on. It is STAMPED by the same shared
+    `framework.authority.classifier.classify_action()` the gate uses, so the
+    ledger and the verdict table can never disagree about what an action *is*.
+    Stamp point: the live officer emit path is the external screenpipe
+    brain-bridge governance hook (log_reasoning / record_run), which passes the
+    raw tool call through `classify_action()` at emit time — that wiring lives
+    outside this repo, in the screenpipe brain MCP. In-repo, the
+    fidelity_events.py builders are the reachable emit surface and may pass
+    `action_type` once the per-case raw tool call is available. When no caller
+    supplies it, `action_type` is left ABSENT (the unstamped / unmeasured
+    default) — never written as a literal null.
     """
     event: dict[str, Any] = {
         "ts": ts,
@@ -259,6 +294,8 @@ def emit_consequence(
         "subject": subject,
         "refs": list(refs) if refs is not None else [],
     }
+    if action_type is not None:
+        event["action_type"] = action_type
     if proposal is not None:
         event["proposal"] = proposal
     if outcome is not None:

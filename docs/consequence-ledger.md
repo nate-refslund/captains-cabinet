@@ -33,6 +33,7 @@ screenpipe pipes, cabinet officers, and crew subagents.
   "actor": {"kind": "pipe | officer | crew", "id": "<stable id>"},
   "lane": "<context slug or null>",
   "action": "drafted-reply",
+  "action_type": "internal_message | external_message | local_edit | ... | null",
   "subject": "thread:abc123",
   "refs": ["msg:1", "board:42"],
   "proposal": {"required": true, "decision": "approved | edited | rejected | expired | null", "decided_at": "..."},
@@ -47,6 +48,12 @@ resolves:
 
 1. **Act** — actor emits the event with `ts/actor/lane/action/subject/refs`,
    plus `proposal.required` (and `decision: null` while the gate is open).
+   The optional `action_type` enum field [FIX-1] is stamped at emit time by
+   the shared `framework/authority/classifier.py:classify_action()` — the SAME
+   classifier the authority-matrix gate reads — so the ledger and the verdict
+   table agree on what each action *is*. It is left ABSENT (the unstamped /
+   unmeasured default) when no classifier-derived value is supplied; the enum
+   mirrors `classifier.ACTION_TYPES` exactly (CI-asserted, no drift).
 2. **Decide** — when the human gate resolves, `proposal.decision` +
    `decided_at` land. `edited` is approval *with corrections* — it counts
    against graduation exactly like the perception side's edited-draft signal

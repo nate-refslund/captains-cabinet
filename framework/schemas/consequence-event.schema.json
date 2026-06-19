@@ -37,6 +37,24 @@
       "minLength": 1,
       "description": "What was done, verb-first kebab/snake form (e.g. 'drafted-reply', 'auto-closed-commitment', 'claimed-task', 'deployed-preview')."
     },
+    "action_type": {
+      "type": ["string", "null"],
+      "enum": [
+        "task_status_move", "board_status", "label", "tier2_note",
+        "draft_only", "local_edit",
+        "internal_message", "internal_email",
+        "external_message", "external_email",
+        "vercel_deploy_preview", "git_push_nonmain",
+        "vercel_deploy_prod", "git_push_main",
+        "purchase", "provision_paid", "billing",
+        "secret_read", "secret_write", "env_write",
+        "mcp_post", "mcp_put", "mcp_delete",
+        "oauth_grant", "token_grant",
+        "ambiguous",
+        null
+      ],
+      "description": "[FIX-1] First-class action-type enum — the (lane × action_type) cell key the authority-matrix gate reads and graduation math keys on. Stamped at emit time by the SAME shared classify_action() the gate uses (framework/authority/classifier.py), so the ledger and the verdict table can never disagree about what an action is. Optional/nullable: absent when not yet stamped (the unmeasured default). MUST mirror classifier.ACTION_TYPES exactly (CI-asserted) — do not drift this list from the classifier."
+    },
     "subject": {
       "type": "string",
       "minLength": 1,
