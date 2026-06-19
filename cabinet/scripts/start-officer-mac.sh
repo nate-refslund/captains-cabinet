@@ -168,6 +168,32 @@ fi
 # Export OFFICER_NAME for hooks (stop-hook.sh + post-tool-use.sh etc.)
 export OFFICER_NAME="$OFFICER"
 
+# ===========================================================
+# CABINET_LANE — load-bearing lane dimension [FIX-4]
+# ===========================================================
+# framework/authority/lane.py resolve_lane() reads CABINET_LANE FIRST as the
+# lane of the F+A cell tuple (officer, lane, action_type). The Mac officer is
+# single-project-per-LaunchAgent (no --project flag), so its lane source is
+# instance/config/active-project.txt (the same active-context machinery the
+# Linux script's legacy mode uses). Read defensively + whitespace-strip, then
+# validate against the slug allowlist (mirrors start-officer.sh FW-073 regex) so
+# a malformed active-project.txt cannot inject into the exported value. Export
+# ONLY when a valid slug exists — an empty CABINET_LANE would shadow PROJECT in
+# resolve_lane; omitting it lets resolve_lane fall through to PROJECT then None
+# (fail-safe → unmeasured cell, propose-only at the gate).
+CABINET_LANE_SLUG=""
+if [ -f "$REPO_ROOT/instance/config/active-project.txt" ]; then
+  CABINET_LANE_SLUG=$(tr -d '[:space:]' < "$REPO_ROOT/instance/config/active-project.txt" 2>/dev/null)
+fi
+if [ -n "$CABINET_LANE_SLUG" ] && [[ "$CABINET_LANE_SLUG" =~ ^[a-z0-9][a-z0-9-]*$ ]] && [ "${#CABINET_LANE_SLUG}" -le 32 ]; then
+  export CABINET_LANE="$CABINET_LANE_SLUG"
+else
+  # Scrub any inherited/stale value so a non-conforming active-project.txt or a
+  # poisoned parent env can't silently shadow PROJECT/None in resolve_lane.
+  unset CABINET_LANE
+  CABINET_LANE_SLUG=""
+fi
+
 # Audit-fix 2026-05-23: per memory feedback_telegram_state_dir.md, each officer
 # needs a distinct TELEGRAM_STATE_DIR or Telegram polling state collides across
 # officers. Linux start-officer.sh sets this at line 280; mirror on Mac.
@@ -206,6 +232,12 @@ if [ "${CABINET_MAC_DRY_RUN:-0}" = "1" ]; then
     echo "native_agent=true"
   else
     echo "native_agent=false"
+  fi
+  # [FIX-4] surface the resolved lane so test-mac-dry-run.sh can assert the
+  # CABINET_LANE export contract. Printed ONLY when a slug resolved (empty →
+  # no line → resolve_lane falls through, fail-safe).
+  if [ -n "${CABINET_LANE:-}" ]; then
+    echo "CABINET_LANE=$CABINET_LANE"
   fi
   exit 0
 fi

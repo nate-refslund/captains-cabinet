@@ -432,3 +432,32 @@ class TestResolveLane:
         # not interpolate or resolve filesystem paths (no injection surface).
         monkeypatch.setenv("CABINET_LANE", "../../etc/passwd")
         assert resolve_lane() == "../../etc/passwd"
+
+    def test_start_officer_exports_the_var_resolve_lane_reads_first(self):
+        # [FIX-4] T4 contract pin: the lane the gate reads MUST be the var the
+        # officer-start scripts export. resolve_lane reads CABINET_LANE first;
+        # start-officer.sh / start-officer-mac.sh export CABINET_LANE (derived
+        # from --project / active-project.txt). Both sides must agree on the
+        # EXACT name — if either renames it, the lane silently nulls and every
+        # cell collapses to (officer, None, action_type). This regression guard
+        # asserts the scripts actually export the var resolve_lane prioritises.
+        repo_root = Path(__file__).resolve().parents[3]
+        for rel in ("cabinet/scripts/start-officer.sh",
+                    "cabinet/scripts/start-officer-mac.sh"):
+            body = (repo_root / rel).read_text()
+            assert "CABINET_LANE" in body, (
+                f"{rel} must export CABINET_LANE — the load-bearing source "
+                "resolve_lane() reads first [FIX-4]"
+            )
+        # And resolve_lane must read THAT exact var with top precedence.
+        monkeypatch_env = {"CABINET_LANE": "lane-from-script", "PROJECT": "x"}
+        old = {k: os.environ.get(k) for k in monkeypatch_env}
+        try:
+            os.environ.update(monkeypatch_env)
+            assert resolve_lane() == "lane-from-script"
+        finally:
+            for k, v in old.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v

@@ -271,6 +271,16 @@ fi
 # this shell — the unset ensures only the pool-mode branch can write it
 # into the tmux subshell.
 unset CABINET_ACTIVE_PROJECT
+# [FIX-4] CABINET_LANE is LOAD-BEARING: framework/authority/lane.py resolve_lane()
+# reads it FIRST as the lane dimension of the F+A cell tuple (officer, lane,
+# action_type). It is derived from the SAME project/active-context machinery as
+# CABINET_ACTIVE_PROJECT (ACTIVE_SLUG: --project in pool mode, else
+# instance/config/active-project.txt). Defensive unset mirrors the
+# CABINET_ACTIVE_PROJECT scrub above so a sourced cabinet/env/<slug>.env can't
+# leak a stale lane into the subshell. Exported ONLY when a slug is resolved —
+# an empty CABINET_LANE would shadow PROJECT in resolve_lane; omitting it lets
+# resolve_lane fall through to PROJECT then None (fail-safe → unmeasured cell).
+unset CABINET_LANE
 # FW-084: in single_ceo mode, non-CEO officers do NOT get TELEGRAM_BOT_TOKEN or
 # TELEGRAM_HQ_CHAT_ID — they are Telegram-dark. CEO officer gets both as before.
 # multi_officer mode (legacy): all officers get full Telegram env (unchanged).
@@ -283,6 +293,15 @@ else
 fi
 if [ "$POOL_MODE" = true ]; then
   EXPORT_VARS="$EXPORT_VARS CABINET_ACTIVE_PROJECT=$ACTIVE_SLUG"
+fi
+# [FIX-4] Export the resolved lane in BOTH pool and legacy modes — wherever a
+# project/active-context slug exists, the authority gate's resolve_lane() must
+# see it. ACTIVE_SLUG is already constrained (pool mode: slug regex
+# [a-z0-9][a-z0-9-]*; legacy: whitespace-stripped value from the repo-controlled
+# active-project.txt), so it is safe to word-split out of EXPORT_VARS. When
+# empty (legacy, no active-project.txt) it is NOT exported (fail-safe).
+if [ -n "$ACTIVE_SLUG" ]; then
+  EXPORT_VARS="$EXPORT_VARS CABINET_LANE=$ACTIVE_SLUG"
 fi
 
 # Test hook: CABINET_TEST_DRY_RUN=1 dumps resolved arg-derived contracts and
