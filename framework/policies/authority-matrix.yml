@@ -1,0 +1,147 @@
+# Authority Matrix — the Captain authority matrix as DATA (the FLOOR).
+#
+# Canonical, Captain-readable policy document: risk-class rows × confidence-
+# state columns → verdict. This is the FRAMEWORK FLOOR (germline, read-only to
+# officers/loops). Presets may NARROW autonomy (never widen); the instance
+# layer binds lanes → risk-classes and tunes per-cell bars within the floor.
+# Merged by name via load_policies() (framework → preset → instance).
+#
+# Realizes docs/authority-matrix-design-2026-06-19.md §1 Component 1, §2 table,
+# FIX-6 (deploy_nonprod/deploy_prod split — prod is always-gated, no carve-out),
+# FIX-7 (all six HARD_CEILING_TOUCHES members covered), and the Reconciliation
+# table. Validated by framework/authority/matrix.py against the ONE shared
+# classifier enum (framework/authority/classifier.py ACTION_TYPES) and the
+# code-level hard-ceiling backstop (framework/learning/capability_gaps.py
+# HARD_CEILING_TOUCHES).
+#
+# FAIL-SAFE is the spine: until F provides a per-cell confidence score, the cell
+# is propose_only; hard-ceiling classes are always_gated regardless of
+# confidence — F can never lift them. NO row maps a prod/ceiling class to auto.
+version: 1
+policies:
+  - name: authority-matrix
+    type: authority_matrix
+    message: "Below the autonomy bar for this (lane × action-type) — proposing instead."
+
+    # action_type -> risk_class. The action_type strings are the ENUM the shared
+    # classify_action() emits and compute_ratios() keys cells on [FIX-1]. They
+    # MUST equal the classifier's ACTION_TYPES minus the AMBIGUOUS backstop
+    # (CI-asserted): an ambiguous/unknown action has NO risk_class and falls
+    # through to propose-only (fail-safe).
+    risk_classes:
+      reversible:
+        action_types: [task_status_move, board_status, label, tier2_note, draft_only, local_edit]
+      internal_comms:
+        action_types: [internal_message, internal_email]
+      external_comms:                                                 # HARD CEILING: external_comms
+        action_types: [external_message, external_email]
+      deploy_nonprod:
+        action_types: [vercel_deploy_preview, git_push_nonmain]
+      deploy_prod:                                                    # HARD CEILING: production
+        action_types: [vercel_deploy_prod, git_push_main]
+      spend:                                                          # HARD CEILING: spending
+        action_types: [purchase, provision_paid, billing]
+      secrets:                                                        # HARD CEILING: secrets
+        action_types: [secret_read, secret_write, env_write]
+      network_write:                                                  # HARD CEILING: network_write
+        action_types: [mcp_post, mcp_put, mcp_delete]
+      credentials_grant:                                              # HARD CEILING: credentials_grant
+        action_types: [oauth_grant, token_grant]
+
+    # Hard ceiling — always-gated regardless of confidence. MUST cover every
+    # member of HARD_CEILING_TOUCHES (CI-asserted) [FIX-7].
+    hard_ceiling: [external_comms, deploy_prod, spend, secrets, network_write, credentials_grant]
+
+    # Map each hard_ceiling risk_class -> the HARD_CEILING_TOUCHES frozenset
+    # member it satisfies. Coverage CI test asserts
+    # set(ceiling_frozenset_map.values()) == HARD_CEILING_TOUCHES (the full six,
+    # NOT a self-fulfilling "mappable subset") [FIX-7].
+    ceiling_frozenset_map:
+      external_comms: external_comms
+      deploy_prod: production
+      spend: spending
+      secrets: secrets
+      network_write: network_write
+      credentials_grant: credentials_grant
+
+    # Verdict table: risk_class -> { confidence_state -> verdict }.
+    # confidence_state in {unmeasured, propose_only, eligible, graduated, demote}
+    #                   (hard-ceiling rows use the "*" wildcard).
+    # verdict in {auto, auto_with_veto_window, notify_after, propose_only,
+    #            always_gated, classifier}.
+    # NO prod/ceiling cell may be `auto` (CI-asserted) [FIX-6].
+    verdicts:
+      reversible:
+        graduated: auto
+        eligible: propose_only
+        propose_only: propose_only
+        unmeasured: propose_only
+        demote: propose_only
+      internal_comms:
+        graduated: auto_with_veto_window      # + notify_after implied (the notification IS the veto handle)
+        eligible: propose_only
+        propose_only: propose_only
+        unmeasured: propose_only
+        demote: propose_only
+      deploy_nonprod:
+        graduated: classifier                 # -> low-risk auto / else gated (NON-PROD target only) [FIX-6]
+        eligible: classifier
+        propose_only: propose_only
+        unmeasured: propose_only
+        demote: propose_only
+      external_comms:    { "*": always_gated }
+      deploy_prod:       { "*": always_gated }
+      spend:             { "*": always_gated }
+      secrets:           { "*": always_gated }
+      network_write:     { "*": always_gated }
+      credentials_grant: { "*": always_gated }
+
+    # internal_comms deferred-send delay (Component 5). Open-decision #1: default 7 (spec range 5-10).
+    veto_window_minutes: 7
+
+    # Mechanical low-risk deploy classifier inputs (Component 6, NON-PROD only).
+    deploy:
+      safe_globs:
+        - "**/*.md"
+        - "docs/**"
+        - "**/__tests__/**"
+        - "**/*.test.*"
+        - "**/*.spec.*"
+        - "tsconfig.json"
+        - ".eslintrc*"
+      high_risk_globs:
+        - "**/migrations/*.sql"
+        - "**/schema*.sql"
+        - "**/*_schema.*"
+        - "auth/**"
+        - "authentication/**"
+        - "**/jwt/*"
+        - "**/oauth*"
+        - "payment*"
+        - "stripe/**"
+        - "billing/**"
+        - "**/checkout*"
+        - "**/subscription*"
+        - "neon.json"
+        - "**/neon/**"
+        - "vercel.json"
+        - ".vercelignore"
+        - ".env*"
+        - "policies/**"
+        - "framework/schemas-base.sql"
+        - "cabinet/init.sql"
+        - "presets/*/schemas.sql"
+
+    # Per decision-type graduation bar (irreversible types carry a higher bar).
+    # F2's graduation.evaluate IMPORTS these -- it does NOT hardcode its own
+    # [FIX-1 reconcile]. Open-decision #2.
+    bars:
+      default:        { match_rate: 0.85, samples: 20, max_divergent_last10: 1, recency_clean_days: 14 }
+      internal_comms: { match_rate: 0.90, samples: 30, max_divergent_last10: 0, recency_clean_days: 21 }
+      deploy_nonprod: { match_rate: 0.95, samples: 30, max_divergent_last10: 0, recency_clean_days: 21 }
+
+    # Anti-flap cooldown for a demoted cell (Component 4). Open-decision #3.
+    cooldown_days:
+      default: 14
+      internal_comms: 21
+      deploy_nonprod: 21

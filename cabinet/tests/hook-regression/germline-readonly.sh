@@ -6,12 +6,12 @@
 # instance/config/autonomy.yml. Edit/Write must BLOCK (exit 2) for EVERY
 # officer (including cos): no loop may edit its own judge.
 #
-# 19 BLOCK probes (9 germline classes incl. the suffix-anchored
-# framework/authority/ judge modules classifier.py + lane.py, x
+# 21 BLOCK probes (9 germline classes incl. the suffix-anchored
+# framework/authority/ judge modules classifier.py + lane.py + matrix.py, x
 # Edit/Write/officer/path-form variants + constitution regression pin +
-# double-slash normalization) + 9 ALLOW probes (false-positive guards:
+# double-slash normalization) + 10 ALLOW probes (false-positive guards:
 # siblings, evolved skills, own tier2, non-germline hooks, shared interfaces,
-# the authority judges' own editable tests).
+# the authority judges' own editable tests incl. test_matrix.py).
 #
 # Accepted FP (documented, fail-closed): staging a germline-named file
 # under a mirrored directory tail (e.g. /tmp/cabinet/mcp-scope.yml) is
@@ -68,6 +68,10 @@ probe "G15 dbl-slash autonomy.yml (cos)"   cos Write 'instance/config//autonomy.
 probe "G16 Edit authority classifier (cto)" cto Edit  'framework/authority/classifier.py'                          BLOCK
 probe "G17 Write authority lane (cos!)"     cos Write 'framework/authority/lane.py'                                 BLOCK
 probe "G18 abs-path authority judge (cro)"  cro Edit  '/opt/founders-cabinet/framework/authority/classifier.py'    BLOCK
+# Authority matrix loader/validator (T5) — the new judge module that
+# schema-checks authority-matrix.yml; suffix-anchored like the other judges.
+probe "G18b Edit authority matrix.py (cto)" cto Edit  'framework/authority/matrix.py'                              BLOCK
+probe "G18c Write authority matrix.py (cos!)" cos Write 'framework/authority/matrix.py'                            BLOCK
 # Regression pin: pre-existing constitution protection unchanged
 probe "G19 constitution pin (cto)"         cto Edit  'constitution/CONSTITUTION.md'                                BLOCK
 
@@ -94,6 +98,7 @@ probe "FP7 other lib file (cto)"           cto Edit  'cabinet/scripts/lib/trigge
 # are the officers' verification surface and stay editable (mirrors how
 # cabinet/scripts/lib/tests/ stays editable while policy_engine.py is germline)
 probe "FP8 authority test file (cro)"      cro Write 'framework/authority/tests/test_classifier.py'                ALLOW
+probe "FP8b matrix test file (cro)"        cro Write 'framework/authority/tests/test_matrix.py'                    ALLOW
 probe "FP9 authority sibling note (cro)"   cro Write 'framework/authority-notes.md'                                ALLOW
 
 echo ""
