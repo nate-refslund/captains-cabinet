@@ -211,3 +211,33 @@ class TestIntentAndContext:
         scores mission × core, not mission alone."""
         out = officer_prompt.intent_and_context(_mower_case())
         assert "da" in out["reconstructed_intent"].lower()
+
+    def test_core_half_survives_cap_when_goal_is_oversized(self):
+        """Regression: a naive f'Goal: {goal} Core: {core}'[:500] truncates from
+        the right and chops the ENTIRE Core half on a long goal. The goal slice
+        must be budgeted separately so 'Core:' (and the language axis) always
+        survive the 500-char cap."""
+        long_ask = "robotplaeneklipper til en kaempe graesplaene " + ("y" * 5000)
+        c = Case.from_retro_case({
+            "case_id": "cap1234567", "reply_key": "k", "slug": "bo",
+            "person": "Bo", "channel": "msgraph", "language": "da",
+            "reply_ts": "2026-05-06T12:00:00+00:00", "subject": "s",
+            "n_prior": 1,
+            "thread_before": [
+                {"direction": "received", "who": "Bo <b@x>",
+                 "date": "2026-05-05T08:00:00+00:00", "source": "msgraph",
+                 "text": long_ask},
+            ],
+            "real_reply": "x",
+        })
+        out = officer_prompt.intent_and_context(c)
+        ri = out["reconstructed_intent"]
+        # the field is still within the cap
+        assert len(ri) <= 500
+        # mission_or_goal is at/over the budget that would otherwise eat Core
+        assert len(out["mission_or_goal"]) >= 1
+        # BOTH halves survive: the Core marker and the language axis are present
+        assert "Core:" in ri
+        assert "da" in ri.lower()
+        # the standing-style core text actually made it in (not just the label)
+        assert "direct recommendation" in ri

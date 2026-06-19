@@ -124,8 +124,19 @@ def intent_and_context(case: Case) -> dict:
     # of its own, only atemporal style priors, so it never leaks.
     core = (f"decisive, concrete and low-ceremony; replies in {case.language} "
             f"on {case.channel}; gives a direct recommendation over hedging")
-    reconstructed_intent = (
-        f"Goal: {mission_or_goal} Core: {core}")[:_INTENT_FIELD_CAP]
+
+    # Compose mission × core so the "Core:" half ALWAYS survives the cap. A naive
+    # f"Goal: {goal} Core: {core}"[:CAP] truncates from the RIGHT, which can chop
+    # off the entire Core half on a long goal. Instead, budget the goal slice
+    # separately: reserve room for the fixed wrapper + the full core, then fit the
+    # goal into whatever remains (never negative).
+    _wrapper = f"Goal:  Core: {core}"  # fixed overhead incl. the full core text
+    goal_budget = max(0, _INTENT_FIELD_CAP - len(_wrapper))
+    goal_slice = mission_or_goal[:goal_budget]
+    reconstructed_intent = f"Goal: {goal_slice} Core: {core}"
+    # Defensive clamp: if `core` alone already exceeds the cap (pathological
+    # language/channel), still never exceed CAP — but Core is preserved first.
+    reconstructed_intent = reconstructed_intent[:_INTENT_FIELD_CAP]
 
     return {
         "reconstructed_intent": reconstructed_intent,
