@@ -306,3 +306,177 @@ class TestBackwardCompatibleSignature:
         assert out["verdict"] == "match"
         assert out.get("intent_verdict", "") == ""
         assert calls["n"] == 1  # only the decision pass ran
+
+
+# ---------------------------------------------------------------------------
+# F4 T6 — composite blend (design §3.4) + CaseScore intent fields (§1.5, §8)
+# ---------------------------------------------------------------------------
+
+class TestCompositeBlend:
+    """The decision-dominant, intent-penalizing blend (design §3.4).
+
+        composite(dec, intent):
+            dec_score = _DEC[dec]
+            if intent in ("error",""): return dec_score   # F1 fallback
+            if intent == "intent-divergent": return 0.0    # hollow/off-intent
+            return max(dec_score, _INTENT[intent])         # credit the better
+    """
+
+    # The §3.4 worked-quadrants table, asserted EXACTLY.
+    @pytest.mark.parametrize("dec, intent, expected", [
+        ("match", "intent-aligned", 1.0),       # literal + on-intent (gold)
+        ("match", "intent-divergent", 0.0),     # echoed words, missed goal -> ZERO
+        ("divergent", "intent-aligned", 1.0),   # different/better, same intent (F4 path)
+        ("divergent", "intent-divergent", 0.0),  # wrong action, wrong intent
+        ("partial", "intent-aligned", 1.0),     # hedged literally but served goal
+        ("partial", "intent-partial", 0.5),     # partial on both axes
+        ("match", "error", 1.0),                # intent layer failed -> _DEC[match]
+    ])
+    def test_seven_quadrant_table_exact(self, dec, intent, expected):
+        assert scorer.composite(dec, intent) == expected
+
+    def test_match_intent_divergent_is_zero(self):
+        # A surface-match whose intent missed the goal is gated to ZERO, not
+        # rubber-stamped (the §3.4 intent-divergent branch is load-bearing).
+        assert scorer.composite("match", "intent-divergent") == 0.0
+
+    def test_divergent_intent_aligned_is_one(self):
+        # The Husqvarna credit path: different surface, same intent -> 1.0.
+        assert scorer.composite("divergent", "intent-aligned") == 1.0
+
+    def test_intent_error_falls_back(self):
+        # intent layer unavailable ("error") -> decision-only fallback == _DEC[dec].
+        for dec in ("match", "partial", "divergent", "skipped"):
+            assert scorer.composite(dec, "error") == scorer._DEC.get(dec, 0.0)
+
+    def test_empty_intent_falls_back(self):
+        # An empty intent verdict ("") is the F1 decision-only path too.
+        for dec in ("match", "partial", "divergent"):
+            assert scorer.composite(dec, "") == scorer._DEC.get(dec, 0.0)
+
+    def test_dec_alias_matches_existing_composite_table(self):
+        # _DEC is the design's name for the existing decision table; same values.
+        assert scorer._DEC["match"] == 1.0
+        assert scorer._DEC["partial"] == 0.5
+        assert scorer._DEC["divergent"] == 0.0
+        assert scorer._DEC["error"] == 0.0
+
+    def test_intent_table_values(self):
+        assert scorer._INTENT == {"intent-aligned": 1.0, "intent-partial": 0.5,
+                                  "intent-divergent": 0.0, "error": 0.0}
+
+
+class TestScoreIntentFields:
+    """``score(..., intent_ctx=...)`` threads the intent context to the judge
+    and exposes the intent axis on the CaseScore row (design §1.5, §8)."""
+
+    def _case(self):
+        from framework.fidelity.types import Case
+        return Case.from_retro_case(_mower_case_dict())
+
+    def _decision(self, text):
+        from framework.fidelity.types import OfficerDecision
+        return OfficerDecision(decision=text, rationale="", chain=[])
+
+    def _fake_embedder(self, texts):
+        return [[float(len(t or "")), 1.0, 0.0] for t in texts]
+
+    def test_default_no_intent_ctx_is_decision_only(self, monkeypatch):
+        """With no intent_ctx, the intent layer is empty and composite ==
+        decision-only (F1 behavior unchanged — no regression)."""
+        monkeypatch.setattr(
+            scorer, "judge_with_oauth",
+            lambda cd, draft: {"verdict": "match", "rationale": "",
+                               "what_diverged": "", "real_decision": "",
+                               "draft_decision": ""})
+        cs = scorer.score(self._case(), self._decision("Ja."),
+                          baseline_draft="x",
+                          centroids={"msgraph": [1.0, 1.0, 0.0]},
+                          embedder=self._fake_embedder)
+        assert cs.decision_verdict == "match"
+        assert cs.composite == 1.0
+        assert cs.intent_verdict == ""
+        assert cs.intent_grounded_fact == ""
+        assert cs.intent_composite == 1.0  # composite("match","") == _DEC[match]
+
+    def test_intent_ctx_threads_to_judge_and_credits_divergence(
+            self, monkeypatch):
+        """intent_ctx supplied -> judge receives reconstructed_intent +
+        full_cutoff_context; a divergent decision with intent-aligned earns the
+        F4 credit (intent_composite 1.0) while decision_verdict stays divergent
+        (decision-first, still on the row)."""
+        captured = {}
+
+        def fake_judge(cd, draft, reconstructed_intent="",
+                       full_cutoff_context=None):
+            captured["intent"] = reconstructed_intent
+            captured["ctx"] = full_cutoff_context
+            return {"verdict": "divergent", "rationale": "", "what_diverged": "",
+                    "real_decision": "", "draft_decision": "",
+                    "intent_verdict": "intent-aligned", "intent_rationale": "",
+                    "intent_what_diverged": "",
+                    "intent_grounded_fact": "From Bo at 2026-05-05: mower."}
+
+        monkeypatch.setattr(scorer, "judge_with_oauth", fake_judge)
+        cs = scorer.score(
+            self._case(), self._decision("LiDAR robotplaeneklipper anbefaling"),
+            baseline_draft="x", centroids={"msgraph": [1.0, 1.0, 0.0]},
+            embedder=self._fake_embedder,
+            intent_ctx={"reconstructed_intent": _MOWER_INTENT,
+                        "full_cutoff_context": _MOWER_CTX})
+        assert captured["intent"] == _MOWER_INTENT
+        assert captured["ctx"] == _MOWER_CTX
+        assert cs.decision_verdict == "divergent"   # decision-first, preserved
+        assert cs.intent_verdict == "intent-aligned"
+        assert cs.intent_grounded_fact == "From Bo at 2026-05-05: mower."
+        assert cs.intent_composite == 1.0           # max(_DEC[divergent], 1.0)
+
+    def test_intent_ctx_hollow_match_gated_to_zero(self, monkeypatch):
+        """A surface-match whose intent the judge flags divergent -> the row's
+        intent_composite is 0.0 (the §3.4 gate fires through score)."""
+        def fake_judge(cd, draft, reconstructed_intent="",
+                       full_cutoff_context=None):
+            return {"verdict": "match", "rationale": "", "what_diverged": "",
+                    "real_decision": "", "draft_decision": "",
+                    "intent_verdict": "intent-divergent", "intent_rationale": "",
+                    "intent_what_diverged": "missed goal",
+                    "intent_grounded_fact": "FORCED: ..."}
+
+        monkeypatch.setattr(scorer, "judge_with_oauth", fake_judge)
+        cs = scorer.score(
+            self._case(), self._decision("echo"),
+            baseline_draft="x", centroids={"msgraph": [1.0, 1.0, 0.0]},
+            embedder=self._fake_embedder,
+            intent_ctx={"reconstructed_intent": _MOWER_INTENT,
+                        "full_cutoff_context": _MOWER_CTX})
+        assert cs.decision_verdict == "match"       # decision-first, visible
+        assert cs.intent_verdict == "intent-divergent"
+        assert cs.intent_composite == 0.0           # hollow match -> ZERO
+
+    def test_intent_ctx_uses_case_intent_when_no_reconstructed(
+            self, monkeypatch):
+        """If intent_ctx omits reconstructed_intent, score falls back to
+        case.intent (cached benchmark intent) so a refreshed benchmark needs no
+        recomputation (design §1.5/§1.6)."""
+        captured = {}
+
+        def fake_judge(cd, draft, reconstructed_intent="",
+                       full_cutoff_context=None):
+            captured["intent"] = reconstructed_intent
+            return {"verdict": "divergent", "rationale": "", "what_diverged": "",
+                    "real_decision": "", "draft_decision": "",
+                    "intent_verdict": "intent-partial", "intent_rationale": "",
+                    "intent_what_diverged": "",
+                    "intent_grounded_fact": "From Bo at 2026-05-05: mower."}
+
+        monkeypatch.setattr(scorer, "judge_with_oauth", fake_judge)
+        case = self._case()
+        case.intent = "Goal: cached mower intent. Core: decisive."
+        cs = scorer.score(
+            case, self._decision("anbefaling"),
+            baseline_draft="x", centroids={"msgraph": [1.0, 1.0, 0.0]},
+            embedder=self._fake_embedder,
+            intent_ctx={"full_cutoff_context": _MOWER_CTX})
+        assert captured["intent"] == "Goal: cached mower intent. Core: decisive."
+        assert cs.intent_verdict == "intent-partial"
+        assert cs.intent_composite == 0.5           # max(_DEC[divergent], 0.5)
