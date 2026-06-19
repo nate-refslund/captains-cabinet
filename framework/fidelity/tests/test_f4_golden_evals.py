@@ -90,7 +90,7 @@ def test_eval_tier2_matches_real_gather_behavior():
     be lying — so we assert no such surface exists."""
 
     class _Fake:
-        def gather_vault(self, handle):
+        def gather_vault(self, handle, topic=None):
             return {"hits": [], "brief": "POSTCUTOFF PROSE — must never appear"}
 
         def person_intel(self, slug):

@@ -264,9 +264,14 @@ class BrainAdapter:
             self._context_lib = context_lib
         return self._context_lib
 
-    def gather_vault(self, handle: str) -> dict:
+    def gather_vault(self, handle: str, topic: str | None = None) -> dict:
         # sources=["vault"] EXACTLY — Tier-1 only; brief is discarded upstream.
-        return self._ctx().gather(handle, sources=["vault"])
+        # topic = the inbound message being replied to → topic-aware retrieval
+        # (gather extracts EN+DA content nouns + folds them ahead of the person
+        # terms, so the query is what the conversation is ABOUT, not just the
+        # person slug). Without it, search("Sobuc") hits the profile note, not
+        # the thread; a 0.4 relevance floor returns 0 rather than noise.
+        return self._ctx().gather(handle, sources=["vault"], topic=topic)
 
     # The brain MCP *server* module (server.py) imports fastmcp and runs
     # standalone on Python 3.12, so it is NOT importable in-process here
@@ -311,6 +316,25 @@ class BrainAdapter:
         return Path(resolved).read_text(encoding="utf-8", errors="replace")
 
 
+def _reply_topic(case: Case) -> str | None:
+    """The inbound message being replied to — the topic for topic-aware vault
+    retrieval. A reply case answers the most recent INBOUND (received) message;
+    its text is what the conversation is about. Falls back to the last
+    text-bearing thread message. Pre-cutoff by construction (thread_before is
+    asserted pre-cutoff). NEVER reads real_reply (the held-out ground truth)."""
+    thread = getattr(case, "thread_before", None) or []
+    _inbound = ("received", "incoming", "in", "inbound")
+    for m in reversed(thread):
+        if isinstance(m, dict) and m.get("direction") in _inbound:
+            t = (m.get("text") or "").strip()
+            if t:
+                return t
+    for m in reversed(thread):
+        if isinstance(m, dict) and (m.get("text") or "").strip():
+            return m["text"].strip()
+    return None
+
+
 def gather_cutoff_context(case: Case, *, brain=None,
                           read_paths: list | None = None) -> dict:
     """Assemble the officer's as-of-cutoff context (design §2.2). Returns a
@@ -327,8 +351,14 @@ def gather_cutoff_context(case: Case, *, brain=None,
         brain = BrainAdapter()
     cutoff = case.cutoff_ts
 
-    # --- vault hits (Tier-1 only; brief DROPPED) ---------------------------
-    vault = brain.gather_vault(case.slug or case.person) or {}
+    # --- vault hits (Tier-1 only; brief DROPPED; TOPIC-AWARE) --------------
+    # The topic = the inbound message being replied to, so retrieval is driven
+    # by what the conversation is ABOUT (the garden budget, the house), not the
+    # bare person slug. Pre-cutoff by construction (thread_before is asserted
+    # pre-cutoff). gather's 0.4 relevance floor returns 0 (not noise) when
+    # nothing on-topic is indexed — correct + leak-safe.
+    topic = _reply_topic(case)
+    vault = brain.gather_vault(case.slug or case.person, topic=topic) or {}
     raw_hits = vault.get("hits", []) or []
     # Pre-filter on a real CONTENT timestamp strictly before the cutoff; a hit
     # with no derivable content ts is un-fenceable -> excluded.
@@ -353,6 +383,7 @@ def gather_cutoff_context(case: Case, *, brain=None,
         "thread": case.thread_before,            # already pre-cutoff (asserted)
         "commitments": commitments,
         "vault_hits": vault_hits,
+        "topic_terms": vault.get("topic_terms"),  # what drove retrieval (observability)
         "person_static": person_static,
         "excluded": [
             "search_brain (mtime != content-ts; no mtime fallback)",

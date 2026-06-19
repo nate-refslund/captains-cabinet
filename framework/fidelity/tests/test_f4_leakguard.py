@@ -59,13 +59,14 @@ class FakeBrain:
         self.calls = []
         self.tier2_invoked = False
 
-    def gather_vault(self, handle):
+    def gather_vault(self, handle, topic=None):
         # gather_cutoff_context MUST scope to the vault tier only. The real
         # adapter calls context_lib.gather(handle, sources=["vault"]); this
         # fake mirrors the {hits, brief} shape and records the call. If any
         # code path tried to reach a Tier-2 fetcher it would have to call a
         # method that does not exist here -> AttributeError, surfacing the bug.
         self.calls.append(("gather_vault", handle))
+        self.last_topic = topic
         return {"hits": list(self._vault_hits), "brief": self._brief}
 
     def person_intel(self, slug):
@@ -103,6 +104,36 @@ class TestBriefExcluded:
         # no free-text prose source field smuggled in
         for v in ctx.values():
             assert not (isinstance(v, str) and "Husqvarna URL" in v)
+
+
+class TestTopicAwareRetrieval:
+    """The vault query is TOPIC-aware: gather_cutoff_context passes the inbound
+    message (what's being replied to) as topic=, so retrieval is driven by what
+    the conversation is ABOUT, not the bare person slug (the vault_hits=0 fix).
+    NEVER reads real_reply."""
+
+    def test_reply_topic_extracts_inbound_message(self):
+        assert officer_runner._reply_topic(_case()) == "kan vi snakke lon?"
+
+    def test_topic_passed_through_to_gather_vault(self):
+        brain = FakeBrain(vault_hits=[])
+        officer_runner.gather_cutoff_context(_case(), brain=brain)
+        assert brain.last_topic == "kan vi snakke lon?"
+
+    def test_topic_terms_surfaced_for_observability(self):
+        brain = FakeBrain(vault_hits=[])
+        ctx = officer_runner.gather_cutoff_context(_case(), brain=brain)
+        assert "topic_terms" in ctx
+
+    def test_reply_topic_never_reads_real_reply(self):
+        # The real_reply ("Ja, lad os tage det fredag.") is the held-out ground
+        # truth — it must NEVER be the topic.
+        assert officer_runner._reply_topic(_case()) != "Ja, lad os tage det fredag."
+
+    def test_no_inbound_message_is_none_not_crash(self):
+        c = _case()
+        c.thread_before = []
+        assert officer_runner._reply_topic(c) is None
 
 
 class TestTier2Unreachable:
