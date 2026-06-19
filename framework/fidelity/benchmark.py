@@ -18,6 +18,7 @@ import os
 from pathlib import Path
 
 from framework.fidelity import retro
+from framework.fidelity.officer_prompt import intent_and_context
 from framework.fidelity.types import Case
 
 _SUPPORTED: set[tuple[str, str]] = {("send-1to1-reply", "reply")}
@@ -70,5 +71,27 @@ def build_cases(lane: str = "send-1to1-reply", decision_type: str = "reply",
             f"F1 supports only {sorted(_SUPPORTED)}; "
             f"({lane!r}, {decision_type!r}) lands in F3.")
     rcs = retro.extract_cases(n_cases=n, people_dir=people_dir)
-    return [Case.from_retro_case(rc, lane=lane, decision_type=decision_type)
-            for rc in rcs]
+    cases = [Case.from_retro_case(rc, lane=lane, decision_type=decision_type)
+             for rc in rcs]
+    return [_enrich_intent(c) for c in cases]
+
+
+def _enrich_intent(case: Case) -> Case:
+    """Cache the reconstructed as-of-cutoff intent on the Case (design §5, §1.6).
+
+    The intent is a PURE function of the pre-cutoff thread: it is computed by
+    ``officer_prompt.intent_and_context``, which reads ``case.thread_before``
+    ONLY and NEVER ``case.real_reply`` (the held-out ground truth). Real-world
+    facts the situation implicates (the house, the lawn size) enter the harness
+    only through the leak-guarded ``gather_cutoff_context`` path at officer time
+    (§2) — they are NOT baked into the benchmark intent here.
+
+    Enrichment is LAZY/fill-if-empty: an already-populated ``case.intent`` (a
+    refreshed benchmark) is preserved, and if it is still empty at score time
+    ``scorer.score`` recomputes it the same way. The cached value lives on the
+    in-memory Case object only; nothing here writes it to the embeddings/brain
+    index, so — like the held-out set — it stays out of the index and the clone
+    cannot memorize it (parent §274-276)."""
+    if not case.intent:
+        case.intent = intent_and_context(case)["reconstructed_intent"]
+    return case
