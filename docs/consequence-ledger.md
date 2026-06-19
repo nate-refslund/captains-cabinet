@@ -38,9 +38,20 @@ screenpipe pipes, cabinet officers, and crew subagents.
   "refs": ["msg:1", "board:42"],
   "proposal": {"required": true, "decision": "approved | edited | rejected | expired | null", "decided_at": "..."},
   "outcome": {"status": "ok | failed | unknown", "evidence": "..."},
-  "review": {"verdict": "confirmed | wrong | unknown", "reviewed_at": "...", "lesson_ref": "..."}
+  "review": {"verdict": "confirmed | wrong | unknown", "reviewed_at": "...", "lesson_ref": "..."},
+  "decision_verdict": "match | partial | divergent | error | skipped | null",
+  "intent_verdict": "intent-aligned | intent-partial | intent-divergent | error | '' | null",
+  "intent_composite": 0.0,
+  "endorsement": "unknown | regretted | constrained | corrected | null"
 }
 ```
+
+The last four are the optional **F4 scorer-axis fields** `[T3]` — absent on
+non-eval acting surfaces and legacy rows (the unmeasured default; a real falsy
+value like `intent_verdict: ""` or `intent_composite: 0.0` is written, an
+unpassed field is dropped). They are stamped by the F4 scoring-path emit
+(`framework/fidelity/fidelity_events.py:emit_case_scored`) from a scorer
+`CaseScore`. `additionalProperties: false` still holds at every level.
 
 One event = one action, written when the action happens and **enriched in
 place** (or superseded append-only, see Storage) as its consequence
@@ -64,6 +75,14 @@ resolves:
 4. **Review** — the existing reasoning-review / architect loop compares the
    action's expectation to reality and writes `review.verdict`
    (+ `lesson_ref` when `wrong`).
+5. **Score (F4 eval) `[T3]`** — for a held-out fidelity case, the scoring path
+   emits a distinct `fidelity-case-scored` event carrying the scorer's
+   `decision_verdict` / `intent_verdict` / `intent_composite` / `endorsement`
+   AND maps `review.verdict` FROM the intent verdict
+   (`intent-aligned→confirmed`, `intent-divergent→wrong`,
+   `intent-partial / error / ""→unknown`). This is the seam that makes
+   `review_confirmed_rate` measurable for scored cells — before it, every scored
+   case landed `review.verdict: unknown` so the bar's denominator was 0 forever.
 
 ## Mapping the existing sources
 
@@ -143,8 +162,11 @@ normalized projection the graduation math reads.
   `actor + action + subject + ts` identity — consumers take the last
   write per identity, the same convention the autonomy resolver uses
   today. The cabinet read path `read_ledger` collapses that identity tuple
-  last-write-wins; `compute_ratios` derives the three graduation ratios per
-  `(actor, lane, action_type)` cell (→ `GraduationRatios`) — keyed on the
+  last-write-wins; `compute_ratios` derives the graduation ratios per
+  `(actor, lane, action_type)` cell (→ `GraduationRatios`: approval-unchanged,
+  outcome-held, review-confirmed, and `[T3]` `intent_match_rate` =
+  `intent-aligned / (intent-aligned + intent-divergent)`, `None` when the
+  denominator is 0) — keyed on the
   `action_type` enum (the shared classifier's stamp), NOT the free-text
   `action`, so the ledger and the authority gate agree on the cell. A row with
   no `action_type` (unstamped/legacy) buckets under the visible

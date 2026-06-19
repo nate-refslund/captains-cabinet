@@ -60,6 +60,13 @@ _ACTOR_KINDS = {"pipe", "officer", "crew"}
 _PROPOSAL_DECISIONS = {"approved", "edited", "rejected", "expired", None}
 _OUTCOME_STATUSES = {"ok", "failed", "unknown"}
 _REVIEW_VERDICTS = {"confirmed", "wrong", "unknown"}
+# [T3] Optional F4 scorer-axis enums carried on the consequence event. They
+# mirror scorer._DEC keys (decision) and scorer.judge_with_oauth (intent). A
+# None / absent value is the unmeasured default. "" (intent layer did not run)
+# and "error" are legal intent values — they mean decision-only, NOT a typo.
+_DECISION_VERDICTS = {"match", "partial", "divergent", "error", "skipped", None}
+_INTENT_VERDICTS = {"intent-aligned", "intent-partial", "intent-divergent",
+                    "error", "", None}
 # [FIX-1] The action_type enum is sourced from the ONE shared classifier
 # (framework/authority/classifier.py) so the schema, this validator, the
 # emit-time stamp, and the gate's verdict lookup can never drift apart. A None
@@ -68,7 +75,10 @@ _ACTION_TYPES = set(ACTION_TYPES) | {None}
 
 # Allowed keys per object (additionalProperties:false everywhere).
 _ROOT_KEYS = {"ts", "actor", "lane", "action", "subject",
-              "action_type", "refs", "proposal", "outcome", "review"}
+              "action_type", "refs", "proposal", "outcome", "review",
+              # [T3] optional F4 scorer-axis fields.
+              "decision_verdict", "intent_verdict", "intent_composite",
+              "endorsement"}
 _ROOT_REQUIRED = ("ts", "actor", "lane", "action", "subject")
 _ACTOR_KEYS = {"kind", "id"}
 _PROPOSAL_KEYS = {"required", "decision", "decided_at"}
@@ -122,6 +132,56 @@ def validate_consequence(event: dict[str, Any]) -> None:
         if at not in _ACTION_TYPES:
             raise ConsequenceValidationError(
                 f"action_type must be one of {sorted(a for a in _ACTION_TYPES if a)} or null"
+            )
+
+    # [T3] decision_verdict: optional enum string | null (scorer._DEC keys).
+    if "decision_verdict" in event:
+        dv = event["decision_verdict"]
+        if dv is not None and not isinstance(dv, str):
+            raise ConsequenceValidationError(
+                "decision_verdict must be a string or null"
+            )
+        if dv not in _DECISION_VERDICTS:
+            raise ConsequenceValidationError(
+                "decision_verdict must be one of "
+                f"{sorted(v for v in _DECISION_VERDICTS if v)} or null"
+            )
+
+    # [T3] intent_verdict: optional enum string | null. "" and "error" are
+    # legal — they mean the intent layer did not run (decision-only path).
+    if "intent_verdict" in event:
+        iv = event["intent_verdict"]
+        if iv is not None and not isinstance(iv, str):
+            raise ConsequenceValidationError(
+                "intent_verdict must be a string or null"
+            )
+        if iv not in _INTENT_VERDICTS:
+            raise ConsequenceValidationError(
+                "intent_verdict must be one of "
+                f"{sorted(v for v in _INTENT_VERDICTS if v)}, '' or null"
+            )
+
+    # [T3] intent_composite: optional number in [0.0, 1.0] | null. bool is an
+    # int subclass in Python — reject it explicitly so True/False can't pass.
+    if "intent_composite" in event:
+        ic = event["intent_composite"]
+        if ic is not None:
+            if isinstance(ic, bool) or not isinstance(ic, (int, float)):
+                raise ConsequenceValidationError(
+                    "intent_composite must be a number or null"
+                )
+            if not (0.0 <= float(ic) <= 1.0):
+                raise ConsequenceValidationError(
+                    "intent_composite must be within [0.0, 1.0]"
+                )
+
+    # [T3] endorsement: optional non-empty string | null. Loose string (not a
+    # frozen enum) — the endorsement vocabulary is still being wired (design F4).
+    if "endorsement" in event:
+        en = event["endorsement"]
+        if en is not None and (not isinstance(en, str) or not en):
+            raise ConsequenceValidationError(
+                "endorsement must be a non-empty string or null"
             )
 
     # actor
@@ -249,6 +309,11 @@ def _write_to_log(event: dict[str, Any]) -> None:
         f.write(json.dumps(event, default=str) + "\n")
 
 
+_UNSET: Any = object()  # [T3] distinguishes "param not passed" from a falsy
+# value the caller meant (intent_verdict="" / intent_composite=0.0): a real ""
+# or 0.0 is WRITTEN, an unpassed param is DROPPED — see emit_consequence.
+
+
 def emit_consequence(
     *,
     ts: str,
@@ -261,6 +326,10 @@ def emit_consequence(
     proposal: dict[str, Any] | None = None,
     outcome: dict[str, Any] | None = None,
     review: dict[str, Any] | None = None,
+    decision_verdict: Any = _UNSET,
+    intent_verdict: Any = _UNSET,
+    intent_composite: Any = _UNSET,
+    endorsement: Any = _UNSET,
 ) -> dict[str, Any]:
     """Validate then append-write ONE consequence event to the JSONL ledger.
 
@@ -285,6 +354,14 @@ def emit_consequence(
     `action_type` once the per-case raw tool call is available. When no caller
     supplies it, `action_type` is left ABSENT (the unstamped / unmeasured
     default) — never written as a literal null.
+
+    [T3] The optional F4 scorer-axis scalars (decision_verdict / intent_verdict
+    / intent_composite / endorsement) default to a private _UNSET sentinel, NOT
+    None: a caller that genuinely means intent_verdict="" or intent_composite=
+    0.0 has those WRITTEN, while a caller that omits them leaves them ABSENT.
+    This keeps the unmeasured default visible (absent, never a silent null) and
+    lets the F4 scoring-path emit carry the real falsy values when the intent
+    layer ran but did not credit.
     """
     event: dict[str, Any] = {
         "ts": ts,
@@ -302,6 +379,15 @@ def emit_consequence(
         event["outcome"] = outcome
     if review is not None:
         event["review"] = review
+    # [T3] Only the _UNSET sentinel is dropped; a real falsy value is written.
+    if decision_verdict is not _UNSET:
+        event["decision_verdict"] = decision_verdict
+    if intent_verdict is not _UNSET:
+        event["intent_verdict"] = intent_verdict
+    if intent_composite is not _UNSET:
+        event["intent_composite"] = intent_composite
+    if endorsement is not _UNSET:
+        event["endorsement"] = endorsement
 
     validate_consequence(event)  # raises before any write
     _write_to_log(event)
@@ -445,6 +531,11 @@ class GraduationRatios:
     confirmed: int = 0
     wrong: int = 0
     sample_count: int = 0
+    # [T3] F4 intent axis. intent_partial / error / "" / absent are EXCLUDED
+    # from the denominator (like unknown verdicts are for review_confirmed_rate)
+    # — only a credited (aligned) or a hard-divergent verdict scores the cell.
+    intent_aligned: int = 0
+    intent_divergent: int = 0
 
     @property
     def approval_unchanged_rate(self) -> float | None:
@@ -460,6 +551,18 @@ class GraduationRatios:
     def review_confirmed_rate(self) -> float | None:
         denom = self.confirmed + self.wrong
         return (self.confirmed / denom) if denom else None
+
+    @property
+    def intent_match_rate(self) -> float | None:
+        """[T3] intent-aligned / (intent-aligned + intent-divergent).
+
+        None when the denominator is 0 — an UNMEASURED intent dimension (no
+        credited/divergent intent verdict yet). Per the no-silent-caps rule an
+        unmeasured cell reads as a visible None, never a silent 0.0/1.0.
+        intent-partial / error / "" are excluded from the denominator, exactly
+        as unknown verdicts are excluded from review_confirmed_rate."""
+        denom = self.intent_aligned + self.intent_divergent
+        return (self.intent_aligned / denom) if denom else None
 
 
 def compute_ratios(
@@ -525,5 +628,13 @@ def compute_ratios(
             cell.confirmed += 1
         elif verdict == "wrong":
             cell.wrong += 1
+
+        # [T3] Intent axis from the new optional field. intent-partial / error /
+        # "" / absent score neither side (excluded from the denominator).
+        intent_verdict = ev.get("intent_verdict")
+        if intent_verdict == "intent-aligned":
+            cell.intent_aligned += 1
+        elif intent_verdict == "intent-divergent":
+            cell.intent_divergent += 1
 
     return cells

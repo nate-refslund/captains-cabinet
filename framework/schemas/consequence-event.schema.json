@@ -60,6 +60,27 @@
       "minLength": 1,
       "description": "Who/what the action concerned — a person handle, thread id, board item, commit, outcome node."
     },
+    "decision_verdict": {
+      "type": ["string", "null"],
+      "enum": ["match", "partial", "divergent", "error", "skipped", null],
+      "description": "[T3] The F4 scorer's tone-blind DECISION verdict for this case (scorer._DEC keys). Optional/nullable — absent for non-eval acting surfaces and legacy rows. Descriptive on the row; the bar keys on review.verdict, not this."
+    },
+    "intent_verdict": {
+      "type": ["string", "null"],
+      "enum": ["intent-aligned", "intent-partial", "intent-divergent", "error", "", null],
+      "description": "[T3] The F4 scorer's INTENT-alignment verdict (scorer.judge_with_oauth). Optional/nullable. '' / 'error' = the intent layer did not run (decision-only path). review.verdict is mapped FROM this at emit time (aligned->confirmed, divergent->wrong, partial/error/''->unknown) so an intent-based review_confirmed_rate becomes measurable."
+    },
+    "intent_composite": {
+      "type": ["number", "null"],
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "[T3] The F4 scorer's decision-dominant, intent-penalizing composite (scorer.composite), 0.0–1.0. Optional/nullable — absent when no intent layer ran."
+    },
+    "endorsement": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "description": "[T3] The case's endorsement label (Case.endorsement: unknown | regretted | constrained | corrected | ...). Non-empty string when present; nullable/absent when unlabeled. Kept a loose string (not a frozen enum) because the endorsement vocabulary is still being wired (design F4)."
+    },
     "refs": {
       "type": "array",
       "items": {"type": "string"},

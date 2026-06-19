@@ -72,6 +72,7 @@ VALID_EVENT_TYPES = frozenset({
     # Fidelity harness (F) — officer-under-test evaluation + leak guard
     "fidelity_case_evaluated",      # blind officer decision captured for a held-out case
     "fidelity_case_leak_detected",  # anti-leakage breach → case hard-failed, never scored
+    "fidelity_case_scored",         # [T3] scored case: intent axis + intent-mapped review.verdict
 
     # Self-improvement loop (R8) — closed-loop learning pipeline
     "role_evolved",                       # charter/capability auto-applied via self-improvement
@@ -290,6 +291,7 @@ _AGGREGATE_MAP: dict[str, tuple[str, str]] = {
     "eval_failed":                ("eval",        "eval_id"),
     "fidelity_case_evaluated":     ("fidelity",    "case_id"),
     "fidelity_case_leak_detected": ("fidelity",    "case_id"),
+    "fidelity_case_scored":        ("fidelity",    "case_id"),
     "role_evolved":               ("role",        "role_slug"),
     "skill_promoted":             ("skill",       "skill_slug"),
     "self_improvement_loop_started":   ("self_improvement", "loop_id"),
