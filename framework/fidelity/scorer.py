@@ -20,6 +20,37 @@ from framework.fidelity.types import Case, OfficerDecision
 
 _COMPOSITE = {"match": 1.0, "partial": 0.5, "divergent": 0.0, "error": 0.0,
               "skipped": 0.0}
+# Design §3.4 names the decision table `_DEC`; it is the same table (the
+# decision verdict -> baseline score). Alias so both the design's name and the
+# original F1 name resolve to one source of truth.
+_DEC = _COMPOSITE
+
+# Design §3.4 — the intent axis score table. `intent-divergent` and `error`
+# both map to 0.0, but they are handled by SEPARATE branches in composite():
+# `intent-divergent` ZEROS the row (hollow/off-intent), while `error`/"" falls
+# back to the decision-only score (== F1).
+_INTENT = {"intent-aligned": 1.0, "intent-partial": 0.5,
+           "intent-divergent": 0.0, "error": 0.0}
+
+
+def composite(dec_verdict: str, intent_verdict: str) -> float:
+    """Decision-dominant, intent-penalizing blend (design §3.4).
+
+    - intent layer unavailable (``error`` or ``""``) -> decision-only score,
+      which reproduces F1 exactly.
+    - ``intent-divergent`` -> 0.0: a hollow surface-match or an off-intent
+      action is gated to zero regardless of the decision verdict. This is the
+      branch that makes the §3.2/§3.3b deterministic guards load-bearing.
+    - otherwise the intent serves the mission: credit the BETTER of the
+      literal-match score and the intent score, so on-intent divergence
+      (``divergent × intent-aligned``) earns 1.0 (the F4 credit path).
+    """
+    dec = _DEC.get(dec_verdict, 0.0)
+    if intent_verdict in ("error", ""):     # intent layer unavailable
+        return dec                          # decision-only fallback (== F1)
+    if intent_verdict == "intent-divergent":
+        return 0.0                          # hollow surface-match / off-intent
+    return max(dec, _INTENT[intent_verdict])
 
 # ---------------------------------------------------------------------------
 # F4 §3.1-§3.3 — INTENT RUBRIC (appended after a divider; JUDGE_SYSTEM, the
@@ -148,6 +179,11 @@ class CaseScore:
     endorsement_adjusted: bool
     composite: float
     raw: dict[str, Any] = field(default_factory=dict)
+    # F4 §1.5 — the intent axis on the score row. Empty/0.0 by default so the
+    # decision-only (F1) path is unchanged; populated when intent_ctx is scored.
+    intent_verdict: str = ""
+    intent_grounded_fact: str = ""
+    intent_composite: float = 0.0
 
 
 def _fmt_thread(thread_before: list[dict]) -> str:
@@ -265,20 +301,48 @@ def judge_with_oauth(case_dict: dict, clone_draft: str,
 
 
 def score(case: Case, officer_decision: OfficerDecision, baseline_draft: str,
-          centroids: dict, embedder=None, judge=None) -> CaseScore:
-    """Score one officer decision vs ground truth across the three channels."""
+          centroids: dict, embedder=None, judge=None,
+          intent_ctx: dict | None = None) -> CaseScore:
+    """Score one officer decision vs ground truth across the three channels.
+
+    When ``intent_ctx`` is supplied (the F4 path), the reconstructed intent +
+    the already-fenced ``full_cutoff_context`` are threaded to the judge for the
+    intent pass, and the §3.4 ``composite`` blend is applied ON TOP of the
+    decision verdict. The intent dict shape is
+    ``{"reconstructed_intent": str, "full_cutoff_context": <fenced dict>}``;
+    ``reconstructed_intent`` falls back to ``case.intent`` (cached benchmark
+    intent) when omitted. NEVER reads ``real_reply`` — the judge's intent pass
+    and its deterministic guards see only the thread + the fenced context.
+
+    With no ``intent_ctx`` the decision verdict alone drives the composite
+    (== F1; ``composite(dec, "")`` returns ``_DEC[dec]``), so the F1 path is
+    byte-for-byte unchanged."""
     judge = judge or judge_with_oauth
     clone_draft = officer_decision.decision if isinstance(
         officer_decision.decision, str) else str(officer_decision.decision)
     rc = case.to_retro_case()
 
     # DECISION via OAuth judge; inject as judge_result so score_case does no
-    # ANTHROPIC_API_KEY call.
-    verdict = judge(rc, clone_draft)
+    # ANTHROPIC_API_KEY call. The intent pass rides on the same judge call when
+    # intent_ctx is supplied — decision verdict stays first and visible.
+    if intent_ctx is not None:
+        reconstructed_intent = (intent_ctx.get("reconstructed_intent")
+                                or case.intent or "")
+        full_cutoff_context = intent_ctx.get("full_cutoff_context")
+        verdict = judge(rc, clone_draft,
+                        reconstructed_intent=reconstructed_intent,
+                        full_cutoff_context=full_cutoff_context)
+    else:
+        verdict = judge(rc, clone_draft)
     row = retro.score_case(rc, clone_draft, baseline_draft, centroids,
                            judge=False, embedder=embedder, judge_result=verdict)
 
     decision_verdict = row["judge"]["verdict"]
+    # Intent axis: empty when no intent layer ran (== "" -> decision-only blend).
+    intent_verdict = verdict.get("intent_verdict", "") if isinstance(
+        verdict, dict) else ""
+    intent_grounded_fact = verdict.get("intent_grounded_fact", "") if isinstance(
+        verdict, dict) else ""
     # F1: endorsement 'unknown' -> score vs actual, no adjustment.
     endorsement_adjusted = case.endorsement in ("regretted", "constrained")
     return CaseScore(
@@ -287,6 +351,9 @@ def score(case: Case, officer_decision: OfficerDecision, baseline_draft: str,
         decision_verdict=decision_verdict,
         mechanics_flags=row["mechanics"],
         endorsement_adjusted=endorsement_adjusted,
-        composite=_COMPOSITE.get(decision_verdict, 0.0),
+        composite=_DEC.get(decision_verdict, 0.0),
         raw=row,
+        intent_verdict=intent_verdict,
+        intent_grounded_fact=intent_grounded_fact,
+        intent_composite=composite(decision_verdict, intent_verdict),
     )
