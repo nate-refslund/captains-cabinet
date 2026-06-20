@@ -71,6 +71,33 @@ def _capture_llm():
     return fake, seen
 
 
+class _FakeBrain:
+    """Hermetic BrainAdapter stand-in for the clone arm's identity gather, so
+    these gather-render tests touch NO live screenpipe / vault / network. The
+    clone arm (gather set) now builds the system from the clone identity; these
+    tests are about the gather RENDER path, so the identity is stubbed flat."""
+
+    def voice_profile(self) -> str:
+        return "(voice prior stub)"
+
+    def nate_model_patterns(self) -> str:
+        return "(patterns prior stub)"
+
+    def drafting_lessons(self, before_ts: str) -> str:
+        return "(lessons prior stub)"
+
+    def person_intel(self, slug: str) -> str:
+        return "(person frontmatter stub)"
+
+
+def _run_gather(case, role, llm, gather):
+    """run_case on the clone arm with a hermetic fake brain (identity priors
+    stubbed). Keeps these gather-render tests live-free now that the clone arm
+    gathers identity for build_clone_eval_system."""
+    return officer_runner.run_case(case, role, llm=llm, gather=gather,
+                                   brain=_FakeBrain())
+
+
 class TestGatherNoneIsF1:
     def test_gather_none_is_f1(self):
         # gather=None must yield a BYTE-IDENTICAL prompt to the F1 path:
@@ -166,16 +193,14 @@ class TestGatherSetInjectsContextAndRules:
         case = _case()
         fake, seen = _capture_llm()
         captured = []
-        officer_runner.run_case(case, "chair", llm=fake,
-                                gather=_fake_gather_factory(captured))
+        _run_gather(case, "chair", fake, _fake_gather_factory(captured))
         assert captured and captured[0] is case
 
     def test_gather_set_appends_context_after_situation(self):
         case = _case()
         fake, seen = _capture_llm()
         captured = []
-        officer_runner.run_case(case, "chair", llm=fake,
-                                gather=_fake_gather_factory(captured))
+        _run_gather(case, "chair", fake, _fake_gather_factory(captured))
         payload = seen["payload"]
         situation = format_situation(case)
         # The situation text comes FIRST; the context block is APPENDED after it.
@@ -194,8 +219,7 @@ class TestGatherSetInjectsContextAndRules:
         case = _case()
         fake, seen = _capture_llm()
         captured = []
-        officer_runner.run_case(case, "chair", llm=fake,
-                                gather=_fake_gather_factory(captured))
+        _run_gather(case, "chair", fake, _fake_gather_factory(captured))
         system = seen["system"]
         # strict cutoff boundary still present (ALWAYS)
         assert "You have NO knowledge of events at or after" in system
@@ -212,8 +236,7 @@ class TestGatherSetInjectsContextAndRules:
         case = _case()
         fake, seen = _capture_llm()
         captured = []
-        officer_runner.run_case(case, "chair", llm=fake,
-                                gather=_fake_gather_factory(captured))
+        _run_gather(case, "chair", fake, _fake_gather_factory(captured))
         assert case.real_reply not in seen["system"]
         assert case.real_reply not in seen["payload"]
 
@@ -225,8 +248,7 @@ class TestGatherSetInjectsContextAndRules:
         case = _topic_overlap_case()
         fake, seen = _capture_llm()
         captured = []
-        officer_runner.run_case(case, "chair", llm=fake,
-                                gather=_fake_gather_factory(captured))
+        _run_gather(case, "chair", fake, _fake_gather_factory(captured))
         blob = seen["system"] + seen["payload"]
         assert case.real_reply not in seen["system"]
         assert case.real_reply not in seen["payload"]

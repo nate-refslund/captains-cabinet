@@ -26,7 +26,8 @@ import re
 from framework.fidelity import leakguard
 from framework.fidelity.fidelity_events import emit_case_evaluated, emit_case_leaked
 from framework.fidelity.oauth_llm import oauth_raw_llm
-from framework.fidelity.officer_prompt import build_eval_system, format_situation
+from framework.fidelity.officer_prompt import (
+    build_clone_eval_system, build_eval_system, format_situation)
 from framework.fidelity.types import Case, OfficerDecision
 
 # ---------------------------------------------------------------------------
@@ -534,21 +535,69 @@ def _render_context_block(ctx: dict) -> str:
     return "\n".join(lines)
 
 
+def _gather_clone_identity(case: Case, brain: "BrainAdapter",
+                           person_static: str = "") -> dict:
+    """Gather the current-state identity priors that drive the clone draft
+    (design §1.6; ground brain-identity-sources), leak-safe.
+
+    Returns ``{voice, patterns, lessons, person_static}`` for
+    build_clone_eval_system:
+      - ``voice``   = voice.md (accepted current-state prior — live, not
+                      as-of-then; fine to inject, mirrors retrodiction).
+      - ``patterns``= nate_model('patterns') (accepted current-state prior,
+                      PRIVATE-fenced by me_signal).
+      - ``lessons`` = drafting lessons date-filtered STRICTLY BEFORE the case
+                      cutoff (the ONLY hard cutoff here — a lesson logged at/
+                      after the reply moment could postdate it and leak; the
+                      whole same-day block is dropped, conservative).
+      - ``person_static`` = the atemporal frontmatter already fenced upstream
+                      (gather_cutoff_context strips dated/Notes sections). Reuse
+                      it if present; otherwise derive it the same way.
+
+    PRIVACY FENCE: these inform the SYSTEM prompt (HOW the clone writes/decides)
+    only — build_clone_eval_system fences them, and run_case's post-output
+    scan_for_leaks ensures none echo into the captured decision. This function
+    never reads case.real_reply (the held-out ground truth)."""
+    ps = (person_static or "").strip()
+    if not ps:
+        ps = _static_frontmatter(brain.person_intel(case.slug or case.person))
+    return {
+        "voice": brain.voice_profile(),
+        "patterns": brain.nate_model_patterns(),
+        # before_ts is the case cutoff — STRICTLY pre-cutoff lessons only.
+        "lessons": brain.drafting_lessons(case.cutoff_ts),
+        "person_static": ps,
+    }
+
+
 def run_case(case: Case, officer_role: str, llm=oauth_raw_llm,
-             emit_events: bool = True, gather=None) -> OfficerDecision:
+             emit_events: bool = True, gather=None,
+             brain: "BrainAdapter" = None) -> OfficerDecision:
     """Drive the officer blind on one Case; return the captured OfficerDecision.
     Hard-fails (LeakageDetectedError) + emits a leak event on any cutoff
     breach.
 
     ``gather`` is the A/B context-lift control (design §1.3, §8):
       - ``gather=None`` (default) reproduces F1 BYTE-FOR-BYTE — context-starved
-        officer, strict EVAL_MODE_RULES, payload == format_situation(case).
-      - ``gather=gather_cutoff_context`` (the F4 path) calls ``gather(case)``,
+        officer drafting from a GENERIC system prompt (no clone identity),
+        strict EVAL_MODE_RULES, payload == format_situation(case). ``brain`` is
+        never touched on this arm.
+      - ``gather=gather_cutoff_context`` (the F4 clone arm) calls ``gather(case)``,
         renders the already-leak-guarded dict to a context block appended AFTER
-        format_situation in the USER message (no new system authority), and
-        swaps in the conditional EVAL_MODE_RULES_GATHER (strict boundary +
-        permission to use the context / propose options + reconciled output
-        line). The gathered dict is the ONLY difference between the two arms."""
+        format_situation in the USER message (no new system authority), AND
+        builds the officer system via ``build_clone_eval_system`` so the officer
+        drafts AS NATE'S CLONE: the current-state identity priors (voice.md,
+        nate_model('patterns'), drafting lessons date-filtered STRICTLY BEFORE
+        the cutoff, and the atemporal person frontmatter) are gathered leak-safe
+        (``_gather_clone_identity``) and injected into the SYSTEM prompt. The
+        conditional EVAL_MODE_RULES_GATHER (strict boundary + permission to use
+        the context / propose options + reconciled output line) still rides on.
+
+    PRIVACY FENCE (paramount): the identity informs the SYSTEM prompt ONLY —
+    build_clone_eval_system fences it, and the post-output scan_for_leaks
+    (always run, both arms) ensures none of it (nor any post-cutoff signal)
+    echoes into the captured decision. ``brain`` is an injectable BrainAdapter
+    (defaults to the live brain bridge); tests inject a fake."""
     # 1. PRE-execution guard: reconstructed thread must be strictly pre-cutoff.
     try:
         leakguard.assert_thread_pre_cutoff(case.thread_before, case.cutoff_ts)
@@ -561,15 +610,27 @@ def run_case(case: Case, officer_role: str, llm=oauth_raw_llm,
     #    EVAL_MODE_RULES is conditional on whether gathering ran (design §4):
     #    the gather=None arm is byte-identical to F1.
     rules = EVAL_MODE_RULES if gather is None else EVAL_MODE_RULES_GATHER
-    system = build_eval_system(case, officer_role) + \
-        rules.format(cutoff_ts=case.cutoff_ts)
-    user_msg = format_situation(case)
-    if gather is not None:
-        # Gather + render the leak-guarded context, appended AFTER the situation
-        # (design §2.4) so it inherits no new system-prompt authority. This adds
-        # no new source — gather already enforced exclusion-by-default + fencing.
+    if gather is None:
+        # F1 arm: generic system prompt, NO identity. Byte-for-byte unchanged.
+        system = build_eval_system(case, officer_role) + \
+            rules.format(cutoff_ts=case.cutoff_ts)
+        user_msg = format_situation(case)
+    else:
+        # F4 clone arm. Gather + render the leak-guarded context, appended AFTER
+        # the situation (design §2.4) so it inherits no new system-prompt
+        # authority. This adds no new source — gather already enforced
+        # exclusion-by-default + fencing.
         ctx = gather(case)
-        user_msg = user_msg + "\n" + _render_context_block(ctx)
+        user_msg = format_situation(case) + "\n" + _render_context_block(ctx)
+        # Build the system from the clone identity so the officer drafts AS the
+        # clone. Identity is gathered leak-safe (lessons date-filtered STRICTLY
+        # before the cutoff); person_static is reused from the gathered ctx.
+        if brain is None:
+            brain = BrainAdapter()
+        identity = _gather_clone_identity(
+            case, brain, person_static=ctx.get("person_static", ""))
+        system = build_clone_eval_system(case, officer_role, identity) + \
+            rules.format(cutoff_ts=case.cutoff_ts)
     draft = llm(user_msg, system) or ""
 
     decision = OfficerDecision(
