@@ -21,7 +21,13 @@ F1 byte-for-byte (no gathering); gather=gather_cutoff_context is the F4 path.
 from __future__ import annotations
 
 import hashlib
+import json
+import os
 import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
 
 from framework.fidelity import leakguard
 from framework.fidelity.fidelity_events import emit_case_evaluated, emit_case_leaked
@@ -256,6 +262,52 @@ def _scrub_iso_lines(text: str) -> str:
                      if not _DATE_FORMS_RE.search(ln)).strip()
 
 
+# A handle is a person folder name; reject anything that could escape the vault
+# when context_lib resolves it (defense in depth, Corridor path-traversal note).
+def _safe_handle(handle: str) -> bool:
+    h = (handle or "").strip()
+    return bool(h) and "\x00" not in h and "/" not in h and "\\" not in h \
+        and ".." not in h
+
+
+def _subprocess_vault_gather(handle: str, topic: str | None = None) -> dict:
+    """Run context_lib.gather(sources=["vault"]) under the BRAIN interpreter
+    (python3.12) via subprocess and return its {hits, topic_terms}.
+
+    The in-process embedded search FAILS under the harness interpreter (system
+    Python 3.9.6 has no loadable sqlite extensions -> the vector extension can't
+    load -> context_lib._fetch_vault silently returns 0 hits). Running the SAME
+    gather under 3.12 reuses every bit of its logic; the content_ts leak-fence
+    in gather_cutoff_context still runs in THIS (3.9.6) process on the returned
+    hits, so leak-safety is unchanged (this only fixes WHERE search executes).
+
+    Graceful-degrade: any failure (interpreter/runner absent, unsafe handle,
+    timeout, non-JSON) returns ``{"hits": [], "topic_terms": None}`` so the case
+    is scored context-thin rather than aborting the batch — exactly the
+    pre-fix behavior, just no longer the silent default for everyone."""
+    if not _safe_handle(handle):
+        sys.stderr.write(f"[vault-gather] refused unsafe handle {handle!r}\n")
+        return {"hits": [], "topic_terms": None}
+    python = (os.environ.get("CABINET_BRAIN_PYTHON")
+              or shutil.which("python3.12") or "python3.12")
+    runner = Path(__file__).with_name("_vault_gather_runner.py")
+    try:
+        proc = subprocess.run(
+            [python, str(runner), handle, topic or ""],
+            capture_output=True, text=True, timeout=60,
+            env={**os.environ},
+        )
+        data = json.loads((proc.stdout or "").strip() or "{}")
+    except (FileNotFoundError, OSError, subprocess.SubprocessError,
+            ValueError) as e:  # ValueError covers json.JSONDecodeError
+        sys.stderr.write(f"[vault-gather] subprocess gather failed: {e}\n")
+        return {"hits": [], "topic_terms": None}
+    if data.get("error"):
+        sys.stderr.write(f"[vault-gather] runner error: {data['error']}\n")
+    return {"hits": data.get("hits") or [],
+            "topic_terms": data.get("topic_terms")}
+
+
 class BrainAdapter:
     """Thin, injectable adapter over the brain bridge. Defaults to the real
     brain MCP surface; tests inject a fake. The ONLY retrieval entry points are
@@ -263,11 +315,19 @@ class BrainAdapter:
     Tier-2 / search_brain method, so no code path can reach "now".
 
     ``gather_vault`` MUST scope to ``sources=["vault"]`` so context_lib never
-    fans out to the live _fetch_sent / _fetch_screen / _fetch_monday tiers."""
+    fans out to the live _fetch_sent / _fetch_screen / _fetch_monday tiers. The
+    DEFAULT adapter routes the vault search through a python3.12 subprocess
+    (``vault_search``) because the in-process 3.9.6 sqlite cannot load the
+    vector extension; an INJECTED context_lib/server stays in-process so every
+    existing test seam (leak-integrity stubs) is preserved unchanged."""
 
-    def __init__(self, context_lib=None, server=None):
+    def __init__(self, context_lib=None, server=None, vault_search=None):
         self._context_lib = context_lib
         self._server = server
+        # Injectable vault-search seam: tests pass a fake; the default real
+        # adapter uses the python3.12 subprocess gather. Only consulted when
+        # NO context_lib/server is injected (those stay in-process).
+        self._vault_search = vault_search
 
     def _ctx(self):
         if self._context_lib is None:
@@ -282,7 +342,16 @@ class BrainAdapter:
         # terms, so the query is what the conversation is ABOUT, not just the
         # person slug). Without it, search("Sobuc") hits the profile note, not
         # the thread; a 0.4 relevance floor returns 0 rather than noise.
-        return self._ctx().gather(handle, sources=["vault"], topic=topic)
+        #
+        # An INJECTED context_lib/server (tests) is delegated in-process,
+        # preserving the leak-integrity seam (sources=["vault"] asserted there).
+        # The DEFAULT real adapter routes through the python3.12 subprocess
+        # (vault_search) because the in-process 3.9.6 sqlite can't load the
+        # vector extension -> the in-process search silently returns 0 hits.
+        if self._context_lib is not None or self._server is not None:
+            return self._ctx().gather(handle, sources=["vault"], topic=topic)
+        fn = self._vault_search or _subprocess_vault_gather
+        return fn(handle, topic) or {"hits": [], "topic_terms": None}
 
     # The brain MCP *server* module (server.py) imports fastmcp and runs
     # standalone on Python 3.12, so it is NOT importable in-process here
@@ -340,12 +409,20 @@ class BrainAdapter:
         # same-day block — a same-day lesson could postdate the reply). The
         # filter ALWAYS runs, so leak-safety holds for the real lib AND an
         # injected fake server alike.
+        #
+        # Cap-then-filter trap (fixed): draft_lib.drafting_lessons() returns only
+        # the LAST max_chars (the MOST RECENT lessons). Feeding that pre-capped
+        # tail to lessons_before means a case with a past cutoff sees a tail that
+        # is entirely post-cutoff -> 0 lessons, even when earlier qualifying
+        # lessons exist. So we pass the FULL corpus; lessons_before filters
+        # strictly-before-cutoff THEN applies its own post-filter cap.
         from framework.fidelity import retro
         if self._server is not None:
             raw = self._server.drafting_lessons()
         else:
             import draft_lib
-            raw = draft_lib.drafting_lessons()
+            raw = (draft_lib.LESSONS_FILE.read_text(errors="replace")
+                   if draft_lib.LESSONS_FILE.exists() else "")
         return retro.lessons_before(before_ts, text=raw)
 
     def read_note(self, path: str) -> str:
