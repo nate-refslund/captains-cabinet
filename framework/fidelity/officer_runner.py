@@ -307,6 +307,46 @@ class BrainAdapter:
                 if fm.get("direction") == direction
                 and str(fm.get("status", "")).strip().lower() not in _closed]
 
+    # --- clone-identity priors (design §1.6; ground brain-identity-sources) ---
+    # The clone arm needs the SAME current-state identity priors the
+    # retrodiction reply cell uses: voice.md, nate_model('patterns'), and
+    # drafting lessons. These are ACCEPTED current-state leaks (live, not
+    # as-of-then) — fine to INJECT into the officer's system prompt, EXCEPT the
+    # drafting lessons, which MUST be date-filtered strictly BEFORE the case
+    # cutoff (a lesson logged at/after the reply moment could postdate it and
+    # leak). All three inform HOW the officer drafts; the privacy fence keeping
+    # them out of any captured decision / event / artifact is enforced by the
+    # prompt-assembly + scan_for_leaks layers, not here.
+
+    def voice_profile(self) -> str:
+        if self._server is not None:
+            return self._server.voice_profile()
+        import draft_lib
+        return draft_lib.voice_profile()
+
+    def nate_model_patterns(self) -> str:
+        # PATTERNS layer ONLY — never core/memory (ground gotcha: patterns shape
+        # how to write NOW; core/memory are less volatile and could leak newer
+        # signal). me_signal wraps it in the PRIVATE fence.
+        if self._server is not None:
+            return self._server.nate_model_patterns()
+        import me_signal
+        return me_signal.nate_model("patterns")
+
+    def drafting_lessons(self, before_ts: str) -> str:
+        # Raw lessons text from the source, then date-filtered STRICTLY BEFORE
+        # before_ts via retro.lessons_before (conservative: drops the whole
+        # same-day block — a same-day lesson could postdate the reply). The
+        # filter ALWAYS runs, so leak-safety holds for the real lib AND an
+        # injected fake server alike.
+        from framework.fidelity import retro
+        if self._server is not None:
+            raw = self._server.drafting_lessons()
+        else:
+            import draft_lib
+            raw = draft_lib.drafting_lessons()
+        return retro.lessons_before(before_ts, text=raw)
+
     def read_note(self, path: str) -> str:
         if self._server is not None:
             return self._server.read_note(path)
