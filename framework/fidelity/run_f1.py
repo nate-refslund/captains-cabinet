@@ -35,21 +35,54 @@ def _baseline_payload(case) -> str:
 
 def run_batch(officer_role: str = "cos", n_cases: int = 24, people_dir=None,
               runner=run_case, scorer_fn=score, baseline_llm=oauth_raw_llm,
-              emit_events: bool = True) -> dict:
-    """Drive -> score -> aggregate over the reply cell."""
+              emit_events: bool = True, gather=None, with_intent: bool = False,
+              emit_scored: bool = False) -> dict:
+    """Drive -> score -> aggregate over the reply cell.
+
+    Three knobs, all default OFF -> the F1 (surface-only) path is byte-for-byte
+    unchanged. Captain-authorized 2026-06-20 (D1, docs/overnight-integration-
+    drafts.md):
+    - ``gather`` (None): pass ``officer_runner.gather_cutoff_context`` for the
+      F4 leak-guarded gather arm; threaded into the runner so the officer
+      decides WITH as-of-cutoff context.
+    - ``with_intent`` (False): thread the reconstructed intent + the fenced
+      cutoff context into ``score()`` so the intent axis is measured (a
+      decision-only run leaves intent_verdict='').
+    - ``emit_scored`` (False): persist a fidelity-case-scored consequence event
+      per case (carries the intent fields + maps review.verdict from intent), so
+      the graduation bar is actually FED. A pure-scorer/dry run leaves it False;
+      a measurement run sets it True."""
+    from framework.fidelity.officer_runner import gather_cutoff_context
+    from framework.fidelity.fidelity_events import emit_case_scored
     cases = build_cases(n=n_cases, people_dir=people_dir)
     centroids = author_centroid(exclude_keys={c.situation_ref for c in cases})
 
     scores, n_leaked = [], 0
     for case in cases:
         try:
-            decision = runner(case, officer_role, emit_events=emit_events)
+            decision = runner(case, officer_role, emit_events=emit_events,
+                              gather=gather)
         except leakguard.LeakageDetectedError:
             n_leaked += 1  # hard-failed + leak event already emitted in run_case
             continue
         baseline_draft = baseline_llm(_baseline_payload(case), BASELINE_SYSTEM) or ""
-        cs = scorer_fn(case, decision, baseline_draft, centroids)
+        intent_ctx = None
+        if with_intent:
+            ctx = (gather or gather_cutoff_context)(case)
+            intent_ctx = {"reconstructed_intent": getattr(case, "intent", "") or "",
+                          "full_cutoff_context": ctx}
+        cs = scorer_fn(case, decision, baseline_draft, centroids,
+                       intent_ctx=intent_ctx)
         scores.append(cs)
+        if emit_scored:
+            # action_type stays None for an eval reply case: the reply cell is
+            # identified by lane="send-1to1-reply"; decision_type ("reply") is a
+            # benchmark label, NOT a classifier.ACTION_TYPES value (the schema
+            # enum). Absent action_type = the unmeasured default the cell key
+            # tolerates.
+            emit_case_scored(cs, officer_role, getattr(case, "lane", None),
+                             action_type=None,
+                             endorsement=getattr(case, "endorsement", None))
 
     mechanics_fail = (sum(1 for s in scores if s.mechanics_flags) / len(scores)
                       if scores else 0.0)
