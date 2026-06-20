@@ -94,6 +94,73 @@ class TestFormatSituation:
         assert "Nate:" in s
 
 
+def _identity():
+    """A clone-identity priors dict {voice, patterns, lessons, person_static}
+    as BrainAdapter (voice_profile / nate_model_patterns / drafting_lessons /
+    static person frontmatter) would hand it to the clone arm. Each value
+    carries a distinctive sentinel so the tests can assert it reached (or did
+    NOT reach) the assembled prompt."""
+    return {
+        "voice": "VOICE-SENTINEL: korte saetninger, ingen tankestreger.",
+        "patterns": "PATTERNS-SENTINEL: beslutter hurtigt, anbefaler direkte.",
+        "lessons": "LESSONS-SENTINEL: spoerg ikke om audience, du kender den.",
+        "person_static": "PERSON-SENTINEL: Ulrik, VP Product & Publishers.",
+    }
+
+
+class TestBuildCloneEvalSystem:
+    def test_identity_priors_inform_the_prompt(self):
+        """All four identity priors must reach the assembled clone prompt — the
+        IDENTITY is what drives the draft (voice + patterns + lessons +
+        person_static), not just the role charter."""
+        ident = _identity()
+        s = officer_prompt.build_clone_eval_system(_case(), "chair", ident)
+        assert ident["voice"] in s
+        assert ident["patterns"] in s
+        assert ident["lessons"] in s
+        assert ident["person_static"] in s
+
+    def test_carries_role_context(self):
+        """The role charter may stay as light role context — lane/decision_type
+        from build_eval_system still ride along so the officer keeps role
+        framing even though identity drives the draft."""
+        s = officer_prompt.build_clone_eval_system(_case(), "chair", _identity())
+        assert "send-1to1-reply" in s
+        assert "reply" in s
+
+    def test_contains_explicit_privacy_fence_instruction(self):
+        """An explicit privacy-fence instruction MUST be present: the priors
+        shape HOW the clone writes/decides but must NEVER be quoted, pasted, or
+        referenced into the reply (brain-bridge rule; mirrors me_signal PRIVATE
+        fence)."""
+        s = officer_prompt.build_clone_eval_system(_case(), "chair", _identity())
+        low = s.lower()
+        assert "never quote" in low or "never quote, paste" in low
+        # the fence names that these are Nate's private model (shape HOW only)
+        assert "private" in low
+        assert "how you write" in low or "how you write and decide" in low
+
+    def test_never_includes_held_out_reply(self):
+        """The held-out reply is the ground truth — it must NEVER appear in the
+        clone prompt, exactly as build_eval_system guarantees."""
+        s = officer_prompt.build_clone_eval_system(_case(), "chair", _identity())
+        assert "Ja, fredag passer." not in s
+
+    def test_missing_identity_keys_do_not_crash(self):
+        """A partial/empty identity dict (a prior unavailable for this case)
+        must degrade gracefully — assemble the prompt, still fence, never
+        KeyError."""
+        s = officer_prompt.build_clone_eval_system(_case(), "chair", {})
+        assert isinstance(s, str) and s
+        assert "private" in s.lower()
+
+    def test_drives_as_nate_clone_framing(self):
+        """The clone arm drafts AS NATE'S CLONE — the prompt must frame the
+        officer as drafting in Nate's identity, not merely as the role."""
+        s = officer_prompt.build_clone_eval_system(_case(), "chair", _identity())
+        assert "Nate" in s
+
+
 def _mower_case():
     """A richer multi-message thread to exercise intent reconstruction:
     >5 messages so the <=5 last-message window is provably enforced, with a

@@ -42,6 +42,72 @@ def build_eval_system(case: Case, officer_role: str) -> str:
     return role_definition(officer_role) + ctx
 
 
+# ---------------------------------------------------------------------------
+# Clone-identity eval prompt (design §1.6; ground retrodiction-clone-draft-
+# reference + brain-identity-sources). The REPLY cell drives the officer to
+# draft AS NATE'S CLONE — mirroring retrodiction's draft_case: the IDENTITY
+# (voice + nate_model patterns + date-filtered drafting lessons + person
+# frontmatter) is what shapes the draft; the role charter stays as light role
+# context. Assembly order mirrors draft_case's CLONE_PAYLOAD: NATE MODEL
+# (patterns) -> VOICE -> DRAFTING LESSONS -> COUNTERPARTY.
+#
+# PRIVACY FENCE (paramount). The priors INFORM how the officer writes and
+# decides — they are Nate's private model. They must NEVER be quoted, pasted,
+# or referenced into the reply, a captured decision, a consequence event, a
+# commit, or any artifact (brain-bridge rule; mirrors me_signal's PRIVATE
+# fence). The fence here is the in-prompt instruction; scan_for_leaks + the
+# capture layer enforce that nothing emits them. NOTE: this function assembles
+# ONLY the system prompt — date-filtering of lessons strictly BEFORE the case
+# cutoff is the caller's job (BrainAdapter.drafting_lessons -> retro
+# .lessons_before); whatever lands in identity["lessons"] is injected verbatim.
+# ---------------------------------------------------------------------------
+_CLONE_PRIVACY_FENCE = (
+    "Use the following to shape HOW you write and decide — they are Nate's "
+    "PRIVATE model. NEVER quote, paste, or reference them in your reply, in a "
+    "decision, in an event, or in any artifact. They inform your style and "
+    "judgment only; they never appear in anything you produce.")
+
+
+def build_clone_eval_system(case: Case, officer_role: str,
+                            identity: dict) -> str:
+    """Assemble the REPLY-cell system prompt that drives the officer to draft
+    AS NATE'S CLONE.
+
+    ``identity`` is ``{voice, patterns, lessons, person_static}`` — the
+    current-state priors BrainAdapter hands over (voice.md, nate_model
+    ('patterns'), date-filtered drafting lessons, static person frontmatter).
+    The IDENTITY drives the draft; ``build_eval_system`` supplies the light
+    role + decision-type context so role framing rides along.
+
+    The prompt carries an explicit privacy fence (``_CLONE_PRIVACY_FENCE``):
+    the priors shape HOW the clone writes/decides but must never be quoted,
+    pasted, or referenced into anything the officer produces. The held-out
+    reply (``case.real_reply``) is NEVER included — same guarantee as
+    ``build_eval_system``.
+
+    A missing/empty identity key degrades to "(unavailable)" — the prompt
+    still assembles and still fences; it never KeyErrors."""
+    identity = identity or {}
+
+    def _val(key: str) -> str:
+        v = (identity.get(key) or "").strip()
+        return v if v else "(unavailable)"
+
+    block = (
+        "\n\n# CLONE IDENTITY — draft AS NATE\n"
+        "You are drafting the reply Nate himself would send. Become Nate's "
+        "clone: write in his voice and decide the way he decides.\n\n"
+        f"{_CLONE_PRIVACY_FENCE}\n\n"
+        f"## How Nate decides (nate_model patterns)\n{_val('patterns')}\n\n"
+        f"## How Nate writes (voice profile)\n{_val('voice')}\n\n"
+        f"## Drafting lessons (date-filtered before the cutoff)\n"
+        f"{_val('lessons')}\n\n"
+        f"## Counterparty (atemporal frontmatter)\n{_val('person_static')}"
+    )
+    # role + decision-type context (light) first, then the identity that drives.
+    return build_eval_system(case, officer_role) + block
+
+
 def _clean(text: str) -> str:
     body = re.sub(r"<!--[^>]*-->", "", text or "")
     return re.sub(r"_\([^)]*\)_", "", body).strip()
