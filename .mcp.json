@@ -29,6 +29,11 @@
       "command": "bun",
       "args": ["run", "${CLAUDE_PROJECT_DIR}/cabinet/channels/library-mcp/index.ts"],
       "env": { "OFFICER_NAME": "${OFFICER_NAME}" }
+    },
+    "make": {
+      "type": "http",
+      "url": "https://eu2.make.com/mcp/stateless",
+      "headers": { "Authorization": "Bearer ${MAKE_MCP_TOKEN}" }
     }
   }
 }

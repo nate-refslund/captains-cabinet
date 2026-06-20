@@ -151,6 +151,80 @@ class TestRunnerLeakBoundary:
         assert out["why"] == ""
 
 
+class _FakeProc:
+    def __init__(self, stdout):
+        self.stdout = stdout
+
+
+def _fake_log(commits):
+    """commits: list of (hash, date, subject, body) -> a fake subprocess.run."""
+    out = "".join(f"{h}\x1f{d}\x1f{s}\x1f{b}\x1e" for h, d, s, b in commits)
+
+    def runner(argv, capture_output=True, text=True, timeout=60):
+        return _FakeProc(out)
+    return runner
+
+
+class TestGitExtractor:
+    def test_builds_git_cases(self, tmp_path):
+        runner = _fake_log([
+            ("abc123def456", "2026-06-10T09:00:00+02:00", "fix(db): token race",
+             "A select-then-insert path caused orphaned tokens under concurrency. " * 3),
+        ])
+        clean = json.dumps({
+            "dilemma": "A token-creation path had a concurrency window; what to do?",
+            "decision": "an atomic upsert keyed on a partial unique index",
+            "why": "closes the race and keeps token stability"})
+        cases = decision_cell.extract_git_decision_cases(
+            [tmp_path / "v0-politiske-annoncer"], llm=lambda p, s: clean,
+            cache_path=tmp_path / "git.json", log_runner=runner)
+        assert len(cases) == 1
+        c = cases[0]
+        assert c.source == "git"
+        assert c.detected_at == "2026-06-10T09:00:00+02:00"
+        assert c.case_id == "v0-politiske-annoncer:abc123def4"
+        assert c.app == "git:v0-politiske-annoncer"
+
+    def test_skips_release_and_thin_body(self, tmp_path):
+        runner = _fake_log([
+            ("h1", "2026-06-10T09:00:00+02:00", "chore(release): v1.2.3",
+             "Bump the version manifest to invalidate the plugin cache. " * 3),
+            ("h2", "2026-06-10T09:00:00+02:00", "fix: x", "short"),
+        ])
+
+        def boom(p, s):
+            raise AssertionError("LLM must not run on skipped commits")
+
+        cases = decision_cell.extract_git_decision_cases(
+            [tmp_path / "r"], llm=boom, cache_path=tmp_path / "g.json",
+            log_runner=runner)
+        assert cases == []
+
+    def test_leak_scan_drops_bled_fix(self, tmp_path):
+        runner = _fake_log([
+            ("hash00000000", "2026-06-10T09:00:00+02:00", "fix: race",
+             "padding body describing the concurrency problem at length " * 3)])
+        leak = json.dumps({
+            "dilemma": "atomic upsert partial unique index conflict update recycle token",
+            "decision": "atomic upsert partial unique index conflict update recycle",
+            "why": "x"})
+        cases = decision_cell.extract_git_decision_cases(
+            [tmp_path / "r"], llm=lambda p, s: leak,
+            cache_path=tmp_path / "g.json", log_runner=runner)
+        assert cases == []
+
+    def test_build_corpus_git_only_merges(self, tmp_path):
+        runner = _fake_log([
+            ("h12345678ab", "2026-06-10T09:00:00+02:00", "fix: x",
+             "detailed body explaining the problem and the constraints faced " * 3)])
+        clean = json.dumps({"dilemma": "a real problem needs deciding here",
+                            "decision": "implement approach alpha", "why": "because reasons"})
+        cases = decision_cell.build_decision_corpus(
+            sources=("git",), repos=[tmp_path / "r"], llm=lambda p, s: clean,
+            cache_path=tmp_path / "g.json", log_runner=runner)
+        assert len(cases) == 1 and cases[0].source == "git"
+
+
 class TestScorer:
     def _case(self):
         return DecisionCase(

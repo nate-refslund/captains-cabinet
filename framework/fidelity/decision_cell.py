@@ -138,12 +138,11 @@ Return ONLY JSON:
 CRITICAL: the dilemma must NOT contain Nate's choice, the chosen action's verb, or wording that gives it away. Someone reading only the dilemma should not be able to tell what Nate decided. Keep every situational fact that is needed to decide well."""
 
 
-def _extract_one(parsed: dict, llm) -> dict | None:
-    """LLM-split one parsed note into {dilemma, decision, why}; None if the LLM
-    output is unusable. Leak-scan is applied by the caller."""
-    payload = (f"# SITUATION (as logged, fuses situation + choice)\n"
-               f"{parsed['situation']}\n\n# WHY (Nate)\n{parsed['why']}")
-    raw = llm(payload, _EXTRACT_SYSTEM) or ""
+def _llm_split(payload: str, system: str, llm) -> dict | None:
+    """Run an LLM split-prompt and parse {dilemma, decision, why}; None if the
+    output is unusable. Shared by every source extractor (decisions corpus,
+    git, …). Leak-scan is applied by the caller."""
+    raw = llm(payload, system) or ""
     try:
         m = re.search(r"\{.*\}", raw, re.DOTALL)
         obj = json.loads(m.group(0) if m else raw)
@@ -155,6 +154,13 @@ def _extract_one(parsed: dict, llm) -> dict | None:
     if not dilemma or not decision:
         return None
     return {"dilemma": dilemma, "decision": decision, "why": why}
+
+
+def _extract_one(parsed: dict, llm) -> dict | None:
+    """LLM-split one parsed decision NOTE into {dilemma, decision, why}."""
+    payload = (f"# SITUATION (as logged, fuses situation + choice)\n"
+               f"{parsed['situation']}\n\n# WHY (Nate)\n{parsed['why']}")
+    return _llm_split(payload, _EXTRACT_SYSTEM, llm)
 
 
 def extract_decision_cases(decisions_dir: Path | None = None, llm=oauth_raw_llm,
@@ -207,6 +213,130 @@ def extract_decision_cases(decisions_dir: Path | None = None, llm=oauth_raw_llm,
         cpath.parent.mkdir(parents=True, exist_ok=True)
         cpath.write_text(json.dumps(cache, ensure_ascii=False, indent=2))
     return cases
+
+
+# --- git source: technical decisions (volume; tagged proxy) ----------------
+# Git commit bodies on Nate-DIRECTED work carry recoverable {dilemma, decision,
+# why, timestamp} — but they are AI-authored (the agent's prose, Nate's
+# direction) and technical-domain. So git is a VOLUME source tagged source="git"
+# (a technical-decision proxy), never conflated with pure-Nate authenticity.
+_GIT_EXTRACT_SYSTEM = """You split a git commit (a logged technical decision) into a held-out evaluation case.
+
+The commit message states a problem and the solution that was implemented. Split it so an evaluator can pose the decision point WITHOUT revealing the chosen solution.
+
+Return ONLY JSON:
+{"dilemma":"the technical problem / decision point — symptom, constraint, and what must be decided, with the facts needed to decide, but WITHOUT stating the chosen fix/approach. Neutral. <=600 chars.",
+ "decision":"the concrete technical call that was made (the fix/approach). <=200 chars.",
+ "why":"the rationale — what it fixes/prevents, the trade-off. <=300 chars."}
+
+CRITICAL: the dilemma must NOT contain the chosen solution — someone reading only the dilemma should not know which fix was picked. Keep the symptom/constraint facts needed to decide."""
+
+# Skip non-judgment commits (releases, version bumps, pure merges).
+_GIT_SKIP_RE = re.compile(
+    r"^(chore\(release\)|release|bump|merge\b|v?\d+\.\d+\.\d+)", re.IGNORECASE)
+
+
+def _git_cache_path() -> Path:
+    p = os.environ.get("CABINET_DECISION_GIT_CACHE")
+    if p:
+        return Path(p).expanduser()
+    return Path.home() / ".screenpipe" / "state" / "cabinet_decision_cases_git.json"
+
+
+def _git_log(repo: Path, n: int = 400, runner=None) -> list[dict]:
+    """Read commits from a repo (READ-ONLY: git log only). argv list, no shell.
+    Returns [{hash, date, subject, body}], newest first. ``runner`` is injectable
+    for tests (defaults to subprocess.run)."""
+    import subprocess
+    run = runner or subprocess.run
+    try:
+        proc = run(["git", "-C", str(repo), "log", "--no-merges",
+                    "--format=%H%x1f%aI%x1f%s%x1f%b%x1e", "-n", str(n)],
+                   capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    out = []
+    for rec in (getattr(proc, "stdout", "") or "").split("\x1e"):
+        rec = rec.strip("\n")
+        if not rec.strip():
+            continue
+        parts = rec.split("\x1f")
+        if len(parts) < 4:
+            continue
+        out.append({"hash": parts[0].strip(), "date": parts[1].strip(),
+                    "subject": parts[2].strip(), "body": parts[3].strip()})
+    return out
+
+
+def extract_git_decision_cases(repos, llm=oauth_raw_llm, cache_path=None,
+                               use_cache: bool = True, max_per_repo: int = 40,
+                               min_body_chars: int = 120,
+                               log_runner=None) -> list[DecisionCase]:
+    """Mine judgment-call git commits into DecisionCases (source="git"). Each
+    qualifying commit (substantive body, not a release/merge) is LLM-split into
+    {dilemma, decision, why}; the dilemma is leak-scanned (the chosen fix must
+    not bleed in). Cached by repo:hash outside the repo. READ-ONLY on repos."""
+    cpath = cache_path or _git_cache_path()
+    cache = {}
+    if use_cache and cpath.exists():
+        try:
+            cache = json.loads(cpath.read_text(errors="replace"))
+        except ValueError:
+            cache = {}
+    cases: list[DecisionCase] = []
+    dirty = False
+    for repo in repos:
+        repo = Path(repo)
+        picked = 0
+        for c in _git_log(repo, runner=log_runner):
+            if picked >= max_per_repo:
+                break
+            if len(c["body"]) < min_body_chars or _GIT_SKIP_RE.match(c["subject"]):
+                continue
+            key = f"{repo.name}:{c['hash'][:10]}"
+            if use_cache and key in cache:
+                rec = cache[key]
+                if rec:
+                    cases.append(DecisionCase(**rec))
+                    picked += 1
+                continue
+            split = _llm_split(f"# COMMIT\n{c['subject']}\n\n{c['body']}",
+                               _GIT_EXTRACT_SYSTEM, llm)
+            rec = None
+            if split and not _dilemma_leaks(split["dilemma"], split["decision"],
+                                            split["why"]):
+                rec = asdict(DecisionCase(
+                    case_id=key, detected_at=c["date"], app=f"git:{repo.name}",
+                    dilemma=split["dilemma"], decision=split["decision"],
+                    why=split["why"], source="git"))
+                cases.append(DecisionCase(**rec))
+                picked += 1
+            cache[key] = rec
+            dirty = True
+    if use_cache and dirty:
+        cpath.parent.mkdir(parents=True, exist_ok=True)
+        cpath.write_text(json.dumps(cache, ensure_ascii=False, indent=2))
+    return cases
+
+
+# Nate's product/infra repos (Nate-directed) — NOT the cabinet harness branch
+# (that is this session's own build work, not a Nate product decision).
+_DEFAULT_GIT_REPOS = [Path.home() / "v0-politiske-annoncer",
+                      Path.home() / "dev-tasks"]
+
+
+def build_decision_corpus(sources=("decisions", "git"), repos=None,
+                          **kw) -> list[DecisionCase]:
+    """Merge the enabled decision sources into one tagged corpus. ``decisions``
+    = the pure-Nate hand-captured notes (source="decisions-corpus"); ``git`` =
+    technical-decision proxy (source="git"). Each DecisionCase carries .source
+    so results can be read per-source (pure-Nate vs proxy)."""
+    out: list[DecisionCase] = []
+    if "decisions" in sources:
+        out += extract_decision_cases()
+    if "git" in sources:
+        out += extract_git_decision_cases(repos or _DEFAULT_GIT_REPOS, **kw)
+    return out
 
 
 # --- runner: clone proposes {decision, why} from the dilemma + identity -----

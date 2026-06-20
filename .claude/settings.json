@@ -1,21 +1,9 @@
 {
+  "cleanupPeriodDays": 60,
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   },
-  "enableAllProjectMcpServers": true,
-  "cleanupPeriodDays": 60,
-  "voice": {
-    "enabled": true
-  },
-  "statusLine": {
-    "type": "command",
-    "command": "bash",
-    "args": [
-      "${CLAUDE_PROJECT_DIR}/cabinet/scripts/statusline.sh"
-    ]
-  },
   "permissions": {
-    "defaultMode": "auto",
     "allow": [
       "Bash(*)",
       "Read",
@@ -40,8 +28,10 @@
       "Bash(reboot *)",
       "Bash(dd if=*)",
       "Bash(mkfs.*)"
-    ]
+    ],
+    "defaultMode": "auto"
   },
+  "enableAllProjectMcpServers": true,
   "hooks": {
     "UserPromptSubmit": [
       {
@@ -357,5 +347,15 @@
         ]
       }
     ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "bash"
+  },
+  "voice": {
+    "enabled": true
+  },
+  "enabledPlugins": {
+    "make-skills@make-marketplace": true
   }
 }
