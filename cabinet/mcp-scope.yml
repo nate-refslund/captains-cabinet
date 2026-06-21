@@ -35,7 +35,7 @@ cabinet: main
 
 agents:
   cos:
-    mcps: [notion, linear, library, telegram, host, brain]
+    mcps: [notion, library, telegram, host, brain]
     rationale: >
       Coordination and briefings. Not code; CoS does not touch Neon or
       Vercel directly — that's CTO/COO. Library for Phase 1 inbox and
@@ -45,17 +45,17 @@ agents:
       no other officer is allowed host MCP access.
 
   cto:
-    mcps: [neon, vercel, linear, library, telegram, brain]
+    mcps: [neon, vercel, library, telegram, brain]
     rationale: >
       Engineering domain. Schema/migrations on Neon, deploys on Vercel,
-      specs tracked in Linear, framework work and experience records in
+      specs, framework work and experience records in
       Library. No Notion — CTO should not be writing business strategy.
 
   cpo:
-    mcps: [notion, linear, library, telegram, brain]
+    mcps: [notion, library, telegram, brain]
     rationale: >
       Specs, prioritization, product strategy. Notion for business brain
-      reads; Linear for backlog management; Library for specs + decision
+      reads; Library for backlog + specs + decision
       queue records.
 
   cro:
@@ -66,10 +66,10 @@ agents:
       execution tickets. No Neon/Vercel — CRO does not touch production.
 
   coo:
-    mcps: [neon, vercel, linear, library, telegram, brain]
+    mcps: [neon, vercel, library, telegram, brain]
     rationale: >
       Deploy validation, uptime monitoring, Sentry error triage. Neon
-      for health queries; Vercel for deployment state; Linear for bugs;
+      for health queries; Vercel for deployment state;
       Library for operational artifacts.
 
   # Portfolio roster lane CEOs (preset `portfolio`, hq deployment).
@@ -82,7 +82,7 @@ agents:
   # broadcast only — lane CEOs are Telegram-dark (no bot, no Captain DM;
   # attention routes via the Chair's captain-attention queue).
   polads-ceo:
-    mcps: [neon, vercel, linear, library, telegram, brain]
+    mcps: [neon, vercel, library, telegram, brain]
     rationale: >
       Lane CEO — engineering-grade scope for the lane (cto-like set) plus
       brain for gather-then-decide and the queue_draft outbound gate.
@@ -90,7 +90,7 @@ agents:
       ceiling) regardless of scope.
 
   stephie-ceo:
-    mcps: [neon, vercel, linear, library, telegram, brain]
+    mcps: [neon, vercel, library, telegram, brain]
     rationale: >
       Lane CEO — engineering-grade scope for the lane (cto-like set) plus
       brain for gather-then-decide and the queue_draft outbound gate.
