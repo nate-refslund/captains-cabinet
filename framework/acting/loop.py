@@ -21,7 +21,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from framework.fidelity.consequence import emit_consequence, validate_consequence
+from framework.fidelity.consequence import (
+    emit_consequence, read_ledger, validate_consequence)
 
 # captain-response -> ledger lifecycle. review.verdict feeds the ladder's
 # review_confirmed_rate: ONLY "approve" is proof. "edit"=the draft was wrong
@@ -242,57 +243,90 @@ def expire_event(proposal_ev: dict, *, reviewed_at: str | None = None) -> dict:
     return ev
 
 
-def run_lane(*, thread_ref, subject: str, ts: str, actor: dict,
-             gather, draft_fn, present, get_response, dispatch,
-             lane: str = "send-1to1-reply", emit=emit_consequence,
-             refs: list | None = None) -> dict:
-    """Orchestrate ONE pass of the acting lane — fully dependency-injected so it
-    runs identically dry (stubs) or live (brain / Telegram / queue_draft). The
-    captain stays in the loop: nothing is dispatched until ``get_response``
-    returns the captain's decision.
+def proposal_id(event: dict) -> str:
+    """Stable correlation key for a proposal = its identity tuple
+    (actor.id | action | subject | ts). Lets a later captain reply — arriving as
+    a separate Channels turn — be matched back to its pending proposal."""
+    a = event.get("actor") or {}
+    return "|".join((str(a.get("id", "")), str(event.get("action", "")),
+                     str(event.get("subject", "")), str(event.get("ts", ""))))
 
-    Injected deps:
-      gather(thread_ref) -> context (brain MCP gather, or a stub)
-      draft_fn(thread_ref, context) -> draft str | None  (None = gate: no reply)
-      present(draft, proposal_event) -> None   (Telegram prompt, or record)
-      get_response() -> str                    (captain reply, or simulated)
-      dispatch(routed, draft, proposal_event) -> None  (queue_draft/log_lesson/…)
-      emit(**event) -> persists the consequence event (default: the real ledger)
-    """
+
+def propose(*, thread_ref, subject: str, ts: str, actor: dict,
+            gather, draft_fn, present, lane: str = "send-1to1-reply",
+            emit=emit_consequence, refs: list | None = None) -> dict:
+    """FIRST half of the live event-driven loop (one officer turn): gather →
+    draft → emit the PENDING proposal → present it on the Cabinet Telegram, then
+    END the turn. Returns the proposal_id so the later reply can be correlated.
+    The captain's decision arrives in a SEPARATE turn -> handle_response().
+    Injected deps: gather(thread_ref)->ctx, draft_fn(thread_ref,ctx)->draft|None
+    (None = the gate said no-reply), present(draft, proposal_event)->None."""
     ctx = gather(thread_ref)
     draft = draft_fn(thread_ref, ctx)
     if not draft:
         return {"thread_ref": thread_ref, "status": "gated"}
-
-    # TODO(live-split): the live event-driven split is the NEXT slice, not this
-    # one. Break run_lane into propose() (gather/draft/present + emit the pending
-    # proposal, return a proposal_id/correlation key) and handle_response() (match
-    # a later reply to its pending proposal via that key, route, then
-    # outcome_event/expire_event). Needs: a pending_proposals() ledger reader, a
-    # proposal_id carried on refs so re-delivered replies are idempotent, and an
-    # expire-on-timeout cron firing expire_event for proposals never answered.
-    # route_captain_response/proposal_event/outcome_event/expire_event are PURE
-    # and drop into handle_response() unchanged (reviewer-confirmed).
     prop = proposal_event(actor=actor, lane=lane, subject=subject, ts=ts, refs=refs)
     emit(**prop)
     present(draft, prop)
+    return {"thread_ref": thread_ref, "status": "proposed",
+            "proposal_id": proposal_id(prop), "proposal": prop, "draft": draft}
 
-    routed = route_captain_response(get_response())
-    result = {"thread_ref": thread_ref, "status": "decided",
-              "primary": routed.primary, "routed": routed, "draft": draft}
+
+def pending_proposals(since: str | None = None, rows: list | None = None) -> list:
+    """Open proposals awaiting a captain decision: read_ledger() is last-write-
+    wins, so a superseded proposal is already resolved; filter to the rows whose
+    proposal.decision is still None and that carry no outcome. handle_response()
+    loads the matching one by proposal_id. ``rows`` is injectable for tests."""
+    rows = rows if rows is not None else read_ledger(since=since)
+    return [e for e in rows
+            if isinstance(e, dict)
+            and (e.get("proposal") or {}).get("decision") is None
+            and "outcome" not in e]
+
+
+def handle_response(*, proposal: dict, reply_text: str, dispatch,
+                    draft: str | None = None, emit=emit_consequence,
+                    reviewed_at: str | None = None) -> dict:
+    """SECOND half (a LATER officer turn): match a captain reply to its pending
+    ``proposal`` (reloaded via pending_proposals/proposal_id), route it, record
+    the superseding outcome/expire on the proposal's identity tuple, then
+    dispatch. IDEMPOTENT: a proposal already decided is a no-op (Channels may
+    re-deliver, or the captain may reply twice). Pass ``reviewed_at`` (the actual
+    decision time) live so decided_at reflects when the captain decided, not when
+    the draft was proposed."""
+    pid = proposal_id(proposal)
+    if (proposal.get("proposal") or {}).get("decision") is not None:
+        return {"proposal_id": pid, "status": "already-decided", "primary": None}
+    routed = route_captain_response(reply_text)
+    result = {"proposal_id": pid, "status": "decided",
+              "primary": routed.primary, "routed": routed}
     if routed.primary in _VERDICT:
-        out = outcome_event(prop, routed)
+        out = outcome_event(proposal, routed, reviewed_at=reviewed_at)
         emit(**out)
         result["verdict"] = out["review"]["verdict"]
     else:
-        # FIX B: a policy/instruction-only reply (primary='none') made no draft
-        # decision — close the pending proposal as 'expired' instead of leaving
-        # it dangling forever.
-        exp = expire_event(prop)
-        emit(**exp)
+        # policy/instruction-only reply: no draft decision -> close as expired.
+        emit(**expire_event(proposal, reviewed_at=reviewed_at))
         result["status"] = "expired"
-    # FIX E (fail-closed): the draft physically reaches dispatch ONLY on an
-    # explicit approve — every other path (skip/edit/none) passes draft=None, so
-    # no non-approve route can send the draft.
-    dispatch(routed, draft if routed.primary == "approve" else None, prop)
+    # FIX E (fail-closed): the draft reaches dispatch ONLY on an explicit approve.
+    dispatch(routed, draft if routed.primary == "approve" else None, proposal)
     return result
+
+
+def run_lane(*, thread_ref, subject: str, ts: str, actor: dict,
+             gather, draft_fn, present, get_response, dispatch,
+             lane: str = "send-1to1-reply", emit=emit_consequence,
+             refs: list | None = None) -> dict:
+    """Synchronous composition of propose() + handle_response() — the DRY-RUN
+    model of the live two-turn loop. Live deployment calls the two halves across
+    turns (propose now; handle_response when the captain's reply lands via the
+    Channels plugin). Kept dependency-injected so it runs identically dry or
+    live; the captain stays in the loop (nothing dispatched until get_response)."""
+    p = propose(thread_ref=thread_ref, subject=subject, ts=ts, actor=actor,
+                gather=gather, draft_fn=draft_fn, present=present, lane=lane,
+                emit=emit, refs=refs)
+    if p["status"] == "gated":
+        return {"thread_ref": thread_ref, "status": "gated"}
+    h = handle_response(proposal=p["proposal"], reply_text=get_response(),
+                        dispatch=dispatch, draft=p["draft"], emit=emit)
+    return {"thread_ref": thread_ref, "draft": p["draft"], **h}

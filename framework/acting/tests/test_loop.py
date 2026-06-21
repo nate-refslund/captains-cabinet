@@ -103,6 +103,55 @@ class TestRecorder:
             assert out[k] == prop[k]  # ledger reader dedups on this tuple
 
 
+class TestLiveSplit:
+    """propose() + handle_response() — the event-driven halves run across turns,
+    sharing state via the ledger + a proposal_id correlation key."""
+
+    def test_propose_returns_correlation_key_and_pending_event(self):
+        events, presented = [], []
+        p = loop.propose(
+            thread_ref="thr", subject="kristoffer", ts=TS, actor=ACTOR,
+            gather=lambda tr: {}, draft_fn=lambda tr, ctx: "et udkast",
+            present=lambda d, prop: presented.append((d, loop.proposal_id(prop))),
+            emit=lambda **ev: events.append(ev))
+        assert p["status"] == "proposed"
+        assert p["proposal_id"] == "cos|draft-reply|kristoffer|" + TS
+        assert len(events) == 1 and events[0]["proposal"]["decision"] is None
+        assert presented and presented[0][1] == p["proposal_id"]  # pid reaches present
+
+    def test_handle_response_resolves_a_reloaded_pending_proposal(self):
+        events, dispatched = [], []
+        p = loop.propose(
+            thread_ref="thr", subject="kristoffer", ts=TS, actor=ACTOR,
+            gather=lambda tr: {}, draft_fn=lambda tr, ctx: "et udkast",
+            present=lambda d, prop: None, emit=lambda **ev: events.append(ev))
+        h = loop.handle_response(
+            proposal=p["proposal"], reply_text="send", draft=p["draft"],
+            dispatch=lambda routed, d, prop: dispatched.append((routed.primary, d)),
+            emit=lambda **ev: events.append(ev), reviewed_at="2026-06-21T10:05:00Z")
+        assert h["status"] == "decided" and h["verdict"] == "confirmed"
+        assert events[1]["proposal"]["decision"] == "approved"
+        assert events[1]["proposal"]["decided_at"] == "2026-06-21T10:05:00Z"  # real time
+        assert dispatched == [("approve", "et udkast")]
+
+    def test_handle_response_is_idempotent_on_already_decided(self):
+        # a re-delivered reply (Channels) or a second reply must NOT re-dispatch
+        decided = loop.outcome_event(_proposal(), loop.route_captain_response("send"))
+        events, dispatched = [], []
+        h = loop.handle_response(
+            proposal=decided, reply_text="send", draft="x",
+            dispatch=lambda *a: dispatched.append(a),
+            emit=lambda **ev: events.append(ev))
+        assert h["status"] == "already-decided"
+        assert events == [] and dispatched == []  # no re-emit, no re-send
+
+    def test_pending_proposals_filters_to_open_only(self):
+        prop = _proposal()                                    # decision None -> open
+        decided = loop.outcome_event(_proposal(), loop.route_captain_response("send"))
+        open_ = loop.pending_proposals(rows=[prop, decided])
+        assert len(open_) == 1 and open_[0]["proposal"]["decision"] is None
+
+
 class TestRunLaneEndToEndDry:
     def test_approve_records_proof(self):
         events, dispatched = [], []
