@@ -73,6 +73,42 @@ _POLICY_RE = re.compile(
     r"ikke|aldrig|altid|fremover|generelt|medmindre|kun (svar|reply))\b",
     re.IGNORECASE)
 
+# --- FIX A: an approve token is FAIL-CLOSED if its remainder HOLDS or NEGATES
+#     the send. Two shapes, checked against the post-approve remainder:
+#     (1) a hold/cancel word (vent, wait, stop, cancel, undlad, not yet, …);
+#     (2) a NEGATED send/reply — EN "don't/never + send/reply/…", or DA
+#         post-verb negation "send/svar/skriv/reply + (det) ikke". If either
+#         matches, DOWNGRADE primary approve -> none (never auto-send). ---
+_HOLD_CANCEL_RE = re.compile(
+    r"\b(vent|wait|hold on|hold op|hold|stop|cancel|annuller|undlad|"
+    r"glem det|never mind|nevermind|ikke endnu|not yet|"
+    r"drop it|drop den|drop det|drop)\b",
+    re.IGNORECASE)
+_NEGATED_SEND_RE = re.compile(
+    # EN/leading negation: don't / do not / aldrig / never  +  a send verb.
+    r"\b(don'?t|do not|aldrig|never)\b[^.!?\n]*\b(send|reply|svar|skriv)\b"
+    r"|"
+    # DA post-verb negation: send/svar/skriv/reply  +  (det) ikke.
+    r"\b(send|svar|skriv|reply)\b[^.!?\n]*\b(det )?ikke\b",
+    re.IGNORECASE)
+
+# --- FIX F: a standalone (no send/edit/skip verb) reply only records a DURABLE
+#     policy when it carries a GENERALIZING marker. A bare one-off refusal
+#     ("please dont send this") is NOT a standing rule. ---
+_GENERALIZE_RE = re.compile(
+    r"\b(in general|always|never|from now on|going forward|unless|"
+    r"only reply|these people|these threads|"
+    r"generelt|altid|aldrig|fremover|medmindre|disse)\b",
+    re.IGNORECASE)
+
+
+def _holds_or_negates_send(text: str) -> bool:
+    """True when `text` (an approve-remainder) holds or negates the send —
+    the FIX-A fail-closed condition. Empty/no-signal remainder is safe."""
+    if not text:
+        return False
+    return bool(_HOLD_CANCEL_RE.search(text) or _NEGATED_SEND_RE.search(text))
+
 
 def route_captain_response(text: str) -> RoutedResponse:
     """Classify a captain reply into a RoutedResponse (v1 heuristic + fallback)."""
@@ -101,15 +137,29 @@ def route_captain_response(text: str) -> RoutedResponse:
     if _APPROVE_RE.match(head):
         r.primary = "approve"
         rest = _APPROVE_RE.sub("", head, count=1).strip(" ,.-—\n")
+        # FIX A (fail-closed): if the remainder holds or negates the send, the
+        # leading "ok/ja/send" is NOT an approval — downgrade to none (never
+        # auto-send). The remainder's instruction/policy is still captured.
+        if _holds_or_negates_send(rest):
+            r.primary = "none"
+        # FIX C: capture instruction AND policy INDEPENDENTLY (two ifs, not
+        # if/elif) so a compound "send, also build A, and in general suppress
+        # marketing threads" keeps BOTH lists non-empty.
         if rest and _INSTR_RE.search(rest):
             r.instructions.append(rest)
-        elif rest and _POLICY_RE.search(rest):
+        # A durable policy in the remainder needs a GENERALIZING marker (same bar
+        # as the standalone branch) — so a one-off contradiction like "but do not
+        # send this" is NOT mis-recorded as a standing rule.
+        if rest and _GENERALIZE_RE.search(rest):
             r.policies.append(rest)
         return r
 
     # No explicit draft verb — a standalone policy or instruction.
+    # FIX F: a bare refusal becomes a DURABLE policy only with a generalizing
+    # marker; otherwise it is a one-off (primary=none, no policy captured).
     if _POLICY_RE.search(t):
-        r.policies.append(t)
+        if _GENERALIZE_RE.search(t):
+            r.policies.append(t)
     elif _INSTR_RE.search(t):
         r.instructions.append(t)
     return r
@@ -160,8 +210,34 @@ def outcome_event(proposal_ev: dict, routed: RoutedResponse, *,
     ev["review"] = {"verdict": m["verdict"]}
     if reviewed_at:
         ev["review"]["reviewed_at"] = reviewed_at
-    if lesson_ref:
+    # FIX D: the ledger rejects lesson_ref on confirmed/unknown — only attach it
+    # when the mapped verdict is 'wrong' (an edit). A lesson_ref passed for an
+    # approve/skip is silently dropped rather than producing an invalid event.
+    if lesson_ref and m["verdict"] == "wrong":
         ev["review"]["lesson_ref"] = lesson_ref
+    validate_consequence(ev)
+    return ev
+
+
+def expire_event(proposal_ev: dict, *, reviewed_at: str | None = None) -> dict:
+    """The SUPERSEDING event that closes a PENDING proposal as 'expired' — the
+    captain's reply carried no draft decision (a policy/instruction-only reply),
+    so the draft is never sent and the proposal must not dangle pending forever.
+
+    Supersedes on the proposal's identity tuple (actor, action, subject, ts)
+    exactly like ``outcome_event`` (dict(proposal_ev) then override). There is
+    NO outcome object (nothing shipped); the review verdict is 'unknown' (no
+    proof, no correction — the ladder neither climbs nor records a lesson)."""
+    decided_at = reviewed_at or proposal_ev["ts"]
+    ev = dict(proposal_ev)
+    ev["proposal"] = {
+        "required": proposal_ev.get("proposal", {}).get("required", False),
+        "decision": "expired",
+        "decided_at": decided_at,
+    }
+    ev["review"] = {"verdict": "unknown"}
+    if reviewed_at:
+        ev["review"]["reviewed_at"] = reviewed_at
     validate_consequence(ev)
     return ev
 
@@ -188,6 +264,15 @@ def run_lane(*, thread_ref, subject: str, ts: str, actor: dict,
     if not draft:
         return {"thread_ref": thread_ref, "status": "gated"}
 
+    # TODO(live-split): the live event-driven split is the NEXT slice, not this
+    # one. Break run_lane into propose() (gather/draft/present + emit the pending
+    # proposal, return a proposal_id/correlation key) and handle_response() (match
+    # a later reply to its pending proposal via that key, route, then
+    # outcome_event/expire_event). Needs: a pending_proposals() ledger reader, a
+    # proposal_id carried on refs so re-delivered replies are idempotent, and an
+    # expire-on-timeout cron firing expire_event for proposals never answered.
+    # route_captain_response/proposal_event/outcome_event/expire_event are PURE
+    # and drop into handle_response() unchanged (reviewer-confirmed).
     prop = proposal_event(actor=actor, lane=lane, subject=subject, ts=ts, refs=refs)
     emit(**prop)
     present(draft, prop)
@@ -199,5 +284,15 @@ def run_lane(*, thread_ref, subject: str, ts: str, actor: dict,
         out = outcome_event(prop, routed)
         emit(**out)
         result["verdict"] = out["review"]["verdict"]
-    dispatch(routed, draft, prop)
+    else:
+        # FIX B: a policy/instruction-only reply (primary='none') made no draft
+        # decision — close the pending proposal as 'expired' instead of leaving
+        # it dangling forever.
+        exp = expire_event(prop)
+        emit(**exp)
+        result["status"] = "expired"
+    # FIX E (fail-closed): the draft physically reaches dispatch ONLY on an
+    # explicit approve — every other path (skip/edit/none) passes draft=None, so
+    # no non-approve route can send the draft.
+    dispatch(routed, draft if routed.primary == "approve" else None, prop)
     return result
