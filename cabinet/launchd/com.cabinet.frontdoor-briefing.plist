@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Cabinet front-door recurring briefing (one channel @NateHQChairBot).
+     Source of truth; installed to ~/Library/LaunchAgents/ + loaded with:
+       cp cabinet/launchd/com.cabinet.frontdoor-briefing.plist ~/Library/LaunchAgents/
+       launchctl load -w ~/Library/LaunchAgents/com.cabinet.frontdoor-briefing.plist
+     Reverse: launchctl unload ~/Library/LaunchAgents/com.cabinet.frontdoor-briefing.plist
+     No secrets here — the wrapper reads the token from cabinet/.env. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.cabinet.frontdoor-briefing</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/nate/captains-cabinet/cabinet/scripts/run-frontdoor-briefing.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>7</integer>
+    <key>Minute</key><integer>30</integer>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>/Users/nate/.cabinet/logs/frontdoor-briefing.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/nate/.cabinet/logs/frontdoor-briefing.log</string>
+</dict>
+</plist>
