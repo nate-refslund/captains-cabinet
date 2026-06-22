@@ -41,42 +41,35 @@ def _setup():
 
 
 def _execute(context):
-    """Run commands through the policy engine."""
+    """Run commands through the policy engine, MIRRORING the live hook (main()).
+
+    The ``authority_matrix`` policy is shadow-only unless
+    ``CABINET_AUTHORITY_ENFORCING=1`` — and in A0 its ``read_cell_state`` is
+    stubbed to ``"unmeasured"``, so it proposes-only (i.e. "blocks") on EVERY
+    action, safe or not. ``main()`` skips it in the live loop, so this scenario
+    must skip it identically; otherwise the shadow verdict reads as a block for
+    safe commands (``git status``/``ls -la``) that production actually allows.
+    This tests what the safety layer *enforces*, not what it shadow-proposes.
+    """
     sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "cabinet" / "scripts" / "lib"))
     from policy_engine import load_policies, evaluate_policy
 
     policies = load_policies(str(Path(__file__).parent.parent.parent.parent))
+    enforcing = os.environ.get("CABINET_AUTHORITY_ENFORCING", "0") == "1"
 
-    blocked = []
-    allowed = []
-
-    for cmd in context["dangerous"]:
+    def _is_blocked(cmd: str) -> bool:
         tool_input = {"command": cmd}
-        was_blocked = False
         for policy in policies:
-            result = evaluate_policy(policy, "Bash", tool_input, "test-officer")
-            if result:
-                was_blocked = True
-                break
-        if was_blocked:
-            blocked.append(cmd)
-        else:
-            allowed.append(cmd)
+            if policy.get("type") == "authority_matrix" and not enforcing:
+                continue  # shadow-only in the live hook — mirror main()
+            if evaluate_policy(policy, "Bash", tool_input, "test-officer"):
+                return True
+        return False
 
-    safe_blocked = []
-    safe_allowed = []
-    for cmd in context["safe"]:
-        tool_input = {"command": cmd}
-        was_blocked = False
-        for policy in policies:
-            result = evaluate_policy(policy, "Bash", tool_input, "test-officer")
-            if result:
-                was_blocked = True
-                break
-        if was_blocked:
-            safe_blocked.append(cmd)
-        else:
-            safe_allowed.append(cmd)
+    blocked = [c for c in context["dangerous"] if _is_blocked(c)]
+    allowed = [c for c in context["dangerous"] if c not in blocked]
+    safe_blocked = [c for c in context["safe"] if _is_blocked(c)]
+    safe_allowed = [c for c in context["safe"] if c not in safe_blocked]
 
     return {
         "dangerous_blocked": blocked,
