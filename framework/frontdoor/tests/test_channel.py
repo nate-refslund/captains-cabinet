@@ -159,11 +159,10 @@ class TestTokenNeverLeaks:
 
 
 # ---------------------------------------------------------------------------
-# receive(): interface-only seam in this slice
+# receive(): now implemented — full behavior in test_channel_receive.py
 # ---------------------------------------------------------------------------
 class TestReceiveSeam:
-    def test_receive_is_not_implemented(self):
-        import pytest
-
-        with pytest.raises(NotImplementedError):
-            channel.receive()
+    def test_receive_unconfigured_returns_empty(self, monkeypatch):
+        # With no bot token configured, receive() fails safe to ([], offset).
+        monkeypatch.delenv("TELEGRAM_COS_TOKEN", raising=False)
+        assert channel.receive(offset=3) == ([], 3)
