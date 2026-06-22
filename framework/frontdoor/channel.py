@@ -27,6 +27,7 @@ from __future__ import annotations
 import json
 import os
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from framework import env
@@ -137,10 +138,73 @@ def send(text: str, *, http_post=None) -> dict:
     return {"status": "sent", "sent": True, "response": safe_resp}
 
 
-def receive():
-    """Inbound seam — where the Channels-plugin long-poll lands (Chair is sole
-    poller, arch §7). Implementation deferred to a later slice."""
-    raise NotImplementedError(
-        "front-door inbound (receive) is deferred; the Chair long-polls via the "
-        "Channels plugin in a later slice"
-    )
+def _default_http_get(url: str, params: dict, timeout: int) -> dict:
+    """Default transport: GET ``url?params`` and return the parsed body.
+
+    Errors are raised as plain RuntimeError WITHOUT the token-bearing URL —
+    ``receive()`` also fails safe, but we never originate a leak.
+    """
+    full = url + "?" + urllib.parse.urlencode(params, doseq=True)
+    try:
+        with urllib.request.urlopen(full, timeout=timeout) as resp:  # noqa: S310 (fixed https host)
+            raw = resp.read().decode("utf-8")
+        return json.loads(raw) if raw else {}
+    except urllib.error.HTTPError as exc:  # pragma: no cover - network path
+        raise RuntimeError(f"telegram HTTP {exc.code}") from None
+    except Exception as exc:  # pragma: no cover - network path
+        raise RuntimeError(f"telegram transport error: {type(exc).__name__}") from None
+
+
+def receive(*, offset=None, timeout: int = 0, limit: int = 100, http_get=None) -> tuple:
+    """Poll Telegram getUpdates for the CAPTAIN's messages only.
+
+    The Chair is the sole poller (arch §7). Returns ``(messages, next_offset)``:
+      * ``messages`` — list of ``{update_id, message_id, text, ts}`` from
+        ``CAPTAIN_TELEGRAM_ID`` ONLY. Any other chat is ignored (Corridor:
+        validate the sender; never act on unauthorized traffic).
+      * ``next_offset`` — highest seen ``update_id + 1``; pass it back next call
+        so updates are not reprocessed. Unchanged when nothing new arrives.
+
+    Reading inbound is always safe, so this is NOT gated by ``allow_sends()``
+    (that gates only outbound). Token is read from env and NEVER logged or
+    returned; any transport failure fails safe to ``([], offset)`` — no leak,
+    offset preserved so nothing is skipped.
+    """
+    token = _token()
+    captain = _captain_id()
+    if not token or not captain:
+        return [], offset
+
+    params: dict = {"timeout": timeout, "limit": limit,
+                    "allowed_updates": json.dumps(["message"])}
+    if offset is not None:
+        params["offset"] = offset
+
+    get = http_get or _default_http_get
+    url = f"{_base()}/bot{token}/getUpdates"
+    try:
+        resp = get(url, params, timeout + 10)
+    except BaseException:
+        # Fail safe — never surface a token-bearing error; keep the offset.
+        return [], offset
+
+    messages = []
+    next_offset = offset
+    for upd in (resp.get("result") or []):
+        uid = upd.get("update_id")
+        if uid is not None:
+            next_offset = uid + 1  # advance past EVERY update, even ignored ones
+        msg = upd.get("message") or {}
+        chat = msg.get("chat") or {}
+        if str(chat.get("id")) != str(captain):
+            continue  # not the Captain — ignore (do not act on it)
+        text = msg.get("text")
+        if not text:
+            continue
+        messages.append({
+            "update_id": uid,
+            "message_id": msg.get("message_id"),
+            "text": text,
+            "ts": msg.get("date"),
+        })
+    return messages, next_offset
