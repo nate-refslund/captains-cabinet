@@ -35,7 +35,7 @@ cabinet: main
 
 agents:
   cos:
-    mcps: [notion, library, telegram, host, brain]
+    mcps: [notion, library, telegram, host, brain, exa, brave-search]
     rationale: >
       Coordination and briefings. Not code; CoS does not touch Neon or
       Vercel directly — that's CTO/COO. Library for Phase 1 inbox and
@@ -82,7 +82,7 @@ agents:
   # broadcast only — lane CEOs are Telegram-dark (no bot, no Captain DM;
   # attention routes via the Chair's captain-attention queue).
   polads-ceo:
-    mcps: [neon, vercel, make, library, telegram, brain]
+    mcps: [neon, vercel, make, library, telegram, brain, corridor]
     rationale: >
       Lane CEO — engineering-grade scope for the lane (cto-like set) plus
       brain for gather-then-decide and the queue_draft outbound gate.
@@ -90,7 +90,7 @@ agents:
       ceiling) regardless of scope.
 
   stephie-ceo:
-    mcps: [neon, vercel, make, library, telegram, brain]
+    mcps: [neon, vercel, make, library, telegram, brain, corridor]
     rationale: >
       Lane CEO — engineering-grade scope for the lane (cto-like set) plus
       brain for gather-then-decide and the queue_draft outbound gate.
