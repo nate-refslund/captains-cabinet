@@ -113,7 +113,20 @@ def main() -> int:
             with urllib.request.urlopen(f"{api}/getUpdates?{params}", timeout=35) as resp:  # noqa: S310 (fixed https host)
                 data = json.load(resp)
         except Exception as e:
-            log(f"getUpdates error: {e}"); time.sleep(5); continue
+            log(f"getUpdates error: {e}")
+            # Self-heal a 409 Conflict: another getUpdates poller exists (Telegram
+            # allows only one per token). This Cabinet is single-Telegram-voice, the
+            # officer launches without --channels, and the watchdog is the SOLE poller
+            # by design — so any telegram plugin is a stray (e.g. the officer probing
+            # its own telegram setup mid-session). Reap it to reclaim the lock.
+            # (Revisit if a deployment ever runs >1 telegram-capable officer.)
+            if "409" in str(e):
+                try:
+                    subprocess.run(["pkill", "-f", "plugins/cache/claude-plugins-official/telegram"], timeout=10)
+                    log("409 self-heal: reaped stray telegram plugin poller(s)")
+                except Exception:
+                    pass
+            time.sleep(5); continue
 
         if not data.get("ok"):
             log(f"getUpdates not ok: {data.get('description')}"); time.sleep(5); continue
