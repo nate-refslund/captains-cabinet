@@ -17,7 +17,8 @@
       "mcp__vercel",
       "mcp__plugin_telegram_telegram",
       "mcp__library",
-      "mcp__redis_trigger_channel"
+      "mcp__redis_trigger_channel",
+      "mcp__make"
     ],
     "deny": [
       "Bash(rm -rf /)",
@@ -352,10 +353,11 @@
     "type": "command",
     "command": "bash"
   },
+  "enabledPlugins": {
+    "make-skills@make-marketplace": true,
+    "telegram@claude-plugins-official": true
+  },
   "voice": {
     "enabled": true
-  },
-  "enabledPlugins": {
-    "make-skills@make-marketplace": true
   }
 }

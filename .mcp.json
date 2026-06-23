@@ -32,8 +32,7 @@
     },
     "make": {
       "type": "http",
-      "url": "https://eu2.make.com/mcp/stateless",
-      "headers": { "Authorization": "Bearer ${MAKE_MCP_TOKEN}" }
+      "url": "https://mcp.make.com"
     }
   }
 }
