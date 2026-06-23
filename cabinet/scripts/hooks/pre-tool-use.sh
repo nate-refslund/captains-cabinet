@@ -937,6 +937,20 @@ if [ "$TOOL_NAME" = "Edit" ] || [ "$TOOL_NAME" = "Write" ]; then
       echo "BLOCKED: Germline file — read-only for officers and loops (no loop may edit its own judge). Propose the change to the Captain; only the Captain applies germline edits." >&2
       exit 2
       ;;
+    *"cabinet/.env"*)
+      # CoS manages the cabinet's OWN secret store (Captain-granted 2026-06-23:
+      # "you should be able to both read and write ... handle the integrations for
+      # me"). Security-neutral: cos already holds the host MCP (edit_file/run over
+      # every host file), so this only surfaces — via native tools — a capability
+      # cos already has. NARROW by design: other officers (no host MCP) stay
+      # blocked from ALL .env via the general arm below, and even cos is allowed
+      # ONLY the cabinet store here (product / screenpipe .env paths do not match
+      # this arm, so they remain blocked).
+      if [ "${OFFICER:-}" != "cos" ]; then
+        echo "BLOCKED: Environment files cannot be modified by Officers" >&2
+        exit 2
+      fi
+      ;;
     *".env"*)
       echo "BLOCKED: Environment files cannot be modified by Officers" >&2
       exit 2
