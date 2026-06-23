@@ -280,4 +280,4 @@ if [ -n "$MEMORY_BLOCK" ]; then
   SEMANTIC_HEADER="🧠 SEMANTIC RECALL (top 5 relevant past entries — telegram_dm, captain_decision, officer_trigger, experience_record, reflection, correction):"
   WRAPPED="$(printf '%s\n\n<system-reminder>\n%s\n\n%s\n</system-reminder>' "$WRAPPED" "$SEMANTIC_HEADER" "$MEMORY_BLOCK")"
 fi
-printf '%s' "$WRAPPED" | jq -R -s '{hookSpecificOutput: {additionalContext: .}}'
+printf '%s' "$WRAPPED" | jq -R -s '{hookSpecificOutput: {hookEventName: "UserPromptSubmit", additionalContext: .}}'

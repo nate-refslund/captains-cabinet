@@ -112,7 +112,7 @@ $FLAG_BLOCK"
     '{ts:$ts, officer:$officer, iter_n:$iter, draft:$draft, flags:$flags, outcome:$outcome}' 2>/dev/null)"
   [ -n "$AUDIT_LINE" ] && echo "$AUDIT_LINE" >> "$AUDIT_LOG"
 
-  jq -n --arg ctx "$WARN" '{hookSpecificOutput: {additionalContext: $ctx}}'
+  jq -n --arg ctx "$WARN" '{hookSpecificOutput: {hookEventName: "PreToolUse", additionalContext: $ctx}}'
   rm -f "$ITER_FILE" 2>/dev/null
   exit 0
 fi
@@ -155,5 +155,5 @@ AUDIT_LINE="$(jq -cn \
   '{ts:$ts, officer:$officer, iter_n:$iter, draft:$draft, flags:$flags, suggested_rewrite:$suggested_rewrite, outcome:$outcome}' 2>/dev/null)"
 [ -n "$AUDIT_LINE" ] && echo "$AUDIT_LINE" >> "$AUDIT_LOG"
 
-jq -n --arg ctx "$WARN" '{hookSpecificOutput: {additionalContext: $ctx}}'
+jq -n --arg ctx "$WARN" '{hookSpecificOutput: {hookEventName: "PreToolUse", additionalContext: $ctx}}'
 exit 0

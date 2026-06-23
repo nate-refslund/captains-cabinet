@@ -28,6 +28,14 @@ export CAPTAIN_TELEGRAM_ID="$(grep '^CAPTAIN_TELEGRAM_ID=' "$ENV_FILE" | cut -d=
 export CABINET_ENV=runtime
 export REDIS_HOST="${REDIS_HOST:-localhost}"
 
+# launchd hands us a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin) that EXCLUDES
+# Homebrew. The intake module's stdlib backend shells out to `redis-cli`, which
+# lives in /opt/homebrew/bin — without this the briefing crashes at enqueue with
+# `FileNotFoundError: redis-cli` and NO briefing reaches Nate (observed
+# 2026-06-23 07:30). Prepend Homebrew bin so redis-cli (and the brew python)
+# resolve. Matches this script's existing /opt/homebrew/bin/python3.12 default.
+export PATH="/opt/homebrew/bin:$PATH"
+
 PY="${CABINET_PYTHON:-/opt/homebrew/bin/python3.12}"
 cd "$ROOT" || exit 1
 exec "$PY" -m framework.frontdoor.run_briefing

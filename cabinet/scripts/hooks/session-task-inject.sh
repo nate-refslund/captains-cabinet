@@ -27,4 +27,4 @@ if task:
 [ -z "$RESULT" ] && exit 0
 
 MSG="Mission task available: $RESULT"
-printf '%s' "$MSG" | jq -R -s '{hookSpecificOutput: {additionalContext: .}}'
+printf '%s' "$MSG" | jq -R -s '{hookSpecificOutput: {hookEventName: "UserPromptSubmit", additionalContext: .}}'

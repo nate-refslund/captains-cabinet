@@ -462,7 +462,7 @@ Only the following MCP servers are used by the Cabinet. Do NOT use any other MCP
 - **Linear** — Execution backlog (issues, sprints, project tracking)
 - **Neon** — Product database (schema, queries, migrations)
 - **Library** — this Cabinet's structured knowledge (Spaces/records: briefs, specs, decisions, playbooks). Accessed via the `library` MCP or the dashboard `/library` route.
-- **Cabinet** — inter-Cabinet comms (identify, presence, availability, send_message, request_handoff). Currently stdio-only; cross-container transport blocked by FW-005.
+- **Cabinet** — inter-Cabinet comms (identify, presence, availability, send_message, request_handoff). stdio + HTTP transport (FW-005 done — stdlib HTTP listener, bearer-auth, `/health`, tested for stdio↔http parity); cross-instance federation ready, consent-gated via `instance/config/peers.yml` (Work↔Personal peer provisioned).
 - **Vercel** — Hosting and deployment (preview, production)
 - **Brain** — Nate's screenpipe brain bridge (vault search, person intel, commitments, `queue_draft` outbound gate, reasoning log). Declared in `instance/config/extensions.yml` → rendered to `instance/config/extra-mcps.json`; scoped per officer in `cabinet/mcp-scope.yml`. Usage rules are MANDATORY: `.claude/rules/brain-bridge.md` (vault is read-first Nate-truth; `queue_draft` is the only outbound path; vault writes only via `append_agent_inbox`).
 
@@ -482,13 +482,13 @@ The Cabinet uses **local MCP servers with API tokens** (configured in `.mcp.json
 
 ## Model Routing
 
-The Cabinet uses a tiered model strategy: Fable 5 drives the officer loop at max effort; crew model is the spawning officer's situational call (Captain directive 2026-06-12) — default Sonnet 4.6 for parallel execution, escalate individual crew/teammates to Fable 5 when the subtask needs orchestrator-grade judgment. (Fable 5 upgrade from Opus 4.7; original Opus upgrade Captain ratified 2026-05-24 msg 2687).
+The Cabinet uses a tiered model strategy. **Current officer default: Opus 4.8 1M (`claude-opus-4-8[1m]`) at max effort** — Fable 5 is access-gated on this account (2026-06-23, Captain-set); flip back to `claude-fable-5` when access returns. Crew model is the spawning officer's situational call (Captain directive 2026-06-12) — default Sonnet 4.6 for parallel execution, escalate individual crew/teammates to Opus 4.8 when the subtask needs orchestrator-grade judgment. (Model lineage: Opus 4.7 → Fable 5 ratified 2026-05-24 msg 2687 → Opus 4.8 1M fallback 2026-06-23 while Fable is gated.)
 
-- **Officers (orchestrator default):** Fable 5 (`claude-fable-5`) + `--effort max`. Set via `--model` at session start in `cabinet/scripts/start-officer.sh`. Officers drive the loop: read tasks, coordinate, execute, reply to Captain, route work.
-- **Subagents + Crew (Agent Teams):** officer's choice per task — set the model explicitly in Task() and TeamCreate prompts. Default Sonnet 4.6 (cost-efficient parallel execution); Fable 5 for judgment-heavy crew (adversarial review of high-risk changes, architecture, security). Agent Teams are enabled fleet-wide via `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in `cabinet/.env`; use them for short bounded bursts where workers coordinate with each other — they multiply concurrent sessions against the shared quota pool.
+- **Officers (orchestrator default):** Opus 4.8 1M (`claude-opus-4-8[1m]`) + `--effort max` (Fable 5 gated — see above). Set via the `MODEL` default in `cabinet/scripts/start-officer-mac.sh` (Mac) / `start-officer.sh` (Docker), the `CABINET_MODEL` env in the officer LaunchAgent, and the `model:` frontmatter in each agent def. The model id is single-quoted where it reaches a shell (the `[1m]` suffix would otherwise glob). Officers drive the loop: read tasks, coordinate, execute, reply to Captain, route work.
+- **Subagents + Crew (Agent Teams):** officer's choice per task — set the model explicitly in Task() and TeamCreate prompts. Default Sonnet 4.6 (cost-efficient parallel execution); Opus 4.8 for judgment-heavy crew (adversarial review of high-risk changes, architecture, security). Agent Teams are enabled fleet-wide via `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in `cabinet/.env`; use them for short bounded bursts where workers coordinate with each other — they multiply concurrent sessions against the shared quota pool.
 - **Fable advisor consultation:** Use `bash cabinet/scripts/advisor-crew.sh --task "..." --context <file>` for one-shot consultations. Use `Task(model="fable", prompt="...")` for adversarial reviews, fresh-context audits, multi-step subloops.
 
-**Rollback:** `CABINET_MODEL=claude-sonnet-4-6 bash cabinet/scripts/start-officer.sh <officer>` downgrades one officer. Fleet rollback: change the default in `start-officer.sh`.
+**Rollback:** `CABINET_MODEL=claude-sonnet-4-6 bash cabinet/scripts/start-officer-mac.sh <officer>` downgrades one officer. Fleet rollback: change the `MODEL` default in `start-officer-mac.sh` / `start-officer.sh` (and `DEFAULT_MODEL` in `generate-instance.py` for future lanes). When Fable access returns: set the fleet model back to `claude-fable-5[1m]`.
 
 ## Compact Instructions
 

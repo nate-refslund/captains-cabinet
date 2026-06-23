@@ -21,8 +21,10 @@ export CABINET_SOURCE_REPO="$REPO_ROOT"
 export CABINET_ROOT="$REPO_ROOT"
 LOGS_DIR="$HOME/Library/Logs/cabinet"
 SESSION_NAME="officer-$OFFICER"
-# CABINET_MODEL=claude-fable-5[1m] is available as an opt-in override once verified interactively.
-MODEL="${CABINET_MODEL:-claude-fable-5}"
+# Fleet default: Opus 4.8 1M (Fable 5 is access-gated on this account, 2026-06-23; Captain-set).
+# Override per-officer via CABINET_MODEL=... (e.g. claude-sonnet-4-6 to downgrade, or
+# claude-fable-5[1m] once Fable access returns).
+MODEL="${CABINET_MODEL:-claude-opus-4-8[1m]}"
 REDIS_HOST="${REDIS_HOST:-localhost}"
 REDIS_PORT="${REDIS_PORT:-6379}"
 
@@ -218,7 +220,10 @@ if [ "${CABINET_USE_NATIVE_AGENT:-1}" = "1" ] \
 fi
 
 # Build the claude invocation
-CLAUDE_CMD="cd $REPO_ROOT && claude --model $MODEL $MCP_FLAG $TELEGRAM_FLAG $AGENT_FLAG --dangerously-skip-permissions --effort max"
+# $MODEL is single-quoted: model ids can carry a [1m] context suffix (e.g.
+# claude-opus-4-8[1m]) and this command is typed into a zsh pane, which would
+# glob the unquoted brackets ("zsh: no matches found"). Single quotes pass it literally.
+CLAUDE_CMD="cd $REPO_ROOT && claude --model '$MODEL' $MCP_FLAG $TELEGRAM_FLAG $AGENT_FLAG --dangerously-skip-permissions --effort max"
 
 # ===========================================================
 # Dry-run gate — print plan & exit before any tmux/redis/launch side-effects.

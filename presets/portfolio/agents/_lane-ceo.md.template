@@ -92,7 +92,7 @@ unreviewed changes.
 
 **Crew model is YOUR situational call** (Captain directive 2026-06-12):
 default `claude-sonnet-4-6` for parallel execution and routine review;
-escalate individual crew to `claude-fable-5` when the subtask needs
+escalate individual crew to `claude-opus-4-8` when the subtask needs
 orchestrator-grade judgment (adversarial review of high-risk changes,
 architecture decisions, security analysis). Agent Teams (`TeamCreate`,
 enabled via `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` in `cabinet/.env`) are

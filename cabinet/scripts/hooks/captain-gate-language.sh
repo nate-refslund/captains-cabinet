@@ -140,5 +140,5 @@ Hook: warn-only. Disable via GATE_LANGUAGE_HOOK_ENABLED=0."
 
 # Emit the additionalContext JSON for next-turn injection
 # (Sprint A G4: hookSpecificOutput is the documented CC contract).
-jq -n --arg ctx "$WARN" '{hookSpecificOutput: {additionalContext: $ctx}}'
+jq -n --arg ctx "$WARN" '{hookSpecificOutput: {hookEventName: "PreToolUse", additionalContext: $ctx}}'
 exit 0

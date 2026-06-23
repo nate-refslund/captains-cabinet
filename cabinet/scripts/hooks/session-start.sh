@@ -112,6 +112,7 @@ full_context="$(printf '%b%b' "$header" "$context")"
 printf '%s' "$full_context" | jq -Rs --slurpfile _ /dev/null '
   {
     "hookSpecificOutput": {
+      "hookEventName": "SessionStart",
       "additionalContext": .
     }
   }

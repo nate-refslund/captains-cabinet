@@ -95,7 +95,7 @@ SECRET_PATTERNS = [
 CHAIR_CAPABILITIES = "[logs_captain_decisions, reviews_specs, reviews_implementations, validates_deployments]"
 LANE_CEO_CAPABILITIES = "[deploys_code, logs_captain_decisions]"
 
-DEFAULT_MODEL = "claude-fable-5"
+DEFAULT_MODEL = "claude-opus-4-8[1m]"
 
 LANE_CEO_TEMPLATE_REL = "presets/portfolio/agents/_lane-ceo.md.template"
 TEMPLATE_PLACEHOLDERS = ("{{LANE_NAME}}", "{{LANE_SLUG}}", "{{REPO}}", "{{BOARDS}}", "{{MODEL}}")
@@ -617,7 +617,7 @@ cabinet:
   id: acme-hq                    # cabinet_id; 'main' for single-instance
   mode: single                   # single | multi (multi REQUIRES a non-'main' id)
   org_shape: portfolio           # portfolio | functional | custom
-  officer_model: claude-fable-5
+  officer_model: claude-opus-4-8[1m]
 
 lanes:
   - name: Acme Storefront
