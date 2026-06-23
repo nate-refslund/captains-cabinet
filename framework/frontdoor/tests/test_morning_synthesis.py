@@ -150,6 +150,46 @@ def test_deploy_health_no_apps_is_empty(monkeypatch):
     assert ms.deploy_health_items() == []
 
 
+def _sentry(issues):
+    return {"project": "p", "count": len(issues), "issues": issues}
+
+
+def test_sentry_health_silent_when_no_issues(monkeypatch):
+    monkeypatch.setattr(ms.product_health, "sentry_health", lambda o, p, **kw: _sentry([]))
+    assert ms.sentry_health_items(org="step", project="p") == []
+
+
+def test_sentry_health_batch_for_minor_errors(monkeypatch):
+    monkeypatch.setattr(ms.product_health, "sentry_health",
+                        lambda o, p, **kw: _sentry([{"title": "TypeError x", "events": 12}]))
+    items = ms.sentry_health_items(org="step", project="p")
+    assert len(items) == 1
+    it = items[0]
+    assert it["source"] == "sentry-health"
+    assert it["urgency_tier"] == "batch"
+    assert "1 unresolved error" in it["payload"]["summary"]
+
+
+def test_sentry_health_ping_now_for_incident(monkeypatch):
+    monkeypatch.setattr(ms.product_health, "sentry_health",
+                        lambda o, p, **kw: _sentry([{"title": "SyntaxError", "events": 13084}]))
+    items = ms.sentry_health_items(org="step", project="p")
+    assert items[0]["urgency_tier"] == "ping-now"
+    assert items[0]["context"]["top_events"] == 13084
+
+
+def test_sentry_health_no_config_is_empty(monkeypatch):
+    monkeypatch.delenv("CABINET_SENTRY_ORG", raising=False)
+    monkeypatch.delenv("CABINET_SENTRY_PROJECT", raising=False)
+    assert ms.sentry_health_items() == []
+
+
+def test_sentry_health_injected_overrides_network():
+    items = ms.sentry_health_items(org="step", project="p",
+                                   health=_sentry([{"title": "E", "events": 5}]))
+    assert items[0]["urgency_tier"] == "batch"
+
+
 def test_gather_items_includes_all_sources(monkeypatch):
     monkeypatch.setattr(ms.sa, "find_threads",
                         lambda hours=72: [_thread("lisa", "Lisa Stentoft", "a real question")])
@@ -157,6 +197,10 @@ def test_gather_items_includes_all_sources(monkeypatch):
                         lambda direction="owed_by_nate": [_cmt("Kris", "x", "2000-01-01")])
     monkeypatch.setattr(ms.sa, "deploy_health",
                         lambda app, **kw: _health(app, failed=1, latest="READY"))
+    monkeypatch.setattr(ms.product_health, "sentry_health",
+                        lambda o, p, **kw: _sentry([{"title": "E", "events": 9}]))
     monkeypatch.setenv("CABINET_DEPLOY_HEALTH_APPS", "v0-x")
+    monkeypatch.setenv("CABINET_SENTRY_ORG", "step")
+    monkeypatch.setenv("CABINET_SENTRY_PROJECT", "p")
     sources = sorted({it["source"] for it in ms.gather_items()})
-    assert sources == ["awaiting-reply", "commitment", "deploy-health"]
+    assert sources == ["awaiting-reply", "commitment", "deploy-health", "sentry-health"]

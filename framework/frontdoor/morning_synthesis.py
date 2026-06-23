@@ -15,6 +15,7 @@ from __future__ import annotations
 import datetime
 import os
 
+from framework.acting import product_health
 from framework.acting import screenpipe_adapter as sa
 from framework.frontdoor import intake
 
@@ -204,19 +205,73 @@ def deploy_health_items(*, apps: list | None = None) -> list[dict]:
     return items
 
 
+# A single Sentry issue with >= this many events in the 24h window reads as an
+# active incident (prod is actively erroring) → ping-now; otherwise batch.
+_INCIDENT_EVENTS = 1000
+
+
+def _sentry_cfg() -> tuple[str, str]:
+    return (os.environ.get("CABINET_SENTRY_ORG", "").strip(),
+            os.environ.get("CABINET_SENTRY_PROJECT", "").strip())
+
+
+def sentry_health_items(*, org: str | None = None, project: str | None = None,
+                        health: dict | None = None) -> list[dict]:
+    """Sentry error health → intake items, ONLY when there are unresolved errors.
+
+    ping-now if any single issue is an active incident (>= _INCIDENT_EVENTS events
+    in 24h — prod is actively erroring), else batch. Quiet when clean. Org/project
+    come from the instance env (CABINET_SENTRY_ORG / CABINET_SENTRY_PROJECT) so this
+    framework module stays product-agnostic. Best-effort: any failure → [].
+
+    ``health`` is injectable for tests (no network).
+    """
+    if org is None:
+        org = _sentry_cfg()[0]
+    if project is None:
+        project = _sentry_cfg()[1]
+    if not org or not project:
+        return []
+    if health is None:
+        try:
+            health = product_health.sentry_health(org, project)
+        except Exception:
+            return []
+    issues = (health or {}).get("issues") or []
+    if not issues:
+        return []
+    top = max((int(i.get("events", 0) or 0) for i in issues), default=0)
+    titles = ", ".join(f"{(i.get('title') or '')[:60]} ({i.get('events', 0)})"
+                       for i in issues[:3])
+    return [{
+        "source": "sentry-health",
+        "kind": "errors",
+        "ts": _now_iso(),
+        "urgency_tier": "ping-now" if top >= _INCIDENT_EVENTS else "batch",
+        "payload": {"summary": f"Sentry — {project}: {len(issues)} unresolved error(s) in 24h — {titles}"},
+        "context": {
+            "why": "unresolved product errors (Sentry)",
+            "project": project,
+            "count": len(issues),
+            "top_events": top,
+        },
+    }]
+
+
 def gather_items(*, hours: int = 72, limit: int = 6) -> list[dict]:
     """All synthesis items from every real source.
 
-    Sources today: awaiting-reply 1:1 threads + time-pressing commitments Nate
-    owes (overdue / due-today) + Vercel deploy-health alerts (failed/broken builds
-    on monitored apps; quiet when healthy). Each appends provenance-bearing items;
-    the composer weaves them into ONE message. Extend here as more sources are
-    rewired in — Sentry error-rate + PostHog signals (pending their own adapters)
-    and calendar (pending a live feed; the legacy Google Calendar is unconnected).
+    Sources today: awaiting-reply 1:1 threads + time-pressing commitments Nate owes
+    (overdue / due-today) + Vercel deploy-health (failed/broken builds) + Sentry
+    error-health (unresolved prod errors). Each is best-effort + quiet when healthy;
+    the composer weaves them into ONE message. PostHog is intentionally NOT wired as
+    an alert source — the configured analytics project carries only pageview traffic,
+    no error signal (see the cos source registry). Calendar stays out (no live feed).
     """
     items = awaiting_reply_items(hours=hours, limit=limit)
     items += commitment_items(limit=limit)
     items += deploy_health_items()
+    items += sentry_health_items()
     return items
 
 

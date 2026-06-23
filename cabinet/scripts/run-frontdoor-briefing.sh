@@ -37,6 +37,14 @@ SP_ENV="${HOME:-/Users/nate}/.screenpipe/pipes/_shared/.env"
 [ -f "$SP_ENV" ] && export VERCEL_API_KEY="$(grep '^VERCEL_API_KEY=' "$SP_ENV" | cut -d= -f2-)"
 export CABINET_DEPLOY_HEALTH_APPS="${CABINET_DEPLOY_HEALTH_APPS:-v0-politiske-annoncer}"
 
+# Sentry error-health source: a read-scoped token from the cabinet's OWN store
+# (cabinet/.env, read here like the bot token) + the instance's org/project (kept
+# out of the framework module, same as the Vercel app list). Optional — unset →
+# sentry-health stays silent.
+export SENTRY_AUTH_TOKEN="$(grep '^SENTRY_AUTH_TOKEN=' "$ENV_FILE" | cut -d= -f2-)"
+export CABINET_SENTRY_ORG="${CABINET_SENTRY_ORG:-step-network}"
+export CABINET_SENTRY_PROJECT="${CABINET_SENTRY_PROJECT:-sentry-step-polads}"
+
 # launchd hands us a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin) that EXCLUDES
 # Homebrew. The intake module's stdlib backend shells out to `redis-cli`, which
 # lives in /opt/homebrew/bin — without this the briefing crashes at enqueue with
