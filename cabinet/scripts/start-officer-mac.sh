@@ -150,8 +150,18 @@ if [ "$HAS_TELEGRAM" = "true" ]; then
   fi
   if [ -n "$BOT_TOKEN" ]; then
     export TELEGRAM_BOT_TOKEN="$BOT_TOKEN"
-    TELEGRAM_FLAG="--channels plugin:telegram@claude-plugins-official"
-    echo "start-officer-mac.sh: $OFFICER telegram token resolved from \$$RESOLVED_VAR" >&2
+    # Receive path: if an inbound-watchdog LaunchAgent exists for this officer, that
+    # poller OWNS getUpdates — do NOT also load --channels, or two pollers on one bot
+    # token fight (Telegram 409 Conflict → nothing consumes; observed 2026-06-23). The
+    # officer still SENDS via framework.frontdoor.channel.send (token exported above).
+    # The Channels plugin's idle-delivery is unreliable; the watchdog is the fix.
+    if [ -f "$REPO_ROOT/cabinet/launchd/com.cabinet.officer.$OFFICER-inbound.plist" ]; then
+      TELEGRAM_FLAG=""
+      echo "start-officer-mac.sh: $OFFICER receive via inbound watchdog — not loading --channels (token resolved from \$$RESOLVED_VAR for sends)" >&2
+    else
+      TELEGRAM_FLAG="--channels plugin:telegram@claude-plugins-official"
+      echo "start-officer-mac.sh: $OFFICER telegram token resolved from \$$RESOLVED_VAR" >&2
+    fi
   else
     cat >&2 <<TOKERR
 [ERROR] start-officer-mac.sh: officer '$OFFICER' has the telegram_bot capability
