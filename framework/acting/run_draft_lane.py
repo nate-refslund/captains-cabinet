@@ -15,6 +15,7 @@ import os
 import sys
 import json
 import datetime
+import subprocess
 import urllib.request
 import urllib.parse
 
@@ -37,6 +38,31 @@ def _tg(text: str) -> dict:
     return json.load(urllib.request.urlopen(req, timeout=20))
 
 
+def _store_draft(pid: str, thread: dict, draft: str) -> None:
+    """Persist the EXACT presented draft, keyed by proposal id, so the Chair can
+    send it VERBATIM via the brain's queue_draft on Nate's 'send' reply.
+    loop.propose is leak-safe and stores no content, so without this the Chair
+    would have to re-draft (non-deterministic) — this guarantees Nate gets the
+    draft he approved. Redis key cabinet:draft:<pid>, TTL 7d. Best-effort."""
+    last = thread.get("last", {})
+    channel = "teams" if last.get("source") == "teams" else "email"
+    rec = {
+        "person": thread.get("person"),
+        "slug": thread.get("slug"),
+        "channel": channel,
+        "draft": draft,
+        "why": f"draft reply to {thread.get('person')}'s {channel} message (cabinet draft lane)",
+    }
+    host = os.environ.get("REDIS_HOST", "localhost")
+    try:
+        subprocess.run(
+            ["redis-cli", "-h", host, "SET", f"cabinet:draft:{pid}",
+             json.dumps(rec), "EX", "604800"],
+            check=False, capture_output=True, timeout=10)
+    except Exception:
+        pass
+
+
 def _present(thread: dict, draft: str, prop: dict) -> None:
     last = thread.get("last", {})
     chan = "Teams" if last.get("source") == "teams" else "email"
@@ -49,6 +75,7 @@ def _present(thread: dict, draft: str, prop: dict) -> None:
         f"Reply:  send  /  edit: <your version>  /  skip: <why>\n"
         f"·{pid}·"
     )
+    _store_draft(pid, thread, draft)
 
 
 def main() -> None:
