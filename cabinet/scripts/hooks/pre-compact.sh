@@ -31,25 +31,45 @@ while read -r key; do
 done < <(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" KEYS "cabinet:schedule:last-run:$OFFICER:*" 2>/dev/null)
 
 # ============================================================
-# 2. Write local state file using jq (always valid JSON)
+# 2. Capture a narrative excerpt — the officer's OWN curated working
+#    memory — so post-compact can re-surface it into context. Claude
+#    Code's native compaction summary is best-effort; this is a
+#    deterministic floor under it (the working notes + .remember buffer
+#    this officer maintains). All values reach jq via --arg (string),
+#    never the filter body, so filenames/content cannot inject.
+# ============================================================
+NOTES_FILE="$STATE_DIR/working-notes.md"
+NARRATIVE=""
+[ -f "$NOTES_FILE" ] && NARRATIVE="$(tail -c 1500 "$NOTES_FILE")"
+REMEMBER_NOW="$CABINET_ROOT/.remember/now.md"
+if [ -f "$REMEMBER_NOW" ]; then
+  NARRATIVE="$NARRATIVE
+
+--- .remember/now.md (live buffer) ---
+$(tail -c 1000 "$REMEMBER_NOW")"
+fi
+
+# ============================================================
+# 3. Write local state file using jq (always valid JSON)
 # ============================================================
 jq -n \
   --arg officer "$OFFICER" \
   --arg captured_at "$TIMESTAMP" \
+  --arg narrative "$NARRATIVE" \
   --argjson tool_calls "${TOOL_CALLS:-0}" \
   --argjson pending_triggers "${TRIGGER_COUNT:-0}" \
   --argjson schedules "$SCHEDULE_JSON" \
-  '{officer: $officer, captured_at: $captured_at, tool_calls: $tool_calls, pending_triggers: $pending_triggers, schedules: $schedules}' \
+  '{officer: $officer, captured_at: $captured_at, tool_calls: $tool_calls, pending_triggers: $pending_triggers, schedules: $schedules, narrative_excerpt: $narrative}' \
   > "$STATE_FILE"
 
 # ============================================================
-# 3. Store to PostgreSQL for cross-session persistence (best-effort)
+# 4. Store to PostgreSQL for cross-session persistence (best-effort)
 # ============================================================
 # Source env if NEON_CONNECTION_STRING not already set
 [ -z "$NEON_CONNECTION_STRING" ] && source "$CABINET_ROOT/cabinet/.env" 2>/dev/null
 
 if [ -n "$NEON_CONNECTION_STRING" ]; then
-  NOTES_FILE="$CABINET_ROOT/instance/memory/tier2/$OFFICER/working-notes.md"
+  # NOTES_FILE already set above (section 2); same path, reused here.
   WORKING_NOTES=""
   [ -f "$NOTES_FILE" ] && WORKING_NOTES=$(tail -c 3000 "$NOTES_FILE")
 

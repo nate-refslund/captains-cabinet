@@ -15,7 +15,10 @@ Your context was just compressed. Behavioral rules loaded earlier in this sessio
 ALL OFFICERS — read these immediately:
 1. memory/skills/evolved/telegram-communication.md — reactions (react to EVERY Captain message before replying), threading (always use reply_to), formatting rules, SEND FILES when referencing paths (Captain cannot access the server filesystem — attach files with reply(files=[...]))
 2. memory/skills/evolved/individual-reflection.md — 6h cadence + value maximization step
-3. shared/interfaces/captain-decisions.md — Captain Decision Trail (check before any design/UI work)
+3. The three Captain ledgers — re-read ALL THREE (SessionStart loads them at boot but does not necessarily re-fire on every compaction, so this is your post-compaction refresh):
+   - shared/interfaces/captain-patterns.md (ratified standing behaviors — 4th loop)
+   - shared/interfaces/captain-intents.md (inferred latent intents — 5th loop)
+   - shared/interfaces/captain-decisions.md (decision trail — check before any design/UI work)
 4. Your role definition in .claude/agents/${OFFICER}.md — re-read your full role
 5. instance/memory/tier2/${OFFICER}/corrections.md — Captain corrections (mistakes to never repeat)
 
@@ -60,6 +63,20 @@ if [ -f "$STATE_FILE" ] && PARSED=$(jq '.' "$STATE_FILE" 2>/dev/null); then
     echo "- Schedule last-run timestamps:"
     echo "$SCHED"
   fi
+
+  # Re-surface the narrative excerpt captured at PreCompact — the officer's
+  # own working notes + .remember buffer. This is a deterministic floor under
+  # Claude Code's native compaction summary: even if the summary drops the
+  # in-flight thread, these curated notes carry it back into context.
+  NARR=$(echo "$PARSED" | jq -r '.narrative_excerpt // ""')
+  if [ -n "$NARR" ] && [ "$NARR" != "null" ]; then
+    echo ""
+    echo "WORKING-MEMORY EXCERPT (your own notes at compaction — verify against current reality before acting):"
+    echo "----------------------------------------"
+    echo "$NARR"
+    echo "----------------------------------------"
+  fi
+
   echo ""
   echo "Read your working notes for full context: instance/memory/tier2/${OFFICER}/working-notes.md"
   echo ""
