@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Cabinet dashboard (office wall-display + /tasks + /library control panel) on :3100.
+     Source of truth; installed + loaded with:
+       cp cabinet/launchd/com.cabinet.dashboard.plist ~/Library/LaunchAgents/
+       launchctl load -w ~/Library/LaunchAgents/com.cabinet.dashboard.plist
+     Reverse: launchctl unload ~/Library/LaunchAgents/com.cabinet.dashboard.plist
+     KeepAlive keeps it up across crashes/reboots. start-dashboard.sh reads
+     cabinet/.env (NEON_CONNECTION_STRING -> local cabinet DB, DASHBOARD_PASSWORD).
+     No secrets in this plist. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.cabinet.dashboard</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/nate/captains-cabinet/cabinet/scripts/start-dashboard.sh</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/nate/.cabinet/logs/dashboard.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/nate/.cabinet/logs/dashboard.log</string>
+</dict>
+</plist>

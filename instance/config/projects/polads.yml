@@ -85,6 +85,18 @@ neon:
   project: politiske-annoncer      # Neon project id restless-king-62586913
 
 # =============================================================
+# Vercel — PolAds hosting (cabinet investigated 2026-06-22)
+# =============================================================
+vercel:
+  project: v0-politiske-annoncer   # Vercel app (xtest.polads.eu staging, polads.eu prod)
+
+# =============================================================
+# Monday — product pulse 2723505568 (on the SHARED task board 5091839409;
+# each task → epic → product). Routing is via the dev-tasks plugin in the
+# repo, NOT a cabinet adapter (see Tasks note below).
+# =============================================================
+
+# =============================================================
 # Tasks — DELIBERATELY ABSENT. No tasks: block / task-sync adapter for
 # this project: the dev-tasks plugin (Monday.com) is the sanctioned task
 # route per the clone-convergence plan (R2: "leave task-sync disabled").
