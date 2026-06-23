@@ -22,6 +22,10 @@ def _now_iso() -> str:
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
+def _today() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+
+
 # Cheap, no-LLM noise markers — obvious automated / service-desk / notification
 # mail that never warrants a reply. This is a coarse pre-filter so the first
 # unified message isn't polluted by bot mail; the ACCURATE filter is the
@@ -85,13 +89,74 @@ def awaiting_reply_items(*, hours: int = 72, limit: int = 6) -> list[dict]:
     return items
 
 
-def gather_items(*, hours: int = 72, limit: int = 6) -> list[dict]:
-    """All synthesis items from every real source (currently: awaiting replies).
+def commitment_items(*, commitments: list | None = None, today: str | None = None,
+                     limit: int = 5) -> list[dict]:
+    """Time-pressing commitments Nate OWES → intake items (batch tier).
 
-    Extend here as more sources are rewired in (commitments, deploy health,
-    calendar) — each appends provenance-bearing items; the composer weaves them.
+    Surfaces only DATED, open, owed-by-Nate commitments whose due date is today
+    or past (overdue + due-today) — the briefing is a time-pressing nudge
+    surface; undated promises live in the ledger and don't need a daily ping.
+    Most-overdue first (due asc), capped at ``limit``. Each item carries
+    provenance (person + commitment_id). Best-effort: any gather failure → [].
+
+    ``commitments`` / ``today`` are injectable for tests (no brain, no clock).
     """
-    return awaiting_reply_items(hours=hours, limit=limit)
+    if commitments is None:
+        try:
+            commitments = sa.open_commitments(direction="owed_by_nate") or []
+        except Exception:
+            commitments = []
+    today = today or _today()
+
+    dated = [
+        c for c in commitments
+        if isinstance(c, dict)
+        and (c.get("due") or "").strip()
+        and (c.get("due") or "").strip() <= today
+    ]
+    # ISO date string sorts chronologically — most overdue first.
+    dated.sort(key=lambda c: (c.get("due") or "").strip())
+
+    items: list[dict] = []
+    for c in dated:
+        if len(items) >= limit:
+            break
+        text = (c.get("text") or "").strip().replace("\n", " ")
+        if not text:
+            continue
+        due = (c.get("due") or "").strip()
+        person = c.get("person") or "someone"
+        snippet = (text[:140] + "…") if len(text) > 140 else text
+        when = "overdue" if due < today else "due today"
+        items.append({
+            "source": "commitment",
+            "kind": "owed-by-you",
+            "ts": _now_iso(),
+            "urgency_tier": "batch",
+            "payload": {"summary": f"You owe {person}: {snippet} — {when} (was due {due})"},
+            "context": {
+                "why": "open commitment, no fulfillment detected yet",
+                "person": person,
+                "slug": c.get("slug"),
+                "commitment_id": c.get("commitment_id"),
+                "due": due,
+            },
+        })
+    return items
+
+
+def gather_items(*, hours: int = 72, limit: int = 6) -> list[dict]:
+    """All synthesis items from every real source.
+
+    Sources today: awaiting-reply 1:1 threads + time-pressing commitments Nate
+    owes (overdue / due-today). Each appends provenance-bearing items; the
+    composer weaves them into ONE message. Extend here as more sources are
+    rewired in — deploy health (pending an instance Vercel app-list) and
+    calendar (pending a live feed; the legacy Google Calendar is unconnected).
+    """
+    items = awaiting_reply_items(hours=hours, limit=limit)
+    items += commitment_items(limit=limit)
+    return items
 
 
 def enqueue_synthesis(*, hours: int = 72, limit: int = 6) -> dict:

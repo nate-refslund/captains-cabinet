@@ -49,3 +49,68 @@ def test_limit_respected(monkeypatch):
         for i in range(10)
     ])
     assert len(ms.awaiting_reply_items(limit=3)) == 3
+
+
+def _cmt(person, text, due, **kw):
+    d = {"person": person, "text": text, "due": due, "status": "open",
+         "direction": "owed_by_nate", "slug": person.split()[0].lower(),
+         "commitment_id": f"cmt-{person[:4].lower()}"}
+    d.update(kw)
+    return d
+
+
+def test_commitment_items_surfaces_overdue_and_today():
+    items = ms.commitment_items(
+        today="2026-06-23",
+        commitments=[
+            _cmt("Lisa Stentoft", "create tasks from Anna feedback", "2026-06-22"),
+            _cmt("Kristoffer", "feedback on publisher comms email", "2026-06-20"),
+            _cmt("Maria", "send the deck", "2026-06-23"),
+        ],
+    )
+    # overdue/today only, most-overdue first
+    assert [i["context"]["person"] for i in items] == ["Kristoffer", "Lisa Stentoft", "Maria"]
+    it = items[0]
+    assert it["source"] == "commitment"
+    assert it["kind"] == "owed-by-you"
+    assert it["urgency_tier"] == "batch"
+    assert it["payload"]["summary"].startswith("You owe Kristoffer:")
+    assert "overdue" in it["payload"]["summary"]
+    assert it["context"]["commitment_id"] == "cmt-kris"
+    assert items[2]["payload"]["summary"].endswith("due today (was due 2026-06-23)")
+
+
+def test_commitment_items_skips_undated_and_future():
+    items = ms.commitment_items(
+        today="2026-06-23",
+        commitments=[
+            _cmt("A", "no due date", ""),                 # undated → skip
+            _cmt("B", "future promise", "2026-07-10"),    # future → skip
+            _cmt("C", "overdue thing", "2026-06-01"),     # overdue → keep
+        ],
+    )
+    assert [i["context"]["person"] for i in items] == ["C"]
+
+
+def test_commitment_items_respects_limit():
+    # Direction filtering is the ADAPTER's job (sa.open_commitments); commitment_items
+    # shapes whatever it is handed. This pins only the cap.
+    cs = [_cmt(f"P{i}", "owed thing", "2026-06-10") for i in range(8)]
+    items = ms.commitment_items(today="2026-06-23", commitments=cs, limit=3)
+    assert len(items) == 3
+
+
+def test_commitment_items_gather_failure_is_empty(monkeypatch):
+    def boom(direction="owed_by_nate"):
+        raise RuntimeError("ledger down")
+    monkeypatch.setattr(ms.sa, "open_commitments", boom)
+    assert ms.commitment_items() == []
+
+
+def test_gather_items_includes_both_sources(monkeypatch):
+    monkeypatch.setattr(ms.sa, "find_threads",
+                        lambda hours=72: [_thread("lisa", "Lisa Stentoft", "a real question")])
+    monkeypatch.setattr(ms.sa, "open_commitments",
+                        lambda direction="owed_by_nate": [_cmt("Kris", "x", "2000-01-01")])
+    sources = sorted({it["source"] for it in ms.gather_items()})
+    assert sources == ["awaiting-reply", "commitment"]

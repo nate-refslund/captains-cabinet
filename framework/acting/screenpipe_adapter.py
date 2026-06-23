@@ -23,10 +23,27 @@ def _dl():
     return dl
 
 
+def _cl():
+    import commitments_lib as cl  # lazy — same reason as _dl (screenpipe-only dep)
+    return cl
+
+
 def find_threads(hours: int = 48) -> list:
     """Awaiting-reply threads from the brain (each: slug, person, last, thread,
     audience). The acting lane proposes a draft for each that passes the gate."""
     return _dl().find_awaiting_threads(hours=hours)
+
+
+def open_commitments(direction: str = "owed_by_nate") -> list:
+    """Open commitments from the screenpipe ledger (Obsidian 6-Commitments/ — the
+    source of truth for promises). Returns the raw frontmatter dicts (text,
+    person, slug, due, source, source_date, status, direction) for items still
+    open in the requested direction. The briefing surfaces the time-bound /
+    overdue ones; the caller wraps this for best-effort behavior."""
+    return [c for c in (_cl().load_all() or {}).values()
+            if isinstance(c, dict)
+            and c.get("status", "open") == "open"
+            and c.get("direction") == direction]
 
 
 def gather(thread: dict) -> dict:
