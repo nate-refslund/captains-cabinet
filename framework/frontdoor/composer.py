@@ -79,6 +79,14 @@ def render_item(item: dict[str, Any]) -> str:
     context = item.get("context") or {}
     why = str(context.get("why") or "").strip()
 
+    # Long-form items (a rewired full pipe DM — multi-line or long) render as a
+    # titled SECTION preserving the pipe's own formatting, instead of being crushed
+    # into a one-line bullet. Short items keep the provenance bullet.
+    if "\n" in summary or len(summary) > 220:
+        head = f"▸ {source}" if source else "▸"
+        block = f"{head}\n{summary}"
+        return f"{block}\n_({why})_" if why else block
+
     prefix = f"[{source}] " if source else ""
     line = f"• {prefix}{summary}".rstrip()
     if why:
