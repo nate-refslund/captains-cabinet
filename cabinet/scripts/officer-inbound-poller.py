@@ -44,6 +44,19 @@ import time
 import urllib.parse
 import urllib.request
 
+# Repo root on sys.path so the watchdog can ALSO fire registered triggers — a fired
+# reminder/interval reuses the very same tmux wake path as a Captain DM. Fail-safe by
+# construction: if the firing module can't be imported, `fire_due_triggers` is a no-op
+# and DM receive is completely unaffected.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+try:
+    from framework.triggers.firing import fire_due_triggers
+except Exception:
+    def fire_due_triggers(*_a, **_k):  # firing unavailable → receive path unchanged
+        return 0
+
 
 def log(msg: str) -> None:
     print(f"[inbound-poller] {msg}", flush=True)
@@ -143,6 +156,15 @@ def main() -> int:
                 log(f"skip update_id={uid} from={frm or '?'} (not captain or non-text)")
             offset = max(offset, uid)
             save_offset(offset)
+
+        # Fire any due triggers (reminders / intervals) into the pane, reusing the
+        # wake path. Runs every poll cycle (~25s granularity). Non-blocking (skips
+        # when the pane is busy) and fully wrapped — a trigger error never affects
+        # the DM receive loop above.
+        try:
+            fire_due_triggers(session, pane_busy, log)
+        except Exception as e:
+            log(f"trigger firing (non-fatal): {e}")
 
 
 if __name__ == "__main__":
