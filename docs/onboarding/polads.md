@@ -6,11 +6,11 @@ _Autonomous research + lane scaffold by the Chair. The SAFE artifacts (lane-CEO 
 - **repo:** https://github.com/STEP-Network/v0-politiske-annoncer
 - **stack:** drizzle, neon, nextjs, react, tailwind, vercel
 - **plugins in repo:** dev-tasks
-- **summary:** —
+- **summary:** PolAds (polads.eu) — EU political advertisement transparency platform (EU Regulation 2025/1410). Repo STEP-Network/v0-politiske-annoncer (Vercel app v0-politiske-annoncer, Neon politiske-annoncer). Current class of work: v1.0 production push + UAT closeout on xtest.polads.eu. Declared for the HQ (Ma
 
 ## Lane (answers entry, fed to generate-instance)
 - slug: `polads` · name: PolAds
-- repos: ['https://github.com/STEP-Network/v0-politiske-annoncer'] · boards: ['2723505568']
+- repos: ['https://github.com/STEP-Network/v0-politiske-annoncer'] · boards: ['5091839409']
 - task plugin: `dev-tasks` · lane MCPs: ['neon', 'vercel', 'library', 'telegram', 'brain']
 
 ## Plugin manifest

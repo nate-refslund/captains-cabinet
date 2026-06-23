@@ -33,6 +33,25 @@ def _declared_name(base: Path, slug: str):
     return None
 
 
+def _declared_description(base: Path, slug: str):
+    """Curated product summary from a declared context's ``description:`` block —
+    the canonical summary when a repo's README is thin/empty (e.g. v0 defaults)."""
+    ctx = base / "instance" / "config" / "contexts" / f"{slug}.yml"
+    if not ctx.is_file():
+        return None
+    out, capture = [], False
+    for ln in ctx.read_text(encoding="utf-8").splitlines():
+        if re.match(r"^description:\s*\|", ln):
+            capture = True
+            continue
+        if capture:
+            if re.match(r"^\S", ln):  # next top-level key → end of block
+                break
+            out.append(ln.strip())
+    text = " ".join(x for x in out if x).strip()
+    return text[:300] or None
+
+
 def _default_render(lane: dict, model: str) -> str:
     """Render the lane-CEO role def by reusing the generator's renderer (DRY).
 
@@ -109,6 +128,10 @@ def onboard_lane(repo_path: str, *, slug: str, board_id=None,
     profile = research_fn(repo_path)
     resolved = name or _declared_name(base, slug) or profile.get("name") or slug
     profile = {**profile, "name": resolved}
+    if not profile.get("summary"):
+        desc = _declared_description(base, slug)
+        if desc:
+            profile = {**profile, "summary": desc}
     pl = plan.build_lane_plan(profile, slug=slug, board_id=board_id,
                               model=model, existing=existing)
     report = {

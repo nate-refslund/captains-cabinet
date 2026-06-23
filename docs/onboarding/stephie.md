@@ -10,7 +10,7 @@ _Autonomous research + lane scaffold by the Chair. The SAFE artifacts (lane-CEO 
 
 ## Lane (answers entry, fed to generate-instance)
 - slug: `stephie` · name: STEPhie
-- repos: ['https://github.com/STEP-Network/stephie-mcp'] · boards: ['2730518827']
+- repos: ['https://github.com/STEP-Network/stephie-mcp'] · boards: ['5091839409']
 - task plugin: `dev-tasks` · lane MCPs: ['vercel', 'library', 'telegram', 'brain']
 
 ## Plugin manifest

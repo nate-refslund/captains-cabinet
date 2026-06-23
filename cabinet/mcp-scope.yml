@@ -82,7 +82,7 @@ agents:
   # broadcast only — lane CEOs are Telegram-dark (no bot, no Captain DM;
   # attention routes via the Chair's captain-attention queue).
   polads-ceo:
-    mcps: [neon, vercel, library, telegram, brain]
+    mcps: [neon, vercel, make, library, telegram, brain]
     rationale: >
       Lane CEO — engineering-grade scope for the lane (cto-like set) plus
       brain for gather-then-decide and the queue_draft outbound gate.
@@ -90,7 +90,7 @@ agents:
       ceiling) regardless of scope.
 
   stephie-ceo:
-    mcps: [neon, vercel, library, telegram, brain]
+    mcps: [neon, vercel, make, library, telegram, brain]
     rationale: >
       Lane CEO — engineering-grade scope for the lane (cto-like set) plus
       brain for gather-then-decide and the queue_draft outbound gate.
