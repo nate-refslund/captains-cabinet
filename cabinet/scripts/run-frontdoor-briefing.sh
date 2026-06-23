@@ -28,6 +28,22 @@ export CAPTAIN_TELEGRAM_ID="$(grep '^CAPTAIN_TELEGRAM_ID=' "$ENV_FILE" | cut -d=
 export CABINET_ENV=runtime
 export REDIS_HOST="${REDIS_HOST:-localhost}"
 
+# Run mode: the evening (PM) run additionally builds the comprehensive daily
+# recap (writes today's Monday Reflections item + the vault daily note, folds the
+# recap into this briefing). The morning (AM) run stays signals-only. We key off
+# the local hour: hour >= 17 → PM, else AM. Honor a caller-supplied override so a
+# manual `CABINET_RUN_MODE=PM bash run-frontdoor-briefing.sh` forces the recap.
+if [ -z "${CABINET_RUN_MODE:-}" ]; then
+  HOUR="$(date +%H)"
+  # Strip any leading zero so 09 doesn't trip base-8 arithmetic.
+  if [ "$((10#$HOUR))" -ge 17 ]; then
+    CABINET_RUN_MODE=PM
+  else
+    CABINET_RUN_MODE=AM
+  fi
+fi
+export CABINET_RUN_MODE
+
 # Deploy-health source: a read-only Vercel API key + the monitored app list.
 # The key lives in screenpipe's shared .env (NOT cabinet/.env); read ONLY that
 # one key (never source the whole file). CABINET_DEPLOY_HEALTH_APPS holds the
