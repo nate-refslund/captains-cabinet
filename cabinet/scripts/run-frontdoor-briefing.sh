@@ -28,6 +28,15 @@ export CAPTAIN_TELEGRAM_ID="$(grep '^CAPTAIN_TELEGRAM_ID=' "$ENV_FILE" | cut -d=
 export CABINET_ENV=runtime
 export REDIS_HOST="${REDIS_HOST:-localhost}"
 
+# Deploy-health source: a read-only Vercel API key + the monitored app list.
+# The key lives in screenpipe's shared .env (NOT cabinet/.env); read ONLY that
+# one key (never source the whole file). CABINET_DEPLOY_HEALTH_APPS holds the
+# instance's product app names so the framework module stays product-agnostic.
+# Both optional — unset → deploy-health simply stays silent.
+SP_ENV="${HOME:-/Users/nate}/.screenpipe/pipes/_shared/.env"
+[ -f "$SP_ENV" ] && export VERCEL_API_KEY="$(grep '^VERCEL_API_KEY=' "$SP_ENV" | cut -d= -f2-)"
+export CABINET_DEPLOY_HEALTH_APPS="${CABINET_DEPLOY_HEALTH_APPS:-v0-politiske-annoncer}"
+
 # launchd hands us a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin) that EXCLUDES
 # Homebrew. The intake module's stdlib backend shells out to `redis-cli`, which
 # lives in /opt/homebrew/bin — without this the briefing crashes at enqueue with

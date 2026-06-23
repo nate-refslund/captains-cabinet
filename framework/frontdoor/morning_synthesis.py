@@ -13,6 +13,7 @@ brain/capture hiccup yields fewer items, never a crash.
 from __future__ import annotations
 
 import datetime
+import os
 
 from framework.acting import screenpipe_adapter as sa
 from framework.frontdoor import intake
@@ -145,17 +146,77 @@ def commitment_items(*, commitments: list | None = None, today: str | None = Non
     return items
 
 
+def _deploy_apps() -> list[str]:
+    """Monitored Vercel app names from the instance env (CABINET_DEPLOY_HEALTH_APPS,
+    comma-separated). Empty/unset → no apps → deploy-health stays silent. Keeping
+    the product names in instance env (set by the briefing wrapper) keeps THIS
+    framework module product-agnostic."""
+    raw = os.environ.get("CABINET_DEPLOY_HEALTH_APPS", "")
+    return [a.strip() for a in raw.split(",") if a.strip()]
+
+
+def deploy_health_items(*, apps: list | None = None) -> list[dict]:
+    """Vercel deploy health → intake items, but ONLY when something is wrong.
+
+    For each monitored app: surface an item if its latest deploy is ERROR/CANCELED
+    (ping-now — the live build is broken) or there are recent failed/cancelled
+    deploys (batch). Quiet when healthy — a briefing that says "all green" every
+    night is noise. Apps come from the instance env (``_deploy_apps``); framework
+    stays product-agnostic. Best-effort: a per-app failure skips that app, never
+    crashes the briefing.
+
+    ``apps`` is injectable for tests (no env, no network).
+    """
+    if apps is None:
+        apps = _deploy_apps()
+
+    items: list[dict] = []
+    for app in apps:
+        try:
+            h = sa.deploy_health(app)
+        except Exception:
+            continue
+        failed = h.get("failed") or []
+        latest = h.get("latest_state")
+        latest_bad = latest in ("ERROR", "CANCELED")
+        if not failed and not latest_bad:
+            continue  # healthy → stay silent
+
+        if latest_bad:
+            summary = f"Deploy health — {app}: latest deploy is {latest}"
+            tier = "ping-now"
+        else:
+            summary = f"Deploy health — {app}: {len(failed)} recent failed/cancelled deploy(s)"
+            tier = "batch"
+        items.append({
+            "source": "deploy-health",
+            "kind": "vercel",
+            "ts": _now_iso(),
+            "urgency_tier": tier,
+            "payload": {"summary": summary},
+            "context": {
+                "why": "monitored Vercel app",
+                "app": app,
+                "failed": len(failed),
+                "latest_state": latest,
+            },
+        })
+    return items
+
+
 def gather_items(*, hours: int = 72, limit: int = 6) -> list[dict]:
     """All synthesis items from every real source.
 
     Sources today: awaiting-reply 1:1 threads + time-pressing commitments Nate
-    owes (overdue / due-today). Each appends provenance-bearing items; the
-    composer weaves them into ONE message. Extend here as more sources are
-    rewired in — deploy health (pending an instance Vercel app-list) and
-    calendar (pending a live feed; the legacy Google Calendar is unconnected).
+    owes (overdue / due-today) + Vercel deploy-health alerts (failed/broken builds
+    on monitored apps; quiet when healthy). Each appends provenance-bearing items;
+    the composer weaves them into ONE message. Extend here as more sources are
+    rewired in — Sentry error-rate + PostHog signals (pending their own adapters)
+    and calendar (pending a live feed; the legacy Google Calendar is unconnected).
     """
     items = awaiting_reply_items(hours=hours, limit=limit)
     items += commitment_items(limit=limit)
+    items += deploy_health_items()
     return items
 
 

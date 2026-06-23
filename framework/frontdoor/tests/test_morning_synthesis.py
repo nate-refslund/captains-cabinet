@@ -107,10 +107,56 @@ def test_commitment_items_gather_failure_is_empty(monkeypatch):
     assert ms.commitment_items() == []
 
 
-def test_gather_items_includes_both_sources(monkeypatch):
+def _health(app, failed=0, latest="READY"):
+    return {"app": app, "total": 8, "latest_state": latest,
+            "failed": [{"state": "ERROR"}] * failed}
+
+
+def test_deploy_health_silent_when_healthy(monkeypatch):
+    monkeypatch.setattr(ms.sa, "deploy_health", lambda app, **kw: _health(app, failed=0, latest="READY"))
+    assert ms.deploy_health_items(apps=["v0-x"]) == []
+
+
+def test_deploy_health_surfaces_failures_as_batch(monkeypatch):
+    monkeypatch.setattr(ms.sa, "deploy_health", lambda app, **kw: _health(app, failed=2, latest="READY"))
+    items = ms.deploy_health_items(apps=["v0-x"])
+    assert len(items) == 1
+    it = items[0]
+    assert it["source"] == "deploy-health"
+    assert it["urgency_tier"] == "batch"
+    assert "2 recent failed" in it["payload"]["summary"]
+    assert it["context"]["app"] == "v0-x"
+
+
+def test_deploy_health_latest_broken_is_ping_now(monkeypatch):
+    monkeypatch.setattr(ms.sa, "deploy_health", lambda app, **kw: _health(app, failed=1, latest="ERROR"))
+    items = ms.deploy_health_items(apps=["v0-x"])
+    assert items[0]["urgency_tier"] == "ping-now"
+    assert "latest deploy is ERROR" in items[0]["payload"]["summary"]
+
+
+def test_deploy_health_per_app_failure_skips(monkeypatch):
+    def flaky(app, **kw):
+        if app == "boom":
+            raise RuntimeError("vercel down")
+        return _health(app, failed=1, latest="READY")
+    monkeypatch.setattr(ms.sa, "deploy_health", flaky)
+    items = ms.deploy_health_items(apps=["boom", "ok"])
+    assert [i["context"]["app"] for i in items] == ["ok"]
+
+
+def test_deploy_health_no_apps_is_empty(monkeypatch):
+    monkeypatch.delenv("CABINET_DEPLOY_HEALTH_APPS", raising=False)
+    assert ms.deploy_health_items() == []
+
+
+def test_gather_items_includes_all_sources(monkeypatch):
     monkeypatch.setattr(ms.sa, "find_threads",
                         lambda hours=72: [_thread("lisa", "Lisa Stentoft", "a real question")])
     monkeypatch.setattr(ms.sa, "open_commitments",
                         lambda direction="owed_by_nate": [_cmt("Kris", "x", "2000-01-01")])
+    monkeypatch.setattr(ms.sa, "deploy_health",
+                        lambda app, **kw: _health(app, failed=1, latest="READY"))
+    monkeypatch.setenv("CABINET_DEPLOY_HEALTH_APPS", "v0-x")
     sources = sorted({it["source"] for it in ms.gather_items()})
-    assert sources == ["awaiting-reply", "commitment"]
+    assert sources == ["awaiting-reply", "commitment", "deploy-health"]

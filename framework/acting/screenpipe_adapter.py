@@ -28,6 +28,11 @@ def _cl():
     return cl
 
 
+def _pol():
+    import product_ops_lib as pol  # lazy — screenpipe-only dep (Vercel REST helpers)
+    return pol
+
+
 def find_threads(hours: int = 48) -> list:
     """Awaiting-reply threads from the brain (each: slug, person, last, thread,
     audience). The acting lane proposes a draft for each that passes the gate."""
@@ -44,6 +49,24 @@ def open_commitments(direction: str = "owed_by_nate") -> list:
             if isinstance(c, dict)
             and c.get("status", "open") == "open"
             and c.get("direction") == direction]
+
+
+def deploy_health(app: str, limit: int = 8) -> dict:
+    """Recent Vercel deploy health for one app (read-only, via product_ops_lib's
+    REST helper). Returns {app, total, latest_state, failed:[{state,created,creator}]}.
+    The caller surfaces a briefing item ONLY when something is wrong (quiet when
+    healthy). A missing VERCEL_API_KEY → product_ops_lib returns [] → empty health;
+    the caller wraps this for best-effort behavior."""
+    deps = _pol().vercel_deployments(app, limit=limit) or []
+    failed = [{"state": d.get("state"), "created": d.get("created"),
+               "creator": d.get("creator")}
+              for d in deps if d.get("state") in ("ERROR", "CANCELED")]
+    return {
+        "app": app,
+        "total": len(deps),
+        "latest_state": (deps[0].get("state") if deps else None),
+        "failed": failed,
+    }
 
 
 def gather(thread: dict) -> dict:
