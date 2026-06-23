@@ -264,6 +264,20 @@ redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" \
 # Kill any existing session for this officer (idempotent restart)
 tmux kill-session -t "$SESSION_NAME" 2>/dev/null || true
 
+# Reap orphaned Telegram channel-plugin pollers. The kill-session above kills the
+# pane's process tree, but the --channels telegram plugin DETACHES (reparents to
+# PID 1) and survives, keeping its getUpdates long-poll alive. Telegram allows only
+# ONE getUpdates poll per bot token — a second (orphaned) poller returns 409 Conflict
+# and NOTHING consumes, so the officer silently stops receiving DMs (observed
+# 2026-06-23 after repeated relaunches). This Cabinet is single-Telegram-voice (only
+# the Chair has a bot), so any stray telegram plugin is an orphan to replace.
+# (Revisit if a deployment ever runs >1 telegram-capable officer — needs per-token scoping.)
+if [ "$HAS_TELEGRAM" = "true" ]; then
+  pkill -f 'plugins/cache/claude-plugins-official/telegram' 2>/dev/null \
+    && echo "start-officer-mac.sh: reaped orphaned telegram channel-plugin poller(s)" >&2 || true
+  sleep 1   # let the token's getUpdates lock release before the new plugin claims it
+fi
+
 # Start fresh detached session
 tmux new-session -d -s "$SESSION_NAME" -x 220 -y 50
 
