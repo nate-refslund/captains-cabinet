@@ -85,6 +85,53 @@ def present_draft(person: str, channel_name: str, draft: str,
     return pid
 
 
+def _strip_subject(s: str) -> str:
+    """Normalize a subject for thread-matching (drop SV:/Re:/VS:/Fwd: prefixes)."""
+    import re
+    return re.sub(r'^((sv|re|vs|fw|fwd|ang)\s*:\s*)+', '', (s or '').strip(),
+                  flags=re.I).strip().lower()
+
+
+def _resolve_thread_gid(addr: str, subject: str):
+    """Find the most recent inbox message FROM addr matching this subject so the
+    reply threads into it (Captain 2026-06-24: "that's how the final email should
+    work"). Returns (graph_id, conversationId), or (None, None) when there is no
+    thread to reply into — then deliver_draft sends a fresh email. Best-effort:
+    any Graph hiccup degrades to a fresh send."""
+    try:
+        import email_lib as _el
+    except Exception:
+        return None, None
+    want = _strip_subject(subject)
+    if not want or not addr:
+        return None, None
+    r = _el.msgraph_call(url="/v1.0/me/mailFolders/inbox/messages", top=120,
+                         select="id,conversationId,subject,from,receivedDateTime",
+                         orderby="receivedDateTime desc")
+    for m in (r.get("value") if isinstance(r, dict) else None) or []:
+        f = ((m.get("from") or {}).get("emailAddress", {}) or {})
+        if str(f.get("address", "")).lower() != (addr or "").lower():
+            continue
+        cs = _strip_subject(m.get("subject"))
+        if cs and (cs == want or want in cs or cs in want):
+            return m.get("id"), m.get("conversationId")
+    return None, None
+
+
+def _verify_sent(conv: str):
+    """Confirm a /reply landed in Sent Items under the original conversation."""
+    try:
+        import email_lib as _el
+    except Exception:
+        return None
+    s = _el.msgraph_call(url="/v1.0/me/mailFolders/sentitems/messages", top=5,
+                         select="conversationId,sentDateTime", orderby="sentDateTime desc")
+    for m in (s.get("value") if isinstance(s, dict) else None) or []:
+        if m.get("conversationId") == conv:
+            return {"ok": True, "sent": True, "threaded": True}
+    return None
+
+
 def deliver_draft(pid: str, override_text: str = "", dry_run: bool = False) -> dict:
     """Send the stored draft via the screenpipe send libs. Post-approval egress —
     call ONLY after Nate approved in the Chair chat. Clears the draft on success.
@@ -114,10 +161,17 @@ def deliver_draft(pid: str, override_text: str = "", dry_run: bool = False) -> d
             import email_lib as _el
             if not addr:
                 return {"ok": False, "error": f"no email for {p.get('person')}"}
+            gid, conv = _resolve_thread_gid(addr, subject)
             if dry_run:
                 return {"ok": True, "dry_run": True, "via": "email", "dest": addr,
-                        "subject": subject}
-            res = _el.send_email(addr, subject, text)
+                        "subject": subject, "threaded": bool(gid)}
+            if gid:
+                # true threaded reply into the recipient's existing thread
+                _el.msgraph_call(url="/v1.0/me/messages/" + gid + "/reply",
+                                 method="POST", body={"comment": text})
+                res = _verify_sent(conv) or {"ok": True, "sent": True, "threaded": True}
+            else:
+                res = _el.send_email(addr, subject, text)  # no thread -> fresh email
     except Exception as e:
         return {"ok": False, "error": str(e)[:200]}
     if isinstance(res, dict) and res.get("ok"):
