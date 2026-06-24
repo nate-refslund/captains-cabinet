@@ -95,7 +95,7 @@ roster:
     # scope are keyed on it (see presets/portfolio/agents/cos.md header).
   polads-ceo:
     title: PolAds CEO
-    type: consultant               # on-demand; spawned per trigger/mission, idle-stop
+    type: fulltime                 # always-on 24/7, Opus 4.8 1M (Captain decision 2026-06-24)
     model: claude-fable-5
     capabilities: [deploys_code, logs_captain_decisions]
     authority_level: mission_executor
@@ -103,7 +103,7 @@ roster:
     # captain-attention queue + warroom broadcast.
   stephie-ceo:
     title: STEPhie & Website CEO   # lane stephie-stepnetwork (two repos, one lane)
-    type: consultant
+    type: fulltime
     model: claude-fable-5
     capabilities: [deploys_code, logs_captain_decisions]
     authority_level: mission_executor
