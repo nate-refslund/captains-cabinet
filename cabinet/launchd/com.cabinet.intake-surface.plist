@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Drains cabinet:frontdoor:intake every 5min and surfaces ping-now pipe items to
+     Nate (channel.send), leaving batch for the briefing. Captain 2026-06-24:
+     "make sure all pipes reach you every time." RunAtLoad false so the backlog is
+     handled deliberately first. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.cabinet.intake-surface</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd /Users/nate/captains-cabinet &amp;&amp; set -a &amp;&amp; source cabinet/.env 2>/dev/null &amp;&amp; set +a &amp;&amp; CABINET_ENV=runtime REDIS_HOST=localhost /opt/homebrew/bin/python3.12 -m framework.frontdoor.surface</string>
+  </array>
+  <key>StartInterval</key><integer>300</integer>
+  <key>RunAtLoad</key><false/>
+  <key>StandardOutPath</key><string>/Users/nate/Library/Logs/cabinet/intake-surface.out.log</string>
+  <key>StandardErrorPath</key><string>/Users/nate/Library/Logs/cabinet/intake-surface.err.log</string>
+  <key>EnvironmentVariables</key><dict><key>PATH</key><string>/opt/homebrew/bin:/usr/bin:/bin</string></dict>
+</dict>
+</plist>
