@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Comms Officer as a durable always-on LaunchAgent (Captain activated 2026-06-24:
+     "apply it"). Telegram-dark domain officer: owns Nate's Outlook + Teams comms
+     end-to-end (triage/tier/act, file Receipts+Important, newsletter digest, draft via
+     queue_draft gather-then-decide). Surfaces to the Chair via the intake stream /
+     notify-officer — it NEVER DMs Nate (start-officer-mac.sh gives a bot token only to
+     telegram_bot=true officers). Opus 4.8 1M, max effort.
+     Install + load:
+       cp cabinet/launchd/com.cabinet.officer.comms-officer.plist ~/Library/LaunchAgents/
+       launchctl load -w ~/Library/LaunchAgents/com.cabinet.officer.comms-officer.plist
+     Reverse: launchctl unload ~/Library/LaunchAgents/com.cabinet.officer.comms-officer.plist
+     KeepAlive cycles it across crashes/reboots; start-officer-mac.sh babysits the tmux pane. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.cabinet.officer.comms-officer</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/nate/captains-cabinet/cabinet/scripts/start-officer-mac.sh</string>
+    <string>comms-officer</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>CABINET_ENV</key>
+    <string>runtime</string>
+    <key>REDIS_HOST</key>
+    <string>localhost</string>
+    <key>CABINET_MODEL</key>
+    <string>claude-opus-4-8[1m]</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <key>StandardOutPath</key>
+  <string>/Users/nate/Library/Logs/cabinet/officer-comms-officer.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/nate/Library/Logs/cabinet/officer-comms-officer.err.log</string>
+</dict>
+</plist>

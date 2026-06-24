@@ -116,6 +116,34 @@ communication:
 #   cpo: { type: fulltime }
 #   coo: { type: fulltime }
 #   cro: { type: consultant, schedule: "0 */4 * * *" }
+#
+# -------------------------------------------------------------------------
+# Comms Officer registration — PREPARED 2026-06-24, NOT YET ACTIVE.
+# -------------------------------------------------------------------------
+# Domain officer (portfolio/hq deployment): owns Nate's Outlook + Teams comms
+# end-to-end. Telegram-DARK (no bot, no Captain DM — surfaces ONLY through the
+# Chair via cabinet:frontdoor:intake + the captain-attention queue). Model
+# claude-opus-4-8[1m] (fleet default; comes from CABINET_MODEL /
+# start-officer-mac.sh + the role-def frontmatter, NOT parsed from here).
+#
+# DO NOT UNCOMMENT until the ACTIVATION CHECKLIST is met
+# (shared/interfaces/comms-officer-activation-2026-06-24.md): comms-officer
+# hired in cabinet/mcp-scope.yml (PROPOSED make+brain+telegram scope, germline
+# — Captain applies) + its rows in cabinet/officer-capabilities.conf + the
+# Make folder-WRITE scenario edit landed + the gather fix landed.
+#
+# NOTE on the spawn parser (cabinet/scripts/cabinet-spawn.sh): introducing a
+# LIVE `officers:` block REPLACES the fallback roster (cos cto cpo coo cro).
+# This portfolio deployment currently runs cos (Chair) + polads-ceo +
+# stephie-ceo. If/when you activate this block, list the FULL live roster too
+# so spawn doesn't drop the Chair or a lane CEO. The `type: fulltime` and the
+# officer key MUST be on the SAME line (inline-YAML), key may contain hyphens.
+#
+officers:
+  cos: { type: fulltime }              # Chair (Lead — the only Telegram voice)
+  polads-ceo: { type: fulltime }       # lane CEO (Telegram-dark)
+  stephie-ceo: { type: fulltime }      # lane CEO (Telegram-dark)
+  comms-officer: { type: fulltime }    # Telegram-dark domain officer; model claude-opus-4-8[1m] (activated 2026-06-24)
 
 # =============================================================
 # Organizational Health — officer governance and auditing
