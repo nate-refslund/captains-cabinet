@@ -16,6 +16,14 @@
 #   vercel.sh logdrains                      Configured log-drains (status,
 #                                            destination URL, sources, envs) —
 #                                            diagnose the failing PolAds drain.
+#   vercel.sh promote <project> <deployment-id>
+#                                            Promote a READY deployment to
+#                                            production (flips every prod alias,
+#                                            e.g. polads.eu, to it), then polls
+#                                            until the alias flip completes.
+#                                            Idempotent: re-promoting the current
+#                                            prod deployment is reported as a
+#                                            no-op, not an error.
 #   vercel.sh --help
 #
 # Options / env:
@@ -29,6 +37,7 @@
 #   vercel.sh deployments v0-politiske-annoncer
 #   vercel.sh deployments v0-politiske-annoncer 5
 #   vercel.sh deployment dpl_9Wuk7JFEMTP6EmyyTtvufwuc4EcS
+#   vercel.sh promote v0-politiske-annoncer dpl_7hw2FBowFPhHRmHTagSWD4WRdetj
 #   vercel.sh logdrains
 
 set -euo pipefail
@@ -41,7 +50,7 @@ API_BASE="https://api.vercel.com"
 # Help
 # ────────────────────────────────────────────────────────────
 usage() {
-  sed -n '2,27p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '2,41p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 # ────────────────────────────────────────────────────────────
@@ -144,6 +153,56 @@ vercel_get() {
   return 1
 }
 
+# ────────────────────────────────────────────────────────────
+# vercel_post <path-with-leading-slash> [json-body] [extra-query-string]
+# Authenticated POST that always carries teamId. Same token-safety contract as
+# vercel_get: the bearer (Authorization header) is never surfaced — on failure
+# we print guidance + the body's error message, neither of which carries it.
+# Captures the HTTP status into the global VERCEL_POST_CODE so the caller can
+# distinguish an idempotent 409 (already-promoted) from a real failure.
+# Echoes the JSON body on 2xx; returns non-zero on any non-2xx.
+# ────────────────────────────────────────────────────────────
+VERCEL_POST_CODE=""
+vercel_post() {
+  local path="$1" data="${2:-{\}}" qs="${3:-}" url body code
+  url="${API_BASE}${path}?teamId=${TEAM}"
+  [ -n "$qs" ] && url="${url}&${qs}"
+
+  body="$(mktemp)"
+  code="$(curl -sS -o "$body" -w '%{http_code}' -X POST \
+    -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json" \
+    -d "$data" \
+    "$url" || echo "000")"
+  VERCEL_POST_CODE="$code"
+
+  case "$code" in
+    2??)
+      cat "$body"
+      rm -f "$body"
+      return 0
+      ;;
+    401|403)
+      echo "ERROR: Vercel returned HTTP $code (token expired or unauthorized) — the token may need refreshing." >&2
+      echo "       Refresh the VERCEL_TOKEN in cabinet/.env (a working token authenticates as the step-network team)." >&2
+      ;;
+    404)
+      echo "ERROR: Vercel returned HTTP 404 (not found): ${path}" >&2
+      echo "       Check the project id, deployment id, or --team id." >&2
+      ;;
+    000)
+      echo "ERROR: could not reach api.vercel.com (network error)." >&2
+      ;;
+    *)
+      echo "ERROR: Vercel returned HTTP $code for POST ${path}" >&2
+      jq -r '.error.message // .message // .error // empty' "$body" 2>/dev/null | head -3 >&2 || true
+      ;;
+  esac
+  rm -f "$body"
+  return 1
+}
+
 # Render an epoch-millis timestamp as a readable UTC string (— if absent/0).
 # Pure jq helper string, reused inside the projections below.
 read -r -d '' TS_FMT <<'JQ' || true
@@ -224,6 +283,96 @@ cmd_deployment() {
 }
 
 # ────────────────────────────────────────────────────────────
+# Subcommand: promote <project> <deployment-id>
+# Flips the production alias(es) (polads.eu et al.) to a READY deployment.
+#
+# Vercel's promote API keys on the project's prj_ id (not the slug), so we
+# resolve it first. We then refuse to promote anything that is not READY — a
+# half-built deployment must never become production. The promote itself is
+# POST /v10/projects/<prj>/promote/<dpl>; a 409 "already the current production
+# deployment" is treated as success (idempotent), not failure. Finally we poll
+# the promote-aliases status until every alias flip reports completed/succeeded.
+# ────────────────────────────────────────────────────────────
+cmd_promote() {
+  local project="${1:?Usage: vercel.sh promote <project> <deployment-id>}"
+  local dep="${2:?Usage: vercel.sh promote <project> <deployment-id>}"
+
+  # 1) Resolve project slug -> prj_ id (the promote endpoint needs the id).
+  local p_enc proj_json proj_id
+  p_enc="$(jq -rn --arg p "$project" '$p|@uri')"
+  proj_json="$(vercel_get "/v9/projects/${p_enc}")" || return 1
+  proj_id="$(printf '%s' "$proj_json" | jq -r '.id // empty')"
+  if [ -z "$proj_id" ]; then
+    echo "ERROR: could not resolve a project id for '${project}'." >&2
+    return 1
+  fi
+
+  # 2) Fetch the target deployment; verify it is READY before promoting.
+  local dep_enc dep_json ready target sha ref msg
+  dep_enc="$(jq -rn --arg i "$dep" '$i|@uri')"
+  dep_json="$(vercel_get "/v13/deployments/${dep_enc}")" || return 1
+  ready="$(printf '%s' "$dep_json" | jq -r '.readyState // .status // "UNKNOWN"')"
+  target="$(printf '%s' "$dep_json" | jq -r '.target // "preview"')"
+  sha="$(printf '%s' "$dep_json" | jq -r '(.meta.githubCommitSha // "—")[0:9]')"
+  ref="$(printf '%s' "$dep_json" | jq -r '.meta.githubCommitRef // .gitSource.ref // "—"')"
+  msg="$(printf '%s' "$dep_json" | jq -r '(.meta.githubCommitMessage // "" | split("\n")[0]) // "—"')"
+
+  echo "Promote target — ${project}:"
+  echo "  deployment: ${dep}"
+  echo "  readyState: ${ready}    current target: ${target}"
+  echo "  branch:     ${ref}    commit: ${sha}"
+  echo "  msg:        ${msg}"
+  echo
+
+  if [ "$ready" != "READY" ]; then
+    echo "ERROR: refusing to promote — deployment is '${ready}', not READY." >&2
+    echo "       Only a fully-built READY deployment may become production." >&2
+    return 1
+  fi
+
+  # 3) Promote. Treat 409 'already current production' as an idempotent success.
+  # We swallow vercel_post's own stderr here: for a 409 it would read like a
+  # failure, but cmd_promote owns the 409→no-op messaging. On a genuine failure
+  # we re-run once WITHOUT suppression so the real error message reaches the CEO.
+  echo "Promoting ${dep} to production on project ${proj_id}…"
+  if vercel_post "/v10/projects/${proj_id}/promote/${dep_enc}" '{}' >/dev/null 2>&1; then
+    echo "  → promote request accepted (HTTP ${VERCEL_POST_CODE}); alias flip in progress."
+  elif [ "$VERCEL_POST_CODE" = "409" ]; then
+    echo "  → already the current production deployment — nothing to flip (idempotent no-op)."
+    echo
+    echo "Production alias already points to ${dep}. Done."
+    return 0
+  else
+    echo "ERROR: promote failed — Vercel returned HTTP ${VERCEL_POST_CODE}:" >&2
+    # Re-issue once with stderr visible so the CEO sees Vercel's exact reason.
+    vercel_post "/v10/projects/${proj_id}/promote/${dep_enc}" '{}' >/dev/null || true
+    return 1
+  fi
+
+  # 4) Poll the alias-flip status until every alias completes (or we time out).
+  echo
+  echo "Waiting for production aliases to flip…"
+  local i status_json pending
+  for i in $(seq 1 20); do
+    sleep 3
+    status_json="$(vercel_get "/v1/projects/${proj_id}/promote/aliases")" || break
+    # Count aliases not yet in a terminal-success state.
+    pending="$(printf '%s' "$status_json" | jq '[.aliases[]? | select((.status // "") as $s | ($s != "completed" and $s != "succeeded"))] | length')"
+    if [ "${pending:-1}" -eq 0 ]; then
+      echo "  → all production aliases flipped:"
+      printf '%s' "$status_json" | jq -r '.aliases[]? | "      \(.status)  \(.alias)"'
+      echo
+      echo "Promotion complete. Production now serves ${dep} (${ref} @ ${sha})."
+      return 0
+    fi
+  done
+
+  echo "  ⚠ alias flip still settling after the poll window — check the dashboard." >&2
+  printf '%s' "${status_json:-}" | jq -r '.aliases[]? | "      \(.status)  \(.alias)"' 2>/dev/null || true
+  return 0
+}
+
+# ────────────────────────────────────────────────────────────
 # Subcommand: logdrains
 # Lists configured log-drains so the CEO can see/diagnose the failing PolAds
 # drain. NEVER prints the drain's secret headers (x-sentry-auth etc.).
@@ -266,6 +415,7 @@ cmd_logdrains() {
 case "$SUBCMD" in
   deployments) shift; cmd_deployments "$@" ;;
   deployment)  shift; cmd_deployment  "$@" ;;
+  promote)     shift; cmd_promote     "$@" ;;
   logdrains)   shift; cmd_logdrains   "$@" ;;
   *)
     echo "ERROR: unknown subcommand '$SUBCMD'." >&2
