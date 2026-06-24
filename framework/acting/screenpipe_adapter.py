@@ -39,6 +39,51 @@ def _pol():
 
 
 # ---------------------------------------------------------------------------
+# Skip-list — Teams groups the draft-lane must NEVER draft replies for (Captain
+# rule 2026-06-24). The list is a plain text file (one group name per line, '#'
+# comments) seeded + appended by Nate OUTSIDE this repo; we load it FRESH every
+# run so appends take effect with no restart. Matching is case-insensitive
+# substring against the thread's group/person display name AND its slug (the
+# vault folder, e.g. "Teams Group LEAD KANALEN" → matches entry "LEAD KANALEN").
+# This is a cabinet-lane policy, so it lives here in find_threads (the single
+# cabinet-side entry point every thread flows through) rather than in the shared
+# screenpipe draft_lib — keeping the rule git-trackable and other pipes
+# unaffected. It runs ALONGSIDE (before) the downstream noise-filter /
+# should_nate_reply gate, which are untouched. Degrade-safe: a missing / empty /
+# all-comment / unreadable file yields no exclusions and NEVER raises.
+# ---------------------------------------------------------------------------
+_SKIP_GROUPS_FILE = os.path.expanduser("~/.screenpipe/state/draft-skip-groups.txt")
+
+
+def _load_skip_groups() -> list:
+    """Read the skip-list file fresh, returning lowercased entries (blank and
+    '#'-comment lines dropped). Any error (missing/unreadable file) → []."""
+    try:
+        with open(_SKIP_GROUPS_FILE, encoding="utf-8") as f:
+            out = []
+            for line in f:
+                s = line.strip()
+                if not s or s.startswith("#"):
+                    continue
+                out.append(s.lower())
+            return out
+    except Exception:
+        return []
+
+
+def is_skipped_group(thread: dict, skip: list | None = None) -> bool:
+    """True when this thread's group/person display name (or slug) matches a
+    skip-list entry as a case-insensitive substring → the lane must NOT draft
+    for it. `skip` is injectable (so the list is loaded once per run); when None
+    it is loaded fresh. Empty skip-list → always False (no exclusions)."""
+    skip = _load_skip_groups() if skip is None else skip
+    if not skip:
+        return False
+    hay = f"{thread.get('person', '')} {thread.get('slug', '')}".lower()
+    return any(entry in hay for entry in skip)
+
+
+# ---------------------------------------------------------------------------
 # Fix 1 — a SKIP (or send/edit) must STICK. The propose loop dedups against
 # OPEN proposals; once Nate decides, the proposal resolves and the thread looks
 # "free" again -> re-presented 2h later. These helpers let the loop also skip a
@@ -282,8 +327,16 @@ def prep(thread: dict, *, max_items: int = 3) -> dict:
 
 def find_threads(hours: int = 48) -> list:
     """Awaiting-reply threads from the brain (each: slug, person, last, thread,
-    audience). The acting lane proposes a draft for each that passes the gate."""
-    return _dl().find_awaiting_threads(hours=hours)
+    audience). The acting lane proposes a draft for each that passes the gate.
+
+    Skip-list excluded here: any thread whose group/person name matches an entry
+    in ~/.screenpipe/state/draft-skip-groups.txt (loaded fresh each call) is
+    dropped before it can reach the gate / drafter — the lane NEVER drafts for
+    those groups. Runs alongside the existing noise-filter + should_nate_reply
+    gate (downstream), which are unchanged."""
+    threads = _dl().find_awaiting_threads(hours=hours)
+    skip = _load_skip_groups()
+    return [t for t in threads if not is_skipped_group(t, skip)]
 
 
 def open_commitments(direction: str = "owed_by_nate") -> list:
