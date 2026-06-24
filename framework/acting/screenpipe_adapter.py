@@ -23,6 +23,44 @@ for _p in (_PIPES, os.path.join(_PIPES, "_shared")):
         sys.path.insert(0, _p)
 
 
+# Token preflight (once, at import): the live audio/OCR tier (_fetch_screen →
+# sp_lib) needs SCREENPIPE_API_AUTH_KEY. Without it that tier silently returns
+# nothing — so log ONCE to stderr that it's disabled, but NEVER raise: the vault
+# + Sent tiers still work, and a missing key must not break drafting.
+if not os.environ.get("SCREENPIPE_API_AUTH_KEY"):
+    print(
+        "[screenpipe_adapter] SCREENPIPE_API_AUTH_KEY unset — live audio/OCR "
+        "context tier disabled (vault + Sent still active).",
+        file=sys.stderr,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Chrome/relevance gate for the live (raw audio / on-screen) context tier.
+# context_lib._fetch_screen returns OCR lines from whatever app was on screen;
+# many are pure UI chrome ("Collapse app bar", menu labels, keystroke hints)
+# rather than substance. We drop those before merging into the brain context so
+# the drafter sees on-topic lines, not app furniture.
+# ---------------------------------------------------------------------------
+_CHROME_SUBSTRINGS = (
+    "collapse app bar", "expand app bar", "view more apps", "show more apps",
+    "app launcher", "navigation rail", "skip to main", "skip to content",
+    "⌘", "ctrl+", "alt+", "shift+", "⌥", "⇧", "⌃",
+)
+
+
+def _is_chrome(text: str) -> bool:
+    """True when an OCR/audio line is pure app-chrome (UI furniture) and should
+    be dropped before merging into context. Drops: known chrome substrings
+    (case-insensitive) and very short lines (< ~40 chars), which on screen are
+    almost always button/menu labels rather than substance. Never raises."""
+    s = (text or "").strip()
+    if len(s) < 40:
+        return True
+    low = s.lower()
+    return any(sub in low for sub in _CHROME_SUBSTRINGS)
+
+
 def _dl():
     import draft_lib as dl  # imported lazily so the cabinet test suite needn't have it
     return dl
@@ -381,9 +419,36 @@ def gather(thread: dict, *, do_prep: bool = True) -> dict:
     dl = _dl()
     slug, person = thread["slug"], thread["person"]
     intel = dl.person_intel(slug)
-    topic = (thread.get("last", {}).get("text", "") or "")[:200]
-    brain = dl.search_brain(f"{person} {topic}", top_k=4)
+    # The thread's latest message text — drives BOTH the search_brain query and
+    # (the fix) the topic= anchor for the live audio/OCR/Sent fetch below.
+    topic = (thread.get("last", {}).get("text", "") or "")[:400]
+    brain = dl.search_brain(f"{person} {topic[:200]}", top_k=4)
     commits = dl.open_commitments_for(slug)
+
+    # THE FIX: search_brain reaches only the vault INDEX. Raw audio / on-screen
+    # OCR / recent Sent live in context_lib.gather — and its screen fetcher keys
+    # on topic terms, not the person's name. Passing topic= makes _fetch_screen
+    # topic-anchored (via extract_topic_terms) so it returns on-topic lines, not
+    # app-chrome that merely co-occurred while the person's name was visible.
+    # Degrade-safe: any screenpipe outage / import failure contributes nothing
+    # and NEVER breaks drafting.
+    try:
+        import context_lib as _ctx
+        live = _ctx.gather(person, sources=["vault", "sent", "screen"],
+                            topic=topic, budget_chars=2500)
+        live_brief = (live or {}).get("brief", "") or ""
+        if live_brief.strip() and live_brief.strip() != "(no context found)":
+            # Drop pure app-chrome OCR lines before merging (keep substance).
+            kept = [ln for ln in live_brief.splitlines()
+                    if ln.strip() and not _is_chrome(ln)]
+            live_brief = "\n".join(kept).strip()
+            if live_brief:
+                heading = ("### live context (raw audio / on-screen / Sent — "
+                           "topic-anchored)")
+                brain = ((brain + "\n\n" if brain else "")
+                         + heading + "\n" + live_brief)
+    except Exception:
+        pass  # live context tier is best-effort; never break the lane
 
     prep_block = {"gathered": [], "check_yourself": [], "enriched": ""}
     if do_prep:
