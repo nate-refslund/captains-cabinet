@@ -92,6 +92,14 @@ def _strip_subject(s: str) -> str:
                   flags=re.I).strip().lower()
 
 
+def _to_html(text: str) -> str:
+    """Plain-text draft -> minimal HTML that PRESERVES line breaks. Both the
+    Graph /reply and the HTML send path render HTML, which collapses raw
+    newlines (the bug that flattened the first Morten reply into one line)."""
+    import html as _h
+    return _h.escape(text or "").replace("\n", "<br>\n")
+
+
 def _resolve_thread_gid(addr: str, subject: str):
     """Find the most recent inbox message FROM addr matching this subject so the
     reply threads into it (Captain 2026-06-24: "that's how the final email should
@@ -165,13 +173,21 @@ def deliver_draft(pid: str, override_text: str = "", dry_run: bool = False) -> d
             if dry_run:
                 return {"ok": True, "dry_run": True, "via": "email", "dest": addr,
                         "subject": subject, "threaded": bool(gid)}
+            html = _to_html(text)
             if gid:
-                # true threaded reply into the recipient's existing thread
-                _el.msgraph_call(url="/v1.0/me/messages/" + gid + "/reply",
-                                 method="POST", body={"comment": text})
-                res = _verify_sent(conv) or {"ok": True, "sent": True, "threaded": True}
+                # Guard: if a reply already exists in this thread, NEVER resend
+                # (the 4x-Morten incident). And retries=0 below: a /reply is not
+                # idempotent, so the proxy must never auto-retry it.
+                if _verify_sent(conv):
+                    res = {"ok": True, "sent": True, "threaded": True, "note": "already-replied"}
+                else:
+                    _el.msgraph_call(
+                        url="/v1.0/me/messages/" + gid + "/reply", method="POST",
+                        body={"message": {"body": {"contentType": "HTML", "content": html}}},
+                        retries=0)
+                    res = _verify_sent(conv) or {"ok": True, "sent": True, "threaded": True}
             else:
-                res = _el.send_email(addr, subject, text)  # no thread -> fresh email
+                res = _el.send_email(addr, subject, html, content_type="HTML")  # no thread -> fresh
     except Exception as e:
         return {"ok": False, "error": str(e)[:200]}
     if isinstance(res, dict) and res.get("ok"):
