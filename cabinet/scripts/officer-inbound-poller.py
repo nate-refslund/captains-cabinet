@@ -85,7 +85,43 @@ def main() -> int:
         offset = 0
 
     api = f"https://api.telegram.org/bot{token}"
+    redis_host = os.environ.get("REDIS_HOST", "localhost")
     log(f"started officer={officer} session={session} captain={captain} offset={offset}")
+
+    def react(message_id: int, emoji: str = "\U0001F440") -> None:
+        """Set an emoji reaction on the Captain's message as a read-ack (👀 default).
+
+        Degrade-safe by construction: ANY failure (network, API error, bad id) is
+        swallowed — a reaction must NEVER block waking the Chair or advancing the
+        offset. The token is read from the enclosing scope and never logged."""
+        try:
+            body = json.dumps({
+                "chat_id": int(captain),
+                "message_id": message_id,
+                "reaction": [{"type": "emoji", "emoji": emoji}],
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                f"{api}/setMessageReaction", data=body,
+                headers={"Content-Type": "application/json"}, method="POST",
+            )
+            urllib.request.urlopen(req, timeout=10).read()  # noqa: S310 (fixed https host)
+        except Exception:
+            pass  # read-ack is best-effort; never let it disrupt receive
+
+    def set_last_captain_msg_id(message_id: int) -> None:
+        """Record the Captain's latest message_id so the Chair can thread its reply.
+
+        channel.send reads cabinet:last-captain-msg-id to attach reply_parameters.
+        Degrade-safe: a redis-cli failure (missing binary, no server) is swallowed —
+        threading is a nicety, not a precondition for delivering the DM."""
+        try:
+            subprocess.run(
+                ["redis-cli", "-h", redis_host, "SET",
+                 "cabinet:last-captain-msg-id", str(message_id)],
+                capture_output=True, timeout=10,
+            )
+        except Exception:
+            pass  # threading id is best-effort; never block receive
 
     def save_offset(o: int) -> None:
         tmp = offset_file + ".tmp"
@@ -164,6 +200,9 @@ def main() -> int:
                 quoted = quoted[:500] + "…"
             if frm == str(captain) and text:
                 log(f"captain msg update_id={uid} ({len(text)} chars{', reply' if quoted else ''}) -> relaying")
+                mid = int(msg.get("message_id", 0))
+                react(mid)                     # 👀 read-ack (degrade-safe)
+                set_last_captain_msg_id(mid)   # id the Chair threads replies onto
                 deliver(text, quoted)
             else:
                 log(f"skip update_id={uid} from={frm or '?'} (not captain or non-text)")

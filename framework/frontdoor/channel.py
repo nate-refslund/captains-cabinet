@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -54,6 +55,30 @@ def _captain_id() -> str:
 
 def _base() -> str:
     return (os.environ.get(_TELEGRAM_BASE_ENV) or _DEFAULT_TELEGRAM_BASE).rstrip("/")
+
+
+# Redis key holding the Captain's most-recent message_id (written by the inbound
+# watchdog on every Captain DM). Reading it lets a reply thread onto that message.
+_LAST_CAPTAIN_MSG_KEY = "cabinet:last-captain-msg-id"
+
+
+def _last_captain_msg_id() -> int | None:
+    """Best-effort: read the Captain's latest message_id from Redis for threading.
+
+    Dependency-light (redis-cli subprocess, same convention as chair_drafts.py)
+    and DEGRADE-SAFE: any failure — no redis-cli binary, no server, empty/non-int
+    value — returns None, and ``send`` then posts a plain (unthreaded) message
+    exactly as before. This never carries a secret and never raises.
+    """
+    host = os.environ.get("REDIS_HOST", "localhost")
+    try:
+        out = subprocess.run(
+            ["redis-cli", "-h", host, "GET", _LAST_CAPTAIN_MSG_KEY],
+            capture_output=True, text=True, timeout=10,
+        ).stdout.strip()
+        return int(out) if out else None
+    except Exception:
+        return None  # threading is a nicety; fall back to a plain send
 
 
 def _scrub(text: object, token: str) -> str:
@@ -121,6 +146,16 @@ def send(text: str, *, http_post=None) -> dict:
     post = http_post or _default_http_post
     url = f"{_base()}/bot{token}/sendMessage"
     payload = {"chat_id": chat_id, "text": text}
+
+    # Thread onto the Captain's latest message when we know it (set by the inbound
+    # watchdog). allow_sending_without_reply=True means a stale/deleted id still
+    # delivers (just unthreaded) rather than erroring. Unknown id -> plain send.
+    last_id = _last_captain_msg_id()
+    if last_id is not None:
+        payload["reply_parameters"] = {
+            "message_id": last_id,
+            "allow_sending_without_reply": True,
+        }
 
     try:
         resp = post(url, payload)

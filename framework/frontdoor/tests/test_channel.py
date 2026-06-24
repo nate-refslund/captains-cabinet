@@ -24,6 +24,13 @@ def _set_env(monkeypatch, *, token=TOKEN, captain=CAPTAIN):
     monkeypatch.setenv("CAPTAIN_TELEGRAM_ID", captain)
 
 
+def _no_threading(monkeypatch):
+    """Neutralize the Redis-backed reply-threading lookup so a test is hermetic
+    (no redis-cli subprocess, no dependency on host Redis state). Tests that
+    exercise threading override this with their own stub."""
+    monkeypatch.setattr(channel, "_last_captain_msg_id", lambda: None)
+
+
 class _RecordingPost:
     """Mock http_post: records the call and returns a canned 200 body."""
 
@@ -81,6 +88,7 @@ class TestRuntimeSend:
     def test_runtime_posts_to_telegram_sendmessage_with_captain_chat_id(self, monkeypatch):
         monkeypatch.setattr(env, "allow_sends", lambda: True)
         _set_env(monkeypatch)
+        _no_threading(monkeypatch)
         post = _RecordingPost()
         result = channel.send("the exact text", http_post=post)
         assert len(post.calls) == 1
@@ -108,6 +116,7 @@ class TestRuntimeSend:
     def test_url_targets_api_telegram_org_host(self, monkeypatch):
         monkeypatch.setattr(env, "allow_sends", lambda: True)
         _set_env(monkeypatch)
+        _no_threading(monkeypatch)
         post = _RecordingPost()
         channel.send("hi", http_post=post)
         url = post.calls[0]["url"]
@@ -121,6 +130,7 @@ class TestTokenNeverLeaks:
     def test_token_absent_from_successful_result(self, monkeypatch):
         monkeypatch.setattr(env, "allow_sends", lambda: True)
         _set_env(monkeypatch)
+        _no_threading(monkeypatch)
         post = _RecordingPost()
         result = channel.send("hi", http_post=post)
         assert TOKEN not in str(result)
@@ -131,6 +141,7 @@ class TestTokenNeverLeaks:
     def test_token_absent_from_error_result_on_http_failure(self, monkeypatch):
         monkeypatch.setattr(env, "allow_sends", lambda: True)
         _set_env(monkeypatch)
+        _no_threading(monkeypatch)
         # Simulate an HTTP error whose message embeds the token-bearing URL.
         boom = RuntimeError(
             f"HTTP 401 Unauthorized for url "
@@ -148,6 +159,7 @@ class TestTokenNeverLeaks:
         """If send ever raises, the message must not contain the token."""
         monkeypatch.setattr(env, "allow_sends", lambda: True)
         _set_env(monkeypatch)
+        _no_threading(monkeypatch)
         boom = RuntimeError(f"https://api.telegram.org/bot{TOKEN}/sendMessage failed")
         post = _RecordingPost(raises=boom)
         try:
@@ -166,3 +178,84 @@ class TestReceiveSeam:
         # With no bot token configured, receive() fails safe to ([], offset).
         monkeypatch.delenv("TELEGRAM_COS_TOKEN", raising=False)
         assert channel.receive(offset=3) == ([], 3)
+
+
+# ---------------------------------------------------------------------------
+# (5) REPLY-THREADING: when the inbound watchdog has recorded the Captain's
+#     latest message_id (in Redis), send() threads the reply onto it via
+#     reply_parameters. Unknown id => plain send, exactly as before. Driven
+#     through the _last_captain_msg_id seam — NEVER hits Redis or the network.
+# ---------------------------------------------------------------------------
+class TestReplyThreading:
+    def test_payload_includes_reply_parameters_when_id_known(self, monkeypatch):
+        monkeypatch.setattr(env, "allow_sends", lambda: True)
+        _set_env(monkeypatch)
+        monkeypatch.setattr(channel, "_last_captain_msg_id", lambda: 777)
+        post = _RecordingPost()
+        result = channel.send("threaded reply", http_post=post)
+        data = post.calls[0]["data"]
+        assert data["reply_parameters"] == {
+            "message_id": 777,
+            "allow_sending_without_reply": True,
+        }
+        # threading does not disturb the core payload
+        assert str(data.get("chat_id")) == CAPTAIN
+        assert data.get("text") == "threaded reply"
+        assert result["sent"] is True
+
+    def test_payload_omits_reply_parameters_when_id_unknown(self, monkeypatch):
+        monkeypatch.setattr(env, "allow_sends", lambda: True)
+        _set_env(monkeypatch)
+        monkeypatch.setattr(channel, "_last_captain_msg_id", lambda: None)
+        post = _RecordingPost()
+        channel.send("plain reply", http_post=post)
+        assert "reply_parameters" not in post.calls[0]["data"]
+
+    def test_redis_failure_degrades_to_plain_send(self, monkeypatch):
+        """If the Redis lookup itself errors, send() must still deliver — plain."""
+        monkeypatch.setattr(env, "allow_sends", lambda: True)
+        _set_env(monkeypatch)
+
+        def boom():
+            raise RuntimeError("redis unreachable")
+
+        # The helper swallows internally, but even if a future refactor let an
+        # error through, send() should not be derailed. Here we assert the
+        # SHIPPED helper is degrade-safe: a dead redis-cli => None => plain send.
+        monkeypatch.setenv("REDIS_HOST", "203.0.113.1")  # TEST-NET-1, unroutable
+        # Force the subprocess to fail fast instead of timing out the suite.
+        import subprocess as _sp
+        monkeypatch.setattr(
+            channel.subprocess, "run",
+            lambda *a, **k: (_ for _ in ()).throw(_sp.SubprocessError("no redis")),
+        )
+        post = _RecordingPost()
+        result = channel.send("still sends", http_post=post)
+        assert "reply_parameters" not in post.calls[0]["data"]
+        assert result["sent"] is True
+
+    def test_threading_on_does_not_leak_token(self, monkeypatch):
+        monkeypatch.setattr(env, "allow_sends", lambda: True)
+        _set_env(monkeypatch)
+        monkeypatch.setattr(channel, "_last_captain_msg_id", lambda: 555)
+        post = _RecordingPost()
+        result = channel.send("hi", http_post=post)
+        assert TOKEN not in str(result)
+        assert "api.telegram.org/bot" not in str(result)
+
+    def test_blocked_dev_never_reads_redis_for_threading(self, monkeypatch):
+        """The gate is FIRST: a blocked-dev send must not even consult Redis."""
+        monkeypatch.delenv("CABINET_ENV", raising=False)  # dev default
+        _set_env(monkeypatch)
+        called = {"n": 0}
+
+        def _tripwire():
+            called["n"] += 1
+            return 999
+
+        monkeypatch.setattr(channel, "_last_captain_msg_id", _tripwire)
+        post = _RecordingPost()
+        result = channel.send("x", http_post=post)
+        assert result["status"] == "blocked-dev"
+        assert post.calls == []
+        assert called["n"] == 0  # threading lookup never reached past the gate
