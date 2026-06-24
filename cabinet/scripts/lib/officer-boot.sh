@@ -81,3 +81,34 @@ officer_boot_drive() {
   fi
   return 0
 }
+
+# officer_loop_arm <tmux-target> <loop-command-text>
+#   Submit a "/loop 5m <prompt>" into a LIVE officer pane and verify it registered.
+#   Shared by start-officer-mac.sh (first arm at boot) and officer-supervisor-mac.sh
+#   (recurring safety-net re-arm) so the submit technique lives in ONE place.
+#
+#   The submit technique is the load-bearing part: a long single-line command sent
+#   with a trailing C-m in the SAME send-keys call is treated by Claude Code as a
+#   PASTE ("[Pasted text #N]") and the C-m is absorbed into the paste instead of
+#   submitting it (observed 2026-06-24: the /loop sat unsent in the input buffer,
+#   so the officer never actually looped). The fix mirrors officer_boot_drive:
+#   send the TEXT, settle, send C-m SEPARATELY, then verify "esc to interrupt"
+#   (CC actively processing) and nudge a second C-m if it didn't register.
+#   Returns 0 if it registered (or best-effort after the nudge), 1 if the pane is gone.
+officer_loop_arm() {
+  local pane="$1"
+  local loop_cmd="$2"
+
+  tmux has-session -t "$pane" 2>/dev/null || return 1
+
+  _obd_send -t "$pane" "$loop_cmd"
+  sleep 0.6
+  _obd_send -t "$pane" C-m
+  # Verify submission; nudge once if the paste swallowed the Enter.
+  sleep 3
+  if ! tmux capture-pane -t "$pane" -p 2>/dev/null | grep -v '^[[:space:]]*$' | tail -8 \
+       | grep -qE '(esc to interrupt|Scheduled .* Every|cron )'; then
+    _obd_send -t "$pane" C-m
+  fi
+  return 0
+}

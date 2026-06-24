@@ -13,10 +13,16 @@ a time-sensitive brief is never silently stuck. Best-effort: never raises.
 
 Run frequently (every ~5 min) via com.cabinet.intake-surface so ping-now items
 (pre-meeting briefs, prod alerts) reach Nate promptly.
+
+It ALSO drains lane officers' captain-attention cards into the intake first
+(attention_drain.drain_attention): officers that can't DM Nate card decisions to
+cabinet:captain-attention:<project>, and this is the loop that forwards those
+into the one-voice intake so the same ping-now/batch routing applies. Best-effort
+and ordered first so a card raised this tick can surface this tick.
 """
 from __future__ import annotations
 
-from framework.frontdoor import intake, channel
+from framework.frontdoor import intake, channel, attention_drain
 
 _CONSUMER = "chair"
 
@@ -24,9 +30,15 @@ _CONSUMER = "chair"
 def drain_and_surface(*, consumer: str = _CONSUMER, count: int = 200) -> dict:
     """Surface ping-now intake items to the Captain; leave batch for the briefing.
 
-    Returns a small dict of counts (for logging). Failures degrade — a send error
-    leaves that item pending so the next run retries it rather than dropping it.
+    First forwards any lane captain-attention cards into the intake, then surfaces
+    ping-now items. Returns a small dict of counts (for logging). Failures degrade
+    — a send error leaves that item pending so the next run retries it rather than
+    dropping it; an attention-drain error degrades to "forwarded nothing".
     """
+    try:
+        attn = attention_drain.drain_attention()
+    except Exception:
+        attn = {"streams": 0, "forwarded": 0, "skipped": 0, "by_project": {}}
     try:
         pending = intake.drain_pending(consumer=consumer)   # crash recovery
     except Exception:
@@ -71,7 +83,9 @@ def drain_and_surface(*, consumer: str = _CONSUMER, count: int = 200) -> dict:
 
     batch_pending = sum(1 for it in items if (it.get("urgency_tier") or "batch") != "ping-now")
     return {"seen": len(items), "ping_now_surfaced": surfaced,
-            "acked": len(acked), "batch_pending": batch_pending}
+            "acked": len(acked), "batch_pending": batch_pending,
+            "attention_forwarded": attn.get("forwarded", 0),
+            "attention_streams": attn.get("streams", 0)}
 
 
 if __name__ == "__main__":  # invoked by com.cabinet.intake-surface (launchd)

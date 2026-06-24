@@ -182,6 +182,47 @@ bash cabinet/scripts/verify-launchagents.sh
 
 Exit 0 = pass. Re-deploy if any fail.
 
+> **Portfolio-preset note.** `deploy-mac.sh --all` registers the legacy `work`
+> preset fleet (`cos cto cpo cro coo` + the daemon list above). The **portfolio**
+> deployment (one persistent Chair `cos` + domain officers `comms-officer`,
+> `polads-ceo`, `stephie-ceo`, plus the `com.cabinet.intake-surface`,
+> `com.cabinet.frontdoor-briefing`, and `com.cabinet.officer-supervisor-mac`
+> daemons) is registered by `cp`-ing each plist into `~/Library/LaunchAgents/`
+> and `launchctl load -w`-ing it — the install commands are in each plist's
+> header comment.
+
+### 7.0a Officer self-wake (loop-prompts + supervisor)
+
+Mac officers run as **separate** `officer-<role>` tmux sessions and only advance
+when they take a tool action (the post-tool-use hook is what surfaces their
+queued triggers + carded work). So each domain officer is given a durable
+self-wake `/loop`:
+
+- **Per-role loop prompt:** `cabinet/loop-prompts/<role>.txt` (gather-then-decide
+  sweep — check triggers + intake + the lane's captain-attention backlog, do the
+  next due lane step, surface to the Chair, never DM Nate). An officer with no
+  prompt file (e.g. `cos`, the Chair) has no self-wake by design.
+- **First arm at boot:** `start-officer-mac.sh` submits `/loop 5m <prompt>` after
+  the boot prompt via `officer_loop_arm` (in `lib/officer-boot.sh`).
+- **Recurring safety-net:** `com.cabinet.officer-supervisor-mac.plist` (every 2h)
+  runs `officer-supervisor-mac.sh`, which re-sends the `/loop` into each live
+  `officer-<role>` session so a session that exited its loop is re-armed without
+  a full restart. Crash-restart itself stays owned by each officer's LaunchAgent
+  KeepAlive. (This is the Mac counterpart to the Docker `officer-supervisor.sh`,
+  which targets a single `cabinet` session-with-windows and is a no-op on Mac.)
+
+Re-arming is idempotent: Claude Code's `/loop` registers a cron keyed on
+`(interval, prompt)` and re-uses the same job id rather than stacking duplicates.
+
+Verify an officer is self-waking:
+
+```bash
+# heartbeat should be seconds-fresh (post-tool-use writes it every tool call)
+redis-cli -h localhost GET cabinet:heartbeat:polads-ceo
+# the loop registered a cron (look for "Scheduled <id> (Every 5 minutes)")
+tmux capture-pane -t officer-polads-ceo -p | grep -i scheduled
+```
+
 ### 7.1 Interactive one-time steps (login / OAuth) `[CAPTAIN]`
 
 Officers run unattended with full host shell access, so they self-install

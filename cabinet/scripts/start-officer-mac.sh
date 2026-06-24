@@ -309,6 +309,37 @@ source "$REPO_ROOT/cabinet/scripts/lib/officer-boot.sh"
 BOOT_PROMPT="You are $OFFICER. Read your role definition at .claude/agents/$OFFICER.md and your session start checklist. Read your foundation skills in memory/skills/. Read your tier 2 notes in instance/memory/tier2/$OFFICER/. Then announce yourself on the warroom: bash $REPO_ROOT/cabinet/scripts/send-to-group.sh '<b>$OFFICER online (Mac native).</b> Session started. Checking for pending work.' — then check for pending triggers and overdue work immediately."
 officer_boot_drive "$SESSION_NAME" "$BOOT_PROMPT"
 
+# ===========================================================
+# Durable self-wake /loop (Gap 1: Mac officers stall after one turn).
+# ===========================================================
+# A Mac officer runs as its own detached tmux session and only advances when it
+# takes a tool action — the post-tool-use hook is what surfaces queued triggers
+# (cabinet:triggers:<officer>) and carded work. With no recurring nudge an
+# officer does ONE boot burst then sits idle at the prompt forever, stranding
+# every trigger and carded decision behind it (observed 2026-06-24:
+# polads-ceo + stephie-ceo idle with 4 pending triggers + 4 captain-attention
+# cards each). The fix: queue a `/loop 5m <prompt>` after the boot prompt so the
+# officer re-checks its triggers + intake + lane work on a cadence and stays
+# alive. Per-role prompt in cabinet/loop-prompts/<officer>.txt (gather-then-
+# decide; surface to the Chair; never DM Nate). Skipped if no prompt file exists
+# (officer simply has no self-wake — no error). Idempotent: each boot is a fresh
+# session, and officer_boot_drive already drained the startup prompts, so this
+# `/loop` is the session's next command. The officer-supervisor-mac re-sends it
+# every ~2h as a safety net if the officer ever exits its loop.
+LOOP_FILE="$REPO_ROOT/cabinet/loop-prompts/${OFFICER}.txt"
+if [ -f "$LOOP_FILE" ]; then
+  LOOP_PROMPT=$(tr '\n' ' ' < "$LOOP_FILE" | sed 's/  */ /g; s/ *$//')
+  if [ -n "$LOOP_PROMPT" ]; then
+    sleep 5  # let the boot prompt settle into a running turn before queuing /loop
+    # officer_loop_arm (from lib/officer-boot.sh, already sourced above) submits
+    # the /loop with the paste-safe technique: text, settle, C-m separately, then
+    # verify + nudge. A bare `send-keys "... " C-m` would be absorbed as a paste
+    # and never submit (observed 2026-06-24).
+    officer_loop_arm "$SESSION_NAME" "/loop 5m $LOOP_PROMPT"
+    echo "start-officer-mac.sh: $OFFICER self-wake /loop 5m armed from $LOOP_FILE" >&2
+  fi
+fi
+
 echo "start-officer-mac.sh: $OFFICER started in tmux session $SESSION_NAME (model=$MODEL, telegram=$HAS_TELEGRAM, cua_driver=$HAS_CUA_DRIVER)"
 
 # Audit-fix 2026-05-23: drop infinite while-true heartbeat loop. The in-session
