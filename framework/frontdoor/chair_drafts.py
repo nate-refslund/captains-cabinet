@@ -45,6 +45,18 @@ def _load_shared_env() -> None:
         os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
 
+def _apply_signature(draft: str, channel_name: str) -> str:
+    """Close every email with Nate's exact default signature (never Teams).
+    Uses draft_lib.ensure_signature (idempotent — won't double-sign)."""
+    try:
+        if _SHARED not in sys.path:
+            sys.path.insert(0, _SHARED)
+        import draft_lib
+        return draft_lib.ensure_signature(draft, channel_name)
+    except Exception:
+        return draft
+
+
 def present_draft(person: str, channel_name: str, draft: str,
                   recipient_email: str = "", subject: str = "",
                   why: str = "", slug: str = "") -> str:
@@ -53,6 +65,7 @@ def present_draft(person: str, channel_name: str, draft: str,
     Returns the pid. Nate replies 'send' (or 'send <pid>') in the Chair chat to
     deliver, 'edit: <text>' to send his version, 'skip: <why>' to drop it.
     """
+    draft = _apply_signature(draft, channel_name)
     pid = hashlib.sha1(f"{person}{draft}{time.time()}".encode()).hexdigest()[:6]
     payload = {
         "slug": slug or person.lower().replace(" ", "-"),
