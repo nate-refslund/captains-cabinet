@@ -105,12 +105,18 @@ def main() -> int:
         tail = "\n".join(l for l in out.splitlines() if l.strip())[-1200:]
         return "esc to interrupt" in tail
 
-    def deliver(text: str) -> None:
-        """Idle-gate, then inject the Captain DM into the officer pane as a turn."""
+    def deliver(text: str, quoted: str = "") -> None:
+        """Idle-gate, then inject the Captain DM into the officer pane as a turn.
+        `quoted` is the message Nate REPLIED TO (Telegram reply-threading) — prefixed
+        so the officer sees the exact draft / proposal / message being answered, with
+        no need to ask 'which one'."""
         waited = 0
         while pane_busy() and waited < 300:   # wait up to ~5 min for the pane to free
             time.sleep(5); waited += 5
-        relay = f"\U0001F4E9 Captain DM (Telegram): {text}"
+        if quoted:
+            relay = f"\U0001F4E9 Captain DM (Telegram) [↩ replying to: “{quoted}”]: {text}"
+        else:
+            relay = f"\U0001F4E9 Captain DM (Telegram): {text}"
         # text first, then Enter separately (Enter doesn't reliably register fused)
         subprocess.run(["tmux", "send-keys", "-t", session, relay], timeout=10)
         time.sleep(0.5)
@@ -149,9 +155,16 @@ def main() -> int:
             msg = upd.get("message") or {}
             frm = str((msg.get("from") or {}).get("id", ""))
             text = (msg.get("text") or "").strip()
+            # Telegram reply-threading: if Nate REPLIED TO a message (a draft, a
+            # proposal card, a briefing line), capture what he's answering so the
+            # officer has the exact context without having to ask 'which one'.
+            rt = msg.get("reply_to_message") or {}
+            quoted = (rt.get("text") or rt.get("caption") or "").strip().replace("\n", " ")
+            if len(quoted) > 500:
+                quoted = quoted[:500] + "…"
             if frm == str(captain) and text:
-                log(f"captain msg update_id={uid} ({len(text)} chars) -> relaying")
-                deliver(text)
+                log(f"captain msg update_id={uid} ({len(text)} chars{', reply' if quoted else ''}) -> relaying")
+                deliver(text, quoted)
             else:
                 log(f"skip update_id={uid} from={frm or '?'} (not captain or non-text)")
             offset = max(offset, uid)
