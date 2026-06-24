@@ -233,7 +233,12 @@ fi
 # $MODEL is single-quoted: model ids can carry a [1m] context suffix (e.g.
 # claude-opus-4-8[1m]) and this command is typed into a zsh pane, which would
 # glob the unquoted brackets ("zsh: no matches found"). Single quotes pass it literally.
-CLAUDE_CMD="cd $REPO_ROOT && claude --model '$MODEL' $MCP_FLAG $TELEGRAM_FLAG $AGENT_FLAG --dangerously-skip-permissions --effort max"
+# OFFICER_NAME/CABINET_OFFICER are pinned ON the command (not just exported in this
+# script): tmux send-keys runs claude in the SESSION's env, which inherits the tmux
+# SERVER's global env. When the server was first started by another officer (e.g. cos),
+# a new session would otherwise launch claude as OFFICER_NAME=cos and mis-attribute every
+# heartbeat / cost / log / tier2 write to cos. Forcing them here pins the real identity.
+CLAUDE_CMD="cd $REPO_ROOT && OFFICER_NAME='$OFFICER' CABINET_OFFICER='$OFFICER' claude --model '$MODEL' $MCP_FLAG $TELEGRAM_FLAG $AGENT_FLAG --dangerously-skip-permissions --effort max"
 
 # ===========================================================
 # Dry-run gate — print plan & exit before any tmux/redis/launch side-effects.
