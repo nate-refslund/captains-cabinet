@@ -97,6 +97,17 @@ agents:
       Production deploys and external comms remain propose-only (hard
       ceiling) regardless of scope.
 
+  # Comms Officer (portfolio/hq) — owns Nate's Outlook + Teams comms.
+  # Telegram-dark: surfaces ONLY through the Chair. Captain-approved (2026-06-24).
+  comms-officer:
+    mcps: [make, brain, library, telegram]
+    rationale: >
+      make: Graph-proxy folder-WRITE edit (3902068) + filing/archiving mailbox
+      MOVES through the Make proxy — never a human-bound send. brain:
+      gather-then-decide + the queue_draft outbound gate (approve-only). No
+      neon/vercel/corridor. External comms + spend + mail-delete stay
+      propose-only. telegram = warroom broadcast only; Telegram-dark.
+
 # Scaffolded agents (not hired, scope reserved):
 scaffolds:
   operations-officer:
