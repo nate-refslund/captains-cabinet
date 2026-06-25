@@ -98,6 +98,13 @@
             "args": [
               "${CLAUDE_PROJECT_DIR}/cabinet/scripts/hooks/captain-posture-warroom.sh"
             ]
+          },
+          {
+            "type": "command",
+            "command": "bash",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/cabinet/scripts/hooks/captain-escalation-precheck.sh"
+            ]
           }
         ]
       },
