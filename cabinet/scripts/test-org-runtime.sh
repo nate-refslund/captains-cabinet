@@ -25,10 +25,20 @@ json_value() {
 
 echo "=== Org runtime vertical-slice eval ==="
 
-ACTIVE="$(tr -d '[:space:]' < "$REPO_ROOT/instance/config/active-project.txt")"
-[ "$ACTIVE" = "captains-cabinet" ] \
-  && pass "active project is captains-cabinet" \
-  || fail "active project expected captains-cabinet, got '$ACTIVE'"
+# active-project.txt is deployment-local and absent on clean checkouts AND on
+# the live hq deployment (verified 2026-07-02) — the runtime itself falls
+# through to fail-safe lane resolution when it is missing. Mirror that:
+# absent file = pass-with-note, never a hard fail. (This whole eval tests the
+# org-runtime.py vertical slice, which is on the ratified kill list — the step
+# retires with it; see docs/plans/ kill tracker.)
+if [ -f "$REPO_ROOT/instance/config/active-project.txt" ]; then
+  ACTIVE="$(tr -d '[:space:]' < "$REPO_ROOT/instance/config/active-project.txt")"
+  [ "$ACTIVE" = "captains-cabinet" ] \
+    && pass "active project is captains-cabinet" \
+    || fail "active project expected captains-cabinet, got '$ACTIVE'"
+else
+  pass "active-project.txt absent (deployment-local) -> runtime fail-safe path"
+fi
 
 [ -f "$REPO_ROOT/instance/config/contexts/captains-cabinet.yml" ] \
   && pass "captains-cabinet context exists" \
