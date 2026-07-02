@@ -523,9 +523,12 @@ ev11_hook_probe() {
   local json
   json=$(jq -cn --arg cmd "$cmd" '{tool_name:"Bash",tool_input:{command:$cmd}}')
   # FW-047: CABINET_HOOK_TEST_MODE=1 suppresses block 5 trigger_send
-  # fan-out to CPO/COO production streams. Block 6 REMINDER echoes
+  # fan-out to validator production streams. Block 6 REMINDER echoes
   # (the stdout signal this probe reads) are unaffected.
-  echo "$json" | CABINET_HOOK_TEST_MODE=1 OFFICER_NAME=cto bash "$EV11_HOOK" 2>/dev/null
+  # 2026-07-02: probe officer repinned cto -> polads-ceo (live deploys_code
+  # holder per the Captain-ratified Q3 purge) — deploy detection is
+  # capability-routed, so a dead officer id silently never fires.
+  echo "$json" | CABINET_HOOK_TEST_MODE=1 OFFICER_NAME=polads-ceo bash "$EV11_HOOK" 2>/dev/null
   # Returns the hook stdout; caller checks for REMINDER presence
 }
 
@@ -572,7 +575,7 @@ else
       "git push origin HEAD:main" \
       "git push origin main; echo done" \
       "git push origin refs/heads/main"; do
-      if ! ev11_hook_probe "$cmd" | grep -q "REMINDER:"; then
+      if ! { EVPROBE_OUT=$(ev11_hook_probe "$cmd"); grep -q "REMINDER:" <<<"$EVPROBE_OUT"; }; then
         EV11_FAILURE="deploy regex FAILED expected-positive: $cmd (no REMINDER in hook stdout — deploy branch did not fire)"
         break
       fi
@@ -594,7 +597,7 @@ else
         "git push origin main-feat" \
         "git push origin feat/main" \
         "git push origin issue-42/main"; do
-        if ev11_hook_probe "$cmd" | grep -q "REMINDER:"; then
+        if { EVPROBE_OUT=$(ev11_hook_probe "$cmd"); grep -q "REMINDER:" <<<"$EVPROBE_OUT"; }; then
           EV11_FAILURE="deploy regex WRONGLY matched expected-negative: $cmd (REMINDER in hook stdout — deploy branch fired on non-main branch)"
           break
         fi
@@ -612,7 +615,7 @@ else
         "git push origin main --dry-run" \
         "git push -n origin main" \
         "git push origin main -n"; do
-        if ev11_hook_probe "$cmd" | grep -q "REMINDER:"; then
+        if { EVPROBE_OUT=$(ev11_hook_probe "$cmd"); grep -q "REMINDER:" <<<"$EVPROBE_OUT"; }; then
           EV11_FAILURE="dry-run skip regex FAILED: $cmd produced REMINDER (M-4b dry-run skip did not noop before deploy branch)"
           break
         fi
@@ -634,7 +637,7 @@ else
         "git push origin main && git commit -m 'test --dry-run'" \
         "git push origin main && git commit -m 'test -n'" \
         "git push --no-force origin main"; do
-        if ! ev11_hook_probe "$cmd" | grep -q "REMINDER:"; then
+        if ! { EVPROBE_OUT=$(ev11_hook_probe "$cmd"); grep -q "REMINDER:" <<<"$EVPROBE_OUT"; }; then
           EV11_FAILURE="dry-run skip regex WRONGLY matched real push: $cmd (no REMINDER — dry-run elif consumed the real push, would suppress AUTO-DEPLOY)"
           break
         fi
@@ -780,7 +783,7 @@ else
     json=$(jq -cn --arg cmd "$cmd" '{tool_name:"Bash",tool_input:{command:$cmd}}')
     # FW-047: CABINET_HOOK_TEST_MODE=1 suppresses block 5 + 6b
     # trigger_send fan-out. Stdout REMINDER observation unaffected.
-    echo "$json" | CABINET_HOOK_TEST_MODE=1 OFFICER_NAME=cto bash "$EV13_HOOK" 2>/dev/null
+    echo "$json" | CABINET_HOOK_TEST_MODE=1 OFFICER_NAME=polads-ceo bash "$EV13_HOOK" 2>/dev/null  # 2026-07-02: live deploys_code holder (Q3 purge)
   }
 
   if [ -z "$EV13_FAILURE" ]; then
@@ -811,7 +814,7 @@ else
       "timeout 60 git push origin main" \
       "  git push origin main" \
       "gh pr merge 42 --squash"; do
-      if ! ev13_hook_probe "$cmd" | grep -q "REMINDER:"; then
+      if ! { EVPROBE_OUT=$(ev13_hook_probe "$cmd"); grep -q "REMINDER:" <<<"$EVPROBE_OUT"; }; then
         EV13_FAILURE="FW-028 anchor FAILED expected-positive: $cmd (no REMINDER — real push silently silenced, no AUTO-DEPLOY cascade)"
         break
       fi
@@ -832,7 +835,7 @@ else
       '# git push origin main' \
       'python3 -c "print(\"git push origin main\")"' \
       'EV11_DEPLOY_RE=$(grep "git push origin main" file)'; do
-      if ev13_hook_probe "$cmd" | grep -q "REMINDER:"; then
+      if { EVPROBE_OUT=$(ev13_hook_probe "$cmd"); grep -q "REMINDER:" <<<"$EVPROBE_OUT"; }; then
         EV13_FAILURE="FW-028 anchor WRONGLY matched expected-negative: $cmd (REMINDER in stdout — test-harness form still amplifies AUTO-DEPLOY)"
         break
       fi
@@ -844,7 +847,7 @@ else
     # NOT produce REMINDER. `head -n1` in the hook restricts the anchor
     # shape-check to line 1 so heredoc bodies can't trip it.
     EV13_HEREDOC=$'cat <<EOF\ngit push origin main\nEOF'
-    if ev13_hook_probe "$EV13_HEREDOC" | grep -q "REMINDER:"; then
+    if { EVPROBE_OUT=$(ev13_hook_probe "$EV13_HEREDOC"); grep -q "REMINDER:" <<<"$EVPROBE_OUT"; }; then
       EV13_FAILURE="FW-028 anchor WRONGLY matched heredoc first-line (cat <<EOF) — head -n1 guard broken, heredoc bodies re-amplify"
     fi
   fi

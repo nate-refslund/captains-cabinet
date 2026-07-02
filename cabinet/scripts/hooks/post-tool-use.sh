@@ -555,11 +555,17 @@ if [ -n "$LAST_CALL" ] && [ "$LAST_CALL" != "(nil)" ]; then
   # ISO-8601, so the guard should accept it rather than trigger a
   # 24h flood of false WARNs (Sonnet adversary #5 on L-6, 2026-04-21).
   if echo "$LAST_CALL" | grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z$'; then
-    LAST_EPOCH=$(date -d "$LAST_CALL" +%s 2>/dev/null || echo "0")
+    # 2026-07-02: GNU-only `date -d` fails on macOS -> LAST_EPOCH=0 -> a
+    # 56-year "idle" warning on EVERY tool call (same bug class as the
+    # pre-push hook). BSD fallback + parse-failure (0) skips the warning:
+    # unparseable is not idle.
+    LAST_EPOCH=$(date -d "$LAST_CALL" +%s 2>/dev/null \
+      || date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "${LAST_CALL%%.*}Z" +%s 2>/dev/null \
+      || echo "0")
     NOW_EPOCH=$(date -u +%s)
     IDLE_SECONDS=$((NOW_EPOCH - LAST_EPOCH))
 
-    if [ "$IDLE_SECONDS" -gt 1800 ] 2>/dev/null; then
+    if [ "$LAST_EPOCH" != "0" ] && [ "$IDLE_SECONDS" -gt 1800 ] 2>/dev/null; then
       echo ""
       echo "⚠️ You were idle for $((IDLE_SECONDS / 60)) minutes. Check for pending work NOW:"
       echo "  - Check shared/interfaces/product-specs/ for ready specs"
