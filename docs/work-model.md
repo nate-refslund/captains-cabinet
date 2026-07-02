@@ -196,8 +196,14 @@ move to officers, because they need the investigation bar and
 course-of-action discipline (`.claude/rules/courses-of-action.md`) that
 one-shot pipes structurally cannot meet:
 
-- Reply drafting → officers, outbound exclusively via the brain bridge's
-  `queue_draft` approval gate.
+- Reply drafting → **retired as a Cabinet function (2026-07-03 pivot: the
+  Captain owns communication).** The same capture signals now feed the
+  capture→action lane — proactive *action* proposals (create/update a task,
+  implement, follow up, close a commitment) through the binder gate, not
+  outbound message drafts. The brain bridge's `queue_draft` gate stays a
+  guard (no officer may send), enforced structurally by the lane having no
+  external-comms action at all. See
+  `docs/plans/capture-to-action-lane-design-2026-07-03.md`.
 - Commitment nudges → the coordinating role's founder-accountability
   protocol (single owner, no pile-on).
 - "What needs you now" digests → the coordinating role.

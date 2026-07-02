@@ -77,7 +77,7 @@ One append-only **consequence ledger** records every proposal, every Captain ver
 - `plan-B-macmini-product-org-2026-07-02.md` — flavor B execution plan
 - `EXECUTION-STATUS.md` — live tracking: what's done, in flight, and ratified
 
-The governance design (authority matrix, germline protection, consequence schema, fidelity measurement) is built and tested; the plans' current phases are closing the remaining wiring — mechanical verdict capture, machine probes, the enforcement flip, the executor. Where these docs describe machinery ahead of the live wiring, `EXECUTION-STATUS.md` is the truth of what runs today.
+The governance design (authority matrix, germline protection, consequence schema, fidelity measurement) is built and tested; mechanical verdict capture and the ledger-liveness dead-man have since shipped in the foundation phase, and the plans' current phases are closing the remaining wiring — machine probes, the enforcement flip, the executor. Where these docs describe machinery ahead of the live wiring, `EXECUTION-STATUS.md` is the truth of what runs today.
 
 ## Quickstart
 

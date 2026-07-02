@@ -130,7 +130,7 @@ Correlation IDs are minted at proposal time and **propagated into the artifacts 
 
 ### Mechanical verdict capture — the founding lesson
 
-The estate's signature historical failure, paid twice: an approval surface moved, the label ledger didn't move with it, and every autonomy lane silently starved at n=0 while the org kept working. The lesson is principle 2, made structural: **the inbound decision path writes the superseding approve/edit/skip event in-process, before delivery — the coordinating officer reads results but is never the recorder.** Presenting the proposal, delivering the decision, and writing both ledger rows are one component, germline-protected, that migrates together or not at all. *(target state — the binder wire is in the shared foundation phase, `docs/plans/EXECUTION-STATUS.md`)*
+The estate's signature historical failure, paid twice: an approval surface moved, the label ledger didn't move with it, and every autonomy lane silently starved at n=0 while the org kept working. The lesson is principle 2, made structural: **the inbound decision path writes the superseding approve/edit/skip event in-process, before delivery — the coordinating officer reads results but is never the recorder.** Presenting the proposal, delivering the decision, and writing both ledger rows are one component, germline-protected, that migrates together or not at all. *(live — the binder wire shipped in the shared foundation phase (F0.5), flag-gated and hardened against pid-spoofing and truncation; it now carries proactive-action verdicts, not just reply drafts, per the 2026-07-03 pivot; `docs/plans/EXECUTION-STATUS.md`)*
 
 ### Verdict supply per flavor
 
@@ -156,7 +156,7 @@ Demotion is automatic and drilled, not discretionary:
 
 ### The ledger-liveness dead-man
 
-A standing, germline-protected watchdog: if a lane emits proposals while Captain replies are visibly arriving and **zero verdicts land on the ledger for N hours → critical page AND automatic demotion to propose-only.** Evidence starvation revokes autonomy by construction. Staleness is loss of proof, not preservation of it. This converts the estate's twice-paid failure into a self-neutralizing one.
+A standing, germline-protected watchdog: if a lane emits proposals while Captain replies are visibly arriving and **zero verdicts land on the ledger for N hours → critical page AND automatic demotion to propose-only.** Evidence starvation revokes autonomy by construction. Staleness is loss of proof, not preservation of it. This converts the estate's twice-paid failure into a self-neutralizing one. *(live — the check is armed and pages hourly via the off-machine healthchecks path over an unwindowed ledger read; it caught a real starvation on its first hour. Automatic demotion lands with the graduation wiring (B2.9+); until then the page is the response. `docs/plans/EXECUTION-STATUS.md`)*
 
 ### The test-diff valve — closing Goodhart on machine truth
 
@@ -306,7 +306,7 @@ Crew inherit the spawning Officer's boundaries, narrowed — never widened; enfo
 
 ### The substrate
 
-One Mac, one dedicated auto-login user, **everything a user-session LaunchAgent** (subscription auth, keychain, and OS permissions live in the user session — never cron, never daemons). Sleep disabled; OS auto-updates scheduled within watchdog-aware windows. Officers live in tmux panes; deterministic services run headless. **The entire fleet is declared in one services manifest** (`cabinet/services.yml`) from which every launchd plist is generated — no hand-authored plists, no machine-specific hardcodes, and the manifest is diffable against what is actually installed and firing *(target state — manifest + generator land in the shared foundation phase, `docs/plans/`)*. **The machine must be rebuildable from git alone.** Durable state lives in git and SQLite (WAL, backed up by snapshot — never raw-copied); Redis is an ephemeral trigger bus, never the only home of anything durable. Secrets are keychain-referenced: names in files, values never.
+One Mac, one dedicated auto-login user, **everything a user-session LaunchAgent** (subscription auth, keychain, and OS permissions live in the user session — never cron, never daemons). Sleep disabled; OS auto-updates scheduled within watchdog-aware windows. Officers live in tmux panes; deterministic services run headless. **The entire fleet is declared in one services manifest** (`cabinet/services.yml`) from which every launchd plist is generated — no hand-authored plists, no machine-specific hardcodes, and the manifest is diffable against what is actually installed and firing *(live — the manifest (`cabinet/services.yml`) and generator (`generate-plists.py --check`) shipped in the shared foundation phase; `docs/plans/EXECUTION-STATUS.md`)*. **The machine must be rebuildable from git alone.** Durable state lives in git and SQLite (WAL, backed up by snapshot — never raw-copied); Redis is an ephemeral trigger bus, never the only home of anything durable. Secrets are keychain-referenced: names in files, values never.
 
 ### The watchdog stack
 
