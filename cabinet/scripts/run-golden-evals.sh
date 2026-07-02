@@ -109,9 +109,16 @@ log "EVAL-003: Spending Limits"
 # Captain's own Cabinet default), pre-tool-use.sh skips the per-officer
 # cap block entirely. That's correct behavior, but means we cannot
 # exercise the gate. Detect this and skip rather than falsely fail.
-EVAL_CAP_USD=$(awk '/^[[:space:]]*daily_per_officer_usd:/{gsub(/#.*/,""); print $2; exit}' /opt/founders-cabinet/instance/config/platform.yml 2>/dev/null)
+# 2026-07-03: read the SAME platform.yml the hook under test reads ($CABINET_ROOT),
+# not the Docker-era /opt path — on machines where /opt/founders-cabinet was a stale
+# or absent symlink this eval read a DIFFERENT deployment's caps than pre-tool-use.sh.
+EVAL_CAP_USD=$(awk '/^[[:space:]]*daily_per_officer_usd:/{gsub(/#.*/,""); print $2; exit}' "$CABINET_ROOT/instance/config/platform.yml" 2>/dev/null)
 case "$EVAL_CAP_USD" in *[!0-9.]*|'') EVAL_CAP_USD=0 ;; esac
-if [ "$(awk -v v="$EVAL_CAP_USD" 'BEGIN{print (v+0)==0}')" = "1" ]; then
+# 2026-07-03: BSD awk (macOS) cannot parse `print (expr)==0` (GNU-only) — the
+# check errored silently on Mac, emptied the result, and fell into the else
+# branch where the caps=0 hook correctly does not block -> false FAIL. This was
+# the local-vs-CI divergence. Portable form:
+if [ "$(awk -v v="$EVAL_CAP_USD" 'BEGIN{ if (v+0==0) print 1; else print 0 }')" = "1" ]; then
   log "EVAL-003: skipping — daily_per_officer_usd=0 (unlimited) in platform.yml"
   pass "Spending limit eval skipped cleanly when cap=unlimited"
 else

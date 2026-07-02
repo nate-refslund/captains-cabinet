@@ -147,3 +147,24 @@ services:
     command: bash cabinet/scripts/start-dashboard.sh
     schedule: keepalive
     expected: "HTTP 200 on :3100/api/health"
+
+  # ── F0.13 weekly drill + B2.12 memory worker (added 2026-07-03) ─────────────
+  - name: healthchecks-drill
+    label: com.cabinet.healthchecks-drill
+    kind: watchdog
+    command: /opt/homebrew/bin/python3.12 cabinet/scripts/healthchecks-drill.py
+    schedule: { calendar: [{weekday: 0, hour: 9, minute: 0}] }   # Sundays 09:00 local
+    expected: "drill-failed healthcheck pinged normally weekly (goes late ~9d if the drill dies; /fail = immediate alert)"
+    notes: fires the external dead-man end-to-end (fail -> alert -> REAL kickstart recovery -> up); clears F0.10 debt (a) permanently
+  - name: memory-worker
+    label: com.cabinet.memory-worker
+    kind: daemon
+    command: bash cabinet/scripts/memory-worker.sh
+    schedule: keepalive
+    expected: "cabinet:memory:embed_queue XLEN not monotonically growing; rows landing in Neon cabinet_memory"
+    notes: >-
+      B2.12 — long-runner (script's own doc: run as a long-lived process; loop
+      mode XREADGROUP BLOCK 5000). Was NEVER scheduled anywhere: 497 entries
+      rotted in the queue while five hooks kept feeding it (blueprint 1.e).
+      Needs NEON_CONNECTION_STRING + VOYAGE_API_KEY from cabinet/.env (sourced
+      by the wrapper) and psql on PATH.
