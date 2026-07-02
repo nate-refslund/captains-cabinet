@@ -834,8 +834,18 @@ _VOICE_DBLSPACE_RE = re.compile(r"(?<=\S)[ \t]{2,}")
 
 
 def _vc():
-    import voice_charset as vc  # lazy — same _shared/ path as _dl; zero screenpipe deps
-    return vc
+    # lazy; zero screenpipe deps either way. Resolution order (2026-07-02,
+    # CI 28619006556): the _shared/ copy first (live estate parity), then the
+    # FRAMEWORK-VENDORED copy (framework/acting/voice_charset.py) so lib-less
+    # installs (CI, flavor-B Mini) apply the SAME rule instead of silently
+    # degrading to identity. The two files are byte-synced below their headers
+    # until the A3 re-point makes _shared a re-export.
+    try:
+        import voice_charset as vc  # _shared/ path when the estate is present
+        return vc
+    except ImportError:
+        from framework.acting import voice_charset as vc
+        return vc
 
 
 def _voice_fallback(text):
