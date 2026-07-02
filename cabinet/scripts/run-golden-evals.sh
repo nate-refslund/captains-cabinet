@@ -192,15 +192,18 @@ CAP_FILE="$CABINET_ROOT/cabinet/officer-capabilities.conf"
 if [ -f "$CAP_FILE" ]; then
   # Test has_capability
   source <(grep -v '^#' "$CABINET_ROOT/cabinet/scripts/hooks/post-tool-use.sh" | head -40)
-  if grep -q "^cto:deploys_code$" "$CAP_FILE"; then
-    pass "CTO has deploys_code capability"
+  # 2026-07-02: pins updated to the LIVE portfolio roster (Captain-ratified Q3
+  # residue purge removed the extinct cto/cpo/cro/coo rows). The eval tests
+  # capability-ROUTING mechanics; the officer ids follow officer-capabilities.conf.
+  if grep -q "^polads-ceo:deploys_code$" "$CAP_FILE"; then
+    pass "lane CEO (polads-ceo) has deploys_code capability"
   else
-    fail "CTO missing deploys_code capability"
+    fail "lane CEO (polads-ceo) missing deploys_code capability"
   fi
-  if grep -q "^coo:validates_deployments$" "$CAP_FILE"; then
-    pass "COO has validates_deployments capability"
+  if grep -q "^cos:validates_deployments$" "$CAP_FILE"; then
+    pass "Chair (cos) has validates_deployments capability"
   else
-    fail "COO missing validates_deployments capability"
+    fail "Chair (cos) missing validates_deployments capability"
   fi
 else
   fail "officer-capabilities.conf not found"
