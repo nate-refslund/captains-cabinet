@@ -5,6 +5,20 @@
 > (header) and the clone-convergence plan (R2/R3). Products are **lanes**,
 > not outcomes — a product never "finishes"; only outcomes do.
 
+> **AMENDMENT 2026-07-02 (Captain-ruled — PM decoupling).** The foundation's
+> canonical work store is a LOCAL task board (SQLite; Neon optional, never
+> required). External PM tools (Monday, Jira, Linear) are optional
+> `TaskAdapter` plugins: local wins, the adapter mirrors. For THIS deployment,
+> Monday Tasks board 5091706356 is the **STEP collaboration mirror**, not the
+> canonical store — Monday's only remaining surface is PM (dev-tasks plugin,
+> todos, commitment→task promotion, completion-tracker closes, briefs reading
+> due tasks via the adapter). All Monday-born SYNTHESIS re-points to the vault
+> per the RE-POINT-TO-VAULT ruling (plan A A3-phase, shadow-parity per pipe;
+> spec: `docs/plans/EXECUTION-STATUS.md` §Captain-ratified additions).
+> Until each pipe's re-point lands, existing pipes keep writing Monday — the
+> CONTRACT changes now, implementation follows the plan. Statements below that
+> name Monday as "canonical" are superseded by this amendment.
+
 ## The three work classes
 
 Every piece of work in a lane (polads, stephie-stepnetwork, system-self) is
@@ -12,7 +26,7 @@ exactly one of:
 
 | Class | What it is | Where it lives | Lifecycle |
 |---|---|---|---|
-| **STREAM** | Continuous product work: bugs, tasks, small features | Monday Tasks board **5091706356** (per-product filter via the dev-tasks plugin) | claim → execute → close back to Monday; never ends |
+| **STREAM** | Continuous product work: bugs, tasks, small features | Local task board (canonical, Amendment 2026-07-02); mirrored to Monday Tasks board **5091706356** via TaskAdapter (per-product filter via the dev-tasks plugin) | claim → execute → close locally; adapter mirrors; never ends |
 | **MISSIONS** | Bounded, Captain-ratified state changes | `instance/config/outcomes.yml` (rolling window, 1–2 active per lane) | draft → active → achieved → retired |
 | **INTAKE** | Classification machinery feeding the other two | Scheduled CoS routine (cron trigger, R3) | runs forever; never an outcome |
 
@@ -21,9 +35,11 @@ intake wrapped in an outcome produces a mission that can never achieve.
 
 ## STREAM — continuous product work
 
-- The Monday Tasks board (5091706356) is the **canonical backlog** per
-  product. Officers claim items via the dev-tasks plugin, execute, and close
-  back to Monday.
+- The **local task board is the canonical backlog** per product (Amendment
+  2026-07-02); the Monday Tasks board (5091706356) is its STEP collaboration
+  mirror via the TaskAdapter. Officers claim items locally (today still via
+  the dev-tasks plugin against Monday until the adapter cutover lands),
+  execute, and close locally; the adapter mirrors the close.
 - **Close-back rule** (mirrors the existing "Linear/board state must always
   reflect reality" rule): the moment an officer learns a tracked item is
   done, its Monday status moves — same turn, no "please close it" prompt.

@@ -35,7 +35,7 @@ cabinet: main
 
 agents:
   cos:
-    mcps: [notion, library, telegram, host, brain, exa, brave-search]
+    mcps: [notion, library, telegram, host, brain, exa, brave-search, perplexity, claude-in-chrome]
     rationale: >
       Coordination and briefings. Not code; CoS does not touch Neon or
       Vercel directly — that's CTO/COO. Library for Phase 1 inbox and
@@ -44,55 +44,31 @@ agents:
       restart_officer, tail_logs, edit_file, read_file). CoS-only scope —
       no other officer is allowed host MCP access.
 
-  cto:
-    mcps: [neon, vercel, library, telegram, brain]
-    rationale: >
-      Engineering domain. Schema/migrations on Neon, deploys on Vercel,
-      specs, framework work and experience records in
-      Library. No Notion — CTO should not be writing business strategy.
 
-  cpo:
-    mcps: [notion, library, telegram, brain]
-    rationale: >
-      Specs, prioritization, product strategy. Notion for business brain
-      reads; Library for backlog + specs + decision
-      queue records.
 
-  cro:
-    mcps: [notion, library, telegram, brain]
-    rationale: >
-      Research and competitive intel. Notion for research publication;
-      Library for research-brief records. No Linear — CRO does not own
-      execution tickets. No Neon/Vercel — CRO does not touch production.
 
-  coo:
-    mcps: [neon, vercel, library, telegram, brain]
-    rationale: >
-      Deploy validation, uptime monitoring, Sentry error triage. Neon
-      for health queries; Vercel for deployment state;
-      Library for operational artifacts.
 
   # Portfolio roster lane CEOs (preset `portfolio`, hq deployment).
   # Role defs are generated from presets/portfolio/agents/_lane-ceo.md.template
   # into instance/agents/<slug>-ceo.md (instance overlay — the preset agents
-  # dir intentionally has no file for them). Scope = the cto-like set + brain:
+  # dir intentionally has no file for them). Scope = the engineering-grade set + brain:
   # a lane CEO owns its lane end-to-end (schema/migrations, deploys-to-gate,
   # backlog, framework records) and is bound by .claude/rules/brain-bridge.md
   # + .claude/rules/courses-of-action.md. telegram stays in-scope for warroom
   # broadcast only — lane CEOs are Telegram-dark (no bot, no Captain DM;
   # attention routes via the Chair's captain-attention queue).
   polads-ceo:
-    mcps: [neon, vercel, make, library, telegram, brain, corridor]
+    mcps: [neon, vercel, make, library, telegram, brain, corridor, monday]
     rationale: >
-      Lane CEO — engineering-grade scope for the lane (cto-like set) plus
+      Lane CEO — engineering-grade scope for the lane plus
       brain for gather-then-decide and the queue_draft outbound gate.
       Production deploys and external comms remain propose-only (hard
       ceiling) regardless of scope.
 
   stephie-ceo:
-    mcps: [neon, vercel, make, library, telegram, brain, corridor]
+    mcps: [neon, vercel, make, library, telegram, brain, corridor, monday]
     rationale: >
-      Lane CEO — engineering-grade scope for the lane (cto-like set) plus
+      Lane CEO — engineering-grade scope for the lane plus
       brain for gather-then-decide and the queue_draft outbound gate.
       Production deploys and external comms remain propose-only (hard
       ceiling) regardless of scope.
@@ -100,7 +76,7 @@ agents:
   # Comms Officer (portfolio/hq) — owns Nate's Outlook + Teams comms.
   # Telegram-dark: surfaces ONLY through the Chair. Captain-approved (2026-06-24).
   comms-officer:
-    mcps: [make, brain, library, telegram]
+    mcps: [make, brain, library, telegram, monday]
     rationale: >
       make: Graph-proxy folder-WRITE edit (3902068) + filing/archiving mailbox
       MOVES through the Make proxy — never a human-bound send. brain:

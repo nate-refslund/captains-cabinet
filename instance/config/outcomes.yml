@@ -65,6 +65,10 @@
 # compiles hq's missions and never double-executes cos-owned system-self
 # tasks. hq must run with CABINET_ID=hq-macbook for these outcomes to
 # compile (default CABINET_ID is "main").
+# AMENDMENT 2026-07-02 (Captain-ratified derivation card, docs/plans/outcome-derivation-2026-07-02.md):
+# outcomes below now AI-DERIVED from Captain-owned directions (instance/config/directions.yml)
+# and Captain-RATIFIED — per the directions-layer ruling. Work-model STREAM canonicality
+# amended same day (local board canonical; Monday = STEP mirror) — see docs/work-model.md.
 deployment: hq-macbook
 
 outcomes:
@@ -114,6 +118,7 @@ outcomes:
           - "Production deployment READY on Vercel app v0-politiske-annoncer"
           - "Post-deploy smoke pass: public search, transparency-notice detail, registration entry"
           - "PROPOSE-ONLY: deploy executes only after explicit Captain approval (production hard ceiling)"
+          - "BILLING FREEZE (Captain 2026-06-29 + card #2 2026-07-02): billing/subscription surfaces are EXCLUDED from this node's smoke scope and do NOT ship under this gate — polads-004-live owns the billing prod flip"
         evidence_required: "Vercel production deployment id + smoke-check transcript + Captain approval record"
         verifier_role: cos
         risk_level: high
@@ -139,7 +144,7 @@ outcomes:
       preview/test deployment, every remaining wave item triaged out of
       Needs Refinement, and Monday closed back via the dev-tasks plugin.
       Grounded ONLY in live Monday data pulled 2026-06-10.
-    status: active
+    status: achieved  # 2026-07-02 card #3: 4/5 Criticals Done (PRs #419/#425/#468), Beta epic 88/88; remainder (2979104881, 2979083289, 2975934613) = stream
     captain_ratified: true
     measurable_criteria:
       - node_id: polads-003-critical
@@ -190,7 +195,7 @@ outcomes:
       (Monday 2959309890), deploy to ai.stepnetwork.dk, and queue her the
       promised retest ping. Spec the canvas drag/reposition tool — her
       biggest current blocker ("ikke nok frihed til at flytte rundt").
-    status: active
+    status: achieved  # 2026-07-02 card: job-banners shipped at /create/job-banners (Captain-verified); successor = stephie-002
     captain_ratified: true
     measurable_criteria:
       - node_id: stephie-001-fixes
@@ -238,7 +243,7 @@ outcomes:
       onboarding wizard -> Monday.com sync path works and that the scheduled
       sync jobs are not failing silently. Read-mostly; a safe first mission
       for this lane (repo STEP-Network/step-network-website).
-    status: active
+    status: retired  # 2026-07-02 card: lane dormant by Captain ruling — website owned elsewhere; direction question parked
     captain_ratified: true
     measurable_criteria:
       - node_id: stepnet-001-e2e
@@ -369,3 +374,152 @@ outcomes:
   # then-outcome adhoc-001); that approval carries over to this routine —
   # build it in R3 without re-asking. Per-item proposals still gate via
   # ask_nate as specified.
+
+  # ===========================================================
+  # 2026-07-02 — AI-derived from directions.yml, Captain-ratified (card #3/#7)
+  # ===========================================================
+  # SLOT 2/2 for lane polads (freed by polads-003 achieved)
+  - id: outcome-polads-004
+    name: "PolAds Basic+Pro subscription & billing live end-to-end"
+    description: >
+      From price-model-approved-but-unbillable (Subscription epic 0/37, Paddle
+      Stuck in sandbox, entitlements half-enforced) to: a customer can
+      subscribe, be correctly entitled Basic vs Pro, and be charged with a
+      reconciled ledger in production. Direction fit: bet "subscription &
+      billing finalization" — instrument delta: basic_to_pro_conversion
+      unmeasurable -> live; v1_live prerequisite for Sept 1. Derivation:
+      docs/plans/outcome-derivation-2026-07-02.md.
+    status: active
+    captain_ratified: true
+    measurable_criteria:
+      - node_id: polads-004-entitlements
+        title: "Basic/Pro entitlement matrix enforced server-side, verified on staging"
+        owner_role: polads-ceo
+        acceptance_criteria:
+          - "Written one-page entitlement matrix (Captain-visible)"
+          - "Basic lock/greyout (3036217684), Basic wallet/credits open (3036649194), Pro share-credits (3038863708), dashboard T7 Pro-gate (3024648996) each conform to the matrix with a regression test"
+        evidence_required: "Matrix doc + merged PR links + staging verification notes"
+        verifier_role: stephie-ceo
+        risk_level: medium
+        rollback_note: "Per-fix git revert; staging-only surfaces"
+      - node_id: polads-004-ledger
+        title: "Wallet/credit ledger + checkout correctness closed"
+        owner_role: polads-ceo
+        acceptance_criteria:
+          - "Wallet-ledger UNIQUE index + qty-from-billed-amount (3018114858)"
+          - "UpgradeCheckout state machine unit-tested (3019803817)"
+          - "Live-amendment 1-credit charge wired per rule 3032953940 (3033388843)"
+          - "No double-charge path demonstrable (ledger-integrity test)"
+        evidence_required: "Merged PRs + green tests + ledger-integrity test output"
+        verifier_role: stephie-ceo
+        risk_level: medium
+        rollback_note: "Schema changes via reversible migration; git revert for logic"
+      - node_id: polads-004-paddle
+        title: "Paddle production readiness decided and configured"
+        owner_role: polads-ceo
+        acceptance_criteria:
+          - "EU/US compliance investigation (3004954017) resolved with a written disposition"
+          - "VAT/tax + payout policy documented"
+          - "Sandbox->production configuration plan written"
+          - "PROPOSE-ONLY: any spend/production Paddle config change executes only after explicit Captain approval (spend hard ceiling)"
+        evidence_required: "Decision doc + config diff proposal + Captain approval record"
+        verifier_role: cos
+        risk_level: high
+        rollback_note: "Config-only until approved; sandbox remains fallback"
+      - node_id: polads-004-live
+        title: "First real Basic->Pro upgrade + top-up transaction in production, reconciled"
+        owner_role: polads-ceo
+        depends_on: [polads-004-entitlements, polads-004-ledger, polads-004-paddle]
+        acceptance_criteria:
+          - "Production flip of billing surfaces (owns the billing prod scope excluded from polads-001-prod)"
+          - "One real or Captain-designated pilot transaction completes and reconciles in the ledger"
+          - "Rollback path documented"
+          - "PROPOSE-ONLY: production deploy + real money — hard ceiling, Captain approval per step"
+        evidence_required: "Sanitized transaction record + ledger reconciliation + approval trail"
+        verifier_role: cos
+        risk_level: high
+        rollback_note: "Vercel rollback + billing feature-flag off; Paddle sandbox re-point"
+
+  # QUEUED DRAFT (window cap; activates when polads-001 achieves, or Captain may rule it stream — card #4)
+  - id: outcome-polads-005
+    name: "Publisher dashboard converged-v4 cutover live"
+    description: >
+      Publishers move from the old dashboard to converged-v4 (Home/Records/
+      Market-Insight/Pro-gate) in production, 24-locale parity. Direction fit:
+      bet "publisher dashboard" — support_load_per_customer down,
+      basic_to_pro_conversion up (T7 teaser). Honesty note: T-series already
+      flows as stream in Sprint 11; this outcome adds the verification+cutover
+      gate. Node sketch in docs/plans/outcome-derivation-2026-07-02.md.
+    status: draft
+    captain_ratified: false
+    measurable_criteria:
+      - "T-series complete + verified with tests (T2 3024989131, T4 3024990331, T6 3024988454, T7 3024648996, T8 3025020850, T9 3025000015, T10 3025762374)"
+      - "i18n 24-locale parity sweep evidence"
+      - "PROPOSE-ONLY: production cutover + smoke needs explicit Captain approval (production hard ceiling)"
+
+
+  # SLOT 1/2 for lane stephie (successor to stephie-001; slot 2 deliberately empty)
+  - id: outcome-stephie-002
+    name: "Booking front-door v0 — job-banner flow generalized to a second bookable format with order handoff"
+    description: >
+      From single-purpose job-banner tool (/create/job-banners) to a booking
+      front-door: an advertiser takes >=1 additional ad format from request ->
+      creative -> structured order draft end-to-end on staging, live behind a
+      flag. Direction fit: bet "generalize the proven AI job-banner flow into
+      the booking front-door" — instrument delta: self_served_booking_rate
+      0 -> first pilot value; request_to_live_lead_time first baseline.
+      GATE: stephie-002-spec scope is bounded by directions.yml stephie
+      not_goals — Captain must fill that TODO before the spec finalizes
+      (card #11). Derivation: docs/plans/outcome-derivation-2026-07-02.md.
+    status: active
+    captain_ratified: true
+    measurable_criteria:
+      - node_id: stephie-002-spec
+        title: "Front-door generalization spec (passes spec-quality-gate)"
+        owner_role: stephie-ceo
+        acceptance_criteria:
+          - "Format model: what makes a format bookable"
+          - "Reuse map of the job-banner canvas pipeline"
+          - "GAM order-handoff shape defined"
+          - "Measurable acceptance criteria + effort estimate; bounded by directions.yml stephie not_goals (Captain TODO filled first)"
+        evidence_required: "Spec doc in shared/interfaces/product-specs/ + spec-quality-gate pass"
+        verifier_role: polads-ceo
+        risk_level: low
+        rollback_note: "Spec-only; no runtime change"
+      - node_id: stephie-002-format2
+        title: "Second format creative flow works on preview"
+        owner_role: stephie-ceo
+        depends_on: [stephie-002-spec]
+        acceptance_criteria:
+          - "An advertiser produces a campaign-ready creative of the chosen second format end-to-end on a preview deployment"
+          - "Regression tests on the generalized (non-job-specific) pipeline pieces"
+        evidence_required: "PR links on STEP-Network/stephie-mcp + preview URL + verification notes"
+        verifier_role: polads-ceo
+        risk_level: medium
+        rollback_note: "Preview-only; git revert"
+      - node_id: stephie-002-order
+        title: "Booking request -> structured order draft (read-only GAM verification)"
+        owner_role: stephie-ceo
+        depends_on: [stephie-002-format2]
+        acceptance_criteria:
+          - "Submitted booking request yields a validated order object (GAM order draft or internal booking record)"
+          - "Read-only GAM verification of targeting/inventory references"
+          - "First tasks created in GAM Campaign Order epic 2730544524"
+          - "PROPOSE-ONLY: any GAM write / live order creation requires explicit Captain approval"
+        evidence_required: "Order object samples + read-only GAM verification transcript"
+        verifier_role: polads-ceo
+        risk_level: medium
+        rollback_note: "No external writes until approved; internal records reversible"
+      - node_id: stephie-002-pilot
+        title: "Live behind flag + pilot measurement baselines"
+        owner_role: stephie-ceo
+        depends_on: [stephie-002-order]
+        acceptance_criteria:
+          - "Front-door live on ai.stepnetwork.dk behind a feature flag"
+          - "One pilot booking exercised"
+          - "request_to_live_lead_time + self_served_booking_rate baselines recorded for the direction instruments"
+          - "PROPOSE-ONLY: production deploy needs Captain approval; any advertiser-facing pilot comms via brain queue_draft (external_comms ceiling)"
+        evidence_required: "Deployment id + flag config + baseline measurement note"
+        verifier_role: cos
+        risk_level: high
+        rollback_note: "Feature flag off; Vercel rollback"

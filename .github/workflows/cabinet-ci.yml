@@ -9,11 +9,14 @@ name: Cabinet CI
 # Does NOT run: Dockerfile rebuilds, deploy-triggering ops, MCP integration.
 # Minimal by design — expand once signal justifies.
 
+# F0.3 (2026-07-02): retargeted at the live integration branch — CI had been
+# structurally dead since master froze 2026-06-12 while all fidelity/authority/
+# acting/frontdoor work landed on feat/fidelity-harness-design.
 on:
   pull_request:
-    branches: [master]
+    branches: [master, feat/fidelity-harness-design]
   push:
-    branches: [master]
+    branches: [master, feat/fidelity-harness-design]
 
 permissions:
   contents: read
@@ -378,3 +381,23 @@ jobs:
         # code + stale Proposed status for 7 days unnoticed). Punch-list
         # shows in the CI run log; CTO reacts in the next /loop tick.
         run: bash /opt/founders-cabinet/cabinet/scripts/audit-framework-backlog-drift.sh
+
+  # F0.3 (2026-07-02): the 1,343-test framework suite finally gets a CI runner —
+  # it previously ran in NO CI anywhere (the newest, most safety-critical code:
+  # leak fences, authority matrix, graduation, acting lane, frontdoor).
+  # KNOWN-RED at introduction: 2 pre-existing date-drift failures in
+  # framework/fidelity/tests/test_graduation.py (fixtures written 2026-06-19
+  # with wall-clock-relative day arithmetic; rotted by 07-02). Honest red over
+  # absent — fix tracked in docs/plans/EXECUTION-STATUS.md.
+  framework-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: pip install pytest pyyaml jsonschema
+      - name: Framework test suite
+        run: python -m pytest framework/ -q

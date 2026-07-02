@@ -123,3 +123,4 @@ instance/config/required-plugins.yml
 instance/config/extra-mcps.json
 .claude/project-config.json
 instance/config/autonomy.yml
+cabinet/launchd/generated/

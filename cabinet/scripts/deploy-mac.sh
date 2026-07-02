@@ -163,13 +163,48 @@ EOF
   fi
 }
 
+# F0.2 (2026-07-02): the officer fleet is DERIVED from the deployment's roster
+# (instance/config/roster.yml — the authoritative, deployment-local seed source
+# that bootstrap-roles.sh consumes), never hardcoded. The previous hardcoded
+# `cos cto cpo cro coo` deployed the retired 5-officer work-preset fleet — on
+# the live portfolio deployment (cos, polads-ceo, stephie-ceo, comms-officer) a
+# redeploy would have replaced the WORKING org with a dead one (blueprint §2.3-D,
+# red-team amendment RT#13). No roster file ⇒ refuse loudly; never fall back to
+# a preset default.
+roster_officers() {
+  local roster="$REPO_ROOT/instance/config/roster.yml"
+  if [ ! -f "$roster" ]; then
+    cat >&2 <<EOF
+deploy-mac.sh: instance/config/roster.yml not found — cannot derive the officer
+  fleet. Seed it first (cabinet-init interview or bootstrap-roles.sh --roster),
+  or deploy a single officer explicitly with --officer <name>.
+  Refusing to guess: deploying a preset default fleet onto a live deployment is
+  exactly the wrong-fleet-redeploy failure this guard exists to prevent.
+EOF
+    exit 2
+  fi
+  # Parser contract (mirrors bootstrap-roles.sh): top-level `roster:` opens the
+  # section; role slugs are 2-space-indented keys (hyphens allowed); 4-space
+  # lines are per-role fields and are skipped.
+  awk '
+    /^roster:[[:space:]]*$/ { in_roster=1; next }
+    in_roster && /^[^[:space:]#]/ { exit }
+    in_roster && /^  [a-z0-9-]+:[[:space:]]*$/ {
+      slug=$1; sub(/:$/,"",slug); print slug
+    }
+  ' "$roster"
+}
+
 # Execute
 if [ "$ALL" = true ]; then
-  for o in cos cto cpo cro coo; do deploy_officer "$o"; done
+  OFFICERS_LIST=$(roster_officers)
+  [ -n "$OFFICERS_LIST" ] || { echo "deploy-mac.sh: roster.yml parsed to an empty officer list — refusing." >&2; exit 2; }
+  for o in $OFFICERS_LIST; do guard_consultant "$o"; deploy_officer "$o"; done
   # All non-officer daemon templates. Mirrors cabinet/launchd/*.template.plist
   # minus the per-officer template. Keep in sync with verify-launchagents.sh.
   for d in \
     heartbeat-watchdog \
+    limit-reset-watchdog \
     cost-summary \
     worktree-listener \
     mission-supervisor \
@@ -193,7 +228,9 @@ else
   # whenever --officer was present).
   DEPLOYED_ANY=false
   if [ "$OFFICER" = "all" ]; then
-    for o in cos cto cpo cro coo; do deploy_officer "$o"; done
+    OFFICERS_LIST=$(roster_officers)
+    [ -n "$OFFICERS_LIST" ] || { echo "deploy-mac.sh: roster.yml parsed to an empty officer list — refusing." >&2; exit 2; }
+    for o in $OFFICERS_LIST; do guard_consultant "$o"; deploy_officer "$o"; done
     DEPLOYED_ANY=true
   elif [ -n "$OFFICER" ]; then
     guard_consultant "$OFFICER"

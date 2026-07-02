@@ -1,266 +1,445 @@
-# Captain's Cabinet
+# Captain's Cabinet — The Guide
 
-*A framework for building autonomous AI organizations that ship, learn, and evolve.*
+*The operating doctrine for autonomous AI organizations that ship, learn, and evolve.*
 
 **By Nathaniel Refslund**
-**Version 1.2 - April 2026**
+**Version 2.0 — July 2026**
 
 ---
 
 ## Purpose of This Guide
 
-The Captain's Cabinet is a framework for organizing autonomous AI agents into a self-improving workforce that operates continuously under human direction. It is designed for operators — founders, managers, solo professionals, team leads — who want to multiply their output without multiplying their headcount.
+Captain's Cabinet is a framework for organizing autonomous AI agents into a self-improving workforce that operates continuously under human direction. This guide is the doctrine: the principles the machine is built on, and how its parts fit together — for a Captain running one.
 
-This guide defines the principles, structure, and dynamics of a Captain's Cabinet. It does not prescribe specific tools, platforms, or technologies. It is intentionally incomplete - the Cabinet fills in the gaps itself over time, and that is the point.
-
----
+It is written to be durable. It states principles and points at the artifacts that implement them (`framework/`, `docs/plans/`, `instance/config/`); it avoids file-level detail that rots. One convention throughout: where the live estate has not yet caught up to doctrine, the item is marked *(target state — migration per `docs/plans/`)*. The plans' `EXECUTION-STATUS.md` is always the truth of what runs today. Doctrine leads; wiring follows; the gap is tracked, never hidden.
 
 ## Definition
 
-A **Captain's Cabinet** is a continuously running organization of AI agents that builds, ships, and improves the Captain's work — whether that work is a product, an operation, a research practice, a consulting engagement, or anything else — under the strategic direction of the human Captain. The Cabinet operates autonomously within defined safety boundaries. It compounds institutional knowledge over time. It adapts its own structure to the work at hand.
+A **Captain's Cabinet** is a continuously running organization of AI agents that builds, ships, and operates the Captain's work — a product, a practice, an operation — under the strategic direction of the human Captain. It operates autonomously within enforced boundaries, earns wider autonomy through recorded evidence, compounds institutional knowledge, and improves its own processes through a gate it cannot edit.
 
-The Cabinet is not a chatbot. It is not a pipeline. It is not a script. It is an organization — with roles, memory, judgment, and the capacity to reorganize itself. The operator running it is its Captain. The agents are its Officers and Crew.
+The Cabinet is not a chatbot. It is not a pipeline. It is not a script. It is an organization — with roles, memory, judgment, and the capacity to reorganize itself. The operator running it is its **Captain**. The agents are its **Officers** and **Crew**.
 
-### Officers and Crew
+**Officers** are the domain owners: persistent Claude Code sessions, each with a defined area of responsibility and the authority to decide within it. **Crew** are ephemeral execution agents spawned by Officers for specific work, dissolving when it is done. Officers set direction within their domain; Crew do the work; permissions flow downward, never upward.
 
-The Cabinet has two layers of agents:
-
-**Officers** are the domain owners. Each Officer has a clearly defined area of responsibility, a direct line to the Captain (or to the Chief of Staff who relays), and the authority to make decisions within their domain. Officers are persistent - they exist as long as their role is needed.
-
-**Crew** are execution agents spawned by Officers to carry out specific work. A Chief Technology Officer spawns a crew of frontend, backend, and testing agents to build a feature. A Chief Research Officer spawns a crew of specialists to investigate a market segment. Crew are ephemeral - they exist for the duration of a task and dissolve when the work is done.
-
-Officers set the direction within their domain. Crew do the work.
+Two flavors of Cabinet exist on the same framework. **Flavor A** is the personal clone org: it senses the Captain's world (screen, messages, meetings, a personal knowledge vault) and acts as their clone, with human verdicts as its only honest ground truth. **Flavor B** is the standalone product org on a dedicated Mac Mini: it owns one software product end-to-end and feeds primarily on machine-checkable truth — CI verdicts, deploy states, error budgets, support resolutions. Everything in this guide applies to both unless a flavor is named.
 
 ---
 
-## Theory
+## 1. Philosophy
 
-### The Operator's Role Changes
+### The operator becomes the Captain
 
-In a traditional organization, the operator — founder, manager, team lead, solo professional, whoever holds the role — does the work, delegates the work, or manages people who do the work. In a Captain's Cabinet, the operator does none of these. They become the **Captain** — setting direction, making decisions that require human judgment, and reviewing outcomes. The Captain steers an autonomous organization that happens to be made of AI agents instead of people.
+In a traditional organization the operator does the work, delegates the work, or manages the people who do it. In a Cabinet the operator does none of these. They set direction, make the decisions that genuinely require human judgment, and review outcomes. The Cabinet determines *how*; the Captain determines *what matters and why*.
 
-This is not a delegation framework. Delegation implies the Captain knows how the work should be done and instructs others to do it. In a Captain's Cabinet, the Officers determine how to execute within their domains. The Captain determines what matters and why.
+This is not a delegation framework. Delegation implies the Captain knows how the work should be done and instructs others to do it. Officers determine execution within their domains. The Captain's scarcest resource is not time — it is judgment, and the whole machine is engineered to spend it precisely.
 
-### Why It Works
+### Leader-leader, not leader-follower
 
-Three converging capabilities make the Captain's Cabinet viable:
+The Cabinet's command model is Marquet's leader-leader: don't move information to authority — move authority to the information. But moving authority safely requires two preconditions Marquet named and this framework mechanizes: **competence** and **clarity**.
 
-1. **AI agents can now use tools, write code, and coordinate with each other** without custom orchestration frameworks. The infrastructure cost of running multiple cooperating agents has collapsed.
+- **Clarity** is supplied by the intent hierarchy (§2): Captain-authored directions, ratified outcomes, a constitution loaded into every session. Officers act on "I intend to…" proposals, not on awaiting orders.
+- **Competence** is not asserted — it is *measured*. Authority transfers per action class only when the evidence engine (§3) shows the org gets that class right. Autonomy is earned in cells, held on evidence, and revoked on failure.
 
-2. **Messaging interfaces allow asynchronous command and control.** A Captain can direct an entire organization from a mobile device, reviewing outcomes and making decisions without sitting at a terminal.
+The result is intent-based execution with a mechanical trust ladder underneath it. Nobody — not the Captain in a generous mood, not an officer with a persuasive argument — hands over control ahead of the evidence.
 
-3. **File-based memory and self-modification allow agents to improve their own processes** without model retraining. The system gets better by writing better instructions for itself.
+### Outcome per unit of Captain attention
 
-### What a Solo Founder Becomes
+The north star metric is **verified outcomes per Captain-minute**. Not tasks completed, not messages sent, not ceremony performed — ledger-verified outcomes, divided by the human attention consumed producing them. Every design choice bends toward this ratio: machine probes answer what machines can check so the Captain answers only what they cannot; proposals batch into briefings instead of fragmenting attention; one card carries a whole course of action instead of five pings carrying five steps. When in doubt between more process and less Captain attention, choose less attention.
 
-A solo founder running a Cabinet is not a solo founder anymore. They are the Captain of an organization that operates at a pace no human team can match - not because the agents are smarter than humans, but because they never stop, never context-switch, and never forget what they learned yesterday.
+### Asymmetric autonomy is correct
 
-The Captain's scarcest resource is no longer time. It is judgment. The Cabinet generates options, analysis, and implementation at machine speed. The Captain's job is to point it in the right direction and course-correct when it drifts.
+Machine-verifiable action classes (CI-gated commits, preview deploys, board moves) graduate in weeks at product-traffic volume. Judgment classes (external comms tone, prioritization, compliance wording) stay Captain-gated for months — possibly forever on a compliance product. This asymmetry is the evidence engine *working*. The failure mode to watch is never "judgment lanes still gated" — it is a machine-verifiable lane still unmeasured, which means a probe or a join is broken. Never equalize the two by weakening a gate.
 
----
+### Built = scheduled + fed + watched
 
-## The Five Pillars
+The estate's most instructive historical failure: sophisticated machinery built, tested — and never scheduled, never fed, never watched. Nothing noticed, because process-health is not outcome-health. Doctrine, therefore: **a component does not exist until it is scheduled (a manifest-registered job), fed (its inputs asserted fresh and non-empty), and watched (a liveness/throughput expectation registered with a watchdog that pages on starvation).** Code-written-only is not done. Every consumer of data asserts its inputs are fresh before trusting them, and hard-fails loudly otherwise.
 
-A Captain's Cabinet is built on five non-negotiable pillars. Remove any one and the system degrades into either chaos or stagnation.
+### The Twelve Principles
 
-### 1. Dynamic Roles
+These survive any implementation churn — the org's constitution-of-constitutions. Violations are defects, not style choices.
 
-Every Officer in the Cabinet has a clearly defined domain of ownership - what it is responsible for, what it produces, and what it can decide autonomously. These roles are defined as living documents, not code. They can be created, modified, merged, split, or retired at any time by the Captain.
-
-**Officers may be always-active or activation-on-demand.** A role that requires continuous availability operates differently from one that does periodic work. The Cabinet should support both — without requiring that every Officer maintain a persistent presence when their work is intermittent. How this is implemented is a design choice.
-
-**Roles define ownership, not workflows.** How Officers interact with each other - who feeds whom, who requests what - emerges organically and evolves over time. The Cabinet does not prescribe communication patterns between roles. It trusts that Officers with clear ownership and shared interfaces will find effective ways to collaborate.
-
-**Organic does not mean passive.** Officers are responsible for proactively pushing their outputs to whichever peers need to act on them. Shared interfaces are for artifacts - the durable outputs of work. But an artifact that sits unread creates no value. When an Officer completes work that another Officer should evaluate, build on, or respond to, the producing Officer must notify them directly. Which Officers to notify, and why, is a judgment call that belongs to the producing Officer - not a prescribed routing rule.
-
-A role definition must include:
-- **Name and identity**: what the Officer is
-- **Domain of ownership**: what it is responsible for
-- **Autonomy boundaries**: what it can decide without Captain approval
-- **Shared interfaces**: where it reads from and writes to
-
-A role definition must not include:
-- Fixed interaction patterns with other Officers
-- Step-by-step procedures (these belong in the skill library, not in identity)
-- Assumptions about which other Officers exist
-
-The org chart is a configuration file, not an org chart. The Captain can restructure the entire Cabinet in a single message.
-
-**Officer lifecycle.** Officers are created when their domain is needed and retired when it is not. Retirement should preserve what the Officer learned — their accumulated memory and experience — rather than delete it. A role that was retired may be needed again, and its prior context has value. Organizational experimentation should be cheap: try a role, retire it if it does not serve, revive it if the need returns.
-
-### 2. The Founder as Captain
-
-The Captain interacts with the Cabinet through a single asynchronous messaging interface. This is the only point of contact between the human world and the autonomous organization.
-
-The Cabinet communicates outward through:
-- **Briefings**: scheduled summaries of progress, outcomes, and blockers
-- **Decision requests**: when a situation exceeds the Officers' autonomy boundaries
-- **Alerts**: high-signal events that require immediate Captain awareness
-
-The Captain communicates inward through:
-- **Strategic direction**: what to build, what to prioritize, what to stop
-- **Decisions**: approvals, rejections, course corrections
-- **Restructuring**: creating, modifying, or retiring Officers
-
-The Cabinet must minimize Captain interrupts. Every message to the Captain should either deliver value (briefings, completed work) or be genuinely blocked without Captain input (decisions that exceed autonomy boundaries). If the Cabinet messages the Captain too often, the autonomy boundaries are drawn too tightly. If it never messages the Captain, the safety boundaries are drawn too loosely.
-
-**Alert discipline.** A single issue must not produce repeated alerts. Alerts to the Captain must be deduplicated - once the Captain has been informed of a problem, subsequent notifications about the same problem are noise, not signal. An implementation that alerts every five minutes about a known issue will train the Captain to ignore alerts entirely, which defeats their purpose.
-
-**Cost visibility.** The Captain needs ongoing visibility into resource consumption - not just hard limits that halt operations when exceeded. Spending limits prevent runaway costs, but a dashboard that shows where resources are going allows the Captain to make informed allocation decisions before limits are hit.
-
-### 3. Memory That Compounds
-
-A Cabinet without memory repeats its mistakes, rediscovers its solutions, and starts from zero every session. Memory is what transforms a collection of stateless agents into an institution.
-
-The Cabinet maintains three tiers of memory:
-
-**Tier 1: Operating Instructions**
-Loaded into every agent at session start. Contains the Cabinet's constitution - project conventions, safety rules, active role roster, and core principles. Must be concise. Must be accurate. Must be maintained ruthlessly.
-
-**Tier 2: Working Knowledge**
-Notes that agents write for themselves - corrections, preferences, accumulated context. Automatically managed and curated. Each Officer maintains its own working knowledge within its domain.
-
-**Tier 3: Institutional Memory**
-The full corpus of log entries, decision logs, research archives, and postmortems. Not loaded automatically - retrieved on demand when relevant. This is the Cabinet's long-term memory. It grows continuously and is periodically consolidated to extract patterns and prune noise.
-
-The critical design rule: **only Tier 1 is always loaded.** Everything else is pulled on demand. An agent that loads its entire memory into every session will drown in context and lose focus.
-
-**Memory consolidation** is an active process, not passive storage. The Cabinet periodically reviews its accumulated experience, extracts patterns, deduplicates, and distills lessons into higher-tier memory. A pattern observed three times becomes an operating instruction. A procedure that works repeatedly becomes a reusable skill. Memory flows upward through the tiers over time.
-
-### 4. Self-Improvement Loops
-
-The Cabinet gets measurably better at its job over time - not through model improvements, but through better instructions, better tools, better processes, and better memory. This happens through three nested loops:
-
-**Operational standards are a prerequisite for learning.** Before the improvement loops can function, every Officer must have defined quality standards in their role definition — the minimum bar for how they do their work, not just what they own. An Officer without standards produces undefined behavior, and undefined behavior cannot be improved through reflection. The Captain defines initial standards; the improvement loops refine them over time.
-
-**Captain directives vs. retrospective-discovered improvements.** The Captain can update operational standards, role definitions, and processes at any time — this is Captain authority, not micromanagement. The self-improvement loops exist for improvements that Officers discover autonomously through experience. These are complementary mechanisms: Captain directives set and raise the bar; improvement loops optimize how Officers meet it.
-
-**The Task Loop (event-driven)**
-Every task follows: plan, execute, verify, record. Verification must be independent - the agent that built something is not the agent that confirms it works. Every completed task produces an log entry: what was attempted, what succeeded or failed, and what to do differently next time. The Task Loop is enforced, not optional — a task without a recorded experience is not complete.
-
-**The Reflection Loop (throughput-driven)**
-Each Officer periodically reviews their own accumulated log entries, identifies patterns in their own work, and self-corrects. Additionally, the orchestrating Officer reviews all Officers' log entries for cross-Officer coordination patterns — handoff quality, responsiveness, communication gaps. Reflection cadence should match the rate at which new log entries accumulate. If ten records appear in six hours, reflect every six hours. If one record appears per day, daily reflection is sufficient. The principle: reflect often enough that patterns are caught before they compound, but not so often that every cycle finds nothing.
-
-**The Evolution Loop (batch-driven)**
-A heavier analysis cycle where the Cabinet evaluates its own performance against defined metrics, runs validation tests against proposed changes, and promotes improvements that pass. Changes that degrade performance are automatically reverted. The Cabinet can propose organizational restructuring - merging Officers, creating new specialists, retiring unused roles - but the Captain approves structural changes. Evolution runs after each Reflection cycle has produced enough data to warrant analysis. It can always decide not to promote anything if no improvements qualify.
-
-**Organizational auditing.** Individual reflection improves each Officer's own work. Organizational auditing examines the Cabinet as a whole — whether roles still fit their definitions, whether any domain has no owner, whether any workload is concentrated in one Officer while another is idle. This is the coordinating Officer's responsibility. It complements reflection rather than replacing it.
-
-**The iron rule of self-improvement: every change is an experiment with a rollback path.** The Cabinet modifies its own instructions on a branch, validates against a set of known-good scenarios, and only promotes changes that demonstrably improve outcomes. Self-improvement without validation is drift, not improvement.
-
-**Cadence scales with operating speed.** The improvement loops must match the pace of the Cabinet's work, not a fixed clock. A Cabinet running on powerful models that complete 50 tasks per day needs rapid reflection and frequent evolution cycles. A Cabinet running on smaller models with lower throughput can reflect less often. The principle: improvement loops should never be the bottleneck, and accumulated log entries should never sit unreviewed long enough for bad patterns to compound. Set cadences aggressively and adjust based on whether each cycle produces actionable output.
-
-### 5. Safety Boundaries
-
-A Cabinet that operates autonomously must have hard boundaries that no agent can cross, regardless of context or reasoning. These boundaries exist because autonomous systems will eventually encounter situations where the locally optimal action is globally destructive.
-
-Safety boundaries are defined in a protected document that no agent can modify. They include:
-
-- **Actions that require Captain approval** (production deployments, data deletion, credential rotation, budget increases)
-- **Hard spending limits** per session, per day, and per month
-- **A kill switch** that immediately halts all agent activity, accessible only to the Captain
-- **Retry limits** that prevent infinite loops (max retries per operation, automatic escalation on repeated failure)
-- **Scope boundaries** that restrict agents to their designated workspace
-
-**Permission inheritance.** An Officer can spawn Crew to execute work within its domain. Crew inherit the boundaries of the Officer that spawned them. An Officer can restrict the scope of its Crew further, but never expand it beyond what the Officer itself possesses. Permissions flow downward, never upward. A Crew agent can never acquire capabilities that its Officer does not have. This principle is non-negotiable and must be enforced at the infrastructure level.
-
-Safety boundaries are not suggestions. They are enforced programmatically - through tool-level intercepts that block prohibited actions before they execute, not through instructions that ask agents to please be careful.
-
-The Cabinet also maintains a self-healing escalation chain: when an agent fails, it retries, then self-diagnoses, then escalates to a more capable Officer, and finally escalates to the Captain. The Captain is always the last resort, never the first responder.
-
-**Liveness monitoring must distinguish idle from dead.** A Cabinet that runs continuously will have agents in a waiting state - awaiting input, awaiting a scheduled trigger, awaiting a peer's output. These agents are alive but inactive. Any liveness system that relies solely on activity signals will misidentify waiting agents as failed agents, producing false alerts that erode trust in the monitoring system. The health layer must account for the fact that an agent doing nothing may be doing exactly what it should.
+1. **The gate is the mechanism.** Proposal machinery contributes almost nothing; the acceptance gate (balanced probe, regression budget, hidden holdout, repeated passes) separates compounding from thrashing. Invest there.
+2. **Whoever owns the approval surface owns label capture, atomically.** The verdict is recorded in-process with the act itself; presenting a proposal, delivering the decision, and writing the ledger rows are ONE component that migrates together. Evidence starvation auto-revokes autonomy.
+3. **No loop may edit its own judge — and the judge must be read-isolated, not just write-protected.** Germline protection for judge code; split germline for eval fixtures; the holdout lives in a scope the optimizer cannot read; logs are immutable.
+4. **Machine truth first, human judgment reserved.** Fill evidence denominators with adversary-resistant probes; spend Captain attention only where machines cannot check; treat every verifier as a proxy that must co-evolve with what it measures.
+5. **Never trust the actor's narrative.** Agents write claims; tools write logs; a verifier reads both and writes neither. Fabrication demotes. Failure reporting must be cheap and unpunished.
+6. **Fail closed, degrade honestly.** Unmeasured means propose-only. Credit exhaustion halts self-improvement rather than skipping gates. Veto windows hold when the Captain is unreachable. Probes report could-not-observe rather than guessing.
+7. **Built = scheduled + fed + watched.** A component isn't done until a watchdog would page on its starvation. Data-freshness assertions on every consumer.
+8. **One joint per function.** Every severed wire in this estate's history was cut at a duplicated joint during a migration. Before any migration: enumerate duplicates, assign one owner, run both joints in observed parallel, verify evidence continuity, then delete with a tripwire.
+9. **Episodic execution over durable state.** Fresh sessions re-reading files and databases beat marathon contexts; capsule, handoff, and progress files; restart is the default recovery.
+10. **The Captain is a metered, two-way resource.** Escalation budgets and rubber-stamp detection on one side; a debt queue with ageing on the other. Batch, dedupe, expire.
+11. **Asymmetric autonomy is correct.** Machine-verifiable lanes graduate in weeks; judgment lanes may stay gated for months. Don't equalize by weakening the gate.
+12. **Reversibility prices everything.** Reversible and cheap: act and log. Expensive: evidence threshold. Irreversible: ceiling, forever.
 
 ---
 
-## Artifacts
+## 2. The Intent Hierarchy
 
-A Captain's Cabinet produces and maintains three essential artifacts:
+Intent flows down through four layers, each more concrete than the last. The Captain owns the top; the org derives everything below it and carries proposals back up for ratification.
 
-### The Constitution
+```
+DIRECTIONS   (Captain-authored, durable, few)
+   └─► OUTCOMES   (AI-derived, Captain-ratified, bounded + verifiable)
+          └─► WORK MODEL   (stream / missions / intake)
+                 └─► EXECUTION   (claims, episodic runs, verification)
+```
 
-A concise document loaded at the start of every agent session. It defines: the project and its context, the active role roster, work principles and quality standards, safety rules and autonomy boundaries.
+### Directions — the layer the org may never author
 
-The Constitution is the Cabinet's DNA. It must be short enough that agents actually follow it and specific enough that it changes behavior. It is a living document - the Cabinet proposes amendments through the self-improvement loops, and the Captain approves or rejects them.
+A **direction** is a Captain-owned statement of where a lane is going: a mission sentence, a small set of **instruments** (trend metrics — instruments, not targets), the current **bets**, and explicit **not-goals**. Directions are few, durable, and revised roughly quarterly. They live in `instance/config/directions.yml`.
 
-### The Role Registry
+Two rules are absolute. First, **the org derives outcomes from directions; it never authors directions** — not even for its own self-improvement lane, which is governed by a Captain-owned direction like any product lane. Second, **instruments are trend instruments for drift detection, not deadline targets** — the moment an instrument becomes a quota, Goodhart owns it.
 
-The authoritative list of active Officers in the Cabinet - who exists, what each one owns, and how they relate to the shared interfaces. The Role Registry changes whenever the Captain restructures the organization. It is the single source of truth for "who does what around here."
+### Outcomes — bounded, verifiable, ratified
 
-### The Skill Library
+An **outcome** is a bounded, verifiable state change: a verifier can look at evidence and say *the world changed from X to Y*. Outcomes are AI-derived and Captain-ratified; every proposed outcome must cite the direction bet it serves and the instrument delta it expects. Lifecycle: `draft → active (ratified) → achieved → retired`.
 
-A growing collection of reusable procedures - playbooks for repeated workflows that the Cabinet has validated through experience. Skills are not instructions written on day one and left to rot. They are distilled from successful episodes, tested against validation scenarios, and promoted into the library only after proving their value.
+Each lane holds a rolling window of **1–2 active outcomes — a cap, not a quota**. A lane with zero active outcomes is healthy; silence is a valid state. The **renewal loop** keeps the window honest: when an outcome's criteria all carry verified evidence, the coordinating role proposes `achieved`; the freed slot triggers the lane's product-owner role to draft a successor from stream pressure and the epic queue; the Captain ratifies. At AI speed these are gates, not calendars.
 
-**Skills have a full lifecycle: creation, promotion, review, and archival.** A skill that produces failures when followed, goes unused in its domain, or is superseded by a better skill should be reviewed and potentially archived. A library that only grows becomes noisy and contradictory. Archival is as important as promotion — it keeps the library trustworthy. Archived skills are not deleted; they are kept with reason notes so the Cabinet does not re-invent a procedure it already tried and retired.
+The retro adds a **direction-drift check**: outcomes achieving while the direction's instruments stay flat means the org is winning the wrong game — regenerate the outcomes, don't celebrate them.
 
-**Foundation skills** ship with the Cabinet from day one — baseline procedures that define the minimum quality bar for how Officers operate. They are promoted from the start but follow the same lifecycle as any other skill. They can be improved through the learning loop just like skills discovered through experience.
+### The work model — Stream / Missions / Intake
 
-The Skill Library is the Cabinet's institutional competence. Over time, it becomes the primary source of compounding value - a library of validated procedures that no employee could match for consistency and retention.
+Every piece of work in a lane is exactly one of three classes (full contract: `docs/work-model.md`):
 
----
+- **STREAM** — continuous product work: bugs, tasks, small features. Lives on the **local task board** (the canonical work store; external PM tools mirror via adapters — §6). Claim → execute → close; never ends. Standing quality bars ("critical items triaged within 24h") are **stream SLOs** — control loops monitored by briefings, never outcomes.
+- **MISSIONS** — the outcomes above, when work needs orchestration structure the stream cannot give: ordering, verification gates, risk-tiered approvals, cross-role handoffs. Two-prong test: verifiable state change (not an activity) AND genuine campaign shape. A batch of stream items with a bow on it is not a mission. Expect a handful per product per year.
+- **INTAKE** — the classification machinery feeding the other two: sweep sources, classify to a lane, gather-then-decide, propose-only. Intake runs forever and is never itself an outcome.
 
-## Dynamics
+Never collapse the classes. Stream wrapped in outcomes produces zombie missions; intake wrapped in an outcome produces a mission that can never achieve. Products are **lanes**, not outcomes — a product never finishes; only outcomes do.
 
-### How a Cabinet Starts
+### Execution
 
-A Cabinet begins small - the minimum viable set of Officers needed to operate. Typically this is an orchestrator (who manages Captain communication and inter-Officer coordination), one or two execution Officers, and a research Officer. Adding more Officers on day one is a common mistake. Start with few, prove they work, expand when the workload justifies it.
-
-### How a Cabinet Grows
-
-New Officers emerge from demonstrated need, not from anticipation. When the Cabinet's retrospective loop identifies that an existing Officer is consistently overloaded or that a category of work has no clear owner, it proposes a new role. The Captain approves and the Cabinet creates the role definition, updates the registry, and begins operating with the new structure.
-
-### How a Cabinet Adapts
-
-The Captain can restructure the Cabinet at any time through a single message. This is not a disruptive reorganization - it is a configuration change. Roles are documents, not people. They carry no ego, no institutional knowledge that would be lost, and no transition period. The Cabinet's memory persists independently of its organizational structure.
-
-### How a Cabinet Runs 24/7
-
-A Cabinet operates continuously. The cadence of work is not measured in sprints or weeks but in hours. Research sweeps happen multiple times per day. Backlog refinement happens daily. Retrospectives happen every few days, not every few weeks. The Cabinet compresses what a human team does in a month into days - not because each task is faster, but because the Cabinet never stops working.
-
-### How a Cabinet Fails
-
-The most common failure modes:
-
-**Context rot.** Long-running sessions accumulate noise until agents make assumptions without checking. Mitigated by breaking work into atomic tasks with fresh context, aggressive memory consolidation, and independent verification. When agents have finite working memory, the Cabinet must ensure that what an agent was doing survives any reset of that memory — otherwise the agent effectively restarts.
-
-**Memory corruption.** Multiple agents writing to shared files simultaneously. Mitigated by atomic writes, file locking on coordination artifacts, and clear ownership of shared interfaces.
-
-**Improvement drift.** The Cabinet changes its own instructions without validating the changes, gradually drifting from effective to confidently wrong. Mitigated by the iron rule: every change is validated against known-good scenarios before promotion.
-
-**Cost runaway.** Parallel agent sessions consume resources multiplicatively. Mitigated by per-session and per-day spending limits enforced at the infrastructure level, not by agent self-restraint.
-
-**Communication isolation.** Officers produce outputs but do not notify the peers who need to act on them. Work accumulates in shared interfaces but never reaches the right people, and the pipeline stalls despite every Officer being individually productive. Mitigated by making proactive notification an explicit responsibility of every Officer — not a prescribed workflow, but a cultural norm. Work should flow to those who can act on it; Officers should not have to discover work that was meant for them.
-
-**Safety erosion.** An improvement loop weakens safety boundaries to remove friction. Mitigated by making safety boundaries physically unmodifiable by any agent, including the improvement agent.
+Officers claim work from the board, run it episodically (§7), verify independently (the agent that built a thing is not the agent that confirms it works), record an experience entry, and close the item the moment it is known done — board state must reflect reality the same turn, because a drifting board poisons briefings, retros, and priority math.
 
 ---
 
-## Implementing a Captain's Cabinet
+## 3. The Evidence Engine
 
-This guide deliberately does not prescribe implementation. Any technology stack that provides the following capabilities can host a Captain's Cabinet:
+Autonomy in a Cabinet is a computed, demotable property of one ledger. This section is the machine that computes it.
 
-- **AI agents** that can read files, write code, execute commands, and use external tools
-- **Multi-agent coordination** that allows Officers to work in parallel with independent context and peer-to-peer communication, and to spawn Crew for task execution
-- **Permission scoping** that enforces downward-only permission inheritance from Officers to Crew
-- **An asynchronous messaging interface** between the Captain and the Cabinet (mobile-accessible)
-- **Persistent storage** for memory tiers and shared artifacts
-- **Scheduled execution** for recurring tasks (research sweeps, briefings, retrospectives)
-- **Tool-level safety intercepts** that can block actions before they execute
-- **A sandboxed environment** that constrains the blast radius of autonomous execution
+### One ledger, three writers — none of them narrative
 
-The Cabinet is the framework. The tools are the implementation. Neither defines the other.
+The **consequence ledger** is an append-only store of consequence events, one normalized schema (`framework/schemas/consequence-event.schema.json`) covering every acting surface, with proposal, outcome, and review phases joined by correlation IDs. Three independent writers:
+
+1. **Officers** emit proposals, each minting a correlation ID.
+2. **The verdict binder** records Captain decisions — mechanically (below).
+3. **Outcome probes** — deterministic daemons polling machine truth (PR checks and merge/revert state, deploy status and rollbacks, error-budget burn, CI runs, support-thread resolution) — write outcome status and reviewed verdicts. *(target state — probes land per plan phase B2, `docs/plans/`)*
+
+Correlation IDs are minted at proposal time and **propagated into the artifacts themselves** — commit trailers, deploy metadata, thread tags — so probes attribute by exact read-back, never by time-and-author guessing. Unattributable artifacts count for no one. Every probe event carries `observed` vs `could-not-observe`; an unreachable upstream never counts as anyone's failure.
+
+### Mechanical verdict capture — the founding lesson
+
+The estate's signature historical failure, paid twice: an approval surface moved, the label ledger didn't move with it, and every autonomy lane silently starved at n=0 while the org kept working. The lesson is principle 2, made structural: **the inbound decision path writes the superseding approve/edit/skip event in-process, before delivery — the coordinating officer reads results but is never the recorder.** Presenting the proposal, delivering the decision, and writing both ledger rows are one component, germline-protected, that migrates together or not at all. *(target state — the binder wire is in the shared foundation phase, `docs/plans/EXECUTION-STATUS.md`)*
+
+### Verdict supply per flavor
+
+- **Flavor B — machine probes are the primary verdict supply.** A product org has abundant, adversary-resistant, machine-checkable ground truth; probes fill graduation denominators at product-traffic volume instead of human-reply volume. One valve must be closed for this to be safe (§below: test-diff).
+- **Flavor A — human verdicts only.** For "is this what the Captain would do," the only honest signal is the Captain's approve/edit/skip, quiz picks, and observed subsequent actions. Bars stay conservative; months at propose-only is honest, not slow.
+- Both flavors: batched one-tap approvals carry reduced label weight — a rubber-stamp is not evidence.
+
+The shared rule: **promotion reads the most trustworthy verdict source available for that lane's ground truth.**
+
+### Graduation cells
+
+Autonomy is assigned **per action class, never per agent**. Each (action class × context) cell accumulates verdicts; graduation math computes ratios (fitness = outcome held × review confirmed) against per-cell bars — minimum sample counts, agreement rates, clean-day dwell. The **authority matrix** (`framework/policies/authority-matrix.yml`) maps risk class × confidence state to a verdict: auto, propose, or gated. The fail-safe spine: **unmeasured always resolves to propose-only.** Graduated auto actions execute behind a **veto window** — an `execute_after` timestamp the Captain can cancel within, which holds (fails closed) if the Captain's channel is unreachable.
+
+### Demotion — trust that cannot ratchet down is not trust
+
+Demotion is automatic and drilled, not discretionary:
+
+- A wrong verdict or cancelled auto-action drops the cell.
+- **Verifier-detected fabrication demotes directly** — an officer claiming success against contradicting tool logs is a trust event, not a style note. Honest self-flagging is penalty-free and counts *toward* graduation calibration.
+- **Model upgrades demote graduated cells one level pending re-proof** — graduation history is stamped with the model baseline it was earned on.
+- Error-budget burn throttles new-feature autonomy while **pre-approved incident remediation stays fast** — never route rollbacks to the Captain mid-incident.
+- A **synthetic wrong verdict is injected before any cell is trusted** — demotion is proven live, chaos-engineering the trust loop itself.
+
+### The ledger-liveness dead-man
+
+A standing, germline-protected watchdog: if a lane emits proposals while Captain replies are visibly arriving and **zero verdicts land on the ledger for N hours → critical page AND automatic demotion to propose-only.** Evidence starvation revokes autonomy by construction. Staleness is loss of proof, not preservation of it. This converts the estate's twice-paid failure into a self-neutralizing one.
+
+### The test-diff valve — closing Goodhart on machine truth
+
+CI verdicts are adversary-resistant only if the builder cannot move the goalposts. Mechanically enforced: test-touching diffs (coverage deltas, assertion-count drops, skip/xfail additions) are a **ceiling risk class** — a PR that touches tests can never advance graduation from CI-green alone; it routes to Captain review or an independent verification lane, backed by a coverage-ratchet probe the builder cannot author. This is a blocking precondition for enforcement, not a later hardening.
+
+### The Gate — self-modification's one door
+
+Every durable change to the org's own behavior — playbook deltas, skills, policy values, tool descriptions, memory promotions — is admitted through **the Gate**, the most protected asset in the estate *(target state — gate-runner lands per plan phase B5)*:
+
+- **Balanced probe:** previously-failing AND previously-passing cases — a change must fix something without breaking anything.
+- **Zero-regression budget** on the passing set; **pass^k (k=3)** on behavioral cases — single lucky passes don't count.
+- **Read-isolated holdout:** a rotated eval set living in a scope the org cannot read, because a proxy the optimizer can see is a proxy it will eventually hack. Proxy-vs-holdout divergence alarms.
+- **Cost gate:** changes that inflate tokens-per-task beyond budget are rejected regardless of quality.
+- **Split germline:** judge and policy *code* changes are Captain-only; the eval-fixture *corpus* is append-only with additive cases auto-admitted — eval refresh runs at machine speed while the judge stays human-held.
+- **Trace→test flywheel:** every escalation, wrong verdict, and rollback becomes a probe case. The suite grows from real failures, not imagination.
+- **Judge discipline:** pinned judge contracts (model ID + rubric version + prompt hash) in git; position-swapped comparisons; a monthly Captain-labeled calibration batch; full re-baseline on any judge or model swap.
+
+The Gate is live only when it has demonstrably **rejected** something. A gate that admits everything is a rubber stamp with extra steps.
+
+---
+
+## 4. Governance & Safety
+
+### Three enforcement strata
+
+Safety is enforced at three independent layers, so no single failure — and no single persuasive argument — can unlock the estate:
+
+1. **The tool-use hook** — deterministic checks before every tool call: kill-switch state, germline write-protection, prohibited actions. The reflex layer; it asks no model's opinion.
+2. **The typed policy engine + authority matrix** — the judgment layer: classifies each act's risk class, reads the cell's measured confidence, resolves auto/propose/gated. CI-asserted invariants guarantee no ceiling cell can ever resolve to auto. The hook remains as belt-and-suspenders through every migration — the old gate is never deleted in the same motion that enables the new one.
+3. **The executor + hash-locked outbox** — the physics layer *(target state — plan phase B4)*: one deterministic process holds all send/deploy credentials. Officers physically cannot send; they write proposal rows; the executor executes only rows carrying a fresh approval token whose payload hash matches exactly what the Captain saw. Every external side effect becomes a ledger row by construction — every send is a label. Veto windows are `execute_after` timestamps; the executor fails closed when the Captain channel is down.
+
+### The hard ceiling — six classes, never lifted
+
+**External communications, production deploys, spend, secrets, network writes, and credential grants remain Captain-gated at every confidence level, in every phase, forever.** No graduation evidence lifts them. Narrow carve-outs (a receipt auto-forward, an incident rollback) are implemented as enumerated conditions inside the executor — never by lifting a ceiling row. CI asserts the invariant continuously.
+
+### Germline — no loop may edit its own judge
+
+The components that judge the org — the policy engine, authority matrix, golden evals, graduation math, the dead-man watchdogs, the courses-of-action rule — are **germline**: write-protected against every officer and every loop, enforced at the hook. Officers propose germline changes to the Captain; only the Captain applies them. The split-germline refinement (§3) keeps eval *fixtures* flowing at machine speed while judge *code* stays human-held. This is a non-negotiable architectural invariant: a self-improving system that can weaken its own examiner will, eventually, and the logs of the field's best-known self-modifying systems show exactly that.
+
+### The kill switch
+
+**Anyone can stop the fleet — any officer, any watchdog, the Captain. Only the Captain can resume it**, via a typed resume token. The switch is designed **fail-closed**: if its state store is unreachable, work halts rather than proceeding blind. Halting is always safe and always reversible by exactly one person.
+
+### Accounts, credentials, and the human wall
+
+The Captain-ruled boundary (2026-07-02): **the org may autonomously create accounts on low-risk services** (a monitoring endpoint, a status page) when a plan requires it; **the human gate is reserved for what is legally or financially binding** — payments, contracts, OAuth consent to sensitive scopes, identity ceremonies. Credential entry always flows through the sanctioned executor path with secrets referenced from the keychain — an officer never types a secret into an arbitrary surface, and files carry names of secrets, never values.
+
+A pre-enumerated **Captain-required action registry** (payments, OAuth, DNS, 2FA, legal signatures) lets officers park-and-batch when they hit the human wall instead of stalling or improvising. The org cannot legally sign, pay, consent, or appear — its job is to make every arrival at that wall batched and fully briefed.
+
+---
+
+## 5. The Captain Interface
+
+### Monitor-and-intervene, not approve-everything
+
+Per-action permission prompts train humans to approve unread (the measured field number is 93%). The Cabinet's interface is therefore monitor-and-intervene: a streamed activity digest, cheap interrupts, inline approve/edit/skip — with hard gates reserved for the ceiling classes and genuine escalations. The system watches its own approval latency as a **rubber-stamp detector**: sustained sub-10-second approvals on judgment items trigger a batching review, never a gate weakening.
+
+### One voice
+
+The coordinating officer (the Chair) is the **sole Telegram voice**. Officers never fragment the Captain's phone with parallel threads; internal coordination rides internal channels; one relationship surface stays clean. Symmetrically, there is **one send path** in code — a single choke point every outbound message flows through, tripwired in CI.
+
+### Proposal hygiene
+
+The measured failure that produced these rules: one-card-per-*action* proposals created a 51% unanswered backlog — attention died of fragmentation, not volume.
+
+- **Investigation bar:** gather-then-propose. Full thread and audience, counterparty intel, open commitments, board state, the indexed codebase when technical. If the bar cannot be met, name the gap instead of proposing.
+- **One card per situation, carrying the whole course of action** — the full chain (reply → task → follow-up → close commitment) with per-step gates, never step 1 with the rest planned silently.
+- **Urgency tiers:** `ping-now` (would be wrong by tomorrow) · `batch-into-next-briefing` (the default) · `FYI-digest`.
+- **Auto-expiry:** unanswered proposals fold into the next briefing's decision queue as one line — never re-pinged as fresh.
+- **Never re-ask answered questions.** The decision trail is checked first; a Captain answer in any channel is applied and cited.
+
+### Briefings and the decision queue
+
+Scheduled briefings (morning and evening) are the org's pulse: headline, calendar, overdue and due, in-flight work, stale items, the decision queue, and one recommended starting point. Everything that can batch, batches here.
+
+### The Captain-debt reverse queue
+
+The Captain is a bottleneck in both directions, and the second direction is usually unmodeled: **what the Captain owes the org** — pending ratifications, germline applies, tokens, OAuth clicks, calibration batches. The Cabinet tracks these as a first-class queue with age, *what-it-blocks*, and effort estimate, surfaced in every briefing, cleared in scheduled batched sessions (one sit-down, N pre-verified diffs). Measured history is blunt: approved one-liners rotting for days stall the whole loop at the last mile. The debt queue is the mechanism that prevents it.
+
+### The escalation budget
+
+Target: **escalations under 10% of actions.** Over-escalation reduces realized safety — it trains inattention. Breaches alert; a queue growing faster than it clears is treated as miscalibration or attack, and the response is better batching or better evidence, never a weaker gate.
+
+### The L0–L3 ladder
+
+Every action class sits at a dispatcher level: **L0** auto + audit trail · **L1** auto above a measured confidence bar (graduated cells, veto window) · **L2** one-tap approval · **L3** dual-confirm + cooldown (credentials, payments, germline diffs). Ceiling classes cap at L2/L3 forever. Levels are assigned per action class on evidence — never per officer, never on charisma.
+
+---
+
+## 6. Memory & Knowledge
+
+### One synthesis destination
+
+Everything the org learns, derives, or synthesizes is born in **one knowledge corpus** — flavor A: the personal vault; flavor B: the product-brain corpus (architecture, incidents, decisions, support KB, deploy history) — as markdown with provenance and content timestamps, indexed for hybrid semantic search. External tools are not synthesis destinations. The historical alternative — synthesis scattered across a PM tool, chat threads, and six decision stores — produced two-hop staleness and split-brain truth; the ruling (2026-07-02) ended it: **the corpus is the one synthesis destination; every other system keeps only its own function.**
+
+### Memory vs source of truth
+
+Not everything belongs in memory. Every connected source is classified: **knowledge-sync** (synthesized knowledge → the corpus, with provenance and content time) vs **live-adapter** (operational state stays in the tool and is queried at question time — a board's current status, a database row) vs **ignore**. Memory holds what informs judgment; live state stays live. Confusing the two produces confidently-stale answers.
+
+### The Estate Mapper and the Source Map
+
+When a tool connects, the org runs read-only **discovery** over its estate (boards, channels, drives, folders), proposes a **classification** per surface, and records the result as a **Source Map** (`instance/config/sources/<tool>.yml` + a corpus note) — durable environment knowledge that replaces hardcoded IDs forever. A one-card **sync plan** (mode, cadence, backfill depth and cost, destination) gets Captain approval; a **sync compiler** then generates the jobs, registered in the services manifest with freshness floors and watchdog expectations — scheduled, fed, and watched by construction. Low-cadence re-exploration diffs the estate over time; offboarding a source disables its adapters and marks its history source-defunct rather than deleting it. *(target state — Captain-ratified workstream, sequenced per `docs/plans/`)*
+
+### Federated gather
+
+Every adapter exposes `search` as an auto-registered second-tier fetcher for the org's gather step — so a surface that isn't synced is still not invisible. Un-synced ≠ unknown; it is just slower to reach.
+
+### Work tracking — the TaskAdapter
+
+The canonical work store is a **local task board** (SQLite; claim-by-CAS with leases). External PM tools — Monday, Jira, Linear — are optional **TaskAdapter** plugins: pull backlog, push status, mirror state. **Local wins; the adapter mirrors.** The foundation runs with zero PM dependency; a deployment plugs in its team's PM tool for collaboration visibility, or none. A CI ratchet keeps PM imports out of the framework. *(adapter cutover per `docs/plans/`)*
+
+### The tier model
+
+- **Tier 1 — operating law**, loaded into every session: constitution, safety boundaries, role definition, the Captain-facing ledgers. Short, accurate, ruthlessly maintained.
+- **Tier 2 — working notes**, per officer: corrections, preferences, accumulated context. Read at session start, written after significant work.
+- **Tier 3 — episodic memory**: the full corpus of experience records, decisions, research. Retrieved on demand, never bulk-loaded.
+
+Only Tier 1 is always loaded. Memory flows upward by consolidation: a pattern observed repeatedly becomes an instruction; a procedure that works repeatedly becomes a skill. A nightly consolidation job proposes the promotions — through the Gate, like every durable change.
+
+### Bi-temporal facts and content time
+
+Facts that can silently invalidate (deploy states, decisions, commitments) are stored **bi-temporally** — valid-from/valid-until, superseded, never deleted — so the org can answer both "what is true" and "what did we believe then," and a high-relevance fact cannot become confidently wrong. All measurement and retrieval fencing uses **content time** (when the event happened), never file mtime; a chunk whose content time cannot be derived is excluded, never guessed.
+
+### Provenance and quarantine
+
+Content from untrusted external channels — inbound support mail, web pages, external PR comments — is **data, not instructions**. It is quarantined at ingestion: it may inform a Captain-gated draft, but it can never be promoted to durable memory, a skill, or a policy delta without Captain authentication. This guards the poisoning path the Gate cannot see: a subtly poisoned "lesson" shows no behavioral regression until it is load-bearing. Inferred knowledge (reconstructed links, derived relations) carries `provenance: inferred` with confidence — never laundered into fact.
+
+---
+
+## 7. Officers & Runtime
+
+### Thin personas, thick SOPs
+
+Officers are differentiated by **tool scopes and procedures, not persona prose** — elaborate character sheets measurably degrade performance; crisp SOPs and clean interfaces improve it. A role definition carries identity, domain of ownership, autonomy boundaries, and shared interfaces. Step-by-step procedures live in the skill library where the loops can improve them; fixed interaction patterns are deliberately absent — officers with clear ownership find their own collaboration paths, and proactive notification of peers is a duty, not a workflow.
+
+### The officer ceiling
+
+**Three to four officers, maximum.** Coordination overhead is real physics: error amplification grows with every coordinating member, and adding agents to a task class a single agent handles poorly makes it worse, not better. The flavor-B roster is deliberately minimal — a **Chair** (sole Captain voice: triage, synthesis, briefings; never in the verdict-recording path), a **Builder** (single writer on the product repo), and a **Support-Drafter** (propose-only external comms, activated only after enforcement and provenance gates are live). Everything else — probes, verifier, gate-runner, executor, watchdogs — is a **deterministic daemon, not an officer**. A new officer is added only when a task class's measured single-agent success is below threshold, never for throughput.
+
+### Episodic execution
+
+Marathon sessions are the anti-pattern: multi-day contexts accumulate noise until agents act on corrupted assumptions, and models don't recover from their own wrong turns in-thread. Officers therefore run **episodically**: bounded runs in fresh sessions, resumed from durable state — a capsule file (who am I, what is the mission), a handoff file (exact next actions), a progress file, commit-on-stop. Restart is the default recovery, not the exception. Crew for parallel spikes run in isolated worktrees. Fresh-session-from-durable-state beats in-thread correction; this is the operational precondition for self-improvement to matter at all.
+
+### Crew and delegation
+
+Crew inherit the spawning Officer's boundaries, narrowed — never widened; enforced at infrastructure level. Delegation is **artifact-first**: objective, output format, tool guidance, boundaries, and full context in a brief — chat-relay handoffs measurably lose intent. Returns are condensed artifacts, not transcripts. Before decomposing work at all, the spawn gate asks whether one agent clears the bar alone.
+
+### The substrate
+
+One Mac, one dedicated auto-login user, **everything a user-session LaunchAgent** (subscription auth, keychain, and OS permissions live in the user session — never cron, never daemons). Sleep disabled; OS auto-updates scheduled within watchdog-aware windows. Officers live in tmux panes; deterministic services run headless. **The entire fleet is declared in one services manifest** (`cabinet/services.yml`) from which every launchd plist is generated — no hand-authored plists, no machine-specific hardcodes, and the manifest is diffable against what is actually installed and firing *(target state — manifest + generator land in the shared foundation phase, `docs/plans/`)*. **The machine must be rebuildable from git alone.** Durable state lives in git and SQLite (WAL, backed up by snapshot — never raw-copied); Redis is an ephemeral trigger bus, never the only home of anything durable. Secrets are keychain-referenced: names in files, values never.
+
+### The watchdog stack
+
+Multiple independent, simple observers beat one sophisticated supervisor:
+
+- **Outcome watchdog** — verifies *outcomes*, not process exit codes (a job can run green and deliver nothing).
+- **Ledger-liveness dead-man** (§3) — evidence starvation pages and demotes.
+- **Heartbeat watchdog** — progress-aware (monotonic step counters), distinguishing healthy-idle from wedged; a waiting agent may be doing exactly what it should. Tiered recovery: re-inject → compact-and-restart → fresh session + page.
+- **External dead-man** — an off-machine check the estate cannot take down with itself.
+- **Data-freshness assertions** on every consumer — gates, briefings, and probes hard-fail on stale or empty inputs.
+- **Weekly synthetic-kill drills** — deliberately stop one job and assert the page arrives. An alarm that has never fired in a drill is a hope, not an alarm.
+
+---
+
+## 8. Self-Improvement Loops
+
+### The loop family
+
+Improvement runs at several cadences at once; the fastest loop that can catch a signal owns it.
+
+- **Task loop** (every task): plan → execute → verify independently → record an experience entry. Enforced — a task without a record is not complete.
+- **Individual reflection** (event-triggered: compaction, completion milestones — never a clock, never on idle): each officer reviews its own records; three repeats of a pattern drafts a skill.
+- **Cross-officer retro** (event floor with a time ceiling): handoff quality, trigger responsiveness, coordination drift, the direction-drift check (§2), one focused improvement.
+- **Evolution loop**: validates and promotes draft skills, proposes role amendments, refreshes golden evals.
+- **Inline meta-loops**: the **pattern listener** (scans every Captain message for standing-preference signals and offers to encode them) and **intent inference** (hypothesizes the Captain's latent WHY before any Captain-facing reply) — because in-conversation signals arrive faster than any scheduled loop.
+- **Reasoning review**: officers log expectations with their actions; a scheduled pass compares expectations to what actually happened and mints lessons from the misses.
+
+One discipline binds them all: **every reflection must cite an external signal** — a CI result, an eval, Captain feedback, a production metric. Intrinsic self-critique without external signal is drift with good posture.
+
+### Everything durable rides the Gate
+
+Reflection produces *candidates*. Only the Gate (§3) turns a candidate into doctrine: balanced probe, regression budget, repeated passes, holdout, cost check. Skills have a full lifecycle — drafted in `evolved/`, validated, promoted, and eventually **archived with reason notes** when superseded or unused: a library that only grows becomes noisy and contradictory, and archival is what keeps it trustworthy. Foundation skills are never edited in place; improved versions land in the overlay and take precedence.
+
+### Earned auto-apply
+
+Even *applying* improvements is graduated, per change-class: a class earns silent auto-apply only after repeated confirmed applications with zero wrong ones, and only for reversible changes — everything else stays one-tap Captain ratification. Playbook edits are **itemized deltas with helpful/harmful counters, never monolithic rewrites** — wholesale self-rewriting of accumulated context is how systems collapse their own memory.
+
+### Curation
+
+Standing hygiene jobs, all Gate-bound: a **nightly consolidation** over transcripts and records proposing memory promotions; a **weekly drift replay** of sampled real traffic against the current system; a **monthly Captain calibration batch** (10–20 labeled cases) keeping judges honest; a **harness-debt review on every model upgrade**, because scaffolding encodes assumptions about model weaknesses that expire. Changes carry lineage tags so downstream outcomes attribute to the change that caused them, and underperforming lineages get reverted on evidence, not sentiment.
+
+### Bounded pressure
+
+Optimization pressure against any proxy grows reward hacking with iteration count. Hence: iteration caps per improvement cycle; a hidden holdout with divergence alarms; hard budget stops — **self-improvement halts fail-closed on credit exhaustion; no change auto-applies without a completed gate run; autonomy never widens on a skipped gate.**
+
+---
+
+## 9. Onboarding a Product
+
+Trusting the org with a new product is never ad-hoc. It is a staged SOP with machine-checked gates — the same ramp every time, which is what makes the org a reusable machine rather than a bespoke build. *(SOP artifacts land per plan phase B6; the stages below are the ratified contract.)*
+
+**Stage 0 — Interview.** The `cabinet-init` skill interviews the Captain: profile, lanes, org shape, autonomy posture, seed outcomes, integrations. It generates the `instance/` configuration and prints activation steps. **Nothing it generates activates by itself.**
+
+**Stage 1 — Read-only shadow week.** The org watches and maps, writing nothing. Output: a product dossier — architecture map, operational runbook, a machine-readable deploy policy (canary %, rollback triggers, blast-radius caps), an **oracle inventory** (which machine-truth probes apply to this product, with the queries), and this product's Captain-required registry entries. The Estate Mapper (§6) runs here: discovery → classification → Source Map → approved sync plan.
+
+**Stage 2 — Propose-only.** Every action proposed, every verdict recorded, until the ledger holds **at least ~20 consequence events** for the product with measured escalation precision above the bar. Probes live; evidence accruing; nothing auto.
+
+**Stage 3 — Per-cell graduation.** Standard bars apply per action class. Compliance- or judgment-heavy lanes are pinned Captain-gated per the dossier, deliberately and indefinitely where the product warrants it.
+
+**Product is a parameter, not a fork.** A second product onboards with **zero framework code changes** — CI greps assert no product slug ever appears in `framework/`. Product specifics live in the instance layer and the dossier.
+
+**Federation** — spawning a whole new cabinet instance for a product — is permanently the highest-consequence act: propose-only, dual-confirm with cooldown, full dossier required, fresh ledger and model stamp on the new instance (autonomy evidence never transfers between orgs, because it was earned against a different ground-truth distribution), and excluded from graduation forever.
+
+---
+
+## 10. Glossary
+
+| Term | Meaning |
+|---|---|
+| **Captain** | The human. Sets directions, ratifies outcomes, holds the ceiling keys. |
+| **Officer** | A persistent Claude Code session owning a domain (Chair, Builder, Support-Drafter…). |
+| **Chair** | The coordinating officer; the sole Telegram voice; never the verdict recorder. |
+| **Crew** | Ephemeral subagents spawned by an officer; permissions inherited downward only. |
+| **Flavor A / B** | Personal clone org (human verdicts, sensing stack) / standalone product org (machine probes, Mac Mini). |
+| **Direction** | Captain-authored durable intent for a lane: mission, instruments, bets, not-goals. Never AI-authored. |
+| **Instrument** | A trend metric on a direction — drift detector, never a deadline target. |
+| **Outcome** | AI-derived, Captain-ratified, bounded verifiable state change. Window-capped per lane. |
+| **Lane** | A product or standing domain. Lanes never finish; outcomes do. |
+| **Stream / Missions / Intake** | The three work classes: continuous work / ratified campaigns / classification machinery. |
+| **Renewal loop** | Achieved-outcome confirmation → successor derivation → Captain ratification. |
+| **Direction-drift check** | Retro test: outcomes achieving while instruments stay flat ⇒ regenerate outcomes. |
+| **Consequence ledger** | Append-only store of proposals, verdicts, and outcomes — the org's single evidence plane. |
+| **Correlation ID** | Minted at proposal, propagated into artifacts, joined by probes. The evidence join. |
+| **Verdict** | A recorded judgment on a proposal: approve/edit/skip (human) or probe-verified outcome (machine). |
+| **Verdict binder** | The mechanical component recording verdicts in-process with delivery. |
+| **Graduation cell** | (Action class × context) unit that accumulates evidence and earns autonomy. Never per-agent. |
+| **Authority matrix** | Risk class × confidence → auto/propose/gated. Unmeasured ⇒ propose-only. |
+| **Hard ceiling** | Six classes gated at every confidence forever: external comms, prod deploys, spend, secrets, network writes, credential grants. |
+| **Veto window** | Delay (`execute_after`) before a graduated auto-action fires; Captain can cancel; holds if the channel is down. |
+| **Demotion** | Automatic autonomy reduction: wrong verdict, fabrication, model bump, starvation, budget burn. |
+| **Ledger-liveness dead-man** | Watchdog: proposals flowing + replies visible + no verdicts landing ⇒ page + auto-demote. |
+| **Test-diff valve** | Test-touching changes never earn graduation credit from CI-green alone. |
+| **The Gate** | The eval-gated admission path for all self-modification: balanced probe, regression budget, pass^k, holdout, cost gate. |
+| **Holdout** | Read-isolated eval set the org cannot see; divergence from the visible proxy alarms. |
+| **Germline** | Officer-unwritable judge components; Captain-only changes. "No loop may edit its own judge." |
+| **Split germline** | Judge code Captain-only; additive eval fixtures auto-admitted at machine speed. |
+| **Executor / outbox** | Sole credential holder executing hash-locked approved rows; every send a label by construction. |
+| **Kill switch** | Anyone stops; only the Captain resumes; fails closed. |
+| **Captain-required registry** | Pre-enumerated human-only actions (payments, OAuth, DNS, legal) — officers park-and-batch. |
+| **Captain-debt queue** | What the Captain owes the org: ratifications, applies, tokens — aged, blocking-annotated, batched. |
+| **Escalation budget** | <10% of actions escalate; breach alarms; latency watched as a rubber-stamp detector. |
+| **L0–L3 ladder** | Auto+audit / auto-above-bar / one-tap / dual-confirm+cooldown — per action class. |
+| **One voice / one send path** | Single Captain-facing officer; single code path for outbound, CI-tripwired. |
+| **Course of action** | One proposal card carrying a situation's full chain with per-step gates. |
+| **Source Map** | Durable per-tool estate map: surfaces, classifications, sync decisions (`instance/config/sources/`). |
+| **Estate Mapper** | Discovery → classification → Source Map → sync-plan proposal → compiled, watched sync jobs. |
+| **Knowledge-sync vs live-adapter** | Synthesized knowledge enters the corpus; operational state stays in its tool, queried live. |
+| **Federated gather** | Every adapter's `search` auto-registers as a retrieval fetcher — un-synced ≠ invisible. |
+| **TaskAdapter** | Optional PM-tool mirror over the canonical local task board. Local wins. |
+| **Bi-temporal fact** | valid-from/valid-until, superseded never deleted — "what is true" and "what did we believe then." |
+| **content_ts** | Content time (when it happened), never mtime — the only clock for fencing and measurement. |
+| **Provenance quarantine** | Untrusted inbound content is data-not-instructions; never promoted to memory/skills/policy without the Captain. |
+| **Episodic execution** | Bounded fresh-session runs from durable state: capsule, handoff, progress files; restart as default recovery. |
+| **services.yml** | The single deployment manifest; every scheduled component generated from it; machine rebuildable from git. |
+| **Built = scheduled + fed + watched** | Existence criterion for any component (principle 7). |
+| **Shadow parity** | A replacement runs alongside the incumbent on real traffic and must match before the incumbent retires. |
+| **Experience record** | Per-task log entry: attempted, succeeded/failed, do-differently. Mandatory. |
+| **Golden evals** | Known-good validation scenarios every promoted change must pass. |
+| **Scorecard** | The ledger-derived raw metric vector (no composites) in the weekly brief. |
+| **North star** | Verified outcomes per Captain-minute, trending up. |
+| **Staged onboarding SOP** | Interview → shadow week dossier → propose-only n≥20 → per-cell graduation. |
+| **Federation** | Spawning a new cabinet instance — permanently the highest-consequence, propose-only act. |
 
 ---
 
 ## End Note
 
-The Captain's Cabinet is not a product. It is not a tool. It is an organizational pattern - a way of structuring autonomous AI agents so that a single human can direct an organization that builds, learns, and evolves continuously.
-
-The models will change. The tools will change. The capabilities will expand. What will not change is the fundamental dynamic: a Captain setting direction, Officers owning domains, Crew executing work, and a memory system ensuring that every lesson learned is a lesson kept.
+The models will change. The tools will change. The capabilities will expand. What will not change is the dynamic this guide encodes: a Captain setting direction, Officers owning domains, Crew executing work, evidence deciding trust, a gate deciding change — and a memory system ensuring that every lesson learned is a lesson kept.
 
 The Cabinet is always in session.
 
 ---
 
-*The Captain's Cabinet is authored by Nathaniel Refslund. This is a living document and will evolve as the framework matures through real-world application.*
+*Captain's Cabinet is authored by Nathaniel Refslund. This is a living document, amended through the org's own gated loops with Captain ratification.*
 
 *© 2026 Nathaniel Refslund. All rights reserved.*

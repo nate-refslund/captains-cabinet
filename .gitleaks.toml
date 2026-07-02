@@ -1,0 +1,15 @@
+# gitleaks config — F0.1 (2026-07-02)
+# History scan of all commits found exactly 4 findings, all dummy fixtures in test
+# files (verified by eye: ABCDEFGHIJ...-style tokens, 12345678: bot-token shapes).
+# Allowlist them so the CI secret-scan job stays green without weakening real
+# detection. Scan reports: docs/plans/EXECUTION-STATUS.md (F0.1 row).
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test fixtures with intentionally fake credentials"
+paths = [
+  '''cabinet/dashboard/src/app/api/.*route\.test\.ts''',
+  '''cabinet/scripts/lib/tests/test_compile_digest\.py''',
+]

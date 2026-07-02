@@ -103,7 +103,11 @@ is_announced() {
   fi
   local now_epoch env_epoch age
   now_epoch=$(date -u +%s)
-  env_epoch=$(date -u -d "$env_ts" +%s 2>/dev/null || echo 0)
+  # F0.3 (2026-07-02): BSD/macOS date lacks -d; try GNU first, then BSD -j -f.
+  # Without the fallback this fail-closed on the platform the system runs on.
+  env_epoch=$(date -u -d "$env_ts" +%s 2>/dev/null \
+    || date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "$env_ts" +%s 2>/dev/null \
+    || echo 0)
   if [ "$env_epoch" = "0" ]; then
     echo "pre-push: FORCE_PUSH_ANNOUNCED=$env_ts could not be parsed as a date" >&2
     return 1

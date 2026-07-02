@@ -1,0 +1,137 @@
+# =============================================================
+# cabinet/services.yml — THE fleet manifest (F0.4, promoted 2026-07-02)
+# =============================================================
+# One manifest describing the live fleet. Daemon/watchdog plists are RENDERED
+# from this file by cabinet/scripts/generate-plists.py (into
+# cabinet/launchd/generated/, machine-specific, gitignored). Officers are
+# rendered by deploy-mac.sh from cabinet/launchd/com.cabinet.officer.template.plist
+# with the roster derived from instance/config/roster.yml (F0.2).
+#
+# SCHEMA (per service):
+#   name:     ^[a-z0-9-]+$ (validated before any path use)
+#   label:    launchd Label (reverse-DNS)
+#   kind:     officer | daemon | watchdog   (officer = skipped by the generator)
+#   command:  repo-root-relative invocation, executed as
+#             /bin/bash -lc "cd $CABINET_ROOT && set -a && source cabinet/.env
+#             2>/dev/null && set +a && REDIS_HOST=localhost exec <command>"
+#   schedule: keepalive | {interval_s: N} | {calendar: [{hour: H, minute: M}|{minute: M}, ...]}
+#   env:      optional per-service EnvironmentVariables (NAMES + non-secret values only —
+#             secrets stay in cabinet/.env, sourced at runtime, never rendered into plists)
+#   expected: the "fed + watched" floor (principle 7) — what the outcome-watchdog /
+#             dead-man asserts; a service without a met floor is DOWN even if green
+#   notes:    free text
+#
+# expected floors are wired progressively: F0.12 heartbeat-watchdog, F0.7
+# ledger-liveness, healthchecks.io (F0.13 — live for pipe-watchdog-side checks).
+#
+# B2+ additions land here as they ship (per Plan B services.yml spec):
+#   heartbeat-watchdog (F0.12), memory-worker (B2.12), ledger-liveness (F0.7),
+#   probe-github/vercel/sentry/ci (B2.3-6), verifier (B2.7), mission-supervisor
+#   (B2.11), gate-runner/flywheel/dreaming/gate-drift-replay/judge-calibration (B5),
+#   cmp-lite (B6.4), executor under user cabinet-exec (B4.7).
+
+services:
+  # ── Officers (keepalive; tmux sessions via start-officer-mac.sh; roster-derived) ──
+  - name: officer-cos
+    label: com.cabinet.officer.cos
+    kind: officer
+    command: bash cabinet/scripts/start-officer-mac.sh cos
+    schedule: keepalive
+    expected: "redis heartbeat cabinet:heartbeat:cos (idle≠dead — progress-aware semantics land with F0.12)"
+    notes: sole Telegram voice; no self-wake loop by design (woken by DMs/triggers/briefings)
+  - name: officer-polads-ceo
+    label: com.cabinet.officer.polads-ceo
+    kind: officer
+    command: bash cabinet/scripts/start-officer-mac.sh polads-ceo
+    schedule: keepalive
+    expected: "redis heartbeat cabinet:heartbeat:polads-ceo"
+  - name: officer-stephie-ceo
+    label: com.cabinet.officer.stephie-ceo
+    kind: officer
+    command: bash cabinet/scripts/start-officer-mac.sh stephie-ceo
+    schedule: keepalive
+    expected: "redis heartbeat cabinet:heartbeat:stephie-ceo"
+  - name: officer-comms-officer
+    label: com.cabinet.officer.comms-officer
+    kind: officer
+    command: bash cabinet/scripts/start-officer-mac.sh comms-officer
+    schedule: keepalive
+    expected: "redis heartbeat cabinet:heartbeat:comms-officer"
+
+  # ── Captain channel ──────────────────────────────────────────────────────
+  - name: cos-inbound
+    label: com.cabinet.officer.cos-inbound
+    kind: daemon
+    command: bash cabinet/scripts/start-inbound-poller.sh
+    schedule: keepalive
+    expected: "getUpdates offset advances whenever Captain messages exist; F0.7 ledger-liveness rides this"
+    notes: >-
+      SOLE getUpdates poller (two pollers on one token 409-conflict). Installed
+      plist is invalid XML for strict parsers ('--' in a comment) — replaced by
+      this generated one at next deploy.
+  - name: frontdoor-briefing
+    label: com.cabinet.frontdoor-briefing
+    kind: daemon
+    command: bash cabinet/scripts/run-frontdoor-briefing.sh
+    schedule:
+      calendar:
+        - { hour: 7, minute: 30 }
+        - { hour: 19, minute: 30 }
+    expected: "2 delivered briefings/day (outcome-watchdog expectation: DELIVERED, not exited-0)"
+  - name: intake-surface
+    label: com.cabinet.intake-surface
+    kind: daemon
+    command: python3.12 -m framework.frontdoor.surface
+    schedule: { interval_s: 300 }
+    env: { CABINET_ENV: runtime }
+    expected: "ping-now items surface <10min; queue drains (XLEN not monotonically growing)"
+
+  # ── Acting ───────────────────────────────────────────────────────────────
+  - name: draft-lane
+    label: com.cabinet.draft-lane
+    kind: daemon
+    command: bash cabinet/scripts/run-draft-lane.sh
+    schedule: { interval_s: 300 }
+    expected: "≥1 proposal event per awaiting-reply thread batch; propose-only (nothing sends)"
+    notes: "Captain Q10 2026-07-02: 300s is the ruled cadence (docs previously claimed 2h)"
+
+  # ── Watchdogs / supervision ──────────────────────────────────────────────
+  - name: outcome-watchdog
+    label: com.cabinet.outcome-watchdog
+    kind: watchdog
+    command: bash cabinet/scripts/run-outcome-watchdog.sh
+    schedule:
+      calendar:
+        - { minute: 0 }
+        - { minute: 30 }
+    expected: "heartbeat key cabinet:watchdog:outcome:heartbeat fresh <75min (externally asserted by the screenpipe pipe-watchdog dead-man + healthchecks.io outcome-watchdog-alive)"
+  - name: limit-reset-watchdog
+    label: com.cabinet.limit-reset-watchdog
+    kind: watchdog
+    command: bash cabinet/cron/limit-reset-watchdog.sh
+    schedule: { interval_s: 180 }
+    expected: "log writes every cycle; wakes (never restarts) limit-blocked officers at reset"
+    notes: >-
+      Installed plist is invalid XML for strict parsers ('--daemon' in a
+      comment) — replaced by this generated one at next deploy.
+  - name: officer-supervisor-mac
+    label: com.cabinet.officer-supervisor-mac
+    kind: watchdog
+    command: bash cabinet/scripts/officer-supervisor-mac.sh
+    schedule: { interval_s: 7200 }
+    expected: "re-arms /loop on lane officers; log every 2h"
+  - name: status-sweep
+    label: com.cabinet.status-sweep
+    kind: daemon
+    command: bash cabinet/scripts/run-status-sweep.sh
+    schedule: { interval_s: 1800 }
+    expected: "trigger XADD to cos every 30min"
+    notes: self-labeled TEMPORARY backstop pending always-on Mini
+
+  # ── Surfaces ─────────────────────────────────────────────────────────────
+  - name: dashboard
+    label: com.cabinet.dashboard
+    kind: daemon
+    command: bash cabinet/scripts/start-dashboard.sh
+    schedule: keepalive
+    expected: "HTTP 200 on :3100/api/health"

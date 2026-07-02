@@ -1,0 +1,74 @@
+# =============================================================
+# instance/config/directions.yml — Captain-owned DIRECTIONS (the layer above outcomes)
+# =============================================================
+# Ratified 2026-07-02 (Captain confirmed the model + these drafts verbatim).
+# CONTRACT (recorded in captain-decisions.md + docs/plans/EXECUTION-STATUS.md):
+#   - Directions are CAPTAIN-AUTHORED, durable, few; revised ~quarterly.
+#     The org derives outcomes FROM directions; it NEVER authors directions.
+#   - Outcomes stay bounded verifiable state changes (work-model semantics
+#     unchanged) but flip to AI-DERIVED → Captain-ratified. Every proposed
+#     outcome must cite the direction bet it serves + expected instrument delta.
+#   - instruments are TREND INSTRUMENTS for the direction-drift retro check
+#     ("outcomes achieving, instruments flat ⇒ regenerate outcomes"),
+#     NOT deadline targets.
+#   - Window cap (1-2 active outcomes/lane) and Captain ratification stay.
+# Consumed by: the renewal loop (manual one-shot derivation first; automated
+# per plan addendum "Directions layer" at its planned slot post-B4.11/M2).
+
+directions:
+  stephie:
+    mission: >
+      The best 24/7, fast, on-demand advertiser & agency service for ordering
+      and booking high-performing ads across our network.
+    instruments:
+      - request_to_live_lead_time          # from ad request/booking to live campaign
+      - self_served_booking_rate           # % bookings completed end-to-end with no human touch
+      - campaign_performance_vs_benchmark  # delivered performance vs network benchmark
+      - repeat_booking_rate                # advertisers/agencies coming back
+      - service_availability               # 24/7 responsiveness of the service surface
+    bets:
+      - generalize the proven AI job-banner flow (/create/job-banners) into the booking front-door
+      - officer-backed 24/7 service desk (order/book/adjust on demand)
+      - performance-optimization loop (measure -> adjust -> report per campaign)
+    not_goals:
+      - "TODO-CAPTAIN: confirm not-goals (e.g. 'not a generic design tool'; 'not replacing human agency relationships')"
+
+  polads:
+    mission: >
+      Compliant-by-construction European political-ads transparency — publishers
+      and advertisers get effortless EU-regulation compliance, self-serve,
+      launch-grade by Sept 1.
+    instruments:
+      - v1_live                            # binary: v1.0 in production
+      - self_serve_registration_completion # advertisers/publishers finishing flows unassisted
+      - compliance_report_correctness      # Art. 5/6-grade reporting accuracy
+      - support_load_per_customer          # inbound support volume per active customer
+      - basic_to_pro_conversion            # subscription upgrade rate
+    bets:
+      - subscription & billing finalization (Basic + Pro)
+      - publisher dashboard
+      - advertiser registration flow
+      - AI-based support
+    not_goals:
+      - no adjudicating political status (platform is a conduit — Captain/Oliver ruling 2026)
+      - no non-EU markets yet
+
+  system-self:
+    # Captain-owned like all directions; the org proposes outcomes against it.
+    mission: >
+      A self-improving org that compounds: verified outcomes per Captain-minute
+      trending up, escalation rate trending down, evidence never starving.
+    instruments:
+      - verified_outcomes_per_captain_minute
+      - escalation_rate
+      - autonomy_coverage        # % actions in graduated cells
+      - repeat_incident_rate
+      - ledger_liveness
+    bets:
+      - the two master plans (docs/plans/) executed to their milestone ladders
+    not_goals:
+      - never self-author directions; never lift the hard ceiling; never edit its own judge
+
+  # stepnetwork: lane dormant by Captain ruling 2026-07-02 ("someone else is
+  # doing this") — website mini-tasks + direction question parked as a future
+  # lane decision. No direction authored; outcome stepnetwork-001 retires.
