@@ -39,11 +39,13 @@ STARVE_H = int(os.environ.get("LEDGER_STARVE_HOURS", "24"))
 SLUG = "ledger-liveness"
 
 
-def _iso_age_h(ts: str) -> float:
-    """Age in hours. FAIL-LOUD direction: an unparseable timestamp on a PENDING
-    proposal must count as OLD (starvation-triggering), never silently fresh —
-    the first live run parsed 4 pendings as 0.0h (fractional-seconds ISO) which
-    would have made starvation untriggerable. Handles Z, offsets, fractions."""
+def _iso_age_h(ts: str, now: datetime | None = None) -> float:
+    """Age in hours relative to ``now`` (default: wall clock; injected in tests).
+    FAIL-LOUD direction: an unparseable timestamp on a PENDING proposal must
+    count as OLD (starvation-triggering), never silently fresh — the first live
+    run parsed 4 pendings as 0.0h (fractional-seconds ISO) which would have made
+    starvation untriggerable. Handles Z, offsets, fractions."""
+    now = now or datetime.now(timezone.utc)
     try:
         s = (ts or "").strip()
         if s.endswith("Z"):
@@ -51,9 +53,41 @@ def _iso_age_h(ts: str) -> float:
         t = datetime.fromisoformat(s)
         if t.tzinfo is None:
             t = t.replace(tzinfo=timezone.utc)
-        return (datetime.now(timezone.utc) - t).total_seconds() / 3600.0
+        return (now - t).total_seconds() / 3600.0
     except Exception:
         return float(STARVE_H * 100)  # unparseable ⇒ treat as ancient, not fresh
+
+
+def assess(rows: list, now_dt: datetime, poller_alive: bool) -> dict:
+    """PURE starvation decision (no IO) — the seam under test.
+
+    STARVATION = pending>0 AND oldest pending > STARVE_H AND poller alive AND
+    zero superseding decisions (approved/edited/rejected) within STARVE_H. The
+    clock is injected (``now_dt``) so the truth table is wall-clock-free.
+
+    ``rows`` is the FULL (unwindowed) ledger — pending detection MUST see every
+    open proposal regardless of age (M-2); decisions are filtered to the STARVE_H
+    window by ``decided_at`` (the decision clock), NOT the proposal's original ts.
+    Synthetic-lane artifacts are excluded from both sides of the math."""
+    pending = loop.pending_proposals(rows=rows)
+    pending = [p for p in pending if "synthetic" not in str(p.get("lane", ""))]
+    oldest_h = max((_iso_age_h(p.get("ts", ""), now=now_dt) for p in pending),
+                   default=0.0)
+    decisions = [
+        e for e in rows
+        if isinstance(e, dict)
+        and (e.get("proposal") or {}).get("decision") in ("approved", "edited", "rejected")
+        and "synthetic" not in str(e.get("lane", ""))
+        and _iso_age_h((e.get("proposal") or {}).get("decided_at") or e.get("ts", ""),
+                       now=now_dt) <= STARVE_H
+    ]
+    starving = bool(pending) and oldest_h > STARVE_H and poller_alive and not decisions
+    return {
+        "pending": len(pending),
+        "oldest_h": oldest_h,
+        "decisions_recent": len(decisions),
+        "starving": starving,
+    }
 
 
 def _poller_alive() -> bool:
@@ -83,28 +117,17 @@ def main() -> int:
     # the oldest, most-starved pendings — flipping this dead-man from correctly
     # red to falsely green exactly as a genuine starvation aged past the window
     # (live risk: the 4 pendings dated 2026-06-26..29). The whole point of the
-    # dead-man is to see EVERY open pending regardless of age. Decisions are
-    # still filtered to the STARVE_H window below via decided_at.
+    # dead-man is to see EVERY open pending regardless of age. assess() filters
+    # decisions to the STARVE_H window by decided_at.
     rows = loop.read_ledger(since=None)
-    pending = loop.pending_proposals(rows=rows)
-    # exclude synthetic verification artifacts from the math
-    pending = [p for p in pending
-               if "synthetic" not in str(p.get("lane", "")) ]
-    oldest_h = max((_iso_age_h(p.get("ts", "")) for p in pending), default=0.0)
-    decisions = [
-        e for e in rows
-        if isinstance(e, dict)
-        and (e.get("proposal") or {}).get("decision") in ("approved", "edited", "rejected")
-        and "synthetic" not in str(e.get("lane", ""))
-        and _iso_age_h((e.get("proposal") or {}).get("decided_at") or e.get("ts", "")) <= STARVE_H
-    ]
+    now_dt = datetime.now(timezone.utc)
     alive = _poller_alive()
-    starving = bool(pending) and oldest_h > STARVE_H and alive and not decisions
-    status = _ping(fail=starving)
-    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    print(f"[{stamp}] pending={len(pending)} oldest={oldest_h:.1f}h "
-          f"decisions_{STARVE_H}h={len(decisions)} poller_alive={alive} "
-          f"STARVING={starving} hc={status}", flush=True)
+    a = assess(rows, now_dt, alive)
+    status = _ping(fail=a["starving"])
+    stamp = now_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    print(f"[{stamp}] pending={a['pending']} oldest={a['oldest_h']:.1f}h "
+          f"decisions_{STARVE_H}h={a['decisions_recent']} poller_alive={alive} "
+          f"STARVING={a['starving']} hc={status}", flush=True)
     return 0
 
 

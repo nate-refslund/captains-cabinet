@@ -137,7 +137,22 @@ def handle_captain_update(
                 fn = chair_drafts.deliver_draft
             else:
                 fn = deliver
-            override = routed.edit_text if routed.primary == "edit" else ""
+            override = ""
+            if routed.primary == "edit":
+                override = routed.edit_text or ""
+                # cp2 edit-path (2026-07-03): give the Captain's edit the SAME
+                # charset hygiene the AI draft got at creation (em/en-dash → -,
+                # smart quotes → straight, … → ...), so a reply typed on mobile
+                # doesn't egress with characters the draft path already strips.
+                # Lazy import (screenpipe_adapter prints a module-load notice);
+                # fail-OPEN to raw text — a normalization import must never block
+                # a delivery whose verdict has already landed. This chokepoint is
+                # inherited by the capture→action lane's edit path.
+                try:
+                    from framework.acting.screenpipe_adapter import normalize_voice
+                    override = normalize_voice(override)
+                except Exception:
+                    pass
             delivery["attempted"] = True
             try:
                 delivery["result"] = fn(pid, override_text=override or "")
