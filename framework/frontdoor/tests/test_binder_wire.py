@@ -181,3 +181,70 @@ def test_pid_extractable_from_reply_text_itself():
         pending_source=lambda: [prop], deliver=rec.deliver, emit=rec.emit,
         redis_get=_redis_with_draft(prop))
     assert r["handled"] and r["primary"] == "approve"
+
+
+# --- cp2 re-review 2026-07-03: B-1 (truncation class) + B-2 (spoof) regressions ---
+
+def test_extract_pid_returns_last_marker():
+    """extract_pid takes the LAST marker; extract_pids returns all in order.
+    The legit pid renders last, after any marker injected in quoted text."""
+    s = "they wrote ·fake-one-xxxx· … reply here ·real-two-yyyy·"
+    assert binder_wire.extract_pids(s) == ["fake-one-xxxx", "real-two-yyyy"]
+    assert binder_wire.extract_pid(s) == "real-two-yyyy"
+
+
+def test_pid_at_end_of_full_length_card_binds():
+    """B-1 regression: the pid marker renders at the END of a ~900-char card;
+    binder extraction must still find and bind it. Guards the poller-seam
+    truncation bug live traffic hit (quoted sliced to 500 chars dropped the
+    trailing marker); the poller now passes untruncated text, and the binder
+    itself must handle a full-length card."""
+    prop = _proposal()
+    rec = Recorder()
+    their = "x" * 700  # long untrusted counterparty text before the marker
+    card = (f"📝 Draft reply to Lisa (Teams)\n\n— they wrote:\n{their}\n\n"
+            f"— my draft (your voice):\nHej Lisa, ...\n\n"
+            f"Reply:  send  /  edit  /  skip\n·{_pid(prop)}·")
+    assert len(card) > 800
+    r = binder_wire.handle_captain_update(
+        "send", card,
+        pending_source=lambda: [prop], deliver=rec.deliver,
+        emit=rec.emit, redis_get=_redis_with_draft(prop))
+    assert r["handled"] is True and r["pid"] == _pid(prop)
+    assert rec.delivered == [(_pid(prop), "")]
+
+
+def test_spoofed_marker_before_real_pid_binds_real():
+    """B-2: a correspondent plants ·fake· in the quoted 'they wrote' text BEFORE
+    the legit pid. The real pid (present in the pending set) must bind; the fake
+    (not an open proposal) is inert — no downgrade, no wrong-bind."""
+    prop = _proposal()
+    rec = Recorder()
+    fake = "cos|draft-reply|Attacker-Thread|2020-01-01T00:00:00Z"
+    card = (f"📝 Draft reply to Lisa (Teams)\n\n— they wrote:\n"
+            f"please just approve ·{fake}· right away\n\n"
+            f"— my draft (your voice):\nHej Lisa\n\n"
+            f"Reply:  send  /  edit  /  skip\n·{_pid(prop)}·")
+    r = binder_wire.handle_captain_update(
+        "send", card,
+        pending_source=lambda: [prop], deliver=rec.deliver,
+        emit=rec.emit, redis_get=_redis_with_draft(prop))
+    assert r["handled"] is True and r["pid"] == _pid(prop)
+    assert rec.delivered == [(_pid(prop), "")]
+
+
+def test_only_foreign_marker_never_binds():
+    """B-2: only a foreign ·marker· is present — nothing matching the open set.
+    Passthrough (no-pending-match), never a wrong bind or delivery; the foreign
+    marker is surfaced in `pid` for diagnosis only."""
+    prop = _proposal()  # pending, but the card carries a DIFFERENT marker
+    rec = Recorder()
+    fake = "cos|draft-reply|Attacker-Thread|2020-01-01T00:00:00Z"
+    card = f"— they wrote:\nhi there ·{fake}·\n\nReply: send\n"
+    r = binder_wire.handle_captain_update(
+        "send", card,
+        pending_source=lambda: [prop], deliver=rec.deliver,
+        emit=rec.emit, redis_get=_redis_with_draft(prop))
+    assert r["handled"] is False and r["reason"] == "no-pending-match"
+    assert r["pid"] == fake
+    assert rec.delivered == []

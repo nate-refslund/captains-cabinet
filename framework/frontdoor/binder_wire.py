@@ -45,13 +45,29 @@ def _redis_get(key: str, host: str = "localhost") -> str:
     return "" if out in ("", "(nil)") else out
 
 
-def extract_pid(quoted: str, text: str = "") -> str | None:
-    """Pid from the replied-to message (primary) or the reply itself (rare)."""
+def extract_pids(quoted: str, text: str = "") -> list[str]:
+    """ALL pid markers found, in render order (quoted source before reply text).
+
+    B-2 hardening (cp2 re-review 2026-07-03): a draft card embeds untrusted
+    counterparty text ("they wrote: …") which a correspondent controls. The
+    single-match extractor took the FIRST marker, so a `·fake·` planted in that
+    text won. Callers cross-check these candidates against the OPEN proposal set
+    and bind only a real one — a planted marker is not a pending pid, so it can
+    neither bind nor mask the legitimate marker.
+    """
+    out: list[str] = []
     for source in (quoted or "", text or ""):
-        m = _PID_RE.search(source)
-        if m:
-            return m.group(1)
-    return None
+        out.extend(_PID_RE.findall(source))
+    return out
+
+
+def extract_pid(quoted: str, text: str = "") -> str | None:
+    """Best single pid: the LAST marker. The legitimate pid renders last in the
+    lane card (after quoted counterparty text); an injected marker renders
+    earlier and must not win. Prefer extract_pids + a pending-set cross-check
+    where the open set is available (see handle_captain_update)."""
+    pids = extract_pids(quoted, text)
+    return pids[-1] if pids else None
 
 
 def handle_captain_update(
@@ -76,16 +92,27 @@ def handle_captain_update(
     so importing this module never touches redis/ledger.
     """
     try:
-        pid = extract_pid(quoted, text)
-        if not pid:
+        candidates = extract_pids(quoted, text)
+        if not candidates:
             return {"handled": False, "reason": "no-pid"}
 
         pending = pending_source() if pending_source is not None else loop.pending_proposals()
         by_id = {loop.proposal_id(p): p for p in pending if isinstance(p, dict)}
-        proposal = by_id.get(pid)
+        # B-2 (cp2 re-review 2026-07-03): bind the LAST marker that is a REAL open
+        # proposal. Cards render the legit pid last (lane) or on the header line
+        # (chair) — either way, only a marker present in by_id may bind, so a
+        # `·fake·` a correspondent planted in quoted text is inert: not in by_id,
+        # it is skipped, and it cannot mask the genuine proposal. pid retained
+        # for logging/return (last candidate when none are open).
+        pid = candidates[-1]
+        proposal = None
+        for cand in reversed(candidates):
+            if cand in by_id:
+                pid, proposal = cand, by_id[cand]
+                break
         if proposal is None:
-            # Marker present but no open proposal (already decided / expired /
-            # foreign marker). Passthrough — the Chair can still reason about it.
+            # Marker(s) present but none is an open proposal (already decided /
+            # expired / foreign). Passthrough — the Chair can still reason on it.
             return {"handled": False, "reason": "no-pending-match", "pid": pid}
 
         raw = redis_get(f"cabinet:draft:{pid}")

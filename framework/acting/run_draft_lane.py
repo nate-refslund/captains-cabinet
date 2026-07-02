@@ -129,7 +129,10 @@ def _prep_lines(prep: dict) -> str:
 def _present(thread: dict, draft: str, prop: dict, prep: dict | None = None) -> None:
     last = thread.get("last", {})
     chan = "Teams" if last.get("source") == "teams" else "email"
-    their = (last.get("text", "") or "").strip()[:400]
+    # B-2 defense-in-depth (cp2 re-review 2026-07-03): strip the pid marker char
+    # (U+00B7 ·) from untrusted counterparty text so a correspondent's message
+    # cannot inject a `·fake·` proposal marker into the card the binder parses.
+    their = (last.get("text", "") or "").replace("·", "").strip()[:400]
     pid = proposal_id(prop)
     _tg(
         f"📝 Draft reply to {thread['person']} ({chan})\n\n"

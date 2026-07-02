@@ -77,7 +77,10 @@ def present_draft(person: str, channel_name: str, draft: str,
        "EX", "604800")
     via = "Teams" if channel_name.lower() == "teams" else "email"
     dest = f" <{recipient_email}>" if recipient_email else ""
-    blocks = [f"✍️ Draft {via} to *{person}*{dest}  ·{pid}·", "", draft]
+    # B-2 defense-in-depth (cp2 re-review 2026-07-03): strip the marker char from
+    # the (possibly external) display name so it can't forge a second ·…· marker.
+    safe_person = (person or "").replace("·", "")
+    blocks = [f"✍️ Draft {via} to *{safe_person}*{dest}  ·{pid}·", "", draft]
     if why:
         blocks += ["", f"_{why}_"]
     blocks += ["", f"Reply *send* / *edit: <text>* / *skip: <why>*  (or `send {pid}`)"]

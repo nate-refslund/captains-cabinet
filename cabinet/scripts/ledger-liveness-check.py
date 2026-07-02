@@ -27,7 +27,7 @@ import os
 import subprocess
 import sys
 import urllib.request
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path:
@@ -78,9 +78,14 @@ def _ping(fail: bool) -> str:
 
 
 def main() -> int:
-    since = (datetime.now(timezone.utc) - timedelta(hours=STARVE_H * 2)) \
-        .strftime("%Y-%m-%dT%H:%M:%SZ")
-    rows = loop.read_ledger(since=since)
+    # M-2 (cp2 re-review 2026-07-03): read the ledger UNWINDOWED. A pending
+    # proposal keeps its original (old) ts, so a 48h read window silently DROPPED
+    # the oldest, most-starved pendings — flipping this dead-man from correctly
+    # red to falsely green exactly as a genuine starvation aged past the window
+    # (live risk: the 4 pendings dated 2026-06-26..29). The whole point of the
+    # dead-man is to see EVERY open pending regardless of age. Decisions are
+    # still filtered to the STARVE_H window below via decided_at.
+    rows = loop.read_ledger(since=None)
     pending = loop.pending_proposals(rows=rows)
     # exclude synthetic verification artifacts from the math
     pending = [p for p in pending
