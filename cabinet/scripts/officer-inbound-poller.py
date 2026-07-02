@@ -198,7 +198,12 @@ def main() -> int:
             # proposal card, a briefing line), capture what he's answering so the
             # officer has the exact context without having to ask 'which one'.
             rt = msg.get("reply_to_message") or {}
-            quoted = (rt.get("text") or rt.get("caption") or "").strip().replace("\n", " ")
+            # FULL quoted text for the binder (2026-07-03): the ·pid· marker sits at
+            # the END of draft cards (~900 chars) — the 500-char preview truncation
+            # below sliced it off, so every real Captain `send` logged no-pid.
+            # Binder gets the untruncated text; the relay keeps the short preview.
+            quoted_full = (rt.get("text") or rt.get("caption") or "").strip()
+            quoted = quoted_full.replace("\n", " ")
             if len(quoted) > 500:
                 quoted = quoted[:500] + "…"
             if frm == str(captain) and text:
@@ -216,7 +221,7 @@ def main() -> int:
                 if os.environ.get("CABINET_BINDER_WIRED") == "1":
                     try:
                         from framework.frontdoor import binder_wire
-                        wr = binder_wire.handle_captain_update(text, quoted, log=log)
+                        wr = binder_wire.handle_captain_update(text, quoted_full, log=log)
                         if wr.get("handled"):
                             binder_note = wr.get("summary", "")
                         else:
