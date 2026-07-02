@@ -219,6 +219,11 @@ def main() -> int:
                         wr = binder_wire.handle_captain_update(text, quoted, log=log)
                         if wr.get("handled"):
                             binder_note = wr.get("summary", "")
+                        else:
+                            # observability (2026-07-02): the first real Captain reply
+                            # relayed with no trace of WHY the binder declined — log the
+                            # reason so unmatched grammar/pids are diagnosable from logs.
+                            log(f"[binder] not handled: reason={wr.get('reason','?')} pid={wr.get('pid','-')}")
                     except Exception as e:
                         log(f"binder wire unavailable (passthrough preserved): {e}")
                 deliver(text, quoted, binder_note)
