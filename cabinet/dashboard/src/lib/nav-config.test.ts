@@ -7,8 +7,9 @@ import { describe, it, expect } from 'vitest'
 import { ADVANCED_NAV, CONSUMER_NAV, navForMode } from './nav-config'
 
 describe('ADVANCED_NAV — static shape', () => {
-  it('has 13 items (12 internal + 1 external Terminal)', () => {
-    expect(ADVANCED_NAV).toHaveLength(13)
+  it('has 14 items (13 internal + 1 external Terminal)', () => {
+    // 2026-07-02: Library page added in the June work without this pin updating
+    expect(ADVANCED_NAV).toHaveLength(14)
   })
 
   it('every link has an href and a label', () => {
