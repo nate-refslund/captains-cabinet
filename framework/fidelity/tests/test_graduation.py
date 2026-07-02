@@ -123,7 +123,7 @@ DEPLOY_CELL = ("officer:cos", "polads", "vercel_deploy_preview")
 
 class TestUnmeasured:
     def test_no_data_is_unmeasured(self):
-        out = graduation.evaluate(REVERSIBLE_CELL)
+        out = graduation.evaluate(REVERSIBLE_CELL, now=_NOW)
         assert out["state"] == "unmeasured"
         assert "evidence" in out
 
@@ -134,7 +134,7 @@ class TestUnmeasured:
             ts = _iso(_NOW - timedelta(days=60 - i))
             _emit(ts=ts, subject=f"s{i}", verdict="unknown", status="unknown",
                   action_type="local_edit")
-        out = graduation.evaluate(REVERSIBLE_CELL)
+        out = graduation.evaluate(REVERSIBLE_CELL, now=_NOW)
         assert out["state"] == "unmeasured"
 
 
@@ -146,7 +146,7 @@ class TestProposeOnly:
     def test_too_few_samples_is_propose_only(self):
         # clean confirms but only 5 samples < bar.samples (20) -> not graduated.
         _emit_n(5, verdict="confirmed", action_type="local_edit")
-        out = graduation.evaluate(REVERSIBLE_CELL)
+        out = graduation.evaluate(REVERSIBLE_CELL, now=_NOW)
         assert out["state"] == "propose_only"
 
     def test_below_match_rate_is_propose_only(self):
@@ -156,7 +156,7 @@ class TestProposeOnly:
             ts = _iso(_NOW - timedelta(days=120 - i * 2))
             v = "confirmed" if i % 5 != 0 else "wrong"  # 1-in-5 wrong, spread out
             _emit(ts=ts, subject=f"s{i}", verdict=v, action_type="local_edit")
-        out = graduation.evaluate(REVERSIBLE_CELL)
+        out = graduation.evaluate(REVERSIBLE_CELL, now=_NOW)
         assert out["state"] in ("propose_only", "demote")
         # The point: it is NOT graduated/eligible (below the 0.85 match bar).
         assert out["state"] != "graduated"
@@ -172,7 +172,7 @@ class TestGraduated:
         # 25 clean confirms, last one >14d ago -> clears default bar fully.
         _emit_n(25, verdict="confirmed", status="ok", action_type="local_edit",
                 start_days_ago=60, spacing_days=1.0)
-        out = graduation.evaluate(REVERSIBLE_CELL)
+        out = graduation.evaluate(REVERSIBLE_CELL, now=_NOW)
         assert out["state"] == "graduated"
         ev = out["evidence"]
         assert ev["sample_count"] >= 20
@@ -183,7 +183,7 @@ class TestGraduated:
         # recency_clean (days since last sample / since last wrong) < 14d.
         _emit_n(25, verdict="confirmed", status="ok", action_type="local_edit",
                 start_days_ago=27, spacing_days=1.0)  # last sample ~3d ago
-        out = graduation.evaluate(REVERSIBLE_CELL)
+        out = graduation.evaluate(REVERSIBLE_CELL, now=_NOW)
         assert out["state"] == "eligible"
         assert out["state"] != "graduated"
 
@@ -193,7 +193,7 @@ class TestGraduated:
         # samples floor (30) -> not graduated.
         _emit_n(25, verdict="confirmed", status="ok",
                 action_type="internal_message", start_days_ago=80, spacing_days=1.0)
-        out = graduation.evaluate(INTERNAL_CELL)
+        out = graduation.evaluate(INTERNAL_CELL, now=_NOW)
         assert out["state"] != "graduated"  # 25 < 30 samples floor
 
 
@@ -212,7 +212,7 @@ class TestDemote:
               status="failed", action_type="local_edit")
         _emit(ts=_iso(_NOW - timedelta(days=1)), subject="w2", verdict="wrong",
               status="failed", action_type="local_edit")
-        out = graduation.evaluate(REVERSIBLE_CELL)
+        out = graduation.evaluate(REVERSIBLE_CELL, now=_NOW)
         assert out["state"] == "demote"
 
     def test_single_fresh_wrong_is_not_graduated(self):
@@ -222,7 +222,7 @@ class TestDemote:
                 start_days_ago=120, spacing_days=2.0)
         _emit(ts=_iso(_NOW - timedelta(days=1)), subject="w1", verdict="wrong",
               status="failed", action_type="local_edit")
-        out = graduation.evaluate(REVERSIBLE_CELL)
+        out = graduation.evaluate(REVERSIBLE_CELL, now=_NOW)
         assert out["state"] != "graduated"
 
 
@@ -247,7 +247,7 @@ class TestBarReadFromYaml:
         monkeypatch.setattr(graduation, "_load_bars", fake_bars)
         _emit_n(5, verdict="confirmed", status="ok", action_type="local_edit",
                 start_days_ago=60, spacing_days=1.0)
-        out = graduation.evaluate(REVERSIBLE_CELL)
+        out = graduation.evaluate(REVERSIBLE_CELL, now=_NOW)
         assert out["state"] == "graduated"  # 5 >= patched floor of 3
 
     def test_default_bar_values_come_from_the_shipped_yaml(self):

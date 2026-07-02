@@ -49,33 +49,58 @@ for _p in (str(RETRO_PIPE_DIR), str(_SHARED_DIR), str(RETRO_PIPE_DIR.parent)):
     if _p not in sys.path and Path(_p).exists():
         sys.path.insert(0, _p)
 
-_spec = importlib.util.spec_from_file_location(
-    "retrodiction_lib", str(RETRO_PIPE_DIR / "lib.py")
-)
-if _spec is None or _spec.loader is None:  # pragma: no cover - install guard
-    raise ImportError(f"retrodiction lib not found at {RETRO_PIPE_DIR / 'lib.py'}")
-_retro = importlib.util.module_from_spec(_spec)
-sys.modules["retrodiction_lib"] = _retro
-_spec.loader.exec_module(_retro)
+# Import-safe when the lib is absent (2026-07-02, CI run 28618484301): a clean
+# runner / flavor-B Mini has no ~/.screenpipe, and an import-time crash here
+# took 18 test modules down at COLLECTION. Absence now degrades to a stub
+# module whose every attribute raises with guidance on FIRST USE — importers
+# can `import retro` + check `retro_available()`; only actual scoring calls
+# require the lib. Deletes when plan A2.1 vendors the lib into framework/.
+class _RetroUnavailable:
+    def __getattr__(self, attr):
+        raise RuntimeError(
+            f"retrodiction lib not available (looked in {RETRO_PIPE_DIR}) — "
+            f"attribute {attr!r} needs the screenpipe retrodiction pipe "
+            "(flavor-A coupling; set CABINET_RETRO_PIPE_DIR or wait for the "
+            "A2.1 vendoring). retro_available() lets callers branch cleanly."
+        )
 
-# Re-export the reused surface (import/port — do NOT rebuild these).
-extract_cases = _retro.extract_cases
-score_case = _retro.score_case
-judge_decision = _retro.judge_decision
-score_draft = _retro.score_draft
-author_centroid = _retro.author_centroid
-aggregate = _retro.aggregate
-cusum = _retro.cusum
-mechanics_flags = _retro.mechanics_flags
-parse_json_block = _retro.parse_json_block
-lessons_before = _retro.lessons_before
-parse_conversations = _retro.parse_conversations
-cosine = _retro.cosine
 
-JUDGE_SYSTEM = _retro.JUDGE_SYSTEM
-BASELINE_SYSTEM = _retro.BASELINE_SYSTEM
-RETRO_ADDENDUM = _retro.RETRO_ADDENDUM
-LLM_MODEL = _retro.LLM_MODEL
+if retro_available():
+    _spec = importlib.util.spec_from_file_location(
+        "retrodiction_lib", str(RETRO_PIPE_DIR / "lib.py")
+    )
+    if _spec is None or _spec.loader is None:  # pragma: no cover - install guard
+        raise ImportError(f"retrodiction lib not found at {RETRO_PIPE_DIR / 'lib.py'}")
+    _retro = importlib.util.module_from_spec(_spec)
+    sys.modules["retrodiction_lib"] = _retro
+    _spec.loader.exec_module(_retro)
+else:  # pragma: no cover - exercised only on lib-less installs (CI, flavor B)
+    _retro = _RetroUnavailable()
+
+# Re-export the reused surface (import/port — do NOT rebuild these). On a
+# lib-less install the names resolve lazily through PEP 562 module __getattr__
+# → the stub, which raises with guidance at FIRST USE, never at import.
+if retro_available():
+    extract_cases = _retro.extract_cases
+    score_case = _retro.score_case
+    judge_decision = _retro.judge_decision
+    score_draft = _retro.score_draft
+    author_centroid = _retro.author_centroid
+    aggregate = _retro.aggregate
+    cusum = _retro.cusum
+    mechanics_flags = _retro.mechanics_flags
+    parse_json_block = _retro.parse_json_block
+    lessons_before = _retro.lessons_before
+    parse_conversations = _retro.parse_conversations
+    cosine = _retro.cosine
+
+    JUDGE_SYSTEM = _retro.JUDGE_SYSTEM
+    BASELINE_SYSTEM = _retro.BASELINE_SYSTEM
+    RETRO_ADDENDUM = _retro.RETRO_ADDENDUM
+    LLM_MODEL = _retro.LLM_MODEL
+else:  # pragma: no cover - exercised only on lib-less installs (CI, flavor B)
+    def __getattr__(name):  # PEP 562: module imports cleanly, surface fails loudly
+        return getattr(_retro, name)  # _RetroUnavailable raises with guidance
 
 __all__ = [
     "RETRO_PIPE_DIR", "retro_available",
