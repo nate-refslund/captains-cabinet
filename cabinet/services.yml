@@ -62,13 +62,25 @@ services:
   - name: cos-inbound
     label: com.cabinet.officer.cos-inbound
     kind: daemon
-    command: bash cabinet/scripts/start-inbound-poller.sh
+    command: bash cabinet/scripts/start-inbound-poller.sh cos
     schedule: keepalive
-    expected: "getUpdates offset advances whenever Captain messages exist; F0.7 ledger-liveness rides this"
+    env:
+      CABINET_BINDER_WIRED: "1"   # F0.5 mechanical verdict capture (rollback: remove + redeploy)
+    expected: "offset advances on Captain messages; binder wire records verdicts in-process (F0.5)"
     notes: >-
-      SOLE getUpdates poller (two pollers on one token 409-conflict). Installed
-      plist is invalid XML for strict parsers ('--' in a comment) — replaced by
-      this generated one at next deploy.
+      SOLE getUpdates poller (two pollers on one token 409-conflict). Generated
+      plist replaced the invalid-XML hand-made one at the F0.5 deploy
+      (2026-07-02); command carries the officer arg (missing in the draft row).
+
+  - name: ledger-liveness
+    label: com.cabinet.ledger-liveness
+    kind: watchdog
+    command: python3.12 cabinet/scripts/ledger-liveness-check.py
+    schedule: { interval_s: 3600 }
+    expected: "healthchecks 'ledger-liveness' pinged hourly; /fail on evidence starvation (pending proposals + live poller + zero decisions in 24h)"
+    notes: >-
+      F0.7 dead-man skeleton: evidence starvation must page — staleness is loss
+      of proof. Auto-demote wiring joins when graduation goes live (B2.9+).
   - name: frontdoor-briefing
     label: com.cabinet.frontdoor-briefing
     kind: daemon

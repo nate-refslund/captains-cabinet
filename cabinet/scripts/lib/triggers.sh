@@ -171,9 +171,12 @@ trigger_send() {
   # memory.sh's `set -a; source cabinet/.env` (NEON_CONNECTION_STRING +
   # others) into the calling officer's session JSONL. The disown drops the
   # job from the parent's job table entirely so no completion notice fires.
-  if [ -f "$CABINET_ROOT/cabinet/scripts/lib/memory.sh" ]; then
+  # set-u-safe root (2026-07-02, CI 28619006556): a `CABINET_ROOT=x . triggers.sh`
+  # source prefix unwinds after the source, so this function self-resolves.
+  local mem_root="${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
+  if [ -f "$mem_root/cabinet/scripts/lib/memory.sh" ]; then
     (
-      source "$CABINET_ROOT/cabinet/scripts/lib/memory.sh" 2>/dev/null
+      source "$mem_root/cabinet/scripts/lib/memory.sh" 2>/dev/null
       if declare -f memory_queue_embed > /dev/null; then
         local source_id="trg-$(date -u +%Y%m%dT%H%M%S)-${sender}-to-${target}"
         local metadata

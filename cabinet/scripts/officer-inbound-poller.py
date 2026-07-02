@@ -141,18 +141,21 @@ def main() -> int:
         tail = "\n".join(l for l in out.splitlines() if l.strip())[-1200:]
         return "esc to interrupt" in tail
 
-    def deliver(text: str, quoted: str = "") -> None:
+    def deliver(text: str, quoted: str = "", binder_note: str = "") -> None:
         """Idle-gate, then inject the Captain DM into the officer pane as a turn.
         `quoted` is the message Nate REPLIED TO (Telegram reply-threading) — prefixed
         so the officer sees the exact draft / proposal / message being answered, with
-        no need to ask 'which one'."""
+        no need to ask 'which one'. `binder_note` (F0.5) is the mechanical binder
+        wire's outcome — when present, recording+delivery ALREADY happened; the
+        Chair must harvest lessons only and never double-deliver."""
         waited = 0
         while pane_busy() and waited < 300:   # wait up to ~5 min for the pane to free
             time.sleep(5); waited += 5
+        note = f" [⚙ {binder_note}]" if binder_note else ""
         if quoted:
-            relay = f"\U0001F4E9 Captain DM (Telegram) [↩ replying to: “{quoted}”]: {text}"
+            relay = f"\U0001F4E9 Captain DM (Telegram){note} [↩ replying to: “{quoted}”]: {text}"
         else:
-            relay = f"\U0001F4E9 Captain DM (Telegram): {text}"
+            relay = f"\U0001F4E9 Captain DM (Telegram){note}: {text}"
         # text first, then Enter separately (Enter doesn't reliably register fused)
         subprocess.run(["tmux", "send-keys", "-t", session, relay], timeout=10)
         time.sleep(0.5)
@@ -203,7 +206,22 @@ def main() -> int:
                 mid = int(msg.get("message_id", 0))
                 react(mid)                     # 👀 read-ack (degrade-safe)
                 set_last_captain_msg_id(mid)   # id the Chair threads replies onto
-                deliver(text, quoted)
+                # F0.5 binder wire (flag-gated): mechanically record the Captain's
+                # approve/edit:/skip: verdict on the pending draft proposal and
+                # deliver on approve/edit — BEFORE the Chair sees the DM. The
+                # relay carries the outcome so the Chair never double-delivers.
+                # Fail-safe by construction: any wire error → handled=False →
+                # this DM relays byte-identically to pre-wire behavior.
+                binder_note = ""
+                if os.environ.get("CABINET_BINDER_WIRED") == "1":
+                    try:
+                        from framework.frontdoor import binder_wire
+                        wr = binder_wire.handle_captain_update(text, quoted, log=log)
+                        if wr.get("handled"):
+                            binder_note = wr.get("summary", "")
+                    except Exception as e:
+                        log(f"binder wire unavailable (passthrough preserved): {e}")
+                deliver(text, quoted, binder_note)
             else:
                 log(f"skip update_id={uid} from={frm or '?'} (not captain or non-text)")
             offset = max(offset, uid)

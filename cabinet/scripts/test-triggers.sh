@@ -71,7 +71,8 @@ if ! redis-cli -h "$TRIG_REDIS_HOST" -p "$TRIG_REDIS_PORT" ping >/dev/null 2>&1;
   exit 0
 fi
 
-CABINET_ROOT="$REPO_ROOT" . "$REPO_ROOT/cabinet/scripts/lib/triggers.sh"
+export CABINET_ROOT="$REPO_ROOT"  # persist past the source (2026-07-02: prefix form unwinds)
+. "$REPO_ROOT/cabinet/scripts/lib/triggers.sh"
 
 echo "=== trigger_send ==="
 OFFICER_NAME=sender-a trigger_send "$TEST_OFFICER" "hello from A"
