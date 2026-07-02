@@ -87,6 +87,28 @@ other extension — declare the owning plugin in
   Presets live in `presets/<name>/`; the active one is in
   `instance/config/active-preset`.
 
+## 7. The prove-to-earn flows (self-proposal · account · trust ladder)
+
+Three flows let the cabinet *earn* more reach over time, all surfacing for
+Nate's one-tap approval — never self-granting
+(`docs/prove-to-earn-expansion-2026-06-25.md`):
+
+- **MCP/plugin self-proposal** — once you've tested a new MCP/plugin,
+  `framework.learning.self_proposal.prepare_mcp_proposal(...)` surfaces the
+  exact `mcp-scope.yml` scope line + test evidence as a one-tap card. **Nate
+  applies the scope edit.** The Chair never self-edits `mcp-scope.yml`,
+  germline, or the hook (hard line).
+- **Account-creation flow** — `cabinet/scripts/prepare-account-flow.sh
+  --service <name>` drives a signup to the credential boundary (recipe in
+  `instance/config/account-flows.yml`) and surfaces "credential needed."
+  Credential entry stays Nate's. Depends on the Chair holding `claude-in-chrome`
+  scope (a Component-1 self-proposal away).
+- **Trust ladder** — `framework.learning.trust_ladder` reads
+  `instance/config/trust-ladder.yml` (Captain-authored rungs:
+  `would-like-to -> intend-to -> ive-done -> ive-been-doing`, per lane) and
+  surfaces a rung-grant card when a rung's cells are all `graduated` per the
+  per-cell `graduation.evaluate()`. Ceiling cells stay Captain-only forever.
+
 ## The rule
 
 Don't rebuild what's first-party (skill-creator / mcp-builder /

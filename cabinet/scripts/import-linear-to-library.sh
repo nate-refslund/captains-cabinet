@@ -91,7 +91,36 @@ map_state() {
   esac
 }
 
-# Map assignee name → officer abbreviation or "captain"
+# Active officer roster — DERIVED, not hardcoded. .claude/agents/<slug>.md is
+# the canonical, deployment-resolved roster (load-preset.sh/sync-agents.sh
+# render it as hired-in-mcp-scope.yml ∩ has-a-role-def; start-officer-mac.sh
+# gates each boot on it). This script runs with the full repo tree, so that
+# dir is reachable here. Cached once; preset-agnostic (portfolio → cos +
+# lane CEOs + comms-officer; work → the functional five).
+CABINET_ROOT="${CABINET_ROOT:-$(cd "${SCRIPT_DIR}/../.." && pwd)}"
+_ROSTER_SLUGS=""
+roster_slugs() {
+  if [ -z "$_ROSTER_SLUGS" ]; then
+    local agents_dir="$CABINET_ROOT/.claude/agents"
+    if [ -d "$agents_dir" ]; then
+      local b
+      for f in "$agents_dir"/*.md; do
+        [ -f "$f" ] || continue
+        b="$(basename "$f" .md)"
+        [ "$b" = "TEMPLATE" ] && continue
+        _ROSTER_SLUGS="$_ROSTER_SLUGS $b"
+      done
+    fi
+    _ROSTER_SLUGS="${_ROSTER_SLUGS# }"
+  fi
+  echo "$_ROSTER_SLUGS"
+}
+
+# Map assignee name → officer slug or "captain". The officer match is derived
+# from the live roster (above), not a static abbreviation list: the assignee's
+# lowercased first-name token matches a real officer slug exactly, or that slug
+# starts with the token (so "PolAds" → polads-ceo, "Cos"/"Chair-bot" → cos).
+# No match → fall back to the first-name truncation default (unchanged).
 map_assignee() {
   local name="$1"
   if [ -z "$name" ]; then echo ""; return; fi
@@ -102,15 +131,20 @@ map_assignee() {
     echo "captain"
     return
   fi
-  # Officer abbreviation heuristics from first name
-  case "$lower" in
-    cos*) echo "cos" ;;
-    cto*) echo "cto" ;;
-    cpo*) echo "cpo" ;;
-    cro*) echo "cro" ;;
-    coo*) echo "coo" ;;
-    *) echo "$(echo "$name" | awk '{print tolower($1)}' | cut -c1-8)" ;;
-  esac
+  # Officer match against the derived roster (first-name token).
+  local token
+  token=$(echo "$lower" | awk '{print $1}')
+  if [ -n "$token" ]; then
+    local slug
+    for slug in $(roster_slugs); do
+      if [ "$slug" = "$token" ] || [ "${slug#"$token"}" != "$slug" ]; then
+        echo "$slug"
+        return
+      fi
+    done
+  fi
+  # No roster match — first-name truncation default.
+  echo "$(echo "$name" | awk '{print tolower($1)}' | cut -c1-8)"
 }
 
 # Fetch one page of issues. Returns raw JSON.

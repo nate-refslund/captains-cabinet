@@ -14,7 +14,7 @@ Your context was just compressed. Behavioral rules loaded earlier in this sessio
 
 ALL OFFICERS — read these immediately:
 1. memory/skills/evolved/telegram-communication.md — reactions (react to EVERY Captain message before replying), threading (always use reply_to), formatting rules, SEND FILES when referencing paths (Captain cannot access the server filesystem — attach files with reply(files=[...]))
-2. memory/skills/evolved/individual-reflection.md — 6h cadence + value maximization step
+2. memory/skills/individual-reflection.md — event-triggered reflection + value maximization step
 3. The three Captain ledgers — re-read ALL THREE (SessionStart loads them at boot but does not necessarily re-fire on every compaction, so this is your post-compaction refresh):
    - shared/interfaces/captain-patterns.md (ratified standing behaviors — 4th loop)
    - shared/interfaces/captain-intents.md (inferred latent intents — 5th loop)
@@ -97,7 +97,8 @@ echo "  L2 WORKFLOW: What about my process could be better?"
 echo "  L3 META: What pattern would improve the cabinet's improvement process itself?"
 echo "Read memory/skills/holistic-thinking.md for the lens."
 echo "Surface L2/L3 ideas to CoS via notify-officer.sh."
-echo "After: redis-cli -h redis -p 6379 INCR cabinet:reflections:count"
+echo "After writing it, stamp the reflection via the shared host-correct sink (writes last-run + INCRs the retro counter — do NOT hand-write 'redis-cli -h redis', it silently fails on Mac):"
+echo "  . ${CABINET_ROOT}/cabinet/scripts/lib/reflection.sh && reflection_stamp ${OFFICER}"
 echo ""
 echo "THEN:"
 echo "1. Check for pending triggers (hook auto-delivers, but manual: source ${CABINET_ROOT}/cabinet/scripts/lib/triggers.sh && trigger_read ${OFFICER})"

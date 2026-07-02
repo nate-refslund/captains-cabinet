@@ -67,7 +67,7 @@ CoS runs this every 24 hours, immediately after the cross-officer retro. Tracked
    - If no improvements qualified for promotion, record that — it's a valid outcome
    - Record the timestamp:
    ```bash
-   redis-cli -h redis -p 6379 SET "cabinet:schedule:last-run:cos:evolution" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+   redis-cli -h "${REDIS_HOST:-localhost}" -p "${REDIS_PORT:-6379}" SET "cabinet:schedule:last-run:cos:evolution" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
    ```
 
 ## Expected Outcome

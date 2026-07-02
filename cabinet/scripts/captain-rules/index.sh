@@ -45,6 +45,54 @@ BARE_SCALAR_RE = re.compile(r'^[A-Za-z0-9_/\-.]+$')
 
 REQUIRED = ['id', 'section', 'title', 'trigger_words', 'scope', 'added', 'added_by', 'excerpt']
 
+# A `## ` heading in a source file is expected to carry an <!-- index: --> block
+# UNLESS the author explicitly opts it out with an <!-- no-index --> marker
+# anywhere in that heading's body (e.g. the `## People` facts block, which holds
+# concrete memories, not retrieval rules). The coverage check below fails loudly
+# when an indexable heading has no block — this is the structural guard against
+# the drift that produced the stale/empty index (BUG 1, 2026-06-25): a file full
+# of patterns silently producing fewer entries than headings.
+HEADING_RE = re.compile(r'^##\s+(?!#)(.*)$', re.MULTILINE)
+NOINDEX_RE = re.compile(r'<!--\s*no-index\s*-->', re.IGNORECASE)
+
+
+def check_block_coverage(path):
+    """Fail (exit 2) if any `## ` heading lacks both an index block and a
+    no-index opt-out. Catches authors who add a pattern without its index block,
+    so the generated index can never silently drift out of sync with the file."""
+    if not os.path.exists(path):
+        return
+    src = os.path.basename(path)
+    with open(path) as f:
+        text = f.read()
+    # Slice the file into [heading, body-until-next-heading] segments.
+    headings = list(HEADING_RE.finditer(text))
+    uncovered = []
+    for i, h in enumerate(headings):
+        title = h.group(1).strip()
+        body_start = h.end()
+        body_end = headings[i + 1].start() if i + 1 < len(headings) else len(text)
+        body = text[body_start:body_end]
+        if NOINDEX_RE.search(body):
+            continue  # explicit opt-out (facts/memory block, not a rule)
+        if not BLOCK_RE.search(body):
+            line = text.count('\n', 0, h.start()) + 1
+            uncovered.append((line, title))
+    if uncovered:
+        sys.stderr.write(
+            f"[index] FATAL: {len(uncovered)} heading(s) in {src} have no "
+            f"<!-- index: --> block and no <!-- no-index --> opt-out:\n"
+        )
+        for line, title in uncovered:
+            sys.stderr.write(f"[index]   {src}:{line}  ## {title}\n")
+        sys.stderr.write(
+            "[index] Every pattern/intent heading must carry an index block so it "
+            "propagates to officers (see cabinet/scripts/captain-rules/README.md). "
+            "For a non-rule heading (a facts/memory block), add an HTML comment "
+            "<!-- no-index --> in its body to opt out.\n"
+        )
+        sys.exit(2)
+
 
 def parse_blocks(path):
     src = os.path.basename(path)
@@ -111,6 +159,7 @@ def yaml_value(key, value):
 
 records = []
 for src in sources:
+    check_block_coverage(src)   # fail loudly on a heading missing its index block
     records.extend(parse_blocks(src))
 
 records.sort(key=natural_id_key)

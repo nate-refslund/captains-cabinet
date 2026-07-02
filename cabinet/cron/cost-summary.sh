@@ -41,9 +41,27 @@ if [ -d "$ROLES_DIR" ]; then
   done
 fi
 if [ "${#OFFICERS[@]}" -eq 0 ]; then
-  # Fallback ONLY when instance/roles/active/ is empty/missing (deployment
-  # not bootstrapped yet): legacy hardcoded functional five.
-  OFFICERS=("cos" "cto" "cpo" "cro" "coo")
+  # Fallback when instance/roles/active/ is empty/missing (NOT yet seeded by
+  # bootstrap-roles.sh — the case on the hq deployment today). DERIVE from
+  # .claude/agents/*.md — the deployment-resolved roster (load-preset.sh /
+  # sync-agents.sh render it; this Mac-cron script has the repo tree, so it's
+  # reachable). An empty roles dir must NEVER fall through to a phantom
+  # hardcoded set; cost-summary doesn't filter by officer_type (consultants
+  # spend tokens too), so all agent slugs are correct here.
+  AGENTS_DIR="$REPO_ROOT/.claude/agents"
+  if [ -d "$AGENTS_DIR" ]; then
+    for agent_md in "$AGENTS_DIR"/*.md; do
+      [ -f "$agent_md" ] || continue
+      slug="$(basename "$agent_md" .md)"
+      [ "$slug" = "TEMPLATE" ] && continue
+      OFFICERS+=("$slug")
+    done
+  fi
+fi
+if [ "${#OFFICERS[@]}" -eq 0 ]; then
+  # Neither instance/roles/active/ nor .claude/agents/ yielded a roster.
+  # Emit totals-only (still useful) and log — never invent phantom officers.
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) cost-summary: no roster from instance/roles/active/ or .claude/agents/ — totals-only digest" >&2
 fi
 MSG="💰 Cabinet cost summary $TODAY"
 

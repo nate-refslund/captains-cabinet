@@ -42,6 +42,7 @@ def run_briefing(
     send_fn=None,
     drain_fn=None,
     ack_fn=None,
+    pending_fn=None,
     recap_fn=None,
     run_mode: str | None = None,
 ) -> dict:
@@ -72,7 +73,18 @@ def run_briefing(
         except Exception as e:  # best-effort: never block the briefing send
             recap = {"recap": False, "error": str(e)[:300]}
 
-    send = run_frontdoor.run_send_path(send_fn=send_fn, drain_fn=drain_fn, ack_fn=ack_fn)
+    # recover_pending=True is the fix for the single-voice comms-awareness gap:
+    # surface.py (every 5 min) reads the intake with ">" and surfaces ONLY
+    # ping-now in real time, leaving batch/fyi items delivered-but-unacked in the
+    # consumer group's PEL "for the briefing to compose". Those items are then no
+    # longer ">"-visible, so a plain briefing drain saw nothing and the batch/fyi
+    # backlog — comms-officer FYIs, relevant-but-no-reply messages — surfaced
+    # NEVER. The briefing is the designated place batch/fyi reaches Nate, so it
+    # recovers that pending backlog, composes it into the one voice, sends, and
+    # ACKs. (surface.py is unchanged: still real-time ping-now only.)
+    send = run_frontdoor.run_send_path(
+        send_fn=send_fn, drain_fn=drain_fn, ack_fn=ack_fn, pending_fn=pending_fn,
+        recover_pending=True)
     return {"synthesis": syn, "recap": recap, "send": send}
 
 

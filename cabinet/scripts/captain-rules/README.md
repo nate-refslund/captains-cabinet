@@ -4,6 +4,16 @@ Spec 042 implementation. Replaces always-loaded `captain-patterns.md` +
 `captain-intents.md` with on-demand keyword retrieval into the officer's
 context window.
 
+> **OPEN FLAG (2026-06-25) — eval.sh is intentionally 0/5 pending a Captain decision.**
+> The index was regenerated from the current `captain-patterns.md` (15 patterns)
+> during the principles-over-specifics collapse. The 5 always-injected
+> master-directive **anchors (A1–A5)** + `I-W-001` + the old `P-*` patterns
+> dropped out (their bodies live nowhere in the current source files), so the 5
+> golden fixtures that assert them now FAIL. This is a flagged decision, not a
+> bug: see **FW-117** in `shared/cabinet-framework-backlog.md` for the
+> reinstate-vs-retire options and the verbatim recoverable anchor content.
+> Until resolved, `query.sh` returns **no anchors** on Captain DMs.
+
 ## Layout
 
 ```
@@ -23,6 +33,14 @@ Every new pattern or intent in `shared/interfaces/captain-patterns.md` /
 `captain-intents.md` ships with a paired `<!-- index: ... -->` block.
 The block is the source of truth for retrieval — markdown body remains
 human-readable but is not parsed.
+
+**The indexer enforces this.** A `## ` heading with no `<!-- index: -->` block
+fails the build loudly (`index.sh` exits 2, naming the file:line). This is the
+guard against the drift that left the index stale (a file full of patterns
+silently producing fewer entries than headings). For a non-rule heading — a
+facts / memory block like `## People` that is intentionally NOT a retrieval
+pattern — add an HTML comment `<!-- no-index -->` anywhere in that heading's body
+to opt it out.
 
 Run the helper to scaffold:
 
@@ -78,9 +96,29 @@ Output: `shared/interfaces/captain-rules-index.yaml`. Determinism per
 Spec 042 AC #2 — re-running on unchanged input produces byte-identical
 output.
 
-A pre-commit hook (`cabinet/scripts/git-hooks/pre-commit`) regenerates
-the index when either source file is staged and fails the commit if
-the index is out of date.
+### Freshness gate (pre-commit)
+
+A pre-commit hook (`cabinet/scripts/git-hooks/pre-commit`) re-derives the index
+from the **working-tree** sources and fails the commit if the committed
+`captain-rules-index.yaml` doesn't match.
+
+Two things make this robust (both were broken before 2026-06-25 and are the
+root cause of the long-stale index):
+
+1. **The sources are gitignored** (`.gitignore: shared/interfaces/**/*.md`) —
+   runtime content, never staged. So the gate triggers on the **tracked index
+   artifact** being staged (or a source, if force-tracked), NOT on the sources
+   being staged (a staging trigger on an unstageable file is dead). It then
+   re-runs `index.sh`, which reads the working-tree sources directly, and
+   requires a byte-match.
+2. **It runs before the `COMMIT_NO_REVIEW` early-return**, so the docs-only
+   checkpoint-review bypass cannot also skip freshness validation. The freshness
+   gate has its own independent bypass: `COMMIT_NO_RULES_INDEX=1`.
+
+The hook only fires if installed: `bash cabinet/scripts/install-git-hooks.sh`
+(sets `core.hooksPath = cabinet/scripts/git-hooks`). If `core.hooksPath` points
+elsewhere (e.g. the default `.git/hooks`) with no `pre-commit` there, the gate is
+dormant — verify with `git config core.hooksPath`.
 
 ## Querying the index
 

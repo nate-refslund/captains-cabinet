@@ -279,6 +279,74 @@ assert "trigger_ids_path no-arg returns rc=1" "$TIP_RC" "1"
 assert_contains "trigger_ids_path no-arg emits diagnostic" "$TIP_OUT" "officer argument required"
 
 echo ""
+echo "=== trigger_read_safety_net (post-tool-use hook crash/outage net) ==="
+# The hook uses this INSTEAD of trigger_read so it never steals fresh (id ">")
+# triggers from the live redis-trigger-channel `channel` consumer. It must:
+#   (a) NOT surface a fresh trigger (idle < grace) — leave it for the channel.
+#   (b) reclaim a stranded trigger that another consumer (`channel`) delivered
+#       but never ACKed once it ages past the grace window.
+SN_OFFICER="test-sn-$$-$(date +%s)"
+SN_STREAM="cabinet:triggers:${SN_OFFICER}"
+SN_GROUP="officer-${SN_OFFICER}"
+redis-cli -h "$TRIG_REDIS_HOST" -p "$TRIG_REDIS_PORT" DEL "$SN_STREAM" >/dev/null 2>&1
+
+# (a) Fresh trigger with a large grace → safety net returns nothing.
+OFFICER_NAME=sn-sender trigger_send "$SN_OFFICER" "fresh-not-stolen"
+SN_FRESH=$(TRIGGER_SAFETY_NET_GRACE_MS=60000 trigger_read_safety_net "$SN_OFFICER")
+SN_FRESH_RC=$?
+assert "safety_net leaves a FRESH trigger for the live channel (rc=1)" "$SN_FRESH_RC" "1"
+assert "safety_net yields nothing for a fresh trigger" "$SN_FRESH" ""
+
+# (b) Simulate the channel delivering-but-not-ACKing, then reclaim with 0 grace.
+redis-cli --raw -h "$TRIG_REDIS_HOST" -p "$TRIG_REDIS_PORT" \
+  XREADGROUP GROUP "$SN_GROUP" channel COUNT 10 STREAMS "$SN_STREAM" '>' >/dev/null 2>&1
+SN_RECLAIM=$(TRIGGER_SAFETY_NET_GRACE_MS=0 trigger_read_safety_net "$SN_OFFICER")
+SN_RECLAIM_RC=$?
+assert "safety_net RECLAIMS a stranded trigger cross-consumer (rc=0)" "$SN_RECLAIM_RC" "0"
+assert_contains "safety_net surfaces the stranded message body" "$SN_RECLAIM" "fresh-not-stolen"
+# The reclaimed ids_file must hold a real entry id (NNN-NNN), not the cursor.
+SN_IDS=$(cat "/tmp/.trigger_ids_${SN_OFFICER}" 2>/dev/null)
+if echo "$SN_IDS" | grep -qE '^[0-9]+-[0-9]+ *$'; then
+  PASS=$((PASS+1)); printf "  [PASS] safety_net writes a valid reclaimed id (not the cursor)\n"
+else
+  FAIL=$((FAIL+1)); FAILURES+=("safety_net ids_file: expected NNN-NNN, got '$SN_IDS'")
+  printf "  [FAIL] safety_net ids_file: expected NNN-NNN, got '%s'\n" "$SN_IDS"
+fi
+redis-cli -h "$TRIG_REDIS_HOST" -p "$TRIG_REDIS_PORT" DEL "$SN_STREAM" >/dev/null 2>&1
+rm -f "/tmp/.trigger_ids_${SN_OFFICER}"
+
+echo ""
+echo "=== trigger_wake_officer (control plane — idle-session wake) ==="
+# trigger_wake_officer tmux-nudges the target's live officer-<role> session so an
+# IDLE session takes a turn within seconds (the MCP channel notification alone does
+# not wake an idle session — root cause 2026-06-25). The unit-testable invariants
+# (no live officer pane needed): it is a clean no-op when no session exists, it is
+# guarded by the killswitch, and bursts are debounced to one wake.
+WK_OFFICER="test-wake-$$-$(date +%s)"
+
+# (a) No tmux session for this officer → clean no-op, fast return, no error.
+WK_OUT=$(trigger_wake_officer "$WK_OFFICER" 2>&1); WK_RC=$?
+assert "wake on non-existent session returns rc=0 (clean no-op)" "$WK_RC" "0"
+assert "wake on non-existent session emits nothing" "$WK_OUT" ""
+
+# (b) Empty target → no-op rc=0 (defensive).
+WK_EMPTY_RC=$(trigger_wake_officer "" >/dev/null 2>&1; echo $?)
+assert "wake with empty target returns rc=0" "$WK_EMPTY_RC" "0"
+
+# (c) Debounce lock: SET NX EX 3 — only the FIRST of a burst within the TTL wins.
+# (Mirrors the lock the helper acquires; deterministic without a live pane.)
+WK_LOCK_KEY="cabinet:trigger-wake:${WK_OFFICER}"
+redis-cli -h "$TRIG_REDIS_HOST" -p "$TRIG_REDIS_PORT" DEL "$WK_LOCK_KEY" >/dev/null 2>&1
+WK_WINNERS=0
+for _n in 1 2 3 4; do
+  _r=$(redis-cli -h "$TRIG_REDIS_HOST" -p "$TRIG_REDIS_PORT" \
+    SET "$WK_LOCK_KEY" x NX EX 3 2>/dev/null)
+  [ "$_r" = "OK" ] && WK_WINNERS=$((WK_WINNERS+1))
+done
+assert "wake debounce: 1 winner per burst within TTL" "$WK_WINNERS" "1"
+redis-cli -h "$TRIG_REDIS_HOST" -p "$TRIG_REDIS_PORT" DEL "$WK_LOCK_KEY" >/dev/null 2>&1
+
+echo ""
 echo "=== Summary ==="
 echo "PASS: $PASS | FAIL: $FAIL"
 if [ "$FAIL" -eq 0 ]; then

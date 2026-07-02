@@ -321,19 +321,33 @@ if [ "$_CATN_BOT_MODE" = "single_ceo" ] \
 fi
 
 # ============================================================
-# 4. TRIGGER DELIVERY — deliver pending triggers via Redis Streams
+# 4. TRIGGER DELIVERY (SAFETY NET) — re-surface stranded triggers only
 # ============================================================
-# Reads NEW messages from the officer's stream. Messages stay "pending"
-# until the officer ACKs them — crash recovery built in.
+# The PRIMARY delivery path is the redis-trigger-channel MCP, which blocks on
+# XREADGROUP id ">" as consumer `channel` and injects each new trigger into the
+# live session as a <channel> tag the instant it lands. This hook must NOT also
+# read id ">" on the same consumer group: a Redis group hands each new message
+# to exactly ONE consumer, so a hook reading ">" as consumer `worker` STEALS the
+# trigger before the live channel sees it — silently starving the Chair (root
+# cause 2026-06-25; the live cos session never woke to CEO messages even though
+# the stream showed entries-read=51 / pending=0, all consumed by `worker`).
+#
+# Instead the hook is a SAFETY NET: trigger_read_safety_net (XAUTOCLAIM over the
+# group, min-idle 30s) only re-surfaces triggers that were delivered-but-never-
+# ACKed and have gone stale — i.e. the channel pushed then crashed, or the
+# channel was down when the trigger arrived. Fresh triggers (idle < grace) are
+# left untouched for the live channel to deliver. This keeps crash/outage
+# recovery without racing the primary path.
+#
 # Do NOT silence source errors — if triggers.sh is missing or has a syntax
 # error, the officer must see it (audit Finding #2, 2026-04-21). A silent
-# source failure means trigger_read is undefined and the officer stops
+# source failure means trigger delivery is undefined and the officer stops
 # receiving Captain DMs and cross-officer notifications without any
 # diagnostic surface.
 if ! . "$CABINET_ROOT/cabinet/scripts/lib/triggers.sh"; then
   echo "post-tool-use: CRITICAL — triggers.sh failed to load; trigger delivery is broken for $OFFICER" >&2
 fi
-TRIG_MESSAGES=$(trigger_read "$OFFICER" 2>/dev/null)
+TRIG_MESSAGES=$(trigger_read_safety_net "$OFFICER" 2>/dev/null)
 # FW-074: in pool mode, IDS file path is per-(officer, project) — derive
 # via trigger_ids_path so ACK lands on the correct stream/group.
 # Legacy mode falls back to /tmp/.trigger_ids_<officer> (unchanged).
@@ -342,7 +356,8 @@ TRIG_IDS=$(cat "$TRIG_IDS_FILE" 2>/dev/null)
 if [ -n "$TRIG_MESSAGES" ]; then
   TRIG_COUNT=$(echo "$TRIG_MESSAGES" | wc -l)
   echo ""
-  echo "PENDING TRIGGERS ($TRIG_COUNT):"
+  echo "RECOVERED TRIGGERS ($TRIG_COUNT) — these were delivered but left un-ACKed"
+  echo "and went stale (the live channel likely missed or crashed mid-delivery):"
   echo "$TRIG_MESSAGES"
   echo ""
   echo "Process these triggers now. Then ACK:"

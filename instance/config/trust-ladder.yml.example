@@ -1,0 +1,85 @@
+# trust-ladder.yml — the explicit, Captain-authored trust ladder.
+#
+# Copy to trust-ladder.yml and tune. If ABSENT, the conservative default is a
+# single `would-like-to` rung (propose everything) — the safe floor.
+#
+# This is the Captain-readable map of NAMED rungs the Chair climbs as cells
+# prove out. It sits ABOVE the per-cell graduation machine
+# (framework/fidelity/graduation.py) and the authority matrix
+# (framework/policies/authority-matrix.yml) — it does not replace either.
+# See docs/prove-to-earn-expansion-2026-06-25.md §4.
+#
+# RUNG VOCABULARY (from docs/grand-plan-captain-agent-2026-06-21.md). Lowest to
+# highest; you may use any subset, in this order, per lane:
+#   would-like-to    propose-first (waits for approval)          [the floor]
+#   intend-to        veto-window (announces, acts unless vetoed)
+#   ive-done         auto-when-proven, reversible (reports after)
+#   ive-been-doing   fully graduated (acts, reports periodically)
+#
+# HOW A RUNG IS EARNED: every (lane, action_type) cell the rung `grants` must be
+# `graduated` per graduation.evaluate (the proof bar is the matrix `bars`, not a
+# second bar). An earned rung is SURFACED as a one-tap card — it is NEVER
+# auto-granted. You grant it (record a trust_rung_granted event); only then does
+# the ladder advance and the granted cells resolve to their matrix auto/veto
+# verdict.
+#
+# HARD CEILING: if any granted cell's action_type maps to a hard-ceiling
+# risk_class (external_comms, deploy_prod, spend, secrets, network_write,
+# credentials_grant), the rung is computed as Captain-only — the ladder will
+# NEVER auto-advance past it, regardless of what you write here. You can still
+# grant it explicitly, but it stays your decision forever (matches the matrix
+# always_gated rows). This is enforced in code, not just here.
+
+rungs:
+  # --- PolAds lane ---------------------------------------------------------
+  - name: ive-done                 # reversible auto, reports after
+    lane: polads
+    grants:
+      - { action_type: task_status_move }   # Monday/Linear status moves
+      - { action_type: board_status }
+      - { action_type: label }
+      - { action_type: tier2_note }
+    # min_samples is OPTIONAL — omit to use the matrix `bars` floor (20 for
+    # `default`). Set it to require MORE proof than the matrix floor for this
+    # specific rung.
+    # min_samples: 30
+
+  - name: intend-to                # internal comms with a veto window
+    lane: polads
+    grants:
+      - { action_type: internal_message }   # Teams/internal DMs (queue_draft, internal recipient)
+      - { action_type: internal_email }
+    min_samples: 30                # internal_comms bar is already 30 in the matrix; explicit here
+
+  # `ive-done` for nonprod deploy goes through the matrix `classifier` verdict
+  # (safe globs auto, risky globs gated) once granted.
+  - name: ive-done
+    lane: polads
+    grants:
+      - { action_type: vercel_deploy_preview }
+      - { action_type: git_push_nonmain }
+    min_samples: 30
+
+  # --- STEPhie lane (same shape, separate climb — trust is per-lane) -------
+  - name: ive-done
+    lane: stephie
+    grants:
+      - { action_type: task_status_move }
+      - { action_type: board_status }
+      - { action_type: label }
+
+  # --- A CEILING rung, shown for documentation -----------------------------
+  # This is computed Captain-only (external_message -> external_comms ceiling).
+  # The ladder will surface it when the cell graduates, but will NEVER
+  # auto-advance to it. Listed here so the example shows the ceiling behavior.
+  - name: ive-done
+    lane: polads
+    grants:
+      - { action_type: external_message }    # -> external_comms (HARD CEILING)
+
+# Opt-in auto-advance for NON-CEILING rungs only. OFF by default — even a
+# reversible rung is proposed (granting a rung edits effective authority, and
+# the Chair does not widen its own authority silently). Flip a specific rung in
+# here only if you want the ladder to advance it without a tap. Ceiling rungs
+# IGNORE this entirely.
+auto_grant_nonceiling: false

@@ -26,7 +26,9 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import subprocess
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -41,6 +43,89 @@ _DEFAULT_TELEGRAM_BASE = "https://api.telegram.org"
 
 # Marker used to scrub token-bearing URLs out of anything we surface.
 _URL_PREFIX = "api.telegram.org/bot"
+
+# Telegram sendMessage hard-limits the `text` field at 4096 UTF-16 code units. A
+# longer message returns HTTP 400 and is LOST (observed 2026-06-29 07:30: the
+# briefing assembled 77 intake items into one body far over the limit → 400 →
+# the Captain got no briefing). We chunk anything over this ceiling into multiple
+# sequential sends. Slightly under 4096 to leave headroom for the optional
+# "(i/N)" continuation marker we prepend to multi-part chunks.
+_TELEGRAM_LIMIT = 4096
+_CHUNK_BUDGET = 3900
+
+
+def _hard_wrap(line: str, limit: int) -> list[str]:
+    """Last-resort split of a SINGLE over-long line (no newline to break on).
+
+    Only reached when one line alone exceeds ``limit`` (rare — a giant unbroken
+    paragraph). Splits on whitespace where possible so we never sever a word, and
+    falls back to a hard character cut for a single token longer than ``limit``.
+    """
+    out: list[str] = []
+    rest = line
+    while len(rest) > limit:
+        cut = rest.rfind(" ", 0, limit)
+        if cut <= 0:  # no breakable space in the window → hard character cut
+            cut = limit
+        out.append(rest[:cut])
+        rest = rest[cut:].lstrip(" ")
+    if rest:
+        out.append(rest)
+    return out
+
+
+def _split_for_telegram(text: str, limit: int = _CHUNK_BUDGET) -> list[str]:
+    """Split ``text`` into <=``limit``-char chunks on natural boundaries.
+
+    Breaks on paragraph (blank-line) boundaries first, then single-line
+    boundaries, NEVER mid-line — so a provenance bullet or a tier header is never
+    severed. Only an individual line that is itself longer than ``limit`` is
+    hard-wrapped (``_hard_wrap``), and only as a last resort. A message that
+    already fits returns ``[text]`` unchanged (single-send path, no marker).
+    """
+    if len(text) <= limit:
+        return [text]
+
+    chunks: list[str] = []
+    current = ""
+
+    def flush() -> None:
+        nonlocal current
+        if current:
+            chunks.append(current)
+            current = ""
+
+    # Preserve paragraph structure: split on blank lines, keep the separator
+    # semantics by rejoining with "\n\n" within a chunk when both fit.
+    for para in text.split("\n\n"):
+        # A whole paragraph that fits onto the current chunk (with the blank-line
+        # separator) stays joined for readability.
+        candidate = para if not current else current + "\n\n" + para
+        if len(candidate) <= limit:
+            current = candidate
+            continue
+        # The paragraph doesn't fit alongside what's buffered → start it fresh.
+        flush()
+        if len(para) <= limit:
+            current = para
+            continue
+        # The paragraph alone is too big → break it line by line.
+        for line in para.split("\n"):
+            cand = line if not current else current + "\n" + line
+            if len(cand) <= limit:
+                current = cand
+                continue
+            flush()
+            if len(line) <= limit:
+                current = line
+                continue
+            # A single line longer than the limit → hard-wrap it.
+            for piece in _hard_wrap(line, limit):
+                if current:
+                    flush()
+                chunks.append(piece)
+    flush()
+    return chunks or [text]
 
 
 def _token() -> str:
@@ -124,14 +209,141 @@ def _default_http_post(url: str, data: dict) -> dict:
         raise RuntimeError(f"telegram transport error: {type(exc).__name__}") from None
 
 
+# Transport-retry budget for a TRANSIENT network failure (the request never got
+# a real HTTP response — urllib URLError, socket timeout/error, ConnectionError).
+# The 2026-06-30 07:30 briefing failed with "telegram transport error: URLError":
+# the Mac slept 02:28→08:04, launchd ran the calendar-scheduled briefing the
+# instant it woke (08:04:29), and api.telegram.org would not resolve because
+# mDNSResponder/the network stack was still coming up. The first send hit a dead
+# resolver, was NOT retried (only HTTP 400 was), and the briefing was LOST.
+#
+# A briefing can tolerate a few seconds, so we retry the post on transport-level
+# failures with short exponential backoff. Sleeps are 1s, 3s (between 3 attempts)
+# → worst-case ~4s of backoff plus the per-attempt urlopen timeout (15s each);
+# total budget stays well under the briefing's launchd slot and the watchdog's
+# 240s deadline. An HTTP 4xx is NEVER transport-retried here — it reached
+# Telegram and was rejected (a payload bug); 400 keeps its own plain-text
+# fallback below. On all-attempts-failed we return the SAME error shape as a
+# single failure, so the caller leaves the intake PENDING (no false-ACK).
+_TRANSPORT_RETRY_ATTEMPTS = 3
+_TRANSPORT_BACKOFF_S = (1, 3)  # waits BETWEEN attempts; len == attempts - 1
+
+# Transient transport exception types: the request never received an HTTP
+# response. urllib wraps most of these in URLError, but a directly-injected
+# socket/connection error is covered too. NOTE: urllib.error.HTTPError IS a
+# subclass of URLError but is deliberately EXCLUDED — it carries an HTTP status
+# (the request reached Telegram), so it is handled by the 400 path, never retried
+# as transport.
+_TRANSIENT_EXC = (urllib.error.URLError, socket.timeout, socket.gaierror,
+                  ConnectionError, TimeoutError, OSError)
+
+
+def _is_transient_transport(exc: BaseException, scrubbed: str) -> bool:
+    """True iff ``exc`` is a transport-level failure (no HTTP response received).
+
+    Two signals, either suffices:
+      * the exception type is a known transient transport error AND not an
+        ``HTTPError`` (which carries a status code — that reached Telegram); or
+      * the scrubbed message contains the default transport's transport-error
+        marker ("transport error") and is NOT an HTTP-status error ("HTTP 4"/5).
+    The string check covers the default ``_default_http_post`` wrapper (which
+    raises a plain ``RuntimeError("telegram transport error: …")`` so no token
+    leaks) and any caller/test that mimics it. An HTTP 4xx/5xx never matches —
+    the request got a response and must not be transport-retried."""
+    if isinstance(exc, urllib.error.HTTPError):
+        return False  # has a status code → reached Telegram, not a transport miss
+    if isinstance(exc, _TRANSIENT_EXC):
+        return True
+    s = scrubbed.lower()
+    if "http 4" in s or "http 5" in s:
+        return False  # an HTTP-status error surfaced as text → not transport
+    return "transport error" in s
+
+
+def _post_one(post, url: str, payload: dict, token: str, *, sleep=None) -> tuple:
+    """POST ONE message payload; sanitize, retry transient transport, fall back
+    to plain text on a 400.
+
+    Returns ``(ok, scrubbed_response, scrubbed_error)``:
+      * ``ok`` True  → ``scrubbed_response`` is the token-safe body, error None.
+      * ``ok`` False → ``scrubbed_error`` is the token-safe error, response None.
+
+    Two distinct robustness layers, by failure class (a network blip and a
+    payload bug are NOT the same failure):
+
+      1. TRANSIENT TRANSPORT (the request never got an HTTP response — URLError,
+         socket timeout/error, ConnectionError): retry the SAME post up to
+         ``_TRANSPORT_RETRY_ATTEMPTS`` times with short exponential backoff
+         (``_TRANSPORT_BACKOFF_S``). This is the 2026-06-30 fix — a briefing that
+         fires the instant the Mac wakes hits a not-yet-ready resolver, and a
+         retry a second later succeeds. An HTTP 4xx is NOT in this class.
+
+      2. HTTP 400 (the request reached Telegram and was rejected — typically a
+         markdown/entity parse glitch): retry ONCE as PLAIN text, stripping any
+         ``parse_mode`` so a bad-markup body still delivers. Today's payload sets
+         no parse_mode, so this is a safety net for any future formatted send.
+
+    A successful FIRST post returns immediately with no retry and no sleep — the
+    normal path is byte-identical to before. ALL failures are scrubbed of the
+    token-bearing URL before they leave this function (``send`` is the trust
+    boundary; this preserves it). ``sleep`` is injectable so tests run instantly.
+    """
+    # Resolve the backoff sleeper at CALL time (not as a bound default) so a test
+    # patching ``channel.time.sleep`` is honored and the suite pays no real wait.
+    if sleep is None:
+        sleep = time.sleep
+
+    # (1) Transport-retry loop. A non-transport failure (e.g. HTTP 400) breaks out
+    #     immediately to the 400/plain-text fallback below — it is never slept on
+    #     or transport-retried. The LAST attempt does not sleep after failing.
+    last_err = None
+    for attempt in range(_TRANSPORT_RETRY_ATTEMPTS):
+        try:
+            resp = post(url, payload)
+            return True, _scrub(resp, token), None
+        except BaseException as exc:  # noqa: BLE001 — must sanitize ALL failures
+            last_err = _scrub(exc, token)
+            if not _is_transient_transport(exc, last_err):
+                break  # not a transient blip → fall through to the 400 handler
+            if attempt < len(_TRANSPORT_BACKOFF_S):
+                sleep(_TRANSPORT_BACKOFF_S[attempt])
+            # else: this was the final attempt — fall through, report last_err
+
+    first_err = last_err or "telegram send failed"
+
+    # (2) Retry once as PLAIN text on an apparent 400 (formatting/parse glitch).
+    # We detect 400 from the scrubbed message (HTTPError surfaces as "telegram
+    # HTTP 400" from the default transport). Strip parse_mode so a bad-markup body
+    # still delivers as plain text. (Reached only for a non-transient failure or
+    # an exhausted transport-retry; a 400 is non-transient so it lands here on its
+    # first occurrence, exactly as before.)
+    if "400" in first_err:
+        plain = {k: v for k, v in payload.items() if k != "parse_mode"}
+        try:
+            resp = post(url, plain)
+            return True, _scrub(resp, token), None
+        except BaseException as exc2:  # noqa: BLE001 — sanitize the retry too
+            return False, None, _scrub(exc2, token)
+
+    return False, None, first_err
+
+
 def send(text: str, *, http_post=None) -> dict:
     """Send ``text`` to the Captain via Telegram — the ONLY front-door send path.
 
     Gated by ``env.allow_sends()`` as the FIRST line: a non-runtime session
     physically cannot send (no network call, returns ``blocked-dev``).
 
-    Returns a dict with at least ``status`` and ``sent``. The token and the
-    token-bearing request URL are guaranteed absent from the return value and
+    A message over Telegram's 4096-char limit is split into multiple ≤-limit
+    chunks (on line/paragraph boundaries, numbered "(i/N)") and sent
+    sequentially; ``sent`` is True only if EVERY chunk delivered, and a partial
+    failure returns ``status='error'`` with ``sent_chunks`` (how many landed
+    before the failure) so the caller does not falsely ACK. A normal-length
+    message is sent as ONE post exactly as before.
+
+    Returns a dict with at least ``status`` and ``sent`` — ``response`` for a
+    single send, or ``chunks``/``responses`` for a multi-part one. The token and
+    the token-bearing request URL are guaranteed absent from the return value and
     from any error path.
     """
     # (1) THE GATE — checked first, before reading any secret or touching net.
@@ -145,32 +357,133 @@ def send(text: str, *, http_post=None) -> dict:
 
     post = http_post or _default_http_post
     url = f"{_base()}/bot{token}/sendMessage"
-    payload = {"chat_id": chat_id, "text": text}
 
     # Thread onto the Captain's latest message when we know it (set by the inbound
     # watchdog). allow_sending_without_reply=True means a stale/deleted id still
     # delivers (just unthreaded) rather than erroring. Unknown id -> plain send.
+    # The thread anchor is shared across every chunk of a multi-part message.
     last_id = _last_captain_msg_id()
+    reply_parameters = None
     if last_id is not None:
-        payload["reply_parameters"] = {
+        reply_parameters = {
             "message_id": last_id,
             "allow_sending_without_reply": True,
         }
 
-    try:
-        resp = post(url, payload)
-    except BaseException as exc:  # noqa: BLE001 — must sanitize ALL failures
-        # Never let a token-bearing message escape. Re-shape into a clean result.
-        return {
-            "status": "error",
-            "sent": False,
-            "error": _scrub(exc, token),
-        }
+    # Telegram hard-limits a single message at 4096 chars; over that it 400s and
+    # the message is LOST. Split an over-limit body into multiple ≤4096 chunks on
+    # line/paragraph boundaries (never mid-line) and send them sequentially. A
+    # normal-length message yields exactly ONE chunk → identical behavior to
+    # before (single post, no marker, same payload).
+    chunks = _split_for_telegram(text)
+    multipart = len(chunks) > 1
 
-    # Sanitize the response too — a producer-supplied mock or a real body could
-    # echo the URL/token; ``send`` is the trust boundary.
-    safe_resp = _scrub(resp, token)
-    return {"status": "sent", "sent": True, "response": safe_resp}
+    responses = []
+    for idx, chunk in enumerate(chunks, start=1):
+        # Number multi-part chunks so the Captain sees ordering; a single-chunk
+        # (normal-length) message is sent verbatim with NO marker.
+        body = f"({idx}/{len(chunks)}) {chunk}" if multipart else chunk
+        payload = {"chat_id": chat_id, "text": body}
+        if reply_parameters is not None:
+            payload["reply_parameters"] = reply_parameters
+        ok, sent_resp, err = _post_one(post, url, payload, token)
+        if not ok:
+            # A chunk failed even after the plain-text retry — stop and report.
+            # Earlier chunks already delivered; surfacing the failure (rather than
+            # a false success) lets the caller leave the intake items PENDING so a
+            # later pass redelivers, instead of ACKing a partial briefing away.
+            return {
+                "status": "error",
+                "sent": False,
+                "error": err,
+                "chunks": len(chunks),
+                "sent_chunks": idx - 1,
+            }
+        responses.append(sent_resp)
+
+    if multipart:
+        return {"status": "sent", "sent": True, "chunks": len(chunks),
+                "responses": responses}
+    return {"status": "sent", "sent": True, "response": responses[0]}
+
+
+def _default_multipart_post(url: str, fields: dict, filename: str, content: bytes) -> dict:
+    """Default transport: POST a multipart/form-data body (one file + fields).
+
+    Pure-stdlib multipart (no ``requests`` dependency). Same leak discipline as
+    ``_default_http_post``: errors are raised as a plain RuntimeError WITHOUT the
+    token-bearing URL; ``send_document`` sanitizes again as a backstop.
+    """
+    boundary = "----CabinetBoundary" + os.urandom(12).hex()
+    pre = []
+    for k, v in fields.items():
+        pre.append(
+            f"--{boundary}\r\nContent-Disposition: form-data; "
+            f'name="{k}"\r\n\r\n{v}\r\n'.encode("utf-8")
+        )
+    pre.append(
+        f"--{boundary}\r\nContent-Disposition: form-data; "
+        f'name="document"; filename="{filename}"\r\n'
+        f"Content-Type: application/octet-stream\r\n\r\n".encode("utf-8")
+    )
+    body = b"".join(pre) + content + f"\r\n--{boundary}--\r\n".encode("utf-8")
+    req = urllib.request.Request(
+        url, data=body,
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310 (fixed https host)
+            raw = resp.read().decode("utf-8")
+        return json.loads(raw) if raw else {}
+    except urllib.error.HTTPError as exc:  # pragma: no cover - network path
+        raise RuntimeError(f"telegram HTTP {exc.code}") from None
+    except Exception as exc:  # pragma: no cover - network path
+        raise RuntimeError(f"telegram transport error: {type(exc).__name__}") from None
+
+
+def send_document(file_path: str, *, caption: str | None = None, http_post=None) -> dict:
+    """Send a file to the Captain via Telegram sendDocument — same gate as ``send``.
+
+    Identical security model to ``send()``: gated FIRST by ``env.allow_sends()``
+    (a non-runtime session physically cannot send), the recipient is ALWAYS
+    ``CAPTAIN_TELEGRAM_ID`` (never a parameter), and the token + token-bearing URL
+    are scrubbed from every return value and error path. ``caption`` is optional
+    text shown with the document. Returns a dict with ``status`` + ``sent``.
+
+    The file is read from ``file_path`` on the local disk; a read failure returns
+    a clean ``error`` result (no send attempted). ``http_post`` is injectable for
+    tests so nothing hits the real host.
+    """
+    # (1) THE GATE — checked first, before reading any secret or touching net.
+    if not env.allow_sends():
+        return {"status": "blocked-dev", "sent": False}
+
+    token = _token()
+    chat_id = _captain_id()
+    if not token or not chat_id:
+        return {"status": "error", "sent": False, "error": "telegram not configured"}
+
+    try:
+        with open(file_path, "rb") as fh:
+            content = fh.read()
+        filename = os.path.basename(file_path) or "document"
+    except Exception as exc:  # cannot read file — never attempt a send
+        return {"status": "error", "sent": False,
+                "error": f"cannot read file: {type(exc).__name__}"}
+
+    fields = {"chat_id": chat_id}
+    if caption:
+        fields["caption"] = caption
+
+    post = http_post or _default_multipart_post
+    url = f"{_base()}/bot{token}/sendDocument"
+    try:
+        resp = post(url, fields, filename, content)
+    except BaseException as exc:  # noqa: BLE001 — must sanitize ALL failures
+        return {"status": "error", "sent": False, "error": _scrub(exc, token)}
+
+    return {"status": "sent", "sent": True, "response": _scrub(resp, token)}
 
 
 def _default_http_get(url: str, params: dict, timeout: int) -> dict:

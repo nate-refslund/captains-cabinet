@@ -215,3 +215,67 @@ def test_compose_now_is_a_noop():
     items = [_item(summary="x"), _item(tier="ping-now", summary="y")]
     assert composer.compose(items) == composer.compose(
         items, now="2026-06-22T09:00:00Z")
+
+
+# --- compose: per-tier cap (the 2026-06-29 tight-digest fix) ------------------
+
+def test_compose_uncapped_by_default_renders_all():
+    """Default (max_per_tier=None) is the prior behavior: every item rendered,
+    no roll-up — so existing callers/tests are unaffected."""
+    items = [_item(tier="batch", summary=f"item-{i}",
+                   ts=f"2026-06-22T{i:02d}:00:00Z") for i in range(20)]
+    out = composer.compose(items)
+    for i in range(20):
+        assert f"item-{i}" in out
+    assert "more" not in out  # no roll-up line when uncapped
+
+
+def test_compose_caps_tier_and_rolls_up_remainder():
+    """With a cap, a tier over the cap shows the N most-recent in full and folds
+    the rest into ONE source-counted roll-up line — a tight digest, not a wall."""
+    items = [_item(source="awaiting-reply", tier="batch", summary=f"reply-{i}",
+                   ts=f"2026-06-22T{i:02d}:00:00Z") for i in range(8)]
+    items += [_item(source="commitment", tier="batch", summary=f"owe-{i}",
+                    ts=f"2026-06-22T{i:02d}:30:00Z") for i in range(4)]
+    out = composer.compose(items, max_per_tier=5)
+    # Exactly 5 full item lines for the batch tier + 1 roll-up line.
+    bullet_lines = [ln for ln in out.splitlines() if ln.startswith("•")]
+    assert len(bullet_lines) == 6
+    # The roll-up names the hidden count and the per-source breakdown (12 items,
+    # cap 5 → 7 hidden; the most-recent-5 by ts are the latest commitments+replies).
+    assert "…and 7 more" in out
+    # Breakdown counts only the HIDDEN items by source (deterministic, desc count).
+    assert "awaiting-reply" in out and "commitment" in out
+
+
+def test_compose_cap_shows_most_recent_items():
+    """The shown items are the most RECENT by ts (the tail), not the oldest —
+    the freshest signals stay visible, the stale ones roll up."""
+    items = [_item(tier="batch", summary=f"m{i}", ts=f"2026-06-22T{i:02d}:00:00Z")
+             for i in range(10)]
+    out = composer.compose(items, max_per_tier=3)
+    # Most-recent 3 (m7, m8, m9) shown; older ones rolled up.
+    assert "m9" in out and "m8" in out and "m7" in out
+    assert "m0" not in out and "m1" not in out
+    assert "…and 7 more" in out
+
+
+def test_compose_cap_never_truncates_ping_now():
+    """ping-now is exempt from the cap — an active incident always shows in full
+    (even a flood of them), only batch/fyi are capped."""
+    items = [_item(tier="ping-now", source="sentry-health", summary=f"incident-{i}",
+                   ts=f"2026-06-22T{i:02d}:00:00Z") for i in range(8)]
+    out = composer.compose(items, max_per_tier=3)
+    for i in range(8):
+        assert f"incident-{i}" in out  # all 8 shown despite cap=3
+    assert "more" not in out  # no roll-up for ping-now
+
+
+def test_compose_cap_exact_boundary_no_rollup():
+    """A tier with exactly max_per_tier items shows all, no roll-up line."""
+    items = [_item(tier="batch", summary=f"x{i}", ts=f"2026-06-22T0{i}:00:00Z")
+             for i in range(5)]
+    out = composer.compose(items, max_per_tier=5)
+    for i in range(5):
+        assert f"x{i}" in out
+    assert "more" not in out

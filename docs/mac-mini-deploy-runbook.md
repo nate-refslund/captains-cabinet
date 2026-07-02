@@ -157,6 +157,7 @@ This `envsubst`-substitutes paths into the plist templates in `cabinet/launchd/`
 
 - `com.cabinet.officer.<slug>.plist` (per officer)
 - `com.cabinet.heartbeat-watchdog.plist`
+- `com.cabinet.limit-reset-watchdog.plist` (auto-resume after account session-limit reset)
 - `com.cabinet.cost-summary.plist`
 - `com.cabinet.worktree-listener.plist`
 - `com.cabinet.mission-supervisor.plist`
@@ -190,6 +191,57 @@ Exit 0 = pass. Re-deploy if any fail.
 > daemons) is registered by `cp`-ing each plist into `~/Library/LaunchAgents/`
 > and `launchctl load -w`-ing it — the install commands are in each plist's
 > header comment.
+>
+> **TEMPORARY backstop (`com.cabinet.status-sweep`).** A 30-min `StartInterval`
+> cron (`run-status-sweep.sh`) that pushes a STATUS-SWEEP trigger to the Chair
+> (`cabinet:triggers:cos`) so the Chair periodically sweeps in-flight work + DMs
+> Nate a digest — a backstop to the Redis trigger Channel, which can't wake a
+> slept/idle session. Beginner-cadence only; disable when no longer needed:
+> `launchctl bootout gui/$(id -u)/com.cabinet.status-sweep`. NOTE: `StartInterval`
+> does not fire while the Mac is asleep — wake-time backstop on the MacBook; true
+> 24/7 needs the always-on Mac mini.
+
+### 7.0z Limit-reset auto-continue watchdog (`com.cabinet.limit-reset-watchdog`)
+
+`cabinet/cron/limit-reset-watchdog.sh` (every **3 min**, `StartInterval=180`)
+recovers an officer that hit the **account session limit** — the case where
+Claude Code prints `You've hit your session limit · resets H:MMpm` and the
+active turn dies (the never-stop Stop hook can't fire, because the turn failed
+rather than stopped). It runs two phases each tick:
+
+1. **Detect + parse + store.** Scans each `officer-<slug>` tmux pane
+   (`tmux capture-pane`) for the limit banner. A line must carry **both** a
+   limit phrase **and** a `reset(s) <clock>` clause (so the watchdog's own
+   resume nudge and relayed triggers that merely mention "session limit reset"
+   never false-arm). It resolves the clock in the Captain timezone
+   (`platform.yml → captain_timezone`, Copenhagen/Berlin — am/pm aware, and if
+   the time already passed today it rolls to **tomorrow**), then stores the UTC
+   epoch at `cabinet:limit-reset:<slug>` (12 h TTL self-clear guard).
+2. **Watch + wake.** When `now ≥ cabinet:limit-reset:<slug>`, it atomically
+   `GETDEL`s the key (fire-exactly-once) and fires the **existing** wake —
+   `notify-officer.sh <slug> "Session limit reset — resume your active-task"`
+   (durable trigger XADD + `trigger_wake_officer` tmux nudge). The woken officer
+   reads its own `cabinet:active-task:<slug>` flag and resumes via the
+   never-stop loop. The watchdog never creates the active-task flag (only the
+   officer knows its task) and never `kickstart`s — a limit-blocked officer is
+   **alive**, so this is wake-only. (That's why it is a **separate** daemon from
+   `heartbeat-watchdog`, which restarts *dead* officers.)
+
+```bash
+# install (also done by deploy-mac.sh --all)
+bash cabinet/scripts/deploy-mac.sh --daemon limit-reset-watchdog
+# unit-test the time parser (no Redis/tmux side effects)
+CABINET_LRW_SELFTEST=1 bash cabinet/cron/limit-reset-watchdog.sh
+# inspect / clear an armed reset
+redis-cli GET  cabinet:limit-reset:<slug>
+redis-cli DEL  cabinet:limit-reset:<slug>
+# logs
+tail -f ~/Library/Logs/cabinet/limit-reset-watchdog.err.log
+```
+
+If Redis is unreachable the watchdog no-ops and retries next tick. Like all
+`StartInterval` crons it does not fire while the Mac is asleep — true 24/7
+recovery needs the always-on Mac mini.
 
 ### 7.0a Officer self-wake (loop-prompts + supervisor)
 

@@ -30,6 +30,24 @@ CoS runs this event-triggered: at 5 accumulated reflections across officers (`ca
    - Same failure happening twice → note it
    - Same failure happening 3+ times → propose a change
 
+#### Part 1b: Anomaly-seeking on our own telemetry (Layer 2 — DETECT)
+
+This is the "the cabinet notices what's off about itself" capability (`docs/meta-cognition-direction-2026-06-25.md`). After the record/coordination review, read the already-emitted telemetry and ask: **"what violates what I'd predict?"** — the question that *would have autonomously surfaced this session's stale-index bug*.
+
+```bash
+bash cabinet/scripts/meta-cognition/anomaly-scan.sh        # factual telemetry snapshot
+```
+This reads real streams (tool-call volume by officer, stuck-loop repeats, hook-fire counts, `reflections:count`, overdue scheduled tasks, per-officer cost) — adding NO always-loaded loop. For each number, predict-then-compare: is an officer running far more/less than its baseline? A gate firing on ~everything (false-positive storm) or never (dead)? Reflections flatlined while work continued? A scheduled task overdue past its cadence? A decision the cabinet keeps re-litigating (a rule isn't propagating)?
+
+**Apply the CONFIDENCE FLOOR (the hard selector — `shared/interfaces/anomaly-ledger.md`).** A surprise graduates to a proposal ONLY if ALL hold: (1) it is a **measured** deviation, not a vibe; (2) it implies a falsifiable hypothesis ("X because Y — testable by Z") or a probable defect ("this looks broken: <evidence>"); (3) it is actionable. Modeled on the brain's `context_lib` min_score=0.4 — it can't spam.
+
+- **Graduated** surprise → write it to `anomaly-ledger.md` `## Active` AND emit a proposal:
+  ```bash
+  source cabinet/scripts/meta-cognition/lib.sh
+  mc_emit_proposal detect "<anomaly: what's off + the hypothesis/defect>" "<evidence (the measured numbers) + the one testable next step>"
+  ```
+- **Below-floor** surprise → a silent counter line under `anomaly-ledger.md` `## Counters` (recurrence across retros is itself a signal). Never pinged.
+
 ### Part 2: Opportunity Scan (NEW)
 
 4. **Tool & feature scan:**
@@ -60,6 +78,22 @@ CoS runs this event-triggered: at 5 accumulated reflections across officers (`ca
    - If the answer is "yes, we'd do it the same" — record that and move on
    - If the answer is "no" — draft a proposal
 
+7b. **Accretion-counter check → fire the principle-harvester if due (Layer 3 BACKSTOP → Layer 2 HARVEST).**
+   The highest-value meta-work (collapse-to-principle) fires on **accretion**, not this clock — but the retro is the floor that catches a threshold crossed while no harvest ran. Check it:
+   ```bash
+   bash cabinet/scripts/meta-cognition/harvest-check.sh --status
+   ```
+   - If it prints `HARVEST DUE` → run the **principle-harvester** now (`memory/skills/evolved/principle-harvester.md`): fan out the 3 fresh-context finders (behavioral/governance/execution), red-team each collapse candidate, emit survivors as proposals, then `harvest-check.sh --mark`. This is the design's "Part 3 explicitly checks the harvester's accretion counters and fires Layer 2 if the threshold was crossed but the harvest hadn't run."
+   - If it prints `no harvest` → nothing meaningful accreted; skip (do not fan out finders — that would be idea-spam).
+
+7c. **Cross-pollination (the portfolio's unique advantage).**
+   Scan for a pattern/fix/principle proven in ONE lane that should transfer to another (PolAds → STEPhie or vice-versa) — something the single-product cabinets structurally can't do. If you find one, emit it as a proposal:
+   ```bash
+   source cabinet/scripts/meta-cognition/lib.sh
+   mc_emit_proposal backstop "Cross-pollinate: <pattern> from <lane A> to <lane B>" "<what worked in A + why it applies to B + the concrete transfer step>"
+   ```
+   One candidate per retro at most; skip if none is genuine.
+
 ### Part 4: Proposals & Recording (existing)
 
 8. **Draft improvement proposals:**
@@ -75,14 +109,26 @@ CoS runs this event-triggered: at 5 accumulated reflections across officers (`ca
    - Are there patterns in what gets used vs what doesn't?
    - Feed back to CRO: "more of X, less of Y"
 
+9b. **Surface the meta-cognition proposal ledger into the briefing decision-queue (the ONE sink).**
+    All four meta-cognition layers (Layer 1 encode-gate, Layer 2 harvest + detect, Layer 3 cross-pollination, counterfactual-replay) write proposal-only, per-item Captain-gated entries to `shared/interfaces/meta-cognition-proposals.md`. The retro is where they reach the Captain — the same "stale proposals auto-expire into the briefing" pattern as courses-of-action. Read the open entries:
+    ```bash
+    grep -A6 'status: open' shared/interfaces/meta-cognition-proposals.md
+    ```
+    **Red-team checkpoint (mandatory before any Layer-2 collapse reaches the Captain).** For each open `layer: harvest` (or any collapse) proposal, confirm a fresh-context review agent has attacked it (per `principle-harvester.md` step 3 / `engineering-development-loop`) — over-reach is the main risk. Drop or downgrade any that fails. (Layer-1 `prevent`, `detect`, `backstop`, and `counterfactual` entries already carry their own selector and don't need a second review unless they propose a collapse.)
+    Fold each survivor into the briefing decision-queue as ONE line (with its `MC-id`), per-item gated (apply | edit | skip). On the Captain's decision, mark it resolved — never hand-edit `status:`:
+    ```bash
+    source cabinet/scripts/meta-cognition/lib.sh
+    mc_resolve_proposal <MC-id> applied   # or: skipped | folded | decided
+    ```
+
 10. **Submit to Captain:**
-    DM Nate with a summary of proposals. Wait for approval before promoting changes.
+    DM Nate with a summary of proposals (process improvements + the meta-cognition ledger survivors from 9b). Wait for approval before promoting changes.
 
 11. **Record:**
     - Write an experience record for the retro itself
     - Record the timestamp:
     ```bash
-    redis-cli -h redis -p 6379 SET "cabinet:schedule:last-run:cos:retrospective" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    redis-cli -h "${REDIS_HOST:-localhost}" -p "${REDIS_PORT:-6379}" SET "cabinet:schedule:last-run:cos:retrospective" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     ```
 
 ## Expected Outcome

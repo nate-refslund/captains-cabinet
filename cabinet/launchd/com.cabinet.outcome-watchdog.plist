@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Cabinet INDEPENDENT outcome-monitoring watchdog.
+
+     Verifies declared OUTCOMES actually happened (not just that processes ran):
+     briefing DELIVERED, officers reflected, decisions logged, no silent cron
+     failure, pipes fresh. Routes failures by tier (auto-fix / Chair / drift) and
+     stamps its own heartbeat for the dead-man's switch.
+
+     StartCalendarInterval (wall-clock, every :00 and :30) — NOT StartInterval —
+     because a relative StartInterval can be silently coalesced/throttled for
+     hours by the macOS power manager (root cause of the 2026-06-25 pipe stall),
+     and a watchdog that silently stops firing is worse than none. Calendar
+     timers fire on the wall clock and don't coalesce-stall.
+
+     Source of truth in repo; installed + loaded with:
+       cp cabinet/launchd/com.cabinet.outcome-watchdog.plist ~/Library/LaunchAgents/
+       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.cabinet.outcome-watchdog.plist
+
+     DISABLE (reversible):
+       launchctl bootout gui/$(id -u)/com.cabinet.outcome-watchdog
+       rm ~/Library/LaunchAgents/com.cabinet.outcome-watchdog.plist   # optional, full removal
+
+     No secrets here — the wrapper reads none (the only outbound is a localhost
+     Redis trigger the Chair turns into a gated send). PATH/REDIS_HOST/TZ are set
+     inside the wrapper.
+
+     KNOWN LIMIT (MacBook): launchd does not fire while the Mac is asleep; a
+     missed calendar slot fires once on wake. True 24/7 cadence needs the
+     always-on Mac Mini. The dead-man's switch (pipe-watchdog, also calendar-
+     scheduled) covers a watchdog that stops firing for any reason. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.cabinet.outcome-watchdog</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/nate/captains-cabinet/cabinet/scripts/run-outcome-watchdog.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Minute</key><integer>30</integer></dict>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/nate/.cabinet/logs/outcome-watchdog.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/nate/.cabinet/logs/outcome-watchdog.log</string>
+</dict>
+</plist>

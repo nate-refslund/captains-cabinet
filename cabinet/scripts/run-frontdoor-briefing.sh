@@ -71,4 +71,30 @@ export PATH="/opt/homebrew/bin:$PATH"
 
 PY="${CABINET_PYTHON:-/opt/homebrew/bin/python3.12}"
 cd "$ROOT" || exit 1
-exec "$PY" -m framework.frontdoor.run_briefing
+
+# Wake-race guard (observed 2026-06-30 + 07-01): launchd fires this briefing when
+# the Mac WAKES from overnight sleep, before the network stack is ready — so
+# channel.send fails "telegram transport error: URLError" and NO briefing reaches
+# Nate until a manual re-run. Wait until Telegram's API is actually reachable (up
+# to ~3 min) before composing/sending, so the cron self-heals the wake race.
+# Transient blips DURING the send are still caught by channel.send's transport
+# retry; anything still missed stays pending and is recovered by the next run's
+# recover_pending (loss-safe). Best-effort: proceed after the cap regardless.
+for _i in $(seq 1 36); do
+  if "$PY" -c 'import socket; socket.create_connection(("api.telegram.org", 443), timeout=4).close()' 2>/dev/null; then
+    break
+  fi
+  sleep 5
+done
+
+# Run the briefing and stamp the delivered-marker ONLY on a confirmed send, so the
+# outcome-watchdog can tell a delivered briefing from a failed one (it treats
+# cabinet:schedule:last-run:cos:briefing as the satisfied-by-any-means signal;
+# run_briefing itself does not stamp it, so a delivered auto-briefing previously
+# looked identical to a failed one).
+BRIEF_OUT="$("$PY" -m framework.frontdoor.run_briefing 2>&1)"
+printf '%s\n' "$BRIEF_OUT"
+if printf '%s' "$BRIEF_OUT" | grep -q '"sent": *true'; then
+  redis-cli -h "${REDIS_HOST:-localhost}" -p "${REDIS_PORT:-6379}" \
+    SET cabinet:schedule:last-run:cos:briefing "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >/dev/null 2>&1 || true
+fi

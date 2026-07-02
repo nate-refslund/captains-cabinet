@@ -87,7 +87,7 @@ CoS runs this event-triggered: at 5 accumulated reflections across officers (`ca
     - Write an experience record for the retro itself
     - Record the timestamp:
     ```bash
-    redis-cli -h redis -p 6379 SET "cabinet:schedule:last-run:cos:retrospective" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    redis-cli -h "${REDIS_HOST:-localhost}" -p "${REDIS_PORT:-6379}" SET "cabinet:schedule:last-run:cos:retrospective" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     ```
 
 ## Expected Outcome

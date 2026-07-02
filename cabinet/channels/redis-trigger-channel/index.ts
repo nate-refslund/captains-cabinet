@@ -15,6 +15,27 @@ import { createClient } from "redis";
 
 const OFFICER = process.env.OFFICER_NAME || "unknown";
 const REDIS_URL = process.env.REDIS_URL || "redis://redis:6379";
+
+// Guard against a broken launch path. If OFFICER_NAME was never exported into
+// this process (or the MCP-config "${OFFICER_NAME}" placeholder was passed
+// through un-interpolated), we must NOT silently join a junk consumer group:
+// that leaks an orphan bun process on a `cabinet:triggers:${OFFICER_NAME}`
+// stream and a stray `channel` consumer that can split a real officer's stream
+// (root cause 2026-06-25 — 15 such zombies found). Fail loud and exit so the
+// supervisor/launcher relaunches with a valid identity instead of leaking.
+if (
+  OFFICER === "unknown" ||
+  OFFICER.includes("$") ||           // un-interpolated ${OFFICER_NAME}
+  !/^[a-z0-9][a-z0-9-]*$/.test(OFFICER)  // mirrors the cabinet slug guard
+) {
+  process.stderr.write(
+    `redis-trigger-channel: refusing to start — invalid OFFICER_NAME=${JSON.stringify(
+      process.env.OFFICER_NAME
+    )}. Launch with a concrete officer slug (e.g. OFFICER_NAME=cos).\n`
+  );
+  process.exit(1);
+}
+
 const STREAM_KEY = `cabinet:triggers:${OFFICER}`;
 const GROUP_NAME = `officer-${OFFICER}`;
 const CONSUMER_NAME = "channel";

@@ -132,8 +132,18 @@ if [ "$LIVE" = true ]; then
   KS=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET cabinet:killswitch 2>/dev/null)
   test_step "Kill switch is off (operations would resume)" "" "$KS"
 
-  # Check officer expected states still set
-  for officer in cos cto cro cpo; do
+  # Check officer expected states still set. Roster DERIVED, not hardcoded:
+  # this script runs in the watchdog container (Dockerfile.watchdog COPYs it
+  # to /opt/watchdog/) with NO repo tree, so .claude/agents/ is unreachable —
+  # enumerate cabinet:officer:expected:* from Redis exactly as health-check.sh
+  # and officer-supervisor.sh do. The old `cos cto cro cpo` literal pinged
+  # phantom officers that don't exist in the portfolio preset.
+  ROSTER=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" KEYS "cabinet:officer:expected:*" 2>/dev/null \
+             | sed 's/cabinet:officer:expected://' | sort)
+  if [ -z "$ROSTER" ]; then
+    echo "  ℹ️  No cabinet:officer:expected:* keys found — no officers activated (or Redis empty)"
+  fi
+  for officer in $ROSTER; do
     EXPECTED=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET "cabinet:officer:expected:$officer" 2>/dev/null)
     if [ "$EXPECTED" = "active" ]; then
       test_step "Officer $officer still marked as expected:active" "active" "$EXPECTED"

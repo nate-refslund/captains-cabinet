@@ -41,6 +41,101 @@ _trigger_keys() {
   fi
 }
 
+# Wake a target officer's LIVE session so a queued trigger becomes an actual
+# LLM turn within SECONDS — the control-plane half of trigger delivery.
+#
+# WHY THIS EXISTS (root cause 2026-06-25, the Captain's #1 reliability blocker):
+# Putting a trigger on the Redis stream (XADD, above) is only the DATA plane.
+# The redis-trigger-channel MCP consumes it and fires a `notifications/claude/
+# channel` notification — but that notification does NOT wake an IDLE Claude
+# Code session. It is the SAME idle-delivery flaw commit 96dff1b already proved
+# for the telegram Channels plugin ("fetches one update, injects, then stalls
+# until processed — which never happens while idle"). Evidence: a round-trip
+# wake-test reached every officer's stream (pending=0, lag=0) yet NO officer
+# acted for 6+ minutes — they only woke when their own `/loop 5m` next ticked.
+# The post-tool-use safety-net hook has the same limitation: it only surfaces a
+# trigger on the officer's NEXT tool action, so a truly idle pane never advances.
+#
+# THE FIX (proven, mechanism-tested 2026-06-25 — woke an idle officer in 5s):
+# the ONE wake path that demonstrably re-invokes an idle Mac officer is
+# `tmux send-keys` into its `officer-<role>` session — exactly what the inbound
+# poller (96dff1b) and officer_loop_arm use. We nudge the pane to take a turn;
+# the trigger CONTENT is still delivered by the hook/channel on that turn, so
+# the nudge text is intentionally minimal (no content duplication).
+#
+# Safety / correctness:
+#   * Idle-gated — only injects when the pane is NOT mid-turn ("esc to interrupt"
+#     absent). A busy officer will see the trigger via the hook on its current
+#     turn's tool calls anyway, so we never risk mid-turn input corruption.
+#   * Session-existence guarded — `tmux has-session` must succeed. Where the
+#     session is not local (Docker's single `cabinet` session, or the officer is
+#     down), this no-ops cleanly; delivery falls back to the channel/hook.
+#   * Killswitch-guarded — never nudge while the Cabinet is halted.
+#   * Best-effort + fully detached — runs in a backgrounded subshell, all errors
+#     swallowed, so a missing tmux or a dead pane can NEVER break trigger_send
+#     (the XADD already succeeded — the trigger is durable regardless).
+#   * Debounced — a per-(officer) Redis lock (3s TTL) coalesces a burst of
+#     near-simultaneous sends into ONE wake, so we don't machine-gun Enter into
+#     the pane when several triggers land at once.
+#
+# Usage: trigger_wake_officer <target_officer>
+trigger_wake_officer() {
+  local target="$1"
+  [ -n "$target" ] || return 0
+
+  # Detach EVERYTHING below: the wake is a courtesy nudge on top of a trigger
+  # that is already durably queued. It must never delay or fail the caller.
+  (
+    # Need tmux to wake a Mac officer pane. Absent (e.g. Docker entrypoint
+    # without the right target, or CI) → nothing to do.
+    command -v tmux >/dev/null 2>&1 || exit 0
+
+    local session="officer-${target}"
+    tmux has-session -t "$session" 2>/dev/null || exit 0
+
+    # Killswitch — do not nudge officers while the Cabinet is halted.
+    local _ks
+    _ks=$(redis-cli -h "$TRIG_REDIS_HOST" -p "$TRIG_REDIS_PORT" \
+      GET cabinet:killswitch 2>/dev/null)
+    [ "$_ks" = "active" ] && exit 0
+
+    # Debounce: coalesce a burst into one wake. SET NX with a short TTL — if the
+    # lock already exists a wake is already in flight/just fired, so skip. Best-
+    # effort: if redis is unreachable the SET returns empty and we proceed (a
+    # spurious extra Enter at an idle prompt is harmless).
+    local _lock
+    _lock=$(redis-cli -h "$TRIG_REDIS_HOST" -p "$TRIG_REDIS_PORT" \
+      SET "cabinet:trigger-wake:${target}" "$(date -u +%s)" NX EX 3 2>/dev/null)
+    [ "$_lock" = "OK" ] || exit 0
+
+    # Idle-gate: only inject when the pane is NOT actively processing a turn.
+    # "esc to interrupt" is CC's active-turn indicator (same probe the inbound
+    # poller + boot driver use). If busy, the officer will surface the trigger
+    # via the post-tool-use hook on its current turn — no nudge needed.
+    local _tail
+    _tail=$(tmux capture-pane -t "$session" -p 2>/dev/null \
+      | grep -v '^[[:space:]]*$' | tail -6)
+    if echo "$_tail" | grep -q 'esc to interrupt'; then
+      exit 0
+    fi
+
+    # Wake. Minimal nudge — the trigger CONTENT rides the hook/channel on the
+    # turn this triggers. Paste-safe submit (text, settle, C-m separately, then
+    # verify + nudge a second C-m) mirrors officer_loop_arm: a fused trailing
+    # C-m is swallowed as a paste and never submits (observed 2026-06-24).
+    local _nudge="🔔 Trigger received — a new officer message is queued on your stream (cabinet:triggers:${target}). Take one tool action now so the post-tool-use hook surfaces it, then process + ACK it per your loop prompt (gather-then-decide; surface to the Chair; never DM Nate)."
+    tmux send-keys -t "$session" "$_nudge" 2>/dev/null || exit 0
+    sleep 0.6
+    tmux send-keys -t "$session" C-m 2>/dev/null
+    sleep 2
+    if ! tmux capture-pane -t "$session" -p 2>/dev/null \
+         | grep -v '^[[:space:]]*$' | tail -6 | grep -q 'esc to interrupt'; then
+      tmux send-keys -t "$session" C-m 2>/dev/null
+    fi
+  ) >/dev/null 2>&1 &
+  disown 2>/dev/null || true
+}
+
 # Send a trigger to an officer
 # Usage: trigger_send <target_officer> "<message>"
 trigger_send() {
@@ -91,6 +186,14 @@ trigger_send() {
     ) >/dev/null 2>&1 &
     disown 2>/dev/null || true
   fi
+
+  # Control plane: wake the target's live session so this trigger becomes an
+  # actual LLM turn within seconds. The XADD above is the durable data plane;
+  # without this, an IDLE officer never advances to read the trigger (the MCP
+  # channel notification + post-tool-use hook only surface on the officer's
+  # NEXT turn, which for an idle pane is up to a /loop-cadence away — root cause
+  # 2026-06-25). Fully detached + best-effort: see trigger_wake_officer.
+  trigger_wake_officer "$target"
 }
 
 # Read NEW triggers for an officer (marks them as pending until ACK'd)
@@ -123,6 +226,73 @@ trigger_read() {
   # across projects do not stomp each other (FW-074).
   echo "$output" | grep -E '^[0-9]+-[0-9]+$' | tr '\n' ' ' > "$ids_file"
   # Output message content
+  echo "$output" | awk '/^message$/{getline; print}'
+}
+
+# Safety-net read — re-surface triggers that were delivered to the group but
+# left UN-ACKed and idle past a grace window, regardless of which consumer
+# (channel/worker) originally claimed them. Used by the post-tool-use hook so
+# it NEVER steals fresh (id ">") triggers from the live redis-trigger-channel
+# MCP consumer (that race silently starved the Chair — root cause 2026-06-25).
+#
+# NOTE this hook is a BACKSTOP, not the wake. Re-invoking an IDLE officer to take
+# the turn on which this (and the channel) surface a trigger is done by
+# trigger_wake_officer (tmux send-keys), called from trigger_send. This hook only
+# runs once the officer is already taking a turn; its job is to recover triggers
+# the channel stranded (pushed-but-died, or channel down), not to wake the pane.
+#
+# Mechanism: XAUTOCLAIM transfers ownership of entries idle >= GRACE_MS to the
+# `worker` consumer and returns them. Because the channel MCP AUTO-ACKs the
+# instant it pushes a notification (channel/index.ts), a successfully-delivered
+# trigger has zero pending time and is never reclaimed here. Only triggers the
+# channel pushed-but-died-before-ACK, or that no live consumer ever read (e.g.
+# channel down), age past the grace window and get surfaced — exactly the
+# crash-recovery / channel-outage cases the hook should cover.
+#
+# GRACE_MS default 30000 (30s): comfortably longer than the channel's 5s BLOCK
+# loop, so the live channel always wins the fresh delivery. Override via
+# TRIGGER_SAFETY_NET_GRACE_MS.
+# Usage: trigger_read_safety_net <officer>
+#   Writes reclaimed IDs to the per-(officer,project) ids_file; echoes message
+#   content lines. Returns 1 (and writes empty ids_file) when nothing reclaimed.
+trigger_read_safety_net() {
+  local officer="$1"
+  local grace_ms="${TRIGGER_SAFETY_NET_GRACE_MS:-30000}"
+
+  local keys stream group ids_file
+  keys=$(_trigger_keys "$officer")
+  IFS='|' read -r stream group ids_file <<< "$keys"
+
+  redis-cli -h "$TRIG_REDIS_HOST" -p "$TRIG_REDIS_PORT" \
+    XGROUP CREATE "$stream" "$group" 0 MKSTREAM > /dev/null 2>&1
+
+  # XAUTOCLAIM <key> <group> <consumer> <min-idle-ms> <start> [COUNT n]
+  # Claims idle>=grace pending entries for `worker`, starting from 0.
+  # --raw output is a flat list: [next-cursor, then for each entry: id, then
+  # field/value pairs..., then a trailing deleted-ids array]. We extract the
+  # message IDs (NNN-NNN lines) and the value following each literal `message`
+  # field — same parse shape as trigger_read.
+  local output
+  output=$(redis-cli --raw -h "$TRIG_REDIS_HOST" -p "$TRIG_REDIS_PORT" \
+    XAUTOCLAIM "$stream" "$group" worker "$grace_ms" 0 COUNT 50 2>/dev/null)
+
+  if [ -z "$output" ]; then
+    echo "" > "$ids_file"
+    return 1
+  fi
+
+  # First line of XAUTOCLAIM output is the next cursor (an ID or "0-0") — it is
+  # NOT a reclaimed message ID. Drop it so trigger_ack does not try to ACK the
+  # cursor. Remaining NNN-NNN tokens are the reclaimed entry IDs.
+  local ids
+  ids=$(echo "$output" | tail -n +2 | grep -E '^[0-9]+-[0-9]+$' | tr '\n' ' ')
+  echo "$ids" > "$ids_file"
+
+  # No real reclaimed IDs (only the cursor) → nothing to surface.
+  if [ -z "$(echo "$ids" | tr -d ' ')" ]; then
+    return 1
+  fi
+
   echo "$output" | awk '/^message$/{getline; print}'
 }
 

@@ -293,6 +293,39 @@ if [ "$HAS_TELEGRAM" = "true" ]; then
   sleep 1   # let the token's getUpdates lock release before the new plugin claims it
 fi
 
+# Reap orphaned redis-trigger-channel processes + their stale group consumers.
+# Same class of bug as the telegram reap above, on the OTHER delivery path:
+# each officer runs a `bun run .../redis-trigger-channel/index.ts` MCP that
+# joins the Redis consumer group `officer-<officer>` as consumer `channel` and
+# injects new triggers into the live session. A Redis group hands each new
+# message to exactly ONE consumer, so a stale/orphaned `channel` from a prior
+# (dead) session would SPLIT the stream — silently eating triggers the live
+# Chair should have woken to (root cause 2026-06-25: notify-officer cos never
+# surfaced in the active Chair). The MCP child is normally killed with the
+# tmux pane, but it can detach/reparent to PID 1 on crash, and a broken launch
+# path that failed to expand $OFFICER_NAME leaked 15 zombies on a junk
+# `cabinet:triggers:${OFFICER_NAME}` stream (observed 2026-06-25). The
+# invariant we enforce here: exactly ONE live `channel` consumer per officer.
+#
+# 1) Kill any existing channel process for THIS officer (env OFFICER_NAME=<o>).
+#    We are restarting, so any pre-existing one is stale by definition.
+for _ch_pid in $(pgrep -f 'redis-trigger-channel/index.ts' 2>/dev/null); do
+  _ch_off=$(ps eww -p "$_ch_pid" 2>/dev/null | tr ' ' '\n' | grep '^OFFICER_NAME=' | head -1 | cut -d= -f2-)
+  # Match this officer, OR a literal unexpanded ${OFFICER_NAME} leak (junk).
+  if [ "$_ch_off" = "$OFFICER" ] || [ "$_ch_off" = '${OFFICER_NAME}' ]; then
+    kill -9 "$_ch_pid" 2>/dev/null \
+      && echo "start-officer-mac.sh: reaped stale redis-trigger-channel pid=$_ch_pid (OFFICER_NAME='$_ch_off')" >&2 || true
+  fi
+done
+# 2) Drop the stale `channel` group consumer so the new MCP registers clean and
+#    inherits no other consumer's pending. Idempotent (no-op if absent). The
+#    `worker` consumer (post-tool-use safety net) is intentionally left intact.
+redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" \
+  XGROUP DELCONSUMER "cabinet:triggers:$OFFICER" "officer-$OFFICER" channel > /dev/null 2>&1 || true
+# 3) Best-effort cleanup of the junk stream from the unexpanded-variable leak.
+redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" \
+  DEL 'cabinet:triggers:${OFFICER_NAME}' > /dev/null 2>&1 || true
+
 # Start fresh detached session
 tmux new-session -d -s "$SESSION_NAME" -x 220 -y 50
 

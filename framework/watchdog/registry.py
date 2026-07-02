@@ -1,0 +1,622 @@
+"""framework.watchdog.registry — the OUTCOME-expectations registry.
+
+The declarative heart of the outcome-monitoring watchdog. An *expectation* is a
+statement of what should be TRUE in the world ("the briefing was DELIVERED to
+Nate twice today"), NOT a statement that a process ran. This is the structural
+answer to the silent-failure class that every existing monitor misses: the
+briefing cron exits 0, launchd shows "active", pipe-health says green — because
+they all check the PROCESS. Nothing checked the OUTCOME. On 2026-06-29 the 07:30
+briefing job ran clean (exit 0) but its Telegram send 400'd; the backlog
+snowballed to 77 recovered-but-undelivered items over days, fully silent.
+
+Design goals (why it is shaped this way):
+  * STDLIB ONLY. No third-party imports, and — load-bearing — it NEVER imports
+    the systems it watches (framework.frontdoor, screenpipe libs, org_runtime).
+    A watchdog built on top of the thing it watches dies with it. Each verify
+    reads a FILE, a Redis key (via redis-cli subprocess), or a launchd/log
+    timestamp — the cheapest possible probe, never a Graph/Vercel/LLM call.
+  * EXTENSIBLE BY ADDING A ROW. An expectation is one `Expectation(...)` literal
+    in `EXPECTATIONS`. Add an outcome to watch = append a row with its id, what,
+    cadence, tier, a verify function, and a response policy. Nothing else.
+  * COMPOSE, DON'T DUPLICATE. Where a signal is already emitted (overdue
+    reflections via the schedule last-run stamps the anomaly-scan reads), the
+    verify reuses that source rather than re-deriving it.
+
+The checker (`framework.watchdog.check`) imports `EXPECTATIONS` + `Probe`,
+evaluates each expectation against a `Probe` (the thin I/O surface — files +
+Redis + clock), and routes the failures by tier. Tests inject a fake Probe so
+the whole evaluation runs with zero network / zero real Redis.
+"""
+from __future__ import annotations
+
+import dataclasses
+import datetime as _dt
+import enum
+import json
+import re
+from typing import Callable, Optional
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Tiers — how a FAILED expectation is responded to. The tier is a property of
+# the expectation (declared in the registry), not decided at check time, so the
+# routing is auditable from the registry alone.
+# ─────────────────────────────────────────────────────────────────────────────
+class Tier(enum.Enum):
+    AUTO_FIX = "auto-fix"      # deterministic-safe remediation, then log. (a)
+    ESCALATE_CHAIR = "chair"   # judgment needed → cabinet:triggers:cos.       (b)
+    DRIFT = "drift"            # principle/governance drift → meta-cognition.  (d)
+    # NOTE: there is deliberately NO direct-to-Nate tier. Per P-Alerts-To-Chair,
+    # every operational alert routes to the Chair; the Chair escalates to Nate
+    # only if genuinely stuck (response tier (c) is the Chair's call, not ours).
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Result of evaluating one expectation. `ok=True` → the outcome happened.
+# `ok=False` → the outcome did NOT happen (or could not be verified); `detail`
+# is the human-readable evidence the Chair (or the log) needs, and `fix_hint`
+# is an optional structured payload an AUTO_FIX response uses.
+# ─────────────────────────────────────────────────────────────────────────────
+@dataclasses.dataclass
+class CheckResult:
+    expectation_id: str
+    ok: bool
+    detail: str
+    # When ok is False and tier is AUTO_FIX, the checker calls the expectation's
+    # `auto_fix(probe, result)` — fix_hint carries any structured context that
+    # remediation needs (e.g. which run_mode briefing to re-trigger).
+    fix_hint: dict = dataclasses.field(default_factory=dict)
+    # `skipped` distinguishes "outcome verified false" from "not applicable right
+    # now" (e.g. the PM briefing check before 19:30, or killswitch active). A
+    # skipped check is neither a pass nor a failure — it is simply not evaluated.
+    skipped: bool = False
+
+
+@dataclasses.dataclass
+class Expectation:
+    """One declared outcome the cabinet must keep TRUE.
+
+    Fields:
+      id        stable slug (used in logs, dedup keys, proposal ids).
+      what      one-line human statement of the outcome (shown to the Chair).
+      cadence_s how often this outcome must (re)occur, in seconds. Informational
+                for the registry/report; each verify encodes its own freshness
+                window because "delivered twice today" is not a simple interval.
+      tier      Tier — how a failure is responded to.
+      verify    fn(probe) -> CheckResult. MUST be cheap + side-effect-free
+                (reads only). Receives the shared Probe.
+      auto_fix  fn(probe, CheckResult) -> str|None. ONLY set for AUTO_FIX tier.
+                Performs the deterministic-safe remediation and returns a
+                one-line description of what it did (or None if it declined).
+                Must itself be deterministic-safe — never send outbound, never
+                touch anything risky; the canonical safe action is to re-push a
+                trigger to the Chair's stream with full context.
+    """
+    id: str
+    what: str
+    cadence_s: int
+    tier: Tier
+    verify: Callable[["Probe"], CheckResult]
+    auto_fix: Optional[Callable[["Probe", CheckResult], Optional[str]]] = None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Probe — the ENTIRE I/O surface the verifies are allowed to touch. Keeping it
+# behind one injectable object is what makes the whole registry testable with a
+# fake (no real Redis, no real files) AND what guarantees a verify can't quietly
+# reach for the network. The real implementation lives in check.py; tests pass a
+# stub with the same method names.
+# ─────────────────────────────────────────────────────────────────────────────
+class Probe:
+    """Read-only I/O surface (files + Redis + clock). Implemented in check.py.
+
+    Every method is degrade-safe: on any error it returns a benign empty value
+    (None / "" / []) rather than raising, so a verify never crashes the whole
+    sweep on one unreadable source — it reports the outcome as unverifiable.
+    """
+
+    def now(self) -> _dt.datetime:  # pragma: no cover - trivial
+        raise NotImplementedError
+
+    def local_now(self) -> _dt.datetime:  # pragma: no cover
+        """`now()` converted to the Captain's timezone (platform.yml)."""
+        raise NotImplementedError
+
+    def tz_ok(self) -> bool:  # pragma: no cover
+        """True if the Captain timezone resolved (so local_now() is reliable).
+        False → the briefing slot math would be wrong; the verify SKIPs. Default
+        True for probes that don't override it (e.g. the in-memory test stub)."""
+        return True
+
+    def read_text(self, path: str) -> str:  # pragma: no cover
+        """Full file contents, or "" if missing/unreadable."""
+        raise NotImplementedError
+
+    def file_mtime(self, path: str) -> Optional[float]:  # pragma: no cover
+        """Epoch seconds of a file's last modification, or None."""
+        raise NotImplementedError
+
+    def redis_get(self, key: str) -> str:  # pragma: no cover
+        """GET a Redis key as a string, or "" if unset/unreachable."""
+        raise NotImplementedError
+
+    def redis_keys(self, pattern: str) -> list[str]:  # pragma: no cover
+        """KEYS matching a glob, or [] if unreachable."""
+        raise NotImplementedError
+
+    def launchd_loaded(self, label: str) -> Optional[bool]:  # pragma: no cover
+        """True/False if a launchd label is loaded; None if undeterminable."""
+        raise NotImplementedError
+
+    def trigger_chair(self, message: str) -> bool:  # pragma: no cover
+        """Push a trigger to cabinet:triggers:cos (the ONLY side-effect a
+        verify/auto_fix may cause). Returns True on a confirmed enqueue."""
+        raise NotImplementedError
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helpers shared by the verifies (stdlib only).
+# ─────────────────────────────────────────────────────────────────────────────
+def _parse_iso(s: str) -> Optional[_dt.datetime]:
+    """Parse an ISO-8601 timestamp (with or without trailing Z) to aware UTC."""
+    s = (s or "").strip()
+    if not s:
+        return None
+    s = s.rstrip("Z")
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M"):
+        try:
+            return _dt.datetime.strptime(s, fmt).replace(tzinfo=_dt.timezone.utc)
+        except ValueError:
+            continue
+    return None
+
+
+def _iter_json_records(text: str) -> list[dict]:
+    """Decode a stream of concatenated (possibly pretty-printed) JSON objects.
+
+    The frontdoor briefing log is exactly this: each launchd run appends one
+    pretty-printed JSON dict. We greedily raw_decode from each top-level `{` at
+    a line start. Returns records in file order (oldest → newest)."""
+    out: list[dict] = []
+    dec = json.JSONDecoder()
+    for m in re.finditer(r"(?m)^\{", text):
+        try:
+            obj, _ = dec.raw_decode(text[m.start():])
+            if isinstance(obj, dict):
+                out.append(obj)
+        except ValueError:
+            continue
+    return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# VERIFY functions — one per seeded expectation. Each is pure given a Probe.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Paths/keys the verifies read. Centralized so a path move is one edit and the
+# docs-track-code grep finds them. Absolute Mac-native paths with a HOME-relative
+# fallback resolved in check.py's real Probe.
+BRIEFING_LOG = "/Users/nate/.cabinet/logs/frontdoor-briefing.log"
+CAPTAIN_DECISIONS = (
+    "/Users/nate/captains-cabinet/shared/interfaces/captain-decisions.md"
+)
+LAST_CAPTAIN_MSG_KEY = "cabinet:last-captain-msg-id"
+# The Chair stamps this on EVERY briefing it delivers — including a MANUAL
+# delivery when the cron missed (observed value: "2026-06-29T06:29:35Z (manual —
+# cron miss)"). The OUTCOME is "Nate got his briefing", delivered BY ANY MEANS —
+# so a fresh marker satisfies the expectation even if the cron's own send failed
+# or never ran. We read the leading ISO token and ignore any trailing annotation.
+BRIEF_DELIVERED_MARKER_KEY = "cabinet:schedule:last-run:cos:briefing"
+
+# Briefing schedule (local time, from the frontdoor-briefing plist):
+BRIEF_AM_HOUR = 7
+BRIEF_PM_HOUR = 19
+BRIEF_MINUTE = 30
+# Grace after the scheduled minute before we expect the outcome to be TRUE.
+BRIEF_GRACE_MIN = 45
+
+
+def _leading_iso(s: str) -> Optional[_dt.datetime]:
+    """Parse the leading ISO-8601 token of a string that may carry a trailing
+    human annotation, e.g. '2026-06-29T06:29:35Z (manual — cron miss)'. Returns
+    aware UTC, or None."""
+    m = re.match(r"\s*(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?Z?)", s or "")
+    return _parse_iso(m.group(1)) if m else None
+
+
+def _brief_slot_id(slot_local: _dt.datetime) -> str:
+    """Stable per-slot id (date + AM/PM) so dedup/escalation is scoped to THIS
+    slot — a new slot's failure can fire even while a prior handled slot stays
+    quiet. e.g. '2026-06-29-AM'."""
+    ampm = "PM" if slot_local.hour >= 12 else "AM"
+    return f"{slot_local:%Y-%m-%d}-{ampm}"
+
+
+def verify_briefing_delivered(probe: "Probe") -> CheckResult:
+    """OUTCOME: the most recent *scheduled* briefing actually DELIVERED to Nate.
+
+    This is the bug-of-record. We do NOT check that the job ran — we check that
+    the last briefing-log record reports a CONFIRMED send (`send.sent == True`
+    / `status == 'sent'`). A record with `sent: false` (the HTTP-400 case) is a
+    FAILED outcome even though the process exited 0.
+
+    Cadence-aware: only asserts after a scheduled slot's grace window has passed,
+    so we don't flag "the 19:30 hasn't happened" at 14:00. Within an active
+    window, the freshest log record must be a successful send dated *after* the
+    slot fired. If the freshest record is stale (older than the slot) → the job
+    didn't run at all; if it's fresh but `sent:false` → it ran but the send
+    failed (auto-fixable)."""
+    eid = "briefing-delivered"
+    # If the Captain timezone could not be resolved, local_now() is silently UTC
+    # and the 07:30/19:30-LOCAL slot math would be wrong by the UTC offset,
+    # false-failing all day. SKIP (not fail) until the TZ is fixed (review MEDIUM).
+    if not probe.tz_ok():
+        return CheckResult(eid, True,
+                          "Captain timezone unresolved — skipping briefing slot "
+                          "check until CABINET_CAPTAIN_TZ is valid", skipped=True)
+    local = probe.local_now()
+
+    # Which scheduled slot is the most recent that should already be DONE?
+    today_am = local.replace(hour=BRIEF_AM_HOUR, minute=BRIEF_MINUTE,
+                             second=0, microsecond=0)
+    today_pm = local.replace(hour=BRIEF_PM_HOUR, minute=BRIEF_MINUTE,
+                             second=0, microsecond=0)
+    grace = _dt.timedelta(minutes=BRIEF_GRACE_MIN)
+    if local >= today_pm + grace:
+        slot_local = today_pm
+    elif local >= today_am + grace:
+        slot_local = today_am
+    else:
+        # Before today's AM grace: the most recent due slot is yesterday's PM.
+        slot_local = today_pm - _dt.timedelta(days=1)
+
+    slot_id = _brief_slot_id(slot_local)
+    slot_utc = slot_local.astimezone(_dt.timezone.utc)
+
+    # SATISFIED-BY-ANY-DELIVERY (refinement 2026-06-29): the OUTCOME is "Nate got
+    # his briefing", delivered by ANY means — not "the cron's send succeeded". The
+    # Chair stamps cabinet:schedule:last-run:cos:briefing on every delivery,
+    # INCLUDING a manual one when the cron missed. If that marker is dated at/after
+    # the due slot, the outcome is TRUE regardless of what the cron log says — so a
+    # manually-recovered briefing no longer false-positives. Checked FIRST, before
+    # the cron-log inspection, so it short-circuits the failure path.
+    marker = _leading_iso(probe.redis_get(BRIEF_DELIVERED_MARKER_KEY))
+    if marker is not None and marker >= slot_utc:
+        return CheckResult(eid, True,
+                          f"briefing delivered for the {slot_id} slot "
+                          f"(delivery marker {marker:%Y-%m-%d %H:%M}Z ≥ slot) — "
+                          f"satisfied by any means")
+
+    text = probe.read_text(BRIEFING_LOG)
+    records = _iter_json_records(text)
+    if not records:
+        # No log at all → can't verify; treat as a failure to deliver (the log
+        # is written on every run, so an empty/absent log means nothing ran).
+        return CheckResult(eid, False,
+                           f"no briefing-log records at {BRIEFING_LOG} and no "
+                           f"delivery marker (expected a delivered briefing for "
+                           f"the {slot_id} slot)",
+                           fix_hint={"slot_local": slot_local.isoformat(),
+                                     "slot_id": slot_id})
+
+    last = records[-1]
+    # The briefing log record's "send" is the run_send_path result: it carries
+    # the outcome booleans (sent / drained / recovered) at the top level AND the
+    # underlying channel.send result nested under "send" (status / error). Read
+    # the outer for the outcome, the nested for the failure detail.
+    send = last.get("send") or {}
+    channel = send.get("send") or {}  # nested channel.send result
+    # `sent` is the CANONICAL outcome signal (the outer run_send_path bool). Do
+    # NOT also require status=="sent" — a True `sent` with an absent/renamed
+    # nested status would otherwise false-FAIL a genuinely delivered briefing
+    # (review HIGH 2026-06-29). status is used ONLY for failure-detail text.
+    sent = bool(send.get("sent"))
+    status = str(channel.get("status") or send.get("status") or "")
+
+    # When did the freshest record land? PREFER a record-level timestamp if the
+    # briefing ever stamps one (forward-compatible, decoupled from file mtime);
+    # fall back to the log file mtime. mtime alone can be advanced by a write
+    # that appends no NEW complete record (rotation/partial write), which could
+    # mask a stale success — the satisfied-by-marker check above is the primary
+    # guard, and a record-level ts is the durable structural fix (briefing TODO).
+    rec_ts = _parse_iso(str(last.get("ts") or last.get("run_time") or ""))
+    if rec_ts is not None:
+        run_dt_utc = rec_ts
+    else:
+        mtime = probe.file_mtime(BRIEFING_LOG)
+        run_dt_utc = (_dt.datetime.fromtimestamp(mtime, _dt.timezone.utc)
+                      if mtime else None)
+    # slot_utc was computed above (alongside the delivery-marker check).
+
+    if sent:
+        # Delivered — but is it the CURRENT slot's delivery, or a stale success?
+        # (The delivery-marker check above already covered any-means delivery; a
+        # cron-log success older than the slot with NO marker means it didn't run.)
+        if run_dt_utc is not None and run_dt_utc < slot_utc:
+            return CheckResult(
+                eid, False,
+                f"last briefing send SUCCEEDED but is stale (ran "
+                f"{run_dt_utc:%Y-%m-%d %H:%M}Z, before the "
+                f"{slot_local:%Y-%m-%d %H:%M} local slot) — the scheduled "
+                f"briefing did not run",
+                fix_hint={"slot_local": slot_local.isoformat(),
+                          "slot_id": slot_id, "cause": "did-not-run"})
+        return CheckResult(eid, True,
+                          f"briefing delivered (status=sent) for the {slot_id} slot")
+
+    # Freshest record is a NON-success. Distinguish "ran but send failed" (fresh
+    # record, auto-fixable) from "didn't run" (stale record).
+    drained = send.get("drained")
+    recovered = send.get("recovered")
+    err = channel.get("error") or send.get("error") or status or "unknown"
+    if run_dt_utc is not None and run_dt_utc >= slot_utc:
+        return CheckResult(
+            eid, False,
+            f"briefing RAN but send FAILED (status={status!r}, error={err!r}, "
+            f"drained={drained}, recovered={recovered}) — backlog undelivered "
+            f"for the {slot_id} slot (no delivery by any other means either)",
+            fix_hint={"slot_local": slot_local.isoformat(), "slot_id": slot_id,
+                      "cause": "send-failed", "error": str(err)[:200]})
+    return CheckResult(
+        eid, False,
+        f"no successful briefing for the {slot_id} slot "
+        f"(freshest record status={status!r}, sent={sent})",
+        fix_hint={"slot_local": slot_local.isoformat(),
+                  "slot_id": slot_id, "cause": "did-not-run"})
+
+
+def autofix_briefing(probe: "Probe", result: CheckResult) -> Optional[str]:
+    """Deterministic-safe remediation for a failed/undelivered briefing.
+
+    Per the brain-bridge + P-Alerts-To-Chair rules, the watchdog NEVER sends an
+    outbound message itself and never calls the Telegram API. The
+    deterministic-safe fix is to re-trigger the Chair with full context so the
+    Chair re-runs the briefing through the gated front-door channel (the one
+    legitimate send path). That is both the auto-fix (it re-drives the outcome)
+    AND correct routing (the Chair owns the send + can judge a payload bug).
+
+    Anti-thrash: the checker dedups on the expectation id within a cooldown
+    window, so this won't machine-gun the Chair on every 30-min cycle while the
+    briefing stays broken — it fires once per cooldown until the outcome is TRUE
+    again."""
+    cause = result.fix_hint.get("cause", "unknown")
+    slot = result.fix_hint.get("slot_local", "?")
+    err = result.fix_hint.get("error", "")
+    msg = (
+        "OUTCOME-WATCHDOG auto-fix — the recurring briefing did NOT reach Nate "
+        f"for the {slot} slot (cause: {cause}"
+        + (f", send error: {err}" if err else "")
+        + "). The job's process exited clean but the OUTCOME (a delivered "
+        "briefing) did not happen. Please RE-RUN the briefing send now: "
+        "`CABINET_ENV=runtime REDIS_HOST=localhost PATH=/opt/homebrew/bin:$PATH "
+        "bash cabinet/scripts/run-frontdoor-briefing.sh` (it recovers the "
+        "pending/undelivered backlog and re-sends through the gated channel). "
+        "If the send still 400s, the payload itself is the bug (e.g. an "
+        "over-long chunk or a stale reply-to id) — gather-then-decide, fix the "
+        "root cause, and only escalate to Nate if you are genuinely stuck. "
+        "Do NOT DM Nate the raw failure."
+    )
+    return msg if probe.trigger_chair(msg) else None
+
+
+# Reflection cadence — reuse the same schedule stamps the anomaly-scan reads.
+# A fulltime officer that did work but hasn't reflected within the ceiling is
+# overdue. We read cabinet:schedule:last-run:<officer>:reflection and the
+# positive work signal cabinet:last-experience:<officer> (set by
+# record-experience.sh, 2h TTL) — identical sources to lib/reflection.sh, so we
+# compose rather than re-derive. Ceiling mirrors the retro's 48h floor.
+FULLTIME_OFFICERS = ["cos", "polads-ceo", "stephie-ceo", "comms-officer"]
+REFLECTION_CEILING_S = 48 * 3600
+
+
+def verify_officer_reflection(probe: "Probe") -> CheckResult:
+    """OUTCOME: each fulltime officer that has done recent work has reflected
+    within the 48h ceiling. Officers idle (no recent experience record) are not
+    expected to reflect — absence of work == nothing to reflect on (same gate as
+    reflection_due). Only flags an officer with a *recent work signal* whose last
+    reflection is older than the ceiling (or never)."""
+    eid = "officer-reflection"
+    now = probe.now()
+    overdue = []
+    for officer in FULLTIME_OFFICERS:
+        last_work = probe.redis_get(f"cabinet:last-experience:{officer}")
+        if not last_work:
+            continue  # idle → not expected to reflect
+        last_refl_raw = probe.redis_get(
+            f"cabinet:schedule:last-run:{officer}:reflection")
+        last_refl = _parse_iso(last_refl_raw)
+        if last_refl is None:
+            overdue.append(f"{officer} (worked recently, never reflected)")
+            continue
+        age_s = (now - last_refl).total_seconds()
+        if age_s > REFLECTION_CEILING_S:
+            overdue.append(f"{officer} ({age_s / 3600:.0f}h since last reflection)")
+    if overdue:
+        return CheckResult(eid, False,
+                          "officers overdue for reflection: " + ", ".join(overdue))
+    return CheckResult(eid, True, "all working officers reflected within 48h")
+
+
+# Captain-decision logging — the governance gap just closed. Heuristic, file-only:
+# a relayed Captain decision should have a captain-decisions.md entry. We can't
+# reconstruct every relay, but we CAN catch the structural failure: the file
+# stopped growing while the cabinet kept relaying decisions. The cheap, robust
+# proxy is the freshest dated heading in the file vs the freshest Captain DM.
+# This is intentionally a DRIFT-tier signal (a note, never an alert): it is a
+# soft indicator, not a hard outcome, and false positives must not page anyone.
+DECISION_HEADING_RE = re.compile(r"(?m)^##\s+(?:(\d{4}-\d{2}-\d{2})\b|.*?\((\d{4}-\d{2}-\d{2})\))")
+
+
+def verify_captain_decisions_logged(probe: "Probe") -> CheckResult:
+    """OUTCOME (soft): captain-decisions.md is being kept current — its newest
+    entry is not staler than the cabinet's most recent Captain interaction by an
+    implausible margin. Drift-tier: a note to the meta-cognition sink, not an
+    alert. The hard real-time enforcement is the post-tool-use hook; this is the
+    backstop that notices if that enforcement silently lapsed."""
+    eid = "captain-decisions-logged"
+    text = probe.read_text(CAPTAIN_DECISIONS)
+    if not text:
+        return CheckResult(eid, True, "captain-decisions.md unreadable — skip",
+                          skipped=True)
+    dates = []
+    for m in DECISION_HEADING_RE.finditer(text):
+        ds = m.group(1) or m.group(2)
+        d = _parse_iso(ds + "T00:00:00")
+        if d:
+            dates.append(d)
+    if not dates:
+        return CheckResult(eid, True, "no dated decision headings yet — skip",
+                          skipped=True)
+    newest = max(dates)
+    # Is the cabinet still actively talking to the Captain? Use the inbound
+    # msg-id key freshness as a cheap "recent interaction" proxy — but that key
+    # carries no timestamp, so we fall back to a generous 7-day staleness floor:
+    # only flag if the newest logged decision is > 7 days old. That is a true
+    # structural lapse (a week of zero logged decisions), not normal quiet.
+    age_days = (probe.now() - newest).total_seconds() / 86400.0
+    if age_days > 7:
+        return CheckResult(
+            eid, False,
+            f"newest captain-decisions.md entry is {age_days:.0f} days old "
+            f"({newest:%Y-%m-%d}) — the real-time decision-logging discipline "
+            f"may have lapsed; verify recent Captain decisions were logged")
+    return CheckResult(eid, True,
+                      f"captain-decisions.md current (newest {newest:%Y-%m-%d})")
+
+
+# Cron/pipe silent-failure — a job whose log shows an error or that stopped
+# producing output. We read the cabinet log dir for the known recurring jobs and
+# flag a log whose tail contains a FATAL/error marker OR that is stale past its
+# cadence. This complements pipe-watchdog (which owns screenpipe ingestion) by
+# covering the CABINET's own crons (briefing, status-sweep) — the outcome being
+# "the cabinet's scheduled jobs are producing output, not silently erroring".
+CABINET_LOG_DIR = "/Users/nate/.cabinet/logs"
+CABINET_JOB_LOGS = {
+    # label: (log filename, max staleness seconds before "silent")
+    "status-sweep": ("status-sweep.log", 2 * 1800 + 600),   # 30-min cadence, 2x+grace
+}
+JOB_ERROR_MARKERS = ("FATAL", "Traceback (most recent call last)",
+                     "trigger NOT pushed", "trigger_send failed")
+
+
+def verify_no_silent_cron_failure(probe: "Probe") -> CheckResult:
+    """OUTCOME: the cabinet's own recurring jobs are producing output and not
+    silently erroring. For each watched job log: flag if its tail carries an
+    error marker, OR it is stale past its cadence (ran-but-no-output / didn't
+    run). Escalates to the Chair (a cron silently dying is operational)."""
+    eid = "no-silent-cron-failure"
+    now_epoch = probe.now().timestamp()
+    problems = []
+    for label, (fname, max_stale_s) in CABINET_JOB_LOGS.items():
+        path = f"{CABINET_LOG_DIR}/{fname}"
+        mtime = probe.file_mtime(path)
+        if mtime is None:
+            problems.append(f"{label}: no log at {path} (never ran?)")
+            continue
+        idle_s = now_epoch - mtime
+        if idle_s > max_stale_s:
+            problems.append(
+                f"{label}: log silent {idle_s / 60:.0f}min "
+                f"(> {max_stale_s / 60:.0f}min cadence) — stalled or not firing")
+            continue
+        tail = "\n".join(probe.read_text(path).splitlines()[-25:])
+        hit = next((mk for mk in JOB_ERROR_MARKERS if mk in tail), None)
+        if hit:
+            problems.append(f"{label}: error marker {hit!r} in recent log tail")
+    if problems:
+        return CheckResult(eid, False,
+                          "cabinet cron issues: " + "; ".join(problems))
+    return CheckResult(eid, True, "cabinet crons producing clean output")
+
+
+# Pipe freshness — the brain's ingestion pipes must be writing within cadence.
+# We deliberately DO NOT re-implement pipe-watchdog (which owns kickstart-healing
+# of msgraph/teams/embeddings). We add the OUTCOME assertion: "the brain is fresh"
+# — the data Nate's officers reason from is current. If a pipe is stale we ESCALATE
+# to the Chair (pipe-watchdog auto-heals; if it's still stale here that means the
+# heal didn't take → a human/Chair signal). Cheap: just the log mtimes.
+SCREENPIPE_STATE_DIR = "/Users/nate/.screenpipe/state"
+PIPE_FRESHNESS = {
+    # pipe: (log filename under state dir, max staleness seconds)
+    "msgraph-incremental": ("msgraph-incremental.log", 3 * 3600),     # ~15min cadence; 3h = clearly stale
+    "teams-graph-incremental": ("teams-graph-incremental.log", 3 * 3600),
+    "embeddings": ("embeddings.log", 3 * 3600),
+}
+
+
+def verify_pipes_fresh(probe: "Probe") -> CheckResult:
+    """OUTCOME: the brain's ingestion pipes are fresh (ingesting within cadence).
+
+    KNOWN STANDING OUTAGE (memory): Microsoft Graph teams + microsoft365
+    connections have been connected:false since ~2026-06-02, so msgraph/teams
+    pipes legitimately write nothing. We therefore report stale Graph pipes as a
+    SINGLE de-duplicated Chair line (not per-pipe spam), and the Chair already
+    knows the root (re-auth). embeddings staleness is the one that matters most
+    (the index the brain search reads). Pure mtime read — no Graph poll."""
+    eid = "pipes-fresh"
+    now_epoch = probe.now().timestamp()
+    stale = []
+    for pipe, (fname, max_stale_s) in PIPE_FRESHNESS.items():
+        mtime = probe.file_mtime(f"{SCREENPIPE_STATE_DIR}/{fname}")
+        if mtime is None:
+            stale.append(f"{pipe} (no log)")
+            continue
+        idle_s = now_epoch - mtime
+        if idle_s > max_stale_s:
+            stale.append(f"{pipe} ({idle_s / 3600:.1f}h stale)")
+    if stale:
+        return CheckResult(eid, False,
+                          "brain pipes stale (pipe-watchdog should auto-heal; "
+                          "escalating residual): " + ", ".join(stale))
+    return CheckResult(eid, True, "brain ingestion pipes fresh")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# THE REGISTRY — add an outcome to watch = append one Expectation row here.
+# ─────────────────────────────────────────────────────────────────────────────
+EXPECTATIONS: list[Expectation] = [
+    Expectation(
+        id="briefing-delivered",
+        what="Briefing DELIVERED to Nate 2x/day (07:30 + 19:30 local) — a "
+             "confirmed send landed, not just that the job ran.",
+        cadence_s=12 * 3600,
+        tier=Tier.AUTO_FIX,
+        verify=verify_briefing_delivered,
+        auto_fix=autofix_briefing,
+    ),
+    Expectation(
+        id="officer-reflection",
+        what="Each fulltime officer that did recent work reflected within 48h.",
+        cadence_s=48 * 3600,
+        tier=Tier.ESCALATE_CHAIR,
+        verify=verify_officer_reflection,
+    ),
+    Expectation(
+        id="captain-decisions-logged",
+        what="Relayed Captain decisions are logged to captain-decisions.md "
+             "(real-time discipline hasn't lapsed).",
+        cadence_s=24 * 3600,
+        tier=Tier.DRIFT,
+        verify=verify_captain_decisions_logged,
+    ),
+    Expectation(
+        id="no-silent-cron-failure",
+        what="The cabinet's own recurring jobs produce output and don't silently "
+             "error (a job that runs but yields no outcome / logs an error).",
+        cadence_s=3600,
+        tier=Tier.ESCALATE_CHAIR,
+        verify=verify_no_silent_cron_failure,
+    ),
+    Expectation(
+        id="pipes-fresh",
+        what="Brain ingestion pipes (msgraph / teams / embeddings) ingesting "
+             "within cadence so officers reason from current data.",
+        cadence_s=3 * 3600,
+        tier=Tier.ESCALATE_CHAIR,
+        verify=verify_pipes_fresh,
+    ),
+]
+
+
+def expectation_by_id(eid: str) -> Optional[Expectation]:
+    return next((e for e in EXPECTATIONS if e.id == eid), None)

@@ -37,6 +37,14 @@ from framework import env
 from framework.frontdoor import channel, composer, intake
 
 
+# Per-tier item cap for the composed briefing. Keeps the unified message a TIGHT
+# digest (top items per tier + a roll-up of the rest) instead of dumping the whole
+# intake backlog — the 2026-06-29 failure rendered a 77-item wall. ping-now is
+# never capped (the composer exempts it). 5 mirrors the well-formed manual
+# briefing's section depth. Override via run_send_path(max_per_tier=…).
+_DEFAULT_MAX_PER_TIER = 5
+
+
 def run_send_path(
     *,
     since: str | None = None,
@@ -46,9 +54,12 @@ def run_send_path(
     now: str | None = None,
     http_post: Callable[..., Any] | None = None,
     ack_on_send: bool = True,
+    recover_pending: bool = False,
+    max_per_tier: int | None = _DEFAULT_MAX_PER_TIER,
     send_fn: Callable[..., dict] | None = None,
     drain_fn: Callable[..., list] | None = None,
     ack_fn: Callable[..., int] | None = None,
+    pending_fn: Callable[..., list] | None = None,
 ) -> dict:
     """Run ONE pass of the front-door send path: drain → compose → send.
 
@@ -68,19 +79,37 @@ def run_send_path(
         because the gate short-circuits first).
       ack_on_send: when True (default), ack the drained item ids ONLY after a
         confirmed send (sent == True). False leaves acking to a later step.
-      send_fn / drain_fn / ack_fn: seams for tests; default to the real module
-        functions. ``send_fn`` lets a test assert the gate without importing
-        urllib; ``drain_fn``/``ack_fn`` let a test run the full wiring without a
-        live Redis.
+      recover_pending: when True, FIRST recover items already delivered-but-
+        unacked to this consumer (``intake.drain_pending``) and prepend them
+        (deduped by id, oldest first) to the fresh ``>`` drain. This is the
+        BRIEFING's backstop: the every-5-min ``surface.py`` loop reads ``>`` and
+        surfaces ONLY ping-now in real time, deliberately leaving batch/fyi
+        items PENDING "for the briefing to compose". But pending items are no
+        longer ``>``-visible (the consumer group already delivered them), so a
+        plain ``>`` drain at briefing time sees nothing and the batch/fyi backlog
+        (comms-officer FYIs, relevant-no-reply items) would surface NEVER. With
+        this flag the briefing recovers + composes + sends + ACKs that backlog —
+        closing the single-voice comms-awareness gap. Default False so the bare
+        send path (and surface.py's own ping-now pass) keep their prior behavior.
+      max_per_tier: cap on item lines rendered per (non-ping-now) tier so the
+        composed briefing stays a TIGHT digest — top N most-recent shown in full,
+        the rest folded into one source-counted roll-up line. Defaults to
+        ``_DEFAULT_MAX_PER_TIER`` (the 2026-06-29 fix for the 77-item wall); pass
+        None to render every item (the prior uncapped behavior).
+      send_fn / drain_fn / ack_fn / pending_fn: seams for tests; default to the
+        real module functions. ``send_fn`` lets a test assert the gate without
+        importing urllib; ``drain_fn``/``ack_fn``/``pending_fn`` let a test run
+        the full wiring without a live Redis.
 
     Returns a dict:
       {
-        'drained':  <int items drained>,
+        'drained':  <int items drained (pending-recovered + fresh)>,
         'item_ids': [<stream ids>],
         'text':     <the composed unified message ('' when nothing drained)>,
         'sent':     <bool — True only on a real confirmed send>,
         'send':     <the channel.send result dict, or None when nothing to send>,
         'acked':    <int ids acked>,
+        'recovered': <int pending items recovered (0 unless recover_pending)>,
         'allow_sends': <bool — the env gate's value this pass>,
       }
     The token and any token-bearing URL never appear in this result: channel.send
@@ -90,15 +119,40 @@ def run_send_path(
     _drain = drain_fn or intake.drain
     _send = send_fn or channel.send
     _ack = ack_fn or intake.ack
+    _pending = pending_fn or intake.drain_pending
 
-    items = _drain(since=since, stream_key=stream_key, count=count,
+    recovered: list[dict] = []
+    if recover_pending:
+        try:
+            recovered = _pending(stream_key=stream_key, consumer=consumer) or []
+        except Exception:
+            recovered = []  # best-effort: a recovery hiccup never blocks the send
+
+    fresh = _drain(since=since, stream_key=stream_key, count=count,
                    consumer=consumer)
+
+    # Merge recovered (oldest, surface.py-abandoned batch/fyi) ahead of fresh,
+    # deduped by stream id so an item that is BOTH pending and freshly delivered
+    # is composed + acked exactly once.
+    items: list[dict] = []
+    seen: set = set()
+    for it in list(recovered) + list(fresh):
+        if not isinstance(it, dict):
+            continue
+        mid = it.get("id")
+        if mid is not None and mid in seen:
+            continue
+        if mid is not None:
+            seen.add(mid)
+        items.append(it)
+
     item_ids = [it.get("id") for it in items
                 if isinstance(it, dict) and it.get("id") is not None]
 
     # Compose is always safe (pure, no I/O). Even in dev we surface the text so a
-    # developer can see exactly what WOULD be sent.
-    text = composer.compose(items, now=now)
+    # developer can see exactly what WOULD be sent. max_per_tier keeps it a tight
+    # digest (top N per tier + a roll-up of the rest) — see _DEFAULT_MAX_PER_TIER.
+    text = composer.compose(items, now=now, max_per_tier=max_per_tier)
 
     result: dict[str, Any] = {
         "drained": len(items),
@@ -107,6 +161,7 @@ def run_send_path(
         "sent": False,
         "send": None,
         "acked": 0,
+        "recovered": len(recovered),
         "allow_sends": env.allow_sends(),
     }
 

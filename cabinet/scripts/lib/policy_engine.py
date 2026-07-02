@@ -799,6 +799,18 @@ def _path_matches_pattern(file_path: str, pattern: str) -> bool:
     if fnmatch.fnmatch(basename, pattern):
         return True
 
+    # Root-relative path vs a leading-`*/` directory pattern (parity fix).
+    # `*/constitution/*` requires a dir segment before `constitution/`, so it
+    # matches the ABSOLUTE form but not the root-relative `constitution/X`.
+    # pre-tool-use.sh + the regex shadow both match the relative form, so the
+    # typed engine was strictly narrower on a covered rule. Retry with a
+    # synthetic leading `/` so the relative path matches as its absolute form
+    # would. Purely ADDITIVE (only adds matches); `docs/constitution-guide.md`
+    # still fails.
+    if "/" in pattern and not file_path.startswith("/"):
+        if _path_matches_pattern("/" + file_path, pattern):
+            return True
+
     return False
 
 

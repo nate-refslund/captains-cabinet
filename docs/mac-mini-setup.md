@@ -209,7 +209,7 @@ PASS Phase 1 → notify CoS (`bash cabinet/scripts/notify-officer.sh cos "Phase 
    bash cabinet/scripts/reload-officer-mac.sh cos  # smoke-test
    ```
 4. **Bring up CTO + CPO + COO + CRO** per Phase 7 Spec 064 Checkpoints 7.1-7.3
-5. **Register observability LaunchAgents** (heartbeat-watchdog + cost-summary + worktree-listener)
+5. **Register observability LaunchAgents** (heartbeat-watchdog + limit-reset-watchdog + cost-summary + worktree-listener)
 6. **48h soak** under real workload (Phase 7 Checkpoint 7.8)
 
 ### Captain involvement during Phase 2-8

@@ -156,6 +156,24 @@ if [ -w "$PATTERNS_FILE" ] || [ ! -e "$PATTERNS_FILE" ]; then
   } >> "$PATTERNS_FILE" 2>/dev/null
 fi
 
+# LAYER 1 (PREVENT) — encode-time anti-accretion gate. AFTER appending the new
+# pattern, ask the gate "is this an instance of an existing principle?" If yes,
+# the gate emits a proposal-only, per-item Captain-gated entry to the
+# meta-cognition proposal ledger (the new rule still stands; the gate never
+# blocks). Async + best-effort: a gate failure never affects the encode path or
+# the Captain-acknowledge reply. Concrete facts are exempt inside the gate.
+# See docs/meta-cognition-direction-2026-06-25.md.
+# The gate is also the single chokepoint for the LAYER 2 (HARVEST) accretion
+# counter — on a non-exempt candidate (a genuine rule, not a fact) it bumps the
+# Redis counter so the principle-harvester fires once enough has accreted since
+# the last harvest. So this one call drives both Layer 1 (gate proposal) and the
+# Layer 2 trigger. Async + best-effort; never affects the encode or reply path.
+ENCODE_GATE="$REPO_ROOT/cabinet/scripts/meta-cognition/encode-gate.sh"
+if [ "${ENCODE_GATE_ENABLED:-1}" != "0" ] && [ -x "$ENCODE_GATE" ]; then
+  ( printf '%s' "$DM_BODY" | bash "$ENCODE_GATE" - >/dev/null 2>&1 || true ) &
+  disown 2>/dev/null || true
+fi
+
 # Phase 3 — cross-officer broadcast on second+ sighting. Each active
 # officer's trigger stream gets one notification telling them to re-read
 # captain-patterns.md. The notify-officer.sh script handles the Redis

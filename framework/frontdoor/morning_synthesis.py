@@ -13,11 +13,89 @@ brain/capture hiccup yields fewer items, never a crash.
 from __future__ import annotations
 
 import datetime
+import json
 import os
+import subprocess
 
 from framework.acting import product_health
 from framework.acting import screenpipe_adapter as sa
 from framework.frontdoor import intake
+
+# Repo root (…/framework/frontdoor/morning_synthesis.py → up 3). Used to locate
+# the dated follow-ups reader without depending on the caller's cwd.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_DUE_FOLLOWUPS_SH = os.path.join(_REPO_ROOT, "cabinet", "scripts", "due-followups.sh")
+
+# ---------------------------------------------------------------------------
+# OPERATIONAL-vs-CAPTAIN routing (2026-06-26, Nate's standing directive).
+# WHY: deploy-health + Sentry error-health are RAW OPERATIONAL/MONITORING signals.
+# Per Nate's repeated correction, every operational/error/monitoring alert routes
+# to the CHAIR (cos) to triage — escalating to Nate ONLY if genuinely necessary —
+# NOT straight onto his phone via the briefing. (This was the live source of the
+# "sentry-step-polads: N unresolved errors in 24h" ping Nate kept flagging — it was
+# the cabinet's OWN front-door synthesis surfacing Sentry, NOT a Sentry-native rule.)
+# So those two sources are delivered as an OFFICER MESSAGE on the Chair's Redis
+# trigger stream `cabinet:triggers:cos` (the same path pipe-health uses + the exact
+# shape cabinet/scripts/lib/triggers.sh::trigger_send writes), and are NO LONGER
+# enqueued into the Nate-bound front-door intake. The genuinely Captain-facing
+# sources (awaiting-reply, owed commitments, dated follow-ups) stay in the intake.
+# The Chair's post-tool-use hook + redis-trigger-channel MCP surface the trigger on
+# its next turn; the Chair triages (gather-then-decide) and escalates only the
+# genuinely-actionable. Reversible: flip _OPERATIONAL_SOURCES back into the intake.
+_OPERATIONAL_SOURCES = {"sentry-health", "deploy-health"}
+_CHAIR_OFFICER = "cos"
+_CHAIR_STREAM = f"cabinet:triggers:{_CHAIR_OFFICER}"
+_CHAIR_GROUP = f"officer-{_CHAIR_OFFICER}"
+
+
+def notify_chair(message: str, *, sender: str = "frontdoor-synthesis") -> bool:
+    """Deliver an OPERATIONAL alert to the Chair (cos) as an officer-stream message.
+
+    Mirrors cabinet/scripts/lib/triggers.sh::trigger_send byte-for-byte so the
+    redis-trigger-channel MCP + the Chair's post-tool-use hook surface it exactly
+    like any officer→officer trigger: idempotent consumer-group create (MKSTREAM on
+    the officer-cos group, NOT intake's frontdoor group), then XADD with the TWO
+    fields trigger_read expects — {sender, message="[<utc>] From <sender>: <msg>"}.
+
+    Implemented as a direct redis-cli subprocess (NOT intake._redis()) for two
+    reasons the backend abstraction can't meet: (1) an officer trigger needs TWO
+    stream fields, but backend.xadd writes only one; (2) the group is officer-cos,
+    not intake's hardcoded 'frontdoor'. This matches pipe-health/check.py::notify_chair
+    exactly (the proven sibling). Best-effort: returns True on enqueue, False
+    otherwise; NEVER raises into the caller (a failed alert must not crash the
+    briefing). REDIS_HOST/REDIS_PORT mirror intake + triggers.sh."""
+    host = os.environ.get("REDIS_HOST", "redis")
+    port = os.environ.get("REDIS_PORT", "6379")
+    ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    payload = f"[{ts}] From {sender}: {message}"
+    try:
+        # Idempotent group create (MKSTREAM) — matches trigger_send; harmless if it
+        # already exists (BUSYGROUP swallowed by the capture).
+        subprocess.run(
+            ["redis-cli", "-h", host, "-p", str(port),
+             "XGROUP", "CREATE", _CHAIR_STREAM, _CHAIR_GROUP, "0", "MKSTREAM"],
+            capture_output=True, text=True, timeout=10)
+        r = subprocess.run(
+            ["redis-cli", "-h", host, "-p", str(port),
+             "XADD", _CHAIR_STREAM, "*", "sender", sender, "message", payload],
+            capture_output=True, text=True, timeout=10)
+        return r.returncode == 0 and bool(r.stdout.strip())
+    except Exception:
+        return False
+
+
+def _operational_summary(items: list[dict]) -> str:
+    """Compose the operational items (sentry/deploy health) into ONE Chair-bound
+    message body. Each item's payload.summary is the human line the source already
+    built (e.g. 'Sentry — sentry-step-polads: 5 unresolved error(s) in 24h — …').
+    A urgency_tier=='ping-now' item is flagged so the Chair can prioritize."""
+    lines = ["OPERATIONAL HEALTH (route: triage + escalate to Nate only if needed):"]
+    for it in items:
+        summary = (it.get("payload") or {}).get("summary") or it.get("source", "?")
+        tier = it.get("urgency_tier", "batch")
+        flag = " [INCIDENT — ping-now]" if tier == "ping-now" else ""
+        lines.append(f"• {summary}{flag}")
+    return "\n".join(lines)
 
 
 def _now_iso() -> str:
@@ -258,34 +336,151 @@ def sentry_health_items(*, org: str | None = None, project: str | None = None,
     }]
 
 
+def _due_followups(script: str | None = None) -> list[dict]:
+    """Run the dated follow-ups reader and return the DUE entries as objects.
+
+    Shells out to ``cabinet/scripts/due-followups.sh --json`` (the single source
+    of the "which entries are ripe" logic — date + status parsing lives THERE,
+    not duplicated here). Returns the parsed JSON array (objects with id /
+    check_from / entry). Best-effort: a missing script, non-zero exit, timeout,
+    or unparseable output → ``[]`` (never raises into the briefing).
+
+    ``script`` overrides the reader path for tests.
+    """
+    sh = script or _DUE_FOLLOWUPS_SH
+    try:
+        out = subprocess.run(
+            [sh, "--json"],
+            capture_output=True, text=True, timeout=20, check=False,
+        )
+    except Exception:
+        return []
+    if out.returncode != 0:
+        return []
+    try:
+        data = json.loads(out.stdout or "[]")
+    except (ValueError, TypeError):
+        return []
+    return data if isinstance(data, list) else []
+
+
+def followup_items(*, due: list[dict] | None = None) -> list[dict]:
+    """Dated follow-ups whose check_from date has arrived → intake items.
+
+    The register (``shared/interfaces/follow-ups.md``) holds dated, gather-then-
+    decide follow-ups. When an entry's ``check_from`` is reached and it's still
+    ``open``, it surfaces here so the briefing's "📌 Follow-ups due" content puts
+    it in front of the Chair. We do NOT decide or nudge: the item carries the
+    entry's own ``gather`` (verify-resolved query) + ``nudge_if`` (open
+    condition) text so the Chair does gather-then-decide per its rule — verify
+    whether it already resolved (brain + email) BEFORE any nudge. A resolved
+    item must stay silent; only a genuinely-open one pings Nate.
+
+    Batch tier (rides the next briefing's decision queue), unless the entry text
+    itself is flagged time-critical (contains ``ping-now``) → ping-now. Each item
+    carries the entry id for provenance and mark-done. Best-effort: reader failure
+    → no items (``due`` is injectable for tests).
+    """
+    if due is None:
+        due = _due_followups()
+
+    items: list[dict] = []
+    for d in due:
+        if not isinstance(d, dict):
+            continue
+        entry = (d.get("entry") or "").strip()
+        if not entry:
+            continue
+        fid = (d.get("id") or "").strip()
+
+        # Pull the human subject = the 4th pipe field (after id | deadline |
+        # check_from). Falls back to the id if the line isn't the expected shape.
+        parts = [p.strip() for p in entry.split("|")]
+        subject = parts[3] if len(parts) > 3 else (fid or entry)
+
+        # The Chair needs the entry's own gather + nudge_if rule inline so the
+        # gather-then-decide is self-contained in the surfaced item. Carry the
+        # FULL entry text in the summary (it already reads as an instruction).
+        summary = f"📌 Follow-up due — {subject} · {entry}"
+
+        # Default batch (rides the next briefing). If the author marked the entry
+        # time-critical, honor it as ping-now.
+        tier = "ping-now" if "ping-now" in entry.lower() else "batch"
+
+        items.append({
+            "source": "follow-up",
+            "kind": "dated-register",
+            "ts": _now_iso(),
+            "urgency_tier": tier,
+            "payload": {"summary": summary},
+            "context": {
+                "why": "dated follow-up reached its check date — gather-then-decide before nudging",
+                "followup_id": fid,
+                "subject": subject,
+            },
+        })
+    return items
+
+
 def gather_items(*, hours: int = 72, limit: int = 6) -> list[dict]:
     """All synthesis items from every real source.
 
     Sources today: awaiting-reply 1:1 threads + time-pressing commitments Nate owes
     (overdue / due-today) + Vercel deploy-health (failed/broken builds) + Sentry
-    error-health (unresolved prod errors). Each is best-effort + quiet when healthy;
-    the composer weaves them into ONE message. PostHog is intentionally NOT wired as
-    an alert source — the configured analytics project carries only pageview traffic,
-    no error signal (see the cos source registry). Calendar stays out (no live feed).
+    error-health (unresolved prod errors) + dated follow-ups whose check_from date
+    has arrived (the "📌 Follow-ups due" content — gather-then-decide rule carried
+    inline). Each is best-effort + quiet when healthy.
+
+    NOTE on routing (done in enqueue_synthesis, not here): the two OPERATIONAL
+    sources (deploy-health, sentry-health — see _OPERATIONAL_SOURCES) are split off
+    to the Chair's trigger stream for triage; only the Captain-facing sources are
+    woven into the briefing the composer sends to Nate. gather_items itself still
+    returns ALL sources (callers/tests that want the raw signal set are unaffected).
+    PostHog is intentionally NOT wired as an alert source — the configured analytics
+    project carries only pageview traffic, no error signal (see the cos source
+    registry). Calendar stays out (no live feed).
     """
     items = awaiting_reply_items(hours=hours, limit=limit)
     items += commitment_items(limit=limit)
     items += deploy_health_items()
     items += sentry_health_items()
+    items += followup_items()
     return items
 
 
 def enqueue_synthesis(*, hours: int = 72, limit: int = 6) -> dict:
-    """Gather real signals and enqueue them to the durable intake.
+    """Gather real signals; route operational ones to the Chair and the rest to the
+    Captain-bound intake.
 
-    Returns {'enqueued': n, 'ids': [...], 'sources': [...]} — never sends.
+    SPLIT ROUTING (2026-06-26, Nate's standing directive — see _OPERATIONAL_SOURCES):
+    operational/monitoring signals (Sentry + deploy health) go to the Chair's trigger
+    stream (cabinet:triggers:cos) for triage via notify_chair() — they are NO LONGER
+    enqueued into the Nate-bound front-door intake. Everything else (awaiting-reply,
+    owed commitments, dated follow-ups) is genuinely Captain-facing and still enqueues
+    to the intake for the composed briefing. Still never sends to Nate directly; the
+    intake's one live send stays in channel.send (allow_sends-gated).
+
+    Returns {'enqueued': n, 'ids': [...], 'sources': [...], 'chair_routed': m,
+    'chair_sources': [...], 'chair_delivered': bool} — 'enqueued' counts ONLY the
+    Captain-bound intake items (back-compat: same meaning as before for those).
     """
     items = gather_items(hours=hours, limit=limit)
-    ids = [intake.enqueue(it) for it in items]
+    operational = [it for it in items if it.get("source") in _OPERATIONAL_SOURCES]
+    captain_items = [it for it in items if it.get("source") not in _OPERATIONAL_SOURCES]
+
+    ids = [intake.enqueue(it) for it in captain_items]
+
+    chair_delivered = True
+    if operational:
+        chair_delivered = notify_chair(_operational_summary(operational))
+
     return {
         "enqueued": len(ids),
         "ids": ids,
-        "sources": sorted({it["source"] for it in items}),
+        "sources": sorted({it["source"] for it in captain_items}),
+        "chair_routed": len(operational),
+        "chair_sources": sorted({it["source"] for it in operational}),
+        "chair_delivered": chair_delivered,
     }
 
 

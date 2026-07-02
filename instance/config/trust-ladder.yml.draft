@@ -1,0 +1,66 @@
+# trust-ladder.yml — STARTER DRAFT (cos-drafted 2026-06-25 from this session's
+# ACTUAL autonomy grants). This is a PROPOSAL — review, tune, and activate:
+#     mv instance/config/trust-ladder.yml.draft instance/config/trust-ladder.yml
+# Then GRANT each rung as it's earned (a one-tap card / trust_rung_granted event).
+# Nothing auto-activates — granting a rung stays YOUR decision (the hard line:
+# the Chair never widens its own authority silently).
+#
+# Rung vocab (low→high): would-like-to (propose) | intend-to (veto-window) |
+#   ive-done (auto-when-proven, reversible) | ive-been-doing (fully graduated).
+# HARD CEILING action_types (external_comms, deploy_prod, spend, secrets,
+# network_write, credentials_grant) are Captain-only forever regardless of rung
+# — enforced in code, never auto-advanced.
+#
+# NOTE: screenpipe-pipe authority is NOT in this ladder — you granted that
+# separately (full authority over pipes, your personal infra). This ladder
+# governs the LANE action_types (the authority matrix's domain).
+
+rungs:
+  # --- PolAds lane --- (this session: I moved tasks/boards; CEOs shipped to staging)
+  - name: ive-done                  # reversible auto, reports after
+    lane: polads
+    grants:
+      - { action_type: task_status_move }   # Monday/Linear status moves
+      - { action_type: board_status }
+      - { action_type: label }
+      - { action_type: tier2_note }
+
+  - name: ive-done                  # staging deploys (CEOs shipped #649/650/651 to staging)
+    lane: polads
+    grants:
+      - { action_type: vercel_deploy_preview }
+      - { action_type: git_push_nonmain }
+    min_samples: 30
+
+  - name: would-like-to             # comms: this session = draft-then-you-approve (queue_draft)
+    lane: polads
+    grants:
+      - { action_type: internal_message }   # Teams/internal DMs
+      - { action_type: internal_email }
+  # external_message (-> external_comms) + prod deploy (-> deploy_prod) are HARD
+  # CEILING: Captain-only forever. NOT listed as grants. This session you
+  # approved every prod ship + every outbound personally — that stays.
+
+  # --- STEPhie lane (same shape, separate climb — trust is per-lane) ---
+  - name: ive-done
+    lane: stephie
+    grants:
+      - { action_type: task_status_move }
+      - { action_type: board_status }
+      - { action_type: label }
+      - { action_type: tier2_note }
+  - name: ive-done
+    lane: stephie
+    grants:
+      - { action_type: vercel_deploy_preview }
+      - { action_type: git_push_nonmain }
+    min_samples: 30
+  - name: would-like-to
+    lane: stephie
+    grants:
+      - { action_type: internal_message }
+      - { action_type: internal_email }
+
+# Even reversible rungs propose first — you grant. Flip a specific rung's
+# auto-advance only when you want it hands-off. Ceiling rungs ignore this.
+auto_grant_nonceiling: false

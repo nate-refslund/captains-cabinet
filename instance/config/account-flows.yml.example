@@ -1,0 +1,54 @@
+# account-flows.yml — recipes for the Chair-driven account-creation flow.
+#
+# Copy to account-flows.yml and tune. See
+# docs/prove-to-earn-expansion-2026-06-25.md §3.
+#
+# A signup is a sequence of steps; exactly one CLASS of step is yours (the
+# credential boundary). The Chair drives a browser (via claude-in-chrome — see
+# the dependency note) filling only the non-credential fields up to that
+# boundary, then STOPS and surfaces a "credential needed" card. You enter the
+# secret in the open tab; reply `done`; the Chair completes the remainder. The
+# Chair NEVER reads, stores, types, or logs the credential.
+#
+# HARD LINE (docs §0): account creation + credential entry is one of the two
+# un-toggleable guards. This config tells the Chair WHERE to stop — it cannot be
+# used to make the Chair enter a credential.
+#
+# DEPENDENCY (genuine residual): the browser-driving steps need the Chair to
+# have `claude-in-chrome` MCP scope, which is NOT granted today. Until it is
+# (itself a Component-1 self-proposal — the Chair surfaces the scope line, you
+# apply it), cabinet/scripts/prepare-account-flow.sh degrades to surfacing the
+# WHOLE signup as a manual step for you.
+
+flows:
+  - service: example-saas
+    signup_url: https://app.example.com/signup
+    # Fields the Chair fills (safe, non-secret). Each is a label the driver
+    # locates on the page. Never put a secret here.
+    chair_fills:
+      - { field: "Full name", value: "Nathaniel Refslund" }
+      - { field: "Organization", value: "STEP Network" }
+      - { field: "Work email", value: "naref@stepnetwork.dk" }
+    # The credential boundary — the field(s) that are YOURS. The Chair stops
+    # here and surfaces "credential needed". It never fills these.
+    captain_supplies:
+      - "Password (choose one)"
+      - "Email verification code (OTP)"
+    # What the Chair does after you signal done (the non-credential remainder).
+    resume_after:
+      - { field: "Team size", value: "10-50" }
+      - { action: "click", target: "Finish setup" }
+    # If the signup costs money, declare it — the WHOLE flow becomes
+    # Captain-gated end to end (spend ceiling), not just the credential step.
+    touches: []          # e.g. [spending] for a paid plan
+
+  # A paid example — note `touches: [spending]` gates the entire flow.
+  - service: example-paid-tool
+    signup_url: https://paid.example.com/start
+    chair_fills:
+      - { field: "Company", value: "STEP Network" }
+    captain_supplies:
+      - "Card details"
+      - "Password"
+    resume_after: []
+    touches: [spending]

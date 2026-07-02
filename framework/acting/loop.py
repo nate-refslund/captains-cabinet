@@ -220,7 +220,8 @@ def outcome_event(proposal_ev: dict, routed: RoutedResponse, *,
     return ev
 
 
-def expire_event(proposal_ev: dict, *, reviewed_at: str | None = None) -> dict:
+def expire_event(proposal_ev: dict, *, reviewed_at: str | None = None,
+                 decided_at: str | None = None) -> dict:
     """The SUPERSEDING event that closes a PENDING proposal as 'expired' — the
     captain's reply carried no draft decision (a policy/instruction-only reply),
     so the draft is never sent and the proposal must not dangle pending forever.
@@ -228,8 +229,18 @@ def expire_event(proposal_ev: dict, *, reviewed_at: str | None = None) -> dict:
     Supersedes on the proposal's identity tuple (actor, action, subject, ts)
     exactly like ``outcome_event`` (dict(proposal_ev) then override). There is
     NO outcome object (nothing shipped); the review verdict is 'unknown' (no
-    proof, no correction — the ladder neither climbs nor records a lesson)."""
-    decided_at = reviewed_at or proposal_ev["ts"]
+    proof, no correction — the ladder neither climbs nor records a lesson).
+
+    ``decided_at`` is the SUPPRESSION clock — ``decided_subjects`` /
+    ``already_handled`` read it to judge "is this inbound newer than the
+    resolution?". For an auto-expired self-reply it MUST be the proposal's own
+    creation ts (when the draft was made), NOT the (possibly hours-later) expiry
+    moment, or a genuinely-new inbound that arrived before the sweep is wrongly
+    judged already-handled and the lane never drafts it (the Kristoffer
+    UAT-TEST-#3 miss). ``reviewed_at`` stays the real audit time of the expiry.
+    When ``decided_at`` is not given it falls back to ``reviewed_at`` then the
+    proposal ts (the prior behavior, preserved for policy/instruction expiries)."""
+    decided_at = decided_at or reviewed_at or proposal_ev["ts"]
     ev = dict(proposal_ev)
     ev["proposal"] = {
         "required": proposal_ev.get("proposal", {}).get("required", False),

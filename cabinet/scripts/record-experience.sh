@@ -6,6 +6,16 @@
 #   outcome: success | failure | partial | escalated
 #   tags: comma-separated, e.g. "git,deployment,migration"
 #
+# Optional (cross-cutting COUNTERFACTUAL-REPLAY, docs/meta-cognition-direction-2026-06-25.md):
+#   COUNTERFACTUAL="<the one change that would have made this 10x better>" record-experience.sh ...
+#   (or pass it as the 7th positional arg). Captured on the record and counted by a
+#   normalized slug in Redis; escalation is REVERSIBILITY-TIERED (see block 1b):
+#     - reversible self-adjustment (CF_REVERSIBLE=1 or a [reversible]/[self-adjust]
+#       tag in the text) → escalates at the 1st occurrence (immediate, compounds);
+#     - default / expensive / irreversible → gates on recurrence (CF_GATE_THRESHOLD,
+#       default 3) — a real wall, not a one-off.
+#   Passing neither signal preserves the prior >= 3 behavior exactly.
+#
 # Example:
 #   record-experience.sh cto success "Fix migration drift" \
 #     "Renumbered 3 colliding migration pairs, ran all migrations, verified 11 tables created" \
@@ -18,6 +28,9 @@ TASK_SUMMARY="${3:?Task summary required}"
 WHAT_HAPPENED="${4:?Description of what happened required}"
 LESSONS="${5:-}"
 TAGS="${6:-}"
+# Optional 7th field via env or positional (non-breaking — existing callers pass
+# at most 6 args): "what ONE change would have made this 10x better?"
+COUNTERFACTUAL="${COUNTERFACTUAL:-${7:-}}"
 
 CABINET_ROOT="${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 
@@ -54,9 +67,96 @@ $WHAT_HAPPENED
 
 ## Lessons Learned
 ${LESSONS:-No specific lessons noted.}
+
+## Counterfactual (one change → 10x)
+${COUNTERFACTUAL:-(none noted)}
 EOF
 
 echo "Written to $RECORD_FILE"
+
+# ============================================================
+# 1b. Counterfactual-replay recurrence → escalation (REVERSIBILITY-TIERED)
+# ============================================================
+# Cross-cutting selector (docs/meta-cognition-direction-2026-06-25.md), now tiered
+# by reversibility instead of a blunt count-for-everything (matches the
+# individual-reflection skill guidance — adapt immediately when reversible, gate
+# when not). We normalize the counterfactual to a slug + INCR a Redis counter;
+# the threshold that triggers a proposal depends on the tier:
+#
+#   * REVERSIBLE tier — the counterfactual is an officer SELF-ADJUSTMENT that is
+#     cheap to make and self-corrects next cycle if wrong (signalled by
+#     CF_REVERSIBLE=1|true|yes OR a [reversible]/[self-adjust] tag in the text):
+#     escalate at the FIRST occurrence. An immediate, reversible self-adjustment
+#     that compounds — no waiting, no Captain spam (the proposal frames it as a
+#     reversible self-adjustment, not a build-this capability gap).
+#   * DEFAULT / IRREVERSIBLE tier — a capability gap that spends Captain attention
+#     or a hard-to-reverse change: keep gating on "reversible + evidenced", i.e.
+#     the recurrence threshold (CF_GATE_THRESHOLD, default 3). RECURRENCE OF THE
+#     SAME wall is the evidence.
+#
+# DEFAULT-PRESERVING: a caller that passes NEITHER a reversibility signal NOR a
+# CF_GATE_THRESHOLD override gets EXACTLY the prior behavior (escalate at >= 3).
+# The live fleet's escalation cadence is therefore UNCHANGED until a caller opts
+# in (marks a counterfactual reversible) or the default threshold is retuned.
+#
+# Host note: uses the same REDIS resolution as the counter reset below
+# (${REDIS_HOST:-localhost}) — the legacy `-h redis` default silently failed on
+# Mac-native (the Docker service name does not resolve), so the counter never
+# incremented and NOTHING ever escalated. localhost resolves on Mac AND Docker
+# exports REDIS_HOST=redis-<slug>, so both are correct.
+if [ -n "$COUNTERFACTUAL" ]; then
+  CF_LIB="$CABINET_ROOT/cabinet/scripts/meta-cognition/lib.sh"
+  CF_REDIS_HOST="${REDIS_HOST:-localhost}"
+  CF_REDIS_PORT="${REDIS_PORT:-6379}"
+
+  # Reversibility tier: explicit env wins; else an inline [reversible]/[self-adjust] tag.
+  CF_TIER="default"
+  case "$(printf '%s' "${CF_REVERSIBLE:-}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|reversible) CF_TIER="reversible" ;;
+  esac
+  if [ "$CF_TIER" = "default" ]; then
+    case "$(printf '%s' "$COUNTERFACTUAL" | tr '[:upper:]' '[:lower:]')" in
+      *'[reversible]'*|*'[self-adjust]'*|*'[self adjust]'*) CF_TIER="reversible" ;;
+    esac
+  fi
+
+  # Threshold: reversible → fire at 1; default/irreversible → CF_GATE_THRESHOLD (default 3).
+  if [ "$CF_TIER" = "reversible" ]; then
+    CF_THRESHOLD=1
+  else
+    CF_THRESHOLD="${CF_GATE_THRESHOLD:-3}"
+  fi
+
+  # Normalized slug: lowercase, alnum-and-space, first 8 salient words.
+  CF_SLUG="$(printf '%s' "$COUNTERFACTUAL" \
+    | tr '[:upper:]' '[:lower:]' \
+    | tr -cs 'a-z0-9 ' ' ' \
+    | tr -s ' ' \
+    | awk '{ for(i=1;i<=NF && i<=8;i++) printf "%s%s", (i>1?"-":""), $i }')"
+  if [ -n "$CF_SLUG" ] && command -v redis-cli >/dev/null 2>&1; then
+    CF_KEY="cabinet:meta:counterfactual:$CF_SLUG"
+    CF_COUNT="$(redis-cli -h "$CF_REDIS_HOST" -p "$CF_REDIS_PORT" INCR "$CF_KEY" 2>/dev/null)"
+    [ "$CF_COUNT" = "1" ] && redis-cli -h "$CF_REDIS_HOST" -p "$CF_REDIS_PORT" EXPIRE "$CF_KEY" 2592000 >/dev/null 2>&1
+    if [ -n "$CF_COUNT" ] && [ "$CF_COUNT" -ge "$CF_THRESHOLD" ] 2>/dev/null && [ -f "$CF_LIB" ]; then
+      if [ "$CF_TIER" = "reversible" ]; then
+        CF_TITLE="Reversible self-adjustment (counterfactual): ${CF_SLUG}"
+        CF_BODY="$(printf '%s\n' \
+          "An officer flagged a CHEAP, REVERSIBLE 'one change would 10x this' — escalated immediately (1st occurrence) because a reversible self-adjustment compounds and self-corrects next cycle if wrong; no need to wait for recurrence." \
+          "Phrasing: ${COUNTERFACTUAL}" \
+          "Proposed: let the officer apply this self-adjustment now and observe next cycle. Captain may APPROVE | EDIT | SKIP — but the bar is low because it is reversible.")"
+      else
+        CF_TITLE="Recurring counterfactual (${CF_COUNT}x) -> capability gap: ${CF_SLUG}"
+        CF_BODY="$(printf '%s\n' \
+          "The same 'one change would 10x this' counterfactual has recurred ${CF_COUNT} times (gate=${CF_THRESHOLD}) across experience records — that is a wall, not a one-off, and the change is expensive / not trivially reversible." \
+          "Latest phrasing: ${COUNTERFACTUAL}" \
+          "Proposed: open a capability-gap (the capability-gap skill, .claude/skills/capability-gap) to build the missing tool/skill/process. Captain decides: APPROVE the gap | EDIT scope | SKIP.")"
+      fi
+      ( . "$CF_LIB" \
+        && mc_emit_proposal counterfactual "$CF_TITLE" "$CF_BODY" "batch-into-next-briefing" >/dev/null 2>&1 || true ) &
+      disown 2>/dev/null || true
+    fi
+  fi
+fi
 
 # ============================================================
 # 2. Insert into PostgreSQL (if available)
@@ -100,8 +200,12 @@ else
   echo "No DATABASE_URL — saved to file only"
 fi
 
-# Reset experience record counters after recording
-REDIS_HOST="${REDIS_HOST:-redis}"
+# Reset experience record counters after recording.
+# Host: localhost resolves on Mac-native AND Docker exports REDIS_HOST=redis-<slug>;
+# the legacy `-h redis` default silently failed on Mac (Docker service name does not
+# resolve), so last-experience never updated and the proactive-work / reflection-gate
+# signals that read it were starved.
+REDIS_HOST="${REDIS_HOST:-localhost}"
 REDIS_PORT="${REDIS_PORT:-6379}"
 OFFICER="${OFFICER_NAME:-unknown}"
 if command -v redis-cli &>/dev/null; then

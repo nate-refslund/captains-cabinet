@@ -84,10 +84,37 @@ if [ -d "$ROLES_DIR" ]; then
   done
 fi
 if [ "${#FULLTIME_OFFICERS[@]}" -eq 0 ]; then
-  # Fallback ONLY when instance/roles/active/ is empty/missing (deployment
-  # not bootstrapped yet): legacy hardcoded functional-four so existing
-  # un-bootstrapped deployments keep watchdog coverage.
-  FULLTIME_OFFICERS=("cos" "cto" "cpo" "coo")
+  # Fallback when instance/roles/active/ is empty/missing (NOT yet seeded by
+  # bootstrap-roles.sh — the case on the hq deployment today). DERIVE from
+  # .claude/agents/*.md (the deployment-resolved roster; this Mac-cron script
+  # has the repo tree). An empty roles dir must NEVER fall through to a phantom
+  # hardcoded set — that was the bug (phantom cto/cpo/coo have no LaunchAgent,
+  # so `launchctl kickstart com.cabinet.officer.<phantom>` fails → false
+  # restart-failure alerts while real officer deaths go unwatched).
+  #
+  # .claude/agents/*.md has no reliable officer_type signal (frontmatter omits
+  # it; bodies are contradictory for lane CEOs), so we cannot fulltime-filter
+  # here. Belt-and-braces instead: this is a RESTARTER, so only include a slug
+  # that actually has an installed LaunchAgent to restart
+  # (com.cabinet.officer.<slug>.plist). That guarantees no phantom is ever
+  # kickstarted regardless of how .claude/agents/ drifts, and every officer
+  # with a persistent agent on this host is fulltime by construction.
+  AGENTS_DIR="$REPO_ROOT/.claude/agents"
+  LA_DIR="$HOME/Library/LaunchAgents"
+  if [ -d "$AGENTS_DIR" ]; then
+    for agent_md in "$AGENTS_DIR"/*.md; do
+      [ -f "$agent_md" ] || continue
+      slug="$(basename "$agent_md" .md)"
+      [ "$slug" = "TEMPLATE" ] && continue
+      # Only restart what has a persistent LaunchAgent (the restart target).
+      if [ -f "$LA_DIR/com.cabinet.officer.$slug.plist" ]; then
+        FULLTIME_OFFICERS+=("$slug")
+      fi
+    done
+  fi
+  if [ "${#FULLTIME_OFFICERS[@]}" -eq 0 ]; then
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) heartbeat-watchdog: no roster from instance/roles/active/ or .claude/agents/ (+installed plists) — nothing to watch this tick" >&2
+  fi
 fi
 
 restart_officer() {

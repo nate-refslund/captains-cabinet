@@ -19,9 +19,12 @@ export TELEGRAM_COS_TOKEN="$(grep '^TELEGRAM_COS_TOKEN=' "$ENV_FILE" | cut -d= -
 export CAPTAIN_TELEGRAM_ID="$(grep '^CAPTAIN_TELEGRAM_ID=' "$ENV_FILE" | cut -d= -f2-)"
 export CABINET_ENV=runtime
 export REDIS_HOST="${REDIS_HOST:-localhost}"
-# Conservative-first (apprenticeship lane): 1 NEW draft per run; dedup skips threads
-# already awaiting a decision. Tune up once proven. Override: DRAFT_LANE_MAX.
-export DRAFT_LANE_MAX="${DRAFT_LANE_MAX:-1}"
+# NEW drafts surfaced per run. The recency-aware dedup (open_proposal_blocks +
+# already_handled) means this caps only GENUINELY-NEW threads — decided/awaiting
+# ones are already filtered out — so a small batch clears a real backlog instead
+# of starving fresh messages one-per-5min behind an arbitrary straggler (the
+# Kristoffer Round-2 symptom). 4 is conservative-but-unblocking. Override: DRAFT_LANE_MAX.
+export DRAFT_LANE_MAX="${DRAFT_LANE_MAX:-4}"
 
 # launchd gives a minimal PATH; Homebrew holds redis-cli + python3.12.
 export PATH="/opt/homebrew/bin:$PATH"

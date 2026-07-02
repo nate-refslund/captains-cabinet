@@ -199,8 +199,166 @@ def test_gather_items_includes_all_sources(monkeypatch):
                         lambda app, **kw: _health(app, failed=1, latest="READY"))
     monkeypatch.setattr(ms.product_health, "sentry_health",
                         lambda o, p, **kw: _sentry([{"title": "E", "events": 9}]))
+    # follow-up reader mocked so the source list is deterministic regardless of
+    # what the real register holds today.
+    monkeypatch.setattr(ms, "_due_followups",
+                        lambda script=None: [{"id": "f1", "check_from": "2000-01-01",
+                                              "entry": "f1 | deadline 2000-01-02 | check_from 2000-01-01 | Subj | gather: g | nudge_if: n | status: open"}])
     monkeypatch.setenv("CABINET_DEPLOY_HEALTH_APPS", "v0-x")
     monkeypatch.setenv("CABINET_SENTRY_ORG", "step")
     monkeypatch.setenv("CABINET_SENTRY_PROJECT", "p")
     sources = sorted({it["source"] for it in ms.gather_items()})
-    assert sources == ["awaiting-reply", "commitment", "deploy-health", "sentry-health"]
+    assert sources == ["awaiting-reply", "commitment", "deploy-health", "follow-up", "sentry-health"]
+
+
+# ── dated follow-ups source (followup_items) ────────────────────────────────
+# _due_followups (the subprocess→reader call) is injectable via the `due=` arg
+# so these never shell out; the reader's own date/status parsing is tested
+# separately by the shell harness.
+
+def _fu(fid, subject, *, status="open", tier_marker=""):
+    """Build a reader-shaped due object (id / check_from / entry)."""
+    rule = "gather: did it resolve? | nudge_if: still open → ping Nate"
+    if tier_marker:
+        rule += f" {tier_marker}"
+    entry = (f"{fid} | deadline 2026-08-07 | check_from 2026-08-04 | "
+             f"{subject} | {rule} | status: {status}")
+    return {"id": fid, "check_from": "2026-08-04", "entry": entry}
+
+
+def test_followup_item_shape_and_rule_inline():
+    items = ms.followup_items(due=[_fu("tv2-dpa", "TV2 — accept the new DPA")])
+    assert len(items) == 1
+    it = items[0]
+    assert it["source"] == "follow-up"
+    assert it["kind"] == "dated-register"
+    assert it["urgency_tier"] == "batch"            # default tier
+    assert it["context"]["followup_id"] == "tv2-dpa"
+    assert it["context"]["subject"] == "TV2 — accept the new DPA"
+    assert it["context"]["why"]
+    s = it["payload"]["summary"]
+    assert "TV2 — accept the new DPA" in s          # subject surfaced
+    assert "gather:" in s and "nudge_if:" in s      # gather-then-decide rule carried inline
+
+
+def test_followup_ping_now_when_marked():
+    items = ms.followup_items(due=[_fu("urgent", "deadline today", tier_marker="ping-now")])
+    assert items[0]["urgency_tier"] == "ping-now"
+
+
+def test_followup_empty_when_nothing_due():
+    assert ms.followup_items(due=[]) == []
+
+
+def test_followup_skips_malformed_entries():
+    # An entry with no text, and a non-dict, are both skipped without crashing.
+    due = [{"id": "x", "entry": ""}, "not-a-dict", _fu("ok", "Real one")]
+    items = ms.followup_items(due=due)
+    assert [i["context"]["followup_id"] for i in items] == ["ok"]
+
+
+def test_due_followups_swallows_subprocess_failure(tmp_path):
+    # The real _due_followups must never raise: a missing/failing reader script
+    # → []. Point it at a nonexistent path (FileNotFoundError inside subprocess).
+    missing = str(tmp_path / "no-such-due-followups.sh")
+    assert ms._due_followups(script=missing) == []
+
+
+def test_due_followups_swallows_bad_json(tmp_path, monkeypatch):
+    # A reader that exits 0 but prints non-JSON → [] (never raises).
+    fake = tmp_path / "fake-reader.sh"
+    fake.write_text("#!/bin/bash\necho 'not json at all'\n")
+    fake.chmod(0o755)
+    assert ms._due_followups(script=str(fake)) == []
+
+
+def test_followup_items_default_reads_register():
+    # No injection → calls the real reader on the real register (live, un-mocked
+    # path). Asserts it returns a list and never raises; if anything IS due today
+    # every item must carry the follow-up source + an id (no brittle exact match
+    # on register contents, which change over time).
+    items = ms.followup_items()
+    assert isinstance(items, list)
+    for it in items:
+        assert it["source"] == "follow-up"
+        assert "followup_id" in it["context"]
+
+
+# ── split routing: operational → Chair, captain-facing → intake (2026-06-26) ──
+# Nate's standing directive: Sentry + deploy health are operational/monitoring
+# noise that must route to the Chair (cabinet:triggers:cos) for triage, NOT into
+# the Nate-bound briefing intake. These lock that split so it can't regress.
+
+def _wire_all_sources(monkeypatch):
+    """Mock every source so gather_items yields one of each (incl. both operational)."""
+    monkeypatch.setattr(ms.sa, "find_threads",
+                        lambda hours=72: [_thread("lisa", "Lisa Stentoft", "a real question")])
+    monkeypatch.setattr(ms.sa, "open_commitments",
+                        lambda direction="owed_by_nate": [_cmt("Kris", "x", "2000-01-01")])
+    monkeypatch.setattr(ms.sa, "deploy_health",
+                        lambda app, **kw: _health(app, failed=1, latest="ERROR"))
+    monkeypatch.setattr(ms.product_health, "sentry_health",
+                        lambda o, p, **kw: _sentry([{"title": "E", "events": 9}]))
+    monkeypatch.setattr(ms, "_due_followups",
+                        lambda script=None: [{"id": "f1", "check_from": "2000-01-01",
+                                              "entry": "f1 | deadline 2000-01-02 | check_from 2000-01-01 | Subj | gather: g | nudge_if: n | status: open"}])
+    monkeypatch.setenv("CABINET_DEPLOY_HEALTH_APPS", "v0-x")
+    monkeypatch.setenv("CABINET_SENTRY_ORG", "step")
+    monkeypatch.setenv("CABINET_SENTRY_PROJECT", "p")
+
+
+def test_enqueue_splits_operational_to_chair(monkeypatch):
+    _wire_all_sources(monkeypatch)
+    enqueued, chair_msgs = [], []
+    monkeypatch.setattr(ms.intake, "enqueue", lambda it: (enqueued.append(it), "id-x")[1])
+    monkeypatch.setattr(ms, "notify_chair", lambda msg, **kw: (chair_msgs.append(msg), True)[1])
+
+    res = ms.enqueue_synthesis()
+
+    # Captain-bound intake gets ONLY the captain-facing sources — never the operational ones.
+    intake_sources = sorted({it["source"] for it in enqueued})
+    assert intake_sources == ["awaiting-reply", "commitment", "follow-up"]
+    assert "sentry-health" not in intake_sources and "deploy-health" not in intake_sources
+
+    # The Chair got exactly ONE composed operational message, naming both signals.
+    assert len(chair_msgs) == 1
+    assert "OPERATIONAL HEALTH" in chair_msgs[0]
+    assert "Sentry" in chair_msgs[0]            # the sentry summary line
+    assert "v0-x" in chair_msgs[0]              # the deploy-health summary names the app
+
+    # The return contract reports the split.
+    assert res["enqueued"] == 3
+    assert res["sources"] == ["awaiting-reply", "commitment", "follow-up"]
+    assert res["chair_routed"] == 2
+    assert res["chair_sources"] == ["deploy-health", "sentry-health"]
+    assert res["chair_delivered"] is True
+
+
+def test_enqueue_no_chair_message_when_no_operational(monkeypatch):
+    # Only captain-facing sources present → the Chair is NOT pinged at all.
+    monkeypatch.setattr(ms.sa, "find_threads",
+                        lambda hours=72: [_thread("lisa", "Lisa Stentoft", "a real question")])
+    monkeypatch.setattr(ms.sa, "open_commitments", lambda direction="owed_by_nate": [])
+    monkeypatch.setattr(ms.sa, "deploy_health", lambda app, **kw: _health(app, failed=0, latest="READY"))
+    monkeypatch.setattr(ms.product_health, "sentry_health", lambda o, p, **kw: _sentry([]))
+    monkeypatch.setattr(ms, "_due_followups", lambda script=None: [])
+    monkeypatch.setenv("CABINET_DEPLOY_HEALTH_APPS", "v0-x")
+    monkeypatch.setenv("CABINET_SENTRY_ORG", "step")
+    monkeypatch.setenv("CABINET_SENTRY_PROJECT", "p")
+
+    enqueued, chair_calls = [], []
+    monkeypatch.setattr(ms.intake, "enqueue", lambda it: (enqueued.append(it), "id-x")[1])
+    monkeypatch.setattr(ms, "notify_chair", lambda msg, **kw: (chair_calls.append(msg), True)[1])
+
+    res = ms.enqueue_synthesis()
+    assert chair_calls == []                    # Chair untouched when nothing operational
+    assert res["chair_routed"] == 0
+    assert res["enqueued"] == 1                 # just the awaiting-reply item
+
+
+def test_notify_chair_never_raises(monkeypatch):
+    # A redis-cli explosion must degrade to False, never bubble into the briefing.
+    def boom(*a, **k):
+        raise RuntimeError("redis down")
+    monkeypatch.setattr(ms.subprocess, "run", boom)
+    assert ms.notify_chair("anything") is False

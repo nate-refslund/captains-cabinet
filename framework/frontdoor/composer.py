@@ -100,7 +100,26 @@ def _ts_key(item: dict[str, Any]) -> str:
     return str(item.get("ts") or "")
 
 
-def compose(items: list[dict[str, Any]], *, now: str | None = None) -> str:
+def _grouped_summary(tier: str, hidden: list[dict[str, Any]]) -> str:
+    """One roll-up line for the items capped out of a tier, grouped by source.
+
+    Keeps the briefing a TIGHT digest instead of a wall: when a tier has more
+    items than the cap, the overflow is summarized as e.g.
+    ``…and 9 more (6 awaiting-reply, 3 commitment) — see /tasks``. Counting by
+    source preserves the signal (what KIND of thing is waiting) without dumping
+    every line. Deterministic: sources listed by descending count, then name.
+    """
+    by_source: dict[str, int] = {}
+    for it in hidden:
+        src = str(it.get("source") or "other").strip() or "other"
+        by_source[src] = by_source.get(src, 0) + 1
+    parts = sorted(by_source.items(), key=lambda kv: (-kv[1], kv[0]))
+    breakdown = ", ".join(f"{n} {src}" for src, n in parts)
+    return f"• …and {len(hidden)} more ({breakdown})"
+
+
+def compose(items: list[dict[str, Any]], *, now: str | None = None,
+            max_per_tier: int | None = None) -> str:
     """Render a list of intake items into ONE unified captain-facing message.
 
     Deterministic: tiers ordered ping-now > batch > fyi; items within a tier
@@ -108,6 +127,14 @@ def compose(items: list[dict[str, Any]], *, now: str | None = None) -> str:
     forward_judge-passing items are surfaced (conservative: all, today). Tier
     sections with no surviving items are omitted (no empty headers). Returns ''
     for an empty result so the Chair can decide not to send.
+
+    ``max_per_tier`` caps how many item lines each tier renders so the briefing
+    stays a TIGHT digest, not a wall (the 2026-06-29 failure: a 77-item backlog
+    rendered in full). When a tier exceeds the cap, the most RECENT ``max_per_tier``
+    items (by ts) are shown in full and the remainder folds into ONE roll-up line
+    counting the overflow by source. ``None`` (the default) means NO cap —
+    identical to prior behavior, so existing callers/tests are unaffected.
+    ping-now is never capped (an active incident must always show in full).
 
     ``now`` is accepted for interface symmetry / future relative-time rendering
     but is not required for the deterministic core — passing it does not change
@@ -126,7 +153,17 @@ def compose(items: list[dict[str, Any]], *, now: str | None = None) -> str:
             continue
         ordered = sorted(bucket, key=_ts_key)
         lines = [_TIER_LABELS[tier]]
-        lines.extend(render_item(it) for it in ordered)
+        # Cap non-ping-now tiers to keep the digest tight. ping-now is exempt —
+        # an active incident always shows in full. With a cap, show the most
+        # RECENT items (tail of the ts-ascending order) and roll up the rest.
+        if (max_per_tier is not None and tier != "ping-now"
+                and len(ordered) > max_per_tier):
+            shown = ordered[-max_per_tier:]
+            hidden = ordered[:-max_per_tier]
+            lines.extend(render_item(it) for it in shown)
+            lines.append(_grouped_summary(tier, hidden))
+        else:
+            lines.extend(render_item(it) for it in ordered)
         sections.append("\n".join(lines))
 
     return "\n\n".join(sections)
