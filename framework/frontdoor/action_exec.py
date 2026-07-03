@@ -74,8 +74,18 @@ def _monday_post(query: str, variables: dict) -> dict:
     return out.get("data") or {}
 
 
+# The Monday Tasks board in Nate's AI Workspace — the default landing board for
+# lane-created tasks. A proposal's free-text board_hint routes here unless it
+# carries an explicit numeric board_id (env ACTION_LANE_DEFAULT_BOARD overrides).
+DEFAULT_TASKS_BOARD = "5091706356"
+
+
 def _exec_monday_create(payload: dict, monday_post: Callable) -> dict:
-    board = str(payload.get("board_id") or payload.get("board_hint") or "").strip()
+    board = str(payload.get("board_id") or "").strip()
+    if not board.isdigit():
+        # free-text hints ("commitments", "polads") land on the default Tasks
+        # board — the LLM cannot know board ids and must not have to
+        board = os.environ.get("ACTION_LANE_DEFAULT_BOARD", DEFAULT_TASKS_BOARD)
     title = (payload.get("title") or "").strip()
     if not board.isdigit():
         raise RuntimeError(f"monday_task_create needs a numeric board_id (got {board!r})")
@@ -150,6 +160,7 @@ def _exec_reminder(payload: dict, osascript: Callable) -> dict:
         'set remNotes to item 3 of argv\n'
         'set dueIso to item 4 of argv\n'
         'tell application "Reminders"\n'
+        ' if not (exists (first list whose name is listName)) then set listName to "Screenpipe Work"\n'
         ' set theList to first list whose name is listName\n'
         ' set props to {name:remTitle}\n'
         ' if remNotes is not "" then set props to props & {body:remNotes}\n'

@@ -98,6 +98,20 @@ def test_edit_defers_never_executes():
     assert spy.calls == []                         # nothing executed
 
 
+def test_free_text_board_hint_lands_on_default_board():
+    """The LLM proposes board_hint free text; execution resolves it to the
+    default Tasks board instead of failing the Captain's approve."""
+    spy = MondaySpy()
+    r = ax.deliver_action(
+        "pid7", redis_get=_store([{"kind": "monday_task_create",
+                                   "payload": {"board_hint": "commitments",
+                                               "title": "t"}}]),
+        monday_post=spy, osascript=lambda c: "ok")
+    assert r["ok"] is True
+    _, variables = spy.calls[0]
+    assert variables["board"] == ax.DEFAULT_TASKS_BOARD
+
+
 def test_missing_record_and_dry_run():
     assert ax.deliver_action("gone", redis_get=lambda k: "")["ok"] is False
     r = ax.deliver_action(
