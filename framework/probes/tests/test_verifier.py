@@ -90,7 +90,8 @@ def test_verify_emits_schema_valid_confirmed_with_markers():
     assert r["emitted"][0]["verdict"] == "confirmed"
     ev = emitted[0]
     validate_consequence(ev)
-    assert ev["review"] == {"verdict": "confirmed", "reviewed_at": "2026-07-03T04:00:00Z"}
+    assert ev["review"] == {"verdict": "confirmed", "source": "verdict_judge",
+                            "reviewed_at": "2026-07-03T04:00:00Z"}
     assert "verdict-source:verdict_judge" in ev["refs"]
     assert "verdict-kind:confirmed" in ev["refs"]
     assert c.cid_from_refs(ev["refs"]) == cid          # join preserved

@@ -142,7 +142,13 @@ def build_case_scored(case_score: Any, officer: str, lane: str,
         "refs": [case_score.case_id],
         "proposal": {"required": False},
         "outcome": {"status": "ok", "evidence": evidence},
-        "review": {"verdict": review_verdict},
+        # source=verdict_judge (flavor-A split 2026-07-03): a harness-scored
+        # case is a MACHINE judgment against historical ground truth — it makes
+        # fidelity measurable and its `wrong` can hold/demote, but it can never
+        # fuel promotion. Promotion fuel is verdict_human only (live Captain
+        # replies via loop.outcome_event). This supersedes the Jun-18 intent of
+        # feeding the bar's confirmed channel from scored cases.
+        "review": {"verdict": review_verdict, "source": "verdict_judge"},
         "decision_verdict": decision_verdict,
         "intent_verdict": intent_verdict,
         "intent_composite": intent_composite,

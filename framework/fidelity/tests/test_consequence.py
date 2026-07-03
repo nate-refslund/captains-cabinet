@@ -417,7 +417,9 @@ class TestComputeRatios:
                        "evidence": None if status == "unknown" else "ev"}
         review = None
         if verdict is not None:
-            review = {"verdict": verdict}
+            # human-decided fixture rows (flavor-A split 2026-07-03): only
+            # verdict_human confirms count toward review_confirmed_rate
+            review = {"verdict": verdict, "source": "verdict_human"}
         emit_consequence(
             ts=ts, actor=actor, lane=lane, action=action, subject=subject,
             action_type=action_type,
@@ -455,6 +457,32 @@ class TestComputeRatios:
         cell = compute_ratios()[("officer:cos", "polads", "internal_message")]
         assert cell.outcome_held_rate == 0.75
         assert cell.ok == 3 and cell.failed == 1
+
+    def test_flavor_a_split_judge_confirms_never_promote(self, event_log_dir):
+        """Flavor-A CI pin (2026-07-03): promotion fuel (cell.confirmed) counts
+        verdict_human ONLY. A judge/machine confirmed contributes nothing; a
+        judge wrong still demotes; an unattributed legacy confirmed is
+        fail-closed excluded."""
+        def emit(subject, verdict, source):
+            review = {"verdict": verdict}
+            if source is not None:
+                review["source"] = source
+            emit_consequence(
+                ts="2026-06-18T08:00:00+00:00",
+                actor={"kind": "officer", "id": "cos"}, lane="polads",
+                action=f"act-{subject}", subject=subject,
+                action_type="internal_message",
+                proposal={"required": True, "decision": "approved",
+                          "decided_at": "2026-06-18T08:05:00+00:00"},
+                outcome={"status": "ok", "evidence": "ev"}, review=review)
+        emit("h1", "confirmed", "verdict_human")   # counts
+        emit("j1", "confirmed", "verdict_judge")   # promotion-inert
+        emit("l1", "confirmed", None)              # legacy/unattributed: inert
+        emit("j2", "wrong", "verdict_judge")       # machine wrong DOES demote
+        cell = compute_ratios()[("officer:cos", "polads", "internal_message")]
+        assert cell.confirmed == 1                 # only the human confirm
+        assert cell.wrong == 1                     # judge wrong counted
+        assert cell.review_confirmed_rate == 0.5
 
     def test_review_confirmed_rate(self, event_log_dir):
         # 1 confirmed, 1 wrong, 1 unknown → 1/2 = 0.5

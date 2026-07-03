@@ -188,7 +188,11 @@ def verify(
             continue
 
         ev = dict(prop)
-        ev["review"] = {"verdict": result["verdict"]}   # lesson_ref absent (minted downstream)
+        # source=verdict_judge at the SCHEMA level (not just refs meta): the
+        # flavor-A promotion split reads review.source, so a machine confirmed
+        # is structurally incapable of fueling promotion (it may hold/demote).
+        ev["review"] = {"verdict": result["verdict"],   # lesson_ref absent (minted downstream)
+                        "source": VERDICT_SOURCE}
         if reviewed_at:
             ev["review"]["reviewed_at"] = reviewed_at
         meta = [f"verdict-source:{VERDICT_SOURCE}", f"verdict-kind:{result['kind']}"]

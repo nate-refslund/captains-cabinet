@@ -66,10 +66,15 @@ def _emit(
     action_type: str = "internal_message",
     refs=None,
 ):
-    """Emit one fully-decided consequence row into the tmp ledger."""
+    """Emit one fully-decided consequence row into the tmp ledger.
+
+    Fixtures simulate HUMAN-decided rows, so review carries
+    source=verdict_human — required since the flavor-A promotion split
+    (2026-07-03): an unattributed confirmed no longer fuels promotion."""
     actor = actor or {"kind": "officer", "id": "cos"}
     outcome = {"status": status, "evidence": None if status == "unknown" else "ev"}
-    review = {"verdict": verdict} if verdict is not None else None
+    review = ({"verdict": verdict, "source": "verdict_human"}
+              if verdict is not None else None)
     emit_consequence(
         ts=ts,
         actor=actor,

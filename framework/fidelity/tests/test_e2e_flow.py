@@ -347,7 +347,8 @@ class TestEmitLedgerRatiosGraduation:
         assert cell.intent_aligned == 1
         assert cell.intent_divergent == 0
         assert cell.intent_match_rate == 1.0
-        assert cell.review_confirmed_rate == 1.0  # no longer forever-None
+        assert cell.confirmed == 0                # judge confirmed ≠ promotion fuel
+        assert cell.review_confirmed_rate is None  # flavor-A: human-only channel
 
         # 7. graduation returns a SANE fail-safe state on this thin synthetic
         #    data — proven-but-not-graduated (one sample is far below any bar).

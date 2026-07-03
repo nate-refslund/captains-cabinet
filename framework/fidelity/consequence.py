@@ -91,7 +91,14 @@ _ROOT_REQUIRED = ("ts", "actor", "lane", "action", "subject")
 _ACTOR_KEYS = {"kind", "id"}
 _PROPOSAL_KEYS = {"required", "decision", "decided_at"}
 _OUTCOME_KEYS = {"status", "evidence"}
-_REVIEW_KEYS = {"verdict", "reviewed_at", "lesson_ref"}
+_REVIEW_KEYS = {"verdict", "reviewed_at", "lesson_ref", "source"}
+# review.source — WHO judged (flavor-A promotion split, 2026-07-03): only
+# verdict_human confirms fuel promotion; verdict_judge (machine/LLM) and any
+# other source can only hold or demote. "system" = non-judgment closures
+# (auto-expiry / policy-only replies). Absent = legacy/unattributed — treated
+# as NOT human by compute_ratios (fail-closed: an unattributed confirm can
+# never fuel promotion).
+_REVIEW_SOURCES = {"verdict_human", "verdict_judge", "system"}
 
 
 def _reject_extra(obj: dict[str, Any], allowed: set[str], where: str) -> None:
@@ -253,6 +260,10 @@ def validate_consequence(event: dict[str, Any]) -> None:
         if rev["verdict"] not in _REVIEW_VERDICTS:
             raise ConsequenceValidationError(
                 f"review.verdict must be one of {sorted(_REVIEW_VERDICTS)}"
+            )
+        if "source" in rev and rev["source"] not in _REVIEW_SOURCES:
+            raise ConsequenceValidationError(
+                f"review.source must be one of {sorted(_REVIEW_SOURCES)}"
             )
 
     _validate_invariants(event)
@@ -631,8 +642,15 @@ def compute_ratios(
         elif status == "failed":
             cell.failed += 1
 
-        verdict = (ev.get("review") or {}).get("verdict")
-        if verdict == "confirmed":
+        # Flavor-A promotion split (2026-07-03): `confirmed` — the promotion
+        # fuel — counts ONLY when a HUMAN judged it (review.source ==
+        # "verdict_human"). A machine/LLM verdict (verdict_judge) or an
+        # unattributed legacy row can never fuel promotion (fail-closed).
+        # `wrong` counts from ANY source — machine evidence may demote/hold,
+        # never promote. This asymmetry is the flavor-A contract.
+        review = ev.get("review") or {}
+        verdict = review.get("verdict")
+        if verdict == "confirmed" and review.get("source") == "verdict_human":
             cell.confirmed += 1
         elif verdict == "wrong":
             cell.wrong += 1

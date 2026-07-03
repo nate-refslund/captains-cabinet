@@ -144,7 +144,7 @@ class TestSchemaIntentFields:
             action_type="internal_message",
             decision_verdict="divergent", intent_verdict="intent-aligned",
             intent_composite=1.0, endorsement="unknown",
-            review={"verdict": "confirmed"},
+            review={"verdict": "confirmed", "source": "verdict_human"},
         )
         events = read_ledger()
         assert len(events) == 1
@@ -238,16 +238,19 @@ class TestBuildCaseScored:
 
     def test_emit_case_scored_review_confirmed_rate_now_measurable(
             self, event_log_dir):
-        # The whole point of T3: an intent-aligned scored case yields a
-        # review.verdict=confirmed event, so review_confirmed_rate is no longer
-        # forever-None (the unmeasured trap) for the scored cell.
+        # T3 x flavor-A (2026-07-03): an intent-aligned scored case emits
+        # review.verdict=confirmed with source=verdict_judge — the intent axis
+        # becomes measurable, but a JUDGE confirmed is NOT promotion fuel, so
+        # cell.confirmed stays 0 (review_confirmed_rate None from judge rows).
+        # A judge 'wrong' (divergent case) DOES count — machines may demote.
         fidelity_events.emit_case_scored(
             _case_score(intent_verdict="intent-aligned"),
             officer="cos", lane="polads", action_type="internal_message",
             endorsement="unknown")
         cell = compute_ratios()[("officer:cos", "polads", "internal_message")]
-        assert cell.review_confirmed_rate == 1.0
-        assert cell.confirmed == 1 and cell.wrong == 0
+        assert cell.intent_match_rate == 1.0          # measurable intent axis
+        assert cell.confirmed == 0 and cell.wrong == 0  # zero promotion fuel
+        assert cell.review_confirmed_rate is None
 
 
 # --------------------------------------------------------------------------
@@ -259,7 +262,7 @@ class TestIntentMatchRate:
                      action_type="internal_message"):
         review = {"verdict": "unknown"}
         if intent_verdict == "intent-aligned":
-            review = {"verdict": "confirmed"}
+            review = {"verdict": "confirmed", "source": "verdict_human"}
         elif intent_verdict == "intent-divergent":
             review = {"verdict": "wrong"}
         emit_consequence(

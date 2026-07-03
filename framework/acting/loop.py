@@ -208,7 +208,10 @@ def outcome_event(proposal_ev: dict, routed: RoutedResponse, *,
     ev["outcome"] = {"status": m["status"]}
     if m["status"] in ("ok", "failed"):   # ledger requires evidence for these
         ev["outcome"]["evidence"] = evidence or m.get("evidence") or "recorded"
-    ev["review"] = {"verdict": m["verdict"]}
+    # source=verdict_human: outcome_event is reachable ONLY from a routed
+    # Captain reply — the stamp that lets flavor-A promotion math count it
+    # (machine verdicts stamp verdict_judge and can never fuel promotion).
+    ev["review"] = {"verdict": m["verdict"], "source": "verdict_human"}
     if reviewed_at:
         ev["review"]["reviewed_at"] = reviewed_at
     # FIX D: the ledger rejects lesson_ref on confirmed/unknown — only attach it
@@ -247,7 +250,11 @@ def expire_event(proposal_ev: dict, *, reviewed_at: str | None = None,
         "decision": "expired",
         "decided_at": decided_at,
     }
-    ev["review"] = {"verdict": "unknown"}
+    # source=system: an expiry is a CLOSURE, not a judgment — nobody reviewed
+    # the draft (auto-expiry sweep, or a policy/instruction-only reply). The
+    # unknown verdict is never scored, but the source keeps the row honestly
+    # non-human so it can never be mistaken for label supply.
+    ev["review"] = {"verdict": "unknown", "source": "system"}
     if reviewed_at:
         ev["review"]["reviewed_at"] = reviewed_at
     validate_consequence(ev)
