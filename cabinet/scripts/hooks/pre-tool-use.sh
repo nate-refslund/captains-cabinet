@@ -35,16 +35,42 @@ else
 fi
 
 # ============================================================
-# 0. TYPED POLICY SHADOW (Outcome-to-OVI branch)
+# 0. TYPED POLICY ENGINE (shadow, or ENFORCING behind the Captain flip)
 # ============================================================
-# Shadow-only: policy-shadow.py observes the same hook input and records a
-# structured decision to org_events for parity analysis. It NEVER replaces this
-# hook's live allow/block decisions on this branch, and any failure here is
-# intentionally ignored so the safety hook cannot be bricked by telemetry.
+# policy-shadow.py evaluates the same hook input through the typed policy
+# engine and emits {"decision": allow|block, "reason": ...} while recording to
+# org_events for parity analysis.
+#
+# CAPTAIN FLIP (2026-07-03, "flip it" — parity proof v2: 100% covered-rule
+# agreement, 0 fail-open, 0 fail-safe): when enforcement is ON — env
+# CABINET_AUTHORITY_ENFORCING=1 OR the flag file
+# instance/config/authority-enforcing exists (file flag = instant flip/revert
+# for every live session, no restarts; revert = rm the file) — a typed "block"
+# verdict exits 2 with the engine's reason.
+#
+# FAIL-OPEN TO THE PROVEN FLOOR: any wrapper failure (python error, empty or
+# unparseable output) falls through to the bash rules below, which per the
+# parity proof enforce a superset of the typed engine's stateless coverage —
+# so this path can never be bricked by telemetry and never widens allowed
+# behavior. The three STATEFUL attestation gates (Layer-1 push/merge review,
+# CI-green, gh-api branch-delete) and all legacy bash rules remain untouched
+# and still run after this section.
 CABINET_ROOT="${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
 POLICY_SHADOW="$CABINET_ROOT/cabinet/scripts/policy-shadow.py"
 if [ -x "$POLICY_SHADOW" ]; then
-  printf '%s' "$HOOK_INPUT" | python3 "$POLICY_SHADOW" >/dev/null 2>/dev/null || true
+  if [ "${CABINET_AUTHORITY_ENFORCING:-0}" = "1" ] \
+     || [ -f "$CABINET_ROOT/instance/config/authority-enforcing" ]; then
+    PS_OUT=$(printf '%s' "$HOOK_INPUT" | python3 "$POLICY_SHADOW" 2>/dev/null || true)
+    PS_DEC=$(printf '%s' "$PS_OUT" | jq -r '.decision // empty' 2>/dev/null)
+    if [ "$PS_DEC" = "block" ]; then
+      PS_REASON=$(printf '%s' "$PS_OUT" | jq -r '.reason // "typed policy"' 2>/dev/null)
+      echo "TYPED POLICY BLOCK — $PS_REASON (authority-enforcing; revert: rm instance/config/authority-enforcing)" >&2
+      exit 2
+    fi
+    # non-block or wrapper failure → fall through to the bash floor below
+  else
+    printf '%s' "$HOOK_INPUT" | python3 "$POLICY_SHADOW" >/dev/null 2>/dev/null || true
+  fi
 fi
 
 # ============================================================
