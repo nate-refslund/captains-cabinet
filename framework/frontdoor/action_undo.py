@@ -1,0 +1,712 @@
+"""UNDO-1 — write-ahead undo journal + deterministic inverse executors.
+
+The reversal half of the action executor (the 2026-07-04 trust-inversion pivot,
+grand-plan §1 + impl-plan §1.1). ``action_exec.deliver_action`` writes a
+WRITE-AHEAD journal row for every acted step BEFORE the mutating call, enriches
+it with the created ids after, and drops a Redis pointer as an index. This
+module owns that journal and the deterministic inverse ops that turn a landed
+action back into a no-op — so any acted card carries a 48h undo handle and, when
+the flip lands, an ``undo`` reply reverses the artifact and mints the estate's
+first negative labels.
+
+Doctrine baked in here (safety-spine §3 "undo honesty"):
+  - WRITE-AHEAD, DURABLE: the journal is an append-only JSONL on disk (the
+    ``consequence.py`` daily-rotated pattern); Redis is never the sole copy
+    (CRIT-4). The pointer is an index; the file is the durable truth.
+  - COMPARE-AND-RESTORE for board_status [RT-A11]: a column is restored only if
+    its CURRENT value still equals what the lane wrote — otherwise a colleague
+    edited it since and we DEAD-LETTER + tell, never clobber.
+  - ARCHIVE, NEVER DELETE: a lane-created Monday item is reversed with
+    ``archive_item`` (30-day trash), never ``delete_item``.
+  - PER-ROW INVERSE FROM THE ACTUAL BACKEND [RT-B11]: the ``apple_reminders``
+    reminder backend has no reliable inverse and is EXCLUDED from act-first v1
+    (op ``none``); the calendar backend is the reversible one (delete-by-UID).
+  - NO LLM anywhere in the reversal path — deterministic code only.
+
+Stdlib-only, importable under system Python 3.9.6 (``from __future__`` +
+Optional annotations, no runtime ``X | Y`` unions). All subprocess calls are
+arg-lists; credentials are never touched here (reversal transports are injected
+or resolved lazily from the executor's loaders). Fully unit-testable: every
+external effect (Monday / AppleScript / Redis) is an injected callable.
+"""
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import uuid
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional
+
+from framework.authority.classifier import ACTION_TYPES
+from framework.fidelity.consequence import validate_consequence
+
+# --- constants ---------------------------------------------------------------
+
+# The 48h undo window every receipt advertises (grand-plan §1). The Redis
+# pointer outlives it (9d) so a late undo still finds its index; the journal
+# row's ttl_expires_at is the 48h survival clock the TTL sweep (UNDO-3) reads.
+UNDO_WINDOW_H = 48
+# Pointer TTL: 9 days = 48h window + late-undo grace, and it outlives the 7d
+# ``cabinet:action:<pid>`` record. Redis is only ever the INDEX (never the sole
+# copy — the JSONL is durable), so a lapsed pointer degrades to a journal scan.
+POINTER_TTL_S = 777600
+# Journal retention floor; the GC (UNDO-3, a later wave) prunes older files.
+JOURNAL_RETENTION_D = 30
+
+# Backends with no reliable inverse — EXCLUDED from act-first v1 [RT-B11]. The
+# Apple Reminders surface cannot be deterministically reversed (no stable
+# per-item handle we control end-to-end), so its rows journal op ``none`` and
+# ``act_first_eligible`` returns False. Such cards execute ONLY when the Captain
+# approves them on the binder — they never act unattended.
+ACT_FIRST_EXCLUDED_BACKENDS = frozenset({"apple_reminders"})
+
+_ROW_STATUSES = frozenset({"executed", "reversed", "reversal_failed", "void"})
+
+# step-kind -> classifier action_type, GUARDED: a mapping is stamped only when
+# its target already exists in classifier.ACTION_TYPES. task_create /
+# calendar_event_create / officer_dispatch are added at the germline moments
+# (Moment 1/2) — until then those kinds journal action_type=None (unstamped),
+# exactly like action_lane.chain_action_type leads the amendment safely.
+_KIND_ACTION_TYPE = {
+    "monday_task_create": "task_create",
+    "monday_task_update": "board_status",
+    "reminder_create": "calendar_event_create",
+    "delegate_work": "officer_dispatch",
+}
+_ACTION_TYPES_SET = frozenset(ACTION_TYPES)
+
+
+class UndoJournalError(ValueError):
+    """Raised when a journal row is malformed (fail before any write)."""
+
+
+# --- time / id helpers -------------------------------------------------------
+
+def _now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _iso_plus(ts: str, *, hours: int) -> str:
+    try:
+        base = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except (ValueError, TypeError):
+        base = datetime.now(timezone.utc)
+    return (base + timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _mint() -> str:
+    """A fresh opaque journal id (uuid4 hex) — the write-ahead row and its
+    post-mutation enrichment share this id so last-write-wins collapses them."""
+    return uuid.uuid4().hex
+
+
+def action_type_for(kind: Optional[str]) -> Optional[str]:
+    """The classifier action_type a step kind stamps, or None. GUARDED: only a
+    real ACTION_TYPES enum member is ever returned, so an unapplied germline
+    type never reaches the ledger (mirrors action_lane.chain_action_type)."""
+    at = _KIND_ACTION_TYPE.get(kind or "")
+    return at if (at and at in _ACTION_TYPES_SET) else None
+
+
+# --- journal store (durable, append-only JSONL) ------------------------------
+
+def _undo_dir() -> Path:
+    """The undo-journal directory. CABINET_UNDO_DIR overrides (tests point it at
+    a tmp dir); default is the durable per-user location (NOT /tmp, which is
+    wiped) — same override discipline as consequence.py's CABINET_EVENT_LOG_DIR."""
+    return Path(os.environ.get(
+        "CABINET_UNDO_DIR",
+        os.path.expanduser("~/Library/Application Support/cabinet/undo"),
+    ))
+
+
+def _ensure_dir(d: Path) -> None:
+    d.mkdir(parents=True, exist_ok=True)
+    try:                                    # 0700 — the journal holds prestate
+        os.chmod(d, 0o700)                  # content that never leaves the box
+    except OSError:
+        pass
+
+
+def _journal_file(base: Path) -> Path:
+    # Fixed, non-user-controlled basename: the only variable part is a
+    # strftime('%Y-%m-%d') date (digits + hyphens), so no caller input can
+    # traverse out (Corridor path-safety, mirrors consequence.py:_write_to_log).
+    return base / ("undo-journal-"
+                   + datetime.now(timezone.utc).strftime("%Y-%m-%d") + ".jsonl")
+
+
+def _safe_journal_files(log_dir: Path) -> List[Path]:
+    """The undo-journal-*.jsonl files that genuinely live under the resolved
+    dir — a symlink planted in the dir pointing outside is skipped, never
+    followed (mirrors consequence.py:_safe_ledger_files)."""
+    base = log_dir.resolve()
+    safe: List[Path] = []
+    for f in sorted(log_dir.glob("undo-journal-*.jsonl")):
+        try:
+            real = f.resolve()
+        except OSError:
+            continue
+        if real == base or base in real.parents:
+            safe.append(f)
+    return safe
+
+
+def new_row(*, pid: str, cid: str, step: int, kind: str, backend: str,
+            lane: Optional[str], subject: str, actor: Optional[dict],
+            prestate: Optional[dict] = None, created: Optional[dict] = None,
+            inverse: Optional[dict] = None, executed_at: Optional[str] = None,
+            status: str = "executed", canary: bool = False,
+            jid: Optional[str] = None, now: Optional[str] = None) -> Dict[str, Any]:
+    """Build a journal row. ``prestate`` CONTENT lives ONLY here, never on the
+    consequence ledger (the ledger stays lifecycle-only). ``created`` is empty
+    on the write-ahead row and enriched after the mutation; ``inverse`` is the
+    ``{op, args}`` derived from the ACTUAL backend used at write time."""
+    ts = now or _now()
+    return {
+        "jid": jid or _mint(),
+        "ts": ts,
+        "pid": str(pid),
+        "cid": str(cid or ""),
+        "step": int(step),
+        "kind": kind,
+        "backend": backend,
+        "lane": lane,
+        "subject": str(subject or "")[:300],
+        "actor": actor or {"kind": "officer", "id": "officer:cos"},
+        "action_type": action_type_for(kind),
+        "prestate": prestate or {},
+        "created": created or {},
+        "inverse": inverse or {"op": "none", "args": {}},
+        "executed_at": executed_at,
+        "reversed_at": None,
+        "ttl_expires_at": _iso_plus(ts, hours=UNDO_WINDOW_H),
+        "status": status,
+        "canary": bool(canary),
+    }
+
+
+def _validate_row(row: dict) -> None:
+    if not isinstance(row, dict):
+        raise UndoJournalError("journal row must be an object")
+    for k in ("jid", "pid", "kind", "status"):
+        if not row.get(k):
+            raise UndoJournalError(f"journal row missing {k}")
+    if not isinstance(row.get("step"), int):
+        raise UndoJournalError("journal row step must be an int")
+    if row["status"] not in _ROW_STATUSES:
+        raise UndoJournalError(f"journal row status must be one of {sorted(_ROW_STATUSES)}")
+    inv = row.get("inverse")
+    if not isinstance(inv, dict) or "op" not in inv:
+        raise UndoJournalError("journal row inverse must be an object with an op")
+
+
+def journal_step(row: dict) -> Dict[str, Any]:
+    """Validate then append ONE journal row (write-ahead before the mutation;
+    again — same jid — after, to enrich with created ids). Last-write-wins by
+    jid on read collapses the pair to the final state."""
+    _validate_row(row)
+    d = _undo_dir()
+    _ensure_dir(d)
+    base = d.resolve()
+    with open(_journal_file(base), "a") as fh:
+        fh.write(json.dumps(row, default=str) + "\n")
+    return row
+
+
+def _read_journal(*, pid: Optional[str] = None) -> List[Dict[str, Any]]:
+    """All journal rows collapsed by jid (last-write-wins), optionally filtered
+    to one pid. Chronological by ts; equal-ts rows keep append order so an
+    enrichment / reversal line still wins over the write-ahead line."""
+    d = _undo_dir()
+    if not d.exists():
+        return []
+    rows: List[Dict[str, Any]] = []
+    for f in _safe_journal_files(d):
+        try:
+            with open(f) as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        r = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if not isinstance(r, dict) or "jid" not in r:
+                        continue
+                    if pid is not None and r.get("pid") != str(pid):
+                        continue
+                    rows.append(r)
+        except OSError:
+            continue
+    rows.sort(key=lambda r: r.get("ts", ""))
+    collapsed: Dict[str, Dict[str, Any]] = {}
+    for r in rows:
+        collapsed[r["jid"]] = r
+    return list(collapsed.values())
+
+
+# --- Redis pointer (index only — never the sole copy) ------------------------
+
+def _redis(*args: str) -> str:
+    host = os.environ.get("REDIS_HOST", "localhost")
+    out = subprocess.run(["redis-cli", "-h", host, *args],
+                         capture_output=True, text=True, timeout=10).stdout.strip()
+    return "" if out in ("", "(nil)") else out
+
+
+def _default_redis_set(key: str, value: str, ttl_s: Optional[int]) -> None:
+    args = ["SET", key, value]
+    if ttl_s:
+        args += ["EX", str(int(ttl_s))]
+    _redis(*args)
+
+
+def _default_redis_get(key: str) -> str:
+    return _redis("GET", key)
+
+
+def _default_redis_del(key: str) -> None:
+    _redis("DEL", key)
+
+
+def write_pointer(pid: str, steps: List[dict], executed_at: str, *,
+                  redis_set: Optional[Callable[[str, str, Optional[int]], None]] = None,
+                  ttl_s: int = POINTER_TTL_S) -> Dict[str, Any]:
+    """Index the pid's acted steps: ``SET cabinet:undo:<pid> <json> EX 777600``.
+    A convenience/fast lookup for the binder's undo grammar and the TTL sweep —
+    the JSONL journal remains the durable copy, so a missing pointer only forces
+    a journal scan, never data loss."""
+    payload = {"pid": str(pid),
+               "steps": [{"jid": s.get("jid"), "step": s.get("step"),
+                          "kind": s.get("kind")} for s in (steps or [])],
+               "executed_at": executed_at,
+               "ttl_expires_at": _iso_plus(executed_at, hours=UNDO_WINDOW_H)}
+    (redis_set or _default_redis_set)(f"cabinet:undo:{pid}", json.dumps(payload), ttl_s)
+    return payload
+
+
+def read_pointer(pid: str, *,
+                 redis_get: Optional[Callable[[str], str]] = None) -> Optional[dict]:
+    raw = (redis_get or _default_redis_get)(f"cabinet:undo:{pid}")
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+
+
+# --- inverse-op registry (open strings; future kinds slot in) ----------------
+
+def query_columns(monday_post: Callable, item: str,
+                  col_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+    """Read the CURRENT value of specific columns of one item — the shared read
+    used both for prestate capture (before write) and drift detection (before
+    restore). Returns {column_id: {text, value, type}}; resilient to a fake /
+    partial response (missing items -> {})."""
+    data = monday_post(
+        "query($item: [ID!], $cols: [String!]) {"
+        " items(ids: $item) { column_values(ids: $cols) { id text value type } } }",
+        {"item": [str(item)], "cols": [str(c) for c in col_ids]})
+    items = (data or {}).get("items") or []
+    cvs = (items[0].get("column_values") if items else []) or []
+    out: Dict[str, Dict[str, Any]] = {}
+    for cv in cvs:
+        if isinstance(cv, dict) and cv.get("id") is not None:
+            out[str(cv["id"])] = {"text": cv.get("text"),
+                                  "value": cv.get("value"), "type": cv.get("type")}
+    return out
+
+
+def _restore_args(payload: dict, created: dict, prestate: dict) -> Dict[str, Any]:
+    """Build the compare-and-restore args for a board_status inverse: per touched
+    column, the value the lane wrote (for the drift check) + the prior value to
+    restore (from prestate). The note leg (if any) is a delete_update by id."""
+    setmap = (payload or {}).get("set") or {}
+    columns: Dict[str, Any] = {}
+    for col in ("status", "priority", "due"):
+        if col not in setmap:
+            continue
+        col_id = str(setmap.get(col + "_column") or col)
+        prior = (prestate or {}).get(col_id) or {}
+        columns[col_id] = {
+            "wrote": str(setmap[col]),
+            "prior_text": prior.get("text"),
+            "kind": "date" if col == "due" else "label",
+        }
+    return {"board_id": (payload or {}).get("board_id"),
+            "item_id": (payload or {}).get("monday_id"),
+            "columns": columns,
+            "update_id": (created or {}).get("note_update_id")}
+
+
+def inverse_for(kind: str, backend: str, payload: Optional[dict],
+                created: Optional[dict], prestate: Optional[dict]) -> Dict[str, Any]:
+    """The ``{op, args}`` that reverses one executed step, derived from the
+    ACTUAL backend used at write time. The op string is fixed by (kind, backend)
+    even with empty args, so ``act_first_eligible`` can probe it cheaply."""
+    payload = payload or {}
+    created = created or {}
+    prestate = prestate or {}
+    if kind == "monday_task_create":
+        return {"op": "monday_archive_item",
+                "args": {"item_id": created.get("monday_id"),
+                         "board_id": created.get("board_id") or payload.get("board_id"),
+                         "update_id": created.get("update_id")}}
+    if kind == "monday_task_update":
+        return {"op": "monday_compare_restore",
+                "args": _restore_args(payload, created, prestate)}
+    if kind == "reminder_create":
+        if backend == "apple_reminders":
+            return {"op": "none",
+                    "args": {"reason": "apple_reminders has no reliable inverse "
+                                       "— excluded from act-first v1"}}
+        return {"op": "calendar_delete_by_uid",
+                "args": {"uid": created.get("uid"), "calendar": created.get("calendar")}}
+    if kind == "delegate_work":
+        return {"op": "none",
+                "args": {"reason": "delegate_work is propose-first — no act-first inverse"}}
+    return {"op": "none", "args": {"reason": "unknown kind " + repr(kind)}}
+
+
+def act_first_eligible(kind: str, backend: str) -> bool:
+    """True iff this (kind, backend) has a REGISTERED, non-``none`` inverse and
+    the backend is not on the act-first exclusion list. The mechanical perimeter
+    (grand-plan §1): no inverse ⇒ no unattended act."""
+    if backend in ACT_FIRST_EXCLUDED_BACKENDS:
+        return False
+    return inverse_for(kind, backend, {}, {}, {}).get("op") not in ("none", None)
+
+
+def _inv_monday_archive_item(args: dict, *, monday_post: Callable,
+                             osascript: Callable = None, **_) -> Dict[str, Any]:
+    """Reverse a create: archive the item (30-day trash — NEVER delete_item) and
+    delete the description update. Empty item_id (a crash row) is a safe no-op."""
+    item_id = args.get("item_id")
+    if not item_id:
+        return {"ok": True, "skipped": "no item_id (crash/unexecuted row) — nothing to reverse"}
+    detail: List[Any] = []
+    monday_post("mutation($item: ID!) { archive_item(item_id: $item) { id } }",
+                {"item": str(item_id)})
+    detail.append(["archived_item", str(item_id)])
+    upd = args.get("update_id")
+    if upd:
+        monday_post("mutation($u: ID!) { delete_update(id: $u) { id } }", {"u": str(upd)})
+        detail.append(["deleted_update", str(upd)])
+    return {"ok": True, "detail": detail}
+
+
+def _restore_one_column(monday_post: Callable, board: str, item: str,
+                        col_id: str, prior_text: Optional[str], kind: str) -> None:
+    if prior_text in (None, ""):
+        value = "{}"                                  # previously empty -> clear
+    elif kind == "date":
+        value = json.dumps({"date": str(prior_text)})
+    else:                                             # status / priority label
+        value = json.dumps({"label": str(prior_text)})
+    monday_post(
+        "mutation($board: ID!, $item: ID!, $col: String!, $val: JSON!) {"
+        " change_column_value(board_id: $board, item_id: $item,"
+        " column_id: $col, value: $val, create_labels_if_missing: true) { id } }",
+        {"board": str(board), "item": str(item), "col": str(col_id), "val": value})
+
+
+def _inv_monday_compare_restore(args: dict, *, monday_post: Callable,
+                                osascript: Callable = None, **_) -> Dict[str, Any]:
+    """Reverse a board_status write with COMPARE-AND-RESTORE [RT-A11]: re-read
+    each touched column and restore its prior value ONLY if the current value is
+    still what the lane wrote. A drifted column (a colleague edited it) is
+    DEAD-LETTERED, never clobbered — its divergence is returned so the caller
+    tells the Captain."""
+    board = args.get("board_id")
+    item = args.get("item_id")
+    columns = args.get("columns") or {}
+    restored: List[str] = []
+    dead_letters: List[dict] = []
+    if item and columns:
+        current = query_columns(monday_post, str(item), list(columns.keys()))
+        for col_id, spec in columns.items():
+            cur_text = (current.get(col_id) or {}).get("text")
+            if cur_text != spec.get("wrote"):
+                dead_letters.append({"column_id": col_id, "reason": "drifted",
+                                     "current": cur_text, "lane_wrote": spec.get("wrote")})
+                continue
+            if board:
+                _restore_one_column(monday_post, str(board), str(item), col_id,
+                                    spec.get("prior_text"), spec.get("kind"))
+                restored.append(col_id)
+    upd = args.get("update_id")
+    if upd:
+        monday_post("mutation($u: ID!) { delete_update(id: $u) { id } }", {"u": str(upd)})
+    return {"ok": not dead_letters, "restored": restored, "dead_letters": dead_letters}
+
+
+def _calendar_delete_script() -> str:
+    # uid + calendar travel as argv (item N of argv), NEVER interpolated into
+    # AppleScript source — same discipline as the executor's write path.
+    return (
+        'on run argv\n'
+        'set calName to item 1 of argv\n'
+        'set theUid to item 2 of argv\n'
+        'tell application "Calendar"\n'
+        ' if not (exists (first calendar whose name is calName)) then return "ok:absent"\n'
+        ' tell (first calendar whose name is calName)\n'
+        '  set matches to (every event whose uid is theUid)\n'
+        '  repeat with ev in matches\n'
+        '   delete ev\n'
+        '  end repeat\n'
+        ' end tell\n'
+        'end tell\n'
+        'return "ok"\n'
+        'end run')
+
+
+def _inv_calendar_delete(args: dict, *, monday_post: Callable = None,
+                         osascript: Callable, **_) -> Dict[str, Any]:
+    """Reverse a calendar event: delete by UID in the named calendar. Empty
+    uid/calendar (a crash row) is a safe no-op."""
+    uid = args.get("uid")
+    cal = args.get("calendar")
+    if not uid or not cal:
+        return {"ok": True, "skipped": "no uid/calendar (crash/unexecuted row) — nothing to reverse"}
+    res = osascript(["osascript", "-e", _calendar_delete_script(), str(cal), str(uid)])
+    if "ok" in (res or ""):
+        return {"ok": True, "detail": res}
+    return {"ok": False, "error": "calendar delete returned " + repr(res)}
+
+
+def _inv_none(args: dict, *, monday_post: Callable = None,
+              osascript: Callable = None, **_) -> Dict[str, Any]:
+    return {"ok": True,
+            "skipped": (args or {}).get("reason")
+            or "no reliable inverse — excluded from act-first v1"}
+
+
+INVERSE_OPS: Dict[str, Callable[..., Dict[str, Any]]] = {
+    "monday_archive_item": _inv_monday_archive_item,
+    "monday_compare_restore": _inv_monday_compare_restore,
+    "calendar_delete_by_uid": _inv_calendar_delete,
+    "none": _inv_none,
+}
+
+
+# --- reversal (deterministic, no LLM) ----------------------------------------
+
+def _prod_transports():
+    """Lazy production transports for a live undo (deferred import breaks the
+    action_exec<->action_undo cycle: action_exec imports us at module load; we
+    import it only here, at call time)."""
+    from framework.frontdoor import action_exec
+    action_exec._load_shared_env()
+    return action_exec._monday_post, action_exec._default_osascript
+
+
+def _executed_rows_for(pid: str) -> List[Dict[str, Any]]:
+    """The still-reversible rows for a pid: journaled, side-effect completed
+    (executed_at set), not already reversed/void. Read from the DURABLE journal,
+    so reversal works even if the Redis pointer lapsed."""
+    return [r for r in _read_journal(pid=pid)
+            if r.get("status") == "executed" and r.get("executed_at")]
+
+
+def _summary(res: dict) -> Dict[str, Any]:
+    return {k: v for k, v in (res or {}).items()
+            if k in ("detail", "restored", "skipped")}
+
+
+def _reverse_rows(rows: List[dict], *, pid: str, monday_post: Callable,
+                  osascript: Callable, redis_del: Callable,
+                  now: Optional[str]) -> Dict[str, Any]:
+    """Execute the inverse ops for ``rows`` in REVERSE step order. Ledger-verdict
+    ordering (fail-closed) is the caller's job (UNDO-2 binder); here we run the
+    inverses, journal the reversal, and one-shot DEL the pointer on full success.
+    Partial failure keeps a ``reversal_failed`` row + returns manual_cleanup."""
+    lane = rows[0].get("lane") if rows else None
+    reversed_steps: List[dict] = []
+    manual: List[dict] = []
+    for row in sorted(rows, key=lambda r: r.get("step", 0), reverse=True):
+        inv = row.get("inverse") or {"op": "none", "args": {}}
+        op = INVERSE_OPS.get(inv.get("op"), _inv_none)
+        try:
+            res = op(inv.get("args") or {}, monday_post=monday_post, osascript=osascript)
+        except Exception as e:                       # an inverse must never crash the sweep
+            res = {"ok": False, "error": str(e)[:200]}
+        rt = now or _now()
+        if res.get("ok") and not res.get("dead_letters"):
+            journal_step({**row, "status": "reversed", "reversed_at": rt})
+            reversed_steps.append({"step": row.get("step"), "kind": row.get("kind"),
+                                   **_summary(res)})
+        else:
+            journal_step({**row, "status": "reversal_failed", "reversed_at": rt,
+                          "reversal_result": res})
+            manual.append({"step": row.get("step"), "kind": row.get("kind"),
+                           "op": inv.get("op"), "result": res})
+    if manual:
+        return {"ok": False, "via": "action-undo", "dest": lane,
+                "reversed": reversed_steps, "manual_cleanup": manual,
+                "error": (str(len(manual)) + " step(s) could not be reversed — "
+                          "manual cleanup required; kind should be frozen")}
+    try:                                             # one-shot: a re-undo no-ops
+        redis_del("cabinet:undo:" + str(pid))
+    except Exception:
+        pass
+    return {"ok": True, "via": "action-undo", "dest": lane, "reversed": reversed_steps}
+
+
+def reverse(pid: str, *, monday_post: Optional[Callable] = None,
+            osascript: Optional[Callable] = None,
+            redis_del: Optional[Callable[[str], None]] = None,
+            now: Optional[str] = None) -> Dict[str, Any]:
+    """Reverse EVERY still-executed step of a pid, in reverse step order.
+    Idempotent: once reversed the rows drop out, so a second call returns
+    ``already_undone`` (mirrors the executor's one-shot no-op)."""
+    rows = _executed_rows_for(pid)
+    if not rows:
+        return {"ok": True, "already_undone": True, "via": "action-undo",
+                "dest": None, "reversed": []}
+    if monday_post is None or osascript is None:
+        mp, osa = _prod_transports()
+        monday_post = monday_post or mp
+        osascript = osascript or osa
+    return _reverse_rows(rows, pid=pid, monday_post=monday_post, osascript=osascript,
+                         redis_del=redis_del or _default_redis_del, now=now)
+
+
+def undo(target: str, *, monday_post: Optional[Callable] = None,
+         osascript: Optional[Callable] = None,
+         redis_del: Optional[Callable[[str], None]] = None,
+         now: Optional[str] = None) -> Dict[str, Any]:
+    """Public entry: reverse a whole pid OR a single journal id. If ``target``
+    matches a known jid, reverse just that step; otherwise treat it as a pid.
+    deliver_draft-shaped return ({ok, via, dest, reversed, ...})."""
+    by_jid = {r.get("jid"): r for r in _read_journal()}
+    row = by_jid.get(target)
+    if row is None:
+        return reverse(target, monday_post=monday_post, osascript=osascript,
+                       redis_del=redis_del, now=now)
+    if row.get("status") != "executed" or not row.get("executed_at"):
+        return {"ok": True, "already_undone": True, "via": "action-undo",
+                "dest": row.get("lane"), "reversed": []}
+    if monday_post is None or osascript is None:
+        mp, osa = _prod_transports()
+        monday_post = monday_post or mp
+        osascript = osascript or osa
+    return _reverse_rows([row], pid=row.get("pid"), monday_post=monday_post,
+                         osascript=osascript, redis_del=redis_del or _default_redis_del,
+                         now=now)
+
+
+def find_reconcilable(*, pid: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Crash rows: journaled write-ahead but never enriched (no created ids / no
+    executed_at). The intent-without-result reconciler (UNDO-3) re-probes or
+    voids these; they are NEVER re-executed."""
+    return [r for r in _read_journal(pid=pid)
+            if r.get("status") == "executed" and not r.get("executed_at")
+            and not (r.get("created") or {})]
+
+
+# --- freeze / is_frozen (fail-closed) ----------------------------------------
+
+def _frozen_mirror() -> Path:
+    return _undo_dir() / "frozen-kinds.jsonl"
+
+
+def freeze(kind: str, reason: str, *,
+           redis_set: Optional[Callable[[str, str, Optional[int]], None]] = None,
+           now: Optional[str] = None) -> Dict[str, Any]:
+    """Freeze an act-first kind. Durable JSONL mirror FIRST (the source of
+    truth), then the fast Redis flag. No TTL, no auto-unfreeze (CRIT-5): a kind
+    is un-frozen only by a manually-triggered green canary (a later wave)."""
+    row = {"ts": now or _now(), "kind": kind, "reason": str(reason)[:300], "op": "freeze"}
+    d = _undo_dir()
+    _ensure_dir(d)
+    with open(_frozen_mirror(), "a") as fh:
+        fh.write(json.dumps(row) + "\n")
+    try:
+        (redis_set or _default_redis_set)("cabinet:actfirst:frozen:" + str(kind),
+                                          json.dumps(row), None)
+    except Exception:
+        pass                                # durable mirror is authoritative
+    return row
+
+
+def _kind_in_mirror(kind: str) -> bool:
+    p = _frozen_mirror()
+    if not p.exists():
+        return False
+    try:
+        with open(p) as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    r = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(r, dict) and r.get("kind") == kind and r.get("op") == "freeze":
+                    return True
+    except OSError:
+        return True                         # can't read the mirror -> fail-closed
+    return False
+
+
+def is_frozen(kind: str, *,
+              redis_get: Optional[Callable[[str], str]] = None) -> bool:
+    """Fail-closed: Redis unreachable ⇒ treated frozen. A durable mirror hit
+    also holds (Redis may have been flushed; a freeze is durable)."""
+    getter = redis_get or _default_redis_get
+    try:
+        val = getter("cabinet:actfirst:frozen:" + str(kind))
+    except Exception:
+        return True
+    if val:
+        return True
+    return _kind_in_mirror(kind)
+
+
+# --- acted consequence event (per-STEP, RT-B1/RT-B6) -------------------------
+
+def _acted_refs(row: dict) -> List[str]:
+    refs: List[str] = []
+    cid = row.get("cid")
+    if cid:
+        from framework.probes import correlation
+        refs.append(correlation.ref_for(cid))
+    jid = row.get("jid")
+    if jid:
+        refs.append("undo-journal:" + str(jid))
+    return refs
+
+
+def acted_event(step: Optional[dict], row: dict, *,
+                action: Optional[str] = None) -> Dict[str, Any]:
+    """The per-STEP acted consequence event. At EXECUTION time it carries
+    ``proposal:{required:false, decision:null}`` + ``outcome:{status:"unknown"}``
+    [RT-B1] so an acted row NEVER enters ``pending_proposals()`` and an
+    unattended act NEVER counts as an approval. Each step stamps its OWN
+    action_type [RT-B6] (guarded to real enum members). Validated against the
+    consequence schema before returning — an invalid event is never emitted.
+
+    NOT wired to live execution in Wave 1 — the executor journals; wiring the
+    emit onto the ledger lands with the act-first branch (a later wave)."""
+    kind = row.get("kind") or (step or {}).get("kind") or "action"
+    ev: Dict[str, Any] = {
+        "ts": row.get("executed_at") or row.get("ts") or _now(),
+        "actor": row.get("actor") or {"kind": "officer", "id": "officer:cos"},
+        "lane": row.get("lane"),
+        "action": action or ("acted:" + str(kind)),
+        "subject": str(row.get("subject") or (step or {}).get("title") or kind)[:300],
+        "refs": _acted_refs(row),
+        "proposal": {"required": False, "decision": None},
+        "outcome": {"status": "unknown"},
+    }
+    at = row.get("action_type")
+    if at:                                  # guarded: only a real enum reaches the ledger
+        ev["action_type"] = at
+    validate_consequence(ev)                # raises before returning; never emit invalid
+    return ev

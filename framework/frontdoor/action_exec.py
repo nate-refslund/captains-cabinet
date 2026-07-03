@@ -18,6 +18,13 @@ edit-text does NOT reinterpret the payload in v1 — the edit text is recorded
 on the ledger as the correction; execution uses the stored payload verbatim
 (reinterpreting free text into mutations without re-approval would act on
 words Nate never saw as a card).
+
+UNDO-1 (2026-07-04 trust-inversion): every step is WRITE-AHEAD journaled
+through ``action_undo`` before its mutation and enriched with the created ids
+after (``journal=True`` by default), and a strict per-kind payload-key assert
+runs before ``_cid`` injection — so a landed card carries a 48h undo handle and
+an attendee/assignee smuggle is a mechanical rejection. Journaling is
+best-effort: it never breaks a delivery whose verdict already landed.
 """
 from __future__ import annotations
 
@@ -29,8 +36,66 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable
 
+from framework.frontdoor import action_undo
+
 _SHARED = str(Path.home() / ".screenpipe" / "pipes" / "_shared")
 MONDAY_API = "https://api.monday.com/v2"
+
+
+class PayloadKeyError(ValueError):
+    """A step payload carried a key outside its kind's closed schema — the
+    fail-closed mechanical block on attendee/assignee/people smuggling [RT-B11].
+    """
+
+
+# Closed per-kind payload schemas. Anything outside these (except an injected
+# ``_``-prefixed key) is REJECTED before the step runs — attendee/assignee/owner
+# smuggling made mechanical, checked PRE-``_cid``-injection so the original
+# proposer payload is validated clean.
+_PAYLOAD_KEYS = {
+    "monday_task_create": {"board_id", "board_hint", "title", "description"},
+    "monday_task_update": {"monday_id", "board_id", "set", "why"},
+    "reminder_create": {"title", "due_iso", "notes", "list"},
+    "delegate_work": {"officer", "brief"},
+}
+# Closed key set for a monday_task_update ``set`` map (label writes + the
+# per-column id overrides + the note leg). No people/assignee/subscriber key can
+# ride in here.
+_SET_KEYS = {"status", "priority", "due", "description", "note",
+             "status_column", "priority_column", "due_column"}
+
+
+def _assert_payload_keys(kind: str, payload: dict) -> None:
+    """Reject any non-``_``-prefixed payload key outside the kind's closed
+    schema (and any set-map key outside ``_SET_KEYS``). Raises PayloadKeyError —
+    fail-closed: the step never journals or executes."""
+    allowed = _PAYLOAD_KEYS.get(kind)
+    if allowed is None:
+        return                              # unknown kind: the exec dispatch rejects it
+    for k in payload:
+        if isinstance(k, str) and k.startswith("_"):
+            continue                        # injected keys (e.g. _cid) — allowlisted
+        if k not in allowed:
+            raise PayloadKeyError(f"{kind}: disallowed payload key {k!r}")
+    setmap = payload.get("set")
+    if kind == "monday_task_update" and isinstance(setmap, dict):
+        for k in setmap:
+            if k not in _SET_KEYS:
+                raise PayloadKeyError(f"{kind}: disallowed set-map key {k!r}")
+
+
+def _backend_for(kind: str) -> str:
+    """The concrete backend a step kind executes on — the inverse is derived
+    from the ACTUAL backend used at write time [RT-B11]."""
+    if kind in ("monday_task_create", "monday_task_update"):
+        return "monday"
+    if kind == "reminder_create":
+        return ("apple_reminders"
+                if os.environ.get("ACTION_LANE_REMINDER_BACKEND", "calendar") == "apple_reminders"
+                else "calendar")
+    if kind == "delegate_work":
+        return "delegate"
+    return "unknown"
 
 
 def _redis(*args: str) -> str:
@@ -112,12 +177,16 @@ def _exec_monday_create(payload: dict, monday_post: Callable) -> dict:
         # outcomes — the evidence plane's stamp on lane-created artifacts.
         from framework.probes import correlation
         desc = (desc + "\n\n" if desc else "") + correlation.monday_footer(cid)
+    update_id = None
     if desc:
-        monday_post(
+        upd = monday_post(
             "mutation($item: ID!, $body: String!) {"
             " create_update(item_id: $item, body: $body) { id } }",
             {"item": str(item_id), "body": desc[:4000]})
-    return {"monday_id": str(item_id), "board_id": board}
+        # capture the update id (previously discarded): the undo journal needs it
+        # to delete the description post when reversing the create.
+        update_id = ((upd.get("create_update") or {}).get("id"))
+    return {"monday_id": str(item_id), "board_id": board, "update_id": update_id}
 
 
 def _exec_monday_update(payload: dict, monday_post: Callable) -> dict:
@@ -128,12 +197,15 @@ def _exec_monday_update(payload: dict, monday_post: Callable) -> dict:
     if not isinstance(setmap, dict) or not setmap:
         raise RuntimeError("monday_task_update needs a non-empty set map")
     applied = []
+    note_update_id = None
     if setmap.get("description") or setmap.get("note") or payload.get("why"):
         body = str(setmap.get("description") or setmap.get("note") or payload.get("why"))
-        monday_post(
+        upd = monday_post(
             "mutation($item: ID!, $body: String!) {"
             " create_update(item_id: $item, body: $body) { id } }",
             {"item": item, "body": body[:4000]})
+        # capture the note update id so the undo journal can delete it on reverse
+        note_update_id = ((upd.get("create_update") or {}).get("id"))
         applied.append("update-note")
     for col in ("status", "priority", "due"):
         if col not in setmap:
@@ -151,7 +223,24 @@ def _exec_monday_update(payload: dict, monday_post: Callable) -> dict:
             " column_id: $col, value: $val, create_labels_if_missing: true) { id } }",
             {"board": board, "item": item, "col": column_id, "val": value})
         applied.append(col)
-    return {"monday_id": item, "applied": applied}
+    return {"monday_id": item, "applied": applied, "note_update_id": note_update_id}
+
+
+def _monday_update_prestate(payload: dict, monday_post: Callable) -> dict:
+    """Read the CURRENT value of exactly the columns a monday_task_update is
+    about to touch — the prestate the undo journal compares against on reverse
+    (restore only if the value is still what the lane wrote). Best-effort by
+    contract: an unreadable prestate degrades undo to a dead-letter (never a
+    clobber), it does not block the Captain-approved write."""
+    item = str(payload.get("monday_id") or "").strip()
+    setmap = payload.get("set") or {}
+    if not item.isdigit() or not isinstance(setmap, dict):
+        return {}
+    col_ids = [str(setmap.get(f"{col}_column") or col)
+               for col in ("status", "priority", "due") if col in setmap]
+    if not col_ids:
+        return {}
+    return action_undo.query_columns(monday_post, item, col_ids)
 
 
 def _exec_calendar_event(payload: dict, osascript: Callable) -> dict:
@@ -179,7 +268,7 @@ def _exec_calendar_event(payload: dict, osascript: Callable) -> dict:
         ' if not (exists (first calendar whose name is calName)) then set calName to "Cabinet"\n'
         ' try\n'
         '  tell (first calendar whose name is calName)\n'
-        '   make new event with properties {summary:evTitle, start date:startDate, end date:endDate, description:evNotes}\n'
+        '   set newEvent to make new event with properties {summary:evTitle, start date:startDate, end date:endDate, description:evNotes}\n'
         '  end tell\n'
         ' on error\n'
         # the named calendar is read-only (e.g. an Exchange view) or otherwise
@@ -187,11 +276,13 @@ def _exec_calendar_event(payload: dict, osascript: Callable) -> dict:
         '  set calName to "Cabinet"\n'
         '  if not (exists (first calendar whose name is calName)) then make new calendar with properties {name:calName}\n'
         '  tell (first calendar whose name is calName)\n'
-        '   make new event with properties {summary:evTitle, start date:startDate, end date:endDate, description:evNotes}\n'
+        '   set newEvent to make new event with properties {summary:evTitle, start date:startDate, end date:endDate, description:evNotes}\n'
         '  end tell\n'
         ' end try\n'
+        # return the created event UID so the undo journal can delete-by-UID on
+        # reverse (the reversible handle the calendar backend earns act-first with)
         'end tell\n'
-        'return "ok:" & calName\n'
+        'return "ok:" & calName & ":" & (uid of newEvent)\n'
         'end run\n'
         'on parseIso(s)\n'
         ' set d to current date\n'
@@ -211,7 +302,12 @@ def _exec_calendar_event(payload: dict, osascript: Callable) -> dict:
     res = osascript(["osascript", "-e", script, cal, title[:200], notes[:500], due])
     if "ok" not in res:
         raise RuntimeError(f"calendar returned {res!r}")
-    return {"calendar": res.split(":", 1)[-1] or cal, "title": title[:80]}
+    # parse "ok:<calendar>:<uid>" (uid may contain colons — split at most twice).
+    # Tolerant of the legacy "ok:<calendar>" shape (uid absent -> "").
+    parts = (res or "").split(":", 2)
+    out_cal = parts[1] if len(parts) > 1 and parts[1] else cal
+    uid = parts[2] if len(parts) > 2 else ""
+    return {"calendar": out_cal, "uid": uid, "title": title[:80]}
 
 
 _DELEGATE_OFFICERS = {"cos", "polads-ceo", "stephie-ceo", "comms-officer"}
@@ -229,8 +325,12 @@ def _exec_delegate(payload: dict) -> dict:
     if not brief:
         raise RuntimeError("delegate_work needs a brief")
     root = str(Path(__file__).resolve().parents[2])
-    msg = (f"[action-lane] CAPTAIN-APPROVED WORK ITEM — execute and report back "
-           f"to the Chair when done:\n\n{brief}")
+    # [RT-A2] The brief is capture-derived (email/Teams → vault → proposer), so it
+    # is UNTRUSTED text. The old "CAPTAIN-APPROVED WORK ITEM" prefix framed
+    # injected instructions as authorized; frame it as world-description the
+    # receiving officer must verify, never as a command it should obey.
+    msg = (f"[action-lane] work item (capture-derived, verify before trusting "
+           f"factual claims); report back to the Chair when done:\n\n{brief}")
     r = subprocess.run(
         ["bash", "-c",
          '. "$1/cabinet/scripts/lib/triggers.sh" && OFFICER_NAME=action-lane trigger_send "$2" "$3"',
@@ -294,14 +394,51 @@ def _default_osascript(cmd: list) -> str:
     return subprocess.run(cmd, capture_output=True, text=True, timeout=30).stdout.strip()
 
 
+def _exec_step(kind: str, payload: dict, mp: Callable, osa: Callable) -> dict:
+    """Dispatch one step to its executor. Raises on an unknown kind or a backend
+    failure — the caller stops the chain and reports what already ran."""
+    if kind == "monday_task_create":
+        return _exec_monday_create(payload, mp)
+    if kind == "monday_task_update":
+        return _exec_monday_update(payload, mp)
+    if kind == "reminder_create":
+        # backend is per-instance config (Captain ruling: reminders on the
+        # CALENDAR; Apple Reminders demoted to an optional plugin — other
+        # captains may prefer it: ACTION_LANE_REMINDER_BACKEND)
+        backend = os.environ.get("ACTION_LANE_REMINDER_BACKEND", "calendar")
+        return (_exec_reminder(payload, osa) if backend == "apple_reminders"
+                else _exec_calendar_event(payload, osa))
+    if kind == "delegate_work":
+        return _exec_delegate(payload)
+    raise RuntimeError(f"unknown action kind {kind!r}")
+
+
+def _best_effort(fn: Callable) -> None:
+    """Run a side-effect that must NEVER break a delivery whose approval already
+    landed (undo journaling + the Redis pointer/DEL) — parity with the existing
+    best-effort ``cabinet:action`` cleanup."""
+    try:
+        fn()
+    except Exception:
+        pass
+
+
 def deliver_action(pid: str, override_text: str = "", *,
                    redis_get: Callable[[str], str] | None = None,
                    monday_post: Callable | None = None,
                    osascript: Callable | None = None,
-                   dry_run: bool = False) -> dict:
+                   dry_run: bool = False,
+                   journal: bool = True,
+                   redis_set: Callable[[str, str, int | None], None] | None = None) -> dict:
     """Execute the stored action chain for an APPROVED card. deliver_draft-shaped
     return: {ok, via, dest, executed: [...], error?}. Injectable transports for
-    tests; production defaults resolve lazily."""
+    tests; production defaults resolve lazily.
+
+    ``journal`` (default True) write-ahead-journals every step through
+    ``action_undo`` BEFORE its mutation and enriches the row with created ids
+    after — so an approved (and, at the flip, an unattended) card carries a 48h
+    undo handle. Journaling is best-effort: it never breaks a delivery whose
+    verdict has already landed on the ledger."""
     rget = redis_get or (lambda k: _redis("GET", k))
     if override_text.strip():
         # EDIT on an action card: the verdict (edit→wrong + correction) has
@@ -328,41 +465,72 @@ def deliver_action(pid: str, override_text: str = "", *,
     osa = osascript or _default_osascript
 
     executed: list[dict] = []
+    journaled: list[dict] = []
     rec_cid = str(rec.get("cid") or "")
+    lane = rec.get("lane", "?")
+    subject = str(rec.get("subject") or "")
+    actor = rec.get("actor") or {"kind": "officer", "id": "officer:cos"}
     for i, step in enumerate(steps, 1):
         kind = step.get("kind")
         payload = dict(step.get("payload") or {})
+        # payload hygiene (fail-closed) BEFORE _cid injection — a smuggled
+        # attendee/assignee key stops the step, nothing journals or executes.
+        try:
+            _assert_payload_keys(kind, payload)
+        except PayloadKeyError as e:
+            return {"ok": False, "via": "action-lane", "dest": lane,
+                    "executed": executed,
+                    "error": f"step {i}/{len(steps)} ({kind}) rejected: {e}"[:300]}
         if rec_cid:
             payload["_cid"] = rec_cid
+        backend = _backend_for(kind)
         if dry_run:
-            executed.append({"step": i, "kind": kind, "dry_run": True})
+            # no writes; surface the inverse spec so a dry chain proves its
+            # inverse replays to a no-op (impl-plan verify) without touching disk.
+            executed.append({"step": i, "kind": kind, "dry_run": True,
+                             "inverse": action_undo.inverse_for(kind, backend, payload, {}, {})})
             continue
+
+        # WRITE-AHEAD: prestate (update only) + a journal row with the inverse
+        # spec, on disk BEFORE the mutation. A crash after this leaves a row with
+        # no created ids / no executed_at — reconcilable, never re-executed.
+        prestate: dict = {}
+        if journal and kind == "monday_task_update":
+            _best_effort(lambda: prestate.update(_monday_update_prestate(payload, mp)))
+        jid = action_undo._mint()
+        wa_row = None
+        if journal:
+            wa_row = action_undo.new_row(
+                pid=pid, cid=rec_cid, step=i, kind=kind, backend=backend,
+                lane=rec.get("lane"), subject=subject, actor=actor, prestate=prestate,
+                inverse=action_undo.inverse_for(kind, backend, payload, {}, prestate),
+                executed_at=None, jid=jid)
+            _best_effort(lambda: action_undo.journal_step(wa_row))
+
         try:
-            if kind == "monday_task_create":
-                out = _exec_monday_create(payload, mp)
-            elif kind == "monday_task_update":
-                out = _exec_monday_update(payload, mp)
-            elif kind == "reminder_create":
-                # backend is per-instance config (Captain ruling: reminders on
-                # the CALENDAR; Apple Reminders demoted to an optional plugin —
-                # other captains may prefer it: ACTION_LANE_REMINDER_BACKEND)
-                backend = os.environ.get("ACTION_LANE_REMINDER_BACKEND", "calendar")
-                out = (_exec_reminder(payload, osa) if backend == "apple_reminders"
-                       else _exec_calendar_event(payload, osa))
-            elif kind == "delegate_work":
-                out = _exec_delegate(payload)
-            else:
-                raise RuntimeError(f"unknown action kind {kind!r}")
-            executed.append({"step": i, "kind": kind, **out})
+            out = _exec_step(kind, payload, mp, osa)
         except Exception as e:  # stop the chain; report what DID run
-            return {"ok": False, "via": "action-lane", "dest": rec.get("lane", "?"),
+            return {"ok": False, "via": "action-lane", "dest": lane,
                     "executed": executed,
                     "error": f"step {i}/{len(steps)} ({kind}) failed: {e}"[:300]}
-    if not dry_run:
-        # one-shot execution: clear the record so a re-delivered approve no-ops
-        try:
-            _redis("DEL", f"cabinet:action:{pid}")
-        except Exception:
-            pass
-    return {"ok": True, "via": "action-lane", "dest": rec.get("lane", "?"),
-            "executed": executed}
+        executed.append({"step": i, "kind": kind, **out})
+
+        # ENRICH: same jid, now carrying the created ids + the fully-argumented
+        # inverse. Last-write-wins collapses the pair to this committed state.
+        if journal and wa_row is not None:
+            enriched = {**wa_row, "created": dict(out),
+                        "inverse": action_undo.inverse_for(kind, backend, payload, out, prestate),
+                        "executed_at": action_undo._now()}
+            _best_effort(lambda: action_undo.journal_step(enriched))
+            journaled.append({"jid": jid, "step": i, "kind": kind})
+
+    if dry_run:
+        return {"ok": True, "via": "action-lane", "dest": lane, "executed": executed}
+    # one-shot execution: clear the record so a re-delivered approve no-ops
+    _best_effort(lambda: _redis("DEL", f"cabinet:action:{pid}"))
+    if journal and journaled:
+        # index the pid's undo window (Redis is the fast index; the JSONL is
+        # durable, so a pointer-write failure only forces a journal scan).
+        _best_effort(lambda: action_undo.write_pointer(
+            pid, journaled, action_undo._now(), redis_set=redis_set))
+    return {"ok": True, "via": "action-lane", "dest": lane, "executed": executed}
