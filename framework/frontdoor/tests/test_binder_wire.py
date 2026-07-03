@@ -326,3 +326,44 @@ def test_no_pid_skip_verdict_records_without_delivery():
     assert r["handled"] is True and r["primary"] == "skip"
     assert rec.delivered == []          # skip never delivers
     assert rec.emitted                  # but the verdict landed on the ledger
+
+
+# ---- 2026-07-03 pivot: payload routing (action cards vs reply drafts) ---------
+
+def test_action_record_routes_to_action_executor(monkeypatch):
+    """An approve on a card whose pid has a cabinet:action:<pid> record must
+    dispatch through action_exec.deliver_action, not chair_drafts."""
+    import json as _json
+    from framework.frontdoor import action_exec
+    prop = _proposal()
+    pid = _pid(prop)
+    store = {f"cabinet:action:{pid}": _json.dumps(
+        {"lane": "polads", "steps": [{"kind": "reminder_create",
+                                      "payload": {"title": "t"}}]})}
+    rec = Recorder()
+    called = {}
+    def fake_deliver_action(p, override_text="", **kw):
+        called["pid"] = p
+        called["override"] = override_text
+        return {"ok": True, "via": "action-lane", "dest": "polads"}
+    monkeypatch.setattr(action_exec, "deliver_action", fake_deliver_action)
+    r = binder_wire.handle_captain_update(
+        "approve", f"⚡ Action proposal ... ·{pid}·",
+        pending_source=lambda: [prop],
+        emit=rec.emit, redis_get=lambda k: store.get(k, ""))
+    assert r["handled"] is True and r["primary"] == "approve"
+    assert called["pid"] == pid                       # routed to the action executor
+    assert "action-lane" in r["summary"]
+
+
+def test_draft_record_still_routes_to_chair_drafts():
+    """No cabinet:action record + a cabinet:draft record → legacy draft path
+    (the injected deliver seam stands in for chair_drafts)."""
+    prop = _proposal()
+    rec = Recorder()
+    r = binder_wire.handle_captain_update(
+        "send", _quoted_for(prop),
+        pending_source=lambda: [prop], deliver=rec.deliver,
+        emit=rec.emit, redis_get=_redis_with_draft(prop))
+    assert r["handled"] is True
+    assert rec.delivered and rec.delivered[0][0] == _pid(prop)

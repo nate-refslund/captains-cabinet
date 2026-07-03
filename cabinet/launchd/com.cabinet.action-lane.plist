@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Capture→action lane (the 2026-07-03 Captain-ruled pivot of the draft lane).
+     Every 30 min: gather fresh vault signals (commitments/meetings/decisions),
+     propose ≤2 action cards per run (≤5/day Redis budget) to Nate's Telegram
+     with ·pid· markers; his approve/edit:/skip: lands via the binder; approves
+     execute through framework/frontdoor/action_exec.py (Monday/Reminders).
+     PROPOSE-ONLY posture: nothing acts without a verdict; the verdicts feed the
+     (now live) graduation engine per cell.
+
+     Source of truth in repo; installed + loaded with:
+       cp cabinet/launchd/com.cabinet.action-lane.plist ~/Library/LaunchAgents/
+       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.cabinet.action-lane.plist
+
+     DISABLE:
+       launchctl bootout gui/$(id -u)/com.cabinet.action-lane
+       rm ~/Library/LaunchAgents/com.cabinet.action-lane.plist
+
+     No secrets here — the runner loads cabinet/.env + pipes/_shared/.env itself.
+     KNOWN LIMIT: StartInterval does not fire during sleep; coalesces on wake. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.cabinet.action-lane</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/env</string>
+    <string>python3.12</string>
+    <string>/Users/nate/captains-cabinet/framework/acting/run_action_lane.py</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/nate/captains-cabinet</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>REDIS_HOST</key>
+    <string>localhost</string>
+    <key>REDIS_PORT</key>
+    <string>6379</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>StartInterval</key>
+  <integer>1800</integer>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>/Users/nate/.cabinet/logs/action-lane.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/nate/.cabinet/logs/action-lane.log</string>
+</dict>
+</plist>

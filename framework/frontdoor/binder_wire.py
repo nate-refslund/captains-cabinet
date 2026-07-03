@@ -153,8 +153,17 @@ def handle_captain_update(
             if routed.primary not in ("approve", "edit"):
                 return
             if deliver is None:
-                from framework.frontdoor import chair_drafts
-                fn = chair_drafts.deliver_draft
+                # PAYLOAD ROUTING (2026-07-03 pivot): an action card stores its
+                # chain under cabinet:action:<pid>; a reply draft under
+                # cabinet:draft:<pid>. Route by which record exists — same gate,
+                # different executor. Action-first: the pivot lane is the live
+                # one (draft lane parked by Captain ruling).
+                if redis_get(f"cabinet:action:{pid}"):
+                    from framework.frontdoor import action_exec
+                    fn = action_exec.deliver_action
+                else:
+                    from framework.frontdoor import chair_drafts
+                    fn = chair_drafts.deliver_draft
             else:
                 fn = deliver
             override = ""

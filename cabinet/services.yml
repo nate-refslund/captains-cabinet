@@ -92,6 +92,17 @@ services:
       evolution chain had no clock. Stamp key standardized to
       cabinet:schedule:last-run:cos:cross-officer-retro (cos:retro was never
       written by anything); first firing bootstraps the stamp convention.
+  - name: action-lane
+    label: com.cabinet.action-lane
+    kind: daemon
+    command: python3.12 framework/acting/run_action_lane.py
+    schedule: { interval_s: 1800 }
+    expected: "≤2 action cards/run, ≤5/day (Redis budget) to Captain Telegram; approve executes via action_exec (Monday/Reminders); log every 30min"
+    notes: >-
+      The 2026-07-03 Captain-ruled pivot of the draft lane (parked): proactive
+      ACTION proposals from captured commitments/meetings/decisions through the
+      SAME binder gate. Propose-only; verdicts feed the live graduation engine.
+      Pure core (action_lane.py) is retrodiction-ready for the sim harness.
   - name: frontdoor-briefing
     label: com.cabinet.frontdoor-briefing
     kind: daemon
