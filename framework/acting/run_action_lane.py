@@ -54,6 +54,9 @@ def covered_evidence_refs() -> frozenset:
     return frozenset(refs)
 
 VAULT = Path.home() / "Obsidian" / "screenpipe-brain"
+# Captain-ratified directions.yml (mission/instruments/bets/not_goals per lane) —
+# injected into the proposer prompt + used to validate every card's direction_fit.
+DIRECTIONS_PATH = Path(__file__).resolve().parents[2] / "instance" / "config" / "directions.yml"
 LOCK_PATH = "/tmp/cabinet-action-lane.lock"
 # Captain ruling 2026-07-03: NO attention quota — send every genuinely-needed
 # action. MAX_PER_RUN is a technical anti-runaway bound only (a berserk LLM
@@ -97,6 +100,25 @@ def _redis(*args: str) -> str:
     out = subprocess.run(["redis-cli", "-h", host, *args],
                          capture_output=True, text=True, timeout=10).stdout.strip()
     return "" if out in ("", "(nil)") else out
+
+
+def load_directions() -> "dict | None":
+    """Parse the Captain-ratified directions.yml (yaml.safe_load only) for
+    injection into the proposer prompt + direction_fit validation. A missing or
+    broken file degrades to None — the proposer then skips direction_fit
+    enforcement rather than dropping every card (graceful degradation)."""
+    try:
+        import yaml
+        data = yaml.safe_load(DIRECTIONS_PATH.read_text())
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
+def _suppress_log(line: str) -> None:
+    """Sink for the proposer's dedup/skip decisions — one line each to the
+    launchd log so no drop is silent (SEC-4 RT-A12)."""
+    print(line)
 
 
 def _llm(system: str, user: str) -> str:
@@ -228,7 +250,8 @@ def main() -> int:
     proposals = action_lane.propose_actions(
         signals, as_of=now.strftime("%Y-%m-%dT%H:%M:%SZ"), llm=_llm,
         decided_subjects=decided, open_subjects=open_subjects,
-        budget_left=budget, covered_evidence=covered_evidence_refs())
+        budget_left=budget, covered_evidence=covered_evidence_refs(),
+        directions=load_directions(), suppress_log=_suppress_log)
 
     if args.dry_run:
         print(f"DRY RUN — {len(proposals)} card(s) would present:\n")
