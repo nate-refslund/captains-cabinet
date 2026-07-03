@@ -1,11 +1,24 @@
 #!/bin/bash
 # retro-trigger.sh — Fires retro when reflection threshold reached
-# Replaces the time-based 24h retro with event-based: every 5 reflections cabinet-wide
-# OR every 24h as a safety floor (so retros happen even on quiet days)
+# Event-based: every 5 reflections cabinet-wide OR every 48h as a safety floor
+# (so retros happen even on quiet days; floor matches CLAUDE.md's 48h).
 [ -f /etc/environment.cabinet ] && source /etc/environment.cabinet
 
-REDIS_HOST="${REDIS_HOST:-redis}"
-REDIS_PORT="${REDIS_PORT:-6379}"
+# B4 Mac portability (2026-07-03): explicit REDIS_HOST/PORT win; REDIS_URL is
+# a fallback; default 127.0.0.1 — the old 'redis' Docker-DNS default made every
+# redis-cli below fail silently on Mac.
+if [ -n "${REDIS_HOST:-}" ] || [ -n "${REDIS_PORT:-}" ]; then
+  REDIS_HOST="${REDIS_HOST:-127.0.0.1}"
+  REDIS_PORT="${REDIS_PORT:-6379}"
+elif [ -n "${REDIS_URL:-}" ]; then
+  REDIS_HOST=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f1)
+  REDIS_PORT=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f2)
+  REDIS_HOST="${REDIS_HOST:-127.0.0.1}"
+  REDIS_PORT="${REDIS_PORT:-6379}"
+else
+  REDIS_HOST="127.0.0.1"
+  REDIS_PORT="6379"
+fi
 TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
 
 # Resolve CABINET_ROOT — env var wins, otherwise script-relative (cabinet/cron/.. = repo root)
@@ -44,8 +57,15 @@ LAST_RETRO_COUNT=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET "cabinet:refl
 REFLECTIONS_SINCE=$((REFLECTIONS_NOW - LAST_RETRO_COUNT))
 
 # Safety floor: also fire if last retro was 48h ago (catches quiet periods)
-LAST_RETRO_TS=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET "cabinet:schedule:last-run:cos:retro" 2>/dev/null)
-LAST_RETRO_EPOCH=$(date -d "$LAST_RETRO_TS" +%s 2>/dev/null || echo 0)
+# stamp key fix (HIGH-8 2026-07-03): the script read cos:retro, a key nothing
+# ever writes — the floor clock was permanently at epoch 0. The retro task's
+# real name is cross-officer-retro; read it (legacy cos:retro as fallback for
+# any historical value).
+LAST_RETRO_TS=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET "cabinet:schedule:last-run:cos:cross-officer-retro" 2>/dev/null)
+[ -z "$LAST_RETRO_TS" ] && LAST_RETRO_TS=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET "cabinet:schedule:last-run:cos:retro" 2>/dev/null)
+LAST_RETRO_EPOCH=$(date -d "$LAST_RETRO_TS" +%s 2>/dev/null \
+  || date -j -f "%Y-%m-%dT%H:%M:%SZ" "$LAST_RETRO_TS" +%s 2>/dev/null \
+  || echo 0)
 NOW_EPOCH=$(date -u +%s)
 HOURS_SINCE_RETRO=$(( (NOW_EPOCH - LAST_RETRO_EPOCH) / 3600 ))
 
@@ -92,7 +112,7 @@ Patterns to look for:
 Phase 1 RETRO: Cross-officer patterns, handoff quality, coordination gaps. Score the cabinet on improving the WORK, the WORKFLOW, the IMPROVEMENT itself (3 levels).
 Phase 2 EVOLUTION: Validate draft skills against golden evals, promote validated skills.
 
-After: redis-cli -h $REDIS_HOST -p $REDIS_PORT SET cabinet:schedule:last-run:cos:retro \"\$(date -u +%Y-%m-%dT%H:%M:%SZ)\" && redis-cli -h $REDIS_HOST -p $REDIS_PORT SET cabinet:reflections:count_at_last_retro \"$REFLECTIONS_NOW\""
+After: redis-cli -h $REDIS_HOST -p $REDIS_PORT SET cabinet:schedule:last-run:cos:cross-officer-retro \"\$(date -u +%Y-%m-%dT%H:%M:%SZ)\" && redis-cli -h $REDIS_HOST -p $REDIS_PORT SET cabinet:reflections:count_at_last_retro \"$REFLECTIONS_NOW\""
 
   # trigger_send writes to stderr on XADD failure; capture stderr so we can
   # distinguish real success from silent-drop and refuse to print false-positive.

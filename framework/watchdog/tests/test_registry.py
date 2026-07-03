@@ -424,8 +424,10 @@ def test_pipes_fresh_passes():
 
 
 def test_pipes_stale_fails():
+    # 40h exceeds every cadence-aligned ceiling (max 28h for teams-graph since
+    # the 2026-07-03 sleep-aware thresholds; 5h was the pre-change fixture).
     now = dt.datetime(2026, 6, 29, 12, 0, tzinfo=dt.timezone.utc)
-    old = (now - dt.timedelta(hours=5)).timestamp()
+    old = (now - dt.timedelta(hours=40)).timestamp()
     mtimes = {f"{reg.SCREENPIPE_STATE_DIR}/{fn}": old
               for (fn, _s) in reg.PIPE_FRESHNESS.values()}
     probe = FakeProbe(now=now, mtimes=mtimes)
@@ -508,3 +510,28 @@ def test_full_run_with_fake_probe_routes_only_failures():
     assert "AUTO-FIX fired" in failed[0]["action"]
     # exactly one Chair trigger (the auto-fix re-trigger)
     assert len(probe.triggers) == 1
+
+
+def test_reflection_toolcall_counts_as_work_signal():
+    """HIGH-8 (2026-07-03): last-experience is 2h-TTL and its writer stalled —
+    the check read every officer as idle and logged vacuous green. The durable
+    last-toolcall stamp now counts as the work signal, so a working officer
+    with no reflection goes honestly red."""
+    now = dt.datetime(2026, 6, 29, 12, 0, tzinfo=dt.timezone.utc)
+    redis = {"cabinet:last-toolcall:cos":
+             (now - dt.timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ")}
+    probe = FakeProbe(now=now, redis=redis)
+    res = reg.verify_officer_reflection(probe)
+    assert res.ok is False
+    assert "cos" in res.detail and "never reflected" in res.detail
+
+
+def test_reflection_stale_toolcall_is_idle():
+    """A toolcall OLDER than the ceiling window is not recent work — the
+    officer is idle and not expected to reflect."""
+    now = dt.datetime(2026, 6, 29, 12, 0, tzinfo=dt.timezone.utc)
+    redis = {"cabinet:last-toolcall:cos":
+             (now - dt.timedelta(hours=72)).strftime("%Y-%m-%dT%H:%M:%SZ")}
+    probe = FakeProbe(now=now, redis=redis)
+    res = reg.verify_officer_reflection(probe)
+    assert res.ok is True

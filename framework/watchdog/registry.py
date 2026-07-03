@@ -419,7 +419,17 @@ def verify_officer_reflection(probe: "Probe") -> CheckResult:
     now = probe.now()
     overdue = []
     for officer in FULLTIME_OFFICERS:
+        # WORK SIGNAL (HIGH-8 fix 2026-07-03): last-experience alone made this
+        # check vacuous — the key has a 2h TTL and record-experience.sh stopped
+        # being called Jun 30, so every officer read as "idle" and the check
+        # logged green while the reflection chain was dead. Compose it with the
+        # DURABLE cabinet:last-toolcall:<officer> stamp (post-tool-use hook,
+        # ISO-8601): a toolcall within the ceiling window == the officer worked.
         last_work = probe.redis_get(f"cabinet:last-experience:{officer}")
+        if not last_work:
+            tc = _parse_iso(probe.redis_get(f"cabinet:last-toolcall:{officer}"))
+            if tc is not None and (now - tc).total_seconds() <= REFLECTION_CEILING_S:
+                last_work = "toolcall"
         if not last_work:
             continue  # idle → not expected to reflect
         last_refl_raw = probe.redis_get(

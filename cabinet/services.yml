@@ -81,6 +81,17 @@ services:
     notes: >-
       F0.7 dead-man skeleton: evidence starvation must page — staleness is loss
       of proof. Auto-demote wiring joins when graduation goes live (B2.9+).
+  - name: retro-trigger
+    label: com.cabinet.retro-trigger
+    kind: cron
+    command: bash cabinet/cron/retro-trigger.sh
+    schedule: { interval_s: 3600 }
+    expected: "fires cross-officer RETRO+EVOLUTION trigger to cos when due (5 reflections or 48h floor); otherwise logs 'No retro yet'"
+    notes: >-
+      HIGH-8 (2026-07-03): was unscheduled anywhere — the reflection→retro→
+      evolution chain had no clock. Stamp key standardized to
+      cabinet:schedule:last-run:cos:cross-officer-retro (cos:retro was never
+      written by anything); first firing bootstraps the stamp convention.
   - name: frontdoor-briefing
     label: com.cabinet.frontdoor-briefing
     kind: daemon

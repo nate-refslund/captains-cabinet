@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Hourly retro-trigger check (HIGH-8, scheduled 2026-07-03). The script is a
+     cheap idempotent check: it fires the cross-officer RETRO + EVOLUTION trigger
+     to the Chair (cos) only when due — 5+ reflections since the last retro OR the
+     48h safety floor — otherwise logs "No retro yet" and exits. Before this plist
+     existed the script was UNSCHEDULED anywhere, so the reflection→retro→evolution
+     chain had no clock at all (stalled past its own ceiling, watchdog vacuously
+     green).
+
+     Source of truth in repo; installed + loaded with:
+       cp cabinet/launchd/com.cabinet.retro-trigger.plist ~/Library/LaunchAgents/
+       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.cabinet.retro-trigger.plist
+
+     DISABLE:
+       launchctl bootout gui/$(id -u)/com.cabinet.retro-trigger
+       rm ~/Library/LaunchAgents/com.cabinet.retro-trigger.plist
+
+     No secrets in this file — the script sources cabinet/.env itself for the
+     Telegram-capable child scripts. REDIS_HOST/PORT set here per B4 (Mac).
+
+     KNOWN LIMIT (same as status-sweep): launchd StartInterval does not fire
+     while the Mac sleeps; missed intervals coalesce to one fire on wake. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.cabinet.retro-trigger</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/nate/captains-cabinet/cabinet/cron/retro-trigger.sh</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>REDIS_HOST</key>
+    <string>localhost</string>
+    <key>REDIS_PORT</key>
+    <string>6379</string>
+    <key>CABINET_ROOT</key>
+    <string>/Users/nate/captains-cabinet</string>
+  </dict>
+  <key>StartInterval</key>
+  <integer>3600</integer>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>/Users/nate/.cabinet/logs/retro-trigger.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/nate/.cabinet/logs/retro-trigger.log</string>
+</dict>
+</plist>
