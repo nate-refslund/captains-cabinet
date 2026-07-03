@@ -59,6 +59,7 @@ def emit_outcome(
     confidence: str,
     evidence: str | None = None,
     observed_at: str | None = None,
+    extra_refs: list | None = None,
     rows: list | None = None,
     emit: Callable[..., Any] = emit_consequence,
     find: Callable[..., Any] = find_proposal_by_cid,
@@ -70,7 +71,12 @@ def emit_outcome(
     - Unattributable cid → no emit (RT#3). Undecided proposal → no emit (nothing
       executed without approval, so there is no outcome to observe).
     - The rich label + confidence + source go in refs; the proposal's own refs
-      (incl. the cid) are preserved so the join survives.
+      (incl. the cid) are preserved so the join survives. A probe may pass
+      ``extra_refs`` for source-specific metadata that also belongs in refs —
+      e.g. the B2.6 CI probe's ``graduation-credit:false`` Goodhart guard (a
+      green CI on a test-only diff is not evidence the feature works). These are
+      appended verbatim; the frozen outcome object still carries only
+      {status, evidence}.
     """
     if status not in STATUSES:
         raise ValueError(f"status must be one of {STATUSES}; got {status!r}")
@@ -91,6 +97,8 @@ def emit_outcome(
             f"{_CONFIDENCE_PREFIX}{confidence}"]
     if observed_at:
         meta.append(f"observed-at:{observed_at}")
+    if extra_refs:
+        meta.extend(str(r) for r in extra_refs)   # source-specific refs (e.g. B2.10)
     ev["refs"] = list(prop.get("refs") or []) + meta
 
     if status == "unknown":
