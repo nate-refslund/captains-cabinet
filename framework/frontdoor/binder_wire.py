@@ -93,27 +93,47 @@ def handle_captain_update(
     """
     try:
         candidates = extract_pids(quoted, text)
-        if not candidates:
-            return {"handled": False, "reason": "no-pid"}
-
         pending = pending_source() if pending_source is not None else loop.pending_proposals()
         by_id = {loop.proposal_id(p): p for p in pending if isinstance(p, dict)}
-        # B-2 (cp2 re-review 2026-07-03): bind the LAST marker that is a REAL open
-        # proposal. Cards render the legit pid last (lane) or on the header line
-        # (chair) — either way, only a marker present in by_id may bind, so a
-        # `·fake·` a correspondent planted in quoted text is inert: not in by_id,
-        # it is skipped, and it cannot mask the genuine proposal. pid retained
-        # for logging/return (last candidate when none are open).
-        pid = candidates[-1]
+
+        pid: str | None = None
         proposal = None
-        for cand in reversed(candidates):
-            if cand in by_id:
-                pid, proposal = cand, by_id[cand]
-                break
-        if proposal is None:
-            # Marker(s) present but none is an open proposal (already decided /
-            # expired / foreign). Passthrough — the Chair can still reason on it.
-            return {"handled": False, "reason": "no-pending-match", "pid": pid}
+        if candidates:
+            # B-2 (cp2 re-review 2026-07-03): bind the LAST marker that is a REAL open
+            # proposal. Cards render the legit pid last (lane) or on the header line
+            # (chair) — either way, only a marker present in by_id may bind, so a
+            # `·fake·` a correspondent planted in quoted text is inert: not in by_id,
+            # it is skipped, and it cannot mask the genuine proposal. pid retained
+            # for logging/return (last candidate when none are open).
+            pid = candidates[-1]
+            for cand in reversed(candidates):
+                if cand in by_id:
+                    pid, proposal = cand, by_id[cand]
+                    break
+            if proposal is None:
+                # Marker(s) present but none is an open proposal (already decided /
+                # expired / foreign). Passthrough — the Chair can still reason on it.
+                return {"handled": False, "reason": "no-pending-match", "pid": pid}
+        else:
+            # NO-PID FALLBACK (CRIT-1 2026-07-03): the first REAL Captain verdict
+            # ("send") was eaten here — he replied to the Chair's argument message,
+            # which carries no ·pid· marker, so the wire passed through and the
+            # verdict never landed on the ledger. Bind mechanically ONLY when it is
+            # unambiguous: the reply routes to a clear approve/edit/skip verdict AND
+            # exactly ONE proposal is open. Anything else stays passthrough — with
+            # multiple proposals open we never guess which one he meant; the Chair
+            # (who receives the DM either way) disambiguates.
+            routed_probe = loop.route_captain_response(text)
+            if routed_probe.primary not in ("approve", "edit", "skip"):
+                return {"handled": False, "reason": "no-pid"}
+            if len(by_id) != 1:
+                log(f"binder-wire: no-pid verdict '{routed_probe.primary}' with "
+                    f"{len(by_id)} open proposals — not guessing, passthrough")
+                return {"handled": False,
+                        "reason": f"no-pid-ambiguous ({len(by_id)} open)"}
+            pid, proposal = next(iter(by_id.items()))
+            log(f"binder-wire: no-pid fallback bound '{routed_probe.primary}' to the "
+                f"single open proposal pid={pid[:60]}")
 
         raw = redis_get(f"cabinet:draft:{pid}")
         stored = None

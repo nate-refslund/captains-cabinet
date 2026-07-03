@@ -271,3 +271,58 @@ def test_edit_override_charset_normalized_before_delivery():
     # normalization is live (isolated run + production). Where the charset lib
     # resolves to a no-op, norm==raw and it stays correct rather than skipping.
     assert delivered_override == norm
+
+
+# ---- CRIT-1 no-pid fallback (2026-07-03): the eaten-"send" fix ----------------
+
+def test_no_pid_verdict_binds_single_open_proposal():
+    """The observed first-real-reply failure: Captain replies 'send' to the
+    Chair's ARGUMENT message (no ·pid· anywhere). With exactly ONE open
+    proposal, the verdict must bind mechanically instead of passing through."""
+    prop = _proposal()
+    rec = Recorder()
+    r = binder_wire.handle_captain_update(
+        "send", "Chair: I think we should reply X because Y — thoughts?",
+        pending_source=lambda: [prop], deliver=rec.deliver,
+        emit=rec.emit, redis_get=_redis_with_draft(prop))
+    assert r["handled"] is True and r["primary"] == "approve"
+    assert r["pid"] == _pid(prop)
+    assert rec.delivered and rec.delivered[0][0] == _pid(prop)
+
+
+def test_no_pid_verdict_with_multiple_open_never_guesses():
+    p1 = _proposal(subject="thread:kristoffer")
+    p2 = _proposal(subject="thread:lisa")
+    rec = Recorder()
+    r = binder_wire.handle_captain_update(
+        "send", "which of these should go?",
+        pending_source=lambda: [p1, p2], deliver=rec.deliver,
+        emit=rec.emit, redis_get=lambda k: "")
+    assert r["handled"] is False
+    assert r["reason"].startswith("no-pid-ambiguous")
+    assert rec.emitted == [] and rec.delivered == []
+
+
+def test_no_pid_non_verdict_stays_passthrough_even_with_one_open():
+    """A question/instruction with no pid must NOT bind — only clear
+    approve/edit/skip verdicts use the fallback."""
+    prop = _proposal()
+    rec = Recorder()
+    r = binder_wire.handle_captain_update(
+        "what's the status on this?", "Chair: proposal summary...",
+        pending_source=lambda: [prop], deliver=rec.deliver,
+        emit=rec.emit, redis_get=_redis_with_draft(prop))
+    assert r["handled"] is False and r["reason"] == "no-pid"
+    assert rec.emitted == [] and rec.delivered == []
+
+
+def test_no_pid_skip_verdict_records_without_delivery():
+    prop = _proposal()
+    rec = Recorder()
+    r = binder_wire.handle_captain_update(
+        "skip: already handled it myself", "Chair argument message",
+        pending_source=lambda: [prop], deliver=rec.deliver,
+        emit=rec.emit, redis_get=_redis_with_draft(prop))
+    assert r["handled"] is True and r["primary"] == "skip"
+    assert rec.delivered == []          # skip never delivers
+    assert rec.emitted                  # but the verdict landed on the ledger
