@@ -326,11 +326,12 @@ def _exec_delegate(payload: dict) -> dict:
         raise RuntimeError("delegate_work needs a brief")
     root = str(Path(__file__).resolve().parents[2])
     # [RT-A2] The brief is capture-derived (email/Teams → vault → proposer), so it
-    # is UNTRUSTED text. The old "CAPTAIN-APPROVED WORK ITEM" prefix framed
-    # injected instructions as authorized; frame it as world-description the
-    # receiving officer must verify, never as a command it should obey.
-    msg = (f"[action-lane] work item (capture-derived, verify before trusting "
-           f"factual claims); report back to the Chair when done:\n\n{brief}")
+    # is UNTRUSTED text — framed as world-description the receiving officer must
+    # verify, never as a command it should obey. Single source of truth for that
+    # framing lives on the delegate_work kind (action_lane.DELEGATE_BRIEF_FRAME);
+    # lazy-imported so this module never hard-depends on the proposer at load.
+    from framework.acting.action_lane import DELEGATE_BRIEF_FRAME
+    msg = DELEGATE_BRIEF_FRAME.format(brief=brief)
     r = subprocess.run(
         ["bash", "-c",
          '. "$1/cabinet/scripts/lib/triggers.sh" && OFFICER_NAME=action-lane trigger_send "$2" "$3"',
