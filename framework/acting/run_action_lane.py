@@ -193,8 +193,8 @@ def _tg(text: str) -> None:
                                data=data), timeout=20)
 
 
-def _store_action(pid: str, prop: action_lane.ActionProposal) -> None:
-    rec = {"lane": prop.lane, "subject": prop.subject,
+def _store_action(pid: str, prop: action_lane.ActionProposal, cid: str = "") -> None:
+    rec = {"cid": cid, "lane": prop.lane, "subject": prop.subject,
            "situation": prop.situation,
            "steps": [{"kind": s.kind, "title": s.title, "payload": s.payload}
                      for s in prop.steps],
@@ -245,13 +245,28 @@ def main() -> int:
     actor = {"kind": "officer", "id": "officer:cos"}
     for p in proposals:
         ts = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        # B2.1 cid (strategy-report corrected rec 2, 2026-07-03): without a
+        # minted correlation id every card is unjoinable to probe outcomes and
+        # lands unattributable — the wire the graduation engine starves without.
+        from framework.probes import correlation
+        cid = correlation.mint()
         prop_ev = proposal_event(actor=actor, lane=p.lane, subject=p.subject,
                                  ts=ts, action="action-card",
-                                 refs=list(p.evidence))   # evidence = dedup identity
+                                 refs=[correlation.ref_for(cid)] + list(p.evidence))
+        # action_type stamping (graduation wire). Guarded by the shared enum:
+        # only a mapping whose target EXISTS in classifier.ACTION_TYPES is
+        # stamped, so no invalid type is ever emitted. task_create activates
+        # automatically when the Captain applies the germline amendment
+        # (docs/proposals/germline-amendment-task-create-2026-07-03.md);
+        # until then creates stay unstamped exactly as before. Chains stamp
+        # only when ALL steps agree on one type (honest cell accounting).
+        at = action_lane.chain_action_type(p)
+        if at:
+            prop_ev["action_type"] = at
         pid = proposal_id(prop_ev)
         card = action_lane.render_card(p, pid)   # marker-stripped inside
         emit_consequence(**prop_ev)              # ledger FIRST (fail-closed order)
-        _store_action(pid, p)
+        _store_action(pid, p, cid=cid)
         _tg(card)
         presented += 1
         print(f"presented action card -> {p.subject} ({p.lane}, conf={p.confidence:.2f})")

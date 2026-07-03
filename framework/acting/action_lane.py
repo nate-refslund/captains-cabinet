@@ -186,6 +186,31 @@ def propose_actions(
     return out
 
 
+# card kind -> classifier action_type. Only semantically-true mappings; a
+# target absent from the classifier enum is simply never stamped (guarded in
+# chain_action_type), so this map can lead the germline amendment safely.
+ACTION_TYPE_MAP = {
+    "monday_task_update": "board_status",   # exists today: status/label/due on a board item
+    "monday_task_create": "task_create",    # pending germline amendment (2026-07-03)
+}
+
+
+def chain_action_type(prop: "ActionProposal"):
+    """The single classifier action_type for a card, or None. Stamps only when
+    every step maps to the SAME valid enum value — a mixed chain stays
+    unstamped rather than mis-bucketing a graduation cell."""
+    try:
+        from framework.authority.classifier import ACTION_TYPES
+    except Exception:
+        return None
+    mapped = {ACTION_TYPE_MAP.get(s.kind) for s in prop.steps}
+    if len(mapped) == 1:
+        at = mapped.pop()
+        if at and at in ACTION_TYPES:
+            return at
+    return None
+
+
 def _no_marker(s: str) -> str:
     """Strip the pid-marker char (U+00B7) from model/vault-derived text so a
     correspondent (or the model itself) can never inject a fake ·pid· into the

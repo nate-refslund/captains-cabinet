@@ -105,11 +105,18 @@ def _exec_monday_create(payload: dict, monday_post: Callable) -> dict:
     item_id = ((data.get("create_item") or {}).get("id"))
     if not item_id:
         raise RuntimeError("monday create returned no item id")
-    if payload.get("description"):
+    desc = str(payload.get("description") or "")
+    cid = str(payload.get("_cid") or "")
+    if cid:
+        # correlation footer (B2.1): makes the created item joinable to probe
+        # outcomes — the evidence plane's stamp on lane-created artifacts.
+        from framework.probes import correlation
+        desc = (desc + "\n\n" if desc else "") + correlation.monday_footer(cid)
+    if desc:
         monday_post(
             "mutation($item: ID!, $body: String!) {"
             " create_update(item_id: $item, body: $body) { id } }",
-            {"item": str(item_id), "body": str(payload["description"])[:4000]})
+            {"item": str(item_id), "body": desc[:4000]})
     return {"monday_id": str(item_id), "board_id": board}
 
 
@@ -321,9 +328,12 @@ def deliver_action(pid: str, override_text: str = "", *,
     osa = osascript or _default_osascript
 
     executed: list[dict] = []
+    rec_cid = str(rec.get("cid") or "")
     for i, step in enumerate(steps, 1):
         kind = step.get("kind")
-        payload = step.get("payload") or {}
+        payload = dict(step.get("payload") or {})
+        if rec_cid:
+            payload["_cid"] = rec_cid
         if dry_run:
             executed.append({"step": i, "kind": kind, "dry_run": True})
             continue

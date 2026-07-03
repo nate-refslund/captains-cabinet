@@ -134,3 +134,23 @@ def test_evidence_overlap_dedup_beats_reworded_slugs():
         budget_left=5,
         covered_evidence=frozenset({"2-Meetings/2026-07-02-scrum.md"}))
     assert [p.subject for p in props] == ["genuinely-new"]
+
+
+def test_chain_action_type_stamps_only_uniform_valid_chains():
+    """Graduation wire: monday_task_update maps to the existing board_status
+    enum value; monday_task_create's task_create stays dormant until the
+    germline amendment lands; mixed chains never stamp."""
+    upd = al.propose_actions("s", as_of="t",
+                             llm=_llm_returning([_p("u", kinds=("monday_task_update",))]),
+                             decided_subjects=set(), open_subjects=set(), budget_left=5)[0]
+    assert al.chain_action_type(upd) == "board_status"
+    cre = al.propose_actions("s", as_of="t",
+                             llm=_llm_returning([_p("c", kinds=("monday_task_create",))]),
+                             decided_subjects=set(), open_subjects=set(), budget_left=5)[0]
+    from framework.authority.classifier import ACTION_TYPES
+    expected = "task_create" if "task_create" in ACTION_TYPES else None
+    assert al.chain_action_type(cre) == expected
+    mixed = al.propose_actions("s", as_of="t",
+                               llm=_llm_returning([_p("m", kinds=("monday_task_update", "reminder_create"))]),
+                               decided_subjects=set(), open_subjects=set(), budget_left=5)[0]
+    assert al.chain_action_type(mixed) is None
