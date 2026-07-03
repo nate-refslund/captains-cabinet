@@ -14,7 +14,20 @@
 #   CABINET_ACTIVE_PROJECT=other-proj trigger_send cpo "msg"
 # Legacy callsites (no CABINET_ACTIVE_PROJECT) are byte-for-byte unchanged.
 
-TRIG_REDIS_HOST="${REDIS_HOST:-redis}"
+# B4 Mac portability (2026-07-03): explicit REDIS_HOST wins, REDIS_URL is the
+# fallback, default 127.0.0.1. The old `redis` Docker-DNS default made every
+# un-enveloped sender (interactive shells, ad-hoc scripts) silently fail to
+# queue on Mac — the stderr warn fired, but the trigger was lost. Docker
+# deployments set REDIS_URL/REDIS_HOST in the compose env, so they are
+# unaffected by the localhost default.
+if [ -n "${REDIS_HOST:-}" ]; then
+  TRIG_REDIS_HOST="$REDIS_HOST"
+elif [ -n "${REDIS_URL:-}" ]; then
+  TRIG_REDIS_HOST=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f1)
+else
+  TRIG_REDIS_HOST="127.0.0.1"
+fi
+TRIG_REDIS_HOST="${TRIG_REDIS_HOST:-127.0.0.1}"
 TRIG_REDIS_PORT="${REDIS_PORT:-6379}"
 TRIG_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CABINET_ROOT="${CABINET_ROOT:-$(cd "$TRIG_LIB_DIR/../../.." && pwd)}"
