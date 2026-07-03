@@ -107,6 +107,7 @@ def propose_actions(
     open_subjects: set,
     budget_left: int,
     lane_default: str = "polads",
+    covered_evidence: frozenset = frozenset(),
 ) -> list[ActionProposal]:
     """The pure decision step: signals in, ≤budget carded proposals out.
 
@@ -117,6 +118,12 @@ def propose_actions(
     decided_subjects / open_subjects: slugs the ledger says are settled or
       currently pending — both are skipped (never re-ask an answered question;
       never double-card an open one).
+    covered_evidence: evidence refs already carried by ANY prior action card
+      (open or decided). Slug dedup alone is insufficient — the LLM re-words
+      subjects between runs (the 5-cards-for-2-situations incident, 2026-07-03),
+      but the underlying evidence refs (commitment ids, note paths) are stable.
+      A proposal citing ANY covered ref is dropped: same evidence = same
+      situation, no matter how it is phrased.
     budget_left: hard cap on proposals returned this run (daily ask budget).
     """
     if budget_left <= 0 or not (signals_text or "").strip():
@@ -139,6 +146,9 @@ def propose_actions(
             continue
         if subject in decided_subjects or subject in open_subjects:
             continue
+        evidence_refs = {str(e)[:200] for e in (p.get("evidence") or [])[:8]}
+        if evidence_refs & set(covered_evidence):
+            continue   # same underlying evidence as an existing card — dedup
         try:
             confidence = max(0.0, min(1.0, float(p.get("confidence", 0.0))))
         except (TypeError, ValueError):

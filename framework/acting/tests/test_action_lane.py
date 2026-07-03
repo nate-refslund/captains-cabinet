@@ -119,3 +119,18 @@ def test_card_strips_marker_char_from_untrusted_fields():
     card = al.render_card(props[0], "real-pid")
     assert card.count("·") == 2                    # exactly the one real marker
     assert card.rstrip().endswith("·real-pid·")
+
+
+def test_evidence_overlap_dedup_beats_reworded_slugs():
+    """The 5-cards-for-2-situations incident (2026-07-03): the LLM re-words the
+    subject each run, so slug dedup misses — but evidence refs are stable. Any
+    overlap with a prior card's refs drops the proposal, phrasing be damned."""
+    reworded = _p("master-dashboard-demo-monday-meeting-with-doris-buijs-cvdm")
+    fresh = _p("genuinely-new")
+    fresh["evidence"] = ["6-Commitments/owed_by_nate/cmt-other.md"]
+    props = al.propose_actions(
+        "signals...", as_of="t", llm=_llm_returning([reworded, fresh]),
+        decided_subjects=set(), open_subjects={"master-dashboard-demo-monday-meeting-doris-cvdm"},
+        budget_left=5,
+        covered_evidence=frozenset({"2-Meetings/2026-07-02-scrum.md"}))
+    assert [p.subject for p in props] == ["genuinely-new"]

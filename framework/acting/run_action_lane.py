@@ -38,7 +38,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from framework.acting import action_lane, screenpipe_adapter as sa  # noqa: E402
 from framework.acting.loop import proposal_event, proposal_id, pending_proposals  # noqa: E402
-from framework.fidelity.consequence import emit_consequence  # noqa: E402
+from framework.fidelity.consequence import emit_consequence, read_ledger  # noqa: E402
+
+
+def covered_evidence_refs() -> frozenset:
+    """Evidence refs carried by ANY prior action card (open or decided) — the
+    stable dedup identity across runs (LLM subject slugs drift; refs don't)."""
+    refs: set = set()
+    try:
+        for ev in read_ledger():
+            if ev.get("action") == "action-card":
+                refs.update(r for r in (ev.get("refs") or []) if isinstance(r, str))
+    except Exception:
+        pass   # fail-open here is safe: slug dedup still applies
+    return frozenset(refs)
 
 VAULT = Path.home() / "Obsidian" / "screenpipe-brain"
 LOCK_PATH = "/tmp/cabinet-action-lane.lock"
@@ -181,10 +194,16 @@ def gather_signals(as_of: dt.datetime, *, window_h: int = WINDOW_H) -> str:
 # ---------------------------------------------------------------------------
 
 def _tg(text: str) -> None:
-    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-    chat = os.environ.get("TELEGRAM_CHAT_ID", "") or os.environ.get("CAPTAIN_TELEGRAM_ID", "")
+    # HQ CHAIR channel ONLY (Captain ruling 2026-07-03: cabinet cards go to the
+    # HQ Chair bot, never the Screenpipe bot). TELEGRAM_COS_TOKEN is the Chair's
+    # bot — the same one the cos-inbound poller polls, so replies BIND. There is
+    # deliberately NO fallback to TELEGRAM_BOT_TOKEN: that is the Screenpipe
+    # bot, whose updates never reach the binder (the first 5 live cards landed
+    # there and could not be verdicted).
+    token = os.environ.get("TELEGRAM_COS_TOKEN", "")
+    chat = os.environ.get("CAPTAIN_TELEGRAM_ID", "")
     if not token or not chat:
-        raise RuntimeError("telegram env missing (TELEGRAM_BOT_TOKEN / chat id)")
+        raise RuntimeError("telegram env missing (TELEGRAM_COS_TOKEN / CAPTAIN_TELEGRAM_ID)")
     data = urllib.parse.urlencode({"chat_id": chat, "text": text}).encode()
     urllib.request.urlopen(
         urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage",
@@ -196,7 +215,8 @@ def _store_action(pid: str, prop: action_lane.ActionProposal) -> None:
            "situation": prop.situation,
            "steps": [{"kind": s.kind, "title": s.title, "payload": s.payload}
                      for s in prop.steps],
-           "evidence": list(prop.evidence)}
+           "evidence": list(prop.evidence),
+           "confidence": prop.confidence, "urgency": prop.urgency}
     _redis("SET", f"cabinet:action:{pid}", json.dumps(rec), "EX", "604800")
 
 
@@ -228,7 +248,7 @@ def main() -> int:
     proposals = action_lane.propose_actions(
         signals, as_of=now.strftime("%Y-%m-%dT%H:%M:%SZ"), llm=_llm,
         decided_subjects=decided, open_subjects=open_subjects,
-        budget_left=budget)
+        budget_left=budget, covered_evidence=covered_evidence_refs())
 
     if args.dry_run:
         print(f"DRY RUN — {len(proposals)} card(s) would present:\n")
@@ -246,7 +266,8 @@ def main() -> int:
     for p in proposals:
         ts = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         prop_ev = proposal_event(actor=actor, lane=p.lane, subject=p.subject,
-                                 ts=ts, action="action-card")
+                                 ts=ts, action="action-card",
+                                 refs=list(p.evidence))   # evidence = dedup identity
         pid = proposal_id(prop_ev)
         card = action_lane.render_card(p, pid)   # marker-stripped inside
         emit_consequence(**prop_ev)              # ledger FIRST (fail-closed order)
