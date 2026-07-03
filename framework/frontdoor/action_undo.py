@@ -39,7 +39,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-from framework.authority.classifier import ACTION_TYPES
 from framework.fidelity.consequence import validate_consequence
 
 # --- constants ---------------------------------------------------------------
@@ -64,18 +63,11 @@ ACT_FIRST_EXCLUDED_BACKENDS = frozenset({"apple_reminders"})
 
 _ROW_STATUSES = frozenset({"executed", "reversed", "reversal_failed", "void"})
 
-# step-kind -> classifier action_type, GUARDED: a mapping is stamped only when
-# its target already exists in classifier.ACTION_TYPES. task_create /
-# calendar_event_create / officer_dispatch are added at the germline moments
-# (Moment 1/2) — until then those kinds journal action_type=None (unstamped),
-# exactly like action_lane.chain_action_type leads the amendment safely.
-_KIND_ACTION_TYPE = {
-    "monday_task_create": "task_create",
-    "monday_task_update": "board_status",
-    "reminder_create": "calendar_event_create",
-    "delegate_work": "officer_dispatch",
-}
-_ACTION_TYPES_SET = frozenset(ACTION_TYPES)
+# step-kind -> classifier action_type is owned by the proposer lane as ONE map
+# (action_lane.ACTION_TYPE_MAP, enum-guarded by action_lane.step_action_type).
+# This module resolves through that single source (action_type_for) so the
+# card's stamp and the executor's per-step acted events can never drift [RT-B6]
+# — a local copy here already diverged once (missing investigation_run).
 
 
 class UndoJournalError(ValueError):
@@ -103,11 +95,15 @@ def _mint() -> str:
 
 
 def action_type_for(kind: Optional[str]) -> Optional[str]:
-    """The classifier action_type a step kind stamps, or None. GUARDED: only a
-    real ACTION_TYPES enum member is ever returned, so an unapplied germline
-    type never reaches the ledger (mirrors action_lane.chain_action_type)."""
-    at = _KIND_ACTION_TYPE.get(kind or "")
-    return at if (at and at in _ACTION_TYPES_SET) else None
+    """The classifier action_type a step of this kind stamps, or None — resolved
+    through the proposer lane's SINGLE source (action_lane.step_action_type over
+    ACTION_TYPE_MAP) so the card stamp and the executor's per-step acted events
+    can never drift [RT-B6]. Enum-guarded there: an unapplied germline type
+    (task_create / calendar_event_create / officer_dispatch) resolves to None
+    until its Moment lands. Lazy import — the reversal module never hard-depends
+    on the proposer at load time."""
+    from framework.acting import action_lane
+    return action_lane.step_action_type(action_lane.ActionStep(kind=kind or "", title=""))
 
 
 # --- journal store (durable, append-only JSONL) ------------------------------
