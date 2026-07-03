@@ -59,9 +59,12 @@ def _load_shared_env() -> None:
 
 def _monday_post(query: str, variables: dict) -> dict:
     """One Monday GraphQL call. JSON-built body; key from env; never logged."""
-    key = os.environ.get("MONDAY_API_KEY", "")
+    # Canonical var is MONDAY_API_TOKEN (per .env.example + the pipes' _shared/.env);
+    # accept the legacy MONDAY_API_KEY name as a fallback. Fixes action-lane
+    # deliveries failing "MONDAY_API_KEY not set" when only the TOKEN name is present.
+    key = os.environ.get("MONDAY_API_TOKEN") or os.environ.get("MONDAY_API_KEY", "")
     if not key:
-        raise RuntimeError("MONDAY_API_KEY not set")
+        raise RuntimeError("MONDAY_API_TOKEN / MONDAY_API_KEY not set")
     body = json.dumps({"query": query, "variables": variables}).encode()
     req = urllib.request.Request(
         MONDAY_API, data=body,

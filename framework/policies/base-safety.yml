@@ -32,3 +32,95 @@ policies:
     tools: [Edit, Write]
     path_patterns: ["*.env", "*.env.*"]
     message: "Environment files cannot be modified by Officers"
+
+  - name: no-production-deploy
+    type: command_contains
+    description: "Block production deployment (mirrors pre-tool-use.sh section 3a)"
+    tool: Bash
+    patterns: ["vercel deploy", "vercel --prod"]
+    case_sensitive: true
+    message: "Production deployment requires Captain approval"
+
+  # ---------------------------------------------------------------------------
+  # Parity migration (2026-07-03): the following stateless rules were live-only
+  # in pre-tool-use.sh (bash) and are now expressed as typed policies so the
+  # typed engine models the live hook's STATELESS rule set. SHADOW-ONLY today --
+  # pre-tool-use.sh does NOT invoke policy_engine.py; the live hook remains the
+  # sole enforcer. These affect the typed engine (consumed via policy-shadow.py)
+  # only. Enforce-flip stays OFF (CABINET_AUTHORITY_ENFORCING / a future legacy
+  # flip are Captain-gated). Proof: docs/policy-shadow-parity-proof-v2-2026-07-03.md.
+  #
+  # STATEFUL live gates NOT migrated (Captain-scoped out, by design): the
+  # Layer-1 git-push/merge REVIEW gate (pre-tool-use.sh section 6), the CI-GREEN
+  # merge gate (section 7), and the gh-api / curl / wget protected-branch DELETE
+  # guard (section 6 Phase 2b) are Redis-ATTESTATION gates -- they block only
+  # until the CTO sets cabinet:layer1:cto:reviewed / :ci-green. A stateless typed
+  # policy cannot read that Redis state, so it could only model the
+  # block-when-unreviewed branch -- misrepresenting a gate as an absolute block.
+  # policy_engine.py's own contract already declares "Layer 1 gate, CI green
+  # gate ... remain in bash." They stay live-only, enforced by pre-tool-use.sh.
+  # See the v2 proof section "Scope".
+
+  # R4 -- non-CTO product-codebase write via Bash (mirrors pre-tool-use.sh sec 4).
+  # bash_write_to_path is SOURCE/TARGET-aware: it matches only when the workspace
+  # path is the WRITE TARGET (redirect dest, sed -i/perl -i file arg, tee/cp/mv/
+  # rsync dest, patch/tar extract dir), so reads FROM the workspace (cp
+  # /workspace/x /tmp/, cat | tee /tmp) correctly ALLOW. cto+unknown exempt,
+  # exactly like the live section-4 officer guard.
+  - name: no-product-workspace-write
+    type: bash_write_to_path
+    description: "Only CTO may write into the active project codebase via Bash"
+    path_pattern: "/workspace/[a-z0-9][a-z0-9-]*/"
+    exempt_officers: [cto, unknown]
+    message: "Only CTO can modify the active project codebase via Bash. Write a spec and notify CTO."
+
+  # R4 (Edit/Write) -- non-CTO product-codebase Edit/Write (mirrors
+  # pre-tool-use.sh section 4 FILE_PATH case /workspace/<slug>/*). Glob
+  # /workspace/[a-z0-9]*/* enforces the live hook's leading-lowercase slug so an
+  # uppercase/mixed-case slug path is ALLOWED exactly as the live hook allows it.
+  # cto+unknown exempt.
+  - name: no-product-workspace-edit
+    type: path_block
+    description: "Only CTO may Edit/Write the active project codebase"
+    tools: [Edit, Write]
+    path_patterns: ["/workspace/[a-z0-9]*/*"]
+    exempt_officers: [cto, unknown]
+    message: "Only CTO can modify the active project codebase. Write a spec to shared/interfaces/product-specs/ and notify CTO."
+
+  # Germline read-only set (mirrors pre-tool-use.sh sec 5 GERMLINE SET) -- the
+  # files that JUDGE officer/loop behavior. Read-only for EVERY officer and loop
+  # (no exempt_officers -- not even cos). Directory entries use "*/<dir>/*"
+  # (contains-dir); single files are "*<suffix>" (ends-with, so siblings like
+  # autonomy.yml.example / golden-evals-notes.md / authority/tests/*.py stay
+  # editable). _path_matches_pattern normalizes // and retries relative paths as
+  # absolute, matching the live hook's `tr -s /` + contains/suffix semantics.
+  # constitution/ is already covered by constitution-readonly above.
+  - name: germline-readonly
+    type: path_block
+    description: "Germline files (the judges of officer/loop behavior) are read-only for all officers and loops"
+    tools: [Edit, Write]
+    path_patterns:
+      - "*/golden-evals/*"
+      - "*/framework/policies/*"
+      - "*framework/authority/classifier.py"
+      - "*framework/authority/lane.py"
+      - "*framework/authority/matrix.py"
+      - "*framework/authority/veto.py"
+      - "*framework/authority/deploy_classifier.py"
+      - "*framework/fidelity/graduation.py"
+      - "*cabinet/scripts/lib/policy_engine.py"
+      - "*cabinet/mcp-scope.yml"
+      - "*cabinet/officer-capabilities.conf"
+      - "*.claude/rules/brain-bridge.md"
+      - "*.claude/rules/courses-of-action.md"
+      - "*instance/config/autonomy.yml"
+    message: "Germline file -- read-only for officers and loops (no loop may edit its own judge). Propose the change to the Captain; only the Captain applies germline edits."
+
+  # Officer tier2 isolation (mirrors pre-tool-use.sh sec 5 tier2 arm): an officer
+  # may only write under its OWN instance/memory/tier2/<officer>/ directory.
+  - name: officer-tier2-isolation
+    type: tier2_isolation
+    description: "Officers may only write to their own tier2 directory"
+    tools: [Edit, Write]
+    base_path: "instance/memory/tier2/"
+    message: "Officers can only write to their own tier2 directory"

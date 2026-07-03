@@ -61,14 +61,141 @@ def file_path(tool_input: dict[str, Any]) -> str:
     return str(tool_input.get("file_path") or tool_input.get("path") or "")
 
 
-def decision(hook: dict[str, Any]) -> dict[str, Any]:
+# Policy types the LEGACY-enforcing shadow decision routes through. This is
+# EXACTLY the set the live main() loop would block on — authority_matrix is
+# excluded (it is shadow-verdict-only; in A0 _eval_authority_matrix blocks every
+# action, so including it here would make .decision block everything).
+_LEGACY_ENFORCING_TYPES = frozenset({
+    "binary_block",
+    "destructive_rm",
+    "command_contains",
+    "path_block",
+    "bash_write_to_path",
+    "tier2_isolation",
+})
+
+
+def _shadow_cabinet_root() -> str | None:
+    """Resolve the repo root for policy loading WITHOUT depending on CABINET_ROOT
+    being exported. The parity harness + test-policy-shadow.sh invoke the shadow
+    standalone with CABINET_ROOT unset, in which case policy_engine.load_policies
+    would default to /opt/founders-cabinet and load ZERO policies. Reuse the
+    engine's own _authority_root() (honors CABINET_ROOT, else walks up from the
+    engine file to the repo root) so the shadow and the engine resolve the SAME
+    root — one source of truth, no dynamic path math here. Returns None if the
+    engine is unavailable (caller falls back to the regex shadow).
+    """
+    if policy_engine is None:
+        return None
+    env_root = os.environ.get("CABINET_ROOT")
+    if env_root:
+        return env_root
+    resolver = getattr(policy_engine, "_authority_root", None)
+    if resolver is None:
+        return None
+    try:
+        return str(resolver())
+    except Exception:  # noqa: BLE001 - shadow must never raise
+        return None
+
+
+def _reason_token(policy: dict[str, Any]) -> str:
+    """Stable reason token for a matched policy: the kebab name → snake_case
+    (e.g. no-production-deploy → no_production_deploy, which CONTAINS the legacy
+    'production_deploy' token the shadow tests assert on)."""
+    name = str(policy.get("name") or policy.get("type") or "policy")
+    return name.replace("-", "_")
+
+
+def _engine_decision(hook: dict[str, Any], officer: str) -> dict[str, Any] | None:
+    """Route .decision through policy_engine.evaluate_policy() over the loaded
+    typed policies (first-match-wins, mirroring the live main() loop). Returns
+    the shadow-v1-shaped result dict, or None if the engine cannot be used
+    (import missing / no root) so the caller falls back to the regex shadow.
+
+    Fail-safe: any exception → None (regex fallback). authority_matrix policies
+    are skipped. A policiesless load (empty root) yields decision=allow.
+    """
+    if policy_engine is None:
+        return None
+    evaluate_policy = getattr(policy_engine, "evaluate_policy", None)
+    load_policies = getattr(policy_engine, "load_policies", None)
+    if evaluate_policy is None or load_policies is None:
+        return None
+
     tool_name = str(hook.get("tool_name") or "")
     tool_input = hook.get("tool_input") if isinstance(hook.get("tool_input"), dict) else {}
+
+    try:
+        policies = load_policies(_shadow_cabinet_root())
+    except Exception:  # noqa: BLE001 - shadow must never raise
+        return None
+
+    try:
+        for policy in policies:
+            if not isinstance(policy, dict):
+                continue
+            if policy.get("type") not in _LEGACY_ENFORCING_TYPES:
+                continue  # skip authority_matrix (shadow-only) + non-legacy
+            result = evaluate_policy(policy, tool_name, tool_input, officer)
+            if result:
+                token = _reason_token(policy)
+                return {
+                    "decision": "block",
+                    "reason": token,
+                    "reasons": [token],
+                    "officer": officer,
+                    "policy_version": "shadow-v1",
+                }
+    except Exception:  # noqa: BLE001 - shadow must never raise
+        return None
+
+    return {
+        "decision": "allow",
+        "reason": "no_shadow_rule_matched",
+        "officer": officer,
+        "policy_version": "shadow-v1",
+    }
+
+
+def decision(hook: dict[str, Any]) -> dict[str, Any]:
+    """SHADOW .decision — now routed through the typed policy engine.
+
+    Parity fix (2026-07-03, docs/policy-shadow-parity-proof-v2-2026-07-03.md):
+    the old self-contained regex here was strictly weaker than the live hook on
+    the covered rules (missed adversarial rm-root / perl-i / sed-i / tar product
+    writes, over-matched read-from-workspace). We now delegate to
+    policy_engine.evaluate_policy() over the loaded typed policies — the SAME
+    engine that already gets those rules right — so the shadow decision tracks
+    the typed engine (and, for the migrated stateless rules, the live hook).
+    SHADOW-ONLY: this changes only the recorded shadow decision, never a live
+    allow/block (pre-tool-use.sh does not invoke this engine).
+
+    Shape is unchanged (policy_version 'shadow-v1', decision allow|block). If the
+    engine is unavailable for any reason, fall back to the historical regex
+    shadow (_regex_decision) so the shadow never crashes and never regresses to
+    a bare allow-on-error.
+    """
     officer = os.environ.get("OFFICER") or os.environ.get("OFFICER_NAME") or "unknown"
-    reasons: list[str] = []
 
     if hook.get("_error"):
         return {"decision": "allow", "reason": hook["_error"], "officer": officer, "policy_version": "shadow-v1"}
+
+    engine_result = _engine_decision(hook, officer)
+    if engine_result is not None:
+        return engine_result
+
+    # Engine unavailable (import failed / no root / raised) — historical regex.
+    return _regex_decision(hook, officer)
+
+
+def _regex_decision(hook: dict[str, Any], officer: str) -> dict[str, Any]:
+    """Historical self-contained regex shadow. Retained as the fail-safe path
+    when the typed engine cannot be loaded. NOTE: strictly weaker than the engine
+    on the covered rules (see decision() docstring) — used only as a fallback."""
+    tool_name = str(hook.get("tool_name") or "")
+    tool_input = hook.get("tool_input") if isinstance(hook.get("tool_input"), dict) else {}
+    reasons: list[str] = []
 
     if tool_name == "Bash":
         cmd = command(tool_input)
