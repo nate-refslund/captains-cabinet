@@ -147,6 +147,94 @@ def _exec_monday_update(payload: dict, monday_post: Callable) -> dict:
     return {"monday_id": item, "applied": applied}
 
 
+def _exec_calendar_event(payload: dict, osascript: Callable) -> dict:
+    """Reminder as a CALENDAR event (Captain ruling 2026-07-03: work reminders
+    live on his calendar, not a personal to-do app). Calendar.app via argv-passed
+    AppleScript; target calendar from ACTION_LANE_CALENDAR (default 'Work').
+    30-minute block at due_iso; date-only due lands at 09:00."""
+    title = (payload.get("title") or "").strip()
+    if not title:
+        raise RuntimeError("reminder_create needs a title")
+    cal = os.environ.get("ACTION_LANE_CALENDAR", "Work").strip()
+    due = (payload.get("due_iso") or "").strip()
+    if not due:
+        raise RuntimeError("calendar reminder needs due_iso")
+    notes = (payload.get("notes") or "").strip()
+    script = (
+        'on run argv\n'
+        'set calName to item 1 of argv\n'
+        'set evTitle to item 2 of argv\n'
+        'set evNotes to item 3 of argv\n'
+        'set dueIso to item 4 of argv\n'
+        'set startDate to my parseIso(dueIso)\n'
+        'set endDate to startDate + (30 * minutes)\n'
+        'tell application "Calendar"\n'
+        ' if not (exists (first calendar whose name is calName)) then set calName to "Cabinet"\n'
+        ' try\n'
+        '  tell (first calendar whose name is calName)\n'
+        '   make new event with properties {summary:evTitle, start date:startDate, end date:endDate, description:evNotes}\n'
+        '  end tell\n'
+        ' on error\n'
+        # the named calendar is read-only (e.g. an Exchange view) or otherwise
+        # unwritable — land on the dedicated writable "Cabinet" calendar instead
+        '  set calName to "Cabinet"\n'
+        '  if not (exists (first calendar whose name is calName)) then make new calendar with properties {name:calName}\n'
+        '  tell (first calendar whose name is calName)\n'
+        '   make new event with properties {summary:evTitle, start date:startDate, end date:endDate, description:evNotes}\n'
+        '  end tell\n'
+        ' end try\n'
+        'end tell\n'
+        'return "ok:" & calName\n'
+        'end run\n'
+        'on parseIso(s)\n'
+        ' set d to current date\n'
+        ' set year of d to (text 1 thru 4 of s) as integer\n'
+        ' set month of d to (text 6 thru 7 of s) as integer\n'
+        ' set day of d to (text 9 thru 10 of s) as integer\n'
+        ' if (length of s) > 10 then\n'
+        '  set hours of d to (text 12 thru 13 of s) as integer\n'
+        '  set minutes of d to (text 15 thru 16 of s) as integer\n'
+        ' else\n'
+        '  set hours of d to 9\n'
+        '  set minutes of d to 0\n'
+        ' end if\n'
+        ' set seconds of d to 0\n'
+        ' return d\n'
+        'end parseIso')
+    res = osascript(["osascript", "-e", script, cal, title[:200], notes[:500], due])
+    if "ok" not in res:
+        raise RuntimeError(f"calendar returned {res!r}")
+    return {"calendar": res.split(":", 1)[-1] or cal, "title": title[:80]}
+
+
+_DELEGATE_OFFICERS = {"cos", "polads-ceo", "stephie-ceo", "comms-officer"}
+
+
+def _exec_delegate(payload: dict) -> dict:
+    """delegate_work: dispatch an implementation brief to an officer lane via
+    the durable trigger stream (+ tmux wake). The Captain-ruled 'SOLVE, don't
+    just track' leg — an approved card puts real work in motion. Officer name
+    is whitelist-validated; the brief travels as an argv value, never shell."""
+    officer = (payload.get("officer") or "").strip()
+    brief = (payload.get("brief") or "").strip()
+    if officer not in _DELEGATE_OFFICERS:
+        raise RuntimeError(f"delegate_work: unknown officer {officer!r}")
+    if not brief:
+        raise RuntimeError("delegate_work needs a brief")
+    root = str(Path(__file__).resolve().parents[2])
+    msg = (f"[action-lane] CAPTAIN-APPROVED WORK ITEM — execute and report back "
+           f"to the Chair when done:\n\n{brief}")
+    r = subprocess.run(
+        ["bash", "-c",
+         '. "$1/cabinet/scripts/lib/triggers.sh" && OFFICER_NAME=action-lane trigger_send "$2" "$3"',
+         "_", root, officer, msg],
+        capture_output=True, text=True, timeout=20,
+        env={**os.environ, "REDIS_HOST": os.environ.get("REDIS_HOST", "localhost")})
+    if r.returncode != 0 or r.stderr.strip():
+        raise RuntimeError(f"trigger_send failed: {r.stderr.strip()[:150] or r.returncode}")
+    return {"delegated_to": officer, "brief_chars": len(brief)}
+
+
 def _exec_reminder(payload: dict, osascript: Callable) -> dict:
     title = (payload.get("title") or "").strip()
     if not title:
@@ -245,7 +333,14 @@ def deliver_action(pid: str, override_text: str = "", *,
             elif kind == "monday_task_update":
                 out = _exec_monday_update(payload, mp)
             elif kind == "reminder_create":
-                out = _exec_reminder(payload, osa)
+                # backend is per-instance config (Captain ruling: reminders on
+                # the CALENDAR; Apple Reminders demoted to an optional plugin —
+                # other captains may prefer it: ACTION_LANE_REMINDER_BACKEND)
+                backend = os.environ.get("ACTION_LANE_REMINDER_BACKEND", "calendar")
+                out = (_exec_reminder(payload, osa) if backend == "apple_reminders"
+                       else _exec_calendar_event(payload, osa))
+            elif kind == "delegate_work":
+                out = _exec_delegate(payload)
             else:
                 raise RuntimeError(f"unknown action kind {kind!r}")
             executed.append({"step": i, "kind": kind, **out})

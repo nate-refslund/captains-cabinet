@@ -119,3 +119,45 @@ def test_missing_record_and_dry_run():
         redis_get=_store([{"kind": "reminder_create", "payload": {"title": "t"}}]),
         monday_post=MondaySpy(), osascript=lambda c: "ok")
     assert r["ok"] is True and r["executed"][0]["dry_run"] is True
+
+
+def test_reminder_backend_defaults_to_calendar(monkeypatch):
+    """Captain ruling 2026-07-03: reminders land on the CALENDAR by default;
+    Apple Reminders is an opt-in plugin via ACTION_LANE_REMINDER_BACKEND."""
+    monkeypatch.delenv("ACTION_LANE_REMINDER_BACKEND", raising=False)
+    monkeypatch.setenv("ACTION_LANE_CALENDAR", "Work")
+    seen = {}
+    def osa(cmd):
+        seen["script"] = cmd[2]
+        return "ok:Work"
+    r = ax.deliver_action(
+        "pidc1", redis_get=_store([{"kind": "reminder_create",
+                                    "payload": {"title": "prep dashboard",
+                                                "due_iso": "2026-07-06T09:00"}}]),
+        monday_post=MondaySpy(), osascript=osa)
+    assert r["ok"] is True
+    assert 'application "Calendar"' in seen["script"]      # calendar, not Reminders
+    assert r["executed"][0]["calendar"] == "Work"
+
+
+def test_reminder_backend_apple_plugin_optin(monkeypatch):
+    monkeypatch.setenv("ACTION_LANE_REMINDER_BACKEND", "apple_reminders")
+    seen = {}
+    def osa(cmd):
+        seen["script"] = cmd[2]
+        return "ok"
+    r = ax.deliver_action(
+        "pidc2", redis_get=_store([{"kind": "reminder_create",
+                                    "payload": {"title": "t", "due_iso": "2026-07-06"}}]),
+        monday_post=MondaySpy(), osascript=osa)
+    assert r["ok"] is True
+    assert 'application "Reminders"' in seen["script"]
+
+
+def test_delegate_work_whitelists_officer():
+    r = ax.deliver_action(
+        "pidd1", redis_get=_store([{"kind": "delegate_work",
+                                    "payload": {"officer": "evil-officer",
+                                                "brief": "do things"}}]),
+        monday_post=MondaySpy(), osascript=lambda c: "ok")
+    assert r["ok"] is False and "unknown officer" in r["error"]

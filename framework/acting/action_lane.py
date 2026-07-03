@@ -24,8 +24,13 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-# v1 action vocabulary — low-blast, machine-verifiable actions only.
-ACTION_KINDS = ("monday_task_create", "monday_task_update", "reminder_create")
+# Action vocabulary. Captain ruling 2026-07-03 ("not just PM/PO — do actual
+# work that would solve the tasks"): delegate_work dispatches an implementation
+# brief to an officer lane, so an approved card can SOLVE, not just track.
+# reminder_create lands on the Captain's CALENDAR by default (Apple Reminders
+# is an optional per-instance plugin — his ruling: good for personal, not work).
+ACTION_KINDS = ("monday_task_create", "monday_task_update", "reminder_create",
+                "delegate_work")
 URGENCIES = ("ping-now", "batch")
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
@@ -63,18 +68,30 @@ Nate handles ALL communication himself. You propose ACTIONS the captured world
 implies — never reply drafts. Allowed action kinds (nothing else):
 - monday_task_create: {board_hint, title, description, priority?, due?}
 - monday_task_update: {monday_id, set: {status?|priority?|due?|description?}, why}
-- reminder_create: {list, title, due_iso, notes?}
+- reminder_create: {title, due_iso, notes?} — lands as a CALENDAR event/block on
+  Nate's calendar (never a personal to-do app)
+- delegate_work: {officer: "polads-ceo"|"stephie-ceo"|"comms-officer"|"cos",
+  brief: str} — dispatches a precise implementation brief to that officer's
+  lane so the work actually gets DONE on approval
 
 Rules:
+- SOLVE, don't just track (Captain ruling): when the situation has a concrete
+  fix, the chain must carry the steps that COMPLETE it — investigation,
+  delegate_work with an exact brief, the tracking task — so approving the card
+  solves the situation, not merely files it. A bare create-task chain is only
+  right when the work genuinely needs Nate himself.
 - ONE proposal per SITUATION, carrying ALL steps that situation needs, in order.
 - Only propose what the evidence supports. Cite evidence refs you were given.
 - Skip anything already decided, already tracked, or already done.
+- Propose EVERY situation that genuinely needs handling — there is no quota;
+  the bar is genuine need, not count.
+- situation: complete sentences, self-contained (it is shown to Nate in full).
 - Confidence = your honest probability Nate approves unchanged.
 - Urgency "ping-now" ONLY if it would be wrong or worthless by tomorrow.
 Return STRICT JSON: {"proposals": [{"situation": str, "subject_hint": str,
 "lane": str, "urgency": "ping-now"|"batch", "confidence": float,
 "evidence": [str], "steps": [{"kind": str, "title": str, "payload": {}}]}]}
-Return {"proposals": []} when nothing clears the bar. Fewer, better proposals win."""
+Return {"proposals": []} when nothing clears the bar."""
 
 
 def _parse_llm(raw: str) -> list[dict]:
@@ -157,7 +174,7 @@ def propose_actions(
         seen.add(subject)
         out.append(ActionProposal(
             subject=subject,
-            situation=str(p.get("situation") or "")[:300],
+            situation=str(p.get("situation") or "")[:800],
             steps=tuple(ActionStep(kind=s["kind"], title=s["title"].strip()[:200],
                                    payload=dict(s.get("payload") or {}))
                         for s in steps[:6]),

@@ -12,9 +12,9 @@ window): open commitments (6-Commitments), fresh meeting notes (2-Meetings),
 fresh decisions (5-Reflections/Decisions). The gather step is `as_of`-shaped so
 the retrodiction harness can drive the same path with a historical clock.
 
-Budget: ≤ MAX_PER_RUN cards per run AND ≤ DAILY_CAP per UTC day (Redis counter)
-— the attention channel is the scarce resource (it was 9× oversubscribed;
-Nate's 100%-reply commitment survives only if every card is worth a tap).
+No attention quota (Captain ruling 2026-07-03): every genuinely-needed action
+is sent. MAX_PER_RUN is a technical anti-runaway bound only. The quality bar
+lives in the proposer prompt (genuine need + SOLVE-shaped chains).
 
 Run: python3.12 framework/acting/run_action_lane.py [--dry-run]
   --dry-run: gather + propose + print the would-be cards; no Telegram, no
@@ -55,8 +55,10 @@ def covered_evidence_refs() -> frozenset:
 
 VAULT = Path.home() / "Obsidian" / "screenpipe-brain"
 LOCK_PATH = "/tmp/cabinet-action-lane.lock"
-MAX_PER_RUN = 2
-DAILY_CAP = 5
+# Captain ruling 2026-07-03: NO attention quota — send every genuinely-needed
+# action. MAX_PER_RUN is a technical anti-runaway bound only (a berserk LLM
+# must not flood 20 cards in one tick), not a budget.
+MAX_PER_RUN = 8
 WINDOW_H = 72
 LLM_MODEL = "claude-sonnet-4-6"
 _lock_fh = None
@@ -95,25 +97,6 @@ def _redis(*args: str) -> str:
     out = subprocess.run(["redis-cli", "-h", host, *args],
                          capture_output=True, text=True, timeout=10).stdout.strip()
     return "" if out in ("", "(nil)") else out
-
-
-def _budget_left() -> int:
-    day = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d")
-    used = _redis("GET", f"cabinet:action-lane:asks:{day}")
-    try:
-        used_n = int(used or 0)
-    except ValueError:
-        used_n = 0
-    return max(0, DAILY_CAP - used_n)
-
-
-def _budget_spend(n: int) -> None:
-    if n <= 0:
-        return
-    day = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d")
-    key = f"cabinet:action-lane:asks:{day}"
-    _redis("INCRBY", key, str(n))
-    _redis("EXPIRE", key, str(3 * 86400))
 
 
 def _llm(system: str, user: str) -> str:
@@ -231,10 +214,7 @@ def main() -> int:
     _load_env()
 
     now = dt.datetime.now(dt.timezone.utc)
-    budget = min(MAX_PER_RUN, _budget_left()) if not args.dry_run else MAX_PER_RUN
-    if budget <= 0:
-        print(f"done: daily ask budget exhausted ({DAILY_CAP}/day)")
-        return 0
+    budget = MAX_PER_RUN
 
     signals = gather_signals(now)
     if not signals.strip():
@@ -275,7 +255,6 @@ def main() -> int:
         _tg(card)
         presented += 1
         print(f"presented action card -> {p.subject} ({p.lane}, conf={p.confidence:.2f})")
-    _budget_spend(presented)
     print(f"done: presented {presented} action card(s)")
     return 0
 
