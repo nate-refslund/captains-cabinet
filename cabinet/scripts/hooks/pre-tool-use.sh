@@ -48,21 +48,37 @@ if [ -x "$POLICY_SHADOW" ]; then
 fi
 
 # ============================================================
-# 1. KILL SWITCH CHECK
+# 1. KILL SWITCH CHECK (fail-closed — CRIT-5 hardening 2026-07-03)
 # ============================================================
+# Two deliberate properties:
+#   (a) NO self-serve deactivation. While active, NOTHING a hooked officer
+#       session runs can disarm or bypass the halt. The old substring
+#       whitelist for "DEL cabinet:killswitch" let ANY compound command
+#       embedding that string exit 0 — skipping not just this check but
+#       every downstream gate (spending, prohibited actions, germline).
+#       Deactivation is Captain-side only: cabinet/scripts/kill-switch.sh
+#       deactivate (terminal) or the dashboard governance toggle — both run
+#       outside officer hooks, so removing the whitelist strands nothing.
+#   (b) UNREACHABLE control plane halts mutations. redis-cli's exit code
+#       distinguishes key-absent (0, empty) from connection failure (non-0).
+#       When Redis cannot answer, state-changing tool classes are blocked
+#       until it returns; read/observe/comms tools stay allowed so officers
+#       report the outage instead of going silently dark. Deliberately
+#       stricter than the spending gate's fail-open contract below: a
+#       missing budget is ambiguity; a missing safety switch is exposure.
 KILLSWITCH=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET cabinet:killswitch 2>/dev/null)
+KS_EXIT=$?
 if [ "$KILLSWITCH" = "active" ]; then
-  # Allow the command that deactivates the kill switch
-  if [ "$TOOL_NAME" = "Bash" ]; then
-    CMD=$(echo "$TOOL_INPUT" | jq -r '.command // empty' 2>/dev/null)
-    case "$CMD" in
-      *"DEL cabinet:killswitch"*|*"del cabinet:killswitch"*)
-        exit 0
-        ;;
-    esac
-  fi
-  echo "KILL SWITCH ACTIVE — all operations halted by Captain. Send /resume to deactivate." >&2
+  echo "KILL SWITCH ACTIVE — all operations halted by Captain. Deactivation is Captain-side only: kill-switch.sh deactivate, or the dashboard governance toggle." >&2
   exit 2
+fi
+if [ "$KS_EXIT" -ne 0 ]; then
+  case "$TOOL_NAME" in
+    Bash|Write|Edit|MultiEdit|NotebookEdit)
+      echo "KILL SWITCH UNVERIFIABLE — Redis unreachable at $REDIS_HOST:$REDIS_PORT; state-changing tools are halted until the control plane answers (read/comms tools still allowed)." >&2
+      exit 2
+      ;;
+  esac
 fi
 
 # ============================================================
