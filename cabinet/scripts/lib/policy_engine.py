@@ -1010,10 +1010,11 @@ def _eval_tier2_isolation(
 #   * Unknown / unmeasured / ambiguous -> propose_only. An unknown action_type
 #     (classify_action -> AMBIGUOUS, or anything not mapped) has no risk_class
 #     and proposes. A missing/absent cell verdict resolves to propose_only.
-#   * read_cell_state is STUBBED to "unmeasured" in A0 (F2 graduation.py is not
-#     built). So EVERY non-ceiling cell resolves propose_only and the gate
-#     NEVER returns auto/None in A0 — autonomy lights up cell-by-cell only when
-#     F's graduation states arrive.
+#   * read_cell_state reads F2 graduation.evaluate LIVE (un-stubbed
+#     2026-07-03), fail-safe-wrapped: absence/exception/unknown-state ->
+#     "unmeasured" -> propose_only. Autonomy lights up cell-by-cell as cells
+#     earn graduated state — and the verdict is still SHADOW-consumed until
+#     the Captain-gated enforcement flip.
 #   * Defensive .get() throughout — a malformed/empty policy dict proposes,
 #     never auto. No exception escapes to the caller.
 #
@@ -1061,17 +1062,32 @@ def resolve_verdict(verdicts: Any, risk_class: str, state: str) -> str:
     return "propose_only"
 
 
-def read_cell_state(officer: str, lane: str | None, action_type: str) -> str:
-    """Read F's PRECOMPUTED per-cell graduation state.
+_CELL_STATES = {"unmeasured", "propose_only", "eligible", "graduated", "demote"}
 
-    STUBBED in A0: F2 (`framework/fidelity/graduation.py`) does not exist yet,
-    so there is no confidence source — every cell reads "unmeasured" (the
-    fail-safe state that forces propose_only at the gate). When F2 lands, this
-    becomes `graduation.evaluate((f"officer:{officer}", lane, action_type))`
-    wrapped fail-safe: any absence/exception -> "unmeasured" (block), never a
-    graduated state that would unlock auto.
+
+def read_cell_state(officer: str, lane: str | None, action_type: str) -> str:
+    """Read the per-cell graduation state from F2 (`framework.fidelity.graduation`).
+
+    UN-STUBBED 2026-07-03 (CRIT-3): the A0 stub hardcoded "unmeasured", so the
+    measure→gate wire was severed and `auto` was unreachable by construction.
+    Now the live graduation engine answers — still SHADOW-consumed only (the
+    verdict reaches enforcement solely behind the CABINET_AUTHORITY_ENFORCING
+    flip + parity gate, unchanged by this change).
+
+    FAIL-SAFE wrapper exactly as the A0 docstring prescribed: any import
+    failure, evaluate() exception, or out-of-vocabulary state resolves to
+    "unmeasured" (which forces propose_only at the gate) — never a graduated
+    state that would unlock auto by accident. Reads the consequence ledger at
+    call time (acceptable in shadow; revisit with a TTL cache before any
+    enforcement flip if per-call latency ever matters).
     """
-    return "unmeasured"
+    try:
+        from framework.fidelity import graduation  # noqa: E402 (path set at module load)
+        result = graduation.evaluate((f"officer:{officer}", lane, action_type))
+        state = (result or {}).get("state")
+        return state if state in _CELL_STATES else "unmeasured"
+    except Exception:
+        return "unmeasured"
 
 
 def _eval_authority_matrix(
@@ -1080,10 +1096,11 @@ def _eval_authority_matrix(
     """Authority-matrix verdict for a tool call. Returns a block message
     (propose-only / gated) or None (allow).
 
-    In A0 this returns a block for EVERY action: ceiling classes gate; all
-    other cells resolve propose_only because read_cell_state is stubbed to
-    "unmeasured". It NEVER returns None (auto) in A0. See the section header
-    for the full fail-safe contract.
+    Ceiling classes always gate. Other cells resolve via the LIVE graduation
+    state (read_cell_state, un-stubbed 2026-07-03): a graduated cell can now
+    resolve auto (returns None) — consumed in SHADOW only until the
+    Captain-gated enforcement flip. See the section header for the fail-safe
+    contract.
     """
     message = policy.get("message", "below the autonomy bar — proposing instead")
 
@@ -1131,7 +1148,7 @@ def _eval_authority_matrix(
 
     # 5. auto verdict -> allow. UNREACHABLE in A0 (no cell graduates without
     #    F). Returned for the post-enforcing-flip cycle; the gate never gets
-    #    here while read_cell_state is stubbed.
+    #    here for cells the live graduation engine has not graduated.
     return None
 
 
