@@ -31,7 +31,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
-from framework.fidelity.consequence import emit_consequence
+from framework.fidelity.consequence import DIRECT_DEMOTE_REF, emit_consequence
 from framework.fidelity import graduation
 
 
@@ -64,6 +64,7 @@ def _emit(
     actor=None,
     lane: str = "polads",
     action_type: str = "internal_message",
+    refs=None,
 ):
     """Emit one fully-decided consequence row into the tmp ledger."""
     actor = actor or {"kind": "officer", "id": "cos"}
@@ -76,6 +77,7 @@ def _emit(
         action=f"act-{subject}",
         subject=subject,
         action_type=action_type,
+        refs=refs,
         proposal={
             "required": True,
             "decision": decision,
@@ -224,6 +226,41 @@ class TestDemote:
               status="failed", action_type="local_edit")
         out = graduation.evaluate(REVERSIBLE_CELL, now=_NOW)
         assert out["state"] != "graduated"
+
+    def test_single_plain_wrong_alone_does_not_demote(self):
+        # Contrast baseline for B2.9: ONE plain wrong (no fabrication marker) is
+        # 1 divergent < 2 -> NOT a demote (it's eligible/propose_only, not demote).
+        _emit_n(25, verdict="confirmed", status="ok", action_type="local_edit",
+                start_days_ago=120, spacing_days=2.0)
+        _emit(ts=_iso(_NOW - timedelta(days=1)), subject="w1", verdict="wrong",
+              status="failed", action_type="local_edit")
+        out = graduation.evaluate(REVERSIBLE_CELL, now=_NOW)
+        assert out["state"] != "demote"
+
+    def test_single_fabrication_demotes_directly(self):
+        # B2.9: ONE B2.8-verified fabrication (wrong + DIRECT_DEMOTE_REF) demotes
+        # directly, even though divergent_last10 == 1 < the ≥2 cluster threshold.
+        _emit_n(25, verdict="confirmed", status="ok", action_type="local_edit",
+                start_days_ago=120, spacing_days=2.0)
+        _emit(ts=_iso(_NOW - timedelta(days=1)), subject="fab", verdict="wrong",
+              status="failed", action_type="local_edit",
+              refs=[DIRECT_DEMOTE_REF, "verdict-kind:fabrication"])
+        out = graduation.evaluate(REVERSIBLE_CELL, now=_NOW)
+        assert out["state"] == "demote"
+        assert out["evidence"]["fabrication_demote"] is True
+        assert out["evidence"]["divergent_last10"] == 1   # single sample, yet demoted
+
+    def test_aged_out_fabrication_no_longer_bites(self):
+        # Symmetric ramp-down: a fabrication older than the last-10-scored window
+        # (10 clean confirms after it) no longer demotes.
+        _emit(ts=_iso(_NOW - timedelta(days=60)), subject="oldfab", verdict="wrong",
+              status="failed", action_type="local_edit",
+              refs=[DIRECT_DEMOTE_REF])
+        _emit_n(12, verdict="confirmed", status="ok", action_type="local_edit",
+                start_days_ago=40, spacing_days=2.0)
+        out = graduation.evaluate(REVERSIBLE_CELL, now=_NOW)
+        assert out["evidence"]["fabrication_demote"] is False
+        assert out["state"] != "demote"
 
 
 # --------------------------------------------------------------------------

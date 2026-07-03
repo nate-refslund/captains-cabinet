@@ -7,7 +7,7 @@ NEVER flip the deterministic verdict."""
 from __future__ import annotations
 
 from framework.acting import loop
-from framework.fidelity.consequence import validate_consequence
+from framework.fidelity.consequence import DIRECT_DEMOTE_REF, validate_consequence
 from framework.probes import correlation as c
 from framework.probes import verifier as v
 
@@ -105,7 +105,8 @@ def test_verify_fabrication_emits_wrong_plus_direct_demote():
     ev = emitted[0]
     validate_consequence(ev)
     assert ev["review"]["verdict"] == "wrong"
-    assert "verdict-kind:fabrication" in ev["refs"] and "demote:direct" in ev["refs"]
+    # pin the emitter↔consumer contract: the same constant graduation (B2.9) reads
+    assert "verdict-kind:fabrication" in ev["refs"] and DIRECT_DEMOTE_REF in ev["refs"]
     assert r["emitted"][0]["demote"] is True
 
 

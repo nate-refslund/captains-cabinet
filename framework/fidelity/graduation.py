@@ -57,6 +57,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from framework.fidelity.consequence import (  # noqa: E402
+    DIRECT_DEMOTE_REF,
     GraduationRatios,
     compute_ratios,
     read_ledger,
@@ -171,6 +172,17 @@ def _divergent_in_last10(rows: list[dict[str, Any]]) -> int:
     return sum(1 for e in last if _verdict(e) == "wrong")
 
 
+def _fresh_direct_demote(rows: list[dict[str, Any]]) -> bool:
+    """[B2.9] True iff any of the most recent _LAST_N SCORED rows carries the
+    B2.8 fabrication directive (`DIRECT_DEMOTE_REF` in refs). A single proven
+    fabrication demotes directly — it does NOT wait for the ≥2 divergent cluster.
+    Scoped to the same last-10-scored window as the cluster check so a fabrication
+    aged out by 10 newer clean samples no longer bites (symmetric ramp-down)."""
+    scored = [e for e in rows if _verdict(e) in ("confirmed", "wrong")]
+    last = scored[-_LAST_N:]
+    return any(DIRECT_DEMOTE_REF in (e.get("refs") or []) for e in last)
+
+
 def _days_since_last_wrong(
     rows: list[dict[str, Any]], now: datetime
 ) -> Optional[float]:
@@ -248,6 +260,7 @@ def evaluate(
     match_rate = ratios.review_confirmed_rate  # the decision-match channel
     fitness = _fitness(ratios)
     divergent_last10 = _divergent_in_last10(cell_rows)
+    fabrication_demote = _fresh_direct_demote(cell_rows)
     days_since_wrong = _days_since_last_wrong(cell_rows, now)
     days_since_sample = _days_since_last_sample(cell_rows, now)
 
@@ -259,6 +272,7 @@ def evaluate(
         "outcome_held_rate": ratios.outcome_held_rate,
         "review_confirmed_rate": ratios.review_confirmed_rate,
         "divergent_last10": divergent_last10,
+        "fabrication_demote": fabrication_demote,
         "days_since_last_wrong": days_since_wrong,
         "days_since_last_sample": days_since_sample,
         "bar": dict(bar),
@@ -270,9 +284,12 @@ def evaluate(
     if match_rate is None or ratios.sample_count == 0:
         return {"state": "unmeasured", "evidence": evidence}
 
-    # 2. DEMOTE: a fresh divergent CLUSTER in the last 10 (tighter than the
-    #    promotion ceiling) drops the cell sub-bar regardless of history.
-    if divergent_last10 >= _DEMOTE_DIVERGENT_IN_LAST10:
+    # 2. DEMOTE: either a fresh divergent CLUSTER in the last 10 (tighter than
+    #    the promotion ceiling) OR a single B2.8-verified fabrication drops the
+    #    cell sub-bar regardless of history. A fabrication is a proven lie about
+    #    success (the verifier's RT#4 gate already excluded upstream-outage) — it
+    #    does not wait for a second divergence.
+    if fabrication_demote or divergent_last10 >= _DEMOTE_DIVERGENT_IN_LAST10:
         return {"state": "demote", "evidence": evidence}
 
     # 3. Below the sample or match floor -> propose_only (the fail-safe).

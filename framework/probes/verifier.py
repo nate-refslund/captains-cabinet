@@ -40,7 +40,11 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from framework.acting import loop
-from framework.fidelity.consequence import emit_consequence, validate_consequence
+from framework.fidelity.consequence import (
+    DIRECT_DEMOTE_REF,
+    emit_consequence,
+    validate_consequence,
+)
 from framework.probes import correlation
 from framework.probes import lib
 
@@ -189,7 +193,7 @@ def verify(
             ev["review"]["reviewed_at"] = reviewed_at
         meta = [f"verdict-source:{VERDICT_SOURCE}", f"verdict-kind:{result['kind']}"]
         if result["demote"]:
-            meta.append("demote:direct")
+            meta.append(DIRECT_DEMOTE_REF)
         if adv is not None:
             meta.append(f"advisory-verdict:{adv}")
             meta.append(f"advisory-agrees:{str(adv == result['verdict']).lower()}")

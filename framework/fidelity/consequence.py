@@ -60,6 +60,14 @@ _ACTOR_KINDS = {"pipe", "officer", "crew"}
 _PROPOSAL_DECISIONS = {"approved", "edited", "rejected", "expired", None}
 _OUTCOME_STATUSES = {"ok", "failed", "unknown"}
 _REVIEW_VERDICTS = {"confirmed", "wrong", "unknown"}
+
+# [B2.9] The refs directive a B2.8 verifier fabrication event carries. A single
+# fresh occurrence demotes a cell DIRECTLY (no ≥2-divergent cluster wait) — a
+# proven fabrication (success claimed while probes were reachable and recorded
+# zero evidence; the verifier's RT#4 gate already excluded upstream-outage) is a
+# one-sample demotion trigger. Owned here (the vocabulary module) so the verifier
+# (emitter) and graduation (consumer) can never drift on the string.
+DIRECT_DEMOTE_REF = "demote:direct"
 # [T3] Optional F4 scorer-axis enums carried on the consequence event. They
 # mirror scorer._DEC keys (decision) and scorer.judge_with_oauth (intent). A
 # None / absent value is the unmeasured default. "" (intent layer did not run)
