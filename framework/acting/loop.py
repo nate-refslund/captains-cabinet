@@ -265,22 +265,34 @@ def proposal_id(event: dict) -> str:
 
 def propose(*, thread_ref, subject: str, ts: str, actor: dict,
             gather, draft_fn, present, lane: str = "send-1to1-reply",
-            emit=emit_consequence, refs: list | None = None) -> dict:
+            emit=emit_consequence, refs: list | None = None,
+            mint_cid=None) -> dict:
     """FIRST half of the live event-driven loop (one officer turn): gather →
     draft → emit the PENDING proposal → present it on the Cabinet Telegram, then
     END the turn. Returns the proposal_id so the later reply can be correlated.
     The captain's decision arrives in a SEPARATE turn -> handle_response().
     Injected deps: gather(thread_ref)->ctx, draft_fn(thread_ref,ctx)->draft|None
-    (None = the gate said no-reply), present(draft, proposal_event)->None."""
+    (None = the gate said no-reply), present(draft, proposal_event)->None.
+
+    B2.1: mints an EXTERNAL correlation-id (uuid4) into ``refs`` if none is
+    present, so downstream execution can stamp it into artifacts and probes can
+    join outcomes back. Additive to refs only — ``proposal_id`` (the identity
+    tuple) is unchanged, so the binder / pending logic is unaffected. ``mint_cid``
+    is injectable for deterministic tests."""
     ctx = gather(thread_ref)
     draft = draft_fn(thread_ref, ctx)
     if not draft:
         return {"thread_ref": thread_ref, "status": "gated"}
+    from framework.probes import correlation
+    refs = list(refs or [])
+    if correlation.cid_from_refs(refs) is None:
+        refs = [correlation.ref_for((mint_cid or correlation.mint)())] + refs
     prop = proposal_event(actor=actor, lane=lane, subject=subject, ts=ts, refs=refs)
     emit(**prop)
     present(draft, prop)
     return {"thread_ref": thread_ref, "status": "proposed",
-            "proposal_id": proposal_id(prop), "proposal": prop, "draft": draft}
+            "proposal_id": proposal_id(prop), "proposal": prop, "draft": draft,
+            "correlation_id": correlation.cid_from_refs(refs)}
 
 
 def pending_proposals(since: str | None = None, rows: list | None = None) -> list:
