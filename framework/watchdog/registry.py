@@ -538,9 +538,17 @@ def verify_no_silent_cron_failure(probe: "Probe") -> CheckResult:
 SCREENPIPE_STATE_DIR = "/Users/nate/.screenpipe/state"
 PIPE_FRESHNESS = {
     # pipe: (log filename under state dir, max staleness seconds)
-    "msgraph-incremental": ("msgraph-incremental.log", 3 * 3600),     # ~15min cadence; 3h = clearly stale
-    "teams-graph-incremental": ("teams-graph-incremental.log", 3 * 3600),
-    "embeddings": ("embeddings.log", 3 * 3600),
+    # Thresholds account for each pipe's ACTUAL cadence AND the Mac's overnight
+    # gap: all pipes pause when the MacBook sleeps / work-hours gates close
+    # (~19:00-08:00), so a threshold shorter than that window false-alarms every
+    # morning (observed 2026-07-01 flood + 07-03 teams-graph). Cadences were set
+    # for the Graph cost optimization: msgraph HOURLY (07-19 work-hours-gated +
+    # 14h overnight-catchup), teams-graph DAILY (86400s). Keep these in sync with
+    # the plists if the cadence changes. (Deeper fix — true sleep-awareness — is a
+    # noted kaizen; these cadence-aligned ceilings stop the false alarms now.)
+    "msgraph-incremental": ("msgraph-incremental.log", 15 * 3600),          # hourly, work-hours-gated + overnight gap
+    "teams-graph-incremental": ("teams-graph-incremental.log", 28 * 3600),  # DAILY cadence (86400s) + buffer
+    "embeddings": ("embeddings.log", 15 * 3600),                            # frequent but pauses on overnight sleep
 }
 
 
