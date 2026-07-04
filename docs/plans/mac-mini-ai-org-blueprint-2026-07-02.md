@@ -6,6 +6,20 @@
 
 **Companion report:** a parallel session produced `~/self-improving-org-report-2026-07-02.md` earlier today, oriented at the *personal* "replace Nate's work" question with filesystem-verified operational P0s. The two analyses were run independently and **converge on the same core diagnosis** — that convergence is itself evidence (§2.5). This report is the product-org (Mac Mini) blueprint; where the two disagree, the disagreement is flagged and explained (§2.5, §4.4).
 
+> **[PARTIAL SUPERSESSION 2026-07-04 — earn-demotion ruling (captain-decisions,
+> 2026-07-03).** This blueprint's trust-ladder pointers — the "prove-to-earn
+> graduation" item in §1's design-corpus list, §2.3-C's "trust-ladder config
+> never authored" waiting-on-apply item, and §2.4's directive to port the
+> cabinet engine "(fidelity/graduation/trust-ladder/learning)" — are dead
+> doctrine at the ladder half: reversible action classes are trusted from
+> **day one** (act-with-undo, journaled, told after) and DEMOTED on evidence —
+> undo rates, explicit vetoes — never rung-earned.
+> `framework/learning/trust_ladder.py`, its test, and the `trust-ladder.yml`
+> draft/example were removed 2026-07-04 (lane/ripout-0705); do NOT port,
+> author, or rebuild them in any flavor-A/B build. The graduation machinery
+> (`graduation.evaluate`, the evidence engine) and the hard ceilings are
+> unchanged and remain the load-bearing gate.]**
+
 ---
 
 ## 1. Executive summary
