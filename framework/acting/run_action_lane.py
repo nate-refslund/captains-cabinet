@@ -43,8 +43,12 @@ from framework.fidelity.consequence import emit_consequence, read_ledger  # noqa
 from framework.frontdoor import actfirst_canary  # noqa: E402  # cid-echo suppression (TI-7)
 # TI-3 act-first gate seams (all already committed): the executor act-first path,
 # the reversal-eligibility perimeter, the veto registry, the receipt surface.
+# _canonical_sha/_surfaces_path are consumed (never redefined) so the TOCTOU
+# fingerprint and the confidence-floor knob share the executor's exact bytes —
+# one hash function, one config file, no drift.
 from framework.frontdoor import action_undo, veto_registry, tell_surface  # noqa: E402
-from framework.frontdoor.action_exec import deliver_action  # noqa: E402
+from framework.frontdoor.action_exec import (  # noqa: E402
+    deliver_action, _canonical_sha, _surfaces_path)
 
 
 def covered_evidence_refs() -> frozenset:
@@ -80,11 +84,34 @@ _lock_fh = None
 # the propose-only lane.
 ACT_FIRST_FLAG_FILE = Path(__file__).resolve().parents[2] / "instance" / "config" / "act-first-enabled"
 MAX_AUTO_EXEC_STEPS = 2   # a card auto-executes at most this many steps [RT-A4]
+# The declared instance knob's fail-safe twin: any problem reading the real
+# value degrades HERE, never to 0 — a broken knob must tighten the act-first
+# gate, not silently widen it.
+CONFIDENCE_FLOOR_DEFAULT = 0.65
 
 
 def _act_first_on() -> bool:
     return (os.environ.get("CABINET_ACT_FIRST") == "1"
             or ACT_FIRST_FLAG_FILE.exists())
+
+
+def _confidence_floor() -> float:
+    """The instance ``confidence_floor`` from act-first-surfaces.yml — the same
+    Captain-owned file the executor's board gate loads (one knob, one file, no
+    second config to drift). Closes the checkpoint flip-condition "phantom
+    safety knob" (1 declaration, 0 reads): a 0.1-confidence card clearing the
+    mechanical gates must NOT act. FAIL-SAFE: absent/corrupt file, missing key,
+    or an invalid value (non-numeric, ≤0, >1, NaN) degrades to the 0.65
+    default — never to 0."""
+    try:
+        import yaml   # deferred — mirrors action_exec._load_act_first_surfaces
+        data = yaml.safe_load(_surfaces_path().read_text())
+        floor = float(data.get("confidence_floor") if isinstance(data, dict) else None)
+        if 0.0 < floor <= 1.0:
+            return floor
+    except Exception:
+        pass
+    return CONFIDENCE_FLOOR_DEFAULT
 
 
 def _backend_for_step(step) -> str:
@@ -109,15 +136,24 @@ def _card_board(p) -> "str | None":
     return None
 
 
-def _card_act_first_eligible(p, action_type) -> "tuple[bool, str]":
+def _card_act_first_eligible(p, action_type,
+                             floor: float = CONFIDENCE_FLOOR_DEFAULT) -> "tuple[bool, str]":
     """(eligible, reason) — the mechanical chain rule [RT-A4/B6]. A card
     auto-executes ONLY if it is not injection-suspect, carries a valid stamped
-    action_type, has ≤MAX_AUTO_EXEC_STEPS steps, and EVERY step has a registered
-    inverse (act_first_eligible). Any miss ⇒ propose_only (fail-safe)."""
+    action_type, meets the confidence floor, has ≤MAX_AUTO_EXEC_STEPS steps, and
+    EVERY step has a registered inverse (act_first_eligible). Any miss ⇒
+    propose_only (fail-safe). ``floor`` defaults to the constant so the helper
+    stays deterministic under test; main() passes the yml-resolved value."""
     if getattr(p, "injection_suspect", False):
         return False, "injection_suspect"
     if not action_type:
         return False, "unstamped action_type"
+    try:
+        conf = float(p.confidence)
+    except (TypeError, ValueError, AttributeError):
+        conf = 0.0   # unverifiable confidence never clears the floor
+    if not conf >= floor:   # NaN-safe: nan >= x is False ⇒ blocked, not waved through
+        return False, "confidence below floor"
     if len(p.steps) > MAX_AUTO_EXEC_STEPS:
         return False, f"chain has {len(p.steps)}>{MAX_AUTO_EXEC_STEPS} steps"
     for s in p.steps:
@@ -526,10 +562,19 @@ def _tg(text: str) -> None:
 
 
 def _store_action(pid: str, prop: action_lane.ActionProposal, cid: str = "") -> None:
+    steps = [{"kind": s.kind, "title": s.title, "payload": s.payload}
+             for s in prop.steps]
     rec = {"cid": cid, "lane": prop.lane, "subject": prop.subject,
            "situation": prop.situation,
-           "steps": [{"kind": s.kind, "title": s.title, "payload": s.payload}
-                     for s in prop.steps],
+           "steps": steps,
+           # TOCTOU pin (executor-integrity quartet, checkpoint flip-condition
+           # #1): fingerprint the steps at STORE time with the executor's OWN
+           # hash (_canonical_sha), so deliver_action's re-check — which reads
+           # rec["steps_sha256"] and re-hashes rec["steps"] — refuses any record
+           # whose steps were swapped in Redis between card time and execution.
+           # Stamped on BOTH paths deliberately: the Captain-approve path (live
+           # today, hours between store and execute) is the longer TOCTOU window.
+           "steps_sha256": _canonical_sha(steps),
            "evidence": list(prop.evidence),
            "confidence": prop.confidence, "urgency": prop.urgency}
     _redis("SET", f"cabinet:action:{pid}", json.dumps(rec), "EX", "604800")
@@ -591,6 +636,9 @@ def main() -> int:
             print("act-first: veto cache not ready — acting disabled this run (propose-only)")
             act_first = False
     prior_acted = _prior_acted_types() if act_first else frozenset()
+    # yml-resolved once per run (fail-safe default on any read problem); never
+    # read flag-off — the dark lane touches nothing the propose-only lane didn't.
+    conf_floor = _confidence_floor() if act_first else CONFIDENCE_FLOOR_DEFAULT
 
     presented = acted = 0
     actor = {"kind": "officer", "id": "officer:cos"}
@@ -607,9 +655,15 @@ def main() -> int:
         # action_type stamping (graduation wire). Guarded by the shared enum:
         # only a mapping whose target EXISTS in classifier.ACTION_TYPES is
         # stamped, so no invalid type is ever emitted. Chains stamp only when
-        # ALL steps agree on one type (honest cell accounting).
+        # ALL steps agree on one type (honest cell accounting). Gated on the
+        # armed posture [closes refuter KILLED #1(b)]: post-GERM-2 the enum
+        # maps creates, so an unconditioned stamp wrote flag-off ledger rows
+        # carrying action_type — bytes the audited pre-TI-3 propose-only lane
+        # never wrote, silently accumulating graduation-cell history while the
+        # Captain believed the posture inert. Earning starts AT the flip, never
+        # dark; flag-on keeps stamping both acted and propose-fallthrough rows.
         at = action_lane.chain_action_type(p)
-        if at:
+        if at and act_first:
             prop_ev["action_type"] = at
         pid = proposal_id(prop_ev)
 
@@ -622,7 +676,7 @@ def main() -> int:
         # post-act ledger emit is lost. Any miss anywhere → fall through to propose.
         did_act = False
         if act_first:
-            elig, ereason = _card_act_first_eligible(p, at)
+            elig, ereason = _card_act_first_eligible(p, at, floor=conf_floor)
             kind_key = actfirst_canary.kind_key(at) if at else ""
             gates_ok, greason = (_act_first_gates_ok(at, _card_board(p), kind_key)
                                  if elig else (False, ereason))
@@ -662,7 +716,12 @@ def main() -> int:
             _tg(card)
             presented += 1
             print(f"presented action card -> {p.subject} ({p.lane}, conf={p.confidence:.2f})")
-    print(f"done: presented {presented} card(s), acted {acted} card(s)")
+    if act_first:
+        print(f"done: presented {presented} card(s), acted {acted} card(s)")
+    else:
+        # exact pre-TI-3 summary bytes [closes refuter KILLED #1(a)]: a dark or
+        # degraded run reports as the propose-only lane it behaviorally is.
+        print(f"done: presented {presented} action card(s)")
     return 0
 
 
