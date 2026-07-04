@@ -114,6 +114,20 @@ policies:
       - "*.claude/rules/brain-bridge.md"
       - "*.claude/rules/courses-of-action.md"
       - "*instance/config/autonomy.yml"
+      # ACTING-PLANE JUDGES added 2026-07-04 (build-checkpoint hard-blocker
+      # #2, safety-perimeter CRITICAL: captain-vetoes.yml was empirically
+      # Edit->ALLOWED -- a forgeable veto registry). Mirrors the same
+      # additions in pre-tool-use.sh sec 5 -- keep both lists in lockstep.
+      - "*shared/interfaces/captain-vetoes.yml"
+      - "*instance/config/act-first-surfaces.yml"
+      - "*framework/frontdoor/action_exec.py"
+      - "*framework/frontdoor/action_undo.py"
+      - "*framework/frontdoor/actfirst_canary.py"
+      - "*framework/frontdoor/veto_registry.py"
+      - "*framework/frontdoor/tell_surface.py"
+      - "*framework/frontdoor/calendar_template.py"
+      - "*framework/acting/action_lane.py"
+      - "*framework/acting/run_action_lane.py"
     message: "Germline file -- read-only for officers and loops (no loop may edit its own judge). Propose the change to the Captain; only the Captain applies germline edits."
 
   # Officer tier2 isolation (mirrors pre-tool-use.sh sec 5 tier2 arm): an officer

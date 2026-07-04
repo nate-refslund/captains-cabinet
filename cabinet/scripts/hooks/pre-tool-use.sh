@@ -975,7 +975,16 @@ if [ "$TOOL_NAME" = "Edit" ] || [ "$TOOL_NAME" = "Write" ]; then
     # (trailing slash keeps e.g. memory/golden-evals-notes.md editable);
     # single files are suffix-anchored so siblings like
     # instance/config/autonomy.yml.example stay editable.
-    *"memory/golden-evals/"*|*"framework/policies/"*|*"framework/authority/classifier.py"|*"framework/authority/lane.py"|*"framework/authority/matrix.py"|*"framework/authority/veto.py"|*"framework/authority/deploy_classifier.py"|*"framework/fidelity/graduation.py"|*"cabinet/scripts/lib/policy_engine.py"|*"cabinet/mcp-scope.yml"|*"cabinet/officer-capabilities.conf"|*".claude/rules/brain-bridge.md"|*".claude/rules/courses-of-action.md"|*"instance/config/autonomy.yml")
+    # ACTING-PLANE JUDGES added 2026-07-04 (build-checkpoint hard-blocker
+    # #2, safety-perimeter CRITICAL: captain-vetoes.yml was empirically
+    # Edit→ALLOWED — a forgeable veto registry). The captain-veto registry
+    # (the sharpest demotion tooth), the act-first surface allowlist, and
+    # the frontdoor/acting executor+gate modules JUDGE or CARRY unattended
+    # act-first behavior; an officer edit to any of them forges its own
+    # demotion or widens its own act surface. KEEP IN LOCKSTEP with
+    # GERM_PATH_RE in section 5b below — a path added here without 5b
+    # reopens the bash-redirect write bypass for it.
+    *"memory/golden-evals/"*|*"framework/policies/"*|*"framework/authority/classifier.py"|*"framework/authority/lane.py"|*"framework/authority/matrix.py"|*"framework/authority/veto.py"|*"framework/authority/deploy_classifier.py"|*"framework/fidelity/graduation.py"|*"cabinet/scripts/lib/policy_engine.py"|*"cabinet/mcp-scope.yml"|*"cabinet/officer-capabilities.conf"|*".claude/rules/brain-bridge.md"|*".claude/rules/courses-of-action.md"|*"instance/config/autonomy.yml"|*"shared/interfaces/captain-vetoes.yml"|*"instance/config/act-first-surfaces.yml"|*"framework/frontdoor/action_exec.py"|*"framework/frontdoor/action_undo.py"|*"framework/frontdoor/actfirst_canary.py"|*"framework/frontdoor/veto_registry.py"|*"framework/frontdoor/tell_surface.py"|*"framework/frontdoor/calendar_template.py"|*"framework/acting/action_lane.py"|*"framework/acting/run_action_lane.py")
       echo "BLOCKED: Germline file — read-only for officers and loops (no loop may edit its own judge). Propose the change to the Captain; only the Captain applies germline edits." >&2
       exit 2
       ;;
@@ -1011,6 +1020,110 @@ if [ "$TOOL_NAME" = "Edit" ] || [ "$TOOL_NAME" = "Write" ]; then
       fi
       ;;
   esac
+fi
+
+# ============================================================
+# 5b. GERMLINE BASH WRITE SCREEN (2026-07-04)
+# ============================================================
+# Build-checkpoint 2026-07-04 hard-blocker #2 (safety-perimeter CRITICAL):
+# section 5 binds the Edit/Write TOOLS only, so `echo forged > shared/
+# interfaces/captain-vetoes.yml`, `tee`, `sed -i`, `cp/mv/install`,
+# `truncate`, `dd of=` and `python -c 'open(...,"w")'` were an open Bash
+# bypass around the germline judge plane — one injected officer command
+# could forge the veto registry (the demotion tooth) or widen the act-first
+# surface allowlist. This screen closes the write-shaped vectors while
+# leaving reads (cat/grep/less/head, copies OUT of a germline path,
+# redirects whose target is elsewhere) untouched.
+#
+# Design rules (deterministic string/regex — no dataflow, no LLM):
+#   - FAIL TOWARD BLOCKING on ambiguity. Prose false-positives (e.g. an
+#     unquoted `git commit -m` body containing `> <germ path>`, or `echo`
+#     lines mentioning tee/cp + a germ path) are ACCEPTED and stateless —
+#     nothing is consumed on match (not the FW-028/FW-029 amplification
+#     class), the officer just rephrases. Missing a real write is the
+#     failure mode we refuse.
+#   - Write arms are TARGET-anchored (redirect target token, cp/mv FINAL
+#     dest, dd of=, tee/truncate args) so germline paths appearing as read
+#     sources (`cp <germ> /tmp/`, `dd if=<germ> of=/tmp/x`, `2>/dev/null`)
+#     do not trip them. Interpreter arms (python -c / heredoc / bare stdin)
+#     cannot be statically bounded — quote spans swallow in-quote paths in
+#     both directions — so they block on interpreter-shape + germ-mention
+#     anywhere in the command; accepted FP documented (workaround: read via
+#     cat/grep, or split the python call from the germ-path read).
+#   - Newlines are joined to spaces in the MATCH-ONLY copy so a `\`-line-
+#     continuation cannot split `>` from its target across grep lines.
+#     Side effect: heredoc BODIES join into the scanned line — a doc
+#     heredoc whose prose contains `tee <germ path>` blocks (accepted FP;
+#     write docs via the Write tool instead).
+#   - Cost: one cheap pre-filter grep short-circuits ~every command (germ
+#     paths appear in almost no officer bash); the write-shape grep runs
+#     only on germ-mentioning commands. 1 jq + 1 pipeline + ≤2 greps, no
+#     loops, no per-path subshells.
+#
+# KNOWN residuals (not closable by substring matching, named follow-ups):
+# variable indirection (`V=<germ>; echo x > $V`), git-content restores
+# (`git checkout -- <germ>`, `git apply`), perl/ruby/node -e interpreters,
+# `cp evil -t <germ dir>` basename joins, and typed-policy-engine parity
+# for these entries (section 0 engine has no germline rules yet).
+if [ "$TOOL_NAME" = "Bash" ]; then
+  CMD=$(echo "$TOOL_INPUT" | jq -r '.command // empty' 2>/dev/null)
+  # Match-only copy: squeeze slashes (mirrors section 5's tr -s '/' so
+  # `instance/config//autonomy.yml` cannot dodge), fold shell line-
+  # continuations (a trailing `\` before a newline joins the two lines in
+  # bash — strip it FIRST so `echo x > \<NL> germ` reads as `echo x > germ`
+  # and the operator cannot be split from its target), then join remaining
+  # newlines to spaces so a multi-line command scans as one line.
+  CMD_SQ=$(printf '%s' "$CMD" | tr -s '/' | sed 's/\\$//' | tr '\n' ' ')
+  # Same protected set as section 5's germline case list — KEEP IN LOCKSTEP.
+  GERM_PATH_RE='memory/golden-evals/|framework/policies/|framework/authority/(classifier|lane|matrix|veto|deploy_classifier)\.py|framework/fidelity/graduation\.py|cabinet/scripts/lib/policy_engine\.py|cabinet/mcp-scope\.yml|cabinet/officer-capabilities\.conf|\.claude/rules/(brain-bridge|courses-of-action)\.md|instance/config/autonomy\.yml|shared/interfaces/captain-vetoes\.yml|instance/config/act-first-surfaces\.yml|framework/frontdoor/(action_exec|action_undo|actfirst_canary|veto_registry|tell_surface|calendar_template)\.py|framework/acting/(action_lane|run_action_lane)\.py'
+  if printf '%s' "$CMD_SQ" | grep -qE "$GERM_PATH_RE"; then
+    # Target token: optional opening quote, then ONE shell word containing a
+    # germline path (germ paths never contain spaces/quotes, so excluding
+    # separators + redirect chars from the token class is sound).
+    GERM_TGT="[\"']?[^[:space:];|&<>\"']*($GERM_PATH_RE)"
+    # Command-position anchor (start or a separator that can precede a
+    # command word). Single-quoted so the backtick stays literal.
+    ANCH='(^|[;&|`([:space:]])'
+    # Quote-aware filler (same shape as section 4's sed arm): crosses quoted
+    # spans so `sed 's/x/y/' -i <germ>` cannot hide -i behind an arg, and
+    # deliberately tolerates unbalanced quotes (fail-closed).
+    QF="([^&'\"]|'[^']*'|\"[^\"]*\"|'|\"|&[^&])*"
+    # a) redirect INTO a germ path: >, >>, 2>, 2>>, &>, >|, >& forms
+    GERM_WRITE_RE=">{1,2}[|&]?[[:space:]]*${GERM_TGT}"
+    # b) tee: every file arg is a write target; `<` excluded from the filler
+    #    so `tee /tmp/out < <germ>` stays a read
+    GERM_WRITE_RE="${GERM_WRITE_RE}|${ANCH}tee[[:space:]]+(-[-a-zA-Z]+[[:space:]]+)*([^;|&<]+[[:space:]]+)?${GERM_TGT}"
+    # c) sed in-place (plain `sed -n p <germ>` reads stay allowed)
+    GERM_WRITE_RE="${GERM_WRITE_RE}|${ANCH}sed[[:space:]]+(${QF}[[:space:]])?(-[a-zA-Z]*i[^[:space:]]*|--in-place(=[^[:space:]]*)?)([[:space:]]${QF})?[[:space:]]+${GERM_TGT}"
+    # d) copy/move/link/install with a germ path as FINAL destination
+    #    (germ as SOURCE with a non-germ dest falls through = read); the
+    #    trailing group also accepts fd-redirect tails like `2>/dev/null`
+    GERM_WRITE_RE="${GERM_WRITE_RE}|${ANCH}(cp|mv|rsync|install|ln)[[:space:]]+(-[-a-zA-Z]+[[:space:]]+)*[^;|&]+[[:space:]]+${GERM_TGT}[\"']?([[:space:]]*(\$|[;&|<>])|[[:space:]]+[0-9]+[<>])"
+    # d2) -t/--target-directory destination form
+    GERM_WRITE_RE="${GERM_WRITE_RE}|${ANCH}(cp|mv|rsync|install|ln)[[:space:]]+([^;|&]*[[:space:]])?(-[a-zA-Z]*t[[:space:]]*|--target-directory(=|[[:space:]]+))${GERM_TGT}"
+    # e) truncate: file args are write targets
+    GERM_WRITE_RE="${GERM_WRITE_RE}|${ANCH}truncate[[:space:]]+([^;|&<]+[[:space:]]+)?${GERM_TGT}"
+    # f) dd of=<germ> (dd if=<germ> of=/tmp/x stays a read)
+    GERM_WRITE_RE="${GERM_WRITE_RE}|${ANCH}dd[[:space:]]+[^;|&]*of=${GERM_TGT}"
+    # g) python -c with a germ path anywhere in the command (see header:
+    #    interpreter args are unboundable; germ presence already established
+    #    by the pre-filter). `-c` must be a standalone flag — a following
+    #    quote/paren/space/EOL — so `--config <germ>` reads stay allowed.
+    GERM_WRITE_RE="${GERM_WRITE_RE}|${ANCH}python[0-9.]*[[:space:]]+([^;|&]*[[:space:]])?-c([\"'([:space:]]|\$)"
+    # g2) python fed by heredoc
+    GERM_WRITE_RE="${GERM_WRITE_RE}|${ANCH}python[0-9.]*[[:space:]][^;|&]*<<"
+    # g3) bare/stdin-fed python (`echo 'open(...)' | python3` / `python3 -`).
+    #     Trailing class is pipe / subshell-close / EOL ONLY — deliberately
+    #     excludes `;` and `&` so a compound READ like `which python3 && cat
+    #     <germ>` (python3 is an ARGUMENT, not a stdin interpreter) is not a
+    #     false-positive block. The dangerous stdin-fed forms all end in a
+    #     pipe segment, `-`, or EOL, which stay covered.
+    GERM_WRITE_RE="${GERM_WRITE_RE}|${ANCH}python[0-9.]*([[:space:]]+-)?[[:space:]]*(\$|[|)])"
+    if printf '%s' "$CMD_SQ" | grep -qE "$GERM_WRITE_RE"; then
+      echo "BLOCKED: Germline file — read-only for officers and loops (no loop may edit its own judge). This Bash command contains a write-shaped operation targeting a germline path (reads like cat/grep/less are allowed). Propose the change to the Captain; only the Captain applies germline edits." >&2
+      exit 2
+    fi
+  fi
 fi
 
 

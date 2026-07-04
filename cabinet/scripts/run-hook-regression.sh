@@ -35,6 +35,7 @@ HARNESSES=(
   "fw057-notify-officer-argv.sh"
   "fw076-pool-mode.sh"
   "germline-readonly.sh"
+  "germline-bash-write.sh"
 )
 
 OVERALL_FAIL=0

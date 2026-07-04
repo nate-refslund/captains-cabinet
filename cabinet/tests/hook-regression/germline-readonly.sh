@@ -6,14 +6,23 @@
 # instance/config/autonomy.yml. Edit/Write must BLOCK (exit 2) for EVERY
 # officer (including cos): no loop may edit its own judge.
 #
-# 24 BLOCK probes (9 germline classes incl. the suffix-anchored
-# framework/authority/ judge modules classifier.py + lane.py + matrix.py and the
-# authority-matrix.yml DATA file (T8), x Edit/Write/officer/path-form variants +
-# constitution regression pin + double-slash normalization) + 11 ALLOW probes
-# (false-positive guards: siblings, evolved skills, own tier2, non-germline
-# hooks, shared interfaces, the authority judges' own editable tests incl.
-# test_matrix.py, and a preset/instance authority-matrix overlay which is NOT
-# the germline floor).
+# 39 BLOCK probes (10 germline classes incl. the suffix-anchored
+# framework/authority/ judge modules classifier.py + lane.py + matrix.py, the
+# authority-matrix.yml DATA file (T8), and — added 2026-07-04 per build-
+# checkpoint hard-blocker #2 (safety-perimeter CRITICAL: captain-vetoes.yml
+# was empirically Edit→ALLOWED) — the ACTING-PLANE JUDGES: captain-vetoes.yml,
+# act-first-surfaces.yml and the frontdoor/acting executor+gate modules,
+# x Edit/Write/officer/path-form variants + constitution regression pin +
+# double-slash normalization) + 17 ALLOW probes (false-positive guards:
+# siblings, evolved skills, own tier2, non-germline hooks, shared interfaces,
+# the authority judges' own editable tests incl. test_matrix.py, a preset/
+# instance authority-matrix overlay which is NOT the germline floor, and the
+# acting-plane FP guards: composer.py/loop.py siblings, frontdoor+acting
+# tests, .yml.example sibling, rename-staged veto proposal).
+#
+# The BASH-side write bypass of this same set (redirect/tee/sed -i/cp/mv/
+# install/truncate/dd of=/python -c) is pinned by the sibling harness
+# germline-bash-write.sh (pre-tool-use.sh sec 5b).
 #
 # Accepted FP (documented, fail-closed): staging a germline-named file
 # under a mirrored directory tail (e.g. /tmp/cabinet/mcp-scope.yml) is
@@ -82,6 +91,27 @@ probe "G18c Write authority matrix.py (cos!)" cos Write 'framework/authority/mat
 probe "G20 Edit authority-matrix.yml (cto)" cto Edit  'framework/policies/authority-matrix.yml'                    BLOCK
 probe "G21 Write authority-matrix.yml (cos!)" cos Write 'framework/policies/authority-matrix.yml'                  BLOCK
 probe "G22 abs-path authority-matrix.yml (cro)" cro Edit '/opt/founders-cabinet/framework/policies/authority-matrix.yml' BLOCK
+# ACTING-PLANE JUDGES (2026-07-04 — build-checkpoint hard-blocker #2,
+# safety-perimeter CRITICAL). The checkpoint proved captain-vetoes.yml was
+# empirically Edit→ALLOWED: an officer could forge the veto registry — the
+# sharpest demotion tooth — or widen act-first-surfaces.yml. These probes
+# pin the closure: the veto registry, the act-first surface allowlist, and
+# the frontdoor/acting executor+gate modules are germline for EVERY officer.
+probe "G23 Edit captain-vetoes.yml (cro)"   cro Edit  'shared/interfaces/captain-vetoes.yml'                       BLOCK
+probe "G24 Write captain-vetoes.yml (cos!)" cos Write 'shared/interfaces/captain-vetoes.yml'                       BLOCK
+probe "G25 abs-path captain-vetoes (cto)"   cto Edit  '/opt/founders-cabinet/shared/interfaces/captain-vetoes.yml' BLOCK
+probe "G26 Edit act-first-surfaces (cpo)"   cpo Edit  'instance/config/act-first-surfaces.yml'                     BLOCK
+probe "G27 Write act-first-surfaces (cos!)" cos Write 'instance/config/act-first-surfaces.yml'                     BLOCK
+probe "G28 dbl-slash act-first-surfaces"    cro Edit  'instance/config//act-first-surfaces.yml'                    BLOCK
+probe "G29 Edit action_exec.py (cto)"       cto Edit  'framework/frontdoor/action_exec.py'                         BLOCK
+probe "G30 Write action_undo.py (coo)"      coo Write 'framework/frontdoor/action_undo.py'                         BLOCK
+probe "G31 Edit actfirst_canary.py (cro)"   cro Edit  'framework/frontdoor/actfirst_canary.py'                     BLOCK
+probe "G32 Edit veto_registry.py (cos!)"    cos Edit  'framework/frontdoor/veto_registry.py'                       BLOCK
+probe "G33 Write tell_surface.py (cto)"     cto Write 'framework/frontdoor/tell_surface.py'                        BLOCK
+probe "G34 Edit calendar_template.py (cpo)" cpo Edit  'framework/frontdoor/calendar_template.py'                   BLOCK
+probe "G35 Edit action_lane.py (cto)"       cto Edit  'framework/acting/action_lane.py'                            BLOCK
+probe "G36 Write run_action_lane.py (cos!)" cos Write 'framework/acting/run_action_lane.py'                        BLOCK
+probe "G37 abs-path action_lane.py (cro)"   cro Edit  '/opt/founders-cabinet/framework/acting/action_lane.py'      BLOCK
 # Regression pin: pre-existing constitution protection unchanged
 probe "G19 constitution pin (cto)"         cto Edit  'constitution/CONSTITUTION.md'                                BLOCK
 
@@ -115,6 +145,15 @@ probe "FP9 authority sibling note (cro)"   cro Write 'framework/authority-notes.
 # (design Component 1) and are NOT in the germline set — an officer proposing
 # instance lane bindings is allowed work, so the instance overlay stays editable.
 probe "FP10 instance authority-matrix overlay (cos)" cos Write 'instance/config/policies/authority-matrix.yml'    ALLOW
+# Acting-plane additions are SUFFIX-anchored files, not dir globs: sibling
+# modules, their tests, .example siblings and rename-staged proposals stay
+# the officers' write surface.
+probe "FP11 act-first-surfaces example (cos)" cos Edit 'instance/config/act-first-surfaces.yml.example'           ALLOW
+probe "FP12 captain-vetoes proposal (cos)"  cos Write 'shared/interfaces/captain-vetoes-proposed.yml'             ALLOW
+probe "FP13 frontdoor sibling composer.py" cro Edit  'framework/frontdoor/composer.py'                            ALLOW
+probe "FP14 acting sibling loop.py (cto)"  cto Edit  'framework/acting/loop.py'                                   ALLOW
+probe "FP15 frontdoor test file (cro)"     cro Write 'framework/frontdoor/tests/test_action_exec.py'              ALLOW
+probe "FP16 acting test file (cro)"        cro Write 'framework/acting/tests/test_action_lane.py'                 ALLOW
 
 echo ""
 echo "=== Summary: PASS=$PASS  FAIL=$FAIL ==="
