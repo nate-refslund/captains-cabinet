@@ -136,6 +136,7 @@ class TestEventTypes:
 
 
 from framework.events.emitter import (
+    _event_log_dir,
     _resolve_aggregate,
     _resolve_product_slug,
     _write_to_store,
@@ -576,3 +577,110 @@ class TestPostgresSchemaAlignment:
             f"{TestPostgresSchemaAlignment.REQUIRED_COLUMNS - schema_cols} "
             f"which are NOT in 045 org_events columns {schema_cols}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Subagent lifecycle type (2026-07-04 ledger hygiene)
+# ---------------------------------------------------------------------------
+
+
+class TestSubagentCompletedType:
+    """subagent_completed — the WRITABLE half of the on-subagent-stop.sh fix.
+
+    The SubagentStop hook used to emit work_item_completed for EVERY subagent
+    stop, burying genuine work-graph completions under ~6.6k task-ref-less
+    rows. The hook's switch to this type is germline (applied separately);
+    these tests pin the landing type so the germline change cannot land on an
+    unregistered event_type (emit() raises ValueError for unknown types).
+    """
+
+    def test_registered_in_valid_event_types(self):
+        assert "subagent_completed" in VALID_EVENT_TYPES
+
+    def test_emit_does_not_raise(self, event_log_dir):
+        # Payload mirrors the exact shape on-subagent-stop.sh builds
+        # (cabinet/scripts/hooks/on-subagent-stop.sh:29/:31).
+        ev = emit(
+            "subagent_completed",
+            actor="cos",
+            payload={
+                "agent_type": "code-reviewer",
+                "agent_id": "a1b2c3d4e5",
+                "session_id": "s-123",
+                "completed_by": "subagent",
+            },
+        )
+        assert ev["event_type"] == "subagent_completed"
+        assert ev["id"]
+
+    def test_aggregate_resolves_on_agent_id(self):
+        # agent_id is the one payload key the hook ALWAYS provides —
+        # task_ref is only present for FW-*/PROD-*/TASK-* tagged agents.
+        agg_type, agg_id = _resolve_aggregate(
+            "subagent_completed", {"agent_id": "a1b2c3d4e5"}
+        )
+        assert agg_type == "subagent"
+        assert agg_id == "a1b2c3d4e5"
+
+    def test_taskref_carrying_payload_still_aggregates_on_agent_id(self):
+        # A task-tagged completion keeps its task_ref in the payload for the
+        # mission supervisor; the AGGREGATE stays the subagent itself.
+        agg_type, agg_id = _resolve_aggregate(
+            "subagent_completed",
+            {"task_ref": "FW-042", "agent_id": "beefcafe01"},
+        )
+        assert agg_type == "subagent"
+        assert agg_id == "beefcafe01"
+
+
+# ---------------------------------------------------------------------------
+# Pytest ledger fence — defense-in-depth redirect (2026-07-04 leak incident)
+# ---------------------------------------------------------------------------
+
+
+class TestPytestLedgerFence:
+    """_event_log_dir() must NEVER return the durable live default under
+    pytest when CABINET_EVENT_LOG_DIR is unset — that exact fallback is how
+    1,969+ fidelity fixture rows leaked into the live audit ledger. The
+    primary fence is the repo-root conftest.py (session env sandbox); this
+    suite pins the emitter-level second layer.
+    """
+
+    LIVE_DEFAULT = Path(
+        os.path.expanduser("~/Library/Application Support/cabinet/events")
+    )
+
+    def test_unset_env_redirects_away_from_live_default(self, monkeypatch):
+        monkeypatch.delenv("CABINET_EVENT_LOG_DIR", raising=False)
+        d = _event_log_dir()
+        assert d != self.LIVE_DEFAULT
+        # The redirect target is recognisably the fence dir, not some other
+        # accidental location.
+        assert d.name.startswith("cabinet-pytest-events-")
+
+    def test_redirect_is_stable_within_process(self, monkeypatch):
+        # Write (emit) and read (replay) resolve the dir independently — they
+        # must agree on ONE target for the life of the process.
+        monkeypatch.delenv("CABINET_EVENT_LOG_DIR", raising=False)
+        assert _event_log_dir() == _event_log_dir()
+
+    def test_explicit_env_still_wins_over_redirect(self, monkeypatch, tmp_path):
+        # The fence only guards the UNSET case; an explicit dir (the normal
+        # per-test fixture pattern) must keep absolute precedence.
+        monkeypatch.setenv("CABINET_EVENT_LOG_DIR", str(tmp_path))
+        assert _event_log_dir() == tmp_path
+
+    def test_emit_and_replay_agree_under_fence(self, monkeypatch):
+        # End-to-end through the redirect: an emit with NO env var must land
+        # where replay() reads — and nothing may touch the live default.
+        monkeypatch.delenv("CABINET_EVENT_LOG_DIR", raising=False)
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        ev = emit(
+            "session_started", actor="system", payload={"role": "fence-e2e"}
+        )
+        got = [
+            e
+            for e in replay(event_types=["session_started"])
+            if e["payload"].get("role") == "fence-e2e"
+        ]
+        assert ev["id"] in {e["id"] for e in got}
