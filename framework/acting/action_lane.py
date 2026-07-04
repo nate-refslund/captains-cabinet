@@ -249,6 +249,14 @@ _INJECTION_SCREEN = (
     ("url-exfil", re.compile(
         r"\b(?:exfiltrate|exfil|leak)\b|\b(?:send|post|forward|upload)\b[^\n]{0,40}"
         r"\b(?:to\s+)?https?://", re.I)),
+    # [SEC-5 finding 2026-07-04] Bare approval IMPERATIVE directed at the agent's
+    # decision — "approve this card", "please approve it", "godkend denne". The
+    # executor tripwire caught only the past-participle claim (godkendt/approved);
+    # this closes the proposer layer so a planted approval imperative forces
+    # injection_suspect (→ propose_only) BEFORE the card is ever a candidate.
+    ("approval-imperative", re.compile(
+        r"\b(?:please\s+)?(?:approve|godkend|authori[sz]e)\s+"
+        r"(?:this|the|it|my|card|action|request|task|denne|dette|den)\b", re.I)),
 )
 
 

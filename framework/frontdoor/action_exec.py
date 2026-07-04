@@ -116,9 +116,15 @@ _TRIPWIRE = {
         re.IGNORECASE),
     # any clickable/exfil URL or data: URI
     "url": re.compile(r"(?:https?://|ftp://|data:[a-z]+/|www\.)", re.IGNORECASE),
-    # approval-claim words (DA/EN) — a forged "this is sanctioned" signal
-    "approval_claim": re.compile(r"\b(?:godkendt|approved|authori[sz]ed)\b",
-                                 re.IGNORECASE),
+    # approval-claim (DA/EN) — a forged "this is sanctioned" signal: both the
+    # past-participle claim (godkendt/approved/authorized) AND the bare imperative
+    # directed at the agent's decision ("approve this card", "godkend denne").
+    # [SEC-5 finding 2026-07-04: the imperative form previously slipped both layers.]
+    "approval_claim": re.compile(
+        r"\b(?:godkendt|approved|authori[sz]ed"
+        r"|(?:please\s+)?(?:approve|godkend|authori[sz]e)\s+"
+        r"(?:this|the|it|card|action|request|task|denne|dette|den))\b",
+        re.IGNORECASE),
     # bare email address (assigning/mentioning a human is a cascade)
     "email": re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+\.[A-Za-z0-9.-]+\b"),
 }
