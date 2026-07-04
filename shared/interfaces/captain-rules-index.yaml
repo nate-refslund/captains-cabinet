@@ -4,7 +4,7 @@
 # Re-run cabinet/scripts/captain-rules/index.sh after any source-file edit
 # (pre-commit hook enforces freshness).
 
-# 37 entries
+# 38 entries
 entries:
   - id: A1
     source: captain-patterns.md
@@ -376,3 +376,13 @@ entries:
     added_by: cos
     excerpt: "For ANY 'doesn't work' (missing access, dead/needs-rotation token, broken pipe, blocked deploy, failing integration) — never forward the symptom or an officer's claim. (1) deep-dive to the REAL root cause, (2) VERIFY by testing (never infer), (3) ship a PROPER durable fix (no quickfixes), (4) verify the fix. Also CHECK the decision trail (already decided/removed/killed?). Escalate ONLY the genuine residual that only the Captain can provide, framed as 'here's what was wrong + the fix I shipped' or 'I dug in fully and I'm blocked on X.'"
     full_ref: shared/interfaces/captain-patterns.md#P-Verify-And-Fix
+  - id: proposals-are-actual-work
+    source: captain-patterns.md
+    section: operating-posture
+    title: "Proposals carry the actual work, not just PM/tracking"
+    trigger_words: ["create a task", "create the task", "add to backlog", "monday task", "just create", "actionable proposal", "solve the task", "fix the task", "action proposal", "PM", "PO", "track it", "look into it"]
+    scope: all_officers
+    added: 2026-07-03
+    added_by: cos
+    excerpt: "Every action proposal must carry the EXACT steps that SOLVE the task, so the Captain's approve = the task is actually done — not just a tracking card. Route the situation to the owning lane, which returns the exact solution (entity + precise change + per-step gate); read-only verify first, high-blast steps Captain-gated. Not 'look into it' — the ready solution."
+    full_ref: shared/interfaces/captain-patterns.md#proposals-are-actual-work
