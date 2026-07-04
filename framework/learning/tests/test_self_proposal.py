@@ -1,4 +1,4 @@
-"""Tests for Component 1 — MCP/plugin self-proposal (prepare + surface).
+"""Tests for the MCP/plugin self-proposal (prepare + surface).
 
 Non-negotiable properties under test:
   1. NEVER writes mcp-scope.yml — compute_scope_diff is pure read; the module

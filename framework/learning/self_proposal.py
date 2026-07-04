@@ -1,19 +1,21 @@
-"""Component 1 — MCP/plugin self-proposal (prepare + surface, NEVER self-grant).
+"""MCP/plugin self-proposal (prepare + surface, NEVER self-grant).
 
 The Chair, having evaluated + tested a new MCP/plugin, surfaces a ONE-TAP
 approval to Nate carrying:
 
   * the EXACT `cabinet/mcp-scope.yml` diff (the line(s) to add) — computed as a
     STRING for review, NEVER written;
-  * any account step (handed to Nate — see Component 2);
-  * the test evidence the Chair gathered (the "prove" for a *capability*);
+  * any account step (handed to Nate — the sibling account flow,
+    `cabinet/scripts/prepare-account-flow.sh`, drives it to the credential
+    boundary);
+  * the test evidence the Chair gathered (shows the capability actually works);
   * a hard-ceiling flag (Captain-required, never auto, if it touches one).
 
 It does this by enqueuing a canonical front-door intake card
 (`framework.frontdoor.intake.enqueue`) and emitting a `self_proposal_prepared`
-audit event. See docs/prove-to-earn-expansion-2026-06-25.md §2.
+audit event.
 
-HARD LINE (docs §0 + shared/interfaces/captain-patterns.md
+HARD LINE (shared/interfaces/captain-patterns.md
 autonomy-boundary-accounts-and-self-guards): this module **PREPARES + SURFACES**
 only. It has NO write path to `cabinet/mcp-scope.yml` or any germline file, and
 NO auto-grant. Nate applies the one scope line himself. The germline guard in

@@ -59,7 +59,7 @@ why=..., test_evidence=..., account_step=..., gap_id=...)`. It computes the
 evidence + any account step, flags hard-ceiling touches, and enqueues a
 front-door intake card. **Nate applies the one scope line himself — the Chair
 never self-edits `mcp-scope.yml`** (hard line; the germline guard blocks it
-anyway). See `docs/prove-to-earn-expansion-2026-06-25.md` §2.
+anyway).
 
 Track everything at `/gaps` in the dashboard or
 `python3 cabinet/scripts/org-runtime.py gaps list`.

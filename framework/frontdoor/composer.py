@@ -10,7 +10,7 @@ PURE by contract: NO I/O — no Redis, no env, no network, no clock unless an
 explicit ``now`` is injected. Fully unit-testable, deterministic.
 
 CONSERVATIVE FORWARD-JUDGE: ``forward_judge(item)`` defaults True — the job is
-to UNIFY + ENRICH, not drop. Tightening (the trust ladder, applied to *what
+to UNIFY + ENRICH, not drop. Tightening (evidence-based filtering of *what
 reaches Nate*) lives in ``forward_judge`` later; today it forwards everything.
 
 SECRET-SAFETY: composer never reads the environment and never emits token or

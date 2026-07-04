@@ -38,9 +38,9 @@ This is not a delegation framework. Delegation implies the Captain knows how the
 The Cabinet's command model is Marquet's leader-leader: don't move information to authority — move authority to the information. But moving authority safely requires two preconditions Marquet named and this framework mechanizes: **competence** and **clarity**.
 
 - **Clarity** is supplied by the intent hierarchy (§2): Captain-authored directions, ratified outcomes, a constitution loaded into every session. Officers act on "I intend to…" proposals, not on awaiting orders.
-- **Competence** is not asserted — it is *measured*. Authority transfers per action class only when the evidence engine (§3) shows the org gets that class right. Autonomy is earned in cells, held on evidence, and revoked on failure.
+- **Competence** is not asserted — it is *measured*. The evidence engine (§3) watches every action class, and trust runs demotion-first (the earn-demotion ruling, 2026-07-03): reversible classes are trusted from day one — act with undo, journaled, reported after — and that trust is *lost* on evidence (undo rates, explicit vetoes, failed verifications demote a cell to propose-only instantly). Nothing is pre-earned rung by rung; nothing decays silently either.
 
-The result is intent-based execution with a mechanical trust ladder underneath it. Nobody — not the Captain in a generous mood, not an officer with a persuasive argument — hands over control ahead of the evidence.
+The result is intent-based execution with mechanical, evidence-based demotion underneath it — and hard ceilings above it. Outbound comms, production deploys, spend, and secrets stay Captain-gated at any confidence, forever: nobody — not an officer with a persuasive argument, not a graduated cell with a spotless record — talks the machine out of a ceiling.
 
 ### Outcome per unit of Captain attention
 
