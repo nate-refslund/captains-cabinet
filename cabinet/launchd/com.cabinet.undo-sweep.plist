@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- HOURLY UNDO-3 reconciliation sweep — the estate's first MACHINE-LABEL
+     producer (checkpoint 2026-07-04 condition 5). Every 3600s it runs
+     run-undo-sweep.sh, which pre-flights Monday liveness (a blind sweep mints
+     false ttl_ok labels) and then runs action_reconcile.run_sweep with a REAL
+     make_monday_probe: past-TTL acted journal rows still outcome=unknown get a
+     superseding ttl_ok / silent_revert consequence event, human-revert-rates
+     are computed (F2b), and >30d journal files are GC'd. Idempotent — a human
+     verdict always wins and is never overwritten.
+
+     Source of truth in repo; installed + loaded with:
+       cp cabinet/launchd/com.cabinet.undo-sweep.plist ~/Library/LaunchAgents/
+       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.cabinet.undo-sweep.plist
+
+     DISABLE:
+       launchctl bootout gui/$(id -u)/com.cabinet.undo-sweep
+       rm ~/Library/LaunchAgents/com.cabinet.undo-sweep.plist
+
+     No secrets here — the runner sources ~/.screenpipe/pipes/_shared/.env
+     itself (Monday key never appears in this file or the log).
+     KNOWN LIMIT: StartInterval does not fire during sleep; coalesces on wake.
+     Safe: the outcome=unknown gate makes a missed hour self-healing. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.cabinet.undo-sweep</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/nate/captains-cabinet/cabinet/scripts/run-undo-sweep.sh</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/nate/captains-cabinet</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>REDIS_HOST</key>
+    <string>localhost</string>
+    <key>REDIS_PORT</key>
+    <string>6379</string>
+    <key>PYTHONPATH</key>
+    <string>/Users/nate/captains-cabinet</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>StartInterval</key>
+  <integer>3600</integer>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>/Users/nate/.cabinet/logs/undo-sweep.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/nate/.cabinet/logs/undo-sweep.log</string>
+</dict>
+</plist>
