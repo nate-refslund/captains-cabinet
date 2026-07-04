@@ -15,6 +15,7 @@ sys.path.insert(0, _ROOT)
 from framework.measurement.role_eval_runner import (
     RoleEval,
     register,
+    resolve_role_slug,
     run_eval,
     run_all,
     run_all_for_role,
@@ -120,6 +121,117 @@ class TestRunner:
         result = run_eval("does-not-exist")
         assert result.passed is False
         assert "Unknown eval" in (result.error or "")
+
+
+# ---------------------------------------------------------------------------
+# roster-driven role resolution (R8 retarget, 2026-07-04)
+# ---------------------------------------------------------------------------
+# Shipped evals declare the retired work-preset roster (cto/cpo/cro/coo);
+# the registry resolves those against cabinet/officer-capabilities.conf so
+# eval attribution targets a role the evolution loop can load_role().
+
+
+def _write_capabilities_conf(root: Path, lines: list[str]) -> None:
+    conf_dir = root / "cabinet"
+    conf_dir.mkdir(parents=True, exist_ok=True)
+    (conf_dir / "officer-capabilities.conf").write_text(
+        "# test conf\n" + "\n".join(lines) + "\n"
+    )
+
+
+class TestRosterResolution:
+    def test_non_extinct_slugs_pass_through(self, tmp_path):
+        # Synthetic/test slugs and live slugs are NEVER remapped — only the
+        # known-extinct work-preset roster is (surgical rule 1).
+        _write_capabilities_conf(tmp_path, ["cos:telegram_bot"])
+        assert resolve_role_slug("t_role") == "t_role"
+        assert resolve_role_slug("cos") == "cos"
+        assert resolve_role_slug("polads-ceo") == "polads-ceo"
+
+    def test_extinct_slug_resolves_to_cos_from_conf(self, tmp_path):
+        # The live portfolio-roster shape: Chair (cos) + lane CEOs + comms.
+        _write_capabilities_conf(tmp_path, [
+            "cos:captain_rules_retrieval",
+            "cos:validates_deployments",
+            "polads-ceo:deploys_code",
+            "stephie-ceo:deploys_code",
+            "comms-officer:logs_captain_decisions",
+        ])
+        for extinct in ("cto", "cpo", "cro", "coo"):
+            assert resolve_role_slug(extinct) == "cos"
+
+    def test_extinct_slug_kept_when_deployment_runs_it(self, tmp_path):
+        # A deployment that genuinely still runs a cto keeps cto attribution
+        # (rule 2) — resolution must not steal evals from a living role.
+        _write_capabilities_conf(tmp_path, [
+            "cto:deploys_code",
+            "cos:validates_deployments",
+        ])
+        assert resolve_role_slug("cto") == "cto"
+        assert resolve_role_slug("cpo") == "cos"  # still-extinct one remaps
+
+    def test_successor_by_capability_when_no_cos(self, tmp_path):
+        # Exotic roster with a renamed coordinator: the validates_deployments
+        # holder (platform-quality owner) inherits the subsystem evals.
+        _write_capabilities_conf(tmp_path, [
+            "lane-a:deploys_code",
+            "chair-x:validates_deployments",
+        ])
+        assert resolve_role_slug("coo") == "chair-x"
+
+    def test_conf_inline_comments_stripped(self, tmp_path):
+        # A trailing `# comment` on a conf line must not poison the exact
+        # capability match in successor rule 3 (checkpoint-review cp1 #7).
+        _write_capabilities_conf(tmp_path, [
+            "lane-a:deploys_code",
+            "chair-x:validates_deployments  # coordinator note",
+        ])
+        assert resolve_role_slug("cro") == "chair-x"
+
+    def test_missing_conf_falls_back_to_static_cos(self, tmp_path):
+        # tmp CABINET_ROOT has no conf at all (unit-test / bare-framework
+        # context) → deterministic static successor.
+        assert resolve_role_slug("cro") == "cos"
+
+    def test_register_rebinds_and_preserves_declared(self, tmp_path):
+        _write_capabilities_conf(tmp_path, ["cos:validates_deployments"])
+        ev = RoleEval(
+            name="t_extinct_bound",
+            role_slug="coo",
+            category="quality",
+            description="declared for a retired role",
+            setup=lambda: {},
+            execute=lambda ctx: {"ok": True},
+            verify=lambda ctx, res: [("works", True, "n/a")],
+        )
+        try:
+            register(ev)
+            assert _EVALS["t_extinct_bound"].role_slug == "cos"
+            assert _EVALS["t_extinct_bound"].declared_role_slug == "coo"
+            # ...and the runner's role filter sees it under the LIVE role,
+            # so its eval_failed events reach a loadable amendment target.
+            names = {e.name for e in run_all_for_role("cos")}
+            assert "t_extinct_bound" in names
+        finally:
+            _EVALS.pop("t_extinct_bound", None)
+
+    def test_register_leaves_live_binding_unmarked(self, tmp_path):
+        _write_capabilities_conf(tmp_path, ["cos:validates_deployments"])
+        ev = RoleEval(
+            name="t_live_bound",
+            role_slug="cos",
+            category="quality",
+            description="already live",
+            setup=lambda: {},
+            execute=lambda ctx: {"ok": True},
+            verify=lambda ctx, res: [("works", True, "n/a")],
+        )
+        try:
+            register(ev)
+            assert _EVALS["t_live_bound"].role_slug == "cos"
+            assert _EVALS["t_live_bound"].declared_role_slug == ""
+        finally:
+            _EVALS.pop("t_live_bound", None)
 
 
 # ---------------------------------------------------------------------------

@@ -11,6 +11,14 @@ Each eval is a small Python module in `framework/measurement/role_evals/` with
 `name`, `role_slug`, `category`, and setup/execute/verify callables — the same
 shape as Scenario but with a role binding.
 
+Role binding is ROSTER-DRIVEN (R8 retarget, 2026-07-04): the slug an eval
+declares is resolved against the live roster from
+`cabinet/officer-capabilities.conf` at registration time
+(`_eval_registry.resolve_role_slug`), so evals authored for the retired
+work-preset roster (cto/cpo/cro/coo) attribute their events to a role the
+evolution loop can actually load and amend (this deployment: `cos`). The
+declared slug is preserved on `RoleEval.declared_role_slug`.
+
 Events emitted:
   - `eval_run_started` — when a run begins (per role or overall)
   - `eval_passed` — per eval that passes all assertions
@@ -19,8 +27,9 @@ Events emitted:
 Usage:
     from framework.measurement.role_eval_runner import run_all_for_role, run_all
 
-    # Run all evals for the CTO role
-    results = run_all_for_role("cto")
+    # Run all evals bound to the coordinating officer (includes evals
+    # inherited from the retired work-preset roster via roster resolution)
+    results = run_all_for_role("cos")
 
     # Run everything (weekly cron path)
     results = run_all()
@@ -62,12 +71,14 @@ from framework.events.emitter import emit
 # unchanged. See _eval_registry.py docstring for the full story.
 
 from framework.measurement._eval_registry import (  # noqa: E402
+    EXTINCT_WORK_ROSTER,
     RoleEval,
     RoleEvalResult,
     _EVALS,
     is_discovered as _is_discovered,
     mark_discovered as _mark_discovered,
     register,
+    resolve_role_slug,
 )
 
 

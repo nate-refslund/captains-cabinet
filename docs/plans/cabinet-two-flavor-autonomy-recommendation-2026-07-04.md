@@ -254,9 +254,10 @@ Current memory layers include:
 - Screenpipe/Obsidian brain.
 - Cabinet Memory pgvector index.
 - Tier 2 officer notes.
-- Tier 3 experience records.
-- `memory/experience_records` structured records.
-- `memory/tier3/experience-records/*.md`.
+- Tier 3 experience records — `memory/tier3/experience-records/` (unified 2026-07-04,
+  lane/learn-0705: the formerly-separate `memory/experience_records` structured-JSONL
+  store and the shell-written `*.md` records now live in this ONE canonical dir, and
+  `framework/learning/experience.py list_records()` reads both formats).
 - Evolved skills.
 - Consequence ledger.
 - Org event ledger.

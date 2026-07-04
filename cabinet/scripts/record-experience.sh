@@ -1,5 +1,10 @@
 #!/bin/bash
-# record-experience.sh — Write an experience record to Tier 3 + PostgreSQL
+# record-experience.sh — Write an experience record to Tier 3 + PostgreSQL,
+# and emit an `experience_recorded` event (block 1c) so OVI's learning_rate
+# counts it. Tier 3 (memory/tier3/experience-records/) is the CANONICAL
+# experience store shared with framework/learning/experience.py — its
+# list_records() parses the md files this script writes (2026-07-04
+# unification), so these records feed skill induction directly.
 # Called by Officers after completing any significant task.
 #
 # Usage: record-experience.sh <officer> <outcome> <task_summary> <what_happened> [lessons_learned] [tags]
@@ -159,6 +164,67 @@ if [ -n "$COUNTERFACTUAL" ]; then
 fi
 
 # ============================================================
+# 1c. Emit experience_recorded event (OVI learning_rate feed)
+# ============================================================
+# UNIFICATION (2026-07-04, lane/learn-0705): OVI's learning_rate component is
+# count(experience_recorded events in window) (framework/ovi/compute.py +
+# framework/ovi/components.yml) — but only the Python writer
+# (framework/learning/experience.py record()) ever emitted that event, and
+# the fleet records experience through THIS script. Result: learning_rate
+# sat at 0 while real records accumulated on disk. Emit the same event here
+# so both write paths feed the ledger.
+#
+# Safety/robustness:
+#   * Values cross into Python via ENVIRONMENT VARIABLES, never interpolated
+#     into the source — task summaries are arbitrary text; interpolation
+#     would be a code-injection vector (Corridor-reviewed pattern).
+#   * Best-effort end to end (`|| true`, output discarded): recording an
+#     experience must NEVER fail because the event ledger hiccuped. The md
+#     file above is the durable record either way — list_records() reads it.
+#   * lesson_type mirrors the md→structured mapping in
+#     framework/learning/experience.py (_OUTCOME_TO_LESSON_TYPE): keep the
+#     two in sync if either changes.
+#   * ATTRIBUTION (deliberate, reviewed cp1 #2): the event actor is the
+#     positional $1 officer — the officer the RECORD belongs to — matching
+#     the md file and the PG row. The Redis signal keys further down use the
+#     SESSION officer (OFFICER_NAME env wins there) because they feed
+#     per-session idle/reflection detection. Two different semantics; do not
+#     "unify" them.
+if [ -f "$CABINET_ROOT/framework/events/emitter.py" ] && command -v python3 >/dev/null 2>&1; then
+  case "$OUTCOME" in
+    success) EV_LESSON_TYPE="pattern" ;;
+    failure) EV_LESSON_TYPE="anti_pattern" ;;
+    *)       EV_LESSON_TYPE="blocker" ;;   # partial | escalated
+  esac
+  CABINET_ROOT="$CABINET_ROOT" \
+  EV_RECORD_FILE="$RECORD_FILE" \
+  EV_OFFICER="$OFFICER" \
+  EV_LESSON_TYPE="$EV_LESSON_TYPE" \
+  EV_TRIGGER="$TASK_SUMMARY" \
+  python3 - <<'PYEOF' >/dev/null 2>&1 || true
+import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, os.environ["CABINET_ROOT"])
+from framework.events.emitter import emit
+
+record_id = Path(os.environ["EV_RECORD_FILE"]).stem
+emit("experience_recorded", actor=os.environ.get("EV_OFFICER", "unknown"), payload={
+    # experience_id keys the Store aggregate (emitter _AGGREGATE_MAP);
+    # it equals the md file stem so the event links back to the record.
+    "experience_id": record_id,
+    "record_id": record_id,
+    "lesson_type": os.environ.get("EV_LESSON_TYPE", "pattern"),
+    "trigger_signal": os.environ.get("EV_TRIGGER", "")[:160],
+    "applicability_scope": "this_role",
+    "has_evidence": True,
+    "source": "record-experience.sh",
+})
+PYEOF
+fi
+
+# ============================================================
 # 2. Insert into PostgreSQL (if available)
 # ============================================================
 DATABASE_URL="${DATABASE_URL:-}"
@@ -207,7 +273,14 @@ fi
 # signals that read it were starved.
 REDIS_HOST="${REDIS_HOST:-localhost}"
 REDIS_PORT="${REDIS_PORT:-6379}"
-OFFICER="${OFFICER_NAME:-unknown}"
+# Attribution fix (2026-07-04): this line used to be `${OFFICER_NAME:-unknown}`,
+# which CLOBBERED the positional $1 officer whenever the OFFICER_NAME env was
+# absent (manual/cron invocations) — so cabinet:last-experience:<officer> and
+# cabinet:toolcalls:<officer> landed on "unknown" and the reflection-gate /
+# proactive-work signals that read them per-officer (post-tool-use.sh) were
+# starved. Env still wins (officer sessions export OFFICER_NAME); the
+# positional arg is now the fallback instead of "unknown".
+OFFICER="${OFFICER_NAME:-$OFFICER}"
 if command -v redis-cli &>/dev/null; then
   redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" SET "cabinet:last-experience:$OFFICER" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" EX 7200 > /dev/null 2>&1
   redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" SET "cabinet:toolcalls:$OFFICER" 0 > /dev/null 2>&1
