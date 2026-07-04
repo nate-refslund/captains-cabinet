@@ -12,9 +12,19 @@ window): open commitments (6-Commitments), fresh meeting notes (2-Meetings),
 fresh decisions (5-Reflections/Decisions). The gather step is `as_of`-shaped so
 the retrodiction harness can drive the same path with a historical clock.
 
-No attention quota (Captain ruling 2026-07-03): every genuinely-needed action
-is sent. MAX_PER_RUN is a technical anti-runaway bound only. The quality bar
-lives in the proposer prompt (genuine need + SOLVE-shaped chains).
+Ask budget (germline batch 2026-07-04 — supersedes the 2026-07-03 "no
+attention quota" note that used to live here): presented asks are throttled at
+the card-emit seam to the plist-ratified contract
+(cabinet/launchd/com.cabinet.action-lane.plist: "≤2 action cards per run
+(≤5/day Redis budget)") — until this batch that budget existed only as
+documentation. A withheld card writes NOTHING (no ledger row / Redis record /
+Telegram), so it re-proposes naturally while its evidence stays fresh. Acted
+(act-first) cards are tells with undo handles, not asks — they ride the
+estate/per-kind caps (actfirst_canary) and never consume the ask budget.
+MAX_PER_RUN stays the technical anti-runaway bound on proposal GENERATION.
+Open cards older than ~36h auto-expire graduation-neutrally (see
+_expire_stale_cards). The quality bar still lives in the proposer prompt
+(genuine need + SOLVE-shaped chains).
 
 Run: python3.12 framework/acting/run_action_lane.py [--dry-run]
   --dry-run: gather + propose + print the would-be cards; no Telegram, no
@@ -30,6 +40,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import urllib.parse
 import urllib.request
 from collections import namedtuple
@@ -38,7 +49,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from framework.acting import action_lane, screenpipe_adapter as sa  # noqa: E402
-from framework.acting.loop import proposal_event, proposal_id, pending_proposals  # noqa: E402
+from framework.acting.loop import (  # noqa: E402
+    expire_event, pending_proposals, proposal_event, proposal_id)
 from framework.fidelity.consequence import emit_consequence, read_ledger  # noqa: E402
 from framework.frontdoor import actfirst_canary  # noqa: E402  # cid-echo suppression (TI-7)
 # TI-3 act-first gate seams (all already committed): the executor act-first path,
@@ -68,13 +80,54 @@ VAULT = Path.home() / "Obsidian" / "screenpipe-brain"
 # injected into the proposer prompt + used to validate every card's direction_fit.
 DIRECTIONS_PATH = Path(__file__).resolve().parents[2] / "instance" / "config" / "directions.yml"
 LOCK_PATH = "/tmp/cabinet-action-lane.lock"
-# Captain ruling 2026-07-03: NO attention quota — send every genuinely-needed
-# action. MAX_PER_RUN is a technical anti-runaway bound only (a berserk LLM
-# must not flood 20 cards in one tick), not a budget.
+# MAX_PER_RUN is a technical anti-runaway bound on proposal GENERATION only (a
+# berserk LLM must not flood 20 cards in one tick). It deliberately exceeds the
+# ask budget below: when act-first is live, acted cards (which are NOT asks)
+# can consume the surplus while presented asks stay throttled.
 MAX_PER_RUN = 8
+# ASK BUDGET — scope: PRESENTED asks only (cards landing on Nate's Telegram
+# awaiting a verdict); acted act-first cards are tells bounded by the
+# estate/per-kind caps in actfirst_canary instead.
+#
+# FIELD-TEST OVERRIDE (Nate, 2026-07-05 — feedback_field_test_disturb_max):
+# the Cabinet's operating phase is FIELD-TEST — "surface EVERYTHING, no ≤5/day
+# throttle, no quieting" — so the org runs hard, generates real labels (incl.
+# the first negatives), and reveals where it needs improvement. Since the lane
+# is act-first (not propose-first), more surfacing ≠ more asking — it is more
+# VISIBILITY into what the org already did. So these caps are lifted to
+# non-binding: they no longer withhold a card a real workload produces. They
+# are NOT removed — the counter still runs (ask-volume/day is exactly the
+# field-test signal we want) and the high ceilings remain a berserk-loop
+# backstop (a wedged LLM still can't fire thousands of Telegrams). This is a
+# PHASE choice ("for now"); re-tighten toward disturb-less once acceptance/undo
+# rates are known. Supersedes the ratified plist "≤2/run, ≤5/day" contract —
+# the plist comment + docs/plans/cabinet-two-flavor-autonomy-recommendation-
+# 2026-07-04.md:313 are updated in this same change (docs-track-code).
+MAX_PRESENT_PER_RUN = 8     # field-test: == MAX_PER_RUN, so generation is the only bound
+DAY_ASK_BUDGET = 200        # field-test: ~8/h — never binds a real day; berserk-loop backstop only
+# 48h TTL on the day counter: outlives its UTC day across a late run, then
+# self-expires — the same lifetime actfirst_canary.CAP_KEY_TTL_S uses.
+ASK_KEY_TTL_S = 172800
+# CARD EXPIRY (germline batch 2026-07-04): an open action card older than this
+# with no verdict auto-expires (see _expire_stale_cards). 36h mirrors the draft
+# lane's PROPOSAL_MAX_AGE_H default (run_draft_lane.py:41) so both lanes share
+# one staleness doctrine; env-overridable for the same reason the draft lane's
+# is; <=0 disables the sweep.
+CARD_MAX_AGE_H = float(os.environ.get("ACTION_CARD_MAX_AGE_H", "36"))
 WINDOW_H = 72
 LLM_MODEL = "claude-sonnet-4-6"
 _lock_fh = None
+
+# CANONICAL ACTOR (germline batch 2026-07-04): the officer actor id is the BARE
+# role ("cos"), NEVER "officer:cos". The ledger/graduation plane flattens actor
+# to "kind:id" (graduation._cell_rows / consequence.compute_ratios), so the old
+# double-prefixed literal produced cells keyed "officer:officer:cos" that the
+# act-first gate — which composes "officer:"+role → "officer:cos" — could never
+# match: every demotion-evidence row was invisible to the gate query. ONE
+# module constant now feeds both emit sites (dry-run + live) AND the gate's
+# cell composition (_graduation_demoted), so the identities can never drift
+# apart again. run_draft_lane.py:237 already uses the bare form.
+_ACTOR = {"kind": "officer", "id": "cos"}
 
 # --- TI-3 act-first gate (2026-07-04 trust-inversion) ------------------------
 # DEFAULT OFF. The entire earn-demotion posture stays DARK until the Captain
@@ -162,16 +215,62 @@ def _card_act_first_eligible(p, action_type,
     return True, ""
 
 
-def _act_first_gates_ok(action_type, board, kind) -> "tuple[bool, str]":
+def _graduation_demoted(action_type, lane) -> "tuple[bool, str]":
+    """(demoted, reason) — fail-closed read of the graduation cell state for
+    THIS lane's actor. DEMOTE-WIRE (germline batch 2026-07-04): demotion is the
+    earn-demotion doctrine's PRIMARY brake — a cell the graduation engine
+    demoted (>=2 wrong verdicts in the last 10 scored, or a single B2.8-proven
+    fabrication; graduation.evaluate step 2) must actually STOP acting. Before
+    this batch nothing in the acting path READ that state, so evidence-driven
+    demotion was computed but never enforced. Only state=='demote' blocks:
+    unmeasured / propose_only / eligible do NOT (the act_with_undo@unmeasured
+    trust-inversion posture — trust is lost on evidence, never pre-earned).
+    The cell key composes the SAME "kind:id" flatten graduation._cell_rows
+    uses, from the one canonical _ACTOR, so the gate and the emitters can never
+    disagree on identity again (the "officer:officer:cos" severing this batch
+    fixed). FAIL-CLOSED: an unreadable ledger/matrix — or a failed import —
+    blocks; an unverifiable brake must never widen action."""
+    # N3 (checkpoint review lane-germline-0705-cp1): a None lane cannot key the
+    # real per-lane cell — reading the None-lane cell would MISS a demotion that
+    # lives on the actual lane (fail-open). An unspecified lane at a gating
+    # decision is undeterminable → fail closed.
+    if lane is None:
+        return True, "lane unspecified (fail-closed)"
+    try:
+        # Lazy import: a broken graduation plane degrades to "blocked" at gate
+        # time instead of crashing the whole propose-only lane at import time.
+        from framework.fidelity import graduation
+        cell = ("{}:{}".format(_ACTOR["kind"], _ACTOR["id"]), lane, action_type)
+        state = (graduation.evaluate(cell) or {}).get("state")
+    except Exception:
+        return True, "graduation state unreadable (fail-closed)"
+    if state == "demote":
+        return True, "cell demoted (wrong-cluster/fabrication evidence)"
+    return False, ""
+
+
+def _act_first_gates_ok(action_type, board, kind, lane) -> "tuple[bool, str]":
     """(ok, reason) — the fail-closed runtime gates on a per-card basis: Captain
-    veto, kind freeze (breaker), silence breaker, per-kind/day caps. Every check
-    fails CLOSED (an unreachable Redis / unreadable registry ⇒ block ⇒ the card
-    falls through to propose_only), so an anomalous state never widens action."""
+    veto, graduation demotion, kind freeze (breaker), silence breaker,
+    per-kind/day caps. Every check fails CLOSED (an unreachable Redis /
+    unreadable registry/ledger ⇒ block ⇒ the card falls through to
+    propose_only), so an anomalous state never widens action. ``lane`` keys the
+    graduation cell (actor, lane, action_type) and is REQUIRED (N3, checkpoint
+    review 2026-07-05): a defaulted/None lane would read the wrong cell and miss
+    a real per-lane demotion, so it is now mandatory and _graduation_demoted
+    fails closed on None."""
     try:
         if veto_registry.is_vetoed(action_type, board=board):
             return False, "captain veto"
     except Exception:
         return False, "veto check errored (fail-closed)"
+    # DEMOTE-WIRE (germline 2026-07-04): the evidence brake, checked right
+    # after the Captain's word (veto) and before the mechanical breakers —
+    # veto/freeze/silence/caps guarded the estate, but a demoted cell could
+    # still act because no gate consulted graduation state.
+    demoted, dreason = _graduation_demoted(action_type, lane)
+    if demoted:
+        return False, dreason
     if actfirst_canary.is_frozen(kind):
         return False, "kind frozen (breaker/undo-rate)"
     if actfirst_canary.is_silenced(kind):
@@ -273,19 +372,39 @@ def _suppress_log(line: str) -> None:
 
 def _llm(system: str, user: str) -> str:
     """Raw-text Anthropic call (the core parses its own JSON). Key from env;
-    never logged."""
+    never logged.
+
+    SECRETS-ARGV (germline batch 2026-07-04): the API key and the request body
+    used to ride the curl ARGV (`-H "x-api-key: …"` / `-d '{…}'`) — readable by
+    ANY local process via `ps` for the full call duration (up to 180s), and the
+    body embeds vault-derived signal text (private). Now the key goes through a
+    0600 temp header file (`curl -H @<file>`, supported since curl 7.55;
+    tempfile.mkstemp creates 0600 by construction, unlinked in `finally` so it
+    lives only for the call) and the body rides stdin (`-d @-` + subprocess
+    ``input=``). Only non-secret headers stay on argv."""
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
         return ""
     body = {"model": LLM_MODEL, "max_tokens": 4096, "system": system,
             "messages": [{"role": "user", "content": user}]}
-    r = subprocess.run(
-        ["curl", "-s", "--max-time", "180", "https://api.anthropic.com/v1/messages",
-         "-H", f"x-api-key: {api_key}",
-         "-H", "anthropic-version: 2023-06-01",
-         "-H", "content-type: application/json",
-         "-d", json.dumps(body)],
-        capture_output=True, text=True, timeout=185)
+    hfd, hpath = tempfile.mkstemp(prefix="cabinet-llm-hdr-")   # 0600 by default
+    try:
+        with os.fdopen(hfd, "w") as hf:
+            hf.write(f"x-api-key: {api_key}\n")
+        r = subprocess.run(
+            ["curl", "-s", "--max-time", "180", "https://api.anthropic.com/v1/messages",
+             "-H", f"@{hpath}",
+             "-H", "anthropic-version: 2023-06-01",
+             "-H", "content-type: application/json",
+             "-d", "@-"],
+            input=json.dumps(body),
+            capture_output=True, text=True, timeout=185)
+    finally:
+        # The key file must not outlive the call — even on timeout/raise.
+        try:
+            os.unlink(hpath)
+        except OSError:
+            pass
     try:
         d = json.loads(r.stdout)
     except json.JSONDecodeError:
@@ -580,6 +699,112 @@ def _store_action(pid: str, prop: action_lane.ActionProposal, cid: str = "") -> 
     _redis("SET", f"cabinet:action:{pid}", json.dumps(rec), "EX", "604800")
 
 
+def _ask_budget_ok(presented_this_run: int) -> "tuple[bool, str]":
+    """(ok, reason) — the ask throttle, checked at the card-emit seam BEFORE any
+    side effect. Under the FIELD-TEST OVERRIDE (2026-07-05; see the ASK BUDGET
+    constants block) the caps are lifted to non-binding (MAX_PRESENT_PER_RUN=8,
+    DAY_ASK_BUDGET=200) so the phase surfaces everything a real workload
+    produces; this leg remains as the berserk-loop backstop + ask-volume counter
+    (telemetry), not a routine throttle.
+
+    Two legs: (1) per-run — ≤MAX_PRESENT_PER_RUN presented this run (checked
+    first so a run-capped card never burns day-budget); (2) per-day —
+    INCR-then-compare on the UTC-day Redis counter, EX ASK_KEY_TTL_S. INCR-
+    then-compare deliberately mirrors actfirst_canary.incr_and_check: a
+    withheld ask still consumed its count (conservative — never over-sends, at
+    worst slightly under-sends, bounded by the per-run leg). The singleton lock
+    makes concurrent lane runs impossible, so there is no INCR race within the
+    lane. FAIL-CLOSED: any Redis problem withholds — safe because a withheld
+    card writes NO ledger row, so covered_evidence_refs() does not cover it and
+    it re-proposes on a later run while its evidence window (72h) is fresh; and
+    coherent, because a presented card without a stored Redis record could
+    never be approve-executed anyway."""
+    if presented_this_run >= MAX_PRESENT_PER_RUN:
+        return False, f"per-run present cap {MAX_PRESENT_PER_RUN} reached"
+    day = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d")
+    key = f"cabinet:action:asks:{day}"
+    try:
+        n = int(_redis("INCR", key) or 0)
+        _redis("EXPIRE", key, str(ASK_KEY_TTL_S))
+    except Exception as e:
+        return False, f"ask counter unavailable — fail-closed ({e})"
+    if n > DAY_ASK_BUDGET:
+        return False, f"day ask budget {DAY_ASK_BUDGET} exhausted ({n} asked today)"
+    return True, ""
+
+
+def _expire_stale_cards(now: dt.datetime) -> int:
+    """CARD-EXPIRY (germline batch 2026-07-04) — close every open action card
+    older than CARD_MAX_AGE_H that never got a verdict, so stale asks stop
+    dangling forever.
+
+    Before this batch action cards NEVER expired (unlike the draft lane —
+    run_draft_lane.py._auto_expire_self_replied): an unanswered card stayed an
+    ⚡AWAITING line in every digest (tell_surface derives those from pending
+    proposals) AND held a live executable record in Redis for its full 7-day
+    TTL. Doctrine (.claude/rules/courses-of-action.md §3): stale proposals
+    auto-expire into the briefing — they are not re-pinged and must not pile up.
+
+    Per expired card:
+      * emit loop.expire_event — the SAME superseding closure the draft lane
+        uses: decision='expired', review.verdict='unknown', source='system'.
+        Graduation-NEUTRAL by construction: unknown verdicts are excluded from
+        every scored denominator (graduation._divergent_in_last10 counts only
+        confirmed/wrong), so an expiry can never register as a demotion.
+        decided_at = the card's OWN ts (the suppression clock — a genuinely-new
+        same-subject situation arriving before the sweep must not be judged
+        already-handled; the draft lane's Kristoffer-miss rationale,
+        loop.expire_event docstring); reviewed_at = the real expiry moment
+        (the audit clock).
+      * best-effort DEL of cabinet:action:<pid> — the TTL alignment: the
+        AWAITING line (ledger-derived, dies with the expire event) and the
+        executable record die TOGETHER instead of the record outliving its
+        card by ~5.5 days. Mirrors the executor's own DEL-on-delivered
+        (action_exec.py:1179). Safe under a racing late approve: the binder's
+        handle_response refuses any already-decided proposal BEFORE dispatch
+        (loop.py), so a missing record is unreachable — the DEL is defense-in-
+        depth, not the guard. Ordered ledger-first: a DEL without the expire
+        event would orphan a still-open card, so the DEL only runs after the
+        emit landed.
+
+    Best-effort throughout: an unreadable ledger skips the whole sweep; a
+    per-card failure logs and continues (one line per expiry — SEC-4, no
+    silent drops). Only rows with action=='action-card' are touched —
+    draft-reply proposals belong to the draft lane's own sweep. An unparseable
+    ts never expires (conservative: we cannot prove the card is old — same
+    stance as the draft lane's backstop). Returns the count expired."""
+    if CARD_MAX_AGE_H <= 0:
+        return 0
+    try:
+        open_props = pending_proposals()
+    except Exception as e:
+        print(f"card-expiry: skipped (ledger unreadable: {e})")
+        return 0
+    expired = 0
+    for prop in open_props:
+        if prop.get("action") != "action-card":
+            continue
+        when = sa.parse_dt(prop.get("ts"))
+        if when is None or (now - when).total_seconds() < CARD_MAX_AGE_H * 3600:
+            continue
+        try:
+            ev = expire_event(prop,
+                              reviewed_at=now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                              decided_at=prop.get("ts"))
+            emit_consequence(**ev)
+            expired += 1
+            print(f"card-expiry: expired open card -> {prop.get('subject')} "
+                  f"(> {CARD_MAX_AGE_H:g}h, no verdict; graduation-neutral)")
+        except Exception as e:
+            print(f"card-expiry: failed for {prop.get('subject')}: {e}")
+            continue
+        try:
+            _redis("DEL", f"cabinet:action:{proposal_id(prop)}")
+        except Exception:
+            pass   # unreachable-anyway record ages out on its own 7d TTL
+    return expired
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
@@ -592,6 +817,15 @@ def main() -> int:
 
     now = dt.datetime.now(dt.timezone.utc)
     budget = MAX_PER_RUN
+
+    # CARD-EXPIRY sweep FIRST (germline 2026-07-04) — the draft lane's ordering
+    # rationale (run_draft_lane.py main): expired cards must drop out of
+    # pending_proposals BEFORE open_subjects is read below, so a stale card
+    # stops suppressing a fresh same-subject proposal this very tick. Skipped
+    # on --dry-run: the eyeball gate stays write-free (no ledger, no Redis) as
+    # its docstring promises.
+    if not args.dry_run:
+        _expire_stale_cards(now)
 
     # cid-echo suppression (TI-7): when act-first is live, drop signals derived
     # from the lane's OWN recent acted cards so an act can't loop act→capture→act.
@@ -615,7 +849,9 @@ def main() -> int:
     if args.dry_run:
         print(f"DRY RUN — {len(proposals)} card(s) would present:\n")
         for p in proposals:
-            prop_ev = proposal_event(actor={"kind": "officer", "id": "officer:cos"},
+            # _ACTOR (bare "cos") — the old inline "officer:cos" literal here
+            # double-prefixed the graduation cell key; see the constant's WHY.
+            prop_ev = proposal_event(actor=_ACTOR,
                                      lane=p.lane, subject=p.subject,
                                      ts=now.strftime("%Y-%m-%dT%H:%M:%SZ"),
                                      action="action-card")
@@ -641,7 +877,10 @@ def main() -> int:
     conf_floor = _confidence_floor() if act_first else CONFIDENCE_FLOOR_DEFAULT
 
     presented = acted = 0
-    actor = {"kind": "officer", "id": "officer:cos"}
+    # _ACTOR (bare "cos"): this literal was the LIVE half of the double-prefix
+    # bug — every ledger row it emitted flattened to "officer:officer:cos" and
+    # was invisible to the gate's "officer:cos" cell query (see the constant).
+    actor = _ACTOR
     for p in proposals:
         ts = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         # B2.1 cid (strategy-report corrected rec 2, 2026-07-03): without a
@@ -678,7 +917,12 @@ def main() -> int:
         if act_first:
             elig, ereason = _card_act_first_eligible(p, at, floor=conf_floor)
             kind_key = actfirst_canary.kind_key(at) if at else ""
-            gates_ok, greason = (_act_first_gates_ok(at, _card_board(p), kind_key)
+            # lane=p.lane keys the DEMOTE-WIRE's graduation cell (actor, lane,
+            # action_type) — the same triple the emitted ledger rows carry, so
+            # the evidence this card generates is the evidence its next run is
+            # gated on.
+            gates_ok, greason = (_act_first_gates_ok(at, _card_board(p), kind_key,
+                                                     lane=p.lane)
                                  if elig else (False, ereason))
             if elig and gates_ok:
                 _store_action(pid, p, cid=cid)
@@ -710,6 +954,19 @@ def main() -> int:
                 print(f"act-first ineligible -> {p.subject}: {ereason or greason}")
 
         if not did_act:
+            # ASK-BUDGET seam: the ask throttle (field-test override 2026-07-05:
+            # non-binding 8/run, 200/day — backstop + telemetry only) is checked
+            # BEFORE any side effect — a
+            # withheld card writes NOTHING (no ledger row, no Redis record, no
+            # Telegram), so covered_evidence never covers it and it re-proposes
+            # naturally on a later run while its evidence stays fresh. Acted
+            # cards above never reach this seam (tells, not asks). Logged per
+            # card (SEC-4 RT-A12: no silent drops).
+            budget_ok, breason = _ask_budget_ok(presented)
+            if not budget_ok:
+                print(f"ask-budget: withheld card -> {p.subject} ({breason}; "
+                      f"re-proposes while evidence is fresh)")
+                continue
             card = action_lane.render_card(p, pid)   # marker-stripped inside
             emit_consequence(**prop_ev)              # ledger FIRST (fail-closed order)
             _store_action(pid, p, cid=cid)

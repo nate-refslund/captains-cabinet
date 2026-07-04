@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -57,6 +58,21 @@ VALID_EVENT_TYPES = frozenset({
     "work_item_completed",
     "work_item_failed",
     "work_item_verified",
+    # Subagent lifecycle (2026-07-04 ledger hygiene + g-hooks). Generic
+    # helper-agent completions (code reviewers, explainer crews, exploration,
+    # debugging — no task ref in agent_type) land HERE, not on
+    # work_item_completed: the SubagentStop hook
+    # (cabinet/scripts/hooks/on-subagent-stop.sh) used to emit
+    # work_item_completed for EVERY subagent stop, burying genuine work-graph
+    # completions — and the mission-ledger consumers that replay
+    # work_item_completed (OVI task_throughput / verification_pass_rate, mission
+    # compiler DONE overlay) — under ~6.6k task-ref-less rows (purge:
+    # cabinet/scripts/ledger-purge-testrows.sh). This entry is the WRITABLE half
+    # of the fix — a valid landing type for the hook; the hook's switch itself
+    # is germline and is applied via the germline process. Telemetry-only — no
+    # consumer replays it yet. (De-duplicated at integration: the ledger and
+    # germline lanes each registered this type; one canonical entry.)
+    "subagent_completed",
 
     # Policy
     "policy_evaluated",
@@ -89,10 +105,16 @@ VALID_EVENT_TYPES = frozenset({
     "capability_gap_declined",            # Captain declined (with reason → learning)
     "capability_gap_resolved",            # gap closed (auto-skilled OR built+installed)
 
-    # Prove-to-earn expansion (docs/prove-to-earn-expansion-2026-06-25.md)
+    # Self-extension surfacing — the Chair PREPARES + SURFACES; Nate applies.
+    # (trust_rung_proposed / trust_rung_granted were REMOVED 2026-07-04 with
+    # framework/learning/trust_ladder.py — earn-demotion ruling, captain-
+    # decisions 2026-07-03: reversible classes act-with-undo from day one and
+    # trust is LOST on evidence, never rung-earned. Dropping the types here is
+    # fail-closed: emit() rejects unregistered types, so no code path can ever
+    # record a rung grant again. Historical trust_rung_* events in old ledgers
+    # still replay fine — replay() filters by *requested* type and never
+    # validates against this emit-time allowlist.)
     "self_proposal_prepared",             # Chair surfaced a one-tap MCP/plugin scope-grant proposal
-    "trust_rung_proposed",                # ladder surfaced an earned rung (one-tap grant card)
-    "trust_rung_granted",                 # Captain granted a trust rung (advances the ladder)
     "account_flow_surfaced",              # Chair surfaced a "credential needed" account-flow step
 
     # Learning
@@ -162,17 +184,44 @@ def emit(
     return event
 
 
+# Per-process cache for the pytest fallback dir (defense-in-depth fence,
+# 2026-07-04). Cached so every resolver call inside ONE test process — the
+# JSONL append in _write_to_log() AND the read in replay() — agrees on the
+# SAME redirect target; a fresh dir per call would make emit-then-replay
+# tests read an empty directory.
+_PYTEST_FALLBACK_DIR: Path | None = None
+
+
 def _event_log_dir() -> Path:
     """Resolve the JSONL event-ledger directory.
 
     CABINET_EVENT_LOG_DIR always wins when set. The default is a durable
     per-user location — /tmp/cabinet-events (the old default) is wiped on
     reboot/periodic cleanup, which silently truncated the event ledger.
+
+    Defense-in-depth test fence (2026-07-04 leak incident): when running
+    under pytest (PYTEST_CURRENT_TEST set) with NO explicit
+    CABINET_EVENT_LOG_DIR, redirect to a per-process temp dir instead of the
+    durable live default. The Store SQLite mirror already auto-skips under
+    pytest (_write_to_store); this JSONL path did NOT — which is how 1,969+
+    fidelity fixture rows (payload.subject "abc1234567") leaked into the live
+    audit ledger. The PRIMARY fence is the repo-root conftest.py (+ pytest.ini
+    rootdir anchor), which exports a session sandbox for the whole run
+    including subprocesses; this layer catches any pytest invocation that
+    bypasses the root conftest. Purge of the already-leaked rows:
+    cabinet/scripts/ledger-purge-testrows.sh (Captain-gated).
     """
-    return Path(os.environ.get(
-        "CABINET_EVENT_LOG_DIR",
-        os.path.expanduser("~/Library/Application Support/cabinet/events"),
-    ))
+    explicit = os.environ.get("CABINET_EVENT_LOG_DIR")
+    if explicit:
+        return Path(explicit)
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        global _PYTEST_FALLBACK_DIR
+        if _PYTEST_FALLBACK_DIR is None:
+            _PYTEST_FALLBACK_DIR = Path(
+                tempfile.mkdtemp(prefix="cabinet-pytest-events-")
+            )
+        return _PYTEST_FALLBACK_DIR
+    return Path(os.path.expanduser("~/Library/Application Support/cabinet/events"))
 
 
 def _write_to_log(event: dict[str, Any]) -> None:
@@ -273,6 +322,10 @@ _AGGREGATE_MAP: dict[str, tuple[str, str]] = {
     "work_item_completed":        ("work_item",   "task_id"),
     "work_item_failed":           ("work_item",   "task_id"),
     "work_item_verified":         ("work_item",   "task_id"),
+    # Subagent lifecycle (2026-07-04): aggregate on the subagent's own id —
+    # agent_id is the one key the SubagentStop hook payload ALWAYS carries
+    # (task_ref only exists when agent_type encodes FW-*/PROD-*/TASK-*).
+    "subagent_completed":         ("subagent",    "agent_id"),
     "role_created":               ("role",        "slug"),
     "role_charter_changed":       ("role",        "slug"),
     "role_capability_added":      ("role",        "slug"),

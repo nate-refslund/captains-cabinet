@@ -32,12 +32,32 @@ framework/roles/lifecycle.py:FRAMEWORK_PATH_INSTANCE
 framework/roles/tests/test_lifecycle.py:FRAMEWORK_PATH_INSTANCE
 # 2026-07-02 — Captain-ratified growth (F0.1 canonicalization of the June
 # autonomous-operation work; ratification = the 11-question sit-down, Q1/Q3).
-# RATCHET-DOWN DEBT: these 6 are instance-path couplings in framework/ that
+# RATCHET-DOWN DEBT: these 5 are instance-path couplings in framework/ that
 # the PM-decoupling + Estate-Mapper work is expected to remove; revisit at
 # plan B2/B4 and shrink via --update-baseline after the cleanup PR.
+# (was 6 — test_trust_ladder.py entry ratcheted out 2026-07-04 when the
+# trust-ladder module was deleted under the earn-demotion ruling.)
 framework/learning/capability_gaps.py:FRAMEWORK_PATH_INSTANCE
 framework/learning/tests/test_capability_gaps.py:FRAMEWORK_PATH_INSTANCE
-framework/learning/tests/test_trust_ladder.py:FRAMEWORK_PATH_INSTANCE
 framework/onboarding/onboard.py:FRAMEWORK_PATH_INSTANCE
 framework/onboarding/tests/test_onboard.py:FRAMEWORK_PATH_INSTANCE
 framework/triggers/registry.py:FRAMEWORK_PATH_INSTANCE
+# 2026-07-04 — Captain-ratified growth (+3, lane/config-0705). The act-first
+# lane reads Captain-owned runtime config that is instance-resident BY DESIGN
+# (deployment-local, flippable/editable without a framework change;
+# trust-inversion flip protocol, captain-decisions 2026-07-04). Per-file, the
+# actual hits (adversarial review 2026-07-04 corrected the original "all three
+# are the kill-flag read" wording — only one file reads the flag):
+#   run_action_lane.py — instance/config/directions.yml AND the act-first
+#                        kill-flag instance/config/act-first-enabled
+#   action_exec.py     — instance/config/act-first-surfaces.yml (the Captain's
+#                        act-first surface allow/deny config — itself a
+#                        germline-lock.sh target)
+#   actfirst_canary.py — instance/config/act-first-surfaces.yml
+# All are config-file reads, not code deps. Not ratchet-down debt: the coupling
+# is intentional as long as the act-first lane's Captain config (flag, surfaces,
+# directions) lives in instance/. Removing the FLAG alone does NOT clear these
+# entries — the surfaces/directions reads remain.
+framework/acting/run_action_lane.py:FRAMEWORK_PATH_INSTANCE
+framework/frontdoor/action_exec.py:FRAMEWORK_PATH_INSTANCE
+framework/frontdoor/actfirst_canary.py:FRAMEWORK_PATH_INSTANCE

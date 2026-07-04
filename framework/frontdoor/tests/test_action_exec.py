@@ -1039,11 +1039,17 @@ def test_per_step_gated_delivery_holds_delegate(monkeypatch):
 # =============================================================================
 
 def test_endpoint_pin_only_monday_no_new_egress():
-    """The executor's only HTTP egress is api.monday.com; no networking library
-    beyond urllib.request is imported (redis/osascript/bash stay local)."""
+    """The executor's HTTP egress is pinned to exactly two hosts: api.monday.com
+    (the write surface) and api.telegram.org (added 2026-07-04 germline g-exec —
+    the edit→re-card presenter `_tg_send`, which posts the corrected card to the
+    CAPTAIN'S OWN HQ Chair bot; a Captain-facing approval surface, not a new
+    colleague-facing egress, and the hard external-comms ceiling is untouched).
+    No networking library beyond urllib.request is imported (redis/osascript/
+    bash stay local). Any third host appearing here is an unreviewed egress —
+    widen this pin only with a dated rationale like the telegram one."""
     src = open(ax.__file__).read()
     hosts = set(re.findall(r"https?://([A-Za-z0-9.\-]+)", src))
-    assert hosts <= {"api.monday.com"}, hosts
+    assert hosts <= {"api.monday.com", "api.telegram.org"}, hosts
     for banned in ("import requests", "import httpx", "import socket",
                    "import http.client", "import smtplib", "import ftplib"):
         assert banned not in src
@@ -1070,3 +1076,114 @@ def test_act_first_requires_steps_sha_stamp(monkeypatch):
     r2 = ax.deliver_action("pt2", redis_get=_store(steps),
                            monday_post=spy, osascript=lambda c: "ok")
     assert r2["ok"] is True
+
+
+# =============================================================================
+# edit→re-card HAPPY PATH (_recard_edited) — MF-2 regression batch (checkpoint
+# review lane-germline-0705-cp1, 2026-07-05). test_edit_defers_never_executes
+# above pins only the SKIP branch (no presentable channel under pytest); until
+# this batch the re-card itself shipped with zero coverage. These pin it: a
+# Captain "edit: <text>" verdict re-enters the PROPOSE flow as a fresh card —
+# new pid, recard-of ref, corrected content on the annotation leg, fail-closed
+# emit→store→present order — and still executes NOTHING.
+# =============================================================================
+
+def _recard_rec():
+    steps = [{"kind": "monday_task_update", "title": "move to Done",
+              "payload": {"board_id": "5091706356", "monday_id": "42",
+                          "set": {"status": "Done"}}}]
+    return {"cid": "oldcid", "lane": "polads", "subject": "close cmt",
+            "situation": "done in scrum", "steps": steps,
+            "steps_sha256": ax._canonical_sha(steps),
+            "evidence": ["6-Commitments/x.md"], "confidence": 0.95,
+            "urgency": "batch"}
+
+
+def test_recard_edited_reproposes_fresh_card(monkeypatch):
+    from framework.acting.loop import proposal_id
+    from framework.fidelity import consequence as cq
+    from framework.probes import correlation
+
+    calls = []
+    # the lazy in-function import binds the module attribute at call time, so
+    # patching the consequence module keeps the ledger seam hermetic here.
+    monkeypatch.setattr(cq, "emit_consequence",
+                        lambda **ev: calls.append(("emit", ev)))
+    out = ax._recard_edited(
+        "OLDPID", _recard_rec(), "status should be In Progress, not Done",
+        telegram_send=lambda text: calls.append(("tg", text)),
+        redis_set=lambda k, v, ttl: calls.append(("store", k, v, ttl)))
+
+    assert out["recarded"] is True
+    new_pid = out["recard_pid"]
+    assert new_pid and new_pid != "OLDPID"        # a FRESH proposal identity
+
+    # Fail-closed order (byte-parity with run_action_lane.main's present
+    # branch): ledger emit FIRST, then the Redis store, then the card — a card
+    # that cannot land its PENDING proposal is never stored or shown.
+    assert [c[0] for c in calls] == ["emit", "store", "tg"]
+
+    ev = calls[0][1]
+    assert ev["action"] == "action-card"
+    # CANONICAL ACTOR (germline contract 2026-07-04): BARE role — a
+    # pre-qualified "officer:cos" id double-composes to "officer:officer:cos"
+    # downstream and severs graduation evidence from the gate.
+    assert ev["actor"] == {"kind": "officer", "id": "cos"}
+    assert ev["proposal"] == {"required": True, "decision": None}
+    assert "recard-of:OLDPID" in ev["refs"]                      # audit joinback
+    assert correlation.ref_for(out["recard_cid"]) in ev["refs"]  # fresh cid
+    assert "6-Commitments/x.md" in ev["refs"]                    # evidence kept
+    assert proposal_id(ev) == new_pid             # the binder can bind a reply
+
+    _, key, payload, ttl = calls[1]
+    assert key == f"cabinet:action:{new_pid}" and ttl == 604800
+    rec = json.loads(payload)
+    assert rec["recard_of"] == "OLDPID"
+    assert rec["subject"] == "close cmt" and rec["lane"] == "polads"
+    # the correction rides the step's per-kind annotation leg (update -> "why")…
+    assert rec["steps"][0]["payload"]["why"] == (
+        "[Captain correction]: status should be In Progress, not Done")
+    # …the executable payload the Captain called wrong is otherwise unchanged…
+    assert rec["steps"][0]["payload"]["set"] == {"status": "Done"}
+    # …under a fresh TOCTOU stamp the executor re-checks at approve time.
+    assert rec["steps_sha256"] == ax._canonical_sha(rec["steps"])
+
+    card = calls[2][1]
+    assert "CAPTAIN EDIT (re-card)" in card       # visibly his own edit
+    assert "status should be In Progress, not Done" in card
+    assert f"·{new_pid}·" in card                 # bindable marker on the card
+
+
+def test_deliver_action_edit_recards_end_to_end(monkeypatch):
+    # The whole edit branch through deliver_action: the verdict has already
+    # landed by dispatch time → nothing executes, and the corrected chain
+    # comes back as a fresh proposed card awaiting a FRESH approve.
+    from framework.fidelity import consequence as cq
+    monkeypatch.setattr(cq, "emit_consequence", lambda **ev: None)
+    spy = MondaySpy()
+    sent, stored = [], []
+    out = ax.deliver_action(
+        "OLDPID", override_text="retitle it",
+        redis_get=lambda k: json.dumps(_recard_rec()),
+        redis_set=lambda k, v, ttl: stored.append(k),
+        telegram_send=lambda t: sent.append(t),
+        monday_post=spy, osascript=lambda c: "ok")
+    assert out["ok"] is False and out["edit_deferred"] is True
+    assert out.get("recarded") is True and out["recard_pid"]
+    assert "re-carded" in out["error"]
+    assert spy.calls == []                        # NOTHING executed
+    assert len(sent) == 1
+    assert stored == [f"cabinet:action:{out['recard_pid']}"]
+
+
+def test_deliver_action_edit_missing_record_still_defers(monkeypatch):
+    # Expired TTL / already executed: no stored chain to correct — the edit
+    # verdict stands, nothing executes, and the result names the impossibility
+    # instead of raising or presenting a phantom card.
+    out = ax.deliver_action(
+        "GONE", override_text="fix it",
+        redis_get=lambda k: "",
+        telegram_send=lambda t: pytest.fail("nothing to present"))
+    assert out["ok"] is False and out["edit_deferred"] is True
+    assert out.get("recarded") is not True
+    assert "re-card impossible" in out["error"]

@@ -2,9 +2,21 @@
 """generate-plists.py — render launchd plists for the cabinet fleet from
 cabinet/services.yml (F0.4, 2026-07-02).
 
-Scope: DAEMON and WATCHDOG kinds only. Officers (kind: officer) are rendered
+Scope: DAEMON, WATCHDOG and CRON kinds (all render identically — kind is fleet
+taxonomy, not a rendering switch). Officers (kind: officer) are rendered
 by deploy-mac.sh from cabinet/launchd/com.cabinet.officer.template.plist with
 the roster derived from instance/config/roster.yml — one owner per joint.
+
+Kind handling is STRICT (lane-ops 2026-07-04): an unknown kind is a hard
+error, never a silent skip. The silent-skip of `kind: cron` is exactly how
+the retro-trigger row was never rendered — its hand-made plist shipped
+without PATH, launchd's minimal PATH has no /opt/homebrew/bin, and redis-cli
+was unfindable (FATAL hourly since ~Jul 3) while every GENERATED plist
+carried PATH all along.
+
+`disabled: true` rows are skipped with a printed notice (parked/staged
+services stay in the manifest as fleet truth — e.g. draft-lane, superseded by
+the 2026-07-03 act-not-draft ruling — without being rendered or installed).
 
 Security contract (Corridor-reviewed, binding):
   - service names validated ^[a-z0-9-]+$ BEFORE any filesystem path use
@@ -196,7 +208,25 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     services = load_services(root)
-    daemons = [s for s in services if s.get("kind") in ("daemon", "watchdog")]
+    # STRICT kind gate (lane-ops 2026-07-04): daemon/watchdog/cron render;
+    # officer is deploy-mac.sh's; anything ELSE is a manifest typo and must
+    # fail LOUDLY — the old `in ("daemon","watchdog")` filter silently dropped
+    # the `kind: cron` retro-trigger row, which is how its hand-made plist
+    # missed the PATH env and FATAL'd hourly under launchd's minimal PATH.
+    RENDERED_KINDS = ("daemon", "watchdog", "cron")
+    unknown = [s["name"] for s in services
+               if s.get("kind") not in RENDERED_KINDS + ("officer",)]
+    if unknown:
+        raise SystemExit(
+            f"generate-plists: unknown kind on service(s) {unknown} — "
+            f"valid kinds: officer|{'|'.join(RENDERED_KINDS)} (unknown kinds "
+            f"hard-error so a row can never be silently un-rendered again)")
+    disabled = [s["name"] for s in services
+                if s.get("kind") in RENDERED_KINDS and s.get("disabled")]
+    if disabled:
+        print(f"disabled (manifest-parked, not rendered): {', '.join(disabled)}")
+    daemons = [s for s in services
+               if s.get("kind") in RENDERED_KINDS and not s.get("disabled")]
     skipped = [s["name"] for s in services if s.get("kind") == "officer"]
     if skipped:
         print(f"officers (deploy-mac.sh template path owns these): {', '.join(skipped)}")

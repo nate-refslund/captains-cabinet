@@ -335,6 +335,18 @@ def read_cell_state(officer, lane, action_type) -> str:
 
 **Cooldown to re-promote (anti-flap, concrete).** A demoted cell is `propose_only` for a **cooldown window** (`authority-matrix.yml → cooldown_days`: 14d default, 21d for deploy_nonprod/internal_comms) AND must re-clear the full bar on *fresh* post-demotion samples — the demotion timestamp becomes the new clean-streak floor (dirty pre-demotion samples don't count, mirroring Ground-2 "graduation window restarts on normalized data clean"). The Redis sticky key TTL enforces the floor of the window; re-promotion is never automatic on TTL expiry alone — the cell re-earns `eligible→graduated` exactly like a new cell. **The sticky key + cooldown logic are unit-tested (§test plan); they are not prose.**
 
+> **[Status note, 2026-07-04 — docs-track-code]** As built so far, `cooldown_days`
+> is **observability-only / not auto-enforced**. The matrix loader validates it
+> (`framework/authority/matrix.py::_validate_cooldowns`, asserted in
+> `framework/authority/tests/test_matrix.py`), but **no runtime consumer reads
+> it yet**: `framework/fidelity/graduation.py` imports only `bars` (its
+> `demote` state fires on fresh divergents/fabrication), and the
+> `authority_thermostat.py` demotion scan + Redis sticky-key TTL described
+> above are **not implemented**. The paragraph above remains the design
+> contract; until the demotion path lands and consumes `cooldown_days`, treat
+> the key as documentation of intent, not an active control. (The germline
+> `authority-matrix.yml` itself is deliberately untouched.)
+
 **Depends-on.** `compute_ratios`/`read_ledger` (F0, re-keyed); `graduation.evaluate` (F2 — hard gate); `aggregate.cusum` (F6 — hard gate); the event store; Redis; Component 3; the new `authority.friction`/`authority.gate_decision` types.
 
 **Isolation.** `demotion_scan(cell) -> state` + a finding-emit, in `authority_thermostat.py`. Reads the ledger + drift; writes a Redis sticky key + one event. Does not touch the gate's hot path (the gate just reads the resulting state).

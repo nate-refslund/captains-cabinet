@@ -13,9 +13,19 @@
 # ~/Cabinet-Backups; override via BACKUP_DEST env var or --dest flag. Old
 # backups beyond the retention window are pruned.
 #
-# Schedule via cron or launchd. Example launchd snippet:
-#   <key>StartCalendarInterval</key>
-#   <dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>0</integer></dict>
+# SCHEDULED (lane-ops 2026-07-04): the `backup` row in cabinet/services.yml
+# (daily 03:00 local) renders com.cabinet.backup.plist; the repo install copy
+# lives at cabinet/launchd/com.cabinet.backup.plist (load steps in
+# cabinet/launchd/INSTALL-flip.md). The outcome-watchdog derives a 26h
+# freshness floor for it from the manifest. Prove restorability with the
+# companion drill: `bash cabinet/scripts/restore-drill.sh` (temp-dir only,
+# never touches live state).
+#
+# NATE-DECISIONS deliberately not wired here (see the services.yml backup row):
+#   * Off-machine copy — a local snapshot dies with the disk; recommended:
+#     post-backup rsync of $BACKUP_DEST to the UpCloud CPH box over Tailscale.
+#   * Redis AOF — BGSAVE below is point-in-time only; enable-redis-aof.sh
+#     exists but restarts Redis, so flipping it stays a Captain step.
 #
 # Usage:
 #   bash cabinet/scripts/backup.sh                       # default location, no Postgres
@@ -42,7 +52,9 @@ while [ $# -gt 0 ]; do
     --retention-days) RETENTION_DAYS="$2"; shift 2 ;;
     --pg) INCLUDE_PG=1; shift ;;
     -h|--help)
-      sed -n '1,28p' "$0" | sed 's/^# \{0,1\}//' >&2
+      # Print the whole header block (through the "Idempotent" line, currently
+      # line 36 — keep in sync when the header grows; lane-ops 2026-07-04).
+      sed -n '1,36p' "$0" | sed 's/^# \{0,1\}//' >&2
       exit 0
       ;;
     *) echo "backup.sh: unknown arg: $1" >&2; exit 2 ;;

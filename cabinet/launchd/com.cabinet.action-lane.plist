@@ -2,11 +2,17 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!-- Capture→action lane (the 2026-07-03 Captain-ruled pivot of the draft lane).
      Every 30 min: gather fresh vault signals (commitments/meetings/decisions),
-     propose ≤2 action cards per run (≤5/day Redis budget) to Nate's Telegram
-     with ·pid· markers; his approve/edit:/skip: lands via the binder; approves
-     execute through framework/frontdoor/action_exec.py (Monday/Reminders).
-     PROPOSE-ONLY posture: nothing acts without a verdict; the verdicts feed the
-     (now live) graduation engine per cell.
+     propose/act on action cards to Nate's Telegram with ·pid· markers; his
+     approve/edit:/skip: (and undo [n] on acted cards) lands via the binder;
+     execution runs through framework/frontdoor/action_exec.py (Monday/Reminders).
+     ASK BUDGET — FIELD-TEST OVERRIDE (Nate, 2026-07-05): the prior "≤2 cards/run,
+     ≤5/day" contract is LIFTED to non-binding (MAX_PRESENT_PER_RUN=8, DAY_ASK_
+     BUDGET=200 in run_action_lane.py) for the field-test phase — surface EVERYTHING
+     to generate labels + visibility; the counter still runs (ask-volume telemetry)
+     and the high ceiling is a berserk-loop backstop only. "For now"; re-tighten
+     toward disturb-less once acceptance/undo rates are known.
+     ACT-FIRST posture: reversible/undoable steps act immediately with a 48h undo
+     handle; the verdicts (and undos) feed the graduation/demotion engine per cell.
 
      Source of truth in repo; installed + loaded with:
        cp cabinet/launchd/com.cabinet.action-lane.plist ~/Library/LaunchAgents/

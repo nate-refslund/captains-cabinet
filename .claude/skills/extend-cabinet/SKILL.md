@@ -87,11 +87,14 @@ other extension — declare the owning plugin in
   Presets live in `presets/<name>/`; the active one is in
   `instance/config/active-preset`.
 
-## 7. The prove-to-earn flows (self-proposal · account · trust ladder)
+## 7. The self-extension flows (self-proposal · account)
 
-Three flows let the cabinet *earn* more reach over time, all surfacing for
-Nate's one-tap approval — never self-granting
-(`docs/prove-to-earn-expansion-2026-06-25.md`):
+Two flows extend the cabinet's reach, both surfacing for Nate's one-tap
+approval — never self-granting. (Scope grants and credentials are hard
+ceilings; day-to-day autonomy needs no earning — per the earn-demotion ruling,
+captain-decisions 2026-07-03, reversible action classes are trusted from day
+one with undo and DEMOTED on evidence. The old rung-climbing trust ladder was
+removed 2026-07-04.)
 
 - **MCP/plugin self-proposal** — once you've tested a new MCP/plugin,
   `framework.learning.self_proposal.prepare_mcp_proposal(...)` surfaces the
@@ -102,12 +105,7 @@ Nate's one-tap approval — never self-granting
   --service <name>` drives a signup to the credential boundary (recipe in
   `instance/config/account-flows.yml`) and surfaces "credential needed."
   Credential entry stays Nate's. Depends on the Chair holding `claude-in-chrome`
-  scope (a Component-1 self-proposal away).
-- **Trust ladder** — `framework.learning.trust_ladder` reads
-  `instance/config/trust-ladder.yml` (Captain-authored rungs:
-  `would-like-to -> intend-to -> ive-done -> ive-been-doing`, per lane) and
-  surfaces a rung-grant card when a rung's cells are all `graduated` per the
-  per-cell `graduation.evaluate()`. Ceiling cells stay Captain-only forever.
+  scope (itself a self-proposal away).
 
 ## The rule
 

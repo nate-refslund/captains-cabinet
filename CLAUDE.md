@@ -22,28 +22,28 @@ The **preset loader** (`cabinet/scripts/load-preset.sh`, called automatically by
 
 See `framework/README.md` and `presets/README.md` for full details.
 
-## Two Repos, Clean Separation
+## Framework Repo vs Product Repos, Clean Separation
 
-This is the **founders-cabinet** repo — the organizational framework. It contains governance, memory, infrastructure, and Officer definitions.
+This is the **captains-cabinet** repo — the organizational framework. It contains governance, memory, infrastructure, and Officer definitions. The live deployment is **native Mac launchd** (re-grounded 2026-07-04; the old Docker/Hetzner `/opt/founders-cabinet` + `/workspace/product`-mount deployment is extinct): this checkout at `/Users/nate/captains-cabinet` (`$CABINET_ROOT`) IS the running org, and officers run as launchd LaunchAgents attached to `officer-<role>` tmux sessions (`cabinet/scripts/start-officer-mac.sh`; fleet manifest `cabinet/services.yml`).
 
-The **product repo** is mounted at `/workspace/product`. It's a normal app repo with no Cabinet awareness. All code work happens there.
+**Product repos** are separate local checkouts on the same Mac — normal app repos with no Cabinet awareness. All product code work happens there. Each lane declares its product repo (URL, branch, local checkout path) in `instance/config/projects/<lane>.yml`, with the lane itself described in `instance/config/contexts/<lane>.yml`.
 
-- **This repo (`/opt/founders-cabinet`):** Constitution, roles, memory, shared interfaces, Docker config
-- **Product repo (`/workspace/product`):** Source code, package.json, tests — the actual app
+- **This repo (`/Users/nate/captains-cabinet`):** Constitution, roles, memory, shared interfaces, launchd/deploy config
+- **Product repos (per lane, path in `instance/config/projects/<lane>.yml`):** Source code, package.json, tests — the actual apps
 
 ## The Product
 
-The product is defined in `instance/config/product.yml`. On first session, read the product config to understand what you're building, then explore:
-- **Codebase:** `/workspace/product` — the app's source code
+On the live **portfolio** deployment there are several product lanes; each lane's product is defined in `instance/config/projects/<lane>.yml` + `instance/config/contexts/<lane>.yml` (single-product `work`-preset deployments use `instance/config/product.yml` instead). On first session, read your lane's config to understand what you're building, then explore:
+- **Codebase:** the lane's local checkout (path in its `projects/<lane>.yml`)
 - **Database:** Neon (connection string in environment)
-- **Backlog:** Linear (workspace configured in `instance/config/product.yml`)
-- **Business context:** Notion — use `notion-search` and `notion-fetch` to read strategy, brand, vision docs
+- **Backlog:** the org runtime work graph — ratified missions in `instance/config/outcomes.yml`, projected through `org_events` (see `.claude/rules/org-runtime-native.md`); `/tasks` (`officer_tasks`) remains the compatibility projection
+- **Business context:** where the lane's config points it — Notion (`notion-search` / `notion-fetch`) when the lane carries Notion IDs; some lanes deliberately keep knowledge elsewhere (e.g. PolAds: brain vault `9-Codebases/` + Monday docs, per its `projects/polads.yml`)
 
 Do not hallucinate product knowledge — discover it from artifacts.
 
 ## Addressing the Captain
 
-Read `product.captain_name` from `instance/config/product.yml`. When speaking to or about the Captain in messages, briefings, and voice — use their name (e.g. "Nate" not "Captain"). If `captain_name` is not set, fall back to "Captain."
+Read `captain_name` from `instance/config/platform.yml` (the live deployment sets it there; single-product deployments may carry it as `product.captain_name` in `instance/config/product.yml`). When speaking to or about the Captain in messages, briefings, and voice — use their name (e.g. "Nate" not "Captain"). If `captain_name` is not set, fall back to "Captain."
 
 This applies to Telegram messages, Notion pages, briefings, and any direct communication. Governance documents and role definitions still use "Captain" as the role title — that doesn't change.
 
@@ -71,14 +71,14 @@ The bottleneck is always a dependency (data, decision, validation), never engine
 | **Notion** | Business brain — strategy, brand, research, decisions | `notion-search`, `notion-fetch`, `notion-create-pages`, `notion-update-page` |
 | **/tasks** | Canonical task backlog (Postgres `officer_tasks`) — product + Cabinet framework + Personal | Dashboard `/tasks` route OR direct `officer_tasks` queries |
 | **Linear** | Read-only archive (post-cutover, audit only — **do not write**) | GraphQL API, read-only |
-| **GitHub Issues** | Cabinet-framework backlog — infra, officer system, meta-features | `gh` CLI / GitHub API on `nate-step/founders-cabinet` |
-| **Git repo** | Code — the product itself | Git CLI in `/workspace/product` |
+| **GitHub Issues** | Cabinet-framework backlog — infra, officer system, meta-features | `gh` CLI / GitHub API on `nate-step/captains-cabinet` |
+| **Git repo** | Code — the product itself | Git CLI in the lane's product checkout (path in `instance/config/projects/<lane>.yml`) |
 
 Keep framework work (GitHub Issues) separate from product work (/tasks) so the product officer never triages framework items. Dated cutover state (Spec-039, row counts, Linear→/tasks migration) lives in `instance/config/platform.yml` → "Knowledge-systems migration state".
 
 ## Notion Usage
 
-Officers read from and write to Notion. Key locations (IDs in `instance/config/product.yml`):
+Officers read from and write to Notion **where the lane configures it**. Key locations (IDs in the lane's `instance/config/projects/<lane>.yml` → `notion:` block, or `instance/config/product.yml` on single-product deployments; a lane may deliberately leave them empty — e.g. PolAds keeps knowledge in the brain vault + Monday docs):
 - **Business Brain:** Vision, strategy, brand, pricing — read to stay aligned
 - **Research Hub:** Research officer publishes briefs and competitive intel here
 - **Product Hub:** Product officer publishes specs and roadmap here
@@ -237,7 +237,7 @@ Cron jobs and Officer notifications push triggers to Redis Streams (`trigger_sen
 - **Data plane** — the trigger lands durably on `cabinet:triggers:<officer>` and is content-delivered into your session as a `<channel>` tag by the `redis-trigger-channel` MCP, plus a crash/outage safety-net in the post-tool-use hook. Both surface the trigger **on your next turn**.
 - **Control plane (the wake)** — `trigger_send` also calls `trigger_wake_officer`, which `tmux send-keys`-nudges your live `officer-<role>` session so an **idle** session actually takes that next turn within seconds. This is load-bearing: the MCP channel notification alone does NOT wake an idle Claude Code session (same idle-delivery limit the Captain's inbound Telegram poller works around — root cause fixed 2026-06-25). Idle-gated (never injects mid-turn), debounced, killswitch-guarded, best-effort.
 
-Process triggers when they arrive, then ACK: `. /opt/founders-cabinet/cabinet/scripts/lib/triggers.sh && trigger_ack <your-role> "$(cat /tmp/.trigger_ids_<your-role>)"`. Unacknowledged triggers persist until ACK'd (crash recovery built in).
+Process triggers when they arrive, then ACK: `. "$CABINET_ROOT/cabinet/scripts/lib/triggers.sh" && trigger_ack <your-role> "$(cat /tmp/.trigger_ids_<your-role>)"` (live Mac deployment: `CABINET_ROOT=/Users/nate/captains-cabinet`). Unacknowledged triggers persist until ACK'd (crash recovery built in).
 
 ### Scheduled work
 Scheduled tasks (briefings, research sweeps, backlog refinement, retros) are triggered by system cron scripts that push to Redis Streams → the wake nudges the officer's session → delivered within seconds. A per-officer self-wake `/loop` (`cabinet/loop-prompts/<officer>.txt`) remains as a periodic backstop, but routine cross-officer/cron triggers no longer wait on the loop cadence.
@@ -246,24 +246,22 @@ Scheduled tasks (briefings, research sweeps, backlog refinement, retros) are tri
 Use `/loop` for temporary, specific tasks — "remind me every 10 min," "watch this deploy for 30 min," "check PR status every 5 min." These are short-lived and purposeful. **Do NOT set up a permanent polling loop** — the Redis Channel handles all recurring delivery.
 
 ### No idling
-No assigned work? Sweep `shared/interfaces/product-specs/`, Linear backlog, `shared/backlog.md`, and your role's proactive work. First actionable item wins. If none, notify the product officer you have capacity and wait for a trigger.
+No assigned work? Sweep `shared/interfaces/product-specs/`, the work graph (`instance/config/outcomes.yml` — your `owner_role` nodes are standing work you PULL), `shared/backlog.md`, and your role's proactive work. First actionable item wins. If none, notify the product officer you have capacity and wait for a trigger.
 
 ### Schedules
-- **07:00 + 19:00:** Daily briefing (coordinating officer)
-- **Every 4h:** Research sweep (research officer)
+**Clock-driven cadences are OWNED by `cabinet/services.yml`** (the fleet manifest) — read it rather than trusting a list here, which would rot every time the fleet changes (it did: the old 07:00 briefing / 4h research sweep / 12h backlog refinement list described the retired `work`-preset fleet). Live examples from the manifest: `frontdoor-briefing` 07:30 + 19:30, `retro-trigger` hourly due-check, `officer-supervisor-mac` 2h loop re-arm. Event-driven work stays event-driven:
 - **Event-triggered:** Individual reflection (after compaction or completion milestones — not on a clock)
-- **Every 12h:** Backlog refinement (product officer)
-- **Event-triggered + 48h safety floor:** Cross-officer retro + evolution loop (fires at 5 accumulated reflections or 48h since last, whichever first)
+- **Event-triggered + 48h safety floor:** Cross-officer retro + evolution loop (fires at 5 accumulated reflections or 48h since last, whichever first — the due-check is `retro-trigger` in `services.yml`)
 
 ### Tracking your last run
 After completing scheduled work, record the timestamp so you know when to run next:
 ```bash
-redis-cli -h redis -p 6379 SET "cabinet:schedule:last-run:<your-role>:<task>" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+redis-cli -h "${REDIS_HOST:-localhost}" -p 6379 SET "cabinet:schedule:last-run:<your-role>:<task>" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 ```
 
 To check when you last ran a task:
 ```bash
-redis-cli -h redis -p 6379 GET "cabinet:schedule:last-run:<your-role>:<task>"
+redis-cli -h "${REDIS_HOST:-localhost}" -p 6379 GET "cabinet:schedule:last-run:<your-role>:<task>"
 ```
 
 ## MCP Scope
@@ -271,7 +269,7 @@ redis-cli -h redis -p 6379 GET "cabinet:schedule:last-run:<your-role>:<task>"
 Only the following MCP servers are used by the Cabinet. Do NOT use any other MCP servers that may be available on the Captain's profile. Those are personal tools, not Cabinet tools.
 
 - **Notion** — Business brain (strategy, brand, research, decisions)
-- **Linear** — Execution backlog (issues, sprints, project tracking)
+- **Linear** — Read-only archive (post-cutover, audit only — **do not write**; the backlog lives in the work graph + `/tasks`, see Knowledge Systems)
 - **Neon** — Product database (schema, queries, migrations)
 - **Library** — this Cabinet's structured knowledge (Spaces/records: briefs, specs, decisions, playbooks). Accessed via the `library` MCP or the dashboard `/library` route.
 - **Cabinet** — inter-Cabinet comms (identify, presence, availability, send_message, request_handoff). stdio + HTTP transport (FW-005 done — stdlib HTTP listener, bearer-auth, `/health`, tested for stdio↔http parity); cross-instance federation ready, consent-gated via `instance/config/peers.yml` (Work↔Personal peer provisioned).
@@ -282,7 +280,7 @@ If a task seems to require a tool outside this list, escalate to the Captain rat
 
 ### MCP Setup for New Founders
 
-The Cabinet uses **local MCP servers with API tokens** (configured in `.mcp.json`) rather than OAuth-based claude.ai integrations. This ensures reliability in headless Docker environments.
+The Cabinet uses **local MCP servers with API tokens** (configured in `.mcp.json`) rather than OAuth-based claude.ai integrations. This ensures reliability in headless, long-lived Mac launchd sessions (no browser to re-auth in).
 
 1. **Configure `.mcp.json`** with your API-token MCP servers (see `.mcp.json` in repo root for the template)
 2. **Block unwanted claude.ai MCPs** from your profile by adding deny rules to `.claude/settings.json`:

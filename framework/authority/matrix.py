@@ -16,15 +16,27 @@ it against the TWO sources of truth it must agree with:
 
 FAIL-CLOSED (Corridor + design §error-handling): the loader/validator NEVER
 silently passes a malformed or autonomy-widening matrix — anything unknown,
-mistyped, missing, or extra raises `MatrixValidationError`. Two safety
+mistyped, missing, or extra raises `MatrixValidationError`. Three safety
 invariants are enforced as hard rules, not prose:
 
   1. No prod/ceiling cell may resolve to `auto` [FIX-6]. A hard-ceiling row is
      `always_gated` for every state.
   2. The hard ceiling covers all six HARD_CEILING_TOUCHES members [FIX-7].
+  3. TRUST-INVERSION floor [NATE-DECISION 2026-07-03/04 earn-demotion ruling,
+     widened 2026-07-04 by fix wave wsqzqfpt5]: no reversible / act_with_undo
+     class may be `propose_only` at `unmeasured` (trust is granted day-one and
+     lost on demotion EVIDENCE — never pre-earned), and any acting-from-day-one
+     row must land on `propose_only` at `demote` so the demotion path always
+     has teeth. Enforced by `_validate_act_first_floor` so no future preset or
+     instance merge can silently re-introduce earn-up.
 
-This is matrix-as-DATA only — no gate behavior, no exit codes, no live
-side-effects. System Python is 3.9.6 with no `jsonschema` dependency, so the
+This is matrix-as-DATA only — no gate behavior and no live side-effects on
+import or load. The one opt-in exception is `check_gate_actor_id_parity()`
+(and the `__main__` CI probe that calls it): it writes two SYNTHETIC
+consequence rows to a private temp ledger (CABINET_EVENT_LOG_DIR re-pointed
+for the probe duration, restored in `finally`) to prove a bare-role acted row
+is visible to the gate's `read_cell_state` — it can never touch the live
+audit ledger. System Python is 3.9.6 with no `jsonschema` dependency, so the
 validator is hand-rolled (additionalProperties:false at every level), mirroring
 `framework/fidelity/consequence.py`. The loader uses `yaml.safe_load` (no
 arbitrary object construction) and reads only an explicit, caller-controlled
@@ -55,9 +67,16 @@ class MatrixValidationError(Exception):
 # Canonical vocab (the closed sets the validator enforces)
 # ---------------------------------------------------------------------------
 
-# The nine risk classes (five spec + three execution-surface ceiling classes).
+# The thirteen risk classes: the trust-first act-with-undo classes
+# (reversible, pm_write, calendar_write), the 2026-07-04 split-outs from the
+# old reversible bucket (read_only_dispatch = act-and-tell investigation runs;
+# draft_only = earn-up kept, NATE-DECISION: outbound-adjacent), the earn-up
+# rows (internal_comms, deploy_nonprod), and the six execution-surface hard
+# ceilings. Closed set: the YAML's risk_classes AND verdicts keys must equal
+# it exactly (additionalProperties:false in both directions).
 RISK_CLASSES = frozenset({
-    "reversible", "pm_write", "calendar_write",
+    "reversible", "read_only_dispatch", "draft_only",
+    "pm_write", "calendar_write",
     "internal_comms", "external_comms",
     "deploy_nonprod", "deploy_prod", "spend",
     "secrets", "network_write", "credentials_grant",
@@ -74,6 +93,19 @@ VERDICTS = frozenset({
 CONFIDENCE_STATES = frozenset({
     "unmeasured", "propose_only", "eligible", "graduated", "demote",
 })
+
+# TRUST-INVERSION beachhead pins [NATE-DECISION 2026-07-03/04, widened
+# 2026-07-04 (wsqzqfpt5)]: the classes that act from day one, and the EXACT
+# verdict each must carry at `unmeasured`. Name-anchored on purpose — these two
+# rows are the doctrine's beachhead, so their unmeasured cells are pinned by
+# equality (not merely "not propose_only"): `auto` here would be a WIDENING
+# (dropping the undo/tell handle), `always_gated`/`propose_only` a silent
+# earn-up regression. draft_only and deploy_nonprod are deliberately absent
+# (NATE-DECISION: outbound-/prod-adjacent — they keep earn-up).
+_TRUST_FIRST_UNMEASURED = {
+    "reversible": "act_with_undo",
+    "read_only_dispatch": "notify_after",
+}
 
 # The action_types the matrix is allowed to map (the shared enum minus the
 # propose-defaulting AMBIGUOUS backstop — it has no risk_class on purpose).
@@ -182,6 +214,109 @@ def no_ceiling_or_prod_auto(policy: dict[str, Any]) -> bool:
     return True
 
 
+def check_gate_actor_id_parity(officer: str = "cos") -> bool:
+    """Parity probe: a synthetic acted row written with the CANONICAL bare-role
+    actor id ({"kind": "officer", "id": "cos"}) must be visible to the gate's
+    `read_cell_state("cos", ...)`. Deterministic check the CI test calls
+    directly (peer of `no_ceiling_or_prod_auto`) — NEVER called by the
+    load/validate paths.
+
+    WHY [germline batch 2026-07-04]: the gate query composes the graduation
+    cell key as "officer:" + role (policy_engine.read_cell_state →
+    graduation.evaluate(("officer:cos", lane, action_type))), while emitters
+    stamp {"kind", "id"} that graduation flattens to "kind:id". A double-
+    prefixed emitter id ("officer:cos" instead of the bare "cos") therefore
+    flattens to "officer:officer:cos" and SEVERS the cell's evidence from the
+    gate — demotion evidence silently stops reaching the very query that must
+    see it. This probe proves the wire end-to-end through the REAL stack
+    (consequence.emit_consequence schema validation → JSONL ledger →
+    read_ledger → compute_ratios → graduation.evaluate → read_cell_state):
+
+      * canonical row (id="cos", lane "parity-canonical") → state must NOT be
+        "unmeasured" (one confirmed/verdict_human sample makes the cell
+        measured; with the default bar it lands "propose_only");
+      * control row with the DEFECT shape (id="officer:cos", lane
+        "parity-control") → state MUST stay "unmeasured", proving the probe
+        actually distinguishes severed evidence (guards against a future read
+        path that ignored the actor entirely, which would make the positive
+        leg pass vacuously).
+
+    CONTAINMENT (Corridor-reviewed): the two synthetic rows are written to a
+    fresh private temp dir by re-pointing CABINET_EVENT_LOG_DIR for the probe
+    duration only — saved and restored (or removed) in `finally`, temp dir
+    deleted — so the probe can never write the LIVE audit ledger
+    (~/Library/Application Support/cabinet/). CABINET_SIM_MODE is popped for
+    the duration so the SIE-7 sim-quarantine cannot mark/filter the synthetic
+    rows and skew the read. Fail-closed by construction: any import error,
+    emit rejection, or read failure surfaces as a False return (read_cell_state
+    itself resolves exceptions to "unmeasured", which fails the canonical leg).
+
+    Returns True iff BOTH legs hold.
+    """
+    import shutil
+    import tempfile
+    from datetime import datetime, timezone
+
+    saved_log = os.environ.get("CABINET_EVENT_LOG_DIR")
+    saved_sim = os.environ.get("CABINET_SIM_MODE")
+    tmp = tempfile.mkdtemp(prefix="cabinet-actor-parity-")
+    try:
+        os.environ["CABINET_EVENT_LOG_DIR"] = tmp
+        os.environ.pop("CABINET_SIM_MODE", None)
+
+        from framework.fidelity import consequence
+
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        # Two schema-valid acted rows: identical everywhere except the actor id
+        # shape (+ lane/subject so identities never collapse via last-write-
+        # wins). review.source="verdict_human" so the confirm is a scored
+        # sample under the flavor-A promotion split; action_type is a widened
+        # reversible kind, exercising the exact cell the doctrine acts on.
+        for actor_id, lane, subject in (
+            (officer, "parity-canonical", "parity probe — canonical bare-role row"),
+            (f"officer:{officer}", "parity-control", "parity probe — double-prefixed control row"),
+        ):
+            consequence.emit_consequence(
+                ts=ts,
+                actor={"kind": "officer", "id": actor_id},
+                lane=lane,
+                action="parity-probe synthetic acted row",
+                subject=subject,
+                action_type="task_status_move",
+                # evidence is REQUIRED for status ok (consequence.py
+                # _validate_invariants) — the probe rides the real schema.
+                outcome={"status": "ok",
+                         "evidence": "synthetic parity-probe row (temp ledger)"},
+                review={"verdict": "confirmed", "source": "verdict_human"},
+            )
+
+        # Import the LIVE gate helper exactly as the shipped CI tests do
+        # (cabinet/scripts/lib is not a package — path-import, and force the
+        # real yaml if a conftest stub leaked into sys.modules).
+        lib_dir = _FRAMEWORK_ROOT / "cabinet" / "scripts" / "lib"
+        if str(lib_dir) not in sys.path:
+            sys.path.insert(0, str(lib_dir))
+        if "yaml" in sys.modules and not hasattr(sys.modules["yaml"], "safe_load"):
+            del sys.modules["yaml"]
+        import policy_engine
+
+        canonical = policy_engine.read_cell_state(
+            officer, "parity-canonical", "task_status_move")
+        control = policy_engine.read_cell_state(
+            officer, "parity-control", "task_status_move")
+        return canonical != "unmeasured" and control == "unmeasured"
+    finally:
+        # Restore the exact prior env (absent stays absent) + drop the temp
+        # ledger — the probe leaves zero trace either way.
+        if saved_log is None:
+            os.environ.pop("CABINET_EVENT_LOG_DIR", None)
+        else:
+            os.environ["CABINET_EVENT_LOG_DIR"] = saved_log
+        if saved_sim is not None:
+            os.environ["CABINET_SIM_MODE"] = saved_sim
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 # ---------------------------------------------------------------------------
 # Validation (hand-rolled, fail-closed, additionalProperties:false everywhere)
 # ---------------------------------------------------------------------------
@@ -238,6 +373,7 @@ def _validate_policy(policy: dict[str, Any]) -> None:
     hard_ceiling = _validate_hard_ceiling(policy["hard_ceiling"])
     _validate_ceiling_map(policy["ceiling_frozenset_map"], hard_ceiling)
     _validate_verdicts(policy["verdicts"], hard_ceiling)
+    _validate_act_first_floor(policy["verdicts"], hard_ceiling)
     _validate_veto_window(policy["veto_window_minutes"])
     _validate_deploy(policy["deploy"])
     _validate_bars(policy["bars"])
@@ -363,6 +499,86 @@ def _validate_verdicts(verdicts: Any, hard_ceiling: set[str]) -> None:
                 )
 
 
+def _validate_act_first_floor(verdicts: dict, hard_ceiling: set[str]) -> None:
+    """THE CI INVARIANT #3 — the trust-inversion floor [NATE-DECISION
+    2026-07-03/04 earn-demotion ruling; widened to the reversible beachhead
+    2026-07-04 (fix wave wsqzqfpt5)].
+
+    Runs AFTER _validate_verdicts, so non-ceiling rows are guaranteed to carry
+    all five confidence states. Three hard rules, each fail-closed:
+
+      a. ANY non-ceiling row that grants `act_with_undo` anywhere must grant it
+         at `unmeasured` too, and must land on `propose_only` at `demote`.
+         Trust-with-undo is day-one-or-not-at-all (never pre-earned via a
+         graduated-only grant), and demotion evidence must always have a safe
+         landing — a `demote` cell that still acts would make the demotion
+         wire decorative.
+      b. The beachhead rows (`reversible`, `read_only_dispatch`) are pinned by
+         EQUALITY at `unmeasured` (see _TRUST_FIRST_UNMEASURED for why
+         equality, not just "not propose_only") and must demote → propose_only.
+      c. No beachhead row may be moved under the hard ceiling — an always_gated
+         wildcard would be the same silent earn-up regression wearing a
+         stricter costume (and these classes are definitionally reversible /
+         read-only, never ceiling material).
+
+    WHY a validator and not a review note: presets/instances merge over the
+    floor by name (load_policies), so a later layer could quietly ship
+    `reversible: {unmeasured: propose_only}` and re-introduce earn-up — the
+    exact posture the Captain ruled OUT. Deliberate tension with the header's
+    "presets may narrow" rule: for trust-first classes, narrowing happens
+    through demotion EVIDENCE (the demote state), not by config re-pinning;
+    re-gating them is a germline amendment (this validator), never a preset
+    override. The runtime stays fail-safe independently of this check: the
+    policy_engine allow-branch grants act_with_undo only when a registered
+    inverse exists AND the undo journal is reachable, else propose-only.
+    """
+    for rc, states in verdicts.items():
+        if rc in hard_ceiling:
+            if rc in _TRUST_FIRST_UNMEASURED:
+                raise MatrixValidationError(  # rule (c)
+                    f"'{rc}' is a trust-first class and may not be moved under "
+                    f"the hard ceiling (always_gated would silently re-gate an "
+                    f"act-from-day-one row)"
+                )
+            continue  # genuine ceiling rows are fully covered by invariant #2
+        if not isinstance(states, dict):
+            continue  # unreachable after _validate_verdicts; defensive only
+
+        grants_undo = "act_with_undo" in set(states.values())
+        pinned = _TRUST_FIRST_UNMEASURED.get(rc)
+
+        # rule (a): act_with_undo is day-one-or-not-at-all + demotes safely.
+        if grants_undo:
+            if states.get("unmeasured") != "act_with_undo":
+                raise MatrixValidationError(
+                    f"verdicts.{rc}: grants act_with_undo but is "
+                    f"'{states.get('unmeasured')}' at unmeasured — earn-up on a "
+                    f"reversible/act_with_undo class is ruled out (trust granted "
+                    f"day-one, lost on evidence; NATE-DECISION 2026-07-03/04)"
+                )
+            if states.get("demote") != "propose_only":
+                raise MatrixValidationError(
+                    f"verdicts.{rc}.demote = '{states.get('demote')}': an "
+                    f"act_with_undo row must demote to propose_only — demotion "
+                    f"evidence is the ONLY way down and must land fail-safe"
+                )
+
+        # rule (b): the beachhead rows are pinned exactly.
+        if pinned is not None:
+            if states.get("unmeasured") != pinned:
+                raise MatrixValidationError(
+                    f"verdicts.{rc}.unmeasured = '{states.get('unmeasured')}': "
+                    f"the trust-inversion floor pins this cell to '{pinned}' "
+                    f"(NATE-DECISION 2026-07-04 — no earn-up re-introduction, "
+                    f"no undo/tell-handle widening)"
+                )
+            if states.get("demote") != "propose_only":
+                raise MatrixValidationError(
+                    f"verdicts.{rc}.demote = '{states.get('demote')}': "
+                    f"trust-first rows must demote to propose_only"
+                )
+
+
 def _validate_veto_window(v: Any) -> None:
     if not isinstance(v, int) or isinstance(v, bool) or v <= 0:
         raise MatrixValidationError("veto_window_minutes must be a positive integer")
@@ -404,3 +620,25 @@ def _validate_cooldowns(cooldowns: Any) -> None:
     for name, days in cooldowns.items():
         if not isinstance(days, int) or isinstance(days, bool) or days < 0:
             raise MatrixValidationError(f"cooldown_days.{name} must be a non-negative integer")
+
+
+# ---------------------------------------------------------------------------
+# __main__ CI probe — `python3 framework/authority/matrix.py`
+# ---------------------------------------------------------------------------
+# One-command proof for the germline batch: (1) the shipped floor passes the
+# full validator (incl. the trust-inversion floor, invariant #3), and (2) the
+# bare-role actor-id parity holds through the live gate stack. Writes ONLY to
+# the probe's private temp ledger (see check_gate_actor_id_parity's
+# containment note) — never the live audit ledger. Exit 0 = both PASS.
+
+if __name__ == "__main__":  # pragma: no cover — CI convenience entrypoint
+    try:
+        load_matrix()  # validates the shipped floor; raises on any violation
+        print("authority-matrix floor validation: PASS")
+    except MatrixValidationError as exc:
+        print(f"authority-matrix floor validation: FAIL — {exc}")
+        sys.exit(1)
+    _parity_ok = check_gate_actor_id_parity()
+    print("gate actor-id parity (bare-role acted row visible): "
+          + ("PASS" if _parity_ok else "FAIL"))
+    sys.exit(0 if _parity_ok else 1)

@@ -348,4 +348,24 @@ for o in "${OFFICERS[@]}"; do
   fi
 done
 
+# ---------------------------------------------------------------------------
+# Tick heartbeat (adversarial review, lane-ops 2026-07-04). WHY: the
+# outcome-watchdog now derives a log-freshness floor for every services.yml
+# row (registry.py::verify_no_silent_cron_failure; this row: interval 180s →
+# 2h floor), and this script used to log ONLY on events (armed/fired/error,
+# all to stderr) — so any healthy quiet stretch >2h false-paged the Chair
+# forever (live evidence the day the floors shipped: 5.7h of legitimate
+# silence while running fine). The services.yml `expected:` for this row has
+# always claimed "log writes every cycle"; this line makes that claim TRUE
+# instead of the floor false-paging on it. Placement is load-bearing: END of
+# the tick, so the heartbeat asserts "a full DETECT+WATCH pass COMPLETED" —
+# a mid-loop wedge stops the heartbeat and the freshness floor catches it.
+# stdout (not stderr) on purpose: it lands in limit-reset-watchdog.out.log
+# (a watched freshness candidate) while .err.log stays event-only, keeping
+# the watchdog's 25-line tail marker scan high-signal. The text must never
+# contain a JOB_ERROR_MARKERS token (FATAL / NOGROUP / "command not found" /
+# "trigger NOT pushed" / "trigger_send failed" / Traceback) — a heartbeat
+# that spells an error token would page the very scan it feeds.
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) limit-reset-watchdog: tick complete (${#OFFICERS[@]} officer pane(s) scanned)"
+
 exit 0

@@ -327,6 +327,14 @@ def evaluate(
     #    cell sub-bar regardless of history. A fabrication is a proven lie about
     #    success (the verifier's RT#4 gate already excluded upstream-outage) — it
     #    does not wait for a second divergence.
+    #
+    #    NOTE (2026-07-04, docs-track-code): the matrix's anti-flap
+    #    `cooldown_days` (authority-matrix.yml, Component 4 / open-decision #3)
+    #    is NOT consulted here or anywhere at runtime yet — this module imports
+    #    only `bars` (_load_bars). The key is schema-validated
+    #    (matrix.py::_validate_cooldowns) and observability-only until the
+    #    demotion-scan / sticky-key path lands; see the dated status note in
+    #    docs/authority-matrix-design-2026-06-19.md § "Cooldown to re-promote".
     if fabrication_demote or divergent_last10 >= _DEMOTE_DIVERGENT_IN_LAST10:
         return {"state": "demote", "evidence": evidence}
 

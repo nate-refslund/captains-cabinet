@@ -1,7 +1,7 @@
 # account-flows.yml — recipes for the Chair-driven account-creation flow.
 #
-# Copy to account-flows.yml and tune. See
-# docs/prove-to-earn-expansion-2026-06-25.md §3.
+# Copy to account-flows.yml and tune. Driven by
+# cabinet/scripts/prepare-account-flow.sh (see its header for the full flow).
 #
 # A signup is a sequence of steps; exactly one CLASS of step is yours (the
 # credential boundary). The Chair drives a browser (via claude-in-chrome — see
@@ -10,15 +10,16 @@
 # secret in the open tab; reply `done`; the Chair completes the remainder. The
 # Chair NEVER reads, stores, types, or logs the credential.
 #
-# HARD LINE (docs §0): account creation + credential entry is one of the two
-# un-toggleable guards. This config tells the Chair WHERE to stop — it cannot be
-# used to make the Chair enter a credential.
+# HARD LINE (shared/interfaces/captain-patterns.md →
+# autonomy-boundary-accounts-and-self-guards): account creation + credential
+# entry is one of the two un-toggleable guards. This config tells the Chair
+# WHERE to stop — it cannot be used to make the Chair enter a credential.
 #
 # DEPENDENCY (genuine residual): the browser-driving steps need the Chair to
 # have `claude-in-chrome` MCP scope, which is NOT granted today. Until it is
-# (itself a Component-1 self-proposal — the Chair surfaces the scope line, you
-# apply it), cabinet/scripts/prepare-account-flow.sh degrades to surfacing the
-# WHOLE signup as a manual step for you.
+# (itself a self-proposal — the Chair surfaces the scope line, you apply it),
+# cabinet/scripts/prepare-account-flow.sh degrades to surfacing the WHOLE
+# signup as a manual step for you.
 
 flows:
   - service: example-saas
