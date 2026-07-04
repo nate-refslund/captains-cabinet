@@ -535,12 +535,16 @@ class TestActWithUndoCarveOuts:
         assert set(ACTION_TYPE_MAP.values()) <= set(ACTION_TYPES)
 
     def test_pure_monday_create_is_task_create(self):
+        # NAMED per-op tool (op = tool-name suffix) — the ONLY shape that earns
+        # the soft class post-inversion (the lane's real path).
         assert classify_action("mcp__claude_ai_monday_com__create_item",
                                {"board_id": "5091706356", "item_name": "x"}) == "task_create"
+        # A generic raw-body call is the ceiling now (allowlist inversion,
+        # re-verify round 2) — never parsed, never softened.
         assert classify_action(
             "mcp__x_monday_com__all_api_write",
             {"query": "mutation { create_item(...) { id } create_update(...) { id } }"}
-        ) == "task_create"
+        ) == "mcp_post"
 
     def test_batched_monday_mutation_is_ceiling_not_create(self):   # [RT-B2]
         assert classify_action(
@@ -575,17 +579,18 @@ class TestActWithUndoCarveOuts:
 
 
 class TestOutOfVocabMondayOpSmuggle:
-    """[KILLED #4, checkpoint 2026-07-04 §4] Out-of-vocab Monday mutation
-    fields were invisible to the vocabulary-built findall, so a destructive op
-    batched with a create classified as a PURE create (task_create,
-    act_with_undo) and the generic API tool executed both. Body extraction is
-    now vocabulary-independent: ANY unknown field forces the mcp_post ceiling.
-    Named per-op MCP tools (shape 1) are unchanged."""
+    """[KILLED #4 → re-verify round 2, 2026-07-04] ALLOWLIST INVERSION: parsing
+    an adversarial GraphQL body with regex is unwinnable (comma / # comment /
+    block string / BOM byte / escaped delimiter each defeated a denylist
+    patch). A generic raw-body Monday call (all_monday_api / all_api_write /
+    raw curl) is now ALWAYS the ceiling — never softened, never parsed. Only a
+    NAMED per-op MCP tool (shape 1, op = tool-name suffix) can earn the soft
+    class, because it cannot carry a smuggled second op."""
 
     def test_delete_board_smuggled_inside_create_is_ceiling(self):
         # The checkpoint's executed refutation, verbatim shape: the batch used
         # to classify "task_create" whose undo deletes the created ITEM — not
-        # the destroyed board. Must be the ceiling.
+        # the destroyed board. A raw body is now the ceiling unconditionally.
         assert classify_action(
             "mcp__x_monday_com__all_monday_api",
             {"query": 'mutation { create_item(board_id: 1, item_name: "x") { id } '
@@ -597,6 +602,33 @@ class TestOutOfVocabMondayOpSmuggle:
             "mcp__x_monday_com__all_api_write",
             {"query": "mutation { create_item(board_id: 1) { id } "
                       "duplicate_group(board_id: 1, group_id: \"g\") { id } }"}
+        ) == "mcp_post"
+
+    def test_bom_byte_between_op_and_paren_is_ceiling(self):
+        # re-verify round 2: a U+FEFF between op and "(" defeated [\s,]*. Under
+        # the inversion the raw body never parses — always ceiling.
+        assert classify_action(
+            "mcp__x_monday_com__all_monday_api",
+            {"query": 'mutation { create_item(item_name:"x"){id} '
+                      'delete_board﻿(board_id:999){id} }'}
+        ) == "mcp_post"
+
+    def test_escaped_block_string_delimiter_is_ceiling(self):
+        # re-verify round 2: an escaped \""" inside a block string mis-paired
+        # the stripper. Inversion: raw body → ceiling regardless.
+        assert classify_action(
+            "mcp__x_monday_com__all_api_write",
+            {"query": 'mutation { create_item(item_name: """a\\"""b""") { id } '
+                      'delete_board(board_id:1){id} }'}
+        ) == "mcp_post"
+
+    def test_any_raw_generic_body_create_is_ceiling(self):
+        # The inversion's core: even a PURE create via the generic raw-body tool
+        # is the ceiling now — a raw body is never softened. The lane's own
+        # creates go through the NAMED tool / ACTION_TYPE_MAP path, not this one.
+        assert classify_action(
+            "mcp__x_monday_com__all_api_write",
+            {"query": 'mutation { create_item(board_id:1,item_name:"x"){id} }'}
         ) == "mcp_post"
 
     def test_unknown_future_op_batched_with_create_is_ceiling(self):
@@ -614,31 +646,28 @@ class TestOutOfVocabMondayOpSmuggle:
             {"query": "mutation { delete_group(board_id: 1, group_id: \"g\") { id } }"}
         ) == "mcp_post"
 
-    def test_pure_create_regression_still_task_create(self):
-        # The carve-out itself must survive the generic extractor: a genuinely
-        # pure create body (args + sub-selection, quoted prose with parens)
-        # still earns task_create.
+    def test_named_create_tool_still_task_create(self):
+        # The soft carve-out survives ON THE NAMED TOOL (the lane's path): a
+        # named create_item op earns task_create regardless of its arguments.
         assert classify_action(
-            "mcp__x_monday_com__all_api_write",
-            {"query": 'mutation { create_item(board_id: 5091706356, '
-                      'item_name: "call mom (later)") { id } }'}
-        ) == "task_create"
+            "mcp__claude_ai_monday_com__create_item",
+            {"board_id": "5091706356", "item_name": "call mom (later)"}) == "task_create"
 
-    def test_pure_create_with_named_operation_and_vars_still_task_create(self):
-        # A well-formed operation header (name + variable defs) is inert — it
-        # must not be mistaken for an out-of-vocab field.
+    def test_named_status_tool_still_board_status(self):
+        # Named status op stays board_status.
         assert classify_action(
-            "mcp__x_monday_com__all_api_write",
-            {"query": "mutation CreateTask($b: ID!, $n: String!) "
-                      "{ create_item(board_id: $b, item_name: $n) { id } }"}
-        ) == "task_create"
+            "mcp__claude_ai_monday_com__change_item_column_values",
+            {"item_id": "1", "column_id": "s", "value": '{"label": "Done"}'}) == "board_status"
 
-    def test_pure_status_regression_still_board_status(self):
+    def test_generic_body_status_is_ceiling_post_inversion(self):
+        # A change_column via the GENERIC raw-body tool is the ceiling now — the
+        # inversion refuses to parse any raw body (a status op could sit beside
+        # a smuggled delete). The lane sets status via the named tool.
         assert classify_action(
             "mcp__x_monday_com__all_monday_api",
             {"query": 'mutation { change_column_value(item_id: 1, column_id: "s", '
                       'value: "{\\"label\\": \\"Done\\"}") { id } }'}
-        ) == "board_status"
+        ) == "mcp_post"
 
     def test_string_literal_cannot_hide_a_real_field(self):
         # A quoted arg that LOOKS like it closes early must not swallow the
@@ -697,9 +726,10 @@ class TestOutOfVocabMondayOpSmuggle:
             {"query": 'mutation { create_item(item_name: "unterminated) { id } }'}
         ) == "mcp_post"
 
-    def test_pure_create_with_block_string_arg_still_task_create(self):
-        # A legitimate block-string argument must not force the ceiling.
+    def test_block_string_generic_body_is_ceiling_post_inversion(self):
+        # Even a legitimate-looking block-string create via the generic raw-body
+        # tool is the ceiling now — the inversion never parses a raw body.
         assert classify_action(
             "mcp__x_monday_com__all_api_write",
             {"query": 'mutation { create_item(item_name: """hello there""") { id } }'}
-        ) == "task_create"
+        ) == "mcp_post"

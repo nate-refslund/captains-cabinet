@@ -468,30 +468,47 @@ def _monday_body_ops(body: str) -> "set[str]":
     return ops
 
 
+# [re-verify round 2] A synthetic op that is in NO carve-out set — returned for
+# EVERY generic raw-GraphQL-body Monday call so it always lands at the ceiling.
+_RAW_BODY_OP = "__raw_graphql_body__"
+
+
 def _monday_mutation_ops(tool_name: str, tool_input: dict[str, Any]) -> "set[str] | None":
     """The SET of Monday mutation ops a call performs, or None if it is not a
-    Monday mutation. Two shapes: (1) a named per-op MCP tool
-    (mcp__..._monday_com__create_item) -> {that op}; (2) a generic API tool
-    (all_monday_api / all_api_write) or a Bash/curl GraphQL POST carrying a
-    query/body string -> EVERY field token the body calls, extracted
-    generically (NOT just the known vocabulary — out-of-vocab fields must
-    surface so the caller's subset tests fail them to the ceiling). Reads
-    (get_*/search/board_insights) and non-Monday tools -> None."""
+    Monday mutation.
+
+    ALLOWLIST INVERSION [re-verify round 2, 2026-07-04]: only shape (1) — a
+    NAMED per-op MCP tool whose op IS its tool-name suffix — can earn the soft
+    act_with_undo class, because the op is structurally unambiguous and cannot
+    carry a smuggled second op. Shape (2) — a generic API tool
+    (all_monday_api / all_api_write) or a raw curl GraphQL POST carrying an
+    arbitrary body — is ALWAYS the ceiling: parsing an adversarial GraphQL
+    string with regex is unwinnable (BOM / zero-width bytes between a field and
+    its "(", escaped block-string delimiters, aliases, fragments, directives —
+    each defeated a prior denylist patch). We stop parsing it and refuse to
+    soften a raw body at all. This costs nothing real: the action LANE's own
+    creates execute through deliver_action + ACTION_TYPE_MAP (never this
+    classifier path), and an officer's raw Monday call has no business acting
+    unattended. Reads (get_*/search/board_insights) and non-Monday tools -> None.
+    """
     tn = tool_name.lower()
-    if "monday" not in tn and "monday" not in str(tool_input.get("query", "")).lower():
+    is_monday_tool = "monday" in tn
+    has_body = bool(" ".join(
+        str(tool_input.get(k, "")) for k in ("query", "body", "graphql", "mutation")).strip())
+    if not is_monday_tool and not (has_body and "monday" in str(tool_input.get("query", "")).lower()):
         # A raw curl to api.monday.com still lands here via the Bash path (see
         # _classify_bash) — this MCP helper only fires for monday-named tools.
-        if "monday" not in tn:
+        if not is_monday_tool:
             return None
-    # (1) named per-op tool: the op is the tool-name suffix.
+    # (1) named per-op tool: the op is the tool-name suffix — unambiguous, may
+    # earn the soft class if it is a create/status op (subset test in caller).
     for op in _MONDAY_KNOWN_OPS:
         if tn.endswith("__" + op) or tn.endswith("_" + op):
             return {op}
-    # (2) generic API / body-bearing tool: scan the query/variables body.
-    body = " ".join(str(tool_input.get(k, "")) for k in ("query", "body", "graphql", "mutation"))
-    if body.strip():
-        # ALL fields, generically — not only the known vocabulary [KILLED #4].
-        return _monday_body_ops(body)   # possibly empty -> ceiling below
+    # (2) generic API / raw-body tool: NEVER softened — a raw GraphQL body can
+    # smuggle any op, so it always forces the ceiling (fail-closed, un-parsed).
+    if has_body or "all_api" in tn or "all_monday_api" in tn:
+        return {_RAW_BODY_OP}
     return None
 
 

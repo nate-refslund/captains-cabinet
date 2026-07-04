@@ -1138,6 +1138,57 @@ if [ "$TOOL_NAME" = "Bash" ]; then
       echo "BLOCKED: Germline file — read-only for officers and loops (no loop may edit its own judge). This Bash command contains a write-shaped operation targeting a germline path (reads like cat/grep/less are allowed). Propose the change to the Captain; only the Captain applies germline edits." >&2
       exit 2
     fi
+    # FAIL-CLOSED READ ALLOWLIST [re-verify round 3, 2026-07-04]. The interpreter
+    # denylist above is unwinnable on its own (tclsh, lua, php, ed, ex, patch,
+    # `git checkout`, ruby/tclsh heredocs, `$(printf '\x3e')`-built redirects all
+    # slipped a denylist). Inversion: with a germline path present, EVERY
+    # command-position verb must be a recognized READ; any other verb — an
+    # interpreter, editor, patcher, vcs-write, or writer — blocks. A small closed
+    # allowlist beats an unbounded denylist. (A string hook is still only
+    # defense-in-depth vs a Turing-complete shell; the complete germline boundary
+    # is officers-run-as-a-separate-uid at deployment. See flip record.)
+    GERM_ALLOW_BLOCK=$(printf '%s' "$CMD_SQ" | awk '
+      BEGIN{
+        # pure reads
+        split("cat tac bat grep egrep fgrep zgrep rg ag less more head tail wc nl cut sort uniq column tr od xxd hexdump base32 base64 md5 md5sum shasum sha1sum sha256sum sha512sum cksum b2sum file stat ls realpath readlink dirname basename diff cmp comm which type command hash test true false echo printf pwd env id whoami date sleep jq yq colordiff nkf",R," ")
+        for(i in R) ok[R[i]]=1
+        # dual-use tools whose WRITE forms are already caught by the precise
+        # arms a-h ABOVE (redirect / -i / of= / dest / -c). A bare read through
+        # them (cp FROM germ, sed w/o -i, dd if=germ, tee < germ, python
+        # script.py --config germ) is legitimate and must pass — the precise
+        # arm already fired-and-exited if it was a write.
+        split("cp mv rsync install ln sed dd tee truncate python python2 python3",D," ")
+        for(i in D) ok[D[i]]=1
+        ok[":"]=1; ok["["]=1; ok["]"]=1
+        # git is a read ONLY with a read subcommand
+        split("show log diff cat-file blame grep ls-files ls-tree status rev-parse describe shortlog reflog",G," ")
+        for(i in G) gitok[G[i]]=1
+      }
+      {
+        # break into command-position segments at separators/substitutions
+        gsub(/\$\(/, "\n", $0); gsub(/[|;&`()]/, "\n", $0)
+        m=split($0, seg, "\n")
+        for(s=1;s<=m;s++){
+          line=seg[s]
+          # strip leading whitespace + env-assignment prefixes (VAR=val ...)
+          sub(/^[[:space:]]+/,"",line)
+          while(match(line, /^[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+/)){
+            line=substr(line, RLENGTH+1)
+          }
+          if(line=="") continue
+          split(line, w, /[[:space:]]+/); verb=w[1]
+          sub(/^.*\//,"",verb)            # strip a path prefix (/usr/bin/cat->cat)
+          sub(/^["'\'']/,"",verb)          # strip a leading quote
+          if(verb=="") continue
+          if(verb ~ /^python[0-9.]+$/) continue    # versioned python (arms g* guard writes)
+          if(verb=="git"){ if(w[2] in gitok) continue; else {print "BLOCK"; exit} }
+          if(!(verb in ok)){ print "BLOCK"; exit }
+        }
+      }')
+    if [ "$GERM_ALLOW_BLOCK" = "BLOCK" ]; then
+      echo "BLOCKED: Germline file — read-only for officers and loops. This Bash command references a germline path but is not a recognized read-only command (cat/grep/less/head/tail/diff/stat/git-show...). An interpreter, editor, patcher, or writer touching a germline path is refused fail-closed. Propose the change to the Captain; only the Captain applies germline edits." >&2
+      exit 2
+    fi
   fi
 fi
 
