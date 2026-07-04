@@ -572,3 +572,88 @@ class TestActWithUndoCarveOuts:
     def test_non_template_calendar_is_propose_defaulting(self):
         cmd = "osascript -e 'tell application \"Calendar\" to make new event'"
         assert classify_action("Bash", {"command": cmd}) == AMBIGUOUS
+
+
+class TestOutOfVocabMondayOpSmuggle:
+    """[KILLED #4, checkpoint 2026-07-04 §4] Out-of-vocab Monday mutation
+    fields were invisible to the vocabulary-built findall, so a destructive op
+    batched with a create classified as a PURE create (task_create,
+    act_with_undo) and the generic API tool executed both. Body extraction is
+    now vocabulary-independent: ANY unknown field forces the mcp_post ceiling.
+    Named per-op MCP tools (shape 1) are unchanged."""
+
+    def test_delete_board_smuggled_inside_create_is_ceiling(self):
+        # The checkpoint's executed refutation, verbatim shape: the batch used
+        # to classify "task_create" whose undo deletes the created ITEM — not
+        # the destroyed board. Must be the ceiling.
+        assert classify_action(
+            "mcp__x_monday_com__all_monday_api",
+            {"query": 'mutation { create_item(board_id: 1, item_name: "x") { id } '
+                      "delete_board(board_id: 999) { id } }"}
+        ) == "mcp_post"
+
+    def test_duplicate_group_smuggled_inside_create_is_ceiling(self):
+        assert classify_action(
+            "mcp__x_monday_com__all_api_write",
+            {"query": "mutation { create_item(board_id: 1) { id } "
+                      "duplicate_group(board_id: 1, group_id: \"g\") { id } }"}
+        ) == "mcp_post"
+
+    def test_unknown_future_op_batched_with_create_is_ceiling(self):
+        # An op the 16-entry vocabulary has NEVER heard of must still surface
+        # (generic identifier( extraction) and break the pure-create subset.
+        assert classify_action(
+            "mcp__x_monday_com__all_api_write",
+            {"query": "mutation { create_item(board_id: 1) { id } "
+                      "grant_marketplace_app_billing(app_id: 7) { id } }"}
+        ) == "mcp_post"
+
+    def test_out_of_vocab_op_alone_is_ceiling(self):
+        assert classify_action(
+            "mcp__x_monday_com__all_monday_api",
+            {"query": "mutation { delete_group(board_id: 1, group_id: \"g\") { id } }"}
+        ) == "mcp_post"
+
+    def test_pure_create_regression_still_task_create(self):
+        # The carve-out itself must survive the generic extractor: a genuinely
+        # pure create body (args + sub-selection, quoted prose with parens)
+        # still earns task_create.
+        assert classify_action(
+            "mcp__x_monday_com__all_api_write",
+            {"query": 'mutation { create_item(board_id: 5091706356, '
+                      'item_name: "call mom (later)") { id } }'}
+        ) == "task_create"
+
+    def test_pure_create_with_named_operation_and_vars_still_task_create(self):
+        # A well-formed operation header (name + variable defs) is inert — it
+        # must not be mistaken for an out-of-vocab field.
+        assert classify_action(
+            "mcp__x_monday_com__all_api_write",
+            {"query": "mutation CreateTask($b: ID!, $n: String!) "
+                      "{ create_item(board_id: $b, item_name: $n) { id } }"}
+        ) == "task_create"
+
+    def test_pure_status_regression_still_board_status(self):
+        assert classify_action(
+            "mcp__x_monday_com__all_monday_api",
+            {"query": 'mutation { change_column_value(item_id: 1, column_id: "s", '
+                      'value: "{\\"label\\": \\"Done\\"}") { id } }'}
+        ) == "board_status"
+
+    def test_string_literal_cannot_hide_a_real_field(self):
+        # A quoted arg that LOOKS like it closes early must not swallow the
+        # destructive field that follows — the escape-aware strip leaves real
+        # (unquoted) syntax in place.
+        assert classify_action(
+            "mcp__x_monday_com__all_api_write",
+            {"query": 'mutation { create_item(item_name: "a\\" b") { id } '
+                      "delete_board(board_id: 2) { id } }"}
+        ) == "mcp_post"
+
+    def test_named_per_op_tool_shape_unchanged(self):
+        # Shape 1 (named per-op MCP tools) is untouched by the generic body
+        # extractor: the op IS the tool name.
+        assert classify_action("mcp__claude_ai_monday_com__create_item",
+                               {"board_id": "5091706356"}) == "task_create"
+        assert classify_action("mcp__claude_ai_monday_com__delete_item",
+                               {"item_id": "1"}) == "mcp_post"
