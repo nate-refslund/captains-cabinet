@@ -6,6 +6,8 @@ OFF so the whole branch is dark until a Captain flip.
 """
 from __future__ import annotations
 
+import json
+
 from framework.acting import run_action_lane as r
 from framework.acting.action_lane import ActionProposal, ActionStep
 from framework.frontdoor import actfirst_canary, veto_registry, action_undo
@@ -179,6 +181,9 @@ def _drive_main(monkeypatch, *, proposals, deliver_result, act_first=True,
 
     # flag
     monkeypatch.setattr(r, "_act_first_on", lambda: act_first)
+    # confidence floor — pinned to the shipped default so main() never reads the
+    # real instance yml from a unit test (hermetic fixtures)
+    monkeypatch.setattr(r, "_confidence_floor", lambda: r.CONFIDENCE_FLOOR_DEFAULT)
     # veto/canary — all clear so the real gate helper passes
     monkeypatch.setattr(r.veto_registry, "rebuild_cache", lambda *a, **k: None)
     monkeypatch.setattr(r.veto_registry, "veto_cache_ready", lambda *a, **k: True)
@@ -286,3 +291,211 @@ def test_crash_between_act_and_emit_leaves_act_standing(monkeypatch):
     assert len(out["delivers"]) == 1           # acted
     assert out["tgs"] == []                     # NOT re-proposed despite emit loss
     assert len(out["receipts"]) == 1           # Captain still gets the receipt
+
+
+# ============================================================================
+# L2-gate (flip-conditions burn-down, checkpoint 2026-07-04): confidence floor
+# enforcement + steps_sha256 TOCTOU stamp + flag-off byte-identity pins.
+# ============================================================================
+
+def _conf_card(conf):
+    """A single stampable create with an arbitrary confidence value."""
+    step = ActionStep(kind="monday_task_create", title="new",
+                      payload={"board_id": "5091706356", "title": "t"})
+    return ActionProposal(subject="s", situation="w", steps=(step,),
+                          lane="polads", evidence=("x.md",), confidence=conf,
+                          urgency="batch")
+
+
+# --- confidence floor (the ex-phantom knob) ----------------------------------
+
+def test_confidence_below_floor_blocks():
+    ok, why = r._card_act_first_eligible(_conf_card(0.5), "task_create")
+    assert ok is False and why == "confidence below floor"
+
+
+def test_confidence_above_floor_passes():
+    ok, why = r._card_act_first_eligible(_conf_card(0.9), "task_create")
+    assert ok is True and why == ""
+
+
+def test_confidence_exactly_at_floor_passes():
+    ok, _ = r._card_act_first_eligible(_conf_card(r.CONFIDENCE_FLOOR_DEFAULT),
+                                       "task_create")
+    assert ok is True
+
+
+def test_explicit_floor_param_is_honored():
+    ok, why = r._card_act_first_eligible(_conf_card(0.9), "task_create", floor=0.95)
+    assert ok is False and why == "confidence below floor"
+
+
+def test_unparseable_confidence_never_clears_floor():
+    # fail-safe: a confidence we cannot verify is treated as 0.0, never waved on
+    ok, why = r._card_act_first_eligible(_conf_card("very sure"), "task_create")
+    assert ok is False and why == "confidence below floor"
+
+
+def test_nan_confidence_never_clears_floor():
+    ok, why = r._card_act_first_eligible(_conf_card(float("nan")), "task_create")
+    assert ok is False and why == "confidence below floor"
+
+
+def _floor_yml(tmp_path, body):
+    p = tmp_path / "act-first-surfaces.yml"
+    p.write_text(body)
+    return p
+
+
+def test_floor_reader_reads_declared_value(monkeypatch, tmp_path):
+    monkeypatch.setattr(r, "_surfaces_path",
+                        lambda: _floor_yml(tmp_path, "confidence_floor: 0.8\n"))
+    assert r._confidence_floor() == 0.8
+
+
+def test_floor_reader_absent_file_defaults(monkeypatch, tmp_path):
+    monkeypatch.setattr(r, "_surfaces_path", lambda: tmp_path / "missing.yml")
+    assert r._confidence_floor() == r.CONFIDENCE_FLOOR_DEFAULT
+
+
+def test_floor_reader_corrupt_yaml_defaults(monkeypatch, tmp_path):
+    monkeypatch.setattr(r, "_surfaces_path", lambda: _floor_yml(tmp_path, "{"))
+    assert r._confidence_floor() == r.CONFIDENCE_FLOOR_DEFAULT
+
+
+def test_floor_reader_invalid_values_default_never_zero(monkeypatch, tmp_path):
+    # a broken knob must TIGHTEN the gate (0.65), never widen it (0 would let
+    # every card through the confidence check)
+    for body in ("confidence_floor: 0\n",       # zero is not a floor
+                 "confidence_floor: -0.3\n",    # negative
+                 "confidence_floor: 1.5\n",     # out of range
+                 "confidence_floor: high\n",    # non-numeric
+                 "confidence_floor: .nan\n",    # NaN
+                 "version: 1\n"):               # key missing entirely
+        monkeypatch.setattr(r, "_surfaces_path",
+                            lambda b=body: _floor_yml(tmp_path, b))
+        assert r._confidence_floor() == r.CONFIDENCE_FLOOR_DEFAULT, body
+
+
+def test_floor_reader_consumes_shipped_instance_yml():
+    # the real Captain-owned file, no monkeypatch: whatever the yml declares is
+    # what the gate enforces — the knob is READ, no longer phantom (checkpoint
+    # flip condition). Stays green if the Captain retunes (or deletes) the value.
+    import yaml
+    data = yaml.safe_load(r._surfaces_path().read_text()) or {}
+    declared = data.get("confidence_floor")
+    if declared:
+        assert r._confidence_floor() == float(declared)
+    else:
+        assert r._confidence_floor() == r.CONFIDENCE_FLOOR_DEFAULT
+
+
+def test_low_confidence_card_proposes_instead_of_acting(monkeypatch):
+    # main() wiring: a 0.5-confidence create clears every mechanical gate EXCEPT
+    # the floor → falls through to propose (card presented, executor untouched)
+    out = _drive_main(monkeypatch, proposals=[_conf_card(0.5)],
+                      deliver_result={"ok": True})
+    assert out["delivers"] == []               # never reached the executor
+    assert len(out["tgs"]) == 1                # proposed to the Captain instead
+    assert "outcome" not in out["emits"][0]    # propose-shaped ledger row
+
+
+# --- steps_sha256 TOCTOU stamp at store ---------------------------------------
+
+def _capture_store(monkeypatch):
+    stored = {}
+    monkeypatch.setattr(r, "_redis", lambda *a: stored.update(args=a) or "")
+    return stored
+
+
+def _exec_valid_update_card():
+    """An update card whose payload matches the executor's CLOSED schema
+    (_PAYLOAD_KEYS/_SET_KEYS) — required for the end-to-end store→deliver
+    round-trips below, which run the real deliver_action."""
+    step = ActionStep(kind="monday_task_update", title="move to Done",
+                      payload={"board_id": "5091706356", "monday_id": "42",
+                               "set": {"status": "Done"}})
+    return ActionProposal(subject="close cmt", situation="done", steps=(step,),
+                          lane="polads", evidence=("6-Commitments/x.md",),
+                          confidence=0.95, urgency="batch")
+
+
+def test_store_action_stamps_steps_sha256(monkeypatch):
+    from framework.frontdoor.action_exec import _canonical_sha
+    stored = _capture_store(monkeypatch)
+    r._store_action("pid-1", _update_card(), cid="cid-1")
+    assert stored["args"][:2] == ("SET", "cabinet:action:pid-1")
+    rec = json.loads(stored["args"][2])
+    # shape agreement end-to-end: the executor's TOCTOU re-check recomputes
+    # _canonical_sha over rec["steps"] AS READ BACK from the record — the
+    # store-time stamp must equal that round-tripped hash exactly.
+    assert rec["steps_sha256"] == _canonical_sha(rec["steps"])
+    assert rec["steps"][0]["kind"] == "monday_task_update"
+
+
+def test_executor_toctou_refuses_swapped_record(monkeypatch):
+    # end-to-end against the REAL executor: a record stamped by _store_action
+    # then swapped in Redis is refused before anything runs (dry_run keeps the
+    # probe pure; the TOCTOU check fires ahead of it either way).
+    from framework.frontdoor import action_exec
+    monkeypatch.setattr(action_exec, "_load_shared_env", lambda: None)  # hermetic
+    stored = _capture_store(monkeypatch)
+    r._store_action("pid-2", _exec_valid_update_card(), cid="c")
+    rec = json.loads(stored["args"][2])
+    rec["steps"][0]["payload"]["monday_id"] = "666"        # the swap
+    out = action_exec.deliver_action("pid-2", redis_get=lambda k: json.dumps(rec),
+                                     dry_run=True)
+    assert out["ok"] is False and out.get("toctou") is True
+    assert out["executed"] == []
+
+
+def test_executor_accepts_unswapped_stored_record(monkeypatch):
+    # the positive half: the untouched stored record passes the executor's
+    # TOCTOU re-check (no false refusals from the store-time stamp)
+    from framework.frontdoor import action_exec
+    monkeypatch.setattr(action_exec, "_load_shared_env", lambda: None)  # hermetic
+    stored = _capture_store(monkeypatch)
+    r._store_action("pid-3", _exec_valid_update_card(), cid="c")
+    blob = stored["args"][2]
+    out = action_exec.deliver_action("pid-3", redis_get=lambda k: blob,
+                                     dry_run=True)
+    assert out.get("toctou") is not True
+    assert out["ok"] is True
+
+
+# --- flag-off byte-identity (refuter KILLED #1 pinned closed) -----------------
+
+def test_flag_off_row_carries_no_action_type(monkeypatch):
+    # KILLED #1(b): with the flag off, the ledger row must be the pre-TI-3
+    # propose-only bytes — NO action_type, no dark graduation-cell accumulation
+    out = _drive_main(monkeypatch, proposals=[_update_card()],
+                      deliver_result={"ok": True}, act_first=False)
+    assert len(out["emits"]) == 1
+    assert "action_type" not in out["emits"][0]
+    assert "outcome" not in out["emits"][0]
+
+
+def test_flag_on_propose_fallthrough_keeps_stamp(monkeypatch):
+    # the counterpart: once armed, a downgraded card's propose row DOES stamp —
+    # graduation earns from live verdicts only while the posture is on
+    out = _drive_main(monkeypatch, proposals=[_update_card()],
+                      deliver_result={"ok": False, "gate": "board_not_allowed"})
+    assert len(out["emits"]) == 1
+    assert out["emits"][0].get("action_type") == "board_status"
+
+
+def test_flag_off_prints_pre_ti3_baseline_summary(monkeypatch, capsys):
+    # KILLED #1(a): the flag-off run summary is the exact pre-TI-3 line, and the
+    # TI-3 "acted" format never leaks into a dark run's output
+    _drive_main(monkeypatch, proposals=[_update_card()],
+                deliver_result={"ok": True}, act_first=False)
+    stdout = capsys.readouterr().out
+    assert "done: presented 1 action card(s)" in stdout
+    assert "acted" not in stdout
+
+
+def test_flag_on_prints_acted_summary(monkeypatch, capsys):
+    _drive_main(monkeypatch, proposals=[_update_card()],
+                deliver_result={"ok": True})
+    stdout = capsys.readouterr().out
+    assert "done: presented 0 card(s), acted 1 card(s)" in stdout
