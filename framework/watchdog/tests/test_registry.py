@@ -22,7 +22,8 @@ from framework.watchdog.registry import CheckResult, Probe, Tier
 # test can assert the router did the right thing.
 # ─────────────────────────────────────────────────────────────────────────────
 class FakeProbe(Probe):
-    def __init__(self, *, now=None, local=None, files=None, mtimes=None, redis=None):
+    def __init__(self, *, now=None, local=None, files=None, mtimes=None, redis=None,
+                 launchctl=None):
         self._now = now or dt.datetime(2026, 6, 29, 16, 0, tzinfo=dt.timezone.utc)
         # default local = Europe/Berlin ~= UTC+2 in summer
         self._local = local or self._now.astimezone(
@@ -30,6 +31,10 @@ class FakeProbe(Probe):
         self._files = files or {}
         self._mtimes = mtimes or {}
         self._redis = redis or {}
+        # launchctl surface (lane-ops 2026-07-04): {} = "not observable" —
+        # matches the base-Probe default, so tests that don't care exercise
+        # the self-disabled path exactly like a non-Mac host.
+        self._launchctl = launchctl or {}
         # side-effect capture
         self.triggers: list[str] = []
         self.drift: list[tuple[str, str]] = []
@@ -58,6 +63,9 @@ class FakeProbe(Probe):
 
     def launchd_loaded(self, label):
         return True
+
+    def launchctl_list(self):
+        return self._launchctl
 
     # side-effecting surface (used by the router via the real probe; FakeProbe
     # implements the same names so route_failure works unchanged)
@@ -409,6 +417,306 @@ def test_cron_stale_fails():
     res = reg.verify_no_silent_cron_failure(probe)
     assert res.ok is False
     assert "silent" in res.detail
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Manifest-derived cron coverage (lane-ops 2026-07-04). These encode the two
+# incidents-of-record: retro-trigger FATAL'ing hourly outside the hardcoded
+# watch list, and memory-worker declared-but-never-scheduled.
+# ─────────────────────────────────────────────────────────────────────────────
+# A miniature but shape-faithful manifest: flow interval, flow calendar with
+# weekday, BLOCK calendar, keepalive, officer, disabled, env/notes noise —
+# every construct the real services.yml uses.
+_MINI_MANIFEST = """\
+# header comment
+services:
+  - name: officer-cos
+    label: com.cabinet.officer.cos
+    kind: officer
+    command: bash cabinet/scripts/start-officer-mac.sh cos
+    schedule: keepalive
+    notes: sole Telegram voice
+  - name: retro-trigger
+    label: com.cabinet.retro-trigger
+    kind: cron
+    command: bash cabinet/cron/retro-trigger.sh
+    schedule: { interval_s: 3600 }
+    notes: >-
+      adversarial block scalar deliberately mentioning interval_s: 999 and
+      weekday — the parser must NOT read a notes continuation as schedule
+      fields (the exact-4-space key match clears the schedule-block flag).
+  - name: memory-worker
+    label: com.cabinet.memory-worker
+    kind: daemon
+    command: bash cabinet/scripts/memory-worker.sh
+    schedule: keepalive
+    env:
+      SOME_FLAG: "1"
+  - name: frontdoor-briefing
+    label: com.cabinet.frontdoor-briefing
+    kind: daemon
+    command: bash cabinet/scripts/run-frontdoor-briefing.sh
+    schedule:
+      calendar:
+        - { hour: 7, minute: 30 }
+        - { hour: 19, minute: 30 }
+  - name: actfirst-canary
+    label: com.cabinet.actfirst-canary
+    kind: watchdog
+    command: bash cabinet/scripts/run-actfirst-canary.sh
+    schedule: { calendar: [{weekday: 1, hour: 7, minute: 15}] }   # Mondays
+  - name: draft-lane
+    label: com.cabinet.draft-lane
+    kind: daemon
+    disabled: true
+    command: bash cabinet/scripts/run-draft-lane.sh
+    schedule: { interval_s: 300 }
+"""
+
+
+def test_manifest_parser_extracts_all_shapes():
+    entries = {e["name"]: e for e in reg._parse_services_manifest(_MINI_MANIFEST)}
+    assert entries["officer-cos"]["kind"] == "officer"
+    assert entries["officer-cos"]["schedule_kind"] == "keepalive"
+    rt = entries["retro-trigger"]
+    assert rt["kind"] == "cron" and rt["schedule_kind"] == "interval"
+    assert rt["interval_s"] == 3600  # the notes block-scalar 999 must NOT win
+    assert entries["memory-worker"]["schedule_kind"] == "keepalive"
+    fb = entries["frontdoor-briefing"]
+    assert fb["schedule_kind"] == "calendar" and fb["weekly"] is False
+    ac = entries["actfirst-canary"]
+    assert ac["schedule_kind"] == "calendar" and ac["weekly"] is True
+    dl = entries["draft-lane"]
+    assert dl["disabled"] is True
+    assert entries["retro-trigger"]["label"] == "com.cabinet.retro-trigger"
+
+
+def test_floor_policy_interval_calendar_keepalive():
+    assert reg._floor_for_entry({"schedule_kind": "interval", "interval_s": 3600}) == 7800
+    # short cadences clamp to the 2h minimum (quiet-run false-alarm guard)
+    assert reg._floor_for_entry({"schedule_kind": "interval", "interval_s": 300}) == 7200
+    assert reg._floor_for_entry({"schedule_kind": "calendar", "weekly": False}) == 26 * 3600
+    assert reg._floor_for_entry({"schedule_kind": "calendar", "weekly": True}) == 8 * 86400
+    assert reg._floor_for_entry({"schedule_kind": "keepalive"}) is None
+    assert reg._floor_for_entry({"schedule_kind": None}) is None
+
+
+def _mini_probe(now, *, files=None, mtimes=None, launchctl=None):
+    """Probe pre-loaded with the mini manifest + healthy logs for every floored
+    service; tests then break exactly one thing."""
+    files = dict(files or {})
+    mtimes = dict(mtimes or {})
+    files.setdefault(reg.SERVICES_MANIFEST, _MINI_MANIFEST)
+    for name in ("retro-trigger", "frontdoor-briefing", "actfirst-canary"):
+        p = f"{reg.CABINET_LOG_DIR}/{name}.log"
+        files.setdefault(p, "[ok]\n")
+        mtimes.setdefault(p, now.timestamp())
+    return FakeProbe(now=now, files=files, mtimes=mtimes, launchctl=launchctl)
+
+
+def test_cron_manifest_all_healthy_passes():
+    now = dt.datetime(2026, 7, 4, 12, 0, tzinfo=dt.timezone.utc)
+    probe = _mini_probe(now)
+    res = reg.verify_no_silent_cron_failure(probe)
+    assert res.ok is True
+    # launchd not observable → floors-only wording, never a failure
+    assert "launchd scan unavailable" in res.detail
+
+
+def test_cron_retro_trigger_fatal_marker_caught():
+    """Incident-of-record #1: retro-trigger logged FATAL hourly (redis-cli not
+    found under launchd's minimal PATH) but only status-sweep was watched. With
+    manifest-derived coverage the FATAL tail pages on the first sweep."""
+    now = dt.datetime(2026, 7, 4, 12, 0, tzinfo=dt.timezone.utc)
+    p = f"{reg.CABINET_LOG_DIR}/retro-trigger.log"
+    probe = _mini_probe(now, files={
+        p: "[2026-07-04] FATAL: triggers lib not found\n"})
+    res = reg.verify_no_silent_cron_failure(probe)
+    assert res.ok is False
+    assert "retro-trigger" in res.detail and "FATAL" in res.detail
+
+
+def test_cron_command_not_found_marker_caught():
+    """The launchd-minimal-PATH class itself ('redis-cli: command not found')
+    is a first-class marker now."""
+    now = dt.datetime(2026, 7, 4, 12, 0, tzinfo=dt.timezone.utc)
+    p = f"{reg.CABINET_LOG_DIR}/retro-trigger.log"
+    probe = _mini_probe(now, files={
+        p: "cabinet/cron/retro-trigger.sh: line 12: redis-cli: command not found\n"})
+    res = reg.verify_no_silent_cron_failure(probe)
+    assert res.ok is False
+    assert "command not found" in res.detail
+
+
+def test_cron_interval_stale_fails_and_calendar_generous():
+    """A 3h-silent hourly job breaches its 2.17h floor; a 3h-silent DAILY
+    calendar job is fine (26h floor) — cadence-aware, not one-size."""
+    now = dt.datetime(2026, 7, 4, 12, 0, tzinfo=dt.timezone.utc)
+    old = (now - dt.timedelta(hours=3)).timestamp()
+    probe = _mini_probe(now, mtimes={
+        f"{reg.CABINET_LOG_DIR}/retro-trigger.log": old,
+        f"{reg.CABINET_LOG_DIR}/frontdoor-briefing.log": old,
+    })
+    res = reg.verify_no_silent_cron_failure(probe)
+    assert res.ok is False
+    assert "retro-trigger" in res.detail and "silent" in res.detail
+    assert "frontdoor-briefing" not in res.detail
+
+
+def test_cron_keepalive_has_no_freshness_floor():
+    """memory-worker (keepalive) with NO log at all must not freshness-flag:
+    long-runners log on events; their liveness is the launchd scan's job."""
+    now = dt.datetime(2026, 7, 4, 12, 0, tzinfo=dt.timezone.utc)
+    probe = _mini_probe(now)  # no memory-worker log anywhere
+    res = reg.verify_no_silent_cron_failure(probe)
+    assert res.ok is True
+
+
+def test_cron_keepalive_error_marker_in_err_log_caught():
+    """A fresh NOGROUP in memory-worker's .err (generated-plist convention)
+    pages even though keepalive rows have no freshness floor."""
+    now = dt.datetime(2026, 7, 4, 12, 0, tzinfo=dt.timezone.utc)
+    p = f"{reg.GENERATED_LOG_DIR}/memory-worker.err"
+    probe = _mini_probe(now,
+                        files={p: "NOGROUP No such key 'cabinet:memory:embed_queue'\n"},
+                        mtimes={p: now.timestamp()})
+    res = reg.verify_no_silent_cron_failure(probe)
+    assert res.ok is False
+    assert "memory-worker" in res.detail and "NOGROUP" in res.detail
+
+
+def test_cron_old_error_marker_ages_out():
+    """A marker in a log older than the scan window (keepalive → 24h) is
+    archaeology, not a live failure — must NOT page forever."""
+    now = dt.datetime(2026, 7, 4, 12, 0, tzinfo=dt.timezone.utc)
+    p = f"{reg.GENERATED_LOG_DIR}/memory-worker.err"
+    probe = _mini_probe(now,
+                        files={p: "NOGROUP No such key\n"},
+                        mtimes={p: (now - dt.timedelta(hours=30)).timestamp()})
+    res = reg.verify_no_silent_cron_failure(probe)
+    assert res.ok is True
+
+
+def test_cron_declared_but_not_loaded_caught():
+    """Incident-of-record #2: memory-worker sat in services.yml while five hooks
+    fed its queue — never scheduled. With a visible launchctl surface missing
+    its label, the manifest row itself now pages."""
+    now = dt.datetime(2026, 7, 4, 12, 0, tzinfo=dt.timezone.utc)
+    ll = {  # everything loaded EXCEPT memory-worker; officer label present
+        "com.cabinet.officer.cos": {"pid": 4242, "status": 0},
+        "com.cabinet.retro-trigger": {"pid": None, "status": 0},
+        "com.cabinet.frontdoor-briefing": {"pid": None, "status": 0},
+        "com.cabinet.actfirst-canary": {"pid": None, "status": 0},
+    }
+    probe = _mini_probe(now, launchctl=ll)
+    res = reg.verify_no_silent_cron_failure(probe)
+    assert res.ok is False
+    assert "memory-worker" in res.detail and "not loaded" in res.detail
+
+
+def test_cron_nonzero_exit_status_caught_officers_excluded():
+    """retro-trigger exiting 127 hourly (PATH class) is a page even while its
+    log looks quiet; an officer wrapper's non-zero exit is NOT (session
+    lifecycle is the supervisor's domain, wrappers exit non-zero by design)."""
+    now = dt.datetime(2026, 7, 4, 12, 0, tzinfo=dt.timezone.utc)
+    ll = {
+        "com.cabinet.officer.cos": {"pid": None, "status": 15},   # excluded
+        "com.cabinet.retro-trigger": {"pid": None, "status": 127},
+        "com.cabinet.memory-worker": {"pid": 777, "status": 0},
+        "com.cabinet.frontdoor-briefing": {"pid": None, "status": 0},
+        "com.cabinet.actfirst-canary": {"pid": None, "status": 0},
+    }
+    probe = _mini_probe(now, launchctl=ll)
+    res = reg.verify_no_silent_cron_failure(probe)
+    assert res.ok is False
+    assert "com.cabinet.retro-trigger: last exit status 127" in res.detail
+    assert "officer.cos" not in res.detail
+
+
+def test_cron_unrostered_officer_label_not_flagged():
+    """Self-review fix: an officer hired after the manifest was written
+    (com.cabinet.officer.<slug>, no row) exits non-zero legitimately like any
+    session wrapper — must NOT page. The cos-inbound poller (same prefix but a
+    WATCHED daemon row) must still be covered."""
+    now = dt.datetime(2026, 7, 4, 12, 0, tzinfo=dt.timezone.utc)
+    ll = {
+        "com.cabinet.officer.mari-ceo": {"pid": None, "status": 1},   # unrostered
+        "com.cabinet.retro-trigger": {"pid": None, "status": 0},
+        "com.cabinet.memory-worker": {"pid": 777, "status": 0},
+        "com.cabinet.frontdoor-briefing": {"pid": None, "status": 0},
+        "com.cabinet.actfirst-canary": {"pid": None, "status": 0},
+    }
+    probe = _mini_probe(now, launchctl=ll)
+    res = reg.verify_no_silent_cron_failure(probe)
+    assert res.ok is True
+    assert "mari-ceo" not in res.detail
+
+
+def test_cron_watched_daemon_under_officer_prefix_still_flagged():
+    """cos-inbound (com.cabinet.officer.cos-inbound, kind daemon) must NOT be
+    swallowed by the officer-prefix exclusion — a crash-looping poller pages."""
+    now = dt.datetime(2026, 7, 4, 12, 0, tzinfo=dt.timezone.utc)
+    manifest = _MINI_MANIFEST + """\
+  - name: cos-inbound
+    label: com.cabinet.officer.cos-inbound
+    kind: daemon
+    command: bash cabinet/scripts/start-inbound-poller.sh cos
+    schedule: keepalive
+"""
+    ll = {
+        "com.cabinet.officer.cos-inbound": {"pid": 900, "status": 78},
+        "com.cabinet.retro-trigger": {"pid": None, "status": 0},
+        "com.cabinet.memory-worker": {"pid": 777, "status": 0},
+        "com.cabinet.frontdoor-briefing": {"pid": None, "status": 0},
+        "com.cabinet.actfirst-canary": {"pid": None, "status": 0},
+    }
+    probe = _mini_probe(now, files={reg.SERVICES_MANIFEST: manifest}, launchctl=ll)
+    res = reg.verify_no_silent_cron_failure(probe)
+    assert res.ok is False
+    assert "com.cabinet.officer.cos-inbound: last exit status 78" in res.detail
+
+
+def test_cron_disabled_row_fully_excluded():
+    """draft-lane is disabled:true (parked by the act-not-draft ruling): no
+    freshness floor, no not-loaded page — declared-parked is not a failure."""
+    now = dt.datetime(2026, 7, 4, 12, 0, tzinfo=dt.timezone.utc)
+    ll = {  # draft-lane absent from launchd (its plist is .disabled) — fine
+        "com.cabinet.officer.cos": {"pid": 4242, "status": 0},
+        "com.cabinet.retro-trigger": {"pid": None, "status": 0},
+        "com.cabinet.memory-worker": {"pid": 777, "status": 0},
+        "com.cabinet.frontdoor-briefing": {"pid": None, "status": 0},
+        "com.cabinet.actfirst-canary": {"pid": None, "status": 0},
+    }
+    probe = _mini_probe(now, launchctl=ll)
+    res = reg.verify_no_silent_cron_failure(probe)
+    assert res.ok is True
+    assert "draft-lane" not in res.detail
+
+
+def test_cron_generated_and_legacy_log_dirs_both_count():
+    """Freshness takes the NEWEST mtime across both plist-era log locations, so
+    a service migrated from ~/.cabinet/logs to ~/Library/Logs/cabinet (e.g.
+    the regenerated retro-trigger) never false-alarms mid-transition."""
+    now = dt.datetime(2026, 7, 4, 12, 0, tzinfo=dt.timezone.utc)
+    legacy = f"{reg.CABINET_LOG_DIR}/retro-trigger.log"
+    gen = f"{reg.GENERATED_LOG_DIR}/retro-trigger.log"
+    probe = _mini_probe(now, files={gen: "[ok] No retro yet\n"}, mtimes={
+        legacy: (now - dt.timedelta(days=3)).timestamp(),  # old era, stale
+        gen: now.timestamp(),                              # new era, fresh
+    })
+    res = reg.verify_no_silent_cron_failure(probe)
+    assert res.ok is True
+
+
+def test_cron_missing_manifest_falls_back_to_static():
+    """No manifest readable → the legacy static status-sweep row still applies
+    (the watchdog is never blinded by a manifest move/rewrite). This is also
+    the compatibility path the pre-existing status-sweep tests exercise."""
+    now = dt.datetime(2026, 7, 4, 12, 0, tzinfo=dt.timezone.utc)
+    probe = FakeProbe(now=now, files={}, mtimes={})
+    res = reg.verify_no_silent_cron_failure(probe)
+    assert res.ok is False
+    assert "status-sweep" in res.detail  # fallback row, no log → flagged
 
 
 # ─────────────────────────────────────────────────────────────────────────────

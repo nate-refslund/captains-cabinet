@@ -1,8 +1,11 @@
 """UNDO-3 — TTL-survival sweep + silent-revert detection + journal GC.
 
 The hourly reconciler of the trust-inversion undo plane (grand-plan §3 W2·L2,
-impl-plan §2.2). NOT yet scheduled — built and tested dark; a ``services.yml``
-row + watchdog floor wire it live in a later step.
+impl-plan §2.2). SCHEDULED since 2026-07-04: the ``com.cabinet.undo-sweep``
+LaunchAgent (hand-made plist, loaded per cabinet/launchd/INSTALL-flip.md) runs
+run-undo-sweep.sh hourly, and the ``undo-sweep`` row in ``cabinet/services.yml``
+puts it under the outcome-watchdog's manifest-derived no-silent-cron floor
+(lane-ops 2026-07-04).
 
 It reads the write-ahead undo journal (``action_undo``) and, for every acted
 step past its 48h TTL whose CURRENT acted ledger record is still

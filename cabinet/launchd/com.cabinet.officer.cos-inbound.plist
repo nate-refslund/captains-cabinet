@@ -14,7 +14,17 @@
 
      PATH is load-bearing (launchd's minimal PATH omits Homebrew bin → no tmux/python).
      No secrets here: the bot token + CAPTAIN_TELEGRAM_ID are sourced from cabinet/.env
-     by start-inbound-poller.sh at runtime. -->
+     by start-inbound-poller.sh at runtime.
+
+     CABINET_VETO_WIRED=1 (lane-ops 2026-07-04) arms the TI-4 veto wire: the
+     binder's never:/lift/`veto confirm` verbs PERSIST to
+     shared/interfaces/captain-vetoes.yml (previously dark — parsed, recorded
+     nothing), making run_action_lane's is_vetoed() a real pre-act block.
+     Writes stay gated on captain_verified — this poller relays ONLY
+     CAPTAIN_TELEGRAM_ID messages, so a veto is unforgeable. It only ever
+     TIGHTENS autonomy (a veto blocks acting; it never widens anything).
+     Rollback: delete the key + reload. Kept in sync with the cos-inbound row
+     env in cabinet/services.yml (the generated plist carries it too). -->
 <plist version="1.0">
 <dict>
   <key>Label</key>
@@ -29,6 +39,14 @@
   <dict>
     <key>PATH</key>
     <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <!-- Parity fix (lane-ops 2026-07-04): the INSTALLED plist is generated from
+         services.yml and has carried CABINET_BINDER_WIRED since the F0.5 deploy
+         (2026-07-02) — this hand-made fallback copy had drifted without it, so
+         installing it would have silently DISARMED mechanical verdict capture. -->
+    <key>CABINET_BINDER_WIRED</key>
+    <string>1</string>
+    <key>CABINET_VETO_WIRED</key>
+    <string>1</string>
   </dict>
   <key>RunAtLoad</key>
   <true/>

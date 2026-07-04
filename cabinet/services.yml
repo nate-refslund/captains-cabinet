@@ -10,15 +10,31 @@
 # SCHEMA (per service):
 #   name:     ^[a-z0-9-]+$ (validated before any path use)
 #   label:    launchd Label (reverse-DNS)
-#   kind:     officer | daemon | watchdog   (officer = skipped by the generator)
+#   kind:     officer | daemon | watchdog | cron
+#             officer = rendered by deploy-mac.sh from the officer template,
+#             SKIPPED by the generator. daemon/watchdog/cron all render
+#             identically — kind is fleet taxonomy, not a rendering switch.
+#             Any OTHER kind is a hard generator ERROR (lane-ops 2026-07-04):
+#             the old silent-skip of unknown kinds is exactly how the
+#             `kind: cron` retro-trigger row was never rendered, so its
+#             hand-made plist shipped without PATH and FATAL'd hourly
+#             (launchd's minimal PATH has no /opt/homebrew/bin → no redis-cli).
 #   command:  repo-root-relative invocation, executed as
 #             /bin/bash -lc "cd $CABINET_ROOT && set -a && source cabinet/.env
 #             2>/dev/null && set +a && REDIS_HOST=localhost exec <command>"
 #   schedule: keepalive | {interval_s: N} | {calendar: [{hour: H, minute: M}|{minute: M}, ...]}
 #   env:      optional per-service EnvironmentVariables (NAMES + non-secret values only —
 #             secrets stay in cabinet/.env, sourced at runtime, never rendered into plists)
+#   disabled: true → the row stays in the manifest as fleet truth but is NOT
+#             rendered by the generator and NOT expected loaded by the
+#             outcome-watchdog's no-silent-cron floors (a parked or staged
+#             service — see draft-lane, mission-supervisor). Default false.
 #   expected: the "fed + watched" floor (principle 7) — what the outcome-watchdog /
-#             dead-man asserts; a service without a met floor is DOWN even if green
+#             dead-man asserts; a service without a met floor is DOWN even if green.
+#             Since lane-ops 2026-07-04 the outcome-watchdog DERIVES per-service
+#             log-freshness floors from this manifest (framework/watchdog/
+#             registry.py::_parse_services_manifest) — adding a row here is
+#             what puts a service under no-silent-cron coverage.
 #   notes:    free text
 #
 # expected floors are wired progressively: F0.12 heartbeat-watchdog, F0.7
@@ -66,7 +82,14 @@ services:
     schedule: keepalive
     env:
       CABINET_BINDER_WIRED: "1"   # F0.5 mechanical verdict capture (rollback: remove + redeploy)
-    expected: "offset advances on Captain messages; binder wire records verdicts in-process (F0.5)"
+      # TI-4 veto wire ARMED (lane-ops 2026-07-04): binder_wire's never:/lift/
+      # `veto confirm` verbs now PERSIST to shared/interfaces/captain-vetoes.yml
+      # (previously dark — verbs parsed but recorded nothing), which makes
+      # run_action_lane's is_vetoed() a real pre-act block. Writes stay gated on
+      # captain_verified (this poller relays ONLY CAPTAIN_TELEGRAM_ID messages),
+      # so a veto is unforgeable. Rollback: remove this line + redeploy.
+      CABINET_VETO_WIRED: "1"
+    expected: "offset advances on Captain messages; binder wire records verdicts in-process (F0.5); Captain `never:` persists to captain-vetoes.yml (TI-4, armed 2026-07-04)"
     notes: >-
       SOLE getUpdates poller (two pollers on one token 409-conflict). Generated
       plist replaced the invalid-XML hand-made one at the F0.5 deploy
@@ -92,6 +115,11 @@ services:
       evolution chain had no clock. Stamp key standardized to
       cabinet:schedule:last-run:cos:cross-officer-retro (cos:retro was never
       written by anything); first firing bootstraps the stamp convention.
+      PATH FATAL fix (lane-ops 2026-07-04): kind cron was silently skipped by
+      generate-plists.py, so the hand-made plist had no PATH and redis-cli was
+      unfindable under launchd (FATAL hourly since ~Jul 3). The generator now
+      renders cron rows; cabinet/launchd/com.cabinet.retro-trigger.plist is
+      regenerated WITH PATH — Nate reloads it (no launchctl from lanes).
   - name: action-lane
     label: com.cabinet.action-lane
     kind: daemon
@@ -124,10 +152,34 @@ services:
   - name: draft-lane
     label: com.cabinet.draft-lane
     kind: daemon
+    disabled: true
     command: bash cabinet/scripts/run-draft-lane.sh
     schedule: { interval_s: 300 }
-    expected: "≥1 proposal event per awaiting-reply thread batch; propose-only (nothing sends)"
-    notes: "Captain Q10 2026-07-02: 300s is the ruled cadence (docs previously claimed 2h)"
+    expected: "(parked — nothing asserted while disabled)"
+    notes: >-
+      PARKED 2026-07-04 (lane-ops), superseded by the Captain's act-not-draft
+      ruling (2026-07-03: Nate owns ALL outbound comms; inbound becomes ACTION
+      proposals via the action-lane, not reply drafts). The LaunchAgents copy
+      is already sitting as com.cabinet.draft-lane.plist.disabled; this row is
+      the manifest-side park so the generator stops rendering it and the
+      watchdog stops expecting it. Cadence history: Captain Q10 2026-07-02
+      ruled 300s (docs previously claimed 2h). Re-enable = delete `disabled:`
+      + regenerate + Captain re-ruling.
+
+  - name: mission-supervisor
+    label: com.cabinet.mission-supervisor
+    kind: daemon
+    disabled: true
+    command: bash cabinet/cron/mission-supervisor.sh
+    schedule: { interval_s: 300 }
+    expected: "(staged — nothing asserted while disabled)"
+    notes: >-
+      STAGED DISABLED (lane-ops 2026-07-04): pull-only ratified 2026-07-04;
+      enable only if pull proves insufficient. The push-router half of the
+      work graph (framework/missions/supervisor.py routes ready tasks to
+      officers as Redis triggers every 5min). Officers currently PULL ready
+      work; flipping this on is a Captain call, not an ops default. The
+      cabinet-route-tasks skill remains the manual trigger meanwhile.
 
   # ── Watchdogs / supervision ──────────────────────────────────────────────
   - name: outcome-watchdog
@@ -189,4 +241,57 @@ services:
       mode XREADGROUP BLOCK 5000). Was NEVER scheduled anywhere: 497 entries
       rotted in the queue while five hooks kept feeding it (blueprint 1.e).
       Needs NEON_CONNECTION_STRING + VOYAGE_API_KEY from cabinet/.env (sourced
-      by the wrapper) and psql on PATH.
+      by the wrapper) and psql on PATH. Self-heal hardening (lane-ops
+      2026-07-04): NOGROUP → re-create the consumer group; XAUTOCLAIM output
+      is now actually processed (was piped to /dev/null, so reclaimed messages
+      churned invisibly forever); empty loop sleeps 5s (no busy-spin when
+      redis-cli fails fast).
+
+  # ── Flip agents (checkpoint 2026-07-04 conditions 5+12) ───────────────────
+  # Rows added by lane-ops 2026-07-04 so the fleet manifest is the ONE truth
+  # and the outcome-watchdog derives their no-silent-cron floors. Their
+  # INSTALL SOURCE stays the hand-made, comment-rich plists in cabinet/launchd/
+  # (see cabinet/launchd/INSTALL-flip.md — loading is a deliberate human step);
+  # the generated renders exist for --check parity, not for installation.
+  - name: undo-sweep
+    label: com.cabinet.undo-sweep
+    kind: watchdog
+    command: bash cabinet/scripts/run-undo-sweep.sh
+    schedule: { interval_s: 3600 }
+    expected: "hourly UNDO-3 sweep log; past-TTL acted rows get ttl_ok/silent_revert consequence labels; skips (never mints false ttl_ok) on Monday outage"
+    notes: runner sets its own PYTHONPATH + sources ~/.screenpipe/pipes/_shared/.env (no secrets in plist)
+  - name: actfirst-canary
+    label: com.cabinet.actfirst-canary
+    kind: watchdog
+    command: bash cabinet/scripts/run-actfirst-canary.sh
+    schedule: { calendar: [{weekday: 1, hour: 7, minute: 15}] }   # Mondays 07:15 local
+    expected: "weekly TI-7 journal-only create→verify→reverse canary per act-first kind; any failure freezes the kind (PAGE lines in log)"
+    notes: runner sets its own PYTHONPATH + sources ~/.screenpipe/pipes/_shared/.env (no secrets in plist)
+  - name: falsifier-daily
+    label: com.cabinet.falsifier-daily
+    kind: watchdog
+    command: python3.12 cabinet/scripts/falsifier-report.py
+    schedule: { calendar: [{hour: 8, minute: 5}] }   # daily 08:05 local
+    expected: "one JSON line/day appended to shared/interfaces/falsifier-series.jsonl (idempotent per date) — Day-14/30/Quarter falsifiers measurable"
+    notes: read-only (ledger files + local Redis GET); Redis-unreachable degrades to ledger-only counts
+
+  # ── Durability (lane-ops 2026-07-04) ───────────────────────────────────────
+  - name: backup
+    label: com.cabinet.backup
+    kind: daemon
+    command: bash cabinet/scripts/backup.sh --retention-days 14
+    schedule: { calendar: [{hour: 3, minute: 0}] }   # daily 03:00 local; sleep-missed slots coalesce on wake
+    expected: "a dated snapshot dir lands in ~/Cabinet-Backups daily (filesystem state + redis dump.rdb); restore-drill (cabinet/scripts/restore-drill.sh) passes when run"
+    notes: >-
+      Closes the CRIT-4 finding (19.7GB of runtime state with zero backups).
+      LOCAL destination ~/Cabinet-Backups, 14-day retention, pruned by the
+      script itself. Verify restorability with cabinet/scripts/restore-drill.sh
+      (temp-dir only, never touches live state).
+      NATE-DECISION (off-machine copy, deliberately NOT wired): recommend
+      rsync of ~/Cabinet-Backups to the UpCloud CPH box over Tailscale
+      (8CPU/16GB node already on the tailnet) — an on-machine backup does not
+      survive disk loss/theft. Say the word and ops wires a post-backup rsync.
+      NATE-DECISION (Redis AOF, deliberately NOT flipped): BGSAVE gives
+      point-in-time snapshots only; cabinet/scripts/enable-redis-aof.sh exists
+      and flips appendonly+everysec, but it restarts Redis (brief fleet trigger
+      outage) so flipping it stays a Captain step.

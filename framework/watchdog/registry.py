@@ -148,6 +148,16 @@ class Probe:
         """True/False if a launchd label is loaded; None if undeterminable."""
         raise NotImplementedError
 
+    def launchctl_list(self) -> dict:
+        """`launchctl list` filtered to com.cabinet.* labels, as
+        {label: {"pid": Optional[int], "status": Optional[int]}} where status is
+        the job's LAST EXIT STATUS. Defaults to {} (not NotImplementedError, the
+        same deliberate degrade-safe choice as tz_ok): on a non-Mac test host or
+        an older Probe stub the scan simply self-disables instead of crashing
+        the sweep — {} means "launchd not observable", and the verify treats
+        that as unverifiable-skip, never as failure. Real impl in check.py."""
+        return {}
+
     def trigger_chair(self, message: str) -> bool:  # pragma: no cover
         """Push a trigger to cabinet:triggers:cos (the ONLY side-effect a
         verify/auto_fix may cause). Returns True on a confirmed enqueue."""
@@ -495,48 +505,253 @@ def verify_captain_decisions_logged(probe: "Probe") -> CheckResult:
 
 
 # Cron/pipe silent-failure — a job whose log shows an error or that stopped
-# producing output. We read the cabinet log dir for the known recurring jobs and
-# flag a log whose tail contains a FATAL/error marker OR that is stale past its
-# cadence. This complements pipe-watchdog (which owns screenpipe ingestion) by
-# covering the CABINET's own crons (briefing, status-sweep) — the outcome being
-# "the cabinet's scheduled jobs are producing output, not silently erroring".
-CABINET_LOG_DIR = "/Users/nate/.cabinet/logs"
-CABINET_JOB_LOGS = {
-    # label: (log filename, max staleness seconds before "silent")
-    "status-sweep": ("status-sweep.log", 2 * 1800 + 600),   # 30-min cadence, 2x+grace
-}
+# producing output. STRUCTURAL REWORK (lane-ops 2026-07-04): this used to watch
+# exactly ONE hardcoded log (status-sweep), so retro-trigger FATAL'd hourly for
+# a day+ (launchd PATH missing → redis-cli not found) and memory-worker was
+# never scheduled at all — both invisible, because a hand-maintained watch list
+# rots the moment the fleet changes. The fleet already HAS a single manifest
+# (cabinet/services.yml, "a service without a met floor is DOWN even if
+# green"), so the floors are now DERIVED from it: every non-officer,
+# non-disabled row gets (a) a log-freshness floor from its declared schedule,
+# (b) an error-marker tail scan, and via launchctl (c) a last-exit-status scan
+# and (d) a declared-but-not-loaded check — (d) is the one that would have
+# caught memory-worker, (a)+(b)+(c) the ones that would have caught
+# retro-trigger. Adding a services.yml row is now what enrolls a job here —
+# nothing to update in this file.
+#
+# STDLIB-ONLY CONSTRAINT: the registry's survival contract forbids third-party
+# imports (PyYAML included) — a watchdog that dies from a missing dep is worse
+# than none. services.yml is repo-controlled and machine-edited, so a narrow
+# line-parser over exactly the shapes the manifest uses (flat keys at 4-space
+# indent, flow `{ interval_s: N }` / `{ calendar: [...] }`, block calendar
+# lists) is reliable HERE; any unparseable/foreign shape degrades per-entry,
+# and a wholesale parse failure falls back to the legacy static row so the
+# watchdog is never blinded by a manifest rewrite.
+SERVICES_MANIFEST = "/Users/nate/captains-cabinet/cabinet/services.yml"
+CABINET_LOG_DIR = "/Users/nate/.cabinet/logs"            # hand-made plists log here
+GENERATED_LOG_DIR = "/Users/nate/Library/Logs/cabinet"   # generate-plists.py convention
+# Markers additions (2026-07-04): "NOGROUP" = a Redis Streams consumer lost its
+# group (the memory-worker failure smell; its self-heal log line deliberately
+# avoids the token). "command not found" = the launchd-minimal-PATH class that
+# killed retro-trigger. Marker scans are WINDOWED to the entry's floor (or 24h)
+# so a years-old error line in a quiet log can't page forever.
 JOB_ERROR_MARKERS = ("FATAL", "Traceback (most recent call last)",
-                     "trigger NOT pushed", "trigger_send failed")
+                     "trigger NOT pushed", "trigger_send failed",
+                     "NOGROUP", "command not found")
+
+# Fallback when the manifest is missing/unparseable: the pre-2026-07-04 static
+# coverage (status-sweep), so a bad manifest degrades to old behavior, not to
+# zero coverage.
+_FALLBACK_ENTRIES = [{
+    "name": "status-sweep", "label": "com.cabinet.status-sweep",
+    "kind": "daemon", "disabled": False,
+    "schedule_kind": "interval", "interval_s": 1800, "weekly": False,
+}]
+
+# Freshness-floor policy. Deliberately conservative (the 2026-07-01 pipe-alarm
+# flood is the cautionary tale — see PIPE_FRESHNESS above):
+#   interval  → 2×cadence + 10min grace, floored at 2h: launchd only advances a
+#               log's mtime when the job WRITES; a healthy short-cadence service
+#               that prints nothing on a quiet pass (intake-surface at 300s)
+#               would false-alarm on a tight floor. 2h still catches every real
+#               stall while the marker scan supplies the fast signal for
+#               loud failures.
+#   calendar  → 26h (daily slot + grace); any weekday key → 8 days (weekly).
+#   keepalive → None: long-runners log on EVENTS, not on a clock (a quiet day
+#               for memory-worker is normal) — their liveness is owned by the
+#               launchctl loaded/exit-status scan instead.
+_FLOOR_MIN_S = 7200
+
+
+def _floor_for_entry(entry: dict) -> Optional[int]:
+    if entry.get("schedule_kind") == "interval" and entry.get("interval_s"):
+        return max(2 * int(entry["interval_s"]) + 600, _FLOOR_MIN_S)
+    if entry.get("schedule_kind") == "calendar":
+        return 8 * 86400 if entry.get("weekly") else 26 * 3600
+    return None  # keepalive / unknown schedule
+
+
+def _service_log_candidates(name: str) -> list[str]:
+    """Every path a service's output may land at, across BOTH plist eras: the
+    generator writes NAME.log/.err under ~/Library/Logs/cabinet; older
+    hand-made plists write NAME.log (and cos-inbound NAME.out.log/.err.log)
+    under ~/.cabinet/logs. Freshness = newest existing mtime across all of
+    them, so a plist migration between conventions never false-alarms."""
+    return [
+        f"{GENERATED_LOG_DIR}/{name}.log",
+        f"{GENERATED_LOG_DIR}/{name}.err",
+        f"{GENERATED_LOG_DIR}/{name}.out.log",
+        f"{GENERATED_LOG_DIR}/{name}.err.log",
+        f"{CABINET_LOG_DIR}/{name}.log",
+    ]
+
+
+def _parse_services_manifest(text: str) -> list[dict]:
+    """Parse cabinet/services.yml's service rows with stdlib only (see the
+    survival-contract note above). Extracts exactly what the floors need:
+    name / label / kind / disabled / schedule shape. Entry keys sit at EXACTLY
+    4-space indent in the manifest; deeper lines belong to a block value (env,
+    notes, a block-form schedule) — that exact-indent match is what keeps a
+    `notes: >-` continuation or env var from being misread as a key."""
+    entries: list[dict] = []
+    cur: Optional[dict] = None
+    in_sched_block = False
+    for raw in (text or "").splitlines():
+        line = raw.rstrip()
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        m = re.match(r"^  - name:\s*([A-Za-z0-9._-]+)\s*$", line)
+        if m:
+            cur = {"name": m.group(1), "label": "", "kind": "",
+                   "disabled": False, "schedule_kind": None,
+                   "interval_s": None, "weekly": False}
+            entries.append(cur)
+            in_sched_block = False
+            continue
+        if cur is None:
+            continue
+        km = re.match(r"^    ([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$", line)
+        if km:
+            key, val = km.group(1), km.group(2).strip()
+            in_sched_block = False
+            if key == "kind":
+                cur["kind"] = val
+            elif key == "label":
+                cur["label"] = val
+            elif key == "disabled":
+                cur["disabled"] = val.lower() in ("true", "yes", "1")
+            elif key == "schedule":
+                # Strip a trailing YAML comment from flow values before
+                # matching (rows annotate cadence inline, e.g. `# daily 03:00`).
+                val = val.split("#", 1)[0].strip()
+                if val == "keepalive":
+                    cur["schedule_kind"] = "keepalive"
+                elif "interval_s" in val:
+                    im = re.search(r"interval_s:\s*(\d+)", val)
+                    if im:
+                        cur["schedule_kind"] = "interval"
+                        cur["interval_s"] = int(im.group(1))
+                elif "calendar" in val:
+                    cur["schedule_kind"] = "calendar"
+                    cur["weekly"] = "weekday" in val
+                elif val == "":
+                    in_sched_block = True  # block form follows (calendar list)
+            continue
+        if in_sched_block:
+            # Inside `schedule:`'s block value (≥6-space indent): detect the
+            # calendar/interval markers wherever they appear.
+            if "calendar" in line:
+                cur["schedule_kind"] = "calendar"
+            im = re.search(r"interval_s:\s*(\d+)", line)
+            if im:
+                cur["schedule_kind"] = "interval"
+                cur["interval_s"] = int(im.group(1))
+            if "weekday" in line:
+                cur["weekly"] = True
+    return entries
 
 
 def verify_no_silent_cron_failure(probe: "Probe") -> CheckResult:
-    """OUTCOME: the cabinet's own recurring jobs are producing output and not
-    silently erroring. For each watched job log: flag if its tail carries an
-    error marker, OR it is stale past its cadence (ran-but-no-output / didn't
-    run). Escalates to the Chair (a cron silently dying is operational)."""
+    """OUTCOME: every service the fleet manifest declares is producing output
+    within its cadence, not silently erroring, and actually loaded — with the
+    floors DERIVED from cabinet/services.yml (see the rework note above).
+    Officer rows are excluded (their lifecycle is the supervisor's; their tmux
+    wrappers exit non-zero legitimately); disabled rows are excluded (parked/
+    staged is a declared state, not a failure). Escalates to the Chair as ONE
+    consolidated finding (anti-thrash cooldown in the router still applies)."""
     eid = "no-silent-cron-failure"
     now_epoch = probe.now().timestamp()
-    problems = []
-    for label, (fname, max_stale_s) in CABINET_JOB_LOGS.items():
-        path = f"{CABINET_LOG_DIR}/{fname}"
-        mtime = probe.file_mtime(path)
-        if mtime is None:
-            problems.append(f"{label}: no log at {path} (never ran?)")
-            continue
-        idle_s = now_epoch - mtime
-        if idle_s > max_stale_s:
-            problems.append(
-                f"{label}: log silent {idle_s / 60:.0f}min "
-                f"(> {max_stale_s / 60:.0f}min cadence) — stalled or not firing")
-            continue
-        tail = "\n".join(probe.read_text(path).splitlines()[-25:])
-        hit = next((mk for mk in JOB_ERROR_MARKERS if mk in tail), None)
-        if hit:
-            problems.append(f"{label}: error marker {hit!r} in recent log tail")
+    entries = [e for e in _parse_services_manifest(probe.read_text(SERVICES_MANIFEST))
+               if e.get("name")]
+    if not entries:
+        entries = _FALLBACK_ENTRIES
+    watched = [e for e in entries
+               if e.get("kind") != "officer" and not e.get("disabled")]
+    officer_labels = {e.get("label") for e in entries if e.get("kind") == "officer"}
+
+    problems: list[str] = []
+    for e in watched:
+        name = e["name"]
+        floor_s = _floor_for_entry(e)
+        cands = [(p, probe.file_mtime(p)) for p in _service_log_candidates(name)]
+        cands = [(p, mt) for p, mt in cands if mt is not None]
+        freshest = max((mt for _p, mt in cands), default=None)
+
+        if floor_s is not None:
+            if freshest is None:
+                problems.append(f"{name}: no log at any known path (never ran / "
+                                f"not installed?)")
+                # No log → nothing to marker-scan either.
+                continue
+            idle_s = now_epoch - freshest
+            if idle_s > floor_s:
+                problems.append(
+                    f"{name}: log silent {idle_s / 3600:.1f}h "
+                    f"(> {floor_s / 3600:.1f}h floor) — stalled or not firing")
+                continue
+
+        # Marker scan, windowed: only files written within the entry's floor
+        # (or 24h for floorless keepalive rows) are recent enough that an error
+        # line in their tail reflects the CURRENT run era, not archaeology.
+        window_s = floor_s if floor_s is not None else 86400
+        for path, mt in cands:
+            if now_epoch - mt > window_s:
+                continue
+            tail = "\n".join(probe.read_text(path).splitlines()[-25:])
+            hit = next((mk for mk in JOB_ERROR_MARKERS if mk in tail), None)
+            if hit:
+                problems.append(f"{name}: error marker {hit!r} in recent log tail "
+                                f"({path.rsplit('/', 1)[-1]})")
+                break
+
+    # launchctl surface — {} means "not observable here" (non-Mac host, test
+    # stub, launchctl error): both launchd checks self-disable rather than
+    # false-fail, per the Probe degrade-safe contract.
+    ll = probe.launchctl_list()
+    if ll:
+        # (c) last-exit-status: any com.cabinet.* label whose last run exited
+        # non-zero — INCLUDING labels not (yet) in the manifest, so a stray or
+        # freshly-installed agent is still covered. Officer labels excluded
+        # (session wrappers restart by design). This is what turns retro-
+        # trigger's hourly exit-127 into a page instead of a green launchd row.
+        watched_labels = {e.get("label") for e in watched}
+        for label in sorted(ll):
+            if label in officer_labels:
+                continue
+            # Self-review fix (lane-ops 2026-07-04): an officer hired AFTER this
+            # manifest was written appears as com.cabinet.officer.<slug> with no
+            # row — its session wrapper exits non-zero legitimately just like
+            # the rostered officers, so exclude the whole officer.* prefix
+            # UNLESS the label is a watched non-officer row (the cos-inbound
+            # poller lives under that prefix but is a daemon we DO cover).
+            if label.startswith("com.cabinet.officer.") and label not in watched_labels:
+                continue
+            status = ll[label].get("status")
+            if status not in (0, None):
+                problems.append(f"{label}: last exit status {status}")
+        # (d) declared-but-not-loaded: an enabled manifest row whose label
+        # launchd doesn't know. THE memory-worker failure class — declared in
+        # the fleet manifest, hooks feeding its queue, never scheduled. Also
+        # deliberately flags a freshly-declared service until its plist is
+        # actually bootstrapped (that gap is real downtime, and it self-heals
+        # on install).
+        for e in watched:
+            label = e.get("label")
+            if label and label not in ll:
+                problems.append(f"{e['name']}: declared in services.yml but not "
+                                f"loaded in launchd ({label})")
+
     if problems:
-        return CheckResult(eid, False,
-                          "cabinet cron issues: " + "; ".join(problems))
-    return CheckResult(eid, True, "cabinet crons producing clean output")
+        shown = problems[:8]
+        more = len(problems) - len(shown)
+        detail = "cabinet cron issues: " + "; ".join(shown)
+        if more > 0:
+            detail += f"; +{more} more"
+        return CheckResult(eid, False, detail)
+    return CheckResult(eid, True,
+                      f"{len(watched)} manifest services producing clean output"
+                      + ("" if ll else " (launchd scan unavailable — log floors only)"))
 
 
 # Pipe freshness — the brain's ingestion pipes must be writing within cadence.
@@ -619,8 +834,10 @@ EXPECTATIONS: list[Expectation] = [
     ),
     Expectation(
         id="no-silent-cron-failure",
-        what="The cabinet's own recurring jobs produce output and don't silently "
-             "error (a job that runs but yields no outcome / logs an error).",
+        what="Every enabled cabinet/services.yml service produces output within "
+             "its schedule-derived floor, logs no error markers, is loaded in "
+             "launchd, and its last run exited 0 (floors derived from the fleet "
+             "manifest — lane-ops 2026-07-04).",
         cadence_s=3600,
         tier=Tier.ESCALATE_CHAIR,
         verify=verify_no_silent_cron_failure,
