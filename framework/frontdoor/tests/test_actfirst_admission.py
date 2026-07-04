@@ -145,7 +145,12 @@ def _clean_getter(rec):
 
 
 def _rec(steps, **extra):
-    return {"lane": "polads", "steps": steps, **extra}
+    # steps_sha256 stamped by default — the TI-3 gate always stamps at store
+    # time and the act-first path REQUIRES the stamp (integrator tightening of
+    # the TOCTOU back-compat; the no-stamp refusal is pinned in
+    # test_action_exec.py::test_act_first_requires_steps_sha_stamp).
+    return {"lane": "polads", "steps": steps,
+            "steps_sha256": ax._canonical_sha(steps), **extra}
 
 
 def _llm_returning(proposals):

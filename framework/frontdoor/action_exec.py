@@ -1024,8 +1024,18 @@ def deliver_action(pid: str, override_text: str = "", *,
 
     # TOCTOU (both paths): if the record carries a steps fingerprint stamped at
     # card time, refuse on a mismatch — a payload swapped in cabinet:action:<pid>
-    # between decision and execution never runs. Back-compat: absent ⇒ skipped.
+    # between decision and execution never runs.
+    # Back-compat is PATH-SPLIT: on the APPROVED path an absent stamp is skipped
+    # (records stored by pre-stamp code may execute within the 7-day TTL). On
+    # the ACT-FIRST path the stamp is REQUIRED — the TI-3 gate stores stamped
+    # and executes in the same process, so there are no legacy act-first
+    # records; a swapper who strips the field must not bypass the re-check.
     expected_sha = rec.get("steps_sha256")
+    if act_first and not expected_sha:
+        return {"ok": False, "toctou": True, "gate": "propose_only",
+                "via": "action-lane", "dest": lane, "executed": [],
+                "error": "act-first record lacks its steps_sha256 stamp — "
+                         "refusing (TOCTOU: stamp required on the unattended path)"}
     if expected_sha and _canonical_sha(steps) != expected_sha:
         return {"ok": False, "toctou": True, "via": "action-lane", "dest": lane,
                 "executed": [],

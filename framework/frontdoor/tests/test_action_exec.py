@@ -321,10 +321,15 @@ def _surfaces(denylist=None, per_kind=20, estate=40):
             "caps": {"per_kind_per_day": per_kind, "estate_per_day": estate}}
 
 
-def _ks_getter(steps, ks="", counts=None):
+def _ks_getter(steps, ks="", counts=None, stamp=True):
     """A redis_get that answers the action record, the killswitch, and daily
-    cap counters. Everything else is empty."""
-    rec = json.dumps({"lane": "polads", "steps": steps})
+    cap counters. Everything else is empty. Records carry the steps_sha256
+    stamp by default — the TI-3 gate always stamps at store time, and the
+    act-first path REQUIRES it (stamp=False exercises the refusal)."""
+    body = {"lane": "polads", "steps": steps}
+    if stamp:
+        body["steps_sha256"] = ax._canonical_sha(steps)
+    rec = json.dumps(body)
     counts = counts or {}
 
     def g(k):
@@ -1042,3 +1047,26 @@ def test_endpoint_pin_only_monday_no_new_egress():
     for banned in ("import requests", "import httpx", "import socket",
                    "import http.client", "import smtplib", "import ftplib"):
         assert banned not in src
+
+
+def test_act_first_requires_steps_sha_stamp(monkeypatch):
+    """[FLIP-COND integrator] On the act-first path an ABSENT steps_sha256 is a
+    refusal (a swapper who strips the stamp must not bypass the TOCTOU
+    re-check); the approved path keeps absent=>skipped back-compat."""
+    monkeypatch.setattr(ax, "_load_act_first_surfaces",
+                        lambda: {"denylist": {}, "caps": {"per_kind_per_day": 20,
+                                                          "estate_per_day": 40}})
+    spy = MondaySpy()
+    steps = [{"kind": "monday_task_create",
+              "payload": {"board_id": "5091706356", "title": "t"}}]
+    # act-first + no stamp -> refused, nothing executed
+    r = ax.deliver_action("pt1", act_first=True,
+                          redis_get=_store(steps),
+                          monday_post=spy, osascript=lambda c: "ok",
+                          redis_incr=lambda k, t: None)
+    assert r["ok"] is False and r.get("toctou") is True
+    assert spy.calls == []
+    # approved path + no stamp -> back-compat executes
+    r2 = ax.deliver_action("pt2", redis_get=_store(steps),
+                           monday_post=spy, osascript=lambda c: "ok")
+    assert r2["ok"] is True
