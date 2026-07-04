@@ -42,11 +42,21 @@ framework/onboarding/onboard.py:FRAMEWORK_PATH_INSTANCE
 framework/onboarding/tests/test_onboard.py:FRAMEWORK_PATH_INSTANCE
 framework/triggers/registry.py:FRAMEWORK_PATH_INSTANCE
 # 2026-07-04 — Captain-ratified growth (+3, lane/config-0705). The act-first
-# lane reads its runtime kill-flag at instance/config/act-first-enabled — the
-# flag lives in instance/ BY DESIGN (deployment-local, flippable without a
-# framework change; trust-inversion flip protocol, captain-decisions 2026-07-04),
-# so these three FRAMEWORK_PATH_INSTANCE hits are the flag read, not a code dep.
-# Not ratchet-down debt: the coupling is intentional as long as the flag exists.
+# lane reads Captain-owned runtime config that is instance-resident BY DESIGN
+# (deployment-local, flippable/editable without a framework change;
+# trust-inversion flip protocol, captain-decisions 2026-07-04). Per-file, the
+# actual hits (adversarial review 2026-07-04 corrected the original "all three
+# are the kill-flag read" wording — only one file reads the flag):
+#   run_action_lane.py — instance/config/directions.yml AND the act-first
+#                        kill-flag instance/config/act-first-enabled
+#   action_exec.py     — instance/config/act-first-surfaces.yml (the Captain's
+#                        act-first surface allow/deny config — itself a
+#                        germline-lock.sh target)
+#   actfirst_canary.py — instance/config/act-first-surfaces.yml
+# All are config-file reads, not code deps. Not ratchet-down debt: the coupling
+# is intentional as long as the act-first lane's Captain config (flag, surfaces,
+# directions) lives in instance/. Removing the FLAG alone does NOT clear these
+# entries — the surfaces/directions reads remain.
 framework/acting/run_action_lane.py:FRAMEWORK_PATH_INSTANCE
 framework/frontdoor/action_exec.py:FRAMEWORK_PATH_INSTANCE
 framework/frontdoor/actfirst_canary.py:FRAMEWORK_PATH_INSTANCE

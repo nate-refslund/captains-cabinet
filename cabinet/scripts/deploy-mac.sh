@@ -135,7 +135,10 @@ deploy_officer() {
     "com.cabinet.officer.$officer"
 }
 
-# Daemon deployment (heartbeat-watchdog, cost-summary, worktree-listener)
+# Daemon deployment — renders any cabinet/launchd/com.cabinet.<name>.template.plist.
+# (2026-07-04: comment de-staled with the --all prune — the old example list here
+# named heartbeat-watchdog/cost-summary/worktree-listener, three of the very
+# legacy daemons --all no longer auto-installs; see the daemon-leg note below.)
 deploy_daemon() {
   local daemon="$1"
   OFFICER_VAR=""  # daemons don't use OFFICER
