@@ -22,7 +22,8 @@ from __future__ import annotations
 
 import os
 
-from framework.frontdoor import daily_recap, morning_synthesis, run_frontdoor
+from framework.frontdoor import (daily_recap, morning_synthesis, run_frontdoor,
+                                 tell_digest)
 
 
 def _is_pm() -> bool:
@@ -44,22 +45,33 @@ def run_briefing(
     ack_fn=None,
     pending_fn=None,
     recap_fn=None,
+    digest_fn=None,
     run_mode: str | None = None,
 ) -> dict:
-    """Enqueue a fresh synthesis (+ the PM daily recap), then run one send pass.
+    """Enqueue a fresh synthesis (+ the PM daily recap + the TI-5 digest), then
+    run one send pass.
 
     Returns ``{'synthesis': <enqueue result>, 'recap': <recap result|None>,
-    'send': <run_send_path result>}``.
+    'digest': <tell_digest result>, 'send': <run_send_path result>}``.
 
     PM-only recap: when this is the evening run (``run_mode == 'PM'``, else the
     CABINET_RUN_MODE env), the daily recap is enqueued AFTER the synthesis so it
     rides the same unified briefing. ``recap`` is None on the AM run.
 
+    TI-5 digest (BOTH runs — the twice-daily act-then-tell surface): the
+    ACTED/AWAITING/WATCHING/SELF digest is enqueued before the send pass so it
+    rides this same unified briefing, and its ``cabinet:digest:<date>`` manifest
+    is persisted first so `undo <n>` / `👍 <n>` replies bind the moment the text
+    lands (checkpoint 2026-07-04 Tier-0 #6 — Nate's ruled flip prerequisite;
+    plugs the binder no-pid label leak). Best-effort: a digest failure logs into
+    the result and never blocks the briefing. Kill-switch CABINET_TELL_DIGEST=0.
+
     Seams: ``enqueue_fn`` overrides the synthesis enqueue; ``recap_fn`` overrides
-    the daily-recap enqueue; ``run_mode`` forces AM/PM; ``send_fn`` / ``drain_fn``
-    / ``ack_fn`` forward to run_send_path — all for tests (no real network /
-    Redis / brain). The token never appears in the result (channel.send scrubs;
-    run_send_path only re-surfaces the scrubbed dict).
+    the daily-recap enqueue; ``digest_fn`` overrides the TI-5 digest enqueue;
+    ``run_mode`` forces AM/PM; ``send_fn`` / ``drain_fn`` / ``ack_fn`` forward to
+    run_send_path — all for tests (no real network / Redis / brain). The token
+    never appears in the result (channel.send scrubs; run_send_path only
+    re-surfaces the scrubbed dict).
     """
     enqueue = enqueue_fn or morning_synthesis.enqueue_synthesis
     syn = enqueue(hours=hours, limit=limit)
@@ -73,6 +85,14 @@ def run_briefing(
         except Exception as e:  # best-effort: never block the briefing send
             recap = {"recap": False, "error": str(e)[:300]}
 
+    # TI-5: the act-then-tell digest rides BOTH the 07:30 and 19:30 briefings.
+    # Enqueued BEFORE the send pass so this run's drain composes it in.
+    digest_enqueue = digest_fn or tell_digest.enqueue_digest
+    try:
+        digest = digest_enqueue()
+    except Exception as e:  # best-effort: never block the briefing send
+        digest = {"digest": False, "error": str(e)[:300]}
+
     # recover_pending=True is the fix for the single-voice comms-awareness gap:
     # surface.py (every 5 min) reads the intake with ">" and surfaces ONLY
     # ping-now in real time, leaving batch/fyi items delivered-but-unacked in the
@@ -85,7 +105,7 @@ def run_briefing(
     send = run_frontdoor.run_send_path(
         send_fn=send_fn, drain_fn=drain_fn, ack_fn=ack_fn, pending_fn=pending_fn,
         recover_pending=True)
-    return {"synthesis": syn, "recap": recap, "send": send}
+    return {"synthesis": syn, "recap": recap, "digest": digest, "send": send}
 
 
 if __name__ == "__main__":  # pragma: no cover — invoked by the launchd wrapper
@@ -95,6 +115,8 @@ if __name__ == "__main__":  # pragma: no cover — invoked by the launchd wrappe
         "synthesis": out["synthesis"],
         "recap": {k: v for k, v in (out["recap"] or {}).items()
                   if k not in ("item", "preview")} if out["recap"] else None,
+        "digest": {k: v for k, v in (out["digest"] or {}).items()
+                   if k != "manifest"},
         "send": {k: v for k, v in out["send"].items() if k != "text"},
     }
     print(json.dumps(printable, indent=2, default=str))

@@ -5,6 +5,13 @@
 # Pulls real signals into the front-door intake and runs ONE send-path pass:
 #   morning_synthesis.enqueue_synthesis  →  run_frontdoor.run_send_path
 #
+# TI-5: run_briefing also enqueues the act-then-tell digest (tell_digest.
+# enqueue_digest — ACTED with stable `undo <n>` handles / AWAITING / WATCHING /
+# SELF) into this same briefing on BOTH the AM and PM runs, persisting the
+# cabinet:digest:<date> index manifest FIRST so undo-by-index replies bind the
+# moment the text lands. Best-effort (a digest failure never blocks the
+# briefing); disable with CABINET_TELL_DIGEST=0.
+#
 # Secrets: the bot token lives ONLY in cabinet/.env (chmod 600). We read the two
 # values we need into the process env here — never echoed, never written to the
 # plist. Everything else (allow_sends gate, captain-only recipient) is enforced

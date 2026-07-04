@@ -9,6 +9,14 @@ items surface.py left delivered-but-unacked in the PEL for the briefing to clear
 from framework.frontdoor import run_briefing as rb
 
 
+def _no_digest():
+    """A stub for the TI-5 digest seam — these tests exercise the synthesis/send
+    plumbing; the digest leg has its own tests (test_tell_digest.py + the
+    dedicated riders below). Without a stub the DEFAULT would gather from the
+    real journal/ledger and write real Redis."""
+    return {"digest": False, "skipped": "stubbed in test"}
+
+
 def test_enqueues_then_sends_unified():
     calls = {}
 
@@ -34,7 +42,7 @@ def test_enqueues_then_sends_unified():
 
     out = rb.run_briefing(enqueue_fn=fake_enqueue, send_fn=fake_send,
                           drain_fn=fake_drain, ack_fn=fake_ack,
-                          pending_fn=lambda **kw: [])
+                          pending_fn=lambda **kw: [], digest_fn=_no_digest)
 
     assert out["synthesis"]["enqueued"] == 2
     assert out["send"]["sent"] is True
@@ -52,6 +60,7 @@ def test_nothing_to_send_is_safe():
         send_fn=lambda text, *, http_post=None: {"status": "sent", "sent": True},
         ack_fn=lambda ids, *, stream_key=None: len(ids),
         pending_fn=lambda **kw: [],
+        digest_fn=_no_digest,
     )
     assert out["send"]["drained"] == 0
     assert out["send"]["sent"] is False  # empty compose → nothing sent
@@ -89,7 +98,7 @@ def test_briefing_recovers_pending_backlog_left_by_surface():
     out = rb.run_briefing(
         enqueue_fn=lambda *, hours, limit: {"enqueued": 0, "ids": [], "sources": []},
         drain_fn=fake_drain, pending_fn=fake_pending,
-        send_fn=fake_send, ack_fn=fake_ack)
+        send_fn=fake_send, ack_fn=fake_ack, digest_fn=_no_digest)
 
     # Both pending (comms-officer) items are recovered, composed into ONE message,
     # and surfaced to Nate — the relevant-no-reply case no longer vanishes.
@@ -122,8 +131,66 @@ def test_briefing_dedupes_item_both_pending_and_fresh():
     out = rb.run_briefing(
         enqueue_fn=lambda *, hours, limit: {"enqueued": 0, "ids": [], "sources": []},
         drain_fn=fake_drain, pending_fn=fake_pending,
-        send_fn=fake_send, ack_fn=lambda ids, *, stream_key=None: len(ids))
+        send_fn=fake_send, ack_fn=lambda ids, *, stream_key=None: len(ids),
+        digest_fn=_no_digest)
 
     assert out["send"]["drained"] == 1          # deduped
     assert out["send"]["item_ids"] == ["dup"]   # single id
     assert calls["text"].count("only once") == 1
+
+
+# --- TI-5: the act-then-tell digest rides the twice-daily briefing -------------
+
+def test_digest_enqueued_before_send_and_rides_briefing():
+    """The digest leg runs on the briefing path (AM and PM alike): its intake
+    item is enqueued BEFORE the send drain so THIS briefing composes it in."""
+    calls = {"order": []}
+    digest_item = {
+        "id": "d1", "source": "tell-digest", "kind": "digest", "ts": "t3",
+        "urgency_tier": "batch",
+        "payload": {"summary": "🗒 Act-then-tell digest\n\n✅ ACTED (1)\n"
+                               " 3. Created task\n      undo: `undo 3` (47h left)"},
+    }
+
+    def fake_digest():
+        calls["order"].append("digest")
+        return {"digest": True, "enqueued": "d1", "acted": 1}
+
+    def fake_drain(**kw):
+        calls["order"].append("drain")
+        return [digest_item]
+
+    def fake_send(text, *, http_post=None):
+        calls["text"] = text
+        return {"status": "sent", "sent": True}
+
+    out = rb.run_briefing(
+        enqueue_fn=lambda *, hours, limit: {"enqueued": 0, "ids": [], "sources": []},
+        drain_fn=fake_drain, pending_fn=lambda **kw: [],
+        send_fn=fake_send, ack_fn=lambda ids, *, stream_key=None: len(ids),
+        digest_fn=fake_digest)
+
+    assert calls["order"] == ["digest", "drain"]   # enqueue precedes the drain
+    assert out["digest"] == {"digest": True, "enqueued": "d1", "acted": 1}
+    # the digest text (with its undo handle) reaches the ONE sent message
+    assert "✅ ACTED (1)" in calls["text"]
+    assert "`undo 3`" in calls["text"]
+
+
+def test_digest_failure_never_blocks_briefing():
+    def broken_digest():
+        raise RuntimeError("journal unreadable")
+
+    out = rb.run_briefing(
+        enqueue_fn=lambda *, hours, limit: {"enqueued": 0, "ids": [], "sources": []},
+        drain_fn=lambda **kw: [
+            {"id": "1", "source": "awaiting-reply", "kind": "thread", "ts": "t1",
+             "urgency_tier": "batch", "payload": {"summary": "Lisa awaits reply"}}],
+        pending_fn=lambda **kw: [],
+        send_fn=lambda text, *, http_post=None: {"status": "sent", "sent": True},
+        ack_fn=lambda ids, *, stream_key=None: len(ids),
+        digest_fn=broken_digest)
+
+    assert out["digest"]["digest"] is False
+    assert "journal unreadable" in out["digest"]["error"]
+    assert out["send"]["sent"] is True             # the briefing still went out
