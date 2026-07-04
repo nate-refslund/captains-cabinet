@@ -41,6 +41,10 @@ from framework.acting import action_lane, screenpipe_adapter as sa  # noqa: E402
 from framework.acting.loop import proposal_event, proposal_id, pending_proposals  # noqa: E402
 from framework.fidelity.consequence import emit_consequence, read_ledger  # noqa: E402
 from framework.frontdoor import actfirst_canary  # noqa: E402  # cid-echo suppression (TI-7)
+# TI-3 act-first gate seams (all already committed): the executor act-first path,
+# the reversal-eligibility perimeter, the veto registry, the receipt surface.
+from framework.frontdoor import action_undo, veto_registry, tell_surface  # noqa: E402
+from framework.frontdoor.action_exec import deliver_action  # noqa: E402
 
 
 def covered_evidence_refs() -> frozenset:
@@ -67,6 +71,114 @@ MAX_PER_RUN = 8
 WINDOW_H = 72
 LLM_MODEL = "claude-sonnet-4-6"
 _lock_fh = None
+
+# --- TI-3 act-first gate (2026-07-04 trust-inversion) ------------------------
+# DEFAULT OFF. The entire earn-demotion posture stays DARK until the Captain
+# flips it — mirrors the authority-enforcing flip (env override OR a flag file
+# so a live flip/revert needs no code change and no restart). Nothing below
+# runs unless _act_first_on(); with it off, main() behaves byte-identically to
+# the propose-only lane.
+ACT_FIRST_FLAG_FILE = Path(__file__).resolve().parents[2] / "instance" / "config" / "act-first-enabled"
+MAX_AUTO_EXEC_STEPS = 2   # a card auto-executes at most this many steps [RT-A4]
+
+
+def _act_first_on() -> bool:
+    return (os.environ.get("CABINET_ACT_FIRST") == "1"
+            or ACT_FIRST_FLAG_FILE.exists())
+
+
+def _backend_for_step(step) -> str:
+    """The backend a step will execute on — mirrors the executor's own routing
+    so the gate's act_first_eligible pre-check agrees with what will run."""
+    kind = getattr(step, "kind", None) or (step.get("kind") if isinstance(step, dict) else "")
+    if kind in ("monday_task_create", "monday_task_update"):
+        return "monday"
+    if kind == "reminder_create":
+        return os.environ.get("ACTION_LANE_REMINDER_BACKEND", "calendar")
+    return kind or "?"   # delegate_work / investigation_run → op "none" → ineligible
+
+
+def _card_board(p) -> "str | None":
+    """The Monday board a card touches (for veto + allowlist matching), from the
+    first monday step carrying a board_id. None for non-Monday cards."""
+    for s in p.steps:
+        pl = getattr(s, "payload", None) or {}
+        b = str(pl.get("board_id") or "").strip()
+        if b:
+            return b
+    return None
+
+
+def _card_act_first_eligible(p, action_type) -> "tuple[bool, str]":
+    """(eligible, reason) — the mechanical chain rule [RT-A4/B6]. A card
+    auto-executes ONLY if it is not injection-suspect, carries a valid stamped
+    action_type, has ≤MAX_AUTO_EXEC_STEPS steps, and EVERY step has a registered
+    inverse (act_first_eligible). Any miss ⇒ propose_only (fail-safe)."""
+    if getattr(p, "injection_suspect", False):
+        return False, "injection_suspect"
+    if not action_type:
+        return False, "unstamped action_type"
+    if len(p.steps) > MAX_AUTO_EXEC_STEPS:
+        return False, f"chain has {len(p.steps)}>{MAX_AUTO_EXEC_STEPS} steps"
+    for s in p.steps:
+        if not action_undo.act_first_eligible(getattr(s, "kind", ""), _backend_for_step(s)):
+            return False, f"step {getattr(s, 'kind', '?')} has no registered inverse"
+    return True, ""
+
+
+def _act_first_gates_ok(action_type, board, kind) -> "tuple[bool, str]":
+    """(ok, reason) — the fail-closed runtime gates on a per-card basis: Captain
+    veto, kind freeze (breaker), silence breaker, per-kind/day caps. Every check
+    fails CLOSED (an unreachable Redis / unreadable registry ⇒ block ⇒ the card
+    falls through to propose_only), so an anomalous state never widens action."""
+    try:
+        if veto_registry.is_vetoed(action_type, board=board):
+            return False, "captain veto"
+    except Exception:
+        return False, "veto check errored (fail-closed)"
+    if actfirst_canary.is_frozen(kind):
+        return False, "kind frozen (breaker/undo-rate)"
+    if actfirst_canary.is_silenced(kind):
+        return False, "kind silenced (30 acts, no human touch)"
+    if not actfirst_canary.cap_check(kind).get("ok", False):
+        return False, "per-day cap reached"
+    return True, ""
+
+
+def _prior_acted_types() -> frozenset:
+    """action_types that have EVER acted (a prior action-card ledger row carrying
+    an outcome) — for the receipt's first-ever-cell instant-tell rule."""
+    types: set = set()
+    try:
+        for ev in read_ledger():
+            if ev.get("action") == "action-card" and (ev.get("outcome") or {}).get("status"):
+                at = ev.get("action_type")
+                if at:
+                    types.add(at)
+    except Exception:
+        pass
+    return frozenset(types)
+
+
+def _emit_receipt(p, pid, cid, action_type, result, *, first_ever, now) -> None:
+    """Send an instant act-then-tell receipt on the HQ Chair channel when
+    tell_surface.instant_tell_rules fires; otherwise the act is batch-eligible
+    and rides the next digest (nothing sent here). NEVER raises — a receipt
+    failure must not disturb an act that already landed + journaled."""
+    try:
+        content = p.situation + "\n" + "\n".join(f"- {s.title}" for s in p.steps)
+        row = {
+            "pid": pid, "cid": cid, "kind": action_type, "subject": p.subject,
+            "lane": p.lane, "urgency": p.urgency, "first_ever_cell": first_ever,
+            "content": content, "created": now,
+            "payload": (getattr(p.steps[0], "payload", {}) if p.steps else {}),
+            "executed": result.get("executed"),
+        }
+        msg = tell_surface.receipt(row, now=dt.datetime.now(dt.timezone.utc))
+        if msg:
+            _tg(msg)
+    except Exception as e:
+        print(f"act-first: receipt emit failed (act already landed + journaled): {e}")
 
 
 def _acquire_lock() -> bool:
@@ -436,7 +548,11 @@ def main() -> int:
     now = dt.datetime.now(dt.timezone.utc)
     budget = MAX_PER_RUN
 
-    signals = gather_signals(now)
+    # cid-echo suppression (TI-7): when act-first is live, drop signals derived
+    # from the lane's OWN recent acted cards so an act can't loop act→capture→act.
+    # Dormant (empty set) when act-first is off — gather behaves exactly as before.
+    _echo = actfirst_canary.own_acted_cids() if _act_first_on() else frozenset()
+    signals = gather_signals(now, suppress_cids=_echo)
     if not signals.strip():
         print("done: no fresh signals in window")
         return 0
@@ -462,7 +578,21 @@ def main() -> int:
             print("\n" + "=" * 60 + "\n")
         return 0
 
-    presented = 0
+    # TI-3 act-first setup (DARK unless flipped). Rebuild the veto cache once at
+    # lane start; a rebuild failure means the registry is unreadable → act-first
+    # OFF this run (fail-closed — an unverifiable veto set never widens action).
+    act_first = _act_first_on()
+    if act_first:
+        try:
+            veto_registry.rebuild_cache()
+        except Exception as e:
+            print(f"act-first: veto cache rebuild errored ({e}) — acting disabled this run")
+        if not veto_registry.veto_cache_ready():
+            print("act-first: veto cache not ready — acting disabled this run (propose-only)")
+            act_first = False
+    prior_acted = _prior_acted_types() if act_first else frozenset()
+
+    presented = acted = 0
     actor = {"kind": "officer", "id": "officer:cos"}
     for p in proposals:
         ts = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -476,22 +606,63 @@ def main() -> int:
                                  refs=[correlation.ref_for(cid)] + list(p.evidence))
         # action_type stamping (graduation wire). Guarded by the shared enum:
         # only a mapping whose target EXISTS in classifier.ACTION_TYPES is
-        # stamped, so no invalid type is ever emitted. task_create activates
-        # automatically when the Captain applies the germline amendment
-        # (docs/proposals/germline-amendment-task-create-2026-07-03.md);
-        # until then creates stay unstamped exactly as before. Chains stamp
-        # only when ALL steps agree on one type (honest cell accounting).
+        # stamped, so no invalid type is ever emitted. Chains stamp only when
+        # ALL steps agree on one type (honest cell accounting).
         at = action_lane.chain_action_type(p)
         if at:
             prop_ev["action_type"] = at
         pid = proposal_id(prop_ev)
-        card = action_lane.render_card(p, pid)   # marker-stripped inside
-        emit_consequence(**prop_ev)              # ledger FIRST (fail-closed order)
-        _store_action(pid, p, cid=cid)
-        _tg(card)
-        presented += 1
-        print(f"presented action card -> {p.subject} ({p.lane}, conf={p.confidence:.2f})")
-    print(f"done: presented {presented} action card(s)")
+
+        # --- ACT-FIRST branch (earn-demotion). A card auto-executes ONLY when it
+        # clears the mechanical chain rule AND every fail-closed runtime gate; the
+        # executor's own act-first perimeter (board allowlist, tripwire, caps) is
+        # the final authority and can still downgrade. Ordering is journal-first-
+        # by-construction: deliver_action write-ahead-journals each step (48h undo
+        # handle) BEFORE its mutation, so the act is always reversible even if the
+        # post-act ledger emit is lost. Any miss anywhere → fall through to propose.
+        did_act = False
+        if act_first:
+            elig, ereason = _card_act_first_eligible(p, at)
+            kind_key = actfirst_canary.kind_key(at) if at else ""
+            gates_ok, greason = (_act_first_gates_ok(at, _card_board(p), kind_key)
+                                 if elig else (False, ereason))
+            if elig and gates_ok:
+                _store_action(pid, p, cid=cid)
+                result = deliver_action(pid, act_first=True)
+                if result.get("ok"):
+                    acted_ev = dict(prop_ev)
+                    acted_ev["proposal"] = {"required": False, "decision": None}
+                    acted_ev["outcome"] = {"status": "unknown"}   # UNDO-2 supersedes on 👍/undo/TTL
+                    try:
+                        emit_consequence(**acted_ev)
+                    except Exception as e:
+                        print(f"act-first: post-act ledger emit failed "
+                              f"(act journaled + undoable): {e}")
+                    try:
+                        actfirst_canary.incr_and_check(kind_key)
+                    except Exception:
+                        pass
+                    _emit_receipt(p, pid, cid, at, result,
+                                  first_ever=(at not in prior_acted), now=ts)
+                    prior_acted = prior_acted | {at}
+                    did_act = True
+                    acted += 1
+                    print(f"ACTED (act-first) -> {p.subject} ({p.lane}, {at})")
+                else:
+                    # executor's perimeter downgraded, or a step failed → propose.
+                    print(f"act-first downgraded -> {p.subject}: "
+                          f"{result.get('gate') or result.get('error')}")
+            else:
+                print(f"act-first ineligible -> {p.subject}: {ereason or greason}")
+
+        if not did_act:
+            card = action_lane.render_card(p, pid)   # marker-stripped inside
+            emit_consequence(**prop_ev)              # ledger FIRST (fail-closed order)
+            _store_action(pid, p, cid=cid)
+            _tg(card)
+            presented += 1
+            print(f"presented action card -> {p.subject} ({p.lane}, conf={p.confidence:.2f})")
+    print(f"done: presented {presented} card(s), acted {acted} card(s)")
     return 0
 
 
