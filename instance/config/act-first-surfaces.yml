@@ -37,6 +37,12 @@ version: 1
 status: ruled                     # Captain ruling 2026-07-04 (access inversion)
 audit_ref: docs/cascade-audit-2026-07-04.md
 ruled_at: "2026-07-04"
+# cascade_gated enumeration: full-estate read-only webhook sweep 2026-07-04
+# (lane L5-cascade-enum) — 535 active boards paged, webhooks(board_id:) queried
+# for every one; 36 webhook-bearing boards found, all rowed below.
+enumerated_at: "2026-07-04"
+enumerated_boards_scanned: 535
+enumerated_webhook_bearing: 36
 
 # --- acting identity (Captain-ruled 2026-07-04) -------------------------------
 # "Use my existing Monday API key with full privilege as the agent token —
@@ -125,10 +131,182 @@ cascade_gated:
       UNIDENTIFIED destination — an update triggers an unknown subscriber.
       Creates are clear (no create_item subscriber) and act freely; updates
       stay propose-first here until that webhook's destination is identified.
-  # NOTE: the audit's team-task boards (AdOps/Marketing/Video/AdTech/Yield/BI/
-  # Email-Automation/Audience) carry link_to_teams webhooks that fan out to
-  # whole Teams channels, and further CRM/Invoice/onboarding boards were
-  # blocked as a policy class. Their board_ids were not individually captured
-  # in the audit draft (prose rows). The proposer has no lane pointing at them
-  # today; enumerate + append their ids here before any lane is aimed at those
-  # workspaces. [checkpoint follow-up]
+  # ---------------------------------------------------------------------------
+  # ENUMERATED 2026-07-04 (lane L5-cascade-enum, closes checkpoint condition #4
+  # / KILLED #3 enumeration half): full-estate READ-ONLY webhook sweep over ALL
+  # 535 active boards (not just the audit's name-matched focus set) — 36 boards
+  # carry API-visible webhooks; every one not already rowed above is gated
+  # below, citing the observed webhook ids/events. Boards with ZERO API
+  # webhooks stay default-allow EXCEPT the commercial policy class (the
+  # webhooks API cannot see native Monday automations or Make-side triggers —
+  # the audit's acknowledged blind spot). Over-inclusion is cheap here: this
+  # gate is propose-first, not access denial, and the Captain lifts any row by
+  # deleting one line.
+  # ---------------------------------------------------------------------------
+
+  # --- (a) link_to_teams team-task boards: a create/board-relation write fans
+  # --- out to whole Microsoft Teams channels. Audit prose row, now concrete.
+  - board_id: "1717613454"
+    name: "Tasks - AdOps (STEP Network 3.0)"
+    why: >
+      create_item webhook 112133147 + link_to_teams_Mjj8r8Eo board-relation
+      webhook 113416702 (+ change_name 110316095) — Teams-channel fan-out.
+  - board_id: "1693359113"
+    name: "Tasks - Marketing (STEP Network 3.0)"
+    why: >
+      create_item 112133452 + link_to_teams_Mjj8FZuw board-relation webhook
+      113415995, plus budget/status/subitem webhooks (117443641, 117449795,
+      117629133, 118240117, 118241052, 122964859 — two watch subitem board
+      1743738324) — Teams fan-out + unknown Make destinations.
+  - board_id: "1635510115"
+    name: "Tasks - Video (STEP Network 3.0)"
+    why: >
+      create_item x3 (105424034, 105424042, 110123411) + link_to_teams_Mjj8R4OI
+      board-relation webhook 113415722 (+ 105388897, 107323503) — Teams fan-out.
+  - board_id: "1635251745"
+    name: "Tasks - AdTech (STEP Network 3.0)"
+    why: >
+      create_item 110119945 + link_to_teams_Mjj8tJFz board-relation webhook
+      112145892 (+ 108103385, 108105285) — Teams fan-out.
+  - board_id: "1762038452"
+    name: "Tasks - Yield & Growth (STEP Network 3.0)"
+    why: >
+      create_item 113417166 + link_to_teams_Mjj8r8Eo board-relation webhook
+      113417159 (+ change_name 113417164) — Teams fan-out.
+  - board_id: "5091535905"
+    name: "Automations (STEP Network 3.0)"
+    why: >
+      NOT in the audit prose — found by the full sweep: create_item 155382436 +
+      link_to_teams_Mjj8r8Eo board-relation webhook 155382437 (+ change_name
+      155382435) — same Teams fan-out class as the team-task boards.
+
+  # --- (a') Data & Intelligence task boards: audit named them in the
+  # --- link_to_teams class; live sweep shows no link_to_teams TODAY but dense
+  # --- write-triggered webhooks with UNIDENTIFIED destinations (class c).
+  - board_id: "1711642084"
+    name: "Tasks BI-Engineering (Data & Intelligence)"
+    why: >
+      board_relation webhook 129786886 + task_status webhook 139863375 + six
+      item-lifecycle webhooks (153622707-153622712, incl. item_deleted /
+      change_name) — destinations unidentified.
+  - board_id: "1711637245"
+    name: "Tasks Email-Automation (Data & Intelligence)"
+    why: >
+      column webhook 141544721 + six item-lifecycle webhooks
+      (153623310-153623315) — destinations unidentified.
+  - board_id: "2028600766"
+    name: "Tasks Audience (Data & Intelligence)"
+    why: >
+      column webhook 137515376 + six item-lifecycle webhooks (153622266,
+      153622267, 153622269, 153622272, 153622274, 153622276) — destinations
+      unidentified.
+
+  # --- (b) commercial CRM / Support ticket boards observed webhook-bearing ---
+  - board_id: "1402911049"
+    name: "Opportunities (AdSales)"
+    why: >
+      19 webhooks — the densest board in the estate: deal_stage status webhooks
+      104602165 + 104712545, catch-all change_column_value 121335717, and 16
+      per-column watchers. Live CRM pipeline; any column write triggers
+      unidentified Make scenarios.
+  - board_id: "1647372207"
+    name: "Tickets (Support & Service)"
+    why: >
+      create_item 106719564 + 108848941, email-column webhook 108623278,
+      people-column webhooks 106720039/151021911, status 108773141/123040886,
+      button 164567833 — ticket flows route requester EMAIL.
+  - board_id: "1734103411"
+    name: "Zendesk Tickets v2 (Support & Service)"
+    why: >
+      status webhook 111465440 + email-column webhook 111465453 + people-column
+      111465487 — Zendesk-bridged; writes fan to requester email.
+  - board_id: "1868329933"
+    name: "Tickets test (Support & Service)"
+    why: >
+      status 120366307 + email-column 120366327 + people-column 120366325 —
+      same ticket-flow shape as the live Tickets board.
+
+  # --- (b') commercial policy class: ZERO API-visible webhooks, gated anyway —
+  # --- money/customer boards where the Make/native-automation blind spot is
+  # --- least acceptable (webhooks API cannot enumerate those triggers).
+  - board_id: "5098809499"
+    name: "Invoice management (STEP Network 3.0)"
+    why: >
+      0 API webhooks observed (sweep 2026-07-04) — gated as commercial policy
+      class: invoicing board, Make/native-automation blind spot.
+  - board_id: "5098758685"
+    name: "Win Tracker (CRM)"
+    why: >
+      0 API webhooks observed — gated as commercial policy class (CRM
+      workspace), Make/native-automation blind spot.
+  - board_id: "5098758504"
+    name: "Opportunities (CRM)"
+    why: >
+      0 API webhooks observed — gated as commercial policy class (CRM
+      workspace), Make/native-automation blind spot.
+
+  # --- (c) onboarding / publisher-ops boards with write-triggered webhooks
+  # --- whose destinations are unidentified (create_item / status / button) ---
+  - board_id: "1562037034"
+    name: "On/Off-Boarding Overview (SN - On/Off-boardings)"
+    why: create_item webhook 110699212 — destination unidentified.
+  - board_id: "1510894391"
+    name: "Onboarding fra Typeform (SN - On/Off-boardings)"
+    why: create_item webhook 108132462 — Typeform-bridged, destination unidentified.
+  - board_id: "5094806643"
+    name: "Publisher Onboarding (SN - On/Off-boardings)"
+    why: status webhook 164880143 — destination unidentified.
+  - board_id: "5089801442"
+    name: "Publisher Onboarding v2 (SN - On/Off-boardings)"
+    why: button-column webhook 164884051 — button columns are Make launch points.
+  - board_id: "5096317725"
+    name: "DK4 - D'kultur (SN - On/Off-boardings)"
+    why: status webhook 168409056 — live publisher onboarding, destination unidentified.
+  - board_id: "5091488428"
+    name: "Presse-fotos.dk (SW) (SN - On/Off-boardings)"
+    why: status webhook 155247610 — live publisher onboarding, destination unidentified.
+  - board_id: "1615264261"
+    name: "Publisher Onboarding (Web OnBOARDing template)"
+    why: status webhook 143280671 — onboarding template, destination unidentified.
+  - board_id: "1222800432"
+    name: "Publisher total overview (STEP Network 3.0)"
+    why: >
+      9 webhooks: catch-all change_column_value 158695050, file/board-relation
+      watchers (149184658, 151442530, 151442989), five button-column Make
+      launch points (159522331, 160688738, 160689201, 167640590, 168599885) —
+      central publisher-ops board, destinations unidentified.
+  - board_id: "1631918659"
+    name: "Objectives & Key Results (STEP Network 3.0)"
+    why: >
+      create_item 109336756 + create_subitem/subitem-lifecycle webhooks
+      (107163270, 107190115, 107190550, 107195187, 107195513, 109320458,
+      109379138, 122037559, 124738512) — destinations unidentified.
+  - board_id: "1677240056"
+    name: "Budgets (STEP Network 3.0)"
+    why: numeric-column webhook 117445048 — finance board, destination unidentified.
+  - board_id: "1658073379"
+    name: "Expenses (STEP Network 3.0)"
+    why: numeric-column webhook 117454604 — finance board, destination unidentified.
+  - board_id: "1558597958"
+    name: "Størrelser (STEP Network 3.0)"
+    why: button-column webhook 100653114 — Make launch point, ad-ops config board.
+  - board_id: "1558578956"
+    name: "Placements (STEP Network 3.0)"
+    why: button-column webhook 130155441 — Make launch point, ad-ops config board.
+  - board_id: "1558569789"
+    name: "Ad Units (STEP Network 3.0)"
+    why: button-column webhook 125736923 — Make launch point, ad-ops config board.
+  - board_id: "1810210072"
+    name: "Adform deal update(New publishers) (SN - Ad Manager)"
+    why: button-column webhook 118291563 — Adform-touching Make launch point.
+  - board_id: "1775404963"
+    name: "Publishers (AdUnit) (OMGz) (SN - Ad Manager)"
+    why: button-column webhooks 114201376 + 114219097 — Make launch points.
+  - board_id: "1781515860"
+    name: "AI test - Alle kampagner (Media & Insights)"
+    why: status webhook 116738709 — destination unidentified.
+  - board_id: "1163227592"
+    name: "Marketingopgave (overblik) (Projekt)"
+    why: >
+      people-column webhook 95293434 — a people-column write EMAILS the
+      assigned human (same cascade the no-people executor obligation guards).
