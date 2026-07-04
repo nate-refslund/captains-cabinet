@@ -58,25 +58,20 @@ VALID_EVENT_TYPES = frozenset({
     "work_item_completed",
     "work_item_failed",
     "work_item_verified",
-    # Subagent lifecycle (g-hooks 2026-07-04): generic helper-agent stops
-    # (code review, exploration, debugging — no task ref in agent_type) emit
-    # THIS type instead of work_item_completed, so mission-ledger consumers
-    # that replay work_item_completed (OVI task_throughput /
-    # verification_pass_rate, mission compiler DONE overlay) stop counting
-    # helper noise (6,574 junk rows pre-fix). Emitted by
-    # cabinet/scripts/hooks/on-subagent-stop.sh; telemetry-only — no consumer
-    # replays it yet.
-    "subagent_completed",
-
-    # Subagent lifecycle (2026-07-04 ledger hygiene). Generic helper-agent
-    # completions (code reviewers, explainer crews, ...) land HERE, not on
+    # Subagent lifecycle (2026-07-04 ledger hygiene + g-hooks). Generic
+    # helper-agent completions (code reviewers, explainer crews, exploration,
+    # debugging — no task ref in agent_type) land HERE, not on
     # work_item_completed: the SubagentStop hook
     # (cabinet/scripts/hooks/on-subagent-stop.sh) used to emit
-    # work_item_completed for EVERY subagent stop, burying the genuine
-    # work-graph completions under ~6.6k task-ref-less rows (purge:
-    # cabinet/scripts/ledger-purge-testrows.sh). This entry is the WRITABLE
-    # half of the fix — a valid landing type for the hook; the hook's switch
-    # itself is germline and is applied via the germline process, not here.
+    # work_item_completed for EVERY subagent stop, burying genuine work-graph
+    # completions — and the mission-ledger consumers that replay
+    # work_item_completed (OVI task_throughput / verification_pass_rate, mission
+    # compiler DONE overlay) — under ~6.6k task-ref-less rows (purge:
+    # cabinet/scripts/ledger-purge-testrows.sh). This entry is the WRITABLE half
+    # of the fix — a valid landing type for the hook; the hook's switch itself
+    # is germline and is applied via the germline process. Telemetry-only — no
+    # consumer replays it yet. (De-duplicated at integration: the ledger and
+    # germline lanes each registered this type; one canonical entry.)
     "subagent_completed",
 
     # Policy
