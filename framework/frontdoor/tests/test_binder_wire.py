@@ -606,3 +606,299 @@ def test_acted_verdict_lifecycle_every_supersede_valid():
         assert ev["proposal"] == {"required": False, "decision": None}
     assert undone["outcome"] == {"status": "failed", "evidence": "captain-undo: changed mind"}
     assert undone["review"]["verdict"] == "wrong" and undone["review"]["source"] == "verdict_human"
+
+
+# ============================================================================
+# UNDO-BY-INDEX — manifest-or-nothing (checkpoint 2026-07-04, lane L6 verify).
+# An `undo <n>` / `👍 <n>` / `edit <n>:` binds ONLY through the server-issued
+# cabinet:digest:<date> manifest re-checked against cabinet:undo:<pid>. Free
+# text NEVER selects an act, and a stale/unknown index is REFUSED — never the
+# single-open guess, never a fall-through into the propose path.
+# ============================================================================
+
+def test_unknown_index_refused_even_with_single_open_window():
+    """`undo 7` when no manifest carries 7: before the fix this fell through to
+    the single-open fallback and reversed a DIFFERENT act than digest line 7."""
+    row = _acted_row()
+    a = ActedRec()
+    r = binder_wire.handle_captain_update(
+        "undo 7", "🗒 digest text", redis_get=_undo_redis(),
+        emit=a.emit, reverse=a.reverse, freeze=a.freeze,
+        journal_rows_for=lambda pid=None: [row], read_ledger_fn=lambda: [],
+        list_undo_windows=lambda: [_ACTED_PID],   # exactly ONE open window
+        pending_source=lambda: [], now="2026-07-06T12:00:00Z")
+    assert r["handled"] is False
+    assert r["reason"].startswith("digest-index-stale")
+    assert a.reversed_pids == [] and a.emitted == []
+
+
+def test_stale_index_expired_pointer_refused():
+    """The manifest maps n→pid but the pid's undo window is gone (48h passed /
+    already reversed): the reply is refused, never rebound to another act."""
+    other = _acted_row(pid="other-open-act")
+    a = ActedRec()
+    store = {
+        # manifest still resolves index 2 to the EXPIRED act (no undo pointer)
+        "cabinet:digest:2026-07-06": json.dumps({"2": _ACTED_PID}),
+        # a different act holds the only live pointer
+        "cabinet:undo:other-open-act": json.dumps({"pid": "other-open-act"}),
+    }
+    r = binder_wire.handle_captain_update(
+        "undo 2", "🗒 digest text", redis_get=lambda k: store.get(k, ""),
+        emit=a.emit, reverse=a.reverse, freeze=a.freeze,
+        journal_rows_for=lambda pid=None: [other], read_ledger_fn=lambda: [],
+        list_undo_windows=lambda: ["other-open-act"],
+        pending_source=lambda: [], now="2026-07-06T12:00:00Z")
+    assert r["handled"] is False
+    assert r["reason"].startswith("digest-index-stale")
+    assert a.reversed_pids == []                 # the OTHER act was never touched
+    assert a.emitted == []
+
+
+def test_free_text_act_naming_never_binds():
+    """RT-A9: naming an act in words ("undo the JFM task") is not a server id —
+    with several windows open nothing binds; the reply relays for the Chair."""
+    a = ActedRec()
+    r = binder_wire.handle_captain_update(
+        "undo the JFM task", "🗒 digest text", redis_get=lambda k: "",
+        emit=a.emit, reverse=a.reverse, freeze=a.freeze,
+        journal_rows_for=lambda pid=None: [], read_ledger_fn=lambda: [],
+        list_undo_windows=lambda: ["w1", "w2"], pending_source=lambda: [])
+    assert r["handled"] is False
+    assert a.reversed_pids == [] and a.emitted == []
+
+
+def test_stale_confirm_index_never_becomes_propose_approve():
+    """`ok 2` aimed at a dead digest line must NOT fall into the propose path and
+    auto-approve (deliver!) an unrelated pending draft — the wrong-send class."""
+    prop = _proposal()
+    rec = Recorder()
+    r = binder_wire.handle_captain_update(
+        "ok 2", "🗒 digest text",
+        pending_source=lambda: [prop], deliver=rec.deliver, emit=rec.emit,
+        redis_get=lambda k: "", journal_rows_for=lambda pid=None: [],
+        read_ledger_fn=lambda: [], list_undo_windows=lambda: [])
+    assert r["handled"] is False
+    assert r["reason"].startswith("digest-index-stale")
+    assert rec.delivered == [] and rec.emitted == []
+
+
+def test_live_index_still_binds_when_marker_also_planted():
+    """A planted ·fake· in the digest-quoting reply cannot mask a valid index:
+    the fake has no pointer (skipped), the index resolves via the manifest."""
+    row = _acted_row()
+    a = ActedRec()
+    store = {f"cabinet:undo:{_ACTED_PID}": "1",
+             "cabinet:digest:2026-07-06": json.dumps({"1": _ACTED_PID})}
+    r = binder_wire.handle_captain_update(
+        "undo 1", "quoted counterparty text ·fake-planted-pid-123·",
+        redis_get=lambda k: store.get(k, ""), emit=a.emit, reverse=a.reverse,
+        freeze=a.freeze, journal_rows_for=lambda pid=None: [row],
+        read_ledger_fn=lambda: [], now="2026-07-06T12:00:00Z")
+    assert r["handled"] is True and r["pid"] == _ACTED_PID
+    assert a.reversed_pids == [_ACTED_PID]
+
+
+# ============================================================================
+# NO-PID FALLBACK — re-verified + pinned (checkpoint 2026-07-04, lane L6 §4):
+# a CLEAR verdict with exactly ONE open proposal binds mechanically; anything
+# ambiguous returns handled=False WITH a reason (the poller logs it and relays
+# the DM to the Chair, who asks) — never a guess, never a silent drop.
+# ============================================================================
+
+def test_no_pid_clear_verdict_zero_open_relays_with_reason():
+    """0 open proposals: nothing to bind — the reply must surface a reason (the
+    ambiguous branch), not vanish."""
+    rec = Recorder()
+    r = binder_wire.handle_captain_update(
+        "send", "Chair argument", pending_source=lambda: [],
+        deliver=rec.deliver, emit=rec.emit, redis_get=lambda k: "",
+        journal_rows_for=lambda pid=None: [], read_ledger_fn=lambda: [],
+        list_undo_windows=lambda: [])
+    assert r["handled"] is False
+    assert r["reason"] == "no-pid-ambiguous (0 open)"
+    assert rec.emitted == [] and rec.delivered == []
+
+
+def test_no_pid_ambiguous_reason_carries_open_count():
+    """The relayed reason names HOW MANY proposals were open — the Chair's ask
+    can list them instead of guessing (never drop silently)."""
+    p1, p2, p3 = (_proposal(subject=f"thread:{n}") for n in ("a", "b", "c"))
+    rec = Recorder()
+    r = binder_wire.handle_captain_update(
+        "send", "which?", pending_source=lambda: [p1, p2, p3],
+        deliver=rec.deliver, emit=rec.emit, redis_get=lambda k: "")
+    assert r["handled"] is False
+    assert r["reason"] == "no-pid-ambiguous (3 open)"
+
+
+def test_no_pid_edit_verdict_binds_single_open():
+    """The fallback covers all three clear verdicts — an edit: with one open
+    proposal binds, records wrong, and delivers the Captain's text."""
+    prop = _proposal()
+    rec = Recorder()
+    r = binder_wire.handle_captain_update(
+        "edit: Send den kortere version", "Chair argument (no pid)",
+        pending_source=lambda: [prop], deliver=rec.deliver, emit=rec.emit,
+        redis_get=_redis_with_draft(prop),
+        capture_lesson=lambda **kw: {"lesson_ref": "lesson-009"})
+    assert r["handled"] is True and r["primary"] == "edit"
+    assert r["pid"] == _pid(prop)
+    assert rec.delivered and rec.delivered[0][1] == "Send den kortere version"
+
+
+# ============================================================================
+# SIE-1 — lesson capture at the binder verdict seam.
+# One structured row per correction verdict (undo / edit / never / rejected);
+# the superseding ledger event carries review.lesson_ref (verdict=wrong only)
+# + a refs "lesson:<ref>" join. Confirms/approvals never mint a lesson. A
+# capture failure never blocks the verdict (fail-open to verdict-only).
+# ============================================================================
+
+class LessonRec:
+    def __init__(self, fail=False):
+        self.calls, self.fail = [], fail
+        self.n = 0
+
+    def __call__(self, **kw):
+        if self.fail:
+            raise RuntimeError("lesson ledger unwritable")
+        self.n += 1
+        self.calls.append(kw)
+        return {"lesson_ref": f"lesson-{self.n:03d}", **kw}
+
+
+def test_acted_undo_captures_lesson_and_stamps_event():
+    row = _acted_row()
+    a, les = ActedRec(), LessonRec()
+    r = binder_wire.handle_captain_update(
+        "undo: wrong board, this belongs on PolAds", f"·{_ACTED_PID}·",
+        redis_get=_undo_redis(), emit=a.emit, reverse=a.reverse, freeze=a.freeze,
+        journal_rows_for=lambda pid=None: [row], read_ledger_fn=lambda: [],
+        capture_lesson=les, now="2026-07-06T12:00:00Z")
+    assert r["handled"] and r["lesson_ref"] == "lesson-001"
+    call = les.calls[0]
+    # VERBATIM correction text — the whole reply, never a paraphrase
+    assert call["captain_text"] == "undo: wrong board, this belongs on PolAds"
+    assert call["verdict"] == "undo" and call["pid"] == _ACTED_PID
+    # deterministic fields come from the STORED record, never the reply text
+    assert call["action_type"] == "task_create" and call["lane"] == "polads"
+    ev = a.emitted[0]
+    assert ev["review"]["lesson_ref"] == "lesson-001"
+    assert "lesson:lesson-001" in ev["refs"]
+
+
+def test_acted_edit_and_never_capture_lessons():
+    row = _acted_row()
+    for text, verdict in [("edit: retitle to Q3 deploy gate", "edit"),
+                          ("never: reminders like this", "never")]:
+        a, les = ActedRec(), LessonRec()
+        r = binder_wire.handle_captain_update(
+            text, f"·{_ACTED_PID}·", redis_get=_undo_redis(),
+            emit=a.emit, reverse=a.reverse, freeze=a.freeze,
+            journal_rows_for=lambda pid=None: [row], read_ledger_fn=lambda: [],
+            capture_lesson=les, now="2026-07-06T12:00:00Z")
+        assert r["handled"] and r["lesson_ref"] == "lesson-001"
+        assert les.calls[0]["verdict"] == verdict
+        assert les.calls[0]["captain_text"] == text
+        assert a.emitted[0]["review"]["lesson_ref"] == "lesson-001"
+        assert "lesson:lesson-001" in a.emitted[0]["refs"]
+
+
+def test_acted_confirm_mints_no_lesson():
+    row = _acted_row()
+    a, les = ActedRec(), LessonRec()
+    binder_wire.handle_captain_update(
+        "👍", f"·{_ACTED_PID}·", redis_get=_undo_redis(),
+        emit=a.emit, reverse=a.reverse, freeze=a.freeze,
+        journal_rows_for=lambda pid=None: [row], read_ledger_fn=lambda: [],
+        capture_lesson=les, now="2026-07-06T12:00:00Z")
+    assert les.calls == []
+    assert "lesson_ref" not in a.emitted[0].get("review", {})
+
+
+def test_propose_edit_captures_lesson_event_carries_ref():
+    prop = _proposal()
+    rec, les = Recorder(), LessonRec()
+    r = binder_wire.handle_captain_update(
+        "edit: brug den formelle version", _quoted_for(prop),
+        pending_source=lambda: [prop], deliver=rec.deliver, emit=rec.emit,
+        redis_get=_redis_with_draft(prop), capture_lesson=les)
+    assert r["handled"] and r["primary"] == "edit"
+    assert r["lesson_ref"] == "lesson-001"
+    assert les.calls[0]["verdict"] == "edit"
+    assert les.calls[0]["captain_text"] == "edit: brug den formelle version"
+    ev = rec.emitted[0]
+    assert ev["review"]["verdict"] == "wrong"
+    assert ev["review"]["lesson_ref"] == "lesson-001"
+    assert "lesson:lesson-001" in ev["refs"]
+
+
+def test_propose_skip_captures_rejected_lesson_refs_only():
+    """skip: maps to decision=rejected / review verdict 'unknown' (FIX D keeps
+    lesson_ref out of review) — the lesson row still lands and the event's refs
+    carry the join."""
+    prop = _proposal()
+    rec, les = Recorder(), LessonRec()
+    r = binder_wire.handle_captain_update(
+        "skip: den er allerede håndteret af Lisa", _quoted_for(prop),
+        pending_source=lambda: [prop], deliver=rec.deliver, emit=rec.emit,
+        redis_get=_redis_with_draft(prop), capture_lesson=les)
+    assert r["handled"] and r["primary"] == "skip"
+    assert les.calls[0]["verdict"] == "rejected"
+    ev = rec.emitted[0]
+    assert ev["review"]["verdict"] == "unknown"
+    assert "lesson_ref" not in ev["review"]
+    assert "lesson:lesson-001" in ev["refs"]
+
+
+def test_propose_approve_mints_no_lesson():
+    prop = _proposal()
+    rec, les = Recorder(), LessonRec()
+    r = binder_wire.handle_captain_update(
+        "send", _quoted_for(prop), pending_source=lambda: [prop],
+        deliver=rec.deliver, emit=rec.emit, redis_get=_redis_with_draft(prop),
+        capture_lesson=les)
+    assert r["handled"] and r["primary"] == "approve"
+    assert r["lesson_ref"] is None
+    assert les.calls == []
+
+
+def test_lesson_capture_failure_never_blocks_verdict():
+    """The lesson ledger is a consumer of the verdict, not a gate on it."""
+    row = _acted_row()
+    a = ActedRec()
+    r = binder_wire.handle_captain_update(
+        "undo: wrong", f"·{_ACTED_PID}·", redis_get=_undo_redis(),
+        emit=a.emit, reverse=a.reverse, freeze=a.freeze,
+        journal_rows_for=lambda pid=None: [row], read_ledger_fn=lambda: [],
+        capture_lesson=LessonRec(fail=True), now="2026-07-06T12:00:00Z")
+    assert r["handled"] is True and r["verdict"] == "wrong"
+    assert r["lesson_ref"] is None
+    assert a.reversed_pids == [_ACTED_PID]       # reversal still ran
+    ev = a.emitted[0]
+    assert ev["review"]["verdict"] == "wrong"    # verdict landed without a ref
+    assert "lesson_ref" not in ev["review"]
+
+
+def test_default_lesson_capture_writes_real_ledger_via_env(tmp_path, monkeypatch):
+    """The DEFAULT seam (no injected capture_lesson) writes the SIE-1 YAML at
+    CABINET_ACTION_LESSONS — the live-path wiring, exercised hermetically."""
+    from framework.frontdoor import action_lessons
+    lf = tmp_path / "lessons.yml"
+    monkeypatch.setenv("CABINET_ACTION_LESSONS", str(lf))
+    row = _acted_row()
+    a = ActedRec()
+    r = binder_wire.handle_captain_update(
+        "undo: too early, not yet", f"·{_ACTED_PID}·", redis_get=_undo_redis(),
+        emit=a.emit, reverse=a.reverse, freeze=a.freeze,
+        journal_rows_for=lambda pid=None: [row], read_ledger_fn=lambda: [],
+        now="2026-07-06T12:00:00Z")
+    assert r["handled"] is True
+    rows = action_lessons.load_lessons(lf)
+    assert len(rows) == 1
+    assert rows[0]["verdict"] == "undo"
+    assert rows[0]["captain_text"] == "undo: too early, not yet"
+    assert rows[0]["taxonomy"] == "wrong-timing"
+    assert rows[0]["lesson_ref"] == r["lesson_ref"]
+    assert a.emitted[0]["review"]["lesson_ref"] == rows[0]["lesson_ref"]

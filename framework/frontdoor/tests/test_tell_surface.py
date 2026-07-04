@@ -383,3 +383,39 @@ def test_delegate_headline_shows_officer_and_brief():
     out = ts.render_receipt(row, now=NOW)
     assert "Dispatched work → cto" in out
     assert "ship the auth fix" in out
+
+
+# --- TI-5 stable undo_index (lane L6, 2026-07-04) ------------------------------
+# The tell_digest orchestrator mints a SERVER-ASSIGNED stable index per act
+# (one number for the act's whole undo window, never reused). The pure
+# formatters honor it; rows without one keep the positional fallback, so every
+# pre-existing caller/test is unchanged.
+
+def test_acted_section_honors_stable_undo_index():
+    rows = [_acted(pid="A", undo_index=4), _acted(pid="B", undo_index=7)]
+    out = ts.build_digest(rows, [], [], [], now=NOW)
+    assert " 4. " in out and "`undo 4`" in out
+    assert " 7. " in out and "`undo 7`" in out
+    assert "`undo 1`" not in out            # no positional leak-through
+
+
+def test_digest_manifest_mirrors_stable_indexes():
+    rows = [_acted(pid="A", jid="j1", undo_index=4),
+            _acted(pid="B", jid="j2", undo_index=7)]
+    man = ts.digest_manifest(rows)
+    assert [(m["index"], m["pid"]) for m in man] == [(4, "A"), (7, "B")]
+
+
+def test_positional_fallback_without_undo_index():
+    rows = [_acted(pid="A"), _acted(pid="B")]
+    man = ts.digest_manifest(rows)
+    assert [(m["index"], m["pid"]) for m in man] == [(1, "A"), (2, "B")]
+    out = ts.build_digest(rows, [], [], [], now=NOW)
+    assert "`undo 1`" in out and "`undo 2`" in out
+
+
+def test_overflow_micro_digest_honors_stable_index():
+    rows = [_acted(pid=p, undo_index=i) for p, i in
+            (("A", 5), ("B", 6), ("C", 9))]
+    out = ts.overflow_micro_digest(rows, now=NOW)
+    assert "`undo 5`" in out and "`undo 9`" in out and "`undo 1`" not in out

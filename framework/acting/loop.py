@@ -215,10 +215,18 @@ def outcome_event(proposal_ev: dict, routed: RoutedResponse, *,
     if reviewed_at:
         ev["review"]["reviewed_at"] = reviewed_at
     # FIX D: the ledger rejects lesson_ref on confirmed/unknown — only attach it
-    # when the mapped verdict is 'wrong' (an edit). A lesson_ref passed for an
-    # approve/skip is silently dropped rather than producing an invalid event.
+    # to review when the mapped verdict is 'wrong' (an edit). A lesson_ref passed
+    # for an approve is silently dropped rather than producing an invalid event.
     if lesson_ref and m["verdict"] == "wrong":
         ev["review"]["lesson_ref"] = lesson_ref
+    # SIE-1: the refs join to the lesson ledger is schema-legal on ANY verdict,
+    # so a skip:-rejection's lesson (verdict stays 'unknown' — FIX D) is still
+    # discoverable from the superseding event.
+    if lesson_ref:
+        tag = f"lesson:{lesson_ref}"
+        refs = list(ev.get("refs") or [])
+        if tag not in refs:
+            ev["refs"] = refs + [tag]
     validate_consequence(ev)
     return ev
 
@@ -316,14 +324,17 @@ def pending_proposals(since: str | None = None, rows: list | None = None) -> lis
 
 def handle_response(*, proposal: dict, reply_text: str, dispatch,
                     draft: str | None = None, emit=emit_consequence,
-                    reviewed_at: str | None = None) -> dict:
+                    reviewed_at: str | None = None,
+                    lesson_ref: str | None = None) -> dict:
     """SECOND half (a LATER officer turn): match a captain reply to its pending
     ``proposal`` (reloaded via pending_proposals/proposal_id), route it, record
     the superseding outcome/expire on the proposal's identity tuple, then
     dispatch. IDEMPOTENT: a proposal already decided is a no-op (Channels may
     re-deliver, or the captain may reply twice). Pass ``reviewed_at`` (the actual
     decision time) live so decided_at reflects when the captain decided, not when
-    the draft was proposed."""
+    the draft was proposed. ``lesson_ref`` (SIE-1, from the binder's lesson
+    capture) rides the superseding outcome event (review.lesson_ref + refs);
+    it is ignored on the expire path (no decision — no lesson to join)."""
     pid = proposal_id(proposal)
     if (proposal.get("proposal") or {}).get("decision") is not None:
         return {"proposal_id": pid, "status": "already-decided", "primary": None}
@@ -331,7 +342,8 @@ def handle_response(*, proposal: dict, reply_text: str, dispatch,
     result = {"proposal_id": pid, "status": "decided",
               "primary": routed.primary, "routed": routed}
     if routed.primary in _VERDICT:
-        out = outcome_event(proposal, routed, reviewed_at=reviewed_at)
+        out = outcome_event(proposal, routed, reviewed_at=reviewed_at,
+                            lesson_ref=lesson_ref)
         emit(**out)
         result["verdict"] = out["review"]["verdict"]
     else:

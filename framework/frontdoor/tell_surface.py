@@ -420,16 +420,30 @@ def receipt(acted_row: Dict[str, Any], *, now: Any = None) -> str:
 
 # --- daily digest ------------------------------------------------------------
 
+def _row_index(row: Dict[str, Any], fallback: int) -> int:
+    """The row's SERVER-ASSIGNED stable undo index (``undo_index``, minted by the
+    tell_digest orchestrator so an act keeps ONE number for its whole undo
+    window, across every digest that renders it), else the positional fallback.
+    Stable indexes are what make a reply to an OLDER rendered digest safe — a
+    renumbering digest would let "undo 2" bind a different act than the line the
+    Captain read [RT-A9]."""
+    idx = row.get("undo_index")
+    if isinstance(idx, int) and idx > 0:
+        return idx
+    return fallback
+
+
 def digest_manifest(acted_rows: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
-    """The index→pid map for the ACTED section's undo-by-index grammar. Numbered
+    """The index→pid map for the ACTED section's undo-by-index grammar. Indexed
     over the LOUD rows only (quiet rows are folded to the weekly rollup and carry
-    no index), 1..N, matching ``_acted_section``. The orchestrator persists this
-    as the ``cabinet:digest:<date>`` manifest the binder re-checks against
+    no index), honoring each row's stable ``undo_index`` (positional 1..N when
+    absent), matching ``_acted_section``. The orchestrator persists this as the
+    ``cabinet:digest:<date>`` manifest the binder re-checks against
     ``cabinet:undo:<pid>`` [RT-A9]."""
     out: List[Dict[str, Any]] = []
     loud = [r for r in (acted_rows or []) if r and not r.get("quiet")]
     for i, r in enumerate(loud, 1):
-        out.append({"index": i, "pid": str(r.get("pid") or ""),
+        out.append({"index": _row_index(r, i), "pid": str(r.get("pid") or ""),
                     "jid": str(r.get("jid") or "")})
     return out
 
@@ -445,10 +459,11 @@ def _acted_section(rows: List[Dict[str, Any]], *, now: Any) -> str:
         return ""
     lines = [f"✅ ACTED ({len(loud)})"]
     for i, r in enumerate(loud, 1):
+        idx = _row_index(r, i)
         content = _indent(_render_content(r), "    ")
         lines.append(
-            f" {i}. {_headline(r)}\n{content}\n"
-            f"      undo: `undo {i}` ({_window(r, now)} left)")
+            f" {idx}. {_headline(r)}\n{content}\n"
+            f"      undo: `undo {idx}` ({_window(r, now)} left)")
     if quiet:
         n = len(quiet)
         lines.append(f" 🔁 {n} graduated-cell act{'s' if n != 1 else ''} "
@@ -567,7 +582,8 @@ def overflow_micro_digest(untold_rows: Optional[List[Dict[str, Any]]],
     lines = [f"📨 {len(rows)} acts since the last briefing "
              "(full detail rides the next digest):"]
     for i, r in enumerate(rows, 1):
-        lines.append(f" {i}. {_headline(r)} — undo: `undo {i}`")
+        idx = _row_index(r, i)
+        lines.append(f" {idx}. {_headline(r)} — undo: `undo {idx}`")
     lines.append("Reply `undo <n>` to reverse, or `👍 <n>` to confirm.")
     return "\n".join(lines)
 
