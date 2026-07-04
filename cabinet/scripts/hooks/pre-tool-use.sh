@@ -984,7 +984,18 @@ if [ "$TOOL_NAME" = "Edit" ] || [ "$TOOL_NAME" = "Write" ]; then
     # demotion or widens its own act surface. KEEP IN LOCKSTEP with
     # GERM_PATH_RE in section 5b below — a path added here without 5b
     # reopens the bash-redirect write bypass for it.
-    *"memory/golden-evals/"*|*"framework/policies/"*|*"framework/authority/classifier.py"|*"framework/authority/lane.py"|*"framework/authority/matrix.py"|*"framework/authority/veto.py"|*"framework/authority/deploy_classifier.py"|*"framework/fidelity/graduation.py"|*"cabinet/scripts/lib/policy_engine.py"|*"cabinet/mcp-scope.yml"|*"cabinet/officer-capabilities.conf"|*".claude/rules/brain-bridge.md"|*".claude/rules/courses-of-action.md"|*"instance/config/autonomy.yml"|*"shared/interfaces/captain-vetoes.yml"|*"shared/interfaces/action-lessons.yml"|*"instance/config/act-first-surfaces.yml"|*"framework/frontdoor/action_exec.py"|*"framework/frontdoor/action_undo.py"|*"framework/frontdoor/actfirst_canary.py"|*"framework/frontdoor/veto_registry.py"|*"framework/frontdoor/tell_surface.py"|*"framework/frontdoor/calendar_template.py"|*"framework/acting/action_lane.py"|*"framework/acting/run_action_lane.py")
+    # ENFORCER SELF-PROTECTION added 2026-07-04 (red-team + independent review:
+    # the perimeter did NOT protect its own files — `Write`/`echo >` over
+    # pre-tool-use.sh, .claude/settings.json, or policy-shadow.py exited 0, so
+    # one injected officer write neutered the whole gate). The hooks dir,
+    # settings wiring, typed-engine, kill switch, and germline-lock.sh are now
+    # germline. DEFENSE-IN-DEPTH only: a path hook over a Turing-complete shell
+    # cannot be a complete boundary (cd-relative, var-indirection, script-file
+    # interpreters, patch/archive all evade it) — the COMPLETE boundary is the
+    # filesystem lock (cabinet/scripts/germline-lock.sh, `chflags schg`) which
+    # makes the officer uid physically unable to write every static germline
+    # file. Keep both.
+    *"memory/golden-evals/"*|*"framework/policies/"*|*"framework/authority/classifier.py"|*"framework/authority/lane.py"|*"framework/authority/matrix.py"|*"framework/authority/veto.py"|*"framework/authority/deploy_classifier.py"|*"framework/fidelity/graduation.py"|*"cabinet/scripts/lib/policy_engine.py"|*"cabinet/mcp-scope.yml"|*"cabinet/officer-capabilities.conf"|*".claude/rules/brain-bridge.md"|*".claude/rules/courses-of-action.md"|*"instance/config/autonomy.yml"|*"shared/interfaces/captain-vetoes.yml"|*"shared/interfaces/action-lessons.yml"|*"instance/config/act-first-surfaces.yml"|*"framework/frontdoor/action_exec.py"|*"framework/frontdoor/action_undo.py"|*"framework/frontdoor/actfirst_canary.py"|*"framework/frontdoor/veto_registry.py"|*"framework/frontdoor/tell_surface.py"|*"framework/frontdoor/calendar_template.py"|*"framework/acting/action_lane.py"|*"framework/acting/run_action_lane.py"|*".claude/settings.json"|*"cabinet/scripts/hooks/"*|*"cabinet/scripts/policy-shadow.py"|*"cabinet/scripts/kill-switch.sh"|*"cabinet/scripts/germline-lock.sh")
       echo "BLOCKED: Germline file — read-only for officers and loops (no loop may edit its own judge). Propose the change to the Captain; only the Captain applies germline edits." >&2
       exit 2
       ;;
@@ -1074,13 +1085,28 @@ if [ "$TOOL_NAME" = "Bash" ]; then
   # and the operator cannot be split from its target), then join remaining
   # newlines to spaces so a multi-line command scans as one line.
   CMD_SQ=$(printf '%s' "$CMD" | tr -s '/' | sed 's/\\$//' | tr '\n' ' ')
+  # Edit C (2026-07-04): cp/mv/rsync/install/ln with an ENTIRELY-germline parent
+  # DIR as the write destination (basename-join forge, e.g.
+  # `cp /tmp/evil framework/authority/x.py` or into cabinet/scripts/hooks/ to
+  # drop a malicious hook). Those dir paths are NOT in GERM_PATH_RE, so this arm
+  # is independent + target-anchored (germ dir must be the FINAL dest token).
+  # Mixed dirs (cabinet/, .claude/rules/, instance/config/, shared/interfaces/)
+  # are deliberately excluded — their residual is closed by the filesystem lock.
+  GERM_DIR_RE='framework/authority/|framework/frontdoor/|framework/acting/|framework/fidelity/|framework/policies/|cabinet/scripts/lib/|cabinet/scripts/hooks/|memory/golden-evals/'
+  _GDIR_TGT="[\"']?[^[:space:];|&<>\"']*(${GERM_DIR_RE})[^[:space:];|&<>\"']*"
+  # branch 1: germ dir as FINAL positional dest; branch 2: -t/--target-directory DEST form (dir not final)
+  if printf '%s' "$CMD_SQ" | grep -qE "(^|[;&|\`([:space:]])(cp|mv|rsync|install|ln)[[:space:]]+(-[-a-zA-Z]+[[:space:]]+)*([^;|&]+[[:space:]]+)?${_GDIR_TGT}[\"']?([[:space:]]*(\$|[;&|<>#])|[[:space:]]+[0-9]+[<>])" \
+     || printf '%s' "$CMD_SQ" | grep -qE "(^|[;&|\`([:space:]])(cp|mv|rsync|install|ln)[[:space:]]+([^;|&]*[[:space:]])?(-[a-zA-Z]*t[[:space:]]*|--target-directory[=[:space:]])${_GDIR_TGT}"; then
+    echo "BLOCKED: Germline directory — cp/mv/rsync/install/ln into an all-germline directory is a forge (basename-join). Reads are unaffected. Propose the change to the Captain." >&2
+    exit 2
+  fi
   # Same protected set as section 5's germline case list — KEEP IN LOCKSTEP.
-  GERM_PATH_RE='memory/golden-evals/|framework/policies/|framework/authority/(classifier|lane|matrix|veto|deploy_classifier)\.py|framework/fidelity/graduation\.py|cabinet/scripts/lib/policy_engine\.py|cabinet/mcp-scope\.yml|cabinet/officer-capabilities\.conf|\.claude/rules/(brain-bridge|courses-of-action)\.md|instance/config/autonomy\.yml|shared/interfaces/(captain-vetoes|action-lessons)\.yml|instance/config/act-first-surfaces\.yml|framework/frontdoor/(action_exec|action_undo|actfirst_canary|veto_registry|tell_surface|calendar_template)\.py|framework/acting/(action_lane|run_action_lane)\.py'
+  GERM_PATH_RE='memory/golden-evals/|framework/policies/|framework/authority/(classifier|lane|matrix|veto|deploy_classifier)\.py|framework/fidelity/graduation\.py|cabinet/scripts/lib/policy_engine\.py|cabinet/mcp-scope\.yml|cabinet/officer-capabilities\.conf|\.claude/rules/(brain-bridge|courses-of-action)\.md|instance/config/autonomy\.yml|shared/interfaces/(captain-vetoes|action-lessons)\.yml|instance/config/act-first-surfaces\.yml|framework/frontdoor/(action_exec|action_undo|actfirst_canary|veto_registry|tell_surface|calendar_template)\.py|framework/acting/(action_lane|run_action_lane)\.py|\.claude/settings\.json|cabinet/scripts/hooks/|cabinet/scripts/policy-shadow\.py|cabinet/scripts/kill-switch\.sh|cabinet/scripts/germline-lock\.sh'
   if printf '%s' "$CMD_SQ" | grep -qE "$GERM_PATH_RE"; then
     # Target token: optional opening quote, then ONE shell word containing a
     # germline path (germ paths never contain spaces/quotes, so excluding
     # separators + redirect chars from the token class is sound).
-    GERM_TGT="[\"']?[^[:space:];|&<>\"']*($GERM_PATH_RE)"
+    GERM_TGT="[\"']?[^[:space:];|&<>\"']*($GERM_PATH_RE)[^[:space:];|&<>\"']*"
     # Command-position anchor (start or a separator that can precede a
     # command word). Single-quoted so the backtick stays literal.
     ANCH='(^|[;&|`([:space:]])'
@@ -1098,7 +1124,7 @@ if [ "$TOOL_NAME" = "Bash" ]; then
     # d) copy/move/link/install with a germ path as FINAL destination
     #    (germ as SOURCE with a non-germ dest falls through = read); the
     #    trailing group also accepts fd-redirect tails like `2>/dev/null`
-    GERM_WRITE_RE="${GERM_WRITE_RE}|${ANCH}(cp|mv|rsync|install|ln)[[:space:]]+(-[-a-zA-Z]+[[:space:]]+)*[^;|&]+[[:space:]]+${GERM_TGT}[\"']?([[:space:]]*(\$|[;&|<>])|[[:space:]]+[0-9]+[<>])"
+    GERM_WRITE_RE="${GERM_WRITE_RE}|${ANCH}(cp|mv|rsync|install|ln)[[:space:]]+(-[-a-zA-Z]+[[:space:]]+)*[^;|&]+[[:space:]]+${GERM_TGT}[\"']?([[:space:]]*(\$|[;&|<>#])|[[:space:]]+[0-9]+[<>])"
     # d2) -t/--target-directory destination form
     GERM_WRITE_RE="${GERM_WRITE_RE}|${ANCH}(cp|mv|rsync|install|ln)[[:space:]]+([^;|&]*[[:space:]])?(-[a-zA-Z]*t[[:space:]]*|--target-directory(=|[[:space:]]+))${GERM_TGT}"
     # e) truncate: file args are write targets
@@ -1173,6 +1199,9 @@ if [ "$TOOL_NAME" = "Bash" ]; then
         # git is a read ONLY with a read subcommand
         split("show log diff cat-file blame grep ls-files ls-tree status rev-parse describe shortlog reflog",G," ")
         for(i in G) gitok[G[i]]=1
+        # exec-wrappers run their ARGUMENT — peel them so the allowlist sees the real verb
+        split("env command builtin exec nohup setsid stdbuf unbuffer nice ionice timeout time doas xargs chroot",WP," ")
+        for(i in WP) wrap[WP[i]]=1
       }
       {
         # break into command-position segments at separators/substitutions
@@ -1184,6 +1213,23 @@ if [ "$TOOL_NAME" = "Bash" ]; then
           sub(/^[[:space:]]+/,"",line)
           while(match(line, /^[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+/)){
             line=substr(line, RLENGTH+1)
+          }
+          # peel exec-wrapper prefixes (env/command/nice/timeout/xargs/...) so
+          # `env ed <germ>` / `command ed <germ>` cannot smuggle a writer past
+          # the allowlist. Bounded + fail-closed; preserves `env VAR=v cat germ`.
+          _wp=0
+          while(1){
+            split(line,_wt,/[[:space:]]+/); _v=_wt[1]
+            sub(/^.*\//,"",_v); sub(/^["'"'"']/,"",_v)
+            if(!(_v in wrap)) break
+            if(++_wp>4){ print "BLOCK"; exit }
+            _before=line
+            sub(/^[[:space:]]*[^[:space:]]+[[:space:]]+/,"",line)   # drop wrapper token
+            if(line==_before) break                                 # bare wrapper, no arg
+            while(match(line,/^(-[^[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|[0-9]+[smhd]?)[[:space:]]+/)){
+              line=substr(line,RLENGTH+1)                           # drop its flags/VAR=/duration args
+            }
+            if(line=="") break
           }
           if(line=="") continue
           split(line, w, /[[:space:]]+/); verb=w[1]

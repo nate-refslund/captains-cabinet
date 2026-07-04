@@ -128,9 +128,18 @@ probe "FP2 golden-evals-notes.md (cto)"    cto Write 'memory/golden-evals-notes.
 probe "FP3 evolved skill draft (cro)"      cro Write 'memory/skills/evolved/draft-skill.md'                        ALLOW
 # Own tier2 writes still allowed (tier2 arm regression pin)
 probe "FP4 own tier2 notes (cto)"          cto Edit  'instance/memory/tier2/cto/notes.md'                          ALLOW
-# Hooks are NOT germline — CoS hook ownership stands
-probe "FP5 non-germline hook (cos)"        cos Edit  'cabinet/scripts/hooks/post-tool-use.sh'                      ALLOW
+# Hooks ARE germline (2026-07-04 enforcer self-protection fix): the whole
+# cabinet/scripts/hooks/ dir + .claude/settings.json + policy-shadow.py are the
+# ENFORCER — an officer that could rewrite them neuters the perimeter itself.
+# Now read-only for officers/loops (Captain applies hook changes deliberately;
+# the filesystem lock enforces the same set at the OS layer).
+probe "FP5 enforcer hook protected (cos)"  cos Edit  'cabinet/scripts/hooks/post-tool-use.sh'                      BLOCK
 # Shared interfaces unaffected
+# Enforcer self-protection (2026-07-04): the perimeter's own files are germline
+probe "FP5b Write pre-tool-use.sh (cro)"    cro Write 'cabinet/scripts/hooks/pre-tool-use.sh'                      BLOCK
+probe "FP5c Write settings.json (cro)"      cro Write '.claude/settings.json'                                     BLOCK
+probe "FP5d Write policy-shadow.py (cos)"   cos Write 'cabinet/scripts/policy-shadow.py'                           BLOCK
+probe "FP5e Write kill-switch.sh (cro)"     cro Edit  'cabinet/scripts/kill-switch.sh'                             BLOCK
 probe "FP6 captain-decisions.md (cos)"     cos Write 'shared/interfaces/captain-decisions.md'                      ALLOW
 # Other lib files are not the judge — only policy_engine.py is germline
 probe "FP7 other lib file (cto)"           cto Edit  'cabinet/scripts/lib/triggers.sh'                             ALLOW
