@@ -220,6 +220,72 @@ def veto_scope_from_record(record: dict) -> Dict[str, Any]:
     return {k: v for k, v in scope.items() if v is not None}
 
 
+# =============================================================================
+# TI-4 — the veto registry wiring (never: persist / lift / freeform confirm).
+#
+# The acted-receipt ``never:`` above returns a SERVER-DERIVED scope; TI-4 makes
+# it durable. Three verbs bind framework.frontdoor.veto_registry:
+#   never:  (on an acted receipt) -> record_veto(scope_from_record, verbatim)
+#   never:  (freeform, no receipt) -> Chair-drafted `veto confirm` round-trip
+#   lift veto-NNN                  -> lift_veto (retire, never delete)
+#
+# DARK by default (CABINET_VETO_WIRED != "1"): the verbs behave exactly as
+# pre-TI-4 (the acted never: still returns its scope; it just persists nothing),
+# so the registry stays empty until Nate's deployment flips the flag. And every
+# write is gated on ``captain_verified`` — a veto is unforgeable, only from Nate
+# (the inbound poller relays ONLY CAPTAIN_TELEGRAM_ID messages here). Off the
+# Captain path, or dark, nothing is recorded regardless of what parses.
+# =============================================================================
+
+def _veto_recording_enabled() -> bool:
+    return os.environ.get("CABINET_VETO_WIRED") == "1"
+
+
+def _default_record_veto(scope: Dict[str, Any], verbatim: str, ts: str) -> Optional[dict]:
+    if not _veto_recording_enabled():
+        return None
+    from framework.frontdoor import veto_registry
+    return veto_registry.record_veto(scope, verbatim, ts)
+
+
+def _default_lift_veto(veto_id: str, ts: str) -> Optional[dict]:
+    if not _veto_recording_enabled():
+        return None
+    from framework.frontdoor import veto_registry
+    return veto_registry.lift_veto(veto_id, ts)
+
+
+def _default_redis_set(key: str, value: str) -> None:
+    host = os.environ.get("REDIS_HOST", "localhost")
+    subprocess.run(["redis-cli", "-h", host, "SET", key, value], timeout=10)
+
+
+def _default_redis_del(key: str) -> None:
+    host = os.environ.get("REDIS_HOST", "localhost")
+    subprocess.run(["redis-cli", "-h", host, "DEL", key], timeout=10)
+
+
+def _default_present(msg: str) -> None:
+    from framework.frontdoor import channel
+    channel.send(msg)
+
+
+# `lift veto-NNN` retires a veto; `veto confirm [k=v]` commits a freeform veto's
+# scope. STRICT deterministic scope args only — never a free-text→slug guess.
+_LIFT_RE = re.compile(r"^\s*(?:lift|unveto|remove)\s+veto[-_ ]?0*(\d+)\b",
+                      re.IGNORECASE)
+_VETO_CONFIRM_RE = re.compile(r"^\s*veto\s+confirm\b(.*)$", re.IGNORECASE | re.DOTALL)
+_SCOPE_ARG_RE = re.compile(r"\b(action_type|board|content_family)\s*=\s*([^\s,;]+)",
+                           re.IGNORECASE)
+_PENDING_VETO_KEY = "cabinet:veto-pending"
+
+
+def _parse_scope_args(text: str) -> Dict[str, str]:
+    """The allowed deterministic scope fields from a `veto confirm` reply, as
+    literal key=value — never a slug inferred from prose [RT-A10]."""
+    return {k.lower(): v.strip() for k, v in _SCOPE_ARG_RE.findall(text or "")}
+
+
 # --- lazy production transports (all injectable; importing stays cheap) -------
 
 def _now_iso() -> str:
@@ -372,6 +438,8 @@ def _apply_acted_verdict(pid: str, verb: _ActedVerb, *,
                          freeze: Callable[[str, str], Any], now: str,
                          journal_rows_for: Callable[..., List[dict]],
                          read_ledger_fn: Callable[[], List[dict]],
+                         record_veto: Callable[..., Any],
+                         verbatim: str,
                          log: Callable[[str], None]) -> Optional[dict]:
     """Emit the superseding verdict(s) for every step of an acted pid, and (for
     undo) reverse the artifact — ledger verdict BEFORE reversal (fail-closed)."""
@@ -404,10 +472,30 @@ def _apply_acted_verdict(pid: str, verb: _ActedVerb, *,
             emit(**acted_verdict_event(
                 rec, "never", evidence=f"captain veto (never); scope={scope}",
                 reviewed_at=now))
-        return {"handled": True, "acted": True, "primary": "never", "verdict": "wrong",
-                "pid": pid, "veto_scope": scope,
-                "summary": f"acted: never-veto ·{short}· scope={scope} "
-                           "(persist to captain-vetoes.yml is TI-4)"}
+        out = {"handled": True, "acted": True, "primary": "never", "verdict": "wrong",
+               "pid": pid, "veto_scope": scope}
+        # Persist to the veto registry (TI-4). record_veto is a no-op when the
+        # veto wiring is dark / off the Captain path — the verdict + server-side
+        # scope stand regardless. A scope with no enforceable field (e.g. a kind
+        # whose classifier action_type isn't mapped yet — lane-only) is refused
+        # by the registry; that raises and is caught here. A persist failure
+        # NEVER breaks the verdict or Captain-DM passthrough (the invariant).
+        veto_id, note = None, "registry dark"
+        try:
+            res = record_veto(scope, verbatim, now)
+            if res:
+                veto_id = res.get("id")
+        except Exception as e:
+            note = f"not persisted ({e})"
+            log(f"binder-wire: veto persist failed (verdict stands): {e!r}")
+        if veto_id:
+            out["veto_id"] = veto_id
+            out["summary"] = (f"acted: never-veto ·{short}· scope={scope} "
+                              f"→ recorded {veto_id}")
+        else:
+            out["summary"] = (f"acted: never-veto ·{short}· scope={scope} "
+                              f"(scope on ledger; {note})")
+        return out
 
     # verb.primary == "undo": ledger verdict FIRST, THEN reverse (fail-closed —
     # if the reversal errors the wrong verdict has already recorded the intent).
@@ -441,6 +529,7 @@ def _route_acted_reply(text: str, quoted: str, *,
                        now: str, list_undo_windows: Callable[[], List[str]],
                        read_ledger_fn: Callable[[], List[dict]],
                        journal_rows_for: Callable[..., List[dict]],
+                       record_veto: Callable[..., Any],
                        log: Callable[[str], None]) -> Optional[dict]:
     """Route a Captain reply that is an acted-receipt verdict; None if it is not
     (the caller then runs the propose-card path). RT-B1: never touches
@@ -455,7 +544,109 @@ def _route_acted_reply(text: str, quoted: str, *,
         return None      # no server-issued acted id — fall through to propose path
     return _apply_acted_verdict(pid, verb, emit=emit, reverse=reverse, freeze=freeze,
                                 now=now, journal_rows_for=journal_rows_for,
-                                read_ledger_fn=read_ledger_fn, log=log)
+                                read_ledger_fn=read_ledger_fn,
+                                record_veto=record_veto, verbatim=text, log=log)
+
+
+# --- TI-4 veto commands (lift / freeform never confirm) ----------------------
+
+def _open_pending_veto(text: str, *, present: Callable[[str], Any],
+                       redis_set: Callable[[str, str], Any], now: str,
+                       log: Callable[[str], None]) -> dict:
+    """A freeform ``never:`` (no acted receipt to derive scope from) can't be
+    enforced without a deterministic scope, so it opens a confirm-pending state:
+    stash the verbatim and ask the Captain to pin the scope with `veto confirm
+    action_type=… [board=…]`. Nothing is recorded until he confirms."""
+    pending = {"verbatim": text, "scope": {}, "ts": now}
+    try:
+        redis_set(_PENDING_VETO_KEY, json.dumps(pending, ensure_ascii=False))
+    except Exception as e:
+        log(f"binder-wire: veto-pending store failed: {e!r}")
+    try:
+        present("🛑 Veto noted — it needs a scope to enforce. Reply "
+                "`veto confirm action_type=<kind> [board=<id>]` to record it, "
+                f"or ignore to drop.\n«{(text or '')[:200]}»")
+    except Exception as e:
+        log(f"binder-wire: veto-pending present failed: {e!r}")
+    return {"handled": True, "veto": "pending",
+            "summary": "freeform veto pending — awaiting `veto confirm`"}
+
+
+def _confirm_pending_veto(arg_text: str, *, record_veto: Callable[..., Any],
+                          present: Callable[[str], Any], redis_get: Callable[[str], str],
+                          redis_del: Callable[[str], Any], now: str,
+                          log: Callable[[str], None]) -> dict:
+    """Commit the pending freeform veto — scope pinned from the confirm reply's
+    STRICT deterministic key=value args (never a slug), merged over any pending
+    scope. Refuses a scopeless confirm (keeps it pending)."""
+    try:
+        raw = redis_get(_PENDING_VETO_KEY)
+    except Exception:
+        raw = ""
+    if not raw:
+        return {"handled": True, "veto": "confirm-none",
+                "summary": "veto confirm — nothing pending"}
+    try:
+        pending = json.loads(raw)
+    except Exception:
+        pending = {"verbatim": "", "scope": {}}
+    scope = dict(pending.get("scope") or {})
+    scope.update(_parse_scope_args(arg_text))
+    if not any(scope.get(f) for f in ("action_type", "board", "content_family")):
+        try:
+            present("Veto needs a deterministic field. Reply "
+                    "`veto confirm action_type=<kind> [board=<id>]`.")
+        except Exception:
+            pass
+        return {"handled": True, "veto": "confirm-need-scope",
+                "summary": "veto confirm — need action_type/board (kept pending)"}
+    try:
+        veto = record_veto(scope, pending.get("verbatim", ""), now)
+    except Exception as e:
+        log(f"binder-wire: veto confirm persist failed: {e!r}")
+        return {"handled": True, "veto": "confirm-error",
+                "summary": f"veto confirm failed: {e!r}"}
+    try:
+        redis_del(_PENDING_VETO_KEY)
+    except Exception:
+        pass
+    vid = (veto or {}).get("id")
+    return {"handled": True, "veto": "confirmed", "veto_id": vid, "veto_scope": scope,
+            "summary": f"veto recorded {vid} scope={scope}" if vid
+                       else f"veto confirm — registry dark; scope={scope}"}
+
+
+def _route_veto_command(text: str, *, record_veto: Callable[..., Any],
+                        lift_veto: Callable[..., Any], present: Callable[[str], Any],
+                        redis_get: Callable[[str], str], redis_set: Callable[[str, str], Any],
+                        redis_del: Callable[[str], Any], now: str,
+                        log: Callable[[str], None]) -> Optional[dict]:
+    """`lift veto-NNN` / `veto confirm` / freeform `never:` → the veto registry.
+    None (fall through) for anything else. Reached only when veto wiring is
+    active AND captain_verified (handle_captain_update gate), so every write here
+    is Captain-authored [unforgeable]. A pid-bound `never:` was already handled
+    by the acted branch upstream — this sees only the freeform case."""
+    t = (text or "").strip()
+    m = _LIFT_RE.match(t)
+    if m:
+        vid = f"veto-{int(m.group(1)):03d}"
+        try:
+            res = lift_veto(vid, now)
+        except Exception as e:
+            log(f"binder-wire: veto lift failed: {e!r}")
+            res = None
+        return {"handled": True, "veto": "lift", "veto_id": vid,
+                "summary": (f"veto {vid} lifted" if res
+                            else f"veto lift: {vid} not found / dark (nothing lifted)")}
+    m = _VETO_CONFIRM_RE.match(t)
+    if m:
+        return _confirm_pending_veto(m.group(1) or "", record_veto=record_veto,
+                                     present=present, redis_get=redis_get,
+                                     redis_del=redis_del, now=now, log=log)
+    if _NEVER_RE.match(t):
+        return _open_pending_veto(t, present=present, redis_set=redis_set,
+                                  now=now, log=log)
+    return None
 
 
 def handle_captain_update(
@@ -473,6 +664,12 @@ def handle_captain_update(
     list_undo_windows: Callable[[], List[str]] | None = None,
     read_ledger_fn: Callable[[], List[dict]] | None = None,
     journal_rows_for: Callable[..., List[dict]] | None = None,
+    record_veto: Callable[..., Any] | None = None,
+    lift_veto: Callable[..., Any] | None = None,
+    present: Callable[[str], Any] | None = None,
+    redis_set: Callable[[str, str], Any] | None = None,
+    redis_del: Callable[[str], Any] | None = None,
+    captain_verified: bool = True,
 ) -> dict:
     """Bind a Captain reply to its pending draft proposal; record, then deliver.
 
@@ -486,6 +683,22 @@ def handle_captain_update(
     so importing this module never touches redis/ledger.
     """
     try:
+        now_s = now or _now_iso()
+        # TI-4: veto writes bind ONLY on the Captain-verified path — a veto is
+        # unforgeable (the inbound poller relays only CAPTAIN_TELEGRAM_ID here).
+        # Off that path the never:/lift verbs record nothing (a _noop), even if a
+        # record_veto was injected; on it, the default is dark until
+        # CABINET_VETO_WIRED=1. The veto-command branch (lift/confirm/freeform)
+        # only arms when wiring is active, so the propose path is byte-identical
+        # for every non-veto reply.
+        def _noop(*_a: Any, **_k: Any) -> None:
+            return None
+        _rv = (record_veto or _default_record_veto) if captain_verified else _noop
+        _lv = (lift_veto or _default_lift_veto) if captain_verified else _noop
+        _veto_armed = captain_verified and (
+            _veto_recording_enabled() or record_veto is not None
+            or lift_veto is not None or present is not None)
+
         # --- UNDO-2 ACTED BRANCH (RT-B1): a reply binding a server-issued acted
         # id routes through the undo registry, NEVER loop.handle_response. Runs
         # BEFORE the pending-proposal lookup; returns None for propose cards, so
@@ -494,14 +707,28 @@ def handle_captain_update(
             text, quoted, redis_get=redis_get,
             emit=emit if emit is not None else emit_consequence,
             reverse=reverse or _default_reverse, freeze=freeze or _default_freeze,
-            now=now or _now_iso(),
+            now=now_s,
             list_undo_windows=list_undo_windows or _default_list_undo_windows,
             read_ledger_fn=read_ledger_fn or read_ledger,
-            journal_rows_for=journal_rows_for or _default_journal_rows_for, log=log)
+            journal_rows_for=journal_rows_for or _default_journal_rows_for,
+            record_veto=_rv, log=log)
         if acted is not None:
             log(f"binder-wire: acted {acted.get('primary')} "
                 f"pid={str(acted.get('pid'))[:60]} verdict={acted.get('verdict')}")
             return acted
+
+        # --- TI-4 VETO COMMANDS: lift veto-NNN / veto confirm / freeform never:.
+        # Armed only on the Captain-verified path with veto wiring live; a
+        # pid-bound never: was already recorded by the acted branch above. ---
+        if _veto_armed:
+            veto = _route_veto_command(
+                text, record_veto=_rv, lift_veto=_lv,
+                present=present or _default_present,
+                redis_get=redis_get, redis_set=redis_set or _default_redis_set,
+                redis_del=redis_del or _default_redis_del, now=now_s, log=log)
+            if veto is not None:
+                log(f"binder-wire: veto {veto.get('veto')} -> {veto.get('summary')}")
+                return veto
 
         candidates = extract_pids(quoted, text)
         pending = pending_source() if pending_source is not None else loop.pending_proposals()
