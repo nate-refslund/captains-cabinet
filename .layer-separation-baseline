@@ -41,3 +41,12 @@ framework/learning/tests/test_trust_ladder.py:FRAMEWORK_PATH_INSTANCE
 framework/onboarding/onboard.py:FRAMEWORK_PATH_INSTANCE
 framework/onboarding/tests/test_onboard.py:FRAMEWORK_PATH_INSTANCE
 framework/triggers/registry.py:FRAMEWORK_PATH_INSTANCE
+# 2026-07-04 — Captain-ratified growth (+3, lane/config-0705). The act-first
+# lane reads its runtime kill-flag at instance/config/act-first-enabled — the
+# flag lives in instance/ BY DESIGN (deployment-local, flippable without a
+# framework change; trust-inversion flip protocol, captain-decisions 2026-07-04),
+# so these three FRAMEWORK_PATH_INSTANCE hits are the flag read, not a code dep.
+# Not ratchet-down debt: the coupling is intentional as long as the flag exists.
+framework/acting/run_action_lane.py:FRAMEWORK_PATH_INSTANCE
+framework/frontdoor/action_exec.py:FRAMEWORK_PATH_INSTANCE
+framework/frontdoor/actfirst_canary.py:FRAMEWORK_PATH_INSTANCE

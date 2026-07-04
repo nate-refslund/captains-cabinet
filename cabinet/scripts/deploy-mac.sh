@@ -6,11 +6,14 @@
 #
 # Usage:
 #   bash cabinet/scripts/deploy-mac.sh --officer <officer>     # deploy one officer
-#   bash cabinet/scripts/deploy-mac.sh --officer all           # deploy all 5 officers
-#   bash cabinet/scripts/deploy-mac.sh --daemon <name>         # deploy a non-officer service
-#                                                              #   (heartbeat-watchdog, cost-summary, worktree-listener)
+#   bash cabinet/scripts/deploy-mac.sh --officer all           # deploy the roster fleet (instance/config/roster.yml)
+#   bash cabinet/scripts/deploy-mac.sh --daemon <name>         # deploy one template-based non-officer service
+#                                                              #   (any cabinet/launchd/com.cabinet.<name>.template.plist)
 #   bash cabinet/scripts/deploy-mac.sh --officer X --daemon Y  # both in one invocation
-#   bash cabinet/scripts/deploy-mac.sh --all                   # deploy everything
+#   bash cabinet/scripts/deploy-mac.sh --all                   # roster officers + the services.yml-backed
+#                                                              #   template daemons (limit-reset-watchdog, dashboard);
+#                                                              #   the rest of the fleet is manifest-owned — see
+#                                                              #   cabinet/services.yml + generate-plists.py
 #   bash cabinet/scripts/deploy-mac.sh --dry-run               # show what would be done, don't execute
 #   bash cabinet/scripts/deploy-mac.sh --officer X --force     # override the consultant guard
 #
@@ -200,23 +203,44 @@ if [ "$ALL" = true ]; then
   OFFICERS_LIST=$(roster_officers)
   [ -n "$OFFICERS_LIST" ] || { echo "deploy-mac.sh: roster.yml parsed to an empty officer list — refusing." >&2; exit 2; }
   for o in $OFFICERS_LIST; do guard_consultant "$o"; deploy_officer "$o"; done
-  # All non-officer daemon templates. Mirrors cabinet/launchd/*.template.plist
-  # minus the per-officer template. Keep in sync with verify-launchagents.sh.
+  # Daemon leg (corrected 2026-07-04, lane/config-0705). cabinet/services.yml
+  # is THE fleet manifest (F0.4): daemon/watchdog plists are rendered from it
+  # by cabinet/scripts/generate-plists.py (render-only by security contract —
+  # it never calls launchctl). The previous hardcoded 12-daemon list here
+  # installed TEN services absent from both services.yml AND the live fleet
+  # (heartbeat-watchdog, cost-summary, worktree-listener, mission-supervisor,
+  # task-sync, role-evals-weekly, outbox-relay, ovi-weekly,
+  # self-improvement-loop, chrome-profile) — the same wrong-fleet-redeploy
+  # hazard F0.2 fixed for officers, and mission-supervisor in particular would
+  # resurrect 5-min push routing against the Captain's pull-only ruling (see
+  # .claude/skills/cabinet-route-tasks/). --all now installs only the
+  # manifest-backed template daemons; the retired templates stay on disk and
+  # remain individually deployable via an explicit `--daemon <name>` (a
+  # deliberate operator act, not a default).
+  #
+  # TODO(F0.4 follow-up — full reconcile): teach deploy-mac.sh to bootstrap
+  # cabinet/launchd/generated/*.plist (run generate-plists.py, then
+  # launchctl bootstrap each non-officer service) so --all installs the FULL
+  # manifest fleet — including replacing the invalid-XML limit-reset-watchdog
+  # template render, which services.yml notes should be superseded by its
+  # generated plist at next deploy. Deferred here: new launchctl machinery on
+  # the LIVE fleet needs its own tested change, not a docs/CI lane rider.
   for d in \
-    heartbeat-watchdog \
     limit-reset-watchdog \
-    cost-summary \
-    worktree-listener \
-    mission-supervisor \
-    task-sync \
-    role-evals-weekly \
-    outbox-relay \
-    ovi-weekly \
-    self-improvement-loop \
-    chrome-profile \
     dashboard; do
     deploy_daemon "$d"
   done
+  cat >&2 <<'EOF'
+deploy-mac.sh: NOTE — --all installs officers (roster-derived) plus the two
+  manifest-backed template daemons (limit-reset-watchdog, dashboard). The rest
+  of the daemon/watchdog fleet is owned by cabinet/services.yml: render with
+  `python3.12 cabinet/scripts/generate-plists.py` and bootstrap the generated
+  plists deliberately (per-plist header comments carry the install commands).
+  Legacy templates (heartbeat-watchdog, cost-summary, worktree-listener,
+  mission-supervisor, task-sync, role-evals-weekly, outbox-relay, ovi-weekly,
+  self-improvement-loop, chrome-profile) are NOT in the manifest and are no
+  longer auto-installed; use --daemon <name> only if you mean it.
+EOF
   # dashboard-kiosk is OPT-IN (needs a physical monitor on the Mac mini).
   # Office-display deployments add it explicitly:
   #   bash cabinet/scripts/deploy-mac.sh --daemon dashboard-kiosk

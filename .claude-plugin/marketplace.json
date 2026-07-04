@@ -13,7 +13,7 @@
         "repo": "nate-step/captains-cabinet",
         "ref": "claude/convergence-v2"
       },
-      "description": "Full Captains Cabinet plugin: framework + work preset + 5 officers + 19 skills + 11 slash commands + 6 MCP servers.",
+      "description": "Full Captains Cabinet plugin: framework + presets (work, portfolio, personal, step-network) + 20 skills + 11 slash commands + 7 MCP servers. The officer fleet is roster-derived (instance/config/roster.yml) — the work preset ships 8 role archetypes, the portfolio preset ships the Chair plus generated lane CEOs.",
       "category": "ai-organization",
       "tags": ["ai-organization", "officers", "autonomous", "event-sourced"]
     },
