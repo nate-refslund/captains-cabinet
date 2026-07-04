@@ -1,7 +1,8 @@
 #!/bin/bash
 # ledger-purge-testrows.sh — one-shot, Captain-gated purge of KNOWN-JUNK rows
-# from the audit event ledger (events-*.jsonl). Prepared 2026-07-04 (lane
-# ledger); REFUSES to mutate anything until BOTH gates below hold.
+# from the audit event ledger (events-*.jsonl + consequence-events-*.jsonl).
+# Prepared 2026-07-04 (lane ledger); REFUSES to mutate anything until BOTH
+# gates below hold.
 # Reversible by design: full dated backup FIRST, verified before any rewrite.
 #
 # WHAT LEAKED (and why this script exists):
@@ -14,6 +15,18 @@
 #      "abc1234567" (the fixture case id). 1,969 rows at diagnosis, 1,996 at
 #      prep time — they keep accruing until the fence is merged, which is
 #      exactly why gate 2 requires the fence before purging.
+#      SAME rows, SECOND family (2026-07-04 adversarial-review finding): the
+#      leaking suites dual-emit — framework/fidelity/fidelity_events.py writes
+#      each case to the org-event ledger (events-*.jsonl, subject under
+#      payload) AND to the consequence ledger (consequence-events-*.jsonl,
+#      subject at TOP level, via framework/fidelity/consequence.py, which
+#      honours the same CABINET_EVENT_LOG_DIR and fell through to the same
+#      live default). 1,996 fixture rows there at prep = ~85% of that family
+#      (2,341 total) — and consequence-events is the GRADUATION READ PATH
+#      (framework/fidelity/graduation.py autonomy-evidence math), so leaving
+#      it polluted is worse than the org family. Criterion 1 therefore
+#      applies to BOTH families, keyed per-family (payload.subject vs
+#      top-level subject).
 #   2. Junk work_item_completed rows — cabinet/scripts/hooks/on-subagent-stop.sh
 #      emits work_item_completed for EVERY subagent stop (code reviewers,
 #      explainer crews, ...), burying genuine work-graph completions.
@@ -40,13 +53,20 @@
 # against a temp fixture without ever touching the live ledger. Default is
 # the durable live location.
 #
-# SCOPE — events-*.jsonl in the ledger dir ONLY. Deliberately NOT touched:
-#   * consequence-events-*.jsonl / config-drift-*.jsonl (different families,
-#     different producers — out of scope for this incident);
+# SCOPE — events-*.jsonl AND consequence-events-*.jsonl in the ledger dir.
+# Criterion 2 (junk subagent completions) only ever matches the org family:
+# work_item_completed is an org-event type — consequence rows are classified
+# by the fixture-subject criterion ONLY, so a consequence row that merely
+# *mentions* subagent fields can never be dropped. Deliberately NOT touched:
+#   * config-drift-*.jsonl (different family, different producer — genuinely
+#     unrelated to this incident);
 #   * the org-runtime SQLite Store mirror (cabinet/cache/org-runtime.sqlite3):
 #     the junk work_item_completed rows were mirrored there too and need
 #     their own verified pass (follow-up); the fidelity fixture rows never
-#     reached it (the Store mirror auto-skips under pytest);
+#     reached it (the Store mirror auto-skips under pytest); the consequence
+#     family has NO mirrors at all (JSONL-only by F0 design — see
+#     docs/fidelity-harness-plan-F0-F1-2026-06-18.md), so its cleanup is
+#     complete once the JSONL is clean;
 #   * Postgres org_events (only written when DATABASE_URL is set — separate
 #     verified pass if ever needed).
 #
@@ -56,13 +76,18 @@
 # positively identify as junk).
 #
 # LIVE-APPEND RACE GUARD: the running org appends to TODAY'S events file
-# continuously (hooks fire every few minutes). A rewrite of that file could
-# clobber a row appended between our read and the atomic replace — and the
-# lost row would not be in the backup either. So the rewrite SKIPS the
-# current UTC day's file by default; its junk rows are simply caught by a
-# later run (or set CABINET_PURGE_INCLUDE_TODAY=1 for a run with the org
-# quiesced — killswitch on / launchd agents stopped). Historical day-files
-# are append-dead, so rewriting them is race-free.
+# continuously (hooks fire every few minutes), and the fidelity harness
+# appends to today's consequence-events file whenever it evaluates a case.
+# A rewrite of an active file could clobber a row appended between our read
+# and the atomic replace — and the lost row would not be in the backup
+# either. So the rewrite SKIPS the current UTC day's file in BOTH families
+# by default; their junk rows are simply caught by a later run (or set
+# CABINET_PURGE_INCLUDE_TODAY=1 for a run with the org quiesced — killswitch
+# on / launchd agents stopped). Historical day-files are append-dead, so
+# rewriting them is race-free. (Residual sliver, accepted: a writer that
+# resolved its filename just before UTC midnight can in principle append to
+# the old day's file while we rewrite it — run the purge away from 00:00 UTC
+# or quiesced.)
 
 set -euo pipefail
 
@@ -105,11 +130,22 @@ if [ ! -d "$LEDGER_DIR" ]; then
   exit 1
 fi
 
+# BOTH contaminated families (2026-07-04 review fix — see header): the two
+# globs are disjoint (a basename starts with "events-" or with
+# "consequence-events-", never both). Built with a nullglob loop instead of
+# concatenating two array expansions because macOS /bin/bash is 3.2, where
+# expanding an EMPTY array as "${arr[@]}" under `set -u` aborts with
+# "unbound variable" — the loop body simply never runs for an unmatched
+# pattern, so a family may be absent (the test fixtures often have only one)
+# without tripping the guard.
 shopt -s nullglob
-LEDGER_FILES=("$LEDGER_DIR"/events-*.jsonl)
+LEDGER_FILES=()
+for f in "$LEDGER_DIR"/events-*.jsonl "$LEDGER_DIR"/consequence-events-*.jsonl; do
+  LEDGER_FILES+=("$f")
+done
 shopt -u nullglob
 if [ "${#LEDGER_FILES[@]}" -eq 0 ]; then
-  echo "REFUSED: no events-*.jsonl files in $LEDGER_DIR — nothing to purge." >&2
+  echo "REFUSED: no events-*.jsonl / consequence-events-*.jsonl files in $LEDGER_DIR — nothing to purge." >&2
   exit 1
 fi
 
@@ -133,8 +169,10 @@ if [ "$DRY_RUN" != "1" ]; then
   mkdir -p "$BACKUP_DIR"
   cp -p "${LEDGER_FILES[@]}" "$BACKUP_DIR/"
 
+  # *.jsonl (not events-*.jsonl) so the verification spans BOTH backed-up
+  # families — the cp above copied every file in LEDGER_FILES.
   SRC_ROWS="$(cat "${LEDGER_FILES[@]}" | wc -l | tr -d ' ')"
-  BAK_ROWS="$(cat "$BACKUP_DIR"/events-*.jsonl | wc -l | tr -d ' ')"
+  BAK_ROWS="$(cat "$BACKUP_DIR"/*.jsonl | wc -l | tr -d ' ')"
   if [ "$SRC_ROWS" != "$BAK_ROWS" ]; then
     echo "ABORT: backup row count ($BAK_ROWS) != source row count ($SRC_ROWS)." >&2
     echo "Ledger untouched. Partial backup left at $BACKUP_DIR for inspection." >&2
@@ -167,16 +205,21 @@ dry_run = os.environ.get("PURGE_DRY_RUN") == "1"
 include_today = os.environ.get("PURGE_INCLUDE_TODAY") == "1"
 
 # Live-append race guard (see script header): the org appends to TODAY'S
-# file while we run; rewriting it could clobber a fresh row that is in
-# neither the rewrite nor the backup. Skip it unless the operator asserts
-# the org is quiesced (CABINET_PURGE_INCLUDE_TODAY=1).
-today_basename = "events-{}.jsonl".format(
-    datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
-)
+# file in BOTH families while we run (hooks -> events-*, fidelity harness ->
+# consequence-events-*); rewriting an active file could clobber a fresh row
+# that is in neither the rewrite nor the backup. Skip them unless the
+# operator asserts the org is quiesced (CABINET_PURGE_INCLUDE_TODAY=1).
+_today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+today_basenames = {
+    "events-{}.jsonl".format(_today),
+    "consequence-events-{}.jsonl".format(_today),
+}
 
 # Criterion 1 — fidelity test-fixture rows (the pytest leak):
-# exact payload.subject match on the fixture case id. This catches every
-# fidelity_case_* row the leaking suites emitted; genuine fidelity rows carry
+# exact subject match on the fixture case id, keyed PER FAMILY — the org
+# family carries it at payload.subject; the consequence family carries it at
+# the TOP level (framework/fidelity/consequence.py schema). This catches
+# every row the leaking suites dual-emitted; genuine fidelity rows carry
 # real case ids, never the fixture literal.
 FIXTURE_SUBJECT = "abc1234567"
 
@@ -190,8 +233,22 @@ FIXTURE_SUBJECT = "abc1234567"
 GENUINE_REF = re.compile(r"^(FW|PROD)-[0-9]+$")
 
 
-def classify(event: dict) -> str | None:
-    """Return the junk criterion this row matches, or None to keep it."""
+def classify(event: dict, family: str) -> str | None:
+    """Return the junk criterion this row matches, or None to keep it.
+
+    family is "org" (events-*.jsonl) or "consequence"
+    (consequence-events-*.jsonl) — the criteria are deliberately DISJOINT per
+    family so neither can over-match the other's shapes:
+      * consequence rows are junk ONLY on the top-level fixture subject
+        (criterion 2 is an org-event shape; a consequence row that merely
+        mentions completed_by/"work_item_completed" text is kept);
+      * org rows are junk on payload.subject (criterion 1) or the junk
+        subagent-completion shape (criterion 2).
+    """
+    if family == "consequence":
+        if event.get("subject") == FIXTURE_SUBJECT:
+            return "conseq_fixture"
+        return None  # fail-safe: no other criterion applies to this family
     payload = event.get("payload")
     if not isinstance(payload, dict):
         return None  # unknown shape -> fail-safe: keep
@@ -208,15 +265,21 @@ def classify(event: dict) -> str | None:
 
 total_before = 0
 total_after = 0
-dropped = {"fixture": 0, "subagent": 0}
+dropped = {"fixture": 0, "subagent": 0, "conseq_fixture": 0}
 unparseable = 0
 files_changed = 0
-skipped_today = None  # (basename, junk_count) when the active file is skipped
+skipped_today = []  # (basename, junk_count) per skipped active file (≤1 per family)
 
-for path in sorted(glob.glob(os.path.join(ledger_dir, "events-*.jsonl"))):
-    is_active_today = (
-        os.path.basename(path) == today_basename and not include_today
-    )
+# Disjoint globs (basename anchors differ) — sorted per family, org family
+# first, so output ordering is deterministic for the operator and the tests.
+_paths = sorted(glob.glob(os.path.join(ledger_dir, "events-*.jsonl"))) + sorted(
+    glob.glob(os.path.join(ledger_dir, "consequence-events-*.jsonl"))
+)
+
+for path in _paths:
+    basename = os.path.basename(path)
+    family = "consequence" if basename.startswith("consequence-events-") else "org"
+    is_active_today = basename in today_basenames and not include_today
     if is_active_today:
         # Count-only pass: report the junk waiting here, but drop NOTHING and
         # never rewrite the file the live org is appending to.
@@ -233,9 +296,9 @@ for path in sorted(glob.glob(os.path.join(ledger_dir, "events-*.jsonl"))):
                 except (json.JSONDecodeError, ValueError):
                     unparseable += 1
                     continue
-                if classify(event):
+                if classify(event, family):
                     junk_here += 1
-        skipped_today = (os.path.basename(path), junk_here)
+        skipped_today.append((basename, junk_here))
         continue
 
     kept_lines: list[str] = []
@@ -254,7 +317,7 @@ for path in sorted(glob.glob(os.path.join(ledger_dir, "events-*.jsonl"))):
                 kept_lines.append(line)  # fail-safe: never drop unparseable
                 total_after += 1
                 continue
-            criterion = classify(event)
+            criterion = classify(event, family)
             if criterion:
                 dropped[criterion] += 1
                 file_dropped += 1
@@ -289,13 +352,15 @@ for path in sorted(glob.glob(os.path.join(ledger_dir, "events-*.jsonl"))):
         files_changed += 1
         print(
             f"{'would rewrite' if dry_run else 'rewrote'}: "
-            f"{os.path.basename(path)} (-{file_dropped} rows)"
+            f"{basename} (-{file_dropped} rows)"
         )
 
-if skipped_today:
+# One guard line PER skipped active file (at most one per family), so the
+# operator sees exactly what junk is deferred in each.
+for skipped_name, junk_count in skipped_today:
     print(
         f"skipped (active today-file, live-append race guard): "
-        f"{skipped_today[0]} — {skipped_today[1]} junk rows left for a later "
+        f"{skipped_name} — {junk_count} junk rows left for a later "
         f"run (or CABINET_PURGE_INCLUDE_TODAY=1 with the org quiesced)"
     )
 
@@ -304,6 +369,7 @@ print(f"--- {mode} ---")
 print(f"rows before:            {total_before}")
 print(f"dropped (fixture subject=={FIXTURE_SUBJECT!r}): {dropped['fixture']}")
 print(f"dropped (junk subagent work_item_completed):  {dropped['subagent']}")
+print(f"dropped (consequence fixture subject=={FIXTURE_SUBJECT!r}): {dropped['conseq_fixture']}")
 print(f"rows after:             {total_after}")
 print(f"files {'needing rewrite' if dry_run else 'rewritten'}: {files_changed}")
 if unparseable:
@@ -311,7 +377,7 @@ if unparseable:
 
 # Arithmetic self-check — if this ever fails, something in the loop is wrong
 # and the operator must inspect before trusting the result.
-if total_after + dropped["fixture"] + dropped["subagent"] != total_before:
+if total_after + sum(dropped.values()) != total_before:
     print("ERROR: row arithmetic does not balance — inspect before trusting.",
           file=sys.stderr)
     sys.exit(1)

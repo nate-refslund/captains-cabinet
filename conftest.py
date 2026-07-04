@@ -9,7 +9,11 @@ fidelity test-fixture rows (payload.subject == "abc1234567"; 1,996 by prep
 time) leaked into the live audit ledger. Suites that fence themselves with a
 per-test fixture (e.g. framework/events/tests/test_emitter.py) were fine, but
 fixture-less tests, import-time emits, and subprocesses spawned by tests all
-fell through to the live default.
+fell through to the live default. (Adversarial-review addendum, 2026-07-04:
+the same suites DUAL-EMIT via framework/fidelity/fidelity_events.py, so the
+same 1,996 rows also leaked into consequence-events-*.jsonl — the graduation
+read path. framework/fidelity/consequence.py honours the same env var, so
+this fence covers that family too; the purge script cleans both.)
 
 Worse: the runtime launch EXPORTS CABINET_EVENT_LOG_DIR pointing AT the live
 ledger (framework/env.py — "the runtime launch sets it"), so a pytest run
