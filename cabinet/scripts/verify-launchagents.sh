@@ -37,7 +37,29 @@ LOG_DIR="$HOME/Library/Logs/cabinet"
 # Opt-in daemons: present as templates but NOT expected on every deployment.
 # dashboard-kiosk needs a physical monitor (office-display deployments only);
 # headless servers intentionally skip it.
-OPTIONAL_PLISTS=("com.cabinet.dashboard-kiosk")
+#
+# 2026-07-04 (lane/config-0705, in sync with the deploy-mac.sh --all prune):
+# the ten LEGACY templates below are absent from cabinet/services.yml (THE
+# fleet manifest, F0.4) and from the live fleet — deploy-mac.sh --all no
+# longer auto-installs them (mission-supervisor would even resurrect push
+# routing against the Captain's pull-only ruling). They stay OPTIONAL here:
+# not required anywhere, but still verified if an operator deliberately
+# installed one via `deploy-mac.sh --daemon <name>`. Drops on sight when the
+# TODO(F0.4 follow-up) reconcile derives both scripts from services.yml.
+OPTIONAL_PLISTS=(
+  "com.cabinet.dashboard-kiosk"
+  # legacy, non-manifest (see note above):
+  "com.cabinet.heartbeat-watchdog"
+  "com.cabinet.cost-summary"
+  "com.cabinet.worktree-listener"
+  "com.cabinet.mission-supervisor"
+  "com.cabinet.task-sync"
+  "com.cabinet.role-evals-weekly"
+  "com.cabinet.outbox-relay"
+  "com.cabinet.ovi-weekly"
+  "com.cabinet.self-improvement-loop"
+  "com.cabinet.chrome-profile"
+)
 is_optional() {
   local p="$1"
   for o in "${OPTIONAL_PLISTS[@]}"; do [ "$p" = "$o" ] && return 0; done
@@ -54,17 +76,13 @@ if [ -d "$CABINET_ROOT/cabinet/launchd" ]; then
   done < <(find "$CABINET_ROOT/cabinet/launchd" -maxdepth 1 -type f -name '*.template.plist' | sort)
 fi
 
-# Fallback if no templates were discovered (e.g., misconfigured CABINET_ROOT)
+# Fallback if no templates were discovered (e.g., misconfigured CABINET_ROOT).
+# 2026-07-04: was the legacy 8-daemon fleet — now the services.yml-backed
+# template pair, matching what deploy-mac.sh --all actually installs.
 if [ "${#EXPECTED_PLISTS[@]}" -eq 0 ]; then
   EXPECTED_PLISTS=(
-    "com.cabinet.heartbeat-watchdog"
-    "com.cabinet.cost-summary"
-    "com.cabinet.ovi-weekly"
-    "com.cabinet.worktree-listener"
-    "com.cabinet.mission-supervisor"
-    "com.cabinet.task-sync"
-    "com.cabinet.role-evals-weekly"
-    "com.cabinet.outbox-relay"
+    "com.cabinet.limit-reset-watchdog"
+    "com.cabinet.dashboard"
   )
 fi
 

@@ -153,21 +153,29 @@ After signing + notarization, these consents persist across reboots.
 CABINET_ROOT="$(pwd)" bash cabinet/scripts/deploy-mac.sh --all
 ```
 
-This `envsubst`-substitutes paths into the plist templates in `cabinet/launchd/` and registers them in `~/Library/LaunchAgents/`:
+This `envsubst`-substitutes paths into the plist templates in `cabinet/launchd/` and registers them in `~/Library/LaunchAgents/` (list corrected 2026-07-04 to match `deploy-mac.sh --all` after its prune to the `cabinet/services.yml` manifest):
 
-- `com.cabinet.officer.<slug>.plist` (per officer)
-- `com.cabinet.heartbeat-watchdog.plist`
+- `com.cabinet.officer.<slug>.plist` — one per officer, fleet **derived from
+  `instance/config/roster.yml`** (F0.2; no roster file ⇒ refuse, never a preset
+  default). Live portfolio roster: `cos`, `polads-ceo`, `stephie-ceo`,
+  `comms-officer`.
 - `com.cabinet.limit-reset-watchdog.plist` (auto-resume after account session-limit reset)
-- `com.cabinet.cost-summary.plist`
-- `com.cabinet.worktree-listener.plist`
-- `com.cabinet.mission-supervisor.plist`
-- `com.cabinet.task-sync.plist`
-- `com.cabinet.role-evals-weekly.plist`
-- `com.cabinet.outbox-relay.plist`
-- `com.cabinet.ovi-weekly.plist`
-- `com.cabinet.self-improvement-loop.plist`
-- `com.cabinet.chrome-profile.plist` (Captain-layer authenticated browser)
 - `com.cabinet.dashboard.plist` (control panel + office-display server on `:3100`)
+
+Everything else in the daemon/watchdog fleet is **owned by `cabinet/services.yml`**
+(the F0.4 fleet manifest): render with `python3.12 cabinet/scripts/generate-plists.py`
+(render-only) and bootstrap the generated plists deliberately — each live plist's
+header comment carries its install commands. The legacy templates
+(`heartbeat-watchdog`, `cost-summary`, `worktree-listener`, `mission-supervisor`,
+`task-sync`, `role-evals-weekly`, `outbox-relay`, `ovi-weekly`,
+`self-improvement-loop`, `chrome-profile`) are **not** in the manifest and are no
+longer auto-installed by `--all` — `mission-supervisor` in particular would
+resurrect push routing against the Captain's pull-only ruling (see
+`.claude/skills/cabinet-route-tasks/`). Install one only as a deliberate act:
+
+```bash
+bash cabinet/scripts/deploy-mac.sh --daemon <name>
+```
 
 `com.cabinet.dashboard-kiosk.plist` is **opt-in** (needs a physical monitor) — deploy it separately on the office Mac mini:
 
@@ -181,16 +189,18 @@ Verify all registered + running:
 bash cabinet/scripts/verify-launchagents.sh
 ```
 
-Exit 0 = pass. Re-deploy if any fail.
+Exit 0 = pass. Re-deploy if any fail. (The verifier treats the legacy templates
+as OPTIONAL — checked only if installed.)
 
-> **Portfolio-preset note.** `deploy-mac.sh --all` registers the legacy `work`
-> preset fleet (`cos cto cpo cro coo` + the daemon list above). The **portfolio**
-> deployment (one persistent Chair `cos` + domain officers `comms-officer`,
-> `polads-ceo`, `stephie-ceo`, plus the `com.cabinet.intake-surface`,
-> `com.cabinet.frontdoor-briefing`, and `com.cabinet.officer-supervisor-mac`
-> daemons) is registered by `cp`-ing each plist into `~/Library/LaunchAgents/`
-> and `launchctl load -w`-ing it — the install commands are in each plist's
-> header comment.
+> **Portfolio-preset note.** The **portfolio** deployment (one persistent Chair
+> `cos` + domain officers `comms-officer`, `polads-ceo`, `stephie-ceo`) is what
+> `--all` deploys when the roster says so; its daemons (e.g.
+> `com.cabinet.intake-surface`, `com.cabinet.frontdoor-briefing`,
+> `com.cabinet.officer-supervisor-mac`) are manifest rows registered by `cp`-ing
+> each plist into `~/Library/LaunchAgents/` and `launchctl load -w`-ing it — the
+> install commands are in each plist's header comment. (Historical: `--all` used
+> to hardcode the retired `work`-preset `cos cto cpo cro coo` fleet — fixed by
+> F0.2 roster derivation + the 2026-07-04 daemon prune.)
 >
 > **TEMPORARY backstop (`com.cabinet.status-sweep`).** A 30-min `StartInterval`
 > cron (`run-status-sweep.sh`) that pushes a STATUS-SWEEP trigger to the Chair
@@ -375,7 +385,7 @@ After everything is in place:
      description: Continuous Cabinet operation with mission execution + OVI tracking
      measurable_criteria:
        - Officers respond to Captain DMs within 5 min
-       - Mission supervisor routes ready tasks every 5 min
+       - Officers pull + progress their ready mission tasks each self-wake tick (routing is pull-only; see .claude/skills/cabinet-route-tasks/)
        - OVI snapshot fires Monday 08:00 with non-zero data
        - No officer process exits abnormally for 72 hours
      status: active

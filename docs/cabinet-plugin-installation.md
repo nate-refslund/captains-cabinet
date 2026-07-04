@@ -38,20 +38,27 @@ the strict-validation warning means it's not "marketplace strict-clean" yet.
 claude plugin install captains-cabinet --source captains-cabinet-marketplace
 ```
 
-The plugin manifest (`.claude-plugin/plugin.json`) declares:
+The plugin manifest (`.claude-plugin/plugin.json`) declares (counts corrected 2026-07-04):
 
-- **5 agent definitions** (cos / cto / cpo / cro / coo) from the `work` preset
-- **18 skills** — 8 cabinet-specific (cabinet-task, cabinet-route-tasks,
-  cabinet-work-graph-complete, org-status, mission-compile, ovi-publish,
-  capability-gap, extend-cabinet) +
+- **1 agent definition** — the portfolio Chair (`presets/portfolio/agents/cos.md`).
+  The officer fleet is roster-derived (`instance/config/roster.yml`), never
+  baked into the manifest: lane-CEO role defs are generated per deployment
+  (gitignored `instance/agents/`), and the `work` preset's 8 role archetypes
+  stay in `presets/work/agents/` where the preset loader picks them up when
+  that preset is active. (The manifest previously registered the retired
+  cos/cto/cpo/cro/coo work fleet on every install.)
+- **20 skills** — 9 cabinet-specific (cabinet-task, cabinet-route-tasks,
+  cabinet-work-graph-complete, cabinet-init, org-status, mission-compile,
+  ovi-publish, capability-gap, extend-cabinet) +
   10 lifted foundation skills (holistic-thinking, production-quality-ownership,
   telegram-communication, cross-officer-retro, evolution-loop,
   individual-reflection, agent-team-workflow, deploy-and-verify,
-  engineering-development-loop, spec-quality-gate)
+  engineering-development-loop, spec-quality-gate) +
+  cabinet-intro (`.claude-plugin/skills/`)
 - **11 slash commands** — 5 parent (activate-project, mission-compile,
   org-status, ovi-publish, role-eval) + 6 cabinet- prefixed
 - **1 path-scoped rule** (org-runtime-native)
-- **6 MCP servers** (notion, neon, linear, vercel, redis-trigger-channel, library)
+- **7 MCP servers** (notion, neon, linear, vercel, redis-trigger-channel, library, make)
 - **settings** with hooks, voice, defaultMode, and statusLine wiring
 
 ## Prerequisites (auto-checked by `setup-mac.sh --check`)
@@ -87,7 +94,7 @@ that the plugin install path does NOT replace.
 
 The marketplace lists two install targets:
 
-- `captains-cabinet` — full work preset (5 officers, mission/role/OVI)
+- `captains-cabinet` — full framework + presets (mission/role/OVI; the work preset ships 5 functional-officer archetypes + 3 support archetypes — the instance roster decides what actually runs)
 - `captains-cabinet-personal` — personal preset (lighter, coaching-focused)
 
 A founder can install both side by side and choose the active preset via
