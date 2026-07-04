@@ -32,12 +32,13 @@ framework/roles/lifecycle.py:FRAMEWORK_PATH_INSTANCE
 framework/roles/tests/test_lifecycle.py:FRAMEWORK_PATH_INSTANCE
 # 2026-07-02 — Captain-ratified growth (F0.1 canonicalization of the June
 # autonomous-operation work; ratification = the 11-question sit-down, Q1/Q3).
-# RATCHET-DOWN DEBT: these 6 are instance-path couplings in framework/ that
+# RATCHET-DOWN DEBT: these 5 are instance-path couplings in framework/ that
 # the PM-decoupling + Estate-Mapper work is expected to remove; revisit at
 # plan B2/B4 and shrink via --update-baseline after the cleanup PR.
+# (was 6 — test_trust_ladder.py entry ratcheted out 2026-07-04 when the
+# trust-ladder module was deleted under the earn-demotion ruling.)
 framework/learning/capability_gaps.py:FRAMEWORK_PATH_INSTANCE
 framework/learning/tests/test_capability_gaps.py:FRAMEWORK_PATH_INSTANCE
-framework/learning/tests/test_trust_ladder.py:FRAMEWORK_PATH_INSTANCE
 framework/onboarding/onboard.py:FRAMEWORK_PATH_INSTANCE
 framework/onboarding/tests/test_onboard.py:FRAMEWORK_PATH_INSTANCE
 framework/triggers/registry.py:FRAMEWORK_PATH_INSTANCE

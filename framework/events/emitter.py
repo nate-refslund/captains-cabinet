@@ -89,10 +89,16 @@ VALID_EVENT_TYPES = frozenset({
     "capability_gap_declined",            # Captain declined (with reason → learning)
     "capability_gap_resolved",            # gap closed (auto-skilled OR built+installed)
 
-    # Prove-to-earn expansion (docs/prove-to-earn-expansion-2026-06-25.md)
+    # Self-extension surfacing — the Chair PREPARES + SURFACES; Nate applies.
+    # (trust_rung_proposed / trust_rung_granted were REMOVED 2026-07-04 with
+    # framework/learning/trust_ladder.py — earn-demotion ruling, captain-
+    # decisions 2026-07-03: reversible classes act-with-undo from day one and
+    # trust is LOST on evidence, never rung-earned. Dropping the types here is
+    # fail-closed: emit() rejects unregistered types, so no code path can ever
+    # record a rung grant again. Historical trust_rung_* events in old ledgers
+    # still replay fine — replay() filters by *requested* type and never
+    # validates against this emit-time allowlist.)
     "self_proposal_prepared",             # Chair surfaced a one-tap MCP/plugin scope-grant proposal
-    "trust_rung_proposed",                # ladder surfaced an earned rung (one-tap grant card)
-    "trust_rung_granted",                 # Captain granted a trust rung (advances the ladder)
     "account_flow_surfaced",              # Chair surfaced a "credential needed" account-flow step
 
     # Learning

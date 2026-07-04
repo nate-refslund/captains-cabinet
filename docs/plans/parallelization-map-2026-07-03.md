@@ -80,7 +80,7 @@ The ordered trunk. Each row waits on the row(s) above. This is the spine both pl
 | A6.5a | Reconcile brain-bridge germline contradiction | A | |
 | A7.0a | Create the broker macOS user | A | |
 | A7.1a | Flip CABINET_AUTHORITY_ENFORCING=1 | A | |
-| A7.2 | Author trust-ladder.yml + autonomy.yml | A | |
+| A7.2 | Author autonomy.yml *(trust-ladder half SUPERSEDED 2026-07-04 — earn-demotion ruling; module removed)* | A | |
 | A7.4a | Ratify first auto scope + undo window | A | |
 | B4.8 | Micro-VPS webhook catcher | B | provisioning decision |
 | B5.3 | Split germline: fixtures at machine speed | B | |

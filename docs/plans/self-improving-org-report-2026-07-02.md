@@ -2,6 +2,16 @@
 **Scope:** `~/captains-cabinet` + `~/.screenpipe` + the Obsidian brain, toward an autonomous AI org that replaces 90%+ of Nate's work and self-improves past him.
 **Date:** 2026-07-02 · **Method:** 3 orchestrated workflows, 31 agents (~4.4M tokens): 11 read-only system readers → 8 frontier researchers (multi-engine, cited) → 6 filesystem claim-verifiers (34 checks: 29 confirmed, 5 corrected) → 3 architecture panels → 2 adversarial red teams. Every load-bearing claim below was re-verified against the live filesystem today unless marked otherwise.
 
+> **[PARTIAL SUPERSESSION 2026-07-04 — earn-demotion ruling (captain-decisions,
+> 2026-07-03).** This report's trust-ladder guidance — "One graduation engine …
+> `trust_ladder.py` win[s]" (§Consolidations) and the P0/checklist items directing
+> Nate to author `trust-ladder.yml` — is dead doctrine: reversible action classes
+> are trusted from day one (act-with-undo) and DEMOTED on evidence, never
+> rung-earned. `framework/learning/trust_ladder.py` + the `trust-ladder.yml`
+> draft/example were removed on lane/ripout-0705; do not rebuild or author them.
+> The 2026-07-03 adversarial re-review supersedes this report wherever the two
+> conflict. The rest of this snapshot is preserved as-written.]
+
 ---
 
 ## 1. TL;DR

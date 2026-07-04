@@ -43,6 +43,13 @@ Per-**lane**, climb one rung when N outcomes the review-loop confirmed served in
 Capability is given; **trust is earned.** Reversible config the clone reprograms itself
 from chat; safety-critical code stays captain-gated (the line = the authority matrix).
 
+> **[SUPERSEDED 2026-07-04 — earn-demotion ruling (captain-decisions, 2026-07-03).**
+> The rung-climb model above is dead doctrine: reversible action classes are trusted
+> from **day one** (act-with-undo, journaled, told after) and trust is **lost** on
+> evidence — undo rates, explicit vetoes — never pre-earned. Its implementation
+> (`framework/learning/trust_ladder.py` + `instance/config/trust-ladder.yml.*`) was
+> removed 2026-07-04 (lane/ripout-0705); do not rebuild. Hard ceilings unchanged.]
+
 ## Reconciling the previous intentions
 
 - **Fidelity / prediction harness (F):** DEMOTE to a **regression guardrail** (catch
