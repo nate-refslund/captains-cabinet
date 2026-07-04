@@ -13,11 +13,19 @@ v1 action kinds (low-blast, machine-verifiable):
 Credentials: MONDAY_API_KEY from ~/.screenpipe/pipes/_shared/.env (the same
 env the Plan-A pipes use). Never logged. All subprocess calls are arg-lists.
 Steps execute IN ORDER; the first failure stops the chain (already-executed
-steps are reported so nothing is silently half-done). An approve with
-edit-text does NOT reinterpret the payload in v1 — the edit text is recorded
-on the ledger as the correction; execution uses the stored payload verbatim
-(reinterpreting free text into mutations without re-approval would act on
-words Nate never saw as a card).
+steps are reported so nothing is silently half-done). An "edit: <text>"
+verdict NEVER executes (the Captain just called the stored payload wrong) and
+NEVER reinterprets free text into silent mutations — instead (2026-07-04
+germline g-exec fix; the old ``edit_deferred`` return was a dead-end that
+dropped the correction) the corrected chain is RE-CARDED: the edit text is
+deterministically ATTACHED to each step's annotation field
+(``_EDIT_ANNOTATION_FIELD``), and a fresh proposal re-enters the propose flow
+(ledger proposal event → ``cabinet:action:<new_pid>`` store → HQ Chair
+Telegram card, same fail-closed order as run_action_lane). Only a fresh
+Captain approve of THAT card executes anything. The edit verdict has already
+landed as the wrong-label by the time we run; the re-card's own
+approve/edit/skip lands the follow-up label — the edit→correction loop the
+dead-end evaporated.
 
 UNDO-1 (2026-07-04 trust-inversion): every step is WRITE-AHEAD journaled
 through ``action_undo`` before its mutation and enriched with the created ids
@@ -67,6 +75,7 @@ import os
 import re
 import subprocess
 import sys
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any, Callable
@@ -205,6 +214,39 @@ def _assert_payload_keys(kind: str, payload: dict) -> None:
         for k in setmap:
             if k not in _SET_KEYS:
                 raise PayloadKeyError(f"{kind}: disallowed set-map key {k!r}")
+
+
+# EDIT→RE-CARD (2026-07-04 germline g-exec): the per-kind payload field a
+# Captain "edit: <text>" correction is deterministically ATTACHED to when the
+# corrected chain is re-carded (see _recard_edited). Two hard properties:
+#   1. APPEND, never replace/parse — free text cannot be deterministically
+#      mapped onto structured fields (is "due Friday" a title? a due date?),
+#      and guessing would put words on a colleague surface the Captain never
+#      chose. The re-card renders the EXACT payload (SEC-4 RT-A3 via
+#      action_lane.render_card), so the fresh approve — not this merge — is
+#      what authorizes execution.
+#   2. Every target field below is a member of that kind's closed
+#      _PAYLOAD_KEYS schema above — the re-carded payload still passes
+#      _assert_payload_keys on its eventual approved execution. Adding a kind
+#      to _PAYLOAD_KEYS? Give it an annotation field here too, or its
+#      re-cards ride unannotated (correction visible on the situation line
+#      only).
+_EDIT_ANNOTATION_FIELD = {
+    "monday_task_create": "description",   # lands in the item body a human reads
+    "monday_task_update": "why",           # feeds the note leg of the update
+    "reminder_create": "notes",            # calendar/reminder notes body
+    "delegate_work": "brief",              # the officer MUST see the correction
+    "investigation_run": "question",       # ditto — correction shapes the ask
+    "mission_propose": "why_now",          # never executes, but the card shows it
+}
+# Size caps on re-card text growth. A Captain edit is trusted human input, but
+# repeated edit→re-card rounds APPEND each round's correction (deliberate: the
+# accumulated trail is the audit history), so cap per-round size. Not a loop
+# guard — every round requires a fresh human "edit:" reply, so there is no
+# automatic runaway; this only bounds card/Monday-body bloat (Monday update
+# bodies are hard-capped at 4000 chars in _exec_monday_create/_update anyway).
+_EDIT_TEXT_CAP = 1000
+_SITUATION_CAP = 800
 
 
 def _backend_for(kind: str) -> str:
@@ -968,6 +1010,150 @@ def _gate_chain(steps: list, *, lane, redis_get: Callable, surfaces: dict):
     return (None, held)
 
 
+# --- edit→re-card path (2026-07-04 germline g-exec) ---------------------------
+
+def _tg_send(text: str) -> None:
+    """Present a card on the Captain's Telegram — HQ CHAIR channel ONLY
+    (Captain ruling 2026-07-03: cabinet cards go to the HQ Chair bot, never the
+    Screenpipe bot). Mirrors run_action_lane._tg: TELEGRAM_COS_TOKEN is the
+    Chair's bot — the same one the cos-inbound poller polls, so a reply to the
+    re-card BINDS back through the binder. Deliberately NO fallback to
+    TELEGRAM_BOT_TOKEN (the Screenpipe bot, whose updates never reach the
+    binder — the first 5 live cards landed there and could not be verdicted).
+    Raises on missing env: an unpresentable card must surface as a skipped/
+    failed re-card, never a silent one. Token read at call time, never logged."""
+    token = os.environ.get("TELEGRAM_COS_TOKEN", "")
+    chat = os.environ.get("CAPTAIN_TELEGRAM_ID", "")
+    if not token or not chat:
+        raise RuntimeError("telegram env missing (TELEGRAM_COS_TOKEN / CAPTAIN_TELEGRAM_ID)")
+    data = urllib.parse.urlencode({"chat_id": chat, "text": text}).encode()
+    urllib.request.urlopen(
+        urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage",
+                               data=data), timeout=20)
+
+
+def _apply_edit_to_steps(steps: list, edit_text: str) -> list:
+    """Deep-copied ``steps`` with the Captain's correction APPENDED to each
+    step's per-kind annotation field (``_EDIT_ANNOTATION_FIELD``). Every step
+    carries it — in a multi-step chain we cannot know which step the correction
+    targets, and the annotation fields are exactly the human-context legs
+    (description/why/notes/brief/question) where extra context is always safe.
+    An unknown kind is copied through unannotated (the correction still shows on
+    the re-card's situation line; execution dispatch rejects unknown kinds
+    anyway). Deep copy via JSON round-trip: the stored record is JSON-shaped by
+    construction (it came out of ``json.loads``), and the original record must
+    never be mutated in place."""
+    correction = "[Captain correction]: " + edit_text[:_EDIT_TEXT_CAP]
+    out = json.loads(json.dumps(steps))
+    for step in out:
+        if not isinstance(step, dict):
+            continue
+        field = _EDIT_ANNOTATION_FIELD.get(str(step.get("kind") or ""))
+        if not field:
+            continue
+        payload = step.get("payload")
+        if not isinstance(payload, dict):
+            payload = {}
+            step["payload"] = payload
+        prior = str(payload.get(field) or "").strip()
+        # append below any prior content (incl. earlier corrections — the
+        # accumulated trail IS the audit history of the edit rounds).
+        payload[field] = (prior + "\n\n" + correction) if prior else correction
+    return out
+
+
+def _recard_edited(pid: str, rec: dict, edit_text: str, *,
+                   telegram_send: Callable[[str], None] | None = None,
+                   redis_set: Callable[[str, str, int | None], None] | None = None) -> dict:
+    """Re-enter the PROPOSE flow with the Captain-edited chain: build the
+    corrected ActionProposal, mint a fresh cid + pid, then — in the SAME
+    fail-closed order as run_action_lane.main's present branch — emit the
+    PENDING ledger proposal FIRST, store ``cabinet:action:<new_pid>`` (with its
+    steps_sha256 TOCTOU stamp, mirroring run_action_lane._store_action
+    field-for-field), and present the card on the HQ Chair Telegram. A send
+    failure AFTER the emit+store is an honest partial: the proposal is open on
+    the ledger, so the binder's no-pid fallback / the briefing sweep can still
+    surface it (courses-of-action rule: stale proposals fold into the next
+    briefing) — the correction is never lost. Raises on any failure; the caller
+    (deliver_action's edit branch) wraps this best-effort because the edit
+    verdict has already landed and must never be broken by re-card trouble.
+
+    PROPOSE-ONLY by construction: nothing here executes, journals, or acts —
+    execution happens only when the Captain approves the NEW card through the
+    ordinary binder path. Hard ceilings untouched."""
+    from datetime import datetime, timezone
+    # Lazy imports (same rationale as _exec_delegate's DELEGATE_BRIEF_FRAME
+    # import): run_action_lane/action_lane import THIS module at load, so a
+    # top-level import here would be a cycle; the executor must never
+    # hard-depend on the proposer stack at load time.
+    from framework.acting import action_lane
+    from framework.acting.loop import proposal_event, proposal_id
+    from framework.fidelity.consequence import emit_consequence
+    from framework.probes import correlation
+
+    raw_steps = list(rec.get("steps") or [])
+    if not raw_steps:
+        raise RuntimeError("stored action has no steps to re-card")
+    steps = _apply_edit_to_steps(raw_steps, edit_text)
+    # The situation line carries the correction VERBATIM (marker-stripped by
+    # render_card) so the Captain instantly sees this is his own edit coming
+    # back as an actionable card, not a fresh proposer idea.
+    situation = ((str(rec.get("situation") or "").strip()
+                  or str(rec.get("subject") or ""))
+                 + " — CAPTAIN EDIT (re-card): " + edit_text)[:_SITUATION_CAP]
+    prop = action_lane.ActionProposal(
+        subject=str(rec.get("subject") or "recard"),
+        situation=situation,
+        steps=tuple(action_lane.ActionStep(kind=str(s.get("kind") or ""),
+                                           title=str(s.get("title") or ""),
+                                           payload=dict(s.get("payload") or {}))
+                    for s in steps),
+        lane=str(rec.get("lane") or "?"),
+        evidence=tuple(str(e) for e in (rec.get("evidence") or [])),
+        confidence=float(rec.get("confidence") or 0.0),
+        urgency=str(rec.get("urgency") or "batch"))
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # Fresh correlation id (B2.1): probe outcomes must join to the RE-CARD's
+    # artifacts, not the corrected original's; the "recard-of:<old_pid>" ref
+    # keeps the two joinable for audit (refs are free strings — same pattern as
+    # SIE-1's "lesson:<ref>" tags).
+    cid = correlation.mint()
+    prop_ev = proposal_event(
+        # CANONICAL ACTOR ID (germline contract 2026-07-04): BARE role — ledger/
+        # journal consumers compose the qualified key as "officer:"+role
+        # themselves (e.g. framework/fidelity/run_e2e_smoke.py:145), so a
+        # pre-qualified "officer:cos" would double-compose and sever evidence.
+        actor={"kind": "officer", "id": "cos"},
+        lane=prop.lane, subject=prop.subject, ts=ts, action="action-card",
+        refs=[correlation.ref_for(cid)] + list(prop.evidence)
+             + [f"recard-of:{pid}"])
+    new_pid = proposal_id(prop_ev)
+    new_steps = [{"kind": s.kind, "title": s.title, "payload": s.payload}
+                 for s in prop.steps]
+    new_rec = {"cid": cid, "lane": prop.lane, "subject": prop.subject,
+               "situation": prop.situation,
+               "steps": new_steps,
+               # TOCTOU pin — same stamp run_action_lane._store_action writes:
+               # deliver_action re-hashes rec["steps"] against this at execute
+               # time, so a Redis swap between re-card and approve never runs.
+               "steps_sha256": _canonical_sha(new_steps),
+               "evidence": list(prop.evidence),
+               "confidence": prop.confidence, "urgency": prop.urgency,
+               # audit joinback (extra key is harmless — the executor reads
+               # only the fields it knows).
+               "recard_of": pid}
+    # Fail-closed order (byte-parity with run_action_lane.main): ledger FIRST —
+    # a card that cannot land its PENDING proposal is never stored or shown.
+    emit_consequence(**prop_ev)
+    payload_json = json.dumps(new_rec)
+    if redis_set is not None:                      # injected transport (tests)
+        redis_set(f"cabinet:action:{new_pid}", payload_json, 604800)
+    else:                                          # same 7-day TTL as the lane
+        _redis("SET", f"cabinet:action:{new_pid}", payload_json, "EX", "604800")
+    (telegram_send or _tg_send)(action_lane.render_card(prop, new_pid))
+    return {"recarded": True, "recard_pid": new_pid, "recard_cid": cid}
+
+
 def deliver_action(pid: str, override_text: str = "", *,
                    redis_get: Callable[[str], str] | None = None,
                    monday_post: Callable | None = None,
@@ -976,7 +1162,8 @@ def deliver_action(pid: str, override_text: str = "", *,
                    journal: bool = True,
                    act_first: bool = False,
                    redis_set: Callable[[str, str, int | None], None] | None = None,
-                   redis_incr: Callable[[str, int], None] | None = None) -> dict:
+                   redis_incr: Callable[[str, int], None] | None = None,
+                   telegram_send: Callable[[str], None] | None = None) -> dict:
     """Execute the stored action chain for a card. deliver_draft-shaped return:
     {ok, via, dest, executed: [...], error?}. Injectable transports for tests;
     production defaults resolve lazily.
@@ -999,17 +1186,79 @@ def deliver_action(pid: str, override_text: str = "", *,
     HELD while reversible-eligible steps act. It is inert today — the branch that
     passes ``act_first=True`` lands in a later wave behind the OFF flag. The
     always-on guards (killswitch, provenance banner, @-strip, calendar pin,
-    payload TOCTOU) run on BOTH paths."""
+    payload TOCTOU) run on BOTH paths.
+
+    ``override_text`` (a Captain "edit: <text>" verdict, dispatched by the
+    binder AFTER the edit→wrong verdict landed) executes NOTHING — instead the
+    corrected chain is RE-CARDED via ``_recard_edited`` (2026-07-04 germline
+    g-exec). ``telegram_send`` is the re-card's injectable presenter (default
+    ``_tg_send`` → the HQ Chair bot); tests inject it to stay hermetic."""
     rget = redis_get or (lambda k: _redis("GET", k))
     if override_text.strip():
-        # EDIT on an action card: the verdict (edit→wrong + correction) has
-        # already landed on the ledger — that label is the point. But we never
-        # execute a payload the Captain just said is wrong, and we never
-        # reinterpret free text into mutations he didn't see as a card.
-        # The record is kept so the Chair can re-card the corrected chain.
-        return {"ok": False, "edit_deferred": True,
-                "error": "edit on action card — nothing executed; "
-                         "Chair: re-card the corrected action"}
+        # EDIT on an action card (edit→re-card, 2026-07-04 germline g-exec).
+        # The verdict (edit→wrong + correction) has already landed on the
+        # ledger by the time dispatch calls us (fail-closed ordering) — that
+        # label is half the point. We still NEVER execute a payload the Captain
+        # just called wrong, and NEVER reinterpret free text into silent
+        # mutations. But the old dead-end return ("Chair: re-card the corrected
+        # action") produced no re-card in practice — the richest label flavor
+        # (an edit + its corrected follow-up) evaporated. Now the corrected
+        # chain re-enters the PROPOSE flow as a fresh card (_recard_edited):
+        # correction attached per _EDIT_ANNOTATION_FIELD, exact payloads on the
+        # card, and only a FRESH approve executes. ``ok`` stays False and
+        # ``edit_deferred`` stays True on every branch — truthfully, nothing
+        # executed HERE (contract pinned by test_edit_defers_never_executes).
+        base = {"ok": False, "edit_deferred": True,
+                "error": "edit on action card — nothing executed"}
+        raw0 = rget(f"cabinet:action:{pid}")
+        if not raw0:
+            # No stored chain to correct (expired TTL or already executed) —
+            # nothing to re-card; the edit verdict + lesson still stand.
+            base["error"] += (f"; re-card impossible: no action {pid} "
+                              "(expired or already executed)")
+            return base
+        try:
+            rec0 = json.loads(raw0)
+        except (ValueError, TypeError):
+            base["error"] += "; re-card impossible: stored action record unparseable"
+            return base
+        # Presentability pre-flight (fail-safe, BEFORE any side effect): a
+        # re-card we cannot PRESENT would sit open on the ledger as a card the
+        # Captain never sees. Skip cleanly when there is no injected sender AND
+        # either (a) the HQ Chair env is absent, or (b) we are under pytest —
+        # PYTEST_CURRENT_TEST mirrors framework/events/emitter.py:360's
+        # auto-disable of external side effects during test runs (a suite run
+        # in a token-bearing shell must never DM the real Captain). Hermetic
+        # tests exercise the re-card by injecting ``telegram_send``.
+        if telegram_send is None and (
+                os.environ.get("PYTEST_CURRENT_TEST")
+                or not (os.environ.get("TELEGRAM_COS_TOKEN")
+                        and os.environ.get("CAPTAIN_TELEGRAM_ID"))):
+            base["recard"] = "skipped: no presentable telegram channel"
+            base["error"] += ("; re-card skipped (no telegram channel) — "
+                              "Chair: re-card the corrected action")
+            return base
+        try:
+            rc = _recard_edited(pid, rec0, override_text.strip(),
+                                telegram_send=telegram_send,
+                                redis_set=redis_set)
+            base.update(rc)
+            base["error"] += ("; corrected chain re-carded as "
+                              f"·{rc['recard_pid'][:40]}…· — awaiting fresh approve")
+            # The OLD record is deliberately NOT deleted: the new card fully
+            # supersedes it, but a decided proposal can never dispatch again
+            # (handle_response is idempotent; the binder binds only OPEN
+            # proposals), so the 7-day TTL reaping it is sufficient — and a
+            # re-card that half-failed later still has the original to fall
+            # back on for the Chair's manual path.
+        except Exception as e:
+            # Fail-safe: the edit verdict already landed — re-card trouble must
+            # never break the dispatch (parity with the module's best-effort
+            # rule for post-verdict side effects).
+            base["recard_error"] = str(e)[:200]
+            base["error"] += ("; re-card FAILED — Chair: re-card the "
+                              "corrected action")
+        return base
     raw = rget(f"cabinet:action:{pid}")
     if not raw:
         return {"ok": False, "error": f"no action {pid} (expired or already executed)"}
@@ -1082,7 +1331,16 @@ def deliver_action(pid: str, override_text: str = "", *,
     held: list[dict] = []
     rec_cid = str(rec.get("cid") or "")
     subject = str(rec.get("subject") or "")
-    actor = rec.get("actor") or {"kind": "officer", "id": "officer:cos"}
+    # CANONICAL ACTOR ID (germline fix 2026-07-04): the fallback id is the BARE
+    # role ("cos"), never a pre-qualified "officer:cos". Journal/ledger
+    # consumers compose the qualified cell key themselves as "officer:"+role
+    # (e.g. framework/fidelity/run_e2e_smoke.py:145,
+    # framework/frontdoor/attention_drain.py:297), so the old "officer:cos"
+    # literal double-composed to "officer:officer:cos" — severing every
+    # undo-journal row's demotion evidence from the graduation/demotion gate
+    # query. Stored action records carry no actor today, so this fallback IS
+    # the identity every journal row gets stamped with.
+    actor = rec.get("actor") or {"kind": "officer", "id": "cos"}
     for i, step in enumerate(steps, 1):
         kind = step.get("kind")
         # per-step gated delivery (act-first only): a gated kind / no-inverse step

@@ -34,6 +34,7 @@ Redis narrows the perimeter (treated frozen / silenced), never widens it.
 """
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import uuid
@@ -544,7 +545,12 @@ def _canary_pid(step_kind: str) -> str:
 
 
 def _canary_actor() -> Dict[str, str]:
-    return {"kind": "officer", "id": "officer:cos"}
+    # CANONICAL ACTOR ID (germline batch, 2026-07-04): the id is the BARE role
+    # ("cos"), never "officer:cos" — consumers compose the query key as
+    # "officer:" + role, so a pre-prefixed id yields "officer:officer:cos" and
+    # severs canary/journal rows from the demotion-evidence reads. One emitter
+    # contract across every module; the kind field already carries "officer".
+    return {"kind": "officer", "id": "cos"}
 
 
 def _journal_canary(pid: str, step: int, step_kind: str, backend: str, *,
@@ -583,20 +589,143 @@ def _canary_monday_create(pid: str, *, monday_post: Callable, osascript: Callabl
     return {"created": created, "reverse": res}
 
 
+# The pre-discovery hardcoded probe target ("status" column, label "Done").
+# Kept ONLY as the fallback when column discovery gets no board data back — a
+# minimal fake backend (tests/test_actfirst_canary.py FakeMonday answers only
+# item reads + generic ids, no "boards" key) or a degraded API that answers
+# without erroring. The literals are load-bearing for the fixture contract:
+# the tests seed column "status" with text "Done" (clean roundtrip) / "Blocked"
+# (drift → dead-letter → freeze). On a REAL board lacking that column the
+# update still errors → the canary still freezes — fail-closed unchanged.
+_LEGACY_PROBE_TARGET = {"col": "status", "mode": "label", "value": "Done"}
+
+
+def _first_existing_label(settings_str: Optional[str]) -> Optional[str]:
+    """The first non-empty label defined on a status column (parsed from its
+    Monday ``settings_str`` JSON; digit keys in numeric index order so repeated
+    canaries deterministically write the same label). None when unparseable or
+    none defined — the caller then SKIPS that column, because writing a label
+    the board does not define would, via the executor's mandatory
+    ``create_labels_if_missing:true`` (action_exec.py:630, the People-board
+    label-write gotcha), permanently add a canary label to the BOARD SCHEMA —
+    a mutation the item-level compare-restore reverse does not undo."""
+    try:
+        parsed = json.loads(settings_str or "")
+    except (ValueError, TypeError):
+        return None
+    labels = parsed.get("labels") if isinstance(parsed, dict) else None
+    if not isinstance(labels, dict):
+        return None
+
+    def _order(k):
+        # Monday label keys are the column's numeric indexes as strings; sort
+        # digits numerically first, anything exotic after, lexicographically.
+        s = str(k)
+        return (0, int(s), "") if s.isdigit() else (1, 0, s)
+
+    for k in sorted(labels, key=_order):
+        v = labels.get(k)
+        if isinstance(v, str) and v.strip():
+            return v
+    return None
+
+
+def _discover_probe_target(monday_post: Callable, board: str) -> Dict[str, Any]:
+    """Pick a board_status probe target the TARGET BOARD actually supports.
+
+    2026-07-04 fix: the probe used to hardcode column id ``status``, which
+    board 5091706356 LACKS — Monday answered "This column ID doesn't exist for
+    the board", so every weekly AND manual canary failed and the fail-closed
+    freeze could never be lifted by a green run (freeze contract: no
+    auto-unfreeze, action_undo.freeze:701). Discovery reads the board's own
+    columns (read-only query; the board id travels as a GraphQL VARIABLE, never
+    interpolated into the query body — same injection discipline as
+    action_undo.query_columns:316) and picks, in order:
+
+      1. a status-type column carrying an EXISTING label → label probe (the
+         real board_status shape; an existing label leaves the board schema
+         untouched despite ``create_labels_if_missing:true``);
+      2. a date-type column → date probe (same executor loop and the
+         ``kind:"date"`` compare-restore leg, action_undo._restore_one_column:412);
+      3. otherwise → note probe (``set.note`` → create_update, reversed by
+         delete_update via the journaled note_update_id) — every board supports
+         item updates, so this is the universal reversible mutation of the same
+         forward op; weaker (no column compare-restore leg exercised) but still
+         a genuine create→verify→reverse proof, so it is the LAST resort;
+      4. no boards/columns data in the response at all → the legacy
+         ``status``/"Done" target (_LEGACY_PROBE_TARGET — fixtured fakes and
+         degraded APIs; a real board that then rejects the column still fails
+         → freezes).
+
+    A discovery call that RAISES is deliberately NOT caught here: it propagates
+    to run_canary's per-kind try/except → cannot-run → freeze. Discovery only
+    CHOOSES the probe target — it can never lift, skip, or soften a freeze."""
+    data = monday_post(
+        "query($board: [ID!]) {"
+        " boards(ids: $board) { columns { id type settings_str } } }",
+        {"board": [str(board)]})
+    boards = (data or {}).get("boards") or []
+    first = boards[0] if boards and isinstance(boards[0], dict) else {}
+    cols = first.get("columns") or []
+    if not cols:
+        return dict(_LEGACY_PROBE_TARGET)
+    date_col: Optional[str] = None
+    for c in cols:
+        if not isinstance(c, dict) or not c.get("id"):
+            continue
+        ctype = str(c.get("type") or "").lower()
+        # "status" is the current API column-type enum; "color" is the legacy
+        # name for the same class (Nate's boards carry ids like color_mm34crny).
+        if ctype in ("status", "color"):
+            label = _first_existing_label(c.get("settings_str"))
+            if label:
+                return {"col": str(c["id"]), "mode": "label", "value": label}
+        elif ctype == "date" and date_col is None:
+            date_col = str(c["id"])
+    if date_col:
+        return {"col": date_col, "mode": "date", "value": None}
+    return {"col": None, "mode": "note", "value": None}
+
+
 def _canary_board_status(pid: str, *, monday_post: Callable, osascript: Callable,
                          redis_del: Callable, board: str, date: str,
                          now: Optional[str]) -> Dict[str, Any]:
-    """board_status needs a target: create a throwaway canary item, flip its
-    status, reverse (compare-restore), then archive the throwaway (teardown). The
-    UPDATE is the probe under test; scaffolding failure counts as cannot-run."""
+    """board_status needs a target: create a throwaway canary item, mutate it
+    per the DISCOVERED probe target (_discover_probe_target — the board's own
+    columns decide; the old hardcoded "status" id froze the kind permanently on
+    boards without it), reverse (compare-restore / delete-update), then archive
+    the throwaway (teardown). The UPDATE is the probe under test; scaffolding
+    failure — discovery error or setup create — counts as cannot-run."""
     from framework.frontdoor import action_exec
+    # Discover BEFORE the setup create: a discovery failure then freezes without
+    # leaving an orphan throwaway item behind.
+    target = _discover_probe_target(monday_post, board)
     setup = action_exec._exec_monday_create(
         {"board_id": board, "title": CANARY_PREFIX + " board_status probe " + date}, monday_post)
     item = setup.get("monday_id")
     if not item:
         raise RuntimeError("canary board_status setup returned no item id")
-    prestate = action_undo.query_columns(monday_post, item, ["status"])
-    upd_payload = {"monday_id": item, "board_id": board, "set": {"status": "Done"}}
+    if target["mode"] == "label":
+        # prestate is keyed on the SAME discovered column id the write and the
+        # inverse resolve (action_exec._exec_monday_update:624 and
+        # action_undo._restore_args:339 both honor ``set.{col}_column``) — one
+        # id end-to-end, or compare-restore would inspect the wrong column.
+        prestate = action_undo.query_columns(monday_post, item, [target["col"]])
+        upd_payload = {"monday_id": item, "board_id": board,
+                       "set": {"status": target["value"],
+                               "status_column": target["col"]}}
+    elif target["mode"] == "date":
+        prestate = action_undo.query_columns(monday_post, item, [target["col"]])
+        upd_payload = {"monday_id": item, "board_id": board,
+                       "set": {"due": date, "due_column": target["col"]}}
+    else:
+        # note probe: no column is touched, so there is no prestate to capture —
+        # the inverse is delete_update by the journaled note_update_id
+        # (action_undo._restore_args:349 → _inv_monday_compare_restore:447).
+        prestate = {}
+        upd_payload = {"monday_id": item, "board_id": board,
+                       "set": {"note": CANARY_PREFIX
+                               + " board_status note probe — auto-reversed"}}
     out = action_exec._exec_monday_update(upd_payload, monday_post)
     _journal_canary(pid, 1, "monday_task_update", "monday",
                     created=out, payload=upd_payload, prestate=prestate, now=now)
@@ -609,7 +738,7 @@ def _canary_board_status(pid: str, *, monday_post: Callable, osascript: Callable
                     {"item": str(item)})
     except Exception:
         pass
-    return {"created": out, "reverse": res}
+    return {"created": out, "reverse": res, "probe_target": target}
 
 
 def _canary_calendar(pid: str, *, monday_post: Callable, osascript: Callable,
@@ -675,6 +804,11 @@ def run_canary(*, monday_post: Callable, osascript: Callable,
             ok = _reverse_ok(r.get("reverse") or {})
             entry.update({"ok": ok, "created": bool((r.get("created") or {})),
                           "reverse": r.get("reverse")})
+            if r.get("probe_target"):
+                # which column/mode the board_status probe actually exercised
+                # (discovered per board, 2026-07-04) — the operator verifying a
+                # manual green canary needs this to trust the lift.
+                entry["probe_target"] = r["probe_target"]
             if not ok:
                 raise RuntimeError("canary reverse did not cleanly complete")
         except Exception as e:

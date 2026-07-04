@@ -26,6 +26,18 @@ Doctrine baked in here (safety-spine §3 "undo honesty"):
   - PER-ROW INVERSE FROM THE ACTUAL BACKEND [RT-B11]: the ``apple_reminders``
     reminder backend has no reliable inverse and is EXCLUDED from act-first v1
     (op ``none``); the calendar backend is the reversible one (delete-by-UID).
+  - WIDENED REVERSIBLE KINDS (germline batch 2026-07-04): the four reversible
+    classifier kinds {task_status_move, label, tier2_note, local_edit} carry
+    registered deterministic inverses so the policy-engine allow-branch
+    ("registered inverse exists, else propose-only") can grant their
+    act_with_undo@unmeasured posture. Board-column kinds reuse the proven
+    ``monday_compare_restore`` mechanic; file kinds get
+    ``file_compare_restore`` — restore the captured prior content (or
+    delete-if-created) ONLY while the file's sha256 still matches what the
+    lane wrote; drift ⇒ dead-letter, never clobber. investigation_run is
+    READ-ONLY (read_only_dispatch class) — no inverse, never through this
+    door; deploy_nonprod / draft_only stay unregistered (NATE-DECISION:
+    earn-up, see ``inverse_for``).
   - NO LLM anywhere in the reversal path — deterministic code only.
 
 Stdlib-only, importable under system Python 3.9.6 (``from __future__`` +
@@ -36,6 +48,7 @@ external effect (Monday / AppleScript / Redis) is an injected callable.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -180,7 +193,12 @@ def new_row(*, pid: str, cid: str, step: int, kind: str, backend: str,
         "backend": backend,
         "lane": lane,
         "subject": str(subject or "")[:300],
-        "actor": actor or {"kind": "officer", "id": "officer:cos"},
+        # CANONICAL ACTOR ID (germline batch 2026-07-04): the id is the BARE
+        # role ("cos"), NEVER "officer:cos" — the demotion-evidence gate
+        # composes "officer:"+role for its ledger query, so a pre-prefixed id
+        # reads back as "officer:officer:cos" and SEVERS this row from the
+        # demotion evidence it is supposed to supply.
+        "actor": actor or {"kind": "officer", "id": "cos"},
         "action_type": action_type_for(kind),
         "prestate": prestate or {},
         "created": created or {},
@@ -330,10 +348,19 @@ def query_columns(monday_post: Callable, item: str,
 def _restore_args(payload: dict, created: dict, prestate: dict) -> Dict[str, Any]:
     """Build the compare-and-restore args for a board_status inverse: per touched
     column, the value the lane wrote (for the drift check) + the prior value to
-    restore (from prestate). The note leg (if any) is a delete_update by id."""
+    restore (from prestate). The note leg (if any) is a delete_update by id.
+
+    ``label`` joined the iterated columns with the germline widening
+    (2026-07-04): a ``label`` / ``task_status_move`` step shares the
+    monday_task_update payload contract ({monday_id, board_id?, set:{...}},
+    real column id via ``<col>_column``), and a label column restores exactly
+    like status/priority (``{"label": prior_text}`` — _restore_one_column's
+    label leg). Additive for monday_task_update: its executor-enforced set-map
+    schema (action_exec._SET_KEYS) doesn't carry ``label``, so nothing changes
+    for existing cards."""
     setmap = (payload or {}).get("set") or {}
     columns: Dict[str, Any] = {}
-    for col in ("status", "priority", "due"):
+    for col in ("status", "priority", "due", "label"):
         if col not in setmap:
             continue
         col_id = str(setmap.get(col + "_column") or col)
@@ -347,6 +374,31 @@ def _restore_args(payload: dict, created: dict, prestate: dict) -> Dict[str, Any
             "item_id": (payload or {}).get("monday_id"),
             "columns": columns,
             "update_id": (created or {}).get("note_update_id")}
+
+
+def _file_restore_args(payload: dict, created: dict, prestate: dict) -> Dict[str, Any]:
+    """Build the compare-and-restore args for a file-write inverse (tier2_note /
+    local_edit — germline widening 2026-07-04).
+
+    CAPTURE CONTRACT (the executor that journals a file kind writes these
+    fields; this builder + ``_inv_file_compare_restore`` consume them):
+      - prestate (on the WRITE-AHEAD row, read BEFORE the mutation):
+          ``existed``: bool — did the file exist before the lane wrote?
+          ``prior_content``: str | None — the FULL prior text (None iff
+            existed is False; "" is a real, known-empty prior).
+      - created (the enrichment row, AFTER the mutation):
+          ``path``: str — the ABSOLUTE path actually written (absolute by
+            contract: the inverse must never resolve against an ambient cwd).
+          ``wrote_sha256``: str — sha256 hex of the file content AFTER the
+            write. This is the drift fingerprint; for an append-style write
+            the post-write content is prior+appended, which is why it MUST be
+            read back from disk post-write, never derived from the payload.
+    ``payload["path"]`` is only the write-ahead fallback for the path —
+    ``created`` wins because it records what actually happened."""
+    return {"path": (created or {}).get("path") or (payload or {}).get("path"),
+            "existed": (prestate or {}).get("existed"),
+            "prior_content": (prestate or {}).get("prior_content"),
+            "wrote_sha256": (created or {}).get("wrote_sha256")}
 
 
 def inverse_for(kind: str, backend: str, payload: Optional[dict],
@@ -365,6 +417,31 @@ def inverse_for(kind: str, backend: str, payload: Optional[dict],
     if kind == "monday_task_update":
         return {"op": "monday_compare_restore",
                 "args": _restore_args(payload, created, prestate)}
+    # GERMLINE WIDENING (2026-07-04): the four reversible classifier kinds
+    # {task_status_move, label, tier2_note, local_edit} get registered
+    # deterministic inverses so the policy-engine allow-branch ("registered
+    # inverse exists, else fall through to propose-only") can actually grant
+    # their act_with_undo@unmeasured verdict. Deliberately NO backend branch
+    # on these four: Monday is the only wired board-write surface, the file
+    # ops are backend-agnostic by nature, and the eligibility probe may pass
+    # the kind-fallback backend (run_action_lane._backend_for_step returns the
+    # kind itself for unrouted kinds) — a genuinely-registered inverse must
+    # not be gated out of the grant by a backend-string spelling. The journal
+    # row still records the ACTUAL backend at write time [RT-B11], and every
+    # restore is compare-first (drift ⇒ dead-letter, never clobber), so a
+    # misrouted row degrades safe, not silent.
+    if kind in ("task_status_move", "label"):
+        # Same payload contract + restore mechanic as monday_task_update
+        # ({monday_id, board_id?, set:{...}}): a status move / label write is
+        # a Monday column write, reversed by compare-and-restore of exactly
+        # the touched columns (_restore_args picks up the ``label`` leg).
+        return {"op": "monday_compare_restore",
+                "args": _restore_args(payload, created, prestate)}
+    if kind in ("tier2_note", "local_edit"):
+        # Restore the captured prior file content, or delete-if-created —
+        # only while the file still matches what the lane wrote (sha256).
+        return {"op": "file_compare_restore",
+                "args": _file_restore_args(payload, created, prestate)}
     if kind == "reminder_create":
         if backend == "apple_reminders":
             return {"op": "none",
@@ -375,6 +452,21 @@ def inverse_for(kind: str, backend: str, payload: Optional[dict],
     if kind == "delegate_work":
         return {"op": "none",
                 "args": {"reason": "delegate_work is propose-first — no act-first inverse"}}
+    if kind == "investigation_run":
+        # READ-ONLY by contract (read_only_dispatch class, germline batch
+        # 2026-07-04): it commissions an investigation that returns a brief —
+        # no side effects, so there is nothing to reverse and it must NEVER be
+        # granted through the act-with-undo (inverse-backed) door. Its
+        # notify_after posture is the policy layer's business; here it stays
+        # op ``none`` (act_first_eligible False), exactly like delegate_work.
+        return {"op": "none",
+                "args": {"reason": "investigation_run is read-only — nothing to reverse"}}
+    # NATE-DECISION (2026-07-04): deploy_nonprod and draft_only are NOT widened
+    # — Captain judgment keeps them on the earn-up ladder, so they deliberately
+    # have NO registered inverse and fall through to op ``none`` (⇒ propose-
+    # only) like every other unregistered kind. Do not add them here without a
+    # Captain ruling. Hard-ceiling kinds (outbound comms, prod deploy, spend,
+    # secrets) must never appear in this registry at all.
     return {"op": "none", "args": {"reason": "unknown kind " + repr(kind)}}
 
 
@@ -484,6 +576,84 @@ def _inv_calendar_delete(args: dict, *, monday_post: Callable = None,
     return {"ok": False, "error": "calendar delete returned " + repr(res)}
 
 
+def _inv_file_compare_restore(args: dict, *, monday_post: Callable = None,
+                              osascript: Callable = None, **_) -> Dict[str, Any]:
+    """Reverse a file write (tier2_note / local_edit — germline widening
+    2026-07-04) with COMPARE-AND-RESTORE: the [RT-A11] doctrine applied to
+    files. Mutate ONLY if the file's CURRENT content is still byte-identical
+    (sha256) to what the lane wrote — anything else means a colleague/officer
+    touched it since, and we return a dead-letter, never clobber. Restore =
+    write the captured prior content back; a file the lane CREATED
+    (existed False) is deleted — the file only, never a directory, never
+    recursive. Fail-closed on every unknown (missing fingerprint, relative
+    path, uncaptured prior): a loud dead-letter, not a guess. The pre-flight
+    honesty check lives in ``_prestate_quarantine_reason`` (dead-letter +
+    freeze BEFORE execution); the checks here are the belt-and-braces stop
+    for a row that reaches the executor anyway."""
+    path = args.get("path")
+    if not path:
+        return {"ok": True, "skipped": "no path (crash/unexecuted row) — nothing to reverse"}
+    path = str(path)
+
+    def dead(reason: str) -> Dict[str, Any]:
+        # ok:False + dead_letters mirrors _inv_monday_compare_restore's drift
+        # return, so _reverse_rows journals reversal_failed + manual_cleanup.
+        return {"ok": False, "dead_letters": [{"path": path, "reason": reason}]}
+
+    # Never resolve against an ambient cwd — the capture contract
+    # (_file_restore_args) journals ABSOLUTE paths; a relative one is a
+    # malformed row, not a guessing game (Corridor path-safety, same posture
+    # as _journal_file's fixed basename).
+    if not os.path.isabs(path):
+        return dead("relative path — the capture contract journals absolute "
+                    "paths; refusing to guess a cwd")
+    existed = args.get("existed")
+    if existed not in (True, False):
+        return dead("prestate never captured whether the file existed — "
+                    "cannot know whether to delete or restore")
+    if not os.path.exists(path):
+        if existed is False:
+            # The lane created it and it is already gone — the inverse's end
+            # state already holds (mirrors the calendar "ok:absent" no-op).
+            return {"ok": True, "skipped": "file already absent — nothing to reverse"}
+        return dead("file deleted since the lane wrote it — restoring would "
+                    "resurrect a colleague's deliberate delete")
+    if os.path.isdir(path):
+        return dead("path is a directory — the journal only ever records "
+                    "regular files")
+    wrote_sha = args.get("wrote_sha256")
+    if not wrote_sha:
+        return dead("no wrote_sha256 fingerprint on the row — cannot prove "
+                    "the file is still what the lane wrote")
+    try:
+        with open(path, "rb") as fh:
+            current_sha = hashlib.sha256(fh.read()).hexdigest()
+    except OSError as e:
+        return dead("unreadable file: " + str(e)[:120])
+    if current_sha != str(wrote_sha):
+        return dead("drifted — current content is not what the lane wrote "
+                    "(edited since); never clobber")
+    if existed is False:
+        try:
+            os.remove(path)             # the created FILE only — never a tree
+        except OSError as e:
+            return dead("delete failed: " + str(e)[:120])
+        return {"ok": True, "detail": [["deleted_created_file", path]]}
+    prior = args.get("prior_content")
+    if not isinstance(prior, str):
+        # existed True with no captured prior string — a restore would write
+        # content the lane never knew. "" IS a valid known-empty prior (the
+        # None/"" split mirrors the column rule in _prestate_quarantine_reason).
+        return dead("prior content never captured — a restore would CLOBBER "
+                    "the file with content the lane never knew")
+    try:
+        with open(path, "w") as fh:
+            fh.write(prior)
+    except OSError as e:
+        return dead("restore write failed: " + str(e)[:120])
+    return {"ok": True, "restored": [path]}
+
+
 def _inv_none(args: dict, *, monday_post: Callable = None,
               osascript: Callable = None, **_) -> Dict[str, Any]:
     return {"ok": True,
@@ -495,6 +665,7 @@ INVERSE_OPS: Dict[str, Callable[..., Dict[str, Any]]] = {
     "monday_archive_item": _inv_monday_archive_item,
     "monday_compare_restore": _inv_monday_compare_restore,
     "calendar_delete_by_uid": _inv_calendar_delete,
+    "file_compare_restore": _inv_file_compare_restore,
     "none": _inv_none,
 }
 
@@ -534,10 +705,33 @@ def _prestate_quarantine_reason(row: dict) -> Optional[str]:
     restore is indistinguishable from "the column was empty" and would write
     ``{}``, CLEARING a value the lane never knew — a clobber reported as
     success. A column entry that EXISTS with ``text: None`` is a KNOWN-empty
-    prior and stays restorable. Fail-closed: no captured prior ⇒ no reverse."""
+    prior and stays restorable. Fail-closed: no captured prior ⇒ no reverse.
+
+    A ``file_compare_restore`` inverse (tier2_note / local_edit — germline
+    widening 2026-07-04) consumes prestate the same way: ``existed`` must have
+    been captured (else the inverse cannot know whether to delete or restore),
+    and an existed-True row must carry the captured ``prior_content`` STRING
+    (else the restore would clobber the file with content the lane never
+    knew). An empty string IS a known-empty prior and stays restorable — the
+    None/"" split mirrors the column ``text: None`` rule above."""
     inv = row.get("inverse") or {}
-    if inv.get("op") != "monday_compare_restore":
-        return None                     # only compare-restore consumes prestate
+    op = inv.get("op")
+    if op == "file_compare_restore":
+        prestate = row.get("prestate") or {}
+        if prestate.get("existed") not in (True, False):
+            return ("prestate never captured whether the file existed — the "
+                    "inverse cannot know whether to delete or restore; row "
+                    "dead-lettered, kind frozen, artifact left standing for "
+                    "manual review")
+        if prestate.get("existed") is True \
+                and not isinstance(prestate.get("prior_content"), str):
+            return ("prestate never captured the prior file content — a "
+                    "restore would CLOBBER the file with content the lane "
+                    "never knew; row dead-lettered, kind frozen, artifact "
+                    "left standing for manual review")
+        return None
+    if op != "monday_compare_restore":
+        return None          # remaining registered ops don't consume prestate
     columns = (inv.get("args") or {}).get("columns") or {}
     if not columns:
         return None                     # note-only update: nothing restores from prestate
@@ -776,7 +970,10 @@ def acted_event(step: Optional[dict], row: dict, *,
     kind = row.get("kind") or (step or {}).get("kind") or "action"
     ev: Dict[str, Any] = {
         "ts": row.get("executed_at") or row.get("ts") or _now(),
-        "actor": row.get("actor") or {"kind": "officer", "id": "officer:cos"},
+        # BARE role id — see the canonical-actor-id comment in new_row(): the
+        # gate composes "officer:"+role, so "officer:cos" here would sever
+        # this acted event from demotion evidence (germline batch 2026-07-04).
+        "actor": row.get("actor") or {"kind": "officer", "id": "cos"},
         "lane": row.get("lane"),
         "action": action or ("acted:" + str(kind)),
         "subject": str(row.get("subject") or (step or {}).get("title") or kind)[:300],

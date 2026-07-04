@@ -73,17 +73,23 @@ class TestShippedFloor:
         assert pol["name"] == "authority-matrix"
         assert pol["type"] == "authority_matrix"
 
-    def test_floor_covers_all_eleven_risk_classes(self, loaded):
+    def test_floor_covers_all_thirteen_risk_classes(self, loaded):
         # [GERM-2] +pm_write +calendar_write (act_with_undo classes).
+        # 2026-07-04 trust-inversion split-outs: +read_only_dispatch
+        # (investigation_run, notify_after) +draft_only (earn-up kept,
+        # NATE-DECISION — outbound-adjacent) moved OUT of reversible.
         pol = M.matrix_policy(loaded)
         expected = {
-            "reversible", "pm_write", "calendar_write",
+            "reversible", "read_only_dispatch", "draft_only",
+            "pm_write", "calendar_write",
             "internal_comms", "external_comms",
             "deploy_nonprod", "deploy_prod", "spend",
             "secrets", "network_write", "credentials_grant",
         }
         assert set(pol["risk_classes"]) == expected
         assert set(pol["verdicts"]) == expected
+        # keep the count claim honest with matrix.RISK_CLASSES (closed set)
+        assert expected == set(M.RISK_CLASSES)
 
     def test_veto_window_is_seven(self, loaded):
         pol = M.matrix_policy(loaded)
@@ -211,11 +217,23 @@ class TestVerdictShape:
         for rc in pol["hard_ceiling"]:
             assert set(pol["verdicts"][rc]) == {"*"}
 
-    def test_reversible_graduated_is_auto(self, loaded):
-        # the one canonical auto path (reversible only graduates to auto)
+    def test_reversible_is_act_with_undo_trust_first(self, loaded):
+        # TRUST-INVERSION (2026-07-04, earn-demotion ruling — supersedes the
+        # old reversible earn-up pin auto@graduated/propose_only@unmeasured,
+        # which _validate_act_first_floor now hard-rejects): act_with_undo at
+        # every non-demote state, propose_only at demote (evidence is the
+        # only way down, and it must land fail-safe).
         pol = M.matrix_policy(loaded)
-        assert pol["verdicts"]["reversible"]["graduated"] == "auto"
-        assert pol["verdicts"]["reversible"]["unmeasured"] == "propose_only"
+        for state in ("unmeasured", "propose_only", "eligible", "graduated"):
+            assert pol["verdicts"]["reversible"][state] == "act_with_undo", state
+        assert pol["verdicts"]["reversible"]["demote"] == "propose_only"
+        # read_only_dispatch mirrors the posture with notify_after (read-only,
+        # act-and-tell); draft_only keeps the old earn-up ladder verbatim.
+        for state in ("unmeasured", "propose_only", "eligible", "graduated"):
+            assert pol["verdicts"]["read_only_dispatch"][state] == "notify_after", state
+        assert pol["verdicts"]["read_only_dispatch"]["demote"] == "propose_only"
+        assert pol["verdicts"]["draft_only"]["graduated"] == "auto"
+        assert pol["verdicts"]["draft_only"]["unmeasured"] == "propose_only"
 
     def test_internal_comms_graduated_is_veto_window(self, loaded):
         pol = M.matrix_policy(loaded)

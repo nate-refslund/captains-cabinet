@@ -90,12 +90,18 @@ def _run_shadow(mod, hook: dict, db_path: str, officer: str = "cos", **env):
     return rc
 
 
+# Mirrors the matrix verdict vocabulary (framework/policies/authority-matrix.yml
+# "verdict in {...}" header). act_with_undo + classifier joined 2026-07-04 with
+# the trust-inversion germline batch — the shadow records resolve_verdict's
+# output verbatim, so the typed set must track the matrix vocab exactly.
 _TYPED_VERDICTS = {
     "auto",
+    "act_with_undo",
     "auto_with_veto_window",
     "notify_after",
     "propose_only",
     "always_gated",
+    "classifier",
 }
 
 
@@ -121,8 +127,12 @@ class TestAuthorityShadowEmission:
             verdict = authority[0]["shadow_decision"].get("verdict")
             assert verdict in _TYPED_VERDICTS, f"verdict {verdict!r} not a typed verdict"
 
-    def test_reversible_unmeasured_is_propose_only(self):
-        # A plain local edit -> reversible -> unmeasured (A0 stub) -> propose_only.
+    def test_reversible_unmeasured_is_act_with_undo(self):
+        # TRUST-INVERSION (germline batch 2026-07-04): a plain local edit ->
+        # reversible -> unmeasured -> act_with_undo (trust granted day-one,
+        # lost on demotion evidence — never earn-up). The shadow records the
+        # verdict verbatim; the LIVE gate additionally allows only when the
+        # undo plane is viable (policy_engine._act_with_undo_gap).
         mod = _load_shadow_module()
         with tempfile.TemporaryDirectory() as tmp:
             db = os.path.join(tmp, "shadow.sqlite3")
@@ -136,7 +146,7 @@ class TestAuthorityShadowEmission:
                 e["shadow_decision"] for e in _events(db)
                 if e.get("shadow_decision", {}).get("policy_version") == "authority-shadow-v1"
             ]
-            assert authority and authority[0]["verdict"] == "propose_only"
+            assert authority and authority[0]["verdict"] == "act_with_undo"
 
     def test_hard_ceiling_is_always_gated(self):
         # git push origin main -> deploy_prod (hard ceiling) -> always_gated.
@@ -156,8 +166,10 @@ class TestAuthorityShadowEmission:
             assert authority and authority[0]["verdict"] == "always_gated"
 
     def test_a0_never_emits_auto_for_real_actions(self):
-        """The A0 fail-closed invariant in the shadow stream: no probe yields a
-        typed `auto` verdict (read_cell_state is stubbed to unmeasured)."""
+        """The fail-closed invariant in the shadow stream: no probe yields a
+        typed `auto` verdict at unmeasured confidence — act_with_undo is the
+        ONLY acting verdict reachable there (trust-inversion, 2026-07-04),
+        and it is a distinct typed verdict, never spelled `auto`."""
         mod = _load_shadow_module()
         probes = [
             ("Edit", {"file_path": "/workspace/product/a.ts"}),
