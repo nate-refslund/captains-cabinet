@@ -115,18 +115,28 @@ class TestHardCeilingNeverAuto:
 
 
 class TestUnmeasuredCellCannotAuto:
-    """(d) — a non-ceiling cell with stubbed-unmeasured confidence resolves
-    propose_only; the gate NEVER returns None (auto) anywhere in A0."""
+    """(d) — at unmeasured confidence, `auto` stays unreachable. POST
+    trust-inversion (germline batch 2026-07-04, earn-demotion ruling): the
+    reversible row now allows via the DISTINCT act_with_undo verdict
+    (registered inverse + reachable journal, else propose-only) — but earn-up
+    rows and ceilings still block, and nothing ever resolves to `auto`."""
 
-    def test_reversible_unmeasured_proposes(self):
+    def test_reversible_unmeasured_acts_with_undo(self):
+        # TRUST-INVERSION (2026-07-04, supersedes the old propose pin): a
+        # plainly-reversible local edit -> reversible row, unmeasured ->
+        # act_with_undo -> allow (local_edit has a registered
+        # file_compare_restore inverse). Shadow-consumed until the
+        # Captain-gated enforcement flip.
+        import os
+        import tempfile
+        from unittest.mock import patch
         pol = _matrix_policy()
-        # a plainly-reversible local edit -> reversible row, unmeasured -> propose
-        result = _eval_authority_matrix(
-            pol, "Edit", {"file_path": "src/app.py", "content": "x"}, "cto"
-        )
-        assert result is not None
-        assert "PROPOSE-ONLY" in result
-        assert "unmeasured" in result
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(os.environ, {"CABINET_UNDO_DIR": tmp}):
+                result = _eval_authority_matrix(
+                    pol, "Edit", {"file_path": "src/app.py", "content": "x"}, "cto"
+                )
+        assert result is None
 
     def test_internal_comms_unmeasured_proposes(self):
         pol = _matrix_policy()
@@ -139,11 +149,14 @@ class TestUnmeasuredCellCannotAuto:
         assert result is not None
         assert "PROPOSE-ONLY" in result
 
-    def test_gate_never_returns_auto_in_a0(self):
+    def test_gate_blocks_everything_but_act_with_undo(self):
+        # POST trust-inversion sweep (2026-07-04 — supersedes the old
+        # never-allow A0 sweep): every ceiling + earn-up probe still blocks;
+        # only act_with_undo cells (the Edit probe above) may allow. The
+        # reversible Edit probe deliberately moved OUT of this sweep and into
+        # test_reversible_unmeasured_acts_with_undo.
         pol = _matrix_policy()
-        # Sweep every probe (ceiling + reversible + internal) — none may auto.
         sweep = list(_CEILING_PROBES.values()) + [
-            ("Edit", {"file_path": "README.md", "content": "x"}),
             ("Bash", {"command": "git push origin feature-branch"}),
             (
                 "mcp__brain__queue_draft",
@@ -152,7 +165,7 @@ class TestUnmeasuredCellCannotAuto:
         ]
         for tool, ti in sweep:
             result = _eval_authority_matrix(pol, tool, ti, "cto")
-            assert result is not None, f"A0 must never auto: {tool} {ti}"
+            assert result is not None, f"must block (ceiling/earn-up): {tool} {ti}"
 
 
 class TestGoldenEvalFilesExist:

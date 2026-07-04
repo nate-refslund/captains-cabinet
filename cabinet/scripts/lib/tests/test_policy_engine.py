@@ -1548,9 +1548,14 @@ class TestResolveVerdict:
     def test_explicit_state_resolution(self):
         pol = _load_real_matrix_policy()
         v = pol["verdicts"]
-        assert resolve_verdict(v, "reversible", "graduated") == "auto"
-        assert resolve_verdict(v, "reversible", "unmeasured") == "propose_only"
-        assert resolve_verdict(v, "reversible", "eligible") == "propose_only"
+        # TRUST-INVERSION (germline batch 2026-07-04, earn-demotion ruling):
+        # the reversible row is act_with_undo at every non-demote state —
+        # trust granted day-one, lost only on demotion evidence. The old
+        # earn-up pins (propose_only@unmeasured, auto@graduated) are the
+        # exact posture matrix._validate_act_first_floor now hard-REJECTS.
+        assert resolve_verdict(v, "reversible", "graduated") == "act_with_undo"
+        assert resolve_verdict(v, "reversible", "unmeasured") == "act_with_undo"
+        assert resolve_verdict(v, "reversible", "eligible") == "act_with_undo"
         assert resolve_verdict(v, "reversible", "demote") == "propose_only"
         assert resolve_verdict(v, "internal_comms", "graduated") == "auto_with_veto_window"
         assert resolve_verdict(v, "internal_comms", "unmeasured") == "propose_only"
@@ -1593,18 +1598,108 @@ class TestReadCellState:
         assert read_cell_state(None, None, None) == "unmeasured"  # type: ignore[arg-type]
 
 
+class TestReadCellStateFailClosed:
+    """MF-1 (checkpoint review lane-germline-0705-cp1, 2026-07-05): the live
+    (un-stubbed) read_cell_state resolves its two failure directions
+    DIFFERENTLY post-act-first-widening. No-evidence stays trust-first
+    "unmeasured" (act_with_undo day-one for reversible classes), but a read
+    ERROR or an out-of-vocabulary state must fail CLOSED to "demote"
+    (propose_only across every class): unmeasured now means ALLOW, so
+    resolving a broken evidence plane to "unmeasured" would silently ERASE a
+    demotion at exactly the enforcing gate. (TestReadCellState above predates
+    the un-stub; its cells still legitimately read unmeasured because the
+    fenced test ledger carries no rows for them.)"""
+
+    @staticmethod
+    def _graduation():
+        from framework.fidelity import graduation  # the module read_cell_state
+        return graduation                          # lazily imports at call time
+
+    def test_evaluate_exception_fails_closed_to_demote(self):
+        with patch.object(self._graduation(), "evaluate",
+                          side_effect=RuntimeError("evidence plane broken")):
+            assert read_cell_state("cos", "polads", "task_create") == "demote"
+
+    def test_no_cell_rows_is_legit_unmeasured(self):
+        # None = a cell with no evidence yet — the trust-first case, NOT an
+        # error: a brand-new reversible cell is act_with_undo from day one.
+        with patch.object(self._graduation(), "evaluate", return_value=None):
+            assert read_cell_state("cos", "polads", "task_create") == "unmeasured"
+
+    def test_out_of_vocab_state_fails_closed_to_demote(self):
+        # An unknown state must never be trusted — it is a read failure, not a
+        # new kind of permission.
+        with patch.object(self._graduation(), "evaluate",
+                          return_value={"state": "turbo-graduated"}):
+            assert read_cell_state("cos", "polads", "task_create") == "demote"
+
+    def test_known_states_pass_through_verbatim(self):
+        # The whole _CELL_STATES vocabulary passes through untouched — the
+        # fail-closed wrapper must not distort a real reading (incl. a real
+        # demote, the brake this batch wired).
+        for state in ("unmeasured", "propose_only", "eligible", "graduated",
+                      "demote"):
+            with patch.object(self._graduation(), "evaluate",
+                              return_value={"state": state}):
+                assert read_cell_state("cos", "polads", "task_create") == state
+
+    def test_cell_key_composes_single_officer_prefix(self):
+        # CANONICAL ACTOR-ID JOIN (germline 2026-07-04): the query composes
+        # "officer:" + the BARE role. Pin the join key — a pre-prefixed id
+        # double-composes to "officer:officer:cos" and silently severs
+        # demotion evidence from the gate (the shipped severing bug this
+        # batch fixed).
+        seen = {}
+
+        def spy(cell, **kw):
+            seen["cell"] = cell
+            return {"state": "graduated"}
+
+        with patch.object(self._graduation(), "evaluate", new=spy):
+            assert read_cell_state("cos", "polads", "task_create") == "graduated"
+        assert seen["cell"] == ("officer:cos", "polads", "task_create")
+
+
 class TestEvalAuthorityMatrix:
     """The eval end-to-end: verdict resolution + the fail-safe spine."""
 
-    def test_reversible_unmeasured_proposes(self):
+    def test_reversible_unmeasured_acts_with_undo(self):
+        """TRUST-INVERSION (germline batch 2026-07-04, supersedes the old
+        test_reversible_unmeasured_proposes): a plain local edit -> reversible
+        -> unmeasured -> act_with_undo -> ALLOW, because local_edit has a
+        registered deterministic inverse (action_undo file_compare_restore)
+        and the undo journal is reachable. Shadow-consumed until the
+        Captain-gated enforcement flip — the gate verdict changes, live
+        behavior does not (CABINET_AUTHORITY_ENFORCING still defaults 0)."""
         pol = _load_real_matrix_policy()
-        # A plain local edit -> reversible -> unmeasured (stub) -> propose_only.
-        result = _eval_authority_matrix(
-            pol, "Edit", {"file_path": "/workspace/product/src/foo.ts"}, "cto"
-        )
+        with tempfile.TemporaryDirectory() as tmp:
+            # hermetic journal-reachability: never depend on the machine's
+            # real ~/Library undo dir (same override discipline as _undo_dir).
+            with patch.dict(os.environ, {"CABINET_UNDO_DIR": tmp}):
+                result = _eval_authority_matrix(
+                    pol, "Edit", {"file_path": "/workspace/product/src/foo.ts"}, "cto"
+                )
+        assert result is None  # allow — act_with_undo with a viable undo plane
+
+    def test_reversible_act_with_undo_falls_safe_without_journal(self):
+        """The Corridor-confirmed fail-safe: same reversible cell, but the
+        undo journal path is UNREACHABLE — CABINET_UNDO_DIR points below a
+        plain FILE, so _act_with_undo_gap's walk-up lands on a non-dir
+        ancestor -> "undo journal dir unreachable" -> the allow branch must
+        fall through to propose-only naming the gap (never allow)."""
+        pol = _load_real_matrix_policy()
+        with tempfile.TemporaryDirectory() as tmp:
+            blocker = os.path.join(tmp, "not-a-dir")
+            with open(blocker, "w") as fh:
+                fh.write("x")
+            with patch.dict(os.environ,
+                            {"CABINET_UNDO_DIR": os.path.join(blocker, "undo")}):
+                result = _eval_authority_matrix(
+                    pol, "Edit", {"file_path": "/workspace/product/src/foo.ts"}, "cto"
+                )
         assert result is not None
         assert "PROPOSE-ONLY" in result
-        assert "reversible" in result
+        assert "act_with_undo" in result  # the gap-naming message
 
     def test_internal_comms_unmeasured_proposes(self):
         pol = _load_real_matrix_policy()
@@ -1667,41 +1762,61 @@ class TestEvalAuthorityMatrix:
         assert result is not None
         assert "PROPOSE-ONLY" in result
 
-    def test_gate_never_returns_auto_in_a0(self):
-        """The CORE A0 invariant: across a broad sample of action types, the
-        gate NEVER returns None (auto/allow) — every cell proposes or gates,
-        because read_cell_state is stubbed to 'unmeasured'."""
+    def test_gate_allows_only_act_with_undo_cells_at_unmeasured(self):
+        """The fail-closed spine, POST trust-inversion (germline batch
+        2026-07-04 — supersedes the old test_gate_never_returns_auto_in_a0):
+        across a broad sample of action types at unmeasured confidence, the
+        ONLY allows are cells the Captain-ratified matrix maps to
+        act_with_undo AND whose undo plane is mechanically viable (registered
+        inverse + reachable journal). Everything else — hard ceilings,
+        earn-up rows (internal_comms, deploy_nonprod), and the ambiguous
+        backstop — still blocks. `auto` remains unreachable at unmeasured."""
         pol = _load_real_matrix_policy()
+        # (tool, input, allow_expected) — allow_expected True ONLY for
+        # act_with_undo classes: local_edit/task_status_move/... (reversible)
+        # and board_status/task_create (pm_write). Everything Bash that
+        # classifies local_edit (plain `ls -la`) rides the same row.
         probes = [
-            ("Edit", {"file_path": "/workspace/product/a.ts"}),
-            ("Write", {"file_path": "/workspace/product/b.ts", "content": "x"}),
-            ("Read", {"file_path": "/workspace/product/c.ts"}),
-            ("Bash", {"command": "ls -la"}),
-            ("Bash", {"command": "git push origin feature/x"}),
-            ("Bash", {"command": "git push origin main"}),
-            ("Bash", {"command": "vercel deploy"}),
-            ("Bash", {"command": "vercel --prod"}),
-            ("Bash", {"command": "stripe charge --amount 100"}),
-            ("Bash", {"command": "cat /workspace/product/.env"}),
-            ("Bash", {"command": "oauth grant token"}),
+            ("Edit", {"file_path": "/workspace/product/a.ts"}, True),
+            ("Write", {"file_path": "/workspace/product/b.ts", "content": "x"}, True),
+            ("Read", {"file_path": "/workspace/product/c.ts"}, True),
+            ("Bash", {"command": "ls -la"}, True),
+            ("Bash", {"command": "git push origin feature/x"}, False),
+            ("Bash", {"command": "git push origin main"}, False),
+            ("Bash", {"command": "vercel deploy"}, False),
+            ("Bash", {"command": "vercel --prod"}, False),
+            ("Bash", {"command": "stripe charge --amount 100"}, False),
+            ("Bash", {"command": "cat /workspace/product/.env"}, False),
+            ("Bash", {"command": "oauth grant token"}, False),
             (
                 "mcp__brain__queue_draft",
                 {"recipient": "sean@stepnetwork.dk", "channel": "teams"},
+                False,
             ),
             (
                 "mcp__brain__queue_draft",
                 {"recipient": "out@example.com", "channel": "email"},
+                False,
             ),
-            ("mcp__monday_com__change_item_column_values", {}),
-            ("mcp__some__create_post", {}),
-            ("SomeRandomTool", {"x": 1}),
+            ("mcp__monday_com__change_item_column_values", {}, True),
+            ("mcp__some__create_post", {}, False),
+            ("SomeRandomTool", {"x": 1}, False),
         ]
-        for tool_name, tool_input in probes:
-            result = _eval_authority_matrix(pol, tool_name, tool_input, "cto")
-            assert result is not None, (
-                f"A0 gate returned auto/allow for {tool_name} {tool_input} — "
-                f"fail-closed invariant violated"
-            )
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(os.environ, {"CABINET_UNDO_DIR": tmp}):
+                for tool_name, tool_input, allow_expected in probes:
+                    result = _eval_authority_matrix(pol, tool_name, tool_input, "cto")
+                    if allow_expected:
+                        assert result is None, (
+                            f"act_with_undo cell blocked: {tool_name} {tool_input} "
+                            f"-> {result}"
+                        )
+                    else:
+                        assert result is not None, (
+                            f"gate returned allow for {tool_name} {tool_input} — "
+                            f"fail-closed invariant violated (only act_with_undo "
+                            f"cells may allow at unmeasured)"
+                        )
 
     def test_malformed_policy_fails_safe(self):
         """A malformed/empty policy dict must NOT raise and must NOT allow —
@@ -1714,11 +1829,14 @@ class TestEvalAuthorityMatrix:
         assert "PROPOSE-ONLY" in result
 
     def test_dispatch_via_evaluate_policy(self):
-        """evaluate_policy() routes authority_matrix to the eval."""
+        """evaluate_policy() routes authority_matrix to the eval. The
+        propose-only probe is deploy_nonprod (earn-up kept, NATE-DECISION
+        2026-07-04) — the old Edit probe now rides the act_with_undo allow
+        branch (trust-inversion) and no longer blocks."""
         pol = _load_real_matrix_policy()
-        # A reversible action in A0 -> propose_only (block message).
+        # An earn-up action at unmeasured -> propose_only (block message).
         result = evaluate_policy(
-            pol, "Edit", {"file_path": "/workspace/product/a.ts"}, "cto"
+            pol, "Bash", {"command": "git push origin feature/x"}, "cto"
         )
         assert result is not None
         assert "PROPOSE-ONLY" in result

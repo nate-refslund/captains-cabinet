@@ -14,9 +14,23 @@
 # code-level hard-ceiling backstop (framework/learning/capability_gaps.py
 # HARD_CEILING_TOUCHES).
 #
-# FAIL-SAFE is the spine: until F provides a per-cell confidence score, the cell
-# is propose_only; hard-ceiling classes are always_gated regardless of
-# confidence — F can never lift them. NO row maps a prod/ceiling class to auto.
+# FAIL-SAFE is the spine, in TWO postures since the trust-inversion ruling
+# (NATE-DECISION 2026-07-03/04 earn-demotion, REINFORCED + VERIFIED 2026-07-04,
+# widened to the reversible beachhead by fix wave wsqzqfpt5):
+#   * EARN-UP rows (internal_comms, deploy_nonprod, draft_only): until F
+#     provides a per-cell confidence score, the cell is propose_only.
+#   * TRUST-FIRST rows (reversible, pm_write, calendar_write → act_with_undo;
+#     read_only_dispatch → notify_after): trust is GRANTED at unmeasured and
+#     lost only on demotion EVIDENCE (demote → propose_only) — never pre-earned.
+#     act_with_undo grants nothing by itself: the policy_engine allow-branch
+#     grants it ONLY when action_undo.py registers a deterministic inverse for
+#     the action_type AND the undo-journal path is reachable; otherwise the
+#     call falls through to propose-only (Corridor-confirmed invariant).
+# Hard-ceiling classes are always_gated regardless of confidence — F can never
+# lift them. NO row maps a prod/ceiling class to auto. matrix.py's
+# _validate_act_first_floor makes earn-up re-introduction on a trust-first row
+# (propose_only@unmeasured) a hard validation error, so no future preset or
+# instance merge can silently restore it.
 version: 1
 policies:
   - name: authority-matrix
@@ -29,8 +43,19 @@ policies:
     # (CI-asserted): an ambiguous/unknown action has NO risk_class and falls
     # through to propose-only (fail-safe).
     risk_classes:
+      # reversible — act_with_undo (trust-first) since 2026-07-04 (fix wave
+      # wsqzqfpt5, per the EARN-DEMOTION ruling): exactly the four kinds whose
+      # deterministic inverse the undo plane can register. draft_only and
+      # investigation_run MOVED OUT the same day — draft_only to its own
+      # earn-up class (NATE-DECISION: outbound-adjacent), investigation_run to
+      # read_only_dispatch (read-only ⇒ no inverse exists or is needed, so
+      # keeping it here would falsely claim reversibility-with-undo).
       reversible:
-        action_types: [task_status_move, label, tier2_note, draft_only, local_edit, investigation_run]
+        action_types: [task_status_move, label, tier2_note, local_edit]
+      read_only_dispatch:                                             # notify_after (read-only, act-and-tell)
+        action_types: [investigation_run]
+      draft_only:                                                     # NATE-DECISION 2026-07-04: NOT widened (earn-up kept)
+        action_types: [draft_only]
       pm_write:                                                       # act_with_undo (reversible-with-undo)
         action_types: [task_create, board_status]
       calendar_write:                                                 # act_with_undo (reversible-with-undo)
@@ -71,11 +96,42 @@ policies:
     # Verdict table: risk_class -> { confidence_state -> verdict }.
     # confidence_state in {unmeasured, propose_only, eligible, graduated, demote}
     #                   (hard-ceiling rows use the "*" wildcard).
-    # verdict in {auto, auto_with_veto_window, notify_after, propose_only,
-    #            always_gated, classifier}.
-    # NO prod/ceiling cell may be `auto` (CI-asserted) [FIX-6].
+    # verdict in {auto, act_with_undo, auto_with_veto_window, notify_after,
+    #            propose_only, always_gated, classifier}.
+    # NO prod/ceiling cell may be `auto` (CI-asserted) [FIX-6]. NO trust-first
+    # row may be propose_only at unmeasured (CI-asserted, invariant #3 —
+    # matrix.py:_validate_act_first_floor).
     verdicts:
+      # reversible — INVERTED 2026-07-04 (was earn-up: propose_only@unmeasured,
+      # auto@graduated). EARN-DEMOTION doctrine: trust granted from day one,
+      # lost on demotion evidence — mirrors the pm_write row below. The undo
+      # journal (48h window, per-step undo handle on the receipt) is the
+      # Captain's control surface; the engine still falls through to
+      # propose-only for any action_type without a registered inverse.
+      # Guarded by matrix.py:_validate_act_first_floor — propose_only@unmeasured
+      # here is a hard validation error (no silent earn-up re-introduction).
       reversible:
+        graduated: act_with_undo
+        eligible: act_with_undo
+        propose_only: act_with_undo
+        unmeasured: act_with_undo
+        demote: propose_only
+      # read_only_dispatch — act-and-tell from day one (2026-07-04): the run is
+      # READ-ONLY evidence gathering (PRO-7), so there is nothing to undo and
+      # nothing to gate — the notification IS the oversight surface. Demotion
+      # evidence still drops it to propose-only (an officer abusing dispatch
+      # framing for writes is classifier/ceiling territory, not this row).
+      read_only_dispatch:
+        graduated: notify_after
+        eligible: notify_after
+        propose_only: notify_after
+        unmeasured: notify_after
+        demote: propose_only
+      # NATE-DECISION 2026-07-04: draft_only KEEPS the old reversible earn-up
+      # ladder (Captain judgment — a draft is outbound-ADJACENT: its content
+      # exists to leave the machine, so it earns autonomy rather than getting
+      # it granted; actual sending stays behind the external_comms ceiling).
+      draft_only:
         graduated: auto
         eligible: propose_only
         propose_only: propose_only
@@ -99,6 +155,10 @@ policies:
         propose_only: propose_only
         unmeasured: propose_only
         demote: propose_only
+      # NATE-DECISION 2026-07-04: deploy_nonprod stays earn-up, deliberately
+      # NOT widened in the trust-inversion wave (prod-adjacent: a preview
+      # deploy/non-main push has no deterministic inverse and leaks build
+      # output off-machine — Captain kept the classifier-gated earn-up path).
       deploy_nonprod:
         graduated: classifier                 # -> low-risk auto / else gated (NON-PROD target only) [FIX-6]
         eligible: classifier

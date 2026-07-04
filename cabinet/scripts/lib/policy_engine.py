@@ -1074,20 +1074,188 @@ def read_cell_state(officer: str, lane: str | None, action_type: str) -> str:
     verdict reaches enforcement solely behind the CABINET_AUTHORITY_ENFORCING
     flip + parity gate, unchanged by this change).
 
-    FAIL-SAFE wrapper exactly as the A0 docstring prescribed: any import
-    failure, evaluate() exception, or out-of-vocabulary state resolves to
-    "unmeasured" (which forces propose_only at the gate) — never a graduated
-    state that would unlock auto by accident. Reads the consequence ledger at
-    call time (acceptable in shadow; revisit with a TTL cache before any
-    enforcement flip if per-call latency ever matters).
+    FAIL-CLOSED wrapper. Two distinct failure directions, resolved differently
+    since the 2026-07-05 act-first widening (MF-1, checkpoint review
+    lane-germline-0705-cp1):
+      * NO EVIDENCE YET — evaluate() returns None for a cell with no rows.
+        This is the LEGITIMATE unmeasured case → "unmeasured", which the
+        trust-first matrix maps to act_with_undo for reversible/pm classes.
+        Correct: a brand-new reversible cell is trusted from day one. NOTE: only
+        a literal None is the no-evidence signal; a dict result MUST carry a
+        recognized state — an empty/stateless dict falls to the OOV rule below
+        (fail-closed), never silently trusted.
+      * CANNOT READ — an import failure or an evaluate() EXCEPTION (broken
+        evidence plane) → "demote". Pre-widening this path returned
+        "unmeasured" because unmeasured meant propose_only; post-widening
+        unmeasured means ALLOW, so resolving a read ERROR to "unmeasured" would
+        silently ERASE a demotion at exactly the enforcing gate. "demote" maps
+        to propose_only across every class (and always_gated still wins for
+        ceilings), matching the lane gate's fail-closed `_graduation_demoted`
+        (run_action_lane.py) — a broken evidence plane must BLOCK, never allow.
+      * OUT-OF-VOCABULARY — evaluate() returned a state we don't recognize:
+        also "demote" (fail-closed) — an unknown state must never be trusted.
+    Reads the consequence ledger at call time (acceptable in shadow; revisit
+    with a TTL cache before any enforcement flip if per-call latency matters).
+
+    CANONICAL ACTOR-ID JOIN (2026-07-04 germline batch): this query composes
+    "officer:" + the BARE role (e.g. "officer:cos"). Emitters therefore write
+    actor = {"kind": "officer", "id": "<bare role>"} — NEVER a pre-prefixed
+    "officer:cos" id, which double-prefixes to "officer:officer:cos" here and
+    silently severs demotion evidence from the gate (the demote state would
+    never be read). If you change the composition here, change every emitter
+    in the same batch.
     """
     try:
         from framework.fidelity import graduation  # noqa: E402 (path set at module load)
         result = graduation.evaluate((f"officer:{officer}", lane, action_type))
-        state = (result or {}).get("state")
-        return state if state in _CELL_STATES else "unmeasured"
     except Exception:
+        # CANNOT READ the evidence plane → fail CLOSED (see docstring MF-1).
+        return "demote"
+    if result is None:
+        # No cell rows yet — the LEGITIMATE unmeasured case (trust-first: a
+        # fresh reversible cell is act_with_undo from day one).
         return "unmeasured"
+    state = (result or {}).get("state")
+    # A recognized state passes through; an out-of-vocabulary state is treated
+    # as a read failure → fail closed (never trust an unknown state).
+    return state if state in _CELL_STATES else "demote"
+
+
+def _act_with_undo_gap(action_type: str) -> str | None:
+    """Why an `act_with_undo` verdict can NOT be honored for `action_type` — a
+    short gap reason for the block message — or None when the undo plane is
+    mechanically viable and the gate may allow.
+
+    THE TWO REQUIRED PRECONDITIONS (EARN-DEMOTION ruling, captain-decisions
+    2026-07-03/04; Corridor-confirmed invariant): the allow branch grants
+    act_with_undo ONLY when
+      1. a REGISTERED deterministic inverse exists for this action_type, and
+      2. the undo journal dir is reachable/writable;
+    otherwise the caller falls through to propose-only. "No inverse ⇒ no
+    unattended act" is the undo plane's mechanical perimeter
+    (framework/frontdoor/action_undo.py:381 act_first_eligible); a journal
+    dir that cannot be written means the lane's WRITE-AHEAD row — the 48h
+    undo handle — could never land, so acting unattended would break the
+    reversibility promise (framework/frontdoor/action_exec.py module
+    docstring, "adversarial KILLED #2").
+
+    ⚠ FLIP PRECONDITION — JOURNALING AT THE OFFICER TOOL SURFACE (MF-3,
+    checkpoint review lane-germline-0705-cp1). This gate proves the undo plane
+    is *mechanically viable* (an inverse is registered and the journal dir can
+    be written), NOT that any given call is *actually* journaled. Reversibility
+    is only real for acts that flow through the write-ahead lane
+    (action_exec/action_undo). A RAW officer tool call — Edit/Write, or a direct
+    Monday MCP mutation — that this matrix verdict would apply to is journaled
+    by NOTHING and captures no prestate, so at CABINET_AUTHORITY_ENFORCING=1 an
+    act_with_undo ALLOW here would permit an un-undoable write. This is DARK
+    today (the authority matrix is excluded from the enforcing set — see
+    main()), so no live call is affected. Do NOT flip enforcement for the
+    act_with_undo classes until raw officer pm_write/calendar_write tool calls
+    are routed through (or wrapped by) the journaled lane, or blocked at the
+    hook so only lane-executed acts can act. Tracked as a flip precondition
+    alongside the schg lock + launchd steps.
+
+    SINGLE-SOURCE derivation — no duplicate mapping in the gate (same
+    no-duplicate rule as the classifier import at the top of this file):
+      * kind -> action_type: framework/acting/action_lane.py:524
+        ACTION_TYPE_MAP (the graduation-wire stamp map). Inverted here; an
+        action_type with ZERO lane kinds has nothing registered to execute
+        (or reverse) it -> gap.
+      * kind -> backend: framework/frontdoor/action_exec.py:210 _backend_for
+        — the ACTUAL backend used at write time [RT-B11], env-aware
+        (ACTION_LANE_REMINDER_BACKEND), so e.g. reminder_create on
+        apple_reminders (no reliable inverse — act-first excluded) correctly
+        yields a gap here instead of an allow.
+      * registry probe: action_undo.act_first_eligible(kind, backend) — True
+        iff inverse_for() yields a registered, non-"none" op AND the backend
+        is not act-first excluded. Private-member imports are deliberate:
+        duplicating either map in the gate is exactly the drift this
+        codebase forbids.
+
+    FAIL-SAFE (Corridor invariant): every probe is exception-wrapped to a
+    gap reason — an import failure, a malformed registry, or an unprobeable
+    journal path yields a gap (-> propose_only at the caller), NEVER an
+    allow.
+
+    READ-ONLY (Corridor invariant): the journal probe must not mkdir or
+    touch anything — this eval is a pure decision function (section header
+    above) and is also shadow-consumed per recorded verdict. Dir creation
+    stays owned by the lane's journal_step/_ensure_dir at write time; the
+    gate only verifies that creation WILL succeed (nearest existing ancestor
+    is a writable, traversable dir). The probed path derives ONLY from
+    action_undo._undo_dir() (CABINET_UNDO_DIR env / fixed default) — no
+    tool-input ever reaches it (no traversal surface).
+    """
+    # Precondition 1 — a registered deterministic inverse for this action_type.
+    try:
+        from framework.acting.action_lane import ACTION_TYPE_MAP  # noqa: E402
+        from framework.frontdoor import action_exec  # noqa: E402
+        from framework.frontdoor import action_undo  # noqa: E402
+    except Exception:
+        return "undo registry unavailable"
+    try:
+        real_kinds = [k for k, at in ACTION_TYPE_MAP.items() if at == action_type]
+        # N2 (checkpoint review lane-germline-0705-cp1): require EVERY real
+        # execution kind of this action_type to be reversible, not just one.
+        # `_act_with_undo_gap` only receives the action_type, but a card step
+        # executes via a SPECIFIC kind; if several kinds map to one action_type
+        # and only some are invertible, an `any()` allow would let the gate
+        # trust the action_type while a card carrying the NON-invertible kind
+        # acts un-undoably. `all()` is conservative-correct: whichever kind the
+        # card carries, an inverse is guaranteed. (Today every widened/beachhead
+        # action_type is single-kind so any()==all(); this hardens the class
+        # against a future multi-kind entry.)
+        if real_kinds:
+            ok = all(
+                action_undo.act_first_eligible(k, action_exec._backend_for(k))
+                for k in real_kinds
+            )
+        else:
+            # IDENTITY FALLBACK: the four WIDENED reversible action_types
+            # {task_status_move, label, tier2_note, local_edit} are classifier-
+            # native — they never appear as ACTION_TYPE_MAP values (the map
+            # covers card-step kinds only: board_status, task_create,
+            # calendar_event_create, officer_dispatch, investigation_run), so
+            # real_kinds is []. action_undo registers their inverses under the
+            # action_type NAME itself (inverse_for "GERMLINE WIDENING" branch),
+            # so probe the action_type as its own kind. SAFE by the registry's
+            # fail-closed shape: an unregistered name resolves op "none" -> not
+            # eligible -> gap; _backend_for returns "unknown" (not act-first
+            # excluded), which the four widened inverse branches ignore
+            # (backend-agnostic — see the "deliberately NO backend branch" note
+            # in inverse_for). An action_type with no real kinds AND no identity
+            # registration correctly yields a gap.
+            ok = action_undo.act_first_eligible(
+                action_type, action_exec._backend_for(action_type)
+            )
+        if not ok:
+            return "no registered deterministic inverse"
+    except Exception:
+        return "inverse-registry probe failed"
+
+    # Precondition 2 — the undo journal dir is reachable/writable. Walk up to
+    # the nearest EXISTING ancestor (the dir itself may legitimately not exist
+    # yet — journal_step mkdirs at write time) and require it to be a writable,
+    # traversable directory. A non-dir in the way, an unwritable ancestor, or
+    # any OSError -> gap.
+    try:
+        probe = action_undo._undo_dir()
+        # N4 (checkpoint review): a RELATIVE undo dir would resolve the walk-up
+        # against the current working directory — a writable cwd could then
+        # falsely satisfy "journal viable" while the real durable target is
+        # elsewhere. A durable journal is always an absolute location, so a
+        # relative path is a misconfiguration → fail closed (gap), never a
+        # cwd-relative false positive.
+        if not probe.is_absolute():
+            return "undo journal dir not absolute"
+        while not probe.exists() and probe != probe.parent:
+            probe = probe.parent
+        if not (probe.is_dir() and os.access(probe, os.W_OK | os.X_OK)):
+            return "undo journal dir unreachable"
+    except Exception:
+        return "undo-journal probe failed"
+
+    return None
 
 
 def _eval_authority_matrix(
@@ -1097,10 +1265,24 @@ def _eval_authority_matrix(
     (propose-only / gated) or None (allow).
 
     Ceiling classes always gate. Other cells resolve via the LIVE graduation
-    state (read_cell_state, un-stubbed 2026-07-03): a graduated cell can now
-    resolve auto (returns None) — consumed in SHADOW only until the
-    Captain-gated enforcement flip. See the section header for the fail-safe
-    contract.
+    state (read_cell_state, un-stubbed 2026-07-03) into one of four outcomes
+    — consumed in SHADOW only until the Captain-gated enforcement flip:
+
+      * `auto`                    -> allow (None) — a graduated cell.
+      * `act_with_undo`           -> allow (None) ONLY when the undo plane is
+                                     mechanically viable for the action_type
+                                     (_act_with_undo_gap: registered inverse
+                                     + writable journal); else propose-only.
+                                     EARN-DEMOTION doctrine (2026-07-04 fix).
+      * `auto_with_veto_window` /
+        `notify_after`            -> allow (None) at THIS gate; the window /
+                                     after-notification is enforced by the
+                                     downstream deferred-send + consequence
+                                     machinery, not by a pre-tool-use block.
+      * anything else (propose_only, always_gated, classifier, unknown)
+                                  -> propose-only (fail-safe collapse).
+
+    See the section header for the fail-safe contract.
     """
     message = policy.get("message", "below the autonomy bar — proposing instead")
 
@@ -1133,22 +1315,74 @@ def _eval_authority_matrix(
             f"no auto path."
         )
 
-    # 3. Read F's PRECOMPUTED cell state (stubbed -> "unmeasured" in A0).
+    # 3. Read the LIVE per-cell graduation state (read_cell_state, un-stubbed
+    #    2026-07-03) and resolve the (risk_class, state) cell to a verdict.
     lane = resolve_lane()
     state = read_cell_state(officer, lane, action_type)
     verdict = resolve_verdict(policy.get("verdicts"), risk_class, state)
 
-    # 4. Any non-auto verdict blocks. In A0 `state` is always "unmeasured", so
-    #    every non-ceiling cell lands here as propose_only. The classifier and
-    #    auto_with_veto_window verdicts are UNREACHABLE in A0 (they require a
-    #    graduated/eligible cell); when reached in a later cycle they also
-    #    block-or-redirect rather than fire — but in A0 we never see them.
+    # 4. act_with_undo — the EARN-DEMOTION allow branch (added 2026-07-04).
+    #    FIXES A DORMANT LANDMINE: the bare `verdict != "auto"` collapse below
+    #    used to catch act_with_undo too, blocking it at EVERY state. The
+    #    germline matrix (framework/policies/authority-matrix.yml:84-95) maps
+    #    pm_write / calendar_write to act_with_undo at every non-demote
+    #    confidence state — the EARN-DEMOTION ruling (captain-decisions
+    #    2026-07-03/04): trust on reversible-with-undo is granted from day one
+    #    and LOST on evidence (demote -> propose_only via resolve_verdict),
+    #    never pre-earned. Collapsing it to propose-only was dormant while
+    #    CABINET_AUTHORITY_ENFORCING defaulted "0", but would have silently
+    #    reversed the doctrine forever the moment the flag flipped.
+    #
+    #    ALLOW IS CONDITIONAL (fail-safe — Corridor-confirmed invariant): the
+    #    gate returns allow(None) ONLY when a registered deterministic inverse
+    #    exists for the action_type AND the undo journal path is writable
+    #    (_act_with_undo_gap above); otherwise it falls through to
+    #    propose-only with the gap named in the message. And the gate's None
+    #    only stops the pre-tool-use BLOCK — it executes nothing: act-first
+    #    execution is honored solely through the journaled action lane, which
+    #    write-ahead-journals before every mutation (PATH parity,
+    #    framework/frontdoor/tests/test_undo_capability_parity.py).
+    if verdict == "act_with_undo":
+        gap = _act_with_undo_gap(action_type)
+        if gap is None:
+            return None
+        return (
+            f"PROPOSE-ONLY ({risk_class}, confidence={state}; act_with_undo "
+            f"verdict but {gap} for '{action_type}') — {message}"
+        )
+
+    # 5. auto_with_veto_window / notify_after — explicit allow-with-window
+    #    (added 2026-07-04; previously collapsed to propose by the bare
+    #    `!= "auto"` check). Both are ACT verdicts in the matrix vocabulary
+    #    (framework/authority/matrix.py:68): auto_with_veto_window acts with a
+    #    deferred-send veto window (veto_window_minutes, matrix Component 5 —
+    #    internal_comms@graduated, where "the notification IS the veto
+    #    handle"); notify_after acts immediately and tells the Captain after
+    #    (the read_only_dispatch posture, e.g. investigation_run — read-only,
+    #    so no inverse is needed or checked). The window / notification is
+    #    enforced by the downstream deferred-send + consequence machinery, NOT
+    #    by a pre-tool-use exit-2 — so at THIS gate both resolve to allow.
+    #    Only cells the Captain-ratified germline matrix maps to these
+    #    verdicts can reach here; hard ceilings were short-circuited at step 2
+    #    and can never resolve to an act verdict.
+    if verdict in ("auto_with_veto_window", "notify_after"):
+        return None
+
+    # 6. FAIL-SAFE collapse — any verdict not explicitly allowed above blocks
+    #    as propose-only: propose_only itself, always_gated, unknown or
+    #    malformed verdict strings — undefined never acts (Corridor
+    #    invariant). NATE-DECISION (2026-07-04 germline batch): `classifier`
+    #    (deploy_nonprod@graduated/eligible -> mechanical low-risk-deploy
+    #    routing) deliberately STAYS collapsed here — deploy_nonprod keeps the
+    #    earn-up posture and was NOT widened; wiring the deploy classifier is
+    #    a separate Captain-gated step.
     if verdict != "auto":
         return f"PROPOSE-ONLY ({risk_class}, confidence={state}) — {message}"
 
-    # 5. auto verdict -> allow. UNREACHABLE in A0 (no cell graduates without
-    #    F). Returned for the post-enforcing-flip cycle; the gate never gets
-    #    here for cells the live graduation engine has not graduated.
+    # 7. auto verdict -> allow. Reachable only for a cell the live graduation
+    #    engine has actually graduated (read_cell_state fail-safes everything
+    #    else to "unmeasured") — and still SHADOW-consumed until the
+    #    Captain-gated enforcement flip.
     return None
 
 

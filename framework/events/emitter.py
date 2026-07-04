@@ -58,6 +58,15 @@ VALID_EVENT_TYPES = frozenset({
     "work_item_completed",
     "work_item_failed",
     "work_item_verified",
+    # Subagent lifecycle (g-hooks 2026-07-04): generic helper-agent stops
+    # (code review, exploration, debugging — no task ref in agent_type) emit
+    # THIS type instead of work_item_completed, so mission-ledger consumers
+    # that replay work_item_completed (OVI task_throughput /
+    # verification_pass_rate, mission compiler DONE overlay) stop counting
+    # helper noise (6,574 junk rows pre-fix). Emitted by
+    # cabinet/scripts/hooks/on-subagent-stop.sh; telemetry-only — no consumer
+    # replays it yet.
+    "subagent_completed",
 
     # Subagent lifecycle (2026-07-04 ledger hygiene). Generic helper-agent
     # completions (code reviewers, explainer crews, ...) land HERE, not on

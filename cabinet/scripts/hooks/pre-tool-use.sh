@@ -92,7 +92,23 @@ fi
 #       report the outage instead of going silently dark. Deliberately
 #       stricter than the spending gate's fail-open contract below: a
 #       missing budget is ambiguity; a missing safety switch is exposure.
-KILLSWITCH=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET cabinet:killswitch 2>/dev/null)
+#   (c) BOUNDED probe, same verdict (g-hooks 2026-07-04). `-t 1` caps the
+#       redis-cli connect phase at 1s (measured worst case ~2s wall-clock:
+#       redis-cli retries the connect once). Without it redis-cli blocks
+#       with no timeout, so a WEDGED Redis — up but not answering (seen in the wild
+#       as a stuck bgsave, CRIT-4 re-review 2026-07-03) — hung this GET
+#       forever and froze EVERY tool call in EVERY officer session, instead
+#       of tripping branch (b). The choice on ambiguity is unchanged and
+#       deliberate: timeout → non-zero exit → the (b) branch below fail-
+#       SAFEs toward BLOCKING mutations while read/comms tools stay up to
+#       report the outage. Never fail-open: an old redis-cli (<6.2, no -t
+#       support; deployed is 8.8.0) errors out non-zero → same blocking
+#       branch. Residual, accepted: -t bounds CONNECT only — a server that
+#       accepts the TCP connection then goes silent mid-command can still
+#       hang the GET; the observed wedge modes (process down, refused port,
+#       un-accepted connect during bgsave stall) all resolve inside the 1s
+#       window.
+KILLSWITCH=$(redis-cli -t 1 -h "$REDIS_HOST" -p "$REDIS_PORT" GET cabinet:killswitch 2>/dev/null)
 KS_EXIT=$?
 if [ "$KILLSWITCH" = "active" ]; then
   echo "KILL SWITCH ACTIVE — all operations halted by Captain. Deactivation is Captain-side only: kill-switch.sh deactivate, or the dashboard governance toggle." >&2
