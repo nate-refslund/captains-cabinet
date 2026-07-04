@@ -77,7 +77,7 @@ def test_reminder_passes_values_as_argv_not_script():
     seen = {}
     def osa(cmd):
         seen["cmd"] = cmd
-        return "ok"
+        return "ok:Cabinet:U1"      # modern uid-bearing shape (uid-less now fails)
     evil = 'x" & (do shell script "rm -rf ~") & "'
     r = ax.deliver_action(
         "pid3", redis_get=_store([{"kind": "reminder_create",
@@ -149,7 +149,7 @@ def test_reminder_backend_defaults_to_calendar(monkeypatch):
     seen = {}
     def osa(cmd):
         seen["script"] = cmd[2]
-        return "ok:Work"
+        return "ok:Work:U1"         # modern uid-bearing shape (uid-less now fails)
     r = ax.deliver_action(
         "pidc1", redis_get=_store([{"kind": "reminder_create",
                                     "payload": {"title": "prep dashboard",
@@ -736,6 +736,202 @@ def test_load_surfaces_parses_live_yml():
     assert not ax._board_not_denied("1549621337", "monday_task_create", dl)  # Bookings→Jannie
     assert not ax._board_not_denied("1623368485", "monday_task_create", dl)  # Deals CRM
     assert ax._board_not_denied("5096013783", "monday_task_create", dl)      # unlisted → allowed
+
+
+# =============================================================================
+# Executor integrity (checkpoint 2026-07-04 condition 1 — KILLED #2 / #3)
+# =============================================================================
+# --- journal fail-closed on act-first (KILLED #2 leak a) ----------------------
+
+def test_act_first_journal_failure_downgrades_before_mutation(monkeypatch):
+    """A write-ahead journal failure on the act-first path downgrades the card
+    to propose_only BEFORE the mutation — an unjournaled unattended act would
+    have no undo handle (refuter: 'journal-write failure lets the mutation
+    proceed UNJOURNALED')."""
+    monkeypatch.setattr(ax, "_load_act_first_surfaces", lambda: _surfaces())
+    def boom(row):
+        raise OSError("disk full")
+    monkeypatch.setattr(au, "journal_step", boom)
+    spy = MondaySpy()
+    r = ax.deliver_action(
+        "pj1", act_first=True,
+        redis_get=_ks_getter([{"kind": "monday_task_create",
+                               "payload": {"board_id": "5091706356", "title": "t"}}]),
+        monday_post=spy, osascript=lambda c: "ok", redis_incr=lambda k, t: None)
+    assert r["ok"] is False and r["gate"] == "propose_only"
+    assert any("no undo handle" in x for x in r["reasons"])
+    assert spy.calls == []                          # the mutation NEVER ran
+    assert r["executed"] == []
+
+
+def test_act_first_journal_failure_midchain_stops_and_reports(monkeypatch):
+    """Chain rule: step 1 journals+acts, step 2's write-ahead journal fails —
+    step 2 never mutates, the card downgrades, and the already-acted step 1 is
+    reported (nothing silently half-done)."""
+    monkeypatch.setattr(ax, "_load_act_first_surfaces", lambda: _surfaces())
+    real = au.journal_step
+    calls = {"n": 0}
+    def flaky(row):
+        calls["n"] += 1
+        if calls["n"] == 3:                         # step1 WA, step1 enrich, step2 WA
+            raise OSError("disk full")
+        return real(row)
+    monkeypatch.setattr(au, "journal_step", flaky)
+    spy = MondaySpy()
+    r = ax.deliver_action(
+        "pj2", act_first=True,
+        redis_get=_ks_getter([
+            {"kind": "monday_task_create",
+             "payload": {"board_id": "5091706356", "title": "a"}},
+            {"kind": "monday_task_create",
+             "payload": {"board_id": "5091706356", "title": "b"}}]),
+        monday_post=spy, osascript=lambda c: "ok", redis_incr=lambda k, t: None)
+    assert r["ok"] is False and r["gate"] == "propose_only"
+    assert len(r["executed"]) == 1                  # step 1 reported
+    assert len(spy.calls) == 1                      # step 2's create never ran
+    assert any("step 2" in x for x in r["reasons"])
+
+
+def test_approved_path_journal_failure_still_delivers(monkeypatch):
+    """REGRESSION pin: the Captain-approved path keeps best-effort journaling —
+    a journal failure never breaks a delivery whose verdict already landed."""
+    def boom(row):
+        raise OSError("disk full")
+    monkeypatch.setattr(au, "journal_step", boom)
+    spy = MondaySpy()
+    r = ax.deliver_action(
+        "pj3", redis_get=_store([{"kind": "monday_task_create",
+                                  "payload": {"board_id": "5091706356", "title": "t"}}]),
+        monday_post=spy, osascript=lambda c: "ok")
+    assert r["ok"] is True                          # delivery unbroken
+    assert r["executed"][0]["monday_id"] == "12345"
+
+
+def test_act_first_journal_disabled_downgrades(monkeypatch):
+    """act_first=True with journal=False is an unjournaled act BY CONSTRUCTION —
+    the whole card downgrades before anything executes."""
+    monkeypatch.setattr(ax, "_load_act_first_surfaces", lambda: _surfaces())
+    spy = MondaySpy()
+    r = ax.deliver_action(
+        "pj4", act_first=True, journal=False,
+        redis_get=_ks_getter([{"kind": "monday_task_create",
+                               "payload": {"board_id": "5091706356", "title": "t"}}]),
+        monday_post=spy, osascript=lambda c: "ok", redis_incr=lambda k, t: None)
+    assert r["ok"] is False and r["gate"] == "propose_only"
+    assert any("unjournaled" in x for x in r["reasons"])
+    assert spy.calls == []
+
+
+# --- calendar UID assert (KILLED #2 / UNVERIFIED #10) -------------------------
+
+def test_calendar_empty_uid_is_step_failure(monkeypatch):
+    """An empty/missing UID in the calendar response means the delete-by-UID
+    inverse is a silent no-op — the step FAILS loudly instead of the act
+    standing irreversible. Both the legacy 'ok:<cal>' shape and an explicit
+    empty uid are refused."""
+    monkeypatch.delenv("ACTION_LANE_REMINDER_BACKEND", raising=False)
+    for res in ("ok:Cabinet", "ok:Cabinet:", "ok:Cabinet:   "):
+        r = ax.deliver_action(
+            "pju", redis_get=_store([{"kind": "reminder_create",
+                                      "payload": {"title": "t",
+                                                  "due_iso": "2026-07-06T09:00"}}]),
+            monday_post=MondaySpy(), osascript=lambda c, _res=res: _res)
+        assert r["ok"] is False, res
+        assert "no event UID" in r["error"]
+    assert au._read_journal(pid="pju")[0]["executed_at"] is None  # never enriched
+
+
+def test_calendar_empty_uid_fails_act_first_too(monkeypatch):
+    """Same assert on the unattended path: the act fails loudly rather than
+    landing without an undo handle."""
+    monkeypatch.delenv("ACTION_LANE_REMINDER_BACKEND", raising=False)
+    monkeypatch.setattr(ax, "_load_act_first_surfaces", lambda: _surfaces())
+    r = ax.deliver_action(
+        "pju2", act_first=True,
+        redis_get=_ks_getter([{"kind": "reminder_create",
+                               "payload": {"title": "t", "due_iso": "2026-07-06T09:00"}}]),
+        monday_post=MondaySpy(), osascript=lambda c: "ok:Cabinet",
+        redis_incr=lambda k, t: None)
+    assert r["ok"] is False and "no event UID" in r["error"]
+
+
+# --- loader content-damage fails closed (KILLED #3) ---------------------------
+
+def _write_surfaces(tmp_path, text):
+    p = tmp_path / "act-first-surfaces.yml"
+    p.write_text(text)
+    return p
+
+
+def test_load_surfaces_missing_denylist_key_gates_everything(monkeypatch, tmp_path):
+    """PARSEABLE yaml with the denylist key dropped entirely (partial write) is
+    content damage — deny-all sentinel, not a silently-empty denylist."""
+    p = _write_surfaces(tmp_path, "version: 1\ncascade_gated: []\n")
+    monkeypatch.setattr(ax, "_surfaces_path", lambda: p)
+    dl = ax._load_act_first_surfaces()["denylist"]
+    assert not ax._board_not_denied("5091706356", "monday_task_create", dl)
+    assert not ax._board_not_denied("9999", "monday_task_create", dl)
+
+
+def test_load_surfaces_missing_cascade_gated_key_gates_everything(monkeypatch, tmp_path):
+    """A dropped cascade_gated key would silently un-gate the audit-proven
+    cascade boards — deny-all until the file is repaired."""
+    p = _write_surfaces(tmp_path, "version: 1\ndenylist: []\n")
+    monkeypatch.setattr(ax, "_surfaces_path", lambda: p)
+    dl = ax._load_act_first_surfaces()["denylist"]
+    assert not ax._board_not_denied("1549621337", "monday_task_create", dl)
+    assert not ax._board_not_denied("9999", "monday_task_create", dl)
+
+
+def test_load_surfaces_mangled_board_id_gates_everything(monkeypatch, tmp_path):
+    """A row carrying a PRESENT-but-non-digit board_id is a mangled Captain
+    exclusion (the refuter's one-corrupt-row path: the old loader skipped it and
+    the cascade board executed unattended) — deny-all, in either section."""
+    for section in ("denylist", "cascade_gated"):
+        other = "cascade_gated" if section == "denylist" else "denylist"
+        p = _write_surfaces(
+            tmp_path, "%s: []\n%s:\n  - board_id: \"15496x1337\"\n" % (other, section))
+        monkeypatch.setattr(ax, "_surfaces_path", lambda _p=p: _p)
+        dl = ax._load_act_first_surfaces()["denylist"]
+        assert not ax._board_not_denied("1549621337", "monday_task_create", dl), section
+        assert not ax._board_not_denied("9999", "monday_task_create", dl), section
+
+
+def test_load_surfaces_non_list_section_gates_everything(monkeypatch, tmp_path):
+    """A section key PRESENT but carrying a non-list value (scalar/mapping
+    mangle) silently shrinks the denylist exactly like a dropped key — same
+    deny-all sentinel."""
+    p = _write_surfaces(tmp_path, "denylist: oops\ncascade_gated: []\n")
+    monkeypatch.setattr(ax, "_surfaces_path", lambda: p)
+    dl = ax._load_act_first_surfaces()["denylist"]
+    assert not ax._board_not_denied("9999", "monday_task_create", dl)
+
+
+def test_load_surfaces_explicitly_empty_sections_stay_valid(monkeypatch, tmp_path):
+    """The Captain's ruled posture: keys PRESENT with empty ([] or bare-key)
+    values are a valid default-allow file, NOT corruption."""
+    for text in ("denylist: []\ncascade_gated: []\n",
+                 "denylist:\ncascade_gated:\n"):
+        p = _write_surfaces(tmp_path, text)
+        monkeypatch.setattr(ax, "_surfaces_path", lambda _p=p: _p)
+        surf = ax._load_act_first_surfaces()
+        assert surf["denylist"] == {}
+        assert ax._board_not_denied("9999", "monday_task_create", surf["denylist"])
+
+
+def test_load_surfaces_prose_row_without_board_id_tolerated(monkeypatch, tmp_path):
+    """A policy-class prose row (NO board_id key at all) stays documentation —
+    only a present-but-mangled id is corruption."""
+    p = _write_surfaces(tmp_path,
+                        "denylist: []\n"
+                        "cascade_gated:\n"
+                        "  - name: team-task boards\n"
+                        "    why: link_to_teams fan-out (ids pending enumeration)\n"
+                        "  - board_id: \"123\"\n")
+    monkeypatch.setattr(ax, "_surfaces_path", lambda: p)
+    dl = ax._load_act_first_surfaces()["denylist"]
+    assert not ax._board_not_denied("123", "monday_task_create", dl)   # real row gated
+    assert ax._board_not_denied("9999", "monday_task_create", dl)      # no sentinel
 
 
 # =============================================================================

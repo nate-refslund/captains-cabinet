@@ -15,7 +15,12 @@ Doctrine baked in here (safety-spine §3 "undo honesty"):
     (CRIT-4). The pointer is an index; the file is the durable truth.
   - COMPARE-AND-RESTORE for board_status [RT-A11]: a column is restored only if
     its CURRENT value still equals what the lane wrote — otherwise a colleague
-    edited it since and we DEAD-LETTER + tell, never clobber.
+    edited it since and we DEAD-LETTER + tell, never clobber. The same
+    quarantine applies BEFORE the restore when the journal row's prestate never
+    captured a touched column (a failed prestate read — checkpoint 2026-07-04
+    condition 1 / KILLED #2): restoring would write ``{}`` and CLEAR a value we
+    never knew, so the row is dead-lettered, the kind FROZEN via
+    ``actfirst_canary.freeze``, and the reverse never executes.
   - ARCHIVE, NEVER DELETE: a lane-created Monday item is reversed with
     ``archive_item`` (30-day trash), never ``delete_item``.
   - PER-ROW INVERSE FROM THE ACTUAL BACKEND [RT-B11]: the ``apple_reminders``
@@ -61,7 +66,11 @@ JOURNAL_RETENTION_D = 30
 # approves them on the binder — they never act unattended.
 ACT_FIRST_EXCLUDED_BACKENDS = frozenset({"apple_reminders"})
 
-_ROW_STATUSES = frozenset({"executed", "reversed", "reversal_failed", "void"})
+# ``dead_letter`` is the TERMINAL quarantine state: a row whose reverse would
+# be dishonest (e.g. a compare-restore with never-captured prestate) — never
+# re-attempted, never reported as undone, surfaced loudly for manual review.
+_ROW_STATUSES = frozenset({"executed", "reversed", "reversal_failed", "void",
+                           "dead_letter"})
 
 # step-kind -> classifier action_type is owned by the proposer lane as ONE map
 # (action_lane.ACTION_TYPE_MAP, enum-guarded by action_lane.step_action_type).
@@ -514,6 +523,54 @@ def _summary(res: dict) -> Dict[str, Any]:
             if k in ("detail", "restored", "skipped")}
 
 
+def _prestate_quarantine_reason(row: dict) -> Optional[str]:
+    """The loud reason ``row`` must be DEAD-LETTERED instead of reversed, or
+    None when the reverse is honest (checkpoint 2026-07-04 condition 1 /
+    KILLED #2 leak (b)).
+
+    A ``monday_compare_restore`` inverse restores each touched column from the
+    row's prestate. When the prestate NEVER CAPTURED a touched column (the
+    failed-prestate-read signature — usually the whole map is empty), the
+    restore is indistinguishable from "the column was empty" and would write
+    ``{}``, CLEARING a value the lane never knew — a clobber reported as
+    success. A column entry that EXISTS with ``text: None`` is a KNOWN-empty
+    prior and stays restorable. Fail-closed: no captured prior ⇒ no reverse."""
+    inv = row.get("inverse") or {}
+    if inv.get("op") != "monday_compare_restore":
+        return None                     # only compare-restore consumes prestate
+    columns = (inv.get("args") or {}).get("columns") or {}
+    if not columns:
+        return None                     # note-only update: nothing restores from prestate
+    prestate = row.get("prestate") or {}
+    missing = sorted(c for c in columns if c not in prestate)
+    if not missing:
+        return None
+    return ("prestate empty/missing for column(s) %s — the prior value was "
+            "never captured, so a restore would CLOBBER the column to empty; "
+            "row dead-lettered, kind frozen, artifact left standing for "
+            "manual review" % ", ".join(missing))
+
+
+def _quarantine_row(row: dict, reason: str, *, now: Optional[str]) -> Dict[str, Any]:
+    """Dead-letter ``row`` (terminal — never re-attempted, never 'undone') and
+    FREEZE its kind so no further unattended act of that kind runs until a
+    manual green canary. Freeze goes through ``actfirst_canary.freeze`` — the
+    one act-first control-plane surface — which resolves the breaker key
+    (action_type) and writes the durable mirror first. A freeze-write failure
+    never masks the quarantine: the dead-letter row is the durable truth."""
+    result = {"ok": False, "dead_letter": True, "reason": reason}
+    journal_step({**row, "status": "dead_letter", "reversed_at": now or _now(),
+                  "reversal_result": result})
+    try:
+        # lazy import — actfirst_canary imports this module at load time.
+        from framework.frontdoor import actfirst_canary
+        actfirst_canary.freeze(row.get("kind") or "",
+                               "prestate-clobber quarantine: " + reason, now=now)
+    except Exception:
+        pass                            # dead-letter row already quarantines
+    return result
+
+
 def _reverse_rows(rows: List[dict], *, pid: str, monday_post: Callable,
                   osascript: Callable, redis_del: Callable,
                   now: Optional[str]) -> Dict[str, Any]:
@@ -526,6 +583,16 @@ def _reverse_rows(rows: List[dict], *, pid: str, monday_post: Callable,
     manual: List[dict] = []
     for row in sorted(rows, key=lambda r: r.get("step", 0), reverse=True):
         inv = row.get("inverse") or {"op": "none", "args": {}}
+        # PRESTATE-CLOBBER QUARANTINE (checkpoint condition 1 / KILLED #2): a
+        # compare-restore whose prestate never captured the touched columns
+        # must NEVER execute — it would restore-to-empty and clear a value the
+        # lane never knew. Dead-letter + freeze + loud reason instead.
+        quarantine = _prestate_quarantine_reason(row)
+        if quarantine is not None:
+            res = _quarantine_row(row, quarantine, now=now)
+            manual.append({"step": row.get("step"), "kind": row.get("kind"),
+                           "op": inv.get("op"), "result": res})
+            continue
         op = INVERSE_OPS.get(inv.get("op"), _inv_none)
         try:
             res = op(inv.get("args") or {}, monday_post=monday_post, osascript=osascript)
@@ -559,9 +626,18 @@ def reverse(pid: str, *, monday_post: Optional[Callable] = None,
             now: Optional[str] = None) -> Dict[str, Any]:
     """Reverse EVERY still-executed step of a pid, in reverse step order.
     Idempotent: once reversed the rows drop out, so a second call returns
-    ``already_undone`` (mirrors the executor's one-shot no-op)."""
+    ``already_undone`` (mirrors the executor's one-shot no-op). A DEAD-LETTERED
+    pid is the one exception: its artifact still STANDS, so re-undo surfaces
+    the loud quarantine reason instead of a dishonest ``already_undone``."""
     rows = _executed_rows_for(pid)
     if not rows:
+        dead = [r for r in _read_journal(pid=pid) if r.get("status") == "dead_letter"]
+        if dead:
+            return {"ok": False, "via": "action-undo",
+                    "dest": dead[0].get("lane"), "reversed": [],
+                    "dead_letter": True,
+                    "error": str(((dead[0].get("reversal_result") or {}).get("reason"))
+                                 or "row dead-lettered — artifact stands, manual review")}
         return {"ok": True, "already_undone": True, "via": "action-undo",
                 "dest": None, "reversed": []}
     if monday_post is None or osascript is None:
@@ -584,6 +660,13 @@ def undo(target: str, *, monday_post: Optional[Callable] = None,
     if row is None:
         return reverse(target, monday_post=monday_post, osascript=osascript,
                        redis_del=redis_del, now=now)
+    if row.get("status") == "dead_letter":
+        # quarantined: the artifact STANDS — surface the loud reason, never a
+        # dishonest already_undone (checkpoint condition 1 / KILLED #2).
+        return {"ok": False, "via": "action-undo", "dest": row.get("lane"),
+                "reversed": [], "dead_letter": True,
+                "error": str(((row.get("reversal_result") or {}).get("reason"))
+                             or "row dead-lettered — artifact stands, manual review")}
     if row.get("status") != "executed" or not row.get("executed_at"):
         return {"ok": True, "already_undone": True, "via": "action-undo",
                 "dest": row.get("lane"), "reversed": []}

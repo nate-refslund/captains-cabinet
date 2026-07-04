@@ -155,6 +155,79 @@ def test_compare_restore_clears_previously_empty_column():
     assert change and change[-1]["val"] == "{}"                 # cleared, not a label
 
 
+# --- prestate-clobber quarantine (checkpoint 2026-07-04 cond. 1 / KILLED #2) --
+
+def test_empty_prestate_dead_letters_freezes_never_clobbers():
+    """Refuter leak (b): 'a failed prestate read is indistinguishable from
+    "column was empty," so undo writes {} and CLEARS the prior value while
+    reporting success.' Now: the reverse NEVER executes — the row dead-letters
+    (terminal), the kind freezes via the durable mirror, and the reason is
+    loud. The artifact stands for manual review instead of being clobbered."""
+    fm = FakeMonday(columns={"status": {"text": "Done"}})   # current == lane's write
+    _journal_executed("pidq1", 1, "monday_task_update", "monday",
+                      created={"note_update_id": None},
+                      payload={"monday_id": "7", "board_id": "9", "set": {"status": "Done"}},
+                      prestate={})                          # the failed-read signature
+    res = au.reverse("pidq1", monday_post=fm, osascript=lambda c: "ok", redis_del=_no_op_del)
+    assert res["ok"] is False
+    result = res["manual_cleanup"][0]["result"]
+    assert result["dead_letter"] is True and "CLOBBER" in result["reason"]
+    assert fm.calls == []                                   # reverse NEVER executed
+    assert au._read_journal(pid="pidq1")[0]["status"] == "dead_letter"
+    # the kind froze by its breaker key (monday_task_update → board_status),
+    # via the durable JSONL mirror (Redis is mocked away here).
+    assert au.is_frozen("board_status") is True
+
+
+def test_prestate_missing_touched_column_dead_letters():
+    """A PARTIAL prestate (one touched column never captured) is the same
+    clobber risk — the whole row quarantines; no column is restored."""
+    fm = FakeMonday(columns={"status": {"text": "Done"},
+                             "priority": {"text": "High"}})
+    _journal_executed("pidq2", 1, "monday_task_update", "monday",
+                      created={"note_update_id": None},
+                      payload={"monday_id": "7", "board_id": "9",
+                               "set": {"status": "Done", "priority": "High"}},
+                      prestate={"status": {"text": "New"}})  # priority never captured
+    res = au.reverse("pidq2", monday_post=fm, osascript=lambda c: "ok", redis_del=_no_op_del)
+    assert res["ok"] is False
+    assert "priority" in res["manual_cleanup"][0]["result"]["reason"]
+    assert not any("change_column_value" in q for q, _ in fm.calls)  # nothing restored
+
+
+def test_dead_letter_reundo_is_loud_never_already_undone():
+    """A quarantined pid must NEVER later read as already_undone — the artifact
+    still stands. Both reverse(pid) and undo(jid) surface the loud reason."""
+    fm = FakeMonday(columns={"status": {"text": "Done"}})
+    row = _journal_executed("pidq3", 1, "monday_task_update", "monday",
+                            created={"note_update_id": None},
+                            payload={"monday_id": "7", "board_id": "9",
+                                     "set": {"status": "Done"}},
+                            prestate={})
+    au.reverse("pidq3", monday_post=fm, osascript=lambda c: "ok", redis_del=_no_op_del)
+    res2 = au.reverse("pidq3", monday_post=fm, osascript=lambda c: "ok", redis_del=_no_op_del)
+    assert res2["ok"] is False and res2.get("dead_letter") is True
+    assert "already_undone" not in res2 and "CLOBBER" in res2["error"]
+    res3 = au.undo(row["jid"], monday_post=fm, osascript=lambda c: "ok", redis_del=_no_op_del)
+    assert res3["ok"] is False and res3.get("dead_letter") is True
+    assert "already_undone" not in res3
+
+
+def test_note_only_update_with_empty_prestate_still_reverses():
+    """REGRESSION pin: an update that restores NOTHING from prestate (note-only
+    — no status/priority/due columns) legitimately has an empty prestate and
+    must keep reversing (delete the note post), not quarantine."""
+    fm = FakeMonday()
+    _journal_executed("pidq4", 1, "monday_task_update", "monday",
+                      created={"note_update_id": "u5"},
+                      payload={"monday_id": "7", "board_id": "9", "set": {"note": "hi"}},
+                      prestate={})
+    res = au.reverse("pidq4", monday_post=fm, osascript=lambda c: "ok", redis_del=_no_op_del)
+    assert res["ok"] is True
+    assert any("delete_update" in q for q, _ in fm.calls)   # note leg reversed
+    assert au._read_journal(pid="pidq4")[0]["status"] == "reversed"
+
+
 # --- ordering, crash reconciliation, single-step undo ------------------------
 
 def test_reverse_runs_in_reverse_step_order():

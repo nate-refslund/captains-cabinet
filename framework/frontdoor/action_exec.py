@@ -24,7 +24,11 @@ through ``action_undo`` before its mutation and enriched with the created ids
 after (``journal=True`` by default), and a strict per-kind payload-key assert
 runs before ``_cid`` injection — so a landed card carries a 48h undo handle and
 an attendee/assignee smuggle is a mechanical rejection. Journaling is
-best-effort: it never breaks a delivery whose verdict already landed.
+best-effort ONLY on the approved path (it never breaks a delivery whose verdict
+already landed); on the act-first path a write-ahead journal failure DOWNGRADES
+the card to propose_only BEFORE the mutation — an unjournaled unattended act
+would have no undo handle, which is exactly the "48h reversibility" promise
+(checkpoint 2026-07-04 condition 1, adversarial KILLED #2).
 
 SEC-3 / PRO-7 (2026-07-04 trust-inversion, Wave 2): the executor is the
 enforcement point. A set of deterministic, fail-closed guards runs on the
@@ -322,7 +326,15 @@ def _load_act_first_surfaces() -> dict:
     ABSENT file ⇒ empty denylist (the ruled default-allow posture). A file that
     EXISTS but cannot be parsed ⇒ {_DENY_ALL_SENTINEL: None} — every board gated
     (fail-closed on corruption: an unreadable Captain exclusion list is never
-    ignored). Deferred yaml import mirrors framework/authority/matrix.py."""
+    ignored). CONTENT DAMAGE fails closed the same way (checkpoint 2026-07-04,
+    adversarial KILLED #3 — a parseable-but-corrupt file must never silently
+    shrink the denylist): a MISSING ``denylist``/``cascade_gated`` key (a
+    partial write dropped a whole Captain-owned section) or a row carrying a
+    present-but-non-digit board_id (a mangled exclusion) both raise into the
+    deny-all sentinel. An explicitly EMPTY section ([] / bare key) is the
+    Captain's ruled posture and stays valid; a row with NO board_id at all
+    remains a tolerated prose/policy-class documentation row. Deferred yaml
+    import mirrors framework/authority/matrix.py."""
     deny: dict = {}
     caps = dict(_DEFAULT_CAPS)
     path = _surfaces_path()
@@ -334,12 +346,26 @@ def _load_act_first_surfaces() -> dict:
         if not isinstance(data, dict):
             raise ValueError("act-first-surfaces.yml is not a mapping")
         for section in ("denylist", "cascade_gated"):
-            for row in (data.get(section) or []):
+            if section not in data:
+                # key dropped entirely ⇒ damaged content, NOT the ruled-empty
+                # posture — fail closed rather than un-gate cascade boards.
+                raise ValueError("act-first-surfaces.yml missing %r key" % section)
+            sec_val = data.get(section)
+            if sec_val is not None and not isinstance(sec_val, list):
+                # present but not a list (scalar/mapping mangle) — same silent
+                # denylist-shrink risk as a dropped key; fail closed.
+                raise ValueError("act-first-surfaces.yml %r is not a list" % section)
+            for row in (sec_val or []):
                 if not isinstance(row, dict):
                     continue
-                bid = str(row.get("board_id") or "").strip()
-                if not bid.isdigit():
+                raw_bid = row.get("board_id")
+                if raw_bid is None:
                     continue    # policy-class prose rows are documentation only
+                bid = str(raw_bid).strip()
+                if not bid.isdigit():
+                    # a PRESENT-but-non-digit board_id is a mangled Captain
+                    # exclusion (partial write / corruption) — never skip it.
+                    raise ValueError("%s row has non-digit board_id %r" % (section, bid))
                 kinds = {str(k) for k in (row.get("kinds") or [])}
                 if bid in deny and deny[bid] is None:
                     continue                       # whole-board gate already set
@@ -666,10 +692,19 @@ def _exec_calendar_event(payload: dict, osascript: Callable,
     if "ok" not in res:
         raise RuntimeError(f"calendar returned {res!r}")
     # parse "ok:<calendar>:<uid>" (uid may contain colons — split at most twice).
-    # Tolerant of the legacy "ok:<calendar>" shape (uid absent -> "").
     parts = (res or "").split(":", 2)
     out_cal = parts[1] if len(parts) > 1 and parts[1] else cal
-    uid = parts[2] if len(parts) > 2 else ""
+    uid = (parts[2] if len(parts) > 2 else "").strip()
+    # UID assert (checkpoint 2026-07-04 condition 1 / KILLED #2): the ONLY undo
+    # handle a calendar event has is delete-by-UID. An empty/missing UID means
+    # the journaled inverse would silently no-op while the event stands
+    # IRREVERSIBLE — so it is a step FAILURE (the chain stops / the act-first
+    # card downgrades loudly), never a quiet degrade. The legacy "ok:<calendar>"
+    # uid-less shape is no longer tolerated for the same reason.
+    if not uid:
+        raise RuntimeError(
+            "calendar returned no event UID (%r) — delete-by-UID undo would be "
+            "a silent no-op; failing the step instead of standing irreversible" % res)
     return {"calendar": out_cal, "uid": uid, "title": title[:80]}
 
 
@@ -949,8 +984,11 @@ def deliver_action(pid: str, override_text: str = "", *,
     ``journal`` (default True) write-ahead-journals every step through
     ``action_undo`` BEFORE its mutation and enriches the row with created ids
     after — so an approved (and, at the flip, an unattended) card carries a 48h
-    undo handle. Journaling is best-effort: it never breaks a delivery whose
-    verdict has already landed on the ledger.
+    undo handle. Journaling is best-effort ONLY on the approved path (it never
+    breaks a delivery whose verdict has already landed on the ledger); on the
+    act-first path a write-ahead journal failure — or ``journal=False`` itself —
+    DOWNGRADES the card to propose_only before any mutation, because an
+    unjournaled unattended act has no undo handle (checkpoint condition 1).
 
     ``act_first`` (default False = the Captain-approved binder path, behaviour
     unchanged) turns on the SEC-3 act-first PERIMETER — the fail-closed board
@@ -1010,6 +1048,14 @@ def deliver_action(pid: str, override_text: str = "", *,
     # HELD while reversible-eligible steps act.
     held_map: dict = {}
     if act_first and not dry_run:
+        # FAIL-CLOSED (checkpoint 2026-07-04 condition 1 / KILLED #2): an
+        # act-first delivery with journaling disabled would act with NO undo
+        # handle BY CONSTRUCTION — the whole card downgrades to a proposal.
+        if not journal:
+            return {"ok": False, "gate": "propose_only", "via": "action-lane",
+                    "dest": lane, "executed": [], "held": [],
+                    "reasons": ["journaling disabled on the act-first path — "
+                                "an unjournaled act has no undo handle"]}
         surfaces = _load_act_first_surfaces()
         decision, held_map = _gate_chain(steps, lane=lane, redis_get=rget,
                                          surfaces=surfaces)
@@ -1072,7 +1118,27 @@ def deliver_action(pid: str, override_text: str = "", *,
                 inverse=action_undo.inverse_for(kind, backend, payload, {}, prestate),
                 executed_at=None, jid=jid)
             wa_row["payload_sha256"] = payload_sha   # TOCTOU fingerprint on the row
-            _best_effort(lambda: action_undo.journal_step(wa_row))
+            if act_first:
+                # FAIL-CLOSED on the act-first path (checkpoint 2026-07-04
+                # condition 1 / KILLED #2): a write-ahead journal failure means
+                # this step would mutate with NO undo handle — the step (and,
+                # per the chain rule, the whole card) downgrades to propose_only
+                # BEFORE the mutation. Steps that already acted are reported so
+                # nothing is silently half-done.
+                try:
+                    action_undo.journal_step(wa_row)
+                except Exception as e:
+                    return {"ok": False, "gate": "propose_only",
+                            "via": "action-lane", "dest": lane,
+                            "executed": executed, "held": held,
+                            "reasons": ["step %d (%s): write-ahead journal "
+                                        "failed — an unjournaled act has no "
+                                        "undo handle: %s"
+                                        % (i, kind, str(e)[:120])]}
+            else:
+                # approved path stays best-effort: journaling trouble never
+                # breaks a delivery whose verdict already landed on the ledger.
+                _best_effort(lambda: action_undo.journal_step(wa_row))
 
         # re-check the fingerprint right before the mutation (TOCTOU).
         if not _verify_payload_unchanged(payload, payload_sha):

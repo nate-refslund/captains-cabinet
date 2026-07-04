@@ -395,13 +395,27 @@ def is_silenced(kind: str, *,
         return True
 
 
-# --- act-first freeze read (re-export so the gate has ONE import surface) -----
+# --- act-first freeze read/write (ONE import surface for the gate + executor) -
 
 def is_frozen(kind: str, *,
               redis_get: Optional[Callable[[str], str]] = None) -> bool:
     """Fail-closed frozen read (delegates to action_undo — the freeze owner).
     Re-exported here so TI-3 imports every act-first predicate from one module."""
     return action_undo.is_frozen(kind, redis_get=redis_get)
+
+
+def freeze(step_kind: str, reason: str, *,
+           redis_set: Optional[Callable[[str, str, Optional[int]], None]] = None,
+           now: Optional[str] = None) -> Dict[str, Any]:
+    """Freeze an act-first kind by its BREAKER KEY — ``kind_key`` resolves the
+    classifier action_type when the enum is live (e.g. monday_task_update →
+    board_status), else the step-kind string — then delegates to
+    ``action_undo.freeze`` (durable JSONL mirror first, best-effort Redis, NO
+    auto-unfreeze). One write surface so the executor's quarantine paths (e.g.
+    the prestate-clobber dead-letter) freeze exactly the key the TI-3 gate and
+    the breakers check."""
+    return action_undo.freeze(kind_key(step_kind), reason,
+                              redis_set=redis_set, now=now)
 
 
 # --- cid-echo suppression ----------------------------------------------------
