@@ -205,6 +205,13 @@ def acted_verdict_event(action_record: dict, verdict: str, *,
             review["reviewed_at"] = reviewed_at
         if rv == "wrong" and lesson_ref:
             review["lesson_ref"] = lesson_ref
+            # SIE-1: the superseding event also carries the lesson in refs, so
+            # the ledger row → lesson-ledger join survives even readers that
+            # only look at refs (the review object is verdict-plumbing).
+            tag = f"lesson:{lesson_ref}"
+            refs = list(ev.get("refs") or [])
+            if tag not in refs:
+                ev["refs"] = refs + [tag]
         ev["review"] = review
     # verdict == "ttl_ok": leave ev["review"] as-copied (preserved) [RT-B1].
     validate_consequence(ev)
@@ -379,9 +386,10 @@ def _resolve_acted_pid(quoted: str, text: str, verb: _ActedVerb, *,
                        list_undo_windows: Callable[[], List[str]],
                        log: Callable[[str], None]) -> Optional[str]:
     """The pid an acted verb binds — a SERVER-ISSUED opaque id only [RT-A9], or
-    None (fall through). Priority: (1) a ·pid· marker present in the undo store;
-    (2) a digest-index selector via the manifest, re-checked against the store;
-    (3) a single-open fallback for undo/never only."""
+    None (fall through / refuse). Priority: (1) a ·pid· marker present in the
+    undo store; (2) a digest-index selector via the manifest, re-checked against
+    the store — MANIFEST-OR-NOTHING; (3) a single-open fallback for BARE
+    undo/never only (an explicit index never reaches it)."""
     def _has_undo(pid: str) -> bool:
         try:
             return bool(redis_get(f"cabinet:undo:{pid}"))
@@ -393,12 +401,20 @@ def _resolve_acted_pid(quoted: str, text: str, verb: _ActedVerb, *,
         if _has_undo(cand):
             return cand
     # 2. digest-index selector -> manifest -> pid, re-checked against the pointer.
+    #    MANIFEST-OR-NOTHING (checkpoint 07-04, undo-by-index verify): an explicit
+    #    index names ONE rendered digest line. If no recent manifest carries it
+    #    (unknown n) or the mapped pid's undo window is gone (stale n), the verb
+    #    resolves to NOTHING — it must never fall to the single-open guess below,
+    #    which could bind a DIFFERENT act than the line the Captain tapped.
     if verb.index is not None:
         pid = _digest_index_pid(verb.index, redis_get=redis_get, now=now)
         if pid and _has_undo(pid):
             return pid
-    # 3. single-open fallback: undo/never ONLY (never a bare confirm — that is the
-    #    propose-approve token), and only when exactly ONE undo window is open.
+        log(f"binder-wire: digest index {verb.index} unknown/stale — refused "
+            "(manifest-or-nothing; no fallback)")
+        return None
+    # 3. single-open fallback: BARE undo/never ONLY (never a bare confirm — that
+    #    is the propose-approve token), and only when exactly ONE window is open.
     if verb.primary in ("undo", "never"):
         try:
             wins = list(list_undo_windows())
@@ -409,6 +425,38 @@ def _resolve_acted_pid(quoted: str, text: str, verb: _ActedVerb, *,
                 f"single open undo window {wins[0][:60]}")
             return wins[0]
     return None
+
+
+# --- SIE-1 lesson capture (structured correction rows at the verdict seam) ----
+
+def _default_capture_lesson(**kw: Any) -> Optional[dict]:
+    from framework.frontdoor import action_lessons
+    return action_lessons.capture_lesson(**kw)
+
+
+def _capture_lesson_safe(capture: Callable[..., Any], *, pid: str, verdict: str,
+                         captain_text: str, record: dict, ts: str,
+                         log: Callable[[str], None]) -> Optional[str]:
+    """Append ONE lesson row for a Captain correction verdict; return its
+    lesson_ref, or None on ANY failure (logged). The lesson ledger is a
+    downstream consumer of the verdict, never a gate on it — a capture failure
+    must not break verdict recording or Captain-DM passthrough. ``captain_text``
+    is passed VERBATIM (inert quoted data — see action_lessons header); the
+    deterministic fields (action_type/lane/cid) come from the STORED record,
+    never from the reply text, so a lesson can't be steered by phrasing."""
+    try:
+        from framework.probes import correlation
+        cid = correlation.cid_from_refs(list(record.get("refs") or []))
+    except Exception:
+        cid = None
+    try:
+        row = capture(pid=str(pid), verdict=verdict, captain_text=captain_text,
+                      cid=cid, action_type=record.get("action_type"),
+                      lane=record.get("lane"), ts=ts)
+        return (row or {}).get("lesson_ref")
+    except Exception as e:
+        log(f"binder-wire: lesson capture failed (verdict stands): {e!r}")
+        return None
 
 
 def _acted_records_for_pid(pid: str, *,
@@ -440,7 +488,8 @@ def _apply_acted_verdict(pid: str, verb: _ActedVerb, *,
                          read_ledger_fn: Callable[[], List[dict]],
                          record_veto: Callable[..., Any],
                          verbatim: str,
-                         log: Callable[[str], None]) -> Optional[dict]:
+                         log: Callable[[str], None],
+                         capture_lesson: Optional[Callable[..., Any]] = None) -> Optional[dict]:
     """Emit the superseding verdict(s) for every step of an acted pid, and (for
     undo) reverse the artifact — ledger verdict BEFORE reversal (fail-closed)."""
     records = _acted_records_for_pid(pid, journal_rows_for=journal_rows_for,
@@ -448,6 +497,18 @@ def _apply_acted_verdict(pid: str, verb: _ActedVerb, *,
     if not records:
         return None      # pointer present but no executed rows — passthrough
     short = str(pid)[:40]
+
+    # SIE-1: a correction verdict (undo/edit/never — never a confirm) appends
+    # ONE structured lesson row BEFORE the superseding events are built, so its
+    # lesson_ref can be stamped into review.lesson_ref + refs on every step's
+    # event. Best-effort by contract: a lesson failure logs and yields
+    # lesson_ref=None — the verdict itself is the load-bearing artifact and is
+    # recorded regardless.
+    lesson_ref: Optional[str] = None
+    if verb.primary in ("undo", "edit", "never") and capture_lesson is not None:
+        lesson_ref = _capture_lesson_safe(
+            capture_lesson, pid=pid, verdict=verb.primary, captain_text=verbatim,
+            record=records[0][1], ts=now, log=log)
 
     if verb.primary == "confirm":
         for _jrow, rec in records:
@@ -461,9 +522,10 @@ def _apply_acted_verdict(pid: str, verb: _ActedVerb, *,
             emit(**acted_verdict_event(
                 rec, "edit",
                 evidence=f"captain edited (re-card): {verb.edit_text}"[:400],
-                reviewed_at=now))
+                reviewed_at=now, lesson_ref=lesson_ref))
         return {"handled": True, "acted": True, "primary": "edit", "verdict": "wrong",
                 "pid": pid, "recard": True, "correction": verb.edit_text,
+                "lesson_ref": lesson_ref,
                 "summary": f"acted: edit recorded wrong + re-card ·{short}· (NOT executed)"}
 
     if verb.primary == "never":
@@ -471,9 +533,9 @@ def _apply_acted_verdict(pid: str, verb: _ActedVerb, *,
         for _jrow, rec in records:
             emit(**acted_verdict_event(
                 rec, "never", evidence=f"captain veto (never); scope={scope}",
-                reviewed_at=now))
+                reviewed_at=now, lesson_ref=lesson_ref))
         out = {"handled": True, "acted": True, "primary": "never", "verdict": "wrong",
-               "pid": pid, "veto_scope": scope}
+               "pid": pid, "veto_scope": scope, "lesson_ref": lesson_ref}
         # Persist to the veto registry (TI-4). record_veto is a no-op when the
         # veto wiring is dark / off the Captain path — the verdict + server-side
         # scope stand regardless. A scope with no enforceable field (e.g. a kind
@@ -501,7 +563,7 @@ def _apply_acted_verdict(pid: str, verb: _ActedVerb, *,
     # if the reversal errors the wrong verdict has already recorded the intent).
     for _jrow, rec in records:
         emit(**acted_verdict_event(rec, "undo", why=verb.why or "no reason given",
-                                   reviewed_at=now))
+                                   reviewed_at=now, lesson_ref=lesson_ref))
     kinds = sorted({r.get("kind") for r, _ in records if r.get("kind")})
     try:
         rev = reverse(pid)
@@ -515,11 +577,11 @@ def _apply_acted_verdict(pid: str, verb: _ActedVerb, *,
                 pass
         manual = rev.get("manual_cleanup") or rev.get("error") or "unknown"
         return {"handled": True, "acted": True, "primary": "undo", "verdict": "wrong",
-                "pid": pid, "reversal": rev, "frozen": kinds,
+                "pid": pid, "reversal": rev, "frozen": kinds, "lesson_ref": lesson_ref,
                 "summary": f"acted: undo ·{short}· — REVERSAL FAILED — manual cleanup: "
                            f"{manual}; kind(s) frozen: {', '.join(kinds) or '-'}"}
     return {"handled": True, "acted": True, "primary": "undo", "verdict": "wrong",
-            "pid": pid, "reversal": rev,
+            "pid": pid, "reversal": rev, "lesson_ref": lesson_ref,
             "summary": f"acted: undo ·{short}· reversed ({len(records)} step(s)); wrong recorded"}
 
 
@@ -530,7 +592,8 @@ def _route_acted_reply(text: str, quoted: str, *,
                        read_ledger_fn: Callable[[], List[dict]],
                        journal_rows_for: Callable[..., List[dict]],
                        record_veto: Callable[..., Any],
-                       log: Callable[[str], None]) -> Optional[dict]:
+                       log: Callable[[str], None],
+                       capture_lesson: Optional[Callable[..., Any]] = None) -> Optional[dict]:
     """Route a Captain reply that is an acted-receipt verdict; None if it is not
     (the caller then runs the propose-card path). RT-B1: never touches
     loop.handle_response. Only activates when an acted verb parses AND a
@@ -541,11 +604,23 @@ def _route_acted_reply(text: str, quoted: str, *,
     pid = _resolve_acted_pid(quoted, text, verb, redis_get=redis_get, now=now,
                              list_undo_windows=list_undo_windows, log=log)
     if pid is None:
+        if verb.index is not None:
+            # An EXPLICIT digest index that resolved to nothing is digest grammar
+            # aimed at a line that no longer exists — REFUSE the whole reply
+            # (handled=False → poller relays to the Chair, who asks). It must
+            # NEVER fall through to the propose path: a stale "ok 2" landing as
+            # a propose-approve could ship a pending draft the Captain never
+            # looked at (the wrong-bind class this seam exists to kill).
+            log(f"binder-wire: indexed verb '{verb.primary} {verb.index}' had no "
+                "live manifest/undo binding — refused, relayed for disambiguation")
+            return {"handled": False,
+                    "reason": f"digest-index-stale ({verb.primary} {verb.index})"}
         return None      # no server-issued acted id — fall through to propose path
     return _apply_acted_verdict(pid, verb, emit=emit, reverse=reverse, freeze=freeze,
                                 now=now, journal_rows_for=journal_rows_for,
                                 read_ledger_fn=read_ledger_fn,
-                                record_veto=record_veto, verbatim=text, log=log)
+                                record_veto=record_veto, verbatim=text, log=log,
+                                capture_lesson=capture_lesson)
 
 
 # --- TI-4 veto commands (lift / freeform never confirm) ----------------------
@@ -670,6 +745,7 @@ def handle_captain_update(
     redis_set: Callable[[str, str], Any] | None = None,
     redis_del: Callable[[str], Any] | None = None,
     captain_verified: bool = True,
+    capture_lesson: Callable[..., Any] | None = None,
 ) -> dict:
     """Bind a Captain reply to its pending draft proposal; record, then deliver.
 
@@ -698,6 +774,11 @@ def handle_captain_update(
         _veto_armed = captain_verified and (
             _veto_recording_enabled() or record_veto is not None
             or lift_veto is not None or present is not None)
+        # SIE-1: lessons mirror verdict recording — captured wherever a
+        # correction verdict lands (the poller only relays Captain messages
+        # here). Injectable for tests; the default writes the lesson ledger
+        # (CABINET_ACTION_LESSONS overrides the path).
+        _cap = capture_lesson if capture_lesson is not None else _default_capture_lesson
 
         # --- UNDO-2 ACTED BRANCH (RT-B1): a reply binding a server-issued acted
         # id routes through the undo registry, NEVER loop.handle_response. Runs
@@ -711,7 +792,7 @@ def handle_captain_update(
             list_undo_windows=list_undo_windows or _default_list_undo_windows,
             read_ledger_fn=read_ledger_fn or read_ledger,
             journal_rows_for=journal_rows_for or _default_journal_rows_for,
-            record_veto=_rv, log=log)
+            record_veto=_rv, log=log, capture_lesson=_cap)
         if acted is not None:
             log(f"binder-wire: acted {acted.get('primary')} "
                 f"pid={str(acted.get('pid'))[:60]} verdict={acted.get('verdict')}")
@@ -826,9 +907,27 @@ def handle_captain_update(
             except Exception as e:  # record the failure; verdict already landed
                 delivery["result"] = {"ok": False, "error": str(e)[:200]}
 
+        # SIE-1 (propose seam): an `edit:`/`skip:` on a still-open proposal is a
+        # correction verdict — append ONE structured lesson row and hand its ref
+        # to handle_response so the superseding outcome event carries it
+        # (review.lesson_ref where verdict=wrong, plus a refs entry). Pre-routing
+        # here duplicates handle_response's own deterministic routing (same
+        # function, same text — cannot diverge); an already-decided proposal is
+        # skipped so an idempotent re-delivery never double-appends. Approvals
+        # are not corrections — no lesson.
+        lesson_ref: Optional[str] = None
+        if (proposal.get("proposal") or {}).get("decision") is None:
+            pre = loop.route_captain_response(text)
+            if pre.primary in ("edit", "skip"):
+                lesson_ref = _capture_lesson_safe(
+                    _cap, pid=pid,
+                    verdict="edit" if pre.primary == "edit" else "rejected",
+                    captain_text=text, record=proposal, ts=now_s, log=log)
+
         from datetime import datetime, timezone
         kwargs = {"proposal": proposal, "reply_text": text,
                   "dispatch": _dispatch, "draft": draft_text,
+                  "lesson_ref": lesson_ref,
                   # decided_at must be the DECISION time, not the proposal ts —
                   # approval-latency metrics (rubber-stamp detector, starvation
                   # windows) read this field.
@@ -856,7 +955,8 @@ def handle_captain_update(
             f"primary={result.get('primary')} delivered={delivery['attempted']}")
         return {"handled": True, "status": result.get("status"),
                 "verdict": result.get("verdict"), "primary": result.get("primary"),
-                "delivery": delivery.get("result"), "pid": pid, "summary": summary}
+                "delivery": delivery.get("result"), "pid": pid,
+                "lesson_ref": lesson_ref, "summary": summary}
     except Exception as e:  # NEVER break Captain-DM passthrough
         log(f"binder-wire error (passthrough preserved): {e!r}")
         return {"handled": False, "reason": f"error: {e!r}"}
