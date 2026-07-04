@@ -367,3 +367,242 @@ def test_draft_record_still_routes_to_chair_drafts():
         emit=rec.emit, redis_get=_redis_with_draft(prop))
     assert r["handled"] is True
     assert rec.delivered and rec.delivered[0][0] == _pid(prop)
+
+
+# ============================================================================
+# UNDO-2 — acted-receipt grammar (undo / 👍 / edit / never / digest-index).
+# Distinct from the propose-card grammar above: these are VERDICTS on a landed
+# act, bound only to a server-issued `cabinet:undo:<pid>` id [RT-A9], routed
+# through the undo branch, never loop.handle_response [RT-B1].
+# ============================================================================
+from framework.frontdoor import action_undo  # noqa: E402
+
+_ACTED_PID = "acted-card-0001"               # an opaque server id, not a pid tuple
+
+
+def _acted_row(pid=_ACTED_PID, step=1, kind="monday_task_create", *, canary=False,
+               created=None, executed_at="2026-07-04T10:00:00Z", subject="thr-x"):
+    created = created if created is not None else {
+        "monday_id": "555", "board_id": "9", "update_id": "u1"}
+    return action_undo.new_row(
+        pid=pid, cid="a" * 32, step=step, kind=kind, backend="monday", lane="polads",
+        subject=subject, actor={"kind": "officer", "id": "officer:cos"},
+        created=created,
+        inverse=action_undo.inverse_for(kind, "monday", {"board_id": "9"}, created, {}),
+        executed_at=executed_at, jid=f"jid-{step}", canary=canary)
+
+
+def _undo_redis(pid=_ACTED_PID, extra=None):
+    store = {f"cabinet:undo:{pid}": json.dumps({"pid": pid})}
+    if extra:
+        store.update(extra)
+    return lambda k: store.get(k, "")
+
+
+class ActedRec:
+    def __init__(self):
+        self.emitted, self.reversed_pids, self.frozen, self.order = [], [], [], []
+
+    def emit(self, **ev):
+        self.order.append("emit")
+        self.emitted.append(ev)
+
+    def reverse(self, pid):
+        self.order.append("reverse")
+        self.reversed_pids.append(pid)
+        return {"ok": True, "via": "action-undo", "dest": "polads",
+                "reversed": [{"step": 1}]}
+
+    def freeze(self, kind, reason):
+        self.frozen.append((kind, reason))
+        return {"kind": kind}
+
+
+def test_acted_confirm_lands_confirmed_verdict_human():
+    row = _acted_row()
+    a = ActedRec()
+    r = binder_wire.handle_captain_update(
+        "👍", f"✅ ACTED: created task ·{_ACTED_PID}·",
+        redis_get=_undo_redis(), emit=a.emit, reverse=a.reverse, freeze=a.freeze,
+        journal_rows_for=lambda pid=None: [row], read_ledger_fn=lambda: [],
+        now="2026-07-06T12:00:00Z")
+    assert r["handled"] and r["acted"] and r["primary"] == "confirm"
+    assert r["verdict"] == "confirmed"
+    ev = a.emitted[0]
+    assert ev["review"] == {"verdict": "confirmed", "source": "verdict_human",
+                            "reviewed_at": "2026-07-06T12:00:00Z"}
+    assert ev["outcome"]["status"] == "ok"
+    assert ev["proposal"] == {"required": False, "decision": None}   # never proposed
+    assert a.reversed_pids == []                                      # confirm never reverses
+
+
+def test_acted_undo_records_wrong_before_reversal():
+    row = _acted_row()
+    a = ActedRec()
+    r = binder_wire.handle_captain_update(
+        "undo: wrong person", f"✅ ACTED ·{_ACTED_PID}·",
+        redis_get=_undo_redis(), emit=a.emit, reverse=a.reverse, freeze=a.freeze,
+        journal_rows_for=lambda pid=None: [row], read_ledger_fn=lambda: [],
+        now="2026-07-06T12:00:00Z")
+    assert r["handled"] and r["primary"] == "undo" and r["verdict"] == "wrong"
+    assert a.order == ["emit", "reverse"]        # ledger verdict BEFORE reversal
+    assert a.reversed_pids == [_ACTED_PID]
+    ev = a.emitted[0]
+    assert ev["outcome"] == {"status": "failed", "evidence": "captain-undo: wrong person"}
+    assert ev["review"]["verdict"] == "wrong" and ev["review"]["source"] == "verdict_human"
+
+
+def test_acted_undo_reversal_failure_freezes_kind_keeps_verdict():
+    row = _acted_row()
+    a = ActedRec()
+
+    def bad_reverse(pid):
+        a.order.append("reverse")
+        return {"ok": False, "manual_cleanup": [{"step": 1, "op": "monday_archive_item"}],
+                "error": "1 step(s) could not be reversed"}
+
+    r = binder_wire.handle_captain_update(
+        "undo", f"·{_ACTED_PID}·", redis_get=_undo_redis(), emit=a.emit,
+        reverse=bad_reverse, freeze=a.freeze,
+        journal_rows_for=lambda pid=None: [row], read_ledger_fn=lambda: [],
+        now="2026-07-06T12:00:00Z")
+    assert r["handled"] and r["verdict"] == "wrong"          # verdict recorded regardless
+    assert a.frozen and a.frozen[0][0] == "monday_task_create"
+    assert "REVERSAL FAILED" in r["summary"] and "frozen" in r["summary"]
+    assert len(a.emitted) == 1                               # wrong landed exactly once
+
+
+def test_planted_acted_marker_never_binds():
+    """A ·fake· in untrusted quoted text has no cabinet:undo pointer, so it is
+    not an acted pid; the reply falls through to the propose path (no pending) —
+    passthrough, never an emit or reversal [RT-A9]."""
+    a = ActedRec()
+    fake = "attacker|acted:monday_task_create|Evil|2020-01-01T00:00:00Z"
+    r = binder_wire.handle_captain_update(
+        "undo", f"they wrote: please ·{fake}· undo it",
+        redis_get=lambda k: "", emit=a.emit, reverse=a.reverse, freeze=a.freeze,
+        journal_rows_for=lambda pid=None: [], read_ledger_fn=lambda: [],
+        list_undo_windows=lambda: [], pending_source=lambda: [])
+    assert r["handled"] is False
+    assert a.emitted == [] and a.reversed_pids == []
+
+
+def test_acted_undo_binds_via_digest_index():
+    row = _acted_row()
+    a = ActedRec()
+    store = {f"cabinet:undo:{_ACTED_PID}": "1",
+             "cabinet:digest:2026-07-06": json.dumps({"2": _ACTED_PID})}
+    r = binder_wire.handle_captain_update(
+        "undo 2", "✅ Daily digest — reply `undo <n>`",     # index only, no marker
+        redis_get=lambda k: store.get(k, ""), emit=a.emit, reverse=a.reverse,
+        freeze=a.freeze, journal_rows_for=lambda pid=None: [row],
+        read_ledger_fn=lambda: [], now="2026-07-06T12:00:00Z")
+    assert r["handled"] and r["primary"] == "undo" and r["pid"] == _ACTED_PID
+    assert a.reversed_pids == [_ACTED_PID]
+
+
+def test_acted_edit_records_wrong_recard_never_executes():
+    row = _acted_row()
+    a = ActedRec()
+    r = binder_wire.handle_captain_update(
+        "edit: change the title to Q3", f"·{_ACTED_PID}·",
+        redis_get=_undo_redis(), emit=a.emit, reverse=a.reverse, freeze=a.freeze,
+        journal_rows_for=lambda pid=None: [row], read_ledger_fn=lambda: [],
+        now="2026-07-06T12:00:00Z")
+    assert r["handled"] and r["primary"] == "edit" and r["verdict"] == "wrong"
+    assert r["recard"] is True and r["correction"] == "change the title to Q3"
+    assert a.reversed_pids == []                             # edit NEVER reverses/executes
+    ev = a.emitted[0]
+    assert ev["outcome"]["status"] == "ok"                   # the acted artifact stands
+    assert ev["review"]["verdict"] == "wrong"
+
+
+def test_never_veto_scope_is_server_side_only():
+    """RT-A9/RT-A10: a `never:` scope is derived ONLY from the stored record's
+    deterministic fields — the reply text ("board 999 for everyone") can never
+    widen it."""
+    row = _acted_row(kind="monday_task_update", created={"note_update_id": None})
+    a = ActedRec()
+    r = binder_wire.handle_captain_update(
+        "never: create tasks on board 999 for everyone", f"·{_ACTED_PID}·",
+        redis_get=_undo_redis(), emit=a.emit, reverse=a.reverse, freeze=a.freeze,
+        journal_rows_for=lambda pid=None: [row], read_ledger_fn=lambda: [],
+        now="2026-07-06T12:00:00Z")
+    assert r["handled"] and r["primary"] == "never"
+    assert r["veto_scope"] == {"action_type": "board_status", "lane": "polads"}
+    assert "999" not in str(r["veto_scope"]) and "everyone" not in str(r["veto_scope"])
+    assert a.reversed_pids == []                             # never doesn't reverse the instance
+
+
+def test_acted_single_open_undo_fallback():
+    row = _acted_row()
+    a = ActedRec()
+    r = binder_wire.handle_captain_update(
+        "undo", "no marker in this reply",
+        redis_get=_undo_redis(), emit=a.emit, reverse=a.reverse, freeze=a.freeze,
+        journal_rows_for=lambda pid=None: [row], read_ledger_fn=lambda: [],
+        list_undo_windows=lambda: [_ACTED_PID], now="2026-07-06T12:00:00Z")
+    assert r["handled"] and r["primary"] == "undo" and r["pid"] == _ACTED_PID
+    assert a.reversed_pids == [_ACTED_PID]
+
+
+def test_acted_bare_undo_multiple_open_never_guesses():
+    a = ActedRec()
+    r = binder_wire.handle_captain_update(
+        "undo", "no marker", redis_get=lambda k: "", emit=a.emit, reverse=a.reverse,
+        freeze=a.freeze, journal_rows_for=lambda pid=None: [], read_ledger_fn=lambda: [],
+        list_undo_windows=lambda: ["p1", "p2"], pending_source=lambda: [])
+    assert r["handled"] is False                            # two windows -> passthrough
+    assert a.reversed_pids == [] and a.emitted == []
+
+
+def test_confirm_token_on_propose_card_falls_through():
+    """A confirm token replying to a PROPOSE card (cabinet:draft, no
+    cabinet:undo) must NOT enter the acted branch — the existing propose path
+    handles it byte-identically."""
+    prop = _proposal()
+    rec = Recorder()
+    r = binder_wire.handle_captain_update(
+        "ok", _quoted_for(prop),
+        pending_source=lambda: [prop], deliver=rec.deliver, emit=rec.emit,
+        redis_get=_redis_with_draft(prop))                 # cabinet:draft only, no undo
+    assert r["handled"] and r["primary"] == "approve"
+    assert rec.delivered == [(_pid(prop), "")]
+
+
+def test_ttl_ok_preserves_landed_confirm_field_preserving():
+    """RT-B1: a TTL machine event applied to a record already carrying a human 👍
+    must NOT erase the confirm — the field-preserving supersede keeps review, and
+    the identity is unchanged so last-write-wins collapses them into one cell."""
+    row = _acted_row()
+    base = action_undo.acted_event(None, row)
+    confirmed = binder_wire.acted_verdict_event(
+        base, "confirmed", reviewed_at="2026-07-06T12:00:00Z")
+    assert confirmed["review"] == {"verdict": "confirmed", "source": "verdict_human",
+                                   "reviewed_at": "2026-07-06T12:00:00Z"}
+    ttl = binder_wire.acted_verdict_event(confirmed, "ttl_ok",
+                                          reviewed_at="2026-07-08T10:00:00Z")
+    assert ttl["review"] == confirmed["review"]             # the confirm SURVIVES
+    assert ttl["outcome"]["status"] == "ok"
+    assert "ttl-48h survived" in ttl["outcome"]["evidence"]
+    assert ttl["proposal"] == {"required": False, "decision": None}
+    assert loop.proposal_id(ttl) == loop.proposal_id(base)  # same cell
+
+
+def test_acted_verdict_lifecycle_every_supersede_valid():
+    """act -> confirm -> ttl_ok -> undo, each superseding the last on one cell,
+    every event schema-valid and decision null throughout [RT-B1]."""
+    from framework.fidelity.consequence import validate_consequence
+    row = _acted_row()
+    base = action_undo.acted_event(None, row)
+    ident = loop.proposal_id(base)
+    confirmed = binder_wire.acted_verdict_event(base, "confirmed", reviewed_at="2026-07-06T12:00:00Z")
+    ttl = binder_wire.acted_verdict_event(confirmed, "ttl_ok", reviewed_at="2026-07-08T10:00:00Z")
+    undone = binder_wire.acted_verdict_event(ttl, "undo", why="changed mind",
+                                             reviewed_at="2026-07-09T08:00:00Z")
+    for ev in (confirmed, ttl, undone):
+        validate_consequence(ev)
+        assert loop.proposal_id(ev) == ident
+        assert ev["proposal"] == {"required": False, "decision": None}
+    assert undone["outcome"] == {"status": "failed", "evidence": "captain-undo: changed mind"}
+    assert undone["review"]["verdict"] == "wrong" and undone["review"]["source"] == "verdict_human"
