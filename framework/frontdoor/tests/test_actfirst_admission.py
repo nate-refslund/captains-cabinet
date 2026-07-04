@@ -15,7 +15,8 @@ the other still catches the attack:
     delegate/investigation framing.
   - the EXECUTOR layer (``framework.frontdoor.action_exec`` /
     ``action_undo`` / ``binder_wire``) — the mechanical enforcement point: the
-    fail-closed board allowlist (default-deny), the closed per-kind payload
+    board gate (DEFAULT-ALLOW + Captain denylist/cascade-gated boards — the
+    2026-07-04 ACCESS INVERSION), the closed per-kind payload
     schema (``PayloadKeyError``), the person/assignee/attendee denylist, the
     content tripwire, @-mention stripping, the provenance banner, the calendar
     pin, and the binder's server-pointer cross-check that binds only a
@@ -75,16 +76,18 @@ REQUIRED_ATTACK_CLASSES = frozenset({
     "provenance_banner",
 })
 
-# A board that is never on any act-first allowlist (default-deny target).
-OFF_ALLOWLIST_BOARD = "9999999999"
-# The single audited hard-floor act-first board (create-only).
+# A Captain-denied / cascade-gated board (ACCESS INVERSION: boards are
+# default-allow, so a meaningful escape target is an explicitly DENIED surface
+# — this is Bookings, whose status webhooks email Jannie via Make).
+DENIED_BOARD = "1549621337"
+# The audited act-first landing board (creates clear; update path cascade-gated).
 ALLOWED_BOARD = "5091706356"
 
 # A deterministic act-first surfaces config injected into the executor gate so
-# the allowlist tests never depend on the on-disk yml (which is fail-closed
-# anyway). Mirrors the shape ``_load_act_first_surfaces`` returns.
+# the board-gate tests never depend on the on-disk yml. Mirrors the DEFAULT-
+# ALLOW + denylist shape ``_load_act_first_surfaces`` returns post-inversion.
 _SURFACES = {
-    "allowlist": {ALLOWED_BOARD: {"kinds": {"monday_task_create"}}},
+    "denylist": {DENIED_BOARD: None},
     "caps": {"per_kind_per_day": 20, "estate_per_day": 40},
 }
 
@@ -235,40 +238,42 @@ class TestPlantedPid:
 
 
 # =============================================================================
-# 2 — Board-escape: a create targeting a non-allowlisted board.
+# 2 — Board-escape: a create steered to a Captain-denied / cascade-gated board
+#     (default-allow world: the escape that matters is into a DENIED surface —
+#     e.g. injection redirecting a write to the board that emails Jannie).
 # =============================================================================
 
 class TestBoardEscape:
     attack_class = "board_escape"
 
     def test_proposer_renders_the_exact_target_board(self):
-        # A3 content perimeter: the proposer NEVER conceals the target board — an
-        # off-allowlist board is rendered verbatim on the card the Captain sees
-        # (the mechanical block is the executor allowlist, asserted below).
+        # A3 content perimeter: the proposer NEVER conceals the target board — a
+        # denied board is rendered verbatim on the card the Captain sees
+        # (the mechanical block is the executor's denylist gate, asserted below).
         prop = _make_proposal(steps=[al.ActionStep(
             "monday_task_create", "File it",
-            {"board_id": OFF_ALLOWLIST_BOARD, "title": "x"})])
+            {"board_id": DENIED_BOARD, "title": "x"})])
         card = al.render_card(prop, "pid-abcdef")
-        assert OFF_ALLOWLIST_BOARD in card
+        assert DENIED_BOARD in card
 
-    def test_executor_downgrades_off_allowlist_board_to_propose_only(self):
-        # _board_allowed is default-deny.
-        allow = _SURFACES["allowlist"]
-        assert ax._board_allowed(ALLOWED_BOARD, "monday_task_create", allow) is True
-        assert ax._board_allowed(OFF_ALLOWLIST_BOARD, "monday_task_create", allow) is False
+    def test_executor_downgrades_denied_board_to_propose_only(self):
+        # default-allow, denylist-gated: allowed board passes, denied refuses.
+        dl = _SURFACES["denylist"]
+        assert ax._board_not_denied(ALLOWED_BOARD, "monday_task_create", dl) is True
+        assert ax._board_not_denied(DENIED_BOARD, "monday_task_create", dl) is False
         # _gate_chain downgrades the whole card to propose_only, executes nothing.
         steps = [{"kind": "monday_task_create",
-                  "payload": {"board_id": OFF_ALLOWLIST_BOARD, "title": "x"}}]
+                  "payload": {"board_id": DENIED_BOARD, "title": "x"}}]
         decision, _held = ax._gate_chain(steps, lane="polads",
                                          redis_get=lambda k: "", surfaces=_SURFACES)
         assert decision is not None and decision["gate"] == "propose_only"
-        assert any("not act-first-allowed" in r for r in decision["reasons"])
+        assert any("Captain-denied" in r for r in decision["reasons"])
         # …and end-to-end through deliver_action on the act-first path: nothing
         # reaches Monday.
         spy = MondaySpy()
         r = _deliver_act_first(
             _rec([{"kind": "monday_task_create",
-                   "payload": {"board_id": OFF_ALLOWLIST_BOARD, "title": "x"}}]),
+                   "payload": {"board_id": DENIED_BOARD, "title": "x"}}]),
             spy)
         assert r.get("gate") == "propose_only"
         assert spy.calls == []

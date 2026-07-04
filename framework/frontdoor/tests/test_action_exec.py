@@ -309,11 +309,15 @@ def test_dry_run_surfaces_inverse_spec_no_writes():
 # fail-closed. The act-first perimeter is DARK unless act_first=True.
 # =============================================================================
 
-def _surfaces(boards=None, per_kind=20, estate=40):
-    """A fixed act-first-surfaces dict so gate tests don't couple to the live yml."""
-    if boards is None:
-        boards = {"5091706356": {"kinds": {"monday_task_create"}}}
-    return {"allowlist": boards,
+def _surfaces(denylist=None, per_kind=20, estate=40):
+    """A fixed act-first surfaces dict so gate tests don't couple to the live
+    yml. ACCESS INVERSION shape: default-allow + denylist. The fixture denies
+    the Deals board outright (whole-board) and gates the Tasks board's UPDATE
+    path (mirrors the live cascade_gated posture)."""
+    if denylist is None:
+        denylist = {"1623368485": None,                      # whole board denied
+                    "5091706356": {"monday_task_update"}}    # update path gated
+    return {"denylist": denylist,
             "caps": {"per_kind_per_day": per_kind, "estate_per_day": estate}}
 
 
@@ -530,7 +534,7 @@ def test_content_tripwire_categories():
     assert ax._content_tripwire(["Ship the VIES autofill for publishers"]) == []
 
 
-# --- board allowlist + gate (act-first only) ---------------------------------
+# --- board gate: default-allow + denylist (act-first only) -------------------
 
 def test_act_first_allowed_board_create_executes(monkeypatch):
     monkeypatch.setattr(ax, "_load_act_first_surfaces", lambda: _surfaces())
@@ -543,7 +547,9 @@ def test_act_first_allowed_board_create_executes(monkeypatch):
     assert r["ok"] is True and r["executed"][0]["monday_id"] == "12345"
 
 
-def test_act_first_offlist_board_downgrades_to_propose_only(monkeypatch):
+def test_act_first_denied_board_downgrades_to_propose_only(monkeypatch):
+    # Deals (1623368485) is whole-board denied in the fixture (cascade-gated
+    # CRM class) — an act-first create there downgrades, nothing executes.
     monkeypatch.setattr(ax, "_load_act_first_surfaces", lambda: _surfaces())
     spy = MondaySpy()
     r = ax.deliver_action(
@@ -552,13 +558,27 @@ def test_act_first_offlist_board_downgrades_to_propose_only(monkeypatch):
                                "payload": {"board_id": "1623368485", "title": "t"}}]),
         monday_post=spy, osascript=lambda c: "ok", redis_incr=lambda k, t: None)
     assert r["ok"] is False and r["gate"] == "propose_only"
-    assert any("not act-first-allowed" in x for x in r["reasons"])
+    assert any("Captain-denied" in x for x in r["reasons"])
     assert spy.calls == []                           # nothing executed
 
 
-def test_act_first_update_on_create_only_board_downgrades(monkeypatch):
-    """Board 5091706356 is CREATE-only (its update path carries an unidentified
-    webhook) — an act-first update there downgrades."""
+def test_act_first_default_allow_unlisted_board_acts(monkeypatch):
+    # ACCESS INVERSION pin: a board absent from the denylist is fair game —
+    # no allowlist membership is required to act (default-allow).
+    monkeypatch.setattr(ax, "_load_act_first_surfaces", lambda: _surfaces())
+    spy = MondaySpy()
+    r = ax.deliver_action(
+        "pa2b", act_first=True,
+        redis_get=_ks_getter([{"kind": "monday_task_create",
+                               "payload": {"board_id": "5096013783", "title": "t"}}]),
+        monday_post=spy, osascript=lambda c: "ok", redis_incr=lambda k, t: None)
+    assert r["ok"] is True and r["executed"][0]["monday_id"] == "12345"
+
+
+def test_act_first_update_on_gated_update_path_downgrades(monkeypatch):
+    """Board 5091706356's UPDATE path is cascade-gated (unidentified
+    change_column_value webhook) — an act-first update there downgrades while
+    creates act freely."""
     monkeypatch.setattr(ax, "_load_act_first_surfaces", lambda: _surfaces())
     r = ax.deliver_action(
         "pa3", act_first=True,
@@ -570,8 +590,8 @@ def test_act_first_update_on_create_only_board_downgrades(monkeypatch):
 
 
 def test_approved_path_ignores_act_first_perimeter(monkeypatch):
-    """The perimeter is DARK on the approved path: an off-allowlist board create
-    the Captain approved still executes (act_first defaults False)."""
+    """The perimeter is DARK on the approved path: a denied-board create the
+    Captain explicitly approved still executes (act_first defaults False)."""
     monkeypatch.setattr(ax, "_load_act_first_surfaces", lambda: _surfaces())
     spy = MondaySpy()
     r = ax.deliver_action(
@@ -579,7 +599,7 @@ def test_approved_path_ignores_act_first_perimeter(monkeypatch):
                                   "payload": {"board_id": "1623368485",
                                               "title": "http://x.example approved"}}]),
         monday_post=spy, osascript=lambda c: "ok")
-    assert r["ok"] is True                           # tripwire + allowlist not applied
+    assert r["ok"] is True                           # tripwire + board gate not applied
 
 
 def test_act_first_tripwire_hit_downgrades(monkeypatch):
@@ -682,24 +702,40 @@ def test_act_first_records_caps_after_execution(monkeypatch):
     assert any(":monday_task_create" in k for k in incs)
 
 
-# --- surfaces loader (fail-closed) -------------------------------------------
+# --- surfaces loader (default-allow; fail-closed on corruption only) ---------
 
-def test_load_surfaces_fallback_when_missing(monkeypatch, tmp_path):
-    """Absent/unreadable yml ⇒ ONLY the hardcoded floor {5091706356 create-only}."""
+def test_load_surfaces_absent_file_is_empty_denylist(monkeypatch, tmp_path):
+    """ABSENT yml ⇒ empty denylist (the ruled default-allow posture) + default caps."""
     monkeypatch.setattr(ax, "_surfaces_path", lambda: tmp_path / "nope.yml")
     surf = ax._load_act_first_surfaces()
-    assert set(surf["allowlist"]) == {"5091706356"}
-    assert surf["allowlist"]["5091706356"]["kinds"] == {"monday_task_create"}
+    assert surf["denylist"] == {}
+    assert ax._board_not_denied("9999", "monday_task_create", surf["denylist"])
     assert surf["caps"]["per_kind_per_day"] == 20 and surf["caps"]["estate_per_day"] == 40
 
 
-def test_load_surfaces_parses_live_yml():
-    """The real instance yml parses to allow 5091706356 create-only (update not
-    allowed) and never admits a blocked board."""
+def test_load_surfaces_corrupt_file_gates_everything(monkeypatch, tmp_path):
+    """A file that EXISTS but cannot be parsed ⇒ every board gated — an
+    unreadable Captain exclusion list is never ignored (fail-closed on
+    corruption, distinct from the absent-file default-allow)."""
+    bad = tmp_path / "act-first-surfaces.yml"
+    bad.write_text("denylist: [unclosed")
+    monkeypatch.setattr(ax, "_surfaces_path", lambda: bad)
     surf = ax._load_act_first_surfaces()
-    assert ax._board_allowed("5091706356", "monday_task_create", surf["allowlist"])
-    assert not ax._board_allowed("5091706356", "monday_task_update", surf["allowlist"])
-    assert not ax._board_allowed("1623368485", "monday_task_create", surf["allowlist"])
+    assert not ax._board_not_denied("5091706356", "monday_task_create", surf["denylist"])
+    assert not ax._board_not_denied("9999", "monday_task_create", surf["denylist"])
+
+
+def test_load_surfaces_parses_live_yml():
+    """The real instance yml: empty Captain denylist + audit-proven
+    cascade_gated boards. Tasks creates act; Tasks updates gated (unidentified
+    webhook); Bookings/Deals denied (email cascades); unlisted boards allowed."""
+    surf = ax._load_act_first_surfaces()
+    dl = surf["denylist"]
+    assert ax._board_not_denied("5091706356", "monday_task_create", dl)
+    assert not ax._board_not_denied("5091706356", "monday_task_update", dl)
+    assert not ax._board_not_denied("1549621337", "monday_task_create", dl)  # Bookings→Jannie
+    assert not ax._board_not_denied("1623368485", "monday_task_create", dl)  # Deals CRM
+    assert ax._board_not_denied("5096013783", "monday_task_create", dl)      # unlisted → allowed
 
 
 # =============================================================================

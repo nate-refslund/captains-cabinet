@@ -1,52 +1,56 @@
 # =============================================================================
-# act-first surfaces — per-board cascade verdicts + act-first knobs  (TI-0)
+# act-first surfaces — ACCESS INVERSION (Captain-ruled 2026-07-04)
 # =============================================================================
 #
-#   ██  DRAFT — NOT ENFORCING.  The Captain ratifies before the act-first flip. ██
+# DEFAULT-ALLOW. The Captain: "you have autonomous access to ALL boards in
+# Monday — we should not have an allowlist, rather a denylist... for now there
+# is no denylist, keep it empty." Access is granted first and narrowed only by
+# explicit exclusion — the access-axis mirror of earn-demotion. Safe because
+# default-allow ≠ default-act: every act-first step still needs a registered
+# inverse (48h undo), and the six hard ceilings (incl. external comms — the
+# Captain owns ALL outbound) are unchanged on every board.
 #
-# This file is the INSTANCE draft produced by the Wave-1 L3 cascade audit
-# (docs/cascade-audit-2026-07-04.md, 2026-07-04). It records, per Monday board,
-# whether the act-first lane may execute unattended writes there, and carries the
-# instance act-first knobs (confidence floor + caps). It is officer-landable and
-# advisory ONLY. The ENFORCING germline allowlist lands separately in GERM-2
-# (framework/policies/act-first-surfaces.yml, Captain-applied). Until then the
-# executor's hard fallback allowlist is {5091706356} (SEC-3), and nothing in this
-# file grants unattended execution by itself.
+# Two sections gate a board, both Captain-owned, mechanically identical:
+#   denylist:      — explicit Captain exclusions. EMPTY by the 2026-07-04
+#                    ruling. Connect-time interviews of new critical-info tools
+#                    ("what may this NOT touch?") append here.
+#   cascade_gated: — NOT an access denial. Audit-proven boards where a write
+#                    mechanically fires outbound mail/Teams to a human (TI-0
+#                    cascade audit, docs/cascade-audit-2026-07-04.md) — acting
+#                    there = sending, so the write stays propose-first under
+#                    the UNCHANGED external-comms ceiling. The Captain lifts
+#                    any entry by deleting it (one line).
 #
-# Verdict vocabulary (Nate's 2026-07-04 ruling folded in):
-#   allow       — audited; no outbound-to-external-human cascade found on the
-#                 acted path. Monday NATIVE notifications are HARMLESS and never
-#                 block a board (2026-07-04 ruling). Still Captain-gated at flip.
-#   blocked     — a real outbound cascade is present or near-certain (Make email
-#                 scenario, @-mention email to a non-Nate human, external webhook,
-#                 support/CRM email automation). NEVER act-first here.
-#   unverified  — cannot be positively cleared. Make.com scenarios are invisible
-#                 to this audit (no Make creds; Monday's webhooks() API never
-#                 reveals a webhook's destination URL). A "0 webhooks" board is
-#                 NOT proven clean — a Make poll-trigger or native email automation
-#                 leaves no API-visible trace. unverified ⇒ EXCLUDED from act-first
-#                 (default-deny), not "clean".
+# Corruption honesty: this file ABSENT ⇒ empty denylist (the ruled posture).
+# This file PRESENT but unparseable ⇒ every board gated until repaired (an
+# unreadable Captain exclusion list is never ignored).
 #
-# DEFAULT-DENY: any board not listed `allow` below is excluded from act-first.
+# The previous default-deny allowlist draft (TI-0, ratification pending) is
+# SUPERSEDED by the inversion ruling; its audit evidence lives on below as the
+# cascade_gated whys. Boards the audit called "unverified" (People &
+# Relationships 5096013693, Reflections & Research 5096013783, Products
+# 5091839409, Activities 5091999365, …) are now ALLOWED — the Make.com
+# blind-spot risk on private AI-Workspace boards is accepted by the ruling.
 # =============================================================================
 
-version: 0
-status: draft                     # draft | ratified — Captain flips to ratified
+version: 1
+status: ruled                     # Captain ruling 2026-07-04 (access inversion)
 audit_ref: docs/cascade-audit-2026-07-04.md
-audited_at: "2026-07-04"
-audited_by: L3-cascade-audit (trust-inversion Wave 1)
+ruled_at: "2026-07-04"
 
-# --- account / identity the audit ran under (see report §agent-token) --------
-# The MONDAY_API_TOKEN in ~/.screenpipe/pipes/_shared/.env resolves to the
-# full-privilege "STEPhie" user (id 48307552) which can read/write 534 active
-# boards across the ENTIRE STEP org (CRM, Invoices, Bookings, AdSales, onboarding).
-# Unattended act-first MUST NOT ride this token — see recommended MONDAY_AGENT_TOKEN.
-audited_identity:
+# --- acting identity (Captain-ruled 2026-07-04) -------------------------------
+# "Use my existing Monday API key with full privilege as the agent token —
+# I want the cabinet to be able to act like me." MONDAY_API_TOKEN (fallback
+# MONDAY_API_KEY) from ~/.screenpipe/pipes/_shared/.env is the acting
+# credential — full-privilege user 48307552, org-wide. The earlier scoped-
+# agent-user recommendation is superseded by this ruling. Names only — never
+# values — in any file or log.
+acting_identity:
   monday_user_id: "48307552"
-  scope_observed: "full-org (534 active boards, all workspaces)"
-  recommendation: use a dedicated scoped agent user — MONDAY_AGENT_TOKEN (design in report)
+  credential_env: MONDAY_API_TOKEN   # fallback: MONDAY_API_KEY
+  scope: full-org (by Captain ruling)
 
-# --- instance act-first knobs (consumed by the runner/executor once wired) ----
+# --- instance act-first knobs --------------------------------------------------
 confidence_floor: 0.65            # proposer confidence below this ⇒ propose-only
 
 caps:                             # honest, conservative starters — tighten never loosen
@@ -54,21 +58,20 @@ caps:                             # honest, conservative starters — tighten ne
     max_acts_per_run: 5           # across all boards+kinds in one lane run
     max_acts_per_day: 40
   per_kind:
-    max_acts_per_day: 20          # per action_type (e.g. monday_task_create)
-  per_board_default:              # applies to any allow board without its own caps
+    max_acts_per_day: 20          # per action_type (e.g. task_create)
+  per_board_default:
     max_acts_per_run: 3
     max_acts_per_day: 15
 
-# --- executor obligations (hard, deterministic; enforced in the L1 executor) --
-# These are NOT knobs — they are invariants the executor must hold on EVERY
-# act-first write regardless of board verdict. Documented here so the allowlist
-# and the obligations travel together; the code home is SEC-3 in action_exec.py.
+# --- executor obligations (hard, deterministic; enforced in action_exec) ------
+# Invariants on EVERY act-first write regardless of board — these, not board
+# lists, are what keep default-allow safe. Code home: SEC-3 in action_exec.py.
 executor_obligations:
   - id: no-at-mention
     rule: >
       NEVER emit Monday @-mention syntax (@name, @team, or a raw Monday user-id
       mention token) in any create_update / note body. A mention notifies AND
-      EMAILS the mentioned user — a real outbound cascade the board verdict does
+      EMAILS the mentioned user — a real outbound cascade the board gate does
       not capture. Strip @-tokens from all lane-written Monday bodies. [RT-A8]
   - id: provenance-banner
     rule: >
@@ -81,108 +84,51 @@ executor_obligations:
       owner — assigning/subscribing a human on a Monday item emails them.
 
 # =============================================================================
-# ALLOWLIST — boards where act-first MAY execute (still Captain-gated at flip).
-# Start of one. Everything else is default-denied.
+# DENYLIST — explicit Captain exclusions. EMPTY per the 2026-07-04 ruling.
+# (Connect-time interviews of new critical-info tools append rows here:
+#  {board_id: "...", kinds: [...optional...], why: "..."} — no kinds = whole board.)
 # =============================================================================
-allowlist:
-  - board_id: "5091706356"
-    name: "Tasks"
-    workspace: "AI Workspace"
-    verdict: allow
-    kinds: [monday_task_create]   # CREATE only — see caveat on the update path
-    caps:
-      max_acts_per_run: 3
-      max_acts_per_day: 15
-    why: >
-      Nate's private AI-Workspace Tasks board — the action_exec DEFAULT_TASKS_BOARD
-      and the SEC-3 fallback board. Webhook snapshot: NO create_item subscriber, so
-      creating an item fires no cascade. This is the lowest-blast landing surface.
-    caveats:
-      - >
-        UPDATE path is NOT clear. The board carries a `change_column_value`
-        webhook (id 157255553) + a `change_subitem_column_value` webhook
-        (id 157257050). Monday's API does not reveal their destination, so a
-        monday_task_update (status/priority/due) on this board triggers an
-        UNIDENTIFIED subscriber. monday_task_update stays propose-only on this
-        board until that webhook's destination is identified and cleared.
-      - >
-        permissions=everyone (org-visible, 1813 items) — not a throwaway scratch
-        board. Provenance banner + @-mention stripping are load-bearing here.
+denylist: []
 
 # =============================================================================
-# BLOCKED — real or near-certain outbound cascade. NEVER act-first. Evidence set
-# (representative, not exhaustive — the whole CRM/AdSales/Support/onboarding/
-# Invoice surface is blocked by policy; these are the audited proofs).
+# CASCADE-GATED — writing here mechanically SENDS to a human (audit-proven).
+# Gated under the unchanged external-comms ceiling; Captain-liftable per entry.
 # =============================================================================
-blocked:
+cascade_gated:
   - board_id: "1549621337"
-    name: "Bookings"
-    workspace: "STEP Network 3.0"
+    name: "Bookings (STEP Network 3.0)"
     why: >
-      Status-change webhooks on status0__1 (ids 126701248, 166272135, both fire
-      at index 19) — the trigger family behind Make scenario 1952299 "Booking
-      Changed", which EMAILS Jannie. The canonical known email cascade. HARD BLOCK.
+      Status-change webhooks (126701248, 166272135) drive Make scenario 1952299
+      "Booking Changed", which EMAILS Jannie. Acting here = sending.
   - board_id: "1623368485"
-    name: "Deals"
-    workspace: "AdSales"
-    why: 4 webhooks incl. button-column triggers (Make/automation launch points). Live CRM revenue board.
+    name: "Deals (AdSales)"
+    why: 4 webhooks incl. button-column Make/automation launch points. Live CRM revenue board.
   - board_id: "1402911034"
-    name: "Contacts"
-    workspace: "AdSales"
-    why: create_item + contact_email-change webhooks — CRM contact creation fans out (enrichment/email). Live CRM.
+    name: "Contacts (AdSales)"
+    why: create_item + contact_email-change webhooks — CRM contact creation fans out (enrichment/email).
   - board_id: "1402911042"
-    name: "Sales Activities"
-    workspace: "AdSales"
+    name: "Sales Activities (AdSales)"
     why: create_item + board-relation webhooks on the live AdSales CRM.
   - board_id: "5092199368"
-    name: "PolAds Tickets"
-    workspace: "Support & Service"
+    name: "PolAds Tickets (Support & Service)"
     why: >
-      Support/Service ticket board. 0 API webhooks, but ticket boards route
-      complainant/requester EMAIL via native automation and/or Make (the PolAds
-      complaint-conduit flow). Outbound-to-external-human near-certain. BLOCK.
-  - board_id: "team-task-boards"
-    name: "Tasks - AdOps / Marketing / Video / AdTech / Yield & Growth / BI-Engineering / Email-Automation / Audience"
-    workspace: "STEP Network 3.0 / Data & Intelligence"
+      Ticket boards route complainant/requester EMAIL via native automation
+      and/or Make (the PolAds complaint-conduit flow). Outbound near-certain.
+  - board_id: "5091003553"
+    name: "Prices (AdSales)"
+    why: commercial AdSales surface (policy class from the audit's blocked set).
+  - board_id: "5091706356"
+    name: "Tasks (AI Workspace) — UPDATE PATH ONLY"
+    kinds: [monday_task_update]
     why: >
-      All carry create_item + `link_to_teams` board-relation webhooks that fan
-      out to Microsoft Teams channels (whole teams). Not cabinet surfaces; BLOCK.
-  - board_id: "crm-adsales-invoice-onboarding-*"
-    name: "(policy class) CRM / AdSales / Invoice / On-Off-boarding / commercial boards"
-    workspace: "CRM, AdSales, Support & Service, SN - On/Off-boardings, Media & Insights, STEP Network 3.0"
-    why: >
-      Company-operational boards touching customers, money, publishers, staff.
-      Blocked by workspace policy independent of webhook state — the act-first
-      lane has no business writing here. Includes 'Prices' (5091003553, AdSales).
-
-# =============================================================================
-# UNVERIFIED — candidate cabinet boards that could NOT be positively cleared.
-# Excluded from act-first (default-deny). Promotable to `allow` only after the
-# Make.com blind spot is closed for them (see report). Nate's private AI-Workspace
-# boards: Monday native notifications on these are harmless, but a hidden Make
-# poll-scenario or a native EMAIL automation would not appear in this audit.
-# =============================================================================
-unverified:
-  - board_id: "5096013693"
-    name: "People & Relationships"
-    workspace: "AI Workspace"
-    why: >
-      Private; people-intel already writes here. 0 API webhooks. Excluded: PII +
-      the people-board never-write-by-index gotcha make it a poor act-first surface
-      even before the Make blind spot. Not blocked-for-cascade; excluded pending
-      explicit Captain ratification of a people-safe write contract.
-  - board_id: "5096013783"
-    name: "Reflections & Research"
-    workspace: "AI Workspace"
-    why: >
-      Private; meeting-intel/reflections push here. 0 API webhooks. Strongest
-      candidate to promote to `allow` after a Make re-audit confirms no poll-scenario
-      or email automation watches it.
-  - board_id: "5091839409"
-    name: "Products"
-    workspace: "AI Workspace"
-    why: Private AI-Workspace board, 0 API webhooks. Unverified vs the Make blind spot.
-  - board_id: "5091999365"
-    name: "Activities"
-    workspace: "AI Workspace"
-    why: Private AI-Workspace board, 0 API webhooks. Unverified vs the Make blind spot.
+      change_column_value webhook 157255553 (+ subitem 157257050) with an
+      UNIDENTIFIED destination — an update triggers an unknown subscriber.
+      Creates are clear (no create_item subscriber) and act freely; updates
+      stay propose-first here until that webhook's destination is identified.
+  # NOTE: the audit's team-task boards (AdOps/Marketing/Video/AdTech/Yield/BI/
+  # Email-Automation/Audience) carry link_to_teams webhooks that fan out to
+  # whole Teams channels, and further CRM/Invoice/onboarding boards were
+  # blocked as a policy class. Their board_ids were not individually captured
+  # in the audit draft (prose rows). The proposer has no lane pointing at them
+  # today; enumerate + append their ids here before any lane is aimed at those
+  # workspaces. [checkpoint follow-up]

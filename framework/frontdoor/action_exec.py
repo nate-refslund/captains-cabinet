@@ -37,8 +37,11 @@ execution path regardless of whether the act-first flip is live:
     killswitch check before any side effect (unreachable Redis ⇒ halt), and a
     payload-sha256 TOCTOU re-check.
   - ACT-FIRST PERIMETER (only when ``act_first=True`` — a later wave's branch;
-    inert today): a fail-closed Monday board allowlist (default-deny; hard floor
-    ``{5091706356}`` create-only), a content tripwire over generated text
+    inert today): a Monday board gate that is DEFAULT-ALLOW with a Captain
+    denylist + audit-proven cascade-gated boards (the 2026-07-04 ACCESS
+    INVERSION ruling — access granted first, narrowed only by explicit
+    exclusion; a write that provably fires outbound mail/Teams stays gated
+    under the unchanged external-comms ceiling), a content tripwire over generated text
     (IBAN / credential / URL / approval-claim / email ⇒ propose_only) [RT-A1], a
     person/assignee/attendee key denylist, per-day per-kind caps, and per-step
     gated delivery — reversible-eligible steps may act while gated kinds
@@ -92,11 +95,17 @@ _SHARED_CALENDAR_NAMES = frozenset({"work", "shared", "subscribed", "delegate",
 # act-first path regardless of any upstream verdict (explicit-approve-forever).
 KINDS_REQUIRE_EXPLICIT_APPROVE = frozenset({"mission_propose"})
 
-# SEC-3 hard fallback board allowlist — used when act-first-surfaces.yml is
-# absent/unparseable (fail-closed floor). Board 5091706356 = Nate's private
-# AI-Workspace Tasks board, CREATE-only (the audited no-cascade landing surface;
-# its update path carries an unidentified webhook, so updates are excluded).
-_FALLBACK_ALLOWLIST = {"5091706356": {"kinds": frozenset({"monday_task_create"})}}
+# ACCESS INVERSION (Captain ruling 2026-07-04): the board gate is DEFAULT-ALLOW.
+# No hardcoded instance board lives in framework anymore. The gate consults a
+# DENYLIST assembled from instance/config/act-first-surfaces.yml — the Captain's
+# explicit `denylist:` (empty by his ruling) unioned with the audit-proven
+# `cascade_gated:` boards (writes there mechanically fire outbound mail/Teams,
+# so they stay propose-first under the UNCHANGED external-comms ceiling — that
+# is a comms gate, not an access denial). Absent file ⇒ empty denylist (the
+# ruled default-allow). Present-but-unparseable ⇒ EVERY board gated (an
+# unreadable Captain exclusion list is never ignored — fail-closed on
+# corruption only). Sentinel key for that state:
+_DENY_ALL_SENTINEL = "*"
 # Conservative default caps if the yml omits them (tighten never loosen).
 _DEFAULT_CAPS = {"per_kind_per_day": 20, "estate_per_day": 40}
 
@@ -289,7 +298,7 @@ def _verify_payload_unchanged(payload: dict, expected_sha: str) -> bool:
     return bool(expected_sha) and _canonical_sha(payload) == expected_sha
 
 
-# --- SEC-3 board allowlist (fail-closed, default-deny) -----------------------
+# --- board gate: DEFAULT-ALLOW + denylist (ACCESS INVERSION, 2026-07-04) -----
 
 def _surfaces_path() -> Path:
     """instance/config/act-first-surfaces.yml under the cabinet root."""
@@ -298,48 +307,79 @@ def _surfaces_path() -> Path:
 
 
 def _load_act_first_surfaces() -> dict:
-    """Parse the act-first surfaces yml into ``{"allowlist": {board_id:
-    {kinds:set}}, "caps": {...}}``. FAIL-CLOSED: any problem (missing file,
-    ImportError — system Python has no yaml — or a parse error) yields ONLY the
-    hardcoded ``_FALLBACK_ALLOWLIST`` floor + conservative caps. A parsed file
-    contributes its ``verdict: allow`` boards; the floor is always unioned in so
-    a file that fails to load never removes the one audited board. Deferred yaml
-    import mirrors framework/authority/matrix.py."""
-    allow = {b: {"kinds": set(v["kinds"])} for b, v in _FALLBACK_ALLOWLIST.items()}
+    """Parse the act-first surfaces yml into ``{"denylist": {board_id:
+    set-of-kinds | None}, "caps": {...}}``. None ⇒ the WHOLE board is gated; a
+    set ⇒ only those kinds are gated there.
+
+    The denylist is the union of two sections (both Captain-owned):
+      * ``denylist:``      — explicit Captain exclusions (EMPTY by the
+                             2026-07-04 ruling; connect-time interviews of new
+                             tools append here).
+      * ``cascade_gated:`` — audit-proven boards where a write mechanically
+                             fires outbound mail/Teams to a human; gated under
+                             the unchanged external-comms ceiling, liftable by
+                             the Captain per entry.
+    ABSENT file ⇒ empty denylist (the ruled default-allow posture). A file that
+    EXISTS but cannot be parsed ⇒ {_DENY_ALL_SENTINEL: None} — every board gated
+    (fail-closed on corruption: an unreadable Captain exclusion list is never
+    ignored). Deferred yaml import mirrors framework/authority/matrix.py."""
+    deny: dict = {}
     caps = dict(_DEFAULT_CAPS)
+    path = _surfaces_path()
+    if not path.exists():
+        return {"denylist": deny, "caps": caps}
     try:
         import yaml  # deferred — available in the cabinet runtime + CI
-        data = yaml.safe_load(_surfaces_path().read_text())
-        if isinstance(data, dict):
-            for row in (data.get("allowlist") or []):
-                if not isinstance(row, dict) or row.get("verdict") != "allow":
+        data = yaml.safe_load(path.read_text())
+        if not isinstance(data, dict):
+            raise ValueError("act-first-surfaces.yml is not a mapping")
+        for section in ("denylist", "cascade_gated"):
+            for row in (data.get(section) or []):
+                if not isinstance(row, dict):
                     continue
                 bid = str(row.get("board_id") or "").strip()
                 if not bid.isdigit():
-                    continue
+                    continue    # policy-class prose rows are documentation only
                 kinds = {str(k) for k in (row.get("kinds") or [])}
-                entry = allow.setdefault(bid, {"kinds": set()})
-                entry["kinds"] |= kinds or {"monday_task_create"}
-            cfg = data.get("caps") or {}
-            pk = ((cfg.get("per_kind") or {}).get("max_acts_per_day"))
-            es = ((cfg.get("estate") or {}).get("max_acts_per_day"))
-            if isinstance(pk, int) and pk > 0:
-                caps["per_kind_per_day"] = pk
-            if isinstance(es, int) and es > 0:
-                caps["estate_per_day"] = es
+                if bid in deny and deny[bid] is None:
+                    continue                       # whole-board gate already set
+                if not kinds:
+                    deny[bid] = None               # whole board gated
+                elif bid in deny:
+                    deny[bid] |= kinds
+                else:
+                    deny[bid] = set(kinds)
+        cfg = data.get("caps") or {}
+        pk = ((cfg.get("per_kind") or {}).get("max_acts_per_day"))
+        es = ((cfg.get("estate") or {}).get("max_acts_per_day"))
+        if isinstance(pk, int) and pk > 0:
+            caps["per_kind_per_day"] = pk
+        if isinstance(es, int) and es > 0:
+            caps["estate_per_day"] = es
     except Exception:
-        pass                                    # fail-closed to the floor
-    return {"allowlist": allow, "caps": caps}
+        # fail-closed ON CORRUPTION only: the file exists but is unreadable —
+        # gate everything rather than silently dropping Captain exclusions.
+        return {"denylist": {_DENY_ALL_SENTINEL: None}, "caps": dict(_DEFAULT_CAPS)}
+    return {"denylist": deny, "caps": caps}
 
 
-def _board_allowed(board: str, kind: str, allowlist: dict) -> bool:
-    """True iff ``kind`` may act-first on ``board`` per the (already fail-closed)
-    allowlist. Default-deny: an unlisted board or a kind not in the board's
-    allowed set is refused."""
-    entry = (allowlist or {}).get(str(board))
-    if not entry:
+_UNLISTED = object()   # distinguishes "board not in denylist" from "None = whole board"
+
+
+def _board_not_denied(board: str, kind: str, denylist: dict) -> bool:
+    """True iff ``kind`` may act-first on ``board`` — DEFAULT-ALLOW: any board
+    absent from the denylist is fair game (the ACCESS INVERSION). False when the
+    corruption sentinel is present, the board is whole-board gated (None), or
+    the kind is in the board's gated set."""
+    dl = denylist or {}
+    if _DENY_ALL_SENTINEL in dl:
         return False
-    return kind in entry.get("kinds", set())
+    entry = dl.get(str(board), _UNLISTED)
+    if entry is _UNLISTED:
+        return True
+    if entry is None:
+        return False
+    return kind not in entry
 
 
 # --- SEC-3 killswitch + caps (fail-closed) -----------------------------------
@@ -842,9 +882,9 @@ def _gate_chain(steps: list, *, lane, redis_get: Callable, surfaces: dict):
     ``decision`` is a propose_only downgrade dict (execute NOTHING) if any
     perimeter guard trips, else ``None``; ``held`` maps step-index → reason for
     per-step gated delivery. Deterministic + fail-closed: a payload-key/person
-    violation, an off-allowlist board, a content-tripwire hit, or a cap breach
-    downgrades the whole card to a proposal the Captain reviews."""
-    allowlist = (surfaces or {}).get("allowlist") or {}
+    violation, a denied/cascade-gated board, a content-tripwire hit, or a cap
+    breach downgrades the whole card to a proposal the Captain reviews."""
+    denylist = (surfaces or {}).get("denylist") or {}
     reasons = []
     held = {}
     eligible_kinds = []
@@ -862,12 +902,13 @@ def _gate_chain(steps: list, *, lane, redis_get: Callable, surfaces: dict):
         if ph:
             reasons.append("step %d (%s): person/assignee/attendee key(s) %s"
                            % (i, kind, ph))
-        # board allowlist (monday create/update only) — default-deny.
+        # board gate (monday create/update only) — DEFAULT-ALLOW + denylist
+        # (ACCESS INVERSION 2026-07-04); cascade-gated boards downgrade here.
         if kind in ("monday_task_create", "monday_task_update"):
             board = _resolve_board(payload)
-            if not _board_allowed(board, kind, allowlist):
-                reasons.append("step %d (%s): board %s not act-first-allowed for %s"
-                               % (i, kind, board, kind))
+            if not _board_not_denied(board, kind, denylist):
+                reasons.append("step %d (%s): board %s is Captain-denied / "
+                               "cascade-gated for %s" % (i, kind, board, kind))
         tripwire_strings += _step_generated_strings(step)
         reason = _step_held_reason(kind, _backend_for(kind))
         if reason:
@@ -964,7 +1005,7 @@ def deliver_action(pid: str, override_text: str = "", *,
                     "error": "execution halted — killswitch %s" % ks}
 
     # ACT-FIRST PERIMETER (inert unless act_first=True): the whole-chain gate +
-    # per-step held map. A perimeter breach (off-allowlist board, tripwire,
+    # per-step held map. A perimeter breach (denied/cascade-gated board, tripwire,
     # person key, cap) downgrades the whole card to a proposal; gated kinds are
     # HELD while reversible-eligible steps act.
     held_map: dict = {}
