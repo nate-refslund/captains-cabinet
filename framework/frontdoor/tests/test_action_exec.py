@@ -250,8 +250,8 @@ def test_write_ahead_journal_exists_before_mutation():
 
 
 def test_journal_stamps_guarded_action_type():
-    """Per-step action_type is stamped only for a live classifier enum: update →
-    board_status; create → task_create is not yet in ACTION_TYPES → None."""
+    """Per-step action_type is stamped from the live classifier enum [GERM-2]:
+    create → task_create (pm_write); update → board_status."""
     ax.deliver_action(
         "pidat", redis_get=_store([
             {"kind": "monday_task_create", "payload": {"board_id": "1", "title": "c"}},
@@ -259,7 +259,7 @@ def test_journal_stamps_guarded_action_type():
              "payload": {"monday_id": "2", "board_id": "1", "set": {"status": "Done"}}}]),
         monday_post=MondaySpy(), osascript=lambda c: "ok")
     rows = {r["step"]: r for r in au._read_journal(pid="pidat")}
-    assert rows[1]["action_type"] is None          # task_create — unstamped pre-germline
+    assert rows[1]["action_type"] == "task_create"  # [GERM-2] live enum member
     assert rows[2]["action_type"] == "board_status"
 
 

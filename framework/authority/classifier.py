@@ -26,7 +26,9 @@ Discipline (docs/authority-matrix-design-2026-06-19.md §2, FIX-1/FIX-7):
     the `AMBIGUOUS` backstop. This is the fail-closed spine: the gate must see
     these as their ceiling class regardless of anything else.
 
-System Python is 3.9.6; only stdlib is used.
+System Python is 3.9.6; stdlib + one framework leaf template constant
+(framework.frontdoor.calendar_template.CALENDAR_EVENT_SCRIPT, imported call-time
+inside _classify_bash so module load stays cycle-free) [GERM-2].
 """
 from __future__ import annotations
 
@@ -44,11 +46,25 @@ AMBIGUOUS = "ambiguous"
 
 # reversible risk_class members
 _REVERSIBLE = {
-    "task_status_move", "board_status", "label", "tier2_note",
+    "task_status_move", "label", "tier2_note",
     "draft_only", "local_edit",
+    # investigation_run — read-only evidence gathering (PRO-7). Moment-1 intent:
+    # in the enum + reversible, propose-first (reversible/unmeasured →
+    # propose_only, so it never acts unattended without earned graduation).
+    "investigation_run",
 }
+# pm_write — reversible-with-undo (act_with_undo class) [GERM-2]. board_status
+# MOVES here out of _REVERSIBLE; the ledger cell key is (actor, lane,
+# action_type), so the string is unchanged and its history follows it.
+_PM_WRITE = {"task_create", "board_status"}
+# calendar_write — reversible-with-undo (act_with_undo class) [GERM-2].
+_CALENDAR_WRITE = {"calendar_event_create"}
 # comms
-_INTERNAL_COMMS = {"internal_message", "internal_email"}
+# officer_dispatch is internal_comms but a DISTINCT cell from internal_message
+# (RT-B4) — a delegate dispatch is org-internal machine handoff, never an
+# outbound colleague message; it stamps its own graduable cell and stays
+# propose-first (internal_comms's graduated verdict is dormant per M1).
+_INTERNAL_COMMS = {"internal_message", "internal_email", "officer_dispatch"}
 _EXTERNAL_COMMS = {"external_message", "external_email"}
 # deploy
 _DEPLOY = {
@@ -71,6 +87,8 @@ CEILING_ACTION_TYPES = frozenset(_SECRETS | _NETWORK_WRITE | _CREDENTIALS_GRANT)
 # Every valid action_type the classifier can return.
 ACTION_TYPES = frozenset(
     _REVERSIBLE
+    | _PM_WRITE
+    | _CALENDAR_WRITE
     | _INTERNAL_COMMS
     | _EXTERNAL_COMMS
     | _DEPLOY
@@ -279,6 +297,20 @@ def _classify_bash(command: str) -> str:
         # bare `vercel deploy` → preview by default
         return "vercel_deploy_preview"
 
+    # --- GERM-2: calendar write (calendar_write / external_comms) [RT-B2] --
+    # An osascript Calendar write. Attendee/invitee-bearing -> external_comms
+    # ceiling: inviting a human SENDS mail (a dedicated CI test pins this). A
+    # write byte-matching the lane executor's event template -> the
+    # reversible-with-undo calendar_event_create; any OTHER Calendar osascript
+    # stays AMBIGUOUS (propose-defaulting) — only the lane's own template acts.
+    if "osascript" in low and "calendar" in low:
+        if re.search(r"\battendee|\binvitee|make new attendee", low):
+            return "external_message"
+        from framework.frontdoor.calendar_template import CALENDAR_EVENT_SCRIPT
+        if CALENDAR_EVENT_SCRIPT in command:
+            return "calendar_event_create"
+        return AMBIGUOUS
+
     # --- everything else local / reversible / no-egress -------------------
     return "local_edit"
 
@@ -343,6 +375,49 @@ def _classify_git_push(command: str) -> str:
 # MCP classification
 # ---------------------------------------------------------------------------
 
+# The Monday GraphQL mutation fields we recognize. The create pair is the ONLY
+# act-first-eligible set; everything else is a status write (board_status) or a
+# ceiling. Fixed vocabulary — an unrecognized mutation field forces the ceiling.
+_MONDAY_CREATE_OPS = frozenset({"create_item", "create_update"})
+_MONDAY_STATUS_OPS = frozenset({
+    "change_column_value", "change_multiple_column_values",
+    "change_simple_column_value", "change_item_column_values",
+})
+_MONDAY_KNOWN_OPS = frozenset({
+    "create_item", "create_update", "create_subitem", "create_board",
+    "create_group", "create_column", "duplicate_item", "archive_item",
+    "delete_item", "delete_update", "move_item_to_board", "move_item_to_group",
+    "change_column_value", "change_multiple_column_values",
+    "change_simple_column_value", "change_item_column_values",
+})
+_MONDAY_OP_RE = re.compile(r"\b(" + "|".join(sorted(_MONDAY_KNOWN_OPS)) + r")\b")
+
+
+def _monday_mutation_ops(tool_name: str, tool_input: dict[str, Any]) -> "set[str] | None":
+    """The SET of Monday mutation ops a call performs, or None if it is not a
+    Monday mutation. Two shapes: (1) a named per-op MCP tool
+    (mcp__..._monday_com__create_item) -> {that op}; (2) a generic API tool
+    (all_monday_api / all_api_write) or a Bash/curl GraphQL POST carrying a
+    query/body string -> every op the body mentions (fixed vocabulary). Reads
+    (get_*/search/board_insights) and non-Monday tools -> None."""
+    tn = tool_name.lower()
+    if "monday" not in tn and "monday" not in str(tool_input.get("query", "")).lower():
+        # A raw curl to api.monday.com still lands here via the Bash path (see
+        # _classify_bash) — this MCP helper only fires for monday-named tools.
+        if "monday" not in tn:
+            return None
+    # (1) named per-op tool: the op is the tool-name suffix.
+    for op in _MONDAY_KNOWN_OPS:
+        if tn.endswith("__" + op) or tn.endswith("_" + op):
+            return {op}
+    # (2) generic API / body-bearing tool: scan the query/variables body.
+    body = " ".join(str(tool_input.get(k, "")) for k in ("query", "body", "graphql", "mutation"))
+    if body.strip():
+        found = set(_MONDAY_OP_RE.findall(body))
+        return found            # possibly empty -> fail-closed to ceiling below
+    return None
+
+
 def _classify_mcp(tool_name: str, tool_input: dict[str, Any]) -> str | None:
     """Classify an MCP tool call. Returns None if not positively matched (the
     caller then falls through to the AMBIGUOUS backstop)."""
@@ -374,8 +449,25 @@ def _classify_mcp(tool_name: str, tool_input: dict[str, Any]) -> str | None:
             return "billing"
         return "purchase"
 
+    # --- GERM-2: Monday mutations — FULL-MATCH carve-outs [RT-B2] ----------
+    # Placed ABOVE mcp_post (order matters): a PURE create maps to the
+    # reversible-with-undo task_create; a pure status write to board_status;
+    # ANY other or MIXED Monday mutation (a create batched with a delete, a
+    # people/assignee op, an unknown field, or an unparseable body) does NOT
+    # earn the softer class — it falls to the network_write ceiling. An
+    # attacker cannot smuggle a dangerous op inside a "create" batch to soften
+    # the verdict.
+    ops = _monday_mutation_ops(tool_name, tool_input)
+    if ops is not None:
+        if ops and ops <= _MONDAY_CREATE_OPS:
+            return "task_create"
+        if ops and ops <= _MONDAY_STATUS_OPS:
+            return "board_status"
+        return "mcp_post"        # mixed / unknown / empty -> ceiling (fail-closed)
+
     # --- board / task status (reversible) ---------------------------------
-    if ("monday" in tn or "board" in tn) and (
+    # (residual: non-Monday board tools; Monday handled above.)
+    if "board" in tn and "monday" not in tn and (
         "change_item_column" in tn or "column_value" in tn or "status" in tn
     ):
         return "board_status"

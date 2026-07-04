@@ -41,8 +41,9 @@
       "type": ["string", "null"],
       "enum": [
         "task_status_move", "board_status", "label", "tier2_note",
-        "draft_only", "local_edit",
-        "internal_message", "internal_email",
+        "draft_only", "local_edit", "investigation_run",
+        "task_create", "calendar_event_create",
+        "internal_message", "internal_email", "officer_dispatch",
         "external_message", "external_email",
         "vercel_deploy_preview", "git_push_nonmain",
         "vercel_deploy_prod", "git_push_main",

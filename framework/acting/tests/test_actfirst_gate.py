@@ -237,11 +237,28 @@ def test_downgrade_falls_through_to_propose(monkeypatch):
     assert out["receipts"] == []
 
 
-def test_ineligible_create_proposes_even_with_flag_on(monkeypatch):
-    # a create is unstamped (task_create ∉ classifier enum) → never acts
+def test_create_card_acts_post_germline(monkeypatch):
+    # [GERM-2] a pure create stamps task_create (pm_write / act_with_undo) and
+    # ACTS through the journaled lane — the second genuine end-to-end act path.
     step = ActionStep(kind="monday_task_create", title="new",
                       payload={"board_id": "5091706356", "title": "t"})
     card = ActionProposal(subject="new task", situation="w", steps=(step,),
+                          lane="polads", evidence=("x.md",), confidence=0.9,
+                          urgency="batch")
+    out = _drive_main(monkeypatch, proposals=[card],
+                      deliver_result={"ok": True})
+    assert len(out["delivers"]) == 1 and out["delivers"][0]["act_first"] is True
+    assert out["tgs"] == []                    # acted, not proposed
+    assert out["emits"][0].get("action_type") == "task_create"
+    assert out["emits"][0]["outcome"] == {"status": "unknown"}
+
+
+def test_ineligible_dispatch_proposes_even_with_flag_on(monkeypatch):
+    # delegate_work stamps officer_dispatch (internal_comms) but has NO
+    # registered inverse → never act-first; falls through to propose.
+    step = ActionStep(kind="delegate_work", title="dispatch",
+                      payload={"officer": "cto", "brief": "b"})
+    card = ActionProposal(subject="dispatch work", situation="w", steps=(step,),
                           lane="polads", evidence=("x.md",), confidence=0.9,
                           urgency="batch")
     out = _drive_main(monkeypatch, proposals=[card],

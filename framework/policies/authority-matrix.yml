@@ -30,9 +30,13 @@ policies:
     # through to propose-only (fail-safe).
     risk_classes:
       reversible:
-        action_types: [task_status_move, board_status, label, tier2_note, draft_only, local_edit]
+        action_types: [task_status_move, label, tier2_note, draft_only, local_edit, investigation_run]
+      pm_write:                                                       # act_with_undo (reversible-with-undo)
+        action_types: [task_create, board_status]
+      calendar_write:                                                 # act_with_undo (reversible-with-undo)
+        action_types: [calendar_event_create]
       internal_comms:
-        action_types: [internal_message, internal_email]
+        action_types: [internal_message, internal_email, officer_dispatch]
       external_comms:                                                 # HARD CEILING: external_comms
         action_types: [external_message, external_email]
       deploy_nonprod:
@@ -76,6 +80,18 @@ policies:
         eligible: propose_only
         propose_only: propose_only
         unmeasured: propose_only
+        demote: propose_only
+      pm_write:                          # EARN-DEMOTION: trust granted, lost on evidence
+        graduated: act_with_undo
+        eligible: act_with_undo
+        propose_only: act_with_undo
+        unmeasured: act_with_undo
+        demote: propose_only
+      calendar_write:
+        graduated: act_with_undo
+        eligible: act_with_undo
+        propose_only: act_with_undo
+        unmeasured: act_with_undo
         demote: propose_only
       internal_comms:
         graduated: auto_with_veto_window      # + notify_after implied (the notification IS the veto handle)

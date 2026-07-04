@@ -57,14 +57,15 @@ class MatrixValidationError(Exception):
 
 # The nine risk classes (five spec + three execution-surface ceiling classes).
 RISK_CLASSES = frozenset({
-    "reversible", "internal_comms", "external_comms",
+    "reversible", "pm_write", "calendar_write",
+    "internal_comms", "external_comms",
     "deploy_nonprod", "deploy_prod", "spend",
     "secrets", "network_write", "credentials_grant",
 })
 
 # The verdicts a cell may carry.
 VERDICTS = frozenset({
-    "auto", "auto_with_veto_window", "notify_after",
+    "auto", "act_with_undo", "auto_with_veto_window", "notify_after",
     "propose_only", "always_gated", "classifier",
 })
 

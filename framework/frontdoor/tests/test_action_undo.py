@@ -240,14 +240,22 @@ def test_acted_event_unknown_outcome_never_pending_and_validates():
     assert loop.pending_proposals(rows=[ev]) == []  # never enters the pending set
 
 
-def test_acted_event_unstamped_kind_absent_action_type():
+def test_acted_event_action_type_stamped_or_absent():
     from framework.acting import loop
+    # [GERM-2] a create is a live enum member now — the acted event carries it.
     row = au.new_row(pid="p2", cid="", step=1, kind="monday_task_create",
                      backend="monday", lane="polads", subject="s", actor=None,
                      executed_at=au._now())
     ev = au.acted_event(None, row)
-    assert "action_type" not in ev                  # task_create not yet a live enum
+    assert ev["action_type"] == "task_create"
     assert loop.pending_proposals(rows=[ev]) == []
+    # The original invariant survives: an UNMAPPED kind stays ABSENT — never a
+    # literal null and never a fabricated stamp.
+    row2 = au.new_row(pid="p3", cid="", step=1, kind="future_kind",
+                      backend="monday", lane="polads", subject="s", actor=None,
+                      executed_at=au._now())
+    ev2 = au.acted_event(None, row2)
+    assert "action_type" not in ev2
 
 
 # --- freeze / pointer / validation -------------------------------------------

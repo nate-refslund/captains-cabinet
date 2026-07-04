@@ -31,6 +31,7 @@ from framework.learning.capability_gaps import HARD_CEILING_TOUCHES
 # Verdicts that the matrix may assign.
 _VERDICTS = {
     "auto",
+    "act_with_undo",
     "auto_with_veto_window",
     "notify_after",
     "propose_only",
@@ -72,10 +73,12 @@ class TestShippedFloor:
         assert pol["name"] == "authority-matrix"
         assert pol["type"] == "authority_matrix"
 
-    def test_floor_covers_all_nine_risk_classes(self, loaded):
+    def test_floor_covers_all_eleven_risk_classes(self, loaded):
+        # [GERM-2] +pm_write +calendar_write (act_with_undo classes).
         pol = M.matrix_policy(loaded)
         expected = {
-            "reversible", "internal_comms", "external_comms",
+            "reversible", "pm_write", "calendar_write",
+            "internal_comms", "external_comms",
             "deploy_nonprod", "deploy_prod", "spend",
             "secrets", "network_write", "credentials_grant",
         }
@@ -373,3 +376,14 @@ class TestLoaderHardening:
         evil.write_text("version: !!python/object/apply:os.system ['echo pwned']\n")
         with pytest.raises(Exception):
             M.load_matrix(str(evil))
+
+
+class TestActWithUndoNeverCeiling:
+    def test_act_with_undo_never_on_a_ceiling_row(self, loaded):
+        # [GERM-2] the six hard ceilings can NEVER carry act_with_undo, and the
+        # two new reversible-with-undo classes are never themselves ceilings.
+        pol = M.matrix_policy(loaded)
+        for rc in pol["hard_ceiling"]:
+            assert "act_with_undo" not in set(pol["verdicts"][rc].values()), rc
+        assert "pm_write" not in pol["hard_ceiling"]
+        assert "calendar_write" not in pol["hard_ceiling"]

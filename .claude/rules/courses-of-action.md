@@ -46,6 +46,19 @@ the recorded failure mode.
   **per-step gate** (the Captain can approve, edit, or skip each step
   independently). Never split one situation across multiple pings, and
   never propose step 1 while silently planning the rest.
+
+  **Exception — reversible-with-undo steps (`pm_write` / `calendar_write`).**
+  Per the EARN-DEMOTION ruling (captain-decisions.md, 2026-07-03/04), a step
+  whose action_type is in an `act_with_undo` class does not wait on a
+  pre-approval gate: it ACTS immediately (write-ahead journaled, executed,
+  told after) and its **per-step gate BECOMES a per-step undo handle on the
+  receipt** — the Captain reverses it with `undo [n]` inside the 48h window
+  instead of approving it beforehand. Every gated step in the SAME chain
+  (anything outbound, deploy, spend, `officer_dispatch`, or any hard-ceiling
+  step) still carries its ordinary pre-approval per-step gate; a mixed chain
+  keeps both — acted steps show as done-with-undo, gated steps as awaiting.
+  This is the ONLY relaxation; the investigation bar (§1) and one-card
+  discipline are unchanged.
 - A single-step chain is legitimate when that is honestly all the situation
   needs — but check the chain candidates first: does this also need a task
   created? a follow-up scheduled? a commitment closed? a board status
@@ -64,6 +77,14 @@ the recorded failure mode.
 - **Stale proposals auto-expire into the briefing.** A proposal not acted
   on by the next scheduled briefing is folded into that briefing's decision
   queue as one line with a link — it is not re-pinged as a fresh message.
+- **Acted steps are told, not asked.** A reversible-with-undo step that already
+  acted is reported in the digest's ✅ ACTED section — one line rendering the
+  EXACT written content (what a colleague will actually see), its receipt id,
+  and its `undo [n]` handle. It is never phrased as a question and never
+  re-pinged. A cell's acted lines quiet to a weekly rollup only after ≥3
+  explicit Captain 👍 confirmations on that cell (TTL survival alone never
+  quiets it). Monday's own native task notifications are harmless and internal
+  (captain-decisions.md, 2026-07-04) and are not themselves an outbound step.
 
 ## Scope
 

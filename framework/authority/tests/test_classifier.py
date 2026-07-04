@@ -47,6 +47,8 @@ class TestEnumSurface:
         expected = {
             "task_status_move", "board_status", "label", "tier2_note",
             "draft_only", "local_edit",
+            # [GERM-2] act_with_undo classes + the internal dispatch cell
+            "task_create", "calendar_event_create", "officer_dispatch",
             "internal_message", "internal_email",
             "external_message", "external_email",
             "vercel_deploy_preview", "git_push_nonmain",
@@ -520,3 +522,53 @@ class TestT1CeilingLeakFixes:
         # auto-eligible class.
         out = classify_action("Bash", {"command": cmd})
         assert out not in ("local_edit", "git_push_nonmain")
+
+
+# ---------------------------------------------------------------------------
+# [GERM-2] act_with_undo carve-outs — Monday full-match + calendar byte-match.
+# ---------------------------------------------------------------------------
+
+class TestActWithUndoCarveOuts:
+    def test_action_type_map_targets_are_enum_members(self):
+        # No dormant-forever typo: every stamped target is a real enum member.
+        from framework.acting.action_lane import ACTION_TYPE_MAP
+        assert set(ACTION_TYPE_MAP.values()) <= set(ACTION_TYPES)
+
+    def test_pure_monday_create_is_task_create(self):
+        assert classify_action("mcp__claude_ai_monday_com__create_item",
+                               {"board_id": "5091706356", "item_name": "x"}) == "task_create"
+        assert classify_action(
+            "mcp__x_monday_com__all_api_write",
+            {"query": "mutation { create_item(...) { id } create_update(...) { id } }"}
+        ) == "task_create"
+
+    def test_batched_monday_mutation_is_ceiling_not_create(self):   # [RT-B2]
+        assert classify_action(
+            "mcp__x_monday_com__all_api_write",
+            {"query": "mutation { create_item(...){id} change_column_value(...){id} }"}
+        ) == "mcp_post"
+        assert classify_action(
+            "mcp__x_monday_com__all_api_write",
+            {"query": "mutation { create_item(...){id} delete_item(...){id} }"}
+        ) == "mcp_post"
+
+    def test_monday_status_write_is_board_status(self):
+        assert classify_action(
+            "mcp__claude_ai_monday_com__change_item_column_values",
+            {"board_id": "5091706356"}) == "board_status"
+
+    def test_calendar_template_is_calendar_event_create(self):
+        # Realistic: a real osascript command embeds the RAW template (shell
+        # single-quoted), not its Python repr — the byte-match is on the raw
+        # constant both the executor and this classifier reference.
+        from framework.frontdoor.calendar_template import CALENDAR_EVENT_SCRIPT
+        cmd = "osascript -e '" + CALENDAR_EVENT_SCRIPT + "' Cabinet 'T' '' 2026-07-05T09:00"
+        assert classify_action("Bash", {"command": cmd}) == "calendar_event_create"
+
+    def test_attendee_calendar_is_external_comms(self):             # [RT-B2]
+        cmd = "osascript -e 'tell application \"Calendar\" ... make new attendee ...'"
+        assert classify_action("Bash", {"command": cmd}) == "external_message"
+
+    def test_non_template_calendar_is_propose_defaulting(self):
+        cmd = "osascript -e 'tell application \"Calendar\" to make new event'"
+        assert classify_action("Bash", {"command": cmd}) == AMBIGUOUS

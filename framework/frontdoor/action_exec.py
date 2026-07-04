@@ -65,6 +65,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from framework.frontdoor import action_undo
+from framework.frontdoor.calendar_template import CALENDAR_EVENT_SCRIPT  # [GERM-2] single source
 
 _SHARED = str(Path.home() / ".screenpipe" / "pipes" / "_shared")
 MONDAY_API = "https://api.monday.com/v2"
@@ -617,54 +618,10 @@ def _exec_calendar_event(payload: dict, osascript: Callable,
     if not due:
         raise RuntimeError("calendar reminder needs due_iso")
     notes = (payload.get("notes") or "").strip()
-    script = (
-        'on run argv\n'
-        'set calName to item 1 of argv\n'
-        'set evTitle to item 2 of argv\n'
-        'set evNotes to item 3 of argv\n'
-        'set dueIso to item 4 of argv\n'
-        'set startDate to my parseIso(dueIso)\n'
-        'set endDate to startDate + (30 * minutes)\n'
-        'tell application "Calendar"\n'
-        ' if not (exists (first calendar whose name is calName)) then set calName to "Cabinet"\n'
-        # [RT-A7] share-scope / writability assert: a subscribed or read-only
-        # (shared/delegated) calendar is never written — fall to local Cabinet.
-        ' try\n'
-        '  if (exists (first calendar whose name is calName)) and (writable of (first calendar whose name is calName) is false) then set calName to "Cabinet"\n'
-        ' end try\n'
-        ' try\n'
-        '  tell (first calendar whose name is calName)\n'
-        '   set newEvent to make new event with properties {summary:evTitle, start date:startDate, end date:endDate, description:evNotes}\n'
-        '  end tell\n'
-        ' on error\n'
-        # the named calendar is read-only (e.g. an Exchange view) or otherwise
-        # unwritable — land on the dedicated writable "Cabinet" calendar instead
-        '  set calName to "Cabinet"\n'
-        '  if not (exists (first calendar whose name is calName)) then make new calendar with properties {name:calName}\n'
-        '  tell (first calendar whose name is calName)\n'
-        '   set newEvent to make new event with properties {summary:evTitle, start date:startDate, end date:endDate, description:evNotes}\n'
-        '  end tell\n'
-        ' end try\n'
-        # return the created event UID so the undo journal can delete-by-UID on
-        # reverse (the reversible handle the calendar backend earns act-first with)
-        'end tell\n'
-        'return "ok:" & calName & ":" & (uid of newEvent)\n'
-        'end run\n'
-        'on parseIso(s)\n'
-        ' set d to current date\n'
-        ' set year of d to (text 1 thru 4 of s) as integer\n'
-        ' set month of d to (text 6 thru 7 of s) as integer\n'
-        ' set day of d to (text 9 thru 10 of s) as integer\n'
-        ' if (length of s) > 10 then\n'
-        '  set hours of d to (text 12 thru 13 of s) as integer\n'
-        '  set minutes of d to (text 15 thru 16 of s) as integer\n'
-        ' else\n'
-        '  set hours of d to 9\n'
-        '  set minutes of d to 0\n'
-        ' end if\n'
-        ' set seconds of d to 0\n'
-        ' return d\n'
-        'end parseIso')
+    # [GERM-2] single-source template — byte-identical to what the classifier
+    # matches on (framework/frontdoor/calendar_template.py). The RT-A7 share-scope
+    # / writability / delete-by-UID-on-reverse behavior lives in that template.
+    script = CALENDAR_EVENT_SCRIPT
     res = osascript(["osascript", "-e", script, cal, title[:200], notes[:500], due])
     if "ok" not in res:
         raise RuntimeError(f"calendar returned {res!r}")
