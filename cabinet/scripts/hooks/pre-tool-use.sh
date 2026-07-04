@@ -1147,17 +1147,27 @@ if [ "$TOOL_NAME" = "Bash" ]; then
     # allowlist beats an unbounded denylist. (A string hook is still only
     # defense-in-depth vs a Turing-complete shell; the complete germline boundary
     # is officers-run-as-a-separate-uid at deployment. See flip record.)
-    GERM_ALLOW_BLOCK=$(printf '%s' "$CMD_SQ" | awk '
+    # Continuation-folded, NEWLINES PRESERVED as real command separators [round 3
+    # bypass: a multi-line "cat germ <NL> ed germ <<EOF" collapses under
+    # newline->space and only the first verb is checked]. RS="\4" (EOT, never in
+    # a command) reads the whole input as one record so `\<NL>` continuation
+    # pairs fold to nothing while real newlines survive; the allowlist awk then
+    # sees each physical line as its own record and checks every segment's verb.
+    CMD_FOLDED=$(printf '%s' "$CMD" | tr -s '/' | awk 'BEGIN{RS="\4"}{gsub(/\\\n/,"");printf "%s",$0}')
+    GERM_ALLOW_BLOCK=$(printf '%s' "$CMD_FOLDED" | awk '
       BEGIN{
         # pure reads
         split("cat tac bat grep egrep fgrep zgrep rg ag less more head tail wc nl cut sort uniq column tr od xxd hexdump base32 base64 md5 md5sum shasum sha1sum sha256sum sha512sum cksum b2sum file stat ls realpath readlink dirname basename diff cmp comm which type command hash test true false echo printf pwd env id whoami date sleep jq yq colordiff nkf",R," ")
         for(i in R) ok[R[i]]=1
-        # dual-use tools whose WRITE forms are already caught by the precise
-        # arms a-h ABOVE (redirect / -i / of= / dest / -c). A bare read through
-        # them (cp FROM germ, sed w/o -i, dd if=germ, tee < germ, python
-        # script.py --config germ) is legitimate and must pass — the precise
-        # arm already fired-and-exited if it was a write.
-        split("cp mv rsync install ln sed dd tee truncate python python2 python3",D," ")
+        # dual-use tools whose WRITE forms are ALL caught by the precise arms
+        # a-h ABOVE (redirect / of= / dest / dash-c). A bare read through them
+        # (cp FROM germ, dd if=germ, tee fed by germ, python script.py config
+        # germ) is legitimate and passes; the precise arm already fired-and-
+        # exited if it was a write. NOTE sed is DELIBERATELY EXCLUDED here: it
+        # writes via the w / W / e SCRIPT commands (not only dash-i), which the
+        # arm-c dash-i check does not screen [round-3 bypass], so any sed
+        # touching a germline path is refused fail-closed. Read one with cat.
+        split("cp mv rsync install ln dd tee truncate python python2 python3",D," ")
         for(i in D) ok[D[i]]=1
         ok[":"]=1; ok["["]=1; ok["]"]=1
         # git is a read ONLY with a read subcommand
