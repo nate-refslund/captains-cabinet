@@ -200,6 +200,11 @@ services:
     notes: >-
       Installed plist is invalid XML for strict parsers ('--daemon' in a
       comment) — replaced by this generated one at next deploy.
+      Tick heartbeat added 2026-07-04 (adversarial review): the script used to
+      log only on EVENTS, so the manifest-derived 2h freshness floor false-
+      paged on healthy quiet stretches (5.7h observed) — every completed tick
+      now writes one stdout line, making the "log writes every cycle" floor
+      claim above actually true.
   - name: officer-supervisor-mac
     label: com.cabinet.officer-supervisor-mac
     kind: watchdog

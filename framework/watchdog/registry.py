@@ -727,6 +727,22 @@ def verify_no_silent_cron_failure(probe: "Probe") -> CheckResult:
             # poller lives under that prefix but is a daemon we DO cover).
             if label.startswith("com.cabinet.officer.") and label not in watched_labels:
                 continue
+            # Adversarial-review fix (lane-ops 2026-07-04): a job that is
+            # CURRENTLY RUNNING (pid set) is not judged by `status` — launchctl
+            # reports the exit of the PREVIOUS incarnation there, which for a
+            # keepalive daemon is almost always a routine SIGTERM (-15) from
+            # the last reload/deploy. Live incident that forced this: the
+            # healthy cos-inbound poller sat at pid 29983 / status -15 and
+            # would have paged the Chair EVERY sweep forever (the 2026-07-01
+            # pipe-alarm-flood class this whole check is written to avoid).
+            # Coverage survives the skip: interval/cron jobs spend their life
+            # NOT running (pid None between runs — retro-trigger's 127 still
+            # pages), and a crash-looping keepalive daemon is throttled
+            # (ThrottleInterval 30) so it too shows pid None + non-zero status
+            # on almost every sweep. A job observed mid-run with a prior
+            # failure is simply caught on the next 30-min sweep once it exits.
+            if ll[label].get("pid") is not None:
+                continue
             status = ll[label].get("status")
             if status not in (0, None):
                 problems.append(f"{label}: last exit status {status}")
@@ -836,8 +852,10 @@ EXPECTATIONS: list[Expectation] = [
         id="no-silent-cron-failure",
         what="Every enabled cabinet/services.yml service produces output within "
              "its schedule-derived floor, logs no error markers, is loaded in "
-             "launchd, and its last run exited 0 (floors derived from the fleet "
-             "manifest — lane-ops 2026-07-04).",
+             "launchd, and — when not currently running — its last completed "
+             "run exited 0 (floors derived from the fleet manifest — lane-ops "
+             "2026-07-04; running jobs are never judged by their previous "
+             "incarnation's exit).",
         cadence_s=3600,
         tier=Tier.ESCALATE_CHAIR,
         verify=verify_no_silent_cron_failure,

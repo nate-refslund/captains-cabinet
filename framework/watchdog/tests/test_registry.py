@@ -654,7 +654,11 @@ def test_cron_unrostered_officer_label_not_flagged():
 
 def test_cron_watched_daemon_under_officer_prefix_still_flagged():
     """cos-inbound (com.cabinet.officer.cos-inbound, kind daemon) must NOT be
-    swallowed by the officer-prefix exclusion — a crash-looping poller pages."""
+    swallowed by the officer-prefix exclusion — a crash-looping poller pages.
+    pid is None here because that IS the crash-looper's steady state: a dying
+    keepalive job sits throttled (ThrottleInterval 30) between restarts, and
+    only a NOT-running job's `status` describes its most recent completed run
+    (see the running-job skip in scan (c))."""
     now = dt.datetime(2026, 7, 4, 12, 0, tzinfo=dt.timezone.utc)
     manifest = _MINI_MANIFEST + """\
   - name: cos-inbound
@@ -664,7 +668,7 @@ def test_cron_watched_daemon_under_officer_prefix_still_flagged():
     schedule: keepalive
 """
     ll = {
-        "com.cabinet.officer.cos-inbound": {"pid": 900, "status": 78},
+        "com.cabinet.officer.cos-inbound": {"pid": None, "status": 78},
         "com.cabinet.retro-trigger": {"pid": None, "status": 0},
         "com.cabinet.memory-worker": {"pid": 777, "status": 0},
         "com.cabinet.frontdoor-briefing": {"pid": None, "status": 0},
@@ -674,6 +678,47 @@ def test_cron_watched_daemon_under_officer_prefix_still_flagged():
     res = reg.verify_no_silent_cron_failure(probe)
     assert res.ok is False
     assert "com.cabinet.officer.cos-inbound: last exit status 78" in res.detail
+
+
+def test_cron_running_job_prior_exit_status_ignored():
+    """Adversarial-review regression (lane-ops 2026-07-04, incident-of-record):
+    the LIVE cos-inbound poller sat healthy at pid 29983 with launchctl status
+    -15 — the PREVIOUS incarnation's routine SIGTERM from a reload — and the
+    first cut of scan (c) would have paged the Chair on it every sweep forever
+    (the pipe-alarm-flood class). A RUNNING job's prior-incarnation exit is
+    history, not state: quiet while pid is set; page the moment the same
+    label is observed NOT running with that non-zero status (a keepalive
+    daemon that stayed down after a SIGTERM genuinely is a failure)."""
+    now = dt.datetime(2026, 7, 4, 12, 0, tzinfo=dt.timezone.utc)
+    manifest = _MINI_MANIFEST + """\
+  - name: cos-inbound
+    label: com.cabinet.officer.cos-inbound
+    kind: daemon
+    command: bash cabinet/scripts/start-inbound-poller.sh cos
+    schedule: keepalive
+"""
+    base_ll = {
+        "com.cabinet.retro-trigger": {"pid": None, "status": 0},
+        "com.cabinet.memory-worker": {"pid": 777, "status": 0},
+        "com.cabinet.frontdoor-briefing": {"pid": None, "status": 0},
+        "com.cabinet.actfirst-canary": {"pid": None, "status": 0},
+    }
+    # Running with the previous incarnation's SIGTERM → healthy, no page.
+    ll_running = dict(base_ll)
+    ll_running["com.cabinet.officer.cos-inbound"] = {"pid": 29983, "status": -15}
+    probe = _mini_probe(now, files={reg.SERVICES_MANIFEST: manifest},
+                        launchctl=ll_running)
+    res = reg.verify_no_silent_cron_failure(probe)
+    assert res.ok is True
+    assert "cos-inbound" not in res.detail
+    # Same label, same -15, but NOT running → the daemon stayed down: page.
+    ll_down = dict(base_ll)
+    ll_down["com.cabinet.officer.cos-inbound"] = {"pid": None, "status": -15}
+    probe = _mini_probe(now, files={reg.SERVICES_MANIFEST: manifest},
+                        launchctl=ll_down)
+    res = reg.verify_no_silent_cron_failure(probe)
+    assert res.ok is False
+    assert "com.cabinet.officer.cos-inbound: last exit status -15" in res.detail
 
 
 def test_cron_disabled_row_fully_excluded():
