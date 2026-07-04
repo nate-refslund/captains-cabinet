@@ -19,9 +19,11 @@ state in {unmeasured, propose_only, eligible, graduated, demote}:
     no-silent-caps: an unmeasured cell is a VISIBLE state, not a pass.)
   * `propose_only`— measured but below the bar (too few samples, or match_rate
     under the floor) — the fail-safe verdict the gate proposes on.
-  * `eligible`    — meets the sample floor + match bar, but the recency-clean
-    streak has not yet matured (e.g. the last sample is younger than
-    `recency_clean_days`). Not yet auto.
+  * `eligible`    — meets the sample floor + match bar, but the WRONG-ONLY
+    recency clock has not yet matured: either the last `wrong` verdict is
+    younger than `recency_clean_days`, or the cell itself is younger than the
+    ~7d seasoning floor. Clean samples ACCUMULATE — they never reset the
+    clock (defect-3 fix; see step 5 in `evaluate`). Not yet auto.
   * `graduated`   — clears the FULL bar (samples, match_rate, last-10 divergent,
     recency-clean). The only state that lets the gate auto.
   * `demote`      — a fresh wrong-verdict cluster (>=2 divergent in the last 10,
@@ -70,6 +72,17 @@ from framework.fidelity.consequence import (  # noqa: E402
 # docs/authority-matrix-design-2026-06-19.md §4 trigger-3.
 _DEMOTE_DIVERGENT_IN_LAST10 = 2
 _LAST_N = 10
+
+# [defect-3 fix] Cell-age seasoning floor (days). The recency-clean gate in
+# `evaluate` step 5 is a WRONG-ONLY clock (clean samples accumulate; only a
+# wrong verdict resets), so a brand-new cell that collects 20+ clean samples
+# in one afternoon would otherwise clear the full bar same-day. The ratified
+# rec pairs the wrong-only clock with this floor (proactive-org-strategy
+# 2026-07-03 rec-2 / grand-plan Captain-Moment-1: "wrong-only recency clock +
+# ~7d seasoning"): a cell must have EXISTED — first scored sample — at least
+# this many days before it may graduate. Age only grows, so unlike the old
+# days-since-last-SAMPLE clock it can never be reset by fresh clean activity.
+_SEASONING_DAYS = 7.0
 
 
 # --------------------------------------------------------------------------
@@ -188,9 +201,10 @@ def _days_since_last_wrong(
 ) -> Optional[float]:
     """Days since the most recent `wrong` verdict, or None if never wrong.
 
-    None means the clean streak is unbroken by any wrong call — recency-clean
-    is then bounded only by how recently the cell was active (handled by the
-    caller via days-since-last-sample)."""
+    None means the clean streak is unbroken by any wrong call — under the
+    wrong-only recency clock (defect-3 fix) a never-wrong cell passes the
+    streak check immediately and is bounded only by the cell-age seasoning
+    floor (`_cell_age_days` >= `_SEASONING_DAYS`)."""
     wrongs = [e for e in rows if _verdict(e) == "wrong"]
     if not wrongs:
         return None
@@ -203,7 +217,10 @@ def _days_since_last_wrong(
 def _days_since_last_sample(
     rows: list[dict[str, Any]], now: datetime
 ) -> Optional[float]:
-    """Days since the most recent scored row, or None if none scored."""
+    """Days since the most recent scored row, or None if none scored.
+
+    Evidence/observability only since the defect-3 fix — the recency gate no
+    longer reads it (a young CLEAN sample must not reset the streak)."""
     scored = [e for e in rows if _verdict(e) in ("confirmed", "wrong")]
     if not scored:
         return None
@@ -211,6 +228,24 @@ def _days_since_last_sample(
     if last_ts is None:
         return None
     return (now - last_ts).total_seconds() / 86400.0
+
+
+def _cell_age_days(
+    rows: list[dict[str, Any]], now: datetime
+) -> Optional[float]:
+    """Days since the FIRST scored row (cell age), or None if none scored.
+
+    The seasoning floor keys on cell AGE precisely because age only grows —
+    unlike days-since-last-sample (the defect-3 clock) it cannot be reset by
+    fresh clean activity, so it brakes burst-graduation without punishing a
+    continuously-used cell."""
+    scored = [e for e in rows if _verdict(e) in ("confirmed", "wrong")]
+    if not scored:
+        return None
+    first_ts = _parse_ts(scored[0].get("ts", ""))
+    if first_ts is None:
+        return None
+    return (now - first_ts).total_seconds() / 86400.0
 
 
 # --------------------------------------------------------------------------
@@ -263,6 +298,7 @@ def evaluate(
     fabrication_demote = _fresh_direct_demote(cell_rows)
     days_since_wrong = _days_since_last_wrong(cell_rows, now)
     days_since_sample = _days_since_last_sample(cell_rows, now)
+    cell_age = _cell_age_days(cell_rows, now)
 
     evidence: dict[str, Any] = {
         "sample_count": ratios.sample_count,
@@ -275,6 +311,8 @@ def evaluate(
         "fabrication_demote": fabrication_demote,
         "days_since_last_wrong": days_since_wrong,
         "days_since_last_sample": days_since_sample,
+        "cell_age_days": cell_age,
+        "seasoning_days": _SEASONING_DAYS,
         "bar": dict(bar),
         "cell": list(cell),
     }
@@ -307,18 +345,29 @@ def evaluate(
     if divergent_last10 > bar["max_divergent_last10"]:
         return {"state": "propose_only", "evidence": evidence}
 
-    # 5. Recency-clean gate. The clean streak must be at least
-    #    recency_clean_days — measured as (a) days since the last WRONG verdict
-    #    if any wrong exists, else (b) days since the cell was last active. A
-    #    cell that cleared everything else but whose streak has not yet matured
-    #    is `eligible` (proven-but-not-yet-auto), not `graduated`.
+    # 5. Recency-clean gate — a WRONG-ONLY clock [defect-3 fix, checkpoint
+    #    2026-07-04 §7 rec-8]. Only a wrong verdict resets the streak; clean
+    #    samples ACCUMULATE. (The previous rule also reset on days-since-last-
+    #    SAMPLE, so a continuously-used, never-wrong cell could never reach
+    #    `graduated` and a graduated cell flapped back to `eligible` on its
+    #    next clean label — time-to-auto was infinite for exactly the cells
+    #    earning trust. Wrong-only matches the ratified design language:
+    #    proactive-org-strategy 2026-07-03 rec-2 "days-since-last-WRONG-only …
+    #    never-wrong passes immediately" + both design docs' clean-STREAK
+    #    wording.) A cell re-earning the streak after a wrong is `eligible`
+    #    (proven-but-not-yet-auto), not `graduated`.
     need_clean = bar["recency_clean_days"]
     if days_since_wrong is not None and days_since_wrong < need_clean:
         # a recent wrong call: not yet clean — eligible, re-earning the streak.
         return {"state": "eligible", "evidence": evidence}
-    if days_since_sample is not None and days_since_sample < need_clean:
-        # never-wrong but the most recent sample is younger than the streak
-        # window: proven but still maturing.
+
+    # 5b. ~7d cell-age seasoning floor (same ratified rec, anti-burst leg):
+    #     never-wrong is clean by definition, but the cell must still have
+    #     EXISTED long enough that its clean record spans real calendar time —
+    #     20 clean samples minted in one afternoon stay `eligible` until the
+    #     cell is ~a week old. Age is measured from the FIRST scored sample
+    #     and only grows, so this floor can never flap a graduated cell back.
+    if cell_age is None or cell_age < _SEASONING_DAYS:
         return {"state": "eligible", "evidence": evidence}
 
     # 6. Clears the FULL bar.
