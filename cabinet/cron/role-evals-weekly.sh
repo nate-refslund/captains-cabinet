@@ -10,6 +10,11 @@
 # Flow:
 #   1. Run every registered role eval via `framework.measurement.role_eval_runner`
 #      — emits eval_run_started + eval_passed/eval_failed events per eval.
+#      Role attribution is roster-driven (R8 retarget, 2026-07-04): declared
+#      slugs from the retired work-preset roster (cto/cpo/cro/coo) resolve
+#      against cabinet/officer-capabilities.conf to a LIVE role (this
+#      deployment: cos), so step 3's proposals target roles that
+#      roles.lifecycle.load_role can actually load instead of dead-ending.
 #   2. Scan the last 4 weeks of eval_failed events for clusters via
 #      `framework.measurement.eval_pattern_detector` — surfaces patterns
 #      worth a charter amendment.

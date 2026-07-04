@@ -332,7 +332,7 @@ The Cabinet's durable state lives in three places:
 | Where | What | Backup |
 |---|---|---|
 | **Postgres (Neon)** | event ledger, role entities, work graph, OVI snapshots | Neon's built-in continuous backup (free tier: 7 days PITR) |
-| **Filesystem** | `shared/interfaces/captain-*.md`, `instance/roles/active/*.yml`, `memory/skills/evolved/*.md`, `memory/experience_records/*.jsonl` | Daily `rsync` to local NAS OR S3 |
+| **Filesystem** | `shared/interfaces/captain-*.md`, `instance/roles/active/*.yml`, `memory/skills/evolved/*.md`, `memory/tier3/experience-records/` (canonical store since 2026-07-04 — both `.jsonl` and `.md` records) | Daily `rsync` to local NAS OR S3 |
 | **Redis** | Heartbeat, cost counters, trigger streams (ephemeral) | Optional `BGSAVE` daily snapshot if you want to recover pending triggers across a hard restart |
 
 Backup script (run via cron or LaunchAgent — your choice):
@@ -353,7 +353,7 @@ rsync -a --delete \
   ~/work/captains-cabinet/shared/interfaces/ \
   ~/work/captains-cabinet/instance/ \
   ~/work/captains-cabinet/memory/skills/evolved/ \
-  ~/work/captains-cabinet/memory/experience_records/ \
+  ~/work/captains-cabinet/memory/tier3/experience-records/ \
   "$DEST/$DATE/"
 
 # Redis (optional)
