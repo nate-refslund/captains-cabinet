@@ -44,6 +44,19 @@ class ConsequenceValidationError(ValueError):
     """Raised when a consequence event violates the schema or its invariants."""
 
 
+class SimQuarantineError(RuntimeError):
+    """[SIE-7] Raised when a write would cross the sim/live quarantine fence — a
+    sim-marked event aimed at a live dir, or a live event aimed at a '-sim' dir.
+    The two must always agree, so simulated consequences can never contaminate
+    the live graduation/breaker/cell math Nate's real verdicts feed."""
+
+
+def _sim_mode() -> bool:
+    """[SIE-7] True in a replay-simulation process (CABINET_SIM_MODE=1). Off by
+    default, so every live emit/read behaves exactly as before."""
+    return os.environ.get("CABINET_SIM_MODE") == "1"
+
+
 def _consequence_log_dir() -> Path:
     """Resolve the JSONL consequence-ledger directory.
 
@@ -86,7 +99,9 @@ _ROOT_KEYS = {"ts", "actor", "lane", "action", "subject",
               "action_type", "refs", "proposal", "outcome", "review",
               # [T3] optional F4 scorer-axis fields.
               "decision_verdict", "intent_verdict", "intent_composite",
-              "endorsement"}
+              "endorsement",
+              # [SIE-7] quarantine marker (present-and-true only on sim rows).
+              "sim"}
 _ROOT_REQUIRED = ("ts", "actor", "lane", "action", "subject")
 _ACTOR_KEYS = {"kind", "id"}
 _PROPOSAL_KEYS = {"required", "decision", "decided_at"}
@@ -197,6 +212,16 @@ def validate_consequence(event: dict[str, Any]) -> None:
         if en is not None and (not isinstance(en, str) or not en):
             raise ConsequenceValidationError(
                 "endorsement must be a non-empty string or null"
+            )
+
+    # [SIE-7] sim: optional quarantine marker. When present it must be the bool
+    # True — a row either carries sim:true or omits the key; sim:false / other
+    # values are rejected so the marker is never ambiguous. (bool is checked
+    # before value since isinstance(True, int) is a Python footgun.)
+    if "sim" in event:
+        if event["sim"] is not True:
+            raise ConsequenceValidationError(
+                "sim, when present, must be the boolean true (or omitted)"
             )
 
     # actor
@@ -320,6 +345,21 @@ def _write_to_log(event: dict[str, Any]) -> None:
     log_dir = _consequence_log_dir()
     log_dir.mkdir(parents=True, exist_ok=True)
     base = log_dir.resolve()
+    # [SIE-7] Quarantine fence — the ONE structural chokepoint. The event's sim
+    # marker MUST agree with the target dir's '-sim' suffix. This refuses a
+    # sim-marked row aimed at a live dir (sim can never write to live) AND a
+    # non-sim row aimed at a '-sim' dir (the sim ledger stays unambiguously
+    # all-sim). It reads no env — pure marker↔dir agreement — so no write path
+    # can bypass it, and live writes (marker absent, dir not '-sim') are
+    # untouched: False == False passes exactly as before.
+    is_sim_dir = base.name.endswith("-sim")
+    has_marker = bool(event.get("sim"))
+    if has_marker != is_sim_dir:
+        raise SimQuarantineError(
+            f"quarantine fence: sim-marker={has_marker} but target dir "
+            f"{base.name!r} is_sim={is_sim_dir} — refusing the write "
+            f"(sim consequences must stay in a '-sim' dir; live rows must not)"
+        )
     log_file = base / (
         "consequence-events-"
         + datetime.now(timezone.utc).strftime("%Y-%m-%d") + ".jsonl"
@@ -407,6 +447,10 @@ def emit_consequence(
         event["intent_composite"] = intent_composite
     if endorsement is not _UNSET:
         event["endorsement"] = endorsement
+    # [SIE-7] Stamp the quarantine marker in a sim process so validate + the
+    # write chokepoint see it. Live emits (the default) never carry it.
+    if _sim_mode():
+        event["sim"] = True
 
     validate_consequence(event)  # raises before any write
     _write_to_log(event)
@@ -499,6 +543,14 @@ def read_ledger(since: str | None = None) -> list[dict[str, Any]]:
                     continue
                 if _is_consequence_row(ev):
                     rows.append(ev)
+
+    # [SIE-7] Defense in depth: a live consumer NEVER sees a sim row. The write
+    # fence already keeps sim rows out of live dirs, but if a misconfigured or
+    # legacy mixed dir ever held one, dropping it here guarantees it can't enter
+    # graduation/breaker/cell math. A sim process (CABINET_SIM_MODE=1) keeps
+    # them — the sim runner is the one legitimate reader of sim rows.
+    if not _sim_mode():
+        rows = [ev for ev in rows if not ev.get("sim")]
 
     # Stable sort by ts so last-write-wins respects chronology; equal-ts
     # writes keep file+line read order (a later enrichment line still wins).

@@ -42,16 +42,28 @@ screenpipe pipes, cabinet officers, and crew subagents.
   "decision_verdict": "match | partial | divergent | error | skipped | null",
   "intent_verdict": "intent-aligned | intent-partial | intent-divergent | error | '' | null",
   "intent_composite": 0.0,
-  "endorsement": "unknown | regretted | constrained | corrected | null"
+  "endorsement": "unknown | regretted | constrained | corrected | null",
+  "sim": true
 }
 ```
 
-The last four are the optional **F4 scorer-axis fields** `[T3]` — absent on
-non-eval acting surfaces and legacy rows (the unmeasured default; a real falsy
-value like `intent_verdict: ""` or `intent_composite: 0.0` is written, an
-unpassed field is dropped). They are stamped by the F4 scoring-path emit
+The four scorer-axis fields (`decision_verdict` … `endorsement`) are the
+optional **F4 scorer-axis fields** `[T3]` — absent on non-eval acting surfaces
+and legacy rows (the unmeasured default; a real falsy value like
+`intent_verdict: ""` or `intent_composite: 0.0` is written, an unpassed field
+is dropped). They are stamped by the F4 scoring-path emit
 (`framework/fidelity/fidelity_events.py:emit_case_scored`) from a scorer
 `CaseScore`. `additionalProperties: false` still holds at every level.
+
+`sim` `[SIE-7]` is the **replay-simulation quarantine marker** — present-and-true
+ONLY on events emitted under `CABINET_SIM_MODE=1`, never written as `false`. The
+single write chokepoint (`_write_to_log`) enforces that the marker agrees with
+the target dir's `-sim` suffix: a `sim:true` row can land ONLY in a `-sim` event
+dir and a non-sim row NEVER lands there, so simulated consequences can never
+contaminate the live graduation / breaker / cell math Nate's real verdicts feed.
+`read_ledger` additionally drops sim rows for live consumers (defense in depth).
+This is what lets ~100 replay simulations run against years of history in
+parallel with — and fully isolated from — the live estate.
 
 One event = one action, written when the action happens and **enriched in
 place** (or superseded append-only, see Storage) as its consequence

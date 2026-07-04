@@ -146,6 +146,10 @@
         }
       },
       "additionalProperties": false
+    },
+    "sim": {
+      "const": true,
+      "description": "[SIE-7] Quarantine marker. Present-and-true ONLY on events emitted under CABINET_SIM_MODE=1 (replay simulations). Enforced to agree with the target dir at the single write chokepoint: a sim:true row can land ONLY in a '-sim' event dir and a non-sim row NEVER lands there, so simulated consequences can never contaminate live graduation/breaker/cell math. read_ledger drops sim rows for live consumers. Absent on all live rows (never written as false)."
     }
   },
   "additionalProperties": false
