@@ -417,7 +417,17 @@ _MONDAY_OP_RE = re.compile(r"\b(" + "|".join(sorted(_MONDAY_KNOWN_OPS)) + r")\b"
 #     pure-create/pure-status subset carve-outs and force the ceiling —
 #     over-capture can never soften a verdict. Directives (@skip(...)) and
 #     variables ($x(...)) are excluded by the lookbehind.
+# [re-verify KILLED #4] Block strings MUST be stripped BEFORE regular strings:
+# a GraphQL block string """a"b""" carries a lone " that a double-quote-only
+# stripper mis-pairs, swallowing real fields after it (e.g. delete_board(...))
+# and softening the verdict. This matches a """...""" span whose content is any
+# char except a " that begins a closing """ — so the inner lone " in """a"b"""
+# stays inside the span and the closing """ terminates it correctly.
+_GQL_BLOCKSTRING_RE = re.compile(r'"""(?:[^"]|"(?!""))*"""')
 _GQL_STRING_RE = re.compile(r'"(?:[^"\\]|\\.)*"')
+# GraphQL "#" line comments are ignored tokens and may sit between a field
+# Name and its "(" — strip them so an out-of-vocab op can't hide behind one.
+_GQL_COMMENT_RE = re.compile(r"#[^\n]*")
 _GQL_OP_HEADER_RE = re.compile(
     r"\b(?:mutation|query|subscription)\b\s*"
     r"(?:[A-Za-z_][A-Za-z0-9_]*\s*)?"      # optional operation name
@@ -425,7 +435,14 @@ _GQL_OP_HEADER_RE = re.compile(
     r"(?=\{)",
     re.IGNORECASE,
 )
-_GQL_FIELD_RE = re.compile(r"(?<![@$\w])([A-Za-z_][A-Za-z0-9_]*)\s*\(")
+# Between a field Name and its Arguments GraphQL permits ignored tokens —
+# whitespace AND commas (comments already stripped). "[\s,]*" tolerates
+# "delete_board,(" and "delete_board (" so no op hides in the gap.
+_GQL_FIELD_RE = re.compile(r"(?<![@$\w])([A-Za-z_][A-Za-z0-9_]*)[\s,]*\(")
+
+# A synthetic op that is in NO carve-out set — returned when the body cannot be
+# cleaned to a balanced state, so the caller forces the mcp_post ceiling.
+_UNPARSEABLE_OP = "__unbalanced_body__"
 
 
 def _monday_body_ops(body: str) -> "set[str]":
@@ -433,10 +450,22 @@ def _monday_body_ops(body: str) -> "set[str]":
     mentions UNION every generically-extracted "identifier(" token. The union
     keeps the smuggle test honest — a field the vocabulary has never heard of
     still lands in the set, fails the subset carve-outs, and forces the
-    mcp_post ceiling [KILLED #4]."""
-    stripped = _GQL_STRING_RE.sub(" ", body)
+    mcp_post ceiling [KILLED #4].
+
+    Fail-closed cleaning order (block strings → regular strings → comments →
+    op header), then a balance check: if a residual unbalanced " survives, the
+    body is un-cleanable and we return the _UNPARSEABLE_OP sentinel (ceiling)
+    rather than trust a mis-paired extraction."""
+    stripped = _GQL_BLOCKSTRING_RE.sub(" ", body)
+    stripped = _GQL_STRING_RE.sub(" ", stripped)
+    stripped = _GQL_COMMENT_RE.sub(" ", stripped)
     stripped = _GQL_OP_HEADER_RE.sub(" ", stripped)
-    return set(_MONDAY_OP_RE.findall(stripped)) | set(_GQL_FIELD_RE.findall(stripped))
+    ops = set(_MONDAY_OP_RE.findall(stripped)) | set(_GQL_FIELD_RE.findall(stripped))
+    # A lone " left after string-stripping means the quotes never balanced —
+    # extraction cannot be trusted; force the ceiling (fail-closed).
+    if '"' in stripped:
+        ops.add(_UNPARSEABLE_OP)
+    return ops
 
 
 def _monday_mutation_ops(tool_name: str, tool_input: dict[str, Any]) -> "set[str] | None":

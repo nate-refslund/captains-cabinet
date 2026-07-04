@@ -657,3 +657,49 @@ class TestOutOfVocabMondayOpSmuggle:
                                {"board_id": "5091706356"}) == "task_create"
         assert classify_action("mcp__claude_ai_monday_com__delete_item",
                                {"item_id": "1"}) == "mcp_post"
+
+    # --- re-verify wave 2026-07-04: ignored-token + block-string bypasses ----
+
+    def test_comma_between_op_and_paren_is_ceiling(self):
+        # GraphQL ignored token: a comma may sit between a field Name and "(".
+        # "delete_board,(" must NOT hide the op (\s*-only regex missed it).
+        assert classify_action(
+            "mcp__x_monday_com__all_monday_api",
+            {"query": 'mutation { create_item(board_id:1,item_name:"x"){id} '
+                      "delete_board,(board_id:999){id} }"}
+        ) == "mcp_post"
+
+    def test_comment_between_op_and_paren_is_ceiling(self):
+        # A "#" line comment is an ignored token — it must be stripped so the
+        # op behind it still surfaces.
+        assert classify_action(
+            "mcp__x_monday_com__all_api_write",
+            {"query": "mutation { create_item(item_name:\"x\"){id} "
+                      "delete_board#hide\n(board_id:9){id} }"}
+        ) == "mcp_post"
+
+    def test_block_string_smuggle_is_ceiling(self):
+        # GraphQL block strings """...""" carry a lone " that a double-quote-only
+        # stripper mis-pairs, swallowing the destructive fields after it. Block
+        # strings are stripped FIRST now.
+        assert classify_action(
+            "mcp__x_monday_com__all_monday_api",
+            {"query": 'mutation { create_item(item_name: """a"b""") { id } '
+                      'delete_board(board_id: 1) { id } '
+                      'create_update(body: """c"d""") { id } }'}
+        ) == "mcp_post"
+
+    def test_unbalanced_quote_body_fails_closed_to_ceiling(self):
+        # A body whose quotes never balance is un-cleanable — the sentinel
+        # forces the ceiling rather than trusting a mis-paired extraction.
+        assert classify_action(
+            "mcp__x_monday_com__all_api_write",
+            {"query": 'mutation { create_item(item_name: "unterminated) { id } }'}
+        ) == "mcp_post"
+
+    def test_pure_create_with_block_string_arg_still_task_create(self):
+        # A legitimate block-string argument must not force the ceiling.
+        assert classify_action(
+            "mcp__x_monday_com__all_api_write",
+            {"query": 'mutation { create_item(item_name: """hello there""") { id } }'}
+        ) == "task_create"

@@ -1119,6 +1119,21 @@ if [ "$TOOL_NAME" = "Bash" ]; then
     #     false-positive block. The dangerous stdin-fed forms all end in a
     #     pipe segment, `-`, or EOL, which stay covered.
     GERM_WRITE_RE="${GERM_WRITE_RE}|${ANCH}python[0-9.]*([[:space:]]+-)?[[:space:]]*(\$|[|)])"
+    # g4) python COMBINED flag cluster ending in c: `python3 -Sc '...'`,
+    #     `-Ic`, `-OOc`, `-Bsc` all put `c` adjacent to another flag letter, so
+    #     arm g's standalone `-c` misses them. Match a leading `-` + flag
+    #     letters + `c` immediately before the code word. [re-verify KILLED #5]
+    GERM_WRITE_RE="${GERM_WRITE_RE}|${ANCH}python[0-9.]*[[:space:]]+([^;|&]*[[:space:]])?-[A-Za-z]*c([\"'([:space:]]|\$)"
+    # h) general-purpose scripting interpreters invoked WITH A FLAG while a
+    #    germline path is present. The pre-filter already confirmed a germ path
+    #    is in THIS command; a germline READ uses cat/grep/less (never these),
+    #    and every real write form takes a flag (perl -i / ruby -pi / awk -i
+    #    inplace / node -e fs.writeFile). Requiring the trailing "-" avoids
+    #    false-blocking a bare interpreter NAME that is merely an argument to a
+    #    read (e.g. `grep perl <germ>`). Enumerating each interpreter's exact
+    #    write flags is whack-a-mole, so flag-presence is the fail-closed cut.
+    #    [re-verify KILLED #5: `perl -i -pe 's/.../' <germ>`]
+    GERM_WRITE_RE="${GERM_WRITE_RE}|${ANCH}(perl|ruby|node|nodejs|awk|gawk|mawk)[[:space:]]+-"
     if printf '%s' "$CMD_SQ" | grep -qE "$GERM_WRITE_RE"; then
       echo "BLOCKED: Germline file — read-only for officers and loops (no loop may edit its own judge). This Bash command contains a write-shaped operation targeting a germline path (reads like cat/grep/less are allowed). Propose the change to the Captain; only the Captain applies germline edits." >&2
       exit 2
