@@ -8,7 +8,7 @@ executor hard-stop, the weekly ledger↔yml divergence audit) reads or writes
 through this one API so the meaning of "vetoed" can never fork.
 
 Source of truth is the git-tracked, Captain-verbatim, **germline-protected**
-YAML file (``instance/config/captain-vetoes.yml`` by default; overridable via
+YAML file (``shared/interfaces/captain-vetoes.yml`` by default; overridable via
 ``CABINET_CAPTAIN_VETOES``). Redis (``cabinet:vetoes:*``) is only a rebuilt
 cache — never the sole authority — and a rebuild FAILURE fails CLOSED (act-first
 off that run), so an unreadable registry narrows the perimeter, never widens it.
@@ -44,7 +44,12 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import yaml
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_DEFAULT_VETO_FILE = _REPO_ROOT / "instance" / "config" / "captain-vetoes.yml"
+# shared/interfaces/ is the canonical home: it is the grand-plan germline-
+# write-protected path (CAPTAIN MOMENT 1, RT-B7), it is where actfirst_canary's
+# RT-B7 divergence audit reads, and it sits with the other Captain-verbatim
+# artifacts (captain-decisions/patterns/intents). Overridable via
+# CABINET_CAPTAIN_VETOES. (An earlier draft used instance/config — reconciled.)
+_DEFAULT_VETO_FILE = _REPO_ROOT / "shared" / "interfaces" / "captain-vetoes.yml"
 
 # Redis cache namespace (grand plan: cabinet:vetoes:*). The health sentinel is
 # how a separate/unhooked process (the action lane) learns the cache is fresh;
@@ -76,7 +81,7 @@ class VetoRegistryError(Exception):
 
 def veto_file_path() -> Path:
     """The active veto file — ``CABINET_CAPTAIN_VETOES`` override, else the
-    canonical ``instance/config/captain-vetoes.yml``. Exposed so every consumer
+    canonical ``shared/interfaces/captain-vetoes.yml``. Exposed so every consumer
     (canary divergence audit, tests, a future path reconciliation) resolves the
     SAME file instead of hardcoding a second literal."""
     env = os.environ.get("CABINET_CAPTAIN_VETOES")

@@ -1,6 +1,6 @@
 """Tests for TI-4 — the Captain's veto registry.
 
-Fully fixtured: a tmp yml (never the real instance/config file), fake redis via
+Fully fixtured: a tmp yml (never the real shared/interfaces file), fake redis via
 plain dicts, an injected emit recorder for the ledger audit. No live APIs, no
 subprocess, no network."""
 from __future__ import annotations
