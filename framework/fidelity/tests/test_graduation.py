@@ -12,6 +12,11 @@ Bar floor (READ from framework/policies/authority-matrix.yml, NOT hardcoded):
 Per-decision-type overrides from the yaml (keyed by risk_class):
   internal_comms 0.90/30/0/21, deploy_nonprod 0.95/30/0/21.
 
+Recency is a WRONG-ONLY clock (defect-3 fix, checkpoint 2026-07-04 §7 rec-8):
+only a wrong verdict younger than recency_clean_days holds a cell at
+`eligible`; clean samples accumulate (never reset), and a never-wrong cell is
+bounded only by the ~7d cell-age seasoning floor (anti burst-graduation).
+
 Fitness = outcome_held_rate x review_confirmed_rate (positive signal, NOT
 correction-count). FAIL-SAFE: a cell whose ratios are None (no data /
 denominator 0) -> 'unmeasured' (never silently eligible). 'demote' when a
@@ -185,11 +190,67 @@ class TestGraduated:
         assert ev["sample_count"] >= 20
         assert ev["match_rate"] >= 0.85
 
-    def test_recency_not_yet_clean_is_eligible_not_graduated(self):
-        # 25 clean confirms but the most recent sample is only 3 days old, so
-        # recency_clean (days since last sample / since last wrong) < 14d.
+    def test_continuous_clean_use_matures_wrong_only_clock(self):
+        # [defect-3 fix — FLIPPED pinning test] Same shape that used to pin
+        # the quiet-gap bug: 25 clean confirms with the most recent only ~3d
+        # old. Under the old rule the young sample reset the recency clock and
+        # a continuously-used, never-wrong cell stayed `eligible` FOREVER
+        # (time-to-auto infinite). Under the wrong-only clock clean samples
+        # accumulate: never wrong + cell age ~27d >= the ~7d seasoning floor
+        # -> graduated.
         _emit_n(25, verdict="confirmed", status="ok", action_type="local_edit",
                 start_days_ago=27, spacing_days=1.0)  # last sample ~3d ago
+        out = graduation.evaluate(REVERSIBLE_CELL, now=_NOW)
+        assert out["state"] == "graduated"
+        assert out["evidence"]["days_since_last_wrong"] is None   # never wrong
+        assert out["evidence"]["cell_age_days"] >= 7
+
+    def test_old_wrong_with_recent_clean_samples_graduates(self):
+        # [defect-3 fix] N clean samples over the bar + an OLD last-wrong
+        # (>= recency_clean_days ago) = graduated, even though clean samples
+        # keep arriving (newest ~1d old): a CLEAN sample must not reset the
+        # streak — only a wrong does.
+        _emit(ts=_iso(_NOW - timedelta(days=40)), subject="w-old",
+              verdict="wrong", status="failed", action_type="local_edit")
+        _emit_n(25, verdict="confirmed", status="ok", action_type="local_edit",
+                start_days_ago=25, spacing_days=1.0)  # newest ~1d ago
+        out = graduation.evaluate(REVERSIBLE_CELL, now=_NOW)
+        assert out["state"] == "graduated"
+        assert out["evidence"]["days_since_last_wrong"] >= 14     # old wrong, aged clean
+        assert out["evidence"]["days_since_last_sample"] < 14     # fresh CLEAN sample
+
+    def test_graduated_cell_does_not_ungraduate_on_next_clean_label(self):
+        # [defect-3 fix — golden eval] A cell that already cleared the FULL
+        # bar must NOT flap back to `eligible` when the next CLEAN label lands
+        # (the old rule did exactly that on every new sample).
+        _emit_n(25, verdict="confirmed", status="ok", action_type="local_edit",
+                start_days_ago=60, spacing_days=1.0)
+        assert graduation.evaluate(REVERSIBLE_CELL, now=_NOW)["state"] == "graduated"
+        _emit(ts=_iso(_NOW - timedelta(days=1)), subject="fresh-clean",
+              verdict="confirmed", status="ok", action_type="local_edit")
+        out = graduation.evaluate(REVERSIBLE_CELL, now=_NOW)
+        assert out["state"] == "graduated"                        # no flap
+
+    def test_burst_minted_cell_stays_eligible_under_seasoning_floor(self):
+        # [defect-3 fix — anti-burst leg] 25 clean confirms ALL inside the
+        # last ~2 days clear samples/match/fitness, but the cell is younger
+        # than the ~7d seasoning floor -> `eligible`, not graduated. A
+        # never-wrong cell cannot burst-graduate the same afternoon it is
+        # minted.
+        _emit_n(25, verdict="confirmed", status="ok", action_type="local_edit",
+                start_days_ago=2, spacing_days=0.05)
+        out = graduation.evaluate(REVERSIBLE_CELL, now=_NOW)
+        assert out["state"] == "eligible"
+        assert out["evidence"]["cell_age_days"] < out["evidence"]["seasoning_days"]
+
+    def test_recent_wrong_still_resets_the_streak(self):
+        # The wrong side of the clock is UNCHANGED: a wrong verdict younger
+        # than recency_clean_days keeps the cell `eligible` (re-earning),
+        # regardless of how old the cell is.
+        _emit_n(25, verdict="confirmed", status="ok", action_type="local_edit",
+                start_days_ago=120, spacing_days=2.0)
+        _emit(ts=_iso(_NOW - timedelta(days=3)), subject="w-fresh",
+              verdict="wrong", status="failed", action_type="local_edit")
         out = graduation.evaluate(REVERSIBLE_CELL, now=_NOW)
         assert out["state"] == "eligible"
         assert out["state"] != "graduated"

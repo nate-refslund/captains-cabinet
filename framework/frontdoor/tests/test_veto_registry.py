@@ -260,3 +260,83 @@ def test_recorded_veto_blocks_matching_card_allows_others(vetofile):
     # which veto blocked it (for the tell surface)
     m = vr.matching_vetoes("task_create", board="5091706356", vetoes=rows)
     assert len(m) == 1 and m[0]["id"] == "veto-001"
+
+
+# --- Tier-0 #7 — veto schema reconcile (registry rows vs canary-audit reads) --
+# The checkpoint found the registry wrote only recorded_at/lifted_at while the
+# weekly divergence auditor (actfirst_canary.veto_ledger_divergences) reads
+# ts/status — the audit wasn't reading the registry it audits. The writer now
+# stamps BOTH dialects; these tests pin the full round-trip.
+
+def test_binder_written_veto_roundtrips_writer_to_is_vetoed(vetofile):
+    """The task's round-trip: write via the registry's OWN writer (the binder's
+    `never:` path calls exactly record_veto), read via rebuild_cache +
+    is_vetoed, then lift and confirm enforcement releases."""
+    v = vr.record_veto({"action_type": "task_create", "board": "5091706356"},
+                       "never: auto-create on the tasks board",
+                       ts="2026-07-04T10:00:00Z", path=vetofile, emit=EmitRec())
+    # one row, BOTH dialects, stamped consistently by the single writer
+    assert v["ts"] == v["recorded_at"] == "2026-07-04T10:00:00Z"
+    assert v["status"] == "active" and v["lifted_at"] is None
+    # persisted round-trip (yml -> load -> enforce)
+    assert vr.is_vetoed("task_create", board="5091706356", path=vetofile) is True
+    # rebuild_cache caches the active row + ok sentinel (fake redis)
+    store = {}
+    res = vr.rebuild_cache(vetoes=vr.load_vetoes(vetofile),
+                           redis_set=lambda k, val, ttl: store.__setitem__(k, val),
+                           redis_del=lambda k: store.pop(k, None),
+                           redis_scan=lambda pat: list(store))
+    assert res == {"ok": True, "count": 1}
+    cached = json.loads(store["cabinet:vetoes:veto-001"])
+    assert cached["ts"] == cached["recorded_at"] and cached["status"] == "active"
+    assert vr.veto_cache_ready(redis_get=lambda k: store.get(k, "")) is True
+    # lift -> both dialects flip together -> enforcement releases
+    lifted = vr.lift_veto("veto-001", ts="2026-07-05T00:00:00Z",
+                          path=vetofile, emit=EmitRec())
+    assert lifted["lifted_at"] == "2026-07-05T00:00:00Z"
+    assert lifted["status"] == "lifted"
+    assert vr.is_vetoed("task_create", board="5091706356", path=vetofile) is False
+
+
+def test_registry_rows_are_readable_by_the_canary_divergence_audit(vetofile):
+    """Cross-module pin: the weekly auditor's own load path + active/ts reads
+    must see registry-written rows. An acted event matching an ACTIVE veto at
+    or after its ts diverges; one BEFORE the veto does not; a LIFTED veto never
+    diverges (pre-fix the lifted row still audited as active and the ts check
+    was vacuous)."""
+    from framework.frontdoor import actfirst_canary as ac
+
+    vr.record_veto({"action_type": "task_create", "board": "5091706356"},
+                   "never: auto-create on the tasks board",
+                   ts="2026-07-03T00:00:00Z", path=vetofile, emit=EmitRec())
+    rows = ac.load_vetoes(path=vetofile)          # the auditor's OWN loader
+    # an unattended-act row exactly as the lane emits it (RT-B1 marker:
+    # proposal.required False + a stamped action_type)
+    acted_after = {"action": "acted:task_create", "action_type": "task_create",
+                   "lane": "polads", "subject": "s",
+                   "ts": "2026-07-03T12:00:00Z",
+                   "proposal": {"required": False, "decision": None},
+                   "outcome": {"status": "ok", "evidence": "acted act_first"}}
+    acted_before = dict(acted_after, ts="2026-07-02T12:00:00Z")
+    div = ac.veto_ledger_divergences(vetoes=rows, ledger=[acted_after])
+    assert len(div) == 1 and div[0]["veto_id"] == "veto-001"
+    # at-or-after is real now (ts carried on the row): earlier act, no page
+    assert ac.veto_ledger_divergences(vetoes=rows, ledger=[acted_before]) == []
+    # lifted -> status flips -> the auditor stops treating it as active
+    vr.lift_veto("veto-001", path=vetofile, emit=EmitRec())
+    rows = ac.load_vetoes(path=vetofile)
+    assert ac.veto_ledger_divergences(vetoes=rows, ledger=[acted_after]) == []
+
+
+def test_hand_lifted_status_only_row_is_not_enforced_but_unknown_status_is(vetofile):
+    """Activeness honors EITHER dialect: a row lifted via status alone (e.g. a
+    Captain germline hand-edit) is released, but an unknown/mangled status is
+    NOT lift evidence — the veto stays enforced (fail-closed)."""
+    rows = [
+        {"id": "veto-001", "scope": {"action_type": "task_create"},
+         "status": "lifted", "lifted_at": None},
+        {"id": "veto-002", "scope": {"action_type": "board_status"},
+         "status": "garbled", "lifted_at": None},
+    ]
+    assert vr.is_vetoed("task_create", vetoes=rows) is False       # status-lifted
+    assert vr.is_vetoed("board_status", vetoes=rows) is True       # fail-closed

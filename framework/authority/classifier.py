@@ -392,13 +392,61 @@ _MONDAY_KNOWN_OPS = frozenset({
 })
 _MONDAY_OP_RE = re.compile(r"\b(" + "|".join(sorted(_MONDAY_KNOWN_OPS)) + r")\b")
 
+# [KILLED #4 fix — checkpoint 2026-07-04 §4] Generic mutation-field extraction
+# for body-bearing tools. The old detector was findall over the fixed
+# vocabulary above, so an OUT-OF-VOCAB destructive field (delete_board,
+# duplicate_group, any future op) was invisible: "create_item + delete_board"
+# extracted {create_item}, passed the pure-create subset test below, and
+# classified task_create (act_with_undo) — the generic API tool then executed
+# BOTH. These three patterns make extraction vocabulary-INDEPENDENT so an
+# unknown field can never hide behind a known one:
+#   * _GQL_STRING_RE — escape-aware double-quoted GraphQL string literals. An
+#     executable field can never live inside a string literal, so stripping
+#     them first only removes non-executable text (and stops prose args like
+#     item_name: "call mom (later)" from being read as fields). Fail
+#     direction: an unbalanced quote leaves text UNstripped -> extraction sees
+#     more -> ceiling.
+#   * _GQL_OP_HEADER_RE — a WELL-FORMED operation header (keyword + optional
+#     operation name + optional variable defs, immediately before "{"). Only
+#     this provably-inert header is stripped so an operation NAME is not read
+#     as a field; anything malformed stays in place and lands in extraction ->
+#     out-of-vocab -> ceiling (fail-closed).
+#   * _GQL_FIELD_RE — every identifier called with arguments ("ident(").
+#     Deliberate over-capture (sub-selection fields with args, malformed
+#     fragments, parens outside strings): extra members can only break the
+#     pure-create/pure-status subset carve-outs and force the ceiling —
+#     over-capture can never soften a verdict. Directives (@skip(...)) and
+#     variables ($x(...)) are excluded by the lookbehind.
+_GQL_STRING_RE = re.compile(r'"(?:[^"\\]|\\.)*"')
+_GQL_OP_HEADER_RE = re.compile(
+    r"\b(?:mutation|query|subscription)\b\s*"
+    r"(?:[A-Za-z_][A-Za-z0-9_]*\s*)?"      # optional operation name
+    r"(?:\([^)]*\)\s*)?"                   # optional variable definitions
+    r"(?=\{)",
+    re.IGNORECASE,
+)
+_GQL_FIELD_RE = re.compile(r"(?<![@$\w])([A-Za-z_][A-Za-z0-9_]*)\s*\(")
+
+
+def _monday_body_ops(body: str) -> "set[str]":
+    """ALL mutation-field candidates in a generic GraphQL body: known-vocab
+    mentions UNION every generically-extracted "identifier(" token. The union
+    keeps the smuggle test honest — a field the vocabulary has never heard of
+    still lands in the set, fails the subset carve-outs, and forces the
+    mcp_post ceiling [KILLED #4]."""
+    stripped = _GQL_STRING_RE.sub(" ", body)
+    stripped = _GQL_OP_HEADER_RE.sub(" ", stripped)
+    return set(_MONDAY_OP_RE.findall(stripped)) | set(_GQL_FIELD_RE.findall(stripped))
+
 
 def _monday_mutation_ops(tool_name: str, tool_input: dict[str, Any]) -> "set[str] | None":
     """The SET of Monday mutation ops a call performs, or None if it is not a
     Monday mutation. Two shapes: (1) a named per-op MCP tool
     (mcp__..._monday_com__create_item) -> {that op}; (2) a generic API tool
     (all_monday_api / all_api_write) or a Bash/curl GraphQL POST carrying a
-    query/body string -> every op the body mentions (fixed vocabulary). Reads
+    query/body string -> EVERY field token the body calls, extracted
+    generically (NOT just the known vocabulary — out-of-vocab fields must
+    surface so the caller's subset tests fail them to the ceiling). Reads
     (get_*/search/board_insights) and non-Monday tools -> None."""
     tn = tool_name.lower()
     if "monday" not in tn and "monday" not in str(tool_input.get("query", "")).lower():
@@ -413,8 +461,8 @@ def _monday_mutation_ops(tool_name: str, tool_input: dict[str, Any]) -> "set[str
     # (2) generic API / body-bearing tool: scan the query/variables body.
     body = " ".join(str(tool_input.get(k, "")) for k in ("query", "body", "graphql", "mutation"))
     if body.strip():
-        found = set(_MONDAY_OP_RE.findall(body))
-        return found            # possibly empty -> fail-closed to ceiling below
+        # ALL fields, generically — not only the known vocabulary [KILLED #4].
+        return _monday_body_ops(body)   # possibly empty -> ceiling below
     return None
 
 
@@ -456,7 +504,9 @@ def _classify_mcp(tool_name: str, tool_input: dict[str, Any]) -> str | None:
     # people/assignee op, an unknown field, or an unparseable body) does NOT
     # earn the softer class — it falls to the network_write ceiling. An
     # attacker cannot smuggle a dangerous op inside a "create" batch to soften
-    # the verdict.
+    # the verdict: body extraction is vocabulary-INDEPENDENT [KILLED #4], so an
+    # out-of-vocab field (delete_board, duplicate_group, a future op) lands in
+    # `ops`, fails both subset tests, and forces the ceiling.
     ops = _monday_mutation_ops(tool_name, tool_input)
     if ops is not None:
         if ops and ops <= _MONDAY_CREATE_OPS:

@@ -23,8 +23,15 @@ Invariants (do not weaken):
     ``act_with_undo`` (``demote_cell_for_veto`` / ``cell_matches``), not merely
     one card.
   * **Monotonic, no expiry, lift-only** — ids never repeat; rows are never
-    deleted (a retired veto is stamped ``lifted_at``); silence never clears a
-    veto.
+    deleted (a retired veto is stamped ``lifted_at`` + ``status: lifted``);
+    silence never clears a veto.
+  * **One row shape for every reader** [Tier-0 #7 schema reconcile] — the
+    writer stamps BOTH field dialects on each row: the registry's own
+    ``recorded_at``/``lifted_at`` and the canary divergence-audit's
+    ``ts``/``status`` (``actfirst_canary.veto_ledger_divergences`` reads the
+    latter). Activeness honors either dialect, and only positive lift
+    evidence counts (an unknown ``status`` is NOT a lift — fail toward
+    enforcing the veto).
   * **Audited** — every record/lift emits a consequence-ledger audit event.
 
 System note: the act-first machinery runs as UNHOOKED launchd processes, so this
@@ -205,11 +212,23 @@ def load_vetoes(path: Optional[Path] = None) -> List[Dict[str, Any]]:
     return [v for v in _load_doc(path).get("vetoes", []) if isinstance(v, dict)]
 
 
+def _is_lifted(v: Dict[str, Any]) -> bool:
+    """A row is lifted iff EITHER dialect positively says so: the registry's
+    own ``lifted_at`` stamp OR the canary-audit ``status: lifted`` field
+    [Tier-0 #7 schema reconcile]. Honoring both means the enforcement plane
+    and the weekly divergence audit can never disagree about activeness. An
+    unknown/mangled ``status`` is NOT lift evidence — the veto stays enforced
+    (fail-closed)."""
+    if v.get("lifted_at"):
+        return True
+    return str(v.get("status") or "").strip().lower() == "lifted"
+
+
 def active_vetoes(path: Optional[Path] = None,
                   vetoes: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
     """Non-lifted, enforceable vetoes only — what the perimeter actually binds."""
     rows = vetoes if vetoes is not None else load_vetoes(path)
-    return [v for v in rows if isinstance(v, dict) and not v.get("lifted_at")
+    return [v for v in rows if isinstance(v, dict) and not _is_lifted(v)
             and _is_enforceable(_clean_scope(v.get("scope")))]
 
 
@@ -355,12 +374,21 @@ def record_veto(scope: Dict[str, Any], verbatim_text: str,
     p = Path(path) if path else veto_file_path()
     doc = _load_doc(p)
     vid = f"veto-{int(doc.get('next_id') or _next_from(doc['vetoes'])):03d}"
+    recorded_at = ts or _now_iso()
     veto = {
         "id": vid,
         "scope": clean,
         "verbatim": (verbatim_text or "").strip()[:1000],
-        "recorded_at": ts or _now_iso(),
+        "recorded_at": recorded_at,
         "lifted_at": None,
+        # [Tier-0 #7 schema reconcile] The canary divergence audit reads
+        # ``ts``/``status``; the registry historically wrote only
+        # recorded_at/lifted_at, so the weekly audit never saw the rows it was
+        # auditing (a lifted veto still audited as active; the at-or-after
+        # timestamp check vacuous on a missing ts). Stamp BOTH dialects at the
+        # single writer so every reader agrees on the same row.
+        "ts": recorded_at,
+        "status": "active",
         "source": "captain",
     }
     doc["vetoes"].append(veto)
@@ -386,6 +414,7 @@ def lift_veto(veto_id: str, ts: Optional[str] = None, *,
     if found.get("lifted_at"):
         return found                       # idempotent — already lifted
     found["lifted_at"] = ts or _now_iso()
+    found["status"] = "lifted"   # keep the canary-audit dialect in sync [Tier-0 #7]
     _save_doc(p, doc)
     _audit(emit, action="captain-veto-lift", vid=veto_id,
            scope=_clean_scope(found.get("scope")),
