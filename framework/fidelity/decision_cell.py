@@ -34,7 +34,7 @@ from pathlib import Path
 from framework.fidelity.oauth_llm import oauth_json_llm, oauth_raw_llm
 from framework.env import captain_name, captain_role
 from framework.fidelity.officer_prompt import _clone_privacy_fence
-from framework.fidelity.officer_runner import BrainAdapter
+from framework.sources import get_source
 from framework.fidelity.scorer import composite
 from framework.fidelity.types import DecisionCase
 
@@ -373,26 +373,37 @@ _DECISION_CLONE_SYSTEM = """You are {cap}'s clone, facing a real {role} decision
 Return ONLY JSON: {{"decision":"the concrete call you make","why":"your reasoning, in {cap}'s frame"}}"""
 
 
-def _clone_identity(case: DecisionCase, brain: BrainAdapter) -> dict:
+def _clone_identity(case: DecisionCase, brain) -> dict:
     """Values-identity for the decision clone: voice + nate_model patterns +
     drafting lessons date-filtered STRICTLY before detected_at. No person_static
     (a decision has no single counterparty). Mirrors the reply cell's identity
-    gather + privacy fence."""
+    gather + privacy fence.
+
+    ``brain`` is a ``framework.sources.PersonalSource`` (the bound personal
+    source; default ``get_source()``). ``model_patterns()`` is the launcher-
+    neutral method that on Flavor-A maps to ``me_signal.nate_model('patterns')``
+    (the brain artifact kept verbatim, DE-NATE §3 — only the METHOD name changed);
+    it is byte-identical to the prior ``BrainAdapter.nate_model_patterns()``."""
     def _v(x):
         return (x or "").strip() or "(unavailable)"
     return {
         "voice": _v(brain.voice_profile()),
-        "patterns": _v(brain.nate_model_patterns()),
+        "patterns": _v(brain.model_patterns()),
         "lessons": _v(brain.drafting_lessons(case.detected_at)),
     }
 
 
 def run_decision_case(case: DecisionCase, llm=oauth_raw_llm,
-                      brain: BrainAdapter | None = None) -> dict:
+                      brain=None) -> dict:
     """Drive the clone on the dilemma; return its proposed {decision, why}. The
     clone sees the dilemma + values-identity ONLY — NEVER case.decision/why.
-    Identity informs HOW it decides and is privacy-fenced (never echoed)."""
-    brain = brain or BrainAdapter()
+    Identity informs HOW it decides and is privacy-fenced (never echoed).
+
+    ``brain`` is an injectable ``framework.sources.PersonalSource``; it defaults
+    to ``get_source()`` — the bound personal source (the Flavor-A screenpipe
+    adapter on this deployment, byte-identical to the prior ``BrainAdapter()``
+    default). Tests inject a fake source in its place."""
+    brain = brain or get_source()
     ident = _clone_identity(case, brain)
     system = _DECISION_CLONE_SYSTEM.format(
         cap=_CAP, role=_ROLE, fence=_clone_privacy_fence(_CAP),

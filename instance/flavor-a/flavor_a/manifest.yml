@@ -1,0 +1,24 @@
+# instance/flavor-a/flavor_a/manifest.yml — the Flavor-A source-adapter manifest.
+#
+# Extension contract: framework/schemas/extension-manifest.schema.json (axes spec
+# 2026-07-05 §6.4), validated by cabinet/scripts/validate-extension.sh. This
+# adapter RECEIVES resolved axis values from its loader; it never reads axis
+# config itself (the axis linter runs over this dir with an EMPTY allowlist).
+name: flavor-a-screenpipe-source
+version: "1.0.0"
+kind: source
+# A pure READ source emits NO actions, so it carries no action_types and no
+# risk_classes; undo_contract is `none` (there is nothing to undo — a read is
+# never act-first-eligible in any posture, and the inverse-required rule holds
+# vacuously). The dispatch/actuator (WRITE) half is a SEPARATE PersonalDispatch
+# adapter, deferred to a later pass.
+action_types: []
+risk_classes: []
+undo_contract: none
+axis_compat:
+  # The screenpipe brain is a PERSONAL-flavor evidence supply. A clean-room /
+  # Flavor-B (org) deployment binds NullPersonalSource or an org source instead.
+  flavor: [personal]
+entrypoints:
+  # capability -> path relative to this extension dir (realpath-contained + exists).
+  source: screenpipe_source.py

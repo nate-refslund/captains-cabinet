@@ -113,7 +113,7 @@ class TestRunnerLeakBoundary:
         def voice_profile(self):
             return "terse, decisive"
 
-        def nate_model_patterns(self):
+        def model_patterns(self):
             return "gives AI max autonomy"
 
         def drafting_lessons(self, before_ts):
