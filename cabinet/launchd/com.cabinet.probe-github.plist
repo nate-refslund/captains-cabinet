@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- 5-MIN B2.3 GitHub outcome probe (lane-supply 2026-07-05). Read-only: joins
+     trailer-carrying PRs (Cabinet-Proposal-Id) back to their proposals and
+     supersedes merged/reverted/held outcomes onto the proposal's own ledger
+     row — the (actor, lane, action_type) cell the gate + hourly verifier read.
+     Products/checkouts: instance/config/probes.yml. Writes NOTHING to GitHub.
+
+     FAIL-CLOSED: missing config/checkout -> skip, no verdict; silent source
+     while local git shows commits -> healthchecks /fail page, NOTHING emitted.
+     INSTALLING THIS PLIST IS THE ENABLE FLIP (CABINET_PROBES_ENABLED=1).
+
+     Install:
+       cp cabinet/launchd/com.cabinet.probe-github.plist ~/Library/LaunchAgents/
+       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.cabinet.probe-github.plist
+     Disable:
+       launchctl bootout gui/$(id -u)/com.cabinet.probe-github
+       rm ~/Library/LaunchAgents/com.cabinet.probe-github.plist
+
+     No secrets here — gh uses its own keychain auth; the runner sources env
+     files itself (GH_TOKEN mapped from GITHUB_PAT only as fallback). -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.cabinet.probe-github</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/nate/captains-cabinet/cabinet/scripts/run-probes.sh</string>
+    <string>github</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/nate/captains-cabinet</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>CABINET_PROBES_ENABLED</key>
+    <string>1</string>
+    <key>PYTHONPATH</key>
+    <string>/Users/nate/captains-cabinet</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>StartInterval</key>
+  <integer>300</integer>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>/Users/nate/.cabinet/logs/probe-github.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/nate/.cabinet/logs/probe-github.log</string>
+</dict>
+</plist>

@@ -103,6 +103,34 @@ def test_undecided_proposal_never_emits_outcome():
     assert emitted == []
 
 
+def test_acted_actfirst_row_accepts_probe_outcome():
+    """Guard update (lane-supply 2026-07-05): an act-first ACTED row —
+    proposal {required: False, decision: None} FOREVER (binder_wire.
+    acted_verdict_event:194) — IS executed, so probes must be able to land
+    outcomes on it. The old decision-only guard blinded every probe to acted
+    cards, starving the verifier's reconciliation loop."""
+    cid = c.mint()
+    acted = {"ts": "2026-07-05T01:00:00Z",
+             "actor": {"kind": "officer", "id": "cos"}, "lane": "cos",
+             "action": "action-card", "subject": "acted-card",
+             "action_type": "task_create", "refs": [c.ref_for(cid)],
+             "proposal": {"required": False, "decision": None},
+             "outcome": {"status": "unknown"}}
+    validate_consequence(acted)
+    emitted = []
+    r = lib.emit_outcome(cid=cid, status="failed", probe_status="rolled_back",
+                         source="vercel", confidence="high",
+                         evidence="production alias re-pointed (rollback)",
+                         rows=[acted], emit=lambda **ev: emitted.append(ev))
+    assert r["emitted"] is True
+    ev = emitted[0]
+    validate_consequence(ev)
+    assert ev["outcome"]["status"] == "failed"
+    # identity/cell fields inherited — the supersede lands on the acted row
+    assert (ev["actor"], ev["lane"], ev["action_type"]) == (
+        acted["actor"], "cos", "task_create")
+
+
 def test_bad_status_or_confidence_raises():
     cid = c.mint()
     rows = [_decided_proposal(cid)]

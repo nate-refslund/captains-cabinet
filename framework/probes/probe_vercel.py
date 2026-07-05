@@ -51,24 +51,18 @@ STABILITY_MS = STABILITY_MIN * 60 * 1000
 ROLLBACK_WINDOW_DAYS = 14                    # how far back a rollback can supersede a ready deploy
 _FRESHNESS_WINDOW = "15 minutes ago"         # git-activity lookback (10-min cadence + slack)
 
-# ── DEPLOY TEMPLATE (Nate-gated — NOT installed by building this file) ────────
-# Built + tested now; going live is a deliberate deploy step (reads Nate's live
-# Vercel account) that needs THREE things, none done here:
-#   1. a __main__ entry that builds the real VercelClient + reads the product
-#      app-name(s) from config, calls run_probe per product, and exits
-#      (StartCalendarInterval one-shot), guarded by CABINET_PROBES_ENABLED and a
-#      present VERCEL_API_KEY.
-#   2. a services.yml row (promote kind → watchdog so generate-plists renders it):
-#        - name: probe-vercel
-#          label: com.cabinet.probe-vercel
-#          kind: watchdog
-#          command: python3.12 -m framework.probes.probe_vercel
-#          schedule: { interval_s: 600 }
-#          expected: "healthchecks 'probe-vercel' pinged 10-min; /fail on silent source"
-#   3. create the healthchecks 'probe-vercel' check (period 10m, grace) + assign a
-#      channel — same as the F0.13 checks.
-# Until all three land, this module is import-only: nothing schedules it, nothing
-# touches the live API.
+# ── DEPLOY STATUS (lane-supply 2026-07-05 — the template below is now BUILT) ──
+# The three deploy steps the original Nate-gated template named:
+#   1. __main__ entry — DONE (below): delegates to runner.probe_main; real
+#      VercelClient per app from instance/config/probes.yml (token from
+#      VERCEL_API_KEY env ONLY — the wrapper maps VERCEL_TOKEN→VERCEL_API_KEY;
+#      empty value = probe-wide skip), chdir to the product checkout for the
+#      git trailer fallback, guarded by CABINET_PROBES_ENABLED + --dry-run.
+#   2. services.yml row — DONE: probe-vercel, kind watchdog, interval 600s,
+#      command `bash cabinet/scripts/run-probes.sh vercel`. Plist install stays
+#      a deliberate human step (cabinet/launchd/INSTALL-flip.md).
+#   3. healthchecks 'probe-vercel' check (period 10m + grace) — STILL NATE'S:
+#      hc_ping is fail-open without HEALTHCHECKS_PING_KEY.
 
 
 # --- pure classification -----------------------------------------------------
@@ -281,3 +275,10 @@ def run_probe(
                                               else {"reason": res.get("reason")})})
     hc(SLUG)   # liveness
     return {"fresh": True, "emitted": emitted, "skipped": skipped}
+
+
+if __name__ == "__main__":   # the deploy entry the 2026-07-03 review found missing
+    import sys
+
+    from framework.probes import runner
+    sys.exit(runner.probe_main("vercel", runner.run_vercel_products, VercelClient))

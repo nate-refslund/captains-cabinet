@@ -473,6 +473,26 @@ services:
     schedule: { interval_s: 300 }
 """
 
+# Monthly rows live in their OWN snippet (not _MINI_MANIFEST): the shared mini
+# manifest feeds _mini_probe fixtures that provide a log per row, and a new
+# never-ran row would fail every downstream healthy-path test for the wrong
+# reason (lane-supply 2026-07-05).
+_MONTHLY_MANIFEST = """
+services:
+  - name: fidelity-f1
+    label: com.cabinet.fidelity-f1
+    kind: cron
+    command: bash cabinet/scripts/run-fidelity-f1.sh
+    schedule: { calendar: [{day: 1, hour: 6, minute: 30}] }   # monthly (lane-supply 2026-07-05)
+  - name: monthly-block
+    label: com.cabinet.monthly-block
+    kind: cron
+    command: bash x.sh
+    schedule:
+      calendar:
+        - { day: 15, hour: 3, minute: 0 }
+"""
+
 
 def test_manifest_parser_extracts_all_shapes():
     entries = {e["name"]: e for e in reg._parse_services_manifest(_MINI_MANIFEST)}
@@ -486,9 +506,22 @@ def test_manifest_parser_extracts_all_shapes():
     assert fb["schedule_kind"] == "calendar" and fb["weekly"] is False
     ac = entries["actfirst-canary"]
     assert ac["schedule_kind"] == "calendar" and ac["weekly"] is True
+    # \bday\s*: must NOT fire on "weekday:" — a weekly row is never monthly
+    # (lane-supply 2026-07-05, fidelity-f1 monthly floor).
+    assert ac["monthly"] is False
     dl = entries["draft-lane"]
     assert dl["disabled"] is True
     assert entries["retro-trigger"]["label"] == "com.cabinet.retro-trigger"
+
+
+def test_manifest_parser_monthly_shapes():
+    """Monthly (day-of-month) calendar rows — flow AND block forms — parse
+    monthly=True (lane-supply 2026-07-05, the fidelity-f1 floor wire)."""
+    entries = {e["name"]: e for e in reg._parse_services_manifest(_MONTHLY_MANIFEST)}
+    f1 = entries["fidelity-f1"]
+    assert f1["schedule_kind"] == "calendar" and f1["monthly"] is True
+    mb = entries["monthly-block"]
+    assert mb["schedule_kind"] == "calendar" and mb["monthly"] is True
 
 
 def test_floor_policy_interval_calendar_keepalive():
@@ -497,6 +530,13 @@ def test_floor_policy_interval_calendar_keepalive():
     assert reg._floor_for_entry({"schedule_kind": "interval", "interval_s": 300}) == 7200
     assert reg._floor_for_entry({"schedule_kind": "calendar", "weekly": False}) == 26 * 3600
     assert reg._floor_for_entry({"schedule_kind": "calendar", "weekly": True}) == 8 * 86400
+    # monthly rows (day-of-month key) get 33d — the 26h daily default would
+    # false-page a healthy monthly job every day (lane-supply 2026-07-05);
+    # monthly outranks weekly when keys combine (launchd ANDs → ≤monthly).
+    assert reg._floor_for_entry({"schedule_kind": "calendar",
+                                 "monthly": True}) == 33 * 86400
+    assert reg._floor_for_entry({"schedule_kind": "calendar", "weekly": True,
+                                 "monthly": True}) == 33 * 86400
     assert reg._floor_for_entry({"schedule_kind": "keepalive"}) is None
     assert reg._floor_for_entry({"schedule_kind": None}) is None
 

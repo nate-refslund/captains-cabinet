@@ -22,7 +22,11 @@
 #   command:  repo-root-relative invocation, executed as
 #             /bin/bash -lc "cd $CABINET_ROOT && set -a && source cabinet/.env
 #             2>/dev/null && set +a && REDIS_HOST=localhost exec <command>"
-#   schedule: keepalive | {interval_s: N} | {calendar: [{hour: H, minute: M}|{minute: M}, ...]}
+#   schedule: keepalive | {interval_s: N} | {calendar: [{hour: H, minute: M}|{minute: M}|{day: D, ...}, ...]}
+#             `day` (1-31, launchd Day) makes a calendar entry MONTHLY — added
+#             lane-supply 2026-07-05 for the fidelity-f1 row; generate-plists.py
+#             renders it and framework/watchdog/registry.py gives monthly rows a
+#             33-day freshness floor (the 26h daily default would false-page).
 #   env:      optional per-service EnvironmentVariables (NAMES + non-secret values only —
 #             secrets stay in cabinet/.env, sourced at runtime, never rendered into plists)
 #   disabled: true → the row stays in the manifest as fleet truth but is NOT
@@ -300,3 +304,101 @@ services:
       point-in-time snapshots only; cabinet/scripts/enable-redis-aof.sh exists
       and flips appendonly+everysec, but it restarts Redis (brief fleet trigger
       outage) so flipping it stays a Captain step.
+
+  # ── Verdict supply (lane-supply 2026-07-05) ────────────────────────────────
+  # THE keystone wave: the 2026-07-03 re-review found the machine
+  # eval/probe/verifier stack "dead at runtime" (no __main__, no manifest row,
+  # no plist; CABINET_PROBES_ENABLED only in comments). These rows wake it so
+  # verdict_judge/probe-outcome labels flow into the consequence ledger on the
+  # SAME (actor, lane, action_type) cells the act-first graduation gate reads —
+  # zero Captain attention per label. INSTALL SOURCE stays the hand-made,
+  # comment-rich plists in cabinet/launchd/ (INSTALL-flip.md §verdict-supply;
+  # loading is a deliberate human step — same posture as the flip agents
+  # above); installing a plist IS the enable flip: each carries
+  # CABINET_PROBES_ENABLED=1, and the entrypoints are inert without it.
+  # probe-ci / probe-support stay import-only (CI workflow names + Resend
+  # inbound config not wired yet — schedule them when their config lands).
+  - name: verifier
+    label: com.cabinet.verifier
+    kind: watchdog
+    command: bash cabinet/scripts/run-verifier.sh
+    schedule: { interval_s: 3600 }
+    env: { CABINET_PROBES_ENABLED: "1" }
+    expected: "hourly JSON summary line in log; claims from executed act-first cards reconciled to review{source: verdict_judge} supersedes; NO verdict on outcome=unknown (RT#4); human verdicts never overwritten"
+    notes: >-
+      B2.8 claims↔probes reconciler (framework/probes/run_verifier.py wrapping
+      framework/probes/verifier.py). Ledger-only — reads/writes no external
+      system, no Redis. Fabrication demotes are structurally unreachable from
+      the acted-card claim scope (every acted emit carries outcome=unknown);
+      they arm only if claims are ever widened to org_events completion claims
+      (a separate, reviewed decision).
+  - name: probe-github
+    label: com.cabinet.probe-github
+    kind: watchdog
+    command: bash cabinet/scripts/run-probes.sh github
+    schedule: { interval_s: 300 }
+    env: { CABINET_PROBES_ENABLED: "1" }
+    expected: "healthchecks 'probe-github' pinged 5-min once the check exists; /fail on silent source; trailer-carrying PR outcomes (merged/reverted/held) superseded onto their proposals"
+    notes: >-
+      B2.3 reference probe. Read-only via gh CLI (own keychain auth; GH_TOKEN
+      mapped from GITHUB_PAT only as fallback). Products + local checkouts:
+      instance/config/probes.yml — missing checkout/config skips fail-closed.
+  - name: probe-vercel
+    label: com.cabinet.probe-vercel
+    kind: watchdog
+    command: bash cabinet/scripts/run-probes.sh vercel
+    schedule: { interval_s: 600 }
+    env: { CABINET_PROBES_ENABLED: "1" }
+    expected: "healthchecks 'probe-vercel' pinged 10-min once the check exists; /fail on silent source; deploy_ready/rolled_back/deploy_error outcomes superseded onto their proposals"
+    notes: >-
+      B2.4. Read-only Vercel REST, team-scoped (probe_vercel.TEAM_ID —
+      truncated-id gotcha). VERCEL_API_KEY from _shared/.env via env (VERCEL_TOKEN
+      fallback mapped in run-probes.sh); empty key = probe-wide skip, no verdict.
+  - name: probe-sentry
+    label: com.cabinet.probe-sentry
+    kind: watchdog
+    command: bash cabinet/scripts/run-probes.sh sentry
+    schedule: { interval_s: 900 }
+    env: { CABINET_PROBES_ENABLED: "1" }
+    expected: "healthchecks 'probe-sentry' pinged 15-min once the check exists; /fail on silent source; within_budget/regressed outcomes superseded; frozen feed reads unknown, never ok"
+    notes: >-
+      B2.5. Read-only Sentry API; SENTRY_AUTH_TOKEN via env (empty = skip).
+      Cross-cycle per-version last-event map persisted at ~/Library/Application
+      Support/cabinet/probe-sentry-seen.json (CABINET_PROBE_STATE_DIR override);
+      dry runs never persist (a rehearsal must not advance the feed clock).
+  - name: fidelity-f1
+    label: com.cabinet.fidelity-f1
+    kind: cron
+    command: bash cabinet/scripts/run-fidelity-f1.sh
+    schedule: { calendar: [{day: 1, hour: 6, minute: 30}] }   # monthly, 1st 06:30 local
+    expected: "one monthly batch summary in log; exit nonzero + assert message if the clone stops beating the 0.083 generic-assistant baseline (fidelity-decay canary)"
+    notes: >-
+      F1 end-to-end fidelity batch (framework/fidelity/run_f1.py via
+      cabinet/scripts/run-fidelity-f1.sh; F1_ROLE/F1_CASES env knobs). Monthly:
+      the batch is expensive (officer drives + OAuth judge + Voyage) and drift
+      is slow — the fast label loop is verifier+probes above. Monthly calendar
+      rows get a 33-day watchdog floor (registry.py, lane-supply 2026-07-05).
+  - name: regression-corpus
+    label: com.cabinet.regression-corpus
+    kind: cron
+    command: python3.12 cabinet/scripts/build-regression-corpus.py
+    schedule: { calendar: [{hour: 4, minute: 30}] }   # daily 04:30 local
+    expected: "daily refresh log line; corpus artifact updated from decided cards/verdicts (see the script's own contract when it lands)"
+    notes: >-
+      Scheduled by lane-supply (single-writer 2026-07-05) at the wave's AGREED
+      path; the script itself ships with the regression-corpus lane of this
+      same integration wave. If integration lands without it, the plist FATALs
+      visibly at 04:30 (missing file) — flip `disabled: true` here + regenerate
+      rather than letting it thrash.
+  - name: graduation-transitions
+    label: com.cabinet.graduation-transitions
+    kind: cron
+    command: python3.12 cabinet/scripts/emit-graduation-transitions.py
+    schedule: { interval_s: 3600 }
+    expected: "hourly transition scan log line; cell promote/demote/hold transitions emitted from the consequence ledger the verifier/probes above feed"
+    notes: >-
+      Scheduled by lane-supply (single-writer 2026-07-05) at the wave's AGREED
+      path; the script ships with the graduation lane of this integration wave.
+      Downstream of verifier+probes: they supply the verdict rows whose cell
+      crossings this emitter surfaces. Same missing-file posture as
+      regression-corpus (flip disabled rather than thrash).

@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- MONTHLY F1 fidelity batch (lane-supply 2026-07-05; 1st of the month
+     06:30). Runs run-fidelity-f1.sh -> framework/fidelity/run_f1.py: held-out
+     reply cases, blind officer drive (leak-guarded), generic-assistant
+     baseline, OAuth-judge + Voyage scoring, and the assert that the clone
+     still beats the 0.083 baseline — the slow fidelity-decay canary under the
+     fast verifier/probe label loop. Exit nonzero + assert message in the log
+     on regression. Leaked cases are counted + EXCLUDED, never silently scored.
+
+     No CABINET_PROBES_ENABLED here: F1 is an eval batch, not an outcome probe;
+     installing this plist is itself the deliberate scheduling act.
+     The manifest-derived watchdog gives this row a 33-day freshness floor
+     (framework/watchdog/registry.py — monthly rows must not false-page daily).
+
+     Install:
+       cp cabinet/launchd/com.cabinet.fidelity-f1.plist ~/Library/LaunchAgents/
+       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.cabinet.fidelity-f1.plist
+     Disable:
+       launchctl bootout gui/$(id -u)/com.cabinet.fidelity-f1
+       rm ~/Library/LaunchAgents/com.cabinet.fidelity-f1.plist
+
+     No secrets here — the runner sources cabinet/.env + _shared/.env itself
+     (OAuth judge / VOYAGE_API_KEY reach the process via env only).
+     KNOWN LIMIT: StartCalendarInterval slots missed during sleep coalesce to
+     ONE run on wake — fine for a monthly batch. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.cabinet.fidelity-f1</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/nate/captains-cabinet/cabinet/scripts/run-fidelity-f1.sh</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/nate/captains-cabinet</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PYTHONPATH</key>
+    <string>/Users/nate/captains-cabinet</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Day</key>
+    <integer>1</integer>
+    <key>Hour</key>
+    <integer>6</integer>
+    <key>Minute</key>
+    <integer>30</integer>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>/Users/nate/.cabinet/logs/fidelity-f1.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/nate/.cabinet/logs/fidelity-f1.log</string>
+</dict>
+</plist>

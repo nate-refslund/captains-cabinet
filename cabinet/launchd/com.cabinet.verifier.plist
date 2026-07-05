@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- HOURLY B2.8 verdict-supply verifier (lane-supply 2026-07-05) — the
+     reconciler the 2026-07-03 re-review found dead at runtime. Every 3600s it
+     runs run-verifier.sh: reads the consequence ledger, derives the executed
+     act-first action cards' implicit success claims, reconciles each against
+     the machine outcome its correlation-id accumulated (undo-sweep ttl_ok /
+     probe ok / probe failed), and emits review{source: verdict_judge}
+     SUPERSEDES on the SAME (actor, lane, action_type) graduation cell the
+     act-first gate reads. Machine labels, zero Captain attention.
+
+     FAIL-CLOSED: outcome=unknown -> NO verdict (RT#4); any error -> NO verdict
+     + nonzero exit; a landed HUMAN verdict is never overwritten (flavor-A).
+     Ledger-only: no external systems, no Redis writes.
+
+     INSTALLING THIS PLIST IS THE ENABLE FLIP: it carries
+     CABINET_PROBES_ENABLED=1 and the entrypoint is inert without it.
+
+     Source of truth in repo; installed + loaded with:
+       cp cabinet/launchd/com.cabinet.verifier.plist ~/Library/LaunchAgents/
+       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.cabinet.verifier.plist
+
+     DISABLE:
+       launchctl bootout gui/$(id -u)/com.cabinet.verifier
+       rm ~/Library/LaunchAgents/com.cabinet.verifier.plist
+
+     No secrets here — the runner sources cabinet/.env + _shared/.env itself.
+     KNOWN LIMIT: StartInterval does not fire during sleep; coalesces on wake.
+     Safe: unreviewed claims stay eligible next run (idempotent selection). -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.cabinet.verifier</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/nate/captains-cabinet/cabinet/scripts/run-verifier.sh</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/nate/captains-cabinet</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>CABINET_PROBES_ENABLED</key>
+    <string>1</string>
+    <key>PYTHONPATH</key>
+    <string>/Users/nate/captains-cabinet</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>StartInterval</key>
+  <integer>3600</integer>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>/Users/nate/.cabinet/logs/verifier.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/nate/.cabinet/logs/verifier.log</string>
+</dict>
+</plist>
