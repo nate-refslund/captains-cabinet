@@ -556,7 +556,11 @@ _FALLBACK_ENTRIES = [{
 #               would false-alarm on a tight floor. 2h still catches every real
 #               stall while the marker scan supplies the fast signal for
 #               loud failures.
-#   calendar  → 26h (daily slot + grace); any weekday key → 8 days (weekly).
+#   calendar  → 26h (daily slot + grace); any weekday key → 8 days (weekly);
+#               any day-of-month key → 33 days (monthly — lane-supply
+#               2026-07-05 for the fidelity-f1 row: without this, a monthly
+#               calendar row inherits the 26h daily floor and false-pages
+#               every day of the month it correctly does nothing).
 #   keepalive → None: long-runners log on EVENTS, not on a clock (a quiet day
 #               for memory-worker is normal) — their liveness is owned by the
 #               launchctl loaded/exit-status scan instead.
@@ -567,6 +571,10 @@ def _floor_for_entry(entry: dict) -> Optional[int]:
     if entry.get("schedule_kind") == "interval" and entry.get("interval_s"):
         return max(2 * int(entry["interval_s"]) + 600, _FLOOR_MIN_S)
     if entry.get("schedule_kind") == "calendar":
+        # Longest period wins when keys combine (launchd ANDs calendar keys, so
+        # a day+weekday row fires at most monthly — the monthly floor applies).
+        if entry.get("monthly"):
+            return 33 * 86400   # 31-day month + 2 days grace
         return 8 * 86400 if entry.get("weekly") else 26 * 3600
     return None  # keepalive / unknown schedule
 
@@ -605,7 +613,7 @@ def _parse_services_manifest(text: str) -> list[dict]:
         if m:
             cur = {"name": m.group(1), "label": "", "kind": "",
                    "disabled": False, "schedule_kind": None,
-                   "interval_s": None, "weekly": False}
+                   "interval_s": None, "weekly": False, "monthly": False}
             entries.append(cur)
             in_sched_block = False
             continue
@@ -635,6 +643,10 @@ def _parse_services_manifest(text: str) -> list[dict]:
                 elif "calendar" in val:
                     cur["schedule_kind"] = "calendar"
                     cur["weekly"] = "weekday" in val
+                    # \bday\s*: cannot match inside "weekday" (k→d is no word
+                    # boundary) — monthly detection never false-fires on weekly
+                    # rows (lane-supply 2026-07-05, fidelity-f1 monthly floor).
+                    cur["monthly"] = bool(re.search(r"\bday\s*:", val))
                 elif val == "":
                     in_sched_block = True  # block form follows (calendar list)
             continue
@@ -649,6 +661,10 @@ def _parse_services_manifest(text: str) -> list[dict]:
                 cur["interval_s"] = int(im.group(1))
             if "weekday" in line:
                 cur["weekly"] = True
+            if re.search(r"\bday\s*:", line):
+                cur["monthly"] = True   # block-form monthly (see \bday note above;
+                # the regex alone suffices — "weekday:" carries no boundary
+                # before "day", and a combined day+weekday entry IS ≤monthly)
     return entries
 
 

@@ -25,8 +25,17 @@ import os
 import sys
 import json
 import argparse
+from pathlib import Path
 
-sys.path.insert(0, "/Users/nate/captains-cabinet")
+# Repo root from THIS file (parents[2] = the tree with framework/), NEVER a
+# hardcoded absolute. WHY [lane-supply 2026-07-05, adversarial-review fix]:
+# framework/ is a namespace package, so a literal "/Users/nate/captains-cabinet"
+# front-loads the MAIN checkout onto framework's namespace __path__ and a run
+# from a git worktree then imports main's STALE framework/* instead of the
+# worktree's (the same import-order shadowing that failed lane-supply's registry
+# tests under a full sweep). parents[2] resolves identically in production (run
+# from main), so it is byte-for-byte equivalent there. Matches run_action_lane.py:49.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, os.path.expanduser("~/.screenpipe/pipes/_shared"))
 sys.path.insert(0, os.path.expanduser("~/.screenpipe/pipes"))
 

@@ -48,6 +48,25 @@ from framework.fidelity.consequence import (
 from framework.probes import correlation
 from framework.probes import lib
 
+# JUDGE-CALIBRATION GATE (cross-lane wire, closure wave 2026-07-05). The
+# failure-to-eval flywheel (framework/fidelity/judge_calibration.py) proves
+# whether this machine judge agrees with the Captain's own labels >= 80% over
+# >= MIN_PAIRS pairs. Until it does, an uncalibrated judge must NOT wield the
+# sharpest demotion tooth (the DIRECT_DEMOTE_REF single-row direct demote that
+# graduation B2.9 consumes). We STILL emit the verdict_judge row (verdict +
+# source) so calibration can accumulate the judge-vs-human pairs it needs to
+# bootstrap — gating the emit entirely would deadlock calibration forever. Only
+# the direct-demote MARKER is withheld until calibrated. Fail-closed: the gate
+# fn never raises and reads False on any error/missing proof, so an unreadable
+# calibration state suppresses the marker (the safe direction). RESIDUAL
+# (documented, follow-up): an uncalibrated judge's plain `wrong` verdict can
+# still contribute to graduation's soft >=2-in-10 CLUSTER demotion (that count
+# is source-blind in the schg-locked graduation layer); fully gating it needs a
+# graduation-side verdict_judge-source filter — deferred to a germline wave. It
+# is the SAFE direction (a spurious demote only makes a cell propose-only), so
+# the residual is low-risk, not silent.
+from framework.fidelity.judge_calibration import judge_verdicts_may_demote
+
 VERDICT_SOURCE = "verdict_judge"          # machine reconciliation (vs verdict_human)
 
 # verdict KINDs — richer than the 3-value schema verdict; carried in refs.
@@ -158,6 +177,11 @@ def verify(
     rows = rows if rows is not None else loop.read_ledger(since=None)
     emitted, skipped = [], []
 
+    # Compute the calibration gate ONCE per batch (it reads a proof file; the
+    # answer is stable within a run). may_demote=False → direct-demote markers
+    # are withheld this batch (see the import-site comment).
+    may_demote = judge_verdicts_may_demote()
+
     for claim in claims:
         cid = claim.get("cid")
         if not correlation.is_cid(cid or ""):
@@ -196,7 +220,14 @@ def verify(
         if reviewed_at:
             ev["review"]["reviewed_at"] = reviewed_at
         meta = [f"verdict-source:{VERDICT_SOURCE}", f"verdict-kind:{result['kind']}"]
-        if result["demote"]:
+        # Direct-demote marker is gated on calibration: an uncalibrated judge
+        # records its fabrication verdict (for calibration data + audit) but does
+        # NOT get to fire graduation's direct demote until it has proven >=80%
+        # agreement with the Captain's labels.
+        demote_armed = bool(result["demote"]) and may_demote
+        if result["demote"] and not may_demote:
+            meta.append("demote-suppressed:judge-uncalibrated")
+        if demote_armed:
             meta.append(DIRECT_DEMOTE_REF)
         if adv is not None:
             meta.append(f"advisory-verdict:{adv}")
@@ -206,6 +237,11 @@ def verify(
         validate_consequence(ev)           # fail LOUD before the ledger
         emit(**ev)
         emitted.append({"cid": cid, "verdict": result["verdict"], "kind": result["kind"],
-                        "demote": result["demote"], "advisory": adv})
+                        # `demote` reports what actually carried weight (armed),
+                        # not the raw classification — a suppressed direct-demote
+                        # (uncalibrated judge) reports False here and is visible
+                        # via demote_classified + the demote-suppressed ref.
+                        "demote": demote_armed, "demote_classified": result["demote"],
+                        "advisory": adv})
 
     return {"emitted": emitted, "skipped": skipped}

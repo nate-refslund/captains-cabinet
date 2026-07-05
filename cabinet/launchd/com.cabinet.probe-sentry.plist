@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- 15-MIN B2.5 Sentry outcome probe (lane-supply 2026-07-05). Read-only:
+     joins releases (version = deployed SHA -> commit trailer) back to their
+     proposals and supersedes within_budget/regressed outcomes onto the
+     proposal's ledger row. TWO freshness disciplines: silent source pages;
+     a FROZEN last-event feed reads unknown, never ok (Sentry-silent != zero
+     errors). Cross-cycle seen-state: ~/Library/Application Support/cabinet/
+     probe-sentry-seen.json. Org/projects: instance/config/probes.yml.
+     Writes NOTHING to Sentry.
+
+     FAIL-CLOSED: empty SENTRY_AUTH_TOKEN -> probe-wide skip, no verdict.
+     INSTALLING THIS PLIST IS THE ENABLE FLIP (CABINET_PROBES_ENABLED=1).
+
+     Install:
+       cp cabinet/launchd/com.cabinet.probe-sentry.plist ~/Library/LaunchAgents/
+       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.cabinet.probe-sentry.plist
+     Disable:
+       launchctl bootout gui/$(id -u)/com.cabinet.probe-sentry
+       rm ~/Library/LaunchAgents/com.cabinet.probe-sentry.plist
+
+     No secrets here — SENTRY_AUTH_TOKEN comes from cabinet/.env at run time,
+     env only, never argv/logged. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.cabinet.probe-sentry</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/nate/captains-cabinet/cabinet/scripts/run-probes.sh</string>
+    <string>sentry</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/nate/captains-cabinet</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>CABINET_PROBES_ENABLED</key>
+    <string>1</string>
+    <key>PYTHONPATH</key>
+    <string>/Users/nate/captains-cabinet</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>StartInterval</key>
+  <integer>900</integer>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>/Users/nate/.cabinet/logs/probe-sentry.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/nate/.cabinet/logs/probe-sentry.log</string>
+</dict>
+</plist>

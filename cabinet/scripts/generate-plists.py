@@ -90,6 +90,10 @@ def _schedule_keys(svc):
                 e["Minute"] = int(entry["minute"])
             if "weekday" in entry:  # 0=Sunday..6=Saturday (launchd convention; 7 also Sunday)
                 e["Weekday"] = int(entry["weekday"])
+            if "day" in entry:      # 1-31 day-of-month → MONTHLY row (launchd Day;
+                # lane-supply 2026-07-05 for fidelity-f1 — the watchdog gives
+                # `day`-carrying rows a 33-day floor, registry._floor_for_entry)
+                e["Day"] = int(entry["day"])
             if not e:
                 raise ValueError(f"{svc['name']}: empty calendar entry")
             cal.append(e)

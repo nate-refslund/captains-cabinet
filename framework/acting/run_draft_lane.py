@@ -22,8 +22,21 @@ import datetime
 import subprocess
 import urllib.request
 import urllib.parse
+from pathlib import Path
 
-sys.path.insert(0, "/Users/nate/captains-cabinet")
+# Repo root on sys.path so `from framework...` resolves when this script is run
+# directly (launchd/cron pass a bare path, not `-m`). Derive it from THIS file
+# (parents[2] = the tree that contains framework/), NEVER a hardcoded absolute.
+# WHY [lane-supply 2026-07-05, adversarial-review fix]: framework/ is a
+# namespace package (no __init__.py), so a literal "/Users/nate/captains-cabinet"
+# front-loaded the MAIN checkout onto framework's namespace __path__. A test run
+# from a git worktree then imported main's STALE framework/* (e.g.
+# watchdog/registry.py, which lacks this lane's monthly floor) instead of the
+# worktree's — a full worktree sweep failed 3 registry tests purely from import
+# order. parents[2] resolves to the identical path in production (run from main),
+# so this is byte-for-byte equivalent there; it only differs — correctly — when
+# the code under test lives in a worktree. Matches run_action_lane.py:49.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, os.path.expanduser("~/.screenpipe/pipes/_shared"))
 
 from framework.acting import loop, screenpipe_adapter as sa

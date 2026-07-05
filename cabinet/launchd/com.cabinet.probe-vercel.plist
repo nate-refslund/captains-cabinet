@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- 10-MIN B2.4 Vercel outcome probe (lane-supply 2026-07-05). Read-only:
+     recovers each deployment's Cabinet-Proposal-Id (meta stamp, commit-trailer
+     fallback) and supersedes deploy_ready/rolled_back/deploy_error outcomes
+     onto the proposal's ledger row — the cell the gate + verifier read.
+     Team-scoped queries by app (probe_vercel.TEAM_ID — truncated-id gotcha).
+     Products/checkouts: instance/config/probes.yml. Writes NOTHING to Vercel.
+
+     FAIL-CLOSED: empty VERCEL_API_KEY -> probe-wide skip, no verdict; silent
+     source while git shows pushes -> healthchecks /fail page, NOTHING emitted.
+     INSTALLING THIS PLIST IS THE ENABLE FLIP (CABINET_PROBES_ENABLED=1).
+
+     Install:
+       cp cabinet/launchd/com.cabinet.probe-vercel.plist ~/Library/LaunchAgents/
+       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.cabinet.probe-vercel.plist
+     Disable:
+       launchctl bootout gui/$(id -u)/com.cabinet.probe-vercel
+       rm ~/Library/LaunchAgents/com.cabinet.probe-vercel.plist
+
+     No secrets here — VERCEL_API_KEY comes from ~/.screenpipe/pipes/_shared/
+     .env at run time (VERCEL_TOKEN fallback from cabinet/.env), env only. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.cabinet.probe-vercel</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/nate/captains-cabinet/cabinet/scripts/run-probes.sh</string>
+    <string>vercel</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/nate/captains-cabinet</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>CABINET_PROBES_ENABLED</key>
+    <string>1</string>
+    <key>PYTHONPATH</key>
+    <string>/Users/nate/captains-cabinet</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>StartInterval</key>
+  <integer>600</integer>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>/Users/nate/.cabinet/logs/probe-vercel.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/nate/.cabinet/logs/probe-vercel.log</string>
+</dict>
+</plist>

@@ -1,0 +1,31 @@
+{
+  "case_format": 1,
+  "case_id": "case-20f941bc982e9dea",
+  "cell": {
+    "action_type": "__unstamped__",
+    "actor": "officer:officer:synthetic-test",
+    "lane": "synthetic-test"
+  },
+  "human_verdict": {
+    "decided_at": "2026-07-02T20:21:00Z",
+    "evidence": null,
+    "kind": "skip",
+    "proposal_decision": "rejected",
+    "review_source": null,
+    "review_verdict": "unknown",
+    "reviewed_at": null
+  },
+  "situation": {
+    "action": "draft-reply",
+    "action_type": null,
+    "actor": {
+      "id": "officer:synthetic-test",
+      "kind": "officer"
+    },
+    "lane": "synthetic-test",
+    "proposal_required": true,
+    "refs": [],
+    "subject": "thread:synthetic-f05",
+    "ts": "2026-07-02T20:21:00Z"
+  }
+}

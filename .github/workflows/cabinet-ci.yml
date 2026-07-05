@@ -401,3 +401,12 @@ jobs:
         run: pip install pytest pyyaml jsonschema
       - name: Framework test suite
         run: python -m pytest framework/ -q
+
+      # Run SEPARATELY from framework/ — cabinet/scripts/*/tests all use the
+      # basename `tests`, which collides under one pytest invocation (known
+      # un-packaged module-name clash). This step exists so the ledger-purge
+      # criteria-parity pins (test_ledger_purge_testrows.py + test_purge_sqlite_
+      # mirror.py — closure wave 2026-07-05) actually gate: without it, drift in
+      # either purge script's drop criteria would merge unnoticed.
+      - name: Cabinet script tests (purge parity + generate-instance)
+        run: python -m pytest cabinet/scripts/tests -q

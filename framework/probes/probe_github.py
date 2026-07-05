@@ -28,23 +28,20 @@ SLUG = "probe-github"
 CADENCE_S = 300                 # 5 min
 REVERT_WINDOW_DAYS = 14
 
-# ── DEPLOY TEMPLATE (Nate-gated — NOT installed by building this file) ────────
-# Built + tested now; going live is a deliberate deploy step (reads Nate's live
-# GitHub) that needs THREE things, none done here:
-#   1. a __main__ entry that builds the real GhClient + reads the product repo(s)
-#      from config, calls run_probe per repo, and exits (StartCalendarInterval
-#      one-shot), guarded by CABINET_PROBES_ENABLED.
-#   2. a services.yml row (promote kind → watchdog so generate-plists renders it):
-#        - name: probe-github
-#          label: com.cabinet.probe-github
-#          kind: watchdog
-#          command: python3.12 -m framework.probes.probe_github
-#          schedule: { interval_s: 300 }
-#          expected: "healthchecks 'probe-github' pinged 5-min; /fail on silent source"
-#   3. create the healthchecks 'probe-github' check (period 5m, grace) + assign a
-#      channel — same as the F0.13 checks.
-# Until all three land, this module is import-only: nothing schedules it, nothing
-# touches the live API.
+# ── DEPLOY STATUS (lane-supply 2026-07-05 — the template below is now BUILT) ──
+# The three deploy steps the original Nate-gated template named:
+#   1. __main__ entry — DONE (below): delegates to runner.probe_main, which
+#      builds the real GhClient per product from instance/config/probes.yml,
+#      chdirs to the product checkout (git freshness + trailer fallback read
+#      the RIGHT repo), and is guarded by CABINET_PROBES_ENABLED (live) with a
+#      --dry-run collector mode (zero writes).
+#   2. services.yml row — DONE: probe-github, kind watchdog, interval 300s,
+#      command `bash cabinet/scripts/run-probes.sh github` (the wrapper sources
+#      creds from env files — never argv). Plist install stays a deliberate
+#      human step (cabinet/launchd/INSTALL-flip.md).
+#   3. healthchecks 'probe-github' check (period 5m + grace) — STILL NATE'S:
+#      hc_ping is fail-open without HEALTHCHECKS_PING_KEY, so the probe runs
+#      correctly before the check exists; it just isn't externally dead-manned.
 
 
 # --- pure classification -----------------------------------------------------
@@ -185,3 +182,10 @@ def run_probe(
                                               else {"reason": res.get("reason")})})
     hc(SLUG)   # liveness
     return {"fresh": True, "emitted": emitted, "skipped": skipped}
+
+
+if __name__ == "__main__":   # the deploy entry the 2026-07-03 review found missing
+    import sys
+
+    from framework.probes import runner
+    sys.exit(runner.probe_main("github", runner.run_github_products, GhClient))

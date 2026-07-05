@@ -97,18 +97,40 @@ def test_verify_emits_schema_valid_confirmed_with_markers():
     assert c.cid_from_refs(ev["refs"]) == cid          # join preserved
 
 
-def test_verify_fabrication_emits_wrong_plus_direct_demote():
+def test_verify_fabrication_direct_demote_gated_on_calibration(monkeypatch):
+    """Fabrication → wrong verdict ALWAYS; but the DIRECT_DEMOTE marker (which
+    graduation B2.9 consumes) is GATED on judge calibration (closure wave
+    2026-07-05). Uncalibrated → wrong recorded + demote SUPPRESSED; calibrated →
+    the direct-demote fires. Both paths pinned so the gate can't silently regress
+    in either direction (the whole point of the flywheel's 80% bar)."""
+    # --- uncalibrated → demote SUPPRESSED, verdict still recorded ---
+    monkeypatch.setattr(v, "judge_verdicts_may_demote", lambda: False)
     cid = c.mint()
-    rows = [_decided(cid)]                              # decided proposal, NO probe outcome
     emitted = []
-    r = v.verify(claims=[{"cid": cid, "claimed": "deployed"}], rows=rows,
+    r = v.verify(claims=[{"cid": cid, "claimed": "deployed"}], rows=[_decided(cid)],
                  emit=lambda **ev: emitted.append(ev))
     ev = emitted[0]
     validate_consequence(ev)
-    assert ev["review"]["verdict"] == "wrong"
-    # pin the emitter↔consumer contract: the same constant graduation (B2.9) reads
-    assert "verdict-kind:fabrication" in ev["refs"] and DIRECT_DEMOTE_REF in ev["refs"]
-    assert r["emitted"][0]["demote"] is True
+    assert ev["review"]["verdict"] == "wrong"                       # verdict still emitted
+    assert "verdict-kind:fabrication" in ev["refs"]                 # classified fabrication
+    assert DIRECT_DEMOTE_REF not in ev["refs"]                      # tooth withheld
+    assert "demote-suppressed:judge-uncalibrated" in ev["refs"]    # visibly suppressed
+    assert r["emitted"][0]["demote"] is False                      # no weight carried
+    assert r["emitted"][0]["demote_classified"] is True            # raw classification kept
+
+    # --- calibrated (judge proven >=80% vs human) → demote FIRES ---
+    monkeypatch.setattr(v, "judge_verdicts_may_demote", lambda: True)
+    cid2 = c.mint()
+    emitted2 = []
+    r2 = v.verify(claims=[{"cid": cid2, "claimed": "deployed"}], rows=[_decided(cid2)],
+                  emit=lambda **ev: emitted2.append(ev))
+    ev2 = emitted2[0]
+    validate_consequence(ev2)
+    assert ev2["review"]["verdict"] == "wrong"
+    # the emitter↔consumer contract: the same constant graduation (B2.9) reads
+    assert "verdict-kind:fabrication" in ev2["refs"] and DIRECT_DEMOTE_REF in ev2["refs"]
+    assert "demote-suppressed:judge-uncalibrated" not in ev2["refs"]
+    assert r2["emitted"][0]["demote"] is True
 
 
 def test_advisory_dissent_never_flips_deterministic_verdict():

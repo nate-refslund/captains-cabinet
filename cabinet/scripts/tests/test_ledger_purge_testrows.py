@@ -309,6 +309,51 @@ class TestPurge:
         assert "files rewritten: 0" in second.stdout
         assert (ledger / "events-2026-06-21.jsonl").read_text() == after_first
 
+    def test_valid_json_non_object_line_is_kept_not_crashed(self, tmp_path):
+        # REGRESSION (2026-07-05 adversarial review): a ledger line that is
+        # valid JSON but NOT an object ("[1, 2, 3]", "42", '"str"') crashed
+        # classify() with AttributeError — in a mutating run that aborts
+        # mid-iteration AFTER earlier files were already rewritten (partial
+        # purge + raw traceback) instead of taking the documented fail-safe.
+        # Such a line cannot be positively identified as junk, so it must be
+        # KEPT byte-verbatim and counted with the unparseable lines — exactly
+        # the SQLite sibling's isinstance guard (purge-sqlite-mirror.py::
+        # find_junk). Covers BOTH read loops: historical rewrite loop and the
+        # today-file count-only loop.
+        from datetime import datetime, timezone
+
+        ledger = tmp_path / "events"
+        ledger.mkdir(parents=True)
+        non_object_lines = "[1, 2, 3]\n" + "42\n" + '"a-bare-string"\n'
+        (ledger / "events-2026-06-21.jsonl").write_text(
+            json.dumps(DROP_ROWS[0]) + "\n"
+            + non_object_lines
+            + json.dumps(KEEP_ROWS[2]) + "\n"
+        )
+        today_name = "events-{}.jsonl".format(
+            datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        )
+        today_content = "[]\n" + json.dumps(DROP_ROWS[0]) + "\n"
+        (ledger / today_name).write_text(today_content)
+
+        # dry run first — the crash reproduced in BOTH modes
+        preview = _run(SCRIPT, ledger, dry_run=True)
+        assert preview.returncode == 0, preview.stderr
+        assert "unparseable lines preserved (never dropped): 4" in preview.stdout
+
+        result = _run(SCRIPT, ledger, confirm=True)
+        assert result.returncode == 0, result.stderr
+        # junk dropped; non-object lines preserved byte-verbatim, in order
+        assert (ledger / "events-2026-06-21.jsonl").read_text() == (
+            non_object_lines + json.dumps(KEEP_ROWS[2]) + "\n"
+        )
+        # 3 historical + 1 today-file non-object line, all counted
+        assert "unparseable lines preserved (never dropped): 4" in result.stdout
+        # today-file untouched, its junk deferred as usual (guard intact) —
+        # and its non-object line was NOT miscounted as junk
+        assert (ledger / today_name).read_text() == today_content
+        assert "1 junk rows left" in result.stdout
+
 
 class TestLiveAppendRaceGuard:
     """The active TODAY-file is never rewritten by default — the running org

@@ -89,6 +89,17 @@ VALID_EVENT_TYPES = frozenset({
     "fidelity_case_evaluated",      # blind officer decision captured for a held-out case
     "fidelity_case_leak_detected",  # anti-leakage breach → case hard-failed, never scored
     "fidelity_case_scored",         # [T3] scored case: intent axis + intent-mapped review.verdict
+    # Graduation visibility (lane instrument, 2026-07-05): a per-cell autonomy
+    # STATE TRANSITION (unmeasured/propose_only/eligible/graduated/demote)
+    # observed by the sweep cabinet/scripts/emit-graduation-transitions.py.
+    # graduation.evaluate is stateless and schg-LOCKED, so transitions are
+    # detected + emitted by that UNLOCKED caller (current state vs its own
+    # last-seen state file) — this is how a briefing SEES cells moving instead
+    # of re-deriving state on every read. payload: {cell:{actor,lane,
+    # action_type}, from_state, to_state, evidence:{...}}. At-least-once:
+    # consumers must tolerate a duplicated transition (a failed state-file
+    # write after a successful emit re-emits next sweep).
+    "graduation_transition",
 
     # Self-improvement loop (R8) — closed-loop learning pipeline
     "role_evolved",                       # charter/capability auto-applied via self-improvement

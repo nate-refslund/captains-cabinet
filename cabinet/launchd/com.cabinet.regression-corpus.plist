@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- DAILY regression-corpus refresh (04:30). Scheduled by lane-supply
+     (services.yml single-writer, 2026-07-05) at the wave's AGREED path; the
+     script itself (cabinet/scripts/build-regression-corpus.py) ships with the
+     regression-corpus lane of the SAME integration wave — do not install this
+     plist before that script exists (a missing file FATALs visibly at 04:30;
+     if integration lands without it, flip `disabled: true` on the
+     regression-corpus row in cabinet/services.yml instead of letting it
+     thrash).
+
+     Install (post-integration):
+       cp cabinet/launchd/com.cabinet.regression-corpus.plist ~/Library/LaunchAgents/
+       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.cabinet.regression-corpus.plist
+     Disable:
+       launchctl bootout gui/$(id -u)/com.cabinet.regression-corpus
+       rm ~/Library/LaunchAgents/com.cabinet.regression-corpus.plist
+
+     No secrets here — cabinet/.env is sourced by the wrapper at run time. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.cabinet.regression-corpus</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd /Users/nate/captains-cabinet &amp;&amp; set -a &amp;&amp; source cabinet/.env 2>/dev/null; set +a &amp;&amp; exec /opt/homebrew/bin/python3.12 cabinet/scripts/build-regression-corpus.py</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/nate/captains-cabinet</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PYTHONPATH</key>
+    <string>/Users/nate/captains-cabinet</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>4</integer>
+    <key>Minute</key>
+    <integer>30</integer>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>/Users/nate/.cabinet/logs/regression-corpus.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/nate/.cabinet/logs/regression-corpus.log</string>
+</dict>
+</plist>

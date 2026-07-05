@@ -345,33 +345,32 @@ The Cabinet's durable state lives in three places:
 | **Filesystem** | `shared/interfaces/captain-*.md`, `instance/roles/active/*.yml`, `memory/skills/evolved/*.md`, `memory/tier3/experience-records/` (canonical store since 2026-07-04 — both `.jsonl` and `.md` records) | Daily `rsync` to local NAS OR S3 |
 | **Redis** | Heartbeat, cost counters, trigger streams (ephemeral) | Optional `BGSAVE` daily snapshot if you want to recover pending triggers across a hard restart |
 
-Backup script (run via cron or LaunchAgent — your choice):
+**The backup job is manifest-owned (lane-ops 2026-07-04)** — do NOT hand-roll
+a cron script (the old `~/bin/cabinet-backup.sh` rsync snippet that used to
+live here predates the fleet manifest and described none of the real
+machinery). The pieces:
 
-```bash
-#!/usr/bin/env bash
-# ~/bin/cabinet-backup.sh
-set -euo pipefail
-DEST="${BACKUP_DEST:-/Volumes/NAS/cabinet-backups}"
-DATE=$(date +%Y-%m-%d)
-mkdir -p "$DEST"
-
-# Postgres (if you operate a self-hosted DB; skip if using Neon)
-# pg_dump $DATABASE_URL | gzip > "$DEST/postgres-$DATE.sql.gz"
-
-# Filesystem (Cabinet artifacts only — the .git tree is in GitHub)
-rsync -a --delete \
-  ~/work/captains-cabinet/shared/interfaces/ \
-  ~/work/captains-cabinet/instance/ \
-  ~/work/captains-cabinet/memory/skills/evolved/ \
-  ~/work/captains-cabinet/memory/tier3/experience-records/ \
-  "$DEST/$DATE/"
-
-# Redis (optional)
-redis-cli SAVE  # synchronous; or BGSAVE for async
-cp /opt/homebrew/var/db/redis/dump.rdb "$DEST/redis-$DATE.rdb"
-```
-
-Schedule via launchd (per `cabinet/launchd/com.cabinet.cost-summary.template.plist` as a template for crontab-style timing).
+- **`cabinet/scripts/backup.sh`** — the actual backup (filesystem artifacts +
+  Redis `BGSAVE`; optional `--pg` for a self-hosted Postgres). Scheduled by
+  the `backup` row in `cabinet/services.yml` (daily 03:00 local,
+  `--retention-days 14`, destination `~/Cabinet-Backups`; the row's `expected:`
+  floor puts it under outcome-watchdog no-silent-cron coverage). Render/load
+  via `cabinet/scripts/generate-plists.py`.
+- **`cabinet/scripts/restore-drill.sh`** — prove a snapshot actually restores
+  (newest snapshot → full restore into a throwaway temp dir → artifact
+  verification; read-only against the backup, deliberately no `--apply`). A
+  backup nobody has restored is a hope, not a backup.
+- **Deliberately NOT wired (Captain decisions, recorded on the services.yml
+  `backup` row):** an off-machine copy (recommended: post-backup rsync of
+  `~/Cabinet-Backups` to the UpCloud CPH box over Tailscale — a local
+  snapshot dies with the disk) and Redis AOF
+  (`cabinet/scripts/enable-redis-aof.sh` exists but restarts Redis).
+- **Ledger-hygiene backups are separate** from this daily job: the one-shot
+  purge tools (`cabinet/scripts/ledger-purge-testrows.sh` for the JSONL
+  event families, `cabinet/scripts/purge-sqlite-mirror.py` for the
+  org-runtime SQLite Store mirror) each take their own verified pre-mutation
+  snapshot (`ledger-backups/` sibling dir / `cabinet/cache/mirror-backups/`)
+  — see each script's header for the gate + rollback contract.
 
 ## 11. Verification — 72h soak
 

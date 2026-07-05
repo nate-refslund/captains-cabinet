@@ -57,26 +57,20 @@ CADENCE_S = 900                       # 15 min
 ATTRIBUTION_WINDOW_HOURS = 6          # a spike joins a deploy only within 6h
 BASELINE_REGRESSION_FACTOR = 1.5      # burn ≥ 1.5× the 7d rolling baseline = spike
 
-# ── DEPLOY TEMPLATE (Nate-gated — NOT installed by building this file) ────────
-# Built + tested now; going live is a deliberate deploy step (reads Nate's live
-# Sentry org "step-network") that needs THREE things, none done here:
-#   1. a __main__ entry that builds the real SentryClient(org="step-network"),
-#      reads the product project(s) from config, LOADS the prior per-version
-#      last-event map from state (e.g. ~/Library/Application Support/cabinet/
-#      probe-sentry-seen.json), calls run_probe(now=…, prior_seen=…) per project,
-#      PERSISTS the returned ["seen"] map, and exits (StartCalendarInterval
-#      one-shot), guarded by CABINET_PROBES_ENABLED.
-#   2. a services.yml row (promote kind → watchdog so generate-plists renders it):
-#        - name: probe-sentry
-#          label: com.cabinet.probe-sentry
-#          kind: watchdog
-#          command: python3.12 -m framework.probes.probe_sentry
-#          schedule: { interval_s: 900 }
-#          expected: "healthchecks 'probe-sentry' pinged 15-min; /fail on silent source"
-#   3. create the healthchecks 'probe-sentry' check (period 15m, grace) + assign a
-#      channel — same as the F0.13 checks.
-# Until all three land, this module is import-only: nothing schedules it, nothing
-# touches the live API.
+# ── DEPLOY STATUS (lane-supply 2026-07-05 — the template below is now BUILT) ──
+# The three deploy steps the original Nate-gated template named:
+#   1. __main__ entry — DONE (below): delegates to runner.probe_main; real
+#      SentryClient(org from probes.yml) per project, prior per-version
+#      last-event map LOADED from ~/Library/Application Support/cabinet/
+#      probe-sentry-seen.json (dir overridable via CABINET_PROBE_STATE_DIR; a
+#      --dry-run never persists — a rehearsal must not advance the feed clock),
+#      updated map PERSISTED after the cycle; guarded by CABINET_PROBES_ENABLED
+#      and a present SENTRY_AUTH_TOKEN (empty value = probe-wide skip).
+#   2. services.yml row — DONE: probe-sentry, kind watchdog, interval 900s,
+#      command `bash cabinet/scripts/run-probes.sh sentry`. Plist install stays
+#      a deliberate human step (cabinet/launchd/INSTALL-flip.md).
+#   3. healthchecks 'probe-sentry' check (period 15m + grace) — STILL NATE'S:
+#      hc_ping is fail-open without HEALTHCHECKS_PING_KEY.
 
 
 # --- pure classification -----------------------------------------------------
@@ -339,3 +333,10 @@ def run_probe(
                                               else {"reason": res.get("reason")})})
     hc(SLUG)   # liveness
     return {"fresh": True, "emitted": emitted, "skipped": skipped, "seen": seen}
+
+
+if __name__ == "__main__":   # the deploy entry the 2026-07-03 review found missing
+    import sys
+
+    from framework.probes import runner
+    sys.exit(runner.probe_main("sentry", runner.run_sentry_products, SentryClient))

@@ -68,8 +68,11 @@ def emit_outcome(
     the cid resolves to. Returns {emitted: bool, ...}.
 
     - status ∈ {ok, failed, unknown} (canonical); probe_status is the rich label.
-    - Unattributable cid → no emit (RT#3). Undecided proposal → no emit (nothing
-      executed without approval, so there is no outcome to observe).
+    - Unattributable cid → no emit (RT#3). Unexecuted proposal → no emit: a
+      pending propose-first ask (required=true, decision null) has no outcome to
+      observe. Executed = approved (decision set) OR act-first ACTED
+      (required=false — decision stays null forever on acted rows; guard
+      updated lane-supply 2026-07-05, see the inline note below).
     - The rich label + confidence + source go in refs; the proposal's own refs
       (incl. the cid) are preserved so the join survives. A probe may pass
       ``extra_refs`` for source-specific metadata that also belongs in refs —
@@ -86,8 +89,17 @@ def emit_outcome(
     prop = find(cid, rows=rows)
     if prop is None:
         return {"emitted": False, "reason": "unattributable-cid", "cid": cid}
-    if (prop.get("proposal") or {}).get("decision") is None:
-        # a probe outcome presumes an approved+executed proposal
+    # Execution guard (updated lane-supply 2026-07-05): a probe outcome presumes
+    # an EXECUTED proposal. Two executed shapes exist since the act-first ruling
+    # (2026-07-03/04): (a) propose-first, approved by the Captain (decision set);
+    # (b) act-first ACTED — proposal.required is False and decision stays None
+    # FOREVER (an unattended act was never proposed; binder_wire.
+    # acted_verdict_event:194 pins that shape). The original decision-only guard
+    # predates act-first and silently blinded every probe to acted cards — the
+    # exact rows the verdict-supply loop reconciles. required=True + decision
+    # None (a live pending ask) is still refused: nothing executed yet.
+    _p = prop.get("proposal") or {}
+    if _p.get("decision") is None and _p.get("required") is not False:
         return {"emitted": False, "reason": "proposal-not-decided", "cid": cid}
 
     ev = dict(prop)

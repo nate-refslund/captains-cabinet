@@ -854,3 +854,129 @@ def run_weekly(*, monday_post: Callable, osascript: Callable,
         pages.append("ENV PERMS — " + perms["reason"] + " (" + perms["mode"] + ")")
     return {"canary": canary, "breaker": breaker, "silence": silence,
             "veto_divergences": divergences, "env_perms": perms, "pages": pages}
+
+
+# --- manual green-canary unfreeze (CANARY-UNFREEZE, germline batch 2026-07-05) -
+# The CRIT-5 contract: a kind frozen by a failed canary / breaker / prestate-
+# clobber quarantine has NO auto-unfreeze — it is re-armed ONLY by an explicit,
+# Captain-triggered green canary that first PROVES create→verify→reverse passes
+# for that kind, THEN lifts the freeze (Redis flag + durable mirror supersede via
+# action_undo.unfreeze). NO blind unfreeze: a genuinely-green probe is mandatory.
+# board_status was hand-unfrozen 2026-07-05 (a manual Redis poke the durable
+# mirror would have re-asserted on the next is_frozen fail-closed) — this makes
+# it a real, repeatable command that actually clears the durable side.
+
+def _fk_to_candidate() -> Dict[str, tuple]:
+    """freeze-key (the classifier action_type when live, else the step-kind
+    fallback) -> its ``(step_kind, backend)`` canary candidate. The reverse of
+    ``kind_key`` over the canary set, so an --unfreeze target given as EITHER the
+    action_type ('board_status') OR the step kind ('monday_task_update') resolves
+    to the one probe that proves it."""
+    return {kind_key(k): (k, b) for (k, b) in _CANARY_CANDIDATES}
+
+
+def run_unfreeze_canary(target: str, *, monday_post: Callable, osascript: Callable,
+                        redis_set: Optional[Callable[[str, str, Optional[int]], None]] = None,
+                        redis_get: Optional[Callable[[str], str]] = None,
+                        redis_del: Optional[Callable[[str], None]] = None,
+                        board: str = "5091706356", now: Optional[str] = None
+                        ) -> Dict[str, Any]:
+    """Prove-then-lift ONE frozen kind. Resolve ``target`` (an action_type like
+    'board_status' OR a step kind like 'monday_task_update') to its canary probe,
+    run the SAME create→verify→reverse the weekly canary runs, and lift the freeze
+    ONLY if that probe comes back cleanly green. A non-green (or cannot-run) probe
+    leaves the kind FROZEN — ``action_undo.unfreeze`` is never called, so the
+    durable mirror is never superseded and ``is_frozen`` stays True (CRIT-5: no
+    blind unfreeze). Transports are injected (fixtured in tests); ZERO consequence
+    events are emitted (a canary must never look like real acting).
+
+    Returns {ok, green, unfrozen, kind, action_type, backend, was_frozen,
+    probe_target?, reverse?, lift?|error, note?}. ``ok``/``unfrozen`` are True only
+    on a green lift."""
+    cand = _fk_to_candidate()
+    if target in cand:
+        fk = target
+        step_kind, backend = cand[target]
+    else:
+        pair = next(((k, b) for (k, b) in _CANARY_CANDIDATES if k == target), None)
+        if pair is None:
+            return {"ok": False, "unfrozen": False, "green": False,
+                    "kind": target,
+                    "error": "unknown act-first kind %r — not a canary candidate "
+                             "(expected an action_type or a step-kind)" % target}
+        step_kind, backend = pair
+        fk = kind_key(step_kind)
+    # The probe can only run for a kind that is still act-first-eligible (a
+    # registered, non-``none`` inverse) — an ineligible kind has no reversible
+    # probe to prove green, so refuse rather than pretend a lift.
+    if not action_undo.act_first_eligible(step_kind, backend):
+        return {"ok": False, "unfrozen": False, "green": False,
+                "kind": step_kind, "action_type": fk, "backend": backend,
+                "error": "kind is not act-first-eligible (no registered inverse) "
+                         "— nothing to prove green"}
+    was_frozen = action_undo.is_frozen(fk, redis_get=redis_get)
+    rdel = redis_del or _default_redis_del
+    handler = _CANARY_HANDLERS.get(step_kind)
+    entry: Dict[str, Any] = {"kind": step_kind, "action_type": fk,
+                             "backend": backend, "was_frozen": was_frozen}
+    try:
+        if handler is None:
+            raise RuntimeError("no canary handler for " + step_kind)
+        r = handler(_canary_pid(step_kind), monday_post=monday_post,
+                    osascript=osascript, redis_del=rdel, board=board,
+                    date=_date(now), now=now)
+        green = _reverse_ok(r.get("reverse") or {})
+        entry["reverse"] = r.get("reverse")
+        if r.get("probe_target"):
+            # which column/mode the board_status probe actually exercised — the
+            # operator lifting a freeze needs it to trust the green.
+            entry["probe_target"] = r["probe_target"]
+        if not green:
+            raise RuntimeError("canary reverse did not cleanly complete")
+    except Exception as e:
+        entry.update({"ok": False, "green": False, "unfrozen": False,
+                      "error": str(e)[:200],
+                      "note": "kind stays frozen — a manual green canary is "
+                              "required to unfreeze (CRIT-5)"})
+        return entry
+    # GREEN — lift the freeze durably (mirror supersede FIRST) + clear the flag.
+    lift = action_undo.unfreeze(
+        fk, "manual green canary passed create->verify->reverse for " + step_kind,
+        redis_del=rdel, now=now)
+    entry.update({"ok": True, "green": True, "unfrozen": True, "lift": lift})
+    return entry
+
+
+# --- manual entrypoint: prove-then-unfreeze a frozen act-first kind ----------
+# Captain-triggered, never scheduled (CRIT-5). This module is otherwise DARK;
+# the ONLY thing that runs a real backend from here is this explicit invocation:
+#   python3.12 -m framework.frontdoor.actfirst_canary --unfreeze board_status
+# (or the step kind, e.g. monday_task_update). It uses the production Monday /
+# AppleScript transports; a non-green probe exits non-zero and LEAVES the freeze.
+
+def _cli(argv: Optional[List[str]] = None) -> int:
+    import argparse
+    ap = argparse.ArgumentParser(
+        prog="actfirst_canary",
+        description="Manually prove-then-unfreeze a frozen act-first kind "
+                    "(a green create->verify->reverse is mandatory; CRIT-5 — "
+                    "there is no blind or automatic unfreeze).")
+    ap.add_argument("--unfreeze", metavar="KIND", required=True,
+                    help="the frozen kind to prove + lift — its action_type "
+                         "(e.g. board_status) or its step kind (e.g. "
+                         "monday_task_update)")
+    ap.add_argument("--board", default="5091706356",
+                    help="Monday board id for the synthetic probe "
+                         "(default 5091706356)")
+    args = ap.parse_args(argv)
+    # production transports (loads MONDAY_API_TOKEN via _load_shared_env).
+    monday_post, osascript = action_undo._prod_transports()
+    res = run_unfreeze_canary(args.unfreeze, monday_post=monday_post,
+                              osascript=osascript, board=args.board)
+    print(json.dumps(res, indent=2, default=str))
+    return 0 if res.get("unfrozen") else 1
+
+
+if __name__ == "__main__":
+    import sys as _sys
+    _sys.exit(_cli(_sys.argv[1:]))
