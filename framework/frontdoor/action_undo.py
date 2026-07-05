@@ -893,7 +893,11 @@ def freeze(kind: str, reason: str, *,
            now: Optional[str] = None) -> Dict[str, Any]:
     """Freeze an act-first kind. Durable JSONL mirror FIRST (the source of
     truth), then the fast Redis flag. No TTL, no auto-unfreeze (CRIT-5): a kind
-    is un-frozen only by a manually-triggered green canary (a later wave)."""
+    is un-frozen ONLY by a manually-triggered green canary — now built
+    (``unfreeze`` + ``actfirst_canary.run_unfreeze_canary``, germline batch
+    2026-07-05), which appends a superseding ``op:"unfreeze"`` mirror row AFTER a
+    real create→verify→reverse proves the kind green. Nothing lifts a freeze
+    automatically."""
     row = {"ts": now or _now(), "kind": kind, "reason": str(reason)[:300], "op": "freeze"}
     d = _undo_dir()
     _ensure_dir(d)
@@ -907,10 +911,53 @@ def freeze(kind: str, reason: str, *,
     return row
 
 
+def unfreeze(kind: str, reason: str, *,
+             redis_del: Optional[Callable[[str], None]] = None,
+             now: Optional[str] = None) -> Dict[str, Any]:
+    """Lift a freeze on an act-first kind — the durable half of the manual
+    green-canary unfreeze (CANARY-UNFREEZE, germline batch 2026-07-05; the
+    "a later wave" deferred in ``freeze``'s CRIT-5 note). SUPERSEDE-then-clear,
+    mirroring ``freeze``'s mirror-FIRST ordering: append an ``op:"unfreeze"`` row
+    to the durable JSONL mirror (the source of truth ``_kind_in_mirror`` now
+    reads last-op-wins), THEN best-effort DEL the fast Redis flag so
+    ``is_frozen``'s Redis-first read also clears.
+
+    NO AUTO CALLER (CRIT-5 intact — the freeze itself still has no auto-unfreeze
+    and no timer): this is invoked ONLY by ``actfirst_canary.run_unfreeze_canary``
+    AFTER a real create→verify→reverse probe proves the kind green — never
+    blindly. A mirror-write failure is loud (raises) because the durable
+    supersede is the load-bearing lift; the Redis DEL is best-effort (the mirror
+    is authoritative and ``is_frozen`` falls through to it)."""
+    row = {"ts": now or _now(), "kind": kind, "reason": str(reason)[:300],
+           "op": "unfreeze"}
+    d = _undo_dir()
+    _ensure_dir(d)
+    with open(_frozen_mirror(), "a") as fh:
+        fh.write(json.dumps(row) + "\n")
+    try:
+        (redis_del or _default_redis_del)("cabinet:actfirst:frozen:" + str(kind))
+    except Exception:
+        pass                                # durable mirror supersede is authoritative
+    return row
+
+
 def _kind_in_mirror(kind: str) -> bool:
+    """True iff ``kind``'s LAST mirror op is a freeze (append-only JSONL, last-
+    write-wins by chronological append order).
+
+    CANARY-UNFREEZE (germline batch 2026-07-05): the mirror was freeze-only and
+    this returned True on the FIRST freeze row ever seen — so once frozen, a kind
+    could NEVER be lifted from the durable side (only the fast Redis flag could be
+    flushed, and ``is_frozen`` would then fail-closed straight back to the
+    mirror). The manual green-canary unfreeze (``unfreeze`` above) now appends an
+    ``op:"unfreeze"`` row that SUPERSEDES the freeze; we honor it by tracking the
+    last op for the kind, so a freeze→unfreeze→(re)freeze history resolves to the
+    newest state. CRIT-5 preserved: nothing AUTO writes an unfreeze row — only the
+    proven-green manual path does. Fail-closed: an unreadable mirror ⇒ True."""
     p = _frozen_mirror()
     if not p.exists():
         return False
+    last_op = None
     try:
         with open(p) as fh:
             for line in fh:
@@ -921,11 +968,12 @@ def _kind_in_mirror(kind: str) -> bool:
                     r = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                if isinstance(r, dict) and r.get("kind") == kind and r.get("op") == "freeze":
-                    return True
+                if isinstance(r, dict) and r.get("kind") == kind \
+                        and r.get("op") in ("freeze", "unfreeze"):
+                    last_op = r.get("op")     # chronological: newest op wins
     except OSError:
         return True                         # can't read the mirror -> fail-closed
-    return False
+    return last_op == "freeze"
 
 
 def is_frozen(kind: str, *,

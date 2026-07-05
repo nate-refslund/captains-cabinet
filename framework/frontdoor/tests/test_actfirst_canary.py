@@ -358,3 +358,176 @@ def test_run_weekly_smoke():
     assert set(out) == {"canary", "breaker", "silence", "veto_divergences",
                         "env_perms", "pages"}
     assert out["canary"]["frozen"] == []          # clean canary, nothing frozen
+
+
+# =============================================================================
+# CANARY-UNFREEZE (germline batch 2026-07-05) — the manual green-canary
+# unfreeze. CRIT-5 contract: a frozen kind is re-armed ONLY by an explicit,
+# Captain-triggered probe that first PROVES create→verify→reverse green, then
+# lifts the freeze (durable mirror supersede + Redis flag clear). A non-green
+# probe leaves the kind frozen; no scheduled/automatic path may ever lift.
+# Fixtured transports throughout — never real Monday/Calendar.
+# =============================================================================
+
+def _freeze_store():
+    """A dict-backed Redis triple, pre-loaded by au.freeze through rset."""
+    store = {}
+    return (store,
+            lambda k, v, ttl: store.__setitem__(k, v),      # rset
+            lambda k: store.get(k, ""),                     # rget
+            lambda k: store.pop(k, None))                   # rdel
+
+
+def test_unfreeze_green_probe_lifts_flag_and_mirror(tmp_path):
+    store, rset, rget, rdel = _freeze_store()
+    au.freeze("board_status", "canary failed", redis_set=rset)
+    assert au.is_frozen("board_status", redis_get=rget) is True
+    fm = FakeMonday(columns={"status": {"text": "Done"}})   # clean roundtrip
+    out = ac.run_unfreeze_canary("board_status", monday_post=fm,
+                                 osascript=_fake_osa, redis_get=rget,
+                                 redis_del=rdel, now="2026-07-05T00:00:00Z")
+    assert out["ok"] is True and out["green"] is True and out["unfrozen"] is True
+    assert out["was_frozen"] is True
+    assert out["kind"] == "monday_task_update" and out["action_type"] == "board_status"
+    assert out["lift"]["op"] == "unfreeze"
+    # the probe genuinely ran create→verify→reverse (setup item archived after)
+    assert "change_column_value" in fm.qs() and "archive_item" in fm.qs()
+    # BOTH halves cleared: Redis flag deleted AND the durable mirror superseded
+    assert "cabinet:actfirst:frozen:board_status" not in store
+    assert au._kind_in_mirror("board_status") is False
+    assert au.is_frozen("board_status", redis_get=rget) is False
+    # ZERO consequence events — an unfreeze probe never looks like real acting
+    assert not list((tmp_path / "events").glob("consequence-events-*.jsonl"))
+
+
+def test_unfreeze_non_green_probe_leaves_frozen_fail_closed():
+    store, rset, rget, rdel = _freeze_store()
+    au.freeze("board_status", "canary failed", redis_set=rset)
+    # column drift ("Blocked" vs the probe's "Done") → compare-restore
+    # dead-letters → the reverse is NOT clean → no lift, kind stays frozen.
+    fm = FakeMonday(columns={"status": {"text": "Blocked"}})
+    out = ac.run_unfreeze_canary("board_status", monday_post=fm,
+                                 osascript=_fake_osa, redis_get=rget,
+                                 redis_del=rdel, now="2026-07-05T00:00:00Z")
+    assert out["ok"] is False and out["green"] is False and out["unfrozen"] is False
+    assert "CRIT-5" in out["note"]
+    assert "cabinet:actfirst:frozen:board_status" in store   # flag untouched
+    assert au._kind_in_mirror("board_status") is True        # mirror untouched
+    assert au.is_frozen("board_status", redis_get=rget) is True
+
+
+def test_unfreeze_cannot_run_probe_leaves_frozen():
+    # A probe that cannot even run (backend erroring on create) is cannot-run,
+    # not green — same fail-closed leg as a dirty reverse.
+    store, rset, rget, rdel = _freeze_store()
+    au.freeze("board_status", "canary failed", redis_set=rset)
+    def boom(query, variables):
+        raise RuntimeError("monday 500")
+    out = ac.run_unfreeze_canary("board_status", monday_post=boom,
+                                 osascript=_fake_osa, redis_get=rget, redis_del=rdel)
+    assert out["ok"] is False and out["unfrozen"] is False and out.get("error")
+    assert au.is_frozen("board_status", redis_get=rget) is True
+
+
+def test_unfreeze_accepts_step_kind_alias():
+    # --unfreeze takes EITHER the action_type ('board_status') or the step kind
+    # ('monday_task_update') — both resolve to the ONE probe + freeze key.
+    store, rset, rget, rdel = _freeze_store()
+    au.freeze("board_status", "canary failed", redis_set=rset)
+    fm = FakeMonday(columns={"status": {"text": "Done"}})
+    out = ac.run_unfreeze_canary("monday_task_update", monday_post=fm,
+                                 osascript=_fake_osa, redis_get=rget, redis_del=rdel)
+    assert out["unfrozen"] is True and out["action_type"] == "board_status"
+    assert au.is_frozen("board_status", redis_get=rget) is False
+
+
+def test_unfreeze_unknown_kind_refused():
+    out = ac.run_unfreeze_canary("bogus_kind", monday_post=FakeMonday(),
+                                 osascript=_fake_osa)
+    assert out["ok"] is False and out["unfrozen"] is False
+    assert "unknown act-first kind" in out["error"]
+
+
+def test_unfreeze_ineligible_kind_refused(monkeypatch):
+    # A kind with no registered inverse has no reversible probe to prove green —
+    # refuse rather than pretend a lift (fail-closed, freeze intact).
+    store, rset, rget, rdel = _freeze_store()
+    au.freeze("board_status", "canary failed", redis_set=rset)
+    monkeypatch.setattr(au, "act_first_eligible", lambda *a, **k: False)
+    out = ac.run_unfreeze_canary("board_status", monday_post=FakeMonday(),
+                                 osascript=_fake_osa, redis_get=rget, redis_del=rdel)
+    assert out["ok"] is False and out["unfrozen"] is False
+    assert "not act-first-eligible" in out["error"]
+    assert au.is_frozen("board_status", redis_get=rget) is True
+
+
+def test_weekly_green_canary_never_auto_unfreezes():
+    # CRIT-5 behavioral pin: even a GREEN scheduled/weekly canary run does NOT
+    # lift an existing freeze — the ONLY lift path is the explicit
+    # run_unfreeze_canary above (freeze() has no timer; run_canary only ADDS
+    # freezes on failure).
+    store, rset, rget, rdel = _freeze_store()
+    au.freeze("board_status", "canary failed last week", redis_set=rset)
+    fm = FakeMonday(columns={"status": {"text": "Done"}})   # all-green run
+    out = ac.run_canary(monday_post=fm, osascript=_fake_osa, redis_get=rget,
+                        redis_set=rset, redis_del=rdel, now="2026-07-05T00:00:00Z")
+    assert all(r["ok"] for r in out["results"])             # genuinely green
+    assert au.is_frozen("board_status", redis_get=rget) is True   # freeze holds
+    # ...and the explicit manual path is what lifts it:
+    out2 = ac.run_unfreeze_canary("board_status", monday_post=fm,
+                                  osascript=_fake_osa, redis_get=rget, redis_del=rdel)
+    assert out2["unfrozen"] is True
+    assert au.is_frozen("board_status", redis_get=rget) is False
+
+
+def test_unfreeze_has_no_auto_caller_in_source():
+    # CRIT-5 structural pin: action_undo.unfreeze( is CALLED only from
+    # actfirst_canary.run_unfreeze_canary; run_unfreeze_canary( is referenced
+    # only inside actfirst_canary itself (its def + the manual _cli). No other
+    # framework module — and no launchd plist / cabinet script — wires an
+    # automatic lift.
+    import re
+    from pathlib import Path
+    root = Path(ac.__file__).resolve().parents[2]
+    call_re = re.compile(r"(?<!def )\bunfreeze\(")            # calls, not the def
+    runner_re = re.compile(r"(?<!def )\brun_unfreeze_canary\(")
+    unfreeze_callers, runner_callers = set(), set()
+    for f in (root / "framework").rglob("*.py"):
+        if "tests" in f.parts:
+            continue
+        text = f.read_text(encoding="utf-8", errors="ignore")
+        if call_re.search(text):
+            unfreeze_callers.add(f.name)
+        if runner_re.search(text):
+            runner_callers.add(f.name)
+    assert unfreeze_callers == {"actfirst_canary.py"}
+    assert runner_callers == {"actfirst_canary.py"}           # only its own _cli
+    # nothing scheduled invokes the manual flag (docs may mention it; plists and
+    # cron/scripts must not)
+    for d in (root / "cabinet" / "launchd", root / "cabinet" / "scripts"):
+        for f in d.rglob("*"):
+            if f.is_file() and f.suffix in (".plist", ".sh", ".py"):
+                assert "--unfreeze" not in f.read_text(encoding="utf-8",
+                                                       errors="ignore"), f
+
+
+def test_unfreeze_cli_exit_codes(monkeypatch, capsys):
+    # The exact command INSTALL-flip.md documents:
+    #   python3.12 -m framework.frontdoor.actfirst_canary --unfreeze <kind>
+    # exit 0 only on a green lift; non-zero LEAVES the freeze. Production
+    # transports are monkeypatched to fixtures — never real Monday/Calendar.
+    store, rset, rget, rdel = _freeze_store()
+    au.freeze("board_status", "canary failed", redis_set=rset)
+    monkeypatch.setattr(ac, "_default_redis_get", rget)
+    monkeypatch.setattr(ac, "_default_redis_del", rdel)
+    monkeypatch.setattr(au, "_default_redis_get", rget)
+    bad = FakeMonday(columns={"status": {"text": "Blocked"}})
+    monkeypatch.setattr(au, "_prod_transports", lambda: (bad, _fake_osa))
+    assert ac._cli(["--unfreeze", "board_status"]) == 1     # non-green → freeze holds
+    assert au.is_frozen("board_status", redis_get=rget) is True
+    good = FakeMonday(columns={"status": {"text": "Done"}})
+    monkeypatch.setattr(au, "_prod_transports", lambda: (good, _fake_osa))
+    assert ac._cli(["--unfreeze", "board_status"]) == 0     # green → lifted
+    assert au.is_frozen("board_status", redis_get=rget) is False
+    out = capsys.readouterr().out
+    assert '"unfrozen": true' in out

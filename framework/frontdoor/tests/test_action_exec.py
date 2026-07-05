@@ -321,12 +321,13 @@ def _surfaces(denylist=None, per_kind=20, estate=40):
             "caps": {"per_kind_per_day": per_kind, "estate_per_day": estate}}
 
 
-def _ks_getter(steps, ks="", counts=None, stamp=True):
+def _ks_getter(steps, ks="", counts=None, stamp=True, **extra):
     """A redis_get that answers the action record, the killswitch, and daily
     cap counters. Everything else is empty. Records carry the steps_sha256
     stamp by default — the TI-3 gate always stamps at store time, and the
-    act-first path REQUIRES it (stamp=False exercises the refusal)."""
-    body = {"lane": "polads", "steps": steps}
+    act-first path REQUIRES it (stamp=False exercises the refusal). ``extra``
+    adds further record fields (subject / evidence — the _store_action shape)."""
+    body = {"lane": "polads", "steps": steps, **extra}
     if stamp:
         body["steps_sha256"] = ax._canonical_sha(steps)
     rec = json.dumps(body)
@@ -1187,3 +1188,116 @@ def test_deliver_action_edit_missing_record_still_defers(monkeypatch):
     assert out["ok"] is False and out["edit_deferred"] is True
     assert out.get("recarded") is not True
     assert "re-card impossible" in out["error"]
+
+
+# =============================================================================
+# ACTED-EVENT IDENTITY FIX (germline batch 2026-07-05). The act-first lane used
+# to emit ONE card-level acted row under action 'action-card', but binder_wire.
+# _acted_records_for_pid and action_reconcile.run_sweep recompute EACH step's
+# identity as loop.proposal_id(action_undo.acted_event(None, journal_row)) —
+# action 'acted:<kind>' at the row's executed_at. The two never matched: every
+# act left a permanent outcome:unknown orphan AND each verdict minted a second
+# row (2 rows/act double-count). The executor now emits the per-step acted row
+# itself (_emit_acted_consequence) off the exact enriched journal row, so the
+# identities are equal BY CONSTRUCTION. These tests pin that parity end-to-end.
+# =============================================================================
+
+def _acted_getter(pid_steps=None):
+    """An act-first-shaped stored record with the _store_action fields the
+    executor's acted emit consumes (subject + evidence refs)."""
+    steps = pid_steps or [{"kind": "monday_task_create",
+                           "payload": {"board_id": "5091706356", "title": "t"}}]
+    return _ks_getter(steps, subject="close cmt",
+                      evidence=["6-Commitments/x.md"], cid="c" * 32)
+
+
+def _act(pid, monkeypatch, tmp_path, *, act_first=True):
+    """Run one real act-first delivery into fenced ledger + journal dirs."""
+    monkeypatch.setenv("CABINET_EVENT_LOG_DIR", str(tmp_path / "events"))
+    monkeypatch.setattr(ax, "_load_act_first_surfaces", lambda: _surfaces())
+    r = ax.deliver_action(pid, act_first=act_first, redis_get=_acted_getter(),
+                          monday_post=MondaySpy(), osascript=lambda c: "ok",
+                          redis_incr=lambda k, t: None)
+    assert r["ok"] is True
+    return r
+
+
+def test_act_first_emits_acted_row_on_canonical_identity(monkeypatch, tmp_path):
+    from framework.acting import loop
+    from framework.fidelity.consequence import read_ledger
+    _act("paid1", monkeypatch, tmp_path)
+
+    led = read_ledger()
+    acted = [e for e in led if (e.get("action") or "").startswith("acted:")]
+    assert len(acted) == 1                        # ONE row per executed step
+    ev = acted[0]
+    # canonical identity components + the RT-B1 acted shape
+    assert ev["action"] == "acted:monday_task_create"
+    assert ev["proposal"] == {"required": False, "decision": None}
+    assert ev["outcome"] == {"status": "unknown"}     # a verdict supersedes it
+    assert ev["actor"] == {"kind": "officer", "id": "cos"}
+    assert ev.get("action_type") == "task_create"
+    assert "review" not in ev                     # verdict_human is NEVER pre-filled
+    # the proposal's evidence refs ride along (cross-run dedup coverage), plus
+    # the journal joinback the undo grammar needs
+    assert "6-Commitments/x.md" in ev["refs"]
+    assert any(r.startswith("undo-journal:") for r in ev["refs"])
+
+    # IDENTITY PARITY (the whole point): the consumers recompute the identity
+    # from the journal row — it must equal the emitted row's identity exactly,
+    # or every verdict double-mints and the unknown row orphans forever.
+    jrows = [r for r in au._read_journal(pid="paid1") if r.get("executed_at")]
+    assert len(jrows) == 1
+    recomputed = loop.proposal_id(au.acted_event(None, jrows[0]))
+    assert recomputed == loop.proposal_id(ev)
+
+
+def test_approved_path_emits_no_acted_row(monkeypatch, tmp_path):
+    # The APPROVED path's proposal→outcome lifecycle is recorded by the binder;
+    # an executor-side acted row there would double-count. Only act-first emits.
+    from framework.fidelity.consequence import read_ledger
+    _act("paid-approved", monkeypatch, tmp_path, act_first=False)
+    assert [e for e in read_ledger()
+            if (e.get("action") or "").startswith("acted:")] == []
+
+
+def test_captain_verdict_supersedes_acted_row_in_place(monkeypatch, tmp_path):
+    # binder parity: _acted_records_for_pid must find the EMITTED ledger row by
+    # identity (not fall back to the recomputed base — the pre-fix orphan mode),
+    # and a Captain 👍 must supersede it in place: one row, unknown→confirmed,
+    # verdict_human provenance, no second identity minted.
+    from framework.fidelity.consequence import emit_consequence, read_ledger
+    from framework.frontdoor import binder_wire as bw
+    _act("paid2", monkeypatch, tmp_path)
+
+    records = bw._acted_records_for_pid("paid2", journal_rows_for=au._read_journal,
+                                        read_ledger_fn=read_ledger)
+    assert len(records) == 1
+    _jrow, rec = records[0]
+    # the LEDGER row, not the base fallback: only the executor-emitted row
+    # carries the record's evidence refs (acted_event(None, jrow) cannot).
+    assert "6-Commitments/x.md" in (rec.get("refs") or [])
+
+    emit_consequence(**bw.acted_verdict_event(rec, "confirmed",
+                                              reviewed_at="2026-07-05T12:00:00Z"))
+    led = read_ledger()
+    acted = [e for e in led if (e.get("action") or "").startswith("acted:")]
+    assert len(acted) == 1                        # superseded, NOT double-minted
+    assert acted[0]["outcome"]["status"] == "ok"
+    assert acted[0]["review"] == {"verdict": "confirmed", "source": "verdict_human",
+                                  "reviewed_at": "2026-07-05T12:00:00Z"}
+    # no permanent outcome:unknown orphan anywhere on the ledger
+    assert not [e for e in led if (e.get("outcome") or {}).get("status") == "unknown"]
+
+
+def test_acted_emit_failure_is_best_effort_act_stands(monkeypatch, tmp_path):
+    # A failed ledger emit must never break an act that already landed and is
+    # journaled with its 48h undo handle (the emit is best-effort by contract).
+    from framework.fidelity import consequence as cq
+    def boom(**ev):
+        raise RuntimeError("ledger write failed")
+    monkeypatch.setattr(cq, "emit_consequence", boom)
+    r = _act("paid3", monkeypatch, tmp_path)
+    assert r["executed"] and r["executed"][0]["monday_id"] == "12345"
+    jrows = [x for x in au._read_journal(pid="paid3") if x.get("executed_at")]
+    assert len(jrows) == 1                        # journaled + undoable regardless
