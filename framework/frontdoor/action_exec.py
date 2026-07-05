@@ -779,7 +779,7 @@ def _exec_calendar_event(payload: dict, osascript: Callable,
     # [B2] Double-book precondition on the UNATTENDED (act-first) path: gather the
     # Captain's calendars for the 30-min block this event will occupy and REFUSE to
     # write on a clash — an act-first block must never land on an existing
-    # commitment (Nate's mandatory gather-before-block). Fail-CLOSED: a calendar
+    # commitment (the Captain's mandatory gather-before-block). Fail-CLOSED: a calendar
     # read error propagates (no write). The approved path is Captain-chosen, so its
     # gather-before-propose belongs in the proposer, not this headless executor.
     if act_first:
