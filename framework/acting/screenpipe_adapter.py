@@ -16,9 +16,8 @@ import os
 import re
 import subprocess
 import sys
-from pathlib import Path
 
-from framework.env import captain_name
+from framework.env import captain_name, captain_timezone
 
 _PIPES = os.path.expanduser("~/.screenpipe/pipes")
 for _p in (_PIPES, os.path.join(_PIPES, "_shared")):
@@ -898,21 +897,11 @@ def normalize_voice(text):
 # ---------------------------------------------------------------------------
 def _captain_tz():
     """The captain's local timezone (platform.yml captain_timezone), for the
-    'today' boundary. Falls back to Europe/Berlin (CET/CEST) then UTC."""
-    name = "Europe/Berlin"
-    try:
-        root = os.environ.get("CABINET_ROOT") or str(Path(__file__).resolve().parents[2])
-        path = os.path.join(root, "instance", "config", "platform.yml")
-        with open(path, encoding="utf-8") as f:
-            for line in f:
-                s = line.strip()
-                if s.startswith("captain_timezone:"):
-                    val = s.split(":", 1)[1].split("#", 1)[0].strip()
-                    if val:
-                        name = val
-                    break
-    except Exception:
-        pass
+    'today' boundary. The NAME is resolved by ``framework.env.captain_timezone``
+    (instance config, fallback Europe/Berlin — CET/CEST — exactly as the removed
+    hand-reader). We own only the name→tzinfo conversion here, itself falling
+    back to UTC if the name is unloadable."""
+    name = captain_timezone()
     try:
         from zoneinfo import ZoneInfo
         return ZoneInfo(name)

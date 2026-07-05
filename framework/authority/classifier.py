@@ -35,6 +35,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from framework import env  # instance-config resolver (org_domains); leaf, cycle-free
+
 # ---------------------------------------------------------------------------
 # The action_type enum surface (single source of truth)
 # ---------------------------------------------------------------------------
@@ -104,10 +106,15 @@ ACTION_TYPES = frozenset(
 # Helpers — small, pure string predicates
 # ---------------------------------------------------------------------------
 
-_INTERNAL_DOMAINS = (
-    "stepnetwork.dk", "jfmedier.dk", "jysk-fynske-medier.dk",
-    "polads.eu", "refslund.ai", "step.dk",
-)
+# The org's internal email domains — SOURCED from instance config (the
+# framework.env.org_domains resolver reads instance/config/platform.yml), so
+# this universal-base classifier carries no launcher's domains. Fail-closed to
+# the EMPTY tuple: a generic deployment has no internal domains, so every
+# recipient classifies external (the conservative comms ceiling). The
+# _is_internal_recipient predicate below is UNCHANGED — only the domain SOURCE
+# moved to config; on this instance the resolver returns the same six domains
+# the hardcode had, so classification is byte-identical.
+_INTERNAL_DOMAINS = env.org_domains()
 
 _DOTENV_RE = re.compile(r"(^|/)\.env(\.[\w.-]+)?$")
 # Command-scan variant: find a .env token anywhere on a command line,

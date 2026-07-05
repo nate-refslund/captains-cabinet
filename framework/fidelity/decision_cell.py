@@ -1,4 +1,4 @@
-"""Decision cell (F3-intent) — measure intent-fidelity on real Head-of-Tech
+"""Decision cell (F3-intent) — measure intent-fidelity on real Captain
 DECISIONS, not replies (docs/fidelity-decision-cell-design-2026-06-20.md).
 
 The reply cell measures VOICE; "replace the Captain" is judgment calls with a WHY.
@@ -32,7 +32,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from framework.fidelity.oauth_llm import oauth_json_llm, oauth_raw_llm
-from framework.env import captain_name
+from framework.env import captain_name, captain_role
 from framework.fidelity.officer_prompt import _clone_privacy_fence
 from framework.fidelity.officer_runner import BrainAdapter
 from framework.fidelity.scorer import composite
@@ -43,6 +43,10 @@ from framework.fidelity.types import DecisionCase
 # deployment. Baked into the raw LLM-prompt constants below and used at the
 # call sites that address the Captain in a payload/label.
 _CAP = captain_name()
+# Captain role/title, resolved once per process (env.py caches). Renders
+# BYTE-IDENTICAL to the prior hardcoded "Head-of-Tech" on this deployment.
+# Injected into the runtime clone prompt below via .format(role=_ROLE).
+_ROLE = captain_role()
 
 _DECISIONS_REL = "5-Reflections/Decisions"
 
@@ -353,7 +357,7 @@ def build_decision_corpus(sources=("decisions", "git"), repos=None,
 
 
 # --- runner: clone proposes {decision, why} from the dilemma + identity -----
-_DECISION_CLONE_SYSTEM = """You are {cap}'s clone, facing a real Head-of-Tech decision. Make the call {cap} would make and give his reasoning. Decide as {cap} decides — his values, risk posture, and priorities drive the call.
+_DECISION_CLONE_SYSTEM = """You are {cap}'s clone, facing a real {role} decision. Make the call {cap} would make and give his reasoning. Decide as {cap} decides — his values, risk posture, and priorities drive the call.
 
 {fence}
 
@@ -391,8 +395,8 @@ def run_decision_case(case: DecisionCase, llm=oauth_raw_llm,
     brain = brain or BrainAdapter()
     ident = _clone_identity(case, brain)
     system = _DECISION_CLONE_SYSTEM.format(
-        cap=_CAP, fence=_clone_privacy_fence(_CAP), patterns=ident["patterns"],
-        voice=ident["voice"], lessons=ident["lessons"])
+        cap=_CAP, role=_ROLE, fence=_clone_privacy_fence(_CAP),
+        patterns=ident["patterns"], voice=ident["voice"], lessons=ident["lessons"])
     user = (f"# DECISION POINT (decide as-of {case.detected_at})\n"
             f"{case.dilemma}\n\nMake the call and give your reasoning.")
     raw = llm(user, system) or ""

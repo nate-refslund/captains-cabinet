@@ -31,10 +31,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from framework.autoreply import kristoffer_uat as K
 from framework.env import captain_name
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+from . import kristoffer_uat as K
+
+# Repo root is 4 levels up: instance/flavor-a/autoreply/wiring.py -> repo root
+# (this cell moved out of framework/ into instance/flavor-a/, so parents[3]).
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 _REDIS_H = os.environ.get("REDIS_HOST", "localhost")
 
 #: Local audit log (append-only JSONL). Lives under the runtime state dir so it
@@ -271,7 +274,9 @@ def status() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# CLI — `python -m framework.autoreply.wiring <status|sample|arm|disarm>`.
+# CLI (run from the repo root — package parent on PYTHONPATH so `autoreply`
+# resolves, cwd supplies the `framework` namespace package):
+#   PYTHONPATH=instance/flavor-a python -m autoreply.wiring <status|sample|arm|disarm>
 # `sample` is the one the Captain runs to see the exact ack before arming.
 # ---------------------------------------------------------------------------
 
@@ -293,7 +298,7 @@ def _main(argv: list) -> int:
         print(json.dumps(disarm(note="disarmed via CLI"),
                          indent=2, ensure_ascii=False, default=str))
     else:
-        print("usage: python -m framework.autoreply.wiring "
+        print("usage: PYTHONPATH=instance/flavor-a python -m autoreply.wiring "
               "<status|sample|arm [ttl_seconds]|disarm>", file=sys.stderr)
         return 2
     return 0

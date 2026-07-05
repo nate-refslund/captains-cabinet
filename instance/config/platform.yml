@@ -10,6 +10,10 @@
 # Founder's name — used in voice messages and officer communication
 captain_name: Nate                    # Default: "Captain" if not set
 
+# Founder's role/title — framework code (e.g. the fidelity decision cell) names
+# the Captain's role via framework.env.captain_role(). Default: "the Captain".
+captain_role: Head-of-Tech
+
 # Founder's timezone — ALL officer communication uses this timezone.
 # Officers display times in this timezone, never UTC or ambiguous abbreviations.
 # Uses IANA timezone identifier (e.g., Europe/Berlin, America/New_York, Asia/Tokyo).
@@ -19,6 +23,33 @@ captain_timezone: Europe/Berlin       # CEST/CET — auto-adjusts for DST
 # Founder's Telegram chat ID — used by hooks to detect Captain conversations
 # Find yours: look at the chat_id field in incoming Telegram messages
 captain_telegram_chat_id: "8631324091"
+
+# =============================================================
+# Org identity — internal email domains + Monday board ids
+# =============================================================
+# Instance-specific identifiers the universal-base framework reads via
+# framework.env resolvers (they are NOT hardcoded in framework/).
+#
+# org_domains — the org's internal email domains. The action classifier
+# (framework/authority/classifier.py) treats a recipient at one of these (or a
+# subdomain) as internal_comms; everything else is external_comms (the
+# always-gated ceiling). framework.env.org_domains() reads this list and
+# fails closed to EMPTY (a deployment with none set treats every recipient as
+# external). Domains are matched case-insensitively.
+org_domains:
+  - stepnetwork.dk
+  - jfmedier.dk
+  - jysk-fynske-medier.dk
+  - polads.eu
+  - refslund.ai
+  - step.dk
+
+# tasks_board — the Monday board id lane-created tasks land on (action_exec's
+# DEFAULT_TASKS_BOARD + the act-first canary's synthetic probe board).
+# framework.env.tasks_board() reads this (env CABINET_TASKS_BOARD overrides) and
+# fails closed to "" (the executor's isdigit() guard then refuses rather than
+# landing on another deployment's board).
+tasks_board: "5091706356"
 
 # =============================================================
 # Spending Limits — daily caps on Anthropic API spend

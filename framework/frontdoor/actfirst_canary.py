@@ -56,11 +56,21 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+from framework import env  # instance-config resolver (tasks_board)
 from framework.frontdoor import action_undo
 from framework.probes import correlation
 from framework.fidelity.consequence import read_ledger
 
 # --- constants ---------------------------------------------------------------
+
+# The Monday board the synthetic canary probes — SOURCED from instance config
+# (framework.env.tasks_board reads instance/config/platform.yml → tasks_board;
+# env CABINET_TASKS_BOARD overrides), so this universal-base guard carries no
+# launcher's board id. The default for run_canary / run_weekly /
+# run_unfreeze_canary / the --board CLI arg; a caller may still pass board=
+# explicitly. On this instance it resolves byte-identical to the removed
+# hardcode; a generic deployment with no board configured resolves "".
+_DEFAULT_BOARD = env.tasks_board()
 
 # Blast bounds (safety-spine §6). Loaded from the instance act-first knobs
 # (instance/config/act-first-surfaces.yml caps) with these conservative hard
@@ -1100,7 +1110,7 @@ def run_canary(*, monday_post: Callable, osascript: Callable,
                redis_set: Optional[Callable[[str, str, Optional[int]], None]] = None,
                redis_get: Optional[Callable[[str], str]] = None,
                redis_del: Optional[Callable[[str], None]] = None,
-               board: str = "5091706356", now: Optional[str] = None,
+               board: str = _DEFAULT_BOARD, now: Optional[str] = None,
                kind: Optional[str] = None) -> Dict[str, Any]:
     """The weekly synthetic canary: for each act-first-eligible kind, create a
     synthetic artifact, verify it landed, reverse it, verify the reverse. ANY
@@ -1168,7 +1178,7 @@ def run_weekly(*, monday_post: Callable, osascript: Callable,
                redis_set: Optional[Callable[[str, str, Optional[int]], None]] = None,
                redis_get: Optional[Callable[[str], str]] = None,
                redis_del: Optional[Callable[[str], None]] = None,
-               board: str = "5091706356", now: Optional[str] = None,
+               board: str = _DEFAULT_BOARD, now: Optional[str] = None,
                posture: Optional[str] = None,
                content_audit: Optional[Callable[..., Dict[str, Any]]] = None
                ) -> Dict[str, Any]:
@@ -1227,7 +1237,7 @@ def run_unfreeze_canary(target: str, *, monday_post: Callable, osascript: Callab
                         redis_set: Optional[Callable[[str, str, Optional[int]], None]] = None,
                         redis_get: Optional[Callable[[str], str]] = None,
                         redis_del: Optional[Callable[[str], None]] = None,
-                        board: str = "5091706356", now: Optional[str] = None
+                        board: str = _DEFAULT_BOARD, now: Optional[str] = None
                         ) -> Dict[str, Any]:
     """Prove-then-lift ONE frozen kind. Resolve ``target`` (an action_type like
     'board_status' OR a step kind like 'monday_task_update') to its canary probe,
@@ -1313,9 +1323,9 @@ def _cli(argv: Optional[List[str]] = None) -> int:
                     help="the frozen kind to prove + lift — its action_type "
                          "(e.g. board_status) or its step kind (e.g. "
                          "monday_task_update)")
-    ap.add_argument("--board", default="5091706356",
+    ap.add_argument("--board", default=_DEFAULT_BOARD,
                     help="Monday board id for the synthetic probe "
-                         "(default 5091706356)")
+                         "(default: the instance tasks board)")
     args = ap.parse_args(argv)
     # production transports (loads MONDAY_API_TOKEN via _load_shared_env).
     monday_post, osascript = action_undo._prod_transports()

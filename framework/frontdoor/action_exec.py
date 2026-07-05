@@ -80,6 +80,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable
 
+from framework import env  # instance-config resolver (tasks_board)
 from framework.frontdoor import action_undo
 from framework.frontdoor.calendar_template import CALENDAR_EVENT_SCRIPT  # [GERM-2] single source
 
@@ -639,10 +640,15 @@ def _monday_post(query: str, variables: dict) -> dict:
     return out.get("data") or {}
 
 
-# The Monday Tasks board in the Captain's AI Workspace — the default landing board for
-# lane-created tasks. A proposal's free-text board_hint routes here unless it
-# carries an explicit numeric board_id (env ACTION_LANE_DEFAULT_BOARD overrides).
-DEFAULT_TASKS_BOARD = "5091706356"
+# The Monday Tasks board — the default landing board for lane-created tasks.
+# SOURCED from instance config (framework.env.tasks_board reads
+# instance/config/platform.yml → tasks_board; env CABINET_TASKS_BOARD overrides),
+# so this universal-base module carries no launcher's board id. A proposal's
+# free-text board_hint routes here unless it carries an explicit numeric
+# board_id; _resolve_board's env ACTION_LANE_DEFAULT_BOARD still overrides. On a
+# generic deployment this resolves "" and _exec_monday_create's isdigit() guard
+# refuses rather than leaking a board; on this instance it is byte-identical.
+DEFAULT_TASKS_BOARD = env.tasks_board()
 
 
 def _exec_monday_create(payload: dict, monday_post: Callable) -> dict:
