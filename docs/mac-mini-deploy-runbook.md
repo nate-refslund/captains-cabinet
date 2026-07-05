@@ -109,6 +109,25 @@ Verify: `bash cabinet/scripts/setup-mac.sh --check` returns exit 0.
    `CABINET_POSTURE=guardian` in the environment narrows every session
    (env can only narrow — `CABINET_POSTURE=sovereign` is ignored).
 
+   **Axes (cabinet-axes amendment 2026-07-05, apply token
+   `apply cabinet axes`).** The ruling file now carries the full axis
+   point: this deployment is the `org-macmini` preset —
+   `cp instance/config/posture-presets/org-macmini.yml
+   instance/config/posture.yml` pre-fills `flavor: org` +
+   `deployment_target: mac_mini` (schg attestation backend) before you
+   edit `basis:`/`deployment:` and lock. Optional keys: `never_grant:`
+   (list of ceiling classes structurally non-grantable on THIS deployment
+   — grant rows in those classes are dropped fail-closed) and
+   `deployment_target:` (absent ⇒ inferred; a docker deployment uses the
+   `ro_mount` backend — germline/posture/grants mounted read-only from
+   the HOST, `cabinet/deploy/docker/README.md`). A third narrow surface
+   joins the env brake: the Captain binder verb `posture guardian|earn_up`
+   writes `instance/config/posture-narrow` (deliberately unlocked — it
+   can only NARROW; `posture clear` removes it). `earn_up` — everything
+   proposes, cells climb only on Captain-granted rungs — is honored even
+   unattested (narrowing needs no lock); check the effective point any
+   time with `python3 cabinet/scripts/posture-status.py`.
+
 ## 5. First product onboarding
 
 ```bash

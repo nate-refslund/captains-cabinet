@@ -9,11 +9,15 @@ in an unlock window (D7 — no runtime writer exists here on purpose).
 
 Fail-safe polarity (D6): absent / unparseable / NOT-schg-locked ⇒ `[]` +
 deduped need. Per-row validation line-drops anything malformed (+ need) and
-keeps the rest. **Flavor=personal ⇒ external_comms grant rows are dropped
-fail-closed + need** — the Captain's personal outbound surfaces stay
-queue_draft-only in every posture (structural refusal, re-confirmed
-2026-07-04 under ACT-AND-DRAFT: external recipients keep per-item Captain
-approval ALWAYS).
+keeps the rest. **never_grant (Captain ruling 2026-07-05 — external-comms
+grantability is INSTANCE-scoped, never flavor-structural):** the old
+`flavor=personal ⇒ external_comms refused` gate is deleted; instead, rows
+whose risk_class ∈ the posture.yml `never_grant:` list are dropped
+fail-closed at load + ONE deduped kind=decision need per class (asking for
+a never-granted class is noise — never a recurring grant-request need).
+Nate's personal instance keeps its exact prior behavior via config
+(`never_grant: [external_comms]`, ACT-AND-DRAFT); the framework stops
+encoding one captain's policy.
 
 `check()` enforces ALL of (FI-2): deployment==CABINET_ID ∧ ceiling class ∧
 action_type ∈ action_types ∧ lane match ∧ not expired (≤90d horizon enforced
@@ -47,7 +51,7 @@ if str(_FRAMEWORK_ROOT) not in sys.path:
     sys.path.insert(0, str(_FRAMEWORK_ROOT))
 
 from framework.authority.posture import (  # noqa: E402
-    cabinet_id, cabinet_root, is_locked, load_posture_config,
+    cabinet_id, cabinet_root, is_locked, load_posture_config, posture_path,
 )
 
 # The six hard-ceiling risk classes — grants are CEILINGS-ONLY. Static so the
@@ -143,7 +147,8 @@ def _default_is_vetoed(action_type: str | None) -> bool:
 # ---------------------------------------------------------------------------
 
 def _file_need(root, why: str, *, risk_class=None, action_type="standing_grants_config",
-               filed_by="grants.loader") -> None:
+               filed_by="grants.loader",
+               unblocks="standing-grant resolution (empty grants until repaired)") -> None:
     try:
         from framework.authority import needs
         needs.file_need(
@@ -151,12 +156,73 @@ def _file_need(root, why: str, *, risk_class=None, action_type="standing_grants_
             risk_class=risk_class,
             action_type=action_type,
             why=why,
-            unblocks="standing-grant resolution (empty grants until repaired)",
+            unblocks=unblocks,
             filed_by=filed_by,
             root=root,
         )
     except Exception:
         pass
+
+
+# ---------------------------------------------------------------------------
+# never_grant — instance-scoped class refusal (Captain ruling 2026-07-05)
+# ---------------------------------------------------------------------------
+
+def _parse_never_grant(raw: Any) -> frozenset[str] | None:
+    """Absent key ⇒ empty set; list of non-empty strings ⇒ that set;
+    anything else ⇒ None (malformed — the caller narrows to ALL ceilings)."""
+    if raw is None:
+        return frozenset()
+    if isinstance(raw, list) and all(
+            isinstance(x, str) and x.strip() for x in raw):
+        return frozenset(x.strip() for x in raw)
+    return None
+
+
+def _never_grant_classes(
+    root: str | Path | None = None,
+    *,
+    is_locked_fn: Optional[Callable[[Path], bool]] = None,
+) -> frozenset[str]:
+    """The Captain's `never_grant` risk-class set from posture.yml.
+
+    Fail-closed shape (constraint: ambiguity narrows, never widens):
+    - absent file ⇒ empty set — the documented default (all six ceiling
+      classes grantable; the grants file keeps its OWN schg attestation);
+    - attested valid ruling ⇒ its list;
+    - present-but-unattested/corrupt ruling ⇒ never_grant is still honored
+      from a raw parse — a narrowing key is fail-safe even unsigned (the
+      CABINET_POSTURE narrow-only doctrine). Tampering cannot widen: the
+      maximum reachable surface equals the no-file default;
+    - unparseable file / non-mapping / malformed never_grant value ⇒ ALL
+      ceiling classes (grants are ceilings-only, so this drops every row).
+
+    SEAM (AX-1, same wave): once the posture schema grows the optional
+    `never_grant` key, the attested-ruling read below returns it directly;
+    the raw-parse fallback keeps this correct while that lands (pre-AX-1 a
+    ruling carrying never_grant is an unknown key ⇒ corrupt ⇒ None from
+    load_posture_config).
+    """
+    cfg = load_posture_config(root, is_locked_fn=is_locked_fn,
+                              file_needs=False)
+    if cfg is not None:
+        parsed = _parse_never_grant(cfg.get("never_grant"))
+        return CEILING_RISK_CLASSES if parsed is None else parsed
+    path = posture_path(root)
+    try:
+        if not path.exists():
+            return frozenset()
+    except OSError:
+        return CEILING_RISK_CLASSES  # cannot even probe — never widen
+    try:
+        import yaml  # deferred — available in the cabinet runtime + CI
+        data = yaml.safe_load(path.read_text())
+    except Exception:
+        return CEILING_RISK_CLASSES  # ruling exists but is unreadable
+    if not isinstance(data, dict):
+        return CEILING_RISK_CLASSES
+    parsed = _parse_never_grant(data.get("never_grant"))
+    return CEILING_RISK_CLASSES if parsed is None else parsed
 
 
 # ---------------------------------------------------------------------------
@@ -238,10 +304,10 @@ def load_grants(
     """The valid grant rows, or `[]` on any file-level failure (D6).
 
     Absent / unparseable / not-schg-locked ⇒ [] + deduped need. Malformed
-    rows are line-dropped (+ need), the rest survive. external_comms rows are
-    dropped unless the ATTESTED posture ruling positively says flavor=org —
-    flavor=personal is the structural refusal; an absent/corrupt/unlocked
-    ruling cannot attest org, so it refuses too (never widen on ambiguity).
+    rows are line-dropped (+ need), the rest survive. Rows whose risk_class
+    ∈ posture.yml `never_grant` are dropped fail-closed + ONE deduped
+    kind=decision need per class (Captain ruling 2026-07-05: grantability is
+    instance-scoped — the flavor-structural external_comms refusal is gone).
     """
     path = grants_path(root)
     need = _file_need if file_needs else (lambda *a, **k: None)
@@ -270,11 +336,10 @@ def load_grants(
                    "{version: 1, grants: [...]} exactly")
         return []
 
-    posture_cfg = load_posture_config(root, is_locked_fn=is_locked_fn,
-                                      file_needs=False)
-    flavor = posture_cfg.get("flavor") if posture_cfg else None
+    never = _never_grant_classes(root, is_locked_fn=is_locked_fn)
 
     out: list[dict[str, Any]] = []
+    needed_classes: set[str] = set()  # one decision need per class per pass
     for g in data["grants"]:
         err = _row_error(g)
         if err:
@@ -282,15 +347,21 @@ def load_grants(
             need(root, f"standing grant {gid or '<no id>'} line-dropped: {err}",
                  action_type="standing_grants_row")
             continue
-        if g["risk_class"] == "external_comms" and flavor != "org":
-            # Structural flavor=personal external_comms refusal (FI-2) —
-            # personal surfaces stay queue_draft-only in every posture.
-            need(root,
-                 f"standing grant {g['id']} refused: external_comms grants "
-                 f"are structurally refused unless the attested posture "
-                 f"ruling says flavor=org (found: {flavor or 'no attested ruling'})",
-                 risk_class="external_comms",
-                 action_type="flavor_personal_refusal")
+        if g["risk_class"] in never:
+            # Instance-scoped refusal (Captain ruling 2026-07-05): the class
+            # is on this Captain's never_grant list — drop fail-closed and
+            # file ONE decision need per class, never a grant-request need.
+            if g["risk_class"] not in needed_classes:
+                needed_classes.add(g["risk_class"])
+                need(root,
+                     f"standing grant(s) for '{g['risk_class']}' dropped: "
+                     f"the class is in the Captain's never_grant list "
+                     f"(posture.yml)",
+                     risk_class=g["risk_class"],
+                     action_type="never_grant_refusal",
+                     unblocks="nothing until the Captain removes the class "
+                              "from never_grant (unlock ritual) — deliberate "
+                              "instance policy, not a repairable fault")
             continue
         out.append(g)
     return out

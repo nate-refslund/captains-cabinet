@@ -1,0 +1,26 @@
+# instance/config/channels.yml — org-domain classification for channel
+# adapters (AX-5, axes spec docs/plans/cabinet-axes-spec-2026-07-05.md §4).
+#
+# Every framework/channels adapter resolves classify(recipient) ->
+# internal|external from THIS file: a recipient whose email domain equals
+# (or is a subdomain of) an entry below classifies `internal`; EVERYTHING
+# else — unknown domains, opaque chat/channel ids, malformed handles —
+# classifies `external`, the most restrictive class (external recipients
+# stay per-item Captain-approved in every posture).
+#
+# FAIL-CLOSED: an absent file, a symlinked/traversal path, an unknown key,
+# a wrong version, or ANY malformed entry loads as the EMPTY domain list —
+# every recipient then classifies external until the file is repaired.
+# Never best-effort-parsed.
+#
+# SECURITY: adding a domain WIDENS classification (external -> internal
+# action_types), so treat this file like the posture ruling — live
+# deployments should add instance/config/channels.yml to the germline lock
+# set (cabinet/scripts/germline-lock.sh) so growing it takes the Captain's
+# unlock ritual.
+#
+# Copy to instance/config/channels.yml and replace with your org's domains.
+version: 1
+org_domains:
+  - example.com        # subdomains (mail.example.com) match implicitly
+  - example.org

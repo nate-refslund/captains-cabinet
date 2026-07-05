@@ -98,13 +98,65 @@ State it, don't ask for permission tuning:
 > ledger, and posture never enters graduation — bars define PROOF,
 > posture defines what unproven states UNLOCK.
 
-Ask ONE question — "is this deployment's flavor `org` (a product org
-cabinet) or `personal` (your personal surfaces)?" — and record
-`autonomy.flavor` plus (optional) `autonomy.target_posture` in the
-answers. `flavor: personal` always scaffolds guardian, and its
-external_comms standing grants are structurally refused in every posture
-(ACT-AND-DRAFT, captain-decisions.md 2026-07-04). Keep
-`autonomy.posture: propose_first` recorded as before and move on.
+**Axes interview (axes spec 2026-07-05 §1/§5) — ask ONE question per
+axis, then act on the matching preset:**
+
+1. **Level** — "guardian (the default — trust-first on reversible
+   classes, lost on evidence), earn_up (everything proposes; cells climb
+   only on Captain-granted rungs), or sovereign (boundless under standing
+   grants — requires the attested lock ritual)?" Default **guardian** on
+   any unclear answer.
+2. **Flavor** — "org (a product org cabinet: senses product telemetry,
+   machine-probe labels) or personal (your own surfaces, captain-verdict
+   labels)?" Record `autonomy.flavor`. External-comms grantability is NOT
+   flavor-structural (Captain correction 2026-07-05): a captain who never
+   wants a class granted lists it under `never_grant:` in posture.yml
+   (e.g. `[external_comms]` — ACT-AND-DRAFT), in any flavor.
+3. **Deployment target** — "macbook (shared daily machine), mac_mini
+   (dedicated host), or docker (container — attestation is the host-side
+   `:ro` bind mounts)?" If unanswered, omit `deployment_target:` and the
+   resolver infers (`/.dockerenv` ⇒ docker, else macbook).
+
+The three shipped presets are pre-filled points on these axes —
+`instance/config/posture-presets/{personal-macbook,org-macmini,org-docker}.yml`
+(personal-macbook: guardian·personal·macbook + a `never_grant` example;
+org-macmini: sovereign·org·mac_mini; org-docker: guardian·org·docker).
+Any axis combination is valid — copy the nearest preset and set the
+differing fields.
+
+**Write rules (the skill acts here; the generator never overwrites an
+existing ruling):**
+
+- **guardian or earn_up** level, and `instance/config/posture.yml` is
+  ABSENT: copy the matching preset to `instance/config/posture.yml`, set
+  `deployment:` to the cabinet id, `posture:` to the chosen level, and
+  `flavor:` / `deployment_target:` / `never_grant:` from the answers.
+  Leave it unlocked — guardian is the fail-closed default anyway, and
+  `earn_up` is honored even unattested (it can only narrow). NEVER
+  overwrite an existing posture.yml.
+- **sovereign** level: do NOT write a sovereign ruling — print the
+  attestation ritual verbatim instead (widening is a Captain act, never
+  an init side-effect):
+
+  ```
+  sudo bash cabinet/scripts/germline-lock.sh unlock   # Captain unlock window
+  cp instance/config/posture-presets/org-macmini.yml instance/config/posture.yml
+  $EDITOR instance/config/posture.yml   # deployment: <cabinet id>; basis/ruled_at
+  git add -A && git commit
+  sudo bash cabinet/scripts/germline-lock.sh lock     # the lock IS the signature
+  ```
+
+  (docker target: the ritual is host-side — edit in the host checkout and
+  keep the `:ro` bind mount.) Record `autonomy.target_posture: sovereign`
+  so the generator's inert scaffold carries the target; the deployment
+  runs guardian until the Captain performs the ritual.
+
+Record `autonomy.posture: propose_first` as before and move on. Runtime
+narrowing never needs a ritual: `CABINET_POSTURE=guardian|earn_up` env,
+the Captain's `posture guardian|earn_up` binder verb (writes
+`instance/config/posture-narrow`; `posture clear` removes the cap), or
+the dashboard `/posture` tile's printed verb — the tile itself is
+render-only (`cabinet/scripts/posture-status.py` supplies its JSON).
 
 ### 5. Seed outcomes (1–2 bounded campaigns per lane)
 
@@ -176,6 +228,8 @@ placeholders only:
    autonomy: {posture: propose_first,            # fixed at init
               flavor: org,                       # org | personal (§4)
               target_posture: guardian}          # optional; guardian default, 'mini*' org ⇒ sovereign
+                                                 # (an earn_up choice rides the preset-written
+                                                 #  posture.yml from §4, not this key)
    integrations:
      telegram: {ceo_bot, bot_token_env}          # username + ENV VAR NAME
      mcp_env_names: []                           # ENV VAR NAMES

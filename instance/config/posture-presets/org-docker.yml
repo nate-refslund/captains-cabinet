@@ -1,0 +1,33 @@
+# posture-presets/org-docker.yml — PRESET: org flavor in a docker container
+# (axes spec docs/plans/cabinet-axes-spec-2026-07-05.md §3/§5, for future
+# captains/servers — no live deployment yet). A pre-filled posture.yml
+# template — presets are the UX; axes are the architecture.
+#
+# Axes: autonomy_level=guardian · flavor=org · deployment_target=docker
+#
+# Docker attestation is the `ro_mount` backend: schg does not exist on Linux,
+# so the trust anchor is the HOST bind-mounting germline + posture/grants
+# read-only into the container (`-v …:ro`) — the container cannot remount at
+# any privilege. The lock/unlock ritual therefore happens HOST-SIDE:
+#   (host) edit the file in the host checkout        # the "unlock window"
+#   (host) cp instance/config/posture-presets/org-docker.yml \
+#             instance/config/posture.yml
+#   (host) $EDITOR instance/config/posture.yml       # deployment: MUST equal
+#                                                    # the container CABINET_ID
+#   (host) git add -A && git commit
+#   (host) keep/restore the :ro bind mount, restart the container
+# In-container the resolver write-probes the real path and requires the
+# containing /proc/mounts entry to carry `ro` — any ambiguity ⇒ guardian.
+# Widening to sovereign is the same host-side ritual with posture: sovereign.
+version: 1
+status: ruled
+ruled_at: 1970-01-01T00:00:00Z   # placeholder — set the real ruling time
+basis: "org-docker preset — set to your ruling words"
+deployment: CHANGE-ME            # MUST equal CABINET_ID env (default "main")
+flavor: org                      # senses product telemetry, optimizes product
+                                 # outcomes (machine-probe labels first)
+posture: guardian                # the default start; widen to sovereign only
+                                 # via the host-side ritual above
+deployment_target: docker        # ro_mount attestation backend (host :ro bind)
+never_grant: []                  # risk classes this captain never grants —
+                                 # empty = grants decide

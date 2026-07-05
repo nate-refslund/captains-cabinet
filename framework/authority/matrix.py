@@ -32,16 +32,23 @@ invariants are enforced as hard rules, not prose:
      instance merge can silently re-introduce earn-up.
   4. The OPTIONAL `postures:` key (sovereign build spec 2026-07-04 §2.1) may
      only define FULL verdict tables for known non-default postures
-     (`sovereign` in v1). A `postures.guardian` key is REJECTED — the root
-     `verdicts` table IS guardian and is never redefined. Posture ceiling rows
-     are wildcard-only in {always_gated, standing_grant} (`auto` structurally
-     impossible in EVERY posture), `standing_grant` never appears in the root
-     table or on a non-ceiling row, and the demote column is posture-invariant
-     vs the root table (evidence beats posture). Together with invariant 3 the
-     two compose, never trade off: no posture makes a demote cell act, and the
+     (`sovereign` in v1; + `earn_up` since the axes build). A
+     `postures.guardian` key is REJECTED — the root `verdicts` table IS
+     guardian and is never redefined. Posture ceiling rows are wildcard-only
+     in {always_gated, standing_grant} (`auto` structurally impossible in
+     EVERY posture), `standing_grant` never appears in the root table or on a
+     non-ceiling row, and the demote column is posture-invariant vs the root
+     table (evidence beats posture). Together with invariant 3 the two
+     compose, never trade off: no posture makes a demote cell act, and the
      trust-inversion floor holds on the root/guardian table in every posture.
      (RECONCILE 2026-07-05: kept both — HEAD's trust-inversion floor [#3] +
      sovereign's posture rules [#4].)
+  5. EARN_UP-ONLY-NARROWS [axes spec 2026-07-05 §1]: every `postures.earn_up`
+     cell must be no more permissive than the corresponding root/guardian
+     cell on the VERDICT_PERMISSIVENESS ordering, and `standing_grant` is
+     forbidden anywhere in earn_up (ceilings stay always_gated). A table that
+     can only narrow is fail-safe by construction — this is what makes
+     earn_up selectable WITHOUT attestation in the posture kernel.
 
 This is matrix-as-DATA only — no gate behavior and no live side-effects on
 import or load. The one opt-in exception is `check_gate_actor_id_parity()`
@@ -105,10 +112,26 @@ VERDICTS = frozenset({
     "propose_only", "always_gated", "classifier", "standing_grant",
 })
 
-# Non-default postures the floor may define full verdict tables for (§2.1).
-# Guardian is NEVER a member — the root `verdicts` table IS guardian, and the
-# validator rejects a `postures.guardian` key outright [D1].
-POSTURES = frozenset({"sovereign"})
+# Non-default postures the floor may define full verdict tables for (§2.1;
+# earn_up joined in the axes build, spec 2026-07-05 §1). Guardian is NEVER a
+# member — the root `verdicts` table IS guardian, and the validator rejects a
+# `postures.guardian` key outright [D1].
+POSTURES = frozenset({"earn_up", "sovereign"})
+
+# Verdict permissiveness — the earn_up narrows-validator's ruler (AX-1 frozen
+# ordering). act_with_undo and notify_after share a rank (both act-first with
+# a different oversight handle). `standing_grant` deliberately carries NO
+# rank: it is ceiling-row-only, forbidden in earn_up and in the root table,
+# so it is never orderable against them.
+VERDICT_PERMISSIVENESS = {
+    "always_gated": 0,
+    "propose_only": 1,
+    "classifier": 2,
+    "auto_with_veto_window": 3,
+    "act_with_undo": 4,
+    "notify_after": 4,
+    "auto": 5,
+}
 
 # Confidence states (F's graduation states). Non-ceiling rows must cover all
 # five; ceiling rows use the "*" wildcard.
@@ -708,6 +731,8 @@ def _validate_postures(policy: dict[str, Any]) -> None:
         _validate_verdicts(
             table, hc, posture_table=True, where=f"postures.{name}.verdicts"
         )
+        if name == "earn_up":
+            _validate_earn_up_narrows(table, root_verdicts)
         # Demote invariance [§2.1] — checked after the shape pass, so every
         # non-ceiling row is known to carry an explicit demote cell.
         for rc, states in table.items():
@@ -724,6 +749,59 @@ def _validate_postures(policy: dict[str, Any]) -> None:
                     f"postures.{name}.verdicts.{rc}.demote = "
                     f"'{states['demote']}' drifts from the root table's "
                     f"'{root_row['demote']}' — demote is posture-invariant"
+                )
+
+
+def _validate_earn_up_narrows(table: dict, root_verdicts: dict) -> None:
+    """THE CI INVARIANT #5 — the `postures.earn_up` table may only NARROW vs
+    the root/guardian table [axes spec 2026-07-05 §1], machine-checked
+    cell-by-cell on VERDICT_PERMISSIVENESS. This is what makes earn_up
+    selectable WITHOUT attestation in the posture kernel: a table that can
+    only narrow is fail-safe by construction.
+
+    Runs AFTER `_validate_verdicts(posture_table=True)`, so shapes hold (full
+    class coverage, five states per non-ceiling row, single-'*' ceilings) and
+    every verdict is a VERDICTS member. Two hard rules on top of the shared
+    posture rules (demote invariance vs root stays with the generic pass in
+    `_validate_postures`):
+
+      a. `standing_grant` is forbidden ANYWHERE in earn_up — ceilings stay
+         plain always_gated (grants are a sovereign surface; earn_up climbs
+         through Captain-granted rungs, never through standing grants).
+      b. rank(earn_up cell) <= rank(root cell), every cell. Equality is legal
+         (narrow-or-equal); any widening is a hard validation error, so no
+         future merge can quietly turn the cautious start into an act-first
+         table. All autonomy above this floor comes from the trust-ladder
+         overlay at run time (AX-2), never from the table.
+    """
+    for rc, states in table.items():
+        root_row = root_verdicts.get(rc)
+        if not isinstance(root_row, dict):
+            raise MatrixValidationError(
+                f"postures.earn_up.verdicts.{rc}: no root/guardian row to "
+                f"narrow against"
+            )
+        for state, verdict in states.items():
+            if verdict == "standing_grant":
+                raise MatrixValidationError(  # rule (a)
+                    f"postures.earn_up.verdicts.{rc}.{state}: "
+                    f"'standing_grant' is forbidden in earn_up — ceilings "
+                    f"stay always_gated (grants are a sovereign surface)"
+                )
+            root_verdict = root_row.get(state, root_row.get("*"))
+            if root_verdict not in VERDICT_PERMISSIVENESS:
+                # Only reachable on a malformed standalone call (the root
+                # table never carries standing_grant) — fail closed anyway.
+                raise MatrixValidationError(
+                    f"postures.earn_up.verdicts.{rc}.{state}: root verdict "
+                    f"{root_verdict!r} is not orderable on "
+                    f"VERDICT_PERMISSIVENESS"
+                )
+            if VERDICT_PERMISSIVENESS[verdict] > VERDICT_PERMISSIVENESS[root_verdict]:
+                raise MatrixValidationError(  # rule (b)
+                    f"postures.earn_up.verdicts.{rc}.{state} = '{verdict}' "
+                    f"is more permissive than the root/guardian "
+                    f"'{root_verdict}' — earn_up may only narrow"
                 )
 
 

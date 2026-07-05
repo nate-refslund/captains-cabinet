@@ -162,6 +162,20 @@ policies:
       - "*instance/config/standing-grants.yml"
       - "*/instance/config/policies/*"
       - "*shared/interfaces/needs-ledger.jsonl"
+      # CABINET-AXES kernel (amendment 2026-07-05): the earn_up rung-ladder
+      # overlay (a forged rung map LIFTS verdicts), the axes-contract rule,
+      # the extension gate pair (manifest schema + validator), the live
+      # Captain-locked rung-grant file (covered before the deployment creates
+      # it; the .example sibling stays editable), and the shipped
+      # posture-presets dir. The axis allowlist rides */framework/policies/*
+      # above. instance/config/posture-narrow is DELIBERATELY absent --
+      # narrow-only cap, written by the Captain's binder verb at runtime.
+      - "*framework/learning/trust_ladder.py"
+      - "*.claude/rules/axes-contract.md"
+      - "*framework/schemas/extension-manifest.schema.json"
+      - "*cabinet/scripts/validate-extension.sh"
+      - "*instance/config/trust-ladder.yml"
+      - "*/instance/config/posture-presets/*"
     message: "Germline file -- read-only for officers and loops (no loop may edit its own judge). Propose the change to the Captain; only the Captain applies germline edits."
 
   # Officer tier2 isolation (mirrors pre-tool-use.sh sec 5 tier2 arm): an officer

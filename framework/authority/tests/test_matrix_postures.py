@@ -171,8 +171,9 @@ class TestShippedFloorPostures:
         # floor passed the full fail-closed validator.
         assert "postures" in _pol(loaded)
 
-    def test_postures_key_is_sovereign_only(self, loaded):
-        assert set(_pol(loaded)["postures"]) == {"sovereign"}
+    def test_postures_keys_are_earnup_and_sovereign(self, loaded):
+        # AX-1 (axes spec 2026-07-05 §1): earn_up joined the posture tables.
+        assert set(_pol(loaded)["postures"]) == {"earn_up", "sovereign"}
         assert set(_pol(loaded)["postures"]) <= M.POSTURES
 
     def test_sovereign_table_is_exactly_spec_2_1(self, loaded):
@@ -193,8 +194,10 @@ class TestShippedFloorPostures:
     def test_standing_grant_is_in_the_verdict_enum(self):
         assert "standing_grant" in M.VERDICTS
 
-    def test_postures_vocab_is_sovereign_only(self):
-        assert M.POSTURES == frozenset({"sovereign"})
+    def test_postures_vocab_never_admits_guardian(self):
+        # AX-1: earn_up joined the vocab; guardian stays structurally OUT —
+        # the root verdicts table IS guardian and is never redefined.
+        assert M.POSTURES == frozenset({"earn_up", "sovereign"})
         assert "guardian" not in M.POSTURES
 
 
@@ -459,5 +462,5 @@ class TestBackCompat:
         policies = policy_engine.load_policies(str(_REPO_ROOT))
         am = next(p for p in policies if p.get("name") == "authority-matrix")
         assert am["type"] == "authority_matrix"
-        assert set(am["postures"]) == {"sovereign"}
+        assert set(am["postures"]) == {"earn_up", "sovereign"}  # AX-1
         assert am["postures"]["sovereign"]["verdicts"] == _EXPECTED_SOVEREIGN

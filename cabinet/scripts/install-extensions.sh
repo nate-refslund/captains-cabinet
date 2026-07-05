@@ -14,6 +14,16 @@
 #   skills:   file-drop (.claude/skills/<name>/SKILL.md) or plugin-bundled —
 #             nothing for this script to do; documented in extensions.yml.
 #
+# AXES-CONTRACT GATE (spec §6.4, .claude/rules/axes-contract.md §2): every
+# declared extension with a LOCAL directory — the optional `dir:` key on a
+# plugin/mcp entry, or a plugin whose `source` is a local path — must pass
+# cabinet/scripts/validate-extension.sh (manifest schema + entrypoint
+# realpath containment + strict axis lint) BEFORE it is installed/rendered.
+# A failing extension is SKIPPED fail-closed and a kind=decision need is
+# filed (best-effort; a no-op where needs aren't wired). Entries with no
+# local dir (marketplace plugins, remote MCPs) have nothing to scan here —
+# the extend-cabinet skill routes their authoring through the same gate.
+#
 # Idempotent. Re-running skips already-installed plugins and re-renders the
 # extra-mcps.json from the declared set.
 #
@@ -75,6 +85,61 @@ N_MCPS=$(printf '%s' "$PARSED_JSON" | python3 -c "import json,sys; print(len(jso
 echo "  declared: $N_PLUGINS plugin(s), $N_MCPS extra MCP server(s)"
 
 # ──────────────────────────────────────────────────────────────────────────
+# Axes-contract gate helpers (spec §6.4) — validate-extension.sh is resolved
+# from THIS script's dir (the germline-locked gate of the running checkout),
+# never from CABINET_ROOT, so a re-pointed root cannot swap in a forged gate.
+# ──────────────────────────────────────────────────────────────────────────
+VALIDATE_EXT="$SCRIPT_DIR/validate-extension.sh"
+FRAMEWORK_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+resolve_ext_dir() { # $1=declared dir (may be empty) $2=source (may be empty)
+  local dir="$1" src="$2"
+  if [ -n "$dir" ]; then
+    case "$dir" in /*) ;; *) dir="$CABINET_ROOT/$dir" ;; esac
+    printf '%s' "$dir"
+  elif [ -n "$src" ] && [ -d "$src" ]; then
+    printf '%s' "$src"
+  fi
+}
+
+file_extension_need() { # $1=name $2=dir — best-effort, never blocks install
+  PYTHONPATH="$FRAMEWORK_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 - "$1" "$2" <<'PY' 2>/dev/null || true
+import os
+import sys
+
+from framework.authority import needs
+
+needs.file_need(
+    "decision",
+    action_type="extension_manifest",
+    why=("extension '%s' failed validate-extension.sh (%s) — skipped "
+         "fail-closed, not installed/rendered" % (sys.argv[1], sys.argv[2])),
+    unblocks=("installing the extension (fix its manifest / axis-lint "
+              "violations, then re-run install-extensions.sh)"),
+    filed_by="install-extensions.sh",
+    root=os.environ.get("CABINET_ROOT") or None,
+)
+PY
+}
+
+gate_extension() { # $1=name $2=dir → 0 pass, 1 fail (reported + need filed)
+  local name="$1" dir="$2" out
+  if [ -z "$dir" ] || [ ! -d "$dir" ]; then
+    fail "$name: declared extension dir not found (${dir:-<empty>}) — skipped (axes contract §6.4)"
+    file_extension_need "$name" "${dir:-<empty>}"
+    return 1
+  fi
+  if out="$(bash "$VALIDATE_EXT" "$dir" 2>&1)"; then
+    ok "$name passed the validate-extension gate"
+    return 0
+  fi
+  fail "$name FAILED the validate-extension gate — skipped fail-closed (axes contract §6.4)"
+  printf '%s\n' "$out" | tail -3 | sed 's/^/      /'
+  file_extension_need "$name" "$dir"
+  return 1
+}
+
+# ──────────────────────────────────────────────────────────────────────────
 # Plugins
 # ──────────────────────────────────────────────────────────────────────────
 if [ "$N_PLUGINS" -gt 0 ]; then
@@ -88,12 +153,20 @@ if [ "$N_PLUGINS" -gt 0 ]; then
   while [ "$i" -lt "$N_PLUGINS" ]; do
     get() { printf '%s' "$PARSED_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin)['plugins'][$i]; v=d.get('$1',''); print(v if not isinstance(v,list) else ','.join(map(str,v)))"; }
     name="$(get name)"; marketplace="$(get marketplace)"; source="$(get source)"
-    optional="$(get optional)"; required_env="$(get required_env)"
+    optional="$(get optional)"; required_env="$(get required_env)"; dir="$(get dir)"
     i=$((i + 1))
     [ -z "$name" ] && continue
 
     echo ""
     echo -e "${BLUE}plugin [$i/$N_PLUGINS] $name${NC}  (source: $source)"
+
+    # Axes-contract gate (§6.4): a plugin shipping a local dir (`dir:` key,
+    # or a local-path `source`) must pass validate-extension.sh or be
+    # skipped fail-closed BEFORE any `claude plugin ...` command runs.
+    ext_dir="$(resolve_ext_dir "$dir" "$source")"
+    if [ -n "$ext_dir" ] && ! gate_extension "$name" "$ext_dir"; then
+      continue
+    fi
 
     # required_env check (warn only; cabinet/.env is loaded at officer boot)
     if [ -n "$required_env" ]; then
@@ -143,13 +216,33 @@ fi
 if [ "$N_MCPS" -gt 0 ]; then
   echo ""
   echo -e "${BLUE}Rendering $N_MCPS extra MCP server(s) → instance/config/extra-mcps.json${NC}"
-  printf '%s' "$PARSED_JSON" | python3 -c "
-import json, sys
+
+  # Axes-contract gate (§6.4): an mcp declaring a local `dir:` must pass
+  # validate-extension.sh; failures are excluded from the render fail-closed.
+  SKIP_MCPS=""
+  i=0
+  while [ "$i" -lt "$N_MCPS" ]; do
+    getm() { printf '%s' "$PARSED_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin)['mcps'][$i]; v=d.get('$1',''); print(v if not isinstance(v,list) else ','.join(map(str,v)))"; }
+    m_name="$(getm name)"; m_dir="$(getm dir)"
+    i=$((i + 1))
+    [ -z "$m_name" ] && continue
+    if [ -n "$m_dir" ]; then
+      ext_dir="$(resolve_ext_dir "$m_dir" "")"
+      if ! gate_extension "$m_name" "$ext_dir"; then
+        SKIP_MCPS="$SKIP_MCPS,$m_name"
+      fi
+    fi
+  done
+  SKIP_MCPS="${SKIP_MCPS#,}"
+
+  printf '%s' "$PARSED_JSON" | SKIP_MCPS="$SKIP_MCPS" EXTRA_MCPS_FILE="$EXTRA_MCPS_FILE" python3 -c "
+import json, os, sys
 data = json.load(sys.stdin)
+skipped = set(filter(None, os.environ.get('SKIP_MCPS', '').split(',')))
 servers = {}
 for m in data['mcps']:
     name = m.get('name')
-    if not name:
+    if not name or name in skipped:
         continue
     entry = {}
     if m.get('command'): entry['command'] = m['command']
@@ -159,10 +252,9 @@ for m in data['mcps']:
     if m.get('env'): entry['env'] = m['env']
     servers[name] = entry
 out = {'mcpServers': servers}
-import os
-with open('$EXTRA_MCPS_FILE', 'w') as f:
+with open(os.environ['EXTRA_MCPS_FILE'], 'w') as f:
     json.dump(out, f, indent=2)
-print('  wrote ' + str(len(servers)) + ' server(s) to $EXTRA_MCPS_FILE')
+print('  wrote ' + str(len(servers)) + ' server(s) to ' + os.environ['EXTRA_MCPS_FILE'])
 "
   ok "extra-mcps.json rendered (merged into officer .mcp.json at boot)"
 else

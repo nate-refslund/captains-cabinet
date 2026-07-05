@@ -24,6 +24,7 @@
 #   sudo bash cabinet/scripts/germline-lock.sh unlock <path>   # one file
 #        bash cabinet/scripts/germline-lock.sh status   # who is locked (no sudo)
 #        bash cabinet/scripts/germline-lock.sh verify    # prove a locked file rejects a write (no sudo)
+#        bash cabinet/scripts/germline-lock.sh --backend ro-mount <any>  # docker target: no-op + host-side ritual (AX-4)
 #
 # OPERATIONAL PATTERN: unlock -> edit/commit germline -> lock. Because schg
 # blocks git rename/checkout on these paths, do all commits while UNLOCKED and
@@ -86,6 +87,20 @@ FILES=(
   "cabinet/scripts/gate-apply.sh"
   "cabinet/launchd/com.cabinet.gate-apply.plist"
   "shared/interfaces/gate-apply-watch.jsonl"
+  # --- cabinet-axes kernel (amendment 2026-07-05): the earn_up rung-ladder
+  #     overlay (a forged rung map LIFTS verdicts), the axis-branching
+  #     allowlist (framework/policies/ dir-cover already carries it — not
+  #     re-listed here), the axes-contract rule, the extension gate pair
+  #     (schema + validator), and the live Captain-locked rung-grant file
+  #     (deployment-created at the first `grant rung`; lock skips absent —
+  #     the .example stays unlocked). instance/config/posture-narrow is
+  #     DELIBERATELY absent everywhere: it can only NARROW (fail-safe) and
+  #     the Captain's binder verb writes it at runtime. ---
+  "framework/learning/trust_ladder.py"
+  ".claude/rules/axes-contract.md"
+  "framework/schemas/extension-manifest.schema.json"
+  "cabinet/scripts/validate-extension.sh"
+  "instance/config/trust-ladder.yml"
 )
 # whole directories locked -R (blocks edit AND new-file/rename/unlink inside —
 # closes the `cp evil framework/policies/newfile` class at the FS layer)
@@ -94,6 +109,7 @@ DIRS=(
   "framework/policies"         # typed policy rules
   "memory/golden-evals"        # the behavioral judges
   "instance/config/policies"   # D8: the instance policy layer — no officer may drop a widening policy file
+  "instance/config/posture-presets"  # axes: shipped axis points — a forged preset seeds a widened ruling
 )
 # DELIBERATELY NOT LOCKED — a sanctioned Python API appends to these at runtime
 # (veto_registry.py / action_lessons.py / needs.py, same uid). Forging one only
@@ -108,6 +124,26 @@ SKIP=(
 )
 
 need_root() { [ "$(id -u)" = "0" ] || { echo "ERROR: '$1' needs root (schg is system-immutable). Re-run: sudo bash cabinet/scripts/germline-lock.sh $1" >&2; exit 2; }; }
+
+# --backend ro-mount (docker deployment target, axes spec 2026-07-05 §3):
+# schg does not exist in a Linux container — there the boundary is the HOST's
+# read-only bind mounts (compose :ro over the germline dirs + posture.yml +
+# standing-grants.yml), which the container cannot remount at any privilege.
+# Every command is a deliberate NO-OP under this backend; the lock/unlock
+# ritual happens host-side. Runbook: cabinet/deploy/docker/README.md
+if [ "${1:-}" = "--backend" ]; then
+  case "${2:-}" in
+    ro-mount|ro_mount)
+      echo "germline-lock: backend ro-mount — nothing to chflags in a container."
+      echo "The boundary is the host's read-only bind mounts. To edit germline:"
+      echo "  1. on the HOST, edit the mounted files (unlock schg there first if the host arms it)"
+      echo "  2. docker compose restart cabinet"
+      echo "Runbook: cabinet/deploy/docker/README.md"
+      exit 0 ;;
+    schg) shift 2 ;;   # the explicit default — fall through to normal behavior
+    *) echo "usage: germline-lock.sh [--backend schg|ro-mount] lock|unlock [path]|status|verify" >&2; exit 1 ;;
+  esac
+fi
 
 cmd="${1:-status}"
 case "$cmd" in
@@ -138,6 +174,10 @@ case "$cmd" in
     echo "UNLOCKED all germline targets. RE-LOCK when done: sudo bash cabinet/scripts/germline-lock.sh lock"
     ;;
   status)
+    if [ -e /.dockerenv ]; then
+      echo "NOTE: container detected — schg is meaningless here; the boundary is the host-side ro mounts."
+      echo "      Run: bash cabinet/scripts/germline-lock.sh --backend ro-mount status (runbook: cabinet/deploy/docker/README.md)"
+    fi
     locked=0; unlocked=0
     for f in "${FILES[@]}"; do
       [ -e "$f" ] || continue
@@ -157,5 +197,5 @@ case "$cmd" in
     if printf '' >> "$probe" 2>/dev/null; then echo "VERIFY FAILED — wrote to locked $probe (boundary NOT holding)"; exit 1
     else echo "VERIFY OK — write to schg-locked $probe was refused (Operation not permitted)"; fi
     ;;
-  *) echo "usage: germline-lock.sh lock|unlock [path]|status|verify" >&2; exit 1 ;;
+  *) echo "usage: germline-lock.sh [--backend schg|ro-mount] lock|unlock [path]|status|verify" >&2; exit 1 ;;
 esac

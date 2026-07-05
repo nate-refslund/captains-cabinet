@@ -1,0 +1,46 @@
+# axes-allowlist.yml — THE germline-pinned allowlist of the axes contract
+# (axes spec docs/plans/cabinet-axes-spec-2026-07-05.md §6.1; enforced by
+# framework/tests/test_axes_contract.py).
+#
+# Doctrine: autonomy_level / flavor / deployment_target are DATA, consumed
+# through resolvers and tables — never code branches. The axis linter
+# AST-walks framework/ (tests/ dirs skipped) and rejects any comparison that
+# binds an axis-named identifier (posture, posture_name, autonomy_level,
+# flavor, deployment_target, level, postures) to an axis value (earn_up,
+# guardian, sovereign, personal, org, macbook, mac_mini, docker — literal or
+# canonical constant) OUTSIDE the files below. Extensions get NO allowlist at
+# all (cabinet/scripts/validate-extension.sh scans them strict): extensions
+# receive resolved axis values; they never read axis config.
+#
+# FAIL-CLOSED: closed schema — unknown keys, absolute paths, ".." segments,
+# or any malformed entry make the loader return the EMPTY allowlist (maximum
+# strictness ⇒ CI red), never a best-effort subset. WIDENING IS A CAPTAIN
+# ACT: framework/policies/ is Ring-0 (dir-covered in immutable-core.yml), so
+# adding an entry rides a germline amendment in an unlock window — officers
+# and loops cannot grow the branching surface.
+#
+# `pending: <lane>` marks a sanctioned entry whose immutable-core (Ring-0)
+# wiring is still OWED to the named lane (same flip discipline as
+# immutable-core.yml `pending:`): the wiring lane adds the path to
+# immutable-core.yml and deletes the flag in the SAME change. eval-020
+# (test_axes_contract.py) xfail-softens the allowlist ⊆ immutable-core check
+# ONLY for pending entries, hard-fails a stale flag (pending but already
+# wired), and hard-fails any non-pending entry missing from disk. As of the
+# cabinet-axes amendment (2026-07-05) no pending entries remain — every
+# entry below is Ring-0 and hard-asserted.
+version: 1
+allowed:
+  - path: framework/authority/posture.py
+    why: the posture kernel — resolves the level axis (narrow-only caps, schg attestation, deployment_target inference); axis comparisons ARE its job
+  - path: framework/authority/matrix.py
+    why: the ONE authority-matrix loader/validator — validates per-posture tables (rejects postures.guardian, earn_up-only-narrows rule)
+  - path: framework/authority/grants.py
+    why: ceilings-only standing-grants kernel — consumes posture.yml never_grant off the same attestation chain
+  - path: framework/frontdoor/action_exec.py
+    why: the execution surface applying posture-resolved semantics (sovereign notify_after / standing_grant branches) — Ring-0 judged code
+  - path: framework/frontdoor/actfirst_canary.py
+    why: the act-first canary — its sovereign branch selects which canary thresholds apply — Ring-0 judged code
+  - path: cabinet/scripts/lib/policy_engine.py
+    why: the gate — posture-table selection at verdict resolution (earn_up/sovereign branches); outside the framework/ walk but sanctioned for scoped scans
+  - path: framework/learning/trust_ladder.py
+    why: earn_up rung-ladder overlay — the lift applies ONLY when posture==earn_up (AX-2 surface, spec §1 L1; Ring-0-wired by AX-8)

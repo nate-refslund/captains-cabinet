@@ -18,7 +18,11 @@ This test IS the mechanism now, in both directions:
              flags `pending:` are xfail(strict=False) — the mechanism for
              FUTURE additions (enumerate first, wire each list, delete the
              flag same-commit). As of the sovereign amendment (2026-07-05)
-             every entry is fully wired and asserts hard.
+             every entry is fully wired and asserts hard; the cabinet-axes
+             amendment (2026-07-05) added its set (trust_ladder.py,
+             axes-allowlist.yml, axes-contract.md, the extension gate pair,
+             trust-ladder.yml, posture-presets/) fully wired in the same
+             change — no pending, every new entry asserts hard.
   REVERSE  — every atom found in each of the four lists maps back to an
              enumerated immutable-core entry, so no germline addition can
              bypass the single source.
@@ -390,11 +394,15 @@ def test_schema_entry_keys_closed():
 # Captain-locked attestation configs (FI-1/FI-2) — DEPLOYMENT-created at apply
 # time (§8 step 5), locked in step 7. Enumerated + fully list-wired BEFORE they
 # exist so the boundary arms the moment they land; the exists-on-disk typo
-# guard therefore exempts exactly these two (germline-lock lock prints
-# "skip (absent)" for them until the deployment creates them).
+# guard therefore exempts exactly these (germline-lock lock prints
+# "skip (absent)" for them until the deployment creates them). The live
+# rung-grant file (cabinet-axes 2026-07-05) is the same class: born at the
+# first Captain `grant rung`, files-class because rung grants MINT authority
+# (a forged row lifts verdicts); its .example sibling stays unlocked.
 _DEPLOYMENT_CREATED = frozenset({
     "instance/config/posture.yml",
     "instance/config/standing-grants.yml",
+    "instance/config/trust-ladder.yml",
 })
 
 # Runtime-created root-consumed data plane (SOV-9a): the gate-apply watch
@@ -446,6 +454,9 @@ _ROOT_EXECUTED_OR_AUTHORITY_MINTING = (
     "shared/interfaces/gate-apply-watch.jsonl",  # rows become cmd_watch's root `git apply -R`
     "instance/config/posture.yml",          # Captain-signed posture selection (FI-1)
     "instance/config/standing-grants.yml",  # Captain-signed ceiling grants (FI-2)
+    # cabinet-axes (2026-07-05): Captain-granted rung ladder — each row LIFTS
+    # a cell's verdict (propose_only → … → auto), i.e. mints authority.
+    "instance/config/trust-ladder.yml",
 )
 
 

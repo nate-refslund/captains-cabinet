@@ -117,16 +117,22 @@ VALID_EVENT_TYPES = frozenset({
     "capability_gap_resolved",            # gap closed (auto-skilled OR built+installed)
 
     # Self-extension surfacing — the Chair PREPARES + SURFACES; Nate applies.
-    # (trust_rung_proposed / trust_rung_granted were REMOVED 2026-07-04 with
-    # framework/learning/trust_ladder.py — earn-demotion ruling, captain-
-    # decisions 2026-07-03: reversible classes act-with-undo from day one and
-    # trust is LOST on evidence, never rung-earned. Dropping the types here is
-    # fail-closed: emit() rejects unregistered types, so no code path can ever
-    # record a rung grant again. Historical trust_rung_* events in old ledgers
-    # still replay fine — replay() filters by *requested* type and never
-    # validates against this emit-time allowlist.)
     "self_proposal_prepared",             # Chair surfaced a one-tap MCP/plugin scope-grant proposal
     "account_flow_surfaced",              # Chair surfaced a "credential needed" account-flow step
+
+    # Trust ladder — the earn_up posture's climb surface (axes build, spec
+    # 2026-07-05 §1 L1). REMOVED 2026-07-04 with framework/learning/
+    # trust_ladder.py (earn-demotion ruling: as a DEFAULT the ladder
+    # contradicted trust-first), RESURRECTED as the OPT-IN earn_up surface:
+    # `proposed` is the one-tap climb card trust_ladder.propose_next_rung
+    # surfaces (only when resolve_posture()==earn_up); `granted` is the
+    # Captain surface's (trust_ladder.grant_rung) AUDIT record ONLY — this
+    # ledger is same-uid-appendable, so NO authority ever derives from the
+    # event: current_rung() reads the `granted:` rows of the ATTESTED
+    # (Captain-locked) trust-ladder.yml exclusively (AX-8) and a forged
+    # event mints nothing. Guardian/sovereign never emit either type.
+    "trust_rung_proposed",
+    "trust_rung_granted",
 
     # Learning
     "experience_recorded",
