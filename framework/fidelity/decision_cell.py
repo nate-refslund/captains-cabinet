@@ -32,7 +32,8 @@ from dataclasses import asdict
 from pathlib import Path
 
 from framework.fidelity.oauth_llm import oauth_json_llm, oauth_raw_llm
-from framework.fidelity.officer_prompt import _CLONE_PRIVACY_FENCE
+from framework.env import captain_name
+from framework.fidelity.officer_prompt import _clone_privacy_fence
 from framework.fidelity.officer_runner import BrainAdapter
 from framework.fidelity.scorer import composite
 from framework.fidelity.types import DecisionCase
@@ -378,7 +379,7 @@ def run_decision_case(case: DecisionCase, llm=oauth_raw_llm,
     brain = brain or BrainAdapter()
     ident = _clone_identity(case, brain)
     system = _DECISION_CLONE_SYSTEM.format(
-        fence=_CLONE_PRIVACY_FENCE, patterns=ident["patterns"],
+        fence=_clone_privacy_fence(captain_name()), patterns=ident["patterns"],
         voice=ident["voice"], lessons=ident["lessons"])
     user = (f"# DECISION POINT (decide as-of {case.detected_at})\n"
             f"{case.dilemma}\n\nMake the call and give your reasoning.")

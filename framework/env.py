@@ -51,3 +51,56 @@ def ledger_dir() -> Path:
         return Path(explicit).expanduser()
     base = Path.home() / ".cabinet" / "ledger"
     return base if is_runtime() else base.with_name("ledger-dev")
+
+
+def _cabinet_root() -> Path:
+    """The deployment root — ``CABINET_ROOT`` env, else this file's repo root
+    (``framework/env.py`` → parents[1]). No hardcoded absolute path (the old
+    ``_captain_tz`` reader baked in ``/Users/nate/...`` — a launcher leak this
+    resolver deliberately avoids)."""
+    return Path(os.environ.get("CABINET_ROOT") or str(Path(__file__).resolve().parents[1]))
+
+
+# Cache: captain_name is read once per process (config does not change under a
+# running officer; a restart re-reads). None ⇒ not yet resolved.
+_captain_name_cache: "str | None" = None
+
+
+def captain_name(default: str = "Captain") -> str:
+    """The Captain's display name for this deployment — the FOUNDATION resolver
+    that lets framework code address the launcher WITHOUT hardcoding a name.
+
+    Reads ``captain_name`` from ``instance/config/platform.yml`` (portfolio /
+    live deployments), else ``instance/config/product.yml`` (single-product
+    ``work`` deployments), per CLAUDE.md → "Addressing the Captain". Any
+    absence / parse failure falls back to ``default`` ("Captain") — a generic
+    deployment stays generic, never crashes, and never leaks another
+    launcher's name. Framework code that greets/represents the Captain calls
+    this instead of a string literal."""
+    global _captain_name_cache
+    if _captain_name_cache is not None:
+        return _captain_name_cache
+    name = default
+    try:
+        import yaml  # local: keep env.py import-light for the safety switches
+        root = _cabinet_root()
+        for rel in ("instance/config/platform.yml", "instance/config/product.yml"):
+            p = root / rel
+            try:
+                if not p.exists():
+                    continue
+                data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+            except Exception:
+                continue
+            if not isinstance(data, dict):
+                continue
+            val = data.get("captain_name")
+            if val is None and isinstance(data.get("product"), dict):
+                val = data["product"].get("captain_name")   # product.yml nests it
+            if isinstance(val, str) and val.strip():
+                name = val.strip()
+                break
+    except Exception:
+        name = default
+    _captain_name_cache = name
+    return name

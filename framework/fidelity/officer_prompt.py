@@ -11,6 +11,7 @@ import os
 import re
 from pathlib import Path
 
+from framework.env import captain_name
 from framework.fidelity.types import Case
 
 _REPO_ROOT = Path(
@@ -61,11 +62,12 @@ def build_eval_system(case: Case, officer_role: str) -> str:
 # cutoff is the caller's job (BrainAdapter.drafting_lessons -> retro
 # .lessons_before); whatever lands in identity["lessons"] is injected verbatim.
 # ---------------------------------------------------------------------------
-_CLONE_PRIVACY_FENCE = (
-    "Use the following to shape HOW you write and decide — they are Nate's "
-    "PRIVATE model. NEVER quote, paste, or reference them in your reply, in a "
-    "decision, in an event, or in any artifact. They inform your style and "
-    "judgment only; they never appear in anything you produce.")
+def _clone_privacy_fence(cap: str) -> str:
+    return (
+        f"Use the following to shape HOW you write and decide — they are {cap}'s "
+        "PRIVATE model. NEVER quote, paste, or reference them in your reply, in a "
+        "decision, in an event, or in any artifact. They inform your style and "
+        "judgment only; they never appear in anything you produce.")
 
 
 def build_clone_eval_system(case: Case, officer_role: str,
@@ -88,18 +90,19 @@ def build_clone_eval_system(case: Case, officer_role: str,
     A missing/empty identity key degrades to "(unavailable)" — the prompt
     still assembles and still fences; it never KeyErrors."""
     identity = identity or {}
+    cap = captain_name()
 
     def _val(key: str) -> str:
         v = (identity.get(key) or "").strip()
         return v if v else "(unavailable)"
 
     block = (
-        "\n\n# CLONE IDENTITY — draft AS NATE\n"
-        "You are drafting the reply Nate himself would send. Become Nate's "
+        f"\n\n# CLONE IDENTITY — draft AS {cap.upper()}\n"
+        f"You are drafting the reply {cap} himself would send. Become {cap}'s "
         "clone: write in his voice and decide the way he decides.\n\n"
-        f"{_CLONE_PRIVACY_FENCE}\n\n"
-        f"## How Nate decides (nate_model patterns)\n{_val('patterns')}\n\n"
-        f"## How Nate writes (voice profile)\n{_val('voice')}\n\n"
+        f"{_clone_privacy_fence(cap)}\n\n"
+        f"## How {cap} decides (nate_model patterns)\n{_val('patterns')}\n\n"
+        f"## How {cap} writes (voice profile)\n{_val('voice')}\n\n"
         f"## Drafting lessons (date-filtered before the cutoff)\n"
         f"{_val('lessons')}\n\n"
         f"## Counterparty (atemporal frontmatter)\n{_val('person_static')}"
@@ -131,22 +134,23 @@ def build_agent_eval_system(case: Case, officer_role: str,
     his behalf, free to do better than a literal imitation would. The held-out
     reply (``case.real_reply``) is NEVER included."""
     identity = identity or {}
+    cap = captain_name()
 
     def _val(key: str) -> str:
         v = (identity.get(key) or "").strip()
         return v if v else "(unavailable)"
 
     block = (
-        "\n\n# AGENT IDENTITY — act ON NATE'S BEHALF\n"
-        "You are Nate's trusted AI agent handling this thread for him. Your "
-        "objective is the OUTCOME: serve Nate's goal in this situation as "
-        "well as — or better than — Nate himself would. You are NOT required "
-        "to mimic what Nate would literally have written; you ARE required to "
+        f"\n\n# AGENT IDENTITY — act ON {cap.upper()}'S BEHALF\n"
+        f"You are {cap}'s trusted AI agent handling this thread for him. Your "
+        f"objective is the OUTCOME: serve {cap}'s goal in this situation as "
+        f"well as — or better than — {cap} himself would. You are NOT required "
+        f"to mimic what {cap} would literally have written; you ARE required to "
         "pursue his intent, honor his standing decisions, and stay grounded "
         "in the supplied context (never invent facts).\n\n"
-        f"{_CLONE_PRIVACY_FENCE}\n\n"
-        f"## How Nate decides (nate_model patterns)\n{_val('patterns')}\n\n"
-        f"## How Nate writes (voice profile — calibrate tone, do not "
+        f"{_clone_privacy_fence(cap)}\n\n"
+        f"## How {cap} decides (nate_model patterns)\n{_val('patterns')}\n\n"
+        f"## How {cap} writes (voice profile — calibrate tone, do not "
         f"impersonate blindly)\n{_val('voice')}\n\n"
         f"## Drafting lessons (date-filtered before the cutoff)\n"
         f"{_val('lessons')}\n\n"
@@ -162,14 +166,15 @@ def _clean(text: str) -> str:
 
 
 def format_situation(case: Case, last_cap: int = 1500, cap: int = 600) -> str:
-    """Oldest-first situation text from thread_before only. Sent → 'Nate:',
-    received → the sender's display name. The last message keeps more body."""
+    """Oldest-first situation text from thread_before only. Sent → the Captain's
+    name, received → the sender's display name. Last message keeps more body."""
+    who_captain = captain_name()
     msgs = case.thread_before
     lines = [f"# HELD-OUT SITUATION (decide as-of {case.cutoff_ts})",
-             "The conversation below ends just before Nate replied. Draft the "
-             "reply Nate would have sent at that moment.\n"]
+             f"The conversation below ends just before {who_captain} replied. "
+             f"Draft the reply {who_captain} would have sent at that moment.\n"]
     for i, m in enumerate(msgs):
-        who = "Nate" if m.get("direction") == "sent" else \
+        who = who_captain if m.get("direction") == "sent" else \
             (m.get("who") or "").split("<")[0].strip() or case.person
         body = _clean(m.get("text") or "")
         limit = last_cap if i == len(msgs) - 1 else cap
@@ -202,6 +207,7 @@ def intent_and_context(case: Case) -> dict:
     fields are capped at ≤500 chars.
     """
     # Window: last ≤5 messages of thread_before ONLY (never real_reply).
+    cap = captain_name()
     window = case.thread_before[-_INTENT_WINDOW:]
 
     # The mission/goal is grounded in the counterparty's most recent ask: the
@@ -221,11 +227,11 @@ def intent_and_context(case: Case) -> dict:
 
     if last_received and last_sent:
         goal = (f"Respond to {case.person}'s request — \"{last_received}\" — "
-                f"in light of Nate's stated context: \"{last_sent}\".")
+                f"in light of {cap}'s stated context: \"{last_sent}\".")
     elif last_received:
         goal = f"Respond to {case.person}'s request: \"{last_received}\"."
     elif last_sent:
-        goal = (f"Continue the thread with {case.person} from Nate's last "
+        goal = (f"Continue the thread with {case.person} from {cap}'s last "
                 f"point: \"{last_sent}\".")
     else:
         # Thin/empty thread — name the gap rather than invent intent.
