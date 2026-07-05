@@ -1,0 +1,31 @@
+{
+  "case_format": 1,
+  "case_id": "case-b0ca15ea65a0a493",
+  "cell": {
+    "action_type": "__unstamped__",
+    "actor": "officer:cos",
+    "lane": "send-1to1-reply"
+  },
+  "human_verdict": {
+    "decided_at": "2026-06-23T20:28:29.094101+00:00",
+    "evidence": null,
+    "kind": "skip",
+    "proposal_decision": "rejected",
+    "review_source": null,
+    "review_verdict": "unknown",
+    "reviewed_at": null
+  },
+  "situation": {
+    "action": "draft-reply",
+    "action_type": null,
+    "actor": {
+      "id": "cos",
+      "kind": "officer"
+    },
+    "lane": "send-1to1-reply",
+    "proposal_required": true,
+    "refs": [],
+    "subject": "Maria-Maegaard-Koch",
+    "ts": "2026-06-23T20:28:29.094101+00:00"
+  }
+}

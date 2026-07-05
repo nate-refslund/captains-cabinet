@@ -210,3 +210,30 @@ normalized projection the graduation math reads.
 - The reasoning-review / architect loops keep their cadence and prompts;
   their *outputs* now also land as `review` blocks on the corresponding
   events, closing the loop in the same record the action opened.
+
+## Flywheel consumers (2026-07-05 — review §6.2/§6.3)
+
+Two additional READ-ONLY consumers of this ledger (neither changes the write
+path or the schema; fresh review 2026-07-04 §6 items 2–3):
+
+- **Regression corpus** — `cabinet/scripts/build-regression-corpus.py`
+  (logic: `framework/fidelity/regression_corpus_lib.py`) freezes every human
+  correction (`proposal.decision` edited/rejected, and `verdict_human`
+  `wrong` rows — undo/veto/edit by the binder's evidence prefix) into
+  replayable cases under `framework/fidelity/regression_corpus/`
+  (`{situation, human_verdict, cell}`; cell keyed exactly like
+  `compute_ratios`, `__unstamped__` sentinel included). The eval cadence
+  gates changes with `framework/fidelity/regression_gate.py`: PASS iff **no
+  frozen case regresses AND ≥1 improves**; any error/coverage hole →
+  `no_verdict`, never a pass.
+- **Judge calibration** — `cabinet/scripts/judge-calibration.py`
+  (logic: `framework/fidelity/judge_calibration.py`) measures
+  `verdict_judge` ↔ `verdict_human` agreement per subject (RAW rows: a judge
+  verdict superseded by a human verdict on the same identity is a
+  calibration pair) and writes an ATOMIC proof to
+  **`$CABINET_EVENT_LOG_DIR/judge-calibration-status.json`** — a new,
+  non-colliding filename family in the ledger dir (readers here glob only
+  `consequence-events-*.jsonl`). `judge_verdicts_may_demote()` is the
+  fail-closed precondition: **no `verdict_judge` row may count toward
+  demotion** until agreement ≥ 80% over ≥ 10 pairs with a proof < 14 days
+  old. Promotion is untouched (`verdict_human`-only, as above).

@@ -1,0 +1,17 @@
+{
+  "case_count": 6,
+  "case_ids": [
+    "case-0ce33b759f02b669",
+    "case-20f941bc982e9dea",
+    "case-3a656be151ed52b3",
+    "case-5ac3f128d5629c38",
+    "case-956cd536d64b1236",
+    "case-b0ca15ea65a0a493"
+  ],
+  "fingerprint": "b0e3b7fd2b83e5081028d56977e4117c816bf32f33755daf3cca4851b90d68aa",
+  "format": 1,
+  "kinds": {
+    "edit": 1,
+    "skip": 5
+  }
+}
