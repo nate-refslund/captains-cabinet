@@ -218,8 +218,14 @@ document itself is linted by `framework/tests/test_amendment_doc_lint.py`.
 
 ## §5 · APPLY-GATE evidence pack (all green before you reply)
 
-a. **P1-P6 green** — `python3.12 -m pytest framework/ cabinet/scripts/lib/tests -q`
-   with `CABINET_POSTURE` unset, then again with `CABINET_POSTURE=sovereign`.
+a. **P1-P6 green** — run the suites SEPARATELY (a combined `framework/ cabinet/scripts/lib/tests`
+   invocation errors at collection: `cabinet/scripts/lib/tests` and `cabinet/scripts/gates/tests`
+   both claim the top-level `tests` package). Use:
+   `python3.12 -m pytest framework/ -q` then `python3.12 -m pytest cabinet/scripts/lib/tests -q`
+   then `python3.12 -m pytest cabinet/scripts/gates/tests -q`, each with `CABINET_POSTURE` unset,
+   then re-run the framework sweep with `CABINET_POSTURE=sovereign`.
+   (Integrator-verified 2026-07-05: framework 2632 passed, sovereign sweep 1773 passed,
+   lib 438 passed, gates 6 passed.)
 b. **Sovereign scratch dry-run transcript** — on a scratch `CABINET_ID`
    tree: ceiling probe ⇒ blocked + `NEED-<hex>` filed ⇒ `grant NEED-<hex>`
    binder receipt renders the machine-effective scope ⇒
