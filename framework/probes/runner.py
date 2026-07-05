@@ -45,9 +45,15 @@ from typing import Any, Callable
 
 from framework.probes import lib
 
-# Default config path: instance layer (per-deployment products), overridable
-# per-invocation (--config) for fenced tests.
-CONFIG_PATH = Path(__file__).resolve().parents[2] / "instance" / "config" / "probes.yml"
+# Config path is INJECTED, not hardcoded — framework/ must not name the instance
+# layer (three-layer gate: framework cannot reference instance/). The mechanism
+# lives here; the per-deployment config path is supplied by the caller: an
+# explicit --config arg, else the CABINET_PROBES_CONFIG env var that the
+# cabinet/scripts glue (run-probes.sh) sets to the deployment's config (that
+# script IS allowed to reference instance/). Unset + no arg → no config → every
+# probe skips with a visible reason (fail-safe no-op). This is the plugin
+# contract: framework = mechanism, instance = config, glue = injection.
+CONFIG_PATH_ENV = "CABINET_PROBES_CONFIG"
 # Sentry cross-cycle seen-state (probe_sentry.py deploy template names this
 # exact location); dir env-overridable so tests never touch the durable copy.
 STATE_DIR_ENV = "CABINET_PROBE_STATE_DIR"
@@ -65,7 +71,12 @@ def load_config(path: Path | str | None = None) -> dict:
     """instance/config/probes.yml → dict. Missing/empty/broken file → {} (every
     probe then skips with a visible reason — config gaps never crash a cycle).
     yaml import deferred: the probe modules stay stdlib-only at import time."""
-    p = Path(path) if path else CONFIG_PATH
+    if path:
+        p = Path(path)
+    elif os.environ.get(CONFIG_PATH_ENV):
+        p = Path(os.environ[CONFIG_PATH_ENV])
+    else:
+        return {}                       # no injected config → no products → no-op
     try:
         import yaml   # deferred — same posture as run_action_lane.py:160
         data = yaml.safe_load(p.read_text())

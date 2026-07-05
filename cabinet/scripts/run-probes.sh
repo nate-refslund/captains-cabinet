@@ -58,6 +58,12 @@ fi
 PY="${CABINET_PYTHON:-/opt/homebrew/bin/python3.12}"
 cd "$ROOT" || exit 1
 export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
+# Inject the per-deployment probe config path. framework/probes/runner.py is
+# instance-agnostic (three-layer gate); THIS glue script — allowed to name the
+# instance layer — supplies the path. Unset/missing → runner returns {} → every
+# probe skips (fail-safe no-op). Override CABINET_PROBES_CONFIG upstream for a
+# non-default deployment.
+export CABINET_PROBES_CONFIG="${CABINET_PROBES_CONFIG:-$ROOT/instance/config/probes.yml}"
 
 SRC="${1:-all}"
 shift 2>/dev/null || true
