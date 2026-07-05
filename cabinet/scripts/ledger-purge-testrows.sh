@@ -299,6 +299,9 @@ for path in _paths:
                 except (json.JSONDecodeError, ValueError):
                     unparseable += 1
                     continue
+                if not isinstance(event, dict):
+                    unparseable += 1  # valid JSON, not an object — fail-safe: keep
+                    continue
                 if classify(event, family):
                     junk_here += 1
         skipped_today.append((basename, junk_here))
@@ -318,6 +321,17 @@ for path in _paths:
             except (json.JSONDecodeError, ValueError):
                 unparseable += 1
                 kept_lines.append(line)  # fail-safe: never drop unparseable
+                total_after += 1
+                continue
+            if not isinstance(event, dict):
+                # Valid JSON but not an object (bare array/number/string) —
+                # cannot be positively identified as junk, so it takes the
+                # same fail-safe path as an unparseable line (byte-verbatim
+                # keep + counted). Mirrors purge-sqlite-mirror.py::find_junk;
+                # without this guard classify() crashed with AttributeError
+                # mid-iteration (regression test pins it).
+                unparseable += 1
+                kept_lines.append(line)  # byte-verbatim keep
                 total_after += 1
                 continue
             criterion = classify(event, family)
