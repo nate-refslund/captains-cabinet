@@ -1,6 +1,6 @@
 """framework.frontdoor — the cabinet's send-path front-door (Phase 1 foundation).
 
-The one structure through which everything reaching Nate, and everything Nate
+The one structure through which everything reaching the Captain, and everything the Captain
 sends, passes (docs/cabinet-architecture-cohesive-2026-06-22.md §3). Four
 modules, one direction of dependency:
 

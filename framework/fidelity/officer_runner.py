@@ -29,6 +29,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from framework.env import captain_name
 from framework.fidelity import leakguard
 from framework.fidelity.fidelity_events import emit_case_evaluated, emit_case_leaked
 from framework.fidelity.oauth_llm import oauth_raw_llm
@@ -36,6 +37,12 @@ from framework.fidelity.officer_prompt import (
     build_agent_eval_system, build_clone_eval_system, build_eval_system,
     format_situation)
 from framework.fidelity.types import Case, OfficerDecision
+
+# Captain display name, resolved once per process (env.py caches). Renders
+# BYTE-IDENTICAL to the prior hardcoded captain name here; baked into the EVAL_MODE
+# prompt constants below so their sole .format() placeholder stays {cutoff_ts}
+# (3 tests call EVAL_MODE_RULES.format(cutoff_ts=...) with no other key).
+_CAP = captain_name()
 
 # ---------------------------------------------------------------------------
 # EVAL_MODE_RULES — conditional on whether context-gathering ran (design §4).
@@ -70,9 +77,9 @@ reference anything timestamped at or after that moment (search results, vault
 notes, commitments, decisions). This is a blind evaluation."""
 
 # F1's output-format line (context-starved arm): return only the reply text.
-_F1_OUTPUT_LINE = """
+_F1_OUTPUT_LINE = f"""
 
-Return ONLY the reply text Nate would have sent at that moment — no JSON, no
+Return ONLY the reply text {_CAP} would have sent at that moment — no JSON, no
 commentary, no subject line."""
 
 # EVAL_MODE_RULES — the gather=None (F1) block. Byte-identical to F1's original.
@@ -93,9 +100,9 @@ ask."""
 # Reconciled output line (gather arm): replaces F1's "Return ONLY the reply
 # text" so proposing options does not invite JSON/scaffolding — options go IN
 # the message text.
-_EVAL_MODE_GATHER_OUTPUT_LINE = """
+_EVAL_MODE_GATHER_OUTPUT_LINE = f"""
 
-Return only the message you would send Nate's counterparty — no JSON, no meta-commentary,
+Return only the message you would send {_CAP}'s counterparty — no JSON, no meta-commentary,
 no subject line. If the best response proposes options, put them in that message."""
 
 # EVAL_MODE_RULES_GATHER — the gather!=None block: strict boundary + permission
@@ -215,7 +222,7 @@ def _validate_read_path(path: str, cutoff_ts: str) -> str:
     (defense in depth on the brain server's own realpath jail):
       - reject empty, absolute, leading-slash, null-byte, or backslash paths;
       - reject ANY '..' traversal segment;
-      - reject 0-Self/ (the private Nate Model);
+      - reject 0-Self/ (the Captain's private self-model);
       - if the path embeds an ISO date (a daily note), require it strictly
         BEFORE the cutoff date — a future-dated note is a leak.
     Returns the normalized vault-relative path."""
@@ -234,7 +241,7 @@ def _validate_read_path(path: str, cutoff_ts: str) -> str:
     if not segments:
         raise ValueError(f"refused empty path: {path!r}")
     if segments[0].casefold() == "0-self":
-        raise PermissionError("refused: 0-Self/ is the private Nate Model")
+        raise PermissionError(f"refused: 0-Self/ is the private {_CAP} Model")
     norm = "/".join(segments)
     # Pre-cutoff gate: a date embedded in the path must be strictly < cutoff.
     m = _DATE_RE.search(norm)
@@ -649,8 +656,8 @@ def _gather_clone_identity(case: Case, brain: "BrainAdapter",
 
 
 # D17/INT-3 — the identity the gather arm drafts under. 'clone' (default,
-# diagnostic arm: draft AS Nate) stays the shard-output default until the
-# first AGB baseline is cut; 'agent' (act ON NATE'S BEHALF, outcome-first) is
+# diagnostic arm: draft AS the Captain) stays the shard-output default until the
+# first AGB baseline is cut; 'agent' (act ON THE CAPTAIN'S BEHALF, outcome-first) is
 # an explicit opt-in. Kept as a module constant so measure_intent and tests
 # share one vocabulary.
 IDENTITY_MODES = ("clone", "agent")
@@ -673,7 +680,7 @@ def run_case(case: Case, officer_role: str, llm=oauth_raw_llm,
         renders the already-leak-guarded dict to a context block appended AFTER
         format_situation in the USER message (no new system authority), AND
         builds the officer system via ``build_clone_eval_system`` so the officer
-        drafts AS NATE'S CLONE: the current-state identity priors (voice.md,
+        drafts AS THE CAPTAIN'S CLONE: the current-state identity priors (voice.md,
         nate_model('patterns'), drafting lessons date-filtered STRICTLY BEFORE
         the cutoff, and the atemporal person frontmatter) are gathered leak-safe
         (``_gather_clone_identity``) and injected into the SYSTEM prompt. The
@@ -681,8 +688,8 @@ def run_case(case: Case, officer_role: str, llm=oauth_raw_llm,
         the context / propose options + reconciled output line) still rides on.
 
     ``identity_mode`` (D17/INT-3) selects WHICH identity the gather arm drafts
-    under: ``'clone'`` (default — draft AS Nate, the diagnostic arm, exact
-    prior behavior) or ``'agent'`` (act ON NATE'S BEHALF, outcome-first, via
+    under: ``'clone'`` (default — draft AS the Captain, the diagnostic arm, exact
+    prior behavior) or ``'agent'`` (act ON THE CAPTAIN'S BEHALF, outcome-first, via
     ``build_agent_eval_system``). The default stays 'clone' until the first
     AGB baseline is cut (A/A invariant); an unknown mode raises ValueError
     (loud — a typo must never silently change what a shard measured). The F1
@@ -725,8 +732,8 @@ def run_case(case: Case, officer_role: str, llm=oauth_raw_llm,
         # Build the system from the gathered identity. Identity is gathered
         # leak-safe (lessons date-filtered STRICTLY before the cutoff);
         # person_static is reused from the gathered ctx. identity_mode picks
-        # the framing: 'clone' drafts AS Nate (default, byte-identical prior
-        # path); 'agent' acts ON NATE'S BEHALF (D17 opt-in).
+        # the framing: 'clone' drafts AS the Captain (default, byte-identical prior
+        # path); 'agent' acts ON THE CAPTAIN'S BEHALF (D17 opt-in).
         if brain is None:
             brain = BrainAdapter()
         identity = _gather_clone_identity(

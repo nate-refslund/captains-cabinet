@@ -9,7 +9,7 @@ byte-synced below this header; drift check: diff the two files minus this block)
 Origin rule (Captain, 2026-06-25): write only with characters on a normal
 Danish keyboard, PLUS emojis.
 
-Nate's rule (2026-06-25, refined): "write only with characters on a normal
+The captain's rule (2026-06-25, refined): "write only with characters on a normal
 Danish keyboard, PLUS emojis." So instead of an ever-growing substitution
 table, normalize_charset() enforces a CHARSET WHITELIST with an emoji-safe
 catch-all:
@@ -19,7 +19,7 @@ catch-all:
   2. WHITELIST  — the Danish-keyboard charset is kept verbatim: a-z A-Z, 0-9,
      ae/oe/aa (the three Danish letters, both cases), the accented Latin
      reachable via dead keys, standard punctuation/symbols (incl. EUR), space,
-     newline. EMOJIS are kept too (Nate uses them) and NEVER stripped.
+     newline. EMOJIS are kept too (the captain uses them) and NEVER stripped.
   3. CATCH-ALL  — any char NOT whitelisted and NOT an emoji is decomposed
      (unicodedata NFKD, combining marks stripped) and only the resulting
      keyboard chars are kept; if nothing keyboard-friendly results, the char is

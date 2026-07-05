@@ -7,7 +7,7 @@ gate — "NEVER call email or Teams APIs directly (no Graph calls, no Make
 webhooks, no SMTP, no chat POSTs)". The default transport is therefore
 `contract.queue_draft_stub`, raising NotImplementedError pointing at that
 bridge; a deployment with a different Captain-approved bridge injects its own
-`send_transport` at construction. Refactoring the pre-axes Nate-specific
+`send_transport` at construction. Refactoring the pre-axes Captain-specific
 Outlook path onto this contract = binding that bridge as the injected
 transport (axes spec docs/plans/cabinet-axes-spec-2026-07-05.md §4).
 

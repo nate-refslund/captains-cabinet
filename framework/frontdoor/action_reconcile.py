@@ -18,7 +18,7 @@ erase a landed human 👍 (the same read-modify-write, field-preserving supersed
     ``{ok, failed, unknown}``). This is where graduation's Gate-2 clock starts.
   - artifact gone without a Captain undo -> ``outcome=failed`` + ``review=wrong``,
     ``source=verdict_judge`` — UNLESS the Monday activity log attributes the
-    delete to Nate's user id, then ``verdict_human`` (his hand is his verdict).
+    delete to the Captain's user id, then ``verdict_human`` (his hand is his verdict).
 
 Idempotency AND the ordering guarantee come from ONE gate: only rows whose
 current ledger record is still ``outcome=unknown`` are reconciled. A human
@@ -41,13 +41,14 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from framework.acting import loop
+from framework.env import captain_name
 from framework.fidelity.consequence import (
     UNSTAMPED_ACTION_TYPE, emit_consequence, read_ledger)
 from framework.frontdoor import action_undo
 from framework.frontdoor.binder_wire import acted_verdict_event
 
 # The Monday activity-log events that count as a REVERT of a lane-created item
-# (an archive / delete / a column wiped back). Attribution to Nate's user id on
+# (an archive / delete / a column wiped back). Attribution to the Captain's user id on
 # any of these upgrades a silent revert to a human verdict.
 _REVERT_EVENTS = frozenset({
     "archive_pulse", "delete_pulse", "restore_pulse",
@@ -84,7 +85,7 @@ def item_state(monday_post: Callable, item_id: str) -> Dict[str, Any]:
 def item_activity(monday_post: Callable, item_id: str,
                   since: Optional[str] = None) -> List[Dict[str, Any]]:
     """The item's activity-log entries (event / user_id / ts) at or after
-    ``since`` — the attribution source for a Nate-caused revert."""
+    ``since`` — the attribution source for a Captain-caused revert."""
     data = monday_post(
         "query($id: [ID!]) { items(ids: $id) {"
         " activity_logs { event user_id created_at } } }", {"id": [str(item_id)]})
@@ -128,7 +129,7 @@ def make_monday_probe(monday_post: Callable, *,
 def _probe_verdict(row: dict, monday_probe: Optional[Callable]):
     """(verdict, source, evidence) for a past-TTL row. No probe, a probe error,
     or an intact artifact -> ttl_ok (conservative — a revert is never invented).
-    A missing/archived artifact -> silent_revert (verdict_human iff Nate's hand)."""
+    A missing/archived artifact -> silent_revert (verdict_human iff the Captain's hand)."""
     if monday_probe is None:
         return "ttl_ok", None, None
     try:
@@ -139,7 +140,7 @@ def _probe_verdict(row: dict, monday_probe: Optional[Callable]):
         return "ttl_ok", None, None
     if state.get("reverted_by_nate"):
         return ("silent_revert", "verdict_human",
-                "silent revert attributed to Nate (Monday activity log)")
+                f"silent revert attributed to {captain_name()} (Monday activity log)")
     return "silent_revert", "verdict_judge", None
 
 

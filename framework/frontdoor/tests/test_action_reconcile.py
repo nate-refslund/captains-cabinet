@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import pytest
 
+from framework.env import captain_name
 from framework.fidelity import consequence
 from framework.frontdoor import action_reconcile as ar
 from framework.frontdoor import action_undo as au
@@ -117,7 +118,7 @@ def test_silent_revert_nate_attributed_upgrades_to_human():
                  read_ledger_fn=lambda: [], emit=rec.emit, gc=False)
     ev = rec.emitted[0]
     assert ev["review"]["verdict"] == "wrong" and ev["review"]["source"] == "verdict_human"
-    assert "attributed to Nate" in ev["outcome"]["evidence"]
+    assert f"attributed to {captain_name()}" in ev["outcome"]["evidence"]
 
 
 # --- idempotency + the ordering guarantee (RT-B1) ----------------------------

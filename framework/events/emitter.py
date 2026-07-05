@@ -116,7 +116,7 @@ VALID_EVENT_TYPES = frozenset({
     "capability_gap_declined",            # Captain declined (with reason → learning)
     "capability_gap_resolved",            # gap closed (auto-skilled OR built+installed)
 
-    # Self-extension surfacing — the Chair PREPARES + SURFACES; Nate applies.
+    # Self-extension surfacing — the Chair PREPARES + SURFACES; the Captain applies.
     "self_proposal_prepared",             # Chair surfaced a one-tap MCP/plugin scope-grant proposal
     "account_flow_surfaced",              # Chair surfaced a "credential needed" account-flow step
 

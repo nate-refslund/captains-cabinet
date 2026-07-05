@@ -39,7 +39,7 @@ from pathlib import Path
 
 # Repo root from THIS file (parents[2] = the tree with framework/), NEVER a
 # hardcoded absolute. WHY [lane-supply 2026-07-05, adversarial-review fix]:
-# framework/ is a namespace package, so a literal "/Users/nate/captains-cabinet"
+# framework/ is a namespace package, so a hardcoded absolute repo path
 # front-loads the MAIN checkout onto framework's namespace __path__ and a run
 # from a git worktree then imports main's STALE framework/* instead of the
 # worktree's (the same import-order shadowing that failed lane-supply's registry

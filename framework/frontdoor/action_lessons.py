@@ -92,7 +92,7 @@ def _now_iso() -> str:
 # --- deterministic taxonomy classifier -----------------------------------------
 #
 # NEVER an LLM slug (RT-A10 discipline, same bar as veto scopes): the taxonomy is
-# a keyword match over the Captain's own words (EN + DA — Nate replies in both),
+# a keyword match over the Captain's own words (EN + DA — the Captain replies in both),
 # with verb-level defaults where the words carry no signal. Deterministic =>
 # testable => the repeat-taxonomy falsifier can trust its denominator.
 

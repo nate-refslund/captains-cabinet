@@ -50,8 +50,8 @@ GRAD_CREDIT_FALSE_REF = "graduation-credit:false"
 # are NOT decisive → unknown, re-observed next cycle rather than scored a loss.
 _RED_CONCLUSIONS = {"FAILURE", "TIMED_OUT", "CANCELLED"}
 
-# ── DEPLOY TEMPLATE (Nate-gated — NOT installed by building this file) ────────
-# Built + tested now; going live is a deliberate deploy step (reads Nate's live
+# ── DEPLOY TEMPLATE (Captain-gated — NOT installed by building this file) ────────
+# Built + tested now; going live is a deliberate deploy step (reads the Captain's live
 # GitHub CI) that needs THREE things, none done here:
 #   1. a __main__ entry that builds the real GhCiClient + reads the product
 #      repo(s) and their CI workflow name (<product-ci>) from config, calls

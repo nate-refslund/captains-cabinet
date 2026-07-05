@@ -11,7 +11,7 @@ explicit ``now`` is injected. Fully unit-testable, deterministic.
 
 CONSERVATIVE FORWARD-JUDGE: ``forward_judge(item)`` defaults True — the job is
 to UNIFY + ENRICH, not drop. Tightening (evidence-based filtering of *what
-reaches Nate*) lives in ``forward_judge`` later; today it forwards everything.
+reaches the Captain*) lives in ``forward_judge`` later; today it forwards everything.
 
 SECRET-SAFETY: composer never reads the environment and never emits token or
 ``nate_model``/voice material. It renders ONLY producer-supplied content

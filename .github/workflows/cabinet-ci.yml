@@ -410,3 +410,26 @@ jobs:
       # either purge script's drop criteria would merge unnoticed.
       - name: Cabinet script tests (purge parity + generate-instance)
         run: python -m pytest cabinet/scripts/tests -q
+
+  # DN-6 (2026-07-05): the de-Nate FOUNDATION gate — framework/ must be
+  # launcher-agnostic (any captain, not just Nate). Two files, one job:
+  #   * test_no_launcher_hardcode.py — the RATCHET. Text-walks framework/**/*.py
+  #     and fails on a bare `Nate` / `/Users/nate` outside a documented,
+  #     shrink-only allowlist. After the sweep, a NEW hardcoded launcher name in
+  #     framework is CI-red here, not a review note.
+  #   * test_clean_room.py — the RUNTIME proof. Drives CABINET_ROOT at a throwaway
+  #     instance naming captain `Testburg` and asserts the fidelity identity
+  #     prompt renders Testburg (and `Captain` with no platform.yml), NOT Nate.
+  # Its own job so a launcher-leak regression is a distinct, unmissable signal.
+  clean-room-foundation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: pip install pytest pyyaml
+      - name: Clean-room foundation (launcher-agnostic ratchet + runtime proof)
+        run: python -m pytest framework/tests/test_no_launcher_hardcode.py framework/tests/test_clean_room.py -q

@@ -71,7 +71,7 @@ from framework.probes import correlation, lib, verifier
 # own review.
 ACTION_CARD = "action-card"
 CLAIMED = "done"        # in verifier._CLAIM_SUCCESS — the acted card's implicit claim
-HC_SLUG = "verifier"    # healthchecks liveness slug (check creation is Nate's step)
+HC_SLUG = "verifier"    # healthchecks liveness slug (check creation is the Captain's step)
 
 
 def _cell_of(row: dict) -> dict:

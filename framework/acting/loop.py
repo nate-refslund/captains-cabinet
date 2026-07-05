@@ -7,7 +7,7 @@ no Telegram send, no queue_draft, no file writes; those wrap around this core vi
 injected dispatch in a later slice, so this stays fully unit-testable and safe.
 
 The captain's reply drives the ladder: **approve = proof (climb), edit =
-correction, skip = boundary**, plus the two shapes Nate asked for — instance
+correction, skip = boundary**, plus the two shapes the captain asked for — instance
 *instruction* ("also build A and tell them when done") and standing *policy*
 ("don't reply to these people unless they explicitly await me").
 
@@ -60,7 +60,7 @@ _APPROVE_RE = re.compile(r"^\s*((send|ok|okay|approve[d]?|yes|ja)\b|[👍👌�
                          re.IGNORECASE)
 _DRAFT_PREFIX = re.compile(r"^\s*draft[-\s]?reply[:,\s]*", re.IGNORECASE)
 
-# --- bilingual (EN + DA) markers. Nate writes Danish; production uses the
+# --- bilingual (EN + DA) markers. The captain writes Danish; production uses the
 #     officer LLM, but the heuristic must handle his common shapes. ---
 _INSTR_RE = re.compile(
     r"\b(also|then|and (also )?(build|make|create|do|send|tell|ping|notify|draft|"

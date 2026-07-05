@@ -638,7 +638,7 @@ def _monday_post(query: str, variables: dict) -> dict:
     return out.get("data") or {}
 
 
-# The Monday Tasks board in Nate's AI Workspace — the default landing board for
+# The Monday Tasks board in the Captain's AI Workspace — the default landing board for
 # lane-created tasks. A proposal's free-text board_hint routes here unless it
 # carries an explicit numeric board_id (env ACTION_LANE_DEFAULT_BOARD overrides).
 DEFAULT_TASKS_BOARD = "5091706356"

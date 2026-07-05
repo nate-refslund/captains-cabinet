@@ -28,7 +28,7 @@ from pathlib import Path
 # directly (launchd/cron pass a bare path, not `-m`). Derive it from THIS file
 # (parents[2] = the tree that contains framework/), NEVER a hardcoded absolute.
 # WHY [lane-supply 2026-07-05, adversarial-review fix]: framework/ is a
-# namespace package (no __init__.py), so a literal "/Users/nate/captains-cabinet"
+# namespace package (no __init__.py), so a literal absolute repo path
 # front-loaded the MAIN checkout onto framework's namespace __path__. A test run
 # from a git worktree then imported main's STALE framework/* (e.g.
 # watchdog/registry.py, which lacks this lane's monthly floor) instead of the
@@ -42,6 +42,7 @@ sys.path.insert(0, os.path.expanduser("~/.screenpipe/pipes/_shared"))
 from framework.acting import loop, screenpipe_adapter as sa
 from framework.acting.loop import proposal_id
 from framework.fidelity.consequence import emit_consequence
+from framework.env import captain_name
 
 MAX = int(os.environ.get("DRAFT_LANE_MAX", "1"))
 TOKEN = os.environ["TELEGRAM_COS_TOKEN"]
@@ -98,9 +99,9 @@ def _tg(text: str) -> dict:
 
 def _store_draft(pid: str, thread: dict, draft: str) -> None:
     """Persist the EXACT presented draft, keyed by proposal id, so the Chair can
-    send it VERBATIM via the brain's queue_draft on Nate's 'send' reply.
+    send it VERBATIM via the brain's queue_draft on the captain's 'send' reply.
     loop.propose is leak-safe and stores no content, so without this the Chair
-    would have to re-draft (non-deterministic) — this guarantees Nate gets the
+    would have to re-draft (non-deterministic) — this guarantees the captain gets the
     draft he approved. Redis key cabinet:draft:<pid>, TTL 7d. Best-effort."""
     last = thread.get("last", {})
     channel = "teams" if last.get("source") == "teams" else "email"
@@ -123,7 +124,7 @@ def _store_draft(pid: str, thread: dict, draft: str) -> None:
 
 def _prep_lines(prep: dict) -> str:
     """Render the '🔎 prep:' block for the present message from gather()'s prep
-    dict: (a) what was auto-gathered, (b) what Nate should verify himself. Empty
+    dict: (a) what was auto-gathered, (b) what the captain should verify himself. Empty
     string when there is nothing to show (no prep block clutter)."""
     if not prep:
         return ""
@@ -168,27 +169,28 @@ def _auto_expire_self_replied() -> int:
     """FIX 2 — auto-expire stale-OPEN draft proposals so they stop suppressing
     future genuinely-new inbound.
 
-    Root cause: when Nate replies to the counterparty HIMSELF, his reply bypasses
+    Root cause: when the captain replies to the counterparty HIMSELF, his reply bypasses
     the approve gate, so the open proposal is never decided — it dangles pending
     forever, and the recency-aware dedup then suppresses every later message on
     that thread (it compares new inbound against the OLD pending proposal's ts).
-    Once Nate replies, the thread also LEAVES find_threads() (its last message is
+    Once the captain replies, the thread also LEAVES find_threads() (its last message is
     no longer inbound), so the proposal can only be reconciled from the ledger +
     stored conversation here, not from the awaiting set.
 
     For each OPEN proposal (loop.pending_proposals), expire it when EITHER:
-      (1) PRECISE — Nate sent an outbound message on that thread strictly newer
+      (1) PRECISE — the captain sent an outbound message on that thread strictly newer
           than the proposal (sa.nate_replied_since == True); the exact fix, or
       (2) BACKSTOP — the proposal is older than PROPOSAL_MAX_AGE_H and the
           precise check did not affirmatively say 'no newer reply' (None/True),
           so a stale draft never dangles even when the conversation is unreadable.
     A precise False (we positively saw NO newer self-reply) keeps the proposal
-    open until the age backstop — Nate genuinely hasn't replied yet. Expiry is the
+    open until the age backstop — the captain genuinely hasn't replied yet. Expiry is the
     SAME superseding event run_lane emits for a policy-only reply (loop.expire_event:
     decision='expired', verdict='unknown', no outcome) so graduation math is
     unaffected (expired/unknown are excluded from every denominator). Best-effort:
     any failure (ledger unreadable, redis/brain hiccup) expires nothing and never
     breaks the drafting run. Returns the count expired."""
+    cap = captain_name()
     try:
         open_props = loop.pending_proposals()
     except Exception as e:
@@ -210,10 +212,10 @@ def _auto_expire_self_replied() -> int:
             and (now - when).total_seconds() >= PROPOSAL_MAX_AGE_H * 3600
         )
         # Precise self-reply wins outright. The age backstop fires only when the
-        # precise check did NOT positively clear the thread (False == Nate has
+        # precise check did NOT positively clear the thread (False == the captain has
         # demonstrably not replied yet -> leave it open until truly stale).
         if replied is True:
-            reason = "Nate replied himself"
+            reason = f"{cap} replied himself"
         elif too_old and replied is not False:
             reason = f"stale > {PROPOSAL_MAX_AGE_H:g}h, no decision"
         else:
@@ -242,15 +244,16 @@ def main() -> None:
         print("done: another draft-lane run holds the lock — skipping this tick")
         return
     # FIX 2: reconcile stale-OPEN proposals BEFORE reading the open/decided maps
-    # below — expire any whose thread Nate already replied to himself (or that
+    # below — expire any whose thread the captain already replied to himself (or that
     # have gone stale). This must run first so the just-expired proposals no
     # longer appear in open_subject_ts() and therefore no longer suppress a
     # genuinely-new inbound on the same thread this very tick.
     _auto_expire_self_replied()
+    cap = captain_name()
     actor = {"kind": "officer", "id": "cos"}
     # Dedup against OPEN proposals (already awaiting your decision) AND against
     # DECIDED proposals with no genuinely-new inbound since the decision (Fix 1:
-    # a skip/send/edit must STICK — don't re-present a thread Nate already ruled
+    # a skip/send/edit must STICK — don't re-present a thread the captain already ruled
     # on unless a fresh message actually arrived). Both maps are read once so the
     # per-thread check is a dict lookup, not a per-thread ledger scan.
     #
@@ -287,14 +290,14 @@ def main() -> None:
         # the LIVE state right before we emit/present:
         #   (1) DUP guard: a proposal for this slug may have landed during our
         #       draft (residual race if the lock ever no-ops). If one is now open
-        #       FOR THIS-OR-A-NEWER inbound, skip — Nate must never get the same
+        #       FOR THIS-OR-A-NEWER inbound, skip — the captain must never get the same
         #       draft twice for an open thread. RECENCY-AWARE (open_proposal_blocks
         #       _live), mirroring the top-of-loop gate: a STALE older open proposal
-        #       (an earlier draft Nate hasn't decided) must NOT suppress the
+        #       (an earlier draft the captain hasn't decided) must NOT suppress the
         #       genuinely-new message we just drafted — that blunt check was the
         #       Morten-Stagaard 17:05 DPA miss (older 14:53 draft sat open, so the
         #       newer 17:05 reply was silently dropped here).
-        #   (2) FRESHNESS: Nate may have replied himself while we drafted (he is
+        #   (2) FRESHNESS: the captain may have replied himself while we drafted (he is
         #       faster than the 5-min lane), making his message the newest. A
         #       still-awaiting re-check from the same authority as find-time drops
         #       the now-stale draft. Fail-safe: still_awaiting()==None (brain
@@ -303,7 +306,7 @@ def main() -> None:
             print(f"skip (now-open proposal during draft) -> {t['person']}")
             continue
         if sa.still_awaiting(t["slug"], hours=72) is False:
-            print(f"skip (Nate already replied — latest no longer inbound) -> {t['person']}")
+            print(f"skip ({cap} already replied — latest no longer inbound) -> {t['person']}")
             continue
         prep = ctx.get("prep")
         ts = datetime.datetime.now(datetime.timezone.utc).isoformat()

@@ -15,7 +15,7 @@ grantability is INSTANCE-scoped, never flavor-structural):** the old
 whose risk_class ∈ the posture.yml `never_grant:` list are dropped
 fail-closed at load + ONE deduped kind=decision need per class (asking for
 a never-granted class is noise — never a recurring grant-request need).
-Nate's personal instance keeps its exact prior behavior via config
+The Captain's personal instance keeps its exact prior behavior via config
 (`never_grant: [external_comms]`, ACT-AND-DRAFT); the framework stops
 encoding one captain's policy.
 

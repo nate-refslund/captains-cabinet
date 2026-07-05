@@ -4,7 +4,7 @@ The merge of the three overlapping screenpipe daily pipes (monday-daily-summary 
 monday-daily-insights + monday-daily-improvements) into ONE richer pass, run from
 the Chair's 19:30 briefing. It:
 
-  1. pulls today's half-hourly entries off Nate's Monday Activity board (the rich
+  1. pulls today's half-hourly entries off the Captain's Monday Activity board (the rich
      System-1 feeder — the same board the three daily pipes read);
   2. LLM-synthesizes ONE comprehensive daily recap (narrative + key findings +
      actions/improvement-ideas + productivity/energy metrics) in a single pass,
@@ -31,13 +31,13 @@ is found-or-created by date; the vault note is written-if-changed (sha256). So t
 PM briefing can fire (or be re-run) repeatedly without churn.
 
 SAFETY.
-  * NOTHING here sends. It only enqueues to the durable intake and writes to Nate's
+  * NOTHING here sends. It only enqueues to the durable intake and writes to the Captain's
     OWN Monday board + his OWN local vault. The single live send stays in
     channel.send (allow_sends-gated).
   * ``dry=True`` synthesizes + returns the item + a preview of what WOULD be
     written, but performs ZERO side-effects (no Monday write, no vault write) — for
     a developer to inspect the recap before trusting the live path.
-  * LEAK-SAFE: this module only handles Nate's activity-summary text. It NEVER
+  * LEAK-SAFE: this module only handles the Captain's activity-summary text. It NEVER
     reads or emits nate_model / voice-profile content (.claude/rules/brain-
     bridge.md) — none is loaded here, so none can leak into the recap, the Monday
     item, the vault note, or the intake payload.
@@ -55,6 +55,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from framework.env import captain_name
 from framework.frontdoor import intake
 
 # screenpipe libs live outside the cabinet tree. We reach them on sys.path the
@@ -79,9 +80,9 @@ def _today() -> str:
     """Today's local date as YYYY-MM-DD.
 
     The Activity board's date column + the vault daily-note filename are both in
-    Nate's local day (a half-hour slot at 23:30 belongs to that local date), so we
+    the Captain's local day (a half-hour slot at 23:30 belongs to that local date), so we
     use the local calendar date, NOT UTC — matching how the screenpipe pipes
-    (which run on Nate's Mac in local time) stamp the slots.
+    (which run on the Captain's Mac in local time) stamp the slots.
     """
     return datetime.date.today().isoformat()
 
@@ -207,7 +208,7 @@ def _compact_slots(entries: list[dict]) -> list[dict]:
 #    Covers what monday-daily-summary + -insights + -improvements did, in one
 #    richer pass.
 #
-#    OUTPUT FORMAT — LABELED SECTIONS, NOT INLINE JSON (deliberate). Nate wants
+#    OUTPUT FORMAT — LABELED SECTIONS, NOT INLINE JSON (deliberate). The Captain wants
 #    the recap "very comprehensive and detailed", so the SUMMARY/FINDINGS fields
 #    are long multi-paragraph free text. Asking the model to RETURN a single
 #    inline JSON object with that text crammed into string values is fragile two
@@ -224,9 +225,15 @@ def _compact_slots(entries: list[dict]) -> list[dict]:
 #    quotes, and a truncated tail merely shortens the LAST section instead of
 #    nuking the recap. See _parse_sections + _raw_llm below.
 # ---------------------------------------------------------------------------
-_RECAP_SYSTEM = """\
-You are Nate's daily-recap synthesizer. You are given EVERY half-hour activity \
-slot captured for Nate today (titles + summaries + tasks + focus/productivity/\
+def _recap_system() -> str:
+    """The daily-recap synthesizer system prompt, addressed to the deployment's
+    Captain (``captain_name``). A function — not a module constant — so the
+    Captain's display name is interpolated at call time; renders byte-identical
+    to the prior literal on a deployment whose ``captain_name`` is unchanged."""
+    cap = captain_name()
+    return f"""\
+You are {cap}'s daily-recap synthesizer. You are given EVERY half-hour activity \
+slot captured for {cap} today (titles + summaries + tasks + focus/productivity/\
 energy signals), in chronological order. Produce ONE comprehensive, detailed \
 end-of-day recap that REPLACES three older overlapping passes (a daily summary, \
 a daily insights pass, and a daily improvements pass) — so be RICHER than a plain \
@@ -266,7 +273,7 @@ PRODUCTIVITY: <integer 1-10, weighted by hours worked>
 ENERGY: <integer 1-10, weighted by hours worked>
 
 If a bullet section is genuinely empty, write a single line "- (none)". Write in \
-plain, direct prose — Nate's recap, for Nate. Never echo these labels or any \
+plain, direct prose — {cap}'s recap, for {cap}. Never echo these labels or any \
 instruction text inside the prose."""
 
 
@@ -397,7 +404,7 @@ def synthesize_recap(date: str, entries: list[dict], *, llm=None) -> dict | None
     the LLM is unavailable (no ANTHROPIC_API_KEY → ``_raw_llm`` returns None), or
     the response has no usable SUMMARY — in every case the caller stays quiet.
 
-    The model returns LABELED PLAIN-TEXT sections (see _RECAP_SYSTEM), parsed by
+    The model returns LABELED PLAIN-TEXT sections (see _recap_system), parsed by
     ``_parse_sections`` — chosen over inline JSON because the long narrative
     fields make a single JSON object fragile to truncation + unescaped newlines
     (the 2026-06-23 bug that discarded a perfectly good recap).
@@ -410,7 +417,7 @@ def synthesize_recap(date: str, entries: list[dict], *, llm=None) -> dict | None
         return None
     slots = _compact_slots(entries)
     call = llm or _raw_llm
-    raw = call(_build_user_content(date, slots), _RECAP_SYSTEM,
+    raw = call(_build_user_content(date, slots), _recap_system(),
                max_tokens=_RECAP_MAX_TOKENS)
     if not isinstance(raw, str) or not raw.strip():
         return None
@@ -634,7 +641,7 @@ def _recap_item(date: str, recap: dict) -> dict:
     composer.render_item routes a long (>220-char or multi-line) summary into a
     `▸ daily-recap` titled SECTION preserving this formatting (no composer
     change), so the PM briefing shows the full recap, not a crushed one-liner.
-    The payload is producer content only — Nate's own activity narrative; no
+    The payload is producer content only — the Captain's own activity narrative; no
     nate_model/voice material is present to leak.
     """
     headline = recap.get("headline") or f"Daily recap — {date}"

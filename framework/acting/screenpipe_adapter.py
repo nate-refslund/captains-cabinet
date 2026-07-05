@@ -1,4 +1,4 @@
-"""Live adapters wiring the Cabinet acting lane to Nate's screenpipe brain.
+"""Live adapters wiring the Cabinet acting lane to the captain's screenpipe brain.
 
 These provide the gather / draft_fn deps that framework.acting.loop.run_lane (and
 propose()) expect, by calling the existing, battle-tested draft_lib in-process —
@@ -16,6 +16,9 @@ import os
 import re
 import subprocess
 import sys
+from pathlib import Path
+
+from framework.env import captain_name
 
 _PIPES = os.path.expanduser("~/.screenpipe/pipes")
 for _p in (_PIPES, os.path.join(_PIPES, "_shared")):
@@ -79,7 +82,7 @@ def _pol():
 # ---------------------------------------------------------------------------
 # Skip-list — Teams groups the draft-lane must NEVER draft replies for (Captain
 # rule 2026-06-24). The list is a plain text file (one group name per line, '#'
-# comments) seeded + appended by Nate OUTSIDE this repo; we load it FRESH every
+# comments) seeded + appended by the captain OUTSIDE this repo; we load it FRESH every
 # run so appends take effect with no restart. Matching is case-insensitive
 # substring against the thread's group/person display name AND its slug (the
 # vault folder, e.g. "Teams Group LEAD KANALEN" → matches entry "LEAD KANALEN").
@@ -149,7 +152,7 @@ def is_skipped_group(thread: dict, skip: list | None = None) -> bool:
 # as an awaiting-reply thread and the lane drafts a *prose reply* to it — which
 # is wrong twice over: a calendar invite is answered by Accept/Decline (a
 # calendar action), never by an email reply, AND it is not a thread that "needs
-# Nate's reply" at all. Calendar handling is a SEPARATE capability (the comms
+# the captain's reply" at all. Calendar handling is a SEPARATE capability (the comms
 # officer's calendar read + auto-accept course, designed alongside this).
 #
 # We classify calendar items here, from the captured message itself, with a
@@ -164,7 +167,7 @@ def is_skipped_group(thread: dict, skip: list | None = None) -> bool:
 #   1. iCalendar payload markers — the .ics body Outlook embeds in invites.
 #   2. Outlook/Teams invite skeleton — the "When:/Where:" (EN) or
 #      "Hvornår:/Hvor:" (DA) header block + the Teams join-meeting block.
-#      Both EN and DA because Nate's tenant is bilingual.
+#      Both EN and DA because the captain's tenant is bilingual.
 #   3. Organizer/room-resource sender or response-token signals — RSVP /
 #      "Accepteret/Afvist/Foreløbig" status lines, room-mailbox senders.
 # Each marker is anchored enough that a normal human email about an unrelated
@@ -238,7 +241,7 @@ def is_calendar_invite(thread: dict) -> bool:
 
 # ---------------------------------------------------------------------------
 # Fix 1 — a SKIP (or send/edit) must STICK. The propose loop dedups against
-# OPEN proposals; once Nate decides, the proposal resolves and the thread looks
+# OPEN proposals; once the captain decides, the proposal resolves and the thread looks
 # "free" again -> re-presented 2h later. These helpers let the loop also skip a
 # thread that has a DECIDED proposal in the consequence ledger UNLESS a genuinely
 # NEW inbound message arrived since that decision. Primary signal: the last
@@ -321,7 +324,7 @@ def open_subject_ts(rows: list | None = None) -> dict:
     consequence ledger's still-PENDING proposals (decision is None, no outcome).
 
     The OPEN-proposal companion to ``decided_subjects``. The propose loop dedups a
-    thread that already has an open proposal awaiting Nate's decision — but a blunt
+    thread that already has an open proposal awaiting the captain's decision — but a blunt
     'subject in open set' check silently swallows a GENUINELY NEW inbound that
     arrives while the prior draft is still undecided (the reported Kristoffer
     Round-2 bug: a Round-1 draft sat open since the night before, so the 11h-newer
@@ -359,7 +362,7 @@ def subject_has_open_proposal(slug: str, rows: list | None = None) -> bool:
     at the start of main(), then spends tens of seconds in the LLM gather/draft
     before it emits its own proposal. Two concurrent lane runs (a manual run + the
     5-min cron overlapping) therefore both snapshot 'no open proposal for Maria'
-    before either has emitted, both draft, and Nate gets the SAME draft twice.
+    before either has emitted, both draft, and the captain gets the SAME draft twice.
     Re-reading the ledger immediately before emit/present closes that window: a
     proposal that landed DURING our draft is now visible and we skip. Cheap (one
     ledger read) and called at most MAX times per run. ``rows`` injectable for
@@ -397,19 +400,19 @@ def open_proposal_blocks_live(thread: dict, rows: list | None = None) -> bool:
 
 def still_awaiting(slug: str, hours: int = 72) -> "bool | None":
     """LIVE freshness re-check: is ``slug``'s latest message STILL inbound
-    (awaiting Nate), as of right now?
+    (awaiting the captain), as of right now?
 
     Returns True if the slug is still an awaiting-reply thread, False if it is
-    NOT (Nate has since replied — his message is now the latest — or it dropped
+    NOT (the captain has since replied — his message is now the latest — or it dropped
     out for another reason), and None if undeterminable (the brain query failed).
 
-    Why: a backlog draft can surface AFTER Nate already replied himself (he is
+    Why: a backlog draft can surface AFTER the captain already replied himself (he is
     faster than the 5-min lane). find_threads() ran at the TOP of the run; by the
     time a later draft in the batch reaches present(), the live state may have a
-    Nate reply as the newest message. We must DROP such a draft. The authority is
+    the captain reply as the newest message. We must DROP such a draft. The authority is
     the same as find-time — ``find_awaiting_threads`` only returns a thread whose
     LAST message direction is 'received' — so a slug no longer in a FRESH call has
-    a non-inbound latest message (Nate replied) and must not be drafted. Fail-safe:
+    a non-inbound latest message (the captain replied) and must not be drafted. Fail-safe:
     any error → None (caller surfaces; never silently suppress a real reply on a
     transient brain hiccup)."""
     try:
@@ -420,17 +423,17 @@ def still_awaiting(slug: str, hours: int = 72) -> "bool | None":
 
 
 def nate_replied_since(slug: str, when: "_dt.datetime | None") -> "bool | None":
-    """FIX 2 detection: has Nate sent an OUTBOUND message on ``slug``'s thread
+    """FIX 2 detection: has the captain sent an OUTBOUND message on ``slug``'s thread
     that is STRICTLY NEWER than ``when`` (the open proposal's creation time)?
 
     The precise signal for stale-open proposal auto-expiry: an open draft
-    proposal sits forever when Nate replies to the counterparty HIMSELF (his
+    proposal sits forever when the captain replies to the counterparty HIMSELF (his
     reply bypasses the approve gate, so the proposal is never decided), and that
     dangling proposal then suppresses future genuinely-new inbound on the thread
     (the recency-aware dedup compares against the OLD pending proposal's ts).
     Detecting his own send lets the loop expire the proposal so the thread frees
     up. Note ``still_awaiting`` is the related-but-distinct find-time signal:
-    once Nate replies, the thread leaves find_awaiting_threads ENTIRELY (its last
+    once the captain replies, the thread leaves find_awaiting_threads ENTIRELY (its last
     message is no longer inbound), so the open proposal must be reconciled from
     the stored conversation, not from the awaiting set.
 
@@ -454,7 +457,7 @@ def nate_replied_since(slug: str, when: "_dt.datetime | None") -> "bool | None":
         if (m.get("direction") or "") == "sent" and d > when:
             return True
     # No sent message newer than `when`. If we could read ANY datable message
-    # (sent or received), that is a determinable "Nate has not replied since" ->
+    # (sent or received), that is a determinable "the captain has not replied since" ->
     # False; if nothing was datable (empty/unreadable convo) -> None so the caller
     # falls back to the time backstop and never expires on uncertainty.
     return False if saw_parseable_date else None
@@ -501,7 +504,7 @@ def _handled_key(slug: str) -> str:
 def handled_signature(slug: str) -> str:
     """The last-handled signature recorded for this thread, or '' if none.
     Best-effort: any redis error returns '' (re-present rather than wrongly
-    suppress — fail toward showing Nate the draft)."""
+    suppress — fail toward showing the captain the draft)."""
     try:
         r = subprocess.run(
             ["redis-cli", "-h", _redis_host(), "GET", _handled_key(slug)],
@@ -513,8 +516,8 @@ def handled_signature(slug: str) -> str:
 
 def record_handled(slug: str, signature: str, ttl: int = 1209600) -> None:
     """Persist the last-handled signature for a thread (default TTL 14d). Called
-    when a draft is presented AND when Nate decides, so the signature always
-    reflects the message Nate has seen. Best-effort (never raises)."""
+    when a draft is presented AND when the captain decides, so the signature always
+    reflects the message the captain has seen. Best-effort (never raises)."""
     try:
         subprocess.run(
             ["redis-cli", "-h", _redis_host(), "SET", _handled_key(slug),
@@ -533,7 +536,7 @@ def record_handled(slug: str, signature: str, ttl: int = 1209600) -> None:
 # refreshable, clearable) via chair-claim-thread.sh when it starts and clears it
 # via chair-release-thread.sh when it finishes. find_threads() checks the lock
 # and DROPS a locked thread BEFORE the gate/drafter — neither drafting it nor
-# notifying Nate about it, exactly like the skip-list exclusion. This is a
+# notifying the captain about it, exactly like the skip-list exclusion. This is a
 # RUNTIME-OWNERSHIP lock (cleared when the Chair is done), distinct from the
 # skip-list (a standing never-draft policy) and the calendar filter (a
 # classification): a thread can be claimed once, handled, released, then resume
@@ -596,24 +599,29 @@ def already_handled(thread: dict, decided: dict | None = None) -> bool:
 # 1-3 concrete things a good reply needs; we auto-gather what the brain can
 # answer (targeted search_brain + open_commitments_for + person history) and
 # attach it to the draft context, then surface a "🔎 prep:" block listing what
-# was gathered and what Nate must verify himself. Stays propose-only; the planner
+# was gathered and what the captain must verify himself. Stays propose-only; the planner
 # prompt is built from THREAD CONTENT ONLY — never nate_model / voice.
 # ---------------------------------------------------------------------------
-PREP_SYSTEM = (
-    "You prepare an assistant to draft a reply to ONE message on Nate's behalf. "
-    "Before drafting, decide what concrete facts a GOOD reply actually needs — "
-    "the courses-of-action rule: gather, then draft. From the message and thread "
-    "below, name 1-3 SPECIFIC things to check (e.g. 'compare the OLD vs NEW DPA', "
-    "'find the sommerfest date in the July calendar', 'pull the PolAds codebase "
-    "for how euEligibilityCategory is set'). For each, give a short brain search "
-    "query that would surface it from Nate's notes/vault. Mark whether it is the "
-    "kind of thing the vault can answer (searchable) or something only Nate can "
-    "confirm (e.g. a private doc, an external fact, his own intent). Respond with "
-    "STRICT JSON only:\n"
-    '{"needs": [{"item": "<what the reply needs, 1 line>", '
-    '"query": "<brain search query, or empty>", "searchable": true|false}]}\n'
-    "Keep it to at most 3 items. No prose outside the JSON."
-)
+def _prep_system(cap):
+    """The prep-planner system prompt (courses-of-action 'gather then draft'),
+    parameterized on the captain's display name (``cap`` = captain_name()) so the
+    framework never hardcodes a launcher. Built per call; renders byte-identically
+    to the prior module-level constant for the deployment's configured captain."""
+    return (
+        f"You prepare an assistant to draft a reply to ONE message on {cap}'s behalf. "
+        "Before drafting, decide what concrete facts a GOOD reply actually needs — "
+        "the courses-of-action rule: gather, then draft. From the message and thread "
+        "below, name 1-3 SPECIFIC things to check (e.g. 'compare the OLD vs NEW DPA', "
+        "'find the sommerfest date in the July calendar', 'pull the PolAds codebase "
+        "for how euEligibilityCategory is set'). For each, give a short brain search "
+        f"query that would surface it from {cap}'s notes/vault. Mark whether it is the "
+        f"kind of thing the vault can answer (searchable) or something only {cap} can "
+        "confirm (e.g. a private doc, an external fact, his own intent). Respond with "
+        "STRICT JSON only:\n"
+        '{"needs": [{"item": "<what the reply needs, 1 line>", '
+        '"query": "<brain search query, or empty>", "searchable": true|false}]}\n'
+        "Keep it to at most 3 items. No prose outside the JSON."
+    )
 
 
 def prep(thread: dict, *, max_items: int = 3) -> dict:
@@ -651,6 +659,7 @@ def prep(thread: dict, *, max_items: int = 3) -> dict:
         enriched_parts.append("### prep: open commitments\n" + "\n".join(commits))
 
     # 2) The planner names what the reply needs (one LLM call, thread-only input).
+    cap = captain_name()
     plan = None
     try:
         payload = (
@@ -658,7 +667,7 @@ def prep(thread: dict, *, max_items: int = 3) -> dict:
             f"# THREAD (oldest-first)\n{convo[:2500]}\n\n"
             f"# MESSAGE TO REPLY TO\n{topic[:1200]}"
         )
-        plan = cl.call_llm(payload, PREP_SYSTEM, max_tokens=500)
+        plan = cl.call_llm(payload, _prep_system(cap), max_tokens=500)
     except Exception:
         plan = None
 
@@ -750,7 +759,7 @@ def deploy_health(app: str, limit: int = 8) -> dict:
 
 def gather(thread: dict, *, do_prep: bool = True) -> dict:
     """run_lane's gather(thread_ref) — assemble the as-of-now context + the
-    should-Nate-reply gate decision for one thread.
+    should-reply gate decision for one thread.
 
     Fix 2: when ``do_prep`` (the default), an investigate-then-draft prep step
     runs FIRST — a one-call planner names the concrete things the reply needs and
@@ -809,8 +818,8 @@ def gather(thread: dict, *, do_prep: bool = True) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Nate-voice character normalize (captain-patterns -> teams-message-voice-
-# formatting). Nate's rule (2026-06-25): write only with characters on a normal
+# captain-voice character normalize (captain-patterns -> teams-message-voice-
+# formatting). The captain's rule (2026-06-25): write only with characters on a normal
 # Danish keyboard, PLUS emojis. Enforced as a CHARSET WHITELIST + emoji-safe
 # catch-all rather than a substitution list, so unanticipated fancy chars (a CJK
 # char, a math symbol, an exotic dash variant) are caught, not leaked:
@@ -858,7 +867,7 @@ def _voice_fallback(text):
 
 
 def normalize_voice(text):
-    """Normalize Nate-voice outbound text to the Danish-keyboard-plus-emoji charset
+    """Normalize captain-voice outbound text to the Danish-keyboard-plus-emoji charset
     (the teams-message-voice-formatting rule). Delegates to draft_lib.humanize when
     available (single source of truth: charset whitelist + emoji-safe catch-all);
     otherwise applies the SAME voice_charset model locally. Idempotent and total —
@@ -876,11 +885,11 @@ def normalize_voice(text):
 
 
 # ---------------------------------------------------------------------------
-# "Hej <name>" opener rule (teams-message-voice-formatting (c)). Nate opens with
+# "Hej <name>" opener rule (teams-message-voice-formatting (c)). the captain opens with
 # a "hej <name>" greeting only on the FIRST message of the day to that person; a
 # follow-up later the same day just continues, no re-greeting. This is a judgment
 # rule, so it fires ONLY on positive evidence: we strip a leading greeting line
-# from the draft *only* when Nate has already SENT this person a message earlier
+# from the draft *only* when the captain has already SENT this person a message earlier
 # TODAY (in his local timezone). Fail-safe in BOTH directions — if we cannot
 # prove a same-day prior send (no history, unparseable dates, any error) we keep
 # the greeting (the conservative default: a stray greeting is harmless; wrongly
@@ -892,7 +901,8 @@ def _captain_tz():
     'today' boundary. Falls back to Europe/Berlin (CET/CEST) then UTC."""
     name = "Europe/Berlin"
     try:
-        path = "/Users/nate/captains-cabinet/instance/config/platform.yml"
+        root = os.environ.get("CABINET_ROOT") or str(Path(__file__).resolve().parents[2])
+        path = os.path.join(root, "instance", "config", "platform.yml")
         with open(path, encoding="utf-8") as f:
             for line in f:
                 s = line.strip()
@@ -924,7 +934,7 @@ _GREETING_LINE_RE = re.compile(
 
 
 def messaged_today(thread: dict) -> bool:
-    """True when Nate has already SENT a message to this person earlier TODAY
+    """True when the captain has already SENT a message to this person earlier TODAY
     (captain-local day). Looks at the thread's recent messages and, best-effort,
     the fuller stored conversation. Any uncertainty (no parseable same-day sent
     message, error) returns False — so the greeting is kept by default."""
@@ -955,7 +965,7 @@ def messaged_today(thread: dict) -> bool:
 
 
 def strip_greeting_if_not_first_of_day(draft: str, thread: dict) -> str:
-    """Drop a leading 'hej <name>' greeting line from `draft` ONLY when Nate has
+    """Drop a leading 'hej <name>' greeting line from `draft` ONLY when the captain has
     already messaged this person earlier today (messaged_today). Otherwise return
     the draft unchanged. Only the FIRST physical line is considered a greeting,
     and only if it matches the greeting shape — body content is never touched."""
@@ -981,8 +991,8 @@ def draft_fn(thread: dict, ctx: dict, *, min_confidence: float = 0.0):
     the lane stays silent on this thread, no proposal made).
 
     The returned draft is run through normalize_voice() (em/en dashes, bullet
-    glyphs and → arrows become Nate's plain forms) and the first-of-day greeting
-    rule (a leading 'hej <name>' is dropped when Nate already messaged this
+    glyphs and → arrows become the captain's plain forms) and the first-of-day greeting
+    rule (a leading 'hej <name>' is dropped when the captain already messaged this
     person earlier today) so the cabinet lane never surfaces — or persists for
     verbatim send — a draft that breaks the teams-message-voice-formatting rules.
     """

@@ -2,20 +2,20 @@
 
 Captain directive (2026-06-24, "make sure all pipes reach you every time"): the
 single-voice flag reroutes informational pipe DMs into the intake stream
-(cabinet:frontdoor:intake) instead of DMing Nate. This is the loop that drains
+(cabinet:frontdoor:intake) instead of DMing the Captain. This is the loop that drains
 that stream and actually gets items to him:
 
-  - ping-now  -> DM Nate immediately (channel.send), then ACK.
+  - ping-now  -> DM the Captain immediately (channel.send), then ACK.
   - batch/fyi -> left PENDING for the next briefing to compose + ACK (one voice).
 
 It also recovers ping-now items left pending by a crash/incomplete prior run, so
 a time-sensitive brief is never silently stuck. Best-effort: never raises.
 
 Run frequently (every ~5 min) via com.cabinet.intake-surface so ping-now items
-(pre-meeting briefs, prod alerts) reach Nate promptly.
+(pre-meeting briefs, prod alerts) reach the Captain promptly.
 
 It ALSO drains lane officers' captain-attention cards into the intake first
-(attention_drain.drain_attention): officers that can't DM Nate card decisions to
+(attention_drain.drain_attention): officers that can't DM the Captain card decisions to
 cabinet:captain-attention:<project>, and this is the loop that forwards those
 into the one-voice intake so the same ping-now/batch routing applies. Best-effort
 and ordered first so a card raised this tick can surface this tick.

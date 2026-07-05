@@ -30,7 +30,7 @@ refs (the review object is frozen).
 DEFERRED (documented, NOT built here — deploy/follow-on):
   - the LIVE Haiku pass (through framework/fidelity/oauth_llm.py's clean cwd);
     here it is an injected callable, no LLM call in this module or its tests.
-  - com.cabinet.verifier.plist (hourly) — deploy is Nate-gated.
+  - com.cabinet.verifier.plist (hourly) — deploy is Captain-gated.
   - the penalty-free escalate/self-flag(reason) officer-prompt tool line
     (shared F0.16) — a graduation calibration INPUT, wired officer-side.
   - graduation's direct-demote-on-fabrication consumption of demote:direct (B2.9).

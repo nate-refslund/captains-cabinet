@@ -4,7 +4,7 @@ germline CODE auto-apply stays DARK.
 `ratify()` is the ONLY sanctioned reviewer for self-improvement *code diffs*:
 it produces an evidence pack and **applies nothing** — the apply lane
 (`cabinet/scripts/gate-apply.sh` + the `com.cabinet.gate-apply` root daemon)
-ships DARK and is never loaded by any setup script. Until Nate builds the
+ships DARK and is never loaded by any setup script. Until the Captain builds the
 unprivileged sandbox harness and explicitly `sudo launchctl load`s the daemon,
 germline code apply stays Captain-manual in every posture (D15).
 

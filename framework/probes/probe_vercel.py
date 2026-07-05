@@ -52,7 +52,7 @@ ROLLBACK_WINDOW_DAYS = 14                    # how far back a rollback can super
 _FRESHNESS_WINDOW = "15 minutes ago"         # git-activity lookback (10-min cadence + slack)
 
 # ── DEPLOY STATUS (lane-supply 2026-07-05 — the template below is now BUILT) ──
-# The three deploy steps the original Nate-gated template named:
+# The three deploy steps the original Captain-gated template named:
 #   1. __main__ entry — DONE (below): delegates to runner.probe_main; real
 #      VercelClient per app from instance/config/probes.yml (token from
 #      VERCEL_API_KEY env ONLY — the wrapper maps VERCEL_TOKEN→VERCEL_API_KEY;
@@ -61,7 +61,7 @@ _FRESHNESS_WINDOW = "15 minutes ago"         # git-activity lookback (10-min cad
 #   2. services.yml row — DONE: probe-vercel, kind watchdog, interval 600s,
 #      command `bash cabinet/scripts/run-probes.sh vercel`. Plist install stays
 #      a deliberate human step (cabinet/launchd/INSTALL-flip.md).
-#   3. healthchecks 'probe-vercel' check (period 10m + grace) — STILL NATE'S:
+#   3. healthchecks 'probe-vercel' check (period 10m + grace) — STILL THE CAPTAIN'S:
 #      hc_ping is fail-open without HEALTHCHECKS_PING_KEY.
 
 

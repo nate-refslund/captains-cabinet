@@ -1,4 +1,4 @@
-"""Front-door reply leg — bind Nate's reply back to its originating proposal.
+"""Front-door reply leg — bind the Captain's reply back to its originating proposal.
 
 `bind(reply_text, items)` is the LAST module of the cabinet front-door
 (docs/cabinet-architecture-cohesive-2026-06-22.md §3). It closes the loop:
@@ -67,7 +67,7 @@ def bind(
     """Bind a captain reply to its proposal, record the outcome, ack the items.
 
     Args:
-      reply_text: Nate's raw Telegram reply.
+      reply_text: the Captain's raw Telegram reply.
       items: the intake item(s) this reply concerns. Each carries a
         `correlation_id` (== loop.proposal_id of its originating proposal) and a
         Redis-assigned stream `id` (the ack key).

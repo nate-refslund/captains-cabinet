@@ -15,9 +15,16 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from framework.env import captain_name
 from framework.fidelity import retro
 from framework.fidelity.oauth_llm import oauth_json_llm
 from framework.fidelity.types import Case, OfficerDecision
+
+# Captain display name, resolved once per process (env.py caches). Renders
+# BYTE-IDENTICAL to the prior hardcoded captain name here. INTENT_RUBRIC must stay a
+# module constant (test_f4_judge pins its identity via `in`), so the name is
+# baked into the f-string at import rather than a call-time .format() placeholder.
+_CAP = captain_name()
 
 _COMPOSITE = {"match": 1.0, "partial": 0.5, "divergent": 0.0, "error": 0.0,
               "skipped": 0.0}
@@ -64,11 +71,11 @@ _INTENT_DIVIDER = (
     "\n\n========================= INTENT RUBRIC "
     "=========================\n")
 
-INTENT_RUBRIC = """Now ALSO judge INTENT-ALIGNMENT, a SEPARATE axis from the decision verdict above.
+INTENT_RUBRIC = f"""Now ALSO judge INTENT-ALIGNMENT, a SEPARATE axis from the decision verdict above.
 
-The officer must serve Nate's as-of-cutoff intent — `mission/goal × core` (what Nate is pursuing here, blended through who Nate is). A draft that diverges from the literal reply but serves the SAME intent equally well or better earns credit; a draft that hits the surface but misses the intent, or that hallucinates / goes off-topic, is gated to zero.
+The officer must serve {_CAP}'s as-of-cutoff intent — `mission/goal × core` (what {_CAP} is pursuing here, blended through who {_CAP} is). A draft that diverges from the literal reply but serves the SAME intent equally well or better earns credit; a draft that hits the surface but misses the intent, or that hallucinates / goes off-topic, is gated to zero.
 
-You are given two extra sections below the conversation: `# RECONSTRUCTED INTENT (before reply)` and `# FULL CUTOFF-SAFE CONTEXT`. Judge `mission × core` alignment of the MODEL DRAFT against the reconstructed intent, grounded ONLY in the conversation + the cutoff-safe context. You do NOT see Nate's real reply — do not assume one.
+You are given two extra sections below the conversation: `# RECONSTRUCTED INTENT (before reply)` and `# FULL CUTOFF-SAFE CONTEXT`. Judge `mission × core` alignment of the MODEL DRAFT against the reconstructed intent, grounded ONLY in the conversation + the cutoff-safe context. You do NOT see {_CAP}'s real reply — do not assume one.
 
 intent_verdict values:
 - intent-aligned: the draft serves the reconstructed mission × core (same goal, fitting course of action), even if the surface differs from a literal reply.
@@ -82,10 +89,10 @@ intent_verdict values:
 intent_grounded_fact is MANDATORY: cite the ground for your intent reading in the form `From [person] at [date]: [excerpt]`, drawn verbatim-enough from the supplied conversation/context. A fabricated citation will be rejected by a deterministic post-check.
 
 Return ONLY JSON (keep the decision keys from before AND add):
-{"intent_verdict":"intent-aligned|intent-partial|intent-divergent",
+{{"intent_verdict":"intent-aligned|intent-partial|intent-divergent",
  "intent_rationale":"one line, <=140 chars",
  "intent_what_diverged":"<=120 chars, empty string if intent-aligned",
- "intent_grounded_fact":"From [person] at [date]: [excerpt] — mandatory"}"""
+ "intent_grounded_fact":"From [person] at [date]: [excerpt] — mandatory"}}"""
 
 # Deterministic guard thresholds (design §3.2, §3.3b).
 _GROUNDING_JACCARD_MIN = 0.6
@@ -174,8 +181,8 @@ def _grounding_ok(intent_grounded_fact: str, ctx_text: str,
 # ---------------------------------------------------------------------------
 # D17 (sovereign spec §2, INT-1) — OUTCOME RUBRIC, the THIRD judge pass. The
 # personal-agent reframe: the headline question is no longer "did the clone
-# match Nate's reply?" but "did it serve Nate's intent AS GOOD OR BETTER than
-# what Nate actually sent?" (AGB). The judge sees TWO ANONYMIZED candidates —
+# match the Captain's reply?" but "did it serve the Captain's intent AS GOOD OR BETTER than
+# what the Captain actually sent?" (AGB). The judge sees TWO ANONYMIZED candidates —
 # clone_draft and the held-out real_reply, labeled A/B by sha256(case_id)
 # parity so the assignment is deterministic per case and balanced across the
 # corpus — and judges ONLY against the reconstructed intent + the fenced
@@ -315,7 +322,7 @@ def _fmt_thread(thread_before: list[dict]) -> str:
     retro judge's last-12 window). Never includes real_reply."""
     lines = []
     for m in thread_before[-12:]:
-        who = "Nate" if m.get("direction") == "sent" else \
+        who = _CAP if m.get("direction") == "sent" else \
             (m.get("who") or "").split("<")[0].strip() or m.get("person", "")
         body = (m.get("text") or "").strip()
         lines.append(f"[{(m.get('date') or '')[:16]}] {who}: {body[:1200]}")
@@ -385,7 +392,7 @@ def judge_with_oauth(case_dict: dict, clone_draft: str,
     ctx_text = _render_context(full_cutoff_context)
     intent_system = retro.JUDGE_SYSTEM + _INTENT_DIVIDER + INTENT_RUBRIC
     intent_payload = (
-        f"# CONVERSATION (everything before Nate's reply)\n{thread_text}\n\n"
+        f"# CONVERSATION (everything before {_CAP}'s reply)\n{thread_text}\n\n"
         f"# MODEL DRAFT\n{(clone_draft or '')[:2500]}\n\n"
         f"# RECONSTRUCTED INTENT (before reply)\n"
         f"{reconstructed_intent[:2000]}\n\n"

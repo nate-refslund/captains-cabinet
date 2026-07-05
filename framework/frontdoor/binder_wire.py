@@ -238,8 +238,8 @@ def veto_scope_from_record(record: dict) -> Dict[str, Any]:
 #
 # DARK by default (CABINET_VETO_WIRED != "1"): the verbs behave exactly as
 # pre-TI-4 (the acted never: still returns its scope; it just persists nothing),
-# so the registry stays empty until Nate's deployment flips the flag. And every
-# write is gated on ``captain_verified`` — a veto is unforgeable, only from Nate
+# so the registry stays empty until the Captain's deployment flips the flag. And every
+# write is gated on ``captain_verified`` — a veto is unforgeable, only from the Captain
 # (the inbound poller relays ONLY CAPTAIN_TELEGRAM_ID messages here). Off the
 # Captain path, or dark, nothing is recorded regardless of what parses.
 # =============================================================================
