@@ -201,20 +201,59 @@ def test_sovereign_mission_adopt_records_and_is_idempotent(tmp_path):
     assert out["ok"] is True
     assert out["executed"][0]["adopted"] is True
     mid = out["executed"][0]["mission_id"]
-    path = ax._standing_missions_path()
+    path = ax._adopted_missions_path()
     assert path.exists()
     import yaml
     data = yaml.safe_load(path.read_text())
-    assert data["version"] == 1 and len(data["missions"]) == 1
-    row = data["missions"][0]
-    assert row["id"] == mid and row["source"] == "action-lane-adopt"
-    assert row["mission"] == _NONCEIL_MISSION["mission"]
+    # {outcomes:} schema (deployment-pinned; compile_from_yaml-readable), its own
+    # adopted-missions.yml — never standing_pull's file.
+    assert data["deployment"] and len(data["outcomes"]) == 1
+    row = data["outcomes"][0]
+    assert row["id"] == mid and row["status"] == "active"
+    assert row["name"] == _NONCEIL_MISSION["mission"][:80]
+    assert _NONCEIL_MISSION["mission"] in row["description"]
     # re-adopt of the same mission is an idempotent no-op
     out2 = ax.deliver_action("pid-m2", redis_get=_mission_rec(),
                              act_first=True, posture="sovereign",
                              redis_incr=lambda *a, **k: None)
     assert out2["ok"] is True and out2["executed"][0]["adopted"] is False
-    assert len(yaml.safe_load(path.read_text())["missions"]) == 1
+    assert len(yaml.safe_load(path.read_text())["outcomes"]) == 1
+
+
+def test_adopted_mission_compiles_into_role_assigned_work():
+    """[A5] The adopted row must be compile_from_yaml-readable AND role-assigned —
+    an adopted mission nobody can compile/route is dead work. Pins the gap the
+    minimal string-criteria shape left (a non-root node had no assigned_role)."""
+    out = ax.deliver_action("pid-mc", redis_get=_mission_rec(),
+                            act_first=True, posture="sovereign",
+                            redis_incr=lambda *a, **k: None)
+    assert out["ok"] is True and out["executed"][0]["adopted"] is True
+    from framework.missions.compiler import compile_from_yaml
+    ms = compile_from_yaml(ax._adopted_missions_path(), actor="t", roles=None,
+                           emit_event=False)
+    assert len(ms) == 1
+    graph = ms[0]["work_graph"]
+    assert graph.nodes and all(
+        n.assigned_role for n in graph.nodes.values()
+    ), "every adopted work node must be role-assigned or it cannot route"
+
+
+def test_adopted_blank_outcomes_dropped_not_black_holed():
+    """[A5 review, MAJOR] A blank/whitespace first_outcome must be DROPPED, never
+    written as an empty-title criterion — an empty title raises in compile, which
+    _adopted_missions_source swallows to [], SILENTLY dropping the WHOLE adopted
+    file from routing. Blank outcomes vanish; an all-blank set falls back to the
+    mission text; the file always stays compilable + role-assigned."""
+    from framework.missions.compiler import compile_from_yaml
+    ax._exec_mission_adopt({"mission": "Fix the thing",
+                            "first_outcomes": ["", "   ", "actually fixed"]})
+    ax._exec_mission_adopt({"mission": "Do only this", "first_outcomes": ["", "  "]})
+    ms = compile_from_yaml(ax._adopted_missions_path(), actor="t", roles=None,
+                           emit_event=False)
+    assert len(ms) == 2  # BOTH adopts compile — a blank outcome killed neither
+    nodes = [n for m in ms for n in m["work_graph"].nodes.values()]
+    assert nodes and all(n.description.strip() for n in nodes)   # no empty titles
+    assert all(n.assigned_role for n in nodes)                    # nothing black-holed
 
 
 def test_guardian_act_first_mission_stays_held():
@@ -222,13 +261,13 @@ def test_guardian_act_first_mission_stays_held():
                             act_first=True, posture="guardian")
     assert out["ok"] is False and out.get("gate") == "propose_only"
     assert out["executed"] == []
-    assert not ax._standing_missions_path().exists()
+    assert not ax._adopted_missions_path().exists()
 
 
 def test_posture_none_act_first_mission_stays_held():
     out = ax.deliver_action("pid-m4", redis_get=_mission_rec(), act_first=True)
     assert out["ok"] is False and out.get("gate") == "propose_only"
-    assert not ax._standing_missions_path().exists()
+    assert not ax._adopted_missions_path().exists()
 
 
 def test_sovereign_ceiling_mission_never_adopts():
@@ -236,7 +275,7 @@ def test_sovereign_ceiling_mission_never_adopts():
                             act_first=True, posture="sovereign")
     assert out["ok"] is False and out.get("gate") == "propose_only"
     assert any("hard ceiling" in h for h in out.get("held", []))
-    assert not ax._standing_missions_path().exists()
+    assert not ax._adopted_missions_path().exists()
 
 
 def test_approved_path_mission_propose_still_raises_unknown_kind():
@@ -259,9 +298,9 @@ def test_exec_step_mission_guard_is_structural():
 
 
 def test_mission_adopt_corrupt_file_fails_step(tmp_path):
-    path = ax._standing_missions_path()
+    path = ax._adopted_missions_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("missions: 'not-a-list'\n")
+    path.write_text("outcomes: 'not-a-list'\n")
     out = ax.deliver_action("pid-m7", redis_get=_mission_rec(),
                             act_first=True, posture="sovereign")
     assert out["ok"] is False and "corrupt" in out["error"]

@@ -970,56 +970,77 @@ def _default_osascript(cmd: list) -> str:
     return proc.stdout.strip()
 
 
-def _standing_missions_path() -> Path:
-    """shared/interfaces/standing-missions.yml under the cabinet root — the
-    sovereign mission-adoption interface (the standing-pull/supervisor compile
-    source; never the Captain's outcomes.yml). Fixed relative suffix under a
-    controlled root — no interpolation from untrusted input."""
+def _adopted_missions_path() -> Path:
+    """shared/interfaces/adopted-missions.yml under the cabinet root — the
+    action-lane's OWN standing-work artifact (a compile source for the sovereign
+    supervisor, SEPARATE from standing_pull's standing-missions.yml so it never
+    clobbers or corrupts that file's sole-writer invariant; never the Captain's
+    outcomes.yml). Fixed relative suffix under a controlled root — no
+    interpolation from untrusted input."""
     root = os.environ.get("CABINET_ROOT") or str(Path(__file__).resolve().parents[2])
-    return Path(root) / "shared" / "interfaces" / "standing-missions.yml"
+    return Path(root) / "shared" / "interfaces" / "adopted-missions.yml"
 
 
 def _exec_mission_adopt(payload: dict) -> dict:
     """Sovereign auto-adopt of a NON-ceiling mission graph (SOV-4, D14/§3) —
     reachable ONLY when the held-map cleared the step (act_first + sovereign +
-    clean ceiling screen). Records the adopted mission as a row in
-    shared/interfaces/standing-missions.yml so the sovereign supervisor can
-    compile it. Idempotent on the content-hash id; RAISES on an unparseable
-    existing file — an adopt that cannot durably record must fail the step,
-    never silently no-op."""
+    clean ceiling screen). Records the adopted mission as an OUTCOME row in
+    shared/interfaces/adopted-missions.yml (the action-lane's OWN artifact —
+    {outcomes:} schema so compile_from_yaml reads it, deployment-pinned so no
+    other cabinet compiles it; the supervisor merges it alongside standing_pull's
+    file, never clobbering it). Idempotent on the content-hash id; RAISES on an
+    unparseable existing file — an adopt that cannot durably record must fail the
+    step, never silently no-op."""
     import yaml  # deferred — mirrors the loaders above
     mission = str(payload.get("mission") or "").strip()
     if not mission:
         raise RuntimeError("mission_propose adopt needs a mission")
     mid = "adopt-" + hashlib.sha256(mission.encode("utf-8")).hexdigest()[:8]
-    path = _standing_missions_path()
-    data: dict = {"version": 1, "missions": []}
+    dep = os.environ.get("CABINET_ID", "main")
+    path = _adopted_missions_path()
+    data: dict = {"deployment": dep,
+                  "generated_by": "framework.frontdoor.action_exec._exec_mission_adopt",
+                  "outcomes": []}
     if path.exists():
         loaded = yaml.safe_load(path.read_text())
         if loaded is not None:
             if (not isinstance(loaded, dict)
-                    or not isinstance(loaded.get("missions"), list)):
+                    or not isinstance(loaded.get("outcomes"), list)):
                 raise RuntimeError(
-                    "standing-missions.yml is corrupt — refusing to adopt")
+                    "adopted-missions.yml is corrupt — refusing to adopt")
             data = loaded
-    for row in data["missions"]:
+            data.setdefault("deployment", dep)
+    for row in data["outcomes"]:
         if isinstance(row, dict) and row.get("id") == mid:
             return {"mission_id": mid, "adopted": False,
                     "reason": "already adopted (idempotent)"}
-    from datetime import datetime, timezone
     outcomes = payload.get("first_outcomes")
     if isinstance(outcomes, str):
         outcomes = [outcomes]
-    data["missions"].append({
+    why = str(payload.get("why_now") or "").strip()
+    # Map the adopted mission -> a COMPILABLE outcome. Each first-outcome becomes a
+    # RICH criterion with an explicit owner_role — adopted work must be
+    # role-assigned or compile_outcome rejects its non-root node (arbitrary mission
+    # text yields no keyword-matchable role). Default the coordinating officer,
+    # instance-tunable via ADOPT_OWNER_ROLE; a mission with no first_outcomes still
+    # yields one routable node (the mission itself). why_now folds into the
+    # description; the return value + reasoning log carry the rest.
+    owner = os.environ.get("ADOPT_OWNER_ROLE", "cos")
+    # Filter blank/whitespace outcomes: a "" title makes _normalize_criterion raise
+    # -> compile_from_yaml raises -> _adopted_missions_source swallows to [],
+    # SILENTLY dropping the WHOLE adopted file from routing. Fall back to the
+    # mission text if none survive, so an adopt always yields routable work.
+    crits = [{"title": s, "owner_role": owner}
+             for o in (outcomes or []) if (s := str(o).strip())]
+    if not crits:
+        crits = [{"title": mission[:200], "owner_role": owner}]
+    desc = mission + (("\n\nWhy now: " + why) if why else "")
+    data["outcomes"].append({
         "id": mid,
-        "source": "action-lane-adopt",
-        "adopted_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "status": "adopted",
-        "direction": str(payload.get("direction") or ""),
-        "mission": mission,
-        "why_now": str(payload.get("why_now") or ""),
-        "expected_instrument_delta": str(payload.get("expected_instrument_delta") or ""),
-        "first_outcomes": [str(o) for o in (outcomes or []) if o is not None],
+        "name": mission[:80],
+        "description": desc,
+        "measurable_criteria": crits,
+        "status": "active",
     })
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True))
