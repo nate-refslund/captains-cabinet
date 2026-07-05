@@ -221,6 +221,54 @@ def test_read_events_propagates_read_error_for_failclosed_wire():
         cr.read_events("2026-07-05T10:00:00", "2026-07-05T11:00:00", osascript=boom)
 
 
+# --- event_window / conflicts_for_due (B2 block-window, parity with the write) --
+
+def test_event_window_timed():
+    start, end = cr.event_window("2026-07-06T14:00")
+    assert start == _dt(2026, 7, 6, 14, 0)
+    assert end == _dt(2026, 7, 6, 14, 30)     # 30-min block
+
+
+def test_event_window_date_only_defaults_0900():
+    # CALENDAR_EVENT_SCRIPT parseIso defaults a date-only due to 09:00 local.
+    start, end = cr.event_window("2026-07-06")
+    assert start == _dt(2026, 7, 6, 9, 0)
+    assert end == _dt(2026, 7, 6, 9, 30)
+
+
+def test_event_window_zeroes_seconds():
+    # the write template zeroes seconds; the gather window must occupy the same span.
+    start, end = cr.event_window("2026-07-06T14:00:45")
+    assert start == _dt(2026, 7, 6, 14, 0) and end == _dt(2026, 7, 6, 14, 30)
+
+
+def test_event_window_rejects_bad_due():
+    for bad in ("", "not-a-date", "2026-13-40T14:00"):
+        with pytest.raises(ValueError):
+            cr.event_window(bad)
+
+
+def test_conflicts_for_due_uses_block_window():
+    # an existing event overlapping the 09:00–09:30 block of a DATE-ONLY due.
+    stdout = _line("Home", "2026-07-06T09:15:00", "2026-07-06T09:45:00", "clash") + cr._RS
+    hits = cr.conflicts_for_due("2026-07-06", osascript=_fake_runner(stdout))
+    assert [e["summary"] for e in hits] == ["clash"]
+
+
+def test_conflicts_for_due_adjacent_is_not_conflict():
+    # existing ends exactly at the block start (09:00) → adjacency, no overlap.
+    stdout = _line("Home", "2026-07-06T08:30:00", "2026-07-06T09:00:00", "before") + cr._RS
+    hits = cr.conflicts_for_due("2026-07-06", osascript=_fake_runner(stdout))
+    assert hits == []
+
+
+def test_conflicts_for_due_propagates_read_error_failclosed():
+    def boom(cmd):
+        raise cr.CalendarReadError("permission denied")
+    with pytest.raises(cr.CalendarReadError):
+        cr.conflicts_for_due("2026-07-06T10:00", osascript=boom)
+
+
 @pytest.mark.skipif(shutil.which("osascript") is None,
                     reason="osascript unavailable (non-macOS / CI)")
 def test_applescript_parseiso_preserves_seconds_parity():

@@ -51,11 +51,11 @@ WIRE CONTRACT (obligations on the future germline call-site in action_exec.py):
 from __future__ import annotations
 
 import subprocess
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Callable
 
-__all__ = ["read_events", "overlaps", "find_conflicts", "CalendarReadError",
-           "CALENDAR_READ_SCRIPT"]
+__all__ = ["read_events", "overlaps", "find_conflicts", "conflicts_for_due",
+           "event_window", "CalendarReadError", "CALENDAR_READ_SCRIPT"]
 
 # Delimiters between fields / records in the osascript stdout. Non-printable
 # control chars (US / RS) that will not appear in a calendar name or title, so
@@ -303,3 +303,47 @@ def find_conflicts(cand_start, cand_end,
     s = _coerce_dt(cand_start)
     e = _coerce_dt(cand_end)
     return read_events(s.isoformat(), e.isoformat(), osascript=osascript)
+
+
+# 30-minute block, matching CALENDAR_EVENT_SCRIPT's `startDate + (30 * minutes)`.
+_BLOCK_MINUTES = 30
+
+
+def event_window(due_iso: str) -> tuple[datetime, datetime]:
+    """The [start, end) block a calendar event will OCCUPY for ``due_iso`` — the
+    single authoritative replica of the block math in
+    ``framework/frontdoor/calendar_template.py`` CALENDAR_EVENT_SCRIPT (its
+    ``parseIso`` + 30-minute span), so a double-book gather reads the SAME window
+    the write lands on and cannot drift from it.
+
+    Byte-for-byte with that AppleScript ``parseIso``: the date is chars 1-10; a
+    due WITHOUT a time part (``len <= 10``) defaults to 09:00 local; a timed due
+    takes its HH at 12-13 and MM at 15-16; seconds are ZEROED (the write template
+    does not set seconds); the block is 30 minutes. Returns NAIVE local datetimes
+    (Calendar.app's frame — the same frame ``_parse_iso`` / ``overlaps`` use).
+    Raises ValueError on an unparseable due (a programming error, fail-loud)."""
+    s = (due_iso or "").strip()
+    if not s:
+        raise ValueError("event_window requires a due_iso")
+    try:
+        year, month, day = int(s[0:4]), int(s[5:7]), int(s[8:10])
+        if len(s) > 10:                       # timed — mirror AS text 12-13 / 15-16
+            hour, minute = int(s[11:13]), int(s[14:16])
+        else:                                 # date-only — AS defaults to 09:00
+            hour, minute = 9, 0
+        start = datetime(year, month, day, hour, minute, 0)   # seconds zeroed
+    except (ValueError, IndexError):
+        raise ValueError(f"event_window: unparseable due_iso {due_iso!r}")
+    return start, start + timedelta(minutes=_BLOCK_MINUTES)
+
+
+def conflicts_for_due(due_iso: str,
+                      osascript: Callable | None = None) -> list[dict]:
+    """The existing events that overlap the 30-min block ``due_iso`` will occupy
+    — the one call the future germline B2 wire in
+    ``action_exec._exec_calendar_event`` needs before an act-first write. Uses
+    ``event_window`` (block-window parity) + ``find_conflicts``. Propagates
+    ``CalendarReadError`` unchanged: the wire MUST fail-closed (not write) on a
+    raise, and treat a non-empty list as a conflict (per the WIRE CONTRACT)."""
+    start, end = event_window(due_iso)
+    return find_conflicts(start, end, osascript=osascript)
