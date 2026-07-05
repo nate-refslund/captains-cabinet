@@ -24,7 +24,11 @@ bash cabinet/scripts/work-graph-complete.sh <node_id> --status done --evidence <
 
 Where:
 
-- `<node_id>` matches the format `<outcome_id>-task-NNN` from the mission compiler. Find it in the session-task-inject context or via `python3 -m framework.missions.supervisor --json --dry-run`.
+- `<node_id>` is either shape the work graph uses (both accepted since 2026-07-05):
+  - a compiler-generated task id `<outcome_id>-task-NNN` (string criteria), or
+  - a **ratified explicit `node_id` from `instance/config/outcomes.yml`** (e.g. `polads-001-ci`, `sys-001-parity`) — the script resolves the owning outcome from the outcomes file itself, since these ids are not string-prefixed with their outcome id. An id in neither shape exits 2 without emitting (a typo never mints a completion).
+
+  Find the id in the session-task-inject context or via `python3 -m framework.missions.supervisor --json --dry-run`.
 - `--status` is one of `done` (default), `failed`, or `verified`.
 - `--evidence` is either a path to an evidence file (e.g., test output, deploy log) or inline text describing what was accomplished.
 

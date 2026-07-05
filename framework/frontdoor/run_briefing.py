@@ -35,6 +35,18 @@ def _is_pm() -> bool:
     return os.environ.get("CABINET_RUN_MODE", "").strip().upper() == "PM"
 
 
+def _default_digest() -> dict:
+    """Production TI-5 digest call: gather the 📈 LOOP readout (per-card-kind
+    approve/edit/skip/expired rates + undo-rate trend + latest falsifier-series
+    line — lane instrument, 2026-07-05) and enqueue the digest with it.
+
+    Lives HERE, not in tell_digest, because enqueue_digest deliberately never
+    auto-gathers the readout (its live-ledger/series reads would make fixtured
+    callers non-hermetic — tell_digest.py module header). gather_loop_readout
+    never raises (fail-safe: readout absent on error, digest never blocked)."""
+    return tell_digest.enqueue_digest(readout=tell_digest.gather_loop_readout())
+
+
 def run_briefing(
     *,
     hours: int = 72,
@@ -63,7 +75,9 @@ def run_briefing(
     rides this same unified briefing, and its ``cabinet:digest:<date>`` manifest
     is persisted first so `undo <n>` / `👍 <n>` replies bind the moment the text
     lands (checkpoint 2026-07-04 Tier-0 #6 — Nate's ruled flip prerequisite;
-    plugs the binder no-pid label leak). Best-effort: a digest failure logs into
+    plugs the binder no-pid label leak). The default digest also carries the
+    📈 LOOP readout (acceptance/undo rates + falsifier series — see
+    ``_default_digest``). Best-effort: a digest failure logs into
     the result and never blocks the briefing. Kill-switch CABINET_TELL_DIGEST=0.
 
     Seams: ``enqueue_fn`` overrides the synthesis enqueue; ``recap_fn`` overrides
@@ -86,8 +100,10 @@ def run_briefing(
             recap = {"recap": False, "error": str(e)[:300]}
 
     # TI-5: the act-then-tell digest rides BOTH the 07:30 and 19:30 briefings.
-    # Enqueued BEFORE the send pass so this run's drain composes it in.
-    digest_enqueue = digest_fn or tell_digest.enqueue_digest
+    # Enqueued BEFORE the send pass so this run's drain composes it in. The
+    # default path (_default_digest) also carries the 📈 LOOP readout; the
+    # digest_fn seam is unchanged and takes no readout.
+    digest_enqueue = digest_fn or _default_digest
     try:
         digest = digest_enqueue()
     except Exception as e:  # best-effort: never block the briefing send

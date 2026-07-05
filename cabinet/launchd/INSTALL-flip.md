@@ -11,6 +11,8 @@ human step of the flip protocol).
 | `com.cabinet.actfirst-canary` | weekly (Mon 07:15) | TI-7 journal-only create→verify→reverse canaries + kind/silence breakers + veto audit (failure freezes the kind) |
 | `com.cabinet.falsifier-daily` | daily (08:05) | one read-only JSON line/day → `shared/interfaces/falsifier-series.jsonl` so Day-14/Day-30/Quarter falsifiers are measurable |
 
+Not yet scheduled (run manually or add via the fleet manifest, which the supply lane owns): `cabinet/scripts/emit-graduation-transitions.py` — sweeps per-cell graduation state and emits `graduation_transition` org events when a cell MOVES (unmeasured/propose_only/eligible/graduated/demote), so briefings can see cells moving instead of only counting snapshots. First run seeds its state file silently (`--emit-baseline` to override); `--dry-run` prints without emitting.
+
 Install + load (from the live checkout `/Users/nate/captains-cabinet`):
 
 ```sh
