@@ -286,3 +286,23 @@ def test_applescript_parseiso_preserves_seconds_parity():
     as_iso = proc.stdout.strip()
     assert as_iso == "2026-07-05T10:00:30", f"AS dropped seconds: {as_iso!r}"
     assert cr._parse_iso(as_iso) == cr._parse_iso(bound)
+
+
+@pytest.mark.skipif(shutil.which("osacompile") is None,
+                    reason="osacompile unavailable (non-macOS / CI)")
+def test_calendar_read_script_actually_compiles():
+    """The generated AppleScript must COMPILE — the pure-Python tests mock
+    osascript, so a syntax bug (e.g. the poison var 'sT', which AppleScript reads
+    as a reserved ordinal token) would otherwise ship silently and only fail live.
+    osacompile is compile-only: no Calendar access, no side effects."""
+    import os
+    import tempfile
+    with tempfile.NamedTemporaryFile("w", suffix=".applescript", delete=False) as f:
+        f.write(cr.CALENDAR_READ_SCRIPT)
+        src = f.name
+    try:
+        p = subprocess.run(["osacompile", "-o", os.devnull, src],
+                           capture_output=True, text=True, timeout=30)
+        assert p.returncode == 0, f"CALENDAR_READ_SCRIPT does not compile:\n{p.stderr}"
+    finally:
+        os.unlink(src)
