@@ -61,10 +61,13 @@
 #   * config-drift-*.jsonl (different family, different producer — genuinely
 #     unrelated to this incident);
 #   * the org-runtime SQLite Store mirror (cabinet/cache/org-runtime.sqlite3):
-#     the junk work_item_completed rows were mirrored there too and need
-#     their own verified pass (follow-up); the fidelity fixture rows never
-#     reached it (the Store mirror auto-skips under pytest); the consequence
-#     family has NO mirrors at all (JSONL-only by F0 design — see
+#     the junk work_item_completed rows were mirrored there too — purged by
+#     the SIBLING script cabinet/scripts/purge-sqlite-mirror.py (same gates,
+#     same criteria, backup-first; prepared 2026-07-05, lane hygiene); the
+#     fidelity fixture rows never reached the mirror (the Store mirror
+#     auto-skips under pytest) but the sibling sweeps that criterion
+#     defensively anyway; the consequence family has NO mirrors at all
+#     (JSONL-only by F0 design — see
 #     docs/fidelity-harness-plan-F0-F1-2026-06-18.md), so its cleanup is
 #     complete once the JSONL is clean;
 #   * Postgres org_events (only written when DATABASE_URL is set — separate
@@ -296,6 +299,9 @@ for path in _paths:
                 except (json.JSONDecodeError, ValueError):
                     unparseable += 1
                     continue
+                if not isinstance(event, dict):
+                    unparseable += 1  # valid JSON, not an object — fail-safe: keep
+                    continue
                 if classify(event, family):
                     junk_here += 1
         skipped_today.append((basename, junk_here))
@@ -315,6 +321,17 @@ for path in _paths:
             except (json.JSONDecodeError, ValueError):
                 unparseable += 1
                 kept_lines.append(line)  # fail-safe: never drop unparseable
+                total_after += 1
+                continue
+            if not isinstance(event, dict):
+                # Valid JSON but not an object (bare array/number/string) —
+                # cannot be positively identified as junk, so it takes the
+                # same fail-safe path as an unparseable line (byte-verbatim
+                # keep + counted). Mirrors purge-sqlite-mirror.py::find_junk;
+                # without this guard classify() crashed with AttributeError
+                # mid-iteration (regression test pins it).
+                unparseable += 1
+                kept_lines.append(line)  # byte-verbatim keep
                 total_after += 1
                 continue
             criterion = classify(event, family)
@@ -388,6 +405,7 @@ if [ "$DRY_RUN" = "1" ]; then
 else
   echo "purge complete. rollback: copy files back from $BACKUP_DIR"
   echo "NOTE: the org-runtime SQLite Store mirror (cabinet/cache/org-runtime.sqlite3)"
-  echo "still holds the mirrored junk work_item_completed rows — separate verified"
-  echo "pass required (follow-up)."
+  echo "holds mirrored junk work_item_completed rows too — run the sibling pass:"
+  echo "  CABINET_PURGE_DRY_RUN=1 python3 cabinet/scripts/purge-sqlite-mirror.py   # preview"
+  echo "  CABINET_PURGE_CONFIRM=1 python3 cabinet/scripts/purge-sqlite-mirror.py   # apply"
 fi
