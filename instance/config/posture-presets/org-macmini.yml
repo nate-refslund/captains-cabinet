@@ -1,0 +1,32 @@
+# posture-presets/org-macmini.yml — PRESET: org flavor on a dedicated Mac
+# Mini (axes spec docs/plans/cabinet-axes-spec-2026-07-05.md §5). A pre-filled
+# posture.yml template — presets are the UX; axes are the architecture.
+#
+# Axes: autonomy_level=sovereign · flavor=org · deployment_target=mac_mini
+#
+# THIS PRESET DECLARES SOVEREIGN, WHICH ONLY THE ATTESTED RITUAL ACTIVATES.
+# A copied-but-unlocked file resolves guardian (fail-closed) and files a
+# repair need — the preset is safe to copy, but nothing widens until the
+# Captain performs, on the Mini itself:
+#   sudo bash cabinet/scripts/germline-lock.sh unlock   # Captain unlock window
+#   cp instance/config/posture-presets/org-macmini.yml \
+#      instance/config/posture.yml
+#   $EDITOR instance/config/posture.yml   # deployment: MUST equal CABINET_ID;
+#                                         # set basis/ruled_at to the ruling
+#   git add -A && git commit              # commit the ruling
+#   sudo bash cabinet/scripts/germline-lock.sh lock     # the lock IS the signature
+# No dashboard button, chat verb, or env var can perform this widening.
+version: 1
+status: ruled
+ruled_at: 1970-01-01T00:00:00Z   # placeholder — set the real ruling time
+basis: "org-macmini preset — set to your ruling words"
+deployment: CHANGE-ME            # MUST equal CABINET_ID env (default "main")
+flavor: org                      # senses product telemetry, optimizes product
+                                 # outcomes (machine-probe labels first)
+posture: sovereign               # reversible→auto, internal/deploy_nonprod→
+                                 # notify_after, ceilings→standing_grant —
+                                 # ONLY once schg-locked; guardian until then
+deployment_target: mac_mini      # schg attestation backend (macOS chflags)
+never_grant: []                  # empty = grants decide (all six ceiling
+                                 # classes grantable under attested sovereign)
+max_auto_exec_steps: 5           # sovereign-only budget (other postures FORCED 2)

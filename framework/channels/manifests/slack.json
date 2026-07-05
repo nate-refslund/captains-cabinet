@@ -1,0 +1,12 @@
+{
+  "name": "slack",
+  "version": "0.1.0",
+  "kind": "channel",
+  "action_types": ["internal_message", "external_message"],
+  "risk_classes": ["external_comms", "internal_comms"],
+  "undo_contract": "delete_window(172800)",
+  "entrypoints": {
+    "delete": "slack.py",
+    "send": "slack.py"
+  }
+}

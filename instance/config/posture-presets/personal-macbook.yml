@@ -1,0 +1,35 @@
+# posture-presets/personal-macbook.yml — PRESET: personal flavor on the
+# captain's own MacBook (axes spec docs/plans/cabinet-axes-spec-2026-07-05.md
+# §5). Presets are the UX; axes are the architecture — this is a pre-filled
+# posture.yml template, nothing more. Any axis combination stays valid.
+#
+# Axes: autonomy_level=guardian · flavor=personal · deployment_target=macbook
+#
+# Activate (cabinet-init does this for you, or by hand):
+#   cp instance/config/posture-presets/personal-macbook.yml \
+#      instance/config/posture.yml
+#   $EDITOR instance/config/posture.yml   # deployment: MUST equal CABINET_ID
+#                                         # (default "main"); set basis/ruled_at
+# The CHANGE-ME deployment below keeps a verbatim copy INERT (treated absent
+# ⇒ guardian) until the captain names their own deployment. guardian is the
+# default posture anyway, so this preset never needs the lock ritual — locking
+# it (sudo bash cabinet/scripts/germline-lock.sh lock) is still good hygiene.
+# Widening to sovereign later is ONLY the attested ritual: unlock → edit →
+# commit → lock. Narrowing (CABINET_POSTURE env, the `posture guardian|earn_up`
+# binder verb) needs nothing.
+version: 1
+status: ruled
+ruled_at: 1970-01-01T00:00:00Z   # placeholder — set the real ruling time
+basis: "personal-macbook preset — set to your ruling words"
+deployment: CHANGE-ME            # MUST equal CABINET_ID env (default "main")
+flavor: personal                 # senses the captain's world, optimizes on
+                                 # the captain's behalf (captain-verdict labels)
+posture: guardian                # trust-first on reversible, lost on evidence;
+                                 # the default every deployment starts at
+deployment_target: macbook       # schg attestation backend (macOS chflags)
+never_grant: []                  # risk classes this CAPTAIN never grants, in
+                                 # any flavor/posture — grant rows in these
+                                 # classes drop fail-closed + file ONE decision
+                                 # need per class. Nate's personal instance
+                                 # keeps ACT-AND-DRAFT with:
+                                 #   never_grant: [external_comms]

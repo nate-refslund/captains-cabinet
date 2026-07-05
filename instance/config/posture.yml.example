@@ -6,15 +6,22 @@
 #
 # ABSENT file = guardian = today's exact behavior, byte-identical. The ruling
 # takes effect ONLY when ALL of (framework/authority/posture.py):
-#   present ∧ schema-valid (CLOSED keys — any unknown key is corrupt)
+#   present ∧ real path (a symlinked ruling is never attestable)
+#   ∧ schema-valid (CLOSED keys — any unknown key is corrupt)
 #   ∧ deployment == CABINET_ID env (default "main"; mismatch ⇒ treated absent)
-#   ∧ schg-locked (os.stat().st_flags & SF_IMMUTABLE; non-Darwin ⇒ never).
+#   ∧ schg-locked (os.lstat().st_flags & SF_IMMUTABLE; non-Darwin ⇒ never).
 # Anything else resolves guardian (fail-safe polarity, D6) and a corrupt or
-# unlocked file additionally files a deduped need.
+# unlocked file additionally files a deduped need. ONE exception (axes spec
+# 2026-07-05 §1): `posture: earn_up` is honored even UNLOCKED — earn_up may
+# only narrow vs guardian (matrix-validated), and narrowing is always safe.
+# Widening to sovereign always requires the full lock ritual.
 #
-# Env may only NARROW: CABINET_POSTURE=guardian is the emergency drop-brake
-# and wins over this file; CABINET_POSTURE=sovereign is IGNORED. There is NO
-# dev/test bypass of the lock attestation.
+# Runtime may only NARROW: CABINET_POSTURE=guardian is the emergency
+# drop-brake and CABINET_POSTURE=earn_up narrows further (both min-capped —
+# env can never widen); CABINET_POSTURE=sovereign is IGNORED. The
+# instance/config/posture-narrow file (single word guardian|earn_up,
+# deliberately unlocked — the binder verb writes it) is a second narrow-only
+# cap. There is NO dev/test bypass of the lock attestation.
 #
 # Activate (Captain, in an unlock window):
 #   cp instance/config/posture.yml.example instance/config/posture.yml
@@ -27,10 +34,23 @@ status: ruled                  # only 'ruled' activates; anything else is corrup
 ruled_at: 2026-07-05T00:00:00Z
 basis: "<verbatim Captain directive essence>"
 deployment: mini-polads        # MUST equal CABINET_ID env (default "main")
-flavor: org                    # org | personal — personal structurally REFUSES
-                               # external_comms standing grants (queue_draft-only)
-posture: sovereign             # guardian | sovereign
+flavor: org                    # org | personal — the identity axis (evidence
+                               # supply + optimization target), NEVER authority
+                               # semantics; external-comms refusal is the
+                               # instance-scoped `never_grant` below, not flavor
+                               # (Captain correction 2026-07-05)
+posture: sovereign             # guardian | earn_up | sovereign
 lanes: {polads: sovereign}     # OPTIONAL per-lane override of `posture`
 caps: {hard_multiplier: 10}    # runaway hard-stop = per-kind/day cap × this;
-                               # freeze-on-hit in BOTH postures (FI-5)
-max_auto_exec_steps: 5         # sovereign only; guardian is FORCED 2
+                               # freeze-on-hit in EVERY posture (FI-5)
+max_auto_exec_steps: 5         # sovereign only; guardian/earn_up are FORCED 2
+never_grant: []                # OPTIONAL: risk classes the Captain NEVER
+                               # grants, any flavor (e.g. [external_comms]).
+                               # Grant rows in these classes are dropped
+                               # fail-closed at load + ONE kind=decision need
+                               # per class. Empty/absent = all six ceiling
+                               # classes grantable in sovereign.
+deployment_target: mac_mini    # OPTIONAL: macbook | mac_mini | docker — the
+                               # topology axis; selects the attestation
+                               # backend (AX-4). Absent ⇒ inferred:
+                               # /.dockerenv ⇒ docker, else macbook.

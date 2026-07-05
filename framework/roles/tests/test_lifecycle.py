@@ -18,11 +18,12 @@ from framework.events.emitter import replay
 
 
 @pytest.fixture(autouse=True)
-def clean_env(tmp_path):
-    """Point everything at temp directories."""
-    os.environ["CABINET_ROOT"] = str(tmp_path)
-    os.environ["CABINET_EVENT_LOG_DIR"] = str(tmp_path / "events")
-    os.environ.pop("DATABASE_URL", None)
+def clean_env(tmp_path, monkeypatch):
+    """Point everything at temp directories (monkeypatch restores on teardown —
+    a leaked CABINET_ROOT poisons every later CABINET_ROOT-resolving suite)."""
+    monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+    monkeypatch.setenv("CABINET_EVENT_LOG_DIR", str(tmp_path / "events"))
+    monkeypatch.delenv("DATABASE_URL", raising=False)
     (tmp_path / "instance" / "roles" / "active").mkdir(parents=True)
     yield tmp_path
 

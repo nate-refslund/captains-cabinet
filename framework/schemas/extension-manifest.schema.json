@@ -1,0 +1,70 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://captains-cabinet.dev/schemas/extension-manifest.schema.json",
+  "title": "Cabinet extension manifest",
+  "description": "Every extension (channel adapter, source adapter, skill, MCP) ships this manifest as manifest.yml|.yaml|.json at its directory root — validated by cabinet/scripts/validate-extension.sh (axes spec 2026-07-05 §6.4). Extensions RECEIVE resolved axis values from their loader; they never read axis config themselves — the axis linter runs over the extension's files with an EMPTY allowlist. Loaders skip manifest-invalid extensions fail-closed and file a need.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "version", "kind", "action_types", "risk_classes", "undo_contract", "entrypoints"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["channel", "source", "skill", "mcp"]
+    },
+    "action_types": {
+      "description": "The action_type strings this extension emits (classifier vocabulary where applicable; may be empty for pure sources/skills).",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "risk_classes": {
+      "description": "The authority-matrix risk classes those action_types map to — closed vocabulary (framework.authority.matrix.RISK_CLASSES; drift-pinned by test_axes_contract.py).",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["calendar_write", "credentials_grant", "deploy_nonprod", "deploy_prod", "draft_only", "external_comms", "internal_comms", "network_write", "pm_write", "read_only_dispatch", "reversible", "secrets", "spend"]
+      }
+    },
+    "undo_contract": {
+      "description": "none = no pseudo-undo exists, so this extension's action_types can never be act-first-eligible in ANY posture (inverse-required rule); delete_window(N) = artifacts deletable for N seconds after send.",
+      "type": "string",
+      "pattern": "^(none|delete_window\\([0-9]+\\))$"
+    },
+    "axis_compat": {
+      "description": "Axis values this extension supports; ABSENT = compatible with all (the default). Consumed by loaders only — never read by the extension itself.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "autonomy_level": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "enum": ["earn_up", "guardian", "sovereign"] }
+        },
+        "flavor": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "enum": ["personal", "org"] }
+        },
+        "deployment_target": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "enum": ["macbook", "mac_mini", "docker"] }
+        }
+      }
+    },
+    "entrypoints": {
+      "description": "capability -> file path relative to the extension dir; each must realpath-resolve INSIDE the extension dir (traversal/symlink escapes are refused) and exist.",
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "type": "string", "minLength": 1 }
+    }
+  }
+}

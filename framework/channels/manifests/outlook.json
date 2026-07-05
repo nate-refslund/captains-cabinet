@@ -1,0 +1,11 @@
+{
+  "name": "outlook",
+  "version": "0.1.0",
+  "kind": "channel",
+  "action_types": ["internal_email", "external_email"],
+  "risk_classes": ["external_comms", "internal_comms"],
+  "undo_contract": "none",
+  "entrypoints": {
+    "send": "outlook.py"
+  }
+}

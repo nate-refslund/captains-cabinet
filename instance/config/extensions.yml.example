@@ -47,6 +47,14 @@
 #   required_env  env vars the plugin expects (warn only — install proceeds;
 #                 a missing var is a runtime issue only when officers use it)
 #   optional      true = warn + continue on failure; false = abort setup
+#   dir           OPTIONAL local extension directory carrying a manifest
+#                 (manifest.yml|.yaml|.json — schema framework/schemas/
+#                 extension-manifest.schema.json). When set — or when
+#                 `source` is a local path — the installer runs
+#                 cabinet/scripts/validate-extension.sh on it and SKIPS the
+#                 plugin fail-closed on failure (axes contract §6.4; a
+#                 kind=decision need is filed). Relative paths resolve
+#                 against CABINET_ROOT.
 plugins: []
   # Example — STEP-Network's dev-tasks plugin (Monday.com + GitHub + Vercel
   # workflow: 44 Monday MCP tools, 15 skills like /dev-tasks:pickup-task +
@@ -91,6 +99,13 @@ plugins: []
 # (notion, neon, linear, vercel, library, redis-channel) + the Captain-layer
 # set (screenpipe, chrome_devtools, playwright, cua). Use this section ONLY
 # for ADDITIONAL servers specific to your deployment.
+#
+# Optional `dir:` per entry — the server's local extension directory
+# (manifest at its root). When set, install-extensions.sh runs
+# cabinet/scripts/validate-extension.sh on it and EXCLUDES the server from
+# extra-mcps.json fail-closed on failure (axes contract §6.4 + a filed
+# need). Remote/dir-less servers render as before; authoring them still
+# goes through the gate via the extend-cabinet skill.
 mcps: []
   # Example — Nate's deployment: the screenpipe brain bridge (Obsidian vault
   # search, person intel, commitments, queue_draft outbound gate, reasoning

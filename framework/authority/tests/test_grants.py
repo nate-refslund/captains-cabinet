@@ -3,7 +3,10 @@
 Ceilings-only, Captain-locked, hard-scope-predicated. Every ambiguity narrows:
 absent/corrupt/unlocked file ⇒ [], malformed row ⇒ line-drop, Redis down ⇒
 treated revoked / not granted, missing scope context ⇒ predicate fails,
-flavor≠org ⇒ external_comms grants structurally refused.
+risk_class ∈ posture.yml never_grant ⇒ dropped + ONE decision need per class
+(Captain ruling 2026-07-05: grantability is instance-scoped — the old
+flavor≠org structural refusal is gone), unreadable never_grant intent ⇒
+every row dropped.
 """
 from __future__ import annotations
 
@@ -65,15 +68,18 @@ def write_grants(root: Path, rows, text: str | None = None) -> Path:
     return p
 
 
-def write_posture(root: Path, flavor="org") -> Path:
+def write_posture(root: Path, flavor="org", never_grant=None) -> Path:
     d = root / "instance" / "config"
     d.mkdir(parents=True, exist_ok=True)
     p = d / "posture.yml"
-    p.write_text(yaml.safe_dump({
+    doc = {
         "version": 1, "status": "ruled", "ruled_at": "2026-07-05T00:00:00Z",
         "basis": "test", "deployment": "main", "flavor": flavor,
         "posture": "sovereign",
-    }))
+    }
+    if never_grant is not None:
+        doc["never_grant"] = never_grant
+    p.write_text(yaml.safe_dump(doc))
     return p
 
 
@@ -164,33 +170,90 @@ def test_line_drop_files_row_need_when_wired(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Structural flavor=personal external_comms refusal
+# never_grant — instance-scoped class refusal (Captain ruling 2026-07-05)
 # ---------------------------------------------------------------------------
 
-def test_flavor_personal_refuses_external_comms_grants(tmp_path, monkeypatch):
-    monkeypatch.setenv("CABINET_NEEDS_WIRED", "1")
+def test_flavor_personal_no_longer_refuses_external_comms(tmp_path):
+    # Captain ruling 2026-07-05: grantability is instance-scoped, never
+    # flavor-structural — personal flavor without never_grant keeps the row.
     write_posture(tmp_path, flavor="personal")
-    write_grants(tmp_path, [grant_row(),
-                            grant_row(id="GRANT-spend", risk_class="spend")])
-    out = G.load_grants(tmp_path, is_locked_fn=LOCKED)
-    assert [g["id"] for g in out] == ["GRANT-spend"]
-    rows = N.list_open(root=tmp_path)
-    assert any(r["action_type"] == "flavor_personal_refusal" for r in rows)
-
-
-def test_flavor_org_keeps_external_comms_grants(tmp_path):
-    write_posture(tmp_path, flavor="org")
     write_grants(tmp_path, [grant_row()])
     out = G.load_grants(tmp_path, is_locked_fn=LOCKED)
     assert [g["id"] for g in out] == ["GRANT-test1"]
 
 
-def test_no_attested_ruling_refuses_external_comms_grants(tmp_path):
-    # No posture.yml at all: org cannot be positively attested ⇒ refuse.
+def test_absent_ruling_defaults_all_classes_grantable(tmp_path):
+    # No posture.yml: never_grant defaults [] — external_comms rows load
+    # (the grants file's OWN schg attestation stays the gate).
+    write_grants(tmp_path, [grant_row(),
+                            grant_row(id="GRANT-spend", risk_class="spend")])
+    out = G.load_grants(tmp_path, is_locked_fn=LOCKED)
+    assert [g["id"] for g in out] == ["GRANT-test1", "GRANT-spend"]
+
+
+def test_never_grant_drops_listed_class(tmp_path):
+    write_posture(tmp_path, never_grant=["external_comms"])
     write_grants(tmp_path, [grant_row(),
                             grant_row(id="GRANT-spend", risk_class="spend")])
     out = G.load_grants(tmp_path, is_locked_fn=LOCKED)
     assert [g["id"] for g in out] == ["GRANT-spend"]
+
+
+def test_never_grant_files_one_decision_need_per_class(tmp_path, monkeypatch):
+    monkeypatch.setenv("CABINET_NEEDS_WIRED", "1")
+    write_posture(tmp_path, never_grant=["external_comms"])
+    write_grants(tmp_path, [grant_row(),
+                            grant_row(id="GRANT-test2",
+                                      action_types=["external_teams"])])
+    assert G.load_grants(tmp_path, is_locked_fn=LOCKED) == []
+    rows = [r for r in N.list_open(root=tmp_path)
+            if r["action_type"] == "never_grant_refusal"]
+    assert len(rows) == 1                       # ONE per CLASS, not per row
+    assert rows[0]["kind"] == "decision"
+    assert rows[0]["risk_class"] == "external_comms"
+    assert rows[0]["count"] == 1                # in-pass dedup, single filing
+
+
+def test_never_grant_multiple_classes(tmp_path, monkeypatch):
+    monkeypatch.setenv("CABINET_NEEDS_WIRED", "1")
+    write_posture(tmp_path, never_grant=["external_comms", "spend"])
+    write_grants(tmp_path, [
+        grant_row(),
+        grant_row(id="GRANT-spend", risk_class="spend"),
+        grant_row(id="GRANT-prod", risk_class="deploy_prod"),
+    ])
+    out = G.load_grants(tmp_path, is_locked_fn=LOCKED)
+    assert [g["id"] for g in out] == ["GRANT-prod"]
+    rows = [r for r in N.list_open(root=tmp_path)
+            if r["action_type"] == "never_grant_refusal"]
+    assert {r["risk_class"] for r in rows} == {"external_comms", "spend"}
+
+
+def test_never_grant_honored_from_unattested_ruling(tmp_path):
+    # Narrowing is fail-safe: an UNLOCKED posture.yml's never_grant still
+    # drops rows (the grants file itself stays attested here).
+    write_posture(tmp_path, never_grant=["external_comms"])
+    write_grants(tmp_path, [grant_row(),
+                            grant_row(id="GRANT-spend", risk_class="spend")])
+    not_posture = lambda p: Path(p).name != "posture.yml"  # noqa: E731
+    out = G.load_grants(tmp_path, is_locked_fn=not_posture)
+    assert [g["id"] for g in out] == ["GRANT-spend"]
+
+
+@pytest.mark.parametrize("text", [
+    "never_grant: [broken\n  ",                          # unparseable yaml
+    "- just\n- a\n- list\n",                             # not a mapping
+    yaml.safe_dump({"never_grant": "external_comms"}),   # not a list
+    yaml.safe_dump({"never_grant": [1, 2]}),             # not strings
+])
+def test_never_grant_unreadable_ruling_drops_all_rows(tmp_path, text):
+    # Present-but-unreadable never_grant intent ⇒ most-restrictive: every
+    # ceiling class treated never-granted (never widen on ambiguity).
+    d = tmp_path / "instance" / "config"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "posture.yml").write_text(text)
+    write_grants(tmp_path, [grant_row(id="GRANT-spend", risk_class="spend")])
+    assert G.load_grants(tmp_path, is_locked_fn=LOCKED) == []
 
 
 # ---------------------------------------------------------------------------

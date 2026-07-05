@@ -217,6 +217,16 @@ PASS Phase 1 → notify CoS (`bash cabinet/scripts/notify-officer.sh cos "Phase 
    `instance/config/posture.yml` (+ empty `standing-grants.yml`), then
    `sudo bash cabinet/scripts/germline-lock.sh lock`. Skipping this leaves the
    deployment guardian (today's rules) — nothing else changes.
+   *Axes (amendment 2026-07-05):* start from the shipped preset —
+   `cp instance/config/posture-presets/org-macmini.yml instance/config/posture.yml`
+   (axes `flavor: org` · `deployment_target: mac_mini` · schg attestation),
+   set `deployment:` to this Mini's `CABINET_ID`, and add a `never_grant:`
+   list if any ceiling class should be structurally non-grantable on this
+   deployment. Downgrade is always instant and needs no unlock:
+   `CABINET_POSTURE=guardian` env, or the Captain binder verb
+   `posture guardian` (writes the narrow-only
+   `instance/config/posture-narrow` cap). Upgrades happen ONLY via this
+   lock ritual — no env var, dashboard, or chat verb can widen.
 
 ### Captain involvement during Phase 2-8
 

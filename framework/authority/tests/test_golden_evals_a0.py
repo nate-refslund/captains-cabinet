@@ -24,6 +24,8 @@ import re
 import sys
 from pathlib import Path
 
+import pytest
+
 # Repo root on path so both `framework.*` and the standalone gate module import.
 # framework/authority/tests/<file> -> parents[0]=tests [1]=authority [2]=framework
 # [3]=repo root.
@@ -38,6 +40,19 @@ from policy_engine import _eval_authority_matrix  # noqa: E402
 from framework.authority import matrix as M  # noqa: E402
 
 _GOLDEN_DIR = _REPO_ROOT / "memory" / "golden-evals"
+
+
+@pytest.fixture(autouse=True)
+def _no_ambient_posture_narrowing(monkeypatch):
+    """These goldens pin the DEFAULT resolution (no posture config ⇒ the
+    guardian root table) — a runner-exported narrowing cap
+    (CABINET_POSTURE=earn_up, axes spec 2026-07-05 §1) must not leak in and
+    demote the reversible act_with_undo pin to propose_only. The narrowed
+    worlds keep their own pins: the earn_up gate floor is byte-pinned in
+    test_policy_engine.py::TestEarnUpPostureSelection + test_matrix_earnup.py
+    (and re-asserted end-to-end via env inside
+    test_reversible_unmeasured_acts_with_undo below)."""
+    monkeypatch.delenv("CABINET_POSTURE", raising=False)
 
 
 def _matrix_policy() -> dict:
@@ -160,7 +175,19 @@ class TestUnmeasuredCellCannotAuto:
                 result = _eval_authority_matrix(
                     pol, "Edit", {"file_path": "src/app.py", "content": "x"}, "cto"
                 )
+            # AXES (2026-07-05 §1): under the earn_up NARROWING env cap the
+            # SAME probe floors at propose_only — earn_up narrows this pin,
+            # never voids it (env -> resolve_posture -> gate, end-to-end).
+            with patch.dict(os.environ, {"CABINET_UNDO_DIR": tmp,
+                                         "CABINET_POSTURE": "earn_up"}):
+                narrowed = _eval_authority_matrix(
+                    pol, "Edit", {"file_path": "src/app.py", "content": "x"}, "cto"
+                )
         assert result is None
+        assert narrowed is not None
+        assert narrowed.startswith(
+            "PROPOSE-ONLY (reversible, confidence=unmeasured)"
+        )
 
     def test_internal_comms_unmeasured_proposes(self):
         pol = _matrix_policy()

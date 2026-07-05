@@ -10,6 +10,30 @@ servers, plugins, officers, presets — is extensible. There are two modes:
 the cabinet extends **itself** (autonomous), and the Captain extends it
 **on demand** (manual). Pick the path that matches what you're creating.
 
+## 0. Every extension passes the validation gate (MANDATORY)
+
+Every extension that binds into the cabinet — skill, MCP server, plugin,
+channel/source adapter — ships a manifest at its root
+(`manifest.yml|.yaml|.json`; schema
+`framework/schemas/extension-manifest.schema.json`: name, version, kind,
+action_types, risk_classes, undo_contract, axis_compat, entrypoints) and
+MUST pass the axes-contract gate before anything loads it:
+
+```
+bash cabinet/scripts/validate-extension.sh <extension-dir>
+```
+
+Three checks, all fail-closed: manifest schema, entrypoint realpath
+containment (traversal/symlink escapes refused), and the axis linter with
+an EMPTY allowlist — extensions RECEIVE resolved axis values; they never
+read `posture.yml`, the matrix, grants, or any other axis config themselves
+(`.claude/rules/axes-contract.md` §2, spec
+`docs/plans/cabinet-axes-spec-2026-07-05.md` §6.4). `install-extensions.sh`
+runs this gate automatically for every declared extension with a local
+`dir:` (or local-path plugin `source`) and SKIPS failures fail-closed,
+filing a need. Run the gate yourself before declaring anything, and never
+hand-wire an extension around it.
+
 ## 1. The cabinet writes its own skills (autonomous — already running)
 
 This is the cabinet's Hermes-style learning loop. You usually don't invoke
@@ -38,7 +62,8 @@ with frontmatter:
 Copy the shape from any existing one (e.g. `.claude/skills/org-status/`).
 Auto-discovered by Claude Code the moment the file exists — no install step.
 Cabinet foundation skills live in `memory/skills/`; the template is
-`memory/skills/TEMPLATE.md`.
+`memory/skills/TEMPLATE.md`. Add a `manifest.yml` (kind: skill) beside the
+SKILL.md and run the §0 gate on the skill dir before dropping it.
 
 **Guided** — use the first-party `skill-creator` skill (ships with the
 Anthropic skills plugin). It scaffolds, iterates, and can run evals on the
@@ -50,6 +75,9 @@ in your `/skills` list, then invoke it and describe what you want.
 Use the first-party `mcp-builder` skill (Python FastMCP or Node MCP SDK), or
 `vercel-mcp-builder` for a hosted Streamable-HTTP server. Once built:
 
+- Ship a `manifest.yml` (kind: mcp) at the server's root and pass the §0
+  gate (`validate-extension.sh <server-dir>`); reference that dir via the
+  entry's `dir:` key so the installer re-runs the gate on every apply.
 - Declare it in `instance/config/extensions.yml` under `mcps:` →
   `bash cabinet/scripts/install-extensions.sh` renders it into
   `instance/config/extra-mcps.json`, which `start-officer-mac.sh` merges into
@@ -65,7 +93,9 @@ Use the first-party `create-cowork-plugin` skill to scaffold a plugin
 (bundles skills + agents + hooks + MCP + commands). Publish it to a
 marketplace (or keep it local), then declare it in
 `instance/config/extensions.yml` under `plugins:` and run
-`install-extensions.sh`. The cabinet itself ships as a plugin
+`install-extensions.sh`. A local plugin (dev-path `source` or a `dir:` key)
+must carry a manifest and pass the §0 gate — the installer refuses it
+otherwise. The cabinet itself ships as a plugin
 (`.claude-plugin/plugin.json`) — read it as a worked example.
 
 ## 5. Install the first-party creators (if not already present)
@@ -93,8 +123,10 @@ Two flows extend the cabinet's reach, both surfacing for Nate's one-tap
 approval — never self-granting. (Scope grants and credentials are hard
 ceilings; day-to-day autonomy needs no earning — per the earn-demotion ruling,
 captain-decisions 2026-07-03, reversible action classes are trusted from day
-one with undo and DEMOTED on evidence. The old rung-climbing trust ladder was
-removed 2026-07-04.)
+one with undo and DEMOTED on evidence. The rung-climbing trust ladder was
+removed as the DEFAULT 2026-07-04 and survives only as the opt-in `earn_up`
+posture's climb surface — rungs granted solely via `granted:` rows in the
+Captain-locked trust-ladder.yml, never self-granted.)
 
 - **MCP/plugin self-proposal** — once you've tested a new MCP/plugin,
   `framework.learning.self_proposal.prepare_mcp_proposal(...)` surfaces the

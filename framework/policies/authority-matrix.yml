@@ -187,6 +187,31 @@ policies:
     # demote is posture-invariant (every non-ceiling demote cell must equal
     # the root table's) — evidence beats posture.
     postures:
+      # earn_up — L1, the cautious captain's start (axes spec 2026-07-05 §1,
+      # leader-leader). STATIC floor: every non-ceiling class propose_only at
+      # ALL five confidence states; the six ceilings stay always_gated (never
+      # standing_grant — grants are a sovereign surface). ALL autonomy above
+      # this floor comes from the trust-ladder overlay at run time (AX-2:
+      # would-like-to → intend-to → ive-done → ive-been-doing, each rung
+      # Captain-granted per lane), NEVER from this table. Machine-checked by
+      # matrix.py:_validate_earn_up_narrows: earn_up may only narrow vs the
+      # root/guardian table, which is what makes it selectable WITHOUT
+      # attestation (narrowing is always safe).
+      earn_up:
+        verdicts:
+          reversible:         { graduated: propose_only, eligible: propose_only, propose_only: propose_only, unmeasured: propose_only, demote: propose_only }
+          read_only_dispatch: { graduated: propose_only, eligible: propose_only, propose_only: propose_only, unmeasured: propose_only, demote: propose_only }
+          draft_only:         { graduated: propose_only, eligible: propose_only, propose_only: propose_only, unmeasured: propose_only, demote: propose_only }
+          pm_write:           { graduated: propose_only, eligible: propose_only, propose_only: propose_only, unmeasured: propose_only, demote: propose_only }
+          calendar_write:     { graduated: propose_only, eligible: propose_only, propose_only: propose_only, unmeasured: propose_only, demote: propose_only }
+          internal_comms:     { graduated: propose_only, eligible: propose_only, propose_only: propose_only, unmeasured: propose_only, demote: propose_only }
+          deploy_nonprod:     { graduated: propose_only, eligible: propose_only, propose_only: propose_only, unmeasured: propose_only, demote: propose_only }
+          external_comms:     { "*": always_gated }
+          deploy_prod:        { "*": always_gated }
+          spend:              { "*": always_gated }
+          secrets:            { "*": always_gated }
+          network_write:      { "*": always_gated }
+          credentials_grant:  { "*": always_gated }
       sovereign:
         verdicts:
           reversible:        { graduated: auto, eligible: auto, propose_only: auto, unmeasured: auto, demote: propose_only }

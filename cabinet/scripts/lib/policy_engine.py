@@ -1063,12 +1063,16 @@ def risk_of(action_type: str, risk_classes: Any) -> str | None:
     return None
 
 
-# Posture vocabulary [SOV-3]. Local mirror of matrix.POSTURES so the engine
-# stays standalone-importable: only these non-default postures may select a
+# Posture vocabulary [SOV-3; earn_up joined in the axes build, spec
+# 2026-07-05 §1]. Local mirror of matrix.POSTURES so the engine stays
+# standalone-importable: only these non-default postures may select a
 # `postures.*` table; guardian IS the root table and anything unknown or
-# malformed falls back to it (fail toward guardian, never widen).
+# malformed falls back to it (fail toward guardian, never widen). earn_up's
+# table only NARROWS vs the root (machine-checked by matrix.py), so selecting
+# it needs no attestation.
 _GUARDIAN = "guardian"
-_POSTURE_TABLES = frozenset({"sovereign"})
+_EARN_UP = "earn_up"
+_POSTURE_TABLES = frozenset({"sovereign", _EARN_UP})
 
 
 def resolve_verdict(
@@ -1320,8 +1324,10 @@ def resolve_gate_posture(lane: str | None = None) -> str:
 
     "sovereign" IFF the SOV-1 kernel attests the Captain-locked ruling
     (present + schema-valid + deployment match + schg-locked; env may only
-    narrow). Module absent, any exception, or an out-of-vocab answer resolves
-    "guardian" — the default world stays bit-identical.
+    narrow); "earn_up" whenever the kernel says so (a NARROWING choice the
+    kernel honors even unattested — axes spec 2026-07-05 §1). Module absent,
+    any exception, or an out-of-vocab answer resolves "guardian" — the
+    default world stays bit-identical.
     """
     if _resolve_posture is None:
         return _GUARDIAN
@@ -1330,6 +1336,34 @@ def resolve_gate_posture(lane: str | None = None) -> str:
     except Exception:
         return _GUARDIAN
     return posture if posture in _POSTURE_TABLES else _GUARDIAN
+
+
+# The ONLY verdicts the earn_up ladder overlay may lift to — the frozen rung
+# map's image (would-like-to maps to the propose_only floor itself = no lift).
+# Anything else the ladder returns is refused fail-closed.
+_RUNG_LIFT_VERDICTS = frozenset({"auto_with_veto_window", "notify_after", "auto"})
+
+
+def _earn_up_rung_lift(lane: str | None) -> str | None:
+    """The trust-ladder overlay verdict for an earn_up cell, or None (AX-2).
+
+    Supplies the "Captain granted the rung for that lane" leg of the earn_up
+    lift (axes spec 2026-07-05 §1 L1): trust_ladder.rung_verdict_lift derives
+    the granted rung from the `granted:` rows of the ATTESTED
+    (Captain-locked) ladder file — never from `trust_rung_granted` events,
+    which are same-uid-appendable audit records (AX-8 no-self-grant fix) —
+    capped by the rungs that same file still defines for the lane, and maps
+    the effective rung through the frozen rung→verdict table. Lazy +
+    fail-safe: module absent, broken grant read, missing/corrupt/unattested
+    ladder file, or an out-of-vocab answer ⇒ None — the static earn_up floor
+    (propose_only) stands. Never raises.
+    """
+    try:
+        from framework.learning import trust_ladder  # noqa: E402
+        lifted = trust_ladder.rung_verdict_lift(lane, posture=_EARN_UP)
+    except Exception:
+        return None
+    return lifted if lifted in _RUNG_LIFT_VERDICTS else None
 
 
 def _grant_context(tool_input: Any) -> dict[str, Any]:
@@ -1449,11 +1483,14 @@ def _eval_authority_matrix(
     Ceiling classes always gate in guardian; a SOVEREIGN posture ceiling row
     may resolve `standing_grant` (D2): an attested Captain standing grant with
     a satisfied hard-scope predicate ⇒ attributed allow + rate-counted; else a
-    deduped NEED is filed and this step gates while the chain proceeds. Other
-    cells resolve via the LIVE graduation state (read_cell_state, un-stubbed
-    2026-07-03) against the POSTURE-SELECTED verdicts table into one of the
-    outcomes below — consumed in SHADOW only until the Captain-gated
-    enforcement flip:
+    deduped NEED is filed and this step gates while the chain proceeds. Under
+    EARN_UP the ceiling rows stay always_gated (guardian strings, grants never
+    consulted) and non-ceiling cells floor at propose_only, liftable only by
+    the trust-ladder overlay (step 3b — graduated cell + Captain-granted
+    rung). Other cells resolve via the LIVE graduation state (read_cell_state,
+    un-stubbed 2026-07-03) against the POSTURE-SELECTED verdicts table into
+    one of the outcomes below — consumed in SHADOW only until the
+    Captain-gated enforcement flip:
 
       * `auto`                    -> allow (None) — a graduated cell.
       * `act_with_undo`           -> allow (None) ONLY when the undo plane is
@@ -1584,6 +1621,29 @@ def _eval_authority_matrix(
         policy.get("verdicts"), risk_class, state,
         posture=posture, postures=postures,
     )
+
+    # 3b. EARN_UP TRUST-LADDER OVERLAY [AX-2, axes spec 2026-07-05 §1 L1] —
+    #    the static earn_up table floors every non-ceiling cell at
+    #    propose_only; ALL autonomy above that floor is rung-granted at run
+    #    time. The lift applies ONLY when posture==earn_up AND the cell's
+    #    LIVE graduation state is `graduated` AND the Captain granted the
+    #    rung for this lane (trust_rung_granted, replayed by the ladder —
+    #    capped by the ladder file, so a missing/corrupt file fail-closes to
+    #    the floor). NEVER lifts ceilings: step 2 short-circuits every
+    #    hard-ceiling class before this point, and the isinstance guard
+    #    additionally refuses to lift ANYTHING under a malformed hard_ceiling
+    #    (fail-closed — a ceiling class could otherwise reach step 3).
+    #    Guardian and sovereign never enter this branch (posture equality),
+    #    so their behavior stays byte-identical.
+    if (
+        posture == _EARN_UP
+        and state == "graduated"
+        and isinstance(hard_ceiling, list)
+        and risk_class not in hard_ceiling
+    ):
+        lifted = _earn_up_rung_lift(lane)
+        if lifted is not None:
+            verdict = lifted
 
     # RECONCILE 2026-07-05: kept both — HEAD's verdict ladder (act_with_undo
     # gap-check, auto_with_veto_window/notify_after allow legs, fail-safe

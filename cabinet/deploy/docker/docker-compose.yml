@@ -1,0 +1,68 @@
+# cabinet/deploy/docker/docker-compose.yml — org-docker preset runtime (axes
+# spec 2026-07-05 §3, AX-4). Run from THIS directory:
+#   docker compose up -d --build
+#
+# THE TRUST BOUNDARY lives in the `:ro` bind mounts below: the germline dirs
+# + posture.yml + standing-grants.yml are read-only FROM THE HOST, and the
+# container cannot remount them at any privilege (every capability dropped
+# except cron's SETUID/SETGID; no-new-privileges pins it). posture.py attests
+# them via the `ro_mount` backend — a writable (or unverifiable) ruling
+# resolves guardian, fail-closed. Lock/unlock ritual is HOST-SIDE: edit the
+# files on the host, then `docker compose restart cabinet` (see README.md).
+#
+# FOOTGUN (engine behavior): every single-file bind source must EXIST on the
+# host before `up`, or docker creates a DIRECTORY in its place. First run:
+#   touch ../../../cabinet/.env
+#   cp ../../../instance/config/posture.yml.example ../../../instance/config/posture.yml
+#   cp ../../../instance/config/standing-grants.yml.example ../../../instance/config/standing-grants.yml
+# (an empty/invalid posture.yml is safe — it resolves guardian, the default).
+
+services:
+  cabinet:
+    build:
+      context: ../../..
+      dockerfile: cabinet/deploy/docker/Dockerfile
+    image: captains-cabinet:docker
+    init: true
+    restart: unless-stopped
+    depends_on: [redis]
+    environment:
+      CABINET_ID: ${CABINET_ID:-main}
+      REDIS_HOST: redis
+      # Narrow-only runtime cap (guardian|earn_up). =sovereign is IGNORED by
+      # the resolver — sovereign comes ONLY from the attested ruling below.
+      CABINET_POSTURE: ${CABINET_POSTURE:-}
+    volumes:
+      # ── the trust boundary: Captain-owned files, READ-ONLY from the host ──
+      - ../../../instance/config/posture.yml:/opt/cabinet/instance/config/posture.yml:ro
+      - ../../../instance/config/standing-grants.yml:/opt/cabinet/instance/config/standing-grants.yml:ro
+      - ../../../instance/config/policies:/opt/cabinet/instance/config/policies:ro
+      - ../../../cabinet/scripts/hooks:/opt/cabinet/cabinet/scripts/hooks:ro
+      - ../../../framework/policies:/opt/cabinet/framework/policies:ro
+      - ../../../memory/golden-evals:/opt/cabinet/memory/golden-evals:ro
+      # secrets stay host-side, sourced at run time — never baked into images
+      - ../../../cabinet/.env:/opt/cabinet/cabinet/.env:ro
+      # ── runtime-written state survives restarts ──
+      - cabinet-shared:/opt/cabinet/shared
+      - cabinet-instance-memory:/opt/cabinet/instance/memory
+      - cabinet-logs:/var/log/cabinet
+    # The container cannot remount ro→rw at ANY privilege: mount(2) needs
+    # CAP_SYS_ADMIN, which is dropped with everything else, and
+    # no-new-privileges forbids re-acquiring capabilities.
+    cap_drop: [ALL]
+    cap_add: [SETGID, SETUID]   # cron job execution only
+    security_opt:
+      - no-new-privileges:true
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - cabinet-redis:/data
+
+volumes:
+  cabinet-shared:
+  cabinet-instance-memory:
+  cabinet-logs:
+  cabinet-redis:

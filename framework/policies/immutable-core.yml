@@ -42,7 +42,10 @@
 # xfail for that pair flips into a hard assert. As of the sovereign-posture
 # amendment (2026-07-05) every entry is fully wired (no pending remain): the
 # new sovereign germline files entered all four lists and the enforcer-triad
-# base-safety lag was closed. An entry with no `pending` is asserted hard.
+# base-safety lag was closed. The cabinet-axes amendment (2026-07-05) keeps
+# that state: its new set entered all four lists in the same change (and
+# cleared axes-allowlist.yml's `pending: AX-8` flag — eval-020's flip
+# discipline). An entry with no `pending` is asserted hard.
 #
 # EDIT DISCIPLINE: this file is itself Ring-0 (dir-cover). Officers/loops
 # propose changes to the Captain; only the Captain applies them in a
@@ -117,6 +120,40 @@ files:
   # lists already — the meta-test asserts that hard today (FI-5 auto-cover).
   - path: framework/policies/immutable-core.yml
 
+  # --- CABINET-AXES germline (amendment 2026-07-05, docs/proposals/
+  #     germline-amendment-cabinet-axes-2026-07-05.md): the axes contract's
+  #     kernel surfaces. trust_ladder.py is the earn_up rung-ladder overlay —
+  #     a forged rung map LIFTS verdicts (mints authority), exactly the
+  #     judged-authority-code class (this entry also clears the
+  #     `pending: AX-8` flag on its axes-allowlist.yml row — eval-020).
+  #     The allowlist + linter pair IS the sanctioned branching surface
+  #     (widening it must be a Captain act); the extension manifest schema +
+  #     validate-extension.sh are the captain-instance gate (a forged schema
+  #     or gate script admits axis-branching extensions). ---
+  - path: framework/learning/trust_ladder.py
+  # dir-covered by framework/policies/ (like immutable-core.yml itself);
+  # enumerated so eval-020's allowlist ⊆ immutable-core check is explicit.
+  - path: framework/policies/axes-allowlist.yml
+  - path: .claude/rules/axes-contract.md
+  - path: framework/schemas/extension-manifest.schema.json
+  - path: cabinet/scripts/validate-extension.sh
+  # Captain-locked live rung grants (created at the first `grant rung` —
+  # deployment-created like posture.yml; germline-lock skips absent). Rung
+  # grants MINT authority (propose_only → … → auto per cell), so the live
+  # file is files-class, never SKIP; instance/config/trust-ladder.yml.example
+  # stays unlocked (suffix-anchored hook arms + exact-path lock don't match).
+  - path: instance/config/trust-ladder.yml
+  # DELIBERATELY NOT ENUMERATED: instance/config/posture-narrow — the
+  # narrow-only runtime cap (single word guardian|earn_up) read by
+  # resolve_posture as a CAP after file+env resolution. It can only NARROW
+  # (min by permissiveness), so tampering is fail-safe by construction, and
+  # the Captain's binder verb writes it at runtime — locking or hook-blocking
+  # it would break the instant-downgrade surface (axes spec §1).
+  # ALSO NOT ENUMERATED: cabinet/scripts/generate-services-cron.py — renders
+  # operational schedule rows only (no verdict/grant/authority content),
+  # render-only (never installs); same class as its unlocked launchd twin
+  # generate-plists.py. Justified in the cabinet-axes amendment doc.
+
 dirs:
   - path: cabinet/scripts/hooks/
   - path: framework/policies/
@@ -125,6 +162,11 @@ dirs:
   # can drop a widening policy layer (load_policies refuses matrix overrides;
   # the lock closes the file-drop vector too).
   - path: instance/config/policies/
+  # Cabinet-axes (2026-07-05): the shipped posture presets are pre-filled
+  # axis points captains copy into posture.yml — a forged preset seeds a
+  # widened ruling at the very moment a captain ratifies one, so the dir is
+  # locked -R like the policy layer (no officer may drop or edit a preset).
+  - path: instance/config/posture-presets/
 
 runtime_appended:
   - path: shared/interfaces/captain-vetoes.yml

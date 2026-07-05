@@ -2664,3 +2664,373 @@ class TestSovereignCeilingRealKernels:
             text = ledger.read_text()
             assert m.group(0) in text
             assert '"kind": "standing_grant"' in text
+
+
+# ===================================================================
+# 8. EARN_UP TRUST-LADDER OVERLAY [AX-2]
+# ===================================================================
+# Spec: docs/plans/cabinet-axes-spec-2026-07-05.md §1 L1. earn_up is the third
+# posture: its STATIC table floors every non-ceiling class at propose_only
+# (ceilings always_gated — guardian byte-strings, standing grants never
+# consulted); ALL autonomy above the floor is the trust-ladder overlay —
+# posture==earn_up AND graduated cell AND Captain-granted rung ⇒ verdict
+# lifted per the FROZEN rung map (would-like-to→propose_only,
+# intend-to→auto_with_veto_window, ive-done→notify_after, ive-been-doing→
+# auto), never ceilings, fail-closed to the floor on any ladder failure.
+# Guardian/sovereign behavior stays byte-identical (sections 6-7 above keep
+# pinning it — the overlay branch requires posture equality).
+
+def _earn_up():
+    """Patch the gate's posture resolution to earn_up (kernel injection —
+    the narrowing posture needs no attestation, but the test env has no
+    ruling file at all, so inject like the sovereign helper does)."""
+    return patch.object(_pe, "_resolve_posture", lambda lane=None: "earn_up")
+
+
+class TestEarnUpPostureSelection:
+    """earn_up passes through resolve_gate_posture and selects the
+    postures.earn_up static table."""
+
+    def test_earn_up_passes_through_gate_posture(self):
+        with _earn_up():
+            assert resolve_gate_posture() == "earn_up"
+            assert resolve_gate_posture("polads") == "earn_up"
+
+    def test_earn_up_table_sweep_all_non_ceiling_propose(self):
+        """The frozen static floor: EVERY non-ceiling class propose_only at
+        ALL five confidence states; the six ceilings always_gated."""
+        pol = _load_real_matrix_policy()
+        v, p = pol["verdicts"], pol["postures"]
+        for rc in _NON_CEILING_ROWS + ("read_only_dispatch", "draft_only"):
+            for state in _ALL_STATES:
+                assert resolve_verdict(
+                    v, rc, state, posture="earn_up", postures=p
+                ) == "propose_only", (rc, state)
+        for rc in _CEILING_ROWS:
+            for state in _ALL_STATES:
+                assert resolve_verdict(
+                    v, rc, state, posture="earn_up", postures=p
+                ) == "always_gated", (rc, state)
+
+    def test_earn_up_floor_blocks_what_guardian_trusts(self):
+        """THE discriminating probe: a reversible Edit at unmeasured is an
+        act_with_undo ALLOW under guardian but floors at propose_only under
+        earn_up — proving the earn_up table is actually selected at the gate
+        (exact block bytes pinned)."""
+        pol = _load_real_matrix_policy()
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(os.environ, {"CABINET_UNDO_DIR": tmp}):
+                assert _eval_authority_matrix(
+                    pol, "Edit", {"file_path": "/workspace/product/src/foo.ts"},
+                    "cto",
+                ) is None  # guardian: trust-first allow
+                with _earn_up():
+                    result = _eval_authority_matrix(
+                        pol, "Edit",
+                        {"file_path": "/workspace/product/src/foo.ts"}, "cto",
+                    )
+        assert result == (
+            f"PROPOSE-ONLY (reversible, confidence=unmeasured) — {pol['message']}"
+        )
+
+    def test_earn_up_ceilings_keep_guardian_strings_and_skip_grants(self):
+        """Ceilings stay always_gated under earn_up: guardian byte-identical
+        GATED strings, and the standing-grant kernel is NEVER consulted
+        (grants are a sovereign surface — frozen design fact)."""
+        pol = _load_real_matrix_policy()
+        fake_g = _FakeGrants(granted=True, grant_id="GRANT-abc")
+        with _earn_up(), patch.object(_pe, "_grants", fake_g):
+            r1 = _eval_authority_matrix(
+                pol, "mcp__brain__queue_draft",
+                {"recipient": "outsider@example.com", "body": "x",
+                 "channel": "email"},
+                "cos",
+            )
+            r2 = _eval_authority_matrix(
+                pol, "Bash", {"command": "git push origin main"}, "cto"
+            )
+        assert r1 == (
+            "GATED (hard ceiling: external_comms) — draft via queue_draft, "
+            "never auto."
+        )
+        assert r2 == (
+            "GATED (hard ceiling: deploy_prod) — propose to Captain; "
+            "no auto path."
+        )
+        assert fake_g.check_calls == []  # never consulted in earn_up
+
+
+class TestEarnUpLadderOverlay:
+    """The lift: posture==earn_up + graduated cell + granted rung ⇒ rung-map
+    verdict; every missing leg (or any ladder failure) keeps the floor."""
+
+    def test_lift_requires_graduated_state(self):
+        """Even with a granted rung (lift patched wide open to 'auto'), a
+        non-graduated cell NEVER lifts — the branch needs state==graduated."""
+        pol = _load_real_matrix_policy()
+        with _earn_up(), patch.object(
+            _pe, "_earn_up_rung_lift", lambda lane: "auto"
+        ):
+            # real read_cell_state resolves unmeasured in this env.
+            result = _eval_authority_matrix(
+                pol, "Edit", {"file_path": "/workspace/product/a.ts"}, "cto"
+            )
+        assert result == (
+            f"PROPOSE-ONLY (reversible, confidence=unmeasured) — {pol['message']}"
+        )
+
+    def test_graduated_without_granted_rung_stays_floor(self):
+        pol = _load_real_matrix_policy()
+        with _earn_up(), \
+                patch.object(_pe, "read_cell_state",
+                             lambda officer, lane, action_type: "graduated"), \
+                patch.object(_pe, "_earn_up_rung_lift", lambda lane: None):
+            result = _eval_authority_matrix(
+                pol, "Edit", {"file_path": "/workspace/product/a.ts"}, "cto"
+            )
+        assert result == (
+            f"PROPOSE-ONLY (reversible, confidence=graduated) — {pol['message']}"
+        )
+
+    @pytest.mark.parametrize("lifted", ["auto_with_veto_window", "auto"])
+    def test_graduated_granted_rung_lifts_to_allow(self, lifted):
+        pol = _load_real_matrix_policy()
+        with _earn_up(), \
+                patch.object(_pe, "read_cell_state",
+                             lambda officer, lane, action_type: "graduated"), \
+                patch.object(_pe, "_earn_up_rung_lift",
+                             lambda lane, _v=lifted: _v):
+            result = _eval_authority_matrix(
+                pol, "Edit", {"file_path": "/workspace/product/a.ts"}, "cto"
+            )
+        assert result is None  # lifted verdicts are ACT verdicts at this gate
+
+    def test_notify_after_lift_allows_and_emits_earn_up_tell(self):
+        pol = _load_real_matrix_policy()
+        with _earn_up(), \
+                patch.object(_pe, "read_cell_state",
+                             lambda officer, lane, action_type: "graduated"), \
+                patch.object(_pe, "_earn_up_rung_lift",
+                             lambda lane: "notify_after"), \
+                patch("framework.events.emitter.emit") as m_emit:
+            result = _eval_authority_matrix(
+                pol, "mcp__brain__queue_draft",
+                {"recipient": "sean@stepnetwork.dk", "body": "hi",
+                 "channel": "teams"},
+                "cos",
+            )
+        assert result is None  # ive-done: acts, reports after
+        assert m_emit.call_count == 1
+        payload = m_emit.call_args[1]["payload"]
+        assert payload["verdict"] == "notify_after"
+        assert payload["posture"] == "earn_up"
+        assert payload["risk_class"] == "internal_comms"
+        assert payload["confidence_state"] == "graduated"
+
+    def test_lift_never_reaches_ceilings_even_with_malformed_hard_ceiling(self):
+        """Fail-closed backstop: ceilings normally short-circuit at step 2 and
+        can never lift; if hard_ceiling is MALFORMED (not a list) a ceiling
+        class reaches step 3 — the overlay's isinstance guard must then refuse
+        to lift ANYTHING (including non-ceiling rows), never allow."""
+        pol = {
+            "name": "authority-matrix",
+            "type": "authority_matrix",
+            "message": "below the bar",
+            "risk_classes": {
+                "external_comms": {"action_types": ["external_message"]},
+                "reversible": {"action_types": ["local_edit"]},
+            },
+            "hard_ceiling": "corrupt",  # malformed on purpose
+            "verdicts": {
+                "external_comms": {"*": "always_gated"},
+                "reversible": {s: "propose_only" for s in _ALL_STATES},
+            },
+            "postures": {"earn_up": {"verdicts": {
+                "external_comms": {"*": "always_gated"},
+                "reversible": {s: "propose_only" for s in _ALL_STATES},
+            }}},
+        }
+        with _earn_up(), \
+                patch.object(_pe, "read_cell_state",
+                             lambda officer, lane, action_type: "graduated"), \
+                patch.object(_pe, "_earn_up_rung_lift", lambda lane: "auto"):
+            ceiling_probe = _eval_authority_matrix(
+                pol, "mcp__brain__queue_draft",
+                {"recipient": "outsider@example.com", "channel": "email"},
+                "cos",
+            )
+            reversible_probe = _eval_authority_matrix(
+                pol, "Edit", {"file_path": "/workspace/product/a.ts"}, "cto"
+            )
+        assert ceiling_probe is not None
+        assert "PROPOSE-ONLY" in ceiling_probe
+        assert reversible_probe is not None  # nothing lifts under a malformed ceiling set
+        assert "PROPOSE-ONLY" in reversible_probe
+
+    def test_lift_fail_closed_when_ladder_raises(self):
+        pol = _load_real_matrix_policy()
+        with _earn_up(), \
+                patch.object(_pe, "read_cell_state",
+                             lambda officer, lane, action_type: "graduated"), \
+                patch("framework.learning.trust_ladder.rung_verdict_lift",
+                      side_effect=RuntimeError("ladder down")):
+            result = _eval_authority_matrix(
+                pol, "Edit", {"file_path": "/workspace/product/a.ts"}, "cto"
+            )
+        assert result == (
+            f"PROPOSE-ONLY (reversible, confidence=graduated) — {pol['message']}"
+        )
+
+    def test_lift_helper_whitelists_rung_map_image(self):
+        """_earn_up_rung_lift refuses any out-of-vocab ladder answer — only
+        the frozen rung map's lift verdicts pass."""
+        for bad in ("always_gated", "standing_grant", "act_with_undo",
+                    "propose_only", "classifier", "god-mode", 7, None):
+            with patch("framework.learning.trust_ladder.rung_verdict_lift",
+                       new=lambda lane=None, _v=bad, **kw: _v):
+                assert _pe._earn_up_rung_lift("polads") is None, bad
+        for ok in ("auto_with_veto_window", "notify_after", "auto"):
+            with patch("framework.learning.trust_ladder.rung_verdict_lift",
+                       new=lambda lane=None, _v=ok, **kw: _v):
+                assert _pe._earn_up_rung_lift("polads") == ok
+
+    def test_guardian_and_sovereign_never_enter_the_overlay(self):
+        """The overlay branch requires posture==earn_up: a wide-open lift must
+        change NOTHING under guardian or sovereign (byte-parity guard)."""
+        pol = _load_real_matrix_policy()
+        with patch.object(_pe, "_earn_up_rung_lift", lambda lane: "auto"), \
+                patch.object(_pe, "read_cell_state",
+                             lambda officer, lane, action_type: "graduated"), \
+                patch("framework.events.emitter.emit"):
+            # guardian: deploy_nonprod@graduated -> classifier -> collapses to
+            # propose (NATE-DECISION 2026-07-04) — a wide-open lift changing
+            # this to allow would prove the overlay leaked out of earn_up.
+            guardian_result = _eval_authority_matrix(
+                pol, "Bash", {"command": "git push origin feature/x"}, "cto"
+            )
+            with _sovereign():
+                sovereign_result = _eval_authority_matrix(
+                    pol, "Bash", {"command": "git push origin feature/x"}, "cto"
+                )
+        assert guardian_result == (
+            f"PROPOSE-ONLY (deploy_nonprod, confidence=graduated) — {pol['message']}"
+        )
+        assert sovereign_result is None  # sovereign table: notify_after allow
+
+    def test_end_to_end_real_ladder_real_grant(self):
+        """Integration through the REAL trust_ladder: a Captain-authored
+        ladder file carrying a `granted:` row (the ATTESTED-file authority
+        source — attestation injected for the tmp root, AX-8) lifts a
+        graduated internal_comms cell to notify_after (allow + tell)."""
+        pol = _load_real_matrix_policy()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cfg = Path(tmpdir) / "instance" / "config"
+            cfg.mkdir(parents=True)
+            (cfg / "trust-ladder.yml").write_text(
+                "rungs:\n"
+                "  - name: ive-done\n"
+                "    grants:\n"
+                "      - { action_type: internal_message }\n"
+                "granted:\n"
+                "  - { rung: ive-done }\n"  # lane absent = every lane
+            )
+            env = {
+                "CABINET_ROOT": tmpdir,
+                "CABINET_EVENT_LOG_DIR": os.path.join(tmpdir, "events"),
+                "CABINET_FRAMEWORK_STORE_MIRROR": "0",
+            }
+            with patch.dict(os.environ, env):
+                from framework.events.emitter import replay
+                with _earn_up(), patch(
+                    "framework.authority.posture.is_locked",
+                    lambda p, target=None: True,
+                ), patch.object(
+                    _pe, "read_cell_state",
+                    lambda officer, lane, action_type: "graduated",
+                ):
+                    result = _eval_authority_matrix(
+                        pol, "mcp__brain__queue_draft",
+                        {"recipient": "sean@stepnetwork.dk", "body": "hi",
+                         "channel": "teams"},
+                        "cos",
+                    )
+                tells = replay(event_types=["policy_evaluated"])
+            assert result is None  # lifted to notify_after -> allow
+            assert len(tells) == 1
+            assert tells[0]["payload"]["verdict"] == "notify_after"
+            assert tells[0]["payload"]["posture"] == "earn_up"
+
+    def test_end_to_end_forged_event_stays_floor(self):
+        """SECURITY (AX-8): a forged trust_rung_granted event — the ledger is
+        same-uid-appendable, actor is an unauthenticated string — must lift
+        NOTHING even with the ladder file attested: authority derives only
+        from the file's `granted:` rows, never from events."""
+        pol = _load_real_matrix_policy()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cfg = Path(tmpdir) / "instance" / "config"
+            cfg.mkdir(parents=True)
+            (cfg / "trust-ladder.yml").write_text(
+                "rungs:\n"
+                "  - name: ive-done\n"
+                "    grants:\n"
+                "      - { action_type: internal_message }\n"
+            )
+            env = {
+                "CABINET_ROOT": tmpdir,
+                "CABINET_EVENT_LOG_DIR": os.path.join(tmpdir, "events"),
+                "CABINET_FRAMEWORK_STORE_MIRROR": "0",
+            }
+            with patch.dict(os.environ, env):
+                from framework.events.emitter import emit
+                # The one-liner from the finding: an officer minting the event.
+                emit("trust_rung_granted", actor="captain",
+                     payload={"rung": "ive-been-doing", "lane": None})
+                with _earn_up(), patch(
+                    "framework.authority.posture.is_locked",
+                    lambda p, target=None: True,
+                ), patch.object(
+                    _pe, "read_cell_state",
+                    lambda officer, lane, action_type: "graduated",
+                ):
+                    result = _eval_authority_matrix(
+                        pol, "mcp__brain__queue_draft",
+                        {"recipient": "sean@stepnetwork.dk", "body": "hi",
+                         "channel": "teams"},
+                        "cos",
+                    )
+        assert result == (
+            f"PROPOSE-ONLY (internal_comms, confidence=graduated) — {pol['message']}"
+        )
+
+    def test_end_to_end_no_grant_stays_floor(self):
+        """Same real wiring but NO granted rung: the graduated cell stays at
+        the earn_up propose_only floor."""
+        pol = _load_real_matrix_policy()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cfg = Path(tmpdir) / "instance" / "config"
+            cfg.mkdir(parents=True)
+            (cfg / "trust-ladder.yml").write_text(
+                "rungs:\n"
+                "  - name: ive-done\n"
+                "    grants:\n"
+                "      - { action_type: internal_message }\n"
+            )
+            env = {
+                "CABINET_ROOT": tmpdir,
+                "CABINET_EVENT_LOG_DIR": os.path.join(tmpdir, "events"),
+                "CABINET_FRAMEWORK_STORE_MIRROR": "0",
+            }
+            with patch.dict(os.environ, env):
+                with _earn_up(), patch.object(
+                    _pe, "read_cell_state",
+                    lambda officer, lane, action_type: "graduated",
+                ):
+                    result = _eval_authority_matrix(
+                        pol, "mcp__brain__queue_draft",
+                        {"recipient": "sean@stepnetwork.dk", "body": "hi",
+                         "channel": "teams"},
+                        "cos",
+                    )
+        assert result == (
+            f"PROPOSE-ONLY (internal_comms, confidence=graduated) — {pol['message']}"
+        )

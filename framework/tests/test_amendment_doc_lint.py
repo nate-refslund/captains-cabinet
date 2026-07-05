@@ -113,10 +113,19 @@ def test_act_and_draft_is_the_encoded_ruling():
 
 
 def test_every_immutable_core_entry_referenced():
-    """The Ring-0 single source and the Captain contract must agree: every
+    """The Ring-0 single source and the Captain contracts must agree: every
     enumerated path (by basename, or the exact path for ambiguous names)
-    appears in the amendment."""
-    text = _doc()
+    appears in SOME germline amendment doc. immutable-core grows amendment
+    by amendment while each dated doc stays FROZEN, so the check runs over
+    the union of docs/proposals/germline-amendment-*.md — an entry no
+    Captain contract ever named is still a hard failure (cabinet-axes
+    2026-07-05 extended the enumeration; the sovereign doc alone can no
+    longer cover it)."""
+    docs = sorted(
+        (_REPO_ROOT / "docs" / "proposals").glob("germline-amendment-*.md")
+    )
+    assert _DOC in docs, "sovereign amendment doc missing from proposals/"
+    text = "\n".join(p.read_text() for p in docs)
     core = yaml.safe_load(
         (_REPO_ROOT / "framework" / "policies" / "immutable-core.yml")
         .read_text()
@@ -126,7 +135,8 @@ def test_every_immutable_core_entry_referenced():
             path = entry["path"]
             base = path.rstrip("/").rsplit("/", 1)[-1]
             assert base in text or path in text, (
-                f"immutable-core entry {path} not referenced in the amendment"
+                f"immutable-core entry {path} not referenced in any "
+                f"germline amendment doc"
             )
 
 

@@ -1,0 +1,113 @@
+# trust-ladder.yml — the explicit, Captain-authored trust ladder.
+#
+# THE earn_up SURFACE ONLY (axes spec 2026-07-05 §1 L1). This file is consulted
+# exclusively when instance/config/posture.yml (or the CABINET_POSTURE narrow
+# env/file) resolves the `earn_up` posture — guardian and sovereign never read
+# it. Copy to trust-ladder.yml and tune. If ABSENT or corrupt, the conservative
+# default is a single `would-like-to` rung (propose everything, lift nothing)
+# — the safe floor.
+#
+# This is the Captain-readable map of NAMED rungs a lane climbs as cells prove
+# out. It sits ABOVE the per-cell graduation machine
+# (framework/fidelity/graduation.py) and the authority matrix
+# (framework/policies/authority-matrix.yml) — it does not replace either: the
+# static postures.earn_up table floors every non-ceiling class at propose_only,
+# and ALL autonomy above that floor comes from this ladder at run time.
+#
+# RUNG VOCABULARY + the FROZEN rung → verdict map the gate overlay lifts a
+# graduated, rung-granted cell to. Lowest to highest; you may use any subset,
+# in this order, per lane:
+#   would-like-to    propose-first (waits for approval)      -> propose_only  [the floor]
+#   intend-to        veto-window (announces, acts unless vetoed) -> auto_with_veto_window
+#   ive-done         acts, reports after                     -> notify_after
+#   ive-been-doing   fully graduated (acts, reports periodically) -> auto
+#
+# HOW A RUNG IS EARNED: every (lane, action_type) cell the rung `grants` must
+# be `graduated` per graduation.evaluate (the proof bar is the matrix `bars`,
+# not a second bar). An earned rung is SURFACED as a one-tap card — it is
+# NEVER auto-granted; there is no self-grant path in code. You grant it by
+# appending a `granted:` row to THIS file in an unlock window (sudo bash
+# cabinet/scripts/germline-lock.sh unlock instance/config/trust-ladder.yml →
+# edit → re-lock; trust_ladder.grant_rung then records the trust_rung_granted
+# AUDIT event). The ATTESTED (Captain-locked) file is the ONLY authority
+# source — `granted:` rows in an unlocked file are ignored, and a bare
+# trust_rung_granted event mints nothing (the ledger is same-uid-appendable).
+# Only a locked-file granted row advances the ladder, and only then do
+# GRADUATED cells on that lane resolve to the rung's verdict above.
+#
+# THIS FILE IS ALSO THE LIFT CAP: the gate overlay lifts at most to the
+# highest rung this file still defines for the lane (min of granted rung and
+# file cap). Deleting or corrupting this file drops every lift back to the
+# propose_only floor — your mechanical kill handle for the earn_up surface.
+#
+# HARD CEILING: if any granted cell's action_type maps to a hard-ceiling
+# risk_class (external_comms, deploy_prod, spend, secrets, network_write,
+# credentials_grant), the rung is computed as Captain-only — the ladder will
+# NEVER auto-advance past it, and the gate overlay never lifts a ceiling row
+# regardless of rung (ceilings stay always_gated in the earn_up table). You
+# can still grant such a rung explicitly, but it stays your decision forever.
+# This is enforced in code, not just here.
+
+rungs:
+  # --- PolAds lane ---------------------------------------------------------
+  - name: ive-done                 # graduated cells act, report after (notify_after)
+    lane: polads
+    grants:
+      - { action_type: task_status_move }   # Monday/Linear status moves
+      - { action_type: board_status }
+      - { action_type: label }
+      - { action_type: tier2_note }
+    # min_samples is OPTIONAL — omit to use the matrix `bars` floor (20 for
+    # `default`). Set it to require MORE proof than the matrix floor for this
+    # specific rung.
+    # min_samples: 30
+
+  - name: intend-to                # internal comms with a veto window
+    lane: polads
+    grants:
+      - { action_type: internal_message }   # Teams/internal DMs (queue_draft, internal recipient)
+      - { action_type: internal_email }
+    min_samples: 30                # internal_comms bar is already 30 in the matrix; explicit here
+
+  - name: ive-done
+    lane: polads
+    grants:
+      - { action_type: vercel_deploy_preview }
+      - { action_type: git_push_nonmain }
+    min_samples: 30
+
+  # --- STEPhie lane (same shape, separate climb — trust is per-lane) -------
+  - name: ive-done
+    lane: stephie
+    grants:
+      - { action_type: task_status_move }
+      - { action_type: board_status }
+      - { action_type: label }
+
+  # --- A CEILING rung, shown for documentation -----------------------------
+  # This is computed Captain-only (external_message -> external_comms ceiling).
+  # The ladder will surface it when the cell graduates, but will NEVER
+  # auto-advance to it, and the gate overlay never lifts the external_comms
+  # row. Listed here so the example shows the ceiling behavior.
+  - name: ive-done
+    lane: polads
+    grants:
+      - { action_type: external_message }    # -> external_comms (HARD CEILING)
+
+# --- GRANTED ROWS — the Captain's actual grants (closed shape) -------------
+# Authority lives HERE, in the locked file — never in events. Each row:
+#   rung        required, one of the four vocabulary names above
+#   lane        optional — absent/null applies to EVERY lane
+#   granted_at  optional provenance timestamp
+#   note        optional free text
+# Malformed rows (unknown keys, out-of-vocab rung) are line-dropped
+# fail-closed. The effective lift per lane = min(highest applicable granted
+# row, highest rung the `rungs:` map still defines for the lane).
+#
+# granted:
+#   - { rung: ive-done, lane: polads, granted_at: 2026-07-05, note: "scrum ok" }
+
+# NOTE (deliberate absence): the pre-ripout `auto_grant_nonceiling` flag does
+# NOT exist anymore. Every rung — ceiling or not — is grant-by-Captain only;
+# the resurrected module ships no auto-advance path at all (axes Corridor
+# constraint: authority changes ride Captain-authenticated surfaces only).

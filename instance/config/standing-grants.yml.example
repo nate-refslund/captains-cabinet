@@ -7,9 +7,17 @@
 #
 # Fail-safe polarity (framework/authority/grants.py): absent / unparseable /
 # not-schg-locked ⇒ grants resolve EMPTY (+ deduped need). Malformed rows are
-# line-dropped. flavor=personal (posture.yml) structurally refuses every
-# external_comms grant — the Captain's personal outbound stays approval-gated
-# in every posture.
+# line-dropped.
+#
+# Class grantability is INSTANCE-scoped (Captain ruling 2026-07-05 — the old
+# flavor=personal structural refusal is gone): a `never_grant:` list in the
+# Captain-locked instance/config/posture.yml drops every grant row whose
+# risk_class is listed, fail-closed at load, + ONE kind=decision need per
+# class (never a recurring grant-request need). Empty/absent never_grant =
+# all six ceiling classes grantable — the rows below still decide. E.g.
+# Nate's personal instance keeps external outbound per-item-approved
+# (ACT-AND-DRAFT) via, in posture.yml:
+#   never_grant: [external_comms]
 #
 # Every row is enforced with ALL of: deployment==CABINET_ID, action_type +
 # lane membership (named lanes only — never '*'), unexpired (expires ≤ 90d

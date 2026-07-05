@@ -888,6 +888,125 @@ def _route_needs_command(text: str, *, mark_need: Callable[..., Any],
     return None
 
 
+# =============================================================================
+# AX-7 — the NARROW-ONLY posture verb: `posture guardian|earn_up` writes the
+# instance/config/posture-narrow cap (atomic, single validated word) and
+# `posture clear` removes it. Rides the SAME gate as the needs verbs
+# (CABINET_NEEDS_WIRED=1 AND captain_verified — the poller relays only
+# CAPTAIN_TELEGRAM_ID here), so the surface is Captain-authenticated.
+#
+# WIDENING IS NEVER A CHAT VERB (axes spec §1 / axes-contract §3): `posture
+# sovereign` — or any word outside the narrow vocabulary — is refused with the
+# attestation ritual, because a chat "go sovereign" is a forge vector; the
+# resolver honors sovereign only from a locked, deployment-matched ruling. The
+# narrow vocabulary is REUSED from the posture kernel (posture._NARROW_CAPS),
+# never restated, and the cap file's reader already fails closed to earn_up on
+# garbage — every failure mode of this verb is a narrowing or a no-op.
+#
+# Grammar is full-message anchored (exactly `posture <word>`), so prose and
+# untrusted quoted text can never trigger it; a matched verb is TERMINAL and
+# never falls through to the propose path.
+# =============================================================================
+
+_POSTURE_VERB_RE = re.compile(r"^\s*posture\s+([A-Za-z_\-]+)\s*$", re.IGNORECASE)
+
+_POSTURE_RITUAL = (
+    "sovereign is never set from chat/env — it requires the Captain's "
+    "attested ritual on the machine:\n"
+    "  sudo bash cabinet/scripts/germline-lock.sh unlock\n"
+    "  $EDITOR instance/config/posture.yml   # posture: sovereign (presets: "
+    "instance/config/posture-presets/)\n"
+    "  git add -A && git commit\n"
+    "  sudo bash cabinet/scripts/germline-lock.sh lock\n"
+    "(docker target: the ritual is host-side — edit in the host checkout, "
+    "keep the :ro bind mount.)")
+
+
+def _effective_posture_line() -> str:
+    """Best-effort one-liner of the now-effective posture for verb receipts.
+    file_needs=False — a receipt read never files a need. Never raises."""
+    try:
+        from framework.authority import posture
+        return f"Effective posture now: {posture.resolve_posture(file_needs=False)}."
+    except Exception:
+        return "Effective posture: unknown (resolver unavailable)."
+
+
+def _write_narrow_cap(word: str) -> None:
+    """Atomically write the single-word narrow cap file. The file is
+    deliberately NOT in the lock set — it can only narrow, so tampering is
+    fail-safe — but the write is still tmp+rename so a crash never leaves a
+    half-written word (which would fail closed to earn_up anyway)."""
+    from framework.authority import posture
+    path = posture.narrow_cap_path(None)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}")
+    try:
+        tmp.write_text(word + "\n")
+        os.replace(tmp, path)
+    finally:
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except OSError:
+            pass
+
+
+def _route_posture_command(text: str, *, present: Callable[[str], Any],
+                           log: Callable[[str], None]) -> Optional[dict]:
+    """The AX-7 posture verb, or None when the reply is not one. TERMINAL on
+    any match — set/clear/refuse all return handled=True with a receipt; a
+    write failure is reported LOUDLY (the brake did NOT engage) rather than
+    ever claiming a cap that isn't on disk."""
+    m = _POSTURE_VERB_RE.match(text or "")
+    if m is None:
+        return None
+    from framework.authority import posture
+    word = m.group(1).lower().replace("-", "_")
+
+    def _say(msg: str) -> None:
+        try:
+            present(msg)
+        except Exception as e:
+            log(f"binder-wire: posture receipt present failed: {e!r}")
+
+    if word == "clear":
+        try:
+            posture.narrow_cap_path(None).unlink(missing_ok=True)
+        except OSError as e:
+            _say(f"⚠️ FAILED to clear the narrow cap ({e}) — cap unchanged. "
+                 + _effective_posture_line())
+            return {"handled": True, "posture_verb": "clear-failed",
+                    "summary": f"posture clear FAILED: {e}"}
+        _say("⚠️ WARNING: narrow cap cleared — this RESTORES the attested "
+             "posture level (the locked ruling / env caps still apply). "
+             + _effective_posture_line())
+        return {"handled": True, "posture_verb": "clear",
+                "summary": "posture narrow cap cleared (attested level restored)"}
+
+    if word in posture._NARROW_CAPS:
+        try:
+            _write_narrow_cap(word)
+        except OSError as e:
+            _say(f"⚠️ FAILED to set the narrow cap ({e}) — posture UNCHANGED. "
+                 f"{_effective_posture_line()} Emergency brake: "
+                 "CABINET_POSTURE=guardian in the environment.")
+            return {"handled": True, "posture_verb": "narrow-failed", "cap": word,
+                    "summary": f"posture {word} FAILED (cap not written): {e}"}
+        _say(f"🛡 Narrow cap set: {word} (posture-narrow file). "
+             f"{_effective_posture_line()} Undo with `posture clear` "
+             "(restores the attested level).")
+        return {"handled": True, "posture_verb": "narrow", "cap": word,
+                "summary": f"posture narrow cap set: {word}"}
+
+    _say(f"🔒 `posture {word}` refused — this verb can only NARROW: "
+         "`posture guardian` | `posture earn_up` | `posture clear`. "
+         + _POSTURE_RITUAL)
+    return {"handled": True, "posture_verb": "refused", "cap": word,
+            "summary": f"posture {word} refused (narrow-only verb; "
+                       "widening is the attestation ritual)"}
+
+
 def _route_veto_command(text: str, *, record_veto: Callable[..., Any],
                         lift_veto: Callable[..., Any], present: Callable[[str], Any],
                         redis_get: Callable[[str], str], redis_set: Callable[[str, str], Any],
@@ -1018,6 +1137,15 @@ def handle_captain_update(
                     f"{needs_res.get('need') or needs_res.get('rearm') or 'refused'}"
                     f" -> {needs_res.get('summary') or needs_res.get('reason')}")
                 return needs_res
+            # AX-7 posture verb — same gate as the needs verbs (dark behind
+            # CABINET_NEEDS_WIRED, Captain-verified only). Narrow-only by
+            # construction; None ⇒ not the grammar ⇒ byte-identical routing.
+            posture_res = _route_posture_command(
+                text, present=present or _default_present, log=log)
+            if posture_res is not None:
+                log(f"binder-wire: posture {posture_res.get('posture_verb')} "
+                    f"-> {posture_res.get('summary')}")
+                return posture_res
 
         # --- TI-4 VETO COMMANDS: lift veto-NNN / veto confirm / freeform never:.
         # Armed only on the Captain-verified path with veto wiring live; a
