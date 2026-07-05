@@ -188,6 +188,19 @@ normalized projection the graduation math reads.
   `framework/schemas/consequence-event.schema.json` before writing
   (`additionalProperties: false` everywhere — drift fails loud, which is
   the point of normalizing).
+- **Hygiene (known-junk purges, 2026-07-04/05)**: two Captain-gated,
+  backup-first, one-shot purge tools exist for the historical pollution the
+  2026-07-04 leak incident left behind (pytest fixture rows dual-emitted into
+  BOTH families + junk subagent `work_item_completed` rows) —
+  `cabinet/scripts/ledger-purge-testrows.sh` for the JSONL families
+  (`events-*.jsonl` **and** `consequence-events-*.jsonl` — this read path),
+  and its sibling `cabinet/scripts/purge-sqlite-mirror.py` for the
+  org-runtime SQLite Store mirror (`cabinet/cache/org-runtime.sqlite3`,
+  which mirrored the junk `work_item_completed` rows; the consequence family
+  has no mirror by design). Both refuse without `CABINET_PURGE_CONFIRM=1`,
+  preview with `CABINET_PURGE_DRY_RUN=1`, and never drop what they cannot
+  positively identify as junk. Read each script's header for the full
+  gate/rollback contract.
 
 > Built: `framework/fidelity/consequence.py` — `emit_consequence` validates (hand-rolled, no jsonschema dep) then appends to `consequence-events-YYYY-MM-DD.jsonl`; `read_ledger` + `compute_ratios` are the graduation read path.
 
