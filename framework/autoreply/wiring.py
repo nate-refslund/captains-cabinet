@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from framework.autoreply import kristoffer_uat as K
+from framework.env import captain_name
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _REDIS_H = os.environ.get("REDIS_HOST", "localhost")
@@ -105,9 +106,9 @@ def _send_backend(draft: Dict[str, Any]) -> Any:
 
 
 def _copy_to_nate(text: str) -> Any:
-    """Send a copy of the auto-ack to Nate via the cabinet's ONLY Captain path
-    (``framework.frontdoor.channel.send``). Itself gated by ``allow_sends()`` —
-    a non-runtime session returns ``blocked-dev`` (the sample still composes)."""
+    """Send a copy of the auto-ack to the Captain via the cabinet's ONLY Captain
+    path (``framework.frontdoor.channel.send``). Itself gated by ``allow_sends()``
+    — a non-runtime session returns ``blocked-dev`` (the sample still composes)."""
     from framework.frontdoor import channel
     return channel.send(text)
 
@@ -115,7 +116,7 @@ def _copy_to_nate(text: str) -> Any:
 def _route_bug(item: Dict[str, Any]) -> Any:
     """Route the UAT bug to polads-ceo via the standard officer trigger
     (``notify-officer.sh`` -> Redis stream -> the officer's session). Raises on
-    failure so handle_message records ``routed=False`` (Nate sees it)."""
+    failure so handle_message records ``routed=False`` (the Captain sees it)."""
     officer = item.get("officer", K.ROUTE_OFFICER)
     sender = item.get("sender", "Kristoffer")
     topic = item.get("topic", "")
@@ -157,11 +158,12 @@ def _log_reasoning(rec: dict) -> None:
     if shared not in sys.path:
         sys.path.insert(0, shared)
     import agent_reasoning  # type: ignore
+    cap = captain_name()
     agent_reasoning.log(
         action=f"autoreply-{rec.get('decision', '')}",
         subject=rec.get("topic", "")[:120],
         rationale=rec.get("reason", "")[:300],
-        expectation="Kristoffer acked + bug routed to polads-ceo; Nate copied",
+        expectation=f"Kristoffer acked + bug routed to polads-ceo; {cap} copied",
         pipe="autoreply-kristoffer-uat",
         ref=rec.get("ref", ""),
     )
@@ -189,19 +191,22 @@ def process(sender: str, channel: str, text: str, *,
 
 
 def dry_run_sample(sender: str = "krmoj@step.dk", channel: str = "teams",
-                   text: str = (
-                       "Hi Nate - the publisher VIES auto-fill is broken on "
-                       "staging: clicking 'fetch company data' returns a 500 and "
-                       "the form stays empty. Repro: /register, type a CVR, hit "
-                       "fetch. Expected it to populate name/address."),
+                   text: str = "",
                    eta: str = "we're aiming to have a fix in the next deploy",
                    ref: str = "") -> dict:
-    """Produce a SAMPLE auto-ack and send it to NATE ONLY (clearly labelled as a
-    dry-run sample), so he can approve the exact behaviour before the lane is
-    armed. Sends NOTHING to Kristoffer, routes NOTHING to polads-ceo. Safe to run
-    any time, armed or not — ``dry_run=True`` short-circuits every egress except
-    the labelled Nate copy.
+    """Produce a SAMPLE auto-ack and send it to THE CAPTAIN ONLY (clearly labelled
+    as a dry-run sample), so they can approve the exact behaviour before the lane
+    is armed. Sends NOTHING to Kristoffer, routes NOTHING to polads-ceo. Safe to
+    run any time, armed or not — ``dry_run=True`` short-circuits every egress
+    except the labelled Captain copy.
     """
+    if not text:
+        cap = captain_name()
+        text = (
+            f"Hi {cap} - the publisher VIES auto-fill is broken on "
+            "staging: clicking 'fetch company data' returns a 500 and "
+            "the form stays empty. Repro: /register, type a CVR, hit "
+            "fetch. Expected it to populate name/address.")
     return K.handle_message(
         sender=sender, channel=channel, text=text,
         redis_get=_redis_get, send_backend=_send_backend,
@@ -267,7 +272,7 @@ def status() -> dict:
 
 # ---------------------------------------------------------------------------
 # CLI — `python -m framework.autoreply.wiring <status|sample|arm|disarm>`.
-# `sample` is the one Nate runs to see the exact ack before arming.
+# `sample` is the one the Captain runs to see the exact ack before arming.
 # ---------------------------------------------------------------------------
 
 def _main(argv: list) -> int:

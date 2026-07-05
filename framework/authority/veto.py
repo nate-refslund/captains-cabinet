@@ -2,8 +2,8 @@
 
 Component 5 of docs/authority-matrix-design-2026-06-19.md. When the authority
 gate resolves an internal-comms action to `auto_with_veto_window`, the officer's
-direct send is BLOCKED (the gate exits 2) and the payload is ENQUEUED here. Nate
-gets a Telegram notice ("sending to <person> in N min — reply `kill <id>` to
+direct send is BLOCKED (the gate exits 2) and the payload is ENQUEUED here. The
+Captain gets a Telegram notice ("sending to <person> in N min — reply `kill <id>` to
 stop"); if he does nothing, an out-of-band scan fires the ACTUAL send on TTL
 expiry through the SAME approved `queue_draft` backend (brain-bridge.md:
 `queue_draft` is the ONLY outbound path). If he kills it, the entry is deleted
@@ -16,7 +16,7 @@ and the event emitter — is INJECTED so the whole thing is unit-testable with
 fakes (no real Redis, no real time, no real outbound, no real event ledger).
 
 It implements NO new send path: the real byte egress is the caller-supplied
-`send_backend` (the existing approved `queue_draft` backend in Nate's external
+`send_backend` (the existing approved `queue_draft` backend in the Captain's external
 screenpipe brain-mcp). It touches no `queue_draft` internals.
 
 Crash-safety + idempotency are the spine:
@@ -161,7 +161,7 @@ def compose_veto_notice(
 
     Shape (design §Component 5 step 2): "Sending to <person> in N min —
     [preview]. Reply `kill <draft_id>` to stop." A preview snippet of the body
-    is included so Nate can judge at a glance. Per telegram-communication rules
+    is included so the Captain can judge at a glance. Per telegram-communication rules
     the caller threads the reply; this function only builds the text.
     """
     if window_minutes is None:

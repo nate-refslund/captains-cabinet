@@ -1,11 +1,11 @@
 """MCP/plugin self-proposal (prepare + surface, NEVER self-grant).
 
 The Chair, having evaluated + tested a new MCP/plugin, surfaces a ONE-TAP
-approval to Nate carrying:
+approval to the Captain carrying:
 
   * the EXACT `cabinet/mcp-scope.yml` diff (the line(s) to add) — computed as a
     STRING for review, NEVER written;
-  * any account step (handed to Nate — the sibling account flow,
+  * any account step (handed to the Captain — the sibling account flow,
     `cabinet/scripts/prepare-account-flow.sh`, drives it to the credential
     boundary);
   * the test evidence the Chair gathered (shows the capability actually works);
@@ -18,7 +18,7 @@ audit event.
 HARD LINE (shared/interfaces/captain-patterns.md
 autonomy-boundary-accounts-and-self-guards): this module **PREPARES + SURFACES**
 only. It has NO write path to `cabinet/mcp-scope.yml` or any germline file, and
-NO auto-grant. Nate applies the one scope line himself. The germline guard in
+NO auto-grant. The Captain applies the one scope line themselves. The germline guard in
 `cabinet/scripts/hooks/pre-tool-use.sh` (exit 2) blocks any self-edit attempt
 regardless — this module simply never attempts one (it reads the file to
 *compute* the diff text, then stops).
@@ -52,7 +52,7 @@ except ImportError:  # pragma: no cover - yaml present in the cabinet runtime
     _yaml_load = None
 
 
-# The file Nate edits to grant an MCP. We READ it to compute the diff; we NEVER
+# The file the Captain edits to grant an MCP. We READ it to compute the diff; we NEVER
 # write it (hard line). Resolved from CABINET_ROOT so the path is controlled.
 _MCP_SCOPE_REL = "cabinet/mcp-scope.yml"
 
@@ -100,7 +100,7 @@ def compute_scope_diff(
     cabinet_root: str | Path | None = None,
 ) -> dict[str, Any]:
     """Compute the EXACT `cabinet/mcp-scope.yml` change to grant `server` to
-    `officers` — as text for Nate to apply. NEVER writes the file.
+    `officers` — as text for the Captain to apply. NEVER writes the file.
 
     Returns:
         {
@@ -108,7 +108,7 @@ def compute_scope_diff(
           "server": str,
           "officers_missing": [str],     # officers that don't have it yet
           "diff_text": str,              # the human-readable line(s) to add
-          "scope_path": str,             # the file Nate edits
+          "scope_path": str,             # the file the Captain edits
           "scope_readable": bool,        # False if the file couldn't be parsed
         }
 
@@ -279,7 +279,7 @@ def prepare_mcp_proposal(
         officers: officer ids to grant (e.g. ['cos']).
         why: one-line rationale.
         test_evidence: what the Chair verified works (the capability proof).
-        account_step: credential/account step handed to Nate, or None.
+        account_step: credential/account step handed to the Captain, or None.
         touches: explicitly-declared hard-ceiling categories, if known.
         kind: 'mcp' | 'plugin'.
         gap_id: link to a capability_gap so can_install still gates a build step.
@@ -310,7 +310,7 @@ def prepare_mcp_proposal(
         "why": why,
         "scope_diff": scope_diff,
         "ceiling": ceiling,
-        "captain_required": True,  # ALWAYS — a scope grant is always Nate's.
+        "captain_required": True,  # ALWAYS — a scope grant is always the Captain's.
         "account_step": account_step,
         "test_evidence": test_evidence,
         "gap_id": gap_id,

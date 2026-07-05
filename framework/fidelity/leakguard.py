@@ -27,7 +27,7 @@ from typing import Any
 # post-cutoff record and must be dropped.
 #
 # `due` is DELIBERATELY EXCLUDED: a due date is legitimate as-of-cutoff
-# knowledge (Nate can know "this is due next Friday" at the cutoff), NOT a
+# knowledge (the Captain can know "this is due next Friday" at the cutoff), NOT a
 # content-creation timestamp. Including it wrongly DROPS a genuinely open
 # commitment whose source_date is empty and whose due is in the future —
 # _item_ts returns the FIRST matching key, so an empty source_date is skipped

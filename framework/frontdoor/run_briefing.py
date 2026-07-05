@@ -2,7 +2,7 @@
 
 Scheduled by launchd (cabinet/scripts/run-frontdoor-briefing.sh). Pulls real
 signals into the durable intake (morning_synthesis) and runs the send path
-(run_frontdoor.run_send_path) → ONE unified message to Nate on the single
+(run_frontdoor.run_send_path) → ONE unified message to the Captain on the single
 channel, replacing the screenpipe morning-brief DM that the cutover silenced.
 
 PM augmentation: the wrapper sets ``CABINET_RUN_MODE=PM`` for the evening run
@@ -74,7 +74,7 @@ def run_briefing(
     ACTED/AWAITING/WATCHING/SELF digest is enqueued before the send pass so it
     rides this same unified briefing, and its ``cabinet:digest:<date>`` manifest
     is persisted first so `undo <n>` / `👍 <n>` replies bind the moment the text
-    lands (checkpoint 2026-07-04 Tier-0 #6 — Nate's ruled flip prerequisite;
+    lands (checkpoint 2026-07-04 Tier-0 #6 — the Captain's ruled flip prerequisite;
     plugs the binder no-pid label leak). The default digest also carries the
     📈 LOOP readout (acceptance/undo rates + falsifier series — see
     ``_default_digest``). Best-effort: a digest failure logs into
@@ -115,7 +115,7 @@ def run_briefing(
     # consumer group's PEL "for the briefing to compose". Those items are then no
     # longer ">"-visible, so a plain briefing drain saw nothing and the batch/fyi
     # backlog — comms-officer FYIs, relevant-but-no-reply messages — surfaced
-    # NEVER. The briefing is the designated place batch/fyi reaches Nate, so it
+    # NEVER. The briefing is the designated place batch/fyi reaches the Captain, so it
     # recovers that pending backlog, composes it into the one voice, sends, and
     # ACKs. (surface.py is unchanged: still real-time ping-now only.)
     send = run_frontdoor.run_send_path(

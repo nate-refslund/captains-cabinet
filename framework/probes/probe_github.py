@@ -29,7 +29,7 @@ CADENCE_S = 300                 # 5 min
 REVERT_WINDOW_DAYS = 14
 
 # ── DEPLOY STATUS (lane-supply 2026-07-05 — the template below is now BUILT) ──
-# The three deploy steps the original Nate-gated template named:
+# The three deploy steps the original Captain-gated template named:
 #   1. __main__ entry — DONE (below): delegates to runner.probe_main, which
 #      builds the real GhClient per product from instance/config/probes.yml,
 #      chdirs to the product checkout (git freshness + trailer fallback read
@@ -39,7 +39,7 @@ REVERT_WINDOW_DAYS = 14
 #      command `bash cabinet/scripts/run-probes.sh github` (the wrapper sources
 #      creds from env files — never argv). Plist install stays a deliberate
 #      human step (cabinet/launchd/INSTALL-flip.md).
-#   3. healthchecks 'probe-github' check (period 5m + grace) — STILL NATE'S:
+#   3. healthchecks 'probe-github' check (period 5m + grace) — STILL THE CAPTAIN'S:
 #      hc_ping is fail-open without HEALTHCHECKS_PING_KEY, so the probe runs
 #      correctly before the check exists; it just isn't externally dead-manned.
 

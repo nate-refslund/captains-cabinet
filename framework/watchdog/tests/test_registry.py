@@ -12,6 +12,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 
+from framework.env import captain_name
 from framework.watchdog import registry as reg
 from framework.watchdog.registry import CheckResult, Probe, Tier
 
@@ -122,8 +123,8 @@ def test_briefing_send_failed_verifies_false_and_autofixes():
     assert "AUTO-FIX fired" in action
     assert len(probe.triggers) == 1
     assert "RE-RUN the briefing" in probe.triggers[0]
-    # the re-trigger must NOT instruct DMing Nate
-    assert "Do NOT DM Nate" in probe.triggers[0]
+    # the re-trigger must NOT instruct DMing the Captain (de-nate: resolver-driven)
+    assert f"Do NOT DM {captain_name()}" in probe.triggers[0]
 
 
 def test_briefing_delivered_success_passes():

@@ -3,10 +3,10 @@
 AGB (as-good-or-better) is the HEADLINE, decision-match a DIAGNOSTIC.
 
 The personal-agent reframe (sovereign spec D17/INT-1..3): the harness
-objective is no longer "did the clone match Nate's literal reply?" but "did
-its outcome serve Nate's reconstructed intent as good or better than what
-Nate actually sent?". This module is a pure reader over the per-case recs
-measure_intent emits — no LLM calls, no network, no ledger writes.
+objective is no longer "did the clone match the Captain's literal reply?" but
+"did its outcome serve the Captain's reconstructed intent as good or better
+than what the Captain actually sent?". This module is a pure reader over the
+per-case recs measure_intent emits — no LLM calls, no network, no ledger writes.
 
 Rates follow the harness's no-silent-caps rule: an unmeasured rate is a
 visible None, never a silent 0.0/1.0.
@@ -32,6 +32,8 @@ import argparse
 import json
 import sys
 from typing import Optional
+
+from framework.env import captain_name
 
 # Verdict vocabularies (scorer.py is the source; mirrored here as read-side
 # constants so the reader never imports the scoring/LLM stack).
@@ -130,11 +132,12 @@ def _fmt_rate(rate: Optional[float]) -> str:
 
 def render(summary: dict) -> str:
     """Human-readable report, AGB headline first, diagnostics after."""
+    cap = captain_name()
     lines = []
     overall = summary.get("overall") or {}
     lines.append("# Intent-fidelity report (D17 — outcome objective)")
     lines.append(
-        f"HEADLINE  AGB (as-good-or-better vs Nate's real reply, judged "
+        f"HEADLINE  AGB (as-good-or-better vs {cap}'s real reply, judged "
         f"against reconstructed intent): {_fmt_rate(overall.get('agb_rate'))}")
     for mode, seg in (summary.get("identities") or {}).items():
         oc = seg.get("outcome_counts") or {}

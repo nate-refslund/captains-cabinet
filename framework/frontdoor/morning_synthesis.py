@@ -19,6 +19,7 @@ import subprocess
 
 from framework.acting import product_health
 from framework.acting import screenpipe_adapter as sa
+from framework.env import captain_name
 from framework.frontdoor import intake
 
 # Repo root (…/framework/frontdoor/morning_synthesis.py → up 3). Used to locate
@@ -27,17 +28,17 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__f
 _DUE_FOLLOWUPS_SH = os.path.join(_REPO_ROOT, "cabinet", "scripts", "due-followups.sh")
 
 # ---------------------------------------------------------------------------
-# OPERATIONAL-vs-CAPTAIN routing (2026-06-26, Nate's standing directive).
+# OPERATIONAL-vs-CAPTAIN routing (2026-06-26, the Captain's standing directive).
 # WHY: deploy-health + Sentry error-health are RAW OPERATIONAL/MONITORING signals.
-# Per Nate's repeated correction, every operational/error/monitoring alert routes
-# to the CHAIR (cos) to triage — escalating to Nate ONLY if genuinely necessary —
+# Per the Captain's repeated correction, every operational/error/monitoring alert routes
+# to the CHAIR (cos) to triage — escalating to the Captain ONLY if genuinely necessary —
 # NOT straight onto his phone via the briefing. (This was the live source of the
-# "sentry-step-polads: N unresolved errors in 24h" ping Nate kept flagging — it was
+# "sentry-step-polads: N unresolved errors in 24h" ping the Captain kept flagging — it was
 # the cabinet's OWN front-door synthesis surfacing Sentry, NOT a Sentry-native rule.)
 # So those two sources are delivered as an OFFICER MESSAGE on the Chair's Redis
 # trigger stream `cabinet:triggers:cos` (the same path pipe-health uses + the exact
 # shape cabinet/scripts/lib/triggers.sh::trigger_send writes), and are NO LONGER
-# enqueued into the Nate-bound front-door intake. The genuinely Captain-facing
+# enqueued into the Captain-bound front-door intake. The genuinely Captain-facing
 # sources (awaiting-reply, owed commitments, dated follow-ups) stay in the intake.
 # The Chair's post-tool-use hook + redis-trigger-channel MCP surface the trigger on
 # its next turn; the Chair triages (gather-then-decide) and escalates only the
@@ -89,7 +90,8 @@ def _operational_summary(items: list[dict]) -> str:
     message body. Each item's payload.summary is the human line the source already
     built (e.g. 'Sentry — sentry-step-polads: 5 unresolved error(s) in 24h — …').
     A urgency_tier=='ping-now' item is flagged so the Chair can prioritize."""
-    lines = ["OPERATIONAL HEALTH (route: triage + escalate to Nate only if needed):"]
+    cap = captain_name()
+    lines = [f"OPERATIONAL HEALTH (route: triage + escalate to {cap} only if needed):"]
     for it in items:
         summary = (it.get("payload") or {}).get("summary") or it.get("source", "?")
         tier = it.get("urgency_tier", "batch")
@@ -126,7 +128,7 @@ def _looks_like_noise(person: str, snippet: str) -> bool:
 def awaiting_reply_items(*, hours: int = 72, limit: int = 6) -> list[dict]:
     """Real awaiting-reply threads → intake items (batch tier).
 
-    Each item surfaces (not drafts) a thread that has no reply from Nate yet,
+    Each item surfaces (not drafts) a thread that has no reply from the Captain yet,
     with provenance. Obvious automated/service-desk mail is pre-filtered out.
     Best-effort: any gather failure → empty list.
     """
@@ -141,7 +143,7 @@ def awaiting_reply_items(*, hours: int = 72, limit: int = 6) -> list[dict]:
             break
         if not isinstance(t, dict):
             continue
-        # 1:1 only — Nate rarely replies to group/list threads (the bias the
+        # 1:1 only — the Captain rarely replies to group/list threads (the bias the
         # should_nate_reply gate encodes). Restricting to direct threads keeps
         # the synthesis to where a reply is genuinely expected.
         if ((t.get("audience") or {}).get("kind") or "direct") in ("group", "list"):
@@ -171,9 +173,9 @@ def awaiting_reply_items(*, hours: int = 72, limit: int = 6) -> list[dict]:
 
 def commitment_items(*, commitments: list | None = None, today: str | None = None,
                      limit: int = 5) -> list[dict]:
-    """Time-pressing commitments Nate OWES → intake items (batch tier).
+    """Time-pressing commitments the Captain OWES → intake items (batch tier).
 
-    Surfaces only DATED, open, owed-by-Nate commitments whose due date is today
+    Surfaces only DATED, open, owed-by-the-Captain commitments whose due date is today
     or past (overdue + due-today) — the briefing is a time-pressing nudge
     surface; undated promises live in the ledger and don't need a daily ping.
     Most-overdue first (due asc), capped at ``limit``. Each item carries
@@ -374,7 +376,7 @@ def followup_items(*, due: list[dict] | None = None) -> list[dict]:
     entry's own ``gather`` (verify-resolved query) + ``nudge_if`` (open
     condition) text so the Chair does gather-then-decide per its rule — verify
     whether it already resolved (brain + email) BEFORE any nudge. A resolved
-    item must stay silent; only a genuinely-open one pings Nate.
+    item must stay silent; only a genuinely-open one pings the Captain.
 
     Batch tier (rides the next briefing's decision queue), unless the entry text
     itself is flagged time-critical (contains ``ping-now``) → ping-now. Each item
@@ -425,7 +427,7 @@ def followup_items(*, due: list[dict] | None = None) -> list[dict]:
 def gather_items(*, hours: int = 72, limit: int = 6) -> list[dict]:
     """All synthesis items from every real source.
 
-    Sources today: awaiting-reply 1:1 threads + time-pressing commitments Nate owes
+    Sources today: awaiting-reply 1:1 threads + time-pressing commitments the Captain owes
     (overdue / due-today) + Vercel deploy-health (failed/broken builds) + Sentry
     error-health (unresolved prod errors) + dated follow-ups whose check_from date
     has arrived (the "📌 Follow-ups due" content — gather-then-decide rule carried
@@ -434,7 +436,7 @@ def gather_items(*, hours: int = 72, limit: int = 6) -> list[dict]:
     NOTE on routing (done in enqueue_synthesis, not here): the two OPERATIONAL
     sources (deploy-health, sentry-health — see _OPERATIONAL_SOURCES) are split off
     to the Chair's trigger stream for triage; only the Captain-facing sources are
-    woven into the briefing the composer sends to Nate. gather_items itself still
+    woven into the briefing the composer sends to the Captain. gather_items itself still
     returns ALL sources (callers/tests that want the raw signal set are unaffected).
     PostHog is intentionally NOT wired as an alert source — the configured analytics
     project carries only pageview traffic, no error signal (see the cos source
@@ -452,12 +454,12 @@ def enqueue_synthesis(*, hours: int = 72, limit: int = 6) -> dict:
     """Gather real signals; route operational ones to the Chair and the rest to the
     Captain-bound intake.
 
-    SPLIT ROUTING (2026-06-26, Nate's standing directive — see _OPERATIONAL_SOURCES):
+    SPLIT ROUTING (2026-06-26, the Captain's standing directive — see _OPERATIONAL_SOURCES):
     operational/monitoring signals (Sentry + deploy health) go to the Chair's trigger
     stream (cabinet:triggers:cos) for triage via notify_chair() — they are NO LONGER
-    enqueued into the Nate-bound front-door intake. Everything else (awaiting-reply,
+    enqueued into the Captain-bound front-door intake. Everything else (awaiting-reply,
     owed commitments, dated follow-ups) is genuinely Captain-facing and still enqueues
-    to the intake for the composed briefing. Still never sends to Nate directly; the
+    to the intake for the composed briefing. Still never sends to the Captain directly; the
     intake's one live send stays in channel.send (allow_sends-gated).
 
     Returns {'enqueued': n, 'ids': [...], 'sources': [...], 'chair_routed': m,

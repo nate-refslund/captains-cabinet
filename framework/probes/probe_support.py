@@ -54,8 +54,8 @@ ENABLED_ENV = "CABINET_PROBE_SUPPORT_ENABLED"
 # even scheduling this file does nothing observable while the flag is unset; a
 # disabled probe is NOT a failed probe, so it must never page.
 
-# ── DEPLOY TEMPLATE (Nate-gated — NOT installed by building this file) ────────
-# Built + tested now; going live is a deliberate deploy step (reads Nate's live
+# ── DEPLOY TEMPLATE (Captain-gated — NOT installed by building this file) ────────
+# Built + tested now; going live is a deliberate deploy step (reads the Captain's live
 # support inbox) that needs THREE things, none done here:
 #   1. a __main__ entry that builds the real ResendSupportClient, reads the
 #      support mailbox(es) from config, and calls run_probe per mailbox — guarded

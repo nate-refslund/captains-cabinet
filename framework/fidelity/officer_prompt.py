@@ -46,14 +46,14 @@ def build_eval_system(case: Case, officer_role: str) -> str:
 # ---------------------------------------------------------------------------
 # Clone-identity eval prompt (design §1.6; ground retrodiction-clone-draft-
 # reference + brain-identity-sources). The REPLY cell drives the officer to
-# draft AS NATE'S CLONE — mirroring retrodiction's draft_case: the IDENTITY
+# draft AS THE CAPTAIN'S CLONE — mirroring retrodiction's draft_case: the IDENTITY
 # (voice + nate_model patterns + date-filtered drafting lessons + person
 # frontmatter) is what shapes the draft; the role charter stays as light role
 # context. Assembly order mirrors draft_case's CLONE_PAYLOAD: NATE MODEL
 # (patterns) -> VOICE -> DRAFTING LESSONS -> COUNTERPARTY.
 #
 # PRIVACY FENCE (paramount). The priors INFORM how the officer writes and
-# decides — they are Nate's private model. They must NEVER be quoted, pasted,
+# decides — they are the Captain's private model. They must NEVER be quoted, pasted,
 # or referenced into the reply, a captured decision, a consequence event, a
 # commit, or any artifact (brain-bridge rule; mirrors me_signal's PRIVATE
 # fence). The fence here is the in-prompt instruction; scan_for_leaks + the
@@ -73,7 +73,7 @@ def _clone_privacy_fence(cap: str) -> str:
 def build_clone_eval_system(case: Case, officer_role: str,
                             identity: dict) -> str:
     """Assemble the REPLY-cell system prompt that drives the officer to draft
-    AS NATE'S CLONE.
+    AS THE CAPTAIN'S CLONE.
 
     ``identity`` is ``{voice, patterns, lessons, person_static}`` — the
     current-state priors BrainAdapter hands over (voice.md, nate_model
@@ -114,9 +114,10 @@ def build_clone_eval_system(case: Case, officer_role: str,
 # ---------------------------------------------------------------------------
 # INT-3 (sovereign spec D17) — the PERSONAL-AGENT identity. The clone identity
 # above is kept VERBATIM as the diagnostic arm (does the officer decide like
-# Nate?); this arm reframes the objective: the officer is Nate's AGENT acting
-# on his behalf, judged by whether the OUTCOME serves Nate's intent as good or
-# better than what Nate did — mimicry is not the goal. Same identity dict,
+# the Captain?); this arm reframes the objective: the officer is the Captain's
+# AGENT acting on their behalf, judged by whether the OUTCOME serves the
+# Captain's intent as good or better than what the Captain did — mimicry is not
+# the goal. Same identity dict,
 # same privacy fence; only the framing differs. Default identity stays 'clone'
 # until the first AGB baseline is cut (run_case/measure_intent enforce that
 # default — flipping silently would breach the A/A shard invariant).
@@ -126,11 +127,11 @@ def build_clone_eval_system(case: Case, officer_role: str,
 def build_agent_eval_system(case: Case, officer_role: str,
                             identity: dict) -> str:
     """Assemble the REPLY-cell system prompt that drives the officer to act AS
-    NATE'S AGENT (identity_mode='agent').
+    THE CAPTAIN'S AGENT (identity_mode='agent').
 
     Same ``identity`` shape and privacy fence as ``build_clone_eval_system``
     (``{voice, patterns, lessons, person_static}``, missing keys degrade to
-    "(unavailable)"), but the mandate is OUTCOME-first: serve Nate's intent on
+    "(unavailable)"), but the mandate is OUTCOME-first: serve the Captain's intent on
     his behalf, free to do better than a literal imitation would. The held-out
     reply (``case.real_reply``) is NEVER included."""
     identity = identity or {}
@@ -211,13 +212,13 @@ def intent_and_context(case: Case) -> dict:
     window = case.thread_before[-_INTENT_WINDOW:]
 
     # The mission/goal is grounded in the counterparty's most recent ask: the
-    # latest received message in the window (what they actually want from Nate).
+    # latest received message in the window (what they actually want from the Captain).
     last_received = next(
         (_clean(m.get("text") or "") for m in reversed(window)
          if m.get("direction") == "received" and _clean(m.get("text") or "")),
         "",
     )
-    # Thread topic context: Nate's own latest stated position in the window,
+    # Thread topic context: the Captain's own latest stated position in the window,
     # so the goal carries the situation's substance, not just the bare ask.
     last_sent = next(
         (_clean(m.get("text") or "") for m in reversed(window)
@@ -239,7 +240,7 @@ def intent_and_context(case: Case) -> dict:
                 f"recoverable pre-cutoff content.")
     mission_or_goal = goal[:_INTENT_FIELD_CAP]
 
-    # Core: who Nate is in this lane — language + channel + standing style.
+    # Core: who the Captain is in this lane — language + channel + standing style.
     # This is the second axis of mission × core; it carries no thread facts
     # of its own, only atemporal style priors, so it never leaks.
     core = (f"decisive, concrete and low-ceremony; replies in {case.language} "

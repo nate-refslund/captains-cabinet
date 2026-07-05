@@ -1,6 +1,6 @@
 """veto_registry.py — TI-4: the Captain's persistent, unforgeable veto registry.
 
-A veto is the sharpest of the estate's demotion teeth (grand plan §5.4): Nate's
+A veto is the sharpest of the estate's demotion teeth (grand plan §5.4): the Captain's
 ``never:`` on an act-first kind removes it from ``act_with_undo`` FOREVER, and
 his ``lift veto-NNN`` restores it. This module is the durable home of that
 verdict — everything above it (the binder grammar, the proposer pre-filter, the
@@ -50,6 +50,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import yaml
 
+from framework.env import captain_name
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 # shared/interfaces/ is the canonical home: it is the grand-plan germline-
 # write-protected path (CAPTAIN MOMENT 1, RT-B7), it is where actfirst_canary's
@@ -71,13 +73,19 @@ _SCOPE_FIELDS: Tuple[str, ...] = ("action_type", "board", "content_family", "lan
 # nothing — a catch-all veto (which would veto the whole estate) is refused.
 _ENFORCEABLE_FIELDS: Tuple[str, ...] = ("action_type", "board", "content_family")
 
-_DEFAULT_HEADER = (
-    "# captain-vetoes.yml — THE CAPTAIN'S VETO REGISTRY (TI-4)\n"
-    "# Captain-authored, verbatim, germline-protected, monotonic, lift-only,\n"
-    "# no expiry. Written only by framework/frontdoor/veto_registry.py on Nate's\n"
-    "# CAPTAIN_TELEGRAM_ID-gated verbs. Scope is derived from deterministic\n"
-    "# fields (action_type + board / content-hash family), never a slug.\n"
-)
+def _default_header() -> str:
+    """The fallback file header, carrying the launcher's name (byte-identical to
+    the prior hardcoded literal on this instance, where captain_name() resolves to
+    it); the rest is generic Captain-voice already. Computed at call time so a
+    fresh deployment stamps its own captain's name, never a hardcoded one."""
+    cap = captain_name()
+    return (
+        "# captain-vetoes.yml — THE CAPTAIN'S VETO REGISTRY (TI-4)\n"
+        "# Captain-authored, verbatim, germline-protected, monotonic, lift-only,\n"
+        f"# no expiry. Written only by framework/frontdoor/veto_registry.py on {cap}'s\n"
+        "# CAPTAIN_TELEGRAM_ID-gated verbs. Scope is derived from deterministic\n"
+        "# fields (action_type + board / content-hash family), never a slug.\n"
+    )
 
 
 class VetoRegistryError(Exception):
@@ -178,7 +186,7 @@ def _read_header(p: Path) -> str:
     try:
         lines = p.read_text(encoding="utf-8").splitlines()
     except Exception:
-        return _DEFAULT_HEADER
+        return _default_header()
     header: List[str] = []
     for ln in lines:
         s = ln.strip()
@@ -188,7 +196,7 @@ def _read_header(p: Path) -> str:
             break
     while header and header[-1].strip() == "":
         header.pop()
-    return ("\n".join(header) + "\n") if header else _DEFAULT_HEADER
+    return ("\n".join(header) + "\n") if header else _default_header()
 
 
 def _save_doc(p: Path, doc: Dict[str, Any]) -> None:

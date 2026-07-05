@@ -4,7 +4,7 @@
 This module is its production counterpart — the missing wiring the 2026-07-04
 checkpoint names Tier-0 #6 ("Wire TI-5 digest legs — ACTED/AWAITING/WATCHING/
 SELF + manifest into composer.py/run_briefing.py; enables undo-by-index and
-plugs the binder no-pid label leak — Nate's ruled flip prerequisite"). One call
+plugs the binder no-pid label leak — the Captain's ruled flip prerequisite"). One call
 per briefing run:
 
   1. GATHER — acted journal rows still inside their undo window (non-canary,

@@ -56,7 +56,7 @@ def ledger_dir() -> Path:
 def _cabinet_root() -> Path:
     """The deployment root — ``CABINET_ROOT`` env, else this file's repo root
     (``framework/env.py`` → parents[1]). No hardcoded absolute path (the old
-    ``_captain_tz`` reader baked in ``/Users/nate/...`` — a launcher leak this
+    ``_captain_tz`` reader baked in an absolute home path — a launcher leak this
     resolver deliberately avoids)."""
     return Path(os.environ.get("CABINET_ROOT") or str(Path(__file__).resolve().parents[1]))
 

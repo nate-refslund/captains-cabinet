@@ -2,7 +2,7 @@
 
 The declarative heart of the outcome-monitoring watchdog. An *expectation* is a
 statement of what should be TRUE in the world ("the briefing was DELIVERED to
-Nate twice today"), NOT a statement that a process ran. This is the structural
+the Captain twice today"), NOT a statement that a process ran. This is the structural
 answer to the silent-failure class that every existing monitor misses: the
 briefing cron exits 0, launchd shows "active", pipe-health says green — because
 they all check the PROCESS. Nothing checked the OUTCOME. On 2026-06-29 the 07:30
@@ -15,6 +15,9 @@ Design goals (why it is shaped this way):
     A watchdog built on top of the thing it watches dies with it. Each verify
     reads a FILE, a Redis key (via redis-cli subprocess), or a launchd/log
     timestamp — the cheapest possible probe, never a Graph/Vercel/LLM call.
+    (The one in-repo import is ``framework.env.captain_name`` — the de-nate
+    display-name resolver: import-light stdlib at load, its yaml read is lazy and
+    degrades to "Captain" on any failure, so the watchdog never dies for it.)
   * EXTENSIBLE BY ADDING A ROW. An expectation is one `Expectation(...)` literal
     in `EXPECTATIONS`. Add an outcome to watch = append a row with its id, what,
     cadence, tier, a verify function, and a response policy. Nothing else.
@@ -33,8 +36,19 @@ import dataclasses
 import datetime as _dt
 import enum
 import json
+import os
 import re
+from pathlib import Path
 from typing import Callable, Optional
+
+from framework.env import captain_name
+
+
+def _cabinet_root() -> Path:
+    """The deployment root — ``CABINET_ROOT`` env, else this file's repo root
+    (``framework/watchdog/registry.py`` → parents[2]). No hardcoded home path;
+    mirrors ``framework.env`` / ``framework.authority.posture.cabinet_root``."""
+    return Path(os.environ.get("CABINET_ROOT") or Path(__file__).resolve().parents[2])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -46,9 +60,9 @@ class Tier(enum.Enum):
     AUTO_FIX = "auto-fix"      # deterministic-safe remediation, then log. (a)
     ESCALATE_CHAIR = "chair"   # judgment needed → cabinet:triggers:cos.       (b)
     DRIFT = "drift"            # principle/governance drift → meta-cognition.  (d)
-    # NOTE: there is deliberately NO direct-to-Nate tier. Per P-Alerts-To-Chair,
-    # every operational alert routes to the Chair; the Chair escalates to Nate
-    # only if genuinely stuck (response tier (c) is the Chair's call, not ours).
+    # NOTE: there is deliberately NO direct-to-Captain tier. Per P-Alerts-To-Chair,
+    # every operational alert routes to the Chair; the Chair escalates to the
+    # Captain only if genuinely stuck (response tier (c) is the Chair's call, not ours).
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -204,16 +218,19 @@ def _iter_json_records(text: str) -> list[dict]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Paths/keys the verifies read. Centralized so a path move is one edit and the
-# docs-track-code grep finds them. Absolute Mac-native paths with a HOME-relative
-# fallback resolved in check.py's real Probe.
-BRIEFING_LOG = "/Users/nate/.cabinet/logs/frontdoor-briefing.log"
-CAPTAIN_DECISIONS = (
-    "/Users/nate/captains-cabinet/shared/interfaces/captain-decisions.md"
+# docs-track-code grep finds them. Resolved launcher-agnostically (de-nate):
+# CABINET_ROOT-anchored repo paths via _cabinet_root(); HOME-anchored runtime
+# dirs (.cabinet / .screenpipe / Library/Logs) via Path.home() — never a
+# hardcoded home literal. On the live Mac these resolve byte-identically to the
+# previous hardcoded values.
+BRIEFING_LOG = str(Path.home() / ".cabinet" / "logs" / "frontdoor-briefing.log")
+CAPTAIN_DECISIONS = str(
+    _cabinet_root() / "shared" / "interfaces" / "captain-decisions.md"
 )
 LAST_CAPTAIN_MSG_KEY = "cabinet:last-captain-msg-id"
 # The Chair stamps this on EVERY briefing it delivers — including a MANUAL
 # delivery when the cron missed (observed value: "2026-06-29T06:29:35Z (manual —
-# cron miss)"). The OUTCOME is "Nate got his briefing", delivered BY ANY MEANS —
+# cron miss)"). The OUTCOME is "the Captain got their briefing", delivered BY ANY MEANS —
 # so a fresh marker satisfies the expectation even if the cron's own send failed
 # or never ran. We read the leading ISO token and ignore any trailing annotation.
 BRIEF_DELIVERED_MARKER_KEY = "cabinet:schedule:last-run:cos:briefing"
@@ -243,7 +260,7 @@ def _brief_slot_id(slot_local: _dt.datetime) -> str:
 
 
 def verify_briefing_delivered(probe: "Probe") -> CheckResult:
-    """OUTCOME: the most recent *scheduled* briefing actually DELIVERED to Nate.
+    """OUTCOME: the most recent *scheduled* briefing actually DELIVERED to the Captain.
 
     This is the bug-of-record. We do NOT check that the job ran — we check that
     the last briefing-log record reports a CONFIRMED send (`send.sent == True`
@@ -283,8 +300,8 @@ def verify_briefing_delivered(probe: "Probe") -> CheckResult:
     slot_id = _brief_slot_id(slot_local)
     slot_utc = slot_local.astimezone(_dt.timezone.utc)
 
-    # SATISFIED-BY-ANY-DELIVERY (refinement 2026-06-29): the OUTCOME is "Nate got
-    # his briefing", delivered by ANY means — not "the cron's send succeeded". The
+    # SATISFIED-BY-ANY-DELIVERY (refinement 2026-06-29): the OUTCOME is "the Captain
+    # got their briefing", delivered by ANY means — not "the cron's send succeeded". The
     # Chair stamps cabinet:schedule:last-run:cos:briefing on every delivery,
     # INCLUDING a manual one when the cron missed. If that marker is dated at/after
     # the due slot, the outcome is TRUE regardless of what the cron log says — so a
@@ -392,8 +409,9 @@ def autofix_briefing(probe: "Probe", result: CheckResult) -> Optional[str]:
     cause = result.fix_hint.get("cause", "unknown")
     slot = result.fix_hint.get("slot_local", "?")
     err = result.fix_hint.get("error", "")
+    cap = captain_name()
     msg = (
-        "OUTCOME-WATCHDOG auto-fix — the recurring briefing did NOT reach Nate "
+        f"OUTCOME-WATCHDOG auto-fix — the recurring briefing did NOT reach {cap} "
         f"for the {slot} slot (cause: {cause}"
         + (f", send error: {err}" if err else "")
         + "). The job's process exited clean but the OUTCOME (a delivered "
@@ -403,8 +421,8 @@ def autofix_briefing(probe: "Probe", result: CheckResult) -> Optional[str]:
         "pending/undelivered backlog and re-sends through the gated channel). "
         "If the send still 400s, the payload itself is the bug (e.g. an "
         "over-long chunk or a stale reply-to id) — gather-then-decide, fix the "
-        "root cause, and only escalate to Nate if you are genuinely stuck. "
-        "Do NOT DM Nate the raw failure."
+        f"root cause, and only escalate to {cap} if you are genuinely stuck. "
+        f"Do NOT DM {cap} the raw failure."
     )
     return msg if probe.trigger_chair(msg) else None
 
@@ -527,9 +545,9 @@ def verify_captain_decisions_logged(probe: "Probe") -> CheckResult:
 # lists) is reliable HERE; any unparseable/foreign shape degrades per-entry,
 # and a wholesale parse failure falls back to the legacy static row so the
 # watchdog is never blinded by a manifest rewrite.
-SERVICES_MANIFEST = "/Users/nate/captains-cabinet/cabinet/services.yml"
-CABINET_LOG_DIR = "/Users/nate/.cabinet/logs"            # hand-made plists log here
-GENERATED_LOG_DIR = "/Users/nate/Library/Logs/cabinet"   # generate-plists.py convention
+SERVICES_MANIFEST = str(_cabinet_root() / "cabinet" / "services.yml")
+CABINET_LOG_DIR = str(Path.home() / ".cabinet" / "logs")            # hand-made plists log here
+GENERATED_LOG_DIR = str(Path.home() / "Library" / "Logs" / "cabinet")   # generate-plists.py convention
 # Markers additions (2026-07-04): "NOGROUP" = a Redis Streams consumer lost its
 # group (the memory-worker failure smell; its self-heal log line deliberately
 # avoids the token). "command not found" = the launchd-minimal-PATH class that
@@ -810,10 +828,10 @@ def verify_no_silent_cron_failure(probe: "Probe") -> CheckResult:
 # Pipe freshness — the brain's ingestion pipes must be writing within cadence.
 # We deliberately DO NOT re-implement pipe-watchdog (which owns kickstart-healing
 # of msgraph/teams/embeddings). We add the OUTCOME assertion: "the brain is fresh"
-# — the data Nate's officers reason from is current. If a pipe is stale we ESCALATE
+# — the data the Captain's officers reason from is current. If a pipe is stale we ESCALATE
 # to the Chair (pipe-watchdog auto-heals; if it's still stale here that means the
 # heal didn't take → a human/Chair signal). Cheap: just the log mtimes.
-SCREENPIPE_STATE_DIR = "/Users/nate/.screenpipe/state"
+SCREENPIPE_STATE_DIR = str(Path.home() / ".screenpipe" / "state")
 PIPE_FRESHNESS = {
     # pipe: (log filename under state dir, max staleness seconds)
     # Thresholds account for each pipe's ACTUAL cadence AND the Mac's overnight
@@ -863,7 +881,7 @@ def verify_pipes_fresh(probe: "Probe") -> CheckResult:
 EXPECTATIONS: list[Expectation] = [
     Expectation(
         id="briefing-delivered",
-        what="Briefing DELIVERED to Nate 2x/day (07:30 + 19:30 local) — a "
+        what=f"Briefing DELIVERED to {captain_name()} 2x/day (07:30 + 19:30 local) — a "
              "confirmed send landed, not just that the job ran.",
         cadence_s=12 * 3600,
         tier=Tier.AUTO_FIX,

@@ -1,6 +1,6 @@
 """T5 — small REAL reversible end-to-end smoke runner (live OAuth judge, NO sends).
 
-Nate's directive: test the real flow, reversible only. This drives the SAME
+The Captain's directive: test the real flow, reversible only. This drives the SAME
 chain as the F1 batch (run_f1.run_batch) on a SMALL n of held-out reply cases
 with the LIVE seams — real OAuth `claude -p` judge + real gather + real Voyage
 STYLE scoring — then closes the loop the F1 batch does not: it emits a
@@ -9,7 +9,7 @@ for every scored case and runs graduation.evaluate over the resulting cells, so
 graduation actually READS the events. The point is to prove the FLOW works
 live; the scores may be low and that is fine.
 
-REVERSIBILITY (the only-thing-allowed posture, Nate asleep / autonomous):
+REVERSIBILITY (the only-thing-allowed posture, Captain asleep / autonomous):
   * reads + scores + LOCAL JSONL ledger writes ONLY.
   * NO queue_draft, NO email/Teams/Graph/Make/SMTP, NO board write, NO deploy,
     NO Captain-facing outbound — none of those code paths are touched.

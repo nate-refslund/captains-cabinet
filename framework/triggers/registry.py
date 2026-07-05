@@ -1,7 +1,7 @@
 """Durable trigger registry — the Chair's Duty C primitive.
 
 Backs "remind me tomorrow about X", "every 30 min check Y", "when Z happens do A".
-The Chair REGISTERS a trigger when Nate asks; a checker (cabinet/scripts/check-triggers.py,
+The Chair REGISTERS a trigger when the Captain asks; a checker (cabinet/scripts/check-triggers.py,
 launchd every minute) finds DUE triggers and fires them into the Chair's Redis trigger
 stream, which wakes the Chair to **gather-then-decide at fire time** (re-check before acting;
 never a stale nudge). This is the primitive the screenpipe `reminders` pipe needs before it

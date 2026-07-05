@@ -3,7 +3,7 @@
 Captain choice (2026-06-25, option (a) "for this case"): when Kristoffer Møller
 Nielsen files a UAT bug report on Teams, the cabinet sends HIM a bounded
 acknowledgement directly (scoped to him + UAT only), routes the bug to
-polads-ceo, and copies the exact ack to Nate's Telegram. Every other message —
+polads-ceo, and copies the exact ack to the Captain's Telegram. Every other message —
 his casual chatter, anyone else, any other channel, any other topic — is OUT of
 scope and falls back to the normal propose-only `queue_draft` gate.
 
@@ -15,7 +15,7 @@ WHY THIS IS SAFE (the design, enforced in code here, not in prose):
     / the brain ``queue_draft`` delivery). Exactly the ``framework.authority.veto``
     precedent: an auto-send is the approved backend fired without waiting for the
     tap, never a raw Teams/Graph/Make call. brain-bridge.md stays satisfied —
-    the only change is WHO approves (a scoped code rule vs Nate's thumb), FOR
+    the only change is WHO approves (a scoped code rule vs the Captain's thumb), FOR
     THIS ONE CELL.
 
   * THREE INDEPENDENT GATES, each fail-CLOSED, ALL must pass:
@@ -32,7 +32,7 @@ WHY THIS IS SAFE (the design, enforced in code here, not in prose):
     ETA. It can NEVER assert a fix, a root cause, or anything substantive that
     could be wrong. No free-form LLM text leaves the machine on this path.
 
-  * NATE ALWAYS SEES IT. Every auto-send emits a COPY to Nate's Telegram via
+  * THE CAPTAIN ALWAYS SEES IT. Every auto-send emits a COPY to the Captain's Telegram via
     ``framework.frontdoor.channel.send`` (the cabinet's only Captain path,
     itself gated by ``allow_sends()``), labelled as an auto-send, BEFORE the
     function returns. Visibility is not best-effort decoration — a copy-send
@@ -58,6 +58,8 @@ import json
 import re
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
+
+from framework.env import captain_name
 
 
 # ===========================================================================
@@ -108,7 +110,7 @@ DEFAULT_ETA = "the team will triage it shortly"
 # ===========================================================================
 # UAT DETECTION — does this Teams message look like a UAT bug report?
 # Conservative by design: a near-miss should DECLINE (fall through to the normal
-# propose gate), never auto-fire. False-negative (Nate taps send) >> false-
+# propose gate), never auto-fire. False-negative (the Captain taps send) >> false-
 # positive (a wrong autonomous ack). All matching is on the message text only.
 # ===========================================================================
 
@@ -190,7 +192,7 @@ def is_uat_report(text: str) -> bool:
         return False
     # A genuine defect signal survived the benign-phrase blanking -> treat as a
     # report. Context words only *raise* confidence; the signal itself is what's
-    # required, and the bias on ambiguity is to DECLINE (Nate taps send on a miss).
+    # required, and the bias on ambiguity is to DECLINE (the Captain taps send on a miss).
     return True
 
 
@@ -202,11 +204,15 @@ def detect_topic(text: str, max_len: int = 80) -> str:
     t = re.sub(r"[\r\n\t\x00-\x1f\x7f]+", " ", (text or "")).strip()
     if not t:
         return "the issue you reported"
-    # Drop a leading greeting/address clause ("hi", "hej", "hi Nate -", "hey,")
-    # so the echoed topic is the actual issue, not the salutation.
+    # Drop a leading greeting/address clause ("hi", "hej", "hi <captain> -",
+    # "hey,") so the echoed topic is the actual issue, not the salutation. The
+    # addressee alternative is the Captain's own name (de-nate: re.escape'd so any
+    # captain's name is stripped, never a hardcoded literal; byte-identical on this
+    # instance, where the resolver returns the same name the literal used to hold).
+    cap = captain_name()
     t = re.sub(
         r"^\s*(hi|hey|hello|hej|halløj|yo|hej igen|hi again)\b[\s,!]*"
-        r"(nate|there|team)?[\s,!.:–—-]*",
+        r"(" + re.escape(cap) + r"|there|team)?[\s,!.:–—-]*",
         "", t, flags=re.IGNORECASE).strip() or t
     # First sentence-ish chunk, capped.
     head = re.split(r"(?<=[.!?])\s", t, maxsplit=1)[0]
@@ -224,7 +230,7 @@ def render_ack(topic: str, eta: str = "", ref: str = "") -> str:
     """Compose the bounded acknowledgement. Three claims ONLY: received +
     routing to the team + ETA. No fix, no root cause, no substantive promise.
 
-    Voice note: this is a Teams message, so per Nate's house style it stays
+    Voice note: this is a Teams message, so per the Captain's house style it stays
     lowercase-casual and UNSIGNED (Teams is never signed — voice.md). The fence
     is the template itself; no nate_model/voice content is interpolated.
     """
@@ -361,12 +367,12 @@ def handle_message(
       2. ARM       — flag != "1" -> ``disarmed`` (DEFAULT). Built-but-not-live.
       3. KILLSWITCH— global halt active -> ``halted``.
       4. ACT       — compose bounded ack, route bug to polads-ceo, fire the
-                     approved ``send_backend``, COPY to Nate, audit.
+                     approved ``send_backend``, COPY to the Captain, audit.
 
     ``dry_run=True`` runs every gate and composes the ack + audit, but routes
     NOTHING and sends NOTHING (no send_backend, no route_bug call); the copy to
-    Nate is still produced so a sample can be shown (the wiring labels it). Used
-    to surface a sample ack for Nate's approval without any real egress.
+    the Captain is still produced so a sample can be shown (the wiring labels it).
+    Used to surface a sample ack for the Captain's approval without any real egress.
 
     Returns a result dict:
       {decision, reason, ack (when composed), routed (bool), sent (bool),
@@ -386,7 +392,7 @@ def handle_message(
     # --- 2 & 3. ARM + GLOBAL KILLSWITCH -------------------------------------
     # dry_run BYPASSES these two gates by design: it has zero real egress (it
     # neither sends to Kristoffer nor routes the bug — see step 4), it only
-    # composes a labelled SAMPLE to Nate. That lets Nate review the exact ack
+    # composes a labelled SAMPLE to the Captain. That lets the Captain review the exact ack
     # BEFORE arming. SCOPE (gate 1) is still enforced above even for a dry-run,
     # so a sample is always for a genuinely in-scope message.
     if not dry_run:
@@ -413,7 +419,7 @@ def handle_message(
     #     team", so the routing must actually happen (and happen even if the
     #     send later fails: the bug must never be lost just because the courtesy
     #     ack hiccuped). Best-effort + audited; a routing failure does NOT block
-    #     the ack (Nate sees both outcomes).
+    #     the ack (the Captain sees both outcomes).
     routed = False
     route_err = ""
     if not dry_run and route_bug is not None:
@@ -448,8 +454,8 @@ def handle_message(
         except Exception as exc:  # noqa: BLE001
             send_err = f"{type(exc).__name__}: {exc}"[:200]
 
-    # 4c. COPY to Nate — ALWAYS, so he sees exactly what went out. On a real
-    #     send this is the audit-to-Nate; on dry_run it's the labelled sample.
+    # 4c. COPY to the Captain — ALWAYS, so they see exactly what went out. On a
+    #     real send this is the audit-to-Captain; on dry_run it's the labelled sample.
     copied = False
     copy_err = ""
     label = "SAMPLE (dry-run, NOT sent to Kristoffer)" if dry_run else "AUTO-SENT to Kristoffer"
@@ -475,8 +481,9 @@ def handle_message(
         copy_err = f"{type(exc).__name__}: {exc}"[:200]
 
     decision = "dry-run" if dry_run else ("sent" if sent else "send-failed")
+    cap = captain_name()
     reason = "all gates passed; " + ("sample composed" if dry_run else (
-        "ack auto-sent + copied to Nate" if sent else f"send failed: {send_err}"))
+        f"ack auto-sent + copied to {cap}" if sent else f"send failed: {send_err}"))
     rec = make_audit_record(
         decision, sender=sender, channel=channel, topic=topic, reason=reason,
         ack=ack, ref=ref,

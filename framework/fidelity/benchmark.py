@@ -46,7 +46,7 @@ _JWT_RE = re.compile(r"eyJ[A-Za-z0-9_-]{10,}")
 _WORD_RE = re.compile(r"\b\w+\b", re.UNICODE)
 # Decision-forcing markers: a thread that asks something / requests a call /
 # pushes a decision carries enough signal to score even when short. EN + DA
-# (Nate's two reply languages). A bare '?' also counts (handled separately).
+# (the Captain's two reply languages). A bare '?' also counts (handled separately).
 _DECISION_MARKERS = (
     # English
     "recommend", "should we", "should i", "can you", "could you", "would you",
@@ -81,7 +81,7 @@ def _reply_text(case: Case) -> str:
 
 def _has_decision_signal(text: str) -> bool:
     """True iff the text forces/invites a decision (a question or a request).
-    Used to keep a SHORT thread that nonetheless asks Nate to decide something
+    Used to keep a SHORT thread that nonetheless asks the Captain to decide something
     — those are legitimate, scoreable judgment cases."""
     t = (text or "").lower()
     if "?" in t:

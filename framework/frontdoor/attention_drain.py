@@ -1,13 +1,13 @@
 """framework.frontdoor.attention_drain — lane captain-attention cards → front-door intake.
 
 GAP THIS CLOSES (2026-06-24): lane officers (polads-ceo, stephie-ceo, …) that
-cannot DM Nate card their decisions to a per-project Redis Stream
+cannot DM the Captain card their decisions to a per-project Redis Stream
 ``cabinet:captain-attention:<project>`` (see cabinet/scripts/lib/captain-attention.sh).
 In the portfolio preset NOTHING drained those streams to the Chair: the only
 auto-scan (post-tool-use.sh §3b) is gated on ``OFFICER_NAME == CABINET_CEO_OFFICER``
 in ``single_ceo`` bot mode, so for separate lane CEOs the cards sat stranded
 (observed: 4 critical polads-ceo cards — Sentry blocker, DPA fix, deploy
-approvals — never reached Nate).
+approvals — never reached the Captain).
 
 This module is the missing bridge. ``drain_attention()`` discovers every
 ``cabinet:captain-attention:<project>`` stream, reads each card via a DEDICATED
@@ -19,7 +19,7 @@ by com.cabinet.intake-surface) then surfaces ping-now items immediately and fold
 batch/fyi into the next briefing — one voice, the architecture's intent.
 
 Urgency mapping (captain-attention allowlist → intake urgency_tier):
-    blocking, high  → ping-now   (time-critical; DM Nate now)
+    blocking, high  → ping-now   (time-critical; DM the Captain now)
     medium          → batch      (rides the next briefing's decision queue)
     low             → fyi        (digest only)
 

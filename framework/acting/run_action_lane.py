@@ -4,7 +4,7 @@
 Pivot of run_draft_lane.py per the 2026-07-03 Captain ruling: same singleton
 lock, same ·pid· card + cabinet:action:<pid> store + consequence-ledger
 proposal, ACTION payloads instead of reply drafts. Propose-only: every card
-awaits Nate's approve/edit:/skip: through the (fixed) binder; approves execute
+awaits the Captain's approve/edit:/skip: through the (fixed) binder; approves execute
 via framework.frontdoor.action_exec.
 
 Signals v1 (read-only over the Plan-A vault, newest-first, fenced to a recency
@@ -93,11 +93,11 @@ LOCK_PATH = "/tmp/cabinet-action-lane.lock"
 # ask budget below: when act-first is live, acted cards (which are NOT asks)
 # can consume the surplus while presented asks stay throttled.
 MAX_PER_RUN = 8
-# ASK BUDGET — scope: PRESENTED asks only (cards landing on Nate's Telegram
+# ASK BUDGET — scope: PRESENTED asks only (cards landing on the Captain's Telegram
 # awaiting a verdict); acted act-first cards are tells bounded by the
 # estate/per-kind caps in actfirst_canary instead.
 #
-# FIELD-TEST OVERRIDE (Nate, 2026-07-05 — feedback_field_test_disturb_max):
+# FIELD-TEST OVERRIDE (the Captain, 2026-07-05 — feedback_field_test_disturb_max):
 # the Cabinet's operating phase is FIELD-TEST — "surface EVERYTHING, no ≤5/day
 # throttle, no quieting" — so the org runs hard, generates real labels (incl.
 # the first negatives), and reveals where it needs improvement. Since the lane
@@ -141,7 +141,7 @@ _ACTOR = {"kind": "officer", "id": "cos"}
 # The graduation cell key is (actor, lane, action_type). The lane component was
 # LLM free-text off the proposer, so ONE conceptual lane arrived under many
 # spellings across runs — the live ledger showed 5 spellings across 26 rows
-# ('Commitments', 'Commitments / Delivery', 'nate', 'polads-ceo', ...). That
+# ('Commitments', 'Commitments / Delivery', 'captain', 'polads-ceo', ...). That
 # FRAGMENTS verdict accumulation: two undos of the "same" lane land in two
 # different cells and never cluster, so the 2-wrong demotion never fires and the
 # 20-sample graduation floor is unreachable per cell. Fix: collapse the lane to

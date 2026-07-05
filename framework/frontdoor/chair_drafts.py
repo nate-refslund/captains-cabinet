@@ -1,13 +1,13 @@
 """Chair-owned draft flow.
 
 Captain directive (2026-06-24, "make the drafts end here in this chat"): ALL
-outbound drafts present in the Chair chat (@NateHQChairBot) via present_draft()
+outbound drafts present in the Chair chat (the Captain's HQ Chair bot) via present_draft()
 and deliver post-approval via deliver_draft(), using the screenpipe send libs
 (email_lib / teams_graph_lib) directly. The screenpipe bot is no longer in the
 approval path — it is back-end (capture/index) only.
 
 Approval gate is preserved: deliver_draft() is the egress and runs ONLY after
-Nate replies 'send' to a presented draft in the Chair chat. The Chair reply
+the Captain replies 'send' to a presented draft in the Chair chat. The Chair reply
 handler (cos session, via the inbound watchdog's reply-threading) maps a
 'send'/'edit:'/'skip:' reply back to the pid and calls deliver_draft().
 """
@@ -46,7 +46,7 @@ def _load_shared_env() -> None:
 
 
 def _apply_signature(draft: str, channel_name: str) -> str:
-    """Close every email with Nate's exact default signature (never Teams).
+    """Close every email with the Captain's exact default signature (never Teams).
     Uses draft_lib.ensure_signature (idempotent — won't double-sign)."""
     try:
         if _SHARED not in sys.path:
@@ -62,7 +62,7 @@ def present_draft(person: str, channel_name: str, draft: str,
                   why: str = "", slug: str = "") -> str:
     """Present a draft in the Chair chat with a short pid; store it for delivery.
 
-    Returns the pid. Nate replies 'send' (or 'send <pid>') in the Chair chat to
+    Returns the pid. The Captain replies 'send' (or 'send <pid>') in the Chair chat to
     deliver, 'edit: <text>' to send his version, 'skip: <why>' to drop it.
     """
     draft = _apply_signature(draft, channel_name)
@@ -145,7 +145,7 @@ def _verify_sent(conv: str):
 
 def deliver_draft(pid: str, override_text: str = "", dry_run: bool = False) -> dict:
     """Send the stored draft via the screenpipe send libs. Post-approval egress —
-    call ONLY after Nate approved in the Chair chat. Clears the draft on success.
+    call ONLY after the Captain approved in the Chair chat. Clears the draft on success.
 
     dry_run=True wires everything (load draft, env, import the send lib) but does
     NOT send — used to verify the path without an actual egress.

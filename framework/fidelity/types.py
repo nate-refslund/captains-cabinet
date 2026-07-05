@@ -84,14 +84,15 @@ class DecisionCase:
     """A held-out Head-of-Tech DECISION case (the F3-intent cell,
     docs/fidelity-decision-cell-design-2026-06-20.md). Unlike the reply Case
     (a thread → a message), a decision case is a judgment call: a ``dilemma``
-    (the decision point with Nate's choice REMOVED — what the clone sees) and
-    the held-out ground truth ``decision`` + ``why`` (Nate's actual call + his
-    rationale, the intent). ``detected_at`` is the real decision timestamp = the
-    leak cutoff. The clone never sees ``decision``/``why``; the judge does."""
+    (the decision point with the Captain's choice REMOVED — what the clone sees)
+    and the held-out ground truth ``decision`` + ``why`` (the Captain's actual
+    call + their rationale, the intent). ``detected_at`` is the real decision
+    timestamp = the leak cutoff. The clone never sees ``decision``/``why``; the
+    judge does."""
     case_id: str
     detected_at: str          # real decision timestamp = leak cutoff
     app: str
-    dilemma: str              # decision point, Nate's choice removed (clone input)
-    decision: str             # GROUND TRUTH — what Nate chose (held out from clone)
-    why: str                  # GROUND TRUTH — Nate's rationale / intent (held out)
+    dilemma: str              # decision point, the Captain's choice removed (clone input)
+    decision: str             # GROUND TRUTH — what the Captain chose (held out from clone)
+    why: str                  # GROUND TRUTH — the Captain's rationale / intent (held out)
     source: str = "decisions-corpus"

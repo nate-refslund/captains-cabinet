@@ -1,19 +1,19 @@
 """Decision cell (F3-intent) — measure intent-fidelity on real Head-of-Tech
 DECISIONS, not replies (docs/fidelity-decision-cell-design-2026-06-20.md).
 
-The reply cell measures VOICE; "replace Nate" is judgment calls with a WHY.
-This cell drives the clone on a held-out DILEMMA (Nate's choice removed) and
-judges its proposed decision + rationale against Nate's actual decision + WHY.
+The reply cell measures VOICE; "replace the Captain" is judgment calls with a WHY.
+This cell drives the clone on a held-out DILEMMA (the Captain's choice removed) and
+judges its proposed decision + rationale against the Captain's actual decision + WHY.
 
 Three pieces, all reusing the reply-cell machinery (oauth LLMs, the clone
 privacy fence + identity, the verdict vocab + composite()):
   1. extract_decision_cases — parse 5-Reflections/Decisions notes, LLM-split
      each into {dilemma, decision, why}, leak-scan the dilemma (it must NOT
-     reveal Nate's choice), cache. A bleeding dilemma is DROPPED, never scored.
+     reveal the Captain's choice), cache. A bleeding dilemma is DROPPED, never scored.
   2. run_decision_case — clone proposes {decision, why} from the dilemma +
      values-identity (voice + nate_model patterns + lessons date-filtered
      strictly before detected_at). Privacy-fenced; never sees the ground truth.
-  3. score_decision_case — the judge compares clone vs Nate's actual
+  3. score_decision_case — the judge compares clone vs the Captain's actual
      {decision, why}: decision_match (same call?) + intent_match (same WHY?).
 
 LEAK MODEL: the clone never receives decision/why (only the dilemma + identity).
@@ -37,6 +37,12 @@ from framework.fidelity.officer_prompt import _clone_privacy_fence
 from framework.fidelity.officer_runner import BrainAdapter
 from framework.fidelity.scorer import composite
 from framework.fidelity.types import DecisionCase
+
+# Captain display name, resolved once per process (env.py caches; a restart
+# re-reads). Renders BYTE-IDENTICAL to the prior hardcoded captain name on this
+# deployment. Baked into the raw LLM-prompt constants below and used at the
+# call sites that address the Captain in a payload/label.
+_CAP = captain_name()
 
 _DECISIONS_REL = "5-Reflections/Decisions"
 
@@ -92,25 +98,29 @@ def _parse_note(text: str) -> dict:
     }
 
 
-# --- leak-scan: the dilemma must not reveal Nate's choice -------------------
+# --- leak-scan: the dilemma must not reveal the Captain's choice ------------
 _STOP = {"the", "a", "an", "and", "or", "to", "of", "in", "on", "for", "with",
-         "you", "your", "nate", "that", "this", "it", "is", "was", "had", "has",
+         "you", "your", "that", "this", "it", "is", "was", "had", "has",
          "he", "his", "she", "her", "they", "them", "at", "by", "as", "be"}
 
 
 def _content_tokens(s: str) -> set:
+    # The Captain's own name is a non-distinctive stopword — folded in
+    # dynamically so it tracks the deployment. _CAP.lower() == "nate" here, so
+    # the effective stop set is byte-identical to the prior literal.
+    stop = _STOP | {_CAP.lower()}
     toks = re.findall(r"\b\w+\b", (s or "").lower())
-    return {t for t in toks if len(t) > 3 and t not in _STOP}
+    return {t for t in toks if len(t) > 3 and t not in stop}
 
 
 def _dilemma_leaks(dilemma: str, decision: str, why: str) -> bool:
-    """True iff the dilemma reveals Nate's choice — a backstop for the
+    """True iff the dilemma reveals the Captain's choice — a backstop for the
     extractor prompt (the primary guard), catching EGREGIOUS copy-paste of the
     decision into the dilemma.
 
     Heuristic: the fraction of the DECISION's distinctive content tokens that
     surface in the dilemma. A neutral question legitimately SHARES the action
-    verb ("should Nate proceed?" vs decision "proceed") without revealing the
+    verb ("should the Captain proceed?" vs decision "proceed") without revealing the
     choice, so a short decision (<3 distinctive tokens) is NOT flagged on a
     shared verb alone — the prompt handles those, and over-dropping wastes the
     thin corpus. A decision with >=3 distinctive tokens whose bulk (>=70%) has
@@ -127,16 +137,16 @@ def _dilemma_leaks(dilemma: str, decision: str, why: str) -> bool:
     return overlap >= 0.7
 
 
-_EXTRACT_SYSTEM = """You split a logged DECISION note into three parts for a held-out evaluation.
+_EXTRACT_SYSTEM = f"""You split a logged DECISION note into three parts for a held-out evaluation.
 
-The note records a decision Nate already made, fusing the situation with his choice. Split it so an evaluator can pose the decision point to a model WITHOUT revealing what Nate chose.
+The note records a decision {_CAP} already made, fusing the situation with his choice. Split it so an evaluator can pose the decision point to a model WITHOUT revealing what {_CAP} chose.
 
 Return ONLY JSON:
-{"dilemma":"the decision point Nate faced — the situation + the question/options, with ALL situational facts needed to decide, but WITHOUT stating or implying which option Nate picked. Neutral framing. <=600 chars.",
- "decision":"what Nate actually chose/did — the concrete call. <=200 chars.",
- "why":"Nate's rationale / the intent behind the choice. <=300 chars."}
+{{"dilemma":"the decision point {_CAP} faced — the situation + the question/options, with ALL situational facts needed to decide, but WITHOUT stating or implying which option {_CAP} picked. Neutral framing. <=600 chars.",
+ "decision":"what {_CAP} actually chose/did — the concrete call. <=200 chars.",
+ "why":"{_CAP}'s rationale / the intent behind the choice. <=300 chars."}}
 
-CRITICAL: the dilemma must NOT contain Nate's choice, the chosen action's verb, or wording that gives it away. Someone reading only the dilemma should not be able to tell what Nate decided. Keep every situational fact that is needed to decide well."""
+CRITICAL: the dilemma must NOT contain {_CAP}'s choice, the chosen action's verb, or wording that gives it away. Someone reading only the dilemma should not be able to tell what {_CAP} decided. Keep every situational fact that is needed to decide well."""
 
 
 def _llm_split(payload: str, system: str, llm) -> dict | None:
@@ -160,7 +170,7 @@ def _llm_split(payload: str, system: str, llm) -> dict | None:
 def _extract_one(parsed: dict, llm) -> dict | None:
     """LLM-split one parsed decision NOTE into {dilemma, decision, why}."""
     payload = (f"# SITUATION (as logged, fuses situation + choice)\n"
-               f"{parsed['situation']}\n\n# WHY (Nate)\n{parsed['why']}")
+               f"{parsed['situation']}\n\n# WHY ({_CAP})\n{parsed['why']}")
     return _llm_split(payload, _EXTRACT_SYSTEM, llm)
 
 
@@ -217,10 +227,10 @@ def extract_decision_cases(decisions_dir: Path | None = None, llm=oauth_raw_llm,
 
 
 # --- git source: technical decisions (volume; tagged proxy) ----------------
-# Git commit bodies on Nate-DIRECTED work carry recoverable {dilemma, decision,
-# why, timestamp} — but they are AI-authored (the agent's prose, Nate's
+# Git commit bodies on Captain-directed work carry recoverable {dilemma, decision,
+# why, timestamp} — but they are AI-authored (the agent's prose, the Captain's
 # direction) and technical-domain. So git is a VOLUME source tagged source="git"
-# (a technical-decision proxy), never conflated with pure-Nate authenticity.
+# (a technical-decision proxy), never conflated with pure-Captain authenticity.
 _GIT_EXTRACT_SYSTEM = """You split a git commit (a logged technical decision) into a held-out evaluation case.
 
 The commit message states a problem and the solution that was implemented. Split it so an evaluator can pose the decision point WITHOUT revealing the chosen solution.
@@ -320,8 +330,10 @@ def extract_git_decision_cases(repos, llm=oauth_raw_llm, cache_path=None,
     return cases
 
 
-# Nate's product/infra repos (Nate-directed) — NOT the cabinet harness branch
-# (that is this session's own build work, not a Nate product decision).
+# The Captain's product/infra repos (Captain-directed) — NOT the cabinet harness
+# branch (that is this session's own build work, not a Captain product decision).
+# NOTE: these default repo names are Flavor-A instance-specific (see deviations);
+# a deployment overrides them via build_decision_corpus(repos=...).
 _DEFAULT_GIT_REPOS = [Path.home() / "v0-politiske-annoncer",
                       Path.home() / "dev-tasks"]
 
@@ -329,9 +341,9 @@ _DEFAULT_GIT_REPOS = [Path.home() / "v0-politiske-annoncer",
 def build_decision_corpus(sources=("decisions", "git"), repos=None,
                           **kw) -> list[DecisionCase]:
     """Merge the enabled decision sources into one tagged corpus. ``decisions``
-    = the pure-Nate hand-captured notes (source="decisions-corpus"); ``git`` =
+    = the pure-Captain hand-captured notes (source="decisions-corpus"); ``git`` =
     technical-decision proxy (source="git"). Each DecisionCase carries .source
-    so results can be read per-source (pure-Nate vs proxy)."""
+    so results can be read per-source (pure-Captain vs proxy)."""
     out: list[DecisionCase] = []
     if "decisions" in sources:
         out += extract_decision_cases()
@@ -341,20 +353,20 @@ def build_decision_corpus(sources=("decisions", "git"), repos=None,
 
 
 # --- runner: clone proposes {decision, why} from the dilemma + identity -----
-_DECISION_CLONE_SYSTEM = """You are Nate's clone, facing a real Head-of-Tech decision. Make the call Nate would make and give his reasoning. Decide as Nate decides — his values, risk posture, and priorities drive the call.
+_DECISION_CLONE_SYSTEM = """You are {cap}'s clone, facing a real Head-of-Tech decision. Make the call {cap} would make and give his reasoning. Decide as {cap} decides — his values, risk posture, and priorities drive the call.
 
 {fence}
 
-## How Nate decides (nate_model patterns)
+## How {cap} decides (nate_model patterns)
 {patterns}
 
-## How Nate writes/reasons (voice profile)
+## How {cap} writes/reasons (voice profile)
 {voice}
 
 ## Past decision lessons (date-filtered before this moment)
 {lessons}
 
-Return ONLY JSON: {{"decision":"the concrete call you make","why":"your reasoning, in Nate's frame"}}"""
+Return ONLY JSON: {{"decision":"the concrete call you make","why":"your reasoning, in {cap}'s frame"}}"""
 
 
 def _clone_identity(case: DecisionCase, brain: BrainAdapter) -> dict:
@@ -379,7 +391,7 @@ def run_decision_case(case: DecisionCase, llm=oauth_raw_llm,
     brain = brain or BrainAdapter()
     ident = _clone_identity(case, brain)
     system = _DECISION_CLONE_SYSTEM.format(
-        fence=_clone_privacy_fence(captain_name()), patterns=ident["patterns"],
+        cap=_CAP, fence=_clone_privacy_fence(_CAP), patterns=ident["patterns"],
         voice=ident["voice"], lessons=ident["lessons"])
     user = (f"# DECISION POINT (decide as-of {case.detected_at})\n"
             f"{case.dilemma}\n\nMake the call and give your reasoning.")
@@ -394,37 +406,37 @@ def run_decision_case(case: DecisionCase, llm=oauth_raw_llm,
         return {"decision": raw.strip()[:400], "why": ""}
 
 
-# --- scorer: judge clone vs Nate's actual {decision, why} -------------------
-_DECISION_JUDGE_SYSTEM = """You grade whether a MODEL's decision matches NATE's actual decision on the same dilemma — on two SEPARATE axes.
+# --- scorer: judge clone vs the Captain's actual {decision, why} ------------
+_DECISION_JUDGE_SYSTEM = f"""You grade whether a MODEL's decision matches {_CAP.upper()}'s actual decision on the same dilemma — on two SEPARATE axes.
 
-You are given the DILEMMA, NATE's actual decision + why (ground truth), and the MODEL's decision + why. Judge tone-blind; judge the substance of the call and its reasoning.
+You are given the DILEMMA, {_CAP.upper()}'s actual decision + why (ground truth), and the MODEL's decision + why. Judge tone-blind; judge the substance of the call and its reasoning.
 
 decision_verdict (did the MODEL make the same CALL?):
 - match: same concrete choice/action.
 - partial: overlapping but materially different (right direction, wrong scope/condition).
 - divergent: a different call.
 
-intent_verdict (does the MODEL's reasoning serve the SAME intent/WHY as Nate's?):
+intent_verdict (does the MODEL's reasoning serve the SAME intent/WHY as {_CAP}'s?):
 - intent-aligned: same underlying goal + values drove it, even if the surface call differs.
 - intent-partial: serves part of the WHY but misses a material element.
 - intent-divergent: wrong intent — different values/goal, or ungrounded/hallucinated reasoning.
 
 Return ONLY JSON:
-{"decision_verdict":"match|partial|divergent",
+{{"decision_verdict":"match|partial|divergent",
  "intent_verdict":"intent-aligned|intent-partial|intent-divergent",
- "rationale":"<=140 chars"}"""
+ "rationale":"<=140 chars"}}"""
 
 
 def score_decision_case(case: DecisionCase, clone_out: dict,
                         judge=oauth_json_llm) -> dict:
-    """Judge the clone's {decision, why} against Nate's actual ground truth.
+    """Judge the clone's {decision, why} against the Captain's actual ground truth.
     Returns {decision_verdict, intent_verdict, composite, rationale}. The judge
     is SUPPOSED to see the ground truth (it grades against it); the leak boundary
     is on the clone (run_decision_case), which never saw it."""
     payload = (
         f"# DILEMMA\n{case.dilemma}\n\n"
-        f"# NATE'S ACTUAL DECISION\n{case.decision}\n"
-        f"# NATE'S WHY\n{case.why}\n\n"
+        f"# {_CAP.upper()}'S ACTUAL DECISION\n{case.decision}\n"
+        f"# {_CAP.upper()}'S WHY\n{case.why}\n\n"
         f"# MODEL DECISION\n{(clone_out.get('decision') or '')[:600]}\n"
         f"# MODEL WHY\n{(clone_out.get('why') or '')[:600]}")
     res = judge(payload, _DECISION_JUDGE_SYSTEM, max_tokens=300) or {}

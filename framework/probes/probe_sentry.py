@@ -58,7 +58,7 @@ ATTRIBUTION_WINDOW_HOURS = 6          # a spike joins a deploy only within 6h
 BASELINE_REGRESSION_FACTOR = 1.5      # burn ≥ 1.5× the 7d rolling baseline = spike
 
 # ── DEPLOY STATUS (lane-supply 2026-07-05 — the template below is now BUILT) ──
-# The three deploy steps the original Nate-gated template named:
+# The three deploy steps the original Captain-gated template named:
 #   1. __main__ entry — DONE (below): delegates to runner.probe_main; real
 #      SentryClient(org from probes.yml) per project, prior per-version
 #      last-event map LOADED from ~/Library/Application Support/cabinet/
@@ -69,7 +69,7 @@ BASELINE_REGRESSION_FACTOR = 1.5      # burn ≥ 1.5× the 7d rolling baseline =
 #   2. services.yml row — DONE: probe-sentry, kind watchdog, interval 900s,
 #      command `bash cabinet/scripts/run-probes.sh sentry`. Plist install stays
 #      a deliberate human step (cabinet/launchd/INSTALL-flip.md).
-#   3. healthchecks 'probe-sentry' check (period 15m + grace) — STILL NATE'S:
+#   3. healthchecks 'probe-sentry' check (period 15m + grace) — STILL THE CAPTAIN'S:
 #      hc_ping is fail-open without HEALTHCHECKS_PING_KEY.
 
 

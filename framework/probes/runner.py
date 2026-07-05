@@ -1,7 +1,7 @@
 """Probe deploy shell — config, guard, and per-source orchestration (2026-07-05).
 
 The B2.3/B2.4/B2.5 probe modules were built import-only: each carries a
-"DEPLOY TEMPLATE (Nate-gated)" comment describing the __main__ it would need —
+"DEPLOY TEMPLATE (Captain-gated)" comment describing the __main__ it would need —
 build the real client, read the product repo(s)/app(s) from config, call
 run_probe, guarded by CABINET_PROBES_ENABLED. The 2026-07-03 re-review found
 exactly that: nothing wakes the stack. This module is the shared shell those

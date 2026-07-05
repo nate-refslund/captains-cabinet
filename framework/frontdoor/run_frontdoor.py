@@ -5,7 +5,7 @@ leg (docs/cabinet-architecture-cohesive-2026-06-22.md §3, §8):
 
     intake.drain()  →  composer.compose()  →  channel.send()
 
-This is the "one unified message" path the Chair runs to reach Nate: it drains
+This is the "one unified message" path the Chair runs to reach the Captain: it drains
 captain-bound items off the durable Redis intake, weaves them into ONE
 provenance-bearing message grouped by urgency tier, and sends that single
 message to CAPTAIN_TELEGRAM_ID.

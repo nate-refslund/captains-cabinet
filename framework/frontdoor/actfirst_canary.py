@@ -999,7 +999,7 @@ def _discover_probe_target(monday_post: Callable, board: str) -> Dict[str, Any]:
             continue
         ctype = str(c.get("type") or "").lower()
         # "status" is the current API column-type enum; "color" is the legacy
-        # name for the same class (Nate's boards carry ids like color_mm34crny).
+        # name for the same class (the Captain's boards carry ids like color_mm34crny).
         if ctype in ("status", "color"):
             label = _first_existing_label(c.get("settings_str"))
             if label:

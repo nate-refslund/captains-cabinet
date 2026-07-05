@@ -8,7 +8,7 @@ directly (no Graph calls, no Make webhooks, no SMTP, no chat POSTs)". The
 default transports are therefore `contract.queue_draft_stub` callables that
 raise NotImplementedError pointing at that bridge; a deployment with a
 different Captain-approved bridge injects its own `send_transport` /
-`delete_transport` at construction. Refactoring the pre-axes Nate-specific
+`delete_transport` at construction. Refactoring the pre-axes Captain-specific
 Teams path onto this contract = binding that bridge as the injected
 transport (axes spec docs/plans/cabinet-axes-spec-2026-07-05.md §4).
 

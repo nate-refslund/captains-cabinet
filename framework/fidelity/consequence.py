@@ -48,7 +48,7 @@ class SimQuarantineError(RuntimeError):
     """[SIE-7] Raised when a write would cross the sim/live quarantine fence — a
     sim-marked event aimed at a live dir, or a live event aimed at a '-sim' dir.
     The two must always agree, so simulated consequences can never contaminate
-    the live graduation/breaker/cell math Nate's real verdicts feed."""
+    the live graduation/breaker/cell math the Captain's real verdicts feed."""
 
 
 def _sim_mode() -> bool:

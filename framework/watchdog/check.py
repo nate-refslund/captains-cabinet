@@ -11,7 +11,7 @@ by its declared tier:
   ESCALATE_CHAIR  → push ONE consolidated trigger to cabinet:triggers:cos
                     (matching triggers.sh::trigger_send), so the Chair triages.
                     Per P-Alerts-To-Chair, operational alerts go to the Chair —
-                    NEVER to Nate. The Chair escalates to Nate only if stuck.
+                    NEVER to the Captain. The Chair escalates to the Captain only if stuck.
   DRIFT           → append a proposal to shared/interfaces/meta-cognition-
                     proposals.md via the meta-cognition lib's `mc_emit_proposal`
                     (proposal-only, Captain-gated; not an alert).
@@ -55,6 +55,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from framework.env import captain_name  # noqa: E402
 from framework.watchdog import registry  # noqa: E402
 from framework.watchdog.registry import CheckResult, Probe, Tier  # noqa: E402
 
@@ -253,6 +254,7 @@ class RealProbe(Probe):
 # ─────────────────────────────────────────────────────────────────────────────
 def route_failure(probe: RealProbe, exp, result: CheckResult) -> str:
     tier = exp.tier
+    cap = captain_name()  # de-nate: the Captain's display name for alert copy
     # Per-slot dedup scope: when a verify reports a slot_id (the briefing does),
     # scope the cooldown to THAT slot — so a handled AM-slot failure never
     # suppresses a fresh PM-slot failure, and a flagged+handled slot never
@@ -278,7 +280,7 @@ def route_failure(probe: RealProbe, exp, result: CheckResult) -> str:
         if not probe.cooldown_active(exp.id, esc):
             ok = probe.trigger_chair(
                 f"OUTCOME-WATCHDOG: auto-fix for '{exp.id}' could not run — "
-                f"{result.detail}. Please handle (gather-then-decide; do not DM Nate).")
+                f"{result.detail}. Please handle (gather-then-decide; do not DM {cap}).")
             if ok:
                 probe.set_cooldown(exp.id, esc)
                 return f"auto-fix declined → ESCALATED to Chair: {result.detail}"
@@ -292,7 +294,7 @@ def route_failure(probe: RealProbe, exp, result: CheckResult) -> str:
             f"• Expectation: {exp.what}\n"
             f"• Finding: {result.detail}\n"
             f"This is operational — triage it (gather-then-decide), fix the root "
-            f"cause, and escalate to Nate ONLY if you are genuinely stuck. The "
+            f"cause, and escalate to {cap} ONLY if you are genuinely stuck. The "
             f"process may be 'green' while the OUTCOME did not happen."
         )
         ok = probe.trigger_chair(msg)
