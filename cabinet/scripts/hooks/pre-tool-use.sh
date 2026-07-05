@@ -101,15 +101,30 @@ fi
 #       of tripping branch (b). The choice on ambiguity is unchanged and
 #       deliberate: timeout → non-zero exit → the (b) branch below fail-
 #       SAFEs toward BLOCKING mutations while read/comms tools stay up to
-#       report the outage. Never fail-open: an old redis-cli (<6.2, no -t
-#       support; deployed is 8.8.0) errors out non-zero → same blocking
-#       branch. Residual, accepted: -t bounds CONNECT only — a server that
-#       accepts the TCP connection then goes silent mid-command can still
-#       hang the GET; the observed wedge modes (process down, refused port,
-#       un-accepted connect during bgsave stall) all resolve inside the 1s
-#       window.
+#       report the outage. Residual, accepted: -t bounds CONNECT only — a
+#       server that accepts the TCP connection then goes silent mid-command can
+#       still hang the GET; the observed wedge modes (process down, refused
+#       port, un-accepted connect during bgsave stall) all resolve inside the
+#       1s window.
+#       PORTABILITY (2026-07-05): NOT every redis-cli build honors -t — older
+#       ones (CI's redis-tools 7.0.x) error on the flag itself, which would make
+#       redis-cli exit non-zero against a perfectly REACHABLE Redis and wrongly
+#       trip the fail-closed branch below (it did: the shadow-parity CI eval saw
+#       a benign `echo hello` blocked). So a non-zero exit is disambiguated by
+#       stderr: a FLAG-parse error means retry once WITHOUT -t (reachable Redis,
+#       benign command must not block); a genuine CONNECTION error stays
+#       fail-closed. The wedge bound is preserved wherever -t is honored, and a
+#       real timeout/outage never matches the flag-error pattern so it still
+#       blocks.
 KILLSWITCH=$(redis-cli -t 1 -h "$REDIS_HOST" -p "$REDIS_PORT" GET cabinet:killswitch 2>/dev/null)
 KS_EXIT=$?
+if [ "$KS_EXIT" -ne 0 ]; then
+  KS_ERR=$(redis-cli -t 1 -h "$REDIS_HOST" -p "$REDIS_PORT" GET cabinet:killswitch 2>&1 >/dev/null)
+  if printf '%s' "$KS_ERR" | grep -qiE "unrecognized|unknown option|bad number of args|invalid option|ambiguous"; then
+    KILLSWITCH=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET cabinet:killswitch 2>/dev/null)
+    KS_EXIT=$?
+  fi
+fi
 if [ "$KILLSWITCH" = "active" ]; then
   echo "KILL SWITCH ACTIVE — all operations halted by Captain. Deactivation is Captain-side only: kill-switch.sh deactivate, or the dashboard governance toggle." >&2
   exit 2
