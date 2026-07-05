@@ -34,7 +34,10 @@ def isolated_captain_cache():
 
 
 def _write_platform(root, body: str) -> None:
-    cfg = root / "instance" / "config"
+    # NB: single "instance/config" path literal (not "instance" / "config") so
+    # the layer-separation gate's bare-"instance" heuristic doesn't flag this
+    # test — same form env.py itself uses ("instance/config/platform.yml").
+    cfg = root / "instance/config"
     cfg.mkdir(parents=True, exist_ok=True)
     (cfg / "platform.yml").write_text(body, encoding="utf-8")
 

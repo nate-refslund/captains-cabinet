@@ -1,6 +1,6 @@
 """Tests for the scoped Kristoffer-UAT auto-reply core (graduated autonomy).
 
-The module under test (``framework/autoreply/kristoffer_uat.py``) is a pure
+The module under test (``instance/flavor-a/autoreply/kristoffer_uat.py``) is a pure
 decision + compose core: every side effect (send, copy-to-Nate, Redis, audit,
 route) is INJECTED, so these tests use fakes — no real Redis, no real outbound,
 no real Telegram. Mirrors the ``framework/authority/veto`` test convention.
@@ -21,11 +21,17 @@ from pathlib import Path
 
 import pytest
 
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
+# This cell moved from framework/autoreply/ to instance/flavor-a/autoreply/.
+# Two paths go on sys.path: the package parent (instance/flavor-a) so the
+# ``autoreply`` package imports, and the repo root so the module's own
+# ``from framework.env import captain_name`` resolves (framework namespace pkg).
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+_PKG_PARENT = Path(__file__).resolve().parents[2]  # instance/flavor-a
+for _p in (str(_REPO_ROOT), str(_PKG_PARENT)):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
-from framework.autoreply import kristoffer_uat as K
+from autoreply import kristoffer_uat as K
 
 
 # ---------------------------------------------------------------------------

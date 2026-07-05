@@ -81,7 +81,7 @@ class OfficerDecision:
 
 @dataclass
 class DecisionCase:
-    """A held-out Head-of-Tech DECISION case (the F3-intent cell,
+    """A held-out Captain DECISION case (the F3-intent cell,
     docs/fidelity-decision-cell-design-2026-06-20.md). Unlike the reply Case
     (a thread → a message), a decision case is a judgment call: a ``dilemma``
     (the decision point with the Captain's choice REMOVED — what the clone sees)
