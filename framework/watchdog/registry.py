@@ -539,6 +539,25 @@ JOB_ERROR_MARKERS = ("FATAL", "Traceback (most recent call last)",
                      "trigger NOT pushed", "trigger_send failed",
                      "NOGROUP", "command not found")
 
+
+def _is_watchdog_self_report_line(ln: str) -> bool:
+    """True if `ln` is THIS check's own structured finding, not a real service
+    error. The outcome-watchdog's own log (outcome-watchdog.log) contains this
+    check's findings — e.g. `[FAIL] no-silent-cron-failure ... error marker
+    'FATAL' in recent log tail` — which quote JOB_ERROR_MARKERS verbatim. Marker-
+    scanning those lines re-detects the marker from our OWN output: a self-
+    referential false-positive that fired every cycle and masked real failures.
+    A genuine service error line ("FATAL: db down", a Traceback) carries none of
+    these self-report signatures, so filtering by them is loss-free for real
+    errors."""
+    s = ln.lstrip()
+    return (
+        s.startswith("[FAIL]") or s.startswith("[OK]") or s.startswith("[WARN]")
+        or "error marker '" in ln            # this check's own report phrase
+        or "→ escalation" in ln          # the '→ escalation SKIPPED/…' echo
+        or "no-silent-cron-failure" in ln     # this check's eid in any echo
+    )
+
 # Fallback when the manifest is missing/unparseable: the pre-2026-07-04 static
 # coverage (status-sweep), so a bad manifest degrades to old behavior, not to
 # zero coverage.
@@ -714,7 +733,9 @@ def verify_no_silent_cron_failure(probe: "Probe") -> CheckResult:
         for path, mt in cands:
             if now_epoch - mt > window_s:
                 continue
-            tail = "\n".join(probe.read_text(path).splitlines()[-25:])
+            tail_lines = [l for l in probe.read_text(path).splitlines()[-25:]
+                          if not _is_watchdog_self_report_line(l)]
+            tail = "\n".join(tail_lines)
             hit = next((mk for mk in JOB_ERROR_MARKERS if mk in tail), None)
             if hit:
                 problems.append(f"{name}: error marker {hit!r} in recent log tail "
