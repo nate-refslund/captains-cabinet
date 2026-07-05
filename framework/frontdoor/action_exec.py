@@ -776,6 +776,22 @@ def _exec_calendar_event(payload: dict, osascript: Callable,
     if not due:
         raise RuntimeError("calendar reminder needs due_iso")
     notes = (payload.get("notes") or "").strip()
+    # [B2] Double-book precondition on the UNATTENDED (act-first) path: gather the
+    # Captain's calendars for the 30-min block this event will occupy and REFUSE to
+    # write on a clash — an act-first block must never land on an existing
+    # commitment (Nate's mandatory gather-before-block). Fail-CLOSED: a calendar
+    # read error propagates (no write). The approved path is Captain-chosen, so its
+    # gather-before-propose belongs in the proposer, not this headless executor.
+    if act_first:
+        from framework.frontdoor import calendar_read
+        # same osascript runner as the write, so the gather + write are one
+        # injectable seam (and the read can't silently hit a real subprocess).
+        _clash = calendar_read.conflicts_for_due(due, osascript=osascript)  # raise → fail-closed
+        if _clash:
+            _first = _clash[0].get("summary") or "an existing event"
+            raise RuntimeError(
+                "act-first calendar block would double-book %r (+%d more) — "
+                "refusing; the block needs a free slot" % (_first, len(_clash) - 1))
     # [GERM-2] single-source template — byte-identical to what the classifier
     # matches on (framework/frontdoor/calendar_template.py). The RT-A7 share-scope
     # / writability / delete-by-UID-on-reverse behavior lives in that template.
@@ -941,7 +957,17 @@ def _exec_reminder(payload: dict, osascript: Callable) -> dict:
 
 
 def _default_osascript(cmd: list) -> str:
-    return subprocess.run(cmd, capture_output=True, text=True, timeout=30).stdout.strip()
+    """Default osascript runner. RAISES on a non-zero exit so a failed AppleScript
+    (TCC/automation denial, Calendar unscriptable, an AppleEvent timeout on the
+    heavy calendar read) FAILS CLOSED — load-bearing for the B2 double-book gather,
+    which must never read '' → 'no conflict' → double-book. The write templates'
+    own ``err:`` returns exit 0, so they still flow through each caller's
+    ``"ok" not in res`` check. Mirrors calendar_read._default_osascript."""
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"osascript exited {proc.returncode}: {(proc.stderr or '').strip()[:200]}")
+    return proc.stdout.strip()
 
 
 def _standing_missions_path() -> Path:

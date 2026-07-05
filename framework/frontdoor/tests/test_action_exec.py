@@ -476,6 +476,68 @@ def test_act_first_calendar_lands_on_configured_home(monkeypatch):
     assert seen["cmd"][3] == "Home"
 
 
+def test_act_first_calendar_refuses_double_book(monkeypatch):
+    """[B2] An act-first block overlapping an existing event is REFUSED (no write)
+    — the mandatory gather-before-block. The gather + write share the injected
+    osascript; the READ script returns an overlapping event."""
+    from framework.frontdoor.calendar_read import CALENDAR_READ_SCRIPT
+    monkeypatch.delenv("ACTION_LANE_REMINDER_BACKEND", raising=False)
+    monkeypatch.setenv("ACTION_LANE_CALENDAR", "Home")
+    monkeypatch.setattr(ax, "_load_act_first_surfaces", lambda: _surfaces())
+    def osa(cmd):
+        if len(cmd) > 2 and cmd[2] == CALENDAR_READ_SCRIPT:   # the double-book gather
+            return "Home\x1f2026-07-06T09:15:00\x1f2026-07-06T09:45:00\x1fexisting mtg\x1e"
+        return "ok:Home:U1"                                   # the write (should not run)
+    r = ax.deliver_action(
+        "pc3", act_first=True,
+        redis_get=_ks_getter([{"kind": "reminder_create",
+                               "payload": {"title": "t", "due_iso": "2026-07-06T09:00"}}]),
+        monday_post=MondaySpy(), osascript=osa, redis_incr=lambda k, t: None)
+    assert r["ok"] is False   # refused — would double-book the 09:00–09:30 block
+
+
+def test_act_first_calendar_failclosed_on_gather_read_error(monkeypatch):
+    """[B2] If the double-book gather cannot read the calendar, the act-first
+    write FAILS CLOSED (no write) — unknown conflict state must not auto-write."""
+    from framework.frontdoor.calendar_read import CALENDAR_READ_SCRIPT, CalendarReadError
+    monkeypatch.delenv("ACTION_LANE_REMINDER_BACKEND", raising=False)
+    monkeypatch.setenv("ACTION_LANE_CALENDAR", "Home")
+    monkeypatch.setattr(ax, "_load_act_first_surfaces", lambda: _surfaces())
+    def osa(cmd):
+        if len(cmd) > 2 and cmd[2] == CALENDAR_READ_SCRIPT:
+            raise CalendarReadError("calendar unreadable")
+        return "ok:Home:U1"
+    r = ax.deliver_action(
+        "pc3", act_first=True,
+        redis_get=_ks_getter([{"kind": "reminder_create",
+                               "payload": {"title": "t", "due_iso": "2026-07-06T09:00"}}]),
+        monday_post=MondaySpy(), osascript=osa, redis_incr=lambda k, t: None)
+    assert r["ok"] is False   # fail-closed
+
+
+def test_default_osascript_raises_on_nonzero(monkeypatch):
+    """[B2 fix] The PRODUCTION default runner fails CLOSED on a non-zero osascript
+    exit (TCC denial / AppleEvent timeout on the heavy calendar read) — so the
+    double-book gather can never read '' → 'no conflict' → double-book. Before
+    this, subprocess stdout was returned regardless of returncode."""
+    class _R:
+        returncode = 1
+        stdout = ""
+        stderr = "not authorized to send Apple events (-1743)"
+    monkeypatch.setattr(ax.subprocess, "run", lambda *a, **k: _R())
+    with pytest.raises(RuntimeError):
+        ax._default_osascript(["osascript", "-e", "x"])
+
+
+def test_default_osascript_returns_stdout_on_success(monkeypatch):
+    class _R:
+        returncode = 0
+        stdout = "ok:Home:U1\n"
+        stderr = ""
+    monkeypatch.setattr(ax.subprocess, "run", lambda *a, **k: _R())
+    assert ax._default_osascript(["osascript", "-e", "x"]) == "ok:Home:U1"
+
+
 # --- killswitch (both paths, fail-closed) ------------------------------------
 
 def test_killswitch_active_halts_execution():
