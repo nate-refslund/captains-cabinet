@@ -481,11 +481,15 @@ def test_weekly_green_canary_never_auto_unfreezes():
 
 
 def test_unfreeze_has_no_auto_caller_in_source():
-    # CRIT-5 structural pin: action_undo.unfreeze( is CALLED only from
-    # actfirst_canary.run_unfreeze_canary; run_unfreeze_canary( is referenced
-    # only inside actfirst_canary itself (its def + the manual _cli). No other
-    # framework module — and no launchd plist / cabinet script — wires an
-    # automatic lift.
+    # CRIT-5 structural pin (RECONCILE 2026-07-05: kept both): action_undo.
+    # unfreeze( is CALLED only from (a) actfirst_canary — run_unfreeze_canary's
+    # synchronous manual green-canary lift + run_thaw's SOURCE-GATED machine
+    # auto-thaw (refuses captain-origin freezes forever) — and (b) binder_wire's
+    # FI-4 Captain `rearm <kind>` verb: an EXPLICIT Captain reply that runs one
+    # synchronous scoped canary and lifts with source="captain" only on a green
+    # receipt. Neither is an automatic/timer lift; run_unfreeze_canary( stays
+    # referenced only inside actfirst_canary itself (its def + the manual _cli),
+    # and no launchd plist / cabinet script wires any lift.
     import re
     from pathlib import Path
     root = Path(ac.__file__).resolve().parents[2]
@@ -500,8 +504,15 @@ def test_unfreeze_has_no_auto_caller_in_source():
             unfreeze_callers.add(f.name)
         if runner_re.search(text):
             runner_callers.add(f.name)
-    assert unfreeze_callers == {"actfirst_canary.py"}
+    assert unfreeze_callers == {"actfirst_canary.py", "binder_wire.py"}
     assert runner_callers == {"actfirst_canary.py"}           # only its own _cli
+    # binder_wire's lift is the Captain rearm verb: its unfreeze call must be
+    # captain-sourced AND receipted (the receipt is re-verified ≤24h-green
+    # inside action_undo.unfreeze) — never a bare/blind lift.
+    bw = (root / "framework" / "frontdoor" / "binder_wire.py").read_text(
+        encoding="utf-8", errors="ignore")
+    assert 'source="captain"' in bw
+    assert "canary_receipt=" in bw
     # nothing scheduled invokes the manual flag (docs may mention it; plists and
     # cron/scripts must not)
     for d in (root / "cabinet" / "launchd", root / "cabinet" / "scripts"):

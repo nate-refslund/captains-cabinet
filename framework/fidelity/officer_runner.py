@@ -33,7 +33,8 @@ from framework.fidelity import leakguard
 from framework.fidelity.fidelity_events import emit_case_evaluated, emit_case_leaked
 from framework.fidelity.oauth_llm import oauth_raw_llm
 from framework.fidelity.officer_prompt import (
-    build_clone_eval_system, build_eval_system, format_situation)
+    build_agent_eval_system, build_clone_eval_system, build_eval_system,
+    format_situation)
 from framework.fidelity.types import Case, OfficerDecision
 
 # ---------------------------------------------------------------------------
@@ -647,9 +648,18 @@ def _gather_clone_identity(case: Case, brain: "BrainAdapter",
     }
 
 
+# D17/INT-3 — the identity the gather arm drafts under. 'clone' (default,
+# diagnostic arm: draft AS Nate) stays the shard-output default until the
+# first AGB baseline is cut; 'agent' (act ON NATE'S BEHALF, outcome-first) is
+# an explicit opt-in. Kept as a module constant so measure_intent and tests
+# share one vocabulary.
+IDENTITY_MODES = ("clone", "agent")
+
+
 def run_case(case: Case, officer_role: str, llm=oauth_raw_llm,
              emit_events: bool = True, gather=None,
-             brain: "BrainAdapter" = None) -> OfficerDecision:
+             brain: "BrainAdapter" = None,
+             identity_mode: str = "clone") -> OfficerDecision:
     """Drive the officer blind on one Case; return the captured OfficerDecision.
     Hard-fails (LeakageDetectedError) + emits a leak event on any cutoff
     breach.
@@ -670,11 +680,24 @@ def run_case(case: Case, officer_role: str, llm=oauth_raw_llm,
         conditional EVAL_MODE_RULES_GATHER (strict boundary + permission to use
         the context / propose options + reconciled output line) still rides on.
 
+    ``identity_mode`` (D17/INT-3) selects WHICH identity the gather arm drafts
+    under: ``'clone'`` (default — draft AS Nate, the diagnostic arm, exact
+    prior behavior) or ``'agent'`` (act ON NATE'S BEHALF, outcome-first, via
+    ``build_agent_eval_system``). The default stays 'clone' until the first
+    AGB baseline is cut (A/A invariant); an unknown mode raises ValueError
+    (loud — a typo must never silently change what a shard measured). The F1
+    arm (``gather=None``) carries no identity, so the mode is inert there.
+
     PRIVACY FENCE (paramount): the identity informs the SYSTEM prompt ONLY —
-    build_clone_eval_system fences it, and the post-output scan_for_leaks
-    (always run, both arms) ensures none of it (nor any post-cutoff signal)
-    echoes into the captured decision. ``brain`` is an injectable BrainAdapter
-    (defaults to the live brain bridge); tests inject a fake."""
+    build_clone_eval_system / build_agent_eval_system fence it, and the
+    post-output scan_for_leaks (always run, both arms and both identities)
+    ensures none of it (nor any post-cutoff signal) echoes into the captured
+    decision. ``brain`` is an injectable BrainAdapter (defaults to the live
+    brain bridge); tests inject a fake."""
+    if identity_mode not in IDENTITY_MODES:
+        raise ValueError(
+            f"unknown identity_mode {identity_mode!r} — expected one of "
+            f"{IDENTITY_MODES}")
     # 1. PRE-execution guard: reconstructed thread must be strictly pre-cutoff.
     try:
         leakguard.assert_thread_pre_cutoff(case.thread_before, case.cutoff_ts)
@@ -699,14 +722,18 @@ def run_case(case: Case, officer_role: str, llm=oauth_raw_llm,
         # exclusion-by-default + fencing.
         ctx = gather(case)
         user_msg = format_situation(case) + "\n" + _render_context_block(ctx)
-        # Build the system from the clone identity so the officer drafts AS the
-        # clone. Identity is gathered leak-safe (lessons date-filtered STRICTLY
-        # before the cutoff); person_static is reused from the gathered ctx.
+        # Build the system from the gathered identity. Identity is gathered
+        # leak-safe (lessons date-filtered STRICTLY before the cutoff);
+        # person_static is reused from the gathered ctx. identity_mode picks
+        # the framing: 'clone' drafts AS Nate (default, byte-identical prior
+        # path); 'agent' acts ON NATE'S BEHALF (D17 opt-in).
         if brain is None:
             brain = BrainAdapter()
         identity = _gather_clone_identity(
             case, brain, person_static=ctx.get("person_static", ""))
-        system = build_clone_eval_system(case, officer_role, identity) + \
+        build_system = (build_agent_eval_system if identity_mode == "agent"
+                        else build_clone_eval_system)
+        system = build_system(case, officer_role, identity) + \
             rules.format(cutoff_ts=case.cutoff_ts)
     draft = llm(user_msg, system) or ""
 

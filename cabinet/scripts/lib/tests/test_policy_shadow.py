@@ -306,3 +306,266 @@ class TestNoLiveBlock:
                 if e.get("shadow_decision", {}).get("policy_version") == "shadow-v1"
             ]
             assert regex, "regex shadow must still emit even when authority can't"
+
+
+# ===================================================================
+# SOVEREIGN POSTURE MIRROR [SOV-3]
+# ===================================================================
+# The shadow record mirrors the posture-aware gate: it gains posture /
+# grant_id / need_id fields, resolves sovereign verdicts from the floor's
+# postures table, and probes standing_grant ceiling rows SIDE-EFFECT-FREE
+# (no need filed, no rate use counted — the shadow is a recorder). Guardian
+# default world: identical verdicts, posture="guardian". Never blocks.
+
+
+class _FakeGrants:
+    def __init__(self, granted=False, grant_id=None):
+        self.granted = granted
+        self.grant_id = grant_id
+        self.check_calls = []
+        self.use_calls = []
+
+    def check(self, risk_class, action_type, *, lane, context=None,
+              file_needs=True, **kw):
+        self.check_calls.append({"file_needs": file_needs})
+        if self.granted:
+            return {"granted": True, "grant_id": self.grant_id, "reason": "matched"}
+        return {"granted": False, "grant_id": None,
+                "reason": "no matching standing grant"}
+
+    def record_use(self, grant_id, **kw):
+        self.use_calls.append(grant_id)
+        return True
+
+
+class _FakeNeeds:
+    def __init__(self, nid="NEED-feedbeef"):
+        self.nid = nid
+        self.file_calls = []
+
+    def file_need(self, kind, **kw):
+        self.file_calls.append(kind)
+        return self.nid
+
+    def need_id(self, kind, risk_class=None, action_type=None, lane=None):
+        return self.nid
+
+
+def _authority_records(db: str) -> list[dict]:
+    return [
+        e["shadow_decision"] for e in _events(db)
+        if e.get("shadow_decision", {}).get("policy_version") == "authority-shadow-v1"
+    ]
+
+
+class TestPostureShadowMirror:
+    """[SOV-3] the authority record carries posture/grant_id/need_id and
+    mirrors the sovereign gate — while staying record-only."""
+
+    def test_guardian_default_record_fields(self):
+        mod = _load_shadow_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            db = os.path.join(tmp, "shadow.sqlite3")
+            _run_shadow(
+                mod,
+                {"tool_name": "Edit", "tool_input": {"file_path": "/workspace/product/a.ts"}},
+                db,
+                officer="cto",
+            )
+            rec = _authority_records(db)[0]
+        # RECONCILE 2026-07-05: kept both — guardian semantics for a
+        # reversible Edit@unmeasured are act_with_undo under main's ratified
+        # trust-inversion floor (the old propose_only pin was the pre-widening
+        # earn-up guardian). The SOV-3 mirror obligation is unchanged: posture
+        # recorded, no grant/need on the default path.
+        assert rec["verdict"] == "act_with_undo"
+        assert rec["posture"] == "guardian"
+        assert rec["grant_id"] is None
+        assert rec["need_id"] is None
+
+    def test_guardian_ceiling_record_unchanged(self):
+        mod = _load_shadow_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            db = os.path.join(tmp, "shadow.sqlite3")
+            _run_shadow(
+                mod,
+                {"tool_name": "Bash", "tool_input": {"command": "git push origin main"}},
+                db,
+                officer="cto",
+            )
+            rec = _authority_records(db)[0]
+        assert rec["verdict"] == "always_gated"
+        assert rec["posture"] == "guardian"
+        assert rec["grant_id"] is None and rec["need_id"] is None
+
+    def test_sovereign_ceiling_no_grant_records_need_fingerprint(self):
+        mod = _load_shadow_module()
+        pe = mod.policy_engine
+        assert pe is not None
+        fake_g = _FakeGrants(granted=False)
+        fake_n = _FakeNeeds(nid="NEED-feedbeef")
+        with tempfile.TemporaryDirectory() as tmp:
+            db = os.path.join(tmp, "shadow.sqlite3")
+            with patch.object(pe, "_resolve_posture", lambda lane=None: "sovereign"), \
+                    patch.object(pe, "_grants", fake_g), \
+                    patch.object(pe, "_needs", fake_n):
+                rc = _run_shadow(
+                    mod,
+                    {"tool_name": "Bash", "tool_input": {"command": "git push origin main"}},
+                    db,
+                    officer="cto",
+                )
+            rec = _authority_records(db)[0]
+        assert rc == 0  # never blocks
+        assert rec["verdict"] == "standing_grant"
+        assert rec["posture"] == "sovereign"
+        assert rec["grant_id"] is None
+        assert rec["need_id"] == "NEED-feedbeef"
+        # SIDE-EFFECT-FREE probe: nothing filed, nothing counted, loader
+        # config-needs suppressed.
+        assert fake_n.file_calls == []
+        assert fake_g.use_calls == []
+        assert fake_g.check_calls == [{"file_needs": False}]
+
+    def test_sovereign_ceiling_grant_match_records_grant_id(self):
+        mod = _load_shadow_module()
+        pe = mod.policy_engine
+        fake_g = _FakeGrants(granted=True, grant_id="GRANT-abc")
+        with tempfile.TemporaryDirectory() as tmp:
+            db = os.path.join(tmp, "shadow.sqlite3")
+            with patch.object(pe, "_resolve_posture", lambda lane=None: "sovereign"), \
+                    patch.object(pe, "_grants", fake_g), \
+                    patch.object(pe, "_needs", _FakeNeeds()):
+                _run_shadow(
+                    mod,
+                    {
+                        "tool_name": "mcp__brain__queue_draft",
+                        "tool_input": {"recipient": "out@example.com", "channel": "email"},
+                    },
+                    db,
+                    officer="cos",
+                )
+            rec = _authority_records(db)[0]
+        assert rec["verdict"] == "standing_grant"
+        assert rec["grant_id"] == "GRANT-abc"
+        assert rec["need_id"] is None
+        assert fake_g.use_calls == []  # the shadow NEVER consumes rate budget
+
+    def test_sovereign_kernel_unavailable_records_always_gated(self):
+        mod = _load_shadow_module()
+        pe = mod.policy_engine
+        with tempfile.TemporaryDirectory() as tmp:
+            db = os.path.join(tmp, "shadow.sqlite3")
+            with patch.object(pe, "_resolve_posture", lambda lane=None: "sovereign"), \
+                    patch.object(pe, "_grants", None), \
+                    patch.object(pe, "_needs", None):
+                _run_shadow(
+                    mod,
+                    {"tool_name": "Bash", "tool_input": {"command": "git push origin main"}},
+                    db,
+                    officer="cto",
+                )
+            rec = _authority_records(db)[0]
+        # The gate degrades the row to plain always_gated — mirror it.
+        assert rec["verdict"] == "always_gated"
+        assert rec["posture"] == "sovereign"
+        assert rec["grant_id"] is None and rec["need_id"] is None
+
+    def test_sovereign_notify_after_recorded(self):
+        mod = _load_shadow_module()
+        pe = mod.policy_engine
+        with tempfile.TemporaryDirectory() as tmp:
+            db = os.path.join(tmp, "shadow.sqlite3")
+            with patch.object(pe, "_resolve_posture", lambda lane=None: "sovereign"):
+                _run_shadow(
+                    mod,
+                    {
+                        "tool_name": "mcp__brain__queue_draft",
+                        "tool_input": {"recipient": "sean@stepnetwork.dk", "channel": "teams"},
+                    },
+                    db,
+                    officer="cos",
+                )
+            rec = _authority_records(db)[0]
+        assert rec["verdict"] == "notify_after"
+        assert rec["posture"] == "sovereign"
+        assert rec["risk_class"] == "internal_comms"
+
+    def test_sovereign_reversible_records_auto(self):
+        mod = _load_shadow_module()
+        pe = mod.policy_engine
+        with tempfile.TemporaryDirectory() as tmp:
+            db = os.path.join(tmp, "shadow.sqlite3")
+            rc = None
+            with patch.object(pe, "_resolve_posture", lambda lane=None: "sovereign"):
+                rc = _run_shadow(
+                    mod,
+                    {"tool_name": "Edit", "tool_input": {"file_path": "/workspace/product/a.ts"}},
+                    db,
+                    officer="cto",
+                )
+            rec = _authority_records(db)[0]
+        assert rc == 0  # record-only even on an auto verdict
+        assert rec["verdict"] == "auto"
+        assert rec["posture"] == "sovereign"
+
+
+class TestMissingFloorShadowFailClosed:
+    """[SOV-3 D8] a missing/unparseable authority floor surfaces in the shadow
+    stream as a fail-closed propose_only record — never as SILENCE (no record
+    at all was the fail-open blindspot: load_policies now synthesizes the
+    quarantine stub, and the shadow mirrors its `_validation_failed`)."""
+
+    @staticmethod
+    def _root(tmp: str, floor_text: str | None = None) -> str:
+        """A minimal CABINET_ROOT whose authority floor is missing (default)
+        or unparseable (floor_text)."""
+        root = os.path.join(tmp, "root")
+        fw = Path(root) / "framework" / "policies"
+        fw.mkdir(parents=True)
+        if floor_text is not None:
+            (fw / "authority-matrix.yml").write_text(floor_text)
+        inst = Path(root) / "instance" / "config"
+        inst.mkdir(parents=True)
+        (inst / "active-preset").write_text("work")
+        return root
+
+    def test_deleted_floor_records_propose_only(self):
+        mod = _load_shadow_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            db = os.path.join(tmp, "shadow.sqlite3")
+            rc = _run_shadow(
+                mod,
+                {"tool_name": "Bash", "tool_input": {"command": "git push origin main"}},
+                db,
+                officer="cto",
+                CABINET_ROOT=self._root(tmp),
+            )
+            recs = _authority_records(db)
+        assert rc == 0  # never blocks
+        assert recs, "missing floor must record fail-closed, not fall silent"
+        # Even a ceiling probe resolves propose_only: the quarantine wins
+        # before the ceiling branch, exactly like the gate's step 0.
+        assert recs[0]["verdict"] == "propose_only"
+        assert recs[0]["posture"] == "guardian"
+        assert recs[0]["grant_id"] is None and recs[0]["need_id"] is None
+
+    def test_unparseable_floor_records_propose_only(self):
+        mod = _load_shadow_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            db = os.path.join(tmp, "shadow.sqlite3")
+            rc = _run_shadow(
+                mod,
+                {"tool_name": "Edit", "tool_input": {"file_path": "/workspace/product/a.ts"}},
+                db,
+                officer="cto",
+                CABINET_ROOT=self._root(tmp, floor_text="this is not: valid: yaml: [[[["),
+            )
+            recs = _authority_records(db)
+            regex = [
+                e["shadow_decision"] for e in _events(db)
+                if e.get("shadow_decision", {}).get("policy_version") == "shadow-v1"
+            ]
+        assert rc == 0
+        assert recs and recs[0]["verdict"] == "propose_only"
+        assert regex, "the legacy shadow decision must still emit"

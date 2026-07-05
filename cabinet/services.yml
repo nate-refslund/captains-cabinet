@@ -49,6 +49,13 @@
 #   probe-github/vercel/sentry/ci (B2.3-6), verifier (B2.7), mission-supervisor
 #   (B2.11), gate-runner/flywheel/dreaming/gate-drift-replay/judge-calibration (B5),
 #   cmp-lite (B6.4), executor under user cabinet-exec (B4.7).
+#
+# DELIBERATELY ABSENT — com.cabinet.gate-apply (sovereign amendment 2026-07-05,
+# D15): the germline code-apply root daemon ships DARK. Its plist lives at
+# cabinet/launchd/com.cabinet.gate-apply.plist but is NOT a service row here,
+# is NOT rendered by generate-plists.py, and is NOT loaded by any setup
+# script. Arming it is an explicit Captain `sudo launchctl load` AFTER the
+# unprivileged sandbox verify harness exists. Do not add a row for it.
 
 services:
   # ── Officers (keepalive; tmux sessions via start-officer-mac.sh; roster-derived) ──
@@ -93,6 +100,9 @@ services:
       # captain_verified (this poller relays ONLY CAPTAIN_TELEGRAM_ID messages),
       # so a veto is unforgeable. Rollback: remove this line + redeploy.
       CABINET_VETO_WIRED: "1"
+      # CABINET_NEEDS_WIRED: "1"  # DARK by default (sovereign amendment 2026-07-05, §8 step 8):
+      #                           # uncomment + redeploy to arm the FI-4 binder needs verbs
+      #                           # (grant/deny/later/snooze NEED-<hex> + rearm <kind>).
     expected: "offset advances on Captain messages; binder wire records verdicts in-process (F0.5); Captain `never:` persists to captain-vetoes.yml (TI-4, armed 2026-07-04)"
     notes: >-
       SOLE getUpdates poller (two pollers on one token 409-conflict). Generated

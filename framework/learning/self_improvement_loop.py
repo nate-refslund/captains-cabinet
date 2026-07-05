@@ -124,6 +124,67 @@ except ImportError:  # pragma: no cover — defended just in case
 
 _TODO_RE = re.compile(r"<TODO:[^>]*>")
 
+# [SOV-8/D15] Proposal kinds that carry a CODE DIFF. These never reach the
+# role-adapt apply path (_apply_proposal) — the Evidence Gate ratifies them
+# (evidence only, applies nothing; germline apply stays Captain-manual).
+_CODE_DIFF_KINDS = frozenset({"code_change", "code_diff"})
+
+
+def _resolve_posture_safe() -> str:
+    """Lazy posture read — ANY failure answers guardian, so the no-config
+    world stays bit-identical [D15/D16]."""
+    try:
+        from framework.authority.posture import resolve_posture
+        return resolve_posture()
+    except Exception:  # noqa: BLE001
+        return "guardian"
+
+
+def _is_code_diff_proposal(proposal: dict[str, Any]) -> bool:
+    """True when suggested_change carries a code diff (by kind or by a
+    non-empty `diff` field) — the class _apply_proposal must never touch."""
+    suggested = proposal.get("suggested_change") or {}
+    if suggested.get("kind") in _CODE_DIFF_KINDS:
+        return True
+    return bool(str(suggested.get("diff") or "").strip())
+
+
+def _route_code_diff_through_gate(
+    proposal: dict[str, Any],
+    parent_event_id: str,
+    actor: str,
+    emit_fn: Any = None,
+) -> tuple[str, str]:
+    """[SOV-8/D15] Route a code-diff proposal through gate.ratify (S0-S5,
+    evidence only — NEVER _apply_proposal, never adapt_role). The pack's
+    verdict becomes the proposal status (`gate_pass|gate_fail|gate_refused`);
+    the pack itself is what a Captain unlock window (or the DARK apply lane,
+    once armed) consumes. Fail-safe: a broken gate parks the proposal for
+    the Captain instead of applying anything."""
+    suggested = proposal.get("suggested_change") or {}
+    try:
+        from framework.learning import gate
+        pack = gate.ratify({
+            "id": proposal.get("proposal_id"),
+            "gap_id": proposal.get("gap_id"),
+            "lane": proposal.get("lane"),
+            "summary": suggested.get("rationale") or proposal.get("proposal_id"),
+            "diff": str(suggested.get("diff") or ""),
+            "workdir": suggested.get("workdir"),
+        }, actor=actor)
+    except Exception as e:  # noqa: BLE001
+        return "pending_captain_approval", f"gate unavailable: {e}"
+    if emit_fn is not None:
+        emit_fn("digest_published", actor=actor, parent_id=parent_event_id,
+                payload={
+                    "kind": "gate_evidence",
+                    "proposal_id": proposal.get("proposal_id"),
+                    "pack_id": pack.get("pack_id"),
+                    "verdict": pack.get("verdict"),
+                })
+    return (f"gate_{pack.get('verdict')}",
+            f"evidence pack {pack.get('pack_id')} (gate applies nothing)")
+
 
 def _noop_emit(event_type: str, actor: str, payload: dict[str, Any] | None = None,
                parent_id: str | None = None) -> dict[str, Any]:
@@ -451,6 +512,41 @@ def _validate_skill_draft(path: Path) -> tuple[bool, str]:
     return True, "ok"
 
 
+def _auto_validate_skills(
+    drafted_paths: list[Path],
+    parent_event_id: str,
+    actor: str,
+    emit_fn: Any = emit,
+) -> list[dict[str, Any]]:
+    """[SOV-8 §3 "skill promotion via CoS loop"] Sovereign, evals-green only:
+    flip well-formed drafts to `status: validated` via
+    skill_induction.promote_draft (a Ring-2 same-uid file rewrite — no root)
+    and emit the notify_after tell. Callers gate on posture + the validation
+    gate; this helper never checks them again."""
+    from framework.learning.skill_induction import promote_draft
+    validated: list[dict[str, Any]] = []
+    for p in drafted_paths:
+        ok, _reason = _validate_skill_draft(p)
+        if not ok:
+            continue
+        if not promote_draft(p, promoted_by=actor):
+            continue  # not in draft status (already validated/retired)
+        emit_fn("skill_promoted", actor=actor, parent_id=parent_event_id, payload={
+            "skill_slug": p.stem,
+            "skill_path": str(p),
+            "status": "auto_validated",
+            "posture": "sovereign",
+            "captain_auto_ratified": True,
+            "ratification_note": (
+                "Sovereign posture: validation evals green ⇒ draft "
+                "auto-promoted to status: validated (this event is the "
+                "notify_after tell)."
+            ),
+        })
+        validated.append({"skill_slug": p.stem, "skill_path": str(p)})
+    return validated
+
+
 def _apply_skill_inductions(
     drafted_paths: list[Path],
     parent_event_id: str,
@@ -619,6 +715,18 @@ def run_loop(
             proposal_report.append(record)
             continue
 
+        if _is_code_diff_proposal(proposal):
+            # [SOV-8/D15] code diffs NEVER reach _apply_proposal — the
+            # Evidence Gate ratifies them (evidence only, applies nothing).
+            status, detail = _route_code_diff_through_gate(
+                proposal, parent_id, actor, emit_fn=emit_fn)
+            _stamp_proposal_status(Path(path), status,
+                                   f"self-improvement-loop: {detail}")
+            record["status"] = status
+            record["gate_detail"] = detail
+            proposal_report.append(record)
+            continue
+
         if not gate_ok:
             _stamp_proposal_status(Path(path), "blocked_by_validation",
                                    "self-improvement-loop: validation gate failed")
@@ -670,6 +778,7 @@ def run_loop(
     # Stage 3 — skill induction ---------------------------------------------
     drafted_paths: list[Path] = []
     skill_promoted: list[dict[str, Any]] = []
+    skill_validated: list[dict[str, Any]] = []
     if not dry_run:
         drafted_paths = induce_drafts(actor=actor)
         if drafted_paths:
@@ -677,6 +786,18 @@ def run_loop(
                 drafted_paths, parent_id, actor,
                 emit_fn=emit_fn, validation_skipped=skip_evals,
             )
+        # [SOV-8 §3] sovereign only: validation-evals-green ⇒ auto-promote
+        # drafts to status:validated (Ring-2 file, no root); the emitted
+        # skill_promoted event is the notify_after tell. Guardian (or any
+        # posture-read failure) never enters this branch — bit-identical.
+        if (drafted_paths and not skip_evals
+                and _resolve_posture_safe() == "sovereign"):
+            gate_was_evaluated = bool(proposed) or bool(hat_candidates)
+            if not gate_was_evaluated:
+                gate_ok, gate_detail = _validation_gate()
+            if gate_ok:
+                skill_validated = _auto_validate_skills(
+                    drafted_paths, parent_id, actor, emit_fn=emit_fn)
     else:
         # Dry-run: cluster without writing
         from framework.learning.skill_induction import _cluster_records  # noqa: SLF001
@@ -739,6 +860,11 @@ def run_loop(
             "skipped": len(gap_routing.get("skipped", [])),
         },
     }
+    if skill_validated:
+        # Sovereign-only key: absent in guardian so the completed-event
+        # payload stays byte-identical to the pre-posture world there.
+        summary["skill_induction"]["auto_validated"] = len(skill_validated)
+        summary["skill_induction"]["auto_validated_detail"] = skill_validated
     emit_fn("self_improvement_loop_completed", actor=actor, parent_id=parent_id, payload=summary)
     summary["parent_event_id"] = parent_id
     return summary

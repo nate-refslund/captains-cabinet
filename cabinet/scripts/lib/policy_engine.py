@@ -49,6 +49,24 @@ except Exception:  # pragma: no cover - keep the engine importable if absent
     classify_action = None  # type: ignore[assignment]
     resolve_lane = None  # type: ignore[assignment]
 
+# Sovereign-posture kernel [SOV-3] — same fail-safe import contract as the
+# classifier above: any absence resolves guardian / no-grants / no-needs
+# (never raises, never widens). Tests inject by patching these module globals.
+try:  # pragma: no cover - exercised via the posture gate tests
+    from framework.authority.posture import resolve_posture as _resolve_posture  # noqa: E402
+except Exception:  # pragma: no cover - keep the engine importable if absent
+    _resolve_posture = None  # type: ignore[assignment]
+
+try:  # pragma: no cover - exercised via the posture gate tests
+    from framework.authority import grants as _grants  # noqa: E402
+except Exception:  # pragma: no cover - keep the engine importable if absent
+    _grants = None  # type: ignore[assignment]
+
+try:  # pragma: no cover - exercised via the posture gate tests
+    from framework.authority import needs as _needs  # noqa: E402
+except Exception:  # pragma: no cover - keep the engine importable if absent
+    _needs = None  # type: ignore[assignment]
+
 
 # ---------------------------------------------------------------------------
 # Shell command parsing — the core innovation replacing ~700 lines of regex
@@ -1007,6 +1025,8 @@ def _eval_tier2_isolation(
 #   * HARD CEILING short-circuit — the hard_ceiling risk_classes
 #     (external_comms, deploy_prod, spend, secrets, network_write,
 #     credentials_grant) are ALWAYS gated, ignoring confidence entirely.
+#     A SOVEREIGN posture ceiling row may narrow that to the CONDITIONAL
+#     standing_grant (grant-or-need, D2) — never to unconditional auto.
 #   * Unknown / unmeasured / ambiguous -> propose_only. An unknown action_type
 #     (classify_action -> AMBIGUOUS, or anything not mapped) has no risk_class
 #     and proposes. A missing/absent cell verdict resolves to propose_only.
@@ -1043,13 +1063,39 @@ def risk_of(action_type: str, risk_classes: Any) -> str | None:
     return None
 
 
-def resolve_verdict(verdicts: Any, risk_class: str, state: str) -> str:
+# Posture vocabulary [SOV-3]. Local mirror of matrix.POSTURES so the engine
+# stays standalone-importable: only these non-default postures may select a
+# `postures.*` table; guardian IS the root table and anything unknown or
+# malformed falls back to it (fail toward guardian, never widen).
+_GUARDIAN = "guardian"
+_POSTURE_TABLES = frozenset({"sovereign"})
+
+
+def resolve_verdict(
+    verdicts: Any,
+    risk_class: str,
+    state: str,
+    *,
+    posture: str | None = None,
+    postures: Any = None,
+) -> str:
     """Resolve a (risk_class, confidence_state) cell to a verdict string.
 
     Supports the "*" wildcard row (hard-ceiling rows ship as {"*": ...}).
     FAIL-SAFE: any absent risk_class, absent state (with no wildcard), or
     malformed table resolves to "propose_only" — never auto.
+
+    Posture axis [SOV-3, keyword-only — positional callers untouched]: when
+    `posture` names a known non-default posture AND `postures` carries a
+    well-formed FULL table for it (the floor's `postures.<name>.verdicts`),
+    that table answers instead of the root one. `posture=None`/"guardian"/
+    unknown, or a malformed `postures` structure, resolves from the root
+    table — guardian byte-identical.
     """
+    if posture in _POSTURE_TABLES and isinstance(postures, dict):
+        entry = postures.get(posture)
+        if isinstance(entry, dict) and isinstance(entry.get("verdicts"), dict):
+            verdicts = entry["verdicts"]
     if not isinstance(verdicts, dict):
         return "propose_only"
     row = verdicts.get(risk_class)
@@ -1258,15 +1304,156 @@ def _act_with_undo_gap(action_type: str) -> str | None:
     return None
 
 
+# ---------------------------------------------------------------------------
+# Sovereign-posture gate wire [SOV-3] — posture selection + D2 ceiling branch
+# ---------------------------------------------------------------------------
+# Posture is a SELECTION dimension of the ONE matrix (sovereign build spec
+# 2026-07-04 §0): the kernel (framework.authority.posture) answers "which
+# posture table applies?", the floor's `postures.sovereign` table answers
+# "what verdict?", and grants/needs (FI-2/FI-3) answer the hard-ceiling
+# standing_grant rows. Everything here is fail-safe toward guardian: module
+# absent, exception, unknown posture, malformed tables — all resolve today's
+# exact behavior, byte-identical block strings included.
+
+def resolve_gate_posture(lane: str | None = None) -> str:
+    """The posture this gate evaluation runs under — fail-safe.
+
+    "sovereign" IFF the SOV-1 kernel attests the Captain-locked ruling
+    (present + schema-valid + deployment match + schg-locked; env may only
+    narrow). Module absent, any exception, or an out-of-vocab answer resolves
+    "guardian" — the default world stays bit-identical.
+    """
+    if _resolve_posture is None:
+        return _GUARDIAN
+    try:
+        posture = _resolve_posture(lane)
+    except Exception:
+        return _GUARDIAN
+    return posture if posture in _POSTURE_TABLES else _GUARDIAN
+
+
+def _grant_context(tool_input: Any) -> dict[str, Any]:
+    """Hard-scope context ({recipient|amount_eur|vendor}) from the tool call.
+
+    Only positively-typed fields are forwarded — a missing field FAILS the
+    class hard-scope predicate inside grants.check (fail-closed), so the gate
+    never grants a ceiling act it cannot scope-verify.
+    """
+    if not isinstance(tool_input, dict):
+        return {}
+    ctx: dict[str, Any] = {}
+    recipient = tool_input.get("recipient") or tool_input.get("to")
+    if isinstance(recipient, str) and recipient.strip():
+        ctx["recipient"] = recipient
+    amount = tool_input.get("amount_eur")
+    if isinstance(amount, (int, float)) and not isinstance(amount, bool):
+        ctx["amount_eur"] = amount
+    vendor = tool_input.get("vendor")
+    if isinstance(vendor, str) and vendor.strip():
+        ctx["vendor"] = vendor
+    return ctx
+
+
+def _emit_gate_tell(officer: str, payload: dict[str, Any]) -> None:
+    """Best-effort org_event for a sovereign allow — the tell IS the audit
+    (D4: a notify_after allow returns None, so no acted_row exists; this
+    event is what the digest renders). NEVER blocks the allow."""
+    try:
+        from framework.events.emitter import emit  # noqa: E402
+        emit("policy_evaluated", actor=f"officer:{officer}", payload=payload)
+    except Exception:
+        pass
+
+
+def standing_grant_resolution(
+    risk_class: str,
+    action_type: str,
+    *,
+    lane: str | None,
+    context: dict[str, Any] | None = None,
+    officer: str = "unknown",
+    act: bool = False,
+) -> dict[str, Any]:
+    """D2 standing-grant resolution for a sovereign hard-ceiling row.
+
+    Returns {available, granted, grant_id, need_id, reason}. `act=True` is the
+    GATE path (files the deduped NEED on a miss, counts the use on a hit);
+    `act=False` is the SHADOW path — a pure probe: no need filed, no rate
+    consumed, the would-be need id computed via the deterministic content
+    fingerprint. `available=False` (grants module absent / check raised) means
+    the standing-grant machinery cannot answer at all — the caller degrades
+    the row to plain always_gated (guardian strings). Never raises.
+    """
+    out: dict[str, Any] = {
+        "available": False, "granted": False, "grant_id": None,
+        "need_id": None, "reason": "standing-grant kernel unavailable",
+    }
+    if _grants is None:
+        return out
+    try:
+        res = _grants.check(
+            risk_class, action_type, lane=lane, context=context,
+            file_needs=act,
+        )
+    except Exception:
+        return out
+    out["available"] = True
+    if isinstance(res, dict) and res.get("granted"):
+        out["granted"] = True
+        out["grant_id"] = res.get("grant_id")
+        out["reason"] = str(res.get("reason") or "")
+        if act:
+            try:
+                _grants.record_use(out["grant_id"])
+            except Exception:
+                pass
+        return out
+    out["reason"] = str(
+        (res.get("reason") if isinstance(res, dict) else None)
+        or "no matching standing grant"
+    )
+    if _needs is not None:
+        try:
+            if act:
+                out["need_id"] = _needs.file_need(
+                    "standing_grant",
+                    risk_class=risk_class,
+                    action_type=action_type,
+                    lane=lane,
+                    why=(
+                        f"officer gate blocked {risk_class}/{action_type} "
+                        f"(lane {lane}): {out['reason']}"
+                    ),
+                    unblocks=(
+                        f"sovereign auto for {action_type} under a Captain "
+                        f"standing grant"
+                    ),
+                    filed_by=f"policy_engine:{officer}",
+                    scope_hint=context,
+                )
+            else:
+                out["need_id"] = _needs.need_id(
+                    "standing_grant", risk_class, action_type, lane
+                )
+        except Exception:
+            out["need_id"] = None
+    return out
+
+
 def _eval_authority_matrix(
     policy: dict, tool_name: str, tool_input: dict, officer: str
 ) -> str | None:
     """Authority-matrix verdict for a tool call. Returns a block message
     (propose-only / gated) or None (allow).
 
-    Ceiling classes always gate. Other cells resolve via the LIVE graduation
-    state (read_cell_state, un-stubbed 2026-07-03) into one of four outcomes
-    — consumed in SHADOW only until the Captain-gated enforcement flip:
+    Ceiling classes always gate in guardian; a SOVEREIGN posture ceiling row
+    may resolve `standing_grant` (D2): an attested Captain standing grant with
+    a satisfied hard-scope predicate ⇒ attributed allow + rate-counted; else a
+    deduped NEED is filed and this step gates while the chain proceeds. Other
+    cells resolve via the LIVE graduation state (read_cell_state, un-stubbed
+    2026-07-03) against the POSTURE-SELECTED verdicts table into one of the
+    outcomes below — consumed in SHADOW only until the Captain-gated
+    enforcement flip:
 
       * `auto`                    -> allow (None) — a graduated cell.
       * `act_with_undo`           -> allow (None) ONLY when the undo plane is
@@ -1279,12 +1466,28 @@ def _eval_authority_matrix(
                                      after-notification is enforced by the
                                      downstream deferred-send + consequence
                                      machinery, not by a pre-tool-use block.
-      * anything else (propose_only, always_gated, classifier, unknown)
+                                     notify_after (sovereign tables, D4) also
+                                     emits the gate tell the digest renders —
+                                     the gate returns None so no acted_row
+                                     exists; the org_event IS the record.
+      * anything else (propose_only, always_gated, classifier, a MISPLACED
+        standing_grant on a non-ceiling row, unknown)
                                   -> propose-only (fail-safe collapse).
 
-    See the section header for the fail-safe contract.
+    With no posture config the resolution and every block string are
+    byte-identical to the guardian/legacy gate. See the section headers for
+    the fail-safe contract.
     """
+    # RECONCILE 2026-07-05: kept both — HEAD's four-outcome verdict contract
+    # (act_with_undo gap-check + veto-window/notify_after allow legs) + the
+    # sovereign posture axis (standing_grant D2 ceiling path, posture-selected
+    # tables, guardian byte-identical default).
     message = policy.get("message", "below the autonomy bar — proposing instead")
+
+    # 0. A merged floor that failed validation was quarantined by
+    #    load_policies (D8) — fail CLOSED to propose-only, never evaluate it.
+    if policy.get("_validation_failed"):
+        return f"PROPOSE-ONLY (authority matrix failed validation) — {message}"
 
     # The shared classifier/lane resolver are imported at module load from
     # framework.authority. If absent (deployment without the framework on the
@@ -1302,9 +1505,61 @@ def _eval_authority_matrix(
             f"PROPOSE-ONLY (unclassified action '{action_type}') — {message}"
         )
 
+    # Lane + posture resolve ONCE, above the ceiling short-circuit [SOV-3]
+    # (both are pure reads; posture is guardian on any ambiguity/failure).
+    lane = resolve_lane()
+    posture = resolve_gate_posture(lane)
+    postures = policy.get("postures")
+
     # 2. HARD CEILING short-circuit — ignores confidence, fail-closed [FIX-7].
+    #    Sovereign narrows always_gated to the CONDITIONAL standing_grant only
+    #    when the posture table says so (D2); every other outcome — guardian,
+    #    always_gated posture row, kernel unavailable — keeps the guardian
+    #    strings BYTE-IDENTICAL.
     hard_ceiling = policy.get("hard_ceiling")
     if isinstance(hard_ceiling, list) and risk_class in hard_ceiling:
+        if posture in _POSTURE_TABLES:
+            ceiling_verdict = resolve_verdict(
+                policy.get("verdicts"), risk_class, "*",
+                posture=posture, postures=postures,
+            )
+            if ceiling_verdict == "standing_grant":
+                res = standing_grant_resolution(
+                    risk_class, action_type, lane=lane,
+                    context=_grant_context(tool_input), officer=officer,
+                    act=True,
+                )
+                if res["granted"]:
+                    # Attributed allow — grant_id is the authority.
+                    _emit_gate_tell(officer, {
+                        "kind": "standing_grant_allow",
+                        "verdict": "standing_grant",
+                        "posture": posture,
+                        "risk_class": risk_class,
+                        "action_type": action_type,
+                        "lane": lane,
+                        "grant_id": res["grant_id"],
+                        "tool_name": tool_name,
+                    })
+                    return None
+                if res["available"]:
+                    # U+00B7 strip — same binder-injection defense as the
+                    # needs kernel (the reason may echo executor scope data).
+                    reason = str(
+                        res.get("reason") or "no matching standing grant"
+                    ).replace("·", "")
+                    if res.get("need_id"):
+                        return (
+                            f"GATED (standing_grant: {risk_class}) — {reason}; "
+                            f"filed {res['need_id']} — the chain proceeds "
+                            f"without this step."
+                        )
+                    return (
+                        f"GATED (standing_grant: {risk_class}) — {reason}; "
+                        f"the chain proceeds without this step."
+                    )
+                # Kernel unavailable ⇒ the row degrades to plain always_gated
+                # (guardian strings below) — narrower, never wider.
         if risk_class == "external_comms":
             return (
                 "GATED (hard ceiling: external_comms) — draft via queue_draft, "
@@ -1316,10 +1571,24 @@ def _eval_authority_matrix(
         )
 
     # 3. Read the LIVE per-cell graduation state (read_cell_state, un-stubbed
-    #    2026-07-03) and resolve the (risk_class, state) cell to a verdict.
-    lane = resolve_lane()
+    #    2026-07-03; fail-CLOSED — exception/OOV -> demote, only a literal
+    #    None -> unmeasured) and resolve the (risk_class, state) cell against
+    #    the posture-selected verdicts table. Lane + posture were resolved
+    #    ONCE above the ceiling short-circuit [SOV-3] — never re-resolved
+    #    here (cell-key normalization stays consistent between emit + gate).
+    # RECONCILE 2026-07-05: kept both — HEAD's live-graduation read + the
+    # sovereign posture-table resolution; dropped HEAD's duplicate
+    # `lane = resolve_lane()` (lane already resolved at step 1.5).
     state = read_cell_state(officer, lane, action_type)
-    verdict = resolve_verdict(policy.get("verdicts"), risk_class, state)
+    verdict = resolve_verdict(
+        policy.get("verdicts"), risk_class, state,
+        posture=posture, postures=postures,
+    )
+
+    # RECONCILE 2026-07-05: kept both — HEAD's verdict ladder (act_with_undo
+    # gap-check, auto_with_veto_window/notify_after allow legs, fail-safe
+    # collapse, auto) + sovereign's notify_after gate-tell emission and the
+    # misplaced-standing_grant fail-closed branch (D4).
 
     # 4. act_with_undo — the EARN-DEMOTION allow branch (added 2026-07-04).
     #    FIXES A DORMANT LANDMINE: the bare `verdict != "auto"` collapse below
@@ -1364,25 +1633,52 @@ def _eval_authority_matrix(
     #    by a pre-tool-use exit-2 — so at THIS gate both resolve to allow.
     #    Only cells the Captain-ratified germline matrix maps to these
     #    verdicts can reach here; hard ceilings were short-circuited at step 2
-    #    and can never resolve to an act verdict.
-    if verdict in ("auto_with_veto_window", "notify_after"):
+    #    and can never resolve to an act verdict. notify_after (present in
+    #    sovereign tables per D4 — guardian carries none) additionally EMITS
+    #    the gate tell: the gate returns None so no acted_row exists; the
+    #    org_event is what the digest renders.
+    if verdict == "auto_with_veto_window":
         return None
+    if verdict == "notify_after":
+        _emit_gate_tell(officer, {
+            "kind": "notify_after",
+            "verdict": "notify_after",
+            "posture": posture,
+            "risk_class": risk_class,
+            "action_type": action_type,
+            "confidence_state": state,
+            "lane": lane,
+            "tool_name": tool_name,
+        })
+        return None
+
+    # 5b. A standing_grant verdict reaching this step is MISPLACED (D4 — it is
+    #    only legal on a posture ceiling row, resolved at step 2 above) —
+    #    fail CLOSED to propose-only with the misplacement named, never allow.
+    if verdict == "standing_grant":
+        return (
+            f"PROPOSE-ONLY (misplaced standing_grant verdict on "
+            f"'{risk_class}') — {message}"
+        )
 
     # 6. FAIL-SAFE collapse — any verdict not explicitly allowed above blocks
     #    as propose-only: propose_only itself, always_gated, unknown or
     #    malformed verdict strings — undefined never acts (Corridor
-    #    invariant). NATE-DECISION (2026-07-04 germline batch): `classifier`
-    #    (deploy_nonprod@graduated/eligible -> mechanical low-risk-deploy
-    #    routing) deliberately STAYS collapsed here — deploy_nonprod keeps the
-    #    earn-up posture and was NOT widened; wiring the deploy classifier is
-    #    a separate Captain-gated step.
+    #    invariant). With no posture config every cell resolves from the root
+    #    (guardian) table and every block string here is byte-identical to
+    #    the legacy gate. NATE-DECISION (2026-07-04 germline batch):
+    #    `classifier` (deploy_nonprod@graduated/eligible -> mechanical
+    #    low-risk-deploy routing) deliberately STAYS collapsed here —
+    #    deploy_nonprod keeps the earn-up posture and was NOT widened; wiring
+    #    the deploy classifier is a separate Captain-gated step.
     if verdict != "auto":
         return f"PROPOSE-ONLY ({risk_class}, confidence={state}) — {message}"
 
     # 7. auto verdict -> allow. Reachable only for a cell the live graduation
-    #    engine has actually graduated (read_cell_state fail-safes everything
-    #    else to "unmeasured") — and still SHADOW-consumed until the
-    #    Captain-gated enforcement flip.
+    #    engine has actually graduated under the posture-selected table
+    #    (read_cell_state fail-safes read errors to "demote" and no-evidence
+    #    to "unmeasured") — and still SHADOW-consumed until the Captain-gated
+    #    enforcement flip.
     return None
 
 
@@ -1390,10 +1686,82 @@ def _eval_authority_matrix(
 # Policy loading
 # ---------------------------------------------------------------------------
 
+def _is_authority_matrix_policy(policy: Any, name: Any) -> bool:
+    """True for the authority-matrix policy by TYPE or by NAME — the name
+    check stops a preset/instance policy named `authority-matrix` (any type)
+    from displacing the floor entry in the by-name merge."""
+    return (
+        isinstance(policy, dict)
+        and (policy.get("type") == "authority_matrix" or name == "authority-matrix")
+    )
+
+
+def _validate_authority_floor(policies_by_name: dict[str, dict]) -> None:
+    """Runtime-validate the merged authority floor with the SAME validators as
+    CI (D8: `_validate_postures` + `no_ceiling_or_prod_auto`) — fail CLOSED.
+
+    Any violation — or the validators being unimportable — replaces the policy
+    with a quarantine stub carrying `_validation_failed`, which the gate
+    resolves to propose-only for EVERY action (never fail-open, never evaluate
+    a widening/corrupt matrix). D8's OTHER arm, the MISSING floor: a merge
+    that produced no `authority_matrix` policy at all (floor file deleted, or
+    unparseable so the malformed-file skip dropped it) synthesizes the same
+    stub under the reserved floor name — otherwise the gate would apply no
+    authority verdict whatsoever, which is fail-open. Mutates
+    `policies_by_name` in place.
+    """
+    for name, policy in list(policies_by_name.items()):
+        if not isinstance(policy, dict) or policy.get("type") != "authority_matrix":
+            continue
+        try:
+            from framework.authority.matrix import (  # noqa: E402
+                _validate_postures, no_ceiling_or_prod_auto,
+            )
+            _validate_postures(policy)
+            if not no_ceiling_or_prod_auto(policy):
+                raise ValueError("a hard-ceiling row resolves to 'auto'")
+        except Exception as exc:
+            policies_by_name[name] = {
+                "name": name,
+                "type": "authority_matrix",
+                "message": str(
+                    policy.get("message")
+                    or "below the autonomy bar — proposing instead"
+                ),
+                "_validation_failed": str(exc) or "authority matrix failed validation",
+            }
+            print(
+                f"WARN: policy-engine — authority matrix '{name}' failed "
+                f"validation ({exc}); fail-closed to propose-only",
+                file=sys.stderr,
+            )
+    if not any(
+        isinstance(p, dict) and p.get("type") == "authority_matrix"
+        for p in policies_by_name.values()
+    ):
+        policies_by_name["authority-matrix"] = {
+            "name": "authority-matrix",
+            "type": "authority_matrix",
+            "message": "below the autonomy bar — proposing instead",
+            "_validation_failed": "floor missing/unparseable",
+        }
+        print(
+            "WARN: policy-engine — authority matrix floor missing/unparseable; "
+            "fail-closed to propose-only",
+            file=sys.stderr,
+        )
+
+
 def load_policies(cabinet_root: str | None = None) -> list[dict]:
     """Load policies from framework + preset + instance layers.
 
-    Later layers can override earlier policies by name.
+    Later layers can override earlier policies by name — EXCEPT the authority
+    matrix, which is FLOOR-ONLY (D8): a preset/instance layer carrying an
+    `authority_matrix`-typed policy (or one named `authority-matrix`) is
+    refused with a WARN, so a writable layer can never widen the germline
+    verdict tables. The surviving merged floor is then runtime-validated
+    fail-closed — and a merge with NO surviving floor (file absent or
+    unparseable) is quarantined the same way (see `_validate_authority_floor`).
     """
     import yaml  # noqa: E402 — deferred import, available in CI
 
@@ -1418,7 +1786,7 @@ def load_policies(cabinet_root: str | None = None) -> list[dict]:
 
     policies_by_name: dict[str, dict] = {}
 
-    for policy_dir in policy_dirs:
+    for layer, policy_dir in enumerate(policy_dirs):
         if not os.path.isdir(policy_dir):
             continue
         for filename in sorted(os.listdir(policy_dir)):
@@ -1432,8 +1800,18 @@ def load_policies(cabinet_root: str | None = None) -> list[dict]:
                     continue
                 for policy in data["policies"]:
                     name = policy.get("name")
-                    if name:
-                        policies_by_name[name] = policy
+                    if not name:
+                        continue
+                    if layer > 0 and _is_authority_matrix_policy(policy, name):
+                        # D8: framework floor wins — refuse the layered matrix.
+                        print(
+                            f"WARN: policy-engine — {filepath} layers an "
+                            f"authority matrix ('{name}'); the framework "
+                            f"floor wins (skipped)",
+                            file=sys.stderr,
+                        )
+                        continue
+                    policies_by_name[name] = policy
             except Exception:
                 # Skip malformed policy files — fail-open with warning
                 print(
@@ -1441,6 +1819,7 @@ def load_policies(cabinet_root: str | None = None) -> list[dict]:
                     file=sys.stderr,
                 )
 
+    _validate_authority_floor(policies_by_name)
     return list(policies_by_name.values())
 
 

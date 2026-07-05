@@ -128,6 +128,40 @@ policies:
       - "*framework/frontdoor/calendar_template.py"
       - "*framework/acting/action_lane.py"
       - "*framework/acting/run_action_lane.py"
+      # ENFORCER-TRIAD LAG CLOSURE (sovereign amendment 2026-07-05): these
+      # entered hook sec 5/5b + germline-lock on 2026-07-04 but lagged here.
+      # immutable-core.yml is the single source; the lockstep meta-test
+      # (framework/tests/test_germline_lockstep_consistency.py) diffs all
+      # four germline lists against it -- extend BOTH or the suite fails.
+      - "*.claude/settings.json"
+      - "*/cabinet/scripts/hooks/*"
+      - "*cabinet/scripts/policy-shadow.py"
+      - "*cabinet/scripts/kill-switch.sh"
+      - "*cabinet/scripts/germline-lock.sh"
+      - "*shared/interfaces/action-lessons.yml"
+      # SOVEREIGN-POSTURE germline (amendment 2026-07-05): the posture/grants/
+      # needs kernel, the gate-apply lane, the Captain-locked attestation
+      # configs (covered before the deployment creates them), the D8 instance
+      # policy layer, and the needs-ledger data plane (appended ONLY via
+      # needs.py -- a direct officer write forges needs).
+      - "*framework/authority/posture.py"
+      - "*framework/authority/grants.py"
+      - "*framework/authority/needs.py"
+      - "*framework/learning/gate.py"
+      - "*framework/learning/apply_watch.py"
+      - "*cabinet/scripts/grant-apply.sh"
+      # ROOT-EXECUTED apply lane (D15, SOV-9a): the DARK code-apply script
+      # (sudo + root daemon), its LaunchDaemon definition (ProgramArguments
+      # run as root on load), and the watch ledger whose rows cmd_watch
+      # executes as a root `git apply -R` -- a forged row mints a root
+      # write, so the ledger is locked files-class, never sanctioned-append.
+      - "*cabinet/scripts/gate-apply.sh"
+      - "*cabinet/launchd/com.cabinet.gate-apply.plist"
+      - "*shared/interfaces/gate-apply-watch.jsonl"
+      - "*instance/config/posture.yml"
+      - "*instance/config/standing-grants.yml"
+      - "*/instance/config/policies/*"
+      - "*shared/interfaces/needs-ledger.jsonl"
     message: "Germline file -- read-only for officers and loops (no loop may edit its own judge). Propose the change to the Captain; only the Captain applies germline edits."
 
   # Officer tier2 isolation (mirrors pre-tool-use.sh sec 5 tier2 arm): an officer

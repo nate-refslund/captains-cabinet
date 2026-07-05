@@ -106,7 +106,16 @@ _SHARED_CALENDAR_NAMES = frozenset({"work", "shared", "subscribed", "delegate",
 
 # PRO-7: kinds that can NEVER act unattended — the executor HELDs them on the
 # act-first path regardless of any upstream verdict (explicit-approve-forever).
+# SOV-4 amends the mission_propose hold to POSTURE-AWARE: sovereign auto-adopts
+# a NON-ceiling mission graph (D14/§3 — the adopt is the notify_after-class
+# act); guardian and every posture-less path keep the hold byte-identical.
 KINDS_REQUIRE_EXPLICIT_APPROVE = frozenset({"mission_propose"})
+
+# D14 (SOV-4): a dispatch that makes ANOTHER AGENT act is not reversible by
+# undoing the dispatch row — officer_dispatch/delegate_work stay held in EVERY
+# posture, structurally (not as an accident of inverse registration). Checked
+# only when a posture is passed so the posture-less path stays byte-identical.
+KINDS_HELD_EVERY_POSTURE = frozenset({"delegate_work"})
 
 # ACCESS INVERSION (Captain ruling 2026-07-04): the board gate is DEFAULT-ALLOW.
 # No hardcoded instance board lives in framework anymore. The gate consults a
@@ -511,21 +520,49 @@ def _act_count(redis_get: Callable, key: str) -> int:
         return -1
 
 
-def _caps_would_exceed(planned_kinds, redis_get: Callable, surfaces: dict):
+def _posture_hard_multiplier() -> int:
+    """caps.hard_multiplier from the attested posture ruling (FI-5), default 10.
+    Lazy + guarded — a broken posture kernel must never break the perimeter
+    (and the posture-None path never calls this at all)."""
+    try:
+        from framework.authority.posture import hard_multiplier
+        return int(hard_multiplier())
+    except Exception:
+        return 10
+
+
+def _caps_would_exceed(planned_kinds, redis_get: Callable, surfaces: dict,
+                       posture: str | None = None):
     """(exceeded, reason) for adding ``planned_kinds`` act-first acts today.
-    FAIL-CLOSED: an unreadable counter (Redis loss) counts as exceeded so a
-    control-plane outage narrows the perimeter rather than opening it."""
+    FAIL-CLOSED: an unreadable counter (Redis loss) counts as exceeded in
+    EVERY posture so a control-plane outage narrows the perimeter rather than
+    opening it (the INT-13 alarm+proceed carve-out was rejected).
+
+    Posture-aware (D11, SOV-4): ``posture=None``/guardian is byte-identical to
+    the pre-posture path (today's block strings). Sovereign: exceeding the
+    base cap returns (False, alarm-note) — the act proceeds; only crossing
+    ``cap × hard_multiplier`` (the runaway mechanical hard-stop) blocks. This
+    is the read-only pre-flight peek: the freeze itself is the counting path's
+    job (actfirst_canary.incr_and_check), a peek never writes."""
     from datetime import datetime, timezone
     day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     caps = (surfaces or {}).get("caps") or _DEFAULT_CAPS
     per_kind_cap = caps.get("per_kind_per_day", _DEFAULT_CAPS["per_kind_per_day"])
     estate_cap = caps.get("estate_per_day", _DEFAULT_CAPS["estate_per_day"])
     kinds = list(planned_kinds)
+    sovereign = posture == "sovereign"
+    hard = _posture_hard_multiplier() if sovereign else 1
+    alarms = []
     estate_cur = _act_count(redis_get, "cabinet:actfirst:count:%s:estate" % day)
     if estate_cur < 0:
         return True, "cap counter unreadable (fail-closed)"
     if estate_cur + len(kinds) > estate_cap:
-        return True, "estate cap %d/day would be exceeded" % estate_cap
+        if not sovereign:
+            return True, "estate cap %d/day would be exceeded" % estate_cap
+        if estate_cur + len(kinds) > estate_cap * hard:
+            return True, ("runaway hard-stop: estate cap %d × %d would be "
+                          "exceeded" % (estate_cap, hard))
+        alarms.append("estate")
     per_kind = {}
     for k in kinds:
         per_kind[k] = per_kind.get(k, 0) + 1
@@ -534,7 +571,15 @@ def _caps_would_exceed(planned_kinds, redis_get: Callable, surfaces: dict):
         if cur < 0:
             return True, "cap counter unreadable (fail-closed)"
         if cur + n > per_kind_cap:
-            return True, "per-kind cap %d/day for %s would be exceeded" % (per_kind_cap, k)
+            if not sovereign:
+                return True, "per-kind cap %d/day for %s would be exceeded" % (per_kind_cap, k)
+            if cur + n > per_kind_cap * hard:
+                return True, ("runaway hard-stop: per-kind cap %d × %d for %s "
+                              "would be exceeded" % (per_kind_cap, hard, k))
+            alarms.append(k)
+    if alarms:
+        return False, ("cap alarm (sovereign alarm+proceed): "
+                       + ", ".join(alarms))
     return False, ""
 
 
@@ -894,10 +939,70 @@ def _default_osascript(cmd: list) -> str:
     return subprocess.run(cmd, capture_output=True, text=True, timeout=30).stdout.strip()
 
 
+def _standing_missions_path() -> Path:
+    """shared/interfaces/standing-missions.yml under the cabinet root — the
+    sovereign mission-adoption interface (the standing-pull/supervisor compile
+    source; never the Captain's outcomes.yml). Fixed relative suffix under a
+    controlled root — no interpolation from untrusted input."""
+    root = os.environ.get("CABINET_ROOT") or str(Path(__file__).resolve().parents[2])
+    return Path(root) / "shared" / "interfaces" / "standing-missions.yml"
+
+
+def _exec_mission_adopt(payload: dict) -> dict:
+    """Sovereign auto-adopt of a NON-ceiling mission graph (SOV-4, D14/§3) —
+    reachable ONLY when the held-map cleared the step (act_first + sovereign +
+    clean ceiling screen). Records the adopted mission as a row in
+    shared/interfaces/standing-missions.yml so the sovereign supervisor can
+    compile it. Idempotent on the content-hash id; RAISES on an unparseable
+    existing file — an adopt that cannot durably record must fail the step,
+    never silently no-op."""
+    import yaml  # deferred — mirrors the loaders above
+    mission = str(payload.get("mission") or "").strip()
+    if not mission:
+        raise RuntimeError("mission_propose adopt needs a mission")
+    mid = "adopt-" + hashlib.sha256(mission.encode("utf-8")).hexdigest()[:8]
+    path = _standing_missions_path()
+    data: dict = {"version": 1, "missions": []}
+    if path.exists():
+        loaded = yaml.safe_load(path.read_text())
+        if loaded is not None:
+            if (not isinstance(loaded, dict)
+                    or not isinstance(loaded.get("missions"), list)):
+                raise RuntimeError(
+                    "standing-missions.yml is corrupt — refusing to adopt")
+            data = loaded
+    for row in data["missions"]:
+        if isinstance(row, dict) and row.get("id") == mid:
+            return {"mission_id": mid, "adopted": False,
+                    "reason": "already adopted (idempotent)"}
+    from datetime import datetime, timezone
+    outcomes = payload.get("first_outcomes")
+    if isinstance(outcomes, str):
+        outcomes = [outcomes]
+    data["missions"].append({
+        "id": mid,
+        "source": "action-lane-adopt",
+        "adopted_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "status": "adopted",
+        "direction": str(payload.get("direction") or ""),
+        "mission": mission,
+        "why_now": str(payload.get("why_now") or ""),
+        "expected_instrument_delta": str(payload.get("expected_instrument_delta") or ""),
+        "first_outcomes": [str(o) for o in (outcomes or []) if o is not None],
+    })
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True))
+    return {"mission_id": mid, "adopted": True, "file": str(path)}
+
+
 def _exec_step(kind: str, payload: dict, mp: Callable, osa: Callable,
-               act_first: bool = False) -> dict:
+               act_first: bool = False, posture: str | None = None) -> dict:
     """Dispatch one step to its executor. Raises on an unknown kind or a backend
-    failure — the caller stops the chain and reports what already ran."""
+    failure — the caller stops the chain and reports what already ran.
+    ``posture`` (SOV-4) unlocks exactly ONE new dispatch: the sovereign
+    act-first mission adopt; every other path — including the Captain-approved
+    ``act_first=False`` path, where mission_propose still raises unknown-kind —
+    is byte-identical."""
     if kind == "monday_task_create":
         return _exec_monday_create(payload, mp)
     if kind == "monday_task_update":
@@ -913,6 +1018,10 @@ def _exec_step(kind: str, payload: dict, mp: Callable, osa: Callable,
         return _exec_delegate(payload)
     if kind == "investigation_run":
         return _exec_investigation(payload)
+    if kind == "mission_propose" and act_first and posture == "sovereign":
+        # defense-in-depth: the held-map already screened ceiling-touch; this
+        # guard keeps the adopt structurally unreachable on any other path.
+        return _exec_mission_adopt(payload)
     raise RuntimeError(f"unknown action kind {kind!r}")
 
 
@@ -930,10 +1039,19 @@ def _best_effort(fn: Callable) -> None:
 
 def _step_generated_strings(step: dict) -> list:
     """Every human-visible generated string a step would write — the tripwire
-    screen's input (titles, descriptions, notes, whys, briefs, questions)."""
+    screen's input (titles, descriptions, notes, whys, briefs, questions, and
+    the mission/investigation text fields — screening MORE text only narrows,
+    and the sovereign adopt path [SOV-4] must screen what it records)."""
     p = step.get("payload") or {}
     out = [p.get("title"), p.get("description"), p.get("notes"), p.get("why"),
-           p.get("brief"), p.get("question")]
+           p.get("brief"), p.get("question"), p.get("sources_hint"),
+           p.get("direction"), p.get("mission"), p.get("why_now"),
+           p.get("expected_instrument_delta")]
+    outcomes = p.get("first_outcomes")
+    if isinstance(outcomes, str):
+        out.append(outcomes)
+    elif isinstance(outcomes, (list, tuple)):
+        out += [o for o in outcomes]
     setmap = p.get("set")
     if isinstance(setmap, dict):
         out += [setmap.get("description"), setmap.get("note"),
@@ -941,26 +1059,95 @@ def _step_generated_strings(step: dict) -> list:
     return [s for s in out if isinstance(s, str) and s]
 
 
-def _step_held_reason(kind: str, backend: str):
+def _mission_ceiling_touches(payload: dict) -> set:
+    """Hard-ceiling categories a mission_propose graph touches — the sovereign
+    auto-adopt screen (D14/§3: only NON-ceiling graphs adopt). Reuses the ONE
+    conservative keyword inference (capability_gaps.infer_touches) over the
+    proposal's text fields; FAIL-CLOSED: any screening failure returns a
+    synthetic touch so an unscreenable graph never adopts."""
+    try:
+        from framework.learning.capability_gaps import infer_touches
+        parts = []
+        for key in ("direction", "mission", "why_now", "expected_instrument_delta"):
+            v = (payload or {}).get(key)
+            if isinstance(v, str):
+                parts.append(v)
+        outcomes = (payload or {}).get("first_outcomes")
+        if isinstance(outcomes, str):
+            parts.append(outcomes)
+        elif isinstance(outcomes, (list, tuple)):
+            parts += [str(o) for o in outcomes]
+        return infer_touches(" ".join(parts))
+    except Exception:
+        return {"unscreenable (fail-closed)"}
+
+
+def _step_held_reason(kind: str, backend: str, *,
+                      posture: str | None = None,
+                      payload: dict | None = None):
     """Why a step must be HELD (not act-first executed), or None if it is
     reversible-eligible. PRO-7 per-step gated delivery: gated kinds
     (``mission_propose``) and any kind without a registered inverse
     (``delegate_work``, ``investigation_run``, apple_reminders) await a verdict
-    while reversible-eligible steps in the same card may act."""
+    while reversible-eligible steps in the same card may act.
+
+    Posture-aware (SOV-4; ``posture=None`` is byte-identical legacy):
+      * ``delegate_work`` (action_type officer_dispatch) is held in EVERY
+        posture — structural D14, independent of inverse registration.
+      * ``mission_propose`` in sovereign ADOPTS when its graph is non-ceiling
+        (``_mission_ceiling_touches`` fail-closed screen); ceiling-touch holds.
+      * ``investigation_run`` in sovereign drops its hold (internal, stoppable,
+        read-shaped — D14)."""
+    if posture is not None and kind in KINDS_HELD_EVERY_POSTURE:
+        return ("officer_dispatch/delegate_work cascade is not reversible — "
+                "held in every posture (D14)")
     if kind in KINDS_REQUIRE_EXPLICIT_APPROVE:
+        if posture == "sovereign" and kind == "mission_propose":
+            touches = _mission_ceiling_touches(payload or {})
+            if not touches:
+                return None   # sovereign auto-adopt (non-ceiling graph, D14/§3)
+            return ("mission graph touches hard ceiling(s) %s — held for "
+                    "explicit approve" % sorted(touches))
         return "requires explicit approve (never act-first)"
     if not action_undo.act_first_eligible(kind, backend):
+        if posture == "sovereign" and kind == "investigation_run":
+            return None       # D14: read-shaped + stoppable — the hold drops
         return "no registered inverse — propose-first"
     return None
 
 
-def _gate_chain(steps: list, *, lane, redis_get: Callable, surfaces: dict):
+def _file_exec_need(kind: str, *, risk_class=None, action_type=None, lane=None,
+                    why: str, unblocks: str = "",
+                    cost_of_delay: str = "medium") -> None:
+    """Best-effort FI-3 NEED from the executor perimeter (SOV-4) — the
+    kernel's needs_enabled() short-circuit keeps the default world
+    bit-identical, and a filing failure never blocks (or changes) a gate
+    decision. NEVER raises."""
+    try:
+        from framework.authority import needs
+        needs.file_need(kind, risk_class=risk_class, action_type=action_type,
+                        lane=lane, why=why, unblocks=unblocks,
+                        cost_of_delay=cost_of_delay, filed_by="action_exec.gate")
+    except Exception:
+        pass
+
+
+def _gate_chain(steps: list, *, lane, redis_get: Callable, surfaces: dict,
+                posture: str | None = None):
     """The whole-chain act-first perimeter. Returns ``(decision, held)`` where
     ``decision`` is a propose_only downgrade dict (execute NOTHING) if any
     perimeter guard trips, else ``None``; ``held`` maps step-index → reason for
     per-step gated delivery. Deterministic + fail-closed: a payload-key/person
     violation, a denied/cascade-gated board, a content-tripwire hit, or a cap
-    breach downgrades the whole card to a proposal the Captain reviews."""
+    breach downgrades the whole card to a proposal the Captain reviews.
+
+    ``posture`` (SOV-4; None = byte-identical legacy) threads to the held-map
+    (D14 holds + sovereign mission-adopt/investigation drops), the caps peek
+    (D11 sovereign alarm+proceed), and — sovereign only — a SECOND independent
+    injection-classifier pass over the chain's generated text (D13: the
+    proposer's injection_suspect is self-attested; a sovereign act re-screens
+    in the executor perimeter). Denylist hits and missing credentials also
+    file kind=access|credential NEEDs (no-op until needs are wired)."""
     denylist = (surfaces or {}).get("denylist") or {}
     reasons = []
     held = {}
@@ -986,8 +1173,14 @@ def _gate_chain(steps: list, *, lane, redis_get: Callable, surfaces: dict):
             if not _board_not_denied(board, kind, denylist):
                 reasons.append("step %d (%s): board %s is Captain-denied / "
                                "cascade-gated for %s" % (i, kind, board, kind))
+                _file_exec_need(
+                    "access", action_type=kind, lane=lane,
+                    why=("act-first blocked: board %s is Captain-denied / "
+                         "cascade-gated for %s" % (board, kind)),
+                    unblocks="act-first %s on board %s" % (kind, board))
         tripwire_strings += _step_generated_strings(step)
-        reason = _step_held_reason(kind, _backend_for(kind))
+        reason = _step_held_reason(kind, _backend_for(kind),
+                                   posture=posture, payload=payload)
         if reason:
             held[i] = reason
         else:
@@ -996,11 +1189,41 @@ def _gate_chain(steps: list, *, lane, redis_get: Callable, surfaces: dict):
     hits = _content_tripwire(tripwire_strings)
     if hits:
         reasons.append("content tripwire: " + ", ".join(hits))
+    # D13 second injection pass (sovereign only — the guardian path keeps
+    # today's bytes): the proposer's injection_suspect stamp is self-attested
+    # by a possibly-compromised proposer, so an unattended sovereign act
+    # re-screens the ACTUAL generated text here in the executor perimeter.
+    # Fail-closed: an unimportable/erroring screen downgrades.
+    if posture == "sovereign" and tripwire_strings:
+        try:
+            from framework.acting.action_lane import screen
+            res = screen("\n".join(tripwire_strings))
+        except Exception:
+            res = {"suspect": True, "hits": ["screen unavailable (fail-closed)"]}
+        if res.get("suspect"):
+            reasons.append("injection screen (executor pass): "
+                           + ", ".join(res.get("hits") or ["suspect"]))
     # per-day per-kind caps for the acts that WOULD fire (held steps don't count).
     if eligible_kinds:
-        exceeded, why = _caps_would_exceed(eligible_kinds, redis_get, surfaces)
+        exceeded, why = _caps_would_exceed(eligible_kinds, redis_get, surfaces,
+                                           posture)
         if exceeded:
             reasons.append("caps: " + why)
+        # missing-cred probe (SOV-4): a monday act without a key WILL fail at
+        # the mutation — file the kind=credential NEED here (the gate decision
+        # itself is unchanged; the need is the durable signal). Same loader +
+        # lookup the executor uses, so the probe cannot drift from reality.
+        if any(k in ("monday_task_create", "monday_task_update")
+               for k in eligible_kinds):
+            _load_shared_env()
+            if not (os.environ.get("MONDAY_API_TOKEN")
+                    or os.environ.get("MONDAY_API_KEY")):
+                _file_exec_need(
+                    "credential", action_type="monday_api", lane=lane,
+                    why=("act-first monday step has no MONDAY_API_TOKEN / "
+                         "MONDAY_API_KEY — the mutation will fail"),
+                    unblocks="monday act-first executes",
+                    cost_of_delay="blocking")
     elif held:
         reasons.append("no act-first-eligible step (all gated/propose-first)")
     if reasons:
@@ -1201,6 +1424,7 @@ def deliver_action(pid: str, override_text: str = "", *,
                    dry_run: bool = False,
                    journal: bool = True,
                    act_first: bool = False,
+                   posture: str | None = None,
                    redis_set: Callable[[str, str, int | None], None] | None = None,
                    redis_incr: Callable[[str, int], None] | None = None,
                    telegram_send: Callable[[str], None] | None = None) -> dict:
@@ -1232,7 +1456,18 @@ def deliver_action(pid: str, override_text: str = "", *,
     binder AFTER the edit→wrong verdict landed) executes NOTHING — instead the
     corrected chain is RE-CARDED via ``_recard_edited`` (2026-07-04 germline
     g-exec). ``telegram_send`` is the re-card's injectable presenter (default
-    ``_tg_send`` → the HQ Chair bot); tests inject it to stay hermetic."""
+    ``_tg_send`` → the HQ Chair bot); tests inject it to stay hermetic.
+
+    ``posture`` (SOV-4; default None = today's bytes) threads the resolved
+    posture into the act-first perimeter only: D11 caps (sovereign
+    alarm+proceed below the ×hard_multiplier hard-stop), D14 held-map
+    (delegate held every posture; sovereign non-ceiling mission adopt;
+    sovereign investigation hold-drop), and the D13 sovereign second
+    injection pass. The approved path ignores it entirely — as does the
+    edit→re-card path above, which executes nothing in any posture."""
+    # RECONCILE 2026-07-05: kept both HEAD override_text/_recard_edited doc
+    # (edit re-card, g-exec) + sovereign posture= SOV-4 threading doc — the
+    # signature already carries both params; docstring paragraphs merged.
     rget = redis_get or (lambda k: _redis("GET", k))
     if override_text.strip():
         # EDIT on an action card (edit→re-card, 2026-07-04 germline g-exec).
@@ -1357,7 +1592,7 @@ def deliver_action(pid: str, override_text: str = "", *,
                                 "an unjournaled act has no undo handle"]}
         surfaces = _load_act_first_surfaces()
         decision, held_map = _gate_chain(steps, lane=lane, redis_get=rget,
-                                         surfaces=surfaces)
+                                         surfaces=surfaces, posture=posture)
         if decision is not None:
             return decision
 
@@ -1455,7 +1690,7 @@ def deliver_action(pid: str, override_text: str = "", *,
                     "error": f"step {i}/{len(steps)} ({kind}) payload changed after "
                              "journal — refusing (TOCTOU)"}
         try:
-            out = _exec_step(kind, payload, mp, osa, act_first)
+            out = _exec_step(kind, payload, mp, osa, act_first, posture)
         except Exception as e:  # stop the chain; report what DID run
             return {"ok": False, "via": "action-lane", "dest": lane,
                     "executed": executed,

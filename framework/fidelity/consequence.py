@@ -112,8 +112,13 @@ _REVIEW_KEYS = {"verdict", "reviewed_at", "lesson_ref", "source"}
 # other source can only hold or demote. "system" = non-judgment closures
 # (auto-expiry / policy-only replies). Absent = legacy/unattributed — treated
 # as NOT human by compute_ratios (fail-closed: an unattributed confirm can
-# never fuel promotion).
-_REVIEW_SOURCES = {"verdict_human", "verdict_judge", "system"}
+# never fuel promotion). "verdict_gate" [D16, sovereign spec 2026-07-04] =
+# the machine evidence-gate (stamped only for acted rows clearing its full
+# 5-condition bar, framework/learning/gate.py run_gate_review); its confirms
+# fuel promotion ONLY while the deployment posture resolves sovereign AT
+# COMPUTE TIME — guardian ignores them (EARN-DEMOTION-safe), wrong from any
+# source still demotes.
+_REVIEW_SOURCES = {"verdict_human", "verdict_judge", "system", "verdict_gate"}
 
 
 def _reject_extra(obj: dict[str, Any], allowed: set[str], where: str) -> None:
@@ -636,6 +641,22 @@ class GraduationRatios:
         return (self.intent_aligned / denom) if denom else None
 
 
+def _gate_confirms_now() -> bool:
+    """[D16] True iff a verdict_gate confirm may fuel promotion RIGHT NOW —
+    i.e. the deployment posture resolves sovereign at compute time.
+
+    Lazy import + blanket except: on ANY failure (module absent, posture file
+    unreadable, unexpected error) the answer is False ⇒ guardian ⇒ compute is
+    bit-identical to the pre-posture world. Read at compute time (never cached
+    across calls) so a sovereign→guardian flip only ever REDUCES confirmed
+    counts — machine promotion fuel can be revoked, never grandfathered."""
+    try:
+        from framework.authority.posture import resolve_posture
+        return resolve_posture() == "sovereign"
+    except Exception:
+        return False
+
+
 def compute_ratios(
     since: str | None = None,
     ledger: list[dict[str, Any]] | None = None,
@@ -665,8 +686,19 @@ def compute_ratios(
       - review-confirmed   = confirmed / (confirmed + wrong)
     Pending/expired proposals, unknown outcomes, and unknown verdicts are
     excluded from their denominators (not counted as failures).
+
+    [D16] `confirmed` counts review.source == "verdict_human" always, plus
+    "verdict_gate" IFF the posture resolves sovereign at compute time (lazy,
+    fail-closed to guardian — see _gate_confirms_now). `wrong` counts from any
+    source, both postures.
     """
     events = ledger if ledger is not None else read_ledger(since=since)
+
+    # [D16] Whether verdict_gate confirms count — resolved LAZILY on the first
+    # gate-sourced confirm and memoized for THIS compute only (one posture read
+    # per compute, at compute time). A ledger with no verdict_gate rows never
+    # touches the posture module at all (guardian world bit-identical).
+    gate_sovereign = None
 
     cells: dict[tuple[str, str | None, str], GraduationRatios] = {}
     for ev in events:
@@ -700,10 +732,21 @@ def compute_ratios(
         # unattributed legacy row can never fuel promotion (fail-closed).
         # `wrong` counts from ANY source — machine evidence may demote/hold,
         # never promote. This asymmetry is the flavor-A contract.
+        # [D16] SOLE extension: a "verdict_gate" confirm (the machine evidence
+        # gate) also fuels promotion, but ONLY while the posture resolves
+        # sovereign at compute time — guardian keeps ignoring it, so a flip
+        # back to guardian revokes gate fuel on the very next compute.
         review = ev.get("review") or {}
         verdict = review.get("verdict")
-        if verdict == "confirmed" and review.get("source") == "verdict_human":
-            cell.confirmed += 1
+        source = review.get("source")
+        if verdict == "confirmed":
+            if source == "verdict_human":
+                cell.confirmed += 1
+            elif source == "verdict_gate":
+                if gate_sovereign is None:
+                    gate_sovereign = _gate_confirms_now()
+                if gate_sovereign:
+                    cell.confirmed += 1
         elif verdict == "wrong":
             cell.wrong += 1
 

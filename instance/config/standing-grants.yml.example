@@ -1,0 +1,38 @@
+# standing-grants.yml — CAPTAIN-SIGNED CEILING GRANTS [FI-2, sovereign kernel].
+#
+# A standing grant is the ONLY way a hard-ceiling row (external_comms,
+# deploy_prod, spend, secrets, network_write, credentials_grant) resolves to
+# an attributed allow in the sovereign posture — never unconditional auto, in
+# ANY posture. Non-ceiling risk classes may NOT appear here (line-dropped).
+#
+# Fail-safe polarity (framework/authority/grants.py): absent / unparseable /
+# not-schg-locked ⇒ grants resolve EMPTY (+ deduped need). Malformed rows are
+# line-dropped. flavor=personal (posture.yml) structurally refuses every
+# external_comms grant — the Captain's personal outbound stays approval-gated
+# in every posture.
+#
+# Every row is enforced with ALL of: deployment==CABINET_ID, action_type +
+# lane membership (named lanes only — never '*'), unexpired (expires ≤ 90d
+# after granted_at), unrevoked (file flag OR Redis tombstone
+# cabinet:grant:revoked:<id>; Redis unreachable ⇒ treated revoked), daily
+# rate (cabinet:grant:count:<id>:<date>; unreadable ⇒ not granted), no active
+# Captain veto, and the class HARD-SCOPE predicate:
+#   external_comms → recipient ∈ scope.recipient_allowlist (glob ok)
+#   spend          → amount_eur ≤ scope.max_eur_per_day
+#   others         → vendor ∈ scope.vendor_allowlist
+#
+# Grants change ONLY via `sudo bash cabinet/scripts/grant-apply.sh NEED-<hex>`
+# in an unlock window (D7) — there is no runtime writer. `basis` cites the
+# NEED fingerprint that argued for the grant.
+#
+# Activate: cp → edit → commit → sudo chflags schg instance/config/standing-grants.yml
+version: 1
+grants:
+  - {id: GRANT-example-stepnetwork-mail, deployment: mini-polads,
+     risk_class: external_comms, action_types: [external_email],
+     lanes: [polads],
+     scope: {recipient_allowlist: ["*@stepnetwork.dk"], max_eur_per_day: 0,
+             vendor_allowlist: []},
+     rate: {max_per_day: 10}, expires: 2026-10-03,
+     granted_by: "Captain (Nate)", granted_at: 2026-07-05T00:00:00Z,
+     basis: "NEED-1a2b3c4d", revoked: false}

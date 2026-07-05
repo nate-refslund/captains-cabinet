@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any
 
 from framework.frontdoor import intake
@@ -266,19 +267,81 @@ def _mark_forwarded(backend, marker: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# SOV-6 — NEED-tagged / ask-shaped dedup + tier demote. The needs ledger is the
+# canonical surface for standing asks (FI-3: deduped rows, blocking needs own
+# their ping-now escalation), so a lane card duplicating one must not double-
+# ping the Captain. DARK unless the needs plane is wired — the default world
+# drains byte-identically.
+# ---------------------------------------------------------------------------
+_NEED_ID_RE = re.compile(r"\bNEED-([0-9a-f]{8})\b", re.IGNORECASE)
+# Deliberately tight ask-lexicon: only unambiguous permission/grant asks demote
+# (ping-now → batch); anything else keeps its carded urgency untouched.
+_ASK_MARKERS = (
+    "standing grant",
+    "grant need-",
+    "approval needed",
+    "awaiting approval",
+    "requires captain approval",
+    "needs your approval",
+    "permission needed",
+)
+
+
+def _needs_wired() -> bool:
+    """True iff the needs plane is wired (sovereign / CABINET_NEEDS_WIRED /
+    flag file). Lazy + fail-quiet: a broken needs module means OFF."""
+    try:
+        from framework.authority import needs
+        return bool(needs.needs_enabled())
+    except Exception:
+        return False
+
+
+def _card_need_id(card: dict) -> str | None:
+    """The first NEED-<hex8> fingerprint tag in the card's summary/body,
+    normalized to the ledger's lowercase-hex form, or None. Strict hex-only
+    match — untrusted card text cannot mint a bindable tag any other way."""
+    for f in ("summary", "body"):
+        m = _NEED_ID_RE.search(str(card.get(f) or ""))
+        if m:
+            return "NEED-" + m.group(1).lower()
+    return None
+
+
+def _open_need_ids() -> set[str]:
+    try:
+        from framework.authority import needs
+        return {str(r.get("id")) for r in needs.list_open()}
+    except Exception:
+        return set()
+
+
+def _ask_shaped(card: dict) -> bool:
+    text = ((card.get("summary") or "") + "\n" + (card.get("body") or "")).lower()
+    return any(marker in text for marker in _ASK_MARKERS)
+
+
+# ---------------------------------------------------------------------------
 # Card → canonical intake item.
 # ---------------------------------------------------------------------------
-def card_to_item(card: dict, *, project: str) -> dict | None:
+def card_to_item(card: dict, *, project: str,
+                 needs_wired: bool = False) -> dict | None:
     """Map a captain-attention card to a front-door intake item, or None if unusable.
 
     Card fields (from captain-attention.sh): source, project, urgency, summary,
     body, ts. A card with no summary is unusable (intake requires a summary).
+    ``needs_wired=True`` (SOV-6) demotes NEED-tagged / ask-shaped ping-now
+    cards to batch — the needs digest is the canonical ask surface; the
+    default (False) maps exactly as before.
     """
     summary = (card.get("summary") or "").strip()
     if not summary:
         return None
     urgency = (card.get("urgency") or "").strip().lower()
     tier = _URGENCY_TO_TIER.get(urgency, _DEFAULT_TIER)
+    need_id = _card_need_id(card) if needs_wired else None
+    if needs_wired and tier == "ping-now" and (need_id or _ask_shaped(card)):
+        tier = "batch"
     origin = (card.get("source") or "unknown").strip() or "unknown"
     ts = (card.get("ts") or "").strip()
     if not ts:
@@ -293,6 +356,8 @@ def card_to_item(card: dict, *, project: str) -> dict | None:
         "project": project,
         "origin_officer": origin,
     }
+    if need_id:
+        payload["need_id"] = need_id
     return {
         "source": f"officer:{origin}",
         "kind": "captain-attention",
@@ -331,6 +396,11 @@ def drain_attention(*, count: int = 100, only_projects: set[str] | None = None) 
     if only_projects is not None:
         streams = [s for s in streams if s[len(_ATTENTION_PREFIX):] in only_projects]
 
+    # SOV-6: computed once per drain — needs-aware dedup/demote arms only when
+    # the needs plane is wired (default world byte-identical).
+    wired = _needs_wired()
+    open_ids = _open_need_ids() if wired else set()
+
     forwarded, skipped, by_project = 0, 0, {}
     for stream in streams:
         project = stream[len(_ATTENTION_PREFIX):]
@@ -340,11 +410,21 @@ def drain_attention(*, count: int = 100, only_projects: set[str] | None = None) 
             rows = []
         for entry_id, fields in rows:
             marker = f"{project}:{entry_id}"
-            if _already_forwarded(backend, marker):
+            # A card tagged with an OPEN need dedups on the need's fingerprint
+            # id across projects/entries — the digest already surfaces the
+            # need; only the FIRST card rides the briefing (demoted, see
+            # card_to_item), later re-cards of the same need are dropped.
+            need_marker = None
+            if wired:
+                nid = _card_need_id(fields)
+                if nid and nid in open_ids:
+                    need_marker = f"need:{nid}"
+            if _already_forwarded(backend, marker) or (
+                    need_marker and _already_forwarded(backend, need_marker)):
                 _xack(backend, stream, entry_id)  # belt-and-braces: clear the dup
                 skipped += 1
                 continue
-            item = card_to_item(fields, project=project)
+            item = card_to_item(fields, project=project, needs_wired=wired)
             if item is None:
                 # Unusable card (no summary) — ACK so it doesn't redeliver forever.
                 _xack(backend, stream, entry_id)
@@ -357,6 +437,8 @@ def drain_attention(*, count: int = 100, only_projects: set[str] | None = None) 
                 # Enqueue failed — leave the card PENDING (no ACK) for next pass.
                 continue
             _mark_forwarded(backend, marker)
+            if need_marker:
+                _mark_forwarded(backend, need_marker)
             _xack(backend, stream, entry_id)
             forwarded += 1
             by_project[project] = by_project.get(project, 0) + 1

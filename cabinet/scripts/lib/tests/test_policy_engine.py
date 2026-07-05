@@ -1128,15 +1128,19 @@ class TestPolicyLoading:
             # The good policy should load despite the bad file
             assert any(p["name"] == "good-policy" for p in policies)
 
-    def test_empty_dir_returns_empty(self):
-        """No policy files at all returns empty list."""
+    def test_empty_dir_fails_closed_on_missing_floor(self):
+        """No policy files at all does NOT return an empty list: the missing
+        authority floor is quarantined fail-closed (D8 — a missing floor is
+        as closed as a corrupt one; the gate must never run floorless)."""
         with tempfile.TemporaryDirectory() as tmpdir:
             instance_dir = Path(tmpdir) / "instance" / "config"
             instance_dir.mkdir(parents=True)
             (instance_dir / "active-preset").write_text("work")
 
             policies = load_policies(tmpdir)
-            assert policies == []
+            assert len(policies) == 1
+            assert policies[0]["type"] == "authority_matrix"
+            assert policies[0].get("_validation_failed")
 
 
 # ===================================================================
@@ -1976,3 +1980,687 @@ class TestAuthorityMatrixNoLiveBlock:
                     with pytest.raises(SystemExit) as exc_info:
                         main()
                     assert exc_info.value.code == 2
+
+
+# ===================================================================
+# 7. SOVEREIGN POSTURE GATE WIRE [SOV-3]
+# ===================================================================
+# Spec: docs/plans/sovereign-build-spec-2026-07-04.md §2 D2/D4/D8 + §4 SOV-3.
+# Posture is a SELECTION dimension of the ONE matrix: resolve_verdict gains
+# keyword-only posture/postures params; the ceiling branch resolves D2
+# standing_grant (grant ⇒ attributed allow + record_use; else NEED + gate);
+# the step-4 allow-set becomes {auto, notify_after} with a real tell-emit;
+# load_policies refuses layered matrices + validates the merged floor
+# fail-closed. GUARDIAN IS BYTE-IDENTICAL with no posture config — the frozen
+# truth-table + exact block strings are pinned here [P1].
+
+import policy_engine as _pe  # noqa: E402
+
+from policy_engine import (  # noqa: E402
+    resolve_gate_posture,
+    standing_grant_resolution,
+    _grant_context,
+)
+
+_ALL_STATES = ("unmeasured", "propose_only", "eligible", "graduated", "demote")
+_CEILING_ROWS = (
+    "external_comms", "deploy_prod", "spend",
+    "secrets", "network_write", "credentials_grant",
+)
+_NON_CEILING_ROWS = (
+    "reversible", "pm_write", "calendar_write", "internal_comms", "deploy_nonprod",
+)
+
+
+class _FakeGrants:
+    """Injectable grants kernel — records calls, never touches Redis/files."""
+
+    def __init__(self, granted=False, grant_id=None,
+                 reason="no matching standing grant"):
+        self.granted = granted
+        self.grant_id = grant_id
+        self.reason = reason
+        self.check_calls = []
+        self.use_calls = []
+
+    def check(self, risk_class, action_type, *, lane, context=None,
+              file_needs=True, **kw):
+        self.check_calls.append({
+            "risk_class": risk_class, "action_type": action_type,
+            "lane": lane, "context": context, "file_needs": file_needs,
+        })
+        if self.granted:
+            return {"granted": True, "grant_id": self.grant_id,
+                    "reason": f"standing grant {self.grant_id} matched"}
+        return {"granted": False, "grant_id": None, "reason": self.reason}
+
+    def record_use(self, grant_id, **kw):
+        self.use_calls.append(grant_id)
+        return True
+
+
+class _FakeNeeds:
+    """Injectable needs kernel — deterministic id, records file_need calls."""
+
+    def __init__(self, nid="NEED-1a2b3c4d"):
+        self.nid = nid
+        self.file_calls = []
+
+    def file_need(self, kind, **kw):
+        self.file_calls.append((kind, kw))
+        return self.nid
+
+    def need_id(self, kind, risk_class=None, action_type=None, lane=None):
+        return self.nid
+
+
+def _sovereign():
+    """Patch the gate's posture resolution to sovereign (kernel injection —
+    the real resolver requires an schg-locked Captain ruling)."""
+    return patch.object(_pe, "_resolve_posture", lambda lane=None: "sovereign")
+
+
+class TestResolveVerdictPostureParams:
+    """P1 — the frozen guardian truth-table + the sovereign resolve sweep."""
+
+    def test_guardian_truth_table_frozen(self):
+        """No-kwargs == posture='guardian' == posture=None-with-postures ==
+        unknown posture — all resolve the ROOT table, cell by cell."""
+        pol = _load_real_matrix_policy()
+        v, p = pol["verdicts"], pol["postures"]
+        for rc in _CEILING_ROWS + _NON_CEILING_ROWS:
+            for state in _ALL_STATES:
+                base = resolve_verdict(v, rc, state)
+                assert resolve_verdict(v, rc, state, posture="guardian", postures=p) == base
+                assert resolve_verdict(v, rc, state, posture=None, postures=p) == base
+                assert resolve_verdict(v, rc, state, posture="weird", postures=p) == base
+                assert resolve_verdict(v, rc, state, posture="SOVEREIGN", postures=p) == base
+
+    def test_sovereign_sweep_matches_spec_2_1(self):
+        """The sovereign table resolves exactly the spec §2.1 verdicts."""
+        pol = _load_real_matrix_policy()
+        v, p = pol["verdicts"], pol["postures"]
+
+        def sov(rc, state):
+            return resolve_verdict(v, rc, state, posture="sovereign", postures=p)
+
+        for state in ("unmeasured", "propose_only", "eligible", "graduated"):
+            assert sov("reversible", state) == "auto"
+            assert sov("pm_write", state) == "act_with_undo"
+            assert sov("calendar_write", state) == "act_with_undo"
+            assert sov("internal_comms", state) == "notify_after"
+            assert sov("deploy_nonprod", state) == "notify_after"
+        for rc in _NON_CEILING_ROWS:
+            assert sov(rc, "demote") == "propose_only"  # demote posture-invariant
+        for rc in _CEILING_ROWS:
+            for state in _ALL_STATES:
+                assert sov(rc, state) == "standing_grant"
+
+    def test_malformed_postures_falls_back_to_root(self):
+        """Unknown/malformed postures structures resolve the root table."""
+        pol = _load_real_matrix_policy()
+        v = pol["verdicts"]
+        base = resolve_verdict(v, "reversible", "unmeasured")
+        for bad in (None, "nope", [], {}, {"sovereign": "nope"},
+                    {"sovereign": {}}, {"sovereign": {"verdicts": "nope"}},
+                    {"sovereign": {"verdicts": None}}):
+            got = resolve_verdict(v, "reversible", "unmeasured",
+                                  posture="sovereign", postures=bad)
+            # RECONCILE 2026-07-05: kept both — the fallback target is the
+            # ROOT/guardian cell, which under main's ratified trust-inversion
+            # floor is act_with_undo (NOT sovereign's wider "auto" — the
+            # fail-safe narrowing is still proven: a malformed posture table
+            # never selects the sovereign row).
+            assert got == base == "act_with_undo"
+        # A sovereign posture with a valid table still fails safe on a
+        # missing cell — never auto.
+        assert resolve_verdict(
+            v, "not_a_class", "unmeasured",
+            posture="sovereign", postures=pol["postures"],
+        ) == "propose_only"
+
+
+class TestResolveGatePosture:
+    """Fail-safe posture resolution — guardian on every ambiguity."""
+
+    def test_kernel_absent_is_guardian(self):
+        with patch.object(_pe, "_resolve_posture", None):
+            assert resolve_gate_posture() == "guardian"
+            assert resolve_gate_posture("polads") == "guardian"
+
+    def test_kernel_exception_is_guardian(self):
+        def boom(lane=None):
+            raise RuntimeError("kernel down")
+        with patch.object(_pe, "_resolve_posture", boom):
+            assert resolve_gate_posture() == "guardian"
+
+    def test_out_of_vocab_answer_is_guardian(self):
+        for weird in ("SOVEREIGN", "", None, "root", 42):
+            with patch.object(_pe, "_resolve_posture", lambda lane=None, w=weird: w):
+                assert resolve_gate_posture() == "guardian"
+
+    def test_known_postures_pass_through(self):
+        with _sovereign():
+            assert resolve_gate_posture() == "sovereign"
+        with patch.object(_pe, "_resolve_posture", lambda lane=None: "guardian"):
+            assert resolve_gate_posture() == "guardian"
+
+    def test_default_world_resolves_guardian(self):
+        # No posture.yml in the repo instance/config ⇒ the REAL kernel answers
+        # guardian (the bit-identical default world).
+        assert resolve_gate_posture() == "guardian"
+
+
+class TestGuardianGateByteParity:
+    """P1 (gate level) — with the postures key PRESENT in the shipped floor
+    but posture=guardian, every block string is the EXACT legacy literal."""
+
+    def test_ceiling_strings_exact(self):
+        pol = _load_real_matrix_policy()
+        assert "postures" in pol  # the axis is present yet inert in guardian
+        result = _eval_authority_matrix(
+            pol, "mcp__brain__queue_draft",
+            {"recipient": "outsider@example.com", "body": "x", "channel": "email"},
+            "cos",
+        )
+        assert result == (
+            "GATED (hard ceiling: external_comms) — draft via queue_draft, "
+            "never auto."
+        )
+        result = _eval_authority_matrix(
+            pol, "Bash", {"command": "git push origin main"}, "cto"
+        )
+        assert result == (
+            "GATED (hard ceiling: deploy_prod) — propose to Captain; "
+            "no auto path."
+        )
+
+    def test_propose_string_exact(self):
+        # RECONCILE 2026-07-05: kept both — under main's ratified floor a
+        # reversible Edit at unmeasured is act_with_undo (allow when the
+        # inverse + journal are viable), so the exact-propose-bytes pin moved
+        # to a cell that STILL proposes at unmeasured: deploy_nonprod (NATE
+        # kept it earn-up). The reversible allow is asserted alongside so the
+        # trust-inversion semantics stay pinned here too.
+        pol = _load_real_matrix_policy()
+        assert _eval_authority_matrix(
+            pol, "Edit", {"file_path": "/workspace/product/src/foo.ts"}, "cto"
+        ) is None
+        result = _eval_authority_matrix(
+            pol, "Bash", {"command": "git push origin feature-x"}, "cto"
+        )
+        assert result == (
+            f"PROPOSE-ONLY (deploy_nonprod, confidence=unmeasured) — {pol['message']}"
+        )
+
+
+class TestSovereignCeilingBranch:
+    """D2 — sovereign ceiling rows resolve standing_grant: grant ⇒ attributed
+    allow + record_use; no grant ⇒ NEED filed + GATED while the chain
+    proceeds. Injectable grants/needs; guardian strings on every fallback."""
+
+    def test_granted_allows_and_records_use(self):
+        pol = _load_real_matrix_policy()
+        fake_g = _FakeGrants(granted=True, grant_id="GRANT-abc")
+        fake_n = _FakeNeeds()
+        with _sovereign(), patch.object(_pe, "_grants", fake_g), \
+                patch.object(_pe, "_needs", fake_n):
+            result = _eval_authority_matrix(
+                pol, "Bash", {"command": "git push origin main"}, "cto"
+            )
+        assert result is None  # attributed allow
+        assert fake_g.use_calls == ["GRANT-abc"]
+        assert fake_g.check_calls[0]["risk_class"] == "deploy_prod"
+        assert fake_g.check_calls[0]["action_type"] == "git_push_main"
+        assert fake_g.check_calls[0]["file_needs"] is True
+        assert fake_n.file_calls == []  # granted ⇒ nothing to file
+
+    def test_no_grant_files_need_and_gates_with_need_id(self):
+        pol = _load_real_matrix_policy()
+        fake_g = _FakeGrants(granted=False)
+        fake_n = _FakeNeeds(nid="NEED-1a2b3c4d")
+        with _sovereign(), patch.object(_pe, "_grants", fake_g), \
+                patch.object(_pe, "_needs", fake_n):
+            result = _eval_authority_matrix(
+                pol, "mcp__brain__queue_draft",
+                {"recipient": "outsider@gmail.com", "body": "hi", "channel": "teams"},
+                "cos",
+            )
+        assert result is not None
+        assert "GATED (standing_grant: external_comms)" in result
+        assert "NEED-1a2b3c4d" in result
+        assert "chain proceeds" in result
+        assert fake_g.use_calls == []  # not granted ⇒ nothing counted
+        kind, kw = fake_n.file_calls[0]
+        assert kind == "standing_grant"
+        assert kw["risk_class"] == "external_comms"
+        assert kw["action_type"] == "external_message"  # channel=teams
+        assert kw["scope_hint"] == {"recipient": "outsider@gmail.com"}
+        assert kw["filed_by"] == "policy_engine:cos"
+
+    def test_no_grant_no_need_id_still_gates(self):
+        pol = _load_real_matrix_policy()
+        fake_g = _FakeGrants(granted=False)
+
+        class _DisabledNeeds(_FakeNeeds):
+            def file_need(self, kind, **kw):
+                return None  # needs_enabled() false ⇒ no-op
+
+        with _sovereign(), patch.object(_pe, "_grants", fake_g), \
+                patch.object(_pe, "_needs", _DisabledNeeds()):
+            result = _eval_authority_matrix(
+                pol, "Bash", {"command": "stripe charge --amount 5000"}, "cto"
+            )
+        assert result is not None
+        assert "GATED (standing_grant: spend)" in result
+        assert "NEED-" not in result
+        assert "chain proceeds" in result
+
+    def test_grants_kernel_absent_falls_back_to_guardian_strings(self):
+        pol = _load_real_matrix_policy()
+        with _sovereign(), patch.object(_pe, "_grants", None), \
+                patch.object(_pe, "_needs", None):
+            result = _eval_authority_matrix(
+                pol, "Bash", {"command": "git push origin main"}, "cto"
+            )
+        assert result == (
+            "GATED (hard ceiling: deploy_prod) — propose to Captain; "
+            "no auto path."
+        )
+
+    def test_grants_check_exception_falls_back_to_guardian_strings(self):
+        pol = _load_real_matrix_policy()
+
+        class _BoomGrants(_FakeGrants):
+            def check(self, *a, **kw):
+                raise RuntimeError("redis down")
+
+        with _sovereign(), patch.object(_pe, "_grants", _BoomGrants()), \
+                patch.object(_pe, "_needs", _FakeNeeds()):
+            result = _eval_authority_matrix(
+                pol, "mcp__brain__queue_draft",
+                {"recipient": "outsider@gmail.com", "channel": "email"},
+                "cos",
+            )
+        assert result == (
+            "GATED (hard ceiling: external_comms) — draft via queue_draft, "
+            "never auto."
+        )
+
+    def test_posture_table_always_gated_keeps_guardian_strings(self):
+        """A sovereign posture table that keeps a ceiling row always_gated
+        never consults grants — guardian strings exactly."""
+        pol = dict(_load_real_matrix_policy())
+        import copy
+        postures = copy.deepcopy(pol["postures"])
+        postures["sovereign"]["verdicts"]["deploy_prod"] = {"*": "always_gated"}
+        pol["postures"] = postures
+        fake_g = _FakeGrants(granted=True, grant_id="GRANT-abc")
+        with _sovereign(), patch.object(_pe, "_grants", fake_g):
+            result = _eval_authority_matrix(
+                pol, "Bash", {"command": "git push origin main"}, "cto"
+            )
+        assert result == (
+            "GATED (hard ceiling: deploy_prod) — propose to Captain; "
+            "no auto path."
+        )
+        assert fake_g.check_calls == []  # never consulted
+
+    def test_marker_stripped_from_reason(self):
+        """The U+00B7 binder pid-marker is stripped from the gated message
+        (the reason may echo executor-supplied scope data)."""
+        pol = _load_real_matrix_policy()
+        fake_g = _FakeGrants(granted=False, reason="recipient 'a·b' not in allowlist")
+        with _sovereign(), patch.object(_pe, "_grants", fake_g), \
+                patch.object(_pe, "_needs", _FakeNeeds()):
+            result = _eval_authority_matrix(
+                pol, "Bash", {"command": "oauth grant token"}, "cto"
+            )
+        assert result is not None
+        assert "·" not in result
+
+
+class TestSovereignNonCeilingRouting:
+    """D3/D4 — the sovereign non-ceiling sweep through the gate: reversible
+    unmeasured ⇒ auto (allow); internal_comms ⇒ notify_after (allow + tell);
+    misplaced standing_grant fails closed."""
+
+    def test_reversible_unmeasured_allows_in_sovereign(self):
+        pol = _load_real_matrix_policy()
+        with _sovereign():
+            result = _eval_authority_matrix(
+                pol, "Edit", {"file_path": "/workspace/product/src/foo.ts"}, "cto"
+            )
+        assert result is None  # §2.1: reversible unmeasured ⇒ auto
+
+    def test_notify_after_allows_and_emits_tell(self):
+        pol = _load_real_matrix_policy()
+        with _sovereign(), patch("framework.events.emitter.emit") as m_emit:
+            result = _eval_authority_matrix(
+                pol,
+                "mcp__brain__queue_draft",
+                {"recipient": "sean@stepnetwork.dk", "body": "hi", "channel": "teams"},
+                "cos",
+            )
+        assert result is None  # notify_after is an ALLOW at the gate
+        assert m_emit.call_count == 1
+        event_type = m_emit.call_args[0][0]
+        payload = m_emit.call_args[1]["payload"]
+        assert event_type == "policy_evaluated"
+        assert payload["verdict"] == "notify_after"
+        assert payload["risk_class"] == "internal_comms"
+        assert payload["action_type"] == "internal_message"
+        assert payload["posture"] == "sovereign"
+
+    def test_notify_after_allow_survives_broken_emitter(self):
+        pol = _load_real_matrix_policy()
+        with _sovereign(), patch("framework.events.emitter.emit",
+                                 side_effect=RuntimeError("ledger down")):
+            result = _eval_authority_matrix(
+                pol,
+                "mcp__brain__queue_draft",
+                {"recipient": "sean@stepnetwork.dk", "body": "hi", "channel": "teams"},
+                "cos",
+            )
+        assert result is None  # the tell is best-effort, never blocks the allow
+
+    def test_guardian_never_emits_tell(self):
+        pol = _load_real_matrix_policy()
+        with patch("framework.events.emitter.emit") as m_emit:
+            result = _eval_authority_matrix(
+                pol,
+                "mcp__brain__queue_draft",
+                {"recipient": "sean@stepnetwork.dk", "body": "hi", "channel": "teams"},
+                "cos",
+            )
+        assert result is not None  # guardian: propose_only, unchanged
+        assert "PROPOSE-ONLY" in result
+        assert m_emit.call_count == 0
+
+    def test_misplaced_standing_grant_fails_closed(self):
+        """standing_grant on a NON-ceiling posture row (corrupt table) must
+        never allow — fail closed to propose."""
+        pol = {
+            "name": "authority-matrix",
+            "type": "authority_matrix",
+            "message": "below the bar",
+            "risk_classes": {"reversible": {"action_types": ["local_edit"]}},
+            "hard_ceiling": [],
+            "verdicts": {"reversible": {s: "propose_only" for s in _ALL_STATES}},
+            "postures": {"sovereign": {"verdicts": {
+                "reversible": {s: "standing_grant" for s in _ALL_STATES},
+            }}},
+        }
+        with _sovereign(), patch.object(_pe, "_grants", _FakeGrants(granted=True, grant_id="G")):
+            result = _eval_authority_matrix(
+                pol, "Edit", {"file_path": "/workspace/product/a.ts"}, "cto"
+            )
+        assert result is not None
+        assert "misplaced standing_grant" in result
+        assert "PROPOSE-ONLY" in result
+
+
+class TestStandingGrantResolutionHelper:
+    """The shared gate/shadow helper: act=True files + counts; act=False is a
+    pure probe (fingerprint id only, no side effects)."""
+
+    def test_probe_mode_is_side_effect_free(self):
+        fake_g = _FakeGrants(granted=False)
+        fake_n = _FakeNeeds(nid="NEED-feedbeef")
+        with patch.object(_pe, "_grants", fake_g), patch.object(_pe, "_needs", fake_n):
+            res = standing_grant_resolution(
+                "deploy_prod", "git_push_main", lane="polads", act=False
+            )
+        assert res["granted"] is False
+        assert res["need_id"] == "NEED-feedbeef"
+        assert fake_n.file_calls == []          # nothing filed
+        assert fake_g.use_calls == []           # nothing counted
+        assert fake_g.check_calls[0]["file_needs"] is False  # loader needs off
+
+    def test_kernel_absent_not_granted(self):
+        with patch.object(_pe, "_grants", None):
+            res = standing_grant_resolution("spend", "purchase", lane=None)
+        assert res == {
+            "available": False, "granted": False, "grant_id": None,
+            "need_id": None, "reason": "standing-grant kernel unavailable",
+        }
+
+    def test_grant_context_extraction(self):
+        assert _grant_context({"recipient": "a@b.dk"}) == {"recipient": "a@b.dk"}
+        assert _grant_context({"to": "a@b.dk"}) == {"recipient": "a@b.dk"}
+        assert _grant_context({"amount_eur": 12.5}) == {"amount_eur": 12.5}
+        assert _grant_context({"vendor": "hetzner"}) == {"vendor": "hetzner"}
+        assert _grant_context({"amount_eur": True}) == {}   # bool is not a number
+        assert _grant_context({"recipient": "  "}) == {}
+        assert _grant_context("nope") == {}
+        assert _grant_context(None) == {}
+
+
+class TestLoadPoliciesFloorOnly:
+    """D8 — the authority matrix is floor-only and the merged floor is
+    runtime-validated with the SAME validators as CI, fail-closed."""
+
+    @staticmethod
+    def _tree(tmpdir, *, floor_yaml=None, preset_yaml=None, instance_yaml=None):
+        fw_dir = Path(tmpdir) / "framework" / "policies"
+        fw_dir.mkdir(parents=True)
+        if floor_yaml is not None:
+            (fw_dir / "authority-matrix.yml").write_text(floor_yaml)
+        if preset_yaml is not None:
+            preset_dir = Path(tmpdir) / "presets" / "work" / "policies"
+            preset_dir.mkdir(parents=True)
+            (preset_dir / "sneaky.yml").write_text(preset_yaml)
+        instance_dir = Path(tmpdir) / "instance" / "config"
+        instance_dir.mkdir(parents=True)
+        (instance_dir / "active-preset").write_text("work")
+        if instance_yaml is not None:
+            pol_dir = instance_dir / "policies"
+            pol_dir.mkdir()
+            (pol_dir / "sneaky.yml").write_text(instance_yaml)
+
+    _REAL_FLOOR = (_REPO_ROOT / "framework" / "policies" / "authority-matrix.yml")
+
+    def test_preset_authority_matrix_refused(self, capsys):
+        sneaky = (
+            "version: 1\npolicies:\n"
+            "  - name: authority-matrix\n"
+            "    type: authority_matrix\n"
+            '    message: "widened"\n'
+            "    verdicts: {external_comms: {'*': auto}}\n"
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self._tree(tmpdir, floor_yaml=self._REAL_FLOOR.read_text(),
+                       preset_yaml=sneaky)
+            policies = load_policies(tmpdir)
+        auth = [p for p in policies if p.get("type") == "authority_matrix"]
+        assert len(auth) == 1
+        assert auth[0]["message"] != "widened"          # floor wins
+        assert "_validation_failed" not in auth[0]       # floor still valid
+        assert "framework floor wins" in capsys.readouterr().err
+
+    def test_preset_name_squat_refused(self, capsys):
+        # A preset policy NAMED authority-matrix (different type) must not
+        # displace the floor entry in the by-name merge.
+        sneaky = (
+            "version: 1\npolicies:\n"
+            "  - name: authority-matrix\n"
+            "    type: binary_block\n"
+            "    binaries: [sudo]\n"
+            '    message: "squatted"\n'
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self._tree(tmpdir, floor_yaml=self._REAL_FLOOR.read_text(),
+                       preset_yaml=sneaky)
+            policies = load_policies(tmpdir)
+        auth = [p for p in policies if p.get("name") == "authority-matrix"]
+        assert len(auth) == 1
+        assert auth[0]["type"] == "authority_matrix"
+        assert "framework floor wins" in capsys.readouterr().err
+
+    def test_instance_authority_matrix_refused(self, capsys):
+        sneaky = (
+            "version: 1\npolicies:\n"
+            "  - name: instance-matrix\n"
+            "    type: authority_matrix\n"
+            '    message: "widened"\n'
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self._tree(tmpdir, floor_yaml=self._REAL_FLOOR.read_text(),
+                       instance_yaml=sneaky)
+            policies = load_policies(tmpdir)
+        assert not any(p.get("name") == "instance-matrix" for p in policies)
+        assert "framework floor wins" in capsys.readouterr().err
+
+    def test_other_preset_policies_still_layer(self):
+        # The refusal is authority-matrix-scoped: ordinary preset policies
+        # still merge (regression guard on the layering behavior).
+        preset = (
+            "version: 1\npolicies:\n"
+            "  - name: preset-policy\n"
+            "    type: binary_block\n"
+            "    binaries: [docker]\n"
+            '    message: "blocked"\n'
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self._tree(tmpdir, floor_yaml=self._REAL_FLOOR.read_text(),
+                       preset_yaml=preset)
+            policies = load_policies(tmpdir)
+        assert any(p.get("name") == "preset-policy" for p in policies)
+
+    def test_invalid_postures_floor_quarantined(self, capsys):
+        bad_floor = (
+            "version: 1\npolicies:\n"
+            "  - name: authority-matrix\n"
+            "    type: authority_matrix\n"
+            '    message: "the floor message"\n'
+            "    postures:\n"
+            "      guardian:\n"
+            "        verdicts: {}\n"
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self._tree(tmpdir, floor_yaml=bad_floor)
+            policies = load_policies(tmpdir)
+        auth = [p for p in policies if p.get("type") == "authority_matrix"]
+        assert len(auth) == 1
+        assert auth[0].get("_validation_failed")
+        assert "fail-closed" in capsys.readouterr().err
+        # The quarantined policy proposes EVERYTHING — including would-be autos
+        # and ceiling probes (never allow, never evaluate the corrupt table).
+        for tool, ti in (
+            ("Edit", {"file_path": "/workspace/product/a.ts"}),
+            ("Bash", {"command": "git push origin main"}),
+        ):
+            result = _eval_authority_matrix(auth[0], tool, ti, "cto")
+            assert result is not None
+            assert "authority matrix failed validation" in result
+
+    def test_ceiling_auto_floor_quarantined(self):
+        bad_floor = (
+            "version: 1\npolicies:\n"
+            "  - name: authority-matrix\n"
+            "    type: authority_matrix\n"
+            '    message: "m"\n'
+            "    hard_ceiling: [spend]\n"
+            "    verdicts: {spend: {'*': auto}}\n"
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self._tree(tmpdir, floor_yaml=bad_floor)
+            policies = load_policies(tmpdir)
+        auth = [p for p in policies if p.get("type") == "authority_matrix"]
+        assert len(auth) == 1
+        assert "auto" in auth[0].get("_validation_failed", "")
+        # A spend probe against the quarantined floor can never allow.
+        result = _eval_authority_matrix(
+            auth[0], "Bash", {"command": "stripe charge --amount 100"}, "cto"
+        )
+        assert result is not None
+
+    def test_deleted_floor_synthesizes_quarantine_stub(self, capsys):
+        # D8 "missing floor": no authority-matrix.yml at all — the merge must
+        # still surface a quarantined matrix so the gate proposes everything,
+        # never silently applies no authority verdict (fail-open).
+        other = (
+            "version: 1\npolicies:\n"
+            "  - name: fw-policy\n"
+            "    type: binary_block\n"
+            "    binaries: [sudo]\n"
+            '    message: "blocked"\n'
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self._tree(tmpdir)
+            (Path(tmpdir) / "framework" / "policies" / "base.yml").write_text(other)
+            policies = load_policies(tmpdir)
+        auth = [p for p in policies if p.get("type") == "authority_matrix"]
+        assert len(auth) == 1
+        assert auth[0]["name"] == "authority-matrix"
+        assert auth[0].get("_validation_failed") == "floor missing/unparseable"
+        assert "fail-closed" in capsys.readouterr().err
+        # Ordinary policies still load alongside the synthesized stub.
+        assert any(p.get("name") == "fw-policy" for p in policies)
+        # The stub proposes EVERYTHING — reversible edits and ceiling probes.
+        for tool, ti in (
+            ("Edit", {"file_path": "/workspace/product/a.ts"}),
+            ("Bash", {"command": "git push origin main"}),
+        ):
+            result = _eval_authority_matrix(auth[0], tool, ti, "cto")
+            assert result is not None
+            assert "authority matrix failed validation" in result
+
+    def test_unparseable_floor_synthesizes_quarantine_stub(self, capsys):
+        # D8 "missing floor", unparseable flavor: the malformed-file skip in
+        # load_policies drops the floor file — the same stub must appear.
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self._tree(tmpdir, floor_yaml="this is not: valid: yaml: [[[[")
+            policies = load_policies(tmpdir)
+        auth = [p for p in policies if p.get("type") == "authority_matrix"]
+        assert len(auth) == 1
+        assert auth[0].get("_validation_failed") == "floor missing/unparseable"
+        err = capsys.readouterr().err
+        assert "failed to load" in err  # the malformed-file skip fired...
+        assert "fail-closed" in err     # ...and the floor was quarantined
+        result = _eval_authority_matrix(
+            auth[0], "Bash", {"command": "stripe charge --amount 100"}, "cto"
+        )
+        assert result is not None
+        assert "authority matrix failed validation" in result
+
+    def test_shipped_floor_not_quarantined(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self._tree(tmpdir, floor_yaml=self._REAL_FLOOR.read_text())
+            policies = load_policies(tmpdir)
+        auth = [p for p in policies if p.get("type") == "authority_matrix"]
+        assert len(auth) == 1
+        assert "_validation_failed" not in auth[0]
+        assert "postures" in auth[0]
+        assert "verdicts" in auth[0]
+
+
+class TestSovereignCeilingRealKernels:
+    """Integration — the gate against the REAL grants/needs kernels (kwarg
+    compatibility can't be proven by fakes): empty tmp root ⇒ no grant, a
+    real NEED row lands in the ledger, and its id appears in the message."""
+
+    def test_real_kernels_no_grant_files_need_end_to_end(self):
+        import re as _re
+        pol = _load_real_matrix_policy()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "instance" / "config").mkdir(parents=True)
+            env = {
+                "CABINET_ROOT": tmpdir,
+                "CABINET_NEEDS_WIRED": "1",
+                # Keep the need_filed org_event inside the tmp tree.
+                "CABINET_EVENT_LOG_DIR": os.path.join(tmpdir, "events"),
+            }
+            with patch.dict(os.environ, env), _sovereign():
+                result = _eval_authority_matrix(
+                    pol, "Bash", {"command": "git push origin main"}, "cto"
+                )
+            assert result is not None
+            assert "GATED (standing_grant: deploy_prod)" in result
+            m = _re.search(r"NEED-[0-9a-f]{8}", result)
+            assert m, f"no NEED id in: {result}"
+            ledger = Path(tmpdir) / "shared" / "interfaces" / "needs-ledger.jsonl"
+            assert ledger.exists()
+            text = ledger.read_text()
+            assert m.group(0) in text
+            assert '"kind": "standing_grant"' in text

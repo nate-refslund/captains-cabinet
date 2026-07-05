@@ -57,8 +57,19 @@ the recorded failure mode.
   (anything outbound, deploy, spend, `officer_dispatch`, or any hard-ceiling
   step) still carries its ordinary pre-approval per-step gate; a mixed chain
   keeps both — acted steps show as done-with-undo, gated steps as awaiting.
-  This is the ONLY relaxation; the investigation bar (§1) and one-card
-  discipline are unchanged.
+  Under the root/guardian table this is the ONLY relaxation. Under an
+  ATTESTED sovereign posture (germline amendment `apply sovereign posture`,
+  2026-07-05) the matrix's `postures.sovereign` table is the relaxation
+  surface instead: `reversible` steps act (`auto`, journaled where inverses
+  exist), `internal_comms` / `deploy_nonprod` steps act-and-tell
+  (`notify_after` — the digest line IS the audit), and hard-ceiling steps
+  resolve `standing_grant` — acting ONLY under a Captain-signed, schg-locked
+  standing grant with its hard-scope predicate satisfied, otherwise the step
+  gates, files a `NEED-<hex>`, and the chain proceeds without it. External
+  recipients stay per-item Captain-approved in every posture (ACT-AND-DRAFT,
+  captain-decisions.md 2026-07-04). No `instance/config/posture.yml` =
+  guardian, today's rules. The investigation bar (§1) and one-card
+  discipline are unchanged in every posture.
 - A single-step chain is legitimate when that is honestly all the situation
   needs — but check the chain candidates first: does this also need a task
   created? a follow-up scheduled? a commitment closed? a board status

@@ -172,6 +172,46 @@ policies:
       network_write:     { "*": always_gated }
       credentials_grant: { "*": always_gated }
 
+    # POSTURE TABLES — posture is a SELECTION dimension of this ONE matrix,
+    # never a second enforcement story (sovereign build spec 2026-07-04 §0 +
+    # §2.1). The root `verdicts` table above IS guardian and stays byte-frozen;
+    # the validator REJECTS a `postures.guardian` key. Each entry below is a
+    # FULL per-posture verdicts table — auditable whole, no overlay merging
+    # (kills the widening-merge bug class). Posture SELECTION lives in the
+    # Captain-locked instance/config/posture.yml (absent/corrupt/unlocked/
+    # mismatched resolves guardian; env may only NARROW, never widen).
+    # `standing_grant` on a hard-ceiling row means: auto IFF a Captain-signed,
+    # schg-locked, unexpired, unrevoked standing grant with a satisfied
+    # hard-scope predicate exists — else file a NEED and gate this step while
+    # the chain proceeds. NO ceiling row is ever `auto` in ANY posture, and
+    # demote is posture-invariant (every non-ceiling demote cell must equal
+    # the root table's) — evidence beats posture.
+    postures:
+      sovereign:
+        verdicts:
+          reversible:        { graduated: auto, eligible: auto, propose_only: auto, unmeasured: auto, demote: propose_only }
+          # RECONCILE 2026-07-05: kept both — main's fix-wave risk-class split
+          # (read_only_dispatch + draft_only moved OUT of reversible) + the
+          # sovereign posture axis. The posture table must cover the FULL
+          # RISK_CLASSES enum, so the two new rows are added here MIRRORING
+          # the root/guardian rows (fail-safe: read_only_dispatch is already
+          # act-and-tell — auto would drop the tell; draft_only keeps the
+          # NATE-DECISION 2026-07-04 earn-up ladder — outbound-adjacent, a
+          # posture never silently widens a Captain-ruled row). Demote stays
+          # posture-invariant (propose_only) per §2.1.
+          read_only_dispatch: { graduated: notify_after, eligible: notify_after, propose_only: notify_after, unmeasured: notify_after, demote: propose_only }
+          draft_only:        { graduated: auto, eligible: propose_only, propose_only: propose_only, unmeasured: propose_only, demote: propose_only }
+          pm_write:          { graduated: act_with_undo, eligible: act_with_undo, propose_only: act_with_undo, unmeasured: act_with_undo, demote: propose_only }
+          calendar_write:    { graduated: act_with_undo, eligible: act_with_undo, propose_only: act_with_undo, unmeasured: act_with_undo, demote: propose_only }
+          internal_comms:    { graduated: notify_after, eligible: notify_after, propose_only: notify_after, unmeasured: notify_after, demote: propose_only }
+          deploy_nonprod:    { graduated: notify_after, eligible: notify_after, propose_only: notify_after, unmeasured: notify_after, demote: propose_only }
+          external_comms:    { "*": standing_grant }
+          deploy_prod:       { "*": standing_grant }
+          spend:             { "*": standing_grant }
+          secrets:           { "*": standing_grant }
+          network_write:     { "*": standing_grant }
+          credentials_grant: { "*": standing_grant }
+
     # internal_comms deferred-send delay (Component 5). Open-decision #1: default 7 (spec range 5-10).
     veto_window_minutes: 7
 

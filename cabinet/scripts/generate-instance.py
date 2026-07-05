@@ -18,6 +18,9 @@ Generated (org_shape: portfolio):
                                                 officer-supervisor.sh greps this file)
   instance/config/roster.yml                    roster snippet for
                                                 `bootstrap-roles.sh --roster instance/config/roster.yml`
+  instance/config/posture.yml                   INERT posture RULING scaffold (only when
+                                                absent — an existing ruling is never
+                                                regenerated; sovereign amendment 2026-07-05)
 
 Generated (org_shape: functional | custom): contexts + projects + captain keys
 only — the functional preset ships its own five-officer roster (default
@@ -96,6 +99,10 @@ CHAIR_CAPABILITIES = "[logs_captain_decisions, reviews_specs, reviews_implementa
 LANE_CEO_CAPABILITIES = "[deploys_code, logs_captain_decisions]"
 
 DEFAULT_MODEL = "claude-opus-4-8[1m]"
+
+# Posture scaffold vocabulary (sovereign amendment 2026-07-05, FI-1).
+POSTURE_FLAVORS = frozenset({"org", "personal"})
+POSTURE_TARGETS = frozenset({"guardian", "sovereign"})
 
 LANE_CEO_TEMPLATE_REL = "presets/portfolio/agents/_lane-ceo.md.template"
 TEMPLATE_PLACEHOLDERS = ("{{LANE_NAME}}", "{{LANE_SLUG}}", "{{REPO}}", "{{BOARDS}}", "{{MODEL}}")
@@ -224,6 +231,22 @@ def load_answers(path: Path) -> dict:
             raise GenerationError(
                 f"integrations.mcp_env_names[{j}] {env_name!r} must be an ENV VAR NAME (UPPER_SNAKE)"
             )
+
+    # Posture answers (sovereign amendment 2026-07-05). Both optional; the
+    # rendered posture.yml is an INERT scaffold either way (resolve_posture
+    # demands the Captain's schg lock before anything changes).
+    autonomy = answers.get("autonomy") or {}
+    flavor = str(autonomy.get("flavor", "org"))
+    if flavor not in POSTURE_FLAVORS:
+        raise GenerationError(
+            f"autonomy.flavor must be one of {sorted(POSTURE_FLAVORS)}, got {flavor!r}"
+        )
+    target = autonomy.get("target_posture")
+    if target is not None and str(target) not in POSTURE_TARGETS:
+        raise GenerationError(
+            f"autonomy.target_posture must be one of {sorted(POSTURE_TARGETS)}, "
+            f"got {target!r}"
+        )
 
     return answers
 
@@ -600,6 +623,59 @@ def render_platform(existing: str, answers: dict, lanes: list, org_shape: str) -
     return text
 
 
+def resolve_target_posture(answers: dict) -> tuple[str, str]:
+    """(posture, flavor) the scaffold should declare (sovereign amendment
+    2026-07-05). Default guardian; an explicit `autonomy.target_posture`
+    wins; otherwise a flavor-B Mini (org flavor + a `mini*` cabinet id)
+    defaults to sovereign. flavor=personal is ALWAYS guardian at init —
+    flavor-A lanes flip individually later, in an unlock window."""
+    autonomy = answers.get("autonomy") or {}
+    flavor = str(autonomy.get("flavor", "org"))
+    target = autonomy.get("target_posture")
+    if target is not None:
+        posture = str(target)
+    elif flavor == "org" and str((answers.get("cabinet") or {}).get("id", "main")).startswith("mini"):
+        posture = "sovereign"
+    else:
+        posture = "guardian"
+    if flavor == "personal":
+        posture = "guardian"
+    return posture, flavor
+
+
+def render_posture(answers: dict) -> str:
+    """The instance/config/posture.yml SCAFFOLD (FI-1 closed-key schema).
+
+    INERT by construction: `resolve_posture` answers sovereign only for a
+    present + schema-valid + deployment-matched + schg-LOCKED ruling, and
+    this file is written unlocked — so generating it changes no behavior.
+    The Captain ratifies by editing basis/ruled_at, committing, and running
+    `sudo bash cabinet/scripts/germline-lock.sh lock` (the lock IS the
+    signature, D5). ruled_at is a fixed epoch placeholder so re-runs stay
+    byte-idempotent and an unratified scaffold is machine-obvious.
+    """
+    posture, flavor = resolve_target_posture(answers)
+    cab_id = str((answers.get("cabinet") or {}).get("id", "main"))
+    return f"""\
+# {MARKER} — posture RULING scaffold (sovereign amendment 2026-07-05).
+# INERT until the Captain ratifies: resolve_posture requires present +
+# schema-valid + deployment==CABINET_ID + schg-locked; this scaffold is
+# unlocked, so the deployment runs guardian (today's rules) regardless of the
+# posture: value below. To ratify: set basis: to your ruling words, set
+# ruled_at: to the real timestamp, commit, then
+#   sudo bash cabinet/scripts/germline-lock.sh lock
+# Emergency brake: CABINET_POSTURE=guardian in the environment (narrow-only).
+# Closed key set — adding any other key makes the file CORRUPT (⇒ guardian).
+version: 1
+status: ruled
+ruled_at: 1970-01-01T00:00:00Z   # placeholder — Captain sets the real ruling time
+basis: "cabinet-init scaffold — guardian until the Captain ratifies by locking"
+deployment: {cab_id}
+flavor: {flavor}
+posture: {posture}
+"""
+
+
 EXAMPLE_ANSWERS = """\
 # instance/config/cabinet-init.answers.yml — cabinet-init interview answers.
 # Written by the cabinet-init skill; consumed by cabinet/scripts/generate-instance.py.
@@ -635,12 +711,18 @@ lanes:
     linear_workspace_url: https://linear.app/acme-labs
     boards: ["labs"]
 
-# Autonomy is NOT configurable at init: propose-first everywhere, plus the
-# hard ceiling (secrets / spend / external comms / production deploys are
-# ALWAYS propose-only). Graduation comes later from consequence-ledger
-# evidence — see docs/consequence-ledger.md.
+# Guardian at init, always: propose-first everywhere, plus the hard ceiling
+# (secrets / spend / external comms / production deploys never resolve
+# UNCONDITIONAL auto in any posture). Graduation comes later from
+# consequence-ledger evidence — see docs/consequence-ledger.md.
+# The sovereign POSTURE is a post-init Captain ratification (amendment
+# 2026-07-05, `apply sovereign posture`): the generator renders an INERT
+# instance/config/posture.yml scaffold from the two optional keys below, and
+# nothing changes until the Captain locks it (germline-lock.sh lock).
 autonomy:
   posture: propose_first
+  flavor: org                    # org | personal (personal ⇒ guardian scaffold, always)
+  # target_posture: sovereign    # optional; default guardian ('mini*' org ids default sovereign)
 
 integrations:
   telegram:
@@ -702,6 +784,14 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
         platform_path,
         render_platform(existing_platform, answers, lanes, org_shape), "yaml",
     ))
+
+    # Posture scaffold (sovereign amendment 2026-07-05): rendered ONLY when
+    # absent — an existing posture.yml is a Captain RULING (possibly ratified
+    # + schg-locked) and is never regenerated, not even with --force.
+    posture_path = _instance_path(root, "config", "posture.yml")
+    posture_skipped = posture_path.exists()
+    if not posture_skipped:
+        outputs.append((posture_path, render_posture(answers), "yaml"))
 
     # ---- pre-write validation: every planned artifact must parse ----
     for path, content, kind in outputs:
@@ -768,6 +858,15 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
         print("  3. bash cabinet/scripts/load-preset.sh, then deploy per docs/mac-mini-setup.md")
     print("  Nothing above activates lanes: contexts ship active: false and")
     print("  projects ship activation.status: pending until the Captain flips them.")
+    if posture_skipped:
+        print("  Posture: existing instance/config/posture.yml is a Captain ruling —")
+        print("  left untouched (never regenerated, not even with --force).")
+    else:
+        p, f = resolve_target_posture(answers)
+        print(f"  Posture: rendered instance/config/posture.yml scaffold (posture: {p},")
+        print(f"  flavor: {f}) — INERT until the Captain ratifies by locking:")
+        print("  edit basis/ruled_at, commit, then sudo bash cabinet/scripts/germline-lock.sh lock")
+        print("  (unlocked/absent/mismatched always resolves guardian — today's rules).")
     return written
 
 

@@ -16,11 +16,12 @@ it against the TWO sources of truth it must agree with:
 
 FAIL-CLOSED (Corridor + design §error-handling): the loader/validator NEVER
 silently passes a malformed or autonomy-widening matrix — anything unknown,
-mistyped, missing, or extra raises `MatrixValidationError`. Three safety
+mistyped, missing, or extra raises `MatrixValidationError`. Four safety
 invariants are enforced as hard rules, not prose:
 
   1. No prod/ceiling cell may resolve to `auto` [FIX-6]. A hard-ceiling row is
-     `always_gated` for every state.
+     `always_gated` for every state (a POSTURE table may narrow that to the
+     conditional `standing_grant` — never to `auto`).
   2. The hard ceiling covers all six HARD_CEILING_TOUCHES members [FIX-7].
   3. TRUST-INVERSION floor [NATE-DECISION 2026-07-03/04 earn-demotion ruling,
      widened 2026-07-04 by fix wave wsqzqfpt5]: no reversible / act_with_undo
@@ -29,6 +30,18 @@ invariants are enforced as hard rules, not prose:
      row must land on `propose_only` at `demote` so the demotion path always
      has teeth. Enforced by `_validate_act_first_floor` so no future preset or
      instance merge can silently re-introduce earn-up.
+  4. The OPTIONAL `postures:` key (sovereign build spec 2026-07-04 §2.1) may
+     only define FULL verdict tables for known non-default postures
+     (`sovereign` in v1). A `postures.guardian` key is REJECTED — the root
+     `verdicts` table IS guardian and is never redefined. Posture ceiling rows
+     are wildcard-only in {always_gated, standing_grant} (`auto` structurally
+     impossible in EVERY posture), `standing_grant` never appears in the root
+     table or on a non-ceiling row, and the demote column is posture-invariant
+     vs the root table (evidence beats posture). Together with invariant 3 the
+     two compose, never trade off: no posture makes a demote cell act, and the
+     trust-inversion floor holds on the root/guardian table in every posture.
+     (RECONCILE 2026-07-05: kept both — HEAD's trust-inversion floor [#3] +
+     sovereign's posture rules [#4].)
 
 This is matrix-as-DATA only — no gate behavior and no live side-effects on
 import or load. The one opt-in exception is `check_gate_actor_id_parity()`
@@ -82,11 +95,20 @@ RISK_CLASSES = frozenset({
     "secrets", "network_write", "credentials_grant",
 })
 
-# The verdicts a cell may carry.
+# The verdicts a cell may carry. `standing_grant` is legal ONLY on a
+# hard-ceiling row of a posture table (never in the root/guardian table, never
+# on a non-ceiling row): auto IFF a Captain-signed, locked, unexpired,
+# unrevoked standing grant with a satisfied hard-scope predicate exists — else
+# file a NEED and gate [D2].
 VERDICTS = frozenset({
     "auto", "act_with_undo", "auto_with_veto_window", "notify_after",
-    "propose_only", "always_gated", "classifier",
+    "propose_only", "always_gated", "classifier", "standing_grant",
 })
+
+# Non-default postures the floor may define full verdict tables for (§2.1).
+# Guardian is NEVER a member — the root `verdicts` table IS guardian, and the
+# validator rejects a `postures.guardian` key outright [D1].
+POSTURES = frozenset({"sovereign"})
 
 # Confidence states (F's graduation states). Non-ceiling rows must cover all
 # five; ceiling rows use the "*" wildcard.
@@ -118,6 +140,7 @@ _POLICY_KEYS = {
     "name", "type", "message", "description",
     "risk_classes", "hard_ceiling", "ceiling_frozenset_map", "verdicts",
     "veto_window_minutes", "deploy", "bars", "cooldown_days",
+    "postures",  # OPTIONAL (back-compat): per-posture verdict tables [§2.1]
 }
 _POLICY_REQUIRED = (
     "name", "type", "message",
@@ -125,6 +148,7 @@ _POLICY_REQUIRED = (
     "veto_window_minutes", "deploy", "bars", "cooldown_days",
 )
 _RISK_CLASS_KEYS = {"action_types"}
+_POSTURE_ENTRY_KEYS = {"verdicts"}
 _DEPLOY_KEYS = {"safe_globs", "high_risk_globs"}
 _BAR_KEYS = {"match_rate", "samples", "max_divergent_last10", "recency_clean_days"}
 
@@ -204,13 +228,21 @@ def ceiling_members(policy: dict[str, Any]) -> set[str]:
 def no_ceiling_or_prod_auto(policy: dict[str, Any]) -> bool:
     """True iff NO hard-ceiling (incl. prod) row carries an `auto` verdict [FIX-6].
 
-    Deterministic check the CI test calls directly.
+    Sweeps the root/guardian table AND every `postures.*` table — the
+    invariant holds in EVERY posture. Deterministic check the CI test calls
+    directly.
     """
-    verdicts = policy.get("verdicts", {})
-    for rc in policy.get("hard_ceiling", []):
-        for verdict in verdicts.get(rc, {}).values():
-            if verdict == "auto":
-                return False
+    tables = [policy.get("verdicts", {})]
+    postures = policy.get("postures", {})
+    if isinstance(postures, dict):
+        for entry in postures.values():
+            if isinstance(entry, dict) and isinstance(entry.get("verdicts"), dict):
+                tables.append(entry["verdicts"])
+    for verdicts in tables:
+        for rc in policy.get("hard_ceiling", []):
+            for verdict in verdicts.get(rc, {}).values():
+                if verdict == "auto":
+                    return False
     return True
 
 
@@ -373,7 +405,10 @@ def _validate_policy(policy: dict[str, Any]) -> None:
     hard_ceiling = _validate_hard_ceiling(policy["hard_ceiling"])
     _validate_ceiling_map(policy["ceiling_frozenset_map"], hard_ceiling)
     _validate_verdicts(policy["verdicts"], hard_ceiling)
+    # RECONCILE 2026-07-05: kept both — HEAD's trust-inversion floor check
+    # (invariant #3, root table) + sovereign's posture-table check (#4).
     _validate_act_first_floor(policy["verdicts"], hard_ceiling)
+    _validate_postures(policy)
     _validate_veto_window(policy["veto_window_minutes"])
     _validate_deploy(policy["deploy"])
     _validate_bars(policy["bars"])
@@ -458,47 +493,86 @@ def _validate_ceiling_map(cmap: Any, hard_ceiling: set[str]) -> None:
         )
 
 
-def _validate_verdicts(verdicts: Any, hard_ceiling: set[str]) -> None:
+def _validate_verdicts(
+    verdicts: Any,
+    hard_ceiling: set[str],
+    *,
+    posture_table: bool = False,
+    where: str = "verdicts",
+) -> None:
+    """Validate one FULL verdicts table (the root/guardian table by default).
+
+    `posture_table=True` validates a `postures.*` table instead [§2.1]: the
+    shape rules are identical EXCEPT ceiling rows may narrow `always_gated` to
+    the conditional `standing_grant` (never anything wider — `auto` stays
+    structurally impossible). `standing_grant` is forbidden in the root table
+    and on any non-ceiling row in every mode. `where` only prefixes messages.
+    """
     if not isinstance(verdicts, dict):
-        raise MatrixValidationError("verdicts must be a mapping")
+        raise MatrixValidationError(f"{where} must be a mapping")
     if set(verdicts) != set(RISK_CLASSES):
         raise MatrixValidationError(
-            f"verdicts must cover exactly {sorted(RISK_CLASSES)}, "
+            f"{where} must cover exactly {sorted(RISK_CLASSES)}, "
             f"got {sorted(verdicts)}"
         )
 
     for rc, states in verdicts.items():
         if not isinstance(states, dict) or not states:
-            raise MatrixValidationError(f"verdicts.{rc} must be a non-empty mapping")
+            raise MatrixValidationError(f"{where}.{rc} must be a non-empty mapping")
         for state, verdict in states.items():
             if verdict not in VERDICTS:
                 raise MatrixValidationError(
-                    f"verdicts.{rc}.{state}: '{verdict}' not in {sorted(VERDICTS)}"
+                    f"{where}.{rc}.{state}: '{verdict}' not in {sorted(VERDICTS)}"
                 )
+            if verdict == "standing_grant":
+                # standing_grant is a posture-table, hard-ceiling-only verdict
+                # (grant-or-need, never unconditional). The root/guardian
+                # table may NOT contain it [D2].
+                if not posture_table:
+                    raise MatrixValidationError(
+                        f"{where}.{rc}.{state}: 'standing_grant' is forbidden "
+                        f"in the root/guardian verdicts table"
+                    )
+                if rc not in hard_ceiling:
+                    raise MatrixValidationError(
+                        f"{where}.{rc}.{state}: 'standing_grant' is only legal "
+                        f"on a hard-ceiling row"
+                    )
 
         if rc in hard_ceiling:
             # Hard-ceiling rows: wildcard-only AND always_gated for EVERY cell
             # (THE CI INVARIANT #2 [FIX-6]: no ceiling/prod cell may be auto).
+            # A posture table may narrow to {always_gated, standing_grant}.
             if set(states) != {"*"}:
                 raise MatrixValidationError(
-                    f"verdicts.{rc} is a hard-ceiling row and must use the "
+                    f"{where}.{rc} is a hard-ceiling row and must use the "
                     f"single '*' wildcard, got {sorted(states)}"
                 )
             for state, verdict in states.items():
-                if verdict != "always_gated":
+                if posture_table:
+                    if verdict not in ("always_gated", "standing_grant"):
+                        raise MatrixValidationError(
+                            f"{where}.{rc}.{state} = '{verdict}': posture-table "
+                            f"hard-ceiling rows must be always_gated or "
+                            f"standing_grant (auto is structurally impossible)"
+                        )
+                elif verdict != "always_gated":
                     raise MatrixValidationError(
-                        f"verdicts.{rc}.{state} = '{verdict}': hard-ceiling rows "
+                        f"{where}.{rc}.{state} = '{verdict}': hard-ceiling rows "
                         f"must be always_gated regardless of confidence"
                     )
         else:
             # Non-ceiling rows must cover all five confidence states explicitly.
             if set(states) != set(CONFIDENCE_STATES):
                 raise MatrixValidationError(
-                    f"verdicts.{rc} must cover all confidence states "
+                    f"{where}.{rc} must cover all confidence states "
                     f"{sorted(CONFIDENCE_STATES)}, got {sorted(states)}"
                 )
 
 
+# RECONCILE 2026-07-05: kept both validator defs — HEAD's
+# _validate_act_first_floor (trust-inversion floor, invariant #3) AND
+# sovereign's _validate_postures (posture-table axis, invariant #4).
 def _validate_act_first_floor(verdicts: dict, hard_ceiling: set[str]) -> None:
     """THE CI INVARIANT #3 — the trust-inversion floor [NATE-DECISION
     2026-07-03/04 earn-demotion ruling; widened to the reversible beachhead
@@ -576,6 +650,80 @@ def _validate_act_first_floor(verdicts: dict, hard_ceiling: set[str]) -> None:
                 raise MatrixValidationError(
                     f"verdicts.{rc}.demote = '{states.get('demote')}': "
                     f"trust-first rows must demote to propose_only"
+                )
+
+
+def _validate_postures(policy: dict[str, Any]) -> None:
+    """Validate the OPTIONAL `postures` policy key (the posture-table axis).
+
+    Absent key ⇒ no-op — a postures-less legacy floor validates unchanged
+    (back-compat). Present ⇒ fail-closed [§2.1/D1]:
+
+      * keys must be a subset of POSTURES; a `guardian` key raises outright
+        (the root `verdicts` table IS guardian and is never redefined);
+      * each entry is exactly `{verdicts: <FULL table>}`, validated with
+        `_validate_verdicts(posture_table=True)`;
+      * demote is posture-invariant: every non-ceiling row's demote cell must
+        equal the root table's (a posture never softens the demote floor —
+        evidence beats posture).
+
+    Callable standalone on a merged policy dict (the runtime gate validates
+    with the SAME code as CI [D8]), so it re-checks the root shapes it
+    compares against instead of assuming a prior `_validate_policy` pass.
+    """
+    if not isinstance(policy, dict) or "postures" not in policy:
+        return
+    postures = policy["postures"]
+    if not isinstance(postures, dict) or not postures:
+        raise MatrixValidationError("postures must be a non-empty mapping")
+    if "guardian" in postures:
+        raise MatrixValidationError(
+            "postures.guardian is forbidden — the root verdicts table IS the "
+            "guardian posture and is never redefined"
+        )
+    unknown = set(postures) - POSTURES
+    if unknown:
+        raise MatrixValidationError(
+            f"postures keys must be a subset of {sorted(POSTURES)}, "
+            f"got unknown: {sorted(unknown)}"
+        )
+
+    # Standalone-call safety: the root shapes the posture tables validate
+    # against must themselves be well-formed here, not assumed.
+    hard_ceiling = policy.get("hard_ceiling")
+    root_verdicts = policy.get("verdicts")
+    if not isinstance(hard_ceiling, list) or not isinstance(root_verdicts, dict):
+        raise MatrixValidationError(
+            "postures require a well-formed hard_ceiling list + root verdicts "
+            "mapping to validate against"
+        )
+    hc = set(hard_ceiling)
+
+    for name, entry in postures.items():
+        if not isinstance(entry, dict):
+            raise MatrixValidationError(f"postures.{name} must be a mapping")
+        _require(entry, ("verdicts",), f"postures.{name}")
+        _reject_extra(entry, _POSTURE_ENTRY_KEYS, f"postures.{name}")
+        table = entry["verdicts"]
+        _validate_verdicts(
+            table, hc, posture_table=True, where=f"postures.{name}.verdicts"
+        )
+        # Demote invariance [§2.1] — checked after the shape pass, so every
+        # non-ceiling row is known to carry an explicit demote cell.
+        for rc, states in table.items():
+            if rc in hc:
+                continue
+            root_row = root_verdicts.get(rc)
+            if not isinstance(root_row, dict) or "demote" not in root_row:
+                raise MatrixValidationError(
+                    f"postures.{name}.verdicts.{rc}: root verdicts row has no "
+                    f"demote cell to hold the demote invariant against"
+                )
+            if states["demote"] != root_row["demote"]:
+                raise MatrixValidationError(
+                    f"postures.{name}.verdicts.{rc}.demote = "
+                    f"'{states['demote']}' drifts from the root table's "
+                    f"'{root_row['demote']}' — demote is posture-invariant"
                 )
 
 

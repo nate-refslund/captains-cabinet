@@ -84,6 +84,30 @@ Verify: `bash cabinet/scripts/setup-mac.sh --check` returns exit 0.
    ```bash
    bash cabinet/scripts/bootstrap-captain-triplet.sh
    ```
+5. Posture ruling `[CAPTAIN]` (sovereign amendment 2026-07-05, apply token
+   `apply sovereign posture`). `cabinet-init` renders an
+   `instance/config/posture.yml` scaffold from the flavor answer (default
+   guardian; a `mini-*` org cabinet id renders `posture: sovereign`). The
+   scaffold is INERT until YOU ratify it — `resolve_posture` answers
+   `sovereign` only for a present + schema-valid + `deployment == CABINET_ID`
+   + **schg-locked** ruling; anything else (including this unlocked scaffold)
+   is guardian, today's rules. To ratify:
+   ```bash
+   $EDITOR instance/config/posture.yml       # your ruling words in basis: + real ruled_at:
+   printf 'version: 1\ngrants: []\n' > instance/config/standing-grants.yml
+   git add instance/config/posture.yml instance/config/standing-grants.yml && git commit -m "posture ruling"
+   sudo bash cabinet/scripts/germline-lock.sh lock    # the lock IS the signature (D5)
+   bash cabinet/scripts/germline-lock.sh status       # confirm both files LOCKED
+   ```
+   Ceiling grants change ONLY via `sudo bash cabinet/scripts/grant-apply.sh
+   NEED-<8hex>` after a `grant NEED-<hex>` Telegram binder approval; arm the
+   binder needs verbs by setting `CABINET_NEEDS_WIRED=1` in the generated
+   cos-inbound plist (dark by default). Do NOT
+   `launchctl load com.cabinet.gate-apply` — the germline code-apply daemon
+   stays DARK until the unprivileged sandbox harness is built and you
+   explicitly arm it (D15). Emergency brake at any time:
+   `CABINET_POSTURE=guardian` in the environment narrows every session
+   (env can only narrow — `CABINET_POSTURE=sovereign` is ignored).
 
 ## 5. First product onboarding
 

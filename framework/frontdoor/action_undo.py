@@ -882,23 +882,53 @@ def find_reconcilable(*, pid: Optional[str] = None) -> List[Dict[str, Any]]:
             and not (r.get("created") or {})]
 
 
-# --- freeze / is_frozen (fail-closed) ----------------------------------------
+# --- freeze / unfreeze / is_frozen (fail-closed, last-op-wins) ----------------
+
+# Who set (or lifted) a freeze. Machine-origin rows may auto-thaw via
+# actfirst_canary.run_thaw once the mechanical bar clears; captain-origin rows
+# thaw ONLY via the Captain's `rearm` verb (§2.2 — judgment supplements).
+FREEZE_SOURCES = frozenset({"machine", "captain"})
+# A green canary receipt is unfreeze fuel for 24h — stale proof is no proof.
+RECEIPT_MAX_AGE_H = 24
+
 
 def _frozen_mirror() -> Path:
     return _undo_dir() / "frozen-kinds.jsonl"
 
 
+def _default_file_need(**kw) -> Optional[str]:
+    """Lazy needs bridge — imported at CALL time only, inside the caller's
+    try/except: a missing/broken needs module can never block a brake from
+    engaging, and the module itself never hard-depends on needs at load."""
+    from framework.authority import needs
+    return needs.file_need(**kw)
+
+
 def freeze(kind: str, reason: str, *,
            redis_set: Optional[Callable[[str, str, Optional[int]], None]] = None,
-           now: Optional[str] = None) -> Dict[str, Any]:
+           now: Optional[str] = None, source: str = "machine",
+           file_need_fn: Optional[Callable[..., Any]] = None) -> Dict[str, Any]:
     """Freeze an act-first kind. Durable JSONL mirror FIRST (the source of
-    truth), then the fast Redis flag. No TTL, no auto-unfreeze (CRIT-5): a kind
-    is un-frozen ONLY by a manually-triggered green canary — now built
-    (``unfreeze`` + ``actfirst_canary.run_unfreeze_canary``, germline batch
-    2026-07-05), which appends a superseding ``op:"unfreeze"`` mirror row AFTER a
-    real create→verify→reverse proves the kind green. Nothing lifts a freeze
-    automatically."""
-    row = {"ts": now or _now(), "kind": kind, "reason": str(reason)[:300], "op": "freeze"}
+    truth), then the fast Redis flag. No TTL, no timer, no auto-unfreeze on the
+    freeze itself (CRIT-5): the ONLY exits are the ``unfreeze`` primitive's two
+    proven-green paths — the Captain-triggered manual green canary
+    (``actfirst_canary.run_unfreeze_canary``, germline batch 2026-07-05, which
+    appends a superseding ``op:"unfreeze"`` mirror row AFTER a real
+    create→verify→reverse proves the kind green) and, for MACHINE-origin rows
+    ONLY, the source-gated auto-thaw (``actfirst_canary.run_thaw`` at
+    3-greens+7d-clean). Captain-origin rows thaw ONLY via the Captain's rearm
+    verb — never on a timer, never automatically. An unknown ``source``
+    coerces to ``captain`` — the narrow direction, never auto-thawed. Filing
+    the deduped ``kind=unfreeze`` need is best-effort and gated by
+    ``needs_enabled()`` inside the needs module, so the guardian default world
+    stays bit-identical."""
+    # RECONCILE 2026-07-05: kept both HEAD (CRIT-5: no auto-unfreeze/no timer,
+    # manual green-canary lift via run_unfreeze_canary) + sovereign (source-
+    # tagged rows, machine-only run_thaw auto-thaw, unknown source ⇒ captain).
+    if source not in FREEZE_SOURCES:
+        source = "captain"                  # unknown origin ⇒ never auto-thawed
+    row = {"ts": now or _now(), "kind": kind, "reason": str(reason)[:300],
+           "op": "freeze", "source": source}
     d = _undo_dir()
     _ensure_dir(d)
     with open(_frozen_mirror(), "a") as fh:
@@ -908,56 +938,34 @@ def freeze(kind: str, reason: str, *,
                                           json.dumps(row), None)
     except Exception:
         pass                                # durable mirror is authoritative
-    return row
-
-
-def unfreeze(kind: str, reason: str, *,
-             redis_del: Optional[Callable[[str], None]] = None,
-             now: Optional[str] = None) -> Dict[str, Any]:
-    """Lift a freeze on an act-first kind — the durable half of the manual
-    green-canary unfreeze (CANARY-UNFREEZE, germline batch 2026-07-05; the
-    "a later wave" deferred in ``freeze``'s CRIT-5 note). SUPERSEDE-then-clear,
-    mirroring ``freeze``'s mirror-FIRST ordering: append an ``op:"unfreeze"`` row
-    to the durable JSONL mirror (the source of truth ``_kind_in_mirror`` now
-    reads last-op-wins), THEN best-effort DEL the fast Redis flag so
-    ``is_frozen``'s Redis-first read also clears.
-
-    NO AUTO CALLER (CRIT-5 intact — the freeze itself still has no auto-unfreeze
-    and no timer): this is invoked ONLY by ``actfirst_canary.run_unfreeze_canary``
-    AFTER a real create→verify→reverse probe proves the kind green — never
-    blindly. A mirror-write failure is loud (raises) because the durable
-    supersede is the load-bearing lift; the Redis DEL is best-effort (the mirror
-    is authoritative and ``is_frozen`` falls through to it)."""
-    row = {"ts": now or _now(), "kind": kind, "reason": str(reason)[:300],
-           "op": "unfreeze"}
-    d = _undo_dir()
-    _ensure_dir(d)
-    with open(_frozen_mirror(), "a") as fh:
-        fh.write(json.dumps(row) + "\n")
     try:
-        (redis_del or _default_redis_del)("cabinet:actfirst:frozen:" + str(kind))
+        (file_need_fn or _default_file_need)(
+            kind="unfreeze", action_type=str(kind),
+            why="kind frozen (" + source + "): " + str(reason)[:200],
+            unblocks="act-first acting for " + str(kind)
+                     + " (rearm after a green canary)",
+            filed_by="action_undo.freeze")
     except Exception:
-        pass                                # durable mirror supersede is authoritative
+        pass                        # a broken needs path never blocks a brake
     return row
 
 
-def _kind_in_mirror(kind: str) -> bool:
-    """True iff ``kind``'s LAST mirror op is a freeze (append-only JSONL, last-
-    write-wins by chronological append order).
-
-    CANARY-UNFREEZE (germline batch 2026-07-05): the mirror was freeze-only and
-    this returned True on the FIRST freeze row ever seen — so once frozen, a kind
-    could NEVER be lifted from the durable side (only the fast Redis flag could be
-    flushed, and ``is_frozen`` would then fail-closed straight back to the
-    mirror). The manual green-canary unfreeze (``unfreeze`` above) now appends an
-    ``op:"unfreeze"`` row that SUPERSEDES the freeze; we honor it by tracking the
-    last op for the kind, so a freeze→unfreeze→(re)freeze history resolves to the
-    newest state. CRIT-5 preserved: nothing AUTO writes an unfreeze row — only the
-    proven-green manual path does. Fail-closed: an unreadable mirror ⇒ True."""
+# RECONCILE 2026-07-05: kept both — HEAD's manual green-canary unfreeze
+# (CANARY-UNFREEZE, germline batch 2026-07-05; superseding op:"unfreeze" row
+# after a REAL green create→verify→reverse) is FOLDED into the single receipted
+# ``unfreeze`` primitive below (``canary_receipt`` optional: the synchronous
+# ``run_unfreeze_canary`` path passes none — its proof is the green probe it
+# just ran in the SAME invocation); HEAD's inline last-op-wins
+# ``_kind_in_mirror`` is subsumed by sovereign's ``_mirror_rows`` +
+# ``freeze_state`` (identical semantics: newest op per kind wins, unreadable
+# mirror ⇒ fail-closed frozen).
+def _mirror_rows(kind: str) -> Optional[List[Dict[str, Any]]]:
+    """The freeze/unfreeze mirror rows for one kind, append order (= time
+    order). None ⇒ the mirror exists but could not be read (fail-closed)."""
     p = _frozen_mirror()
     if not p.exists():
-        return False
-    last_op = None
+        return []
+    rows: List[Dict[str, Any]] = []
     try:
         with open(p) as fh:
             for line in fh:
@@ -970,24 +978,220 @@ def _kind_in_mirror(kind: str) -> bool:
                     continue
                 if isinstance(r, dict) and r.get("kind") == kind \
                         and r.get("op") in ("freeze", "unfreeze"):
-                    last_op = r.get("op")     # chronological: newest op wins
+                    rows.append(r)
     except OSError:
-        return True                         # can't read the mirror -> fail-closed
-    return last_op == "freeze"
+        return None                         # unreadable mirror -> fail-closed
+    return rows
+
+
+def freeze_state(kind: str) -> Optional[Dict[str, Any]]:
+    """The LAST mirror op for ``kind`` (last-op-wins): a freeze or unfreeze
+    row, None when the mirror has no opinion, ``{"op": "error"}`` when the
+    mirror is unreadable — callers treat that as frozen AND un-thawable."""
+    rows = _mirror_rows(kind)
+    if rows is None:
+        return {"op": "error", "kind": kind,
+                "reason": "frozen-kinds mirror unreadable — fail-closed"}
+    return rows[-1] if rows else None
+
+
+def _kind_in_mirror(kind: str) -> bool:
+    """Last-op-wins per kind: True iff the mirror's FINAL op for the kind is a
+    freeze (or the mirror is unreadable — fail-closed). An ``op:'unfreeze'``
+    row appended by the ``unfreeze`` primitive lifts the freeze durably; a
+    later freeze row re-engages it.
+
+    History (CANARY-UNFREEZE, germline batch 2026-07-05): the mirror was
+    freeze-only and this returned True on the FIRST freeze row ever seen — so
+    once frozen, a kind could NEVER be lifted from the durable side (only the
+    fast Redis flag could be flushed, and ``is_frozen`` would then fail-closed
+    straight back to the mirror). Last-op-wins honors the superseding
+    ``op:"unfreeze"`` row, so a freeze→unfreeze→(re)freeze history resolves to
+    the newest state. CRIT-5 preserved: nothing AUTO writes an unfreeze row
+    for a captain-origin freeze — only the proven-green paths do (manual
+    green canary / rearm; machine-origin only via the source-gated thaw)."""
+    st = freeze_state(kind)
+    if st is None:
+        return False
+    return st.get("op") != "unfreeze"       # freeze OR error ⇒ frozen
 
 
 def is_frozen(kind: str, *,
               redis_get: Optional[Callable[[str], str]] = None) -> bool:
-    """Fail-closed: Redis unreachable ⇒ treated frozen. A durable mirror hit
-    also holds (Redis may have been flushed; a freeze is durable)."""
+    """Fail-closed frozen read, durable-mirror-first (last-op-wins). Every
+    freeze writes the mirror BEFORE the Redis flag, so the mirror is never
+    staler than Redis: a mirror freeze holds even when Redis was flushed, and
+    a receipted ``op:'unfreeze'`` holds even when its Redis DEL failed (a
+    stale flag never resurrects a lifted freeze). Only when the mirror has no
+    opinion does the Redis flag decide — unreachable Redis ⇒ True."""
+    st = freeze_state(kind)
+    if st is not None:
+        return st.get("op") != "unfreeze"   # freeze OR unreadable ⇒ frozen
     getter = redis_get or _default_redis_get
     try:
-        val = getter("cabinet:actfirst:frozen:" + str(kind))
+        return bool(getter("cabinet:actfirst:frozen:" + str(kind)))
     except Exception:
         return True
-    if val:
-        return True
-    return _kind_in_mirror(kind)
+
+
+def unfreeze(kind: str, reason: str, *, canary_receipt: Optional[str] = None,
+             source: str = "captain",
+             now: Optional[str] = None,
+             redis_del: Optional[Callable[[str], None]] = None,
+             redis_get: Optional[Callable[[str], str]] = None) -> Dict[str, Any]:
+    """Lift a freeze — the ONE exit (D11/SOV-5 kills freeze permanence;
+    CANARY-UNFREEZE, germline batch 2026-07-05). SUPERSEDE-then-clear,
+    mirroring ``freeze``'s mirror-FIRST ordering: append the ``op:'unfreeze'``
+    row to the durable JSONL mirror (last-op-wins — the durable lift), THEN
+    best-effort Redis DEL so ``is_frozen``'s mirror-first read also clears. A
+    mirror-write failure is loud (raises): the durable supersede is the
+    load-bearing lift; the Redis DEL is best-effort (the mirror is
+    authoritative and ``is_frozen`` falls through to it).
+
+    TWO proof modes — mechanism proof is mandatory in both, there is NO blind
+    path:
+
+    - RECEIPTED (``canary_receipt`` given): refuses without a ≤24h GREEN
+      canary receipt for THIS kind — receipts are minted only by an actual
+      green ``run_canary`` run (a reply verb or a thaw sweep cannot conjure
+      one). Taken by ``actfirst_canary.run_thaw`` (source=``machine``,
+      3-greens+7d-clean auto-thaw of machine-origin freezes only) and the
+      Captain's rearm verb (source=``captain``).
+    - SYNCHRONOUS MANUAL (``canary_receipt`` None): invoked ONLY by
+      ``actfirst_canary.run_unfreeze_canary`` AFTER a real
+      create→verify→reverse probe proves the kind green in the SAME
+      invocation — never blindly, never scheduled. CRIT-5 intact: the freeze
+      itself still has no auto-unfreeze and no timer, and captain-origin
+      freezes NEVER auto-thaw (run_thaw refuses them; only rearm or the
+      manual green canary lifts them).
+
+    ``source`` records who lifted (``machine``/``captain``; anything else
+    refuses — fail-safe). On success also emits the ``kind_unfrozen`` event +
+    closes the deduped unfreeze need. Never widens beyond this one kind."""
+    # RECONCILE 2026-07-05: kept both — HEAD's manual green-canary unfreeze
+    # (no-receipt synchronous-proof call from run_unfreeze_canary) + sovereign
+    # receipted/source-gated unfreeze (run_thaw / rearm): one primitive.
+    if source not in FREEZE_SOURCES:
+        return {"ok": False, "kind": kind,
+                "reason": "unknown unfreeze source " + repr(source)}
+    st = freeze_state(kind)
+    if st is not None and st.get("op") == "error":
+        return {"ok": False, "kind": kind,
+                "reason": "frozen-kinds mirror unreadable — refusing to unfreeze"}
+    if not is_frozen(kind, redis_get=redis_get):
+        return {"ok": False, "kind": kind,
+                "reason": "not frozen — nothing to unfreeze"}
+    if canary_receipt is not None \
+            and not valid_green_receipt(canary_receipt, kind, now=now):
+        return {"ok": False, "kind": kind,
+                "reason": "no green canary receipt ≤" + str(RECEIPT_MAX_AGE_H)
+                          + "h for " + str(kind)
+                          + " — run a scoped canary and retry"}
+    row = {"ts": now or _now(), "kind": str(kind), "reason": str(reason)[:300],
+           "op": "unfreeze", "source": source, "receipt": canary_receipt}
+    d = _undo_dir()
+    _ensure_dir(d)
+    with open(_frozen_mirror(), "a") as fh:
+        fh.write(json.dumps(row) + "\n")
+    try:
+        (redis_del or _default_redis_del)("cabinet:actfirst:frozen:" + str(kind))
+    except Exception:
+        pass                                # mirror row is the durable lift
+    try:
+        from framework.events.emitter import emit
+        emit("kind_unfrozen", actor="action_undo." + source,
+             payload={"kind": str(kind), "reason": str(reason)[:200],
+                      "source": source, "receipt": canary_receipt})
+    except Exception:
+        pass
+    try:
+        # Close the deduped unfreeze need this kind's freeze filed (lazy +
+        # guarded — same no-hard-dep discipline as the filing side).
+        from framework.authority import needs
+        needs.mark(needs.need_id("unfreeze", action_type=str(kind)), "granted",
+                   by="unfreeze:" + source, reason=str(reason)[:200])
+    except Exception:
+        pass
+    return {"ok": True, **row}
+
+
+# --- canary receipts (unfreeze fuel — minted by actfirst_canary.run_canary) --
+
+def _receipts_file() -> Path:
+    return _undo_dir() / "canary-receipts.jsonl"
+
+
+def record_canary_receipt(kind: str, *, green: bool,
+                          now: Optional[str] = None) -> Dict[str, Any]:
+    """Append one canary outcome row and return it. Green rows carry the
+    receipt token ``unfreeze`` demands; red rows are thaw bookkeeping (a
+    recently-red kind must never read as clean)."""
+    row = {"receipt": uuid.uuid4().hex, "kind": str(kind),
+           "ts": now or _now(), "green": bool(green)}
+    d = _undo_dir()
+    _ensure_dir(d)
+    with open(_receipts_file(), "a") as fh:
+        fh.write(json.dumps(row) + "\n")
+    return row
+
+
+def canary_receipts(kind: Optional[str] = None) -> List[Dict[str, Any]]:
+    """All receipt rows (optionally one kind), torn-line tolerant, ts order.
+    Unreadable file ⇒ [] — missing receipts only ever REFUSE an unfreeze."""
+    p = _receipts_file()
+    if not p.exists():
+        return []
+    rows: List[Dict[str, Any]] = []
+    try:
+        with open(p) as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    r = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(r, dict) or not r.get("receipt"):
+                    continue
+                if kind is not None and r.get("kind") != str(kind):
+                    continue
+                rows.append(r)
+    except OSError:
+        return []
+    rows.sort(key=lambda r: str(r.get("ts", "")))
+    return rows
+
+
+def _parse_ts_strict(ts: Any) -> Optional[datetime]:
+    """STRICT canonical-format parse (None on anything else) — a receipt with
+    a malformed timestamp must read invalid, never fresh."""
+    try:
+        return datetime.strptime(ts or "", "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=timezone.utc)
+    except (ValueError, TypeError):
+        return None
+
+
+def valid_green_receipt(receipt: str, kind: str, *, now: Optional[str] = None,
+                        max_age_h: int = RECEIPT_MAX_AGE_H) -> bool:
+    """True iff ``receipt`` names a GREEN canary row for THIS kind minted
+    within the last ``max_age_h`` hours. Fail-closed: unknown token, red row,
+    kind mismatch, malformed or future-dated ts all refuse."""
+    if not receipt:
+        return False
+    nowdt = _parse_ts_strict(now) or datetime.now(timezone.utc)
+    for r in canary_receipts(kind):
+        if r.get("receipt") != receipt:
+            continue
+        if not r.get("green"):
+            return False
+        ts = _parse_ts_strict(r.get("ts"))
+        if ts is None:
+            return False
+        age = (nowdt - ts).total_seconds()
+        return 0 <= age <= max_age_h * 3600
+    return False
 
 
 # --- acted consequence event (per-STEP, RT-B1/RT-B6) -------------------------

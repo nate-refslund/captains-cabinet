@@ -246,10 +246,151 @@ MAX_AUTO_EXEC_STEPS = 2   # a card auto-executes at most this many steps [RT-A4]
 # gate, not silently widen it.
 CONFIDENCE_FLOOR_DEFAULT = 0.65
 
+# --- SOV-4 posture routing (D10, sovereign build spec 2026-07-04) -------------
+# The matrix wire lives ONLY inside the armed act-first branch: the flag stays
+# the Captain's act switch, posture-config presence switches the armed branch's
+# routing from the hardcoded chain rule to matrix-verdict routing. No
+# posture.yml ⇒ _load_posture_ctx() is None ⇒ today's exact code path,
+# byte-identical (P3). Guardian-table routing == today's mechanical outcome for
+# every stampable action_type × state except demote, which NARROWS to propose
+# (§0: demote always narrows — evidence beats posture; the legacy chain is
+# graduation-blind, so this is the wire's one deliberate correction).
+#
+# The lane's routing allow-set. auto_with_veto_window / classifier are NOT
+# members: verdicts must not promise unbuilt machinery at this lane (D3) — they
+# propose. standing_grant is handled by its own dormant branch (never here).
+ACT_VERDICTS = frozenset({"act_with_undo", "auto", "notify_after"})
+
+# D13 inbound-provenance fence: evidence refs under these vault areas are raw
+# email/Teams captured content — cards derived from them NEVER act first, in
+# any posture (the injection classifier is probabilistic; provenance is not).
+_INBOUND_REF_PREFIXES = ("3-People/", "2-Meetings/", "4-Interactions/")
+
 
 def _act_first_on() -> bool:
     return (os.environ.get("CABINET_ACT_FIRST") == "1"
             or ACT_FIRST_FLAG_FILE.exists())
+
+
+def _load_posture_ctx() -> "dict | None":
+    """The D10 matrix-routing context, or None ⇒ today's exact code path.
+
+    None on: posture kernel absent/unimportable, no instance posture.yml
+    (posture_config_present() — a corrupt file still counts PRESENT: it routes
+    through the matrix wire where resolve_posture says guardian), or any
+    matrix/gate-lib load failure. The absent path is SILENT (byte-identical
+    stdout, P3); a present-but-broken world degrades LOUDLY to the legacy path
+    (== guardian behavior). resolve_verdict/risk_of/read_cell_state come from
+    cabinet/scripts/lib/policy_engine via the established path-insert — ONE
+    gate implementation, no function move."""
+    try:
+        from framework.authority import posture as posture_mod
+        if not posture_mod.posture_config_present():
+            return None
+    except Exception:
+        return None                    # pre-posture world — stay silent
+    try:
+        lib = str(Path(__file__).resolve().parents[2] / "cabinet" / "scripts" / "lib")
+        if lib not in sys.path:
+            sys.path.insert(0, lib)
+        import policy_engine  # noqa: E402 — the established lib path-insert
+        from framework.authority.matrix import load_matrix, matrix_policy
+        policy = matrix_policy(load_matrix())   # fail-closed validator inside
+        return {
+            "policy": policy,
+            "resolve_posture": posture_mod.resolve_posture,
+            "risk_of": policy_engine.risk_of,
+            "resolve_verdict": policy_engine.resolve_verdict,
+            "read_cell_state": policy_engine.read_cell_state,
+        }
+    except Exception as e:
+        # posture.yml EXISTS but the wire cannot stand — degrade loudly to the
+        # legacy chain (mechanically == guardian), never fail the run.
+        print(f"posture: routing ctx unavailable ({e}) — legacy path (guardian)")
+        return None
+
+
+def _route_verdict(pctx: dict, prop, action_type: "str | None"):
+    """(verdict, posture, risk_class) for one card under the matrix wire (D10).
+
+    Posture is resolved per card so FI-1 `lanes:` overrides apply. Fail-safe:
+    an unstamped card or unmapped action_type has no risk_class ⇒ verdict None
+    ⇒ the caller proposes (same fall-through the officer gate uses)."""
+    posture = pctx["resolve_posture"](prop.lane)
+    if not action_type:
+        return None, posture, None
+    policy = pctx["policy"]
+    risk_class = pctx["risk_of"](action_type, policy.get("risk_classes"))
+    if risk_class is None:
+        return None, posture, None
+    state = pctx["read_cell_state"]("cos", prop.lane, action_type)
+    verdict = pctx["resolve_verdict"](
+        policy.get("verdicts"), risk_class, state,
+        posture=posture, postures=policy.get("postures"))
+    return verdict, posture, risk_class
+
+
+def _max_auto_steps(posture: "str | None") -> int:
+    """The per-card auto-exec step budget: legacy constant (2) with no posture,
+    else the FI-1 kernel's answer (guardian FORCED 2 / sovereign posture.yml-
+    tunable, default 5). Guarded to the legacy constant — a broken kernel must
+    tighten the budget, never widen it."""
+    if posture is None:
+        return MAX_AUTO_EXEC_STEPS
+    try:
+        from framework.authority.posture import max_auto_steps
+        return int(max_auto_steps(posture))
+    except Exception:
+        return MAX_AUTO_EXEC_STEPS
+
+
+def _card_provenance(p) -> str:
+    """"inbound" when the card is derived from untrusted inbound capture
+    (email/Teams) — an explicit `provenance` stamp on the proposal, or any
+    evidence ref under the raw-capture vault areas. Everything else is
+    "internal". Over-matching only costs a propose (fail-safe, D13)."""
+    if getattr(p, "provenance", "") == "inbound":
+        return "inbound"
+    for ref in (getattr(p, "evidence", ()) or ()):
+        if str(ref).lstrip("/").startswith(_INBOUND_REF_PREFIXES):
+            return "inbound"
+    return "internal"
+
+
+def _file_lane_need(kind: str, *, risk_class=None, action_type=None, lane=None,
+                    why: str, unblocks: str = "", scope_hint=None) -> None:
+    """Best-effort FI-3 NEED from the lane — the kernel's needs_enabled()
+    short-circuit keeps the default world bit-identical, and a filing failure
+    never blocks (or reorders) the chain. NEVER raises."""
+    try:
+        from framework.authority import needs
+        needs.file_need(kind, risk_class=risk_class, action_type=action_type,
+                        lane=lane, why=why, unblocks=unblocks,
+                        filed_by="run_action_lane", scope_hint=scope_hint)
+    except Exception:
+        pass
+
+
+def _standing_grant_probe(risk_class: "str | None", action_type: "str | None",
+                          lane: "str | None") -> dict:
+    """D2 at the acting lane — DORMANT v1 (FI-2): no scope-enforcing ceiling
+    executor exists, so this NEVER acts and never record_use()s even on a
+    grant hit; it probes coverage and files the standing_grant NEED on a miss
+    so the chain proceeds (proposes) while the Captain sees the gap."""
+    try:
+        from framework.authority import grants
+        res = grants.check(risk_class, action_type, lane=lane, context=None)
+    except Exception as e:
+        return {"granted": False, "reason": f"grants kernel unavailable: {e}"}
+    if not res.get("granted"):
+        _file_lane_need(
+            "standing_grant", risk_class=risk_class, action_type=action_type,
+            lane=lane,
+            why=(f"acting lane blocked {risk_class}/{action_type} "
+                 f"(lane {lane}): {res.get('reason')}"),
+            unblocks=(f"sovereign standing-grant auto for {action_type} once a "
+                      f"scope-enforcing executor lands"))
+    return res
 
 
 def _confidence_floor() -> float:
@@ -294,15 +435,20 @@ def _card_board(p) -> "str | None":
 
 
 def _card_act_first_eligible(p, action_type,
-                             floor: float = CONFIDENCE_FLOOR_DEFAULT) -> "tuple[bool, str]":
+                             floor: float = CONFIDENCE_FLOOR_DEFAULT,
+                             max_steps: int = MAX_AUTO_EXEC_STEPS) -> "tuple[bool, str]":
     """(eligible, reason) — the mechanical chain rule [RT-A4/B6]. A card
-    auto-executes ONLY if it is not injection-suspect, carries a valid stamped
-    action_type, meets the confidence floor, has ≤MAX_AUTO_EXEC_STEPS steps, and
-    EVERY step has a registered inverse (act_first_eligible). Any miss ⇒
-    propose_only (fail-safe). ``floor`` defaults to the constant so the helper
-    stays deterministic under test; main() passes the yml-resolved value."""
+    auto-executes ONLY if it is not injection-suspect, not inbound-derived
+    (D13 — provenance beats the probabilistic injection screen, any posture),
+    carries a valid stamped action_type, meets the confidence floor, has
+    ≤``max_steps`` steps, and EVERY step has a registered inverse
+    (act_first_eligible). Any miss ⇒ propose_only (fail-safe). ``floor``/
+    ``max_steps`` default to the constants so the helper stays deterministic
+    under test; main() passes the yml-/posture-resolved values."""
     if getattr(p, "injection_suspect", False):
         return False, "injection_suspect"
+    if _card_provenance(p) == "inbound":
+        return False, "inbound provenance — never act-first (D13)"
     if not action_type:
         return False, "unstamped action_type"
     try:
@@ -311,14 +457,20 @@ def _card_act_first_eligible(p, action_type,
         conf = 0.0   # unverifiable confidence never clears the floor
     if not conf >= floor:   # NaN-safe: nan >= x is False ⇒ blocked, not waved through
         return False, "confidence below floor"
-    if len(p.steps) > MAX_AUTO_EXEC_STEPS:
-        return False, f"chain has {len(p.steps)}>{MAX_AUTO_EXEC_STEPS} steps"
+    if len(p.steps) > max_steps:
+        return False, f"chain has {len(p.steps)}>{max_steps} steps"
     for s in p.steps:
         if not action_undo.act_first_eligible(getattr(s, "kind", ""), _backend_for_step(s)):
             return False, f"step {getattr(s, 'kind', '?')} has no registered inverse"
     return True, ""
 
 
+# RECONCILE 2026-07-05: kept both HEAD (_graduation_demoted demote-wire +
+# mandatory normalized lane kwarg) + sovereign (posture kwarg threading to the
+# cap peek) — _act_first_gates_ok now takes BOTH lane (positional, required,
+# fail-closed on None) and posture (keyword-only, None = byte-identical
+# guardian behavior). Demote still blocks regardless of posture (evidence
+# beats posture) and every check stays fail-closed.
 def _graduation_demoted(action_type, lane) -> "tuple[bool, str]":
     """(demoted, reason) — fail-closed read of the graduation cell state for
     THIS lane's actor. DEMOTE-WIRE (germline batch 2026-07-04): demotion is the
@@ -359,7 +511,8 @@ def _graduation_demoted(action_type, lane) -> "tuple[bool, str]":
     return False, ""
 
 
-def _act_first_gates_ok(action_type, board, kind, lane) -> "tuple[bool, str]":
+def _act_first_gates_ok(action_type, board, kind, lane, *,
+                        posture: "str | None" = None) -> "tuple[bool, str]":
     """(ok, reason) — the fail-closed runtime gates on a per-card basis: Captain
     veto, graduation demotion, kind freeze (breaker), silence breaker,
     per-kind/day caps. Every check fails CLOSED (an unreachable Redis /
@@ -368,7 +521,10 @@ def _act_first_gates_ok(action_type, board, kind, lane) -> "tuple[bool, str]":
     graduation cell (actor, lane, action_type) and is REQUIRED (N3, checkpoint
     review 2026-07-05): a defaulted/None lane would read the wrong cell and miss
     a real per-lane demotion, so it is now mandatory and _graduation_demoted
-    fails closed on None."""
+    fails closed on None. ``posture`` threads to the cap peek (D11 — None is
+    byte-identical; sovereign alarms at the base cap and blocks only at the
+    ×hard_multiplier hard-stop). The demote check is POSTURE-INVARIANT: no
+    posture makes a demoted cell act (evidence beats posture)."""
     try:
         if veto_registry.is_vetoed(action_type, board=board):
             return False, "captain veto"
@@ -385,7 +541,7 @@ def _act_first_gates_ok(action_type, board, kind, lane) -> "tuple[bool, str]":
         return False, "kind frozen (breaker/undo-rate)"
     if actfirst_canary.is_silenced(kind):
         return False, "kind silenced (30 acts, no human touch)"
-    if not actfirst_canary.cap_check(kind).get("ok", False):
+    if not actfirst_canary.cap_check(kind, posture=posture).get("ok", False):
         return False, "per-day cap reached"
     return True, ""
 
@@ -1000,6 +1156,10 @@ def main() -> int:
     # yml-resolved once per run (fail-safe default on any read problem); never
     # read flag-off — the dark lane touches nothing the propose-only lane didn't.
     conf_floor = _confidence_floor() if act_first else CONFIDENCE_FLOOR_DEFAULT
+    # SOV-4 matrix wire (D10): loaded once per run, ONLY inside the armed
+    # branch. None (no posture.yml / kernel absent / load failure) ⇒ every
+    # card takes today's exact chain below, byte-identically.
+    pctx = _load_posture_ctx() if act_first else None
 
     presented = acted = 0
     # _ACTOR (bare "cos"): this literal was the LIVE half of the double-prefix
@@ -1038,20 +1198,43 @@ def main() -> int:
         # by-construction: deliver_action write-ahead-journals each step (48h undo
         # handle) BEFORE its mutation, so the act is always reversible even if the
         # post-act ledger emit is lost. Any miss anywhere → fall through to propose.
+        #
+        # SOV-4 (D10): with a posture ctx, the matrix verdict routes FIRST —
+        # {act_with_undo, auto, notify_after} enter the same mechanical chain
+        # (inverse-per-step KEPT), {propose_only, always_gated, anything else}
+        # propose, standing_grant probes grants+needs and proposes (dormant v1).
+        # pctx None ⇒ route_allows == act_first ⇒ today's exact chain.
         did_act = False
-        if act_first:
-            elig, ereason = _card_act_first_eligible(p, at, floor=conf_floor)
+        verdict, card_posture = None, None
+        route_allows = act_first
+        if act_first and pctx is not None:
+            verdict, card_posture, risk_class = _route_verdict(pctx, p, at)
+            if verdict == "standing_grant":
+                res = _standing_grant_probe(risk_class, at, p.lane)
+                route_allows = False
+                print(f"matrix verdict standing_grant -> {p.subject}: ceiling "
+                      f"proposes in v1 ({str(res.get('reason'))[:120]})")
+            elif verdict not in ACT_VERDICTS:
+                route_allows = False
+                print(f"matrix verdict {verdict or 'unmapped'} -> {p.subject}: propose")
+        if route_allows:
+            elig, ereason = _card_act_first_eligible(
+                p, at, floor=conf_floor, max_steps=_max_auto_steps(card_posture))
             kind_key = actfirst_canary.kind_key(at) if at else ""
-            # lane=p.lane keys the DEMOTE-WIRE's graduation cell (actor, lane,
-            # action_type) — the same triple the emitted ledger rows carry, so
-            # the evidence this card generates is the evidence its next run is
-            # gated on.
+            # RECONCILE 2026-07-05: kept both HEAD (lane=p.lane) + sovereign
+            # (posture=card_posture). lane=p.lane keys the DEMOTE-WIRE's
+            # graduation cell (actor, lane, action_type) — the same triple the
+            # emitted ledger rows carry, so the evidence this card generates is
+            # the evidence its next run is gated on. posture=card_posture
+            # threads the SOV-4 routed posture into the cap peek (None ⇒
+            # guardian, byte-identical); demote blocks in every posture.
             gates_ok, greason = (_act_first_gates_ok(at, _card_board(p), kind_key,
-                                                     lane=p.lane)
+                                                     lane=p.lane,
+                                                     posture=card_posture)
                                  if elig else (False, ereason))
             if elig and gates_ok:
                 _store_action(pid, p, cid=cid)
-                result = deliver_action(pid, act_first=True)
+                result = deliver_action(pid, act_first=True, posture=card_posture)
                 if result.get("ok"):
                     # ACTED-EVENT IDENTITY FIX (germline batch 2026-07-05): the
                     # per-step acted consequence rows are now emitted INSIDE
@@ -1065,7 +1248,7 @@ def main() -> int:
                     # now — the executor owns the acted row (unknown→verdict in
                     # place). Only the caps counter + receipt remain lane-side.
                     try:
-                        actfirst_canary.incr_and_check(kind_key)
+                        actfirst_canary.incr_and_check(kind_key, posture=card_posture)
                     except Exception:
                         pass
                     _emit_receipt(p, pid, cid, at, result,
@@ -1080,6 +1263,15 @@ def main() -> int:
                           f"{result.get('gate') or result.get('error')}")
             else:
                 print(f"act-first ineligible -> {p.subject}: {ereason or greason}")
+                if (verdict == "auto"
+                        and "no registered inverse" in (ereason or "")):
+                    # D10: an auto verdict the mechanical chain cannot honor is
+                    # a capability gap, not a human-wait — file it and propose.
+                    _file_lane_need(
+                        "capability", action_type=at, lane=p.lane,
+                        why=(f"matrix verdict auto for {at} but the chain has "
+                             f"no registered inverse: {ereason}"),
+                        unblocks=f"act-first for {at} once an inverse is registered")
 
         if not did_act:
             # ASK-BUDGET seam: the ask throttle (field-test override 2026-07-05:

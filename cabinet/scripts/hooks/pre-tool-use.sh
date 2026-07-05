@@ -1026,7 +1026,23 @@ if [ "$TOOL_NAME" = "Edit" ] || [ "$TOOL_NAME" = "Write" ]; then
     # filesystem lock (cabinet/scripts/germline-lock.sh, `chflags schg`) which
     # makes the officer uid physically unable to write every static germline
     # file. Keep both.
-    *"memory/golden-evals/"*|*"framework/policies/"*|*"framework/authority/classifier.py"|*"framework/authority/lane.py"|*"framework/authority/matrix.py"|*"framework/authority/veto.py"|*"framework/authority/deploy_classifier.py"|*"framework/fidelity/graduation.py"|*"cabinet/scripts/lib/policy_engine.py"|*"cabinet/mcp-scope.yml"|*"cabinet/officer-capabilities.conf"|*".claude/rules/brain-bridge.md"|*".claude/rules/courses-of-action.md"|*"instance/config/autonomy.yml"|*"shared/interfaces/captain-vetoes.yml"|*"shared/interfaces/action-lessons.yml"|*"instance/config/act-first-surfaces.yml"|*"framework/frontdoor/action_exec.py"|*"framework/frontdoor/action_undo.py"|*"framework/frontdoor/actfirst_canary.py"|*"framework/frontdoor/veto_registry.py"|*"framework/frontdoor/tell_surface.py"|*"framework/frontdoor/calendar_template.py"|*"framework/acting/action_lane.py"|*"framework/acting/run_action_lane.py"|*".claude/settings.json"|*"cabinet/scripts/hooks/"*|*"cabinet/scripts/policy-shadow.py"|*"cabinet/scripts/kill-switch.sh"|*"cabinet/scripts/germline-lock.sh")
+    # SOVEREIGN-POSTURE KERNEL added 2026-07-05 (amendment
+    # docs/proposals/germline-amendment-sovereign-posture-2026-07-05.md): the
+    # posture/grants/needs kernel, the gate-apply lane, the Captain-locked
+    # attestation configs (posture.yml + standing-grants.yml — hook-covered
+    # BEFORE the deployment creates them), the D8 instance policy-layer dir,
+    # and the needs-ledger data plane (O_APPEND via needs.py ONLY — direct
+    # officer writes forge needs). The single source of this set is
+    # framework/policies/immutable-core.yml; the lockstep meta-test
+    # (framework/tests/test_germline_lockstep_consistency.py) diffs this arm
+    # against it — extend BOTH or the suite fails.
+    # ROOT-EXECUTED APPLY LANE added 2026-07-05 (SOV-9a): gate-apply.sh runs
+    # as root (sudo apply + the DARK com.cabinet.gate-apply daemon), the
+    # plist's ProgramArguments run as root on load, and the watch ledger's
+    # rows are executed by cmd_watch as a root `git apply -R` — an officer
+    # write to any of the three turns into root code, so all are germline
+    # (the ledger is locked files-class, NOT a sanctioned-append SKIP).
+    *"memory/golden-evals/"*|*"framework/policies/"*|*"framework/authority/classifier.py"|*"framework/authority/lane.py"|*"framework/authority/matrix.py"|*"framework/authority/veto.py"|*"framework/authority/deploy_classifier.py"|*"framework/fidelity/graduation.py"|*"cabinet/scripts/lib/policy_engine.py"|*"cabinet/mcp-scope.yml"|*"cabinet/officer-capabilities.conf"|*".claude/rules/brain-bridge.md"|*".claude/rules/courses-of-action.md"|*"instance/config/autonomy.yml"|*"shared/interfaces/captain-vetoes.yml"|*"shared/interfaces/action-lessons.yml"|*"instance/config/act-first-surfaces.yml"|*"framework/frontdoor/action_exec.py"|*"framework/frontdoor/action_undo.py"|*"framework/frontdoor/actfirst_canary.py"|*"framework/frontdoor/veto_registry.py"|*"framework/frontdoor/tell_surface.py"|*"framework/frontdoor/calendar_template.py"|*"framework/acting/action_lane.py"|*"framework/acting/run_action_lane.py"|*".claude/settings.json"|*"cabinet/scripts/hooks/"*|*"cabinet/scripts/policy-shadow.py"|*"cabinet/scripts/kill-switch.sh"|*"cabinet/scripts/germline-lock.sh"|*"framework/authority/posture.py"|*"framework/authority/grants.py"|*"framework/authority/needs.py"|*"framework/learning/gate.py"|*"framework/learning/apply_watch.py"|*"cabinet/scripts/grant-apply.sh"|*"cabinet/scripts/gate-apply.sh"|*"cabinet/launchd/com.cabinet.gate-apply.plist"|*"shared/interfaces/gate-apply-watch.jsonl"|*"instance/config/posture.yml"|*"instance/config/standing-grants.yml"|*"instance/config/policies/"*|*"shared/interfaces/needs-ledger.jsonl")
       echo "BLOCKED: Germline file — read-only for officers and loops (no loop may edit its own judge). Propose the change to the Captain; only the Captain applies germline edits." >&2
       exit 2
       ;;
@@ -1123,7 +1139,7 @@ if [ "$TOOL_NAME" = "Bash" ]; then
   # is independent + target-anchored (germ dir must be the FINAL dest token).
   # Mixed dirs (cabinet/, .claude/rules/, instance/config/, shared/interfaces/)
   # are deliberately excluded — their residual is closed by the filesystem lock.
-  GERM_DIR_RE='framework/authority/|framework/frontdoor/|framework/acting/|framework/fidelity/|framework/policies/|cabinet/scripts/lib/|cabinet/scripts/hooks/|memory/golden-evals/'
+  GERM_DIR_RE='framework/authority/|framework/frontdoor/|framework/acting/|framework/fidelity/|framework/policies/|cabinet/scripts/lib/|cabinet/scripts/hooks/|memory/golden-evals/|instance/config/policies/'
   _GDIR_TGT="[\"']?[^[:space:];|&<>\"']*(${GERM_DIR_RE})[^[:space:];|&<>\"']*"
   # branch 1: germ dir as FINAL positional dest; branch 2: -t/--target-directory DEST form (dir not final)
   if printf '%s' "$CMD_SQ" | grep -qE "(^|[;&|\`([:space:]])(cp|mv|rsync|install|ln)[[:space:]]+(-[-a-zA-Z]+[[:space:]]+)*([^;|&]+[[:space:]]+)?${_GDIR_TGT}[\"']?([[:space:]]*(\$|[;&|<>#])|[[:space:]]+[0-9]+[<>])" \
@@ -1132,7 +1148,7 @@ if [ "$TOOL_NAME" = "Bash" ]; then
     exit 2
   fi
   # Same protected set as section 5's germline case list — KEEP IN LOCKSTEP.
-  GERM_PATH_RE='memory/golden-evals/|framework/policies/|framework/authority/(classifier|lane|matrix|veto|deploy_classifier)\.py|framework/fidelity/graduation\.py|cabinet/scripts/lib/policy_engine\.py|cabinet/mcp-scope\.yml|cabinet/officer-capabilities\.conf|\.claude/rules/(brain-bridge|courses-of-action)\.md|instance/config/autonomy\.yml|shared/interfaces/(captain-vetoes|action-lessons)\.yml|instance/config/act-first-surfaces\.yml|framework/frontdoor/(action_exec|action_undo|actfirst_canary|veto_registry|tell_surface|calendar_template)\.py|framework/acting/(action_lane|run_action_lane)\.py|\.claude/settings\.json|cabinet/scripts/hooks/|cabinet/scripts/policy-shadow\.py|cabinet/scripts/kill-switch\.sh|cabinet/scripts/germline-lock\.sh'
+  GERM_PATH_RE='memory/golden-evals/|framework/policies/|framework/authority/(classifier|lane|matrix|veto|deploy_classifier|posture|grants|needs)\.py|framework/fidelity/graduation\.py|cabinet/scripts/lib/policy_engine\.py|cabinet/mcp-scope\.yml|cabinet/officer-capabilities\.conf|\.claude/rules/(brain-bridge|courses-of-action)\.md|instance/config/(autonomy|posture|standing-grants)\.yml|shared/interfaces/(captain-vetoes|action-lessons)\.yml|shared/interfaces/(needs-ledger|gate-apply-watch)\.jsonl|instance/config/act-first-surfaces\.yml|instance/config/policies/|framework/frontdoor/(action_exec|action_undo|actfirst_canary|veto_registry|tell_surface|calendar_template)\.py|framework/acting/(action_lane|run_action_lane)\.py|framework/learning/(gate|apply_watch)\.py|\.claude/settings\.json|cabinet/scripts/hooks/|cabinet/scripts/policy-shadow\.py|cabinet/scripts/kill-switch\.sh|cabinet/scripts/germline-lock\.sh|cabinet/scripts/(grant|gate)-apply\.sh|cabinet/launchd/com\.cabinet\.gate-apply\.plist'
   if printf '%s' "$CMD_SQ" | grep -qE "$GERM_PATH_RE"; then
     # Target token: optional opening quote, then ONE shell word containing a
     # germline path (germ paths never contain spaces/quotes, so excluding

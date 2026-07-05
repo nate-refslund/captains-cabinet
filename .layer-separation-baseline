@@ -61,3 +61,33 @@ framework/triggers/registry.py:FRAMEWORK_PATH_INSTANCE
 framework/acting/run_action_lane.py:FRAMEWORK_PATH_INSTANCE
 framework/frontdoor/action_exec.py:FRAMEWORK_PATH_INSTANCE
 framework/frontdoor/actfirst_canary.py:FRAMEWORK_PATH_INSTANCE
+
+# 2026-07-05 — sovereign-posture merge growth (+14, feat/sovereign-posture →
+# main reconciliation; RECONCILE 2026-07-05). PENDING Captain ratification at
+# the merge window alongside the sovereign germline amendment
+# (docs/proposals/germline-amendment-sovereign-posture-2026-07-05.md). All 14
+# are the SAME class as the ratified 07-04 act-first entries: framework code
+# reading Captain-owned, deployment-local runtime CONFIG that is
+# instance-resident BY DESIGN — never code deps:
+#   posture.py        — instance/config/posture.yml (Captain-locked posture
+#                       ruling; absent/corrupt ⇒ guardian)
+#   grants.py         — instance/config/grants/ (Captain-signed, schg-locked
+#                       standing grants)
+#   needs.py          — the needs wire flag + ledger location under the
+#                       deployment root
+#   standing_pull.py  — instance/config/outcomes.yml standing-mission pull
+#   (+ their test files, which pin those exact paths)
+framework/acting/tests/test_sov4_posture_routing.py:FRAMEWORK_PATH_INSTANCE
+framework/authority/grants.py:FRAMEWORK_PATH_INSTANCE
+framework/authority/needs.py:FRAMEWORK_PATH_INSTANCE
+framework/authority/posture.py:FRAMEWORK_PATH_INSTANCE
+framework/authority/tests/test_golden_evals_sovereign.py:FRAMEWORK_PATH_INSTANCE
+framework/authority/tests/test_grants.py:FRAMEWORK_PATH_INSTANCE
+framework/authority/tests/test_needs.py:FRAMEWORK_PATH_INSTANCE
+framework/authority/tests/test_posture.py:FRAMEWORK_PATH_INSTANCE
+framework/frontdoor/tests/test_sov6_binder_grant.py:FRAMEWORK_PATH_INSTANCE
+framework/learning/tests/test_gate_apply_dark.py:FRAMEWORK_PATH_INSTANCE
+framework/learning/tests/test_sov8_loop_and_gates.py:FRAMEWORK_PATH_INSTANCE
+framework/missions/standing_pull.py:FRAMEWORK_PATH_INSTANCE
+framework/missions/tests/test_standing_pull.py:FRAMEWORK_PATH_INSTANCE
+framework/missions/tests/test_supervisor_standing.py:FRAMEWORK_PATH_INSTANCE

@@ -10,6 +10,7 @@ clone draft but are never emitted into a score row."""
 
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -170,6 +171,125 @@ def _grounding_ok(intent_grounded_fact: str, ctx_text: str,
     return (len(ft & ht) / len(ft)) >= _GROUNDING_JACCARD_MIN
 
 
+# ---------------------------------------------------------------------------
+# D17 (sovereign spec §2, INT-1) — OUTCOME RUBRIC, the THIRD judge pass. The
+# personal-agent reframe: the headline question is no longer "did the clone
+# match Nate's reply?" but "did it serve Nate's intent AS GOOD OR BETTER than
+# what Nate actually sent?" (AGB). The judge sees TWO ANONYMIZED candidates —
+# clone_draft and the held-out real_reply, labeled A/B by sha256(case_id)
+# parity so the assignment is deterministic per case and balanced across the
+# corpus — and judges ONLY against the reconstructed intent + the fenced
+# cutoff context. It is never told which candidate is real. This pass is
+# judge-side only (the officer has already drafted; real_reply reaches the
+# judge exactly as it always has via retro.judge_decision), so it adds no leak
+# surface. STANDALONE system prompt: retro.JUDGE_SYSTEM stays PRISTINE and is
+# not part of this pass (it names MODEL DRAFT / REAL REPLY, which would
+# de-anonymize the candidates).
+# ---------------------------------------------------------------------------
+OUTCOME_RUBRIC = """You are judging OUTCOMES for a held-out reply situation.
+
+Below are a CONVERSATION (ending just before a reply was sent), a `# RECONSTRUCTED INTENT (before reply)` — mission/goal × core, what the replier is pursuing here — a `# FULL CUTOFF-SAFE CONTEXT`, and TWO anonymized candidate replies: CANDIDATE A and CANDIDATE B. One may be human-written and one machine-written, in shuffled order — you are NOT told which, and it must not matter.
+
+Judge ONLY which candidate better serves the reconstructed intent (mission × core), grounded in the conversation + context. IGNORE style, tone, length, and formatting except where they change the outcome. A candidate that hallucinates facts absent from the conversation/context, goes off-topic, or ignores the counterparty's actual ask serves the intent WORSE.
+
+outcome_winner values:
+- A: CANDIDATE A serves the intent materially better.
+- B: CANDIDATE B serves the intent materially better.
+- tie: both serve the intent about equally well (or equally poorly).
+
+outcome_grounded_fact is MANDATORY: cite the ground for your judgment in the form `From [person] at [date]: [excerpt]`, drawn verbatim-enough from the supplied conversation/context — never from the candidates. A fabricated citation will be rejected by a deterministic post-check.
+
+Return ONLY JSON:
+{"outcome_winner":"A|B|tie",
+ "outcome_rationale":"one line, <=140 chars",
+ "outcome_grounded_fact":"From [person] at [date]: [excerpt] — mandatory"}"""
+
+# Deterministic forced-outcome stamps (mirror _FORCED_GROUND/_FORCED_TOPIC).
+# forced-worse: an off-intent clone draft can never be as-good-or-better;
+# forced-incomparable: an AGB credit resting on a fabricated citation is not
+# revoked into a clone LOSS (that would fabricate a verdict too) — it is
+# demoted to "we could not verify the comparison".
+_FORCED_OUTCOME_TOPIC = ("FORCED: off-topic — clone draft vs "
+                         "reconstructed_intent below floor")
+_FORCED_OUTCOME_GROUND = "FORCED: cited ground absent from cutoff context"
+# The clone-crediting verdict the deterministic guards police.
+_AGB = "as_good_or_better"
+
+
+def outcome_ab_clone_is_a(case_id: str) -> bool:
+    """D17 anonymized A/B assignment: True ⇒ clone_draft is CANDIDATE A (the
+    real reply is B); False ⇒ swapped. sha256(case_id) first-byte parity —
+    deterministic for a fixed case (re-runs and shards agree) and ~50/50
+    balanced across a corpus, so the judge can never learn a fixed slot."""
+    digest = hashlib.sha256((case_id or "").encode("utf-8")).digest()
+    return digest[0] % 2 == 0
+
+
+def _outcome_judge(case_dict: dict, clone_draft: str,
+                   reconstructed_intent: str, thread_text: str,
+                   ctx_text: str) -> dict:
+    """Run the D17 pass-3 OUTCOME A/B judge; return the three outcome keys.
+
+    Candidates are the clone draft and the held-out ``real_reply`` (the ONLY
+    place this pass reads it — judge-side, post-draft), anonymized per
+    ``outcome_ab_clone_is_a``. Verdict vocabulary: ``as_good_or_better``
+    (clone won or tied — the AGB headline), ``worse`` (real reply won),
+    ``incomparable`` (comparison could not be verified), ``error`` (judge
+    unavailable/unparseable), ``""`` (no real reply ⇒ pass did not run).
+
+    DETERMINISTIC guards run only when the LLM credits the clone (the
+    anti-rubber-stamp direction), reusing §3.2/§3.3b verbatim:
+      - ``_topic_overlap(clone_draft, reconstructed_intent)`` below the floor
+        FORCES ``worse`` (an off-intent draft is never as-good-or-better);
+      - ``_grounding_ok`` failure on the cited ground FORCES ``incomparable``
+        (the credit is unverifiable, not disproven).
+    The grounding haystack is thread + fenced ctx only — never real_reply."""
+    real_reply = (case_dict.get("real_reply") or "").strip()
+    if not real_reply:
+        return {"outcome_verdict": "", "outcome_rationale": "",
+                "outcome_grounded_fact": ""}
+
+    clone_is_a = outcome_ab_clone_is_a(case_dict.get("case_id", ""))
+    clone_text = (clone_draft or "")[:2500]
+    real_text = real_reply[:2500]
+    cand_a, cand_b = ((clone_text, real_text) if clone_is_a
+                      else (real_text, clone_text))
+    payload = (
+        f"# CONVERSATION (everything before the reply)\n{thread_text}\n\n"
+        f"# RECONSTRUCTED INTENT (before reply)\n"
+        f"{reconstructed_intent[:2000]}\n\n"
+        f"# FULL CUTOFF-SAFE CONTEXT\n{ctx_text[:4000] or '(none)'}\n\n"
+        f"# CANDIDATE A\n{cand_a}\n\n"
+        f"# CANDIDATE B\n{cand_b}"
+    )
+    res = oauth_json_llm(payload, OUTCOME_RUBRIC, max_tokens=400)
+
+    winner = (res or {}).get("outcome_winner")
+    if winner not in ("A", "B", "tie"):
+        return {"outcome_verdict": "error",
+                "outcome_rationale": "outcome judge unavailable/unparseable",
+                "outcome_grounded_fact": ""}
+
+    clone_label = "A" if clone_is_a else "B"
+    verdict = _AGB if winner in (clone_label, "tie") else "worse"
+    grounded_fact = res.get("outcome_grounded_fact", "") or ""
+
+    # Anti-rubber-stamp guards — only an AGB credit needs policing ("worse" is
+    # already the conservative direction). §3.3b topic floor first (cheap,
+    # decisive), then the §3.2 grounding check, both reused verbatim.
+    if verdict == _AGB:
+        if _topic_overlap(clone_draft, reconstructed_intent) < _TOPIC_FLOOR_MIN:
+            verdict = "worse"
+            grounded_fact = _FORCED_OUTCOME_TOPIC
+        elif not _grounding_ok(grounded_fact, ctx_text, thread_text):
+            verdict = "incomparable"
+            grounded_fact = _FORCED_OUTCOME_GROUND
+
+    return {"outcome_verdict": verdict,
+            "outcome_rationale": res.get("outcome_rationale", ""),
+            "outcome_grounded_fact": grounded_fact}
+
+
 @dataclass
 class CaseScore:
     case_id: str
@@ -184,6 +304,10 @@ class CaseScore:
     intent_verdict: str = ""
     intent_grounded_fact: str = ""
     intent_composite: float = 0.0
+    # D17 — the outcome axis (AGB headline). "" = pass did not run (no intent
+    # supplied / no held-out real reply), keeping the F1 row shape inert.
+    outcome_verdict: str = ""
+    outcome_grounded_fact: str = ""
 
 
 def _fmt_thread(thread_before: list[dict]) -> str:
@@ -233,12 +357,19 @@ def judge_with_oauth(case_dict: dict, clone_draft: str,
     `thread_before[-12:]` + `reconstructed_intent` + the fenced
     `full_cutoff_context` ONLY (NEVER real_reply).
 
-    Returns ONE dual-verdict dict, decision-first. The DETERMINISTIC
+    When the intent layer runs, a THIRD pass (D17 OUTCOME_RUBRIC) compares the
+    clone draft against the held-out real reply as ANONYMIZED candidates A/B
+    (sha256(case_id) parity), judged only against the reconstructed intent —
+    the AGB (as-good-or-better) axis. Judge-side only; the officer never sees
+    real_reply.
+
+    Returns ONE multi-verdict dict, decision-first. The DETERMINISTIC
     anti-rubber-stamp guard (§3.2 grounding + §3.3b topic-overlap floor) runs
     BEFORE crediting any intent-aligned/intent-partial verdict on a divergent
     decision; on failure it FORCES intent_verdict='intent-divergent' and stamps
-    intent_grounded_fact. The guard reads only the fenced cutoff material —
-    never real_reply — so it adds no leak. Both LLM passes go through
+    intent_grounded_fact. The same guards police an AGB outcome credit
+    (_outcome_judge). The guards read only the fenced cutoff material — never
+    real_reply — so they add no leak. All LLM passes go through
     oauth_json_llm, which strips ANTHROPIC_API_KEY from the child env."""
     # 1. Decision verdict — reused verbatim, decision-first.
     decision = retro.judge_decision(case_dict, clone_draft, llm=oauth_json_llm)
@@ -271,32 +402,39 @@ def judge_with_oauth(case_dict: dict, clone_draft: str,
             "intent_what_diverged": "",
             "intent_grounded_fact": "",
         })
-        return out
+    else:
+        intent_verdict = res["intent_verdict"]
+        grounded_fact = res.get("intent_grounded_fact", "") or ""
 
-    intent_verdict = res["intent_verdict"]
-    grounded_fact = res.get("intent_grounded_fact", "") or ""
+        # 3. DETERMINISTIC anti-rubber-stamp guard — only when the LLM credits
+        #    intent on a DIVERGENT decision (the F4 credit path is the only
+        #    place a hollow/hallucinated alignment can sneak credit). Runs over
+        #    the fenced cutoff material ONLY.
+        if (decision.get("verdict") == "divergent"
+                and intent_verdict in _INTENT_CREDIT):
+            # §3.3b topic-overlap floor first (cheap, decisive).
+            if _topic_overlap(clone_draft,
+                              reconstructed_intent) < _TOPIC_FLOOR_MIN:
+                intent_verdict = "intent-divergent"
+                grounded_fact = _FORCED_TOPIC
+            # §3.2 grounding check on the cited ground.
+            elif not _grounding_ok(grounded_fact, ctx_text, thread_text):
+                intent_verdict = "intent-divergent"
+                grounded_fact = _FORCED_GROUND
 
-    # 3. DETERMINISTIC anti-rubber-stamp guard — only when the LLM credits
-    #    intent on a DIVERGENT decision (the F4 credit path is the only place a
-    #    hollow/hallucinated alignment can sneak credit). Runs over the fenced
-    #    cutoff material ONLY.
-    if (decision.get("verdict") == "divergent"
-            and intent_verdict in _INTENT_CREDIT):
-        # §3.3b topic-overlap floor first (cheap, decisive).
-        if _topic_overlap(clone_draft, reconstructed_intent) < _TOPIC_FLOOR_MIN:
-            intent_verdict = "intent-divergent"
-            grounded_fact = _FORCED_TOPIC
-        # §3.2 grounding check on the cited ground.
-        elif not _grounding_ok(grounded_fact, ctx_text, thread_text):
-            intent_verdict = "intent-divergent"
-            grounded_fact = _FORCED_GROUND
+        out.update({
+            "intent_verdict": intent_verdict,
+            "intent_rationale": res.get("intent_rationale", ""),
+            "intent_what_diverged": res.get("intent_what_diverged", ""),
+            "intent_grounded_fact": grounded_fact,
+        })
 
-    out.update({
-        "intent_verdict": intent_verdict,
-        "intent_rationale": res.get("intent_rationale", ""),
-        "intent_what_diverged": res.get("intent_what_diverged", ""),
-        "intent_grounded_fact": grounded_fact,
-    })
+    # 4. D17 pass 3 — OUTCOME A/B vs the held-out real reply (AGB headline).
+    #    Runs whenever the intent layer ran (even if it errored — the outcome
+    #    question is independent of the intent VERDICT; it only needs the
+    #    reconstructed intent text). "" outcome keys when no real reply exists.
+    out.update(_outcome_judge(case_dict, clone_draft, reconstructed_intent,
+                              thread_text, ctx_text))
     return out
 
 
@@ -313,6 +451,10 @@ def score(case: Case, officer_decision: OfficerDecision, baseline_draft: str,
     ``reconstructed_intent`` falls back to ``case.intent`` (cached benchmark
     intent) when omitted. NEVER reads ``real_reply`` — the judge's intent pass
     and its deterministic guards see only the thread + the fenced context.
+
+    On the intent path the judge also runs the D17 OUTCOME pass (anonymized
+    clone-vs-real A/B against the reconstructed intent) and the row carries
+    ``outcome_verdict`` — the AGB axis intent_report headlines.
 
     With no ``intent_ctx`` the decision verdict alone drives the composite
     (== F1; ``composite(dec, "")`` returns ``_DEC[dec]``), so the F1 path is
@@ -343,6 +485,11 @@ def score(case: Case, officer_decision: OfficerDecision, baseline_draft: str,
         verdict, dict) else ""
     intent_grounded_fact = verdict.get("intent_grounded_fact", "") if isinstance(
         verdict, dict) else ""
+    # D17 outcome axis (AGB): empty when the pass did not run.
+    outcome_verdict = verdict.get("outcome_verdict", "") if isinstance(
+        verdict, dict) else ""
+    outcome_grounded_fact = verdict.get("outcome_grounded_fact", "") if isinstance(
+        verdict, dict) else ""
     # F1: endorsement 'unknown' -> score vs actual, no adjustment.
     endorsement_adjusted = case.endorsement in ("regretted", "constrained")
     return CaseScore(
@@ -356,4 +503,6 @@ def score(case: Case, officer_decision: OfficerDecision, baseline_draft: str,
         intent_verdict=intent_verdict,
         intent_grounded_fact=intent_grounded_fact,
         intent_composite=composite(decision_verdict, intent_verdict),
+        outcome_verdict=outcome_verdict,
+        outcome_grounded_fact=outcome_grounded_fact,
     )

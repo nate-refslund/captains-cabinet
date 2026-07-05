@@ -66,23 +66,45 @@ A **lane** is a product/venture/area the Cabinet works (see
 - **custom**: contexts + projects only; the captain authors roles by
   hand (see `presets/_template/`).
 
-### 4. Autonomy posture — NOT negotiable at init
+### 4. Autonomy posture — GUARDIAN at init; sovereign is a post-init Captain ratification
 
-State it, don't ask it:
+(Superseded 2026-07-05 by the sovereign-posture amendment, apply token
+`apply sovereign posture` — this section previously said "NOT negotiable
+at init"; init is still guardian-only, but the interview now RECORDS the
+target so the generator can render the inert scaffold.)
 
-> Every lane starts **propose-first**: actions touching the captain's
-> world are proposed and approved before they apply. On top sits the
-> **hard ceiling** that never lifts regardless of graduation —
-> **secrets, spend, external communications, and production deploys are
-> ALWAYS propose-only.**
+State it, don't ask for permission tuning:
+
+> Every deployment STARTS **guardian**: propose-first everywhere, and the
+> **hard ceilings** — secrets, spend, external communications, production
+> deploys, network writes, credential grants — **never resolve
+> UNCONDITIONAL auto in any posture.**
 >
-> Autonomy is **earned later, per lane, from evidence**: the
-> consequence ledger (`docs/consequence-ledger.md`) records every
-> action's proposal decision, outcome, and review verdict; graduation
-> math reads only that ledger. There is nothing to configure today —
-> good behavior under the gate IS the configuration.
+> The **sovereign posture** is not an init option — it is a **post-init
+> Captain ratification**: the generator renders an INERT
+> `instance/config/posture.yml` scaffold (guardian by default; a `mini*`
+> org cabinet id or an explicit `autonomy.target_posture: sovereign`
+> renders a sovereign target), and NOTHING changes until the Captain
+> edits `basis`/`ruled_at`, commits, and runs
+> `sudo bash cabinet/scripts/germline-lock.sh lock` — the schg lock IS
+> the signature; unlocked/absent/mismatched always resolves guardian.
+> Under a ratified sovereign posture, ceilings resolve `standing_grant`
+> (auto ONLY under a Captain-signed locked grant with its hard-scope
+> satisfied; else the step gates + files a NEED and the chain proceeds).
+>
+> Per-cell autonomy is still **earned from evidence**: the consequence
+> ledger (`docs/consequence-ledger.md`) records every action's proposal
+> decision, outcome, and review verdict; graduation math reads only that
+> ledger, and posture never enters graduation — bars define PROOF,
+> posture defines what unproven states UNLOCK.
 
-Record `autonomy.posture: propose_first` in the answers and move on.
+Ask ONE question — "is this deployment's flavor `org` (a product org
+cabinet) or `personal` (your personal surfaces)?" — and record
+`autonomy.flavor` plus (optional) `autonomy.target_posture` in the
+answers. `flavor: personal` always scaffolds guardian, and its
+external_comms standing grants are structurally refused in every posture
+(ACT-AND-DRAFT, captain-decisions.md 2026-07-04). Keep
+`autonomy.posture: propose_first` recorded as before and move on.
 
 ### 5. Seed outcomes (1–2 bounded campaigns per lane)
 
@@ -151,7 +173,9 @@ placeholders only:
      - {name, slug, repos: [], task_system, boards: [],
         neon_project, vercel_project,            # NAMES only
         linear_team_key, linear_workspace_url}   # when task_system: linear
-   autonomy: {posture: propose_first}            # fixed at init
+   autonomy: {posture: propose_first,            # fixed at init
+              flavor: org,                       # org | personal (§4)
+              target_posture: guardian}          # optional; guardian default, 'mini*' org ⇒ sovereign
    integrations:
      telegram: {ceo_bot, bot_token_env}          # username + ENV VAR NAME
      mcp_env_names: []                           # ENV VAR NAMES
@@ -167,10 +191,12 @@ placeholders only:
    `instance/config/contexts/<slug>.yml` + `projects/<slug>.yml`,
    `instance/agents/<slug>-ceo.md` (rendered from the lane-CEO
    template), the marked `officers:` block + captain keys in
-   `instance/config/platform.yml`, and `instance/config/roster.yml`
-   for `bootstrap-roles.sh --roster`. It refuses path escapes,
-   secret-shaped values, and clobbering hand-authored files, and
-   validates every written YAML.
+   `instance/config/platform.yml`, `instance/config/roster.yml`
+   for `bootstrap-roles.sh --roster`, and — only when absent — the
+   INERT `instance/config/posture.yml` ruling scaffold (§4; an
+   existing ruling is never regenerated, not even with --force). It
+   refuses path escapes, secret-shaped values, and clobbering
+   hand-authored files, and validates every written YAML.
 
 ## Print the exact next steps
 
