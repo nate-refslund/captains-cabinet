@@ -1,6 +1,6 @@
 ---
 description: Mark a mission work-graph node done from this officer session. Emits work_item_completed event + optionally work_item_verified.
-argument-hint: "<task_id> [--evidence <text>|--verify]"
+argument-hint: "<node_id> [--status done|failed|verified] [--evidence <text-or-file>]"
 allowed-tools: Bash
 ---
 
@@ -13,12 +13,17 @@ session.
 bash cabinet/scripts/work-graph-complete.sh $ARGUMENTS
 ```
 
-Two outcomes:
+`<node_id>` accepts both work-graph id shapes (2026-07-05): compiler task ids
+`<outcome_id>-task-NNN` AND ratified explicit `node_id` values from
+`instance/config/outcomes.yml` (e.g. `polads-001-ci`, `sys-001-parity`).
 
-- **Default**: emits `work_item_completed` with the task_id and outcome_id.
-- **`--verify`**: also emits `work_item_verified` so the verifier_role's
+Status mapping (`--status`, default `done`):
+
+- **`done`**: emits `work_item_completed` with the task_id and outcome_id.
+- **`failed`**: emits `work_item_failed`.
+- **`verified`**: emits `work_item_verified` so the verifier_role's
   acceptance is recorded. Use only when verification evidence has been
-  collected per the spec.
+  collected per the spec (never on your own work).
 
 The mission supervisor's next tick (or `/cabinet-route-tasks`) will then
 release any downstream nodes whose dependencies are now satisfied.

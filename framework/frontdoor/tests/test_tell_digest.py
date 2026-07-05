@@ -274,3 +274,162 @@ def test_digest_manifest_binds_undo_by_index_in_binder():
     assert res["pid"] == "pid-a"
     assert reversed_pids == ["pid-a"]
     assert emitted and emitted[0]["review"]["verdict"] == "wrong"
+
+
+# --- 📈 LOOP readout (lane instrument, 2026-07-05) ----------------------------------
+
+def _lrow(ts, *, action_type="task_create", required=True, decision=None,
+          verdict=None, source=None, lane="polads", subject="s"):
+    """A consequence-ledger row for the readout math (proposal/review channels
+    only — the readout never touches outcome.status)."""
+    ev = {"ts": ts, "actor": {"kind": "officer", "id": "officer:cos"},
+          "lane": lane, "action": "action-card", "subject": subject,
+          "proposal": {"required": required, "decision": decision},
+          "outcome": {"status": "unknown"},
+          "review": {"verdict": verdict, "source": source}}
+    if action_type:
+        ev["action_type"] = action_type
+    return ev
+
+
+def test_compute_card_rates_maps_skip_and_counts_expired():
+    ledger = [
+        _lrow("2026-07-01T10:00:00Z", decision="approved"),
+        _lrow("2026-07-01T11:00:00Z", decision="approved"),
+        _lrow("2026-07-01T12:00:00Z", decision="edited"),
+        _lrow("2026-07-01T13:00:00Z", decision="rejected"),   # Captain `skip`
+        _lrow("2026-07-01T14:00:00Z", decision="expired"),    # TTL lapse
+        _lrow("2026-07-01T15:00:00Z", decision=None),         # pending: no rate
+        _lrow("2026-07-01T16:00:00Z", action_type="calendar_write",
+              decision="approved"),
+    ]
+    kinds = td.compute_card_rates(ledger)
+    assert kinds["task_create"] == {"approved": 2, "edited": 1,
+                                    "skipped": 1, "expired": 1}
+    assert kinds["calendar_write"] == {"approved": 1, "edited": 0,
+                                       "skipped": 0, "expired": 0}
+
+
+def test_compute_card_rates_since_window_and_unstamped_bucket():
+    ledger = [
+        _lrow("2026-06-01T10:00:00Z", decision="approved"),   # outside window
+        _lrow("2026-07-01T10:00:00Z", decision="approved"),
+        _lrow("2026-07-01T11:00:00Z", action_type=None, decision="expired"),
+    ]
+    kinds = td.compute_card_rates(ledger, since="2026-06-15T00:00:00Z")
+    assert kinds["task_create"]["approved"] == 1               # windowed
+    # Unstamped rows stay VISIBLE under the sentinel (no-silent-caps).
+    assert kinds["__unstamped__"]["expired"] == 1
+
+
+def test_undo_rate_trend_windows_and_unmeasured_none():
+    ledger = [
+        # current 7d: 2 acts, 1 undone
+        _lrow("2026-07-01T10:00:00Z", required=False, verdict="wrong"),
+        _lrow("2026-07-02T10:00:00Z", required=False, verdict="confirmed",
+              source="verdict_human"),
+        # previous 7d: 1 act, 0 undone
+        _lrow("2026-06-25T10:00:00Z", required=False),
+        # unstamped act must NOT count (mirror falsifier _acted_rows)
+        _lrow("2026-07-03T10:00:00Z", action_type=None, required=False),
+    ]
+    t = td.undo_rate_trend(ledger, now=NOW)
+    assert t == {"rate_7d": 0.5, "prev_rate_7d": 0.0,
+                 "acted_7d": 2, "undone_7d": 1}
+    # No acts at all → None (unmeasured), never a silent 0.0.
+    empty = td.undo_rate_trend([], now=NOW)
+    assert empty["rate_7d"] is None and empty["prev_rate_7d"] is None
+
+
+def test_read_falsifier_series_skips_corrupt_lines(tmp_path):
+    p = tmp_path / "falsifier-series.jsonl"
+    p.write_text('not-json\n{"date": "2026-07-04", "acted_7d": 3}\n\n'
+                 '{"date": "2026-07-05", "acted_7d": 5}\n')
+    series = td.read_falsifier_series(p)
+    assert [s["date"] for s in series] == ["2026-07-04", "2026-07-05"]
+    assert td.read_falsifier_series(tmp_path / "missing.jsonl") == []
+
+
+def test_gather_loop_readout_never_raises(tmp_path):
+    """FAIL-SAFE: a readout failure must never cost the digest. Injected
+    garbage everywhere → errors collected, partial dict returned, no raise."""
+    out = td.gather_loop_readout(now="not-a-timestamp",
+                                 ledger=[{"ts": 1}, "junk", None],
+                                 series_path=tmp_path / "nope.jsonl")
+    assert out["falsifier"] is None and out["series_len"] == 0
+    assert isinstance(out["kinds"], dict) and isinstance(out["undo"], dict)
+
+
+def test_render_loop_readout_lines_and_empty_case():
+    readout = {
+        "now": NOW,
+        "kinds": {"task_create": {"approved": 3, "edited": 1,
+                                  "skipped": 0, "expired": 0}},
+        "undo": {"rate_7d": 0.25, "prev_rate_7d": 0.5,
+                 "acted_7d": 4, "undone_7d": 1},
+        "falsifier": {"date": "2026-07-05", "acted_7d": 4,
+                      "reversal_rate_7d": 0.25, "cells_accumulating": 3,
+                      "cells_graduated": 1},
+        "series_len": 12,
+    }
+    text = td.render_loop_readout(readout)
+    assert text.startswith("📈 LOOP")
+    assert "task_create" in text and "75% approve" in text and "25% edit" in text
+    assert "undo-rate 7d: 25%" in text and "prev 7d 50% ↓" in text
+    assert ("falsifier 2026-07-05: acted_7d=4 · reversal_7d=25% · cells "
+            "3 accumulating / 1 graduated") in text
+    # Nothing measured → "" (silence costs nothing).
+    assert td.render_loop_readout({"kinds": {}, "undo": {}, "falsifier": None}) == ""
+    assert td.render_loop_readout(None) == ""
+
+
+def test_enqueue_digest_appends_readout_below_the_four_legs():
+    r = _Redis()
+    intake = _Intake()
+    readout = {"kinds": {}, "undo": {"rate_7d": None, "prev_rate_7d": None,
+                                     "acted_7d": 0, "undone_7d": 0},
+               "falsifier": {"date": "2026-07-05", "acted_7d": 2,
+                             "reversal_rate_7d": None,
+                             "cells_accumulating": 1, "cells_graduated": 0}}
+    out = td.enqueue_digest(now=NOW, acted_rows=[_jrow()], awaiting_rows=[],
+                            watching_rows=[], self_rows=[], readout=readout,
+                            redis_get=r.get, redis_set=r.set, enqueue=intake)
+    assert out["digest"] is True and out["readout"] is True
+    text = intake.items[0]["payload"]["summary"]
+    assert "✅ ACTED (1)" in text and "📈 LOOP" in text
+    # readout rides BELOW the digest (germline renderer untouched)
+    assert text.index("📈 LOOP") > text.index("✅ ACTED (1)")
+
+
+def test_enqueue_digest_ships_readout_only_when_core_legs_empty():
+    """Loop-closure stays visible on a quiet day: no acts/awaiting/self, but a
+    measured readout still rides the briefing — with no manifest (no indexes
+    to bind) and no undo grammar."""
+    intake = _Intake()
+    readout = {"kinds": {"task_create": {"approved": 1, "edited": 0,
+                                         "skipped": 0, "expired": 0}},
+               "undo": {}, "falsifier": None}
+    out = td.enqueue_digest(now=NOW, acted_rows=[], awaiting_rows=[],
+                            watching_rows=[], self_rows=[], readout=readout,
+                            redis_get=lambda k: "", redis_set=None,
+                            enqueue=intake)
+    assert out["digest"] is True and out["readout"] is True
+    assert out["manifest"] == []
+    text = intake.items[0]["payload"]["summary"]
+    assert text.startswith("📈 LOOP")
+    # no tell_surface header/footer → no undo-by-index grammar implied
+    assert "🗒 Act-then-tell digest" not in text and "undo <n>" not in text
+
+
+def test_enqueue_digest_readout_none_is_byte_identical_legacy():
+    """Back-compat: readout=None (the default) must not change the digest text
+    — fixtured callers and the binder's rendered-text contract stay intact."""
+    r1, r2 = _Redis(), _Redis()
+    i1, i2 = _Intake(), _Intake()
+    td.enqueue_digest(now=NOW, acted_rows=[_jrow()], awaiting_rows=[],
+                      watching_rows=[], self_rows=[],
+                      redis_get=r1.get, redis_set=r1.set, enqueue=i1)
+    td.enqueue_digest(now=NOW, acted_rows=[_jrow()], awaiting_rows=[],
+                      watching_rows=[], self_rows=[], readout=None,
+                      redis_get=r2.get, redis_set=r2.set, enqueue=i2)
+    assert i1.items[0]["payload"]["summary"] == i2.items[0]["payload"]["summary"]
