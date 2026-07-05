@@ -1154,6 +1154,46 @@ def _recard_edited(pid: str, rec: dict, edit_text: str, *,
     return {"recarded": True, "recard_pid": new_pid, "recard_cid": cid}
 
 
+def _emit_acted_consequence(enriched_row: dict, step: dict, rec: dict) -> None:
+    """Emit the per-STEP acted consequence event for an unattended (act-first)
+    step, on the CANONICAL identity the binder + reconcile sweep supersede on.
+
+    ACTED-EVENT IDENTITY FIX (germline batch 2026-07-05): the act-first lane used
+    to emit ONE card-level acted row under action ``action-card``
+    (run_action_lane, ``dict(prop_ev)``), but binder_wire._acted_records_for_pid
+    and action_reconcile both recompute EACH step's identity as
+    ``loop.proposal_id(action_undo.acted_event(None, journal_row))`` — i.e. action
+    ``acted:<kind>`` at the row's ``executed_at``. The two never matched (different
+    action string AND different ts), the VERIFIED proposal_id mismatch: every act
+    left one permanently ``outcome:unknown`` 'action-card' orphan AND each verdict
+    MINTED a second 'acted:<kind>' row → sample_count double-counted (~2 rows/act)
+    and the unknown row never resolved. Emitting HERE, from the executor at
+    execution time off the SAME enriched journal row the consumers rebuild
+    identity from, guarantees proposal_id parity — so a Captain 👍/undo or the
+    reconcile TTL sweep SUPERSEDES this row in place (one row/step, unknown→
+    verdict). Wired HERE (not in the lane) because only the executor holds the
+    exact ``executed_at``/``jid`` that fix the identity — exactly the wiring
+    ``action_undo.acted_event`` deferred ("lands with the act-first branch").
+
+    The proposal's evidence refs (from the stored record) are appended to the
+    event's refs so cross-run dedup (run_action_lane.covered_evidence_refs) still
+    covers an acted card exactly as the old card-level row did. Data-integrity
+    fix only: ``verdict_human`` provenance is UNCHANGED — this row carries
+    ``proposal.required:false`` (the RT-B1 acted marker, never an approval) and
+    its sole outcome is ``unknown`` until a real verdict supersedes it. Called
+    best-effort by ``deliver_action`` (act-first path only) so an emit failure
+    never breaks an act that already landed and is journaled with a 48h undo
+    handle; ``acted_event`` validates the event before returning, and the appended
+    evidence refs (plain strings) keep it schema-legal."""
+    from framework.fidelity.consequence import emit_consequence
+    ev = action_undo.acted_event(step, enriched_row)
+    evidence = [str(e) for e in (rec.get("evidence") or []) if e]
+    if evidence:
+        refs = list(ev.get("refs") or [])
+        ev["refs"] = refs + [e for e in evidence if e not in refs]
+    emit_consequence(**ev)
+
+
 def deliver_action(pid: str, override_text: str = "", *,
                    redis_get: Callable[[str], str] | None = None,
                    monday_post: Callable | None = None,
@@ -1430,6 +1470,16 @@ def deliver_action(pid: str, override_text: str = "", *,
                         "executed_at": action_undo._now()}
             _best_effort(lambda: action_undo.journal_step(enriched))
             journaled.append({"jid": jid, "step": i, "kind": kind})
+            # ACTED-EVENT IDENTITY FIX (germline batch 2026-07-05): on the
+            # UNATTENDED (act-first) path ONLY, emit this step's acted consequence
+            # row off the exact enriched journal row — on the canonical
+            # acted:<kind> identity the binder + reconcile sweep supersede on, so
+            # a later verdict updates it in place instead of double-minting. The
+            # APPROVED path never emits here: its proposal→outcome lifecycle is
+            # recorded by the binder, and a second acted row would double-count.
+            # Best-effort — a failed emit must not break a journaled, undoable act.
+            if act_first:
+                _best_effort(lambda: _emit_acted_consequence(enriched, step, rec))
 
     if dry_run:
         return {"ok": True, "via": "action-lane", "dest": lane, "executed": executed}

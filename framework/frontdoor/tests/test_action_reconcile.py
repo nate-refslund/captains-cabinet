@@ -258,3 +258,69 @@ def test_journal_gc_prunes_old_keeps_recent_and_junk(tmp_path):
 def test_gc_missing_dir_is_noop():
     assert ar.gc_journal(now="2026-07-08T10:00:00Z",
                          journal_dir="/nonexistent/undo/dir") == {"pruned": [], "kept": 0}
+
+
+# --- ACTED-EVENT IDENTITY FIX (germline batch 2026-07-05): sweep parity -------
+# End-to-end against the REAL executor + REAL fenced ledger/journal (no injected
+# journal rows / ledger / emit): deliver_action(act_first=True) now emits the
+# per-step acted row itself (action_exec._emit_acted_consequence) on the exact
+# identity this sweep recomputes — so the TTL sweep SUPERSEDES that row in
+# place. Pre-fix the lane's card-level 'action-card' emit never matched the
+# recomputed identity: the sweep minted a SECOND row and the unknown row
+# orphaned forever (2 rows/act double-count).
+
+def test_ttl_sweep_supersedes_executor_emitted_acted_row(monkeypatch):
+    from framework.acting import loop
+    from framework.fidelity.consequence import read_ledger
+    from framework.frontdoor import action_exec as ax
+
+    # hermetic transports (the autouse fixture fences the dirs; the executor's
+    # own redis paths are neutered exactly as test_action_exec.py does)
+    monkeypatch.setattr(ax, "_redis", lambda *a, **k: "")
+    monkeypatch.setattr(au, "_default_redis_set", lambda *a, **k: None)
+    monkeypatch.setattr(au, "_default_redis_get", lambda *a, **k: "")
+    monkeypatch.setattr(au, "_default_redis_del", lambda *a, **k: None)
+    monkeypatch.setattr(ax, "_load_act_first_surfaces",
+                        lambda: {"denylist": {}, "caps": {"per_kind_per_day": 20,
+                                                          "estate_per_day": 40}})
+    import json
+    steps = [{"kind": "monday_task_create",
+              "payload": {"board_id": "5091706356", "title": "t"}}]
+    rec = {"lane": "polads", "subject": "close cmt", "steps": steps,
+           "steps_sha256": ax._canonical_sha(steps)}
+
+    def getter(k):
+        return json.dumps(rec) if k.startswith("cabinet:action:") else ""
+
+    class Monday:
+        def __call__(self, query, variables):
+            if "create_item" in query:
+                return {"create_item": {"id": "12345"}}
+            return {"create_update": {"id": "u1"}}
+
+    out = ax.deliver_action("psweep", act_first=True, redis_get=getter,
+                            monday_post=Monday(), osascript=lambda c: "ok",
+                            redis_incr=lambda k, t: None)
+    assert out["ok"] is True
+
+    led = read_ledger()
+    acted = [e for e in led if (e.get("action") or "").startswith("acted:")]
+    assert len(acted) == 1 and acted[0]["outcome"] == {"status": "unknown"}
+
+    # sweep with DEFAULT seams (real fenced journal + ledger + emit), far past
+    # the 48h TTL; no probe → conservative ttl_ok.
+    res = ar.run_sweep(now="2027-01-01T00:00:00Z", monday_probe=None, gc=False)
+    assert len(res["ttl_ok"]) == 1 and res["silent_reverts"] == []
+
+    led2 = read_ledger()
+    acted2 = [e for e in led2 if (e.get("action") or "").startswith("acted:")]
+    assert len(acted2) == 1                       # superseded in place, no 2nd mint
+    assert acted2[0]["outcome"]["status"] == "ok"
+    assert loop.proposal_id(acted2[0]) == loop.proposal_id(acted[0])   # same identity
+    # no permanent outcome:unknown orphan survives the sweep
+    assert not [e for e in led2 if (e.get("outcome") or {}).get("status") == "unknown"]
+
+    # idempotent: the superseded row now gates the second pass (skipped, not
+    # re-emitted) — pre-fix this skipped=0 + re-minted forever.
+    res2 = ar.run_sweep(now="2027-01-01T00:00:00Z", monday_probe=None, gc=False)
+    assert res2["ttl_ok"] == [] and res2["skipped"] == 1

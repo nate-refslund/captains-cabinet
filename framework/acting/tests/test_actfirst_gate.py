@@ -164,8 +164,11 @@ def _update_card(board="5091706356"):
 
 def _drive_main(monkeypatch, *, proposals, deliver_result, act_first=True,
                 emit_raises=False):
-    """Patch main()'s I/O seams; return captured (emits, delivers, tgs, rc)."""
-    emits, delivers, tgs, receipts = [], [], [], []
+    """Patch main()'s I/O seams; return captured (emits, delivers, tgs, stores,
+    rc). ``stores`` records every _store_action(pid, proposal, cid) call — the
+    lane-normalization tests read the stored proposal's lane (the record the
+    executor journals + emits acted rows from)."""
+    emits, delivers, tgs, receipts, stores = [], [], [], [], []
 
     monkeypatch.setattr(r.sys, "argv", ["run_action_lane"])
     monkeypatch.setattr(r, "_acquire_lock", lambda: True)
@@ -178,7 +181,8 @@ def _drive_main(monkeypatch, *, proposals, deliver_result, act_first=True,
     monkeypatch.setattr(r.action_lane, "propose_actions",
                         lambda *a, **k: list(proposals))
     monkeypatch.setattr(r, "_prior_acted_types", lambda: frozenset())
-    monkeypatch.setattr(r, "_store_action", lambda *a, **k: None)
+    monkeypatch.setattr(r, "_store_action",
+                        lambda pid, p, cid="": stores.append((pid, p, cid)))
     monkeypatch.setattr(r, "_tg", lambda text: tgs.append(text))
     monkeypatch.setattr(r, "_emit_receipt", lambda *a, **k: receipts.append(a))
     # ask-budget seam (germline 2026-07-04): hermetic per-run counter. Without
@@ -224,10 +228,18 @@ def _drive_main(monkeypatch, *, proposals, deliver_result, act_first=True,
 
     rc = r.main()
     return {"emits": emits, "delivers": delivers, "tgs": tgs,
-            "receipts": receipts, "rc": rc}
+            "receipts": receipts, "stores": stores, "rc": rc}
 
 
-def test_act_path_journals_and_marks_ledger_acted(monkeypatch):
+def test_act_path_emits_nothing_lane_side_executor_owns_acted_row(monkeypatch):
+    # ACTED-EVENT IDENTITY FIX (germline batch 2026-07-05): the lane's old
+    # card-level acted emit (dict(prop_ev) under 'action-card') is GONE — it
+    # never matched the identity binder/reconcile recompute, leaving a permanent
+    # outcome:unknown orphan + a double-mint per verdict. The executor now owns
+    # the per-step acted row (emitted INSIDE deliver_action off the enriched
+    # journal row — pinned in test_action_exec.py::
+    # test_act_first_emits_acted_row_on_canonical_identity). Lane-side the act
+    # path keeps ONLY the caps counter + receipt: zero ledger emits here.
     out = _drive_main(monkeypatch, proposals=[_update_card()],
                       deliver_result={"ok": True})
     # executor invoked in act-first mode
@@ -235,12 +247,8 @@ def test_act_path_journals_and_marks_ledger_acted(monkeypatch):
     assert out["delivers"][0]["act_first"] is True
     # NO card was presented to the Captain (acted, not proposed)
     assert out["tgs"] == []
-    # the acted ledger row is shaped act-not-propose
-    assert len(out["emits"]) == 1
-    ev = out["emits"][0]
-    assert ev["proposal"] == {"required": False, "decision": None}
-    assert ev["outcome"] == {"status": "unknown"}
-    assert ev.get("action_type") == "board_status"
+    # and NO lane-side ledger row — the acted row is the executor's
+    assert out["emits"] == []
     assert len(out["receipts"]) == 1
 
 
@@ -262,6 +270,8 @@ def test_downgrade_falls_through_to_propose(monkeypatch):
 def test_create_card_acts_post_germline(monkeypatch):
     # [GERM-2] a pure create stamps task_create (pm_write / act_with_undo) and
     # ACTS through the journaled lane — the second genuine end-to-end act path.
+    # (2026-07-05 acted-identity fix: the acted ledger row is the EXECUTOR's now
+    # — lane-side the act path emits nothing; see the emits==[] pin above.)
     step = ActionStep(kind="monday_task_create", title="new",
                       payload={"board_id": "5091706356", "title": "t"})
     card = ActionProposal(subject="new task", situation="w", steps=(step,),
@@ -271,8 +281,9 @@ def test_create_card_acts_post_germline(monkeypatch):
                       deliver_result={"ok": True})
     assert len(out["delivers"]) == 1 and out["delivers"][0]["act_first"] is True
     assert out["tgs"] == []                    # acted, not proposed
-    assert out["emits"][0].get("action_type") == "task_create"
-    assert out["emits"][0]["outcome"] == {"status": "unknown"}
+    assert out["emits"] == []                  # executor owns the acted row
+    # the record the executor acts from was stored before delivery
+    assert [s[1].subject for s in out["stores"]] == ["new task"]
 
 
 def test_ineligible_dispatch_proposes_even_with_flag_on(monkeypatch):
@@ -300,9 +311,12 @@ def test_flag_off_never_acts(monkeypatch):
 
 
 def test_crash_between_act_and_emit_leaves_act_standing(monkeypatch):
-    # emit_consequence raises AFTER the journaled+executed act. The lane must NOT
-    # re-present the card (no double-action); the journaled act stands alone and
-    # stays undoable (journal is deliver_action's durable record).
+    # A raising lane-side emit seam cannot disturb an acted card: the lane must
+    # NOT re-present it (no double-action) and the Captain still gets the
+    # receipt. (Since the 2026-07-05 acted-identity fix the act path emits
+    # nothing lane-side at all — the executor owns the acted row, best-effort,
+    # pinned in test_action_exec.py::test_acted_emit_failure_is_best_effort_*;
+    # this stays as the lane-level no-re-propose pin with the emit seam armed.)
     out = _drive_main(monkeypatch, proposals=[_update_card()],
                       deliver_result={"ok": True}, emit_raises=True)
     assert len(out["delivers"]) == 1           # acted
@@ -802,3 +816,218 @@ def test_expiry_unparseable_ts_never_expires(monkeypatch):
     monkeypatch.setattr(r, "emit_consequence", lambda **ev: emitted.append(ev))
     assert r._expire_stale_cards(dt.datetime.now(dt.timezone.utc)) == 0
     assert emitted == []
+
+
+# ============================================================================
+# LANE CELL-KEY NORMALIZATION (germline batch 2026-07-05). The graduation cell
+# is (actor, lane, action_type); the lane component was LLM free-text, so ONE
+# conceptual lane arrived under many spellings (the live ledger held 5 across
+# 26 rows) — fragmenting verdict accumulation so the 2-wrong demotion never
+# clustered and the graduation floor was unreachable. _normalize_lane collapses
+# to the instance context enum at proposal INGESTION (main) and at the demote
+# gate's cell composition (_graduation_demoted); these pin both seams + the
+# helper's determinism.
+# ============================================================================
+
+# The 5 raw spellings observed on the live ledger (the fix's motivating data).
+_LIVE_SPELLINGS = ("Commitments", "Commitments / Delivery",
+                   "Commitments / Meetings", "nate", "polads-ceo")
+
+
+def test_normalize_lane_idempotent():
+    # normalize(normalize(x)) == normalize(x) — applying the collapse at BOTH
+    # seams (emit + gate) can never disagree.
+    for raw in _LIVE_SPELLINGS + ("cabinet", "PolAds delivery", "polads",
+                                  "", None, "zzz totally unknown"):
+        once = r._normalize_lane(raw)
+        assert r._normalize_lane(once) == once, raw
+
+
+def test_live_ledger_spellings_map_to_stable_slugs():
+    slugs = r._context_slugs()
+    assert slugs                                    # instance enum readable
+    enum = set(slugs) | {r._LANE_NORM_DEFAULT}
+    for raw in _LIVE_SPELLINGS:
+        got = r._normalize_lane(raw)
+        assert got in enum, raw                     # a real cell, never free text
+        assert got != raw, raw                      # no raw spelling passes through
+        assert r._normalize_lane(raw) == got        # stable across calls
+    # the officer-role spelling collapses onto its context slug
+    assert r._normalize_lane("polads-ceo") == "polads"
+    # the three 'Commitments*' spellings of ONE conceptual lane land in ONE
+    # cell — the exact de-fragmentation the demotion cluster needs
+    assert len({r._normalize_lane(x) for x in _LIVE_SPELLINGS[:3]}) == 1
+    # the docstring's promised fuzzy matches
+    assert r._normalize_lane("cabinet") == "captains-cabinet"
+    assert r._normalize_lane("PolAds delivery") == "polads"
+
+
+def test_unknown_or_empty_lane_maps_to_stable_default():
+    # fail-safe: unknown/empty inputs land on the FIXED 'adhoc' cell — one
+    # stable catch-all, never a fresh per-call string (which would mint an
+    # unclusterable cell per run).
+    assert r._LANE_NORM_DEFAULT == "adhoc"          # a real context slug
+    assert r._normalize_lane("") == r._LANE_NORM_DEFAULT
+    assert r._normalize_lane(None) == r._LANE_NORM_DEFAULT
+    a = r._normalize_lane("zzz unknown one")
+    b = r._normalize_lane("qqq unknown two")
+    assert a == b == r._LANE_NORM_DEFAULT           # different unknowns, ONE cell
+
+
+def test_enum_unreadable_degrades_to_stable_slugify(monkeypatch, tmp_path):
+    # config unreadable ⇒ deterministic per-input slugification (suffix-stripped
+    # kebab) — still stable per input, never a fresh string per call.
+    monkeypatch.setattr(r, "CONTEXTS_DIR", tmp_path / "no-such-contexts")
+    monkeypatch.setattr(r, "_context_slugs_cache", None)   # drop the run cache
+    assert r._normalize_lane("polads-ceo") == "polads"     # role suffix stripped
+    assert r._normalize_lane("Commitments / Delivery") == "commitments-delivery"
+    assert (r._normalize_lane("Commitments / Delivery")
+            == r._normalize_lane("commitments   delivery"))   # spelling-stable
+    assert r._normalize_lane("") == r._LANE_NORM_DEFAULT
+    # idempotent in degraded mode too
+    once = r._normalize_lane("polads-ceo")
+    assert r._normalize_lane(once) == once
+    monkeypatch.setattr(r, "_context_slugs_cache", None)   # don't poison later tests
+
+
+def test_gate_reads_the_exact_cell_the_emitters_write(monkeypatch, tmp_path):
+    # THE CRITICAL PARITY PIN: acted rows emitted under the normalized lane and
+    # a gate query arriving with a RAW spelling must land on the SAME graduation
+    # cell — if they diverge, demotion re-severs (the whole point of the fix).
+    # Real emit_consequence into a fenced ledger + the REAL graduation.evaluate;
+    # two acted rows under two DIFFERENT raw spellings of the one conceptual
+    # lane, each superseded by a captain-undo (wrong) verdict → the 2-wrong
+    # cluster forms in ONE cell, and the gate — queried with a THIRD spelling —
+    # reads exactly that cell and demotes.
+    from framework.fidelity.consequence import emit_consequence
+    from framework.frontdoor import binder_wire as bw
+    monkeypatch.setenv("CABINET_EVENT_LOG_DIR", str(tmp_path / "events"))
+    monkeypatch.setenv("CABINET_UNDO_DIR", str(tmp_path / "undo"))
+
+    for i, raw in enumerate(("Commitments", "Commitments / Delivery"), 1):
+        lane = r._normalize_lane(raw)               # what ingestion stores/emits
+        row = action_undo.new_row(
+            pid=f"cellpin-{i}", cid="", step=1, kind="monday_task_create",
+            backend="monday", lane=lane, subject=f"cell parity {i}",
+            actor=r._ACTOR, executed_at=f"2026-07-05T0{i}:00:00Z")
+        base = action_undo.acted_event(None, row)   # the executor's emit shape
+        emit_consequence(**base)
+        emit_consequence(**bw.acted_verdict_event(
+            base, "undo", why="fenced parity test",
+            reviewed_at=f"2026-07-05T0{i}:30:00Z"))
+
+    # the gate, handed a third RAW spelling, keys the SAME cell → demoted
+    demoted, why = r._graduation_demoted("task_create", "Commitments / Meetings")
+    assert demoted is True and "demoted" in why
+    # raw and pre-normalized queries agree (idempotent at the gate seam)
+    assert r._graduation_demoted("task_create",
+                                 r._normalize_lane("Commitments")) == (demoted, why)
+    # a lane normalizing to a DIFFERENT cell is untouched (no over-blocking)
+    assert r._graduation_demoted("task_create", "polads") == (False, "")
+
+
+def test_main_ingestion_normalizes_lane_for_gate_and_store(monkeypatch):
+    # main() seam (act path): an LLM free-text lane ('polads-ceo') is collapsed
+    # at INGESTION, so the gate's graduation cell AND the stored record (which
+    # the executor journals + emits acted rows from) carry the identical slug —
+    # emit seam and gate can never diverge on the cell key.
+    seen = {}
+
+    def spy_eval(cell, **kw):
+        seen["cell"] = cell
+        return {"state": "unmeasured"}              # does not brake
+
+    monkeypatch.setattr(graduation, "evaluate", spy_eval)
+    step = ActionStep(kind="monday_task_update", title="move to Done",
+                      payload={"board_id": "5091706356", "item_id": "42",
+                               "status": "Done"})
+    card = ActionProposal(subject="close cmt", situation="done", steps=(step,),
+                          lane="polads-ceo",        # raw LLM spelling
+                          evidence=("6-Commitments/x.md",), confidence=0.95,
+                          urgency="batch")
+    out = _drive_main(monkeypatch, proposals=[card], deliver_result={"ok": True})
+    assert len(out["delivers"]) == 1                # acted
+    assert seen["cell"] == ("officer:cos", "polads", "board_status")
+    assert [s[1].lane for s in out["stores"]] == ["polads"]
+
+
+def test_main_propose_path_emits_normalized_lane(monkeypatch):
+    # main() seam (propose fallthrough): the PENDING proposal row and the stored
+    # record also carry the normalized cell key — the ledger never accumulates a
+    # free-text lane again (flag OFF = the plain propose lane, same seam).
+    card = _update_card()
+    card = ActionProposal(subject=card.subject, situation=card.situation,
+                          steps=card.steps, lane="Commitments / Delivery",
+                          evidence=card.evidence, confidence=card.confidence,
+                          urgency=card.urgency)
+    out = _drive_main(monkeypatch, proposals=[card],
+                      deliver_result={"ok": True}, act_first=False)
+    assert len(out["emits"]) == 1
+    assert out["emits"][0]["lane"] == "adhoc"       # the stable catch-all slug
+    assert [s[1].lane for s in out["stores"]] == ["adhoc"]
+
+
+# ============================================================================
+# ACTED-EVENT IDENTITY FIX — the lane's ledger READERS (germline 2026-07-05):
+# acted rows moved from 'action-card' onto 'acted:<kind>', so the cross-run
+# dedup (covered_evidence_refs) and the first-ever-cell receipt rule
+# (_prior_acted_types) must read BOTH the canonical and the legacy identity —
+# else every acted situation would re-propose and every post-fix first act
+# would spuriously instant-tell.
+# ============================================================================
+
+def _fence(monkeypatch, tmp_path):
+    monkeypatch.setenv("CABINET_EVENT_LOG_DIR", str(tmp_path / "events"))
+    monkeypatch.setenv("CABINET_UNDO_DIR", str(tmp_path / "undo"))
+
+
+def test_covered_evidence_refs_reads_acted_rows(monkeypatch, tmp_path):
+    _fence(monkeypatch, tmp_path)
+    now = dt.datetime.now(dt.timezone.utc)
+    # a presented card (legacy 'action-card' identity) carrying evidence refs
+    _seed_card(now, subject="asked", hours_old=1, action_type="task_create")
+    prop = r.proposal_event(actor=r._ACTOR, lane="polads", subject="asked2",
+                            ts=now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                            action="action-card", refs=["6-Commitments/a.md"])
+    r.emit_consequence(**prop)
+    # an ACTED row on the canonical identity, evidence ref appended exactly as
+    # action_exec._emit_acted_consequence does
+    row = action_undo.new_row(pid="cov-1", cid="", step=1,
+                              kind="monday_task_create", backend="monday",
+                              lane="polads", subject="acted situation",
+                              actor=r._ACTOR, executed_at="2026-07-05T01:00:00Z")
+    ev = action_undo.acted_event(None, row)
+    ev["refs"] = list(ev.get("refs") or []) + ["6-Commitments/b.md"]
+    r.emit_consequence(**ev)
+
+    refs = r.covered_evidence_refs()
+    assert "6-Commitments/a.md" in refs             # presented card still covers
+    assert "6-Commitments/b.md" in refs             # ACTED card now covers too —
+    #                                    an acted situation must not re-propose
+
+
+def test_prior_acted_types_reads_canonical_and_legacy(monkeypatch, tmp_path):
+    _fence(monkeypatch, tmp_path)
+    # canonical acted:<kind> row (post-fix executor emit), outcome present
+    row = action_undo.new_row(pid="pat-1", cid="", step=1,
+                              kind="monday_task_create", backend="monday",
+                              lane="polads", subject="new acted",
+                              actor=r._ACTOR, executed_at="2026-07-05T01:00:00Z")
+    r.emit_consequence(**action_undo.acted_event(None, row))
+    # legacy pre-fix acted row: 'action-card' + outcome (what the lane used to
+    # emit) — history from before the fix must still count
+    legacy = r.proposal_event(actor=r._ACTOR, lane="polads", subject="old acted",
+                              ts="2026-07-01T00:00:00Z", action="action-card")
+    legacy["action_type"] = "board_status"
+    legacy["proposal"] = {"required": False, "decision": None}
+    legacy["outcome"] = {"status": "unknown"}
+    r.emit_consequence(**legacy)
+    # a plain PENDING proposal (no outcome) must NOT count as acted
+    r.emit_consequence(**r.proposal_event(
+        actor=r._ACTOR, lane="polads", subject="only asked",
+        ts="2026-07-02T00:00:00Z", action="action-card"))
+
+    types = r._prior_acted_types()
+    assert "task_create" in types                   # canonical identity read
+    assert "board_status" in types                  # legacy identity still read
+    assert len(types) == 2

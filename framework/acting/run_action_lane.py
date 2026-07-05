@@ -33,6 +33,7 @@ Run: python3.12 framework/acting/run_action_lane.py [--dry-run]
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import datetime as dt
 import fcntl
 import json
@@ -69,7 +70,14 @@ def covered_evidence_refs() -> frozenset:
     refs: set = set()
     try:
         for ev in read_ledger():
-            if ev.get("action") == "action-card":
+            act = ev.get("action") or ""
+            # 'action-card' = a presented proposal row; 'acted:<kind>' = an
+            # unattended act row. ACTED-EVENT IDENTITY FIX (germline batch
+            # 2026-07-05): acted rows moved off 'action-card' onto the canonical
+            # acted:<kind> identity and carry the proposal's evidence refs
+            # (appended in action_exec._emit_acted_consequence), so BOTH must feed
+            # cross-run dedup or an acted situation would re-propose.
+            if act == "action-card" or act.startswith("acted:"):
                 refs.update(r for r in (ev.get("refs") or []) if isinstance(r, str))
     except Exception:
         pass   # fail-open here is safe: slug dedup still applies
@@ -128,6 +136,102 @@ _lock_fh = None
 # cell composition (_graduation_demoted), so the identities can never drift
 # apart again. run_draft_lane.py:237 already uses the bare form.
 _ACTOR = {"kind": "officer", "id": "cos"}
+
+# --- LANE CELL-KEY NORMALIZATION (germline batch 2026-07-05) -----------------
+# The graduation cell key is (actor, lane, action_type). The lane component was
+# LLM free-text off the proposer, so ONE conceptual lane arrived under many
+# spellings across runs — the live ledger showed 5 spellings across 26 rows
+# ('Commitments', 'Commitments / Delivery', 'nate', 'polads-ceo', ...). That
+# FRAGMENTS verdict accumulation: two undos of the "same" lane land in two
+# different cells and never cluster, so the 2-wrong demotion never fires and the
+# 20-sample graduation floor is unreachable per cell. Fix: collapse the lane to
+# the instance context enum (instance/config/contexts/*.yml slugs) at proposal
+# ingestion AND at the gate's cell composition (_graduation_demoted), so the
+# emitters and the gate key the EXACT same cell. Deterministic (no LLM) and
+# fail-safe (config unreadable ⇒ a stable per-input slugification, never a fresh
+# string per run). Idempotent, so applying it at both seams can never disagree.
+CONTEXTS_DIR = Path(__file__).resolve().parents[2] / "instance" / "config" / "contexts"
+# The stable catch-all cell for a lane matching no context slug. "adhoc" is a
+# REAL context slug (Captain-dropped / unclassified work), a FIXED constant —
+# never a per-run string — so every unmatched lane still clusters into ONE cell.
+_LANE_NORM_DEFAULT = "adhoc"
+_context_slugs_cache: "frozenset | None" = None
+
+
+def _context_slugs() -> frozenset:
+    """The instance context slugs (the lane enum), read once per run from
+    instance/config/contexts/*.yml. Minimal `slug:` line parse (no yaml dep, and
+    robust to a partially-written file) — the first top-level `slug:` scalar per
+    file wins; a file without one is skipped. An unreadable dir ⇒ empty set (the
+    caller then slugifies deterministically instead)."""
+    global _context_slugs_cache
+    if _context_slugs_cache is not None:
+        return _context_slugs_cache
+    slugs: set = set()
+    try:
+        for f in sorted(CONTEXTS_DIR.glob("*.yml")):
+            try:
+                for line in f.read_text(encoding="utf-8", errors="ignore").splitlines():
+                    s = line.strip()
+                    if s.startswith("slug:"):
+                        val = s.split(":", 1)[1].strip().strip('"').strip("'").lower()
+                        if val:
+                            slugs.add(val)
+                        break
+            except OSError:
+                continue
+    except OSError:
+        pass
+    _context_slugs_cache = frozenset(slugs)
+    return _context_slugs_cache
+
+
+def _slugify_lane(raw: str) -> str:
+    """Deterministic kebab slug of a raw lane, with the officer-role suffixes
+    stripped ('polads-ceo' -> 'polads', 'comms-officer' -> 'comms'). Stable per
+    input (same raw ⇒ same slug every run) — the fallback when the context enum
+    can't be read, so lanes still de-fragment by spelling."""
+    s = re.sub(r"[^a-z0-9]+", "-", str(raw or "").lower()).strip("-")
+    for suf in ("-ceo", "-officer", "-lane"):
+        if s.endswith(suf):
+            s = s[: -len(suf)]
+    return s or _LANE_NORM_DEFAULT
+
+
+def _normalize_lane(raw: "str | None") -> str:
+    """Collapse a free-text lane to ONE stable cell key. Deterministic, no LLM:
+      1. exact slug match (whole normalized string) → that slug;
+      2. exact token match (any '/'-, space-, dash-split token is a slug) →
+         that slug (longest slug first, deterministic);
+      3. containment fuzzy (a slug contains / is contained by a token, min length
+         4 both sides to avoid short-substring noise, longest slug first) → so
+         'polads-ceo' / 'PolAds delivery' → 'polads', 'cabinet' →
+         'captains-cabinet';
+      4. no match → the STABLE default ('adhoc'), never a fresh string.
+    When the context enum can't be read, degrade to _slugify_lane (still stable
+    per input). Idempotent: _normalize_lane(_normalize_lane(x)) == that value, so
+    applying it at BOTH the emit seam and the gate can never disagree."""
+    slugs = _context_slugs()
+    s = str(raw or "").strip().lower()
+    if not slugs:
+        return _slugify_lane(s)
+    if not s:
+        return _LANE_NORM_DEFAULT
+    if s in slugs:
+        return s
+    tokens = [t for t in re.split(r"[^a-z0-9]+", s) if t]
+    ordered = sorted(slugs, key=lambda x: (-len(x), x))   # longest slug first
+    for slug in ordered:
+        if slug in tokens:
+            return slug
+    for slug in ordered:
+        if len(slug) < 4:
+            continue
+        for t in tokens:
+            if len(t) >= 4 and (slug in t or t in slug):
+                return slug
+    return _LANE_NORM_DEFAULT
+
 
 # --- TI-3 act-first gate (2026-07-04 trust-inversion) ------------------------
 # DEFAULT OFF. The entire earn-demotion posture stays DARK until the Captain
@@ -236,6 +340,12 @@ def _graduation_demoted(action_type, lane) -> "tuple[bool, str]":
     # decision is undeterminable → fail closed.
     if lane is None:
         return True, "lane unspecified (fail-closed)"
+    # LANE CELL-KEY NORMALIZATION (germline batch 2026-07-05): key the SAME
+    # normalized cell the emitters write (ingestion already normalizes p.lane, so
+    # this is idempotent — but the gate must never depend on that: normalizing
+    # here guarantees the gate reads the exact cell the demotion evidence lives
+    # in, even if a raw lane ever reaches this call).
+    lane = _normalize_lane(lane)
     try:
         # Lazy import: a broken graduation plane degrades to "blocked" at gate
         # time instead of crashing the whole propose-only lane at import time.
@@ -281,12 +391,18 @@ def _act_first_gates_ok(action_type, board, kind, lane) -> "tuple[bool, str]":
 
 
 def _prior_acted_types() -> frozenset:
-    """action_types that have EVER acted (a prior action-card ledger row carrying
-    an outcome) — for the receipt's first-ever-cell instant-tell rule."""
+    """action_types that have EVER acted (a prior acted ledger row carrying an
+    outcome) — for the receipt's first-ever-cell instant-tell rule. Reads the
+    canonical acted:<kind> rows (ACTED-EVENT IDENTITY FIX, germline batch
+    2026-07-05) plus the legacy 'action-card' acted rows so history from before
+    the fix still counts — else every post-fix first act would spuriously
+    instant-tell (a real cell read as first-ever)."""
     types: set = set()
     try:
         for ev in read_ledger():
-            if ev.get("action") == "action-card" and (ev.get("outcome") or {}).get("status"):
+            act = ev.get("action") or ""
+            if (act.startswith("acted:") or act == "action-card") \
+                    and (ev.get("outcome") or {}).get("status"):
                 at = ev.get("action_type")
                 if at:
                     types.add(at)
@@ -846,6 +962,15 @@ def main() -> int:
         budget_left=budget, covered_evidence=covered_evidence_refs(),
         directions=load_directions(), suppress_log=_suppress_log)
 
+    # LANE CELL-KEY NORMALIZATION (germline batch 2026-07-05): collapse every
+    # proposal's LLM free-text lane to the stable context-enum cell key BEFORE
+    # anything reads p.lane — so the ledger prop/acted rows, the rendered card,
+    # the stored Redis record + journal rows, AND the gate all key the identical
+    # graduation cell (see _normalize_lane). Done before the dry-run branch so the
+    # eyeball gate shows exactly the cell that will accumulate.
+    proposals = [dataclasses.replace(p, lane=_normalize_lane(p.lane))
+                 for p in proposals]
+
     if args.dry_run:
         print(f"DRY RUN — {len(proposals)} card(s) would present:\n")
         for p in proposals:
@@ -928,14 +1053,17 @@ def main() -> int:
                 _store_action(pid, p, cid=cid)
                 result = deliver_action(pid, act_first=True)
                 if result.get("ok"):
-                    acted_ev = dict(prop_ev)
-                    acted_ev["proposal"] = {"required": False, "decision": None}
-                    acted_ev["outcome"] = {"status": "unknown"}   # UNDO-2 supersedes on 👍/undo/TTL
-                    try:
-                        emit_consequence(**acted_ev)
-                    except Exception as e:
-                        print(f"act-first: post-act ledger emit failed "
-                              f"(act journaled + undoable): {e}")
+                    # ACTED-EVENT IDENTITY FIX (germline batch 2026-07-05): the
+                    # per-step acted consequence rows are now emitted INSIDE
+                    # deliver_action (action_exec._emit_acted_consequence), off the
+                    # exact enriched journal row — on the canonical acted:<kind>
+                    # identity the binder + reconcile sweep supersede on. The old
+                    # card-level dict(prop_ev) emit under 'action-card' is GONE: it
+                    # never matched the consumers' recomputed identity, so it left
+                    # a permanent outcome:unknown orphan AND each verdict minted a
+                    # second row (2 rows/act double-count). Nothing to emit here
+                    # now — the executor owns the acted row (unknown→verdict in
+                    # place). Only the caps counter + receipt remain lane-side.
                     try:
                         actfirst_canary.incr_and_check(kind_key)
                     except Exception:

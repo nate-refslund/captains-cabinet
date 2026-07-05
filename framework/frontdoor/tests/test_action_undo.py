@@ -393,3 +393,89 @@ def test_deliver_then_reverse_end_to_end(monkeypatch):
     res = au.reverse("pidI", monday_post=fm, osascript=lambda c: "ok", redis_del=_no_op_del)
     assert res["ok"] is True
     assert "archive_item" in fm.qs() and "delete_item" not in fm.qs()
+
+
+# --- unfreeze (CANARY-UNFREEZE, germline batch 2026-07-05) --------------------
+# The durable half of the manual green-canary unfreeze: an op:"unfreeze" mirror
+# row SUPERSEDES the freeze (last-op-wins), then the fast Redis flag is
+# best-effort cleared. Before this batch the mirror was freeze-only, so a
+# frozen kind could NEVER be lifted from the durable side — flushing Redis just
+# made is_frozen fail-closed straight back to the mirror.
+
+def test_unfreeze_supersedes_mirror_and_clears_flag():
+    store = {}
+    rset = lambda k, v, ttl: store.__setitem__(k, v)
+    rget = lambda k: store.get(k, "")
+    rdel = lambda k: store.pop(k, None)
+    au.freeze("board_status", "canary failed", redis_set=rset)
+    assert au.is_frozen("board_status", redis_get=rget) is True
+    row = au.unfreeze("board_status", "manual green canary passed", redis_del=rdel)
+    assert row["op"] == "unfreeze" and row["kind"] == "board_status"
+    # BOTH halves cleared: the Redis flag is gone AND the durable mirror now
+    # resolves un-frozen (the last op for the kind is the unfreeze supersede).
+    assert "cabinet:actfirst:frozen:board_status" not in store
+    assert au._kind_in_mirror("board_status") is False
+    assert au.is_frozen("board_status", redis_get=rget) is False
+
+
+def test_refreeze_after_unfreeze_holds_last_op_wins():
+    # A freeze→unfreeze→(re)freeze history must resolve FROZEN — the mirror is
+    # append-only and chronological, newest op wins (never first-freeze-wins).
+    store = {}
+    rset = lambda k, v, ttl: store.__setitem__(k, v)
+    rget = lambda k: store.get(k, "")
+    rdel = lambda k: store.pop(k, None)
+    au.freeze("task_create", "breach 1", redis_set=rset)
+    au.unfreeze("task_create", "green canary", redis_del=rdel)
+    assert au.is_frozen("task_create", redis_get=rget) is False
+    au.freeze("task_create", "breach 2", redis_set=rset)
+    assert au._kind_in_mirror("task_create") is True
+    assert au.is_frozen("task_create", redis_get=rget) is True
+
+
+def test_unfreeze_scoped_to_one_kind_only():
+    # Lifting board_status must not disturb another kind's freeze.
+    store = {}
+    rset = lambda k, v, ttl: store.__setitem__(k, v)
+    rget = lambda k: store.get(k, "")
+    rdel = lambda k: store.pop(k, None)
+    au.freeze("board_status", "x", redis_set=rset)
+    au.freeze("task_create", "y", redis_set=rset)
+    au.unfreeze("board_status", "green", redis_del=rdel)
+    assert au.is_frozen("board_status", redis_get=rget) is False
+    assert au.is_frozen("task_create", redis_get=rget) is True
+
+
+def test_unfreeze_redis_del_failure_still_supersedes_mirror():
+    # The Redis DEL is best-effort; the durable mirror supersede is the
+    # load-bearing lift. A raising redis_del must not raise out of unfreeze,
+    # and a later flushed-Redis read resolves un-frozen from the mirror.
+    au.freeze("task_create", "breach", redis_set=lambda k, v, ttl: None)
+    def boom(_k):
+        raise RuntimeError("redis down")
+    row = au.unfreeze("task_create", "green canary", redis_del=boom)
+    assert row["op"] == "unfreeze"
+    assert au._kind_in_mirror("task_create") is False
+    # Redis flushed/empty (the fixture default getter returns "") → mirror rules.
+    assert au.is_frozen("task_create") is False
+
+
+def test_freeze_flag_has_no_ttl_no_auto_unfreeze_clock():
+    # CRIT-5: the freeze flag is SET with ttl=None — no expiry, no timer, so
+    # nothing can lift a freeze by mere passage of time. (The only lift path is
+    # the explicit proven-green unfreeze above.)
+    seen = {}
+    au.freeze("board_status", "breach",
+              redis_set=lambda k, v, ttl: seen.update(key=k, ttl=ttl))
+    assert seen["key"] == "cabinet:actfirst:frozen:board_status"
+    assert seen["ttl"] is None
+
+
+def test_mirror_last_op_parsing_skips_garbage_lines():
+    # A malformed line appended between ops must not break last-op-wins (the
+    # reader skips junk; an UNREADABLE mirror still fails closed elsewhere).
+    au.freeze("board_status", "breach", redis_set=lambda k, v, ttl: None)
+    with open(au._frozen_mirror(), "a") as fh:
+        fh.write("not-json\n{\"kind\": \"board_status\"}\n")   # junk + op-less row
+    au.unfreeze("board_status", "green canary", redis_del=_no_op_del)
+    assert au._kind_in_mirror("board_status") is False

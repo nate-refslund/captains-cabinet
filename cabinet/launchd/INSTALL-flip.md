@@ -44,6 +44,15 @@ Notes for the integrator:
 - Forcing the first green canary per kind (flip condition 5) is a manual run:
   `bash cabinet/scripts/run-actfirst-canary.sh` — it exits non-zero and prints
   `PAGE:` lines if anything froze.
+- **Un-freezing a frozen kind (CRIT-5 — no auto/blind unfreeze).** A kind frozen
+  by a failed canary/breaker is re-armed ONLY by a Captain-triggered green probe
+  that first PROVES `create→verify→reverse` for that kind, then lifts the freeze
+  (durable JSONL mirror supersede + Redis flag clear):
+  `python3.12 -m framework.frontdoor.actfirst_canary --unfreeze <kind>` — takes
+  the action_type (e.g. `board_status`) or the step kind (e.g.
+  `monday_task_update`). Exits non-zero and LEAVES the freeze if the probe is
+  non-green. Never scheduled; the only manual lift path
+  (`action_undo.unfreeze` has no auto caller).
 - None of this touches `instance/config/act-first-enabled` or
   `CABINET_ACT_FIRST`; the act-first flip itself stays a separate Captain step.
 
