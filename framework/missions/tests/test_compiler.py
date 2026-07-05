@@ -338,7 +338,37 @@ class TestDeploymentGate:
         # No mission_created events for another deployment's outcomes
         assert list(event_log_dir.glob("events-*.jsonl")) == []
 
-    def test_match_compiles(self, tmp_path, sample_roles, monkeypatch):
+    def test_mismatch_warns_loudly_naming_both(
+        self, tmp_path, sample_roles, monkeypatch, capsys,
+    ):
+        """The skip is a LOUD WARN (not a silent 'no work') naming expected
+        vs actual so a mis-sourced cron is diagnosable."""
+        monkeypatch.setenv("CABINET_ID", "machine-b")
+        f = _write_pinned_outcomes(tmp_path, "machine-a")
+
+        assert compile_from_yaml(f, roles=sample_roles) == []
+
+        err = capsys.readouterr().err
+        assert "WARN" in err                 # loud, not a soft skip line
+        assert "machine-a" in err            # expected (the file's deployment)
+        assert "machine-b" in err            # actual (this cabinet's CABINET_ID)
+
+    def test_mismatch_unset_cabinet_id_flagged_distinctly(
+        self, tmp_path, sample_roles, monkeypatch, capsys,
+    ):
+        """An unset CABINET_ID (defaulting to 'main') is called out as unset,
+        not silently reported as if the operator chose 'main'."""
+        monkeypatch.delenv("CABINET_ID", raising=False)
+        f = _write_pinned_outcomes(tmp_path, "machine-a")
+
+        assert compile_from_yaml(f, roles=sample_roles) == []
+
+        err = capsys.readouterr().err
+        assert "WARN" in err
+        assert "unset" in err
+        assert "machine-a" in err
+
+    def test_match_compiles(self, tmp_path, sample_roles, monkeypatch, capsys):
         monkeypatch.setenv("CABINET_ID", "other-machine")
         f = _write_pinned_outcomes(tmp_path, "other-machine")
 
@@ -346,6 +376,8 @@ class TestDeploymentGate:
 
         assert len(missions) == 1
         assert missions[0]["outcome_id"] == "outcome-gated"
+        # Happy path is unchanged — no gate WARN on a match.
+        assert "WARN" not in capsys.readouterr().err
 
     def test_absent_field_always_compiles(self, tmp_path, sample_roles, monkeypatch):
         """Back-compat: files without a deployment pin compile everywhere."""
@@ -497,6 +529,53 @@ class TestApplyStatusFromEvents:
         assert changed == 1
         assert graph.nodes["outcome-x-task-000"].status == NodeStatus.DONE
         assert graph.nodes["outcome-x-task-000"].verification_passed is True
+
+    def test_started_event_marks_in_progress(self, event_log_dir):
+        """work_item_started overlays IN_PROGRESS so the node stops being
+        re-injected before completion is recorded."""
+        graph = _build_graph_with_tasks("outcome-x", 3)
+        emit("work_item_started", actor="engineering", payload={
+            "task_id": "outcome-x-task-001",
+            "outcome_id": "outcome-x",
+        })
+
+        changed = _apply_status_from_events(graph, "outcome-x")
+        assert changed == 1
+        assert graph.nodes["outcome-x-task-000"].status == NodeStatus.PENDING
+        assert graph.nodes["outcome-x-task-001"].status == NodeStatus.IN_PROGRESS
+        assert graph.nodes["outcome-x-task-002"].status == NodeStatus.PENDING
+
+    def test_started_node_excluded_from_ready_tasks(self, event_log_dir):
+        """An in-progress node is no longer a ready task (not re-injected)."""
+        graph = _build_graph_with_tasks("outcome-x", 2)  # both roots, both ready
+        assert "outcome-x-task-000" in {n.id for n in graph.ready_tasks()}
+
+        emit("work_item_started", actor="engineering", payload={
+            "task_id": "outcome-x-task-000",
+            "outcome_id": "outcome-x",
+        })
+        _apply_status_from_events(graph, "outcome-x")
+
+        ready_ids = {n.id for n in graph.ready_tasks()}
+        assert "outcome-x-task-000" not in ready_ids
+        assert "outcome-x-task-001" in ready_ids  # untouched node still ready
+
+    def test_started_then_completed_latest_wins(self, event_log_dir):
+        """started then completed → DONE (terminal event overrides in-progress)."""
+        graph = _build_graph_with_tasks("outcome-x", 1)
+        emit("work_item_started", actor="engineering", payload={
+            "task_id": "outcome-x-task-000",
+            "outcome_id": "outcome-x",
+        })
+        emit("work_item_completed", actor="engineering", payload={
+            "task_id": "outcome-x-task-000",
+            "outcome_id": "outcome-x",
+        })
+
+        changed = _apply_status_from_events(graph, "outcome-x")
+        # PENDING→IN_PROGRESS then IN_PROGRESS→DONE
+        assert changed == 2
+        assert graph.nodes["outcome-x-task-000"].status == NodeStatus.DONE
 
     def test_other_outcome_ignored(self, event_log_dir):
         """Events for a different outcome must not affect this graph."""

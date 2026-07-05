@@ -239,12 +239,18 @@ def _infer_dependencies(criteria: list[str]) -> list[tuple[int, int]]:
 # event ledger is the source of truth; the in-memory graph is a projection.
 
 _COMPLETION_EVENT_TYPES: list[str] = [
+    "work_item_started",
     "work_item_completed",
     "work_item_failed",
     "work_item_verified",
 ]
 
 _EVENT_TYPE_TO_STATUS: dict[str, NodeStatus] = {
+    # work_item_started overlays IN_PROGRESS so an actively-worked node drops
+    # out of ready_tasks() and stops being re-injected before its completion
+    # is recorded. Later events (completed/failed/verified) still override it —
+    # they come after `started` in the ledger and latest-event-wins.
+    "work_item_started": NodeStatus.IN_PROGRESS,
     "work_item_completed": NodeStatus.DONE,
     "work_item_failed": NodeStatus.FAILED,
     "work_item_verified": NodeStatus.DONE,  # verified implies done
@@ -252,11 +258,13 @@ _EVENT_TYPE_TO_STATUS: dict[str, NodeStatus] = {
 
 
 def _apply_status_from_events(graph: WorkGraph, outcome_id: str) -> int:
-    """Overlay completion status onto an in-memory work graph by replaying events.
+    """Overlay lifecycle status onto an in-memory work graph by replaying events.
 
-    Reads work_item_completed / work_item_failed / work_item_verified events
-    from the local event log and sets `node.status` for any task in this
-    outcome's graph. Later events for the same task win (latest status sticks).
+    Reads work_item_started / work_item_completed / work_item_failed /
+    work_item_verified events from the local event log and sets `node.status`
+    for any task in this outcome's graph. `started` marks the node IN_PROGRESS
+    (so it is not re-injected mid-flight); the terminal events mark it
+    DONE/FAILED. Later events for the same task win (latest status sticks).
 
     Args:
         graph: the in-memory WorkGraph (mutated in place)
@@ -509,13 +517,27 @@ def compile_from_yaml(
     # Absent field = compile everywhere (back-compat).
     deployment = data.get("deployment")
     if deployment is not None:
-        cabinet_id = os.environ.get("CABINET_ID", "main")
+        raw_cabinet_id = os.environ.get("CABINET_ID")
+        cabinet_id = raw_cabinet_id if raw_cabinet_id is not None else "main"
         if str(deployment) != cabinet_id:
+            # LOUD WARN, not a silent skip. Returning [] here reads to a
+            # caller as "no work" — but the real cause is a misconfigured
+            # CABINET_ID (a mis-sourced cron pointed at the wrong deployment's
+            # outcomes). Name both values (expected vs actual) so the operator
+            # can fix it, and flag the unset-env case distinctly. Uses the
+            # module's stderr WARN convention (cf. supervisor.py's
+            # "mission-supervisor: WARN ...").
+            actual = (
+                f"'{raw_cabinet_id}'"
+                if raw_cabinet_id is not None
+                else "unset (defaulting to 'main')"
+            )
             print(
-                f"mission-compiler: skipping {path}: file is pinned to "
-                f"deployment '{deployment}' but this cabinet is "
-                f"'{cabinet_id}' (CABINET_ID) — refusing to compile another "
-                f"deployment's outcomes",
+                f"mission-compiler: WARN skipping {path}: file is pinned to "
+                f"deployment '{deployment}' but this cabinet's CABINET_ID is "
+                f"{actual} — expected '{deployment}', got '{cabinet_id}'; "
+                f"refusing to compile another deployment's outcomes (set "
+                f"CABINET_ID='{deployment}' if this IS that deployment)",
                 file=sys.stderr,
             )
             return []
