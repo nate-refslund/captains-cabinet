@@ -6,17 +6,18 @@
 # instance/config/autonomy.yml. Edit/Write must BLOCK (exit 2) for EVERY
 # officer (including cos): no loop may edit its own judge.
 #
-# 39 BLOCK probes (10 germline classes incl. the suffix-anchored
+# 40 BLOCK probes (10 germline classes incl. the suffix-anchored
 # framework/authority/ judge modules classifier.py + lane.py + matrix.py, the
-# authority-matrix.yml DATA file (T8), and — added 2026-07-04 per build-
+# authority-matrix.yml DATA floor (T8) + the germline instance policy layer
+# instance/config/policies/ authority overlay (D8, no officer self-escalation
+# by dropping a widening policy file), and — added 2026-07-04 per build-
 # checkpoint hard-blocker #2 (safety-perimeter CRITICAL: captain-vetoes.yml
 # was empirically Edit→ALLOWED) — the ACTING-PLANE JUDGES: captain-vetoes.yml,
 # act-first-surfaces.yml and the frontdoor/acting executor+gate modules,
 # x Edit/Write/officer/path-form variants + constitution regression pin +
-# double-slash normalization) + 17 ALLOW probes (false-positive guards:
+# double-slash normalization) + 16 ALLOW probes (false-positive guards:
 # siblings, evolved skills, own tier2, non-germline hooks, shared interfaces,
-# the authority judges' own editable tests incl. test_matrix.py, a preset/
-# instance authority-matrix overlay which is NOT the germline floor, and the
+# the authority judges' own editable tests incl. test_matrix.py, and the
 # acting-plane FP guards: composer.py/loop.py siblings, frontdoor+acting
 # tests, .yml.example sibling, rename-staged veto proposal).
 #
@@ -149,11 +150,14 @@ probe "FP7 other lib file (cto)"           cto Edit  'cabinet/scripts/lib/trigge
 probe "FP8 authority test file (cro)"      cro Write 'framework/authority/tests/test_classifier.py'                ALLOW
 probe "FP8b matrix test file (cro)"        cro Write 'framework/authority/tests/test_matrix.py'                    ALLOW
 probe "FP9 authority sibling note (cro)"   cro Write 'framework/authority-notes.md'                                ALLOW
-# Only the framework FLOOR authority-matrix.yml is germline. The instance/preset
-# overlays are the captain-tunable lane->risk bindings + per-cell bar overrides
-# (design Component 1) and are NOT in the germline set — an officer proposing
-# instance lane bindings is allowed work, so the instance overlay stays editable.
-probe "FP10 instance authority-matrix overlay (cos)" cos Write 'instance/config/policies/authority-matrix.yml'    ALLOW
+# BOTH the framework FLOOR authority-matrix.yml AND the instance policy layer
+# instance/config/policies/ are germline. Under the sovereign posture (D8
+# amendment 2026-07-05) an instance authority-matrix overlay is authority-
+# DEFINING: an officer dropping a widening policy file there would self-escalate,
+# so the whole instance/config/policies/ dir is schg-locked + hook-blocked (see
+# germline-lock.sh D8, immutable-core.yml, base-safety.yml, the dir README). The
+# Captain adds instance policies only inside a germline unlock window.
+probe "G38 instance policy-layer authority overlay (cos!)" cos Write 'instance/config/policies/authority-matrix.yml' BLOCK
 # Acting-plane additions are SUFFIX-anchored files, not dir globs: sibling
 # modules, their tests, .example siblings and rename-staged proposals stay
 # the officers' write surface.
