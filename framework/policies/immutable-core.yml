@@ -1,0 +1,137 @@
+# immutable-core.yml — THE single source of Ring-0 paths (FI-5, sovereign spec
+# docs/plans/sovereign-build-spec-2026-07-04.md §1/§4 SOV-9).
+#
+# Ring-0 = the enforcer + judge plane: every path an officer/loop must never
+# write, because writing it would forge a judge, widen an act surface, or
+# disable the perimeter itself. Two consumers, both read-only:
+#
+#   1. gate.ratify S0 (framework/learning/gate.py, SOV-8): REFUSES any
+#      self-improvement code-diff that touches ANY entry in this file —
+#      every class, not just the locked ones. Germline changes reach the
+#      tree only via a Captain amendment in an unlock window, never via the
+#      gate. (eval-019.)
+#   2. framework/tests/test_germline_lockstep_consistency.py: drives the four
+#      germline enforcement lists off this enumeration and diffs them — the
+#      single mechanism for every germline-list addition (SOV-C8). The four
+#      lists, by the names used in `pending:` below:
+#        germline-lock  cabinet/scripts/germline-lock.sh  FILES/DIRS/SKIP arrays
+#        hook-s5        cabinet/scripts/hooks/pre-tool-use.sh §5 germline case arm
+#        hook-s5b       cabinet/scripts/hooks/pre-tool-use.sh §5b GERM_PATH_RE
+#        base-safety    framework/policies/base-safety.yml germline-readonly patterns
+#
+# CLASSES describe the filesystem-lock discipline ONLY (gate refusal covers
+# all of them equally):
+#   files             — schg-locked single files (germline-lock FILES).
+#   dirs              — schg-locked -R directories (germline-lock DIRS); any
+#                       path under one is Ring-0 by dir-cover, including this
+#                       file itself (framework/policies/ ⇒ auto-covered by all
+#                       four lists — no list additions needed for it).
+#   runtime_appended  — hook-blocked for direct officer Edit/Write/bash writes
+#                       but DELIBERATELY NOT schg-locked (germline-lock SKIP):
+#                       a sanctioned same-uid Python API appends at runtime
+#                       (veto_registry.py / action_lessons.py / needs.py).
+#                       Locking these breaks the demotion/learning/needs loops;
+#                       forging one only demotes or records — fail-safe.
+#   hook_protected    — hook/policy-blocked Captain-owned instance config that
+#                       is not lock-listed (file is deployment-created; hard
+#                       ceilings carry a code backstop in capability_gaps.py).
+#
+# `pending:` names the lists an entry is NOT wired into yet — the mechanism
+# for FUTURE germline additions: enumerate here first (pending all four),
+# wire each list, delete the flag in the same commit, and the meta-test's
+# xfail for that pair flips into a hard assert. As of the sovereign-posture
+# amendment (2026-07-05) every entry is fully wired (no pending remain): the
+# new sovereign germline files entered all four lists and the enforcer-triad
+# base-safety lag was closed. An entry with no `pending` is asserted hard.
+#
+# EDIT DISCIPLINE: this file is itself Ring-0 (dir-cover). Officers/loops
+# propose changes to the Captain; only the Captain applies them in a
+# germline-lock unlock window.
+
+version: 1
+
+# Canonical vocabulary for `pending:` values — the meta-test validates against
+# this exact set.
+lists: [germline-lock, hook-s5, hook-s5b, base-safety]
+
+files:
+  # --- enforcer plane: forging any of these disables/subverts the perimeter.
+  #     In germline-lock FILES + hook §5/§5b since 2026-07-04; base-safety
+  #     lag closed by the sovereign amendment ("enforcer-triad lag closure"). ---
+  - path: .claude/settings.json
+  - path: cabinet/scripts/policy-shadow.py
+  - path: cabinet/scripts/kill-switch.sh
+  - path: cabinet/scripts/germline-lock.sh
+
+  # --- judged authority code (grants authority / renders judgment) ---
+  - path: framework/authority/classifier.py
+  - path: framework/authority/lane.py
+  - path: framework/authority/matrix.py
+  - path: framework/authority/veto.py
+  - path: framework/authority/deploy_classifier.py
+  - path: framework/fidelity/graduation.py
+  - path: cabinet/scripts/lib/policy_engine.py
+  - path: framework/frontdoor/action_exec.py
+  - path: framework/frontdoor/action_undo.py
+  - path: framework/frontdoor/actfirst_canary.py
+  - path: framework/frontdoor/veto_registry.py
+  - path: framework/frontdoor/tell_surface.py
+  - path: framework/frontdoor/calendar_template.py
+  - path: framework/acting/action_lane.py
+  - path: framework/acting/run_action_lane.py
+
+  # --- judged config (NOT runtime-written) + rules ---
+  - path: instance/config/act-first-surfaces.yml
+  - path: cabinet/mcp-scope.yml
+  - path: cabinet/officer-capabilities.conf
+  - path: .claude/rules/brain-bridge.md
+  - path: .claude/rules/courses-of-action.md
+
+  # --- NEW sovereign-posture germline (amendment §5 new-file set) — code that
+  #     resolves posture, mints/loads grants, or applies gate output. Wired
+  #     into all four lists by the sovereign amendment (2026-07-05). ---
+  - path: framework/authority/posture.py
+  - path: framework/authority/grants.py
+  - path: framework/authority/needs.py
+  - path: framework/learning/gate.py
+  - path: framework/learning/apply_watch.py
+  - path: cabinet/scripts/grant-apply.sh
+  # ROOT-EXECUTED apply lane (D15, SOV-9a): cmd_apply/cmd_watch run as root
+  # (the Captain's `sudo bash gate-apply.sh apply` + the DARK
+  # com.cabinet.gate-apply daemon), and the plist's ProgramArguments run as
+  # root on load — forging either turns an officer write into root code.
+  # The watch ledger is files-class, NOT runtime_appended: cmd_watch executes
+  # each row's revert_plan as a root `git apply -R`, so a forged row MINTS a
+  # root write — the runtime_appended fail-safe rationale (forge only
+  # demotes/records/files) does not hold. Born at the first Captain-armed
+  # apply; enumerated + wired before it exists (germline-lock skips absent).
+  - path: cabinet/scripts/gate-apply.sh
+  - path: cabinet/launchd/com.cabinet.gate-apply.plist
+  - path: shared/interfaces/gate-apply-watch.jsonl
+  # Captain-locked posture selection + ceiling grants (FI-1/FI-2). Created per
+  # deployment at apply time (§8 step 5), locked in step 7 — enumerated now so
+  # the lists are wired before the files ever exist.
+  - path: instance/config/posture.yml
+  - path: instance/config/standing-grants.yml
+  # This enumeration itself: dir-covered by framework/policies/ in all four
+  # lists already — the meta-test asserts that hard today (FI-5 auto-cover).
+  - path: framework/policies/immutable-core.yml
+
+dirs:
+  - path: cabinet/scripts/hooks/
+  - path: framework/policies/
+  - path: memory/golden-evals/
+  # D8: the instance policy-layer dir joins the germline/schg set so no officer
+  # can drop a widening policy layer (load_policies refuses matrix overrides;
+  # the lock closes the file-drop vector too).
+  - path: instance/config/policies/
+
+runtime_appended:
+  - path: shared/interfaces/captain-vetoes.yml
+  - path: shared/interfaces/action-lessons.yml
+  # ONE needs-ledger (FI-3): O_APPEND JSONL written by needs.py; DATA is
+  # SKIP-class, the CODE (needs.py above) is locked.
+  - path: shared/interfaces/needs-ledger.jsonl
+
+hook_protected:
+  - path: instance/config/autonomy.yml

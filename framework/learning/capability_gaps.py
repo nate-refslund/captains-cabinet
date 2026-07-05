@@ -258,6 +258,13 @@ def can_install(gap_id: str, touches: set[str] | None = None,
         approval should never have been auto-eligible, and a human re-confirm
         is required at install time too).
 
+    Posture-aware extension [sovereign spec §4 SOV-8, §3 "capability install"]:
+    when NO Captain decision exists at all, a SOVEREIGN posture plus a passing
+    Evidence-Gate pack for this gap (gate.ratify verdict "pass") also allows.
+    The ceiling-touch veto stays ABSOLUTE (checked first, both postures), and
+    an explicit Captain decline beats machine evidence in every posture.
+    Guardian with no decision is today's exact answer: False.
+
     FAILS CLOSED: any exception, missing approval, or ceiling touch → False.
     """
     try:
@@ -271,7 +278,27 @@ def can_install(gap_id: str, touches: set[str] | None = None,
         # Require a live approval: latest of approved/declined for this gap must
         # be 'approved'.
         latest = _latest_decision_for(gap_id, product_slug)
-        return latest == "approved"
+        if latest == "approved":
+            return True
+        if latest == "declined":
+            return False
+        # No Captain decision on record — sovereign + gate evidence may allow.
+        return _sovereign_gate_evidence_allows(gap_id)
+    except Exception:
+        return False
+
+
+def _sovereign_gate_evidence_allows(gap_id: str) -> bool:
+    """True only when the posture resolves sovereign AND the Evidence Gate
+    holds a passing pack for this gap. Lazy imports + blanket except: any
+    failure (module absent, posture unreadable, no pack) answers False, so
+    the guardian world stays bit-identical [D15]."""
+    try:
+        from framework.authority.posture import resolve_posture
+        if resolve_posture() != "sovereign":
+            return False
+        from framework.learning.gate import evidence_verdict
+        return evidence_verdict(gap_id=gap_id) == "pass"
     except Exception:
         return False
 

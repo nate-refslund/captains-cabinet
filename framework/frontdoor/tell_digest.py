@@ -34,6 +34,7 @@ shell string). Kill-switch: ``CABINET_TELL_DIGEST=0`` skips the whole leg.
 """
 from __future__ import annotations
 
+import inspect
 import json
 import os
 import subprocess
@@ -43,7 +44,7 @@ from typing import Any, Callable, Dict, List, Optional
 from framework.frontdoor import tell_surface
 
 __all__ = ["enqueue_digest", "assign_undo_indexes", "gather_acted_rows",
-           "gather_self_rows"]
+           "gather_self_rows", "gather_needs_rows", "gather_gate_tell_rows"]
 
 # The binder resolves indexes via cabinet:digest:<today|yesterday>; 48h TTL
 # matches both that lookback and the undo window itself.
@@ -154,6 +155,70 @@ def gather_self_rows(*, journal_rows: Optional[List[Dict[str, Any]]] = None) -> 
     return list(frozen.values())
 
 
+def gather_needs_rows(*, now: str,
+                      root: Optional[str] = None) -> List[Dict[str, Any]]:
+    """The 🙋NEEDS leg rows (SOV-6/FI-3): open + approved_pending_apply needs
+    from the ONE needs ledger. Short-circuits to [] unless the needs plane is
+    wired (``needs.needs_enabled()`` — sovereign posture / CABINET_NEEDS_WIRED
+    / flag file), so the default-world digest stays BYTE-IDENTICAL. NEVER
+    raises — a broken needs module means an empty leg, not a lost briefing."""
+    try:
+        from framework.authority import needs
+        if not needs.needs_enabled(root):
+            return []
+        return needs.list_open(now, root=root)
+    except Exception:
+        return []
+
+
+# Sovereign gate tells: window matches the 2x-daily digest cadence; capped so
+# a chatty gate can never flood the briefing.
+_GATE_TELL_WINDOW_H = 12
+_GATE_TELL_CAP = 8
+
+
+def gather_gate_tell_rows(*, now: str,
+                          replay_fn: Optional[Callable[..., List[Dict[str, Any]]]] = None
+                          ) -> List[Dict[str, Any]]:
+    """Sovereign gate tells for the 👁WATCHING leg (D4): a ``notify_after`` (or
+    standing-grant-attributed) allow returns None at the officer gate, so no
+    acted row exists — the ``policy_evaluated`` org_event SOV-3 emitted IS the
+    audit, and this gather renders it as a digest line. Empty in guardian (the
+    gate never emits these there). NEVER raises."""
+    try:
+        nowdt = tell_surface._parse_iso(now)
+        if nowdt is None:
+            return []
+        since = (nowdt - timedelta(hours=_GATE_TELL_WINDOW_H)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ")
+        if replay_fn is None:
+            # Production default: the gate only emits these tells when the
+            # sovereign plane is wired, so the guardian default path does ZERO
+            # event-dir I/O (needs_enabled ⊇ sovereign is the cheap proxy).
+            # An injected replay_fn bypasses — tests own their world.
+            from framework.authority import needs
+            if not needs.needs_enabled():
+                return []
+            from framework.events.emitter import replay as replay_fn  # type: ignore
+        rows: List[Dict[str, Any]] = []
+        for ev in replay_fn(since=since, event_types=["policy_evaluated"]):
+            p = ev.get("payload") if isinstance(ev, dict) else None
+            p = p if isinstance(p, dict) else {}
+            if p.get("kind") not in ("notify_after", "standing_grant_allow"):
+                continue
+            what = "/".join(str(p.get(k)) for k in ("risk_class", "action_type")
+                            if p.get(k))
+            title = f"gate allowed ({p.get('kind')}): {what or 'action'}"
+            if p.get("lane"):
+                title += f", lane {p['lane']}"
+            if p.get("grant_id"):
+                title += f" — grant {p['grant_id']}"
+            rows.append({"title": title, "source": "gate-tell"})
+        return rows[-_GATE_TELL_CAP:]
+    except Exception:
+        return []
+
+
 # --- stable undo-index assignment ----------------------------------------------
 
 def _load_manifest(raw: str) -> Dict[str, Any]:
@@ -213,14 +278,33 @@ def assign_undo_indexes(acted_rows: List[Dict[str, Any]], *, date: str,
 
 # --- the one orchestration entry -------------------------------------------------
 
+def _build_digest_text(acted, awaiting, watching, selfr, needs, *, now: str) -> str:
+    """Call tell_surface.build_digest, feature-detecting the SOV-6 needs leg —
+    the 4-arg (pre-needs) and 5-leg signatures both work, so this module merges
+    cleanly before OR after the tell_surface diff. When the param is absent the
+    needs rows are dropped (the leg simply doesn't exist yet)."""
+    try:
+        has_needs = "needs_rows" in inspect.signature(
+            tell_surface.build_digest).parameters
+    except (TypeError, ValueError):
+        has_needs = False
+    if has_needs:
+        return tell_surface.build_digest(acted, awaiting, watching, selfr,
+                                         now=now, needs_rows=needs)
+    return tell_surface.build_digest(acted, awaiting, watching, selfr, now=now)
+
+
 def enqueue_digest(*, now: Optional[str] = None,
                    acted_rows: Optional[List[Dict[str, Any]]] = None,
                    awaiting_rows: Optional[List[Dict[str, Any]]] = None,
                    watching_rows: Optional[List[Dict[str, Any]]] = None,
                    self_rows: Optional[List[Dict[str, Any]]] = None,
+                   needs_rows: Optional[List[Dict[str, Any]]] = None,
                    redis_get: Optional[Callable[[str], str]] = None,
                    redis_set: Optional[Callable[[str, str, int], None]] = None,
-                   enqueue: Optional[Callable[[Dict[str, Any]], str]] = None) -> Dict[str, Any]:
+                   enqueue: Optional[Callable[[Dict[str, Any]], str]] = None,
+                   replay_fn: Optional[Callable[..., List[Dict[str, Any]]]] = None
+                   ) -> Dict[str, Any]:
     """Build + persist + enqueue one act-then-tell digest (see module header).
 
     Returns telemetry: ``{"digest": bool, "skipped"/"error": str?, "enqueued":
@@ -228,7 +312,9 @@ def enqueue_digest(*, now: Optional[str] = None,
     raises for the empty case (``digest=False, skipped=...``); a manifest
     persistence failure returns ``digest=False, error=...`` WITHOUT enqueueing
     (fail-closed: no digest whose indexes cannot bind). run_briefing wraps the
-    call so even a crash never blocks the briefing send."""
+    call so even a crash never blocks the briefing send. SOV-6 legs (needs +
+    sovereign gate tells) gather only when their rows are not injected, and a
+    crashing producer degrades to an empty leg — never a lost briefing."""
     if not _enabled():
         return {"digest": False, "skipped": "disabled (CABINET_TELL_DIGEST=0)"}
     now_s = now or _now_iso()
@@ -237,11 +323,22 @@ def enqueue_digest(*, now: Optional[str] = None,
 
     acted = acted_rows if acted_rows is not None else gather_acted_rows(now=now_s)
     awaiting = awaiting_rows if awaiting_rows is not None else _default_pending()
-    watching = watching_rows or []
+    if watching_rows is None:
+        # D4: sovereign notify_after/standing-grant allows are audited ONLY by
+        # their org_event — fold them into the WATCHING leg. Guardian emits
+        # none, so the default world renders identically.
+        watching = gather_gate_tell_rows(now=now_s, replay_fn=replay_fn)
+    else:
+        watching = watching_rows
     selfr = self_rows if self_rows is not None else gather_self_rows()
+    try:
+        needs = (needs_rows if needs_rows is not None
+                 else gather_needs_rows(now=now_s))
+    except Exception:
+        needs = []                # TI-5: a needs-producer crash never blocks
 
     acted = assign_undo_indexes(acted, date=date, redis_get=rget)
-    text = tell_surface.build_digest(acted, awaiting, watching, selfr, now=now_s)
+    text = _build_digest_text(acted, awaiting, watching, selfr, needs, now=now_s)
     if not text:
         return {"digest": False, "skipped": "nothing to tell", "date": date,
                 "acted": 0, "awaiting": 0}

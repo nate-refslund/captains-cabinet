@@ -688,19 +688,44 @@ def find_reconcilable(*, pid: Optional[str] = None) -> List[Dict[str, Any]]:
             and not (r.get("created") or {})]
 
 
-# --- freeze / is_frozen (fail-closed) ----------------------------------------
+# --- freeze / unfreeze / is_frozen (fail-closed, last-op-wins) ----------------
+
+# Who set (or lifted) a freeze. Machine-origin rows may auto-thaw via
+# actfirst_canary.run_thaw once the mechanical bar clears; captain-origin rows
+# thaw ONLY via the Captain's `rearm` verb (§2.2 — judgment supplements).
+FREEZE_SOURCES = frozenset({"machine", "captain"})
+# A green canary receipt is unfreeze fuel for 24h — stale proof is no proof.
+RECEIPT_MAX_AGE_H = 24
+
 
 def _frozen_mirror() -> Path:
     return _undo_dir() / "frozen-kinds.jsonl"
 
 
+def _default_file_need(**kw) -> Optional[str]:
+    """Lazy needs bridge — imported at CALL time only, inside the caller's
+    try/except: a missing/broken needs module can never block a brake from
+    engaging, and the module itself never hard-depends on needs at load."""
+    from framework.authority import needs
+    return needs.file_need(**kw)
+
+
 def freeze(kind: str, reason: str, *,
            redis_set: Optional[Callable[[str, str, Optional[int]], None]] = None,
-           now: Optional[str] = None) -> Dict[str, Any]:
+           now: Optional[str] = None, source: str = "machine",
+           file_need_fn: Optional[Callable[..., Any]] = None) -> Dict[str, Any]:
     """Freeze an act-first kind. Durable JSONL mirror FIRST (the source of
-    truth), then the fast Redis flag. No TTL, no auto-unfreeze (CRIT-5): a kind
-    is un-frozen only by a manually-triggered green canary (a later wave)."""
-    row = {"ts": now or _now(), "kind": kind, "reason": str(reason)[:300], "op": "freeze"}
+    truth), then the fast Redis flag. No TTL, no timer: the only exit is the
+    receipted ``unfreeze`` primitive (machine-origin rows may auto-thaw via
+    ``actfirst_canary.run_thaw`` at 3-greens+7d-clean; captain-origin only via
+    the rearm verb). An unknown ``source`` coerces to ``captain`` — the narrow
+    direction, never auto-thawed. Filing the deduped ``kind=unfreeze`` need is
+    best-effort and gated by ``needs_enabled()``, so the guardian default
+    world stays bit-identical."""
+    if source not in FREEZE_SOURCES:
+        source = "captain"                  # unknown origin ⇒ never auto-thawed
+    row = {"ts": now or _now(), "kind": kind, "reason": str(reason)[:300],
+           "op": "freeze", "source": source}
     d = _undo_dir()
     _ensure_dir(d)
     with open(_frozen_mirror(), "a") as fh:
@@ -710,13 +735,25 @@ def freeze(kind: str, reason: str, *,
                                           json.dumps(row), None)
     except Exception:
         pass                                # durable mirror is authoritative
+    try:
+        (file_need_fn or _default_file_need)(
+            kind="unfreeze", action_type=str(kind),
+            why="kind frozen (" + source + "): " + str(reason)[:200],
+            unblocks="act-first acting for " + str(kind)
+                     + " (rearm after a green canary)",
+            filed_by="action_undo.freeze")
+    except Exception:
+        pass                        # a broken needs path never blocks a brake
     return row
 
 
-def _kind_in_mirror(kind: str) -> bool:
+def _mirror_rows(kind: str) -> Optional[List[Dict[str, Any]]]:
+    """The freeze/unfreeze mirror rows for one kind, append order (= time
+    order). None ⇒ the mirror exists but could not be read (fail-closed)."""
     p = _frozen_mirror()
     if not p.exists():
-        return False
+        return []
+    rows: List[Dict[str, Any]] = []
     try:
         with open(p) as fh:
             for line in fh:
@@ -727,25 +764,188 @@ def _kind_in_mirror(kind: str) -> bool:
                     r = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                if isinstance(r, dict) and r.get("kind") == kind and r.get("op") == "freeze":
-                    return True
+                if isinstance(r, dict) and r.get("kind") == kind \
+                        and r.get("op") in ("freeze", "unfreeze"):
+                    rows.append(r)
     except OSError:
-        return True                         # can't read the mirror -> fail-closed
-    return False
+        return None                         # unreadable mirror -> fail-closed
+    return rows
+
+
+def freeze_state(kind: str) -> Optional[Dict[str, Any]]:
+    """The LAST mirror op for ``kind`` (last-op-wins): a freeze or unfreeze
+    row, None when the mirror has no opinion, ``{"op": "error"}`` when the
+    mirror is unreadable — callers treat that as frozen AND un-thawable."""
+    rows = _mirror_rows(kind)
+    if rows is None:
+        return {"op": "error", "kind": kind,
+                "reason": "frozen-kinds mirror unreadable — fail-closed"}
+    return rows[-1] if rows else None
+
+
+def _kind_in_mirror(kind: str) -> bool:
+    """Last-op-wins per kind: True iff the mirror's FINAL op for the kind is a
+    freeze (or the mirror is unreadable — fail-closed). An ``op:'unfreeze'``
+    row appended by the receipted unfreeze primitive lifts the freeze durably;
+    a later freeze row re-engages it."""
+    st = freeze_state(kind)
+    if st is None:
+        return False
+    return st.get("op") != "unfreeze"       # freeze OR error ⇒ frozen
 
 
 def is_frozen(kind: str, *,
               redis_get: Optional[Callable[[str], str]] = None) -> bool:
-    """Fail-closed: Redis unreachable ⇒ treated frozen. A durable mirror hit
-    also holds (Redis may have been flushed; a freeze is durable)."""
+    """Fail-closed frozen read, durable-mirror-first (last-op-wins). Every
+    freeze writes the mirror BEFORE the Redis flag, so the mirror is never
+    staler than Redis: a mirror freeze holds even when Redis was flushed, and
+    a receipted ``op:'unfreeze'`` holds even when its Redis DEL failed (a
+    stale flag never resurrects a lifted freeze). Only when the mirror has no
+    opinion does the Redis flag decide — unreachable Redis ⇒ True."""
+    st = freeze_state(kind)
+    if st is not None:
+        return st.get("op") != "unfreeze"   # freeze OR unreadable ⇒ frozen
     getter = redis_get or _default_redis_get
     try:
-        val = getter("cabinet:actfirst:frozen:" + str(kind))
+        return bool(getter("cabinet:actfirst:frozen:" + str(kind)))
     except Exception:
         return True
-    if val:
-        return True
-    return _kind_in_mirror(kind)
+
+
+def unfreeze(kind: str, reason: str, *, canary_receipt: str, source: str,
+             now: Optional[str] = None,
+             redis_del: Optional[Callable[[str], None]] = None,
+             redis_get: Optional[Callable[[str], str]] = None) -> Dict[str, Any]:
+    """Lift a freeze — the ONE exit (D11/SOV-5 kills freeze permanence).
+
+    Refuses without a ≤24h GREEN canary receipt for THIS kind: mechanism
+    proof is mandatory, and receipts are minted only by an actual green
+    ``run_canary`` run — a reply verb or a thaw sweep cannot conjure one.
+    On success appends the ``op:'unfreeze'`` mirror row (last-op-wins — the
+    durable lift), then best-effort Redis DEL + ``kind_unfrozen`` event +
+    closes the deduped unfreeze need. ``source`` records who lifted:
+    ``machine`` (run_thaw auto) or ``captain`` (rearm verb). Never widens
+    beyond this one kind."""
+    if source not in FREEZE_SOURCES:
+        return {"ok": False, "kind": kind,
+                "reason": "unknown unfreeze source " + repr(source)}
+    st = freeze_state(kind)
+    if st is not None and st.get("op") == "error":
+        return {"ok": False, "kind": kind,
+                "reason": "frozen-kinds mirror unreadable — refusing to unfreeze"}
+    if not is_frozen(kind, redis_get=redis_get):
+        return {"ok": False, "kind": kind,
+                "reason": "not frozen — nothing to unfreeze"}
+    if not valid_green_receipt(canary_receipt, kind, now=now):
+        return {"ok": False, "kind": kind,
+                "reason": "no green canary receipt ≤" + str(RECEIPT_MAX_AGE_H)
+                          + "h for " + str(kind)
+                          + " — run a scoped canary and retry"}
+    row = {"ts": now or _now(), "kind": str(kind), "reason": str(reason)[:300],
+           "op": "unfreeze", "source": source, "receipt": canary_receipt}
+    d = _undo_dir()
+    _ensure_dir(d)
+    with open(_frozen_mirror(), "a") as fh:
+        fh.write(json.dumps(row) + "\n")
+    try:
+        (redis_del or _default_redis_del)("cabinet:actfirst:frozen:" + str(kind))
+    except Exception:
+        pass                                # mirror row is the durable lift
+    try:
+        from framework.events.emitter import emit
+        emit("kind_unfrozen", actor="action_undo." + source,
+             payload={"kind": str(kind), "reason": str(reason)[:200],
+                      "source": source, "receipt": canary_receipt})
+    except Exception:
+        pass
+    try:
+        # Close the deduped unfreeze need this kind's freeze filed (lazy +
+        # guarded — same no-hard-dep discipline as the filing side).
+        from framework.authority import needs
+        needs.mark(needs.need_id("unfreeze", action_type=str(kind)), "granted",
+                   by="unfreeze:" + source, reason=str(reason)[:200])
+    except Exception:
+        pass
+    return {"ok": True, **row}
+
+
+# --- canary receipts (unfreeze fuel — minted by actfirst_canary.run_canary) --
+
+def _receipts_file() -> Path:
+    return _undo_dir() / "canary-receipts.jsonl"
+
+
+def record_canary_receipt(kind: str, *, green: bool,
+                          now: Optional[str] = None) -> Dict[str, Any]:
+    """Append one canary outcome row and return it. Green rows carry the
+    receipt token ``unfreeze`` demands; red rows are thaw bookkeeping (a
+    recently-red kind must never read as clean)."""
+    row = {"receipt": uuid.uuid4().hex, "kind": str(kind),
+           "ts": now or _now(), "green": bool(green)}
+    d = _undo_dir()
+    _ensure_dir(d)
+    with open(_receipts_file(), "a") as fh:
+        fh.write(json.dumps(row) + "\n")
+    return row
+
+
+def canary_receipts(kind: Optional[str] = None) -> List[Dict[str, Any]]:
+    """All receipt rows (optionally one kind), torn-line tolerant, ts order.
+    Unreadable file ⇒ [] — missing receipts only ever REFUSE an unfreeze."""
+    p = _receipts_file()
+    if not p.exists():
+        return []
+    rows: List[Dict[str, Any]] = []
+    try:
+        with open(p) as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    r = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(r, dict) or not r.get("receipt"):
+                    continue
+                if kind is not None and r.get("kind") != str(kind):
+                    continue
+                rows.append(r)
+    except OSError:
+        return []
+    rows.sort(key=lambda r: str(r.get("ts", "")))
+    return rows
+
+
+def _parse_ts_strict(ts: Any) -> Optional[datetime]:
+    """STRICT canonical-format parse (None on anything else) — a receipt with
+    a malformed timestamp must read invalid, never fresh."""
+    try:
+        return datetime.strptime(ts or "", "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=timezone.utc)
+    except (ValueError, TypeError):
+        return None
+
+
+def valid_green_receipt(receipt: str, kind: str, *, now: Optional[str] = None,
+                        max_age_h: int = RECEIPT_MAX_AGE_H) -> bool:
+    """True iff ``receipt`` names a GREEN canary row for THIS kind minted
+    within the last ``max_age_h`` hours. Fail-closed: unknown token, red row,
+    kind mismatch, malformed or future-dated ts all refuse."""
+    if not receipt:
+        return False
+    nowdt = _parse_ts_strict(now) or datetime.now(timezone.utc)
+    for r in canary_receipts(kind):
+        if r.get("receipt") != receipt:
+            continue
+        if not r.get("green"):
+            return False
+        ts = _parse_ts_strict(r.get("ts"))
+        if ts is None:
+            return False
+        age = (nowdt - ts).total_seconds()
+        return 0 <= age <= max_age_h * 3600
+    return False
 
 
 # --- acted consequence event (per-STEP, RT-B1/RT-B6) -------------------------

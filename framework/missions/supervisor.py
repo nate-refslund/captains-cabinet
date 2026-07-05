@@ -54,6 +54,34 @@ from framework.missions.session_bridge import _outcomes_path
 from framework.roles.lifecycle import list_roles
 
 
+def _standing_missions_source(
+    compile_actor: str,
+    emit_mission_events: bool,
+) -> list[dict[str, Any]]:
+    """SECOND compile-source when sovereign [sovereign spec §4 SOV-8]:
+    `shared/interfaces/standing-missions.yml`, written only by
+    framework.missions.standing_pull (never the Captain's outcomes.yml).
+
+    Guardian bit-identical: the posture resolve is lazy and any failure —
+    module absent, posture unreadable, file missing/corrupt — answers [],
+    so with no attested sovereign ruling this function does nothing at all.
+    """
+    try:
+        from framework.authority.posture import resolve_posture
+        if resolve_posture() != "sovereign":
+            return []
+        from framework.missions.standing_pull import standing_missions_path
+        path = standing_missions_path()
+        if not path.exists():
+            return []
+        return compile_from_yaml(
+            path, actor=compile_actor, roles=None,
+            emit_event=emit_mission_events,
+        )
+    except Exception:
+        return []
+
+
 def already_assigned_ids() -> set[str]:
     """Replay work_item_assigned events to collect task IDs already routed."""
     assigned: set[str] = set()
@@ -100,15 +128,24 @@ def find_unassigned_ready_tasks(
     """
     path = Path(outcomes_path) if outcomes_path else _outcomes_path()
     if not path.exists():
-        return []
+        # Sovereign may still route standing missions with no Captain
+        # outcomes file at all (never-idle); guardian gets today's exact
+        # empty answer because the second source is [] there.
+        missions = _standing_missions_source(compile_actor, emit_mission_events)
+        if not missions:
+            return []
+    else:
+        try:
+            missions = compile_from_yaml(
+                path, actor=compile_actor, roles=None,
+                emit_event=emit_mission_events,
+            )
+        except (FileNotFoundError, ValueError):
+            return []
 
-    try:
-        missions = compile_from_yaml(
-            path, actor=compile_actor, roles=None,
-            emit_event=emit_mission_events,
-        )
-    except (FileNotFoundError, ValueError):
-        return []
+        # Sovereign-only second source (standing missions) — [] in guardian.
+        missions = missions + _standing_missions_source(
+            compile_actor, emit_mission_events)
 
     assigned = already_assigned_ids()
     flagged_unroutable = already_unroutable_ids()

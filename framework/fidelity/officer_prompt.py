@@ -108,6 +108,54 @@ def build_clone_eval_system(case: Case, officer_role: str,
     return build_eval_system(case, officer_role) + block
 
 
+# ---------------------------------------------------------------------------
+# INT-3 (sovereign spec D17) — the PERSONAL-AGENT identity. The clone identity
+# above is kept VERBATIM as the diagnostic arm (does the officer decide like
+# Nate?); this arm reframes the objective: the officer is Nate's AGENT acting
+# on his behalf, judged by whether the OUTCOME serves Nate's intent as good or
+# better than what Nate did — mimicry is not the goal. Same identity dict,
+# same privacy fence; only the framing differs. Default identity stays 'clone'
+# until the first AGB baseline is cut (run_case/measure_intent enforce that
+# default — flipping silently would breach the A/A shard invariant).
+# ---------------------------------------------------------------------------
+
+
+def build_agent_eval_system(case: Case, officer_role: str,
+                            identity: dict) -> str:
+    """Assemble the REPLY-cell system prompt that drives the officer to act AS
+    NATE'S AGENT (identity_mode='agent').
+
+    Same ``identity`` shape and privacy fence as ``build_clone_eval_system``
+    (``{voice, patterns, lessons, person_static}``, missing keys degrade to
+    "(unavailable)"), but the mandate is OUTCOME-first: serve Nate's intent on
+    his behalf, free to do better than a literal imitation would. The held-out
+    reply (``case.real_reply``) is NEVER included."""
+    identity = identity or {}
+
+    def _val(key: str) -> str:
+        v = (identity.get(key) or "").strip()
+        return v if v else "(unavailable)"
+
+    block = (
+        "\n\n# AGENT IDENTITY — act ON NATE'S BEHALF\n"
+        "You are Nate's trusted AI agent handling this thread for him. Your "
+        "objective is the OUTCOME: serve Nate's goal in this situation as "
+        "well as — or better than — Nate himself would. You are NOT required "
+        "to mimic what Nate would literally have written; you ARE required to "
+        "pursue his intent, honor his standing decisions, and stay grounded "
+        "in the supplied context (never invent facts).\n\n"
+        f"{_CLONE_PRIVACY_FENCE}\n\n"
+        f"## How Nate decides (nate_model patterns)\n{_val('patterns')}\n\n"
+        f"## How Nate writes (voice profile — calibrate tone, do not "
+        f"impersonate blindly)\n{_val('voice')}\n\n"
+        f"## Drafting lessons (date-filtered before the cutoff)\n"
+        f"{_val('lessons')}\n\n"
+        f"## Counterparty (atemporal frontmatter)\n{_val('person_static')}"
+    )
+    # role + decision-type context (light) first, then the identity that drives.
+    return build_eval_system(case, officer_role) + block
+
+
 def _clean(text: str) -> str:
     body = re.sub(r"<!--[^>]*-->", "", text or "")
     return re.sub(r"_\([^)]*\)_", "", body).strip()

@@ -112,6 +112,16 @@ VALID_EVENT_TYPES = frozenset({
     "outbox_queued",
     "outbox_dispatched",
     "outbox_failed",
+
+    # Sovereign posture kernel (SOV-1) — needs ledger [FI-3] + brakes [FI-5]
+    "need_filed",
+    "need_granted",
+    "need_denied",
+    "need_snoozed",
+    "need_expired",
+    "need_escalated",
+    "cap_alarm",       # sovereign: daily cap reached ⇒ alarm + proceed (D11)
+    "kind_unfrozen",   # unfreeze primitive lifted a frozen kind (D11/SOV-5)
 })
 
 

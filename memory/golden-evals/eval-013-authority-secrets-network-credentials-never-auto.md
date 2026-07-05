@@ -41,3 +41,31 @@ eventually-auto rather than always-gate.
   `local_edit`/reversible backstop instead of its positive ceiling class.
 - Any of the three is dropped from the matrix `hard_ceiling` list or its
   `ceiling_frozenset_map`.
+
+## Sovereign posture (amendment 2026-07-05 — `apply sovereign posture`)
+
+Everything above is the GUARDIAN row and stays byte-identical — with no
+attested `instance/config/posture.yml` the resolution and block strings are
+exactly the guardian ones. The precise invariant is: secrets, network_write,
+and credentials_grant are **never UNCONDITIONAL auto** in ANY posture.
+
+Under an attested sovereign posture each of the three ceiling rows resolves
+`standing_grant` (D2) — grant-or-need, never an open gate: no matching grant
+⇒ block (`GATED (standing_grant: <risk_class>)`) + deduped NEED while the
+chain proceeds; a Captain-signed, schg-locked, unexpired, unrevoked grant
+with its class hard-scope predicate satisfied (e.g. vendor ∈
+`scope.vendor_allowlist`) ⇒ allow attributed to its `grant_id` +
+rate-counted.
+
+`standing_grant` is CONDITIONAL, never unconditional: the allow exists only
+while every predicate holds — Captain-signed grant row in the schg-locked
+`instance/config/standing-grants.yml`, deployment match, action_type + lane
+match, unexpired (≤90d horizon), unrevoked (file flag or Redis tombstone —
+Redis unreachable ⇒ treated revoked), rate not exhausted, not vetoed, and the
+class hard-scope predicate satisfied. An unlocked/absent/corrupt grants file
+loads as `[]` (fail-closed) and every probe blocks + files a need.
+
+### Additional failure conditions (sovereign)
+- An allow for any of the three classes without a `grant_id`-attributed grant.
+- A grant honored from an unlocked standing-grants.yml.
+- An allow whose scope context falls outside the grant's hard-scope predicate.

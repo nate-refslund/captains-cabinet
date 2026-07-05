@@ -691,6 +691,203 @@ def _confirm_pending_veto(arg_text: str, *, record_veto: Callable[..., Any],
                        else f"veto confirm — registry dark; scope={scope}"}
 
 
+# =============================================================================
+# FI-4 — needs-ledger verbs: grant / deny / later|snooze NEED-<hex> + rearm
+# <kind> (SOV-6). DARK behind CABINET_NEEDS_WIRED=1 AND captain_verified,
+# routed in the veto-command slot (after the acted branch, before the veto
+# verbs — collision-free vs _APPROVE_RE/_CONFIRM_LEAD_RE/_UNDO_RE/_NEVER_RE/
+# _LIFT_RE/_VETO_CONFIRM_RE, pinned by test corpus).
+#
+# Telegram text is UNTRUSTED: the grammar binds ONLY the 8-hex content-
+# fingerprint id [FI-3] — free text never widens anything, and `grant` marks
+# `approved_pending_apply` in the ledger, NEVER auto-applies (the only writer
+# of standing-grants.yml is the Captain's sudo grant-apply.sh, D7). A matched
+# verb is TERMINAL: an unknown/stale id returns handled=False (fail-closed
+# passthrough to the Chair) and never falls through to the propose path — so
+# `grant NEED-ffffffff` can never approve a pending proposal.
+# =============================================================================
+
+_NEED_RE = re.compile(
+    r"^\s*(grant|deny|later|snooze)\s+need[-_ ]?([0-9a-f]{8})\b"
+    r"(?:\s*[:—-]\s*(.*))?$",
+    re.IGNORECASE | re.DOTALL)
+_REARM_RE = re.compile(r"^\s*rearm\s+([a-z0-9_.-]{1,40})\b", re.IGNORECASE)
+
+_NEED_VERB_STATUS = {"grant": "approved_pending_apply", "deny": "denied",
+                     "later": "snoozed", "snooze": "snoozed"}
+
+
+def _needs_wired() -> bool:
+    return os.environ.get("CABINET_NEEDS_WIRED") == "1"
+
+
+def _default_mark_need(nid: str, status: str, *, by: str,
+                       reason: Optional[str] = None,
+                       now: Optional[str] = None) -> Optional[dict]:
+    from framework.authority import needs
+    return needs.mark(nid, status, by=by, reason=reason, now=now)
+
+
+def _default_rearm_canary(*, kind: str) -> dict:
+    # The SAME production transports the weekly canary runner wires
+    # (run-actfirst-canary.sh) — one synchronous probe, scoped to this kind.
+    from framework.frontdoor import actfirst_canary, action_exec
+    return actfirst_canary.run_canary(
+        monday_post=action_exec._monday_post,
+        osascript=action_exec._default_osascript, kind=kind)
+
+
+def _default_unfreeze(kind: str, reason: str, *, canary_receipt: str,
+                      source: str, now: Optional[str] = None) -> dict:
+    from framework.frontdoor import action_undo
+    return action_undo.unfreeze(kind, reason, canary_receipt=canary_receipt,
+                                source=source, now=now)
+
+
+def _default_freeze_state(kind: str) -> Optional[dict]:
+    from framework.frontdoor import action_undo
+    return action_undo.freeze_state(kind)
+
+
+def _default_kind_key(kind: str) -> str:
+    from framework.frontdoor import actfirst_canary
+    return actfirst_canary.kind_key(kind)
+
+
+def _grant_receipt(row: dict) -> str:
+    """The grant receipt: the MACHINE-EFFECTIVE scope in plain language
+    (tell_surface.grant_scope_plain — parsed from the machine grant line,
+    never the requester's why prose: the poisoned-need fix) + the one paste.
+    Nothing is live until the Captain runs the sudo apply in an unlock window."""
+    from framework.frontdoor import tell_surface
+    nid = (str(row.get("id") or "")).replace("·", "")
+    kind = (str(row.get("kind") or "")).replace("·", "")
+    lines = [f"✅ Need {nid} approved — pending apply (nothing is live yet)."]
+    if kind == "standing_grant":
+        lines.append("This grants: " + tell_surface.grant_scope_plain(row))
+        lines.append("Apply in an unlock window: "
+                     f"`sudo bash cabinet/scripts/grant-apply.sh {nid}`")
+    else:
+        lines.append(f"Kind {kind or '?'}: apply is manual — the ledger row is "
+                     "marked approved_pending_apply.")
+    return "\n".join(lines)
+
+
+def _is_frozen_op(st: Optional[dict]) -> bool:
+    return isinstance(st, dict) and st.get("op") in ("freeze", "error")
+
+
+def _route_rearm(kind: str, *, rearm_canary: Callable[..., dict],
+                 unfreeze: Callable[..., dict],
+                 freeze_state: Callable[[str], Optional[dict]],
+                 kind_key: Callable[[str], str], now: str,
+                 log: Callable[[str], None]) -> Optional[dict]:
+    """`rearm <kind>`: one SYNCHRONOUS scoped canary; green ⇒ receipted
+    captain-origin unfreeze, red/absent ⇒ stays frozen with the reason [FI-4].
+    The verb binds only a kind the durable mirror says is FROZEN (server-state
+    cross-check, like acted pids) — anything else returns None so prose like
+    "rearm the pipeline" passes through to the Chair."""
+    cands = [kind]
+    try:
+        fk = kind_key(kind)
+        if fk and fk != kind:
+            cands.append(fk)
+    except Exception:
+        pass
+    target = None
+    for cand in cands:
+        st = freeze_state(cand)
+        if st is None:
+            continue
+        if st.get("op") == "error":
+            return {"handled": True, "rearm": "refused", "kind": cand,
+                    "summary": f"rearm {cand}: frozen-kinds mirror unreadable "
+                               "— refused (fix the mirror first)"}
+        if st.get("op") != "unfreeze":
+            target = cand
+            break
+    if target is None:
+        log(f"binder-wire: rearm '{kind}' names no frozen kind — passthrough")
+        return None
+    try:
+        res = rearm_canary(kind=target) or {}
+    except Exception as e:
+        return {"handled": True, "rearm": "refused", "kind": target,
+                "summary": f"rearm {target}: canary run failed "
+                           f"({str(e)[:120]}) — stays frozen"}
+    entries = [e for e in (res.get("results") or []) if isinstance(e, dict)]
+    green = [e for e in entries if e.get("ok") and e.get("receipt")]
+    if not green:
+        why = ("no canary handler probes that kind" if not entries
+               else str(entries[0].get("error") or "canary red")[:160])
+        return {"handled": True, "rearm": "refused", "kind": target,
+                "summary": f"rearm {target}: stays frozen — {why}"}
+    ent = green[0]
+    # The receipt is minted for the entry's breaker key; lift the key the
+    # receipt validates for when it is the frozen one, else the mirror target
+    # (unfreeze independently re-verifies the ≤24h green receipt either way).
+    fk = str(ent.get("action_type") or target)
+    lift_key = fk if (fk != target and _is_frozen_op(freeze_state(fk))) else target
+    try:
+        out = unfreeze(lift_key, f"captain rearm ({kind})",
+                       canary_receipt=str(ent.get("receipt")),
+                       source="captain", now=now)
+    except Exception as e:
+        out = {"ok": False, "reason": f"unfreeze crashed: {str(e)[:120]}"}
+    if out.get("ok"):
+        return {"handled": True, "rearm": "unfrozen", "kind": lift_key,
+                "summary": f"rearm {lift_key}: green canary → unfrozen "
+                           "(captain-origin lift)"}
+    return {"handled": True, "rearm": "refused", "kind": lift_key,
+            "summary": f"rearm {lift_key}: stays frozen — "
+                       f"{out.get('reason') or 'unfreeze refused'}"}
+
+
+def _route_needs_command(text: str, *, mark_need: Callable[..., Any],
+                         present: Callable[[str], Any], now: str,
+                         log: Callable[[str], None],
+                         rearm_canary: Callable[..., dict],
+                         unfreeze: Callable[..., dict],
+                         freeze_state: Callable[[str], Optional[dict]],
+                         kind_key: Callable[[str], str]) -> Optional[dict]:
+    """FI-4 needs verbs, or None when the reply is not one. TERMINAL on a
+    matched NEED verb: `mark` returning None (unknown/stale hex id) yields
+    handled=False — fail-closed passthrough, NEVER the propose path."""
+    t = (text or "").strip()
+    m = _NEED_RE.match(t)
+    if m:
+        verb = m.group(1).lower()
+        nid = "NEED-" + m.group(2).lower()
+        tail = (m.group(3) or "").strip()
+        row = mark_need(nid, _NEED_VERB_STATUS[verb], by="captain:binder",
+                        reason=tail or None, now=now)
+        if row is None:
+            log(f"binder-wire: needs verb '{verb}' on unknown/stale id {nid} "
+                "— refused (fail-closed passthrough)")
+            return {"handled": False, "reason": f"unknown-need-id ({nid})"}
+        if verb == "grant":
+            try:
+                present(_grant_receipt(row))
+            except Exception as e:
+                log(f"binder-wire: grant receipt present failed: {e!r}")
+            return {"handled": True, "need": "approved_pending_apply",
+                    "need_id": nid,
+                    "summary": f"need {nid} → approved_pending_apply "
+                               "(nothing live until grant-apply.sh)"}
+        if verb == "deny":
+            return {"handled": True, "need": "denied", "need_id": nid,
+                    "summary": f"need {nid} denied — re-files suppressed 90d"
+                               + (f" ({tail[:80]})" if tail else "")}
+        return {"handled": True, "need": "snoozed", "need_id": nid,
+                "summary": f"need {nid} snoozed 7d"}
+    m = _REARM_RE.match(t)
+    if m:
+        return _route_rearm(m.group(1).lower(), rearm_canary=rearm_canary,
+                            unfreeze=unfreeze, freeze_state=freeze_state,
+                            kind_key=kind_key, now=now, log=log)
+    return None
+
+
 def _route_veto_command(text: str, *, record_veto: Callable[..., Any],
                         lift_veto: Callable[..., Any], present: Callable[[str], Any],
                         redis_get: Callable[[str], str], redis_set: Callable[[str, str], Any],
@@ -746,6 +943,11 @@ def handle_captain_update(
     redis_del: Callable[[str], Any] | None = None,
     captain_verified: bool = True,
     capture_lesson: Callable[..., Any] | None = None,
+    mark_need: Callable[..., Any] | None = None,
+    rearm_canary: Callable[..., dict] | None = None,
+    unfreeze_fn: Callable[..., dict] | None = None,
+    freeze_state_fn: Callable[[str], Optional[dict]] | None = None,
+    kind_key_fn: Callable[[str], str] | None = None,
 ) -> dict:
     """Bind a Captain reply to its pending draft proposal; record, then deliver.
 
@@ -797,6 +999,25 @@ def handle_captain_update(
             log(f"binder-wire: acted {acted.get('primary')} "
                 f"pid={str(acted.get('pid'))[:60]} verdict={acted.get('verdict')}")
             return acted
+
+        # --- FI-4 NEEDS VERBS (SOV-6): grant/deny/later/snooze NEED-<hex> +
+        # rearm <kind>. DARK behind CABINET_NEEDS_WIRED=1 and Captain-verified;
+        # TERMINAL on a matched NEED verb (stale hex id ⇒ handled=False, never
+        # the propose path), None otherwise ⇒ every non-needs reply is
+        # byte-identical to the pre-needs wire. ---
+        if captain_verified and _needs_wired():
+            needs_res = _route_needs_command(
+                text, mark_need=mark_need or _default_mark_need,
+                present=present or _default_present, now=now_s, log=log,
+                rearm_canary=rearm_canary or _default_rearm_canary,
+                unfreeze=unfreeze_fn or _default_unfreeze,
+                freeze_state=freeze_state_fn or _default_freeze_state,
+                kind_key=kind_key_fn or _default_kind_key)
+            if needs_res is not None:
+                log(f"binder-wire: needs "
+                    f"{needs_res.get('need') or needs_res.get('rearm') or 'refused'}"
+                    f" -> {needs_res.get('summary') or needs_res.get('reason')}")
+                return needs_res
 
         # --- TI-4 VETO COMMANDS: lift veto-NNN / veto confirm / freeform never:.
         # Armed only on the Captain-verified path with veto wiring live; a

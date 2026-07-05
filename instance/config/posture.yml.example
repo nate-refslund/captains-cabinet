@@ -1,0 +1,36 @@
+# posture.yml — THE POSTURE SELECTION RULING [FI-1, sovereign-posture kernel].
+#
+# Selects WHICH verdicts table of the ONE authority matrix this deployment
+# runs under. Verdict semantics live in the germline floor
+# (framework/policies/authority-matrix.yml); this file only selects.
+#
+# ABSENT file = guardian = today's exact behavior, byte-identical. The ruling
+# takes effect ONLY when ALL of (framework/authority/posture.py):
+#   present ∧ schema-valid (CLOSED keys — any unknown key is corrupt)
+#   ∧ deployment == CABINET_ID env (default "main"; mismatch ⇒ treated absent)
+#   ∧ schg-locked (os.stat().st_flags & SF_IMMUTABLE; non-Darwin ⇒ never).
+# Anything else resolves guardian (fail-safe polarity, D6) and a corrupt or
+# unlocked file additionally files a deduped need.
+#
+# Env may only NARROW: CABINET_POSTURE=guardian is the emergency drop-brake
+# and wins over this file; CABINET_POSTURE=sovereign is IGNORED. There is NO
+# dev/test bypass of the lock attestation.
+#
+# Activate (Captain, in an unlock window):
+#   cp instance/config/posture.yml.example instance/config/posture.yml
+#   $EDITOR instance/config/posture.yml   # set deployment/flavor/posture
+#   git add + commit
+#   sudo chflags schg instance/config/posture.yml
+# Roll back: sudo chflags noschg … ; rm instance/config/posture.yml (absent ⇒ inert).
+version: 1
+status: ruled                  # only 'ruled' activates; anything else is corrupt
+ruled_at: 2026-07-05T00:00:00Z
+basis: "<verbatim Captain directive essence>"
+deployment: mini-polads        # MUST equal CABINET_ID env (default "main")
+flavor: org                    # org | personal — personal structurally REFUSES
+                               # external_comms standing grants (queue_draft-only)
+posture: sovereign             # guardian | sovereign
+lanes: {polads: sovereign}     # OPTIONAL per-lane override of `posture`
+caps: {hard_multiplier: 10}    # runaway hard-stop = per-kind/day cap × this;
+                               # freeze-on-hit in BOTH postures (FI-5)
+max_auto_exec_steps: 5         # sovereign only; guardian is FORCED 2

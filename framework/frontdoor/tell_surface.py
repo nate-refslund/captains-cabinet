@@ -62,6 +62,7 @@ __all__ = [
     "render_receipt",
     "build_digest",
     "digest_manifest",
+    "grant_scope_plain",
     "instant_tell_rules",
     "overflow_micro_digest",
     "should_quiet",
@@ -534,30 +535,157 @@ def _self_section(rows: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def _digest_footer() -> str:
+# --- needs leg (SOV-6 / FI-3 — a missing grant never asks per-item) -----------
+
+# Clip caps for the needs leg: the requester's why is CONTEXT, never the
+# authority line, so it renders short; the machine scope line gets more room.
+_NEED_WHY_CAP = 160
+
+
+def _parse_grant_line(line: Any) -> Optional[Dict[str, Any]]:
+    """Parse a need row's ``proposed_grant_line`` (a flow-style YAML list item)
+    into its machine dict, or None on anything unparseable. yaml is imported
+    lazily (grants.py precedent) so module import stays stdlib-only."""
+    if not isinstance(line, str) or not line.strip():
+        return None
+    txt = line.strip()
+    if txt.startswith("- "):
+        txt = txt[2:]
+    try:
+        import yaml
+        doc = yaml.safe_load(txt)
+    except Exception:
+        return None
+    return doc if isinstance(doc, dict) else None
+
+
+def grant_scope_plain(need_row: Optional[Dict[str, Any]]) -> str:
+    """The MACHINE-EFFECTIVE scope of a standing_grant need, in plain language.
+
+    Poisoned-need fix (SOV-6): the sentence the Captain reads before saying
+    ``grant`` is derived ONLY from the machine ``proposed_grant_line`` — the
+    requester's ``why`` prose can claim anything and never reaches this line.
+    An absent/unparseable grant line renders a refusal note, never a guess."""
+    row = need_row or {}
+    doc = _parse_grant_line(row.get("proposed_grant_line"))
+    if doc is None:
+        return ("no machine grant line recorded — review the ledger row "
+                "before applying (nothing can auto-apply)")
+    ats = ", ".join(str(a) for a in (doc.get("action_types") or []))
+    rc = str(doc.get("risk_class") or row.get("risk_class") or "?")
+    lane_list = [str(x) for x in (doc.get("lanes") or [])]
+    lanes = ", ".join(lane_list) if lane_list else \
+        "NO lane (Captain must fill before apply)"
+    scope = doc.get("scope") if isinstance(doc.get("scope"), dict) else {}
+    bits: List[str] = []
+    if rc == "external_comms":
+        allow = [str(x) for x in (scope.get("recipient_allowlist") or [])]
+        bits.append("to " + (", ".join(allow) if allow
+                             else "NO recipients (inert until filled)"))
+    elif rc == "spend":
+        cap = scope.get("max_eur_per_day")
+        bits.append(f"max {cap if cap is not None else 0} EUR/day")
+    else:
+        vend = [str(x) for x in (scope.get("vendor_allowlist") or [])]
+        bits.append("vendors: " + (", ".join(vend) if vend
+                                   else "NONE (inert until filled)"))
+    rate = doc.get("rate") if isinstance(doc.get("rate"), dict) else {}
+    if rate.get("max_per_day") is not None:
+        bits.append(f"max {rate['max_per_day']}/day")
+    if doc.get("expires"):
+        bits.append(f"until {doc['expires']}")
+    return _no_marker(f"{ats or 'NO action_types'} ({rc}), "
+                      f"lane {lanes}, " + ", ".join(bits))
+
+
+def _need_lines(r: Dict[str, Any]) -> List[str]:
+    """One need's rendered block. Every string is ``_no_marker``-stripped, and
+    the row is addressed ONLY by its full NEED-<hex> fingerprint id — never a
+    bare integer selector, so the needs grammar can never collide with the
+    ACTED undo-by-index grammar [FI-4]."""
+    nid = _no_marker(str(r.get("id") or "")).strip()
+    if not nid.startswith("NEED-"):
+        return []                 # a row the binder grammar cannot bind — skip
+    kind = _no_marker(str(r.get("kind") or "need"))
+    head = f" • {nid} [{kind}]"
+    machine = "/".join(_no_marker(str(x))
+                       for x in (r.get("risk_class"), r.get("action_type")) if x)
+    if machine:
+        head += f" {machine}"
+    if r.get("lane"):
+        head += f" lane {_no_marker(str(r['lane']))}"
+    try:
+        count = int(r.get("count") or 1)
+    except (TypeError, ValueError):
+        count = 1
+    head += f" — asked {count}x"
+    lines = [head]
+    if kind == "standing_grant":
+        lines.append(f"   grants if applied: {grant_scope_plain(r)}")
+    why = _no_marker(str(r.get("why") or "")).strip()
+    if why:
+        lines.append(f"   why: {_clip(why, _NEED_WHY_CAP)}")
+    if r.get("status") == "approved_pending_apply":
+        if kind == "standing_grant":
+            lines.append("   apply: `sudo bash cabinet/scripts/grant-apply.sh "
+                         + nid + "`")
+        else:
+            lines.append("   approved — apply is manual for this kind")
+    return lines
+
+
+def _needs_section(rows: List[Dict[str, Any]]) -> str:
+    """The 🙋 NEEDS leg (SOV-6): open + approved_pending_apply needs filed by
+    chains that kept proceeding. Machine fields are the authority line; the
+    requester's why renders only as clipped, labeled context."""
+    blocks = [_need_lines(r or {}) for r in rows]
+    blocks = [b for b in blocks if b]
+    if not blocks:
+        return ""
+    lines = [f"🙋 NEEDS ({len(blocks)})"]
+    for b in blocks:
+        lines.extend(b)
+    return "\n".join(lines)
+
+
+def _digest_footer(*, needs_present: bool = False) -> str:
     # No "·" anywhere here — it is reserved for the trusted pid marker (see
     # _undo_line); decorative dots would forge a bindable marker in the digest.
-    return ("Per ACTED line: `undo <n>` reverses / `👍 <n>` confirms / "
+    base = ("Per ACTED line: `undo <n>` reverses / `👍 <n>` confirms / "
             "`never: <why>` vetoes. Silence is fine — nothing waits on you.")
+    if not needs_present:
+        return base
+    # The needs grammar surfaces ONLY when needs render [FI-4] — full hex ids,
+    # never integers. `grant` marks approved_pending_apply; nothing auto-applies.
+    return (base + "\nPer NEED line: `grant NEED-<id>` / `deny NEED-<id>: <why>`"
+            " / `later NEED-<id>` (7d). `rearm <kind>` re-arms a frozen kind "
+            "after a green canary.")
 
 
 def build_digest(acted_rows: Optional[List[Dict[str, Any]]],
                  awaiting_rows: Optional[List[Dict[str, Any]]],
                  watching_rows: Optional[List[Dict[str, Any]]],
                  self_rows: Optional[List[Dict[str, Any]]],
-                 *, now: Any) -> str:
-    """The act-then-tell digest that rides the 07:30 + 19:30 briefings. Four
+                 *, now: Any,
+                 needs_rows: Optional[List[Dict[str, Any]]] = None) -> str:
+    """The act-then-tell digest that rides the 07:30 + 19:30 briefings. Five
     sections — ✅ACTED (numbered, exact content + undo index), ⚡AWAITING
     (propose-class cards still pending a verdict), 👁WATCHING (scouted
-    opportunities/health not yet carded), 🫀SELF (frozen kinds, breaker trips,
-    canary status). Empty sections are omitted; an all-empty digest returns ""
-    (silence costs nothing). Rows flagged ``quiet`` (a graduated, all-confirmed
-    cell per ``should_quiet``) are folded to a one-line rollup rather than listed.
-    The digest carries NO ``·`` marker — the Captain acts by index [RT-A9]."""
+    opportunities/health not yet carded), 🙋NEEDS (SOV-6: standing-grant /
+    access needs filed by chains that kept proceeding — full NEED-<hex> ids,
+    never integer selectors), 🫀SELF (frozen kinds, breaker trips, canary
+    status). ``needs_rows=None`` (the default) is BYTE-IDENTICAL to the
+    pre-needs digest. Empty sections are omitted; an all-empty digest returns
+    "" (silence costs nothing). Rows flagged ``quiet`` (a graduated,
+    all-confirmed cell per ``should_quiet``) are folded to a one-line rollup
+    rather than listed. The digest carries NO ``·`` marker — the Captain acts
+    by index [RT-A9]."""
+    needs_sec = _needs_section(needs_rows or [])
     sections = [
         _acted_section(acted_rows or [], now=now),
         _awaiting_section(awaiting_rows or [], now=now),
         _watching_section(watching_rows or []),
+        needs_sec,
         _self_section(self_rows or []),
     ]
     sections = [s for s in sections if s]
@@ -565,7 +693,8 @@ def build_digest(acted_rows: Optional[List[Dict[str, Any]]],
         return ""
     stamp = _fmt_stamp(now)
     header = "🗒 Act-then-tell digest" + (f" — {stamp}" if stamp else "")
-    return "\n\n".join([header] + sections + [_digest_footer()])
+    return "\n\n".join([header] + sections
+                       + [_digest_footer(needs_present=bool(needs_sec))])
 
 
 # --- overflow micro-digest (rule §3.4) ---------------------------------------

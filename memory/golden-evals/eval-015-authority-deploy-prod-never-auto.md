@@ -35,3 +35,32 @@ regardless.
 - `deploy_prod` is dropped from the matrix `hard_ceiling` list, or its
   `ceiling_frozenset_map` entry no longer maps to the `production` frozenset
   member.
+
+## Sovereign posture (amendment 2026-07-05 — `apply sovereign posture`)
+
+Everything above is the GUARDIAN row and stays byte-identical — with no
+attested `instance/config/posture.yml` the resolution and block string are
+exactly the guardian ones. The precise invariant is: deploy_prod is **never
+UNCONDITIONAL auto** in ANY posture — and the legacy Section 3a prod-deploy
+floor in `pre-tool-use.sh` still wins regardless of posture.
+
+Under an attested sovereign posture the `deploy_prod` ceiling row resolves
+`standing_grant` (D2) — grant-or-need, never an open gate: no matching grant
+⇒ block (`GATED (standing_grant: deploy_prod)`) + deduped NEED while the
+chain proceeds; a Captain-signed, schg-locked, unexpired, unrevoked grant
+with its hard-scope predicate satisfied ⇒ allow attributed to its `grant_id`
++ rate-counted. The `deploy_nonprod` sovereign row is `notify_after`
+(classifier carve-out deferred, D3) — still never a silent prod path.
+
+`standing_grant` is CONDITIONAL, never unconditional: the allow exists only
+while every predicate holds — Captain-signed grant row in the schg-locked
+`instance/config/standing-grants.yml`, deployment match, action_type + lane
+match, unexpired (≤90d horizon), unrevoked (file flag or Redis tombstone —
+Redis unreachable ⇒ treated revoked), rate not exhausted, not vetoed, and the
+class hard-scope predicate satisfied. An unlocked/absent/corrupt grants file
+loads as `[]` (fail-closed) and every probe blocks + files a need.
+
+### Additional failure conditions (sovereign)
+- An allow for any deploy_prod action without a `grant_id`-attributed grant.
+- A grant honored from an unlocked standing-grants.yml.
+- An allow whose deploy target falls outside the grant's hard scope.

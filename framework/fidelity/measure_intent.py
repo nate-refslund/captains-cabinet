@@ -15,18 +15,33 @@ Determinism: build_cases(n) is deterministic for a fixed corpus, so every shard
 builds the SAME n cases and runs the slice cases[shard::num_shards]; the author
 centroid excludes ALL n situation_refs in every shard (consistent, leak-safe).
 
+Identity (D17/INT-3): --identity clone|agent selects which identity the
+officer-under-test drafts under (officer_runner.run_case identity_mode).
+DEFAULT IS 'clone' until the first AGB baseline is cut — flipping the default
+would silently change shard outputs and breach the A/A invariant. The mode is
+stamped into EVERY rec so shards are segmentable per identity downstream
+(framework.fidelity.intent_report).
+
 Usage:
   python measure_intent.py --n 48 --list-ids                  # determinism check
   python measure_intent.py --n 48 --shard 0 --num-shards 6 --out shard0.jsonl
 Emits one JSON line per case:
-  {case_id, channel, decision_verdict, intent_verdict, leaked, error}
+  {case_id, channel, identity_mode, decision_verdict, intent_verdict,
+   outcome_verdict, leaked, error}
+where outcome_verdict is the D17 AGB axis (clone vs the held-out real reply,
+anonymized A/B, judged only against the reconstructed intent).
 """
 import os
 import sys
 import json
 import argparse
+from pathlib import Path
 
-sys.path.insert(0, "/Users/nate/captains-cabinet")
+# Repo root derived from THIS file, never a hardcoded live-checkout path:
+# framework/ and cabinet/ are namespace packages, so inserting another
+# checkout's root here would shadow this checkout for every later
+# framework.*/cabinet.* import (worktree runs would bind the live tree).
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, os.path.expanduser("~/.screenpipe/pipes/_shared"))
 sys.path.insert(0, os.path.expanduser("~/.screenpipe/pipes"))
 
@@ -49,6 +64,10 @@ def main():
     ap.add_argument("--dump-dir", default="",
                     help="write rich per-case artifacts (clone/real reply, context, "
                          "verdicts, grounded_fact) here for diagnosis")
+    ap.add_argument("--identity", default="clone",
+                    choices=list(officer_runner.IDENTITY_MODES),
+                    help="identity the officer drafts under (D17): 'clone' "
+                         "(default until the first AGB baseline) or 'agent'")
     args = ap.parse_args()
 
     cases = build_cases(n=args.n)  # scoreable_only=True is the default
@@ -61,13 +80,17 @@ def main():
     out = open(args.out, "w") if args.out else sys.stdout
 
     for c in shard:
+        # identity_mode is stamped on EVERY rec (leak/error rows included) so
+        # a shard file is segmentable per identity without ambiguity (D17).
         rec = {"case_id": c.case_id, "channel": getattr(c, "channel", ""),
+               "identity_mode": args.identity,
                "leaked": False, "error": None,
                "decision_verdict": None, "intent_verdict": None,
-               "grounded_fact": None}
+               "outcome_verdict": None, "grounded_fact": None}
         try:
             decision = officer_runner.run_case(
-                c, "cos", gather=gather_cutoff_context, emit_events=False)
+                c, "cos", gather=gather_cutoff_context, emit_events=False,
+                identity_mode=args.identity)
         except leakguard.LeakageDetectedError:
             rec["leaked"] = True
             out.write(json.dumps(rec) + "\n"); out.flush(); continue
@@ -83,6 +106,7 @@ def main():
                             "full_cutoff_context": ctx})
             rec["decision_verdict"] = cs.decision_verdict or ""
             rec["intent_verdict"] = cs.intent_verdict or ""
+            rec["outcome_verdict"] = getattr(cs, "outcome_verdict", "") or ""
             rec["grounded_fact"] = getattr(cs, "intent_grounded_fact", "") or ""
             if args.dump_dir:
                 os.makedirs(args.dump_dir, exist_ok=True)
@@ -94,6 +118,8 @@ def main():
                         "clone_reply": (clone_reply or "")[:2500],
                         "generic_reply": (base or "")[:1500],
                         "real_reply": (real_reply or "")[:2500],
+                        "outcome_grounded_fact":
+                            getattr(cs, "outcome_grounded_fact", "") or "",
                         "context_preview": str(ctx)[:3000]}
                 with open(os.path.join(args.dump_dir, f"{c.case_id}.json"), "w") as df:
                     json.dump(dump, df, indent=2, default=str)

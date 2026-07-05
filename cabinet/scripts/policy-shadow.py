@@ -253,14 +253,19 @@ def authority_decision(hook: dict[str, Any]) -> dict[str, Any] | None:
     """Compute the SHADOW authority-matrix verdict for a tool call.
 
     Reuses the engine's shared `classify_action` / `risk_of` / `read_cell_state`
-    / `resolve_verdict` (one source of truth — the verdict here is identical to
-    what `_eval_authority_matrix` would gate on). Returns a typed verdict record
-    (NOT a block) or None when authority cannot be evaluated.
+    / `resolve_verdict` / `resolve_gate_posture` (one source of truth — the
+    verdict here is identical to what `_eval_authority_matrix` would gate on).
+    Returns a typed verdict record (NOT a block) or None when authority cannot
+    be evaluated.
 
-    FAIL-SAFE spine (mirrors the gate): hard-ceiling risk_class -> always_gated;
-    unknown/unmapped action_type or unmeasured cell -> propose_only. In A0
-    `read_cell_state` is stubbed to "unmeasured", so a real officer action never
-    resolves to `auto`. SHADOW ONLY — this never blocks.
+    FAIL-SAFE spine (mirrors the gate): hard-ceiling risk_class -> always_gated
+    (a SOVEREIGN posture ceiling row may resolve `standing_grant` instead —
+    probed SIDE-EFFECT-FREE: no need filed, no rate use counted; the record
+    carries the grant_id / would-be need_id [SOV-3]); unknown/unmapped
+    action_type or unmeasured cell -> propose_only; a quarantined floor
+    (`_validation_failed`, D8) -> propose_only. With no posture config the
+    resolution is byte-identical to the guardian gate. SHADOW ONLY — this
+    never blocks.
     """
     if policy_engine is None or hook.get("_error"):
         return None
@@ -276,12 +281,27 @@ def authority_decision(hook: dict[str, Any]) -> dict[str, Any] | None:
     resolve_lane = getattr(policy_engine, "resolve_lane", None)
     if classify_action is None or resolve_lane is None:
         return None
+    # Posture-aware engine surface [SOV-3] — getattr-guarded like the names
+    # above so the shadow stays importable against an older engine.
+    resolve_gate_posture = getattr(policy_engine, "resolve_gate_posture", None)
+    standing_grant_resolution = getattr(policy_engine, "standing_grant_resolution", None)
+    grant_context = getattr(policy_engine, "_grant_context", None)
 
     try:
         action_type = classify_action(tool_name, tool_input)
         risk_class = policy_engine.risk_of(action_type, policy.get("risk_classes"))
+        lane = resolve_lane()
+        posture = resolve_gate_posture(lane) if resolve_gate_posture else "guardian"
+        postures = policy.get("postures")
+        grant_id = None
+        need_id = None
 
-        if risk_class is None:
+        if policy.get("_validation_failed"):
+            # load_policies quarantined the merged floor (D8) — the gate
+            # resolves propose-only fail-closed; mirror it.
+            verdict = "propose_only"
+            state = None
+        elif risk_class is None:
             # Unknown / ambiguous / unmapped action -> fail-safe propose_only.
             verdict = "propose_only"
             state = None
@@ -289,10 +309,38 @@ def authority_decision(hook: dict[str, Any]) -> dict[str, Any] | None:
             # Hard ceiling short-circuit — ignores confidence, fail-closed.
             verdict = "always_gated"
             state = None
+            if posture != "guardian" and standing_grant_resolution is not None:
+                ceiling_verdict = policy_engine.resolve_verdict(
+                    policy.get("verdicts"), risk_class, "*",
+                    posture=posture, postures=postures,
+                )
+                if ceiling_verdict == "standing_grant":
+                    probe = standing_grant_resolution(
+                        risk_class, action_type, lane=lane,
+                        context=grant_context(tool_input) if grant_context else None,
+                        officer=officer, act=False,
+                    )
+                    if probe.get("available"):
+                        verdict = "standing_grant"
+                        grant_id = probe.get("grant_id")
+                        need_id = None if probe.get("granted") else probe.get("need_id")
+                    # else: kernel unavailable — the gate degrades the row to
+                    # plain always_gated; the record mirrors that.
         else:
-            lane = resolve_lane()
             state = policy_engine.read_cell_state(officer, lane, action_type)
-            verdict = policy_engine.resolve_verdict(policy.get("verdicts"), risk_class, state)
+            if resolve_gate_posture is not None:
+                verdict = policy_engine.resolve_verdict(
+                    policy.get("verdicts"), risk_class, state,
+                    posture=posture, postures=postures,
+                )
+                if verdict == "standing_grant":
+                    # Misplaced on a non-ceiling row — the gate fails closed
+                    # to propose (only posture ceiling rows may carry it).
+                    verdict = "propose_only"
+            else:
+                verdict = policy_engine.resolve_verdict(
+                    policy.get("verdicts"), risk_class, state
+                )
     except Exception:  # noqa: BLE001 - shadow must never raise
         return None
 
@@ -302,6 +350,9 @@ def authority_decision(hook: dict[str, Any]) -> dict[str, Any] | None:
         "action_type": action_type,
         "risk_class": risk_class,
         "confidence_state": state,
+        "posture": posture,
+        "grant_id": grant_id,
+        "need_id": need_id,
         "officer": officer,
         "policy_version": AUTHORITY_SHADOW_VERSION,
     }

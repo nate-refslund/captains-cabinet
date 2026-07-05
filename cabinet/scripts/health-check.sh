@@ -114,5 +114,22 @@ if [ "$KILLSWITCH" = "active" ]; then
   echo "[$TIMESTAMP] Kill switch is ACTIVE — skipping further checks"
 fi
 
+# Posture attestation status (sovereign amendment 2026-07-05) — LOG-ONLY,
+# never alerts: the resolution itself is fail-safe (anything ambiguous is
+# guardian), so this line is observability, not enforcement. The watchdog
+# container ships this script without the repo tree — guard on the file and
+# on `ls -lO` (macOS-only flag output; Linux prints the guardian fallback).
+POSTURE_FILE="${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)}/instance/config/posture.yml"
+if [ -f "$POSTURE_FILE" ]; then
+  _P_DECLARED=$(grep -E '^posture:' "$POSTURE_FILE" 2>/dev/null | awk '{print $2}')
+  if ls -lO "$POSTURE_FILE" 2>/dev/null | grep -q schg; then
+    echo "[$TIMESTAMP] Posture: declared=${_P_DECLARED:-?} attestation=LOCKED (schg) — ruling is live"
+  else
+    echo "[$TIMESTAMP] Posture: declared=${_P_DECLARED:-?} attestation=UNLOCKED — resolves guardian until the Captain locks it (sudo bash cabinet/scripts/germline-lock.sh lock)"
+  fi
+else
+  echo "[$TIMESTAMP] Posture: no posture.yml — guardian (today's rules)"
+fi
+
 # Log overall status
 echo "[$TIMESTAMP] Health check complete. Down: $DOWN_COUNT"

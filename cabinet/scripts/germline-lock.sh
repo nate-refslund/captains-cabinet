@@ -64,6 +64,28 @@ FILES=(
   "cabinet/officer-capabilities.conf"
   ".claude/rules/brain-bridge.md"
   ".claude/rules/courses-of-action.md"
+  # --- sovereign-posture kernel (amendment 2026-07-05): code that resolves
+  #     posture, mints/loads ceiling grants, files needs, or applies gate
+  #     output. The two attestation configs are DEPLOYMENT-CREATED at apply
+  #     time — lock skips absent paths, so listing them before they exist is
+  #     safe and means the boundary arms the moment they land. ---
+  "framework/authority/posture.py"
+  "framework/authority/grants.py"
+  "framework/authority/needs.py"
+  "framework/learning/gate.py"
+  "framework/learning/apply_watch.py"
+  "cabinet/scripts/grant-apply.sh"
+  "instance/config/posture.yml"
+  "instance/config/standing-grants.yml"
+  # --- ROOT-EXECUTED apply lane (D15, SOV-9a): the DARK germline code-apply
+  #     script (sudo entrypoint + root daemon), its LaunchDaemon definition
+  #     (ProgramArguments run as root on load), and the watch ledger whose
+  #     rows cmd_watch executes as a root git apply -R — a forged row mints
+  #     a root write, so the ledger is locked, never SKIP. Born at the first
+  #     Captain-armed apply; lock skips absent paths. ---
+  "cabinet/scripts/gate-apply.sh"
+  "cabinet/launchd/com.cabinet.gate-apply.plist"
+  "shared/interfaces/gate-apply-watch.jsonl"
 )
 # whole directories locked -R (blocks edit AND new-file/rename/unlink inside —
 # closes the `cp evil framework/policies/newfile` class at the FS layer)
@@ -71,14 +93,18 @@ DIRS=(
   "cabinet/scripts/hooks"      # the enforcer hooks (pre-tool-use.sh lives here)
   "framework/policies"         # typed policy rules
   "memory/golden-evals"        # the behavioral judges
+  "instance/config/policies"   # D8: the instance policy layer — no officer may drop a widening policy file
 )
 # DELIBERATELY NOT LOCKED — a sanctioned Python API appends to these at runtime
-# (veto_registry.py / action_lessons.py, same uid). Forging one only DEMOTES or
-# records (DoS / advisory) — it can never GRANT authority, so the residual is
-# fail-safe. schg here would break the learning + demotion loops.
+# (veto_registry.py / action_lessons.py / needs.py, same uid). Forging one only
+# DEMOTES, records, or FILES A NEED (DoS / advisory) — it can never GRANT
+# authority (grants live in the schg-locked standing-grants.yml, written only by
+# grant-apply.sh in an unlock window), so the residual is fail-safe. schg here
+# would break the learning + demotion + needs loops.
 SKIP=(
   "shared/interfaces/captain-vetoes.yml"
   "shared/interfaces/action-lessons.yml"
+  "shared/interfaces/needs-ledger.jsonl"
 )
 
 need_root() { [ "$(id -u)" = "0" ] || { echo "ERROR: '$1' needs root (schg is system-immutable). Re-run: sudo bash cabinet/scripts/germline-lock.sh $1" >&2; exit 2; }; }

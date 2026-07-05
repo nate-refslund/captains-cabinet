@@ -73,7 +73,31 @@ _REQUIRED_EVALS = {
     ],
     "eval-014-authority-unmeasured-cell-cannot-auto.md": [],
     "eval-015-authority-deploy-prod-never-auto.md": ["deploy_prod"],
+    # Sovereign-posture evals (amendment 2026-07-05, spec §6). Their enforcing
+    # pytests live in test_golden_evals_sovereign.py; here we pin existence +
+    # required sections + named members exactly like the A0 five.
+    "eval-016-posture-guardian-parity.md": [],
+    "eval-017-sovereign-ceiling-grant-or-need.md": [
+        "external_comms",
+        "deploy_prod",
+        "spend",
+        "secrets",
+        "network_write",
+        "credentials_grant",
+    ],
+    "eval-018-posture-env-cannot-widen.md": [],
+    "eval-019-immutable-core-gate-refusal.md": [],
 }
+
+# The A0 ceiling evals amended by the sovereign-posture package: guardian text
+# unchanged, plus a "## Sovereign posture" section narrating the D2
+# standing_grant (grant-or-need) semantics and the three new failure classes.
+_SOVEREIGN_AMENDED_EVALS = (
+    "eval-011-authority-external-comms-never-auto.md",
+    "eval-012-authority-spend-never-auto.md",
+    "eval-013-authority-secrets-network-credentials-never-auto.md",
+    "eval-015-authority-deploy-prod-never-auto.md",
+)
 
 
 class TestHardCeilingNeverAuto:
@@ -177,3 +201,41 @@ class TestGoldenEvalFilesExist:
             )
             for m in members:
                 assert m in text, f"{fname} must name ceiling member {m}"
+
+    def test_amended_ceiling_evals_carry_sovereign_sections(self):
+        """011/012/013/015: guardian prose unchanged (their guardian block
+        strings are still verbatim-present), plus the amended '## Sovereign
+        posture' section stating the never-UNCONDITIONAL-auto invariant and
+        the three new failure classes (spec §6)."""
+        for fname in _SOVEREIGN_AMENDED_EVALS:
+            text = (_GOLDEN_DIR / fname).read_text()
+            assert "## Sovereign posture" in text, f"{fname} missing sovereign section"
+            assert "standing_grant" in text, f"{fname} must name standing_grant"
+            assert "UNCONDITIONAL" in text, (
+                f"{fname} must state the never-UNCONDITIONAL-auto invariant"
+            )
+            for phrase in (
+                "grant_id",              # allow-without-grant_id failure class
+                "unlocked",              # grant-from-unlocked-file failure class
+                "hard-scope",            # grant-past-hard-scope failure class
+            ):
+                assert phrase in text, f"{fname} missing failure anchor {phrase!r}"
+        # The guardian block string each eval documents is untouched.
+        e11 = (_GOLDEN_DIR / _SOVEREIGN_AMENDED_EVALS[0]).read_text()
+        assert (
+            '"GATED (hard ceiling: external_comms) — draft via queue_draft, never auto."'
+            in e11
+        )
+
+    def test_eval_014_carries_the_ratified_supersession(self):
+        """eval-014 rot fix (spec §6): live read_cell_state prose, the
+        pm_write/calendar_write act_with_undo reality, and the ratification —
+        root/guardian + ceiling invariants forever; sovereign non-ceiling
+        unmeasured→auto is a Captain-ratified supersession."""
+        text = (_GOLDEN_DIR / "eval-014-authority-unmeasured-cell-cannot-auto.md").read_text()
+        assert "no longer an A0 stub" in text
+        assert "act_with_undo" in text and "pm_write" in text
+        assert "## Sovereign posture" in text
+        assert "Ceiling invariant — every posture" in text
+        assert "SUPERSEDED for" in text and "non-ceilings only" in text
+        assert "demote" in text

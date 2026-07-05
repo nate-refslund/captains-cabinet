@@ -22,8 +22,13 @@ import datetime
 import subprocess
 import urllib.request
 import urllib.parse
+from pathlib import Path
 
-sys.path.insert(0, "/Users/nate/captains-cabinet")
+# Repo root derived from THIS file, never a hardcoded live-checkout path:
+# framework/ and cabinet/ are namespace packages, so inserting another
+# checkout's root here would shadow this checkout for every later
+# framework.*/cabinet.* import (worktree runs would bind the live tree).
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, os.path.expanduser("~/.screenpipe/pipes/_shared"))
 
 from framework.acting import loop, screenpipe_adapter as sa

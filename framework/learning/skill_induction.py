@@ -191,6 +191,53 @@ def induce_drafts(
     return written
 
 
+def draft_status(path: Path) -> str | None:
+    """The frontmatter `status:` of a skill file, or None when unreadable /
+    not a frontmatter skill. Read-only."""
+    try:
+        text = Path(path).read_text()
+    except OSError:
+        return None
+    parts = text.split("---", 2)
+    if len(parts) < 3 or text.lstrip()[:3] != "---":
+        return None
+    for line in parts[1].splitlines():
+        if line.strip().startswith("status:"):
+            return line.split(":", 1)[1].strip() or None
+    return None
+
+
+def promote_draft(path: Path, *, promoted_by: str = "self_improvement_loop") -> bool:
+    """Flip a draft skill's frontmatter `status: draft` → `status: validated`
+    [sovereign spec §3 "skill promotion via CoS loop": validation-evals-green
+    ⇒ auto-promote]. A Ring-2 file rewrite under the same uid — no root, no
+    germline. Returns True iff the flip landed; False (never raises) when the
+    file is missing, malformed, or not in `draft` status (a validated or
+    retired skill is never re-stamped)."""
+    try:
+        p = Path(path)
+        text = p.read_text()
+        parts = text.split("---", 2)
+        if len(parts) < 3 or text.lstrip()[:3] != "---":
+            return False
+        fm_lines = parts[1].splitlines()
+        flipped = False
+        for i, line in enumerate(fm_lines):
+            if line.strip() == "status: draft":
+                fm_lines[i] = line.replace("status: draft", "status: validated")
+                flipped = True
+                break
+        if not flipped:
+            return False
+        fm_lines.append(f"promoted_by: {promoted_by}")
+        fm_lines.append(
+            f"promoted_at: {datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}")
+        p.write_text("---".join([parts[0], "\n".join(fm_lines) + "\n", parts[2]]))
+        return True
+    except OSError:
+        return False
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Induce draft skills from clusters of experience records."
