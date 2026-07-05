@@ -93,11 +93,12 @@ MONDAY_API = "https://api.monday.com/v2"
 # agent-authored even if a cascade fires.
 PROVENANCE_BANNER = "🤖 cabinet: "
 
-# [RT-A7] Act-first calendar writes land ONLY on a local, lane-owned "Cabinet"
-# calendar — never a shared/subscribed "Work" view that would surface events to
-# colleagues. This is the hard default AND the forced target on the act-first
-# path (an ACTION_LANE_CALENDAR misconfig cannot push unattended events onto a
-# shared calendar).
+# [RT-A7] The DEFAULT lane-calendar name, used only when ACTION_LANE_CALENDAR is
+# unset. The Captain configures their OWN calendar via ACTION_LANE_CALENDAR
+# ("Home" on this instance — the dedicated "Cabinet" sandbox was retired
+# 2026-07-05). Act-first (unattended) writes land on that configured calendar;
+# the share-scope guard below refuses a shared/subscribed/delegated "Work" view
+# either way, so events never surface to colleagues.
 CABINET_CALENDAR = "Cabinet"
 # Names that must NEVER be an act-first calendar target (shared/subscribed/
 # delegated). The share-scope assert refuses these on the act-first path.
@@ -738,13 +739,15 @@ def _monday_update_prestate(payload: dict, monday_post: Callable) -> dict:
 
 
 def _resolve_calendar(act_first: bool) -> str:
-    """[RT-A7] The calendar an event lands on. The act-first path is HARD-PINNED
-    to the local, lane-owned ``Cabinet`` calendar — an ``ACTION_LANE_CALENDAR``
-    misconfig can never push an unattended event onto a shared ``Work`` view. The
-    approved (Captain-driven) path honors the env override; the default is
-    ``Cabinet`` (never ``Work``)."""
-    if act_first:
-        return CABINET_CALENDAR
+    """[RT-A7] The calendar an event lands on: the Captain-configured
+    ``ACTION_LANE_CALENDAR`` (the Captain's OWN calendar — ``Home`` on this
+    instance), default ``CABINET_CALENDAR``. The act-first (unattended) path uses
+    the SAME configured calendar as the approved path — the dedicated-sandbox
+    ``Cabinet`` calendar was retired by the Captain 2026-07-05 (blocks live on the
+    Captain's real calendar so they sync to their phone). The residual safety is
+    the share-scope guard in ``_exec_calendar_event``: an unattended write can
+    never land on a shared/subscribed/delegated/Work calendar, only the Captain's
+    own."""
     cal = (os.environ.get("ACTION_LANE_CALENDAR", CABINET_CALENDAR) or "").strip()
     return cal or CABINET_CALENDAR
 
@@ -760,13 +763,15 @@ def _exec_calendar_event(payload: dict, osascript: Callable,
     if not title:
         raise RuntimeError("reminder_create needs a title")
     cal = _resolve_calendar(act_first)
-    # [RT-A7] share-scope assert: an unattended write NEVER targets a shared /
-    # subscribed / delegated calendar (the pin above already forces Cabinet — this
-    # is the fail-closed backstop should that ever change).
-    if act_first and (cal != CABINET_CALENDAR
-                      or cal.strip().lower() in _SHARED_CALENDAR_NAMES - {"cabinet"}):
-        raise RuntimeError("act-first calendar writes are pinned to the local "
-                           "Cabinet calendar (refusing %r)" % cal)
+    # [RT-A7] share-scope assert: an unattended (act-first) write NEVER targets a
+    # shared / subscribed / delegated / Work calendar that would surface events to
+    # colleagues. It DOES land on the Captain's own configured calendar
+    # (ACTION_LANE_CALENDAR — "Home" here); the dedicated "Cabinet" sandbox was
+    # retired by the Captain 2026-07-05, so the guard is by shared-NAME, not a pin
+    # to one calendar. Reversibility (delete-by-UID undo) is the other backstop.
+    if act_first and cal.strip().lower() in _SHARED_CALENDAR_NAMES:
+        raise RuntimeError("act-first calendar writes refuse a shared/subscribed/"
+                           "delegated calendar (refusing %r)" % cal)
     due = (payload.get("due_iso") or "").strip()
     if not due:
         raise RuntimeError("calendar reminder needs due_iso")

@@ -1069,20 +1069,17 @@ def _canary_calendar(pid: str, *, monday_post: Callable, osascript: Callable,
                      redis_del: Callable, board: str, date: str,
                      now: Optional[str]) -> Dict[str, Any]:
     from framework.frontdoor import action_exec
-    # 03:00 the next day on the local Cabinet calendar (RT-A7 pin) — off-hours,
+    # 03:00 the next day on the Captain's configured calendar (ACTION_LANE_CALENDAR
+    # — "Home"; the "Cabinet" sandbox was retired 2026-07-05) — off-hours,
     # attendee-free, and reversed immediately.
     due = (_parse(now) + timedelta(days=1)).strftime("%Y-%m-%dT03:00")
-    prev = os.environ.get("ACTION_LANE_CALENDAR")
-    os.environ["ACTION_LANE_CALENDAR"] = "Cabinet"
-    try:
-        payload = {"title": CANARY_PREFIX + " undo probe " + date, "due_iso": due,
-                   "notes": "synthetic undo-capability probe — auto-reversed"}
-        created = action_exec._exec_calendar_event(payload, osascript)
-    finally:
-        if prev is None:
-            os.environ.pop("ACTION_LANE_CALENDAR", None)
-        else:
-            os.environ["ACTION_LANE_CALENDAR"] = prev
+    payload = {"title": CANARY_PREFIX + " undo probe " + date, "due_iso": due,
+               "notes": "synthetic undo-capability probe — auto-reversed"}
+    # [F3, 2026-07-05] Exercise the ACT-FIRST path so the canary actually runs the
+    # share-scope assert the unfreeze certifies. With the "Cabinet" sandbox retired
+    # (F2: no resurrection), a mis/unconfigured ACTION_LANE_CALENDAR now fails
+    # LOUDLY here instead of greening the gate on a fake calendar.
+    created = action_exec._exec_calendar_event(payload, osascript, act_first=True)
     if not created.get("uid"):
         raise RuntimeError("canary calendar create returned no uid")
     _journal_canary(pid, 1, "reminder_create", "calendar",

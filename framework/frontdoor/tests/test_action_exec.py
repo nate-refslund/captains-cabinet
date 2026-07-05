@@ -427,29 +427,53 @@ def test_calendar_script_has_share_scope_guard(monkeypatch):
     assert "writable of" in seen["script"]           # RT-A7 subscribed/read-only guard
 
 
-def test_resolve_calendar_forces_cabinet_on_act_first(monkeypatch):
-    monkeypatch.setenv("ACTION_LANE_CALENDAR", "Work")
-    assert ax._resolve_calendar(act_first=True) == "Cabinet"     # forced, ignores env
-    assert ax._resolve_calendar(act_first=False) == "Work"       # approved path honors env
+def test_resolve_calendar_honors_env_on_both_paths(monkeypatch):
+    # [RT-A7, 2026-07-05] The dedicated "Cabinet" sandbox was retired by the
+    # Captain; act-first now uses the SAME configured calendar as the approved
+    # path (blocks land on the Captain's own calendar, "Home"). The share-scope
+    # guard — not a pin to one calendar — is the residual safety.
+    monkeypatch.setenv("ACTION_LANE_CALENDAR", "Home")
+    assert ax._resolve_calendar(act_first=True) == "Home"        # honors env now
+    assert ax._resolve_calendar(act_first=False) == "Home"       # same as approved
+    monkeypatch.delenv("ACTION_LANE_CALENDAR", raising=False)
+    assert ax._resolve_calendar(act_first=True) == ax.CABINET_CALENDAR  # default fallback
 
 
-def test_act_first_calendar_pinned_cabinet_even_if_env_work(monkeypatch):
-    """[RT-A7] An ACTION_LANE_CALENDAR=Work misconfig cannot push an unattended
-    event onto the shared Work calendar — act-first forces the local Cabinet."""
+def test_act_first_calendar_refuses_shared_work(monkeypatch):
+    """[RT-A7, 2026-07-05] Act-first writes land on the Captain's configured
+    calendar, but the share-scope guard still REFUSES a shared/subscribed/
+    delegated "Work" view — and now LOUDLY (the step fails ok=False), not by the
+    old silent redirect-to-Cabinet."""
     monkeypatch.delenv("ACTION_LANE_REMINDER_BACKEND", raising=False)
     monkeypatch.setenv("ACTION_LANE_CALENDAR", "Work")
+    monkeypatch.setattr(ax, "_load_act_first_surfaces", lambda: _surfaces())
+    def osa(cmd):
+        return "ok:Work:U1"
+    r = ax.deliver_action(
+        "pc3", act_first=True,
+        redis_get=_ks_getter([{"kind": "reminder_create",
+                               "payload": {"title": "t", "due_iso": "2026-07-06T09:00"}}]),
+        monday_post=MondaySpy(), osascript=osa, redis_incr=lambda k, t: None)
+    assert r["ok"] is False   # refused — Work is a shared calendar, not silently redirected
+
+
+def test_act_first_calendar_lands_on_configured_home(monkeypatch):
+    """[RT-A7, 2026-07-05] The intended post-retirement behavior: an act-first
+    block writes to the Captain's own calendar (Home)."""
+    monkeypatch.delenv("ACTION_LANE_REMINDER_BACKEND", raising=False)
+    monkeypatch.setenv("ACTION_LANE_CALENDAR", "Home")
     monkeypatch.setattr(ax, "_load_act_first_surfaces", lambda: _surfaces())
     seen = {}
     def osa(cmd):
         seen["cmd"] = cmd
-        return "ok:Cabinet:U1"
+        return "ok:Home:U1"
     r = ax.deliver_action(
         "pc3", act_first=True,
         redis_get=_ks_getter([{"kind": "reminder_create",
                                "payload": {"title": "t", "due_iso": "2026-07-06T09:00"}}]),
         monday_post=MondaySpy(), osascript=osa, redis_incr=lambda k, t: None)
     assert r["ok"] is True
-    assert seen["cmd"][3] == "Cabinet"
+    assert seen["cmd"][3] == "Home"
 
 
 # --- killswitch (both paths, fail-closed) ------------------------------------

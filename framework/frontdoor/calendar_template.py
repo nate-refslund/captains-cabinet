@@ -19,21 +19,17 @@ CALENDAR_EVENT_SCRIPT = (
     'set startDate to my parseIso(dueIso)\n'
     'set endDate to startDate + (30 * minutes)\n'
     'tell application "Calendar"\n'
-    ' if not (exists (first calendar whose name is calName)) then set calName to "Cabinet"\n'
-    ' try\n'
-    '  if (exists (first calendar whose name is calName)) and (writable of (first calendar whose name is calName) is false) then set calName to "Cabinet"\n'
-    ' end try\n'
-    ' try\n'
-    '  tell (first calendar whose name is calName)\n'
-    '   set newEvent to make new event with properties {summary:evTitle, start date:startDate, end date:endDate, description:evNotes}\n'
-    '  end tell\n'
-    ' on error\n'
-    '  set calName to "Cabinet"\n'
-    '  if not (exists (first calendar whose name is calName)) then make new calendar with properties {name:calName}\n'
-    '  tell (first calendar whose name is calName)\n'
-    '   set newEvent to make new event with properties {summary:evTitle, start date:startDate, end date:endDate, description:evNotes}\n'
-    '  end tell\n'
-    ' end try\n'
+    # [RT-A7, 2026-07-05] NEVER redirect to or re-create the retired "Cabinet"
+    # sandbox: the Captain DELETED it, so a silent fallback would resurrect it and
+    # land events off his phone (defeating the whole point). A missing / non-
+    # writable configured calendar FAILS LOUDLY — returns an "err:" string that
+    # carries no "ok", so _exec_calendar_event raises and the card downgrades.
+    ' if not (exists (first calendar whose name is calName)) then return "err:calendar-not-found:" & calName\n'
+    ' set targetCal to (first calendar whose name is calName)\n'
+    ' if (writable of targetCal is false) then return "err:calendar-not-writable:" & calName\n'
+    ' tell targetCal\n'
+    '  set newEvent to make new event with properties {summary:evTitle, start date:startDate, end date:endDate, description:evNotes}\n'
+    ' end tell\n'
     'end tell\n'
     'return "ok:" & calName & ":" & (uid of newEvent)\n'
     'end run\n'
