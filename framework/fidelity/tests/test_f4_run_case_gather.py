@@ -80,7 +80,7 @@ class _FakeBrain:
     def voice_profile(self) -> str:
         return "(voice prior stub)"
 
-    def nate_model_patterns(self) -> str:
+    def model_patterns(self) -> str:
         return "(patterns prior stub)"
 
     def drafting_lessons(self, before_ts: str) -> str:

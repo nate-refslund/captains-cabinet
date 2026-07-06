@@ -118,8 +118,9 @@ _ACT_FIRST_SURFACES = _REPO_ROOT / "instance" / "config" / "act-first-surfaces.y
 # TI-4 (a later wave) lands this file. Absent today ⇒ zero vetoes ⇒ no divergence
 # (the audit degrades gracefully rather than erroring).
 _CAPTAIN_VETOES = _REPO_ROOT / "shared" / "interfaces" / "captain-vetoes.yml"
-# The Plan-A pipes env — the perms target for the weekly 0600 check.
-_SHARED_ENV = Path.home() / ".screenpipe" / "pipes" / "_shared" / ".env"
+# The Plan-A pipes env — the perms target for the weekly 0600 check — is
+# instance-bound (framework.env.shared_env_path), resolved lazily in
+# env_perms_finding so this universal-base guard carries no launcher path.
 
 
 # --- time helpers ------------------------------------------------------------
@@ -860,8 +861,18 @@ def veto_ledger_divergences(*, vetoes: Optional[List[Dict[str, Any]]] = None,
 
 def env_perms_finding(path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
     """A finding if the shared env file is group/other-readable (looser than
-    0600). None when tight or absent. Deterministic, local, no secrets read."""
-    p = Path(path or _SHARED_ENV)
+    0600). None when tight or absent. Deterministic, local, no secrets read.
+    The default path is instance-bound (framework.env.shared_env_path reads
+    instance/config/platform.yml -> shared_env_path; env CABINET_SHARED_ENV
+    overrides), so this universal-base guard carries no launcher .screenpipe
+    path; a generic deployment resolves "" -> None (nothing to check).
+    Byte-identical on this instance to the removed ~/.screenpipe/…/.env check."""
+    if not path:
+        shared = env.shared_env_path()
+        if not shared:
+            return None                     # no shared env configured — nothing to check
+        path = Path(shared).expanduser()
+    p = Path(path)
     try:
         mode = p.stat().st_mode & 0o777
     except OSError:

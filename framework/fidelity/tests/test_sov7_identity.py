@@ -45,8 +45,8 @@ class _FakeBrain:
         self.calls.append("voice_profile")
         return _VOICE
 
-    def nate_model_patterns(self):
-        self.calls.append("nate_model_patterns")
+    def model_patterns(self):
+        self.calls.append("model_patterns")
         return _PATTERNS
 
     def drafting_lessons(self, before_ts):

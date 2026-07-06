@@ -90,7 +90,7 @@ def test_eval_tier2_matches_real_gather_behavior():
     be lying — so we assert no such surface exists."""
 
     class _Fake:
-        def gather_vault(self, handle, topic=None):
+        def search(self, handle, topic=None):
             return {"hits": [], "brief": "POSTCUTOFF PROSE — must never appear"}
 
         def person_intel(self, slug):
@@ -115,11 +115,14 @@ def test_eval_tier2_matches_real_gather_behavior():
     assert "Tier-2" in excluded
     # brief prose never makes it into the structured output.
     assert "POSTCUTOFF PROSE" not in str(out)
-    # the BrainAdapter has no Tier-2 / search_brain retrieval method at all.
+    # the PersonalSource interface framework depends on has no Tier-2 /
+    # search_brain retrieval method at all (the source adapter can only reach the
+    # four leak-eligible tools; there is deliberately NO path to "now").
+    from framework.sources.base import PersonalSource
     for forbidden in ("search_brain", "fetch_sent", "gather_context",
                       "fetch_screen", "fetch_monday"):
-        assert not hasattr(officer_runner.BrainAdapter, forbidden), \
-            f"BrainAdapter must not expose a Tier-2 method: {forbidden}"
+        assert not hasattr(PersonalSource, forbidden), \
+            f"PersonalSource must not expose a Tier-2 method: {forbidden}"
 
 
 # --------------------------------------------------------------------------

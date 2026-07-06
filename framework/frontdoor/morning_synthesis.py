@@ -18,9 +18,9 @@ import os
 import subprocess
 
 from framework.acting import product_health
-from framework.acting import screenpipe_adapter as sa
 from framework.env import captain_name
 from framework.frontdoor import intake
+from framework.sources import get_source
 
 # Repo root (…/framework/frontdoor/morning_synthesis.py → up 3). Used to locate
 # the dated follow-ups reader without depending on the caller's cwd.
@@ -111,7 +111,7 @@ def _today() -> str:
 # Cheap, no-LLM noise markers — obvious automated / service-desk / notification
 # mail that never warrants a reply. This is a coarse pre-filter so the first
 # unified message isn't polluted by bot mail; the ACCURATE filter is the
-# should_nate_reply gate (screenpipe_adapter.gather), wired in as a follow-on.
+# should_nate_reply gate (get_source().gather), wired in as a follow-on.
 _NOISE_MARKERS = (
     "you don't often get email", "kundeservice", "no-reply", "noreply",
     "do-not-reply", "nulstil din adgangskode", "reset your password",
@@ -133,7 +133,7 @@ def awaiting_reply_items(*, hours: int = 72, limit: int = 6) -> list[dict]:
     Best-effort: any gather failure → empty list.
     """
     try:
-        threads = sa.find_threads(hours=hours) or []
+        threads = get_source().find_threads(hours=hours) or []
     except Exception:
         threads = []
 
@@ -185,7 +185,7 @@ def commitment_items(*, commitments: list | None = None, today: str | None = Non
     """
     if commitments is None:
         try:
-            commitments = sa.open_commitments(direction="owed_by_nate") or []
+            commitments = get_source().briefing_commitments(direction="owed_by_nate") or []
         except Exception:
             commitments = []
     today = today or _today()
@@ -254,7 +254,7 @@ def deploy_health_items(*, apps: list | None = None) -> list[dict]:
     items: list[dict] = []
     for app in apps:
         try:
-            h = sa.deploy_health(app)
+            h = get_source().deploy_health(app)
         except Exception:
             continue
         failed = h.get("failed") or []

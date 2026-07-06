@@ -21,15 +21,11 @@ F1 byte-for-byte (no gathering); gather=gather_cutoff_context is the F4 path.
 from __future__ import annotations
 
 import hashlib
-import json
-import os
 import re
-import shutil
-import subprocess
-import sys
-from pathlib import Path
 
 from framework.env import captain_name
+from framework.sources import get_source
+from framework.sources.base import PersonalSource
 from framework.fidelity import leakguard
 from framework.fidelity.fidelity_events import emit_case_evaluated, emit_case_leaked
 from framework.fidelity.oauth_llm import oauth_raw_llm
@@ -270,188 +266,6 @@ def _scrub_iso_lines(text: str) -> str:
                      if not _DATE_FORMS_RE.search(ln)).strip()
 
 
-# A handle is a person folder name; reject anything that could escape the vault
-# when context_lib resolves it (defense in depth, Corridor path-traversal note).
-def _safe_handle(handle: str) -> bool:
-    h = (handle or "").strip()
-    return bool(h) and "\x00" not in h and "/" not in h and "\\" not in h \
-        and ".." not in h
-
-
-def _subprocess_vault_gather(handle: str, topic: str | None = None) -> dict:
-    """Run context_lib.gather(sources=["vault"]) under the BRAIN interpreter
-    (python3.12) via subprocess and return its {hits, topic_terms}.
-
-    The in-process embedded search FAILS under the harness interpreter (system
-    Python 3.9.6 has no loadable sqlite extensions -> the vector extension can't
-    load -> context_lib._fetch_vault silently returns 0 hits). Running the SAME
-    gather under 3.12 reuses every bit of its logic; the content_ts leak-fence
-    in gather_cutoff_context still runs in THIS (3.9.6) process on the returned
-    hits, so leak-safety is unchanged (this only fixes WHERE search executes).
-
-    Graceful-degrade: any failure (interpreter/runner absent, unsafe handle,
-    timeout, non-JSON) returns ``{"hits": [], "topic_terms": None}`` so the case
-    is scored context-thin rather than aborting the batch — exactly the
-    pre-fix behavior, just no longer the silent default for everyone."""
-    if not _safe_handle(handle):
-        sys.stderr.write(f"[vault-gather] refused unsafe handle {handle!r}\n")
-        return {"hits": [], "topic_terms": None}
-    python = (os.environ.get("CABINET_BRAIN_PYTHON")
-              or shutil.which("python3.12") or "python3.12")
-    runner = Path(__file__).with_name("_vault_gather_runner.py")
-    try:
-        proc = subprocess.run(
-            [python, str(runner), handle, topic or ""],
-            capture_output=True, text=True, timeout=60,
-            env={**os.environ},
-        )
-        data = json.loads((proc.stdout or "").strip() or "{}")
-    except (FileNotFoundError, OSError, subprocess.SubprocessError,
-            ValueError) as e:  # ValueError covers json.JSONDecodeError
-        sys.stderr.write(f"[vault-gather] subprocess gather failed: {e}\n")
-        return {"hits": [], "topic_terms": None}
-    if data.get("error"):
-        sys.stderr.write(f"[vault-gather] runner error: {data['error']}\n")
-    return {"hits": data.get("hits") or [],
-            "topic_terms": data.get("topic_terms")}
-
-
-class BrainAdapter:
-    """Thin, injectable adapter over the brain bridge. Defaults to the real
-    brain MCP surface; tests inject a fake. The ONLY retrieval entry points are
-    the four leak-eligible tools (design §2.1) — there is deliberately NO
-    Tier-2 / search_brain method, so no code path can reach "now".
-
-    ``gather_vault`` MUST scope to ``sources=["vault"]`` so context_lib never
-    fans out to the live _fetch_sent / _fetch_screen / _fetch_monday tiers. The
-    DEFAULT adapter routes the vault search through a python3.12 subprocess
-    (``vault_search``) because the in-process 3.9.6 sqlite cannot load the
-    vector extension; an INJECTED context_lib/server stays in-process so every
-    existing test seam (leak-integrity stubs) is preserved unchanged."""
-
-    def __init__(self, context_lib=None, server=None, vault_search=None):
-        self._context_lib = context_lib
-        self._server = server
-        # Injectable vault-search seam: tests pass a fake; the default real
-        # adapter uses the python3.12 subprocess gather. Only consulted when
-        # NO context_lib/server is injected (those stay in-process).
-        self._vault_search = vault_search
-
-    def _ctx(self):
-        if self._context_lib is None:
-            import context_lib  # brain bridge dep (resolved on sys.path)
-            self._context_lib = context_lib
-        return self._context_lib
-
-    def gather_vault(self, handle: str, topic: str | None = None) -> dict:
-        # sources=["vault"] EXACTLY — Tier-1 only; brief is discarded upstream.
-        # topic = the inbound message being replied to → topic-aware retrieval
-        # (gather extracts EN+DA content nouns + folds them ahead of the person
-        # terms, so the query is what the conversation is ABOUT, not just the
-        # person slug). Without it, search("Sobuc") hits the profile note, not
-        # the thread; a 0.4 relevance floor returns 0 rather than noise.
-        #
-        # An INJECTED context_lib/server (tests) is delegated in-process,
-        # preserving the leak-integrity seam (sources=["vault"] asserted there).
-        # The DEFAULT real adapter routes through the python3.12 subprocess
-        # (vault_search) because the in-process 3.9.6 sqlite can't load the
-        # vector extension -> the in-process search silently returns 0 hits.
-        if self._context_lib is not None or self._server is not None:
-            return self._ctx().gather(handle, sources=["vault"], topic=topic)
-        fn = self._vault_search or _subprocess_vault_gather
-        return fn(handle, topic) or {"hits": [], "topic_terms": None}
-
-    # The brain MCP *server* module (server.py) imports fastmcp and runs
-    # standalone on Python 3.12, so it is NOT importable in-process here
-    # (cabinet 3.9.6 has no fastmcp). The eval harness therefore calls the
-    # SAME underlying libs the server wraps (draft_lib / commitments_lib / a
-    # vault read), which DO import under 3.9.6 (the _shared dir is on sys.path
-    # via retro.py). An injected ``server`` (tests) is still honored if present.
-
-    def person_intel(self, slug: str) -> str:
-        if self._server is not None:
-            return self._server.person_intel(slug)
-        import draft_lib
-        return draft_lib.person_intel(slug)
-
-    def open_commitments(self, direction: str) -> list:
-        if self._server is not None:
-            return self._server.open_commitments(direction)
-        import commitments_lib
-        rows = commitments_lib.load_all()
-        _closed = {"closed", "done", "resolved", "dropped", "cancelled",
-                   "fulfilled"}
-        return [fm for fm in rows.values()
-                if fm.get("direction") == direction
-                and str(fm.get("status", "")).strip().lower() not in _closed]
-
-    # --- clone-identity priors (design §1.6; ground brain-identity-sources) ---
-    # The clone arm needs the SAME current-state identity priors the
-    # retrodiction reply cell uses: voice.md, nate_model('patterns'), and
-    # drafting lessons. These are ACCEPTED current-state leaks (live, not
-    # as-of-then) — fine to INJECT into the officer's system prompt, EXCEPT the
-    # drafting lessons, which MUST be date-filtered strictly BEFORE the case
-    # cutoff (a lesson logged at/after the reply moment could postdate it and
-    # leak). All three inform HOW the officer drafts; the privacy fence keeping
-    # them out of any captured decision / event / artifact is enforced by the
-    # prompt-assembly + scan_for_leaks layers, not here.
-
-    def voice_profile(self) -> str:
-        if self._server is not None:
-            return self._server.voice_profile()
-        import draft_lib
-        return draft_lib.voice_profile()
-
-    def nate_model_patterns(self) -> str:
-        # PATTERNS layer ONLY — never core/memory (ground gotcha: patterns shape
-        # how to write NOW; core/memory are less volatile and could leak newer
-        # signal). me_signal wraps it in the PRIVATE fence.
-        if self._server is not None:
-            return self._server.nate_model_patterns()
-        import me_signal
-        return me_signal.nate_model("patterns")
-
-    def drafting_lessons(self, before_ts: str) -> str:
-        # Raw lessons text from the source, then date-filtered STRICTLY BEFORE
-        # before_ts via retro.lessons_before (conservative: drops the whole
-        # same-day block — a same-day lesson could postdate the reply). The
-        # filter ALWAYS runs, so leak-safety holds for the real lib AND an
-        # injected fake server alike.
-        #
-        # Cap-then-filter trap (fixed): draft_lib.drafting_lessons() returns only
-        # the LAST max_chars (the MOST RECENT lessons). Feeding that pre-capped
-        # tail to lessons_before means a case with a past cutoff sees a tail that
-        # is entirely post-cutoff -> 0 lessons, even when earlier qualifying
-        # lessons exist. So we pass the FULL corpus; lessons_before filters
-        # strictly-before-cutoff THEN applies its own post-filter cap.
-        from framework.fidelity import retro
-        if self._server is not None:
-            raw = self._server.drafting_lessons()
-        else:
-            import draft_lib
-            raw = (draft_lib.LESSONS_FILE.read_text(errors="replace")
-                   if draft_lib.LESSONS_FILE.exists() else "")
-        return retro.lessons_before(before_ts, text=raw)
-
-    def read_note(self, path: str) -> str:
-        if self._server is not None:
-            return self._server.read_note(path)
-        import os
-        from pathlib import Path
-        # Source of truth is the pinned OBSIDIAN_VAULT_PATH (screenpipe's
-        # embeddings plist now exports it); fall back to the TRUE on-disk
-        # lowercase casing (verified: ~/obsidian/screenpipe-brain). Hardcoding
-        # capital "Obsidian" only resolved via case-insensitive FS — the same
-        # case-folding dependence we removed on the index side.
-        vault = (os.environ.get("OBSIDIAN_VAULT_PATH")
-                 or str(Path.home() / "obsidian" / "screenpipe-brain"))
-        vreal = os.path.realpath(vault)
-        resolved = os.path.realpath(os.path.join(vreal, path))
-        if resolved != vreal and not resolved.startswith(vreal + os.sep):
-            raise PermissionError(f"refused path outside vault: {path!r}")
-        return Path(resolved).read_text(encoding="utf-8", errors="replace")
-
-
 def _reply_topic(case: Case) -> str | None:
     """The inbound message being replied to — the topic for topic-aware vault
     retrieval. A reply case answers the most recent INBOUND (received) message;
@@ -479,12 +293,14 @@ def gather_cutoff_context(case: Case, *, brain=None,
     leakguard.filter_mcp_result; every un-fenceable source is excluded and
     surfaced in ``excluded``.
 
-    ``brain`` is an injectable adapter (defaults to BrainAdapter over the live
-    brain bridge); ``read_paths`` is an optional list of explicit, pre-cutoff,
-    vault-relative note paths to admit (each validated by _validate_read_path).
+    ``brain`` is an injectable ``framework.sources.PersonalSource`` (defaults to
+    ``get_source()`` — the bound personal source; on this deployment the Flavor-A
+    screenpipe adapter, byte-identical to the prior ``BrainAdapter()`` default);
+    ``read_paths`` is an optional list of explicit, pre-cutoff, vault-relative
+    note paths to admit (each validated by _validate_read_path).
     """
     if brain is None:
-        brain = BrainAdapter()
+        brain = get_source()
     cutoff = case.cutoff_ts
 
     # --- vault hits (Tier-1 only; brief DROPPED; TOPIC-AWARE) --------------
@@ -494,7 +310,7 @@ def gather_cutoff_context(case: Case, *, brain=None,
     # pre-cutoff). gather's 0.4 relevance floor returns 0 (not noise) when
     # nothing on-topic is indexed — correct + leak-safe.
     topic = _reply_topic(case)
-    vault = brain.gather_vault(case.slug or case.person, topic=topic) or {}
+    vault = brain.search(case.slug or case.person, topic=topic) or {}
     raw_hits = vault.get("hits", []) or []
     # Pre-filter on a real CONTENT timestamp strictly before the cutoff; a hit
     # with no derivable content ts is un-fenceable -> excluded.
@@ -620,7 +436,7 @@ def _render_context_block(ctx: dict) -> str:
     return "\n".join(lines)
 
 
-def _gather_clone_identity(case: Case, brain: "BrainAdapter",
+def _gather_clone_identity(case: Case, brain: "PersonalSource",
                            person_static: str = "") -> dict:
     """Gather the current-state identity priors that drive the clone draft
     (design §1.6; ground brain-identity-sources), leak-safe.
@@ -648,7 +464,7 @@ def _gather_clone_identity(case: Case, brain: "BrainAdapter",
         ps = _static_frontmatter(brain.person_intel(case.slug or case.person))
     return {
         "voice": brain.voice_profile(),
-        "patterns": brain.nate_model_patterns(),
+        "patterns": brain.model_patterns(),
         # before_ts is the case cutoff — STRICTLY pre-cutoff lessons only.
         "lessons": brain.drafting_lessons(case.cutoff_ts),
         "person_static": ps,
@@ -665,7 +481,7 @@ IDENTITY_MODES = ("clone", "agent")
 
 def run_case(case: Case, officer_role: str, llm=oauth_raw_llm,
              emit_events: bool = True, gather=None,
-             brain: "BrainAdapter" = None,
+             brain: "PersonalSource" = None,
              identity_mode: str = "clone") -> OfficerDecision:
     """Drive the officer blind on one Case; return the captured OfficerDecision.
     Hard-fails (LeakageDetectedError) + emits a leak event on any cutoff
@@ -699,8 +515,9 @@ def run_case(case: Case, officer_role: str, llm=oauth_raw_llm,
     build_clone_eval_system / build_agent_eval_system fence it, and the
     post-output scan_for_leaks (always run, both arms and both identities)
     ensures none of it (nor any post-cutoff signal) echoes into the captured
-    decision. ``brain`` is an injectable BrainAdapter (defaults to the live
-    brain bridge); tests inject a fake."""
+    decision. ``brain`` is an injectable ``framework.sources.PersonalSource``
+    (defaults to ``get_source()`` — the bound personal source); tests inject a
+    fake."""
     if identity_mode not in IDENTITY_MODES:
         raise ValueError(
             f"unknown identity_mode {identity_mode!r} — expected one of "
@@ -735,7 +552,7 @@ def run_case(case: Case, officer_role: str, llm=oauth_raw_llm,
         # the framing: 'clone' drafts AS the Captain (default, byte-identical prior
         # path); 'agent' acts ON THE CAPTAIN'S BEHALF (D17 opt-in).
         if brain is None:
-            brain = BrainAdapter()
+            brain = get_source()
         identity = _gather_clone_identity(
             case, brain, person_static=ctx.get("person_static", ""))
         build_system = (build_agent_eval_system if identity_mode == "agent"

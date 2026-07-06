@@ -15,9 +15,10 @@ Design goals (why it is shaped this way):
     A watchdog built on top of the thing it watches dies with it. Each verify
     reads a FILE, a Redis key (via redis-cli subprocess), or a launchd/log
     timestamp — the cheapest possible probe, never a Graph/Vercel/LLM call.
-    (The one in-repo import is ``framework.env.captain_name`` — the de-nate
-    display-name resolver: import-light stdlib at load, its yaml read is lazy and
-    degrades to "Captain" on any failure, so the watchdog never dies for it.)
+    (The in-repo imports are ``framework.env.captain_name`` + ``state_dir`` —
+    de-nate / source-adapter resolvers: import-light stdlib at load, their yaml
+    read is lazy and degrades to a generic default on any failure, so the
+    watchdog never dies for them.)
   * EXTENSIBLE BY ADDING A ROW. An expectation is one `Expectation(...)` literal
     in `EXPECTATIONS`. Add an outcome to watch = append a row with its id, what,
     cadence, tier, a verify function, and a response policy. Nothing else.
@@ -41,7 +42,7 @@ import re
 from pathlib import Path
 from typing import Callable, Optional
 
-from framework.env import captain_name
+from framework.env import captain_name, state_dir
 
 
 def _cabinet_root() -> Path:
@@ -218,9 +219,10 @@ def _iter_json_records(text: str) -> list[dict]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Paths/keys the verifies read. Centralized so a path move is one edit and the
-# docs-track-code grep finds them. Resolved launcher-agnostically (de-nate):
-# CABINET_ROOT-anchored repo paths via _cabinet_root(); HOME-anchored runtime
-# dirs (.cabinet / .screenpipe / Library/Logs) via Path.home() — never a
+# docs-track-code grep finds them. Resolved launcher-agnostically (de-nate /
+# source-adapter): CABINET_ROOT-anchored repo paths via _cabinet_root();
+# HOME-anchored runtime dirs (.cabinet logs / Library/Logs) via Path.home();
+# the brain STATE dir via framework.env.state_dir() (instance config) — never a
 # hardcoded home literal. On the live Mac these resolve byte-identically to the
 # previous hardcoded values.
 BRIEFING_LOG = str(Path.home() / ".cabinet" / "logs" / "frontdoor-briefing.log")
@@ -831,7 +833,11 @@ def verify_no_silent_cron_failure(probe: "Probe") -> CheckResult:
 # — the data the Captain's officers reason from is current. If a pipe is stale we ESCALATE
 # to the Chair (pipe-watchdog auto-heals; if it's still stale here that means the
 # heal didn't take → a human/Chair signal). Cheap: just the log mtimes.
-SCREENPIPE_STATE_DIR = str(Path.home() / ".screenpipe" / "state")
+# The watched STATE dir is instance config (framework.env.state_dir(); env
+# CABINET_STATE_DIR overrides) — byte-identical to the removed hardcoded state
+# path on this deployment, and "" on a clean-room / Flavor-B box, where
+# verify_pipes_fresh degrades to nothing-to-watch (a skip, never a false alarm).
+SCREENPIPE_STATE_DIR = state_dir()
 PIPE_FRESHNESS = {
     # pipe: (log filename under state dir, max staleness seconds)
     # Thresholds account for each pipe's ACTUAL cadence AND the Mac's overnight
@@ -858,6 +864,13 @@ def verify_pipes_fresh(probe: "Probe") -> CheckResult:
     knows the root (re-auth). embeddings staleness is the one that matters most
     (the index the brain search reads). Pure mtime read — no Graph poll."""
     eid = "pipes-fresh"
+    # Flavor-B / unconfigured: no brain state dir → nothing to watch. A skip is
+    # neither pass nor fail (never routed), so a clean-room box with no screenpipe
+    # pipes never false-alarms on their absence (the "nothing to watch" degrade).
+    if not SCREENPIPE_STATE_DIR:
+        return CheckResult(eid, True,
+                          "no brain state dir configured — nothing to watch",
+                          skipped=True)
     now_epoch = probe.now().timestamp()
     stale = []
     for pipe, (fname, max_stale_s) in PIPE_FRESHNESS.items():

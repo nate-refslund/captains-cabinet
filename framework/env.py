@@ -311,3 +311,231 @@ def captain_timezone(default: str = "Europe/Berlin") -> str:
         tz = default
     _captain_timezone_cache = tz
     return tz
+
+
+# Cache: shared_env_path is read once per process (same lifecycle as
+# captain_name). None ⇒ unresolved — the empty string is a VALID resolved value
+# (a generic deployment with no shared credential file), so the sentinel is
+# None, never "".
+_shared_env_path_cache: "str | None" = None
+
+
+def shared_env_path(default: str = "") -> str:
+    """The filesystem path to the shared credentials ``.env`` file the action
+    lane loads MONDAY_API_TOKEN / MONDAY_API_KEY (and friends) from — the
+    resolver that lifts the ``~/.screenpipe/pipes/_shared/.env`` credential path
+    OUT of the universal-base ``framework`` code (``action_exec._load_shared_env``
+    + ``actfirst_canary``'s env-perms check) into instance config, so framework
+    carries no launcher's ``.screenpipe`` path (source-adapter boundary §5,
+    Tier-2 credential reparent).
+
+    Resolution order: the env override ``CABINET_SHARED_ENV`` (an explicit
+    per-process override, mirroring ``tasks_board``'s ``CABINET_TASKS_BOARD``) →
+    ``shared_env_path`` in ``instance/config/platform.yml`` (else ``product.yml``
+    / nested ``product.shared_env_path``) → the generic ``default`` (``""``). A
+    generic deployment with NO shared env configured resolves ``""`` — the
+    caller then SKIPS loading (no credentials; the action lane's Monday calls
+    fail closed with a clear "not set" error rather than reading another
+    launcher's file). The value is returned verbatim; a leading ``~`` is the
+    caller's to ``expanduser`` (mirrors retro's resolution). Byte-identical on
+    this instance to the removed home-relative shared-env read."""
+    global _shared_env_path_cache
+    if _shared_env_path_cache is not None:
+        return _shared_env_path_cache
+    env_override = (os.environ.get("CABINET_SHARED_ENV") or "").strip()
+    if env_override:
+        _shared_env_path_cache = env_override
+        return env_override
+    path = str(default)
+    try:
+        import yaml  # local: keep env.py import-light for the safety switches
+        root = _cabinet_root()
+        for rel in ("instance/config/platform.yml", "instance/config/product.yml"):
+            p = root / rel
+            try:
+                if not p.exists():
+                    continue
+                data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+            except Exception:
+                continue
+            if not isinstance(data, dict):
+                continue
+            val = data.get("shared_env_path")
+            if val is None and isinstance(data.get("product"), dict):
+                val = data["product"].get("shared_env_path")   # product.yml nests it
+            if val is not None and str(val).strip():
+                path = str(val).strip()
+                break
+    except Exception:
+        path = str(default)
+    _shared_env_path_cache = path
+    return path
+
+
+# Cache: retro_pipe_dir is read once per process (same lifecycle as
+# captain_name). None ⇒ unresolved — the empty string is a VALID resolved value
+# (a generic deployment with no retrodiction scoring lib), so the sentinel is
+# None, never "".
+_retro_pipe_dir_cache: "str | None" = None
+
+
+def retro_pipe_dir(default: str = "") -> str:
+    """The filesystem path to the retrodiction SCORING pipe dir (the dir holding
+    ``lib.py``) the fidelity EvaluationEngine (``framework.fidelity.retro``)
+    loads its leak-safe scoring logic from — the resolver that lifts the
+    ``~/.screenpipe/pipes/retrodiction`` path OUT of the universal-base
+    ``framework`` shim into instance config, so framework carries no launcher's
+    ``.screenpipe`` path (source-adapter boundary §5, the parallel EVALUATION
+    seam). The SCORING functions stay in framework (they ARE the
+    EvaluationEngine, not the sensing seam); only the PATH resolves here.
+
+    Reads ``retro_pipe_dir`` from ``instance/config/platform.yml`` (else
+    ``product.yml`` / nested ``product.retro_pipe_dir``), exactly like
+    ``tasks_board()`` MINUS the env override — ``retro.py`` keeps reading its own
+    historical ``CABINET_RETRO_PIPE_DIR`` override so THAT behavior is
+    byte-identical. Any absence / parse failure / empty value falls back to
+    ``default`` (``""``); ``retro.py`` treats ``""`` as "no retrodiction lib
+    configured" (``retro_available()`` → False, the stub raises with guidance on
+    first use). The value is returned verbatim; the caller ``expanduser``s."""
+    global _retro_pipe_dir_cache
+    if _retro_pipe_dir_cache is not None:
+        return _retro_pipe_dir_cache
+    path = str(default)
+    try:
+        import yaml  # local: keep env.py import-light for the safety switches
+        root = _cabinet_root()
+        for rel in ("instance/config/platform.yml", "instance/config/product.yml"):
+            p = root / rel
+            try:
+                if not p.exists():
+                    continue
+                data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+            except Exception:
+                continue
+            if not isinstance(data, dict):
+                continue
+            val = data.get("retro_pipe_dir")
+            if val is None and isinstance(data.get("product"), dict):
+                val = data["product"].get("retro_pipe_dir")   # product.yml nests it
+            if val is not None and str(val).strip():
+                path = str(val).strip()
+                break
+    except Exception:
+        path = str(default)
+    _retro_pipe_dir_cache = path
+    return path
+
+
+# Cache: vault_dir is read once per process (same lifecycle as captain_name).
+# None ⇒ unresolved — the EMPTY string is a VALID resolved value (a generic
+# deployment with no vault), so the sentinel is None, never "".
+_vault_dir_cache: "str | None" = None
+
+
+def vault_dir(default: str = "") -> str:
+    """The captain's brain/Obsidian VAULT directory for this deployment — the
+    resolver that lifts the vault path OUT of the universal-base ``framework``
+    code (the fidelity decision-cell's Decisions corpus dir; on Flavor-A the
+    screenpipe brain vault) into instance config, so framework names no
+    launcher's vault path — and, crucially, no screenpipe-specific vault env key
+    that a clean-room box does not set (source-adapter boundary §5, Tier-2 path
+    reparent).
+
+    Resolution order: the env override ``CABINET_VAULT_DIR`` (an explicit
+    per-process override, mirroring ``tasks_board``'s ``CABINET_TASKS_BOARD``) →
+    ``vault_dir`` in ``instance/config/platform.yml`` (else ``product.yml`` /
+    nested ``product.vault_dir``) → the generic ``default`` (``""``). A non-empty
+    value is ``~``-expanded to an absolute path. A generic deployment with NO
+    vault configured resolves ``""`` — the caller then treats the corpus as empty
+    (fail-closed: no vault ⇒ no cases), never crashes, and never leaks another
+    launcher's vault. On THIS deployment platform.yml carries the brain vault
+    dir, so the Decisions corpus resolves byte-identically to the removed
+    hardcode."""
+    global _vault_dir_cache
+    if _vault_dir_cache is not None:
+        return _vault_dir_cache
+    env_override = (os.environ.get("CABINET_VAULT_DIR") or "").strip()
+    if env_override:
+        _vault_dir_cache = os.path.expanduser(env_override)
+        return _vault_dir_cache
+    resolved = default
+    try:
+        import yaml  # local: keep env.py import-light for the safety switches
+        root = _cabinet_root()
+        for rel in ("instance/config/platform.yml", "instance/config/product.yml"):
+            p = root / rel
+            try:
+                if not p.exists():
+                    continue
+                data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+            except Exception:
+                continue
+            if not isinstance(data, dict):
+                continue
+            val = data.get("vault_dir")
+            if val is None and isinstance(data.get("product"), dict):
+                val = data["product"].get("vault_dir")   # product.yml nests it
+            if isinstance(val, str) and val.strip():
+                resolved = val.strip()
+                break
+    except Exception:
+        resolved = default
+    _vault_dir_cache = os.path.expanduser(resolved) if resolved else resolved
+    return _vault_dir_cache
+
+
+# Cache: state_dir is read once per process (same lifecycle as captain_name).
+# None ⇒ unresolved — the EMPTY string is a VALID resolved value (a generic
+# deployment with no personal-source state dir), so the sentinel is None, never "".
+_state_dir_cache: "str | None" = None
+
+
+def state_dir(default: str = "") -> str:
+    """The deployment's PERSONAL-SOURCE runtime-state directory — the resolver
+    that lifts the ``~/.screenpipe/state`` path OUT of the universal-base
+    ``framework`` code (the fidelity decision-cache + the autonomy-outcomes
+    ledger; the outcome-watchdog's watched brain-pipe dir) into instance config,
+    so framework names no launcher's state path (source-adapter boundary §5,
+    Tier-2 path reparent).
+
+    Resolution order: the env override ``CABINET_STATE_DIR`` (an explicit
+    per-process override) → ``state_dir`` in ``instance/config/platform.yml``
+    (else ``product.yml`` / nested ``product.state_dir``) → the generic
+    ``default`` (``""``). A non-empty value is ``~``-expanded to an absolute
+    path. A generic deployment with NO state dir configured resolves ``""``: a
+    caller that needs a writable dir substitutes its OWN generic fallback (e.g.
+    ``~/.cabinet/state``), and the outcome-watchdog treats ``""`` as
+    'nothing to watch' (the Flavor-B degrade). On THIS deployment platform.yml
+    carries the brain state dir, so the cache/outcomes/watched paths resolve
+    byte-identically to the removed hardcodes."""
+    global _state_dir_cache
+    if _state_dir_cache is not None:
+        return _state_dir_cache
+    env_override = (os.environ.get("CABINET_STATE_DIR") or "").strip()
+    if env_override:
+        _state_dir_cache = os.path.expanduser(env_override)
+        return _state_dir_cache
+    resolved = default
+    try:
+        import yaml  # local: keep env.py import-light for the safety switches
+        root = _cabinet_root()
+        for rel in ("instance/config/platform.yml", "instance/config/product.yml"):
+            p = root / rel
+            try:
+                if not p.exists():
+                    continue
+                data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+            except Exception:
+                continue
+            if not isinstance(data, dict):
+                continue
+            val = data.get("state_dir")
+            if val is None and isinstance(data.get("product"), dict):
+                val = data["product"].get("state_dir")   # product.yml nests it
+            if isinstance(val, str) and val.strip():
+                resolved = val.strip()
+                break
+    except Exception:
+        resolved = default
+    _state_dir_cache = os.path.expanduser(resolved) if resolved else resolved
+    return _state_dir_cache

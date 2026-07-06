@@ -1,4 +1,6 @@
 """CABINET_ENV safety switch — fail-safe by default (dev), opt-in to runtime."""
+import os
+
 import pytest
 
 import framework.env as env
@@ -346,3 +348,158 @@ class TestCaptainTimezone:
         monkeypatch.delenv("CABINET_ROOT", raising=False)
         env._captain_timezone_cache = None
         assert env.captain_timezone() == "Europe/Berlin"
+
+
+@pytest.fixture
+def isolated_vault_dir_cache():
+    """Clear the process-wide vault-dir cache for the test, then restore the
+    original so sibling code (decision_cell._vault_dir) is untouched — mirrors
+    isolated_tasks_board_cache."""
+    saved = env._vault_dir_cache
+    env._vault_dir_cache = None
+    try:
+        yield
+    finally:
+        env._vault_dir_cache = saved
+
+
+@pytest.fixture
+def isolated_state_dir_cache():
+    """Clear the process-wide state-dir cache for the test, then restore the
+    original so sibling code (benchmark._DEFAULT_OUTCOMES, watchdog.registry's
+    SCREENPIPE_STATE_DIR) is untouched — mirrors isolated_tasks_board_cache."""
+    saved = env._state_dir_cache
+    env._state_dir_cache = None
+    try:
+        yield
+    finally:
+        env._state_dir_cache = saved
+
+
+class TestVaultDir:
+    """The vault_dir() resolver — instance-DRIVEN, fail-closed to "".
+
+    The fidelity decision-cell (framework/fidelity/decision_cell.py) reads the
+    brain vault dir via this resolver, never a literal. On THIS deployment it must
+    return the brain vault (byte-identical to the removed vault hardcode) so the
+    Decisions corpus resolves the same files; a clean-room box resolves "" and
+    the corpus is simply empty."""
+
+    def test_reads_vault_from_platform_yml(self, tmp_path, monkeypatch,
+                                           isolated_vault_dir_cache):
+        monkeypatch.delenv("CABINET_VAULT_DIR", raising=False)
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "platform.yml", "vault_dir: /tmp/some/vault\n")
+        env._vault_dir_cache = None
+        assert env.vault_dir() == "/tmp/some/vault"
+
+    def test_leading_tilde_is_expanded(self, tmp_path, monkeypatch,
+                                       isolated_vault_dir_cache):
+        monkeypatch.delenv("CABINET_VAULT_DIR", raising=False)
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "platform.yml", "vault_dir: ~/some/vault\n")
+        env._vault_dir_cache = None
+        assert env.vault_dir() == os.path.expanduser("~/some/vault")
+
+    def test_absent_config_fails_closed_to_empty(self, tmp_path, monkeypatch,
+                                                 isolated_vault_dir_cache):
+        """No vault configured => "" — the caller then treats the corpus as
+        empty (no vault ⇒ no cases), never reads another deployment's vault."""
+        monkeypatch.delenv("CABINET_VAULT_DIR", raising=False)
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))  # empty tmp — no config
+        env._vault_dir_cache = None
+        assert env.vault_dir() == ""
+
+    def test_env_override_wins_over_config_and_expands(self, tmp_path, monkeypatch,
+                                                       isolated_vault_dir_cache):
+        """CABINET_VAULT_DIR is an explicit per-process override; a leading ~ is
+        expanded exactly like the config path."""
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "platform.yml", "vault_dir: /tmp/cfg/vault\n")
+        monkeypatch.setenv("CABINET_VAULT_DIR", "~/env/vault")
+        env._vault_dir_cache = None
+        assert env.vault_dir() == os.path.expanduser("~/env/vault")
+
+    def test_reads_nested_vault_from_product_yml(self, tmp_path, monkeypatch,
+                                                 isolated_vault_dir_cache):
+        monkeypatch.delenv("CABINET_VAULT_DIR", raising=False)
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "product.yml",
+                   "product:\n  vault_dir: /tmp/nested/vault\n")
+        env._vault_dir_cache = None
+        assert env.vault_dir() == "/tmp/nested/vault"
+
+    def test_this_instance_yields_the_brain_vault(self, monkeypatch,
+                                                  isolated_vault_dir_cache):
+        """Byte-identity guard: with CABINET_ROOT unset the resolver reads THIS
+        worktree's instance/config/platform.yml, yielding the brain vault — so
+        decision_cell._vault_dir() resolves the identical Decisions corpus to the
+        removed hardcode."""
+        monkeypatch.delenv("CABINET_VAULT_DIR", raising=False)
+        monkeypatch.delenv("CABINET_ROOT", raising=False)
+        env._vault_dir_cache = None
+        assert env.vault_dir() == os.path.expanduser("~/obsidian/screenpipe-brain")
+
+
+class TestStateDir:
+    """The state_dir() resolver — instance-DRIVEN, fail-closed to "".
+
+    The fidelity decision-cache + autonomy-outcomes ledger (benchmark) and the
+    outcome-watchdog's watched pipe dir (framework/watchdog/registry.py) read the
+    personal-source state dir via this resolver, never a literal. On THIS
+    deployment it must return the brain state dir (byte-identical to the removed
+    state hardcode); a clean-room box resolves "" (nothing-to-watch degrade)."""
+
+    def test_reads_state_from_platform_yml(self, tmp_path, monkeypatch,
+                                           isolated_state_dir_cache):
+        monkeypatch.delenv("CABINET_STATE_DIR", raising=False)
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "platform.yml", "state_dir: /tmp/some/state\n")
+        env._state_dir_cache = None
+        assert env.state_dir() == "/tmp/some/state"
+
+    def test_leading_tilde_is_expanded(self, tmp_path, monkeypatch,
+                                       isolated_state_dir_cache):
+        monkeypatch.delenv("CABINET_STATE_DIR", raising=False)
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "platform.yml", "state_dir: ~/some/state\n")
+        env._state_dir_cache = None
+        assert env.state_dir() == os.path.expanduser("~/some/state")
+
+    def test_absent_config_fails_closed_to_empty(self, tmp_path, monkeypatch,
+                                                 isolated_state_dir_cache):
+        """No state dir configured => "" — the watchdog then treats it as
+        nothing-to-watch; cache/outcomes callers substitute their own generic
+        ~/.cabinet/state; never another deployment's state."""
+        monkeypatch.delenv("CABINET_STATE_DIR", raising=False)
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))  # empty tmp — no config
+        env._state_dir_cache = None
+        assert env.state_dir() == ""
+
+    def test_env_override_wins_over_config_and_expands(self, tmp_path, monkeypatch,
+                                                       isolated_state_dir_cache):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "platform.yml", "state_dir: /tmp/cfg/state\n")
+        monkeypatch.setenv("CABINET_STATE_DIR", "~/env/state")
+        env._state_dir_cache = None
+        assert env.state_dir() == os.path.expanduser("~/env/state")
+
+    def test_reads_nested_state_from_product_yml(self, tmp_path, monkeypatch,
+                                                 isolated_state_dir_cache):
+        monkeypatch.delenv("CABINET_STATE_DIR", raising=False)
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "product.yml",
+                   "product:\n  state_dir: /tmp/nested/state\n")
+        env._state_dir_cache = None
+        assert env.state_dir() == "/tmp/nested/state"
+
+    def test_this_instance_yields_the_brain_state_dir(self, monkeypatch,
+                                                      isolated_state_dir_cache):
+        """Byte-identity guard: with CABINET_ROOT unset the resolver reads THIS
+        worktree's instance/config/platform.yml, yielding the brain state dir —
+        so the decision-cache / outcomes / watched paths resolve identically to
+        the removed hardcode."""
+        monkeypatch.delenv("CABINET_STATE_DIR", raising=False)
+        monkeypatch.delenv("CABINET_ROOT", raising=False)
+        env._state_dir_cache = None
+        assert env.state_dir() == os.path.expanduser("~/.screenpipe/state")

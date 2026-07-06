@@ -108,20 +108,3 @@ framework/missions/tests/test_supervisor_standing.py:FRAMEWORK_PATH_INSTANCE
 # fixed by routing through get_source(), not by widening the baseline.
 framework/acting/run_action_lane.py:FRAMEWORK_PATH_SCREENPIPE
 framework/acting/run_draft_lane.py:FRAMEWORK_PATH_SCREENPIPE
-framework/acting/screenpipe_adapter.py:FRAMEWORK_IMPORTS_SCREENPIPE
-framework/acting/screenpipe_adapter.py:FRAMEWORK_PATH_SCREENPIPE
-framework/fidelity/_vault_gather_runner.py:FRAMEWORK_IMPORTS_SCREENPIPE
-framework/fidelity/_vault_gather_runner.py:FRAMEWORK_PATH_SCREENPIPE
-framework/fidelity/benchmark.py:FRAMEWORK_PATH_SCREENPIPE
-framework/fidelity/decision_cell.py:FRAMEWORK_PATH_SCREENPIPE
-framework/fidelity/officer_runner.py:FRAMEWORK_IMPORTS_SCREENPIPE
-framework/fidelity/officer_runner.py:FRAMEWORK_PATH_SCREENPIPE
-framework/fidelity/retro.py:FRAMEWORK_PATH_SCREENPIPE
-framework/fidelity/run_e2e_smoke.py:FRAMEWORK_PATH_SCREENPIPE
-framework/frontdoor/actfirst_canary.py:FRAMEWORK_PATH_SCREENPIPE
-framework/frontdoor/action_exec.py:FRAMEWORK_PATH_SCREENPIPE
-framework/frontdoor/chair_drafts.py:FRAMEWORK_IMPORTS_SCREENPIPE
-framework/frontdoor/chair_drafts.py:FRAMEWORK_PATH_SCREENPIPE
-framework/frontdoor/daily_recap.py:FRAMEWORK_IMPORTS_SCREENPIPE
-framework/frontdoor/daily_recap.py:FRAMEWORK_PATH_SCREENPIPE
-framework/watchdog/registry.py:FRAMEWORK_PATH_SCREENPIPE

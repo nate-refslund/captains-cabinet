@@ -47,28 +47,22 @@ SAFETY.
 from __future__ import annotations
 
 import datetime
-import hashlib
 import json
 import os
 import re
 import subprocess
-import sys
-from pathlib import Path
 
 from framework.env import captain_name
 from framework.frontdoor import intake
+from framework.sources import get_dispatch
 
-# screenpipe libs live outside the cabinet tree. We reach them on sys.path the
-# same way framework.acting.screenpipe_adapter does — sp_lib (Monday GraphQL
-# helpers + board CONFIG) and commitments_lib (the battle-tested curl-to-
-# Anthropic LLM helper the screenpipe pipes already use). Imported lazily inside
-# the functions so the cabinet's own unit suite (which mocks these seams) need
-# not have screenpipe installed.
-_PIPES = os.path.expanduser("~/.screenpipe/pipes")
-_SHARED = os.path.join(_PIPES, "_shared")
-for _p in (_PIPES, _SHARED):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
+# SRC-3 (source-adapter boundary): the screenpipe-coupled I/O this pipe needs —
+# the captain's Monday board client (activity-board read + reflections upsert),
+# the synthesis LLM model, and the vault daily-note write (the vault-root path,
+# obsidian-sync byte-match) — is reached through framework.sources.get_dispatch()
+# (the Flavor-A ScreenpipeDispatch OWNS those libs + the vault path). Framework
+# names no screenpipe lib and carries no vault path literal; the cabinet's own
+# unit suite mocks the module seams (_sp / _write_vault / _raw_llm) as before.
 
 
 # --- timestamps -------------------------------------------------------------
@@ -89,17 +83,13 @@ def _today() -> str:
 
 # --- screenpipe seams (lazy) ------------------------------------------------
 def _sp():
-    """sp_lib with its env loaded (Monday token, board CONFIG). Loading env is
-    idempotent + cheap; we do it on every access so a long-lived officer session
-    re-reads a rotated token."""
-    import sp_lib  # noqa: PLC0415 — lazy screenpipe-only dep
-    sp_lib.load_env(_SHARED)
-    return sp_lib
-
-
-def _cl():
-    import commitments_lib as cl  # noqa: PLC0415 — lazy screenpipe-only dep
-    return cl
+    """The captain's Monday board client (env loaded) via the Flavor-A dispatch —
+    the seam that OWNS sp_lib. This module's SINGLE Monday accessor (the tests +
+    the golden pin monkeypatch ``dr._sp``), so nothing else here names screenpipe.
+    ``get_dispatch().monday()`` is byte-identical to the former
+    ``import sp_lib; sp_lib.load_env(_SHARED); return sp_lib`` — env re-read each
+    access so a long-lived session picks up a rotated token."""
+    return get_dispatch().monday()
 
 
 # ---------------------------------------------------------------------------
@@ -327,15 +317,19 @@ def _raw_llm(user_content: str, system: str,
     whole point: the recap is labeled-section plain text, not JSON, so a JSON
     parser is the wrong tool. No ANTHROPIC_API_KEY → None (caller stays quiet).
 
-    Reads the key from the env that sp_lib.load_env populated (screenpipe's
-    _shared/.env). NEVER logs or echoes the key.
+    Reads the key from the env the dispatch loaded earlier in the flow (the
+    Flavor-A ``monday()`` call runs the board client's idempotent env load, which
+    populates ANTHROPIC_API_KEY), and the model id via ``get_dispatch().llm_model()``.
+    NEVER logs or echoes the key.
     """
-    cl = _cl()
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
         return None
+    model = get_dispatch().llm_model()  # Flavor-A: commitments_lib.LLM_MODEL
+    if not model:
+        return None
     body = {
-        "model": cl.LLM_MODEL, "max_tokens": max_tokens, "system": system,
+        "model": model, "max_tokens": max_tokens, "system": system,
         "messages": [{"role": "user", "content": user_content}],
     }
     try:
@@ -515,11 +509,6 @@ def _write_monday(date: str, recap: dict) -> dict:
 # 3b. Canonical vault daily note — BYTE-IDENTICAL to obsidian-sync's
 #     sync_daily_summaries, so obsidian-sync's next run hash-matches + skips.
 # ---------------------------------------------------------------------------
-def _vault_path() -> Path:
-    return Path(os.environ.get(
-        "OBSIDIAN_VAULT_PATH", str(Path.home() / "Obsidian" / "screenpipe-brain")))
-
-
 def _fence(s) -> str:
     """Escape a string for a YAML double-quoted scalar — matches obsidian-sync."""
     if s is None:
@@ -612,24 +601,14 @@ def render_vault_note(date: str, recap: dict, monday_id: str | None) -> str:
 
 
 def _write_vault(date: str, content: str) -> dict:
-    """Write the daily note if (and only if) its bytes changed (sha256 compare).
-
-    Returns {"action": written|unchanged|skipped, "path": ...}. Skips (never
-    creates a stray note) when the vault isn't present/marked — matching
-    obsidian-sync's ABORT_NO_VAULT guard.
-    """
-    vault = _vault_path()
-    if not vault.exists() or not (vault / ".obsidian-vault-marker").exists():
-        return {"action": "skipped", "path": str(vault), "reason": "no vault marker"}
-    path = vault / "1-Daily" / f"{date}.md"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    new_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
-    old_hash = (hashlib.sha256(path.read_bytes()).hexdigest()
-                if path.exists() else None)
-    if new_hash == old_hash:
-        return {"action": "unchanged", "path": str(path)}
-    path.write_text(content)
-    return {"action": "written", "path": str(path)}
+    """Write the daily note if (and only if) its bytes changed, via the Flavor-A
+    dispatch (``get_dispatch().write_daily_note`` — the seam that OWNS the vault
+    write + the vault-root path). Returns
+    ``{"action": written|unchanged|skipped, "path": ...}``; a null/clean-room
+    dispatch skips (no vault). Byte-identical to the former inline sha256
+    write-if-changed (marker-guarded). Kept as this module's write seam — the
+    tests monkeypatch ``dr._write_vault``, so they need no live dispatch."""
+    return get_dispatch().write_daily_note(date, content)
 
 
 # ---------------------------------------------------------------------------
@@ -749,7 +728,7 @@ def enqueue_daily_recap(*, dry: bool = False, today: str | None = None,
                     "notes": recap["notes"],
                 },
                 "vault": {
-                    "path": str(_vault_path() / "1-Daily" / f"{date}.md"),
+                    "path": get_dispatch().daily_note_path(date),
                     "content": note_preview,
                 },
                 "intake_item_summary": item["payload"]["summary"],

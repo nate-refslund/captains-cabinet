@@ -46,7 +46,7 @@ class FakeBrain:
     """An injectable brain adapter that records calls and lets each test
     decide what each tool returns. Tier-2 must NEVER be invoked: the vault
     fetcher asserts sources=["vault"], and there is no Tier-2 entry point that
-    can be reached (gather_cutoff_context only ever calls gather_vault)."""
+    can be reached (gather_cutoff_context only ever calls search)."""
 
     def __init__(self, *, vault_hits=None, brief="", person_md="",
                  owed_by=None, owed_to=None, notes=None):
@@ -59,13 +59,13 @@ class FakeBrain:
         self.calls = []
         self.tier2_invoked = False
 
-    def gather_vault(self, handle, topic=None):
+    def search(self, handle, topic=None):
         # gather_cutoff_context MUST scope to the vault tier only. The real
         # adapter calls context_lib.gather(handle, sources=["vault"]); this
         # fake mirrors the {hits, brief} shape and records the call. If any
         # code path tried to reach a Tier-2 fetcher it would have to call a
         # method that does not exist here -> AttributeError, surfacing the bug.
-        self.calls.append(("gather_vault", handle))
+        self.calls.append(("search", handle))
         self.last_topic = topic
         return {"hits": list(self._vault_hits), "brief": self._brief}
 
@@ -115,7 +115,7 @@ class TestTopicAwareRetrieval:
     def test_reply_topic_extracts_inbound_message(self):
         assert officer_runner._reply_topic(_case()) == "kan vi snakke lon?"
 
-    def test_topic_passed_through_to_gather_vault(self):
+    def test_topic_passed_through_to_search(self):
         brain = FakeBrain(vault_hits=[])
         officer_runner.gather_cutoff_context(_case(), brain=brain)
         assert brain.last_topic == "kan vi snakke lon?"
@@ -139,63 +139,21 @@ class TestTopicAwareRetrieval:
 class TestTier2Unreachable:
     def test_tier2_unreachable(self):
         # gather_cutoff_context must call the vault tier ONLY. Assert the
-        # gather_vault call happened and that no Tier-2 fetcher entry point
+        # search call happened and that no Tier-2 fetcher entry point
         # exists on the path (the fake has none — a Tier-2 attempt would
-        # AttributeError). Also assert the real adapter scopes sources=["vault"].
+        # AttributeError). The real adapter's sources=["vault"] scoping is proven
+        # in the Flavor-A adapter's own tests (flavor_a tests).
         brain = FakeBrain(vault_hits=[])
         officer_runner.gather_cutoff_context(_case(), brain=brain)
-        assert ("gather_vault", "ulrik") in brain.calls or \
-               any(c[0] == "gather_vault" for c in brain.calls)
+        assert ("search", "ulrik") in brain.calls or \
+               any(c[0] == "search" for c in brain.calls)
         # no Tier-2 method was ever added/called
         assert not brain.tier2_invoked
 
-    def test_real_adapter_scopes_sources_to_vault(self):
-        # The default adapter's gather_vault MUST delegate to context_lib.gather
-        # with sources=["vault"] EXACTLY — never the default all-source fan-out
-        # (which fires _fetch_sent / _fetch_screen / _fetch_monday = "now").
-        seen = {}
-
-        class StubContextLib:
-            @staticmethod
-            def gather(handle, *, sources=None, **kw):
-                seen["sources"] = sources
-                seen["handle"] = handle
-                return {"hits": [], "brief": "", "counts": {}}
-
-        brain = officer_runner.BrainAdapter(context_lib=StubContextLib())
-        brain.gather_vault("ulrik")
-        assert seen["sources"] == ["vault"]
-        assert seen["handle"] == "ulrik"
-
-    def test_tier2_fetcher_raises_if_invoked(self):
-        # A golden-style guard: wire a context_lib whose Tier-2 fetchers raise,
-        # and confirm gather_cutoff_context never trips them (vault-only path).
-        class TrapContextLib:
-            @staticmethod
-            def gather(handle, *, sources=None, **kw):
-                if sources != ["vault"]:
-                    raise AssertionError(
-                        f"Tier-2 leak: gather called with sources={sources}")
-                return {"hits": [], "brief": ""}
-
-        class StubServer:
-            @staticmethod
-            def person_intel(slug):
-                return ""
-
-            @staticmethod
-            def open_commitments(direction):
-                return []
-
-            @staticmethod
-            def read_note(path):  # pragma: no cover - not exercised here
-                raise AssertionError("read_note should not be called")
-
-        brain = officer_runner.BrainAdapter(
-            context_lib=TrapContextLib(), server=StubServer())
-        # Should not raise — vault-only scoping holds.
-        out = officer_runner.gather_cutoff_context(_case(), brain=brain)
-        assert "vault_hits" in out
+    # NOTE: the BrainAdapter-internal scoping proofs (context_lib sources=["vault"]
+    # + the Tier-2-fetcher-raises guard) moved WITH the adapter to the Flavor-A
+    # adapter's own tests (instance/flavor-a/flavor_a/tests/test_adapter_internals.py,
+    # against ScreenpipeSource) when BrainAdapter re-homed there (SRC-3).
 
 
 class TestSearchBrainMtimeNotTrusted:

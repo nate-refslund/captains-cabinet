@@ -454,14 +454,27 @@ jobs:
           python-version: "3.12"
       - name: Install test dependencies
         run: pip install pytest pyyaml
-      - name: Simulate a clean-room / Flavor-B box (no source binding, no vault)
+      - name: Simulate a clean-room / Flavor-B box (no source binding, vault unreadable)
         # The live instance ships instance/config/sources.yml (binds the Flavor-A
         # screenpipe adapter). A clean-room box has none ⇒ the resolver must
-        # fail-closed to NullPersonalSource. Assert ~/.screenpipe is truly absent
-        # on the runner so the proof is honest (no accidental real source).
+        # fail-closed to NullPersonalSource. We go STRONGER than "absent": plant
+        # ~/.screenpipe as a mode-000 (present-but-UNREADABLE) directory, so a
+        # latent screenpipe/vault read ANYWHERE in framework CORE raises
+        # PermissionError LOUDLY here instead of passing by accident on a bare
+        # runner where the path merely happens not to exist. This is the real
+        # "another captain / a Flavor-B box can run it" premise.
         run: |
           rm -f instance/config/sources.yml
-          test ! -e "$HOME/.screenpipe" || { echo "unexpected ~/.screenpipe present on runner"; exit 1; }
+          test ! -e instance/config/sources.yml || { echo "sources.yml still present"; exit 1; }
+          rm -rf "$HOME/.screenpipe"
+          mkdir -p "$HOME/.screenpipe"
+          : > "$HOME/.screenpipe/POISON"
+          chmod 000 "$HOME/.screenpipe/POISON"
+          chmod 000 "$HOME/.screenpipe"
+          if ls "$HOME/.screenpipe" >/dev/null 2>&1; then
+            echo "expected ~/.screenpipe to be present-but-unreadable"; exit 1
+          fi
+          echo "OK: sources.yml removed; ~/.screenpipe present-but-unreadable"
       - name: Null personal-source imports + runs without crash
         # Import framework.sources on a box with no adapter binding and prove
         # get_source() returns NullPersonalSource and every read method runs
@@ -489,10 +502,46 @@ jobs:
           assert d.append_note("x", "y") is None and d.log_reasoning() is None
           print("OK: clean-room null source imports + runs without crash")
           PY
-      - name: Null-path suite subset (resolver + ratchet — no data dependency)
-        # The resolver/Null tests + the static no-screenpipe ratchet run green
-        # with NO sources.yml present. Data-dependent adapter tests are
-        # intentionally excluded — this proves the null path is import-clean and
-        # crash-free, the "clean-room can run it" contract (NOT that vault-backed
-        # tests pass under null).
-        run: python -m pytest framework/sources framework/tests/test_no_screenpipe_in_core.py -q
+      - name: framework CORE modules import under the null source
+        # Beyond the resolver: prove a REPRESENTATIVE slice of framework CORE — the
+        # modules that were coupled to screenpipe BEFORE this build (the acting
+        # lane core, fidelity benchmark/retro, the frontdoor egress + binder +
+        # synthesis, watchdog, the authority matrix/posture) — IMPORTS cleanly with
+        # NO source binding and an unreadable ~/.screenpipe. A leftover screenpipe
+        # `_shared` import or a ~/.screenpipe read at import time would raise here.
+        # The retrodiction SCORING modules (officer_runner / decision_cell /
+        # measure_intent) are the SEPARATE evaluation seam (spec §1 + §5 Phase 4),
+        # so they are intentionally OUT of this sensing-seam proof.
+        run: |
+          python - <<'PY'
+          import importlib
+          import framework.sources as S
+          assert type(S.get_source()).__name__ == "NullPersonalSource"
+          mods = [
+              "framework.env", "framework.sources.base", "framework.sources.null",
+              "framework.acting.action_lane", "framework.acting.lane_dedup",
+              "framework.fidelity.benchmark", "framework.fidelity.retro",
+              "framework.frontdoor.chair_drafts", "framework.frontdoor.daily_recap",
+              "framework.frontdoor.action_exec", "framework.frontdoor.actfirst_canary",
+              "framework.frontdoor.binder_wire", "framework.frontdoor.morning_synthesis",
+              "framework.watchdog.registry", "framework.watchdog.check",
+              "framework.authority.posture", "framework.authority.matrix",
+          ]
+          for m in mods:
+              importlib.import_module(m)
+          print("OK: %d framework CORE modules import under the null source" % len(mods))
+          PY
+      - name: Null-path suite subset (framework meta-ratchets + resolver — no data dep)
+        # The resolver/Null tests PLUS all framework/tests META-ratchets (the
+        # static no-screenpipe scan, the launcher-hardcode ratchet, axes-contract/
+        # invariants, the env resolver, the clean-room runtime proof) run with NO
+        # sources.yml and an unreadable ~/.screenpipe — the representative framework
+        # CORE subset. Data-dependent adapter tests (the Flavor-A vault/brain
+        # surface, the retrodiction scoring modules) are intentionally excluded:
+        # this proves the null path is import-clean + crash-free, NOT that
+        # vault-backed tests pass under null. NOTE (SRC-5 / P2-FLIP): the static
+        # no-screenpipe ratchet stays RED until the acting-lane SRC-4 PATH reparent
+        # (run_action_lane + run_draft_lane → env.vault_dir()/shared_env_path())
+        # lands — the honest cross-lane signal that the last two couplers are not
+        # yet migrated; it goes green the moment that reparent is present.
+        run: python -m pytest framework/sources framework/tests -q

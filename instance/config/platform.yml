@@ -52,6 +52,50 @@ org_domains:
 tasks_board: "5091706356"
 
 # =============================================================
+# Flavor-A source paths — the screenpipe estate this instance senses through
+# =============================================================
+# Instance+flavor-specific filesystem paths the universal-base framework reads
+# via framework.env resolvers, so framework/ carries no launcher's .screenpipe
+# path (source-adapter boundary, docs/plans/source-adapter-boundary-2026-07-05.md
+# §5 — Tier-2 credential/path reparents). A clean-room / Flavor-B deployment
+# omits these keys and the resolvers fail closed to "" (no credentials loaded,
+# no retrodiction scoring lib — never a crash, never a foreign path).
+#
+# shared_env_path — the shared credentials .env file the action lane loads
+# MONDAY_API_TOKEN / MONDAY_API_KEY from (framework/frontdoor/action_exec.py
+# _load_shared_env + framework/frontdoor/actfirst_canary.py env-perms check).
+# framework.env.shared_env_path() reads this (env CABINET_SHARED_ENV overrides)
+# and fails closed to "" (a deployment with none set loads no shared credentials
+# — Monday calls then fail with a clear "not set" error rather than reading
+# another launcher's file). A leading ~ is expanded by the caller.
+shared_env_path: ~/.screenpipe/pipes/_shared/.env
+
+# retro_pipe_dir — the retrodiction SCORING pipe dir (holds lib.py) the fidelity
+# EvaluationEngine (framework/fidelity/retro.py) loads its leak-safe scoring
+# logic from. framework.env.retro_pipe_dir() reads this (env
+# CABINET_RETRO_PIPE_DIR still overrides in retro.py) and fails closed to ""
+# (retro_available() then False; the scoring stub raises with guidance on first
+# use). The SCORING functions live in framework — only this PATH is
+# instance-bound. A leading ~ is expanded by the caller.
+retro_pipe_dir: ~/.screenpipe/pipes/retrodiction
+
+# vault_dir — the brain/Obsidian VAULT dir the fidelity decision-cell reads its
+# held-out Decisions corpus from (framework/fidelity/decision_cell.py _vault_dir).
+# framework.env.vault_dir() reads this (env CABINET_VAULT_DIR overrides) and
+# fails closed to "" (a deployment with no vault set → the Decisions corpus is
+# empty → no cases, never a crash, never a foreign vault). ~ is expanded by the
+# resolver.
+vault_dir: ~/obsidian/screenpipe-brain
+
+# state_dir — the personal-source runtime-STATE dir (the fidelity decision-cache
+# + autonomy-outcomes ledger; the outcome-watchdog's watched brain-pipe dir).
+# framework.env.state_dir() reads this (env CABINET_STATE_DIR overrides) and
+# fails closed to "" (cache/outcomes callers substitute a generic ~/.cabinet/state;
+# the watchdog treats "" as nothing-to-watch — the Flavor-B degrade). ~ is
+# expanded by the resolver.
+state_dir: ~/.screenpipe/state
+
+# =============================================================
 # Spending Limits — daily caps on Anthropic API spend
 # =============================================================
 # Per-officer and cabinet-wide caps enforced by pre-tool-use.sh.

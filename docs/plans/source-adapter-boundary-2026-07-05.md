@@ -317,20 +317,37 @@ the extension-manifest mechanism already shipped
 
 ### 4.5 File layout
 
+**AS REALIZED (PASS 1 + PASS 2) — a deviation from the original sketch, which
+named an `instance/flavor-a/sources/` subdir.** The adapter home is
+`instance/flavor-a/flavor_a/` — an importable package dir (the resolver adds
+`instance/flavor-a` to `sys.path`, so the binding module dotted-name is
+`flavor_a.<mod>`, matching `sources.yml`), and the WRITE side landed as a
+SIBLING `PersonalDispatch` adapter reached via `get_dispatch()`, not folded into
+the source. `sources.yml` therefore carries BOTH an `adapter:` (read) and a
+`dispatch:` (write) binding.
+
 ```
 framework/sources/
-  __init__.py        # get_source() resolver + cache (reads instance/config/sources.yml)
+  __init__.py        # get_source() + get_dispatch() resolvers + caches
+                     #   (read instance/config/sources.yml; fail-close to Null*)
   base.py            # PersonalSource + PersonalDispatch Protocols (stdlib only)
   null.py            # NullPersonalSource / NullPersonalDispatch (fail-closed)
-instance/flavor-a/
-  sources/
-    manifest.yml         # kind: source; axis_compat: {flavor: [personal]}
-    screenpipe_source.py # ScreenpipeSource — the re-homed BrainAdapter body +
-                         #   acting surface; owns ALL screenpipe imports & paths
-    _vault_gather_runner.py  # the py3.12 search sidecar, moved with it
+  tests/             # resolver + Null hermetic tests
+instance/flavor-a/flavor_a/
+  __init__.py
+  manifest.yml           # kind: source; axis_compat: {flavor: [personal]}
+  screenpipe_source.py   # ScreenpipeSource — the re-homed BrainAdapter body;
+                         #   owns the screenpipe READ imports & paths
+  acting.py              # the acting gather→draft surface (ex-screenpipe_adapter)
+  screenpipe_dispatch.py # ScreenpipeDispatch — the WRITE/egress adapter
+                         #   (email_lib/teams_graph_lib send, Monday client,
+                         #   vault daily-note write); owns the screenpipe WRITE deps
+  _vault_gather_runner.py  # the py3.12 vault-search sidecar, moved with it
+  tests/                 # adapter internals + acting + dispatch tests
 instance/config/
-  sources.yml        # adapter: flavor_a.screenpipe_source:ScreenpipeSource
-                     #   (absent ⇒ NullPersonalSource; the whole binding is DATA)
+  sources.yml        # adapter:  flavor_a.screenpipe_source:ScreenpipeSource
+                     # dispatch: flavor_a.screenpipe_dispatch:ScreenpipeDispatch
+                     #   (either absent ⇒ its Null* ; the whole binding is DATA)
 ```
 
 ---
@@ -360,7 +377,8 @@ uses it yet** ⇒ zero runtime change, full suite green. This is the
 `retro.retro_available()` pattern applied to sensing: the seam exists and is
 proven before anything depends on it.
 
-**Phase 2 — Migrate callers, COLDEST → HOTTEST, one file per step.** Each step
+**Phase 2 — Migrate callers, COLDEST → HOTTEST, one file per step. [DONE —
+PASS 2, byte-identical; one tail remains, see PASS-2 status below.]** Each step
 swaps a direct `import draft_lib` / `BrainAdapter()` for `get_source()`, keeps
 output byte-identical, runs that file's tests, and ratchets both §7 baselines
 DOWN by one. Order by §6 risk:
@@ -379,7 +397,8 @@ DOWN by one. Order by §6 risk:
    `PersonalDispatch`, preserving `allow_sends()` gating and the byte-identical
    daily-note render (§6).
 
-**Phase 3 — Flip the default + empty the allowlist.** Once every Tier-1 caller
+**Phase 3 — Flip the default + empty the allowlist. [DONE — PASS 2 / SRC-5
+P2-FLIP.]** Once every Tier-1 caller
 routes through `get_source()`, the Flavor-A adapter's screenpipe imports live
 WHOLLY in `instance/flavor-a/`. The §7 no-screenpipe-in-core allowlist shrinks
 to **empty**; `framework/**` names screenpipe nowhere. Flavor-B / clean-room
@@ -387,10 +406,36 @@ binds `NullPersonalSource` (or an org source) via `sources.yml` and the entire
 framework runs with no `~/.screenpipe`, no vault, no crash — proven by a
 clean-room CI job that runs the suite with `sources.yml` absent.
 
-**Phase 4 — Fold the parallel seams.** Migrate the retrodiction SCORING engine
-(`retro.py`, already shimmed + A2.1-flagged) and the germline board-id env
-paths (`action_exec`, `actfirst_canary`) into the same instance-bound pattern —
-the board-id moves ride the Captain amendment, surgically.
+**Phase 4 — Fold the parallel seams. [PENDING — the retrodiction scoring
+seam.]** Migrate the retrodiction SCORING engine (`retro.py`, already shimmed +
+A2.1-flagged) and the germline board-id env paths (`action_exec`,
+`actfirst_canary`) into the same instance-bound pattern — the board-id moves
+ride the Captain amendment, surgically. (The `action_exec` / `actfirst_canary`
+credential-PATH reparent to `env.shared_env_path()` already shipped in PASS 2
+and is Captain-ratified via
+`docs/proposals/germline-amendment-source-adapter-2026-07-05.md`; what remains
+here is the `retro.py` scoring engine vendoring.)
+
+**PASS-2 realized status (SRC-5 / P2-FLIP, 2026-07-06).** Phases 0–1 shipped in
+PASS 1 (both ratchets baselined + the `framework/sources/` seam —
+`get_source()` / `get_dispatch()` + `Null*` — shim-first). PASS 2 migrated every
+Tier-1/Tier-2 caller off screenpipe and FLIPPED the ratchets:
+`_ALLOWLISTED_FILES` is EMPTY with `_ALLOWLIST_BASELINE_MAX = 0`; the
+`check-layer-separation.sh` `FRAMEWORK_IMPORTS_SCREENPIPE` +
+`FRAMEWORK_PATH_SCREENPIPE` rule classes are live on the shrink-only
+`.layer-separation-baseline`; the `clean-room-source` CI job proves framework
+CORE imports + runs with `sources.yml` absent and `~/.screenpipe` unreadable
+(`get_source()`→`NullPersonalSource`); and golden eval
+`memory/golden-evals/eval-021-source-boundary.md` pins all of it. The ONE
+residual is the acting HOT-lane PATH reparent (`run_action_lane.py` +
+`run_draft_lane.py` → `framework.env.vault_dir()` / `shared_env_path()`), owned
+by the acting lane under SRC-4 (P2-ACT) behind its own draft-lane byte-identity
+test gate — a subtle case difference (the `"Obsidian"` literal vs
+`platform.yml`'s `~/obsidian`, identical only on macOS's case-insensitive FS) is
+exactly why that reparent stays with the lane that owns the live draft loop.
+Until it lands, the static ratchet + the clean-room job flag exactly those two
+files — the honest cross-lane signal, NEVER a re-allowlist candidate; both go
+fully green the moment the reparent is present.
 
 ---
 

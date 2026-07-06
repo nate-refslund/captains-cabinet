@@ -830,6 +830,22 @@ def test_pipes_stale_fails():
     assert "stale" in res.detail
 
 
+def test_pipes_fresh_skips_when_state_dir_unconfigured(monkeypatch):
+    """Flavor-B degrade (source-adapter SRC-4): with no brain state dir
+    configured (framework.env.state_dir() -> "" -> SCREENPIPE_STATE_DIR ""),
+    verify_pipes_fresh SKIPs — nothing to watch. A skip is neither pass nor fail
+    (never routed), so a clean-room box never false-alarms on absent screenpipe
+    pipes. On this deployment SCREENPIPE_STATE_DIR is non-empty, so the normal
+    freshness path (the two tests above) runs unchanged."""
+    monkeypatch.setattr(reg, "SCREENPIPE_STATE_DIR", "")
+    now = dt.datetime(2026, 6, 29, 12, 0, tzinfo=dt.timezone.utc)
+    probe = FakeProbe(now=now)
+    res = reg.verify_pipes_fresh(probe)
+    assert res.skipped is True
+    assert res.ok is True          # skipped == neither pass nor fail (not routed)
+    assert "nothing to watch" in res.detail
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Router tiers + anti-thrash cooldown.
 # ─────────────────────────────────────────────────────────────────────────────

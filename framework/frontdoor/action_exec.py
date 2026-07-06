@@ -10,8 +10,9 @@ v1 action kinds (low-blast, machine-verifiable):
   - reminder_create     → Apple Reminders via osascript (argv-passed, no
                           string-interpolated AppleScript with untrusted text)
 
-Credentials: MONDAY_API_KEY from ~/.screenpipe/pipes/_shared/.env (the same
-env the Plan-A pipes use). Never logged. All subprocess calls are arg-lists.
+Credentials: MONDAY_API_KEY from the instance-bound shared env file
+(framework.env.shared_env_path; ~/.screenpipe/pipes/_shared/.env on this
+instance). Never logged. All subprocess calls are arg-lists.
 Steps execute IN ORDER; the first failure stops the chain (already-executed
 steps are reported so nothing is silently half-done). An "edit: <text>"
 verdict NEVER executes (the Captain just called the stored payload wrong) and
@@ -84,7 +85,6 @@ from framework import env  # instance-config resolver (tasks_board)
 from framework.frontdoor import action_undo
 from framework.frontdoor.calendar_template import CALENDAR_EVENT_SCRIPT  # [GERM-2] single source
 
-_SHARED = str(Path.home() / ".screenpipe" / "pipes" / "_shared")
 MONDAY_API = "https://api.monday.com/v2"
 
 # --- SEC-3 / PRO-7 constants (trust-inversion Wave 2) ------------------------
@@ -605,8 +605,16 @@ def _redis(*args: str) -> str:
 
 def _load_shared_env() -> None:
     """Load the Plan-A pipes env (MONDAY_API_KEY etc.) without clobbering
-    already-set vars. Same source of truth the pipes use."""
-    env_file = Path(_SHARED) / ".env"
+    already-set vars. The path is instance-bound (framework.env.shared_env_path
+    reads instance/config/platform.yml -> shared_env_path; env CABINET_SHARED_ENV
+    overrides), so this universal-base module carries no launcher .screenpipe
+    path. A generic deployment resolves "" -> nothing loaded (Monday calls then
+    fail closed on the missing key); byte-identical on this instance to the
+    removed ~/.screenpipe/pipes/_shared/.env read."""
+    shared = env.shared_env_path()
+    if not shared:
+        return                          # no shared env configured — fail-closed
+    env_file = Path(shared).expanduser()
     try:
         for line in env_file.read_text().splitlines():
             line = line.strip()

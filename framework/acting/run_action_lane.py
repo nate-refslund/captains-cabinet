@@ -49,7 +49,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from framework.acting import action_lane, screenpipe_adapter as sa  # noqa: E402
+from framework.acting import action_lane, lane_dedup as ld  # noqa: E402
+from framework.env import vault_dir, shared_env_path  # noqa: E402
 from framework.acting.loop import (  # noqa: E402
     expire_event, pending_proposals, proposal_event, proposal_id)
 from framework.fidelity.consequence import emit_consequence, read_ledger  # noqa: E402
@@ -83,7 +84,7 @@ def covered_evidence_refs() -> frozenset:
         pass   # fail-open here is safe: slug dedup still applies
     return frozenset(refs)
 
-VAULT = Path.home() / "Obsidian" / "screenpipe-brain"
+VAULT = Path(vault_dir() or str(Path.home() / "vault"))
 # Captain-ratified directions.yml (mission/instruments/bets/not_goals per lane) —
 # injected into the proposer prompt + used to validate every card's direction_fit.
 DIRECTIONS_PATH = Path(__file__).resolve().parents[2] / "instance" / "config" / "directions.yml"
@@ -599,8 +600,11 @@ def _acquire_lock() -> bool:
 
 
 def _load_env() -> None:
-    for env in (Path(__file__).resolve().parents[2] / "cabinet" / ".env",
-                Path.home() / ".screenpipe" / "pipes" / "_shared" / ".env"):
+    envs = [Path(__file__).resolve().parents[2] / "cabinet" / ".env"]
+    _shared = shared_env_path()
+    if _shared:
+        envs.append(Path(_shared).expanduser())
+    for env in envs:
         try:
             for line in env.read_text().splitlines():
                 line = line.strip()
@@ -1056,7 +1060,7 @@ def _expire_stale_cards(now: dt.datetime) -> int:
     for prop in open_props:
         if prop.get("action") != "action-card":
             continue
-        when = sa.parse_dt(prop.get("ts"))
+        when = ld.parse_dt(prop.get("ts"))
         if when is None or (now - when).total_seconds() < CARD_MAX_AGE_H * 3600:
             continue
         try:
@@ -1108,7 +1112,7 @@ def main() -> int:
         print("done: no fresh signals in window")
         return 0
 
-    decided = set(sa.decided_subjects().keys())
+    decided = set(ld.decided_subjects().keys())
     open_subjects = {  # any pending proposal's subject, action or draft
         (p.get("subject") or "") for p in pending_proposals() if isinstance(p, dict)}
 

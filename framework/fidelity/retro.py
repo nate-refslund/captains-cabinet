@@ -27,14 +27,22 @@ import os
 import sys
 from pathlib import Path
 
-# Resolve the retrodiction pipe dir. Override via CABINET_RETRO_PIPE_DIR for
-# tests / non-default installs; default to the canonical screenpipe location.
-RETRO_PIPE_DIR = Path(
-    os.environ.get(
-        "CABINET_RETRO_PIPE_DIR",
-        str(Path.home() / ".screenpipe" / "pipes" / "retrodiction"),
-    )
-).expanduser()
+from framework import env  # instance-config resolver (retro_pipe_dir)
+
+# Resolve the retrodiction pipe dir. Override via CABINET_RETRO_PIPE_DIR (tests /
+# non-default installs) — read verbatim here so THAT behavior stays
+# byte-identical; else the instance-config resolver (framework.env.retro_pipe_dir
+# reads instance/config/platform.yml -> retro_pipe_dir), so this universal-base
+# shim carries no launcher path (source-adapter boundary, the parallel EVALUATION
+# seam). A generic deployment resolves neither -> a non-existent sentinel dir ->
+# retro_available() False -> the scoring stub raises with guidance on first use.
+# The SCORING functions live in framework (the EvaluationEngine); only this PATH
+# is instance-bound. Byte-identical on this instance to the removed default.
+_RETRO_DIR = os.environ.get("CABINET_RETRO_PIPE_DIR") or env.retro_pipe_dir()
+RETRO_PIPE_DIR = (
+    Path(_RETRO_DIR).expanduser() if _RETRO_DIR
+    else Path(__file__).resolve().parent / "_retrodiction-absent"
+)
 _SHARED_DIR = RETRO_PIPE_DIR.parent / "_shared"
 
 

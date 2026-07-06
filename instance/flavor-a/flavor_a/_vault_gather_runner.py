@@ -1,5 +1,7 @@
 """Vault-gather runner — executed UNDER THE BRAIN INTERPRETER (python3.12) via
-subprocess from BrainAdapter._subprocess_vault_gather.
+subprocess from ``flavor_a.screenpipe_source._subprocess_vault_gather`` (the
+Flavor-A source adapter's vault-search sidecar; re-homed here with the adapter in
+the SRC-3 source-adapter split — it IS the adapter's py3.9/3.12 search boundary).
 
 WHY this exists: the fidelity harness runs in-process under system Python 3.9.6,
 whose sqlite3 was built without loadable-extension support

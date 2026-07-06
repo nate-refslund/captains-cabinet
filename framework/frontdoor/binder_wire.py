@@ -1241,13 +1241,16 @@ def handle_captain_update(
                 # charset hygiene the AI draft got at creation (em/en-dash → -,
                 # smart quotes → straight, … → ...), so a reply typed on mobile
                 # doesn't egress with characters the draft path already strips.
-                # Lazy import (screenpipe_adapter prints a module-load notice);
-                # fail-OPEN to raw text — a normalization import must never block
-                # a delivery whose verdict has already landed. This chokepoint is
-                # inherited by the capture→action lane's edit path.
+                # SRC-3: this is CHARSET-ONLY, so it binds the framework-vendored
+                # ``voice_charset`` directly (the single-source-of-truth charset
+                # model draft_lib.humanize also re-exports) rather than the
+                # re-homed Flavor-A acting adapter — no screenpipe dep in
+                # framework. Fail-OPEN to raw text — a normalization import must
+                # never block a delivery whose verdict has already landed. This
+                # chokepoint is inherited by the capture→action lane's edit path.
                 try:
-                    from framework.acting.screenpipe_adapter import normalize_voice
-                    override = normalize_voice(override)
+                    from framework.acting.voice_charset import normalize_charset
+                    override = normalize_charset(override)
                 except Exception:
                     pass
             delivery["attempted"] = True

@@ -11,7 +11,11 @@ kind: source
 # risk_classes; undo_contract is `none` (there is nothing to undo — a read is
 # never act-first-eligible in any posture, and the inverse-required rule holds
 # vacuously). The dispatch/actuator (WRITE) half is a SEPARATE PersonalDispatch
-# adapter, deferred to a later pass.
+# adapter — screenpipe_dispatch.py::ScreenpipeDispatch (SRC-3, frontdoor egress),
+# bound via instance/config/sources.yml `dispatch:` and reached through
+# framework.sources.get_dispatch(); its outbound-send authority is unchanged
+# (governed by the Chair in-chat approval flow + brain-bridge.md), so this READ
+# manifest is unaffected.
 action_types: []
 risk_classes: []
 undo_contract: none
