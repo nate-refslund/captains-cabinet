@@ -339,7 +339,7 @@ tmux send-keys -t "$SESSION_NAME" "$CLAUDE_CMD" C-m
 # ===========================================================
 # shellcheck source=lib/officer-boot.sh
 source "$REPO_ROOT/cabinet/scripts/lib/officer-boot.sh"
-BOOT_PROMPT="You are $OFFICER. Read your role definition at .claude/agents/$OFFICER.md and your session start checklist. Read your foundation skills in memory/skills/. Read your tier 2 notes in instance/memory/tier2/$OFFICER/. Then announce yourself on the warroom: bash $REPO_ROOT/cabinet/scripts/send-to-group.sh '<b>$OFFICER online (Mac native).</b> Session started. Checking for pending work.' — then check for pending triggers and overdue work immediately."
+BOOT_PROMPT="You are $OFFICER. Read your role definition at .claude/agents/$OFFICER.md and your session start checklist. Read your foundation skills in memory/skills/. Read your tier 2 notes in instance/memory/tier2/$OFFICER/. Then announce yourself on the warroom: bash $REPO_ROOT/cabinet/scripts/send-to-group.sh '<b>$OFFICER online (Mac native).</b> Session started. Checking for pending work.' — then run the calendar boot self-check: bash $REPO_ROOT/cabinet/scripts/calendar-boot-selfcheck.sh (it surfaces ONE warroom line only if the calendar grant is missing for this officer context, and never blocks boot) — then check for pending triggers and overdue work immediately."
 officer_boot_drive "$SESSION_NAME" "$BOOT_PROMPT"
 
 # ===========================================================

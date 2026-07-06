@@ -436,3 +436,276 @@ def test_live_helper_returns_valid_json_array():
     assert p.returncode == 0, f"helper read failed: {p.stderr}"
     parsed = json.loads(p.stdout)
     assert isinstance(parsed, list)
+
+
+# --- all-day availability filter (CABINET_CAL_ALLDAY_BUSY_BLOCKS) --------------
+# The consolidated helper emits EVERY event tagged all_day + availability; the
+# all-day/free-vs-busy POLICY lives here in the reader. These are mock-level
+# (injected runner, no subprocess). REAL all-day bound-shape + Nate's real
+# Vacation/holiday .availability mapping are validation_gated (granted Terminal).
+
+def _recx(cal, s_iso, e_iso, title, *, all_day=None, availability=None):
+    r = {"calendar": cal, "start": s_iso, "end": e_iso, "summary": title}
+    if all_day is not None:
+        r["all_day"] = all_day
+    if availability is not None:
+        r["availability"] = availability
+    return r
+
+
+def test_allday_flag_off_drops_allday(monkeypatch):
+    monkeypatch.delenv("CABINET_CAL_ALLDAY_BUSY_BLOCKS", raising=False)
+    stdout = _json_out([_recx("Home", "2026-07-06T00:00:00", "2026-07-07T00:00:00",
+                              "vac", all_day="true", availability="busy")])
+    hits = cr.read_events("2026-07-06T09:00:00", "2026-07-06T09:30:00",
+                          osascript=_fake_runner(stdout))
+    assert hits == []  # default: ALL all-day dropped (byte-identical to old helper)
+
+
+def test_allday_flag_off_keeps_timed(monkeypatch):
+    monkeypatch.delenv("CABINET_CAL_ALLDAY_BUSY_BLOCKS", raising=False)
+    stdout = _json_out([_recx("Home", "2026-07-06T09:15:00", "2026-07-06T09:45:00",
+                              "timed", all_day="false", availability="free")])
+    hits = cr.read_events("2026-07-06T09:00:00", "2026-07-06T09:30:00",
+                          osascript=_fake_runner(stdout))
+    assert [e["summary"] for e in hits] == ["timed"]  # timed always kept
+
+
+@pytest.mark.parametrize("avail,kept", [
+    ("busy", True), ("unavailable", True), ("notSupported", True),
+    ("unknown", True), ("tentative", True),   # tentative KEPT (possibly-busy)
+    ("free", False),                          # dropped ONLY on explicit free
+])
+def test_allday_flag_on_availability(monkeypatch, avail, kept):
+    monkeypatch.setenv("CABINET_CAL_ALLDAY_BUSY_BLOCKS", "1")
+    stdout = _json_out([_recx("Home", "2026-07-06T00:00:00", "2026-07-07T00:00:00",
+                              "ad", all_day="true", availability=avail)])
+    hits = cr.read_events("2026-07-06T09:00:00", "2026-07-06T09:30:00",
+                          osascript=_fake_runner(stdout))
+    assert ([e["summary"] for e in hits] == ["ad"]) is kept
+
+
+def test_allday_flag_on_missing_availability_kept(monkeypatch):
+    # An all-day record with NO availability field is fail-safe KEPT.
+    monkeypatch.setenv("CABINET_CAL_ALLDAY_BUSY_BLOCKS", "on")
+    stdout = _json_out([_recx("Home", "2026-07-06T00:00:00", "2026-07-07T00:00:00",
+                              "ad", all_day="true")])
+    hits = cr.read_events("2026-07-06T09:00:00", "2026-07-06T09:30:00",
+                          osascript=_fake_runner(stdout))
+    assert [e["summary"] for e in hits] == ["ad"]
+
+
+def test_allday_flag_on_timed_free_still_kept(monkeypatch):
+    # The availability filter applies to all-day ONLY — a timed free event stays.
+    monkeypatch.setenv("CABINET_CAL_ALLDAY_BUSY_BLOCKS", "yes")
+    stdout = _json_out([_recx("Home", "2026-07-06T09:15:00", "2026-07-06T09:45:00",
+                              "timedfree", all_day="false", availability="free")])
+    hits = cr.read_events("2026-07-06T09:00:00", "2026-07-06T09:30:00",
+                          osascript=_fake_runner(stdout))
+    assert [e["summary"] for e in hits] == ["timedfree"]
+
+
+def test_allday_flag_on_excluded_calendar_dropped_first(monkeypatch):
+    # Exclude runs BEFORE the all-day filter: an all-day busy event on an excluded
+    # calendar never resurfaces.
+    monkeypatch.setenv("CABINET_CAL_ALLDAY_BUSY_BLOCKS", "1")
+    monkeypatch.setenv("CABINET_CAL_EXCLUDE", "Holidays")
+    stdout = _json_out([_recx("Holidays", "2026-07-06T00:00:00", "2026-07-07T00:00:00",
+                              "hol", all_day="true", availability="busy")])
+    hits = cr.read_events("2026-07-06T09:00:00", "2026-07-06T09:30:00",
+                          osascript=_fake_runner(stdout))
+    assert hits == []
+
+
+@pytest.mark.parametrize("val,on", [
+    ("1", True), ("true", True), ("yes", True), ("on", True), ("TRUE", True),
+    ("", False), ("0", False), ("false", False), ("garbage", False),
+])
+def test_allday_flag_truthiness(monkeypatch, val, on):
+    monkeypatch.setenv("CABINET_CAL_ALLDAY_BUSY_BLOCKS", val)
+    stdout = _json_out([_recx("Home", "2026-07-06T00:00:00", "2026-07-07T00:00:00",
+                              "ad", all_day="true", availability="busy")])
+    hits = cr.read_events("2026-07-06T09:00:00", "2026-07-06T09:30:00",
+                          osascript=_fake_runner(stdout))
+    # busy all-day: kept iff the flag parsed ON; dropped iff OFF.
+    assert ([e["summary"] for e in hits] == ["ad"]) is on
+
+
+def test_event_from_record_allday_availability_parsing():
+    e = cr._event_from_record(_recx("Home", "2026-07-06T10:00:00",
+                                     "2026-07-06T10:30:00", "x",
+                                     all_day="true", availability="Busy"))
+    assert e["all_day"] is True and e["availability"] == "busy"
+    e2 = cr._event_from_record(_recx("Home", "2026-07-06T10:00:00",
+                                     "2026-07-06T10:30:00", "x"))
+    assert e2["all_day"] is False and e2["availability"] == ""
+    # non-str availability → '' (never raises)
+    e3 = cr._event_from_record({"calendar": "Home", "start": "2026-07-06T10:00:00",
+                                "end": "2026-07-06T10:30:00", "availability": 7})
+    assert e3["availability"] == ""
+
+
+def test_conflicts_for_due_allday_busy_blocks_when_on(monkeypatch):
+    # end-to-end: an all-day BUSY event spanning the day collides with a 30-min
+    # candidate when the flag is ON, and does not when OFF.
+    stdout = _json_out([_recx("Home", "2026-07-06T00:00:00", "2026-07-07T00:00:00",
+                              "vac", all_day="true", availability="busy")])
+    monkeypatch.setenv("CABINET_CAL_ALLDAY_BUSY_BLOCKS", "1")
+    on = cr.conflicts_for_due("2026-07-06T14:00", osascript=_fake_runner(stdout))
+    assert [e["summary"] for e in on] == ["vac"]
+    monkeypatch.delenv("CABINET_CAL_ALLDAY_BUSY_BLOCKS", raising=False)
+    off = cr.conflicts_for_due("2026-07-06T14:00", osascript=_fake_runner(stdout))
+    assert off == []
+
+
+@pytest.mark.parametrize("flag", [None, "1"])
+def test_allday_flag_does_not_touch_failclosed(monkeypatch, flag):
+    # The flag only reshapes a SUCCESSFUL event set; a failed read still RAISES in
+    # BOTH flag states, and garbage JSON still raises.
+    if flag is None:
+        monkeypatch.delenv("CABINET_CAL_ALLDAY_BUSY_BLOCKS", raising=False)
+    else:
+        monkeypatch.setenv("CABINET_CAL_ALLDAY_BUSY_BLOCKS", flag)
+
+    def boom(cmd):
+        raise cr.CalendarReadError("denied")
+    with pytest.raises(cr.CalendarReadError):
+        cr.read_events("2026-07-06T09:00:00", "2026-07-06T09:30:00", osascript=boom)
+    with pytest.raises(cr.CalendarReadError):
+        cr.read_events("2026-07-06T09:00:00", "2026-07-06T09:30:00",
+                       osascript=_fake_runner("not json"))
+
+
+# --- helper_path alias --------------------------------------------------------
+
+def test_helper_path_public_alias_matches_private(monkeypatch):
+    monkeypatch.setenv("CABINET_CAL_HELPER", "/tmp/x/cabinet-calread")
+    assert cr.helper_path() == cr._helper_path() == "/tmp/x/cabinet-calread"
+
+
+# --- real-sharees pre-write gate: read_calinfo (F1) ---------------------------
+
+def _calinfo_obj(**over):
+    base = {"calendar": "Home", "found": True, "ambiguous": False,
+            "writable": True, "shared": False, "shared_signal": "none",
+            "type": "calDAV"}
+    base.update(over)
+    return json.dumps(base)
+
+
+def test_read_calinfo_parses_clean_object():
+    obj = cr.read_calinfo("Home", osascript=_fake_runner(_calinfo_obj()))
+    assert obj["found"] is True and obj["shared_signal"] == "none"
+
+
+def test_read_calinfo_builds_calinfo_command():
+    runner = _fake_runner(_calinfo_obj())
+    cr.read_calinfo("Home", osascript=runner)
+    assert runner.calls[0][1] == "calinfo" and runner.calls[0][2] == "Home"
+
+
+def test_read_calinfo_empty_name_raises():
+    with pytest.raises(cr.CalendarShareError):
+        cr.read_calinfo("  ", osascript=_fake_runner(_calinfo_obj()))
+
+
+def test_read_calinfo_runner_raise_is_shareerror():
+    def boom(cmd):
+        raise RuntimeError("helper exited 3")
+    with pytest.raises(cr.CalendarShareError):
+        cr.read_calinfo("Home", osascript=boom)
+
+
+def test_read_calinfo_non_json_raises():
+    with pytest.raises(cr.CalendarShareError):
+        cr.read_calinfo("Home", osascript=_fake_runner("not json"))
+
+
+def test_read_calinfo_non_object_raises():
+    with pytest.raises(cr.CalendarShareError):
+        cr.read_calinfo("Home", osascript=_fake_runner("[1,2]"))
+
+
+def test_read_calinfo_found_false_raises():
+    with pytest.raises(cr.CalendarShareError):
+        cr.read_calinfo("Ghost", osascript=_fake_runner(_calinfo_obj(found=False)))
+
+
+@pytest.mark.parametrize("missing", ["writable", "ambiguous", "shared", "shared_signal"])
+def test_read_calinfo_missing_safety_key_raises(missing):
+    obj = json.loads(_calinfo_obj())
+    del obj[missing]
+    with pytest.raises(cr.CalendarShareError):
+        cr.read_calinfo("Home", osascript=_fake_runner(json.dumps(obj)))
+
+
+def test_calendar_share_error_is_read_error_subclass():
+    # The wire fail-closed identity: the germline catch on CalendarReadError must
+    # treat a share refusal identically.
+    assert issubclass(cr.CalendarShareError, cr.CalendarReadError)
+
+
+# --- assert_calendar_private_for_actfirst (positive allow-list) ---------------
+
+def test_assert_private_permits_clean_writable_private(monkeypatch):
+    monkeypatch.delenv("CABINET_CAL_PRIVATE", raising=False)
+    # Home: writable, shared:false, signal none, not ambiguous → permitted (None).
+    assert cr.assert_calendar_private_for_actfirst(
+        "Home", osascript=_fake_runner(_calinfo_obj())) is None
+
+
+@pytest.mark.parametrize("signal", ["read_only", "subscription", "birthday",
+                                    "sharees", "delegated", "weird_future_value"])
+def test_assert_private_refuses_any_shared_signal(monkeypatch, signal):
+    monkeypatch.delenv("CABINET_CAL_PRIVATE", raising=False)
+    stub = _calinfo_obj(shared=True, shared_signal=signal)
+    with pytest.raises(cr.CalendarShareError):
+        cr.assert_calendar_private_for_actfirst("Home", osascript=_fake_runner(stub))
+
+
+def test_assert_private_refuses_unknown_signal_even_if_shared_false(monkeypatch):
+    # A shared_signal the Python side never enumerated, with shared:false, still
+    # REFUSES (positive allow-list requires signal == 'none' exactly).
+    monkeypatch.delenv("CABINET_CAL_PRIVATE", raising=False)
+    stub = _calinfo_obj(shared=False, shared_signal="delegated")
+    with pytest.raises(cr.CalendarShareError):
+        cr.assert_calendar_private_for_actfirst("Home", osascript=_fake_runner(stub))
+
+
+def test_assert_private_refuses_non_writable(monkeypatch):
+    monkeypatch.delenv("CABINET_CAL_PRIVATE", raising=False)
+    stub = _calinfo_obj(writable=False)
+    with pytest.raises(cr.CalendarShareError):
+        cr.assert_calendar_private_for_actfirst("Home", osascript=_fake_runner(stub))
+
+
+def test_assert_private_refuses_ambiguous(monkeypatch):
+    monkeypatch.delenv("CABINET_CAL_PRIVATE", raising=False)
+    stub = _calinfo_obj(ambiguous=True)
+    with pytest.raises(cr.CalendarShareError):
+        cr.assert_calendar_private_for_actfirst("Home", osascript=_fake_runner(stub))
+
+
+def test_assert_private_allowlist_member_permits(monkeypatch):
+    monkeypatch.setenv("CABINET_CAL_PRIVATE", " home , personal ")
+    assert cr.assert_calendar_private_for_actfirst(
+        "Home", osascript=_fake_runner(_calinfo_obj())) is None
+
+
+def test_assert_private_allowlist_non_member_refuses(monkeypatch):
+    monkeypatch.setenv("CABINET_CAL_PRIVATE", "Personal")
+    with pytest.raises(cr.CalendarShareError):
+        cr.assert_calendar_private_for_actfirst("Home", osascript=_fake_runner(_calinfo_obj()))
+
+
+def test_assert_private_allowlist_unset_is_noop(monkeypatch):
+    monkeypatch.delenv("CABINET_CAL_PRIVATE", raising=False)
+    assert cr.assert_calendar_private_for_actfirst(
+        "AnyName", osascript=_fake_runner(_calinfo_obj(calendar="AnyName"))) is None
+
+
+def test_assert_private_helper_raise_refuses_failclosed():
+    def boom(cmd):
+        raise RuntimeError("exit 3 write-only")
+    with pytest.raises(cr.CalendarShareError):
+        cr.assert_calendar_private_for_actfirst("Home", osascript=boom)

@@ -69,7 +69,8 @@ from pathlib import Path
 from typing import Callable
 
 __all__ = ["read_events", "overlaps", "find_conflicts", "conflicts_for_due",
-           "event_window", "CalendarReadError"]
+           "event_window", "CalendarReadError", "CalendarShareError",
+           "helper_path", "read_calinfo", "assert_calendar_private_for_actfirst"]
 
 # The signed read-only EventKit helper (the Apple Calendar provider). Resolved at
 # runtime — env override first, else a repo-root-relative `bin/` path. NEVER an
@@ -78,8 +79,47 @@ __all__ = ["read_events", "overlaps", "find_conflicts", "conflicts_for_due",
 _HELPER_ENV = "CABINET_CAL_HELPER"
 _HELPER_BASENAME = "cabinet-calread"
 
-# The ONLY subcommand this read-only module may ever invoke on the helper.
+# The subcommands this module invokes on the CONSOLIDATED helper. ``read`` is the
+# read-only overlap gather; ``calinfo`` is the read-only per-calendar attribute
+# report the act-first share-scope gate consults. Neither mutates a calendar (the
+# mutating ``delete`` subcommand lives in the separate calendar_delete module so
+# THIS module's read-only invariant stays literally true).
 _READ_SUBCOMMAND = "read"
+_CALINFO_SUBCOMMAND = "calinfo"
+
+# --- all-day availability policy (env-flagged, reader-side) -------------------
+# The consolidated helper no longer drops all-day events — it emits EVERY event
+# tagged with all_day + availability, so 100% of the all-day/free-vs-busy policy
+# lives here in the freely-editable reader and no future tweak needs another
+# helper rebuild/re-grant. DEFAULT (flag unset/off): drop ALL all-day events —
+# outcome byte-identical to the old helper-side ``.filter { !isAllDay }`` (records
+# from an OLD helper carry no all_day field → parse as timed → kept, so a
+# NEW-reader + OLD-helper combo is inert). When ON, an all-day event is dropped
+# ONLY on an EXPLICIT free availability token; every other value — busy,
+# unavailable, notSupported, tentative, unknown, OR a missing availability field —
+# is KEPT as a conflict (the safe direction for a double-book guard: never a
+# silent drop). Timed events are ALWAYS kept regardless of availability.
+_ALLDAY_ENV = "CABINET_CAL_ALLDAY_BUSY_BLOCKS"
+# Drop an all-day event ONLY on explicit ``free``. ``tentative`` means
+# possibly-busy → KEEP (a safety-critical guard fails toward blocking); it is NOT
+# in the drop-set (adopted verdict correction — the task spec drops FREE, keeps
+# BUSY, and never says to drop tentative).
+_ALLDAY_FREE_TOKENS = frozenset({"free"})
+
+# --- real-sharees pre-write gate (F1) ----------------------------------------
+# When set (comma-separated calendar names, normalized like CABINET_CAL_EXCLUDE),
+# an act-first calendar write is PERMITTED only onto a listed calendar. This is
+# the ONLY positive protection for the irreducible EventKit blind spot: a WRITABLE
+# calDAV calendar the Captain shared with others reports shared_signal="none" and
+# is indistinguishable from a private one. Unset → the allowlist is a no-op (the
+# machine signal + the germline name-denylist are the only guards).
+_PRIVATE_ENV = "CABINET_CAL_PRIVATE"
+
+# Any positive machine shared-signal the helper's calinfo may report. A permit
+# requires shared_signal == "none" exactly (a POSITIVE allow-list, not this
+# deny-list) — this frozenset is only for readable diagnostics / docs.
+_SHARED_SIGNALS = frozenset({"read_only", "subscription", "birthday", "sharees",
+                             "delegated"})
 
 # Calendar names the double-book gather IGNORES (comma-separated in
 # CABINET_CAL_EXCLUDE) — a calendar the Captain can SEE but does NOT own (a
@@ -114,6 +154,31 @@ def _helper_path() -> str:
     if env:
         return env
     return str(_repo_root() / "bin" / _HELPER_BASENAME)
+
+
+def helper_path() -> str:
+    """Public alias of :func:`_helper_path` — the SHARED resolver so the read
+    gather, the calinfo gate, and the calendar_delete reverse all resolve the
+    SAME consolidated binary (env ``CABINET_CAL_HELPER`` else ``<root>/bin/
+    cabinet-calread``). Pure path resolution — no calendar access, so exposing it
+    does NOT break this module's read-only invariant."""
+    return _helper_path()
+
+
+def _allday_busy_blocks_enabled() -> bool:
+    """True iff the all-day availability filter is opted IN via
+    ``CABINET_CAL_ALLDAY_BUSY_BLOCKS`` (truthy = 1/true/yes/on, casefolded).
+    Default False → the safe/no-op behavior (drop ALL all-day events)."""
+    return (os.environ.get(_ALLDAY_ENV, "") or "").strip().casefold() in {
+        "1", "true", "yes", "on"}
+
+
+def _private_allowlist() -> set:
+    """Calendar names (normalized: stripped + casefolded) an act-first write is
+    permitted onto, from ``CABINET_CAL_PRIVATE`` (comma-separated). Empty/unset →
+    an empty set (the allowlist is a no-op). Mirrors :func:`_excluded_calendars`."""
+    raw = os.environ.get(_PRIVATE_ENV, "") or ""
+    return {name.strip().casefold() for name in raw.split(",") if name.strip()}
 
 
 def _excluded_calendars() -> set:
@@ -194,6 +259,14 @@ def _event_from_record(rec) -> dict | None:
         return None
     cal = rec.get("calendar")
     title = rec.get("summary")
+    # all_day / availability (consolidated helper, 2026-07-06). Robust parse: a
+    # missing all_day → False → treated as TIMED → kept (the safe direction; also
+    # what an OLD helper's records do). availability lowercased; a non-str value
+    # (or missing) → '' — an explicit isinstance guard so _event_from_record can
+    # never raise on a malformed record (its 'never raises' contract).
+    all_day = str(rec.get("all_day")).strip().lower() == "true"
+    _av = rec.get("availability")
+    availability = _av.strip().lower() if isinstance(_av, str) else ""
     return {
         "calendar": cal if isinstance(cal, str) else "",
         "summary": title if isinstance(title, str) else "",
@@ -201,6 +274,8 @@ def _event_from_record(rec) -> dict | None:
         "end": end,
         "start_iso": rec.get("start"),
         "end_iso": rec.get("end"),
+        "all_day": all_day,
+        "availability": availability,
     }
 
 
@@ -302,6 +377,14 @@ def read_events(start_iso: str, end_iso: str,
         # BEFORE the overlap test, so a partner/subscribed calendar never conflicts.
         events = [e for e in events
                   if (e.get("calendar") or "").strip().casefold() not in excluded]
+    # All-day availability filter (runs AFTER the exclude drop, BEFORE overlaps).
+    # Keep every event UNLESS it is all-day AND (the flag is ON AND it carries an
+    # explicit free token). Flag OFF → drop ALL all-day (byte-identical to the old
+    # helper). A missing all_day → timed → kept.
+    allday_on = _allday_busy_blocks_enabled()
+    events = [e for e in events
+              if (not e.get("all_day"))
+              or (allday_on and e.get("availability") not in _ALLDAY_FREE_TOKENS)]
     return overlaps(ws, we, events)
 
 
@@ -357,3 +440,99 @@ def conflicts_for_due(due_iso: str,
     raise, and treat a non-empty list as a conflict (per the WIRE CONTRACT)."""
     start, end = event_window(due_iso)
     return find_conflicts(start, end, osascript=osascript)
+
+
+# --- real-sharees pre-write gate (F1) ----------------------------------------
+
+class CalendarShareError(CalendarReadError):
+    """The target calendar could NOT be positively cleared as the Captain's own
+    private, un-shared, writable calendar for an act-first (unattended) write —
+    because the helper's real EventKit attribute report was unobtainable/garbled
+    (subclassing CalendarReadError so the germline wire's existing fail-closed
+    catch treats it identically) OR because the report shows a positive shared
+    signal / non-writability / duplicate-title ambiguity / an allowlist miss.
+    The wire MUST fail-closed on a raise (refuse the write). 'Unknown share-state
+    → refuse' is the whole point — an act-first block must never surface on a
+    calendar a third party can see."""
+
+
+def read_calinfo(cal_name: str,
+                 osascript: Callable | None = None) -> dict:
+    """Invoke the consolidated helper's read-only ``calinfo <calendar>`` and
+    return the parsed attribute object. STRICT + fail-closed: RAISES
+    CalendarShareError on ANY inability to obtain a clean report — runner
+    raise (helper missing / non-zero exit incl. the fullAccess exit-3 that a
+    write-only/officer context produces / timeout), non-JSON or non-object
+    stdout, ``found:false``, or any of the safety keys {found, writable,
+    ambiguous, shared, shared_signal} absent or of the wrong type. Returning a
+    dict means every safety key was present and well-typed (the caller still
+    checks their VALUES)."""
+    name = (cal_name or "").strip()
+    if not name:
+        raise CalendarShareError("read_calinfo requires a calendar name")
+    runner = osascript or _default_runner
+    cmd = [_helper_path(), _CALINFO_SUBCOMMAND, name]
+    try:
+        out = runner(cmd)
+    except CalendarReadError:
+        raise
+    except Exception as e:                       # normalize any runner failure
+        raise CalendarShareError(
+            f"calinfo read failed ({type(e).__name__}: {e})") from e
+    try:
+        obj = json.loads(out or "")
+    except (ValueError, TypeError) as e:
+        raise CalendarShareError(
+            f"calinfo stdout is not valid JSON: {(out or '')[:120]!r}") from e
+    if not isinstance(obj, dict):
+        raise CalendarShareError(
+            f"calinfo stdout is not a JSON object (got {type(obj).__name__})")
+    # Strict presence + type check of every safety key — a partial/garbled object
+    # must fail closed, never read as 'safe' by a missing key (fail-closed BY
+    # CONSTRUCTION, mirroring _parse_events raising on a non-array).
+    if obj.get("found") is False:
+        raise CalendarShareError(f"calinfo: calendar {name!r} not found")
+    for key, typ in (("found", bool), ("writable", bool), ("ambiguous", bool),
+                     ("shared", bool), ("shared_signal", str)):
+        if not isinstance(obj.get(key), typ):
+            raise CalendarShareError(
+                f"calinfo missing/mistyped safety key {key!r} — refusing")
+    return obj
+
+
+def assert_calendar_private_for_actfirst(cal_name: str,
+                                         osascript: Callable | None = None) -> None:
+    """Raise CalendarShareError unless the target calendar is POSITIVELY cleared
+    as the Captain's own private, un-shared, writable calendar for an act-first
+    write. POSITIVE ALLOW-LIST (fail-closed by construction): permit iff EVERY
+    safety key holds its exact safe value —
+        found is True AND writable is True AND ambiguous is False
+        AND shared is False AND shared_signal == "none"
+    — plus, when ``CABINET_CAL_PRIVATE`` is set, the name is a member. ANY other
+    value, an unknown shared_signal, a partial report, or an unobtainable report
+    raises (refuse). Called on the act-first path in the germline
+    ``action_exec._exec_calendar_event`` (after the cheap name-denylist, before
+    the double-book gather).
+
+    The irreducible residual (real EventKit limit): a WRITABLE calDAV calendar the
+    Captain shared with others reports shared_signal="none" and is PERMITTED unless
+    CABINET_CAL_PRIVATE names the safe set — that allowlist + the germline
+    name-denylist are the only positive protection for that case."""
+    info = read_calinfo(cal_name, osascript=osascript)   # raises = refuse
+    if info.get("found") is not True:
+        raise CalendarShareError(f"calendar {cal_name!r} not found — refusing act-first write")
+    if info.get("writable") is not True:
+        raise CalendarShareError(f"calendar {cal_name!r} is not writable — refusing act-first write")
+    if info.get("ambiguous") is not False:
+        raise CalendarShareError(
+            f"calendar {cal_name!r} is ambiguous (duplicate title) — refusing act-first write")
+    if info.get("shared") is not False:
+        raise CalendarShareError(f"calendar {cal_name!r} is shared — refusing act-first write")
+    if info.get("shared_signal") != "none":
+        raise CalendarShareError(
+            "calendar %r has shared signal %r — refusing act-first write"
+            % (cal_name, info.get("shared_signal")))
+    allow = _private_allowlist()
+    if allow and (cal_name or "").strip().casefold() not in allow:
+        raise CalendarShareError(
+            f"calendar {cal_name!r} not in CABINET_CAL_PRIVATE allowlist — refusing act-first write")

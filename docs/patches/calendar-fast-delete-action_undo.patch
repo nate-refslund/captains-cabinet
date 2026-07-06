@@ -1,0 +1,72 @@
+GERMLINE PATCH — framework/frontdoor/action_undo.py
+Fast EventKit delete-by-identifier reverse (helper-first, AppleScript fallback).
+Only _inv_calendar_delete changes. _calendar_delete_script is KEPT (it is now the
+proven fallback). No other symbol changes. Apply during a germline unlock window.
+
+--- a/framework/frontdoor/action_undo.py
++++ b/framework/frontdoor/action_undo.py
+@@ def _inv_calendar_delete(args: dict, *, monday_post: Callable = None,
+ def _inv_calendar_delete(args: dict, *, monday_post: Callable = None,
+                          osascript: Callable, **_) -> Dict[str, Any]:
+-    """Reverse a calendar event: delete by UID in the named calendar. Empty
+-    uid/calendar (a crash row) is a safe no-op."""
+-    uid = args.get("uid")
+-    cal = args.get("calendar")
+-    if not uid or not cal:
+-        return {"ok": True, "skipped": "no uid/calendar (crash/unexecuted row) — nothing to reverse"}
+-    res = osascript(["osascript", "-e", _calendar_delete_script(), str(cal), str(uid)])
+-    if "ok" in (res or ""):
+-        return {"ok": True, "detail": res}
+-    return {"ok": False, "error": "calendar delete returned " + repr(res)}
++    """Reverse a calendar event: delete by UID in the named calendar. Empty
++    uid/calendar (a crash row) is a safe no-op.
++
++    FAST PATH — the signed EventKit helper's ``delete`` subcommand
++    (calendarItemExternalIdentifier lookup, scoped to the named calendar +
++    removeEvent(commit:true) + a post-delete re-query that CONFIRMS the event is
++    gone; exit 0 ONLY on a confirmed removal, <0.1s). The non-germline invoker
++    ``calendar_delete.delete_event`` owns helper-path resolution and the
++    confirmed-only contract, so this germline body stays a thin dispatcher.
++
++    FALLBACK — the proven AppleScript delete-by-uid (``_calendar_delete_script``,
++    a Calendar.app ``whose uid is`` scan, 14-45s). It keys on the SAME uid space
++    the writer stored (``uid of newEvent``), whereas the fast path relies on the
++    UNPROVEN uid == calendarItemExternalIdentifier equality — so ANY helper
++    uncertainty (0-match, denied/write-only, absent binary, unconfirmed, garbled)
++    MUST degrade to this authoritative path, never silently no-op.
++
++    SAFETY-CRITICAL: ``ok:True`` is returned ONLY on a CONFIRMED delete (helper
++    confirmation JSON, or AppleScript ``ok`` — the latter raising loudly when
++    Automation is denied). If BOTH paths fail, the reverse returns ok:False →
++    ``_reverse_rows`` journals reversal_failed + manual_cleanup; it NEVER claims
++    a delete it did not confirm."""
++    uid = args.get("uid")
++    cal = args.get("calendar")
++    if not uid or not cal:
++        return {"ok": True, "skipped": "no uid/calendar (crash/unexecuted row) — nothing to reverse"}
++    # FAST PATH: confirmed EventKit delete via the signed helper. Lazy import
++    # (no load-time cycle: calendar_delete -> calendar_read -> stdlib only). A
++    # CalendarDeleteError means the fast path could not CONFIRM — fall through.
++    from framework.frontdoor import calendar_delete
++    try:
++        fast = calendar_delete.delete_event(str(cal), str(uid), runner=osascript)
++        return {"ok": True, "detail": fast}
++    except calendar_delete.CalendarDeleteError:
++        pass                       # degrade to the authoritative AppleScript path
++    # FALLBACK: AppleScript delete-by-uid (authoritative for the stored uid;
++    # denied Automation raises out of osascript → not "ok" → ok:False).
++    res = osascript(["osascript", "-e", _calendar_delete_script(), str(cal), str(uid)])
++    if "ok" in (res or ""):
++        return {"ok": True, "detail": res}
++    return {"ok": False, "error": "calendar delete returned " + repr(res)}
+
+NOTES FOR THE APPLIER
+- INVERSE_OPS["calendar_delete_by_uid"] = _inv_calendar_delete is UNCHANGED.
+- inverse_for(reminder_create, calendar) still emits op calendar_delete_by_uid
+  with args {uid, calendar} — UNCHANGED.
+- _calendar_delete_script() is retained verbatim (now the fallback).
+- Depends on the non-germline additions landing in the SAME change:
+  * framework/frontdoor/calendar_delete.py (new invoker + CalendarDeleteError)
+  * framework/frontdoor/calendar_read.py  (new public helper_path() alias)
+  * framework/frontdoor/calread_helper/calread.swift  (new `delete` subcommand)
+    rebuilt+re-signed once (one Calendar re-grant — batch with all helper changes).

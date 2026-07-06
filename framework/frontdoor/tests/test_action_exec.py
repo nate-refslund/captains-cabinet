@@ -9,6 +9,17 @@ import pytest
 from framework.frontdoor import action_exec as ax
 from framework.frontdoor import action_undo as au
 
+# A clean private+writable calinfo report — what the signed helper's `calinfo`
+# subcommand returns for the Captain's own calendar (Home). The F1 real-sharees
+# pre-write gate (germline patch docs/proposals/germline-calendar-followups-
+# 2026-07-06.md) calls the helper with cmd[1]=="calinfo" on the act-first path;
+# these mocks answer it so the gate clears and the test exercises its real intent.
+# This branch is INERT until that germline patch lands (today's action_exec never
+# issues a calinfo call), so pre-staging it keeps the suite green in both states.
+_CLEAN_CALINFO = ('{"calendar":"Home","found":true,"ambiguous":false,'
+                  '"writable":true,"shared":false,"shared_signal":"none",'
+                  '"type":"calDAV"}')
+
 
 @pytest.fixture(autouse=True)
 def _hermetic_undo(tmp_path, monkeypatch):
@@ -467,6 +478,8 @@ def test_act_first_calendar_lands_on_configured_home(monkeypatch):
     def osa(cmd):
         if len(cmd) > 1 and cmd[1] == "read":
             return "[]"                       # double-book gather: no conflict
+        if len(cmd) > 1 and cmd[1] == "calinfo":
+            return _CLEAN_CALINFO             # F1 gate: Home is private+writable
         seen["cmd"] = cmd
         return "ok:Home:U1"
     r = ax.deliver_action(
@@ -486,6 +499,8 @@ def test_act_first_calendar_refuses_double_book(monkeypatch):
     monkeypatch.setenv("ACTION_LANE_CALENDAR", "Home")
     monkeypatch.setattr(ax, "_load_act_first_surfaces", lambda: _surfaces())
     def osa(cmd):
+        if len(cmd) > 1 and cmd[1] == "calinfo":              # F1 gate: clear the calendar first
+            return _CLEAN_CALINFO
         if len(cmd) > 1 and cmd[1] == "read":                 # the double-book gather (helper)
             return ('[{"calendar":"Home","start":"2026-07-06T09:15:00",'
                     '"end":"2026-07-06T09:45:00","summary":"existing mtg"}]')
@@ -506,6 +521,8 @@ def test_act_first_calendar_failclosed_on_gather_read_error(monkeypatch):
     monkeypatch.setenv("ACTION_LANE_CALENDAR", "Home")
     monkeypatch.setattr(ax, "_load_act_first_surfaces", lambda: _surfaces())
     def osa(cmd):
+        if len(cmd) > 1 and cmd[1] == "calinfo":              # F1 gate: clear the calendar first
+            return _CLEAN_CALINFO
         if len(cmd) > 1 and cmd[1] == "read":                 # the double-book gather (helper)
             raise CalendarReadError("calendar unreadable")
         return "ok:Home:U1"
