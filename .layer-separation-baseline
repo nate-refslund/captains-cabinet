@@ -106,5 +106,3 @@ framework/missions/tests/test_supervisor_standing.py:FRAMEWORK_PATH_INSTANCE
 # are excluded by the rule (the seam NAMES the Protocol; the adapter names
 # screenpipe). GROWING this set is forbidden — a NEW screenpipe coupling is
 # fixed by routing through get_source(), not by widening the baseline.
-framework/acting/run_action_lane.py:FRAMEWORK_PATH_SCREENPIPE
-framework/acting/run_draft_lane.py:FRAMEWORK_PATH_SCREENPIPE

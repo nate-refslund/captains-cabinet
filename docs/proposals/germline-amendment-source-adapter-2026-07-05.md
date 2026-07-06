@@ -121,15 +121,19 @@ files (they carry no screenpipe path literal after the reparent).
 
 On **"apply source-adapter"**:
 
-1. **Unlock** the germline for these two files
-   (`cabinet/scripts/germline-lock.sh unlock` per the standing ritual).
-2. **Apply** the two-file reparent from `feat/source-adapter-p2` (either merge
-   the branch or apply just these two files' diff since `5e79138d`).
+1. **Unlock** the germline for all three files
+   (`cabinet/scripts/germline-lock.sh unlock` per the standing ritual —
+   `run_action_lane.py` is germline too, so unlocking only the two frontdoor
+   files would fail the merge when it writes the acting file).
+2. **Apply** the three-file reparent from `feat/source-adapter-p2` by **merging
+   the branch** (do not cherry-pick a subset — `run_action_lane.py`'s
+   sensing-seam migration is coupled to the non-germline `lane_dedup.py` +
+   `framework/sources` seam that only the full merge carries).
 3. **Re-lock** (`cabinet/scripts/germline-lock.sh lock`).
-4. **Verify:** `python3.12 -m pytest framework/frontdoor/tests -q` green;
-   `bash cabinet/scripts/check-layer-separation.sh` green; the reparented files
-   import + run byte-identically (Monday credential load + the `0600` perms
-   finding resolve the same path as before).
+4. **Verify:** `python3.12 -m pytest framework/frontdoor/tests framework/acting/tests -q`
+   green; `bash cabinet/scripts/check-layer-separation.sh` green; the reparented
+   files import + run byte-identically (Monday credential load, the `0600` perms
+   finding, and `run_action_lane`'s `VAULT`/`.env` resolve the same paths as before).
 
 ## §6 · Concurrent-germline-agent conflict flag ⚠️
 

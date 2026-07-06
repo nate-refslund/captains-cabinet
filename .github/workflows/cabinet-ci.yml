@@ -539,9 +539,8 @@ jobs:
         # CORE subset. Data-dependent adapter tests (the Flavor-A vault/brain
         # surface, the retrodiction scoring modules) are intentionally excluded:
         # this proves the null path is import-clean + crash-free, NOT that
-        # vault-backed tests pass under null. NOTE (SRC-5 / P2-FLIP): the static
-        # no-screenpipe ratchet stays RED until the acting-lane SRC-4 PATH reparent
-        # (run_action_lane + run_draft_lane → env.vault_dir()/shared_env_path())
-        # lands — the honest cross-lane signal that the last two couplers are not
-        # yet migrated; it goes green the moment that reparent is present.
+        # vault-backed tests pass under null. The flip is COMPLETE: the static
+        # no-screenpipe ratchet allowlist is EMPTY and green (run_action_lane +
+        # run_draft_lane reparented to env.vault_dir()/shared_env_path()); a NEW
+        # screenpipe import/path anywhere in framework/** is now CI-red.
         run: python -m pytest framework/sources framework/tests -q

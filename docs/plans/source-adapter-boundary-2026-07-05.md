@@ -426,16 +426,15 @@ Tier-1/Tier-2 caller off screenpipe and FLIPPED the ratchets:
 `.layer-separation-baseline`; the `clean-room-source` CI job proves framework
 CORE imports + runs with `sources.yml` absent and `~/.screenpipe` unreadable
 (`get_source()`→`NullPersonalSource`); and golden eval
-`memory/golden-evals/eval-021-source-boundary.md` pins all of it. The ONE
-residual is the acting HOT-lane PATH reparent (`run_action_lane.py` +
-`run_draft_lane.py` → `framework.env.vault_dir()` / `shared_env_path()`), owned
-by the acting lane under SRC-4 (P2-ACT) behind its own draft-lane byte-identity
-test gate — a subtle case difference (the `"Obsidian"` literal vs
-`platform.yml`'s `~/obsidian`, identical only on macOS's case-insensitive FS) is
-exactly why that reparent stays with the lane that owns the live draft loop.
-Until it lands, the static ratchet + the clean-room job flag exactly those two
-files — the honest cross-lane signal, NEVER a re-allowlist candidate; both go
-fully green the moment the reparent is present.
+`memory/golden-evals/eval-021-source-boundary.md` pins all of it. The acting
+HOT-lane PATH reparent (`run_action_lane.py` + `run_draft_lane.py` →
+`framework.env.vault_dir()` / `shared_env_path()`) **is DONE** (integrator, at
+apply time — `run_draft_lane`'s vestigial screenpipe sys.path insert removed;
+`run_action_lane`'s `VAULT` → `vault_dir()` and `_load_env` `.env` →
+`shared_env_path()`, byte-identical on macOS's case-insensitive FS). The static
+ratchet allowlist is now **EMPTY** and green, the clean-room job passes, and
+`framework/**` names screenpipe nowhere — PASS 2 is fully realized and merged to
+live (`4429fbba`).
 
 ---
 
