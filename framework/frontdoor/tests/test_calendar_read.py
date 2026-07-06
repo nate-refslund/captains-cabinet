@@ -317,6 +317,56 @@ def test_default_runner_reads_real_helper_stdout(monkeypatch):
         os.unlink(stub.name)
 
 
+# --- calendar exclude list (CABINET_CAL_EXCLUDE) ------------------------------
+
+def test_exclude_drops_named_calendar(monkeypatch):
+    # A partner's shared work calendar the Captain can SEE but does not own must
+    # not count as a conflict on the Captain's time.
+    monkeypatch.setenv("CABINET_CAL_EXCLUDE", "Solveig's arbejde - Dyrenes Beskyttelse")
+    stdout = _json_out([
+        _rec("Home", "2026-07-06T09:15:00", "2026-07-06T09:45:00", "mine"),
+        _rec("Solveig's arbejde - Dyrenes Beskyttelse",
+             "2026-07-06T09:15:00", "2026-07-06T09:45:00", "hers"),
+    ])
+    hits = cr.read_events("2026-07-06T09:00:00", "2026-07-06T10:00:00",
+                          osascript=_fake_runner(stdout))
+    assert [e["summary"] for e in hits] == ["mine"]
+
+
+def test_exclude_unset_includes_all_calendars(monkeypatch):
+    monkeypatch.delenv("CABINET_CAL_EXCLUDE", raising=False)
+    stdout = _json_out([
+        _rec("Home", "2026-07-06T09:15:00", "2026-07-06T09:45:00", "mine"),
+        _rec("Solveig's arbejde - Dyrenes Beskyttelse",
+             "2026-07-06T09:15:00", "2026-07-06T09:45:00", "hers"),
+    ])
+    hits = cr.read_events("2026-07-06T09:00:00", "2026-07-06T10:00:00",
+                          osascript=_fake_runner(stdout))
+    assert len(hits) == 2  # default: ALL calendars count (safe for a conflict guard)
+
+
+def test_exclude_multiple_case_and_space_insensitive(monkeypatch):
+    monkeypatch.setenv("CABINET_CAL_EXCLUDE", "  work ,  FAMILY  ")
+    stdout = _json_out([
+        _rec("Home", "2026-07-06T09:15:00", "2026-07-06T09:45:00", "keep"),
+        _rec("Work", "2026-07-06T09:15:00", "2026-07-06T09:45:00", "drop1"),
+        _rec("Family", "2026-07-06T09:15:00", "2026-07-06T09:45:00", "drop2"),
+    ])
+    hits = cr.read_events("2026-07-06T09:00:00", "2026-07-06T10:00:00",
+                          osascript=_fake_runner(stdout))
+    assert [e["summary"] for e in hits] == ["keep"]
+
+
+def test_exclude_typo_does_not_over_exclude(monkeypatch):
+    # A name that matches nothing excludes nothing — never silently drops a real
+    # calendar; fail-safe toward INCLUDING conflicts.
+    monkeypatch.setenv("CABINET_CAL_EXCLUDE", "Nonexistent Cal")
+    stdout = _json_out([_rec("Home", "2026-07-06T09:15:00", "2026-07-06T09:45:00", "mine")])
+    hits = cr.read_events("2026-07-06T09:00:00", "2026-07-06T10:00:00",
+                          osascript=_fake_runner(stdout))
+    assert [e["summary"] for e in hits] == ["mine"]
+
+
 # --- event_window / conflicts_for_due (B2 block-window, parity with the write) --
 
 def test_event_window_timed():

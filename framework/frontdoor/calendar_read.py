@@ -81,6 +81,13 @@ _HELPER_BASENAME = "cabinet-calread"
 # The ONLY subcommand this read-only module may ever invoke on the helper.
 _READ_SUBCOMMAND = "read"
 
+# Calendar names the double-book gather IGNORES (comma-separated in
+# CABINET_CAL_EXCLUDE) — a calendar the Captain can SEE but does NOT own (a
+# partner's work calendar, a subscribed team calendar) must not block the
+# Captain's time. Unset → exclude nothing (all calendars count — the safe default
+# for a conflict guard). Instance policy, not framework default.
+_EXCLUDE_ENV = "CABINET_CAL_EXCLUDE"
+
 
 class CalendarReadError(RuntimeError):
     """The calendar read could not be completed (helper missing/non-executable,
@@ -107,6 +114,17 @@ def _helper_path() -> str:
     if env:
         return env
     return str(_repo_root() / "bin" / _HELPER_BASENAME)
+
+
+def _excluded_calendars() -> set:
+    """Calendar names (normalized: stripped + casefolded) the double-book gather
+    ignores, from CABINET_CAL_EXCLUDE (comma-separated). Empty/unset → an empty
+    set (exclude nothing). This is instance policy — which calendars are the
+    Captain's OWN commitments; a partner/subscribed calendar the Captain can see
+    but does not own goes here so its events never count as a conflict. A typo'd
+    name simply doesn't match (no crash, no silent over-exclusion of a real one)."""
+    raw = os.environ.get(_EXCLUDE_ENV, "") or ""
+    return {name.strip().casefold() for name in raw.split(",") if name.strip()}
 
 
 def _default_runner(cmd: list) -> str:
@@ -278,6 +296,12 @@ def read_events(start_iso: str, end_iso: str,
         raise CalendarReadError(
             f"calendar read failed ({type(e).__name__}: {e})") from e
     events = _parse_events(out or "")
+    excluded = _excluded_calendars()
+    if excluded:
+        # Drop calendars the Captain can see but does not own (CABINET_CAL_EXCLUDE)
+        # BEFORE the overlap test, so a partner/subscribed calendar never conflicts.
+        events = [e for e in events
+                  if (e.get("calendar") or "").strip().casefold() not in excluded]
     return overlaps(ws, we, events)
 
 
