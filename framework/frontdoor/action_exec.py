@@ -968,8 +968,15 @@ def _default_osascript(cmd: list) -> str:
     heavy calendar read) FAILS CLOSED — load-bearing for the B2 double-book gather,
     which must never read '' → 'no conflict' → double-book. The write templates'
     own ``err:`` returns exit 0, so they still flow through each caller's
-    ``"ok" not in res`` check. Mirrors calendar_read._default_osascript."""
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    ``"ok" not in res`` check. Mirrors calendar_read._default_osascript.
+
+    Timeout is 120s (not 30s): the proven-correct calendar delete-by-UID reverse
+    (``action_undo._calendar_delete_script``, a ``whose uid is`` scan) runs 14-45s
+    and variable, which overran the old 30s ceiling during the canary's
+    create-then-reverse and false-RED'd it. A genuine hang still RAISES (fail
+    closed) — just with margin. The B2 gather is the signed helper read (<0.1s
+    granted, ~0.1s fail-closed when not), so it never approaches this ceiling."""
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
     if proc.returncode != 0:
         raise RuntimeError(
             f"osascript exited {proc.returncode}: {(proc.stderr or '').strip()[:200]}")
