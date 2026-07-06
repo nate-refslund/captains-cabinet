@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSCalendarsFullAccessUsageDescription</key>
+  <string>The Captain's Cabinet reads your calendar to avoid double-booking the time blocks it creates.</string>
+  <key>NSCalendarsUsageDescription</key>
+  <string>The Captain's Cabinet reads your calendar to avoid double-booking the time blocks it creates.</string>
+  <key>CFBundleIdentifier</key>
+  <string>com.cabinet.calread</string>
+  <key>CFBundleName</key>
+  <string>cabinet-calread</string>
+  <key>CFBundleVersion</key>
+  <string>1</string>
+</dict>
+</plist>

@@ -2,6 +2,11 @@
 cabinet/.env
 .oauth-backup-*.json
 
+# Built Apple Calendar helper binary (arch-specific, signed at install via
+# cabinet/scripts/build-calendar-helper.sh; source lives in
+# framework/frontdoor/calread_helper/)
+/bin/cabinet-calread
+
 # Claude Code auto-memory (per-developer, not part of the framework)
 .claude/memory/
 .claude/scheduled_tasks.lock

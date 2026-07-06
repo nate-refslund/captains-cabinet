@@ -465,6 +465,8 @@ def test_act_first_calendar_lands_on_configured_home(monkeypatch):
     monkeypatch.setattr(ax, "_load_act_first_surfaces", lambda: _surfaces())
     seen = {}
     def osa(cmd):
+        if len(cmd) > 1 and cmd[1] == "read":
+            return "[]"                       # double-book gather: no conflict
         seen["cmd"] = cmd
         return "ok:Home:U1"
     r = ax.deliver_action(
@@ -479,14 +481,14 @@ def test_act_first_calendar_lands_on_configured_home(monkeypatch):
 def test_act_first_calendar_refuses_double_book(monkeypatch):
     """[B2] An act-first block overlapping an existing event is REFUSED (no write)
     — the mandatory gather-before-block. The gather + write share the injected
-    osascript; the READ script returns an overlapping event."""
-    from framework.frontdoor.calendar_read import CALENDAR_READ_SCRIPT
+    runner; the read helper (cmd[1]=='read') returns an overlapping event as JSON."""
     monkeypatch.delenv("ACTION_LANE_REMINDER_BACKEND", raising=False)
     monkeypatch.setenv("ACTION_LANE_CALENDAR", "Home")
     monkeypatch.setattr(ax, "_load_act_first_surfaces", lambda: _surfaces())
     def osa(cmd):
-        if len(cmd) > 2 and cmd[2] == CALENDAR_READ_SCRIPT:   # the double-book gather
-            return "Home\x1f2026-07-06T09:15:00\x1f2026-07-06T09:45:00\x1fexisting mtg\x1e"
+        if len(cmd) > 1 and cmd[1] == "read":                 # the double-book gather (helper)
+            return ('[{"calendar":"Home","start":"2026-07-06T09:15:00",'
+                    '"end":"2026-07-06T09:45:00","summary":"existing mtg"}]')
         return "ok:Home:U1"                                   # the write (should not run)
     r = ax.deliver_action(
         "pc3", act_first=True,
@@ -499,12 +501,12 @@ def test_act_first_calendar_refuses_double_book(monkeypatch):
 def test_act_first_calendar_failclosed_on_gather_read_error(monkeypatch):
     """[B2] If the double-book gather cannot read the calendar, the act-first
     write FAILS CLOSED (no write) — unknown conflict state must not auto-write."""
-    from framework.frontdoor.calendar_read import CALENDAR_READ_SCRIPT, CalendarReadError
+    from framework.frontdoor.calendar_read import CalendarReadError
     monkeypatch.delenv("ACTION_LANE_REMINDER_BACKEND", raising=False)
     monkeypatch.setenv("ACTION_LANE_CALENDAR", "Home")
     monkeypatch.setattr(ax, "_load_act_first_surfaces", lambda: _surfaces())
     def osa(cmd):
-        if len(cmd) > 2 and cmd[2] == CALENDAR_READ_SCRIPT:
+        if len(cmd) > 1 and cmd[1] == "read":                 # the double-book gather (helper)
             raise CalendarReadError("calendar unreadable")
         return "ok:Home:U1"
     r = ax.deliver_action(
@@ -942,7 +944,8 @@ def test_calendar_empty_uid_fails_act_first_too(monkeypatch):
         "pju2", act_first=True,
         redis_get=_ks_getter([{"kind": "reminder_create",
                                "payload": {"title": "t", "due_iso": "2026-07-06T09:00"}}]),
-        monday_post=MondaySpy(), osascript=lambda c: "ok:Cabinet",
+        monday_post=MondaySpy(),
+        osascript=lambda c: "[]" if (len(c) > 1 and c[1] == "read") else "ok:Cabinet",
         redis_incr=lambda k, t: None)
     assert r["ok"] is False and "no event UID" in r["error"]
 

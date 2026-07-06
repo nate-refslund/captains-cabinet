@@ -48,6 +48,11 @@ class FakeMonday:
 
 
 def _fake_osa(cmd):
+    # The act-first calendar write now runs a double-book gather first
+    # (calendar_read helper: `<helper> read <start> <end>`); return a valid empty
+    # JSON array = no conflict, so the synthetic canary write proceeds.
+    if len(cmd) > 1 and cmd[1] == "read":
+        return "[]"
     src = cmd[2] if len(cmd) > 2 else ""
     if "make new event" in src:
         return "ok:Cabinet:UID-CANARY"
