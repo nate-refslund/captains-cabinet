@@ -91,3 +91,37 @@ framework/learning/tests/test_sov8_loop_and_gates.py:FRAMEWORK_PATH_INSTANCE
 framework/missions/standing_pull.py:FRAMEWORK_PATH_INSTANCE
 framework/missions/tests/test_standing_pull.py:FRAMEWORK_PATH_INSTANCE
 framework/missions/tests/test_supervisor_standing.py:FRAMEWORK_PATH_INSTANCE
+
+# 2026-07-06 — SRC-5 source-adapter SEED (+19 lines / 14 files). NOT new
+# violations: this is the initial snapshot of the PRE-EXISTING screenpipe
+# couplers for the two new rule classes (FRAMEWORK_IMPORTS_SCREENPIPE +
+# FRAMEWORK_PATH_SCREENPIPE), frozen so the surface can only SHRINK as the
+# source-adapter migration (docs/plans/source-adapter-boundary-2026-07-05.md §5)
+# reroutes each caller through framework.sources.get_source() / re-homes it to
+# instance/flavor-a. Every entry maps 1:1 to an entry in the strong sibling
+# ratchet framework/tests/test_no_screenpipe_in_core.py::_ALLOWLISTED_FILES
+# (14 files); each SRC-2..6 migration deletes the corresponding line here (via
+# --update-baseline after the cleanup PR) AND the allowlist entry there. Target
+# is EMPTY: framework/** names screenpipe nowhere. tests/ + the sources/ seam
+# are excluded by the rule (the seam NAMES the Protocol; the adapter names
+# screenpipe). GROWING this set is forbidden — a NEW screenpipe coupling is
+# fixed by routing through get_source(), not by widening the baseline.
+framework/acting/run_action_lane.py:FRAMEWORK_PATH_SCREENPIPE
+framework/acting/run_draft_lane.py:FRAMEWORK_PATH_SCREENPIPE
+framework/acting/screenpipe_adapter.py:FRAMEWORK_IMPORTS_SCREENPIPE
+framework/acting/screenpipe_adapter.py:FRAMEWORK_PATH_SCREENPIPE
+framework/fidelity/_vault_gather_runner.py:FRAMEWORK_IMPORTS_SCREENPIPE
+framework/fidelity/_vault_gather_runner.py:FRAMEWORK_PATH_SCREENPIPE
+framework/fidelity/benchmark.py:FRAMEWORK_PATH_SCREENPIPE
+framework/fidelity/decision_cell.py:FRAMEWORK_PATH_SCREENPIPE
+framework/fidelity/officer_runner.py:FRAMEWORK_IMPORTS_SCREENPIPE
+framework/fidelity/officer_runner.py:FRAMEWORK_PATH_SCREENPIPE
+framework/fidelity/retro.py:FRAMEWORK_PATH_SCREENPIPE
+framework/fidelity/run_e2e_smoke.py:FRAMEWORK_PATH_SCREENPIPE
+framework/frontdoor/actfirst_canary.py:FRAMEWORK_PATH_SCREENPIPE
+framework/frontdoor/action_exec.py:FRAMEWORK_PATH_SCREENPIPE
+framework/frontdoor/chair_drafts.py:FRAMEWORK_IMPORTS_SCREENPIPE
+framework/frontdoor/chair_drafts.py:FRAMEWORK_PATH_SCREENPIPE
+framework/frontdoor/daily_recap.py:FRAMEWORK_IMPORTS_SCREENPIPE
+framework/frontdoor/daily_recap.py:FRAMEWORK_PATH_SCREENPIPE
+framework/watchdog/registry.py:FRAMEWORK_PATH_SCREENPIPE

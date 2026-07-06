@@ -1,0 +1,28 @@
+# instance/config/sources.yml — the personal-sensing SOURCE binding (example).
+#
+# This file selects which PersonalSource adapter framework CORE observes the
+# captain's world through. Copy it to `instance/config/sources.yml` and edit the
+# `adapter:` line to bind a real source. It is DATA the instance owns —
+# framework/ never names an adapter statically; the resolver
+# (`framework.sources.get_source()`) reads THIS file and dynamically imports it.
+#
+# ── Contract ──────────────────────────────────────────────────────────────────
+#   adapter: "<module>:<Class>"
+#     <module>  a Python module importable once `instance/flavor-a/` is on
+#               sys.path (the resolver adds that dir). The module lives under the
+#               instance/flavor-a tree; a module resolving OUTSIDE it is refused.
+#     <Class>   a zero-arg class in that module implementing the
+#               framework.sources.base.PersonalSource Protocol.
+#
+# ── Fail-closed default ───────────────────────────────────────────────────────
+#   ABSENT / malformed / unparseable / unimportable  ⇒  NullPersonalSource:
+#   every gather returns thin honest empties, read_note raises, nothing crashes
+#   and no other deployment's data can leak. A clean-room / Flavor-B box simply
+#   ships no sources.yml (or binds its own org source) and framework runs with
+#   no ~/.screenpipe, no vault.
+#
+# ── Flavor-A binding (this deployment, once SRC-1 lands the adapter) ───────────
+# The screenpipe brain adapter — the re-homed BrainAdapter body + acting surface
+# that owns ALL screenpipe imports and paths (spec §4.5). Uncomment to bind:
+#
+# adapter: flavor_a.screenpipe_source:ScreenpipeSource

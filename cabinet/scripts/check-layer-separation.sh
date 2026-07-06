@@ -22,6 +22,15 @@
 #     - String literals `"instance"` or `'instance'` or `"presets"` /
 #       `'presets'` used in `Path(...) / "instance" / ...` style runtime
 #       coupling  →  violation.
+#     - (SRC-5, source-adapter seam) `import`/`from` of a screenpipe `_shared`
+#       lib (draft_lib | commitments_lib | context_lib | me_signal | sp_lib |
+#       product_ops_lib | email_lib | teams_graph_lib | agent_reasoning)  →
+#       violation; and a runtime `~/.screenpipe` / `".screenpipe"` /
+#       `screenpipe-brain` / `OBSIDIAN_VAULT` PATH literal  →  violation.
+#       framework CORE reaches the captain's estate only through
+#       framework.sources.get_source(); the adapter naming screenpipe lives in
+#       instance/flavor-a/. tests/ + the sources/ seam are excluded (strong
+#       sibling: framework/tests/test_no_screenpipe_in_core.py).
 #
 #   presets/**/*.py
 #     - `import instance` / `from instance ...`  →  violation.
@@ -45,6 +54,7 @@
 # where <rule_id> is one of:
 #   FRAMEWORK_IMPORTS_INSTANCE, FRAMEWORK_IMPORTS_PRESETS,
 #   FRAMEWORK_PATH_INSTANCE,    FRAMEWORK_PATH_PRESETS,
+#   FRAMEWORK_IMPORTS_SCREENPIPE, FRAMEWORK_PATH_SCREENPIPE,
 #   PRESETS_IMPORTS_INSTANCE
 # Line numbers are intentionally omitted so trivial file edits don't churn
 # the baseline. The CI signal is "this file violates this rule" — once.
@@ -132,6 +142,40 @@ collect_violations() {
           if (stripped ~ /^"""/ || stripped ~ /^'\''\'\''\'\''/) next;
           if (src ~ /help[[:space:]]*=/) next;
           print path ":FRAMEWORK_PATH_PRESETS";
+        }' \
+      >> "$out"
+
+    # Rule: framework imports of screenpipe `_shared` libs (SRC-5 — clean-room
+    # SOURCE ratchet). A clean-room / Flavor-B box has no ~/.screenpipe, so
+    # framework CORE must reach the captain's estate through
+    # framework.sources.get_source(), never a `_shared` lib. tests/ and the
+    # sources/ seam (which NAMES the Protocol + describes the Flavor-A mapping)
+    # are excluded, matching framework/tests/test_no_screenpipe_in_core.py. The
+    # baseline shrinks to empty as SRC-2..6 reroute each caller through the seam.
+    grep -rnE '^[[:space:]]*(import|from)[[:space:]]+(draft_lib|commitments_lib|context_lib|me_signal|sp_lib|product_ops_lib|email_lib|teams_graph_lib|agent_reasoning)([[:space:]\.]|$)' \
+         framework --include="*.py" --exclude-dir=tests --exclude-dir=sources \
+         --exclude='test_*.py' --exclude='*_test.py' 2>/dev/null \
+      | awk -F: '{ path=$1; sub(/^[[:space:]]*/, "", $3); if ($3 !~ /^#/) print path ":FRAMEWORK_IMPORTS_SCREENPIPE" }' \
+      >> "$out"
+
+    # Rule: framework runtime screenpipe PATH literals (SRC-5) — a ~/.screenpipe
+    # or ".screenpipe" Path component, the screenpipe-brain vault dir, or the
+    # OBSIDIAN_VAULT env key. Quote-anchored ("~/.screenpipe / ".screenpipe) so a
+    # docstring/comment MENTION (the vendoring note in voice_charset.py, the
+    # _shared/.env docstring in probes/runner.py) does not trip; the same
+    # comment/docstring/help= awk filter as the INSTANCE path rule applies too.
+    grep -rnE "([\"'](~/)?\.screenpipe|screenpipe-brain|OBSIDIAN_VAULT)" \
+         framework --include="*.py" --exclude-dir=tests --exclude-dir=sources \
+         --exclude='test_*.py' --exclude='*_test.py' 2>/dev/null \
+      | awk -F: '{
+          path=$1;
+          src="";
+          for (i=3; i<=NF; i++) { src = (i==3 ? $i : src ":" $i) }
+          stripped=src; sub(/^[[:space:]]+/, "", stripped);
+          if (stripped ~ /^#/) next;
+          if (stripped ~ /^"""/ || stripped ~ /^'\''\'\''\'\''/) next;
+          if (src ~ /help[[:space:]]*=/) next;
+          print path ":FRAMEWORK_PATH_SCREENPIPE";
         }' \
       >> "$out"
   fi

@@ -1,0 +1,21 @@
+# instance/config/sources.yml — the LIVE personal-sensing SOURCE binding for THIS
+# deployment (captain Nate, Flavor-A / screenpipe brain).
+#
+# framework.sources.get_source() reads this file, adds `instance/flavor-a` to
+# sys.path, importlib-loads the module named below, instantiates the class, and
+# binds it as the PersonalSource framework CORE observes the captain's world
+# through. The whole binding is DATA the instance owns — framework/ never names
+# an adapter statically. ABSENT / malformed / unimportable ⇒ NullPersonalSource
+# (fail-closed): every gather returns thin honest empties, read_note raises,
+# nothing crashes and no other deployment's data can leak.
+#
+# Contract: adapter: "<module>:<Class>"
+#   <module>  importable once `instance/flavor-a` is on sys.path (the resolver
+#             adds that dir); the module lives INSIDE the instance/flavor-a tree
+#             (a module resolving outside it is refused).
+#   <Class>   a zero-arg class in that module implementing the
+#             framework.sources.base.PersonalSource Protocol.
+#
+# Flavor-A binding: the screenpipe brain adapter (SRC-1) — a thin delegator over
+# today's BrainAdapter + screenpipe_adapter, byte-identical to what runs today.
+adapter: flavor_a.screenpipe_source:ScreenpipeSource

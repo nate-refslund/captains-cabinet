@@ -433,3 +433,66 @@ jobs:
         run: pip install pytest pyyaml
       - name: Clean-room foundation (launcher-agnostic ratchet + runtime proof)
         run: python -m pytest framework/tests/test_no_launcher_hardcode.py framework/tests/test_clean_room.py -q
+
+  # SRC-5 (2026-07-06): the clean-room SOURCE gate — framework/ must import and
+  # RUN with NO personal source configured (instance/config/sources.yml absent ⇒
+  # framework.sources.get_source() → NullPersonalSource), the real "another
+  # captain / a Flavor-B clean-room box can run it" proof. Sibling to
+  # clean-room-foundation (launcher NAME); its own job so a null-source
+  # regression is a distinct, unmissable signal. It does NOT assert data-
+  # dependent tests pass under the null source — only that the null path IMPORTS
+  # and RUNS without crash (no ~/.screenpipe, no vault, no ImportError). Paired
+  # with the static ratchet framework/tests/test_no_screenpipe_in_core.py (which
+  # proves framework/** NAMES no screenpipe) — this proves it RUNS without one.
+  clean-room-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: pip install pytest pyyaml
+      - name: Simulate a clean-room / Flavor-B box (no source binding, no vault)
+        # The live instance ships instance/config/sources.yml (binds the Flavor-A
+        # screenpipe adapter). A clean-room box has none ⇒ the resolver must
+        # fail-closed to NullPersonalSource. Assert ~/.screenpipe is truly absent
+        # on the runner so the proof is honest (no accidental real source).
+        run: |
+          rm -f instance/config/sources.yml
+          test ! -e "$HOME/.screenpipe" || { echo "unexpected ~/.screenpipe present on runner"; exit 1; }
+      - name: Null personal-source imports + runs without crash
+        # Import framework.sources on a box with no adapter binding and prove
+        # get_source() returns NullPersonalSource and every read method runs
+        # (thin honest empties; read_note raises FileNotFoundError) + the null
+        # dispatch no-ops. No ImportError, no stack trace, no screenpipe/vault dep.
+        run: |
+          python - <<'PY'
+          import framework.sources as S
+          src = S.get_source()
+          assert type(src).__name__ == "NullPersonalSource", type(src).__name__
+          assert src.available() is False
+          assert src.search("anyone") == {"hits": [], "topic_terms": None}
+          assert src.find_reply_candidates() == []
+          assert src.person_intel("x") == "" and src.voice_profile() == ""
+          assert src.model_patterns() == "" and src.open_commitments("owed_by") == []
+          assert src.drafting_lessons("2026-01-01T00:00:00Z") == ""
+          raised = False
+          try:
+              src.read_note("anything")
+          except FileNotFoundError:
+              raised = True
+          assert raised, "read_note must raise FileNotFoundError on the null source"
+          d = S.NullPersonalDispatch()
+          assert d.queue_draft() is None and d.deliver() is None
+          assert d.append_note("x", "y") is None and d.log_reasoning() is None
+          print("OK: clean-room null source imports + runs without crash")
+          PY
+      - name: Null-path suite subset (resolver + ratchet — no data dependency)
+        # The resolver/Null tests + the static no-screenpipe ratchet run green
+        # with NO sources.yml present. Data-dependent adapter tests are
+        # intentionally excluded — this proves the null path is import-clean and
+        # crash-free, the "clean-room can run it" contract (NOT that vault-backed
+        # tests pass under null).
+        run: python -m pytest framework/sources framework/tests/test_no_screenpipe_in_core.py -q
