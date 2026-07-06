@@ -122,6 +122,67 @@ def test_stub_adapter_binding_is_loaded(tmp_path):
     assert isinstance(src, PersonalSource)
 
 
+# --- get_dispatch() (the WRITE/actuator sibling resolver, SRC-3) ------------
+def _write_dispatch_stub(adapter_dir: Path, module: str) -> None:
+    """A Protocol-complete stub PersonalDispatch module in the flavor-a dir."""
+    (adapter_dir / (module + ".py")).write_text(textwrap.dedent('''
+        class StubDispatch:
+            IS_STUB = True
+            def queue_draft(self, *a, **k): return None
+            def deliver(self, *a, **k): return {"ok": True, "stub": True}
+            def append_note(self, *a, **k): return None
+            def log_reasoning(self, **k): return None
+            def ensure_signature(self, text, channel): return text
+            def write_daily_note(self, date, content): return {"action": "stub"}
+            def daily_note_path(self, date): return "1-Daily/" + str(date) + ".md"
+    '''), encoding="utf-8")
+
+
+def test_absent_dispatch_key_fails_closed_to_null(tmp_path):
+    """A sources.yml that binds a READ adapter but NO ``dispatch:`` key still
+    fail-closes the WRITE side to NullPersonalDispatch (independent resolvers)."""
+    cfg_dir, _ = _mk_instance(tmp_path)
+    (cfg_dir / "sources.yml").write_text("adapter: x:Y\n", encoding="utf-8")
+    os.environ["CABINET_ROOT"] = str(tmp_path)
+    assert isinstance(src_pkg.get_dispatch(), NullPersonalDispatch)
+
+
+def test_dispatch_stub_binding_is_loaded(tmp_path):
+    cfg_dir, adapter_dir = _mk_instance(tmp_path)
+    _write_dispatch_stub(adapter_dir, "dispstub_bind")
+    (cfg_dir / "sources.yml").write_text(
+        "dispatch: dispstub_bind:StubDispatch\n", encoding="utf-8")
+    os.environ["CABINET_ROOT"] = str(tmp_path)
+    d = src_pkg.get_dispatch()
+    assert getattr(d, "IS_STUB", False) is True
+    assert type(d).__name__ == "StubDispatch"
+    assert d.deliver("x") == {"ok": True, "stub": True}
+    assert isinstance(d, PersonalDispatch)
+
+
+def test_get_dispatch_caches_one_resolution(tmp_path):
+    cfg_dir, adapter_dir = _mk_instance(tmp_path)
+    _write_dispatch_stub(adapter_dir, "dispstub_cache")
+    cfg = cfg_dir / "sources.yml"
+    cfg.write_text("dispatch: dispstub_cache:StubDispatch\n", encoding="utf-8")
+    os.environ["CABINET_ROOT"] = str(tmp_path)
+    first = src_pkg.get_dispatch()
+    assert src_pkg.get_dispatch() is first     # cached identity
+    cfg.unlink()
+    assert src_pkg.get_dispatch() is first     # still cached (no re-resolve)
+
+
+def test_source_and_dispatch_caches_are_independent(tmp_path):
+    """Binding one side must not resolve the other: an adapter-only sources.yml
+    gives a real source but a Null dispatch, and vice versa."""
+    cfg_dir, adapter_dir = _mk_instance(tmp_path)
+    _write_stub(adapter_dir, "src_only")
+    (cfg_dir / "sources.yml").write_text("adapter: src_only:StubSource\n", encoding="utf-8")
+    os.environ["CABINET_ROOT"] = str(tmp_path)
+    assert type(src_pkg.get_source()).__name__ == "StubSource"
+    assert isinstance(src_pkg.get_dispatch(), NullPersonalDispatch)
+
+
 def test_stray_same_named_module_is_refused(tmp_path, monkeypatch):
     """Corridor hardening: a module of the configured name that resolves OUTSIDE
     the instance/flavor-a tree (e.g. shadowed on sys.path) is refused — the

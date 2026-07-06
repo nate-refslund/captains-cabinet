@@ -66,3 +66,27 @@ class NullPersonalDispatch:
 
     def log_reasoning(self, **kw):
         return None
+
+    # --- OUTBOUND PREP + VAULT NOTE WRITE (fail-closed) ---------------------
+    def ensure_signature(self, text: str, channel: str) -> str:
+        # No captain signature configured → return the draft unchanged.
+        return text
+
+    def write_daily_note(self, date: str, content: str) -> dict:
+        # No vault on a clean-room box → skip (never create a stray note).
+        return {"action": "skipped", "path": "", "reason": "no dispatch configured"}
+
+    def daily_note_path(self, date: str) -> str:
+        # A generic, vault-less path (endswith the canonical daily-note leaf so a
+        # dry preview still renders a sensible target on a null deployment).
+        return "1-Daily/" + str(date) + ".md"
+
+    # --- Flavor-A backend accessors (concrete extras, not in the Protocol) --
+    # The daily-recap pipe reaches the captain's board client + synthesis model
+    # through these; a clean-room / Flavor-B box has neither, so they fail-close
+    # (None / "") and the recap degrades to "nothing to recap".
+    def monday(self):
+        return None
+
+    def llm_model(self) -> str:
+        return ""

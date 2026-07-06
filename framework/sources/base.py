@@ -121,3 +121,24 @@ class PersonalDispatch(Protocol):
         """Agent-reasoning-log write (the governance trail). Flavor-A:
         ``agent_reasoning.log(...)``."""
         ...
+
+    # --- OUTBOUND PREP + VAULT NOTE WRITE (the frontdoor egress seam) --------
+    def ensure_signature(self, text: str, channel: str) -> str:
+        """Close an outbound draft with the captain's default signature
+        (idempotent — never double-signs; email only, never a Teams message).
+        Flavor-A: ``draft_lib.ensure_signature``. A deployment with no signature
+        (the null/clean-room dispatch) returns ``text`` unchanged."""
+        ...
+
+    def write_daily_note(self, date: str, content: str) -> dict:
+        """Write the captain's daily note (``1-Daily/<date>.md``) **only when its
+        bytes changed** (sha256 compare — the obsidian-sync hash-match invariant),
+        under the deployment's vault root. Returns
+        ``{"action": written|unchanged|skipped, "path": ...}``. The sole sanctioned
+        full-note write path; a null/clean-room dispatch skips (no vault)."""
+        ...
+
+    def daily_note_path(self, date: str) -> str:
+        """The path the daily note WOULD be written to for ``date`` (for a dry
+        preview — no write). A null/clean-room dispatch returns a generic path."""
+        ...

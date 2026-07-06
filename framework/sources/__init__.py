@@ -1,10 +1,13 @@
-"""framework/sources — ``get_source()``: the bound personal source.
+"""framework/sources — ``get_source()`` / ``get_dispatch()``: the bound seams.
 
-The FOUNDATION resolver for the personal-sensing seam, mirror of
-``env.captain_name()``: it reads the adapter binding from instance config,
-dynamically imports it, caches it, and FAIL-CLOSES to ``NullPersonalSource`` on
-any absence / parse-fail / import-fail. Framework CORE calls ``get_source()``
-and depends only on the ``base.PersonalSource`` Protocol — never on screenpipe.
+The FOUNDATION resolvers for the personal-sensing seam, mirror of
+``env.captain_name()``: each reads its adapter binding from instance config,
+dynamically imports it, caches it, and FAIL-CLOSES to the null adapter on any
+absence / parse-fail / import-fail. Framework CORE calls ``get_source()`` (the
+READ side) and ``get_dispatch()`` (the WRITE/actuator side) and depends only on
+the ``base.PersonalSource`` / ``base.PersonalDispatch`` Protocols — never on
+screenpipe. ``sources.yml`` names the READ adapter under ``adapter:`` and the
+WRITE adapter under ``dispatch:``; both are DATA the instance owns.
 
 LAYER SEPARATION (the Corridor hard rule — ``check-layer-separation.sh``).
 Framework may not statically import from the instance layer, nor carry a bare
@@ -42,14 +45,15 @@ __all__ = [
     "NullPersonalSource",
     "NullPersonalDispatch",
     "get_source",
+    "get_dispatch",
 ]
 
-# Module-global cache: the bound source is resolved ONCE per process (config
+# Module-global caches: each bound adapter is resolved ONCE per process (config
 # does not change under a running officer; a restart re-reads). ``None`` ⇒ not
-# yet resolved. A resolved value is ALWAYS a PersonalSource (real or Null),
-# never ``None`` — so ``get_source()`` never re-does the work and never returns
-# ``None``.
-_cache = None
+# yet resolved. A resolved value is ALWAYS a real-or-Null adapter, never
+# ``None`` — so the getters never re-do the work and never return ``None``.
+_source_cache = None
+_dispatch_cache = None
 
 
 def _cabinet_root() -> Path:
@@ -59,17 +63,20 @@ def _cabinet_root() -> Path:
     return Path(os.environ.get("CABINET_ROOT") or str(Path(__file__).resolve().parents[2]))
 
 
-def _load_bound_source():
-    """Resolve + import the configured personal source, or ``None`` to fail-close.
+def _load_bound(config_key):
+    """Resolve + import the adapter named under ``config_key`` in
+    ``instance/config/sources.yml``, or ``None`` to fail-close.
 
-    Reads ``<root>/instance/config/sources.yml`` (a JOINED literal — never a bare
+    Shared by ``get_source()`` (``config_key='adapter'``, the READ side) and
+    ``get_dispatch()`` (``config_key='dispatch'``, the WRITE side). Reads
+    ``<root>/instance/config/sources.yml`` (a JOINED literal — never a bare
     quoted instance token), ``yaml.safe_load`` only, expecting
-    ``adapter: "module:Class"``. Adds ``<root>/instance/flavor-a`` (JOINED
+    ``<config_key>: "module:Class"``. Adds ``<root>/instance/flavor-a`` (JOINED
     literal) to ``sys.path`` and ``importlib.import_module``-loads the
     CONFIG-NAMED module, then instantiates the named class. ANY absence / parse /
-    import / attribute / instantiation error returns ``None`` so ``get_source()``
-    binds ``NullPersonalSource``. Never raises, never leaks — the whole binding
-    is DATA the instance owns."""
+    import / attribute / instantiation error returns ``None`` so the caller binds
+    the null adapter. Never raises, never leaks — the whole binding is DATA the
+    instance owns."""
     try:
         import yaml  # local import: keep the package import-light + pyyaml-optional
     except Exception:
@@ -85,7 +92,7 @@ def _load_bound_source():
             return None
         if not isinstance(data, dict):
             return None
-        adapter = data.get("adapter")
+        adapter = data.get(config_key)
         if not isinstance(adapter, str) or ":" not in adapter:
             return None
         module_name, _, class_name = adapter.partition(":")
@@ -116,27 +123,46 @@ def _load_bound_source():
             return None
         return cls()
     except Exception:
-        # Absolutely nothing escapes: an unexpected error binds the null source.
+        # Absolutely nothing escapes: an unexpected error binds the null adapter.
         return None
 
 
 def get_source() -> PersonalSource:
-    """The bound personal source for this deployment — the FOUNDATION resolver
-    (mirror of ``env.captain_name()``). Reads the adapter binding from
-    ``instance/config/sources.yml``, ``importlib``-loads it, caches it, and
+    """The bound personal SOURCE (read) for this deployment — the FOUNDATION
+    resolver (mirror of ``env.captain_name()``). Reads the ``adapter:`` binding
+    from ``instance/config/sources.yml``, ``importlib``-loads it, caches it, and
     fail-closes to ``NullPersonalSource`` on any absence / parse-fail /
     import-fail. Returns an object satisfying ``base.PersonalSource`` — never
     ``None``."""
-    global _cache
-    if _cache is not None:
-        return _cache
-    loaded = _load_bound_source()
-    _cache = loaded if loaded is not None else NullPersonalSource()
-    return _cache
+    global _source_cache
+    if _source_cache is not None:
+        return _source_cache
+    loaded = _load_bound("adapter")
+    _source_cache = loaded if loaded is not None else NullPersonalSource()
+    return _source_cache
+
+
+def get_dispatch() -> PersonalDispatch:
+    """The bound personal DISPATCH (write / actuator) for this deployment — the
+    sibling of ``get_source()``. Reads the ``dispatch:`` binding from
+    ``instance/config/sources.yml``, ``importlib``-loads it, caches it, and
+    fail-closes to ``NullPersonalDispatch`` on any absence / parse-fail /
+    import-fail. Returns an object satisfying ``base.PersonalDispatch`` — never
+    ``None``. On a clean-room / Flavor-B box (no ``dispatch:`` binding) the null
+    dispatch no-ops every write, so the egress lanes degrade to
+    draft-capture-only, exactly as when ``env.allow_sends()`` is ``False``."""
+    global _dispatch_cache
+    if _dispatch_cache is not None:
+        return _dispatch_cache
+    loaded = _load_bound("dispatch")
+    _dispatch_cache = loaded if loaded is not None else NullPersonalDispatch()
+    return _dispatch_cache
 
 
 def _reset_cache() -> None:
-    """Clear the resolved-source cache (test seam only). The next
-    ``get_source()`` re-resolves from config. Not part of the public contract."""
-    global _cache
-    _cache = None
+    """Clear the resolved-adapter caches (test seam only). The next
+    ``get_source()`` / ``get_dispatch()`` re-resolves from config. Not part of
+    the public contract."""
+    global _source_cache, _dispatch_cache
+    _source_cache = None
+    _dispatch_cache = None

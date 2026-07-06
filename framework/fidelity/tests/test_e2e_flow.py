@@ -82,7 +82,7 @@ def _case() -> Case:
 # ---------------------------------------------------------------------------
 
 class _LeakTrapBrain:
-    def gather_vault(self, handle, topic=None):
+    def search(self, handle, topic=None):
         return {
             "topic_terms": ["lon"],
             "hits": [

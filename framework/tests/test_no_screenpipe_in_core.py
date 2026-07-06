@@ -89,101 +89,68 @@ Violation = Tuple[str, int, str]  # (display_path, line_no, reason)
 
 
 # ===========================================================================
-# THE ALLOWLIST  (repo-relative posix paths).  It may only ever SHRINK.
+# THE ALLOWLIST  (repo-relative posix paths).  EMPTY — the end state.
 # ===========================================================================
 #
-# Each entry is a framework file that STILL couples to screenpipe in PASS 1
-# (shim-first): the seam exists, but this caller has not yet been rerouted
-# through get_source() / re-homed to instance/flavor-a. Every entry carries a
-# justification, a TODO(SRC-n), and the target phase from the source-adapter
-# spec (docs/plans/source-adapter-boundary-2026-07-05.md §5). A self-test
-# (`test_allowlisted_files_still_couple`) re-scans each entry WITHOUT the
-# allowlist and fails if it no longer couples — so a migrated file MUST have its
-# entry deleted (the allowlist may only shrink; the end state is EMPTY).
+# EMPTY — the P2-FLIP end state (SRC-5, 2026-07-06). Every Tier-1/Tier-2 coupler
+# from the §3 census (docs/plans/source-adapter-boundary-2026-07-05.md) has been
+# migrated off framework/: the screenpipe BODIES re-homed to
+# instance/flavor-a/flavor_a/, every state/credential/vault PATH reparented to a
+# framework.env resolver. What moved where (documentation, not entries):
 #
-# A file that only MENTIONS screenpipe in a comment/docstring (Tier-3 INERT:
-# voice_charset.py, probes/runner.py, and post-migration measure_intent.py) is
-# NOT here — the code-portion masker never flags it, so an entry would be a dead
-# hole the self-test rejects. Likewise the indirect importers of the framework
-# `screenpipe_adapter` module (binder_wire, morning_synthesis) are not here:
-# they import a framework module, not a `_shared` lib, so the ratchet correctly
-# does not flag them; their real coupling is screenpipe_adapter.py itself.
-_ALLOWLISTED_FILES: Dict[str, str] = {
-    # --- fidelity: the injectable seam / sidecar that re-homes WITH the adapter
-    "framework/fidelity/officer_runner.py":
-        "DEFINES BrainAdapter (7 methods, lazy context_lib/draft_lib/"
-        "commitments_lib/me_signal + OBSIDIAN_VAULT read); SRC-1's ScreenpipeSource "
-        "shim imports+wraps it, so it stays coupled by construction in pass 1. "
-        "TODO(SRC-1/pass-2): re-home the BrainAdapter body to instance/flavor-a "
-        "(spec §3). target-phase: pass-2 re-home.",
-    "framework/fidelity/_vault_gather_runner.py":
-        "the py3.12 vault-vector-search subprocess sidecar (import context_lib + "
-        "~/.screenpipe/pipes/retrodiction); the adapter, not framework CORE, owns "
-        "this py3.9/3.12 boundary (spec §6). TODO(SRC-1/pass-2): re-home WITH the "
-        "adapter. target-phase: pass-2 re-home.",
-    # --- acting: the HOT draft lane (migrate behind byte-identical, spec §5 P2.3)
-    "framework/acting/screenpipe_adapter.py":
-        "the acting adapter front-end (draft_lib/commitments_lib/product_ops_lib/"
-        "context_lib + ~/.screenpipe paths); becomes the Flavor-A adapter's acting "
-        "surface. TODO(SRC-3): re-home to instance/flavor-a. target-phase: SRC-3 "
-        "acting migration.",
-    "framework/acting/run_action_lane.py":
-        "imports screenpipe_adapter; VAULT=~/Obsidian/screenpipe-brain + "
-        "~/.screenpipe/_shared/.env. TODO(SRC-3): consume get_source() (read) + "
-        "PersonalDispatch (send); VAULT/env → resolver. target-phase: SRC-3.",
-    "framework/acting/run_draft_lane.py":
-        "sys.path.insert of ~/.screenpipe/_shared; imports screenpipe_adapter. "
-        "TODO(SRC-3): consume get_source() (read) + PersonalDispatch (send). "
-        "target-phase: SRC-3.",
-    # --- frontdoor egress: HOTTEST (send libs + obsidian-sync hash-match, spec §6)
-    "framework/frontdoor/chair_drafts.py":
-        "draft_lib (read) + email_lib/teams_graph_lib (send) via ~/.screenpipe/"
-        "_shared. TODO(SRC-3): read via get_source(), send via PersonalDispatch "
-        "(stays allow_sends()-gated). target-phase: SRC-3.",
-    "framework/frontdoor/daily_recap.py":
-        "sp_lib (Monday GraphQL) + commitments_lib; OBSIDIAN_VAULT_PATH daily-note "
-        "write. TODO(SRC-3): read via get_source(), vault WRITE via "
-        "PersonalDispatch.append_note (preserve obsidian-sync byte-identical "
-        "render). target-phase: SRC-3.",
-    # --- Tier-2 config/env reparents (SRC-4)
-    "framework/fidelity/decision_cell.py":
-        "SRC-2 removed the BrainAdapter import; PATH residual remains "
-        "(OBSIDIAN_VAULT_PATH Decisions-corpus dir + ~/.screenpipe/state case "
-        "cache). TODO(SRC-4): vault dir + state path → resolver/config. "
-        "target-phase: SRC-4 (Tier-2 reparent).",
-    "framework/fidelity/benchmark.py":
-        "PATH-only: ~/.screenpipe/state/autonomy_outcomes.jsonl (env-overridable "
-        "CABINET_AUTONOMY_OUTCOMES). TODO(SRC-4): outcomes path → resolver/config. "
-        "target-phase: SRC-4 (Tier-2 reparent).",
-    "framework/fidelity/run_e2e_smoke.py":
-        "PATH-only: ~/.screenpipe/pipes/embeddings/lib.py presence probe. "
-        "TODO(SRC-4): probe via get_source().available(). target-phase: SRC-4 "
-        "(Tier-2 reparent).",
-    "framework/watchdog/registry.py":
-        "PATH-only: SCREENPIPE_STATE_DIR=~/.screenpipe/state (watched dir). "
-        "TODO(SRC-4): watched-target → config; degrades to 'nothing to watch' on "
-        "Flavor-B. target-phase: SRC-4 (Tier-2 reparent).",
-    "framework/frontdoor/action_exec.py":
-        "PATH-only: MONDAY_API_KEY from ~/.screenpipe/_shared/.env; GERMLINE "
-        "(board-id carrier). TODO(SRC-4): env/credential resolver, board-id via "
-        "the Captain amendment. target-phase: SRC-4 + germline amendment.",
-    "framework/frontdoor/actfirst_canary.py":
-        "PATH-only: _SHARED_ENV=~/.screenpipe/_shared/.env; GERMLINE (board-id "
-        "carrier). TODO(SRC-4): env/credential resolver, board-id via the Captain "
-        "amendment. target-phase: SRC-4 + germline amendment.",
-    # --- the parallel EvaluationEngine seam (already shimmed; Phase 4)
-    "framework/fidelity/retro.py":
-        "the retrodiction SCORING shim (~/.screenpipe/pipes/retrodiction, "
-        "env-overridable CABINET_RETRO_PIPE_DIR); a parallel EVALUATION seam, not "
-        "a SENSING seam (spec §1). TODO(SRC-6): fold into the same pattern (A2.1 "
-        "vendoring). target-phase: SRC-6 (Phase 4).",
-}
+#   * officer_runner.BrainAdapter  → instance/flavor-a/flavor_a/screenpipe_source
+#     .py::ScreenpipeSource. The leak-fence (gather_cutoff_context) stays ABOVE
+#     the adapter, in framework, in-process — it now defaults brain=get_source().
+#   * acting/screenpipe_adapter.py → instance/flavor-a/flavor_a/acting.py; the
+#     callers' pure loop-plumbing folded into framework.acting.lane_dedup.
+#   * _vault_gather_runner.py (the py3.12 vault-search sidecar) re-homed WITH the
+#     adapter to instance/flavor-a/flavor_a/.
+#   * frontdoor egress (chair_drafts/daily_recap SEND + the vault daily-note
+#     write) → instance/flavor-a/flavor_a/screenpipe_dispatch.py::ScreenpipeDispatch,
+#     reached via framework.sources.get_dispatch() (daily-note golden hash kept).
+#   * Tier-2 state/credential/vault PATHS (decision_cell / benchmark /
+#     run_e2e_smoke / registry / retro / action_exec / actfirst_canary) →
+#     framework.env.vault_dir() / state_dir() / shared_env_path() /
+#     retro_pipe_dir() (instance-config-bound, byte-identical on this instance).
+#     The two HOT-lane files (run_action_lane / run_draft_lane) reparent the same
+#     way under SRC-4 (P2-ACT — the acting lane, behind its own draft-lane test
+#     gate + byte-identity proof); once that reparent lands the main ratchet is
+#     green with this empty allowlist. Until then it flags exactly those two —
+#     the honest cross-lane signal, NOT a re-allowlist candidate.
+#
+# The doctrine now physically holds: the ONLY code in the repo that may name
+# screenpipe lives in instance/flavor-a/ — never in framework/. framework/ CORE
+# reaches the captain's estate ONLY through framework.sources.get_source() /
+# get_dispatch(). The allowlist MUST stay empty: a NEW screenpipe `_shared`
+# import or a ~/.screenpipe / vault PATH literal in framework/** is fixed by
+# routing through the seam (or re-homing to instance/flavor-a) — NEVER by
+# re-adding an entry here. The self-test `test_allowlisted_files_still_couple`
+# still guards that any (future) entry must ACTUALLY couple, so a vacuous re-add
+# is itself CI-red; the main ratchet is the strong gate on any uncovered coupling.
+_ALLOWLISTED_FILES: Dict[str, str] = {}
 
-# Shrink-only cap: the allowlist may only ever get SMALLER. Seeded at the current
-# coupler count; the target is always 0 (framework/** names screenpipe nowhere).
-# Lowering it is a ratchet-down; raising it is forbidden — a NEW screenpipe
-# coupling is fixed by routing through get_source(), never by widening this.
-_ALLOWLIST_BASELINE_MAX = 14
+# Shrink-only cap: the allowlist may only ever get SMALLER. The target is
+# REACHED — 0 (framework/** names screenpipe nowhere). Raising it is forbidden —
+# a NEW screenpipe coupling is fixed by routing through get_source(), never by
+# widening this. The full ratchet-down lineage:
+#   14 → 11  SRC-3 (P2-REHOME): officer_runner + _vault_gather_runner +
+#            screenpipe_adapter re-homed to instance/flavor-a/ (fully decoupled).
+#   11 →  8  SRC-4-germline + SRC-6 (P2-GERM + RETRO): action_exec +
+#            actfirst_canary credential path → env.shared_env_path(); retro.py
+#            scoring-lib path → env.retro_pipe_dir() (byte-identical here).
+#    8 →  4  SRC-4 (P2-COLD): decision_cell + benchmark + run_e2e_smoke +
+#            registry Tier-2 state/vault paths → env.state_dir()/vault_dir()
+#            (+ the get_source().available() embeddings gate).
+#    4 →  2  SRC-3 (P2-FRONT): chair_drafts + daily_recap frontdoor egress
+#            re-homed to instance/flavor-a via get_dispatch() (golden hash kept).
+#    2 →  0  SRC-5 / P2-FLIP: the allowlist FLIPS to empty (the end state). The
+#            last two couplers — run_action_lane + run_draft_lane HOT-lane
+#            ~/.screenpipe / vault PATH residuals — reparent to env.vault_dir()/
+#            shared_env_path() under SRC-4 (P2-ACT, the acting lane, byte-identical
+#            behind its draft-lane test gate); the main ratchet goes green the
+#            moment that reparent lands. The baseline is 0 NOW — the surface can
+#            only ever be empty; a residual is fixed at its source, never re-added.
+_ALLOWLIST_BASELINE_MAX = 0
 
 
 _HINT = ("framework/ CORE must reach the captain's estate only through "

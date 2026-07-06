@@ -174,7 +174,7 @@ def _drive_main(monkeypatch, *, proposals, deliver_result, act_first=True,
     monkeypatch.setattr(r, "_acquire_lock", lambda: True)
     monkeypatch.setattr(r, "_load_env", lambda: None)
     monkeypatch.setattr(r, "gather_signals", lambda *a, **k: "a fresh signal line")
-    monkeypatch.setattr(r.sa, "decided_subjects", lambda: {})
+    monkeypatch.setattr(r.ld, "decided_subjects", lambda: {})
     monkeypatch.setattr(r, "pending_proposals", lambda: [])
     monkeypatch.setattr(r, "covered_evidence_refs", lambda: frozenset())
     monkeypatch.setattr(r, "load_directions", lambda: None)

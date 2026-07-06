@@ -1,8 +1,16 @@
 """morning_synthesis source — real signals → intake items, filtered to 1:1 non-noise.
 
 find_threads is mocked, so these never touch the brain or Redis.
+
+SRC-3: morning_synthesis reaches the screenpipe signals through
+``framework.sources.get_source()`` (the bound Flavor-A adapter), so these tests
+patch the bound source's methods (``find_threads`` / ``briefing_commitments`` /
+``deploy_health``) instead of the former ``ms.sa`` module handle. get_source()
+returns the cached singleton, so the patch on that instance is what
+morning_synthesis sees.
 """
 from framework.frontdoor import morning_synthesis as ms
+from framework.sources import get_source
 
 
 def _thread(slug, person, text, kind="direct"):
@@ -11,7 +19,7 @@ def _thread(slug, person, text, kind="direct"):
 
 
 def test_keeps_real_1to1(monkeypatch):
-    monkeypatch.setattr(ms.sa, "find_threads",
+    monkeypatch.setattr(get_source(), "find_threads",
                         lambda hours=72: [_thread("lisa", "Lisa Stentoft",
                                                   "Following your feedback on the question…")])
     items = ms.awaiting_reply_items()
@@ -26,7 +34,7 @@ def test_keeps_real_1to1(monkeypatch):
 
 
 def test_drops_groups_and_noise(monkeypatch):
-    monkeypatch.setattr(ms.sa, "find_threads", lambda hours=72: [
+    monkeypatch.setattr(get_source(), "find_threads", lambda hours=72: [
         _thread("lisa", "Lisa Stentoft", "real 1:1 question that needs an answer"),
         _thread("grp", "Teams Group X", "amen tak for det", kind="group"),     # group → drop
         _thread("ks", "Kundeservice", "Nulstil din adgangskode her"),          # noise → drop
@@ -39,12 +47,12 @@ def test_drops_groups_and_noise(monkeypatch):
 def test_gather_failure_is_empty(monkeypatch):
     def boom(hours=72):
         raise RuntimeError("brain down")
-    monkeypatch.setattr(ms.sa, "find_threads", boom)
+    monkeypatch.setattr(get_source(), "find_threads", boom)
     assert ms.awaiting_reply_items() == []
 
 
 def test_limit_respected(monkeypatch):
-    monkeypatch.setattr(ms.sa, "find_threads", lambda hours=72: [
+    monkeypatch.setattr(get_source(), "find_threads", lambda hours=72: [
         _thread(f"p{i}", f"Person{i}", "a genuine question to answer")
         for i in range(10)
     ])
@@ -103,7 +111,7 @@ def test_commitment_items_respects_limit():
 def test_commitment_items_gather_failure_is_empty(monkeypatch):
     def boom(direction="owed_by_nate"):
         raise RuntimeError("ledger down")
-    monkeypatch.setattr(ms.sa, "open_commitments", boom)
+    monkeypatch.setattr(get_source(), "briefing_commitments", boom)
     assert ms.commitment_items() == []
 
 
@@ -113,12 +121,12 @@ def _health(app, failed=0, latest="READY"):
 
 
 def test_deploy_health_silent_when_healthy(monkeypatch):
-    monkeypatch.setattr(ms.sa, "deploy_health", lambda app, **kw: _health(app, failed=0, latest="READY"))
+    monkeypatch.setattr(get_source(), "deploy_health", lambda app, **kw: _health(app, failed=0, latest="READY"))
     assert ms.deploy_health_items(apps=["v0-x"]) == []
 
 
 def test_deploy_health_surfaces_failures_as_batch(monkeypatch):
-    monkeypatch.setattr(ms.sa, "deploy_health", lambda app, **kw: _health(app, failed=2, latest="READY"))
+    monkeypatch.setattr(get_source(), "deploy_health", lambda app, **kw: _health(app, failed=2, latest="READY"))
     items = ms.deploy_health_items(apps=["v0-x"])
     assert len(items) == 1
     it = items[0]
@@ -129,7 +137,7 @@ def test_deploy_health_surfaces_failures_as_batch(monkeypatch):
 
 
 def test_deploy_health_latest_broken_is_ping_now(monkeypatch):
-    monkeypatch.setattr(ms.sa, "deploy_health", lambda app, **kw: _health(app, failed=1, latest="ERROR"))
+    monkeypatch.setattr(get_source(), "deploy_health", lambda app, **kw: _health(app, failed=1, latest="ERROR"))
     items = ms.deploy_health_items(apps=["v0-x"])
     assert items[0]["urgency_tier"] == "ping-now"
     assert "latest deploy is ERROR" in items[0]["payload"]["summary"]
@@ -140,7 +148,7 @@ def test_deploy_health_per_app_failure_skips(monkeypatch):
         if app == "boom":
             raise RuntimeError("vercel down")
         return _health(app, failed=1, latest="READY")
-    monkeypatch.setattr(ms.sa, "deploy_health", flaky)
+    monkeypatch.setattr(get_source(), "deploy_health", flaky)
     items = ms.deploy_health_items(apps=["boom", "ok"])
     assert [i["context"]["app"] for i in items] == ["ok"]
 
@@ -191,11 +199,11 @@ def test_sentry_health_injected_overrides_network():
 
 
 def test_gather_items_includes_all_sources(monkeypatch):
-    monkeypatch.setattr(ms.sa, "find_threads",
+    monkeypatch.setattr(get_source(), "find_threads",
                         lambda hours=72: [_thread("lisa", "Lisa Stentoft", "a real question")])
-    monkeypatch.setattr(ms.sa, "open_commitments",
+    monkeypatch.setattr(get_source(), "briefing_commitments",
                         lambda direction="owed_by_nate": [_cmt("Kris", "x", "2000-01-01")])
-    monkeypatch.setattr(ms.sa, "deploy_health",
+    monkeypatch.setattr(get_source(), "deploy_health",
                         lambda app, **kw: _health(app, failed=1, latest="READY"))
     monkeypatch.setattr(ms.product_health, "sentry_health",
                         lambda o, p, **kw: _sentry([{"title": "E", "events": 9}]))
@@ -291,11 +299,11 @@ def test_followup_items_default_reads_register():
 
 def _wire_all_sources(monkeypatch):
     """Mock every source so gather_items yields one of each (incl. both operational)."""
-    monkeypatch.setattr(ms.sa, "find_threads",
+    monkeypatch.setattr(get_source(), "find_threads",
                         lambda hours=72: [_thread("lisa", "Lisa Stentoft", "a real question")])
-    monkeypatch.setattr(ms.sa, "open_commitments",
+    monkeypatch.setattr(get_source(), "briefing_commitments",
                         lambda direction="owed_by_nate": [_cmt("Kris", "x", "2000-01-01")])
-    monkeypatch.setattr(ms.sa, "deploy_health",
+    monkeypatch.setattr(get_source(), "deploy_health",
                         lambda app, **kw: _health(app, failed=1, latest="ERROR"))
     monkeypatch.setattr(ms.product_health, "sentry_health",
                         lambda o, p, **kw: _sentry([{"title": "E", "events": 9}]))
@@ -336,10 +344,10 @@ def test_enqueue_splits_operational_to_chair(monkeypatch):
 
 def test_enqueue_no_chair_message_when_no_operational(monkeypatch):
     # Only captain-facing sources present → the Chair is NOT pinged at all.
-    monkeypatch.setattr(ms.sa, "find_threads",
+    monkeypatch.setattr(get_source(), "find_threads",
                         lambda hours=72: [_thread("lisa", "Lisa Stentoft", "a real question")])
-    monkeypatch.setattr(ms.sa, "open_commitments", lambda direction="owed_by_nate": [])
-    monkeypatch.setattr(ms.sa, "deploy_health", lambda app, **kw: _health(app, failed=0, latest="READY"))
+    monkeypatch.setattr(get_source(), "briefing_commitments", lambda direction="owed_by_nate": [])
+    monkeypatch.setattr(get_source(), "deploy_health", lambda app, **kw: _health(app, failed=0, latest="READY"))
     monkeypatch.setattr(ms.product_health, "sentry_health", lambda o, p, **kw: _sentry([]))
     monkeypatch.setattr(ms, "_due_followups", lambda script=None: [])
     monkeypatch.setenv("CABINET_DEPLOY_HEALTH_APPS", "v0-x")

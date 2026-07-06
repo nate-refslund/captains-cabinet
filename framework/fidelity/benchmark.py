@@ -18,6 +18,7 @@ import os
 import re
 from pathlib import Path
 
+from framework.env import state_dir
 from framework.fidelity import retro
 from framework.fidelity.officer_prompt import intent_and_context
 from framework.fidelity.types import Case
@@ -141,12 +142,20 @@ def is_scoreable(case: Case) -> bool:
         return False
     return True
 
-_DEFAULT_OUTCOMES = Path(
-    os.environ.get(
-        "CABINET_AUTONOMY_OUTCOMES",
-        str(Path.home() / ".screenpipe" / "state" / "autonomy_outcomes.jsonl"),
-    )
-).expanduser()
+def _default_outcomes() -> Path:
+    """The autonomy-outcomes ledger path (the F1 validation universe). The
+    ``CABINET_AUTONOMY_OUTCOMES`` env override wins; else the deployment state
+    dir (``framework.env.state_dir()``, or a generic ``~/.cabinet/state``
+    fallback when unconfigured) + the ledger filename. Byte-identical to the
+    removed ``~/.screenpipe/state`` hardcode on this deployment."""
+    override = os.environ.get("CABINET_AUTONOMY_OUTCOMES")
+    if override:
+        return Path(override).expanduser()
+    base = state_dir() or str(Path.home() / ".cabinet" / "state")
+    return Path(base) / "autonomy_outcomes.jsonl"
+
+
+_DEFAULT_OUTCOMES = _default_outcomes()
 
 
 def load_autonomy_rows(path: Path | None = None,

@@ -37,12 +37,12 @@ from pathlib import Path
 # so this is byte-for-byte equivalent there; it only differs — correctly — when
 # the code under test lives in a worktree. Matches run_action_lane.py:49.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-sys.path.insert(0, os.path.expanduser("~/.screenpipe/pipes/_shared"))
 
-from framework.acting import loop, screenpipe_adapter as sa
+from framework.acting import loop, lane_dedup as ld
 from framework.acting.loop import proposal_id
 from framework.fidelity.consequence import emit_consequence
 from framework.env import captain_name
+from framework.sources import get_source
 
 MAX = int(os.environ.get("DRAFT_LANE_MAX", "1"))
 TOKEN = os.environ["TELEGRAM_COS_TOKEN"]
@@ -160,7 +160,7 @@ def _present(thread: dict, draft: str, prop: dict, prep: dict | None = None) -> 
     # Fix 1: record the handled signature so a re-run won't re-present this exact
     # inbound message (the redis fallback to the decided-proposal timestamp).
     try:
-        sa.record_handled(thread["slug"], sa.last_inbound_sig(thread))
+        ld.record_handled(thread["slug"], ld.last_inbound_sig(thread))
     except Exception:
         pass
 
@@ -179,7 +179,7 @@ def _auto_expire_self_replied() -> int:
 
     For each OPEN proposal (loop.pending_proposals), expire it when EITHER:
       (1) PRECISE — the captain sent an outbound message on that thread strictly newer
-          than the proposal (sa.nate_replied_since == True); the exact fix, or
+          than the proposal (get_source().nate_replied_since == True); the exact fix, or
       (2) BACKSTOP — the proposal is older than PROPOSAL_MAX_AGE_H and the
           precise check did not affirmatively say 'no newer reply' (None/True),
           so a stale draft never dangles even when the conversation is unreadable.
@@ -204,8 +204,8 @@ def _auto_expire_self_replied() -> int:
         slug = prop.get("subject")
         if not slug:
             continue
-        when = sa.parse_dt(prop.get("ts"))
-        replied = sa.nate_replied_since(slug, when)  # True / False / None
+        when = ld.parse_dt(prop.get("ts"))
+        replied = get_source().nate_replied_since(slug, when)  # True / False / None
         too_old = (
             PROPOSAL_MAX_AGE_H > 0
             and when is not None
@@ -264,24 +264,25 @@ def main() -> None:
     # still undecided (Kristoffer R1 sat open overnight, so R2 — 11h newer — never
     # surfaced). Now a real new message on an open thread re-presents, exactly like
     # the decided path already does.
-    open_ts = sa.open_subject_ts()
-    decided = sa.decided_subjects()
-    threads = sa.find_threads(hours=72)
+    src = get_source()  # the bound personal source (Flavor-A screenpipe adapter)
+    open_ts = ld.open_subject_ts()
+    decided = ld.decided_subjects()
+    threads = src.find_threads(hours=72)
     # Newest inbound first, so the per-run budget (MAX) goes to the freshest
     # threads rather than whatever order the brain returned. Threads with an
     # unparseable date sort last (epoch fallback) but are still considered.
     _EPOCH = datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc)
-    threads.sort(key=lambda t: sa.last_inbound_dt(t) or _EPOCH, reverse=True)
+    threads.sort(key=lambda t: ld.last_inbound_dt(t) or _EPOCH, reverse=True)
     presented = 0
     for t in threads:
         if presented >= MAX:
             break
-        if sa.open_proposal_blocks(t, open_ts):
+        if ld.open_proposal_blocks(t, open_ts):
             continue  # awaiting your decision, and no newer inbound since
-        if sa.already_handled(t, decided):
+        if ld.already_handled(t, decided):
             continue  # decided already, and no new inbound since -> skip sticks
-        ctx = sa.gather(t)  # runs the Fix-2 prep step (investigate-then-draft)
-        draft = sa.draft_fn(t, ctx)
+        ctx = src.gather(t)  # runs the Fix-2 prep step (investigate-then-draft)
+        draft = src.draft_fn(t, ctx)
         if not draft:
             continue
         # --- Pre-emit re-checks (Layer 2: defense-in-depth past the singleton
@@ -302,24 +303,24 @@ def main() -> None:
         #       still-awaiting re-check from the same authority as find-time drops
         #       the now-stale draft. Fail-safe: still_awaiting()==None (brain
         #       hiccup) surfaces — we never suppress a real reply on uncertainty.
-        if sa.open_proposal_blocks_live(t):
+        if ld.open_proposal_blocks_live(t):
             print(f"skip (now-open proposal during draft) -> {t['person']}")
             continue
-        if sa.still_awaiting(t["slug"], hours=72) is False:
+        if src.still_awaiting(t["slug"], hours=72) is False:
             print(f"skip ({cap} already replied — latest no longer inbound) -> {t['person']}")
             continue
         prep = ctx.get("prep")
         ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
         loop.propose(
             thread_ref=t, subject=t["slug"], ts=ts, actor=actor,
-            lane=sa.lane_for(t),
+            lane=ld.lane_for(t),
             gather=lambda _t, _ctx=ctx: _ctx,
             draft_fn=lambda _t, _c, _d=draft: _d,
             present=lambda d, p, _t=t, _pr=prep: _present(_t, d, p, _pr),
             emit=lambda **ev: emit_consequence(**ev),
         )
         presented += 1
-        print(f"presented draft -> {t['person']} ({sa.lane_for(t)})")
+        print(f"presented draft -> {t['person']} ({ld.lane_for(t)})")
     print(f"done: presented {presented} draft(s)")
 
 

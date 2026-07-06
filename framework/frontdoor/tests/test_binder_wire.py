@@ -254,10 +254,11 @@ def test_edit_override_charset_normalized_before_delivery():
     """cp2 edit-path (FIXED 2026-07-03): the Captain's edit override egresses with
     the SAME charset hygiene as the AI draft — binder _dispatch normalizes it
     before delivery. Was an xfail gap (mobile-typed dashes/quotes/ellipses shipped
-    raw); closed in _dispatch with a lazy, fail-open normalize_voice."""
-    from framework.acting.screenpipe_adapter import normalize_voice
+    raw); closed in _dispatch with a lazy, fail-open normalize_charset (SRC-3: the
+    framework-vendored voice_charset, no screenpipe adapter)."""
+    from framework.acting.voice_charset import normalize_charset
     raw = "ja — helt enig, det er “fint”… send den"
-    norm = normalize_voice(raw)
+    norm = normalize_charset(raw)
     prop = _proposal()
     rec = Recorder()
     r = binder_wire.handle_captain_update(
@@ -266,7 +267,7 @@ def test_edit_override_charset_normalized_before_delivery():
         redis_get=_redis_with_draft(prop))
     assert r["handled"] and r["primary"] == "edit"
     delivered_override = rec.delivered[0][1]
-    # _dispatch and this test call the SAME normalize_voice, so this holds in
+    # _dispatch and this test call the SAME normalize_charset, so this holds in
     # every env — and is non-vacuous (catches a _dispatch regression) wherever
     # normalization is live (isolated run + production). Where the charset lib
     # resolves to a no-op, norm==raw and it stays correct rather than skipping.

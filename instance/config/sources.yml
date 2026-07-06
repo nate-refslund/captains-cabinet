@@ -19,3 +19,13 @@
 # Flavor-A binding: the screenpipe brain adapter (SRC-1) — a thin delegator over
 # today's BrainAdapter + screenpipe_adapter, byte-identical to what runs today.
 adapter: flavor_a.screenpipe_source:ScreenpipeSource
+
+# Flavor-A WRITE/actuator binding (SRC-3, frontdoor egress): the screenpipe
+# dispatch adapter — owns the outbound send (email_lib / teams_graph_lib), the
+# vault daily-note write (OBSIDIAN_VAULT_PATH, obsidian-sync byte-match), the
+# captain's Monday board client (sp_lib) and the synthesis LLM (commitments_lib)
+# that framework.frontdoor.{chair_drafts,daily_recap} reach through
+# framework.sources.get_dispatch(). ABSENT / malformed / unimportable ⇒
+# NullPersonalDispatch (fail-closed): every write no-ops, the egress lanes
+# degrade to draft-capture-only, nothing sends and nothing crashes.
+dispatch: flavor_a.screenpipe_dispatch:ScreenpipeDispatch

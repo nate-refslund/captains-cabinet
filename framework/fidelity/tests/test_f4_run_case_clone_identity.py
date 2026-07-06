@@ -68,8 +68,8 @@ class _FakeBrain:
         self.calls.append("voice_profile")
         return _VOICE
 
-    def nate_model_patterns(self) -> str:
-        self.calls.append("nate_model_patterns")
+    def model_patterns(self) -> str:
+        self.calls.append("model_patterns")
         return _PATTERNS
 
     def drafting_lessons(self, before_ts: str) -> str:
@@ -153,7 +153,7 @@ class TestCloneArmInjectsIdentity:
         officer_runner.run_case(case, "chair", llm=fake, gather=_fake_gather,
                                 brain=brain)
         assert "voice_profile" in brain.calls
-        assert "nate_model_patterns" in brain.calls
+        assert "model_patterns" in brain.calls
         assert "drafting_lessons" in brain.calls
 
     def test_lessons_date_filtered_strictly_before_cutoff(self):

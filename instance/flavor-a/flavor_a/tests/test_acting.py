@@ -1,278 +1,25 @@
-"""Fix 1 — a decided draft proposal must STICK: the propose loop must NOT
-re-present a thread Nate already ruled on (skip/send/edit) unless a genuinely
-NEW inbound message arrived since the decision.
+"""Flavor-A acting surface (flavor_a.acting) — the screenpipe gather->draft cell.
 
-These exercise the PURE dedup helpers in screenpipe_adapter (no screenpipe libs
-needed): timestamp parsing, the decided-subject map from the ledger, and the
-already_handled() gate via both its primary (timestamp) and fallback (signature)
-paths. The screenpipe-backed gather()/prep()/find_threads paths are out of scope
-here (covered by the live DRY run); these lock the dedup logic that fixes the
-2h-re-present bug."""
+Moved here (with the adapter, SRC-3) from the framework acting tests
+(test_skip_stick screenpipe classes + test_normalize_voice): the awaiting-thread
+discovery filters (skip-list / calendar-invite / chair-lock), the live
+self-reply/freshness detectors, and the captain-voice charset + first-of-day
+greeting rules. The screenpipe ``draft_lib`` deps are monkeypatched (via
+``sa._dl``) or fall back to the framework-vendored charset, so these touch no
+live estate. ``sa`` is ``flavor_a.acting`` (was framework.acting.screenpipe_adapter);
+``sa.parse_dt`` is re-exported from ``framework.acting.lane_dedup``."""
 import datetime
+import sys
+from pathlib import Path
 
-from framework.acting import screenpipe_adapter as sa
+# instance/flavor-a on sys.path so ``flavor_a`` imports; repo root for framework.
+_PKG_PARENT = Path(__file__).resolve().parents[2]   # instance/flavor-a
+_REPO_ROOT = Path(__file__).resolve().parents[4]    # worktree / repo root
+for _p in (str(_REPO_ROOT), str(_PKG_PARENT)):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
-
-def _thread(slug="kristoffer", date="2026-06-20T10:00:00+00:00", text="hej Nate"):
-    return {"slug": slug, "person": slug.title(),
-            "last": {"date": date, "text": text, "source": "msgraph"}}
-
-
-def _decided_row(subject, decided_at, ts=None):
-    """A ledger row shaped like read_ledger() returns for a DECIDED proposal."""
-    return {"ts": ts or decided_at, "actor": {"kind": "officer", "id": "cos"},
-            "lane": "send-1to1-reply", "action": "draft-reply", "subject": subject,
-            "proposal": {"required": True, "decision": "rejected",
-                         "decided_at": decided_at}}
-
-
-class TestParseDt:
-    def test_msgraph_offset(self):
-        d = sa.parse_dt("2026-06-18T12:49:44+00:00")
-        assert d is not None and d.tzinfo is not None
-        assert d == datetime.datetime(2026, 6, 18, 12, 49, 44,
-                                      tzinfo=datetime.timezone.utc)
-
-    def test_teams_zulu_fractional(self):
-        d = sa.parse_dt("2026-02-03T19:59:48.471Z")
-        assert d is not None
-        assert d.year == 2026 and d.tzinfo == datetime.timezone.utc
-
-    def test_naive_assumed_utc(self):
-        d = sa.parse_dt("2026-06-20T10:00:00")
-        assert d is not None and d.tzinfo == datetime.timezone.utc
-
-    def test_garbage_is_none(self):
-        assert sa.parse_dt("not-a-date") is None
-        assert sa.parse_dt("") is None
-        assert sa.parse_dt(None) is None
-
-
-class TestDecidedSubjects:
-    def test_maps_subject_to_decided_at(self):
-        rows = [_decided_row("kristoffer", "2026-06-20T09:00:00+00:00")]
-        d = sa.decided_subjects(rows=rows)
-        assert "kristoffer" in d
-        assert d["kristoffer"] == sa.parse_dt("2026-06-20T09:00:00+00:00")
-
-    def test_keeps_latest_decision_per_subject(self):
-        rows = [
-            _decided_row("kristoffer", "2026-06-20T09:00:00+00:00"),
-            _decided_row("kristoffer", "2026-06-21T09:00:00+00:00"),  # newer
-        ]
-        d = sa.decided_subjects(rows=rows)
-        assert d["kristoffer"] == sa.parse_dt("2026-06-21T09:00:00+00:00")
-
-    def test_pending_proposal_excluded(self):
-        rows = [{"ts": "2026-06-20T09:00:00+00:00",
-                 "actor": {"kind": "officer", "id": "cos"},
-                 "lane": "send-1to1-reply", "action": "draft-reply",
-                 "subject": "lisa",
-                 "proposal": {"required": True, "decision": None}}]
-        assert sa.decided_subjects(rows=rows) == {}
-
-    def test_falls_back_to_ts_when_no_decided_at(self):
-        rows = [{"ts": "2026-06-20T09:00:00+00:00",
-                 "actor": {"kind": "officer", "id": "cos"},
-                 "lane": "send-1to1-reply", "action": "draft-reply",
-                 "subject": "lisa",
-                 "proposal": {"required": True, "decision": "approved"}}]
-        d = sa.decided_subjects(rows=rows)
-        assert d["lisa"] == sa.parse_dt("2026-06-20T09:00:00+00:00")
-
-
-class TestAlreadyHandledTimestamp:
-    def test_decided_and_no_new_message_is_handled(self):
-        # last inbound (10:00) is OLDER than the decision (12:00) -> handled.
-        decided = {"kristoffer": sa.parse_dt("2026-06-20T12:00:00+00:00")}
-        t = _thread(date="2026-06-20T10:00:00+00:00")
-        assert sa.already_handled(t, decided) is True
-
-    def test_decided_equal_time_is_handled(self):
-        # last inbound == decision time -> not strictly newer -> handled.
-        decided = {"kristoffer": sa.parse_dt("2026-06-20T12:00:00+00:00")}
-        t = _thread(date="2026-06-20T12:00:00+00:00")
-        assert sa.already_handled(t, decided) is True
-
-    def test_new_inbound_after_decision_re_presents(self):
-        # a fresh message (13:00) AFTER the decision (12:00) -> NOT handled.
-        decided = {"kristoffer": sa.parse_dt("2026-06-20T12:00:00+00:00")}
-        t = _thread(date="2026-06-20T13:00:00+00:00")
-        assert sa.already_handled(t, decided) is False
-
-    def test_never_decided_is_not_handled(self):
-        # no decision recorded for this subject -> a fresh thread, present it.
-        t = _thread(slug="newperson")
-        assert sa.already_handled(t, {}) is False
-
-
-class TestAlreadyHandledSignatureFallback:
-    def test_signature_match_handled_when_no_timestamp(self, monkeypatch):
-        # No parseable decision time (subject absent from decided map) but the
-        # last-inbound text matches the recorded handled signature -> handled.
-        t = _thread(text="same message body")
-        sig = sa.last_inbound_sig(t)
-        monkeypatch.setattr(sa, "handled_signature", lambda slug: sig)
-        assert sa.already_handled(t, {}) is True
-
-    def test_signature_mismatch_re_presents(self, monkeypatch):
-        t = _thread(text="a brand new message body")
-        monkeypatch.setattr(sa, "handled_signature", lambda slug: "deadbeef")
-        assert sa.already_handled(t, {}) is False
-
-    def test_unparseable_date_uses_signature(self, monkeypatch):
-        # Decision exists, but the inbound date is garbage -> timestamp path
-        # cannot fire -> fall back to the signature.
-        t = _thread(date="garbage-date", text="hello")
-        sig = sa.last_inbound_sig(t)
-        decided = {"kristoffer": sa.parse_dt("2026-06-20T12:00:00+00:00")}
-        monkeypatch.setattr(sa, "handled_signature", lambda slug: sig)
-        assert sa.already_handled(t, decided) is True
-
-
-class TestRedisKeyHygiene:
-    def test_slug_with_spaces_and_colons_is_flattened(self):
-        # The redis key must never carry spaces/colons that fracture the keyspace.
-        k = sa._handled_key("Anna Grobelscheg: PolAds")
-        assert k.startswith("cabinet:draft-handled:")
-        suffix = k[len("cabinet:draft-handled:"):]
-        assert " " not in suffix and ":" not in suffix
-
-
-def _open_row(subject, ts):
-    """A ledger row shaped like read_ledger() returns for an OPEN (undecided,
-    no-outcome) proposal."""
-    return {"ts": ts, "actor": {"kind": "officer", "id": "cos"},
-            "lane": "send-1to1-reply", "action": "draft-reply", "subject": subject,
-            "proposal": {"required": True, "decision": None}}
-
-
-class TestOpenSubjectTs:
-    def test_maps_subject_to_proposal_ts(self):
-        rows = [_open_row("kristoffer", "2026-06-24T21:00:00+00:00")]
-        d = sa.open_subject_ts(rows=rows)
-        assert d["kristoffer"] == sa.parse_dt("2026-06-24T21:00:00+00:00")
-
-    def test_keeps_newest_open_ts_per_subject(self):
-        rows = [
-            _open_row("kristoffer", "2026-06-24T21:00:00+00:00"),
-            _open_row("kristoffer", "2026-06-25T07:00:00+00:00"),  # newer
-        ]
-        d = sa.open_subject_ts(rows=rows)
-        assert d["kristoffer"] == sa.parse_dt("2026-06-25T07:00:00+00:00")
-
-    def test_decided_proposal_excluded(self):
-        rows = [_decided_row("lisa", "2026-06-24T09:00:00+00:00")]
-        assert sa.open_subject_ts(rows=rows) == {}
-
-    def test_superseded_with_outcome_excluded(self):
-        rows = [{"ts": "2026-06-24T21:00:00+00:00",
-                 "actor": {"kind": "officer", "id": "cos"},
-                 "lane": "send-1to1-reply", "action": "draft-reply",
-                 "subject": "lisa",
-                 "proposal": {"required": True, "decision": None},
-                 "outcome": {"status": "ok", "evidence": "shipped"}}]
-        assert sa.open_subject_ts(rows=rows) == {}
-
-
-class TestOpenProposalBlocks:
-    """Fix 3: an OPEN proposal suppresses a thread ONLY until a genuinely-new
-    inbound arrives — the Kristoffer Round-2 bug, where a Round-1 draft sat open
-    overnight and silently swallowed the 11h-newer Round-2 message."""
-
-    def test_open_and_no_new_message_blocks(self):
-        # Last inbound (20:00) is OLDER than the open proposal (21:00) -> blocked
-        # (the pending draft already covers this message).
-        open_ts = {"kristoffer": sa.parse_dt("2026-06-24T21:00:00+00:00")}
-        t = _thread(date="2026-06-24T20:00:00+00:00")
-        assert sa.open_proposal_blocks(t, open_ts) is True
-
-    def test_open_equal_time_blocks(self):
-        open_ts = {"kristoffer": sa.parse_dt("2026-06-24T21:00:00+00:00")}
-        t = _thread(date="2026-06-24T21:00:00+00:00")
-        assert sa.open_proposal_blocks(t, open_ts) is True
-
-    def test_new_inbound_after_open_proposal_re_presents(self):
-        # THE FIX: a fresh message (2026-06-25 08:53) after the open proposal
-        # (2026-06-24 21:00) -> NOT blocked -> the lane re-presents Round-2.
-        open_ts = {"kristoffer": sa.parse_dt("2026-06-24T21:00:00+00:00")}
-        t = _thread(date="2026-06-25T08:53:34+00:00")
-        assert sa.open_proposal_blocks(t, open_ts) is False
-
-    def test_no_open_proposal_does_not_block(self):
-        # A subject with no open proposal is never blocked by this gate.
-        t = _thread(slug="freshperson")
-        assert sa.open_proposal_blocks(t, {}) is False
-
-    def test_unparseable_inbound_with_open_proposal_blocks(self):
-        # Open proposal exists but the inbound date is garbage -> cannot prove a
-        # newer message -> block (don't double-draft a pending thread).
-        open_ts = {"kristoffer": sa.parse_dt("2026-06-24T21:00:00+00:00")}
-        t = _thread(date="garbage-date")
-        assert sa.open_proposal_blocks(t, open_ts) is True
-
-
-class TestSubjectHasOpenProposal:
-    """Live (moment-of-use) dup guard: the duplicate-draft fix. Two concurrent
-    runs both snapshot 'no open Maria proposal' before either emits; re-reading
-    the ledger right before emit makes the second run SEE the first's proposal."""
-
-    def test_open_proposal_for_subject_is_true(self):
-        rows = [_open_row("Maria-Skougaard-Andersen", "2026-06-25T09:56:53+00:00")]
-        assert sa.subject_has_open_proposal("Maria-Skougaard-Andersen", rows=rows) is True
-
-    def test_no_open_proposal_for_subject_is_false(self):
-        rows = [_open_row("someone-else", "2026-06-25T09:56:53+00:00")]
-        assert sa.subject_has_open_proposal("Maria-Skougaard-Andersen", rows=rows) is False
-
-    def test_decided_proposal_does_not_count_as_open(self):
-        # A decided proposal must NOT block a fresh draft via this guard (the
-        # recency path handles decided threads separately).
-        rows = [_decided_row("Maria-Skougaard-Andersen", "2026-06-25T09:00:00+00:00")]
-        assert sa.subject_has_open_proposal("Maria-Skougaard-Andersen", rows=rows) is False
-
-
-class TestOpenProposalBlocksLive:
-    """RECENCY-AWARE Layer-2 pre-emit dup guard (open_proposal_blocks_live).
-    Regression cover for the Morten-Stagaard 17:05 DPA miss: the blunt
-    subject_has_open_proposal predecessor skipped on ANY open proposal, so a
-    legitimately-NEW inbound that passed the recency-aware top-of-loop gate was
-    then killed here by a STALE older open proposal. The live variant must apply
-    the SAME last_dt <= when recency test as open_proposal_blocks."""
-
-    def test_morten_newer_inbound_not_blocked_by_stale_open(self):
-        # The exact failure: an open draft for Morten's 14:53 (12:53Z) message
-        # sits undecided; his 17:05 (15:05Z) reply is genuinely NEW. The live
-        # guard must NOT block it (newer than the open proposal) -> it re-presents.
-        rows = [_open_row("Morten-Stagaard", "2026-06-25T13:15:58+00:00")]
-        t = _thread(slug="Morten-Stagaard", date="2026-06-25T15:05:13+00:00")
-        assert sa.open_proposal_blocks_live(t, rows=rows) is False
-
-    def test_same_message_open_proposal_blocks(self):
-        # A proposal that landed DURING our draft for the SAME (or older-than-our)
-        # inbound is a true duplicate -> block. Inbound 13:00Z <= open 13:15Z.
-        rows = [_open_row("Morten-Stagaard", "2026-06-25T13:15:58+00:00")]
-        t = _thread(slug="Morten-Stagaard", date="2026-06-25T13:00:00+00:00")
-        assert sa.open_proposal_blocks_live(t, rows=rows) is True
-
-    def test_no_open_proposal_not_blocked(self):
-        rows = [_open_row("someone-else", "2026-06-25T13:15:58+00:00")]
-        t = _thread(slug="Morten-Stagaard", date="2026-06-25T15:05:13+00:00")
-        assert sa.open_proposal_blocks_live(t, rows=rows) is False
-
-    def test_decided_proposal_not_blocked(self):
-        # A decided proposal is handled by the decided/already_handled path, not
-        # this open-proposal guard -> not blocked here.
-        rows = [_decided_row("Morten-Stagaard", "2026-06-25T13:00:00+00:00")]
-        t = _thread(slug="Morten-Stagaard", date="2026-06-25T15:05:13+00:00")
-        assert sa.open_proposal_blocks_live(t, rows=rows) is False
-
-    def test_unparseable_inbound_with_open_proposal_blocks(self):
-        # Open proposal exists but inbound date is garbage -> cannot prove newer
-        # -> block (conservative: never double-draft a pending thread).
-        rows = [_open_row("Morten-Stagaard", "2026-06-25T13:15:58+00:00")]
-        t = _thread(slug="Morten-Stagaard", date="garbage")
-        assert sa.open_proposal_blocks_live(t, rows=rows) is True
+from flavor_a import acting as sa
 
 
 class _StubDL:
@@ -559,3 +306,138 @@ class TestNateRepliedSince:
         # An unparseable proposal ts (when=None) -> None (can't compare).
         self._convo(monkeypatch, [_sent("2026-06-25T13:00:00+00:00")])
         assert sa.nate_replied_since("morten-stagaard", None) is None
+
+
+class TestNormalizeVoice:
+    def test_em_and_en_dash(self):
+        assert sa.normalize_voice("check — ship") == "check - ship"
+        assert sa.normalize_voice("range 1–5") == "range 1 - 5"
+
+    def test_right_arrow(self):
+        assert sa.normalize_voice("a → b → c") == "a -> b -> c"
+        assert sa.normalize_voice("x ⟶ y ➜ z ➔ w") == "x -> y -> z -> w"
+
+    def test_bullets_line_and_inline(self):
+        assert sa.normalize_voice("do:\n• x\n• y") == "do:\n- x\n- y"
+        assert sa.normalize_voice("a • b") == "a - b"
+        assert sa.normalize_voice("‣ p\n▪ q\n● r") == "- p\n- q\n- r"
+        # indentation preserved (nested bullets)
+        assert sa.normalize_voice("  • nested") == "  - nested"
+
+    def test_mixed_chain(self):
+        src = "plan: build A → tell them • done — verify"
+        assert sa.normalize_voice(src) == "plan: build A -> tell them - done - verify"
+
+    def test_ascii_untouched_and_idempotent(self):
+        ascii_text = "fine -> yes\n- bullet"
+        assert sa.normalize_voice(ascii_text) == ascii_text
+        once = sa.normalize_voice("a — b → c\n• d")
+        assert sa.normalize_voice(once) == once
+
+    def test_no_fancy_glyph_survives(self):
+        out = sa.normalize_voice("— – • ‣ ▪ ● → ⟶ ➜ ➔")
+        for ch in "—–•‣▪●→⟶➜➔":
+            assert ch not in out
+
+    # --- charset-whitelist model (2026-06-25 refinement) ---
+    def test_exotic_and_unanticipated_chars_caught(self):
+        # dash variants beyond em/en, plus catch-all normalize/drop.
+        assert sa.normalize_voice("a ― b") == "a - b"      # horizontal bar
+        assert sa.normalize_voice("a⸺b") == "a - b"        # two-em dash
+        assert sa.normalize_voice("5 − 3") == "5 - 3"      # math minus
+        assert sa.normalize_voice("wait…") == "wait..."     # ellipsis
+        assert sa.normalize_voice("ＡBC") == "ABC"          # fullwidth -> NFKD
+        assert sa.normalize_voice("m²") == "m2"             # superscript -> NFKD
+        assert sa.normalize_voice("a中b") == "ab"           # CJK dropped
+        assert sa.normalize_voice("“x” det’s") == '"x" det\'s'  # curly quotes
+
+    def test_emojis_and_danish_survive(self):
+        assert sa.normalize_voice("ship 🚀👍") == "ship 🚀👍"
+        assert sa.normalize_voice("DK 🇩🇰") == "DK 🇩🇰"       # flag
+        assert sa.normalize_voice("dev 👨‍💻") == "dev 👨‍💻"  # ZWJ sequence
+        assert sa.normalize_voice("blåbær på øen") == "blåbær på øen"
+        assert sa.normalize_voice("café naïve") == "café naïve"
+        assert sa.normalize_voice("5€ + 3$") == "5€ + 3$"
+
+    def test_total_on_bad_input(self):
+        assert sa.normalize_voice("") == ""
+        assert sa.normalize_voice(None) is None
+        assert sa.normalize_voice(123) == 123
+
+
+class TestHejFirstOfDay:
+    """The 'hej <name>' opener rule: strip a leading greeting line ONLY when Nate
+    already messaged this person earlier today. messaged_today reads the thread's
+    own messages (direction + ISO date); we drive it with controlled stamps and
+    avoid the best-effort load_full_conversation by using a slug that resolves to
+    no stored conversation (returns [] / errors -> ignored)."""
+
+    def _iso_today(self, hour=8):
+        import datetime as dt
+        tz = sa._captain_tz()
+        now = dt.datetime.now(tz)
+        return now.replace(hour=hour, minute=0, second=0,
+                           microsecond=0).astimezone(dt.timezone.utc).isoformat()
+
+    def _iso_days_ago(self, days=3):
+        import datetime as dt
+        tz = sa._captain_tz()
+        d = dt.datetime.now(tz) - dt.timedelta(days=days)
+        return d.astimezone(dt.timezone.utc).isoformat()
+
+    def _thread(self, msgs):
+        # slug deliberately non-existent so load_full_conversation contributes
+        # nothing (the test isolates the in-thread signal).
+        return {"slug": "__no_such_person_zzz__", "person": "Kristoffer",
+                "thread": msgs}
+
+    def test_strips_greeting_when_already_messaged_today(self):
+        th = self._thread([
+            {"direction": "sent", "date": self._iso_today(8), "text": "morning note"},
+            {"direction": "received", "date": self._iso_today(9), "text": "spm?"},
+        ])
+        out = sa.strip_greeting_if_not_first_of_day("Hej Kristoffer\nStatus: klar", th)
+        assert out == "Status: klar"
+
+    def test_keeps_greeting_when_first_of_day(self):
+        # only a 3-day-old prior send -> NOT messaged today -> greeting kept
+        th = self._thread([
+            {"direction": "sent", "date": self._iso_days_ago(3), "text": "old"},
+            {"direction": "received", "date": self._iso_today(9), "text": "spm?"},
+        ])
+        draft = "Hej Kristoffer\nStatus: klar"
+        assert sa.strip_greeting_if_not_first_of_day(draft, th) == draft
+
+    def test_keeps_greeting_when_no_history(self):
+        th = self._thread([
+            {"direction": "received", "date": self._iso_today(9), "text": "spm?"},
+        ])
+        draft = "Hej Kristoffer, kan du tjekke det?"
+        assert sa.strip_greeting_if_not_first_of_day(draft, th) == draft
+
+    def test_no_greeting_line_left_untouched(self):
+        th = self._thread([
+            {"direction": "sent", "date": self._iso_today(8), "text": "earlier"},
+        ])
+        draft = "Status: klar\n- a\n- b"
+        assert sa.strip_greeting_if_not_first_of_day(draft, th) == draft
+
+    def test_never_strips_into_empty(self):
+        th = self._thread([
+            {"direction": "sent", "date": self._iso_today(8), "text": "earlier"},
+        ])
+        # greeting is the whole message -> keep it rather than send nothing
+        assert sa.strip_greeting_if_not_first_of_day("Hej Kristoffer", th) == "Hej Kristoffer"
+
+    def test_messaged_today_true_false(self):
+        assert sa.messaged_today(self._thread(
+            [{"direction": "sent", "date": self._iso_today(7), "text": "x"}])) is True
+        assert sa.messaged_today(self._thread(
+            [{"direction": "sent", "date": self._iso_days_ago(2), "text": "x"}])) is False
+        # a RECEIVED message today is not Nate sending -> False
+        assert sa.messaged_today(self._thread(
+            [{"direction": "received", "date": self._iso_today(7), "text": "x"}])) is False
+
+    def test_total_on_bad_input(self):
+        assert sa.strip_greeting_if_not_first_of_day("", {"thread": []}) == ""
+        assert sa.strip_greeting_if_not_first_of_day(None, {"thread": []}) is None

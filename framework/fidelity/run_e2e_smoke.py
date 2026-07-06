@@ -84,13 +84,25 @@ def _oauth_ok() -> bool:
 
 
 def _voyage_ok() -> bool:
-    """True iff the Voyage key resolves through the embeddings lib (it lazily
-    loads _shared/.env). No network call — just key resolution, which is what
-    gates the real STYLE embedding."""
+    """True iff the personal source is live AND the Voyage key resolves through
+    the embeddings lib. ``framework.sources.get_source().available()`` is the
+    launcher-neutral liveness gate (replacing the former
+    ``~/.screenpipe/pipes/embeddings/lib.py`` presence probe): on Flavor-A it is
+    True iff the brain estate is present, so a clean-room box short-circuits to
+    False. The embeddings lib is then located as the SIBLING of the retrodiction
+    pipe (``retro.RETRO_PIPE_DIR.parent/embeddings/lib.py`` — instance config;
+    env ``CABINET_RETRO_PIPE_DIR`` overrides), byte-identical to the former
+    literal on this deployment and a non-existent sentinel on a generic box. No
+    network call — just key resolution, which gates the real STYLE embedding.
+    Any error ⇒ False."""
     try:
         import importlib.util
-        from pathlib import Path
-        p = Path.home() / ".screenpipe" / "pipes" / "embeddings" / "lib.py"
+
+        from framework.sources import get_source
+        if not get_source().available():
+            return False
+        from framework.fidelity import retro
+        p = retro.RETRO_PIPE_DIR.parent / "embeddings" / "lib.py"
         if not p.exists():
             return False
         spec = importlib.util.spec_from_file_location("sp_emb_voyage_probe", str(p))

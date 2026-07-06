@@ -32,7 +32,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from framework.fidelity.oauth_llm import oauth_json_llm, oauth_raw_llm
-from framework.env import captain_name, captain_role
+from framework.env import captain_name, captain_role, state_dir, vault_dir
 from framework.fidelity.officer_prompt import _clone_privacy_fence
 from framework.sources import get_source
 from framework.fidelity.scorer import composite
@@ -53,10 +53,13 @@ _DECISIONS_REL = "5-Reflections/Decisions"
 
 def _vault_dir() -> Path:
     """The Decisions corpus dir, realpath-jailed to the vault (Corridor path-
-    traversal mitigation). OBSIDIAN_VAULT_PATH (pinned by the embeddings plist)
-    else the TRUE on-disk lowercase casing."""
-    vault = (os.environ.get("OBSIDIAN_VAULT_PATH")
-             or str(Path.home() / "obsidian" / "screenpipe-brain"))
+    traversal mitigation). The vault base is ``framework.env.vault_dir()``
+    (instance config; env ``CABINET_VAULT_DIR`` overrides) — on this deployment
+    the brain vault, byte-identical to the removed hardcode. A deployment with no
+    vault configured resolves to a generic dir whose Decisions subdir does not
+    exist, so the corpus is simply empty (``extract_decision_cases`` returns
+    [])."""
+    vault = vault_dir() or str(Path.home() / "vault")
     vreal = os.path.realpath(vault)
     resolved = os.path.realpath(os.path.join(vreal, _DECISIONS_REL))
     if resolved != vreal and not resolved.startswith(vreal + os.sep):
@@ -64,13 +67,22 @@ def _vault_dir() -> Path:
     return Path(resolved)
 
 
+def _state_base() -> Path:
+    """The state dir the extraction caches live in (personal data — kept OUT of
+    the repo). ``framework.env.state_dir()`` (instance config; env
+    ``CABINET_STATE_DIR`` overrides) or a generic ``~/.cabinet/state`` fallback
+    when unconfigured. Byte-identical to the removed state hardcode on this
+    deployment (alongside the autonomy_outcomes ledger)."""
+    return Path(state_dir() or str(Path.home() / ".cabinet" / "state"))
+
+
 def _cache_path() -> Path:
-    """Extraction cache (personal data — kept OUT of the repo). CABINET_DECISION
-    _CACHE env else ~/.screenpipe/state/, alongside autonomy_outcomes.jsonl."""
+    """Extraction cache path. ``CABINET_DECISION_CACHE`` env override else the
+    deployment state dir (``_state_base()``)."""
     p = os.environ.get("CABINET_DECISION_CACHE")
     if p:
         return Path(p).expanduser()
-    return Path.home() / ".screenpipe" / "state" / "cabinet_decision_cases.json"
+    return _state_base() / "cabinet_decision_cases.json"
 
 
 # --- note parsing ----------------------------------------------------------
@@ -255,7 +267,7 @@ def _git_cache_path() -> Path:
     p = os.environ.get("CABINET_DECISION_GIT_CACHE")
     if p:
         return Path(p).expanduser()
-    return Path.home() / ".screenpipe" / "state" / "cabinet_decision_cases_git.json"
+    return _state_base() / "cabinet_decision_cases_git.json"
 
 
 def _git_log(repo: Path, n: int = 400, runner=None) -> list[dict]:
