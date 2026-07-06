@@ -24,14 +24,21 @@ CALENDAR_EVENT_SCRIPT = (
     # land events off his phone (defeating the whole point). A missing / non-
     # writable configured calendar FAILS LOUDLY — returns an "err:" string that
     # carries no "ok", so _exec_calendar_event raises and the card downgrades.
-    ' if not (exists (first calendar whose name is calName)) then return "err:calendar-not-found:" & calName\n'
-    ' set targetCal to (first calendar whose name is calName)\n'
-    ' if (writable of targetCal is false) then return "err:calendar-not-writable:" & calName\n'
-    ' tell targetCal\n'
+    # [2026-07-06] Address the calendar DIRECTLY by name (`calendar calName`), not
+    # via `(first calendar whose name is calName)`. A `whose`-nested reference makes
+    # the created event a nested specifier that Calendar.app cannot resolve `uid`
+    # off of ("Can't make uid of «class wrev»" — reproduced rc=1 against real
+    # Calendar.app; the prior code was only ever mock-tested). Read `uid` INSIDE the
+    # `tell calendar calName` block, off the fresh direct reference (rc=0). RT-A7
+    # fail-loud behavior is unchanged: a missing/non-writable target returns "err:".
+    ' if not (exists calendar calName) then return "err:calendar-not-found:" & calName\n'
+    ' if (writable of calendar calName is false) then return "err:calendar-not-writable:" & calName\n'
+    ' tell calendar calName\n'
     '  set newEvent to make new event with properties {summary:evTitle, start date:startDate, end date:endDate, description:evNotes}\n'
+    '  set theUid to uid of newEvent\n'
     ' end tell\n'
     'end tell\n'
-    'return "ok:" & calName & ":" & (uid of newEvent)\n'
+    'return "ok:" & calName & ":" & theUid\n'
     'end run\n'
     'on parseIso(s)\n'
     ' set d to current date\n'
