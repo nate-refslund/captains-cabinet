@@ -2,6 +2,10 @@
 description: Run the daily Cabinet state backup on demand. Snapshots filesystem (cabinet runtime artifacts) + Redis BGSAVE + optional Postgres pg_dump.
 argument-hint: "[--dest <path>|--pg|--retention-days N]"
 allowed-tools: Bash
+# Act-on-invoke runbook (filesystem/Redis/Postgres snapshots) — explicit
+# /cabinet-backup only, never model-autonomous inside
+# --dangerously-skip-permissions sessions (audit #22).
+disable-model-invocation: true
 ---
 
 Trigger the Cabinet state backup. Normally runs daily via LaunchAgent.

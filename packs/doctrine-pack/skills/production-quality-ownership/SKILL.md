@@ -2,6 +2,9 @@
 name: production-quality-ownership
 description: "Six-question craftsman checklist before declaring work done. Use after finishing any non-trivial task to validate: tests, edge cases, docs, observability, rollback, handoff."
 sunset: '2026-10-05'
+# Background law (always-on, not a runbook) — model applies it on trigger;
+# no meaningful user slash-invocation surface (audit #22).
+user-invocable: false
 ---
 
 

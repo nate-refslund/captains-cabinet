@@ -3,6 +3,10 @@ name: cabinet-route-tasks
 description: "Manually run the mission supervisor to push ready work-graph tasks to officers as Redis triggers. NOT scheduled anywhere — routing is PULL-ONLY (Captain ruling): officers pull their ratified missions from instance/config/outcomes.yml on every self-wake tick. Use this only as a push-nudge after declaring a new outcome, or to debug why a task isn't surfacing."
 argument-hint: "[--dry-run|--mission <mission_id>]"
 allowed-tools: Bash
+# Act-on-invoke runbook (pushes Redis triggers to officers; routing is PULL-ONLY
+# by Captain ruling) — explicit /cabinet-route-tasks only, never model-autonomous
+# inside --dangerously-skip-permissions sessions (audit #22).
+disable-model-invocation: true
 ---
 
 # Cabinet — Route Ready Mission Tasks (manual push-nudge)

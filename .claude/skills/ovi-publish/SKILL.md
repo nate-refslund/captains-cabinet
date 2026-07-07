@@ -3,6 +3,9 @@ name: ovi-publish
 description: Use when computing or publishing weekly OVI and sanitized learning digests for Captain's Cabinet.
 argument-hint: "<YYYY-MM-DD week start>"
 allowed-tools: Bash
+# Act-on-invoke runbook (publishes OVI + digests) — explicit /ovi-publish only,
+# never model-autonomous inside --dangerously-skip-permissions sessions (audit #22).
+disable-model-invocation: true
 ---
 
 # OVI Publish

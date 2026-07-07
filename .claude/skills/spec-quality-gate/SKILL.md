@@ -1,6 +1,9 @@
 ---
 name: spec-quality-gate
 description: Pre-commit checklist for product specs. Use before publishing any spec to Notion / specs/ dir: acceptance criteria measurable, dependencies named, rollback documented, captain attention budgeted.
+# Background law (always-on gate, not a runbook) — model applies it on trigger;
+# no meaningful user slash-invocation surface (audit #22).
+user-invocable: false
 ---
 
 # Skill: Spec Quality Gate
