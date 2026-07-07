@@ -77,6 +77,13 @@ def _write_stub(adapter_dir: Path, module: str) -> None:
             def model_patterns(self): return ""
             def drafting_lessons(self, before_ts): return ""
             def read_note(self, path): return "STUB-NOTE"
+            def find_threads(self, hours=48): return []
+            def gather(self, thread, *, do_prep=True): return {}
+            def draft_fn(self, thread, ctx, *, min_confidence=0.0): return ""
+            def captain_replied_since(self, slug, when): return None
+            def still_awaiting(self, slug, hours=72): return None
+            def deploy_health(self, app, limit=8): return {}
+            def briefing_commitments(self, direction="owed_by_captain"): return []
     '''), encoding="utf-8")
 
 

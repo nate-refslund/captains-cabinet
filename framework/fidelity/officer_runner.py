@@ -334,9 +334,11 @@ def gather_cutoff_context(case: Case, *, brain=None,
     vault_hits = leakguard.filter_mcp_result(pre, cutoff)
 
     # --- commitments (both directions; genuinely ts-keyed) -----------------
+    # CONTRACT direction values (base.PersonalSource) — the Flavor-A adapter
+    # maps them to/from its internal owed_by_nate storage values.
     commitments = leakguard.filter_mcp_result(
-        list(brain.open_commitments("owed_by_nate") or [])
-        + list(brain.open_commitments("owed_to_nate") or []),
+        list(brain.open_commitments("owed_by_captain") or [])
+        + list(brain.open_commitments("owed_to_captain") or []),
         cutoff,
     )
 

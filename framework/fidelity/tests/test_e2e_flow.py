@@ -98,7 +98,8 @@ class _LeakTrapBrain:
         }
 
     def open_commitments(self, direction):
-        if direction == "owed_by_nate":
+        # CONTRACT direction values (base.PersonalSource — T1 widen).
+        if direction == "owed_by_captain":
             return [
                 # PRE-cutoff commitment — must SURVIVE.
                 {"commitment_id": "c-pre", "direction": direction,

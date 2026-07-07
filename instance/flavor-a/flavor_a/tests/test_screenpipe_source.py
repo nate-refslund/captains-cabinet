@@ -44,8 +44,9 @@ _PROTOCOL_METHODS = (
     "read_note",
 )
 _ACTING_METHODS = (
-    "find_threads", "gather", "draft_fn", "nate_replied_since",
-    "still_awaiting", "deploy_health", "briefing_commitments", "normalize_voice",
+    "find_threads", "gather", "draft_fn", "captain_replied_since",
+    "nate_replied_since", "still_awaiting", "deploy_health",
+    "briefing_commitments", "normalize_voice",
 )
 
 
@@ -187,10 +188,35 @@ def test_person_intel_delegates():
 
 
 def test_open_commitments_delegates():
+    # Legacy INTERNAL direction value: passes through byte-identical (back-compat).
     fs = FakeServer()
     out = _src(server=fs).open_commitments("owed_by_nate")
     assert out == [{"direction": "owed_by_nate", "_sentinel": "oc"}]
     assert fs.calls == [("open_commitments", "owed_by_nate")]
+
+
+def test_open_commitments_contract_direction_maps_to_internal_storage():
+    # T1 protocol widen (base.PersonalSource contract): owed_by_captain maps IN
+    # to the internal owed_by_nate storage value, and the returned rows'
+    # direction field maps back OUT to the contract value — on copies, so the
+    # server's row objects are never mutated.
+    fs = FakeServer()
+    out = _src(server=fs).open_commitments("owed_by_captain")
+    assert fs.calls == [("open_commitments", "owed_by_nate")]
+    assert out == [{"direction": "owed_by_captain", "_sentinel": "oc"}]
+
+
+def test_open_commitments_contract_remap_copies_not_mutates():
+    # The remap must never write through to the storage/server row objects.
+    row = {"direction": "owed_to_nate", "_sentinel": "oc"}
+
+    class OneRowServer:
+        def open_commitments(self, direction):
+            return [row]
+
+    out = _src(server=OneRowServer()).open_commitments("owed_to_captain")
+    assert out == [{"direction": "owed_to_captain", "_sentinel": "oc"}]
+    assert row["direction"] == "owed_to_nate"  # original untouched
 
 
 def test_voice_profile_delegates():
@@ -248,7 +274,16 @@ def test_draft_fn_forwards():
     assert fa.calls == [("draft_fn", {"slug": "s"}, {"gate": {}}, 0.5)]
 
 
+def test_captain_replied_since_is_the_contract_name():
+    # T1 protocol widen: the launcher-neutral PROTOCOL name delegates to the
+    # SAME re-homed acting fn (whose internal name keeps the Flavor-A form).
+    fa = FakeActing()
+    assert _src(acting=fa).captain_replied_since("morten", None) is True
+    assert fa.calls == [("nate_replied_since", "morten", None)]
+
+
 def test_nate_replied_since_forwards():
+    # Back-compat ALIAS (pre-contract name) — same delegation, byte-identical.
     fa = FakeActing()
     assert _src(acting=fa).nate_replied_since("morten", None) is True
     assert fa.calls == [("nate_replied_since", "morten", None)]
@@ -269,10 +304,29 @@ def test_deploy_health_forwards():
 
 def test_briefing_commitments_maps_to_acting_open_commitments():
     # The acting status=="open" filter, distinct from PersonalSource.open_commitments.
+    # Legacy INTERNAL direction value: passes through byte-identical (back-compat).
     fa = FakeActing()
     out = _src(acting=fa).briefing_commitments(direction="owed_by_nate")
     assert out == [{"direction": "owed_by_nate", "_sentinel": "acting_oc"}]
     assert fa.calls == [("open_commitments", "owed_by_nate")]
+
+
+def test_briefing_commitments_contract_direction_maps_to_internal():
+    # T1 protocol widen: a CONTRACT direction maps IN to the internal storage
+    # value and the returned rows' direction field maps back OUT (on copies).
+    fa = FakeActing()
+    out = _src(acting=fa).briefing_commitments(direction="owed_to_captain")
+    assert fa.calls == [("open_commitments", "owed_to_nate")]
+    assert out == [{"direction": "owed_to_captain", "_sentinel": "acting_oc"}]
+
+
+def test_briefing_commitments_default_direction_is_the_contract_form():
+    # The protocol default (owed_by_captain) reaches the acting seam as the
+    # internal owed_by_nate — the briefing lanes never speak the internal form.
+    fa = FakeActing()
+    out = _src(acting=fa).briefing_commitments()
+    assert fa.calls == [("open_commitments", "owed_by_nate")]
+    assert out == [{"direction": "owed_by_captain", "_sentinel": "acting_oc"}]
 
 
 def test_normalize_voice_forwards():

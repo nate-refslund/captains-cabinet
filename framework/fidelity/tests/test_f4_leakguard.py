@@ -75,7 +75,8 @@ class FakeBrain:
 
     def open_commitments(self, direction):
         self.calls.append(("open_commitments", direction))
-        return list(self._owed_by if direction == "owed_by_nate"
+        # CONTRACT direction values (base.PersonalSource — T1 widen).
+        return list(self._owed_by if direction == "owed_by_captain"
                     else self._owed_to)
 
     def read_note(self, path):
@@ -341,10 +342,12 @@ class TestCommitmentsFenced:
         assert "AFTER promise" not in repr(ctx)
 
     def test_both_directions_queried(self):
+        # The runner asks in CONTRACT direction values (base.PersonalSource —
+        # the Flavor-A adapter owns the owed_by_nate storage mapping).
         brain = FakeBrain()
         officer_runner.gather_cutoff_context(_case(), brain=brain)
         dirs = [c[1] for c in brain.calls if c[0] == "open_commitments"]
-        assert "owed_by_nate" in dirs and "owed_to_nate" in dirs
+        assert "owed_by_captain" in dirs and "owed_to_captain" in dirs
 
 
 class TestReadNotePathValidation:

@@ -13,8 +13,9 @@ genuinely-new message resurfaces.
 These exercise the real ledger (isolated to a tmp dir via CABINET_EVENT_LOG_DIR),
 the pure lane_dedup dedup helpers, and the real loop.expire_event / read_ledger
 paths; only the screenpipe-backed self-reply detector (the bound source's
-nate_replied_since, re-homed to the Flavor-A adapter and reached via get_source())
-is stubbed, since its own logic is covered in test_acting.py."""
+captain_replied_since — the T1 protocol name; the Flavor-A impl stays the
+re-homed acting.nate_replied_since, reached via get_source()) is stubbed, since
+its own logic is covered in test_acting.py."""
 from __future__ import annotations
 
 import os
@@ -67,7 +68,7 @@ class TestAutoExpireSelfReplied:
         _emit_open("morten-stagaard", "2026-06-25T14:53:00+00:00")
         assert "morten-stagaard" in _open_subjects()  # open before the sweep
         # Nate replied himself after the proposal -> precise detector says True.
-        monkeypatch.setattr(get_source(), "nate_replied_since", lambda slug, when: True)
+        monkeypatch.setattr(get_source(), "captain_replied_since", lambda slug, when: True)
 
         n = rdl._auto_expire_self_replied()
 
@@ -87,7 +88,7 @@ class TestAutoExpireSelfReplied:
         # (14:53) would block a newer message via open_proposal_blocks; after
         # expiry the subject is gone from open_ts, so the new message re-presents.
         _emit_open("morten-stagaard", "2026-06-25T14:53:00+00:00")
-        monkeypatch.setattr(get_source(), "nate_replied_since", lambda slug, when: True)
+        monkeypatch.setattr(get_source(), "captain_replied_since", lambda slug, when: True)
         rdl._auto_expire_self_replied()
 
         open_ts = ld.open_subject_ts(rows=read_ledger())
@@ -110,7 +111,7 @@ class TestAutoExpireSelfReplied:
         # already_handled: a 19:40 inbound (NEWER than 10:08) re-presents, while a
         # 09:00 inbound (OLDER than 10:08, covered by that proposal) stays handled.
         _emit_open("Kristoffer", "2026-06-25T10:08:55+00:00")
-        monkeypatch.setattr(get_source(), "nate_replied_since", lambda slug, when: True)
+        monkeypatch.setattr(get_source(), "captain_replied_since", lambda slug, when: True)
 
         rdl._auto_expire_self_replied()
 
@@ -135,7 +136,7 @@ class TestAutoExpireSelfReplied:
         # Detector says False (Nate has NOT replied since) and the proposal is
         # fresh -> the backstop does not fire -> it stays open (awaiting decision).
         _emit_open("lisa", "2026-06-25T14:53:00+00:00")
-        monkeypatch.setattr(get_source(), "nate_replied_since", lambda slug, when: False)
+        monkeypatch.setattr(get_source(), "captain_replied_since", lambda slug, when: False)
         # Pin "now" close to the proposal so the age backstop can't trip.
         monkeypatch.setattr(rdl, "PROPOSAL_MAX_AGE_H", 36.0)
 
@@ -148,7 +149,7 @@ class TestAutoExpireSelfReplied:
         # Detector can't tell (None) but the proposal is older than the backstop
         # window -> expire anyway so a stale draft never dangles forever.
         _emit_open("ulrik", "2026-06-20T09:00:00+00:00")  # days old
-        monkeypatch.setattr(get_source(), "nate_replied_since", lambda slug, when: None)
+        monkeypatch.setattr(get_source(), "captain_replied_since", lambda slug, when: None)
         monkeypatch.setattr(rdl, "PROPOSAL_MAX_AGE_H", 36.0)
 
         n = rdl._auto_expire_self_replied()
@@ -161,7 +162,7 @@ class TestAutoExpireSelfReplied:
         # 'Nate has not replied' (False) — he genuinely still owes a reply, so the
         # draft should remain his to decide, not be silently expired by age.
         _emit_open("ulrik", "2026-06-20T09:00:00+00:00")  # days old
-        monkeypatch.setattr(get_source(), "nate_replied_since", lambda slug, when: False)
+        monkeypatch.setattr(get_source(), "captain_replied_since", lambda slug, when: False)
         monkeypatch.setattr(rdl, "PROPOSAL_MAX_AGE_H", 36.0)
 
         n = rdl._auto_expire_self_replied()
@@ -173,7 +174,7 @@ class TestAutoExpireSelfReplied:
         # PROPOSAL_MAX_AGE_H <= 0 disables the time backstop (precise-only): a
         # stale proposal with an undeterminable detector stays open.
         _emit_open("ulrik", "2026-06-20T09:00:00+00:00")
-        monkeypatch.setattr(get_source(), "nate_replied_since", lambda slug, when: None)
+        monkeypatch.setattr(get_source(), "captain_replied_since", lambda slug, when: None)
         monkeypatch.setattr(rdl, "PROPOSAL_MAX_AGE_H", 0.0)
 
         n = rdl._auto_expire_self_replied()
@@ -191,14 +192,14 @@ class TestAutoExpireSelfReplied:
                       "decided_at": "2026-06-25T15:00:00+00:00"},
             outcome={"status": "ok", "evidence": "shipped"},
             review={"verdict": "confirmed"})
-        monkeypatch.setattr(get_source(), "nate_replied_since", lambda slug, when: True)
+        monkeypatch.setattr(get_source(), "captain_replied_since", lambda slug, when: True)
 
         n = rdl._auto_expire_self_replied()
 
         assert n == 0  # nothing OPEN to expire
 
     def test_no_open_proposals_is_a_noop(self, monkeypatch):
-        monkeypatch.setattr(get_source(), "nate_replied_since", lambda slug, when: True)
+        monkeypatch.setattr(get_source(), "captain_replied_since", lambda slug, when: True)
         assert rdl._auto_expire_self_replied() == 0
 
     def test_ledger_unreadable_is_safe(self, monkeypatch):

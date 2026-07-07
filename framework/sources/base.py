@@ -54,10 +54,13 @@ class PersonalSource(Protocol):
 
     # --- COMMITMENTS -------------------------------------------------------
     def open_commitments(self, direction: str) -> list:
-        """Open commitments in ``direction`` (owed_by / owed_to the captain),
-        open only. Flavor-A: ``BrainAdapter.open_commitments``
-        (officer_runner.py:377) → ``commitments_lib.load_all(...)`` filtered to
-        non-closed rows."""
+        """Open commitments in ``direction`` — the CONTRACT values
+        ``"owed_by_captain"`` / ``"owed_to_captain"`` (launcher-neutral; rows
+        returned carry the same contract values in their ``direction`` field).
+        Flavor-A: ``BrainAdapter.open_commitments`` (officer_runner.py:377) →
+        ``commitments_lib.load_all(...)`` filtered to non-closed rows, the
+        adapter mapping to/from its internal ``owed_by_nate`` storage values.
+        Honest empty: ``[]``."""
         ...
 
     # --- IDENTITY PRIORS (PRIVATE — inform HOW to draft, never emitted) -----
@@ -89,6 +92,77 @@ class PersonalSource(Protocol):
         ``BrainAdapter.read_note`` (officer_runner.py:436) → an
         ``OBSIDIAN_VAULT_PATH`` realpath-contained read (refuses any path that
         escapes the vault)."""
+        ...
+
+    # --- ACTING / BRIEFING SURFACE (T1 protocol widen, 2026-07-07) ----------
+    # Every method the live lanes (run_draft_lane / morning_synthesis) call on
+    # ``get_source()`` is IN the contract — no framework caller duck-types an
+    # adapter extra. Each records its Flavor-A origin (the method-origin ledger,
+    # source-adapter-boundary spec §4.1) and its HONEST-EMPTY contract: the
+    # value a sourceless (null / clean-room) deployment returns — an empty that
+    # degrades the caller gracefully, NEVER a fabricated observation.
+    def find_threads(self, hours: int = 48) -> list:
+        """Awaiting-reply threads from the last ``hours`` — noise-filtered
+        thread dicts (person / slug / last / audience …), the live lanes'
+        windowed sibling of ``find_reply_candidates``. Flavor-A:
+        ``flavor_a.acting.find_threads(hours=…)`` (draft_lib thread discovery +
+        skip-list / calendar-invite / chair-lock exclusions). Honest empty:
+        ``[]`` — no estate ⇒ nothing awaits."""
+        ...
+
+    def gather(self, thread: dict, *, do_prep: bool = True) -> dict:
+        """Investigate-then-draft context for one ``thread`` (intel / brain
+        hits / commitments / gate / prep). Flavor-A: ``flavor_a.acting.gather``.
+        Honest empty: ``{}`` — ``draft_fn`` declines on an empty context, so an
+        empty gather can never seed a fabricated draft."""
+        ...
+
+    def draft_fn(self, thread: dict, ctx: dict,
+                 *, min_confidence: float = 0.0) -> Optional[str]:
+        """A ready-to-present draft reply in the captain's voice for ``thread``
+        given ``ctx`` (from ``gather``), or ``''``/``None`` to decline (gate
+        refused / thin context / below ``min_confidence``). Flavor-A:
+        ``flavor_a.acting.draft_fn``. Honest empty: ``''`` (a decline — never a
+        fabricated draft)."""
+        ...
+
+    def captain_replied_since(self, slug: str, when) -> Optional[bool]:
+        """Did the CAPTAIN send an outbound message on the ``slug`` thread
+        STRICTLY after ``when`` (tz-aware datetime, or ``None``)? Tri-state:
+        ``True`` = positively saw a newer captain reply; ``False`` = the
+        conversation was readable and positively showed none; ``None`` = cannot
+        know. The launcher-neutral CONTRACT name — Flavor-A:
+        ``flavor_a.acting.nate_replied_since`` (the adapter keeps that name as
+        a back-compat alias). Honest empty: ``None`` — a sourceless deployment
+        must never fabricate ``False`` (it would pin run_draft_lane's stale
+        proposals open past their age backstop) nor ``True`` (it would expire
+        real ones)."""
+        ...
+
+    def still_awaiting(self, slug: str, hours: int = 72) -> Optional[bool]:
+        """Is the ``slug`` thread STILL awaiting the captain's reply right now
+        (same authority as ``find_threads``, re-checked live)? Tri-state like
+        ``captain_replied_since``; callers fail-safe on ``None`` (surface the
+        draft, never suppress on uncertainty). Flavor-A:
+        ``flavor_a.acting.still_awaiting``. Honest empty: ``None`` — never a
+        fabricated ``False`` (would silently drop a just-drafted reply) nor
+        ``True``."""
+        ...
+
+    def deploy_health(self, app: str, limit: int = 8) -> dict:
+        """Deploy health for the captain's app ``app`` — latest deploy state +
+        recent failures (e.g. ``{"latest_state": …, "failed": […]}``).
+        Flavor-A: ``flavor_a.acting.deploy_health`` (Vercel via the captain's
+        estate). Honest empty: ``{}`` — reads as healthy/quiet, so a sourceless
+        deployment stays silent rather than alarming."""
+        ...
+
+    def briefing_commitments(self, direction: str = "owed_by_captain") -> list:
+        """Open commitments for the BRIEFING lanes — the acting-surface
+        ``status == "open"`` filter, distinct from ``open_commitments``'s
+        closed-set filter. ``direction`` takes (and returned rows carry) the
+        same CONTRACT values as ``open_commitments``. Flavor-A:
+        ``flavor_a.acting.open_commitments``. Honest empty: ``[]``."""
         ...
 
 

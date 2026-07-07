@@ -185,7 +185,7 @@ def commitment_items(*, commitments: list | None = None, today: str | None = Non
     """
     if commitments is None:
         try:
-            commitments = get_source().briefing_commitments(direction="owed_by_nate") or []
+            commitments = get_source().briefing_commitments(direction="owed_by_captain") or []
         except Exception:
             commitments = []
     today = today or _today()

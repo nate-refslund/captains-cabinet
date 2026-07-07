@@ -48,6 +48,36 @@ class NullPersonalSource:
     def read_note(self, path: str) -> str:
         raise FileNotFoundError("no personal source configured")
 
+    # --- ACTING / BRIEFING SURFACE (T1 protocol widen) -----------------------
+    # Fail-closed: no estate ⇒ nothing awaits, nothing gathers, nothing drafts,
+    # nothing is KNOWN. The two tri-state probes return None (honest unknown) —
+    # a fabricated False from captain_replied_since would pin the draft lane's
+    # stale proposals open past their age backstop, and a fabricated False from
+    # still_awaiting would silently drop a just-drafted reply; None lets both
+    # callers take their documented fail-safe path instead.
+    def find_threads(self, hours: int = 48) -> list:
+        return []
+
+    def gather(self, thread: dict, *, do_prep: bool = True) -> dict:
+        return {}
+
+    def draft_fn(self, thread: dict, ctx: dict,
+                 *, min_confidence: float = 0.0) -> str:
+        # Honest decline — falsy, so the draft lane skips the thread.
+        return ""
+
+    def captain_replied_since(self, slug: str, when) -> Optional[bool]:
+        return None  # honest UNKNOWN — never a fabricated True/False
+
+    def still_awaiting(self, slug: str, hours: int = 72) -> Optional[bool]:
+        return None  # honest UNKNOWN — callers surface, never suppress
+
+    def deploy_health(self, app: str, limit: int = 8) -> dict:
+        return {}    # reads as healthy/quiet — a null box never alarms
+
+    def briefing_commitments(self, direction: str = "owed_by_captain") -> list:
+        return []
+
 
 class NullPersonalDispatch:
     """Fail-closed ``PersonalDispatch``: every write no-ops (returns ``None``). A

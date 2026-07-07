@@ -105,6 +105,36 @@ def _subprocess_vault_gather(handle: str, topic: str | None = None) -> dict:
             "topic_terms": data.get("topic_terms")}
 
 
+# ---------------------------------------------------------------------------
+# Commitment-direction CONTRACT mapping (T1 protocol widen, 2026-07-07). The
+# PersonalSource CONTRACT speaks the launcher-neutral values owed_by_captain /
+# owed_to_captain (base.PersonalSource.open_commitments); THIS adapter's storage
+# estate (commitments_lib rows, the 6-Commitments/ dirs, the brain server) keeps
+# its internal owed_by_nate / owed_to_nate values verbatim. The adapter maps a
+# contract direction IN and remaps returned rows' ``direction`` field OUT (on
+# shallow copies — storage rows are never mutated). A legacy internal value
+# passes through byte-identical, so pre-contract instance callers/tests keep
+# their exact prior behavior.
+# ---------------------------------------------------------------------------
+_DIRECTION_TO_INTERNAL = {"owed_by_captain": "owed_by_nate",
+                          "owed_to_captain": "owed_to_nate"}
+_DIRECTION_TO_CONTRACT = {v: k for k, v in _DIRECTION_TO_INTERNAL.items()}
+
+
+def _rows_to_contract(rows):
+    """Shallow-copy rows, remapping an internal ``direction`` value to its
+    contract name (owed_by_nate → owed_by_captain). Rows without a direction
+    field — or with an unknown value — pass through unchanged; the input rows
+    themselves are never mutated."""
+    out = []
+    for r in rows:
+        if isinstance(r, dict) and r.get("direction") in _DIRECTION_TO_CONTRACT:
+            r = dict(r)
+            r["direction"] = _DIRECTION_TO_CONTRACT[r["direction"]]
+        out.append(r)
+    return out
+
+
 class ScreenpipeSource:
     """Flavor-A ``PersonalSource`` — the real screenpipe adapter (inlined
     ``BrainAdapter`` bodies + the acting surface, byte-identical to today).
@@ -206,15 +236,27 @@ class ScreenpipeSource:
     # -- COMMITMENTS ---------------------------------------------------------
     #    ← BrainAdapter.open_commitments (officer_runner.py:377), inlined verbatim.
     def open_commitments(self, direction):
+        # CONTRACT surface (base.PersonalSource): direction takes owed_by_captain
+        # / owed_to_captain and the returned rows' direction field carries the
+        # same contract values. Storage + the brain server speak the internal
+        # owed_by_nate values, so a contract direction maps IN and the returned
+        # rows remap OUT (on copies, _rows_to_contract). A legacy internal value
+        # is passed through byte-identical — the pre-contract behavior, kept for
+        # back-compat instance callers/tests.
+        internal = _DIRECTION_TO_INTERNAL.get(direction, direction)
         if self._server is not None:
-            return self._server.open_commitments(direction)
-        import commitments_lib
-        rows = commitments_lib.load_all()
-        _closed = {"closed", "done", "resolved", "dropped", "cancelled",
-                   "fulfilled"}
-        return [fm for fm in rows.values()
-                if fm.get("direction") == direction
-                and str(fm.get("status", "")).strip().lower() not in _closed]
+            rows = self._server.open_commitments(internal)
+        else:
+            import commitments_lib
+            all_rows = commitments_lib.load_all()
+            _closed = {"closed", "done", "resolved", "dropped", "cancelled",
+                       "fulfilled"}
+            rows = [fm for fm in all_rows.values()
+                    if fm.get("direction") == internal
+                    and str(fm.get("status", "")).strip().lower() not in _closed]
+        if direction in _DIRECTION_TO_INTERNAL:
+            return _rows_to_contract(rows or [])
+        return rows
 
     # -- IDENTITY PRIORS (PRIVATE — inform HOW to draft, never emitted) -------
     #    ← BrainAdapter.voice_profile (officer_runner.py:399), inlined verbatim.
@@ -296,8 +338,17 @@ class ScreenpipeSource:
     def draft_fn(self, thread, ctx, *, min_confidence: float = 0.0):
         return self._acting().draft_fn(thread, ctx, min_confidence=min_confidence)
 
-    def nate_replied_since(self, slug, when):
+    def captain_replied_since(self, slug, when):
+        # The PROTOCOL name (launcher-neutral, base.PersonalSource — T1 contract
+        # rename 2026-07-07). The Flavor-A implementation stays the re-homed
+        # acting fn, whose internal name keeps this launcher's form verbatim.
         return self._acting().nate_replied_since(slug, when)
+
+    def nate_replied_since(self, slug, when):
+        # Thin BACK-COMPAT alias (pre-contract name). New code — and all
+        # framework core — calls captain_replied_since; this stays so instance
+        # callers/tests that still speak the Flavor-A form keep working.
+        return self.captain_replied_since(slug, when)
 
     def still_awaiting(self, slug, hours: int = 72):
         return self._acting().still_awaiting(slug, hours=hours)
@@ -305,10 +356,17 @@ class ScreenpipeSource:
     def deploy_health(self, app, limit: int = 8) -> dict:
         return self._acting().deploy_health(app, limit=limit)
 
-    def briefing_commitments(self, direction: str = "owed_by_nate") -> list:
+    def briefing_commitments(self, direction: str = "owed_by_captain") -> list:
         # ← screenpipe_adapter.open_commitments (the ACTING status=="open" filter,
         #   distinct from the PersonalSource.open_commitments _closed-set filter).
-        return self._acting().open_commitments(direction=direction)
+        # CONTRACT direction values map to/from the internal storage values
+        # exactly as in open_commitments above; a legacy internal value passes
+        # through byte-identical (back-compat).
+        internal = _DIRECTION_TO_INTERNAL.get(direction, direction)
+        rows = self._acting().open_commitments(direction=internal)
+        if direction in _DIRECTION_TO_INTERNAL:
+            return _rows_to_contract(rows or [])
+        return rows
 
     def normalize_voice(self, text):
         return self._acting().normalize_voice(text)

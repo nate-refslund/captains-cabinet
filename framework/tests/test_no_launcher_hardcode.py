@@ -182,10 +182,11 @@ _LINE_ALLOWLIST = _merge_line_allowlists(_ALLOWLISTED_LINES, _TEMPORARY_LINE_RES
 # display name, so the case-sensitive `\bNate\b` ratchet never matches them and
 # they need no active allowlist entry. Kept here as the audit trail.
 _BRAIN_ARTIFACTS_KEPT: Tuple[str, ...] = (
-    "Judgment call (no rename): kept internal fn nate_replied_since rather than "
-    "renaming to captain_replied_since — not a runtime string/path/brain-artifact; "
-    "rename is cross-file scope-creep; byte-identical either way; flagged for a "
-    "coordinated rename.",
+    "RESOLVED (T1 protocol widen, 2026-07-07): the flagged coordinated rename "
+    "landed at the CONTRACT surface — framework core + base.PersonalSource now "
+    "speak captain_replied_since; the lowercase nate_replied_since survives "
+    "only in instance/flavor-a (the acting impl + a thin adapter back-compat "
+    "alias), outside this framework-only ratchet's scan tree either way.",
     "Did NOT rename internal identifiers copy_to_nate / nate_copy — evidence the "
     "ratchet is an allowlist-based DISPLAY-NAME ratchet, not a blunt substring "
     "grep: decision_cell.py keeps a literal 'nate' stopword AND pervasive "

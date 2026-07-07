@@ -179,7 +179,7 @@ def _auto_expire_self_replied() -> int:
 
     For each OPEN proposal (loop.pending_proposals), expire it when EITHER:
       (1) PRECISE — the captain sent an outbound message on that thread strictly newer
-          than the proposal (get_source().nate_replied_since == True); the exact fix, or
+          than the proposal (get_source().captain_replied_since == True); the exact fix, or
       (2) BACKSTOP — the proposal is older than PROPOSAL_MAX_AGE_H and the
           precise check did not affirmatively say 'no newer reply' (None/True),
           so a stale draft never dangles even when the conversation is unreadable.
@@ -205,7 +205,7 @@ def _auto_expire_self_replied() -> int:
         if not slug:
             continue
         when = ld.parse_dt(prop.get("ts"))
-        replied = get_source().nate_replied_since(slug, when)  # True / False / None
+        replied = get_source().captain_replied_since(slug, when)  # True / False / None
         too_old = (
             PROPOSAL_MAX_AGE_H > 0
             and when is not None
