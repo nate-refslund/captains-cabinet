@@ -352,6 +352,32 @@ if [ "$FALLBACK_MODEL" != "none" ] \
   FALLBACK_FLAG="--fallback-model '$FALLBACK_MODEL'"
 fi
 
+# ===========================================================
+# Officer config-home isolation (AUD-1, audit 2026-07-07 #1)
+# ===========================================================
+# When the officer's LaunchAgent sets CLAUDE_CONFIG_DIR (pilot: comms-officer),
+# claude runs from a dedicated config home (~/Library/Application Support/
+# cabinet/claude-config) instead of inheriting the Captain's personal ~/.claude
+# (21 personal plugins, corridor mandate, personal auto-memory). Like
+# OFFICER_NAME below, the var must ride ON the command line — tmux send-keys
+# runs in the tmux SERVER's env, so plist EnvironmentVariables never reach the
+# pane when the server pre-exists.
+# CLAUDE_SECURESTORAGE_CONFIG_DIR federates ONLY the OAuth keychain lookup back
+# to the default "Claude Code-credentials" item: CC (verified on 2.1.202)
+# suffixes the keychain service name with sha256(config-dir)[0:8] when
+# CLAUDE_CONFIG_DIR is set, so a fresh config home boots "Not logged in".
+# Set-to-EMPTY drops the suffix (shares the existing keychain item,
+# refresh-token coherent) — NEVER duplicate the OAuth item into a second
+# keychain entry instead: refresh-token rotation would race the two copies.
+# KNOWN RESIDUAL (documented in the AUD-1 ledger row): the ~3KB BODY of the
+# Captain's personal ~/.claude/CLAUDE.md still loads via the cwd ANCESTOR walk
+# (the repo lives under $HOME); the 58KB @screenpipe-memories.md dossier
+# import does NOT load (external-includes gate, unapproved in the fresh home).
+CONFIG_HOME_PREFIX=""
+if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
+  CONFIG_HOME_PREFIX="CLAUDE_CONFIG_DIR='$CLAUDE_CONFIG_DIR' CLAUDE_SECURESTORAGE_CONFIG_DIR='${CLAUDE_SECURESTORAGE_CONFIG_DIR:-}' "
+fi
+
 # Build the claude invocation
 # $MODEL is single-quoted: model ids can carry a [1m] context suffix (e.g.
 # claude-opus-4-8[1m]) and this command is typed into a zsh pane, which would
@@ -361,7 +387,7 @@ fi
 # SERVER's global env. When the server was first started by another officer (e.g. cos),
 # a new session would otherwise launch claude as OFFICER_NAME=cos and mis-attribute every
 # heartbeat / cost / log / tier2 write to cos. Forcing them here pins the real identity.
-CLAUDE_CMD="cd $REPO_ROOT && OFFICER_NAME='$OFFICER' CABINET_OFFICER='$OFFICER' claude --model '$MODEL' $FALLBACK_FLAG $MCP_FLAG $SETTINGS_FLAG $TELEGRAM_FLAG $AGENT_FLAG --dangerously-skip-permissions --effort max"
+CLAUDE_CMD="cd $REPO_ROOT && OFFICER_NAME='$OFFICER' CABINET_OFFICER='$OFFICER' ${CONFIG_HOME_PREFIX}claude --model '$MODEL' $FALLBACK_FLAG $MCP_FLAG $SETTINGS_FLAG $TELEGRAM_FLAG $AGENT_FLAG --dangerously-skip-permissions --effort max"
 
 # ===========================================================
 # Dry-run gate — print plan & exit before any tmux/redis/launch side-effects.
