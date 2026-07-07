@@ -1,9 +1,0 @@
-{
-  "mcpServers": {
-    "host": {
-      "command": "/usr/bin/python3",
-      "args": ["/opt/founders-cabinet/cabinet/mcp-server/host-tools.py"],
-      "env": {}
-    }
-  }
-}

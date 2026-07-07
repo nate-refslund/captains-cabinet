@@ -50,7 +50,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from framework.acting import action_lane, lane_dedup as ld  # noqa: E402
-from framework.env import vault_dir, shared_env_path  # noqa: E402
+from framework.env import vault_dir, shared_env_path, product_brain_dir  # noqa: E402
 from framework.acting.loop import (  # noqa: E402
     expire_event, pending_proposals, proposal_event, proposal_id)
 from framework.fidelity.consequence import emit_consequence, read_ledger  # noqa: E402
@@ -704,24 +704,40 @@ def _llm(system: str, user: str) -> str:
 # until their scout/snapshot lanes land — every section degrades to empty, never
 # an error. Excerpts are provenance-fenced (SEC-4 discipline: signal text is
 # world-description, never instructions).
+#
+# P3b (2026-07-07): sections carry a SOURCE. "vault" (the default) resolves
+# under the caller's vault as before; "corpus" resolves under
+# env.product_brain_dir() — the ORG's OWN product-brain markdown corpus
+# (plan-B B4.14: architecture / decisions / incidents / deploy notes, written
+# by officers via normal file writes into <repo>/product-brain). This is the
+# clean-room fix: on org boxes vault_dir() fail-closes to "" and every vault
+# section is empty, so without a corpus source the lane gathered ZERO sections.
+# product_brain_dir() empty ⇒ corpus sections skip (fail-closed, same degrade
+# as an absent vault folder); both non-empty ⇒ vault sections are UNCHANGED and
+# corpus blocks ride alongside (additive). Corpus refs are namespaced
+# "product-brain/<relpath>" so evidence refs stay unambiguous across sources.
+# Same file-only contract, same _recent_files mtime fencing (as_of ceiling +
+# window), same caps/chars bounds, same SEC-4 provenance fencing.
 # ---------------------------------------------------------------------------
 
-# (label, subpath, filenames, window_h, cap, chars, ff_filter, group_by_product)
+# (label, subpath, filenames, window_h, cap, chars, ff_filter, group_by_product,
+#  source)
 #   filenames=None        → rglob every *.md under subpath (recency-windowed)
 #   filenames=[...]        → only those basenames under subpath/*/ (per-product dirs)
 #   window_h=None          → UNWINDOWED (all ages, still <= as_of — never leak future)
 #   ff_filter={k: pred}    → keep a file only if its YAML head[k] satisfies pred(v)
 #   group_by_product=True  → cap counts PRODUCTS (all their named files), not files
+#   source="vault"|"corpus" → root: the vault (default) | env.product_brain_dir()
 _Section = namedtuple(
     "_Section",
-    "label subpath filenames window_h cap chars ff_filter group_by_product")
+    "label subpath filenames window_h cap chars ff_filter group_by_product source")
 
 
 def _sec(label: str, subpath: str, *, filenames=None, window_h: "int | None" = WINDOW_H,
          cap: int = 5, chars: int = 700, ff_filter=None,
-         group_by_product: bool = False) -> "_Section":
+         group_by_product: bool = False, source: str = "vault") -> "_Section":
     return _Section(label, subpath, filenames, window_h, cap, chars, ff_filter,
-                    group_by_product)
+                    group_by_product, source)
 
 
 def _ff_truthy(v: Any) -> bool:
@@ -744,6 +760,9 @@ PROFILES = {
         _sec("PEOPLE", "3-People/_radar", cap=3, chars=500),
         _sec("CODE", "9-Codebases", filenames=["commits.md", "deployment.md"],
              cap=2, chars=800, group_by_product=True),
+        # P3b: recent org-corpus changes (newest 4 within the operational
+        # window) — the live lane's perception of the org's OWN knowledge.
+        _sec("CORPUS", "", cap=4, chars=700, source="corpus"),
     ],
     "strategic": [
         _sec("OPPORTUNITY", "7-Opportunities", window_h=None, cap=6, chars=700,
@@ -753,6 +772,9 @@ PROFILES = {
         _sec("CODE", "9-Codebases", filenames=["commits.md", "deployment.md"],
              cap=2, chars=800, group_by_product=True),
         _sec("RETRO", "5-Reflections/Weekly-Trends", window_h=None, cap=1, chars=900),
+        # P3b: the grander view — newest 6 corpus notes of ANY age (still
+        # <= as_of; the ceiling never leaks future files into a replay).
+        _sec("CORPUS", "", window_h=None, cap=6, chars=800, source="corpus"),
     ],
 }
 
@@ -897,7 +919,9 @@ def gather_signals(as_of: dt.datetime, *, window_h: int = WINDOW_H,
     """The fenced evidence bundle for a profile. FILE-ONLY (no API) so the sim
     harness replays it deterministically; v1 fencing = file-recency window ending
     at as_of (replay-grade content_ts fencing lands with the sim harness). New
-    folders may be absent → their section is simply empty.
+    folders may be absent → their section is simply empty. Sections with
+    source="corpus" root at env.product_brain_dir() (the org's product-brain
+    corpus) instead of the vault — empty resolver ⇒ empty section (P3b).
 
     ``suppress_cids`` drops any excerpt carrying one of OUR OWN acted correlation
     ids (an act→capture→act echo — TI-7); empty (the default) is a no-op, so the
@@ -907,7 +931,19 @@ def gather_signals(as_of: dt.datetime, *, window_h: int = WINDOW_H,
     sections = PROFILES.get(profile, PROFILES["operational"])
     parts = []                                    # (path, fenced-text) — path for logging
     for sec in sections:
-        root = vault / sec.subpath
+        # P3b: a "corpus" section roots at the org's product-brain dir instead
+        # of the vault. Unresolved ("" on a box with no corpus) ⇒ the section
+        # is simply empty — the same fail-closed degrade as an absent vault
+        # folder, never an error. Refs are namespaced "product-brain/…" so an
+        # evidence ref never collides with a vault-relative path.
+        if sec.source == "corpus":
+            brain = product_brain_dir()
+            if not brain:
+                continue
+            base, ref_prefix = Path(brain), "product-brain/"
+        else:
+            base, ref_prefix = vault, ""
+        root = base / sec.subpath if sec.subpath else base
         # a section using the module default window honors the caller's override;
         # a section with its own window (incl. None = unwindowed) keeps it.
         eff_window = window_h if sec.window_h == WINDOW_H else sec.window_h
@@ -922,7 +958,8 @@ def gather_signals(as_of: dt.datetime, *, window_h: int = WINDOW_H,
         for p in files:
             body = _excerpt(p, sec.chars)
             if body:
-                parts.append((p, f"--- {sec.label} ref={_relpath(p, vault)} ---\n{body}"))
+                parts.append(
+                    (p, f"--- {sec.label} ref={ref_prefix}{_relpath(p, base)} ---\n{body}"))
     # TI-7 cid-echo suppression: never re-feed our own re-captured acts to the
     # proposer. No-op when suppress_cids is empty (pre-flip / sim replay).
     kept = actfirst_canary.filter_cid_echoes(

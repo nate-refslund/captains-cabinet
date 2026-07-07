@@ -37,10 +37,50 @@ presets/<name>/
 │   ├── cto.md
 │   └── ...
 ├── skills/                 # Preset-specific skill defaults
-└── starter-spaces/         # Preset-specific Library starter-space templates (optional)
+└── starter-spaces/         # Preset-specific Library starter Spaces + seed records (optional; see below)
 ```
 
 Framework files in `framework/` plus the active preset's files compose into the runtime Cabinet state via `cabinet/scripts/load-preset.sh`.
+
+## Library starter spaces (`starter-spaces/`)
+
+A preset may ship Library Spaces pre-populated with seed records, so a fresh
+deployment's Library ("Notion-or-Library business brain") starts useful
+instead of empty. One YAML file per Space at
+`presets/<slug>/starter-spaces/<space>.yml`:
+
+- **Space fields** — `name` (unique natural key), `description`,
+  `schema_json`, `starter_template`, `access_rules` — same shape as the
+  legacy space-only JSON templates in `cabinet/starter-spaces/*.json`
+  (installed by `install-starter-space.sh`; the YAML path supersedes it for
+  presets and additionally seeds records).
+- **`records:`** — a list of seed record stubs: `title`, `labels`,
+  `schema_data`, `content_markdown` (may carry `[[wikilink]]` refs by exact
+  title; the backlink index builds when a record is next saved via the
+  dashboard). Template quality: generic org content with `<placeholders>` —
+  no personal data, no real customer names.
+
+Seed with:
+
+```bash
+bash cabinet/scripts/seed-library.sh [--preset <slug>] [--space <basename>] [--dry-run]
+```
+
+Defaults to the active preset. Idempotent by existence check: a Space is
+matched by `name` and reused as-is (never overwritten); a record is matched
+by (space, title) across all versions, so re-runs never duplicate seeds,
+never overwrite edits, and never resurrect deleted records. Writes ride the
+Library's own path (`cabinet/scripts/lib/library.sh`): parameterized inserts,
+inline voyage-4-large embeddings (NULL + ILIKE fallback when Voyage is
+unavailable), best-effort `cabinet_memory` queue.
+
+Shipped: `work/starter-spaces/business-brain.yml` (Business Brain: start-here
+index, product overview, customers & segments, decisions index, operating
+principles) and `step-network/starter-spaces/business-brain.yml` (pool
+flavor: project index + customers & partners, records tagged per project).
+The officer loop-prompts' reflection ritual (`cabinet/loop-prompts/*.txt`)
+instructs officers to land durable business/product/customer facts into the
+seeded 'Business Brain' Space via the library MCP `library_create_record`.
 
 ## How the active preset is chosen
 

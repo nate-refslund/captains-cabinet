@@ -1,0 +1,174 @@
+# presets/step-network/starter-spaces/business-brain.yml
+# Starter Space — Business Brain (step-network preset, multi-project pool)
+#
+# Seeded by: bash cabinet/scripts/seed-library.sh --preset step-network
+# Space name is the natural key (library_spaces.name UNIQUE); records are
+# matched by (space, title) — re-running the seeder never duplicates,
+# never overwrites, never resurrects records the Captain edited or deleted.
+#
+# Pool flavor: one Business Brain shared across every project lane. Facts are
+# labeled per project; the [[Project Index]] record is the routing page.
+# Template quality rules: generic org content only — no personal data, no
+# real customer/partner names. Fill the <placeholders> per deployment.
+# Notion provenance fields are omitted (this preset ships Notion-deprecated).
+
+name: Business Brain
+description: >-
+  Pool-wide business memory shared across every project lane — portfolio
+  strategy, per-project positioning, customers/partners, and durable
+  decisions with their WHY. Officers land durable business/product/customer
+  facts here during synthesis (search first; extend or supersede, never
+  duplicate), labeled by project.
+starter_template: business_brain
+schema_json:
+  fields:
+    - name: category
+      type: select
+      options:
+        - Vision
+        - Positioning
+        - Pricing
+        - Target Users
+        - Competitive Landscape
+        - Principles
+        - Business Model
+        - Go-to-Market
+        - Product Strategy
+        - Research Insights
+        - Other
+      description: High-level bucket for navigation. Not enforced — records can shift category as thinking evolves.
+    - name: project
+      type: text
+      description: Project slug this record belongs to (matches instance/config/projects/<slug>.yml), or "pool" for portfolio-wide records.
+    - name: status
+      type: select
+      options: [Draft, Active, Superseded, Archived]
+      default: Active
+    - name: effective_from
+      type: date
+      description: When this thinking became current. Older records stay searchable but are informational, not directional.
+    - name: last_reviewed
+      type: date
+      description: Last time the Captain reviewed or revised. Used to surface stale strategic docs.
+access_rules:
+  read: ["*"]
+  write: ["*"]
+  comment: ["*"]
+
+# Seed record stubs. [[Wikilinks]] reference records by exact title — the
+# dashboard renders them and indexes backlinks on its write path (the seed
+# path inserts content only; the link index builds when a record is next
+# saved via the dashboard).
+records:
+  - title: Business Brain — Start Here
+    labels: [seed, index, pool]
+    schema_data:
+      category: Other
+      project: pool
+      status: Active
+    content_markdown: |
+      # Business Brain — Start Here
+
+      One business memory for the whole project pool. Every lane's Officers
+      read it before lane work and write to it when a durable fact surfaces —
+      labeled with the project slug so pool-wide and per-project knowledge
+      stay separable without separate silos.
+
+      ## Seeded index pages
+
+      - [[Project Index]] — every lane, one line each, and where its knowledge lives
+      - [[Customers & Partners]] — who the portfolio serves, across lanes
+      - [[Decisions Index]] — durable decisions with their WHY, pool-wide
+
+      ## How to write here
+
+      1. **Search first** (`library_search`) — extend or supersede an existing
+         record instead of creating a near-duplicate.
+      2. One durable fact or theme per record; set `project` in the record's
+         fields (a lane slug, or `pool`) and label accordingly.
+      3. Cross-link with `[[Title]]` wikilinks; a fact two lanes share belongs
+         in ONE `pool` record linked from both sides, not in two copies.
+      4. Updates create a new version (full history preserved) — supersession
+         is the mechanism, duplication is the defect.
+
+  - title: Project Index
+    labels: [seed, index, pool]
+    schema_data:
+      category: Product Strategy
+      project: pool
+      status: Draft
+    content_markdown: |
+      # Project Index
+
+      > Seed stub — one row per project lane. Keep in step with
+      > `instance/config/projects/<slug>.yml` (the lane configs stay the
+      > operational source of truth; this page is the business-context map).
+
+      | Project | One-liner | Stage | Business context lives |
+      |---------|-----------|-------|------------------------|
+      | <project-slug-a> | <what it is, for whom> | <idea / building / live> | <this Space / vault / docs> |
+      | <project-slug-b> | <what it is, for whom> | <idea / building / live> | <this Space / vault / docs> |
+
+      ## Portfolio logic
+
+      <why these projects belong in one pool — shared audience, shared
+      infrastructure, shared distribution — and what the pool optimizes for>
+
+      ## Related
+
+      - [[Customers & Partners]] — the demand side across lanes
+      - [[Decisions Index]] — pool-shaping decisions
+
+  - title: Customers & Partners
+    labels: [seed, customers, pool]
+    schema_data:
+      category: Target Users
+      project: pool
+      status: Draft
+    content_markdown: |
+      # Customers & Partners
+
+      > Seed stub — describe segments generically here; keep identifiable
+      > customer/partner evidence in a Customer Insights Space (or the lane's
+      > configured knowledge store) and link it.
+
+      | Segment | Served by (project) | Primary need | Status |
+      |---------|--------------------|--------------|--------|
+      | <segment-a> | <project-slug> | <need> | <target / active / parked> |
+      | <partner-type-b> | <project-slug or pool> | <need> | <target / active / parked> |
+
+      ## Cross-lane observations
+
+      - <a demand-side fact that holds across more than one project>
+
+      ## Related
+
+      - [[Project Index]] — the supply side
+      - [[Decisions Index]] — pricing/partnership decisions
+
+  - title: Decisions Index
+    labels: [seed, decisions, pool]
+    schema_data:
+      category: Other
+      project: pool
+      status: Active
+    content_markdown: |
+      # Decisions Index
+
+      Durable decisions with their WHY — the principle a future Officer should
+      apply, not just the letter of the call. One line per decision, newest
+      first, tagged with the project it binds (or `pool`), each linking a full
+      record carrying context, alternatives, and reversibility.
+
+      | Date | Project | Decision | Why (one line) | Record |
+      |------|---------|----------|----------------|--------|
+      | <YYYY-MM-DD> | <slug or pool> | <what was decided> | <the principle behind it> | [[<record title>]] |
+
+      ## Conventions
+
+      - The Captain-decision trail in `shared/interfaces/captain-decisions.md`
+        stays the git-backed mirror; land the durable, reusable WHYs here so
+        they are searchable next to the rest of the business brain.
+      - A decision scoped to one lane still lands here (tagged with its slug) —
+        one index, filterable, instead of per-lane silos.
+      - A reversed decision is superseded, not deleted — link the newer record.

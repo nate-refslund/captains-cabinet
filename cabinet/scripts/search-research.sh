@@ -16,8 +16,8 @@ EMBEDDING=$(curl -s https://api.voyageai.com/v1/embeddings \
 
 [[ "$EMBEDDING" == "null" || -z "$EMBEDDING" ]] && { echo "Error: Failed to embed query"; exit 1; }
 
-DB_URL="${NEON_DATABASE_URL:-${DATABASE_URL:-}}"
-[[ -z "$DB_URL" ]] && { echo "Error: DATABASE_URL not set"; exit 1; }
+DB_URL="${NEON_CONNECTION_STRING:-${NEON_DATABASE_URL:-${DATABASE_URL:-}}}"
+[[ -z "$DB_URL" ]] && { echo "Error: NEON_CONNECTION_STRING (or NEON_DATABASE_URL/DATABASE_URL) not set"; exit 1; }
 
 # Cosine similarity search — top 5
 psql "$DB_URL" -t -A --pset="format=aligned" -c "

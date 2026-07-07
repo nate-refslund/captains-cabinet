@@ -21,10 +21,42 @@ Generated (org_shape: portfolio):
   instance/config/posture.yml                   INERT posture RULING scaffold (only when
                                                 absent — an existing ruling is never
                                                 regenerated; sovereign amendment 2026-07-05)
+  instance/config/sources.yml                   personal-sensing seam binding — see the
+                                                emission rule below
+  instance/config/platform.yml                  also gains a `product_brain_dir:` key
+                                                (only when absent) defaulting to
+                                                `product-brain` — RELATIVE to the
+                                                deployment root, i.e. <root>/product-brain
+                                                (never an absolute machine path: generated
+                                                config stays relocatable + launcher-free).
+                                                Canonical resolver:
+                                                framework.env.product_brain_dir(), which
+                                                honors CABINET_PRODUCT_BRAIN_DIR, then
+                                                THIS key (relative → resolved against
+                                                CABINET_ROOT, existence-gated), then the
+                                                in-repo <root>/product-brain directory
 
 Generated (org_shape: functional | custom): contexts + projects + captain keys
 only — the functional preset ships its own five-officer roster (default
 `bootstrap-roles.sh`, no --roster); custom shapes author agents/roster by hand.
+
+sources.yml emission rule (Wave-1 OrgSource, 2026-07-07): the answers'
+`autonomy.flavor` key is the signal for whether this deployment has a personal
+(captain screenpipe/vault) sensing estate — that is the axis's literal meaning
+(axes-contract; org_shape is officer TOPOLOGY and says nothing about estates).
+  * flavor != personal (i.e. `org`, the default): emit a generated-by-marked
+    instance/config/sources.yml binding `framework.sources.org:OrgSource`, so a
+    fresh org instance gets real recall instead of fail-closing to
+    NullPersonalSource (zero hits). No `dispatch:` is emitted — get_dispatch()
+    fail-closes to NullPersonalDispatch (draft-capture-only), correct for a box
+    with no personal actuator estate.
+  * flavor == personal (Flavor-A): emit NOTHING — the captain's instance binds
+    its own adapter by hand (e.g. a screenpipe source), exactly today's
+    behavior; the generator never touches an existing binding.
+An existing sources.yml follows the standard marker convention: with the
+generated-by marker it is rewritten byte-identically; without it (hand-authored,
+e.g. a live Flavor-A binding) the run REFUSES rather than clobbering
+(--force overrides, as everywhere else).
 
 Guardrails:
   * Writes ONLY under <root>/instance/ — every output path is realpath-resolved
@@ -103,6 +135,25 @@ DEFAULT_MODEL = "claude-opus-4-8[1m]"
 # Posture scaffold vocabulary (sovereign amendment 2026-07-05, FI-1).
 POSTURE_FLAVORS = frozenset({"org", "personal"})
 POSTURE_TARGETS = frozenset({"guardian", "sovereign"})
+
+# The org-box recall binding emitted into instance/config/sources.yml (see the
+# module-docstring emission rule). Resolver contract: framework.sources
+# _load_bound() reads `adapter: "<module>:<Class>"` and importlib-loads it;
+# framework/sources/ is one of its two trusted module trees.
+ORG_SOURCE_ADAPTER = "framework.sources.org:OrgSource"
+
+# platform.yml key naming the org's product-brain corpus dir. Canonical
+# resolver: framework.env.product_brain_dir() (CABINET_PRODUCT_BRAIN_DIR env
+# override, else THIS platform.yml key — relative values resolve against the
+# repo root, existence-gated — else the in-repo <root>/product-brain
+# directory, else ""). The generator stamps the key (only when absent) so the
+# deployment's corpus location is declared in config alongside state_dir and
+# the captain keys, and a captain relocates the corpus by editing it.
+# The stamped VALUE is relative to the deployment root ("product-brain" ⇒
+# <root>/product-brain, the resolver's own default) — never an absolute
+# machine path, so generated config stays relocatable and launcher-free.
+PRODUCT_BRAIN_KEY = "product_brain_dir"
+PRODUCT_BRAIN_DEFAULT = "product-brain"
 
 LANE_CEO_TEMPLATE_REL = "presets/portfolio/agents/_lane-ceo.md.template"
 TEMPLATE_PLACEHOLDERS = ("{{LANE_NAME}}", "{{LANE_SLUG}}", "{{REPO}}", "{{BOARDS}}", "{{MODEL}}")
@@ -566,6 +617,30 @@ def render_officers_block(lanes: list) -> str:
     return "\n".join(lines)
 
 
+def render_sources() -> str:
+    """instance/config/sources.yml for an ORG-flavor deployment (see the
+    module-docstring emission rule). Binds the framework-side OrgSource so a
+    fresh org instance has real recall; deliberately NO `dispatch:` key — the
+    write seam fail-closes to NullPersonalDispatch (draft-capture-only)."""
+    return f"""\
+# {MARKER} — personal-sensing seam binding for an ORG-flavor deployment
+# (regenerate via cabinet/scripts/generate-instance.py; emitted because the
+# answers declare autonomy.flavor != personal — an org box has no captain
+# screenpipe/vault estate, so recall binds the cabinet's OWN memory estate).
+#
+# framework.sources.get_source() reads `adapter: "<module>:<Class>"` from this
+# file, importlib-loads the module (framework/sources/ is a trusted adapter
+# tree), instantiates the class, and binds it as the PersonalSource framework
+# CORE queries. Without this file the deployment fail-closes to
+# NullPersonalSource — honest, but ZERO recall on every gather.
+adapter: {ORG_SOURCE_ADAPTER}
+
+# No dispatch: binding — an org box has no personal WRITE/actuator estate.
+# framework.sources.get_dispatch() fail-closes to NullPersonalDispatch: every
+# write no-ops and the egress lanes degrade to draft-capture-only.
+"""
+
+
 def _set_top_level_key(text: str, key: str, value: str) -> str:
     """Replace `key: ...` at column 0, preserving a trailing comment; append if absent."""
     pattern = re.compile(rf"^{re.escape(key)}:[^\n#]*(?P<comment>#[^\n]*)?$", re.MULTILINE)
@@ -583,12 +658,35 @@ def _set_top_level_key(text: str, key: str, value: str) -> str:
     return new_text
 
 
-def render_platform(existing: str, answers: dict, lanes: list, org_shape: str) -> str:
+def _set_top_level_key_if_absent(text: str, key: str, value: str, comment: str = "") -> str:
+    """Append `key: value` at top level ONLY when no such key exists yet.
+
+    Unlike ``_set_top_level_key`` this never replaces: it is used for keys the
+    generator has no answers-file source for (e.g. ``product_brain_dir``), so a
+    captain's hand-edited value must survive every re-run."""
+    if re.search(rf"^{re.escape(key)}:", text, re.MULTILINE):
+        return text
+    suffix = f"    {comment}" if comment else ""
+    sep = "" if text.endswith("\n") else "\n"
+    return f"{text}{sep}{key}: {value}{suffix}\n"
+
+
+def render_platform(existing: str, answers: dict, lanes: list, org_shape: str,
+                    product_brain: str) -> str:
     captain = answers["captain"]
     text = existing
     text = _set_top_level_key(text, "captain_name", str(captain["name"]))
     text = _set_top_level_key(text, "captain_timezone", str(captain["timezone"]))
     text = _set_top_level_key(text, "captain_telegram_chat_id", f'"{captain["telegram_chat_id"]}"')
+    # Org product-brain corpus dir (only when absent — a hand-edited value
+    # survives). Value is RELATIVE to the deployment root. Canonical resolver:
+    # framework.env.product_brain_dir() (CABINET_PRODUCT_BRAIN_DIR env
+    # override, else THIS key — existence-gated — else <root>/product-brain).
+    text = _set_top_level_key_if_absent(
+        text, PRODUCT_BRAIN_KEY, f'"{product_brain}"',
+        comment="# org corpus dir, relative to CABINET_ROOT — read by "
+                "framework.env.product_brain_dir() (CABINET_PRODUCT_BRAIN_DIR overrides)",
+    )
 
     if org_shape != "portfolio":
         return text
@@ -719,6 +817,9 @@ lanes:
 # 2026-07-05, `apply sovereign posture`): the generator renders an INERT
 # instance/config/posture.yml scaffold from the two optional keys below, and
 # nothing changes until the Captain locks it (germline-lock.sh lock).
+# flavor also gates the recall binding: org (the default) emits
+# instance/config/sources.yml binding framework.sources.org:OrgSource;
+# personal emits NO sources.yml (bind your own adapter by hand).
 autonomy:
   posture: propose_first
   flavor: org                    # org | personal (personal ⇒ guardian scaffold, always)
@@ -782,8 +883,23 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
     existing_platform = platform_path.read_text(encoding="utf-8") if platform_path.exists() else ""
     outputs.append((
         platform_path,
-        render_platform(existing_platform, answers, lanes, org_shape), "yaml",
+        render_platform(existing_platform, answers, lanes, org_shape,
+                        product_brain=PRODUCT_BRAIN_DEFAULT), "yaml",
     ))
+
+    # Personal-sensing seam binding (module-docstring emission rule): an
+    # org-flavor deployment (autonomy.flavor != personal) gets the OrgSource
+    # binding so recall works out of the box; a personal/Flavor-A deployment
+    # binds its own adapter by hand — the generator emits nothing. The
+    # standard overwrite guard below protects a hand-authored sources.yml
+    # (no marker ⇒ refuse without --force).
+    flavor = str((answers.get("autonomy") or {}).get("flavor", "org"))
+    sources_emitted = flavor != "personal"
+    if sources_emitted:
+        outputs.append((
+            _instance_path(root, "config", "sources.yml"),
+            render_sources(), "yaml",
+        ))
 
     # Posture scaffold (sovereign amendment 2026-07-05): rendered ONLY when
     # absent — an existing posture.yml is a Captain RULING (possibly ratified
@@ -867,6 +983,13 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
         print(f"  flavor: {f}) — INERT until the Captain ratifies by locking:")
         print("  edit basis/ruled_at, commit, then sudo bash cabinet/scripts/germline-lock.sh lock")
         print("  (unlocked/absent/mismatched always resolves guardian — today's rules).")
+    if sources_emitted:
+        print(f"  Recall: instance/config/sources.yml binds {ORG_SOURCE_ADAPTER} (org")
+        print("  flavor). No dispatch: binding — writes fail-close to draft-capture-only.")
+    else:
+        print("  Recall: no sources.yml emitted (autonomy.flavor: personal) — bind your")
+        print("  personal adapter by hand in instance/config/sources.yml; until then")
+        print("  officers fail-close to NullPersonalSource (zero recall).")
     return written
 
 

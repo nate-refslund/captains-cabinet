@@ -947,14 +947,107 @@ COMPOSE
 # ---------------------------------------------------------------------------
 # Step 13 — Apply schemas to Neon DB (AC #65)
 # ---------------------------------------------------------------------------
+# Framework base schemas applied to a new cabinet's Neon DB, in dependency
+# order — the single source of truth shared by the dry-run plan, the apply
+# loop, and the drift self-check below. Paths relative to the new cabinet
+# checkout. Ordering notes:
+#   - cabinet-memory-content-tsv.sql runs right after cabinet_memory.sql (its
+#     lockstep migration — no-op on the fresh base schema, upgrades cabinets
+#     cloned from a pre-2026-07-07 snapshot).
+#   - cabinet_research.sql runs before cabinet-id-neon-phase1b.sql (which
+#     stamps cabinet_id onto cabinet_research; either order converges, but
+#     table-before-stamp keeps the intent obvious).
+#   - 037-library-phase-a.sql + 044-library-embedding-hardening.sql alter
+#     library_records, contexts-neon-phase2.sql alters library_spaces — all
+#     three run after library.sql (their base tables).
+#   - 041-tasks-due-at.sql alters officer_tasks — after 038-officer-tasks.sql
+#     (its DDL is NOT folded into 038; it ships as a lockstep add-on).
+#   - 045-org-runtime-slice.sql is self-contained (creates its own pgcrypto
+#     extension) — last, mirroring load-preset.sh's Neon list position.
+# load-preset.sh keeps its own Neon list for EXISTING cabinets — mirror
+# additions there in the same change (Docs Must Track the Code).
+schema_apply_list() {
+  cat <<'LIST'
+cabinet/sql/cabinet_memory.sql
+cabinet/migrations/cabinet-memory-content-tsv.sql
+cabinet/sql/cabinet_research.sql
+cabinet/sql/library.sql
+cabinet/sql/037-library-phase-a.sql
+cabinet/sql/044-library-embedding-hardening.sql
+cabinet/sql/contexts-neon-phase1.sql
+cabinet/sql/contexts-neon-phase2.sql
+cabinet/sql/cabinet-id-neon-phase1.sql
+cabinet/sql/cabinet-id-neon-phase1b.sql
+cabinet/sql/session-memories-context-slug.sql
+cabinet/sql/2026-04-17-spec-034-provisioning-schema.sql
+cabinet/sql/038-officer-tasks.sql
+cabinet/sql/041-tasks-due-at.sql
+cabinet/sql/039-linear-to-tasks-schema.sql
+cabinet/sql/045-org-runtime-slice.sql
+LIST
+}
+
+# The ONLY deliberate cabinet/sql omissions from schema_apply_list: the
+# LOCAL-postgres schemas load-preset.sh applies to $DATABASE_URL, never Neon.
+# Anything else on disk but unlisted is REAL drift — the self-check WARNs on
+# it. Keep this set exact (do not park new files here to silence the WARN).
+schema_local_pg_omissions() {
+  cat <<'LIST'
+cabinet-id-phase1.sql
+cabinet-id-phase1b.sql
+contexts-cabinet-phase1.sql
+LIST
+}
+
+# Warn-only drift check: every cabinet/sql/*.sql on disk must be in
+# schema_apply_list or in the exact schema_local_pg_omissions set above —
+# anything else WARNs (a real alarm now, not an expected-noise list). Returns
+# 0 always — new DDL must never be silently forgotten on fresh boxes, but
+# bootstrap keeps going (AC #65 semantics unchanged). Migrations dir gets a
+# note only: most migrations are deliberately absent because their DDL is
+# folded into a base schema.
+schema_list_selfcheck() {
+  local base_dir="$1"
+  local listed omitted f name unlisted="" mig_unlisted=""
+  listed="$(schema_apply_list)"
+  omitted="$(schema_local_pg_omissions)"
+  for f in "$base_dir"/cabinet/sql/*.sql; do
+    [ -f "$f" ] || continue
+    name="$(basename "$f")"
+    grep -qxF "$name" <<<"$omitted" && continue
+    grep -qxF "cabinet/sql/$name" <<<"$listed" || unlisted="$unlisted $name"
+  done
+  if [ -n "$unlisted" ]; then
+    info "WARN: cabinet/sql DDL not in the bootstrap apply list (add to schema_apply_list or document the omission):$unlisted"
+  fi
+  for f in "$base_dir"/cabinet/migrations/*.sql; do
+    [ -f "$f" ] || continue
+    name="$(basename "$f")"
+    grep -qxF "cabinet/migrations/$name" <<<"$listed" || mig_unlisted="$mig_unlisted $name"
+  done
+  if [ -n "$mig_unlisted" ]; then
+    info "NOTE: cabinet/migrations not applied at bootstrap (expected when the DDL is folded into a base schema):$mig_unlisted"
+  fi
+  return 0
+}
+
 step_apply_schemas() {
+  local rel schema
+
   if [ "$DRY_RUN" = "1" ]; then
     if [ -n "$NEON_DATABASE_URL" ]; then
-      dry "Would apply framework/schemas-base.sql + presets/${PRESET_SLUG}/schemas.sql to Neon"
+      dry "Would apply framework base schemas to Neon (in order):"
+      while IFS= read -r rel; do
+        dry "  $rel"
+      done < <(schema_apply_list)
+      dry "Would apply preset schema: presets/${PRESET_SLUG}/schemas.sql (if present)"
       dry "  Neon URL: $(redact_neon_url "$NEON_DATABASE_URL")"
     else
       dry "No Neon URL — would skip schema application (CAPTAIN ACTION REQUIRED later)"
     fi
+    # Drift self-check against the local framework tree (the clone source) —
+    # the new cabinet checkout does not exist in dry-run.
+    schema_list_selfcheck "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
     return 0
   fi
 
@@ -968,17 +1061,9 @@ step_apply_schemas() {
   local cabinet_dir="${CABINET_BOOTSTRAP_ROOT}/${CABINET_SLUG}-cabinet"
   local preset_dir="$cabinet_dir/presets/$PRESET_SLUG"
 
-  # Apply framework base schemas (same list as load-preset.sh)
-  for schema in \
-    "$cabinet_dir/cabinet/sql/cabinet_memory.sql" \
-    "$cabinet_dir/cabinet/sql/library.sql" \
-    "$cabinet_dir/cabinet/sql/contexts-neon-phase1.sql" \
-    "$cabinet_dir/cabinet/sql/cabinet-id-neon-phase1.sql" \
-    "$cabinet_dir/cabinet/sql/cabinet-id-neon-phase1b.sql" \
-    "$cabinet_dir/cabinet/sql/session-memories-context-slug.sql" \
-    "$cabinet_dir/cabinet/sql/2026-04-17-spec-034-provisioning-schema.sql" \
-    "$cabinet_dir/cabinet/sql/038-officer-tasks.sql" \
-    "$cabinet_dir/cabinet/sql/039-linear-to-tasks-schema.sql"; do
+  # Apply framework base schemas (schema_apply_list — see ordering notes there)
+  while IFS= read -r rel; do
+    schema="$cabinet_dir/$rel"
     if [ -f "$schema" ]; then
       if psql "$NEON_DATABASE_URL" -q -f "$schema" > /dev/null 2>&1; then
         info "Applied schema: $(basename "$schema")"
@@ -986,7 +1071,10 @@ step_apply_schemas() {
         info "WARN: failed to apply $(basename "$schema") — Cabinet will still boot; fix before new records"
       fi
     fi
-  done
+  done < <(schema_apply_list)
+
+  # Self-check (warn-only): flag DDL on disk that the apply list above missed
+  schema_list_selfcheck "$cabinet_dir"
 
   # Apply preset-specific schemas
   local preset_schema="$preset_dir/schemas.sql"

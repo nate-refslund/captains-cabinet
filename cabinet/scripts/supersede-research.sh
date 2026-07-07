@@ -3,13 +3,17 @@
 # Usage: bash supersede-research.sh <old-brief-title-or-id> [new-brief-path]
 set -euo pipefail
 
+# Resolve repo root from script location — works for Mac worktrees and Docker /opt.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CABINET_ROOT="${CABINET_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
+
 QUERY="${1:-}"
 NEW_BRIEF="${2:-}"
 
 [[ -z "$QUERY" ]] && { echo "Usage: bash supersede-research.sh <title-search-term> [new-brief-path]"; exit 1; }
 
-DB_URL="${NEON_DATABASE_URL:-${DATABASE_URL:-}}"
-[[ -z "$DB_URL" ]] && DB_URL="postgresql://cabinet:cabinet@postgres:5432/cabinet"
+DB_URL="${NEON_CONNECTION_STRING:-${NEON_DATABASE_URL:-${DATABASE_URL:-}}}"
+[[ -z "$DB_URL" ]] && { echo "Error: NEON_CONNECTION_STRING (or NEON_DATABASE_URL/DATABASE_URL) not set"; exit 1; }
 
 # Use parameterized query to prevent SQL injection
 SEARCH_PATTERN="%${QUERY}%"
@@ -32,5 +36,5 @@ fi
 if [ -n "$NEW_BRIEF" ] && [ -f "$NEW_BRIEF" ]; then
   echo ""
   echo "Embedding replacement brief..."
-  bash /opt/founders-cabinet/cabinet/scripts/embed-research.sh "$NEW_BRIEF" --tags "replacement"
+  bash "$CABINET_ROOT/cabinet/scripts/embed-research.sh" "$NEW_BRIEF" --tags "replacement"
 fi

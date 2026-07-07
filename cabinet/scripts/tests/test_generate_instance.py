@@ -418,6 +418,100 @@ class TestShapesAndExample:
 
 
 # ---------------------------------------------------------------------------
+# sources.yml emission (org flavor → OrgSource) + product_brain_dir stamping
+# ---------------------------------------------------------------------------
+
+class TestSourcesAndProductBrain:
+    def test_org_flavor_emits_orgsource_binding(self, cab_root):
+        """org flavor (explicit) → marked sources.yml binding OrgSource; the
+        platform gains product_brain_dir (relative to the deployment root)."""
+        answers = acme_answers()
+        answers["autonomy"] = {"posture": "propose_first", "flavor": "org"}
+        run_gen(cab_root, answers)
+
+        src_path = cab_root / "instance/config/sources.yml"
+        assert src_path.is_file()
+        text = src_path.read_text()
+        assert gi.MARKER in text
+        src = yaml.safe_load(text)
+        assert src["adapter"] == "framework.sources.org:OrgSource"
+        # deliberately NO dispatch binding — get_dispatch() fail-closes to
+        # NullPersonalDispatch (draft-capture-only)
+        assert "dispatch" not in src
+
+        platform = yaml.safe_load((cab_root / "instance/config/platform.yml").read_text())
+        assert platform["product_brain_dir"] == "product-brain"
+
+    def test_default_flavor_is_org_and_emits(self, cab_root):
+        """No autonomy.flavor key at all (the acme fixture) → defaults to org
+        → sources.yml still emitted (fresh org instances must not fail-close
+        to NullPersonalSource = zero recall)."""
+        assert "flavor" not in acme_answers()["autonomy"]
+        run_gen(cab_root, acme_answers())
+        src = yaml.safe_load((cab_root / "instance/config/sources.yml").read_text())
+        assert src["adapter"] == "framework.sources.org:OrgSource"
+
+    def test_functional_org_shape_also_emits(self, cab_root):
+        """The signal is FLAVOR, not org_shape — a functional org box gets
+        the binding too."""
+        answers = acme_answers()
+        answers["cabinet"]["org_shape"] = "functional"
+        run_gen(cab_root, answers)
+        assert (cab_root / "instance/config/sources.yml").is_file()
+
+    def test_personal_flavor_emits_nothing(self, cab_root):
+        """flavor: personal (Flavor-A) → NO sources.yml — the captain binds
+        their own personal adapter by hand; today's behavior preserved."""
+        answers = acme_answers()
+        answers["autonomy"] = {"posture": "propose_first", "flavor": "personal"}
+        run_gen(cab_root, answers)
+        assert not (cab_root / "instance/config/sources.yml").exists()
+
+    def test_hand_authored_sources_never_clobbered(self, cab_root):
+        """An existing sources.yml WITHOUT the marker (e.g. a live Flavor-A
+        screenpipe binding) refuses the run and survives byte-identical."""
+        hand = cab_root / "instance/config/sources.yml"
+        hand.write_text("# hand-authored live binding\nadapter: flavor_a.x:HandAuthored\n")
+        before = hand.read_bytes()
+        with pytest.raises(gi.GenerationError, match="REFUSING to overwrite"):
+            run_gen(cab_root, acme_answers())
+        assert hand.read_bytes() == before
+        # personal flavor: no emission attempted, hand file untouched, run OK
+        answers = acme_answers()
+        answers["autonomy"] = {"posture": "propose_first", "flavor": "personal"}
+        run_gen(cab_root, answers)
+        assert hand.read_bytes() == before
+
+    def test_generated_sources_rerun_idempotent(self, cab_root):
+        run_gen(cab_root, acme_answers())
+        src_path = cab_root / "instance/config/sources.yml"
+        before = src_path.read_bytes()
+        run_gen(cab_root, acme_answers())
+        assert src_path.read_bytes() == before
+
+    def test_hand_edited_product_brain_dir_survives(self, cab_root):
+        """product_brain_dir is set-if-absent: a captain's hand-edited value
+        must survive every re-run (there is no answers source for it)."""
+        platform = cab_root / "instance/config/platform.yml"
+        platform.write_text(PLATFORM_FIXTURE + 'product_brain_dir: "custom/corpus"\n')
+        run_gen(cab_root, acme_answers())
+        parsed = yaml.safe_load(platform.read_text())
+        assert parsed["product_brain_dir"] == "custom/corpus"
+        assert platform.read_text().count("product_brain_dir") == 1
+
+    def test_dry_run_emits_no_sources(self, cab_root):
+        run_gen(cab_root, acme_answers(), dry_run=True)
+        assert not (cab_root / "instance/config/sources.yml").exists()
+
+    def test_invalid_flavor_refused(self, cab_root):
+        answers = acme_answers()
+        answers["autonomy"] = {"flavor": "corporate"}
+        with pytest.raises(gi.GenerationError, match="autonomy.flavor"):
+            run_gen(cab_root, answers)
+        assert not (cab_root / "instance/config/sources.yml").exists()
+
+
+# ---------------------------------------------------------------------------
 # Universality — the framework carries no deployment specifics
 # ---------------------------------------------------------------------------
 

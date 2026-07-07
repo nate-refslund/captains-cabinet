@@ -226,7 +226,9 @@ placeholders only:
         neon_project, vercel_project,            # NAMES only
         linear_team_key, linear_workspace_url}   # when task_system: linear
    autonomy: {posture: propose_first,            # fixed at init
-              flavor: org,                       # org | personal (§4)
+              flavor: org,                       # org | personal (§4; also gates the
+                                                 #  sources.yml recall binding — org emits
+                                                 #  OrgSource, personal emits none)
               target_posture: guardian}          # optional; guardian default, 'mini*' org ⇒ sovereign
                                                  # (an earn_up choice rides the preset-written
                                                  #  posture.yml from §4, not this key)
@@ -245,11 +247,27 @@ placeholders only:
    `instance/config/contexts/<slug>.yml` + `projects/<slug>.yml`,
    `instance/agents/<slug>-ceo.md` (rendered from the lane-CEO
    template), the marked `officers:` block + captain keys in
-   `instance/config/platform.yml`, `instance/config/roster.yml`
+   `instance/config/platform.yml` (plus a `product_brain_dir:` key —
+   only when absent — defaulting to `product-brain`, relative to the
+   deployment root; canonical resolver
+   `framework.env.product_brain_dir()`, `CABINET_PRODUCT_BRAIN_DIR`
+   overrides), `instance/config/roster.yml`
    for `bootstrap-roles.sh --roster`, and — only when absent — the
    INERT `instance/config/posture.yml` ruling scaffold (§4; an
-   existing ruling is never regenerated, not even with --force). It
-   refuses path escapes, secret-shaped values, and clobbering
+   existing ruling is never regenerated, not even with --force).
+
+   **Recall binding** (`instance/config/sources.yml`): when
+   `autonomy.flavor` is anything but `personal` (i.e. `org`, the
+   default), the generator emits a marked `sources.yml` binding
+   `framework.sources.org:OrgSource` — so a fresh org instance has
+   real recall instead of fail-closing to `NullPersonalSource` (zero
+   hits). No `dispatch:` is emitted (writes fail-close to
+   `NullPersonalDispatch`, draft-capture-only). `flavor: personal`
+   emits NO sources.yml — a Flavor-A captain binds their own personal
+   adapter by hand. An existing hand-authored sources.yml (no
+   generated-by marker) is never clobbered.
+
+   It refuses path escapes, secret-shaped values, and clobbering
    hand-authored files, and validates every written YAML.
 
 ## Print the exact next steps

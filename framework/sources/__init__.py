@@ -107,15 +107,22 @@ def _load_bound(config_key):
 
         mod = importlib.import_module(module_name)
 
-        # Defense-in-depth (Corridor: restrict module loading to the trusted
-        # instance/flavor-a tree). If the resolved module has a concrete file, it
-        # MUST live inside that dir; otherwise a same-named module elsewhere on
-        # sys.path shadowed the adapter — fail-closed rather than bind a stray.
+        # Defense-in-depth (Corridor: restrict module loading to the TRUSTED
+        # trees). If the resolved module has a concrete file, it MUST live in
+        # one of exactly two places: the instance adapter tree (flavor-a) or
+        # THIS framework/sources package itself, which ships the framework-side
+        # adapters (``framework.sources.org:OrgSource`` — the org-box binding).
+        # Anything else means a same-named module elsewhere on sys.path
+        # shadowed the adapter — fail-closed rather than bind a stray.
         mod_file = getattr(mod, "__file__", None)
         if mod_file:
-            real_dir = os.path.realpath(adapter_dir)
             real_mod = os.path.realpath(mod_file)
-            if real_mod != real_dir and not real_mod.startswith(real_dir + os.sep):
+            trusted_dirs = (
+                os.path.realpath(adapter_dir),
+                os.path.realpath(os.path.dirname(__file__)),  # framework/sources
+            )
+            if not any(real_mod == d or real_mod.startswith(d + os.sep)
+                       for d in trusted_dirs):
                 return None
 
         cls = getattr(mod, class_name, None)

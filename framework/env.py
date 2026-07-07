@@ -539,3 +539,79 @@ def state_dir(default: str = "") -> str:
         resolved = default
     _state_dir_cache = os.path.expanduser(resolved) if resolved else resolved
     return _state_dir_cache
+
+
+# Cache: product_brain_dir is read once per process (same lifecycle as
+# vault_dir). None ⇒ unresolved — the EMPTY string is a VALID resolved value
+# (a deployment with no org corpus), so the sentinel is None, never "".
+_product_brain_dir_cache: "str | None" = None
+
+
+def product_brain_dir(default: str = "") -> str:
+    """The ORG's product-brain markdown corpus directory — the flavor-B twin of
+    ``vault_dir()``. Where the vault is the captain's PERSONAL brain (absent on
+    clean-room org boxes, where ``vault_dir()`` fail-closes to ``""`` and the
+    lane gathers zero vault sections), the product-brain corpus is the ORG's
+    OWN knowledge (architecture, decisions, incidents, deploy notes — the
+    plan-B B4.14 corpus), written by officers via normal file writes and
+    gathered by ``run_action_lane.gather_signals``'s corpus sections.
+
+    Resolution order: the env override ``CABINET_PRODUCT_BRAIN_DIR`` (an
+    explicit per-process override, mirroring ``vault_dir``'s
+    ``CABINET_VAULT_DIR``) → the ``product_brain_dir`` key in
+    ``instance/config/platform.yml`` (else ``product.yml``) IF the directory it
+    names exists — the key generate-instance.py stamps; relative values resolve
+    against the repo root, absolute/``~`` values are honored as-is, so a
+    captain relocates the corpus by editing config (review fix 2026-07-07: the
+    stamped key used to be dead config that nothing read) → ``<repo>/
+    product-brain`` IF that directory exists (the corpus ships in-repo, so any
+    checkout that carries it resolves it with zero config) → the generic
+    ``default`` (``""``). A non-empty value is ``~``-expanded. Every non-env
+    arm is existence-gated, so a deployment with NO corpus (or a configured
+    path that does not exist) resolves ``""``/the next arm — the caller then
+    treats the corpus sections as empty (fail-closed: no corpus ⇒ no
+    sections), never crashes, and never scans another launcher's paths."""
+    global _product_brain_dir_cache
+    if _product_brain_dir_cache is not None:
+        return _product_brain_dir_cache
+    env_override = (os.environ.get("CABINET_PRODUCT_BRAIN_DIR") or "").strip()
+    if env_override:
+        _product_brain_dir_cache = os.path.expanduser(env_override)
+        return _product_brain_dir_cache
+    resolved = default
+    try:
+        root = _cabinet_root()
+        # platform.yml / product.yml key (stamped by generate-instance.py).
+        try:
+            import yaml  # local: keep env.py import-light for the safety switches
+            for rel in ("instance/config/platform.yml", "instance/config/product.yml"):
+                p = root / rel
+                try:
+                    if not p.exists():
+                        continue
+                    data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+                except Exception:
+                    continue
+                if not isinstance(data, dict):
+                    continue
+                val = data.get("product_brain_dir")
+                if val is None and isinstance(data.get("product"), dict):
+                    val = data["product"].get("product_brain_dir")
+                if isinstance(val, str) and val.strip():
+                    cand_str = os.path.expanduser(val.strip())
+                    cand_path = Path(cand_str)
+                    if not cand_path.is_absolute():
+                        cand_path = root / cand_str
+                    if cand_path.is_dir():
+                        _product_brain_dir_cache = str(cand_path)
+                        return _product_brain_dir_cache
+                    break  # key set but dir absent → fall through (fail-closed)
+        except Exception:
+            pass
+        cand = root / "product-brain"
+        if cand.is_dir():
+            resolved = str(cand)
+    except Exception:
+        resolved = default
+    _product_brain_dir_cache = os.path.expanduser(resolved) if resolved else resolved
+    return _product_brain_dir_cache

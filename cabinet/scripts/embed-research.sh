@@ -25,8 +25,8 @@ EMBEDDING=$(curl -s https://api.voyageai.com/v1/embeddings -H "Authorization: Be
 [[ "$EMBEDDING" == "null" || -z "$EMBEDDING" ]] && { echo "Error: Failed to get embedding"; exit 1; }
 PG_TAGS="{}"
 [[ -n "$TAGS" ]] && PG_TAGS="{$(echo "$TAGS" | sed 's/,/","/g;s/^/"/;s/$/"/')}"
-DB_URL="${NEON_DATABASE_URL:-${DATABASE_URL:-}}"
-[[ -z "$DB_URL" ]] && { echo "Error: DATABASE_URL not set"; exit 1; }
+DB_URL="${NEON_CONNECTION_STRING:-${NEON_DATABASE_URL:-${DATABASE_URL:-}}}"
+[[ -z "$DB_URL" ]] && { echo "Error: NEON_CONNECTION_STRING (or NEON_DATABASE_URL/DATABASE_URL) not set"; exit 1; }
 
 # Use parameterized query via psql variables to prevent SQL injection
 # NOTE: :'var' substitution only works with stdin/heredoc, NOT with -c flag
