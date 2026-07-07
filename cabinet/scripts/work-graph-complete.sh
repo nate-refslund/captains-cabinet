@@ -298,3 +298,15 @@ fi
 # --- print event id to stdout for chaining ---
 echo "$EVENT_JSON" | python3 -c 'import json, sys; e = json.load(sys.stdin); print(e["id"])'
 echo "work-graph-complete: ${EVENT_TYPE} emitted for ${NODE_ID} (status=${STATUS}, actor=${ACTOR})" >&2
+
+# --- stamp the reflection-experience marker (fix 2026-07-06, polads-ceo finding) ---
+# Completing a work-graph node IS a "did work" event, but only record-experience.sh
+# stamped cabinet:last-experience:<officer>. So an officer who advanced the graph via
+# this script read reflection_due=0 and never auto-reflected — the outcome-watchdog
+# then false-flagged them and the Chair nudged by hand every cycle. Mirror
+# record-experience.sh's stamp for a real officer actor (any status is reflection-
+# worthy work). Idempotent, EX 7200, never fails the script (|| true).
+if [ -n "$ACTOR" ] && [ "$ACTOR" != "system" ]; then
+  redis-cli -h "${REDIS_HOST:-localhost}" -p "${REDIS_PORT:-6379}" \
+    SET "cabinet:last-experience:$ACTOR" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" EX 7200 >/dev/null 2>&1 || true
+fi
