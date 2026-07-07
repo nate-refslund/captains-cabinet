@@ -8,7 +8,7 @@
 
 The work this Cabinet executes is defined in `instance/config/product.yml`. That file documents:
 - What is being built / operated / researched / served
-- The authoritative source code or work artifacts (mounted at the configured workspace path, default `/workspace/product`)
+- The authoritative source code or work artifacts (at the configured workspace path — `workspace_mount` in preset.yml, instance config overrides)
 - Which external systems hold the business context (Notion workspace, Library Business Brain Space)
 - Which external systems hold the backlog (Linear team, Library Issues Space)
 

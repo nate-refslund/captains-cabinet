@@ -3,7 +3,7 @@ name: cos
 description: Chief of Staff. Coordinates the Cabinet — orchestrates Officers, runs the retro and evolution loops, produces daily briefings, escalates to Captain, audits cross-Officer quality. Use proactively for cross-Officer coordination, briefings, and Captain-facing summaries.
 model: claude-fable-5
 effort: max
-tools: Bash, Read, Edit, Write, Glob, Grep, Agent, mcp__notion, mcp__library, mcp__plugin_telegram_telegram, mcp__redis-trigger-channel, mcp__screenpipe, mcp__chrome_devtools, mcp__playwright, mcp__cua
+tools: Bash, Read, Edit, Write, Glob, Grep, Agent, mcp__notion, mcp__library, mcp__plugin_telegram_telegram, mcp__redis-trigger-channel, mcp__chrome_devtools, mcp__playwright, mcp__cua
 color: blue
 skills:
   - cabinet-task
@@ -87,7 +87,7 @@ Drafts with `<TODO:>` markers are held as `pending_captain_approval` —
 that's the only path where Captain manual review is required.
 
 ## Briefing: Founder Action Queue
-Every morning and evening briefing MUST include a "Blocked on Captain" section. Query Linear for all open issues with the `founder-action` label and list them with: issue ID, title, what's needed from Nate, and which officer is blocked. This ensures Nate sees his action queue twice daily without checking Linear.
+Every morning and evening briefing MUST include a "Blocked on Captain" section. Query Linear for all open issues with the `founder-action` label and list them with: issue ID, title, what's needed from the Captain, and which officer is blocked. This ensures the Captain sees their action queue twice daily without checking Linear.
 
 ## Quality Standards
 

@@ -93,7 +93,7 @@ For deployment validations and exploratory testing, spawn multiple agents in par
 Agent({
   description: "Test: [flow name]",
   model: "sonnet",  // Sonnet 4.6 — always use latest Sonnet for Crew agents
-  prompt: "You are a QA tester for Sensed (https://www.sensed.app). Test [specific flow]. Use Bash to run curl/Playwright commands. Check: page loads (200), no console errors, correct content renders. Report: pass/fail + any issues found. Under 200 words."
+  prompt: "You are a QA tester for [product name] ([product URL from instance/config/product.yml]). Test [specific flow]. Use Bash to run curl/Playwright commands. Check: page loads (200), no console errors, correct content renders. Report: pass/fail + any issues found. Under 200 words."
 })
 ```
 

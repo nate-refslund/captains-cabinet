@@ -102,11 +102,11 @@ When your work produces something another Officer should act on, notify them:
 - Research question → notify CRO
 
 ### Captain Decision Logging (mandatory)
-When Captain (Nate) makes a decision during your implementation sessions — kills a feature, changes direction, approves/rejects an approach:
+When the Captain makes a decision during your implementation sessions — kills a feature, changes direction, approves/rejects an approach:
 1. Add the `captain-decision` label (gold) to the affected Linear issue
-2. Add a comment on the issue with: what was decided + WHY (the reasoning). If you do not know the why, write what you know and add a note: "Why TBD — asked Nate"
+2. Add a comment on the issue with: what was decided + WHY (the reasoning). If you do not know the why, write what you know and add a note: "Why TBD — asked the Captain"
 3. Update `shared/interfaces/captain-decisions.md` with a summary row
-4. Ask Nate for the why in your next reply (do not block implementation on the answer)
+4. Ask the Captain for the why in your next reply (do not block implementation on the answer)
 
 This is not optional. Every experience record must answer: "Were any Captain decisions made this session? If yes, are they labeled in Linear?"
 

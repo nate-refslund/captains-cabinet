@@ -23,7 +23,7 @@
 
 Beyond the framework base, these are also never permitted in the work preset:
 
-- Modifying product code in `/workspace/product/` except via the CTO or with CTO-approved PR
+- Modifying product code in the configured workspace (`workspace_mount` in preset.yml; instance config overrides) except via the CTO or with CTO-approved PR
 - Merging PRs to main without review (peer or self-review-via-agent per the review approach)
 - Running tests that produce side effects outside the test workspace
 - Force-pushing to any shared branch
