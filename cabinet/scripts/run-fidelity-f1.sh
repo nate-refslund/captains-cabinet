@@ -36,8 +36,12 @@ set -o pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 # launchd's minimal PATH excludes Homebrew (python3.12) — the retro-trigger
-# FATAL lesson (services.yml:118-122).
-export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+# FATAL lesson (services.yml:118-122). It ALSO excludes ~/.local/bin, where
+# the `claude` CLI lives: oauth_llm.py drives officer+judge via `claude -p`
+# subprocesses and swallows FileNotFoundError → without this the whole batch
+# false-fails in seconds (empty decisions, match_rate 0.0, a false
+# fidelity-decay page — seed-run finding 2026-07-07).
+export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$PATH"
 
 # Env order: cabinet/.env first, then the PersonalSource shared env so REAL
 # keys win over cabinet/.env's empty placeholders (run-undo-sweep.sh env-order
