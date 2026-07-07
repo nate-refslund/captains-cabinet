@@ -33,6 +33,13 @@
 #             rendered by the generator and NOT expected loaded by the
 #             outcome-watchdog's no-silent-cron floors (a parked or staged
 #             service — see draft-lane, mission-supervisor). Default false.
+#   sunset:   optional apoptosis metadata (R10-class discipline, added with the
+#             Cabinet World rows 2026-07-07): the organ's KILL CRITERIA — when
+#             this row should be retired or superseded. Free text for humans +
+#             the apoptosis sweep's propose-only cards; ignored by
+#             generate-plists.py (never rendered into plists). New scheduled
+#             organs SHOULD carry one — an organ that cannot say when it should
+#             die is a hoarding candidate.
 #   expected: the "fed + watched" floor (principle 7) — what the outcome-watchdog /
 #             dead-man asserts; a service without a met floor is DOWN even if green.
 #             Since lane-ops 2026-07-04 the outcome-watchdog DERIVES per-service
@@ -559,3 +566,27 @@ services:
       findings print WAIVED (cited to their amendment doc) so GREEN stays
       meaningful. Also the final acceptance gate of the Mini hatch runbook
       (docs/runbooks/mini-hatch-tonight-2026-07-07.md §Flight recorder).
+
+  # ── Cabinet World (observer-class read-model organs; kickoff 2026-07-07) ──
+  # docs/plans/cabinet-world-build-kickoff-2026-07-07.md — the world is a pure
+  # read-model over org ledgers (renderer-never-writes doctrine). These rows
+  # must NEVER grow a write surface into org state: their only writes are
+  # their own world outputs (shared/interfaces/world-chronicle.jsonl,
+  # shared/interfaces/world/, the cabinet:world:* Redis namespace).
+  - name: world-census
+    label: com.cabinet.world-census
+    kind: cron
+    command: python3.12 cabinet/scripts/world-census.py
+    schedule: { calendar: [{hour: 8, minute: 15}] }   # daily 08:15 local — after the 08:05 falsifier line so memory_ingestion is fresh for the day
+    expected: "one PII-free census keyframe/day appended to shared/interfaces/world-chronicle.jsonl (idempotent per date; closed int/enum schema enforced at write — CensusSchemaError refuses anything else); every un-censused day = PERMANENT replay fog for the file-count surfaces; cabinet-doctor probes chronicle staleness (>2d = DEAD)"
+    sunset: "apoptosis R10-class kill criteria: retire when the Cabinet World read-model is abandoned (E-series sunset) or a superseding keyframe writer owns the chronicle — evidence bar: 30 consecutive days with zero /world readers AND zero replay use. On retirement ARCHIVE world-chronicle.jsonl (append-only replay history), never truncate."
+    notes: >-
+      Cabinet World E0a (kickoff step 1; spec ~/cabinet-world-growth-design-
+      2026-07-07.md §2 Stage 1). Falsifier-series discipline: append-only,
+      flock, idempotent per date, ints/enums only. Fenced local reads ONLY:
+      sqlite3 -readonly over cabinet/cache/org-runtime.sqlite3 (constant SQL,
+      busy-retry, never projection tables), JSONL ledger line counts, git
+      rev-list --count, file counts, memory rows via the falsifier
+      memory_ingestion block (no DB creds in the census path). NO Redis —
+      live keys are Stage-5 overlay (E0b's plane), never morphology. Tests:
+      cabinet/scripts/tests/test_world_census.py.

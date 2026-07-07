@@ -157,3 +157,8 @@ cabinet/launchd/generated/
 # runtime artifacts (written by falsifier-daily / act-first flag) — never commit
 shared/interfaces/falsifier-series.jsonl
 instance/config/act-first-enabled
+
+# Cabinet World runtime read-model outputs (world-census E0a / world-chronicle
+# E0b — append-only replay history; instance data, never committed)
+shared/interfaces/world-chronicle.jsonl
+shared/interfaces/world/

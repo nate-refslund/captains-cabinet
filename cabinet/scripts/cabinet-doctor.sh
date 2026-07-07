@@ -30,6 +30,12 @@
 #      This script NEVER activates/deactivates anything and never calls
 #      launchctl bootstrap/bootout — probe-only, per the generate-plists.py
 #      security contract.
+#   9. world-chronicle freshness (Cabinet World E0a, 2026-07-07): when the
+#      world-census manifest row is enabled, the newest keyframe date in
+#      shared/interfaces/world-chronicle.jsonl must be ≤2 days old — a dead
+#      census writer accrues PERMANENT replay fog (the file-count surfaces
+#      have no ledger to backfill from), a rot class the generic row↔job↔log
+#      probe alone would surface only as one late log among many.
 #
 # OUTPUT: one line per finding (OK / WARN / WAIVED / SKIP / DEAD), then either
 #   CABINET_DOCTOR GREEN (checks=N warn=N waived=N)
@@ -398,6 +404,51 @@ elif printf '%s' "$KS_OUT" | grep -qi "ACTIVE" && ! printf '%s' "$KS_OUT" | grep
 else
   ok "killswitch — status readable, inactive"
 fi
+
+# ============================================================
+# 9. world-chronicle freshness (Cabinet World E0a — replay-fog probe)
+# ============================================================
+# A dead census writer = PERMANENT replay fog. DEAD when the world-census
+# row is enabled and no keyframe ≤2 days old exists. Read-only.
+WORLD_STALE="$($PY - <<'PYEOF'
+import datetime, json, re, sys
+try:
+    text = open("cabinet/services.yml").read()
+except OSError:
+    print("NOROW"); sys.exit(0)
+m = re.search(r"^  - name: world-census\n(?:(?!^  - name: ).*\n?)*", text, re.M)
+if not m:
+    print("NOROW"); sys.exit(0)
+if re.search(r"^\s+disabled:\s*true", m.group(0), re.M):
+    print("DISABLED"); sys.exit(0)
+last = None
+try:
+    for line in open("shared/interfaces/world-chronicle.jsonl"):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            d = json.loads(line).get("date")
+        except Exception:
+            continue
+        if isinstance(d, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", d):
+            last = max(last or d, d)
+except OSError:
+    print("MISSING"); sys.exit(0)
+if not last:
+    print("MISSING"); sys.exit(0)
+age = (datetime.date.today() - datetime.date.fromisoformat(last)).days
+print(f"OK {last}" if age <= 2 else f"STALE last={last} age={age}d")
+PYEOF
+)"
+case "$WORLD_STALE" in
+  OK*)      ok "world-chronicle — fresh keyframe (${WORLD_STALE#OK })" ;;
+  NOROW)    skip "world-chronicle — no world-census manifest row" ;;
+  DISABLED) skip "world-chronicle — world-census row disabled (parked)" ;;
+  MISSING)  dead "world-chronicle — world-census enabled but no keyframe ever landed (replay fog accruing)" ;;
+  STALE*)   dead "world-chronicle — ${WORLD_STALE#STALE } — census writer dead, replay fog accruing (E0a)" ;;
+  *)        warn "world-chronicle — probe output unparseable: $WORLD_STALE" ;;
+esac
 
 # ============================================================
 # verdict + heartbeat
