@@ -38,6 +38,20 @@
     <string>localhost</string>
     <key>CABINET_MODEL</key>
     <string>claude-opus-4-8[1m]</string>
+    <!-- AUD-1 fleet rollout (audit 2026-07-07 #1, piloted on comms-officer):
+         dedicated officer config home — no personal ~/.claude plugin set /
+         auto-memory / corridor mandate. start-officer-mac.sh inlines both
+         vars onto the claude launch line (tmux server-env gotcha).
+         SECURESTORAGE set-to-EMPTY is deliberate: it drops CC's
+         per-config-dir keychain suffix so the officer shares the default
+         "Claude Code-credentials" OAuth item (fresh config homes have no
+         creds; duplicating the item would race refresh rotation).
+         cos receives Telegram via the cos-inbound watchdog (no --channels),
+         so no telegram plugin is needed in the cabinet config home. -->
+    <key>CLAUDE_CONFIG_DIR</key>
+    <string>/Users/nate/Library/Application Support/cabinet/claude-config</string>
+    <key>CLAUDE_SECURESTORAGE_CONFIG_DIR</key>
+    <string></string>
   </dict>
   <key>RunAtLoad</key>
   <true/>
