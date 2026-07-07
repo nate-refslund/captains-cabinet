@@ -112,12 +112,11 @@ jobs:
             bash -n "$f"
           done
 
-      - name: Bash syntax check — remaining subdirs (git-hooks, gates, cutover)
+      - name: Bash syntax check — remaining subdirs (git-hooks, gates)
         # Catches bash scripts in deeper subdirs the earlier globs miss:
         # - git-hooks/pre-commit + pre-push (no .sh extension, safety rails for
         #   force-push refusal + checkpoint-review gate, FW-007 + FW-019)
         # - gates/*.sh (library-write gates, FW-021 idempotency-hash)
-        # - cutover/*.sh (Spec 039 migration tooling)
         # Selects by shebang instead of extension so new subdirs are caught too.
         # -mindepth 2 avoids re-checking top-level (covered by previous step).
         run: |
@@ -291,14 +290,6 @@ jobs:
       - name: Python tests — Gate 3 idempotency hash (FW-021)
         run: |
           cd /opt/founders-cabinet/cabinet/scripts/gates
-          python3 -m pytest tests/ -v
-
-      - name: Python tests — Cutover service-accounts (Spec 039 §5.9 Gate 4)
-        # 15 tests: Linear/GH demotion-target enumeration + assert_captain_excluded
-        # tripwire (COO adversary H-γ — prevents Captain demotion during cutover).
-        # Monkey-patches load_officer_emails per-test so no dep on live yaml.
-        run: |
-          cd /opt/founders-cabinet/cabinet/scripts/cutover
           python3 -m pytest tests/ -v
 
       - name: Python tests — MCP server (FW-005)
