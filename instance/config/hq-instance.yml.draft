@@ -70,7 +70,7 @@ description: >
   Second cabinet instance of the same repo/branch (convergence-v2) on the
   MacBook: brain MCP bridge + portfolio of lanes (polads,
   stephie-stepnetwork, system-self) + comms via the queue_draft approval
-  gate. Roster: Chair persistent (Fable 5, single bot), lane CEOs
+  gate. Roster: Chair persistent (Opus 4.8 1M, single bot), lane CEOs
   on-demand consultants with idle-stop, Telegram-dark, surfaced via the
   Chair + warroom. Quota choreography: Mini missions overnight, HQ fleet
   by day.
@@ -88,7 +88,7 @@ roster:
   cos:
     title: Chair
     type: fulltime                 # persistent session; supervisor auto-restarts
-    model: claude-fable-5
+    model: claude-opus-4-8[1m]
     capabilities: [logs_captain_decisions, reviews_specs, reviews_implementations, validates_deployments]
     authority_level: captain_proxy
     # display name "Chair"; id stays cos — hooks/capabilities/heartbeats/
@@ -96,7 +96,7 @@ roster:
   polads-ceo:
     title: PolAds CEO
     type: fulltime                 # always-on 24/7, Opus 4.8 1M (Captain decision 2026-06-24)
-    model: claude-fable-5
+    model: claude-opus-4-8[1m]
     capabilities: [deploys_code, logs_captain_decisions]
     authority_level: mission_executor
     # telegram-dark: no bot; Captain attention via the Chair's
@@ -104,7 +104,7 @@ roster:
   stephie-ceo:
     title: STEPhie & Website CEO   # lane stephie-stepnetwork (two repos, one lane)
     type: fulltime
-    model: claude-fable-5
+    model: claude-opus-4-8[1m]
     capabilities: [deploys_code, logs_captain_decisions]
     authority_level: mission_executor
     # telegram-dark, surfaced via Chair + warroom (same as polads-ceo).

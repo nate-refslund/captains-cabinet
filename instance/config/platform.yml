@@ -231,16 +231,17 @@ officers:
 #
 #   officer_default:  claude-opus-4-8[1m]  + --effort max   (single-quote where
 #                     it reaches a shell — the [1m] suffix would otherwise glob)
-#                     Fable 5 is access-gated on this account (2026-06-23,
-#                     Captain-set); flip the fleet model back to
-#                     claude-fable-5[1m] when access returns.
+#                     STANDING (Captain ruling 2026-07-07): claude-opus-4-8[1m]
+#                     IS the fleet standard — default mode, no fast-mode toggle,
+#                     and NO flip-back-to-Fable clause. Do not route officers to
+#                     claude-fable-5 even if account access returns.
 #   crew_default:     claude-sonnet-4-6  (cost-efficient parallel execution);
 #                     escalate individual crew to claude-opus-4-8 for
 #                     judgment-heavy work (adversarial review, architecture,
 #                     security). Spawning officer's situational call
 #                     (Captain directive 2026-06-12).
 #   advisor:          bash cabinet/scripts/advisor-crew.sh (one-shot) or
-#                     Task(model="fable", ...) (adversarial / fresh-context).
+#                     Task(model="claude-opus-4-8", ...) (adversarial / fresh-context).
 #   rollback (one):   CABINET_MODEL=claude-sonnet-4-6 bash start-officer-mac.sh <officer>
 #   rollback (fleet): change MODEL default in start-officer-mac.sh / start-officer.sh
 #                     (+ DEFAULT_MODEL in generate-instance.py for future lanes).
