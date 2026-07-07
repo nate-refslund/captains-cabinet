@@ -426,7 +426,7 @@ if [ -d "$PRESET_DIR/agents" ]; then
       # to preset-loaded rosters, not only to officers explicitly created
       # via create-officer.sh (which sets the key in Step 8).
       if command -v redis-cli >/dev/null 2>&1; then
-        REDIS_HOST_LP="${REDIS_HOST:-redis}"
+        REDIS_HOST_LP="${REDIS_HOST:-127.0.0.1}"
         REDIS_PORT_LP="${REDIS_PORT:-6379}"
         marked=0
         for slug in $HIRED_DEFINED; do
