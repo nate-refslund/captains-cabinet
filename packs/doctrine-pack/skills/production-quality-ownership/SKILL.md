@@ -1,7 +1,7 @@
 ---
 name: production-quality-ownership
 description: "Six-question craftsman checklist before declaring work done. Use after finishing any non-trivial task to validate: tests, edge cases, docs, observability, rollback, handoff."
-sunset: 'undefined +90d review'
+sunset: '2026-10-05'
 ---
 
 

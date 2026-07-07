@@ -1,7 +1,7 @@
 ---
 name: cross-officer-retro
 description: "48-hour cross-officer retro driven by CoS. Use when the retro trigger fires (event-driven floor of 5 reflections or 48h ceiling): handoff quality + trigger responsiveness + role evolution proposals."
-sunset: 'undefined +90d review'
+sunset: '2026-10-05'
 ---
 
 # Skill: Cross-Officer Retrospective (Evolved)
@@ -82,7 +82,7 @@ CoS runs this event-triggered: at 5 accumulated reflections across officers (`ca
    - Feed back to CRO: "more of X, less of Y"
 
 10. **Submit to Captain:**
-    DM Nate with a summary of proposals. Wait for approval before promoting changes.
+    DM the Captain with a summary of proposals. Wait for approval before promoting changes.
 
 11. **Record:**
     - Write an experience record for the retro itself

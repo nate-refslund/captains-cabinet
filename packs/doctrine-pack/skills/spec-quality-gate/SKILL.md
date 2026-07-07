@@ -1,7 +1,7 @@
 ---
 name: spec-quality-gate
 description: "Pre-commit checklist for product specs. Use before publishing any spec to Notion / specs/ dir: acceptance criteria measurable, dependencies named, rollback documented, captain attention budgeted."
-sunset: 'undefined +90d review'
+sunset: '2026-10-05'
 ---
 
 # Skill: Spec Quality Gate

@@ -562,7 +562,9 @@ def scan_skills(repo_root: Path, *, now: _dt.datetime,
                 dormant_days: int = SKILL_DORMANT_DAYS,
                 unused_days: int = SKILL_UNUSED_DAYS) -> list[dict]:
     """Dormancy candidates across promoted skills (.claude/skills/*/SKILL.md),
-    evolved runtime skills (memory/skills/evolved/*.md), and pack manifests
+    evolved runtime skills (memory/skills/evolved/*.md), marketplace pack
+    copies (packs/*/skills/*/SKILL.md — parallel copies carrying date-typed
+    ``sunset:`` frontmatter for their removal-wave review), and pack manifests
     (.claude-plugin/*.json ``sunset`` keys). PROPOSE-ONLY."""
     today = now.date()
     findings = []
@@ -571,6 +573,8 @@ def scan_skills(repo_root: Path, *, now: _dt.datetime,
                 sorted((repo_root / ".claude" / "skills").glob("*/SKILL.md"))]
     sources += [("evolved", p) for p in
                 sorted((repo_root / "memory" / "skills" / "evolved").glob("*.md"))]
+    sources += [("pack-copy", p) for p in
+                sorted((repo_root / "packs").glob("*/skills/*/SKILL.md"))]
     for kind, f in sources:
         try:
             meta = _parse_skill_meta(f.read_text())
@@ -607,7 +611,7 @@ def scan_skills(repo_root: Path, *, now: _dt.datetime,
         hard = any(r.startswith(("sunset passed", "usage_count", "last used"))
                    for r in reasons)
         if hard:
-            default_name = f.parent.name if kind == "promoted" else f.stem
+            default_name = f.stem if kind == "evolved" else f.parent.name
             findings.append({
                 "path": str(f.relative_to(repo_root)),
                 "skill_kind": kind,

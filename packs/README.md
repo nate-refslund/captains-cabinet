@@ -16,7 +16,7 @@ bash cabinet/scripts/validate-extension.sh packs/<pack-name>
 
 | Pack | Contents | Copied or referenced? |
 |---|---|---|
-| `doctrine-pack` | 5 doctrine skills: holistic-thinking, production-quality-ownership, individual-reflection, cross-officer-retro, spec-quality-gate | **Copied** from `.claude/skills/` (copies carry `sunset:` frontmatter for the apoptosis reaper) |
+| `doctrine-pack` | 5 doctrine skills: holistic-thinking, production-quality-ownership, individual-reflection, cross-officer-retro, spec-quality-gate | **Copied** from `.claude/skills/` (copies carry date-typed `sunset: '2026-10-05'` frontmatter — the apoptosis reaper scans `packs/*/skills/*/SKILL.md` and cards the removal-wave review once it passes) |
 | `vercel-lane-pack` | deploy-and-verify + engineering-development-loop (both are Vercel-flow skills) | **Copied** from `.claude/skills/` |
 | `agent-teams-pack` | agent-team-workflow | **Copied** from `.claude/skills/` |
 | `preset-portfolio-pack` | Portfolio-preset activation guide skill + README | Payload **referenced** at `presets/portfolio/` (core plugin/repo) |
@@ -31,11 +31,14 @@ deployment-specific stays in `instance/` or a local preset directory.
 
 Packs are **parallel copies**: the originals remain in `.claude/skills/` and
 the core plugin still ships them, because live officers load them from there.
-Copies are content-identical to the originals except for two deliberate
-frontmatter deltas: doctrine copies gain the `sunset:` line, and descriptions
+Copies are content-identical to the originals except for three deliberate
+deltas: doctrine copies gain a date-typed `sunset: '2026-10-05'` line (the
+apoptosis reaper scans `packs/*/skills/*/SKILL.md` and raises a propose-only
+review card once the date passes — the removal-wave trigger), descriptions
 containing `": "` are YAML-quoted so every pack passes
-`claude plugin validate` clean (the originals carry that latent quirk; fixing
-them is the removal wave's business, not this one's).
+`claude plugin validate` clean, and marketplace copies use captain-neutral
+wording (role terms like `the Captain`, never a personal name — the originals
+keep instance wording, and their quoting quirk, until the removal wave).
 Removing the originals (making packs the only source) is a later wave, gated
 on its sibling ratchets. Until then, a deployment that installs both the core
 plugin and a pack sees the same skill under two plugin namespaces — harmless,

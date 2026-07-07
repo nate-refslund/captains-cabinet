@@ -1,7 +1,7 @@
 ---
 name: holistic-thinking
 description: "Universal L1/L2/L3 lens. Apply to every meaningful improvement: L1=immediate, L2=system, L3=org. Captain references this in retros, plans, and reviews — use it before recommending any non-trivial change."
-sunset: 'undefined +90d review'
+sunset: '2026-10-05'
 ---
 
 

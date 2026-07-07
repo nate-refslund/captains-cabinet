@@ -340,6 +340,34 @@ def test_recard_cooldown_suppresses_identical_findings(fixture_repo):
     assert all(c["suppressed"] == "cooldown" for c in r2["cards"])
 
 
+def test_pack_copy_sunsets_are_scanned(tmp_path):
+    """Marketplace pack copies (packs/*/skills/*/SKILL.md) are reaper sources:
+    a passed date-typed sunset flags (the removal-wave review trigger for the
+    T4 pack rail's parallel copies), while a bare condition string still only
+    annotates — it never flags on its own."""
+    repo = tmp_path / "packs-repo"
+    passed = repo / "packs" / "doctrine-pack" / "skills" / "sunset-copy"
+    passed.mkdir(parents=True)
+    (passed / "SKILL.md").write_text(
+        "---\nname: sunset-copy\ndescription: test fixture\n"
+        "sunset: '2026-06-01'\n---\n\n# Skill: Sunset Copy\n")
+    cond = repo / "packs" / "doctrine-pack" / "skills" / "condition-copy"
+    cond.mkdir(parents=True)
+    (cond / "SKILL.md").write_text(
+        "---\nname: condition-copy\ndescription: test fixture\n"
+        "sunset: 'undefined +90d review'\n---\n\n# Skill: Condition Copy\n")
+
+    findings = ap.scan_skills(repo, now=NOW)
+
+    by_name = {f["name"]: f for f in findings}
+    hit = by_name["sunset-copy"]
+    assert hit["skill_kind"] == "pack-copy"
+    assert hit["path"] == "packs/doctrine-pack/skills/sunset-copy/SKILL.md"
+    assert any(r == "sunset passed (2026-06-01)" for r in hit["reasons"])
+    # Condition-only sunset annotates but never flags (propose-only stays quiet).
+    assert "condition-copy" not in by_name
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # (d) heartbeat written after a completed sweep
 # ─────────────────────────────────────────────────────────────────────────────

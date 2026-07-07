@@ -115,7 +115,7 @@ are never packaged into the marketplace.
 
 | Pack | Ships | Copied or referenced |
 |---|---|---|
-| `doctrine-pack` | holistic-thinking, production-quality-ownership, individual-reflection, cross-officer-retro, spec-quality-gate | Copies of the core skills; each copy carries `sunset: 'undefined +90d review'` frontmatter (apoptosis-reaper review hook) |
+| `doctrine-pack` | holistic-thinking, production-quality-ownership, individual-reflection, cross-officer-retro, spec-quality-gate | Copies of the core skills; each copy carries date-typed `sunset: '2026-10-05'` frontmatter (+90d from the rail landing) — the apoptosis reaper scans `packs/*/skills/*/SKILL.md` and raises a propose-only review card once the date passes |
 | `vercel-lane-pack` | deploy-and-verify, engineering-development-loop | Copies of the core skills (both are Vercel-flow skills) |
 | `agent-teams-pack` | agent-team-workflow | Copy of the core skill |
 | `preset-portfolio-pack` | portfolio-preset activation guide | Payload referenced at `presets/portfolio/` — requires the core plugin |
