@@ -38,12 +38,35 @@
 # green. role-evals-weekly.sh wraps its inline call in `|| echo`, so the
 # weekly chain tolerates the non-zero.
 #
+# REPORT_ONLY gate (audit-ratified soak mode, 2026-07-07): REPORT-ONLY IS
+# THE DEFAULT — an UNSET or truthy (1/true/yes/on, case-insensitive)
+# REPORT_ONLY makes this wrapper prepend `--report-only` to the driver
+# args; ONLY an explicit REPORT_ONLY=0 (or false/no/off) arms apply-mode.
+# (Review fix 2026-07-07: the gate used to default to ARMED when the env
+# was absent, so role-evals-weekly.sh's inline call and hand runs bypassed
+# the declared zero-mutation soak.) In report-only mode the driver runs
+# the propose + validation stages for REAL but WITHHOLDS every apply/
+# promote/graduate mutation; it emits the bracketing events with
+# `report_only: true` + a `would_apply` summary, and prints a grep-able
+# `REPORT_ONLY_SUMMARY:` JSON line into this service's log. The loud-red
+# gate contract below applies unchanged — a RED evaluated validation gate
+# still exits 3 and pages, report-only or not (a failing safety net is an
+# org-health pathology independent of whether applies are armed). To arm
+# auto-apply: flip the services.yml row env to REPORT_ONLY: "0" +
+# re-render/reload (and export REPORT_ONLY=0 for the weekly chain / hand
+# runs). The env gates ANY invocation of this wrapper — the LaunchAgent,
+# the inline call from role-evals-weekly.sh, and manual runs alike.
+#
 # Forwarded flags (anything you pass to this script is forwarded verbatim
 # to the Python driver `python3 -m framework.learning.self_improvement_loop`):
 #
 #   --dry-run            Plan only — write NO events, NO proposal YAMLs, NO
 #                        draft skill files. Safe to run anywhere; produces a
 #                        report of what *would* have been done.
+#   --report-only        Propose + validate for real, apply WITHHELD; real
+#                        bracketing events with report_only: true. Usually
+#                        injected by the REPORT_ONLY env gate above rather
+#                        than passed by hand. --dry-run wins if both given.
 #   --skip-evals         Bypass scenario + golden eval validation gate.
 #                        Apply learnings without safety checks. For
 #                        development/debugging only — production runs leave
@@ -55,6 +78,7 @@
 # Examples:
 #   ./self-improvement-loop.sh                    # normal run
 #   ./self-improvement-loop.sh --dry-run --json   # preview as JSON
+#   REPORT_ONLY=1 ./self-improvement-loop.sh      # observe-only soak pass
 #   ./self-improvement-loop.sh --skip-evals       # dev/debug auto-apply
 
 set -euo pipefail
@@ -82,7 +106,29 @@ echo "=== Self-improvement loop @ $(date -u '+%Y-%m-%dT%H:%M:%SZ') ==="
 # the framework targets 3.12, so an unpinned run dies on 3.12-only code.
 PY="${CABINET_PYTHON:-/opt/homebrew/bin/python3.12}"
 
-# Forward all flags (--dry-run, --skip-evals, --json, --window-days, etc.)
-# to the Python driver. The driver parses them via argparse and applies the
-# correct gate behavior; see its --help for the full list.
+# REPORT_ONLY env gate (see header): prepend --report-only when armed.
+# `set --` prepend is bash-3.2-safe (no array expansion under set -u) and
+# involves no interpolation — the env var only selects a fixed literal flag.
+#
+# FAIL-SAFE DEFAULT (review fix 2026-07-07): UNSET defaults to REPORT-ONLY.
+# The soak gate used to live only in the LaunchAgent's env, so any other
+# caller — role-evals-weekly.sh's inline invocation, a hand run, a future
+# weekly plist without the env — ran fully ARMED during the declared
+# zero-mutation soak. Now only an explicit REPORT_ONLY=0 (or false/no/off)
+# arms apply-mode; the services.yml flip-to-"0" instruction is unchanged and
+# remains the one sanctioned arming switch.
+case "$(printf '%s' "${REPORT_ONLY:-1}" | tr '[:upper:]' '[:lower:]')" in
+  0|false|no|off)
+    : # explicitly armed — flags pass through untouched
+    ;;
+  *)
+    echo "REPORT_ONLY=${REPORT_ONLY:-<unset→1>} → running with --report-only (apply/promote/graduate withheld; export REPORT_ONLY=0 to arm)"
+    set -- --report-only "$@"
+    ;;
+esac
+
+# Forward all flags (--dry-run, --report-only, --skip-evals, --json,
+# --window-days, etc.) to the Python driver. The driver parses them via
+# argparse and applies the correct gate behavior; see its --help for the
+# full list.
 exec "$PY" -m framework.learning.self_improvement_loop "$@"

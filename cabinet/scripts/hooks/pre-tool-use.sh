@@ -1059,6 +1059,34 @@ if [ "$TOOL_NAME" = "Edit" ] || [ "$TOOL_NAME" = "Write" ]; then
       echo "BLOCKED: Germline file — read-only for officers and loops (no loop may edit its own judge). Propose the change to the Captain; only the Captain applies germline edits." >&2
       exit 2
       ;;
+    # CAPTAIN-LAW PLANE added 2026-07-07 (audit CRITICAL: self-persuasion /
+    # injection-persistence channel). The always-injected "Captain law"
+    # files — captain-patterns.md, captain-intents.md, captain-decisions.md,
+    # and memory/skills/ (incl. evolved/) — were officer-writable with NO
+    # guard while session-start injects their head/tail into EVERY officer,
+    # and CLAUDE.md told officers to write captain-patterns.md directly: any
+    # officer-authored (or prompt-injected) text became standing law with no
+    # provenance. DELIBERATELY NOT germline (kept out of the §5 arm above,
+    # GERM_PATH_RE, and immutable-core.yml — the lockstep meta-test
+    # framework/tests/test_germline_lockstep_consistency.py diffs those
+    # against the Ring-0 source): unlike Ring-0 read-only files, the three
+    # ledgers keep a SANCTIONED officer APPEND lane —
+    # cabinet/scripts/append-interface.sh (stdin-only content, fixed target
+    # whitelist, append-only under a lock with a prefix-sha256 tripwire,
+    # provenance stamp '### officer-note … [trust:officer]', refuses
+    # Captain-format '## ' headings) — the same mechanism that lets
+    # veto_registry.py remain the only writer of captain-vetoes.yml: block
+    # every direct write vector on the TARGET paths, leave the sanctioned
+    # writer script as the narrow doorway, and protect the writer script
+    # itself from tampering (it is in this arm + §5c). memory/skills/ has NO
+    # append lane: skills changes are evolution-loop proposals under
+    # memory/skills/evolved/ review — Captain-applied, per the audit.
+    # KEEP IN LOCKSTEP with CAPLAW_PATH_RE in §5c below — a path added here
+    # without §5c reopens the bash-redirect write bypass for it.
+    *"shared/interfaces/captain-patterns.md"|*"shared/interfaces/captain-intents.md"|*"shared/interfaces/captain-decisions.md"|*"memory/skills/"*|*"cabinet/scripts/append-interface.sh")
+      echo "BLOCKED: Captain-law file — officer-authored text may not become standing law via direct Write/Edit (no provenance). Append to captain-patterns / captain-intents / captain-decisions through the sanctioned interface: cabinet/scripts/append-interface.sh <target> with the entry on stdin (append-only, provenance-stamped). memory/skills/ and append-interface.sh itself are Captain-applied only — propose the change to the Captain." >&2
+      exit 2
+      ;;
     *"cabinet/.env"*)
       # CoS manages the cabinet's OWN secret store (Captain-granted 2026-06-23:
       # "you should be able to both read and write ... handle the integrations for
@@ -1303,6 +1331,90 @@ if [ "$TOOL_NAME" = "Bash" ]; then
       }')
     if [ "$GERM_ALLOW_BLOCK" = "BLOCK" ]; then
       echo "BLOCKED: Germline file — read-only for officers and loops. This Bash command references a germline path but is not a recognized read-only command (cat/grep/less/head/tail/diff/stat/git-show...). An interpreter, editor, patcher, or writer touching a germline path is refused fail-closed. Propose the change to the Captain; only the Captain applies germline edits." >&2
+      exit 2
+    fi
+  fi
+fi
+
+# ============================================================
+# 5c. CAPTAIN-LAW PLANE BASH WRITE SCREEN (2026-07-07)
+# ============================================================
+# Companion to the §5 CAPTAIN-LAW Write/Edit arm — KEEP IN LOCKSTEP with it.
+# Audit finding (CRITICAL): the always-injected Captain-law files
+# (captain-patterns.md / captain-intents.md / captain-decisions.md +
+# memory/skills/ incl. evolved/) had NO write guard at all, so one bash
+# redirect (`echo forged-law >> shared/interfaces/captain-patterns.md`)
+# made officer- or injection-authored text standing law injected into every
+# future officer session. This screen closes the write-shaped Bash vectors
+# (same arm shapes as §5b: redirect, tee, sed -i, cp/mv/rsync/install/ln
+# dest, truncate, dd of=, python -c/heredoc/stdin, interpreter-with-flag,
+# plus rm/unlink — this plane has no chflags backstop) while leaving reads
+# untouched.
+#
+# SANCTIONED-WRITER CARVE-OUT (mirrors how veto_registry.py writes
+# captain-vetoes.yml through §5b): the write arms are TARGET-anchored, and
+# the sanctioned appender is invoked as a script with a slug argument —
+# `cabinet/scripts/append-interface.sh captain-patterns <<'EOF' … EOF` —
+# so its invocation never contains a write-shaped token targeting a
+# protected path and passes every arm. Deliberately NO §5b-style fail-closed
+# read-allowlist inversion here: that inversion would block the appender's
+# own verb (the exact reason this plane is append-only-via-interface, not
+# Ring-0 read-only). The appender script ITSELF is in CAPLAW_PATH_RE (and
+# the §5 arm), so redirect/sed/cp/rm tampering with the doorway is blocked.
+#
+# Accepted FPs (fail-closed, stateless — rephrase and re-run): heredoc
+# ENTRY BODIES whose prose contains a write-op word + a captain-law path
+# (newlines join in the match-only copy, same class as §5b's documented
+# heredoc FP; workaround: keep raw paths out of entry prose or pipe the
+# entry via printf), and prose `echo`s mentioning tee/cp + a captain-law
+# path. KNOWN residuals (same set as §5b, accepted): variable indirection,
+# `git checkout -- <path>` content restores, script-file interpreters
+# (`python3 evil.py`). Backstop: session-start provenance — appended law
+# carries the '### officer-note … [trust:officer]' stamp, so unstamped
+# '## ' entries not in git history are forensically visible.
+if [ "$TOOL_NAME" = "Bash" ]; then
+  CMD=$(echo "$TOOL_INPUT" | jq -r '.command // empty' 2>/dev/null)
+  # Match-only copy: squeeze slashes, fold line-continuations, join newlines
+  # (same normalization as §5b — see its header for why each step exists).
+  CMD_SQ=$(printf '%s' "$CMD" | tr -s '/' | sed 's/\\$//' | tr '\n' ' ')
+  # The captain-law plane: 3 append-only ledgers + the skills dir + the
+  # sanctioned appender itself. KEEP IN LOCKSTEP with the §5 CAPTAIN-LAW arm.
+  CAPLAW_PATH_RE='shared/interfaces/captain-(patterns|intents|decisions)\.md|memory/skills/|cabinet/scripts/append-interface\.sh'
+  if printf '%s' "$CMD_SQ" | grep -qE "$CAPLAW_PATH_RE"; then
+    CAPLAW_TGT="[\"']?[^[:space:];|&<>\"']*($CAPLAW_PATH_RE)[^[:space:];|&<>\"']*"
+    ANCH='(^|[;&|`([:space:]])'
+    QF="([^&'\"]|'[^']*'|\"[^\"]*\"|'|\"|&[^&])*"
+    # a) redirect INTO a captain-law path (>, >>, 2>, &>, >|, >& forms)
+    CAPLAW_WRITE_RE=">{1,2}[|&]?[[:space:]]*${CAPLAW_TGT}"
+    # b) tee: every file arg is a write target (`tee /tmp/x < <ledger>` stays a read)
+    CAPLAW_WRITE_RE="${CAPLAW_WRITE_RE}|${ANCH}tee[[:space:]]+(-[-a-zA-Z]+[[:space:]]+)*([^;|&<]+[[:space:]]+)?${CAPLAW_TGT}"
+    # c) sed in-place (plain sed reads stay allowed)
+    CAPLAW_WRITE_RE="${CAPLAW_WRITE_RE}|${ANCH}sed[[:space:]]+(${QF}[[:space:]])?(-[a-zA-Z]*i[^[:space:]]*|--in-place(=[^[:space:]]*)?)([[:space:]]${QF})?[[:space:]]+${CAPLAW_TGT}"
+    # d) copy/move/link/install with a captain-law path as FINAL destination
+    #    (covers the dir-dest basename-join into memory/skills/ too — the
+    #    target token contains the dir prefix)
+    CAPLAW_WRITE_RE="${CAPLAW_WRITE_RE}|${ANCH}(cp|mv|rsync|install|ln)[[:space:]]+(-[-a-zA-Z]+[[:space:]]+)*[^;|&]+[[:space:]]+${CAPLAW_TGT}[\"']?([[:space:]]*(\$|[;&|<>#])|[[:space:]]+[0-9]+[<>])"
+    # d2) -t/--target-directory destination form
+    CAPLAW_WRITE_RE="${CAPLAW_WRITE_RE}|${ANCH}(cp|mv|rsync|install|ln)[[:space:]]+([^;|&]*[[:space:]])?(-[a-zA-Z]*t[[:space:]]*|--target-directory(=|[[:space:]]+))${CAPLAW_TGT}"
+    # e) truncate: file args are write targets
+    CAPLAW_WRITE_RE="${CAPLAW_WRITE_RE}|${ANCH}truncate[[:space:]]+([^;|&<]+[[:space:]]+)?${CAPLAW_TGT}"
+    # f) dd of=<ledger> (dd if=<ledger> of=/tmp/x stays a read)
+    CAPLAW_WRITE_RE="${CAPLAW_WRITE_RE}|${ANCH}dd[[:space:]]+[^;|&]*of=${CAPLAW_TGT}"
+    # g/g2/g3/g4) python -c / heredoc / stdin-fed / combined-flag-cluster with
+    # a captain-law path present (interpreter args are statically unboundable
+    # — same rationale and shapes as §5b arms g*)
+    CAPLAW_WRITE_RE="${CAPLAW_WRITE_RE}|${ANCH}python[0-9.]*[[:space:]]+([^;|&]*[[:space:]])?-c([\"'([:space:]]|\$)"
+    CAPLAW_WRITE_RE="${CAPLAW_WRITE_RE}|${ANCH}python[0-9.]*[[:space:]][^;|&]*<<"
+    CAPLAW_WRITE_RE="${CAPLAW_WRITE_RE}|${ANCH}python[0-9.]*([[:space:]]+-)?[[:space:]]*(\$|[|)])"
+    CAPLAW_WRITE_RE="${CAPLAW_WRITE_RE}|${ANCH}python[0-9.]*[[:space:]]+([^;|&]*[[:space:]])?-[A-Za-z]*c([\"'([:space:]]|\$)"
+    # h) scripting interpreters invoked WITH A FLAG while a captain-law path
+    #    is present (perl -i / ruby -pi / awk -i inplace / node -e …)
+    CAPLAW_WRITE_RE="${CAPLAW_WRITE_RE}|${ANCH}(perl|ruby|node|nodejs|awk|gawk|mawk)[[:space:]]+-"
+    # i) delete/shred: this plane is NOT chflags-locked (appends must keep
+    #    working), so removal of a ledger/skill/the appender is write-shaped
+    CAPLAW_WRITE_RE="${CAPLAW_WRITE_RE}|${ANCH}(rm|rmdir|unlink|shred)[[:space:]]+([^;|&]*[[:space:]])?${CAPLAW_TGT}"
+    if printf '%s' "$CMD_SQ" | grep -qE "$CAPLAW_WRITE_RE"; then
+      echo "BLOCKED: Captain-law file — officer-authored text may not become standing law via a direct write (no provenance). This Bash command contains a write-shaped operation targeting captain-patterns/captain-intents/captain-decisions, memory/skills/, or the append interface (reads like cat/grep/less are allowed). Append to the three ledgers through the sanctioned interface: cabinet/scripts/append-interface.sh <target> with the entry on stdin (append-only, provenance-stamped). memory/skills/ and append-interface.sh itself are Captain-applied only — propose the change to the Captain." >&2
       exit 2
     fi
   fi

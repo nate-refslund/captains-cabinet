@@ -73,6 +73,7 @@ CLI::
 
     python3 -m framework.learning.self_improvement_loop                # full loop
     python3 -m framework.learning.self_improvement_loop --dry-run      # detect+plan, NO writes anywhere
+    python3 -m framework.learning.self_improvement_loop --report-only  # propose+validate, apply WITHHELD
     python3 -m framework.learning.self_improvement_loop --json         # JSON report
     python3 -m framework.learning.self_improvement_loop --skip-evals   # auto-apply without running validation evals
 
@@ -87,6 +88,27 @@ scenario evals or golden eval shells. Intended for development and
 debugging the loop itself; not for normal operation. The decision is
 recorded in event payloads as ``validation_skipped: true`` so audits can
 distinguish auto-applied-after-validation from auto-applied-without.
+
+``--report-only`` (audit-ratified soak mode, 2026-07-07) sits BETWEEN the
+two: the propose + validation stages RUN for real, but every apply /
+promote / graduate mutation is withheld. Concretely: patterns are detected
+and amendments drafted in memory (no proposal YAMLs, no
+``role_charter_changed`` — the writer path stays dark), the scenario +
+golden-eval validation gate executes exactly as live (its loud-red exit-3
+contract included), hat candidates come from the read-only
+``graduation_candidates()``, skill induction only counts clusters (no
+draft files), capability gaps route with ``dry_run=True``, and neither
+``adapt_role`` nor ``gate.ratify`` nor any status stamp is touched. Unlike
+``--dry-run`` it EMITS the real bracketing events — the
+``self_improvement_loop_started`` / ``self_improvement_loop_completed``
+pair carries ``report_only: true`` (key absent on normal runs, so the
+default event shape is unchanged) plus a ``would_apply`` summary
+(proposal ids, hat candidates, skill-draft count) so the ledger and the
+weekly review can see exactly what auto-apply WOULD have done. The fleet
+wrapper ``cabinet/cron/self-improvement-loop.sh`` maps the ``REPORT_ONLY``
+environment variable (services.yml row env) onto this flag. When both
+``--dry-run`` and ``--report-only`` are passed, dry-run wins (it is the
+strongest no-side-effects mode and writes no events at all).
 """
 
 from __future__ import annotations
@@ -585,6 +607,7 @@ def run_loop(
     actor: str = "self_improvement_loop",
     dry_run: bool = False,
     skip_evals: bool = False,
+    report_only: bool = False,
 ) -> dict[str, Any]:
     """Execute the closed self-improvement loop. Returns a structured report.
 
@@ -604,28 +627,44 @@ def run_loop(
             running the safety nets. For dev/debug only — production runs
             must keep validation on. Decision is stamped into emitted event
             payloads as ``validation_skipped: true``.
+        report_only: when True (audit-ratified soak mode), run the propose
+            + validation stages for real but WITHHOLD every apply / promote
+            / graduate mutation. Bracketing events still emit, carrying
+            ``report_only: true`` plus a ``would_apply`` summary, so the
+            ledger records exactly what auto-apply would have done. Zero
+            disk writes outside the event ledger. ``dry_run=True`` takes
+            precedence (strongest no-side-effects mode).
     """
     # Bind emit: dry-run uses a no-op so the loop computes everything in
-    # memory but writes nothing to the ledger.
+    # memory but writes nothing to the ledger. Report-only keeps the REAL
+    # emitter — the whole point is a ledger-visible record of the pass.
     emit_fn = _noop_emit if dry_run else emit
 
     loop_id = str(uuid.uuid4())
-    started = emit_fn("self_improvement_loop_started", actor=actor, payload={
+    started_payload: dict[str, Any] = {
         "loop_id": loop_id,
         "window_days": window_days,
         "min_occurrences": min_occurrences,
         "dry_run": dry_run,
         "skip_evals": skip_evals,
-    })
+    }
+    if report_only:
+        # Conditional key: absent on normal runs so the pre-report-only
+        # event payload shape stays byte-identical.
+        started_payload["report_only"] = True
+    started = emit_fn("self_improvement_loop_started", actor=actor,
+                      payload=started_payload)
     parent_id = started["id"]
 
     # Stage 1 — generate evolution proposals from patterns -------------------
     # In dry-run we use the read-only pattern detector + build proposals in
     # memory; the writer (`propose_from_patterns`) both writes YAML and emits
     # role_charter_changed events, which would violate dry-run's no-writes
-    # contract.
+    # contract. Report-only shares the in-memory path: proposals are computed
+    # + classified (and land in the would_apply summary) but nothing is
+    # written to instance/roles/proposals/ until auto-apply is armed.
     proposed: list[tuple[Path | str, dict[str, Any]]]
-    if dry_run:
+    if dry_run or report_only:
         from framework.measurement.eval_pattern_detector import detect_patterns
         patterns = detect_patterns(
             window_days=window_days,
@@ -669,9 +708,9 @@ def run_loop(
         gate_detail = {"skipped": "skip_evals"}
 
     for path, pat in proposed:
-        if dry_run:
-            # In dry-run, `pat` is the in-memory amendment dict (from
-            # draft_amendment); path is a placeholder string. Skip the
+        if dry_run or report_only:
+            # In dry-run/report-only, `pat` is the in-memory amendment dict
+            # (from draft_amendment); path is a placeholder string. Skip the
             # file-read; use the dict directly.
             proposal = pat
         elif _yaml_load is None:
@@ -705,6 +744,27 @@ def run_loop(
 
         if dry_run:
             record["status"] = "planned" if concrete else "skipped_skeleton"
+            proposal_report.append(record)
+            continue
+
+        if report_only:
+            # REPORT_ONLY: classify what the live loop WOULD have done.
+            # No status stamping (paths are in-memory placeholders), no
+            # gate.ratify evidence packs, no adapt_role — observation only.
+            # The gate result used here is REAL (evaluated above).
+            if not concrete:
+                record["status"] = "would_stay_pending"
+                record["skip_reason"] = why
+            elif _is_code_diff_proposal(proposal):
+                record["status"] = "would_route_to_gate"
+            elif not gate_ok:
+                record["status"] = "would_block_by_validation"
+                record["validation_failures"] = {
+                    "scenario_passed": gate_detail.get("scenario_passed"),
+                    "golden_passed": gate_detail.get("golden_passed"),
+                }
+            else:
+                record["status"] = "would_auto_apply"
             proposal_report.append(record)
             continue
 
@@ -757,10 +817,16 @@ def run_loop(
     # Stage 2 — hat graduations ----------------------------------------------
     hat_candidates: list[dict[str, Any]] = []
     hat_applied: list[dict[str, Any]] = []
-    if dry_run:
-        # In dry-run, fall back to the read-only API so we don't emit events
+    if dry_run or report_only:
+        # In dry-run/report-only, fall back to the read-only API so we don't
+        # emit proposal events (propose_graduations emits role_hat_promoted).
         from framework.roles.hat_graduation import graduation_candidates
         hat_candidates = graduation_candidates()
+        if report_only and hat_candidates and not proposed and not skip_evals:
+            # Mirror the live loop's gate discipline: when hats are the first
+            # thing needing validation this run, the gate still RUNS in
+            # report-only — only the graduation apply is withheld.
+            gate_ok, gate_detail = _validation_gate()
     else:
         # propose_graduations both detects + emits role_hat_promoted (proposal)
         hat_candidates = propose_graduations(actor=actor)
@@ -779,7 +845,7 @@ def run_loop(
     drafted_paths: list[Path] = []
     skill_promoted: list[dict[str, Any]] = []
     skill_validated: list[dict[str, Any]] = []
-    if not dry_run:
+    if not dry_run and not report_only:
         drafted_paths = induce_drafts(actor=actor)
         if drafted_paths:
             skill_promoted = _apply_skill_inductions(
@@ -799,7 +865,8 @@ def run_loop(
                 skill_validated = _auto_validate_skills(
                     drafted_paths, parent_id, actor, emit_fn=emit_fn)
     else:
-        # Dry-run: cluster without writing
+        # Dry-run / report-only: cluster without writing draft files —
+        # memory/skills/evolved/ stays untouched until auto-apply is armed.
         from framework.learning.skill_induction import _cluster_records  # noqa: SLF001
         from framework.learning.experience import list_records
         clusters = _cluster_records(
@@ -815,7 +882,7 @@ def run_loop(
     # (capability_gaps.can_install, fail-closed). Isolated: never breaks the loop.
     try:
         from framework.learning.capability_gaps import route_open_gaps
-        gap_routing = route_open_gaps(dry_run=dry_run)
+        gap_routing = route_open_gaps(dry_run=dry_run or report_only)
     except Exception as exc:  # noqa: BLE001
         gap_routing = {"error": str(exc), "auto_skilling": [], "proposed": [], "skipped": []}
 
@@ -865,6 +932,27 @@ def run_loop(
         # payload stays byte-identical to the pre-posture world there.
         summary["skill_induction"]["auto_validated"] = len(skill_validated)
         summary["skill_induction"]["auto_validated_detail"] = skill_validated
+    if report_only:
+        # Conditional keys (absent on normal runs — payload shape unchanged
+        # there): the ledger-visible record of what auto-apply WOULD have
+        # done this run, consumed by the weekly review before REPORT_ONLY
+        # is flipped off.
+        summary["report_only"] = True
+        summary["would_apply"] = {
+            "proposals": [
+                r.get("proposal_id") for r in proposal_report
+                if r.get("status") == "would_auto_apply"
+            ],
+            "hat_graduations": [
+                {
+                    "role_slug": c.get("role_slug"),
+                    "hat_slug": c.get("hat_slug"),
+                    "capabilities_to_promote": c.get("capabilities_to_promote", []),
+                }
+                for c in hat_candidates
+            ] if (gate_ok or skip_evals) else [],
+            "skill_drafts": len(drafted_paths),
+        }
     emit_fn("self_improvement_loop_completed", actor=actor, parent_id=parent_id, payload=summary)
     summary["parent_event_id"] = parent_id
     return summary
@@ -895,6 +983,15 @@ def main(argv: list[str] | None = None) -> int:
               "development / debugging the loop itself — NOT for normal "
               "operation. Emitted events are stamped validation_skipped: true."),
     )
+    parser.add_argument(
+        "--report-only", action="store_true",
+        help=("Audit-ratified soak mode: run propose + validation for real "
+              "but WITHHOLD every apply/promote/graduate mutation. Emits the "
+              "bracketing events with report_only: true plus a would_apply "
+              "summary (proposal ids, hat candidates, skill-draft count). "
+              "The fleet wrapper maps env REPORT_ONLY=1 onto this flag. "
+              "--dry-run takes precedence when both are given."),
+    )
     parser.add_argument("--json", action="store_true",
                         help="Emit the structured report as JSON to stdout.")
     args = parser.parse_args(argv)
@@ -904,6 +1001,7 @@ def main(argv: list[str] | None = None) -> int:
         min_occurrences=args.min_occurrences,
         dry_run=args.dry_run,
         skip_evals=args.skip_evals,
+        report_only=args.report_only,
     )
 
     # Loud-red gate (T2-arm-schedules review fix, 2026-07-07): a RED
@@ -963,6 +1061,29 @@ def main(argv: list[str] | None = None) -> int:
               f"golden_passed={gate.get('golden_passed')}")
     elif args.skip_evals:
         print("  validation gate:   SKIPPED (--skip-evals)")
+    if args.report_only and not args.dry_run:
+        # The would-apply summary, written to the loop's log target (launchd
+        # stdout). Human lines first, then ONE grep-able JSON line so audits
+        # and the weekly review can machine-read the pass.
+        wa = summary.get("would_apply") or {}
+        gate = summary.get("validation_gate") or {}
+        print("  REPORT-ONLY:       propose + validate ran; every apply/"
+              "promote/graduate mutation WITHHELD (flip REPORT_ONLY=0 to arm)")
+        print(f"  would auto-apply proposals: {wa.get('proposals', [])}")
+        print(f"  would graduate hats:        {wa.get('hat_graduations', [])}")
+        print(f"  would draft skills:         {wa.get('skill_drafts', 0)}")
+        print("REPORT_ONLY_SUMMARY: " + json.dumps({
+            "loop_id": summary.get("loop_id"),
+            "would_apply": wa,
+            "validation_gate": {
+                "scenario_passed": gate.get("scenario_passed"),
+                "golden_passed": gate.get("golden_passed"),
+            },
+            "proposals": [
+                {"proposal_id": r.get("proposal_id"), "status": r.get("status")}
+                for r in (summary.get("proposals") or {}).get("detail", [])
+            ],
+        }, default=str))
     return 3 if gate_red else 0
 
 

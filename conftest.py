@@ -70,3 +70,33 @@ _SESSION_SANDBOX = tempfile.mkdtemp(prefix="cabinet-pytest-session-")
 # value would defeat the fence (officer sessions export the LIVE path).
 os.environ["CABINET_EVENT_LOG_DIR"] = os.path.join(_SESSION_SANDBOX, "events")
 os.environ["CABINET_UNDO_DIR"] = os.path.join(_SESSION_SANDBOX, "undo")
+
+# Bare-root collection sweep guard (2026-07-07): officers/ holds gitignored
+# runtime officer mirror checkouts (full-repo copies) — collecting them
+# duplicates every conftest plugin registration and same-basename test module
+# (ImportPathMismatchError). CI runs scoped suites and never hits this; the
+# glob just keeps an ad-hoc repo-root `pytest` from drowning in mirror noise.
+collect_ignore_glob = ["officers/*"]
+
+import pytest  # noqa: E402  (after the env fence on purpose — fence first)
+
+
+@pytest.fixture(autouse=True)
+def _cabinet_root_env_fence():
+    """Restore CABINET_ROOT around every test (cross-suite leak fence).
+
+    framework/measurement role_evals/*.py and scenarios/*.py set
+    os.environ["CABINET_ROOT"] = <tmpdir> inside their run() bodies with no
+    restore; when those suites run earlier in the same pytest process, later
+    suites (e.g. instance/flavor-a test_screenpipe_dispatch) resolve config
+    under a dead tmp root and fail-close to Null bindings. Snapshot/restore
+    per test so a leaked assignment can never cross a test boundary.
+    """
+    prev = os.environ.get("CABINET_ROOT")
+    try:
+        yield
+    finally:
+        if prev is None:
+            os.environ.pop("CABINET_ROOT", None)
+        else:
+            os.environ["CABINET_ROOT"] = prev

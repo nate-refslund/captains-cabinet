@@ -6,7 +6,7 @@
 # instance/config/autonomy.yml. Edit/Write must BLOCK (exit 2) for EVERY
 # officer (including cos): no loop may edit its own judge.
 #
-# 40 BLOCK probes (10 germline classes incl. the suffix-anchored
+# BLOCK probes (germline classes incl. the suffix-anchored
 # framework/authority/ judge modules classifier.py + lane.py + matrix.py, the
 # authority-matrix.yml DATA floor (T8) + the germline instance policy layer
 # instance/config/policies/ authority overlay (D8, no officer self-escalation
@@ -15,11 +15,15 @@
 # was empirically Edit→ALLOWED) — the ACTING-PLANE JUDGES: captain-vetoes.yml,
 # act-first-surfaces.yml and the frontdoor/acting executor+gate modules,
 # x Edit/Write/officer/path-form variants + constitution regression pin +
-# double-slash normalization) + 16 ALLOW probes (false-positive guards:
-# siblings, evolved skills, own tier2, non-germline hooks, shared interfaces,
+# double-slash normalization) + ALLOW probes (false-positive guards:
+# siblings, own tier2, shared interfaces,
 # the authority judges' own editable tests incl. test_matrix.py, and the
 # acting-plane FP guards: composer.py/loop.py siblings, frontdoor+acting
 # tests, .yml.example sibling, rename-staged veto proposal).
+# 2026-07-07 captain-law hardening: FP3 (evolved skill Write) and FP6
+# (captain-decisions.md Write) flipped ALLOW→BLOCK — the ledgers are
+# append-only via append-interface.sh, memory/skills/** is Captain-applied.
+# Counts drift with hardening waves — trust the probe lines, not a number.
 #
 # The BASH-side write bypass of this same set (redirect/tee/sed -i/cp/mv/
 # install/truncate/dd of=/python -c) is pinned by the sibling harness
@@ -125,8 +129,11 @@ echo "=== ALLOW: germline FP guards ==="
 probe "FP1 autonomy.yml.example (cos)"     cos Edit  'instance/config/autonomy.yml.example'                        ALLOW
 # Trailing-slash dir anchor leaves sibling-named files editable
 probe "FP2 golden-evals-notes.md (cto)"    cto Write 'memory/golden-evals-notes.md'                                ALLOW
-# Evolved skills remain the officers' write surface
-probe "FP3 evolved skill draft (cro)"      cro Write 'memory/skills/evolved/draft-skill.md'                        ALLOW
+# CAPTAIN-LAW hardening 2026-07-07 (pre-tool-use.sh §5 captain-law arm):
+# memory/skills/** (evolved/ included) is always-injected officer law, so
+# direct officer Write is BLOCKED — skills changes go through the
+# evolution loop as Captain-applied proposals (was ALLOW pre-hardening).
+probe "FP3 evolved skill draft (cro)"      cro Write 'memory/skills/evolved/draft-skill.md'                        BLOCK
 # Own tier2 writes still allowed (tier2 arm regression pin)
 probe "FP4 own tier2 notes (cto)"          cto Edit  'instance/memory/tier2/cto/notes.md'                          ALLOW
 # Hooks ARE germline (2026-07-04 enforcer self-protection fix): the whole
@@ -141,7 +148,10 @@ probe "FP5b Write pre-tool-use.sh (cro)"    cro Write 'cabinet/scripts/hooks/pre
 probe "FP5c Write settings.json (cro)"      cro Write '.claude/settings.json'                                     BLOCK
 probe "FP5d Write policy-shadow.py (cos)"   cos Write 'cabinet/scripts/policy-shadow.py'                           BLOCK
 probe "FP5e Write kill-switch.sh (cro)"     cro Edit  'cabinet/scripts/kill-switch.sh'                             BLOCK
-probe "FP6 captain-decisions.md (cos)"     cos Write 'shared/interfaces/captain-decisions.md'                      ALLOW
+# CAPTAIN-LAW hardening 2026-07-07: the three captain-law ledgers are
+# append-only via cabinet/scripts/append-interface.sh — direct Write is
+# BLOCKED for every officer (was ALLOW pre-hardening).
+probe "FP6 captain-decisions.md (cos)"     cos Write 'shared/interfaces/captain-decisions.md'                      BLOCK
 # Other lib files are not the judge — only policy_engine.py is germline
 probe "FP7 other lib file (cto)"           cto Edit  'cabinet/scripts/lib/triggers.sh'                             ALLOW
 # Authority judges are suffix-anchored (classifier.py / lane.py) — their TESTS
