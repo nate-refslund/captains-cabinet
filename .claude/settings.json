@@ -12,12 +12,11 @@
       "Glob",
       "Grep",
       "mcp__notion",
-      "mcp__linear",
       "mcp__neon",
       "mcp__vercel",
       "mcp__plugin_telegram_telegram",
       "mcp__library",
-      "mcp__redis_trigger_channel",
+      "mcp__redis-trigger-channel",
       "mcp__make"
     ],
     "deny": [
@@ -29,8 +28,7 @@
       "Bash(reboot *)",
       "Bash(dd if=*)",
       "Bash(mkfs.*)"
-    ],
-    "defaultMode": "auto"
+    ]
   },
   "enableAllProjectMcpServers": true,
   "hooks": {
@@ -43,7 +41,8 @@
             "command": "bash",
             "args": [
               "${CLAUDE_PROJECT_DIR}/cabinet/scripts/hooks/pre-captain-dm.sh"
-            ]
+            ],
+            "timeout": 120
           },
           {
             "type": "command",
@@ -358,13 +357,13 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "bash"
+    "command": "bash",
+    "args": [
+      "${CLAUDE_PROJECT_DIR}/cabinet/scripts/statusline.sh"
+    ]
   },
   "enabledPlugins": {
     "make-skills@make-marketplace": true,
     "telegram@claude-plugins-official": true
-  },
-  "voice": {
-    "enabled": true
   }
 }

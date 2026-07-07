@@ -1851,7 +1851,15 @@ if [ -f "$MCP_SCOPE_FILE" ] && echo "$TOOL_NAME" | grep -q '^mcp__'; then
   # agent's set at build time, so the hook's membership check stays a single
   # string lookup per tool call.
   if [ ! -f "$MCP_SCOPE_CACHE" ] || [ "$MCP_SCOPE_FILE" -nt "$MCP_SCOPE_CACHE" ]; then
-    python3 - "$MCP_SCOPE_FILE" "$MCP_SCOPE_CACHE" <<'PY' 2>/dev/null || true
+    # FAIL CLOSED (audit 4c, germline window 2 2026-07-07): a cache-build
+    # failure used to be swallowed (`2>/dev/null || true`) — stale/absent
+    # cache then resolved ALLOWED="" and the unknown-officer arm let the
+    # call through. That contradicted the axes-contract "corrupt allowlist
+    # loads EMPTY" doctrine. Now: build failure removes any partial cache
+    # and refuses the MCP call loudly, naming this file. The parser SHAPE
+    # is unchanged — gen-officer-mcp-config.py::parse_scope mirrors it
+    # (parity tests in cabinet/scripts/tests/test_gen_officer_mcp_config.py).
+    if ! python3 - "$MCP_SCOPE_FILE" "$MCP_SCOPE_CACHE" <<'PY' 2>/dev/null
 import re, sys
 src, dst = sys.argv[1], sys.argv[2]
 text = open(src).read()
@@ -1892,6 +1900,11 @@ for line in text.splitlines():
 with open(dst, 'w') as f:
     f.write('\n'.join(out) + '\n')
 PY
+    then
+      rm -f "$MCP_SCOPE_CACHE"
+      echo "BLOCKED: mcp-scope cache build FAILED (cabinet/scripts/hooks/pre-tool-use.sh section 9 parsing cabinet/mcp-scope.yml). Corrupt scope loads EMPTY — MCP calls are refused until the yaml parses. Fix cabinet/mcp-scope.yml (Captain window) and retry." >&2
+      exit 2
+    fi
   fi
 
   # Resolve acting officer
@@ -1912,11 +1925,15 @@ PY
   esac
 
   if [ -z "$ALLOWED" ]; then
-    # Unknown officer — fail-warn (not fail-open, not fail-closed). Hard block
-    # would brick hiring flows when a new officer starts before mcp-scope.yml
-    # is updated; silent allow hides configuration drift. Warn + allow lets
-    # the call through while surfacing the gap for the retro.
-    echo "WARN: mcp-scope — officer '$AGENT_KEY' has no entry in cabinet/mcp-scope.yml. Allowing '$MCP_SERVER' call. Add an entry to enforce scope." >&2
+    # FAIL CLOSED (audit 4c, germline window 2 2026-07-07 — was fail-warn):
+    # an unset/unlisted officer identity now refuses the MCP call, matching
+    # the structural plane (gen-officer-mcp-config.py boots an unknown
+    # officer with an EMPTY server set) and the axes-contract doctrine.
+    # Hiring flows: create-officer.sh adds the scope entry in the same run;
+    # a non-officer session in this repo must export OFFICER/OFFICER_NAME
+    # to a scoped identity (or the Captain adds one in an unlock window).
+    echo "BLOCKED: mcp-scope — officer '$AGENT_KEY' has no entry in cabinet/mcp-scope.yml; unknown/unlisted identity fails CLOSED (audit 4c). Refusing '$MCP_SERVER' call. Add the officer to cabinet/mcp-scope.yml (Captain unlock window) or run under a scoped OFFICER identity." >&2
+    exit 2
   else
     # Check membership
     if ! echo ",$ALLOWED," | grep -qi ",${MCP_SERVER}," ; then

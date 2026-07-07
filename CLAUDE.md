@@ -275,10 +275,10 @@ redis-cli -h "${REDIS_HOST:-localhost}" -p 6379 GET "cabinet:schedule:last-run:<
 Only the following MCP servers are used by the Cabinet. Do NOT use any other MCP servers that may be available on the Captain's profile. Those are personal tools, not Cabinet tools.
 
 - **Notion** — Business brain (strategy, brand, research, decisions)
-- **Linear** — Read-only archive (post-cutover, audit only — **do not write**; the backlog lives in the work graph + `/tasks`, see Knowledge Systems)
+- **Linear** — Read-only archive (post-cutover, audit only — **do not write**; the backlog lives in the work graph + `/tasks`, see Knowledge Systems). Archive access is the GraphQL API outside MCP — the `linear` MCP server was removed 2026-07-07 (granted to zero agents; audit #17).
 - **Neon** — Product database (schema, queries, migrations)
 - **Library** — this Cabinet's structured knowledge (Spaces/records: briefs, specs, decisions, playbooks). Accessed via the `library` MCP or the dashboard `/library` route.
-- **Cabinet** — inter-Cabinet comms (identify, presence, availability, send_message, request_handoff). stdio + HTTP transport (FW-005 done — stdlib HTTP listener, bearer-auth, `/health`, tested for stdio↔http parity); cross-instance federation ready, consent-gated via `instance/config/peers.yml` (Work↔Personal peer provisioned).
+- **Cabinet** — inter-Cabinet comms (identify, presence, availability, send_message, request_handoff). stdio + HTTP transport (FW-005 code done — stdlib HTTP listener, bearer-auth, `/health`, tested for stdio↔http parity); consent-gated via `instance/config/peers.yml` (Work↔Personal peer provisioned). **Descoped from the universal MCP grant 2026-07-07 (addendum #3b): the server is registered in no config layer, so the grant was dead policy weight — re-grant in `cabinet/mcp-scope.yml` when the server is actually wired.** §10 peer-trust hook policy remains in place for that day.
 - **Vercel** — Hosting and deployment (preview, production)
 - **Brain** — Nate's screenpipe brain bridge (vault search, person intel, commitments, `queue_draft` outbound gate, reasoning log). Declared in `instance/config/extensions.yml` → rendered to `instance/config/extra-mcps.json`; scoped per officer in `cabinet/mcp-scope.yml`. Usage rules are MANDATORY: `.claude/rules/brain-bridge.md` (vault is read-first Nate-truth; `queue_draft` is the only outbound path; vault writes only via `append_agent_inbox`).
 

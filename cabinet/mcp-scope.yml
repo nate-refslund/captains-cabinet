@@ -130,7 +130,14 @@ scaffolds:
 # the hook). Inline bracket-list style — the hook's parser reads this
 # specific format. See pre-tool-use.sh section 9 (universal-merge).
 #
-# `cabinet` grants identify/presence/availability to every agent. Write
-# tools (send_message, request_handoff) are gated per-peer via peers.yml
-# + pre-tool-use.sh section 10 (Phase 2 CP4), so universal access is safe.
-universal: [telegram, library, cabinet]
+# Germline window 2 (2026-07-07, audit addendum 4a + #3b):
+# - `redis-trigger-channel` ADDED — the trigger-delivery plane every officer
+#   session must boot (injects cabinet:triggers:<officer>; without it the
+#   officer is deaf to wakes). Previously carried as a launcher EXTRA_ALLOW
+#   pass-through in start-officer-mac.sh — dropped there in the same change.
+# - `cabinet` DESCOPED — the FW-005 federation server is registered in NO
+#   config layer (root .mcp.json, .mcp.json.mac-native, extra-mcps.json,
+#   instance/agents/*/mcp.json), so the grant was dead policy weight (same
+#   class as the removed `host` grant). Re-grant when the server is actually
+#   wired; §10's peer-trust policy remains in place for that day.
+universal: [telegram, library, redis-trigger-channel]

@@ -194,17 +194,17 @@ OFFICER_MCP_PATH="$OFFICER_CFG_DIR/officer-mcp-${OFFICER}.json"
 OFFICER_SETTINGS_PATH="$OFFICER_CFG_DIR/officer-settings-${OFFICER}.json"
 
 # Launcher INFRA pass-through (NOT capability grants — see the generator's
-# docstring): redis-trigger-channel is the trigger-delivery plane; without it
-# an officer session boots deaf to wakes/triggers. It is absent from the
-# germline scope file (schg-locked) — adding it to `universal:` there is a
-# Captain amendment, tracked in
-# docs/proposals/germline-addendum-claude-code-audit-2026-07-07.md.
-# cua/cua-driver ride the drives_computer capability gate that assembled the
-# overlay above. The generator IGNORES extra-allow when the scope parse
-# fails, so this pass-through cannot mask a fail-closed boot.
-EXTRA_ALLOW="redis-trigger-channel"
+# docstring). redis-trigger-channel moved OUT of this pass-through into the
+# scope file's `universal:` list (germline window 2, 2026-07-07 — addendum
+# 4a applied), where the structural plane + hook §9 enforce it like every
+# other grant. Only the cua/cua-driver overlay pair remains here: it rides
+# the drives_computer capability gate that assembled the overlay above
+# (proper scoping = addendum 4b, deferred). The generator IGNORES
+# extra-allow when the scope parse fails, so this pass-through cannot mask
+# a fail-closed boot; an empty EXTRA_ALLOW is a no-op ("" splits to []).
+EXTRA_ALLOW=""
 if [ "$HAS_CUA_DRIVER" = "true" ]; then
-  EXTRA_ALLOW="$EXTRA_ALLOW,cua,cua-driver"
+  EXTRA_ALLOW="cua,cua-driver"
 fi
 
 if ! python3 "$REPO_ROOT/cabinet/scripts/gen-officer-mcp-config.py" \

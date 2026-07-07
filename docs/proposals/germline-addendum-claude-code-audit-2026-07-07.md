@@ -24,7 +24,7 @@ schema validation of it blocked officer boot on the rolling restart).
 Scope-parse failure boots the officer
 with an EMPTY server set (fail closed). Two follow-ups need germline edits:
 
-### 4a. `cabinet/mcp-scope.yml` — add the trigger-delivery plane to `universal:`
+### 4a. `cabinet/mcp-scope.yml` — add the trigger-delivery plane to `universal:` — **APPLIED 2026-07-07 (germline window 2; combined with #3b: `universal: [telegram, library, redis-trigger-channel]`; EXTRA_ALLOW pass-through dropped from start-officer-mac.sh same change)**
 
 `redis-trigger-channel` is the trigger-delivery MCP every officer session
 must boot (it injects `cabinet:triggers:<officer>` content; without it the
@@ -65,7 +65,7 @@ server the capability gate just merged. The launcher pass-through adds
 Then remove the conditional `cua,cua-driver` pass-through from
 `start-officer-mac.sh`.
 
-### 4c. `cabinet/scripts/hooks/pre-tool-use.sh` §9 — flip the two fail-open paths
+### 4c. `cabinet/scripts/hooks/pre-tool-use.sh` §9 — flip the two fail-open paths — **APPLIED 2026-07-07 (germline window 2; parser shape unchanged, generator parity intact; probed: unknown-officer exit 2, build-failure exit 2 + cache removed)**
 
 Germline (hooks dir is schg-locked). The audit's exact finding: §9
 warns-and-allows when the officer identity is unset/unlisted, and the cache
@@ -82,7 +82,7 @@ generator (and its parity tests in
 
 ---
 
-## Finding #3b — descope the unregistered `cabinet` federation server (`cabinet/mcp-scope.yml`)
+## Finding #3b — descope the unregistered `cabinet` federation server (`cabinet/mcp-scope.yml`) — **APPLIED 2026-07-07 (germline window 2; CLAUDE.md MCP Scope bullet updated same pass)**
 
 `cabinet` is universally granted (`universal:` list, mcp-scope.yml:136),
 pre-tool-use.sh §10 implements its peer-trust policy, and CLAUDE.md "MCP
@@ -108,7 +108,7 @@ universal: [telegram, library, redis-trigger-channel]
 comms … federation ready" bullet should say descoped-until-registered (or be
 dropped).
 
-## Finding #15 — `.claude/settings.json` allow-list: underscored trigger-channel entry (germline half)
+## Finding #15 — `.claude/settings.json` allow-list: underscored trigger-channel entry (germline half) — **APPLIED 2026-07-07 (germline window 2; rename + `mcp__linear` drop; same window also applied audit #8/#9/#10 + pre-captain-dm timeout 120 in the same file)**
 
 `.claude/settings.json:20` allows `mcp__redis_trigger_channel`, which can
 never match the server named `redis-trigger-channel`.
