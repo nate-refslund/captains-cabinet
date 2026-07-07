@@ -65,6 +65,11 @@ server the capability gate just merged. The launcher pass-through adds
 Then remove the conditional `cua,cua-driver` pass-through from
 `start-officer-mac.sh`.
 
+*2026-07-07 leftovers-window re-check: `cabinet/mcp-scope.yml` STILL schg
+(ls -lO) — germline window 2 applied §4a/§3b/§4c but did not take this one;
+the launcher pass-through remains the live mechanism. Still pending an
+unlock window.*
+
 ### 4c. `cabinet/scripts/hooks/pre-tool-use.sh` §9 — flip the two fail-open paths — **APPLIED 2026-07-07 (germline window 2; parser shape unchanged, generator parity intact; probed: unknown-officer exit 2, build-failure exit 2 + cache removed)**
 
 Germline (hooks dir is schg-locked). The audit's exact finding: §9
@@ -136,7 +141,7 @@ these sources via load-preset.sh at next officer start.
 
 ---
 
-## AUD-2 (audit #6/#33 fallback half) — loud-fallback Notification page
+## AUD-2 (audit #6/#33 fallback half) — loud-fallback Notification page — **SHIPPED 2026-07-07 without germline (local settings layer); germline entry now OPTIONAL consolidation**
 
 `--fallback-model 'claude-opus-4-8'` now rides every officer launch line
 (start-officer-mac.sh, probed like `--agent`, override
@@ -152,6 +157,22 @@ Captain page via the existing notify path — the standing Fable/model rule
 requires non-primary-model operation to be LOUD. Pair with the AUD-9 batch
 (StopFailure/TeammateIdle/PermissionRequest) so one unlock window covers all
 four hook wirings.
+
+**STATUS 2026-07-07 (leftovers window): shipped WITHOUT a germline edit.**
+The hook script landed at `cabinet/scripts/hooks-src/model-fallback-pager.sh`
+(hooks-src/, because `cabinet/scripts/hooks/` is schg), wired via a
+`Notification` entry in `.claude/settings.local.json` — the non-germline
+local settings layer (gitignored; officers read default setting sources, so
+the fleet picks it up at natural relaunch). Stamp + debounced Chair page as
+specified above; tests `cabinet/scripts/tests/test_model_fallback_pager.py`.
+The germline `settings.json` entry is therefore **optional consolidation**
+at the AUD-9 window (move the same entry in and delete the local file in the
+same pass), no longer a blocker. CAVEAT for the window: CC 2.1.202's
+documented Notification matcher types (permission_prompt, idle_prompt,
+auth_success, elicitation_*, agent_needs_input, agent_completed) do NOT
+include a model-fallback type — if the first real engagement never pages,
+detection moves to `statusline.sh` (NOT schg; its stdin JSON carries
+`model.id` every render — compare against the pinned primary).
 
 ---
 
@@ -171,9 +192,33 @@ write is the normal path by which channel-delivered triggers receive their
 consumer-side ACK. Mechanics documented at length in
 `cabinet/scripts/lib/triggers.sh` (trigger_read_safety_net header).
 
+*2026-07-07 leftovers-window re-check: `post-tool-use.sh` STILL schg
+(ls -lO) — comment fix still rides the next unlock window.*
+
 ---
 
-## AUD-8 — sandbox `filesystem.denyWrite` on the comms-officer settings overlay (probed 2026-07-07; exact config, flip deferred to a watched pilot restart)
+## AUD-8 — sandbox `filesystem.denyWrite` on the comms-officer settings overlay (probed 2026-07-07; exact config, flip deferred to a watched pilot restart) — **PILOT FLIPPED LIVE 2026-07-07 (leftovers window)**
+
+> **Applied 2026-07-07, watched restart per the procedure below — landing
+> surface changed to the comms config home** (`~/Library/Application Support/
+> cabinet/claude-config/settings.json`, user scope, comms-only by AUD-1
+> isolation; rollback backup `settings.json.bak-aud8-20260707` alongside)
+> instead of the per-boot generator overlay. As-applied deltas from the
+> config block below, all docs-verified: (1) `denyWrite` additionally
+> carries `<CABINET_ROOT>/cabinet/cache/sandbox-deny-canary` as a STANDING
+> enforcement-probe path (every germline entry is also schg, so only the
+> canary proves the sandbox layer distinctly from schg); (2)
+> `filesystem.allowWrite: [/tmp, /private/tmp, ~/Library/Caches/cabinet,
+> ~/Library/Logs/cabinet]` — under `sandbox.enabled` the DEFAULT write
+> policy narrows to cwd+session-temp only, and officer Bash writes
+> `/tmp/.trigger_ids_*` (trigger ACK); (3) `excludedCommands: ["gh *"]` (Go
+> CLIs documented to fail TLS verification under Seatbelt). Still NO
+> `network` block. VERIFIED: headless probe from the config home — canary
+> write denied (`operation not permitted`), `cabinet/cache/` write OK;
+> interactive `launchctl kickstart -k` boot GREEN (no modal, MCP servers up,
+> `/rc` active, bypass accepted, err.log clean). Remaining for the row:
+> `network.allowedDomains` + `sandbox.credentials` scrub as the second pilot
+> step after a boot-stable soak, then fleet rollout.
 
 Not germline-gated (the overlay is generated per boot by
 `cabinet/scripts/gen-officer-mcp-config.py` into
@@ -302,3 +347,7 @@ schg-locked (germline-lock.sh TARGETS): they need a Captain unlock window
 (action_exec.py:833, schg) should move to roster config in the same unlock
 window. The per-kind forward/inverse executor extraction rides G1 packs
 (unchanged plan).
+
+*2026-07-07 leftovers-window re-check: both targets STILL schg (ls -lO:
+action_lane.py, action_exec.py) and W1A-T4 still in-flight (gamma closed) —
+specs above unchanged, nothing landable outside an unlock window.*

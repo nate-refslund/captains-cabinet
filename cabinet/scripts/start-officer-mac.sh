@@ -341,8 +341,13 @@ fi
 # AGENT_FLAG so older CLIs just omit the flag. Override via
 # CABINET_FALLBACK_MODEL; set it to "none" to disable.
 # NOTE: the loud-fallback Notification-hook page (no silent fallback) is the
-# other half of AUD-2 — settings.json hook wiring is schg-locked germline, so
-# that half rides the germline addendum, not this script.
+# other half of AUD-2 — SHIPPED 2026-07-07 as
+# cabinet/scripts/hooks-src/model-fallback-pager.sh, wired via
+# .claude/settings.local.json (non-germline local settings layer; germline
+# settings.json is schg-locked — the AUD-9 unlock window may consolidate the
+# entry there, see the claude-code-audit addendum §AUD-2). Officers pick the
+# hook up at natural relaunch; it stamps cabinet:model-fallback:<officer> and
+# pages the Chair (debounced) when the CLI reports fallback engagement.
 # ===========================================================
 FALLBACK_MODEL="${CABINET_FALLBACK_MODEL:-claude-opus-4-8}"
 FALLBACK_FLAG=""

@@ -11,6 +11,12 @@ cabinet/.env
 .claude/memory/
 .claude/scheduled_tasks.lock
 
+# Local settings layer (Claude Code convention: per-machine, never committed).
+# On the live box it carries the AUD-2 model-fallback-pager Notification hook
+# (germline .claude/settings.json is schg-locked — see
+# docs/proposals/germline-addendum-claude-code-audit-2026-07-07.md §AUD-2).
+.claude/settings.local.json
+
 # Agent definitions at .claude/agents/ are derived by the preset loader
 # (copied from presets/<active>/agents/ with instance/agents/ overlays).
 # Source of truth lives in presets/ and instance/agents/ — do NOT track
