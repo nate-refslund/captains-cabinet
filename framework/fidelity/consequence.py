@@ -117,7 +117,11 @@ _REVIEW_KEYS = {"verdict", "reviewed_at", "lesson_ref", "source"}
 # 5-condition bar, framework/learning/gate.py run_gate_review); its confirms
 # fuel promotion ONLY while the deployment posture resolves sovereign AT
 # COMPUTE TIME — guardian ignores them (EARN-DEMOTION-safe), wrong from any
-# source still demotes.
+# source still demotes. [CG-1 Option B, ruled 2026-07-07] further scopes gate
+# fuel to deterministic-inverse machine evidence in label-floor-met periods
+# (see compute_ratios); the judge-calibration >=0.8 precondition attaches to
+# verdict_judge (its confirms stay promotion-inert until CG-10 rules
+# otherwise on calibration proof).
 _REVIEW_SOURCES = {"verdict_human", "verdict_judge", "system", "verdict_gate"}
 
 
@@ -657,6 +661,76 @@ def _gate_confirms_now() -> bool:
         return False
 
 
+def _det_inverse_gate_fuel_types() -> frozenset[str]:
+    """[CG-1 Option B, ruled 2026-07-07] The action_types whose acted machine
+    evidence is DETERMINISTIC-INVERSE-backed — the ONLY types whose
+    `verdict_gate` confirms may mint promotion fuel.
+
+    Derived from the EXISTING inverse representation (nothing new is invented):
+    `action_undo.act_first_eligible(kind, backend)` — a registered, non-``none``
+    inverse in `action_undo.inverse_for`'s registry, probed with the sanctioned
+    kind-fallback backend (the same convention the policy-engine eligibility
+    probe uses, see action_undo.py's GERMLINE WIDENING note). Two legs cover
+    the whole stamping surface:
+
+      1. classifier action_types that ARE inverse-registered step kinds
+         themselves (the reversible kinds: task_status_move / label /
+         tier2_note / local_edit);
+      2. proposer-lane step kinds (action_lane.ACTION_TYPE_MAP) mapped to the
+         action_type their acted rows stamp (e.g. monday_task_create →
+         task_create). A kind whose inverse is op ``none`` (delegate_work,
+         investigation_run) admits nothing.
+
+    Note the kind-fallback probe deliberately ignores per-backend exclusions
+    (e.g. apple_reminders): an excluded backend never acts unattended in the
+    first place (act-time perimeter, ACT_FIRST_EXCLUDED_BACKENDS), so no
+    ttl_ok row for it can exist to be counted here.
+
+    Fail-closed: ANY import or probe failure yields the empty set — no
+    deterministic-inverse proof, no gate fuel. Lazy imports keep the guardian
+    world (and lib-less trust-path installs) from ever touching the frontdoor
+    modules; by the time this runs, consequence is fully loaded, so the
+    action_undo → consequence import cycle is inert.
+    """
+    try:
+        from framework.acting.action_lane import ACTION_TYPE_MAP
+        from framework.frontdoor.action_undo import act_first_eligible
+    except Exception:
+        return frozenset()
+    admissible: set[str] = set()
+    for at in ACTION_TYPES:
+        try:
+            if act_first_eligible(at, at):
+                admissible.add(at)
+        except Exception:
+            continue
+    for kind, at in ACTION_TYPE_MAP.items():
+        try:
+            if at in ACTION_TYPES and act_first_eligible(kind, kind):
+                admissible.add(at)
+        except Exception:
+            continue
+    return frozenset(admissible)
+
+
+def _label_floor_met(ts: str) -> bool:
+    """[CG-1 Option B, ruled 2026-07-07] True iff the period containing `ts`
+    met the Captain attention-contract label floor (the A3 sensor: N
+    stratified-random cards/day answered at 100%, per the operative egg plan).
+
+    The A3 sensor DOES NOT EXIST YET. Until it lands and is wired through
+    this seam, NO period is label-floor-met — so ttl_ok-derived machine
+    confirms (every `verdict_gate` confirm rides a ttl_ok row by the gate's
+    5-condition bar) count toward promotion in exactly zero periods. That is
+    the ruling's intent: silence from an absent Captain is never promotion
+    fuel; machine evidence may only fuel promotion inside periods where the
+    human labeling channel was demonstrably alive. Fail-closed by
+    construction — wiring A3 here can only ever WIDEN from zero under a
+    later, explicit change; absence narrows.
+    """
+    return False
+
+
 def compute_ratios(
     since: str | None = None,
     ledger: list[dict[str, Any]] | None = None,
@@ -691,6 +765,14 @@ def compute_ratios(
     "verdict_gate" IFF the posture resolves sovereign at compute time (lazy,
     fail-closed to guardian — see _gate_confirms_now). `wrong` counts from any
     source, both postures.
+
+    [CG-1 Option B, ruled 2026-07-07] The verdict_gate leg is further scoped:
+    a gate confirm counts ONLY when its action_type is deterministic-inverse-
+    backed (_det_inverse_gate_fuel_types — the existing undo registry) AND its
+    period met the Captain label floor (_label_floor_met — the A3 seam,
+    fail-closed False until the sensor exists). The judge-calibration >=0.8
+    precondition attaches to verdict_judge, whose confirms remain promotion-
+    inert here regardless (see the branch comment below).
     """
     events = ledger if ledger is not None else read_ledger(since=since)
 
@@ -699,6 +781,10 @@ def compute_ratios(
     # per compute, at compute time). A ledger with no verdict_gate rows never
     # touches the posture module at all (guardian world bit-identical).
     gate_sovereign = None
+    # [CG-1 Option B] The deterministic-inverse admissible set, same laziness:
+    # derived only after sovereign resolves, memoized for THIS compute, so
+    # guardian (and gate-row-less) computes never import the undo registry.
+    gate_fuel_types = None
 
     cells: dict[tuple[str, str | None, str], GraduationRatios] = {}
     for ev in events:
@@ -736,6 +822,22 @@ def compute_ratios(
         # gate) also fuels promotion, but ONLY while the posture resolves
         # sovereign at compute time — guardian keeps ignoring it, so a flip
         # back to guardian revokes gate fuel on the very next compute.
+        #
+        # [CG-1 Option B, ruled 2026-07-07 — captain-decisions.md] The D5/D16
+        # promotion-fuel reconcile, strictly narrowing D16's branch:
+        #   (b) a gate confirm counts ONLY for DETERMINISTIC-INVERSE machine
+        #       evidence — the row's action_type must be admissible per the
+        #       existing undo registry (_det_inverse_gate_fuel_types); any
+        #       other machine evidence (internal_message etc.) is inert;
+        #   (c) ttl_ok counts toward promotion ONLY in label-floor-met
+        #       periods (_label_floor_met over the row's ts) — every gate
+        #       confirm is ttl_ok-derived by run_gate_review's bar, so the
+        #       floor gates the whole branch.
+        # The judge-calibration >=0.8 precondition attaches to verdict_judge
+        # (comment, not mechanism): verdict_judge confirms stay promotion-
+        # inert here, and any future admission of calibrated judge confirms
+        # (the separate CG-10 germline amendment) is preconditioned on
+        # judge-calibration >=0.8 proven — never on this branch as-is.
         review = ev.get("review") or {}
         verdict = review.get("verdict")
         source = review.get("source")
@@ -746,7 +848,11 @@ def compute_ratios(
                 if gate_sovereign is None:
                     gate_sovereign = _gate_confirms_now()
                 if gate_sovereign:
-                    cell.confirmed += 1
+                    if gate_fuel_types is None:
+                        gate_fuel_types = _det_inverse_gate_fuel_types()
+                    if action_type in gate_fuel_types and \
+                            _label_floor_met(str(ev.get("ts") or "")):
+                        cell.confirmed += 1
         elif verdict == "wrong":
             cell.wrong += 1
 

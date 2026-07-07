@@ -354,15 +354,26 @@ class TestRunGateReview:
         key = ("officer:polads-ceo", "polads", "task_status_move")
         # guardian compute: verdict_gate confirm does NOT count
         assert cells_g[key].confirmed == 0
-        # sovereign compute: it does
+        # sovereign compute: it does — task_status_move is deterministic-
+        # inverse-backed (admissible per CG-1 Option B, ruled 2026-07-07),
+        # and the label floor must be met for ttl_ok-derived fuel to count,
+        # so the A3 seam is patched open alongside the posture seam.
         try:
             consequence._gate_confirms_now  # sanity: seam exists
             orig = consequence._gate_confirms_now
+            orig_floor = consequence._label_floor_met
             consequence._gate_confirms_now = lambda: True
+            consequence._label_floor_met = lambda ts: True
             cells_s = consequence.compute_ratios(ledger=[emitted[0]])
             assert cells_s[key].confirmed == 1
+            # [CG-1 Option B] outside a label-floor-met period the SAME
+            # sovereign stamp mints nothing (ttl_ok alone is not fuel).
+            consequence._label_floor_met = lambda ts: False
+            cells_f = consequence.compute_ratios(ledger=[emitted[0]])
+            assert cells_f[key].confirmed == 0
         finally:
             consequence._gate_confirms_now = orig
+            consequence._label_floor_met = orig_floor
         assert stamped_ledger  # silence linters
 
     def test_per_row_failure_isolated(self):
