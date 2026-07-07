@@ -23,7 +23,7 @@ ingestion pipes; this verifies *outcomes* and routes the failures.
 
 | Piece | File | Role |
 |-------|------|------|
-| **Expectations registry** | `framework/watchdog/registry.py` | Declarative list of "what should be TRUE" + cadence + verify-fn + tier. Add an outcome = add one `Expectation(...)` row. |
+| **Expectations registry** | `framework/watchdog/registry.py` | Declarative catalog of "what should be TRUE" + cadence + verify-fn + tier. Add an outcome = add one `Expectation(...)` row to `_CATALOG`. Deployment data (briefing slot times, officer roster, pipe-freshness table, enabled row ids) is instance config: `instance/config/watchdog.yml` (egg R017). |
 | **Independent checker** | `framework/watchdog/check.py` + `cabinet/scripts/run-outcome-watchdog.sh` | Stdlib-only, imports NOTHING it watches. Evaluates the registry, routes failures by tier, stamps its heartbeat. launchd every :00/:30. |
 | **Tiered response** | `check.py::route_failure` | auto-fix / escalate-to-Chair / drift-note, with anti-thrash cooldown. |
 | **Dead-man's switch** | `~/.screenpipe/pipes/pipe-watchdog/check.py::check_outcome_watchdog_deadman` | A *separate* survivor pings the Chair if the watchdog's own heartbeat staleens. Who-watches-the-watchman. |
@@ -40,7 +40,16 @@ process ran. Each row in `EXPECTATIONS` carries:
 - `verify(probe) -> CheckResult` — cheap, side-effect-free; reads only
 - `auto_fix(probe, result) -> str|None` — only for `AUTO_FIX` tier
 
-**Seeded expectations:**
+**Instance config (egg R017):** the briefing slot times, the fulltime-officer
+roster, the pipe-freshness table, and WHICH catalog rows are enabled live in
+`instance/config/watchdog.yml` — parsed with a narrow stdlib parser (survival
+contract: no PyYAML), so edit only in that file's documented shapes. A missing
+or unparseable file degrades to generic defaults (briefing 07:30/19:30 +45m,
+empty roster, empty pipe table, ALL rows enabled): a bad config can narrow the
+watchdog's inputs, never blind the sweep itself.
+
+**Seeded expectations** (the schedule/roster/pipe values shown are this
+deployment's `watchdog.yml`):
 
 | id | Outcome verified | Tier | How it's verified (OUTCOME, not process) |
 |----|------------------|------|------------------------------------------|
@@ -50,10 +59,12 @@ process ran. Each row in `EXPECTATIONS` carries:
 | `no-silent-cron-failure` | The cabinet's own crons produce output and don't silently error | escalate-chair | Per watched job log: error-marker in the tail (`FATAL`, `Traceback`, `trigger NOT pushed`) OR stale past cadence. |
 | `pipes-fresh` | Brain ingestion pipes (msgraph/teams/embeddings) fresh | escalate-chair | Log mtimes only (no Graph poll). pipe-watchdog auto-heals stalls; a residual stale pipe here = the heal didn't take. |
 
-**To add an expectation:** append one `Expectation(...)` to `EXPECTATIONS` in
+**To add an expectation:** append one `Expectation(...)` to `_CATALOG` in
 `registry.py` with a `verify` fn that takes the `Probe` and returns a
-`CheckResult`. Pick the tier by how a failure should be handled. That's it — the
-checker picks it up automatically.
+`CheckResult`. Pick the tier by how a failure should be handled. If
+`instance/config/watchdog.yml` narrows `expectations:`, also enable the new id
+there (an absent/empty list already enables every catalog row). The checker
+picks it up automatically.
 
 ## 2. Independence (the load-bearing property)
 

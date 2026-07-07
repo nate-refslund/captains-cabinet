@@ -1,0 +1,63 @@
+# instance/config/watchdog.yml — outcome-watchdog instance data (egg plan R017).
+#
+# The deployment-specific tables framework/watchdog/registry.py used to
+# hardcode live HERE now: the briefing slot times, the fulltime-officer
+# roster, the brain pipe-freshness table, and WHICH expectation rows are
+# enabled. The registry keeps the MACHINERY (verify fns, tiers, the router
+# contract) and reads this file at import with a NARROW stdlib parser
+# (survival contract: no PyYAML) — so edit ONLY in the exact shapes used
+# below: top-level `section:` keys, 2-space `key: <int>` scalars under
+# briefing:, 2-space `- <slug>` list items, and 4-space `log:` /
+# `max_stale_s:` fields under a 2-space pipe name. Unknown lines are ignored
+# per-entry; a missing or unparseable file degrades to generic defaults
+# (briefing 07:30/19:30 +45m grace, EMPTY roster, EMPTY pipe table, ALL
+# expectations enabled) — a bad config can narrow the watchdog's inputs,
+# never blind the sweep itself.
+
+# Briefing delivery slots (Captain-local wall clock) + grace minutes before
+# the outcome is asserted. Mirrors the frontdoor-briefing schedule in
+# cabinet/services.yml — keep in sync if that cadence changes.
+briefing:
+  am_hour: 7
+  pm_hour: 19
+  minute: 30
+  grace_min: 45
+
+# Fulltime officers expected to reflect within 48h of doing work
+# (verify_officer_reflection). Keep in sync with the officer rows in
+# cabinet/services.yml.
+fulltime_officers:
+  - cos
+  - polads-ceo
+  - stephie-ceo
+  - comms-officer
+
+# Brain ingestion pipes: log filename under the brain state dir
+# (framework.env.state_dir()) + max staleness seconds. Thresholds account for
+# each pipe's ACTUAL cadence AND the Mac's overnight gap: all pipes pause
+# when the MacBook sleeps / work-hours gates close (~19:00-08:00), so a
+# threshold shorter than that window false-alarms every morning (observed
+# 2026-07-01 flood + 07-03 teams-graph). Cadences per the Graph cost
+# optimization: msgraph HOURLY (07-19 work-hours-gated + 14h overnight
+# catchup), teams-graph DAILY (86400s). Keep in sync with the pipe plists if
+# a cadence changes.
+pipe_freshness:
+  msgraph-incremental:
+    log: msgraph-incremental.log
+    max_stale_s: 54000     # hourly, work-hours-gated + overnight gap (15h)
+  teams-graph-incremental:
+    log: teams-graph-incremental.log
+    max_stale_s: 100800    # DAILY cadence (86400s) + buffer (28h)
+  embeddings:
+    log: embeddings.log
+    max_stale_s: 54000     # frequent but pauses on overnight sleep (15h)
+
+# Expectation rows enabled on THIS deployment (registry catalog ids, in
+# check order). An absent or EMPTY list enables every catalog row — the
+# watchdog can be narrowed, never silently zeroed. Unknown ids are ignored.
+expectations:
+  - briefing-delivered
+  - officer-reflection
+  - captain-decisions-logged
+  - no-silent-cron-failure
+  - pipes-fresh

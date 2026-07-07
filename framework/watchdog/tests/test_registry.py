@@ -945,3 +945,82 @@ def test_reflection_stale_toolcall_is_idle():
     probe = FakeProbe(now=now, redis=redis)
     res = reg.verify_officer_reflection(probe)
     assert res.ok is True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Instance-config loader (egg plan R017): briefing times / roster / pipe table
+# / enabled-expectation rows live in instance/config/watchdog.yml, parsed by
+# the narrow stdlib parser — these pin its shapes and its fail-safe degrades.
+# ─────────────────────────────────────────────────────────────────────────────
+_WATCHDOG_YML = """\
+# header comment
+briefing:
+  am_hour: 6
+  pm_hour: 20
+  minute: 15
+  grace_min: 30
+fulltime_officers:
+  - cos
+  - mari-ceo
+pipe_freshness:
+  some-pipe:
+    log: some-pipe.log
+    max_stale_s: 3600      # trailing comment must be ignored
+  broken-pipe:
+    log: only-a-log-no-threshold.log
+expectations:
+  - pipes-fresh
+  - briefing-delivered
+  - not-a-real-row
+"""
+
+
+def test_watchdog_config_parses_all_sections():
+    cfg = reg._parse_watchdog_config(_WATCHDOG_YML)
+    assert cfg["briefing"] == {"am_hour": 6, "pm_hour": 20, "minute": 15,
+                               "grace_min": 30}
+    assert cfg["fulltime_officers"] == ["cos", "mari-ceo"]
+    # complete pipe entries land as the (log, max_stale_s) tuples the verify
+    # iterates; the incomplete entry is dropped (degrade per-entry)
+    assert cfg["pipe_freshness"] == {"some-pipe": ("some-pipe.log", 3600)}
+    assert cfg["expectations"] == ["pipes-fresh", "briefing-delivered",
+                                   "not-a-real-row"]
+
+
+def test_watchdog_config_defaults_on_empty():
+    """No/empty config → GENERIC defaults, never launcher data: framework
+    fleet briefing times, empty roster (nothing to watch), empty pipe table,
+    and an empty enabled-list (→ the FULL catalog downstream)."""
+    cfg = reg._parse_watchdog_config("")
+    assert cfg["briefing"] == {"am_hour": 7, "pm_hour": 19, "minute": 30,
+                               "grace_min": 45}
+    assert cfg["fulltime_officers"] == []
+    assert cfg["pipe_freshness"] == {}
+    assert cfg["expectations"] == []
+
+
+def test_watchdog_config_out_of_range_falls_back_per_field():
+    """A corrupt hour must fall back to that field's default (never reach
+    datetime.replace and blow up the slot math); a valid sibling still lands."""
+    cfg = reg._parse_watchdog_config("briefing:\n  am_hour: 99\n  minute: 10\n")
+    assert cfg["briefing"]["am_hour"] == 7
+    assert cfg["briefing"]["minute"] == 10
+
+
+def test_watchdog_select_expectations_filters_and_never_blinds():
+    """Config order + unknown-id skip; an empty or all-unknown enabled-list
+    yields the FULL catalog — a bad config can narrow the watchdog's inputs,
+    never silently zero the sweep."""
+    sel = reg._select_expectations(reg._CATALOG, ["pipes-fresh", "nope"])
+    assert [e.id for e in sel] == ["pipes-fresh"]
+    all_ids = [e.id for e in reg._CATALOG]
+    assert [e.id for e in reg._select_expectations(reg._CATALOG, [])] == all_ids
+    assert [e.id for e in reg._select_expectations(reg._CATALOG, ["zzz"])] == all_ids
+
+
+def test_watchdog_this_deployment_enables_full_catalog():
+    """The committed instance config enables all five catalog rows in catalog
+    order — the module-level EXPECTATIONS the checker sweeps is unchanged by
+    the R017 data move (test_full_run_with_fake_probe pins checked == 5)."""
+    assert [e.id for e in reg.EXPECTATIONS] == [e.id for e in reg._CATALOG]
+    assert len(reg.EXPECTATIONS) == 5

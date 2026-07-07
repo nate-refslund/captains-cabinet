@@ -20,8 +20,13 @@ Design goals (why it is shaped this way):
     read is lazy and degrades to a generic default on any failure, so the
     watchdog never dies for them.)
   * EXTENSIBLE BY ADDING A ROW. An expectation is one `Expectation(...)` literal
-    in `EXPECTATIONS`. Add an outcome to watch = append a row with its id, what,
+    in `_CATALOG`. Add an outcome to watch = append a row with its id, what,
     cadence, tier, a verify function, and a response policy. Nothing else.
+  * MACHINERY HERE, DATA IN THE INSTANCE (egg R017). The deployment-specific
+    tables — briefing slot times, the fulltime-officer roster, the
+    pipe-freshness table, and which catalog rows are enabled — are read from
+    instance/config/watchdog.yml (narrow stdlib parse, generic fail-safe
+    defaults), so the framework organ carries no launcher data.
   * COMPOSE, DON'T DUPLICATE. Where a signal is already emitted (overdue
     reflections via the schedule last-run stamps the anomaly-scan reads), the
     verify reuses that source rather than re-deriving it.
@@ -237,12 +242,108 @@ LAST_CAPTAIN_MSG_KEY = "cabinet:last-captain-msg-id"
 # or never ran. We read the leading ISO token and ignore any trailing annotation.
 BRIEF_DELIVERED_MARKER_KEY = "cabinet:schedule:last-run:cos:briefing"
 
-# Briefing schedule (local time, from the frontdoor-briefing plist):
-BRIEF_AM_HOUR = 7
-BRIEF_PM_HOUR = 19
-BRIEF_MINUTE = 30
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Instance config (egg plan R017) — the deployment-specific tables this module
+# used to hardcode (briefing slot times, the fulltime-officer roster, the
+# pipe-freshness table, and WHICH expectation rows are enabled) live in
+# instance/config/watchdog.yml. The registry keeps the MACHINERY (verifies,
+# tiers, the router contract); the instance supplies the data. STDLIB-ONLY
+# (survival contract — same reasoning as the services.yml parser below): a
+# narrow line-parser over exactly the shapes that file documents, never
+# PyYAML. A missing or unparseable file/key degrades to GENERIC defaults —
+# never launcher data: briefing 07:30/19:30 +45m grace (the framework fleet
+# default), an EMPTY roster (no officers to watch), an EMPTY pipe table
+# (nothing to watch), and ALL catalog expectations enabled (a bad config can
+# narrow the watchdog's inputs, never blind the sweep itself).
+# ─────────────────────────────────────────────────────────────────────────────
+WATCHDOG_CONFIG = str(_cabinet_root() / "instance" / "config" / "watchdog.yml")
+
+_BRIEF_DEFAULTS = {"am_hour": 7, "pm_hour": 19, "minute": 30, "grace_min": 45}
+# Field-level sanity bounds: a corrupt hour/minute falls back to that field's
+# default rather than blowing up the slot math in datetime.replace().
+_BRIEF_BOUNDS = {"am_hour": 23, "pm_hour": 23, "minute": 59, "grace_min": 24 * 60}
+
+
+def _parse_watchdog_config(text: str) -> dict:
+    """Parse instance/config/watchdog.yml's four sections with stdlib only.
+
+    Accepted shapes (documented in that file's header): top-level `section:`
+    keys; `  key: <int>` scalars under briefing:; `  - <slug>` items under
+    fulltime_officers: / expectations:; and under pipe_freshness: a
+    `  <pipe>:` entry carrying `    log: <file>` + `    max_stale_s: <int>`.
+    Trailing comments are ignored by the value regexes; unknown lines are
+    ignored per-entry; incomplete pipe entries are dropped."""
+    cfg: dict = {
+        "briefing": dict(_BRIEF_DEFAULTS),
+        "fulltime_officers": [],
+        "pipe_freshness": {},
+        "expectations": [],
+    }
+    section = None
+    pipe = None
+    pipes_raw: dict = {}
+    for raw in (text or "").splitlines():
+        line = raw.rstrip()
+        if not line.strip() or line.strip().startswith("#"):
+            continue
+        m = re.match(r"^([A-Za-z_][A-Za-z0-9_]*):\s*$", line)
+        if m:
+            section = m.group(1)
+            pipe = None
+            continue
+        if section == "briefing":
+            km = re.match(r"^  ([A-Za-z_][A-Za-z0-9_]*):\s*(\d+)\b", line)
+            if km and km.group(1) in cfg["briefing"]:
+                v = int(km.group(2))
+                if 0 <= v <= _BRIEF_BOUNDS[km.group(1)]:
+                    cfg["briefing"][km.group(1)] = v
+        elif section in ("fulltime_officers", "expectations"):
+            im = re.match(r"^  - ([A-Za-z0-9._-]+)\b", line)
+            if im:
+                cfg[section].append(im.group(1))
+        elif section == "pipe_freshness":
+            pm = re.match(r"^  ([A-Za-z0-9._-]+):\s*$", line)
+            if pm:
+                pipe = pm.group(1)
+                pipes_raw.setdefault(pipe, [None, None])
+                continue
+            if pipe:
+                lm = re.match(r"^    log:\s*([^\s#]+)", line)
+                if lm:
+                    pipes_raw[pipe][0] = lm.group(1)
+                sm = re.match(r"^    max_stale_s:\s*(\d+)\b", line)
+                if sm:
+                    pipes_raw[pipe][1] = int(sm.group(1))
+    # Finalize pipes: only complete (log + max_stale_s) entries survive, in the
+    # (fname, max_stale_s) tuple shape verify_pipes_fresh iterates.
+    cfg["pipe_freshness"] = {p: (v[0], v[1]) for p, v in pipes_raw.items()
+                             if v[0] and isinstance(v[1], int)}
+    return cfg
+
+
+def _load_watchdog_config() -> dict:
+    """Read + parse the instance config; ANY failure → pure generic defaults."""
+    try:
+        text = Path(WATCHDOG_CONFIG).read_text(errors="replace")
+    except OSError:
+        text = ""
+    try:
+        return _parse_watchdog_config(text)
+    except Exception:
+        return {"briefing": dict(_BRIEF_DEFAULTS), "fulltime_officers": [],
+                "pipe_freshness": {}, "expectations": []}
+
+
+_CFG = _load_watchdog_config()
+
+# Briefing schedule (Captain-local wall clock; instance/config/watchdog.yml —
+# mirrors the frontdoor-briefing schedule in cabinet/services.yml):
+BRIEF_AM_HOUR = _CFG["briefing"]["am_hour"]
+BRIEF_PM_HOUR = _CFG["briefing"]["pm_hour"]
+BRIEF_MINUTE = _CFG["briefing"]["minute"]
 # Grace after the scheduled minute before we expect the outcome to be TRUE.
-BRIEF_GRACE_MIN = 45
+BRIEF_GRACE_MIN = _CFG["briefing"]["grace_min"]
 
 
 def _leading_iso(s: str) -> Optional[_dt.datetime]:
@@ -435,7 +536,9 @@ def autofix_briefing(probe: "Probe", result: CheckResult) -> Optional[str]:
 # positive work signal cabinet:last-experience:<officer> (set by
 # record-experience.sh, 2h TTL) — identical sources to lib/reflection.sh, so we
 # compose rather than re-derive. Ceiling mirrors the retro's 48h floor.
-FULLTIME_OFFICERS = ["cos", "polads-ceo", "stephie-ceo", "comms-officer"]
+# The roster itself is instance data (instance/config/watchdog.yml — egg R017);
+# an empty/unconfigured roster means no officers to watch (clean-room degrade).
+FULLTIME_OFFICERS = list(_CFG["fulltime_officers"])
 REFLECTION_CEILING_S = 48 * 3600
 
 
@@ -838,20 +941,12 @@ def verify_no_silent_cron_failure(probe: "Probe") -> CheckResult:
 # path on this deployment, and "" on a clean-room / Flavor-B box, where
 # verify_pipes_fresh degrades to nothing-to-watch (a skip, never a false alarm).
 SCREENPIPE_STATE_DIR = state_dir()
-PIPE_FRESHNESS = {
-    # pipe: (log filename under state dir, max staleness seconds)
-    # Thresholds account for each pipe's ACTUAL cadence AND the Mac's overnight
-    # gap: all pipes pause when the MacBook sleeps / work-hours gates close
-    # (~19:00-08:00), so a threshold shorter than that window false-alarms every
-    # morning (observed 2026-07-01 flood + 07-03 teams-graph). Cadences were set
-    # for the Graph cost optimization: msgraph HOURLY (07-19 work-hours-gated +
-    # 14h overnight-catchup), teams-graph DAILY (86400s). Keep these in sync with
-    # the plists if the cadence changes. (Deeper fix — true sleep-awareness — is a
-    # noted kaizen; these cadence-aligned ceilings stop the false alarms now.)
-    "msgraph-incremental": ("msgraph-incremental.log", 15 * 3600),          # hourly, work-hours-gated + overnight gap
-    "teams-graph-incremental": ("teams-graph-incremental.log", 28 * 3600),  # DAILY cadence (86400s) + buffer
-    "embeddings": ("embeddings.log", 15 * 3600),                            # frequent but pauses on overnight sleep
-}
+# pipe → (log filename under the state dir, max staleness seconds). Instance
+# data (instance/config/watchdog.yml — egg R017; the cadence-aligned threshold
+# rationale is documented there, next to the values). Empty when unconfigured
+# → nothing to watch (clean-room degrade; and with no state dir at all,
+# verify_pipes_fresh SKIPs outright).
+PIPE_FRESHNESS = dict(_CFG["pipe_freshness"])
 
 
 def verify_pipes_fresh(probe: "Probe") -> CheckResult:
@@ -889,12 +984,16 @@ def verify_pipes_fresh(probe: "Probe") -> CheckResult:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# THE REGISTRY — add an outcome to watch = append one Expectation row here.
+# THE CATALOG — every outcome expectation this framework ships. Add an outcome
+# to watch = append one Expectation row here (and, if instance/config/
+# watchdog.yml narrows `expectations:`, enable its id there too).
 # ─────────────────────────────────────────────────────────────────────────────
-EXPECTATIONS: list[Expectation] = [
+_CATALOG: list[Expectation] = [
     Expectation(
         id="briefing-delivered",
-        what=f"Briefing DELIVERED to {captain_name()} 2x/day (07:30 + 19:30 local) — a "
+        what=f"Briefing DELIVERED to {captain_name()} 2x/day "
+             f"({BRIEF_AM_HOUR:02d}:{BRIEF_MINUTE:02d} + "
+             f"{BRIEF_PM_HOUR:02d}:{BRIEF_MINUTE:02d} local) — a "
              "confirmed send landed, not just that the job ran.",
         cadence_s=12 * 3600,
         tier=Tier.AUTO_FIX,
@@ -930,13 +1029,36 @@ EXPECTATIONS: list[Expectation] = [
     ),
     Expectation(
         id="pipes-fresh",
-        what="Brain ingestion pipes (msgraph / teams / embeddings) ingesting "
-             "within cadence so officers reason from current data.",
+        what="Brain ingestion pipes ingesting within cadence (per the "
+             "instance pipe-freshness table) so officers reason from current "
+             "data.",
         cadence_s=3 * 3600,
         tier=Tier.ESCALATE_CHAIR,
         verify=verify_pipes_fresh,
     ),
 ]
+
+
+def _select_expectations(catalog: list[Expectation],
+                         enabled_ids: list[str]) -> list[Expectation]:
+    """The rows enabled on THIS deployment: the instance config's
+    `expectations:` id list (config order). Fail-safe by construction: an
+    empty/absent list — or one whose ids are ALL unknown — yields the FULL
+    catalog (a bad config can narrow the watchdog's inputs, never silently
+    zero the sweep); unknown ids are ignored per-entry."""
+    if enabled_ids:
+        by_id = {e.id: e for e in catalog}
+        picked = [by_id[i] for i in enabled_ids if i in by_id]
+        if picked:
+            return picked
+    return list(catalog)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# THE REGISTRY — the catalog rows instance/config/watchdog.yml enables.
+# ─────────────────────────────────────────────────────────────────────────────
+EXPECTATIONS: list[Expectation] = _select_expectations(_CATALOG,
+                                                       _CFG["expectations"])
 
 
 def expectation_by_id(eid: str) -> Optional[Expectation]:
