@@ -1,1 +1,0 @@
-../../instance/officer-skills/comms-officer.txt
