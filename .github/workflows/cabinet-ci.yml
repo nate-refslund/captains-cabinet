@@ -385,6 +385,25 @@ jobs:
       - name: Cabinet script tests (purge parity + generate-instance)
         run: python -m pytest cabinet/scripts/tests -q
 
+      # World E1 grammar gate (2026-07-07): Growth doc §2 — "every mapping's
+      # source_binding command executes at PR time … out-of-grammar = cannot
+      # merge." The binding validator (allowlisted read-only sandbox) must run
+      # PRE-merge, not just post-merge, so an out-of-grammar / dead-pixel /
+      # sandbox-escaping morphology.yml is CI-red instead of resting on
+      # reviewer discipline. The gate ARMS ITSELF on the first grammar merge:
+      # while cabinet/world/morphology.yml is absent it prints an explicit SKIP
+      # (CABINET_WORLD_REQUIRE_GRAMMAR unset → exit 0); once the file lands,
+      # REQUIRE_GRAMMAR=1 makes any binding failure fail the job.
+      - name: World binding gate (grammar law, arms on first merge)
+        run: |
+          if [ -f cabinet/world/morphology.yml ]; then
+            CABINET_WORLD_REQUIRE_GRAMMAR=1 \
+              python cabinet/scripts/world-binding-validator.py \
+                cabinet/world/morphology.yml
+          else
+            echo "WORLD_BINDINGS SKIP — cabinet/world/morphology.yml absent (grammar law not yet merged; gate arms on first merge)"
+          fi
+
   # DN-6 (2026-07-05): the de-Nate FOUNDATION gate — framework/ must be
   # launcher-agnostic (any captain, not just Nate). Two files, one job:
   #   * test_no_launcher_hardcode.py — the RATCHET. Text-walks framework/**/*.py

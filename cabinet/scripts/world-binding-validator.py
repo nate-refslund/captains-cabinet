@@ -19,8 +19,9 @@ This validator makes that mechanical for cabinet/world/morphology.yml:
     restate the entry id.
   * SANDBOX EXECUTION — source_binding runs with shell=False after strict
     tokenization; argv[0] must be in the ALLOWLIST (sqlite3 with -readonly
-    ENFORCED, wc, ls, jq, grep); every path argument must realpath-resolve
-    INSIDE the repo (no traversal, no symlink escape, no /etc reads);
+    ENFORCED **and dot-commands refused** — .shell/.system/.load run
+    shell/extensions even under -readonly; wc, ls, jq, grep); every path
+    argument must realpath-resolve INSIDE the repo (no traversal, no symlink escape, no /etc reads);
     10s timeout; non-zero exit or empty stdout = FAIL (dead pixel).
   * DARK SCOPE — entries with scope: dark skip execution (dark mechanisms
     render dark; they still need schema + codex).
@@ -163,8 +164,21 @@ def execute_binding(binding: str) -> Tuple[bool, str]:
             return False, "shell metacharacters refused (shell=False sandbox)"
         if "$(" in tok or "`" in tok:
             return False, "shell metacharacters refused (shell=False sandbox)"
-    if prog == "sqlite3" and "-readonly" not in args:
-        return False, "sqlite3 without -readonly refused"
+    if prog == "sqlite3":
+        if "-readonly" not in args:
+            return False, "sqlite3 without -readonly refused"
+        # Dot-commands (.shell/.system/.load/.once/.import/.output/…) run
+        # arbitrary shell + load extensions even under -readonly — the
+        # metachar guard misses them because they live inside one quoted
+        # argv token with no standalone metacharacter. Refuse any token
+        # LINE whose lstripped form starts '.'+alpha: covers whole-token
+        # dot-commands AND a '.shell' smuggled behind a newline inside a
+        # SQL token. './relative/path' (dot + slash) stays legal.
+        for tok in args[1:]:
+            for line in tok.splitlines():
+                if re.match(r"\s*\.[A-Za-z]", line):
+                    return False, ("sqlite3 dot-command refused (never "
+                                   "legitimate in a read-only binding)")
     containment = _resolve_containment(args)
     if containment:
         return False, containment

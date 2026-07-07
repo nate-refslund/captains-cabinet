@@ -112,6 +112,46 @@ class TestSandbox:
             "sqlite3 cabinet/cache/org-runtime.sqlite3 'SELECT 1'")
         assert not ok and "-readonly" in reason
 
+    def test_sqlite_dotcommand_refused(self):
+        # .shell/.system/.load run arbitrary shell + load extensions even
+        # under -readonly — the standalone-metachar guard misses them
+        # (whole command lives in one quoted argv token). Must be refused.
+        ok, reason = wbv.execute_binding(
+            'sqlite3 -readonly cabinet/cache/org-runtime.sqlite3 '
+            '".shell echo DOTCMD-ESCAPED"')
+        assert not ok and "dot-command" in reason
+
+    def test_sqlite_newline_embedded_dotcommand_refused(self):
+        # A .shell smuggled behind a newline inside a SQL token must also be
+        # caught — the guard scans every LINE of every token, not just the
+        # token's first character.
+        ok, reason = wbv.execute_binding(
+            'sqlite3 -readonly cabinet/cache/org-runtime.sqlite3 '
+            '"SELECT 1;\n.shell echo PWNED"')
+        assert not ok and "dot-command" in reason
+
+    def test_sqlite_plain_select_still_executes(self):
+        # Positive control: the dot-command refusal must not break a normal
+        # read-only SELECT. Real bindings reference the db with a directory
+        # prefix (e.g. cabinet/cache/org-runtime.sqlite3), never a bare
+        # leading-dot token — here the probe artifact is hidden with a dot
+        # so it is passed as ./.pytest… (dot+slash, not dot+alpha → not a
+        # dot-command; the containment check still validates it).
+        import sqlite3 as _sql
+        db = _SCRIPTS.parents[1] / ".pytest-world-probe.sqlite3"
+        con = _sql.connect(db)
+        con.execute("CREATE TABLE t(x)")
+        con.execute("INSERT INTO t VALUES (42)")
+        con.commit()
+        con.close()
+        try:
+            ok, value = wbv.execute_binding(
+                f"sqlite3 -readonly ./{db.name} 'SELECT x FROM t'")
+            assert ok, value
+            assert value == "42"
+        finally:
+            db.unlink(missing_ok=True)
+
     def test_path_escape_refused(self):
         ok, reason = wbv.execute_binding("wc -l /etc/passwd")
         assert not ok and "escapes the repo" in reason
