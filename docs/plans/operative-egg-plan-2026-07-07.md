@@ -333,3 +333,27 @@ criterion per cell: 20 scored samples banked or explicit ruling).
 W1A-T4 is not `done`. Anything requiring an schg path goes through a CG row — recording a handback beats a workaround.
 This file pair is instance coordination data (R145): excluded from the egg at packaging.
 
+
+## 10. Addendum — Claude Code setup-audit rows (appended 2026-07-07, audit-P0 wave)
+
+Source: `~/cabinet-claude-code-audit-2026-07-07.md` (80-agent audit; finding numbers below are its). Ledger rows AUD-1..AUD-12.
+All alpha-additive except AUD-9 (settings.json hook wiring is schg-locked → captain-gated germline window). The audit's
+germline-locked one-liners (#2, #4-hook-half, #8–#14, #20, #3b) do NOT get rows — they ride
+`docs/proposals/germline-window-addendum-2026-07-07.md` into tonight's unlock window instead.
+**Superseded finding recorded:** audit #6 (flip fleet to Fable-5) is SUPERSEDED by the Captain ruling 2026-07-07 pinning
+`claude-opus-4-8[1m]`; AUD-2 keeps only the fallback-chain + loud-fallback half.
+
+| id | item | class | lane · wave | status | notes | gate_cmd (read-only) | rollback |
+|----|------|-------|-------------|--------|-------|----------------------|----------|
+| AUD-1 | `CLAUDE_CONFIG_DIR` officer isolation (audit #1) | additive | alpha-additive · AUD | todo | Pilot ONE officer first — auth-store risk: a fresh config home carries no OAuth creds; prove auth + brain MCP before fleet rollout. Kills the 58KB personal-dossier import + 21-plugin contamination per session. | pilot launchctl env shows CLAUDE_CONFIG_DIR; boot green; personal CLAUDE.md/plugins absent from /context | revert launchd env; relaunch |
+| AUD-2 | fallbackModel chain + Notification-hook page (audit #6 remainder) | additive | alpha-additive · AUD | todo | Pinned to `claude-opus-4-8[1m]` per Captain ruling 2026-07-07 — audit #6 flip-to-Fable is SUPERSEDED (recorded explicitly; do not flip the ~9 pin sites). Chain surfaces fallback loudly, never silently. | fallback chain on launch line; simulated unavailability pages via Notification hook | remove flag; relaunch |
+| AUD-3 | hook overhead batch (audit #19) | additive | alpha-additive · AUD | todo | After the cost-ledger decision (#13, germline addendum) — batching depends on where the cost parse lands. | measured pre/post per-call overhead drop; hook-regression green | git revert |
+| AUD-4 | skill invocation-control frontmatter sweep (audit #22) | additive | alpha-additive · AUD | todo | `disable-model-invocation: true` on act-on-invoke skills; `user-invocable: false` on background law. | grep sweep over 21 SKILL.md files clean | git revert |
+| AUD-5 | per-agent `memory:` frontmatter (audit #24b) | additive | alpha-additive · AUD | todo | Native durable role memory; retires officer-skills/*.txt refresh rot for the live roster. | roster agent defs carry memory:; forced-compaction refresh verified | git revert |
+| AUD-6 | plugin ships hooks/rules payload (audit #25) | additive | alpha-additive · AUD | todo | Pack wave (rides the gamma pack rail W1A-T4): hooks/hooks.json with `${CLAUDE_PLUGIN_ROOT}`, rules/, count fixes, dup marketplace entry, name-leak scrub. | manifest ships hooks+rules; counts true; dup entry gone | git revert |
+| AUD-7 | idle-wake RemoteTrigger spike (audit #26) | additive | alpha-additive · AUD | todo | Re-run the 2026-06-25 idle-wake test on 2.1.202 (RemoteTrigger/SendMessage/--bg). GATES the /loop stretch half of AUD-10 (#30). | documented spike verdict; trigger lands on idle session ⇒ scrape plane retire-eligible | n/a (read-only spike) |
+| AUD-8 | sandbox pilot one officer (audit #27) | additive | alpha-additive · AUD | todo | `sandbox.enabled` + filesystem.denyWrite germline + network.allowedDomains + credentials scrub on ONE officer. | pilot green; germline write denied; off-list egress blocked | disable sandbox; relaunch |
+| AUD-9 | StopFailure/TeammateIdle/PermissionRequest hooks (audit #28) | additive | captain-gated · CG | captain-gated | settings.json hook wiring is schg-locked → germline window only. | post-window: limit-hit stamp lands; hook-regression green; relock same day | amendment reversal + relock |
+| AUD-10 | named-session continuity + CronCreate (audit #29+#30) | additive | alpha-additive · AUD | todo | `claude -n officer-<role>` / `--resume` per officer (NOT `--continue` — shared cwd bleeds sessions); session crons replace per-need /loop checks; /loop stretch gated on AUD-7. | relaunch resumes named session, no dialog scrape; session_crons readable in Stop hook | revert launch line |
+| AUD-11 | `--json-schema` judges (audit #31) | additive | alpha-additive · AUD | todo | Structured judge output; kills oauth_llm.py:102-117 parse-retry. Keep OAuth-only auth — NO `--bare` (refuted half). | judge path uses --json-schema; fidelity suite green | git revert |
+| AUD-12 | consumer-side trigger ACK (audit #32) | additive | alpha-additive · AUD | todo | ACK after processing, not on emit — crash between deliver and wake must not lose the trigger. `readOnlyHint` on library-mcp's 6 reads. | kill-between test keeps trigger; hints annotated | git revert |

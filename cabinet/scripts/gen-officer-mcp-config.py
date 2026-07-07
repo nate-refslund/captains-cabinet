@@ -233,8 +233,15 @@ def main(argv=None) -> int:
     # Settings overlay mirrors the GRANTS (not merely the servers present in
     # today's input) so a server later added to a config layer without a
     # scope grant stays capped by allowedMcpServers as well.
+    # Shape (2.1.202): each entry MUST be an object — {"serverName": ...}
+    # (string entries fail settings validation and BLOCK officer boot with an
+    # interactive "Invalid entry" dialog; found live on the 2026-07-07 rolling
+    # restart). Note the binary also documents allowedMcpServers as honored
+    # ONLY from managed settings — from this --settings overlay it is
+    # defense-in-depth documentation of the grant set; the enforced scoping
+    # is the filtered --mcp-config + --strict-mcp-config pair.
     settings = {
-        "allowedMcpServers": sorted(allowed),
+        "allowedMcpServers": [{"serverName": s} for s in sorted(allowed)],
         "enableAllProjectMcpServers": False,
     }
 
