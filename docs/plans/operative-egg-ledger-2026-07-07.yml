@@ -562,6 +562,7 @@ entries:
     wave: "B3"
     status: "todo"
     gate_cmd: "ls cabinet/launchd/*.plist | grep -v template | grep -vc gate-apply  # 0; python3 -m pytest framework/learning/tests/test_gate_apply_dark.py -q"
+    note: "2026-07-07 row-sweep SKIP (refuted-in-part, live-blocked): (1) start-officer-mac.sh:261 behavior-branches on repo-tracked com.cabinet.officer.<role>-inbound.plist existing — deleting cos-inbound.plist flips live cos to --channels = double-poller Telegram 409; (2) cabinet/services.yml:272,331 declares the hand-made comment-rich plists the INSTALL SOURCE for the LIVE verdict-supply/evidence-plane agents (installing the plist IS the enable flip) — 'reproducible from services.yml' premise contradicted by the manifest's own doctrine; (3) AUD-1 fleet rollout is mid-flight copying CLAUDE_CONFIG_DIR env keys into the concrete officer plists. Re-attempt needs: inbound-check re-pointed to ~/Library/LaunchAgents, generate-plists.py covering the verdict-supply group, and AUD-1 rollout complete."
     last_update: "2026-07-07"
   - id: "R068"
     title: "cabinet/cron/"
