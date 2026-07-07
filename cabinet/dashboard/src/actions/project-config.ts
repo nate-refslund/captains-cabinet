@@ -1,12 +1,13 @@
 'use server'
 
+import { cabinetPath } from '@/lib/cabinet-root'
 import { dockerExec } from '@/lib/docker'
 import { revalidatePath } from 'next/cache'
 
 const IS_MOCK = process.env.MOCK_DATA === 'true' || !process.env.REDIS_URL
 
-const ASSEMBLE_SCRIPT = '/opt/founders-cabinet/cabinet/scripts/assemble-config.sh'
-const PROJECTS_DIR = '/opt/founders-cabinet/instance/config/projects'
+const ASSEMBLE_SCRIPT = cabinetPath('cabinet/scripts/assemble-config.sh')
+const PROJECTS_DIR = cabinetPath('instance/config/projects')
 
 // Whitelisted sections that may be edited through this action
 const ALLOWED_SECTIONS = ['product', 'notion', 'linear', 'neon', 'telegram']
@@ -18,7 +19,7 @@ async function getActiveSlug(): Promise<string> {
   if (IS_MOCK) return 'sensed'
   try {
     const { stdout } = await dockerExec(
-      'cat /opt/founders-cabinet/instance/config/active-project.txt 2>/dev/null || echo sensed'
+      `cat ${cabinetPath('instance/config/active-project.txt')} 2>/dev/null || echo sensed`
     )
     return stdout.trim() || 'sensed'
   } catch {

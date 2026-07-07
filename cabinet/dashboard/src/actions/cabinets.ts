@@ -11,6 +11,7 @@
 import fs from 'fs'
 import path from 'path'
 import yaml from 'js-yaml'
+import { cabinetPath } from '@/lib/cabinet-root'
 
 // ----------------------------------------------------------------
 // Types
@@ -55,8 +56,7 @@ export interface AuditEvent {
 // Preset discovery (server action — reads from filesystem)
 // ----------------------------------------------------------------
 
-const PRESETS_DIR =
-  process.env.PRESETS_DIR || '/opt/founders-cabinet/presets'
+const PRESETS_DIR = process.env.PRESETS_DIR || cabinetPath('presets')
 
 /**
  * Read available presets from the presets/ directory.

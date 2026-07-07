@@ -1,14 +1,21 @@
 'use server'
 
+import { cabinetPath } from '@/lib/cabinet-root'
 import { dockerExec } from '@/lib/docker'
 import redis from '@/lib/redis'
 import { revalidatePath } from 'next/cache'
 
+/** `source cabinet/.env && export … && bash <script> <args>` against the
+ *  resolved checkout root (dockerExec native mode already cwd's there, but
+ *  absolute paths keep docker mode + explicit invocations working). */
+function envAndRun(script: string, args: string): string {
+  const envFile = cabinetPath('cabinet/.env')
+  return `source ${envFile} && export $(grep -v "^#" ${envFile} | xargs) && bash ${cabinetPath(script)} ${args}`
+}
+
 export async function startOfficer(role: string) {
   try {
-    await dockerExec(
-      `source /opt/founders-cabinet/cabinet/.env && export $(grep -v "^#" /opt/founders-cabinet/cabinet/.env | xargs) && bash /opt/founders-cabinet/cabinet/scripts/start-officer.sh ${role}`
-    )
+    await dockerExec(envAndRun('cabinet/scripts/start-officer.sh', role))
     await redis.set(`cabinet:officer:expected:${role}`, 'active')
     revalidatePath('/officers')
     revalidatePath('/')
@@ -41,9 +48,7 @@ export async function restartOfficer(role: string) {
     await dockerExec(`tmux kill-window -t cabinet:officer-${role}`)
     // Brief delay to let tmux clean up
     await new Promise((resolve) => setTimeout(resolve, 2000))
-    await dockerExec(
-      `source /opt/founders-cabinet/cabinet/.env && export $(grep -v "^#" /opt/founders-cabinet/cabinet/.env | xargs) && bash /opt/founders-cabinet/cabinet/scripts/start-officer.sh ${role}`
-    )
+    await dockerExec(envAndRun('cabinet/scripts/start-officer.sh', role))
     await redis.set(`cabinet:officer:expected:${role}`, 'active')
     revalidatePath('/officers')
     revalidatePath('/')
@@ -70,11 +75,11 @@ export async function deleteOfficer(role: string) {
     }
 
     // Remove role definition and loop prompt files
-    await dockerExec(`rm -f /opt/founders-cabinet/.claude/agents/${role}.md`)
-    await dockerExec(`rm -f /opt/founders-cabinet/cabinet/loop-prompts/${role}.txt`)
+    await dockerExec(`rm -f ${cabinetPath('.claude/agents')}/${role}.md`)
+    await dockerExec(`rm -f ${cabinetPath('cabinet/loop-prompts')}/${role}.txt`)
 
     // Remove from product.yml voice sections
-    const CONFIG_PATH = '/opt/founders-cabinet/instance/config/product.yml'
+    const CONFIG_PATH = cabinetPath('instance/config/product.yml')
     const sections = ['voices', 'naturalize_prompts', 'stability', 'speeds', 'models']
     for (const section of sections) {
       await dockerExec(
@@ -94,7 +99,7 @@ export async function deleteOfficer(role: string) {
     // Remove bot token from .env
     const upperRole = role.toUpperCase()
     await dockerExec(
-      `sed -i '/^TELEGRAM_${upperRole}_TOKEN=/d' /opt/founders-cabinet/cabinet/.env`
+      `sed -i '/^TELEGRAM_${upperRole}_TOKEN=/d' ${cabinetPath('cabinet/.env')}`
     )
 
     revalidatePath('/officers')
@@ -143,7 +148,10 @@ export async function createOfficer(
 
   try {
     await dockerExec(
-      `source /opt/founders-cabinet/cabinet/.env && export $(grep -v "^#" /opt/founders-cabinet/cabinet/.env | xargs) && bash /opt/founders-cabinet/cabinet/scripts/create-officer.sh "${abbrev}" "${title}" "${domain}" "${botUsername}" "${botToken}"${flagStr}`
+      envAndRun(
+        'cabinet/scripts/create-officer.sh',
+        `"${abbrev}" "${title}" "${domain}" "${botUsername}" "${botToken}"${flagStr}`
+      )
     )
     revalidatePath('/officers')
     revalidatePath('/')

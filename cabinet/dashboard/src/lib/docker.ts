@@ -1,5 +1,6 @@
 import { exec as execCb } from 'child_process'
 import { promisify } from 'util'
+import { cabinetRoot } from './cabinet-root'
 
 const exec = promisify(execCb)
 const prefix = process.env.CABINET_PREFIX || 'cabinet'
@@ -29,13 +30,11 @@ const RUNTIME_MODE: 'native' | 'docker' =
         ? 'native'
         : 'docker'
 
-const CABINET_ROOT = process.env.CABINET_ROOT || '/opt/founders-cabinet'
+const CABINET_ROOT = cabinetRoot()
 
-// cabinet/.env path — parametrized so Mac-native reads the local repo's .env
-// and Docker reads the container's /opt path. CABINET_ENV_PATH overrides both.
-const ENV_PATH =
-  process.env.CABINET_ENV_PATH ||
-  (RUNTIME_MODE === 'native' ? `${CABINET_ROOT}/cabinet/.env` : '/opt/founders-cabinet/cabinet/.env')
+// cabinet/.env path — resolved against the checkout root in every mode.
+// CABINET_ENV_PATH overrides.
+const ENV_PATH = process.env.CABINET_ENV_PATH || `${CABINET_ROOT}/cabinet/.env`
 
 export const isNativeRuntime = () => RUNTIME_MODE === 'native'
 

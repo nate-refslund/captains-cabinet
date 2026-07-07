@@ -1,10 +1,11 @@
 'use server'
 
+import { cabinetPath } from '@/lib/cabinet-root'
 import { dockerWriteFile } from '@/lib/docker'
 import { revalidatePath } from 'next/cache'
 
-const AGENTS_DIR = '/opt/founders-cabinet/.claude/agents'
-const LOOP_PROMPTS_DIR = '/opt/founders-cabinet/cabinet/loop-prompts'
+const AGENTS_DIR = cabinetPath('.claude/agents')
+const LOOP_PROMPTS_DIR = cabinetPath('cabinet/loop-prompts')
 
 export async function updateRoleDefinition(role: string, content: string) {
   try {

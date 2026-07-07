@@ -16,6 +16,7 @@
 import Link from 'next/link'
 import path from 'node:path'
 import { readFile } from 'node:fs/promises'
+import { cabinetRoot } from '@/lib/cabinet-root'
 import {
   listClaudeNativeTasks,
   countDrift,
@@ -27,8 +28,7 @@ export const dynamic = 'force-dynamic'
 
 async function resolveActiveContext(): Promise<string | null> {
   if (process.env.CABINET_CONTEXT?.trim()) return process.env.CABINET_CONTEXT.trim()
-  const cabinetRoot = process.env.CABINET_ROOT || '/opt/founders-cabinet'
-  const activeFile = path.join(cabinetRoot, 'instance/config/active-project.txt')
+  const activeFile = path.join(cabinetRoot(), 'instance/config/active-project.txt')
   try {
     const txt = await readFile(activeFile, 'utf-8')
     const slug = txt.trim()

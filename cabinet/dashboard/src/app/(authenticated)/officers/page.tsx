@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import redis from '@/lib/redis'
+import { cabinetPath } from '@/lib/cabinet-root'
 import { getTmuxWindows, isClaudeAlive, isTelegramConnected } from '@/lib/docker'
 import { getOfficerConfig, getConfig } from '@/lib/config'
 import OfficerCard from '@/components/officer-card'
@@ -35,7 +36,7 @@ async function getOfficerData(): Promise<OfficerInfo[]> {
   }
 
   // Also check for role definitions on disk
-  const agentDir = '/opt/founders-cabinet/.claude/agents'
+  const agentDir = cabinetPath('.claude/agents')
   let diskRoles: string[] = []
   try {
     diskRoles = fs

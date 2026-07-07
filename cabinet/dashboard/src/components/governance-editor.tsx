@@ -12,29 +12,31 @@ interface GovernanceDocument {
   content: string
 }
 
+// filePath is display-only (checkout-relative); the server action resolves
+// the real absolute path against CABINET_ROOT (src/actions/governance.ts).
 const DOCUMENT_META: Record<string, { title: string; description: string; filePath: string; accentColor: string }> = {
   constitution: {
     title: 'Constitution',
     description: 'Operating principles — the rules all officers follow',
-    filePath: '/opt/founders-cabinet/constitution/CONSTITUTION.md',
+    filePath: 'constitution/CONSTITUTION.md',
     accentColor: '#d97706', // amber
   },
   safety: {
     title: 'Safety Boundaries',
     description: 'Hard limits that can never be violated',
-    filePath: '/opt/founders-cabinet/constitution/SAFETY_BOUNDARIES.md',
+    filePath: 'constitution/SAFETY_BOUNDARIES.md',
     accentColor: '#dc2626', // red
   },
   registry: {
     title: 'Role Registry',
     description: 'Who does what — active officers, shared interfaces, hooks',
-    filePath: '/opt/founders-cabinet/constitution/ROLE_REGISTRY.md',
+    filePath: 'constitution/ROLE_REGISTRY.md',
     accentColor: '#2563eb', // blue
   },
   operating_manual: {
     title: 'Operating Manual',
     description: 'Session-start instructions loaded by every officer',
-    filePath: '/opt/founders-cabinet/CLAUDE.md',
+    filePath: 'CLAUDE.md',
     accentColor: '#16a34a', // green
   },
 }

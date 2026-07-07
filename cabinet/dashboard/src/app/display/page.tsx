@@ -16,6 +16,7 @@
 
 import fs from 'node:fs'
 import yaml from 'js-yaml'
+import { cabinetPath } from '@/lib/cabinet-root'
 import { getDisplayData, WIP_CAP, type DisplayData } from '@/lib/display-data'
 import { getOfficerConfig } from '@/lib/config'
 import AutoRefresh from '@/components/display/auto-refresh'
@@ -26,7 +27,7 @@ import OfficerTile from '@/components/display/officer-tile'
 export const dynamic = 'force-dynamic'
 
 const PLATFORM_PATH =
-  process.env.PLATFORM_PATH || '/opt/founders-cabinet/instance/config/platform.yml'
+  process.env.PLATFORM_PATH || cabinetPath('instance/config/platform.yml')
 
 /** Read captain_timezone + captain_name from platform.yml. Safe fallbacks so a
  *  missing/unreadable file never breaks the wall display. */

@@ -12,6 +12,7 @@
 import path from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { NextRequest, NextResponse } from 'next/server'
+import { cabinetRoot } from '@/lib/cabinet-root'
 import {
   getAllOfficerBoards,
   startTask,
@@ -27,8 +28,7 @@ export const dynamic = 'force-dynamic'
 /** Resolve active context from env > active-project.txt. Matches page.tsx. */
 async function resolveActiveContext(): Promise<string> {
   if (process.env.CABINET_CONTEXT?.trim()) return process.env.CABINET_CONTEXT.trim()
-  const cabinetRoot = process.env.CABINET_ROOT || '/opt/founders-cabinet'
-  const txt = await readFile(path.join(cabinetRoot, 'instance/config/active-project.txt'), 'utf-8')
+  const txt = await readFile(path.join(cabinetRoot(), 'instance/config/active-project.txt'), 'utf-8')
   const slug = txt.trim()
   if (!slug) throw new Error('active-project.txt is empty')
   return slug

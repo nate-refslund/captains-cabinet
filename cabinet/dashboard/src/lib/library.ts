@@ -11,6 +11,7 @@
  *   - updateRecordStatus() — status state machine PATCH
  */
 
+import { cabinetPath } from './cabinet-root'
 import { query } from './db'
 import { indexLinks, indexSections } from './wikilinks'
 
@@ -132,7 +133,7 @@ async function logEmbeddingCost(
     const { appendFile } = await import('node:fs/promises')
     const logPath =
       process.env.LIBRARY_EMBED_LOG_PATH ??
-      '/opt/founders-cabinet/cabinet/logs/library-embeddings.jsonl'
+      cabinetPath('cabinet/logs/library-embeddings.jsonl')
     const line = JSON.stringify({
       ts: new Date().toISOString(),
       record_id: recordId,

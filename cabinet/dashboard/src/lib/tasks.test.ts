@@ -9,9 +9,9 @@
 // route handlers and the WIP-trigger backstop actually rely on.
 //
 // validateContextSlug uses CONTEXTS_DIR (defaults to
-// /opt/founders-cabinet/instance/config/contexts) which contains the real
-// adhoc/personal/sensed YAMLs — those give us a happy-path check without
-// any fs mocking.
+// <checkout-root>/instance/config/contexts via the cabinet-root resolver)
+// which contains the real adhoc/personal/sensed YAMLs — those give us a
+// happy-path check without any fs mocking.
 
 import { describe, it, expect } from 'vitest'
 

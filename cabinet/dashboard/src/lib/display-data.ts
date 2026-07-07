@@ -16,6 +16,7 @@
 
 import path from 'node:path'
 import { readFile } from 'node:fs/promises'
+import { cabinetRoot } from '@/lib/cabinet-root'
 import { getAllOfficerBoards, getBoardStats, WIP_CAP, type OfficerTask } from '@/lib/tasks'
 import { listClaudeNativeTasks, countDrift } from '@/lib/claude-native-tasks'
 import { dockerExec } from '@/lib/docker'
@@ -85,8 +86,7 @@ const OFFLINE_THRESHOLD_MS = 15 * 60 * 1000
  *  getActiveProjectSlug(), then 'sensed', so the display always has a context. */
 async function resolveActiveContext(): Promise<string> {
   if (process.env.CABINET_CONTEXT?.trim()) return process.env.CABINET_CONTEXT.trim()
-  const cabinetRoot = process.env.CABINET_ROOT || '/opt/founders-cabinet'
-  const activeFile = path.join(cabinetRoot, 'instance/config/active-project.txt')
+  const activeFile = path.join(cabinetRoot(), 'instance/config/active-project.txt')
   try {
     const txt = (await readFile(activeFile, 'utf-8')).trim()
     if (txt) return txt

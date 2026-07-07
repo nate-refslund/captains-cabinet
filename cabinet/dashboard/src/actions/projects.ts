@@ -1,5 +1,6 @@
 'use server'
 
+import { cabinetPath } from '@/lib/cabinet-root'
 import { dockerExec } from '@/lib/docker'
 import redis from '@/lib/redis'
 import { revalidatePath } from 'next/cache'
@@ -19,7 +20,7 @@ export async function switchProject(slug: string): Promise<{ success: boolean; e
       return { success: true }
     }
     const safeSlug = slug.replace(/[^a-z0-9_-]/g, '')
-    await dockerExec(`bash /opt/founders-cabinet/cabinet/scripts/switch-project.sh ${safeSlug}`)
+    await dockerExec(`bash ${cabinetPath('cabinet/scripts/switch-project.sh')} ${safeSlug}`)
     revalidatePath('/')
     revalidatePath('/settings')
     return { success: true }
@@ -38,7 +39,9 @@ export async function getActiveProject(): Promise<string> {
   try {
     const redisValue = await redis.get('cabinet:active-project')
     if (redisValue) return redisValue
-    const { stdout } = await dockerExec('cat /opt/founders-cabinet/instance/config/active-project.txt 2>/dev/null || echo sensed')
+    const { stdout } = await dockerExec(
+      `cat ${cabinetPath('instance/config/active-project.txt')} 2>/dev/null || echo sensed`
+    )
     return stdout.trim() || 'sensed'
   } catch {
     return 'sensed'
@@ -56,7 +59,7 @@ export async function getProjects(): Promise<ProjectInfo[]> {
   try {
     const activeSlug = await getActiveProject()
     const { stdout } = await dockerExec(
-      `for f in /opt/founders-cabinet/instance/config/projects/*.yml; do
+      `for f in ${cabinetPath('instance/config/projects')}/*.yml; do
         slug=$(basename "$f" .yml)
         name=$(grep -m1 "^  name:" "$f" 2>/dev/null | sed 's/.*name: *//')
         [ -z "$name" ] && name=$(grep -m1 "name:" "$f" 2>/dev/null | sed 's/.*name: *//')

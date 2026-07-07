@@ -1,9 +1,9 @@
 // config.ts — 9 config getters used by dashboard /admin + /health pages.
 // Module captures IS_MOCK at load from (MOCK_DATA === 'true' OR
 // !fs.existsSync(CONFIG_PATH)). In test env CONFIG_PATH defaults to
-// /opt/founders-cabinet/instance/config/product.yml which EXISTS —
-// so we force MOCK_DATA=true before dynamic import to pin the
-// deterministic mock fixtures.
+// <checkout-root>/instance/config/product.yml which EXISTS in a real
+// checkout — so we force MOCK_DATA=true before dynamic import to pin
+// the deterministic mock fixtures.
 //
 // Real path (fs.readFileSync + yaml.load) requires fs mocking and
 // is deferred — this harness covers the fallback contract that
@@ -34,8 +34,8 @@ describe('getConfig — mock path', () => {
 
   it('product section has name + captain_name + repo', () => {
     const { product } = mod.getConfig() as { product: Record<string, string> }
-    expect(product.name).toBe('Sensed')
-    expect(product.captain_name).toBe('Nate')
+    expect(product.name).toBe('Demo Product')
+    expect(product.captain_name).toBe('Captain')
     expect(typeof product.repo).toBe('string')
   })
 })
@@ -102,9 +102,9 @@ describe('getOfficerConfig(role) — known roles', () => {
 describe('getGlobalConfig — merged product + voice + image + embeddings', () => {
   it('product block contains captain_name + name + description', () => {
     const { product } = mod.getGlobalConfig()
-    expect(product.name).toBe('Sensed')
-    expect(product.captain_name).toBe('Nate')
-    expect(product.description).toContain('Dual-map')
+    expect(product.name).toBe('Demo Product')
+    expect(product.captain_name).toBe('Captain')
+    expect(product.description).toContain('Placeholder')
   })
 
   it('voice.enabled is boolean', () => {
@@ -157,8 +157,8 @@ describe('getNotionConfig — string-only database IDs', () => {
 describe('getLinearConfig — team_key + workspace_url', () => {
   it('returns both fields from mock', () => {
     const result = mod.getLinearConfig()
-    expect(result.team_key).toBe('SEN')
-    expect(result.workspace_url).toBe('https://linear.app/sensed')
+    expect(result.team_key).toBe('DEMO')
+    expect(result.workspace_url).toBe('https://linear.app/demo')
   })
 
   it('has the exact shape (two string fields)', () => {
@@ -170,8 +170,8 @@ describe('getLinearConfig — team_key + workspace_url', () => {
 })
 
 describe('getActiveProjectSlug — mock path', () => {
-  it('returns "sensed" in mock mode', () => {
-    expect(mod.getActiveProjectSlug()).toBe('sensed')
+  it('returns "demo" in mock mode', () => {
+    expect(mod.getActiveProjectSlug()).toBe('demo')
   })
 })
 
@@ -219,9 +219,9 @@ describe('getProjectConfig — active project YAML', () => {
 })
 
 describe('getProjectsList — mock path', () => {
-  it('returns the mock fixture with sensed + demo-project', () => {
+  it('returns the mock fixture with demo + demo-project', () => {
     const result = mod.getProjectsList()
-    expect(result).toContainEqual({ slug: 'sensed', name: 'Sensed' })
+    expect(result).toContainEqual({ slug: 'demo', name: 'Demo Product' })
     expect(result).toContainEqual({ slug: 'demo-project', name: 'Demo Project' })
   })
 

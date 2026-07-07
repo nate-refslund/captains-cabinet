@@ -1,15 +1,16 @@
 'use server'
 
+import { cabinetPath } from '@/lib/cabinet-root'
 import { dockerWriteFile, dockerReadFile } from '@/lib/docker'
 import { revalidatePath } from 'next/cache'
 
 const IS_MOCK = process.env.MOCK_DATA === 'true' || !process.env.REDIS_URL
 
 const GOVERNANCE_FILES: Record<string, string> = {
-  constitution: '/opt/founders-cabinet/constitution/CONSTITUTION.md',
-  safety: '/opt/founders-cabinet/constitution/SAFETY_BOUNDARIES.md',
-  registry: '/opt/founders-cabinet/constitution/ROLE_REGISTRY.md',
-  operating_manual: '/opt/founders-cabinet/CLAUDE.md',
+  constitution: cabinetPath('constitution/CONSTITUTION.md'),
+  safety: cabinetPath('constitution/SAFETY_BOUNDARIES.md'),
+  registry: cabinetPath('constitution/ROLE_REGISTRY.md'),
+  operating_manual: cabinetPath('CLAUDE.md'),
 }
 
 const MOCK_CONTENT: Record<string, string> = {

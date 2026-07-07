@@ -17,6 +17,7 @@ import { access, constants as fsConstants } from 'node:fs/promises'
 import path from 'node:path'
 import { query, getDbPool } from '@/lib/db'
 import redis from '@/lib/redis'
+import { cabinetRoot } from '@/lib/cabinet-root'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -117,8 +118,7 @@ export function coerceWipCapError(err: unknown, officerSlug: string): WipCapExce
 // ---------------------------------------------------------------------------
 
 const CONTEXTS_DIR =
-  process.env.CONTEXTS_DIR ||
-  path.join(process.env.CABINET_ROOT || '/opt/founders-cabinet', 'instance/config/contexts')
+  process.env.CONTEXTS_DIR || path.join(cabinetRoot(), 'instance/config/contexts')
 
 // Slug format: lowercase alphanumeric + dashes; no path traversal.
 const CONTEXT_SLUG_RE = /^[a-z0-9][a-z0-9-]{0,63}$/

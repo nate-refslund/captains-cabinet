@@ -30,6 +30,7 @@
 //     - generic error → 500 with error message
 //     - body-parse throw → 500
 
+import path from 'node:path'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { NextRequest } from 'next/server'
 
@@ -155,13 +156,14 @@ describe('GET /api/tasks — context resolution', () => {
     expect(pathArg).toContain('instance/config/active-project.txt')
   })
 
-  it('default /opt/founders-cabinet path when CABINET_ROOT unset', async () => {
+  it('defaults to two dirs above cwd (checkout root) when CABINET_ROOT unset', async () => {
     mockReadFile.mockResolvedValueOnce('slug')
     mockGetAllOfficerBoards.mockResolvedValueOnce([])
     mockGetLinearFounderActions.mockResolvedValueOnce({ items: [] })
     await GET(makeGetReq('http://localhost/api/tasks'))
     const pathArg = mockReadFile.mock.calls[0][0] as string
-    expect(pathArg).toContain('/opt/founders-cabinet')
+    const expectedRoot = path.resolve(process.cwd(), '..', '..')
+    expect(pathArg).toBe(path.join(expectedRoot, 'instance/config/active-project.txt'))
   })
 
   it('500 when active-project.txt is empty string', async () => {
