@@ -85,7 +85,8 @@ import pytest  # noqa: E402  (after the env fence on purpose — fence first)
 def _cabinet_root_env_fence():
     """Restore CABINET_ROOT around every test (cross-suite leak fence).
 
-    framework/measurement role_evals/*.py and scenarios/*.py set
+    The measurement seed's role_evals/*.py and scenarios/*.py (shipped in
+    presets/work/measurement/, installed into framework/measurement/) set
     os.environ["CABINET_ROOT"] = <tmpdir> inside their run() bodies with no
     restore; when those suites run earlier in the same pytest process, later
     suites (e.g. instance/flavor-a test_screenpipe_dispatch) resolve config

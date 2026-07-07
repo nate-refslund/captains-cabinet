@@ -9,7 +9,10 @@ Phase 2 of the convergence plan. Unlike `scenario_runner.py` (which tests the
 
 Each eval is a small Python module in `framework/measurement/role_evals/` with
 `name`, `role_slug`, `category`, and setup/execute/verify callables — the same
-shape as Scenario but with a role binding.
+shape as Scenario but with a role binding. The framework ships that directory
+EMPTY (egg row R006): concrete seed content lives in
+`presets/work/measurement/role_evals/` and is installed here per-deployment;
+with nothing installed, discovery finds zero evals and the runner exits clean.
 
 Role binding is ROSTER-DRIVEN (R8 retarget, 2026-07-04): the slug an eval
 declares is resolved against the live roster from

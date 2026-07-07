@@ -17,17 +17,13 @@ from framework.measurement.scenario_runner import (
 _FRAMEWORK_ROOT = Path(__file__).parent.parent.parent.parent
 
 
-# Known scenarios shipped with the framework. Listed explicitly so
-# `test_dash_m_entrypoint_sees_all_scenarios` (the module-identity
-# regression guard) fails loudly when a new scenario is added without
-# also being discoverable via `python3 -m framework.measurement.scenario_runner`.
-_EXPECTED_SCENARIOS = (
-    "outcome_to_mission",
-    "outcome_to_verified",
-    "policy_enforcement",
-    "role_adaptation",
-    "role_retirement",
-)
+# The framework ships NO concrete scenarios (egg row R006, 2026-07-07): the
+# five-officer archetype seed content lives in presets/work/measurement/
+# and is installed into framework/measurement/scenarios/ by a work-preset
+# deployment. The concrete-content tests (TestOrgScenarios + the
+# discovers-all-shipped-scenarios half of the dash-m guard) moved with the
+# seed to presets/work/measurement/tests/test_org_scenarios.py (R050 pair).
+# This file keeps the RUNNER MACHINERY tests only.
 
 
 @pytest.fixture(autouse=True)
@@ -137,32 +133,6 @@ class TestScenarioRunner:
         assert "duration_ms" in d
 
 
-class TestOrgScenarios:
-    """Run the actual org scenarios to verify they work."""
-
-    def test_role_adaptation_scenario(self):
-        result = run_scenario("role_adaptation")
-        assert result.passed, f"Failed assertions: {[a for a in result.assertions if not a['passed']]}"
-
-    def test_role_retirement_scenario(self):
-        result = run_scenario("role_retirement")
-        assert result.passed, f"Failed assertions: {[a for a in result.assertions if not a['passed']]}"
-
-    def test_policy_enforcement_scenario(self):
-        result = run_scenario("policy_enforcement")
-        assert result.passed, f"Failed assertions: {[a for a in result.assertions if not a['passed']]}"
-
-    def test_outcome_to_mission_scenario(self):
-        """Phase 1 baseline: outcome compiles into a valid mission."""
-        result = run_scenario("outcome_to_mission")
-        assert result.passed, f"Failed assertions: {[a for a in result.assertions if not a['passed']]}"
-
-    def test_outcome_to_verified_scenario(self):
-        """Phase 1 closure: outcome → completed → verified → OVI reflects activity."""
-        result = run_scenario("outcome_to_verified")
-        assert result.passed, f"Failed assertions: {[a for a in result.assertions if not a['passed']]}"
-
-
 class TestDashMEntrypoint:
     """Regression guard for the module-identity bug.
 
@@ -190,15 +160,19 @@ class TestDashMEntrypoint:
             timeout=120,
         )
 
-    def test_dash_m_entrypoint_sees_all_scenarios(self):
-        """The `-m` entrypoint must discover every shipped scenario.
+    def test_dash_m_entrypoint_runs_clean_with_no_shipped_content(self):
+        """The `-m` entrypoint stays healthy with zero shipped scenarios.
 
-        Prior to the registry extraction this test would observe an empty
-        JSON array because `__main__._SCENARIOS` and the canonical-path
-        `_SCENARIOS` were two different dicts.
+        Since egg row R006 the framework ships no concrete scenarios (the
+        seed lives in presets/work/measurement/ until a deployment installs
+        it), so the entrypoint must degrade gracefully: emit valid JSON and
+        exit 0 on an empty registry. The discovers-all-shipped-scenarios
+        half of the old guard moved with the seed content
+        (presets/work/measurement/tests/test_org_scenarios.py); the
+        module-identity half stays in-process below.
         """
         result = self._run_dash_m("--json")
-        assert result.returncode in (0, 1), (
+        assert result.returncode == 0, (
             f"Unexpected exit code {result.returncode}. stderr={result.stderr}"
         )
         try:
@@ -208,16 +182,10 @@ class TestDashMEntrypoint:
                 f"`-m` runner did not emit valid JSON. "
                 f"stdout={result.stdout!r} stderr={result.stderr!r} err={e}"
             )
-
-        names = {r["name"] for r in payload}
-        assert len(payload) >= len(_EXPECTED_SCENARIOS), (
-            f"`-m` runner discovered only {len(payload)} scenarios "
-            f"(names={sorted(names)}); expected at least {len(_EXPECTED_SCENARIOS)} "
-            f"({list(_EXPECTED_SCENARIOS)}). This is the module-identity bug "
-            f"resurfacing — see framework/measurement/_scenario_registry.py."
+        assert isinstance(payload, list)
+        assert all(r["passed"] for r in payload), (
+            "content-less framework run must not report failing scenarios"
         )
-        missing = set(_EXPECTED_SCENARIOS) - names
-        assert not missing, f"`-m` runner missed scenarios: {sorted(missing)}"
 
     def test_registry_is_shared_across_import_paths(self):
         """`__main__` and canonical imports must reference the same dict.

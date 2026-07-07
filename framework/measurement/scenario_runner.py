@@ -11,6 +11,11 @@ Usage:
     python3 -m framework.measurement.scenario_runner --scenario outcome_to_mission
     python3 -m framework.measurement.scenario_runner --ci  # lightweight CI mode
 
+The framework ships `scenarios/` empty (egg row R006): concrete seed content
+(e.g. `outcome_to_mission` above) lives in `presets/work/measurement/scenarios/`
+and is installed per-deployment; with nothing installed, discovery finds zero
+scenarios and the runner exits clean.
+
 Module-identity note
 --------------------
 The registry (`_SCENARIOS`, `register`, `Scenario`, `ScenarioResult`) lives
