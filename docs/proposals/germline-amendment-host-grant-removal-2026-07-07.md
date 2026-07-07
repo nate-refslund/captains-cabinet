@@ -47,7 +47,7 @@ and it claimed a capability that cannot exist on this deployment.
 +      (host grant removed 2026-07-07 — dangling: no live .mcp.json layer
 +      defines a `host` server; the only definition pointed at the extinct
 +      /opt/founders-cabinet deployment. See
-+      docs/proposals/germline-amendment-host-grant-removal-undefined.md.)
++      docs/proposals/germline-amendment-host-grant-removal-2026-07-07.md.)
 ```
 
 ## Diff 2 — delete officers/cos/.mcp.json (NOT germline; tracked, clean)

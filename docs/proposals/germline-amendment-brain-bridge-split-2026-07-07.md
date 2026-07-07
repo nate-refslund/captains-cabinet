@@ -43,7 +43,7 @@ CG-3 is executed here.
 |---|---|---|
 | `.claude/rules/brain-bridge.md` | Rewritten framework-generic: same five invariant sections, launcher literals removed, pointer line to the instance addendum + `instance/config/sources.yml`/`framework.sources` binding language added. No tool name changed (`queue_draft`, `append_agent_inbox`, `log_reasoning`, `record_run` verbatim — framework code and tests reference them by these names). | yes |
 | `instance/flavor-a/rules/brain-bridge-screenpipe.md` | NEW — carries the moved screenpipe binding content: vault path `~/Obsidian/screenpipe-brain/`, `nate_model`/voice artifact ids, Graph/Teams/Make/Telegram concretions, reasoning-review/architect loop names, adapter chain + mcp-scope note. Travels with the flavor-a pack per R153. | no |
-| `docs/proposals/germline-amendment-brain-bridge-split-undefined.md` | NEW — this companion record. | no |
+| `docs/proposals/germline-amendment-brain-bridge-split-2026-07-07.md` | NEW — this companion record. | no |
 
 ## §2 · What this amendment does NOT do
 

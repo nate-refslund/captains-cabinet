@@ -1,4 +1,4 @@
-# Germline amendment proposal — MANIFEST-SUNSET optional lifecycle field — undefined (authored 2026-07-07, CG-4)
+# Germline amendment proposal — MANIFEST-SUNSET optional lifecycle field — 2026-07-07 (CG-4)
 
 **Status:** AWAITING CAPTAIN. The one germline file named below is
 Captain-applied only; the Captain unlocked the schg boundary for this wave, so
