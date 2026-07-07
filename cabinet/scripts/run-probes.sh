@@ -19,9 +19,10 @@
 # the services.yml row / plist env — installing the plist IS the flip).
 #
 # SECRETS (env only, NEVER argv, never echoed):
-#   - VERCEL_API_KEY — real value lives in ~/.screenpipe/pipes/_shared/.env
-#     (product-ops pillar decision 2026-05-29); cabinet/.env carries
-#     VERCEL_TOKEN, mapped below as a fallback when VERCEL_API_KEY is empty.
+#   - VERCEL_API_KEY — real value lives in the PersonalSource shared env
+#     (instance platform.yml shared_env_path; product-ops pillar decision
+#     2026-05-29); cabinet/.env carries VERCEL_TOKEN, mapped below as a
+#     fallback when VERCEL_API_KEY is empty.
 #   - SENTRY_AUTH_TOKEN — cabinet/.env.
 #   - GitHub reads go through the `gh` CLI's own auth (keychain); GH_TOKEN is
 #     mapped from GITHUB_PAT only when gh has no ambient auth of its own.
@@ -41,11 +42,12 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # FATAL lesson (services.yml:118-122).
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 
-# Env order: cabinet/.env first, then _shared/.env so REAL keys win over
-# cabinet/.env's empty placeholders (run-undo-sweep.sh:23-27 gotcha).
+# Env order: cabinet/.env first, then the PersonalSource shared env so REAL
+# keys win over cabinet/.env's empty placeholders (run-undo-sweep.sh env-order
+# gotcha). Path is instance data via lib/personal-env.sh (R070 indirection).
 if [ -f "$ROOT/cabinet/.env" ]; then set -a; . "$ROOT/cabinet/.env"; set +a; fi
-SP_ENV="${HOME:-/Users/nate}/.screenpipe/pipes/_shared/.env"
-if [ -f "$SP_ENV" ]; then set -a; . "$SP_ENV"; set +a; fi
+. "$ROOT/cabinet/scripts/lib/personal-env.sh"
+personal_env_source
 
 # Key mapping (values move env→env only; an empty value never claims a key).
 if [ -z "${VERCEL_API_KEY:-}" ] && [ -n "${VERCEL_TOKEN:-}" ]; then

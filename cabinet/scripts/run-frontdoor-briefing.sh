@@ -27,7 +27,7 @@ if [ ! -f "$ENV_FILE" ]; then
 fi
 
 # Read ONLY the two values needed for the send; do not source the whole file
-# (avoids exporting empty optional keys that could shadow screenpipe's env).
+# (avoids exporting empty optional keys that could shadow the shared env's keys).
 export TELEGRAM_COS_TOKEN="$(grep '^TELEGRAM_COS_TOKEN=' "$ENV_FILE" | cut -d= -f2-)"
 export CAPTAIN_TELEGRAM_ID="$(grep '^CAPTAIN_TELEGRAM_ID=' "$ENV_FILE" | cut -d= -f2-)"
 
@@ -52,12 +52,15 @@ fi
 export CABINET_RUN_MODE
 
 # Deploy-health source: a read-only Vercel API key + the monitored app list.
-# The key lives in screenpipe's shared .env (NOT cabinet/.env); read ONLY that
-# one key (never source the whole file). CABINET_DEPLOY_HEALTH_APPS holds the
-# instance's product app names so the framework module stays product-agnostic.
-# Both optional — unset → deploy-health simply stays silent.
-SP_ENV="${HOME:-/Users/nate}/.screenpipe/pipes/_shared/.env"
-[ -f "$SP_ENV" ] && export VERCEL_API_KEY="$(grep '^VERCEL_API_KEY=' "$SP_ENV" | cut -d= -f2-)"
+# The key lives in the PersonalSource shared env (instance platform.yml
+# shared_env_path, resolved via lib/personal-env.sh — R070 indirection; NOT
+# cabinet/.env); read ONLY that one key (never source the whole file).
+# CABINET_DEPLOY_HEALTH_APPS holds the instance's product app names so the
+# framework module stays product-agnostic. Both optional — unset (e.g. a
+# clean-room deployment with no shared env) → deploy-health simply stays silent.
+. "$ROOT/cabinet/scripts/lib/personal-env.sh"
+SHARED_ENV_FILE="$(personal_env_file)"
+[ -n "$SHARED_ENV_FILE" ] && [ -f "$SHARED_ENV_FILE" ] && export VERCEL_API_KEY="$(grep '^VERCEL_API_KEY=' "$SHARED_ENV_FILE" | cut -d= -f2-)"
 export CABINET_DEPLOY_HEALTH_APPS="${CABINET_DEPLOY_HEALTH_APPS:-v0-politiske-annoncer}"
 
 # Sentry error-health source: a read-scoped token from the cabinet's OWN store

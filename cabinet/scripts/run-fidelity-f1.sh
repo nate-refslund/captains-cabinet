@@ -23,7 +23,8 @@
 # excluded, never silently scored (run_f1.py docstring).
 #
 # Secrets: OAuth judge + VOYAGE_API_KEY etc. reach the process via env from
-# cabinet/.env / ~/.screenpipe/pipes/_shared/.env — never argv, never echoed.
+# cabinet/.env / the PersonalSource shared env (instance platform.yml
+# shared_env_path) — never argv, never echoed.
 #
 # Knobs (env, optional): F1_ROLE (default cos), F1_CASES (default 24).
 #
@@ -38,11 +39,12 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # FATAL lesson (services.yml:118-122).
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 
-# Env order: cabinet/.env first, then _shared/.env so REAL keys win over
-# cabinet/.env's empty placeholders (run-undo-sweep.sh:23-27 gotcha).
+# Env order: cabinet/.env first, then the PersonalSource shared env so REAL
+# keys win over cabinet/.env's empty placeholders (run-undo-sweep.sh env-order
+# gotcha). Path is instance data via lib/personal-env.sh (R070 indirection).
 if [ -f "$ROOT/cabinet/.env" ]; then set -a; . "$ROOT/cabinet/.env"; set +a; fi
-SP_ENV="${HOME:-/Users/nate}/.screenpipe/pipes/_shared/.env"
-if [ -f "$SP_ENV" ]; then set -a; . "$SP_ENV"; set +a; fi
+. "$ROOT/cabinet/scripts/lib/personal-env.sh"
+personal_env_source
 
 PY="${CABINET_PYTHON:-/opt/homebrew/bin/python3.12}"
 cd "$ROOT" || exit 1

@@ -37,10 +37,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export PATH="/opt/homebrew/bin:$PATH"
 export REDIS_HOST="${REDIS_HOST:-localhost}"
 
-# Monday key (+ NATE_MONDAY_USER_ID if set) live in the pipes' shared env —
-# the same source of truth action_exec uses for live deliveries.
-SP_ENV="${HOME:-/Users/nate}/.screenpipe/pipes/_shared/.env"
-if [ -f "$SP_ENV" ]; then set -a; . "$SP_ENV"; set +a; fi
+# Monday key (+ NATE_MONDAY_USER_ID if set) live in the PersonalSource shared
+# env (instance platform.yml shared_env_path, via lib/personal-env.sh — R070
+# indirection) — the same source of truth action_exec uses for live deliveries.
+. "$ROOT/cabinet/scripts/lib/personal-env.sh"
+personal_env_source
 
 PY="${CABINET_PYTHON:-/opt/homebrew/bin/python3.12}"
 cd "$ROOT" || exit 1

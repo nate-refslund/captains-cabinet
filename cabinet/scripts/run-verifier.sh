@@ -39,12 +39,15 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # retro-trigger FATAL lesson (services.yml:118-122).
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 
-# Env order: cabinet/.env first, then the pipes' _shared/.env so REAL keys win
-# over cabinet/.env's empty placeholders (the undo-sweep gotcha, run-undo-sweep
-# .sh:23-27 — "empty env values never claim keys" is also enforced Python-side).
+# Env order: cabinet/.env first, then the PersonalSource shared env so REAL
+# keys win over cabinet/.env's empty placeholders (the run-undo-sweep.sh
+# env-order gotcha — "empty env values never claim keys" is also enforced
+# Python-side). The shared-env PATH is instance data (platform.yml
+# shared_env_path, via lib/personal-env.sh — R070 indirection); a clean-room
+# deployment (NullPersonalSource) configures none and sources nothing.
 if [ -f "$ROOT/cabinet/.env" ]; then set -a; . "$ROOT/cabinet/.env"; set +a; fi
-SP_ENV="${HOME:-/Users/nate}/.screenpipe/pipes/_shared/.env"
-if [ -f "$SP_ENV" ]; then set -a; . "$SP_ENV"; set +a; fi
+. "$ROOT/cabinet/scripts/lib/personal-env.sh"
+personal_env_source
 
 PY="${CABINET_PYTHON:-/opt/homebrew/bin/python3.12}"
 cd "$ROOT" || exit 1

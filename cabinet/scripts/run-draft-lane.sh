@@ -29,10 +29,12 @@ export DRAFT_LANE_MAX="${DRAFT_LANE_MAX:-4}"
 # launchd gives a minimal PATH; Homebrew holds redis-cli + python3.12.
 export PATH="/opt/homebrew/bin:$PATH"
 
-# The brain's drafting + retrieval (sa.gather / sa.draft_fn → draft_lib) needs the
-# screenpipe shared keys (Voyage, LLM gateway, etc.). Source them so drafting works.
-SP_ENV="${HOME:-/Users/nate}/.screenpipe/pipes/_shared/.env"
-if [ -f "$SP_ENV" ]; then set -a; . "$SP_ENV"; set +a; fi
+# The brain's drafting + retrieval (sa.gather / sa.draft_fn → draft_lib) needs
+# the PersonalSource shared keys (Voyage, LLM gateway, etc. — instance
+# platform.yml shared_env_path, via lib/personal-env.sh; R070 indirection).
+# Source them so drafting works; clean-room (NullPersonalSource) sources nothing.
+. "$ROOT/cabinet/scripts/lib/personal-env.sh"
+personal_env_source
 
 PY="${CABINET_PYTHON:-/opt/homebrew/bin/python3.12}"
 cd "$ROOT" || exit 1
