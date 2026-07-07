@@ -68,17 +68,6 @@ The full statements, with rationale, are in [`captains-cabinet-guide.md`](./capt
 
 One append-only **consequence ledger** records every proposal, every Captain verdict (captured mechanically, in-process with the action — never by an LLM's discipline), and every machine-probed outcome (deploy held, CI green, thread resolved), joined by correlation IDs propagated into the artifacts themselves. **Graduation math** reads the ledger per action class — never per agent — and computes each cell's earned confidence; the **authority matrix** maps risk class × confidence to a verdict (auto / propose / gated), with unmeasured always meaning propose-only. Demotion is automatic: wrong verdicts, detected fabrication, model upgrades, or a starving ledger (a dead-man watchdog pages and revokes autonomy when evidence stops flowing). Above it all sits a **hard ceiling — six action classes (external comms, production deploys, spend, secrets, network writes, credential grants) that stay Captain-gated at every confidence level, forever.** Autonomy is a computed, demotable property of one ledger — never a vibe.
 
-## Status — honest maturity note
-
-**This system is mid-migration.** The ratified target architecture and the full execution program live in [`docs/plans/`](./docs/plans/):
-
-- `mac-mini-ai-org-blueprint-2026-07-02.md` — the target architecture and the 12 principles
-- `plan-A-personal-clone-org-2026-07-02.md` — flavor A execution plan
-- `plan-B-macmini-product-org-2026-07-02.md` — flavor B execution plan
-- `EXECUTION-STATUS.md` — live tracking: what's done, in flight, and ratified
-
-The governance design (authority matrix, germline protection, consequence schema, fidelity measurement) is built and tested; mechanical verdict capture and the ledger-liveness dead-man have since shipped in the foundation phase, and the plans' current phases are closing the remaining wiring — machine probes, the enforcement flip, the executor. Where these docs describe machinery ahead of the live wiring, `EXECUTION-STATUS.md` is the truth of what runs today.
-
 ## Quickstart
 
 Prerequisites: a Mac with [Homebrew](https://brew.sh), [Claude Code](https://claude.com/claude-code) with a Max subscription, and a Telegram bot token from @BotFather.
@@ -142,10 +131,6 @@ captains-cabinet/
 - **Kill switch:** anyone — any officer, any watchdog, the Captain — can halt the fleet; only the Captain can resume. Designed fail-closed: if the switch's state store is unreachable, work stops.
 - **Propose-first by default:** unmeasured action classes are propose-only by construction.
 - **Evidence starvation revokes autonomy:** a lane whose verdicts stop landing is automatically demoted and paged — staleness is loss of proof.
-
-## Legacy
-
-The first generation of this framework ran as Docker containers on a Linux VPS with Notion/Linear integrations. That path is **legacy/rollback-only** and is being removed per the plans; `docs/hetzner-rollback.md` exists for emergencies. Everything current is launchd-native on macOS.
 
 ## License
 
