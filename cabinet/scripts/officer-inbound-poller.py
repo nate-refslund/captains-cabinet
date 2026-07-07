@@ -211,14 +211,38 @@ def main() -> int:
                 mid = int(msg.get("message_id", 0))
                 react(mid)                     # 👀 read-ack (degrade-safe)
                 set_last_captain_msg_id(mid)   # id the Chair threads replies onto
+                # CHAIR-REPLY-WIRE (2026-07-07, one-bot migration hardening):
+                # a reply threaded onto a Chair message carrying the
+                # ⟦sp:<prompt_id>⟧ marker is a screenpipe pipe-prompt answer —
+                # forward {prompt_id, text} MECHANICALLY onto the
+                # screenpipe:pipe-replies stream (idempotent by update_id; the
+                # sp-bridge consumer group drains it). The relay note tells the
+                # Chair forwarding already happened (never re-forward), and the
+                # marker SKIPS the binder wire below — a pipe answer like a
+                # bare "approve" must never bind a pending cabinet draft.
+                # Fail-safe by construction: any wire error → handled=False →
+                # the DM relays with the reply_bridge discipline path intact.
+                binder_note = ""
+                sp_marker = False
+                try:
+                    from framework.frontdoor import sp_reply_wire
+                    sp_marker = bool(sp_reply_wire.extract_prompt_id(quoted_full))
+                    if sp_marker:
+                        sr = sp_reply_wire.handle_captain_reply(text, quoted_full, uid, log=log)
+                        if sr.get("handled"):
+                            binder_note = sr.get("summary", "")
+                        else:
+                            log(f"[sp-wire] not handled: reason={sr.get('reason','?')} "
+                                f"pid={sr.get('prompt_id','-')}")
+                except Exception as e:
+                    log(f"sp wire unavailable (passthrough preserved): {e}")
                 # F0.5 binder wire (flag-gated): mechanically record the Captain's
                 # approve/edit:/skip: verdict on the pending draft proposal and
                 # deliver on approve/edit — BEFORE the Chair sees the DM. The
                 # relay carries the outcome so the Chair never double-delivers.
                 # Fail-safe by construction: any wire error → handled=False →
                 # this DM relays byte-identically to pre-wire behavior.
-                binder_note = ""
-                if os.environ.get("CABINET_BINDER_WIRED") == "1":
+                if not sp_marker and os.environ.get("CABINET_BINDER_WIRED") == "1":
                     try:
                         from framework.frontdoor import binder_wire
                         wr = binder_wire.handle_captain_update(text, quoted_full, log=log)
