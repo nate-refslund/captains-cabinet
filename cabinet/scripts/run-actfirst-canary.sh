@@ -41,6 +41,29 @@ export REDIS_HOST="${REDIS_HOST:-localhost}"
 . "$ROOT/cabinet/scripts/lib/personal-env.sh"
 personal_env_source
 
+# Calendar-lane env (ACTION_LANE_CALENDAR / CABINET_CAL_*): lives in the
+# instance-local cabinet/.env, which this runner deliberately does NOT source
+# wholesale (see the secrets note above — the tracked template ships empty
+# placeholders that would shadow real shared-env keys). But since F3
+# (2026-07-05: canary exercises the REAL act-first calendar path; the
+# "Cabinet" sandbox is retired) the probe MUST see the same calendar config
+# the live lane uses — without it _resolve_calendar falls back to the retired
+# "Cabinet" default and the weekly canary freezes calendar_event_create every
+# Monday on 'calinfo: calendar not found' (seen 2026-07-06/07). So import ONLY
+# the allowlisted calendar keys, line-parsed (never sourced — no code
+# execution, no secret shadowing), skipping empty values and anything already
+# set. Absent file / absent keys ⇒ no-op and the canary fails closed as before.
+if [ -f "$ROOT/cabinet/.env" ]; then
+  while IFS='=' read -r k v; do
+    case "$k" in
+      ACTION_LANE_CALENDAR|CABINET_CAL_HELPER|CABINET_CAL_PRIVATE|CABINET_CAL_ALLDAY_BUSY_BLOCKS)
+        v="${v%\"}"; v="${v#\"}"
+        if [ -n "$v" ] && [ -z "$(printenv "$k")" ]; then export "$k=$v"; fi
+        ;;
+    esac
+  done < "$ROOT/cabinet/.env"
+fi
+
 PY="${CABINET_PYTHON:-/opt/homebrew/bin/python3.12}"
 cd "$ROOT" || exit 1
 export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
