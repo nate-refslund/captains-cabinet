@@ -1,11 +1,18 @@
 ---
 name: ovi-publish
 description: Use when computing or publishing weekly OVI and sanitized learning digests for Captain's Cabinet.
+argument-hint: "<YYYY-MM-DD week start>"
+allowed-tools: Bash
 ---
 
 # OVI Publish
 
 OVI is verified value divided by burden. Publish only from verified work or explicit fixture inputs.
+
+## Slash usage (`/ovi-publish <YYYY-MM-DD week start>`)
+
+- No argument → determine the current week start (Monday of the current ISO week) before running anything.
+- Always `ovi compute` first; run `ovi publish` only when the verified value and burden inputs are known, or the current work-graph state already contains verified value.
 
 Use:
 

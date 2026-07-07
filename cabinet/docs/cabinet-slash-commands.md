@@ -101,20 +101,26 @@ don't call analyzePlan manually; the hooks do.
 rather than bypassing the hook. Corridor's findings are usually real
 security issues.
 
-## `TeamCreate` — Multi-agent coordination
+## Teammates — implicit teams (`TeamCreate` removed in v2.1.178)
 
-**Use for:** building a team with shared task list and inter-agent
-messaging. The team's `~/.claude/teams/<name>/config.json` is the source
-of truth for membership.
+**Current reality:** `TeamCreate` no longer exists. Teams are implicit —
+your session is its own team. Teammates spawn via the `Agent` tool's
+`name` parameter; coordination runs over the shared task list
+(`TaskCreate`/`TaskUpdate` with `owner`) and `SendMessage` (agent messages
+carry no user authority — harness-enforced).
 
-**Pattern:** create a team for a multi-officer mission, assign tasks via
-`TaskUpdate` setting `owner`, watch teammates pick up work from the
-shared list.
+**Pattern:** spawn `Agent(name: "worker", ...)` + `Agent(name: "reviewer",
+...)` for a bounded implementation task and let them iterate directly.
+Full guidance: the `agent-team-workflow` skill
+(`.claude/skills/agent-team-workflow/`).
 
-**Cabinet rule:** the Cabinet's 5 officers are NOT a Claude Code team in
-this sense — they're separate `claude` CLI processes (one per officer)
-that communicate via Redis Streams and shared interfaces. `TeamCreate` is
-for ephemeral sub-teams within a single implementation task.
+**Cabinet rule:** the officer fleet (roster-derived,
+`instance/config/roster.yml`) is NOT a Claude Code team in this sense —
+officers are separate `claude` CLI processes (one per officer) that
+communicate via Redis Streams and shared interfaces. Teammates are for
+ephemeral sub-teams within a single interactive implementation task —
+Agent Teams do NOT work headless, so unattended lanes use subagents or
+workflow orchestration instead.
 
 ---
 
@@ -129,4 +135,4 @@ for ephemeral sub-teams within a single implementation task.
 | Tool Search | Heavy MCP toolkits | Use `select:` query to load only needed tools |
 | `ScheduleWakeup` | External-state polling | CI / API / install wait — NOT for harness-tracked work |
 | Corridor analyzePlan | Every code generation | Auto-fires via hooks; fix findings, don't bypass |
-| `TeamCreate` | Ephemeral sub-team | Implementation-task scope, not the officer roster |
+| Teammates (`Agent` `name:` param) | Ephemeral sub-team (interactive only; `TeamCreate` removed v2.1.178) | Implementation-task scope, not the officer roster |

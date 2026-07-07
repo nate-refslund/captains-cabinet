@@ -16,5 +16,7 @@ The symlinks are gitignored (see `.gitignore` "officer-skill overlays" block);
 re-create them if lost (e.g. after `git clean -fdx`). A missing overlay
 degrades gracefully — the hook falls back to "re-read your role definition".
 
-Current overlays: `cos.txt`, `comms-officer.txt` (moved out of
-`cabinet/officer-skills/` by egg plan row R090).
+Current overlays (the full live roster): `cos.txt`, `comms-officer.txt`
+(moved out of `cabinet/officer-skills/` by egg plan row R090), plus
+`polads-ceo.txt`, `stephie-ceo.txt` (added 2026-07-07, audit #24a — the two
+lane CEOs previously had no refresh file at all).

@@ -1,6 +1,8 @@
 ---
 name: cabinet-route-tasks
-description: Manually run the mission supervisor to push ready work-graph tasks to officers as Redis triggers. NOT scheduled anywhere — routing is PULL-ONLY (Captain ruling): officers pull their ratified missions from instance/config/outcomes.yml on every self-wake tick. Use this only as a push-nudge after declaring a new outcome, or to debug why a task isn't surfacing.
+description: "Manually run the mission supervisor to push ready work-graph tasks to officers as Redis triggers. NOT scheduled anywhere — routing is PULL-ONLY (Captain ruling): officers pull their ratified missions from instance/config/outcomes.yml on every self-wake tick. Use this only as a push-nudge after declaring a new outcome, or to debug why a task isn't surfacing."
+argument-hint: "[--dry-run|--mission <mission_id>]"
+allowed-tools: Bash
 ---
 
 # Cabinet — Route Ready Mission Tasks (manual push-nudge)
@@ -31,6 +33,10 @@ about a ready task *now* instead of on their next pull tick.
   output shows exactly what the compiler considers ready and for whom).
 
 ## How
+
+Slash arguments pass straight through to the supervisor (e.g.
+`/cabinet-route-tasks --dry-run`, or `--mission <mission_id>` to scope the
+push to one mission).
 
 Dry-run first to see what WOULD be routed without committing:
 

@@ -41,7 +41,7 @@ the strict-validation warning means it's not "marketplace strict-clean" yet.
 claude plugin install captains-cabinet --source captains-cabinet-marketplace
 ```
 
-The plugin manifest (`.claude-plugin/plugin.json`) declares (counts corrected 2026-07-04):
+The plugin manifest (`.claude-plugin/plugin.json`) declares (counts corrected 2026-07-07, audit #7/#21):
 
 - **1 agent definition** — the portfolio Chair (`presets/portfolio/agents/cos.md`).
   The officer fleet is roster-derived (`instance/config/roster.yml`), never
@@ -50,16 +50,21 @@ The plugin manifest (`.claude-plugin/plugin.json`) declares (counts corrected 20
   stay in `presets/work/agents/` where the preset loader picks them up when
   that preset is active. (The manifest previously registered the retired
   cos/cto/cpo/cro/coo work fleet on every install.)
-- **20 skills** — 9 cabinet-specific (cabinet-task, cabinet-route-tasks,
+- **21 skills** — 10 cabinet-specific (cabinet-task, cabinet-route-tasks,
   cabinet-work-graph-complete, cabinet-init, org-status, mission-compile,
-  ovi-publish, capability-gap, extend-cabinet) +
+  ovi-publish, capability-gap, extend-cabinet, brain-audit) +
   10 lifted foundation skills (holistic-thinking, production-quality-ownership,
   telegram-communication, cross-officer-retro, evolution-loop,
   individual-reflection, agent-team-workflow, deploy-and-verify,
   engineering-development-loop, spec-quality-gate) +
   cabinet-intro (`.claude-plugin/skills/`)
-- **11 slash commands** — 5 parent (activate-project, mission-compile,
-  org-status, ovi-publish, role-eval) + 6 cabinet- prefixed
+- **6 slash commands** — 2 parent (activate-project, role-eval) + 4
+  cabinet-prefixed (cabinet-backup, cabinet-briefing, cabinet-research-sweep,
+  cabinet-retro). The five former command/skill same-name pairs
+  (mission-compile, org-status, ovi-publish, cabinet-route-tasks,
+  cabinet-work-graph-complete) are skills only since 2026-07-07 — skills are
+  slash-invocable, and the drifted command wrappers were folded into the
+  SKILL.md files and deleted (audit #21)
 - **1 path-scoped rule** (org-runtime-native)
 - **7 MCP servers** (notion, neon, linear, vercel, redis-trigger-channel, library, make)
 - **settings** with hooks, voice, defaultMode, and statusLine wiring

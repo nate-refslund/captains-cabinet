@@ -1,6 +1,8 @@
 ---
 name: cabinet-work-graph-complete
 description: After an officer finishes a mission task, record the completion (or failure or verification) to the event ledger so the work graph advances and the next ready task surfaces to the next session.
+argument-hint: "<node_id> [--status done|failed|verified] [--evidence <text-or-file>]"
+allowed-tools: Bash
 ---
 
 # Cabinet — Mark Mission Task Complete
@@ -32,7 +34,7 @@ Where:
 - `--status` is one of `done` (default), `failed`, or `verified`.
 - `--evidence` is either a path to an evidence file (e.g., test output, deploy log) or inline text describing what was accomplished.
 
-The script emits the appropriate event (`work_item_completed`, `work_item_failed`, or `work_item_verified`) into the org ledger, which the compiler will overlay onto the work graph at the next session start so completed tasks don't re-inject.
+The script emits the appropriate event (`work_item_completed`, `work_item_failed`, or `work_item_verified`) into the org ledger, which the compiler will overlay onto the work graph at the next session start so completed tasks don't re-inject. The mission supervisor's next tick (or a manual `/cabinet-route-tasks` push-nudge) then releases any downstream nodes whose dependencies are now satisfied.
 
 ## Example
 

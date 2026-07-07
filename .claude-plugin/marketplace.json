@@ -14,7 +14,7 @@
         "repo": "nate-step/captains-cabinet",
         "ref": "claude/convergence-v2"
       },
-      "description": "Full Captains Cabinet plugin: framework + presets (work, portfolio, personal) + 20 skills + 11 slash commands + 7 MCP servers. The officer fleet is roster-derived (instance/config/roster.yml) — the work preset ships 8 role archetypes, the portfolio preset ships the Chair plus generated lane CEOs.",
+      "description": "Full Captains Cabinet plugin: framework + presets (work, portfolio, personal) + 21 skills + 6 slash commands + 7 MCP servers. The officer fleet is roster-derived (instance/config/roster.yml) — the work preset ships 8 role archetypes, the portfolio preset ships the Chair plus generated lane CEOs.",
       "category": "ai-organization",
       "tags": ["ai-organization", "officers", "autonomous", "event-sourced"]
     },
@@ -61,7 +61,7 @@
         "ref": "claude/convergence-v2",
         "path": "packs/agent-teams-pack"
       },
-      "description": "Agent Teams workflow skill: Agent Teams vs sub-agents vs orchestrator, TeamCreate worker+reviewer patterns, worktree isolation, model routing. Requires CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1.",
+      "description": "Agent Teams workflow skill for current CLI reality (>= v2.1.178, TeamCreate removed): implicit teams, teammates via the Agent tool's name param, worker+reviewer patterns, worktree isolation, model routing, headless boundary. Requires CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1.",
       "category": "ai-organization",
       "tags": ["ai-organization", "agent-teams", "model-routing"]
     },

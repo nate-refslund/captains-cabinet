@@ -1,9 +1,3 @@
-<!--
-STAGED cabinet skill — destination: $CABINET_ROOT/.claude/skills/brain-audit/SKILL.md
-(Staged 2026-07-06 at ~/.screenpipe/state/brain-probes/staging/ by the brain-quality
-Wave F drill-contract lane. Install: mkdir -p $CABINET_ROOT/.claude/skills/brain-audit
-&& cp this file to SKILL.md there. Everything below the marker is the skill verbatim.)
--->
 ---
 name: brain-audit
 description: Audit and repair Nate's memory estate (Obsidian vault + embeddings index + graph + memories store) when brain quality regresses. Use when the memory-curator-health service pages cos (Redis trigger "BRAIN-QUALITY REGRESSION"/staleness), when the frozen-core-14 probe gate fails after any wave, when the Memory Curator has self-frozen, or on a Captain ask to check brain quality. Runs the audit fleet -> fix waves -> adversarial verify -> probe gate loop, and owns the curator freeze/unfreeze runbook.
@@ -11,7 +5,7 @@ description: Audit and repair Nate's memory estate (Obsidian vault + embeddings 
 
 # Skill: Brain Audit (memory-estate quality loop)
 
-**Status:** staged (brain-quality Wave F hand-off, 2026-07-06)
+**Status:** installed (brain-quality Wave F hand-off 2026-07-06; staging header stripped 2026-07-07 so the frontmatter parses — audit #7)
 **Owner:** cos (escalation target of `com.cabinet.memory-curator-health`)
 
 ## When to use
