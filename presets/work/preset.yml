@@ -54,3 +54,15 @@ workspace_mount: /workspace/product
 # the single_ceo collapse in AC #62). Step Network preset uses single_ceo.
 # Override per-project in instance/config/projects/<slug>.yml `telegram.bot_mode`.
 telegram_bot_mode: multi_officer  # multi_officer (legacy) | single_ceo (step-network default)
+
+# Onboarding defaults — consumed by framework/onboarding
+# (plan.load_preset_defaults). The framework hardcodes no plugin/MCP names:
+# a preset without this block onboards lanes with EMPTY defaults (fail-closed).
+# work is also the fallback preset when instance/config/active-preset is unset,
+# so these keep the cabinet-standard onboarding defaults on bare deployments.
+onboarding:
+  # Plugins every lane-CEO generally needs beyond what its repo already ships.
+  cabinet_default_plugins: [corridor, brain]
+  # Base MCP scope for a generated lane-CEO (stack-detected MCPs are added
+  # on top from the repo research profile, e.g. neon/vercel).
+  lane_mcps: [library, telegram, brain]

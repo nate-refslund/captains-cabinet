@@ -3,7 +3,7 @@
 research → plan → (apply) render the lane-CEO role-def + write a readiness report.
 
 SAFE BY DEFAULT: it NEVER executes gated actions — no plugin install, no GH-repo
-or Monday-product creation, no git push, no germline edit, no send. Those are
+or tracker-product creation, no git push, no germline edit, no send. Those are
 returned (and written into the report) as PROPOSALS for the Captain to approve.
 `apply=True` writes exactly two local, reversible artifacts: the lane-CEO role
 def (instance/agents/<slug>-ceo.md) and the readiness report (docs/onboarding/
@@ -114,12 +114,16 @@ def _render_report(report: dict) -> str:
     return "\n".join(lines)
 
 
-def onboard_lane(repo_path: str, *, slug: str, board_id=None,
+def onboard_lane(repo_path: str, *, slug: str, tracker_ref=None,
                  model: str = "claude-fable-5", existing: bool = True,
                  root=None, apply: bool = False, name=None,
-                 research_fn=None, render_fn=None) -> dict:
+                 research_fn=None, render_fn=None, defaults=None) -> dict:
     """Onboard one product as a portfolio lane. SAFE by default — see module doc.
 
+    ``tracker_ref`` is an opaque task-tracker reference (board/product id —
+    semantics owned by the lane's task-tracking extension). ``defaults``
+    injects preset onboarding defaults; None loads them from the active
+    preset's config (fail-closed to empty — see plan.load_preset_defaults).
     Lane name precedence: explicit ``name`` > declared context name > the repo's
     package.json name > slug.
     """
@@ -132,8 +136,10 @@ def onboard_lane(repo_path: str, *, slug: str, board_id=None,
         desc = _declared_description(base, slug)
         if desc:
             profile = {**profile, "summary": desc}
-    pl = plan.build_lane_plan(profile, slug=slug, board_id=board_id,
-                              model=model, existing=existing)
+    if defaults is None:
+        defaults = plan.load_preset_defaults(base)
+    pl = plan.build_lane_plan(profile, slug=slug, tracker_ref=tracker_ref,
+                              model=model, existing=existing, defaults=defaults)
     report = {
         "slug": slug, "profile": profile, "plan": pl,
         "gated_actions": pl["gated_actions"],

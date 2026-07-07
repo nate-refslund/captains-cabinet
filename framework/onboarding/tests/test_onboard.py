@@ -14,7 +14,7 @@ _RENDER = lambda lane, model: f"# {lane['slug']}-ceo for {lane['name']} ({model}
 
 
 def test_dry_run_writes_nothing(tmp_path):
-    rep = onboard.onboard_lane("/x", slug="acme", board_id="1234567890",
+    rep = onboard.onboard_lane("/x", slug="acme", tracker_ref="1234567890",
                                research_fn=lambda p: PROFILE, root=str(tmp_path), apply=False)
     assert rep["applied"] is False
     assert rep["lane_ceo_path"] is None
@@ -23,7 +23,7 @@ def test_dry_run_writes_nothing(tmp_path):
 
 
 def test_apply_writes_only_the_two_safe_files(tmp_path):
-    rep = onboard.onboard_lane("/x", slug="acme", board_id="1234567890",
+    rep = onboard.onboard_lane("/x", slug="acme", tracker_ref="1234567890",
                                research_fn=lambda p: PROFILE, render_fn=_RENDER,
                                root=str(tmp_path), apply=True)
     assert rep["applied"] is True
@@ -43,8 +43,11 @@ def test_report_carries_proposals_and_germline_for_captain(tmp_path):
 
 
 def test_gated_actions_never_executed(tmp_path):
+    defaults = {"cabinet_default_plugins": ["corridor", "brain"],
+                "lane_mcps": ["library", "telegram", "brain"]}
     rep = onboard.onboard_lane("/x", slug="acme", research_fn=lambda p: {**PROFILE, "plugins": []},
-                               render_fn=_RENDER, root=str(tmp_path), apply=True)
+                               render_fn=_RENDER, root=str(tmp_path), apply=True,
+                               defaults=defaults)
     assert any(a["action"] == "install-plugin" for a in rep["gated_actions"])
     assert all(a["executed"] is False for a in rep["gated_actions"])
     # apply still wrote ONLY the two safe artifacts — no install/creation side effects
@@ -67,3 +70,19 @@ def test_explicit_name_overrides_all(tmp_path):
                                research_fn=lambda p: {**PROFILE, "name": "my-v0-project"},
                                render_fn=_RENDER, root=str(tmp_path), apply=False)
     assert rep["plan"]["answers_lane"]["name"] == "Acme Shop"
+
+
+def test_defaults_load_from_the_given_root_preset(tmp_path):
+    # onboard_lane resolves preset onboarding defaults against ITS root —
+    # a root without preset config onboards fail-closed (empty defaults).
+    (tmp_path / "instance" / "config").mkdir(parents=True)
+    (tmp_path / "instance" / "config" / "active-preset").write_text("tp\n")
+    pd = tmp_path / "presets" / "tp"
+    pd.mkdir(parents=True)
+    (pd / "preset.yml").write_text(
+        "name: tp\nonboarding:\n  cabinet_default_plugins: [brain]\n  lane_mcps: [library]\n")
+    rep = onboard.onboard_lane("/x", slug="acme", research_fn=lambda p: PROFILE,
+                               root=str(tmp_path), apply=False)
+    names = {p["name"] for p in rep["plan"]["plugin_manifest"] if not p["present"]}
+    assert names == {"brain"}                       # preset default surfaced via root
+    assert rep["plan"]["lane_mcps"][-1] == "library"  # base scope from preset config

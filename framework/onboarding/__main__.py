@@ -1,6 +1,6 @@
 """CLI — the Chair's onboarding entry point.
 
-    python -m framework.onboarding <slug> <repo_path> [--board ID] [--name N] [--new] [--apply]
+    python -m framework.onboarding <slug> <repo_path> [--tracker-ref REF] [--name N] [--new] [--apply]
 
 Dry-run by default (prints what research found + the plan + the gated proposals).
 ``--apply`` writes the two SAFE artifacts (lane-CEO role def + readiness report).
@@ -19,16 +19,18 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="framework.onboarding")
     ap.add_argument("slug", help="lane slug (kebab-case, e.g. polads)")
     ap.add_argument("repo_path", help="local checkout path of the product repo")
-    ap.add_argument("--board", default=None, help="Monday board/product id")
+    ap.add_argument("--tracker-ref", "--board", dest="tracker_ref", default=None,
+                    help="opaque task-tracker ref (board/product id) — semantics "
+                         "owned by the lane's task-tracking extension")
     ap.add_argument("--name", default=None, help="canonical display name (else from context/repo)")
     ap.add_argument("--new", action="store_true",
-                    help="product does not exist yet → propose GH-repo / Monday creation")
+                    help="product does not exist yet → propose GH-repo / tracker-product creation")
     ap.add_argument("--apply", action="store_true",
                     help="write the lane-CEO role def + readiness report (no gated actions)")
     a = ap.parse_args(argv)
 
-    rep = onboard.onboard_lane(a.repo_path, slug=a.slug, board_id=a.board, name=a.name,
-                               existing=not a.new, apply=a.apply)
+    rep = onboard.onboard_lane(a.repo_path, slug=a.slug, tracker_ref=a.tracker_ref,
+                               name=a.name, existing=not a.new, apply=a.apply)
     pl = rep["plan"]
     print(f"{'APPLIED' if rep['applied'] else 'DRY-RUN'} — lane '{a.slug}' "
           f"({pl['answers_lane']['name']})")

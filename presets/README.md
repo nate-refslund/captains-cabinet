@@ -27,7 +27,7 @@ Every preset follows this layout:
 
 ```
 presets/<name>/
-├── preset.yml              # Preset metadata (name, description, agent archetypes, autonomy)
+├── preset.yml              # Preset metadata (name, description, agent archetypes, autonomy, onboarding defaults)
 ├── terminology.yml         # Term mappings (e.g. "agent" → "officer")
 ├── constitution-addendum.md  # Preset-specific Constitution additions
 ├── safety-addendum.md      # Preset-specific safety rules + approved integrations

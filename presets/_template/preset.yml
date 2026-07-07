@@ -22,3 +22,11 @@ autonomy_level: execution_medium
 
 # Where the preset expects the primary workspace (may be overridden per-instance)
 workspace_mount: REPLACE_ME
+
+# OPTIONAL — Onboarding defaults, consumed by framework/onboarding
+# (plan.load_preset_defaults) when this preset onboards a product lane.
+# Omit the block entirely to onboard with EMPTY defaults (fail-closed);
+# the framework hardcodes no plugin/MCP names.
+# onboarding:
+#   cabinet_default_plugins: [REPLACE_ME_plugin]  # plugins every lane-CEO needs beyond its repo
+#   lane_mcps: [REPLACE_ME_mcp]                   # base MCP scope for a generated lane-CEO

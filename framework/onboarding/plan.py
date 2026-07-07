@@ -2,47 +2,107 @@
 
 Pure function. Produces: the answers lane-entry (fed to generate-instance), the
 plugin manifest (present vs needed), the GATED actions (propose-only — plugin
-installs, and for a NEW product the GH-repo / Monday-product creation), and the
+installs, and for a NEW product the GH-repo / tracker-product creation), and the
 germline diffs (mcp-scope + officer-capabilities) for the Captain to apply.
 Nothing here executes anything.
+
+The cabinet-default plugin list and the base lane-MCP scope are PRESET CONFIG
+(presets/<active>/preset.yml → ``onboarding:``), not framework hardcodes —
+``load_preset_defaults`` (the one impure helper here, used by the orchestrator)
+reads them fail-closed to empty. Task-tracker references are OPAQUE to the
+framework: semantics belong to the lane's task-tracking extension.
 """
 from __future__ import annotations
 
+import os
+import re
+from pathlib import Path
+
 _DEFAULT_MODEL = "claude-fable-5"
-# Plugins a product lane-CEO generally needs beyond what its repo already ships.
-_CABINET_DEFAULTS = ["corridor", "brain"]
+# Preset slugs are plain names, never path segments with traversal.
+_PRESET_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def load_preset_defaults(root=None) -> dict:
+    """Onboarding defaults from the ACTIVE preset's config (fail-closed).
+
+    Reads ``instance/config/active-preset`` (missing → ``work``, mirroring
+    load-preset.sh) then ``presets/<active>/preset.yml`` → ``onboarding:``:
+    ``cabinet_default_plugins`` (plugins every lane-CEO needs beyond its repo)
+    and ``lane_mcps`` (base MCP scope for a generated lane-CEO). Any absence
+    or parse failure yields EMPTY lists — a preset that declares nothing
+    onboards lanes with no cabinet defaults; the framework hardcodes no
+    plugin or MCP names.
+    """
+    empty = {"cabinet_default_plugins": [], "lane_mcps": []}
+    try:
+        base = Path(root or os.environ.get("CABINET_ROOT")
+                    or Path(__file__).resolve().parents[2])
+        active = "work"
+        ap = base / "instance" / "config" / "active-preset"
+        if ap.is_file():
+            declared = ap.read_text(encoding="utf-8").strip()
+            if declared:
+                active = declared
+        if not _PRESET_RE.match(active):
+            return empty
+        cfg = base / "presets" / active / "preset.yml"
+        if not cfg.is_file():
+            return empty
+        import yaml  # local: keep module import-light for the pure planner
+        data = yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}
+        ob = data.get("onboarding") if isinstance(data, dict) else None
+        if not isinstance(ob, dict):
+            return empty
+        out = {}
+        for key in ("cabinet_default_plugins", "lane_mcps"):
+            val = ob.get(key)
+            out[key] = [str(v) for v in val] if isinstance(val, list) else []
+        return out
+    except Exception:
+        return empty
 
 
 def _task_plugin(profile: dict) -> str:
     return "dev-tasks" if "dev-tasks" in (profile.get("plugins") or []) else ""
 
 
-def _lane_mcps(profile: dict) -> list:
+def _lane_mcps(profile: dict, base: list) -> list:
+    """Stack-derived MCPs (from research) + the preset's base lane-MCP scope."""
     stack = profile.get("stack") or []
     mcps = []
     if "neon" in stack:
         mcps.append("neon")
     if "vercel" in stack or "nextjs" in stack:
         mcps.append("vercel")
-    mcps += ["library", "telegram", "brain"]
+    mcps += [m for m in base if m not in mcps]
     return mcps
 
 
-def build_lane_plan(profile: dict, *, slug: str, board_id=None,
-                    model: str = _DEFAULT_MODEL, existing: bool = True) -> dict:
+def build_lane_plan(profile: dict, *, slug: str, tracker_ref=None,
+                    model: str = _DEFAULT_MODEL, existing: bool = True,
+                    defaults=None) -> dict:
+    """Pure planner. ``tracker_ref`` is an OPAQUE task-tracker reference
+    (board/product id — semantics owned by the lane's task-tracking
+    extension). ``defaults`` carries the preset onboarding defaults (see
+    ``load_preset_defaults``); None means no defaults were declared."""
+    d = defaults or {}
+    cabinet_plugins = d.get("cabinet_default_plugins") or []
+    base_mcps = d.get("lane_mcps") or []
+
     name = profile.get("name") or slug
     repo_url = profile.get("repo_url")
     answers_lane = {
         "slug": slug,
         "name": name,
         "repos": [repo_url] if repo_url else [],
-        "boards": [str(board_id)] if board_id else [],
+        "boards": [str(tracker_ref)] if tracker_ref else [],
         "plugin": _task_plugin(profile),
     }
 
     have = set(profile.get("plugins") or [])
     manifest = [{"name": p, "present": True, "source": "repo"} for p in sorted(have)]
-    for p in _CABINET_DEFAULTS:
+    for p in cabinet_plugins:
         if p not in have:
             manifest.append({"name": p, "present": False, "source": "cabinet-default"})
 
@@ -54,11 +114,12 @@ def build_lane_plan(profile: dict, *, slug: str, board_id=None,
     if not existing:
         gated.append({"action": "create-repo", "name": slug,
                       "reason": "new product — GH repo does not exist yet", "executed": False})
-        gated.append({"action": "create-monday-product", "name": name,
-                      "reason": "new product — Monday product board does not exist yet",
+        gated.append({"action": "create-tracker-product", "name": name,
+                      "reason": "new product — no task-tracker board/product exists yet "
+                                "(created via the lane's task-tracking extension)",
                       "executed": False})
 
-    mcps = _lane_mcps(profile)
+    mcps = _lane_mcps(profile, base_mcps)
     mcp_scope_diff = (
         f"# add to cabinet/mcp-scope.yml (GERMLINE — Captain applies):\n"
         f"    {slug}-ceo:\n"

@@ -59,3 +59,13 @@ workspace_mount: /workspace/lanes
 # Telegram; lane CEOs are Telegram-dark and route Captain-attention through
 # the Chair (captain-attention queue) and the warroom broadcast.
 telegram_bot_mode: single_ceo
+
+# Onboarding defaults — consumed by framework/onboarding
+# (plan.load_preset_defaults). The framework hardcodes no plugin/MCP names:
+# a preset without this block onboards lanes with EMPTY defaults (fail-closed).
+onboarding:
+  # Plugins every lane-CEO generally needs beyond what its repo already ships.
+  cabinet_default_plugins: [corridor, brain]
+  # Base MCP scope for a generated lane-CEO (stack-detected MCPs are added
+  # on top from the repo research profile, e.g. neon/vercel).
+  lane_mcps: [library, telegram, brain]
