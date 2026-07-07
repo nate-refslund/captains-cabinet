@@ -33,3 +33,32 @@ coaching_consent_log:
 
 coaching_experiments:
   default: 730          # completed experiments kept 2 years
+
+# ── hygiene (apoptosis organ) ────────────────────────────────────────────────
+# Consumed by framework/hygiene/apoptosis.py — this file's FIRST code consumer
+# (path injected via CABINET_RETENTION_CONFIG by cabinet/scripts/
+# apoptosis-sweep.sh; framework code never names this layer directly).
+# Entries name LOG / LEDGER-ARCHIVE files only — never vault, brain, DB, or
+# product data. Semantics per entry:
+#   dir:          directory holding the files. MUST realpath-resolve under the
+#                 cabinet's designated log roots (~/.cabinet/logs or
+#                 ~/Library/Logs/cabinet) or the sweep refuses it fail-closed.
+#   pattern:      glob of covered files (default "*.log").
+#   days:         files whose mtime is OLDER than this are rotated: gzip'd into
+#                 <dir>/archive/ FIRST; the original is removed only after the
+#                 archive verifies. Younger files are NEVER touched, so any
+#                 actively-written log is safe by construction.
+#   archive_days: OPTIONAL — compressed archives older than this are deleted
+#                 (the same hard-delete, gone-is-gone contract as the table
+#                 windows above). Absent = archives kept indefinitely.
+hygiene:
+  logs:
+    - dir: ~/.cabinet/logs
+      pattern: "*.log"
+      days: 45
+    - dir: ~/Library/Logs/cabinet
+      pattern: "*.log"
+      days: 45
+    - dir: ~/Library/Logs/cabinet
+      pattern: "*.err"
+      days: 45
