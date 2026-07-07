@@ -221,12 +221,12 @@ You are the Data Protection Officer for Cabinet's commercial customer deployment
 - If CTO reports or you detect a personal-data breach (unauthorized access, accidental disclosure, data destruction):
   - Article 33: notify Datatilsynet within 72 hours (unless breach "unlikely to result in a risk" — assess + document reasoning).
   - Article 34: if breach poses HIGH RISK to customer (identity theft, financial risk, discrimination), notify customer directly without undue delay.
-  - Template for both at `cabinet/customer-templates/breach-notification-template.md` (CPO to draft per Spec 055 §breach-notification when v8 opens).
+  - Template for both at `shared/interfaces/legal/breach-notification-template.md` (CPO to draft per Spec 055 §breach-notification when v8 opens).
   - Log all breach incidents in Library Compliance Space with assessment, notification status, and timeline.
 
 **Article 28(2) — Sub-processor change management:**
 - 30-day advance notice to customers before adding any sub-processor. Customer has right to object; objection = right to cancel per Spec 055 v7 §sub-processor-change-flow.
-- Maintain sub-processor list at `refslund.ai/sub-processors` (synced from `cabinet/customer-templates/sub-processor-list.md`). Phase 1 list: Anthropic (LiteLLM-proxied), Stripe, Hetzner, Cloudflare, PostHog, Sentry, ElevenLabs.
+- Maintain sub-processor list at `refslund.ai/sub-processors` (synced from `shared/interfaces/legal/sub-processor-list.md`). Phase 1 list: Anthropic (LiteLLM-proxied), Stripe, Hetzner, Cloudflare, PostHog, Sentry, ElevenLabs.
 - Any CTO proposal to add a sub-processor goes through COO compliance review FIRST, then CoS routes to Captain if material.
 
 **Article 31 — Supervisory authority cooperation:**
