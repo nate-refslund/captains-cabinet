@@ -38,7 +38,13 @@ branch commit (one-revert rollback below).
   `cabinet/scripts/lib` sys.path-insert for the package import — ONE module
   object, no dual-identity import seam. `cabinet/scripts/policy-shadow.py`
   and `setup-mac.sh` (cabinet layer) import downward into framework —
-  that direction is allowed.
+  that direction is allowed. The work-preset measurement SEED consumers
+  (`presets/work/measurement/scenarios/policy_enforcement.py`,
+  `presets/work/measurement/role_evals/cto_block_destructive.py` — installed
+  into `framework/measurement/` at deploy time, consumed by the weekly
+  role-evals cron) drop the same lib path-insert and import
+  `framework.authority.policy_engine` off their install-root bootstrap;
+  `presets/work/measurement/README.md` documents the new resolution.
 - **Lockstep set (all four lists + the single source, same commit):**
   - `framework/policies/immutable-core.yml` — files entry
     `cabinet/scripts/lib/policy_engine.py` → `framework/authority/policy_engine.py`.
@@ -91,7 +97,10 @@ hook/typed-engine coverage is byte-equivalent (path strings only).
 - `bash cabinet/scripts/run-hook-regression.sh` → green (probes at new path).
 - `bash cabinet/scripts/check-layer-separation.sh` → no new violations.
 - Import-direction crosscut: `grep -rn 'cabinet/scripts/lib.*policy_engine'
-  framework/` → 0 code references (docs/history only).
+  framework/ presets/` → 0 code references (docs/history only).
+- `python3.12 -m pytest presets/ -q` → green (seed install-shape suite:
+  `test_org_scenarios.py` exercises the seeds at a real install root — the
+  gate that catches any consumer left on the retired lib path).
 
 **One-revert rollback:** `git revert` of the CG-14 commit on
 `feat/germline-window-2` restores `cabinet/scripts/lib/policy_engine.py`,
