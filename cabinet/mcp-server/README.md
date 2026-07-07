@@ -26,7 +26,7 @@ Captain decision 2026-04-16 CD5: **stdio transport for Phase 1 prototype, HTTP-c
   echo '{"jsonrpc":"2.0","id":1,"method":"initialize"}'
   echo '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
   echo '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"identify"}}'
-) | python3 /opt/founders-cabinet/cabinet/mcp-server/server.py
+) | python3 "$CABINET_ROOT/cabinet/mcp-server/server.py"
 ```
 
 ## Registering with Claude Code
@@ -38,7 +38,7 @@ Add to `.mcp.json`:
   "mcpServers": {
     "cabinet": {
       "command": "python3",
-      "args": ["/opt/founders-cabinet/cabinet/mcp-server/server.py"]
+      "args": ["<your-checkout-root>/cabinet/mcp-server/server.py"]
     }
   }
 }
@@ -50,7 +50,7 @@ Not registered yet in Phase 1 — registration is a Phase 2 step when inter-Cabi
 
 - `CABINET_ID` — override default `main`
 - `CAPTAIN_ID` — override; falls back to `product.captain_name`
-- `CABINET_ROOT` — override framework root (default `/opt/founders-cabinet`)
+- `CABINET_ROOT` — override framework root (default: resolved file-relative to the checkout containing `server.py`; the old `/opt/founders-cabinet` Docker default is extinct)
 
 ## Caller expectations
 

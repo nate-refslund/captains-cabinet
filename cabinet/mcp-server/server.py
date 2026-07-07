@@ -59,7 +59,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-CABINET_ROOT = Path(os.environ.get("CABINET_ROOT", "/opt/founders-cabinet"))
+# Repo root: env override first, else file-relative (this file lives at
+# cabinet/mcp-server/server.py → parents[2] is the checkout root). The old
+# hardcoded /opt/founders-cabinet default was the extinct Docker/Hetzner
+# deployment root (native-Mac re-grounding, 2026-07-04). Empty env value
+# is treated as unset, never as a root.
+CABINET_ROOT = Path(os.environ.get("CABINET_ROOT") or Path(__file__).resolve().parents[2])
 MCP_SCOPE_PATH = CABINET_ROOT / "cabinet" / "mcp-scope.yml"
 PRODUCT_YML = CABINET_ROOT / "instance" / "config" / "product.yml"
 PLATFORM_YML = CABINET_ROOT / "instance" / "config" / "platform.yml"

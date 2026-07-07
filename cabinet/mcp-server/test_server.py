@@ -170,13 +170,18 @@ _http_server_proc = None
 
 def _start_http_server_inprocess() -> None:
     """Start the HTTP server in-process (same Python runtime) for testing.
-    This avoids subprocess.Popen which may be blocked by pre-tool-use hooks."""
+    This avoids subprocess.Popen which may be blocked by pre-tool-use hooks.
+    Idempotent — safe to call from every HTTP test (pytest collection order)
+    as well as from the __main__ harness."""
+    if _http_server_started.is_set():
+        return
     sys.path.insert(0, str(SERVER.parent))
     import server as srv
 
-    # Override module-level config for the test instance
+    # Override module-level config for the test instance. CABINET_ROOT needs
+    # no re-pin: server.py resolves env-else-file-relative at import (the old
+    # /opt/founders-cabinet Docker default is extinct).
     srv.HTTP_PORT = TEST_PORT
-    srv.CABINET_ROOT = Path(os.environ.get("CABINET_ROOT", "/opt/founders-cabinet"))
 
     # Patch PEERS_YML to a non-existent path so no peer secrets are loaded.
     # This tests the "open mode" (no secrets configured) code path.
@@ -207,7 +212,18 @@ def _start_http_server_inprocess() -> None:
     _http_server_started.set()
 
 
+def _ensure_http_server() -> None:
+    """Arm the in-process HTTP server on first use (idempotent). Lets the
+    test_http_* / test_cost_http_transport functions pass under bare pytest
+    collection (which does not run the __main__ harness) as well as under
+    `python3 test_server.py`."""
+    if not _http_server_started.is_set():
+        _start_http_server_inprocess()
+        _http_server_started.wait(timeout=6.0)
+
+
 def _http_post(path: str, body: dict, auth: str | None = "Bearer " + TEST_SECRET) -> tuple[int, dict]:
+    _ensure_http_server()
     data = json.dumps(body).encode()
     headers = {"Content-Type": "application/json", "Content-Length": str(len(data))}
     if auth:
@@ -228,6 +244,7 @@ def _http_post(path: str, body: dict, auth: str | None = "Bearer " + TEST_SECRET
 
 
 def _http_get(path: str) -> tuple[int, dict]:
+    _ensure_http_server()
     req = urllib.request.Request(f"http://127.0.0.1:{TEST_PORT}{path}", method="GET")
     try:
         with urllib.request.urlopen(req, timeout=5) as resp:
@@ -779,8 +796,7 @@ def run_stdio_tests() -> None:
 
 def run_http_tests() -> None:
     print("\n-- HTTP transport tests (starting server on port", TEST_PORT, ") --")
-    _start_http_server_inprocess()
-    _http_server_started.wait(timeout=6.0)
+    _ensure_http_server()
 
     test_http_identify()
     test_http_missing_bearer()
