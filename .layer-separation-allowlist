@@ -1,0 +1,62 @@
+# Layer-separation BY-DESIGN allowlist (companion to .layer-separation-baseline)
+#
+# Each line is `<path>:<rule_id>` — a cross-layer reference that is
+# INTENTIONAL and permanent: framework code reading Captain-owned,
+# deployment-local runtime CONFIG that is instance-resident BY DESIGN
+# (flippable/editable without a framework change). These are config-file
+# READS, never code deps — an `import instance` can never be allowlisted.
+#
+# Split out of the shrink-only debt baseline per egg plan R034 (2026-07-07):
+# the baseline is the machine-regenerated DEBT ledger (couplings scheduled
+# for cleanup); THIS file is the hand-curated by-design class and is never
+# machine-rewritten — `check-layer-separation.sh --update-baseline`
+# regenerates only the baseline (current violations MINUS this file).
+# Growing THIS file requires Captain approval, exactly like growing the
+# baseline — an entry here is a standing architecture ruling, not a bypass.
+#
+# HARD LIMIT — class discipline:
+#   * Only FRAMEWORK_PATH_INSTANCE entries may appear here (config reads).
+#   * The screenpipe rule classes (FRAMEWORK_IMPORTS_SCREENPIPE /
+#     FRAMEWORK_PATH_SCREENPIPE) may NEVER be allowlisted — their target is
+#     EMPTY (golden eval-021: framework core reaches the captain's estate
+#     only through framework.sources.get_source()).
+#   * Import-class (FRAMEWORK_IMPORTS_INSTANCE / _PRESETS,
+#     PRESETS_IMPORTS_INSTANCE) entries may never be allowlisted either.
+#
+# Ratified provenance:
+#   2026-07-04 — act-first lane (+3, Captain-ratified; adversarial review
+#   2026-07-04 corrected the per-file hits — only one file reads the flag):
+#     run_action_lane.py — instance/config/directions.yml AND the act-first
+#                          kill-flag instance/config/act-first-enabled
+#     action_exec.py     — instance/config/act-first-surfaces.yml (the
+#                          Captain's act-first surface allow/deny config —
+#                          itself a germline-lock.sh target)
+#     actfirst_canary.py — instance/config/act-first-surfaces.yml
+#   2026-07-05 — sovereign-posture merge (+14, RECONCILE 2026-07-05,
+#   ratified alongside
+#   docs/proposals/germline-amendment-sovereign-posture-2026-07-05.md):
+#     posture.py        — instance/config/posture.yml (Captain-locked posture
+#                         ruling; absent/corrupt ⇒ guardian)
+#     grants.py         — instance/config/grants/ (Captain-signed,
+#                         schg-locked standing grants)
+#     needs.py          — the needs wire flag + ledger location under the
+#                         deployment root
+#     standing_pull.py  — instance/config/outcomes.yml standing-mission pull
+#     (+ their test files, which pin those exact paths)
+framework/acting/run_action_lane.py:FRAMEWORK_PATH_INSTANCE
+framework/acting/tests/test_sov4_posture_routing.py:FRAMEWORK_PATH_INSTANCE
+framework/authority/grants.py:FRAMEWORK_PATH_INSTANCE
+framework/authority/needs.py:FRAMEWORK_PATH_INSTANCE
+framework/authority/posture.py:FRAMEWORK_PATH_INSTANCE
+framework/authority/tests/test_golden_evals_sovereign.py:FRAMEWORK_PATH_INSTANCE
+framework/authority/tests/test_grants.py:FRAMEWORK_PATH_INSTANCE
+framework/authority/tests/test_needs.py:FRAMEWORK_PATH_INSTANCE
+framework/authority/tests/test_posture.py:FRAMEWORK_PATH_INSTANCE
+framework/frontdoor/actfirst_canary.py:FRAMEWORK_PATH_INSTANCE
+framework/frontdoor/action_exec.py:FRAMEWORK_PATH_INSTANCE
+framework/frontdoor/tests/test_sov6_binder_grant.py:FRAMEWORK_PATH_INSTANCE
+framework/learning/tests/test_gate_apply_dark.py:FRAMEWORK_PATH_INSTANCE
+framework/learning/tests/test_sov8_loop_and_gates.py:FRAMEWORK_PATH_INSTANCE
+framework/missions/standing_pull.py:FRAMEWORK_PATH_INSTANCE
+framework/missions/tests/test_standing_pull.py:FRAMEWORK_PATH_INSTANCE
+framework/missions/tests/test_supervisor_standing.py:FRAMEWORK_PATH_INSTANCE
