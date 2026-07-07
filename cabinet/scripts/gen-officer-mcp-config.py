@@ -12,14 +12,18 @@ and emits
   1. a per-officer MCP config: the input (merged) config filtered down to the
      officer's granted server set — passed to `claude --mcp-config <file>
      --strict-mcp-config` so nothing outside the grant set even starts;
-  2. a per-officer settings overlay mirroring the grants into
-     `allowedMcpServers` (+ `enableAllProjectMcpServers: false`) — passed via
-     `claude --settings <file>` so the session cannot union the project
-     .mcp.json (or any drifted config source) back in.
+  2. a per-officer settings overlay (`enableAllProjectMcpServers: false`) —
+     passed via `claude --settings <file>` so the session cannot auto-approve
+     the project .mcp.json back in. The overlay deliberately carries NO
+     `allowedMcpServers` mirror: that is a managed-settings-only policy key
+     (never honored from --settings), yet CC 2.1.202 schema-validates overlay
+     content and the mirror BLOCKED officer boot with an interactive
+     "Invalid entry" dialog (2026-07-07 rolling restart). Never re-add
+     managed policy keys here; --strict-mcp-config is the structural gate.
 
 FAIL CLOSED, never open: a missing/corrupt/unparseable scope file, or an
 officer with no `agents:`/`scaffolds:` entry, yields an EMPTY server set
-(empty mcpServers + empty allowedMcpServers) with a loud [ERROR] on stderr —
+(empty mcpServers) with a loud [ERROR] on stderr —
 the exact inverse of the hook's warn-and-allow path this finding flagged.
 The pre-tool-use.sh §9 call-time check stays as defense-in-depth.
 
@@ -230,18 +234,17 @@ def main(argv=None) -> int:
     allowed = resolve_allowed(args.officer, args.scope, extra)
     mcp_cfg = filter_config(args.input, allowed)
 
-    # Settings overlay mirrors the GRANTS (not merely the servers present in
-    # today's input) so a server later added to a config layer without a
-    # scope grant stays capped by allowedMcpServers as well.
-    # Shape (2.1.202): each entry MUST be an object — {"serverName": ...}
-    # (string entries fail settings validation and BLOCK officer boot with an
-    # interactive "Invalid entry" dialog; found live on the 2026-07-07 rolling
-    # restart). Note the binary also documents allowedMcpServers as honored
-    # ONLY from managed settings — from this --settings overlay it is
-    # defense-in-depth documentation of the grant set; the enforced scoping
-    # is the filtered --mcp-config + --strict-mcp-config pair.
+    # The overlay deliberately does NOT mirror the grants into
+    # `allowedMcpServers`: that key is a managed-settings-only policy
+    # (Array<{serverName}> per current docs), never honored from a
+    # --settings overlay — yet 2.1.202 schema-validates overlay content,
+    # and the mirror's string entries BLOCKED officer boot with an
+    # interactive "Invalid entry" dialog on the 2026-07-07 rolling restart
+    # (an object-shape mirror merely dodges today's validator while still
+    # enforcing nothing). The enforced scoping is the filtered
+    # --mcp-config + --strict-mcp-config pair; the overlay only pins
+    # project-server auto-approval off. Never re-add managed policy keys.
     settings = {
-        "allowedMcpServers": [{"serverName": s} for s in sorted(allowed)],
         "enableAllProjectMcpServers": False,
     }
 

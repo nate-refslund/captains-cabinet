@@ -173,9 +173,12 @@ fi
 # officer's grant set from cabinet/mcp-scope.yml (READ-ONLY germline parse —
 # gen-officer-mcp-config.py mirrors the pre-tool-use.sh §9 parser) so
 # unscoped servers never even BOOT: the launch line passes the filtered
-# config with --strict-mcp-config, plus a --settings overlay mirroring the
-# grants into allowedMcpServers and disabling enableAllProjectMcpServers so
-# the session cannot union the project .mcp.json back in. The §9 call-time
+# config with --strict-mcp-config, plus a --settings overlay disabling
+# enableAllProjectMcpServers so the session cannot auto-approve the project
+# .mcp.json back in. (The overlay carries NO allowedMcpServers mirror:
+# managed-settings-only key, unenforced from --settings, and CC 2.1.202's
+# overlay schema validation of it BLOCKED officer boot — 2026-07-07
+# rolling restart.) The §9 call-time
 # hook stays as defense-in-depth. FAIL CLOSED: if the scope parse fails
 # (missing file, unknown officer, corrupt yaml) or the generator itself
 # cannot run, the officer boots with an EMPTY MCP server set + loud stderr —
@@ -214,7 +217,7 @@ if ! python3 "$REPO_ROOT/cabinet/scripts/gen-officer-mcp-config.py" \
   echo "[ERROR] start-officer-mac.sh: gen-officer-mcp-config.py failed — FAIL CLOSED: booting $OFFICER with an EMPTY MCP server set" >&2
   ( umask 077
     printf '{"mcpServers":{}}\n' > "$OFFICER_MCP_PATH"
-    printf '{"allowedMcpServers":[],"enableAllProjectMcpServers":false}\n' > "$OFFICER_SETTINGS_PATH"
+    printf '{"enableAllProjectMcpServers":false}\n' > "$OFFICER_SETTINGS_PATH"
   )
 fi
 MCP_FLAG="--mcp-config $OFFICER_MCP_PATH --strict-mcp-config"

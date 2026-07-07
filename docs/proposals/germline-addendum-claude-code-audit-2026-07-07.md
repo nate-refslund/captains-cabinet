@@ -17,8 +17,11 @@ self-contained.
 The structural half shipped 2026-07-07 (this branch): officers now launch
 with a per-officer `--mcp-config` generated FROM `cabinet/mcp-scope.yml` by
 `cabinet/scripts/gen-officer-mcp-config.py`, plus `--strict-mcp-config` and
-a `--settings` overlay (`allowedMcpServers` mirror,
-`enableAllProjectMcpServers: false`). Scope-parse failure boots the officer
+a `--settings` overlay (`enableAllProjectMcpServers: false` only — the
+original `allowedMcpServers` mirror was REMOVED later the same day:
+managed-settings-only key, unenforced from `--settings`, and CC 2.1.202's
+schema validation of it blocked officer boot on the rolling restart).
+Scope-parse failure boots the officer
 with an EMPTY server set (fail closed). Two follow-ups need germline edits:
 
 ### 4a. `cabinet/mcp-scope.yml` — add the trigger-delivery plane to `universal:`

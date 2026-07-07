@@ -3,7 +3,9 @@ structural MCP scoping — non-germline half).
 
 Contract under test:
   * scope fixture → per-officer config filtered to (agent mcps ∪ universal ∪
-    extra-allow), settings overlay mirroring the grants;
+    extra-allow); settings overlay pins `enableAllProjectMcpServers: false`
+    and NOTHING else (no `allowedMcpServers` — managed-settings-only key
+    whose overlay validation blocked officer boot on CC 2.1.202);
   * FAIL CLOSED on every degraded input: corrupt/missing scope, unknown
     officer, unparseable merged config → EMPTY server set, never fail open;
   * extra-allow is IGNORED when the scope parse fails (infra pass-through
@@ -126,23 +128,27 @@ def test_scope_fixture_filters_to_grants(paths):
     assert mcp["otherTopLevel"] == {"kept": True}
 
 
-def test_settings_overlay_mirrors_grants_not_just_booted(paths):
+def test_settings_overlay_carries_no_managed_policy_keys(paths):
+    """Regression (2026-07-07 fleet boot-block): `allowedMcpServers` is a
+    managed-settings-only policy key — never honored from a --settings
+    overlay — but CC 2.1.202 schema-validates overlay content, and a grant
+    mirror under that key BLOCKED officer boot with an interactive
+    "Invalid entry" dialog on the rolling restart. The overlay must stay
+    exactly the project-auto-approval pin; scoping is enforced by the
+    filtered --mcp-config + --strict-mcp-config pair."""
     rc, _, settings = run_main(paths, "alpha")
     assert rc == 0
-    # grants (incl. universal servers absent from the merged config, like
-    # telegram/cabinet) — caps future config drift, not just today's servers
-    assert settings["allowedMcpServers"] == sorted(
-        ["neon", "vercel", "brain", "telegram", "library", "cabinet"]
-    )
-    assert settings["enableAllProjectMcpServers"] is False
+    assert "allowedMcpServers" not in settings
+    assert settings == {"enableAllProjectMcpServers": False}
 
 
 def test_universal_merge_applies_to_every_agent(paths):
-    rc, mcp, settings = run_main(paths, "beta")
+    rc, mcp, _ = run_main(paths, "beta")
     assert rc == 0
+    # beta's own list is [notion]; "library" boots only via the universal
+    # merge (telegram/cabinet are universal too but absent from the merged
+    # config, so they cannot boot)
     assert sorted(mcp["mcpServers"]) == ["library", "notion"]
-    assert "telegram" in settings["allowedMcpServers"]
-    assert "cabinet" in settings["allowedMcpServers"]
 
 
 def test_scaffold_agents_parse_like_the_hook(paths):
@@ -153,13 +159,11 @@ def test_scaffold_agents_parse_like_the_hook(paths):
 
 
 def test_extra_allow_infra_passthrough(paths):
-    rc, mcp, settings = run_main(paths, "alpha", extra_allow="redis-trigger-channel,cua")
+    rc, mcp, _ = run_main(paths, "alpha", extra_allow="redis-trigger-channel,cua")
     assert rc == 0
     assert "redis-trigger-channel" in mcp["mcpServers"]
-    # cua granted but not defined in the merged config → allowed, not booted
+    # cua granted but not defined in the merged config → never fabricated
     assert "cua" not in mcp["mcpServers"]
-    assert "cua" in settings["allowedMcpServers"]
-    assert "redis-trigger-channel" in settings["allowedMcpServers"]
 
 
 def test_pseudo_underscore_keys_always_stripped(paths):
@@ -182,7 +186,7 @@ def test_membership_is_case_insensitive_like_the_hook(paths, tmp_path):
 
 def _assert_fail_closed(mcp, settings):
     assert mcp["mcpServers"] == {}
-    assert settings["allowedMcpServers"] == []
+    assert "allowedMcpServers" not in settings
     assert settings["enableAllProjectMcpServers"] is False
 
 
@@ -223,8 +227,8 @@ def test_unparseable_merged_config_fails_closed(paths, capsys):
     rc, mcp, settings = run_main(paths, "alpha")
     assert rc == 0
     assert mcp == {"mcpServers": {}}
-    # grants still mirrored (scope parsed fine); only the boot set is empty
-    assert "neon" in settings["allowedMcpServers"]
+    # overlay is grant-independent — no managed policy keys in any path
+    assert "allowedMcpServers" not in settings
     assert "[ERROR]" in capsys.readouterr().err
 
 
