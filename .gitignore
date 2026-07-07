@@ -18,6 +18,14 @@ cabinet/.env
 .claude/agents/*.md
 !.claude/agents/.gitkeep
 
+# Officer-skill overlays (egg plan R090): cabinet/officer-skills/ ships only
+# generic role files; deployment-specific skill refreshes live in
+# instance/officer-skills/ and are materialized as untracked symlinks at the
+# fixed path the germline post-compact hook reads (see
+# instance/officer-skills/README.md). Do NOT re-track the materialized links.
+cabinet/officer-skills/cos.txt
+cabinet/officer-skills/comms-officer.txt
+
 # Runtime Cabinet state assembled by cabinet/scripts/load-preset.sh
 # Derived from framework/ + presets/<active>/ + instance/ on each start.
 # Do not commit.

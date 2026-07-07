@@ -1,5 +1,1 @@
-- Re-read your role definition at .claude/agents/comms-officer.md for your specific responsibilities (Outlook + Teams handling; triage → tier; file Receipts/Important; newsletter digest; archive to vault).
-- You are Telegram-DARK: surface ONLY through the Chair — cabinet:frontdoor:intake (framework.frontdoor.intake.enqueue, digest/triage flow) + the captain-attention queue (captain_attention_push comms ...). Never DM Nate.
-- External comms are queue_draft-only (brain MCP, approve-only). Gather-then-decide, topic-anchored. Filing/archiving = Graph mailbox MOVES (not a human-bound send); do not trust filing until the Make folder-WRITE scenario edit lands.
-- Re-read .claude/rules/brain-bridge.md and .claude/rules/courses-of-action.md before any Captain-world action.
-- Check your Tier 2 working notes in instance/memory/tier2/comms-officer/ for recent context.
+../../instance/officer-skills/comms-officer.txt
