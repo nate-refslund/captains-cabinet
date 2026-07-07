@@ -349,6 +349,7 @@ if [ -d "$PRESET_DIR/agents" ]; then
     else
       copied=0
       skipped=0
+      drifted=0
       for src in "$PRESET_DIR/agents"/*.md; do
         [ -f "$src" ] || continue
         basename=$(basename "$src")
@@ -356,13 +357,40 @@ if [ -d "$PRESET_DIR/agents" ]; then
         slug="${basename%.md}"
         # Copy iff the slug is in the hired list from mcp-scope.yml.
         if echo "$HIRED" | grep -qx "$slug"; then
-          cp "$src" "$AGENTS_DIR/$basename"
+          # Clobber guard (audit finding #5, 2026-07-07): .claude/agents/ is
+          # derived + gitignored, so a hand-edited target would be silently
+          # and invisibly destroyed by this cp. Refuse the overwrite when ALL
+          # of: (a) no instance overlay exists for this slug (an overlay wins
+          # below anyway, so preset clobber is harmless), (b) the target
+          # differs from the preset source, and (c) the target's sha256
+          # differs from the last-generated marker (.<slug>.md.gen.sha —
+          # written after every loader copy; if the marker is missing we
+          # cannot prove the drift is loader-made, so we protect it).
+          # The drifted content is preserved at <slug>.md.clobbered-backup
+          # (non-.md suffix so Claude Code never registers it as an agent).
+          # Resolution: move the hand edits into instance/agents/<slug>.md
+          # (the overlay slot) or delete the drifted target, then re-run.
+          target="$AGENTS_DIR/$basename"
+          overlay="$CABINET_ROOT/instance/agents/$basename"
+          marker="$AGENTS_DIR/.$basename.gen.sha"
+          if [ -f "$target" ] && [ ! -f "$overlay" ] && ! cmp -s "$src" "$target"; then
+            target_sha=$(shasum -a 256 "$target" | awk '{print $1}')
+            marker_sha=$(cat "$marker" 2>/dev/null || true)
+            if [ "$target_sha" != "$marker_sha" ]; then
+              cp "$target" "$target.clobbered-backup"
+              log "WARN: REFUSING to overwrite $target — it differs from both the preset source and the last loader-generated copy, and no instance overlay exists (instance/agents/$basename). Hand edits preserved in place + backed up to $basename.clobbered-backup. Move the edits into instance/agents/$basename (the overlay slot) or delete the drifted file, then re-run load-preset."
+              drifted=$((drifted + 1))
+              continue
+            fi
+          fi
+          cp "$src" "$target"
+          shasum -a 256 "$target" | awk '{print $1}' > "$marker"
           copied=$((copied + 1))
         else
           skipped=$((skipped + 1))
         fi
       done
-      log "Populated agents from preset: $copied hired (per mcp-scope.yml), $skipped staged"
+      log "Populated agents from preset: $copied hired (per mcp-scope.yml), $skipped staged, $drifted drift-protected (NOT overwritten)"
 
       # Partition hired slugs by whether a role definition exists in the
       # ACTIVE preset ∪ instance overlay. mcp-scope.yml is shared across
@@ -412,12 +440,15 @@ if [ -d "$PRESET_DIR/agents" ]; then
   fi
 fi
 
-# 2. Instance overrides (take precedence)
+# 2. Instance overrides (take precedence). Also refresh the generated-copy
+# marker so the clobber guard above compares future targets against what the
+# loader ACTUALLY last wrote (the overlay), not the preset baseline.
 if [ -d "$CABINET_ROOT/instance/agents" ]; then
   for src in "$CABINET_ROOT/instance/agents"/*.md; do
     [ -f "$src" ] || continue
     basename=$(basename "$src")
     cp "$src" "$AGENTS_DIR/$basename"
+    shasum -a 256 "$AGENTS_DIR/$basename" | awk '{print $1}' > "$AGENTS_DIR/.$basename.gen.sha"
     log "Instance agent override: $basename"
   done
 fi

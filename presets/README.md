@@ -103,7 +103,9 @@ Preset source files (`presets/<slug>/...`) are NOT the runtime artifacts officer
 
 - `presets/<slug>/constitution-addendum.md` → concatenated into `/tmp/cabinet-runtime/constitution.md`
 - `presets/<slug>/safety-addendum.md` → concatenated into `/tmp/cabinet-runtime/safety-boundaries.md`
-- `presets/<slug>/agents/*.md` → copied into `.claude/agents/*.md`
+- `presets/<slug>/agents/*.md` → copied into `.claude/agents/*.md` (then `instance/agents/*.md` overlays win)
+
+**Clobber guard (2026-07-07, audit finding #5):** `.claude/agents/*.md` is derived and gitignored — never hand-edit it. Deployment-specific agent content belongs in `instance/agents/<slug>.md` (the overlay slot; it coexists with an `instance/agents/<slug>/` directory). If the loader finds a `.claude/agents/<slug>.md` that differs from BOTH the preset source and its last-generated marker (`.claude/agents/.<slug>.md.gen.sha`) and no instance overlay exists, it REFUSES the overwrite: the drifted file stays in place, a copy lands at `.claude/agents/<slug>.md.clobbered-backup`, and a WARN names the resolution (move the edits into `instance/agents/<slug>.md`, or delete the drifted file, then re-run).
 
 When you edit any preset source file mid-session, the runtime copies stay stale until either `load-preset.sh` runs again or officers restart. To propagate edits immediately:
 

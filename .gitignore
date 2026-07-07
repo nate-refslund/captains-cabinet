@@ -17,6 +17,11 @@ cabinet/.env
 # the derived copies.
 .claude/agents/*.md
 !.claude/agents/.gitkeep
+# Loader-generated markers + drift backups for the load-preset clobber guard
+# (audit finding #5, 2026-07-07): .<slug>.md.gen.sha records what the loader
+# last wrote; <slug>.md.clobbered-backup preserves refused hand-edited copies.
+.claude/agents/.*.gen.sha
+.claude/agents/*.clobbered-backup
 
 # Officer-skill overlays (egg plan R090): cabinet/officer-skills/ ships only
 # generic role files; deployment-specific skill refreshes live in
