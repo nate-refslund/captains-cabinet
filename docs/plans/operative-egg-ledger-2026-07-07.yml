@@ -1887,6 +1887,7 @@ entries:
     wave: "GENESIS"
     status: "todo"
     gate_cmd: "per-row spec in captain-decisions officer-notes 2026-07-07"
+    note: "2026-07-07 keyless fail-soft VERIFIED + minimally hardened (mini-hatch closure): with VOYAGE_API_KEY unset the org search path never raised anywhere (memory.sh bailed 'Embedding failed' → search-memory.sh 'No results found.' → OrgSource hits=[]) but degraded to EMPTY, not keyword-only. Applied the minimal degrade: memory_search now falls back to memory_search_lexical (BM25-style ts_rank lexical-only arm, same 8-col TSV + superseded/type/officer/tenant/as-of fences, stderr WARN, min_score stays vec-only) — live-verified keyless via search-memory.sh AND OrgSource against real rows (lexical hits returned, rc=0, no raise). Tests: cabinet/scripts/lib/tests/test_memory_search_sh.py keyless contract + functional stub-psql run. The full provider seam (init asks for key, provider/dims index stamp, auto re-embed on switch, doctor probe) remains this row's todo."
     rollback: "git revert"
     last_update: "2026-07-07"
   - id: "CHAIR-REPLY-WIRE"

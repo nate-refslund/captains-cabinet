@@ -212,6 +212,8 @@ memory_queue_embed() {
 #   Degraded (empty tsquery — e.g. stopword-only query): the lex channel
 #   drops out and the remaining weights renormalize:
 #   final   = 0.80*vec + 0.20*recency
+#   Keyless/outage (no embedding at all): falls back to memory_search_lexical
+#   (bottom of this file) — lexical-only + recency, never a blank result set.
 # The similarity floor (min_score) applies to vec, not final — a lexically
 # strong but semantically unrelated row must not sneak in.
 #
@@ -235,7 +237,17 @@ memory_search() {
 
   local query_embedding
   query_embedding=$(memory_get_embedding "$query")
-  [ -z "$query_embedding" ] || [ "$query_embedding" = "null" ] && { echo "Embedding failed"; return 1; }
+  if [ -z "$query_embedding" ] || [ "$query_embedding" = "null" ]; then
+    # Keyless / provider-outage fail-soft (EMBED-SEAM forward-guard,
+    # 2026-07-07): an unset VOYAGE_API_KEY (or a Voyage outage) must DEGRADE
+    # search, never blank it — a keyless Mini hatch still needs org recall.
+    # Fall back to the lexical-only arm below (BM25-style ts_rank, same
+    # filters/fences/8-col output shape). The old "Embedding failed" sentinel
+    # is no longer emitted here; downstream sentinel handling stays as belt.
+    echo "memory.sh WARN: embedding unavailable (no VOYAGE_API_KEY or provider outage) — DEGRADED to lexical-only search" >&2
+    memory_search_lexical "$query" "$source_type_filter" "$officer_filter" "$limit" "$as_of"
+    return $?
+  fi
 
   # Tenant scope (cabinet_id). TRANSITION RULE (2026-07-07): all pre-scoping
   # rows carry the column default 'main' (verified live: 624/624 rows =
@@ -314,6 +326,86 @@ SELECT
   COALESCE(source_id, id::text) as ref
 FROM final
 WHERE vec_sim >= (:'min_score')::float8
+ORDER BY final_score DESC
+LIMIT (:'limit')::int;
+SQLEOF
+}
+
+# =============================================================
+# DEGRADED SEARCH: lexical-only arm (no embedding available)
+# Called by memory_search when memory_get_embedding yields nothing (unset
+# VOYAGE_API_KEY, or a Voyage outage). Same filters + fences + 8-column TSV
+# contract as memory_search; ranking is BM25-style lexical blended with
+# recency:
+#   lex     = r / (r + 0.05) where r = ts_rank(content_tsv, plainto_tsquery)
+#   final   = 0.80*lex + 0.20*recency   (mirrors the hybrid query's
+#             empty-tsquery renormalization — there is no vec channel here)
+# min_score is NOT applied: it is a vec-similarity floor by definition (see
+# the memory_search header) and no vec channel exists in this arm — the
+# @@ tsquery match is the relevance gate (stopword-only queries yield an
+# empty tsquery and honestly return 0 rows). The similarity column carries
+# lex so the 8-col parsers (search-memory.sh, framework/sources/org.py)
+# stay shape-compatible.
+# =============================================================
+memory_search_lexical() {
+  local query="$1"
+  local source_type_filter="${2:-}"
+  local officer_filter="${3:-}"
+  local limit="${4:-10}"
+  local as_of="${5:-}"
+
+  local cid_scope
+  cid_scope="$(memory_cabinet_scope)"
+
+  psql "$NEON_CONNECTION_STRING" -q -t -A -F $'\t' \
+    -v query="$query" \
+    -v limit="$limit" \
+    -v st_filter="${source_type_filter:-}" \
+    -v of_filter="${officer_filter:-}" \
+    -v as_of="${as_of:-}" \
+    -v cid="$cid_scope" \
+    2>/dev/null <<'SQLEOF'
+WITH params AS (
+  SELECT plainto_tsquery('english', :'query') AS tsq
+),
+candidates AS (
+  SELECT m.*, ts_rank(m.content_tsv, p.tsq) AS lex_rank
+  FROM cabinet_memory m CROSS JOIN params p
+  WHERE m.superseded_by IS NULL
+    AND numnode(p.tsq) > 0
+    AND m.content_tsv @@ p.tsq
+    AND (:'st_filter' = '' OR m.source_type = ANY(string_to_array(:'st_filter', ',')))
+    AND (:'of_filter' = '' OR m.officer = :'of_filter')
+    -- Tenant fence: identical to memory_search (resolved id OR legacy 'main').
+    AND (:'cid' = '' OR m.cabinet_id = :'cid' OR m.cabinet_id = 'main')
+    -- Fail-closed content-time fence: under --as-of, NULL-timestamp rows are excluded.
+    AND (:'as_of' = '' OR (m.source_created_at IS NOT NULL
+                           AND m.source_created_at <= NULLIF(:'as_of', '')::timestamptz))
+  ORDER BY ts_rank(m.content_tsv, p.tsq) DESC
+  LIMIT GREATEST((:'limit')::int * 5, 50)
+),
+scored AS (
+  SELECT c.*,
+    CASE WHEN c.source_created_at IS NULL THEN 0.5
+         ELSE exp(-ln(2.0) * GREATEST(extract(epoch FROM (now() - c.source_created_at)), 0) / (90.0 * 86400.0))
+    END AS recency,
+    c.lex_rank / (c.lex_rank + 0.05) AS lex
+  FROM candidates c
+),
+final AS (
+  SELECT s.*, 0.80 * s.lex + 0.20 * s.recency AS final_score
+  FROM scored s
+)
+SELECT
+  source_type,
+  COALESCE(officer, sender, 'n/a') as who,
+  to_char(source_created_at, 'YYYY-MM-DD HH24:MI') as when_at,
+  round(lex::numeric, 3) as similarity,
+  round(final_score::numeric, 3) as score,
+  COALESCE(NULLIF(regexp_replace(LEFT(metadata->>'trust', 32), E'[\t\n\r ]+', '', 'g'), ''), 'derived') as trust,
+  regexp_replace(LEFT(COALESCE(summary, content), 200), E'[\t\n\r]+', ' ', 'g') as preview,
+  COALESCE(source_id, id::text) as ref
+FROM final
 ORDER BY final_score DESC
 LIMIT (:'limit')::int;
 SQLEOF

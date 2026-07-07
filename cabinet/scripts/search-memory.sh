@@ -42,9 +42,11 @@ source "$CABINET_ROOT/cabinet/scripts/lib/memory.sh"
 
 RESULTS=$(memory_search "$QUERY" "$TYPE" "$OFFICER" "$LIMIT" "$MIN_SCORE" "$AS_OF")
 
-# memory_search echoes "Embedding failed" on Voyage/Neon outage. Treat that
-# the same as no results — quiet output, exit 0. Callers (pre-captain-dm
-# semantic recall, retro scans) bail on the "No results found." string.
+# Belt: legacy sentinel. Since 2026-07-07 memory_search DEGRADES to a
+# lexical-only search when the embedding is unavailable (keyless box /
+# Voyage outage) instead of emitting "Embedding failed" — the case below is
+# kept for older lib versions only. Callers (pre-captain-dm semantic recall,
+# retro scans) still bail on the "No results found." string.
 case "$RESULTS" in
   "Embedding failed"*|"Embedding failed")
     echo "No results found."

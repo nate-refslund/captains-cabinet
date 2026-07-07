@@ -220,3 +220,74 @@ def test_pre_captain_dm_budget_and_telemetry():
     assert "INCR cabinet:memory:recall_drops" in text
     # Hook must stay best-effort — the INCR is || true guarded.
     assert ">/dev/null 2>&1 || true" in text
+
+
+def test_memory_search_keyless_degrade_contract():
+    """EMBED-SEAM forward-guard (2026-07-07): with no embedding available
+    (unset VOYAGE_API_KEY / Voyage outage) memory_search must DEGRADE to the
+    lexical-only arm — never blank the result set with the old sentinel bail.
+    The lexical arm keeps every fence of the hybrid arm (superseded, multi-
+    type, officer, tenant OR-'main', fail-closed as-of) and the 8-col shape."""
+    text = MEMORY_SH.read_text()
+    assert "memory_search_lexical()" in text
+    assert "DEGRADED to lexical-only search" in text
+    # Degraded blend has no vec channel; indexed tsquery match is the gate.
+    assert "0.80 * s.lex + 0.20 * s.recency" in text
+    assert "m.content_tsv @@ p.tsq" in text
+    assert "numnode(p.tsq) > 0" in text
+    # Every fence appears in BOTH arms (hybrid + lexical).
+    assert text.count("ANY(string_to_array(:'st_filter', ','))") == 2
+    assert text.count(
+        "AND (:'cid' = '' OR m.cabinet_id = :'cid' OR m.cabinet_id = 'main')"
+    ) == 2
+    assert text.count("AND (:'as_of' = '' OR (m.source_created_at IS NOT NULL") == 2
+    assert text.count("m.superseded_by IS NULL") == 2
+    # 8-col output parity (same SELECT tail in both arms).
+    assert text.count("COALESCE(source_id, id::text) as ref") == 2
+    # min_score stays a vec-only floor: exactly the hybrid arm applies it.
+    assert text.count("vec_sim >= (:'min_score')::float8") == 1
+
+
+def test_memory_search_keyless_functional_lexical_fallback(tmp_path):
+    """Functional keyless run: VOYAGE_API_KEY unset + a stub psql on PATH.
+    memory_search must (1) not emit 'Embedding failed', (2) WARN on stderr,
+    (3) run the LEXICAL SQL (tsquery match, no ::vector cast), (4) pass the
+    query + tenant via parameterized -v args, (5) return the stub's TSV row
+    on stdout with exit 0. No network, no Neon, no Voyage."""
+    import os
+
+    stub_dir = tmp_path / "bin"
+    stub_dir.mkdir()
+    row = ("working_note\tcos\t2026-07-06 10:00\t0.910\t0.780\tderived\t"
+           "Redis stream wiring note\t42")
+    (tmp_path / "rows.tsv").write_text(row + "\n")
+    psql = stub_dir / "psql"
+    psql.write_text(
+        "#!/bin/bash\n"
+        f"printf '%s\\n' \"$@\" > '{tmp_path}/psql_args'\n"
+        f"cat > '{tmp_path}/psql_sql'\n"
+        f"cat '{tmp_path}/rows.tsv'\n"
+    )
+    psql.chmod(0o755)
+
+    proc = _run_bash(
+        f'source "{MEMORY_SH}" && memory_search "redis stream wiring" "" "" 5',
+        env={
+            # VOYAGE_API_KEY deliberately ABSENT (keyless scratch env);
+            # NEON+CABINET_ID set so the lib never back-fills from cabinet/.env.
+            "NEON_CONNECTION_STRING": "postgresql://placeholder",
+            "CABINET_ID": "testcab",
+            "PATH": f"{stub_dir}:{os.environ.get('PATH', '/usr/bin:/bin')}",
+        },
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "Embedding failed" not in proc.stdout
+    assert row in proc.stdout
+    assert "DEGRADED to lexical-only search" in proc.stderr
+    sql = (tmp_path / "psql_sql").read_text()
+    assert "m.content_tsv @@ p.tsq" in sql
+    assert "::vector" not in sql
+    args = (tmp_path / "psql_args").read_text().splitlines()
+    assert "query=redis stream wiring" in args
+    assert "cid=testcab" in args
+    assert not any(a.startswith("embedding=") for a in args)
