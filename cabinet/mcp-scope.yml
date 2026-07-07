@@ -35,14 +35,15 @@ cabinet: main
 
 agents:
   cos:
-    mcps: [notion, library, telegram, host, brain, exa, brave-search, perplexity, claude-in-chrome]
+    mcps: [notion, library, telegram, brain, exa, brave-search, perplexity, claude-in-chrome]
     rationale: >
       Coordination and briefings. Not code; CoS does not touch Neon or
       Vercel directly — that's CTO/COO. Library for Phase 1 inbox and
       memory lookups; Notion for legacy business brain until migration.
-      host: Spec 035 Phase A host-agent tools (run, rebuild_service,
-      restart_officer, tail_logs, edit_file, read_file). CoS-only scope —
-      no other officer is allowed host MCP access.
+      (host grant removed 2026-07-07 — dangling: no live .mcp.json layer
+      defines a `host` server; the only definition pointed at the extinct
+      /opt/founders-cabinet deployment. See
+      docs/proposals/germline-amendment-host-grant-removal-undefined.md.)
 
 
 
