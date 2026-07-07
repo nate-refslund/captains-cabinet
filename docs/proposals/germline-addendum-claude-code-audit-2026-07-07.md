@@ -277,3 +277,28 @@ CLAUDE.md is captain-gated (R132 / CG-3, owned by the parallel org-memory
 session) — at the next unlock window drop the `step-network` mention:
 
 > Shipped presets: `work` (five functional officers, single product), `portfolio` (one persistent Chair + on-demand per-lane CEOs — recommended for multi-product captains), `personal` (+ `_template` scaffolding).
+
+## R003 + R021 (2026-07-07, row-sweep session): beta rows whose targets are schg germline
+
+Both rows sit in the beta-compression lane but their primary targets are
+schg-locked (germline-lock.sh TARGETS): they need a Captain unlock window
+(fold into the CG-13 cosmetic batch or their own window).
+
+**R003 — framework/acting/action_lane.py** (locked at germline-lock.sh:60):
+- Extend the `%%CAPTAIN%%`/`%%DIRECTIONS%%` slot pattern with `%%OFFICERS%%`:
+  replace the hardcoded `delegate_work` officer enum
+  (`"polads-ceo"|"stephie-ceo"|"comms-officer"|"cos"`, PROPOSER_SYSTEM ~line
+  135) with an `%%OFFICERS%%` slot rendered from the instance roster
+  (suggest `framework.env` resolver reading `instance/config/platform.yml`
+  officers block, fail-closed to `"cos"`).
+- `propose_actions(lane_default: str = "polads", ...)` (line 404): the
+  germline caller run_action_lane.py:1156 does NOT pass it, so the safe shape
+  is `lane_default=None` -> resolve via a new `framework.env.default_lane()`
+  (platform.yml key, fail-closed `""`); this deployment sets
+  `default_lane: polads` in instance config. Making the param hard-required
+  would break the schg caller — do both files in the same window.
+
+**R021 — framework/frontdoor act-first/undo plane**: `_DELEGATE_OFFICERS`
+(action_exec.py:833, schg) should move to roster config in the same unlock
+window. The per-kind forward/inverse executor extraction rides G1 packs
+(unchanged plan).
