@@ -178,7 +178,7 @@ replacements = {
     'description: ""': f"description: {os.environ['DESCRIPTION_Q']}",
     'repo: ""': f"repo: {os.environ['REPO_Q']}",
     'repo_branch: main': f"repo_branch: {os.environ['BRANCH_VALUE']}",
-    'mount_path: /workspace/product': f"mount_path: {os.environ['MOUNT_VALUE']}",
+    'mount_path: ""': f"mount_path: {os.environ['MOUNT_VALUE']}",
 }
 for old, new in replacements.items():
     text = text.replace(old, new, 1)

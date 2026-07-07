@@ -189,7 +189,7 @@ step_create_project_yml() {
     | sed \
         -e "s|name: \"\"|name: \"${display_name}\"|" \
         -e "s|repo: \"\"|repo: \"${REPO_URL}\"|" \
-        -e "s|mount_path: /workspace/product|mount_path: ${WORKSPACE_ROOT}/${SLUG}|"
+        -e "s|mount_path: \"\"|mount_path: ${WORKSPACE_ROOT}/${SLUG}|"
   } > "$tmpf"
   mv "$tmpf" "$dest"
 

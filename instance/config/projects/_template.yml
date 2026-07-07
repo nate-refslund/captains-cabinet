@@ -11,7 +11,7 @@ product:
   description: ""                 # One-line description
   repo: ""                        # GitHub repo URL
   repo_branch: main               # Default branch
-  mount_path: /workspace/product   # Docker mount path for the product repo
+  mount_path: ""                   # Local checkout path of the product repo on this Mac (set at activation)
 
 activation:
   status: pending                  # pending | prepared | active

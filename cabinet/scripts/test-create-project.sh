@@ -114,7 +114,7 @@ product:
   description: ""
   repo: ""
   repo_branch: main
-  mount_path: /workspace/product
+  mount_path: ""
 
 notion:
   cabinet_hq_id: ""
