@@ -126,12 +126,22 @@ def test_scope_fixture_filters_to_grants(paths):
     assert mcp["otherTopLevel"] == {"kept": True}
 
 
+def _allowed_names(settings):
+    """allowedMcpServers entries are {"serverName": ...} OBJECTS (2.1.202 —
+    string entries fail settings validation and block officer boot). Pin the
+    shape here so every membership assertion also guards the object form."""
+    entries = settings["allowedMcpServers"]
+    assert all(isinstance(e, dict) and set(e) == {"serverName"} for e in entries), \
+        f"allowedMcpServers entries must be {{'serverName': ...}} objects: {entries!r}"
+    return [e["serverName"] for e in entries]
+
+
 def test_settings_overlay_mirrors_grants_not_just_booted(paths):
     rc, _, settings = run_main(paths, "alpha")
     assert rc == 0
     # grants (incl. universal servers absent from the merged config, like
     # telegram/cabinet) — caps future config drift, not just today's servers
-    assert settings["allowedMcpServers"] == sorted(
+    assert _allowed_names(settings) == sorted(
         ["neon", "vercel", "brain", "telegram", "library", "cabinet"]
     )
     assert settings["enableAllProjectMcpServers"] is False
@@ -141,8 +151,8 @@ def test_universal_merge_applies_to_every_agent(paths):
     rc, mcp, settings = run_main(paths, "beta")
     assert rc == 0
     assert sorted(mcp["mcpServers"]) == ["library", "notion"]
-    assert "telegram" in settings["allowedMcpServers"]
-    assert "cabinet" in settings["allowedMcpServers"]
+    assert "telegram" in _allowed_names(settings)
+    assert "cabinet" in _allowed_names(settings)
 
 
 def test_scaffold_agents_parse_like_the_hook(paths):
@@ -158,8 +168,8 @@ def test_extra_allow_infra_passthrough(paths):
     assert "redis-trigger-channel" in mcp["mcpServers"]
     # cua granted but not defined in the merged config → allowed, not booted
     assert "cua" not in mcp["mcpServers"]
-    assert "cua" in settings["allowedMcpServers"]
-    assert "redis-trigger-channel" in settings["allowedMcpServers"]
+    assert "cua" in _allowed_names(settings)
+    assert "redis-trigger-channel" in _allowed_names(settings)
 
 
 def test_pseudo_underscore_keys_always_stripped(paths):
@@ -224,7 +234,7 @@ def test_unparseable_merged_config_fails_closed(paths, capsys):
     assert rc == 0
     assert mcp == {"mcpServers": {}}
     # grants still mirrored (scope parsed fine); only the boot set is empty
-    assert "neon" in settings["allowedMcpServers"]
+    assert "neon" in _allowed_names(settings)
     assert "[ERROR]" in capsys.readouterr().err
 
 
