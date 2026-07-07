@@ -35,7 +35,7 @@ Officers read the assembled output from the runtime path the loader produces.
 
 ## Terminology note
 
-`cabinet-v2.md` (Captain directive 2026-04-16) uses the term "profile" throughout. The locked implementation uses "**preset**" — a terminology decision made to avoid overloading with user profiles, OS profiles, AWS profiles, etc. Mentally substitute as you read.
+The founding Captain directive ("Cabinet Evolution", 2026-04-16 — archived to the instance archive / git history) used the term "profile" throughout. The locked implementation uses "**preset**" (see `presets/README.md`) — a terminology decision made to avoid overloading with user profiles, OS profiles, AWS profiles, etc. When reading dated records that say "profile", mentally substitute "preset".
 
 ## Framework-classified artifacts outside this directory
 

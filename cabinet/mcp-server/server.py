@@ -37,7 +37,9 @@ Tools by capacity:
 
 Phase-3-forward: Personal-capacity Cabinets refuse any tool marked
 `federation_allowed=False` once Federation tools are introduced (they
-don't exist yet — Phase 3 is intent-only per cabinet-v2.md Part 5).
+don't exist yet — Phase 3 is intent-only per the 2026-04-16 Cabinet
+Evolution directive Part 5, archived; the normative Federation-refusal
+rule now lives in presets/personal/safety-addendum.md).
 The guard is in place today so that infrastructure is never the
 blocker.
 

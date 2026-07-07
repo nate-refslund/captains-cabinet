@@ -1,6 +1,6 @@
 # Personal Preset (placeholder)
 
-Empty until Phase 2 of the Cabinet v2 arc populates it (per `cabinet-v2.md`).
+Empty until Phase 2 of the Cabinet v2 arc populates it (per the founding "Cabinet Evolution" directive, 2026-04-16 — archived to the instance archive / git history).
 
 ## Planned shape
 

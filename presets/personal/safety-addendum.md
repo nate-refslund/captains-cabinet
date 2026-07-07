@@ -34,7 +34,7 @@ Implementation: a helper `require_consent(scope, source)` that reads `coaching_c
 - **No external API calls without a coaching_consent_log row** for the target service.
 - **No medical advice.** See Constitution Addendum §3. Any query that crosses into medical territory returns a redirect-to-professional response and records the fact-of-redirect (not the query content) in `coaching_narratives`.
 - **No persistence of raw biometric data** beyond a retention window set in `instance/config/retention.yml` (Captain sets it; default 180 days for metrics, 30 days for raw sensor streams).
-- **No sharing of personal data in the Federation** (Phase 3). Personal Cabinets never join Federation per cabinet-v2.md Part 5.
+- **No sharing of personal data in the Federation** (Phase 3). Personal Cabinets never join a Federation — the Federation is Work-only, and Personal Cabinets remain individually owned even if hosted on org infrastructure. (Normative rule inlined from the archived 2026-04-16 Cabinet Evolution directive Part 5; see "Federation refusal" below for the full text — this addendum is its normative home.)
 
 ## Captain's override
 
@@ -53,7 +53,7 @@ Agents never attempt to "soft-delete" personal data or retain a backup. Deletion
 
 ## Federation refusal (Phase 3 forward)
 
-Personal-capacity tables (longitudinal_metrics, coaching_narratives, coaching_consent_log, coaching_experiments) NEVER enter Federation. If Phase 3 ever lands on this Cabinet, the Federation registrar must exclude personal-capacity rows from any export, aggregation, or cross-Cabinet query. This rule is non-negotiable per cabinet-v2.md Part 5 and is enforced at the pre-tool-use hook when Federation tools are later introduced.
+Personal-capacity tables (longitudinal_metrics, coaching_narratives, coaching_consent_log, coaching_experiments) NEVER enter Federation. If Phase 3 ever lands on this Cabinet, the Federation registrar must exclude personal-capacity rows from any export, aggregation, or cross-Cabinet query. This rule is non-negotiable and is enforced at the pre-tool-use hook when Federation tools are later introduced. Normative text, inlined from the archived 2026-04-16 Cabinet Evolution directive Part 5 (this addendum is now its normative home): Personal Cabinets never join a Federation — the Federation is Work-only, and Personal Cabinets remain individually owned even if hosted on org infrastructure; a Meta-Cabinet gets structured access (cost logs, policy violations, error rates), never content access — it does not read message content, officer conversations, or decisions; every employee consents individually — a Cabinet is not mandatory, and neither is a Personal Cabinet.
 
 ## Precedence
 

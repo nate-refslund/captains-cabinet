@@ -15,7 +15,7 @@ Phase 1 CP8 prototype — Cabinet MCP stdio server. One tool: `cabinet:identify(
 
 ## Why this exists
 
-Captain directive `cabinet-v2.md` Part 3: Phase 1 must ship a Cabinet MCP prototype to de-risk Phase 2 inter-Cabinet communication. The single tool `identify()` is the minimum sufficient surface — every Phase 2 protocol call starts with identity discovery, so getting it right now prevents Phase 2 rewrites.
+Captain directive ("Cabinet Evolution", 2026-04-16, Part 3 — archived to the instance archive / git history): Phase 1 must ship a Cabinet MCP prototype to de-risk Phase 2 inter-Cabinet communication. The single tool `identify()` is the minimum sufficient surface — every Phase 2 protocol call starts with identity discovery, so getting it right now prevents Phase 2 rewrites.
 
 Captain decision 2026-04-16 CD5: **stdio transport for Phase 1 prototype, HTTP-compatible signature**. The tool shape above is identical to what Phase 2 will expose over HTTP. Only the transport layer changes.
 
