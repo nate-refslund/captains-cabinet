@@ -36,9 +36,31 @@ Generated (org_shape: portfolio):
                                                 CABINET_ROOT, existence-gated), then the
                                                 in-repo <root>/product-brain directory
 
+  instance/config/active-project.txt            the first lane's slug (only when
+                                                absent — an existing deployment's
+                                                active project is operator state
+                                                and is never touched). Read by
+                                                bootstrap-roles.sh (product slug)
+                                                and start-officer-mac.sh
+                                                (CABINET_LANE); without it a
+                                                fresh hatch's bootstrap-roles
+                                                exits 1.
+
 Generated (org_shape: functional | custom): contexts + projects + captain keys
 only — the functional preset ships its own five-officer roster (default
 `bootstrap-roles.sh`, no --roster); custom shapes author agents/roster by hand.
+(active-project.txt is emitted for every shape.)
+
+Adopting a clone that ships another deployment's instance/ (--adopt): a fresh
+captain hatching from a clone that carries a PREVIOUS deployment's committed
+instance/ (hand-authored sources.yml, an unmanaged officers block in
+platform.yml, live contexts/projects) would otherwise hit marker refusals one
+file at a time and hand-edit another captain's config on day one. `--adopt`
+archives each conflicting file to instance/_pre-adopt-<UTC-stamp>/<relpath>
+(inside instance/, path-contained, nothing deleted) and generates fresh. An
+existing posture.yml is STILL never touched (Captain ruling), and --adopt never
+widens what --force would not: it only relocates files the generator was about
+to refuse over.
 
 sources.yml emission rule (Wave-1 OrgSource, 2026-07-07): the answers'
 `autonomy.flavor` key is the signal for whether this deployment has a personal
@@ -77,7 +99,7 @@ Idempotent: re-running with unchanged answers rewrites byte-identical files.
 
 Usage:
   python3 cabinet/scripts/generate-instance.py [--answers PATH] [--root PATH]
-                                               [--dry-run] [--force]
+                                               [--dry-run] [--force] [--adopt]
   python3 cabinet/scripts/generate-instance.py --example   # print a starter answers file
 """
 
@@ -86,8 +108,10 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import shutil
 import sys
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
@@ -844,7 +868,8 @@ integrations:
 # Main generation pass
 # ---------------------------------------------------------------------------
 
-def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool = False) -> list:
+def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool = False,
+             adopt: bool = False) -> list:
     """Run the full generation pass. Returns the list of written paths."""
     root = root.resolve()
     answers = load_answers(answers_path)
@@ -853,6 +878,28 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
     model = str(cabinet.get("officer_model", DEFAULT_MODEL))
     lanes = answers["lanes"]
     integrations = answers.get("integrations") or {}
+
+    # ---- adoption plumbing (--adopt; see module docstring) ----
+    # Conflicting files a previous deployment left behind are ARCHIVED (never
+    # deleted) under instance/_pre-adopt-<UTC-stamp>/<relpath>. Path-contained:
+    # both source and destination resolve under <root>/instance/.
+    instance_root = (root / "instance").resolve()
+    adopt_stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    adopt_root = _instance_path(root, f"_pre-adopt-{adopt_stamp}")
+    adopted: set[Path] = set()
+
+    def _adopt_aside(path: Path, reason: str) -> None:
+        rel = path.relative_to(instance_root)
+        dest = adopt_root / rel
+        if dry_run:
+            print(f"[dry-run] would adopt-archive instance/{rel} -> "
+                  f"{adopt_root.relative_to(root)}/{rel} ({reason})")
+        else:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(path), str(dest))
+            print(f"adopt-archived instance/{rel} -> "
+                  f"{adopt_root.relative_to(root)}/{rel} ({reason})")
+        adopted.add(path)
 
     # ---- plan every output (path, content, validator) BEFORE writing ----
     outputs: list[tuple[Path, str, str]] = []  # (path, content, kind: yaml|agent-md)
@@ -888,6 +935,17 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
 
     platform_path = _instance_path(root, "config", "platform.yml")
     existing_platform = platform_path.read_text(encoding="utf-8") if platform_path.exists() else ""
+    # --adopt: a platform.yml carrying an unmanaged top-level officers: block is
+    # a previous deployment's config — archive the whole file and render fresh
+    # (captain keys + managed block) instead of asking the new captain to
+    # hand-edit another captain's platform.yml. (Corrupt marker blocks still
+    # fail loud in render_platform — adoption never papers over corruption.)
+    if (adopt and existing_platform and org_shape == "portfolio"
+            and PLATFORM_BEGIN not in existing_platform
+            and any(re.match(r"^officers:\s*(#.*)?$", line)
+                    for line in existing_platform.splitlines())):
+        _adopt_aside(platform_path, "unmanaged top-level officers: block")
+        existing_platform = ""
     outputs.append((
         platform_path,
         render_platform(existing_platform, answers, lanes, org_shape,
@@ -916,6 +974,16 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
     if not posture_skipped:
         outputs.append((posture_path, render_posture(answers), "yaml"))
 
+    # Active project (only when absent — an existing deployment's active
+    # project is operator state, never regenerated). bootstrap-roles.sh reads
+    # it for the product slug (exits 1 without it on a fresh hatch) and
+    # start-officer-mac.sh reads it for the CABINET_LANE export; the first
+    # declared lane is the natural initial value.
+    active_project_path = _instance_path(root, "config", "active-project.txt")
+    active_project_skipped = active_project_path.exists()
+    if not active_project_skipped:
+        outputs.append((active_project_path, f"{lanes[0]['slug']}\n", "text"))
+
     # ---- pre-write validation: every planned artifact must parse ----
     for path, content, kind in outputs:
         try:
@@ -931,8 +999,13 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
 
     # ---- overwrite guard (platform.yml is marker-managed, exempt) ----
     for path, _content, _kind in outputs:
-        if path != platform_path:
-            _check_overwrite(path, force)
+        if path == platform_path or path in adopted:
+            continue
+        if (adopt and path.exists()
+                and MARKER not in path.read_text(encoding="utf-8")):
+            _adopt_aside(path, "no generated-by marker")
+            continue
+        _check_overwrite(path, force)
 
     # ---- write (or report) ----
     written = []
@@ -951,8 +1024,9 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
             on_disk = path.read_text(encoding="utf-8")
             if kind == "yaml":
                 yaml.safe_load(on_disk)
-            else:
+            elif kind == "agent-md":
                 yaml.safe_load(on_disk.split("---", 2)[1])
+            # kind == "text" (active-project.txt): plain slug, nothing to parse
         print("validation: all generated YAML parses")
 
     # ---- next steps ----
@@ -981,6 +1055,16 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
         print("  3. bash cabinet/scripts/load-preset.sh, then deploy per cabinet/docs/mac-mini-setup.md")
     print("  Nothing above activates lanes: contexts ship active: false and")
     print("  projects ship activation.status: pending until the Captain flips them.")
+    if active_project_skipped:
+        print("  Active project: existing instance/config/active-project.txt left")
+        print("  untouched (operator state — never regenerated).")
+    else:
+        print(f"  Active project: wrote instance/config/active-project.txt = "
+              f"{lanes[0]['slug']} (bootstrap-roles.sh reads it for the product")
+        print("  slug; edit it any time to switch the active lane).")
+    if adopted:
+        print(f"  Adopted: {len(adopted)} previous-deployment file(s) archived under")
+        print(f"  {adopt_root.relative_to(root)}/ — review, then delete when confident.")
     if posture_skipped:
         print("  Posture: existing instance/config/posture.yml is a Captain ruling —")
         print("  left untouched (never regenerated, not even with --force).")
@@ -1009,6 +1093,11 @@ def main(argv=None) -> int:
     parser.add_argument("--dry-run", action="store_true", help="plan + validate, write nothing")
     parser.add_argument("--force", action="store_true",
                         help="overwrite existing files that lack the generated-by marker")
+    parser.add_argument("--adopt", action="store_true",
+                        help="archive (never delete) a previous deployment's conflicting "
+                             "instance files to instance/_pre-adopt-<stamp>/ and generate "
+                             "fresh — the fresh-captain path for a clone that ships "
+                             "another deployment's instance/")
     parser.add_argument("--example", action="store_true",
                         help="print a starter answers file to stdout and exit")
     args = parser.parse_args(argv)
@@ -1021,7 +1110,8 @@ def main(argv=None) -> int:
     answers_path = Path(args.answers).resolve() if args.answers else root / "instance/config/cabinet-init.answers.yml"
 
     try:
-        generate(root, answers_path, dry_run=args.dry_run, force=args.force)
+        generate(root, answers_path, dry_run=args.dry_run, force=args.force,
+                 adopt=args.adopt)
     except GenerationError as e:
         print(f"[generate-instance] ERROR: {e}", file=sys.stderr)
         return 2

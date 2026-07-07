@@ -77,8 +77,12 @@ The plugin manifest (`.claude-plugin/plugin.json`) declares (counts corrected 20
 
 The plugin install lands the code. Captain-physical work still required:
 
-1. **Configure your instance/** — set `instance/config/active-preset`,
-   `instance/config/active-project.txt`, fill `instance/config/product.yml`
+1. **Configure your instance/** — run the `/cabinet-init` interview
+   (`cabinet/scripts/generate-instance.py`; add `--adopt` if the clone ships a
+   previous deployment's instance/). It generates the lane configs, the
+   platform captain keys + officers block, `instance/config/active-project.txt`,
+   and the roster; then set `instance/config/active-preset`. Never hand-fill
+   `product.yml` / the managed platform block — regenerate instead.
 2. **Bring up Redis** — `brew services start redis` (Mac) or apt equivalent
 3. **Run `cabinet/scripts/setup-mac.sh`** — installs missing deps + runs
    smoke tests + loads the preset

@@ -512,6 +512,106 @@ class TestSourcesAndProductBrain:
 
 
 # ---------------------------------------------------------------------------
+# active-project.txt emission + --adopt (fresh-captain hatch, 2026-07-07)
+# ---------------------------------------------------------------------------
+
+class TestActiveProjectAndAdopt:
+    def test_active_project_written_from_first_lane(self, cab_root):
+        """Fresh hatch: the generator writes active-project.txt with the first
+        lane slug — without it bootstrap-roles.sh exits 1 (hatch stall)."""
+        run_gen(cab_root, acme_answers())
+        ap = cab_root / "instance/config/active-project.txt"
+        assert ap.is_file()
+        assert ap.read_text() == "acme-store\n"
+
+    def test_existing_active_project_never_touched(self, cab_root):
+        """Operator state: an existing active project survives every re-run."""
+        ap = cab_root / "instance/config/active-project.txt"
+        ap.parent.mkdir(parents=True, exist_ok=True)
+        ap.write_text("other-lane\n")
+        run_gen(cab_root, acme_answers())
+        assert ap.read_text() == "other-lane\n"
+
+    def test_active_project_emitted_for_functional_shape(self, cab_root):
+        answers = acme_answers()
+        answers["cabinet"]["org_shape"] = "functional"
+        run_gen(cab_root, answers)
+        assert (cab_root / "instance/config/active-project.txt").read_text() == "acme-store\n"
+
+    def test_dry_run_writes_no_active_project(self, cab_root):
+        run_gen(cab_root, acme_answers(), dry_run=True)
+        assert not (cab_root / "instance/config/active-project.txt").exists()
+
+    def test_adopt_archives_hand_authored_files(self, cab_root):
+        """A clone shipping a previous deployment's hand-authored files:
+        --adopt archives them under instance/_pre-adopt-*/ (never deletes)
+        and generates fresh marked files."""
+        hand_ctx = cab_root / "instance/config/contexts/acme-store.yml"
+        hand_ctx.write_text("slug: acme-store\nname: Previous Captain Lane\nactive: true\n")
+        hand_src = cab_root / "instance/config/sources.yml"
+        hand_src.write_text("# hand-authored live binding\nadapter: flavor_a.x:HandAuthored\n")
+
+        run_gen(cab_root, acme_answers(), adopt=True)
+
+        # fresh marked files in place
+        assert gi.MARKER in hand_ctx.read_text()
+        assert "Previous Captain Lane" not in hand_ctx.read_text()
+        assert gi.MARKER in hand_src.read_text()
+
+        # originals preserved byte-for-byte in the adopt archive
+        archives = list((cab_root / "instance").glob("_pre-adopt-*"))
+        assert len(archives) == 1
+        arch = archives[0]
+        assert (arch / "config/contexts/acme-store.yml").read_text() == \
+            "slug: acme-store\nname: Previous Captain Lane\nactive: true\n"
+        assert "HandAuthored" in (arch / "config/sources.yml").read_text()
+
+    def test_adopt_archives_unmanaged_officers_platform(self, cab_root):
+        """The rehearsal stall: platform.yml with another deployment's
+        unmanaged officers: block hard-refused generation. --adopt archives
+        the whole file and renders fresh captain keys + managed block."""
+        platform = cab_root / "instance/config/platform.yml"
+        prev = PLATFORM_FIXTURE + "\nofficers:\n  legacy-ceo: { type: consultant }\n"
+        platform.write_text(prev)
+
+        run_gen(cab_root, acme_answers(), adopt=True)
+
+        text = platform.read_text()
+        assert gi.PLATFORM_BEGIN in text
+        assert "legacy-ceo" not in text
+        parsed = yaml.safe_load(text)
+        assert parsed["captain_name"] == "Ada"
+        assert parsed["officers"]["cos"] == {"type": "fulltime"}
+
+        archives = list((cab_root / "instance").glob("_pre-adopt-*"))
+        assert len(archives) == 1
+        assert (archives[0] / "config/platform.yml").read_text() == prev
+
+    def test_adopt_never_touches_existing_posture(self, cab_root):
+        """posture.yml is a Captain ruling — --adopt must not archive or
+        regenerate it."""
+        posture = cab_root / "instance/config/posture.yml"
+        posture.write_text("version: 1\nstatus: ruled\nposture: guardian\n")
+        run_gen(cab_root, acme_answers(), adopt=True)
+        assert posture.read_text() == "version: 1\nstatus: ruled\nposture: guardian\n"
+
+    def test_adopt_dry_run_moves_nothing(self, cab_root):
+        hand = cab_root / "instance/config/sources.yml"
+        hand.write_text("# hand-authored\nadapter: flavor_a.x:HandAuthored\n")
+        before = hand.read_bytes()
+        run_gen(cab_root, acme_answers(), adopt=True, dry_run=True)
+        assert hand.read_bytes() == before
+        assert not list((cab_root / "instance").glob("_pre-adopt-*"))
+
+    def test_without_adopt_refusal_unchanged(self, cab_root):
+        """--adopt is opt-in: the plain run still refuses hand-authored files."""
+        hand = cab_root / "instance/config/contexts/acme-store.yml"
+        hand.write_text("slug: acme-store\nname: Hand Authored\nactive: true\n")
+        with pytest.raises(gi.GenerationError, match="REFUSING to overwrite"):
+            run_gen(cab_root, acme_answers())
+
+
+# ---------------------------------------------------------------------------
 # Universality — the framework carries no deployment specifics
 # ---------------------------------------------------------------------------
 

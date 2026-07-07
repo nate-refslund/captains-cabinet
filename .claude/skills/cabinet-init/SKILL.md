@@ -241,6 +241,12 @@ placeholders only:
 
    ```bash
    python3 cabinet/scripts/generate-instance.py            # add --dry-run to preview
+   # Clone ships a PREVIOUS deployment's instance/ (hand-authored
+   # sources.yml, an unmanaged officers block, live contexts)? Use:
+   python3 cabinet/scripts/generate-instance.py --adopt
+   # --adopt archives each conflicting file to instance/_pre-adopt-<stamp>/
+   # (never deletes) and generates fresh; an existing posture.yml ruling is
+   # still never touched.
    ```
 
    It generates (portfolio shape): per-lane
@@ -252,9 +258,13 @@ placeholders only:
    deployment root; canonical resolver
    `framework.env.product_brain_dir()`, `CABINET_PRODUCT_BRAIN_DIR`
    overrides), `instance/config/roster.yml`
-   for `bootstrap-roles.sh --roster`, and — only when absent — the
-   INERT `instance/config/posture.yml` ruling scaffold (§4; an
-   existing ruling is never regenerated, not even with --force).
+   for `bootstrap-roles.sh --roster`,
+   `instance/config/active-project.txt` (first lane slug, only when
+   absent — bootstrap-roles.sh needs it for the product slug and
+   start-officer-mac.sh reads it for CABINET_LANE), and — only when
+   absent — the INERT `instance/config/posture.yml` ruling scaffold
+   (§4; an existing ruling is never regenerated, not even with
+   --force).
 
    **Recall binding** (`instance/config/sources.yml`): when
    `autonomy.flavor` is anything but `personal` (i.e. `org`, the
@@ -288,7 +298,10 @@ Relay the generator's printed list, expanded:
    CABINET_ID matches.
 4. `bash cabinet/scripts/bootstrap-roles.sh --roster instance/config/roster.yml`
    (functional shape: plain `bootstrap-roles.sh`; add `--prune` to
-   retire roles left over from a previous roster).
+   retire roles left over from a previous roster). It reads the product
+   slug from `instance/config/active-project.txt`, which the generator
+   wrote from the first lane — edit that file first to seed under a
+   different lane.
 5. `bash cabinet/scripts/grant-mac-permissions.sh` (TCC, interactive).
 6. `bash cabinet/scripts/load-preset.sh`, then deploy selectively —
    `deploy-mac.sh` for the coordinating role only; lane CEOs are
