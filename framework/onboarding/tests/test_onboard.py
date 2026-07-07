@@ -72,17 +72,26 @@ def test_explicit_name_overrides_all(tmp_path):
     assert rep["plan"]["answers_lane"]["name"] == "Acme Shop"
 
 
-def test_defaults_load_from_the_given_root_preset(tmp_path):
-    # onboard_lane resolves preset onboarding defaults against ITS root —
-    # a root without preset config onboards fail-closed (empty defaults).
-    (tmp_path / "instance" / "config").mkdir(parents=True)
-    (tmp_path / "instance" / "config" / "active-preset").write_text("tp\n")
-    pd = tmp_path / "presets" / "tp"
+def test_defaults_load_from_the_passed_presets_dir(tmp_path, monkeypatch):
+    # The presets location is layer payload the CALLER passes (layer-separation
+    # gate); the active-preset slug resolves via the env seam. No presets_dir
+    # → fail-closed empty defaults (test_gated_actions/... above cover that
+    # implicitly: no cabinet-default rows appear without one).
+    pd = tmp_path / "pdir" / "tp"
     pd.mkdir(parents=True)
     (pd / "preset.yml").write_text(
         "name: tp\nonboarding:\n  cabinet_default_plugins: [brain]\n  lane_mcps: [library]\n")
+    monkeypatch.setenv("CABINET_ACTIVE_PRESET", "tp")
+    rep = onboard.onboard_lane("/x", slug="acme", research_fn=lambda p: PROFILE,
+                               root=str(tmp_path), apply=False,
+                               presets_dir=str(tmp_path / "pdir"))
+    names = {p["name"] for p in rep["plan"]["plugin_manifest"] if not p["present"]}
+    assert names == {"brain"}                     # preset default surfaced via param
+    assert rep["plan"]["lane_mcps"][-1] == "library"  # base scope from preset config
+
+
+def test_no_presets_dir_is_fail_closed_empty(tmp_path):
     rep = onboard.onboard_lane("/x", slug="acme", research_fn=lambda p: PROFILE,
                                root=str(tmp_path), apply=False)
-    names = {p["name"] for p in rep["plan"]["plugin_manifest"] if not p["present"]}
-    assert names == {"brain"}                       # preset default surfaced via root
-    assert rep["plan"]["lane_mcps"][-1] == "library"  # base scope from preset config
+    sources = {p["source"] for p in rep["plan"]["plugin_manifest"]}
+    assert sources <= {"repo"}                    # no cabinet-default rows appear

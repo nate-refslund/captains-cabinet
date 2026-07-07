@@ -541,6 +541,67 @@ def state_dir(default: str = "") -> str:
     return _state_dir_cache
 
 
+def watchdog_config_path(default: str = "") -> str:
+    """The path to the outcome-watchdog's deployment table file — the resolver
+    that lifts the ``instance/config/watchdog.yml`` path OUT of the universal-base
+    ``framework`` watchdog registry (egg R017 moved the DATA there; this moves
+    the framework's knowledge of WHERE through the one ratified env seam), so
+    ``framework/watchdog`` carries no instance path tokens.
+
+    Resolution order: the env override ``CABINET_WATCHDOG_CONFIG`` (an explicit
+    per-process override, ``~``-expanded, mirroring ``shared_env_path``'s
+    ``CABINET_SHARED_ENV``) → ``<root>/instance/config/watchdog.yml`` under the
+    deployment root — the fixed Captain-owned config location, same
+    joined-literal seam idiom as ``captain_name()``'s platform.yml read → the
+    generic ``default`` (``""``) on any failure. Returns a PATH only, never
+    parsed content: the registry owns its stdlib parse + generic fail-safe
+    defaults (survival contract), so an absent/unreadable file — or ``""`` —
+    degrades to the same generic tables as before (briefing 07:30/19:30, empty
+    roster, empty pipe table, full catalog). Deliberately uncached: it is a
+    pure path computation (no yaml), read once at registry import."""
+    env_override = (os.environ.get("CABINET_WATCHDOG_CONFIG") or "").strip()
+    if env_override:
+        return os.path.expanduser(env_override)
+    try:
+        return str(_cabinet_root() / "instance/config/watchdog.yml")
+    except Exception:
+        return str(default)
+
+
+def active_preset(default: str = "work") -> str:
+    """The ACTIVE preset slug for this deployment — the resolver that lifts the
+    ``instance/config/active-preset`` read OUT of universal-base ``framework``
+    code (the onboarding planner's preset-defaults loader) into the one
+    ratified env seam. The preset's CONTENT stays layer payload the caller
+    locates (framework never knows where ``presets/`` lives — see
+    ``framework.onboarding.plan.load_preset_defaults``); only the Captain-owned
+    instance-side POINTER resolves here.
+
+    Resolution order: the env override ``CABINET_ACTIVE_PRESET`` (an explicit
+    per-process override) → the first non-empty content of
+    ``<root>/instance/config/active-preset`` (same joined-literal seam idiom as
+    ``captain_name()``) → the generic ``default`` (``"work"`` — the SAME
+    fallback ``cabinet/scripts/load-preset.sh`` uses, so an unconfigured
+    deployment resolves identically on both sides of the seam). Any parse/read
+    failure falls back to ``default`` — never crashes, never leaks another
+    launcher's preset. Returned verbatim (no slug validation): the caller owns
+    its own traversal guard before using the slug as a path segment.
+    Deliberately uncached: a single tiny file read (no yaml), called once per
+    onboarding run."""
+    env_override = (os.environ.get("CABINET_ACTIVE_PRESET") or "").strip()
+    if env_override:
+        return env_override
+    try:
+        p = _cabinet_root() / "instance/config/active-preset"
+        if p.is_file():
+            declared = p.read_text(encoding="utf-8").strip()
+            if declared:
+                return declared
+    except Exception:
+        pass
+    return default
+
+
 # Cache: product_brain_dir is read once per process (same lifecycle as
 # vault_dir). None ⇒ unresolved — the EMPTY string is a VALID resolved value
 # (a deployment with no org corpus), so the sentinel is None, never "".

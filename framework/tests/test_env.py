@@ -503,3 +503,72 @@ class TestStateDir:
         monkeypatch.delenv("CABINET_ROOT", raising=False)
         env._state_dir_cache = None
         assert env.state_dir() == os.path.expanduser("~/.screenpipe/state")
+
+
+class TestWatchdogConfigPath:
+    """watchdog_config_path() — the seam that lifts the outcome-watchdog's
+    instance/config/watchdog.yml PATH out of framework/watchdog/registry.py
+    (layer-separation gate). Path-only resolver: the registry owns the parse
+    and its generic fail-safe defaults, so any resolution failure ("") reads
+    as an absent file — same degrade as before the move."""
+
+    def test_resolves_under_cabinet_root(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("CABINET_WATCHDOG_CONFIG", raising=False)
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        # NB: joined "instance/config/..." literal — the same seam idiom
+        # env.py uses; the layer-sep gate flags only the bare token.
+        assert env.watchdog_config_path() == str(
+            tmp_path / "instance/config/watchdog.yml")
+
+    def test_env_override_wins_and_expands(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        monkeypatch.setenv("CABINET_WATCHDOG_CONFIG", "~/wd/watchdog.yml")
+        assert env.watchdog_config_path() == os.path.expanduser("~/wd/watchdog.yml")
+
+    def test_this_instance_resolves_the_repo_config(self, monkeypatch):
+        """Byte-identity guard: with CABINET_ROOT unset the resolver yields
+        THIS checkout's instance watchdog config — identical to the joined
+        path the registry used to build itself."""
+        monkeypatch.delenv("CABINET_WATCHDOG_CONFIG", raising=False)
+        monkeypatch.delenv("CABINET_ROOT", raising=False)
+        import pathlib
+        repo = pathlib.Path(env.__file__).resolve().parents[1]
+        assert env.watchdog_config_path() == str(
+            repo / "instance/config/watchdog.yml")
+
+
+class TestActivePreset:
+    """active_preset() — the instance-side pointer the onboarding planner
+    resolves through the env seam (the presets DIR itself stays a caller
+    parameter — payload, not instance config)."""
+
+    def test_reads_active_preset_file(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("CABINET_ACTIVE_PRESET", raising=False)
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        p = tmp_path / "instance/config" / "active-preset"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("portfolio\n", encoding="utf-8")
+        assert env.active_preset() == "portfolio"
+
+    def test_absent_file_falls_back_to_work(self, tmp_path, monkeypatch):
+        """Mirrors load-preset.sh: unset deployments resolve 'work' on both
+        sides of the seam."""
+        monkeypatch.delenv("CABINET_ACTIVE_PRESET", raising=False)
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))  # empty tmp — no config
+        assert env.active_preset() == "work"
+
+    def test_blank_file_falls_back_to_work(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("CABINET_ACTIVE_PRESET", raising=False)
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        p = tmp_path / "instance/config" / "active-preset"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("   \n", encoding="utf-8")
+        assert env.active_preset() == "work"
+
+    def test_env_override_wins(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        p = tmp_path / "instance/config" / "active-preset"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("portfolio\n", encoding="utf-8")
+        monkeypatch.setenv("CABINET_ACTIVE_PRESET", "step-network")
+        assert env.active_preset() == "step-network"

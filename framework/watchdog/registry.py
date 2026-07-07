@@ -15,10 +15,10 @@ Design goals (why it is shaped this way):
     A watchdog built on top of the thing it watches dies with it. Each verify
     reads a FILE, a Redis key (via redis-cli subprocess), or a launchd/log
     timestamp — the cheapest possible probe, never a Graph/Vercel/LLM call.
-    (The in-repo imports are ``framework.env.captain_name`` + ``state_dir`` —
-    de-nate / source-adapter resolvers: import-light stdlib at load, their yaml
-    read is lazy and degrades to a generic default on any failure, so the
-    watchdog never dies for them.)
+    (The in-repo imports are ``framework.env.captain_name`` + ``state_dir`` +
+    ``watchdog_config_path`` — de-nate / source-adapter resolvers: import-light
+    stdlib at load, any lazy read degrades to a generic default on any failure,
+    so the watchdog never dies for them.)
   * EXTENSIBLE BY ADDING A ROW. An expectation is one `Expectation(...)` literal
     in `_CATALOG`. Add an outcome to watch = append a row with its id, what,
     cadence, tier, a verify function, and a response policy. Nothing else.
@@ -47,7 +47,7 @@ import re
 from pathlib import Path
 from typing import Callable, Optional
 
-from framework.env import captain_name, state_dir
+from framework.env import captain_name, state_dir, watchdog_config_path
 
 
 def _cabinet_root() -> Path:
@@ -256,8 +256,13 @@ BRIEF_DELIVERED_MARKER_KEY = "cabinet:schedule:last-run:cos:briefing"
 # default), an EMPTY roster (no officers to watch), an EMPTY pipe table
 # (nothing to watch), and ALL catalog expectations enabled (a bad config can
 # narrow the watchdog's inputs, never blind the sweep itself).
+# The PATH resolves through the one ratified env seam
+# (framework.env.watchdog_config_path(); env CABINET_WATCHDOG_CONFIG
+# overrides) so this module carries no instance path tokens (layer-separation
+# gate); an unresolvable path ("") reads as an absent file → same generic
+# defaults.
 # ─────────────────────────────────────────────────────────────────────────────
-WATCHDOG_CONFIG = str(_cabinet_root() / "instance" / "config" / "watchdog.yml")
+WATCHDOG_CONFIG = watchdog_config_path()
 
 _BRIEF_DEFAULTS = {"am_hour": 7, "pm_hour": 19, "minute": 30, "grace_min": 45}
 # Field-level sanity bounds: a corrupt hour/minute falls back to that field's

@@ -67,10 +67,12 @@ def test_germline_diffs_target_lane_ceo():
     assert "neon" in pl["lane_mcps"] and "vercel" in pl["lane_mcps"]
 
 
-def _seed_preset(root, name="testpreset", block=True):
-    (root / "instance" / "config").mkdir(parents=True)
-    (root / "instance" / "config" / "active-preset").write_text(name + "\n")
-    pd = root / "presets" / name
+# The presets dir is a PARAMETER (layer payload — the caller owns its
+# location; layer-separation gate), so tests seed a NEUTRAL tmp dir and pass
+# it in; the instance-side active-preset pointer resolves through the env
+# seam (framework.env.active_preset — CABINET_ACTIVE_PRESET override).
+def _seed_preset(presets_dir, name="testpreset", block=True):
+    pd = presets_dir / name
     pd.mkdir(parents=True)
     body = "name: %s\n" % name
     if block:
@@ -78,19 +80,30 @@ def _seed_preset(root, name="testpreset", block=True):
                  "  cabinet_default_plugins: [corridor, brain]\n"
                  "  lane_mcps: [library, telegram, brain]\n")
     (pd / "preset.yml").write_text(body)
+    return presets_dir
 
 
-def test_load_preset_defaults_reads_active_preset(tmp_path):
-    _seed_preset(tmp_path)
-    d = plan.load_preset_defaults(tmp_path)
+def test_load_preset_defaults_reads_given_preset(tmp_path):
+    pdir = _seed_preset(tmp_path / "pdir")
+    d = plan.load_preset_defaults(pdir, active="testpreset")
     assert d["cabinet_default_plugins"] == ["corridor", "brain"]
     assert d["lane_mcps"] == ["library", "telegram", "brain"]
 
 
-def test_load_preset_defaults_fail_closed(tmp_path):
+def test_load_preset_defaults_active_resolves_via_env_seam(tmp_path, monkeypatch):
+    pdir = _seed_preset(tmp_path / "pdir")
+    monkeypatch.setenv("CABINET_ACTIVE_PRESET", "testpreset")
+    d = plan.load_preset_defaults(pdir)          # active=None → env seam
+    assert d["lane_mcps"] == ["library", "telegram", "brain"]
+
+
+def test_load_preset_defaults_fail_closed(tmp_path, monkeypatch):
     empty = {"cabinet_default_plugins": [], "lane_mcps": []}
-    assert plan.load_preset_defaults(tmp_path) == empty          # nothing declared
-    _seed_preset(tmp_path, block=False)
-    assert plan.load_preset_defaults(tmp_path) == empty          # preset sans block
-    (tmp_path / "instance" / "config" / "active-preset").write_text("../../evil\n")
-    assert plan.load_preset_defaults(tmp_path) == empty          # traversal refused
+    monkeypatch.setenv("CABINET_ACTIVE_PRESET", "testpreset")
+    assert plan.load_preset_defaults(None) == empty              # no presets dir
+    assert plan.load_preset_defaults(tmp_path / "pdir") == empty  # nothing declared
+    pdir = _seed_preset(tmp_path / "pdir", block=False)
+    assert plan.load_preset_defaults(pdir) == empty              # preset sans block
+    assert plan.load_preset_defaults(pdir, active="../../evil") == empty  # traversal refused
+    monkeypatch.setenv("CABINET_ACTIVE_PRESET", "../../evil")
+    assert plan.load_preset_defaults(pdir) == empty              # env traversal refused too

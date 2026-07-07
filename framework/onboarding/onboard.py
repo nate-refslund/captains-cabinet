@@ -117,14 +117,18 @@ def _render_report(report: dict) -> str:
 def onboard_lane(repo_path: str, *, slug: str, tracker_ref=None,
                  model: str = "claude-fable-5", existing: bool = True,
                  root=None, apply: bool = False, name=None,
-                 research_fn=None, render_fn=None, defaults=None) -> dict:
+                 research_fn=None, render_fn=None, defaults=None,
+                 presets_dir=None) -> dict:
     """Onboard one product as a portfolio lane. SAFE by default — see module doc.
 
     ``tracker_ref`` is an opaque task-tracker reference (board/product id —
     semantics owned by the lane's task-tracking extension). ``defaults``
-    injects preset onboarding defaults; None loads them from the active
-    preset's config (fail-closed to empty — see plan.load_preset_defaults).
-    Lane name precedence: explicit ``name`` > declared context name > the repo's
+    injects preset onboarding defaults; None loads them from the ACTIVE
+    preset's config under ``presets_dir`` — the presets location is layer
+    payload the CALLER resolves (the CLI asks the cabinet layer;
+    layer-separation gate), and with no ``presets_dir`` either the load is
+    fail-closed to empty (see plan.load_preset_defaults). Lane name
+    precedence: explicit ``name`` > declared context name > the repo's
     package.json name > slug.
     """
     base = Path(root or _repo_root())
@@ -137,7 +141,7 @@ def onboard_lane(repo_path: str, *, slug: str, tracker_ref=None,
         if desc:
             profile = {**profile, "summary": desc}
     if defaults is None:
-        defaults = plan.load_preset_defaults(base)
+        defaults = plan.load_preset_defaults(presets_dir)
     pl = plan.build_lane_plan(profile, slug=slug, tracker_ref=tracker_ref,
                               model=model, existing=existing, defaults=defaults)
     report = {

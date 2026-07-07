@@ -155,6 +155,13 @@ ORG_SOURCE_ADAPTER = "framework.sources.org:OrgSource"
 PRODUCT_BRAIN_KEY = "product_brain_dir"
 PRODUCT_BRAIN_DEFAULT = "product-brain"
 
+# The presets tree location, repo-root-relative. The CABINET layer owns this
+# knowledge (same as load-preset.sh): framework code must not hardcode where
+# presets/ lives (layer-separation gate), so framework.onboarding's CLI
+# resolves its --presets-dir default FROM this constant (via the same
+# importlib load onboard._default_render already uses for the renderer).
+PRESETS_DIR_REL = "presets"
+
 LANE_CEO_TEMPLATE_REL = "presets/portfolio/agents/_lane-ceo.md.template"
 TEMPLATE_PLACEHOLDERS = ("{{LANE_NAME}}", "{{LANE_SLUG}}", "{{REPO}}", "{{BOARDS}}", "{{MODEL}}")
 

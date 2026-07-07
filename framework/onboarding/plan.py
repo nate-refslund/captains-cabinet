@@ -7,46 +7,52 @@ germline diffs (mcp-scope + officer-capabilities) for the Captain to apply.
 Nothing here executes anything.
 
 The cabinet-default plugin list and the base lane-MCP scope are PRESET CONFIG
-(presets/<active>/preset.yml → ``onboarding:``), not framework hardcodes —
-``load_preset_defaults`` (the one impure helper here, used by the orchestrator)
-reads them fail-closed to empty. Task-tracker references are OPAQUE to the
-framework: semantics belong to the lane's task-tracking extension.
+(``<presets-dir>/<active>/preset.yml`` → ``onboarding:``), not framework
+hardcodes — ``load_preset_defaults`` (the one impure helper here, used by the
+orchestrator) reads them fail-closed to empty. The presets directory is LAYER
+PAYLOAD, not instance config: the framework never knows where it lives, so the
+cabinet-layer caller resolves and passes it (layer-separation gate); only the
+instance-side pointer (the active-preset slug) resolves through the ratified
+env seam (``framework.env.active_preset``). Task-tracker references are OPAQUE
+to the framework: semantics belong to the lane's task-tracking extension.
 """
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
+
+from framework.env import active_preset as _active_preset
 
 _DEFAULT_MODEL = "claude-fable-5"
 # Preset slugs are plain names, never path segments with traversal.
 _PRESET_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
-def load_preset_defaults(root=None) -> dict:
-    """Onboarding defaults from the ACTIVE preset's config (fail-closed).
+def load_preset_defaults(presets_dir, active=None) -> dict:
+    """Onboarding defaults from a preset's config (fail-closed).
 
-    Reads ``instance/config/active-preset`` (missing → ``work``, mirroring
-    load-preset.sh) then ``presets/<active>/preset.yml`` → ``onboarding:``:
-    ``cabinet_default_plugins`` (plugins every lane-CEO needs beyond its repo)
-    and ``lane_mcps`` (base MCP scope for a generated lane-CEO). Any absence
-    or parse failure yields EMPTY lists — a preset that declares nothing
-    onboards lanes with no cabinet defaults; the framework hardcodes no
-    plugin or MCP names.
+    ``presets_dir`` is the directory holding the preset trees — REQUIRED, no
+    framework default: presets are layer payload, so the cabinet-layer caller
+    (CLI flag / wrapper) owns the location and passes it in; None/"" yields
+    EMPTY defaults. ``active`` is the preset slug; None resolves it through
+    the env seam (``framework.env.active_preset()``: ``CABINET_ACTIVE_PRESET``
+    env → ``instance/config/active-preset`` → ``work``, mirroring
+    load-preset.sh). Reads ``<presets_dir>/<active>/preset.yml`` →
+    ``onboarding:``: ``cabinet_default_plugins`` (plugins every lane-CEO needs
+    beyond its repo) and ``lane_mcps`` (base MCP scope for a generated
+    lane-CEO). Any absence or parse failure yields EMPTY lists — a preset that
+    declares nothing onboards lanes with no cabinet defaults; the framework
+    hardcodes no plugin or MCP names.
     """
     empty = {"cabinet_default_plugins": [], "lane_mcps": []}
     try:
-        base = Path(root or os.environ.get("CABINET_ROOT")
-                    or Path(__file__).resolve().parents[2])
-        active = "work"
-        ap = base / "instance" / "config" / "active-preset"
-        if ap.is_file():
-            declared = ap.read_text(encoding="utf-8").strip()
-            if declared:
-                active = declared
+        if not presets_dir:
+            return empty
+        if active is None:
+            active = _active_preset()
         if not _PRESET_RE.match(active):
             return empty
-        cfg = base / "presets" / active / "preset.yml"
+        cfg = Path(presets_dir) / active / "preset.yml"
         if not cfg.is_file():
             return empty
         import yaml  # local: keep module import-light for the pure planner

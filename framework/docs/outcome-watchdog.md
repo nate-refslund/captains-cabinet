@@ -43,8 +43,11 @@ process ran. Each row in `EXPECTATIONS` carries:
 **Instance config (egg R017):** the briefing slot times, the fulltime-officer
 roster, the pipe-freshness table, and WHICH catalog rows are enabled live in
 `instance/config/watchdog.yml` — parsed with a narrow stdlib parser (survival
-contract: no PyYAML), so edit only in that file's documented shapes. A missing
-or unparseable file degrades to generic defaults (briefing 07:30/19:30 +45m,
+contract: no PyYAML), so edit only in that file's documented shapes. The PATH
+itself resolves through the ratified env seam
+(`framework.env.watchdog_config_path()`; env `CABINET_WATCHDOG_CONFIG`
+overrides — layer-separation gate: the registry carries no instance path
+tokens). A missing or unparseable file degrades to generic defaults (briefing 07:30/19:30 +45m,
 empty roster, empty pipe table, ALL rows enabled): a bad config can narrow the
 watchdog's inputs, never blind the sweep itself.
 
