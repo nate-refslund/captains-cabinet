@@ -590,3 +590,27 @@ services:
       memory_ingestion block (no DB creds in the census path). NO Redis —
       live keys are Stage-5 overlay (E0b's plane), never morphology. Tests:
       cabinet/scripts/tests/test_world_census.py.
+  - name: world-chronicle
+    label: com.cabinet.world-chronicle
+    kind: daemon
+    command: python3.12 cabinet/scripts/world-chronicle.py
+    schedule: keepalive
+    expected: "redis heartbeat cabinet:world:chronicle:heartbeat fresh (SET EX 900 every ~2s tick — key absence = daemon dead, doctor probe #9b); verb-normalized PII-scrubbed records appended to shared/interfaces/world/chronicle-YYYY-MM-DD.jsonl while the org is active; XADD cabinet:world:chronicle (MAXLEN ~20000) + PUBLISH cabinet:world:updated + presence snapshot cabinet:world:presence (EX 60) flowing"
+    sunset: "apoptosis R10-class kill criteria: retire when the Cabinet World read-model is abandoned (E-series sunset) or when a superseding event spine owns cabinet:world:chronicle — evidence bar: 30 consecutive days with zero stream readers (XLEN static + no /world SSE clients) AND no replay use. On retirement ARCHIVE shared/interfaces/world/ chronicles (append-only replay history), never truncate."
+    notes: >-
+      Cabinet World E0b (kickoff step 2; chassis E0). OBSERVER-CLASS read-model:
+      merges org_events (rowid cursor, mode=ro URI handle, busy-retry) + Redis
+      presence/heartbeat/killswitch (plain GET/SCAN — NEVER consumer groups,
+      structurally cannot steal officer mail) + consequence/undo JSONL +
+      memory/logs tool-call tail (byte-offset cursors, dated-file rollover).
+      Secret/PII scrub AT INGEST: per-source field allowlist (payload free
+      text never copied) + identifier guard + credential-shape belt. Records
+      carry NO wall clock — re-chronicling the same rows is byte-identical
+      (the E0 determinism gate). Writes fenced to cabinet:world:* + shared/
+      interfaces/world/ + its own state dir. First-run cursor = current
+      max(rowid) (going-forward spine; CABINET_WORLD_BACKFILL=1 for history).
+      Killswitch: keeps chronicling (observer, no acting paths) and flags
+      killswitch=true in the presence snapshot — the honesty-floor feed for
+      E1's break-through banner. Tests: cabinet/scripts/tests/
+      test_world_chronicle.py (determinism, zero-leak injection, cursor
+      resume, rollover, write fence).

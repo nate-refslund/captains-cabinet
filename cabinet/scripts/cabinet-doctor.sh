@@ -30,12 +30,14 @@
 #      This script NEVER activates/deactivates anything and never calls
 #      launchctl bootstrap/bootout — probe-only, per the generate-plists.py
 #      security contract.
-#   9. world-chronicle freshness (Cabinet World E0a, 2026-07-07): when the
-#      world-census manifest row is enabled, the newest keyframe date in
-#      shared/interfaces/world-chronicle.jsonl must be ≤2 days old — a dead
-#      census writer accrues PERMANENT replay fog (the file-count surfaces
-#      have no ledger to backfill from), a rot class the generic row↔job↔log
-#      probe alone would surface only as one late log among many.
+#   9. world read-model liveness (Cabinet World E0a/E0b, 2026-07-07):
+#      (a) when the world-census manifest row is enabled, the newest keyframe
+#      date in shared/interfaces/world-chronicle.jsonl must be ≤2 days old —
+#      a dead census writer accrues PERMANENT replay fog (the file-count
+#      surfaces have no ledger to backfill from); (b) when the
+#      world-chronicle row is enabled, cabinet:world:chronicle:heartbeat must
+#      exist (the daemon SETs it EX 900 every tick — absence = daemon dead,
+#      distinct from launchd thinking the job is loaded).
 #
 # OUTPUT: one line per finding (OK / WARN / WAIVED / SKIP / DEAD), then either
 #   CABINET_DOCTOR GREEN (checks=N warn=N waived=N)
@@ -449,6 +451,21 @@ case "$WORLD_STALE" in
   STALE*)   dead "world-chronicle — ${WORLD_STALE#STALE } — census writer dead, replay fog accruing (E0a)" ;;
   *)        warn "world-chronicle — probe output unparseable: $WORLD_STALE" ;;
 esac
+
+# 9b. world-chronicle DAEMON heartbeat (E0b) — key is SET EX 900 per tick,
+# so bare existence IS freshness; absence with an enabled row = daemon dead.
+if awk '/^  - name: world-chronicle$/{f=1} f&&/^  - name: /&&!/world-chronicle/{f=0} f&&/disabled: true/{d=1} END{exit d?0:1}' cabinet/services.yml 2>/dev/null; then
+  skip "world-chronicle-daemon — row disabled (parked)"
+elif grep -qE '^  - name: world-chronicle$' cabinet/services.yml 2>/dev/null; then
+  WCHB="$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET cabinet:world:chronicle:heartbeat 2>/dev/null)"
+  if [ -n "$WCHB" ] && [ "$WCHB" != "(nil)" ]; then
+    ok "world-chronicle-daemon — heartbeat live ($WCHB)"
+  else
+    dead "world-chronicle-daemon — row enabled but cabinet:world:chronicle:heartbeat absent (daemon dead; E0b)"
+  fi
+else
+  skip "world-chronicle-daemon — no manifest row"
+fi
 
 # ============================================================
 # verdict + heartbeat
