@@ -1,5 +1,7 @@
 # Master-Plan Execution Status
 
+> **SUPERSEDED 2026-07-07** by `operative-egg-plan-2026-07-07.md` + `operative-egg-ledger-2026-07-07.yml` (A13: the yml ledger is THE execution-state surface) — update the ledger, not this file; content below is a frozen historical record.
+
 > Live tracking for `plan-A-personal-clone-org-2026-07-02.md` + `plan-B-macmini-product-org-2026-07-02.md`.
 > One line per item touched; evidence links mandatory. Update in the same change as the work (docs-track-code).
 
