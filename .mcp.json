@@ -6,14 +6,9 @@
       "env": { "NOTION_TOKEN": "${NOTION_API_KEY}" }
     },
     "neon": {
-      "command": "bash",
-      "args": ["-c", "npx -y @neondatabase/mcp-server-neon start $NEON_API_KEY"],
-      "env": { "NEON_API_KEY": "${NEON_API_KEY}" }
-    },
-    "linear": {
-      "command": "npx",
-      "args": ["-y", "@mseep/linear-mcp"],
-      "env": { "LINEAR_API_KEY": "${LINEAR_API_KEY}" }
+      "type": "http",
+      "url": "https://mcp.neon.tech/mcp",
+      "headers": { "Authorization": "Bearer ${NEON_API_KEY}" }
     },
     "vercel": {
       "command": "npx",
@@ -23,16 +18,17 @@
     "redis-trigger-channel": {
       "command": "bun",
       "args": ["run", "${CLAUDE_PROJECT_DIR}/cabinet/channels/redis-trigger-channel/index.ts"],
-      "env": { "OFFICER_NAME": "${OFFICER_NAME}", "REDIS_URL": "${REDIS_URL:-redis://127.0.0.1:6379}" }
+      "env": { "OFFICER_NAME": "${OFFICER_NAME:-captain-session}", "REDIS_URL": "${REDIS_URL:-redis://127.0.0.1:6379}" }
     },
     "library": {
       "command": "bun",
       "args": ["run", "${CLAUDE_PROJECT_DIR}/cabinet/channels/library-mcp/index.ts"],
-      "env": { "OFFICER_NAME": "${OFFICER_NAME}" }
+      "env": { "OFFICER_NAME": "${OFFICER_NAME:-captain-session}" }
     },
     "make": {
       "type": "http",
-      "url": "https://mcp.make.com"
+      "url": "https://eu2.make.com/mcp/stateless",
+      "headers": { "Authorization": "Bearer ${MAKE_MCP_TOKEN}" }
     }
   }
 }

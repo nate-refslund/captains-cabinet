@@ -1,5 +1,5 @@
 {
-  "_comment": "Mac native .mcp.json — paths + Redis DNS resolved for Mac. Reviewer audit 2026-05-23 caught Docker DNS (redis://redis:6379) + /opt/ paths in master .mcp.json. start-officer-mac.sh will copy this to .mcp.json on first run (and deep-merge with instance/agents/<officer>/mcp.json if drives_computer=true).",
+  "_comment": "Mac native .mcp.json — paths + Redis DNS resolved for Mac. Reviewer audit 2026-05-23 caught Docker DNS (redis://redis:6379) + /opt/ paths in master .mcp.json. start-officer-mac.sh will copy this to .mcp.json on first run (and deep-merge with instance/agents/<officer>/mcp.json if drives_computer=true). MCP hygiene 2026-07-07 (audit #3a/#16/#17/#18): make restored with env-based bearer auth, neon on header-auth remote endpoint (key out of argv/ps), linear deleted (granted to zero agents in cabinet/mcp-scope.yml), npx versions pinned, OFFICER_NAME defaults for non-officer sessions.",
   "mcpServers": {
     "notion": {
       "command": "npx",
@@ -7,14 +7,9 @@
       "env": { "NOTION_TOKEN": "${NOTION_API_KEY}" }
     },
     "neon": {
-      "command": "bash",
-      "args": ["-c", "npx -y @neondatabase/mcp-server-neon start $NEON_API_KEY"],
-      "env": { "NEON_API_KEY": "${NEON_API_KEY}" }
-    },
-    "linear": {
-      "command": "npx",
-      "args": ["-y", "@mseep/linear-mcp"],
-      "env": { "LINEAR_API_KEY": "${LINEAR_API_KEY}" }
+      "type": "http",
+      "url": "https://mcp.neon.tech/mcp",
+      "headers": { "Authorization": "Bearer ${NEON_API_KEY}" }
     },
     "vercel": {
       "command": "npx",
@@ -24,34 +19,39 @@
     "redis-trigger-channel": {
       "command": "bun",
       "args": ["run", "${CABINET_SOURCE_REPO}/cabinet/channels/redis-trigger-channel/index.ts"],
-      "env": { "OFFICER_NAME": "${OFFICER_NAME}", "REDIS_URL": "redis://localhost:6379" }
+      "env": { "OFFICER_NAME": "${OFFICER_NAME:-captain-session}", "REDIS_URL": "redis://localhost:6379" }
     },
     "library": {
       "command": "bun",
       "args": ["run", "${CABINET_SOURCE_REPO}/cabinet/channels/library-mcp/index.ts"],
-      "env": { "OFFICER_NAME": "${OFFICER_NAME}" }
+      "env": { "OFFICER_NAME": "${OFFICER_NAME:-captain-session}" }
+    },
+    "make": {
+      "type": "http",
+      "url": "https://eu2.make.com/mcp/stateless",
+      "headers": { "Authorization": "Bearer ${MAKE_MCP_TOKEN}" }
     },
     "_comment_captain_layer": "Below: Captain-layer tools (screen memory, browser hands, native Mac hands). Wired via setup-mac.sh Steps 9-12. Officer access gated by per-officer tools: allowlist in presets/work/agents/*.md — CoS sees everything; CTO/COO see playwright; others request via CoS.",
     "screenpipe": {
       "command": "npx",
-      "args": ["-y", "screenpipe-mcp@latest"],
-      "env": { "OFFICER_NAME": "${OFFICER_NAME}" }
+      "args": ["-y", "screenpipe-mcp@0.18.14"],
+      "env": { "OFFICER_NAME": "${OFFICER_NAME:-captain-session}" }
     },
     "chrome_devtools": {
       "command": "npx",
-      "args": ["-y", "chrome-devtools-mcp@latest", "--browserUrl", "http://127.0.0.1:9222"],
-      "env": { "OFFICER_NAME": "${OFFICER_NAME}" }
+      "args": ["-y", "chrome-devtools-mcp@1.5.0", "--browserUrl", "http://127.0.0.1:9222"],
+      "env": { "OFFICER_NAME": "${OFFICER_NAME:-captain-session}" }
     },
     "playwright": {
       "command": "npx",
-      "args": ["-y", "@playwright/mcp@latest"],
-      "env": { "OFFICER_NAME": "${OFFICER_NAME}" }
+      "args": ["-y", "@playwright/mcp@0.0.77"],
+      "env": { "OFFICER_NAME": "${OFFICER_NAME:-captain-session}" }
     },
     "cua": {
       "command": "cua-driver",
       "args": ["mcp", "--claude-code-computer-use-compat"],
       "env": {
-        "OFFICER_NAME": "${OFFICER_NAME}",
+        "OFFICER_NAME": "${OFFICER_NAME:-captain-session}",
         "CUA_MODEL_BACKEND": "${CUA_MODEL_BACKEND:-anthropic}",
         "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}"
       }

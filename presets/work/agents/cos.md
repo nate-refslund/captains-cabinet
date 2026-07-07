@@ -3,7 +3,7 @@ name: cos
 description: Chief of Staff. Coordinates the Cabinet — orchestrates Officers, runs the retro and evolution loops, produces daily briefings, escalates to Captain, audits cross-Officer quality. Use proactively for cross-Officer coordination, briefings, and Captain-facing summaries.
 model: claude-fable-5
 effort: max
-tools: Bash, Read, Edit, Write, Glob, Grep, Agent, mcp__notion, mcp__linear, mcp__library, mcp__plugin_telegram_telegram, mcp__redis_trigger_channel, mcp__screenpipe, mcp__chrome_devtools, mcp__playwright, mcp__cua
+tools: Bash, Read, Edit, Write, Glob, Grep, Agent, mcp__notion, mcp__library, mcp__plugin_telegram_telegram, mcp__redis-trigger-channel, mcp__screenpipe, mcp__chrome_devtools, mcp__playwright, mcp__cua
 color: blue
 skills:
   - cabinet-task

@@ -76,3 +76,57 @@ defense-in-depth with matching semantics on both planes. Note
 builder — if the §9 parser changes shape during this fix, update the
 generator (and its parity tests in
 `cabinet/scripts/tests/test_gen_officer_mcp_config.py`) in the same window.
+
+---
+
+## Finding #3b — descope the unregistered `cabinet` federation server (`cabinet/mcp-scope.yml`)
+
+`cabinet` is universally granted (`universal:` list, mcp-scope.yml:136),
+pre-tool-use.sh §10 implements its peer-trust policy, and CLAUDE.md "MCP
+Scope" says "FW-005 done, federation ready" — but **no config layer
+registers the server** (checked root `.mcp.json`, `.mcp.json.mac-native`,
+`instance/config/extra-mcps.json`, `instance/agents/*/mcp.json`). Every tool
+on it is unreachable; the grant is dead policy weight, same class as the
+removed `host` grant
+(`docs/proposals/germline-amendment-host-grant-removal-2026-07-07.md`).
+Per the audit-task ruling the MCP-hygiene pass did NOT invent a server
+registration — config layers were left `cabinet`-free.
+
+**Proposed edit** (unlock window): remove `cabinet` from `universal:` until
+the FW-005 server is actually wired into a config layer. **Interaction with
+§4a above** — apply the two edits to the same line together:
+
+```yaml
+universal: [telegram, library, redis-trigger-channel]
+```
+
+(= §4a's snippet minus `cabinet`.) Companion doc edit in the same pass
+(Docs-Must-Track-Code): CLAUDE.md "MCP Scope" → the "Cabinet — inter-Cabinet
+comms … federation ready" bullet should say descoped-until-registered (or be
+dropped).
+
+## Finding #15 — `.claude/settings.json` allow-list: underscored trigger-channel entry (germline half)
+
+`.claude/settings.json:20` allows `mcp__redis_trigger_channel`, which can
+never match the server named `redis-trigger-channel`.
+`.claude/settings.local.json` does not exist, so the allow-list lives ONLY
+in germline settings.json → the rename lands here.
+
+**Proposed edits** (same unlock window, same file):
+
+1. `"mcp__redis_trigger_channel"` → `"mcp__redis-trigger-channel"` (line 20).
+2. Drop the now-dangling `"mcp__linear"` allow entry (line 15) — the
+   `linear` server was deleted from both `.mcp.json` variants on
+   2026-07-07 (finding #17: granted to zero agents in mcp-scope.yml,
+   `@mseep/*` community package, read-only-archive doctrine). CLAUDE.md
+   "MCP Scope" + "Knowledge Systems" still name Linear as the read-only
+   archive — trim in the same doc pass (archive access continues via the
+   GraphQL API outside MCP).
+
+Non-germline halves of #15 landed on this branch: all 8 agent-def sources
+renamed (`instance/agents/cos.md`,
+`presets/portfolio/agents/{cos.md,_lane-ceo.md.template}`,
+`presets/work/agents/{cos,cto,cpo,cro,coo}.md`);
+`cabinet/scripts/generate-instance.py` verified clean (no tools-line
+literals). Generated `.claude/agents/*.md` are gitignored and refresh from
+these sources via load-preset.sh at next officer start.

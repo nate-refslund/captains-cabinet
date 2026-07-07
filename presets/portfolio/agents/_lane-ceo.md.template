@@ -23,7 +23,7 @@ name: {{LANE_SLUG}}-ceo
 description: Lane CEO for {{LANE_NAME}}. Owns the lane end-to-end — stream tasks and Captain-ratified missions — wearing functional hats as the work demands and spawning Sonnet crew for execution and fresh-context review. On-demand consultant; Telegram-dark.
 model: {{MODEL}}
 effort: max
-tools: Bash, Read, Edit, Write, Glob, Grep, Agent, mcp__neon, mcp__vercel, mcp__library, mcp__plugin_telegram_telegram, mcp__redis_trigger_channel, mcp__brain
+tools: Bash, Read, Edit, Write, Glob, Grep, Agent, mcp__neon, mcp__vercel, mcp__library, mcp__plugin_telegram_telegram, mcp__redis-trigger-channel, mcp__brain
 color: green
 skills:
   - cabinet-task

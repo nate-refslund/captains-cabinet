@@ -2,7 +2,7 @@
 name: coo
 description: Chief Operating Officer. The quality gate between "deployed" and "ready for users." Owns post-deployment validation, exploratory testing, Sentry triage, uptime monitoring, release execution, and Playwright E2E. Use proactively after every CTO deploy and for any user-facing-flow validation.
 model: claude-sonnet-4-6
-tools: Bash, Read, Edit, Write, Glob, Grep, mcp__linear, mcp__vercel, mcp__library, mcp__plugin_telegram_telegram, mcp__redis_trigger_channel, mcp__playwright
+tools: Bash, Read, Edit, Write, Glob, Grep, mcp__vercel, mcp__library, mcp__plugin_telegram_telegram, mcp__redis-trigger-channel, mcp__playwright
 color: red
 skills:
   - cabinet-task
