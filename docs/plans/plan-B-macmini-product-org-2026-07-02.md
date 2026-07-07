@@ -373,6 +373,17 @@ CREATE TABLE outbox (
 - Tiered recovery: **T1** re-inject the current step noting zero progress → **T2** context reset with summarization by a SEPARATE small-model call (self-summarize causes recursive bloat) + fresh session from capsule → **T3** fresh session + state handover + Captain page. T3 causes classified agent-fault vs upstream-outage before any lesson is minted (13% of incidents were upstream in the reference deployment — [RT#4] applies to recovery too).
 - Memory-pressure shed order (above 85% via `memory_pressure`): browser renderers → stateless subagent sessions → Builder workers → Chair LAST (losing a worker costs a re-dispatch; losing the Chair costs the coordination context).
 
+### B4.14 addendum — corpus seam landed early on the MacBook deployment (2026-07-07, P3b)
+
+The gather-side half of B4.14 shipped ahead of the Mini, closing the audited clean-room gap (org boxes gather ZERO sections because `env.vault_dir()` fail-closes to `""` and every `gather_signals` section was vault-rooted):
+
+- **Corpus dir exists:** `CC/product-brain/` seeded (README contract, `architecture.md` template with frontmatter date, `decisions/`, `incidents/`; `deploy-notes/` + `customers/` documented in the README, created on first write). Officers write it via normal file writes; the B4.14 embeddings index / post-file-write embed hook remains open work.
+- **Resolver:** `framework.env.product_brain_dir()` — `CABINET_PRODUCT_BRAIN_DIR` env override → `<repo>/product-brain` if it exists → `""` fail-closed (mirrors `vault_dir()`; cached per process).
+- **Gather:** `run_action_lane.PROFILES` sections carry a `source` field; `source="corpus"` sections root at the resolver instead of the vault (operational: newest 4 within the 72h window; strategic: newest 6 unwindowed). Same file-only contract, mtime `as_of` fencing, caps, and SEC-4 provenance fencing; refs namespaced `product-brain/<relpath>`. Empty resolver ⇒ sections skip (fail-closed); vault + corpus coexist additively.
+- **Tests:** `framework/acting/tests/test_gather_corpus.py` (vaultless-box gather, fencing, caps, coexistence, resolver order).
+
+Still B4.14/B4.15 (NOT landed): the ported embeddings index over this corpus, `com.cabinet.brain-index` nightly + freshness assert, support-kb provenance gating, and the bi-temporal facts store.
+
 ### B4.17 spec — the 72h unattended soak (what is measured, what aborts)
 
 **Measured (all must hold for 72 continuous hours, auto-compiled into the soak report):**

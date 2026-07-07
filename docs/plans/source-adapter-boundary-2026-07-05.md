@@ -557,3 +557,68 @@ lib OR carries a `~/.screenpipe` / vault path literal, UNLESS covered by a
 Marginal cost of a NEW flavor's source after this build: one adapter module +
 one `sources.yml` line + one manifest — no `framework/` fork. That is the whole
 point of the seam.
+
+---
+
+## 9 · Implemented addendum — `OrgSource` (P3a, 2026-07-07)
+
+*(Addendum only — the plan above is history and is unchanged. This section
+records what actually shipped for §8 item 5, the deferred "org source
+(Flavor-B) shape".)*
+
+The first ORG read adapter is now real: **`framework/sources/org.py` →
+`OrgSource`**, the full `PersonalSource` Protocol for a clean-room org box
+(previously everything fail-closed to `NullPersonalSource`, so org officers had
+ZERO query-driven recall in `run_draft_lane` / `morning_synthesis` / the
+fidelity `officer_runner`).
+
+- **`search()` is the one live capability.** It queries the cabinet's OWN
+  memory estate — the `cabinet_memory` pgvector table — through the exact
+  embedding + query path `cabinet/scripts/search-memory.sh` uses
+  (`cabinet/scripts/lib/memory.sh` → `memory_get_embedding` → parameterized
+  `psql -v` SELECT): one Voyage client, one ranking, no second Python
+  re-implementation. Subprocess is `shell=False`; untrusted text travels only
+  as argv positional parameters. Both `memory_search` row layouts parse — the
+  hybrid 8-column (2026-07-07: + blended `score` + `trust`) and the legacy
+  6-column — and hits map to the framework contract
+  `{source, ref, text, base_score, who, ts, content_ts}` (+ `similarity` /
+  `trust` extras on hybrid rows; `base_score` = the backend's ranking score) —
+  `content_ts` ISO-8601 when derivable, else honest `None` (the leak fence
+  excludes it). `library_records` is deliberately deferred until the
+  search-memory upgrade exposes a shared query path for it.
+- **Everything else mirrors `null.py` semantics** — honest empties, tri-state
+  `None` probes, `read_note` raises. The adapter never pretends a personal
+  estate it does not have.
+- **Fail-closed:** no `NEON_CONNECTION_STRING` (in env, or *named* in
+  `cabinet/.env` — checked by variable NAME only, the value is never read into
+  logs) ⇒ `available() is False` and `search()` returns the honest empty
+  without spawning anything. Any backend failure (missing `memory.sh`,
+  timeout, malformed output, "Embedding failed") degrades to the same empty —
+  never a crash into an officer lane.
+- **Env knobs:** `CABINET_ORG_MEMORY_TYPES` (comma-separated
+  `cabinet_memory.source_type` filters — normalized and passed through as ONE
+  backend filter list / one embedding; results deduped by `(source, ref)`,
+  ranked by `base_score`), `CABINET_ORG_SEARCH_LIMIT` (default 10),
+  `CABINET_ORG_MIN_SCORE` (passed through as the backend's vector-similarity
+  `min_score` — unset ⇒ the backend default — and applied client-side to
+  `base_score`).
+- **Resolver trust widened (one edit in `framework/sources/__init__.py`):** the
+  defense-in-depth module-containment check now accepts TWO trusted homes — the
+  `instance/flavor-a` tree (unchanged) **or the `framework/sources` package
+  itself**, which ships the framework-side adapters. The stray/shadow refusal
+  is unchanged for everything outside both trees.
+- **Binding an org deployment** is one `sources.yml` line (this launcher's live
+  `sources.yml` still binds `ScreenpipeSource` — the line below is the org-box
+  example, commented exactly as it would sit next to the Flavor-A binding):
+
+  ```yaml
+  # ORG / Flavor-B (clean-room) binding — real recall from cabinet_memory,
+  # honest null-mirror empties for the personal estate:
+  # adapter: framework.sources.org:OrgSource
+  ```
+
+- **Tests:** `framework/sources/tests/test_org_source.py` — protocol
+  conformance, dual-layout TSV hit-shape mapping from a mocked subprocess
+  payload, argv discipline, fail-closed-on-missing-env, comma-type
+  normalize/dedup/rank, resolver binding of `framework.sources.org:OrgSource`,
+  and a layer-sep self-check on `org.py`.

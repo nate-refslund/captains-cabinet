@@ -1,4 +1,4 @@
-# operative-egg-ledger — machine-readable execution state for docs/plans/operative-egg-plan-undefined.md
+# operative-egg-ledger — machine-readable execution state for docs/plans/operative-egg-plan-2026-07-07.md
 # THE coordination surface for all egg-compression sessions: update status/last_update here when a row moves.
 # status: todo | in-flight | done | captain-gated   (captain-gated = blocked on a Captain ruling/unlock, never self-serve)
 # Rules: beta-compression rows stay todo until CG-12=done. gamma rows until W1A-T4=done. NEVER edit schg germline paths;
@@ -6,7 +6,7 @@
 meta:
   version: 1
   created: "2026-07-07"
-  plan: "docs/plans/operative-egg-plan-undefined.md"
+  plan: "docs/plans/operative-egg-plan-2026-07-07.md"
   branch: "feat/fidelity-harness-design"
   ratification_gate: "CG-12"
 entries:
@@ -1401,7 +1401,7 @@ entries:
     lane: "alpha-additive"
     wave: "A"
     status: "done"
-    gate_cmd: "python3 -c \"import yaml,re;p=chr(124);ids={e['id'] for e in yaml.safe_load(open('docs/plans/operative-egg-ledger-undefined.yml'))['entries']};pids=set(re.findall('^'+re.escape(p)+' (R[0-9]{3}'+p+'W1A-T[0-9]'+p+'A[0-9]+'+p+'CG-[0-9]+'+p+'P[0-9]) ',open('docs/plans/operative-egg-plan-undefined.md').read(),re.M));assert pids==ids,sorted(pids^ids)\"  # exit 0 = ledger parses + 1:1 plan-row coverage"
+    gate_cmd: "python3 -c \"import yaml,re;p=chr(124);ids={e['id'] for e in yaml.safe_load(open('docs/plans/operative-egg-ledger-2026-07-07.yml'))['entries']};pids=set(re.findall('^'+re.escape(p)+' (R[0-9]{3}'+p+'W1A-T[0-9]'+p+'A[0-9]+'+p+'CG-[0-9]+'+p+'P[0-9]) ',open('docs/plans/operative-egg-plan-2026-07-07.md').read(),re.M));assert pids==ids,sorted(pids^ids)\"  # exit 0 = ledger parses + 1:1 plan-row coverage"
     last_update: "2026-07-07"
   - id: "A14"
     title: "autonomy-cell id hygiene (Part III step 2; V 3.6-3)"
@@ -1459,6 +1459,8 @@ entries:
     status: "captain-gated"
     gate_cmd: "ruling in captain-decisions.md naming the target(s) + the deferred ones"
     last_update: "2026-07-07"
+    note: "RULED 2026-07-07 (Captain): compile target = Mac-native launchd + Claude Code CLI on subscription; docker axis retained; Anthropic-API/Agent-SDK substrate swap + SDK PoC DEFERRED until commercialization-ready. Flip to done once the CG-9 ledger batch records it."
+    last_update: "2026-07-07"
   - id: "CG-6"
     title: "push decision for feat/fidelity-harness-design"
     class: "germ-keep"
@@ -1474,6 +1476,8 @@ entries:
     wave: "CG"
     status: "captain-gated"
     gate_cmd: "signed written agreement on file; ledger entry"
+    last_update: "2026-07-07"
+    note: "DEFERRED 2026-07-07 (Captain choice): employer-IP/STEP structuring deferred until commercialization-ready; day-90 legal-fail clock SUSPENDED; commercial lanes frozen by choice, engineering hygiene (de-Nate/pack rail) continues."
     last_update: "2026-07-07"
   - id: "CG-8"
     title: "mcp-scope.yml dangling host grant removal"
@@ -1512,8 +1516,10 @@ entries:
     class: "germ-keep"
     lane: "captain-gated"
     wave: "CG"
-    status: "captain-gated"
+    status: "done"
     gate_cmd: "ledger entry CG-12 status=done with Captain ack reference"
+    last_update: "2026-07-07"
+    note: "RATIFIED 2026-07-07 in-session (Captain: \"you already got my grant so you can just go ahead\") + full-autonomy grant; recorded in captain-decisions.md. Beta lane OPEN, dirty-path-guarded."
     last_update: "2026-07-07"
   - id: "CG-13"
     title: "germline cosmetic batch (next unlock window)"
