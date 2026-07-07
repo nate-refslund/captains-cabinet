@@ -11,6 +11,7 @@ verbatim.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import tempfile
@@ -20,6 +21,25 @@ from framework.fidelity.retro import parse_json_block
 
 _DEFAULT_MODEL = "claude-sonnet-4-6"
 _TIMEOUT_S = 185
+
+# Structured-output default for judge calls (AUD-11, audit #31): every judge
+# rubric expects a free-form JSON object, so the CLI-side contract is simply
+# "a JSON object" — --json-schema makes the CLI itself enforce/repair that,
+# which is what killed the old parse-retry loop.
+_ANY_OBJECT_SCHEMA: dict = {"type": "object"}
+
+# Supplementary cost signal (B5.8 credit governance): the --output-format json
+# envelope carries total_cost_usd per call. The PRIMARY meter stays the OAuth
+# usage API — these module counters are best-effort telemetry only.
+LAST_COST_USD: float | None = None
+TOTAL_COST_USD: float = 0.0
+
+
+def _record_cost(cost: Any) -> None:
+    global LAST_COST_USD, TOTAL_COST_USD
+    if isinstance(cost, (int, float)) and not isinstance(cost, bool):
+        LAST_COST_USD = float(cost)
+        TOTAL_COST_USD += float(cost)
 
 # LEAK ISOLATION (verified 2026-06-19): `claude -p` is a full Claude Code agent
 # that auto-discovers BOTH (a) project context — CLAUDE.md, .remember/ session
@@ -56,18 +76,23 @@ class OAuthUnavailableError(RuntimeError):
     CLAUDE_CODE_OAUTH_TOKEN is available for headless invocation."""
 
 
-def _build_argv(system: str, model: str) -> list[str]:
+def _build_argv(system: str, model: str, output_format: str = "text",
+                json_schema: dict | None = None) -> list[str]:
     """Construct the `claude -p` headless argv. The system prompt is appended
     (never a positional); the user payload is piped on stdin by the caller. No
     API-key flag is ever added — auth is OAuth (token in env or logged-in
-    session)."""
-    return [
+    session). With output_format="json" + a json_schema, the CLI returns a
+    result envelope whose `structured_output` is schema-validated JSON."""
+    argv = [
         "claude", "-p",
         "--model", model,
         "--append-system-prompt", system,
         "--setting-sources", _SETTING_SOURCES,  # drop user-global memory (leak)
-        "--output-format", "text",
+        "--output-format", output_format,
     ]
+    if json_schema is not None:
+        argv += ["--json-schema", json.dumps(json_schema)]
+    return argv
 
 
 def oauth_raw_llm(payload: str, system: str, max_tokens: int = 1500,
@@ -100,18 +125,52 @@ def oauth_raw_llm(payload: str, system: str, max_tokens: int = 1500,
 
 
 def oauth_json_llm(payload: str, system: str, max_tokens: int = 400,
-                   model: str = _DEFAULT_MODEL, attempts: int = 2
-                   ) -> dict[str, Any] | None:
+                   model: str = _DEFAULT_MODEL,
+                   schema: dict | None = None) -> dict[str, Any] | None:
     """JSON Claude call via OAuth. Drop-in for cl.call_llm — pass as the `llm=`
     arg to retrodiction.judge_decision. Returns the parsed dict or None.
 
-    Retries once on an unparseable/empty result: `claude -p` is occasionally
-    non-deterministic about emitting clean JSON (this surfaced live as an
-    intermittent intent_verdict='error'). A single retry absorbs that transient
-    flake; a persistent failure still returns None (the caller's error path)."""
-    for _ in range(max(1, attempts)):
-        text = oauth_raw_llm(payload, system, max_tokens=max_tokens, model=model)
-        parsed = parse_json_block(text)
-        if parsed is not None:
+    AUD-11 (audit #31): judge calls now use `--output-format json
+    --json-schema` so the CLI enforces valid JSON structurally
+    (`structured_output` in the result envelope) — this replaced the old
+    2-attempt parse-retry loop over fenced text (the intermittent
+    intent_verdict='error' flake). `schema` defaults to the permissive
+    any-object schema; pass a rubric-specific one to tighten. Auth stays
+    OAuth-ONLY by design (NO --bare: bare mode never reads OAuth/keychain and
+    would leave judges with no auth path — judges must bill the Max pool).
+    The envelope's total_cost_usd is recorded in LAST_COST_USD/TOTAL_COST_USD
+    as a supplementary B5.8 signal. max_tokens is accepted for signature
+    parity; `claude -p` manages its own output budget."""
+    argv = _build_argv(system, model, output_format="json",
+                       json_schema=schema if schema is not None
+                       else _ANY_OBJECT_SCHEMA)
+    # Same env/cwd isolation as oauth_raw_llm: strip ANTHROPIC_API_KEY (Max
+    # pool only), keep HOME (keychain), run from the clean temp cwd.
+    env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
+    try:
+        r = subprocess.run(
+            argv, input=payload, capture_output=True, text=True,
+            timeout=_TIMEOUT_S, env=env, cwd=_eval_cwd(),
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return None
+    if r.returncode != 0:
+        return None
+    try:
+        envelope = json.loads((r.stdout or "").strip() or "null")
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(envelope, dict) or envelope.get("is_error"):
+        return None
+    _record_cost(envelope.get("total_cost_usd"))
+    structured = envelope.get("structured_output")
+    if isinstance(structured, dict):
+        return structured
+    # Defensive single-pass fallback (no retry loop): older CLIs / edge cases
+    # put the text answer in `result` — parse a fenced block once.
+    result_text = envelope.get("result")
+    if isinstance(result_text, str) and result_text.strip():
+        parsed = parse_json_block(result_text)
+        if isinstance(parsed, dict):
             return parsed
     return None

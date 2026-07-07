@@ -100,32 +100,133 @@ class TestRawLlm:
         assert not os.path.exists(os.path.join(cwd, ".remember")), "cwd must not expose .remember"
 
 
+def _envelope(structured=None, result=None, cost=0.0123, is_error=False):
+    """Minimal `claude -p --output-format json` result envelope."""
+    env = {"type": "result", "subtype": "success", "is_error": is_error,
+           "total_cost_usd": cost, "session_id": "s-1"}
+    if structured is not None:
+        env["structured_output"] = structured
+    if result is not None:
+        env["result"] = result
+    return json.dumps(env)
+
+
 class TestJsonLlm:
-    def test_parses_json_verdict(self, monkeypatch):
+    """AUD-11 (audit #31): oauth_json_llm uses --output-format json
+    --json-schema; the CLI enforces the JSON contract structurally, the old
+    2-attempt parse-retry loop is gone, and total_cost_usd is captured as a
+    supplementary B5.8 signal. Auth stays OAuth-only (no --bare, no API key)."""
+
+    def test_argv_uses_output_format_json_and_json_schema(self, monkeypatch):
+        captured = {}
+
+        def fake_run(argv, **kw):
+            captured["argv"] = argv
+            captured["env"] = kw.get("env", {})
+            return subprocess.CompletedProcess(
+                argv, 0, stdout=_envelope(structured={"verdict": "match"}), stderr="")
+
+        monkeypatch.setattr(oauth_llm.subprocess, "run", fake_run)
+        out = oauth_llm.oauth_json_llm("payload", "system")
+        assert out == {"verdict": "match"}
+        argv = captured["argv"]
+        i = argv.index("--output-format")
+        assert argv[i + 1] == "json"
+        j = argv.index("--json-schema")
+        assert json.loads(argv[j + 1]) == {"type": "object"}
+        # OAuth-only discipline unchanged: no API key in child env, user
+        # setting-source still dropped.
+        assert "ANTHROPIC_API_KEY" not in captured["env"]
+        k = argv.index("--setting-sources")
+        assert "user" not in argv[k + 1].split(",")
+
+    def test_returns_structured_output_dict(self, monkeypatch):
         verdict = {"verdict": "match", "rationale": "same call",
                    "what_diverged": "", "real_decision": "ok", "draft_decision": "ok"}
-        monkeypatch.setattr(oauth_llm, "oauth_raw_llm",
-                            lambda p, s, max_tokens=400, model="claude-sonnet-4-6":
-                            "```json\n" + json.dumps(verdict) + "\n```")
-        out = oauth_llm.oauth_json_llm("payload", "system")
-        assert out == verdict
+        monkeypatch.setattr(
+            oauth_llm.subprocess, "run",
+            lambda argv, **kw: subprocess.CompletedProcess(
+                argv, 0, stdout=_envelope(structured=verdict), stderr=""))
+        assert oauth_llm.oauth_json_llm("payload", "system") == verdict
 
-    def test_returns_none_when_unparseable(self, monkeypatch):
-        monkeypatch.setattr(oauth_llm, "oauth_raw_llm",
-                            lambda p, s, max_tokens=400, model="claude-sonnet-4-6": "not json")
-        assert oauth_llm.oauth_json_llm("p", "s") is None
-
-    def test_retries_once_on_transient_unparseable(self, monkeypatch):
-        # Transient flake: first call returns non-JSON, second returns valid —
-        # the retry must absorb it (this was the live intent_verdict='error').
-        verdict = {"verdict": "match"}
+    def test_single_subprocess_call_no_retry_loop(self, monkeypatch):
         calls = {"n": 0}
 
-        def flaky(p, s, max_tokens=400, model="claude-sonnet-4-6"):
+        def fake_run(argv, **kw):
             calls["n"] += 1
-            return "garbage" if calls["n"] == 1 else "```json\n" + json.dumps(verdict) + "\n```"
+            return subprocess.CompletedProcess(argv, 0, stdout="garbage", stderr="")
 
-        monkeypatch.setattr(oauth_llm, "oauth_raw_llm", flaky)
-        out = oauth_llm.oauth_json_llm("p", "s")
-        assert out == verdict
-        assert calls["n"] == 2  # retried exactly once
+        monkeypatch.setattr(oauth_llm.subprocess, "run", fake_run)
+        assert oauth_llm.oauth_json_llm("p", "s") is None
+        assert calls["n"] == 1  # parse-retry loop removed (AUD-11)
+
+    def test_custom_schema_passthrough(self, monkeypatch):
+        captured = {}
+        schema = {"type": "object", "properties": {"verdict": {"type": "string"}},
+                  "required": ["verdict"]}
+
+        def fake_run(argv, **kw):
+            captured["argv"] = argv
+            return subprocess.CompletedProcess(
+                argv, 0, stdout=_envelope(structured={"verdict": "match"}), stderr="")
+
+        monkeypatch.setattr(oauth_llm.subprocess, "run", fake_run)
+        oauth_llm.oauth_json_llm("p", "s", schema=schema)
+        j = captured["argv"].index("--json-schema")
+        assert json.loads(captured["argv"][j + 1]) == schema
+
+    def test_fallback_parses_fenced_result_once(self, monkeypatch):
+        # Defensive single-pass fallback: no structured_output, fenced JSON in
+        # `result` (older CLI shape) still parses — but with NO retry loop.
+        verdict = {"verdict": "match"}
+        monkeypatch.setattr(
+            oauth_llm.subprocess, "run",
+            lambda argv, **kw: subprocess.CompletedProcess(
+                argv, 0,
+                stdout=_envelope(result="```json\n" + json.dumps(verdict) + "\n```"),
+                stderr=""))
+        assert oauth_llm.oauth_json_llm("payload", "system") == verdict
+
+    def test_returns_none_on_error_envelope(self, monkeypatch):
+        monkeypatch.setattr(
+            oauth_llm.subprocess, "run",
+            lambda argv, **kw: subprocess.CompletedProcess(
+                argv, 0, stdout=_envelope(structured={"x": 1}, is_error=True),
+                stderr=""))
+        assert oauth_llm.oauth_json_llm("p", "s") is None
+
+    def test_returns_none_on_nonzero_exit(self, monkeypatch):
+        monkeypatch.setattr(
+            oauth_llm.subprocess, "run",
+            lambda argv, **kw: subprocess.CompletedProcess(argv, 1, stdout="", stderr="quota"))
+        assert oauth_llm.oauth_json_llm("p", "s") is None
+
+    def test_returns_none_on_unparseable_stdout(self, monkeypatch):
+        monkeypatch.setattr(
+            oauth_llm.subprocess, "run",
+            lambda argv, **kw: subprocess.CompletedProcess(argv, 0, stdout="not json", stderr=""))
+        assert oauth_llm.oauth_json_llm("p", "s") is None
+
+    def test_captures_total_cost_usd(self, monkeypatch):
+        monkeypatch.setattr(
+            oauth_llm.subprocess, "run",
+            lambda argv, **kw: subprocess.CompletedProcess(
+                argv, 0, stdout=_envelope(structured={"v": 1}, cost=0.25), stderr=""))
+        before_total = oauth_llm.TOTAL_COST_USD
+        oauth_llm.oauth_json_llm("p", "s")
+        assert oauth_llm.LAST_COST_USD == 0.25
+        assert oauth_llm.TOTAL_COST_USD == pytest.approx(before_total + 0.25)
+
+    def test_runs_in_isolated_cwd(self, monkeypatch):
+        import os
+        captured = {}
+
+        def fake_run(argv, **kw):
+            captured["cwd"] = kw.get("cwd")
+            return subprocess.CompletedProcess(
+                argv, 0, stdout=_envelope(structured={"v": 1}), stderr="")
+
+        monkeypatch.setattr(oauth_llm.subprocess, "run", fake_run)
+        oauth_llm.oauth_json_llm("p", "s")
+        assert captured["cwd"] and os.path.isdir(captured["cwd"])
+        assert "fidelity_eval_clean" in os.path.basename(captured["cwd"])
