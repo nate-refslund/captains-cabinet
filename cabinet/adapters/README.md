@@ -59,9 +59,9 @@ Per-deployment adapter toggles live in `instance/config/adapters.yml`:
 ```yaml
 adapters:
   notion:
-    enabled: false       # legacy — default off on Mac native, on for Hetzner
+    enabled: false       # legacy — default off
   linear:
-    enabled: false       # legacy — default off on Mac native, on for Hetzner
+    enabled: false       # legacy — default off
   github-issues:
     enabled: false       # Cabinet framework backlog (FW-* tickets)
 ```
@@ -70,7 +70,7 @@ Adapters check this file at startup; `enabled: false` means dormant (no webhook 
 
 ## Adding a new adapter
 
-1. Copy `cabinet/adapters/_template/` to `cabinet/adapters/<your-adapter>/`
+1. Create `cabinet/adapters/<your-adapter>/` following the adapter layout above
 2. Implement `adapter.ts` against the `CabinetAdapter` interface
 3. Define `field-mapping.yml` for Cabinet ↔ external field correspondence
 4. Add `<your-adapter>: { enabled: false }` to `instance/config/adapters.yml` (default off until tested)
@@ -80,9 +80,6 @@ Adapters check this file at startup; `enabled: false` means dormant (no webhook 
 
 ## Existing adapters
 
-- **`notion/`** — Notion business-brain mirror (briefs, specs, decisions). Read-mostly; outbound push only for designated databases.
-- **`linear/`** — Linear sunset adapter (Spec-039 ETL was the migration). Read-only on Mac native; archive-mode on Hetzner.
-
-Both adapters' READMEs document their specific mappings + conflict policies.
+None yet — no adapter directories exist in this repo. Notion and Linear are reached today as direct integrations (Notion business brain via MCP; Linear as the read-only post-cutover archive), not through this adapter contract. The first adapter built here follows the layout + contract above.
 
 ## Per Spec 063 v1.1 Checkpoint 6.5 (adapter-contract scope)
