@@ -1639,4 +1639,5 @@ entries:
     wave: "CG"
     status: "captain-gated"
     gate_cmd: "timed hatch log <=1 day; Chair live on Null source; revocation drill fail-closed; zero hand-edits outside documented steps"
+    note: "dress-rehearsed 2026-07-07, runbook docs/runbooks/mini-hatch-tonight-2026-07-07.md, residual stalls: 5 mini-manual"
     last_update: "2026-07-07"
