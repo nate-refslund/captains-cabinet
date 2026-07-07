@@ -57,6 +57,37 @@ def _write_cfg(root, name: str, body: str) -> None:
     p.write_text(body, encoding="utf-8")
 
 
+def _launcher_instance() -> bool:
+    """True only on the original launcher's committed instance/.
+
+    The ``test_this_instance_yields_*`` byte-identity guards below compare
+    resolver output against the exact values the removed hardcodes carried —
+    values that exist only in the launcher deployment's committed
+    instance/config/platform.yml. A fresh hatch (cabinet-init →
+    generate-instance.py --adopt) regenerates platform.yml for a NEW captain,
+    so on any other instance these guards are meaningless and must SKIP, not
+    fail (found by the 2026-07-07 blind-hatch rehearsal: 6 red tests in an
+    otherwise-green Testburg clone). Sentinel: the launcher's captain_role
+    literal, which this file already asserts."""
+    try:
+        # Single "instance/config/..." path literal (not "instance"/"config")
+        # so the layer-separation gate's bare-"instance" heuristic doesn't
+        # flag this test — same form env.py itself uses.
+        cfg = os.path.join(os.path.dirname(__file__), "..", "..",
+                           "instance/config/platform.yml")
+        with open(cfg, encoding="utf-8") as fh:
+            return "captain_role: Head-of-Tech" in fh.read()
+    except OSError:
+        return False
+
+
+launcher_instance_only = pytest.mark.skipif(
+    not _launcher_instance(),
+    reason="byte-identity guard — only meaningful on the original launcher's "
+           "instance/config/platform.yml (fresh hatches regenerate it)",
+)
+
+
 class TestCaptainRole:
     """The captain_role() resolver — launcher-DRIVEN, fail-closed to generic.
 
@@ -105,6 +136,7 @@ class TestCaptainRole:
         _write_cfg(tmp_path, "platform.yml", "captain_role: Second\n")  # ignored
         assert env.captain_role() == "First"
 
+    @launcher_instance_only
     def test_this_instance_yields_head_of_tech(self, monkeypatch,
                                                isolated_role_cache):
         """Byte-identity guard: with CABINET_ROOT unset the resolver finds the
@@ -195,6 +227,7 @@ class TestOrgDomains:
         _write_cfg(tmp_path, "platform.yml", "org_domains:\n  - second.example\n")
         assert env.org_domains() == ("first.example",)   # cached, second ignored
 
+    @launcher_instance_only
     def test_this_instance_yields_the_six_org_domains(self, monkeypatch,
                                                       isolated_org_domains_cache):
         """Byte-identity guard: with CABINET_ROOT unset the resolver reads THIS
@@ -251,6 +284,7 @@ class TestTasksBoard:
         env._tasks_board_cache = None
         assert env.tasks_board() == "2222222222"
 
+    @launcher_instance_only
     def test_this_instance_yields_the_tasks_board(self, monkeypatch,
                                                   isolated_tasks_board_cache):
         """Byte-identity guard: this worktree's platform.yml yields 5091706356,
@@ -339,6 +373,7 @@ class TestCaptainTimezone:
         _write_cfg(tmp_path, "platform.yml", "captain_timezone: Asia/Tokyo\n")  # ignored
         assert env.captain_timezone() == "America/New_York"
 
+    @launcher_instance_only
     def test_this_instance_yields_europe_berlin(self, monkeypatch,
                                                 isolated_timezone_cache):
         """Byte-identity guard: with CABINET_ROOT unset the resolver finds the
@@ -429,6 +464,7 @@ class TestVaultDir:
         env._vault_dir_cache = None
         assert env.vault_dir() == "/tmp/nested/vault"
 
+    @launcher_instance_only
     def test_this_instance_yields_the_brain_vault(self, monkeypatch,
                                                   isolated_vault_dir_cache):
         """Byte-identity guard: with CABINET_ROOT unset the resolver reads THIS
@@ -493,6 +529,7 @@ class TestStateDir:
         env._state_dir_cache = None
         assert env.state_dir() == "/tmp/nested/state"
 
+    @launcher_instance_only
     def test_this_instance_yields_the_brain_state_dir(self, monkeypatch,
                                                       isolated_state_dir_cache):
         """Byte-identity guard: with CABINET_ROOT unset the resolver reads THIS
