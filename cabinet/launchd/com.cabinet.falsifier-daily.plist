@@ -4,11 +4,15 @@
      falsifier you cannot measure is theater"). 08:05 local it runs
      cabinet/scripts/falsifier-report.py, which READ-ONLY computes
      {date, acted_7d, approved_7d, reversal_rate_7d, stamped_rows_total,
-     cells_accumulating, cells_graduated, proactive_cards_7d} from the
-     consequence ledger + graduation engine + actfirst cap counters, and
-     appends ONE json line (idempotent per date) to
+     cells_accumulating, cells_graduated, proactive_cards_7d,
+     memory_ingestion, recall_drops, session_insert_failures} from the
+     consequence ledger + graduation engine + actfirst cap counters + ONE
+     constant read-only SELECT over cabinet_memory (P1c ingestion liveness,
+     2026-07-07), and appends ONE json line (idempotent per date) to
      shared/interfaces/falsifier-series.jsonl — making the Day-14 / Day-30 /
-     Quarter falsifiers mechanically observable.
+     Quarter falsifiers mechanically observable. WIRED capture classes gone
+     stale >7d print ALERT lines into this job's log (digest, not a page —
+     "ALERT" is deliberately not a JOB_ERROR_MARKERS token).
 
      Source of truth in repo; installed + loaded with:
        cp cabinet/launchd/com.cabinet.falsifier-daily.plist ~/Library/LaunchAgents/
@@ -18,8 +22,12 @@
        launchctl bootout gui/$(id -u)/com.cabinet.falsifier-daily
        rm ~/Library/LaunchAgents/com.cabinet.falsifier-daily.plist
 
-     No secrets here or in the script — it reads no .env at all (ledger files
-     + local Redis GET only). REDIS unreachable degrades to ledger-only counts.
+     No secrets HERE (plist) or in any output — the script resolves
+     NEON_CONNECTION_STRING from the environment else cabinet/.env at runtime
+     solely for the read-only ingestion SELECT; the value never reaches a log
+     or the series. REDIS unreachable degrades to ledger-only counts; psql or
+     conn-string unavailable degrades memory_ingestion to null + one
+     UNMEASURABLE alert.
      KNOWN LIMIT: a StartCalendarInterval slot missed during sleep coalesces to
      one fire on wake; the per-date idempotence makes double-fires harmless. -->
 <plist version="1.0">

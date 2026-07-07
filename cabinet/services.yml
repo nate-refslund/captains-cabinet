@@ -291,8 +291,14 @@ services:
     kind: watchdog
     command: python3.12 cabinet/scripts/falsifier-report.py
     schedule: { calendar: [{hour: 8, minute: 5}] }   # daily 08:05 local
-    expected: "one JSON line/day appended to shared/interfaces/falsifier-series.jsonl (idempotent per date) — Day-14/30/Quarter falsifiers measurable"
-    notes: read-only (ledger files + local Redis GET); Redis-unreachable degrades to ledger-only counts
+    expected: "one JSON line/day appended to shared/interfaces/falsifier-series.jsonl (idempotent per date) — Day-14/30/Quarter falsifiers measurable; since 2026-07-07 each line also carries memory_ingestion per-source_type liveness + recall_drops + session_insert_failures, and stale WIRED capture classes print ALERT lines into the job log"
+    notes: >-
+      Read-only end to end (ledger files + local Redis GET + ONE constant
+      SELECT over cabinet_memory for ingestion liveness — connection string
+      from NEON_CONNECTION_STRING else cabinet/.env, value never logged).
+      Redis-unreachable degrades to ledger-only counts; psql/conn-string
+      unavailable degrades memory_ingestion to null + an UNMEASURABLE alert,
+      never a crash.
 
   # ── Durability (lane-ops 2026-07-04) ───────────────────────────────────────
   - name: backup
@@ -428,7 +434,8 @@ services:
     kind: cron
     command: bash cabinet/cron/self-improvement-loop.sh
     schedule: { interval_s: 21600 }   # every 6h
-    expected: "loop summary (proposals/hats/skills counts) in log every 6h; auto-apply ONLY through the validation gate (scenario evals + golden eval shells) — skeleton TODO proposals stay pending_captain_approval on disk; skill induction writes drafts to memory/skills/evolved/, never auto-validates; a RED evaluated gate is LOUD (exit 3 + FATAL stderr marker → watchdog pages, review fix 2026-07-07) and the golden shells are Mac-native + self-isolating (ephemeral redis, private cache/hook copies — zero live-state writes)"
+    env: { REPORT_ONLY: "1" }   # report-only until first weekly review — flip to 0 to arm auto-apply
+    expected: "REPORT-ONLY soak (audit-ratified 2026-07-07): every 6h the log shows the loop summary PLUS a 'REPORT-ONLY' block and one grep-able REPORT_ONLY_SUMMARY JSON line (would-apply proposal ids + validation results); self_improvement_loop_started/completed events carry report_only: true and a would_apply payload; ZERO mutations — no adapt_role, no proposal YAMLs, no drafts in memory/skills/evolved/. Validation still RUNS: a RED evaluated gate stays LOUD (exit 3 + FATAL stderr marker → watchdog pages, review fix 2026-07-07) and the golden shells are Mac-native + self-isolating (ephemeral redis, private cache/hook copies — zero live-state writes). Once REPORT_ONLY is flipped to \"0\" (re-render + reload required): auto-apply ONLY through the validation gate — skeleton TODO proposals stay pending_captain_approval on disk; skill induction writes drafts to memory/skills/evolved/, never auto-validates."
     notes: >-
       R8 growth engine (framework.learning.self_improvement_loop) — the
       eval→pattern→proposal→gate→apply chain, never scheduled since it
@@ -438,6 +445,22 @@ services:
       safe (template comment). Interpreter pinned in the script via
       CABINET_PYTHON (default /opt/homebrew/bin/python3.12): bare python3
       under launchd is the 3.9 system Python; the framework targets 3.12.
+      REPORT_ONLY wiring (2026-07-07, hardened by the same-day review fix):
+      the wrapper maps env REPORT_ONLY onto the driver's --report-only flag
+      — propose + validate run for real, every apply/promote/graduate is
+      withheld, and the completion event records what WOULD have applied.
+      REPORT-ONLY IS THE WRAPPER DEFAULT: an UNSET env runs --report-only,
+      so role-evals-weekly.sh's inline call and manual runs are soak-safe
+      with no export; ONLY an explicit REPORT_ONLY=0 (or false/no/off)
+      arms apply-mode — flip this row's env to "0" (and set it wherever
+      the weekly chain runs) to arm. INSTALL SOURCE for this
+      row moved 2026-07-07 from the hand-kept envsubst template to the
+      generated plist (cabinet/scripts/generate-plists.py → generated/ →
+      cp to ~/Library/LaunchAgents + bootstrap), so the row's env here IS
+      what launchd runs; logs follow the generated convention
+      (~/Library/Logs/cabinet/self-improvement-loop.log + .err — the old
+      template wrote .out.log/.err.log). Runbook:
+      cabinet/runbooks/org-memory-day1.md §self-improvement.
   - name: apoptosis-sweep
     label: com.cabinet.apoptosis-sweep
     kind: cron
@@ -451,3 +474,36 @@ services:
       the wrapper — framework code never names the config layer). Runs after
       the 03:00 backup so daily snapshots capture pre-rotation state.
       Born-safe polarity: propose-only cards for anything irreversible.
+
+  # ── Memory ingestion netting (P1/P3d, armed 2026-07-07) ────────────────────
+  # The capture hooks feeding cabinet_memory are best-effort exit-0 by design;
+  # this row is the nightly REPAIR half under them (the daily falsifier line's
+  # memory_ingestion object + ALERT lines are the OBSERVABILITY half). INSTALL
+  # SOURCE is the generate-plists.py pipeline (review fix 2026-07-07 — the
+  # original hand-made cabinet/launchd/com.cabinet.memory-reconcile.plist
+  # hardcoded /Users/nate paths, breaking every clean-room install, and was
+  # deleted): python3.12 cabinet/scripts/generate-plists.py → cp
+  # cabinet/launchd/generated/com.cabinet.memory-reconcile.plist
+  # ~/Library/LaunchAgents/ → launchctl bootstrap (same pattern as
+  # self-improvement-loop below). NOTE: hq's installed copy (2026-07-07,
+  # pre-fix) logs to ~/.cabinet/logs/memory-reconcile.log; the generated
+  # convention is ~/Library/Logs/cabinet/memory-reconcile.log — check both
+  # until the agent is reinstalled from the generated plist.
+  - name: memory-reconcile
+    label: com.cabinet.memory-reconcile
+    kind: cron
+    command: bash cabinet/scripts/memory-reconcile.sh
+    schedule: { calendar: [{hour: 3, minute: 30}] }   # nightly 03:30 local — after the 03:00 backup, before the 03:45 apoptosis sweep
+    expected: "one summary line/night in the service log (generated-plist convention ~/Library/Logs/cabinet/memory-reconcile.log; hq's pre-fix install writes ~/.cabinet/logs/memory-reconcile.log) with checked/queued/current/hook-owned counts; hook-missed or hash-drifted knowledge files land back in cabinet_memory within a day"
+    notes: >-
+      P3d netting under the best-effort capture hooks: snapshots
+      cabinet_memory holdings (ONE read-only SELECT), re-hashes the
+      post-file-write-memory.sh watch list (captain-decisions.md deliberately
+      excepted — its ingest belongs to the captain-law append-interface wave;
+      see the script header), queue-embeds missing/hash-drifted files onto
+      cabinet:memory:embed_queue. Reconcile-queued rows carry
+      metadata.content_sha256, so drift detection sharpens night over night.
+      Idempotent via the memory-worker's ON CONFLICT upsert on
+      idx_cm_unique_source. Needs NEON_CONNECTION_STRING from cabinet/.env
+      (sourced by the script) + psql/redis-cli on PATH; queue-push failures
+      exit non-zero so launchd surfaces them.

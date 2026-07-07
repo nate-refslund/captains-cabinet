@@ -9,7 +9,7 @@ human step of the flip protocol).
 | --- | --- | --- |
 | `com.cabinet.undo-sweep` | hourly | UNDO-3 TTL sweep → first machine ttl_ok / silent_revert labels + F2b revert-rates (real Monday probe; skips on outage rather than mint false ttl_ok) |
 | `com.cabinet.actfirst-canary` | weekly (Mon 07:15) | TI-7 journal-only create→verify→reverse canaries + kind/silence breakers + veto audit (failure freezes the kind) |
-| `com.cabinet.falsifier-daily` | daily (08:05) | one read-only JSON line/day → `shared/interfaces/falsifier-series.jsonl` so Day-14/Day-30/Quarter falsifiers are measurable |
+| `com.cabinet.falsifier-daily` | daily (08:05) | one read-only JSON line/day → `shared/interfaces/falsifier-series.jsonl` so Day-14/Day-30/Quarter falsifiers are measurable (since 2026-07-07 the line also carries `memory_ingestion` per-source_type liveness + `recall_drops` + `session_insert_failures`, with ALERT digest lines for stale wired capture classes) |
 
 Not yet scheduled (run manually or add via the fleet manifest, which the supply lane owns): `cabinet/scripts/emit-graduation-transitions.py` — sweeps per-cell graduation state and emits `graduation_transition` org events when a cell MOVES (unmeasured/propose_only/eligible/graduated/demote), so briefings can see cells moving instead of only counting snapshots. First run seeds its state file silently (`--emit-baseline` to override); `--dry-run` prints without emitting.
 

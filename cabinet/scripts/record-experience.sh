@@ -266,6 +266,42 @@ else
   echo "No DATABASE_URL — saved to file only"
 fi
 
+# ============================================================
+# 2b. Queue for Cabinet Memory embedding (P1a, 2026-07-07)
+# ============================================================
+# This script is the FLEET's habitual lesson writer, yet it never fed
+# cabinet_memory — experience_record was a documented source_type with zero
+# rows ever (the memory audit's headline gap). Queue the record onto the
+# embed stream (memory-worker embeds + upserts; idempotent under
+# idx_cm_unique_source on (source_type, source_id)).
+#   source_id         = the md file stem (links the row back to the record)
+#   source_created_at = the record timestamp
+#   content           = same shape backfill-memory.sh used, so searches rank
+#                       live and backfilled records alike
+#   officer           = the positional $1 RECORD officer (attribution note in
+#                       block 1c: the record's officer, NOT the session's
+#                       OFFICER_NAME — this runs before that reassignment)
+# Best-effort end to end: a Redis hiccup must never fail the recording (the
+# md file is the durable record; the nightly memory-reconcile netting and the
+# falsifier's ingestion-liveness line catch persistent silence). Subshell so
+# env/exports don't leak; REDIS_HOST defaults localhost (Mac-native; Docker
+# exports REDIS_HOST — same rationale as the counter reset below).
+(
+  export REDIS_HOST="${REDIS_HOST:-localhost}" REDIS_PORT="${REDIS_PORT:-6379}"
+  source "$CABINET_ROOT/cabinet/scripts/lib/memory.sh" 2>/dev/null || exit 0
+  declare -f memory_queue_embed > /dev/null || exit 0
+  EMBED_CONTENT="[${OUTCOME}] ${TASK_SUMMARY}
+
+${WHAT_HAPPENED}
+
+Lessons: ${LESSONS:-No specific lessons noted.}"
+  EMBED_META=$(jq -nc --arg trust "officer" --arg writer "$OFFICER" \
+    --arg outcome "$OUTCOME" --arg tags "$TAGS" \
+    '{trust: $trust, writer: $writer, outcome: $outcome, tags: $tags}')
+  memory_queue_embed "experience_record" "$(basename "$RECORD_FILE" .md)" \
+    "$OFFICER" "" "$EMBED_CONTENT" "$EMBED_META" "$TIMESTAMP"
+) > /dev/null 2>&1 || true
+
 # Reset experience record counters after recording.
 # Host: localhost resolves on Mac-native AND Docker exports REDIS_HOST=redis-<slug>;
 # the legacy `-h redis` default silently failed on Mac (Docker service name does not

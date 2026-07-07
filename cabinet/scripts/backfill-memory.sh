@@ -1,7 +1,24 @@
 #!/bin/bash
-# backfill-memory.sh — One-time backfill of existing data into cabinet_memory
+# backfill-memory.sh — Idempotent backfill of existing data into cabinet_memory
 # Sources: experience_records, cabinet_research (both from internal PG),
-#          captain-decisions.md, framework files (CLAUDE.md, agent defs, guide)
+#          ALL hook-watched knowledge files (captain-decisions.md per-H2-entry,
+#          captain-patterns/intents, tech radar, product specs, backlog, tier2
+#          working notes + reflections, skills, product-brain corpus,
+#          constitution), and framework extras (CLAUDE.md, agent defs, guide,
+#          officer CLAUDE.md).
+#
+# Parsing/queueing logic is SHARED with the live hook: this script sources
+# cabinet/scripts/hooks/post-file-write-memory.sh in library mode
+# (POST_FILE_WRITE_MEMORY_LIB=1) so backfill and hook can never drift.
+# Content-time rule: source_created_at derives from content (heading date,
+# frontmatter, filename) — NEVER file mtime.
+#
+# Usage: backfill-memory.sh [--files-only]
+#   --files-only   Skip the PG-sourced sections (experience_records,
+#                  cabinet_research); re-queue only the knowledge files.
+#
+# Idempotent: cabinet_memory has a partial-unique (source_type, source_id), so
+# re-queued items upsert in place (version bump) rather than duplicate.
 
 set -uo pipefail
 
@@ -16,13 +33,27 @@ source "$CABINET_ROOT/cabinet/.env" 2>/dev/null
 set +a
 source "$CABINET_ROOT/cabinet/scripts/lib/memory.sh"
 
+# Shared parsing/queueing functions (pfwm_*) — same code path as the live hook.
+POST_FILE_WRITE_MEMORY_LIB=1
+source "$CABINET_ROOT/cabinet/scripts/hooks/post-file-write-memory.sh"
+unset POST_FILE_WRITE_MEMORY_LIB
+
 # Fail fast if required env is missing (prevents silent queue of unembeddable items)
 : "${NEON_CONNECTION_STRING:?NEON_CONNECTION_STRING is required}"
 : "${VOYAGE_API_KEY:?VOYAGE_API_KEY is required}"
 : "${REDIS_HOST:=redis}"
 : "${REDIS_PORT:=6379}"
 
+FILES_ONLY=0
+[ "${1:-}" = "--files-only" ] && FILES_ONLY=1
+
 log() { echo "[backfill $(date -u +%H:%M:%S)] $1"; }
+
+# Backfill runs outside an officer session: honor CLAUDE_OFFICER when set,
+# otherwise attribute to "system" (matches the historical backfill officer).
+WRITER="${CLAUDE_OFFICER:-system}"
+
+if [ "$FILES_ONLY" -eq 0 ]; then
 
 # =============================================================
 # 1. Experience records — queue for re-embedding (table has content but no embeddings)
@@ -78,108 +109,66 @@ SQLEOF
 done
 log "cabinet_research: backfilled"
 
+fi  # FILES_ONLY
+
 # =============================================================
-# 3. Framework files — universal set (CLAUDE.md, agents, constitution, officer CLAUDE.md)
+# 3. Watched knowledge files — SAME parsing as the live hook.
+#    captain-decisions.md is split per-H2-entry inside
+#    pfwm_queue_watched_file (whole-file fallback if zero entries parse);
+#    all files get content-derived source_created_at (never mtime) and
+#    writer/trust metadata.
+# =============================================================
+log "Queueing watched knowledge files (shared hook logic)..."
+WF_COUNT=0
+for f in "$CABINET_ROOT/shared/interfaces/captain-decisions.md" \
+         "$CABINET_ROOT/shared/interfaces/captain-patterns.md" \
+         "$CABINET_ROOT/shared/interfaces/captain-intents.md" \
+         "$CABINET_ROOT/shared/interfaces/tech-radar.md" \
+         "$CABINET_ROOT"/shared/interfaces/product-specs/*.md \
+         "$CABINET_ROOT/shared/backlog.md" \
+         "$CABINET_ROOT"/instance/memory/tier2/*/working-notes.md \
+         "$CABINET_ROOT"/instance/memory/tier2/*/reflections/*.md \
+         "$CABINET_ROOT"/memory/skills/*.md \
+         "$CABINET_ROOT"/memory/skills/evolved/*.md \
+         "$CABINET_ROOT"/constitution/*.md; do
+  [ ! -f "$f" ] && continue
+  [[ "$(basename "$f")" == TEMPLATE* ]] && continue
+  pfwm_queue_watched_file "$f" "$WRITER" && WF_COUNT=$((WF_COUNT+1))
+done
+
+# product-brain corpus (source_type=product_brain, whole-file embeds) — find,
+# not a glob, because the corpus nests to arbitrary depth (decisions/,
+# incidents/, per-product subdirs). Same TEMPLATE skip as above.
+while IFS= read -r -d '' f; do
+  [[ "$(basename "$f")" == TEMPLATE* ]] && continue
+  pfwm_queue_watched_file "$f" "$WRITER" && WF_COUNT=$((WF_COUNT+1))
+done < <(find "$CABINET_ROOT/product-brain" -type f -name '*.md' -print0 2>/dev/null)
+
+log "watched knowledge files queued: $WF_COUNT"
+
+# =============================================================
+# 4. Framework extras not on the hook watch-list (CLAUDE.md, guide, agent
+#    defs, officer CLAUDE.md). Content-time derived (never mtime), trust=derived.
 # =============================================================
 log "Queueing framework files..."
 FW_COUNT=0
-queue_file() {
-  local f="$1" source_type="$2"
-  [ ! -f "$f" ] && return
-  local content
+queue_framework_file() {
+  local f="$1"
+  [ ! -f "$f" ] && return 1
+  local content rel_path ts meta
   content=$(cat "$f")
-  [ -z "$(printf '%s' "$content" | tr -d '[:space:]')" ] && return
-  local rel_path="${f#${CABINET_ROOT}/}"
-  local mtime
-  mtime=$(date -u -r "$f" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "")
-  memory_queue_embed "$source_type" "$rel_path" "system" "" "$content" "{}" "$mtime" && FW_COUNT=$((FW_COUNT+1))
+  [ -z "$(printf '%s' "$content" | tr -d '[:space:]')" ] && return 1
+  rel_path="${f#${CABINET_ROOT}/}"
+  ts="$(pfwm_content_ts "$f")"  # "" when underivable — NEVER mtime
+  meta=$(jq -nc --arg writer "$WRITER" '{writer: $writer, trust: "derived"}')
+  memory_queue_embed "framework_file" "$rel_path" "system" "" "$content" "$meta" "$ts"
 }
-
 for f in "$CABINET_ROOT/CLAUDE.md" \
          "$CABINET_ROOT/founders-cabinet-guide.md" \
          "$CABINET_ROOT"/.claude/agents/*.md \
-         "$CABINET_ROOT"/constitution/*.md \
          "$CABINET_ROOT"/officers/*/CLAUDE.md; do
-  queue_file "$f" "framework_file"
+  queue_framework_file "$f" && FW_COUNT=$((FW_COUNT+1))
 done
 log "framework files queued: $FW_COUNT"
 
-# =============================================================
-# 3b. Shared interfaces — tech radar, backlog, working notes
-# =============================================================
-log "Queueing shared interfaces..."
-SI_COUNT=0
-for f in "$CABINET_ROOT/shared/backlog.md" \
-         "$CABINET_ROOT/shared/interfaces/tech-radar.md" \
-         "$CABINET_ROOT"/instance/memory/tier2/*/working-notes.md; do
-  if [ -f "$f" ]; then
-    content=$(cat "$f")
-    [ -z "$(printf '%s' "$content" | tr -d '[:space:]')" ] && continue
-    rel_path="${f#${CABINET_ROOT}/}"
-    mtime=$(date -u -r "$f" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "")
-    # tech-radar → tech_radar; backlog → working_note; working-notes → working_note
-    case "$rel_path" in
-      *tech-radar.md)  st="tech_radar" ;;
-      *backlog.md)     st="working_note" ;;
-      *working-notes.md) st="working_note" ;;
-      *) st="working_note" ;;
-    esac
-    memory_queue_embed "$st" "$rel_path" "system" "" "$content" "{}" "$mtime" && SI_COUNT=$((SI_COUNT+1))
-  fi
-done
-log "shared interfaces queued: $SI_COUNT"
-
-# =============================================================
-# 3c. Product specs (if directory exists)
-# =============================================================
-log "Queueing product specs..."
-SPEC_COUNT=0
-if [ -d "$CABINET_ROOT/shared/interfaces/product-specs" ]; then
-  for f in "$CABINET_ROOT"/shared/interfaces/product-specs/*.md; do
-    [ ! -f "$f" ] && continue
-    content=$(cat "$f")
-    [ -z "$(printf '%s' "$content" | tr -d '[:space:]')" ] && continue
-    rel_path="${f#${CABINET_ROOT}/}"
-    mtime=$(date -u -r "$f" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "")
-    memory_queue_embed "product_spec" "$rel_path" "system" "" "$content" "{}" "$mtime" && SPEC_COUNT=$((SPEC_COUNT+1))
-  done
-fi
-log "product specs queued: $SPEC_COUNT"
-
-# =============================================================
-# 4. Captain decisions (parse markdown table)
-# =============================================================
-log "Queueing captain decisions..."
-DEC_FILE="$CABINET_ROOT/shared/interfaces/captain-decisions.md"
-if [ -f "$DEC_FILE" ]; then
-  # Parse markdown table rows
-  row_num=0
-  while IFS='|' read -r _ date decision why affected _; do
-    date=$(echo "$date" | xargs)
-    decision=$(echo "$decision" | xargs)
-    why=$(echo "$why" | xargs)
-    affected=$(echo "$affected" | xargs)
-    # Skip non-data rows
-    [[ ! "$date" =~ ^2026- ]] && continue
-    content="Decision: $decision | Why: $why | Affected: $affected"
-    row_num=$((row_num+1))
-    memory_queue_embed "captain_decision" "cd-${date}-${row_num}" "captain" "captain" "$content" "$(jq -nc --arg date "$date" --arg affected "$affected" '{date: $date, affected: $affected}')" "${date}T00:00:00Z"
-  done < "$DEC_FILE"
-  log "captain decisions queued"
-fi
-
-# =============================================================
-# 5. Skills
-# =============================================================
-log "Queueing skills..."
-for f in "$CABINET_ROOT"/memory/skills/*.md; do
-  [ ! -f "$f" ] && continue
-  [[ "$(basename "$f")" == TEMPLATE* ]] && continue
-  content=$(cat "$f")
-  rel_path=${f#${CABINET_ROOT}/}
-  mtime=$(date -u -r "$f" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "")
-  memory_queue_embed "skill" "$rel_path" "system" "" "$content" "{}" "$mtime"
-done
-log "skills queued"
-
-log "Done queueing. Run: bash cabinet/scripts/memory-worker.sh --once  (repeat until queue is empty)"
+log "Done queueing. The live memory-worker drains the queue; or run: bash cabinet/scripts/memory-worker.sh --once  (repeat until queue is empty)"

@@ -10,13 +10,40 @@ measurable by appending one JSON line per day to
 shared/interfaces/falsifier-series.jsonl:
 
   {date, acted_7d, approved_7d, reversal_rate_7d, stamped_rows_total,
-   cells_accumulating, cells_graduated, proactive_cards_7d}
+   cells_accumulating, cells_graduated, proactive_cards_7d,
+   memory_ingestion, recall_drops, session_insert_failures}
 
-Everything is computed read-only from framework.fidelity.consequence
+Memory-ingestion liveness (P1c, 2026-07-07): the capture hooks feeding
+cabinet_memory are best-effort exit-0 BY DESIGN (a hook must never fail the
+officer tool call), which historically meant zero observability — 11/16
+source classes had never landed a single row and nothing said so. Each daily
+line now also carries:
+
+  * memory_ingestion — compact per-source_type object
+    {"<source_type>": {"n": <rowcount>, "latest": <max created_at, ISO-UTC>}}
+    from ONE constant read-only SELECT over cabinet_memory. Connection string
+    comes from NEON_CONNECTION_STRING (env) else cabinet/.env — the VALUE is
+    used for psql argv only and is NEVER printed or logged. Unmeasurable
+    (no psql / no conn string / query failed) degrades to null + one ALERT
+    line, never a crash.
+  * recall_drops — Redis GET cabinet:memory:recall_drops (0 when absent).
+  * session_insert_failures — Redis GET cabinet:memory:session_insert_failures
+    (incremented by the pre-compact.sh wrapper when a session_memories INSERT
+    fails; 0 when absent).
+
+WIRED source classes (a capture path exists in the live fleet:
+captain_decision, telegram_dm, reflection, skill, experience_record,
+session_memory) whose max(created_at) is older than 7 days — or which have
+no rows at all — produce an "ALERT:" line on stdout, i.e. in this job's log
+digest (~/.cabinet/logs/falsifier-daily.log). "ALERT" is deliberately NOT in
+the outcome-watchdog's JOB_ERROR_MARKERS: a stale ingestion class is digest
+material for the Captain's readout, not a fleet page.
+
+Everything else is computed read-only from framework.fidelity.consequence
 (read_ledger / compute_ratios), framework.fidelity.graduation.evaluate, and a
 read-only GET of the actfirst_canary estate cap counters. The ONLY write is
-the jsonl append (idempotent: today's line is never duplicated). No network,
-no Redis writes, no ledger writes, no secrets.
+the jsonl append (idempotent: today's line is never duplicated). No Redis
+writes, no ledger writes, no secrets in output.
 
 Run: python3.12 cabinet/scripts/falsifier-report.py
 Scheduled by cabinet/launchd/com.cabinet.falsifier-daily.plist.
@@ -26,6 +53,8 @@ from __future__ import annotations
 import datetime as dt
 import json
 import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -39,6 +68,24 @@ from framework.fidelity.consequence import (  # noqa: E402
 
 SERIES_PATH = _REPO_ROOT / "shared" / "interfaces" / "falsifier-series.jsonl"
 WINDOW_DAYS = 7
+
+# Source classes with a LIVE capture path in the fleet (P1a/b/c wiring,
+# 2026-07-07): captain_decision + skill + reflection via
+# post-file-write-memory.sh, telegram_dm via capture-captain-dm.sh /
+# post-reply-memory.sh, experience_record via record-experience.sh,
+# session_memory via pre-compact.sh. A wired class going silent for
+# WINDOW_DAYS is a broken capture hook — exactly the failure the old
+# best-effort-exit-0 posture made invisible.
+WIRED_SOURCE_TYPES = ("captain_decision", "telegram_dm", "reflection",
+                      "skill", "experience_record", "session_memory")
+
+# Constant, read-only aggregate — no user input reaches this string, ever.
+_INGESTION_SQL = (
+    "SELECT source_type, count(*), "
+    "to_char(max(created_at) AT TIME ZONE 'UTC', "
+    "'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') "
+    "FROM cabinet_memory GROUP BY 1 ORDER BY 1"
+)
 
 
 def _now() -> dt.datetime:
@@ -87,13 +134,107 @@ def _redis_acted_counts(now: dt.datetime,
     return total
 
 
+def _counter(redis_get: Optional[Callable[[str], str]], key: str) -> int:
+    """Read one non-negative Redis counter; any failure/absence reads 0."""
+    if redis_get is None:
+        return 0
+    try:
+        return int(redis_get(key) or 0)
+    except Exception:
+        return 0
+
+
+def _neon_conn() -> Optional[str]:
+    """NEON_CONNECTION_STRING from the environment, else parsed line-by-line
+    from cabinet/.env (launchd runs carry no login env). The returned VALUE
+    goes into psql argv ONLY — never into any print/log/series output."""
+    conn = os.environ.get("NEON_CONNECTION_STRING", "").strip()
+    if conn:
+        return conn
+    try:
+        for raw in (_REPO_ROOT / "cabinet" / ".env").read_text().splitlines():
+            line = raw.strip()
+            if line.startswith("export "):
+                line = line[len("export "):].strip()
+            if line.startswith("NEON_CONNECTION_STRING="):
+                val = line.split("=", 1)[1].strip().strip('"').strip("'")
+                return val or None
+    except OSError:
+        return None
+    return None
+
+
+def _psql_bin() -> Optional[str]:
+    """psql from PATH, else the Homebrew install (launchd-minimal-PATH class
+    of failure — same trap that killed retro-trigger)."""
+    found = shutil.which("psql")
+    if found:
+        return found
+    brew = "/opt/homebrew/bin/psql"
+    return brew if os.path.exists(brew) else None
+
+
+def read_memory_ingestion() -> Optional[Dict[str, Dict[str, Any]]]:
+    """Per-source_type ingestion liveness from ONE constant read-only SELECT:
+    {source_type: {"n": rowcount, "latest": ISO-UTC max(created_at)}}.
+
+    None (json null in the series) when unmeasurable — psql or the connection
+    string is unavailable, or the query failed. Degrade, never crash: the
+    rest of the daily line must still append."""
+    conn = _neon_conn()
+    psql = _psql_bin()
+    if not conn or not psql:
+        return None
+    try:
+        proc = subprocess.run(
+            [psql, conn, "-X", "-q", "-t", "-A", "-F", "\t",
+             "-c", _INGESTION_SQL],
+            capture_output=True, text=True, timeout=30)
+    except Exception:
+        return None
+    if proc.returncode != 0:
+        return None
+    out: Dict[str, Dict[str, Any]] = {}
+    for line in proc.stdout.splitlines():
+        parts = line.strip().split("\t")
+        if len(parts) != 3 or not parts[0]:
+            continue
+        try:
+            n = int(parts[1])
+        except ValueError:
+            continue
+        out[parts[0]] = {"n": n, "latest": parts[2] or None}
+    return out
+
+
+def stale_wired_classes(ingestion: Optional[Dict[str, Dict[str, Any]]],
+                        now: dt.datetime) -> List[str]:
+    """WIRED classes whose latest row is older than WINDOW_DAYS — or which
+    have never landed a row at all (both are a dead capture path). Empty when
+    ingestion is unmeasurable (the caller emits its own UNMEASURABLE alert —
+    absence of data must not read as 'all six classes broke today')."""
+    if ingestion is None:
+        return []
+    floor = _iso(now - dt.timedelta(days=WINDOW_DAYS))
+    stale: List[str] = []
+    for st in WIRED_SOURCE_TYPES:
+        row = ingestion.get(st)
+        latest = str(row.get("latest") or "") if row else ""
+        if not latest or latest < floor:      # ISO-UTC strings sort lexically
+            stale.append(st)
+    return stale
+
+
 def compute_line(ledger: List[Dict[str, Any]], *,
                  now: Optional[dt.datetime] = None,
-                 redis_get: Optional[Callable[[str], str]] = None) -> Dict[str, Any]:
+                 redis_get: Optional[Callable[[str], str]] = None,
+                 ingestion: Optional[Dict[str, Dict[str, Any]]] = None,
+                 ) -> Dict[str, Any]:
     """The pure daily falsifier line from a (deduped) consequence ledger.
 
-    `ledger` / `now` / `redis_get` are injected so tests run fully fixtured;
-    production passes nothing and reads the live ledger + local Redis.
+    `ledger` / `now` / `redis_get` / `ingestion` are injected so tests run
+    fully fixtured; production passes the live ledger, local Redis, and
+    read_memory_ingestion()'s result (None → json null, honest unmeasured).
     """
     now = now or _now()
     lo = _iso(now - dt.timedelta(days=WINDOW_DAYS))
@@ -142,6 +283,12 @@ def compute_line(ledger: List[Dict[str, Any]], *,
         "cells_accumulating": cells_accumulating,
         "cells_graduated": cells_graduated,
         "proactive_cards_7d": proactive_cards_7d,
+        # P1c memory-ingestion liveness (compact; null = unmeasurable, {} =
+        # measured-and-empty — the two must never be conflated).
+        "memory_ingestion": ingestion,
+        "recall_drops": _counter(redis_get, "cabinet:memory:recall_drops"),
+        "session_insert_failures": _counter(
+            redis_get, "cabinet:memory:session_insert_failures"),
     }
 
 
@@ -167,15 +314,39 @@ def _already_reported(path: Path, date: str) -> bool:
 def main() -> int:
     from framework.frontdoor import actfirst_canary
     now = _now()
+    ingestion = read_memory_ingestion()
     line = compute_line(read_ledger(), now=now,
-                        redis_get=actfirst_canary._default_redis_get)
+                        redis_get=actfirst_canary._default_redis_get,
+                        ingestion=ingestion)
+
+    # Digest alerts (stdout → the job's log). Printed on EVERY run — including
+    # the already-reported no-op path — so the daily digest never goes quiet
+    # about a dead capture class just because the line already appended.
+    alerts: List[str] = []
+    if ingestion is None:
+        alerts.append(
+            "ALERT: memory-ingestion liveness UNMEASURABLE (psql or "
+            "NEON_CONNECTION_STRING unavailable) — a falsifier you cannot "
+            "measure is theater")
+    else:
+        for st in stale_wired_classes(ingestion, now):
+            row = ingestion.get(st) or {}
+            alerts.append(
+                f"ALERT: memory ingestion stale for wired class '{st}' — "
+                f"latest={row.get('latest') or 'never'} "
+                f"(older than {WINDOW_DAYS}d)")
+
     if _already_reported(SERIES_PATH, line["date"]):
         print(f"[{_iso(now)}] falsifier-report: {line['date']} already reported — no-op")
+        for a in alerts:
+            print(a)
         return 0
     SERIES_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(SERIES_PATH, "a") as f:
         f.write(json.dumps(line, sort_keys=True) + "\n")
     print(f"[{_iso(now)}] falsifier-report: {json.dumps(line, sort_keys=True)}")
+    for a in alerts:
+        print(a)
     return 0
 
 
