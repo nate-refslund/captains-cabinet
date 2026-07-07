@@ -9,9 +9,92 @@ HOOK_INPUT=$(cat)
 CABINET_ROOT="${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
 OFFICER="${OFFICER_NAME:-unknown}"
 TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-REDIS_HOST="${REDIS_HOST:-redis}"
+# Audit #12 (2026-07-07): docker-era `redis` default -> loopback (native Mac
+# deployment); the Stop-guard + cost ledger were no-ops in non-launchd sessions.
+REDIS_HOST="${REDIS_HOST:-127.0.0.1}"
 REDIS_PORT="${REDIS_PORT:-6379}"
 SESSION_ID=$(echo "$HOOK_INPUT" | jq -r '.session_id // "unknown"' 2>/dev/null)
+
+# ============================================================
+# 0. COST LEDGER (audit #13, germline window 2 2026-07-07)
+# ============================================================
+# Moved here from stop-hook.sh, which is wired to NO hook event (Stop ->
+# THIS script) — the only writer of cabinet:cost:tokens:* was dead, so
+# cost-report.sh / cron/cost-summary.sh / cost-dashboard.sh / the
+# mcp-server cost surface all read an empty ledger. Runs BEFORE the
+# stop-guard so every Stop event records the turn (guard-blocked stops
+# included); writes only Redis + nothing on stdout (the guard's
+# decision:block JSON protocol stays clean). Officer-gated like the guard;
+# CABINET_HOOK_TEST_MODE=1 skips it (harnesses must not write production
+# cost keys — feedback_test_harness_production_sinks.md).
+if [ "$OFFICER" != "unknown" ] && [ "${CABINET_HOOK_TEST_MODE:-0}" != "1" ]; then
+  TRANSCRIPT_PATH=$(echo "$HOOK_INPUT" | jq -r '.transcript_path // empty' 2>/dev/null)
+  if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
+    # Last assistant entry with usage data; usage + model from the same turn.
+    LAST_ENTRY=$(tail -100 "$TRANSCRIPT_PATH" | jq -c 'select(.type == "assistant" and .message.usage != null) | {usage: .message.usage, model: .message.model}' 2>/dev/null | tail -1)
+
+    if [ -n "$LAST_ENTRY" ] && [ "$LAST_ENTRY" != "null" ]; then
+      INPUT_TOKENS=$(echo "$LAST_ENTRY" | jq -r '.usage.input_tokens // 0' 2>/dev/null)
+      OUTPUT_TOKENS=$(echo "$LAST_ENTRY" | jq -r '.usage.output_tokens // 0' 2>/dev/null)
+      CACHE_WRITE=$(echo "$LAST_ENTRY" | jq -r '.usage.cache_creation_input_tokens // 0' 2>/dev/null)
+      CACHE_READ=$(echo "$LAST_ENTRY" | jq -r '.usage.cache_read_input_tokens // 0' 2>/dev/null)
+      MODEL=$(echo "$LAST_ENTRY" | jq -r '.model // "unknown"' 2>/dev/null)
+
+      # Microdollars for integer math (rates: see stop-hook.sh provenance).
+      case "$MODEL" in
+        *fable*)
+          COST_MICRO=$(( INPUT_TOKENS * 10 + OUTPUT_TOKENS * 50 + CACHE_WRITE * 12500 / 1000 + CACHE_READ * 1000 / 1000 ))
+          ;;
+        *opus*)
+          COST_MICRO=$(( INPUT_TOKENS * 15 + OUTPUT_TOKENS * 75 + CACHE_WRITE * 3750 / 1000 + CACHE_READ * 300 / 1000 ))
+          ;;
+        *)
+          COST_MICRO=$(( INPUT_TOKENS * 3 + OUTPUT_TOKENS * 15 + CACHE_WRITE * 750 / 1000 + CACHE_READ * 60 / 1000 ))
+          ;;
+      esac
+
+      CONTEXT_TOKENS=$(( INPUT_TOKENS + CACHE_READ + CACHE_WRITE ))
+      CONTEXT_WINDOW=${CONTEXT_WINDOW_SIZE:-1000000}
+      CONTEXT_PCT=0
+      [ "$CONTEXT_WINDOW" -gt 0 ] 2>/dev/null && CONTEXT_PCT=$(( CONTEXT_TOKENS * 100 / CONTEXT_WINDOW ))
+
+      redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HSET "cabinet:cost:tokens:$OFFICER" \
+        last_input "$INPUT_TOKENS" \
+        last_output "$OUTPUT_TOKENS" \
+        last_cache_write "$CACHE_WRITE" \
+        last_cache_read "$CACHE_READ" \
+        last_cost_micro "$COST_MICRO" \
+        last_model "$MODEL" \
+        last_context_tokens "$CONTEXT_TOKENS" \
+        last_context_pct "$CONTEXT_PCT" \
+        last_updated "$TIMESTAMP" \
+        > /dev/null 2>&1
+      redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" EXPIRE "cabinet:cost:tokens:$OFFICER" 86400 > /dev/null 2>&1
+
+      # Daily totals (FW-072 pool-mode field scheme preserved: per-project
+      # fields when CABINET_ACTIVE_PROJECT is set, legacy fields otherwise —
+      # one HINCRBY per Stop per dimension, no double-count).
+      TODAY=$(date -u +%Y-%m-%d)
+      PROJ="${CABINET_ACTIVE_PROJECT:-}"
+      if [ -n "$PROJ" ]; then
+        FIELD_PREFIX="${OFFICER}_${PROJ}"
+      else
+        FIELD_PREFIX="${OFFICER}"
+      fi
+      redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HINCRBY "cabinet:cost:tokens:daily:$TODAY" \
+        "${FIELD_PREFIX}_input" "$INPUT_TOKENS" > /dev/null 2>&1
+      redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HINCRBY "cabinet:cost:tokens:daily:$TODAY" \
+        "${FIELD_PREFIX}_output" "$OUTPUT_TOKENS" > /dev/null 2>&1
+      redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HINCRBY "cabinet:cost:tokens:daily:$TODAY" \
+        "${FIELD_PREFIX}_cache_write" "$CACHE_WRITE" > /dev/null 2>&1
+      redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HINCRBY "cabinet:cost:tokens:daily:$TODAY" \
+        "${FIELD_PREFIX}_cache_read" "$CACHE_READ" > /dev/null 2>&1
+      redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HINCRBY "cabinet:cost:tokens:daily:$TODAY" \
+        "${FIELD_PREFIX}_cost_micro" "$COST_MICRO" > /dev/null 2>&1
+      redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" EXPIRE "cabinet:cost:tokens:daily:$TODAY" 172800 > /dev/null 2>&1
+    fi
+  fi
+fi
 
 # ============================================================
 # 1. NEVER-STOP-DURING-A-TASK GUARD (Captain directive 2026-06-23, emphatic:

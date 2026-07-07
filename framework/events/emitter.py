@@ -143,6 +143,7 @@ VALID_EVENT_TYPES = frozenset({
     # System
     "session_started",
     "session_ended",
+    "notification_received",  # CC Notification hook (audit #20, 2026-07-07)
     "kill_switch_activated",
     "kill_switch_deactivated",
     "spending_limit_reached",
@@ -391,6 +392,7 @@ _AGGREGATE_MAP: dict[str, tuple[str, str]] = {
     "outbox_failed":              ("outbox",      "outbox_id"),
     "session_started":            ("session",     "session_id"),
     "session_ended":              ("session",     "session_id"),
+    "notification_received":      ("session",     "session_id"),
     "kill_switch_activated":      ("system",      "killswitch_id"),
     "kill_switch_deactivated":    ("system",      "killswitch_id"),
     "spending_limit_reached":     ("system",      "limit_id"),

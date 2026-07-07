@@ -45,13 +45,20 @@ if [ -f "$STATE_FILE" ] && PARSED=$(jq '.' "$STATE_FILE" 2>/dev/null); then
   TOOL_CT=$(echo "$PARSED" | jq -r '.tool_calls // 0')
   TRIGGERS=$(echo "$PARSED" | jq -r '.pending_triggers // 0')
 
-  # Check staleness — warn if state file is older than 2 hours
-  CAPTURE_EPOCH=$(date -d "$CAPTURED" +%s 2>/dev/null || echo "0")
+  # Check staleness — warn if state file is older than 2 hours.
+  # Audit #11 (germline window 2, 2026-07-07): GNU-only `date -d` fails on
+  # macOS -> CAPTURE_EPOCH=0 -> "state is ~494,000h old" on EVERY macOS
+  # compaction, training officers to ignore the one real staleness signal.
+  # BSD `date -j -f` fallback ported from post-tool-use.sh (2026-07-02 fix);
+  # parse failure (0) now SKIPS the warning — unparseable is not stale.
+  CAPTURE_EPOCH=$(date -d "$CAPTURED" +%s 2>/dev/null \
+    || date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "${CAPTURED%%.*}Z" +%s 2>/dev/null \
+    || echo "0")
   NOW_EPOCH=$(date -u +%s)
   CAPTURE_AGE=$(( NOW_EPOCH - CAPTURE_EPOCH ))
 
   echo "SESSION STATE (captured at $CAPTURED, before compaction):"
-  if [ "$CAPTURE_AGE" -gt 7200 ] 2>/dev/null; then
+  if [ "$CAPTURE_EPOCH" != "0" ] && [ "$CAPTURE_AGE" -gt 7200 ] 2>/dev/null; then
     echo "⚠️ WARNING: State is $((CAPTURE_AGE / 3600))h old — may not reflect current session."
   fi
   echo "- Tool calls this session: $TOOL_CT"

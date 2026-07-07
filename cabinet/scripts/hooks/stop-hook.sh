@@ -2,6 +2,14 @@
 # stop-hook.sh — Fires every time an officer finishes responding
 # Lightweight session state update + cost tracking preparation
 # Receives on stdin: { session_id, transcript_path, cwd, permission_mode, hook_event_name }
+#
+# STATUS (audit #13, germline window 2 2026-07-07): this script is wired to
+# NO hook event — .claude/settings.json routes Stop -> session-stop.sh, which
+# now owns the LIVE cost-ledger parse (section 2 below was copied there;
+# rate table provenance stays here). Container-era paths in sections 1/3
+# (/opt/founders-cabinet) are dead on the native Mac deployment. Kept as
+# reference until the cost surface goes native (OTel / --max-budget-usd);
+# do not wire this file to an event without deduplicating session-stop.sh.
 
 HOOK_INPUT=$(cat)
 OFFICER="${OFFICER_NAME:-unknown}"

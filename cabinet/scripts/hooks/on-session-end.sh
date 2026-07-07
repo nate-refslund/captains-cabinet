@@ -17,7 +17,10 @@ HOOK_INPUT=$(cat)
 CABINET_ROOT="${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
 OFFICER="${OFFICER_NAME:-unknown}"
 TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-REDIS_HOST="${REDIS_HOST:-redis}"
+# Audit #12 (2026-07-07): default was docker-era `redis` (DNS-dead on the
+# native Mac deployment) — session telemetry silently no-op'd in any session
+# not launched by launchd. Loopback default matches the live deployment.
+REDIS_HOST="${REDIS_HOST:-127.0.0.1}"
 REDIS_PORT="${REDIS_PORT:-6379}"
 
 SESSION_ID=$(echo "$HOOK_INPUT" | jq -r '.session_id // "unknown"' 2>/dev/null)
@@ -39,9 +42,14 @@ python3 "$CABINET_ROOT/framework/events/emitter.py" \
 # Best-effort outbox flush. The outbox relay normally runs on cron, but at
 # clean session exit we get a free chance to drain anything pending so
 # downstream systems see updates before the officer goes idle.
-OUTBOX_RELAY="$CABINET_ROOT/cabinet/scripts/outbox-relay.py"
-if [ -x "$OUTBOX_RELAY" ] || [ -f "$OUTBOX_RELAY" ]; then
-  timeout 10s python3 "$OUTBOX_RELAY" --once 2>/dev/null || true
+# Audit #14 (2026-07-07): the old path cabinet/scripts/outbox-relay.py never
+# existed — this flush silently never ran and cron was the only drain. The
+# real entrypoint is the cron wrapper (sources cabinet/.env for adapter
+# tokens, cds to repo root, execs `python3 -m framework.outbox.relay`);
+# default invocation dispatches pending exactly once.
+OUTBOX_RELAY="$CABINET_ROOT/cabinet/cron/outbox-relay.sh"
+if [ -f "$OUTBOX_RELAY" ]; then
+  timeout 10s bash "$OUTBOX_RELAY" >/dev/null 2>&1 || true
 fi
 
 exit 0

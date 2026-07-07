@@ -15,7 +15,9 @@ HOOK_INPUT=$(cat)
 CABINET_ROOT="${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
 OFFICER="${OFFICER_NAME:-unknown}"
 TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-REDIS_HOST="${REDIS_HOST:-redis}"
+# Audit #12 (2026-07-07): docker-era `redis` default -> loopback (native Mac
+# deployment; non-launchd sessions were silently no-op'ing telemetry).
+REDIS_HOST="${REDIS_HOST:-127.0.0.1}"
 REDIS_PORT="${REDIS_PORT:-6379}"
 
 TOOL_NAME=$(echo "$HOOK_INPUT" | jq -r '.tool_name // "unknown"' 2>/dev/null)
