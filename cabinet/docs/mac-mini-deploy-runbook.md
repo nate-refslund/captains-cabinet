@@ -305,8 +305,12 @@ self-wake `/loop`:
 
 - **Per-role loop prompt:** `cabinet/loop-prompts/<role>.txt` (gather-then-decide
   sweep — check triggers + intake + the lane's captain-attention backlog, do the
-  next due lane step, surface to the Chair, never DM Nate). An officer with no
-  prompt file (e.g. `cos`, the Chair) has no self-wake by design.
+  next due lane step, surface to the Chair, never DM the Captain). R091: lane
+  prompts are instance materializations (untracked; canonical copies in
+  `instance/loop-prompts/`); an officer with no per-role file gets the generic
+  parameterized tick rendered from `cabinet/loop-prompts/_template.txt`
+  (`{{officer}}` slots). Only if the template is also absent does the officer
+  have no self-wake.
 - **First arm at boot:** `start-officer-mac.sh` submits `/loop 5m <prompt>` after
   the boot prompt via `officer_loop_arm` (in `lib/officer-boot.sh`).
 - **Recurring safety-net:** `com.cabinet.officer-supervisor-mac.plist` (every 2h)

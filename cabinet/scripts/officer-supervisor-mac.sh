@@ -77,6 +77,11 @@ _rearm_officer() {
   tmux has-session -t "$session" 2>/dev/null || { log "skip $officer — no tmux session"; return 1; }
 
   local loop_file="$REPO_ROOT/cabinet/loop-prompts/${officer}.txt"
+  # R091: no per-officer prompt -> render the generic {{officer}} tick template.
+  if [ ! -f "$loop_file" ] && [ -f "$REPO_ROOT/cabinet/loop-prompts/_template.txt" ]; then
+    loop_file=$(mktemp "/tmp/loop-prompt-${officer}.XXXXXX")
+    sed "s/{{officer}}/${officer}/g" "$REPO_ROOT/cabinet/loop-prompts/_template.txt" > "$loop_file"
+  fi
   [ -f "$loop_file" ] || { log "skip $officer — no loop-prompt file"; return 1; }
 
   local prompt

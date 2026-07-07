@@ -88,6 +88,15 @@ instance/config/roster.yml
 # Deployment-local: lane-CEO role defs rendered from the portfolio template
 instance/agents/*-ceo.md
 
+# R091: per-officer self-wake prompts are instance materializations rendered
+# from cabinet/loop-prompts/_template.txt ({{officer}} slots). Only the
+# template + the generic Chair prompt ship; lane prompts live on disk
+# untracked (canonical copies in instance/loop-prompts/, also untracked).
+cabinet/loop-prompts/*.txt
+!cabinet/loop-prompts/_template.txt
+!cabinet/loop-prompts/cos.txt
+instance/loop-prompts/
+
 # Officer working notes (accumulated at runtime)
 instance/memory/tier2/**/*.md
 !instance/memory/tier2/**/.gitkeep

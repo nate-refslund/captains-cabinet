@@ -529,12 +529,21 @@ officer_boot_drive "$SESSION_NAME" "$BOOT_PROMPT"
 # cards each). The fix: queue a `/loop 5m <prompt>` after the boot prompt so the
 # officer re-checks its triggers + intake + lane work on a cadence and stays
 # alive. Per-role prompt in cabinet/loop-prompts/<officer>.txt (gather-then-
-# decide; surface to the Chair; never DM Nate). Skipped if no prompt file exists
-# (officer simply has no self-wake — no error). Idempotent: each boot is a fresh
+# decide; surface to the Chair; never DM the Captain). R091: when no per-role
+# prompt exists, the generic parameterized tick template
+# (cabinet/loop-prompts/_template.txt, {{officer}} slots) is rendered instead;
+# only if THAT is also absent does the officer simply have no self-wake.
+# Idempotent: each boot is a fresh
 # session, and officer_boot_drive already drained the startup prompts, so this
 # `/loop` is the session's next command. The officer-supervisor-mac re-sends it
 # every ~2h as a safety net if the officer ever exits its loop.
 LOOP_FILE="$REPO_ROOT/cabinet/loop-prompts/${OFFICER}.txt"
+LOOP_TEMPLATE="$REPO_ROOT/cabinet/loop-prompts/_template.txt"
+if [ ! -f "$LOOP_FILE" ] && [ -f "$LOOP_TEMPLATE" ]; then
+  LOOP_FILE=$(mktemp "/tmp/loop-prompt-${OFFICER}.XXXXXX")
+  sed "s/{{officer}}/${OFFICER}/g" "$LOOP_TEMPLATE" > "$LOOP_FILE"
+  echo "start-officer-mac.sh: $OFFICER has no per-role loop prompt — rendered _template.txt" >&2
+fi
 if [ -f "$LOOP_FILE" ]; then
   LOOP_PROMPT=$(tr '\n' ' ' < "$LOOP_FILE" | sed 's/  */ /g; s/ *$//')
   if [ -n "$LOOP_PROMPT" ]; then
