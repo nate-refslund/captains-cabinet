@@ -172,3 +172,95 @@ consumer-side ACK. Mechanics documented at length in
 `cabinet/scripts/lib/triggers.sh` (trigger_read_safety_net header).
 
 ---
+
+## AUD-8 — sandbox `filesystem.denyWrite` on the comms-officer settings overlay (probed 2026-07-07; exact config, flip deferred to a watched pilot restart)
+
+Not germline-gated (the overlay is generated per boot by
+`cabinet/scripts/gen-officer-mcp-config.py` into
+`~/Library/Caches/cabinet/officer-settings-<officer>.json`, and that
+generator is not schg-locked) — recorded HERE because the audit-collector is
+this wave's single findings surface, and because the flip is deliberately
+NOT applied tonight.
+
+### Probe evidence (scratch sessions, CC 2.1.202, 2026-07-07)
+
+All three probes ran headless (`claude -p --settings <file>
+--setting-sources project --dangerously-skip-permissions`) from a scratch
+cwd, no officer touched:
+
+1. **Overlay accepts the key.** `sandbox.enabled` +
+   `sandbox.filesystem.denyWrite` in a `--settings` overlay produced no
+   schema-validation rejection and no boot block (unlike the
+   managed-settings-only `allowedMcpServers` mirror, which 2.1.202 rejected
+   with a boot-blocking modal on the 2026-07-07 rolling restart).
+2. **denyWrite ENFORCES under `--dangerously-skip-permissions`.** A bash
+   write to a denied path failed with exit 1, `operation not permitted`, no
+   file created — exactly the structural backstop audit #27 wants for the
+   acknowledged glob-bypass in pre-tool-use.sh:988 (and it stacks under
+   schg, which already blocks the germline set at the FS layer).
+3. **Network egress is UNAFFECTED when no `network` block is configured.**
+   `curl https://api.github.com` → HTTP 200 from inside the sandboxed
+   session — so a filesystem-only pilot cannot break comms-officer's
+   Make/Graph flows by accident.
+
+### Why the live flip is deferred (not-trivially-safe ruling)
+
+The single failure precedent for overlay content (`allowedMcpServers`)
+manifested **only at interactive TUI boot**, as a modal dialog that blocked
+the officer — headless acceptance did not predict it. Tonight's constraint
+is a live fleet with no officer restarts, so the interactive-boot leg
+cannot be verified; a wrong call bricks comms-officer silently at its next
+launchd keepalive relaunch. Enabling therefore requires the watched pilot
+below, not a dark generator edit.
+
+### Exact config (the pilot flip)
+
+Add to the comms-officer settings overlay (via an officer-conditional in
+`gen-officer-mcp-config.py`, or a static deep-merge layer in
+`start-officer-mac.sh` — implementer's choice; keep the overlay's existing
+`enableAllProjectMcpServers: false`):
+
+```json
+{
+  "enableAllProjectMcpServers": false,
+  "sandbox": {
+    "enabled": true,
+    "filesystem": {
+      "denyWrite": [
+        "<CABINET_ROOT>/cabinet/scripts/hooks",
+        "<CABINET_ROOT>/framework/policies",
+        "<CABINET_ROOT>/memory/golden-evals",
+        "<CABINET_ROOT>/instance/config/policies",
+        "<CABINET_ROOT>/instance/config/posture-presets",
+        "<CABINET_ROOT>/.claude/settings.json",
+        "<CABINET_ROOT>/.claude/rules",
+        "<CABINET_ROOT>/cabinet/mcp-scope.yml",
+        "<CABINET_ROOT>/cabinet/officer-capabilities.conf",
+        "<CABINET_ROOT>/cabinet/scripts/germline-lock.sh",
+        "<CABINET_ROOT>/cabinet/scripts/kill-switch.sh",
+        "<CABINET_ROOT>/cabinet/scripts/policy-shadow.py"
+      ]
+    }
+  }
+}
+```
+
+(Dir entries mirror `germline-lock.sh` `DIRS=(...)`; file entries are the
+enforcer triad + judged-config heads of its `FILES=(...)` list — extend
+toward the full list at pilot time; keep in lockstep with germline-lock.sh
+per its own header rule. Deliberately NO `network` block in the pilot —
+probe 3 shows filesystem-only leaves egress alone; `network.allowedDomains`
++ `sandbox.credentials` scrub are the SECOND pilot step per AUD-8's
+gate_cmd, after the filesystem leg proves boot-stable.)
+
+### Pilot procedure (one officer, eyes on the pane)
+
+1. Apply the overlay change for comms-officer only.
+2. `launchctl kickstart -k gui/$(id -u)/com.cabinet.officer.comms-officer`
+   during a watched window; `tmux attach -t officer-comms-officer` and
+   confirm clean boot (no modal, MCP servers up, first tick green).
+3. Verify: a germline write attempt from inside the session is denied by
+   the sandbox (not just schg/hook); a normal `cabinet/cache/` write
+   succeeds; a Make proxy call succeeds.
+4. Any failure → remove the overlay block + kickstart again (rollback is
+   one generator revert; the overlay regenerates every boot).

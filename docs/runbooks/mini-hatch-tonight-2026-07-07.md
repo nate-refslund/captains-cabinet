@@ -271,3 +271,64 @@ unlock window (`sudo cabinet/scripts/germline-lock.sh unlock` → edit →
    still uncommitted-by-design; commit it inside an unlock window.
 5. If tonight's Mini is ever posture-upgraded: `instance/config/posture.yml`
    ritual + `germline-lock.sh lock` on the Mini itself (mac-mini-setup.md §2.6).
+
+## Flight recorder (added 2026-07-07 — wrap the hatch, gate the exit)
+
+Two additions that cost nothing and make tonight auditable end-to-end:
+
+### 1. Record the whole hatch in a `script(1)` transcript
+
+**Before step 1** (immediately after opening the terminal on the Mini), start
+a typescript that captures every command and every byte of output for the
+entire hatch — including the stalls, which are exactly what P3's
+"zero hand-edits beyond documented steps" bar needs evidence for:
+
+```bash
+mkdir -p ~/hatch-logs
+script -q ~/hatch-logs/mini-hatch-$(date +%Y%m%d-%H%M%S).typescript
+# ... the ENTIRE runbook (steps 1-6 + proofs) runs inside this shell ...
+```
+
+Rules:
+- **Everything** runs inside the `script` shell. If you must open a second
+  terminal (e.g. `tmux attach` verification), start a second transcript
+  there — never an unrecorded shell.
+- On any stall: keep typing inside the transcript (the diagnosis IS the
+  record), and note the wall-clock time inline with `date` before and after.
+- End with `exit` (closes the typescript cleanly), then copy
+  `~/hatch-logs/` off the Mini alongside the timed hatch log P3 asks for.
+  The transcript is also raw material for the ORG-SENSES-1 transcript-digest
+  organ (operative-egg-ledger row) — do not delete it after the hatch.
+
+### 2. `cabinet-doctor` is the FINAL acceptance gate
+
+After step 6 (Chair + measurement plane live, Telegram round-trip done),
+the hatch is not "done" until the deterministic config-liveness prober says
+so:
+
+```bash
+bash cabinet/scripts/cabinet-doctor.sh        # exit 0 required
+```
+
+It probes every `cabinet/services.yml` row ↔ loaded launchd job ↔ fresh log,
+every settings hook entry → existing script, MCP layers env-resolve
+(names only, never values), skill frontmatter (zero leading bytes),
+mcp-scope grants registered, statusline exit 0, Redis PING, and a killswitch
+DRY status check. Also load its daily row: `generate-plists.py` renders
+`com.cabinet.cabinet-doctor.plist` with the rest of the measurement plane in
+step 6 — bootstrap it there like the others.
+
+Reading the verdict on a fresh Mini:
+- `CABINET_DOCTOR GREEN` → hatch accepted; append the GREEN line + the
+  transcript path to the timed hatch log.
+- `DEAD service <row> — launchd job not loaded` for rows you deliberately
+  did NOT bootstrap tonight (this runbook loads the Chair + measurement
+  plane only) → expected on the Mini; record which rows, and either
+  bootstrap them or flip them `disabled: true` in `services.yml` on the
+  Mini clone so the manifest tells the truth (that edit is documented here,
+  so it is not a P3 hand-edit violation).
+- Any OTHER `DEAD` line → a real stall. Do not hand-patch around it —
+  record it (transcript already has it) and fix root-cause or file it
+  upstream, per the P3 bar.
+- `WARN`/`WAIVED` lines do not block acceptance (waivers cite their pending
+  germline amendments).

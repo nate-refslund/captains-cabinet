@@ -535,3 +535,27 @@ services:
       regression-corpus: if the script is absent the plist FATALs visibly at
       06:45 — flip `disabled: true` here + regenerate rather than letting it
       thrash.
+
+  # ── Config-liveness prober (Claude Code audit follow-on, armed 2026-07-07) ──
+  - name: cabinet-doctor
+    label: com.cabinet.cabinet-doctor
+    kind: watchdog
+    command: bash cabinet/scripts/cabinet-doctor.sh
+    schedule: { calendar: [{hour: 7, minute: 10}] }   # daily 07:10 local — after 06:45 curator-health, before the 07:30 briefing
+    expected: "daily CABINET_DOCTOR GREEN|DEAD summary line in log (exit 1 on any DEAD → launchd surfaces it); redis heartbeat cabinet:doctor:heartbeat fresh <26h (stale heartbeat = the DOCTOR is dead, distinct from the doctor finding rot)"
+    notes: >-
+      Deterministic dead-config prober born from the 2026-07-07 Claude Code
+      audit (the audit's P0/P1 class — dead MCP servers, unwired hooks, an
+      unparseable skill, a broken statusline — was invisible to every
+      existing watchdog, which all probe RUNTIME liveness, not CONFIG
+      liveness). Probes: every row of THIS manifest ↔ launchd job ↔ fresh
+      log (log paths read from the installed plists — two log-name
+      conventions live); settings hook entries → existing scripts; MCP
+      layers env-resolve (variable NAMES only, values never read); skill
+      frontmatter parses with zero leading bytes; mcp-scope.yml grants
+      registered in some config layer; statusline exit 0; Redis PING;
+      killswitch status DRY-check. Read-only by contract (never launchctl
+      bootstrap/bootout, never killswitch activate); known Captain-gated
+      findings print WAIVED (cited to their amendment doc) so GREEN stays
+      meaningful. Also the final acceptance gate of the Mini hatch runbook
+      (docs/runbooks/mini-hatch-tonight-2026-07-07.md §Flight recorder).

@@ -1699,8 +1699,27 @@ entries:
     class: "additive"
     lane: "alpha-additive"
     wave: "AUD"
-    status: "todo"
+    status: "in-flight"
     gate_cmd: "documented re-run of the 2026-06-25 idle-wake test on 2.1.202; if a trigger lands on an idle session, the tmux send-keys wake plane is retire-eligible. GATES the /loop backstop stretch (#30 half of AUD-10)."
+    note: >-
+      SPIKE VERDICT 2026-07-07 (scratch-session test on 2.1.202, information
+      only, no rewiring): NEITHER tested surface can wake an idle local tmux
+      officer. (1) SendMessage is TEAM-SCOPED — addressing 'comms-officer'
+      (idle ~20min, verified via tmux session_activity) from a scratch
+      session returned success:false / "No agent named 'comms-officer' is
+      reachable"; it only reaches teammates/background agents spawned within
+      the same session tree (by name or agentId) — no cross-process
+      addressing of an unrelated interactive session exists. (2)
+      RemoteTrigger is the claude.ai CLOUD routines API (GET/POST
+      /v1/code/triggers; live list returned empty data) — running a trigger
+      spins a CLOUD session; it does not touch local tmux sessions at all.
+      CONSEQUENCE — the tmux send-keys wake plane stays load-bearing; the
+      2026-06-25 finding STANDS for these two surfaces. REMAINING (keeps
+      this row open): the `claude --bg` background-session-daemon leg
+      (audit #26's third surface, pairs with AUD-10 named sessions) — a
+      daemon-managed officer WOULD be SendMessage-addressable by agentId,
+      but that is an officer-lifecycle change, pilot-one territory. The
+      /loop backstop stretch stays GATED until that leg is tested.
     last_update: "2026-07-07"
   - id: "AUD-8"
     title: "sandbox pilot one officer (audit #27) — sandbox.enabled + filesystem.denyWrite germline + network.allowedDomains + credentials scrub"
@@ -1709,6 +1728,22 @@ entries:
     wave: "AUD"
     status: "todo"
     gate_cmd: "pilot officer boots green with sandbox.enabled; a germline-path write attempt is denied by filesystem.denyWrite (backstops pre-tool-use.sh:988 glob-bypass); egress outside network.allowedDomains blocked"
+    note: >-
+      PROBED 2026-07-07, NOT flipped live — ruled not-trivially-safe for the
+      comms-officer overlay tonight, exact config documented in
+      docs/proposals/germline-addendum-claude-code-audit-2026-07-07.md
+      §AUD-8. Scratch-session probes on 2.1.202 (headless -p, --settings
+      overlay, --dangerously-skip-permissions): sandbox.enabled +
+      filesystem.denyWrite ACCEPTED from a --settings overlay (no schema
+      boot-block), denyWrite ENFORCED under bypass permissions (write to
+      denied path → exit 1 "operation not permitted", no file created), and
+      network egress UNAFFECTED when no network block is configured (curl
+      api.github.com → 200). What blocks the live flip: the one prior
+      overlay failure (allowedMcpServers, 2026-07-07) manifested ONLY at
+      INTERACTIVE boot as a modal dialog, and no officer restart is allowed
+      tonight to verify — a wrong call leaves comms-officer bricked at its
+      next launchd keepalive relaunch. Flip = pilot-one restart with eyes on
+      the pane, per the addendum procedure.
     last_update: "2026-07-07"
   - id: "AUD-9"
     title: "StopFailure/TeammateIdle/PermissionRequest hooks (audit #28) — settings.json hook wiring is schg-locked"
@@ -1743,4 +1778,27 @@ entries:
     status: "done"
     gate_cmd: "crash between deliver and wake no longer loses the trigger (kill-between test); library-mcp 6 read tools annotated readOnlyHint"
     note: "done 2026-07-07 — channel xAck-on-emit + channel-side xTrim REMOVED (trim now only post-ACK in trigger_ack); triggers stay pending until officer trigger_ack, or the post-tool-use XAUTOCLAIM safety net re-surfaces them and writes the ids_file the officer ACK pipeline consumes = at-least-once (dupes possible, silent loss not). Kill-between drill PASSED live on a scratch stream (deliver-no-ack -> pending=1 -> XAUTOCLAIM worker recovers id -> XACK -> pending=0). library-mcp: readOnlyHint on exactly the 6 read tools, 4 write tools unannotated. Contract ratchet cabinet/scripts/tests/test_channel_ack_readonly_contracts.py (7 tests, CI-collected); triggers.sh safety-net header rewritten; schg post-tool-use.sh comment fix routed to the germline addendum. Live channel processes still run the old code — contract engages per officer on natural relaunch (fleet LIVE, no forced restarts)."
+    last_update: "2026-07-07"
+  # --- ORG-SENSES rows (2026-07-07, cabinet-doctor wave): the org's raw sensory
+  #     record — officer transcripts, the Redis trigger stream, Chair DMs — is
+  #     currently write-only exhaust; nothing digests it into cabinet memory.
+  #     Sister gap to the 2026-07-07 memory-audit verdict (11/16 source_types
+  #     never landed, org flavor ~10x behind the personal brain). ---
+  - id: "ORG-SENSES-1"
+    title: "transcript-digest organ — periodic digest of officer session transcripts (incl. script(1) hatch typescripts, tmux pane history) into cabinet memory + embeddings; digests feed skill_induction as pattern evidence"
+    class: "additive"
+    lane: "alpha-additive"
+    wave: "AUD"
+    status: "todo"
+    gate_cmd: "digest rows landing in cabinet_memory with a transcript-digest source_type + embeddings queued via cabinet:memory:embed_queue; skill_induction run consumes digest evidence (would-propose visible in a REPORT_ONLY self-improvement-loop pass); no raw captain-model/voice content in any digest (brain-bridge taint rule)"
+    note: "Raw supply already exists: officer launchd logs (~/Library/Logs/cabinet/officer-*.log), tmux capture-pane/history, and the mini-hatch flight-recorder typescripts (docs/runbooks/mini-hatch-tonight-2026-07-07.md §Flight recorder rules keep them). Digest-then-embed, never raw-embed: transcripts carry secrets-adjacent output — the digester must redact per the doctor's names-not-values discipline."
+    last_update: "2026-07-07"
+  - id: "ORG-SENSES-2"
+    title: "Redis stream archive + Chair-DM archive to org memory — durable archival of cabinet:triggers:* / org trigger streams and the Captain↔Chair Telegram DM history into org memory (OrgSource), so the org's nervous-system traffic survives Redis retention and is retrievable"
+    class: "additive"
+    lane: "alpha-additive"
+    wave: "AUD"
+    status: "todo"
+    gate_cmd: "trigger-stream entries + Chair DM turns queryable from org memory after their Redis/live windows expire (spot-check one aged trigger id + one aged DM); archive path append-only; killswitch/veto verbs archived with captain_verified provenance intact"
+    note: "Pairs with ORG-SENSES-1 (that row digests session transcripts; this row archives the MESSAGE plane). Chair-DM capture hook exists (capture-captain-dm.sh) — this row is the durable org-memory landing + retrieval, not new capture. Respect HQ-Chair channel rule: the DM archive reads the Chair bot plane only."
     last_update: "2026-07-07"
