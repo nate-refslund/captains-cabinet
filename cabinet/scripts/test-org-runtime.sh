@@ -40,13 +40,25 @@ else
   pass "active-project.txt absent (deployment-local) -> runtime fail-safe path"
 fi
 
-[ -f "$REPO_ROOT/instance/config/contexts/captains-cabinet.yml" ] \
-  && pass "captains-cabinet context exists" \
-  || fail "captains-cabinet context missing"
+# Lane context files (captains-cabinet.yml, sensed.yml, ...) are instance-
+# split (egg plan R124): they stay on this live deployment but leave the egg
+# at packaging — only the generic contexts/_default.yml ships. Mirror the
+# active-project.txt pattern above: absent lane context = clean/egg checkout
+# -> pass-with-note, never a hard fail. When present, the invariant is still
+# asserted.
+if [ -f "$REPO_ROOT/instance/config/contexts/captains-cabinet.yml" ]; then
+  pass "captains-cabinet context exists"
+else
+  pass "captains-cabinet lane context absent (instance-split, leaves at packaging) -> runtime fail-safe path"
+fi
 
-grep -q '^active:[[:space:]]*false' "$REPO_ROOT/instance/config/contexts/sensed.yml" \
-  && pass "Sensed context preserved but inactive" \
-  || fail "Sensed context must be active: false"
+if [ -f "$REPO_ROOT/instance/config/contexts/sensed.yml" ]; then
+  grep -q '^active:[[:space:]]*false' "$REPO_ROOT/instance/config/contexts/sensed.yml" \
+    && pass "Sensed context preserved but inactive" \
+    || fail "Sensed context must be active: false"
+else
+  pass "sensed lane context absent (instance-split, leaves at packaging) -> runtime fail-safe path"
+fi
 
 python3 "$ORG" roles define \
   --role cos \
