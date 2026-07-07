@@ -137,3 +137,7 @@ instance/config/extra-mcps.json
 .claude/project-config.json
 instance/config/autonomy.yml
 cabinet/launchd/generated/
+
+# runtime artifacts (written by falsifier-daily / act-first flag) — never commit
+shared/interfaces/falsifier-series.jsonl
+instance/config/act-first-enabled

@@ -271,7 +271,12 @@ outcomes:
   # ===========================================================
   # LANE: system-self — cabinet + screenpipe self-maintenance
   # ===========================================================
-  # SLOT 1/2 for lane system-self — on achieved: renewal loop proposes successor
+  # WINDOW AMENDMENT 2026-07-05 (Captain-directed, Nate): system-self window
+  # widened 2 -> 3 active outcomes, reserving SLOT 3 for outcome-system-self-003
+  # (brain quality — self-improving memory/retrieval organ). -003 stays draft
+  # (staged: ~/.screenpipe/state/brain-probes/staging/outcome-system-self-003.yml)
+  # until its machinery is built + live-fire-verified, then ratified at hand-off.
+  # SLOT 1/3 for lane system-self — on achieved: renewal loop proposes successor
   - id: outcome-system-self-001
     name: "Typed policy engine promoted from shadow to enforcing"
     description: >
@@ -316,7 +321,7 @@ outcomes:
         verifier_role: polads-ceo
         risk_level: low
 
-  # SLOT 2/2 for lane system-self — on achieved: renewal loop proposes successor
+  # SLOT 2/3 for lane system-self — on achieved: renewal loop proposes successor
   - id: outcome-system-self-002
     name: "Inbound-mail quarantine pass before LLM exposure"
     description: >
@@ -358,6 +363,76 @@ outcomes:
         evidence_required: "Red-team report + corpus + run output"
         verifier_role: stephie-ceo
         risk_level: low
+
+  # SLOT 3/3 for lane system-self — on achieved: renewal loop proposes successor
+  # RATIFIED 2026-07-06 under the Captain's recorded pre-authorization
+  # (2026-07-06: "1. yes, go when it makes sense" — condition: machinery built
+  # + live-fire verified). Met: brain-health sensor live (06/18h), memory-curator
+  # live (07/19h) with braked act-with-undo (cap25 / self-veto+auto-revert+freeze /
+  # identity-guard / mutex), live-fire drill PASSED (incl. honest-NULL trap),
+  # adversarial review PASS — its 3 conditions applied (stale-restore guard,
+  # person-alias propose-only, mid-run freeze re-check). Evidence:
+  # ~/.screenpipe/state/curator-ledger.jsonl + brain_health.json + staging/ratification-packet.md
+  - id: outcome-system-self-003
+    name: Brain quality baseline + Memory Curator live
+    description: >
+      The memory estate (vault + embeddings + graph + memories store) gains a
+      self-maintaining quality organ: durable probe baseline recorded, brain-health
+      sensor running on schedule, Memory Curator machinery live with braked
+      act-with-undo fix-classes, and every regression surfaced by the first full
+      sensor run closed. Bounded: achieved when the four nodes verify; ongoing
+      curation is machinery (services/pipes), not this outcome.
+    lane: system-self
+    status: active
+    captain_ratified: true
+    measurable_criteria:
+      - node_id: brain-003-a
+        title: Durable probe baseline + brain-health sensor live
+        owner_role: cos
+        acceptance_criteria:
+          - frozen-core-14 probe suite + graded expectations + baseline in ~/.screenpipe/state/brain-probes/ (DONE 2026-07-05, verify present)
+          - brain-health pipe runs 2x/day via launchd; writes state/brain_health.json with p@1/p@3, integrity counters, per-writer output freshness, capture-volume watchdog
+          - dead-end retrieval ledger live (dead-end rows only carry query text, truncated; hash+intent otherwise)
+        evidence_required: state/brain_health.json trend history >= 3 runs; launchctl list shows the agent
+        verifier_role: polads-ceo
+        risk_level: low
+        rollback_note: unload plist; ledger/state files are additive
+      - node_id: brain-003-b
+        title: Memory Curator machinery live with brakes
+        owner_role: cos
+        depends_on: [brain-003-a]
+        acceptance_criteria:
+          - screenpipe pipe memory-curator executes whitelisted reversible fix-classes ONLY (dedup-nonidentity, content_ts re-stamp, alias-add, re-park suppressed re-mints)
+          - brakes verified in code: per-run mutation cap; pre+post probe subset with auto-revert+freeze on regression (self-veto); identity/cross-person merges excluded (propose-only); ops-ledger explicit action vocab
+          - cabinet services.yml row reads brain_health.json under watchdog freshness floor; regression -> Redis trigger -> cos brain-audit skill
+        evidence_required: curator ops-ledger shows >=1 braked run; injected quarantine-tagged synthetic defect detected+fixed+verified (live-fire drill, synthetic entity only)
+        verifier_role: polads-ceo
+        risk_level: medium
+        rollback_note: curator freeze flag + plist unload; all mutations ops-ledgered old->new; vault park-never-delete
+      - node_id: brain-003-c
+        title: First-run regressions closed
+        owner_role: cos
+        depends_on: [brain-003-a]
+        acceptance_criteria:
+          - every defect the first full sensor sweep surfaces is fixed or explicitly deferred-with-reason in the curator ledger
+          - frozen-core-14 p@1 >= 0.90 after closure
+        evidence_required: brain_health.json before/after + curator ledger entries
+        verifier_role: polads-ceo
+        risk_level: low
+        rollback_note: per-fix ops-ledger reverts
+      - node_id: brain-003-d
+        title: Captain interaction contract active
+        owner_role: cos
+        depends_on: [brain-003-b]
+        acceptance_criteria:
+          - all brain-quality asks route through ONE Telegram kind + daily digest (morning-brief style); act-with-undo classes report via confirm/undo digest, not per-item asks
+          - cap designed (<=1 digest/day, <=1 structural batch/week) but OFF per field-test disturb-MAX ruling
+        evidence_required: digest messages observed; no per-item ask spam in field test
+        verifier_role: polads-ceo
+        risk_level: low
+        rollback_note: revert to propose-only routing
+    captain_attention_estimate: 1 ratification sitting + 1 plist load + digest reading
+
 
   # ===========================================================
   # INTAKE — not an outcome (removed 2026-06-10)
