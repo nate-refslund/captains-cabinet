@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "cua-driver": {
+      "command": "cua-driver",
+      "args": ["mcp", "--claude-code-computer-use-compat"],
+      "transport": "stdio"
+    }
+  }
+}

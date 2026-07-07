@@ -92,14 +92,27 @@ mkdir -p "$(dirname "$MERGED_MCP_PATH")"
 #   base                                .mcp.json.mac-native (curated core)
 #   + instance/config/extra-mcps.json   captain-declared extras (ALL officers;
 #                                       rendered by install-extensions.sh)
-#   + instance/agents/<o>/mcp.json      per-officer overlay (e.g. cua-driver)
+#   + per-officer cua overlay           instance/agents/<o>/mcp.json when the
+#                                       deployment provides one, else the shipped
+#                                       template cabinet/mcp-overlays/cua-driver.mcp.json
 # Deep-merge preserves base mcpServers; later layers add/override by key.
+# R128 (egg plan 2026-07-07): instance/agents/ is instance payload and leaves
+# the egg at packaging — cabinet/mcp-overlays/ is the capability's shipped
+# template home, so a fresh hatch's drives_computer officers keep computer-use
+# wiring instead of silently losing it. Instance overlay wins when present.
 EXTRA_MCPS="instance/config/extra-mcps.json"
 PER_OFFICER_MCP="instance/agents/$OFFICER/mcp.json"
+CUA_TEMPLATE_MCP="cabinet/mcp-overlays/cua-driver.mcp.json"
 
 MCP_LAYERS=("$MCP_BASE")
 [ -f "$EXTRA_MCPS" ] && MCP_LAYERS+=("$EXTRA_MCPS")
-[ "$HAS_CUA_DRIVER" = "true" ] && [ -f "$PER_OFFICER_MCP" ] && MCP_LAYERS+=("$PER_OFFICER_MCP")
+if [ "$HAS_CUA_DRIVER" = "true" ]; then
+  if [ -f "$PER_OFFICER_MCP" ]; then
+    MCP_LAYERS+=("$PER_OFFICER_MCP")
+  elif [ -f "$CUA_TEMPLATE_MCP" ]; then
+    MCP_LAYERS+=("$CUA_TEMPLATE_MCP")
+  fi
+fi
 
 if [ "${#MCP_LAYERS[@]}" -gt 1 ]; then
   # jq reduce: fold each overlay's mcpServers into the accumulator.
