@@ -567,6 +567,36 @@ services:
       meaningful. Also the final acceptance gate of the Mini hatch runbook
       (docs/runbooks/mini-hatch-tonight-2026-07-07.md §Flight recorder).
 
+  # ── ORG-SENSES-1 transcript-digest organ (armed 2026-07-07) ────────────────
+  - name: transcript-digest
+    label: com.cabinet.transcript-digest
+    kind: cron
+    command: bash cabinet/scripts/transcript-digest.sh
+    schedule: { calendar: [{hour: 4, minute: 10}] }   # daily 04:10 local — after the 03:45 apoptosis sweep, before 06:45 curator-health
+    expected: "one heartbeat line/night appended to ~/.cabinet/logs/transcript-digest.log (stamped ONLY after a completed sweep — dead-man semantics); digest rows land in cabinet_memory as source_type=transcript-digest via cabinet:memory:embed_queue; recurring prompt-pattern lessons appear as experience records (propose-only skill_induction evidence)"
+    sunset: "retire when a richer org-senses digest supersedes it (ORG-SENSES-2+ consolidation) or the officer-session JSONL supply moves off local disk — evidence bar: 30 consecutive days with zero new digest rows while officers are active. Digest rows carry metadata.sunset (supersede-on-redigest) for a future memory-retention sweep."
+    notes: >-
+      ORG-SENSES-1 (operative-egg-ledger row): nightly digest of officer
+      session JSONLs (default Claude config home's project dir for this repo
+      + the AUD-1 isolated config home's projects tree) and flight-recorder
+      script(1) typescripts (~/hatch-logs, mini-hatch runbook §Flight
+      recorder — the seed source) into Cabinet Memory. Digest-then-embed,
+      never raw-embed: tool_result blocks are structurally excluded
+      (brain-bridge taint firewall — captain-model/voice content only
+      arrives via brain-MCP tool results), a belt drops lines naming those
+      surfaces, and secret-shaped values are scrubbed names-not-values
+      before anything is queued. Queue path is the existing lib/memory.sh
+      memory_queue_embed (memory-worker drains + embeds; keyless stays
+      fail-soft — the queue is durable and memory_search's lexical arm
+      still retrieves). Stable source_id td:<session_id> → a grown session
+      re-digests as an UPSERT (version bump). Prompt-pattern lessons feed
+      framework.learning.experience records (per-sig + per-sweep caps) —
+      skill_induction clusters them; the organ itself NEVER writes
+      memory/skills/**. State at ~/.cabinet/state/transcript-digest.json;
+      the heartbeat log rides the hygiene/apoptosis 45d rotation class over
+      ~/.cabinet/logs. The cabinet-doctor manifest probe + outcome-watchdog
+      registry derive coverage from THIS row (26h daily floor).
+
   # ── Cabinet World (observer-class read-model organs; kickoff 2026-07-07) ──
   # docs/plans/cabinet-world-build-kickoff-2026-07-07.md — the world is a pure
   # read-model over org ledgers (renderer-never-writes doctrine). These rows
