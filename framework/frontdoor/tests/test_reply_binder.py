@@ -1,7 +1,7 @@
 """TDD tests for framework.frontdoor.reply_binder.
 
 reply_binder.bind(reply_text, items) is the front-door's reply leg: it routes
-Nate's reply through framework.acting.loop.route_captain_response, matches the
+the Captain's reply through framework.acting.loop.route_captain_response, matches the
 items back to their PENDING proposal by correlation_id == loop.proposal_id(...),
 calls loop.handle_response to record the SUPERSEDING outcome/expire on the
 consequence ledger, then acks the bound intake ids. It is IDEMPOTENT.
@@ -29,7 +29,7 @@ from framework.frontdoor import reply_binder
 # Helpers: build a pending proposal + a matching intake item.
 # --------------------------------------------------------------------------- #
 
-def _proposal(*, ts="2026-06-22T08:00:00Z", subject="reply to Lisa re DPA",
+def _proposal(*, ts="2026-06-22T08:00:00Z", subject="reply to Dana re DPA",
               actor=None, action="draft-reply"):
     """A real PENDING proposal_event (decision=None, no outcome)."""
     actor = actor or {"kind": "officer", "id": "cos"}
@@ -45,9 +45,9 @@ def _item_for(prop, *, kind="draft-proposal", source="draft-reply"):
         "kind": kind,
         "ts": prop["ts"],
         "urgency_tier": "batch",
-        "payload": {"summary": "draft ready for Lisa re DPA"},
-        "context": {"why": "thread awaits Nate", "sources": [], "audience": None,
-                    "thread_ref": "thread:lisa-dpa"},
+        "payload": {"summary": "draft ready for Dana re DPA"},
+        "context": {"why": "thread awaits the captain", "sources": [], "audience": None,
+                    "thread_ref": "thread:dana-dpa"},
         "correlation_id": loop.proposal_id(prop),
     }
 

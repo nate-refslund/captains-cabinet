@@ -184,7 +184,7 @@ def test_drain_forwards_card_into_intake(isolated_keys):
 def test_drain_is_idempotent_no_double_enqueue(isolated_keys):
     k = isolated_keys
     _push_card(k["source"], source="stephie-ceo", urgency="medium",
-               summary="login blocker", body="Sofie can't log in",
+               summary="login blocker", body="a user can't log in",
                ts="2026-06-24T05:52:01Z")
 
     first = attention_drain.drain_attention(only_projects={k["project"]})

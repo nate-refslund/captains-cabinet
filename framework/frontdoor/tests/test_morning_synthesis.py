@@ -20,7 +20,7 @@ def _thread(slug, person, text, kind="direct"):
 
 def test_keeps_real_1to1(monkeypatch):
     monkeypatch.setattr(get_source(), "find_threads",
-                        lambda hours=72: [_thread("lisa", "Lisa Stentoft",
+                        lambda hours=72: [_thread("dana", "Dana Reed",
                                                   "Following your feedback on the question…")])
     items = ms.awaiting_reply_items()
     assert len(items) == 1
@@ -28,20 +28,20 @@ def test_keeps_real_1to1(monkeypatch):
     assert it["source"] == "awaiting-reply"
     assert it["kind"] == "thread"
     assert it["urgency_tier"] == "batch"
-    assert it["payload"]["summary"].startswith("Lisa Stentoft is awaiting your reply")
+    assert it["payload"]["summary"].startswith("Dana Reed is awaiting your reply")
     assert it["context"]["why"]
-    assert it["context"]["person"] == "Lisa Stentoft"
+    assert it["context"]["person"] == "Dana Reed"
 
 
 def test_drops_groups_and_noise(monkeypatch):
     monkeypatch.setattr(get_source(), "find_threads", lambda hours=72: [
-        _thread("lisa", "Lisa Stentoft", "real 1:1 question that needs an answer"),
+        _thread("dana", "Dana Reed", "real 1:1 question that needs an answer"),
         _thread("grp", "Teams Group X", "amen tak for det", kind="group"),     # group → drop
         _thread("ks", "Kundeservice", "Nulstil din adgangskode her"),          # noise → drop
         _thread("ext", "Someone", "You don't often get email from x. …"),      # noise → drop
     ])
     items = ms.awaiting_reply_items()
-    assert [i["context"]["person"] for i in items] == ["Lisa Stentoft"]
+    assert [i["context"]["person"] for i in items] == ["Dana Reed"]
 
 
 def test_gather_failure_is_empty(monkeypatch):
@@ -71,20 +71,20 @@ def test_commitment_items_surfaces_overdue_and_today():
     items = ms.commitment_items(
         today="2026-06-23",
         commitments=[
-            _cmt("Lisa Stentoft", "create tasks from Anna feedback", "2026-06-22"),
-            _cmt("Kristoffer", "feedback on publisher comms email", "2026-06-20"),
-            _cmt("Maria", "send the deck", "2026-06-23"),
+            _cmt("Dana Reed", "create tasks from reviewer feedback", "2026-06-22"),
+            _cmt("Morgan", "feedback on the partner comms email", "2026-06-20"),
+            _cmt("Casey", "send the deck", "2026-06-23"),
         ],
     )
     # overdue/today only, most-overdue first
-    assert [i["context"]["person"] for i in items] == ["Kristoffer", "Lisa Stentoft", "Maria"]
+    assert [i["context"]["person"] for i in items] == ["Morgan", "Dana Reed", "Casey"]
     it = items[0]
     assert it["source"] == "commitment"
     assert it["kind"] == "owed-by-you"
     assert it["urgency_tier"] == "batch"
-    assert it["payload"]["summary"].startswith("You owe Kristoffer:")
+    assert it["payload"]["summary"].startswith("You owe Morgan:")
     assert "overdue" in it["payload"]["summary"]
-    assert it["context"]["commitment_id"] == "cmt-kris"
+    assert it["context"]["commitment_id"] == "cmt-morg"
     assert items[2]["payload"]["summary"].endswith("due today (was due 2026-06-23)")
 
 
@@ -200,9 +200,9 @@ def test_sentry_health_injected_overrides_network():
 
 def test_gather_items_includes_all_sources(monkeypatch):
     monkeypatch.setattr(get_source(), "find_threads",
-                        lambda hours=72: [_thread("lisa", "Lisa Stentoft", "a real question")])
+                        lambda hours=72: [_thread("dana", "Dana Reed", "a real question")])
     monkeypatch.setattr(get_source(), "briefing_commitments",
-                        lambda direction="owed_by_nate": [_cmt("Kris", "x", "2000-01-01")])
+                        lambda direction="owed_by_nate": [_cmt("Kim", "x", "2000-01-01")])
     monkeypatch.setattr(get_source(), "deploy_health",
                         lambda app, **kw: _health(app, failed=1, latest="READY"))
     monkeypatch.setattr(ms.product_health, "sentry_health",
@@ -226,7 +226,7 @@ def test_gather_items_includes_all_sources(monkeypatch):
 
 def _fu(fid, subject, *, status="open", tier_marker=""):
     """Build a reader-shaped due object (id / check_from / entry)."""
-    rule = "gather: did it resolve? | nudge_if: still open → ping Nate"
+    rule = "gather: did it resolve? | nudge_if: still open → ping the captain"
     if tier_marker:
         rule += f" {tier_marker}"
     entry = (f"{fid} | deadline 2026-08-07 | check_from 2026-08-04 | "
@@ -235,17 +235,17 @@ def _fu(fid, subject, *, status="open", tier_marker=""):
 
 
 def test_followup_item_shape_and_rule_inline():
-    items = ms.followup_items(due=[_fu("tv2-dpa", "TV2 — accept the new DPA")])
+    items = ms.followup_items(due=[_fu("vendor-dpa", "Vendor — accept the new DPA")])
     assert len(items) == 1
     it = items[0]
     assert it["source"] == "follow-up"
     assert it["kind"] == "dated-register"
     assert it["urgency_tier"] == "batch"            # default tier
-    assert it["context"]["followup_id"] == "tv2-dpa"
-    assert it["context"]["subject"] == "TV2 — accept the new DPA"
+    assert it["context"]["followup_id"] == "vendor-dpa"
+    assert it["context"]["subject"] == "Vendor — accept the new DPA"
     assert it["context"]["why"]
     s = it["payload"]["summary"]
-    assert "TV2 — accept the new DPA" in s          # subject surfaced
+    assert "Vendor — accept the new DPA" in s       # subject surfaced
     assert "gather:" in s and "nudge_if:" in s      # gather-then-decide rule carried inline
 
 
@@ -293,16 +293,16 @@ def test_followup_items_default_reads_register():
 
 
 # ── split routing: operational → Chair, captain-facing → intake (2026-06-26) ──
-# Nate's standing directive: Sentry + deploy health are operational/monitoring
+# The Captain's standing directive: Sentry + deploy health are operational/monitoring
 # noise that must route to the Chair (cabinet:triggers:cos) for triage, NOT into
-# the Nate-bound briefing intake. These lock that split so it can't regress.
+# the captain-bound briefing intake. These lock that split so it can't regress.
 
 def _wire_all_sources(monkeypatch):
     """Mock every source so gather_items yields one of each (incl. both operational)."""
     monkeypatch.setattr(get_source(), "find_threads",
-                        lambda hours=72: [_thread("lisa", "Lisa Stentoft", "a real question")])
+                        lambda hours=72: [_thread("dana", "Dana Reed", "a real question")])
     monkeypatch.setattr(get_source(), "briefing_commitments",
-                        lambda direction="owed_by_nate": [_cmt("Kris", "x", "2000-01-01")])
+                        lambda direction="owed_by_nate": [_cmt("Kim", "x", "2000-01-01")])
     monkeypatch.setattr(get_source(), "deploy_health",
                         lambda app, **kw: _health(app, failed=1, latest="ERROR"))
     monkeypatch.setattr(ms.product_health, "sentry_health",
@@ -345,7 +345,7 @@ def test_enqueue_splits_operational_to_chair(monkeypatch):
 def test_enqueue_no_chair_message_when_no_operational(monkeypatch):
     # Only captain-facing sources present → the Chair is NOT pinged at all.
     monkeypatch.setattr(get_source(), "find_threads",
-                        lambda hours=72: [_thread("lisa", "Lisa Stentoft", "a real question")])
+                        lambda hours=72: [_thread("dana", "Dana Reed", "a real question")])
     monkeypatch.setattr(get_source(), "briefing_commitments", lambda direction="owed_by_nate": [])
     monkeypatch.setattr(get_source(), "deploy_health", lambda app, **kw: _health(app, failed=0, latest="READY"))
     monkeypatch.setattr(ms.product_health, "sentry_health", lambda o, p, **kw: _sentry([]))

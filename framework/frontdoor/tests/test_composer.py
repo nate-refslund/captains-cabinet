@@ -153,7 +153,7 @@ def test_compose_empty_list_returns_empty_string():
 
 def test_compose_provenance_present_for_every_item():
     items = [
-        _item(source="inbox-triage", summary="reply to Lisa", why="awaiting you"),
+        _item(source="inbox-triage", summary="reply to Dana", why="awaiting you"),
         _item(source="deploy-alert", tier="ping-now", summary="prod failed",
               why="build red"),
     ]

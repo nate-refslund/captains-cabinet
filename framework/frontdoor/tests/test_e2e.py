@@ -45,7 +45,7 @@ def _three_tier_items() -> list[dict]:
             "kind": "deploy-alert",
             "ts": "2026-06-22T08:30:00Z",
             "urgency_tier": "ping-now",
-            "payload": {"summary": "PolAds prod deploy failed"},
+            "payload": {"summary": "Acme prod deploy failed"},
             "context": {"why": "build broke on the impersonation-cookie fix"},
         },
         {
@@ -54,8 +54,8 @@ def _three_tier_items() -> list[dict]:
             "kind": "brief",
             "ts": "2026-06-22T07:00:00Z",
             "urgency_tier": "batch",
-            "payload": {"summary": "3 critical Publisher bugs still overdue"},
-            "context": {"why": "due 2026-06-09, blocking the Poland launch"},
+            "payload": {"summary": "3 critical checkout bugs still overdue"},
+            "context": {"why": "due 2026-06-09, blocking the launch"},
         },
         {
             "id": "3-0",
@@ -63,7 +63,7 @@ def _three_tier_items() -> list[dict]:
             "kind": "fyi",
             "ts": "2026-06-22T06:45:00Z",
             "urgency_tier": "fyi",
-            "payload": {"summary": "Ulrik wants a salary conversation"},
+            "payload": {"summary": "Robin wants a salary conversation"},
             "context": {"why": "raised on Teams, no date set yet"},
         },
     ]
@@ -119,10 +119,10 @@ def test_e2e_dev_composes_one_unified_message_but_does_not_send():
     # Exactly one message string (not three) — all three tiers woven together.
     assert "🔴" in text and "📋" in text and "💡" in text
     # ping-now section precedes batch precedes fyi (one ordered message).
-    assert text.index("PolAds prod deploy failed") < text.index(
-        "3 critical Publisher bugs still overdue")
-    assert text.index("3 critical Publisher bugs still overdue") < text.index(
-        "Ulrik wants a salary conversation")
+    assert text.index("Acme prod deploy failed") < text.index(
+        "3 critical checkout bugs still overdue")
+    assert text.index("3 critical checkout bugs still overdue") < text.index(
+        "Robin wants a salary conversation")
 
     # DEV GATE: nothing sent, no network call, no ack.
     assert out["allow_sends"] is False
@@ -267,9 +267,9 @@ def test_e2e_real_intake_drain_compose_blocked_in_dev(stream_key):
 
     assert out["drained"] == 3
     text = out["text"]
-    assert "PolAds prod deploy failed" in text
-    assert "3 critical Publisher bugs still overdue" in text
-    assert "Ulrik wants a salary conversation" in text
+    assert "Acme prod deploy failed" in text
+    assert "3 critical checkout bugs still overdue" in text
+    assert "Robin wants a salary conversation" in text
     # dev gate: nothing sent, nothing acked.
     assert out["sent"] is False
     assert out["send"] == {"status": "blocked-dev", "sent": False}

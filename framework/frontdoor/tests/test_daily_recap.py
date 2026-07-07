@@ -58,36 +58,36 @@ def _slot(time, summary):
 
 
 _ENTRIES = [
-    _slot("09:30", "worked on PolAds registration flow"),
-    _slot("14:00", "reviewed Banner Creator v2 PR #34"),
+    _slot("09:30", "worked on the acme-shop checkout flow"),
+    _slot("14:00", "reviewed pricing widget v2 PR #34"),
 ]
 
 # A representative LONG, multiline, quote-bearing labeled-section response — the
 # format the real model emits, and exactly what broke the prior inline-JSON parse
 # (literal newlines + a double-quote inside SUMMARY).
 _LONG_RESPONSE = '''```text
-HEADLINE: Shipped PolAds registration flow + reviewed Banner Creator v2 PR
+HEADLINE: Shipped acme-shop checkout flow + reviewed pricing widget v2 PR
 
 SUMMARY:
-The day ran nearly around the clock. From 09:30 Nate drove the registration-flow
-branch, wrestling the euEligibilityCategory compliance gate — an explicit sponsor
+The day ran nearly around the clock. From 09:30 the captain drove the checkout-flow
+branch, wrestling the taxCategory validation gate — an explicit merchant
 declaration, not auto-set from country.
 
-By 14:00 focus shifted to Banner Creator v2 (PR #34). A "GlassCard" data-* prop
+By 14:00 focus shifted to pricing widget v2 (PR #34). A "PriceCard" data-* prop
 issue and a frozen undo button both surfaced.
 
 Energy held through the afternoon.
 
 FINDINGS:
-- VIES auto-fill is still flaky on the publisher path
-- euEligibilityCategory must stay an explicit declaration (Art. 7(1))
+- VAT auto-fill is still flaky on the merchant path
+- taxCategory must stay an explicit declaration (spec §7.1)
 
 ACTIONS:
 - Merge PR #34 once MONDAY_API_KEY is rotated
-- Block auto-inference of euEligibilityCategory before merge
+- Block auto-inference of taxCategory before merge
 
 NOTES:
-- Lisa flagged Poland DPA as a launch blocker
+- QA flagged the vendor DPA as a launch blocker
 - ~17 active hours; top tools: Claude Code, VS Code
 
 PRODUCTIVITY: 9
@@ -109,14 +109,14 @@ def _long_llm(user, system, max_tokens=dr._RECAP_MAX_TOKENS):
 def test_synthesize_parses_long_multiline_response():
     recap = dr.synthesize_recap("2026-06-23", _ENTRIES, llm=_long_llm)
     assert recap is not None  # the 2026-06-23 bug: this was None (recap discarded)
-    assert recap["headline"].startswith("Shipped PolAds")
+    assert recap["headline"].startswith("Shipped acme-shop")
     # multi-paragraph SUMMARY survived (internal blank lines + the embedded quote)
     assert recap["summary"].count("\n") >= 2
-    assert "euEligibilityCategory" in recap["summary"]
-    assert '"GlassCard"' in recap["summary"]
-    assert "- VIES auto-fill is still flaky on the publisher path" in recap["findings"]
+    assert "taxCategory" in recap["summary"]
+    assert '"PriceCard"' in recap["summary"]
+    assert "- VAT auto-fill is still flaky on the merchant path" in recap["findings"]
     assert "- Merge PR #34 once MONDAY_API_KEY is rotated" in recap["actions"]
-    assert "Poland DPA" in recap["notes"]
+    assert "vendor DPA" in recap["notes"]
     assert recap["productivity"] == 9 and recap["energy"] == 6
     assert recap["slot_count"] == 2
 

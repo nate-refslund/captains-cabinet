@@ -119,7 +119,7 @@ def test_canary_runner_uses_the_journal_only_weekly_bundle():
 
 def _ev(ts, *, action="action-card", action_type=None, required=True,
         decision=None, outcome="unknown", verdict=None, source=None,
-        lane="polads"):
+        lane="acme"):
     ev = {"ts": ts, "actor": {"kind": "officer", "id": "officer:cos"},
           "lane": lane, "action": action,
           "proposal": {"required": required, "decision": decision},
@@ -161,7 +161,7 @@ def test_compute_line_counts_from_fixtured_ledger():
     assert line["reversal_rate_7d"] == pytest.approx(0.5)
     assert line["stamped_rows_total"] == 4
     assert line["proactive_cards_7d"] == 4     # window rows, all action-cards
-    # One stamped cell (officer:cos, polads, monday_task_create): 4 samples is
+    # One stamped cell (officer:cos, acme, monday_task_create): 4 samples is
     # under every bar's floor → accumulating, never graduated. The unstamped
     # sentinel cell is excluded from BOTH counts (it can never graduate).
     assert line["cells_accumulating"] == 1

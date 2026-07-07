@@ -27,9 +27,9 @@ def test_enqueues_then_sends_unified():
     def fake_drain(*, since=None, stream_key=None, count=100, consumer="chair"):
         return [
             {"id": "1", "source": "awaiting-reply", "kind": "thread", "ts": "t1",
-             "urgency_tier": "batch", "payload": {"summary": "Lisa awaits reply"}},
+             "urgency_tier": "batch", "payload": {"summary": "Dana awaits reply"}},
             {"id": "2", "source": "awaiting-reply", "kind": "thread", "ts": "t2",
-             "urgency_tier": "batch", "payload": {"summary": "Oliver awaits reply"}},
+             "urgency_tier": "batch", "payload": {"summary": "Sam awaits reply"}},
         ]
 
     def fake_send(text, *, http_post=None):
@@ -47,8 +47,8 @@ def test_enqueues_then_sends_unified():
     assert out["synthesis"]["enqueued"] == 2
     assert out["send"]["sent"] is True
     # the two synthesis items are woven into the ONE sent message
-    assert "Lisa awaits reply" in calls["text"]
-    assert "Oliver awaits reply" in calls["text"]
+    assert "Dana awaits reply" in calls["text"]
+    assert "Sam awaits reply" in calls["text"]
     # acked only after the confirmed send
     assert calls["acked"] == ["1", "2"]
 
@@ -73,7 +73,7 @@ def test_briefing_recovers_pending_backlog_left_by_surface():
     calls = {}
 
     # The fresh ">" drain returns NOTHING — surface.py already delivered everything
-    # into the PEL. The ONLY way these items reach Nate is pending recovery.
+    # into the PEL. The ONLY way these items reach the Captain is pending recovery.
     def fake_drain(**kw):
         return []
 
@@ -81,10 +81,10 @@ def test_briefing_recovers_pending_backlog_left_by_surface():
         return [
             {"id": "p1", "source": "comms-officer", "kind": "fyi", "ts": "t1",
              "urgency_tier": "batch",
-             "payload": {"summary": "Kristoffer messaged on Teams — no reply needed, FYI"}},
+             "payload": {"summary": "Morgan messaged on Teams — no reply needed, FYI"}},
             {"id": "p2", "source": "comms-officer", "kind": "fyi", "ts": "t2",
              "urgency_tier": "fyi",
-             "payload": {"summary": "TV2 DPA escalation update"}},
+             "payload": {"summary": "Vendor DPA escalation update"}},
         ]
 
     def fake_send(text, *, http_post=None):
@@ -101,12 +101,12 @@ def test_briefing_recovers_pending_backlog_left_by_surface():
         send_fn=fake_send, ack_fn=fake_ack, digest_fn=_no_digest)
 
     # Both pending (comms-officer) items are recovered, composed into ONE message,
-    # and surfaced to Nate — the relevant-no-reply case no longer vanishes.
+    # and surfaced to the Captain — the relevant-no-reply case no longer vanishes.
     assert out["send"]["recovered"] == 2
     assert out["send"]["drained"] == 2
     assert out["send"]["sent"] is True
-    assert "Kristoffer messaged on Teams" in calls["text"]
-    assert "TV2 DPA escalation update" in calls["text"]
+    assert "Morgan messaged on Teams" in calls["text"]
+    assert "Vendor DPA escalation update" in calls["text"]
     # acked only after the confirmed send, covering the recovered ids
     assert set(calls["acked"]) == {"p1", "p2"}
 
@@ -185,7 +185,7 @@ def test_digest_failure_never_blocks_briefing():
         enqueue_fn=lambda *, hours, limit: {"enqueued": 0, "ids": [], "sources": []},
         drain_fn=lambda **kw: [
             {"id": "1", "source": "awaiting-reply", "kind": "thread", "ts": "t1",
-             "urgency_tier": "batch", "payload": {"summary": "Lisa awaits reply"}}],
+             "urgency_tier": "batch", "payload": {"summary": "Dana awaits reply"}}],
         pending_fn=lambda **kw: [],
         send_fn=lambda text, *, http_post=None: {"status": "sent", "sent": True},
         ack_fn=lambda ids, *, stream_key=None: len(ids),

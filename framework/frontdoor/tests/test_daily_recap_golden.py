@@ -72,25 +72,25 @@ def _stub_board_id(monkeypatch):
 _DATE = "2026-06-23"
 _MONDAY_ID = "4210987654"
 _RECAP = {
-    "headline": "Shipped PolAds registration flow + reviewed Banner Creator v2 PR",
+    "headline": "Shipped acme-shop checkout flow + reviewed pricing widget v2 PR",
     "summary": (
-        "The day ran nearly around the clock. From 09:30 Nate drove the "
-        "registration-flow branch, wrestling the euEligibilityCategory compliance "
-        "gate — an explicit sponsor declaration, not auto-set from country.\n\n"
-        'By 14:00 focus shifted to Banner Creator v2 (PR #34). A "GlassCard" '
+        "The day ran nearly around the clock. From 09:30 the captain drove the "
+        "checkout-flow branch, wrestling the taxCategory validation gate — an "
+        "explicit merchant declaration, not auto-set from country.\n\n"
+        'By 14:00 focus shifted to pricing widget v2 (PR #34). A "PriceCard" '
         "data-* prop issue and a frozen undo button both surfaced.\n\n"
         "Energy held through the afternoon."
     ),
     "findings": (
-        "- VIES auto-fill is still flaky on the publisher path\n"
-        "- euEligibilityCategory must stay an explicit declaration (Art. 7(1))"
+        "- VAT auto-fill is still flaky on the merchant path\n"
+        "- taxCategory must stay an explicit declaration (spec §7.1)"
     ),
     "actions": (
         "- Merge PR #34 once MONDAY_API_KEY is rotated\n"
-        "- Block auto-inference of euEligibilityCategory before merge"
+        "- Block auto-inference of taxCategory before merge"
     ),
     "notes": (
-        "- Lisa flagged Poland DPA as a launch blocker\n"
+        "- QA flagged the vendor DPA as a launch blocker\n"
         "- ~17 active hours; top tools: Claude Code, VS Code"
     ),
     "productivity": 9,
@@ -99,10 +99,14 @@ _RECAP = {
 }
 
 # --- FROZEN GOLDENS — the invariant P2-FRONT must reproduce byte-for-byte ----
-# Computed from TODAY's render_vault_note (branch feat/source-adapter-p2). Do
-# NOT edit to make a red test pass — a changed value means the render drifted.
-_GOLDEN_SHA_WITH_ID = "9c0a5c8d520318c434f8eb34fc6ba915f8927cdb973bcb97b3a7afee5793505b"
-_GOLDEN_SHA_PENDING = "519469ae2ad7918b49e5164380382c03401ee05f9a586497725a2b69b9ce0a53"
+# Computed from TODAY's render_vault_note (originally frozen on branch
+# feat/source-adapter-p2; re-frozen 2026-07-07 by the egg-plan R036 fixture
+# neutralization, which changed ONLY the injected _RECAP content above — the
+# render logic was untouched and the literals below were regenerated from the
+# real render). Do NOT edit to make a red test pass — a changed value means
+# the render drifted.
+_GOLDEN_SHA_WITH_ID = "ffd01c75f0542469ff6fa653cab3d8727d0ebe4f2de154a19929cece7923f112"
+_GOLDEN_SHA_PENDING = "f2fde606c24533cce4eb8bd6221b07c4fddb61b5d355f1b97fa0597e48464432"
 
 # The exact rendered bytes for each case (auto-generated from the real render,
 # not hand-typed). A readable diff when a byte drifts; self-verified against the
@@ -125,22 +129,22 @@ _EXPECTED_WITH_ID = (
     '_Source: [Monday item 4210987654](https://step-network.monday.com/boards/5096013783/pulses/4210987654)_\n'
     '\n'
     '## Summary\n'
-    'The day ran nearly around the clock. From 09:30 Nate drove the registration-flow branch, wrestling the euEligibilityCategory compliance gate — an explicit sponsor declaration, not auto-set from country.\n'
+    'The day ran nearly around the clock. From 09:30 the captain drove the checkout-flow branch, wrestling the taxCategory validation gate — an explicit merchant declaration, not auto-set from country.\n'
     '\n'
-    'By 14:00 focus shifted to Banner Creator v2 (PR #34). A "GlassCard" data-* prop issue and a frozen undo button both surfaced.\n'
+    'By 14:00 focus shifted to pricing widget v2 (PR #34). A "PriceCard" data-* prop issue and a frozen undo button both surfaced.\n'
     '\n'
     'Energy held through the afternoon.\n'
     '\n'
     '## Key findings\n'
-    '- VIES auto-fill is still flaky on the publisher path\n'
-    '- euEligibilityCategory must stay an explicit declaration (Art. 7(1))\n'
+    '- VAT auto-fill is still flaky on the merchant path\n'
+    '- taxCategory must stay an explicit declaration (spec §7.1)\n'
     '\n'
     '## Actions\n'
     '- Merge PR #34 once MONDAY_API_KEY is rotated\n'
-    '- Block auto-inference of euEligibilityCategory before merge\n'
+    '- Block auto-inference of taxCategory before merge\n'
     '\n'
     '## Notes\n'
-    '- Lisa flagged Poland DPA as a launch blocker\n'
+    '- QA flagged the vendor DPA as a launch blocker\n'
     '- ~17 active hours; top tools: Claude Code, VS Code\n'
     '\n'
     '## Meetings on this day\n'
@@ -169,22 +173,22 @@ _EXPECTED_PENDING = (
     '_Source: (pending Monday sync)_\n'
     '\n'
     '## Summary\n'
-    'The day ran nearly around the clock. From 09:30 Nate drove the registration-flow branch, wrestling the euEligibilityCategory compliance gate — an explicit sponsor declaration, not auto-set from country.\n'
+    'The day ran nearly around the clock. From 09:30 the captain drove the checkout-flow branch, wrestling the taxCategory validation gate — an explicit merchant declaration, not auto-set from country.\n'
     '\n'
-    'By 14:00 focus shifted to Banner Creator v2 (PR #34). A "GlassCard" data-* prop issue and a frozen undo button both surfaced.\n'
+    'By 14:00 focus shifted to pricing widget v2 (PR #34). A "PriceCard" data-* prop issue and a frozen undo button both surfaced.\n'
     '\n'
     'Energy held through the afternoon.\n'
     '\n'
     '## Key findings\n'
-    '- VIES auto-fill is still flaky on the publisher path\n'
-    '- euEligibilityCategory must stay an explicit declaration (Art. 7(1))\n'
+    '- VAT auto-fill is still flaky on the merchant path\n'
+    '- taxCategory must stay an explicit declaration (spec §7.1)\n'
     '\n'
     '## Actions\n'
     '- Merge PR #34 once MONDAY_API_KEY is rotated\n'
-    '- Block auto-inference of euEligibilityCategory before merge\n'
+    '- Block auto-inference of taxCategory before merge\n'
     '\n'
     '## Notes\n'
-    '- Lisa flagged Poland DPA as a launch blocker\n'
+    '- QA flagged the vendor DPA as a launch blocker\n'
     '- ~17 active hours; top tools: Claude Code, VS Code\n'
     '\n'
     '## Meetings on this day\n'
