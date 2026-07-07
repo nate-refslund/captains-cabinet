@@ -6,8 +6,11 @@ in one step rather than `git clone + scripts/setup-mac.sh`.
 ## Plugin packaging status
 
 **Project-only mode (dev preview).** `claude plugin validate .claude-plugin/marketplace.json`
-passes cleanly. `claude plugin validate .claude-plugin/plugin.json` passes with
-one warning that `--strict` treats as an error:
+passes with exactly one known-benign warning (the `_source_note` convention
+field, which Claude Code ignores at load time — see "Capability packs" below
+for why it exists; `--strict` flags it). `claude plugin validate
+.claude-plugin/plugin.json` passes with one warning that `--strict` treats as
+an error:
 
 ```
 ⚠ CLAUDE.md at the plugin root is not loaded as project context.
@@ -92,7 +95,8 @@ that the plugin install path does NOT replace.
 
 ## Per-preset variants
 
-The marketplace lists two install targets:
+The marketplace lists the core plugin, one whole-repo variant, and five
+capability packs (next section). The whole-repo targets:
 
 - `captains-cabinet` — full framework + presets (mission/role/OVI; the work preset ships 5 functional-officer archetypes + 3 support archetypes — the instance roster decides what actually runs)
 - `captains-cabinet-personal` — personal preset (lighter, coaching-focused)
@@ -101,6 +105,63 @@ A founder can install both side by side and choose the active preset via
 `instance/config/active-preset`. The preset loader (`cabinet/scripts/load-preset.sh`)
 concatenates framework + active-preset + instance into `/tmp/cabinet-runtime/`
 at session start.
+
+## Capability packs
+
+Optional slices of the payload, carved out as separately installable plugins
+under `packs/` (rail overview: `packs/README.md`). The `work` preset stays
+CORE payload inside the `captains-cabinet` plugin; instance-specific presets
+are never packaged into the marketplace.
+
+| Pack | Ships | Copied or referenced |
+|---|---|---|
+| `doctrine-pack` | holistic-thinking, production-quality-ownership, individual-reflection, cross-officer-retro, spec-quality-gate | Copies of the core skills; each copy carries `sunset: 'undefined +90d review'` frontmatter (apoptosis-reaper review hook) |
+| `vercel-lane-pack` | deploy-and-verify, engineering-development-loop | Copies of the core skills (both are Vercel-flow skills) |
+| `agent-teams-pack` | agent-team-workflow | Copy of the core skill |
+| `preset-portfolio-pack` | portfolio-preset activation guide | Payload referenced at `presets/portfolio/` — requires the core plugin |
+| `preset-personal-pack` | personal-preset activation guide | Payload referenced at `presets/personal/` — requires the core plugin |
+
+**Additive posture (this wave):** packs are parallel copies — the originals
+stay in `.claude/skills/` and the core plugin still ships them, because live
+officers load them from there. Removing the originals is a later wave, gated
+on its sibling ratchets.
+
+**Install (Captain, interactive):**
+
+```bash
+/plugin marketplace add <owner>/<repo>        # e.g. the repo this doc lives in
+/plugin install doctrine-pack@captains-cabinet-marketplace
+```
+
+**Install (officers / deployments — the governed path):** officers never run
+ad-hoc `/plugin` commands. Declare the pack in
+`instance/config/extensions.yml` under `plugins:` and run
+`bash cabinet/scripts/install-extensions.sh` (idempotent; `setup-mac.sh`
+runs it as Step 13):
+
+```yaml
+plugins:
+  - name: doctrine-pack
+    marketplace: captains-cabinet-marketplace
+    source: <owner>/<repo>
+```
+
+**Extension gate:** every pack also ships a Cabinet extension manifest
+(`packs/<pack>/manifest.yml`, schema
+`framework/schemas/extension-manifest.schema.json`) so the same directory
+passes the governed validator:
+
+```bash
+bash cabinet/scripts/validate-extension.sh packs/<pack-name>
+```
+
+**Fork retargeting (the ONE documented place):** all `plugins[].source`
+entries in `.claude-plugin/marketplace.json` point at the SAME `repo` + `ref`
+— the repository the marketplace file lives in. When forking, retarget
+`source.repo` and `source.ref` in ALL entries together; the top-level
+`_source_note` field in `marketplace.json` restates this convention in-file
+(Claude Code ignores the field at load time; it is the one expected
+`plugin validate` warning).
 
 ## Uninstall
 

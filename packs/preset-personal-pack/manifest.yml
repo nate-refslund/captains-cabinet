@@ -1,0 +1,22 @@
+# manifest.yml — Cabinet extension manifest for the personal preset pack.
+# Schema: framework/schemas/extension-manifest.schema.json; validated by
+#   bash cabinet/scripts/validate-extension.sh packs/preset-personal-pack
+# instance/config/extensions.yml is the governed path that points officers at
+# this pack (see docs/cabinet-plugin-installation.md § Capability packs).
+# Orientation-only bundle: the preset PAYLOAD stays at presets/personal/ in
+# the core repo/plugin (referenced, not copied — see README.md). flavor is
+# restricted to `personal` because the personal preset IS the personal-flavor
+# coaching shape.
+name: preset-personal-pack
+version: "0.1.0"
+kind: skill
+action_types: []
+risk_classes: []
+undo_contract: none
+axis_compat:
+  autonomy_level: [earn_up, guardian, sovereign]
+  flavor: [personal]
+  deployment_target: [macbook, mac_mini, docker]
+entrypoints:
+  skill_preset_personal: skills/preset-personal/SKILL.md
+  readme: README.md

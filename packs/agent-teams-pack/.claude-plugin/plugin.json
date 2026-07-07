@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "agent-teams-pack",
+  "displayName": "Cabinet Agent Teams Pack",
+  "version": "0.1.0",
+  "description": "Agent Teams workflow skill: when to use Agent Teams vs sub-agents vs the orchestrator, TeamCreate worker+reviewer patterns, worktree isolation, and model routing for parallel implementation and adversarial review. Parallel copy of the core plugin's skill; requires CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1.",
+  "author": {
+    "name": "Captain's Cabinet contributors"
+  },
+  "license": "BUSL-1.1",
+  "keywords": [
+    "ai-organization",
+    "agent-teams",
+    "subagents",
+    "model-routing",
+    "parallel"
+  ],
+  "skills": [
+    "./skills/"
+  ]
+}

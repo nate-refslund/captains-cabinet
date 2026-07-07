@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "preset-portfolio-pack",
+  "displayName": "Cabinet Portfolio Preset Pack",
+  "version": "0.1.0",
+  "description": "Portfolio preset orientation: one persistent Chair plus on-demand per-lane CEO officers, generated from the lane-CEO template. This pack REFERENCES the presets/portfolio payload shipped with the core captains-cabinet plugin (it copies none of it) and adds the activation guide skill. Requires the core plugin.",
+  "author": {
+    "name": "Captain's Cabinet contributors"
+  },
+  "license": "BUSL-1.1",
+  "keywords": [
+    "ai-organization",
+    "preset",
+    "portfolio",
+    "multi-product",
+    "chair"
+  ],
+  "skills": [
+    "./skills/"
+  ]
+}

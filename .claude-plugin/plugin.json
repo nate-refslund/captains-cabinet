@@ -3,7 +3,7 @@
   "name": "captains-cabinet",
   "displayName": "Captain's Cabinet",
   "version": "0.2.1",
-  "description": "An autonomous, self-improving AI organization framework for Claude Code — Captain (founder) + a roster-derived officer fleet (live portfolio deployment: cos Chair + polads-ceo + stephie-ceo + comms-officer) with event-sourced missions, durable role registry, OVI measurement, and pattern-learning ledger. Three-layer architecture (framework + preset + instance) for product-agnostic deployment; presets ship role archetypes (work: functional officers, portfolio: Chair + generated lane CEOs), the instance roster decides what actually runs.",
+  "description": "An autonomous, self-improving AI organization framework for Claude Code — Captain (founder) + a roster-derived officer fleet with event-sourced missions, durable role registry, OVI measurement, and pattern-learning ledger. Three-layer architecture (framework + preset + instance) for product-agnostic deployment; presets ship role archetypes (work: functional officers, portfolio: Chair + generated lane CEOs), the instance roster (instance data, never packaged) decides what actually runs.",
   "author": {
     "name": "Captain's Cabinet contributors",
     "url": "https://github.com/nate-step/captains-cabinet"

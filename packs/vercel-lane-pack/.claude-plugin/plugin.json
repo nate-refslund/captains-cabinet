@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "vercel-lane-pack",
+  "displayName": "Cabinet Vercel Lane Pack",
+  "version": "0.1.0",
+  "description": "Deployment skills for Cabinet lanes that ship on Vercel: deploy-and-verify (push, poll Vercel until READY, validate live, only then announce) and engineering-development-loop (plan, execute, spawned review, fix, commit — with Vercel deploy verification). Parallel copies of the core plugin's skills; skip this pack if your lanes do not deploy on Vercel.",
+  "author": {
+    "name": "Captain's Cabinet contributors"
+  },
+  "license": "BUSL-1.1",
+  "keywords": [
+    "ai-organization",
+    "vercel",
+    "deploy",
+    "verification",
+    "engineering"
+  ],
+  "skills": [
+    "./skills/"
+  ]
+}

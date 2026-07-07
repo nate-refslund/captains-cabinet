@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "preset-personal-pack",
+  "displayName": "Cabinet Personal Preset Pack",
+  "version": "0.1.0",
+  "description": "Personal preset orientation: coaching-focused Cabinet shape with lighter governance and consent-gated autonomy. This pack REFERENCES the presets/personal payload shipped with the core captains-cabinet plugin (it copies none of it) and adds the activation guide skill. Requires the core plugin.",
+  "author": {
+    "name": "Captain's Cabinet contributors"
+  },
+  "license": "BUSL-1.1",
+  "keywords": [
+    "ai-organization",
+    "preset",
+    "personal",
+    "coaching"
+  ],
+  "skills": [
+    "./skills/"
+  ]
+}

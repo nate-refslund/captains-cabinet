@@ -1,0 +1,21 @@
+# manifest.yml — Cabinet extension manifest for the portfolio preset pack.
+# Schema: framework/schemas/extension-manifest.schema.json; validated by
+#   bash cabinet/scripts/validate-extension.sh packs/preset-portfolio-pack
+# instance/config/extensions.yml is the governed path that points officers at
+# this pack (see docs/cabinet-plugin-installation.md § Capability packs).
+# Orientation-only bundle: the preset PAYLOAD stays at presets/portfolio/ in
+# the core repo/plugin (referenced, not copied — see README.md). flavor is
+# restricted to `org` because the portfolio preset IS the multi-lane org shape.
+name: preset-portfolio-pack
+version: "0.1.0"
+kind: skill
+action_types: []
+risk_classes: []
+undo_contract: none
+axis_compat:
+  autonomy_level: [earn_up, guardian, sovereign]
+  flavor: [org]
+  deployment_target: [macbook, mac_mini, docker]
+entrypoints:
+  skill_preset_portfolio: skills/preset-portfolio/SKILL.md
+  readme: README.md

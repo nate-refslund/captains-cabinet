@@ -1,0 +1,23 @@
+# manifest.yml — Cabinet extension manifest for the doctrine capability pack.
+# Schema: framework/schemas/extension-manifest.schema.json; validated by
+#   bash cabinet/scripts/validate-extension.sh packs/doctrine-pack
+# instance/config/extensions.yml is the governed path that points officers at
+# this pack (see docs/cabinet-plugin-installation.md § Capability packs).
+# Pure skill bundle: emits no action_types, so no risk classes and no undo
+# surface — the pack is documentation-grade doctrine, not an acting adapter.
+name: doctrine-pack
+version: "0.1.0"
+kind: skill
+action_types: []
+risk_classes: []
+undo_contract: none
+axis_compat:
+  autonomy_level: [earn_up, guardian, sovereign]
+  flavor: [personal, org]
+  deployment_target: [macbook, mac_mini, docker]
+entrypoints:
+  skill_holistic_thinking: skills/holistic-thinking/SKILL.md
+  skill_production_quality_ownership: skills/production-quality-ownership/SKILL.md
+  skill_individual_reflection: skills/individual-reflection/SKILL.md
+  skill_cross_officer_retro: skills/cross-officer-retro/SKILL.md
+  skill_spec_quality_gate: skills/spec-quality-gate/SKILL.md

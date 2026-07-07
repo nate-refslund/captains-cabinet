@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "doctrine-pack",
+  "displayName": "Cabinet Doctrine Pack",
+  "version": "0.1.0",
+  "description": "Optional doctrine skills for any Cabinet: holistic-thinking (L1/L2/L3 improvement lens), production-quality-ownership (six-question craftsman checklist), individual-reflection, cross-officer-retro, and spec-quality-gate. Parallel copies of the core plugin's skills — install this pack to run them standalone; the core plugin still ships the originals this wave.",
+  "author": {
+    "name": "Captain's Cabinet contributors"
+  },
+  "license": "BUSL-1.1",
+  "keywords": [
+    "ai-organization",
+    "doctrine",
+    "reflection",
+    "retro",
+    "quality"
+  ],
+  "skills": [
+    "./skills/"
+  ]
+}

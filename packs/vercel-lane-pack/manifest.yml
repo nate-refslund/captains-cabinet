@@ -1,0 +1,21 @@
+# manifest.yml — Cabinet extension manifest for the Vercel lane capability pack.
+# Schema: framework/schemas/extension-manifest.schema.json; validated by
+#   bash cabinet/scripts/validate-extension.sh packs/vercel-lane-pack
+# instance/config/extensions.yml is the governed path that points officers at
+# this pack (see docs/cabinet-plugin-installation.md § Capability packs).
+# Pure skill bundle: the SKILLS describe deploy flows, but the pack itself
+# emits no action_types (deploys run through the officer's existing tools and
+# gates), so no risk classes and no undo surface here.
+name: vercel-lane-pack
+version: "0.1.0"
+kind: skill
+action_types: []
+risk_classes: []
+undo_contract: none
+axis_compat:
+  autonomy_level: [earn_up, guardian, sovereign]
+  flavor: [personal, org]
+  deployment_target: [macbook, mac_mini, docker]
+entrypoints:
+  skill_deploy_and_verify: skills/deploy-and-verify/SKILL.md
+  skill_engineering_development_loop: skills/engineering-development-loop/SKILL.md

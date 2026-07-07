@@ -1,0 +1,55 @@
+# packs/ — Capability packs (marketplace rail)
+
+Optional, separately installable Claude Code plugins carved out of the
+Cabinet's core payload. Each pack is a self-contained plugin
+(`<pack>/.claude-plugin/plugin.json` + `<pack>/skills/`) listed in the
+marketplace manifest (`.claude-plugin/marketplace.json`) alongside the core
+`captains-cabinet` plugin, **plus** a Cabinet extension manifest
+(`<pack>/manifest.yml`) so the same directory passes the governed extension
+gate:
+
+```bash
+bash cabinet/scripts/validate-extension.sh packs/<pack-name>
+```
+
+## The packs
+
+| Pack | Contents | Copied or referenced? |
+|---|---|---|
+| `doctrine-pack` | 5 doctrine skills: holistic-thinking, production-quality-ownership, individual-reflection, cross-officer-retro, spec-quality-gate | **Copied** from `.claude/skills/` (copies carry `sunset:` frontmatter for the apoptosis reaper) |
+| `vercel-lane-pack` | deploy-and-verify + engineering-development-loop (both are Vercel-flow skills) | **Copied** from `.claude/skills/` |
+| `agent-teams-pack` | agent-team-workflow | **Copied** from `.claude/skills/` |
+| `preset-portfolio-pack` | Portfolio-preset activation guide skill + README | Payload **referenced** at `presets/portfolio/` (core plugin/repo) |
+| `preset-personal-pack` | Personal-preset activation guide skill + README | Payload **referenced** at `presets/personal/` (core plugin/repo) |
+
+The `work` preset stays CORE payload (it ships inside the `captains-cabinet`
+plugin, not as a pack). Instance-specific presets are never packaged into the
+marketplace — the marketplace carries only universal payload; anything
+deployment-specific stays in `instance/` or a local preset directory.
+
+## Additive posture (this wave)
+
+Packs are **parallel copies**: the originals remain in `.claude/skills/` and
+the core plugin still ships them, because live officers load them from there.
+Copies are content-identical to the originals except for two deliberate
+frontmatter deltas: doctrine copies gain the `sunset:` line, and descriptions
+containing `": "` are YAML-quoted so every pack passes
+`claude plugin validate` clean (the originals carry that latent quirk; fixing
+them is the removal wave's business, not this one's).
+Removing the originals (making packs the only source) is a later wave, gated
+on its sibling ratchets. Until then, a deployment that installs both the core
+plugin and a pack sees the same skill under two plugin namespaces — harmless,
+and by design for this transition.
+
+## Install paths
+
+- **Captain, interactive:** `/plugin marketplace add <owner>/<repo>` then
+  `/plugin install <pack-name>@captains-cabinet-marketplace`.
+- **Officers / deployments (governed path):** declare the pack under
+  `plugins:` in `instance/config/extensions.yml` and run
+  `bash cabinet/scripts/install-extensions.sh` — never ad-hoc `/plugin`
+  calls from officer sessions.
+
+Full instructions: `docs/cabinet-plugin-installation.md` § Capability packs —
+including the rule that `source.repo`/`source.ref` in the marketplace manifest
+point at ONE repo+ref and must be retargeted together per fork.

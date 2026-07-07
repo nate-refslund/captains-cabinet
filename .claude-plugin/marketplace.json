@@ -1,7 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-marketplace-manifest.json",
   "name": "captains-cabinet-marketplace",
-  "description": "Distribution channel for the Captains Cabinet plugin and its preset variants. Authoritative source for plugin install paths.",
+  "description": "Distribution channel for the Captains Cabinet plugin, its preset variants, and optional capability packs. Authoritative source for plugin install paths.",
+  "_source_note": "Convention: every plugins[].source below points at the SAME repo+ref — the repository this marketplace file lives in. When forking or retargeting a deployment, update source.repo and source.ref in ALL entries together (see docs/cabinet-plugin-installation.md, 'Capability packs'). Claude Code ignores this field at load time.",
   "owner": {
     "name": "Captains Cabinet contributors"
   },
@@ -13,7 +14,7 @@
         "repo": "nate-step/captains-cabinet",
         "ref": "claude/convergence-v2"
       },
-      "description": "Full Captains Cabinet plugin: framework + presets (work, portfolio, personal, step-network) + 20 skills + 11 slash commands + 7 MCP servers. The officer fleet is roster-derived (instance/config/roster.yml) — the work preset ships 8 role archetypes, the portfolio preset ships the Chair plus generated lane CEOs.",
+      "description": "Full Captains Cabinet plugin: framework + presets (work, portfolio, personal) + 20 skills + 11 slash commands + 7 MCP servers. The officer fleet is roster-derived (instance/config/roster.yml) — the work preset ships 8 role archetypes, the portfolio preset ships the Chair plus generated lane CEOs.",
       "category": "ai-organization",
       "tags": ["ai-organization", "officers", "autonomous", "event-sourced"]
     },
@@ -27,6 +28,66 @@
       "description": "Personal Cabinet variant — coaching-focused, lighter governance, Captain triplet only. Selects the personal preset via instance/config/active-preset at first run.",
       "category": "ai-organization",
       "tags": ["ai-organization", "personal", "coaching"]
+    },
+    {
+      "name": "doctrine-pack",
+      "source": {
+        "source": "github",
+        "repo": "nate-step/captains-cabinet",
+        "ref": "claude/convergence-v2",
+        "path": "packs/doctrine-pack"
+      },
+      "description": "Optional doctrine skills: holistic-thinking, production-quality-ownership, individual-reflection, cross-officer-retro, spec-quality-gate. Parallel copies of the core plugin's skills — the core still ships the originals this wave.",
+      "category": "ai-organization",
+      "tags": ["ai-organization", "doctrine", "reflection", "quality"]
+    },
+    {
+      "name": "vercel-lane-pack",
+      "source": {
+        "source": "github",
+        "repo": "nate-step/captains-cabinet",
+        "ref": "claude/convergence-v2",
+        "path": "packs/vercel-lane-pack"
+      },
+      "description": "Vercel-lane deployment skills: deploy-and-verify (push, poll Vercel, validate live, then announce) and engineering-development-loop. Skip if your lanes do not deploy on Vercel.",
+      "category": "ai-organization",
+      "tags": ["ai-organization", "vercel", "deploy", "engineering"]
+    },
+    {
+      "name": "agent-teams-pack",
+      "source": {
+        "source": "github",
+        "repo": "nate-step/captains-cabinet",
+        "ref": "claude/convergence-v2",
+        "path": "packs/agent-teams-pack"
+      },
+      "description": "Agent Teams workflow skill: Agent Teams vs sub-agents vs orchestrator, TeamCreate worker+reviewer patterns, worktree isolation, model routing. Requires CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1.",
+      "category": "ai-organization",
+      "tags": ["ai-organization", "agent-teams", "model-routing"]
+    },
+    {
+      "name": "preset-portfolio-pack",
+      "source": {
+        "source": "github",
+        "repo": "nate-step/captains-cabinet",
+        "ref": "claude/convergence-v2",
+        "path": "packs/preset-portfolio-pack"
+      },
+      "description": "Portfolio preset orientation + activation guide (one persistent Chair + per-lane CEO officers). References the presets/portfolio payload shipped with the core plugin — install captains-cabinet first.",
+      "category": "ai-organization",
+      "tags": ["ai-organization", "preset", "portfolio", "multi-product"]
+    },
+    {
+      "name": "preset-personal-pack",
+      "source": {
+        "source": "github",
+        "repo": "nate-step/captains-cabinet",
+        "ref": "claude/convergence-v2",
+        "path": "packs/preset-personal-pack"
+      },
+      "description": "Personal preset orientation + activation guide (coaching-focused, consent-gated autonomy). References the presets/personal payload shipped with the core plugin — install captains-cabinet first.",
+      "category": "ai-organization",
+      "tags": ["ai-organization", "preset", "personal", "coaching"]
     }
   ]
 }
