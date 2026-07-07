@@ -116,11 +116,24 @@ def _diff_hashes(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Spec 039 Gate 3 idempotency check")
-    parser.add_argument("--etl-script", default="/opt/founders-cabinet/cabinet/scripts/migrate-sources-to-officer-tasks.sh")
+    # R075: the historical default (migrate-sources-to-officer-tasks.sh, the
+    # spent Spec-039 cutover ETL) was deleted — the ETL under test must now be
+    # named explicitly (only --skip-rerun snapshot mode works without one).
+    parser.add_argument("--etl-script", default=None,
+                        help="Path to the ETL script to re-run (REQUIRED unless --skip-rerun)")
     parser.add_argument("--staging", action="store_true", help="Pass --staging to ETL re-run")
     parser.add_argument("--skip-rerun", action="store_true",
                         help="Snapshot only (pre-run) — useful for external orchestration")
     args = parser.parse_args()
+
+    if not args.skip_rerun:
+        if not args.etl_script:
+            logger.error("--etl-script is required unless --skip-rerun (the old "
+                         "default ETL was removed with the Spec-039 cutover)")
+            return 1
+        if not Path(args.etl_script).is_file():
+            logger.error("--etl-script %s does not exist", args.etl_script)
+            return 1
 
     conn_str = os.environ.get("CONN") or os.environ.get("NEON_CONNECTION_STRING")
     if not conn_str:

@@ -15,8 +15,15 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GATES_PY="$SCRIPT_DIR/gate-3-idempotency.py"
-ETL_SH="$(dirname "$SCRIPT_DIR")/migrate-sources-to-officer-tasks.sh"
+# R075: the spent Spec-039 cutover ETL (migrate-sources-to-officer-tasks.sh)
+# was deleted — the ETL under test is now named explicitly via $ETL_SCRIPT.
+ETL_SH="${ETL_SCRIPT:-}"
 LOG_PREFIX="[gate-3-idempotency]"
+
+if [[ -z "$ETL_SH" || ! -f "$ETL_SH" ]]; then
+  echo "$LOG_PREFIX ERROR: set ETL_SCRIPT to the ETL script to re-run (the old default was removed with the Spec-039 cutover)" >&2
+  exit 1
+fi
 
 USE_STAGING=false
 USE_PROD=false
