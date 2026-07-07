@@ -71,7 +71,10 @@ PROTECTED_REF="refs/heads/master"
 LOG_REL="shared/force-push-log.md"
 ZERO_SHA="0000000000000000000000000000000000000000"
 EVAL_LOCK_TIMEOUT_SEC=30
-EVAL_RUN_TIMEOUT_SEC=60
+# Hang guard, not a performance budget: the 26-eval suite measures ~74s
+# on the live Mac (2026-07-07; the old 60s value dated from a ~12-eval
+# suite and killed GREEN runs mid-flight at EVAL-018). ~4x observed.
+EVAL_RUN_TIMEOUT_SEC=300
 
 REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 if [ -z "$REPO_ROOT" ]; then
@@ -183,8 +186,8 @@ done <<< "$REFS_INPUT"
 # (evaltest_*) under a fixed OFFICER_NAME=evaltest; concurrent runs
 # would cross-contaminate HINCRBY accumulation and yield spurious
 # failures OR mask real failures (peer's correct write covers for
-# broken local stop-hook). Serializing is cheap — full suite runs in
-# ~1-2s per empirical measurement.
+# broken local stop-hook). Serializing is cheap relative to the risk —
+# full 26-eval suite measures ~74s on the live Mac (2026-07-07).
 run_golden_evals_gate() {
   local eval_script="$REPO_ROOT/cabinet/scripts/run-golden-evals.sh"
   if [ ! -x "$eval_script" ]; then
@@ -196,7 +199,7 @@ run_golden_evals_gate() {
     echo "  install: apt-get install util-linux" >&2
     return 1
   fi
-  echo "pre-push: FW-025 — running golden-eval suite before master push (serialized, ~1-2s)..." >&2
+  echo "pre-push: FW-025 — running golden-eval suite before master push (serialized, ~75s)..." >&2
   (
     flock -w "$EVAL_LOCK_TIMEOUT_SEC" 200 || {
       echo "pre-push: golden-evals lock timeout after ${EVAL_LOCK_TIMEOUT_SEC}s — concurrent eval run?" >&2
@@ -206,7 +209,7 @@ run_golden_evals_gate() {
     }
     # timeout guards against a runaway run-golden-evals.sh hang —
     # otherwise every subsequent push would pay the 30s flock timeout
-    # before blocking. 60s is ~30x the observed 1-2s suite runtime.
+    # before blocking. Budget calibrated where EVAL_RUN_TIMEOUT_SEC is set.
     # Portability: timeout(1) is GNU coreutils — absent on stock macOS
     # (exit 127 here blocked a GREEN suite from reaching master). Resolve
     # timeout → gtimeout (homebrew coreutils) → perl SIGALRM (perl ships
