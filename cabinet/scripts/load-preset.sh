@@ -246,16 +246,25 @@ log "Assembled safety boundaries → $RUNTIME_DIR/safety-boundaries.md"
 # ---------------------------------------------------------------
 
 # Product Neon schemas (external)
+# Dependency order mirrors cabinet-bootstrap.sh schema_apply_list (the
+# ordering source of truth — mirror list additions in BOTH scripts, Docs Must
+# Track the Code): 037 + 044 alter library_records after library.sql creates
+# it; 041 alters officer_tasks after 038. R098: 044 is the sole DDL adding
+# embedded_at, which cabinet/dashboard/src/lib/library.ts INSERTs — omitting
+# it broke library record create/update on fresh-hatch DBs.
 if [ -n "${NEON_CONNECTION_STRING:-}" ]; then
   for schema in \
     "$CABINET_ROOT/cabinet/sql/cabinet_memory.sql" \
     "$CABINET_ROOT/cabinet/sql/library.sql" \
+    "$CABINET_ROOT/cabinet/sql/037-library-phase-a.sql" \
+    "$CABINET_ROOT/cabinet/sql/044-library-embedding-hardening.sql" \
     "$CABINET_ROOT/cabinet/sql/contexts-neon-phase1.sql" \
     "$CABINET_ROOT/cabinet/sql/cabinet-id-neon-phase1.sql" \
     "$CABINET_ROOT/cabinet/sql/cabinet-id-neon-phase1b.sql" \
     "$CABINET_ROOT/cabinet/sql/session-memories-context-slug.sql" \
     "$CABINET_ROOT/cabinet/sql/2026-04-17-spec-034-provisioning-schema.sql" \
     "$CABINET_ROOT/cabinet/sql/038-officer-tasks.sql" \
+    "$CABINET_ROOT/cabinet/sql/041-tasks-due-at.sql" \
     "$CABINET_ROOT/cabinet/sql/039-linear-to-tasks-schema.sql" \
     "$CABINET_ROOT/cabinet/sql/045-org-runtime-slice.sql"; do
     if [ -f "$schema" ]; then
