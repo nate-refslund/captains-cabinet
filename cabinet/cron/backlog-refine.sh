@@ -1,7 +1,6 @@
 #!/bin/bash
 # backlog-refine.sh — Triggers CPO to refine the backlog
 # Runs every 12 hours via cron
-[ -f /etc/environment.cabinet ] && source /etc/environment.cabinet
 
 TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
 

@@ -1,7 +1,6 @@
 #!/bin/bash
 # briefing.sh — Triggers CoS to produce a daily briefing
 # Runs at 07:00 and 19:00 CET via cron
-[ -f /etc/environment.cabinet ] && source /etc/environment.cabinet
 #
 # Delivery mechanism:
 #   1. Redis RPUSH → post-tool-use hook surfaces it to Officer (RELIABLE)

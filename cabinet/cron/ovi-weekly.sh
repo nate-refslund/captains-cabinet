@@ -3,7 +3,6 @@
 
 set -euo pipefail
 
-[ -f /etc/environment.cabinet ] && source /etc/environment.cabinet
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CABINET_ROOT="${CABINET_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"

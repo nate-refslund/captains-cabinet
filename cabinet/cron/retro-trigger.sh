@@ -2,7 +2,6 @@
 # retro-trigger.sh — Fires retro when reflection threshold reached
 # Event-based: every 5 reflections cabinet-wide OR every 48h as a safety floor
 # (so retros happen even on quiet days; floor matches CLAUDE.md's 48h).
-[ -f /etc/environment.cabinet ] && source /etc/environment.cabinet
 
 # B4 Mac portability (2026-07-03): explicit REDIS_HOST/PORT win; REDIS_URL is
 # a fallback; default 127.0.0.1 — the old 'redis' Docker-DNS default made every

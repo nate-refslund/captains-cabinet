@@ -1,7 +1,6 @@
 #!/bin/bash
 # research-sweep.sh — Triggers CRO to run a research sweep
 # Runs every 4 hours via cron
-[ -f /etc/environment.cabinet ] && source /etc/environment.cabinet
 
 TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
 

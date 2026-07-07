@@ -1,6 +1,6 @@
 #!/bin/bash
 # limit-reset-watchdog.sh — Auto-resume officers after an account session-limit
-# reset (Nate-requested resilience feature, 2026-06-25).
+# reset (Captain-requested resilience feature, 2026-06-25).
 #
 # THE PROBLEM
 # When an officer (or one of its subagents) exhausts the account session limit,
@@ -339,7 +339,7 @@ for o in "${OFFICERS[@]}"; do
     # Fire the EXISTING wake. notify-officer.sh → trigger_send → (a) durable XADD
     # on cabinet:triggers:<o>, (b) trigger_wake_officer tmux send-keys to re-invoke
     # the idle pane. The officer then reads its active-task flag and resumes.
-    MSG="Session limit reset — resume your active-task. The account session limit window has elapsed; pick up exactly where the limited turn left off (read cabinet:active-task:$o and continue per the never-stop loop). gather-then-decide; surface to the Chair; never DM Nate."
+    MSG="Session limit reset — resume your active-task. The account session limit window has elapsed; pick up exactly where the limited turn left off (read cabinet:active-task:$o and continue per the never-stop loop). gather-then-decide; surface to the Chair; never DM the Captain directly."
     if bash "$REPO_ROOT/cabinet/scripts/notify-officer.sh" "$o" "$MSG" >/dev/null 2>&1; then
       echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) limit-reset-watchdog: FIRED wake for $o (reset $CLAIMED reached) + cleared key" >&2
     else
