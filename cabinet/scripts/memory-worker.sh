@@ -149,7 +149,7 @@ process_entries() {
     fi
 
     # Parse JSON payload
-    local source_type source_id officer sender content metadata source_ts
+    local source_type source_id officer sender content metadata source_ts cabinet_id
     source_type=$(echo "$payload" | jq -r '.source_type // empty' 2>/dev/null)
     source_id=$(echo "$payload" | jq -r '.source_id // empty' 2>/dev/null)
     officer=$(echo "$payload" | jq -r '.officer // empty' 2>/dev/null)
@@ -157,6 +157,9 @@ process_entries() {
     content=$(echo "$payload" | jq -r '.content // empty' 2>/dev/null)
     metadata=$(echo "$payload" | jq -c '.metadata // {}' 2>/dev/null)
     source_ts=$(echo "$payload" | jq -r '.source_ts // empty' 2>/dev/null)
+    # Tenant pass-through: preserve the enqueuer's cabinet_id; empty falls back
+    # to memory_embed's own resolver (correct on single-box deployments).
+    cabinet_id=$(echo "$payload" | jq -r '.cabinet_id // empty' 2>/dev/null)
 
     if [ -z "$content" ]; then
       redis-cli -h "$MEM_REDIS_HOST" -p "$MEM_REDIS_PORT" XACK "$MEM_QUEUE_KEY" "$GROUP" "$id" > /dev/null 2>&1
@@ -165,7 +168,7 @@ process_entries() {
     fi
 
     # Try to embed + insert
-    if memory_embed "$source_type" "$source_id" "$officer" "$sender" "$content" "$metadata" "$source_ts" > /dev/null 2>&1; then
+    if memory_embed "$source_type" "$source_id" "$officer" "$sender" "$content" "$metadata" "$source_ts" "$cabinet_id" > /dev/null 2>&1; then
       redis-cli -h "$MEM_REDIS_HOST" -p "$MEM_REDIS_PORT" XACK "$MEM_QUEUE_KEY" "$GROUP" "$id" > /dev/null 2>&1
       success=$((success+1))
     else

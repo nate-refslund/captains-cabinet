@@ -40,7 +40,7 @@ See `constitution/ROLE_REGISTRY.md` for the current list of Officers, their doma
 - **Officer-to-Officer (Redis):** Use `notify-officer.sh` to push triggers to other Officers. Delivered via their post-tool-use hook.
 - **Shared interfaces** (`shared/interfaces/` at the preset or instance level): For outputs that other Officers consume. Specs, briefs, status documents.
 - **The Library** (this Cabinet's structured knowledge layer): Spaces for business brain, research, decisions, issues, playbooks, ADRs, customer insights. Accessed via the `library` MCP server or the dashboard's `/library` route.
-- **Cabinet Memory** (this Cabinet's universal search): pgvector-indexed semantic search across all Cabinet-produced text. Query via `bash cabinet/scripts/search-memory.sh`.
+- **Cabinet Memory** (this Cabinet's universal search): pgvector-indexed hybrid search (semantic + lexical + recency-blended ranking, with a similarity floor) across all Cabinet-produced text. Query via `bash cabinet/scripts/search-memory.sh "<query>" [--type TYPE[,TYPE...]] [--officer OFFICER] [--limit N] [--min-score S] [--as-of TS]` — `--type` accepts a comma-separated list; `--as-of` is a fail-closed content-time fence (rows without a source timestamp are excluded under a fence).
 
 ## Quality Standards
 

@@ -208,39 +208,59 @@ fi
 # above so officers see both surfaces).
 #
 # Calls cabinet/scripts/search-memory.sh with the DM body as the natural-
-# language query, filtered to past Captain-relevant entries. Budget is
-# capped at 500ms via `timeout`: if Voyage/Neon are slow or offline we
-# silently drop the semantic block — the keyword block still ships.
+# language query, filtered to past Captain-relevant entries. Deliberately NO
+# --officer filter (fixed 2026-07-07): memory_search matches m.officer
+# exactly, and captain_decision rows carry officer='captain' (other officers'
+# reflections/experience_records carry theirs) — an --officer <self> filter
+# made the headline captain_decision type structurally unreachable. The
+# --type list is the scoping mechanism. Budget is
+# capped at 2s via `timeout` (was 500ms — that budget lost the race against
+# Neon cold-resume and measured ~400ms warm latency, so recall dropped
+# deterministically): if Voyage/Neon are slow or offline we drop the
+# semantic block — the keyword block still ships — and count the drop in
+# Redis (cabinet:memory:recall_drops) so the loss is visible, not silent.
+#
+# Each injected hit line arrives prefixed [trust:<value>] — search-memory.sh
+# reads metadata.trust per row, falling back to [trust:derived].
 #
 # Disable knob: SEMANTIC_RECALL_ENABLED=0
 MEMORY_BLOCK=""
 if [ "${SEMANTIC_RECALL_ENABLED:-1}" != "0" ]; then
   SEARCH_SH="$REPO_ROOT/cabinet/scripts/search-memory.sh"
   if [ -f "$SEARCH_SH" ]; then
-    # Latency budget: 500ms hard cap. Prefer `timeout`/`gtimeout` (GNU
+    # Latency budget: 2s hard cap. Prefer `timeout`/`gtimeout` (GNU
     # coreutils — installed in Docker, sometimes missing on bare Mac).
     # Fallback: backgrounded process + bash sleep + kill. Either way we
     # never block the officer reply on Voyage/Neon outages.
+    RECALL_DROPPED=0
     SEARCH_OUT="$(mktemp /tmp/.semantic-recall.$$.XXXXXX 2>/dev/null || echo "/tmp/.semantic-recall.$$.out")"
     if command -v timeout >/dev/null 2>&1; then
-      timeout 0.5 bash "$SEARCH_SH" \
+      timeout 2 bash "$SEARCH_SH" \
         --type telegram_dm,captain_decision,officer_trigger,experience_record,reflection,correction \
-        --officer "$OFFICER" \
         --limit 5 "$DM_BODY" > "$SEARCH_OUT" 2>/dev/null
+      SEARCH_RC=$?
+      # GNU timeout: 124 = deadline hit, 137 = SIGKILL after deadline.
+      if [ "$SEARCH_RC" -eq 124 ] || [ "$SEARCH_RC" -eq 137 ]; then
+        RECALL_DROPPED=1
+        : > "$SEARCH_OUT"
+      fi
     elif command -v gtimeout >/dev/null 2>&1; then
-      gtimeout 0.5 bash "$SEARCH_SH" \
+      gtimeout 2 bash "$SEARCH_SH" \
         --type telegram_dm,captain_decision,officer_trigger,experience_record,reflection,correction \
-        --officer "$OFFICER" \
         --limit 5 "$DM_BODY" > "$SEARCH_OUT" 2>/dev/null
+      SEARCH_RC=$?
+      if [ "$SEARCH_RC" -eq 124 ] || [ "$SEARCH_RC" -eq 137 ]; then
+        RECALL_DROPPED=1
+        : > "$SEARCH_OUT"
+      fi
     else
-      # No GNU timeout — DIY: background + wait up to 500ms + kill.
+      # No GNU timeout — DIY: background + wait up to 2s + kill.
       bash "$SEARCH_SH" \
         --type telegram_dm,captain_decision,officer_trigger,experience_record,reflection,correction \
-        --officer "$OFFICER" \
         --limit 5 "$DM_BODY" > "$SEARCH_OUT" 2>/dev/null &
       SEARCH_PID=$!
-      # Poll up to 5 × 100ms = 500ms.
-      for _ in 1 2 3 4 5; do
+      # Poll up to 20 × 100ms = 2s.
+      for _ in $(seq 1 20); do
         if ! kill -0 "$SEARCH_PID" 2>/dev/null; then
           break
         fi
@@ -252,11 +272,27 @@ if [ "${SEMANTIC_RECALL_ENABLED:-1}" != "0" ]; then
         sleep 0.05
         kill -KILL "$SEARCH_PID" 2>/dev/null || true
         : > "$SEARCH_OUT"   # discard whatever partial output landed
+        RECALL_DROPPED=1
       fi
       wait "$SEARCH_PID" 2>/dev/null || true
     fi
     MEMORY_BLOCK="$(cat "$SEARCH_OUT" 2>/dev/null)"
     rm -f "$SEARCH_OUT" 2>/dev/null
+    # Empty raw output without a normal "No results found." placeholder
+    # means the search died mid-flight (killed, crashed, OOM) — that is a
+    # drop too, not a legitimate no-hit.
+    if [ "$RECALL_DROPPED" -eq 0 ] && [ -z "$(printf '%s' "$MEMORY_BLOCK" | tr -d '[:space:]')" ]; then
+      RECALL_DROPPED=1
+    fi
+    # Telemetry: count every drop (no TTL — a monotonic counter the org
+    # health audit can watch). Best-effort: redis missing/offline must
+    # never fail the hook.
+    if [ "$RECALL_DROPPED" -eq 1 ]; then
+      if command -v redis-cli >/dev/null 2>&1; then
+        redis-cli -h "${REDIS_HOST:-localhost}" -p "${REDIS_PORT:-6379}" \
+          INCR cabinet:memory:recall_drops >/dev/null 2>&1 || true
+      fi
+    fi
     # Drop the "No results found." placeholder so we don't inject empty
     # noise on cold-start systems (no Voyage/Neon, no embeddings yet).
     if [ "$(printf '%s' "$MEMORY_BLOCK" | tr -d '[:space:]')" = "Noresultsfound." ]; then

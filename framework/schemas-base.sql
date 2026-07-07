@@ -16,6 +16,13 @@
 --   3. cabinet/sql/library.sql          — Neon: library_spaces + library_records
 --   4. cabinet/sql/045-org-runtime-slice.sql
 --                                      — org_events + outcome/mission/OVI projections
+--   5. cabinet/sql/cabinet_research.sql — Neon: cabinet_research pgvector research-brief store
+--                                      (embed-/search-/supersede-research.sh substrate)
+--
+-- Framework migrations (additive ALTERs over the schemas above; idempotent):
+--   cabinet/migrations/cabinet-memory-content-tsv.sql
+--                                      — cabinet_memory.content_tsv generated tsvector + GIN
+--                                        (lexical full-text substrate for hybrid retrieval)
 --
 -- Preset-layer schemas (applied after framework by the loader):
 --   presets/<active>/schemas.sql  — additional tables specific to the active preset

@@ -43,3 +43,17 @@ CREATE INDEX IF NOT EXISTS idx_cm_officer
 -- Vector similarity search (cosine distance)
 CREATE INDEX IF NOT EXISTS idx_cm_embed
   ON cabinet_memory USING hnsw (embedding vector_cosine_ops);
+
+-- Lexical full-text substrate (hybrid vector + full-text retrieval).
+-- memory_search (cabinet/scripts/lib/memory.sh) hard-references content_tsv,
+-- so the base schema must carry it: a deployment that ran only this file
+-- would otherwise hard-error every search ('column content_tsv does not
+-- exist' — suppressed stderr makes that a silent total-recall outage).
+-- IDENTICAL text to cabinet/migrations/cabinet-memory-content-tsv.sql —
+-- additive + idempotent, so either apply order converges.
+ALTER TABLE cabinet_memory
+  ADD COLUMN IF NOT EXISTS content_tsv tsvector
+    GENERATED ALWAYS AS (to_tsvector('english', coalesce(content, ''))) STORED;
+
+CREATE INDEX IF NOT EXISTS idx_cm_tsv
+  ON cabinet_memory USING GIN (content_tsv);

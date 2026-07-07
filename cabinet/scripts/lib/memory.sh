@@ -2,17 +2,66 @@
 # memory.sh — Shared Cabinet Memory library (universal semantic search)
 # Usage: source this file, then call memory_embed / memory_search / memory_queue_embed
 
-if [ -z "${NEON_CONNECTION_STRING:-}" ]; then
+# Source cabinet/.env when either the connection string OR the tenant id is
+# missing — worker/hook contexts may inherit NEON_CONNECTION_STRING from
+# launchd without CABINET_ID, and tenant stamping needs both. CALLER-SET
+# VALUES ALWAYS WIN (review fix 2026-07-07): .env only BACK-FILLS the missing
+# variable — a caller that exports an explicit NEON_CONNECTION_STRING (scratch
+# DB, test harness, second cabinet) but no CABINET_ID must never have its
+# connection string silently replaced by the live .env value, or scratch
+# embeds/searches land in the live cabinet_memory.
+if [ -z "${NEON_CONNECTION_STRING:-}" ] || [ -z "${CABINET_ID:-}" ]; then
   MEMORY_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   CABINET_ROOT="${CABINET_ROOT:-$(cd "$MEMORY_LIB_DIR/../../.." && pwd)}"
+  _mem_pre_neon="${NEON_CONNECTION_STRING:-}"
+  _mem_pre_cid="${CABINET_ID:-}"
   set -a
   source "$CABINET_ROOT/cabinet/.env" 2>/dev/null || true
   set +a
+  if [ -n "$_mem_pre_neon" ]; then NEON_CONNECTION_STRING="$_mem_pre_neon"; fi
+  if [ -n "$_mem_pre_cid" ]; then CABINET_ID="$_mem_pre_cid"; fi
+  unset _mem_pre_neon _mem_pre_cid
 fi
 
 MEM_REDIS_HOST="${REDIS_HOST:-redis}"
 MEM_REDIS_PORT="${REDIS_PORT:-6379}"
 MEM_QUEUE_KEY="cabinet:memory:embed_queue"
+
+# =============================================================
+# TENANT RESOLUTION (cabinet_id scoping)
+# Canonical resolver = env CABINET_ID, default 'main' — same precedence as
+# framework/authority/posture.py cabinet_id() and load-preset.sh's CP9b
+# validator. Charset mirrors load-preset.sh (^[a-zA-Z0-9_-]+$); an invalid
+# value is treated as unset rather than erroring (this lib is best-effort).
+# =============================================================
+
+# Write-side id: what new rows are stamped with. Never empty — falls back to
+# 'main' (the cabinet_id column default) exactly like record-experience.sh.
+memory_cabinet_id() {
+  local cid="${CABINET_ID:-main}"
+  if ! printf '%s' "$cid" | grep -qE '^[A-Za-z0-9_-]+$'; then
+    echo "memory.sh WARN: CABINET_ID invalid charset — falling back to 'main'" >&2
+    cid="main"
+  fi
+  printf '%s' "$cid"
+}
+
+# Search-side scope: empty string = unscoped (match ALL rows — the pre-scoping
+# behavior, kept ONLY for the genuinely-unset case). A set-but-INVALID
+# CABINET_ID resolves 'main' here too (review fix 2026-07-07): both resolvers
+# must agree, otherwise a box with a malformed id (e.g. 'acme.eu') would
+# WRITE rows as 'main' while SEARCHING fully unscoped — silently reading
+# every tenant's rows on a shared DB. Invalid → 'main' keeps the box
+# self-consistent (it reads what it writes) and never unscoped, with a loud
+# stderr warning so the misconfiguration is visible.
+memory_cabinet_scope() {
+  local cid="${CABINET_ID:-}"
+  if [ -n "$cid" ] && ! printf '%s' "$cid" | grep -qE '^[A-Za-z0-9_-]+$'; then
+    echo "memory.sh WARN: CABINET_ID invalid charset — scoping search to 'main'" >&2
+    cid="main"
+  fi
+  printf '%s' "$cid"
+}
 
 # =============================================================
 # CORE: generate embedding via Voyage API (returns JSON array)
@@ -35,7 +84,11 @@ memory_get_embedding() {
 
 # =============================================================
 # SYNC INSERT: embed + insert immediately (for backfill)
-# Args: source_type, source_id (can be empty), officer, sender, content, metadata_json, source_created_at
+# Args: source_type, source_id (can be empty), officer, sender, content,
+#       metadata_json, source_created_at,
+#       cabinet_id (optional 8th; default = memory_cabinet_id resolver —
+#                   callers like memory-worker.sh may pass a queued value
+#                   through so the ENQUEUER's tenant wins over the worker's)
 # =============================================================
 memory_embed() {
   local source_type="$1"
@@ -45,6 +98,7 @@ memory_embed() {
   local content="$5"
   local metadata="${6:-{\}}"
   local source_ts="${7:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+  local cabinet_id="${8:-$(memory_cabinet_id)}"
 
   # Refuse empty/whitespace-only content — Voyage happily embeds " " to a valid vector,
   # so this check must happen before embedding (not after)
@@ -70,8 +124,9 @@ memory_embed() {
     -v embedding="$embedding" \
     -v metadata="$metadata" \
     -v source_ts="$source_ts" \
+    -v cid="$cabinet_id" \
     2>/dev/null <<'SQLEOF'
-INSERT INTO cabinet_memory (source_type, source_id, officer, sender, content, embedding, metadata, source_created_at)
+INSERT INTO cabinet_memory (source_type, source_id, officer, sender, content, embedding, metadata, source_created_at, cabinet_id)
 VALUES (
   NULLIF(:'source_type', ''),
   NULLIF(:'source_id', ''),
@@ -80,7 +135,8 @@ VALUES (
   :'content',
   :'embedding'::vector,
   :'metadata'::jsonb,
-  :'source_ts'::timestamptz
+  :'source_ts'::timestamptz,
+  COALESCE(NULLIF(:'cid', ''), 'main')
 )
 ON CONFLICT (source_type, source_id) WHERE source_id IS NOT NULL AND superseded_by IS NULL
 DO UPDATE SET
@@ -88,6 +144,7 @@ DO UPDATE SET
   embedding = EXCLUDED.embedding,
   metadata = EXCLUDED.metadata,
   source_created_at = EXCLUDED.source_created_at,
+  cabinet_id = EXCLUDED.cabinet_id,
   version = cabinet_memory.version + 1
 RETURNING id;
 SQLEOF
@@ -117,6 +174,9 @@ memory_queue_embed() {
   fi
 
   # Build payload as compact JSON (one line — required for XADD single-value parsing)
+  # cabinet_id is stamped at ENQUEUE time (the enqueuer's box identity is the
+  # authoritative tenant); the worker passes it through to memory_embed, which
+  # falls back to its local resolver if the field is absent (old payloads).
   local payload
   payload=$(jq -nc \
     --arg source_type "$source_type" \
@@ -126,7 +186,8 @@ memory_queue_embed() {
     --arg content "$content" \
     --argjson metadata "$metadata" \
     --arg source_ts "$source_ts" \
-    '{source_type: $source_type, source_id: $source_id, officer: $officer, sender: $sender, content: $content, metadata: $metadata, source_ts: $source_ts}')
+    --arg cabinet_id "$(memory_cabinet_id)" \
+    '{source_type: $source_type, source_id: $source_id, officer: $officer, sender: $sender, content: $content, metadata: $metadata, source_ts: $source_ts, cabinet_id: $cabinet_id}')
 
   [ -z "$payload" ] && return 1
 
@@ -134,40 +195,126 @@ memory_queue_embed() {
 }
 
 # =============================================================
-# SEARCH: semantic query
-# Args: query, source_type (optional), officer (optional), limit (default 10)
+# SEARCH: hybrid semantic + lexical + recency query
+# Args: query, source_type (optional, comma-separated multi-type OK),
+#       officer (optional), limit (default 10),
+#       min_score (optional; default 0.45, env CABINET_MEMORY_MIN_SCORE),
+#       as_of (optional ISO timestamp; fail-closed content-time fence —
+#              rows with NULL source_created_at are EXCLUDED under a fence)
+#
+# Ranking formula (blended, computed in SQL):
+#   vec     = 1 - (embedding <=> query)                  cosine similarity, 0..1
+#   lex     = r / (r + 0.05) where r = ts_rank(content_tsv, plainto_tsquery)
+#             (bounded transform → 0..1; 0 when the tsquery is empty)
+#   recency = exp(-ln(2) * age_days / 90)                90-day half-life;
+#             NULL source_created_at → neutral 0.5
+#   final   = 0.60*vec + 0.25*lex + 0.15*recency
+#   Degraded (empty tsquery — e.g. stopword-only query): the lex channel
+#   drops out and the remaining weights renormalize:
+#   final   = 0.80*vec + 0.20*recency
+# The similarity floor (min_score) applies to vec, not final — a lexically
+# strong but semantically unrelated row must not sneak in.
+#
+# Tenant scoping: results are fenced to this cabinet's rows —
+# cabinet_id = memory_cabinet_scope() OR 'main' (legacy transition rows);
+# CABINET_ID unset → unscoped (all rows). See the transition comment inline.
 # =============================================================
 memory_search() {
   local query="$1"
   local source_type_filter="${2:-}"
   local officer_filter="${3:-}"
   local limit="${4:-10}"
+  local min_score="${5:-${CABINET_MEMORY_MIN_SCORE:-0.45}}"
+  local as_of="${6:-}"
+
+  # min_score must be a plain non-negative decimal — junk falls back to the
+  # default rather than erroring the query.
+  if ! printf '%s' "$min_score" | grep -qE '^[0-9]*\.?[0-9]+$'; then
+    min_score="0.45"
+  fi
 
   local query_embedding
   query_embedding=$(memory_get_embedding "$query")
   [ -z "$query_embedding" ] || [ "$query_embedding" = "null" ] && { echo "Embedding failed"; return 1; }
 
+  # Tenant scope (cabinet_id). TRANSITION RULE (2026-07-07): all pre-scoping
+  # rows carry the column default 'main' (verified live: 624/624 rows =
+  # 'main' while this box resolves CABINET_ID=hq-macbook), so a strict
+  # `cabinet_id = resolved` filter would zero out recall. Until those rows
+  # are restamped, the filter matches (resolved id OR 'main') — 'main' rows
+  # are treated as this-cabinet legacy rows. Empty scope (CABINET_ID unset)
+  # = match ALL, today's pre-scoping behavior. Corollary: on a SHARED
+  # multi-cabinet DB every cabinet must run with an explicit non-'main'
+  # CABINET_ID; drop the OR-'main' arm once a backfill restamps legacy rows.
+  local cid_scope
+  cid_scope="$(memory_cabinet_scope)"
+
   # Use tab separator (safer than | — content may contain |)
   # Strip any tabs/newlines from preview so one row = one line, cleanly parseable
   # Filters passed via psql -v (parameterized, injection-safe)
+  # candidates CTE keeps the HNSW index in play: pull a vector-ordered pool
+  # (5x limit, floor 50), then re-rank the pool by the blended score.
   psql "$NEON_CONNECTION_STRING" -q -t -A -F $'\t' \
     -v embedding="$query_embedding" \
+    -v query="$query" \
     -v limit="$limit" \
     -v st_filter="${source_type_filter:-}" \
     -v of_filter="${officer_filter:-}" \
+    -v min_score="$min_score" \
+    -v as_of="${as_of:-}" \
+    -v cid="$cid_scope" \
     2>/dev/null <<'SQLEOF'
+WITH params AS (
+  SELECT plainto_tsquery('english', :'query') AS tsq
+),
+candidates AS (
+  SELECT m.*,
+    (1 - (m.embedding <=> :'embedding'::vector)) AS vec_sim
+  FROM cabinet_memory m
+  WHERE m.superseded_by IS NULL
+    AND (:'st_filter' = '' OR m.source_type = ANY(string_to_array(:'st_filter', ',')))
+    AND (:'of_filter' = '' OR m.officer = :'of_filter')
+    -- Tenant fence: resolved id OR legacy 'main' rows (transition rule
+    -- above); empty scope = unscoped (pre-scoping behavior).
+    AND (:'cid' = '' OR m.cabinet_id = :'cid' OR m.cabinet_id = 'main')
+    -- Fail-closed content-time fence: under --as-of, NULL-timestamp rows are excluded.
+    AND (:'as_of' = '' OR (m.source_created_at IS NOT NULL
+                           AND m.source_created_at <= NULLIF(:'as_of', '')::timestamptz))
+  ORDER BY m.embedding <=> :'embedding'::vector
+  LIMIT GREATEST((:'limit')::int * 5, 50)
+),
+scored AS (
+  SELECT c.*,
+    CASE WHEN c.source_created_at IS NULL THEN 0.5
+         ELSE exp(-ln(2.0) * GREATEST(extract(epoch FROM (now() - c.source_created_at)), 0) / (90.0 * 86400.0))
+    END AS recency,
+    CASE WHEN numnode(p.tsq) = 0 THEN 0.0
+         ELSE ts_rank(c.content_tsv, p.tsq) / (ts_rank(c.content_tsv, p.tsq) + 0.05)
+    END AS lex,
+    (numnode(p.tsq) > 0) AS has_lex
+  FROM candidates c CROSS JOIN params p
+),
+final AS (
+  SELECT s.*,
+    -- final = 0.60*vec + 0.25*lex + 0.15*recency (empty tsquery → 0.80*vec + 0.20*recency)
+    CASE WHEN s.has_lex
+         THEN 0.60 * s.vec_sim + 0.25 * s.lex + 0.15 * s.recency
+         ELSE 0.80 * s.vec_sim + 0.20 * s.recency
+    END AS final_score
+  FROM scored s
+)
 SELECT
   source_type,
   COALESCE(officer, sender, 'n/a') as who,
   to_char(source_created_at, 'YYYY-MM-DD HH24:MI') as when_at,
-  round((1 - (embedding <=> :'embedding'::vector))::numeric, 3) as similarity,
+  round(vec_sim::numeric, 3) as similarity,
+  round(final_score::numeric, 3) as score,
+  COALESCE(NULLIF(regexp_replace(LEFT(metadata->>'trust', 32), E'[\t\n\r ]+', '', 'g'), ''), 'derived') as trust,
   regexp_replace(LEFT(COALESCE(summary, content), 200), E'[\t\n\r]+', ' ', 'g') as preview,
   COALESCE(source_id, id::text) as ref
-FROM cabinet_memory
-WHERE superseded_by IS NULL
-  AND (:'st_filter' = '' OR source_type = :'st_filter')
-  AND (:'of_filter' = '' OR officer = :'of_filter')
-ORDER BY embedding <=> :'embedding'::vector
-LIMIT :'limit';
+FROM final
+WHERE vec_sim >= (:'min_score')::float8
+ORDER BY final_score DESC
+LIMIT (:'limit')::int;
 SQLEOF
 }
