@@ -46,15 +46,29 @@ RETRO_PIPE_DIR = (
 _SHARED_DIR = RETRO_PIPE_DIR.parent / "_shared"
 
 
+def _exists_unprivileged(p: Path) -> bool:
+    """``p.exists()`` that treats an UNREADABLE path as absent instead of
+    crashing at import. The null-hatch gate (operative-egg A15/P1, and the
+    clean-room-source CI job it composes) plants ``~/.screenpipe`` as
+    present-but-mode-000, and ``Path.exists()`` PROPAGATES EACCES (pathlib
+    swallows only ENOENT/ENOTDIR/EBADF/ELOOP) — which took this module down at
+    import. A lib we cannot stat is a lib we cannot import: honest False,
+    degrade to the ``_RetroUnavailable`` stub exactly like plain absence."""
+    try:
+        return p.exists()
+    except OSError:  # EACCES/EPERM — unreadable ≡ absent for this probe
+        return False
+
+
 def retro_available() -> bool:
     """True iff the retrodiction lib is importable from RETRO_PIPE_DIR."""
-    return (RETRO_PIPE_DIR / "lib.py").exists()
+    return _exists_unprivileged(RETRO_PIPE_DIR / "lib.py")
 
 
 # Put the pipe dir + its _shared deps on sys.path (idempotent) so the lib's
 # transitive imports (sp_lib, commitments_lib, draft_lib) resolve.
 for _p in (str(RETRO_PIPE_DIR), str(_SHARED_DIR), str(RETRO_PIPE_DIR.parent)):
-    if _p not in sys.path and Path(_p).exists():
+    if _p not in sys.path and _exists_unprivileged(Path(_p)):
         sys.path.insert(0, _p)
 
 # Import-safe when the lib is absent (2026-07-02, CI run 28618484301): a clean

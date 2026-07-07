@@ -544,3 +544,26 @@ jobs:
         # run_draft_lane reparented to env.vault_dir()/shared_env_path()); a NEW
         # screenpipe import/path anywhere in framework/** is now CI-red.
         run: python -m pytest framework/sources framework/tests -q
+
+  # A15 / P1 (2026-07-07): Proof-1 — the NULL HATCH, the operative-egg plan's
+  # first acceptance event (decision D2). ONE named runnable gate composing the
+  # two clean-room proofs above (the Testburg render + the SRC-5 null-source
+  # job) into a single command: `bash cabinet/scripts/null-hatch.sh` — the egg
+  # boots with no captain data, no screenpipe, no instance source binding,
+  # adapters absent ⇒ NullPersonalSource honest-empties everywhere. The script
+  # is hermetic (sandboxes the COMMITTED tree + a throwaway poisoned $HOME), so
+  # the SAME command a captain runs on a laptop is what CI certifies here.
+  # Exit 0 = Proof 1 holds. Sibling jobs stay: they are the per-seam signals;
+  # this is the composed egg-level gate.
+  null-hatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: pip install pytest pyyaml
+      - name: "Proof 1 — null hatch (one gate, clean checkout)"
+        run: bash cabinet/scripts/null-hatch.sh
