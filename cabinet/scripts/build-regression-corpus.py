@@ -6,9 +6,11 @@ Reads the consequence ledger READ-ONLY (framework.fidelity.consequence.
 read_ledger — deduped, sim-quarantined, symlink-fenced, honoring
 CABINET_EVENT_LOG_DIR) and freezes every historical human correction
 (edit / skip / veto / undo / human-wrong verdict_human rows) as a replayable
-case under framework/fidelity/regression_corpus/ — an UNLOCKED dir
-(deliberately NOT memory/golden-evals/, which is germline schg-locked; see
-cabinet/scripts/germline-lock.sh DIRS).
+case under the instance-layer store instance/fidelity/regression_corpus/
+(egg plan R009: harvested corrections are deployment data — the framework
+egg ships no corpus and the lib's framework-local default slot stays empty).
+The store is an UNLOCKED dir (deliberately NOT memory/golden-evals/, which
+is germline schg-locked; see cabinet/scripts/germline-lock.sh DIRS).
 
 Each case = {input situation (leak-safe replay reference), the human verdict,
 the graduation cell}. All harvest/serialization logic lives in
@@ -38,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -46,9 +49,19 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from framework.fidelity.regression_corpus_lib import (  # noqa: E402
-    DEFAULT_CORPUS_DIR,
     extract_corrections,
     write_corpus,
+)
+
+# The LIVE corpus store (egg plan R009): instance-layer data under the
+# deployment root — CABINET_ROOT env else this checkout (mirrors
+# framework/watchdog/registry.py::_cabinet_root). The cabinet layer owns this
+# instance default; framework code must not path-couple to instance/
+# (cabinet/scripts/check-layer-separation.sh), so the lib's DEFAULT_CORPUS_DIR
+# stays the framework-local EMPTY slot (empty corpus -> gate no_verdict).
+DEFAULT_INSTANCE_CORPUS_DIR = (
+    Path(os.environ.get("CABINET_ROOT") or _REPO_ROOT)
+    / "instance" / "fidelity" / "regression_corpus"
 )
 
 
@@ -58,9 +71,9 @@ def main(argv: list[str] | None = None) -> int:
                     "into the replayable regression corpus."
     )
     ap.add_argument(
-        "--corpus-dir", default=str(DEFAULT_CORPUS_DIR),
-        help="corpus root (default: framework/fidelity/regression_corpus/). "
-             "Tests point this at a temp dir.",
+        "--corpus-dir", default=str(DEFAULT_INSTANCE_CORPUS_DIR),
+        help="corpus root (default: <deployment root>/instance/fidelity/"
+             "regression_corpus/). Tests point this at a temp dir.",
     )
     ap.add_argument(
         "--since", default=None,

@@ -233,7 +233,9 @@ path or the schema; fresh review 2026-07-04 §6 items 2–3):
   (logic: `framework/fidelity/regression_corpus_lib.py`) freezes every human
   correction (`proposal.decision` edited/rejected, and `verdict_human`
   `wrong` rows — undo/veto/edit by the binder's evidence prefix) into
-  replayable cases under `framework/fidelity/regression_corpus/`
+  replayable cases under the instance-layer store
+  `instance/fidelity/regression_corpus/` (egg plan R009 — corrections are
+  deployment data; the framework egg ships no corpus)
   (`{situation, human_verdict, cell}`; cell keyed exactly like
   `compute_ratios`, `__unstamped__` sentinel included). The eval cadence
   gates changes with `framework/fidelity/regression_gate.py`: PASS iff **no

@@ -2,9 +2,11 @@
 
 WHY (fresh review 2026-07-04 §6.2): a correction that never replays is spent
 once. The corpus (framework/fidelity/regression_corpus_lib.py harvests it into
-framework/fidelity/regression_corpus/) freezes every human correction as a
-case; THIS module is the checkable predicate the F1/eval cadence calls before
-accepting a behavior change:
+the instance-layer store instance/fidelity/regression_corpus/ — egg R009; the
+lib's framework-local DEFAULT_CORPUS_DIR ships empty, and an empty corpus is
+an honest no_verdict here) freezes every human correction as a case; THIS
+module is the checkable predicate the F1/eval cadence calls before accepting a
+behavior change:
 
     PASS  iff  no frozen case regresses  AND  >= 1 frozen case improves.
 

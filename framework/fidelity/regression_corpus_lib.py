@@ -49,10 +49,17 @@ CLI) — it is never silently rewritten. Determinism mechanics: no timestamps
 anywhere in corpus output; canonical json (sort_keys, indent=2, ensure_ascii);
 manifest fingerprint = sha256 over the sorted case-id list.
 
-STORAGE: framework/fidelity/regression_corpus/ (repo tree). Deliberately NOT
-memory/golden-evals/ — that dir is germline schg-locked
-(cabinet/scripts/germline-lock.sh DIRS) and a growing corpus needs appends;
-this dir is the UNLOCKED sibling per the 2026-07-05 lane task.
+STORAGE (egg plan R009, 2026-07-07): the live corpus is INSTANCE data —
+instance/fidelity/regression_corpus/ under the deployment root. Harvested
+Captain corrections are deployment-specific, so the framework egg ships NO
+corpus; the harvester CLI (cabinet/scripts/build-regression-corpus.py — the
+cabinet layer, which MAY name instance paths; framework code may not, per
+cabinet/scripts/check-layer-separation.sh) defaults its --corpus-dir to that
+instance store. DEFAULT_CORPUS_DIR below stays the framework-local slot as a
+fail-safe EMPTY default: a caller that passes no corpus_dir reads an empty
+corpus and the gate honestly no_verdicts (never a spurious pass). Both dirs
+are deliberately NOT memory/golden-evals/ — that dir is germline schg-locked
+(cabinet/scripts/germline-lock.sh DIRS) and a growing corpus needs appends.
 
 READ PATH: framework.fidelity.consequence.read_ledger() ONLY — deduped
 last-write-wins (a superseding outcome/acted event is the row's final human
@@ -80,8 +87,11 @@ from framework.fidelity.consequence import UNSTAMPED_ACTION_TYPE, read_ledger
 # ones and load_corpus (regression_gate.py) must accept both or migrate.
 CASE_FORMAT = 1
 
-# Default corpus location: the UNLOCKED dir next to this module (see module
-# docstring — NOT memory/golden-evals, which is schg-locked).
+# Fail-safe default: the framework-local slot next to this module. Since egg
+# R009 the LIVE store is instance/fidelity/regression_corpus/ (instance data;
+# the harvester CLI defaults there — see the module docstring's STORAGE
+# section). This slot ships EMPTY in the egg, so a default-dir reader gets an
+# honest empty corpus -> the gate yields no_verdict, never a spurious pass.
 DEFAULT_CORPUS_DIR = Path(__file__).resolve().parent / "regression_corpus"
 
 # The correction kinds this corpus recognizes (module docstring has the
