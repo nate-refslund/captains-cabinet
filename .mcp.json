@@ -1,19 +1,15 @@
 {
+  "_neon_pending": "neon parked 2026-07-07 pending Captain-provisioned NEON_API_KEY in cabinet/.env — full rationale + restore recipe in .mcp.json.mac-native _neon_pending; re-add in BOTH layers in the same change (lockstep).",
   "mcpServers": {
     "notion": {
       "command": "npx",
       "args": ["-y", "@notionhq/notion-mcp-server"],
       "env": { "NOTION_TOKEN": "${NOTION_API_KEY}" }
     },
-    "neon": {
-      "type": "http",
-      "url": "https://mcp.neon.tech/mcp",
-      "headers": { "Authorization": "Bearer ${NEON_API_KEY}" }
-    },
     "vercel": {
       "command": "npx",
       "args": ["-y", "@robinson_ai_systems/vercel-mcp"],
-      "env": { "VERCEL_TOKEN": "${VERCEL_API_KEY}" }
+      "env": { "VERCEL_TOKEN": "${VERCEL_TOKEN}" }
     },
     "redis-trigger-channel": {
       "command": "bun",
