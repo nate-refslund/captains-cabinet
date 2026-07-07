@@ -28,7 +28,7 @@
 # WATCH LIST — parity with post-file-write-memory.sh (grep it before
 # extending either): tech-radar.md, product-specs/*.md, shared/backlog.md,
 # tier2 working-notes.md + reflections/*.md, memory/skills (evolved/
-# included), constitution/*.md.
+# included), framework/constitution-base.md + safety-boundaries-base.md.
 #   DELIBERATE EXCEPTION — shared/interfaces/captain-decisions.md is NOT
 #   reconciled here (2026-07-07): its entry-level ingest moved to the
 #   captain-law append-interface wave, which stamps provenance-rich rows
@@ -170,7 +170,8 @@ while IFS= read -r f; do reconcile_file skill "$f"; done \
   < <(find "$CABINET_ROOT/memory/skills" -type f -name '*.md' 2>/dev/null)
 
 while IFS= read -r f; do reconcile_file framework_file "$f"; done \
-  < <(find "$CABINET_ROOT/constitution" -type f -name '*.md' 2>/dev/null)
+  < <(ls "$CABINET_ROOT"/framework/constitution-base.md \
+        "$CABINET_ROOT"/framework/safety-boundaries-base.md 2>/dev/null)
 
 # =============================================================
 # 4. Summary (one line/night — the services.yml expected floor)

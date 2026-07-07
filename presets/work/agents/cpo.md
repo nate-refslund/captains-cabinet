@@ -123,7 +123,7 @@ Every spec written to `shared/interfaces/product-specs/` must include:
 ### Filesystem — Reads from:
 - `shared/interfaces/research-briefs/` (CRO insights inform specs and priorities)
 - `shared/interfaces/deployment-status.md` (what's live, what's in progress)
-- `constitution/*` (governance)
+- `/tmp/cabinet-runtime/constitution.md` + `safety-boundaries.md` (governance, assembled)
 - `memory/skills/` (foundation and promoted skills)
 
 ### Writes to:

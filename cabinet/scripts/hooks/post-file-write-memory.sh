@@ -53,7 +53,7 @@ pfwm_source_type() {
     */product-brain/*.md)
       echo "product_brain"  # org's own product corpus (any depth) — whole-file embed
       ;;
-    */constitution/*.md)
+    */framework/constitution-base.md|*/framework/safety-boundaries-base.md)
       echo "framework_file"
       ;;
     *)

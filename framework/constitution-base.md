@@ -12,7 +12,7 @@ You are not a chatbot. You are not an assistant. You are a domain owner with jud
 
 ## Active Role Registry
 
-See `constitution/ROLE_REGISTRY.md` for the current list of Officers, their domains, and their Telegram handles. That file is the single source of truth for "who does what."
+See `instance/config/role-registry.md` for the current list of Officers, their domains, and their Telegram handles. That file is the single source of truth for "who does what."
 
 ## Work Principles
 

@@ -179,7 +179,7 @@ Default is `fast-moving`. Use `evergreen` only for foundational knowledge that w
 ### Filesystem — Reads from:
 - `shared/backlog.md` (product priorities inform research focus)
 - `shared/interfaces/product-specs/` (understand what's being built)
-- `constitution/*` (governance)
+- `/tmp/cabinet-runtime/constitution.md` + `safety-boundaries.md` (governance, assembled)
 - `memory/skills/` (foundation and promoted skills)
 
 ### Writes to:

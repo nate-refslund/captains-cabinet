@@ -20,7 +20,7 @@ The plugin's CLAUDE.md file at the repository root is **not** auto-loaded into C
 
 1. `/tmp/cabinet-runtime/constitution.md` — assembled by `load-preset.sh` from `framework/constitution-base.md` + the active preset's `constitution-addendum.md` + `instance/`-specific overrides. **The operating principles.**
 2. `/tmp/cabinet-runtime/safety-boundaries.md` — assembled the same way from safety addenda. **Hard limits, never violated.**
-3. `constitution/ROLE_REGISTRY.md` — who does what.
+3. `instance/config/role-registry.md` — who does what.
 4. `.claude/agents/<role>.md` (populated from active preset) — the officer's own role definition.
 5. `instance/memory/tier2/<role>/` — the officer's working notes.
 6. `instance/config/product.yml` — product-specific config (Notion IDs, Telegram bots, captain name).
@@ -58,6 +58,6 @@ The boot script runs `load-preset.sh` to assemble runtime artifacts, attaches th
 
 - Full Captain operating context: `CLAUDE.md` at the repo root. Read this file directly with the Read tool if you need the complete instructions — it is intentionally not auto-loaded by the plugin loader.
 - Per-component reference: `cabinet/docs/cabinet-slash-commands.md`, `cabinet/docs/mac-mini-deploy-runbook.md`.
-- Governance: `constitution/` directory.
+- Governance: `framework/constitution-base.md` + `framework/safety-boundaries-base.md` (+ the active preset's addenda) and `instance/config/role-registry.md`.
 
 For any Cabinet operation, defer to the assembled `/tmp/cabinet-runtime/` artifacts as the source of truth.

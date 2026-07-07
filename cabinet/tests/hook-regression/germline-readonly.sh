@@ -14,7 +14,7 @@
 # checkpoint hard-blocker #2 (safety-perimeter CRITICAL: captain-vetoes.yml
 # was empirically Edit→ALLOWED) — the ACTING-PLANE JUDGES: captain-vetoes.yml,
 # act-first-surfaces.yml and the frontdoor/acting executor+gate modules,
-# x Edit/Write/officer/path-form variants + constitution regression pin +
+# x Edit/Write/officer/path-form variants +
 # double-slash normalization) + ALLOW probes (false-positive guards:
 # siblings, own tier2, shared interfaces,
 # the authority judges' own editable tests incl. test_matrix.py, and the
@@ -32,8 +32,7 @@
 # Accepted FP (documented, fail-closed): staging a germline-named file
 # under a mirrored directory tail (e.g. /tmp/cabinet/mcp-scope.yml) is
 # blocked by the suffix anchor — stage proposals under a different name
-# (e.g. /tmp/mcp-scope-proposed.yml) instead. Same class as the
-# constitution/ contains-pattern blocking /tmp/constitution/x.
+# (e.g. /tmp/mcp-scope-proposed.yml) instead.
 #
 # CABINET_HOOK_TEST_MODE=1 must be set inline per every probe (no global
 # export) per feedback_test_harness_production_sinks.md.
@@ -117,8 +116,6 @@ probe "G34 Edit calendar_template.py (cpo)" cpo Edit  'framework/frontdoor/calen
 probe "G35 Edit action_lane.py (cto)"       cto Edit  'framework/acting/action_lane.py'                            BLOCK
 probe "G36 Write run_action_lane.py (cos!)" cos Write 'framework/acting/run_action_lane.py'                        BLOCK
 probe "G37 abs-path action_lane.py (cro)"   cro Edit  '/opt/founders-cabinet/framework/acting/action_lane.py'      BLOCK
-# Regression pin: pre-existing constitution protection unchanged
-probe "G19 constitution pin (cto)"         cto Edit  'constitution/CONSTITUTION.md'                                BLOCK
 
 # ------------------------------------------------------------------
 # ALLOW: false-positive guards (must NOT block)

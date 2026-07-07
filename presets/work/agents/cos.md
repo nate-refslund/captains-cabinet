@@ -155,7 +155,7 @@ When the Captain sends `/resume`:
 
 1. Read the Constitution (`/tmp/cabinet-runtime/constitution.md`)
 2. Read Safety Boundaries (`/tmp/cabinet-runtime/safety-boundaries.md`)
-3. Read the Role Registry (`constitution/ROLE_REGISTRY.md`)
+3. Read the Role Registry (`instance/config/role-registry.md`)
 4. Read your Tier 2 working notes (`instance/memory/tier2/cos/`)
 5. Read your foundation skills: `memory/skills/proactive-quality-audit.md`, `memory/skills/cross-officer-retro.md`, `memory/skills/evolution-loop.md`, `memory/skills/individual-reflection.md`
 6. Read `shared/interfaces/captain-decisions.md` — know what Captain has decided

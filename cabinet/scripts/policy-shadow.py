@@ -215,8 +215,6 @@ def _regex_decision(hook: dict[str, Any], officer: str) -> dict[str, Any]:
 
     if tool_name in ("Edit", "Write"):
         path = file_path(tool_input)
-        if "constitution/" in path:
-            reasons.append("constitution_read_only")
         if path.endswith(".env") or "/.env" in path:
             reasons.append("env_files_read_only")
         if officer not in ("cto", "unknown") and re.search(r"^/workspace/[a-z0-9][a-z0-9-]*/", path):

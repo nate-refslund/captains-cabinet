@@ -979,7 +979,9 @@ if [ "$OFFICER" != "cto" ] && [ "$OFFICER" != "unknown" ]; then
 fi
 
 # ============================================================
-# 5. CONSTITUTION + GERMLINE PROTECTION
+# 5. GERMLINE PROTECTION (constitution/ retired 2026-07-07 — CG-15/R104:
+#    the runtime constitution assembles from framework/constitution-base.md
+#    + the active preset addendum; the old dir + its write-protect arm are gone)
 # ============================================================
 if [ "$TOOL_NAME" = "Edit" ] || [ "$TOOL_NAME" = "Write" ]; then
   FILE_PATH=$(echo "$TOOL_INPUT" | jq -r '.file_path // .path // empty' 2>/dev/null)
@@ -992,10 +994,6 @@ if [ "$TOOL_NAME" = "Edit" ] || [ "$TOOL_NAME" = "Write" ]; then
   # paths resolve correctly).
   FILE_PATH=$(printf '%s' "$FILE_PATH" | tr -s '/')
   case "$FILE_PATH" in
-    *"constitution/"*)
-      echo "BLOCKED: Constitution files are read-only. Propose amendments through the self-improvement loop." >&2
-      exit 2
-      ;;
     # GERMLINE SET (2026-06-10) — the files that JUDGE officer/loop
     # behavior: golden evals, the typed policy engine + its policies, MCP
     # scope, capability routing, the brain-bridge and courses-of-action

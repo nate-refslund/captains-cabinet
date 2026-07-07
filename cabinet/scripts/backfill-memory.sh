@@ -130,7 +130,8 @@ for f in "$CABINET_ROOT/shared/interfaces/captain-decisions.md" \
          "$CABINET_ROOT"/instance/memory/tier2/*/reflections/*.md \
          "$CABINET_ROOT"/memory/skills/*.md \
          "$CABINET_ROOT"/memory/skills/evolved/*.md \
-         "$CABINET_ROOT"/constitution/*.md; do
+         "$CABINET_ROOT/framework/constitution-base.md" \
+         "$CABINET_ROOT/framework/safety-boundaries-base.md"; do
   [ ! -f "$f" ] && continue
   [[ "$(basename "$f")" == TEMPLATE* ]] && continue
   pfwm_queue_watched_file "$f" "$WRITER" && WF_COUNT=$((WF_COUNT+1))
