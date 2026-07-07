@@ -5,7 +5,9 @@
 # lives:
 #   1. Filesystem (captain triplet, role entities, evolved skills, experience
 #      records, mission proposals — the durable runtime artifacts that aren't
-#      git-tracked).
+#      git-tracked; since 2026-07-07 also .claude/agents/, the generated role
+#      defs that CARRY LIVE Captain-approved amendments — lost once in the
+#      cos-law incident, never again).
 #   2. Redis snapshot (via BGSAVE — async, non-blocking).
 #   3. Optional Postgres pg_dump (only if --pg is set + DATABASE_URL is set).
 #
@@ -76,6 +78,16 @@ rsync -a --delete \
   "$CABINET_ROOT/instance/" \
   "$CABINET_ROOT/memory/" \
   "$DEST_DIR/cabinet-state/"
+# .claude/agents/ — gitignored GENERATED role defs that nevertheless carry
+# LIVE Captain-approved amendments applied by CoS between regenerations
+# (2026-07-07 cos-law loss: an amendment existed ONLY here and died with the
+# file). Own destination subdir so its basenames (cos.md, cto.md, ...) can
+# never collide with the contents-merged sources above.
+if [ -d "$CABINET_ROOT/.claude/agents" ]; then
+  rsync -a --delete \
+    "$CABINET_ROOT/.claude/agents/" \
+    "$DEST_DIR/cabinet-state/claude-agents/"
+fi
 FS_FILES=$(find "$DEST_DIR/cabinet-state" -type f 2>/dev/null | wc -l | tr -d ' ')
 FS_SIZE=$(du -sh "$DEST_DIR/cabinet-state" 2>/dev/null | awk '{print $1}')
 echo "  → $FS_FILES files, $FS_SIZE"
