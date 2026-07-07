@@ -3,8 +3,10 @@
 #
 # Invoked by LaunchAgent (com.cabinet.officer.<role>.plist). Reads officer
 # capabilities, builds the right Claude Code invocation flags (telegram_bot
-# gate + cua-driver MCP overlay), starts a detached tmux session, and launches
-# claude inside.
+# gate + cua-driver MCP overlay + per-officer structural MCP scoping from
+# cabinet/mcp-scope.yml via gen-officer-mcp-config.py → --strict-mcp-config
+# + --settings overlay, audit 2026-07-07 #4), starts a detached tmux session,
+# and launches claude inside.
 #
 # Per Spec 059 v1.1 Checkpoint 2.7 + CTO v1.1 #4 (tmux new-session -d) + Spec
 # 060 v1.1 (telegram_bot capability gate) + Spec 061 v1.2 (drives_computer
@@ -156,13 +158,67 @@ if [ "${#MCP_LAYERS[@]}" -gt 1 ]; then
            | .mcpServers |= with_entries(select(.key|startswith("_")|not))' \
        "${MCP_LAYERS[@]}" > "$MERGED_MCP_PATH"
   )
-  MCP_FLAG="--mcp-config $MERGED_MCP_PATH"
-elif [ "$MCP_BASE" = ".mcp.json.mac-native" ]; then
-  # Mac-native base is the source of truth; pass it explicitly even without overlay
-  MCP_FLAG="--mcp-config $REPO_ROOT/$MCP_BASE"
+  SCOPE_INPUT="$MERGED_MCP_PATH"
 else
-  MCP_FLAG=""  # Claude Code reads .mcp.json by default (Hetzner fallback)
+  # Single layer — filter the base directly (covers both the mac-native base
+  # and the bare .mcp.json fallback; the generator strips "_" pseudo-keys the
+  # jq pass above would otherwise have handled).
+  SCOPE_INPUT="$REPO_ROOT/$MCP_BASE"
 fi
+
+# ===========================================================
+# Per-officer STRUCTURAL MCP scoping (audit 2026-07-07 #4, non-germline half)
+# ===========================================================
+# The merged config above is the union of every layer. Scope it DOWN to the
+# officer's grant set from cabinet/mcp-scope.yml (READ-ONLY germline parse —
+# gen-officer-mcp-config.py mirrors the pre-tool-use.sh §9 parser) so
+# unscoped servers never even BOOT: the launch line passes the filtered
+# config with --strict-mcp-config, plus a --settings overlay mirroring the
+# grants into allowedMcpServers and disabling enableAllProjectMcpServers so
+# the session cannot union the project .mcp.json back in. The §9 call-time
+# hook stays as defense-in-depth. FAIL CLOSED: if the scope parse fails
+# (missing file, unknown officer, corrupt yaml) or the generator itself
+# cannot run, the officer boots with an EMPTY MCP server set + loud stderr —
+# never fail open.
+OFFICER_CFG_DIR="$HOME/Library/Caches/cabinet"
+if [ "${CABINET_MAC_DRY_RUN:-0}" = "1" ]; then
+  # Dry-run must not clobber the live per-officer cache files — generate
+  # into a throwaway dir (we only need CLAUDE_CMD materialised for greps).
+  OFFICER_CFG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/cabinet-mcp-dryrun.XXXXXX")"
+fi
+mkdir -p "$OFFICER_CFG_DIR"
+OFFICER_MCP_PATH="$OFFICER_CFG_DIR/officer-mcp-${OFFICER}.json"
+OFFICER_SETTINGS_PATH="$OFFICER_CFG_DIR/officer-settings-${OFFICER}.json"
+
+# Launcher INFRA pass-through (NOT capability grants — see the generator's
+# docstring): redis-trigger-channel is the trigger-delivery plane; without it
+# an officer session boots deaf to wakes/triggers. It is absent from the
+# germline scope file (schg-locked) — adding it to `universal:` there is a
+# Captain amendment, tracked in
+# docs/proposals/germline-addendum-claude-code-audit-2026-07-07.md.
+# cua/cua-driver ride the drives_computer capability gate that assembled the
+# overlay above. The generator IGNORES extra-allow when the scope parse
+# fails, so this pass-through cannot mask a fail-closed boot.
+EXTRA_ALLOW="redis-trigger-channel"
+if [ "$HAS_CUA_DRIVER" = "true" ]; then
+  EXTRA_ALLOW="$EXTRA_ALLOW,cua,cua-driver"
+fi
+
+if ! python3 "$REPO_ROOT/cabinet/scripts/gen-officer-mcp-config.py" \
+      --officer "$OFFICER" \
+      --scope "$REPO_ROOT/cabinet/mcp-scope.yml" \
+      --input "$SCOPE_INPUT" \
+      --extra-allow "$EXTRA_ALLOW" \
+      --out-mcp "$OFFICER_MCP_PATH" \
+      --out-settings "$OFFICER_SETTINGS_PATH"; then
+  echo "[ERROR] start-officer-mac.sh: gen-officer-mcp-config.py failed — FAIL CLOSED: booting $OFFICER with an EMPTY MCP server set" >&2
+  ( umask 077
+    printf '{"mcpServers":{}}\n' > "$OFFICER_MCP_PATH"
+    printf '{"allowedMcpServers":[],"enableAllProjectMcpServers":false}\n' > "$OFFICER_SETTINGS_PATH"
+  )
+fi
+MCP_FLAG="--mcp-config $OFFICER_MCP_PATH --strict-mcp-config"
+SETTINGS_FLAG="--settings $OFFICER_SETTINGS_PATH"
 
 # ===========================================================
 # Telegram bot token resolution
@@ -282,7 +338,7 @@ fi
 # SERVER's global env. When the server was first started by another officer (e.g. cos),
 # a new session would otherwise launch claude as OFFICER_NAME=cos and mis-attribute every
 # heartbeat / cost / log / tier2 write to cos. Forcing them here pins the real identity.
-CLAUDE_CMD="cd $REPO_ROOT && OFFICER_NAME='$OFFICER' CABINET_OFFICER='$OFFICER' claude --model '$MODEL' $MCP_FLAG $TELEGRAM_FLAG $AGENT_FLAG --dangerously-skip-permissions --effort max"
+CLAUDE_CMD="cd $REPO_ROOT && OFFICER_NAME='$OFFICER' CABINET_OFFICER='$OFFICER' claude --model '$MODEL' $MCP_FLAG $SETTINGS_FLAG $TELEGRAM_FLAG $AGENT_FLAG --dangerously-skip-permissions --effort max"
 
 # ===========================================================
 # Dry-run gate — print plan & exit before any tmux/redis/launch side-effects.
