@@ -111,6 +111,39 @@ printf '%s' "$OUT" | grep -q 'CABINET_LANE=' \
        || pass "start-officer-mac rejects cmd-separator active-project.txt slug (no CABINET_LANE, no side-effect)"; }
 rm -f "$FAKE_REPO/instance/config/active-project.txt" "$INJ_SENTINEL"
 
+# --- T5: strict arg contract (hatch-rehearsal fix 2026-07-07) ---
+# a) --dry-run FLAG (no env var) must take the dry path — parity with
+#    deploy-mac.sh's --dry-run, so an operator's natural guess is safe.
+OUT="$(PATH="$FAKE_BIN:$PATH" CABINET_SOURCE_REPO="$FAKE_REPO" bash "$FAKE_REPO/cabinet/scripts/start-officer-mac.sh" cos --dry-run 2>/dev/null)"
+printf '%s' "$OUT" | grep -q "cd $FAKE_REPO" \
+  && pass "start-officer-mac honors the --dry-run flag (no env var needed)" \
+  || fail "--dry-run flag did not produce the dry-run command output"
+
+# b) Unknown flags must be REJECTED (exit 64), never silently ignored — a
+#    mistyped flag falling through to the real path kills the live session.
+RC=0
+PATH="$FAKE_BIN:$PATH" CABINET_SOURCE_REPO="$FAKE_REPO" \
+  bash "$FAKE_REPO/cabinet/scripts/start-officer-mac.sh" cos --bogus-flag >/dev/null 2>&1 || RC=$?
+[ "$RC" = "64" ] \
+  && pass "start-officer-mac rejects unknown flags with exit 64" \
+  || fail "unknown flag was not rejected with exit 64 (got rc=$RC)"
+
+# c) Missing officer arg → usage + exit 64 (not a bare set -u crash).
+RC=0
+PATH="$FAKE_BIN:$PATH" CABINET_SOURCE_REPO="$FAKE_REPO" \
+  bash "$FAKE_REPO/cabinet/scripts/start-officer-mac.sh" >/dev/null 2>&1 || RC=$?
+[ "$RC" = "64" ] \
+  && pass "start-officer-mac exits 64 without an officer argument" \
+  || fail "missing officer arg did not exit 64 (got rc=$RC)"
+
+# d) Extra positional arg → exit 64.
+RC=0
+PATH="$FAKE_BIN:$PATH" CABINET_SOURCE_REPO="$FAKE_REPO" \
+  bash "$FAKE_REPO/cabinet/scripts/start-officer-mac.sh" cos extra >/dev/null 2>&1 || RC=$?
+[ "$RC" = "64" ] \
+  && pass "start-officer-mac rejects extra positional args with exit 64" \
+  || fail "extra positional arg was not rejected with exit 64 (got rc=$RC)"
+
 CABINET_SOURCE_REPO="$REPO_ROOT" bash "$REPO_ROOT/cabinet/scripts/deploy-mac.sh" --officer cos --dry-run > "$TMP_DIR/deploy.out"
 grep -q '<key>CABINET_SOURCE_REPO</key>' "$TMP_DIR/deploy.out" \
   && grep -q '<key>CABINET_ROOT</key>' "$TMP_DIR/deploy.out" \

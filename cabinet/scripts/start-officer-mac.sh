@@ -11,11 +11,42 @@
 # capability gate with jq deep-merge per CTO v1.1 #1 CRITICAL).
 #
 # Usage (LaunchAgent calls this):
-#   /bin/bash $REPO_ROOT/cabinet/scripts/start-officer-mac.sh <officer>
+#   /bin/bash $REPO_ROOT/cabinet/scripts/start-officer-mac.sh <officer> [--dry-run]
+#
+# --dry-run (alias for CABINET_MAC_DRY_RUN=1): print the assembled claude
+# command + native-agent/lane facts and exit 0 — NO tmux, NO redis, NO boot.
+# Unknown args are REJECTED (exit 64): this script's real path kills and
+# replaces the officer's live tmux session, so a mistyped flag must never
+# silently fall through to the real boot (hatch-rehearsal finding 2026-07-07:
+# a guessed `cos --dry-run` from a scratch clone killed the live Chair).
 
 set -euo pipefail
 
-OFFICER="${1:?Usage: start-officer-mac.sh <officer>}"
+usage() {
+  echo "Usage: start-officer-mac.sh <officer> [--dry-run]" >&2
+}
+
+OFFICER=""
+for _arg in "$@"; do
+  case "$_arg" in
+    --dry-run) CABINET_MAC_DRY_RUN=1 ;;
+    -h|--help) usage; exit 0 ;;
+    -*)
+      echo "[ERROR] start-officer-mac.sh: unknown flag '$_arg' — refusing (the real" >&2
+      echo "[ERROR]   boot path replaces the live officer session; flags are never ignored)." >&2
+      usage; exit 64 ;;
+    *)
+      if [ -z "$OFFICER" ]; then
+        OFFICER="$_arg"
+      else
+        echo "[ERROR] start-officer-mac.sh: unexpected extra argument '$_arg'" >&2
+        usage; exit 64
+      fi ;;
+  esac
+done
+if [ -z "$OFFICER" ]; then
+  usage; exit 64
+fi
 REPO_ROOT="${CABINET_SOURCE_REPO:-${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}}"
 export CABINET_SOURCE_REPO="$REPO_ROOT"
 export CABINET_ROOT="$REPO_ROOT"
@@ -289,6 +320,30 @@ redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" \
 # tmux new-session -d creates detached (no terminal attached) — per CTO v1.1 #4
 # LaunchAgent doesn't have a TTY, so attached tmux would fail to start.
 
+# Multi-checkout takeover guard (hatch-rehearsal finding 2026-07-07): session
+# names are fixed (`officer-<role>`, no CABINET_ID namespacing yet), so this
+# script run from a SECOND checkout (scratch clone, worktree, rehearsal) would
+# silently kill-and-replace the LIVE deployment's officer session. Each session
+# records its owning repo root in the tmux session env (CABINET_REPO_ROOT,
+# stamped below at create); if an existing session belongs to a DIFFERENT
+# root, refuse (exit 65) unless the operator explicitly forces the takeover.
+# Sessions predating this guard carry no stamp → guard passes (same-behavior).
+if tmux has-session -t "=$SESSION_NAME" 2>/dev/null; then
+  EXISTING_ROOT="$(tmux show-environment -t "=$SESSION_NAME" CABINET_REPO_ROOT 2>/dev/null \
+    | grep '^CABINET_REPO_ROOT=' | cut -d= -f2- || true)"
+  if [ -n "$EXISTING_ROOT" ] && [ "$EXISTING_ROOT" != "$REPO_ROOT" ] \
+      && [ "${CABINET_FORCE_TAKEOVER:-0}" != "1" ]; then
+    cat >&2 <<TAKEOVER
+[ERROR] start-officer-mac.sh: tmux session '$SESSION_NAME' is owned by ANOTHER
+[ERROR]   checkout: $EXISTING_ROOT
+[ERROR]   This invocation runs from:  $REPO_ROOT
+[ERROR]   Refusing to kill the other deployment's live session. If you really
+[ERROR]   mean to take it over: CABINET_FORCE_TAKEOVER=1 start-officer-mac.sh $OFFICER
+TAKEOVER
+    exit 65
+  fi
+fi
+
 # Kill any existing session for this officer (idempotent restart)
 tmux kill-session -t "$SESSION_NAME" 2>/dev/null || true
 
@@ -339,8 +394,10 @@ redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" \
 redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" \
   DEL 'cabinet:triggers:${OFFICER_NAME}' > /dev/null 2>&1 || true
 
-# Start fresh detached session
+# Start fresh detached session; stamp the owning repo root into the session
+# env so the takeover guard above can tell checkouts apart on future runs.
 tmux new-session -d -s "$SESSION_NAME" -x 220 -y 50
+tmux set-environment -t "=$SESSION_NAME" CABINET_REPO_ROOT "$REPO_ROOT" 2>/dev/null || true
 
 # Send the launch command into the tmux session
 tmux send-keys -t "$SESSION_NAME" "$CLAUDE_CMD" C-m
