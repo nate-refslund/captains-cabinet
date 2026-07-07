@@ -1,4 +1,5 @@
 # Skill: Deploy and Verify
+<!-- single-source (egg R138): the canonical skill body lives HERE (memory/skills/, Captain-applied). .claude/skills/deploy-and-verify/SKILL.md is the on-trigger wrapper — trigger frontmatter + a pointer to this file only, no duplicated body (wrapper side enforced by R155). -->
 
 **Status:** draft
 **Created by:** CTO (via CoS per Captain directive 2026-04-01)

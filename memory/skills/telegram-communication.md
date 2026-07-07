@@ -1,4 +1,5 @@
 # Skill: Telegram Communication
+<!-- single-source (egg R138): the canonical skill body lives HERE (memory/skills/, Captain-applied). .claude/skills/telegram-communication/SKILL.md is the on-trigger wrapper — trigger frontmatter + a pointer to this file only, no duplicated body (wrapper side enforced by R155). -->
 
 **Status:** promoted
 **Created by:** foundation (evolved by CoS per Captain directive 2026-04-01)
@@ -28,7 +29,7 @@ When replying to the Captain via the Channels plugin, **always** pass `reply_to`
 
 ```
 # Incoming message arrives as:
-# <channel source="telegram" chat_id="123" message_id="456" user="Nate" ts="...">
+# <channel source="telegram" chat_id="123" message_id="456" user="Captain" ts="...">
 
 # When replying, pass the message_id:
 reply(chat_id="123", text="Your response", reply_to="456")

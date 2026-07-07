@@ -1,4 +1,5 @@
 # Skill: Engineering Development Loop (Evolved)
+<!-- single-source (egg R138): the canonical skill body lives HERE (memory/skills/, Captain-applied). .claude/skills/engineering-development-loop/SKILL.md is the on-trigger wrapper — trigger frontmatter + a pointer to this file only, no duplicated body (wrapper side enforced by R155). -->
 
 **Status:** promoted
 **Created by:** CTO (evolved from foundation)

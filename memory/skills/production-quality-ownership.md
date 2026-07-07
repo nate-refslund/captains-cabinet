@@ -5,6 +5,7 @@ applies_to: all officers
 ---
 
 # Production Quality Ownership
+<!-- single-source (egg R138): the canonical skill body lives HERE (memory/skills/, Captain-applied). .claude/skills/production-quality-ownership/SKILL.md is the on-trigger wrapper — trigger frontmatter + a pointer to this file only, no duplicated body (wrapper side enforced by R155). -->
 
 You own not just shipping the work, but shipping it WELL. Before declaring any significant work done — not just before committing code, but before any meaningful change — run this checklist.
 

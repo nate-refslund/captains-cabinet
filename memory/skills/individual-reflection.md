@@ -1,4 +1,5 @@
 # Skill: Individual Reflection (Evolved)
+<!-- single-source (egg R138): the canonical skill body lives HERE (memory/skills/, Captain-applied). .claude/skills/individual-reflection/SKILL.md is the on-trigger wrapper — trigger frontmatter + a pointer to this file only, no duplicated body (wrapper side enforced by R155). -->
 
 **Status:** promoted
 **Created by:** foundation (evolved by CoS per Captain directive 2026-04-04)
@@ -26,7 +27,7 @@ Event-triggered — reflection fires when there's something worth reflecting on,
 
 3. **Detect patterns — adapt at reversibility-gated speed (NOT a blunt count):**
    How fast you act on a pattern is gated by **how expensive it is to be wrong**, not by
-   how many times you've seen it (Nate's A1 reversibility principle). A flat "wait for 3
+   how many times you've seen it (the Captain's A1 reversibility principle). A flat "wait for 3
    occurrences" kills the fast loop where it's cheapest and safest:
    - **Cheap + reversible — adjust your OWN behavior NOW (1 occurrence).** If the fix is
      something you control and a wrong call self-corrects next cycle at near-zero cost

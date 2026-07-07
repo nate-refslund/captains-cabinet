@@ -1,4 +1,5 @@
 # Skill: Cross-Officer Retrospective (Evolved)
+<!-- single-source (egg R138): the canonical skill body lives HERE (memory/skills/, Captain-applied). .claude/skills/cross-officer-retro/SKILL.md is the on-trigger wrapper — trigger frontmatter + a pointer to this file only, no duplicated body (wrapper side enforced by R155). -->
 
 **Status:** promoted
 **Created by:** foundation (evolved by CoS per Captain directive 2026-04-04)
@@ -87,7 +88,7 @@ This reads real streams (tool-call volume by officer, stuck-loop repeats, hook-f
    - If it prints `no harvest` → nothing meaningful accreted; skip (do not fan out finders — that would be idea-spam).
 
 7c. **Cross-pollination (the portfolio's unique advantage).**
-   Scan for a pattern/fix/principle proven in ONE lane that should transfer to another (PolAds → STEPhie or vice-versa) — something the single-product cabinets structurally can't do. If you find one, emit it as a proposal:
+   Scan for a pattern/fix/principle proven in ONE lane that should transfer to another (one product lane → another) — something the single-product cabinets structurally can't do. If you find one, emit it as a proposal:
    ```bash
    source cabinet/scripts/meta-cognition/lib.sh
    mc_emit_proposal backstop "Cross-pollinate: <pattern> from <lane A> to <lane B>" "<what worked in A + why it applies to B + the concrete transfer step>"
@@ -122,7 +123,7 @@ This reads real streams (tool-call volume by officer, stuck-loop repeats, hook-f
     ```
 
 10. **Submit to Captain:**
-    DM Nate with a summary of proposals (process improvements + the meta-cognition ledger survivors from 9b). Wait for approval before promoting changes.
+    DM the Captain with a summary of proposals (process improvements + the meta-cognition ledger survivors from 9b). Wait for approval before promoting changes.
 
 11. **Record:**
     - Write an experience record for the retro itself
