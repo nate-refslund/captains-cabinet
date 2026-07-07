@@ -1,6 +1,6 @@
 ---
 name: brain-audit
-description: Audit and repair Nate's memory estate (Obsidian vault + embeddings index + graph + memories store) when brain quality regresses. Use when the memory-curator-health service pages cos (Redis trigger "BRAIN-QUALITY REGRESSION"/staleness), when the frozen-core-14 probe gate fails after any wave, when the Memory Curator has self-frozen, or on a Captain ask to check brain quality. Runs the audit fleet -> fix waves -> adversarial verify -> probe gate loop, and owns the curator freeze/unfreeze runbook.
+description: Audit and repair the Captain's memory estate (Obsidian vault + embeddings index + graph + memories store) when brain quality regresses. Use when the memory-curator-health service pages cos (Redis trigger "BRAIN-QUALITY REGRESSION"/staleness), when the frozen-core-14 probe gate fails after any wave, when the Memory Curator has self-frozen, or on a Captain ask to check brain quality. Runs the audit fleet -> fix waves -> adversarial verify -> probe gate loop, and owns the curator freeze/unfreeze runbook.
 ---
 
 # Skill: Brain Audit (memory-estate quality loop)
@@ -73,7 +73,7 @@ file:line or query→hit trace are hypotheses, not findings.
   (ii) vault-mirror parking was silently reverted by a 30-min regenerating writer —
   durable dedup must act on the SOURCE (e.g. archive the Monday item), not the mirror;
   (iii) a cross-board Monday archive destroyed 3 legit dual-tracking items (no API
-  unarchive exists — Nate had to restore by hand). Any fix that smells like these
+  unarchive exists — the Captain had to restore by hand). Any fix that smells like these
   three: stop, propose instead.
 - Identity/cross-person merges are **propose-only, forever** — never autonomous.
 

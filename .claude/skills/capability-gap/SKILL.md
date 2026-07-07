@@ -57,7 +57,7 @@ If you (the Chair) have evaluated + tested a new MCP/plugin and just need the
 why=..., test_evidence=..., account_step=..., gap_id=...)`. It computes the
 **exact `cabinet/mcp-scope.yml` diff line** (read-only), bundles the test
 evidence + any account step, flags hard-ceiling touches, and enqueues a
-front-door intake card. **Nate applies the one scope line himself — the Chair
+front-door intake card. **The Captain applies the one scope line himself — the Chair
 never self-edits `mcp-scope.yml`** (hard line; the germline guard blocks it
 anyway).
 

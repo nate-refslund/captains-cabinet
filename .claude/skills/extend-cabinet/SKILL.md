@@ -119,7 +119,7 @@ other extension — declare the owning plugin in
 
 ## 7. The self-extension flows (self-proposal · account)
 
-Two flows extend the cabinet's reach, both surfacing for Nate's one-tap
+Two flows extend the cabinet's reach, both surfacing for the Captain's one-tap
 approval — never self-granting. (Scope grants and credentials are hard
 ceilings; day-to-day autonomy needs no earning — per the earn-demotion ruling,
 captain-decisions 2026-07-03, reversible action classes are trusted from day
@@ -130,13 +130,13 @@ Captain-locked trust-ladder.yml, never self-granted.)
 
 - **MCP/plugin self-proposal** — once you've tested a new MCP/plugin,
   `framework.learning.self_proposal.prepare_mcp_proposal(...)` surfaces the
-  exact `mcp-scope.yml` scope line + test evidence as a one-tap card. **Nate
+  exact `mcp-scope.yml` scope line + test evidence as a one-tap card. **The Captain
   applies the scope edit.** The Chair never self-edits `mcp-scope.yml`,
   germline, or the hook (hard line).
 - **Account-creation flow** — `cabinet/scripts/prepare-account-flow.sh
   --service <name>` drives a signup to the credential boundary (recipe in
   `instance/config/account-flows.yml`) and surfaces "credential needed."
-  Credential entry stays Nate's. Depends on the Chair holding `claude-in-chrome`
+  Credential entry stays the Captain's. Depends on the Chair holding `claude-in-chrome`
   scope (itself a self-proposal away).
 
 ## The rule
