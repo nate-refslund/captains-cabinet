@@ -196,6 +196,12 @@ outcomes in `instance/config/outcomes.yml` (`status: active` +
    manual: tokens never ship in the repo (config keeps `TOKEN-TBD`; rehearsal
    proved the boot path warns-and-continues without secrets rather than
    crashing). Without it the Chair boots but is Telegram-dark.
+   While `cabinet/.env` is open, also paste `VOYAGE_API_KEY=...` alongside
+   `TELEGRAM_COS_TOKEN`. Optional — the org memory brain fail-softs to
+   keyword-only (lexical) search without it (keyless degrade verified
+   2026-07-07) — but recommended tonight for onboarding backfill quality:
+   embeddings make the backfilled org memories semantically searchable,
+   not just keyword-matchable.
 2. **TCC grants — ONLY if calendar/computer-use is wanted. NOT needed for the
    base hatch.** macOS requires human clicks (`grant-mac-permissions.sh`
    walks them), grants are responsible-process-scoped, and they persist
