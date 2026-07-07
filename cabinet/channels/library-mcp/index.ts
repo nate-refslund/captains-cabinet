@@ -270,6 +270,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       name: "library_list_spaces",
       description: "List all Library Spaces with id, name, description, template, owner, and creation date.",
       inputSchema: { type: "object", properties: {} },
+      annotations: { readOnlyHint: true },
     },
     {
       name: "library_create_record",
@@ -323,6 +324,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         },
         required: ["record_id"],
       },
+      annotations: { readOnlyHint: true },
     },
     {
       name: "library_get_backlinks",
@@ -335,6 +337,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         },
         required: ["record_id"],
       },
+      annotations: { readOnlyHint: true },
     },
     {
       name: "library_graph_data",
@@ -354,6 +357,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
         },
       },
+      annotations: { readOnlyHint: true },
     },
     {
       name: "library_search",
@@ -378,6 +382,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         },
         required: ["query"],
       },
+      annotations: { readOnlyHint: true },
     },
     {
       name: "library_list_records",
@@ -394,6 +399,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         },
         required: ["space_id_or_name"],
       },
+      annotations: { readOnlyHint: true },
     },
     {
       name: "library_delete_record",

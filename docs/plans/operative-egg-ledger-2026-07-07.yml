@@ -1740,6 +1740,7 @@ entries:
     class: "additive"
     lane: "alpha-additive"
     wave: "AUD"
-    status: "todo"
+    status: "done"
     gate_cmd: "crash between deliver and wake no longer loses the trigger (kill-between test); library-mcp 6 read tools annotated readOnlyHint"
+    note: "done 2026-07-07 — channel xAck-on-emit + channel-side xTrim REMOVED (trim now only post-ACK in trigger_ack); triggers stay pending until officer trigger_ack, or the post-tool-use XAUTOCLAIM safety net re-surfaces them and writes the ids_file the officer ACK pipeline consumes = at-least-once (dupes possible, silent loss not). Kill-between drill PASSED live on a scratch stream (deliver-no-ack -> pending=1 -> XAUTOCLAIM worker recovers id -> XACK -> pending=0). library-mcp: readOnlyHint on exactly the 6 read tools, 4 write tools unannotated. Contract ratchet cabinet/scripts/tests/test_channel_ack_readonly_contracts.py (7 tests, CI-collected); triggers.sh safety-net header rewritten; schg post-tool-use.sh comment fix routed to the germline addendum. Live channel processes still run the old code — contract engages per officer on natural relaunch (fleet LIVE, no forced restarts)."
     last_update: "2026-07-07"

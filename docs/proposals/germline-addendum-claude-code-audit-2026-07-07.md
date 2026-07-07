@@ -152,3 +152,23 @@ Captain page via the existing notify path — the standing Fable/model rule
 requires non-primary-model operation to be LOUD. Pair with the AUD-9 batch
 (StopFailure/TeammateIdle/PermissionRequest) so one unlock window covers all
 four hook wirings.
+
+---
+
+## AUD-12 (audit #32) — post-tool-use.sh safety-net comment is now stale
+
+Consumer-side ACK shipped 2026-07-07: `redis-trigger-channel` no longer XACKs
+on notification emit (and no longer XTRIMs); triggers stay pending until the
+officer's `trigger_ack` or the hook's XAUTOCLAIM safety net reclaims them.
+`cabinet/scripts/hooks/post-tool-use.sh` is schg germline, and its safety-net
+comment (~line 335) still scopes the reclaim to "the channel pushed then
+crashed, or the channel was down".
+
+**Proposed edit** (next unlock window, comment-only, no behavior change):
+extend that sentence — the safety net now ALSO re-surfaces channel-delivered
+triggers the officer has not ACKed within the grace window, and its ids_file
+write is the normal path by which channel-delivered triggers receive their
+consumer-side ACK. Mechanics documented at length in
+`cabinet/scripts/lib/triggers.sh` (trigger_read_safety_net header).
+
+---

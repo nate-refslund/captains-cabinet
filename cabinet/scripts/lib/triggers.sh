@@ -258,12 +258,17 @@ trigger_read() {
 # the channel stranded (pushed-but-died, or channel down), not to wake the pane.
 #
 # Mechanism: XAUTOCLAIM transfers ownership of entries idle >= GRACE_MS to the
-# `worker` consumer and returns them. Because the channel MCP AUTO-ACKs the
-# instant it pushes a notification (channel/index.ts), a successfully-delivered
-# trigger has zero pending time and is never reclaimed here. Only triggers the
-# channel pushed-but-died-before-ACK, or that no live consumer ever read (e.g.
-# channel down), age past the grace window and get surfaced — exactly the
-# crash-recovery / channel-outage cases the hook should cover.
+# `worker` consumer and returns them. CONSUMER-SIDE ACK (AUD-12, audit #32,
+# 2026-07-07): the channel MCP no longer ACKs on notification emit — delivery
+# is not processing, and the old ack-on-emit lost any trigger when the session
+# crashed between push and wake. Every trigger now stays PENDING until the
+# officer's trigger_ack. So this safety net covers BOTH the classic
+# crash/outage cases (channel pushed-but-died, channel down) AND
+# channel-delivered triggers the officer has not ACKed within the grace
+# window: the reclaim re-surfaces the content AND writes the ids_file the
+# officer's `trigger_ack <role> "$(cat ids_file)"` pipeline consumes — which
+# is exactly how channel-delivered triggers get their consumer-side ACK.
+# At-least-once by construction: duplicates possible, silent loss is not.
 #
 # GRACE_MS default 30000 (30s): comfortably longer than the channel's 5s BLOCK
 # loop, so the live channel always wins the fresh delivery. Override via

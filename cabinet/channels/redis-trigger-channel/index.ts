@@ -5,6 +5,16 @@
  * Subscribes to Redis Streams and pushes triggers into Claude Code
  * sessions instantly via MCP notifications. Replaces /loop polling.
  *
+ * ACK CONTRACT (AUD-12, audit #32 — consumer-side ACK): this channel NEVER
+ * XACKs. Delivery is not processing — the old ack-on-emit lost any trigger
+ * when the session crashed between the notification push and the wake turn.
+ * A trigger stays PENDING in the consumer group until the OFFICER processes
+ * it and runs trigger_ack (cabinet/scripts/lib/triggers.sh), or the
+ * post-tool-use safety net (trigger_read_safety_net, XAUTOCLAIM after the
+ * grace window) reclaims + re-surfaces it into the ids_file the officer's
+ * ACK pipeline consumes. Net effect: at-least-once delivery; duplicates are
+ * possible and expected, silent loss is not.
+ *
  * Usage: OFFICER_NAME=cos bun run index.ts
  * Or via .mcp.json as an MCP server with claude/channel capability.
  */
@@ -73,7 +83,10 @@ async function ensureConsumerGroup(): Promise<void> {
 }
 
 /**
- * Process any pending (unACK'd) messages from previous sessions
+ * Re-surface this consumer's pending (delivered-but-unACK'd) messages from
+ * previous sessions. NO ACK here (AUD-12): re-delivery is still delivery,
+ * not processing — the entries stay pending until the officer's trigger_ack
+ * (or the post-tool-use XAUTOCLAIM safety net claims them for `worker`).
  */
 async function processPending(): Promise<void> {
   try {
@@ -88,7 +101,6 @@ async function processPending(): Promise<void> {
       for (const msg of stream.messages) {
         const content = msg.message?.message || JSON.stringify(msg.message);
         await pushToSession(content, msg.id);
-        await redis.xAck(STREAM_KEY, GROUP_NAME, msg.id);
       }
     }
   } catch (err: any) {
@@ -135,15 +147,18 @@ async function subscribeLoop(): Promise<void> {
         for (const msg of stream.messages) {
           const content = msg.message?.message || JSON.stringify(msg.message);
           await pushToSession(content, msg.id);
-          // Auto-ACK after delivery — the channel IS the delivery mechanism
-          await redis.xAck(STREAM_KEY, GROUP_NAME, msg.id);
+          // NO ACK on emit (AUD-12, audit #32): delivery != processing. The
+          // entry stays pending until the officer's trigger_ack, or the
+          // post-tool-use XAUTOCLAIM safety net reclaims it after the grace
+          // window. A crash between this push and the officer's wake turn
+          // therefore no longer loses the trigger.
         }
       }
 
-      // Trim old messages periodically (not every iteration)
-      if (Math.random() < 0.1) {
-        await redis.xTrim(STREAM_KEY, "MAXLEN", { strategyModifier: "~", threshold: 100 });
-      }
+      // NOTE: no channel-side XTRIM either — trimming can delete entries that
+      // are still pending (unprocessed) under the new contract. Stream trim
+      // happens on the ACK side (trigger_ack in lib/triggers.sh), i.e. only
+      // after processing.
 
     } catch (err: any) {
       if (err.message?.includes("NOGROUP")) {
