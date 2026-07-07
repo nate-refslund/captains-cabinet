@@ -135,23 +135,25 @@ _ALLOWLISTED_LINES: Dict[str, Tuple[str, ...]] = {
 
 # TEMPORARY line residuals — E4 lane I4. Each entry is a Monday board-id literal
 # an owner extraction lane (I2, the org-domain + board-id sweep) has not YET
-# reworded out of a DOCSTRING. In BOTH files the RUNTIME code is already
-# launcher-agnostic — the board id travels as a function parameter
-# (actfirst_canary._discover_probe_target(board=...)) or a CONFIG lookup
-# (daily_recap sp.CONFIG["reflections_board"]["id"]); only the docstring CITATION
-# of "board 5091706356" / "board (5096013783)" leaks THIS instance's board id.
+# reworded out of a DOCSTRING. The RUNTIME code is already launcher-agnostic —
+# the board id travels as a function parameter
+# (actfirst_canary._discover_probe_target(board=...)); only the docstring CITATION
+# of "board 5091706356" leaks THIS instance's board id.
 # The needle IS the literal, so the exemption is surgical — it un-guards ONLY the
-# doc line and leaves the rest of each file (actfirst_canary.py is germline) fully
+# doc line and leaves the rest of the file (actfirst_canary.py is germline) fully
 # guarded for every check. FORCING FUNCTION: the moment the owner lane rewords the
-# docstring to name the board WITHOUT the number (as env.py did for /Users/nate),
-# the needle vanishes and test_line_allowlist_needles_are_actually_present goes RED
-# — forcing this entry's deletion. Shrink-only; flagged as I4 deviations for I2.
-# FIXME(I2/board-id-sweep): reword these two docstrings, then delete the entry here.
+# docstring to name the board WITHOUT the number (as env.py did for the launcher
+# home path), the needle vanishes and
+# test_line_allowlist_needles_are_actually_present goes RED — forcing this
+# entry's deletion. Shrink-only; flagged as I4 deviations for I2. (The
+# daily_recap.py entry left 2026-07-07 with egg row R023: the Monday
+# Reflections leg and its board-id docstring citation were DELETED from the
+# module, so the needle — and the exemption — went with the code.)
+# FIXME(I2/board-id-sweep): reword the actfirst_canary docstring, then delete the entry here.
 _TEMPORARY_LINE_RESIDUALS: Dict[str, Tuple[str, ...]] = {
     "framework/frontdoor/actfirst_canary.py": ("5091706356",),
-    "framework/frontdoor/daily_recap.py": ("5096013783",),
 }
-_TEMP_LINE_BASELINE_MAX = 2  # target is always 0; this may only be LOWERED (shrink-only), never raised
+_TEMP_LINE_BASELINE_MAX = 1  # target is always 0; this may only be LOWERED (shrink-only), never raised
 
 # The whole-file temporary residual mechanism (residual pre-sweep misses an owner
 # lane had not yet cleaned, exempted at WHOLE-FILE granularity). EMPTY today — the

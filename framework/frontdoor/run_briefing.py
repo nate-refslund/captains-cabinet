@@ -7,11 +7,12 @@ channel, replacing the screenpipe morning-brief DM that the cutover silenced.
 
 PM augmentation: the wrapper sets ``CABINET_RUN_MODE=PM`` for the evening run
 (hour ≥ 17). In PM mode, AFTER the normal synthesis enqueue, we also enqueue the
-comprehensive daily recap (framework.frontdoor.daily_recap) — which writes the
-day's Monday Reflections item + the canonical vault daily note AND folds the
-long-form recap into this same unified briefing. The AM run (CABINET_RUN_MODE
-unset / "AM") is unchanged. The recap is best-effort: a failure logs into the
-result and never blocks the briefing send.
+comprehensive daily recap (framework.frontdoor.daily_recap) — a neutral
+synthesis over the get_source() surfaces that folds the long-form recap into
+this same unified briefing (its Monday Reflections + vault-note legs were
+deleted with egg row R023; boards archived 2026-07-05). The AM run
+(CABINET_RUN_MODE unset / "AM") is unchanged. The recap is best-effort: a
+failure logs into the result and never blocks the briefing send.
 
 Send-only + gated end-to-end: run_send_path delegates to channel.send, which is
 hard-gated on framework.env.allow_sends() (a dev/test session composes but does

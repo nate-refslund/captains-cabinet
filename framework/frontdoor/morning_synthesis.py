@@ -1,10 +1,12 @@
 """framework.frontdoor.morning_synthesis — a front-door INTAKE SOURCE.
 
-Pulls REAL current signals from the screenpipe brain and enqueues them as intake
-items, so the Chair's send path weaves them into ONE unified message instead of
-N separate pings. This is a "rewire" source per the committed architecture's pipe
-disposition (docs/cabinet-architecture-cohesive-2026-06-22.md §5): screenpipe
-provides the signal (System 1), the cabinet composes the single voice (System 2).
+Pulls REAL current signals from the bound personal source — a neutral synthesis
+skeleton ENUMERATING the ``framework.sources.get_source()`` surfaces
+(``find_threads`` / ``briefing_commitments`` / ``deploy_health``) plus the
+instance-config-driven health and follow-up registers — and enqueues them as
+intake items, so the Chair's send path weaves them into ONE unified message
+instead of N separate pings. The source adapter provides the signal (System 1),
+the cabinet composes the single voice (System 2).
 
 NOTHING here sends. It only enqueues to the durable intake; the one live send
 stays in channel.send (allow_sends-gated). Signal gathering is best-effort — a

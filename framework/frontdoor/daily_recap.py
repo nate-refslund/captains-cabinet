@@ -1,48 +1,39 @@
-"""framework.frontdoor.daily_recap — the PM (evening) front-door INTAKE SOURCE.
+"""framework.frontdoor.daily_recap — the PM (evening) recap: a neutral synthesis
+skeleton over the personal-source seam.
 
-The merge of the three overlapping screenpipe daily pipes (monday-daily-summary +
-monday-daily-insights + monday-daily-improvements) into ONE richer pass, run from
-the Chair's 19:30 briefing. It:
+COMPRESSED per the operative-egg plan R023
+(docs/plans/operative-egg-plan-2026-07-07.md). What this module was: the merge of
+three retired screenpipe daily pipes — it paginated the Captain's Monday Activity
+board (half-hourly slots), wrote a Monday Reflections "Daily Summary" item, and
+mirrored that item into the vault daily note byte-identical to obsidian-sync.
+Those Monday Activity/Reflections legs are DELETED: both boards were archived
+2026-07-05 (the activity chain writes the Captain's own store directly now,
+outside the cabinet), which left the board read returning nothing and the live
+recap a silent no-op. The obsidian-sync byte-identical vault-note render went
+with them — its convergence partner (``sync_daily_summaries``) was deleted in the
+same migration, and the daily note is owned by the instance's own chain now.
 
-  1. pulls today's half-hourly entries off the Captain's Monday Activity board (the rich
-     System-1 feeder — the same board the three daily pipes read);
-  2. LLM-synthesizes ONE comprehensive daily recap (narrative + key findings +
-     actions/improvement-ideas + productivity/energy metrics) in a single pass,
-     instead of three fragmented passes over the same data;
-  3. writes that recap to BOTH durable surfaces — the Monday Reflections board
-     (a "Daily Summary" item, same board/group/schema as
-     monday-daily-summary/commit.py) AND the canonical vault daily note
-     `1-Daily/YYYY-MM-DD.md` (byte-identical to obsidian-sync's
-     sync_daily_summaries, so obsidian-sync's next run hash-matches + skips);
-  4. returns a `batch`-tier intake item carrying the long-form recap, so the
-     PM send path (composer → channel) folds it into the ONE unified Telegram
-     briefing alongside the morning_synthesis signals.
-
-ARCHITECTURE FIT. This mirrors morning_synthesis's shape (gather real signal →
-return canonical intake items) but adds the durable Monday+vault side-effects the
-retired pipes used to own. Per the cohesive architecture (docs/cabinet-
-architecture-cohesive-2026-06-22.md §5): screenpipe is System 1 (the half-hourly
-feeder + the vault it persists to), the cabinet is System 2 (this synthesis + the
-single voice). The three screenpipe daily pipes are retired CONSERVATIVELY, in a
-separate step, only after this proves — NOT here.
-
-IDEMPOTENCY. Re-running on the same day UPDATES, never duplicates: the Monday item
-is found-or-created by date; the vault note is written-if-changed (sha256). So the
-PM briefing can fire (or be re-run) repeatedly without churn.
+What remains is the GENERIC germ: once per evening (run_briefing PM mode), gather
+the day's evidence from the personal-source seam — a best-effort ENUMERATION of
+``framework.sources.get_source()`` surfaces (today: ``find_threads`` +
+``briefing_commitments``; each quiet on failure) — LLM-synthesize ONE end-of-day
+recap in labeled plain-text sections (parsing machinery unchanged), and enqueue
+it as a ``batch``-tier intake item so the PM send path (composer → channel) folds
+it into the single unified briefing.
 
 SAFETY.
-  * NOTHING here sends. It only enqueues to the durable intake and writes to the Captain's
-    OWN Monday board + his OWN local vault. The single live send stays in
+  * NOTHING here sends, and there are no durable writes left. The single side
+    effect of a live run is the intake enqueue; the one live send stays in
     channel.send (allow_sends-gated).
-  * ``dry=True`` synthesizes + returns the item + a preview of what WOULD be
-    written, but performs ZERO side-effects (no Monday write, no vault write) — for
-    a developer to inspect the recap before trusting the live path.
-  * LEAK-SAFE: this module only handles the Captain's activity-summary text. It NEVER
-    reads or emits nate_model / voice-profile content (.claude/rules/brain-
-    bridge.md) — none is loaded here, so none can leak into the recap, the Monday
-    item, the vault note, or the intake payload.
-  * Best-effort gather: a Monday/LLM hiccup yields a thinner (or no) item, never a
-    crash — the rest of the PM briefing still goes out.
+  * ``dry=True`` synthesizes + returns the item + a preview, but enqueues
+    NOTHING — for a developer to eyeball the recap before trusting the live path.
+  * LEAK-SAFE: only evidence text from the source seam is handled. It NEVER
+    reads or emits captain-model / voice-profile content
+    (.claude/rules/brain-bridge.md) — none is loaded here, so none can leak into
+    the recap or the intake payload.
+  * Best-effort gather: a source/LLM hiccup yields a thinner (or no) recap,
+    never a crash — the rest of the PM briefing still goes out. A clean-room /
+    Flavor-B box binds NullPersonalSource → zero evidence → quiet skip.
 """
 from __future__ import annotations
 
@@ -54,15 +45,7 @@ import subprocess
 
 from framework.env import captain_name
 from framework.frontdoor import intake
-from framework.sources import get_dispatch
-
-# SRC-3 (source-adapter boundary): the screenpipe-coupled I/O this pipe needs —
-# the captain's Monday board client (activity-board read + reflections upsert),
-# the synthesis LLM model, and the vault daily-note write (the vault-root path,
-# obsidian-sync byte-match) — is reached through framework.sources.get_dispatch()
-# (the Flavor-A ScreenpipeDispatch OWNS those libs + the vault path). Framework
-# names no screenpipe lib and carries no vault path literal; the cabinet's own
-# unit suite mocks the module seams (_sp / _write_vault / _raw_llm) as before.
+from framework.sources import get_dispatch, get_source
 
 
 # --- timestamps -------------------------------------------------------------
@@ -71,166 +54,97 @@ def _now_iso() -> str:
 
 
 def _today() -> str:
-    """Today's local date as YYYY-MM-DD.
-
-    The Activity board's date column + the vault daily-note filename are both in
-    the Captain's local day (a half-hour slot at 23:30 belongs to that local date), so we
-    use the local calendar date, NOT UTC — matching how the screenpipe pipes
-    (which run on the Captain's Mac in local time) stamp the slots.
-    """
+    """Today's local date as YYYY-MM-DD — the recap is about the Captain's local
+    day (an evening entry at 23:30 belongs to that local date, not UTC's)."""
     return datetime.date.today().isoformat()
 
 
-# --- screenpipe seams (lazy) ------------------------------------------------
-def _sp():
-    """The captain's Monday board client (env loaded) via the Flavor-A dispatch —
-    the seam that OWNS sp_lib. This module's SINGLE Monday accessor (the tests +
-    the golden pin monkeypatch ``dr._sp``), so nothing else here names screenpipe.
-    ``get_dispatch().monday()`` is byte-identical to the former
-    ``import sp_lib; sp_lib.load_env(_SHARED); return sp_lib`` — env re-read each
-    access so a long-lived session picks up a rotated token."""
-    return get_dispatch().monday()
-
-
 # ---------------------------------------------------------------------------
-# 1. Pull today's half-hourly entries off the Activity board.
-#    Reuses monday-daily-summary/prepare.py's cursor pagination + cv helpers.
+# 1. Neutral day-evidence gather — an enumeration of get_source() surfaces.
 # ---------------------------------------------------------------------------
-def _cv(item: dict, col_id: str) -> str:
-    """Text of one column on a Monday item (empty string if absent)."""
-    for c in item.get("column_values", []):
-        if c.get("id") == col_id:
-            return c.get("text") or ""
-    return ""
+def _clip(text: str, cap: int = 200) -> str:
+    t = (text or "").strip().replace("\n", " ")
+    return (t[: cap - 1] + "…") if len(t) > cap else t
 
 
-def fetch_today_halfhourly(*, today: str | None = None, max_pages: int = 20) -> list[dict]:
-    """Today's unchecked half-hourly Activity entries, oldest-first.
+def gather_day_evidence(*, hours: int = 24, thread_cap: int = 12,
+                        commitment_cap: int = 8) -> list[dict]:
+    """The day's evidence from the personal-source seam, as lean evidence dicts.
 
-    Paginates the Activity board's half-hourly group (board id + group id are an
-    integer + a constant from sp_lib.CONFIG — never user input), keeps entries
-    whose entry_type is Hourly/Half-Hourly and whose date is ``today``, then sorts
-    by hour:minute so the recap reads chronologically. Best-effort: a Monday
-    hiccup mid-pagination returns whatever was fetched so far.
+    Enumerates the ``get_source()`` read surfaces that describe the Captain's
+    day, best-effort per surface (a failing surface contributes nothing, never
+    raises):
 
-    ``today`` is injectable for tests.
+      * ``find_threads(hours=…)``          — the day's active conversation threads;
+      * ``briefing_commitments(direction="owed_by_captain")`` — the open
+        commitments the Captain owes (due date noted when present).
+
+    Returns ``[{"surface": <name>, "text": <one compact line>}, …]`` — the shape
+    ``synthesize_recap`` consumes. An unbound / null source yields ``[]`` (the
+    recap then quietly skips). New surfaces join here as the Protocol grows.
     """
-    sp = _sp()
-    C = sp.CONFIG
-    act = C["activity_board"]
-    board = act["id"]
-    group = act["groups"]["halfhourly"]
-    col = act["columns"]
-    today = today or _today()
+    evidence: list[dict] = []
 
-    # --- paginate (mirror prepare.py.fetch_all_hourly) ---
-    items: list[dict] = []
-    cursor = None
-    fields = "id name column_values { id text value }"
-    for _ in range(max_pages):
-        if cursor:
-            q = f'{{ next_items_page(limit:100, cursor:"{cursor}") {{ cursor items {{ {fields} }} }} }}'
-            r = sp.monday(q)
-            try:
-                data = r["data"]["next_items_page"]
-            except Exception:
-                break
-        else:
-            q = (f'{{ boards(ids:[{board}]) {{ groups(ids:["{group}"]) {{ '
-                 f'items_page(limit:100) {{ cursor items {{ {fields} }} }} }} }} }}')
-            r = sp.monday(q)
-            try:
-                data = r["data"]["boards"][0]["groups"][0]["items_page"]
-            except Exception:
-                break
-        items.extend(data.get("items", []))
-        cursor = data.get("cursor")
-        if not cursor:
-            break
-
-    # --- filter to today's half-hourly slots ---
-    todays: list[dict] = []
-    for it in items:
-        if _cv(it, col["entry_type"]) not in ("Hourly", "Half-Hourly"):
+    try:
+        threads = get_source().find_threads(hours=hours) or []
+    except Exception:
+        threads = []
+    for t in threads[:thread_cap]:
+        if not isinstance(t, dict):
             continue
-        if _cv(it, col["date"])[:10] != today:
+        person = t.get("person") or "someone"
+        last = _clip(((t.get("last") or {}).get("text") or ""))
+        kind = (t.get("audience") or {}).get("kind") or "direct"
+        tag = "" if kind == "direct" else f" ({kind})"
+        line = f"{person}{tag}"
+        if last:
+            line += f": “{last}”"
+        evidence.append({"surface": "find_threads", "text": line})
+
+    try:
+        commitments = get_source().briefing_commitments(
+            direction="owed_by_captain") or []
+    except Exception:
+        commitments = []
+    for c in commitments[:commitment_cap]:
+        if not isinstance(c, dict):
             continue
-        todays.append(it)
+        text = _clip(c.get("text") or "")
+        if not text:
+            continue
+        person = c.get("person") or "someone"
+        due = (c.get("due") or "").strip()
+        line = f"owed to {person}: {text}" + (f" (due {due})" if due else "")
+        evidence.append({"surface": "briefing_commitments", "text": line})
 
-    # --- chronological order (hour, then minute) ---
-    def _slot_key(it: dict) -> tuple[int, int]:
-        h = _cv(it, col["hour"]).split(".")[0]
-        m = _cv(it, col["minute"]) or "0"
-        try:
-            return (int(h or 0), int(m or 0))
-        except ValueError:
-            return (0, 0)
-
-    todays.sort(key=_slot_key)
-    return todays
-
-
-def _compact_slots(entries: list[dict]) -> list[dict]:
-    """Reduce raw Monday items to the lean fields the LLM needs (one dict per
-    half-hour slot). Keeps the human-readable activity content, drops board
-    plumbing. Pure — no I/O — so it is trivially testable."""
-    sp = _sp()
-    col = sp.CONFIG["activity_board"]["columns"]
-    slots: list[dict] = []
-    for it in entries:
-        h = _cv(it, col["hour"]).split(".")[0] or "?"
-        m = (_cv(it, col["minute"]) or "0").zfill(2)
-        slots.append({
-            "time": f"{h}:{m}",
-            "title": it.get("name", "")[:160],
-            "summary": _cv(it, col["activity_summary"]),
-            "tasks_actions": _cv(it, col["tasks_actions"]),
-            "focus_type": _cv(it, col["focus_type"]),
-            "productivity": _cv(it, col["productivity"]),
-            "energy": _cv(it, col["energy"]),
-            "apps": _cv(it, col["apps"]),
-        })
-    return slots
+    return evidence
 
 
 # ---------------------------------------------------------------------------
-# 2. LLM synthesis — ONE comprehensive recap from all of today's slots.
-#    Covers what monday-daily-summary + -insights + -improvements did, in one
-#    richer pass.
+# 2. LLM synthesis — ONE comprehensive recap from the day's evidence.
 #
-#    OUTPUT FORMAT — LABELED SECTIONS, NOT INLINE JSON (deliberate). The Captain wants
-#    the recap "very comprehensive and detailed", so the SUMMARY/FINDINGS fields
-#    are long multi-paragraph free text. Asking the model to RETURN a single
-#    inline JSON object with that text crammed into string values is fragile two
-#    ways: (a) the model intermittently emits literal newlines / unescaped quotes
-#    inside the JSON strings → json.loads fails AND commitments_lib's balanced-
-#    brace fallback fails too; (b) a long "comprehensive" answer can exceed
-#    max_tokens → the JSON is truncated mid-string → unrecoverable. Either way the
-#    WHOLE recap was being discarded (observed 2026-06-23: good prose generated,
-#    then dropped). The proven screenpipe pipe (monday-daily-summary/pipe.md)
-#    sidesteps this by never parsing model-returned inline JSON — its agent writes
-#    the file via heredoc, controlling escaping at write time. We can't do that in
-#    a one-shot call, so we use the same spirit: PLAIN-TEXT labeled sections parsed
-#    by splitting on the labels. Section-splitting is immune to embedded newlines /
-#    quotes, and a truncated tail merely shortens the LAST section instead of
-#    nuking the recap. See _parse_sections + _raw_llm below.
+#    OUTPUT FORMAT — LABELED SECTIONS, NOT INLINE JSON (deliberate, proven).
+#    The SUMMARY/FINDINGS fields are long multi-paragraph free text; a single
+#    inline JSON object is fragile two ways: (a) literal newlines / unescaped
+#    quotes inside JSON strings break the parse; (b) a long answer that hits
+#    max_tokens truncates the JSON mid-string — unrecoverable. Either way a good
+#    recap was discarded (observed 2026-06-23). PLAIN-TEXT labeled sections are
+#    immune to embedded newlines/quotes, and a truncated tail merely shortens
+#    the LAST section. See _parse_sections + _raw_llm below.
 # ---------------------------------------------------------------------------
 def _recap_system() -> str:
     """The daily-recap synthesizer system prompt, addressed to the deployment's
     Captain (``captain_name``). A function — not a module constant — so the
-    Captain's display name is interpolated at call time; renders byte-identical
-    to the prior literal on a deployment whose ``captain_name`` is unchanged."""
+    Captain's display name is interpolated at call time."""
     cap = captain_name()
     return f"""\
-You are {cap}'s daily-recap synthesizer. You are given EVERY half-hour activity \
-slot captured for {cap} today (titles + summaries + tasks + focus/productivity/\
-energy signals), in chronological order. Produce ONE comprehensive, detailed \
-end-of-day recap that REPLACES three older overlapping passes (a daily summary, \
-a daily insights pass, and a daily improvements pass) — so be RICHER than a plain \
-summary: weave the full narrative, surface what was learned, AND surface concrete \
-improvement ideas, all grounded in the real evidence. WORK CONTENT ONLY — strip \
-anything personal (messaging, social, banking, browsing for entertainment, \
-health, ambient home audio).
+You are {cap}'s daily-recap synthesizer. You are given the day's evidence \
+gathered from {cap}'s personal-source surfaces (conversation threads, open \
+commitments), in the order gathered. Produce ONE comprehensive, detailed \
+end-of-day recap — richer than a plain summary: weave the day's narrative, \
+surface what was learned, AND surface concrete improvement ideas, all grounded \
+in the real evidence. WORK CONTENT ONLY — strip anything personal (messaging, \
+social, banking, browsing for entertainment, health, ambient home audio).
 
 Output PLAIN TEXT in EXACTLY these labeled sections, each label on its own line, \
 in this order. Do NOT use JSON. Do NOT write anything before HEADLINE: or after \
@@ -240,11 +154,11 @@ HEADLINE:
 <one tight sentence capturing the day, <= 140 chars>
 
 SUMMARY:
-<2-5 short paragraphs — chronological narrative of the day's work: how it \
-started, the key arcs, accomplishments (with PR numbers, branch names, decisions \
-where present), problems and how they resolved, the energy/focus trajectory. \
-Blank lines between paragraphs are fine. Ground every claim in the slots; do not \
-invent meetings or outcomes that aren't in the evidence.>
+<2-5 short paragraphs — narrative of the day's work: the key arcs, \
+accomplishments (with PR numbers, branch names, decisions where present), \
+problems and how they resolved. Blank lines between paragraphs are fine. Ground \
+every claim in the evidence; do not invent meetings or outcomes that aren't in \
+the evidence.>
 
 FINDINGS:
 - <key finding / thing learned / decision that surfaced today>
@@ -256,38 +170,31 @@ what to do better>
 - <...>
 
 NOTES:
-- <any other salient context: people, blockers, follow-ups, metrics (active \
-hours, deep-work hours, top tools)>
+- <any other salient context: people, blockers, follow-ups, metrics>
 
-PRODUCTIVITY: <integer 1-10, weighted by hours worked>
-ENERGY: <integer 1-10, weighted by hours worked>
+PRODUCTIVITY: <integer 1-10, best-effort from the evidence>
+ENERGY: <integer 1-10, best-effort from the evidence>
 
 If a bullet section is genuinely empty, write a single line "- (none)". Write in \
 plain, direct prose — {cap}'s recap, for {cap}. Never echo these labels or any \
 instruction text inside the prose."""
 
 
-def _build_user_content(date: str, slots: list[dict]) -> str:
-    """The LLM user payload: the date + every slot rendered compactly. Pure."""
-    lines = [f"Date: {date}", f"Half-hour slots captured today: {len(slots)}", ""]
-    for s in slots:
-        lines.append(f"### {s['time']} — {s['title']}")
-        if s.get("focus_type"):
-            lines.append(f"focus: {s['focus_type']}"
-                         + (f" · productivity {s['productivity']}" if s.get("productivity") else "")
-                         + (f" · energy {s['energy']}" if s.get("energy") else ""))
-        if s.get("summary"):
-            lines.append(s["summary"])
-        if s.get("tasks_actions"):
-            lines.append(f"tasks/actions: {s['tasks_actions']}")
-        if s.get("apps"):
-            lines.append(f"apps: {s['apps']}")
+def _build_user_content(date: str, evidence: list[dict]) -> str:
+    """The LLM user payload: the date + every evidence line, grouped as gathered.
+    Pure — no I/O."""
+    lines = [f"Date: {date}",
+             f"Evidence items gathered today: {len(evidence)}", ""]
+    for e in evidence:
+        lines.append(f"### {e.get('surface') or 'evidence'}")
+        if e.get("text"):
+            lines.append(str(e["text"]))
         lines.append("")
     return "\n".join(lines)
 
 
 def _coerce_rating(v, default: int = 5) -> int:
-    """Clamp an LLM rating into Monday's 1-10 integer range, fail-soft.
+    """Clamp an LLM rating into the 1-10 integer range, fail-soft.
 
     Accepts an int/float or a stray string ("8", "8/10", "8 (high)") — we pull the
     first integer out of a string, so a label-section value parses cleanly."""
@@ -301,31 +208,26 @@ def _coerce_rating(v, default: int = 5) -> int:
     return max(1, min(10, n))
 
 
-# Generous output budget. The model writes ~1.6-2k tokens for a busy 30-slot day
-# at end_turn; this ceiling leaves wide headroom so a "very comprehensive" recap
-# is never truncated mid-section. Even if it ever WERE clipped, the labeled-
-# section parser degrades gracefully (the last section is just shorter) rather
-# than discarding the whole recap the way a truncated inline-JSON object did.
+# Generous output budget: wide headroom so a comprehensive recap is never
+# truncated mid-section — and even if it WERE clipped, the labeled-section
+# parser degrades gracefully (the last section is just shorter).
 _RECAP_MAX_TOKENS = 6000
 
 
 def _raw_llm(user_content: str, system: str,
              max_tokens: int = _RECAP_MAX_TOKENS) -> str | None:
-    """Plain-TEXT Claude call — mirrors commitments_lib.call_llm's curl exactly
-    (same model, same x-api-key header, same anthropic-version, same --max-time),
-    but returns the RAW assistant text instead of force-parsing JSON. That's the
-    whole point: the recap is labeled-section plain text, not JSON, so a JSON
-    parser is the wrong tool. No ANTHROPIC_API_KEY → None (caller stays quiet).
+    """Plain-TEXT Claude call returning the RAW assistant text (never
+    force-parsing JSON — the recap is labeled-section plain text).
 
-    Reads the key from the env the dispatch loaded earlier in the flow (the
-    Flavor-A ``monday()`` call runs the board client's idempotent env load, which
-    populates ANTHROPIC_API_KEY), and the model id via ``get_dispatch().llm_model()``.
-    NEVER logs or echoes the key.
+    Reads ANTHROPIC_API_KEY from the process env (the briefing wrapper / instance
+    env provides it; absent → None and the caller stays quiet) and the model id
+    via ``get_dispatch().llm_model()`` (empty on a null / clean-room dispatch →
+    None, same quiet skip). NEVER logs or echoes the key.
     """
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
         return None
-    model = get_dispatch().llm_model()  # Flavor-A: commitments_lib.LLM_MODEL
+    model = get_dispatch().llm_model()
     if not model:
         return None
     body = {
@@ -380,7 +282,7 @@ def _parse_sections(text: str) -> dict[str, str]:
 
 def _bullets_or_none(body: str) -> str:
     """Normalize a bullet section: empty / a lone '(none)' bullet → '_(none)_',
-    else the body verbatim. Keeps the vault/Monday '_(none)_' convention."""
+    else the body verbatim."""
     b = (body or "").strip()
     if not b:
         return "_(none)_"
@@ -391,12 +293,14 @@ def _bullets_or_none(body: str) -> str:
 
 
 def synthesize_recap(date: str, entries: list[dict], *, llm=None) -> dict | None:
-    """LLM-synthesize ONE recap dict from today's slots, or None if it can't.
+    """LLM-synthesize ONE recap dict from the day's evidence, or None if it can't.
 
-    Returns a normalized dict: {headline, summary, findings, actions, notes,
-    productivity:int, energy:int, slot_count:int}. None when there are no slots,
-    the LLM is unavailable (no ANTHROPIC_API_KEY → ``_raw_llm`` returns None), or
-    the response has no usable SUMMARY — in every case the caller stays quiet.
+    ``entries`` is the ``gather_day_evidence`` shape
+    (``[{"surface": …, "text": …}, …]``). Returns a normalized dict:
+    {headline, summary, findings, actions, notes, productivity:int, energy:int,
+    evidence_count:int}. None when there is no evidence, the LLM is unavailable
+    (no ANTHROPIC_API_KEY / null dispatch → ``_raw_llm`` returns None), or the
+    response has no usable SUMMARY — in every case the caller stays quiet.
 
     The model returns LABELED PLAIN-TEXT sections (see _recap_system), parsed by
     ``_parse_sections`` — chosen over inline JSON because the long narrative
@@ -409,9 +313,8 @@ def synthesize_recap(date: str, entries: list[dict], *, llm=None) -> dict | None
     """
     if not entries:
         return None
-    slots = _compact_slots(entries)
     call = llm or _raw_llm
-    raw = call(_build_user_content(date, slots), _recap_system(),
+    raw = call(_build_user_content(date, entries), _recap_system(),
                max_tokens=_RECAP_MAX_TOKENS)
     if not isinstance(raw, str) or not raw.strip():
         return None
@@ -432,187 +335,12 @@ def synthesize_recap(date: str, entries: list[dict], *, llm=None) -> dict | None
         "notes": _bullets_or_none(sec.get("NOTES", "")),
         "productivity": _coerce_rating(sec.get("PRODUCTIVITY")),
         "energy": _coerce_rating(sec.get("ENERGY")),
-        "slot_count": len(slots),
+        "evidence_count": len(entries),
     }
 
 
 # ---------------------------------------------------------------------------
-# 3a. Monday Reflections "Daily Summary" item — same board/group/schema as
-#     monday-daily-summary/commit.py. Find-or-create by date (idempotent).
-# ---------------------------------------------------------------------------
-def _find_existing_daily(sp, board_id: int, group_id: str, date_col: str,
-                         date: str) -> str | None:
-    """Item id of an existing Daily-Summary on this date in the daily group, or
-    None. Lets a re-run UPDATE instead of creating a duplicate (the same
-    find-or-create discipline prepare.py uses)."""
-    q = (f'{{ boards(ids:[{board_id}]) {{ groups(ids:["{group_id}"]) {{ '
-         f'items_page(limit:100) {{ items {{ id column_values {{ id text }} }} }} }} }} }}')
-    r = sp.monday(q)
-    try:
-        items = r["data"]["boards"][0]["groups"][0]["items_page"]["items"]
-    except Exception:
-        return None
-    for it in items:
-        if _cv(it, date_col)[:10] == date:
-            return it["id"]
-    return None
-
-
-def _write_monday(date: str, recap: dict) -> dict:
-    """Create or update the Reflections Daily-Summary item for ``date``.
-
-    Same board (5096013783), group (daily), Entry Type ("Daily Summary"), and
-    column schema as monday-daily-summary/commit.py — so this is a drop-in for
-    the retired pipe's Monday write. Returns {"action": create|update|error,
-    "item_id": id|None, "url": ...}. Best-effort: an API error is reported in the
-    return, never raised.
-    """
-    sp = _sp()
-    ref = sp.CONFIG["reflections_board"]
-    board_id = ref["id"]
-    group_id = ref["groups"]["daily"]
-    col = ref["columns"]
-
-    col_vals = {
-        col["entry_type"]: {"label": "Daily Summary"},
-        col["date"]: {"date": date},
-        col["summary"]: {"text": recap["summary"][:6000]},
-        col["findings"]: {"text": recap["findings"][:4000]},
-        col["actions"]: {"text": recap["actions"][:2000]},
-        col["notes"]: {"text": recap["notes"][:4000]},
-        col["productivity"]: {"rating": recap["productivity"]},
-        col["energy"]: {"rating": recap["energy"]},
-    }
-    name = f"{date} — Daily Summary"[:255]
-
-    existing = _find_existing_daily(sp, board_id, group_id, col["date"], date)
-    if existing:
-        r = sp.monday_update_item(existing, board_id, col_vals)
-        action, item_id = "update", existing
-    else:
-        r = sp.monday_create_item(board_id, group_id, name, col_vals)
-        try:
-            item_id = r["data"]["create_item"]["id"]
-        except Exception:
-            item_id = None
-        action = "create"
-
-    url = (f"https://step-network.monday.com/boards/{board_id}/pulses/{item_id}"
-           if item_id else "")
-    if r.get("errors"):
-        return {"action": "error", "item_id": item_id, "url": url,
-                "errors": str(r["errors"])[:300]}
-    return {"action": action, "item_id": item_id, "url": url}
-
-
-# ---------------------------------------------------------------------------
-# 3b. Canonical vault daily note — BYTE-IDENTICAL to obsidian-sync's
-#     sync_daily_summaries, so obsidian-sync's next run hash-matches + skips.
-# ---------------------------------------------------------------------------
-def _fence(s) -> str:
-    """Escape a string for a YAML double-quoted scalar — matches obsidian-sync."""
-    if s is None:
-        return ""
-    return str(s).replace('"', '\\"')
-
-
-def _render_frontmatter(d: dict) -> str:
-    """Render a dict to YAML frontmatter — a faithful copy of obsidian-sync's
-    render_frontmatter, so the bytes match for the daily-note keys we emit."""
-    lines = ["---"]
-    for k, v in d.items():
-        if v is None or v == "":
-            lines.append(f"{k}:")
-        elif isinstance(v, list):
-            if not v:
-                lines.append(f"{k}: []")
-            else:
-                lines.append(f"{k}:")
-                for x in v:
-                    lines.append(f"  - {x}")
-        elif isinstance(v, bool):
-            lines.append(f"{k}: {str(v).lower()}")
-        elif isinstance(v, (int, float)):
-            lines.append(f"{k}: {v}")
-        else:
-            sv = str(v)
-            if any(ch in sv for ch in ":#\n") or sv.startswith(
-                    ("-", "[", "{", "&", "*", "!", "|", ">", "%", "@", "`")):
-                lines.append(f'{k}: "{_fence(sv)}"')
-            else:
-                lines.append(f"{k}: {sv}")
-    lines.append("---")
-    return "\n".join(lines)
-
-
-def render_vault_note(date: str, recap: dict, monday_id: str | None) -> str:
-    """The canonical `1-Daily/YYYY-MM-DD.md` content.
-
-    Frontmatter + body match obsidian-sync.sync_daily_summaries EXACTLY (same
-    keys, same order, same section headers, same dataview block, same
-    `source: monday-daily-summary`). That byte-for-byte match is the whole point:
-    after we write it, obsidian-sync's next 30-min run renders the identical
-    string, its sha256 matches, and it SKIPS — no duplicate, no churn. The only
-    field that varies from the retired pipe is monday_id (the item WE just
-    wrote); obsidian-sync reads that same item back, so they converge.
-    """
-    ref_id = _sp().CONFIG["reflections_board"]["id"]
-    fm = {
-        "type": "daily",
-        "date": date,
-        "productivity": int(recap["productivity"]),
-        "energy": int(recap["energy"]),
-        "tags": ["daily", "synced"],
-        "source": "monday-daily-summary",
-        "monday_id": monday_id or "",
-    }
-    src_line = (
-        f"_Source: [Monday item {monday_id}]"
-        f"(https://step-network.monday.com/boards/{ref_id}/pulses/{monday_id})_"
-        if monday_id else "_Source: (pending Monday sync)_"
-    )
-    body = [
-        _render_frontmatter(fm), "",
-        f"# {date} — Daily Summary",
-        "",
-        src_line,
-        "",
-        "## Summary",
-        recap["summary"] or "_(no summary)_",
-        "",
-        "## Key findings",
-        recap["findings"] or "_(none)_",
-        "",
-        "## Actions",
-        recap["actions"] or "_(none)_",
-        "",
-        "## Notes",
-        recap["notes"] or "_(none)_",
-        "",
-        "## Meetings on this day",
-        "```dataview",
-        "TABLE WITHOUT ID file.link AS Meeting, attendees, project",
-        'FROM "2-Meetings"',
-        f'WHERE date = date("{date}")',
-        "```",
-        "",
-    ]
-    return "\n".join(body)
-
-
-def _write_vault(date: str, content: str) -> dict:
-    """Write the daily note if (and only if) its bytes changed, via the Flavor-A
-    dispatch (``get_dispatch().write_daily_note`` — the seam that OWNS the vault
-    write + the vault-root path). Returns
-    ``{"action": written|unchanged|skipped, "path": ...}``; a null/clean-room
-    dispatch skips (no vault). Byte-identical to the former inline sha256
-    write-if-changed (marker-guarded). Kept as this module's write seam — the
-    tests monkeypatch ``dr._write_vault``, so they need no live dispatch."""
-    return get_dispatch().write_daily_note(date, content)
-
-
-# ---------------------------------------------------------------------------
-# 4. The intake item — long-form recap for the composer's ▸ titled section.
+# 3. The intake item — long-form recap for the composer's ▸ titled section.
 # ---------------------------------------------------------------------------
 def _recap_item(date: str, recap: dict) -> dict:
     """A `batch`-tier intake item carrying the long-form recap as payload.summary.
@@ -620,9 +348,10 @@ def _recap_item(date: str, recap: dict) -> dict:
     composer.render_item routes a long (>220-char or multi-line) summary into a
     `▸ daily-recap` titled SECTION preserving this formatting (no composer
     change), so the PM briefing shows the full recap, not a crushed one-liner.
-    The payload is producer content only — the Captain's own activity narrative; no
-    nate_model/voice material is present to leak.
+    The payload is producer content only — evidence-grounded day narrative; no
+    captain-model/voice material is present to leak.
     """
+    n = recap["evidence_count"]
     headline = recap.get("headline") or f"Daily recap — {date}"
     parts = [f"📓 Daily recap — {date}", "", headline, "", recap["summary"]]
     if recap["findings"] and recap["findings"] != "_(none)_":
@@ -630,7 +359,7 @@ def _recap_item(date: str, recap: dict) -> dict:
     if recap["actions"] and recap["actions"] != "_(none)_":
         parts += ["", "Actions & ideas:", recap["actions"]]
     parts += ["", f"_productivity {recap['productivity']}/10 · "
-                  f"energy {recap['energy']}/10 · {recap['slot_count']} slots_"]
+                  f"energy {recap['energy']}/10 · {n} evidence item(s)_"]
     summary = "\n".join(parts)
     return {
         "source": "daily-recap",
@@ -639,7 +368,7 @@ def _recap_item(date: str, recap: dict) -> dict:
         "urgency_tier": "batch",
         "payload": {"summary": summary},
         "context": {
-            "why": f"end-of-day recap from {recap['slot_count']} activity slots",
+            "why": f"end-of-day recap from {n} evidence item(s)",
             "date": date,
             "productivity": recap["productivity"],
             "energy": recap["energy"],
@@ -652,16 +381,18 @@ def _recap_item(date: str, recap: dict) -> dict:
 # ---------------------------------------------------------------------------
 def build_recap(*, today: str | None = None, llm=None,
                 entries=None) -> dict | None:
-    """Pure-ish recap build: fetch today's slots + synthesize. NO side effects.
+    """Pure-ish recap build: gather the day's evidence + synthesize. NO side
+    effects.
 
     Returns the normalized recap dict (see synthesize_recap) or None when there
-    is nothing to recap / the LLM is unavailable. ``entries`` / ``llm`` / ``today``
-    are injectable for tests so this needs neither Monday nor a key.
+    is nothing to recap / the LLM is unavailable. ``entries`` / ``llm`` /
+    ``today`` are injectable for tests so this needs neither a bound source nor
+    a key.
     """
     date = today or _today()
     if entries is None:
         try:
-            entries = fetch_today_halfhourly(today=date)
+            entries = gather_day_evidence()
         except Exception:
             entries = []
     if not entries:
@@ -671,26 +402,23 @@ def build_recap(*, today: str | None = None, llm=None,
 
 def enqueue_daily_recap(*, dry: bool = False, today: str | None = None,
                         llm=None, entries=None) -> dict:
-    """Build today's recap, persist it (Monday + vault), enqueue the intake item.
+    """Build today's recap and enqueue the intake item — the PM-only front-door
+    source (run_briefing PM mode).
 
-    The PM-only front-door source. Steps:
-      1. fetch today's half-hourly slots + LLM-synthesize ONE recap;
-      2. if ``dry`` is False: write the Monday Reflections Daily-Summary item AND
-         the canonical vault daily note (both idempotent — re-run updates, never
-         duplicates);
-      3. enqueue a `batch`-tier intake item carrying the long-form recap so the
-         PM send path folds it into the unified briefing.
+    Steps: gather the day's evidence from the get_source() surfaces +
+    LLM-synthesize ONE recap; if ``dry`` is False, enqueue a `batch`-tier intake
+    item carrying the long-form recap so the PM send path folds it into the
+    unified briefing. There are NO durable writes (the Monday Reflections +
+    vault-note legs were deleted — egg plan R023; boards archived 2026-07-05).
 
-    DRY MODE (``dry=True``): synthesize + return the item shape + a ``preview`` of
-    what WOULD be written to Monday and the vault, but write NOTHING and enqueue
-    NOTHING — for a developer to eyeball the recap before trusting the live path.
+    DRY MODE (``dry=True``): synthesize + return the item shape + a ``preview``
+    of what WOULD ride the briefing, but enqueue NOTHING.
 
     Returns a telemetry dict:
       {"recap": bool, "dry": bool, "enqueued": "<id>"|None,
-       "monday": {...}|None, "vault": {...}|None,
-       "preview": {...}      # dry only
-       "item": {...},        # the intake item that was / would be enqueued
-       "skipped": "<reason>" # when there was nothing to recap}
+       "item": {...},         # the intake item that was / would be enqueued
+       "preview": {...},      # dry only
+       "skipped": "<reason>"  # when there was nothing to recap}
 
     Best-effort: a failure to build the recap yields {"recap": False,
     "skipped": ...}; the rest of the PM briefing is unaffected.
@@ -699,65 +427,38 @@ def enqueue_daily_recap(*, dry: bool = False, today: str | None = None,
     recap = build_recap(today=date, llm=llm, entries=entries)
     if not recap:
         return {"recap": False, "dry": dry, "enqueued": None,
-                "monday": None, "vault": None,
-                "skipped": "no activity slots / LLM unavailable for today"}
+                "skipped": "no day evidence / LLM unavailable for today"}
 
     item = _recap_item(date, recap)
 
     if dry:
-        # Compose exactly what WOULD be written, but touch nothing.
-        note_preview = render_vault_note(date, recap, monday_id="<pending>")
         return {
             "recap": True,
             "dry": True,
             "enqueued": None,
-            "monday": None,
-            "vault": None,
             "item": item,
             "preview": {
-                "monday": {
-                    "board": _sp().CONFIG["reflections_board"]["id"],
-                    "group": _sp().CONFIG["reflections_board"]["groups"]["daily"],
-                    "name": f"{date} — Daily Summary",
-                    "entry_type": "Daily Summary",
-                    "productivity": recap["productivity"],
-                    "energy": recap["energy"],
-                    "summary": recap["summary"],
-                    "findings": recap["findings"],
-                    "actions": recap["actions"],
-                    "notes": recap["notes"],
-                },
-                "vault": {
-                    "path": get_dispatch().daily_note_path(date),
-                    "content": note_preview,
-                },
                 "intake_item_summary": item["payload"]["summary"],
+                "evidence_count": recap["evidence_count"],
             },
         }
 
-    # --- live side effects (idempotent) ---
-    monday_res = _write_monday(date, recap)
-    note = render_vault_note(date, recap, monday_id=monday_res.get("item_id"))
-    vault_res = _write_vault(date, note)
     enq_id = intake.enqueue(item)
-
     return {
         "recap": True,
         "dry": False,
         "enqueued": enq_id,
-        "monday": monday_res,
-        "vault": vault_res,
         "item": item,
     }
 
 
 if __name__ == "__main__":  # pragma: no cover — manual dev invocation
-    # Default to DRY so a bare run never writes. Pass --live to actually persist.
+    # Default to DRY so a bare run never enqueues. Pass --live to actually enqueue.
     import argparse
 
     ap = argparse.ArgumentParser(description="Build today's daily recap (dry by default).")
     ap.add_argument("--live", action="store_true",
-                    help="actually write Monday + vault + enqueue (default: dry preview)")
+                    help="actually enqueue the intake item (default: dry preview)")
     ap.add_argument("--date", default=None, help="override the recap date (YYYY-MM-DD)")
     args = ap.parse_args()
     out = enqueue_daily_recap(dry=not args.live, today=args.date)
