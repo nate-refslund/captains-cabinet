@@ -332,6 +332,26 @@ if [ "${CABINET_USE_NATIVE_AGENT:-1}" = "1" ] \
   AGENT_FLAG="--agent $OFFICER"
 fi
 
+# ===========================================================
+# Fallback-model probe (AUD-2, audit 2026-07-07): if the installed CLI supports
+# --fallback-model (v2.1.166+, verified present on 2.1.202), pin an explicit
+# fallback so an overloaded/unavailable primary degrades to plain
+# claude-opus-4-8 (deliberately NON-[1m] — the fallback should never widen the
+# context bill) instead of whatever the CLI would silently pick. Probed like
+# AGENT_FLAG so older CLIs just omit the flag. Override via
+# CABINET_FALLBACK_MODEL; set it to "none" to disable.
+# NOTE: the loud-fallback Notification-hook page (no silent fallback) is the
+# other half of AUD-2 — settings.json hook wiring is schg-locked germline, so
+# that half rides the germline addendum, not this script.
+# ===========================================================
+FALLBACK_MODEL="${CABINET_FALLBACK_MODEL:-claude-opus-4-8}"
+FALLBACK_FLAG=""
+if [ "$FALLBACK_MODEL" != "none" ] \
+  && command -v claude >/dev/null 2>&1 \
+  && claude --help 2>&1 | grep -q -- '--fallback-model'; then
+  FALLBACK_FLAG="--fallback-model '$FALLBACK_MODEL'"
+fi
+
 # Build the claude invocation
 # $MODEL is single-quoted: model ids can carry a [1m] context suffix (e.g.
 # claude-opus-4-8[1m]) and this command is typed into a zsh pane, which would
@@ -341,7 +361,7 @@ fi
 # SERVER's global env. When the server was first started by another officer (e.g. cos),
 # a new session would otherwise launch claude as OFFICER_NAME=cos and mis-attribute every
 # heartbeat / cost / log / tier2 write to cos. Forcing them here pins the real identity.
-CLAUDE_CMD="cd $REPO_ROOT && OFFICER_NAME='$OFFICER' CABINET_OFFICER='$OFFICER' claude --model '$MODEL' $MCP_FLAG $SETTINGS_FLAG $TELEGRAM_FLAG $AGENT_FLAG --dangerously-skip-permissions --effort max"
+CLAUDE_CMD="cd $REPO_ROOT && OFFICER_NAME='$OFFICER' CABINET_OFFICER='$OFFICER' claude --model '$MODEL' $FALLBACK_FLAG $MCP_FLAG $SETTINGS_FLAG $TELEGRAM_FLAG $AGENT_FLAG --dangerously-skip-permissions --effort max"
 
 # ===========================================================
 # Dry-run gate — print plan & exit before any tmux/redis/launch side-effects.

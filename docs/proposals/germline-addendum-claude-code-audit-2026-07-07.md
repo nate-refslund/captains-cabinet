@@ -133,3 +133,22 @@ renamed (`instance/agents/cos.md`,
 `cabinet/scripts/generate-instance.py` verified clean (no tools-line
 literals). Generated `.claude/agents/*.md` are gitignored and refresh from
 these sources via load-preset.sh at next officer start.
+
+---
+
+## AUD-2 (audit #6/#33 fallback half) — loud-fallback Notification page
+
+`--fallback-model 'claude-opus-4-8'` now rides every officer launch line
+(start-officer-mac.sh, probed like `--agent`, override
+`CABINET_FALLBACK_MODEL`, `none` disables). The remaining AUD-2 gate half —
+"simulated model-unavailable engages fallback AND pages via Notification hook
+(no silent fallback)" — needs a hook wired in germline `settings.json`
+(schg-locked), so it lands here, not on the branch.
+
+**Proposed edit** (next unlock window): add a `Notification` hook entry that
+greps the notification message for the CLI's model-fallback engagement text
+and, on match, stamps `cabinet:model-fallback:<officer>` in Redis + sends a
+Captain page via the existing notify path — the standing Fable/model rule
+requires non-primary-model operation to be LOUD. Pair with the AUD-9 batch
+(StopFailure/TeammateIdle/PermissionRequest) so one unlock window covers all
+four hook wirings.
