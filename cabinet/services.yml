@@ -428,7 +428,7 @@ services:
     kind: cron
     command: bash cabinet/cron/self-improvement-loop.sh
     schedule: { interval_s: 21600 }   # every 6h
-    expected: "loop summary (proposals/hats/skills counts) in log every 6h; auto-apply ONLY through the validation gate (scenario evals + golden eval shells) — skeleton TODO proposals stay pending_captain_approval on disk; skill induction writes drafts to memory/skills/evolved/, never auto-validates"
+    expected: "loop summary (proposals/hats/skills counts) in log every 6h; auto-apply ONLY through the validation gate (scenario evals + golden eval shells) — skeleton TODO proposals stay pending_captain_approval on disk; skill induction writes drafts to memory/skills/evolved/, never auto-validates; a RED evaluated gate is LOUD (exit 3 + FATAL stderr marker → watchdog pages, review fix 2026-07-07) and the golden shells are Mac-native + self-isolating (ephemeral redis, private cache/hook copies — zero live-state writes)"
     notes: >-
       R8 growth engine (framework.learning.self_improvement_loop) — the
       eval→pattern→proposal→gate→apply chain, never scheduled since it

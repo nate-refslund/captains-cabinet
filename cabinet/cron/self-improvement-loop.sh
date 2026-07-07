@@ -28,8 +28,15 @@
 # detection — the two cadences are overlap-safe (unique loop_id per run,
 # idempotent proposal application).
 #
-# Exits 0 whenever the loop COMPLETES, regardless of how many proposals
-# were applied — "no work to do" is a valid successful outcome.
+# Exit code contract (loud-red gate, T2-arm-schedules review fix 2026-07-07):
+# exits 0 whenever the loop COMPLETES with a green or not-evaluated
+# validation gate, regardless of how many proposals were applied — "no work
+# to do" is a valid successful outcome. Exits 3 (plus a stderr line carrying
+# the watchdog's FATAL marker) when the gate WAS evaluated and is RED: a red
+# gate parks every concrete proposal (blocked_by_validation), and under
+# launchd that state must page (non-zero last-exit + marker scan), never log
+# green. role-evals-weekly.sh wraps its inline call in `|| echo`, so the
+# weekly chain tolerates the non-zero.
 #
 # Forwarded flags (anything you pass to this script is forwarded verbatim
 # to the Python driver `python3 -m framework.learning.self_improvement_loop`):

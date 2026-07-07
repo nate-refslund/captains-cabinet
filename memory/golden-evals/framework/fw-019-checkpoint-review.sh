@@ -8,12 +8,24 @@
 #   (d) COMMIT_NO_REVIEW=1 bypasses threshold with bypass stderr
 #   (e) Merge commits skip enforcement (exit 0)
 #
-# Invocation: bash /opt/founders-cabinet/memory/golden-evals/framework/fw-019-checkpoint-review.sh
-# Exit 0 = all pass; non-zero = failure (first failure reported).
+# Invocation (Mac-native deployment — the /opt/founders-cabinet Docker paths
+# are extinct):  bash memory/golden-evals/framework/fw-019-checkpoint-review.sh
+# Exit 0 = all pass; non-zero = failure (first failure reported) or
+# infra-fail (hook missing — fail-closed so the validation gate goes loudly
+# red instead of silently green).
+#
+# Side-effect-free by construction: the hook is COPIED into a throwaway git
+# repo under mktemp -d; nothing outside $TESTDIR is written.
 
 set -u
 
-HOOK="/opt/founders-cabinet/cabinet/scripts/git-hooks/pre-commit"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CABINET_ROOT="${CABINET_ROOT:-$(cd "$SCRIPT_DIR/../../.." && pwd)}"
+HOOK="$CABINET_ROOT/cabinet/scripts/git-hooks/pre-commit"
+if [ ! -f "$HOOK" ]; then
+  echo "FW-019 INFRA-FAIL (gate stays closed): hook under test not found: $HOOK" >&2
+  exit 1
+fi
 TESTDIR=$(mktemp -d -t fw019-XXXXXX)
 trap "rm -rf $TESTDIR" EXIT
 

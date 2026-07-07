@@ -11,16 +11,120 @@
 #   (g) block cap: blocks_so_far >= GUARD_MAX_BLOCKS → exit 0 (allows stop)
 #   (h) XPENDING not XLEN: ACK'd-only stream → PENDING_TRIGGERS=0, no block
 #
-# Requires: Redis accessible at REDIS_HOST:REDIS_PORT (default localhost:6379)
-# Run in Docker: REDIS_HOST=redis bash memory/golden-evals/framework/fw-a14-stop-guard.sh
-# Run on Mac:    ensure `redis-server` is running, then:
-#                REDIS_HOST=localhost bash memory/golden-evals/framework/fw-a14-stop-guard.sh
+# ISOLATION (2026-07-07, T2-arm-schedules review): this eval runs UNATTENDED
+# every 6h inside the self-improvement-loop validation gate on the LIVE Mac
+# deployment. It therefore:
+#   * starts an EPHEMERAL redis-server on 127.0.0.1:<random high port> and
+#     points both its own redis-cli calls and the hook invocation env at it —
+#     no live Redis key is ever read, written, or KEYS-scanned;
+#   * copies the hook under test into a private tempdir and rebases the
+#     extinct /opt/founders-cabinet Docker prefix to $CABINET_ROOT in the
+#     COPY (the live stop-hook.sh still carries the Docker paths — with them
+#     the guard's trigger_count leg can never fire on Mac, so the guard LOGIC
+#     is exercised against the path-rebased copy; the live file is untouched).
+#     The rebase is ASSERTED: any surviving Docker path is an infra-fail.
+#     With empty stdin (no transcript_path) sections 1–3 of the hook are
+#     no-ops, so the rebased copy touches nothing on disk either.
+#
+# SIGKILL-safety: the gate runner kills this shell after 120s WITHOUT running
+# the EXIT trap; a watcher subprocess reaps the ephemeral redis-server when
+# this shell dies (absolute ~300s bound either way).
+#
+# Invocation (Mac-native deployment):
+#   bash memory/golden-evals/framework/fw-a14-stop-guard.sh
+# Exit 0 = all pass; non-zero = test failure or infra-fail (fail-closed —
+# the validation gate must go loudly red, never silently green).
 
 set -euo pipefail
 
-HOOK="/opt/founders-cabinet/cabinet/scripts/hooks/stop-hook.sh"
-REDIS_HOST="${REDIS_HOST:-localhost}"
-REDIS_PORT="${REDIS_PORT:-6379}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CABINET_ROOT="${CABINET_ROOT:-$(cd "$SCRIPT_DIR/../../.." && pwd)}"
+SRC_HOOK="$CABINET_ROOT/cabinet/scripts/hooks/stop-hook.sh"
+
+infra_fail() {
+  echo "FW-A14 INFRA-FAIL (gate stays closed): $*" >&2
+  exit 1
+}
+
+[ -f "$SRC_HOOK" ] || infra_fail "hook under test not found: $SRC_HOOK"
+
+TESTDIR=$(mktemp -d -t fwa14-XXXXXX) || infra_fail "mktemp failed"
+HOOK="$TESTDIR/stop-hook.under-test.sh"
+
+# ---- Rebase the hook copy (see ISOLATION header) ---------------------------
+sed "s|/opt/founders-cabinet|$CABINET_ROOT|g" "$SRC_HOOK" > "$HOOK" \
+  || { rm -rf "$TESTDIR"; infra_fail "hook copy/rebase failed"; }
+if grep -q '/opt/founders-cabinet' "$HOOK"; then
+  rm -rf "$TESTDIR"; infra_fail "Docker path survived the rebase (hook drift?)"
+fi
+
+# ---- Ephemeral Redis (never the live instance) ------------------------------
+REDIS_SERVER_BIN="$(command -v redis-server 2>/dev/null || true)"
+if [ -z "$REDIS_SERVER_BIN" ]; then
+  for _cand in /opt/homebrew/bin/redis-server /usr/local/bin/redis-server; do
+    if [ -x "$_cand" ]; then REDIS_SERVER_BIN="$_cand"; break; fi
+  done
+fi
+[ -n "$REDIS_SERVER_BIN" ] || { rm -rf "$TESTDIR"; infra_fail "redis-server binary not found"; }
+PATH="$(dirname "$REDIS_SERVER_BIN"):$PATH"   # redis-cli ships alongside redis-server
+
+REDIS_HOST="127.0.0.1"
+REDIS_PORT=""
+REDIS_PID=""
+_attempt=0
+while [ -z "$REDIS_PORT" ] && [ "$_attempt" -lt 5 ]; do
+  _attempt=$((_attempt + 1))
+  _port=$((20000 + RANDOM % 40000))
+  # stdout/stderr to files, NEVER inherited — an inherited pipe would keep the
+  # gate runner's capture open after this shell exits and hang the gate.
+  "$REDIS_SERVER_BIN" --port "$_port" --bind 127.0.0.1 --save '' \
+      --appendonly no --dir "$TESTDIR" \
+      > "$TESTDIR/redis-server.log" 2>&1 &
+  _pid=$!
+  _w=0
+  while [ "$_w" -lt 25 ]; do
+    _w=$((_w + 1))
+    if redis-cli -h 127.0.0.1 -p "$_port" ping > /dev/null 2>&1; then
+      REDIS_PORT="$_port"; REDIS_PID="$_pid"; break
+    fi
+    kill -0 "$_pid" 2>/dev/null || break   # server died early (port in use)
+    sleep 0.2
+  done
+  if [ -z "$REDIS_PORT" ]; then
+    kill "$_pid" 2>/dev/null || true
+    wait "$_pid" 2>/dev/null || true
+  fi
+done
+if [ -z "$REDIS_PORT" ]; then
+  tail -5 "$TESTDIR/redis-server.log" >&2 2>/dev/null || true
+  rm -rf "$TESTDIR"
+  infra_fail "could not start ephemeral redis-server"
+fi
+
+# Watcher: reaps the ephemeral server if this shell is SIGKILLed (gate-runner
+# timeout skips the EXIT trap), bounded at ~300s absolute.
+EVAL_PID=$$
+(
+  _i=0
+  while [ "$_i" -lt 300 ]; do
+    kill -0 "$EVAL_PID" 2>/dev/null || break
+    sleep 1
+    _i=$((_i + 1))
+  done
+  kill "$REDIS_PID" 2>/dev/null
+) > /dev/null 2>&1 &
+WATCHER_PID=$!
+
+cleanup() {
+  kill "$REDIS_PID" 2>/dev/null || true
+  kill "$WATCHER_PID" 2>/dev/null || true
+  wait "$REDIS_PID" "$WATCHER_PID" 2>/dev/null || true
+  rm -rf "$TESTDIR"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 TEST_OFFICER="test-a14-eval"
 STREAM="cabinet:triggers:${TEST_OFFICER}"
 GROUP="officer-${TEST_OFFICER}"
@@ -41,15 +145,25 @@ rc_raw() {
 
 # -------------------------------------------------------
 # Harness: run the guard section in isolation
-# We pass empty HOOK_INPUT (no transcript_path) so sections
-# 1/2/3 of stop-hook are no-ops. Only section 4 runs.
+# We pass session_id-only HOOK_INPUT (no transcript_path) so
+# sections 1/2/3 of stop-hook are no-ops. Only section 4 runs.
+# session_id MUST ride the stdin JSON: the hook overwrites the
+# SESSION_ID env from `.session_id // empty` (that is where
+# Claude Code provides it), so an env-only SESSION_ID silently
+# keyed the block counter under ":nosession" — which is how the
+# original AC (g) pre-fill missed the hook's key and only ever
+# looked green via counter residue in the shared Docker redis.
+# CABINET_ACTIVE_PROJECT is blanked so the triggers lib
+# resolves the legacy stream/group names planted below.
 # -------------------------------------------------------
+HOOK_STDIN="{\"session_id\":\"$SESSION_ID\"}"
+
 run() {
   local label="$1" ctx_pct="$2" expect_block="$3"
   shift 3
   local extra_env=("$@")
 
-  # Plant ctx_pct in Redis
+  # Plant ctx_pct in (ephemeral) Redis
   rc HSET "cabinet:cost:tokens:${TEST_OFFICER}" last_context_pct "$ctx_pct"
 
   # Build env for the hook invocation
@@ -60,11 +174,14 @@ run() {
     "SESSION_ID=$SESSION_ID"
     "CABINET_HOOK_TEST_MODE=0"
     "CABINET_STOP_GUARD_DISABLED=0"
+    "CABINET_ACTIVE_PROJECT="
   )
-  env_prefix+=("${extra_env[@]}")
+  # bash-3.2-safe empty-array expansion: the gate invokes evals with
+  # /bin/bash (macOS 3.2), where "${arr[@]}" on an empty array trips set -u.
+  env_prefix+=(${extra_env[@]+"${extra_env[@]}"})
 
   local out
-  out=$(echo '{}' | env "${env_prefix[@]}" bash "$HOOK" 2>/dev/null)
+  out=$(echo "$HOOK_STDIN" | env "${env_prefix[@]}" bash "$HOOK" 2>/dev/null)
 
   local got_block="false"
   if echo "$out" | jq -e '.decision == "block"' > /dev/null 2>&1; then
@@ -93,6 +210,9 @@ clear_stream() {
   rc DEL "$STREAM"
   rc DEL "cabinet:cost:tokens:${TEST_OFFICER}"
   rc DEL "$BLOCK_KEY"
+  # Belt: the key the hook uses when stdin carries no session_id — keeps
+  # every AC independent even if an invocation regresses to empty input.
+  rc DEL "cabinet:stop-guard:blocks:${TEST_OFFICER}:nosession"
 }
 
 add_pending_trigger() {
@@ -116,26 +236,8 @@ ack_all_pending() {
   done
 }
 
-cleanup() {
-  rc DEL "$STREAM"
-  rc DEL "cabinet:cost:tokens:${TEST_OFFICER}"
-  rc DEL "$BLOCK_KEY"
-  # Clean up all keys for this test officer
-  for k in $(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" KEYS "cabinet:*${TEST_OFFICER}*" 2>/dev/null); do
-    rc DEL "$k"
-  done
-}
-trap cleanup EXIT
-
 echo "FW-A14 stop-hook context-guard eval"
 echo "--------------------------------------"
-
-# Verify Redis connectivity
-if ! redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" ping > /dev/null 2>&1; then
-  echo "SKIP: Redis not available at $REDIS_HOST:$REDIS_PORT"
-  echo "Run with: REDIS_HOST=redis bash $0 (inside Docker)"
-  exit 0
-fi
 
 # -------------------------------------------------------
 # AC (a): CABINET_STOP_GUARD_DISABLED=1 → no block even with high ctx + pending
@@ -157,11 +259,12 @@ run "test-mode-skip" 85 "false" "CABINET_HOOK_TEST_MODE=1"
 clear_stream
 add_pending_trigger > /dev/null
 # Override OFFICER_NAME to unknown
-echo '{}' | REDIS_HOST="$REDIS_HOST" REDIS_PORT="$REDIS_PORT" \
+echo "$HOOK_STDIN" | env REDIS_HOST="$REDIS_HOST" REDIS_PORT="$REDIS_PORT" \
   OFFICER_NAME="unknown" SESSION_ID="$SESSION_ID" \
   CABINET_HOOK_TEST_MODE=0 CABINET_STOP_GUARD_DISABLED=0 \
-  bash "$HOOK" > /tmp/fw-a14-unknown-out.txt 2>/dev/null
-if jq -e '.decision == "block"' /tmp/fw-a14-unknown-out.txt > /dev/null 2>&1; then
+  CABINET_ACTIVE_PROJECT= \
+  bash "$HOOK" > "$TESTDIR/unknown-out.txt" 2>/dev/null
+if jq -e '.decision == "block"' "$TESTDIR/unknown-out.txt" > /dev/null 2>&1; then
   FAIL=$((FAIL + 1))
   FAIL_DETAILS="$FAIL_DETAILS\n  [unknown-officer] block should NOT fire for officer=unknown"
   echo "  FAIL: unknown-officer"
@@ -169,7 +272,7 @@ else
   PASS=$((PASS + 1))
   echo "  PASS: unknown-officer"
 fi
-rm -f /tmp/fw-a14-unknown-out.txt
+rm -f "$TESTDIR/unknown-out.txt"
 
 # -------------------------------------------------------
 # AC (d): ctx_pct < threshold → no block (even with pending triggers)
@@ -226,9 +329,10 @@ run "custom-threshold-skip" 80 "false" "CABINET_STOP_GUARD_CTX_PCT=90"
 clear_stream
 add_pending_trigger > /dev/null
 rc HSET "cabinet:cost:tokens:${TEST_OFFICER}" last_context_pct 80
-out=$(echo '{}' | REDIS_HOST="$REDIS_HOST" REDIS_PORT="$REDIS_PORT" \
+out=$(echo "$HOOK_STDIN" | env REDIS_HOST="$REDIS_HOST" REDIS_PORT="$REDIS_PORT" \
   OFFICER_NAME="$TEST_OFFICER" SESSION_ID="$SESSION_ID" \
   CABINET_HOOK_TEST_MODE=0 CABINET_STOP_GUARD_DISABLED=0 \
+  CABINET_ACTIVE_PROJECT= \
   bash "$HOOK" 2>/dev/null)
 if echo "$out" | jq -e '.decision == "block" and (.reason | type) == "string" and (.reason | length) > 0' > /dev/null 2>&1; then
   PASS=$((PASS + 1))

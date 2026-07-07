@@ -906,9 +906,45 @@ def main(argv: list[str] | None = None) -> int:
         skip_evals=args.skip_evals,
     )
 
+    # Loud-red gate (T2-arm-schedules review fix, 2026-07-07): a RED
+    # validation gate parks every concrete proposal (blocked_by_validation)
+    # and stops hat graduations — if that state exits 0 with no marker, the
+    # armed 6h LaunchAgent shows green in launchctl and the no-silent-cron
+    # watchdog floor reads clean while the growth engine is structurally
+    # dead (exactly the silent-failure class the watchdog exists to catch).
+    # So: when the gate WAS evaluated this run and failed, emit ONE stderr
+    # line carrying the watchdog's "FATAL" JOB_ERROR_MARKERS token (the
+    # marker scan pages on it) and exit 3 (non-zero launchd last-exit —
+    # the launchctl scan pages on that too). Runs where the gate never
+    # evaluated (nothing to validate), --dry-run, and --skip-evals keep
+    # exiting 0. role-evals-weekly.sh wraps its inline invocation in
+    # `|| echo` so the weekly chain is unaffected.
+    gate = summary.get("validation_gate") or {}
+    gate_evaluated = ("scenario_passed" in gate) or ("golden_passed" in gate)
+    gate_red = gate_evaluated and not (
+        bool(gate.get("scenario_passed", True))
+        and bool(gate.get("golden_passed", True)))
+    if gate_red:
+        failing_shells = [
+            str(r.get("script"))
+            for r in (gate.get("golden_evals") or [])
+            if isinstance(r, dict) and not r.get("passed")
+        ]
+        print(
+            "self-improvement-loop: FATAL validation gate RED "
+            f"(scenario_passed={gate.get('scenario_passed')}, "
+            f"golden_passed={gate.get('golden_passed')}"
+            + (f"; failing shells: {', '.join(failing_shells)}"
+               if failing_shells else "")
+            + ") — nothing auto-applied; proposals are parked "
+              "blocked_by_validation until the gate is green again. "
+              "Exiting 3 so launchd/watchdog page instead of logging green.",
+            file=sys.stderr,
+        )
+
     if args.json:
         print(json.dumps(summary, indent=2, default=str))
-        return 0
+        return 3 if gate_red else 0
 
     print("\n=== Self-improvement loop ===")
     print(f"  loop_id:           {summary['loop_id']}")
@@ -927,7 +963,7 @@ def main(argv: list[str] | None = None) -> int:
               f"golden_passed={gate.get('golden_passed')}")
     elif args.skip_evals:
         print("  validation gate:   SKIPPED (--skip-evals)")
-    return 0
+    return 3 if gate_red else 0
 
 
 if __name__ == "__main__":  # pragma: no cover
