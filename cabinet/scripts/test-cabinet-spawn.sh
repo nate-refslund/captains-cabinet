@@ -123,17 +123,25 @@ fi
 echo ""
 echo "T4: --skip-create works when project is already provisioned"
 
-# Sensed is a real provisioned project — use it as the test fixture
-REAL_SLUG="sensed"
-out=$(DRY_RUN=1 bash "$SPAWN" "$REAL_SLUG" "https://github.com/nate-step/Sensed" --skip-create 2>&1); rc=$?
+# Self-provision a throwaway "already provisioned" project env as the fixture
+# (egg R061: sensed.env left the repo; only _template.env ships in cabinet/env/)
+FIXTURE_SLUG="tfx-spawn"
+FIXTURE_ENV="$CABINET_ROOT/cabinet/env/$FIXTURE_SLUG.env"
+if [ -e "$FIXTURE_ENV" ]; then
+  printf "  [FATAL] fixture env %s already exists — refusing to clobber\n" "$FIXTURE_ENV"
+  exit 1
+fi
+printf '# throwaway fixture env for test-cabinet-spawn.sh (removed on exit)\n' > "$FIXTURE_ENV"
+trap 'rm -f "$FIXTURE_ENV"' EXIT
+out=$(DRY_RUN=1 bash "$SPAWN" "$FIXTURE_SLUG" "https://github.com/org/tfx-spawn" --skip-create 2>&1); rc=$?
 assert_exit "T4.1 --skip-create + dry-run exits 0" "$rc" 0
 assert_contains "T4.2 --skip-create mentions skipping create-project" "$out" "skip-create"
 
 # Now test --skip-create WITHOUT dry-run against a slug that has an env file
-# (sensed.env exists in cabinet/env/) — should not attempt to call create-project.sh
+# (the fixture env exists in cabinet/env/) — should not attempt to call create-project.sh
 # We guard by checking that the step output says "already provisioned"
 # Use DRY_RUN=1 because we can't actually start tmux sessions in CI
-out=$(DRY_RUN=1 bash "$SPAWN" "$REAL_SLUG" "https://github.com/nate-step/Sensed" --skip-create 2>&1); rc=$?
+out=$(DRY_RUN=1 bash "$SPAWN" "$FIXTURE_SLUG" "https://github.com/org/tfx-spawn" --skip-create 2>&1); rc=$?
 assert_exit "T4.3 --skip-create dry-run exits 0 for real slug" "$rc" 0
 assert_not_contains "T4.4 --skip-create does not call create-project in dry-run" "$out" "Would invoke: bash cabinet/scripts/create-project.sh"
 
@@ -178,7 +186,7 @@ assert_contains "T6.3 re-run output matches first run (dry-run complete)" "$out2
 
 # Verify state file cleanup: synthesize a completed-state file and confirm
 # that a non-dry-run detects already-completed steps (using --skip-create
-# to avoid real create-project.sh, and pointing at sensed which has an env file).
+# to avoid real create-project.sh, and pointing at a slug that has an env file).
 # We can't do a full non-dry-run in CI (no real tmux), so we verify the
 # state-file-tracking logic via the dry-run path (DRY_RUN never writes state).
 # Belt-and-suspenders: confirm no stale state file exists after dry-run.

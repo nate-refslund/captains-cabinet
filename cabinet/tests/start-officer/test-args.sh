@@ -23,11 +23,21 @@ FAIL=0
 fail() { echo "FAIL: $1"; FAIL=$((FAIL + 1)); }
 pass() { echo "PASS: $1"; PASS=$((PASS + 1)); }
 
-# Mock TELEGRAM_<UPPER>_TOKEN (required by script). Test slug must already
-# exist in cabinet/env/ — sensed.env is shipped, use that.
+# Mock TELEGRAM_<UPPER>_TOKEN (required by script). Pool mode requires the
+# slug's env file in cabinet/env/ — self-provision a throwaway fixture env
+# (egg R061: sensed.env left the repo; only _template.env ships).
 export TELEGRAM_CTO_TOKEN="x-test-token"
 export TELEGRAM_HQ_CHAT_ID="x-test-chat"
 export CABINET_TEST_DRY_RUN=1
+
+TEST_SLUG="tfx-pool"
+TEST_ENV="$ROOT/cabinet/env/$TEST_SLUG.env"
+if [ -e "$TEST_ENV" ]; then
+  echo "FATAL: fixture env $TEST_ENV already exists — refusing to clobber" >&2
+  exit 1
+fi
+printf '# throwaway fixture env for test-args.sh (removed on exit)\n' > "$TEST_ENV"
+trap 'rm -f "$TEST_ENV"' EXIT
 
 # ----------------------------------------------------------------------------
 # T1: Legacy invocation (no --project) — back-compat.
@@ -61,9 +71,9 @@ else
 fi
 
 # ----------------------------------------------------------------------------
-# T2: Pool mode invocation (--project sensed) — uses shipped sensed env.
+# T2: Pool mode invocation (--project "$TEST_SLUG") — uses the fixture env.
 # ----------------------------------------------------------------------------
-output=$(bash "$SCRIPT" cto --project sensed 2>&1)
+output=$(bash "$SCRIPT" cto --project "$TEST_SLUG" 2>&1)
 rc=$?
 if [ "$rc" -ne 0 ]; then
   fail "T2: pool mode exited rc=$rc — $output"
@@ -73,23 +83,23 @@ else
   else
     fail "T2: expected POOL_MODE=true, got: $(echo "$output" | grep '^POOL_MODE=')"
   fi
-  if echo "$output" | grep -q '^WINDOW=officer-cto-sensed$'; then
-    pass "T2: pool WINDOW=officer-cto-sensed (per-project)"
+  if echo "$output" | grep -q "^WINDOW=officer-cto-$TEST_SLUG\$"; then
+    pass "T2: pool WINDOW=officer-cto-$TEST_SLUG (per-project)"
   else
-    fail "T2: expected WINDOW=officer-cto-sensed, got: $(echo "$output" | grep '^WINDOW=')"
+    fail "T2: expected WINDOW=officer-cto-$TEST_SLUG, got: $(echo "$output" | grep '^WINDOW=')"
   fi
-  if echo "$output" | grep -q '^OFFICER_DIR=.*/officers/cto/sensed$'; then
-    pass "T2: pool OFFICER_DIR=.../officers/cto/sensed (per-project)"
+  if echo "$output" | grep -q "^OFFICER_DIR=.*/officers/cto/$TEST_SLUG\$"; then
+    pass "T2: pool OFFICER_DIR=.../officers/cto/$TEST_SLUG (per-project)"
   else
-    fail "T2: expected OFFICER_DIR=.../officers/cto/sensed, got: $(echo "$output" | grep '^OFFICER_DIR=')"
+    fail "T2: expected OFFICER_DIR=.../officers/cto/$TEST_SLUG, got: $(echo "$output" | grep '^OFFICER_DIR=')"
   fi
-  if echo "$output" | grep -q '^ACTIVE_SLUG=sensed$'; then
-    pass "T2: pool ACTIVE_SLUG=sensed"
+  if echo "$output" | grep -q "^ACTIVE_SLUG=$TEST_SLUG\$"; then
+    pass "T2: pool ACTIVE_SLUG=$TEST_SLUG"
   else
-    fail "T2: expected ACTIVE_SLUG=sensed, got: $(echo "$output" | grep '^ACTIVE_SLUG=')"
+    fail "T2: expected ACTIVE_SLUG=$TEST_SLUG, got: $(echo "$output" | grep '^ACTIVE_SLUG=')"
   fi
-  if echo "$output" | grep -q 'CABINET_ACTIVE_PROJECT=sensed'; then
-    pass "T2: pool exports CABINET_ACTIVE_PROJECT=sensed (FW-072 trigger)"
+  if echo "$output" | grep -q "CABINET_ACTIVE_PROJECT=$TEST_SLUG"; then
+    pass "T2: pool exports CABINET_ACTIVE_PROJECT=$TEST_SLUG (FW-072 trigger)"
   else
     fail "T2: pool mode missing CABINET_ACTIVE_PROJECT export"
   fi
