@@ -175,6 +175,18 @@ probe "FP13 frontdoor sibling composer.py" cro Edit  'framework/frontdoor/compos
 probe "FP14 acting sibling loop.py (cto)"  cto Edit  'framework/acting/loop.py'                                   ALLOW
 probe "FP15 frontdoor test file (cro)"     cro Write 'framework/frontdoor/tests/test_action_exec.py'              ALLOW
 probe "FP16 acting test file (cro)"        cro Write 'framework/acting/tests/test_action_lane.py'                 ALLOW
+# CG-15 / germline window 2 (2026-07-07, staging-review finding 4):
+# constitution/ is RETIRED — the runtime constitution assembles from
+# framework/constitution-base.md + preset addenda, and those assembly inputs
+# are DELIBERATELY officer-writable ("protected by review discipline rather
+# than the germline lock" — amendment
+# docs/proposals/germline-amendment-constitution-retirement-2026-07-07.md).
+# These probes are that choice as EXECUTABLE documentation: if a future
+# hardening germlines the constitution sources, flip them to BLOCK
+# deliberately (and extend §5/§5b + the lockstep lists) — no silent drift
+# in either direction.
+probe "FP17 constitution-base.md open (cos)"  cos Edit  'framework/constitution-base.md'                           ALLOW
+probe "FP18 safety-boundaries-base open (cto)" cto Edit 'framework/safety-boundaries-base.md'                      ALLOW
 
 echo ""
 echo "=== Summary: PASS=$PASS  FAIL=$FAIL ==="

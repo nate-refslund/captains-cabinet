@@ -264,14 +264,14 @@ fi
 
 # === Step 5: Role registry (instance/config/role-registry.md) ===
 if grep -qi "^|.*${OFFICER_UPPER}" "$REGISTRY_FILE" 2>/dev/null; then
-  log "SKIP: $OFFICER already in ROLE_REGISTRY.md"
+  log "SKIP: $OFFICER already in instance/config/role-registry.md"
 else
-  log "Adding $OFFICER to ROLE_REGISTRY.md..."
+  log "Adding $OFFICER to instance/config/role-registry.md..."
   LAST_ROW=$(grep -n "^|.*Active" "$REGISTRY_FILE" | tail -1 | cut -d: -f1)
   if [ -n "$LAST_ROW" ]; then
     sed -i "${LAST_ROW}a\\| ${TITLE} (${OFFICER_UPPER}) | ${TITLE} | See instance/config/product.yml | ${DOMAIN} | Active |" "$REGISTRY_FILE"
   fi
-  log "Added to ROLE_REGISTRY.md"
+  log "Added to instance/config/role-registry.md"
 fi
 
 # === Step 6: Bot token in .env ===

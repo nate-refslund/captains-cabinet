@@ -5,10 +5,13 @@ here instead of applying it. Nothing below is applied. Review, then apply by
 hand (or tell an officer to) if you agree.
 
 Germline = read-only for officers/loops: `framework/authority/*` (classifier,
-lane, matrix, veto, deploy_classifier), `framework/fidelity/graduation.py`,
-`cabinet/scripts/lib/policy_engine.py`, `framework/policies/*`,
-`cabinet/mcp-scope.yml`, `cabinet/officer-capabilities.conf`, `.claude/rules/*`,
-`instance/config/autonomy.yml`, `memory/golden-evals/*`, `constitution/*`.
+lane, matrix, veto, deploy_classifier, policy_engine — moved here from
+`cabinet/scripts/lib/` by CG-14, 2026-07-07), `framework/fidelity/graduation.py`,
+`framework/policies/*`, `cabinet/mcp-scope.yml`,
+`cabinet/officer-capabilities.conf`, `.claude/rules/*`,
+`instance/config/autonomy.yml`, `memory/golden-evals/*` (`constitution/*`
+retired by CG-15, 2026-07-07 — assembly inputs are review-discipline class).
+The authoritative enumeration is `framework/policies/immutable-core.yml`.
 
 ---
 
