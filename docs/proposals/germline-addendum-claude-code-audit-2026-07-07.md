@@ -264,3 +264,16 @@ gate_cmd, after the filesystem leg proves boot-stable.)
    succeeds; a Make proxy call succeeds.
 4. Any failure → remove the overlay block + kickstart again (rollback is
    one generator revert; the overlay regenerates every boot).
+
+## R110 (2026-07-07, row-sweep session): CLAUDE.md shipped-presets line is stale
+
+`presets/step-network/` moved to the instance layer (archived at
+`instance/archive/presets/step-network/`; superseded by the portfolio preset).
+CLAUDE.md line 16 still lists it among shipped presets:
+
+> Shipped presets: `work` …, `portfolio` …, `step-network`, `personal` (+ `_template` scaffolding).
+
+CLAUDE.md is captain-gated (R132 / CG-3, owned by the parallel org-memory
+session) — at the next unlock window drop the `step-network` mention:
+
+> Shipped presets: `work` (five functional officers, single product), `portfolio` (one persistent Chair + on-demand per-lane CEOs — recommended for multi-product captains), `personal` (+ `_template` scaffolding).

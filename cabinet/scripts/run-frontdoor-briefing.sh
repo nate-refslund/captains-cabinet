@@ -61,15 +61,18 @@ export CABINET_RUN_MODE
 . "$ROOT/cabinet/scripts/lib/personal-env.sh"
 SHARED_ENV_FILE="$(personal_env_file)"
 [ -n "$SHARED_ENV_FILE" ] && [ -f "$SHARED_ENV_FILE" ] && export VERCEL_API_KEY="$(grep '^VERCEL_API_KEY=' "$SHARED_ENV_FILE" | cut -d= -f2-)"
-export CABINET_DEPLOY_HEALTH_APPS="${CABINET_DEPLOY_HEALTH_APPS:-v0-politiske-annoncer}"
+# R110: instance values live in cabinet/.env (env wins, then cabinet/.env,
+# then empty = the signal stays silent) — no launcher org/app defaults here.
+_env_key() { grep "^$1=" "$ENV_FILE" | cut -d= -f2-; }
+export CABINET_DEPLOY_HEALTH_APPS="${CABINET_DEPLOY_HEALTH_APPS:-$(_env_key CABINET_DEPLOY_HEALTH_APPS)}"
 
 # Sentry error-health source: a read-scoped token from the cabinet's OWN store
 # (cabinet/.env, read here like the bot token) + the instance's org/project (kept
 # out of the framework module, same as the Vercel app list). Optional — unset →
 # sentry-health stays silent.
-export SENTRY_AUTH_TOKEN="$(grep '^SENTRY_AUTH_TOKEN=' "$ENV_FILE" | cut -d= -f2-)"
-export CABINET_SENTRY_ORG="${CABINET_SENTRY_ORG:-step-network}"
-export CABINET_SENTRY_PROJECT="${CABINET_SENTRY_PROJECT:-sentry-step-polads}"
+export SENTRY_AUTH_TOKEN="$(_env_key SENTRY_AUTH_TOKEN)"
+export CABINET_SENTRY_ORG="${CABINET_SENTRY_ORG:-$(_env_key CABINET_SENTRY_ORG)}"
+export CABINET_SENTRY_PROJECT="${CABINET_SENTRY_PROJECT:-$(_env_key CABINET_SENTRY_PROJECT)}"
 
 # launchd hands us a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin) that EXCLUDES
 # Homebrew. The intake module's stdlib backend shells out to `redis-cli`, which

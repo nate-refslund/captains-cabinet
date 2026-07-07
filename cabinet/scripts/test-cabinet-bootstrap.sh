@@ -131,7 +131,7 @@ echo "T3: DRY_RUN plan emitted, no filesystem side-effects, no state file"
 STATE="/tmp/cabinet-bootstrap.test-dry-bootstrap.state"
 rm -f "$STATE"
 
-out=$(bash "$BOOTSTRAP" "test-dry-bootstrap" --preset "step-network" --dry-run 2>&1); rc=$?
+out=$(bash "$BOOTSTRAP" "test-dry-bootstrap" --preset "work" --dry-run 2>&1); rc=$?
 assert_exit "T3.1 dry-run exits 0" "$rc" 0
 assert_contains "T3.1 dry-run emits DRY RUN banner" "$out" "DRY RUN"
 assert_contains "T3.1 dry-run emits plan steps (slug validate runs unconditionally per FW-082 P0-A; assert downstream plan emit)" "$out" "Would mkdir -p"
@@ -142,7 +142,7 @@ assert_file_absent "T3.2 no state file created by dry-run" "$STATE"
 assert_file_absent "T3.3 no cabinet dir created" "/tmp/cabinet-bootstrap-root/test-dry-bootstrap-cabinet"
 
 # DRY_RUN=1 env var form also works
-out=$(DRY_RUN=1 bash "$BOOTSTRAP" "test-dry-env" --preset "step-network" 2>&1); rc=$?
+out=$(DRY_RUN=1 bash "$BOOTSTRAP" "test-dry-env" --preset "work" 2>&1); rc=$?
 assert_exit "T3.4 DRY_RUN=1 env var exits 0" "$rc" 0
 assert_contains "T3.4 DRY_RUN=1 emits DRY RUN banner" "$out" "DRY RUN"
 
@@ -162,7 +162,7 @@ rm -f "$STATE_T4"
 FAKE_NEON_URL="postgresql://user:test_neon_password_xyz@host/db?sslmode=require"
 
 out=$(bash "$BOOTSTRAP" "test-secret-redact" \
-  --preset "step-network" \
+  --preset "work" \
   --peer-cabinet "peer-work:localhost:7471:${SECRET_REF_NAME}" \
   --neon-database-url "$FAKE_NEON_URL" \
   --dry-run 2>&1); rc=$?
@@ -253,7 +253,7 @@ rm -f "$STATE_T6"
 } > "$STATE_T6"
 
 # Run in dry-run to observe resumability reporting without real side effects
-out=$(bash "$BOOTSTRAP" "test-resumable" --preset "step-network" --dry-run 2>&1); rc=$?
+out=$(bash "$BOOTSTRAP" "test-resumable" --preset "work" --dry-run 2>&1); rc=$?
 assert_exit "T6.1 dry-run with pre-seeded state exits 0" "$rc" 0
 # In dry-run mode, step_is_done always returns 1 (dry-run doesn't read state),
 # so the dry-run prints all steps. That's intentional — test the live-mode

@@ -15,7 +15,7 @@
 #   sentry.sh --help
 #
 # Options / env:
-#   --org <slug>        Override org (default: SENTRY_ORG or "step-network").
+#   --org <slug>        Override org (default: SENTRY_ORG from env or cabinet/.env).
 #   SENTRY_AUTH_TOKEN   User token; auto-loaded from cabinet/.env if unset.
 #   SENTRY_ORG          Default org slug.
 #   SENTRY_STATS_PERIOD Stats window for `issues` (default: 14d).
@@ -28,7 +28,13 @@
 set -euo pipefail
 
 CABINET_DIR="${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
-DEFAULT_ORG="${SENTRY_ORG:-step-network}"
+# R110: org is instance data — env wins, then cabinet/.env (SENTRY_ORG or
+# CABINET_SENTRY_ORG), no launcher default. Empty + no --org = clear error below.
+DEFAULT_ORG="${SENTRY_ORG:-}"
+if [ -z "$DEFAULT_ORG" ] && [ -f "$CABINET_DIR/cabinet/.env" ]; then
+  DEFAULT_ORG="$(grep '^SENTRY_ORG=' "$CABINET_DIR/cabinet/.env" | cut -d= -f2-)"
+  [ -n "$DEFAULT_ORG" ] || DEFAULT_ORG="$(grep '^CABINET_SENTRY_ORG=' "$CABINET_DIR/cabinet/.env" | cut -d= -f2-)"
+fi
 STATS_PERIOD="${SENTRY_STATS_PERIOD:-14d}"
 API_BASE="https://sentry.io/api/0"
 
@@ -53,6 +59,11 @@ while [ $# -gt 0 ]; do
   esac
 done
 set -- "${ARGS[@]:-}"
+
+if [ -z "$ORG" ]; then
+  echo "sentry.sh: no org configured — pass --org <slug> or set SENTRY_ORG (env or cabinet/.env)" >&2
+  exit 1
+fi
 
 SUBCMD="${1:-}"
 if [ -z "$SUBCMD" ]; then

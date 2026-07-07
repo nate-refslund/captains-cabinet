@@ -6,7 +6,7 @@
 # bootstrap HARD-FAILS a preset that has no validate.sh (AC #66), so a copied
 # preset must carry this file. Non-zero exit aborts bootstrap/spawn.
 #
-# Mirrors the generic pattern in presets/{work,portfolio,step-network}/validate.sh,
+# Mirrors the generic pattern in presets/{work,portfolio}/validate.sh,
 # plus one template-specific check: every REPLACE_ME scaffold marker must be
 # customized away before the copied preset validates.
 

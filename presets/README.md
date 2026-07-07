@@ -17,7 +17,6 @@ A preset is **not** a separate codebase, a fork, or an alternate framework. It's
 |--------|--------|-------------|
 | `work/` | Active | Product-team shape: CoS / CTO / CPO / CRO / COO, Linear-or-Library backlog, Notion-or-Library business brain, product repo workspace. |
 | `portfolio/` | Active | Portfolio shape: one persistent Chair (id `cos`, single Telegram bot) + one on-demand CEO officer per lane, generated from `agents/_lane-ceo.md.template` into `instance/agents/`. Functional depth via hats + hat graduation and Sonnet crew, not extra fulltime officers. |
-| `step-network/` | Active | Multi-project pool shape: the work-preset officer roster shared across related projects, pre-warmed tmux session pool, single_ceo bot mode. |
 | `personal/` | Placeholder | Coaching / life-operator shape. Empty until Phase 2 of the Cabinet v2 arc populates it. |
 | `_template/` | Template | Skeleton for creating a new preset. Copy to `presets/<your-name>/` and customize. |
 
@@ -76,8 +75,7 @@ unavailable), best-effort `cabinet_memory` queue.
 
 Shipped: `work/starter-spaces/business-brain.yml` (Business Brain: start-here
 index, product overview, customers & segments, decisions index, operating
-principles) and `step-network/starter-spaces/business-brain.yml` (pool
-flavor: project index + customers & partners, records tagged per project).
+principles).
 The officer loop-prompts' reflection ritual (`cabinet/loop-prompts/*.txt`)
 instructs officers to land durable business/product/customer facts into the
 seeded 'Business Brain' Space via the library MCP `library_create_record`.
