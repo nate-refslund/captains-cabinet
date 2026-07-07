@@ -9,8 +9,15 @@ loop — with a BORN-SAFE polarity that is the whole design:
     * retention sweep: gzip-rotate log files past their configured window.
       The original is archived (compressed into <dir>/archive/) BEFORE any
       removal, and only files whose mtime is older than the window are ever
-      touched — an actively-written log always has a fresh mtime, so live
-      service logs are safe by construction.
+      considered. The mtime window alone does NOT protect an open-fd-idle
+      log — a healthy daemon's .err stream is silent for months while a
+      launchd keepalive fd still holds it — so every candidate is probed
+      with lsof first: a file any live process holds open is never
+      unlinked; it is archived and then TRUNCATED IN PLACE (copytruncate
+      semantics — the inode survives, the holder's next write lands in the
+      live, watchdog-scanned path, and disk is reclaimed immediately).
+      Only provably-unheld files are unlinked, and only after their archive
+      verifies. Empty files are skipped outright (nothing to archive).
     * __pycache__ cap: delete byte-code caches under the repo when their
       total size exceeds a cap. Python regenerates them on the next import.
 
@@ -161,14 +168,54 @@ def load_retention_config(path: str | os.PathLike | None = None) -> dict:
         return {}
 
 
+_LSOF_PATHS = ("/usr/sbin/lsof", "/usr/bin/lsof")  # fixed candidates — no PATH lookup
+_DRAIN_ROUNDS = 8          # bounded post-copy re-reads to catch racing appends
+_DRAIN_CHUNK = 1 << 20
+
+
+def _held_open(path: Path) -> Optional[bool]:
+    """Tri-state liveness probe: True → some live process holds *path* open
+    (ANY fd counts — unlinking would strand that fd on a deleted inode, so
+    the holder's first write after months of silence vanishes and disk is
+    never reclaimed), False → provably no holder, None → indeterminate
+    (lsof absent or errored; the caller then takes the truncate path, which
+    is safe whether or not a holder exists). Fixed argv, no shell,
+    read-only. The mtime window alone cannot answer this question: launchd
+    StandardOut/StandardErrorPath targets of healthy keepalive daemons sit
+    write-idle for 45+ days with a live fd — exactly the files unlink must
+    never touch."""
+    exe = next((c for c in _LSOF_PATHS if os.path.exists(c)), None)
+    if exe is None:
+        return None
+    try:
+        p = subprocess.run([exe, "-F", "pan", "--", str(path)],
+                           capture_output=True, text=True, timeout=10)
+    except Exception:  # noqa: BLE001 — unknown beats wrong; caller truncates
+        return None
+    out = (p.stdout or "").strip()
+    if p.returncode == 0 and out:
+        return True
+    if not out and not (p.stderr or "").strip():
+        return False  # lsof ran fine and found no holder (its silent rc-1 case)
+    return None
+
+
 def sweep_retention(cfg: dict, *, now: _dt.datetime, dry_run: bool) -> dict:
     """Honor the config's ``hygiene:`` windows for the log/ledger-archive dirs
     it names. Per entry {dir, pattern, days[, archive_days]}:
 
-      * regular files matching ``pattern`` whose mtime is older than ``days``
-        are gzip'd into <dir>/archive/ and the ORIGINAL is unlinked only after
-        the archive verifies (exists, non-empty). Younger files are never
-        touched — the window IS the safety property.
+      * regular, non-empty files matching ``pattern`` whose mtime is older
+        than ``days`` are gzip'd into <dir>/archive/; only after the archive
+        verifies (exists, non-empty) is the original removed — by ``unlink``
+        when the lsof probe (``_held_open``) proves no live process holds it,
+        else by ``ftruncate`` on the very fd the copy just read (copytruncate:
+        keepalive daemons / tmux wrappers holding the file keep a valid fd,
+        their next Traceback lands in the live path the watchdog scans, and
+        the fd-based truncate is immune to a path swap between check and
+        act). A bounded drain re-read after the copy catches bytes appended
+        mid-copy, narrowing the copy/act race to the same residual window
+        logrotate's copytruncate accepts. Younger files are never touched;
+        empty files are skipped (nothing to archive).
       * compressed archives are deleted ONLY when the entry explicitly names
         ``archive_days`` and the archive's mtime has passed it (the config's
         declared gone-is-gone contract). No ``archive_days`` → kept forever.
@@ -177,7 +224,7 @@ def sweep_retention(cfg: dict, *, now: _dt.datetime, dry_run: bool) -> dict:
     unlink is jail-checked; symlinks are skipped + reported.
     """
     report: dict = {"rotated": [], "deleted_archives": [], "refused": [],
-                    "skipped_young": 0, "entries": 0}
+                    "skipped_young": 0, "skipped_empty": 0, "entries": 0}
     hygiene = cfg.get("hygiene") if isinstance(cfg, dict) else None
     if not isinstance(hygiene, dict):
         report["note"] = "no hygiene section in retention config — nothing to do"
@@ -221,6 +268,13 @@ def sweep_retention(cfg: dict, *, now: _dt.datetime, dry_run: bool) -> dict:
             if st.st_mtime >= cutoff:
                 report["skipped_young"] += 1
                 continue
+            if st.st_size == 0:
+                # Nothing to archive. Open-fd-idle daemon streams (a healthy
+                # .err is 0 bytes for months) would otherwise churn a
+                # header-only archive every window — and unlinking one would
+                # strand its holder's fd on a deleted inode.
+                report["skipped_empty"] += 1
+                continue
             if not _contained(f, jail):
                 report["refused"].append(f"jail escape refused: {f}")
                 continue
@@ -234,14 +288,32 @@ def sweep_retention(cfg: dict, *, now: _dt.datetime, dry_run: bool) -> dict:
                 continue
             try:
                 archive_dir.mkdir(parents=True, exist_ok=True)
-                with open(f, "rb") as src, gzip.open(gz, "wb") as dst:
-                    shutil.copyfileobj(src, dst)
-                if gz.is_file() and gz.stat().st_size > 0 and _contained(f, jail):
-                    f.unlink()  # original removed ONLY after verified archive
-                    report["rotated"].append(
-                        {"file": str(f), "archive": str(gz), "bytes": st.st_size})
-                else:
-                    report["refused"].append(f"archive not verified — original kept: {f}")
+                held = _held_open(f)
+                # Only a PROVEN-unheld file may be unlinked (launchd reopens
+                # interval-job logs per run, so unlink is safe there). A held
+                # — or indeterminate — file is truncated in place instead, so
+                # live fds keep writing into the scanned path, never into a
+                # deleted inode.
+                mode = "unlink" if held is False else "truncate"
+                with open(f, "rb" if mode == "unlink" else "r+b") as src:
+                    with gzip.open(gz, "wb") as dst:
+                        shutil.copyfileobj(src, dst)
+                        for _ in range(_DRAIN_ROUNDS):
+                            tail = src.read(_DRAIN_CHUNK)  # racing appenders
+                            if not tail:
+                                break
+                            dst.write(tail)
+                    if gz.is_file() and gz.stat().st_size > 0 and _contained(f, jail):
+                        if mode == "unlink":
+                            f.unlink()  # removed ONLY after verified archive
+                        else:
+                            os.ftruncate(src.fileno(), 0)  # fd-based, no path re-lookup
+                        report["rotated"].append(
+                            {"file": str(f), "archive": str(gz),
+                             "bytes": st.st_size, "mode": mode})
+                    else:
+                        report["refused"].append(
+                            f"archive not verified — original kept: {f}")
             except Exception as exc:  # noqa: BLE001 — one bad file never kills the sweep
                 report["refused"].append(f"rotate failed ({exc!r}) — original kept: {f}")
 
@@ -676,6 +748,34 @@ def _fingerprint(obj) -> str:
         json.dumps(obj, sort_keys=True, default=str).encode()).hexdigest()[:16]
 
 
+_DAYCOUNT_RE = re.compile(r"\b\d+d\b")
+_VOLATILE_FINDING_KEYS = frozenset({"age_days", "size_kb", "lineno"})
+
+
+def _finding_identity(f):
+    """Stable identity projection of one finding — what the situation IS, not
+    how old it is TODAY. The raw findings embed daily-incrementing counters
+    (scan_services: ``age_days``; scan_worktrees: du-derived ``size_kb`` and
+    'last commit Nd ago' reasons; scan_skills: '(Nd)' day counts), so hashing
+    them raw flips the fingerprint every day and _should_card's
+    differing-fingerprint branch re-cards the identical situation daily —
+    defeating RECARD_COOLDOWN_DAYS. Volatile keys are dropped (``lineno`` too:
+    an unrelated manifest edit shifts it), rendered day-counts are masked to
+    'Nd', and fixed dates (last_commit, disabled_since, created, last_used)
+    stay — they move only when the situation actually changes."""
+    if not isinstance(f, dict):
+        return f
+    ident = {}
+    for k, v in f.items():
+        if k in _VOLATILE_FINDING_KEYS:
+            continue
+        if k == "reasons" and isinstance(v, list):
+            ident[k] = [_DAYCOUNT_RE.sub("Nd", str(r)) for r in v]
+        else:
+            ident[k] = v
+    return ident
+
+
 def _card(domain: str, summary: str, findings: list, now: _dt.datetime) -> dict:
     """One canonical intake item (validated by intake.validate_item at enqueue
     time) — the same shape framework/learning/self_proposal.py emits."""
@@ -688,7 +788,10 @@ def _card(domain: str, summary: str, findings: list, now: _dt.datetime) -> dict:
             "domain": domain,
             "summary": summary,
             "findings": findings,
-            "fingerprint": _fingerprint(findings),
+            # Fingerprint the stable identity, not the raw findings — the raw
+            # rows tick daily (age_days / size_kb / rendered day counts) and
+            # would defeat the re-card cooldown.
+            "fingerprint": _fingerprint([_finding_identity(f) for f in findings]),
             "propose_only": True,
         },
     }
