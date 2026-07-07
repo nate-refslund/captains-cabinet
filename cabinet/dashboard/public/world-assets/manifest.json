@@ -1,0 +1,5 @@
+{
+  "_doc": "Cabinet World asset manifest (content-addressed). Every sprite the renderer may load MUST have a row here and pass cabinet/scripts/world-asset-gate.py (PNG magic bytes only, 16px grid, sha256, realpath containment inside this dir). LimeZu packs (Modern Interiors + Exteriors + Character Generator) are a Captain purchase (kickoff to-do 1, WORLD-E1-ASSETS ledger row) and are commercial-licensed — asset binaries are gitignored, NEVER committed; only this manifest is tracked. Until packs drop in, the renderer runs in visible placeholder-graphics mode.",
+  "version": 1,
+  "assets": []
+}

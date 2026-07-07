@@ -7,9 +7,10 @@ import { describe, it, expect } from 'vitest'
 import { ADVANCED_NAV, CONSUMER_NAV, navForMode } from './nav-config'
 
 describe('ADVANCED_NAV — static shape', () => {
-  it('has 14 items (13 internal + 1 external Terminal)', () => {
+  it('has 15 items (14 internal + 1 external Terminal)', () => {
     // 2026-07-02: Library page added in the June work without this pin updating
-    expect(ADVANCED_NAV).toHaveLength(14)
+    // 2026-07-07: World added (Cabinet World E1 Wardroom — /world, observer-class)
+    expect(ADVANCED_NAV).toHaveLength(15)
   })
 
   it('every link has an href and a label', () => {
@@ -26,6 +27,7 @@ describe('ADVANCED_NAV — static shape', () => {
   it('contains all Spec 032 advanced-mode routes', () => {
     const labels = ADVANCED_NAV.map(l => l.label)
     expect(labels).toContain('Dashboard')
+    expect(labels).toContain('World')
     expect(labels).toContain('Project')
     expect(labels).toContain('Cabinets')
     expect(labels).toContain('Officers')

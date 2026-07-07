@@ -168,3 +168,10 @@ instance/config/act-first-enabled
 # E0b — append-only replay history; instance data, never committed)
 shared/interfaces/world-chronicle.jsonl
 shared/interfaces/world/
+
+# Cabinet World assets (E1): LimeZu packs are commercial-licensed — binaries
+# NEVER committed. Only the content-addressed manifest is tracked; every
+# asset must pass cabinet/scripts/world-asset-gate.py before the renderer
+# may load it (WORLD-E1-ASSETS).
+cabinet/dashboard/public/world-assets/*
+!cabinet/dashboard/public/world-assets/manifest.json

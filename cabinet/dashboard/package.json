@@ -16,6 +16,7 @@
     "js-yaml": "^4.1.0",
     "next": "latest",
     "pg": "^8.13.3",
+    "pixi.js": "^8.19.0",
     "react": "latest",
     "react-dom": "latest",
     "react-force-graph-2d": "^1.29.1"
