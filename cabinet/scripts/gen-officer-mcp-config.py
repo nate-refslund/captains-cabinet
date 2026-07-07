@@ -20,6 +20,13 @@ and emits
      content and the mirror BLOCKED officer boot with an interactive
      "Invalid entry" dialog (2026-07-07 rolling restart). Never re-add
      managed policy keys here; --strict-mcp-config is the structural gate.
+     For AUD-8 pilot officers (default: comms-officer) the overlay ALSO
+     carries the sandbox block — see sandbox_pilot_block() below. The
+     overlay is the ONLY per-officer settings surface: the config home
+     (~/Library/Application Support/cabinet/claude-config) is SHARED by the
+     whole fleet, so sandbox settings written there apply fleet-wide at the
+     next relaunch (the 2026-07-07 config-home flip was rolled back for
+     exactly that reason — settings.json.aud8-pilot-attempt1 alongside it).
 
 FAIL CLOSED, never open: a missing/corrupt/unparseable scope file, or an
 officer with no `agents:`/`scaffolds:` entry, yields an EMPTY server set
@@ -195,6 +202,96 @@ def filter_config(input_path: str, allowed: list) -> dict:
     return out
 
 
+# ---------------------------------------------------------------------------
+# AUD-8 sandbox pilot (per-officer overlay = the ONLY comms-only surface)
+# ---------------------------------------------------------------------------
+# OS-level Seatbelt containment for pilot officers, layered UNDER schg and
+# the hooks (defense-in-depth; backstops the acknowledged glob-bypass in
+# pre-tool-use.sh:988). Empirically verified on CC 2.1.202 (2026-07-07
+# probes, addendum §AUD-8): accepted from a --settings overlay, denyWrite
+# enforced under --dangerously-skip-permissions, egress unaffected without a
+# `network` block, and interactive TUI boot accepted it (19:15:42 watched
+# kickstart). Fail direction: officer not in the pilot set (or env parse
+# yields empty) -> overlay unchanged. The env switch can only DISABLE this
+# extra layer; schg + hooks beneath it are untouched. Rollback = set
+# CABINET_SANDBOX_PILOT_OFFICERS=none (or git-revert this file) + kickstart:
+# the overlay regenerates every boot.
+
+_SANDBOX_PILOT_ENV = "CABINET_SANDBOX_PILOT_OFFICERS"
+_SANDBOX_PILOT_DEFAULT = "comms-officer"
+
+# denyWrite mirrors germline-lock.sh TARGETS (dir entries + enforcer triad +
+# judged-config heads) plus the standing enforcement canary: every germline
+# entry is ALSO schg-locked, so only the canary path proves the SANDBOX
+# layer is enforcing, distinctly from schg. Keep in lockstep with
+# germline-lock.sh per its own header rule.
+_SANDBOX_DENY_REL = (
+    "cabinet/scripts/hooks",
+    "framework/policies",
+    "memory/golden-evals",
+    "instance/config/policies",
+    "instance/config/posture-presets",
+    ".claude/settings.json",
+    ".claude/rules",
+    "cabinet/mcp-scope.yml",
+    "cabinet/officer-capabilities.conf",
+    "cabinet/scripts/germline-lock.sh",
+    "cabinet/scripts/kill-switch.sh",
+    "cabinet/scripts/policy-shadow.py",
+    "cabinet/cache/sandbox-deny-canary",  # standing enforcement probe
+)
+
+
+def repo_root() -> str:
+    """Repo root derived from this file's location (cabinet/scripts/..)."""
+    return os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+
+
+def sandbox_pilot_officers() -> set:
+    """Pilot officer set from CABINET_SANDBOX_PILOT_OFFICERS (csv).
+
+    Unset -> {comms-officer}. Empty/whitespace/"none" -> empty set (the
+    emergency off-switch; disabling the EXTRA sandbox layer only).
+    """
+    raw = os.environ.get(_SANDBOX_PILOT_ENV)
+    if raw is None:
+        raw = _SANDBOX_PILOT_DEFAULT
+    raw = raw.strip()
+    if not raw or raw.lower() == "none":
+        return set()
+    return {x.strip() for x in raw.split(",") if x.strip()}
+
+
+def sandbox_pilot_block(officer: str, root: str):
+    """Return the AUD-8 sandbox settings block for pilot officers, else None.
+
+    Shape verified on CC 2.1.202 (addendum §AUD-8 probes + the 19:15:42
+    watched interactive boot). allowWrite is required because sandbox.enabled
+    narrows the default write policy to cwd+session-temp and officers write
+    /tmp/.trigger_ids_* (trigger ACK); paths are emitted ABSOLUTE (expanduser
+    here, never a literal "~" left for CC to interpret). `gh` is excluded:
+    Go CLIs are documented to fail TLS verification under Seatbelt.
+    Deliberately NO `network` block in this pilot step (probe 3: egress
+    unaffected); network.allowedDomains + credentials scrub are the SECOND
+    pilot step per the AUD-8 gate_cmd.
+    """
+    if officer not in sandbox_pilot_officers():
+        return None
+    return {
+        "enabled": True,
+        "filesystem": {
+            "denyWrite": [os.path.join(root, rel) for rel in _SANDBOX_DENY_REL],
+            "allowWrite": [
+                "/tmp",
+                "/private/tmp",
+                os.path.expanduser("~/Library/Caches/cabinet"),
+                os.path.expanduser("~/Library/Logs/cabinet"),
+            ],
+        },
+        "excludedCommands": ["gh *"],
+    }
+
+
 def write_atomic(path: str, obj: dict) -> None:
     """0600, atomic replace — the config may embed API keys from cabinet/.env."""
     d = os.path.dirname(path) or "."
@@ -247,6 +344,13 @@ def main(argv=None) -> int:
     settings = {
         "enableAllProjectMcpServers": False,
     }
+    sandbox = sandbox_pilot_block(args.officer, repo_root())
+    if sandbox is not None:
+        settings["sandbox"] = sandbox
+        sys.stderr.write(
+            "gen-officer-mcp-config: sandbox-pilot ENABLED for officer=%s "
+            "(AUD-8; %s=none disables)\n" % (args.officer, _SANDBOX_PILOT_ENV)
+        )
 
     try:
         write_atomic(args.out_mcp, mcp_cfg)

@@ -197,7 +197,7 @@ consumer-side ACK. Mechanics documented at length in
 
 ---
 
-## AUD-8 — sandbox `filesystem.denyWrite` on the comms-officer settings overlay (probed 2026-07-07; exact config, flip deferred to a watched pilot restart) — **PILOT FLIPPED LIVE 2026-07-07 (leftovers window)**
+## AUD-8 — sandbox `filesystem.denyWrite` on the comms-officer settings overlay (probed 2026-07-07; exact config, flip deferred to a watched pilot restart) — **PILOT LIVE 2026-07-07, comms-only via the per-officer generator overlay (the config-home flip below was rolled back the same evening — see the 19:52 correction)**
 
 > **Applied 2026-07-07, watched restart per the procedure below — landing
 > surface changed to the comms config home** (`~/Library/Application Support/
@@ -219,6 +219,37 @@ consumer-side ACK. Mechanics documented at length in
 > `/rc` active, bypass accepted, err.log clean). Remaining for the row:
 > `network.allowedDomains` + `sandbox.credentials` scrub as the second pilot
 > step after a boot-stable soak, then fleet rollout.
+
+> **CORRECTION + re-landing, 2026-07-07 19:52 (leftovers window, second
+> pass).** Disk forensics contradicted the note above: the config-home flip
+> was ROLLED BACK at 19:23:35 — `settings.json` restored to the 150-byte
+> base and the sandbox version preserved alongside as
+> `settings.json.aud8-pilot-attempt1` — one second before the 19:23:36
+> comms kickstart, so the seal commit (62fee47f) and the 19:31
+> captain-decisions note recorded a flip that was no longer live (the
+> sealed "boot GREEN" evidence bundle mixes the SANDBOXED 19:15:42 watched
+> boot, which proves 2.1.202 interactive-boot acceptance of this exact
+> block, with the sandbox-LESS 19:23:36 boot after the rollback). The
+> rollback motive is the note's own "Captain attention" line: the config
+> home is SHARED by all four officers' LaunchAgents (AUD-1 fleet rollout),
+> so sandbox settings there apply FLEET-WIDE at each officer's next
+> relaunch — not comms-only as the pilot framing assumed. RE-LANDED
+> comms-only on the correct isolated surface: `gen-officer-mcp-config.py`
+> now injects the sandbox block (same shape; `allowWrite` improved to
+> absolute expanded paths instead of literal `~`) into the per-officer
+> settings overlay for pilot officers only (`CABINET_SANDBOX_PILOT_OFFICERS`,
+> default `comms-officer`; `none` disables; 6 contract tests). VERIFIED
+> 19:47–19:49: headless probe with the generated overlay — canary write
+> denied `operation not permitted` rc=1 + no file created, `cabinet/cache/`
+> write rc=0, `~/Library/Caches/cabinet` write rc=0 (proves the expanded
+> allowWrite) — then watched `kickstart -k`: overlay regenerated WITH
+> sandbox (err.log carries the new `sandbox-pilot ENABLED` line), TUI boot
+> GREEN (2.1.202 banner, prompt, `/rc`, bypass on, NO modal), config-home
+> `settings.json` untouched at 150-byte base (fleet-safe). Rollback is one
+> generator revert (or env `none`) + kickstart — the overlay regenerates
+> every boot. The fleet-wide rollout option (all officers in the pilot set,
+> or a config-home landing) remains the Captain's call after the comms
+> soak, per the 19:31 note.
 
 Not germline-gated (the overlay is generated per boot by
 `cabinet/scripts/gen-officer-mcp-config.py` into

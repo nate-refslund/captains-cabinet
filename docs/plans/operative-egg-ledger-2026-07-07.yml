@@ -1792,6 +1792,29 @@ entries:
       scrub = second pilot step after a boot-stable soak; fleet rollout
       (other officers still share ~/.claude user scope, untouched) after the
       comms soak.
+
+      CORRECTION + RE-LANDING 2026-07-07 19:52 (leftovers second pass): the
+      config-home flip above was ROLLED BACK at 19:23:35 (settings.json
+      restored to base; sandbox preserved as settings.json.aud8-pilot-attempt1)
+      one second before the 19:23:36 kickstart — the config home is SHARED
+      by all four officers' LaunchAgents, so that landing surface was
+      fleet-wide, not comms-only; the paragraph above sealed stale. (Its
+      interactive-acceptance evidence stands: the 19:15:42 watched boot ran
+      WITH the sandbox and was green.) RE-LANDED comms-only on the correct
+      isolated surface: gen-officer-mcp-config.py injects the same sandbox
+      block (allowWrite now absolute expanded paths) into the per-officer
+      settings overlay for CABINET_SANDBOX_PILOT_OFFICERS (default
+      comms-officer; none disables; 6 contract tests in
+      test_gen_officer_mcp_config.py). VERIFIED 19:47-19:49: headless probe
+      with the generated overlay (canary deny rc=1 'operation not
+      permitted' + no file created; cabinet/cache rc=0;
+      ~/Library/Caches/cabinet rc=0) then watched kickstart — overlay
+      regenerated WITH sandbox (err.log 'sandbox-pilot ENABLED' line), TUI
+      boot GREEN (banner/prompt//rc/bypass, no modal), config home untouched
+      at base (fleet-safe). Rollback = generator revert or env none +
+      kickstart (overlay regenerates every boot). Fleet-wide rollout stays a
+      Captain call after the comms soak. Row stays in-flight for the second
+      pilot step (network.allowedDomains + credentials scrub).
     last_update: "2026-07-07"
   - id: "AUD-9"
     title: "StopFailure/TeammateIdle/PermissionRequest hooks (audit #28) — settings.json hook wiring is schg-locked"

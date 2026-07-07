@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import importlib.util as _ilu
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -144,6 +145,74 @@ def test_settings_overlay_carries_no_managed_policy_keys(paths):
     assert rc == 0
     assert "allowedMcpServers" not in settings
     assert settings == {"enableAllProjectMcpServers": False}
+
+
+# ---------------------------------------------------------------------------
+# AUD-8 sandbox pilot — the per-officer overlay is the comms-only surface
+# (the shared config home applies fleet-wide; see sandbox_pilot_block()).
+# ---------------------------------------------------------------------------
+
+def test_sandbox_pilot_block_lands_for_pilot_officer(paths, monkeypatch):
+    monkeypatch.setenv("CABINET_SANDBOX_PILOT_OFFICERS", "alpha")
+    rc, _, settings = run_main(paths, "alpha")
+    assert rc == 0
+    sb = settings["sandbox"]
+    assert sb["enabled"] is True
+    deny = sb["filesystem"]["denyWrite"]
+    allow = sb["filesystem"]["allowWrite"]
+    # absolute, fully-expanded paths only — no placeholders, no literal "~"
+    assert deny and all(os.path.isabs(p) for p in deny)
+    assert all("~" not in p and "<" not in p for p in deny + allow)
+    # the standing enforcement canary (the only non-schg deny path — proves
+    # the SANDBOX layer distinctly from schg)
+    assert any(p.endswith("cabinet/cache/sandbox-deny-canary") for p in deny)
+    # germline heads present
+    assert any(p.endswith("cabinet/scripts/hooks") for p in deny)
+    assert any(p.endswith("cabinet/mcp-scope.yml") for p in deny)
+    # sandbox narrows default writes to cwd+session-temp: trigger-ACK ids
+    # files live at /tmp/.trigger_ids_* — /tmp must stay writable
+    assert "/tmp" in allow and "/private/tmp" in allow
+    # Go CLIs fail TLS under Seatbelt
+    assert sb["excludedCommands"] == ["gh *"]
+    # base project-auto-approval pin unchanged
+    assert settings["enableAllProjectMcpServers"] is False
+
+
+def test_sandbox_pilot_absent_for_non_pilot_officer(paths, monkeypatch):
+    monkeypatch.setenv("CABINET_SANDBOX_PILOT_OFFICERS", "alpha")
+    rc, _, settings = run_main(paths, "beta")
+    assert rc == 0
+    assert settings == {"enableAllProjectMcpServers": False}
+
+
+def test_sandbox_pilot_default_set_is_comms_officer_only(monkeypatch):
+    monkeypatch.delenv("CABINET_SANDBOX_PILOT_OFFICERS", raising=False)
+    assert gen.sandbox_pilot_officers() == {"comms-officer"}
+
+
+def test_sandbox_pilot_env_off_switch(paths, monkeypatch):
+    for off in ("", "   ", "none", "NONE"):
+        monkeypatch.setenv("CABINET_SANDBOX_PILOT_OFFICERS", off)
+        assert gen.sandbox_pilot_officers() == set()
+    monkeypatch.setenv("CABINET_SANDBOX_PILOT_OFFICERS", "none")
+    rc, _, settings = run_main(paths, "alpha")
+    assert rc == 0
+    assert "sandbox" not in settings
+
+
+def test_sandbox_pilot_env_csv_multi_officer(monkeypatch):
+    monkeypatch.setenv("CABINET_SANDBOX_PILOT_OFFICERS", "alpha, beta")
+    assert gen.sandbox_pilot_officers() == {"alpha", "beta"}
+
+
+def test_sandbox_pilot_applies_even_when_scope_fails_closed(paths, monkeypatch):
+    """Containment must never depend on the scope parse: a fail-closed boot
+    (officer unlisted -> empty MCP set) still gets the sandbox layer."""
+    monkeypatch.delenv("CABINET_SANDBOX_PILOT_OFFICERS", raising=False)
+    rc, mcp, settings = run_main(paths, "comms-officer")
+    assert rc == 0
+    assert mcp["mcpServers"] == {}  # fail-closed (not in fixture scope)
+    assert settings["sandbox"]["enabled"] is True
 
 
 def test_universal_merge_applies_to_every_agent(paths):
