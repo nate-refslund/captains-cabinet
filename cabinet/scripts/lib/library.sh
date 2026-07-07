@@ -176,14 +176,15 @@ SQLEOF
 #                                            override flag. Present only to preserve
 #                                            arg-8 compatibility for migration scripts
 #   8. source_created_at        (optional) — ISO 8601 timestamp to override the created_at
-#                                            column with the ORIGINAL source date (Linear
-#                                            createdAt, Notion created_time). Omit for
+#                                            column with the ORIGINAL source date when
+#                                            importing from an external system. Omit for
 #                                            live records; Postgres NOW() default applies.
 #
 # Callers that only set 1-5 can omit 6-8 entirely. Callers that need arg 8
-# (the migration scripts) must pass "" for positions 6 and 7 to keep the
-# positional binding correct — documented here because the gap is otherwise
-# invisible in the call site and will confuse future readers.
+# (external-import scripts, e.g. import-linear-to-library.sh) must pass ""
+# for positions 6 and 7 to keep the positional binding correct — documented
+# here because the gap is otherwise invisible in the call site and will
+# confuse future readers.
 #
 # Returns: new record id on stdout.
 library_create_record() {
