@@ -11,7 +11,7 @@
 #   outcome: success | failure | partial | escalated
 #   tags: comma-separated, e.g. "git,deployment,migration"
 #
-# Optional (cross-cutting COUNTERFACTUAL-REPLAY, docs/meta-cognition-direction-2026-06-25.md):
+# Optional (cross-cutting COUNTERFACTUAL-REPLAY, framework/docs/meta-cognition-direction-2026-06-25.md):
 #   COUNTERFACTUAL="<the one change that would have made this 10x better>" record-experience.sh ...
 #   (or pass it as the 7th positional arg). Captured on the record and counted by a
 #   normalized slug in Redis; escalation is REVERSIBILITY-TIERED (see block 1b):
@@ -82,7 +82,7 @@ echo "Written to $RECORD_FILE"
 # ============================================================
 # 1b. Counterfactual-replay recurrence → escalation (REVERSIBILITY-TIERED)
 # ============================================================
-# Cross-cutting selector (docs/meta-cognition-direction-2026-06-25.md), now tiered
+# Cross-cutting selector (framework/docs/meta-cognition-direction-2026-06-25.md), now tiered
 # by reversibility instead of a blunt count-for-everything (matches the
 # individual-reflection skill guidance — adapt immediately when reversible, gate
 # when not). We normalize the counterfactual to a slug + INCR a Redis counter;

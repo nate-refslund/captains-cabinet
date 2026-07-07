@@ -100,7 +100,7 @@ The retro adds a **direction-drift check**: outcomes achieving while the directi
 
 ### The work model — Stream / Missions / Intake
 
-Every piece of work in a lane is exactly one of three classes (full contract: `docs/work-model.md`):
+Every piece of work in a lane is exactly one of three classes (full contract: `framework/docs/work-model.md`):
 
 - **STREAM** — continuous product work: bugs, tasks, small features. Lives on the **local task board** (the canonical work store; external PM tools mirror via adapters — §6). Claim → execute → close; never ends. Standing quality bars ("critical items triaged within 24h") are **stream SLOs** — control loops monitored by briefings, never outcomes.
 - **MISSIONS** — the outcomes above, when work needs orchestration structure the stream cannot give: ordering, verification gates, risk-tiered approvals, cross-role handoffs. Two-prong test: verifiable state change (not an activity) AND genuine campaign shape. A batch of stream items with a bow on it is not a mission. Expect a handful per product per year.

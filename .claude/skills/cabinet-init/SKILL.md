@@ -40,7 +40,7 @@ Collect:
 ### 2. Lanes
 
 A **lane** is a product/venture/area the Cabinet works (see
-`docs/work-model.md` — products are lanes, not outcomes). Per lane:
+`framework/docs/work-model.md` — products are lanes, not outcomes). Per lane:
 
 - **Name** (human, e.g. `Acme Storefront`) and **slug** (kebab-case,
   e.g. `acme-store` — becomes the context slug and the `<slug>-ceo`
@@ -93,7 +93,7 @@ State it, don't ask for permission tuning:
 > satisfied; else the step gates + files a NEED and the chain proceeds).
 >
 > Per-cell autonomy is still **earned from evidence**: the consequence
-> ledger (`docs/consequence-ledger.md`) records every action's proposal
+> ledger (`framework/docs/consequence-ledger.md`) records every action's proposal
 > decision, outcome, and review verdict; graduation math reads only that
 > ledger, and posture never enters graduation — bars define PROOF,
 > posture defines what unproven states UNLOCK.
@@ -161,7 +161,7 @@ render-only (`cabinet/scripts/posture-status.py` supplies its JSON).
 ### 5. Seed outcomes (1–2 bounded campaigns per lane)
 
 Interview each lane for at most 1–2 **campaigns**, applying both tests
-from `docs/work-model.md` before accepting one:
+from `framework/docs/work-model.md` before accepting one:
 
 - **Inclusion test**: a verifiable STATE CHANGE ("the world changed
   from X to Y"), never an activity ("keep doing X" fails).
@@ -174,7 +174,7 @@ Zero seed outcomes for a lane is healthy (officers work the stream).
 For each accepted campaign, append an entry to
 `instance/config/outcomes.yml.draft` (create the file with a short
 header pointing at `framework/schemas/outcome.schema.json` and
-`docs/work-model.md` if it doesn't exist) with:
+`framework/docs/work-model.md` if it doesn't exist) with:
 
 - `status: draft`, `captain_ratified: false` — the captain ratifies
   per outcome later; the compiler ignores drafts.

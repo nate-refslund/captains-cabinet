@@ -29,7 +29,7 @@ shape with lighter governance and consent-gated autonomy.
 Governed path for deployments: declare the pack under `plugins:` in
 `instance/config/extensions.yml` and run
 `bash cabinet/scripts/install-extensions.sh`
-(see `docs/cabinet-plugin-installation.md` § Capability packs).
+(see `cabinet/docs/cabinet-plugin-installation.md` § Capability packs).
 
 Extension gate:
 `bash cabinet/scripts/validate-extension.sh packs/preset-personal-pack`

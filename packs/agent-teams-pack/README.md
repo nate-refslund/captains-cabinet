@@ -13,7 +13,7 @@ sets it fleet-wide in `cabinet/.env`).
 
 Install: `/plugin install agent-teams-pack@captains-cabinet-marketplace`, or
 the governed path via `instance/config/extensions.yml` (see
-`docs/cabinet-plugin-installation.md` § Capability packs).
+`cabinet/docs/cabinet-plugin-installation.md` § Capability packs).
 
 Extension gate: `bash cabinet/scripts/validate-extension.sh packs/agent-teams-pack`
 (manifest: `manifest.yml`).

@@ -2,7 +2,7 @@
 # Schema: framework/schemas/extension-manifest.schema.json; validated by
 #   bash cabinet/scripts/validate-extension.sh packs/vercel-lane-pack
 # instance/config/extensions.yml is the governed path that points officers at
-# this pack (see docs/cabinet-plugin-installation.md § Capability packs).
+# this pack (see cabinet/docs/cabinet-plugin-installation.md § Capability packs).
 # Pure skill bundle: the SKILLS describe deploy flows, but the pack itself
 # emits no action_types (deploys run through the officer's existing tools and
 # gates), so no risk classes and no undo surface here.

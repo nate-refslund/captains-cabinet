@@ -2,7 +2,7 @@
 # Schema: framework/schemas/extension-manifest.schema.json; validated by
 #   bash cabinet/scripts/validate-extension.sh packs/agent-teams-pack
 # instance/config/extensions.yml is the governed path that points officers at
-# this pack (see docs/cabinet-plugin-installation.md § Capability packs).
+# this pack (see cabinet/docs/cabinet-plugin-installation.md § Capability packs).
 # Pure skill bundle: emits no action_types, so no risk classes and no undo
 # surface.
 name: agent-teams-pack

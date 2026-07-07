@@ -85,7 +85,7 @@ Use the first-party `mcp-builder` skill (Python FastMCP or Node MCP SDK), or
 - Grant officers access: add `mcp__<name>` to an officer's `tools:` via an
   `instance/agents/<officer>.md` overlay (keeps the universal preset clean).
 
-See `docs/cabinet-extensions.md` for the full flow.
+See `cabinet/docs/cabinet-extensions.md` for the full flow.
 
 ## 4. Create a plugin on demand (manual)
 

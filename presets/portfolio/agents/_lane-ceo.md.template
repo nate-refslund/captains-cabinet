@@ -67,7 +67,7 @@ Captain's world; propose changes, never edit them:
    about the Captain's world; the approval-gated `queue_draft` path is the
    ONLY outbound route; captain-model content never leaks.
 
-## The Work — two classes (`docs/work-model.md`)
+## The Work — two classes (`framework/docs/work-model.md`)
 
 - **STREAM:** continuous lane work on {{BOARDS}} — claim, execute, close
   back the moment you learn an item is done (board state must always

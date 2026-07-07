@@ -1465,7 +1465,7 @@ class TestEdgeCases:
 # ===================================================================
 # 6. AUTHORITY MATRIX POLICY TYPE [T6] — fail-safe, shadow-capable
 # ===================================================================
-# Design: docs/authority-matrix-design-2026-06-19.md §1 Component 2 + §3
+# Design: framework/docs/authority-matrix-design-2026-06-19.md §1 Component 2 + §3
 # read_cell_state + the fail-safe inventory. The authority_matrix eval turns
 # matrix data into a per-action verdict and returns a block message (force
 # propose-only / gated) or None (allow). In A0 the confidence read is STUBBED

@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-marketplace-manifest.json",
   "name": "captains-cabinet-marketplace",
   "description": "Distribution channel for the Captains Cabinet plugin, its preset variants, and optional capability packs. Authoritative source for plugin install paths.",
-  "_source_note": "Convention: every plugins[].source below points at the SAME repo+ref — the repository this marketplace file lives in. When forking or retargeting a deployment, update source.repo and source.ref in ALL entries together (see docs/cabinet-plugin-installation.md, 'Capability packs'). Claude Code ignores this field at load time.",
+  "_source_note": "Convention: every plugins[].source below points at the SAME repo+ref — the repository this marketplace file lives in. When forking or retargeting a deployment, update source.repo and source.ref in ALL entries together (see cabinet/docs/cabinet-plugin-installation.md, 'Capability packs'). Claude Code ignores this field at load time.",
   "owner": {
     "name": "Captains Cabinet contributors"
   },

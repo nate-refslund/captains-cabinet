@@ -46,7 +46,7 @@ _(none)_
   2. Docker volume + compose file names
   3. Every hardcoded path in `cabinet/scripts/**/*.sh` (including hooks, record-experience, load-preset, start-officer, notify-officer, reply-to-captain, etc.)
   4. `cabinet/.env` references + any shell rc exports
-  5. Docs: `docs/provisioning-personal-cabinet.md`, `README.md`, CLAUDE.md comments
+  5. Docs: `cabinet/docs/provisioning-personal-cabinet.md`, `README.md`, CLAUDE.md comments
   6. `/home/cabinet/.claude/projects/-opt-founders-cabinet/` project slug (Claude Code auto-generates this from path, so it'll self-update on rename)
   7. `/tmp/cabinet-*` cache files — path-independent, no rename needed
 - **Migration plan:**

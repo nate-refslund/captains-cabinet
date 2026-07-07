@@ -16,7 +16,7 @@ review the duplication once the removal wave lands.
 
 Install: `/plugin install doctrine-pack@captains-cabinet-marketplace`, or the
 governed path via `instance/config/extensions.yml` (see
-`docs/cabinet-plugin-installation.md` § Capability packs).
+`cabinet/docs/cabinet-plugin-installation.md` § Capability packs).
 
 Extension gate: `bash cabinet/scripts/validate-extension.sh packs/doctrine-pack`
 (manifest: `manifest.yml`).

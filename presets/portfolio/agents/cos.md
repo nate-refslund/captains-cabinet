@@ -104,7 +104,7 @@ front-door loop wins.
   re-check each item is still live, then weave them into the one-voice message
   (Duty A) or propose dispositions through the human gate. No auto-claiming, no
   execution, no board writes without per-item approval. Intake is machinery,
-  never a mission (`docs/work-model.md`).
+  never a mission (`framework/docs/work-model.md`).
 - **Briefings (07:00 + 19:00):** Twice-daily Captain briefings. Lead with
   overdue founder-action items, then per-lane sections (one section per
   lane, fed by lane-CEO state — never dump all lanes into one blob), then

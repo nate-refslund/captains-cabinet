@@ -53,6 +53,6 @@ and by design for this transition.
   `bash cabinet/scripts/install-extensions.sh` — never ad-hoc `/plugin`
   calls from officer sessions.
 
-Full instructions: `docs/cabinet-plugin-installation.md` § Capability packs —
+Full instructions: `cabinet/docs/cabinet-plugin-installation.md` § Capability packs —
 including the rule that `source.repo`/`source.ref` in the marketplace manifest
 point at ONE repo+ref and must be retargeted together per fork.

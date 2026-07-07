@@ -1,6 +1,6 @@
 #!/bin/bash
 # cabinet/scripts/meta-cognition/lib.sh — shared selectors + the ONE gated sink
-# for the self-improving meta-cognition system (docs/meta-cognition-direction-2026-06-25.md).
+# for the self-improving meta-cognition system (framework/docs/meta-cognition-direction-2026-06-25.md).
 #
 # This is sourced (not executed) by every layer of the system:
 #   Layer 1 (PREVENT)  — encode-time anti-accretion gate

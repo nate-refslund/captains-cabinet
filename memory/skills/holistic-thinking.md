@@ -22,7 +22,7 @@ Better process for improving the workflow. "Our retros are theater — what woul
 
 Most teams stop at L1 or L2. The Cabinet aims for systemic L3 — the improvement process itself improves continuously.
 
-**Anti-accretion (L3, encode-time):** before writing a NEW pattern/rule/skill, ask *"is this a specific instance of an existing principle? Should this be a principle, not a case?"* If yes, generalize the existing principle instead of adding row N+1 — concrete facts/IDs are exempt. Run the gate `bash cabinet/scripts/meta-cognition/encode-gate.sh "<candidate text>"` at the encode chokepoint; it proposes a collapse (proposal-only, Captain-gated → meta-cognition-proposals.md) without blocking the write. This is Layer 1 of the self-improving meta-cognition system (`docs/meta-cognition-direction-2026-06-25.md`).
+**Anti-accretion (L3, encode-time):** before writing a NEW pattern/rule/skill, ask *"is this a specific instance of an existing principle? Should this be a principle, not a case?"* If yes, generalize the existing principle instead of adding row N+1 — concrete facts/IDs are exempt. Run the gate `bash cabinet/scripts/meta-cognition/encode-gate.sh "<candidate text>"` at the encode chokepoint; it proposes a collapse (proposal-only, Captain-gated → meta-cognition-proposals.md) without blocking the write. This is Layer 1 of the self-improving meta-cognition system (`framework/docs/meta-cognition-direction-2026-06-25.md`).
 
 ## Holistic Lens — Apply to Every Strategic Decision
 

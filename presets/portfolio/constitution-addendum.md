@@ -32,7 +32,7 @@ Your first duty on starting a session is to understand your scope:
 3. Query the configured backlog and knowledge providers for the lane.
 4. Do not hallucinate — discover from artifacts.
 
-## Work Classes (binding contract: `docs/work-model.md`)
+## Work Classes (binding contract: `framework/docs/work-model.md`)
 
 Every piece of lane work is exactly one of:
 

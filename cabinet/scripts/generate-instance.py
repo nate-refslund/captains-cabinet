@@ -812,7 +812,7 @@ lanes:
 # Guardian at init, always: propose-first everywhere, plus the hard ceiling
 # (secrets / spend / external comms / production deploys never resolve
 # UNCONDITIONAL auto in any posture). Graduation comes later from
-# consequence-ledger evidence — see docs/consequence-ledger.md.
+# consequence-ledger evidence — see framework/docs/consequence-ledger.md.
 # The sovereign POSTURE is a post-init Captain ratification (amendment
 # 2026-07-05, `apply sovereign posture`): the generator renders an INERT
 # instance/config/posture.yml scaffold from the two optional keys below, and
@@ -971,7 +971,7 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
         print("     (deploy-mac.sh — select the coordinating role; lane CEOs are on-demand)")
     else:
         print("  2. bash cabinet/scripts/bootstrap-roles.sh   # default functional seed")
-        print("  3. bash cabinet/scripts/load-preset.sh, then deploy per docs/mac-mini-setup.md")
+        print("  3. bash cabinet/scripts/load-preset.sh, then deploy per cabinet/docs/mac-mini-setup.md")
     print("  Nothing above activates lanes: contexts ship active: false and")
     print("  projects ship activation.status: pending until the Captain flips them.")
     if posture_skipped:

@@ -6,7 +6,7 @@ This is the cross-tree half of the join-key contract: the gate side
 (framework.authority) must resolve to the SAME function objects, so the ledger
 key and the verdict-table lookup can never disagree about an action_type.
 
-See docs/authority-matrix-design-2026-06-19.md FIX-1 / FIX-4.
+See framework/docs/authority-matrix-design-2026-06-19.md FIX-1 / FIX-4.
 """
 from __future__ import annotations
 

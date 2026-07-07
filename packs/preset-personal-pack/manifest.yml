@@ -2,7 +2,7 @@
 # Schema: framework/schemas/extension-manifest.schema.json; validated by
 #   bash cabinet/scripts/validate-extension.sh packs/preset-personal-pack
 # instance/config/extensions.yml is the governed path that points officers at
-# this pack (see docs/cabinet-plugin-installation.md § Capability packs).
+# this pack (see cabinet/docs/cabinet-plugin-installation.md § Capability packs).
 # Orientation-only bundle: the preset PAYLOAD stays at presets/personal/ in
 # the core repo/plugin (referenced, not copied — see README.md). flavor is
 # restricted to `personal` because the personal preset IS the personal-flavor

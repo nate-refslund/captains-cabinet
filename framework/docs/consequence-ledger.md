@@ -209,7 +209,7 @@ normalized projection the graduation math reads.
 - **R3 wires the emitters**: cabinet officers (via the brain bridge's
   reasoning/run-recording path) and every *surviving* perception pipe emit
   this shape for consequence-bearing actions. Pipes scheduled for
-  migration to the cabinet (see `docs/work-model.md` — Pipe disposition)
+  migration to the cabinet (see `framework/docs/work-model.md` — Pipe disposition)
   are NOT retrofitted; they retire on shadow parity instead.
 - **Existing rows are not migrated.** The old ledgers stay as history;
   reviewers may backfill high-value rows opportunistically, but the

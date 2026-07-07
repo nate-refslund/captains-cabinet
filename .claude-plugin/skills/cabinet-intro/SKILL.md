@@ -57,7 +57,7 @@ The boot script runs `load-preset.sh` to assemble runtime artifacts, attaches th
 ## Further reading
 
 - Full Captain operating context: `CLAUDE.md` at the repo root. Read this file directly with the Read tool if you need the complete instructions — it is intentionally not auto-loaded by the plugin loader.
-- Per-component reference: `docs/cabinet-slash-commands.md`, `docs/mac-mini-deploy-runbook.md`.
+- Per-component reference: `cabinet/docs/cabinet-slash-commands.md`, `cabinet/docs/mac-mini-deploy-runbook.md`.
 - Governance: `constitution/` directory.
 
 For any Cabinet operation, defer to the assembled `/tmp/cabinet-runtime/` artifacts as the source of truth.

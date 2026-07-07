@@ -1,6 +1,6 @@
 """Tests for the typed policy SHADOW evaluator [T7].
 
-Design: docs/authority-matrix-design-2026-06-19.md §7 FIX-2 Stage 0.
+Design: framework/docs/authority-matrix-design-2026-06-19.md §7 FIX-2 Stage 0.
 
 `cabinet/scripts/policy-shadow.py` is re-wired to import the policy engine and
 emit an AUTHORITY-MATRIX verdict (auto | auto_with_veto_window | notify_after |

@@ -189,7 +189,7 @@ tracking (marking done things done in their source systems), routing
 time-bound items onto the reminder/task surfaces, the task ledger, and
 feedback/correction detection. Reflexes are cheap, legible, and have no
 judgment to migrate. They adopt the consequence-event shape
-(`docs/consequence-ledger.md`) but stay where they are.
+(`framework/docs/consequence-ledger.md`) but stay where they are.
 
 **MIGRATE-TO-CABINET** — judgment and human-facing composition. These
 move to officers, because they need the investigation bar and

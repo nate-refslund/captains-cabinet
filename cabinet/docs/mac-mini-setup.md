@@ -213,7 +213,7 @@ PASS Phase 1 → notify CoS (`bash cabinet/scripts/notify-officer.sh cos "Phase 
 6. **48h soak** under real workload (Phase 7 Checkpoint 7.8)
 7. **Posture ruling (optional, Captain-only)** — a Mini that should run the
    sovereign posture needs the Captain ratification described in
-   `docs/mac-mini-deploy-runbook.md` §4 step 5: edit + commit
+   `cabinet/docs/mac-mini-deploy-runbook.md` §4 step 5: edit + commit
    `instance/config/posture.yml` (+ empty `standing-grants.yml`), then
    `sudo bash cabinet/scripts/germline-lock.sh lock`. Skipping this leaves the
    deployment guardian (today's rules) — nothing else changes.
