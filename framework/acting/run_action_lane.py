@@ -282,7 +282,8 @@ def _load_posture_ctx() -> "dict | None":
     matrix/gate-lib load failure. The absent path is SILENT (byte-identical
     stdout, P3); a present-but-broken world degrades LOUDLY to the legacy path
     (== guardian behavior). resolve_verdict/risk_of/read_cell_state come from
-    cabinet/scripts/lib/policy_engine via the established path-insert — ONE
+    framework/authority/policy_engine (CG-14 pull-down: package import,
+    the old cabinet/scripts/lib path-insert is retired) — ONE
     gate implementation, no function move."""
     try:
         from framework.authority import posture as posture_mod
@@ -291,10 +292,7 @@ def _load_posture_ctx() -> "dict | None":
     except Exception:
         return None                    # pre-posture world — stay silent
     try:
-        lib = str(Path(__file__).resolve().parents[2] / "cabinet" / "scripts" / "lib")
-        if lib not in sys.path:
-            sys.path.insert(0, lib)
-        import policy_engine  # noqa: E402 — the established lib path-insert
+        from framework.authority import policy_engine  # noqa: E402 — CG-14
         from framework.authority.matrix import load_matrix, matrix_policy
         policy = matrix_policy(load_matrix())   # fail-closed validator inside
         return {

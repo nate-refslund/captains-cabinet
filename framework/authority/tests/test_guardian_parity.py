@@ -23,11 +23,8 @@ import pytest
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
-_LIB = _REPO_ROOT / "cabinet" / "scripts" / "lib"
-if str(_LIB) not in sys.path:
-    sys.path.insert(0, str(_LIB))
 
-import policy_engine as PE  # noqa: E402
+from framework.authority import policy_engine as PE  # noqa: E402
 from framework.authority import matrix as M  # noqa: E402
 from framework.authority import posture as P  # noqa: E402
 from framework.frontdoor import actfirst_canary as AC  # noqa: E402

@@ -57,11 +57,7 @@ def test_pm_write_cell_verdict_is_act_with_undo():
     # The matrix DOES class pm_write as act_with_undo at every confidence state
     # (that is the earn-demotion posture) — this is the cell verdict the lane
     # reads when it decides to act-with-undo.
-    import importlib.util
-    root = Path(__file__).resolve().parent.parent.parent.parent
-    spec = importlib.util.spec_from_file_location(
-        "policy_engine", root / "cabinet" / "scripts" / "lib" / "policy_engine.py")
-    pe = importlib.util.module_from_spec(spec); spec.loader.exec_module(pe)
+    from framework.authority import policy_engine as pe  # CG-14 pull-down
     verdicts = _load_policy()["verdicts"]
     for state in ("graduated", "eligible", "propose_only", "unmeasured"):
         assert pe.resolve_verdict(verdicts, "pm_write", state) == "act_with_undo"
@@ -74,7 +70,7 @@ def test_officer_raw_call_verdict_is_shadow_not_a_live_grant():
     # auto-execute act_with_undo. The string 'act_with_undo' must not appear as
     # a live-enforced auto branch in the policy engine's floor.
     root = Path(__file__).resolve().parent.parent.parent.parent
-    src = (root / "cabinet" / "scripts" / "lib" / "policy_engine.py").read_text()
+    src = (root / "framework" / "authority" / "policy_engine.py").read_text()
     # the resolver KNOWS the verdict, but the live floor never turns it into an
     # unattended execution — documented as shadow-consumed (no live exit-2).
     assert "shadow" in src.lower()

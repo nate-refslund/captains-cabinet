@@ -18,12 +18,14 @@ from unittest.mock import patch
 
 import pytest
 
-# Ensure the lib directory is importable
-_LIB_DIR = Path(__file__).parent.parent.resolve()
-if str(_LIB_DIR) not in sys.path:
-    sys.path.insert(0, str(_LIB_DIR))
+# Ensure the repo root is importable (CG-14 pull-down 2026-07-07: the engine
+# lives at framework/authority/policy_engine.py — package import, no lib
+# path-insert).
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
-# Ensure real yaml is available (conftest.py may stub it for ETL tests).
+# Ensure real yaml is available (a conftest may stub it for ETL tests).
 # Force-import the real yaml module before importing policy_engine.
 if "yaml" in sys.modules:
     _yaml_mod = sys.modules["yaml"]
@@ -33,7 +35,7 @@ if "yaml" in sys.modules:
         import yaml  # noqa: E402
         sys.modules["yaml"] = yaml
 
-from policy_engine import (
+from framework.authority.policy_engine import (
     extract_invoked_binaries,
     is_destructive_rm,
     check_bash_write_to_path,
@@ -1322,7 +1324,7 @@ class TestMainEntryPoint:
             })
 
             from io import StringIO
-            from policy_engine import main
+            from framework.authority.policy_engine import main
 
             with patch.dict(os.environ, {"CABINET_ROOT": tmpdir, "OFFICER": "cto"}):
                 with patch("sys.stdin", StringIO(input_json)):
@@ -1352,7 +1354,7 @@ class TestMainEntryPoint:
             })
 
             from io import StringIO
-            from policy_engine import main
+            from framework.authority.policy_engine import main
 
             stderr_capture = StringIO()
             with patch.dict(os.environ, {"CABINET_ROOT": tmpdir, "OFFICER": "cto"}):
@@ -1366,7 +1368,7 @@ class TestMainEntryPoint:
     def test_malformed_json_allows(self):
         """Malformed JSON input exits 0 (fail-open)."""
         from io import StringIO
-        from policy_engine import main
+        from framework.authority.policy_engine import main
 
         with patch.dict(os.environ, {"CABINET_ROOT": "/nonexistent"}):
             with patch("sys.stdin", StringIO("not json at all")):
@@ -1473,7 +1475,7 @@ class TestEdgeCases:
 # block: non-ceiling rows -> propose_only, ceiling rows -> always_gated. The
 # gate NEVER returns auto/None in A0. SHADOW-ONLY: this adds no live exit-2.
 
-from policy_engine import (  # noqa: E402
+from framework.authority.policy_engine import (  # noqa: E402
     _eval_authority_matrix,
     risk_of,
     resolve_verdict,
@@ -1482,7 +1484,7 @@ from policy_engine import (  # noqa: E402
 
 # Import the validated, shipped matrix floor so tests run against the REAL
 # production data (the loader/validator is matrix.py, shipped in T5).
-_REPO_ROOT = Path(__file__).resolve().parents[4]
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
@@ -1907,7 +1909,7 @@ class TestAuthorityMatrixNoLiveBlock:
             })
 
             from io import StringIO
-            from policy_engine import main
+            from framework.authority.policy_engine import main
 
             with patch.dict(os.environ, {"CABINET_ROOT": tmpdir, "OFFICER": "cto"}):
                 with patch("sys.stdin", StringIO(input_json)):
@@ -1937,7 +1939,7 @@ class TestAuthorityMatrixNoLiveBlock:
             })
 
             from io import StringIO
-            from policy_engine import main
+            from framework.authority.policy_engine import main
 
             env = {"CABINET_ROOT": tmpdir, "OFFICER": "cto"}
             with patch.dict(os.environ, env, clear=False):
@@ -1969,7 +1971,7 @@ class TestAuthorityMatrixNoLiveBlock:
             })
 
             from io import StringIO
-            from policy_engine import main
+            from framework.authority.policy_engine import main
 
             with patch.dict(os.environ, {
                 "CABINET_ROOT": tmpdir,
@@ -1994,9 +1996,9 @@ class TestAuthorityMatrixNoLiveBlock:
 # fail-closed. GUARDIAN IS BYTE-IDENTICAL with no posture config — the frozen
 # truth-table + exact block strings are pinned here [P1].
 
-import policy_engine as _pe  # noqa: E402
+from framework.authority import policy_engine as _pe  # noqa: E402
 
-from policy_engine import (  # noqa: E402
+from framework.authority.policy_engine import (  # noqa: E402
     resolve_gate_posture,
     standing_grant_resolution,
     _grant_context,

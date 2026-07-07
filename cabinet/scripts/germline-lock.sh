@@ -50,7 +50,7 @@ FILES=(
   "framework/authority/veto.py"
   "framework/authority/deploy_classifier.py"
   "framework/fidelity/graduation.py"
-  "cabinet/scripts/lib/policy_engine.py"
+  "framework/authority/policy_engine.py"
   "framework/frontdoor/action_exec.py"
   "framework/frontdoor/action_undo.py"
   "framework/frontdoor/actfirst_canary.py"

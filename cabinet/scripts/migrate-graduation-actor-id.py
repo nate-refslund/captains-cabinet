@@ -7,7 +7,7 @@ as {"kind": "officer", "id": "officer:cos"}. The ledger/graduation plane
 flattens actor to "kind:id" (framework/fidelity/graduation._cell_rows,
 consequence.compute_ratios), so those rows landed in cells keyed
 "officer:officer:cos" — cells the act-first gate (which composes
-"officer:" + bare role -> "officer:cos"; policy_engine.py:1159,
+"officer:" + bare role -> "officer:cos"; policy_engine.py (framework/authority/, CG-14):1159,
 run_action_lane.py _ACTOR) can NEVER read. The org's one real acted-row
 negative label (monday_task_create 2026-07-04T15:44:20Z, silent-revert ->
 review{wrong, verdict_judge}) sat stranded in that severed cell

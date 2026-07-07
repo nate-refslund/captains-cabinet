@@ -8,7 +8,7 @@ task names.
 
 Kept separate from test_matrix.py so a regression here is unambiguously a
 safety-floor breach, not a fixture/shape nit. Also proves the legacy policy
-loader (cabinet/scripts/lib/policy_engine.py load_policies) ingests the new
+loader (framework/authority/policy_engine.py load_policies) ingests the new
 authority-matrix.yml without choking — A0 is additive + shadow-only, so the
 legacy floor must keep loading.
 """
@@ -57,15 +57,13 @@ def test_legacy_loader_ingests_authority_matrix_without_breaking():
     """A0 is additive: the legacy policy loader must still load the policy dir
     (now containing authority-matrix.yml) without raising, and surface the
     authority-matrix entry by name."""
-    lib_dir = _REPO_ROOT / "cabinet" / "scripts" / "lib"
-    if str(lib_dir) not in sys.path:
-        sys.path.insert(0, str(lib_dir))
+
     # Force the real yaml if a conftest stub leaked in.
     if "yaml" in sys.modules and not hasattr(sys.modules["yaml"], "safe_load"):
         del sys.modules["yaml"]
         import yaml  # noqa: F401
 
-    import policy_engine
+    from framework.authority import policy_engine
 
     policies = policy_engine.load_policies(str(_REPO_ROOT))
     names = {p.get("name") for p in policies}

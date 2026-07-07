@@ -53,10 +53,7 @@ def _policy():
 def _pctx(state="unmeasured", posture="guardian", **over):
     """A fake D10 ctx: REAL floor policy + REAL risk_of/resolve_verdict from
     the ONE gate implementation, injectable cell state + posture."""
-    lib = str(_REPO / "cabinet" / "scripts" / "lib")
-    if lib not in sys.path:
-        sys.path.insert(0, lib)
-    import policy_engine
+    from framework.authority import policy_engine
     ctx = {
         "policy": _policy(),
         "resolve_posture": lambda lane=None: posture,

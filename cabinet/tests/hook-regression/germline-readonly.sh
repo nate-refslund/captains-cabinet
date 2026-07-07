@@ -63,7 +63,7 @@ probe() {
 echo "=== BLOCK: germline set ==="
 probe "G1 Edit golden-eval (cto)"          cto Edit  'memory/golden-evals/eval-001-kill-switch.md'                 BLOCK
 probe "G2 Write golden-eval subdir (cpo)"  cpo Write 'memory/golden-evals/framework/new-eval.md'                   BLOCK
-probe "G3 Edit policy_engine.py (cto)"     cto Edit  'cabinet/scripts/lib/policy_engine.py'                        BLOCK
+probe "G3 Edit policy_engine.py (cto)"     cto Edit  'framework/authority/policy_engine.py'                        BLOCK
 probe "G4 Edit framework policy (coo)"     coo Edit  'framework/policies/base-safety.yml'                          BLOCK
 probe "G5 Write new framework policy"      cto Write 'framework/policies/new-policy.yml'                           BLOCK
 probe "G6 Edit mcp-scope.yml (cto)"        cto Edit  'cabinet/mcp-scope.yml'                                       BLOCK
@@ -75,7 +75,7 @@ probe "G11 Write autonomy.yml (cos)"       cos Write 'instance/config/autonomy.y
 probe "G12 abs-path mcp-scope (cto)"       cto Edit  '/opt/founders-cabinet/cabinet/mcp-scope.yml'                 BLOCK
 probe "G13 abs-path golden-evals (cro)"    cro Write '/opt/founders-cabinet/memory/golden-evals/eval-002.md'       BLOCK
 # Double-slash normalization (suffix-anchor bypass closed by tr -s '/')
-probe "G14 dbl-slash policy_engine (cto)"  cto Edit  'cabinet/scripts/lib//policy_engine.py'                       BLOCK
+probe "G14 dbl-slash policy_engine (cto)"  cto Edit  'framework/authority//policy_engine.py'                       BLOCK
 probe "G15 dbl-slash autonomy.yml (cos)"   cos Write 'instance/config//autonomy.yml'                               BLOCK
 # Authority judge modules — the shared classifier/lane join key (T1), each
 # suffix-anchored as an exact file (like policy_engine.py) so the modules are
@@ -152,11 +152,12 @@ probe "FP5e Write kill-switch.sh (cro)"     cro Edit  'cabinet/scripts/kill-swit
 # append-only via cabinet/scripts/append-interface.sh — direct Write is
 # BLOCKED for every officer (was ALLOW pre-hardening).
 probe "FP6 captain-decisions.md (cos)"     cos Write 'shared/interfaces/captain-decisions.md'                      BLOCK
-# Other lib files are not the judge — only policy_engine.py is germline
+# Lib files are not the judge — policy_engine.py moved to framework/authority/ (CG-14)
 probe "FP7 other lib file (cto)"           cto Edit  'cabinet/scripts/lib/triggers.sh'                             ALLOW
 # Authority judges are suffix-anchored (classifier.py / lane.py) — their TESTS
-# are the officers' verification surface and stay editable (mirrors how
-# cabinet/scripts/lib/tests/ stays editable while policy_engine.py is germline)
+# are the officers' verification surface and stay editable (policy_engine.py
+# lives here too since CG-14, suffix-anchored the same way; its test corpus
+# framework/authority/tests/test_policy_engine.py stays editable)
 probe "FP8 authority test file (cro)"      cro Write 'framework/authority/tests/test_classifier.py'                ALLOW
 probe "FP8b matrix test file (cro)"        cro Write 'framework/authority/tests/test_matrix.py'                    ALLOW
 probe "FP9 authority sibling note (cro)"   cro Write 'framework/authority-notes.md'                                ALLOW

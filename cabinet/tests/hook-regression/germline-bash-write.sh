@@ -166,7 +166,7 @@ probe_bash "W2 command ed germ (cos)"                    cos 'command ed framewo
 probe_bash "W3 env vim -es germ (cro)"                   cro 'env vim -es framework/authority/veto.py' BLOCK
 probe_bash "W4 env sed w-cmd germ (cro)"                 cro "env sed 'w framework/authority/veto.py' /etc/hostname" BLOCK
 probe_bash "W5 env nice ed (stacked) (cos)"              cos 'env nice ed framework/policies/lane.yml' BLOCK
-probe_bash "W6 command sponge germ (cpo)"                cpo 'command sponge cabinet/scripts/lib/policy_engine.py' BLOCK
+probe_bash "W6 command sponge germ (cpo)"                cpo 'command sponge framework/authority/policy_engine.py' BLOCK
 
 echo ""
 echo "=== BLOCK: R6/R3 cp/mv into a germline directory ==="

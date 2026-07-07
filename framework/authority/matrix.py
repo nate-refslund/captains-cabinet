@@ -346,14 +346,12 @@ def check_gate_actor_id_parity(officer: str = "cos") -> bool:
             )
 
         # Import the LIVE gate helper exactly as the shipped CI tests do
-        # (cabinet/scripts/lib is not a package — path-import, and force the
-        # real yaml if a conftest stub leaked into sys.modules).
-        lib_dir = _FRAMEWORK_ROOT / "cabinet" / "scripts" / "lib"
-        if str(lib_dir) not in sys.path:
-            sys.path.insert(0, str(lib_dir))
+        # (CG-14 pull-down: the engine is framework/authority/policy_engine —
+        # package import; still force the real yaml if a conftest stub leaked
+        # into sys.modules).
         if "yaml" in sys.modules and not hasattr(sys.modules["yaml"], "safe_load"):
             del sys.modules["yaml"]
-        import policy_engine
+        from framework.authority import policy_engine
 
         canonical = policy_engine.read_cell_state(
             officer, "parity-canonical", "task_status_move")

@@ -36,12 +36,9 @@ import yaml
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
-_LIB = _REPO_ROOT / "cabinet" / "scripts" / "lib"
-if str(_LIB) not in sys.path:
-    sys.path.insert(0, str(_LIB))
 
-import policy_engine as PE  # noqa: E402
-from policy_engine import _eval_authority_matrix  # noqa: E402
+from framework.authority import policy_engine as PE  # noqa: E402
+from framework.authority.policy_engine import _eval_authority_matrix  # noqa: E402
 from framework.authority import grants as G  # noqa: E402
 from framework.authority import matrix as M  # noqa: E402
 from framework.authority import needs as N  # noqa: E402
@@ -410,8 +407,8 @@ class TestEval019GateRefusal:
         )
         monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
         diff = (
-            "--- a/cabinet/scripts/lib/policy_engine.py\n"
-            "+++ b/cabinet/scripts/lib/policy_engine.py\n"
+            "--- a/framework/authority/policy_engine.py\n"
+            "+++ b/framework/authority/policy_engine.py\n"
             "@@ -1 +1 @@\n-x\n+y\n"
         )
         ran = []

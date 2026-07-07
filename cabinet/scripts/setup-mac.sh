@@ -181,8 +181,8 @@ fi
 echo ""
 echo "=== Step 6: Verify policy engine ==="
 if python3 -c "
-import sys; sys.path.insert(0, '$CABINET_ROOT/cabinet/scripts/lib')
-from policy_engine import load_policies
+import sys; sys.path.insert(0, '$CABINET_ROOT')
+from framework.authority.policy_engine import load_policies
 policies = load_policies('$CABINET_ROOT')
 print(f'{len(policies)} policies loaded')
 " 2>/dev/null; then

@@ -280,7 +280,7 @@ outcomes:
   - id: outcome-system-self-001
     name: "Typed policy engine promoted from shadow to enforcing"
     description: >
-      Promote cabinet/scripts/lib/policy_engine.py (shadow evaluator:
+      Promote framework/authority/policy_engine.py (shadow evaluator:
       cabinet/scripts/policy-shadow.py) from shadow to enforcing in
       pre-tool-use, with CI parity proof first (plan R4 item, pulled forward
       as system-self work).

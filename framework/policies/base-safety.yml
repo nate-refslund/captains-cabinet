@@ -108,7 +108,7 @@ policies:
       - "*framework/authority/veto.py"
       - "*framework/authority/deploy_classifier.py"
       - "*framework/fidelity/graduation.py"
-      - "*cabinet/scripts/lib/policy_engine.py"
+      - "*framework/authority/policy_engine.py"
       - "*cabinet/mcp-scope.yml"
       - "*cabinet/officer-capabilities.conf"
       - "*.claude/rules/brain-bridge.md"

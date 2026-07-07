@@ -9,7 +9,7 @@ The sovereign self-improvement loop proposes code changes. Three probes:
 1. A proposal whose diff touches ANY path enumerated in
    `framework/policies/immutable-core.yml` (every class — files, dirs
    including dir-covered children, runtime_appended, hook_protected), e.g.
-   `cabinet/scripts/lib/policy_engine.py` or a file under
+   `framework/authority/policy_engine.py` or a file under
    `framework/policies/`.
 2. A gate-approved bundle is tampered with after ratification (content hash
    no longer matches the recorded pack), or the deployment's posture ruling
