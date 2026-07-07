@@ -21,7 +21,7 @@ below).
   standing full-autonomy grant; germline edits staged in a worktree, never
   live.
 
-**What (the germline edit set — one germline file):**
+**What (the germline edit set — two germline files):**
 
 - `framework/acting/run_action_lane.py` (germline, files-class):
   - The gather SECTION TABLE (`PROFILES` with the vault-dir literals), the
@@ -32,6 +32,21 @@ below).
     vault LAYOUT is adapter knowledge; the JUDGMENTS (D13 fence, ask
     budget, cid-echo suppression, verdict routing) all stay in the germline
     lane file.
+  - **D13 FLOOR (review must-fix, same window):** the original extract left
+    the fence's judgment DATA fully in the unlocked adapter — one
+    officer-writable edit (`INBOUND_REF_PREFIXES = ()`) would have routed
+    all inbound-derived cards "internal"/act-first. The lane now derives
+    `_INBOUND_REF_PREFIXES = tuple(sorted(set(vault_signals.
+    INBOUND_REF_PREFIXES) | set(action_lane.D13_INBOUND_FLOOR)))` — the
+    adapter table can only WIDEN the fence, never narrow it below the
+    locked floor.
+- `framework/acting/action_lane.py` (germline, files-class): NEW constant
+  `D13_INBOUND_FLOOR = ("3-People/", "2-Meetings/", "4-Interactions/")` —
+  the schg-locked home of the D13 fence's judgment data (already in every
+  lock list; no lockstep change). Pinned by three new tests in
+  `test_gather_via_source.py`: floor contents exact, effective tuple ⊇
+  floor, union mechanism present in the lane source, floor module present
+  in `immutable-core.yml` + `germline-lock.sh`.
   - `gather_signals` keeps its exact signature and becomes a dispatch:
     - **Flag OFF (default):** `vault_signals.collect_sections(...)` — the
       extracted-but-identical walk. Behavior byte-identical, pinned by the
@@ -70,21 +85,28 @@ was widened for exactly this on 2026-07-07 (T1 protocol widen,
   both paths.
 - `vault_signals.py` is deliberately NOT lock-listed: it supplies
   OBSERVATION layout, not judgment — the D13 fence and every verdict stays
-  in the locked lane. (Same class as the flavor adapters the seam binds.)
+  in the locked lane, and its judgment DATA is floored there too
+  (`action_lane.D13_INBOUND_FLOOR` union, above): a narrowing edit in the
+  unlocked adapter is INERT. (Same class as the flavor adapters the seam
+  binds. The gather `PROFILES` table remains unlocked evidence-shaping —
+  lower stakes: it can bias what is gathered, never lift the D13 fence or
+  any verdict.)
 
 **Gates (run in the staging worktree, 2026-07-07):**
 
-- `python3.12 -m pytest framework/acting -q` → 279 passed (both flag
-  states exercised; gather_v2 + gather_corpus untouched and green).
+- `python3.12 -m pytest framework/acting -q` → 282 passed (both flag
+  states exercised; gather_v2 + gather_corpus untouched and green; three
+  new D13-floor pins in `test_gather_via_source.py`).
 - `grep -cE '6-Commitments|2-Meetings|5-Reflections'
   framework/acting/run_action_lane.py` → 0.
 - `bash cabinet/scripts/check-layer-separation.sh` → no new violations.
 - `python3.12 -m pytest framework/ -q` → green (full suite, branch gate log).
 
-**One-revert rollback:** `git revert` of the CG-2 commit on
-`feat/germline-window-2` restores the inline table + walk in
-`framework/acting/run_action_lane.py` (germline file back byte-identical to
-pre-window) and removes `vault_signals.py` + the via-source tests; flag off
-(or absent) is already the shipped state, so no runtime action is needed
-beyond `sudo bash cabinet/scripts/germline-lock.sh lock` on the live
+**One-revert rollback:** `git revert` of the CG-2 commit AND its D13-floor
+follow-up commit on `feat/germline-window-2` restores the inline table +
+walk in `framework/acting/run_action_lane.py` and the pre-window
+`framework/acting/action_lane.py` (both germline files back byte-identical
+to pre-window) and removes `vault_signals.py` + the via-source tests; flag
+off (or absent) is already the shipped state, so no runtime action is
+needed beyond `sudo bash cabinet/scripts/germline-lock.sh lock` on the live
 checkout after merge/revert.

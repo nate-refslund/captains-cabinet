@@ -284,4 +284,7 @@ def collect_sections(as_of: dt.datetime, *, window_h: int = WINDOW_H,
 # these areas are raw email/Teams captured content. The acting lane's D13
 # fence CONSUMES this table (run_action_lane._INBOUND_REF_PREFIXES) — the
 # judgment lives in the germline lane; only the layout knowledge lives here.
+# NARROWING HERE IS INERT: the lane unions this table with the schg-locked
+# action_lane.D13_INBOUND_FLOOR, so an edit in this unlocked module can only
+# ADD inbound areas (widen the fence), never remove the floor's.
 INBOUND_REF_PREFIXES = ("3-People/", "2-Meetings/", "4-Interactions/")

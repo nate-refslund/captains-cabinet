@@ -23,6 +23,7 @@ from pathlib import Path
 import pytest
 
 import framework.sources as fsources
+from framework.acting import action_lane
 from framework.acting import run_action_lane as ral
 from framework.sources import vault_signals
 
@@ -106,6 +107,41 @@ def test_cg2_gate_no_vault_dir_literals_in_lane_file():
     for literal in ("6-Commitments", "2-Meetings", "5-Reflections",
                     "3-People", "7-Opportunities", "9-Codebases"):
         assert literal not in src, f"vault literal {literal!r} re-inlined in run_action_lane.py"
+
+
+def test_d13_floor_pinned_and_effective_prefixes_superset():
+    """CG-2 review must-fix: the D13 never-act-first fence keeps its judgment
+    DATA floored in the germline. (a) the floor's contents are pinned exactly
+    (a germline edit here is a deliberate Captain amendment); (b) the lane's
+    effective prefix tuple is a superset of the floor — so narrowing the
+    officer-writable vault_signals.INBOUND_REF_PREFIXES (even to ()) can
+    never route inbound-derived cards as "internal"/act-first."""
+    assert set(action_lane.D13_INBOUND_FLOOR) == {
+        "3-People/", "2-Meetings/", "4-Interactions/"}
+    assert set(ral._INBOUND_REF_PREFIXES) >= set(action_lane.D13_INBOUND_FLOOR)
+
+
+def test_d13_effective_prefixes_derive_via_floor_union():
+    """Pin the MECHANISM, not just today's values: the lane must derive
+    _INBOUND_REF_PREFIXES as adapter-table ∪ germline floor (source-level
+    gate, like the literal ban above — a regression back to a bare
+    `= vault_signals.INBOUND_REF_PREFIXES` read fails loudly)."""
+    src = " ".join(Path(ral.__file__).read_text(encoding="utf-8").split())
+    assert ("set(vault_signals.INBOUND_REF_PREFIXES) | "
+            "set(action_lane.D13_INBOUND_FLOOR)") in src, \
+        "_INBOUND_REF_PREFIXES no longer unions the germline D13 floor"
+
+
+def test_d13_floor_module_is_germline_locked():
+    """The floor is only a floor while its home module stays in the germline
+    lock set (the lockstep suite keeps the four lists consistent — checking
+    the canonical source list + the lock script here suffices)."""
+    repo = Path(ral.__file__).resolve().parents[2]
+    for lock_list in ("framework/policies/immutable-core.yml",
+                      "cabinet/scripts/germline-lock.sh"):
+        text = (repo / lock_list).read_text(encoding="utf-8")
+        assert "framework/acting/action_lane.py" in text, \
+            f"D13 floor module missing from germline lock list {lock_list}"
 
 
 # --- 2. flag-ON seam ----------------------------------------------------------

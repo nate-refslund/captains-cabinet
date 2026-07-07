@@ -267,8 +267,12 @@ ACT_VERDICTS = frozenset({"act_with_undo", "auto", "notify_after"})
 # are raw email/Teams captured content — cards derived from them NEVER act
 # first, in any posture (the injection classifier is probabilistic; provenance
 # is not). The prefix table is vault-layout knowledge and lives in
-# vault_signals (CG-2 extract) — the FENCE stays here in the judged lane.
-_INBOUND_REF_PREFIXES = vault_signals.INBOUND_REF_PREFIXES
+# vault_signals (CG-2 extract) — the FENCE stays here in the judged lane, and
+# its judgment DATA keeps a germline floor (action_lane.D13_INBOUND_FLOOR):
+# the effective set is adapter-table ∪ floor, so the officer-writable adapter
+# can only WIDEN the fence, never narrow it below the locked floor.
+_INBOUND_REF_PREFIXES = tuple(sorted(
+    set(vault_signals.INBOUND_REF_PREFIXES) | set(action_lane.D13_INBOUND_FLOOR)))
 
 
 def _act_first_on() -> bool:
