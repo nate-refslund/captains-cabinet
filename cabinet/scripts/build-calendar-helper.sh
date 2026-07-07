@@ -54,7 +54,7 @@ echo
 echo "NEXT: run it once and grant FULL calendar access at the prompt (one re-grant"
 echo "covers read + delete + calinfo; probe reads status only):"
 echo "  $OUT read \"\$(date +%Y-%m-%dT00:00:00)\" \"\$(date -v+1d +%Y-%m-%dT00:00:00)\""
-echo "then smoke the other subcommands (see docs/proposals/calendar-followups-runbook-2026-07-06.md):"
+echo "then smoke the other subcommands (see instance/archive/proposals/calendar-followups-runbook-2026-07-06.md):"
 echo "  $OUT calinfo Home     # expect found:true, writable:true, shared:false, shared_signal:none"
 echo "  $OUT probe            # expect exit 0 (fullAccess) in a granted context"
 echo "(ad-hoc signature: a rebuild changes the cdhash and needs a one-time re-grant.)"

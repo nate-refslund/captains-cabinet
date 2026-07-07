@@ -11,8 +11,9 @@ from framework.frontdoor import action_undo as au
 
 # A clean private+writable calinfo report — what the signed helper's `calinfo`
 # subcommand returns for the Captain's own calendar (Home). The F1 real-sharees
-# pre-write gate (germline patch docs/proposals/germline-calendar-followups-
-# 2026-07-06.md) calls the helper with cmd[1]=="calinfo" on the act-first path;
+# pre-write gate (germline patch germline-calendar-followups-2026-07-06.md,
+# archived to instance/archive/proposals/ per egg R146) calls the helper with
+# cmd[1]=="calinfo" on the act-first path;
 # these mocks answer it so the gate clears and the test exercises its real intent.
 # This branch is INERT until that germline patch lands (today's action_exec never
 # issues a calinfo call), so pre-staging it keeps the suite green in both states.
