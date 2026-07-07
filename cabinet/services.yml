@@ -507,3 +507,31 @@ services:
       idx_cm_unique_source. Needs NEON_CONNECTION_STRING from cabinet/.env
       (sourced by the script) + psql/redis-cli on PATH; queue-push failures
       exit non-zero so launchd surfaces them.
+
+  # brain-quality Wave F watch (installed 2026-07-07, Nate directive)
+  - name: memory-curator-health
+    label: com.cabinet.memory-curator-health
+    kind: cron
+    command: python3.12 cabinet/scripts/check-brain-health.py
+    schedule: { calendar: [{hour: 6, minute: 45}] }   # daily 06:45 local — right after the 06:00 screenpipe brain-health sensor run
+    disabled: false
+    expected: "daily BRAIN_HEALTH_OK or BRAIN_HEALTH_ESCALATED log line; reads ~/.screenpipe/state/brain_health.json and escalates retrieval regression (frozen-core-14 p@1<0.90 / p@3<0.93 / leaks>0 / suppression re-mints>0, per eval-021 invariants) OR staleness (generated_ts >26h old — the sensor runs 06:00+18:00, so >26h means the sensor itself is down) as a Redis trigger to cos -> run the brain-audit skill"
+    notes: >-
+      Brain-quality Wave F hand-off (staged 2026-07-06 at
+      ~/.screenpipe/state/brain-probes/staging/ by the drill-contract lane;
+      companion script staged alongside). Cabinet-side watch on the screenpipe
+      memory estate: the brain-health SENSOR runs screenpipe-side
+      (com.screenpipe.brain-health, 06:00/18:00, writes state/brain_health.json);
+      THIS row is the cabinet's verdict-supply watch on that output. The 26h
+      freshness floor is enforced twice by design: inside the script (stale
+      generated_ts escalates) and by the watchdog registry, which derives the
+      26h daily default floor for this daily calendar row from the manifest
+      (registry.py::_parse_services_manifest — adding this row is what puts it
+      under no-silent-cron coverage). Escalation is retro-trigger-style:
+      triggers.sh trigger_send cos, and cos runs the brain-audit skill
+      (.claude/skills/brain-audit — staged in the same folder) which owns the
+      audit -> fix waves -> adversarial verify -> probe gate loop plus the
+      curator freeze/unfreeze runbook. Same missing-file posture as
+      regression-corpus: if the script is absent the plist FATALs visibly at
+      06:45 — flip `disabled: true` here + regenerate rather than letting it
+      thrash.
