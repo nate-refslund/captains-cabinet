@@ -412,3 +412,42 @@ services:
       Downstream of verifier+probes: they supply the verdict rows whose cell
       crossings this emitter surfaces. Same missing-file posture as
       regression-corpus (flip disabled rather than thrash).
+
+  # ── Growth + hygiene organs (armed 2026-07-07) ─────────────────────────────
+  # Two organs that existed but were NEVER scheduled: the R8 learning loop
+  # (template plist only since 2026-06-09 — the org's growth engine had no
+  # clock) and the apoptosis sweep (shipped 4bcb79e7 with scheduling
+  # deliberately deferred to this wave). INSTALL SOURCE is the hand-kept
+  # templates in cabinet/launchd/ instantiated via
+  # envsubst '$REPO_ROOT $HOME $USER' into ~/Library/LaunchAgents (loading is
+  # a deliberate human step — same posture as the flip agents above). NOT
+  # armed here: judge-calibration and the rest of the future-B5 verdict-fuel
+  # set — they stay in the B2+ comment block until their wave ships them.
+  - name: self-improvement-loop
+    label: com.cabinet.self-improvement-loop
+    kind: cron
+    command: bash cabinet/cron/self-improvement-loop.sh
+    schedule: { interval_s: 21600 }   # every 6h
+    expected: "loop summary (proposals/hats/skills counts) in log every 6h; auto-apply ONLY through the validation gate (scenario evals + golden eval shells) — skeleton TODO proposals stay pending_captain_approval on disk; skill induction writes drafts to memory/skills/evolved/, never auto-validates"
+    notes: >-
+      R8 growth engine (framework.learning.self_improvement_loop) — the
+      eval→pattern→proposal→gate→apply chain, never scheduled since it
+      shipped (role-evals-weekly.sh invokes it inline but that cron was never
+      armed either). Every run emits a unique loop_id and proposal
+      application is idempotent, so overlap with an eval-bound invocation is
+      safe (template comment). Interpreter pinned in the script via
+      CABINET_PYTHON (default /opt/homebrew/bin/python3.12): bare python3
+      under launchd is the 3.9 system Python; the framework targets 3.12.
+  - name: apoptosis-sweep
+    label: com.cabinet.apoptosis-sweep
+    kind: cron
+    command: bash cabinet/scripts/apoptosis-sweep.sh
+    schedule: { calendar: [{hour: 3, minute: 45}] }   # daily 03:45 local, after the 03:00 backup snapshots pre-rotation state
+    expected: "one heartbeat line/day appended to ~/.cabinet/logs/apoptosis-sweep.log (stamped ONLY after a completed sweep — dead-man semantics); direct action limited to retention log-rotation (originals archived, realpath-jailed) + oversized __pycache__; everything irreversible rides propose-only intake cards"
+    notes: >-
+      Hygiene/apoptosis organ (framework.hygiene.apoptosis via
+      cabinet/scripts/apoptosis-sweep.sh; retention windows
+      instance/config/retention.yml injected as CABINET_RETENTION_CONFIG by
+      the wrapper — framework code never names the config layer). Runs after
+      the 03:00 backup so daily snapshots capture pre-rotation state.
+      Born-safe polarity: propose-only cards for anything irreversible.

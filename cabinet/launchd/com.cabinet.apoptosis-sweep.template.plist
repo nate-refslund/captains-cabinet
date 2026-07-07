@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+Apoptosis sweep LaunchAgent template (hygiene organ, armed 2026-07-07 —
+fleet manifest row `apoptosis-sweep` in cabinet/services.yml).
+
+One daily hygiene pass (framework.hygiene.apoptosis via
+cabinet/scripts/apoptosis-sweep.sh) with a born-safe polarity:
+  * DIRECT action only for trivially-regenerable exhaust — gzip-rotate logs
+    past instance/config/retention.yml windows (originals archived first,
+    every delete realpath-jailed to the designated log dirs) and delete
+    oversized __pycache__ dirs (Python regenerates them).
+  * PROPOSE-ONLY cards for anything irreversible (stale worktrees, dormant
+    skills, long-disabled services, never-instantiated templates) — they
+    ride the front-door intake stream as Captain decision cards.
+
+Self-heartbeat: a COMPLETED sweep appends one line to
+~/.cabinet/logs/apoptosis-sweep.log (dead-man semantics — a crash never
+fakes liveness); the outcome-watchdog floors on that file plus the launchd
+logs below via the services.yml row.
+
+Schedule: daily 03:45 local — after the 03:00 backup, so daily snapshots
+capture pre-rotation state. Keep in lockstep with the services.yml row
+(the watchdog derives the freshness floor from the manifest, not this file).
+
+Secrets: NONE — the sweep reads no credentials; only localhost Redis is
+touched (the intake XADD).
+
+Instantiate (machine step, not repo state):
+  REPO_ROOT=<repo> envsubst '$REPO_ROOT $HOME $USER' < this-template \
+    > ~/Library/LaunchAgents/com.cabinet.apoptosis-sweep.plist
+  launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.cabinet.apoptosis-sweep.plist
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.cabinet.apoptosis-sweep</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>${REPO_ROOT}/cabinet/scripts/apoptosis-sweep.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>${REPO_ROOT}</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key><string>${HOME}</string>
+    <key>USER</key><string>${USER}</string>
+    <key>REDIS_HOST</key><string>127.0.0.1</string>
+    <key>REDIS_PORT</key><string>6379</string>
+    <key>CABINET_ROOT</key><string>${REPO_ROOT}</string>
+    <key>PATH</key><string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>LANG</key><string>en_US.UTF-8</string>
+    <key>LC_ALL</key><string>en_US.UTF-8</string>
+  </dict>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>3</integer>
+    <key>Minute</key><integer>45</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>${HOME}/Library/Logs/cabinet/apoptosis-sweep.out.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>${HOME}/Library/Logs/cabinet/apoptosis-sweep.err.log</string>
+
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>

@@ -6,16 +6,21 @@ Closes the Cabinet's learning loop:
   eval results → pattern detection → evolution proposal → validation gate
   → auto-apply (captain-ratified, no manual wait) → hat graduations → skill induction.
 
-This LaunchAgent is OPTIONAL — role-evals-weekly.sh already invokes the
-loop driver inline as its final step. Install this template if you want
-the loop to also run independently (e.g. daily skill induction sweeps
-while the eval-based evolution still runs weekly). The two cadences are
-safe to overlap — every loop run emits a unique `loop_id` and proposal
-application is idempotent.
+ARMED 2026-07-07 (fleet manifest row `self-improvement-loop` in
+cabinet/services.yml): this is the loop's ONLY clock — it had never been
+scheduled anywhere (role-evals-weekly.sh invokes the driver inline, but
+that cron was never armed either). The cadences are safe to overlap —
+every loop run emits a unique `loop_id` and proposal application is
+idempotent.
 
-Default schedule: Tuesday 03:30 local (a half-hour after the weekly eval
-cron, so an independent cadence picks up anything the eval-bound run
-deferred). Adjust as needed.
+Schedule: every 6 hours (StartInterval 21600 — keep in lockstep with the
+services.yml row; the outcome-watchdog derives this service's freshness
+floor from the manifest, not from this file).
+
+Instantiate (machine step, not repo state):
+  REPO_ROOT=<repo> envsubst '$REPO_ROOT $HOME $USER' < this-template \
+    > ~/Library/LaunchAgents/com.cabinet.self-improvement-loop.plist
+  launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.cabinet.self-improvement-loop.plist
 -->
 <plist version="1.0">
 <dict>
@@ -46,12 +51,8 @@ deferred). Adjust as needed.
     <key>LC_ALL</key><string>en_US.UTF-8</string>
   </dict>
 
-  <key>StartCalendarInterval</key>
-  <dict>
-    <key>Weekday</key><integer>2</integer>
-    <key>Hour</key><integer>3</integer>
-    <key>Minute</key><integer>30</integer>
-  </dict>
+  <key>StartInterval</key>
+  <integer>21600</integer>
 
   <key>StandardOutPath</key>
   <string>${HOME}/Library/Logs/cabinet/self-improvement-loop.out.log</string>

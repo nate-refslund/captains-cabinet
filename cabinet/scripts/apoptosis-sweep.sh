@@ -1,7 +1,9 @@
 #!/bin/bash
 # apoptosis-sweep.sh — entry point for the cabinet's hygiene / apoptosis organ
-# (framework.hygiene.apoptosis). NOT scheduled by this change — enrolling a
-# services.yml row + plist is a separate, deliberate scheduling wave.
+# (framework.hygiene.apoptosis). SCHEDULED since 2026-07-07: fleet manifest
+# row `apoptosis-sweep` (cabinet/services.yml, daily 03:45 local) + template
+# cabinet/launchd/com.cabinet.apoptosis-sweep.template.plist instantiated
+# into ~/Library/LaunchAgents.
 #
 # WHAT IT RUNS: one hygiene sweep with a born-safe polarity —
 #   * DIRECT action only for trivially-regenerable exhaust: gzip-rotate log

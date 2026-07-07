@@ -21,9 +21,12 @@
 #         e. induce + promote draft skills
 #         f. emit self_improvement_loop_completed
 #
-# Cadence: invoked from role-evals-weekly.sh after eval + pattern detection,
-# and optionally on its own LaunchAgent (see
-# `cabinet/launchd/com.cabinet.self-improvement-loop.template.plist`).
+# Cadence: every 6h on its own LaunchAgent (fleet manifest row
+# `self-improvement-loop` in cabinet/services.yml, armed 2026-07-07;
+# template `cabinet/launchd/com.cabinet.self-improvement-loop.template.plist`).
+# Also invoked inline from role-evals-weekly.sh after eval + pattern
+# detection — the two cadences are overlap-safe (unique loop_id per run,
+# idempotent proposal application).
 #
 # Exits 0 whenever the loop COMPLETES, regardless of how many proposals
 # were applied — "no work to do" is a valid successful outcome.
@@ -67,7 +70,12 @@ cd "$CABINET_ROOT"
 
 echo "=== Self-improvement loop @ $(date -u '+%Y-%m-%dT%H:%M:%SZ') ==="
 
+# Interpreter: pin to the fleet's Python (same idiom as apoptosis-sweep.sh).
+# Bare `python3` under launchd resolves to /usr/bin/python3 (system 3.9) —
+# the framework targets 3.12, so an unpinned run dies on 3.12-only code.
+PY="${CABINET_PYTHON:-/opt/homebrew/bin/python3.12}"
+
 # Forward all flags (--dry-run, --skip-evals, --json, --window-days, etc.)
 # to the Python driver. The driver parses them via argparse and applies the
 # correct gate behavior; see its --help for the full list.
-exec python3 -m framework.learning.self_improvement_loop "$@"
+exec "$PY" -m framework.learning.self_improvement_loop "$@"
