@@ -2,7 +2,7 @@
 
 Captain's fleet plan: validate 1 Mac mini, then clone the setup to 3 (per Captain msg 2603 Q3 ratification). This guide walks the per-Mac setup for Macs 2 and 3 after Mac 1 (canonical image) is validated through the full Spec 057-065 Mac migration arc.
 
-**Mac 1 (canonical):** Follow `cabinet/docs/mac-mini-setup.md` end-to-end (Phase 1-8).
+**Mac 1 (canonical):** Follow `cabinet/docs/mac-mini-setup.md` end-to-end (Phase 1 + Phase 2).
 
 **Macs 2-3 (clone):** Inherits many account-scoped resources from Mac 1; only per-machine setup needed.
 
@@ -27,7 +27,7 @@ These steps are MACHINE-level and must be done fresh on every Mac:
 
 1. **Unbox + initial macOS setup** (per `cabinet/docs/mac-mini-setup.md` Phase 1 Checkpoint 1.1)
 2. **FileVault disable** (per Captain msg 2603 Q1 — STEP-internal deployment)
-3. **Homebrew + CLIs install** (per Phase 1 Checkpoint 1.4: node + postgresql@17 + redis + gh + tailscale + cua-driver-pinned + screenpipe + apcupsd)
+3. **Homebrew + CLIs install** (per Phase 1 Checkpoint 1.4: node + gh + jq + tmux + tailscale + postgresql@17 + redis + gettext; cua-driver / apcupsd / screenpipe only if the Mac uses the matching optional appendix)
 4. **`pmset -a sleep 0`** (prevent sleep — per Phase 1 Checkpoint 1.3)
 5. **macOS permissions grant** (Accessibility + Screen Recording + Full Disk Access for the Cabinet officer-runner binary — per Phase 1 Checkpoint 1.8)
 6. **Tailscale join via auth-key** (joins the existing Mac 1 tailnet — per Phase 1 Checkpoint 1.9)

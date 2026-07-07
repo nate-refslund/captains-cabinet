@@ -1,34 +1,48 @@
-# Mac Mini Setup Runbook — Phase 1 + Phase 2
+# Mac Mini Setup Runbook — Flavor-B hatch (clean-room)
 
-End-to-end runbook for setting up a fresh Mac mini to run Captain's Cabinet natively. Consolidates Spec 058 v1.2 (Phase 1 unbox + base install) + Spec 059 v1.1 (Phase 2 native launchd Cabinet).
+End-to-end runbook for hatching Captain's Cabinet on a fresh Mac mini. This is
+the **Flavor-B / personal-optional** path: the core install has **no
+screenpipe, no personal vault, no external PM tool** — the same clean-room
+premise CI itself enforces (`framework/tests/test_no_screenpipe_in_core.py`;
+the null-hatch gate boots the tree with `~/.screenpipe` deliberately
+unreadable). A personal sensing estate is an *optional add-on afterwards*
+(Appendix A), never a prerequisite.
 
-**Audience:** Captain hands-on for Phase 1 (most steps need the Mac physically); CoS executes Phase 2 once Phase 1 PASSES.
+**Audience:** the Captain, hands-on for Phase 1 (physical Mac steps + TCC
+clicks + tokens); everything in Phase 2 runs from a terminal / Claude Code
+session on the Mini.
 
-**Estimated time:** Phase 1 ~3-4 hours focused, Phase 2 ~2-3 hours focused. Total day for a clean run + soak check.
+**Estimated time:** Phase 1 ~1-2 h; Phase 2 ~1 h to a booted Chair.
+
+Sister docs: `cabinet/docs/mac-mini-deploy-runbook.md` (deep detail on
+code-signing, LaunchAgents, soak, backups), `cabinet/docs/mac-mini-clone.md`
+(second-Mini clone), `cabinet/docs/mac-tcc-code-signing-gate.md` (TCC
+persistence).
 
 ---
 
-## Phase 1 — Base Mac setup (Spec 058 v1.2)
+## Phase 1 — Base Mac setup
 
 ### Checkpoint 1.1 — Unbox + initial macOS setup (~15 min, Captain hands-on)
 
 1. Unbox the Mac mini, connect power + display + keyboard + Ethernet
 2. Power on, complete initial macOS setup wizard:
-   - User account: create a non-iCloud admin user named `cabinet` (or your preferred name — `USER` env will read this)
-   - Set timezone to `Europe/Berlin` (or your zone)
-   - Skip Apple ID sign-in (or sign in if you want App Store access; not required for Cabinet)
-   - Skip Siri setup
-3. Verify the Mac boots to desktop without issues
+   - User account: create a dedicated admin user (e.g. `cabinet`)
+   - Set your timezone (the interview in Phase 2 records it for officers too)
+   - Apple ID sign-in optional; Siri skip
+3. Verify the Mac boots to desktop, then enable auto-login for the cabinet
+   user (System Settings → Users & Groups) — the org lives in launchd *user*
+   agents and needs a logged-in session
 
-### Checkpoint 1.2 — FileVault disable (~5 min, Captain hands-on)
+### Checkpoint 1.2 — FileVault decision (~5 min, Captain hands-on)
 
-Per Captain msg 2603 Q1: STEP-internal deployment, GDPR posture deferred to commercial Cabinet substrate.
+Your call. FileVault **off** means unattended reboots come back up without a
+password at the console (simplest for a headless always-on box you physically
+control). FileVault **on** is the right call if the Mini holds anything
+sensitive and you can live with console unlock after power loss.
 
 ```bash
-# System Settings → Privacy & Security → FileVault → Turn Off
-# (No CLI equivalent for disabling — must be done in UI)
-# Verify:
-fdesetup status   # should say "FileVault is Off"
+fdesetup status   # verify whichever state you chose
 ```
 
 ### Checkpoint 1.3 — Power management (`pmset`) (~2 min)
@@ -38,213 +52,305 @@ fdesetup status   # should say "FileVault is Off"
 sudo pmset -a sleep 0
 sudo pmset -a disksleep 0
 sudo pmset -a displaysleep 30   # display can sleep; system can't
-# Verify
-pmset -g
+pmset -g                        # verify
 ```
 
-### Checkpoint 1.4 — Homebrew + CLI install (~30 min)
+### Checkpoint 1.4 — Homebrew + CLI install (~20 min)
 
 ```bash
 # Install Homebrew
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
-# CRITICAL — node FIRST (required for npm-installed Claude Code + neonctl)
-# gettext provides envsubst (used by deploy-mac.sh for plist template substitution)
-brew install node gh jq tailscale postgresql@17 redis screenpipe apcupsd gettext
+# Core dependencies — note: NO screenpipe here. The clean-room Mini runs no
+# personal sensing stack; CI's null-hatch gate proves the org boots without it.
+# gettext provides envsubst (deploy-mac.sh plist template substitution).
+brew install node gh jq tmux tailscale postgresql@17 redis gettext
 
 # postgresql@17 is keg-only; ensure PATH:
 echo 'export PATH="/opt/homebrew/opt/postgresql@17/bin:$PATH"' >> ~/.zprofile
 source ~/.zprofile
 pg_dump --version  # must show 17.x — if 16.x wins, fix PATH
 
-# npm-installed tools (per Spec 058 v1.1 CTO #1 + #3)
+# npm-installed tools
 npm install -g @anthropic-ai/claude-code neonctl
 
-# Python — system Python3 is fine; psycopg2 needed for worktree-listener.sh
-# (Postgres NOTIFY consumer). Audit-fix 2026-05-23: bash psql -c "LISTEN..." can't
-# stream NOTIFY payloads; need psycopg2 in the listener.
-pip3 install --user psycopg2-binary
-
-# gh authentication (needed BEFORE Checkpoint 1.6 cua-driver pinned-tag pull)
+# gh authentication (needed before the clone if your fork is private)
 gh auth login   # follow prompts; pick HTTPS + browser OAuth
 ```
+
+**Optional installs** (skip both on a first hatch; add later when the need is
+real):
+- `cua-driver` — only if you will grant an officer the `drives_computer`
+  capability (computer-use). See Appendix B.
+- `apcupsd` — only if the Mini sits on an APC UPS. See Appendix C.
 
 ### Checkpoint 1.5 — Redis service start with AOF persistence (~5 min)
 
 ```bash
-# Enable Redis AOF (append-only file) for durability across restarts
 echo "appendonly yes" | sudo tee -a /opt/homebrew/etc/redis.conf
 brew services start redis
 
-# Verify
-redis-cli ping   # should reply PONG
-redis-cli CONFIG GET appendonly   # should show "yes"
-
-# Reboot-survival test (optional but recommended):
-# 1. redis-cli SET test-key "hello"
-# 2. sudo reboot
-# 3. After reboot: redis-cli GET test-key   # should still return "hello"
+redis-cli ping                    # PONG
+redis-cli CONFIG GET appendonly   # "yes"
 ```
 
-### Checkpoint 1.6 — cua-driver install (PINNED tag) (~10 min)
+(`setup-mac.sh` in Phase 2 re-checks + can do this for you — doing it here
+just front-loads the reboot-survival test: `redis-cli SET t 1`, reboot,
+`redis-cli GET t`.)
 
-```bash
-# Find the latest stable cua-driver release on GitHub
-PINNED_TAG=$(gh release list --repo trycua/cua --limit 1 --json tagName --jq '.[0].tagName')
-# Audit-fix 2026-05-23: pin file goes to /tmp here; Checkpoint 1.12 moves it
-# into the cloned repo (the repo path doesn't exist yet at this checkpoint).
-echo "$PINNED_TAG" > /tmp/cua-driver-version.txt
+### Checkpoint 1.6 — Remote access: SSH + Tailscale (~10 min, Captain hands-on)
 
-# Install via gh release download — match the pinned tag exactly
-gh release download "$PINNED_TAG" --repo trycua/cua --pattern '*macOS*' --dir ~/Downloads/
-# Move into /opt/homebrew/bin/ (or similar)
-sudo mv ~/Downloads/cua-driver /opt/homebrew/bin/cua-driver
-sudo chmod +x /opt/homebrew/bin/cua-driver
-cua-driver --version
-```
-
-### Checkpoint 1.7 — Screenpipe install + initial config (~15 min)
-
-```bash
-# Screenpipe ships with its own LaunchAgent — register it
-brew services start screenpipe
-# Open the Screenpipe app, complete setup wizard
-# Configure exclusions: 1Password, banking apps, personal email
-# Configure retention: 30 days full / OCR-only beyond
-```
-
-### Checkpoint 1.8 — macOS permissions grant (~10 min, Captain hands-on)
-
-System Settings → Privacy & Security:
-- **Accessibility:** Allow `claude`, `cua-driver`, `screenpipe`, and the LaunchAgent-spawned officer binaries (per Spec 058 v1.2 Checkpoint 1.10 code-signing)
-- **Screen Recording:** Allow `screenpipe` and `cua-driver`
-- **Full Disk Access:** Allow `claude` and `cua-driver` (needed for ~/.claude/ + worktree paths)
-
-These grants persist across launches ONLY if the binaries are code-signed (Checkpoint 1.10 below). Without code-signing, every Mac reboot loses these consents → cua-driver re-prompts forever.
-
-Enable Remote Login (SSH):
 ```bash
 sudo systemsetup -setremotelogin on
-```
-
-### Checkpoint 1.9 — Tailscale join (~5 min)
-
-```bash
-# Authenticate Tailscale (for remote access to the Mac)
-sudo tailscale up --authkey=<your-auth-key>
-# Verify
+sudo tailscale up --authkey=<your-auth-key>   # or interactive: sudo tailscale up
 tailscale status
-ssh cabinet@<this-mac-tailscale-name>   # from another machine should work
+# From another machine: ssh <user>@<mini-tailscale-name>
 ```
 
-### Checkpoint 1.10 — TCC code-signing + notarization (CRITICAL, ~30-45 min)
+### Checkpoint 1.7 — macOS permissions + TCC persistence (~15 min, Captain hands-on)
 
-Per Spec 058 v1.2 + CRO F2: without code-signing, TCC permissions don't persist across launches → repeated Accessibility prompts → install disaster. Mandatory before Phase 4 cua-driver work.
+Phase 2's `grant-mac-permissions.sh` walks the TCC grants interactively (the
+OS requires human clicks — this cannot be automated). Two things to know now:
 
-1. **Import Apple Developer Program certificate** (already enrolled per Captain msg 2576):
-   - Apple Developer portal → Certificates → Download `Developer ID Application` cert
-   - Double-click to import into Keychain
-2. **Wrap each officer-spawning binary** into a code-signed app bundle with reverse-DNS Bundle ID (`dk.refslund.cabinet.officer.{cos,cto,cpo,cro,coo}`)
-3. **Notarize** via `xcrun notarytool submit ...`
-4. **Verify** TCC persistence: grant Accessibility → reboot Mac → verify grant still in place
+- Grants are **responsible-process-scoped**: a grant given to Terminal does
+  not cover a LaunchAgent-spawned process. Follow the prompts from the script,
+  not ad-hoc clicking.
+- Grants persist across reboots **only for code-signed binaries**. If you see
+  repeated permission prompts after reboots, work through
+  `cabinet/docs/mac-tcc-code-signing-gate.md` (Developer ID signing +
+  notarization). This is required before any Appendix-B computer-use work,
+  not for the base hatch.
 
-(Full code-signing procedure tracked in a separate runbook — currently a stub pending the actual wrapper script work. The Apple Developer Program enrollment is the unblock; the code-signing tooling is straightforward once a cert is in Keychain.)
-
-### Checkpoint 1.11 — apcupsd config (UPS-specific, ~10 min)
-
-```bash
-# /opt/homebrew/etc/apcupsd/apcupsd.conf (Apple Silicon Homebrew path)
-sudo $EDITOR /opt/homebrew/etc/apcupsd/apcupsd.conf
-# Configure UPSCABLE + UPSTYPE per your specific UPS model
-brew services start apcupsd
-# Test: pull the wall plug briefly; apcupsd should detect + log
-```
-
-### Checkpoint 1.12 — Phase 1 baseline + commit
+### Checkpoint 1.8 — Clone the repo (~5 min)
 
 ```bash
-# Clone repo
-cd ~/work
-gh repo clone nate-step/captains-cabinet
+mkdir -p ~/work && cd ~/work
+git clone <your-fork-url> captains-cabinet   # your fork of captains-cabinet
 cd captains-cabinet
-git checkout mac-native
-
-# Restore captain-rules from Hetzner export tarball
-tar -xzf ~/cabinet-import/host-state.tar.gz -C /tmp/cabinet-import
-cp /tmp/cabinet-import/shared/interfaces/captain-*.md shared/interfaces/
-
-# Move the Checkpoint 1.6 cua-driver pin into the repo (chicken-egg unblock)
-mkdir -p cabinet/config
-mv /tmp/cua-driver-version.txt cabinet/config/cua-driver-version.txt
-
-# Verify Phase 1 baseline state
-# (Smoke-test each tool installed in 1.4-1.11)
+# Stay on the fork's default branch — that IS the ship branch. There is no
+# separate "mac-native" branch to check out.
 ```
 
-PASS Phase 1 → notify CoS (`bash cabinet/scripts/notify-officer.sh cos "Phase 1 PASS — ready for Phase 2"`). CoS takes Phase 2 from here.
+**PASS Phase 1** when: repo cloned, `redis-cli ping` answers, `claude
+--version` works, Tailscale/SSH reachable.
 
 ---
 
-## Phase 2 — Native launchd Cabinet (Spec 059 v1.1)
+## Phase 2 — The hatch (interview → generate → verify → deploy)
 
-### What CoS does autonomously after Phase 1 PASS
+Run everything below from the repo root on the Mini. The hatch path is:
+**cabinet-init interview → generate-instance.py → activation steps →
+null-hatch gate → dry render → deploy**. Config is *generated*, not
+hand-edited — never edit `instance/config/product.yml` / the managed
+`officers:` block in `platform.yml` directly (their headers say the same);
+change the answers file and re-run the generator instead.
 
-0. **Run preflight checks:**
-   ```bash
-   bash cabinet/scripts/mac-preflight.sh
-   bash cabinet/scripts/mac-tcc-gate.sh
-   ```
-1. **Edit `instance/config/product.yml`** (Phase 3 prep: collapse to Lead-only Telegram, voice-only-CoS)
-2. **Substitute plist templates via envsubst:**
-   ```bash
-   for o in cos cto cpo cro coo; do
-     OFFICER=$o USER=$(id -un) HOME=$HOME REPO_ROOT=~/work/captains-cabinet \
-       envsubst < cabinet/launchd/com.cabinet.officer.template.plist \
-       > ~/Library/LaunchAgents/com.cabinet.officer.$o.plist
-   done
-   ```
-3. **Bootstrap CoS first** (verify the substrate works on one officer before all 5):
-   ```bash
-   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.cabinet.officer.cos.plist
-   bash cabinet/scripts/reload-officer-mac.sh cos  # smoke-test
-   ```
-4. **Bring up CTO + CPO + COO + CRO** per Phase 7 Spec 064 Checkpoints 7.1-7.3
-5. **Register observability LaunchAgents** (heartbeat-watchdog + limit-reset-watchdog + cost-summary + worktree-listener)
-6. **48h soak** under real workload (Phase 7 Checkpoint 7.8)
-7. **Posture ruling (optional, Captain-only)** — a Mini that should run the
-   sovereign posture needs the Captain ratification described in
-   `cabinet/docs/mac-mini-deploy-runbook.md` §4 step 5: edit + commit
-   `instance/config/posture.yml` (+ empty `standing-grants.yml`), then
-   `sudo bash cabinet/scripts/germline-lock.sh lock`. Skipping this leaves the
-   deployment guardian (today's rules) — nothing else changes.
-   *Axes (amendment 2026-07-05):* start from the shipped preset —
-   `cp instance/config/posture-presets/org-macmini.yml instance/config/posture.yml`
-   (axes `flavor: org` · `deployment_target: mac_mini` · schg attestation),
-   set `deployment:` to this Mini's `CABINET_ID`, and add a `never_grant:`
-   list if any ceiling class should be structurally non-grantable on this
-   deployment. Downgrade is always instant and needs no unlock:
-   `CABINET_POSTURE=guardian` env, or the Captain binder verb
-   `posture guardian` (writes the narrow-only
-   `instance/config/posture-narrow` cap). Upgrades happen ONLY via this
-   lock ritual — no env var, dashboard, or chat verb can widen.
+### 2.0 — Host bootstrap
 
-### Captain involvement during Phase 2-8
+```bash
+bash cabinet/scripts/setup-mac.sh          # interactive orchestrator; idempotent
+bash cabinet/scripts/setup-mac.sh --check  # verify: exit 0
+```
 
-Mostly hands-off. Captain joins for:
-- Phase 3 Checkpoint 3.1: BotFather revoke 4 officer bot tokens
-- Phase 4 Checkpoint 4.6: Figma test (end-to-end cua-driver round-trip)
-- Phase 7 Checkpoint 7.8 qualitative sign-off: "Cabinet on Mac felt as responsive as Hetzner"
-- Phase 8 Checkpoint 8.5: Hetzner suspension (final docker stop)
+Installs missing deps, starts Redis, creates directories, runs the API-key
+wizard into `cabinet/.env` (chmod 600; headless alternative:
+`SKIP_ENV_WIZARD=1 bash cabinet/scripts/setup-mac.sh`), loads the preset, and
+runs the framework test suite.
+
+### 2.1 — The onboarding interview (`/cabinet-init`)
+
+```bash
+claude
+> /cabinet-init
+```
+
+The skill interviews you (captain profile, lanes, org shape, autonomy
+posture, seed outcomes, integrations), writes
+`instance/config/cabinet-init.answers.yml`, and runs the generator:
+
+```bash
+python3 cabinet/scripts/generate-instance.py            # --dry-run to preview
+```
+
+**If your clone ships a previous deployment's `instance/`** (committed
+platform.yml with another captain's officers block, a hand-authored
+sources.yml, live contexts/projects), the generator will *refuse* rather than
+clobber. That refusal is the cue for the adoption path:
+
+```bash
+python3 cabinet/scripts/generate-instance.py --adopt
+```
+
+`--adopt` archives every conflicting file to
+`instance/_pre-adopt-<stamp>/` (nothing is deleted) and generates *your*
+instance fresh. An existing `posture.yml` ruling is never touched.
+
+The generator writes: per-lane contexts + projects,
+`instance/agents/<lane>-ceo.md`, the managed captain keys + `officers:` block
+in `platform.yml`, `instance/config/roster.yml`,
+`instance/config/active-project.txt` (first lane slug — `bootstrap-roles.sh`
+needs it), the inert posture scaffold, and (org flavor) the
+`sources.yml` OrgSource recall binding. Nothing activates by itself.
+
+### 2.2 — Activation steps (the generator prints these; in order)
+
+```bash
+# 1. Preset
+echo portfolio > instance/config/active-preset    # or work/custom per your shape
+
+# 2. Germline edits (Captain applies): lane CEOs into cabinet/mcp-scope.yml
+#    agents: list + capability rows in cabinet/officer-capabilities.conf
+
+# 3. Chair bot token (BotFather) into cabinet/.env:
+#    TELEGRAM_COS_TOKEN=...           # canonical name; config keeps TOKEN-TBD
+#    Multi-cabinet only: CABINET_MODE=multi + CABINET_ID=<id> in cabinet/.env
+
+# 4. Seed the roster (reads instance/config/active-project.txt for the slug)
+bash cabinet/scripts/bootstrap-roles.sh --roster instance/config/roster.yml
+
+# 5. TCC grants (interactive — Captain clicks)
+bash cabinet/scripts/grant-mac-permissions.sh
+
+# 6. Assemble the runtime
+bash cabinet/scripts/load-preset.sh
+```
+
+### 2.3 — The null-hatch gate (clean-room proof)
+
+Before any officer boots, prove the hatch is clean — the same gate CI runs:
+
+```bash
+bash cabinet/scripts/null-hatch.sh    # exit 0 = the egg boots with NO captain
+                                      # data, NO screenpipe, NO source binding
+```
+
+It runs against a sandbox copy of the committed tree with an *unreadable*
+`~/.screenpipe`, so any latent personal-stack read fails loudly. Do not
+proceed on a red gate.
+
+### 2.4 — Dry render (no side effects), then deploy
+
+```bash
+# Officer command assembly, no tmux/redis/boot:
+bash cabinet/scripts/start-officer-mac.sh cos --dry-run
+
+# Plist render preview, no launchctl:
+bash cabinet/scripts/deploy-mac.sh --officer cos --dry-run
+
+# Deploy the Chair only (lane CEOs are on-demand consultants — no persistent
+# LaunchAgent; they are started per trigger via start-officer-mac.sh):
+bash cabinet/scripts/deploy-mac.sh --officer cos
+```
+
+Both scripts reject unknown flags (exit 64) — a mistyped flag never falls
+through to the real boot path. `start-officer-mac.sh` also refuses to take
+over a tmux session owned by a *different* checkout (exit 65;
+`CABINET_FORCE_TAKEOVER=1` overrides deliberately) — rehearsals and scratch
+clones cannot kill the live Chair.
+
+### 2.5 — Ratify outcomes + verify
+
+- Ratify seed outcomes in `instance/config/outcomes.yml` (`status: active` +
+  `captain_ratified: true`, with your `CABINET_ID` as the deployment key —
+  the compiler refuses files pinned to another deployment, so an inherited
+  `outcomes.yml` is inert until replaced).
+- Verify: `bash cabinet/scripts/health-check.sh`, `tmux attach -t officer-cos`
+  (detach: `C-b d`), and a Telegram round-trip with the Chair.
+
+### 2.6 — Posture ruling (optional, Captain-only)
+
+A Mini that should run the sovereign posture needs the Captain ratification
+described in `cabinet/docs/mac-mini-deploy-runbook.md` §4 step 5: edit +
+commit `instance/config/posture.yml` (+ empty `standing-grants.yml`), then
+`sudo bash cabinet/scripts/germline-lock.sh lock`. Skipping this leaves the
+deployment guardian (today's rules) — nothing else changes.
+
+*Axes (amendment 2026-07-05):* start from the shipped preset —
+`cp instance/config/posture-presets/org-macmini.yml instance/config/posture.yml`
+(axes `flavor: org` · `deployment_target: mac_mini` · schg attestation), set
+`deployment:` to this Mini's `CABINET_ID`, and add a `never_grant:` list if
+any ceiling class should be structurally non-grantable on this deployment.
+Downgrade is always instant and needs no unlock: `CABINET_POSTURE=guardian`
+env, or the Captain binder verb `posture guardian` (writes the narrow-only
+`instance/config/posture-narrow` cap). Upgrades happen ONLY via this lock
+ritual — no env var, dashboard, or chat verb can widen.
 
 ---
 
 ## Stop-the-line gates
 
-If any Phase 1 checkpoint fails, halt + investigate + fix before continuing. Common failure modes:
-- 1.4 `pg_dump 16.x` wins → fix `~/.zprofile` PATH order
-- 1.4 `envsubst: command not found` → `brew install gettext` (gettext is keg-only on Mac; may need PATH addition: `echo 'export PATH="/opt/homebrew/opt/gettext/bin:$PATH"' >> ~/.zprofile`)
-- 1.5 Redis doesn't survive reboot → verify `appendonly yes` actually wrote to redis.conf
-- 1.8 Accessibility prompt re-fires after reboot → 1.10 code-signing wasn't done (skip 1.10 and you'll be stuck in a loop)
-- 1.9 Tailscale auth-key expired → generate a new one from the Tailscale admin console
+If any checkpoint fails, halt + investigate before continuing. Common failure
+modes:
 
-## Per Spec 058 v1.2 + Spec 059 v1.1 — consolidated for Captain operational use.
+- 1.4 `pg_dump 16.x` wins → fix `~/.zprofile` PATH order
+- 1.4 `envsubst: command not found` → `brew install gettext` (keg-only; may
+  need `echo 'export PATH="/opt/homebrew/opt/gettext/bin:$PATH"' >> ~/.zprofile`)
+- 1.5 Redis doesn't survive reboot → verify `appendonly yes` actually landed
+  in redis.conf
+- 1.7 permission prompt re-fires after reboot → code-signing gap
+  (`cabinet/docs/mac-tcc-code-signing-gate.md`)
+- 2.1 generator refuses over existing files → that's the guard working; use
+  `--adopt` (fresh captain adopting a shipped instance/) or `--force`
+  (deliberate single-file overwrite)
+- 2.2 `bootstrap-roles.sh` exits 1 "no product slug" →
+  `instance/config/active-project.txt` missing (generated since 2026-07-07;
+  on older generations: `echo <lane-slug> > instance/config/active-project.txt`)
+- 2.3 null-hatch red → do NOT deploy; the tree leaks launcher/personal state
+  into framework core — fix or file the failure upstream
+
+---
+
+## Appendix A — OPTIONAL Flavor-A add-on: personal sensing estate
+
+Only for a **personal-flavor** deployment (the Captain's own clone-org on
+their daily machine, or a Mini deliberately bound to the Captain's estate).
+Never required; the core org runs entirely without it.
+
+1. Install the personal stack: `brew install screenpipe`,
+   `brew services start screenpipe`, complete its setup wizard (configure
+   exclusions: password managers, banking, personal email; set retention).
+2. Bind the source seam: copy `instance/config/sources.yml.example` to
+   `instance/config/sources.yml` and set `adapter:` to the Flavor-A adapter
+   under `instance/flavor-a/` (see the example file's contract — the module
+   must live in the instance tree; framework core never names it).
+   If the generator emitted an OrgSource `sources.yml` (org flavor), replace
+   it; if you ran the interview with `autonomy.flavor: personal`, none was
+   emitted and the file is yours to author.
+3. Packs: personal-preset capability packs live under `packs/`
+   (`preset-personal-pack`, etc.) — install per `packs/README.md`.
+4. Rules: the binding addendum `instance/flavor-a/rules/brain-bridge-*.md`
+   governs officer use of the estate alongside `.claude/rules/brain-bridge.md`.
+
+The clean-room ratchets stay green either way: personal code lives in
+`instance/flavor-a/`, reached only through `framework.sources` — a screenpipe
+import inside `framework/` is CI-red regardless of flavor.
+
+## Appendix B — OPTIONAL: cua-driver (computer-use)
+
+Only when an officer will carry the `drives_computer` capability.
+
+```bash
+PINNED_TAG=$(gh release list --repo trycua/cua --limit 1 --json tagName --jq '.[0].tagName')
+mkdir -p cabinet/config && echo "$PINNED_TAG" > cabinet/config/cua-driver-version.txt
+gh release download "$PINNED_TAG" --repo trycua/cua --pattern '*macOS*' --dir ~/Downloads/
+sudo mv ~/Downloads/cua-driver /opt/homebrew/bin/cua-driver && sudo chmod +x /opt/homebrew/bin/cua-driver
+cua-driver --version
+```
+
+TCC: cua-driver needs Accessibility + Screen Recording + Full Disk Access,
+and code-signing (Checkpoint 1.7 / the TCC gate doc) for the grants to
+persist. The MCP overlay ships at `cabinet/mcp-overlays/cua-driver.mcp.json`
+(per-officer override: `instance/agents/<officer>/mcp.json`) —
+`start-officer-mac.sh` merges it automatically for `drives_computer`
+officers.
+
+## Appendix C — OPTIONAL: UPS (apcupsd)
+
+Only if the Mini sits on an APC UPS.
+
+```bash
+brew install apcupsd
+sudo $EDITOR /opt/homebrew/etc/apcupsd/apcupsd.conf   # UPSCABLE + UPSTYPE per model
+brew services start apcupsd
+# Test: pull the wall plug briefly; apcupsd should detect + log
+```
