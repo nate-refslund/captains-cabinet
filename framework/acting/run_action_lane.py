@@ -7,10 +7,11 @@ proposal, ACTION payloads instead of reply drafts. Propose-only: every card
 awaits the Captain's approve/edit:/skip: through the (fixed) binder; approves execute
 via framework.frontdoor.action_exec.
 
-Signals v1 (read-only over the Plan-A vault, newest-first, fenced to a recency
-window): open commitments (6-Commitments), fresh meeting notes (2-Meetings),
-fresh decisions (5-Reflections/Decisions). The gather step is `as_of`-shaped so
-the retrodiction harness can drive the same path with a historical clock.
+Signals v1 (read-only, newest-first, fenced to a recency window): open
+commitments, fresh meeting notes, fresh decisions — the section table + vault
+layout live in framework/sources/vault_signals.py since the CG-2 extract
+(2026-07-07). The gather step is `as_of`-shaped so the retrodiction harness
+can drive the same path with a historical clock.
 
 Ask budget (germline batch 2026-07-04 — supersedes the 2026-07-03 "no
 attention quota" note that used to live here): presented asks are throttled at
@@ -55,6 +56,7 @@ from framework.acting.loop import (  # noqa: E402
     expire_event, pending_proposals, proposal_event, proposal_id)
 from framework.fidelity.consequence import emit_consequence, read_ledger  # noqa: E402
 from framework.frontdoor import actfirst_canary  # noqa: E402  # cid-echo suppression (TI-7)
+from framework.sources import vault_signals  # noqa: E402  # CG-2 gather extract
 # TI-3 act-first gate seams (all already committed): the executor act-first path,
 # the reversal-eligibility perimeter, the veto registry, the receipt surface.
 # _canonical_sha/_surfaces_path are consumed (never redefined) so the TOCTOU
@@ -84,7 +86,6 @@ def covered_evidence_refs() -> frozenset:
         pass   # fail-open here is safe: slug dedup still applies
     return frozenset(refs)
 
-VAULT = Path(vault_dir() or str(Path.home() / "vault"))
 # Captain-ratified directions.yml (mission/instruments/bets/not_goals per lane) —
 # injected into the proposer prompt + used to validate every card's direction_fit.
 DIRECTIONS_PATH = Path(__file__).resolve().parents[2] / "instance" / "config" / "directions.yml"
@@ -123,7 +124,7 @@ ASK_KEY_TTL_S = 172800
 # one staleness doctrine; env-overridable for the same reason the draft lane's
 # is; <=0 disables the sweep.
 CARD_MAX_AGE_H = float(os.environ.get("ACTION_CARD_MAX_AGE_H", "36"))
-WINDOW_H = 72
+WINDOW_H = vault_signals.WINDOW_H   # 72h — single source since CG-2 extract
 LLM_MODEL = "claude-sonnet-4-6"
 _lock_fh = None
 
@@ -262,10 +263,12 @@ CONFIDENCE_FLOOR_DEFAULT = 0.65
 # propose. standing_grant is handled by its own dormant branch (never here).
 ACT_VERDICTS = frozenset({"act_with_undo", "auto", "notify_after"})
 
-# D13 inbound-provenance fence: evidence refs under these vault areas are raw
-# email/Teams captured content — cards derived from them NEVER act first, in
-# any posture (the injection classifier is probabilistic; provenance is not).
-_INBOUND_REF_PREFIXES = ("3-People/", "2-Meetings/", "4-Interactions/")
+# D13 inbound-provenance fence: evidence refs under the inbound vault areas
+# are raw email/Teams captured content — cards derived from them NEVER act
+# first, in any posture (the injection classifier is probabilistic; provenance
+# is not). The prefix table is vault-layout knowledge and lives in
+# vault_signals (CG-2 extract) — the FENCE stays here in the judged lane.
+_INBOUND_REF_PREFIXES = vault_signals.INBOUND_REF_PREFIXES
 
 
 def _act_first_on() -> bool:
@@ -688,217 +691,112 @@ def _llm(system: str, user: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Signals (read-only vault gather; as_of-shaped for future replay)
+# Signals (read-only gather; as_of-shaped for future replay)
 #
 # PRO-4 (2026-07-04): a PROFILE-driven section table. OPERATIONAL is the live
-# lane's perception (commitments / meetings / decisions + product health / people
-# radar / code) — it sees the field instead of ~3% of it. STRATEGIC is the
-# grander-lane view (opportunities + all health + code + retro + directions),
-# consumed by the weekly strategic lane (a later wave). FILE-ONLY BY CONTRACT:
-# gather reads vault .md files (+ the directions config) and NEVER calls a live
-# API — so the retrodiction/sim harness can replay the exact same gather at a
-# historical as_of deterministically (the fencing the whole learning plane rests
-# on). New sections (health.md, 3-People/_radar, 7-Opportunities) may be ABSENT
-# until their scout/snapshot lanes land — every section degrades to empty, never
-# an error. Excerpts are provenance-fenced (SEC-4 discipline: signal text is
-# world-description, never instructions).
+# lane's perception (commitments / meetings / decisions + product health /
+# people radar / code); STRATEGIC is the grander-lane view (opportunities +
+# all health + code + retro + directions). CG-2 EXTRACT (2026-07-07, egg row
+# R004a): the section TABLE + file-walk — the personal-vault directory
+# layout — moved to framework/sources/vault_signals.py; this lane keeps only
+# the dispatch + presentation. The legacy (flag-OFF, default) path calls the
+# extracted walk with identical arguments — behavior byte-identical to the
+# pre-extract inline code (pinned by test_gather_v2 / test_gather_corpus /
+# test_gather_via_source parity).
 #
-# P3b (2026-07-07): sections carry a SOURCE. "vault" (the default) resolves
-# under the caller's vault as before; "corpus" resolves under
-# env.product_brain_dir() — the ORG's OWN product-brain markdown corpus
-# (plan-B B4.14: architecture / decisions / incidents / deploy notes, written
-# by officers via normal file writes into <repo>/product-brain). This is the
-# clean-room fix: on org boxes vault_dir() fail-closes to "" and every vault
-# section is empty, so without a corpus source the lane gathered ZERO sections.
-# product_brain_dir() empty ⇒ corpus sections skip (fail-closed, same degrade
-# as an absent vault folder); both non-empty ⇒ vault sections are UNCHANGED and
-# corpus blocks ride alongside (additive). Corpus refs are namespaced
-# "product-brain/<relpath>" so evidence refs stay unambiguous across sources.
-# Same file-only contract, same _recent_files mtime fencing (as_of ceiling +
-# window), same caps/chars bounds, same SEC-4 provenance fencing.
+# CABINET_GATHER_VIA_SOURCE=1 (DARK by default — CG-2 lands dark, canaries
+# one tick, then relocks): gather routes through the bound PersonalSource
+# seam instead of the direct vault walk — open_commitments() rows plus
+# leak-scoped, content_ts-fenced search() context, presented in the SAME
+# fenced-block channel; org-corpus sections ride along unchanged (they are
+# org-side perception, not the captain's vault). FAIL-CLOSED: a broken or
+# absent source gathers EMPTY — it never fabricates and never silently falls
+# back to the vault walk (a fallback would defeat the seam's leak scoping).
 # ---------------------------------------------------------------------------
 
-# (label, subpath, filenames, window_h, cap, chars, ff_filter, group_by_product,
-#  source)
-#   filenames=None        → rglob every *.md under subpath (recency-windowed)
-#   filenames=[...]        → only those basenames under subpath/*/ (per-product dirs)
-#   window_h=None          → UNWINDOWED (all ages, still <= as_of — never leak future)
-#   ff_filter={k: pred}    → keep a file only if its YAML head[k] satisfies pred(v)
-#   group_by_product=True  → cap counts PRODUCTS (all their named files), not files
-#   source="vault"|"corpus" → root: the vault (default) | env.product_brain_dir()
-_Section = namedtuple(
-    "_Section",
-    "label subpath filenames window_h cap chars ff_filter group_by_product source")
+def _gather_via_source() -> bool:
+    return os.environ.get("CABINET_GATHER_VIA_SOURCE", "") == "1"
 
 
-def _sec(label: str, subpath: str, *, filenames=None, window_h: "int | None" = WINDOW_H,
-         cap: int = 5, chars: int = 700, ff_filter=None,
-         group_by_product: bool = False, source: str = "vault") -> "_Section":
-    return _Section(label, subpath, filenames, window_h, cap, chars, ff_filter,
-                    group_by_product, source)
+def _fence_block(label: str, ref: str, body: str, chars: int = 700) -> str:
+    body = (body or "").strip()[:chars]
+    return f"--- {label} ref={ref} ---\n{body}" if body else ""
 
 
-def _ff_truthy(v: Any) -> bool:
-    return v is True or str(v).strip().lower() == "true"
+def _source_parts(as_of: dt.datetime, *, window_h: int, profile: str,
+                  corpus_dir: str) -> list:
+    """PersonalSource-mediated evidence parts (the flag-ON path).
 
-
-def _ff_new_or_investigating(v: Any) -> bool:
-    return str(v).strip().lower() in ("new", "investigating")
-
-
-# Profiles are independent tables (so e.g. health carries the alert:true filter
-# under OPERATIONAL but is unfiltered — "all health" — under STRATEGIC).
-PROFILES = {
-    "operational": [
-        _sec("OPEN COMMITMENT", "6-Commitments", cap=8, chars=700),
-        _sec("MEETING", "2-Meetings", cap=5, chars=1200),
-        _sec("DECISION", "5-Reflections/Decisions", cap=4, chars=700),
-        _sec("PRODUCT HEALTH", "9-Codebases", filenames=["health.md"],
-             cap=3, chars=600, ff_filter={"alert": _ff_truthy}),
-        _sec("PEOPLE", "3-People/_radar", cap=3, chars=500),
-        _sec("CODE", "9-Codebases", filenames=["commits.md", "deployment.md"],
-             cap=2, chars=800, group_by_product=True),
-        # P3b: recent org-corpus changes (newest 4 within the operational
-        # window) — the live lane's perception of the org's OWN knowledge.
-        _sec("CORPUS", "", cap=4, chars=700, source="corpus"),
-    ],
-    "strategic": [
-        _sec("OPPORTUNITY", "7-Opportunities", window_h=None, cap=6, chars=700,
-             ff_filter={"status": _ff_new_or_investigating}),
-        _sec("PRODUCT HEALTH", "9-Codebases", filenames=["health.md"],
-             window_h=None, cap=8, chars=600),
-        _sec("CODE", "9-Codebases", filenames=["commits.md", "deployment.md"],
-             cap=2, chars=800, group_by_product=True),
-        _sec("RETRO", "5-Reflections/Weekly-Trends", window_h=None, cap=1, chars=900),
-        # P3b: the grander view — newest 6 corpus notes of ANY age (still
-        # <= as_of; the ceiling never leaks future files into a replay).
-        _sec("CORPUS", "", window_h=None, cap=6, chars=800, source="corpus"),
-    ],
-}
-
-
-def _read_frontmatter(text: str) -> dict:
-    """Parse ONLY the leading `---`..`---` YAML head (yaml.safe_load, minimal
-    line-parse fallback). Never executes anything — the head is data."""
-    m = re.match(r"^---\s*\n(.*?)\n---\s*(?:\n|$)", text or "", re.DOTALL)
-    if not m:
-        return {}
-    block = m.group(1)
+    Commitments via ``open_commitments()`` (both contract directions, capped
+    like the legacy commitments section); per-commitment vault context via the
+    leak-scoped ``search(handle, topic=…)`` — hits are content_ts-fenced to
+    ``<= as_of`` and hits WITHOUT a content_ts are DROPPED (absent means
+    unfenceable, never assumed-past — the replay fence holds). Honest empty on
+    any source failure."""
     try:
-        import yaml
-        d = yaml.safe_load(block)
-        if isinstance(d, dict):
-            return d
-    except Exception:
-        pass
-    out: dict = {}
-    for line in block.splitlines():
-        if ":" in line and not line.startswith((" ", "\t", "-")):
-            k, v = line.split(":", 1)
-            out[k.strip()] = v.strip()
-    return out
-
-
-def _ff_match(p: Path, ff_filter: "dict | None") -> bool:
-    if not ff_filter:
-        return True
-    try:
-        text = p.read_text(encoding="utf-8", errors="ignore")
-    except OSError:
-        return False
-    fm = _read_frontmatter(text)
-    return all(pred(fm.get(key)) for key, pred in ff_filter.items())
-
-
-def _mtime(p: Path) -> "dt.datetime | None":
-    try:
-        return dt.datetime.fromtimestamp(p.stat().st_mtime, tz=dt.timezone.utc)
-    except OSError:
-        return None
-
-
-def _recent_files(folder: Path, *, as_of: dt.datetime, window_h: "int | None",
-                  cap: int, ff_filter: "dict | None" = None) -> list:
-    """Newest-first *.md under folder, fenced to (as_of - window_h, as_of].
-    window_h=None drops the lower bound (unwindowed) but keeps the as_of ceiling
-    so a replay never leaks a file newer than its clock. ff_filter (if any) is
-    applied newest-first, reading only until `cap` matches are found."""
-    if not folder.exists():
+        from framework.sources import get_source
+        src = get_source()
+        if not src.available():
+            return []
+    except Exception as e:  # noqa: BLE001 — fail-closed, never fabricate
+        print(f"gather: source unavailable ({e}) — empty gather (flag-on)")
         return []
-    lo = (as_of - dt.timedelta(hours=window_h)) if window_h is not None else None
-    cands = []
-    for p in folder.rglob("*.md"):
-        if "_noise" in p.parts:
-            continue
-        m = _mtime(p)
-        if m is None or m > as_of or (lo is not None and m < lo):
-            continue
-        cands.append((m, p))
-    cands.sort(reverse=True)
-    out = []
-    for _, p in cands:
-        if not _ff_match(p, ff_filter):
-            continue
-        out.append(p)
-        if len(out) >= cap:
-            break
-    return out
-
-
-def _named_files(root: Path, names: list, *, as_of: dt.datetime,
-                 window_h: "int | None", cap: int, ff_filter: "dict | None" = None,
-                 group_by_product: bool = False) -> list:
-    """The named files (e.g. health.md, commits.md) under each product dir
-    root/*/. group_by_product ⇒ cap counts PRODUCTS (newest-first by their newest
-    matching file), each contributing all its named files; else cap counts files.
-    Same as_of/window fencing + ff_filter as _recent_files."""
-    if not root.exists():
-        return []
-    lo = (as_of - dt.timedelta(hours=window_h)) if window_h is not None else None
-    found = []
-    for prod in sorted(root.iterdir()):
-        if not prod.is_dir():
-            continue
-        for name in names:
-            p = prod / name
-            if not p.exists():
-                continue
-            m = _mtime(p)
-            if m is None or m > as_of or (lo is not None and m < lo):
-                continue
-            if not _ff_match(p, ff_filter):
-                continue
-            found.append((m, prod.name, p))
-    found.sort(reverse=True)                      # newest first
-    if not group_by_product:
-        return [p for _, _, p in found[:cap]]
-    accepted: list = []
-    out = []
-    for _, prodname, p in found:
-        if prodname not in accepted:
-            if len(accepted) >= cap:
-                continue
-            accepted.append(prodname)
-        out.append(p)
-    return out
-
-
-def _excerpt(p: Path, chars: int) -> str:
+    parts: list = []
     try:
-        text = p.read_text(encoding="utf-8", errors="ignore")
-    except OSError:
-        return ""
-    # drop our own graph block + fences; the LLM needs prose, not plumbing
-    text = re.sub(r"<!-- graph:links -->.*?<!-- /graph:links -->", "", text,
-                  flags=re.DOTALL)
-    return text.strip()[:chars]
-
-
-def _relpath(p: Path, vault: Path) -> str:
-    try:
-        return str(p.relative_to(vault))
-    except ValueError:
-        return p.name
+        rows = list(src.open_commitments("owed_by_captain") or [])
+        rows += list(src.open_commitments("owed_to_captain") or [])
+    except Exception as e:  # noqa: BLE001
+        print(f"gather: open_commitments failed ({e}) — section empty")
+        rows = []
+    seen_refs: set = set()
+    for row in rows[:8]:
+        if not isinstance(row, dict):
+            continue
+        ref = str(row.get("path") or row.get("id") or row.get("slug")
+                  or "commitment")
+        body = " · ".join(
+            str(row[k]) for k in ("text", "person", "due", "direction", "status")
+            if row.get(k))
+        blk = _fence_block("OPEN COMMITMENT", ref, body)
+        if blk:
+            parts.append((ref, blk))
+            seen_refs.add(ref)
+        handle = str(row.get("person") or row.get("slug") or "").strip()
+        topic = str(row.get("text") or "").strip()
+        if not handle or not topic:
+            continue
+        try:
+            hits = (src.search(handle, topic=topic) or {}).get("hits") or []
+        except Exception:  # noqa: BLE001 — one bad search never sinks the gather
+            continue
+        kept = 0
+        for h in hits:
+            if kept >= 2 or not isinstance(h, dict):
+                continue
+            cts = h.get("content_ts")
+            if not cts:
+                continue                  # unfenceable — never assume past
+            try:
+                ts = dt.datetime.fromisoformat(str(cts).replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=dt.timezone.utc)
+            if ts > as_of:
+                continue                  # future hit — the replay fence holds
+            href = str(h.get("path") or h.get("ref") or h.get("heading") or handle)
+            if href in seen_refs:
+                continue
+            blk = _fence_block("CONTEXT", href, str(h.get("text") or ""))
+            if blk:
+                parts.append((href, blk))
+                seen_refs.add(href)
+                kept += 1
+    # Org-corpus perception rides along unchanged (org-side, not the vault).
+    parts.extend(vault_signals.collect_sections(
+        as_of, window_h=window_h, profile=profile, corpus_dir=corpus_dir,
+        include=("corpus",)))
+    return parts
 
 
 def _directions_block() -> str:
@@ -914,50 +812,32 @@ def _directions_block() -> str:
 def gather_signals(as_of: dt.datetime, *, window_h: int = WINDOW_H,
                    profile: str = "operational", vault: "Path | None" = None,
                    suppress_cids=frozenset()) -> str:
-    """The fenced evidence bundle for a profile. FILE-ONLY (no API) so the sim
-    harness replays it deterministically; v1 fencing = file-recency window ending
-    at as_of (replay-grade content_ts fencing lands with the sim harness). New
-    folders may be absent → their section is simply empty. Sections with
-    source="corpus" root at env.product_brain_dir() (the org's product-brain
-    corpus) instead of the vault — empty resolver ⇒ empty section (P3b).
+    """The fenced evidence bundle for a profile.
 
-    ``suppress_cids`` drops any excerpt carrying one of OUR OWN acted correlation
-    ids (an act→capture→act echo — TI-7); empty (the default) is a no-op, so the
-    pre-flip lane and the sim harness are unchanged. The live lane passes
-    ``actfirst_canary.own_acted_cids()`` once acting begins (wired at TI-3)."""
-    vault = vault if vault is not None else VAULT
-    sections = PROFILES.get(profile, PROFILES["operational"])
-    parts = []                                    # (path, fenced-text) — path for logging
-    for sec in sections:
-        # P3b: a "corpus" section roots at the org's product-brain dir instead
-        # of the vault. Unresolved ("" on a box with no corpus) ⇒ the section
-        # is simply empty — the same fail-closed degrade as an absent vault
-        # folder, never an error. Refs are namespaced "product-brain/…" so an
-        # evidence ref never collides with a vault-relative path.
-        if sec.source == "corpus":
-            brain = product_brain_dir()
-            if not brain:
-                continue
-            base, ref_prefix = Path(brain), "product-brain/"
-        else:
-            base, ref_prefix = vault, ""
-        root = base / sec.subpath if sec.subpath else base
-        # a section using the module default window honors the caller's override;
-        # a section with its own window (incl. None = unwindowed) keeps it.
-        eff_window = window_h if sec.window_h == WINDOW_H else sec.window_h
-        if sec.filenames:
-            files = _named_files(root, sec.filenames, as_of=as_of,
-                                 window_h=eff_window, cap=sec.cap,
-                                 ff_filter=sec.ff_filter,
-                                 group_by_product=sec.group_by_product)
-        else:
-            files = _recent_files(root, as_of=as_of, window_h=eff_window,
-                                  cap=sec.cap, ff_filter=sec.ff_filter)
-        for p in files:
-            body = _excerpt(p, sec.chars)
-            if body:
-                parts.append(
-                    (p, f"--- {sec.label} ref={ref_prefix}{_relpath(p, base)} ---\n{body}"))
+    Flag OFF (default): the extracted vault walk
+    (``framework.sources.vault_signals.collect_sections``) — FILE-ONLY (no
+    API) so the sim harness replays it deterministically; v1 fencing =
+    file-recency window ending at as_of. New folders may be absent → their
+    section is simply empty. Corpus sections root at env.product_brain_dir()
+    (the org's product-brain corpus); empty resolver ⇒ empty section (P3b).
+    Behavior is byte-identical to the pre-CG-2 inline implementation.
+
+    Flag ON (``CABINET_GATHER_VIA_SOURCE=1``, dark): ``_source_parts`` — the
+    PersonalSource seam supplies commitments + leak-scoped context in the same
+    fenced-block channel; corpus sections unchanged.
+
+    ``suppress_cids`` drops any excerpt carrying one of OUR OWN acted
+    correlation ids (an act→capture→act echo — TI-7); empty (the default) is a
+    no-op, so the pre-flip lane and the sim harness are unchanged. The live
+    lane passes ``actfirst_canary.own_acted_cids()`` once acting begins."""
+    corpus_dir = product_brain_dir() or ""
+    if _gather_via_source():
+        parts = _source_parts(as_of, window_h=window_h, profile=profile,
+                              corpus_dir=corpus_dir)
+    else:
+        parts = vault_signals.collect_sections(
+            as_of, window_h=window_h, profile=profile, vault=vault,
+            corpus_dir=corpus_dir)
     # TI-7 cid-echo suppression: never re-feed our own re-captured acts to the
     # proposer. No-op when suppress_cids is empty (pre-flip / sim replay).
     kept = actfirst_canary.filter_cid_echoes(
