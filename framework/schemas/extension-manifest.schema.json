@@ -65,6 +65,11 @@
       "type": "object",
       "minProperties": 1,
       "additionalProperties": { "type": "string", "minLength": 1 }
+    },
+    "sunset": {
+      "description": "OPTIONAL lifecycle bound — an ISO date (e.g. '2026-10-05') or a condition string (e.g. 'undefined +90d review'). Read by the apoptosis reaper, which cards the extension for removal-wave review once the date passes / the condition holds. ABSENT = no scheduled sunset (the default; nothing is reaped).",
+      "type": "string",
+      "minLength": 1
     }
   }
 }
