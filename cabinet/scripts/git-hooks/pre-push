@@ -207,14 +207,25 @@ run_golden_evals_gate() {
     # timeout guards against a runaway run-golden-evals.sh hang —
     # otherwise every subsequent push would pay the 30s flock timeout
     # before blocking. 60s is ~30x the observed 1-2s suite runtime.
-    timeout "$EVAL_RUN_TIMEOUT_SEC" bash "$eval_script"
+    # Portability: timeout(1) is GNU coreutils — absent on stock macOS
+    # (exit 127 here blocked a GREEN suite from reaching master). Resolve
+    # timeout → gtimeout (homebrew coreutils) → perl SIGALRM (perl ships
+    # with macOS; alarm survives exec, so a hung suite still dies at
+    # EVAL_RUN_TIMEOUT_SEC). Same guard, three carriers — never a 127.
+    if command -v timeout >/dev/null 2>&1; then
+      timeout "$EVAL_RUN_TIMEOUT_SEC" bash "$eval_script"
+    elif command -v gtimeout >/dev/null 2>&1; then
+      gtimeout "$EVAL_RUN_TIMEOUT_SEC" bash "$eval_script"
+    else
+      perl -e 'alarm shift; exec @ARGV or die "exec: $!"' "$EVAL_RUN_TIMEOUT_SEC" bash "$eval_script"
+    fi
   ) 200>"$EVAL_LOCK_FILE"
   local rc=$?
   if [ "$rc" -ne 0 ]; then
     cat >&2 <<EOF
 pre-push: BLOCKED — golden-eval suite failed (exit $rc). Fix the failure, re-run
   bash cabinet/scripts/run-golden-evals.sh
-locally to confirm 12/12 before retrying the push.
+locally to confirm every eval passes before retrying the push.
 EOF
     return 1
   fi

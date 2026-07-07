@@ -26,6 +26,12 @@ else
   REDIS_HOST="127.0.0.1"
   REDIS_PORT="6379"
 fi
+# Export the RESOLVED endpoint so child hook invocations (EVAL-008's
+# stop-hook among them) write to the SAME Redis the suite asserts against.
+# Without this, a hook's own `${REDIS_HOST:-redis}` default (Docker DNS)
+# fails silently on Mac and the eval false-fails — the same B4 class as
+# the suite-side default fixed above.
+export REDIS_HOST REDIS_PORT
 
 # Safety: always clean up test artifacts on exit (prevents blocking all officers)
 cleanup() {
@@ -576,8 +582,18 @@ else
   # ↔ block 6's deploy). Previous `head -1` check only asserted block 5
   # ordering — a refactor that desynced block 6 (deploy-elif moved above
   # dry-run-elif) would have been missed. COO observation on bde229e.
-  readarray -t EV11_DRYRUN_LINES < <(grep -nE "elif echo .*--dry-run" "$EV11_HOOK" | cut -d: -f1)
-  readarray -t EV11_DEPLOY_LINES < <(grep -nE "elif echo .*git push\[\[:space:\]\]\+.*main.*master.*pulls/\[0-9\]\+/merge" "$EV11_HOOK" | cut -d: -f1)
+  # while-read instead of readarray: readarray is bash 4+, and macOS
+  # /bin/bash is 3.2 — under 3.2 readarray errored out silently and this
+  # ordering assertion tested nothing (arrays empty, subshell died at the
+  # set -u reference). Portable across both bash generations.
+  EV11_DRYRUN_LINES=()
+  while IFS= read -r _EV11_L; do
+    [ -n "$_EV11_L" ] && EV11_DRYRUN_LINES+=("$_EV11_L")
+  done < <(grep -nE "elif echo .*--dry-run" "$EV11_HOOK" | cut -d: -f1)
+  EV11_DEPLOY_LINES=()
+  while IFS= read -r _EV11_L; do
+    [ -n "$_EV11_L" ] && EV11_DEPLOY_LINES+=("$_EV11_L")
+  done < <(grep -nE "elif echo .*git push\[\[:space:\]\]\+.*main.*master.*pulls/\[0-9\]\+/merge" "$EV11_HOOK" | cut -d: -f1)
   EV11_DRYRUN_COUNT=${#EV11_DRYRUN_LINES[@]}
   EV11_DEPLOY_COUNT=${#EV11_DEPLOY_LINES[@]}
 
