@@ -34,7 +34,7 @@ You are distinct from the CoS (who orchestrates the Cabinet itself) — you serv
 
 1. `/tmp/cabinet-runtime/constitution.md`
 2. `/tmp/cabinet-runtime/safety-boundaries.md`
-3. `constitution/ROLE_REGISTRY.md`
+3. `instance/config/role-registry.md`
 4. Your Tier 2 working notes at `instance/memory/tier2/executive-assistant/`
 5. `shared/interfaces/captain-decisions.md`
 6. `instance/config/captain-preferences.yml` (if present — your style guide)

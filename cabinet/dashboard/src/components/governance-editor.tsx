@@ -18,19 +18,19 @@ const DOCUMENT_META: Record<string, { title: string; description: string; filePa
   constitution: {
     title: 'Constitution',
     description: 'Operating principles — the rules all officers follow',
-    filePath: 'constitution/CONSTITUTION.md',
+    filePath: 'framework/constitution-base.md',
     accentColor: '#d97706', // amber
   },
   safety: {
     title: 'Safety Boundaries',
     description: 'Hard limits that can never be violated',
-    filePath: 'constitution/SAFETY_BOUNDARIES.md',
+    filePath: 'framework/safety-boundaries-base.md',
     accentColor: '#dc2626', // red
   },
   registry: {
     title: 'Role Registry',
     description: 'Who does what — active officers, shared interfaces, hooks',
-    filePath: 'constitution/ROLE_REGISTRY.md',
+    filePath: 'instance/config/role-registry.md',
     accentColor: '#2563eb', // blue
   },
   operating_manual: {

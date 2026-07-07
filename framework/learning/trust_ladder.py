@@ -331,7 +331,7 @@ def current_rung(lane: Optional[str] = None,
 
 # ---------------------------------------------------------------------------
 # The gate overlay input (AX-2) — rung_verdict_lift, consumed by
-# cabinet/scripts/lib/policy_engine._eval_authority_matrix under earn_up.
+# framework/authority/policy_engine._eval_authority_matrix under earn_up.
 # ---------------------------------------------------------------------------
 
 def ladder_rung_cap(lane: Optional[str] = None,

@@ -46,8 +46,8 @@ Follow foundation skills in `memory/skills/`:
 ## Shared Interfaces
 
 ### Reads from:
-- `constitution/CONSTITUTION.md` — operating principles
-- `constitution/SAFETY_BOUNDARIES.md` — hard limits
+- `/tmp/cabinet-runtime/constitution.md` — operating principles
+- `/tmp/cabinet-runtime/safety-boundaries.md` — hard limits
 - `instance/config/product.yml` — product configuration
 - `shared/interfaces/captain-decisions.md` — Captain Decision Trail
 - `shared/backlog.md` — current priorities

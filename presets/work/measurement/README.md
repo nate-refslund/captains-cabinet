@@ -38,8 +38,10 @@ The seed modules are written for that install location: each does
 `sys.path.insert(0, <4 parents up>)` (repo root when installed under
 `framework/measurement/…`) and imports the runners via their canonical
 `framework.measurement.…` paths; `policy_enforcement.py` and
-`cto_block_destructive.py` additionally resolve `cabinet/scripts/lib` and
-the policy layers the same install-relative way. Keep the files verbatim
+`cto_block_destructive.py` additionally import the engine as
+`framework.authority.policy_engine` off that same root (CG-14 pull-down —
+`cabinet/scripts/lib` no longer carries it) and resolve the policy layers
+install-relative via `load_policies(<4 parents up>)`. Keep the files verbatim
 here — do not "fix" the parent counts for this preset location (the tests
 exercise them at a real install shape instead).
 

@@ -1,0 +1,88 @@
+# =============================================================================
+# act-first-surfaces.yml.example — the framework-shippable TWIN (egg row R126)
+# =============================================================================
+#
+# Copy to instance/config/act-first-surfaces.yml, fill in your deployment's
+# acting identity, and have the Captain ratify it (the live file is a
+# germline-lock target — schg, listed in immutable-core.yml files). This
+# example ships EMPTY lists: access posture and exclusions are CAPTAIN
+# rulings, never framework defaults. Ruling provenance (why a board is
+# gated/excluded) belongs in the Captain ledger
+# (shared/interfaces/captain-decisions.md) — cite it from `why:` fields.
+#
+# Two sections gate a board, both Captain-owned, mechanically identical:
+#   denylist:      — explicit Captain exclusions. A row:
+#                    {board_id: "...", kinds: [...optional...], why: "..."}
+#                    (no kinds = whole board).
+#   cascade_gated: — NOT an access denial. Audit-proven boards where a write
+#                    mechanically fires outbound mail/Teams to a human —
+#                    acting there = sending, so the write stays propose-first
+#                    under the UNCHANGED external-comms ceiling. The Captain
+#                    lifts any entry by deleting it (one line).
+#
+# CORRUPTION-HONESTY CONTRACT (the consumer's fail-shape, do not weaken):
+#   * File ABSENT           ⇒ empty denylist (the deployment's ruled posture
+#                             applies; default-allow ≠ default-act — every
+#                             act-first step still needs a registered inverse
+#                             and the hard ceilings hold on every board).
+#   * File PRESENT but
+#     UNPARSEABLE           ⇒ every board gated until repaired — an unreadable
+#                             Captain exclusion list is NEVER ignored.
+# =============================================================================
+
+version: 1
+status: unratified                # flips to `ruled` when the Captain ratifies
+audit_ref: ""                     # your cascade-audit doc, if any
+ruled_at: ""
+
+# --- acting identity (Captain-ruled) ------------------------------------------
+# Names only — never credential values — in any file or log.
+acting_identity:
+  monday_user_id: ""
+  credential_env: MONDAY_API_TOKEN
+  scope: ""
+
+# --- instance act-first knobs --------------------------------------------------
+confidence_floor: 0.65            # proposer confidence below this ⇒ propose-only
+
+caps:                             # honest, conservative starters — tighten never loosen
+  estate:
+    max_acts_per_run: 5           # across all boards+kinds in one lane run
+    max_acts_per_day: 40
+  per_kind:
+    max_acts_per_day: 20          # per action_type (e.g. task_create)
+  per_board_default:
+    max_acts_per_run: 3
+    max_acts_per_day: 15
+
+# --- executor obligations (hard, deterministic; enforced in action_exec) ------
+# Invariants on EVERY act-first write regardless of board — these, not board
+# lists, are what keep a default-allow posture safe. Code home: SEC-3 in
+# framework/frontdoor/action_exec.py.
+executor_obligations:
+  - id: no-at-mention
+    rule: >
+      NEVER emit Monday @-mention syntax (@name, @team, or a raw Monday user-id
+      mention token) in any create_update / note body. A mention notifies AND
+      EMAILS the mentioned user — a real outbound cascade the board gate does
+      not capture. Strip @-tokens from all lane-written Monday bodies.
+  - id: provenance-banner
+    rule: >
+      Every lane-created artifact carries a loud human-legible "🤖 cabinet:"
+      prefix + the cid footer, so a cascade that DOES fire is unmistakably
+      machine-authored.
+  - id: create-not-mention-people
+    rule: >
+      Reject any payload/set key matching people|person|assignee|subscriber|
+      owner — assigning/subscribing a human on a Monday item emails them.
+
+# =============================================================================
+# DENYLIST — explicit Captain exclusions. EMPTY until the Captain rules.
+# =============================================================================
+denylist: []
+
+# =============================================================================
+# CASCADE-GATED — writing here mechanically SENDS to a human (audit-proven).
+# EMPTY until your deployment's cascade audit enumerates them.
+# =============================================================================
+cascade_gated: []

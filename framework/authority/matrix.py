@@ -23,7 +23,7 @@ invariants are enforced as hard rules, not prose:
      `always_gated` for every state (a POSTURE table may narrow that to the
      conditional `standing_grant` — never to `auto`).
   2. The hard ceiling covers all six HARD_CEILING_TOUCHES members [FIX-7].
-  3. TRUST-INVERSION floor [NATE-DECISION 2026-07-03/04 earn-demotion ruling,
+  3. TRUST-INVERSION floor [CAPTAIN-RULING 2026-07-03/04 earn-demotion ruling,
      widened 2026-07-04 by fix wave wsqzqfpt5]: no reversible / act_with_undo
      class may be `propose_only` at `unmeasured` (trust is granted day-one and
      lost on demotion EVIDENCE — never pre-earned), and any acting-from-day-one
@@ -90,7 +90,7 @@ class MatrixValidationError(Exception):
 # The thirteen risk classes: the trust-first act-with-undo classes
 # (reversible, pm_write, calendar_write), the 2026-07-04 split-outs from the
 # old reversible bucket (read_only_dispatch = act-and-tell investigation runs;
-# draft_only = earn-up kept, NATE-DECISION: outbound-adjacent), the earn-up
+# draft_only = earn-up kept, CAPTAIN-RULING: outbound-adjacent), the earn-up
 # rows (internal_comms, deploy_nonprod), and the six execution-surface hard
 # ceilings. Closed set: the YAML's risk_classes AND verdicts keys must equal
 # it exactly (additionalProperties:false in both directions).
@@ -139,14 +139,14 @@ CONFIDENCE_STATES = frozenset({
     "unmeasured", "propose_only", "eligible", "graduated", "demote",
 })
 
-# TRUST-INVERSION beachhead pins [NATE-DECISION 2026-07-03/04, widened
+# TRUST-INVERSION beachhead pins [CAPTAIN-RULING 2026-07-03/04, widened
 # 2026-07-04 (wsqzqfpt5)]: the classes that act from day one, and the EXACT
 # verdict each must carry at `unmeasured`. Name-anchored on purpose — these two
 # rows are the doctrine's beachhead, so their unmeasured cells are pinned by
 # equality (not merely "not propose_only"): `auto` here would be a WIDENING
 # (dropping the undo/tell handle), `always_gated`/`propose_only` a silent
 # earn-up regression. draft_only and deploy_nonprod are deliberately absent
-# (NATE-DECISION: outbound-/prod-adjacent — they keep earn-up).
+# (CAPTAIN-RULING: outbound-/prod-adjacent — they keep earn-up).
 _TRUST_FIRST_UNMEASURED = {
     "reversible": "act_with_undo",
     "read_only_dispatch": "notify_after",
@@ -346,14 +346,12 @@ def check_gate_actor_id_parity(officer: str = "cos") -> bool:
             )
 
         # Import the LIVE gate helper exactly as the shipped CI tests do
-        # (cabinet/scripts/lib is not a package — path-import, and force the
-        # real yaml if a conftest stub leaked into sys.modules).
-        lib_dir = _FRAMEWORK_ROOT / "cabinet" / "scripts" / "lib"
-        if str(lib_dir) not in sys.path:
-            sys.path.insert(0, str(lib_dir))
+        # (CG-14 pull-down: the engine is framework/authority/policy_engine —
+        # package import; still force the real yaml if a conftest stub leaked
+        # into sys.modules).
         if "yaml" in sys.modules and not hasattr(sys.modules["yaml"], "safe_load"):
             del sys.modules["yaml"]
-        import policy_engine
+        from framework.authority import policy_engine
 
         canonical = policy_engine.read_cell_state(
             officer, "parity-canonical", "task_status_move")
@@ -597,7 +595,7 @@ def _validate_verdicts(
 # _validate_act_first_floor (trust-inversion floor, invariant #3) AND
 # sovereign's _validate_postures (posture-table axis, invariant #4).
 def _validate_act_first_floor(verdicts: dict, hard_ceiling: set[str]) -> None:
-    """THE CI INVARIANT #3 — the trust-inversion floor [NATE-DECISION
+    """THE CI INVARIANT #3 — the trust-inversion floor [CAPTAIN-RULING
     2026-07-03/04 earn-demotion ruling; widened to the reversible beachhead
     2026-07-04 (fix wave wsqzqfpt5)].
 
@@ -651,7 +649,7 @@ def _validate_act_first_floor(verdicts: dict, hard_ceiling: set[str]) -> None:
                     f"verdicts.{rc}: grants act_with_undo but is "
                     f"'{states.get('unmeasured')}' at unmeasured — earn-up on a "
                     f"reversible/act_with_undo class is ruled out (trust granted "
-                    f"day-one, lost on evidence; NATE-DECISION 2026-07-03/04)"
+                    f"day-one, lost on evidence; CAPTAIN-RULING 2026-07-03/04)"
                 )
             if states.get("demote") != "propose_only":
                 raise MatrixValidationError(
@@ -666,7 +664,7 @@ def _validate_act_first_floor(verdicts: dict, hard_ceiling: set[str]) -> None:
                 raise MatrixValidationError(
                     f"verdicts.{rc}.unmeasured = '{states.get('unmeasured')}': "
                     f"the trust-inversion floor pins this cell to '{pinned}' "
-                    f"(NATE-DECISION 2026-07-04 — no earn-up re-introduction, "
+                    f"(CAPTAIN-RULING 2026-07-04 — no earn-up re-introduction, "
                     f"no undo/tell-handle widening)"
                 )
             if states.get("demote") != "propose_only":

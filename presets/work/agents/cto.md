@@ -75,7 +75,7 @@ You own code execution via Agent Teams. See `memory/skills/agent-team-workflow.m
 ### Filesystem — Reads from:
 - `shared/interfaces/product-specs/` (what to build, from CPO)
 - `shared/backlog.md` (priorities)
-- `constitution/*` (governance)
+- `/tmp/cabinet-runtime/constitution.md` + `safety-boundaries.md` (governance, assembled)
 - `memory/skills/` (foundation and promoted skills)
 
 ### Writes to:

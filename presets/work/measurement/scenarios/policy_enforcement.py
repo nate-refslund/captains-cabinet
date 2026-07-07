@@ -51,8 +51,9 @@ def _execute(context):
     safe commands (``git status``/``ls -la``) that production actually allows.
     This tests what the safety layer *enforces*, not what it shadow-proposes.
     """
-    sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "cabinet" / "scripts" / "lib"))
-    from policy_engine import load_policies, evaluate_policy
+    # CG-14 pull-down: the engine lives in framework/authority/ — the module's
+    # top-level repo-root bootstrap already put the install root on sys.path.
+    from framework.authority.policy_engine import load_policies, evaluate_policy
 
     policies = load_policies(str(Path(__file__).parent.parent.parent.parent))
     enforcing = os.environ.get("CABINET_AUTHORITY_ENFORCING", "0") == "1"

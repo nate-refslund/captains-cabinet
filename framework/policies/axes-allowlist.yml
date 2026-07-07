@@ -40,7 +40,7 @@ allowed:
     why: the execution surface applying posture-resolved semantics (sovereign notify_after / standing_grant branches) — Ring-0 judged code
   - path: framework/frontdoor/actfirst_canary.py
     why: the act-first canary — its sovereign branch selects which canary thresholds apply — Ring-0 judged code
-  - path: cabinet/scripts/lib/policy_engine.py
+  - path: framework/authority/policy_engine.py
     why: the gate — posture-table selection at verdict resolution (earn_up/sovereign branches); outside the framework/ walk but sanctioned for scoped scans
   - path: framework/learning/trust_ladder.py
     why: earn_up rung-ladder overlay — the lift applies ONLY when posture==earn_up (AX-2 surface, spec §1 L1; Ring-0-wired by AX-8)

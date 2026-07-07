@@ -43,8 +43,19 @@
 #                         deployment root
 #     standing_pull.py  — instance/config/outcomes.yml standing-mission pull
 #     (+ their test files, which pin those exact paths)
+#   2026-07-07 — CG-14 policy_engine pull-down (germline window 2,
+#   Captain-ordered): the typed policy engine moved from
+#   cabinet/scripts/lib/ into framework/authority/; its load_policies()
+#   reads the Captain-owned instance/config/policies/ + active-preset
+#   config layers BY DESIGN (floor-only authority merge). Config reads,
+#   never an import. Its FRAMEWORK_PATH_PRESETS hit (the preset policy
+#   layer path) is class-barred from this file and rides the baseline
+#   with the same provenance.
+#     policy_engine.py — instance/config/policies/ + instance/config/
+#                        active-preset (policy layering, D8 floor-only)
 framework/acting/run_action_lane.py:FRAMEWORK_PATH_INSTANCE
 framework/acting/tests/test_sov4_posture_routing.py:FRAMEWORK_PATH_INSTANCE
+framework/authority/policy_engine.py:FRAMEWORK_PATH_INSTANCE
 framework/authority/grants.py:FRAMEWORK_PATH_INSTANCE
 framework/authority/needs.py:FRAMEWORK_PATH_INSTANCE
 framework/authority/posture.py:FRAMEWORK_PATH_INSTANCE

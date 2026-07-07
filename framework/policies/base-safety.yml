@@ -19,13 +19,6 @@ policies:
     case_sensitive: true
     message: "Destructive database operation requires Captain approval"
 
-  - name: constitution-readonly
-    type: path_block
-    description: "Constitution files cannot be modified"
-    tools: [Edit, Write]
-    path_patterns: ["*/constitution/*"]
-    message: "Constitution files are read-only. Propose amendments through the self-improvement loop."
-
   - name: env-file-readonly
     type: path_block
     description: "Environment files cannot be modified"
@@ -94,7 +87,6 @@ policies:
   # autonomy.yml.example / golden-evals-notes.md / authority/tests/*.py stay
   # editable). _path_matches_pattern normalizes // and retries relative paths as
   # absolute, matching the live hook's `tr -s /` + contains/suffix semantics.
-  # constitution/ is already covered by constitution-readonly above.
   - name: germline-readonly
     type: path_block
     description: "Germline files (the judges of officer/loop behavior) are read-only for all officers and loops"
@@ -108,7 +100,7 @@ policies:
       - "*framework/authority/veto.py"
       - "*framework/authority/deploy_classifier.py"
       - "*framework/fidelity/graduation.py"
-      - "*cabinet/scripts/lib/policy_engine.py"
+      - "*framework/authority/policy_engine.py"
       - "*cabinet/mcp-scope.yml"
       - "*cabinet/officer-capabilities.conf"
       - "*.claude/rules/brain-bridge.md"

@@ -629,10 +629,10 @@ if [ "$TOOL_NAME" = "Bash" ]; then
   if echo "$CMD" | head -n1 | grep -qE '^[[:space:]]*(sudo[[:space:]]+|env([[:space:]]+[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+)+[[:space:]]+|timeout[[:space:]]+[0-9]+[smhd]?[[:space:]]+)*git[[:space:]]+add([[:space:];]|$)'; then
     # Check if critical infrastructure files are being staged
     STAGED=$(cd "$CABINET_ROOT" && git diff --cached --name-only 2>/dev/null)
-    if echo "$STAGED" | grep -qE '(hooks/|CLAUDE\.md|\.claude/agents/|scripts/lib/|officer-capabilities|officer-skills/|constitution/)'; then
+    if echo "$STAGED" | grep -qE '(hooks/|CLAUDE\.md|\.claude/agents/|scripts/lib/|officer-capabilities|officer-skills/)'; then
       echo ""
       echo "⚠️ INFRASTRUCTURE REVIEW GATE: You are staging critical files:"
-      echo "$STAGED" | grep -E '(hooks/|CLAUDE\.md|\.claude/agents/|scripts/lib/|officer-capabilities|officer-skills/|constitution/)' | sed 's/^/  - /'
+      echo "$STAGED" | grep -E '(hooks/|CLAUDE\.md|\.claude/agents/|scripts/lib/|officer-capabilities|officer-skills/)' | sed 's/^/  - /'
       echo ""
       echo "MANDATORY: Spawn a review subagent (Sonnet) BEFORE committing."
       echo "  1. bash -n on all .sh files"

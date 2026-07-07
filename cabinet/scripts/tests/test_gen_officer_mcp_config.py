@@ -135,7 +135,11 @@ def test_settings_overlay_carries_no_managed_policy_keys(paths):
     mirror under that key BLOCKED officer boot with an interactive
     "Invalid entry" dialog on the rolling restart. The overlay must stay
     exactly the project-auto-approval pin; scoping is enforced by the
-    filtered --mcp-config + --strict-mcp-config pair."""
+    filtered --mcp-config + --strict-mcp-config pair.
+
+    Merge note (germline window 2): the branch-side object-shape mirror
+    tests (`_allowed_names`) were repairs for the pre-drop generator; the
+    base's mirror REMOVAL supersedes them — mirror stays dropped."""
     rc, _, settings = run_main(paths, "alpha")
     assert rc == 0
     assert "allowedMcpServers" not in settings

@@ -14,7 +14,7 @@
 # checkpoint hard-blocker #2 (safety-perimeter CRITICAL: captain-vetoes.yml
 # was empirically Edit→ALLOWED) — the ACTING-PLANE JUDGES: captain-vetoes.yml,
 # act-first-surfaces.yml and the frontdoor/acting executor+gate modules,
-# x Edit/Write/officer/path-form variants + constitution regression pin +
+# x Edit/Write/officer/path-form variants +
 # double-slash normalization) + ALLOW probes (false-positive guards:
 # siblings, own tier2, shared interfaces,
 # the authority judges' own editable tests incl. test_matrix.py, and the
@@ -32,8 +32,7 @@
 # Accepted FP (documented, fail-closed): staging a germline-named file
 # under a mirrored directory tail (e.g. /tmp/cabinet/mcp-scope.yml) is
 # blocked by the suffix anchor — stage proposals under a different name
-# (e.g. /tmp/mcp-scope-proposed.yml) instead. Same class as the
-# constitution/ contains-pattern blocking /tmp/constitution/x.
+# (e.g. /tmp/mcp-scope-proposed.yml) instead.
 #
 # CABINET_HOOK_TEST_MODE=1 must be set inline per every probe (no global
 # export) per feedback_test_harness_production_sinks.md.
@@ -63,7 +62,7 @@ probe() {
 echo "=== BLOCK: germline set ==="
 probe "G1 Edit golden-eval (cto)"          cto Edit  'memory/golden-evals/eval-001-kill-switch.md'                 BLOCK
 probe "G2 Write golden-eval subdir (cpo)"  cpo Write 'memory/golden-evals/framework/new-eval.md'                   BLOCK
-probe "G3 Edit policy_engine.py (cto)"     cto Edit  'cabinet/scripts/lib/policy_engine.py'                        BLOCK
+probe "G3 Edit policy_engine.py (cto)"     cto Edit  'framework/authority/policy_engine.py'                        BLOCK
 probe "G4 Edit framework policy (coo)"     coo Edit  'framework/policies/base-safety.yml'                          BLOCK
 probe "G5 Write new framework policy"      cto Write 'framework/policies/new-policy.yml'                           BLOCK
 probe "G6 Edit mcp-scope.yml (cto)"        cto Edit  'cabinet/mcp-scope.yml'                                       BLOCK
@@ -75,7 +74,7 @@ probe "G11 Write autonomy.yml (cos)"       cos Write 'instance/config/autonomy.y
 probe "G12 abs-path mcp-scope (cto)"       cto Edit  '/opt/founders-cabinet/cabinet/mcp-scope.yml'                 BLOCK
 probe "G13 abs-path golden-evals (cro)"    cro Write '/opt/founders-cabinet/memory/golden-evals/eval-002.md'       BLOCK
 # Double-slash normalization (suffix-anchor bypass closed by tr -s '/')
-probe "G14 dbl-slash policy_engine (cto)"  cto Edit  'cabinet/scripts/lib//policy_engine.py'                       BLOCK
+probe "G14 dbl-slash policy_engine (cto)"  cto Edit  'framework/authority//policy_engine.py'                       BLOCK
 probe "G15 dbl-slash autonomy.yml (cos)"   cos Write 'instance/config//autonomy.yml'                               BLOCK
 # Authority judge modules — the shared classifier/lane join key (T1), each
 # suffix-anchored as an exact file (like policy_engine.py) so the modules are
@@ -117,8 +116,6 @@ probe "G34 Edit calendar_template.py (cpo)" cpo Edit  'framework/frontdoor/calen
 probe "G35 Edit action_lane.py (cto)"       cto Edit  'framework/acting/action_lane.py'                            BLOCK
 probe "G36 Write run_action_lane.py (cos!)" cos Write 'framework/acting/run_action_lane.py'                        BLOCK
 probe "G37 abs-path action_lane.py (cro)"   cro Edit  '/opt/founders-cabinet/framework/acting/action_lane.py'      BLOCK
-# Regression pin: pre-existing constitution protection unchanged
-probe "G19 constitution pin (cto)"         cto Edit  'constitution/CONSTITUTION.md'                                BLOCK
 
 # ------------------------------------------------------------------
 # ALLOW: false-positive guards (must NOT block)
@@ -152,11 +149,12 @@ probe "FP5e Write kill-switch.sh (cro)"     cro Edit  'cabinet/scripts/kill-swit
 # append-only via cabinet/scripts/append-interface.sh — direct Write is
 # BLOCKED for every officer (was ALLOW pre-hardening).
 probe "FP6 captain-decisions.md (cos)"     cos Write 'shared/interfaces/captain-decisions.md'                      BLOCK
-# Other lib files are not the judge — only policy_engine.py is germline
+# Lib files are not the judge — policy_engine.py moved to framework/authority/ (CG-14)
 probe "FP7 other lib file (cto)"           cto Edit  'cabinet/scripts/lib/triggers.sh'                             ALLOW
 # Authority judges are suffix-anchored (classifier.py / lane.py) — their TESTS
-# are the officers' verification surface and stay editable (mirrors how
-# cabinet/scripts/lib/tests/ stays editable while policy_engine.py is germline)
+# are the officers' verification surface and stay editable (policy_engine.py
+# lives here too since CG-14, suffix-anchored the same way; its test corpus
+# framework/authority/tests/test_policy_engine.py stays editable)
 probe "FP8 authority test file (cro)"      cro Write 'framework/authority/tests/test_classifier.py'                ALLOW
 probe "FP8b matrix test file (cro)"        cro Write 'framework/authority/tests/test_matrix.py'                    ALLOW
 probe "FP9 authority sibling note (cro)"   cro Write 'framework/authority-notes.md'                                ALLOW

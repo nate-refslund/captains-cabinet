@@ -59,7 +59,7 @@ CABINET_ROOT="/opt/founders-cabinet"
 CONFIG_FILE="$CABINET_ROOT/instance/config/product.yml"
 ENV_FILE="$CABINET_ROOT/cabinet/.env"
 ENV_EXAMPLE="$CABINET_ROOT/cabinet/.env.example"
-REGISTRY_FILE="$CABINET_ROOT/constitution/ROLE_REGISTRY.md"
+REGISTRY_FILE="$CABINET_ROOT/instance/config/role-registry.md"
 OFFICER_UPPER="${OFFICER^^}"
 TOKEN_VAR="TELEGRAM_${OFFICER_UPPER}_TOKEN"
 
@@ -136,8 +136,8 @@ Follow foundation skills in \`memory/skills/\`:
 ## Shared Interfaces
 
 ### Reads from:
-- \`constitution/CONSTITUTION.md\` — operating principles
-- \`constitution/SAFETY_BOUNDARIES.md\` — hard limits
+- \`/tmp/cabinet-runtime/constitution.md\` — operating principles (assembled from \`framework/constitution-base.md\` + the active preset's addendum)
+- \`/tmp/cabinet-runtime/safety-boundaries.md\` — hard limits (assembled from \`framework/safety-boundaries-base.md\` + addendum)
 - \`instance/config/product.yml\` — product configuration
 - \`shared/interfaces/\` — cross-officer artifacts
 
@@ -262,7 +262,7 @@ else
   log "Added $OFFICER voice config to product.yml"
 fi
 
-# === Step 5: Constitution — ROLE_REGISTRY.md ===
+# === Step 5: Role registry (instance/config/role-registry.md) ===
 if grep -qi "^|.*${OFFICER_UPPER}" "$REGISTRY_FILE" 2>/dev/null; then
   log "SKIP: $OFFICER already in ROLE_REGISTRY.md"
 else

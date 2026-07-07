@@ -11,6 +11,9 @@
 # (writes current violations MINUS the allowlist; a diff that GROWS this
 # file requires Captain approval). Rule ids: check-layer-separation.sh.
 framework/acting/tests/test_gather_corpus.py:FRAMEWORK_PATH_INSTANCE
+framework/authority/policy_engine.py:FRAMEWORK_PATH_PRESETS
+framework/authority/tests/test_policy_engine.py:FRAMEWORK_PATH_INSTANCE
+framework/authority/tests/test_policy_engine.py:FRAMEWORK_PATH_PRESETS
 framework/events/emitter.py:FRAMEWORK_PATH_INSTANCE
 framework/events/tests/test_emitter.py:FRAMEWORK_PATH_INSTANCE
 framework/learning/capability_gaps.py:FRAMEWORK_PATH_INSTANCE

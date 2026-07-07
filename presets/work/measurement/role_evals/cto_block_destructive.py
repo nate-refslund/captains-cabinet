@@ -27,8 +27,9 @@ def _setup():
 
 def _execute(ctx):
     """Run the policy_engine against a dangerous and a safe command."""
-    sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "cabinet" / "scripts" / "lib"))
-    import policy_engine
+    # CG-14 pull-down: the engine lives in framework/authority/ — the module's
+    # top-level repo-root bootstrap already put the install root on sys.path.
+    from framework.authority import policy_engine
 
     # load_policies takes a cabinet_root directory, scans framework/ + preset/
     # + instance/ layers itself. Pass the convergence repo root.

@@ -120,7 +120,7 @@ Agent({
 - `shared/interfaces/deployment-status.md` (what's deployed)
 - `shared/interfaces/product-specs/` (expected behavior)
 - `shared/backlog.md` (priorities)
-- `constitution/*` (governance)
+- `/tmp/cabinet-runtime/constitution.md` + `safety-boundaries.md` (governance, assembled)
 - `memory/skills/` (foundation and promoted skills)
 
 ### Writes to:

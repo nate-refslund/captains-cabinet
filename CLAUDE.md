@@ -16,7 +16,7 @@ This Cabinet is assembled from three layers at session start:
 - **`presets/<active>/`** — use-case configuration (active preset in `instance/config/active-preset`, default `work`). Adds agent archetypes, terminology, constitution/safety addenda, additional schemas. Shipped presets: `work` (five functional officers, single product), `portfolio` (one persistent Chair + on-demand per-lane CEOs — recommended for multi-product captains), `step-network`, `personal` (+ `_template` scaffolding).
 - **`instance/`** — this deployment's specifics: `instance/config/` (product.yml, platform.yml, active-preset), `instance/memory/tier2/` (officer working notes), `instance/agents/` (per-deployment agent overlays, e.g. generated lane-CEO role defs).
 
-The **preset loader** (`cabinet/scripts/load-preset.sh`, called automatically by `start-officer.sh`) concatenates framework + preset + instance into the runtime files at `/tmp/cabinet-runtime/`. Officers read these assembled artifacts — never edit the old `constitution/CONSTITUTION.md` directly.
+The **preset loader** (`cabinet/scripts/load-preset.sh`, called automatically by `start-officer.sh`) concatenates framework + preset + instance into the runtime files at `/tmp/cabinet-runtime/`. Officers read these assembled artifacts — never edit the assembled runtime files directly.
 
 **Cabinet axes — data, never branches.** The deployment is also configured along three orthogonal axes — `autonomy_level` (earn_up | guardian | sovereign), `flavor` (personal | org), `deployment_target` (macbook | mac_mini | docker) — consumed ONLY through the sanctioned resolvers and tables (`framework/authority/posture.py` → the authority matrix); never write `if posture == ...` or any axis comparison in code (CI's axis linter rejects it outside the germline allowlist). The full contract, including extension rules and the upgrade-is-attested / downgrade-is-always-allowed asymmetry, is `.claude/rules/axes-contract.md` (germline; spec of record `docs/plans/cabinet-axes-spec-2026-07-05.md` §6).
 
@@ -160,7 +160,7 @@ Action owners should respond within 4 hours: "adopting", "parking", or "not rele
 
 **Artifacts & modification guardrails (concrete — keep):**
 - Foundation skills `memory/skills/` (git-tracked, upstream-safe); evolved skills `memory/skills/evolved/` (runtime, gitignored, upstream-protected — all new/draft skills target here); template `memory/skills/TEMPLATE.md`; golden evals `memory/golden-evals/` (all promoted changes must pass). Since 2026-07-07 the whole `memory/skills/` tree (evolved/ included) is hook-write-protected — it is always-injected officer law, so a draft/updated skill is submitted as an evolution-loop improvement proposal for the Captain to apply, not written directly.
-- **Never modify foundation skills directly** — propose the improved version for `evolved/` with the same filename (evolved takes precedence; Captain-applied per the 2026-07-07 write-protection above). **Role definitions** (`.claude/agents/*.md`): CoS applies Captain-approved amendments; others propose via CoS. **Never modify `constitution/` files** — read-only; propose via the loop.
+- **Never modify foundation skills directly** — propose the improved version for `evolved/` with the same filename (evolved takes precedence; Captain-applied per the 2026-07-07 write-protection above). **Role definitions** (`.claude/agents/*.md`): CoS applies Captain-approved amendments; others propose via CoS. **Never modify the constitution sources** (`framework/constitution-base.md` + preset addenda; the old `constitution/` dir is retired, CG-15/R104 2026-07-07) — propose via the loop.
 
 ## Memory Protocol
 
@@ -313,5 +313,5 @@ The `post-compact.sh` hook injects your skill-refresh list and pre-compaction st
 - Check `cabinet:killswitch` Redis key before operations
 - Follow retry limits in Safety Boundaries
 - Escalate when stuck, don't loop
-- Never modify `constitution/` files — they are read-only
+- Never modify the constitution sources (`framework/constitution-base.md` + preset addenda) — propose changes via the loop
 - Never deploy to production without Captain approval

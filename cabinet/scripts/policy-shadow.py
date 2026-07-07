@@ -20,13 +20,17 @@ sys.path.insert(0, str(SCRIPT_DIR / "lib"))
 
 from org_runtime import Store  # noqa: E402
 
-# policy_engine sets up the repo-root sys.path (honoring CABINET_ROOT) so the
-# shared framework.authority classifier/lane resolve — we reuse its bootstrap
-# rather than re-rolling path math here (one source of truth, no dynamic path
-# resolution in the shadow). Imported lazily-tolerant: if the engine is absent
-# the authority emission is skipped and the regex shadow is unaffected.
+# The engine lives at framework/authority/policy_engine (CG-14 pull-down
+# 2026-07-07) — put the repo root on sys.path (this script is
+# cabinet/scripts/policy-shadow.py, so root = two parents up) and import the
+# package form; the engine itself still honors CABINET_ROOT for deployment
+# path resolution. Imported lazily-tolerant: if the engine is absent the
+# authority emission is skipped and the regex shadow is unaffected.
+_REPO_ROOT = SCRIPT_DIR.parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 try:  # pragma: no cover - import-time wiring, exercised via the shadow tests
-    import policy_engine  # noqa: E402
+    from framework.authority import policy_engine  # noqa: E402
 except Exception:  # noqa: BLE001 - shadow must stay importable regardless
     policy_engine = None  # type: ignore[assignment]
 
@@ -211,8 +215,6 @@ def _regex_decision(hook: dict[str, Any], officer: str) -> dict[str, Any]:
 
     if tool_name in ("Edit", "Write"):
         path = file_path(tool_input)
-        if "constitution/" in path:
-            reasons.append("constitution_read_only")
         if path.endswith(".env") or "/.env" in path:
             reasons.append("env_files_read_only")
         if officer not in ("cto", "unknown") and re.search(r"^/workspace/[a-z0-9][a-z0-9-]*/", path):

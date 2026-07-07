@@ -2,7 +2,7 @@
 resolve_lane (the F+A join key), not a private copy.
 
 This is the cross-tree half of the join-key contract: the gate side
-(cabinet/scripts/lib/policy_engine.py) and the framework side
+(framework/authority/policy_engine.py, CG-14 pull-down) and the framework side
 (framework.authority) must resolve to the SAME function objects, so the ledger
 key and the verdict-table lookup can never disagree about an action_type.
 
@@ -13,22 +13,18 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-# Make the lib dir importable (same bootstrap as test_policy_engine.py).
-_LIB_DIR = Path(__file__).parent.parent.resolve()
-if str(_LIB_DIR) not in sys.path:
-    sys.path.insert(0, str(_LIB_DIR))
+# Repo root importable — the engine is framework/authority/policy_engine
+# (CG-14 pull-down 2026-07-07; the lib path-insert bootstrap is retired).
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 # Force the real yaml (conftest may stub it).
 if "yaml" in sys.modules and not hasattr(sys.modules["yaml"], "safe_load"):
     del sys.modules["yaml"]
     import yaml  # noqa: F401
 
-import policy_engine  # noqa: E402
-
-# Repo root so we can import the framework side for identity comparison.
-_REPO_ROOT = _LIB_DIR.parent.parent.parent
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
+from framework.authority import policy_engine  # noqa: E402
 
 
 def test_policy_engine_imported_shared_symbols():

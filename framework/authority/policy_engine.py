@@ -25,17 +25,20 @@ from typing import Any
 # ---------------------------------------------------------------------------
 # Shared authority classifier (the F+A join key) [FIX-1]
 # ---------------------------------------------------------------------------
-# The policy engine is invoked STANDALONE by pre-tool-use.sh — not as part of
-# the `framework` package — so the repo root is not already on sys.path. Put it
-# there (honoring CABINET_ROOT where the framework lives in deployment, else
-# walking up from this file: lib -> scripts -> cabinet -> repo root) so the gate
-# and the consequence emitter share the ONE canonical classify_action /
-# resolve_lane. No duplicate copy: single source of truth.
+# The policy engine may still be invoked STANDALONE (policy-shadow.py /
+# setup-mac.sh) — not only as part of the `framework` package — so the repo
+# root is not guaranteed on sys.path. Put it there (honoring CABINET_ROOT where
+# the framework lives in deployment, else walking up from this file:
+# authority -> framework -> repo root) so the gate and the consequence emitter
+# share the ONE canonical classify_action / resolve_lane. No duplicate copy:
+# single source of truth. (CG-14 pull-down 2026-07-07: this file moved from
+# cabinet/scripts/lib/ into framework/authority/ so the germ layer is
+# import-closed — framework callers no longer path-insert upward into cabinet/.)
 def _authority_root() -> Path:
     env_root = os.environ.get("CABINET_ROOT")
     if env_root and (Path(env_root) / "framework" / "authority").is_dir():
         return Path(env_root)
-    return Path(__file__).resolve().parent.parent.parent.parent
+    return Path(__file__).resolve().parent.parent.parent
 
 
 _AUTH_ROOT = _authority_root()

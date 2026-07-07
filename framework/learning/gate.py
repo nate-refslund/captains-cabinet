@@ -279,7 +279,7 @@ def ceiling_probe(root: str | Path | None = None) -> dict[str, Any]:
     the unprivileged sandbox runner). Fail-closed: any load/validate error is
     a failing probe."""
     try:
-        from cabinet.scripts.lib.policy_engine import resolve_verdict
+        from framework.authority.policy_engine import resolve_verdict
         from framework.authority import matrix as matrix_mod
         data = matrix_mod.load_matrix(
             str(Path(_root(root)) / "framework" / "policies" / "authority-matrix.yml")

@@ -32,11 +32,8 @@ import pytest
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
-_LIB = _REPO_ROOT / "cabinet" / "scripts" / "lib"
-if str(_LIB) not in sys.path:
-    sys.path.insert(0, str(_LIB))
 
-from policy_engine import _eval_authority_matrix  # noqa: E402
+from framework.authority.policy_engine import _eval_authority_matrix  # noqa: E402
 from framework.authority import matrix as M  # noqa: E402
 
 _GOLDEN_DIR = _REPO_ROOT / "memory" / "golden-evals"

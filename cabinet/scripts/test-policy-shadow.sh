@@ -70,12 +70,6 @@ assert_parity \
   "block"
 
 assert_parity \
-  "block constitution edit" \
-  "cos" \
-  '{"tool_name":"Edit","tool_input":{"file_path":"/opt/founders-cabinet/constitution/CONSTITUTION.md"}}' \
-  "block"
-
-assert_parity \
   "block non-CTO product write" \
   "cpo" \
   '{"tool_name":"Edit","tool_input":{"file_path":"/workspace/captains-cabinet/src/runtime.ts"}}' \

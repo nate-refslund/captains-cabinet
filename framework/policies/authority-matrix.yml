@@ -15,7 +15,7 @@
 # HARD_CEILING_TOUCHES).
 #
 # FAIL-SAFE is the spine, in TWO postures since the trust-inversion ruling
-# (NATE-DECISION 2026-07-03/04 earn-demotion, REINFORCED + VERIFIED 2026-07-04,
+# (CAPTAIN-RULING 2026-07-03/04 earn-demotion, REINFORCED + VERIFIED 2026-07-04,
 # widened to the reversible beachhead by fix wave wsqzqfpt5):
 #   * EARN-UP rows (internal_comms, deploy_nonprod, draft_only): until F
 #     provides a per-cell confidence score, the cell is propose_only.
@@ -47,14 +47,14 @@ policies:
       # wsqzqfpt5, per the EARN-DEMOTION ruling): exactly the four kinds whose
       # deterministic inverse the undo plane can register. draft_only and
       # investigation_run MOVED OUT the same day — draft_only to its own
-      # earn-up class (NATE-DECISION: outbound-adjacent), investigation_run to
+      # earn-up class (CAPTAIN-RULING: outbound-adjacent), investigation_run to
       # read_only_dispatch (read-only ⇒ no inverse exists or is needed, so
       # keeping it here would falsely claim reversibility-with-undo).
       reversible:
         action_types: [task_status_move, label, tier2_note, local_edit]
       read_only_dispatch:                                             # notify_after (read-only, act-and-tell)
         action_types: [investigation_run]
-      draft_only:                                                     # NATE-DECISION 2026-07-04: NOT widened (earn-up kept)
+      draft_only:                                                     # CAPTAIN-RULING 2026-07-04: NOT widened (earn-up kept)
         action_types: [draft_only]
       pm_write:                                                       # act_with_undo (reversible-with-undo)
         action_types: [task_create, board_status]
@@ -127,7 +127,7 @@ policies:
         propose_only: notify_after
         unmeasured: notify_after
         demote: propose_only
-      # NATE-DECISION 2026-07-04: draft_only KEEPS the old reversible earn-up
+      # CAPTAIN-RULING 2026-07-04: draft_only KEEPS the old reversible earn-up
       # ladder (Captain judgment — a draft is outbound-ADJACENT: its content
       # exists to leave the machine, so it earns autonomy rather than getting
       # it granted; actual sending stays behind the external_comms ceiling).
@@ -155,7 +155,7 @@ policies:
         propose_only: propose_only
         unmeasured: propose_only
         demote: propose_only
-      # NATE-DECISION 2026-07-04: deploy_nonprod stays earn-up, deliberately
+      # CAPTAIN-RULING 2026-07-04: deploy_nonprod stays earn-up, deliberately
       # NOT widened in the trust-inversion wave (prod-adjacent: a preview
       # deploy/non-main push has no deterministic inverse and leaks build
       # output off-machine — Captain kept the classifier-gated earn-up path).
@@ -221,7 +221,7 @@ policies:
           # RISK_CLASSES enum, so the two new rows are added here MIRRORING
           # the root/guardian rows (fail-safe: read_only_dispatch is already
           # act-and-tell — auto would drop the tell; draft_only keeps the
-          # NATE-DECISION 2026-07-04 earn-up ladder — outbound-adjacent, a
+          # CAPTAIN-RULING 2026-07-04 earn-up ladder — outbound-adjacent, a
           # posture never silently widens a Captain-ruled row). Demote stays
           # posture-invariant (propose_only) per §2.1.
           read_only_dispatch: { graduated: notify_after, eligible: notify_after, propose_only: notify_after, unmeasured: notify_after, demote: propose_only }

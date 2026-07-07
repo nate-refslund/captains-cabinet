@@ -64,6 +64,21 @@ URGENCIES = ("ping-now", "batch")
 # direction_fit escapes accepted alongside a named directions.yml id.
 DIRECTION_LITERALS = frozenset({"maintenance", "personal"})
 
+# --- D13 inbound-provenance FLOOR (germline judgment data) -------------------
+# The deterministic never-act-first backstop: cards whose evidence refs sit
+# under these vault areas are raw email/Teams captured content and NEVER act
+# first, in any posture. CG-2 moved the vault LAYOUT table to the unlocked
+# adapter (framework/sources/vault_signals.INBOUND_REF_PREFIXES) — but the
+# fence's judgment DATA must keep a schg-locked floor, or one officer-writable
+# edit (setting the adapter tuple to ()) reroutes all inbound-derived cards to
+# "internal" and act-first. run_action_lane derives its effective prefix set
+# as adapter-table ∪ THIS floor: the unlocked layer can only WIDEN the fence,
+# never narrow it ("no loop may edit its own judge"). Pinned by
+# test_gather_via_source.py; this module is in every germline lock list
+# (immutable-core.yml / germline-lock.sh FILES / pre-tool-use.sh §5+§5b /
+# base-safety.yml), kept consistent by the lockstep suite.
+D13_INBOUND_FLOOR = ("3-People/", "2-Meetings/", "4-Interactions/")
+
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
 # --- delegate-brief framing (RT-A2) -----------------------------------------

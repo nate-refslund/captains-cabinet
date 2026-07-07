@@ -57,8 +57,8 @@ def _install_and_load(install_root: Path) -> None:
 
     - Seed content lands at <root>/framework/measurement/{scenarios,role_evals}
       byte-verbatim, so each module's positional `__file__` math (4 parents up
-      = repo root; `<root>/cabinet/scripts/lib`; `load_policies(<root>)`)
-      resolves exactly as at a real install.
+      = repo root; `framework.authority.policy_engine` off that root;
+      `load_policies(<root>)`) resolves exactly as at a real install.
     - The layers the seed READS are symlinked to this repo: framework/policies
       plus the cabinet/instance/presets/shared trees (policy layering mirrors
       the live root; everything is read-only for these scenarios — writes go

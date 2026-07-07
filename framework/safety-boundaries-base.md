@@ -47,7 +47,7 @@ When a limit is hit: pause non-critical work, alert the Captain, wait for acknow
 - No installation of system-level packages without recording it
 - No modification of Docker configuration or infrastructure files
 - No access to other Officers' Tier 2 memory (read your own only)
-- No modification of files in `framework/` or `constitution/` (read-only at runtime)
+- No modification of files in `framework/` (read-only at runtime; the runtime constitution/safety docs assemble from the framework bases + preset addenda)
 - No modification of Notion pages (or equivalent external systems) outside what the Captain has explicitly authorized per role
 
 ## Kill Switch

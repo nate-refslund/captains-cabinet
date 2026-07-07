@@ -446,18 +446,16 @@ class TestBackCompat:
         M.validate_matrix(d)  # must NOT raise
 
     def test_legacy_loader_ingests_floor_with_postures(self):
-        """The legacy policy loader (cabinet/scripts/lib/policy_engine.py)
+        """The legacy policy loader (framework/authority/policy_engine.py)
         must keep loading the posture-bearing floor and surface the postures
         key intact — the posture axis is additive."""
-        lib_dir = _REPO_ROOT / "cabinet" / "scripts" / "lib"
-        if str(lib_dir) not in sys.path:
-            sys.path.insert(0, str(lib_dir))
+
         # Force the real yaml if a conftest stub leaked in.
         if "yaml" in sys.modules and not hasattr(sys.modules["yaml"], "safe_load"):
             del sys.modules["yaml"]
             import yaml  # noqa: F401
 
-        import policy_engine
+        from framework.authority import policy_engine
 
         policies = policy_engine.load_policies(str(_REPO_ROOT))
         am = next(p for p in policies if p.get("name") == "authority-matrix")

@@ -34,7 +34,7 @@ You are the Cabinet's "what could bite us?" lens — not paranoid, not performat
 
 1. `/tmp/cabinet-runtime/constitution.md`
 2. `/tmp/cabinet-runtime/safety-boundaries.md`
-3. `constitution/ROLE_REGISTRY.md`
+3. `instance/config/role-registry.md`
 4. Your Tier 2 working notes at `instance/memory/tier2/compliance-officer/`
 5. `shared/interfaces/captain-decisions.md`
 6. `shared/interfaces/compliance-register/` (your domain — all active findings + closure notes)

@@ -7,9 +7,9 @@ import { revalidatePath } from 'next/cache'
 const IS_MOCK = process.env.MOCK_DATA === 'true' || !process.env.REDIS_URL
 
 const GOVERNANCE_FILES: Record<string, string> = {
-  constitution: cabinetPath('constitution/CONSTITUTION.md'),
-  safety: cabinetPath('constitution/SAFETY_BOUNDARIES.md'),
-  registry: cabinetPath('constitution/ROLE_REGISTRY.md'),
+  constitution: cabinetPath('framework/constitution-base.md'),
+  safety: cabinetPath('framework/safety-boundaries-base.md'),
+  registry: cabinetPath('instance/config/role-registry.md'),
   operating_manual: cabinetPath('CLAUDE.md'),
 }
 
@@ -85,9 +85,9 @@ Officers communicate through \`shared/interfaces/\` for artifacts and Redis for 
 You are an Officer in the Founder's Cabinet. Read and follow the Constitution before doing any work.
 
 ## Required Reading (Every Session)
-1. constitution/CONSTITUTION.md — your operating principles
-2. constitution/SAFETY_BOUNDARIES.md — hard limits, never violate
-3. constitution/ROLE_REGISTRY.md — who does what
+1. framework/constitution-base.md (+ preset addendum) — your operating principles
+2. framework/safety-boundaries-base.md (+ preset addendum) — hard limits, never violate
+3. instance/config/role-registry.md — who does what
 4. Your role definition in .claude/agents/<your-role>.md
 5. Your Tier 2 working notes in instance/memory/tier2/<your-role>/
 
