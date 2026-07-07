@@ -23,11 +23,11 @@ def _mk_repo(tmp_path, *, pkg=None, readme=None, claude=None, mcp=None, env=None
 
 
 def test_reads_name_and_summary(tmp_path):
-    _mk_repo(tmp_path, pkg={"name": "v0-politiske-annoncer"},
-             readme="# PolAds\n\nEU political ad transparency platform.\n\nmore.")
+    _mk_repo(tmp_path, pkg={"name": "acme-shop"},
+             readme="# Acme Shop\n\nDemo storefront platform.\n\nmore.")
     p = research.research_repo(str(tmp_path))
-    assert p["name"] == "v0-politiske-annoncer"
-    assert "political ad transparency" in p["summary"].lower()
+    assert p["name"] == "acme-shop"
+    assert "demo storefront" in p["summary"].lower()
 
 
 def test_detects_stack_from_deps(tmp_path):
@@ -47,13 +47,13 @@ def test_detects_plugins_from_claude_and_mcp(tmp_path):
 
 
 def test_normalizes_git_remote(tmp_path):
-    _mk_repo(tmp_path, pkg={"name": "x"}, remote="https://github.com/STEP-Network/x.git")
-    assert research.research_repo(str(tmp_path))["repo_url"] == "https://github.com/STEP-Network/x"
+    _mk_repo(tmp_path, pkg={"name": "x"}, remote="https://github.com/acme-org/x.git")
+    assert research.research_repo(str(tmp_path))["repo_url"] == "https://github.com/acme-org/x"
 
 
 def test_normalizes_ssh_remote(tmp_path):
-    _mk_repo(tmp_path, pkg={"name": "x"}, remote="git@github.com:STEP-Network/x.git")
-    assert research.research_repo(str(tmp_path))["repo_url"] == "https://github.com/STEP-Network/x"
+    _mk_repo(tmp_path, pkg={"name": "x"}, remote="git@github.com:acme-org/x.git")
+    assert research.research_repo(str(tmp_path))["repo_url"] == "https://github.com/acme-org/x"
 
 
 def test_never_surfaces_env_secrets(tmp_path):
