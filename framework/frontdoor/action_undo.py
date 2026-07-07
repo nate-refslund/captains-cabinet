@@ -565,11 +565,35 @@ def _calendar_delete_script() -> str:
 def _inv_calendar_delete(args: dict, *, monday_post: Callable = None,
                          osascript: Callable, **_) -> Dict[str, Any]:
     """Reverse a calendar event: delete by UID in the named calendar. Empty
-    uid/calendar (a crash row) is a safe no-op."""
+    uid/calendar (a crash row) is a safe no-op.
+
+    FAST PATH (2026-07-07): try the consolidated signed EventKit helper's
+    confirmed-only ``delete`` subcommand first (calendar_delete.delete_event —
+    fullAccess BEFORE any lookup, then re-query to CONFIRM removal), which is
+    sub-second vs the AppleScript ``whose uid is`` scan's 14-45s. On ANY fast-path
+    failure — a CalendarDeleteError (0-match / recurrence / unconfirmed / helper
+    exit-3 write-only), a missing/broken module (ImportError), or any unexpected
+    exception — fall through to the AUTHORITATIVE AppleScript delete, which keys on
+    the SAME uid space the writer stored. delete_event returns ONLY on a CONFIRMED
+    delete, so a raise always means 'not confirmed'. Success is returned only on a
+    confirmed delete from EITHER path; if both fail the reverse reports ok:False →
+    reversal_failed → manual_cleanup, never a false success (the SAFETY-CRITICAL
+    undo-honesty invariant). RESIDUAL: the AppleScript fallback returns 'ok' on a
+    0-match (uid no longer resolves — e.g. iCloud rewrote the uid), which is
+    pre-existing + irreducible for a uid-keyed delete; the real fix is
+    EventKit-native create (stable eventIdentifier) — see the germline patch doc."""
     uid = args.get("uid")
     cal = args.get("calendar")
     if not uid or not cal:
         return {"ok": True, "skipped": "no uid/calendar (crash/unexecuted row) — nothing to reverse"}
+    try:
+        # Lazy import — the reverse never hard-depends on the fast-path module at
+        # load time; an absent/broken calendar_delete degrades here.
+        from framework.frontdoor import calendar_delete
+        confirmed = calendar_delete.delete_event(str(cal), str(uid), runner=osascript)
+        return {"ok": True, "detail": confirmed, "via": "eventkit-fast"}
+    except Exception:
+        pass  # ANY fast-path failure → the authoritative AppleScript fallback
     res = osascript(["osascript", "-e", _calendar_delete_script(), str(cal), str(uid)])
     if "ok" in (res or ""):
         return {"ok": True, "detail": res}

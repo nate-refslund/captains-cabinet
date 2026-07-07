@@ -786,6 +786,21 @@ def _exec_calendar_event(payload: dict, osascript: Callable,
     if act_first and cal.strip().lower() in _SHARED_CALENDAR_NAMES:
         raise RuntimeError("act-first calendar writes refuse a shared/subscribed/"
                            "delegated calendar (refusing %r)" % cal)
+    # [F1 2026-07-07] Real-sharees pre-write gate: after the cheap germline
+    # name-denylist (above) and BEFORE the double-book gather, POSITIVELY clear the
+    # target as the Captain's own private, un-shared, writable calendar via the
+    # signed helper's real EventKit attributes (calinfo). Raises CalendarShareError
+    # (a CalendarReadError subclass) on any shared signal / non-writability /
+    # duplicate-title ambiguity / allowlist miss / unobtainable or partial report →
+    # the act-first card fails closed with NO write (same propagate path as the
+    # double-book gather). Same injected osascript runner as the gather + write, so
+    # it is one mock-testable seam. Validated against a real calinfo for a private
+    # calendar (found/writable:true, shared:false, shared_signal:none → permits). The
+    # irreducible EventKit blind spot (a writable calDAV calendar shared to others
+    # reports shared_signal='none') is covered by CABINET_CAL_PRIVATE + the denylist.
+    if act_first:
+        from framework.frontdoor import calendar_read as _cr
+        _cr.assert_calendar_private_for_actfirst(cal, osascript=osascript)
     due = (payload.get("due_iso") or "").strip()
     if not due:
         raise RuntimeError("calendar reminder needs due_iso")

@@ -53,6 +53,11 @@ def _fake_osa(cmd):
     # JSON array = no conflict, so the synthetic canary write proceeds.
     if len(cmd) > 1 and cmd[1] == "read":
         return "[]"
+    # ...and an F1 pre-write gate (`<helper> calinfo <cal>`); report the canary
+    # target as a private, writable, un-shared calendar so the gate clears.
+    if len(cmd) > 1 and cmd[1] == "calinfo":
+        return ('{"calendar":"Cabinet","found":true,"ambiguous":false,'
+                '"writable":true,"shared":false,"shared_signal":"none","type":"calDAV"}')
     src = cmd[2] if len(cmd) > 2 else ""
     if "make new event" in src:
         return "ok:Cabinet:UID-CANARY"

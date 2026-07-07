@@ -962,9 +962,53 @@ def test_calendar_empty_uid_fails_act_first_too(monkeypatch):
         redis_get=_ks_getter([{"kind": "reminder_create",
                                "payload": {"title": "t", "due_iso": "2026-07-06T09:00"}}]),
         monday_post=MondaySpy(),
-        osascript=lambda c: "[]" if (len(c) > 1 and c[1] == "read") else "ok:Cabinet",
+        osascript=lambda c: (_CLEAN_CALINFO if (len(c) > 1 and c[1] == "calinfo")
+                             else "[]" if (len(c) > 1 and c[1] == "read")
+                             else "ok:Cabinet"),   # F1 gate passes; write returns no uid
         redis_incr=lambda k, t: None)
     assert r["ok"] is False and "no event UID" in r["error"]
+
+
+def test_act_first_calendar_refuses_shared_signal(monkeypatch):
+    """[F1 PATCH 2] A calinfo report with a shared signal REFUSES the act-first
+    write (ok=False) and the write cmd (ok:<cal>:<uid>) is never issued."""
+    monkeypatch.delenv("ACTION_LANE_REMINDER_BACKEND", raising=False)
+    monkeypatch.setenv("ACTION_LANE_CALENDAR", "Home")
+    monkeypatch.setattr(ax, "_load_act_first_surfaces", lambda: _surfaces())
+    wrote = {"n": 0}
+    def osa(cmd):
+        if len(cmd) > 1 and cmd[1] == "calinfo":
+            return ('{"calendar":"Home","found":true,"ambiguous":false,'
+                    '"writable":true,"shared":true,"shared_signal":"read_only",'
+                    '"type":"calDAV"}')
+        if len(cmd) > 1 and cmd[1] == "read":
+            return "[]"
+        wrote["n"] += 1
+        return "ok:Home:U1"
+    r = ax.deliver_action(
+        "pcf1", act_first=True,
+        redis_get=_ks_getter([{"kind": "reminder_create",
+                               "payload": {"title": "t", "due_iso": "2026-07-06T09:00"}}]),
+        monday_post=MondaySpy(), osascript=osa, redis_incr=lambda k, t: None)
+    assert r["ok"] is False and wrote["n"] == 0
+
+
+def test_act_first_calendar_failclosed_on_calinfo_raise(monkeypatch):
+    """[F1 PATCH 2] If the calinfo gate cannot obtain a report (helper raise), the
+    act-first write FAILS CLOSED (no write)."""
+    monkeypatch.delenv("ACTION_LANE_REMINDER_BACKEND", raising=False)
+    monkeypatch.setenv("ACTION_LANE_CALENDAR", "Home")
+    monkeypatch.setattr(ax, "_load_act_first_surfaces", lambda: _surfaces())
+    def osa(cmd):
+        if len(cmd) > 1 and cmd[1] == "calinfo":
+            raise RuntimeError("helper exited 3 (write-only)")
+        return "ok:Home:U1"
+    r = ax.deliver_action(
+        "pcf2", act_first=True,
+        redis_get=_ks_getter([{"kind": "reminder_create",
+                               "payload": {"title": "t", "due_iso": "2026-07-06T09:00"}}]),
+        monday_post=MondaySpy(), osascript=osa, redis_incr=lambda k, t: None)
+    assert r["ok"] is False
 
 
 # --- loader content-damage fails closed (KILLED #3) ---------------------------

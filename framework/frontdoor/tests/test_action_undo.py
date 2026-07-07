@@ -99,6 +99,53 @@ def test_calendar_reverse_deletes_by_uid_argv():
     assert "delete ev" in seen["cmd"][2]                         # never interpolated
 
 
+def test_calendar_reverse_fast_path_confirmed():
+    """[PATCH 1] The fast helper delete returns confirmation JSON → ok:True via
+    the eventkit-fast path, and the AppleScript delete is NEVER invoked."""
+    seen = {"as": 0, "fast": 0}
+    def osa(cmd):
+        if len(cmd) > 1 and cmd[1] == "delete":          # the fast helper delete
+            seen["fast"] += 1
+            return '{"ok":true,"deleted":1}'
+        seen["as"] += 1                                   # AppleScript path
+        return "ok"
+    _journal_executed("pidcf", 1, "reminder_create", "calendar",
+                      created={"uid": "UID-1", "calendar": "Home"})
+    res = au.reverse("pidcf", monday_post=lambda *a: {}, osascript=osa, redis_del=_no_op_del)
+    assert res["ok"] is True and res["reversed"][0]["step"] == 1
+    assert seen["fast"] == 1 and seen["as"] == 0          # AppleScript not used
+
+
+def test_calendar_reverse_falls_back_to_applescript():
+    """[PATCH 1] The fast helper raises (write-only/denied sim: non-zero exit) →
+    the authoritative AppleScript fallback runs and confirms → ok:True."""
+    seen = {}
+    def osa(cmd):
+        if len(cmd) > 1 and cmd[1] == "delete":
+            raise RuntimeError("helper exited 3 (write-only)")
+        seen["cmd"] = cmd
+        return "ok"
+    _journal_executed("pidcb", 1, "reminder_create", "calendar",
+                      created={"uid": "UID-2", "calendar": "Home"})
+    res = au.reverse("pidcb", monday_post=lambda *a: {}, osascript=osa, redis_del=_no_op_del)
+    assert res["ok"] is True
+    assert "delete ev" in seen["cmd"][2]                  # AppleScript source ran
+    assert "UID-2" in seen["cmd"] and "Home" in seen["cmd"]
+
+
+def test_calendar_reverse_both_paths_fail_is_manual_cleanup():
+    """[PATCH 1] Fast helper raises AND AppleScript returns non-'ok' → ok:False,
+    reversal_failed + manual_cleanup, never a false success."""
+    def osa(cmd):
+        if len(cmd) > 1 and cmd[1] == "delete":
+            raise RuntimeError("exit 3")
+        return "err:denied"                               # AppleScript automation denied
+    _journal_executed("pidbf", 1, "reminder_create", "calendar",
+                      created={"uid": "UID-3", "calendar": "Home"})
+    res = au.reverse("pidbf", monday_post=lambda *a: {}, osascript=osa, redis_del=_no_op_del)
+    assert res["ok"] is False and res.get("manual_cleanup")
+
+
 def test_apple_reminders_excluded_from_act_first():
     inv = au.inverse_for("reminder_create", "apple_reminders", {}, {}, {})
     assert inv["op"] == "none"
