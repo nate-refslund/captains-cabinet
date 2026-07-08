@@ -67,12 +67,44 @@ from framework.frontdoor.action_exec import (  # noqa: E402
     deliver_action, _canonical_sha, _surfaces_path)
 
 
+# COVERED-EVIDENCE WINDOW (P1 hardening, adversarial review 2026-07-08): the
+# covered set used to read the ALL-TIME ledger, so one long-decided card
+# citing a rolling per-product digest file (the commits/deployment digests)
+# muted every FUTURE situation grounded in that file forever — the exact
+# false-positive direction the attention-gateway spec names as the bad one.
+# Only cards younger than this many days suppress; a re-worded duplicate can
+# therefore re-appear after the window (bounded annoyance — P4 standing
+# cards absorb it), while a genuinely new same-file situation is muted at
+# most this long. <=0 disables the window (all-time, the old behavior).
+# Fail-SAFE parse: an unparsable/non-finite env value falls back to the
+# default rather than crashing the lane at import (a bad knob must not kill
+# the lane) or silently disarming dedup (inf → empty covered set via the
+# except; nan → window off — both quiet failure modes, review cp1 Low-1).
+def _covered_window_days() -> float:
+    raw = os.environ.get("CABINET_COVERED_EVIDENCE_WINDOW_D", "14")
+    try:
+        val = float(raw)
+    except (TypeError, ValueError):
+        return 14.0
+    import math
+    return val if math.isfinite(val) else 14.0
+
+
+COVERED_WINDOW_D = _covered_window_days()
+
+
 def covered_evidence_refs() -> frozenset:
-    """Evidence refs carried by ANY prior action card (open or decided) — the
-    stable dedup identity across runs (LLM subject slugs drift; refs don't)."""
+    """Evidence refs carried by prior action cards inside the covered window
+    (open or decided) — the stable dedup identity across runs (LLM subject
+    slugs drift; refs don't). Windowed per COVERED_WINDOW_D above."""
     refs: set = set()
     try:
-        for ev in read_ledger():
+        since = None
+        if COVERED_WINDOW_D > 0:
+            since = (dt.datetime.now(dt.timezone.utc)
+                     - dt.timedelta(days=COVERED_WINDOW_D)
+                     ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        for ev in read_ledger(since=since):
             act = ev.get("action") or ""
             # 'action-card' = a presented proposal row; 'acted:<kind>' = an
             # unattended act row. ACTED-EVENT IDENTITY FIX (germline batch
