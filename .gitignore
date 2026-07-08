@@ -175,3 +175,9 @@ shared/interfaces/world/
 # may load it (WORLD-E1-ASSETS).
 cabinet/dashboard/public/world-assets/*
 !cabinet/dashboard/public/world-assets/manifest.json
+
+# World-aesthetic calibration corpus: LimeZu-derived showcase scenes +
+# Captain-rejected build screenshots are licensed/instance data — images
+# never committed; only build_corpus.py + the sha256 manifest are tracked.
+cabinet/scripts/world-aesthetic/corpus/*
+!cabinet/scripts/world-aesthetic/corpus/manifest.json
