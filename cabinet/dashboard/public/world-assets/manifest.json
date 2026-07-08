@@ -1,5 +1,3806 @@
 {
   "_doc": "Cabinet World asset manifest (content-addressed). Every sprite the renderer may load MUST have a row here and pass cabinet/scripts/world-asset-gate.py (PNG magic bytes only, 16px grid, sha256, realpath containment inside this dir). LimeZu packs (Modern Interiors + Exteriors + Character Generator) are a Captain purchase (kickoff to-do 1, WORLD-E1-ASSETS ledger row) and are commercial-licensed — asset binaries are gitignored, NEVER committed; only this manifest is tracked. Until packs drop in, the renderer runs in visible placeholder-graphics mode.",
-  "version": 1,
-  "assets": []
+  "version": 2,
+  "assets": [
+    {
+      "id": "interiors/13_Conference_Hall_16x16",
+      "path": "interiors/13_Conference_Hall_16x16.png",
+      "w": 256,
+      "h": 192,
+      "grid": 16,
+      "sha256": "c831e9479019f25518866b08b63e546d7d78a8a1647cddfd34134adcf264df1a",
+      "pack": "LimeZu Modern Interiors (moderninteriors-win, full)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "interiors/4_Bedroom_16x16",
+      "path": "interiors/4_Bedroom_16x16.png",
+      "w": 256,
+      "h": 1712,
+      "grid": 16,
+      "sha256": "33d61ecc64367d21f1d198b64d9ecc21c23d492b2fe9d12bfa4676ba9def7b6e",
+      "pack": "LimeZu Modern Interiors (moderninteriors-win, full)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "interiors/5_Classroom_and_library_16x16",
+      "path": "interiors/5_Classroom_and_library_16x16.png",
+      "w": 256,
+      "h": 544,
+      "grid": 16,
+      "sha256": "b3bc8dbdd0f72421a73b40be1ae09323aab5396a0cb9f81cb9172b634191e18b",
+      "pack": "LimeZu Modern Interiors (moderninteriors-win, full)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "interiors/8_Gym_16x16",
+      "path": "interiors/8_Gym_16x16.png",
+      "w": 256,
+      "h": 528,
+      "grid": 16,
+      "sha256": "5abe9f8046621fcfd897ca30501e71b999d263d0326115c5ec3a29f99866a704",
+      "pack": "LimeZu Modern Interiors (moderninteriors-win, full)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "interiors/Room_Builder_16x16",
+      "path": "interiors/Room_Builder_16x16.png",
+      "w": 1216,
+      "h": 1808,
+      "grid": 16,
+      "sha256": "f53d7cd04f275dfa4b3e1f410569d491275105e2710a0f86ec46edeff3ab576f",
+      "pack": "LimeZu Modern Interiors (moderninteriors-win, full)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "interiors/animated/animated_door_1",
+      "path": "interiors/animated/animated_door_1.png",
+      "w": 80,
+      "h": 32,
+      "grid": 16,
+      "sha256": "dd13493877176653200007256b6a2c48feb7f3433ef5ce39a6050e9276769165",
+      "pack": "LimeZu Modern Interiors (moderninteriors-win, full)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "interiors/animated/animated_door_2",
+      "path": "interiors/animated/animated_door_2.png",
+      "w": 80,
+      "h": 32,
+      "grid": 16,
+      "sha256": "290daadaa43c54ff0345fdd002ec6aa6f9f7a6e12f38af90eb375258172baf48",
+      "pack": "LimeZu Modern Interiors (moderninteriors-win, full)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "interiors/animated/animated_door_3",
+      "path": "interiors/animated/animated_door_3.png",
+      "w": 80,
+      "h": 32,
+      "grid": 16,
+      "sha256": "1b00f1876c9c19305376fa17ce0b4d14e472ac58d109a13f594ee9548cf6dbd1",
+      "pack": "LimeZu Modern Interiors (moderninteriors-win, full)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "interiors/animated/animated_door_4",
+      "path": "interiors/animated/animated_door_4.png",
+      "w": 80,
+      "h": 32,
+      "grid": 16,
+      "sha256": "0e7cba6cc6a106c1077976496bcca6e76d05cc982a528c0e95879d317c3ba892",
+      "pack": "LimeZu Modern Interiors (moderninteriors-win, full)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "interiors/animated/animated_door_5",
+      "path": "interiors/animated/animated_door_5.png",
+      "w": 80,
+      "h": 32,
+      "grid": 16,
+      "sha256": "8117f881027564ab9e413bc265c79f2e187407f8767167c8a5533156bb745488",
+      "pack": "LimeZu Modern Interiors (moderninteriors-win, full)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "interiors/animated/animated_door_6",
+      "path": "interiors/animated/animated_door_6.png",
+      "w": 80,
+      "h": 32,
+      "grid": 16,
+      "sha256": "339050e240fb5e8380a88cb6eebd37988242574bbe5b04fe9034f7498acf31ab",
+      "pack": "LimeZu Modern Interiors (moderninteriors-win, full)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "interiors/animated/animated_punching_bag_left",
+      "path": "interiors/animated/animated_punching_bag_left.png",
+      "w": 192,
+      "h": 32,
+      "grid": 16,
+      "sha256": "b2f88d86d07e28de4f185e919271f0a0100365a1fabc06b44b845fe28dba7c62",
+      "pack": "LimeZu Modern Interiors (moderninteriors-win, full)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "interiors/animated/animated_punching_bag_left_2",
+      "path": "interiors/animated/animated_punching_bag_left_2.png",
+      "w": 192,
+      "h": 32,
+      "grid": 16,
+      "sha256": "f34ce9f0174725de6db8e9dc233a385a0a4a87138206dbcb5cfcf55c792946aa",
+      "pack": "LimeZu Modern Interiors (moderninteriors-win, full)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "interiors/animated/animated_punching_bag_left_3",
+      "path": "interiors/animated/animated_punching_bag_left_3.png",
+      "w": 192,
+      "h": 32,
+      "grid": 16,
+      "sha256": "95b56511f955127039406ede3de7aa78c41a678271f30feb162d765e95936f7b",
+      "pack": "LimeZu Modern Interiors (moderninteriors-win, full)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "interiors/animated/animated_punching_bag_right",
+      "path": "interiors/animated/animated_punching_bag_right.png",
+      "w": 192,
+      "h": 32,
+      "grid": 16,
+      "sha256": "21ec7dd26c7f8c916029912bf41811cc534b34aaa445b06aceb7177cc057f04e",
+      "pack": "LimeZu Modern Interiors (moderninteriors-win, full)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "interiors/animated/animated_punching_bag_right_2",
+      "path": "interiors/animated/animated_punching_bag_right_2.png",
+      "w": 192,
+      "h": 32,
+      "grid": 16,
+      "sha256": "7fb29fd6bde0bed0194e31b3bafd8de1ea9779123462e983d56ee7becc5f6670",
+      "pack": "LimeZu Modern Interiors (moderninteriors-win, full)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "interiors/animated/animated_punching_bag_right_3",
+      "path": "interiors/animated/animated_punching_bag_right_3.png",
+      "w": 192,
+      "h": 32,
+      "grid": 16,
+      "sha256": "66eff7722710622be76222a5330250de7f5c68f27fe43fa21a0d4d914a32661f",
+      "pack": "LimeZu Modern Interiors (moderninteriors-win, full)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/Modern_Office_16x16",
+      "path": "office/Modern_Office_16x16.png",
+      "w": 256,
+      "h": 848,
+      "grid": 16,
+      "sha256": "1a645ad73110933f13c1c2e483de2bcb8319bad8e8c27a9baa5c042a488391c7",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/Room_Builder_Office_16x16",
+      "path": "office/Room_Builder_Office_16x16.png",
+      "w": 256,
+      "h": 224,
+      "grid": 16,
+      "sha256": "23857e126c63ef45a04b86ec45ee7d26899948fa19e802a715e84558f361da5c",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_1",
+      "path": "office/singles/Modern_Office_Singles_1.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "adeafe3276a8349679b8afcdb912b7d5f0e56219acb3e1400e0f09bf406c158d",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_10",
+      "path": "office/singles/Modern_Office_Singles_10.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "f7e48bc85f431bb1aefedc5d76efe0a4061a8ebae7bbfe06e1405a4b5b62362c",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_100",
+      "path": "office/singles/Modern_Office_Singles_100.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "ec7a25c80653b34d1d856c7fe85f7de65c793c74db6f5477d02b8535996ec6dd",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_101",
+      "path": "office/singles/Modern_Office_Singles_101.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "11d6a09097bb5d0f3d111e17c85844d62154038618be1063dfeb81c233d665da",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_102",
+      "path": "office/singles/Modern_Office_Singles_102.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "edb6359fbc9f6a36c63b97f7a2e77f21b74de259715aebcdf0334310baf807f5",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_103",
+      "path": "office/singles/Modern_Office_Singles_103.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "2dbe1c04e3808d0c82a078666cc59b7dd6cc82a9ab0fb461b8959ad2b140ed1c",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_104",
+      "path": "office/singles/Modern_Office_Singles_104.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "54d0b3c96223aa420cf8dd65fc06cc75656492114bb1d84ec995a646b07271a4",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_105",
+      "path": "office/singles/Modern_Office_Singles_105.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "1c3b7b6c20a0475a95f37203a9fc009b5d6e47c622146175e5ec53c462da3500",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_106",
+      "path": "office/singles/Modern_Office_Singles_106.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "3fb77e9bf1a9b8f8d650d9dbeb14e8438352f16cb7cd6572b1f4480992cf21b3",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_107",
+      "path": "office/singles/Modern_Office_Singles_107.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "f9471a25ae393fbb7b24a1e42ed80b26b2ac6eddfaa78047bc1c42b60dac8d10",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_108",
+      "path": "office/singles/Modern_Office_Singles_108.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "d71c3d1e931b882da42c602daa3cfd85474967f5afc4e36be7a06879f554f231",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_109",
+      "path": "office/singles/Modern_Office_Singles_109.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "1c6bf82982519da699230a8283a211382d54f5f08eb84ff791133ca5b4a09ec2",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_11",
+      "path": "office/singles/Modern_Office_Singles_11.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "1cf98ea5fa22f60d69a47da37ec7456f3db458cc94e225c4045d5a3f2eb7242d",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_110",
+      "path": "office/singles/Modern_Office_Singles_110.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "ce9ec72a9e8fbd4e08fa895c725a0139b7021694d27e3ae94b4a68c116d665d2",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_111",
+      "path": "office/singles/Modern_Office_Singles_111.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "0454c54149d13e1f0d6391cc1dd41538a3468c600a54f975c26a7f34455541f3",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_112",
+      "path": "office/singles/Modern_Office_Singles_112.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "11ae49d64fd979a41fa30b459df14bec82740e79db707b1576913f7d21e3c8af",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_113",
+      "path": "office/singles/Modern_Office_Singles_113.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "e51933ae96d0e34d774fd9b30532a45c78eaf4d338f07e0bd9bc875b0db36035",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_114",
+      "path": "office/singles/Modern_Office_Singles_114.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "b10322ea85460f124da273db6f5632230c3fcb62e7a45a2fd64dd6015a75b1b8",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_115",
+      "path": "office/singles/Modern_Office_Singles_115.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "db4ae47bbd21550485acbe07dcb9bb2826c55b19a723050c8402d38a35b87513",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_116",
+      "path": "office/singles/Modern_Office_Singles_116.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "660bd4d657998f995dceb4732ad4e2aa6bf0a0751877e876e7181e53e08d3932",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_117",
+      "path": "office/singles/Modern_Office_Singles_117.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "4cd1219a4fe0f09beed2fbc73dad450f676c43c8742c9644662fd911691f2f43",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_118",
+      "path": "office/singles/Modern_Office_Singles_118.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "cbce0afcd375de699fa33a31cf26ca31ea00ff0bf2a01eb50167abc137dbd639",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_119",
+      "path": "office/singles/Modern_Office_Singles_119.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "31dd2155c36682d0123bfdc04bc3b64a18b0ad01ca0657335f776b911fb83edb",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_12",
+      "path": "office/singles/Modern_Office_Singles_12.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "dbb71e7b745a2a9481551fb1b15be803c4aa4de9329a1d8cfcf31bdcaa36757d",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_120",
+      "path": "office/singles/Modern_Office_Singles_120.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "0a03892ee0c7381d64b1cf3c615003b507adbc1b20ad93f3f20e4daf7dd25f88",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_121",
+      "path": "office/singles/Modern_Office_Singles_121.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "6e2f7e705ac72a9449a68bf821c9d9aae080eed6c3027298d5ae0d0bcb9cd533",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_122",
+      "path": "office/singles/Modern_Office_Singles_122.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "a6b49d6f2cf97492e3a0a4b3673d0e5de0a7eee6edc297dc1f8a30da7da49c28",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_123",
+      "path": "office/singles/Modern_Office_Singles_123.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "3b5e687aee0ad75f3e529b640bde8fa5aa794d63196bd7deaf1db5ed7715d67f",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_124",
+      "path": "office/singles/Modern_Office_Singles_124.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "8fb12c5fe51196d0140d964be78b6421546af543401263ba437f659a12c6ff73",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_125",
+      "path": "office/singles/Modern_Office_Singles_125.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "d64968cacf1cdecf8d2315bdf8d30d8651a2a42098a520304893d1ef21dc49e1",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_126",
+      "path": "office/singles/Modern_Office_Singles_126.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "092df32134650ff91eaf7292711142e2e4b4fd69c748399b5f0ba1669d165089",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_127",
+      "path": "office/singles/Modern_Office_Singles_127.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "6d3ab6ef732c0d92402c691e61e17b9a42570195a4f876d8145a7d8def9ab639",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_128",
+      "path": "office/singles/Modern_Office_Singles_128.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "afa8955b9660ccb5c02b803e965a2c1e87dbadd8dc0e936106da86d0add9419a",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_129",
+      "path": "office/singles/Modern_Office_Singles_129.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "5813e81baa62bc6d4cf73a644b242d84e5979efa56eae258cae0f87685704fcc",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_13",
+      "path": "office/singles/Modern_Office_Singles_13.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "93598eade5360d3f6aa186bf95682030997e90cecbf6b1fc334e045089fdf5e2",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_130",
+      "path": "office/singles/Modern_Office_Singles_130.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "3b385a30eb96ec8f762ba858df7a3e13940ea06bf0475a843225d5cfb8620231",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_131",
+      "path": "office/singles/Modern_Office_Singles_131.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "a670fd69d717b6e4b031e8954a0d24443b9aad398435a904ad5939cec77d1aa0",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_132",
+      "path": "office/singles/Modern_Office_Singles_132.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "42f1e6b007f71eb36d59084254deba19b1037edafcf592624a33897a878ba2e9",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_133",
+      "path": "office/singles/Modern_Office_Singles_133.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "13d537324cef5cb97c38b6d41b7bddf0ed6ad11cd310ed3017a5e1ae8a3fae57",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_134",
+      "path": "office/singles/Modern_Office_Singles_134.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "1102e37d5ff15b5211000e17ed179aa1000e8450aad930dc7621a09f88e6eac3",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_135",
+      "path": "office/singles/Modern_Office_Singles_135.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "ba0aa1b9b849cd3faee55d0b852c16632c5e6bf51a004f5f7485317bd1169e8a",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_136",
+      "path": "office/singles/Modern_Office_Singles_136.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "a0bd901afd6a086185f1bd5e5e00594af7aed51d710da4392dc091c770495580",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_137",
+      "path": "office/singles/Modern_Office_Singles_137.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "6d0b4d959dc7393ebb26c33cec9e26785f80c5aa3e8f310223bbc20cf592161d",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_138",
+      "path": "office/singles/Modern_Office_Singles_138.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "ac523d0c79d3a5643e504e1d694d2deb7ec75d886fdab1996dc8a17282553206",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_139",
+      "path": "office/singles/Modern_Office_Singles_139.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "5dcccc87e5b6b43b0c648d7b365ac0419a10bffc9443a554b1418391ad29d80f",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_14",
+      "path": "office/singles/Modern_Office_Singles_14.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "d3bc630b5b2b0ad05a592b74db65f784ba1508446fbcb44faa79c40de2de456d",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_140",
+      "path": "office/singles/Modern_Office_Singles_140.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "a14bf44ca479cfca880ec3fd5e81beaa83030bb4978029ec8b12d6467883da14",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_141",
+      "path": "office/singles/Modern_Office_Singles_141.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "de5fd1fc159a8f6ef0e11247c8e288ba215e2e73a5a111fd8bd20ca06c454cef",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_142",
+      "path": "office/singles/Modern_Office_Singles_142.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "c8766871d703c1fcffbf4c7f7ac54926493629c20970f5cb250ccfc40d7df1d3",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_143",
+      "path": "office/singles/Modern_Office_Singles_143.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "0c98926531ead17d012cb7f4c64793ee7ba15f91573f0084ef12b60367ece63f",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_144",
+      "path": "office/singles/Modern_Office_Singles_144.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "a6c0ce9840d13ef66725bd513050f69ddab62bd5c5db1de331175454ad039c43",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_145",
+      "path": "office/singles/Modern_Office_Singles_145.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "6a3182dfc9a669aae4f41c81bc00398b40b80ee7c41bfe364255d3905ca2b87d",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_146",
+      "path": "office/singles/Modern_Office_Singles_146.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "cb8336366aac1282ac84320fc68395f5dbec5e2827fe8a41600831b6d10b50f0",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_147",
+      "path": "office/singles/Modern_Office_Singles_147.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "14936ade15f13f0fd298a9a72f2bb3cb3531bf656ad9121d89f17c09f4111daf",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_148",
+      "path": "office/singles/Modern_Office_Singles_148.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "4b0b36f7f2e13a8107240dff26d976c0a2600e3c7a5e359cddb4cf2b9ce05b40",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_149",
+      "path": "office/singles/Modern_Office_Singles_149.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "51ea856ba38035dab50072189e4b2954398e4d657cd7de70a658454f5b0cb2ed",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_15",
+      "path": "office/singles/Modern_Office_Singles_15.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "4a35874cac3c43405686aefa1cab6e9dc321a236bcba5b1833fdba599c32547d",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_150",
+      "path": "office/singles/Modern_Office_Singles_150.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "b75c0686d516e3dbc074f4d84f09d2d8e03ecf1be98c99f5847461ab071f4a6b",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_151",
+      "path": "office/singles/Modern_Office_Singles_151.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "557f7cd0b8fa28ae24c0f2f8e8725e5087985b4731c06667d007de7214848e33",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_152",
+      "path": "office/singles/Modern_Office_Singles_152.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "30ee592d8aa3e97a29d27f3cc69f5f6647f476c9b05efbf3d3058917c189bffb",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_153",
+      "path": "office/singles/Modern_Office_Singles_153.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "8364bf929861f1e910855c30fdd5e613130bcf6a32b4218f3e5f00573623f6d8",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_154",
+      "path": "office/singles/Modern_Office_Singles_154.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "bd9ddcfbe827505c01975cb35a407fb59e43e5a0c7b64bc4249c696a9ba6c460",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_155",
+      "path": "office/singles/Modern_Office_Singles_155.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "52863311962c5a42457090d5528965c1ae15716b2575a1e26aa1cd9f62bf26d0",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_156",
+      "path": "office/singles/Modern_Office_Singles_156.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "9ad97d569e163a82bc2e39b08af01f444720831ea2da3da68d43d262efe3e51f",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_157",
+      "path": "office/singles/Modern_Office_Singles_157.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "bede4a35cf38d79b1bd023da059de29b4f35a0fa2ee6ed8308382cf92ffff1c1",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_158",
+      "path": "office/singles/Modern_Office_Singles_158.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "443b279442849d3de9ce038530d1b3c8bf53290dbcf655a7e14d16a65f5d16c3",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_159",
+      "path": "office/singles/Modern_Office_Singles_159.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "ec2024e0396f294eeec8de73e7773a1a851c02ff82d693ff22909ec71db30da4",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_16",
+      "path": "office/singles/Modern_Office_Singles_16.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "e9f92cdf89d9cae429449e1a548e3f72d53268a64be4c14bf5c4aba282f616d8",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_160",
+      "path": "office/singles/Modern_Office_Singles_160.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "cc1658329f00f0ce386b265bc4a52cf73c74545f49d8e3cbb8eba0e66b2a6d45",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_161",
+      "path": "office/singles/Modern_Office_Singles_161.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "4db9bf0482f6493592ba754d0b9b6f63cba1c0e40b5b940ce4c552360a789a3a",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_162",
+      "path": "office/singles/Modern_Office_Singles_162.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "8b65d88cffed747c53b8a2452fe682d994b8ed554e87f655ddf885eecc7fd1fc",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_163",
+      "path": "office/singles/Modern_Office_Singles_163.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "bf5673a238da56686a6ae61c1e87e9316c49abdcc189d22981d9ccafb4113e94",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_164",
+      "path": "office/singles/Modern_Office_Singles_164.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "dba17b68b829c7e0c8561b4f098a50ff4d59a4563e7b78ee92804f4314e7034a",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_165",
+      "path": "office/singles/Modern_Office_Singles_165.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "e70c7f549519820b69cba9a5806656e85652b354b332b915012e7036fdf6e6b1",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_166",
+      "path": "office/singles/Modern_Office_Singles_166.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "186759ae86b6de71df7c0904b07801c9b0c8e159969d569836a6e7f132369ea4",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_167",
+      "path": "office/singles/Modern_Office_Singles_167.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "52b5d53966ffd0065555804493a7d10ff1b31d6e9a2a2cf83b199febbb65aeb8",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_168",
+      "path": "office/singles/Modern_Office_Singles_168.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "7ed3a2cc7489157b72dc3fce8bc50c49ff096ab1eb5ab48bd78506c44770e1bd",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_169",
+      "path": "office/singles/Modern_Office_Singles_169.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "d5ddb55e398c7af774ab46471188d9813331564deb42314372adb9ad01fdfd1d",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_17",
+      "path": "office/singles/Modern_Office_Singles_17.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "987df7416328b14bf2773ea95f4dfa19e28252fbde48bab69ddbdab7de2abf3c",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_170",
+      "path": "office/singles/Modern_Office_Singles_170.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "01d915074a6c97fe275f207683566c0639a2abb3e22ec81701a0feffa50788c3",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_171",
+      "path": "office/singles/Modern_Office_Singles_171.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "ba3d57ee77597258ab06bfa1d91c1970493bc76bc492bae43e3b9935783ff255",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_172",
+      "path": "office/singles/Modern_Office_Singles_172.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "1847e5c3971b6ddeb5028104789655ed5bfa9d660922f135fcfd3bfb0c7a8807",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_173",
+      "path": "office/singles/Modern_Office_Singles_173.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "986bcc30bd89ff07cae5f9a11c02553fdaf3e0ec726f3a8cb22d5ebcb6972be0",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_174",
+      "path": "office/singles/Modern_Office_Singles_174.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "90f7e68172c9713d3c43d66555146ca256de0df656adb2615b1dae515ce931cd",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_175",
+      "path": "office/singles/Modern_Office_Singles_175.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "1be226102005f38ef667a2c36e9211654df4cb92400d9c010a7391d3836c18b8",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_176",
+      "path": "office/singles/Modern_Office_Singles_176.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "9470cbb4798d256329da5a0eb23f79f221d42b03a93f00c58258e772852f913a",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_177",
+      "path": "office/singles/Modern_Office_Singles_177.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "c364190a54d3aaef890c412a0d0115fea00c19d185d09942628a7d05a2f17a5c",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_178",
+      "path": "office/singles/Modern_Office_Singles_178.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "cdf1abe8d44b055e96847535a31320b85c4e34bf6c3de868827643292e1aa47b",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_179",
+      "path": "office/singles/Modern_Office_Singles_179.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "cdcaf2e82347f993ae48527cc30c0b3e577d9f9c4c8d6c28bac095b757b5deeb",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_18",
+      "path": "office/singles/Modern_Office_Singles_18.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "7fa4cdfede0313247842cf849772c991301599ead5d66a42e21a8fab4a5140fc",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_180",
+      "path": "office/singles/Modern_Office_Singles_180.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "15016350b23fe1658a0d529603619c7d9dc33b764e107ed1e448a798228e21a6",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_181",
+      "path": "office/singles/Modern_Office_Singles_181.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "75f77e042fa5256cb365e93f9f440d56fb0779162748a21258eaa96fadbb9b32",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_182",
+      "path": "office/singles/Modern_Office_Singles_182.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "dc8982dd71bbf4b883860b89cc56d3d0579aa54b0d3d9a85056d9c759da17e26",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_183",
+      "path": "office/singles/Modern_Office_Singles_183.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "db106c2f41d38d1729b78d9726eceb47c8a68f0e62b6b0ddf4c5265f8e111e8e",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_184",
+      "path": "office/singles/Modern_Office_Singles_184.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "5e3100f5e0ab5de89719403698c7d8844f8100165afa989451b2c6d122eb2124",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_185",
+      "path": "office/singles/Modern_Office_Singles_185.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "b329d16070b0d9f5a840cf3b8a9eaff9df0b064aee203b94143ce3d4db13deab",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_186",
+      "path": "office/singles/Modern_Office_Singles_186.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "d8697dd74fd17e5dfa04cbf1bc77b1cf3a4d78a016e101a3363b77efdb649eca",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_187",
+      "path": "office/singles/Modern_Office_Singles_187.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "19a0f4ab0e2c639b231dc44fe24518f4a64bd57e722f8aac65c5914f35c6e838",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_188",
+      "path": "office/singles/Modern_Office_Singles_188.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "18e56f23b37782c09c6df65e8b6f2c5c2a77f59bdeaaf47b76b9156ee76da231",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_189",
+      "path": "office/singles/Modern_Office_Singles_189.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "dc3e5174ed4797d1643d9d53f82dfeb09d2e934df7ad345e605021877bce181e",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_19",
+      "path": "office/singles/Modern_Office_Singles_19.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "a611bcd7da6d913f89df254679b7744c829d3e4c9609f17e8c0827ce8af26aab",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_190",
+      "path": "office/singles/Modern_Office_Singles_190.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "87a682fa577e546a86721941746c4b10c161f3bcaa7efef8a3add12248879888",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_191",
+      "path": "office/singles/Modern_Office_Singles_191.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "f1fc850ab131c49d858aea95bf12ae631fd1f34ca2cb44ae062527c79133f46f",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_192",
+      "path": "office/singles/Modern_Office_Singles_192.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "018948641d9b90da3730833b02d74ef9364a952cffd1622e0a84a788c5d2e4c9",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_193",
+      "path": "office/singles/Modern_Office_Singles_193.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "3fb661506120d2e14c9ef0cd6a01989bef5ed0a30d113484dbc3df1e6d336e75",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_194",
+      "path": "office/singles/Modern_Office_Singles_194.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "160bacae6953ba213e1ed9c54ff7a6f5c41989e01deae98db443c68115bf1cdb",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_195",
+      "path": "office/singles/Modern_Office_Singles_195.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "1dac47e5ee58df03aa957d5b5c2b8c49dcdb708c74fd54d6b3960522eabd3cec",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_196",
+      "path": "office/singles/Modern_Office_Singles_196.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "3a88fc718b4c87513927757760e3ed034719dfc4eae5af4ac94f3b77e48ab98d",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_197",
+      "path": "office/singles/Modern_Office_Singles_197.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "5c975af9b24e6d23bffdf305b89b9c2d31a165d3bc9cd2ec213b5c48d45c310f",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_198",
+      "path": "office/singles/Modern_Office_Singles_198.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "7f13a674f71bd5410d2207c5a035a1f16903f49bbeb261ccf573a192bd45d8e2",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_199",
+      "path": "office/singles/Modern_Office_Singles_199.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "03882f3107a24019a7306d72f26bcac3bce2380d564e406cede80298e911cd53",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_2",
+      "path": "office/singles/Modern_Office_Singles_2.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "105370287b7a88fe67dd274801b8a713a2a1ae25f041bc7fa5b8ea7c00c16c4a",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_20",
+      "path": "office/singles/Modern_Office_Singles_20.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "9eeb999b8ad9250c8db9a3932dfcd8c8e19dc67b6dfbde0741e00efeb9195afc",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_200",
+      "path": "office/singles/Modern_Office_Singles_200.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "e9bcaf13034dc5a8a1b6cd3853cd8d58a7a3848f1cf642e52fa6a42bd363e7ec",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_201",
+      "path": "office/singles/Modern_Office_Singles_201.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "9bcbe02badc7003ad22a59bb734e5568b17d4f47f0c34806c4624beedaca622f",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_202",
+      "path": "office/singles/Modern_Office_Singles_202.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "53e3112cfbe88692135b8e52a7dd0b52cef186900bbc8055b2b2f94574d5eb95",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_203",
+      "path": "office/singles/Modern_Office_Singles_203.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "387b03fd31161f524c491036873c4e18b1cf078a31258943d793a91e316a96db",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_204",
+      "path": "office/singles/Modern_Office_Singles_204.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "b3988ee387d0b291549674e4e7e924070e9eb5ff8c12470c75f5477b77b4bd79",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_205",
+      "path": "office/singles/Modern_Office_Singles_205.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "1de2e6955fabe0b04615bb5ccf1e0779afc481cbac076ed5e9800123c368b629",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_206",
+      "path": "office/singles/Modern_Office_Singles_206.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "8efada3bf8d5e1f70dbf82139c749de12c9f49efd2c4ca6e72b7a7ad5baa2127",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_207",
+      "path": "office/singles/Modern_Office_Singles_207.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "7a5dd9a7fc58d905952cdc7502d6106ea6ae8a33b8b944ff3323bea698f9c530",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_208",
+      "path": "office/singles/Modern_Office_Singles_208.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "f6a1047bb9094e6bc5d0eccdcd180c0d68f62be15c311f594e0dbd40ef1f3f8b",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_209",
+      "path": "office/singles/Modern_Office_Singles_209.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "d32f0a9082c4a8cbbf035d06e44c4c09a254286317ad79e21b37028f06412d9c",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_21",
+      "path": "office/singles/Modern_Office_Singles_21.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "356c4c66604b9962eb871f3ca618336b28e43d3fc415cd6dbb64c9c8130df591",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_210",
+      "path": "office/singles/Modern_Office_Singles_210.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "318190ddd05577a435ae5c4bfa9330be6f92c375be78052ab14b2b92c7b76be8",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_211",
+      "path": "office/singles/Modern_Office_Singles_211.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "3d5e27452c4e3e5a9ebab10c546b60f0f0d8df0ee9ffc6885433a58ff2071a67",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_212",
+      "path": "office/singles/Modern_Office_Singles_212.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "3c207e1925ee18cd5021e5fba45f4a71b0081419f7c37ffb218cc1bb551a8db6",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_213",
+      "path": "office/singles/Modern_Office_Singles_213.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "c3364cc0d95a886e1864f8abe17fcd556a6ceef57fbfcdab1dae5da4781a440e",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_214",
+      "path": "office/singles/Modern_Office_Singles_214.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "9f4602fd9bdc5a4e10376380068d456999f0335a6512a87fa2417970cd9d8d9c",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_215",
+      "path": "office/singles/Modern_Office_Singles_215.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "88e68e417059a549e40e1e39a6ea87c5141aebfc4682551a69f2c08fc1dd7967",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_216",
+      "path": "office/singles/Modern_Office_Singles_216.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "7a6861444a263651c38bf96076301431613f420511f0ac8b4cef32605c40f4b6",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_217",
+      "path": "office/singles/Modern_Office_Singles_217.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "3e56e29cdab9b14f99feb1ec9547c4d89bcd4503904b4018d6748a49ff0ec64b",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_218",
+      "path": "office/singles/Modern_Office_Singles_218.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "8d82c229e845b483c57d957e86267770a05849ecf423a25596c089d351c2e595",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_219",
+      "path": "office/singles/Modern_Office_Singles_219.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "a0d3d0ea01b8cb73c138f7befa35b4963d51c8797d9fc803a0ca9a12e9c086af",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_22",
+      "path": "office/singles/Modern_Office_Singles_22.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "098510c72d4794b4d0e8838e09a36e52feeea4ada01b79328570b3ef3f2316b0",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_220",
+      "path": "office/singles/Modern_Office_Singles_220.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "5c200082349d99194c774d223ba8240230745a2f66260e3c46ee3dc8e23dc661",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_221",
+      "path": "office/singles/Modern_Office_Singles_221.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "53dc29eeeed4d3ed3d9f6afbcc0d274871a916bc19a27fd97ad71b6e36a14ab3",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_222",
+      "path": "office/singles/Modern_Office_Singles_222.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "3e394e7eeb8fd12b975c2e3d6353cfff672d920e05c0ff31aae0200c2b7652bb",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_223",
+      "path": "office/singles/Modern_Office_Singles_223.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "d5d36245fb6f57f2a5e85b8a8b1e58882bc859332296a93e5fe862d29d27df4f",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_224",
+      "path": "office/singles/Modern_Office_Singles_224.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "5fe74f9491c391299624596527769919db76c7c860e93df5deb04301f77ded07",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_225",
+      "path": "office/singles/Modern_Office_Singles_225.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "6d648a139050b4594640df3ebf92c76dd1e41c73c275411df12d2fa17446117a",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_226",
+      "path": "office/singles/Modern_Office_Singles_226.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "2966187a61f68b9a1b9897933067d49305ac41dbddd65bdd20e49d5c04bf030e",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_227",
+      "path": "office/singles/Modern_Office_Singles_227.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "5d08344f9475b814b64ae96b4343405063d305ed30968b91477676efa189a59b",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_228",
+      "path": "office/singles/Modern_Office_Singles_228.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "bfeadf6debdebc6a0df84f3ea0f3e241093c73504ae58e330a61f64a9c19fc10",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_229",
+      "path": "office/singles/Modern_Office_Singles_229.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "abe31e7184b45561cb35ad38bbbb9acbdb42f29a5d9c316d0d01ec4d71945645",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_23",
+      "path": "office/singles/Modern_Office_Singles_23.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "e522fa911a5e511a8aab79f5479e8f6fb3068bc811261acacd9d045618987817",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_230",
+      "path": "office/singles/Modern_Office_Singles_230.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "d152ff0c5c52d2f388eb4dc6ebd997eb70f1923d87900b8e143935ab3c67294e",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_231",
+      "path": "office/singles/Modern_Office_Singles_231.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "37200fe39974e57ff607332f4fae1b120acb02ec41ead467f7bb2f26d5209448",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_232",
+      "path": "office/singles/Modern_Office_Singles_232.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "d2e4ad196f5979d98004f1873ec32cea796098a23b2de0c2d374c64e5d42deb3",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_233",
+      "path": "office/singles/Modern_Office_Singles_233.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "742315b8ccea038e47adc2643a049f4705d6e2a4e5fb11d05107fd42855e19af",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_234",
+      "path": "office/singles/Modern_Office_Singles_234.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "d31bd70b70dcc8a3fdc202f631d9eec35d5f43f6cd643b04629361dc3475d083",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_235",
+      "path": "office/singles/Modern_Office_Singles_235.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "1eb6ed0db00dc2c706c36efb524013e67e5ac4ceee5a48828f5ddf90eb2c6b8b",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_236",
+      "path": "office/singles/Modern_Office_Singles_236.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "118b7e431ed2c92bd0d4ceb2ea74b48d250678c2c831a58998c114022f209f14",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_237",
+      "path": "office/singles/Modern_Office_Singles_237.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "bb111a422462b1397dc4439e77a6b6f27b4b8ff5b2c9d5915206b2357731f2ce",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_238",
+      "path": "office/singles/Modern_Office_Singles_238.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "ef9345526a8da826aec19830a3a574e9d6f5c6b1df472bb36db4d9a39f682c15",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_239",
+      "path": "office/singles/Modern_Office_Singles_239.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "c34b79f4190ad4b34104838c144a1050254d609028f6ea228cb9930d96be66c7",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_24",
+      "path": "office/singles/Modern_Office_Singles_24.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "053b5fe18358d598f6da6c09b6976d0405760ad48ae645b1818f7bf0a811d6ad",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_240",
+      "path": "office/singles/Modern_Office_Singles_240.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "794405c094589a0cbe68356412be3b6a34836896e6ec4d735643d73d2ca8681e",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_241",
+      "path": "office/singles/Modern_Office_Singles_241.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "d8b9618e2ac44a1dcfa95c480d411e3de55778e5d0211f0b132769d24c0a0d65",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_242",
+      "path": "office/singles/Modern_Office_Singles_242.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "a64f348e2826049e21fc47bce862070117bade35ee744c3aef9ff4702db30dc0",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_243",
+      "path": "office/singles/Modern_Office_Singles_243.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "fb06f0f7c236b8f0e44052eb87f5fe31ec282947a8699aa568ef201ccd3376ed",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_244",
+      "path": "office/singles/Modern_Office_Singles_244.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "5c2bf56fc4e7acd916b096f8355826739f5784157f060e51eca3c24266043e03",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_245",
+      "path": "office/singles/Modern_Office_Singles_245.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "8361045d6b2cb0dc03969444fb4f7985569a8af70575e1eecd6f05278f52a7ab",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_246",
+      "path": "office/singles/Modern_Office_Singles_246.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "9affae9a13167cd1735fec3860177af3d56eb0fe34577ebfb267138ecc324b51",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_247",
+      "path": "office/singles/Modern_Office_Singles_247.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "3a157db51a578db7fd481ad8ec543fc4ae702c6a56af471fd1d48fa10ef3baf8",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_248",
+      "path": "office/singles/Modern_Office_Singles_248.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "cee8d9b791acded7935f9995b719a819b57d4b810728731306cf4f923e34f5e7",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_249",
+      "path": "office/singles/Modern_Office_Singles_249.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "442f9550df8be5a76d8ae33cb449b18e3f512c427d702fa2870e13d1c929f823",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_25",
+      "path": "office/singles/Modern_Office_Singles_25.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "4c25a0a8f779d3440721b99ca30ee28dfdce79273bf6acfae882e6dbb528fb57",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_250",
+      "path": "office/singles/Modern_Office_Singles_250.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "02410b9e70da8a483764cf34dfc70dd70f2e37a1f058a2e1b6417c0191875965",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_251",
+      "path": "office/singles/Modern_Office_Singles_251.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "108c7783f1ebd3b1e157cc9c793b79e8a351947359aeddd3e3258de338d1f58f",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_252",
+      "path": "office/singles/Modern_Office_Singles_252.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "688f8793e808a29634c96279544d3e8da55cbe47b0dfbec474ebf065cbf99e45",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_253",
+      "path": "office/singles/Modern_Office_Singles_253.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "8eba5d3677206ae1752675afa171a49f4ed5d7b157579399a991cd48423b5c98",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_254",
+      "path": "office/singles/Modern_Office_Singles_254.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "dd5324b2822ceab54f80e35c769ec8b3e58cb31095d2c54af54b5415a1831b7d",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_255",
+      "path": "office/singles/Modern_Office_Singles_255.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "de7aaaa9cc03be44c9889ee0483d47280484eb0a21ae44c33044a29eb8b2e4e2",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_256",
+      "path": "office/singles/Modern_Office_Singles_256.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "05ce32c6c33a07eeb10ea35cfab7a657d9ff3feb42e03cd49849ea52a28cd906",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_257",
+      "path": "office/singles/Modern_Office_Singles_257.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "972036ac7c9d90f80680cf36d357b4e4d046d3f399f57d8792dacbfaf2df54b5",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_258",
+      "path": "office/singles/Modern_Office_Singles_258.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "9db51b3389a0024cf6b2c8f0cb9dbbc28e1133496509ca734109d0cc0288f2c1",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_259",
+      "path": "office/singles/Modern_Office_Singles_259.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "1a710270a02485e84be6c22ea604c28edc939033bf232a629af64cf17d1d8158",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_26",
+      "path": "office/singles/Modern_Office_Singles_26.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "495025b36a97f1f569cb62496fd651b8c2c2d66c214eabcf69aad86f303ab7a9",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_260",
+      "path": "office/singles/Modern_Office_Singles_260.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "b8ad87663ca03d43e9039bf279c1b705a5cf399ab34f86ca39a28c096d657369",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_261",
+      "path": "office/singles/Modern_Office_Singles_261.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "9d298d9b1a98e0b2149d5d726b055c1a545443193e8fa1e1cf61c8418cac46fe",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_262",
+      "path": "office/singles/Modern_Office_Singles_262.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "1e8aa8af35b072e74718ce61bace0ecb769c3b09b780acaad3109994b5149b4a",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_263",
+      "path": "office/singles/Modern_Office_Singles_263.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "7e835565e208d52c98d953b02dbcba63afe4d5bd0327b2bcf9723c8585b357d1",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_264",
+      "path": "office/singles/Modern_Office_Singles_264.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "2f90570ad48fcd26c5c58a71bb11fcee7def60608f3f82c91f79df6f65c27259",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_265",
+      "path": "office/singles/Modern_Office_Singles_265.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "af50743ff7ed91cc6878378aa30d2a4be2423739c3fd1237c902deb1f14a6db2",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_266",
+      "path": "office/singles/Modern_Office_Singles_266.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "cf36f4a706cac33f4d2529c5bc47b9b34d05777af58d1981705dd22d0fb7b790",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_267",
+      "path": "office/singles/Modern_Office_Singles_267.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "459bc445a230d8b01875b222b2f1d19273801aec2008507738caae1504b5e218",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_268",
+      "path": "office/singles/Modern_Office_Singles_268.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "591c6178c47e70defa9572ee4102f15d61859c813db3b63b4ed2d1ff99eaf0f3",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_269",
+      "path": "office/singles/Modern_Office_Singles_269.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "0fbbd239d26bb781b89dbbe7a1b4bd8782f1e69f510e3e5c9316c2f59882b79a",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_27",
+      "path": "office/singles/Modern_Office_Singles_27.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "0307931fdc4bfbf779e2510bdf9a10a0eff95d7a5d068075a8439b083fcabe5b",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_270",
+      "path": "office/singles/Modern_Office_Singles_270.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "54d0b3c96223aa420cf8dd65fc06cc75656492114bb1d84ec995a646b07271a4",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_271",
+      "path": "office/singles/Modern_Office_Singles_271.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "ce9ec72a9e8fbd4e08fa895c725a0139b7021694d27e3ae94b4a68c116d665d2",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_272",
+      "path": "office/singles/Modern_Office_Singles_272.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "8e065f5c6659e98b24650607e4a017f1836ca27c6023c03a14b6e20e65102d0f",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_273",
+      "path": "office/singles/Modern_Office_Singles_273.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "41e2a8fa55a672af89775255826b248974153daeea4ab01bb906e90cbc07780f",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_274",
+      "path": "office/singles/Modern_Office_Singles_274.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "9a58842a29176d5a712b49f2beb952881e1300fa8535124729c5a079df4bd2a9",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_275",
+      "path": "office/singles/Modern_Office_Singles_275.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "91e2db1e19ec7a28596941b574dde88e54d772443fb4e15b844567129e961a94",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_276",
+      "path": "office/singles/Modern_Office_Singles_276.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "612fdcb120f0628809020966ab6c0d900adcd2c5886e6610f712c498f93aa2ae",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_277",
+      "path": "office/singles/Modern_Office_Singles_277.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "98c17be9220914176d6f1e810fa710608a7219b075f6f29d34d6b0faa081cebe",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_278",
+      "path": "office/singles/Modern_Office_Singles_278.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "4f64c20a3d44c3ea7f46758f30c5466844bfb1ce95cfc390f5d11daba7e08ccc",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_279",
+      "path": "office/singles/Modern_Office_Singles_279.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "21bbaec0ee27b1b7082130c9eb926c829d68350d7ada6ffb70f9bf3737ef3adc",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_28",
+      "path": "office/singles/Modern_Office_Singles_28.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "6ed6ebecb0fa82f2d488ba62a0973995e5383d4cd494c537935a06bc1999e2f6",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_280",
+      "path": "office/singles/Modern_Office_Singles_280.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "70fd0352420c6112332f59241c9ddd2300fdb165473052c3363149c54b152102",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_281",
+      "path": "office/singles/Modern_Office_Singles_281.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "2b4c017eb8a7cfb0a4a92786a03b8290909a6eb6ea893a36a6dfdc7c41bb754f",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_282",
+      "path": "office/singles/Modern_Office_Singles_282.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "a7f9d5b29f0d2ac0720efedbfe447794a22df790e41f8278ca4c8f2d052e277e",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_283",
+      "path": "office/singles/Modern_Office_Singles_283.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "e4cd83e1e6a21a74c4febd758535b492918078f9630a2723336e6d1fe4251d59",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_284",
+      "path": "office/singles/Modern_Office_Singles_284.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "c4caead01d0405f9228596df4ee97cb09ec740bfe19f0c126cd3a5e686e62e52",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_285",
+      "path": "office/singles/Modern_Office_Singles_285.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "517eca320c58ade0cace460b30f850877c1dd794c9169c3d342141cc26d3bcdf",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_286",
+      "path": "office/singles/Modern_Office_Singles_286.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "ebbf88659919e7d7f802025fcfdcf0cfe5200b60b01eb638f00a462a71a0a950",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_287",
+      "path": "office/singles/Modern_Office_Singles_287.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "36d2e532720a4eb59966116685c3eadad44d4725191144dac462dd02954f8b4d",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_288",
+      "path": "office/singles/Modern_Office_Singles_288.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "1e0924f0eda0331bb28e55154a083126c85617e8689c496ffbd7db7c9534a644",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_289",
+      "path": "office/singles/Modern_Office_Singles_289.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "effec39bbf98085445717e9cbe66bd6c7fd11723187876f1863ab288bbe92069",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_29",
+      "path": "office/singles/Modern_Office_Singles_29.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "80aa48718f7792abbe530d62af64e7fd6d3c2eda202cfb2efb22958d7c3a7677",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_290",
+      "path": "office/singles/Modern_Office_Singles_290.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "54f89ac7b4fad37b451171a8112a1204b695bdc64915e0c8c06e2e1e754b0603",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_291",
+      "path": "office/singles/Modern_Office_Singles_291.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "64ebee8b12565b074bc42e2cb7efe3cc84cbd168343aec9a36c5b043a08bb5ea",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_292",
+      "path": "office/singles/Modern_Office_Singles_292.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "06b840ffa69910b44c7a5bdef0bb1e01696333b4f871802807c628d105b0adc1",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_293",
+      "path": "office/singles/Modern_Office_Singles_293.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "93edf196f04265a867b8f42f5cd45601c46f4d98fcc75fbf3a69b4e46364d4c0",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_294",
+      "path": "office/singles/Modern_Office_Singles_294.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "4c44e98c127539aa8340fcff6a648adcdc4f53aac899e8e1b01f14891d130426",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_295",
+      "path": "office/singles/Modern_Office_Singles_295.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "87c65a19f33c901e3e045e8c91f6acc534014e57af0d7aa55e38623f9a7586ce",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_296",
+      "path": "office/singles/Modern_Office_Singles_296.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "b6eec510680cd90997302596d919ce52bdc86d190bda6e9fab13f82bb12acf9d",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_297",
+      "path": "office/singles/Modern_Office_Singles_297.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "50c8dd6964880a731f83250507b781c1a660780b480cfc8894c54bf8376ac210",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_298",
+      "path": "office/singles/Modern_Office_Singles_298.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "ed01afbdd155f2614041843b87ef84d334b59d1d0f40243f1c8b7e6756affc45",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_299",
+      "path": "office/singles/Modern_Office_Singles_299.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "e81e0acb583de34866dd1971016eb1f7a25d189369ad3b0b127bf0d8cab88a5c",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_3",
+      "path": "office/singles/Modern_Office_Singles_3.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "bf3620464dd564613ca883fc1f6c332d7ad46a669499721034c10c69854c6c94",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_30",
+      "path": "office/singles/Modern_Office_Singles_30.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "bc7a4188d0a9b88b3277c31d7999b958a391fa2ea6ec5aab0876bb7aefd60935",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_300",
+      "path": "office/singles/Modern_Office_Singles_300.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "61ef122aa116fefda0f152e0d3bc7c20549aaa6a0e46c8bcbc588fd2a9f122c2",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_301",
+      "path": "office/singles/Modern_Office_Singles_301.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "af2b05b80df3a305ab0bf54b7d1f36c828e4304dfb69df330d8d3f7838fa6799",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_302",
+      "path": "office/singles/Modern_Office_Singles_302.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "59af7adf57158a011de1315037de4681e361b3ee6b95f535d77112f6e42594b8",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_303",
+      "path": "office/singles/Modern_Office_Singles_303.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "e361b8e3c2a3ef591fd1a5e5cf317e21b1d2d3d61a3a7dbe192b9a7ee847aaa0",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_304",
+      "path": "office/singles/Modern_Office_Singles_304.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "68c8aa3d5d412c1a5d89283d497fc4effd705ee2c276ac54fe4d0d739f21f6d8",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_305",
+      "path": "office/singles/Modern_Office_Singles_305.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "3fdb49046a921ebb7c27a6559d96d1714999e94767a2edfe5bde5640214f2224",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_306",
+      "path": "office/singles/Modern_Office_Singles_306.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "17b4634a32146f211f9b07274172ca25cda8e3b867dc3d10f857189170377b6f",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_307",
+      "path": "office/singles/Modern_Office_Singles_307.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "b3708c803ca4025ac9f52a08de3f06e34cbb3e41992f2870935a56d3b526a381",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_308",
+      "path": "office/singles/Modern_Office_Singles_308.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "26681a674706fabbd50002a3b64f16c9d314e6bebb013ac32a6a908b0d903b98",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_309",
+      "path": "office/singles/Modern_Office_Singles_309.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "5c6e1b7f550ad14e89666b9e75ee99868e31c7b0a683cce301118667dd4fec78",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_31",
+      "path": "office/singles/Modern_Office_Singles_31.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "905d4b1bdc3f8cda5eb4809b23d4d4d8995d8e3d4159423339ae4ddedd3b733b",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_310",
+      "path": "office/singles/Modern_Office_Singles_310.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "65d394a35f9f28712d659c873ebc5e38038501f986173918262c7cd966d76b09",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_311",
+      "path": "office/singles/Modern_Office_Singles_311.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "13d148ce8698a63406e37a8b67706b9d78dc7ac7e63d4672927c34e208e00b1a",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_312",
+      "path": "office/singles/Modern_Office_Singles_312.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "f488ea4c589759dfb437e0fbf89fbe5981ea457738eedb8ec9bee7b7fdc6ec2a",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_313",
+      "path": "office/singles/Modern_Office_Singles_313.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "5813e81baa62bc6d4cf73a644b242d84e5979efa56eae258cae0f87685704fcc",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_314",
+      "path": "office/singles/Modern_Office_Singles_314.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "42f1e6b007f71eb36d59084254deba19b1037edafcf592624a33897a878ba2e9",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_315",
+      "path": "office/singles/Modern_Office_Singles_315.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "5710b0149c2e215dcf9e05f966364a15b21925335880b699ec9e2d5bbf725ac9",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_316",
+      "path": "office/singles/Modern_Office_Singles_316.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "f819e5a03021a8f257722ad6ab81cd88acb8e2810852baef035724aa4310983f",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_317",
+      "path": "office/singles/Modern_Office_Singles_317.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "7fe9b36fd098d3bd461654462a8526fb7c4d13c35fbce1a889ff3568b3622b19",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_318",
+      "path": "office/singles/Modern_Office_Singles_318.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "3322477d175d19771e29fb03581ab9bf1c13c5a43a1ab9f98577b6e9d3f80932",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_319",
+      "path": "office/singles/Modern_Office_Singles_319.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "1d82c3256e4cf5be5ca44203799a51f5e934cc036b649fde66e8c67003dd31f8",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_32",
+      "path": "office/singles/Modern_Office_Singles_32.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "8e7453b34764d97d904213186670f512b3a319dbf91bffb186b460dd487236c9",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_320",
+      "path": "office/singles/Modern_Office_Singles_320.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "88e627dd8a68249340d01c648db33552a968e8f7a2f529d94fc9af3985dff3cb",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_321",
+      "path": "office/singles/Modern_Office_Singles_321.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "2586d695b9ba013c78683c34066151f1ccf9816ca97eb4ae15c9953227575c1a",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_322",
+      "path": "office/singles/Modern_Office_Singles_322.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "4c96a88746553d3575c3ae3dadc5c116994d8663ee3b5dc21883c470ff08b764",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_323",
+      "path": "office/singles/Modern_Office_Singles_323.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "bb0d1eea58f74994685187fbfaa5aadeed8d1d4bb6fd7055ce28d541c9fe4cb8",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_324",
+      "path": "office/singles/Modern_Office_Singles_324.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "aeab624c09d8ddf43a601bca1e062b959d0538f941f3bcdb9e96bac16047cae1",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_325",
+      "path": "office/singles/Modern_Office_Singles_325.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "61b7a5bca5a8a752b49388354a363da153a2a4ccf1afd0e2ef98bdb0339c83fa",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_326",
+      "path": "office/singles/Modern_Office_Singles_326.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "cd72cca855770488f0889d2af7f5792050b73e676ec98c5a85af98109f3c6385",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_327",
+      "path": "office/singles/Modern_Office_Singles_327.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "bf8e7598ed77a6ef4deff15e5934428f43b209c2096fea0a302fe0b4f475f740",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_328",
+      "path": "office/singles/Modern_Office_Singles_328.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "85aa78048d1304b19979f2f3a81ac0053660eb439267dbff2a6c28569d42e055",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_329",
+      "path": "office/singles/Modern_Office_Singles_329.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "f1fa56af76e6da773eac4671ded5612e5d4a728f7b18e245936d862702bc8b5b",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_33",
+      "path": "office/singles/Modern_Office_Singles_33.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "697eabded988d8217fcb293a3d8c59d7101371a66f62bd3186b77b9a3bc10888",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_330",
+      "path": "office/singles/Modern_Office_Singles_330.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "c04383ca56a954d1592791dd74bc6a53fa412f72d8ce43920441ca9911bcbe34",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_331",
+      "path": "office/singles/Modern_Office_Singles_331.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "f224a2db86235d6630f7d2fb99e61b02239cba7e7d736592652301dff35a2ae6",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_332",
+      "path": "office/singles/Modern_Office_Singles_332.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "4be6963ab72a468b44894eb8aa424c75b19a5f9e693124ae56d101ca7b80a9c2",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_333",
+      "path": "office/singles/Modern_Office_Singles_333.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "2c5bb65bd1f55f7bae2f7a792d7114ef86c488c27c4ff319eff6aa1a5aba0824",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_334",
+      "path": "office/singles/Modern_Office_Singles_334.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "60dc764d3d5a33da75afc347dc2ee7bc5879ae3b464a7ed02c817e106a1f0149",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_335",
+      "path": "office/singles/Modern_Office_Singles_335.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "5594971729c96675e1764a427984d3bf55064b67f058851b509876aa2973a79d",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_336",
+      "path": "office/singles/Modern_Office_Singles_336.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "20babcbf3a6f7ac65340479593ecb7691f8ea081785fc8da8d59af5c5bab7743",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_337",
+      "path": "office/singles/Modern_Office_Singles_337.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "b54d699d9604ec6952307d3aebddba98c75c32a35561e50daab134d674d6342c",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_338",
+      "path": "office/singles/Modern_Office_Singles_338.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "5017e8309c8931236690119eaf1d145a8341191f7b36f19d4ccc05d77a5f5928",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_339",
+      "path": "office/singles/Modern_Office_Singles_339.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "edc8d640b1d7dd395b247f2031999f087c5705f6dbf6a7399063ad184cf25e91",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_34",
+      "path": "office/singles/Modern_Office_Singles_34.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "716c8757cab6903a785639e4f602c3dcd44a548dc6eb9683fca8ac81bb20056b",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_35",
+      "path": "office/singles/Modern_Office_Singles_35.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "55fcf9acec82d0ff0d770fd006aeb463e3bf2b8c9987c30562cdc0407069f9c9",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_36",
+      "path": "office/singles/Modern_Office_Singles_36.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "9412fbb3331cffc1991ef6b03f1b1d589d8970920fd623b7e1031a5933f42ed5",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_37",
+      "path": "office/singles/Modern_Office_Singles_37.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "5728748932fffa233876abeb76459aa46c9e151cef8ffe5daa404fd0d3f788eb",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_38",
+      "path": "office/singles/Modern_Office_Singles_38.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "9eab6ee999867846c3bbd51b5855a49b8b9f2be68b9d6da6228554fa9892a778",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_39",
+      "path": "office/singles/Modern_Office_Singles_39.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "c49d8128489489a6e6525b9f79158718f1e1359ef8c24b85e72bc972a274429f",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_4",
+      "path": "office/singles/Modern_Office_Singles_4.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "97eff279be667690942ece4f7387b945a4f5db26738d49f7d85085f7c5f902b7",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_40",
+      "path": "office/singles/Modern_Office_Singles_40.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "34563a145cef818c322541825c4f23b1fa236c99d64419d5822179a06c35e496",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_41",
+      "path": "office/singles/Modern_Office_Singles_41.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "a8bbd091f06b636273b14ea242df08eee1fff27dba0064282633ab04348669b9",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_42",
+      "path": "office/singles/Modern_Office_Singles_42.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "e97cb7a96f7996e0e437433a632415e4cb5ad23ce5c56e45ecfb7c2d2b281dbe",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_43",
+      "path": "office/singles/Modern_Office_Singles_43.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "883f4e6eb8e6025c35dac55861907f9de9f4e35fd444c05dcd122d7538431d88",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_44",
+      "path": "office/singles/Modern_Office_Singles_44.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "442b5c0bda8651d0eb9970b451e6c2f92245a046150c2f5c9d1441a3b4cb8546",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_45",
+      "path": "office/singles/Modern_Office_Singles_45.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "8b261f98c79918c978f6a68c5bdfbbd0d18dc62fb157978379f864d3fc04402b",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_46",
+      "path": "office/singles/Modern_Office_Singles_46.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "a8a9fdf57c001ba77b06c04010a1b134c75400f1a9ef1f1ec0d1d8f422bfbada",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_47",
+      "path": "office/singles/Modern_Office_Singles_47.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "decf24ee77f5f0978a98f3327ed6d667e848a13aae402ad0ad83f530681a715e",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_48",
+      "path": "office/singles/Modern_Office_Singles_48.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "8e06de8ce5f7e8c0f1f8688b75ecf9cae05b6e2565ce40530de8135880b01198",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_49",
+      "path": "office/singles/Modern_Office_Singles_49.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "3c8c4b914231440f157aec2dd9b47d3cc12b7f3558d4c68e77ee2d06c801629f",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_5",
+      "path": "office/singles/Modern_Office_Singles_5.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "0a366587d3b03784c8a82a6815926c7ad4aac57fb133059c00984bf9f12a4d68",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_50",
+      "path": "office/singles/Modern_Office_Singles_50.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "b176523eacfb8d39a8c968b6a7fa49907170f6362935a01ab2dc8ea464820bb0",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_51",
+      "path": "office/singles/Modern_Office_Singles_51.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "26b419cb03d5f0f0800a4d4740ee6c6442d9e9768d445cac08484dbbb295901c",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_52",
+      "path": "office/singles/Modern_Office_Singles_52.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "7b3197b525c743348026c3bd110050932bbefb6ca9d8fcbf1fed51cb832bbc48",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_53",
+      "path": "office/singles/Modern_Office_Singles_53.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "a953343822cfeed1f1f4cb2de66e0f71d27c804b1cdfaca73161d4bc06312471",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_54",
+      "path": "office/singles/Modern_Office_Singles_54.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "28fa72f59f9d0ecb95e269b88803e34da24132df5ed833a72867bbb04ef84b67",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_55",
+      "path": "office/singles/Modern_Office_Singles_55.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "ef021070d1bdd89332edee446b2c3fb9db42c0205cecd3ff0ab81f7114eae473",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_56",
+      "path": "office/singles/Modern_Office_Singles_56.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "06a15e4aeed524094959cc116335b3ff0b57ca4149578b1b68b432c6ceb010e7",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_57",
+      "path": "office/singles/Modern_Office_Singles_57.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "fe125af3d2664ef2cbdbe0eed9d177164bc93a59d158da1110c891dd4b1cdda6",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_58",
+      "path": "office/singles/Modern_Office_Singles_58.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "195b24eb293e84a95f4c4b9f8790d9022c27207de5e52b48522db5f6264d6552",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_59",
+      "path": "office/singles/Modern_Office_Singles_59.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "ae8c27c8402c0440d22b7fbc2efbe2d90c485f65fb10ee08889c4f5e593519f2",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_6",
+      "path": "office/singles/Modern_Office_Singles_6.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "45fb06767e02e7a5dd7afbce7d9c0aa6f12a28f6930d5e5fd5ff0f17d03823a1",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_60",
+      "path": "office/singles/Modern_Office_Singles_60.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "dcc76863fb01dd64bc36ed6f8b9c99edc98175f1c64855841969af4e59f8b6c1",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_61",
+      "path": "office/singles/Modern_Office_Singles_61.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "586697ed24c4e4c1ea89b7958a14fdc6d0ad455a83f210c55b88aea0087e4984",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_62",
+      "path": "office/singles/Modern_Office_Singles_62.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "4d72707d24f908fe407e365f2313a1c27545dbe7aed042fc6f5edd6978b4e886",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_63",
+      "path": "office/singles/Modern_Office_Singles_63.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "2c345af6c93881412194a6688dd0c340428625b9f9337fafd4a2c9578f2fe0e8",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_64",
+      "path": "office/singles/Modern_Office_Singles_64.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "777e32749e0124f81b8faea60544540e0b4d0e1f3ba5d28b7d4bfc2670ec4001",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_65",
+      "path": "office/singles/Modern_Office_Singles_65.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "3e68fc792346c9851edf7cbdcea2bb277abdeecfdf08fb02e72c7efb9c972456",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_66",
+      "path": "office/singles/Modern_Office_Singles_66.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "ee50c77e4faa0da02d362ce3b23978d0646dc79928542982a4c79588dca8eee6",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_67",
+      "path": "office/singles/Modern_Office_Singles_67.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "5efb26cb45cfbeb02baf7512ef6a6f0b2282f62d037a03ebc8d25bfa2c734e62",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_68",
+      "path": "office/singles/Modern_Office_Singles_68.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "8a85100b5953d7b6390177134b92a22f0f9485b6be8a5bf43f219dc201002690",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_69",
+      "path": "office/singles/Modern_Office_Singles_69.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "6297698b852f62c38771d8e9a0a72bf19b3948740b1618f5ec8ba8b09ac6aad0",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_7",
+      "path": "office/singles/Modern_Office_Singles_7.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "cebe8431cdb1e8a0616e56da146c7ef2ce7efa79c2c62216109c2a396728c9c7",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_70",
+      "path": "office/singles/Modern_Office_Singles_70.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "0cdc45df109dfff6179f385e84072a39a13e13c546814b2c636ab44d46904402",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_71",
+      "path": "office/singles/Modern_Office_Singles_71.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "43c0a504058b5015a4bf4c406b1bc7a632c5e9811584e1bc55728c7c7cf0e6a1",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_72",
+      "path": "office/singles/Modern_Office_Singles_72.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "a32fb56bd41f15cdfc5766cc7f2ca92fc9c1db70c79a068c3b28234d6e40b28f",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_73",
+      "path": "office/singles/Modern_Office_Singles_73.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "9c9b8896973bb35967c6a69fe9af95815902d4e3f13c1d3922a1483b6f244c32",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_74",
+      "path": "office/singles/Modern_Office_Singles_74.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "8e48a5bbeb671b8c5f5e0d6e26f07550790cff42a9077519dcb07417f6aef942",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_75",
+      "path": "office/singles/Modern_Office_Singles_75.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "afd11afbf2e7cdfc8c32bec9d7972acb0d959528d54a54f880c56e5a4e9502f8",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_76",
+      "path": "office/singles/Modern_Office_Singles_76.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "62cb833dec797ac91298f6df60b4a1f2b1eafcb701e6492f0905650a27e0d7b6",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_77",
+      "path": "office/singles/Modern_Office_Singles_77.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "e3ec6c59a319aa51d70d98a1f14b73307657ec8d523be823878b16bdf5a6923b",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_78",
+      "path": "office/singles/Modern_Office_Singles_78.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "7ee05e4d01cc06033f7e55bc01ba36987cdfbd994724724cd722cec18c3f8431",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_79",
+      "path": "office/singles/Modern_Office_Singles_79.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "aea7fc074c8cb1378268433537b64808c5b4fc7779a747f71c6cdc6009d81d0f",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_8",
+      "path": "office/singles/Modern_Office_Singles_8.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "fc834694c531f2458252731b95724e88e0c3a60f4b130527c53e63d0e087d3f2",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_80",
+      "path": "office/singles/Modern_Office_Singles_80.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "486cdb3bd228ea61ad9c1e18f78cb121490c0bc9d2ea3f7b7837f1b286fc0ced",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_81",
+      "path": "office/singles/Modern_Office_Singles_81.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "fbedd350ab12a2165467ee67288db1b5c4eb0c5919404c65da4f99cfa6b3f955",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_82",
+      "path": "office/singles/Modern_Office_Singles_82.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "e92210c249aa3fa2997fc87ade63062820abc2e553d70cb81be7909261f2c1f6",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_83",
+      "path": "office/singles/Modern_Office_Singles_83.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "0a768d1d6d6593d67b8f919bb5de9e9e599a39db936ce9c126262fc60d1326cf",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_84",
+      "path": "office/singles/Modern_Office_Singles_84.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "949a7b1604e1cfc33fba929a7ddb3efa68a90283cf9481e52f06f03e720cb6b8",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_85",
+      "path": "office/singles/Modern_Office_Singles_85.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "6ad1dd94639f935a45ec5bf8d4c1c0eb62367e1ff15659410760a500d54c8cb5",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_86",
+      "path": "office/singles/Modern_Office_Singles_86.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "fa16c7f154fc26212e40cd361f15c5a29e580e11284daebad6cc52b22d3e819b",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_87",
+      "path": "office/singles/Modern_Office_Singles_87.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "31e45f44b23c8dc0d4f9b0b5277269f2b554da3ddc95ca2c600fc54f07a176ca",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_88",
+      "path": "office/singles/Modern_Office_Singles_88.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "a79042b77ba4b32983280839690ad08c2b22046508c1a048d8598a05ec3f0c30",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_89",
+      "path": "office/singles/Modern_Office_Singles_89.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "deca40b1f590786aa99582509ebbaa5373a6a1e670e98803a88d97626109d033",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_9",
+      "path": "office/singles/Modern_Office_Singles_9.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "f04187a9186d1b1871052d3c5ba6c98f66209a6cfd3a2c53868ce95ca4070781",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_90",
+      "path": "office/singles/Modern_Office_Singles_90.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "0742ad5c5061c84062dfb8fc539be26a96a5d44aca459ca9f115fb15710165a1",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_91",
+      "path": "office/singles/Modern_Office_Singles_91.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "9b250768095ea855f9f7751da8929e3d131e6105d0e10b262ba7cdab8a7a0d29",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_92",
+      "path": "office/singles/Modern_Office_Singles_92.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "50ddc900fe24b53dfa7340327646efdc034c322d43907faf57d13ae812e9a3af",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_93",
+      "path": "office/singles/Modern_Office_Singles_93.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "ca6cc2da144ca0567c39dbe13b1c886ac31149481fb3883d73930d3f52858409",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_94",
+      "path": "office/singles/Modern_Office_Singles_94.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "2f60c4360490564560738e8b0aceccaac17b10140203ac1d44f6a63e1161af53",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_95",
+      "path": "office/singles/Modern_Office_Singles_95.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "9e4c96a7bf87d1192830f762c21b69f1c59fd8e9ca3f0081e4e1aa59cb934295",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_96",
+      "path": "office/singles/Modern_Office_Singles_96.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "18e58b0380eb28c6aaf954e87cd46138b1f90fd74569c24862250a3d16ee6559",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_97",
+      "path": "office/singles/Modern_Office_Singles_97.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "689c6e40d55e3e46f59d5b128c14790eedd8bbdbfcf199901be1881b25f53491",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_98",
+      "path": "office/singles/Modern_Office_Singles_98.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "a02ab029fa6cf72e839cd1487ad131d821760e826ed90848c56e3c45c7078f77",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "office/singles/Modern_Office_Singles_99",
+      "path": "office/singles/Modern_Office_Singles_99.png",
+      "w": 32,
+      "h": 48,
+      "grid": 16,
+      "sha256": "e0401e70e649f691fe20f620af9eb5b694c47c174bf1398666466c5de10d5339",
+      "pack": "LimeZu Modern Office Revamped v1.2",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "exteriors/22_Post_Office_16x16_Big_Blue_Mailbox",
+      "path": "exteriors/22_Post_Office_16x16_Big_Blue_Mailbox.png",
+      "w": 16,
+      "h": 32,
+      "grid": 16,
+      "sha256": "4c1d19d8f65d3f81f6119e8d0ee8b6035c9325ec08852722db761c46e61cf73f",
+      "pack": "LimeZu Modern Exteriors (modernexteriors-win, full standard)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "exteriors/ME_Singles_City_Props_16x16_Mailbox_1",
+      "path": "exteriors/ME_Singles_City_Props_16x16_Mailbox_1.png",
+      "w": 16,
+      "h": 32,
+      "grid": 16,
+      "sha256": "90950abc1d89e671d4fe1c61e0232ccda33426f7a138ac0f9cdc385847b0ee5a",
+      "pack": "LimeZu Modern Exteriors (modernexteriors-win, full standard)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "characters/Premade_Character_01",
+      "path": "characters/Premade_Character_01.png",
+      "w": 896,
+      "h": 656,
+      "grid": 16,
+      "sha256": "cc9ea332c0a7074d126b10e1c12a3c309dead3b3da76504823a744cc013fdac3",
+      "pack": "LimeZu Modern Interiors — Character Generator (premade 16x16)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "characters/Premade_Character_02",
+      "path": "characters/Premade_Character_02.png",
+      "w": 896,
+      "h": 656,
+      "grid": 16,
+      "sha256": "7f754171e260651f1736b57e0d0e69cd87d43885d9ff791d506554d13b16e58a",
+      "pack": "LimeZu Modern Interiors — Character Generator (premade 16x16)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "characters/Premade_Character_03",
+      "path": "characters/Premade_Character_03.png",
+      "w": 896,
+      "h": 656,
+      "grid": 16,
+      "sha256": "aaa8ad96e1c3e0a107d59258175d5b99ba3525f601cc6b0d215096c51cae9cc6",
+      "pack": "LimeZu Modern Interiors — Character Generator (premade 16x16)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "characters/Premade_Character_04",
+      "path": "characters/Premade_Character_04.png",
+      "w": 896,
+      "h": 656,
+      "grid": 16,
+      "sha256": "ae36f44b2145d5dacf6f582069654c75be9df65c592343e67ded394ba856970b",
+      "pack": "LimeZu Modern Interiors — Character Generator (premade 16x16)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "characters/Premade_Character_05",
+      "path": "characters/Premade_Character_05.png",
+      "w": 896,
+      "h": 656,
+      "grid": 16,
+      "sha256": "4cfc17740c9ff75b29a4641029a95412c01809b351af46e9f3274f6613428376",
+      "pack": "LimeZu Modern Interiors — Character Generator (premade 16x16)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "characters/Premade_Character_06",
+      "path": "characters/Premade_Character_06.png",
+      "w": 896,
+      "h": 656,
+      "grid": 16,
+      "sha256": "36da6b393942a1acd94381371e95dc7b3ef01b7cf3ee78ef152ee50fe7379400",
+      "pack": "LimeZu Modern Interiors — Character Generator (premade 16x16)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "characters/Premade_Character_07",
+      "path": "characters/Premade_Character_07.png",
+      "w": 896,
+      "h": 656,
+      "grid": 16,
+      "sha256": "c6c2c4aa48fe299b8fadc59e4cfe1314e0056d6c2500657fea0420dacc3aa33b",
+      "pack": "LimeZu Modern Interiors — Character Generator (premade 16x16)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "characters/Premade_Character_08",
+      "path": "characters/Premade_Character_08.png",
+      "w": 896,
+      "h": 656,
+      "grid": 16,
+      "sha256": "063f6a693034ab6a401d8af4d459e72ae6fc70e8553d00c3a5261e9932bd09df",
+      "pack": "LimeZu Modern Interiors — Character Generator (premade 16x16)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "characters/Premade_Character_09",
+      "path": "characters/Premade_Character_09.png",
+      "w": 896,
+      "h": 656,
+      "grid": 16,
+      "sha256": "795a5a2751ca5276269e0fb64f4020add69363c93b2cdb66d0e7a63ad6fda046",
+      "pack": "LimeZu Modern Interiors — Character Generator (premade 16x16)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "characters/Premade_Character_10",
+      "path": "characters/Premade_Character_10.png",
+      "w": 896,
+      "h": 656,
+      "grid": 16,
+      "sha256": "107b2e8e86907714371e888e0ef012d6ba8e4bccaaea2658517d7ab5045f0dcf",
+      "pack": "LimeZu Modern Interiors — Character Generator (premade 16x16)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "characters/Premade_Character_11",
+      "path": "characters/Premade_Character_11.png",
+      "w": 896,
+      "h": 656,
+      "grid": 16,
+      "sha256": "79a51758bb42c7a398a1ef74553e57eefea6b43bddcb9a7bfe2bd85a91504e67",
+      "pack": "LimeZu Modern Interiors — Character Generator (premade 16x16)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "characters/Premade_Character_12",
+      "path": "characters/Premade_Character_12.png",
+      "w": 896,
+      "h": 656,
+      "grid": 16,
+      "sha256": "2d52f6cadd596530cc7eebb4f756cbe1ac631c42e2830995eb5ca6260b066490",
+      "pack": "LimeZu Modern Interiors — Character Generator (premade 16x16)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "characters/Premade_Character_13",
+      "path": "characters/Premade_Character_13.png",
+      "w": 896,
+      "h": 656,
+      "grid": 16,
+      "sha256": "cb261b0af7aa58394ed2ae3209d68f3f92167499d1dfaa6f8a860a15b5efb791",
+      "pack": "LimeZu Modern Interiors — Character Generator (premade 16x16)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "characters/Premade_Character_14",
+      "path": "characters/Premade_Character_14.png",
+      "w": 896,
+      "h": 656,
+      "grid": 16,
+      "sha256": "3ba3af22d90ee0a2cab1622613896bde7f7466902ab1c8342ec8000ef4870a30",
+      "pack": "LimeZu Modern Interiors — Character Generator (premade 16x16)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "characters/Premade_Character_15",
+      "path": "characters/Premade_Character_15.png",
+      "w": 896,
+      "h": 656,
+      "grid": 16,
+      "sha256": "d38f53679d1eb9ac1486ac0df39343d68da08e1aa2eeaff3677ecf88d2bbd8b5",
+      "pack": "LimeZu Modern Interiors — Character Generator (premade 16x16)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "characters/Premade_Character_16",
+      "path": "characters/Premade_Character_16.png",
+      "w": 896,
+      "h": 656,
+      "grid": 16,
+      "sha256": "61e6e2d8136fdd9599d489b7061c533b53196c147b1edc3631dd846fc7411dc6",
+      "pack": "LimeZu Modern Interiors — Character Generator (premade 16x16)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "characters/Premade_Character_17",
+      "path": "characters/Premade_Character_17.png",
+      "w": 896,
+      "h": 656,
+      "grid": 16,
+      "sha256": "749e70f474ce045d727b92099fa1abc68aaa3e28036f8269a669fff57331a9dc",
+      "pack": "LimeZu Modern Interiors — Character Generator (premade 16x16)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "characters/Premade_Character_18",
+      "path": "characters/Premade_Character_18.png",
+      "w": 896,
+      "h": 656,
+      "grid": 16,
+      "sha256": "2d2d43cfabf49298352977338a9267bbd4ee60bd01063c316d846bd6f30aca35",
+      "pack": "LimeZu Modern Interiors — Character Generator (premade 16x16)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "characters/Premade_Character_19",
+      "path": "characters/Premade_Character_19.png",
+      "w": 896,
+      "h": 656,
+      "grid": 16,
+      "sha256": "373004e23de833bd63155c496d7ba77b1076b1ef019b1c0cdd86d93a674d9b9a",
+      "pack": "LimeZu Modern Interiors — Character Generator (premade 16x16)",
+      "license": "LimeZu commercial — do not redistribute"
+    },
+    {
+      "id": "characters/Premade_Character_20",
+      "path": "characters/Premade_Character_20.png",
+      "w": 896,
+      "h": 656,
+      "grid": 16,
+      "sha256": "dbab068952376dde89c63a0d73a5f9e57af050340854b329e917911db6cad615",
+      "pack": "LimeZu Modern Interiors — Character Generator (premade 16x16)",
+      "license": "LimeZu commercial — do not redistribute"
+    }
+  ]
 }
