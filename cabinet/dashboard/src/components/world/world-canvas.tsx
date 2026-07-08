@@ -142,6 +142,11 @@ export default function WorldCanvas(props: WorldCanvasProps) {
       PIXI.TextureSource.defaultOptions.scaleMode = 'nearest'
       PIXI.Assets.setPreferences({ preferWorkers: false })
 
+      // QA-harness gotcha (docs/runbooks/world-qa-verify.md): WebGL WITHOUT
+      // preserveDrawingBuffer (PIXI default, kept deliberately) — so
+      // canvas.toDataURL()/readback returns a FROZEN stale buffer that reads
+      // false-dead while the rAF loop runs. Aliveness probes must use clipped
+      // page screenshots (or a debug extract() path), never toDataURL.
       const app = new PIXI.Application()
       await app.init({
         background: 0x14161c,
