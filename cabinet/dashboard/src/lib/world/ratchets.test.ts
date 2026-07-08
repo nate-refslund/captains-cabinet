@@ -155,18 +155,25 @@ describe('world CI ratchets', () => {
   })
 
   it('9. silent-black is ratcheted: failures console.error AND badge in DOM', () => {
-    const canvas = read(
-      path.join(DASH, 'src', 'components', 'world', 'world-canvas.tsx')
-    )
-    // Boot rejection + manifest/texture gaps must be loud…
-    expect(canvas).toMatch(/console\.error\(/)
-    expect(canvas).toMatch(/onIssues/)
-    expect(canvas).toMatch(/boot\(\)\.catch/)
+    // The loud-failure contract extends to EVERY canvas/asset class
+    // (world-alive §0): the Wardroom renderer AND the outdoor renderer.
+    for (const name of ['world-canvas.tsx', 'outdoor-canvas.tsx']) {
+      const canvas = read(path.join(DASH, 'src', 'components', 'world', name))
+      // Boot rejection + manifest/texture gaps must be loud…
+      expect(canvas, name).toMatch(/console\.error\(/)
+      expect(canvas, name).toMatch(/onIssues/)
+      expect(canvas, name).toMatch(/boot\(\)\.catch/)
+      // …and stay CSP-safe (AOT patch import, workers off — ratchet #8).
+      expect(canvas, name).toMatch(/import\(\s*['"]pixi\.js\/unsafe-eval['"]\s*\)/)
+      expect(canvas, name).toMatch(/preferWorkers:\s*false/)
+    }
     // …and the shell must render them as a visible DOM badge.
     const client = read(
       path.join(DASH, 'src', 'components', 'world', 'world-client.tsx')
     )
     expect(client).toMatch(/data-world-issues/)
     expect(client).toMatch(/onIssues=/)
+    // Census absence badges too (growth surfaces at day-0 — §4 data path).
+    expect(client).toMatch(/data-world-census-badge/)
   })
 })
