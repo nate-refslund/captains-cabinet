@@ -1,11 +1,68 @@
-# world-aesthetic — mechanical aesthetic ratchets for Cabinet World
+# world-aesthetic — the Cabinet World aesthetic gate
 
-Six deterministic, stdlib-only (python3.12, no Pillow/numpy) gates that catch
-the recorded Cabinet-World failure classes *mechanically* — no LLM judge in
-the loop. A renderer change that reintroduces a rejected look goes red in CI,
-exactly like a broken test. The judgment half — "does this frame read like a
-finished, warm, professional pixel-game scene?" — is the **vision judge**
-(`judge/`, below): protocol in code, judgment via agents at call time.
+The harness that stops another Captain-rejected build from shipping. Three
+pillars, in order of authority:
+
+1. **Mechanical-first.** Six deterministic, stdlib-only (python3.12, no
+   Pillow/numpy) gates catch the *recorded* failure classes mechanically —
+   no LLM in the loop, red in CI exactly like a broken test. Anything a
+   ratchet can catch, a ratchet MUST catch; the judge is never spent on
+   frames below the mechanical floor.
+2. **Pairwise-calibrated judges.** The judgment half — "does this frame read
+   like a finished, warm, professional pixel-game scene?" — is the **vision
+   judge** (`judge/`): protocol in code, judgment via agents at call time,
+   and NO verdict counts unless the judge first passes a hidden calibration
+   set (every Captain-rejected frame ranked below every approved frame,
+   accuracy >= 0.90, else the run is VOID).
+3. **Taste accumulation.** Every Captain approve/reject permanently sharpens
+   the bar: rejections join `corpus/negative/` (the calibration set + the
+   pairwise floor), approvals join `corpus/positive/` and can pin as goldens
+   (`judge/goldens.py`) with SSIM regression thresholds. The harness gets
+   *harder to fool over time*, never softer.
+
+## One entrypoint — `world-aesthetic-gate.py`
+
+```
+# per-change ratchet gate (CI-fast, deterministic; committed calibrations
+# are wired in automatically — override with --palette/--bounds):
+python3.12 cabinet/scripts/world-aesthetic/world-aesthetic-gate.py \
+    --mechanical --map world.map.json --render out.png --labels out.labels.json
+
+# ratchets + blinded vision-judge run-bundle emission (mechanical must pass
+# first; hand the printed tasks.json to a judge agent, then `judge_protocol.py
+# ingest` computes calibrated verdicts):
+python3.12 cabinet/scripts/world-aesthetic/world-aesthetic-gate.py \
+    --full --render out.png --map world.map.json
+
+# refit calibration/*.json from the (gitignored) corpus + separation proof:
+python3.12 cabinet/scripts/world-aesthetic/world-aesthetic-gate.py --calibrate
+```
+
+This gate runs **per-change** (renderer commits, mockup reviews, CI) — never
+on cron; see the doc note beside the Cabinet World rows in
+`cabinet/services.yml`.
+
+**Integration contract.** Every world-reimagine mockup and every future
+renderer build MUST pass `--mechanical` before it is shown to the Captain,
+and SHOULD carry a calibrated judge verdict (`promote`/`iterate`) from
+`--full` when the change is aesthetic (new scene, new dressing pass, new
+zoom). A frame that fails `--mechanical` is not "awaiting taste" — it is
+rejected, mechanically, for reproducing a recorded failure class. Historical
+proof (self-test, 2026-07-08): all 5 reconstructions of the rejected build
+fail hard (`CLUSTER_FLAT_VOID` on every one; `PALETTE_FOREIGN_MASS` on the
+street-void frame), all 9 approved showcase scenes pass, and a real
+agent-as-judge calibration run scored 45/45 (1.000) on the hidden set while
+rejecting a scatter candidate 0/5 vs negatives.
+
+**Captain feedback loop.** When the Captain rejects a frame: screenshot →
+`corpus/negative/` + a `why` row in `corpus/manifest.json`
+(`build_corpus.py manifest` regenerates hashes) → `--calibrate` refits the
+bounds and proves separation. When the Captain approves one:
+`corpus/positive/` the same way, and optionally
+`judge/goldens.py record --verdict approve` to pin it as a regression
+golden. Both directions land in the next judge run's hidden calibration set.
+
+The underlying runner remains directly invokable:
 
 ```
 python3.12 cabinet/scripts/world-aesthetic/aesthetic_gates.py \
@@ -132,7 +189,7 @@ licensed pixels never enter git; sha256 manifests are the tracked record.
 ## Tests
 
 ```
-python3.12 -m pytest cabinet/scripts/world-aesthetic/tests -q   # 83 tests
+python3.12 -m pytest cabinet/scripts/world-aesthetic/tests -q   # 92 tests
 ```
 
 ## Import contract

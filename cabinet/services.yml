@@ -603,6 +603,14 @@ services:
   # must NEVER grow a write surface into org state: their only writes are
   # their own world outputs (shared/interfaces/world-chronicle.jsonl,
   # shared/interfaces/world/, the cabinet:world:* Redis namespace).
+  #
+  # NOT-A-ROW (deliberate): the world-aesthetic gate
+  # (cabinet/scripts/world-aesthetic/world-aesthetic-gate.py — --mechanical |
+  # --full | --calibrate) runs PER-CHANGE (renderer commits, reimagine-mockup
+  # review, CI), never on cron — a scheduled sweep of a deterministic ratchet
+  # over unchanged pixels is pure noise. Do not add a service row for it;
+  # ledger row WORLD-AESTHETIC-GATE owns its self-test, and
+  # cabinet/scripts/world-aesthetic/README.md owns the integration contract.
   - name: world-census
     label: com.cabinet.world-census
     kind: cron
