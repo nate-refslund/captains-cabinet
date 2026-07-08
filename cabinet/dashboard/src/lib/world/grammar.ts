@@ -28,10 +28,19 @@ export interface GrammarCodex {
   day0: string
 }
 
+/** Scene names the camera z levels may bind to (closed enum — v2 §5.1). */
+export type SceneName = 'wardroom' | 'street' | 'island'
+
 export interface ShowGrammar {
   version: number
   verbs: Record<string, VerbMapping>
   fallback: { station: string; anim: 'work' | 'walk' | 'idle' }
+  /**
+   * v2 `scenes` block: camera z → scene (quantized camera as scene
+   * selector, design §10.2 adapted). Absent/malformed → {} — the renderer
+   * fail-closes to the Wardroom at every zoom (v1 behavior).
+   */
+  scenes: Partial<Record<string, SceneName>>
 }
 
 export interface MorphologyEntry {
@@ -71,6 +80,8 @@ export const GRAMMAR_DIR = () =>
   path.join(repoRoot(), 'cabinet', 'world')
 
 const ANIMS = new Set(['work', 'walk', 'idle'])
+const SCENE_Z_KEYS = new Set(['2', '1', '0.5'])
+const SCENE_NAMES = new Set(['wardroom', 'street', 'island'])
 
 function parseCodex(raw: unknown): GrammarCodex | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined
@@ -143,7 +154,28 @@ function parseShowGrammar(text: string, problems: string[]): ShowGrammar | null 
       ? rawFb.anim
       : 'idle') as VerbMapping['anim'],
   }
-  return { version, verbs, fallback }
+  // v2 scenes block — closed key set (camera z stops) + closed scene enum.
+  // Fail-closed: anything malformed is omitted with a problem; an empty map
+  // keeps the v1 wardroom-at-every-zoom behavior.
+  const scenes: Partial<Record<string, SceneName>> = {}
+  if (d.scenes !== undefined) {
+    if (typeof d.scenes !== 'object' || d.scenes === null || Array.isArray(d.scenes)) {
+      problems.push('scenes: not a mapping')
+    } else {
+      for (const [zKey, rawScene] of Object.entries(d.scenes as Record<string, unknown>)) {
+        if (!SCENE_Z_KEYS.has(zKey)) {
+          problems.push(`scenes: unknown z key ${zKey}`)
+          continue
+        }
+        if (typeof rawScene !== 'string' || !SCENE_NAMES.has(rawScene)) {
+          problems.push(`scenes[${zKey}]: unknown scene ${String(rawScene)}`)
+          continue
+        }
+        scenes[zKey] = rawScene as SceneName
+      }
+    }
+  }
+  return { version, verbs, fallback, scenes }
 }
 
 const SCOPES = new Set(['org-global', 'per-officer', 'dark'])

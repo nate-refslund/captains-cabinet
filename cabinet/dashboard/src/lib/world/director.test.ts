@@ -26,6 +26,7 @@ const GRAMMAR: ShowGrammar = {
     },
   },
   fallback: { station: 'floor', anim: 'idle' },
+  scenes: {},
 }
 
 const OFFICERS: Record<string, OfficerPresence> = {

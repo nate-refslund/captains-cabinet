@@ -61,6 +61,12 @@ export interface WorldSnapshot {
   chronicle: ChronicleRecord[]
   /** Grammar state: loaded versions or the honest pending marker. */
   grammar: GrammarStatus
+  /**
+   * Captain-local wall clock, SERVER-stamped (v2 night law: the render
+   * path never reads a clock — hour/minute arrive as data and drive
+   * ambience only, never state). Absent on old snapshots → day render.
+   */
+  clock?: { hour: number; minute: number }
 }
 
 export interface GrammarStatus {

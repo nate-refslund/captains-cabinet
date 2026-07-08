@@ -107,3 +107,49 @@ describe('law parsing', () => {
     expect(g.problems.length >= 0).toBe(true)
   })
 })
+
+describe('v2 scenes block (camera z → scene, T3)', () => {
+  it('parses the closed z→scene map', () => {
+    grammarDir({
+      'show-grammar.yml':
+        VALID_SHOW + '\nscenes:\n  "2": wardroom\n  "1": street\n  "0.5": island\n',
+    })
+    const g = loadGrammar()
+    expect(g.showGrammar?.scenes).toEqual({
+      '2': 'wardroom',
+      '1': 'street',
+      '0.5': 'island',
+    })
+  })
+
+  it('absent block fail-closes to {} (wardroom at every zoom)', () => {
+    grammarDir({ 'show-grammar.yml': VALID_SHOW })
+    expect(loadGrammar().showGrammar?.scenes).toEqual({})
+  })
+
+  it('unknown z keys and unknown scenes are rejected with problems', () => {
+    grammarDir({
+      'show-grammar.yml':
+        VALID_SHOW + '\nscenes:\n  "3": wardroom\n  "1": disco\n  "0.5": island\n',
+    })
+    const g = loadGrammar()
+    expect(g.showGrammar?.scenes).toEqual({ '0.5': 'island' })
+    expect(g.problems.join(' ')).toContain('unknown z key 3')
+    expect(g.problems.join(' ')).toContain('unknown scene disco')
+  })
+
+  it('the repo grammar law carries the ratified three-scene map', () => {
+    delete process.env.CABINET_WORLD_GRAMMAR_DIR
+    const prevRoot = process.env.CABINET_ROOT
+    process.env.CABINET_ROOT = path.resolve(__dirname, '..', '..', '..', '..', '..')
+    const g = loadGrammar()
+    if (prevRoot === undefined) delete process.env.CABINET_ROOT
+    else process.env.CABINET_ROOT = prevRoot
+    expect(g.pending).toBe(false)
+    expect(g.showGrammar?.scenes).toEqual({
+      '2': 'wardroom',
+      '1': 'street',
+      '0.5': 'island',
+    })
+  })
+})

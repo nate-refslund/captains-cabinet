@@ -18,6 +18,8 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { createHash } from 'node:crypto'
+import fs from 'node:fs'
+import path from 'node:path'
 import { loadGrammar } from '@/lib/world/grammar'
 import type {
   ChronicleRecord,
@@ -42,6 +44,54 @@ export function selHandle(slug: string): string {
     .update(`cabinet-world-sel:${slug}`)
     .digest('hex')
     .slice(0, 12)
+}
+
+/**
+ * Captain timezone (IANA) from instance/config/platform.yml, cached per
+ * process; fallback UTC. Fixed repo-root path — no dynamic input.
+ */
+let captainTz: string | null | undefined
+function captainTimezone(): string | null {
+  if (captainTz !== undefined) return captainTz
+  captainTz = null
+  try {
+    const root =
+      process.env.CABINET_ROOT && fs.existsSync(process.env.CABINET_ROOT)
+        ? process.env.CABINET_ROOT
+        : path.resolve(process.cwd(), '..', '..')
+    const text = fs.readFileSync(
+      path.join(root, 'instance', 'config', 'platform.yml'),
+      'utf8'
+    )
+    const m = text.match(/^\s*captain_timezone:\s*["']?([A-Za-z0-9_+\-/]+)/m)
+    if (m) captainTz = m[1]
+  } catch {
+    captainTz = null
+  }
+  return captainTz
+}
+
+/**
+ * The v2 night-law clock: SERVER-stamped captain-local {hour, minute} on
+ * every snapshot (the render path never reads a wall clock — this is the
+ * only place time enters, as data). Drives ambience only, never state.
+ */
+function captainClock(): { hour: number; minute: number } {
+  const tz = captainTimezone()
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      hour: 'numeric',
+      minute: 'numeric',
+      hourCycle: 'h23',
+      timeZone: tz ?? 'UTC',
+    }).formatToParts(new Date())
+    const num = (t: string) =>
+      Number(parts.find((p) => p.type === t)?.value ?? 0)
+    return { hour: num('hour'), minute: num('minute') }
+  } catch {
+    const d = new Date()
+    return { hour: d.getUTCHours(), minute: d.getUTCMinutes() }
+  }
 }
 
 type RedisLike = {
@@ -73,6 +123,7 @@ async function readSnapshot(redis: RedisLike | null): Promise<WorldSnapshot> {
       officers: [],
       chronicle: [],
       grammar,
+      clock: captainClock(),
     }
   }
   let presence: PresenceSnapshot | null = null
@@ -118,6 +169,7 @@ async function readSnapshot(redis: RedisLike | null): Promise<WorldSnapshot> {
     officers,
     chronicle,
     grammar,
+    clock: captainClock(),
   }
 }
 
