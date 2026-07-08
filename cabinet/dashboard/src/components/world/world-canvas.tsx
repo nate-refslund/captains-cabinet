@@ -49,6 +49,26 @@ import {
   type SpriteCut,
   type WorldAssetManifest,
 } from '@/lib/world/sprites'
+import {
+  ALCOVE,
+  DECOR,
+  deskFlairFor,
+  FLAIR_SECOND_OFFSET,
+  lampSheetFor,
+  LAMP_OFFSET,
+  NOTE_PIN_SIZE,
+  pinPlacement,
+  RUG_RUNNER,
+  WINDOW_GLASS,
+} from '@/lib/world/set-dressing'
+import {
+  ambientTint,
+  lampGlow,
+  starOffsets,
+  STAR_COLOR,
+  windowSky,
+  type DayBucket,
+} from '@/lib/world/lighting'
 
 // Stable per-slug placeholder color (cosmetic; zero information — the
 // literacy rule: salience colors are RESERVED and never used here).
@@ -67,6 +87,18 @@ export interface WorldCanvasProps {
   camera: CameraState
   killswitch: boolean
   tick: number
+  /**
+   * Day bucket computed by the shell from the SERVER-stamped snapshot clock
+   * (lib/world/lighting.ts) — ambience data only; this renderer never reads
+   * a wall clock (determinism ratchet).
+   */
+  bucket: DayBucket
+  /**
+   * Chronicle record iids pinned on the noticeboard (last N, texture-class
+   * rate-routing). Pin squares are geometry; the headline TEXT stays DOM
+   * (inspect card).
+   */
+  pins: number[]
   onPrimary: (target: { kind: 'officer' | 'station'; id: string } | null, screen: { x: number; y: number }) => void
   onSecondary: (target: { kind: 'officer' | 'station'; id: string } | null, screen: { x: number; y: number }) => void
   /** Loud-failure surface: boot/manifest/texture problems, badged in DOM. */
@@ -197,6 +229,11 @@ export default function WorldCanvas(props: WorldCanvasProps) {
         })
         world.addChild(wallTS)
       }
+      // Cozy pass (§2): window sky renders BEHIND the wall fixtures (the
+      // window cut's glass pixels are transparent — the sky is a lighting
+      // fill, never invented art).
+      const skyG: Graphics = new PIXI.Graphics()
+      world.addChild(skyG)
       const flatLayer: Container = new PIXI.Container() // mats/rugs, under everything mobile
       world.addChild(flatLayer)
       const stationG: Graphics = new PIXI.Graphics() // placeholder fixtures
@@ -206,22 +243,79 @@ export default function WorldCanvas(props: WorldCanvasProps) {
       world.addChild(propLayer)
       const officerG: Graphics = new PIXI.Graphics() // placeholder officers
       world.addChild(officerG)
+      // Noticeboard pin squares (chronicle-bound TEXTURE; wall-band area).
+      const pinG: Graphics = new PIXI.Graphics()
+      world.addChild(pinG)
+      // Ambient day/night wash over the room (§2 lighting table)…
+      const tintG: Graphics = new PIXI.Graphics()
+      world.addChild(tintG)
+      // …with warm additive lamp pools punching through at dusk/night.
+      const glowG: Graphics = new PIXI.Graphics()
+      glowG.blendMode = 'add'
+      world.addChild(glowG)
       const fxG: Graphics = new PIXI.Graphics() // killswitch lamp (reserved red)
       world.addChild(fxG)
 
       const stationSprites = new Map<string, Sprite>()
       const officerSprites = new Map<string, Sprite>()
+      const cozySprites = new Map<string, Sprite>() // per-desk/bunk dressing
+      /** Wall fixtures hang on the wall face band, not the floor grid. */
+      const WALL_ANCHOR_Y = WALL_TILES * TILE + 12
+
+      // ── static set dressing (positions fixed at authoring time) ─────────
+      {
+        const rugTex = texFor(RUG_RUNNER.sheet, RUG_RUNNER.cut)
+        if (rugTex) {
+          const rug = new PIXI.TilingSprite({
+            texture: rugTex,
+            width: RUG_RUNNER.rect.w * TILE,
+            height: RUG_RUNNER.rect.h * TILE,
+          })
+          rug.position.set(RUG_RUNNER.rect.x * TILE, RUG_RUNNER.rect.y * TILE)
+          flatLayer.addChild(rug)
+        }
+        for (const d of DECOR) {
+          const tex = texFor(d.sheet, d.cut)
+          // Missing sheet → skip paint: the manifest gap is already badged
+          // through resolveWorldSprites().missing (fail to nothing, never to
+          // invention — decor carries zero information).
+          if (!tex) continue
+          const sp = new PIXI.Sprite(tex)
+          sp.anchor.set(0.5, 1)
+          if (d.wall) {
+            sp.position.set(d.x * TILE, WALL_ANCHOR_Y)
+            sp.zIndex = 1
+            propLayer.addChild(sp)
+          } else if (d.flat) {
+            sp.position.set(d.x * TILE, d.y * TILE + 12)
+            flatLayer.addChild(sp)
+          } else {
+            const by = d.y * TILE + 6
+            sp.position.set(d.x * TILE, by)
+            sp.zIndex = by
+            propLayer.addChild(sp)
+          }
+        }
+      }
 
       /** Sync station props to the layout; returns ids drawn as sprites. */
       function syncStations(p: WorldCanvasProps): Set<string> {
         const wanted = new Map<
           string,
-          { sheet: string; flat: boolean; x: number; y: number; kind: 'desk' | 'bunk' | 'civic' | 'flat' }
+          {
+            sheet: string
+            cut?: SpriteCut
+            flat: boolean
+            x: number
+            y: number
+            kind: 'desk' | 'bunk' | 'civic' | 'flat' | 'wall'
+          }
         >()
         for (const st of p.layout.stations.values()) {
           let sheet: string | null = null
+          let cut: SpriteCut | undefined
           let flat = false
-          let kind: 'desk' | 'bunk' | 'civic' | 'flat' = 'civic'
+          let kind: 'desk' | 'bunk' | 'civic' | 'flat' | 'wall' = 'civic'
           if (st.id.startsWith('desk:')) {
             sheet = deskSheetFor(st.id.slice('desk:'.length))
             kind = 'desk'
@@ -229,12 +323,14 @@ export default function WorldCanvas(props: WorldCanvasProps) {
             sheet = BUNK_SHEET
             kind = 'bunk'
           } else if (STATION_SPRITES[st.id]) {
-            sheet = STATION_SPRITES[st.id].sheet
-            flat = STATION_SPRITES[st.id].flat
-            kind = flat ? 'flat' : 'civic'
+            const def = STATION_SPRITES[st.id]
+            sheet = def.sheet
+            cut = def.cut
+            flat = def.flat
+            kind = def.wall ? 'wall' : flat ? 'flat' : 'civic'
           }
           if (!sheet) continue
-          wanted.set(st.id, { sheet, flat, x: st.x, y: st.y, kind })
+          wanted.set(st.id, { sheet, cut, flat, x: st.x, y: st.y, kind })
         }
         for (const [id, sp] of stationSprites) {
           if (!wanted.has(id)) {
@@ -244,7 +340,7 @@ export default function WorldCanvas(props: WorldCanvasProps) {
         }
         const drawn = new Set<string>()
         for (const [id, w] of wanted) {
-          const tex = texFor(w.sheet)
+          const tex = texFor(w.sheet, w.cut)
           if (!tex) continue // placeholder rect path stays loud + visible
           let sp = stationSprites.get(id)
           if (!sp) {
@@ -256,6 +352,11 @@ export default function WorldCanvas(props: WorldCanvasProps) {
           const px = w.x * TILE
           if (w.kind === 'flat') {
             sp.position.set(px, w.y * TILE + 12)
+          } else if (w.kind === 'wall') {
+            // Wall fixtures (windows, cork board) hang on the wall face —
+            // behind everything that y-sorts on the floor.
+            sp.position.set(px, WALL_ANCHOR_Y)
+            sp.zIndex = 1
           } else if (w.kind === 'desk') {
             // Desk fronts its officer: bottom one tile below the stand tile,
             // z ahead of the officer standing behind it.
@@ -274,6 +375,142 @@ export default function WorldCanvas(props: WorldCanvasProps) {
           drawn.add(id)
         }
         return drawn
+      }
+
+      /**
+       * Per-desk personalization + rest-alcove dressing (§2): seeded lamp +
+       * two flair items per desk, rug + cabinet per bunk. Reconciled against
+       * the live roster; positions/variants are pure functions of the slug.
+       */
+      function syncCozy(p: WorldCanvasProps) {
+        const wanted = new Map<
+          string,
+          { sheet: string; x: number; y: number; z: number; flat?: boolean }
+        >()
+        for (const st of p.layout.stations.values()) {
+          if (st.id.startsWith('desk:')) {
+            const slug = st.id.slice('desk:'.length)
+            const deskZ = (st.y + 1) * TILE + 6
+            const [f1, f2] = deskFlairFor(slug)
+            wanted.set(`lamp:${slug}`, {
+              sheet: lampSheetFor(slug),
+              x: st.x + LAMP_OFFSET.dx,
+              y: st.y + LAMP_OFFSET.dy,
+              z: deskZ + 2,
+            })
+            wanted.set(`flair:${slug}:0`, {
+              sheet: f1.sheet,
+              x: st.x + f1.dx,
+              y: st.y + f1.dy,
+              z: deskZ + 2,
+            })
+            wanted.set(`flair:${slug}:1`, {
+              sheet: f2.sheet,
+              x: st.x + FLAIR_SECOND_OFFSET.dx,
+              y: st.y + FLAIR_SECOND_OFFSET.dy,
+              z: deskZ + 2,
+            })
+          } else if (st.id.startsWith('bunk:')) {
+            const slug = st.id.slice('bunk:'.length)
+            wanted.set(`alcove-rug:${slug}`, {
+              sheet: ALCOVE.rugSheet,
+              x: st.x + ALCOVE.rugOffset.dx,
+              y: st.y + ALCOVE.rugOffset.dy,
+              flat: true,
+              z: 0,
+            })
+            const cy = st.y + ALCOVE.cabinetOffset.dy
+            wanted.set(`alcove-cab:${slug}`, {
+              sheet: ALCOVE.cabinetSheet,
+              x: st.x + ALCOVE.cabinetOffset.dx,
+              y: cy,
+              z: cy * TILE + 6,
+            })
+          }
+        }
+        for (const [id, sp] of cozySprites) {
+          if (!wanted.has(id)) {
+            sp.destroy()
+            cozySprites.delete(id)
+          }
+        }
+        for (const [id, w] of wanted) {
+          const tex = texFor(w.sheet)
+          if (!tex) continue // manifest gap already badged; never invent
+          let sp = cozySprites.get(id)
+          if (!sp) {
+            sp = new PIXI.Sprite(tex)
+            sp.anchor.set(0.5, 1)
+            ;(w.flat ? flatLayer : propLayer).addChild(sp)
+            cozySprites.set(id, sp)
+          }
+          sp.position.set(w.x * TILE, w.flat ? w.y * TILE + 12 : w.y * TILE + 6)
+          if (!w.flat) sp.zIndex = w.z
+        }
+      }
+
+      /**
+       * Lighting + chronicle-texture overlays, all from snapshot DATA
+       * (bucket + pins are props; nothing here reads a clock or RNG):
+       * window sky fills (+seeded stars at night), ambient wash, additive
+       * lamp pools, noticeboard pin squares.
+       */
+      function drawCozyOverlays(p: WorldCanvasProps) {
+        // Window sky — behind the transparent glass of each window fixture.
+        skyG.clear()
+        const sky = windowSky(p.bucket)
+        for (const st of p.layout.stations.values()) {
+          if (!st.id.startsWith('window:')) continue
+          const left = st.x * TILE - 16 + WINDOW_GLASS.dx
+          const top = WALL_ANCHOR_Y - 40 + WINDOW_GLASS.dy
+          skyG.rect(left, top, WINDOW_GLASS.w, WINDOW_GLASS.h).fill(sky)
+          if (p.bucket === 'night') {
+            for (const s of starOffsets(st.id, 3, WINDOW_GLASS.w, WINDOW_GLASS.h)) {
+              skyG.rect(left + s.x, top + s.y, 1, 1).fill(STAR_COLOR)
+            }
+          }
+        }
+
+        // Noticeboard pins: one tiny paper square per pinned chronicle
+        // record (texture-class binding; words stay DOM on the inspect card).
+        pinG.clear()
+        const board = p.layout.stations.get('noticeboard')
+        if (board) {
+          const bx = board.x * TILE
+          for (const iid of p.pins) {
+            const pin = pinPlacement(iid)
+            pinG
+              .rect(bx + pin.dx, WALL_ANCHOR_Y + pin.dy, NOTE_PIN_SIZE, NOTE_PIN_SIZE)
+              .fill(pin.color)
+          }
+        }
+
+        // Ambient wash (§2 lighting table; day = no tint at all).
+        tintG.clear()
+        const tint = ambientTint(p.bucket)
+        if (tint) {
+          tintG
+            .rect(0, 0, p.layout.widthPx, p.layout.heightPx)
+            .fill({ color: tint.color, alpha: tint.alpha })
+        }
+
+        // Warm additive pools under desk lamps + the kettle nook. Officers
+        // inside a pool at night = the §2 money frame.
+        glowG.clear()
+        const glow = lampGlow(p.bucket)
+        if (glow) {
+          for (const st of p.layout.stations.values()) {
+            if (st.id.startsWith('desk:')) {
+              const gx = (st.x + LAMP_OFFSET.dx) * TILE
+              const gy = (st.y + LAMP_OFFSET.dy) * TILE - 6
+              glowG.circle(gx, gy, glow.radiusPx).fill({ color: glow.color, alpha: glow.alpha })
+            } else if (st.id === 'kettle') {
+              glowG
+                .circle(st.x * TILE, st.y * TILE, glow.radiusPx)
+                .fill({ color: glow.color, alpha: glow.alpha })
+            }
+          }
+        }
       }
 
       function syncOfficers(p: WorldCanvasProps) {
@@ -359,6 +596,8 @@ export default function WorldCanvas(props: WorldCanvasProps) {
           .stroke({ width: 2, color: 0x3a4152 })
 
         const spriteStations = syncStations(p)
+        syncCozy(p)
+        drawCozyOverlays(p)
 
         // Placeholder fixtures for anything without a resolved sheet.
         stationG.clear()

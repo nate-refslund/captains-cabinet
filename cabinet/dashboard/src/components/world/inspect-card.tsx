@@ -27,6 +27,11 @@ export interface InspectTarget {
   presence?: OfficerPresence | null
   /** PROOF: the most recent chronicle record touching this object. */
   proof?: ChronicleRecord | null
+  /**
+   * Noticeboard: the pinned chronicle headlines (newest first). Text is DOM
+   * — the canvas renders only the pin squares; the words live here.
+   */
+  headlines?: string[]
 }
 
 export default function InspectCard({
@@ -93,6 +98,21 @@ export default function InspectCard({
                   prose).
                 </p>
               </>
+            )}
+            {target.headlines && target.headlines.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-zinc-400">
+                  pinned notes ({target.headlines.length} — the last chronicle
+                  records; each pin square on the cork is one of these):
+                </p>
+                <ul className="space-y-0.5 rounded bg-zinc-950 p-2 font-mono text-[10px] text-zinc-300">
+                  {target.headlines.map((h, i) => (
+                    <li key={i} className="truncate">
+                      {h}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
           </div>
         )}
