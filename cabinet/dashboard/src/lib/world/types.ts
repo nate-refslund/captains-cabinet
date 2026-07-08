@@ -51,6 +51,16 @@ export interface WorldOfficer {
   presence: OfficerPresence
 }
 
+/**
+ * Captain-local wall clock, SERVER-stamped onto the snapshot (grammar v2
+ * night block). The render path never reads a clock — this is the only door
+ * wall-time enters through, as data.
+ */
+export interface SnapshotClock {
+  hour: number
+  minute: number
+}
+
 /** Snapshot event payload sent on SSE connect. */
 export interface WorldSnapshot {
   connectedAt: string
@@ -61,6 +71,8 @@ export interface WorldSnapshot {
   chronicle: ChronicleRecord[]
   /** Grammar state: loaded versions or the honest pending marker. */
   grammar: GrammarStatus
+  /** Captain-local clock (server-computed); null when unresolvable. */
+  clock?: SnapshotClock | null
 }
 
 export interface GrammarStatus {
@@ -79,6 +91,22 @@ export interface Station {
   label: string
 }
 
+/** Four-way facing — director-owned (walk direction / station posture). */
+export type SceneFacing = 'left' | 'right' | 'up' | 'down'
+
+/**
+ * Desk micro-loop variation (behavior vocabulary §1.1) — cosmetic phenotype
+ * inside anim=work, seeded from (slug, tick window), never an activity claim.
+ */
+export type SceneMicro = 'stretch' | 'sip' | 'glance' | null
+
+/**
+ * DOM chip glyph above an officer (text-as-DOM law — never canvas glyphs):
+ * 'ellipsis' = two idle officers sharing a waypoint (chat pairing),
+ * 'zzz' = asleep blink. Group-meeting chips derive from seat stations.
+ */
+export type SceneChip = 'ellipsis' | 'zzz' | null
+
 /** Deterministic director output for one officer at one logical tick. */
 export interface OfficerScene {
   slug: string
@@ -91,8 +119,12 @@ export interface OfficerScene {
   anim: 'idle' | 'walk' | 'work' | 'asleep'
   /** The live verb (T2 label text), or null when the activity TTL expired. */
   verb: string | null
-  /** Facing derived from walk direction; render-only. */
-  facing: 'left' | 'right'
+  /** Facing derived from walk direction / arrival posture; render-only. */
+  facing: SceneFacing
+  /** Seeded desk micro-loop state (null = plain typing). */
+  micro: SceneMicro
+  /** DOM chip glyph (label layer renders it; never world-space text). */
+  chip: SceneChip
 }
 
 /** Camera state — quantized zoom, world-space center. */
