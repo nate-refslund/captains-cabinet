@@ -1,0 +1,113 @@
+# =============================================================================
+# show-grammar.yml v1 — Cabinet World events→animation grammar (GRAMMAR AS LAW)
+# =============================================================================
+# THE ONLY PATH TO PIXELS (chassis 2026-07-06 Part 3; ratification record
+# 2026-07-07): the renderer maps verbs to scenes through THIS file and nothing
+# else. NO change to this file auto-merges — cosmetic included; every change
+# is a PR the Captain merges. New representations enter through exactly one
+# door: grey-`?` → world.grammar_gap org_event → grammar-smith PR → Captain
+# merge (never ad-hoc pixels).
+#
+# v1 scope (E1 Wardroom): the ten live activity verbs from
+# cabinet:officer:activity:<slug> (the estate's ready-made Sims-verb feed) →
+# Wardroom stations. Transient chronicle-verb scenes (work.completed
+# celebrations, veto stamps, crew motes) land in E2's vocabulary expansion —
+# each via its own reviewed PR.
+#
+# Codex is REQUIRED on every entry (§10.5): human-authored, structured,
+# machine-checkable (mechanism_path must exist — the validator lints it).
+# station: desk = the acting officer's own desk; other ids are fixed civic
+# stations in cabinet/dashboard/src/lib/world/layout.ts.
+version: 1
+
+vocab:
+  salience: { 0: ambient, 1: minor, 2: notable, 3: important, 4: captain-attention, 5: breaking }
+  anims: [work, walk, idle]
+
+# Unknown verb → NEVER invisible: generic work at the floor + grey `?`;
+# the grammar-gap loop names it later (E1.5 world.grammar_gap emitter).
+fallback:
+  station: floor
+  anim: idle
+
+verbs:
+  working:
+    station: desk
+    anim: work
+    salience: 0
+    codex:
+      represents: "Officer mid-tool-call at their own desk — the baseline verb the post-tool-use hook stamps when no finer verb applies."
+      mechanism_path: "cabinet/scripts/hooks/post-tool-use.sh"
+      day0: "empty desks (no activity keys yet)"
+  editing:
+    station: desk
+    anim: work
+    salience: 0
+    codex:
+      represents: "Officer editing files (Edit/Write tool classes) at their desk."
+      mechanism_path: "cabinet/scripts/hooks/post-tool-use.sh"
+      day0: "empty desks"
+  testing:
+    station: desk
+    anim: work
+    salience: 0
+    codex:
+      represents: "Officer running tests at their desk."
+      mechanism_path: "cabinet/scripts/hooks/post-tool-use.sh"
+      day0: "empty desks"
+  investigating:
+    station: desk
+    anim: work
+    salience: 0
+    codex:
+      represents: "Officer reading/searching the estate (read-class tools) at their desk."
+      mechanism_path: "cabinet/scripts/hooks/post-tool-use.sh"
+      day0: "empty desks"
+  researching:
+    station: desk
+    anim: work
+    salience: 0
+    codex:
+      represents: "Officer doing web/library research at their desk."
+      mechanism_path: "cabinet/scripts/hooks/post-tool-use.sh"
+      day0: "empty desks"
+  reviewing:
+    station: board
+    anim: work
+    salience: 1
+    codex:
+      represents: "Officer reviewing work — standing at the work board (kanban wall)."
+      mechanism_path: "cabinet/scripts/hooks/post-tool-use.sh"
+      day0: "empty board"
+  coordinating:
+    station: board
+    anim: work
+    salience: 1
+    codex:
+      represents: "Officer coordinating (triggers, handoffs, org work) at the work board."
+      mechanism_path: "cabinet/scripts/hooks/post-tool-use.sh"
+      day0: "empty board"
+  deploying:
+    station: postbox
+    anim: work
+    salience: 2
+    codex:
+      represents: "Officer dispatching a deploy — at the postbox (the dispatch fixture; external effects always gate through Captain surfaces, never through the world)."
+      mechanism_path: "cabinet/scripts/hooks/post-tool-use.sh"
+      day0: "postbox unused"
+  shipping:
+    station: postbox
+    anim: work
+    salience: 2
+    codex:
+      represents: "Officer shipping an artifact (push/release class) — at the postbox."
+      mechanism_path: "cabinet/scripts/hooks/post-tool-use.sh"
+      day0: "postbox unused"
+  replying:
+    station: postbox
+    anim: work
+    salience: 1
+    codex:
+      represents: "Officer composing a reply (Captain DM / channel surface) — at the postbox."
+      mechanism_path: "cabinet/scripts/hooks/post-tool-use.sh"
+      day0: "postbox unused"

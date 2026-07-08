@@ -1,0 +1,183 @@
+# =============================================================================
+# morphology.yml v1 — Cabinet World growth morphology (GRAMMAR AS LAW)
+# =============================================================================
+# world_at(T) = f_v(state_at(T)) — a PURE, VERSIONED function from censused
+# state to structure. No LLM anywhere between ledger and pixel (ratified
+# 2026-07-07: "the moment rendering can vary independently of state, a glance
+# stops being evidence"). NO change to this file auto-merges — every base,
+# anchor, and mapping change is a PR the Captain merges, gated by the
+# binding-executor validator (cabinet/scripts/world-binding-validator.py:
+# read-only allowlisted sandbox, errors/empty output = cannot merge).
+#
+# BINDINGS read the E0a census keyframe series (shared/interfaces/
+# world-chronicle.jsonl via jq -s 'last') or fenced local files directly —
+# the census writer already did the estate reads under its own PII fence,
+# so the render path holds no DB creds and no Redis (§2 Stage 1).
+# NB: leading-dash grep patterns use `-e` (grep eats them as options otherwise).
+#
+# LOCKED, FOREVER (law: block below): semantic assignments, tier bases,
+# district compass anchors (no mirror/rotate), reserved salience palette +
+# dual coding, honest-zero renders, rate-routing, the archetype set.
+version: 1
+
+law:
+  tiering: "tier_i = clamp(floor(log2(S_i / base_i + 1)), 0, 7); bases are cadence-justified per surface, never anchored to flatter today's cabinet; every base/curve change is a PR gated by day-3/30/365 fixture renders (E2)"
+  hysteresis: "a tier must hold across 2 consecutive daily keyframes before its 24h construction scaffold completes"
+  rate_routing: "any source >1 event/day is FORBIDDEN from creating morphology — textures only (path wear, smoke, sediment); sources <1/week are building-class; volume cannot mint capability, ever"
+  district_anchors_fixed:
+    note: "fixed polar anchors, never rotated or mirrored — Knowledge is always NE in every cabinet (E2 consumes; listed now as law)"
+    anchors: { law: N, manor: N-beyond-law, memory: NE, works: E, fields: SE, harbor: S, signals: SW, residential: W, training: NW }
+  layout_fold: "slot k = birth-order rank, total order pinned as (created_at, rowid); positions fix at birth and never move; land radius R = 24 + 6*floor(log10(total_events+1))"
+  reserved_salience_palette:
+    green: "verified ONLY"
+    amber: "blocked/drift ONLY"
+    red: "killswitch/frozen/WIP-violation ONLY"
+    grey: "unmeasured ONLY"
+    purple: "captain-gated ONLY"
+    rule: "dual-coded with shape; WCAG-checked in the asset conformance gate; no variant pack can smuggle an alarm hue"
+  honest_zeros: "zero renders prominent (dark lighthouse, empty racks) — absence of data must never read as absence of the surface"
+  civic_anchor_exception: "N=3 civic anchors max, positions fixed here, each Captain-approved (Post Office placement class, §10.9) — none minted in v1"
+  live_overlay: "Redis presence verbs + SSE drive ANIMATION only, never morphology (killswitch lever + officer motion are overlay surfaces, deliberately absent from this file)"
+
+entries:
+  - id: memory_store
+    represents: "Library main wing height — the org's memory row mass"
+    source_binding: "jq -r -s 'last | .memory_rows_total' shared/interfaces/world-chronicle.jsonl"
+    scope: org-global
+    tier: T0
+    replay: ledger
+    base: 80
+    codex:
+      represents: "Rows in cabinet_memory summed over source types, read from the daily census keyframe (which lifts them from the falsifier memory_ingestion block — no DB creds in the render path)."
+      mechanism_path: "cabinet/scripts/world-census.py"
+      day0: "empty shelves, sealed genome case"
+  - id: evolved_skills
+    represents: "Forge tool wall — one hung tool per evolved skill"
+    source_binding: "jq -r -s 'last | .evolved_skills' shared/interfaces/world-chronicle.jsonl"
+    scope: org-global
+    tier: T0
+    replay: ledger
+    base: 1
+    codex:
+      represents: "Files in memory/skills/evolved/ — skills the org grew beyond its shipped genome."
+      mechanism_path: "cabinet/scripts/world-census.py"
+      day0: "bare wall, pegs drawn"
+  - id: consequence_ledger
+    represents: "Ledger lectern book thickness — acted/proposed consequence rows"
+    source_binding: "jq -r -s 'last | .consequence_ledger_lines' shared/interfaces/world-chronicle.jsonl"
+    scope: org-global
+    tier: T0
+    replay: ledger
+    base: 70
+    codex:
+      represents: "Lines across consequence-events-*.jsonl — the act-with-undo economy's durable record."
+      mechanism_path: "cabinet/scripts/world-census.py"
+      day0: "blank ledger"
+  - id: commits
+    represents: "Works district masonry — lifetime commits in the framework repo"
+    source_binding: "jq -r -s 'last | .commits_total' shared/interfaces/world-chronicle.jsonl"
+    scope: org-global
+    tier: T0
+    replay: ledger
+    base: 120
+    codex:
+      represents: "git rev-list --count HEAD at census time."
+      mechanism_path: "cabinet/scripts/world-census.py"
+      day0: "foundation stones only"
+  - id: captain_rules
+    represents: "Courthouse tablet wall — one tablet per indexed captain rule"
+    source_binding: "grep -c -e '- id:' shared/interfaces/captain-rules-index.yaml"
+    scope: org-global
+    tier: T0
+    replay: git
+    base: 5
+    codex:
+      represents: "Indexed rows in the captain-rules index — standing law the hooks enforce."
+      mechanism_path: "shared/interfaces/captain-rules-index.yaml"
+      day0: "0 tablets, portcullis up"
+  - id: work_completed
+    represents: "Fields tilled — lifetime work_item_completed events"
+    source_binding: "sqlite3 -readonly cabinet/cache/org-runtime.sqlite3 \"SELECT COUNT(*) FROM org_events WHERE event_type='work_item_completed'\""
+    scope: org-global
+    tier: T0
+    replay: ledger
+    base: 850
+    codex:
+      represents: "Completed work items in org_events — the org's shipped-work mass; E2 tiles these into ratified-outcome sectors (growing toward the Captain)."
+      mechanism_path: "cabinet/cache/org-runtime.sqlite3"
+      day0: "unplowed ground"
+  - id: subagents_lifetime
+    represents: "Residential yard cobblestones — lifetime crew completions"
+    source_binding: "sqlite3 -readonly cabinet/cache/org-runtime.sqlite3 \"SELECT COUNT(*) FROM org_events WHERE event_type='subagent_completed'\""
+    scope: org-global
+    tier: T0
+    replay: ledger
+    base: 140
+    codex:
+      represents: "subagent_completed events — crew motes that lived and handed their folder back."
+      mechanism_path: "cabinet/cache/org-runtime.sqlite3"
+      day0: "no cobbles"
+  - id: tier2_reflections
+    represents: "Officer journal stacks — tier-2 working notes"
+    source_binding: "jq -r -s 'last | .tier2_note_files' shared/interfaces/world-chronicle.jsonl"
+    scope: org-global
+    tier: T0
+    replay: ledger
+    base: 4
+    codex:
+      represents: "Markdown notes across instance/memory/tier2/ — the officers' own working memory."
+      mechanism_path: "cabinet/scripts/world-census.py"
+      day0: "empty nightstands"
+  - id: golden_evals_delta
+    represents: "Dojo dummies grown beyond the shipped genome (delta vs 25-eval seed)"
+    source_binding: "jq -r -s 'last | .golden_evals_delta_vs_seed' shared/interfaces/world-chronicle.jsonl"
+    scope: org-global
+    tier: T0
+    replay: ledger
+    base: 2
+    codex:
+      represents: "Golden evals authored HERE (count minus the 25-eval genome seed) — honest zero/negative renders as the shipped set only."
+      mechanism_path: "cabinet/scripts/world-census.py"
+      day0: "0 grown — genome dummies only"
+  - id: packs_inherited
+    represents: "Harbor cranes — extension packs present (delta-vs-shipped lands E2)"
+    source_binding: "jq -r -s 'last | .packs_dirs' shared/interfaces/world-chronicle.jsonl"
+    scope: org-global
+    tier: T0
+    replay: ledger
+    base: 1
+    codex:
+      represents: "Pack directories under packs/ — day0 ships 5 inherited cranes; authored-here delta becomes its own entry when the authorship marker exists (E2)."
+      mechanism_path: "cabinet/scripts/world-census.py"
+      day0: "5 inherited cranes, tier 0 delta"
+  - id: cells_graduated
+    represents: "THE LIGHTHOUSE BEAM — graduated trust cells (dark = honest zero)"
+    source_binding: "jq -r -s 'last | .cells_graduated' shared/interfaces/world-chronicle.jsonl"
+    scope: org-global
+    tier: T0
+    replay: ledger
+    base: 1
+    codex:
+      represents: "Graduation cells that reached act-first — the keystone maturity number; the beam lighting is the biggest visual event of the world's life."
+      mechanism_path: "cabinet/scripts/falsifier-report.py"
+      day0: "dark lighthouse (0 today — render it dark and prominent)"
+  - id: hats_earned
+    represents: "Hat racks in officer houses — earned role hats"
+    source_binding: "ls instance/roles/hats"
+    scope: dark
+    tier: T0
+    replay: none
+    codex:
+      represents: "role_hats organ exists but no hat has ever been earned (0 rows) — empty racks ARE the story; the live binding lands when the first hat does."
+      mechanism_path: "instance/roles/hats"
+      day0: "empty racks"
+  - id: org_posture
+    represents: "The Keep flag — autonomy posture (render-only forever; the world may display posture but never offer a widen control)"
+    source_binding: "jq -r -s 'last | .org_posture' shared/interfaces/world-chronicle.jsonl"
+    scope: org-global
+    tier: T0
+    replay: ledger
+    codex:
+      represents: "Fail-closed posture census enum (guardian unless an attested ruling says otherwise) — forge-vector doctrine: display, never a control."
+      mechanism_path: "cabinet/scripts/world-census.py"
+      day0: "guardian flag"
