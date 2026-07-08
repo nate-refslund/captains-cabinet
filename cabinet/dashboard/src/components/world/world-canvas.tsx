@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * WorldCanvas — the PixiJS PURE RENDERER (E1 Wardroom).
+ * WorldCanvas — the PixiJS PURE RENDERER (E1 Wardroom, LimeZu-textured).
  *
  * Doctrine enforced here:
  *  - pure renderer: draws ONLY what the deterministic director computed;
@@ -11,16 +11,44 @@
  *  - no Math.random / Date.now in the render path: cosmetic phase comes
  *    from seeded hashes; the logical clock is advanced from frame deltas by
  *    the client shell and passed IN (CI ratchet greps this tree).
- *  - assets: LimeZu packs are a Captain purchase (kickoff to-do 1). Until
- *    they drop into public/world-assets/ (conformance-gated), officers
- *    render as outlined placeholder markers — visibly placeholder, never
- *    fake art (WORLD-E1-ASSETS ledger row).
+ *  - CSP: /world pins an eval-free script-src (next.config.ts ratchet).
+ *    PixiJS v8's WebGL uniform-sync normally compiles new Function()s, so we
+ *    import the official 'pixi.js/unsafe-eval' PATCH (AOT, eval-free) before
+ *    init instead of ever widening the header — and keep preferWorkers off
+ *    so Assets never constructs blob: workers the CSP would refuse.
+ *    (Root cause of the 2026-07-08 black-canvas incident: init rejected on
+ *    the eval check and the failure was swallowed — see the loud-failure
+ *    contract below.)
+ *  - LOUD FAILURE (configured-but-dead must be loud): boot errors, manifest
+ *    gaps, and texture-load failures console.error AND surface through
+ *    onIssues → the client shell badges them in DOM. Silent-black is a
+ *    ratcheted regression class now (ratchets.test.ts #8/#9).
+ *  - assets: LimeZu sheets resolve ONLY through the content-addressed
+ *    manifest (lib/world/sprites.ts). Any entity whose sheet is missing
+ *    renders as the outlined placeholder marker — visibly placeholder,
+ *    never fake art, never invisible.
  */
 import { useEffect, useRef } from 'react'
+import type { Container, Graphics, Sprite, Texture, TilingSprite } from 'pixi.js'
 import type { OfficerScene, CameraState } from '@/lib/world/types'
 import type { WardroomLayout } from '@/lib/world/layout'
 import { TILE } from '@/lib/world/layout'
 import { fnv1a } from '@/lib/world/hash'
+import {
+  BUNK_SHEET,
+  charFrame,
+  characterSheetFor,
+  deskSheetFor,
+  FLOOR_CUT,
+  resolveWorldSprites,
+  ROOM_SHEET,
+  STATION_SPRITES,
+  WALL_CUT,
+  WALL_TILES,
+  type CharFacing,
+  type SpriteCut,
+  type WorldAssetManifest,
+} from '@/lib/world/sprites'
 
 // Stable per-slug placeholder color (cosmetic; zero information — the
 // literacy rule: salience colors are RESERVED and never used here).
@@ -41,12 +69,22 @@ export interface WorldCanvasProps {
   tick: number
   onPrimary: (target: { kind: 'officer' | 'station'; id: string } | null, screen: { x: number; y: number }) => void
   onSecondary: (target: { kind: 'officer' | 'station'; id: string } | null, screen: { x: number; y: number }) => void
+  /** Loud-failure surface: boot/manifest/texture problems, badged in DOM. */
+  onIssues?: (issues: string[]) => void
 }
 
 interface PixiHandles {
   app: unknown
   destroy: () => void
   draw: (props: WorldCanvasProps) => void
+}
+
+/** Vertical foot offset (px) so officers stand legibly around fixtures. */
+function standOffsetPx(s: OfficerScene): number {
+  if (s.anim === 'walk') return 0
+  if (s.stationId.startsWith('desk:')) return -2 // behind the desk, face clear of the monitor
+  if (s.stationId.startsWith('bunk:')) return 0 // on the rest chair
+  return 14 // civic fixture: stand in front of it, facing up
 }
 
 export default function WorldCanvas(props: WorldCanvasProps) {
@@ -59,13 +97,22 @@ export default function WorldCanvas(props: WorldCanvasProps) {
     let cancelled = false
     async function boot() {
       if (!hostRef.current) return
-      const { Application, Container, Graphics } = await import('pixi.js')
+      const PIXI = await import('pixi.js')
+      // CSP-compat: installs the AOT uniform-sync path BEFORE any renderer
+      // exists. The /world header stays eval-free — never add 'unsafe-eval'.
+      await import('pixi.js/unsafe-eval')
       if (cancelled || !hostRef.current) return
-      const app = new Application()
+
+      // 16px art: nearest sampling, no blob: worker decode (CSP worker-src).
+      PIXI.TextureSource.defaultOptions.scaleMode = 'nearest'
+      PIXI.Assets.setPreferences({ preferWorkers: false })
+
+      const app = new PIXI.Application()
       await app.init({
         background: 0x14161c,
         resizeTo: hostRef.current,
         antialias: false,
+        roundPixels: true,
       })
       if (cancelled || !hostRef.current) {
         app.destroy(true)
@@ -73,14 +120,217 @@ export default function WorldCanvas(props: WorldCanvasProps) {
       }
       hostRef.current.appendChild(app.canvas)
 
-      const world = new Container()
+      // ── texture phase: manifest-bound, loud on every gap ────────────────
+      const issues: string[] = []
+      const sheets = new Map<string, Texture>()
+      try {
+        const res = await fetch('/world-assets/manifest.json')
+        if (!res.ok) throw new Error(`manifest HTTP ${res.status}`)
+        const manifest = (await res.json()) as WorldAssetManifest
+        const resolved = resolveWorldSprites(manifest)
+        for (const id of resolved.missing) {
+          issues.push(`missing sheet: ${id}`)
+          console.error('[world] sprite sheet missing/invalid in manifest — placeholder fallback:', id)
+        }
+        const loaded = await Promise.all(
+          Object.entries(resolved.urls).map(async ([id, url]) => {
+            try {
+              return [id, (await PIXI.Assets.load(url)) as Texture] as const
+            } catch (err) {
+              issues.push(`texture load failed: ${id}`)
+              console.error('[world] texture load failed — placeholder fallback:', id, err)
+              return [id, null] as const
+            }
+          })
+        )
+        for (const [id, tex] of loaded) if (tex) sheets.set(id, tex)
+      } catch (err) {
+        issues.push('asset manifest unavailable — placeholder mode')
+        console.error('[world] asset manifest fetch failed — placeholder mode:', err)
+      }
+      if (cancelled || !hostRef.current) {
+        app.destroy(true, { children: true })
+        return
+      }
+
+      const cutCache = new Map<string, Texture>()
+      const texFor = (sheetId: string, cut?: SpriteCut): Texture | null => {
+        const base = sheets.get(sheetId)
+        if (!base) return null
+        if (!cut) return base
+        const key = `${sheetId}|${cut.x},${cut.y},${cut.w},${cut.h}`
+        let t = cutCache.get(key)
+        if (!t) {
+          t = new PIXI.Texture({
+            source: base.source,
+            frame: new PIXI.Rectangle(cut.x, cut.y, cut.w, cut.h),
+          })
+          cutCache.set(key, t)
+        }
+        return t
+      }
+
+      // ── scene graph ──────────────────────────────────────────────────────
+      const world: Container = new PIXI.Container()
       app.stage.addChild(world)
-      const floorG = new Graphics()
-      const stationG = new Graphics()
-      const officerG = new Graphics()
+
+      const layout0 = propsRef.current.layout
+      let floorTS: TilingSprite | null = null
+      let wallTS: TilingSprite | null = null
+      const floorTex = texFor(ROOM_SHEET, FLOOR_CUT)
+      if (floorTex) {
+        floorTS = new PIXI.TilingSprite({
+          texture: floorTex,
+          width: layout0.widthPx,
+          height: layout0.heightPx,
+        })
+        world.addChild(floorTS)
+      }
+      const floorG: Graphics = new PIXI.Graphics()
       world.addChild(floorG)
+      const wallTex = texFor(ROOM_SHEET, WALL_CUT)
+      if (wallTex) {
+        wallTS = new PIXI.TilingSprite({
+          texture: wallTex,
+          width: layout0.widthPx,
+          height: WALL_TILES * TILE,
+        })
+        world.addChild(wallTS)
+      }
+      const flatLayer: Container = new PIXI.Container() // mats/rugs, under everything mobile
+      world.addChild(flatLayer)
+      const stationG: Graphics = new PIXI.Graphics() // placeholder fixtures
       world.addChild(stationG)
+      const propLayer: Container = new PIXI.Container() // y-sorted props + officers
+      propLayer.sortableChildren = true
+      world.addChild(propLayer)
+      const officerG: Graphics = new PIXI.Graphics() // placeholder officers
       world.addChild(officerG)
+      const fxG: Graphics = new PIXI.Graphics() // killswitch lamp (reserved red)
+      world.addChild(fxG)
+
+      const stationSprites = new Map<string, Sprite>()
+      const officerSprites = new Map<string, Sprite>()
+
+      /** Sync station props to the layout; returns ids drawn as sprites. */
+      function syncStations(p: WorldCanvasProps): Set<string> {
+        const wanted = new Map<
+          string,
+          { sheet: string; flat: boolean; x: number; y: number; kind: 'desk' | 'bunk' | 'civic' | 'flat' }
+        >()
+        for (const st of p.layout.stations.values()) {
+          let sheet: string | null = null
+          let flat = false
+          let kind: 'desk' | 'bunk' | 'civic' | 'flat' = 'civic'
+          if (st.id.startsWith('desk:')) {
+            sheet = deskSheetFor(st.id.slice('desk:'.length))
+            kind = 'desk'
+          } else if (st.id.startsWith('bunk:')) {
+            sheet = BUNK_SHEET
+            kind = 'bunk'
+          } else if (STATION_SPRITES[st.id]) {
+            sheet = STATION_SPRITES[st.id].sheet
+            flat = STATION_SPRITES[st.id].flat
+            kind = flat ? 'flat' : 'civic'
+          }
+          if (!sheet) continue
+          wanted.set(st.id, { sheet, flat, x: st.x, y: st.y, kind })
+        }
+        for (const [id, sp] of stationSprites) {
+          if (!wanted.has(id)) {
+            sp.destroy()
+            stationSprites.delete(id)
+          }
+        }
+        const drawn = new Set<string>()
+        for (const [id, w] of wanted) {
+          const tex = texFor(w.sheet)
+          if (!tex) continue // placeholder rect path stays loud + visible
+          let sp = stationSprites.get(id)
+          if (!sp) {
+            sp = new PIXI.Sprite(tex)
+            sp.anchor.set(0.5, 1)
+            ;(w.flat ? flatLayer : propLayer).addChild(sp)
+            stationSprites.set(id, sp)
+          }
+          const px = w.x * TILE
+          if (w.kind === 'flat') {
+            sp.position.set(px, w.y * TILE + 12)
+          } else if (w.kind === 'desk') {
+            // Desk fronts its officer: bottom one tile below the stand tile,
+            // z ahead of the officer standing behind it.
+            const by = (w.y + 1) * TILE + 6
+            sp.position.set(px, by)
+            sp.zIndex = by
+          } else if (w.kind === 'bunk') {
+            const by = w.y * TILE + 2
+            sp.position.set(px, by)
+            sp.zIndex = by - 20 // chair back behind the resting officer
+          } else {
+            const by = w.y * TILE + 6
+            sp.position.set(px, by)
+            sp.zIndex = by
+          }
+          drawn.add(id)
+        }
+        return drawn
+      }
+
+      function syncOfficers(p: WorldCanvasProps) {
+        officerG.clear()
+        const seen = new Set<string>()
+        for (const s of p.scenes) {
+          seen.add(s.slug)
+          const px = s.x * TILE
+          const bob =
+            s.anim === 'work'
+              ? Math.round(((p.tick + (fnv1a(s.slug) % 7)) % 8) / 4)
+              : 0
+          const dy = standOffsetPx(s)
+          const py = s.y * TILE + dy - bob
+          const civic =
+            s.anim !== 'walk' &&
+            !s.stationId.startsWith('desk:') &&
+            !s.stationId.startsWith('bunk:')
+          const facing: CharFacing =
+            s.anim === 'walk' ? s.facing : civic ? 'up' : 'down'
+          const cut = charFrame(s.anim, facing, p.tick, fnv1a(s.slug) % 6)
+          const tex = texFor(characterSheetFor(s.slug), cut)
+          const sp = officerSprites.get(s.slug)
+          if (!tex) {
+            // Placeholder marker (visibly placeholder, never fake art).
+            if (sp) sp.visible = false
+            const bodyW = TILE
+            const bodyH = TILE * 1.5
+            const alpha = s.anim === 'asleep' ? 0.35 : 1
+            officerG
+              .rect(px - bodyW / 2, py - bodyH, bodyW, bodyH)
+              .fill({ color: officerColor(s.slug), alpha })
+            officerG
+              .rect(px - bodyW / 2, py - bodyH, bodyW, bodyH)
+              .stroke({ width: 2, color: 0x0c0e12 })
+            continue
+          }
+          let osp = sp
+          if (!osp) {
+            osp = new PIXI.Sprite(tex)
+            osp.anchor.set(0.5, 1)
+            propLayer.addChild(osp)
+            officerSprites.set(s.slug, osp)
+          }
+          osp.visible = true
+          osp.texture = tex
+          osp.position.set(px, py + 4)
+          osp.alpha = s.anim === 'asleep' ? 0.45 : 1
+          osp.zIndex = py + 4
+        }
+        for (const [slug, osp] of officerSprites) {
+          if (!seen.has(slug)) {
+            osp.destroy()
+            officerSprites.delete(slug)
+          }
+        }
+      }
 
       function draw(p: WorldCanvasProps) {
         const vw = app.renderer.width
@@ -92,22 +342,28 @@ export default function WorldCanvas(props: WorldCanvasProps) {
           vh / 2 - p.camera.y * TILE * z
         )
 
-        // Floor + grid (geometry only; decorative — carries no data).
+        // Floor: textured when the sheet resolved; placeholder fill + grid
+        // otherwise (loud badge already raised). Border always drawn.
         floorG.clear()
-        floorG.rect(0, 0, p.layout.widthPx, p.layout.heightPx).fill(0x1d212b)
+        if (!floorTS) {
+          floorG.rect(0, 0, p.layout.widthPx, p.layout.heightPx).fill(0x1d212b)
+          for (let gx = 0; gx <= p.layout.widthPx; gx += TILE * 4) {
+            floorG.moveTo(gx, 0).lineTo(gx, p.layout.heightPx).stroke({ width: 1, color: 0x232836 })
+          }
+          for (let gy = 0; gy <= p.layout.heightPx; gy += TILE * 4) {
+            floorG.moveTo(0, gy).lineTo(p.layout.widthPx, gy).stroke({ width: 1, color: 0x232836 })
+          }
+        }
         floorG
           .rect(0, 0, p.layout.widthPx, p.layout.heightPx)
           .stroke({ width: 2, color: 0x3a4152 })
-        for (let gx = 0; gx <= p.layout.widthPx; gx += TILE * 4) {
-          floorG.moveTo(gx, 0).lineTo(gx, p.layout.heightPx).stroke({ width: 1, color: 0x232836 })
-        }
-        for (let gy = 0; gy <= p.layout.heightPx; gy += TILE * 4) {
-          floorG.moveTo(0, gy).lineTo(p.layout.widthPx, gy).stroke({ width: 1, color: 0x232836 })
-        }
 
-        // Stations (props): outlined fixtures; desks slightly larger.
+        const spriteStations = syncStations(p)
+
+        // Placeholder fixtures for anything without a resolved sheet.
         stationG.clear()
         for (const st of p.layout.stations.values()) {
+          if (spriteStations.has(st.id)) continue
           const isDesk = st.id.startsWith('desk:')
           const isBunk = st.id.startsWith('bunk:')
           const w = isDesk ? TILE * 2 : TILE * 1.5
@@ -117,34 +373,25 @@ export default function WorldCanvas(props: WorldCanvasProps) {
           const color = isDesk ? 0x4a5468 : isBunk ? 0x39415a : 0x475060
           stationG.rect(x, y, w, h).fill(color)
           stationG.rect(x, y, w, h).stroke({ width: 1, color: 0x2a2f3d })
-          if (st.id === 'lever') {
-            // The killswitch lever fixture: red ONLY when active (reserved
-            // salience hue — dual-coded by the DOM banner text).
-            stationG
-              .rect(x + w / 4, y - TILE, w / 2, TILE)
-              .fill(p.killswitch ? 0xcc2222 : 0x555f72)
-          }
         }
 
-        // Officers (placeholder markers until LimeZu lands): 2px outline,
-        // idle bob from seeded phase + logical tick (never wall clock).
-        officerG.clear()
-        for (const s of p.scenes) {
-          const px = s.x * TILE
-          const bob =
-            s.anim === 'work'
-              ? Math.round(((p.tick + (fnv1a(s.slug) % 7)) % 8) / 4)
-              : 0
-          const py = s.y * TILE - bob
-          const bodyW = TILE
-          const bodyH = TILE * 1.5
-          const alpha = s.anim === 'asleep' ? 0.35 : 1
-          officerG
-            .rect(px - bodyW / 2, py - bodyH, bodyW, bodyH)
-            .fill({ color: officerColor(s.slug), alpha })
-          officerG
-            .rect(px - bodyW / 2, py - bodyH, bodyW, bodyH)
-            .stroke({ width: 2, color: 0x0c0e12 })
+        syncOfficers(p)
+
+        // Killswitch lamp on the lever fixture: red ONLY when active
+        // (reserved salience hue — dual-coded by the DOM banner text).
+        fxG.clear()
+        const lever = p.layout.stations.get('lever')
+        if (lever) {
+          const lx = lever.x * TILE
+          const ly = lever.y * TILE
+          fxG
+            .rect(lx - 4, ly - 46, 8, 6)
+            .fill(p.killswitch ? 0xcc2222 : 0x555f72)
+          if (p.killswitch) {
+            fxG
+              .rect(lx - 12, ly - 52, 24, 18)
+              .stroke({ width: 2, color: 0xcc2222 })
+          }
         }
       }
 
@@ -192,8 +439,16 @@ export default function WorldCanvas(props: WorldCanvasProps) {
         },
       }
       draw(propsRef.current)
+      if (issues.length) propsRef.current.onIssues?.(issues)
     }
-    boot()
+    boot().catch((err: unknown) => {
+      // The 2026-07-08 incident class: init/boot rejection must NEVER be
+      // silent — badge it in DOM (the canvas may be dark, the truth is not).
+      console.error('[world] renderer boot failed — placeholder DOM badge raised:', err)
+      propsRef.current.onIssues?.([
+        `renderer failed: ${err instanceof Error ? err.message : String(err)}`,
+      ])
+    })
     return () => {
       cancelled = true
       handlesRef.current?.destroy()

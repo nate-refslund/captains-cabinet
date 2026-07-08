@@ -13,6 +13,14 @@
  *     the only variation sources.
  *  5. CSP header pinned for /world in next.config.ts.
  *  6. Opaque handles: the URL layer never writes a raw officer slug param.
+ *  7. Auth gate cloned on the /api/world routes.
+ *  8. CSP stays eval-free: PixiJS compat comes from the official
+ *     'pixi.js/unsafe-eval' PATCH import (+ workers off), never from
+ *     widening script-src. Root cause of the 2026-07-08 black-canvas
+ *     incident — pixi's init threw on the eval check and nothing surfaced.
+ *  9. Loud-failure surfaces exist: renderer boot/manifest/texture problems
+ *     must console.error AND badge in DOM (silent-black is a regression
+ *     class, never a cosmetic nit).
  */
 import { describe, expect, it } from 'vitest'
 import fs from 'fs'
@@ -122,5 +130,43 @@ describe('world CI ratchets', () => {
       expect(text).toMatch(/cabinet_session/)
       expect(text).toMatch(/401/)
     }
+  })
+
+  it("8. CSP stays eval-free — pixi ships the unsafe-eval PATCH, the header never widens", () => {
+    // The header side: /world's script-src must never gain 'unsafe-eval'
+    // (or a blob: worker escape hatch). PixiJS v8 compiles uniform-sync via
+    // dynamically generated functions unless patched; the sanctioned
+    // mechanism is the official AOT patch module, imported before init.
+    // (Assert on the header VALUE block — the comment above it documents
+    // the patch module by name.)
+    const cfg = read(path.join(DASH, 'next.config.ts'))
+    const valueBlock = cfg.match(/value:\s*\[([\s\S]*?)\]/)?.[1] ?? ''
+    expect(valueBlock).toContain("default-src 'self'")
+    expect(valueBlock).not.toMatch(/unsafe-eval/)
+    expect(valueBlock).not.toMatch(/worker-src/)
+    // The renderer side: the patch import + workers disabled must be
+    // present, or the canvas boots black under the pinned header
+    // (2026-07-08 incident).
+    const canvas = read(
+      path.join(DASH, 'src', 'components', 'world', 'world-canvas.tsx')
+    )
+    expect(canvas).toMatch(/import\(\s*['"]pixi\.js\/unsafe-eval['"]\s*\)/)
+    expect(canvas).toMatch(/preferWorkers:\s*false/)
+  })
+
+  it('9. silent-black is ratcheted: failures console.error AND badge in DOM', () => {
+    const canvas = read(
+      path.join(DASH, 'src', 'components', 'world', 'world-canvas.tsx')
+    )
+    // Boot rejection + manifest/texture gaps must be loud…
+    expect(canvas).toMatch(/console\.error\(/)
+    expect(canvas).toMatch(/onIssues/)
+    expect(canvas).toMatch(/boot\(\)\.catch/)
+    // …and the shell must render them as a visible DOM badge.
+    const client = read(
+      path.join(DASH, 'src', 'components', 'world', 'world-client.tsx')
+    )
+    expect(client).toMatch(/data-world-issues/)
+    expect(client).toMatch(/onIssues=/)
   })
 })

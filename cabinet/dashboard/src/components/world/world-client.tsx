@@ -74,6 +74,10 @@ export default function WorldClient() {
   const [inspect, setInspect] = useState<InspectTarget | null>(null)
   const [legendOpen, setLegendOpen] = useState(false)
   const [connected, setConnected] = useState(false)
+  // Loud-failure surface (2026-07-08 black-canvas incident): renderer boot
+  // errors and manifest/texture gaps badge HERE, in DOM — silent-black is a
+  // ratcheted regression class (world/ratchets.test.ts #9).
+  const [renderIssues, setRenderIssues] = useState<string[]>([])
 
   const directorState = useRef<DirectorState>({})
   const tickRef = useRef(0)
@@ -383,6 +387,7 @@ export default function WorldClient() {
           tick={tick}
           onPrimary={(t) => onPrimary(t)}
           onSecondary={(t) => onSecondary(t)}
+          onIssues={(issues) => setRenderIssues(issues)}
         />
       )}
 
@@ -433,6 +438,15 @@ export default function WorldClient() {
         {typeof grammar?.codexCoverage === 'number' && (
           <span className="rounded bg-zinc-900/80 px-2 py-1 text-zinc-400">
             codex coverage {(grammar.codexCoverage * 100).toFixed(0)}%
+          </span>
+        )}
+        {renderIssues.length > 0 && (
+          <span
+            data-world-issues
+            title={renderIssues.slice(0, 10).join('\n')}
+            className="rounded bg-red-900/85 px-2 py-1 font-semibold text-red-200"
+          >
+            render: {renderIssues.length} issue{renderIssues.length === 1 ? '' : 's'} — see console
           </span>
         )}
         <button
