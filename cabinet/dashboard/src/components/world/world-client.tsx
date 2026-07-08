@@ -23,7 +23,7 @@ import type {
   WorldSnapshot,
 } from '@/lib/world/types'
 import type { ShowGrammar, Morphology, GrammarCodex } from '@/lib/world/grammar'
-import { buildLayout, ROOM_H, ROOM_W } from '@/lib/world/layout'
+import { buildLayout, CLOCKWALL, ROOM_H, ROOM_W } from '@/lib/world/layout'
 import { step, type DirectorState } from '@/lib/world/director'
 import type { OfficerScene } from '@/lib/world/types'
 import { TILE } from '@/lib/world/layout'
@@ -156,6 +156,10 @@ export default function WorldClient() {
               grammar: g && !g.pending ? g.showGrammar : null,
               layout,
               tick: tickRef.current,
+              // Wall time + killswitch enter as snapshot DATA only — the
+              // render path never reads a clock (determinism ratchet).
+              clockHour: snap.clock?.hour ?? null,
+              killswitch: snap.killswitch,
             })
             directorState.current = out.state
             setScenes(out.scenes)
@@ -367,6 +371,64 @@ export default function WorldClient() {
     [snapshot]
   )
 
+  // ── behavior chips (grammar v2): DOM glyphs, never world-space text ──────
+  // 'z' above sleepers, one shared '…' per chat pair, one verb chip per
+  // table meeting. All derived from director scenes — no content invented.
+  const behaviorChips = useMemo(() => {
+    const chips: Array<{ key: string; x: number; y: number; text: string; kind: 'zzz' | 'talk' | 'meet' }> = []
+    for (const s of scenes) {
+      if (s.chip === 'zzz') {
+        chips.push({ key: `z:${s.slug}`, x: s.x, y: s.y - 2.6, text: 'z', kind: 'zzz' })
+      }
+    }
+    // Chat pairs: pair (0,1),(2,3)… in sorted-slug order per waypoint —
+    // mirrors the director's pairing walk exactly.
+    const byWp = new Map<string, OfficerScene[]>()
+    for (const s of scenes) {
+      if (s.chip !== 'ellipsis') continue
+      const wp = s.stationId.replace(/^wander:/, '').replace(/:\d+$/, '')
+      const list = byWp.get(wp) ?? []
+      list.push(s)
+      byWp.set(wp, list)
+    }
+    for (const [wp, group] of byWp) {
+      group.sort((a, b) => (a.slug < b.slug ? -1 : 1))
+      for (let i = 0; i + 1 < group.length; i += 2) {
+        const a = group[i]
+        const b = group[i + 1]
+        chips.push({
+          key: `t:${wp}:${a.slug}`,
+          x: (a.x + b.x) / 2,
+          y: Math.min(a.y, b.y) - 2.6,
+          text: '…',
+          kind: 'talk',
+        })
+      }
+    }
+    // Table meetings: one shared chip listing the verb (§1.3).
+    const seats = new Map<string, OfficerScene[]>()
+    for (const s of scenes) {
+      if (!s.stationId.startsWith('seat:') || s.anim === 'walk') continue
+      const base = s.stationId.split(':').slice(0, 2).join(':')
+      const list = seats.get(base) ?? []
+      list.push(s)
+      seats.set(base, list)
+    }
+    for (const [base, group] of seats) {
+      if (group.length < 2) continue
+      const cx = group.reduce((acc, s) => acc + s.x, 0) / group.length
+      const cy = group.reduce((acc, s) => acc + s.y, 0) / group.length
+      chips.push({
+        key: `m:${base}`,
+        x: cx,
+        y: cy - 3.2,
+        text: group[0].verb ?? 'meeting',
+        kind: 'meet',
+      })
+    }
+    return chips
+  }, [scenes])
+
   const showLabels = camera.z >= 2 || (snapshot?.officers.length ?? 0) <= 8
 
   return (
@@ -417,6 +479,48 @@ export default function WorldClient() {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* ── behavior chips + wall clock: DOM text, never canvas glyphs ── */}
+      {!eraMode && (
+        <div className="pointer-events-none absolute inset-0 z-10">
+          {behaviorChips.map((c) => {
+            const p = project(c.x, c.y, hostSize)
+            if (p.x < -100 || p.x > hostSize.w + 100 || p.y < -50 || p.y > hostSize.h + 50) return null
+            return (
+              <div
+                key={c.key}
+                data-world-chip={c.kind}
+                className={
+                  'absolute -translate-x-1/2 rounded bg-zinc-900/80 px-1 leading-tight ' +
+                  (c.kind === 'zzz'
+                    ? 'text-[10px] italic text-zinc-400'
+                    : c.kind === 'talk'
+                      ? 'text-[12px] text-zinc-200'
+                      : 'text-[10px] font-medium text-zinc-200')
+                }
+                style={{ left: p.x, top: p.y }}
+              >
+                {c.text}
+              </div>
+            )
+          })}
+          {snapshot?.clock && camera.z >= 2 && (() => {
+            const p = project(CLOCKWALL.x, CLOCKWALL.y, hostSize)
+            if (p.x < -100 || p.x > hostSize.w + 100 || p.y < -50 || p.y > hostSize.h + 50) return null
+            const hh = String(snapshot.clock.hour).padStart(2, '0')
+            const mm = String(snapshot.clock.minute).padStart(2, '0')
+            return (
+              <div
+                data-world-clock
+                className="absolute -translate-x-1/2 rounded bg-zinc-900/80 px-1 font-mono text-[10px] text-zinc-300"
+                style={{ left: p.x, top: p.y }}
+              >
+                {hh}:{mm}
+              </div>
+            )
+          })()}
         </div>
       )}
 

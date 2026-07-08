@@ -36,6 +36,7 @@ import { TILE } from '@/lib/world/layout'
 import { fnv1a } from '@/lib/world/hash'
 import {
   BUNK_SHEET,
+  CHAR_STRETCH_CUT,
   charFrame,
   characterSheetFor,
   deskSheetFor,
@@ -84,6 +85,8 @@ function standOffsetPx(s: OfficerScene): number {
   if (s.anim === 'walk') return 0
   if (s.stationId.startsWith('desk:')) return -2 // behind the desk, face clear of the monitor
   if (s.stationId.startsWith('bunk:')) return 0 // on the rest chair
+  if (s.stationId.startsWith('seat:')) return 6 // at a table seat
+  if (s.stationId.startsWith('wander:')) return 8 // pausing at a waypoint
   return 14 // civic fixture: stand in front of it, facing up
 }
 
@@ -216,12 +219,20 @@ export default function WorldCanvas(props: WorldCanvasProps) {
       function syncStations(p: WorldCanvasProps): Set<string> {
         const wanted = new Map<
           string,
-          { sheet: string; flat: boolean; x: number; y: number; kind: 'desk' | 'bunk' | 'civic' | 'flat' }
+          {
+            sheet: string
+            flat: boolean
+            cut?: SpriteCut
+            x: number
+            y: number
+            kind: 'desk' | 'bunk' | 'civic' | 'flat' | 'wall'
+          }
         >()
         for (const st of p.layout.stations.values()) {
           let sheet: string | null = null
           let flat = false
-          let kind: 'desk' | 'bunk' | 'civic' | 'flat' = 'civic'
+          let cut: SpriteCut | undefined
+          let kind: 'desk' | 'bunk' | 'civic' | 'flat' | 'wall' = 'civic'
           if (st.id.startsWith('desk:')) {
             sheet = deskSheetFor(st.id.slice('desk:'.length))
             kind = 'desk'
@@ -229,12 +240,14 @@ export default function WorldCanvas(props: WorldCanvasProps) {
             sheet = BUNK_SHEET
             kind = 'bunk'
           } else if (STATION_SPRITES[st.id]) {
-            sheet = STATION_SPRITES[st.id].sheet
-            flat = STATION_SPRITES[st.id].flat
-            kind = flat ? 'flat' : 'civic'
+            const ss = STATION_SPRITES[st.id]
+            sheet = ss.sheet
+            flat = ss.flat
+            cut = ss.cut // big-sheet fixtures draw their verified cut ONLY
+            kind = ss.wall ? 'wall' : flat ? 'flat' : 'civic'
           }
           if (!sheet) continue
-          wanted.set(st.id, { sheet, flat, x: st.x, y: st.y, kind })
+          wanted.set(st.id, { sheet, flat, cut, x: st.x, y: st.y, kind })
         }
         for (const [id, sp] of stationSprites) {
           if (!wanted.has(id)) {
@@ -244,7 +257,7 @@ export default function WorldCanvas(props: WorldCanvasProps) {
         }
         const drawn = new Set<string>()
         for (const [id, w] of wanted) {
-          const tex = texFor(w.sheet)
+          const tex = texFor(w.sheet, w.cut)
           if (!tex) continue // placeholder rect path stays loud + visible
           let sp = stationSprites.get(id)
           if (!sp) {
@@ -266,6 +279,12 @@ export default function WorldCanvas(props: WorldCanvasProps) {
             const by = w.y * TILE + 2
             sp.position.set(px, by)
             sp.zIndex = by - 20 // chair back behind the resting officer
+          } else if (w.kind === 'wall') {
+            // Wall-hung fixture (windows, noticeboard): anchored to the wall
+            // band's bottom edge, z behind anyone standing on the floor.
+            const by = WALL_TILES * TILE + 2
+            sp.position.set(px, by)
+            sp.zIndex = by - 20
           } else {
             const by = w.y * TILE + 6
             sp.position.set(px, by)
@@ -288,13 +307,13 @@ export default function WorldCanvas(props: WorldCanvasProps) {
               : 0
           const dy = standOffsetPx(s)
           const py = s.y * TILE + dy - bob
-          const civic =
-            s.anim !== 'walk' &&
-            !s.stationId.startsWith('desk:') &&
-            !s.stationId.startsWith('bunk:')
-          const facing: CharFacing =
-            s.anim === 'walk' ? s.facing : civic ? 'up' : 'down'
-          const cut = charFrame(s.anim, facing, p.tick, fnv1a(s.slug) % 6)
+          // Facing is DIRECTOR-owned now (walk direction, station posture,
+          // micro-loop glances, chat pairing) — the renderer just draws it.
+          const facing: CharFacing = s.facing
+          const cut =
+            s.micro === 'stretch'
+              ? CHAR_STRETCH_CUT // §1.1: static up-frame hold (leaning back)
+              : charFrame(s.anim, facing, p.tick, fnv1a(s.slug) % 6)
           const tex = texFor(characterSheetFor(s.slug), cut)
           const sp = officerSprites.get(s.slug)
           if (!tex) {
@@ -380,6 +399,14 @@ export default function WorldCanvas(props: WorldCanvasProps) {
         // Killswitch lamp on the lever fixture: red ONLY when active
         // (reserved salience hue — dual-coded by the DOM banner text).
         fxG.clear()
+        if (p.killswitch) {
+          // §1.5 grammar killswitch_scene: full-scene red wash. The director
+          // is frozen by the reducer; this is the canvas half of the truth
+          // (third channel = the unsuppressible DOM banner).
+          fxG
+            .rect(0, 0, p.layout.widthPx, p.layout.heightPx)
+            .fill({ color: 0xcc2222, alpha: 0.14 })
+        }
         const lever = p.layout.stations.get('lever')
         if (lever) {
           const lx = lever.x * TILE

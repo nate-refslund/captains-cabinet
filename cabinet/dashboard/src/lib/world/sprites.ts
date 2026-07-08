@@ -26,6 +26,19 @@
  */
 import { fnv1a } from './hash'
 import type { OfficerScene } from './types'
+import {
+  BOOKSHELF_CUT,
+  CONF_SHEET,
+  CONF_TABLE_CUT,
+  KETTLE_SHEET,
+  LIBRARY_SHEET,
+  NOTICEBOARD_SHEET,
+  POUF_DARK_CUT,
+  POUF_TAN_CUT,
+  setDressingSheets,
+  SIDEBOARD_COFFEE_CUT,
+  WINDOW_CUT,
+} from './set-dressing'
 
 export const ASSET_BASE = '/world-assets/'
 
@@ -63,17 +76,34 @@ export const WALL_TILES = 2
 
 const SINGLE = (n: number) => `office/singles/Modern_Office_Singles_${n}`
 
+/** One fixed civic station's sprite binding. */
+export interface StationSprite {
+  sheet: string
+  flat: boolean
+  /** Optional pixel cut out of a big sheet (whole single otherwise). */
+  cut?: SpriteCut
+  /** Wall-hung fixtures anchor to the wall band, not the floor foot. */
+  wall?: boolean
+}
+
 /**
- * Fixed civic stations → Modern Office singles.
+ * Fixed civic stations → Modern Office singles / verified big-sheet cuts.
  * flat=true renders under officers (mats/rugs); upright props y-sort.
+ * v2 (cozy pass §2): table, kettle, bookshelf, windows, noticeboard.
  */
-export const STATION_SPRITES: Record<string, { sheet: string; flat: boolean }> = {
+export const STATION_SPRITES: Record<string, StationSprite> = {
   board: { sheet: SINGLE(172), flat: false }, // analytics board on stand
   postbox: { sheet: SINGLE(325), flat: false }, // printer desk — the dispatch fixture
   door: { sheet: SINGLE(93), flat: true }, // doormat
   dojo: { sheet: SINGLE(87), flat: true }, // red rug
   floor: { sheet: SINGLE(92), flat: true }, // centre rug
   lever: { sheet: SINGLE(176), flat: false }, // server rack (red lamp overlay when killswitch)
+  table: { sheet: CONF_SHEET, cut: CONF_TABLE_CUT, flat: false }, // conference oval table
+  kettle: { sheet: KETTLE_SHEET, flat: false }, // coffee-machine table (break nook core)
+  bookshelf: { sheet: LIBRARY_SHEET, cut: BOOKSHELF_CUT, flat: false }, // journal wall
+  'window:1': { sheet: ROOM_SHEET, cut: WINDOW_CUT, flat: false, wall: true },
+  'window:2': { sheet: ROOM_SHEET, cut: WINDOW_CUT, flat: false, wall: true },
+  noticeboard: { sheet: NOTICEBOARD_SHEET, flat: false, wall: true }, // cork panel
 }
 
 /** Officer workstation variants — picked deterministically per slug. */
@@ -104,6 +134,18 @@ export function deskSheetFor(slug: string): string {
 
 /** Render-facing: the director's left/right plus the renderer's up/down. */
 export type CharFacing = 'right' | 'up' | 'left' | 'down'
+
+/**
+ * Static up-facing frame (row 0, U at x=16) — the §1.1 "stretch" micro-loop
+ * hold: reads as leaning back from the desk. Verified against the Premade
+ * Character generator layout documented in this file's header.
+ */
+export const CHAR_STRETCH_CUT: SpriteCut = {
+  x: 16,
+  y: 0,
+  w: CHAR_FRAME_W,
+  h: CHAR_FRAME_H,
+}
 
 /** Direction origin (px) of the 6-frame strips at y=32 (idle) / y=64 (walk). */
 const DIR_X: Record<CharFacing, number> = {
@@ -159,11 +201,16 @@ export function requiredSheets(): string[] {
     `characters/Premade_Character_${String(i + 1).padStart(2, '0')}`
   )
   return [
-    ROOM_SHEET,
-    ...Object.values(STATION_SPRITES).map((s) => s.sheet),
-    ...DESK_SHEETS,
-    BUNK_SHEET,
-    ...chars,
+    ...new Set([
+      ROOM_SHEET,
+      ...Object.values(STATION_SPRITES).map((s) => s.sheet),
+      ...DESK_SHEETS,
+      BUNK_SHEET,
+      ...chars,
+      // Cozy pass (§2): decor/lamps/flair/pins — same loud missing→badge
+      // chain as every other asset class.
+      ...setDressingSheets(),
+    ]),
   ]
 }
 
@@ -196,7 +243,15 @@ export function resolveWorldSprites(manifest: WorldAssetManifest): ResolvedSprit
     }
     let ok = true
     if (id === ROOM_SHEET) {
-      ok = cutFits(row, FLOOR_CUT) && cutFits(row, WALL_CUT)
+      ok = cutFits(row, FLOOR_CUT) && cutFits(row, WALL_CUT) && cutFits(row, WINDOW_CUT)
+    } else if (id === CONF_SHEET) {
+      ok =
+        cutFits(row, CONF_TABLE_CUT) &&
+        cutFits(row, SIDEBOARD_COFFEE_CUT) &&
+        cutFits(row, POUF_TAN_CUT) &&
+        cutFits(row, POUF_DARK_CUT)
+    } else if (id === LIBRARY_SHEET) {
+      ok = cutFits(row, BOOKSHELF_CUT)
     } else if (id.startsWith('characters/')) {
       ok = row.w >= CHAR_SHEET_MIN_W && row.h >= CHAR_SHEET_MIN_H
     } else if (id.startsWith('office/singles/')) {

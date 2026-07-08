@@ -107,8 +107,13 @@ describe('world sprite resolution', () => {
 
   it('station fixture map covers every fixed civic station in the layout', () => {
     // Fixed stations from layout.ts — desks/bunks are per-slug and covered
-    // by DESK_SHEETS/BUNK_SHEET instead.
-    for (const id of ['board', 'postbox', 'door', 'dojo', 'floor', 'lever']) {
+    // by DESK_SHEETS/BUNK_SHEET instead. v2 adds the cozy-pass stations
+    // (table/kettle/bookshelf/windows/noticeboard — clockwall is DOM-only,
+    // deliberately NOT a station sprite: numbers are text, text is DOM).
+    for (const id of [
+      'board', 'postbox', 'door', 'dojo', 'floor', 'lever',
+      'table', 'kettle', 'bookshelf', 'window:1', 'window:2', 'noticeboard',
+    ]) {
       expect(STATION_SPRITES[id], id).toBeDefined()
     }
     expect(BUNK_SHEET).toMatch(/^office\/singles\//)

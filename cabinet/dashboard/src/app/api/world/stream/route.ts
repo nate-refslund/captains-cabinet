@@ -18,10 +18,14 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { createHash } from 'node:crypto'
+import fs from 'node:fs'
+import path from 'node:path'
+import yaml from 'js-yaml'
 import { loadGrammar } from '@/lib/world/grammar'
 import type {
   ChronicleRecord,
   PresenceSnapshot,
+  SnapshotClock,
   WorldOfficer,
   WorldSnapshot,
 } from '@/lib/world/types'
@@ -42,6 +46,55 @@ export function selHandle(slug: string): string {
     .update(`cabinet-world-sel:${slug}`)
     .digest('hex')
     .slice(0, 12)
+}
+
+/** Cached captain timezone (platform.yml is deployment config — stable). */
+let captainTz: string | null = null
+
+function captainTimezone(): string {
+  if (captainTz !== null) return captainTz
+  try {
+    const root =
+      process.env.CABINET_ROOT && fs.existsSync(process.env.CABINET_ROOT)
+        ? process.env.CABINET_ROOT
+        : path.resolve(process.cwd(), '..', '..')
+    const raw = fs.readFileSync(
+      path.join(root, 'instance', 'config', 'platform.yml'),
+      'utf8'
+    )
+    const cfg = (yaml.load(raw, { schema: yaml.JSON_SCHEMA }) ?? {}) as Record<
+      string,
+      unknown
+    >
+    captainTz =
+      typeof cfg.captain_timezone === 'string' ? cfg.captain_timezone : 'UTC'
+  } catch {
+    captainTz = 'UTC'
+  }
+  return captainTz
+}
+
+/**
+ * Captain-local wall clock, stamped onto the snapshot (grammar v2 `night`
+ * block). This route is the ONE sanctioned wall-clock door — the render
+ * path consumes the value as data and never reads a clock itself.
+ */
+function captainClock(): SnapshotClock | null {
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: captainTimezone(),
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(new Date())
+    const hour = Number(parts.find((p) => p.type === 'hour')?.value)
+    const minute = Number(parts.find((p) => p.type === 'minute')?.value)
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null
+    // Intl may render midnight as "24" in some ICU builds — normalize.
+    return { hour: hour % 24, minute }
+  } catch {
+    return null // honest absence: the world falls back to night-at-bunk
+  }
 }
 
 type RedisLike = {
@@ -73,6 +126,7 @@ async function readSnapshot(redis: RedisLike | null): Promise<WorldSnapshot> {
       officers: [],
       chronicle: [],
       grammar,
+      clock: captainClock(),
     }
   }
   let presence: PresenceSnapshot | null = null
@@ -118,6 +172,7 @@ async function readSnapshot(redis: RedisLike | null): Promise<WorldSnapshot> {
     officers,
     chronicle,
     grammar,
+    clock: captainClock(),
   }
 }
 
