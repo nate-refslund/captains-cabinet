@@ -27,6 +27,8 @@ import { buildLayout, CLOCKWALL, ROOM_H, ROOM_W } from '@/lib/world/layout'
 import { step, type DirectorState } from '@/lib/world/director'
 import type { OfficerScene } from '@/lib/world/types'
 import { TILE } from '@/lib/world/layout'
+import { bucketForHour, formatClock } from '@/lib/world/lighting'
+import { NOTE_PIN_MAX } from '@/lib/world/set-dressing'
 import InspectCard, { type InspectTarget } from './inspect-card'
 
 const WorldCanvas = dynamic(() => import('./world-canvas'), { ssr: false })
@@ -181,6 +183,26 @@ export default function WorldClient() {
     [snapshot]
   )
 
+  // ── cozy ambience inputs (grammar v2 night block; §2 lighting) ───────────
+  // Wall time reaches this shell ONLY as snapshot.clock (server-stamped);
+  // the mapping to a day bucket is the pure lib/world/lighting.ts fn.
+  const bucket = useMemo(
+    () =>
+      bucketForHour(
+        snapshot?.clock?.hour,
+        grammar?.showGrammar?.night?.buckets
+      ),
+    [snapshot, grammar]
+  )
+  // Noticeboard pins: the last N chronicle records (texture-class binding —
+  // squares on canvas, headline text on the inspect card, DOM-only).
+  const pinnedRecords = useMemo(
+    () => [...(snapshot?.chronicle ?? [])].slice(-NOTE_PIN_MAX).reverse(),
+    [snapshot]
+  )
+  const pins = useMemo(() => pinnedRecords.map((r) => r.iid), [pinnedRecords])
+  const clockText = formatClock(snapshot?.clock)
+
   const officersBySel = useMemo(() => {
     const m = new Map<string, WorldOfficer>()
     for (const o of snapshot?.officers ?? []) m.set(o.sel, o)
@@ -221,6 +243,29 @@ export default function WorldClient() {
           proof,
         })
         setSel(o.sel)
+      } else if (target.id === 'noticeboard') {
+        // The cork board is a BOUND texture (wardroom_noticeboard_pins),
+        // not decor: cite the morphology codex and list the pinned
+        // headlines as DOM text (the canvas draws only the squares).
+        const station = layout.stations.get(target.id)
+        if (!station) return
+        const entry = (g?.morphology?.entries ?? []).find(
+          (e) => e.id === 'wardroom_noticeboard_pins'
+        )
+        const records = [...(snap?.chronicle ?? [])]
+          .slice(-NOTE_PIN_MAX)
+          .reverse()
+        setInspect({
+          kind: 'station',
+          id: target.id,
+          title: station.label,
+          codex: entry?.codex ?? null,
+          presence: null,
+          proof: records[0] ?? null,
+          headlines: records.map(
+            (r) => `#${r.iid} ${r.verb} · ${r.actor}${r.kind ? ` · ${r.kind}` : ''}`
+          ),
+        })
       } else {
         const station = layout.stations.get(target.id)
         if (!station) return
@@ -447,10 +492,33 @@ export default function WorldClient() {
           camera={camera}
           killswitch={snapshot?.killswitch ?? false}
           tick={tick}
+          bucket={bucket}
+          pins={pins}
           onPrimary={(t) => onPrimary(t)}
           onSecondary={(t) => onSecondary(t)}
           onIssues={(issues) => setRenderIssues(issues)}
         />
+      )}
+
+      {/* ── wall clock chip: numbers are text, text is DOM (law). Renders
+            ONLY from the server-stamped snapshot clock — absent clock,
+            absent chip (never a fake time). ── */}
+      {!eraMode && clockText && camera.z >= 2 && (
+        <div className="pointer-events-none absolute inset-0 z-10">
+          {(() => {
+            const p = project(CLOCKWALL.x, CLOCKWALL.y, hostSize)
+            if (p.x < -100 || p.x > hostSize.w + 100 || p.y < -50 || p.y > hostSize.h + 50) return null
+            return (
+              <div
+                data-world-clock
+                className="absolute -translate-x-1/2 rounded bg-zinc-900/80 px-1 font-mono text-[10px] text-zinc-300"
+                style={{ left: p.x, top: p.y }}
+              >
+                {clockText}
+              </div>
+            )
+          })()}
+        </div>
       )}
 
       {/* ── screen-space labels: text as text, never world-space ── */}
