@@ -196,6 +196,37 @@ def make_synthetic() -> None:
         print(f"wrote {out.relative_to(HERE)}")
 
 
+def _carried_entries() -> list[dict]:
+    """Preserve non-REGISTRY manifest entries (Captain-recorded verdicts).
+
+    judge/goldens.py `record` appends Captain approve/reject frames to the
+    manifest (taste accumulation). Rebuilding from REGISTRY alone would
+    silently DROP that accumulated taste — so carried entries survive a
+    rebuild, and a carried file that is missing or has drifted bytes is a
+    hard stop, never a silent drop.
+    """
+    if not MANIFEST.exists():
+        return []
+    carried = []
+    for img in json.loads(MANIFEST.read_text()).get("images", []):
+        if img.get("id") in REGISTRY:
+            continue  # rebuilt from REGISTRY
+        p = (HERE / Path(img["file"])).resolve()
+        if not p.is_relative_to(CORPUS):
+            sys.exit(f"carried manifest entry escapes corpus dir: "
+                     f"{img['file']}")
+        if not p.exists():
+            sys.exit(f"carried (Captain-recorded) corpus file missing: "
+                     f"{img['file']} — restore it or consciously remove "
+                     f"the manifest entry")
+        if sha256_of(p) != img["sha256"]:
+            sys.exit(f"carried corpus file changed on disk: {img['file']} "
+                     f"— re-record the Captain verdict instead of mutating "
+                     f"corpus bytes")
+        carried.append(img)
+    return carried
+
+
 def build_manifest() -> None:
     images, missing = [], []
     for entry_id, (cls, filename, provenance, why) in sorted(REGISTRY.items()):
@@ -214,6 +245,7 @@ def build_manifest() -> None:
     if missing:
         sys.exit(f"missing corpus files for: {', '.join(missing)} "
                  f"(run `build_corpus.py synthetic` / re-fetch per provenance)")
+    images = sorted(images + _carried_entries(), key=lambda i: i["id"])
     manifest = {
         "purpose": "Calibration corpus for the Cabinet World aesthetic judge "
                    "(positive = LimeZu showcase scenes; negative = Captain-rejected "

@@ -3,7 +3,9 @@
 Six deterministic, stdlib-only (python3.12, no Pillow/numpy) gates that catch
 the recorded Cabinet-World failure classes *mechanically* — no LLM judge in
 the loop. A renderer change that reintroduces a rejected look goes red in CI,
-exactly like a broken test.
+exactly like a broken test. The judgment half — "does this frame read like a
+finished, warm, professional pixel-game scene?" — is the **vision judge**
+(`judge/`, below): protocol in code, judgment via agents at call time.
 
 ```
 python3.12 cabinet/scripts/world-aesthetic/aesthetic_gates.py \
@@ -81,10 +83,56 @@ Enforced twice, mechanically:
    pytest against the **committed** calibrations, plus corpus-independent
    synthetic cases so a clean clone (no corpus) still proves the mechanism.
 
+## The vision judge (`judge/`)
+
+The gates catch *known* failure classes; the judge scores *overall look*
+against the corpus, pairwise. Protocol in code, judgment via agents at call
+time — `judge_protocol.py build` emits a task-list JSON for an LLM runner,
+`ingest` computes verdicts from the filled results:
+
+```
+python3.12 cabinet/scripts/world-aesthetic/judge/judge_protocol.py \
+    build --candidate out.png            # -> judge/runs/<run_id>/tasks.json
+# hand tasks.json + images/ to a judge agent; it writes results.json
+python3.12 cabinet/scripts/world-aesthetic/judge/judge_protocol.py \
+    ingest --run judge/runs/<run_id> --results .../results.json
+```
+
+* **Pairwise, blinded, position-bias-killed.** Candidate vs sampled corpus
+  positives and negatives; every pair asks *"Which reads more like a
+  finished, warm, professional pixel-game scene — LEFT or RIGHT, and why in
+  one line?"* (rubric: `judge/rubric.md` — three lenses: composition
+  mechanics / mood + warmth + lighting / game-feel). Left/right is
+  seeded-randomized per pair; staged image names are opaque; `tasks.json`
+  carries no ground truth (the answer key lives in `key.json`, which the
+  runner must never read).
+* **Calibration gate (the D5 move).** Every run hides the full
+  positive x negative cross product among the candidate pairs. `ingest`
+  scores it first: pairwise accuracy `>= 0.90` (every corpus negative below
+  every positive) or the whole run is **VOID** — stamped
+  `void_uncalibrated`, exit 1, no candidate verdict leaks out. Calibration
+  results are stamped into `verdicts.json` on every outcome.
+* **Aggregation.** Win-rate vs negatives is the sanity floor (default 1.0 —
+  one loss to a Captain-rejected frame disqualifies); win-rate vs positives
+  is the real signal. `reject` below the floor, `promote` at `>= 0.5` vs
+  positives, `iterate` between; every one-line "why" from the losses is
+  collected per candidate as actionable feedback.
+* **Goldens + taste accumulation** (`judge/goldens.py`). Captain-approved
+  frames pin under `goldens/` (gitignored; tracked `goldens/manifest.json`
+  carries sha256 + per-region `min_ssim`/`max_pixel_frac` thresholds);
+  `compare` runs stdlib SSIM + exact pixel-diff per region as a regression
+  gate. `record --verdict approve|reject` appends the frame + WHY to the
+  calibration corpus, so every Captain ruling permanently sharpens both the
+  hidden calibration set and the pairwise bar (`build_corpus.py manifest`
+  carries these recorded entries across rebuilds).
+
+Run bundles (`judge/runs/`) and golden PNGs are gitignored like the corpus —
+licensed pixels never enter git; sha256 manifests are the tracked record.
+
 ## Tests
 
 ```
-python3.12 -m pytest cabinet/scripts/world-aesthetic/tests -q   # 58 tests
+python3.12 -m pytest cabinet/scripts/world-aesthetic/tests -q   # 83 tests
 ```
 
 ## Import contract
@@ -92,4 +140,7 @@ python3.12 -m pytest cabinet/scripts/world-aesthetic/tests -q   # 58 tests
 `cabinet/scripts/gates` is a pre-existing top-level package. This dir's
 `gates/` package is therefore **never** imported as `gates` — everything
 (runner, calibrate, tests) loads it via `_loader.load_gates()` under the
-unique module name `world_aesthetic_gates`. No `sys.path` mutation anywhere.
+unique module name `world_aesthetic_gates`. The judge package follows the
+same contract via `_loader.load_judge()` (`world_aesthetic_judge`); its CLI
+modules self-anchor onto that name when executed directly (PEP 366). No
+`sys.path` mutation anywhere.

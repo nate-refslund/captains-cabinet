@@ -1,0 +1,6 @@
+{
+  "schema": "cabinet.world.goldens/v1",
+  "purpose": "Golden-frame regression pins for Cabinet World renders (Captain-approved frames; SSIM + pixel-diff per region).",
+  "note": "Golden PNGs are gitignored (LimeZu-derived, licensed); this manifest is the tracked record. Verify with `goldens.py verify`.",
+  "goldens": []
+}
