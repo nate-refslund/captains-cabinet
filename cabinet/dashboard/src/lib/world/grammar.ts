@@ -28,10 +28,49 @@ export interface GrammarCodex {
   day0: string
 }
 
+/** v2: daytime TTL-expired wander program (verb ABSENCE made visible). */
+export interface IdleProgram {
+  waypoints: string[]
+  dwellTicks: number
+  nightStation: string
+  chatChip: boolean
+  codex?: GrammarCodex
+}
+
+/** v2: N+ officers on the same verb collapse into one group scene. */
+export interface GroupSceneRule {
+  minOfficers: number
+  station: string
+  codex?: GrammarCodex
+}
+
+/** v2: ambience buckets driven by the server-stamped snapshot clock. */
+export interface NightConfig {
+  buckets: Partial<Record<'dawn' | 'day' | 'dusk' | 'night', [number, number]>>
+  lampPools: boolean
+  windowSky: boolean
+  codex?: GrammarCodex
+}
+
+/** v2: killswitch scene — director freeze + full-scene wash (reserved red). */
+export interface KillswitchScene {
+  freeze: boolean
+  wash: 'red'
+  codex?: GrammarCodex
+}
+
+export type WorldSceneName = 'wardroom' | 'street' | 'island'
+
 export interface ShowGrammar {
   version: number
   verbs: Record<string, VerbMapping>
   fallback: { station: string; anim: 'work' | 'walk' | 'idle' }
+  /** v2 blocks — all optional; a v1 file loads exactly as before. */
+  idleProgram?: IdleProgram
+  groupScenes?: Record<string, GroupSceneRule>
+  night?: NightConfig
+  killswitchScene?: KillswitchScene
+  scenes?: Record<string, WorldSceneName>
 }
 
 export interface MorphologyEntry {
@@ -89,6 +128,163 @@ function parseCodex(raw: unknown): GrammarCodex | undefined {
   return undefined
 }
 
+// ── v2 block parsers (fail-closed: malformed → problem + undefined) ────────
+
+function parseIdleProgram(
+  raw: unknown,
+  problems: string[]
+): IdleProgram | undefined {
+  if (raw === undefined) return undefined
+  if (typeof raw !== 'object' || raw === null) {
+    problems.push('idle_program: not a mapping')
+    return undefined
+  }
+  const d = raw as Record<string, unknown>
+  const waypoints = Array.isArray(d.waypoints)
+    ? d.waypoints.filter((w): w is string => typeof w === 'string')
+    : []
+  if (waypoints.length === 0) {
+    problems.push('idle_program: waypoints missing/empty')
+    return undefined
+  }
+  const dwellTicks =
+    typeof d.dwell_ticks === 'number' && Number.isInteger(d.dwell_ticks) && d.dwell_ticks > 0
+      ? d.dwell_ticks
+      : null
+  if (dwellTicks === null) {
+    problems.push('idle_program: dwell_ticks missing/invalid')
+    return undefined
+  }
+  const nightStation = typeof d.night_station === 'string' ? d.night_station : null
+  if (!nightStation) {
+    problems.push('idle_program: night_station missing')
+    return undefined
+  }
+  const codex = parseCodex(d.codex)
+  if (!codex) problems.push('idle_program: codex missing/incomplete')
+  return {
+    waypoints,
+    dwellTicks,
+    nightStation,
+    chatChip: d.chat_chip === true,
+    codex,
+  }
+}
+
+function parseGroupScenes(
+  raw: unknown,
+  problems: string[]
+): Record<string, GroupSceneRule> | undefined {
+  if (raw === undefined) return undefined
+  if (typeof raw !== 'object' || raw === null) {
+    problems.push('group_scenes: not a mapping')
+    return undefined
+  }
+  const out: Record<string, GroupSceneRule> = {}
+  for (const [verb, rawR] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof rawR !== 'object' || rawR === null) {
+      problems.push(`group_scenes.${verb}: not a mapping`)
+      continue
+    }
+    const r = rawR as Record<string, unknown>
+    const minOfficers =
+      typeof r.min_officers === 'number' && Number.isInteger(r.min_officers) && r.min_officers >= 2
+        ? r.min_officers
+        : null
+    const station = typeof r.station === 'string' ? r.station : null
+    if (minOfficers === null || !station) {
+      problems.push(`group_scenes.${verb}: min_officers/station missing or invalid`)
+      continue
+    }
+    const codex = parseCodex(r.codex)
+    if (!codex) problems.push(`group_scenes.${verb}: codex missing/incomplete`)
+    out[verb] = { minOfficers, station, codex }
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+const NIGHT_BUCKETS = ['dawn', 'day', 'dusk', 'night'] as const
+
+function parseNight(raw: unknown, problems: string[]): NightConfig | undefined {
+  if (raw === undefined) return undefined
+  if (typeof raw !== 'object' || raw === null) {
+    problems.push('night: not a mapping')
+    return undefined
+  }
+  const d = raw as Record<string, unknown>
+  const buckets: NightConfig['buckets'] = {}
+  const rawBuckets = (d.buckets ?? {}) as Record<string, unknown>
+  for (const name of NIGHT_BUCKETS) {
+    const b = rawBuckets[name]
+    if (
+      Array.isArray(b) &&
+      b.length === 2 &&
+      typeof b[0] === 'number' &&
+      typeof b[1] === 'number' &&
+      b[0] >= 0 && b[0] <= 24 && b[1] >= 0 && b[1] <= 24
+    ) {
+      buckets[name] = [b[0], b[1]]
+    } else if (b !== undefined) {
+      problems.push(`night.buckets.${name}: invalid range`)
+    }
+  }
+  for (const k of Object.keys(rawBuckets)) {
+    if (!(NIGHT_BUCKETS as readonly string[]).includes(k)) {
+      problems.push(`night.buckets.${k}: unknown bucket (closed enum)`)
+    }
+  }
+  const codex = parseCodex(d.codex)
+  if (!codex) problems.push('night: codex missing/incomplete')
+  return {
+    buckets,
+    lampPools: d.lamp_pools === true,
+    windowSky: d.window_sky === true,
+    codex,
+  }
+}
+
+function parseKillswitchScene(
+  raw: unknown,
+  problems: string[]
+): KillswitchScene | undefined {
+  if (raw === undefined) return undefined
+  if (typeof raw !== 'object' || raw === null) {
+    problems.push('killswitch_scene: not a mapping')
+    return undefined
+  }
+  const d = raw as Record<string, unknown>
+  if (d.wash !== undefined && d.wash !== 'red') {
+    // Closed enum: red is the reserved killswitch hue — nothing else is law.
+    problems.push('killswitch_scene: wash must be "red" (closed enum)')
+    return undefined
+  }
+  const codex = parseCodex(d.codex)
+  if (!codex) problems.push('killswitch_scene: codex missing/incomplete')
+  return { freeze: d.freeze === true, wash: 'red', codex }
+}
+
+const SCENE_NAMES = new Set<string>(['wardroom', 'street', 'island'])
+
+function parseScenes(
+  raw: unknown,
+  problems: string[]
+): Record<string, WorldSceneName> | undefined {
+  if (raw === undefined) return undefined
+  if (typeof raw !== 'object' || raw === null) {
+    problems.push('scenes: not a mapping')
+    return undefined
+  }
+  const out: Record<string, WorldSceneName> = {}
+  for (const [z, name] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof name === 'string' && SCENE_NAMES.has(name)) {
+      out[z] = name as WorldSceneName
+    } else {
+      problems.push(`scenes.${z}: unknown scene (closed enum wardroom|street|island)`)
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
 function parseShowGrammar(text: string, problems: string[]): ShowGrammar | null {
   let doc: unknown
   try {
@@ -143,7 +339,16 @@ function parseShowGrammar(text: string, problems: string[]): ShowGrammar | null 
       ? rawFb.anim
       : 'idle') as VerbMapping['anim'],
   }
-  return { version, verbs, fallback }
+  return {
+    version,
+    verbs,
+    fallback,
+    idleProgram: parseIdleProgram(d.idle_program, problems),
+    groupScenes: parseGroupScenes(d.group_scenes, problems),
+    night: parseNight(d.night, problems),
+    killswitchScene: parseKillswitchScene(d.killswitch_scene, problems),
+    scenes: parseScenes(d.scenes, problems),
+  }
 }
 
 const SCOPES = new Set(['org-global', 'per-officer', 'dark'])
@@ -230,6 +435,20 @@ export function loadGrammar(): LoadedGrammar {
   if (showGrammar) {
     for (const v of Object.values(showGrammar.verbs)) {
       denomEntries.push({ hasCodex: Boolean(v.codex) })
+    }
+    // v2 blocks count toward coverage exactly like verbs (codex required
+    // everywhere — Legend Law gauge).
+    if (showGrammar.idleProgram) {
+      denomEntries.push({ hasCodex: Boolean(showGrammar.idleProgram.codex) })
+    }
+    for (const g of Object.values(showGrammar.groupScenes ?? {})) {
+      denomEntries.push({ hasCodex: Boolean(g.codex) })
+    }
+    if (showGrammar.night) {
+      denomEntries.push({ hasCodex: Boolean(showGrammar.night.codex) })
+    }
+    if (showGrammar.killswitchScene) {
+      denomEntries.push({ hasCodex: Boolean(showGrammar.killswitchScene.codex) })
     }
   }
   if (morphology) {

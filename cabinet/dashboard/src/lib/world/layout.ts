@@ -15,7 +15,13 @@ export const TILE = 16
 export const ROOM_W = 40
 export const ROOM_H = 24
 
-/** Fixed civic stations every deployment shares (comparability). */
+/** Wall band height in tiles (rows 0..WALL_BAND-1 are wall, not floor). */
+export const WALL_BAND = 2
+
+/** Fixed civic stations every deployment shares (comparability).
+ * v2 additions (world-alive direction §2/§5.1): table, kettle, bookshelf,
+ * window:1/2, noticeboard — grammar-visible ids for idle_program waypoints
+ * and group_scenes. */
 export const FIXED_STATIONS: Station[] = [
   { id: 'board', x: 20, y: 3, label: 'work board' },
   { id: 'postbox', x: 35, y: 12, label: 'postbox' },
@@ -23,6 +29,31 @@ export const FIXED_STATIONS: Station[] = [
   { id: 'dojo', x: 20, y: 20, label: 'dojo corner' },
   { id: 'floor', x: 18, y: 12, label: 'floor' },
   { id: 'lever', x: 37, y: 3, label: 'killswitch lever' },
+  { id: 'table', x: 10, y: 12, label: 'conference table' },
+  { id: 'kettle', x: 5, y: 5, label: 'kettle nook' },
+  { id: 'bookshelf', x: 26, y: 4, label: 'bookshelf' },
+  { id: 'window:1', x: 12, y: 2, label: 'window' },
+  { id: 'window:2', x: 28, y: 2, label: 'window' },
+  { id: 'noticeboard', x: 17, y: 3, label: 'noticeboard' },
+]
+
+/**
+ * Wall anchor for the DOM clock chip — deliberately NOT a station (no
+ * sprite, no placeholder fixture: numbers are text, text is DOM — law).
+ */
+export const CLOCKWALL = { x: 23, y: 2 }
+
+/**
+ * Seat offsets around the conference table (grammar v2 group_scenes).
+ * Six fixed seats; the table core itself is a movement obstacle.
+ */
+export const TABLE_SEAT_OFFSETS: ReadonlyArray<{ dx: number; dy: number }> = [
+  { dx: -2, dy: 0 },
+  { dx: 2, dy: 0 },
+  { dx: -1, dy: -1 },
+  { dx: 1, dy: -1 },
+  { dx: -1, dy: 1 },
+  { dx: 1, dy: 1 },
 ]
 
 export interface WardroomLayout {

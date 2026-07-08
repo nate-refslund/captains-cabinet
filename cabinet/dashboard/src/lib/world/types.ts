@@ -51,6 +51,16 @@ export interface WorldOfficer {
   presence: OfficerPresence
 }
 
+/**
+ * Captain-local wall clock, SERVER-stamped onto the snapshot (grammar v2
+ * night block). The render path never reads a clock — this is the only door
+ * wall-time enters through, as data.
+ */
+export interface SnapshotClock {
+  hour: number
+  minute: number
+}
+
 /** Snapshot event payload sent on SSE connect. */
 export interface WorldSnapshot {
   connectedAt: string
@@ -61,6 +71,8 @@ export interface WorldSnapshot {
   chronicle: ChronicleRecord[]
   /** Grammar state: loaded versions or the honest pending marker. */
   grammar: GrammarStatus
+  /** Captain-local clock (server-computed); null when unresolvable. */
+  clock?: SnapshotClock | null
 }
 
 export interface GrammarStatus {
