@@ -71,7 +71,12 @@ export interface WorldSnapshot {
   chronicle: ChronicleRecord[]
   /** Grammar state: loaded versions or the honest pending marker. */
   grammar: GrammarStatus
-  /** Captain-local clock (server-computed); null when unresolvable. */
+  /**
+   * Captain-local wall clock, SERVER-stamped (v2 night law: the render
+   * path never reads a clock — hour/minute arrive as data and drive
+   * ambience only, never state). Null/absent when unresolvable → the
+   * world falls back honestly (night-at-bunk / day render).
+   */
   clock?: SnapshotClock | null
 }
 

@@ -19,23 +19,30 @@ import dynamic from 'next/dynamic'
 import type {
   CameraState,
   ChronicleRecord,
+  OfficerPresence,
   WorldOfficer,
   WorldSnapshot,
 } from '@/lib/world/types'
-import type { ShowGrammar, Morphology, GrammarCodex } from '@/lib/world/grammar'
+import type { ShowGrammar, Morphology, GrammarCodex, SceneName } from '@/lib/world/grammar'
 import { buildLayout, CLOCKWALL, ROOM_H, ROOM_W } from '@/lib/world/layout'
 import { step, type DirectorState } from '@/lib/world/director'
 import type { OfficerScene } from '@/lib/world/types'
 import { TILE } from '@/lib/world/layout'
 import { bucketForHour, formatClock } from '@/lib/world/lighting'
 import { NOTE_PIN_MAX } from '@/lib/world/set-dressing'
+import { buildGrowth, type CensusKeyframe, type GrowthModel } from '@/lib/world/growth'
+import { buildStreetLayout, type StreetLayout } from '@/lib/world/street-layout'
+import { buildIslandLayout, type IslandLayout } from '@/lib/world/island-layout'
 import InspectCard, { type InspectTarget } from './inspect-card'
 
 const WorldCanvas = dynamic(() => import('./world-canvas'), { ssr: false })
+const OutdoorCanvas = dynamic(() => import('./outdoor-canvas'), { ssr: false })
 
 const ZOOMS: CameraState['z'][] = [0.5, 1, 2]
 /** Logical ms per director tick (frame deltas quantize into this). */
 const TICK_MS = 250
+/** Scene-swap fade-through-black (§10.2 snap-tween: a cut reads cleaner). */
+const FADE_MS = 120
 
 interface GrammarPayload {
   pending: boolean
@@ -43,6 +50,16 @@ interface GrammarPayload {
   morphology: Morphology | null
   codexCoverage: number | null
   problems: string[]
+  /** Census keyframe tail [prev, latest] (growth read-model, §4). */
+  keyframes?: CensusKeyframe[]
+  firstCensusDate?: string | null
+}
+
+/** Camera z → scene under grammar law; absent block fail-closes to the
+ * v1 behavior (the Wardroom at every zoom). */
+function sceneForZ(z: CameraState['z'], grammar: GrammarPayload | null): SceneName {
+  if (!grammar || grammar.pending || !grammar.showGrammar) return 'wardroom'
+  return grammar.showGrammar.scenes[String(z)] ?? 'wardroom'
 }
 
 function parseUrlState(search: string): {
@@ -52,7 +69,8 @@ function parseUrlState(search: string): {
 } {
   const p = new URLSearchParams(search)
   const zRaw = Number(p.get('z'))
-  const z = (ZOOMS as number[]).includes(zRaw) ? (zRaw as CameraState['z']) : 1
+  // Default landing = the Wardroom (z2): scroll out reveals street → island.
+  const z = (ZOOMS as number[]).includes(zRaw) ? (zRaw as CameraState['z']) : 2
   const x = Number.isFinite(Number(p.get('x'))) && p.get('x') !== null
     ? Number(p.get('x'))
     : ROOM_W / 2
@@ -70,7 +88,7 @@ export default function WorldClient() {
   const [grammar, setGrammar] = useState<GrammarPayload | null>(null)
   const [scenes, setScenes] = useState<OfficerScene[]>([])
   const [tick, setTick] = useState(0)
-  const [camera, setCamera] = useState<CameraState>({ z: 1, x: ROOM_W / 2, y: ROOM_H / 2 })
+  const [camera, setCamera] = useState<CameraState>({ z: 2, x: ROOM_W / 2, y: ROOM_H / 2 })
   const [sel, setSel] = useState<string | null>(null)
   const [at, setAt] = useState<string | null>(null)
   const [inspect, setInspect] = useState<InspectTarget | null>(null)
@@ -89,6 +107,9 @@ export default function WorldClient() {
   const dragRef = useRef<{ x: number; y: number; moved: boolean; camX: number; camY: number } | null>(null)
   const wheelAcc = useRef(0)
   const eraMode = at !== null
+  // Scene selector state: displayScene lags the camera z by the fade cut.
+  const [displayScene, setDisplayScene] = useState<SceneName>('wardroom')
+  const [fadeActive, setFadeActive] = useState(false)
 
   // ── URL state (read once; write on change) ──────────────────────────────
   useEffect(() => {
@@ -149,6 +170,10 @@ export default function WorldClient() {
           tickRef.current += 1
           const snap = snapshotRef.current
           const g = grammarRef.current
+          // Killswitch scene (§1.5): the client STOPS advancing the
+          // director — officers/motes freeze mid-stride; the red wash +
+          // unsuppressible banner carry the truth (dual-coded).
+          if (snap?.killswitch) continue
           if (snap && !eraModeRef.current) {
             const officers: Record<string, WorldOfficer['presence']> = {}
             for (const o of snap.officers) officers[o.slug] = o.presence
@@ -202,6 +227,62 @@ export default function WorldClient() {
   )
   const pins = useMemo(() => pinnedRecords.map((r) => r.iid), [pinnedRecords])
   const clockText = formatClock(snapshot?.clock)
+
+  // ── growth read-model (REAL census keyframes via /api/world/grammar) ────
+  const growth: GrowthModel = useMemo(
+    () => buildGrowth(grammar?.keyframes ?? [], grammar?.firstCensusDate ?? null),
+    [grammar]
+  )
+  const officerSlugs = useMemo(
+    () => (snapshot ? snapshot.officers.map((o) => o.slug) : []),
+    [snapshot]
+  )
+  const streetLayout: StreetLayout = useMemo(
+    () => buildStreetLayout(growth, officerSlugs),
+    [growth, officerSlugs]
+  )
+  const islandLayout: IslandLayout = useMemo(
+    () => buildIslandLayout(growth, officerSlugs),
+    [growth, officerSlugs]
+  )
+  const presenceBySlug = useMemo(() => {
+    const m: Record<string, OfficerPresence> = {}
+    for (const o of snapshot?.officers ?? []) m[o.slug] = o.presence
+    return m
+  }, [snapshot])
+
+  // ── scene selector: camera z → scene, swapped through a 120ms cut ───────
+  const targetScene = sceneForZ(camera.z, grammar)
+  useEffect(() => {
+    if (targetScene === displayScene) return
+    setFadeActive(true)
+    const t1 = setTimeout(() => {
+      setDisplayScene(targetScene)
+      // Center on the scene's anchor at entry (§3 camera transitions).
+      const anchor =
+        targetScene === 'street'
+          ? streetLayout.anchor
+          : targetScene === 'island'
+            ? islandLayout.anchor
+            : { x: ROOM_W / 2, y: ROOM_H / 2 }
+      setCamera((c) => ({ ...c, x: anchor.x, y: anchor.y }))
+    }, FADE_MS)
+    const t2 = setTimeout(() => setFadeActive(false), FADE_MS * 2)
+    return () => {
+      clearTimeout(t1)
+      clearTimeout(t2)
+    }
+  }, [targetScene, displayScene, streetLayout, islandLayout])
+
+  /** Scene-local render scale: outdoor scenes keep a legible fixed zoom —
+   * z is the SCENE SELECTOR, not a magnifier, outside the Wardroom. */
+  const sceneScale = displayScene === 'wardroom' ? camera.z : displayScene === 'street' ? 2 : 1
+  const sceneDims =
+    displayScene === 'street'
+      ? { w: streetLayout.w, h: streetLayout.h }
+      : displayScene === 'island'
+        ? { w: islandLayout.w, h: islandLayout.h }
+        : { w: ROOM_W, h: ROOM_H }
 
   const officersBySel = useMemo(() => {
     const m = new Map<string, WorldOfficer>()
@@ -338,17 +419,18 @@ export default function WorldClient() {
     d.moved = true
     setCamera((c) => ({
       ...c,
-      x: Math.max(-4, Math.min(ROOM_W + 4, d.camX - dx / (TILE * c.z))),
-      y: Math.max(-4, Math.min(ROOM_H + 4, d.camY - dy / (TILE * c.z))),
+      // Per-scene clamp box (each scene keeps its own — §3 camera law).
+      x: Math.max(-4, Math.min(sceneDims.w + 4, d.camX - dx / (TILE * sceneScale))),
+      y: Math.max(-4, Math.min(sceneDims.h + 4, d.camY - dy / (TILE * sceneScale))),
     }))
-  }, [])
+  }, [sceneDims.w, sceneDims.h, sceneScale])
   const onPointerUp = useCallback(() => {
     dragRef.current = null
   }, [])
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
       if (ev.key === 'Escape') setInspect(null)
-      const pan = 2 / camera.z
+      const pan = 2 / sceneScale
       if (ev.key === 'w' || ev.key === 'ArrowUp') setCamera((c) => ({ ...c, y: c.y - pan }))
       if (ev.key === 's' || ev.key === 'ArrowDown') setCamera((c) => ({ ...c, y: c.y + pan }))
       if (ev.key === 'a' || ev.key === 'ArrowLeft') setCamera((c) => ({ ...c, x: c.x - pan }))
@@ -358,7 +440,7 @@ export default function WorldClient() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [camera.z])
+  }, [camera.z, sceneScale])
 
   const onPrimary = useCallback(
     (target: { kind: 'officer' | 'station'; id: string } | null) => {
@@ -391,13 +473,91 @@ export default function WorldClient() {
     [openInspect]
   )
 
+  // ── outdoor scenes: inspect + door-is-a-scene-swap navigation ───────────
+  const outdoorProps = displayScene === 'street' ? streetLayout.props : islandLayout.props
+  /** Live growth value cited on a bound surface's card (NOW-equivalent). */
+  const morphValue = useCallback(
+    (id: string): string | null => {
+      switch (id) {
+        case 'street_hq_floors':
+          return `commits_total=${growth.hqFloors.value} → ${growth.hqFloors.tier} floors`
+        case 'island_land_radius':
+          return `R=${growth.radius} tiles`
+        case 'island_officer_houses':
+          return `${growth.officerHouses} roles defined`
+        case 'island_fields':
+          return `${growth.fieldPlots} outcomes · crop stage ${growth.cropStage.tier}/6`
+        case 'island_harbor_beacon':
+          return `cells_graduated=${growth.cellsGraduated}${growth.beaconLit ? '' : ' — dark until the first graduation'}`
+        case 'island_harbor_crates':
+          return `${growth.dockCrates} extension packs`
+        case 'island_services_mill_row':
+          return `${growth.millsTotal} service rows · ${growth.millsDisabled} disabled`
+        case 'street_liveliness':
+          return `org age band: ${growth.streetBand}`
+        default:
+          return null
+      }
+    },
+    [growth]
+  )
+  const openOutdoorInspect = useCallback(
+    (target: { kind: 'officer' | 'station'; id: string } | null) => {
+      if (!target) {
+        setLegendOpen(true)
+        return
+      }
+      if (target.kind === 'officer') {
+        openInspect(target)
+        return
+      }
+      const pr = outdoorProps.find((p) => p.id === target.id)
+      if (!pr) return
+      const entry = pr.morphId
+        ? grammarRef.current?.morphology?.entries.find((e) => e.id === pr.morphId) ?? null
+        : null
+      const value = pr.morphId ? morphValue(pr.morphId) : null
+      setInspect({
+        kind: 'station',
+        id: pr.id,
+        title: value ? `${pr.label} · ${value}` : pr.label,
+        codex: entry?.codex ?? null,
+        decorative: pr.decorative && !pr.morphId,
+        presence: null,
+        proof: null,
+      })
+    },
+    [outdoorProps, openInspect, morphValue]
+  )
+  const onOutdoorPrimary = useCallback(
+    (target: { kind: 'officer' | 'station'; id: string } | null) => {
+      if (dragRef.current?.moved || !target) return
+      if (target.kind === 'officer') {
+        openInspect(target)
+        return
+      }
+      // Primary at Z0/Z1 = NAVIGATE (law): island HQ → Z1, street door → Z2.
+      const pr = outdoorProps.find((p) => p.id === target.id)
+      if (pr?.navigate) {
+        setCamera((c) => ({ ...c, z: pr.navigate as 1 | 2 }))
+      } else {
+        openOutdoorInspect(target)
+      }
+    },
+    [outdoorProps, openInspect, openOutdoorInspect]
+  )
+  // Scene swap clears the previous canvas's render issues (fresh badge).
+  useEffect(() => {
+    setRenderIssues([])
+  }, [displayScene])
+
   // ── screen-space label projection (§10.6 legibility) ────────────────────
   const project = useCallback(
     (wx: number, wy: number, host: { w: number; h: number }) => ({
-      x: host.w / 2 + (wx * TILE - camera.x * TILE) * camera.z,
-      y: host.h / 2 + (wy * TILE - camera.y * TILE) * camera.z,
+      x: host.w / 2 + (wx * TILE - camera.x * TILE) * sceneScale,
+      y: host.h / 2 + (wy * TILE - camera.y * TILE) * sceneScale,
     }),
-    [camera]
+    [camera, sceneScale]
   )
   const hostRef = useRef<HTMLDivElement | null>(null)
   const [hostSize, setHostSize] = useState({ w: 1024, h: 640 })
@@ -485,7 +645,7 @@ export default function WorldClient() {
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
     >
-      {!eraMode && (
+      {!eraMode && displayScene === 'wardroom' && (
         <WorldCanvas
           layout={layout}
           scenes={scenes}
@@ -498,6 +658,55 @@ export default function WorldClient() {
           onSecondary={(t) => onSecondary(t)}
           onIssues={(issues) => setRenderIssues(issues)}
         />
+      )}
+      {!eraMode && displayScene !== 'wardroom' && (
+        <OutdoorCanvas
+          key={displayScene}
+          scene={displayScene}
+          street={streetLayout}
+          island={islandLayout}
+          officers={presenceBySlug}
+          camera={camera}
+          tick={tick}
+          killswitch={snapshot?.killswitch ?? false}
+          clockHour={snapshot?.clock?.hour ?? null}
+          onPrimary={onOutdoorPrimary}
+          onSecondary={openOutdoorInspect}
+          onIssues={(issues) => setRenderIssues(issues)}
+        />
+      )}
+
+      {/* ── scene-swap fade-through-black (snap cut, §10.2) ── */}
+      <div
+        className={
+          'pointer-events-none absolute inset-0 z-30 bg-black transition-opacity duration-150 ' +
+          (fadeActive ? 'opacity-100' : 'opacity-0')
+        }
+      />
+
+      {/* ── outdoor mote labels: text as text, never world-space ── */}
+      {!eraMode && displayScene !== 'wardroom' && (
+        <div className="pointer-events-none absolute inset-0 z-10">
+          {(displayScene === 'street' ? streetLayout.motes : islandLayout.motes).map((m) => {
+            const o = officersBySlug.get(m.slug)
+            const p = project(m.x, m.y - 1.2, hostSize)
+            if (p.x < -100 || p.x > hostSize.w + 100 || p.y < -50 || p.y > hostSize.h + 50) return null
+            return (
+              <div
+                key={m.slug}
+                className="absolute -translate-x-1/2 text-center"
+                style={{ left: p.x, top: p.y }}
+              >
+                <div className="text-[11px] font-semibold leading-tight text-zinc-100 [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]">
+                  {m.slug}
+                </div>
+                <div className="text-[10px] leading-tight text-zinc-300 [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]">
+                  {o?.presence.present && o.presence.verb ? o.presence.verb : 'inside — no live verb'}
+                </div>
+              </div>
+            )
+          })}
+        </div>
       )}
 
       {/* ── wall clock chip: numbers are text, text is DOM (law). Renders
@@ -522,7 +731,7 @@ export default function WorldClient() {
       )}
 
       {/* ── screen-space labels: text as text, never world-space ── */}
-      {!eraMode && showLabels && (
+      {!eraMode && displayScene === 'wardroom' && showLabels && (
         <div className="pointer-events-none absolute inset-0 z-10">
           {scenes.map((s) => {
             const o = officersBySlug.get(s.slug)
@@ -595,7 +804,12 @@ export default function WorldClient() {
       {/* ── top HUD ── */}
       <div className="pointer-events-none absolute left-0 right-0 top-0 z-20 flex items-center gap-2 px-3 py-2 text-xs">
         <span className="rounded bg-zinc-900/80 px-2 py-1 font-semibold">
-          Cabinet World — Wardroom (E1)
+          Cabinet World —{' '}
+          {displayScene === 'wardroom'
+            ? 'Wardroom (Z2)'
+            : displayScene === 'street'
+              ? 'Street (Z1)'
+              : 'Island (Z0)'}
         </span>
         <span className="rounded bg-zinc-900/80 px-2 py-1 text-zinc-400">
           z{camera.z} · iid {snapshot?.iidHigh ?? 0} ·{' '}
@@ -610,6 +824,14 @@ export default function WorldClient() {
         {typeof grammar?.codexCoverage === 'number' && (
           <span className="rounded bg-zinc-900/80 px-2 py-1 text-zinc-400">
             codex coverage {(grammar.codexCoverage * 100).toFixed(0)}%
+          </span>
+        )}
+        {grammar && grammar.pending === false && !growth.available && (
+          <span
+            data-world-census-badge
+            className="rounded bg-amber-900/80 px-2 py-1 font-medium text-amber-200"
+          >
+            census unavailable — growth surfaces at day-0
           </span>
         )}
         {renderIssues.length > 0 && (

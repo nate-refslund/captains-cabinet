@@ -59,7 +59,10 @@ export interface KillswitchScene {
   codex?: GrammarCodex
 }
 
-export type WorldSceneName = 'wardroom' | 'street' | 'island'
+/** Scene names the camera z levels may bind to (closed enum — v2 §5.1). */
+export type SceneName = 'wardroom' | 'street' | 'island'
+/** Back-compat alias (T1 naming) — same closed enum. */
+export type WorldSceneName = SceneName
 
 export interface ShowGrammar {
   version: number
@@ -70,7 +73,12 @@ export interface ShowGrammar {
   groupScenes?: Record<string, GroupSceneRule>
   night?: NightConfig
   killswitchScene?: KillswitchScene
-  scenes?: Record<string, WorldSceneName>
+  /**
+   * v2 `scenes` block: camera z → scene (quantized camera as scene
+   * selector, design §10.2 adapted). Absent/malformed → {} — the renderer
+   * fail-closes to the Wardroom at every zoom (v1 behavior).
+   */
+  scenes: Partial<Record<string, SceneName>>
 }
 
 export interface MorphologyEntry {
@@ -110,6 +118,8 @@ export const GRAMMAR_DIR = () =>
   path.join(repoRoot(), 'cabinet', 'world')
 
 const ANIMS = new Set(['work', 'walk', 'idle'])
+const SCENE_Z_KEYS = new Set(['2', '1', '0.5'])
+const SCENE_NAMES = new Set(['wardroom', 'street', 'island'])
 
 function parseCodex(raw: unknown): GrammarCodex | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined
@@ -263,26 +273,33 @@ function parseKillswitchScene(
   return { freeze: d.freeze === true, wash: 'red', codex }
 }
 
-const SCENE_NAMES = new Set<string>(['wardroom', 'street', 'island'])
-
+/**
+ * v2 scenes block — closed key set (camera z stops) + closed scene enum.
+ * Fail-closed: anything malformed is omitted with a problem; an empty map
+ * keeps the v1 wardroom-at-every-zoom behavior.
+ */
 function parseScenes(
   raw: unknown,
   problems: string[]
-): Record<string, WorldSceneName> | undefined {
-  if (raw === undefined) return undefined
-  if (typeof raw !== 'object' || raw === null) {
+): Partial<Record<string, SceneName>> {
+  const scenes: Partial<Record<string, SceneName>> = {}
+  if (raw === undefined) return scenes
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
     problems.push('scenes: not a mapping')
-    return undefined
+    return scenes
   }
-  const out: Record<string, WorldSceneName> = {}
-  for (const [z, name] of Object.entries(raw as Record<string, unknown>)) {
-    if (typeof name === 'string' && SCENE_NAMES.has(name)) {
-      out[z] = name as WorldSceneName
-    } else {
-      problems.push(`scenes.${z}: unknown scene (closed enum wardroom|street|island)`)
+  for (const [zKey, rawScene] of Object.entries(raw as Record<string, unknown>)) {
+    if (!SCENE_Z_KEYS.has(zKey)) {
+      problems.push(`scenes: unknown z key ${zKey}`)
+      continue
     }
+    if (typeof rawScene !== 'string' || !SCENE_NAMES.has(rawScene)) {
+      problems.push(`scenes[${zKey}]: unknown scene ${String(rawScene)}`)
+      continue
+    }
+    scenes[zKey] = rawScene as SceneName
   }
-  return Object.keys(out).length > 0 ? out : undefined
+  return scenes
 }
 
 function parseShowGrammar(text: string, problems: string[]): ShowGrammar | null {

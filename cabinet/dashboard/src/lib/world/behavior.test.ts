@@ -35,6 +35,7 @@ const GRAMMAR: ShowGrammar = {
     shipping: { station: 'postbox', anim: 'work', salience: 2, codex: CODEX },
   },
   fallback: { station: 'floor', anim: 'idle' },
+  scenes: { '2': 'wardroom', '1': 'street', '0.5': 'island' },
   idleProgram: {
     waypoints: ['kettle', 'bookshelf', 'window:1', 'window:2'],
     dwellTicks: 24,
