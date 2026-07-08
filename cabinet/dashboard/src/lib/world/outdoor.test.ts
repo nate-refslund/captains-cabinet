@@ -88,6 +88,9 @@ describe('street layout (Z1)', () => {
   it('HQ door navigates to the Wardroom (door-is-a-scene-swap)', () => {
     const door = L.props.find((p) => p.id === 'street:hq:door')
     expect(door?.navigate).toBe(2)
+    // Hit/inspect region only — the modular stack draws the art; the door
+    // must never render a spurious sprite of its own.
+    expect(door?.hitOnly).toBe(true)
   })
 })
 

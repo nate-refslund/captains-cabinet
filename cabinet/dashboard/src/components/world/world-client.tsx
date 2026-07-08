@@ -67,7 +67,8 @@ function parseUrlState(search: string): {
 } {
   const p = new URLSearchParams(search)
   const zRaw = Number(p.get('z'))
-  const z = (ZOOMS as number[]).includes(zRaw) ? (zRaw as CameraState['z']) : 1
+  // Default landing = the Wardroom (z2): scroll out reveals street → island.
+  const z = (ZOOMS as number[]).includes(zRaw) ? (zRaw as CameraState['z']) : 2
   const x = Number.isFinite(Number(p.get('x'))) && p.get('x') !== null
     ? Number(p.get('x'))
     : ROOM_W / 2
@@ -85,7 +86,7 @@ export default function WorldClient() {
   const [grammar, setGrammar] = useState<GrammarPayload | null>(null)
   const [scenes, setScenes] = useState<OfficerScene[]>([])
   const [tick, setTick] = useState(0)
-  const [camera, setCamera] = useState<CameraState>({ z: 1, x: ROOM_W / 2, y: ROOM_H / 2 })
+  const [camera, setCamera] = useState<CameraState>({ z: 2, x: ROOM_W / 2, y: ROOM_H / 2 })
   const [sel, setSel] = useState<string | null>(null)
   const [at, setAt] = useState<string | null>(null)
   const [inspect, setInspect] = useState<InspectTarget | null>(null)

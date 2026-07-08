@@ -63,6 +63,8 @@ export interface OutdoorProp {
   ghost?: boolean
   /** Primary click navigates (door-is-a-scene-swap doctrine). */
   navigate?: 2 | 1
+  /** Hit/inspect target only — never drawn (e.g. the HQ door region). */
+  hitOnly?: boolean
 }
 
 export interface MoteSlot {
@@ -148,12 +150,13 @@ export function buildStreetLayout(growth: GrowthModel, slugs: string[]): StreetL
   // stacking, not a single prop). Here: its door hitbox + neighbors + sign.
   props.push({
     id: 'street:hq:door',
-    sheet: STREET_PROPS.mailbox, // hitbox only; mailbox prop stands beside
+    sheet: HQ_GROUND, // hit/inspect region only — the stack draws the art
     x: HQ_X,
     y: BUILD_BASE,
     label: 'HQ door — enter the Wardroom',
     decorative: false,
     navigate: 2,
+    hitOnly: true,
   })
   props.push({
     id: 'street:hq:sign',

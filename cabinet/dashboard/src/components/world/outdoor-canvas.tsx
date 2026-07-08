@@ -282,9 +282,10 @@ export default function OutdoorCanvas(props: OutdoorCanvasProps) {
 
       function buildProps(propsList: Array<{
         id: string; sheet: string; cut?: SpriteCut; x: number; y: number
-        ghost?: boolean
+        ghost?: boolean; hitOnly?: boolean
       }>) {
         for (const pr of propsList) {
+          if (pr.hitOnly) continue // hit/inspect region — never drawn
           const tex = texFor(pr.sheet, pr.cut)
           if (!tex) continue // placeholder path drawn in draw() — stays loud
           const sp = new PIXI.Sprite(tex)
@@ -302,6 +303,7 @@ export default function OutdoorCanvas(props: OutdoorCanvasProps) {
         propG.clear()
         const list = p.scene === 'street' ? p.street?.props : p.island?.props
         for (const pr of list ?? []) {
+          if (pr.hitOnly) continue
           if (texFor(pr.sheet, pr.cut)) continue
           const w = (pr.cut ? pr.cut.w : TILE) * 1
           const h = (pr.cut ? pr.cut.h : TILE * 2) * 1
