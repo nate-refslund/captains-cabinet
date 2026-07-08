@@ -1,0 +1,48 @@
+{
+  "schema": "cabinet.world.autotile-conventions/v1",
+  "_doc": [
+    "Edge-class conventions for LimeZu-style autotile sheet layouts, encoded as",
+    "data (the task rule: convention lives in data, not code). Each convention",
+    "describes a block of tiles by a 3x3 SUBGRID per cell: rows top->bottom,",
+    "chars left->right, 'A' = the block's primary terrain, 'B' = its secondary",
+    "(the terrain it transitions into). Side signatures derive from the subgrid:",
+    "N = row0 (read W->E), S = row2 (W->E), W = col0 (N->S), E = col2 (N->S).",
+    "Two placed tiles are edge-compatible when the facing side signatures,",
+    "resolved through each block's primary/secondary terrain names, are equal.",
+    "blob3x3: the classic 3x3 terrain blob (outer corners + edges + full center)",
+    "used by LimeZu Serene Village / Modern Exteriors ground sets.",
+    "inner2x2: the 2x2 inner-corner (concave notch) companion block.",
+    "solid: any plain fill tile (primary everywhere); size scales to the block."
+  ],
+  "conventions": {
+    "blob3x3": {
+      "size": [3, 3],
+      "cells": {
+        "0,0": ["BBB", "BAA", "BAA"],
+        "1,0": ["BBB", "AAA", "AAA"],
+        "2,0": ["BBB", "AAB", "AAB"],
+        "0,1": ["BAA", "BAA", "BAA"],
+        "1,1": ["AAA", "AAA", "AAA"],
+        "2,1": ["AAB", "AAB", "AAB"],
+        "0,2": ["BAA", "BAA", "BBB"],
+        "1,2": ["AAA", "AAA", "BBB"],
+        "2,2": ["AAB", "AAB", "BBB"]
+      }
+    },
+    "inner2x2": {
+      "size": [2, 2],
+      "cells": {
+        "0,0": ["BAA", "AAA", "AAA"],
+        "1,0": ["AAB", "AAA", "AAA"],
+        "0,1": ["AAA", "AAA", "BAA"],
+        "1,1": ["AAA", "AAA", "AAB"]
+      }
+    },
+    "solid": {
+      "size": null,
+      "cells": {
+        "*": ["AAA", "AAA", "AAA"]
+      }
+    }
+  }
+}

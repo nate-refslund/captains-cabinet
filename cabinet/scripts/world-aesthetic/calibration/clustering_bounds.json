@@ -1,0 +1,163 @@
+{
+  "schema": "cabinet.world.clustering-bounds/v1",
+  "map": {
+    "r_max": 0.5376,
+    "open_min": 0.5943,
+    "cv_min": 0.2286,
+    "params": {
+      "min_props": 8,
+      "open_radius": 4
+    },
+    "fitted_from": [
+      {
+        "synthetic": "make_clustered_map(seed=11)",
+        "stats": {
+          "n_props": 32,
+          "r": 0.3958,
+          "open_ratio": 0.7708,
+          "cv_nn": 0.4621
+        }
+      },
+      {
+        "synthetic": "make_clustered_map(seed=12)",
+        "stats": {
+          "n_props": 32,
+          "r": 0.4091,
+          "open_ratio": 0.7507,
+          "cv_nn": 0.54
+        }
+      },
+      {
+        "synthetic": "make_clustered_map(seed=13)",
+        "stats": {
+          "n_props": 32,
+          "r": 0.4488,
+          "open_ratio": 0.7617,
+          "cv_nn": 0.435
+        }
+      },
+      {
+        "synthetic": "make_clustered_map(seed=14)",
+        "stats": {
+          "n_props": 24,
+          "r": 0.413,
+          "open_ratio": 0.7754,
+          "cv_nn": 0.4538
+        }
+      },
+      {
+        "synthetic": "make_clustered_map(seed=15)",
+        "stats": {
+          "n_props": 24,
+          "r": 0.4016,
+          "open_ratio": 0.7826,
+          "cv_nn": 0.2858
+        }
+      },
+      {
+        "synthetic": "make_clustered_map(seed=16)",
+        "stats": {
+          "n_props": 32,
+          "r": 0.4675,
+          "open_ratio": 0.6992,
+          "cv_nn": 0.4766
+        }
+      }
+    ]
+  },
+  "generated": "2026-07-08T09:56:17+00:00",
+  "generator": "calibrate.py/v1",
+  "image": {
+    "flat_max": 0.379,
+    "dominant_max": 0.3166,
+    "busy_cv_min": 0.4101,
+    "params": {
+      "block_px": 8,
+      "flat_eps": 8,
+      "pixel_scale": 1
+    },
+    "fitted_from": [
+      {
+        "file": "pos-city-market-square.png",
+        "sha256": "eca66ef07bd1692511aa285ab811e8a784507a952211b3c17659016d5d32d34d",
+        "stats": {
+          "flat_mass": 0.0375,
+          "dominant_share": 0.0897,
+          "busy_cv": 0.5126
+        }
+      },
+      {
+        "file": "pos-city-street.png",
+        "sha256": "3d82701fab3b83326d3e8efb7db508231ac0b6590d755da80eace75ed6bbfdce",
+        "stats": {
+          "flat_mass": 0.0835,
+          "dominant_share": 0.1341,
+          "busy_cv": 0.6935
+        }
+      },
+      {
+        "file": "pos-farm-barn-silo.png",
+        "sha256": "c4cab0446dc27efe998a0539276a61af17fa1e1094243041f571ec3e17c34798",
+        "stats": {
+          "flat_mass": 0.1606,
+          "dominant_share": 0.1222,
+          "busy_cv": 0.9287
+        }
+      },
+      {
+        "file": "pos-farm-homestead.png",
+        "sha256": "d7944987aa5c26a32629f3b60bba13a9b273e0edf41eba84839f563942cca078",
+        "stats": {
+          "flat_mass": 0.2627,
+          "dominant_share": 0.1988,
+          "busy_cv": 0.9106
+        }
+      },
+      {
+        "file": "pos-interior-hotel.png",
+        "sha256": "f29989d077041bba3c3470c2d90bf505b316d75154abb6a85e5edb751e6f2ead",
+        "stats": {
+          "flat_mass": 0.2624,
+          "dominant_share": 0.1441,
+          "busy_cv": 1.2395
+        }
+      },
+      {
+        "file": "pos-interior-restaurant.png",
+        "sha256": "210d5d5385de7e0aa663149f7dbac65950dd9312ec91665461001d7e0bffc025",
+        "stats": {
+          "flat_mass": 0.1155,
+          "dominant_share": 0.1086,
+          "busy_cv": 0.7531
+        }
+      },
+      {
+        "file": "pos-office-floor.png",
+        "sha256": "215628e45737e3437219cf04de4e45b8297de06b24146aa475897b18e07950cf",
+        "stats": {
+          "flat_mass": 0.2659,
+          "dominant_share": 0.1616,
+          "busy_cv": 0.9834
+        }
+      },
+      {
+        "file": "pos-village-house.png",
+        "sha256": "d1abc90184be0973e8ba2e6966031ba1999817cdd8abdfb753eca49e23759758",
+        "stats": {
+          "flat_mass": 0.142,
+          "dominant_share": 0.044,
+          "busy_cv": 0.9325
+        }
+      },
+      {
+        "file": "pos-village-island.png",
+        "sha256": "0b1af7e8f6b0bcda6178ccbb5c6658033d2dfe51e50343de4ee368c6fbe7196d",
+        "stats": {
+          "flat_mass": 0.2315,
+          "dominant_share": 0.2197,
+          "busy_cv": 0.8662
+        }
+      }
+    ]
+  }
+}
