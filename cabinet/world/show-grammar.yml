@@ -1,5 +1,5 @@
 # =============================================================================
-# show-grammar.yml v1 — Cabinet World events→animation grammar (GRAMMAR AS LAW)
+# show-grammar.yml v2 — Cabinet World events→animation grammar (GRAMMAR AS LAW)
 # =============================================================================
 # THE ONLY PATH TO PIXELS (chassis 2026-07-06 Part 3; ratification record
 # 2026-07-07): the renderer maps verbs to scenes through THIS file and nothing
@@ -14,11 +14,22 @@
 # celebrations, veto stamps, crew motes) land in E2's vocabulary expansion —
 # each via its own reviewed PR.
 #
+# v2 delta (world-alive direction 2026-07-08, Captain ratified "go all in"
+# in-session; docs/plans/world-alive-direction-2026-07-08.md §5.1): adds the
+# idle_program daytime wander (verb-absence made visible), group_scenes
+# (coordinating ≥2 → table meeting), night ambience buckets (server-stamped
+# clock; render path never reads a wall clock), the killswitch_scene
+# freeze+red-wash (reserved hue, dual-coded with the DOM banner), and the
+# scenes map binding camera z to Wardroom/Street/Island. All v1 verbs are
+# byte-untouched. New stations referenced (table, kettle, bookshelf,
+# window:1, window:2, noticeboard) are fixed civic stations in
+# cabinet/dashboard/src/lib/world/layout.ts.
+#
 # Codex is REQUIRED on every entry (§10.5): human-authored, structured,
 # machine-checkable (mechanism_path must exist — the validator lints it).
 # station: desk = the acting officer's own desk; other ids are fixed civic
 # stations in cabinet/dashboard/src/lib/world/layout.ts.
-version: 1
+version: 2
 
 vocab:
   salience: { 0: ambient, 1: minor, 2: notable, 3: important, 4: captain-attention, 5: breaking }
@@ -111,3 +122,52 @@ verbs:
       represents: "Officer composing a reply (Captain DM / channel surface) — at the postbox."
       mechanism_path: "cabinet/scripts/hooks/post-tool-use.sh"
       day0: "postbox unused"
+
+# ---------------------------------------------------------------------------
+# v2 blocks (world-alive direction 2026-07-08 §5.1). Parser stays fail-closed:
+# unknown keys ignored-with-problem, closed enums, codex required everywhere.
+# ---------------------------------------------------------------------------
+
+# vocab.anims unchanged: [work, walk, idle] — asleep stays a director-honesty
+# state, micro-loops are cosmetic variation inside anim=work (phenotype).
+
+idle_program:            # daytime TTL-expired wander (verb-absence made visible)
+  waypoints: [kettle, bookshelf, "window:1", "window:2"]
+  dwell_ticks: 24
+  night_station: bunk    # 20:00–08:00 captain-local → asleep at the rest alcove
+  chat_chip: true        # DOM ellipsis when two idle officers share a waypoint
+  codex:
+    represents: "Officer session alive but no tool call in 5 min (activity TTL expired). Wander/chat/nap are the ABSENCE of a verb — day renders wander, night renders sleep; nothing here claims work."
+    mechanism_path: "cabinet/scripts/hooks/post-tool-use.sh"
+    day0: "empty room after hours"
+
+group_scenes:
+  coordinating:
+    min_officers: 2
+    station: table
+    codex:
+      represents: "Two-plus officers holding the coordinating verb simultaneously — rendered as a table meeting instead of separate board visits. Dissolves when the condition does."
+      mechanism_path: "cabinet/scripts/hooks/post-tool-use.sh"
+      day0: "empty table"
+
+night:                   # §12 law: warm pools + moon tint, never murky
+  buckets: { dawn: [6, 8], day: [8, 18], dusk: [18, 21], night: [21, 6] }
+  lamp_pools: true
+  window_sky: true
+  codex:
+    represents: "Captain-local wall clock, server-stamped onto the SSE snapshot (the render path never reads a clock). Drives ambience only — never state, never morphology."
+    mechanism_path: "cabinet/dashboard/src/app/api/world/stream/route.ts"
+    day0: "same room, honest lighting"
+
+killswitch_scene:
+  freeze: true
+  wash: red              # reserved hue, dual-coded with the DOM banner
+  codex:
+    represents: "cabinet:killswitch active — director halts (officers freeze mid-stride), scene washes red, banner breaks through. Reset stays a Captain act outside the world."
+    mechanism_path: "cabinet/scripts/kill-switch.sh"
+    day0: "never seen, hopefully"
+
+scenes:                  # quantized camera z → scene (design §10.2 adapted)
+  "2": wardroom
+  "1": street
+  "0.5": island

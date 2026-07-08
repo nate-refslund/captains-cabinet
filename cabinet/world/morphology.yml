@@ -1,5 +1,5 @@
 # =============================================================================
-# morphology.yml v1 — Cabinet World growth morphology (GRAMMAR AS LAW)
+# morphology.yml v2 — Cabinet World growth morphology (GRAMMAR AS LAW)
 # =============================================================================
 # world_at(T) = f_v(state_at(T)) — a PURE, VERSIONED function from censused
 # state to structure. No LLM anywhere between ledger and pixel (ratified
@@ -18,7 +18,15 @@
 # LOCKED, FOREVER (law: block below): semantic assignments, tier bases,
 # district compass anchors (no mirror/rotate), reserved salience palette +
 # dual coding, honest-zero renders, rate-routing, the archetype set.
-version: 1
+#
+# v2 delta (world-alive direction 2026-07-08, Captain ratified "go all in"
+# in-session; docs/plans/world-alive-direction-2026-07-08.md §5.2): appends
+# the growth entries for the Street (Z1) and Island (Z0) scenes plus two
+# Wardroom growth surfaces. The law: block and every v1 entry are
+# byte-untouched. Rate-routed TEXTURE-class entries (noticeboard pins,
+# street liveliness) are explicitly marked in their codex — volume cannot
+# mint capability, ever.
+version: 2
 
 law:
   tiering: "tier_i = clamp(floor(log2(S_i / base_i + 1)), 0, 7); bases are cadence-justified per surface, never anchored to flatter today's cabinet; every base/curve change is a PR gated by day-3/30/365 fixture renders (E2)"
@@ -181,3 +189,115 @@ entries:
       represents: "Fail-closed posture census enum (guardian unless an attested ruling says otherwise) — forge-vector doctrine: display, never a control."
       mechanism_path: "cabinet/scripts/world-census.py"
       day0: "guardian flag"
+
+  # --------------------------------------------------------------------------
+  # v2 entries — Street (Z1) + Island (Z0) + Wardroom growth surfaces
+  # (world-alive direction 2026-07-08 §5.2; validator green required)
+  # --------------------------------------------------------------------------
+  - id: street_hq_floors
+    represents: "HQ street building height — one modular floor per commits tier"
+    source_binding: "jq -r -s 'last | .commits_total' shared/interfaces/world-chronicle.jsonl"
+    scope: org-global
+    tier: T0
+    replay: ledger
+    base: 120
+    codex:
+      represents: "Lifetime commits in the framework repo (census keyframe commits_total) — the Z1 street scene stacks one modular office floor per tier on the HQ facade; the same masonry mass the Works district renders on the island."
+      mechanism_path: "cabinet/scripts/world-census.py"
+      day0: "ground floor only"
+  - id: island_land_radius
+    represents: "Island landmass — R = 24 + 6*floor(log10(events+1))"
+    source_binding: "jq -r -s 'last | .org_events_total' shared/interfaces/world-chronicle.jsonl"
+    scope: org-global
+    tier: T0
+    replay: ledger
+    codex:
+      represents: "Total org_events rows at census time; the fold formula R = 24 + 6*floor(log10(total_events+1)) fixes the Z0 shoreline — land radius in tiles, water ring beyond. Positions fix at birth and never move (layout_fold law)."
+      mechanism_path: "cabinet/scripts/world-census.py"
+      day0: "24-tile islet"
+  - id: island_officer_houses
+    represents: "One cottage per defined role, birth-order slots, west path"
+    source_binding: "jq -r -s 'last | .ev_role_defined' shared/interfaces/world-chronicle.jsonl"
+    scope: org-global
+    tier: T0
+    replay: ledger
+    base: 1
+    codex:
+      represents: "role_defined events in org_events — each mints one Residential-W cottage at its birth-order slot; roof palette seeded per slug. Rendered UNIFORM size: per-officer census scope is still dark, so uniform is the honest render."
+      mechanism_path: "cabinet/scripts/world-census.py"
+      day0: "no houses — an egg has no streets"
+  - id: island_fields
+    represents: "One tilled plot per ratified outcome; crop stage = work_completed tier (aggregate until E2 sector emitters)"
+    source_binding: "jq -r -s 'last | .outcomes_total, .ev_work_item_completed' shared/interfaces/world-chronicle.jsonl"
+    scope: org-global
+    tier: T0
+    replay: ledger
+    base: 850
+    codex:
+      represents: "Two lines: ratified outcomes (plot count, Fields SE) and lifetime work_item_completed events (crop growth stage across all plots, base 850). Per-sector splits land with the E2 emitters — until then every plot renders the aggregate stage, and this codex says so."
+      mechanism_path: "cabinet/scripts/world-census.py"
+      day0: "unplowed ground"
+  - id: island_harbor_beacon
+    represents: "THE dark beacon (interim silo sprite; bespoke lighthouse art tracked in the authored-art budget) — beam lights on first graduated cell"
+    source_binding: "jq -r -s 'last | .cells_graduated' shared/interfaces/world-chronicle.jsonl"
+    scope: org-global
+    tier: T0
+    replay: ledger
+    base: 1
+    codex:
+      represents: "Graduated trust cells (falsifier keystone number), rendered at Harbor S as the farm silo with an UNLIT lamp overlay — the honest-zero lighthouse stand-in, prominent and slightly oversized. The beam lighting on the first graduation will be the biggest visual event in the world's life; it never gets a night light before then."
+      mechanism_path: "cabinet/scripts/falsifier-report.py"
+      day0: "dark beacon, loud about it"
+  - id: island_harbor_crates
+    represents: "Dock crates per extension pack"
+    source_binding: "jq -r -s 'last | .packs_dirs' shared/interfaces/world-chronicle.jsonl"
+    scope: org-global
+    tier: T0
+    replay: ledger
+    base: 1
+    codex:
+      represents: "Pack directories under packs/ — one crate on the Harbor-S dock per pack; the Z0 face of the harbor-cranes surface (authored-here delta stays an E2 entry)."
+      mechanism_path: "cabinet/scripts/world-census.py"
+      day0: "5 inherited crates"
+  - id: island_services_mill_row
+    represents: "Works-ridge mill/kiln row: total service rows, disabled rows render stopped"
+    source_binding: "jq -r -s 'last | .services_rows_total, .services_rows_disabled' shared/interfaces/world-chronicle.jsonl"
+    scope: org-global
+    tier: T0
+    replay: ledger
+    base: 8
+    codex:
+      represents: "Two lines from the fleet manifest census: total service rows (mills/kilns on the Works E ridge) and disabled rows (rendered stopped/ghost-framed — a stopped mill is honest, not hidden)."
+      mechanism_path: "cabinet/scripts/world-census.py"
+      day0: "9 spinning, rest ghost-framed"
+  - id: wardroom_bookshelf_fill
+    represents: "Wardroom bookshelf fill — tier-2 journal mass"
+    source_binding: "jq -r -s 'last | .tier2_note_files' shared/interfaces/world-chronicle.jsonl"
+    scope: org-global
+    tier: T0
+    replay: ledger
+    base: 4
+    codex:
+      represents: "Markdown notes across instance/memory/tier2/ — fills the Z2 bookshelf station shelf-by-shelf (the Wardroom face of the officer-journal mass; the island Library remains the Memory-NE anchor)."
+      mechanism_path: "cabinet/scripts/world-census.py"
+      day0: "empty shelf"
+  - id: wardroom_noticeboard_pins
+    represents: "Cork-board pin TEXTURE — today's org-event volume (rate-routed: >1/day source, texture only, never structure)"
+    source_binding: "jq -r -s 'last | .events_today' shared/interfaces/world-chronicle.jsonl"
+    scope: org-global
+    tier: T0
+    replay: ledger
+    codex:
+      represents: "Org events observed today (census keyframe events_today) — pins = min(12, ceil(events_today/250)) tiny seeded squares on the noticeboard cork. TEXTURE class under rate-routing law: this >1/day source may never create morphology."
+      mechanism_path: "cabinet/scripts/world-census.py"
+      day0: "bare cork"
+  - id: street_liveliness
+    represents: "Street prop unlock band by org age (bench/trees/planters) — TEXTURE class"
+    source_binding: "jq -r -s 'first | .date' shared/interfaces/world-chronicle.jsonl"
+    scope: org-global
+    tier: T0
+    replay: ledger
+    codex:
+      represents: "Date of the FIRST census keyframe — org age bands unlock street set-dressing (<7d bare; 7-30d benches + trees; >30d second streetlight row + planters). Seeded positions fix once placed (fold law). TEXTURE class: age dresses the street, it never mints structure."
+      mechanism_path: "cabinet/scripts/world-census.py"
+      day0: "bare pavement"
