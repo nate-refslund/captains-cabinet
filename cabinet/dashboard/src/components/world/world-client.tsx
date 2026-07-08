@@ -252,27 +252,39 @@ export default function WorldClient() {
   }, [snapshot])
 
   // ── scene selector: camera z → scene, swapped through a 120ms cut ───────
+  // Layouts are read through refs at swap time: their useMemo identity churns
+  // on every snapshot, and having them as effect deps cancelled the fade
+  // timers mid-cut (2026-07-08 stuck-black-overlay incident).
   const targetScene = sceneForZ(camera.z, grammar)
+  const streetLayoutRef = useRef(streetLayout)
+  streetLayoutRef.current = streetLayout
+  const islandLayoutRef = useRef(islandLayout)
+  islandLayoutRef.current = islandLayout
   useEffect(() => {
-    if (targetScene === displayScene) return
+    if (targetScene === displayScene) {
+      // Swap done (or no swap pending): lift the cut AFTER the fade-out leg.
+      // This branch MUST own the fade-out — when the swap timer below flips
+      // displayScene, this effect re-runs and its cleanup cancels any timer
+      // the previous run scheduled, so a fade-out scheduled alongside the
+      // swap would never fire (the 2026-07-08 permanent-black regression:
+      // z=1/z=0.5 rendered a stuck opacity-100 overlay over a live canvas).
+      const t = setTimeout(() => setFadeActive(false), FADE_MS)
+      return () => clearTimeout(t)
+    }
     setFadeActive(true)
     const t1 = setTimeout(() => {
       setDisplayScene(targetScene)
       // Center on the scene's anchor at entry (§3 camera transitions).
       const anchor =
         targetScene === 'street'
-          ? streetLayout.anchor
+          ? streetLayoutRef.current.anchor
           : targetScene === 'island'
-            ? islandLayout.anchor
+            ? islandLayoutRef.current.anchor
             : { x: ROOM_W / 2, y: ROOM_H / 2 }
       setCamera((c) => ({ ...c, x: anchor.x, y: anchor.y }))
     }, FADE_MS)
-    const t2 = setTimeout(() => setFadeActive(false), FADE_MS * 2)
-    return () => {
-      clearTimeout(t1)
-      clearTimeout(t2)
-    }
-  }, [targetScene, displayScene, streetLayout, islandLayout])
+    return () => clearTimeout(t1)
+  }, [targetScene, displayScene])
 
   /** Scene-local render scale: outdoor scenes keep a legible fixed zoom —
    * z is the SCENE SELECTOR, not a magnifier, outside the Wardroom. */
