@@ -314,6 +314,22 @@ services:
     schedule: { calendar: [{weekday: 1, hour: 7, minute: 15}] }   # Mondays 07:15 local
     expected: "weekly TI-7 journal-only create→verify→reverse canary per act-first kind; any failure freezes the kind (PAGE lines in log)"
     notes: runner sets its own PYTHONPATH + sources ~/.screenpipe/pipes/_shared/.env (no secrets in plist)
+  - name: prediction-calibration
+    label: com.cabinet.prediction-calibration
+    kind: watchdog
+    command: python3.12 -m framework.fidelity.prediction_scorer
+    schedule: { calendar: [{hour: 8, minute: 20}] }   # daily 08:20 local (after falsifier)
+    expected: "one JSON line/day appended to shared/interfaces/prediction-calibration.jsonl (idempotent per date) — Brier + calibration bins over acted cards' emitted confidence vs UNDO-3/binder ground truth"
+    notes: >-
+      W9 / ledger A10 (2026-07-09): the org emitted a confidence with every
+      action card and NEVER scored it. Report-only joiner — Redis
+      cabinet:action:* records (the predictions) x consequence ledger acted
+      rows (ttl_ok / silent_revert / binder verdicts, joined on the
+      correlation cid) -> Brier + per-bin calibration + per-lane series.
+      Pure measurement: nothing reads the series into a gate (promotion
+      mechanics stay defer-captain per D5/CG-10); it is the evidence chain
+      for judge-calibration and the prerequisite for EIG ordering. Read-only
+      except the one series append.
   - name: falsifier-daily
     label: com.cabinet.falsifier-daily
     kind: watchdog
