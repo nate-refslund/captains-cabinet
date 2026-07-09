@@ -27,6 +27,7 @@ export type NavLink = {
 
 export const ADVANCED_NAV: NavLink[] = [
   { href: '/', label: 'Dashboard' },
+  { href: '/queue', label: 'Needs You' },
   { href: '/world', label: 'World' },
   { href: '/project', label: 'Project' },
   { href: '/cabinets', label: 'Cabinets' },

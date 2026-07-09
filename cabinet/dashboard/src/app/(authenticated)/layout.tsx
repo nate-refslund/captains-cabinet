@@ -1,5 +1,6 @@
 import Nav from '@/components/nav'
 import KillSwitchHeader from '@/components/kill-switch-header'
+import NeedsYouBadge from '@/components/needs-you-badge'
 import CommandPalette from '@/components/library/CommandPalette'
 import { getProjects, getActiveProject } from '@/actions/projects'
 import { getDashboardConfig } from '@/lib/config'
@@ -55,6 +56,16 @@ export default async function AuthenticatedLayout({
       */}
       <div className="fixed right-14 top-2 z-[60] md:right-3">
         <KillSwitchHeader active={killSwitchActive} />
+      </div>
+
+      {/*
+        War-room strip — command-center §4B: the amber "⚑ N need you" badge
+        on EVERY authenticated page, left of the kill-switch pill. Client
+        island, GET-only, hidden at N=0 (north star: zero pixels when
+        nothing pends). Links to /queue — navigation, never actuation.
+      */}
+      <div className="fixed right-40 top-2 z-[60] md:right-32">
+        <NeedsYouBadge />
       </div>
 
       {/* Main content area */}
