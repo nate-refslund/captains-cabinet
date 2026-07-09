@@ -1,6 +1,11 @@
 #!/bin/bash
-# research-sweep.sh — Triggers CRO to run a research sweep
-# Runs every 4 hours via cron
+# research-sweep.sh — Triggers the research owner to run a research sweep.
+# Target officer: RESEARCH_SWEEP_OFFICER (default cos — the CRO seat was
+# retired; the live roster is cos + lane CEOs + comms-officer, and research
+# sweeps are the Chair's org-plane duty now). Scheduled via the
+# cabinet/services.yml row `research-sweep` (twice daily); this header used
+# to claim 4h/CRO — fixed 2026-07-09 (W10: the cron fired into a dead
+# officer stream for as long as the CRO seat has been retired).
 
 TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
 
@@ -40,11 +45,12 @@ fi
 
 # trigger_send writes to stderr on XADD failure; capture stderr so we can
 # distinguish real success from silent-drop and refuse to print false-positive.
-_send_err=$(OFFICER_NAME=cron trigger_send cro "$TRIGGER_MSG" 2>&1 >/dev/null)
+TARGET_OFFICER="${RESEARCH_SWEEP_OFFICER:-cos}"
+_send_err=$(OFFICER_NAME=cron trigger_send "$TARGET_OFFICER" "$TRIGGER_MSG" 2>&1 >/dev/null)
 _send_rc=$?
 if [ "$_send_rc" -ne 0 ] || [ -n "$_send_err" ]; then
   echo "[$TIMESTAMP] research-sweep.sh FATAL: trigger_send failed (rc=$_send_rc, err=${_send_err:-none}) — trigger NOT pushed" >&2
   exit 1
 fi
 
-echo "[$TIMESTAMP] Research sweep trigger pushed"
+echo "[$TIMESTAMP] Research sweep trigger pushed to $TARGET_OFFICER"

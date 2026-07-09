@@ -1,6 +1,10 @@
 #!/bin/bash
-# backlog-refine.sh — Triggers CPO to refine the backlog
-# Runs every 12 hours via cron
+# backlog-refine.sh — Triggers the backlog owner to refine the backlog.
+# Target officer: BACKLOG_REFINE_OFFICER (default cos — the CPO seat was
+# retired; the live roster is cos + lane CEOs + comms-officer). Scheduled
+# via the cabinet/services.yml row `backlog-refine` (daily); this header
+# used to claim 12h/CPO — fixed 2026-07-09 (W10: the cron fired into a
+# dead officer stream for as long as the CPO seat has been retired).
 
 TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
 
@@ -40,11 +44,12 @@ fi
 
 # trigger_send writes to stderr on XADD failure; capture stderr so we can
 # distinguish real success from silent-drop and refuse to print false-positive.
-_send_err=$(OFFICER_NAME=cron trigger_send cpo "$TRIGGER_MSG" 2>&1 >/dev/null)
+TARGET_OFFICER="${BACKLOG_REFINE_OFFICER:-cos}"
+_send_err=$(OFFICER_NAME=cron trigger_send "$TARGET_OFFICER" "$TRIGGER_MSG" 2>&1 >/dev/null)
 _send_rc=$?
 if [ "$_send_rc" -ne 0 ] || [ -n "$_send_err" ]; then
   echo "[$TIMESTAMP] backlog-refine.sh FATAL: trigger_send failed (rc=$_send_rc, err=${_send_err:-none}) — trigger NOT pushed" >&2
   exit 1
 fi
 
-echo "[$TIMESTAMP] Backlog refinement trigger pushed"
+echo "[$TIMESTAMP] Backlog refinement trigger pushed to $TARGET_OFFICER"

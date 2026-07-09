@@ -147,6 +147,30 @@ services:
       unfindable under launchd (FATAL hourly since ~Jul 3). The generator now
       renders cron rows; cabinet/launchd/com.cabinet.retro-trigger.plist is
       regenerated WITH PATH — Nate reloads it (no launchctl from lanes).
+  - name: research-sweep
+    label: com.cabinet.research-sweep
+    kind: cron
+    command: bash cabinet/cron/research-sweep.sh
+    schedule: { calendar: [{hour: 9, minute: 5}, {hour: 15, minute: 5}] }  # twice daily local
+    expected: "'Research sweep trigger pushed' log line per run; FATAL lines page via the no-silent-cron floor"
+    sunset: "retire if research briefs go unconsumed 60d (backlog-refine reads shared/interfaces/research-briefs/) or a dedicated research seat returns"
+    notes: >-
+      W10 (2026-07-09): script existed since the 5-officer era but was
+      UNSCHEDULED and fired trigger_send cro — a retired seat, so even a
+      manual run XADDed into a dead stream. Target now RESEARCH_SWEEP_OFFICER
+      (default cos, the Chair); cadence 2x/day, not the header's old 4h —
+      the Chair carries other duties.
+  - name: backlog-refine
+    label: com.cabinet.backlog-refine
+    kind: cron
+    command: bash cabinet/cron/backlog-refine.sh
+    schedule: { calendar: [{hour: 8, minute: 35}] }   # daily 08:35 local — after the 07:30 briefing
+    expected: "'Backlog refinement trigger pushed' log line per run; FATAL lines page via the no-silent-cron floor"
+    sunset: "retire if shared/backlog.md is superseded by the work-graph as the only backlog surface"
+    notes: >-
+      W10 (2026-07-09): same repair as research-sweep — unscheduled + fired
+      trigger_send cpo (retired seat). Target now BACKLOG_REFINE_OFFICER
+      (default cos); daily, not the header's old 12h.
   - name: action-lane
     label: com.cabinet.action-lane
     kind: daemon
