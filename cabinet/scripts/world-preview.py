@@ -100,6 +100,10 @@ def main() -> int:
                     help="dir holding world-unified/ + world-next/ (in-repo default)")
     ap.add_argument("--gate", action="store_true",
                     help="run world-aesthetic-gate.py --mechanical on the frame")
+    ap.add_argument("--hour", type=int, default=None,
+                    help="beauty-shot ambience hour 0-23 (render-input DATA, "
+                         "never a wall clock: applies the engine's day/dusk/"
+                         "night dither veil to the frame; omit = neutral day)")
     ap.add_argument("--emit-timeline", default=None,
                     help="also write the full replay timeline JSON here")
     args = ap.parse_args()
@@ -147,7 +151,8 @@ def main() -> int:
     workdir = out.parent / f".world-preview-{rec['date']}"
     workdir.mkdir(exist_ok=True)
     strip_png = workdir / "strip.png"
-    bt.render_strip(sliced, strip_png, Path(args.compositor_dir), frame_dates=[rec["date"]])
+    bt.render_strip(sliced, strip_png, Path(args.compositor_dir), frame_dates=[rec["date"]],
+                    frame_hour=args.hour)
     frame = workdir / f"frame-{timeline['candidate']}-{rec['date']}.png"
     if not frame.exists():
         raise SystemExit(f"compositor did not emit {frame} — see errors above")

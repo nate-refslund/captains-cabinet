@@ -113,6 +113,30 @@ REGISTRY: dict[str, tuple[str, str, str, str]] = {
         "Office floor with cubicle rows, meeting nook, side rooms: desks face "
         "consistently, walkways read clearly — the wardroom target look.",
     ),
+    # ── GOLDEN REFERENCES (cozy-density pass, 2026-07-09): the Captain-approved
+    #    direction mockups ARE the density/coziness bar the live renderer is
+    #    judged against — not just the LimeZu showcases. Provenance: composed by
+    #    compose_unified.py (world-unified lineage), harness-approved at 7.5,
+    #    Captain-approved as THE direction ("approve everything made",
+    #    captain-decisions 2026-07-07; cozy-density complaint 2026-07-09 names
+    #    these as the look live must match). ───────────────────────────────────
+    "pos-mockup-unified-world": (
+        "positive", "pos-mockup-unified-world.png",
+        "Captain-approved 7.5 direction mockup (compose_unified.py, "
+        "world-unified/unified-world.png, ratified direction 2026-07-07)",
+        "THE density bar: full unified island — three-pass ground, purposeful "
+        "prop clusters, fenced pasture + gardens, working quay with berth "
+        "chalk + crate stacks, fauna, mist bands. Live frames are pairwise-"
+        "judged against this exact look.",
+    ),
+    "pos-mockup-unified-close": (
+        "positive", "pos-mockup-unified-close.png",
+        "Captain-approved 7.5 direction mockup (compose_unified.py, "
+        "world-unified/unified-close.png, ratified direction 2026-07-07)",
+        "THE close-zoom cozy bar: village heart crop — lamp posts, benches, "
+        "flower beds, rugs of path texture, drop shadows under every prop, "
+        "animals in the yard. Texture-level reference for close/mid tiers.",
+    ),
     "neg-island-void": (
         "negative", "neg-island-void.png",
         "Captain-rejected Cabinet World build screenshot 2026-07-08 "

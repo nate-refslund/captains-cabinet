@@ -75,13 +75,17 @@ export function baseTile(tx: number, ty: number, geo: WorldGeo): Terrain {
     const dy = ty - isl.cy
     const d = Math.sqrt(dx * dx + dy * dy)
     if (d > isl.r + 1.5) continue
-    // sand fringe just inside the coastline
-    if (d >= isl.r - 1) return 'sand'
+    // sand fringe just inside the coastline — 1.8 tiles so the beach reads
+    // as a CONTIGUOUS ring through the coast wobble (cozy pass: the ±1
+    // per-tile wobble turned a 1-tile fringe into salt-pepper speckle)
+    if (d >= isl.r - 1.8) return 'sand'
     // forest ring outside the cleared heart (the egg's tree-wall; the
     // clearing only retreats where earned lots need it — visible work law)
     if (d > isl.clearR) return 'forest'
-    // cleared heart: grass with seeded meadow variation (TEXTURE class)
-    return fnv1a(`meadow:${tx},${ty}`) % 5 === 0 ? 'meadow' : 'grass'
+    // cleared heart: grass with seeded meadow variation (TEXTURE class).
+    // 1-in-3 (cozy-density pass 2026-07-09; was 1-in-5 — the approved
+    // mockups carry ~110 terrain accents per viewport vs live ~33).
+    return fnv1a(`meadow:${tx},${ty}`) % 3 === 0 ? 'meadow' : 'grass'
   }
   return 'grass'
 }
