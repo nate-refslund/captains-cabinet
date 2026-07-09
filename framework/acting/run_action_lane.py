@@ -1100,13 +1100,27 @@ def main() -> int:
     open_subjects = {  # any pending proposal's subject, action or draft
         (p.get("subject") or "") for p in pending_proposals() if isinstance(p, dict)}
 
+    # W4 lessons-splice (agi-wires dead-wire #4): the SIE-1 correction ledger
+    # finally gets a reader — Captain corrections become standing proposer
+    # instructions instead of evaporating. Best-effort: a missing ledger is
+    # [] by load_lessons' own contract, and ANY read error degrades to []
+    # with a printed notice (the correction loop is an amplifier, never a
+    # gate on the lane).
+    try:
+        from framework.frontdoor.action_lessons import load_lessons
+        lessons = load_lessons()
+    except Exception as e:
+        print(f"action-lessons: unavailable ({e}) — proposing without lessons")
+        lessons = []
+
     proposals = action_lane.propose_actions(
         signals, as_of=now.strftime("%Y-%m-%dT%H:%M:%SZ"), llm=_llm,
         decided_subjects=decided, open_subjects=open_subjects,
         budget_left=budget, covered_evidence=covered_evidence_refs(),
         acted_refs=(acted_view or {}).get("live_canonical") or frozenset(),
         reversed_refs=(acted_view or {}).get("reversed_canonical") or frozenset(),
-        directions=load_directions(), suppress_log=_suppress_log)
+        directions=load_directions(), lessons=lessons,
+        suppress_log=_suppress_log)
 
     # LANE CELL-KEY NORMALIZATION (germline batch 2026-07-05): collapse every
     # proposal's LLM free-text lane to the stable context-enum cell key BEFORE
