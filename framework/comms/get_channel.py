@@ -3,9 +3,19 @@
 Reads ``instance/config/sources.yml → channel:`` (the same instance seam the
 brain bridge uses via ``framework.sources``). Resolution order:
 ``CABINET_CHANNEL`` env override → ``sources.yml`` channel → default
-``telegram``; an explicit ``null`` / unknown / unreadable config binds the
-NullAdapter (fail-closed — a clean-room / Flavor-B box gets no-ops, never a
-crash, never another launcher's channel). Bound once per process.
+``telegram``. Binding rules:
+
+  * an explicit ``null``/``none`` OR an UNKNOWN channel name binds the
+    NullAdapter (fail-closed — never another launcher's channel);
+  * a broken adapter import also degrades to null (never a crash);
+  * ABSENT / unreadable config falls back to this deployment's default,
+    ``telegram`` — NOT null. A clean-room / Flavor-B box makes itself no-op by
+    setting ``channel: null`` (or ``CABINET_CHANNEL=null``); if it does not, the
+    telegram adapter still cannot send, because ``channel.py`` is hard-gated by
+    ``env.allow_sends()`` and requires the bot token + Captain id in the env
+    (absent on a clean-room box ⇒ "telegram not configured", no send).
+
+Bound once per process.
 
 FOUNDATION-FIRST: this resolver is the ONLY place the instance's channel
 CHOICE is read; the adapters name their channel, the resolver binds them by

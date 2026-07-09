@@ -78,17 +78,22 @@ TOOLS: list[dict[str, Any]] = [
         "inputSchema": _obj({
             "subject": _STR, "situation": _STR, "kind": _STR, "lane": _STR,
             "evidence": _ARR, "urgency": {"type": "string", "enum": ["ping-now", "batch-into-next-briefing", "FYI-digest"]},
-            "steps": _ARR, "deadline_iso": _STR, "pid_marker": _STR,
+            "steps": _ARR, "state": _STR, "deadline_iso": _STR, "pid_marker": _STR,
             "injection_suspect": _BOOL, "chair_review": _BOOL,
         }, required=["subject"]),
     },
     {
         "name": "edit_card",
-        "description": "Update a standing card in place (flip a step's state) — same one-message guarantee as send_card.",
+        "description": (
+            "Update a standing card in place (flip a step to done) — SAME one-message "
+            "guarantee as send_card. Identity is content-derived, so pass the SAME "
+            "subject + evidence that created the card plus the new state/steps; the "
+            "gate finds the existing message and edits it."
+        ),
         "inputSchema": _obj({
-            "situation_key": _STR, "subject": _STR, "situation": _STR,
-            "steps": _ARR, "state": _STR, "evidence": _ARR,
-        }, required=["situation_key"]),
+            "subject": _STR, "evidence": _ARR, "situation": _STR,
+            "steps": _ARR, "state": _STR, "lane": _STR,
+        }, required=["subject"]),
     },
     {
         "name": "react",
@@ -177,6 +182,12 @@ def make_tool_result(payload: Any) -> dict:
 
 
 def handle(req: dict) -> "dict | None":
+    # A valid-JSON but non-object frame ([], "x", 42) must NOT crash the loop:
+    # req.get(...) on a non-dict would raise and (in run_stdio) kill the whole
+    # process incl. the HTTP daemon. Reject it as -32600 up front.
+    if not isinstance(req, dict):
+        return {"jsonrpc": "2.0", "id": None,
+                "error": {"code": -32600, "message": "Invalid Request: not a JSON object"}}
     method = req.get("method", "")
     rid = req.get("id")
 
@@ -197,12 +208,20 @@ def handle(req: dict) -> "dict | None":
         ]}}
 
     if method == "tools/call":
-        params = req.get("params", {})
+        params = req.get("params", {}) if isinstance(req.get("params"), dict) else {}
         name = params.get("name", "")
         args = params.get("arguments", {}) or {}
-        if get_tool(name) is None:
+        tool = get_tool(name)
+        if tool is None:
             return {"jsonrpc": "2.0", "id": rid,
                     "error": {"code": -32601, "message": f"Tool not found: {name}"}}
+        # Enforce the inputSchema: ONLY advertised properties reach the tool.
+        # Load-bearing security — the tool fns carry internal seams (adapter/ch/
+        # now) that appear in NO inputSchema; stripping unknown keys stops a
+        # caller injecting them to swap the bound channel or forge the gate's
+        # charter/quiet-hours context (additionalProperties:false, enforced).
+        props = (tool.get("inputSchema") or {}).get("properties") or {}
+        args = {k: v for k, v in args.items() if k in props} if isinstance(args, dict) else {}
         # tools.dispatch is fail-soft: it catches its own exceptions and returns
         # an error dict, so the loop never dies on a bad tool call.
         payload = tools.dispatch(name, args)
@@ -229,7 +248,12 @@ def run_stdio() -> None:
                 "error": {"code": -32700, "message": f"Parse error: {exc}"}}) + "\n")
             sys.stdout.flush()
             continue
-        resp = handle(req)
+        try:
+            resp = handle(req)
+        except Exception as exc:  # a handler bug must NEVER kill the loop/daemon
+            resp = {"jsonrpc": "2.0",
+                    "id": req.get("id") if isinstance(req, dict) else None,
+                    "error": {"code": -32603, "message": f"internal error: {exc}"}}
         if resp is None:
             continue
         sys.stdout.write(json.dumps(resp) + "\n")
@@ -289,7 +313,8 @@ class CommsMCPHandler(BaseHTTPRequestHandler):
         try:
             resp = handle(req)
         except Exception as exc:  # noqa: BLE001
-            self._send_json(500, {"jsonrpc": "2.0", "id": req.get("id"),
+            self._send_json(500, {"jsonrpc": "2.0",
+                "id": req.get("id") if isinstance(req, dict) else None,
                 "error": {"code": -32603, "message": str(exc)}})
             return
         self._send_json(200, resp if resp is not None else {})

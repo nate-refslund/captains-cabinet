@@ -24,9 +24,12 @@ class TelegramAdapter:
     def capabilities(self) -> dict:
         # Telegram supports the full surface; forum topics depend on the bot
         # having topic-mode enabled, but open_thread already degrades on error.
+        # download_inbound is NOT advertised — the method is still a no-op (the
+        # poller owns inbound file fetch today); a missing key ⇒ unsupported, so
+        # advertised capabilities and method bodies stay in lockstep (honest).
         return {c: True for c in (
             "send", "edit", "react", "poll", "set_status", "pin", "thread",
-            "answer_tap", "download_inbound", "draft", "rich")}
+            "answer_tap", "draft", "rich")}
 
     def send(self, body, *, silent=False, reply_to=None, thread_id=None,
              effect_id=None, buttons=None, markdown=False, feed_meta=None):

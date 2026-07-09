@@ -31,32 +31,41 @@ def _cap(adapter, name: str) -> bool:
 def send_card(*, subject: str, situation: str = "", kind: str = "action-card",
               lane: "str | None" = None, evidence: "list | None" = None,
               urgency: "str | None" = None, steps: "list | None" = None,
-              deadline_iso: "str | None" = None, pid_marker: "str | None" = None,
-              injection_suspect: bool = False, chair_review: bool = False,
-              adapter=None, ch=None, now=None) -> dict:
+              state: str = "open", deadline_iso: "str | None" = None,
+              pid_marker: "str | None" = None, injection_suspect: bool = False,
+              chair_review: bool = False, adapter=None, ch=None, now=None) -> dict:
     """Present a card to the Captain — the officer gives the STRUCTURED situation
     (subject/situation/steps/evidence); the gate renders the terse card, dedups
     it into a standing card, honors quiet hours, and (chair_review) routes an
     exceptional one to T2. Delivery is the bound adapter, so it is channel-
-    agnostic and feed-journaled."""
+    agnostic and feed-journaled.
+
+    The card's IDENTITY is content-derived — ``situation_key(evidence, subject)``.
+    Re-sending the SAME subject+evidence with an updated ``state``/``steps`` is the
+    UPDATE path: the gate finds the existing standing card and EDITS that one
+    message in place (no duplicate). ``edit_card`` is the named alias for that."""
     from framework.attention import gate
     a = _adapter(adapter)
     item = {"kind": kind, "subject": subject, "situation": situation,
             "lane": lane, "evidence": list(evidence or []), "urgency": urgency,
-            "steps": list(steps or []), "deadline_iso": deadline_iso,
+            "steps": list(steps or []), "state": state, "deadline_iso": deadline_iso,
             "pid_marker": pid_marker, "injection_suspect": bool(injection_suspect)}
     return gate.submit(item, send_fn=a.send, edit_fn=a.edit,
                        chair_review=chair_review, ch=ch, now=now)
 
 
-def edit_card(*, situation_key: str, subject: str = "", situation: str = "",
-              steps: "list | None" = None, state: str = "open",
-              evidence: "list | None" = None, adapter=None, ch=None, now=None) -> dict:
-    """Update a standing card in place (state flip). Re-runs the gate so the
-    identity path finds the existing message and edits it — same one-message
-    guarantee as send_card."""
-    return send_card(subject=subject, situation=situation, steps=steps,
-                     evidence=evidence, adapter=adapter, ch=ch, now=now)
+def edit_card(*, subject: str, evidence: "list | None" = None, situation: str = "",
+              steps: "list | None" = None, state: str = "done", lane: "str | None" = None,
+              adapter=None, ch=None, now=None) -> dict:
+    """Update a standing card in place (e.g. flip a step to done). Re-describe the
+    SAME situation — the same ``subject`` + ``evidence`` that created the card, so
+    the gate's identity path (``situation_key(evidence, subject)``) finds the
+    existing message — with the new ``state``/``steps``. The gate then EDITS that
+    one message instead of posting a new card. Identity is content-derived, so
+    subject+evidence MUST match the original send_card, or a fresh card results."""
+    return send_card(subject=subject, evidence=evidence, situation=situation,
+                     steps=steps, state=state, lane=lane,
+                     adapter=adapter, ch=ch, now=now)
 
 
 def react(*, message_id: int, emoji: str, adapter=None) -> dict:

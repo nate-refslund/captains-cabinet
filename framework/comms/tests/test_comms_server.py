@@ -62,6 +62,39 @@ def test_tools_call_never_raises_even_if_dispatch_returns_error(monkeypatch):
     assert json.loads(resp["result"]["content"][0]["text"])["status"] == "error"
 
 
+def test_non_dict_frame_does_not_crash():
+    """A valid-JSON but non-object frame ([], scalar, null) must return -32600,
+    never raise — else req.get(...) kills the whole stdio loop + HTTP daemon
+    (gauntlet HIGH)."""
+    for frame in ([], "hello", 42, None):
+        resp = server.handle(frame)
+        assert resp["error"]["code"] == -32600 and resp["id"] is None
+
+
+def test_tools_call_bad_params_type_is_safe():
+    """params that isn't an object must not crash the dispatch branch."""
+    resp = server.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": "nope"})
+    # no tool name → tool-not-found, not a crash
+    assert resp["error"]["code"] == -32601
+
+
+def test_tools_call_strips_injected_internal_seams(monkeypatch):
+    """The gate's charter/quiet-hours context (ch/now) and the bound adapter are
+    NOT in any inputSchema — a caller must not be able to inject them via tool
+    args to forge context or swap the channel (gauntlet MEDIUM security)."""
+    seen = {}
+    monkeypatch.setattr(server.tools, "dispatch",
+                        lambda name, args: seen.update(name=name, args=args) or {"ok": True})
+    server.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
+        "name": "send_card",
+        "arguments": {"subject": "x", "ch": {"forged": "quiet-hours"},
+                      "now": "2020-01-01T03:00:00Z", "adapter": "evil", "bogus": 1},
+    }})
+    # only advertised properties survive; ch/now/adapter/bogus are stripped
+    assert seen["args"] == {"subject": "x"}
+    assert "ch" not in seen["args"] and "now" not in seen["args"] and "adapter" not in seen["args"]
+
+
 def test_http_auth_fails_closed_without_token(monkeypatch):
     monkeypatch.delenv("COMMS_MCP_TOKEN", raising=False)
     assert server.verify_bearer("Bearer anything") is False

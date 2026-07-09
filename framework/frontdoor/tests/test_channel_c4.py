@@ -80,3 +80,15 @@ class TestSendRich:
         post = RecordingPost(response={"ok": True, "result": {"message_id": 9}})
         channel.send_rich(markdown="hi", http_post=post)
         assert rows and rows[-1]["kind"] == "rich" and rows[-1]["telegram_message_id"] == 9
+
+
+class TestSendPollOptionShape:
+    def test_options_are_inputpolloption_objects(self, monkeypatch):
+        """Bot API 7.3+ requires options as InputPollOption objects ({"text": …}),
+        not bare strings — a bare-string array is rejected (gauntlet HIGH)."""
+        _runtime(monkeypatch)
+        monkeypatch.setattr(channel.time, "sleep", lambda *a, **k: None)
+        post = RecordingPost(response={"ok": True, "result": {"message_id": 5}})
+        channel.send_poll("Ship it?", ["Ship", "Hold"], http_post=post)
+        opts = json.loads(post.calls[-1]["data"]["options"])
+        assert opts == [{"text": "Ship"}, {"text": "Hold"}]   # objects, not strings

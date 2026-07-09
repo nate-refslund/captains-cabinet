@@ -97,6 +97,34 @@ def test_send_card_routes_through_gate_with_adapter_send(monkeypatch):
     assert seen["chair_review"] is True
 
 
+def test_send_card_forwards_state_to_item(monkeypatch):
+    """The gate renders state into the card, so state MUST reach the item —
+    without it, edit_card's state-flip is a silent no-op (gauntlet MEDIUM)."""
+    from framework.attention import gate
+    seen = {}
+    monkeypatch.setattr(gate, "submit", lambda item, **kw: seen.update(item=item) or {"status": "sent"})
+    tools.send_card(subject="Deploy", evidence=["m:1"], state="done", adapter=FakeAdapter())
+    assert seen["item"]["state"] == "done"
+
+
+def test_edit_card_reuses_identity_and_flips_state(monkeypatch):
+    """edit_card must re-drive the gate with the SAME identity (subject+evidence)
+    so the gate's identity path finds the existing card and edits it — NOT emit a
+    fresh card. It must NOT depend on a situation_key it ignores (gauntlet HIGH)."""
+    from framework.attention import gate
+    seen = {}
+    monkeypatch.setattr(gate, "submit", lambda item, **kw: seen.update(item=item) or {"status": "edited"})
+    tools.edit_card(subject="Deploy PolAds", evidence=["monday:5091706356"],
+                    state="done", steps=[{"title": "rolled out"}], adapter=FakeAdapter())
+    # identity fields forwarded verbatim → same situation_key as the original send
+    assert seen["item"]["subject"] == "Deploy PolAds"
+    assert seen["item"]["evidence"] == ["monday:5091706356"]
+    assert seen["item"]["state"] == "done"
+    # edit_card no longer takes a situation_key it would ignore
+    import inspect
+    assert "situation_key" not in inspect.signature(tools.edit_card).parameters
+
+
 def test_react_uses_adapter_when_capable():
     a = FakeAdapter()
     r = tools.react(message_id=968, emoji="🤔", adapter=a)
