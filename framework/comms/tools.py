@@ -149,13 +149,27 @@ def send_rich_card(*, markdown: "str | None" = None, html: "str | None" = None,
                        feed_meta={"kind": "rich"})
 
 
-def read_feed(*, cursor: int = 0, max_n: int = 200) -> dict:
+def read_feed(*, consumer: "str | None" = None, cursor: int = 0, max_n: int = 200) -> dict:
     """The never-re-read cursor read of the outbound/inbound feed (P3). Returns
     ``{rows, cursor}`` — the officer's window into what the Captain has already
-    been shown, so it never re-surfaces a handled situation."""
+    been shown, so it never re-surfaces a handled situation.
+
+    Two modes:
+      * ``consumer`` (recommended) — a stable id (e.g. the officer's role). The
+        feed AUTO-MANAGES this consumer's durable cursor: each call loads the
+        stored cursor, returns only rows NEW since the last read, and persists
+        the advance. The officer never tracks a cursor itself.
+      * ``cursor`` (raw) — pass the int you last held; get it back advanced.
+        For stateless callers that manage their own cursor.
+    ``consumer`` must match ``[a-z0-9_-]+`` (the feed's path-traversal fence)."""
     try:
         from framework.attention import feed
-        rows, new_cursor = feed.feed_since(int(cursor), max_n=int(max_n))
+        if consumer:
+            start = feed.load_cursor(consumer)
+            rows, new_cursor = feed.feed_since(start, max_n=int(max_n))
+            feed.store_cursor(consumer, new_cursor)
+        else:
+            rows, new_cursor = feed.feed_since(int(cursor), max_n=int(max_n))
         return {"status": "ok", "rows": rows, "cursor": new_cursor}
     except Exception as e:  # noqa: BLE001
         return {"status": "error", "error": str(e), "rows": [], "cursor": cursor}

@@ -135,12 +135,14 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "read_feed",
         "description": (
-            "The never-re-read cursor read of the outbound/inbound feed. Pass the "
-            "cursor you last held; get back only rows since then plus a new cursor. "
-            "This is how an officer sees what the Captain has ALREADY been shown so "
-            "it never re-surfaces a handled situation or re-reads the same messages."
+            "The never-re-read read of the outbound/inbound feed — how an officer "
+            "sees what the Captain has ALREADY been shown so it never re-surfaces a "
+            "handled situation or re-reads the same messages. RECOMMENDED: pass a "
+            "stable 'consumer' id (e.g. your role) and the feed auto-manages your "
+            "durable cursor — each call returns only what's NEW since your last read, "
+            "no cursor bookkeeping. Or pass a raw 'cursor' int for stateless use."
         ),
-        "inputSchema": _obj({"cursor": _INT, "max_n": _INT}),
+        "inputSchema": _obj({"consumer": _STR, "cursor": _INT, "max_n": _INT}),
     },
     {
         "name": "stream_thinking",
