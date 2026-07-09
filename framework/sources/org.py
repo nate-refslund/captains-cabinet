@@ -13,10 +13,14 @@ parameterized SELECT), so there is ONE Voyage client and ONE ranking, not a
 second Python re-implementation.
 
 Everything the org box does NOT have stays an HONEST empty, mirroring
-``null.py`` semantics method-for-method: no person dossiers, no commitments, no
+``null.py`` semantics method-for-method: no person dossiers, no
 voice/patterns priors, no vault notes (``read_note`` raises), tri-state probes
 return ``None`` (honest unknown). The adapter never pretends a capability —
-only ``search()`` (and ``available()``) are live.
+``search()``, ``available()`` and (since W7 2026-07-09) ``open_commitments()``
+are live: the org's open commitments are its Captain-ratified ACTIVE outcomes
+(``instance/config/outcomes.yml``, direction ``owed_to_captain``) — real
+config, read-only, so the CG-2 gather seam's per-commitment recall fires on
+org deployments instead of running the decision path memory-blind.
 
 Backend contract (defensive by design — the search-memory surface is being
 upgraded in parallel):
@@ -214,6 +218,14 @@ def _run_memory_search(query: str, source_types: str, limit: int,
     return proc.stdout or ""
 
 
+def _lane_from_outcome_id(oid: str) -> str:
+    """Best-effort lane from an ``outcome-<lane>-NNN`` id (e.g.
+    ``outcome-polads-001`` → ``polads``); empty when the id has another
+    shape — the caller falls back to the id itself, never fabricates."""
+    m = re.match(r"^outcome-(.+)-\d+$", oid)
+    return m.group(1) if m else ""
+
+
 def _env_int(name: str, default: int) -> int:
     try:
         return int(os.environ.get(name, "") or default)
@@ -292,10 +304,12 @@ class OrgSource:
         return {"hits": hits[:limit], "topic_terms": None}
 
     # --- everything below mirrors null.py: HONEST no-ops, no pretending ------
-    # An org box has no personal estate (no dossiers, commitments, voice,
-    # drafting lessons, vault, threads, deploys-via-captain). Each method
-    # returns the same honest empty NullPersonalSource returns, for the same
-    # documented reasons (tri-states stay None; read_note raises).
+    # An org box has no PERSONAL estate (no dossiers, voice, drafting lessons,
+    # vault, threads, deploys-via-captain). Each method returns the same honest
+    # empty NullPersonalSource returns, for the same documented reasons
+    # (tri-states stay None; read_note raises). Exception: open_commitments —
+    # an org DOES have commitments of its own (ratified active outcomes); see
+    # its docstring (W7 2026-07-09).
     def find_reply_candidates(self, *, since: Optional[str] = None) -> list:
         return []
 
@@ -303,7 +317,62 @@ class OrgSource:
         return ""
 
     def open_commitments(self, direction: str) -> list:
-        return []
+        """The ORG's open commitments — its Captain-ratified ACTIVE outcomes
+        (W7, 2026-07-09: recall in the decision path).
+
+        The CG-2 gather seam (run_action_lane._source_parts, flag
+        ``CABINET_GATHER_VIA_SOURCE=1``) drives ALL of its memory recall off
+        ``open_commitments()`` rows: each row is fenced as an OPEN COMMITMENT
+        block and seeds a topic-anchored ``search()`` for content_ts-fenced
+        CONTEXT. With the former honest-empty here, an org deployment ran the
+        decision path MEMORY-BLIND even though ``search()`` was live — zero
+        recall ever reached the proposer (the memory-audit P0).
+
+        An org box genuinely HAS open commitments: the ratified ``status:
+        active`` outcomes in ``instance/config/outcomes.yml`` — the same rows
+        the mission compiler executes. They are the org's obligations to the
+        Captain, so they answer ``owed_to_captain``; ``owed_by_captain``
+        stays the honest empty (an org does not track the Captain's personal
+        promises). This reads REAL config — nothing is fabricated.
+
+        Row shape mirrors what the seam consumes (ref from path/id/slug,
+        handle from person/slug, topic from text). Fail-closed: missing file,
+        unparseable YAML, or an absent yaml module ⇒ ``[]``."""
+        if direction != "owed_to_captain":
+            return []
+        # SINGLE JOINED string (layer-sep gate pattern, see env.py:87 — no
+        # bare quoted instance path token in a Path(...) / <token> chain).
+        path = _cabinet_root() / "instance/config/outcomes.yml"
+        try:
+            import yaml  # lazy — a clean-room box without PyYAML stays honest-empty
+            data = yaml.safe_load(path.read_text(encoding="utf-8",
+                                                 errors="ignore"))
+        except Exception:  # noqa: BLE001 — fail-closed, never crash the lane
+            return []
+        outcomes = (data or {}).get("outcomes")
+        if not isinstance(outcomes, list):
+            return []
+        rows: List[dict] = []
+        for oc in outcomes:
+            if not isinstance(oc, dict) or oc.get("status") != "active":
+                continue
+            oid = str(oc.get("id") or "").strip()
+            text = str(oc.get("name") or "").strip()
+            if not oid or not text:
+                continue
+            lane = str(oc.get("lane") or "").strip() or _lane_from_outcome_id(oid)
+            rows.append({
+                "id": oid,
+                "path": f"instance/config/outcomes.yml#{oid}",
+                "slug": lane or oid,
+                "person": lane or oid,
+                "text": text,
+                "direction": "owed_to_captain",
+                "status": "active",
+            })
+            if len(rows) >= 8:   # the seam caps at rows[:8]; stay bounded here too
+                break
+        return rows
 
     def voice_profile(self) -> str:
         return ""

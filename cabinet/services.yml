@@ -155,13 +155,23 @@ services:
     # P3 one-door (review cp3 H2): cards send via channel.send's allow_sends()
     # gate — without the runtime marker every present raises loudly. Kept HERE
     # so a plist regeneration can never wipe the hand-edited plist fix.
-    env: { CABINET_ENV: runtime }
-    expected: "≤2 action cards/run, ≤5/day (Redis budget) to Captain Telegram; approve executes via action_exec (Monday/Reminders); log every 30min"
+    # W7 (2026-07-09): CABINET_GATHER_VIA_SOURCE=1 — the CG-2 seam goes LIVE
+    # after shadow-parity green (test_gather_via_source + test_org_decision_
+    # recall): gather routes through the bound PersonalSource — commitments
+    # rows + leak-scoped content_ts-fenced memory recall reach the proposer,
+    # so decisions stop being memory-blind (memory-audit P0). FAIL-CLOSED: a
+    # broken/absent source gathers EMPTY, never silently falls back to the
+    # vault walk. Revert = delete this one env key.
+    env: { CABINET_ENV: runtime, CABINET_GATHER_VIA_SOURCE: "1" }
+    expected: "≤2 action cards/run, ≤5/day (Redis budget) to Captain Telegram; approve executes via action_exec (Monday/Reminders); log every 30min; gather runs the source seam (flag ON 2026-07-09), not the raw vault walk"
     notes: >-
       The 2026-07-03 Captain-ruled pivot of the draft lane (parked): proactive
       ACTION proposals from captured commitments/meetings/decisions through the
       SAME binder gate. Propose-only; verdicts feed the live graduation engine.
       Pure core (action_lane.py) is retrodiction-ready for the sim harness.
+      Gather flows via the PersonalSource seam (W7 flip): watch the first tick
+      after deploy — a persistent "source unavailable — empty gather" log line
+      means fix the source binding, not blind-revert the flag.
   - name: frontdoor-briefing
     label: com.cabinet.frontdoor-briefing
     kind: daemon
