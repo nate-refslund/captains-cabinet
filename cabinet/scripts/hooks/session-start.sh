@@ -74,15 +74,18 @@ add_section() {
 }
 
 if [ -f "$TRIPLET_DIR/captain-patterns.md" ]; then
-  # Patterns are append-only and grow over time; cap at 100 lines for the
-  # session boot blast.
-  body="$(head -100 "$TRIPLET_DIR/captain-patterns.md" 2>/dev/null)"
-  add_section "Captain Patterns (4th-loop ledger — head 100)" "$body"
+  # W8 (agi-wires dead-wire #8): patterns/intents are APPEND-ONLY ledgers —
+  # the freshest encoded preferences live at the TAIL. The old `head -100`
+  # injected the OLDEST entries and the newest never booted. tail -40
+  # matches the proven captain-decisions pattern below.
+  body="$(tail -40 "$TRIPLET_DIR/captain-patterns.md" 2>/dev/null)"
+  add_section "Captain Patterns (4th-loop ledger — last 40 lines)" "$body"
 fi
 
 if [ -f "$TRIPLET_DIR/captain-intents.md" ]; then
-  body="$(head -100 "$TRIPLET_DIR/captain-intents.md" 2>/dev/null)"
-  add_section "Captain Intents (5th-loop ledger — head 100)" "$body"
+  # W8: same head→tail fix as captain-patterns above.
+  body="$(tail -40 "$TRIPLET_DIR/captain-intents.md" 2>/dev/null)"
+  add_section "Captain Intents (5th-loop ledger — last 40 lines)" "$body"
 fi
 
 if [ -f "$TRIPLET_DIR/captain-decisions.md" ]; then
