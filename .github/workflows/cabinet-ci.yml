@@ -88,6 +88,7 @@ jobs:
           cache-dependency-path: founders-cabinet/cabinet/dashboard/package-lock.json
 
       - name: Bash syntax check — hooks
+        if: ${{ !cancelled() }}
         run: |
           set -e
           for f in /opt/founders-cabinet/cabinet/scripts/hooks/*.sh; do
@@ -96,6 +97,7 @@ jobs:
           done
 
       - name: Bash syntax check — lib
+        if: ${{ !cancelled() }}
         run: |
           set -e
           for f in /opt/founders-cabinet/cabinet/scripts/lib/*.sh; do
@@ -104,6 +106,7 @@ jobs:
           done
 
       - name: Bash syntax check — scripts top-level
+        if: ${{ !cancelled() }}
         # 56 scripts at cabinet/scripts/*.sh (create-officer, resume-officer,
         # notify-officer, record-experience, org-health-audit, etc.) are on the
         # hot path for officer provisioning + day-to-day comms. Prior coverage
@@ -117,6 +120,7 @@ jobs:
           done
 
       - name: Bash syntax check — remaining subdirs (git-hooks, gates)
+        if: ${{ !cancelled() }}
         # Catches bash scripts in deeper subdirs the earlier globs miss:
         # - git-hooks/pre-commit + pre-push (no .sh extension, safety rails for
         #   force-push refusal + checkpoint-review gate, FW-007 + FW-019)
@@ -136,6 +140,7 @@ jobs:
                      done)
 
       - name: shellcheck hooks + lib + scripts root (severity=error)
+        if: ${{ !cancelled() }}
         # FW-054: static analysis gate for the 12 hook + lib scripts.
         # FW-055: extended to cover the 57 root-level cabinet/scripts/*.sh files
         # (officer lifecycle, cost tooling, orchestration). 2 SC2045 instances
@@ -153,6 +158,7 @@ jobs:
             /opt/founders-cabinet/cabinet/scripts/*.sh
 
       - name: Layer-separation gate (FINAL-C)
+        if: ${{ !cancelled() }}
         # Three-layer dependency direction enforcement:
         #   framework/ → cannot reference instance/ or presets/
         #   presets/   → cannot import code from instance/
@@ -166,12 +172,15 @@ jobs:
         run: bash /opt/founders-cabinet/cabinet/scripts/check-layer-separation.sh
 
       - name: Shell unit tests — triggers.sh
+        if: ${{ !cancelled() }}
         run: bash /opt/founders-cabinet/cabinet/scripts/test-triggers.sh
 
       - name: Shell unit tests — memory.sh
+        if: ${{ !cancelled() }}
         run: bash /opt/founders-cabinet/cabinet/scripts/test-memory.sh
 
       - name: Shell unit tests — audit-framework-backlog-drift.sh
+        if: ${{ !cancelled() }}
         # Guards the drift auditor (FW-002 safety net) against silent regressions.
         # 12 fixture scenarios covering fresh/stale × Proposed/Paused × SHIPPED-skip
         # × no-date-skip × env threshold overrides × missing-file handling × advisory-
@@ -180,6 +189,7 @@ jobs:
         run: bash /opt/founders-cabinet/cabinet/scripts/test-audit-framework-backlog-drift.sh
 
       - name: Shell unit tests — start-officer.sh args (FW-073)
+        if: ${{ !cancelled() }}
         # 22 assertions across 8 test groups: legacy back-compat, --project
         # arg parsing, CABINET_ACTIVE_PROJECT export contract (FW-072 trigger),
         # path-injection guard on slug, slug length cap (32 char), defensive
@@ -190,6 +200,7 @@ jobs:
         run: bash /opt/founders-cabinet/cabinet/tests/start-officer/test-args.sh
 
       - name: Shell unit tests — start-officer CABINET_LANE export (T4 / authority FIX-4)
+        if: ${{ !cancelled() }}
         # 6 assertions: pool mode (--project) exports CABINET_LANE=<slug> (the
         # load-bearing source framework/authority/lane.py resolve_lane() reads
         # first); CABINET_LANE tracks CABINET_ACTIVE_PROJECT (one source of
@@ -204,6 +215,7 @@ jobs:
         run: bash /opt/founders-cabinet/cabinet/tests/start-officer/test-lane-export.sh
 
       - name: Shell unit tests — start-officer-mac.sh dry-run (T4 / authority FIX-4)
+        if: ${{ !cancelled() }}
         # Mac-native launch flag assembly + CABINET_LANE export contract: native
         # --agent probe, CABINET_SOURCE_REPO vs script-relative root, telegram
         # gate fallback, CABINET_LANE export from active-project.txt, fail-safe
@@ -215,6 +227,7 @@ jobs:
         run: bash /opt/founders-cabinet/cabinet/scripts/test-mac-dry-run.sh
 
       - name: Shell unit tests — post-tool-use.sh JSONL project field (FW-075)
+        if: ${{ !cancelled() }}
         # 9 assertions: project field surfaces in JSONL when CABINET_ACTIVE_PROJECT
         # is set (FW-073 export contract); legacy mode emits empty field; malformed
         # slug (charset, leading hyphen, length>32) defensively falls back to empty
@@ -223,6 +236,7 @@ jobs:
         run: bash /opt/founders-cabinet/cabinet/scripts/test-post-tool-use-jsonl.sh
 
       - name: Shell unit tests — cabinet-spawn.sh (FW-080)
+        if: ${{ !cancelled() }}
         # 38 assertions across 8 test groups: bad slug rejection (charset + length),
         # missing/bad repo_url rejection, DRY_RUN=1 dry-run plan (no side effects,
         # no state file), --skip-create with provisioned + unprovisioned slugs,
@@ -233,6 +247,7 @@ jobs:
         run: bash /opt/founders-cabinet/cabinet/scripts/test-cabinet-spawn.sh
 
       - name: Shell unit tests — cabinet-bootstrap.sh (FW-082)
+        if: ${{ !cancelled() }}
         # 38 assertions across 7 test groups: bad slug rejection (charset + length),
         # missing preset rejection, DRY_RUN=1 plan-only mode (no filesystem side-effects,
         # no state file, no secrets in output), secret redaction (Neon URL password
@@ -245,18 +260,21 @@ jobs:
         run: bash /opt/founders-cabinet/cabinet/scripts/test-cabinet-bootstrap.sh
 
       - name: Org runtime vertical-slice eval
+        if: ${{ !cancelled() }}
         # Outcome-to-OVI branch 1: proves one Captain-ratified outcome through
         # mission/work-graph, role hat assignment, verification, OVI publish,
         # sanitized digest, append-only org_events, and source-event lineage.
         run: bash /opt/founders-cabinet/cabinet/scripts/test-org-runtime.sh
 
       - name: Durable adaptive role eval
+        if: ${{ !cancelled() }}
         # Branch 2: proves durable role identity, officer-session mapping,
         # memory binding, role eval evidence, deterministic recommendation,
         # Captain-ratified evolution, and append-only role history.
         run: bash /opt/founders-cabinet/cabinet/scripts/test-org-roles.sh
 
       - name: Typed policy shadow parity eval
+        if: ${{ !cancelled() }}
         # Shadow-only typed policy engine observes hook input and records
         # structured decisions to org_events. This branch compares a focused
         # fixture set against the live pre-tool-use.sh behavior; it does not
@@ -264,6 +282,7 @@ jobs:
         run: bash /opt/founders-cabinet/cabinet/scripts/test-policy-shadow.sh
 
       - name: Shell unit tests — create-project.sh (FW-078)
+        if: ${{ !cancelled() }}
         # 25 assertions across 8 test groups: bad slug charset/length rejection,
         # missing repo_url rejection, DRY_RUN=1 plan-only mode (no filesystem
         # side-effects, no state file), idempotency (re-run finds completed steps,
@@ -277,6 +296,7 @@ jobs:
         run: bash /opt/founders-cabinet/cabinet/scripts/test-create-project.sh
 
       - name: Shell unit tests — pre-push hook (FW-007 + FW-025)
+        if: ${{ !cancelled() }}
         # 14 scenarios / 31 assertions covering the safety-critical pre-push hook:
         # non-master fast-paths, legit fast-forward + first-create, force-overwrite
         # + delete refusal, every is_announced() rejection branch (malformed TS,
@@ -287,16 +307,19 @@ jobs:
         run: bash /opt/founders-cabinet/cabinet/scripts/test-pre-push-hook.sh
 
       - name: Python tests — ETL transforms (FW-023)
+        if: ${{ !cancelled() }}
         run: |
           cd /opt/founders-cabinet/cabinet/scripts/lib
           python3 -m pytest tests/ -v
 
       - name: Python tests — Gate 3 idempotency hash (FW-021)
+        if: ${{ !cancelled() }}
         run: |
           cd /opt/founders-cabinet/cabinet/scripts/gates
           python3 -m pytest tests/ -v
 
       - name: Python tests — MCP server (FW-005)
+        if: ${{ !cancelled() }}
         # 20 tests: stdio + HTTP transport, bearer auth, error handling.
         # Runs as a standalone script (not pytest) — the file's __main__ block
         # drives unittest. Spec 035 Phase A shipped in #33, so this is the
@@ -304,6 +327,7 @@ jobs:
         run: python3 /opt/founders-cabinet/cabinet/mcp-server/test_server.py
 
       - name: Dashboard typecheck (tsc --noEmit)
+        if: ${{ !cancelled() }}
         # FW-048: catch TS errors in dashboard before they reach Captain's
         # localhost:3100. tsconfig has noEmit:true, so `npx tsc` alone is
         # pure type-check (no JS output).
@@ -320,12 +344,14 @@ jobs:
           npm test
 
       - name: Golden evals
+        if: ${{ !cancelled() }}
         # EVAL-023 (FW-047) runs under CABINET_HOOK_TEST_MODE=1 so trigger_send
         # fan-out is suppressed. This step also exercises the full hook-probe
         # surface end-to-end.
         run: bash /opt/founders-cabinet/cabinet/scripts/run-golden-evals.sh
 
       - name: Captain-rules retrieval eval
+        if: ${{ !cancelled() }}
         # Spec 042 Phase 3: golden eval over 5 anchor fixtures asserting
         # query.sh surfaces the expected anchors + patterns + intents
         # for synthetic Captain DMs. Catches regressions in trigger-word
@@ -333,6 +359,7 @@ jobs:
         run: bash /opt/founders-cabinet/cabinet/scripts/captain-rules/eval.sh
 
       - name: Captain-rules encode-pipeline eval
+        if: ${{ !cancelled() }}
         # Spec 048 v2: hermetic regression eval over the encode → draft →
         # ratify path (skipping API-bound classify-rule.sh). Pins the
         # draft template shape (set -u, env-var disable, JSONL log path),
@@ -343,6 +370,7 @@ jobs:
         run: bash /opt/founders-cabinet/cabinet/scripts/captain-rules/eval-encode-pipeline.sh
 
       - name: Hook regression harnesses
+        if: ${{ !cancelled() }}
         # FW-051 addendum: 7 permanent harnesses at cabinet/tests/hook-regression/
         # (fw041/042/043/044/045/051) snapshot each FW-0xx adversary-finding
         # validation. Runner applies per-harness tolerance for documented
@@ -353,6 +381,7 @@ jobs:
         run: bash /opt/founders-cabinet/cabinet/scripts/run-hook-regression.sh
 
       - name: Framework backlog drift audit (advisory)
+        if: ${{ !cancelled() }}
         # Surfaces FW-series entries with Status: Proposed/Paused older than
         # threshold (default: Proposed≥7d, Paused≥14d). Advisory only — exits
         # 0 always, never fails CI. Catches the FW-002 drift class (shipped
@@ -387,6 +416,7 @@ jobs:
       # mirror.py — closure wave 2026-07-05) actually gate: without it, drift in
       # either purge script's drop criteria would merge unnoticed.
       - name: Cabinet script tests (purge parity + generate-instance)
+        if: ${{ !cancelled() }}
         run: python -m pytest cabinet/scripts/tests -q
 
       # World E1 grammar gate (2026-07-07): Growth doc §2 — "every mapping's
@@ -399,6 +429,7 @@ jobs:
       # (CABINET_WORLD_REQUIRE_GRAMMAR unset → exit 0); once the file lands,
       # REQUIRE_GRAMMAR=1 makes any binding failure fail the job.
       - name: World binding gate (grammar law, arms on first merge)
+        if: ${{ !cancelled() }}
         # CABINET_WORLD_DATA_OPTIONAL=1 (2026-07-09): bindings over RUNTIME
         # artifacts (chronicle jsonl, memory store) can never find data on a
         # fresh runner — grammar is validated, absent data SKIPs loudly. Live
