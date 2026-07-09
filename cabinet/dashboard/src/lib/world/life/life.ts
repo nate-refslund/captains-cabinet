@@ -169,6 +169,7 @@ export function lifeStep(
       // Suspended: no law, or the first frozen tick (the freeze frame).
       commutes[slug] = input.killswitch ? shiftFrozenCommute(prev) : prev
     } else {
+      const cg = cfg.commute
       const { state: next } = commuteStep(prev, {
         slug,
         records: input.records,
@@ -176,6 +177,10 @@ export function lifeStep(
         nowTsMs,
         tick,
         productLanes: input.productLanes,
+        // Ratified grammar-PR constants win over module defaults.
+        switchShare: cg.switchShare,
+        switchEvals: cg.switchEvals,
+        minDwellTicks: cg.dwellS * 4,
       })
       commutes[slug] = next
     }
@@ -208,7 +213,7 @@ export function lifeStep(
   // ── construction sites ────────────────────────────────────────────────
   const sites: SiteOut[] = []
   let problems: string[] = []
-  if (cfg?.sites) {
+  if (cfg?.construction) {
     const fold = foldSiteLedger(input.siteEntries)
     problems = [...fold.problems]
     for (const site of fold.sites) {
@@ -229,10 +234,19 @@ export function lifeStep(
     }
   }
 
-  // ── fauna ─────────────────────────────────────────────────────────────
+  // ── fauna (ratified per-species law: kind renders iff its species has a
+  //    grammar entry — bird→birds, butterfly→butterflies, fish→fish,
+  //    cat→cat, dog→dog) ────────────────────────────────────────────────
+  const SPECIES_OF: Record<string, string> = {
+    bird: 'birds',
+    butterfly: 'butterflies',
+    fish: 'fish',
+    cat: 'cat',
+    dog: 'dog',
+  }
   const fauna: FaunaSprite[] = cfg?.fauna
     ? faunaAt({ ...input.fauna, tick, clockHour: input.clockHour }).filter(
-        (f) => cfg.fauna!.kinds.includes(f.kind)
+        (f) => SPECIES_OF[f.kind] in cfg.fauna!
       )
     : []
 
@@ -247,6 +261,7 @@ export function lifeStep(
         nowTsMs,
         tick,
         officerPos,
+        cap: cfg.apprentices.capPerOfficer,
       })
     : EMPTY_APPRENTICES
 

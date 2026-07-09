@@ -87,7 +87,7 @@ describe('apprenticesAt — figures for LIVE runs only', () => {
   it('caps at APPRENTICE_CAP with a numeric overflow badge', () => {
     const r = at([spawn(50), spawn(40), spawn(30), spawn(20), spawn(10), spawn(5)])
     expect(r.figures).toHaveLength(APPRENTICE_CAP)
-    expect(r.overflow.cos).toBe(2)
+    expect(r.overflow.cos).toBe(6 - APPRENTICE_CAP)
   })
   it('unknown actors never render a figure (no fictional villagers)', () => {
     expect(at([spawn(10, 'unknown')]).figures).toHaveLength(0)

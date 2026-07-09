@@ -19,11 +19,13 @@
  * the classifier is SUSPENDED mid-walk (no U-turns) and holds position on
  * TTL-expired presence (absence of a verb is never evidence of a move).
  *
- * Thought bubble (Captain T2 ruling 2026-07-09): the bubble is a SEEDED
- * PIXEL bubble in world space — NOT a DOM chip. Its text comes ONLY from
- * the closed VERB_GLOSS table + an identifier-safe lane slug; the gloss is
- * the REAL verb that flipped the classifier — never invented. Unknown verb
- * → NO bubble (honest absence beats invented text).
+ * Thought bubble (Captain T2 ruling 2026-07-09 + ratified grammar v3
+ * `commute.bubble: verb_icon`): the bubble is a PIXEL bubble in world
+ * space — NOT a DOM chip — and it renders the classified verb's ICON only
+ * (never free text in world-space; typography law §9.2). The verb is the
+ * REAL verb that flipped the classifier — never invented; the closed
+ * VERB_GLOSS phrase + lane slug live on the DOM inspect card, where free
+ * text is lawful. Unknown verb → NO bubble (honest absence).
  */
 import type { ChronicleRecord } from '../types'
 
@@ -159,7 +161,9 @@ export function dominantFocus(
 /**
  * CLOSED verb → phrase table (direction §3.4). Deterministic, zero free
  * text, zero PII. A verb absent here renders NO bubble — the closed table
- * is the whole vocabulary.
+ * is the whole vocabulary. The KEYS double as the pixel-icon vocabulary
+ * (renderer maps verb → owned icon tile); the phrases appear only on the
+ * DOM inspect card (world-space carries no text — §9.2).
  */
 export const VERB_GLOSS: Record<string, string> = {
   working: 'get back to it',
@@ -192,14 +196,20 @@ export const VERB_GLOSS: Record<string, string> = {
 const LANE_RE = /^[a-z0-9][a-z0-9-]{0,23}$/
 
 export interface BubbleSpec {
-  /** Closed-table text: "I should 〈gloss〉( · 〈lane〉)". */
-  text: string
   /**
-   * Render class: a SEEDED PIXEL bubble in world space (9-slice from owned
-   * UI tiles, integer scale) — never a DOM chip (Captain T2 ruling
-   * 2026-07-09 overrides the direction doc's DOM-chip line).
+   * The REAL classifier-flipping verb — a key of VERB_GLOSS (closed set).
+   * The renderer maps it to an owned pixel icon inside the bubble; the
+   * verb never renders as world-space text.
    */
-  kind: 'pixel'
+  verb: string
+  /** Closed-table phrase for the DOM inspect card ONLY (never world-space). */
+  cardText: string
+  /**
+   * Render class per ratified grammar v3 (`commute.bubble: verb_icon`): a
+   * PIXEL bubble in world space carrying the verb's ICON — never a DOM
+   * chip, never free text.
+   */
+  kind: 'verb_icon'
 }
 
 /** Bubble for the trigger evidence — null when the verb is off-table. */
@@ -211,13 +221,19 @@ export function bubbleFor(
   if (!gloss) return null
   const lane =
     trigger.lane && LANE_RE.test(trigger.lane) ? ` · ${trigger.lane}` : ''
-  return { text: `I should ${gloss}${lane}`, kind: 'pixel' }
+  return {
+    verb: trigger.verb,
+    cardText: `I should ${gloss}${lane}`,
+    kind: 'verb_icon',
+  }
 }
 
-/** Integer pixel box for the bubble at ×1 (5-px glyphs + 1-px tracking,
- * 5-px padding, 4-px tail). Pure — the renderer scales by integer LOD. */
-export function bubbleBoxPx(spec: BubbleSpec): { w: number; h: number } {
-  return { w: spec.text.length * 6 + 10, h: 16 }
+/** Integer pixel box for the icon bubble at ×1 (16-px icon + 2-px frame +
+ * 4-px tail). Constant — icons never reflow; renderer scales by integer LOD. */
+export const BUBBLE_BOX_PX = { w: 20, h: 22 } as const
+
+export function bubbleBoxPx(_spec: BubbleSpec): { w: number; h: number } {
+  return { ...BUBBLE_BOX_PX }
 }
 
 // ── the commute reducer ─────────────────────────────────────────────────────
@@ -265,6 +281,11 @@ export interface CommuteStepInput {
   productLanes: ReadonlySet<string>
   /** Road journey length in ticks (engine passes the real path length). */
   walkTicks?: number
+  /** Grammar-PR constant overrides (ratified v3 commute block values —
+   * defaults below ARE the ratified values; the law wins if they differ). */
+  switchShare?: number
+  switchEvals?: number
+  minDwellTicks?: number
 }
 
 export interface CommuteStepResult {
@@ -286,6 +307,9 @@ export function commuteStep(
 ): CommuteStepResult {
   const { tick } = input
   const walkTicks = input.walkTicks ?? ROAD_WALK_TICKS
+  const switchShare = input.switchShare ?? SWITCH_SHARE
+  const switchEvals = input.switchEvals ?? SWITCH_EVALS
+  const minDwellTicks = input.minDwellTicks ?? MIN_DWELL_TICKS
 
   // Mid-walk: classifier suspended (no U-turns) — direction §3.3.
   if (state.walking) {
@@ -336,7 +360,7 @@ export function commuteStep(
   if (
     focus.district &&
     focus.district !== state.district &&
-    focus.share >= SWITCH_SHARE
+    focus.share >= switchShare
   ) {
     if (candidate === focus.district) heldEvals += 1
     else {
@@ -350,8 +374,8 @@ export function commuteStep(
 
   if (
     candidate &&
-    heldEvals >= SWITCH_EVALS &&
-    tick - state.lastArrivalTick >= MIN_DWELL_TICKS
+    heldEvals >= switchEvals &&
+    tick - state.lastArrivalTick >= minDwellTicks
   ) {
     const walk: CommuteWalk = {
       from: state.district,

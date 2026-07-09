@@ -25,9 +25,10 @@ import type { ChronicleRecord } from '../types'
 /** Honest fallback retirement when no crew.completed ever arrives (20 min —
  * generous for real runs, bounded for crashed ones). */
 export const APPRENTICE_TTL_TICKS = 20 * 60 * 4
-/** Max rendered figures per officer; beyond it the count is shown as a
- * numeric badge (never invented extra bodies, never hidden runs). */
-export const APPRENTICE_CAP = 4
+/** Max rendered figures per officer (ratified grammar v3
+ * apprentices.cap_per_officer); beyond it the count is shown as a numeric
+ * badge (never invented extra bodies, never hidden runs, never a crowd). */
+export const APPRENTICE_CAP = 3
 export const TICKS_PER_SECOND = 4
 
 /** Closed spawn predicate: a chronicle tool.call whose tool is the Agent/
@@ -68,6 +69,8 @@ export interface ApprenticesInput {
   tick: number
   /** Current officer positions (tile space) — figures cluster nearby. */
   officerPos: Record<string, { x: number; y: number }>
+  /** Grammar-PR cap override (ratified value is the default). */
+  cap?: number
 }
 
 interface OpenRun {
@@ -103,6 +106,7 @@ export function apprenticesAt(input: ApprenticesInput): ApprenticesResult {
     }
   }
 
+  const cap = input.cap ?? APPRENTICE_CAP
   const figures: ApprenticeFigure[] = []
   const overflow: Record<string, number> = {}
   for (const officer of [...open.keys()].sort()) {
@@ -111,10 +115,10 @@ export function apprenticesAt(input: ApprenticesInput): ApprenticesResult {
       (run) => run.ageTicks < APPRENTICE_TTL_TICKS
     )
     if (!pos || live.length === 0) continue
-    if (live.length > APPRENTICE_CAP) {
-      overflow[officer] = live.length - APPRENTICE_CAP
+    if (live.length > cap) {
+      overflow[officer] = live.length - cap
     }
-    live.slice(0, APPRENTICE_CAP).forEach((run, i) => {
+    live.slice(0, cap).forEach((run, i) => {
       // Seeded near-officer offset: a small ring below/beside the desk.
       const h = fnv1a(`${officer}:appr:${run.iid}`)
       const dx = (h % 5) - 2 // -2..2

@@ -27,27 +27,25 @@ const LANES = new Set(['polads', 'stephie'])
 const CONFIG: LifeGrammar = parseLifeGrammar(`
 version: 3
 commute:
-  window_s: 150
-  half_life_s: 75
-  eval_every_s: 15
   switch_share: 0.6
   switch_evals: 2
-  min_dwell_s: 180
-  bubble: pixel
-sites:
+  dwell_s: 180
+  walk_s: [20, 30]
+  bubble: verb_icon
+construction:
   quick_small_min: 15
   quick_large_min: 90
-  great_h: 24
-  crew_base: 4
+  great_hours: 24
+  phases: {clearing: 0.25, raising: 0.75, finishing: 1.0}
+  site_ledger: "shared/interfaces/world-sites.jsonl"
 fauna:
-  kinds: [bird, butterfly, fish, cat, dog]
-  day_only: [bird, butterfly]
+  cat: {home: wardroom_kettle_counter, decorative: true}
+  dog: {home: village, decorative: true}
+  birds: {home: sky, decorative: true}
+  butterflies: {home: meadow, decorative: true}
+  fish: {home: quay_water, decorative: true}
 apprentices:
-  spawn_verb: tool.call
-  spawn_tools: [Agent, Task]
-  end_verb: crew.completed
-  ttl_ticks: 4800
-  cap: 4
+  cap_per_officer: 3
 `)
 
 let IID = 0

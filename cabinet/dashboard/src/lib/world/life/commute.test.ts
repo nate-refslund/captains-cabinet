@@ -112,30 +112,32 @@ describe('dominantFocus — recency-weighted window', () => {
   })
 })
 
-describe('thought bubble — closed table, pixel class', () => {
-  it('renders the REAL trigger verb from the closed table', () => {
+describe('thought bubble — verb ICON in world-space, gloss on the card', () => {
+  it('carries the REAL trigger verb (icon key) + closed card text', () => {
     const b = bubbleFor({ verb: 'reviewing', lane: 'polads' })
-    expect(b).toEqual({ text: 'I should review the queue · polads', kind: 'pixel' })
+    expect(b).toEqual({
+      verb: 'reviewing',
+      cardText: 'I should review the queue · polads',
+      kind: 'verb_icon',
+    })
   })
-  it('unknown verb → NO bubble (honest absence, never invented text)', () => {
+  it('unknown verb → NO bubble (honest absence, never invented content)', () => {
     expect(bubbleFor({ verb: 'somebody.new_verb', lane: null })).toBeNull()
   })
   it('non-identifier lane slugs are dropped, never rendered', () => {
     const b = bubbleFor({ verb: 'deploying', lane: 'Nate <naref@x.dk>' })
-    expect(b?.text).toBe('I should ship this')
+    expect(b?.cardText).toBe('I should ship this')
   })
-  it('every gloss is short, closed, and free of markup', () => {
+  it('every gloss is short, closed, and free of markup (card-side only)', () => {
     for (const gloss of Object.values(VERB_GLOSS)) {
       expect(gloss.length).toBeLessThanOrEqual(24)
       expect(gloss).toMatch(/^[a-z .]+$/)
     }
   })
-  it('pixel box is integer and text-proportional', () => {
+  it('icon bubble box is a constant integer pixel box (no text reflow)', () => {
     const b = bubbleFor({ verb: 'working', lane: null })!
     const box = bubbleBoxPx(b)
-    expect(Number.isInteger(box.w)).toBe(true)
-    expect(box.w).toBe(b.text.length * 6 + 10)
-    expect(box.h).toBe(16)
+    expect(box).toEqual({ w: 20, h: 22 })
   })
 })
 
@@ -182,7 +184,8 @@ describe('commuteStep — switch rule 0.6 share / 2 evals / 180 s dwell', () => 
     expect(walks[0].startTick).toBe(EVAL_EVERY_TICKS)
     expect(walks[0].from).toBe('village')
     expect(walks[0].to).toBe('quay')
-    expect(walks[0].bubble?.kind).toBe('pixel')
+    expect(walks[0].bubble?.kind).toBe('verb_icon')
+    expect(walks[0].bubble?.verb).toBe('work.completed')
     expect(arrivals).toEqual(['quay'])
     expect(state.district).toBe('quay')
   })
@@ -282,6 +285,11 @@ describe('road progress + passing glance', () => {
     startTick,
     walkTicks: ROAD_WALK_TICKS,
     bubble: null,
+  })
+  it('the road walk lands inside the ratified 20–30 s band', () => {
+    const seconds = ROAD_WALK_TICKS / 4
+    expect(seconds).toBeGreaterThanOrEqual(20)
+    expect(seconds).toBeLessThanOrEqual(30)
   })
   it('progress is clamped 0..1', () => {
     const w = walkTo('quay', 100)
