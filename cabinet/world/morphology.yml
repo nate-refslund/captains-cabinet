@@ -250,14 +250,14 @@ entries:
       mechanism_path: "cabinet/scripts/world-census.py"
       day0: "unplowed ground"
   - id: island_harbor_beacon
-    represents: "THE dark beacon (interim silo sprite; bespoke lighthouse art tracked in the authored-art budget) — beam lights on first graduated cell"
+    represents: "THE dark beacon (RECOMPOSED 2026-07-09: the 21_Beach banded lighthouse tower — the interim silo sprite is RETIRED per the Captain ruling; NEVER the water-tank/silo body) — beam lights on first graduated cell"
     source_binding: "jq -r -s 'last | .cells_graduated' shared/interfaces/world-chronicle.jsonl"
     scope: org-global
     tier: T0
     replay: ledger
     base: 1
     codex:
-      represents: "Graduated trust cells (falsifier keystone number), rendered at Harbor S as the farm silo with an UNLIT lamp overlay — the honest-zero lighthouse stand-in, prominent and slightly oversized. The beam lighting on the first graduation will be the biggest visual event in the world's life; it never gets a night light before then."
+      represents: "Graduated trust cells (falsifier keystone number), rendered at Harbor S as the RECOMPOSED lighthouse (exteriors/lighthouse/21_Beach Example tower: red/white banded body, lamp gallery + cap — the lamp fits the tower, per the Captain ruling 2026-07-09; renderer binding lighthouseCutFor() stages it by the lighthouse ladder rung, dual-view with lighthouse_staged, D7/R8) with an UNLIT lamp — the honest-zero beacon, prominent and slightly oversized. The beam lighting on the first graduation will be the biggest visual event in the world's life; it never gets a night light before then."
       mechanism_path: "cabinet/scripts/falsifier-report.py"
       day0: "dark beacon, loud about it"
   - id: island_harbor_crates

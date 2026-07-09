@@ -253,48 +253,61 @@ construction:            # D4: structure NEVER pops in — the visible-work pipe
     day0: "no sites — nothing has ever been built"
 
 fauna:                   # §15.5 population law: fauna for joy; HUMAN-shaped sprites = real actors only
+  # STAGED SCOPE AMENDMENT (v1a review, 2026-07-09): no fauna pack art is
+  # installed in the world-asset manifest yet, so every species below is
+  # `staged: true` — the renderer draws NOTHING for a staged species (no
+  # invented pixels) and this grammar stays truth-aligned with the screen.
+  # When a species' verified pack art lands in the manifest, flip its
+  # staged flag off in the same commit that binds the cuts; the day0 lines
+  # below describe the day the species HATCHES, not today's render.
   dog:
     home: village
     decorative: true
+    staged: true         # dark until dog art lands — nothing renders
     codex:
-      represents: "Carries no data — exists for joy. Petting is a client-only seeded reaction riding the inspect click: zero state, zero writes. Exactly one dog, forever — scarcity keeps the bound/decorative boundary legible."
+      represents: "Carries no data — exists for joy. STAGED: no dog art is installed yet, so no dog renders (grammar and screen stay truth-aligned). Petting, once live, is a client-only seeded reaction riding the inspect click: zero state, zero writes. Exactly one dog, forever — scarcity keeps the bound/decorative boundary legible."
       mechanism_path: "docs/plans/world-unified-spec-v2-2026-07-09.md"
-      day0: "the dog is there from the egg"
+      day0: "staged dark — the dog arrives with its pack art (target: there from the egg)"
   cat:
     home: wardroom_kettle_counter
     decorative: true
+    staged: true         # dark until cat art lands — nothing renders
     codex:
-      represents: "Carries no data — pets gratefully accepted. Exactly one cat, forever (same scarcity law as the dog); window-sill naps by night bucket, pure phenotype."
+      represents: "Carries no data — pets gratefully accepted. STAGED: no cat art installed yet, so no cat renders. Exactly one cat, forever (same scarcity law as the dog); window-sill naps by night bucket, pure phenotype."
       mechanism_path: "docs/plans/world-unified-spec-v2-2026-07-09.md"
-      day0: "asleep on the sill"
+      day0: "staged dark — arrives with its pack art (target: asleep on the sill)"
   birds:
     home: sky
     decorative: true
+    staged: true         # dark until bird art lands — nothing renders
     codex:
-      represents: "Carries no data — seeded fly-bys (fnv1a(day)) for joy. Never a signal, never a count."
+      represents: "Carries no data — seeded fly-bys (fnv1a(day)) for joy. STAGED: no bird art installed yet, so no fly-bys render. Never a signal, never a count."
       mechanism_path: "docs/plans/world-unified-spec-v2-2026-07-09.md"
-      day0: "one gull over the egg"
+      day0: "staged dark — arrives with its pack art (target: one gull over the egg)"
   butterflies:
     home: meadow
     decorative: true
+    staged: true         # dark until butterfly art lands — nothing renders
     codex:
-      represents: "Carries no data — meadow shimmer in day buckets only, seeded like everything."
+      represents: "Carries no data — meadow shimmer in day buckets only, seeded like everything. STAGED: no butterfly art installed yet, so none render."
       mechanism_path: "docs/plans/world-unified-spec-v2-2026-07-09.md"
-      day0: "none — the meadow is forest yet"
+      day0: "staged dark — none anyway: the meadow is forest yet"
   fish:
     home: quay_water
     decorative: true
+    staged: true         # dark until fish art lands — nothing renders
     codex:
-      represents: "Carries no data — fish jump at the quay for joy, seeded, wave-tile adjacent (helps the open-water <= 30 percent gate rule, never claims a signal)."
+      represents: "Carries no data — fish jump at the quay for joy, seeded, wave-tile adjacent (helps the open-water <= 30 percent gate rule, never claims a signal). STAGED: no fish art installed yet, so no splashes render."
       mechanism_path: "docs/plans/world-unified-spec-v2-2026-07-09.md"
-      day0: "one splash off the rowboat jetty"
+      day0: "staged dark — arrives with its pack art (target: one splash off the rowboat jetty)"
   chicken_flock:
     home: coop_yard
     decorative: true
+    staged: true         # dark until flock art lands — nothing renders
     codex:
-      represents: "DEMOTED to fauna (§15.5 — supersedes the bestiary chick-per-subagent mapping): the flock carries no data; the ev_subagent_completed tier + live tool.call[Agent]/crew.completed bindings moved to the apprentices block (cross-link). Card says carries no data — exists for joy."
+      represents: "DEMOTED to fauna (§15.5 — supersedes the bestiary chick-per-subagent mapping): the flock carries no data; the ev_subagent_completed tier + live tool.call[Agent]/crew.completed bindings moved to the apprentices block (cross-link). STAGED: no flock art installed yet. Card says carries no data — exists for joy."
       mechanism_path: "docs/plans/world-unified-spec-v2-2026-07-09.md"
-      day0: "no coop yet — fauna arrives with the yard"
+      day0: "staged dark — no coop yet; fauna arrives with the yard"
 
 apprentices:             # subagents are REAL actors (§15.5) — small transient figures, never crowd-fill
   appear: "live chronicle tool.call[Agent] verb — an apprentice figure spawns near the spawning officer's current workplace"
