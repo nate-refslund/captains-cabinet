@@ -40,6 +40,41 @@ sys.modules["world_binding_validator"] = _wbv
 _spec.loader.exec_module(_wbv)
 
 
+# show-grammar top-level blocks beyond verbs (v2 + v3). ENTRY_MAP blocks hold
+# named sub-entries that each carry their own codex (group_scenes verbs,
+# fauna creatures); weather additionally nests per-state codexes under
+# `states`. Everything else is one block = one codex row.
+_ENTRY_MAP_BLOCKS = ("group_scenes", "fauna")
+_SIMPLE_BLOCKS = ("idle_program", "night", "killswitch_scene", "weather",
+                  "commute", "construction", "apprentices", "portrait_rail",
+                  "mailbox_view", "killswitch_lever", "roof_cutaway")
+
+
+def _show_grammar_block_rows(sg):
+    """Yield (block_name, [(row_name, codex_or_None), …]) for legend + coverage."""
+    for name in _ENTRY_MAP_BLOCKS:
+        block = sg.get(name)
+        if not isinstance(block, dict):
+            continue
+        rows = []
+        for sub, m in sorted(block.items()):
+            if sub == "codex" or not isinstance(m, dict):
+                continue  # a block-level codex is not a sub-entry
+            rows.append((f"{name}.{sub}", m.get("codex")))
+        if rows:
+            yield name, rows
+    for name in _SIMPLE_BLOCKS:
+        block = sg.get(name)
+        if not isinstance(block, dict):
+            continue
+        rows = [(name, block.get("codex"))]
+        if name == "weather":
+            for sub, m in sorted((block.get("states") or {}).items()):
+                if isinstance(m, dict):
+                    rows.append((f"weather.states.{sub}", m.get("codex")))
+        yield name, rows
+
+
 def main() -> int:
     now = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     morphology_path = GRAMMAR_DIR / "morphology.yml"
@@ -52,6 +87,7 @@ def main() -> int:
         "show_grammar_version": None,
         "mappings": [],
         "verbs": [],
+        "blocks": [],
         "codex_coverage": None,
     }
 
@@ -75,6 +111,20 @@ def main() -> int:
                     "salience": m.get("salience", 0),
                     "codex": m.get("codex") if has_codex else None,
                 })
+            # v2 + v3 grammar blocks (idle program, night, killswitch scene,
+            # weather, commute, construction, fauna, apprentices, portrait
+            # rail, mailbox view, killswitch lever, roof cutaway, …) — codex
+            # is required on every entry (Legend Law), so each block/sub-entry
+            # counts toward coverage exactly like a verb.
+            for name, rows in _show_grammar_block_rows(sg):
+                for row_name, codex in rows:
+                    total += 1
+                    has_codex = isinstance(codex, dict)
+                    covered += 1 if has_codex else 0
+                    legend["blocks"].append({
+                        "block": row_name,
+                        "codex": codex if has_codex else None,
+                    })
         except yaml.YAMLError as e:
             legend["problems"] = [f"show-grammar unparseable: {e}"]
 
@@ -117,7 +167,8 @@ def main() -> int:
     os.replace(tmp, OUT_PATH)
     fails = sum(1 for m in legend["mappings"] if m["status"] == "FAIL")
     print(f"[{now}] world-legend: wrote {OUT_PATH} "
-          f"(verbs={len(legend['verbs'])}, mappings={len(legend['mappings'])}, "
+          f"(verbs={len(legend['verbs'])}, blocks={len(legend['blocks'])}, "
+          f"mappings={len(legend['mappings'])}, "
           f"fails={fails}, coverage="
           f"{legend['codex_coverage'] if legend['codex_coverage'] is not None else 'n/a'})")
     return 0

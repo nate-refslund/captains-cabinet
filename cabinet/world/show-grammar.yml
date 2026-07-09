@@ -29,7 +29,20 @@
 # machine-checkable (mechanism_path must exist — the validator lints it).
 # station: desk = the acting officer's own desk; other ids are fixed civic
 # stations in cabinet/dashboard/src/lib/world/layout.ts.
-version: 2
+#
+# v3 delta (THE LIVING ISLAND, Captain-ratified 2026-07-09; spec of record
+# docs/plans/world-unified-spec-v2-2026-07-09.md §2–§9 + §15 addenda + the
+# 2026-07-09 rulings): appends the behavior/overlay blocks — weather (BOUND
+# to real health signals), commute, construction (the visible-work pipeline),
+# fauna (joy-honest, carries-no-data), apprentices (subagents = real actors),
+# portrait_rail, mailbox_view (read-only, decision-queue deep-link),
+# killswitch_lever (THE one actuator — D2 amended), and roof_cutaway (D3
+# amended: at most ONE interior open at a time, ANY bound building — this PR
+# carries the doctrine amendment, spec §14 call #1). All v1/v2 entries above
+# are byte-untouched; the v2 scenes: block is kept for back-compat until the
+# T1 one-continuous-world cutover (supersession §0.5). Growth surfaces bind
+# in morphology.yml; rung truth lives in cabinet/world/growth-ladders.yml.
+version: 3
 
 vocab:
   salience: { 0: ambient, 1: minor, 2: notable, 3: important, 4: captain-attention, 5: breaking }
@@ -171,3 +184,169 @@ scenes:                  # quantized camera z → scene (design §10.2 adapted)
   "2": wardroom
   "1": street
   "0.5": island
+
+# ---------------------------------------------------------------------------
+# v3 blocks (Captain-ratified 2026-07-09). Parser law unchanged: closed
+# enums, fail-closed on malformed, codex REQUIRED on every entry; unknown
+# top-level keys are ignorable by older loaders (additive-safe).
+# ---------------------------------------------------------------------------
+
+weather:                 # BOUND to real signals (Captain ruling 2026-07-09) — never decorative, never random
+  precedence: [storm, fog, rain, sun]   # first true state wins; exactly one sky per tick
+  hysteresis_evals: 2    # a state must hold 2 consecutive evals before the sky changes (no weather flapping)
+  states:
+    storm:
+      signal: "killswitch active / red"
+      source: "GET cabinet:killswitch (non-nil) — the same key the red wash and the DOM banner read"
+      codex:
+        represents: "cabinet:killswitch set — storm clouds + squall dual-code the reserved red wash and the frozen director. Sky and wash can never disagree: one key, one truth. Red stays killswitch-only."
+        mechanism_path: "cabinet/scripts/kill-switch.sh"
+        day0: "never seen, hopefully"
+    fog:
+      signal: "telemetry degraded / unknown"
+      source: "doctor heartbeat stale > 26h (cabinet:doctor:heartbeat) OR the latest world-chronicle keyframe older than 2 days — the world cannot see, so it renders the not-knowing"
+      codex:
+        represents: "Grey-unmeasured made atmospheric: fog rolls onshore only when the estate's telemetry is stale or unreadable. Dual-coded with the grey buoys and the switchboard hut's all-grey wires (§7.1 staleness gate). Fog never means error — it means unknown."
+        mechanism_path: "cabinet/scripts/cabinet-doctor.sh"
+        day0: "clear — a fresh egg's first keyframe is minutes old"
+    rain:
+      signal: "elevated error / incident rate"
+      source: "census infra block degraded count >= 1 (P-INF: officer crash-loops, dead services, probe failures) — until P-INF lands this state NEVER renders (absent feed = absent claim)"
+      codex:
+        represents: "Real degradation makes rain: any occupied infirmary bed (the ONE sick-place, spec R2) rains over the island. Fail-closed staging: no P-INF feed yet means no rain yet — the sky never invents an incident; sun while blind to incidents is a documented honesty limit, stated here, not a lie."
+        mechanism_path: "cabinet/scripts/world-census.py"
+        day0: "no rain — no infra feed, no claim"
+    sun:
+      signal: "healthy — green doctor + probes"
+      source: "doctor heartbeat fresh with DEAD:0 AND no failing probe verdict in the latest keyframe day — the default earned, not assumed"
+      codex:
+        represents: "Sunshine = the estate is green: fresh doctor heartbeat, zero DEAD lines, no probe failures. Seeded cloud drift stays pure phenotype; the STATE is bound. Sun yields to every higher-precedence state."
+        mechanism_path: "cabinet/scripts/cabinet-doctor.sh"
+        day0: "sunny egg — doctor green on a fresh deployment"
+  codex:
+    represents: "The sky is a health gauge (Captain ruling 2026-07-09): sun = green doctor+probes, rain = real incidents, fog = telemetry-degraded/unknown, storm = killswitch. Ambience overlay ONLY — weather never mints structure (rate-routing law), never reads a wall clock (server-stamped evals, like night), and every state names its exact source above. Supersedes the v1 seeded-decorative weather; the P8 sensor-fog proposal folds into the fog state's chronicle-staleness source."
+    mechanism_path: "cabinet/scripts/cabinet-doctor.sh"
+    day0: "sun, honestly earned"
+
+commute:                 # workplace changes are WALKED, never teleported (spec §12 v1a)
+  switch_share: 0.6      # dominant verb-class share must reach 0.6 ...
+  switch_evals: 2        # ... across 2 consecutive evals ...
+  dwell_s: 180           # ... after 180s minimum dwell at the current workplace (no ping-pong)
+  walk_s: [20, 30]       # commute duration band; path = walkable grid, seeded fnv1a(slug, tick)
+  bubble: verb_icon      # thought bubble renders the classified verb's ICON only — never free text in world-space
+  codex:
+    represents: "The commute classifier: officers relocate between stations/buildings when their real verb mix shifts (activity keys cabinet:officer:activity:<slug>), damped by 0.6-share / 2-evals / 180s-dwell hysteresis — grammar-PR constants (spec risk #4; v1a acceptance replays a recorded chronicle window). The walk is presence ANIMATION (live overlay), never state: replay renders the arrival, not the walk."
+    mechanism_path: "cabinet/scripts/hooks/post-tool-use.sh"
+    day0: "no commutes — nobody is home yet"
+
+construction:            # D4: structure NEVER pops in — the visible-work pipeline (spec §3.3, pure function)
+  quick_small_min: 15    # small quick works (berth chalk, tool pip): 15-minute site
+  quick_large_min: 90    # large quick works (lantern post, field plot): 90-minute site
+  great_hours: 24        # great works (buildings, land): 24h crewed scaffold after 2-keyframe hysteresis
+  phases: {clearing: 0.25, raising: 0.75, finishing: 1.0}   # progress = clamp((now_tick - T0)/D, 0, 1)
+  crew_rule: "1 + tier(footprint, 4) seeded wright sprites"
+  strike_rule: "2nd keyframe fails to confirm -> site STRUCK: crew departs, scaffold down, lot reverts; the site sign cites both keyframes (an honest false start)"
+  site_ledger: "shared/interfaces/world-sites.jsonl"   # P-SITES: append-only T0 witness ledger, renderer-side, rebuildable
+  codex:
+    represents: "Every growth rung earns itself ON SCREEN (Captain ruling: growth = visible work — sprites clear trees and build when real events fire): T0 = the witness record (chronicle ts / first-seen snapshot tick / first confirming keyframe), progress a pure function of (T0, now_tick) — replay-identical. Crew sprites are DECORATIVE-HONEST staging of a real witnessed transition, never officer claims (§15.5 carve-out; their card says exactly that). High-rate events can never start buildings — T0-from-keyframe enforces rate-routing."
+    mechanism_path: "cabinet/scripts/world-census.py"
+    day0: "no sites — nothing has ever been built"
+
+fauna:                   # §15.5 population law: fauna for joy; HUMAN-shaped sprites = real actors only
+  dog:
+    home: village
+    decorative: true
+    codex:
+      represents: "Carries no data — exists for joy. Petting is a client-only seeded reaction riding the inspect click: zero state, zero writes. Exactly one dog, forever — scarcity keeps the bound/decorative boundary legible."
+      mechanism_path: "docs/plans/world-unified-spec-v2-2026-07-09.md"
+      day0: "the dog is there from the egg"
+  cat:
+    home: wardroom_kettle_counter
+    decorative: true
+    codex:
+      represents: "Carries no data — pets gratefully accepted. Exactly one cat, forever (same scarcity law as the dog); window-sill naps by night bucket, pure phenotype."
+      mechanism_path: "docs/plans/world-unified-spec-v2-2026-07-09.md"
+      day0: "asleep on the sill"
+  birds:
+    home: sky
+    decorative: true
+    codex:
+      represents: "Carries no data — seeded fly-bys (fnv1a(day)) for joy. Never a signal, never a count."
+      mechanism_path: "docs/plans/world-unified-spec-v2-2026-07-09.md"
+      day0: "one gull over the egg"
+  butterflies:
+    home: meadow
+    decorative: true
+    codex:
+      represents: "Carries no data — meadow shimmer in day buckets only, seeded like everything."
+      mechanism_path: "docs/plans/world-unified-spec-v2-2026-07-09.md"
+      day0: "none — the meadow is forest yet"
+  fish:
+    home: quay_water
+    decorative: true
+    codex:
+      represents: "Carries no data — fish jump at the quay for joy, seeded, wave-tile adjacent (helps the open-water <= 30 percent gate rule, never claims a signal)."
+      mechanism_path: "docs/plans/world-unified-spec-v2-2026-07-09.md"
+      day0: "one splash off the rowboat jetty"
+  chicken_flock:
+    home: coop_yard
+    decorative: true
+    codex:
+      represents: "DEMOTED to fauna (§15.5 — supersedes the bestiary chick-per-subagent mapping): the flock carries no data; the ev_subagent_completed tier + live tool.call[Agent]/crew.completed bindings moved to the apprentices block (cross-link). Card says carries no data — exists for joy."
+      mechanism_path: "docs/plans/world-unified-spec-v2-2026-07-09.md"
+      day0: "no coop yet — fauna arrives with the yard"
+
+apprentices:             # subagents are REAL actors (§15.5) — small transient figures, never crowd-fill
+  appear: "live chronicle tool.call[Agent] verb — an apprentice figure spawns near the spawning officer's current workplace"
+  depart: "crew.completed for that run, or activity TTL expiry — the figure IS the run, not a running-count claim (TTL semantics stated outright: a fast run's figure may linger to TTL)"
+  cap_per_officer: 3     # overflow renders a +N chip — never a crowd
+  lifetime_face: "the durable face stays morphology subagents_lifetime (residential yard cobblestones, ev_subagent_completed) — dual-view, cross-linked (D7)"
+  codex:
+    represents: "Every human-shaped sprite corresponds to a real acting entity: apprentice figures render ONLY while a real subagent run is live, attributed to its spawning officer. Supersedes the chick mapping (see fauna.chicken_flock). No fictional villagers, shopkeepers, or extras, ever — a stranger in town implies an agent that does not exist."
+    mechanism_path: "cabinet/scripts/hooks/post-tool-use.sh"
+    day0: "no apprentices — no crew has ever run"
+
+portrait_rail:           # chrome, not world (§9.1) — the aesthetic gate judges the world framebuffer, not the rail
+  slots: 4               # roster slots; collapses to 16-px status dots in ambient mode
+  portrait: "Portrait Pieces composition seeded fnv1a(officer_id) — same face forever; pack ON-DISK (§15.6), composed once at build, manifest'd as derived assets with provenance"
+  verb_line: "cabinet:officer:activity:<id> — talk animation only while the verb is < 5 min fresh; stale > 30 min dims to 'idle since HH:MM'; chronicle actor 'unknown' NEVER attributes to a slot"
+  status_ring: "reserved salience palette, dual-coded with shape; red NEVER (killswitch-only)"
+  cost_strip: "per-officer today $X.XX + 8-px bar normalized to the day's max, from cabinet:cost:tokens:daily:<date> (strict cost-viz ruling: missing field = grey em-dash, never $0-as-fact; every numeral DOM mono)"
+  codex:
+    represents: "The always-on officer rail: WHO is doing WHAT and what wages it drew today — every line cites its exact key. Lives in the DOM outside the world framebuffer; the cost strip is a dual-view of the desk ledger papers (D7 cross-link: same per-officer number, chrome dialect). Wages drawn from the Captain's treasury — real spend as wages; rent/salary fiction rejected everywhere including this codex."
+    mechanism_path: "cabinet/scripts/hooks/session-stop.sh"
+    day0: "four grey dots — no activity keys, no wages drawn yet today"
+
+mailbox_view:            # Captain ruling 2026-07-09: mailbox click -> decision-queue VIEW; read-only, always
+  interaction: read_only # navigate / inspect / deep-link ONLY — approving/acting stays in Captain surfaces
+  click: "opens the dashboard decision-queue as a READ-only in-world render (pack dialog frame) + deep-links to the dashboard route — no actuation, no state change, ever"
+  flag_binding: "morphology mailbox_pending (pending_captain_items — P1, dark until the snapshot carries it; source-of-record = spec §14 open call #5)"
+  codex:
+    represents: "The crossroads mailbox is the world's face of the Captain's decision queue: flag up while items wait, click shows the queue read-only and links out. The ONE actuator in the world is the killswitch lever — the mailbox is explicitly NOT one (D2 amended). Item titles are free text and live only in the authed card response, never world-space."
+    mechanism_path: "cabinet/dashboard/src/app/api/world/stream/route.ts"
+    day0: "flag down, empty box"
+
+killswitch_lever:        # THE ONE in-world actuator (Captain ruling 2026-07-09; D2 amended — everything else read-only)
+  placement: "Great House exterior wall, left of the door (spec R4 3-way resolution) — far zoom renders a 6-px lever pin at the same anchor"
+  arm: "tap 1 arms (amber glow, 10s auto-expire) + opens the heavy confirm dialog with live state as PROOF (redis GET cabinet:killswitch)"
+  pull: "tap 2 PULL -> POST /api/world/killswitch -> shells the existing cabinet/scripts/kill-switch.sh activate — UI sugar over the proven script, no new write machinery; release = the same ceremony via deactivate"
+  cookie_gate: "PULL enabled only with the captain session cookie — without it the lever is view-only (visitors see truth, cannot act)"
+  state_binding: "GET cabinet:killswitch every tick — the lever renders REAL state including out-of-band shell flips"
+  render: "break-through-fog: lever + pin render above night tint, weather, red wash, occlusion — the one element exempt from lighting passes; its red PULL button is the only red interactive element anywhere"
+  witness: "the API route emits chronicle killswitch.pull (actor captain, src world-ui) after a successful shell call; out-of-band flips are witnessed by the chronicle daemon observing the key change; API failure prints the exact fallback command — never a silent failure"
+  consequence_copy: "All officer operations halt on their NEXT tool invocation — not instantly (docs-track-the-code: this copy changes in the same PR as any kill-switch.sh semantics change)"
+  codex:
+    represents: "The single write the world can perform, with the Captain's hand on it twice: two-tap + confirm + cookie. Everything else — mailbox included — navigates, inspects, or deep-links only. Dual-coded with killswitch_scene above (same key, same reserved red); the world may display posture and halt state but never offer a widen control."
+    mechanism_path: "cabinet/scripts/kill-switch.sh"
+    day0: "lever up, never pulled"
+
+roof_cutaway:            # D3 amended — this PR carries the doctrine amendment (spec §14 call #1)
+  max_open: 1            # at most ONE interior open at a time, ANY bound building
+  zoom_min: 3            # cutaway eligible at >= x3 only
+  coverage_share: 0.4    # the building bbox must cover >= 40 percent of the viewport's central third ...
+  hold_ticks: 2          # ... held 2 ticks; deterministic tie-break by birth order
+  fade_ms: 300           # roof layer fades 1 -> 0.08 IN PLACE; wall caps stay; pan away restores the roof
+  codex:
+    represents: "Universal single-active roof-cutaway: the interior reveals in place (props + officers y-sorted inside, night tint + lamp pools apply indoors too), the world ticks on around the open room, and officers are revealed mid-verb — never teleported (the director stages interior stations whether or not a roof hides them). Same bounded-complexity spirit as the old wardroom-only line, universal scope; the v2 scenes: enum above is kept untouched for back-compat until the T1 one-continuous-world cutover (supersession §0.5)."
+    mechanism_path: "docs/plans/world-unified-spec-v2-2026-07-09.md"
+    day0: "one cottage, one roof — nothing to hide yet"
