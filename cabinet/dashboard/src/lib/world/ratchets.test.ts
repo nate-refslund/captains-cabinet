@@ -3,9 +3,15 @@
  * consensus graft; kickoff step 3 "CI ratchets at route creation").
  *
  * These greps are the mechanical form of the doctrine:
- *  1. NO write server-actions anywhere under the world trees ('use server').
+ *  1. NO write server-actions DECLARED anywhere under the world trees
+ *     ('use server') — and, per the Captain ruling 2026-07-09 (killswitch
+ *     lever = the ONE in-world actuator), EXACTLY ONE world file
+ *     (components/world/killswitch-lever.tsx) may IMPORT a server action,
+ *     and only the existing killswitch one. Every other world file stays
+ *     action-free (test 1b).
  *  2. NO POST/PUT/PATCH/DELETE exports from /api/world routes (GET-only —
- *     the world never grows a write path).
+ *     the world never grows a write path; the lever rides the pre-existing
+ *     dashboard action, not a world route).
  *  3. Text-only rendering: no dangerouslySetInnerHTML / innerHTML /
  *     insertAdjacentHTML in world components.
  *  4. Determinism: no Math.random / Date.now in the render path
@@ -54,10 +60,29 @@ describe('world CI ratchets', () => {
     expect(sources.length).toBeGreaterThan(4)
   })
 
-  it('1. no server actions under any world tree', () => {
+  it('1. no server actions declared under any world tree', () => {
     for (const p of sources) {
       expect(read(p), p).not.toMatch(/['"]use server['"]/)
     }
+  })
+
+  it('1b. ONE-actuator carve-out: only killswitch-lever.tsx imports a server action', () => {
+    // Captain ruling 2026-07-09: the killswitch lever is the single
+    // in-world actuator (two-tap + confirm + captain cookie), wired to the
+    // PRE-EXISTING dashboard killswitch action. This ratchet pins the
+    // carve-out to exactly that one file and exactly that one action —
+    // any second '@/actions/' import in the world trees is a regression.
+    const offenders: string[] = []
+    for (const p of sources) {
+      if (!/@\/actions\//.test(read(p))) continue
+      offenders.push(p)
+    }
+    expect(offenders.map((p) => path.basename(p))).toEqual(['killswitch-lever.tsx'])
+    const lever = read(
+      path.join(DASH, 'src', 'components', 'world', 'killswitch-lever.tsx')
+    )
+    // Only the killswitch action, nothing else, and no broadened imports.
+    expect(lever.match(/@\/actions\/[\w-]+/g)).toEqual(['@/actions/killswitch'])
   })
 
   it('2. /api/world routes are GET-only (no write verbs exported)', () => {

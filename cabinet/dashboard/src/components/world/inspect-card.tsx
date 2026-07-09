@@ -11,6 +11,8 @@
  */
 import { useState } from 'react'
 import type { ChronicleRecord, OfficerPresence } from '@/lib/world/types'
+import { tabsFor } from '@/lib/world/ui-cards'
+import PixelFrame, { type FrameTheme } from './pixel-frame'
 
 export interface InspectTarget {
   kind: 'officer' | 'station' | 'record'
@@ -37,15 +39,25 @@ export interface InspectTarget {
 export default function InspectCard({
   target,
   onClose,
+  theme = 'slate',
 }: {
   target: InspectTarget
   onClose: () => void
+  /** Pixel-frame theme (T3 §9.2): warm parchment = Harvestholm surfaces,
+   * cool slate = Lantern Quay (default). The frame is SKIN — the
+   * WHAT/NOW/PROOF contract below is untouched. */
+  theme?: FrameTheme
 }) {
-  const tabs = target.decorative ? (['WHAT'] as const) : (['WHAT', 'NOW', 'PROOF'] as const)
+  // Tab set derives from the shared coverage contract (ui-cards.tabsFor):
+  // bound = WHAT/NOW/PROOF; decorative = WHAT-only.
+  const tabs = tabsFor(target.decorative) as ReadonlyArray<'WHAT' | 'NOW' | 'PROOF'>
   const [tab, setTab] = useState<(typeof tabs)[number]>('WHAT')
 
   return (
-    <div className="pointer-events-auto fixed right-4 top-16 z-40 w-96 max-w-[92vw] rounded-lg border border-zinc-700 bg-zinc-900/95 text-zinc-100 shadow-2xl">
+    <PixelFrame
+      theme={theme}
+      className="pointer-events-auto fixed right-4 top-16 z-40 w-96 max-w-[92vw]"
+    >
       <div className="flex items-center justify-between border-b border-zinc-700 px-3 py-2">
         <span className="truncate text-sm font-semibold">{target.title}</span>
         <button
@@ -173,6 +185,6 @@ export default function InspectCard({
           </div>
         )}
       </div>
-    </div>
+    </PixelFrame>
   )
 }
