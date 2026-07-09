@@ -55,7 +55,11 @@ def test_assemble_dossier_shape():
     assert d["taint"]["injection_suspect"] is False
 
 
-def test_assemble_dossier_failsoft_absent_ledgers():
+def test_assemble_dossier_failsoft_absent_ledgers(tmp_path, monkeypatch):
+    # Fresh-box semantics: point CABINET_ROOT at an empty dir so the captain-law
+    # ledgers are genuinely ABSENT (on a live deployment they exist, which made
+    # this test read the real shared/interfaces/ ledgers and fail).
+    monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
     d = t2.assemble_dossier(_item(), _decision())   # no ledgers/feed injected
     assert d["patterns"] == "" and d["intents"] == ""
     assert isinstance(d["feed_rows"], list)
