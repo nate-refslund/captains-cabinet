@@ -199,6 +199,12 @@ def _fold_ledger_row(sit: dict, row: dict) -> None:
         return
 
     prop = row.get("proposal")
+    if not isinstance(prop, dict) and "outcome" in row:
+        # A proposal-less outcome row is a RECORD (e.g. the H6 estate-triage
+        # row, probe receipts) — never live demand on the Captain. Folds as
+        # closed unless a real proposal on the same situation says otherwise.
+        sit["_closed_ts"] = max(sit["_closed_ts"], ts)
+        return
     if isinstance(prop, dict):
         decision = prop.get("decision")
         if decision is None and "outcome" not in row:
