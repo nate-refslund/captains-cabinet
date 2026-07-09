@@ -51,6 +51,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from framework.acting import action_lane, lane_dedup as ld  # noqa: E402
+from framework.attention import acted_overlay  # noqa: E402  # P2 world-grounding
 from framework.env import vault_dir, shared_env_path, product_brain_dir  # noqa: E402
 from framework.acting.loop import (  # noqa: E402
     expire_event, pending_proposals, proposal_event, proposal_id)
@@ -93,18 +94,24 @@ def _covered_window_days() -> float:
 COVERED_WINDOW_D = _covered_window_days()
 
 
+def _covered_since() -> "str | None":
+    """The covered window's inclusive ISO floor (None = all-time). Shared by
+    covered_evidence_refs and the P2 acted-overlay so both planes read the
+    same clock."""
+    if COVERED_WINDOW_D <= 0:
+        return None
+    return (dt.datetime.now(dt.timezone.utc)
+            - dt.timedelta(days=COVERED_WINDOW_D)
+            ).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def covered_evidence_refs() -> frozenset:
     """Evidence refs carried by prior action cards inside the covered window
     (open or decided) — the stable dedup identity across runs (LLM subject
     slugs drift; refs don't). Windowed per COVERED_WINDOW_D above."""
     refs: set = set()
     try:
-        since = None
-        if COVERED_WINDOW_D > 0:
-            since = (dt.datetime.now(dt.timezone.utc)
-                     - dt.timedelta(days=COVERED_WINDOW_D)
-                     ).strftime("%Y-%m-%dT%H:%M:%SZ")
-        for ev in read_ledger(since=since):
+        for ev in read_ledger(since=_covered_since()):
             act = ev.get("action") or ""
             # 'action-card' = a presented proposal row; 'acted:<kind>' = an
             # unattended act row. ACTED-EVENT IDENTITY FIX (germline batch
@@ -1063,6 +1070,24 @@ def main() -> int:
         print("done: no fresh signals in window")
         return 0
 
+    # P2 acted-state overlay (attention-gateway spec §8): what the cabinet
+    # already EXECUTED, from the ledger's acted rows × the undo journal.
+    # Rendered into the signals so the proposer sees acted/reversed state
+    # (gather-then-decide), and passed canonically to the propose core for
+    # the mechanical already-acted drop + reversed-refs un-covering. Build
+    # failure ⇒ world state UNKNOWN: cards still propose (fail toward
+    # presenting) but act-first is DISARMED below — never auto-act on an
+    # unverifiable world.
+    # named acted_view, NOT `acted` — the act-first loop below reuses `acted`
+    # as its per-run counter (review cp2 Low-2 shadowing landmine).
+    acted_view = None
+    try:
+        acted_view = acted_overlay.load_acted(since=_covered_since() or "")
+    except Exception as e:
+        print(f"acted-overlay: unavailable ({e}) — world state UNKNOWN this run")
+    if acted_view is not None:
+        signals += acted_overlay.render_overlay(acted_view)
+
     decided = set(ld.decided_subjects().keys())
     open_subjects = {  # any pending proposal's subject, action or draft
         (p.get("subject") or "") for p in pending_proposals() if isinstance(p, dict)}
@@ -1071,6 +1096,8 @@ def main() -> int:
         signals, as_of=now.strftime("%Y-%m-%dT%H:%M:%SZ"), llm=_llm,
         decided_subjects=decided, open_subjects=open_subjects,
         budget_left=budget, covered_evidence=covered_evidence_refs(),
+        acted_refs=(acted_view or {}).get("live_canonical") or frozenset(),
+        reversed_refs=(acted_view or {}).get("reversed_canonical") or frozenset(),
         directions=load_directions(), suppress_log=_suppress_log)
 
     # LANE CELL-KEY NORMALIZATION (germline batch 2026-07-05): collapse every
@@ -1106,6 +1133,13 @@ def main() -> int:
             print(f"act-first: veto cache rebuild errored ({e}) — acting disabled this run")
         if not veto_registry.veto_cache_ready():
             print("act-first: veto cache not ready — acting disabled this run (propose-only)")
+            act_first = False
+        # P2 world-grounding floor: an unverifiable acted-state means the lane
+        # cannot prove it is not about to duplicate a standing artifact —
+        # cards still PROPOSE (fail toward presenting), acting is off.
+        if act_first and acted_view is None:
+            print("act-first: acted-overlay unavailable — world state unknown; "
+                  "acting disabled this run (propose-only)")
             act_first = False
     prior_acted = _prior_acted_types() if act_first else frozenset()
     # yml-resolved once per run (fail-safe default on any read problem); never
