@@ -49,12 +49,19 @@ onboarding web-research brief → Library at genesis).
 **Hatching mode** is the bounded genesis window of a deployment:
 
 ```
-OPEN   = genesis incomplete, decided SERVER-SIDE:
-         instance/config/genesis.stamp ABSENT
-         AND org-reality check agrees (no seeded roster rows, no live Chair
-         launchd job, no ratified outcomes carrying this CABINET_ID)
-CLOSED = genesis.stamp present OR org-reality says a cabinet already lives here
+OPEN   = genesis incomplete, decided SERVER-SIDE, scoped to THIS INSTALL
+         (root + namespace — §10.1):
+         instance/config/genesis.stamp ABSENT in this root
+         AND org-reality check agrees FOR THIS CABINET (no seeded roster rows
+         in this install, no live launchd job under this cabinet's label
+         prefix, no ratified outcomes carrying THIS CABINET_ID)
+CLOSED = genesis.stamp present OR org-reality says a cabinet already lives
+         in THIS root
 ```
+
+(Per-install scoping is load-bearing on a multi-cabinet Mac, §10: another cabinet
+living elsewhere on the machine neither BLOCKS a fresh hatch in a new root, nor can
+a fresh root ever REOPEN an existing cabinet's closed window.)
 
 While OPEN, and only while OPEN, the dashboard serves the hatching UI and the
 `/api/hatch/*` captain-write endpoints (§6). When CLOSED, every hatching route returns
@@ -110,14 +117,21 @@ renders progress; the engine does the work; every step is identical underneath.
 **Act I — make the sea (double-click → browser; silent bootstrap, minimal native
 progress dialog):**
 
-1. **Idempotent re-launch FIRST**: if an install already exists (marker at
-   `~/CaptainsCabinet/captains-cabinet`), the app never re-bootstraps and NEVER
-   re-hatches — hatching OPEN ⇒ it reopens `/world?hatching`; CLOSED (a live cabinet)
-   ⇒ it opens `/world` (the living world) and exits. Double-clicking again is always
-   safe; the §0 server gates are the backstop, the app is polite before they are even
-   reached.
-2. Unpack the bundled payload to `~/CaptainsCabinet/captains-cabinet` (Terminal fallback:
-   the existing clone is the install).
+1. **DETECTION FIRST (Captain amendment 2 — §10.1)**: the app scans for existing
+   cabinets on this Mac — the machine registry `~/.cabinet/registry.json` plus a
+   launchd label scan (`launchctl print gui/$(id -u)` for `com.cabinet.*`) to catch
+   pre-registry installs. If ANY exist, the app opens THEIR world (one cabinet ⇒
+   straight to its dashboard; several ⇒ a native chooser listing the islands by
+   name) and offers **"Hatch a new cabinet…"** as an explicit choice on the same
+   dialog — never the default, never hidden. An unregistered existing cabinet is
+   offered registration first (read-only inspection of its `instance/config` + one
+   registry row; the cabinet itself untouched). Re-hatching an existing install is
+   impossible from the app AND from its server (§0 gates — two independent layers).
+2. On "Hatch a new cabinet" (or a genuinely empty Mac): unpack the bundled payload to
+   the registry-allocated root `~/CaptainsCabinet/<slug>/captains-cabinet` (the slug
+   arrives at the signpost, §1.3/§10.2 — until then a staging dir; first cabinet on a
+   clean Mac may default `main`). Terminal fallback: the existing clone IS the
+   install, registered as-is.
 3. **Self-record**: the engine re-execs under
    `script -q ~/hatch-logs/hatch-$(date +%Y%m%d-%H%M%S).typescript` — the flight-recorder
    rule (mini-hatch runbook) is structural, not remembered; the typescript is
@@ -175,11 +189,15 @@ south edge and crosses at the fixed 0.5 s/tile lane physics to the jetty of the 
 islet** (spec v2 §3.1 / `egg-tile-plan.md`: R=24 forested islet, 20×14 cleared heart, one
 cottage, bare flagpole, mailbox flag-down, dirt path, rowboat jetty, dark lantern-cairn).
 A lantern-lit figure — **the Captain; §15.5 sanctions a transient real external at
-dock/mailbox, and no one is more real here** — steps onto the jetty head, walks the path
-to the cottage door; the camera follows; the door opens; the roof fades (the v1b cutaway,
-single-active); inside: a writing desk, a candle, the first parchment dialog frame (32×32
-pack frames, Harvestholm theme, typewriter text, DOM mono for every datum — spec v2 §9.2 /
-§15.6). The interview begins where the org will live.
+dock/mailbox, and no one is more real here** — steps onto the jetty head, where a bare
+signpost waits. **The first exchange happens right there, on landing (Captain amendment
+2, §10.2): "What will you call this island?"** The island's name IS the cabinet's name:
+a wright carves it into the signpost on the spot, the machine registry allocates this
+cabinet's namespaces from it, and the rowboat's transom takes the slug. Then the figure
+walks the path to the cottage door; the camera follows; the door opens; the roof fades
+(the v1b cutaway, single-active); inside: a writing desk, a candle, the first parchment
+dialog frame (32×32 pack frames, Harvestholm theme, typewriter text, DOM mono for every
+datum — spec v2 §9.2 / §15.6). The interview begins where the org will live.
 
 Codex on the arriving figure: *"You. The only human this world will ever render."* The
 sprite retires when the interview opens; the Captain is never a resident avatar.
@@ -230,10 +248,10 @@ honest that nothing is active yet ("declared, not yet alive — contexts ship
 
 | # | cabinet-init question (answers.yml key) | Desk exchange | VISIBLE consequence (egg-era form) | PROOF on the card |
 |---|---|---|---|---|
-| 1 | Captain name (`captain.name`) | "What name do your officers know you by?" | **The signpost**: a wright plants a rough-hewn post where the path meets the jetty and carves *"The Cabinet of ‹Name›"* | `platform.yml captain_name` (via `framework.env.captain_name()`) |
+| 1 | Captain name (`captain.name`) | "What name do your officers know you by?" | **The door lintel**: a wright carves *"‹Name›'s cabinet"* above the Great House door (the signpost belongs to the ISLAND's name — §1.3/§10.2) | `platform.yml captain_name` (via `framework.env.captain_name()`) |
 | 2 | Timezone (`captain.timezone`) | "Where does your sun rise?" — picker seeded from the browser's IANA zone, confirmed not assumed | **The sun finds your sky**: the day/night sky clock snaps to the Captain's local hour, visibly wheeling to position | `platform.yml captain_timezone`; sky-clock binding (v1a) |
 | 3 | Telegram chat id (`captain.telegram_chat_id`) | NOT asked as a number. Deferred to errand E1's return leg: after the bot token validates, the world says "send your new bot any word" and captures the chat id from that first message (§3 E1) | **The mailbox gets its address plate** (small brass strip on the post) | `platform.yml captain_telegram_chat_id` (an address, never a secret) |
-| 4 | Cabinet id + mode (`cabinet.id`, `cabinet.mode`) | "What is this deployment called?" (multi-mode asked only if a second cabinet is declared) | **The rowboat's transom is painted** with the cabinet id | `answers.yml cabinet.id`; multi mode queues the `CABINET_MODE`/`CABINET_ID` .env append (§6.2) |
+| 4 | Cabinet id + mode (`cabinet.id`, `cabinet.mode`) | Already answered AT THE SIGNPOST on landing (§1.3): island name → display name; slug (generator `SLUG_RE`, reserved-ids + registry-uniqueness checked) → `cabinet.id`. The desk only CONFIRMS it. Mode: auto-`multi` when the registry already holds another cabinet (§10.2) | **The signpost** carries the island name; **the rowboat's transom** takes the slug | `answers.yml cabinet.id`; registry row (§10.1); multi mode queues the `CABINET_MODE`/`CABINET_ID` .env appends (§6.2) |
 | 5 | Officer model (`cabinet.officer_model`) | One confirm, default shown | Card-only (no prop — a model string is not a place) | `roster.yml model:` stamp |
 | 6 | Lanes: name + slug (`lanes[].name/slug`) | "Name the waters you work." One exchange per lane | **A claim is staked at sea**: a barrel-buoy drops at the lane's archipelago fan bearing (spec v2 §2.2 — anchors are morphology law, fixed at birth) + a shore stake with the slug; mist stays over the slot. Codex: *"staked, not earned — no outcome has ever landed here"* | `contexts/<slug>.yml` (`active: false`), `archipelago-positions.json` slot |
 | 7 | Lanes: repos (`lanes[].repos`) | "Which holds carry its cargo?" | **The cargo manifest**: a paper nailed to the jetty head listing repo names per lane | `projects/<slug>.yml product.repo` |
@@ -552,8 +570,13 @@ already-ruled surface and is unchanged.
   for technical captains.
 - **Security plane**: §6 complete (routes, gates, 410 lifecycle, ledger echo) + the
   security test suite (§7.4).
-- **Arrival + hatch choreography, minimal**: rowboat-in, walk, cutaway desk; Chair boat
-  on real job start + at-anchor drill + window light; lanterns per status-feed line.
+- **Arrival + hatch choreography, minimal**: rowboat-in, signpost naming, walk, cutaway
+  desk; Chair boat on real job start + at-anchor drill + window light; lanterns per
+  status-feed line.
+- **Multi-cabinet v1b half (§10.6)**: detection + native chooser + explicit
+  "Hatch a new cabinet…", registry create/append + legacy registration offer, island
+  naming at the signpost (name→slug→cabinet.id), per-install genesis gates, namespace
+  bundle allocated + recorded.
 
 ### 7.2 v2 (polish + probes; nothing in v1b lies while waiting)
 
@@ -562,9 +585,12 @@ probe); one-time login URL (kills the watchword typing); richer hatch choreograp
 (per-service arrivals riding the infra/bestiary dialects when those layers land);
 ONBOARD-2 book-crate delivery scene; stranger-hatch usability pass with a real
 non-technical captain; hatching-tempo tuning against real interview pacing; launcher
-polish (menu-bar residency, payload update story). **Commercialization-lane (deferred
-with that lane, not v2):** signed + notarized Hatch Cabinet.app (Apple Developer cert)
-— removes the Gatekeeper right-click→Open step.
+polish (menu-bar residency, payload update story); **full multi-run + the shared
+archipelago** (§10.3/§10.5: MULTI-CABINET-READINESS executed, two-cabinet side-by-side
+drill, multi-source renderer + island-rises choreography riding WORLD-E0B-MINI — the
+Mini-island flagship demo). **Commercialization-lane (deferred with that lane, not
+v2):** signed + notarized Hatch Cabinet.app (Apple Developer cert) — removes the
+Gatekeeper right-click→Open step.
 
 ### 7.3 Reuse map (what this rides on — build nothing twice)
 
@@ -610,7 +636,14 @@ with that lane, not v2):** signed + notarized Hatch Cabinet.app (Apple Developer
    byte-identical frames); every hatching prop has codex or `decorative: true`; honest
    zeros intact (the cairn stays DARK through the entire hatch — onboarding mints no
    graduation, no light).
-6. **A13 parity:** ledger row WORLD-ONBOARDING-V1B ↔ plan-doc row, gate exit 0.
+6. **Multi-cabinet v1b (§10):** with one cabinet registered, a second app launch opens
+   its world (no re-bootstrap, no re-hatch) and shows "Hatch a new cabinet…"; choosing
+   it lands a NEW island whose signpost naming refuses registry-colliding and reserved
+   slugs with the exact reason; the registry row carries the full namespace bundle and
+   zero secrets; cabinet A's genesis state provably does not gate cabinet B's routes
+   (per-install 410 tests).
+7. **A13 parity:** ledger rows WORLD-ONBOARDING-V1B + MULTI-CABINET-READINESS ↔
+   plan-doc rows, gate exit 0.
 
 ---
 
@@ -644,12 +677,16 @@ with that lane, not v2):** signed + notarized Hatch Cabinet.app (Apple Developer
   focus precedes org onboarding; outcomes are PROPOSED by the org, never interviewed —
   the removed phase-5 is explicit (§2.1).
 
-**Security holes hunted:** the §6.4 table is the record; the three that shaped the design:
+**Security holes hunted:** the §6.4 table is the record; the four that shaped the design:
 (1) replayed-hatching needed the org-reality second gate, stamp alone was forgeable by
-deletion; (2) the ENTER-at-the-wheel stdin gate is what keeps org activation out of the
-web trust domain entirely — without it, "the server runs bootstrap when ready" would have
-made the world an org-state actuator through a side door; (3) secret echo was eliminated
-structurally (write-only lane + derived-proof responses), not by "being careful".
+deletion; (2) the wheel gate (native Launch dialog / fallback stdin — an OS UI event in
+the Captain's local launcher process) is what keeps org activation out of the web trust
+domain entirely — without it, "the server runs bootstrap when ready" would have made the
+world an org-state actuator through a side door; (3) secret echo was eliminated
+structurally (write-only lane + derived-proof responses), not by "being careful";
+(4) multi-cabinet forced the genesis gates to be PER-INSTALL (§0/§10.1) — a machine-wide
+gate would have let cabinet A's existence block cabinet B's hatch, or worse, let a fresh
+staging root masquerade as a reopened window on A.
 
 **Chicken-and-egg audit:**
 
@@ -710,9 +747,147 @@ normal git path post-hatch — the launcher never auto-updates the tree).
    to hard-required — one constant in the .genesis-ready predicate.
 
 ---
+
+## 10. MULTI-CABINET (Captain amendment 2, 2026-07-09 — BINDING; where this contradicts §0–9, THIS section wins)
+
+One Mac, N cabinets, one archipelago. Every judgment below is grounded in what the code
+does today (read-only evidence pass 2026-07-09), and everything that today HARDCODES a
+single-cabinet assumption is flagged into the **MULTI-CABINET-READINESS** ledger row
+rather than hand-waved.
+
+### 10.1 Detection + the machine registry (v1b)
+
+- **Registry:** `~/.cabinet/registry.json` — the ONE machine-level file the launcher
+  owns (`~/.cabinet/` already exists as the machine state home: autoreply/logs/state).
+  Schema `cabinet.registry/v1`:
+
+  ```json
+  { "schema": "cabinet.registry/v1",
+    "cabinets": [ { "name": "Harvestholm", "slug": "harvestholm",
+        "cabinet_id": "harvestholm", "root": "/Users/x/CaptainsCabinet/harvestholm/captains-cabinet",
+        "dashboard_port": 3000, "redis_url": "redis://127.0.0.1:6379/0",
+        "launchd_prefix": "com.cabinet.", "claude_config_dir": "~/.cabinet/harvestholm/claude-config",
+        "telegram_bot_username": "…", "created_at": "…", "genesis": "closed" } ],
+    "peers": {} }
+  ```
+
+  Rules: launcher-only writes (flock + atomic); **no secrets ever** (bot USERNAME yes,
+  token never); **not a trust surface** — every consumer realpath-validates `root`
+  before serving/opening anything, and the world renderer treats registered chronicle
+  paths as read-only exhaust (§10.5). The registry records; it never actuates.
+- **Detection** (launcher Act I step 1, §1.2): registry ∪ launchd label scan
+  (`com.cabinet.*`) ∪ known legacy roots. Existing cabinets ⇒ open THEIR world (native
+  chooser when several — islands listed by name); **"Hatch a new cabinet…"** is an
+  explicit same-dialog choice, never the default. Pre-registry cabinets (this MacBook,
+  the Mini) get offered a registration row on first sight — read-only inspection, one
+  registry append, nothing in the cabinet touched.
+- **Genesis gates are PER-INSTALL** (§0 amended): each cabinet's stamp + org-reality
+  check scope to its own root/label-prefix/CABINET_ID. Cabinet A's existence neither
+  blocks nor reopens anything about cabinet B.
+
+### 10.2 Naming — the island IS the cabinet (v1b)
+
+The signpost exchange on landing (§1.3) is the naming act: **island name = cabinet
+display name**; slug = kebab-case of it (generator `SLUG_RE` + `RESERVED_SLUGS` +
+registry uniqueness — refusals surface as the wright shaking his head with the exact
+reason). From the name the registry allocates the cabinet's whole namespace bundle:
+root dir, dashboard port, Redis db index, launchd label prefix, CLAUDE_CONFIG_DIR —
+recorded in the registry row at carving time, consumed by the generator/engine
+(`cabinet.id` = slug; `CABINET_MODE=multi` + `CABINET_ID` .env appends automatic when
+the registry already holds another cabinet). The FIRST cabinet on a clean Mac may stay
+single-mode with today's bare namespaces (db 0, `com.cabinet.` labels) — recorded
+as-is in its registry row; converting it to multi-mode later is a documented Captain
+step (readiness row), never a silent rewrite.
+
+### 10.3 Multi-run namespacing (v2 — honest judgments, not wishes)
+
+Per-cabinet, all registry-allocated:
+
+| Surface | Design | Honest basis |
+|---|---|---|
+| Repo clone dir | `~/CaptainsCabinet/<slug>/captains-cabinet` | plain; shared/interfaces + ledgers are per-clone already |
+| Dashboard port | registry-allocated (3000 + next-free), bound 127.0.0.1 | today's port is config; per-install .env carries it |
+| **Redis isolation** | **DB index, not key-prefix**: per-cabinet `REDIS_URL=redis://127.0.0.1:6379/<n>` (registry-allocated; db 0 = the first/mother cabinet) | Evidence: **164 files** carry bare `cabinet:*` key literals; spec v2 D5 cites `cabinet:cost:tokens:daily:<date>` BY NAME as law; doctor/dashboards grep these constants. A key-prefix refactor would touch all of it and invite missed-prefix cross-talk forever. A db index isolates EVERY key with zero literal churn (SCAN/KEYS are per-db). Named limits, rendered honestly: SELECT-db is a namespace, NOT an auth boundary (any local process can SELECT any db); FLUSHALL crosses dbs; Redis Cluster forbids db>0 (irrelevant: single host). Precondition = every call site honors `REDIS_URL` — 19 files do today; the ~92 hardcoded `6379`/bare `redis-cli` sites are the readiness row's audit list |
+| launchd labels | `com.cabinet.<slug>.<service>` for new cabinets; mother keeps bare labels until its documented migration | `generate-plists.py` + officer template render labels today; supervisor/doctor greps parametrize on the prefix (readiness row) |
+| CLAUDE_CONFIG_DIR | `~/.cabinet/<slug>/claude-config` per cabinet | the AUD-1 pattern — pilot already live in `start-officer-mac.sh` (comms-officer); kills officer-config cross-contamination between cabinets |
+| Telegram | one bot per cabinet organism (per-cabinet `TELEGRAM_COS_TOKEN` in that cabinet's own `cabinet/.env`) | the standing one-token-one-poller rule; E1 errand runs per hatch |
+| Germline lock | per-clone `schg` via each cabinet's own `germline-lock.sh` | schg is per-file per-checkout; locking cabinet A says nothing about B — correct, and each island's strongbox renders its OWN lock state |
+| tmux / `/tmp/cabinet-runtime` / `~/Library/Caches/cabinet` | `<slug>`-namespaced | the KNOWN deferred residual from the mini-hatch runbook (cce6e601 follow-up note) — becomes a readiness-row item instead of a footnote; the cross-checkout takeover guard (exit 65) already protects against the worst accident and generalizes to N |
+
+Everything in this table that is not true TODAY is a line item in
+**MULTI-CABINET-READINESS** (ledger row, todo): the audit gate is mechanical —
+`REDIS_URL` honored at every Redis touch; zero bare-label greps outside the mother's
+documented exception; two cabinets hatched side-by-side on one Mac pass BOTH doctor
+runs green with zero key/label/port collisions (the live two-cabinet drill is the row's
+acceptance).
+
+### 10.4 Inter-cabinet comms (v3 — config surface only, per the ratified colony contract)
+
+- **Typed envelope schema ONLY** (`cabinet.envelope/v1`: closed verb set, schema-validated
+  at the receiver; free-form command text is not a verb). **Trust never crosses**: no
+  shared cookies/tokens/sessions; an envelope is DATA and enters the receiver through its
+  own gates like any untrusted input. **Ledgers never shared**: captain-decisions /
+  patterns / intents / needs stay per-cabinet, forever.
+- **Spawning/federating = propose-only, highest-consequence** (standing egg ruling): a
+  cabinet may PROPOSE hatching a sibling or opening a peer lane; only its Captain
+  executes (the hatch is a Captain double-click by construction — §1).
+- **Config surface** (designed now, DARK until v3): the registry `peers:` block —
+  default `{}` (OFF). A peer row names {from_slug, to_slug_or_host, envelope_schema,
+  transport: file-drop dir (one-way, receiver-validated), enabled: false}. No transport
+  code ships before v3; the cabinet MCP's consent-gated `instance/config/peers.yml`
+  remains the in-cabinet half when it re-wires (its grant was descoped 2026-07-07 as
+  dead policy weight — that ruling stands).
+
+### 10.5 SHARED WORLD — one archipelago, N islands (v2; flagship demo)
+
+- **Organs stay per-cabinet** (WORLD-E0B-MINI's ratified shape: each cabinet runs its
+  OWN census + chronicle; never cross-mounted organs). What §10 adds — superseding the
+  "one world per instance" READING for rendering only — is that **ONE world renderer
+  may consume N chronicle sources**: the registry hands the renderer each cabinet's
+  chronicle/keyframe paths; every source renders as its own ISLAND in the one
+  archipelago canvas.
+- **Cabinet-island anchors**: allocated at registration, deterministic
+  (`fnv1a(slug)` bearing on a cabinet-ring OUTSIDE the lane-isle fan, min pairwise
+  separation, fixed forever — layout_fold). Lane isles stay children of their own
+  cabinet's island in its own sector. `archipelago-positions.json` grows a
+  `cabinet_islands` block (schema bump, grammar-PR reviewed).
+- **Read-only by construction**: chronicles are exhaust (E0b: PII-scrubbed at ingest,
+  verb-normalized, replay-identical). The renderer of cabinet A NEVER touches cabinet
+  B's Redis, org_events, or config — files only, schema-validated line by line, unknown
+  shapes ⇒ grey. Remote islands render keyframe truth with an honest "as of ‹last
+  keyframe›" staleness chip; LIVE presence/verbs render only for the local cabinet.
+  Cross-MACHINE islands (the Mini) need their chronicle exhaust carried over by a
+  one-way copy (rsync/tailnet pull by the renderer host) — transport choice is an open
+  item; the doctrine holds because copying exhaust adds no write path.
+- **Hatching a second cabinet in a shared world**: the new island RISES offshore —
+  visible from the first island — and the SAME rowboat onboarding plays out on it
+  (its own egg, its own signpost, its own hatch; H-1/H-2 scoped to ITS window only).
+- **Flagship demo (note for the gallery): the Mini hatch becomes, literally, "a new
+  island rises next to the MacBook island."** The mini-hatch runbook executes on the
+  Mini; its chronicle exhaust registers as a source; the MacBook's renderer shows the
+  new island rising while the Mini's own dashboard runs the desk interview. This is
+  the section's acceptance image.
+
+### 10.6 Staging + open items
+
+| Stage | Ships |
+|---|---|
+| **v1b** | Detection + chooser + "Hatch a new cabinet…" explicit choice; registry create/append + legacy-cabinet registration offer; island NAMING at the signpost (name→slug→cabinet.id, registry-uniqueness); per-install genesis gates (§0); namespace bundle ALLOCATED + recorded (even though only one cabinet runs) |
+| **v2** | Full multi-run: MULTI-CABINET-READINESS executed (REDIS_URL db-index everywhere, label prefixes, tmux//tmp/caches namespacing, CLAUDE_CONFIG_DIR per cabinet, port allocation live); two-cabinet side-by-side drill green; shared-world multi-source renderer + cabinet-island anchors + island-rises choreography (rides WORLD-E0B-MINI) |
+| **v3** | Peers config surface goes live (typed envelopes, receiver-gated, default OFF; propose-only federation) |
+
+Open items (Captain calls when they ripen): cross-machine chronicle transport (Mini →
+renderer host); which dashboard is "the" archipelago renderer vs every dashboard
+rendering all registered sources (default: every dashboard renders all, read-only —
+no designated master); mother-cabinet migration timing (bare→prefixed namespaces).
+
+---
 *Sources: `.claude/skills/cabinet-init/SKILL.md` · `cabinet/scripts/generate-instance.py`
 · `docs/plans/world-unified-spec-v2-2026-07-09.md` (+ §15 addenda; world-next track docs)
 · `docs/runbooks/mini-hatch-tonight-2026-07-07.md` · `docs/plans/operative-egg-ledger-2026-07-07.yml`
-GENESIS rows ONBOARD-1/2, GOV-UNLOCK-UX, WORLD-V1A/V1B · `cabinet/dashboard/src/middleware.ts`
-+ `api/auth/reauth-*` (Spec 034) · Corridor plan analysis 2026-07-09 (security context
-confirmed: constant-argv shell bridge, dual-layer auth, constant-path writes).*
+GENESIS rows ONBOARD-1/2, GOV-UNLOCK-UX, WORLD-V1A/V1B, WORLD-E0B/WORLD-E0B-MINI ·
+`cabinet/dashboard/src/middleware.ts` + `api/auth/reauth-*` (Spec 034) · Corridor plan
+analysis 2026-07-09 (security context confirmed: constant-argv shell bridge, dual-layer
+auth, constant-path writes) · multi-cabinet evidence pass 2026-07-09 (164 bare
+`cabinet:*` key files, 19 REDIS_URL sites, `~/.cabinet/` machine home,
+CLAUDE_CONFIG_DIR pilot in start-officer-mac.sh, cce6e601 namespacing residual).*
