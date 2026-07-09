@@ -31,11 +31,13 @@ Usage (calibration run):
   python3.12 cabinet/scripts/world-growth-backtest.py \
       --config <candidates>/conservative.yml --config <candidates>/balanced.yml \
       --config <candidates>/eager.yml --until 2026-07-09 --out <out-dir> \
-      --render-strips --compositor-dir <scratch dir holding world-next/ + world-unified/>
+      --render-strips [--compositor-dir <dir holding world-next/ + world-unified/>]
 
 Without --render-strips the harness is pure JSON emission (repo-runnable, no
-PIL/asset dependencies). The compositor modules live in the design scratchpad
-until WORLD-V1A lands them in-repo; --compositor-dir points at that lineage.
+PIL/asset dependencies). The compositor lineage landed in-repo with WORLD-V1A
+T1 at cabinet/scripts/world-compose/ (the --compositor-dir default); the
+sibling cabinet/scripts/world-preview.py renders single-day stills off the
+same replay + painter.
 """
 from __future__ import annotations
 
@@ -892,8 +894,10 @@ def main() -> int:
     ap.add_argument("--history", default=None,
                     help="reuse a previously extracted history.json")
     ap.add_argument("--render-strips", action="store_true")
-    ap.add_argument("--compositor-dir", default=None,
-                    help="dir containing world-next/ + world-unified/ compositor modules")
+    ap.add_argument("--compositor-dir",
+                    default=str(Path(__file__).resolve().parent / "world-compose"),
+                    help="dir containing world-next/ + world-unified/ compositor "
+                         "modules (default: the in-repo world-compose lineage)")
     ap.add_argument("--frame-dates", default=None,
                     help="comma list of YYYY-MM-DD dates to also emit as native "
                          "chrome-free frames (aesthetic-gate units)")
