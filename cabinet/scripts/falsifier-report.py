@@ -11,7 +11,17 @@ shared/interfaces/falsifier-series.jsonl:
 
   {date, acted_7d, approved_7d, reversal_rate_7d, stamped_rows_total,
    cells_accumulating, cells_graduated, proactive_cards_7d,
-   memory_ingestion, recall_drops, session_insert_failures}
+   memory_ingestion, recall_drops, session_insert_failures,
+   labels_7d, time_to_graduation_days}
+
+Growth metrics (§4.2, 2026-07-09 — "verdict throughput is the gap", the
+egg-analysis verdict): labels_7d counts the week's raw label supply
+({verdict: scored review verdicts, outcome_resolved: ok/failed outcome
+rows}); time_to_graduation_days walks each GRADUATED cell's rows and
+reports days from the cell's first stamped row to the earliest
+row-granular time the graduation bar was met ({cells: {actor|lane|type:
+days}, median}) — the exact evidence the cell-granularity question
+(§4.3-3) is deferred on. Pure measurement, same read-only inputs.
 
 Memory-ingestion liveness (P1c, 2026-07-07): the capture hooks feeding
 cabinet_memory are best-effort exit-0 BY DESIGN (a hook must never fail the
@@ -225,6 +235,59 @@ def stale_wired_classes(ingestion: Optional[Dict[str, Dict[str, Any]]],
     return stale
 
 
+def _parse_ts(ts: str) -> Optional[dt.datetime]:
+    try:
+        return dt.datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _cell_rows(ledger: List[Dict[str, Any]], cell) -> List[Dict[str, Any]]:
+    """This cell's stamped rows, ts-ordered (same keying as compute_ratios:
+    actor 'kind:id', lane, action_type-with-sentinel)."""
+    actor_id, lane, atype = cell
+    rows = []
+    for ev in ledger:
+        if not isinstance(ev, dict):
+            continue
+        a = ev.get("actor") or {}
+        if f"{a.get('kind')}:{a.get('id')}" != actor_id:
+            continue
+        if ev.get("lane") != lane:
+            continue
+        if (ev.get("action_type") or UNSTAMPED_ACTION_TYPE) != atype:
+            continue
+        rows.append(ev)
+    return sorted(rows, key=lambda e: str(e.get("ts") or ""))
+
+
+def _days_to_graduation(cell, ledger: List[Dict[str, Any]],
+                        now: dt.datetime) -> Optional[float]:
+    """Days from the cell's FIRST stamped row to the earliest row-granular
+    time the graduation bar was met (prefix walk: evaluate with the ledger
+    truncated at each row's ts). Row-granular = an upper bound when the
+    recency clock matured between rows; in that case the current-clock
+    evaluation closes the walk. None when the span is uncomputable."""
+    from framework.fidelity import graduation
+    rows = _cell_rows(ledger, cell)
+    first = _parse_ts(rows[0].get("ts")) if rows else None
+    if first is None:
+        return None
+    for ev in rows:
+        t = _parse_ts(ev.get("ts"))
+        if t is None:
+            continue
+        prefix = [e for e in ledger if isinstance(e, dict)
+                  and str(e.get("ts") or "") <= str(ev.get("ts"))]
+        if graduation.evaluate(cell, ledger=prefix,
+                               now=t)["state"] == "graduated":
+            return round((t - first).total_seconds() / 86400, 2)
+    if graduation.evaluate(cell, ledger=ledger,
+                           now=now)["state"] == "graduated":
+        return round((now - first).total_seconds() / 86400, 2)
+    return None
+
+
 def compute_line(ledger: List[Dict[str, Any]], *,
                  now: Optional[dt.datetime] = None,
                  redis_get: Optional[Callable[[str], str]] = None,
@@ -265,14 +328,35 @@ def compute_line(ledger: List[Dict[str, Any]], *,
     # sat exactly there).
     from framework.fidelity import graduation
     cells_accumulating = cells_graduated = 0
+    grad_days: Dict[str, float] = {}
     for cell, ratios in compute_ratios(ledger=ledger).items():
         if cell[2] == UNSTAMPED_ACTION_TYPE or ratios.sample_count == 0:
             continue
         state = graduation.evaluate(cell, ledger=ledger, now=now)["state"]
         if state == "graduated":
             cells_graduated += 1
+            days = _days_to_graduation(cell, ledger, now)
+            if days is not None:
+                grad_days["|".join(str(k) for k in cell)] = days
         else:
             cells_accumulating += 1
+
+    # §4.2 growth metrics — the week's raw label supply (the learning core
+    # runs on labels; the egg verdict named throughput THE gap) + how long
+    # graduated cells actually took. Median over an empty set is None
+    # (honest unmeasured, never a silent 0).
+    labels_verdict_7d = sum(
+        1 for ev in recent
+        if (ev.get("review") or {}).get("verdict") in ("confirmed", "wrong"))
+    outcome_resolved_7d = sum(
+        1 for ev in recent
+        if (ev.get("outcome") or {}).get("status") in ("ok", "failed"))
+    spans = sorted(grad_days.values())
+    median_days = None
+    if spans:
+        mid = len(spans) // 2
+        median_days = (spans[mid] if len(spans) % 2
+                       else round((spans[mid - 1] + spans[mid]) / 2, 2))
 
     return {
         "date": now.strftime("%Y-%m-%d"),
@@ -283,6 +367,10 @@ def compute_line(ledger: List[Dict[str, Any]], *,
         "cells_accumulating": cells_accumulating,
         "cells_graduated": cells_graduated,
         "proactive_cards_7d": proactive_cards_7d,
+        "labels_7d": {"verdict": labels_verdict_7d,
+                      "outcome_resolved": outcome_resolved_7d},
+        "time_to_graduation_days": {"cells": grad_days,
+                                    "median": median_days},
         # P1c memory-ingestion liveness (compact; null = unmeasurable, {} =
         # measured-and-empty — the two must never be conflated).
         "memory_ingestion": ingestion,
