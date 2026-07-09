@@ -22,7 +22,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: cabinet-ci-${{ github.ref }}
+  # Master pushes must ALWAYS run to completion (each gets a unique
+  # per-sha group), so a rapid push train can never cancel the run that
+  # would have caught a regression on the default branch. PR/branch runs
+  # keep the ref-scoped group + cancel-in-progress (newest push wins).
+  group: cabinet-ci-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
   cancel-in-progress: true
 
 jobs:
