@@ -33,3 +33,5 @@ class NullAdapter:
     def open_thread(self, *a, **k): return self._noop("open_thread")
     def answer_tap(self, *a, **k): return self._noop("answer_tap")
     def download_inbound(self, *a, **k): return self._noop("download_inbound")
+    def send_draft(self, *a, **k): return self._noop("send_draft")
+    def send_rich(self, *a, **k): return self._noop("send_rich")

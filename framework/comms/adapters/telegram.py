@@ -18,12 +18,15 @@ class TelegramAdapter:
 
     name = "telegram"
 
+    # Reserved draft id for the ephemeral "Thinking…" status (set_status).
+    _STATUS_DRAFT_ID = 1
+
     def capabilities(self) -> dict:
         # Telegram supports the full surface; forum topics depend on the bot
         # having topic-mode enabled, but open_thread already degrades on error.
         return {c: True for c in (
             "send", "edit", "react", "poll", "set_status", "pin", "thread",
-            "answer_tap", "download_inbound")}
+            "answer_tap", "download_inbound", "draft", "rich")}
 
     def send(self, body, *, silent=False, reply_to=None, thread_id=None,
              effect_id=None, buttons=None, markdown=False, feed_meta=None):
@@ -46,9 +49,21 @@ class TelegramAdapter:
                                  silent=silent, feed_meta=feed_meta)
 
     def set_status(self, kind="typing"):
-        # "thinking" maps to the typing action until streaming-draft (C4) lands.
-        action = "typing" if kind in ("typing", "thinking") else str(kind)
-        return channel.set_typing(action)
+        # "thinking" shows the REAL "Thinking…" via an ephemeral draft
+        # (sendMessageDraft, empty text) — the brief typing bubble is only for
+        # "typing". The draft auto-expires (~30s); the officer's send_card posts
+        # the persisted message.
+        if kind == "thinking":
+            return channel.send_draft(self._STATUS_DRAFT_ID, "")
+        return channel.set_typing("typing")
+
+    def send_draft(self, draft_id, text="", *, thread_id=None):
+        return channel.send_draft(draft_id, text, thread_id=thread_id)
+
+    def send_rich(self, markdown=None, *, html=None, silent=False,
+                  buttons=None, feed_meta=None):
+        return channel.send_rich(markdown, html=html, silent=silent,
+                                 reply_markup=self._kb(buttons), feed_meta=feed_meta)
 
     def pin(self, message_id, *, silent=True):
         return channel.pin(message_id, silent=silent)

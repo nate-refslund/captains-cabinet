@@ -59,8 +59,32 @@ def test_telegram_adapter_delegates_to_channel(monkeypatch):
 
 def test_telegram_capabilities_full():
     caps = TelegramAdapter().capabilities()
-    for c in ("send", "edit", "poll", "pin", "thread", "answer_tap"):
+    for c in ("send", "edit", "poll", "pin", "thread", "answer_tap", "draft", "rich"):
         assert caps.get(c) is True
+
+
+def test_thinking_status_uses_draft_not_typing(monkeypatch):
+    """set_status('thinking') must show the REAL 'Thinking…' via sendMessageDraft
+    (empty text) — not the brief typing bubble."""
+    from framework.frontdoor import channel
+    seen = {}
+    monkeypatch.setattr(channel, "send_draft",
+                        lambda did, text="", **kw: seen.update(draft_id=did, text=text) or {"sent": True})
+    monkeypatch.setattr(channel, "set_typing", lambda a, **kw: seen.update(typing=a) or {"sent": True})
+    TelegramAdapter().set_status("thinking")
+    assert seen.get("text") == "" and "typing" not in seen   # draft, not typing
+    TelegramAdapter().set_status("typing")
+    assert seen.get("typing") == "typing"                    # plain typing bubble
+
+
+def test_send_rich_delegates_with_buttons(monkeypatch):
+    from framework.frontdoor import channel
+    seen = {}
+    monkeypatch.setattr(channel, "send_rich",
+                        lambda md=None, **kw: seen.update(kw, md=md) or {"sent": True, "message_ids": [5]})
+    r = TelegramAdapter().send_rich(markdown="| a |", buttons=[{"text": "ok", "data": "x"}])
+    assert r["message_ids"] == [5] and seen["md"] == "| a |"
+    assert seen["reply_markup"]["inline_keyboard"][0][0]["callback_data"] == "x"
 
 
 def test_button_mapping_rows_and_single():

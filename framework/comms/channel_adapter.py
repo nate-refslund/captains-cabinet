@@ -20,7 +20,7 @@ from typing import Protocol, runtime_checkable
 # The capability keys an adapter may advertise. A missing key ⇒ unsupported.
 CAPABILITIES = (
     "send", "edit", "react", "poll", "set_status", "pin", "thread",
-    "answer_tap", "download_inbound",
+    "answer_tap", "download_inbound", "draft", "rich",
 )
 
 
@@ -58,6 +58,19 @@ class ChannelAdapter(Protocol):
 
     def set_status(self, kind: str = "typing") -> dict:
         """Show an ephemeral status (``typing`` / ``thinking``)."""
+        ...
+
+    def send_draft(self, draft_id: int, text: str = "", *,
+                   thread_id: "int | None" = None) -> dict:
+        """Stream a live draft (the real "Thinking…"). Empty text = placeholder;
+        same ``draft_id`` animates. Ephemeral — finalize with ``send``."""
+        ...
+
+    def send_rich(self, markdown: "str | None" = None, *, html: "str | None" = None,
+                  silent: bool = False, buttons: "list | None" = None,
+                  feed_meta: "dict | None" = None) -> dict:
+        """Send a Rich Message (tables, collapsibles). Exactly one of
+        ``markdown``/``html``. A persisted message, feed-journaled."""
         ...
 
     def pin(self, message_id: int, *, silent: bool = True) -> dict:

@@ -113,6 +113,33 @@ def answer_tap(*, tap_id: str, toast: str = "", adapter=None) -> dict:
     return _adapter(adapter).answer_tap(str(tap_id), str(toast))
 
 
+def stream_thinking(*, draft_id: int = 1, text: str = "", thread_id=None, adapter=None) -> dict:
+    """Show/stream the real "Thinking…" draft while composing. Empty text shows
+    the "Thinking…" placeholder; call again with the SAME draft_id to stream the
+    reply as it forms. Ephemeral (~30s) — the persisted message is a later
+    send_card. Gate-exempt like set_status (it is a status, not a message)."""
+    a = _adapter(adapter)
+    if not _cap(a, "draft"):
+        from framework.comms.channel_adapter import unsupported
+        return unsupported("draft")
+    return a.send_draft(int(draft_id), str(text or ""), thread_id=thread_id)
+
+
+def send_rich_card(*, markdown: "str | None" = None, html: "str | None" = None,
+                   silent: bool = False, buttons: "list | None" = None, adapter=None) -> dict:
+    """Send a Rich Message — tables, collapsible <details>, task lists — for a
+    report or a multi-step course-of-action that reads best as a table. Exactly
+    ONE of markdown/html. A DIRECT presentation send (parallel to send_document):
+    it carries the full safety gate (allow_sends + scrub + feed-journal) but is
+    NOT dedup-gated — the situation-dedup standing-card path is send_card."""
+    a = _adapter(adapter)
+    if not _cap(a, "rich"):
+        from framework.comms.channel_adapter import unsupported
+        return unsupported("rich")
+    return a.send_rich(markdown, html=html, silent=silent, buttons=buttons,
+                       feed_meta={"kind": "rich"})
+
+
 def read_feed(*, cursor: int = 0, max_n: int = 200) -> dict:
     """The never-re-read cursor read of the outbound/inbound feed (P3). Returns
     ``{rows, cursor}`` — the officer's window into what the Captain has already
@@ -131,6 +158,7 @@ TOOLS = {
     "send_card": send_card, "edit_card": edit_card, "react": react,
     "poll": poll, "set_status": set_status, "pin": pin, "unpin": unpin,
     "open_thread": open_thread, "answer_tap": answer_tap, "read_feed": read_feed,
+    "stream_thinking": stream_thinking, "send_rich_card": send_rich_card,
 }
 
 

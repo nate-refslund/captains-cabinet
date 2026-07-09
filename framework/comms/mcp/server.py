@@ -137,6 +137,27 @@ TOOLS: list[dict[str, Any]] = [
         ),
         "inputSchema": _obj({"cursor": _INT, "max_n": _INT}),
     },
+    {
+        "name": "stream_thinking",
+        "description": (
+            "Show/stream the real 'Thinking…' indicator while composing (empty text "
+            "= the placeholder; call again with the SAME draft_id to stream the "
+            "reply as it forms). Ephemeral (~30s) — persist the finished message "
+            "with send_card. Use before a reply that takes a beat to gather."
+        ),
+        "inputSchema": _obj({"draft_id": _INT, "text": _STR, "thread_id": _INT}),
+    },
+    {
+        "name": "send_rich_card",
+        "description": (
+            "Send a Rich Message — tables (| a | b |), collapsible <details>, task "
+            "lists — for a report or a multi-step course-of-action that reads best "
+            "as a table. Provide EXACTLY ONE of markdown or html. A direct "
+            "presentation send (like a document): safety-gated + journaled, but not "
+            "the dedup standing-card path (that is send_card)."
+        ),
+        "inputSchema": _obj({"markdown": _STR, "html": _STR, "silent": _BOOL, "buttons": _ARR}),
+    },
 ]
 
 

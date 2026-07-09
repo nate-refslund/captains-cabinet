@@ -11,7 +11,7 @@ class FakeAdapter:
     def __init__(self, caps=None):
         self._caps = caps if caps is not None else {
             c: True for c in ("send", "edit", "react", "poll", "set_status",
-                              "pin", "thread", "answer_tap")}
+                              "pin", "thread", "answer_tap", "draft", "rich")}
         self.calls = []
 
     def capabilities(self):
@@ -52,6 +52,14 @@ class FakeAdapter:
     def answer_tap(self, tap_id, toast=""):
         self.calls.append(("answer_tap", tap_id, toast))
         return {"sent": True}
+
+    def send_draft(self, draft_id, text="", *, thread_id=None):
+        self.calls.append(("send_draft", draft_id, text, thread_id))
+        return {"sent": True, "status": "sent"}
+
+    def send_rich(self, markdown=None, *, html=None, silent=False, buttons=None, feed_meta=None):
+        self.calls.append(("send_rich", markdown, html, feed_meta))
+        return {"sent": True, "message_ids": [13]}
 
 
 def test_dispatch_unknown_tool_is_error_not_raise():
@@ -137,7 +145,32 @@ def test_read_feed_is_fail_soft(monkeypatch):
     assert r["status"] == "error" and r["cursor"] == 5 and r["rows"] == []
 
 
+def test_stream_thinking_streams_via_draft():
+    a = FakeAdapter()
+    tools.stream_thinking(draft_id=7, text="half", adapter=a)
+    assert ("send_draft", 7, "half", None) in a.calls
+
+
+def test_stream_thinking_degrades_without_draft_cap():
+    a = FakeAdapter(caps={"send": True})
+    assert tools.stream_thinking(adapter=a)["capability"] == "draft"
+
+
+def test_send_rich_card_routes_to_send_rich():
+    a = FakeAdapter()
+    r = tools.send_rich_card(markdown="| a | b |", adapter=a)
+    assert r["message_ids"] == [13]
+    kind, md, html, meta = a.calls[0]
+    assert kind == "send_rich" and md == "| a | b |" and meta["kind"] == "rich"
+
+
+def test_send_rich_card_degrades_without_rich_cap():
+    a = FakeAdapter(caps={"send": True})
+    assert tools.send_rich_card(markdown="x", adapter=a)["capability"] == "rich"
+
+
 def test_registry_covers_every_tool():
     for name in ("send_card", "edit_card", "react", "poll", "set_status",
-                 "pin", "unpin", "open_thread", "answer_tap", "read_feed"):
+                 "pin", "unpin", "open_thread", "answer_tap", "read_feed",
+                 "stream_thinking", "send_rich_card"):
         assert name in tools.TOOLS

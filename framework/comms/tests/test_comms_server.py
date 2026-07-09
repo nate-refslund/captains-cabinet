@@ -23,7 +23,8 @@ def test_tools_list_exposes_the_full_surface():
     resp = server.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
     names = {t["name"] for t in resp["result"]["tools"]}
     assert names == {"send_card", "edit_card", "react", "poll", "set_status",
-                     "pin", "unpin", "open_thread", "answer_tap", "read_feed"}
+                     "pin", "unpin", "open_thread", "answer_tap", "read_feed",
+                     "stream_thinking", "send_rich_card"}
     # send_card advertises subject as required
     sc = next(t for t in resp["result"]["tools"] if t["name"] == "send_card")
     assert sc["inputSchema"]["required"] == ["subject"]
