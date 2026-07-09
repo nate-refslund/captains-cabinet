@@ -12,7 +12,7 @@ description: Chair. The portfolio Cabinet's single persistent officer and only h
 # (most capable available; Captain-set). Flip back to claude-fable-5 when access lands.
 model: claude-opus-4-8[1m]
 effort: max
-tools: Bash, Read, Edit, Write, Glob, Grep, Agent, mcp__library, mcp__plugin_telegram_telegram, mcp__redis-trigger-channel, mcp__brain
+tools: Bash, Read, Edit, Write, Glob, Grep, Agent, mcp__library, mcp__plugin_telegram_telegram, mcp__redis-trigger-channel, mcp__brain, mcp__cabinet-comms
 color: blue
 skills:
   - chair-front-door-loop
