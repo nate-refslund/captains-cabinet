@@ -1,0 +1,123 @@
+# Comms Charter — FRAMEWORK DEFAULT (attention-gateway spec §4.7)
+#
+# The conservative fallback: any captain, either flavor, gets this when no
+# valid instance/config/comms-charter.yml is present (or a present one fails
+# the schema — fail-closed, never a best-effort merge). It is deliberately
+# quiet: everything batch/terse, only genuinely time-critical or safety
+# classes reach the Captain immediately; injection banners are hidden from
+# the Captain (presentation is charter-owned per §5) EXCEPT on security-alert.
+#
+# NO captain-specific values live here (launcher-agnostic). The Captain's
+# own routing/voice/budgets are an instance override, Captain-promptable in
+# one sentence (§4.7 amend ladder).
+version: 1
+
+verbosity: terse            # short cards; verbose only on Captain request
+ack_style: silent-fyi       # apply-and-FYI, no confirmation ping by default
+
+quiet_hours:
+  start: "21:00"
+  end: "07:00"
+  # The FLOOR: only these classes may ping during quiet hours, and they are
+  # ALL kind-matched (producer-attested) — never selected by a free-text
+  # keyword on captured content, so an email that merely says "today" can
+  # never wake the Captain at 3am (review cp4-gauntlet). A genuine deadline
+  # pierces quiet hours structurally instead, via a real ``deadline_iso``
+  # before the next briefing (the gate's timing check), not a prose word.
+  # ASYMMETRY (§4.10.4): a chair amendment may only SHRINK this floor
+  # (quieter); ADDING a class is louder and needs Captain provenance.
+  floor_classes: [infra-page, security-alert]
+
+# First matching class wins (top-to-bottom). Match order: kind, then keyword
+# in title/situation, then lane. An item matching none → the `default` class.
+classes:
+  # --- floor classes: reach the Captain immediately, even in quiet hours.
+  #     ALL kind-matched (producer-attested) — a class that can pierce quiet
+  #     hours must never be selectable by a keyword on captured text. ---
+  - id: deadline-critical
+    # kind-matched only: a producer that KNOWS something is deadline-critical
+    # sets this kind. Generic time-pressure flows through the gate's
+    # structured deadline_iso path instead (a real timestamp, not "today").
+    matchers: {kinds: ["deadline-critical"]}
+    route: direct-now
+    silent: false
+    reaction: ["⚡", "👀"]
+    sla_minutes: 10
+    fallback: mechanical-with-marker
+    show_injection_banner: false
+
+  - id: infra-page
+    matchers: {kinds: ["infra-page", "pager", "watchdog-alert"]}
+    route: direct-now
+    silent: false
+    reaction: ["🚨", "👀"]
+    sla_minutes: 10
+    fallback: mechanical-with-marker
+    show_injection_banner: false
+
+  - id: security-alert
+    matchers: {kinds: ["security-alert", "quarantine-trip"]}
+    route: direct-now
+    silent: false
+    reaction: ["🚨"]
+    show_injection_banner: true   # the ONE class that shows the taint banner
+
+  # --- standing-card classes: one editable card per situation ---
+  - id: action-card
+    matchers: {kinds: ["action-card"]}
+    route: standing-card
+    silent: true
+    reaction: ["👀", "👌"]
+    budget: {demote_after_expiries: 5}
+    show_injection_banner: false
+
+  - id: re-card
+    matchers: {kinds: ["re-card"]}
+    route: standing-card
+    silent: true
+    reaction: ["👀"]
+    show_injection_banner: false
+
+  - id: draft-card
+    matchers: {kinds: ["draft-card"]}
+    route: standing-card
+    silent: true
+    reaction: ["✍", "👀"]
+    show_injection_banner: false
+
+  # --- direct informational ---
+  - id: briefing
+    matchers: {kinds: ["briefing", "morning-brief", "evening-recap"]}
+    route: direct-now
+    silent: false
+    reaction: ["👀"]
+    show_injection_banner: false
+
+  - id: meeting-ping
+    matchers: {kinds: ["meeting-ping", "calendar-reminder"]}
+    route: direct-now
+    silent: true
+    reaction: ["🗓", "👀"]
+    show_injection_banner: false
+
+  # --- quiet tiers ---
+  - id: digest
+    matchers: {kinds: ["digest", "tell-digest"]}
+    route: next-briefing
+    silent: true
+    reaction: ["👀"]
+    show_injection_banner: false
+
+  - id: fyi
+    matchers: {kinds: ["fyi"], keywords: ["fyi"]}
+    route: next-briefing
+    silent: true
+    reaction: ["👀"]
+    show_injection_banner: false
+
+  # --- catch-all: batch into the next briefing (disturb-minimal default) ---
+  - id: default
+    route: next-briefing
+    silent: true
+    reaction: ["👀", "👌", "✍"]
+    show_injection_banner: false

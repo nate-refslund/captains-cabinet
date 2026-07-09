@@ -81,11 +81,24 @@ def drain_and_surface(*, consumer: str = _CONSUMER, count: int = 200) -> dict:
         except Exception:
             pass
 
+    # P5 (attention-gateway §4.6): run the T2 SLA fallback each drain — a
+    # past-deadline Chair-judgment request that the Chair never answered falls
+    # back mechanically (floor → send with (chair-offline); else → briefing).
+    # Best-effort: a sweep error must not stop the surface loop.
+    t2_swept = 0
+    try:
+        from framework.attention import t2
+        from datetime import datetime, timezone
+        t2_swept = len(t2.sweep_expired(datetime.now(timezone.utc)))
+    except Exception as e:  # noqa: BLE001
+        print(f"[surface] T2 sweep skipped ({e})", file=__import__("sys").stderr)
+
     batch_pending = sum(1 for it in items if (it.get("urgency_tier") or "batch") != "ping-now")
     return {"seen": len(items), "ping_now_surfaced": surfaced,
             "acked": len(acked), "batch_pending": batch_pending,
             "attention_forwarded": attn.get("forwarded", 0),
-            "attention_streams": attn.get("streams", 0)}
+            "attention_streams": attn.get("streams", 0),
+            "t2_fallback_swept": t2_swept}
 
 
 if __name__ == "__main__":  # invoked by com.cabinet.intake-surface (launchd)

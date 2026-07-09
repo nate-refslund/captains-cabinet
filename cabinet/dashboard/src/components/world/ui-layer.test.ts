@@ -1,0 +1,125 @@
+/**
+ * T3 UI-layer static contracts (vitest, node env — same grep-ratchet style
+ * as lib/world/ratchets.test.ts, which owns the tree-wide rules; this suite
+ * pins the T3-specific ones):
+ *
+ *  A. MAILBOX READ-ONLY: the decision-queue view issues plain GET fetches
+ *     only — no request method options, no server-action imports, no Redis
+ *     write verbs in its route (Captain ruling 2026-07-09: mailbox renders
+ *     + deep-links, never actuates).
+ *  B. RAIL READ-ONLY: same contract for the portrait rail + its route.
+ *  C. CARD COVERAGE: the inspect card derives its tab set from the shared
+ *     tabsFor contract (WHAT/NOW/PROOF bound · WHAT-only decorative) and
+ *     wears the pixel frame.
+ *  D. LEVER CEREMONY: the lever uses the tick-driven two-tap machine, pins
+ *     actuation behind canActuate, and prints the honest CLI fallback.
+ */
+import { describe, expect, it } from 'vitest'
+import fs from 'fs'
+import path from 'path'
+
+const DASH = path.resolve(__dirname, '..', '..', '..')
+const src = (...rel: string[]) =>
+  fs.readFileSync(path.join(DASH, 'src', ...rel), 'utf8')
+
+const MAILBOX_CARD = ['components', 'world', 'decision-queue-card.tsx']
+const RAIL = ['components', 'world', 'portrait-rail.tsx']
+const FRAME = ['components', 'world', 'pixel-frame.tsx']
+const CARD = ['components', 'world', 'inspect-card.tsx']
+const LEVER = ['components', 'world', 'killswitch-lever.tsx']
+const MAILBOX_ROUTE = ['app', 'api', 'world', 'mailbox', 'route.ts']
+const RAIL_ROUTE = ['app', 'api', 'world', 'rail', 'route.ts']
+
+/** fetch(...) calls must be single-argument (no init object → plain GET). */
+function assertPlainGetFetches(text: string, name: string) {
+  const calls = text.match(/fetch\(([^)]*)\)/g) ?? []
+  expect(calls.length, `${name} should fetch something`).toBeGreaterThan(0)
+  for (const call of calls) {
+    expect(call, `${name}: ${call}`).not.toMatch(/,/) // no init arg at all
+  }
+  expect(text, name).not.toMatch(/method\s*:/i)
+  expect(text, name).not.toMatch(/@\/actions\//)
+  expect(text, name).not.toMatch(/['"]use server['"]/)
+}
+
+describe('A+B. mailbox + rail are read-only by construction', () => {
+  it('decision-queue-card.tsx: GET-only fetches, no actions, no mutation', () => {
+    assertPlainGetFetches(src(...MAILBOX_CARD), 'decision-queue-card')
+  })
+  it('portrait-rail.tsx: GET-only fetches, no actions, no mutation', () => {
+    assertPlainGetFetches(src(...RAIL), 'portrait-rail')
+  })
+  it('pixel-frame.tsx: GET-only manifest fetch, no actions', () => {
+    assertPlainGetFetches(src(...FRAME), 'pixel-frame')
+  })
+  it('mailbox + rail routes export GET only and never write Redis', () => {
+    for (const [name, rel] of [
+      ['mailbox', MAILBOX_ROUTE],
+      ['rail', RAIL_ROUTE],
+    ] as const) {
+      const text = src(...rel)
+      expect(text, name).toMatch(/export\s+async\s+function\s+GET/)
+      expect(text, name).not.toMatch(
+        /export\s+(async\s+)?function\s+(POST|PUT|PATCH|DELETE)/
+      )
+      // Redis surface is read-only: no write/expiry verbs anywhere.
+      expect(text, name).not.toMatch(
+        /\.(set|del|hset|hdel|xadd|lpush|rpush|sadd|incr|decr|expire|persist)\(/i
+      )
+      // Auth gate cloned (ratchet #7 pattern extends to every new route).
+      expect(text, name).toMatch(/cabinet_session/)
+      expect(text, name).toMatch(/401/)
+    }
+  })
+  it('the mailbox card carries the deep-link/honest-channel block', () => {
+    const text = src(...MAILBOX_CARD)
+    expect(text).toMatch(/queueHref/)
+    expect(text).toMatch(/Telegram binder/)
+    expect(text).toMatch(/cabinet:action:\*/)
+  })
+})
+
+describe('C. inspect-card coverage contract + pixel frame', () => {
+  it('card derives tabs from the shared tabsFor contract', () => {
+    const text = src(...CARD)
+    expect(text).toMatch(/tabsFor\(/)
+    expect(text).toMatch(/from '@\/lib\/world\/ui-cards'/)
+  })
+  it('card renders inside the pixel frame (shell swap, contract intact)', () => {
+    const text = src(...CARD)
+    expect(text).toMatch(/<PixelFrame/)
+    // The honesty contract's load-bearing strings survive the re-skin.
+    expect(text).toMatch(/decorative — carries no data/)
+    expect(text).toMatch(/codex pending/)
+  })
+  it('frame resolves ONLY through manifest rows (no hand-built asset URLs)', () => {
+    const text = src(...FRAME)
+    expect(text).toMatch(/manifest\.json/)
+    expect(text).toMatch(/frame_interim/)
+    // Loud fallback exists (placeholder doctrine, never silent-broken).
+    expect(text).toMatch(/data-frame=/)
+  })
+})
+
+describe('D. killswitch lever ceremony', () => {
+  it('lever rides the tick-driven two-tap machine (no wall clock)', () => {
+    const text = src(...LEVER)
+    expect(text).toMatch(/leverReduce/)
+    expect(text).toMatch(/from '@\/lib\/world\/lever'/)
+    expect(text).not.toMatch(/Date\.now\s*\(/)
+    expect(text).not.toMatch(/Math\.random\s*\(/)
+  })
+  it('actuation is cookie-gated and intent-pinned to the rendered state', () => {
+    const text = src(...LEVER)
+    expect(text).toMatch(/disabled=\{!canActuate\}/)
+    expect(text).toMatch(/toggleKillSwitch\(active \? 'deactivate' : 'activate'\)/)
+  })
+  it('failure prints the exact CLI fallback (honest degradation)', () => {
+    expect(src(...LEVER)).toMatch(/fallbackCommand\(/)
+  })
+  it('consequence copy states next-tool-invocation semantics verbatim', () => {
+    expect(src(...LEVER)).toMatch(
+      /halt on their next tool invocation — not instantly/
+    )
+  })
+})

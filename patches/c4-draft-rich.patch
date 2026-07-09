@@ -1,0 +1,90 @@
+--- a/framework/frontdoor/channel.py
++++ b/framework/frontdoor/channel.py
+@@ -860,6 +860,87 @@
+     return _gated_method("setMessageReaction", extra, http_post=http_post)
+ 
+ 
++def send_draft(draft_id: int, text: str = "", *, thread_id: "int | None" = None,
++               http_post=None) -> dict:
++    """Stream a live draft into the Captain's chat (``sendMessageDraft``) — the
++    real "Thinking…" indicator.
++
++    Empty ``text`` shows Telegram's "Thinking…" placeholder; calling again with
++    the SAME ``draft_id`` animates/replaces it in place (this is how you stream a
++    reply as it composes). EPHEMERAL: the draft is a ~30s preview that Telegram
++    discards — to PERSIST the finished message you MUST call ``send()`` (a normal
++    sendMessage) afterwards. So it is NOT feed-journaled (nothing was delivered).
++    Private-chat only; available to all bots since Bot API 9.5 (empty text since
++    10.0). ``draft_id`` must be non-zero. Same gate + scrub as every send."""
++    if not env.allow_sends():
++        return {"status": "blocked-dev", "sent": False}
++    token = _token()
++    chat_id = _captain_id()
++    if not token or not chat_id:
++        return {"status": "error", "sent": False, "error": "telegram not configured"}
++    payload = {"chat_id": chat_id, "draft_id": int(draft_id) or 1, "text": str(text or "")}
++    if thread_id is not None:
++        payload["message_thread_id"] = int(thread_id)
++    post = http_post or _default_http_post
++    url = f"{_base()}/bot{token}/sendMessageDraft"
++    # retry_plain_400=False: no parse_mode here, so the plain-text 400 retry would
++    # just re-POST an identical doomed payload.
++    ok, sent_resp, err = _post_one(post, url, payload, token, retry_plain_400=False)
++    if not ok:
++        return {"status": "error", "sent": False, "error": err}
++    return {"status": "sent", "sent": True}
++
++
++def send_rich(markdown: "str | None" = None, *, html: "str | None" = None,
++              silent: bool = False, reply_markup: dict | None = None,
++              feed_meta: dict | None = None, http_post=None) -> dict:
++    """Send a Rich Message (``sendRichMessage``, Bot API 10.1): tables, collapsible
++    ``<details>``, headings, task lists — the structured surface a multi-step
++    course-of-action card renders best in.
++
++    Provide EXACTLY ONE of ``markdown`` or ``html`` (the ``InputRichMessage`` body):
++    a table is a GFM pipe table (``| a | b |``) or ``<table>``; a collapsible is
++    ``<details><summary>…</summary>…</details>``. It is a REAL, persisted message,
++    so it carries the full ``send`` discipline — ``allow_sends()`` gate first,
++    recipient always ``CAPTAIN_TELEGRAM_ID``, token/URL scrubbed, feed-journaled
++    (``kind="rich"``). Telegram limits: 32768 chars, 500 blocks, 20 columns/table,
++    16 nesting levels — an overflow returns a 400 the caller degrades from (fall
++    back to ``send()``). Clients older than 10.1 render a plain-text fallback."""
++    if not env.allow_sends():
++        return {"status": "blocked-dev", "sent": False}
++    token = _token()
++    chat_id = _captain_id()
++    if not token or not chat_id:
++        return {"status": "error", "sent": False, "error": "telegram not configured"}
++    if bool(markdown) == bool(html):
++        return {"status": "error", "sent": False,
++                "error": "send_rich needs exactly one of markdown or html"}
++    # InputRichMessage: exactly one of markdown/html. JSON-encoded like every
++    # other complex Bot API param (reply_markup, poll options).
++    rich = {"markdown": markdown} if markdown else {"html": html}
++    payload = {"chat_id": chat_id, "rich_message": json.dumps(rich)}
++    if silent:
++        payload["disable_notification"] = True
++    if reply_markup is not None:
++        payload["reply_markup"] = json.dumps(reply_markup)
++    post = http_post or _default_http_post
++    url = f"{_base()}/bot{token}/sendRichMessage"
++    captured: list = []
++
++    def _cap(u, d, _sink=captured):
++        resp = post(u, d)
++        _sink.append(resp)
++        return resp
++
++    ok, sent_resp, err = _post_one(_cap, url, payload, token, retry_plain_400=False)
++    if not ok:
++        return {"status": "error", "sent": False, "error": err}
++    mid = _msgid_of(captured[-1]) if captured else None
++    _journal_out(lambda: _feed_row_out(markdown or html or "", "rich", mid, chat_id, feed_meta))
++    return {"status": "sent", "sent": True, "response": sent_resp,
++            "message_ids": [mid] if mid else []}
++
++
+ def _default_multipart_post(url: str, fields: dict, filename: str, content: bytes) -> dict:
+     """Default transport: POST a multipart/form-data body (one file + fields).
+ 

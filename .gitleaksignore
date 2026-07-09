@@ -1,0 +1,14 @@
+# gitleaks fingerprint allowlist (commit:file:rule:line).
+# Every entry below is a DELIBERATELY FAKE fixture secret inside a
+# redaction-belt / scrub test (pa-abc123…, AKIAABCDEFGH…, ghp_AbCdEf12…,
+# sk-abcdef012…) — planted to prove the pipeline redacts them, never a
+# real credential. Verified 2026-07-09 (CI-audit gitleaks wiring).
+# Add new entries ONLY for provably-fake fixtures; a real leak is
+# rotated + purged, never ignored.
+b552baca58a0c94824a7caf6bc60e5c10ac2bc8d:cabinet/scripts/tests/test_transcript_digest.py:generic-api-key:61
+b552baca58a0c94824a7caf6bc60e5c10ac2bc8d:cabinet/scripts/tests/test_transcript_digest.py:generic-api-key:139
+b552baca58a0c94824a7caf6bc60e5c10ac2bc8d:cabinet/scripts/tests/test_transcript_digest.py:aws-access-token:141
+b552baca58a0c94824a7caf6bc60e5c10ac2bc8d:cabinet/scripts/tests/test_transcript_digest.py:aws-access-token:152
+45e28757a80a8e75f2290619313bb46c500ad204:cabinet/scripts/tests/test_world_chronicle.py:github-pat:32
+2f00fce5639381f6963720aef721a7d4d2927fb3:framework/frontdoor/tests/test_actfirst_admission.py:generic-api-key:408
+d41b18a4b75744edfbdaed8227264d9394779501:framework/frontdoor/tests/test_action_exec.py:generic-api-key:528

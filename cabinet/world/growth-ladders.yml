@@ -1,0 +1,376 @@
+# =============================================================================
+# CABINET WORLD — GROWTH LADDERS v1 (ERA × RUNG two-axis growth, as DATA)
+# =============================================================================
+# Law family: morphology/show-grammar (world-data class — NEVER germlined).
+# Spec of record: docs/plans/world-unified-spec-v2-2026-07-09.md §15.1–15.4
+# (Captain addendum 2: balance made structural; calibration BEFORE build).
+# Ledger row: WORLD-GROWTH-CALIBRATION (docs/plans/operative-egg-ledger-2026-07-07.yml).
+#
+# CAPTAIN-TUNABLE CONTRACT (addendum 2 §3 — "possible for me to change so
+# everything doesn't have to go through you"):
+#   * VALUE edits (weights, caps, thresholds, bases, rungs, vocab, hysteresis)
+#     are Captain-editable DIRECTLY in this file. Run
+#         python3.12 cabinet/scripts/world-growth-validate.py
+#     before committing — it refuses malformed/untruthful configs (every rung
+#     must cite a real census/snapshot/ledger metric).
+#   * SCHEMA changes (new keys, new modes, new sources) ride the grammar-law
+#     PR route (no auto-merge), exactly like morphology/show-grammar.
+#   * The renderer HOT-RELOADS this file on mtime change (no restart, no
+#     orchestrator in the loop). Preview: `world-preview --maturity <index|date>`
+#     (and the `/world?preview=` dev param) lands with WORLD-V1A T1 so value
+#     edits can be seen as stills before committing.
+#   * Replay any edit against real history first:
+#         python3.12 cabinet/scripts/world-growth-backtest.py \
+#             --config cabinet/world/growth-ladders.yml --out /tmp/growth-bt
+#
+# CALIBRATION CHOICE (2026-07-09, THE CALIBRATION GATE — backtest over REAL
+# history 2026-05-25 → 2026-07-09: 172k org_events by day, git commit dates,
+# outcomes.yml flip dates from git, census keyframes; 3 candidates
+# conservative/balanced/eager; full receipts + strips:
+# scratchpad world-v1a/calibration-report.md, timelapse-{candidate}.png):
+#   WINNER = balanced.
+#   * Era transition camp→hamlet fires 2026-06-28 (top contributor:
+#     org_events_total) — ON the June work-surge when the officer fleet was
+#     hired and event volume 10×'d: a genuinely meaningful real moment.
+#     Conservative deferred the same transition to 07-04 (after the surge,
+#     40/46 days of tents while 60k events + 4 officers existed — felt-maturity
+#     mismatch); eager fired it 06-19, ONE day after real work began (egg
+#     outgrown absurdly fast) and ended in town vocabulary (cobble/streetlight)
+#     with zero graduations — overstated maturity.
+#   * Story: 6/7 weeks show visible growth (the 06-01 week is genuinely dead
+#     in the real data); 2 jump-days, each traceable to ONE real moment (the
+#     07-02/03 outcomes-flip "first shipping day" cascade; the 07-07/08
+#     keyframe-ledger birth + first completed self-improvement loop).
+#   * Current-day render = late-hamlet @ 0.359 — matches the ratified "VILLAGE
+#     + WORKING QUAY, lighthouse dark" felt maturity (not yet a town; no light).
+#   * Structural honesty: with cells_graduated weighted 0.20, the era index
+#     without ANY graduation tops out at 0.80 = exactly the beyond_bay
+#     threshold — "grown far beyond the bay" is unreachable until real
+#     graduations exist, true by construction (torches before streetlights).
+#
+# SEMANTICS (implemented by cabinet/scripts/world-growth-backtest.py replay
+# and the WORLD-V1A renderer):
+#   era index  = Σ weight_i · norm_i over the basket;
+#                norm: linear = min(v/cap, 1); logN = min(logN(v+1)/logN(cap+1), 1)
+#   era        = highest threshold ≤ index, with MANDATORY hysteresis: advance
+#                only after `advance_hold_evals` consecutive daily keyframes at
+#                or above the next threshold (the ratified 2-keyframe law);
+#                demote only below threshold − demote_margin, same hold.
+#   rung modes = tier:  clamp(floor(log2(v/base + 1)), 0, len(rungs)−1)
+#                count: clamp(v, 0, len(rungs)−1)      (one rung per real thing)
+#                flag:  v ≥ at (default 1)             (exactly 2 rungs)
+#                per_lane: v1 isle rings from outcomes.yml — retired&inactive =
+#                reef_buoy (Captain ruling 2026-07-09), ever-ratified = dock_r0,
+#                ≥1 achieved = warehouses_r1 (r2/r3 gated on P3/P5 feeds)
+#   hysteresis = a rung must hold `hysteresis_evals` consecutive evals before
+#                the VISIBLE rung moves (the 24h crewed scaffold shows the wait)
+#   vocab      = ERA selects the sprite family a rung renders with (tent →
+#                hut → cottage; torch → lantern → streetlight); RUNG stays the
+#                honest magnitude — era never hides a count, only styles it.
+#   unmeasured = a metric with no real measurement yet renders its baseline
+#                rung with a grey "unmeasured" card — never interpolated.
+# =============================================================================
+schema: cabinet.world.growth-ladders/v1
+# v2 delta (grammar v3 wave, Captain-ratified 2026-07-09): era VOCAB completed
+# for every ladder (VALUE edit — Captain-tunable; addendum 1.1/15.2: ERA styles,
+# RUNG measures). No basket/threshold/rung/base change; calibration untouched.
+version: 2
+candidate: balanced
+calibrated:
+  date: '2026-07-09'
+  winner: balanced
+  gate: WORLD-GROWTH-CALIBRATION
+  report: scratchpad world-v1a/calibration-report.md (session artifact; receipts
+    also in this header and the ledger row note)
+
+era:
+  names: [camp, hamlet, town, beyond_bay]
+  basket:
+    org_age_days:      {weight: 0.15, curve: linear, cap: 365, source: org_events_db}
+    org_events_total:  {weight: 0.25, curve: log10, cap: 10000000, source: census_keyframe}
+    outcomes_achieved: {weight: 0.25, curve: log2, cap: 16, source: outcomes_yml}
+    cells_graduated:   {weight: 0.20, curve: log2, cap: 16, source: census_keyframe}
+    active_lanes:      {weight: 0.15, curve: linear, cap: 8, source: outcomes_yml}
+  thresholds: {camp: 0.0, hamlet: 0.25, town: 0.55, beyond_bay: 0.80}
+  hysteresis: {advance_hold_evals: 2, demote_margin: 0.03}
+
+ladders:
+  great_house:
+    metric: ev_session_started
+    source: census_keyframe
+    verified: {value: 9961, date: '2026-07-09'}
+    mode: tier
+    base: 512
+    rungs: [cottage, cottage_porch, second_gable, great_house]
+    hysteresis_evals: 2
+    class: great
+    vocab: {camp: log_cabin, hamlet: cottage, town: manor, beyond_bay: manor_estate}
+  officer_dwellings:
+    metric: ev_role_defined
+    source: census_keyframe
+    verified: {value: 4, date: '2026-07-09'}
+    mode: count
+    rungs: [none, dwelling_1, dwellings_2, dwellings_3, dwellings_4, dwellings_5plus]
+    hysteresis_evals: 2
+    class: great
+    vocab: {camp: tent, hamlet: hut, town: cottage, beyond_bay: townhouse}
+  flagpole:
+    metric: world_chronicle_keyframes
+    source: world_chronicle
+    verified: {value: 3, date: '2026-07-09'}
+    mode: flag
+    rungs: [bare_pole, pennant]
+    hysteresis_evals: 1
+    class: quick
+    vocab: {camp: pennant_cloth, hamlet: pennant_cloth, town: flag, beyond_bay: crested_flag}
+  noticeboard:
+    metric: world_chronicle_keyframes
+    source: world_chronicle
+    verified: {value: 3, date: '2026-07-09'}
+    mode: flag
+    rungs: [none, board]
+    hysteresis_evals: 2
+    class: quick
+    vocab: {camp: stake_notes, hamlet: plank_board, town: cork_board, beyond_bay: post_kiosk}
+  workshop:
+    metric: evolved_skills
+    source: census_keyframe
+    verified: {value: 9, date: '2026-07-09'}
+    mode: tier
+    base: 1
+    rungs: [bare_wall, tool_rack, shed, shed_full_rack]
+    hysteresis_evals: 2
+    class: great
+    vocab: {camp: toolbox, hamlet: workbench, town: workshop_hut, beyond_bay: workshop_hall}
+  library:
+    metric: memory_rows_total
+    source: census_keyframe
+    verified: {value: 1291, date: '2026-07-09'}
+    mode: tier
+    base: 128
+    rungs: [book_crate, shelf_leanto, library_hall, hall_wing, second_wing]
+    hysteresis_evals: 2
+    class: great
+    vocab: {camp: book_crate, hamlet: shelf_leanto, town: hall, beyond_bay: wings}
+  journal_desk:
+    metric: tier2_note_files
+    source: census_keyframe
+    verified: {value: 43, date: '2026-07-09'}
+    mode: tier
+    base: 8
+    rungs: [desk_papers, journal_stack, journal_shelf, archive_row]
+    hysteresis_evals: 2
+    class: quick
+    vocab: {camp: crate_desk, hamlet: plank_desk, town: writing_desk, beyond_bay: archive_bureau}
+  well:
+    metric: ev_self_improvement_loop_completed
+    source: census_keyframe
+    verified: {value: 14, date: '2026-07-09'}
+    mode: flag
+    rungs: [none, well]
+    hysteresis_evals: 2
+    class: great
+    vocab: {camp: spring_stones, hamlet: well_frame, town: stone_well, beyond_bay: well_house}
+  firepit:
+    metric: ev_self_improvement_loop_completed
+    source: census_keyframe
+    verified: {value: 14, date: '2026-07-09'}
+    mode: tier
+    base: 4
+    rungs: [bare_ground, stone_ring, ring_seats, gathering_circle]
+    hysteresis_evals: 2
+    class: quick
+    vocab: {camp: campfire, hamlet: stone_hearth, town: brazier, beyond_bay: plaza_hearth}
+  field_plots:
+    metric: outcomes_active_system_self
+    source: outcomes_yml
+    verified: {value: 3, date: '2026-07-09'}
+    mode: count
+    rungs: [none, plot_1, plots_2, plots_3, plots_4]
+    hysteresis_evals: 2
+    class: quick
+    vocab: {camp: forage_patch, hamlet: tilled_plot, town: fenced_field, beyond_bay: terraced_field}
+  outbuildings:
+    metric: commits_since_genesis
+    source: commits_ledger
+    verified: {value: 554, date: '2026-07-09'}
+    mode: tier
+    base: 64
+    rungs: [none, coop, small_barn, barn_stable, great_barn]
+    hysteresis_evals: 2
+    class: great
+    vocab: {camp: leanto, hamlet: timber_shed, town: barn, beyond_bay: great_barn}
+  law_plot:
+    metric: captain_rules
+    source: census_keyframe
+    verified: {value: 39, date: '2026-07-09'}
+    mode: tier
+    base: 8
+    rungs: [first_post, post_row, wood_fence, stone_fence]
+    hysteresis_evals: 2
+    class: quick
+    vocab: {camp: carved_post, hamlet: post_row, town: wood_fence, beyond_bay: stone_wall}
+  veto_plinth:
+    metric: captain_vetoes_total
+    source: census_keyframe
+    verified: {value: 0, date: '2026-07-09'}
+    mode: flag
+    rungs: [empty_plinth, veto_stone]
+    hysteresis_evals: 2
+    class: quick
+    vocab: {camp: flat_stone, hamlet: flat_stone, town: stone_plinth, beyond_bay: stone_plinth}
+  observatory:
+    metric: cells_accumulating
+    source: census_keyframe
+    verified: {value: 18, date: '2026-07-09'}
+    mode: tier
+    base: 4
+    rungs: [star_post, chart_table, dome_frame, dome]
+    hysteresis_evals: 2
+    class: great
+    vocab: {camp: stargazing_post, hamlet: chart_tent, town: observatory_hut, beyond_bay: observatory_dome}
+  pens:
+    metric: services_rows_total
+    source: census_keyframe
+    verified: {value: 38, date: '2026-07-09'}
+    mode: tier
+    base: 8
+    rungs: [pen_1, pen_2, pen_row, pen_yard]
+    hysteresis_evals: 2
+    class: quick
+    vocab: {camp: stake_pen, hamlet: timber_pen, town: fenced_yard, beyond_bay: stable_yard}
+  water_store:
+    metric: memory_embed_queue_xlen
+    source: redis_snapshot
+    verified: {value: 1076, date: '2026-07-09'}
+    mode: tier
+    base: 64
+    rungs: [bucket_empty, bucket_full, buckets_3, barrel, tank, tank_tower]
+    hysteresis_evals: 2
+    class: quick
+    vocab: {camp: bucket, hamlet: barrel, town: tank, beyond_bay: tank_tower}
+  composter:
+    metric: services_rows_disabled
+    source: census_keyframe
+    verified: {value: 2, date: '2026-07-09'}
+    mode: count
+    rungs: [none, bay_1, bays_2, bay_row]
+    hysteresis_evals: 2
+    class: quick
+    vocab: {camp: waste_pit, hamlet: compost_bay, town: compost_row, beyond_bay: compost_works}
+  quay:
+    metric: commits_since_genesis
+    source: commits_ledger
+    verified: {value: 554, date: '2026-07-09'}
+    mode: tier
+    base: 16
+    rungs: [rowboat_jetty, timber_jetty, stone_quay_2, stone_quay_3, stone_quay_4, stone_quay_5]
+    hysteresis_evals: 2
+    class: great
+    vocab: {camp: rowboat_jetty, hamlet: timber, town: stone, beyond_bay: stone_second_pier}
+  berths:
+    metric: outcomes_active
+    source: outcomes_yml
+    verified: {value: 6, date: '2026-07-09'}
+    mode: count
+    rungs: [none, berth_1, berths_2, berths_3, berths_4, berths_5, berths_6, berths_7plus]
+    hysteresis_evals: 2
+    class: quick
+    vocab: {camp: mooring_post, hamlet: jetty_berth, town: stone_berth, beyond_bay: double_berth}
+  cargo_stacks:
+    metric: ev_work_item_completed
+    source: census_keyframe
+    verified: {value: 6708, date: '2026-07-09'}
+    mode: tier
+    base: 512
+    rungs: [none, crates_low, crates_mid, crates_high]
+    hysteresis_evals: 2
+    class: quick
+    vocab: {camp: bundles, hamlet: crates, town: crate_stacks, beyond_bay: container_rows}
+  harbor_boat:
+    metric: outcomes_achieved
+    source: outcomes_yml
+    verified: {value: 2, date: '2026-07-09'}
+    mode: flag
+    rungs: [rowboat, packet_boat]
+    hysteresis_evals: 2
+    class: great
+    vocab: {camp: rowboat, hamlet: packet_boat, town: packet_boat, beyond_bay: steam_packet}
+  warehouse:
+    metric: outcomes_achieved
+    source: outcomes_yml
+    verified: {value: 2, date: '2026-07-09'}
+    mode: count
+    rungs: [none, shed, warehouse, warehouse_row]
+    hysteresis_evals: 2
+    class: great
+    vocab: {camp: tarp_cache, hamlet: timber_shed, town: warehouse, beyond_bay: warehouse_row}
+  harbormaster_hut:
+    metric: ev_role_defined
+    source: census_keyframe
+    verified: {value: 4, date: '2026-07-09'}
+    mode: flag
+    at: 2
+    rungs: [none, hut]
+    hysteresis_evals: 2
+    class: great
+    vocab: {camp: signal_post, hamlet: timber_hut, town: harbor_office, beyond_bay: harbor_office}
+  lighthouse:
+    metric: cells_accumulating
+    source: census_keyframe
+    verified: {value: 18, date: '2026-07-09'}
+    mode: tier
+    base: 4
+    rungs: [dark_cairn, stone_base, tower_part, tower_full]
+    hysteresis_evals: 2
+    class: great
+    vocab: {camp: dark_cairn, hamlet: stone_base, town: masonry_tower, beyond_bay: masonry_tower}
+  lighthouse_lamp:
+    metric: cells_graduated
+    source: census_keyframe
+    verified: {value: 0, date: '2026-07-09'}
+    mode: flag
+    rungs: [dark, lit]
+    hysteresis_evals: 1
+    class: quick
+    vocab: {camp: oil_lamp, hamlet: oil_lamp, town: fresnel_lamp, beyond_bay: fresnel_lamp}
+  lantern_posts:
+    metric: ev_graduation_transition
+    source: census_keyframe
+    verified: {value: 15, date: '2026-07-09'}
+    mode: tier
+    base: 2
+    rungs: [none, post_1, posts_2, posts_3, posts_row]
+    hysteresis_evals: 2
+    class: quick
+    vocab: {camp: torch, hamlet: lantern_post, town: streetlight, beyond_bay: streetlight}
+  posts_lit:
+    metric: cells_graduated
+    source: census_keyframe
+    verified: {value: 0, date: '2026-07-09'}
+    mode: count
+    rungs: [none, lit_1, lit_2, lit_3plus]
+    hysteresis_evals: 1
+    class: quick
+    vocab: {camp: torch_flame, hamlet: lantern_flame, town: streetlight_glow, beyond_bay: streetlight_glow}
+  road:
+    metric: org_events_total
+    source: census_keyframe
+    verified: {value: 168917, date: '2026-07-09'}
+    mode: tier
+    base: 8000
+    # rung 0 = the egg's t0 dirt path (ratified egg-tile-plan: the path IS part
+    # of the egg); higher rungs upgrade its material by real traffic volume
+    rungs: [dirt_path, dirt_worn, gravel_road, cobbled_road]
+    hysteresis_evals: 2
+    class: quick
+    vocab: {camp: dirt, hamlet: gravel, town: cobble, beyond_bay: cobble}
+  lane_isles:
+    metric: outcomes_by_lane
+    source: outcomes_yml
+    verified: {value: 4, date: '2026-07-09'}
+    mode: per_lane
+    rungs: [reef_buoy, dock_r0, warehouses_r1, town_r2, district_r3]
+    hysteresis_evals: 2
+    class: great
+    vocab: {camp: reef_ring, hamlet: timber_ring, town: stone_ring, beyond_bay: stone_ring}

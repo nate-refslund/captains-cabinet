@@ -26,7 +26,19 @@
 # byte-untouched. Rate-routed TEXTURE-class entries (noticeboard pins,
 # street liveliness) are explicitly marked in their codex — volume cannot
 # mint capability, ever.
-version: 2
+#
+# v3 delta (THE LIVING ISLAND, Captain-ratified 2026-07-09 "you may actually
+# just finalize the plan and start implementing"; spec of record
+# docs/plans/world-unified-spec-v2-2026-07-09.md §2–§9, §15 addenda + the
+# 2026-07-09 rulings ledger): appends the ERA×RUNG growth-law entries (the
+# rung source of truth is cabinet/world/growth-ladders.yml — Captain-tunable
+# VALUES, hot-reloaded, previewed via world-preview), the staged+recomposed
+# lighthouse, the lane reef-buoys, and the mailbox pending-flag surface.
+# The law: block and every v1/v2 entry are byte-untouched. Behavior/overlay
+# law (weather, commute, construction, fauna, apprentices, portrait rail,
+# mailbox view, killswitch lever, roof cutaway) lives in show-grammar.yml v3
+# per the live_overlay law line below.
+version: 3
 
 law:
   tiering: "tier_i = clamp(floor(log2(S_i / base_i + 1)), 0, 7); bases are cadence-justified per surface, never anchored to flatter today's cabinet; every base/curve change is a PR gated by day-3/30/365 fixture renders (E2)"
@@ -238,14 +250,14 @@ entries:
       mechanism_path: "cabinet/scripts/world-census.py"
       day0: "unplowed ground"
   - id: island_harbor_beacon
-    represents: "THE dark beacon (interim silo sprite; bespoke lighthouse art tracked in the authored-art budget) — beam lights on first graduated cell"
+    represents: "THE dark beacon (RECOMPOSED 2026-07-09: the 21_Beach banded lighthouse tower — the interim silo sprite is RETIRED per the Captain ruling; NEVER the water-tank/silo body) — beam lights on first graduated cell"
     source_binding: "jq -r -s 'last | .cells_graduated' shared/interfaces/world-chronicle.jsonl"
     scope: org-global
     tier: T0
     replay: ledger
     base: 1
     codex:
-      represents: "Graduated trust cells (falsifier keystone number), rendered at Harbor S as the farm silo with an UNLIT lamp overlay — the honest-zero lighthouse stand-in, prominent and slightly oversized. The beam lighting on the first graduation will be the biggest visual event in the world's life; it never gets a night light before then."
+      represents: "Graduated trust cells (falsifier keystone number), rendered at Harbor S as the RECOMPOSED lighthouse (exteriors/lighthouse/21_Beach Example tower: red/white banded body, lamp gallery + cap — the lamp fits the tower, per the Captain ruling 2026-07-09; renderer binding lighthouseCutFor() stages it by the lighthouse ladder rung, dual-view with lighthouse_staged, D7/R8) with an UNLIT lamp — the honest-zero beacon, prominent and slightly oversized. The beam lighting on the first graduation will be the biggest visual event in the world's life; it never gets a night light before then."
       mechanism_path: "cabinet/scripts/falsifier-report.py"
       day0: "dark beacon, loud about it"
   - id: island_harbor_crates
@@ -301,3 +313,63 @@ entries:
       represents: "Date of the FIRST census keyframe — org age bands unlock street set-dressing (<7d bare; 7-30d benches + trees; >30d second streetlight row + planters). Seeded positions fix once placed (fold law). TEXTURE class: age dresses the street, it never mints structure."
       mechanism_path: "cabinet/scripts/world-census.py"
       day0: "bare pavement"
+
+  # --------------------------------------------------------------------------
+  # v3 entries — THE LIVING ISLAND (Captain-ratified 2026-07-09; spec
+  # docs/plans/world-unified-spec-v2-2026-07-09.md). growth-ladders.yml is the
+  # RUNG SOURCE OF TRUTH for every growth surface: bases, rungs, era vocab and
+  # hysteresis live THERE as Captain-tunable data (schema changes ride
+  # grammar-law PRs like this one); entries here bind the STATE and cite their
+  # ladder. Validator green required (read-only sandbox, live bindings).
+  # --------------------------------------------------------------------------
+  - id: era_vocabulary
+    represents: "THE ERA AXIS — one org-maturity index selects the sprite vocabulary every element renders with (torches before streetlights, tent before house)"
+    source_binding: "grep -c -e 'weight:' cabinet/world/growth-ladders.yml"
+    scope: org-global
+    tier: T0
+    replay: ledger
+    codex:
+      represents: "The weighted era basket (5 real metrics: org age, total events, outcomes achieved, graduations, active lanes) in growth-ladders.yml — index = sum(weight * norm), era = highest threshold <= index, MANDATORY 2-keyframe hysteresis (no era flapping). ERA styles, RUNG measures: era never hides a count, only selects which sprite family renders it (spec §15.2; calibration winner 'balanced', WORLD-GROWTH-CALIBRATION gate). Recomputed per daily census keyframe — replay is ledger-true."
+      mechanism_path: "cabinet/world/growth-ladders.yml"
+      day0: "camp era — campfire/tent/torch/dirt vocabulary"
+  - id: ladder_rungs
+    represents: "THE RUNG AXIS — per-element magnitude ladders; growth-ladders.yml is the rung source of truth (no element spawns at final size)"
+    source_binding: "grep -c -e 'rungs:' cabinet/world/growth-ladders.yml"
+    scope: org-global
+    tier: T0
+    replay: ledger
+    codex:
+      represents: "Every bound element's visible growth ladder (29 ladders: tier/count/flag/per_lane modes over live-verified census/snapshot/ledger metrics, log2 bases, 2-eval hysteresis, era vocab per ladder). VALUE edits are Captain-editable directly — world-growth-validate.py refuses malformed/untruthful configs, the renderer HOT-RELOADS on mtime, and world-preview --maturity renders stills before committing (addendum 2 §3). Schema changes ride grammar-law PRs, never auto-merge."
+      mechanism_path: "cabinet/scripts/world-growth-validate.py"
+      day0: "every ladder at rung 0 — empty bucket, bare pole, dark cairn"
+  - id: lighthouse_staged
+    represents: "THE LIGHTHOUSE, staged and RECOMPOSED — tower grows by accumulating trust cells; the lamp lights only at the first graduation"
+    source_binding: "jq -r -s 'last | .cells_accumulating' shared/interfaces/world-chronicle.jsonl"
+    scope: org-global
+    tier: T0
+    replay: ledger
+    base: 4
+    codex:
+      represents: "cells_accumulating (census keyframe) drives the tower stages dark_cairn -> stone_base -> tower_part -> tower_full (ladder: lighthouse; the lamp is ladder lighthouse_lamp, a flag on cells_graduated — 0 today, so DARK at every stage). RECOMPOSED per Captain ruling 2026-07-09: the lamp must fit the tower — proper tower tiles or a Room_Builder/exterior-piece composition, NEVER the water-tank/silo body; supersedes island_harbor_beacon's interim silo sprite (dual-view cross-link, D7/R8 registry). The beam lighting on the first graduation remains the biggest visual event of the world's life; no night light before then."
+      mechanism_path: "cabinet/scripts/falsifier-report.py"
+      day0: "dark cairn on the shore rock — ambition visible from birth"
+  - id: lane_reef_buoys
+    represents: "Reef buoys — retired and instance-test lanes render as honest anchored markers, never islands"
+    source_binding: "grep -c -e 'status: retired' instance/config/outcomes.yml"
+    scope: org-global
+    tier: T0
+    replay: git
+    codex:
+      represents: "Retired outcomes/lanes in outcomes.yml plus instance-only lanes (Captain rulings 2026-07-09): a retired or inactive lane keeps its fixed fan anchor (anchors never move — layout_fold; stepnetwork S at (120,168), spec §2.2) but renders a grey reef buoy whose inspect card says exactly retired/instance. The 'sensed' lane is an INSTANCE-only test app — never foundation, never an isle in egg defaults; stephie is an instance lane too (renders on this deployment, never in egg defaults). Buoys dual-code the grey-unmeasured horizon fog; grey stays the unmeasured hue, never an alarm."
+      mechanism_path: "instance/config/outcomes.yml"
+      day0: "open water — an egg has no retired lanes"
+  - id: mailbox_pending
+    represents: "Crossroads mailbox flag — raised while Captain decisions wait (P1 feed pending; renders flag-down until it lands)"
+    source_binding: "jq -r -s 'last | .pending_captain_items' shared/interfaces/world-chronicle.jsonl"
+    scope: dark
+    tier: T0
+    replay: ledger
+    codex:
+      represents: "pending_captain_items (Redis snapshot int, live-verified 0 on 2026-07-09) — flag up while > 0. DARK until P1 lands the field on the census keyframe/SSE snapshot AND the source-of-record call resolves (spec §14 open call #5: dashboard decision-queue vs Chair binder queue — one truth, one place). Click behavior is show-grammar mailbox_view law: READ-only render of the decision queue + deep-link, NO actuation ever (Captain ruling 2026-07-09; the ONE actuator is the killswitch lever)."
+      mechanism_path: "cabinet/dashboard/src/app/api/world/stream/route.ts"
+      day0: "flag down, empty box"

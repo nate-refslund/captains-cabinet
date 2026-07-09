@@ -1,0 +1,16 @@
+--- a/framework/frontdoor/channel.py
++++ b/framework/frontdoor/channel.py
+@@ -718,8 +718,12 @@
+     opts = [str(o)[:100] for o in (options or [])][:12]
+     if len(opts) < 1:
+         return {"status": "error", "sent": False, "error": "poll needs >=1 option"}
++    # Bot API 7.3+ (May 2024): sendPoll `options` is an Array of InputPollOption
++    # objects ({"text": ...}), NOT bare strings — a bare-string array is rejected
++    # (cp-gauntlet HIGH). Each option text is already capped to the 1-100 char limit.
+     payload = {"chat_id": chat_id, "question": str(question)[:300],
+-               "options": json.dumps(opts), "is_anonymous": bool(is_anonymous),
++               "options": json.dumps([{"text": o} for o in opts]),
++               "is_anonymous": bool(is_anonymous),
+                "allows_multiple_answers": bool(allows_multiple_answers)}
+     if quiz_correct is not None:
+         payload["type"] = "quiz"

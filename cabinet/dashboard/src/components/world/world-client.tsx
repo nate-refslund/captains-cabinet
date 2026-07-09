@@ -10,9 +10,15 @@
  * break-through, the grammar-pending banner, the chronicle ticker, and the
  * Legend Law panel.
  *
- * Read-only by construction: this tree issues GET/EventSource requests
- * only. CI ratchets pin: no server actions, no HTML injection surfaces, no
- * wall-clock/unseeded-RNG calls in the render path.
+ * Read-only by construction — with the ONE ruled exception: this tree
+ * issues GET/EventSource requests only, EXCEPT the killswitch lever
+ * (Captain ruling 2026-07-09: the lever is the single in-world actuator,
+ * two-tap + confirm + captain cookie, wired to the EXISTING dashboard
+ * killswitch action — see killswitch-lever.tsx). CI ratchets pin: no
+ * server actions declared in this tree, exactly one actuator import, no
+ * HTML injection surfaces, no wall-clock/unseeded-RNG calls in the render
+ * path. T3 adds: portrait rail (chrome, never the world framebuffer),
+ * pixel dialog frames, and the mailbox's READ-only decision-queue view.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
@@ -34,6 +40,9 @@ import { buildGrowth, type CensusKeyframe, type GrowthModel } from '@/lib/world/
 import { buildStreetLayout, type StreetLayout } from '@/lib/world/street-layout'
 import { buildIslandLayout, type IslandLayout } from '@/lib/world/island-layout'
 import InspectCard, { type InspectTarget } from './inspect-card'
+import PortraitRail from './portrait-rail'
+import KillswitchLever from './killswitch-lever'
+import DecisionQueueCard from './decision-queue-card'
 
 const WorldCanvas = dynamic(() => import('./world-canvas'), { ssr: false })
 const OutdoorCanvas = dynamic(() => import('./outdoor-canvas'), { ssr: false })
@@ -83,8 +92,15 @@ function parseUrlState(search: string): {
   return { camera: { z, x, y }, sel, at }
 }
 
-export default function WorldClient() {
+export default function WorldClient({
+  canActuate = false,
+}: {
+  /** Captain session verified server-side (page.tsx) — gates the ONE
+   * actuator (killswitch lever); everything else ignores it. */
+  canActuate?: boolean
+}) {
   const [snapshot, setSnapshot] = useState<WorldSnapshot | null>(null)
+  const [mailboxOpen, setMailboxOpen] = useState(false)
   const [grammar, setGrammar] = useState<GrammarPayload | null>(null)
   const [scenes, setScenes] = useState<OfficerScene[]>([])
   const [tick, setTick] = useState(0)
@@ -371,7 +387,7 @@ export default function WorldClient() {
           codex: isLever
             ? {
                 represents:
-                  'The killswitch lever — cabinet:killswitch. Red ONLY when active (reserved salience hue). Pull/reset stays in Telegram/CLI where auth lives; the world never grows a write path.',
+                  'The killswitch lever — cabinet:killswitch. Red ONLY when active (reserved salience hue). THE one in-world actuator (Captain ruling 2026-07-09): two-tap + confirm + captain cookie via the LEVER control (top right), wired to the existing dashboard killswitch write. Everything else in the world stays read-only.',
                 mechanism_path: 'cabinet/scripts/kill-switch.sh',
                 day0: 'lever present, inactive',
               }
@@ -441,7 +457,10 @@ export default function WorldClient() {
   }, [])
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
-      if (ev.key === 'Escape') setInspect(null)
+      if (ev.key === 'Escape') {
+        setInspect(null)
+        setMailboxOpen(false)
+      }
       const pan = 2 / sceneScale
       if (ev.key === 'w' || ev.key === 'ArrowUp') setCamera((c) => ({ ...c, y: c.y - pan }))
       if (ev.key === 's' || ev.key === 'ArrowDown') setCamera((c) => ({ ...c, y: c.y + pan }))
@@ -521,6 +540,12 @@ export default function WorldClient() {
       }
       if (target.kind === 'officer') {
         openInspect(target)
+        return
+      }
+      // Mailbox → the READ-only pending decision-queue view (Captain ruling
+      // 2026-07-09: render + deep-link, no actuation in-world).
+      if (target.id.startsWith('island:post')) {
+        setMailboxOpen(true)
         return
       }
       const pr = outdoorProps.find((p) => p.id === target.id)
@@ -921,6 +946,25 @@ export default function WorldClient() {
               close
             </button>
           </div>
+          {/* codex-coverage gauge (T3 §5.3): entries with codex-or-decorative
+              ÷ emitted entity kinds — the Legend-Law honesty meter. */}
+          {typeof grammar?.codexCoverage === 'number' && (
+            <div data-world-coverage-gauge className="mb-2">
+              <div className="mb-0.5 flex justify-between font-mono text-[10px] text-zinc-400">
+                <span>codex coverage</span>
+                <span>{(grammar.codexCoverage * 100).toFixed(0)}%</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-sm bg-zinc-800">
+                <div
+                  className={
+                    'h-full ' +
+                    (grammar.codexCoverage >= 1 ? 'bg-emerald-500' : 'bg-amber-500')
+                  }
+                  style={{ width: `${Math.round(grammar.codexCoverage * 100)}%` }}
+                />
+              </div>
+            </div>
+          )}
           {grammar?.pending !== false ? (
             <p className="text-amber-300">
               Grammar law not yet merged — no mappings to cite. The legend
@@ -961,8 +1005,27 @@ export default function WorldClient() {
         </div>
       )}
 
+      {/* ── portrait rail (T3 §9.1): chrome, never the world framebuffer ── */}
+      {!eraMode && (
+        <PortraitRail
+          tick={tick}
+          onInspect={(slug) => openInspect({ kind: 'officer', id: slug })}
+        />
+      )}
+
+      {/* ── mailbox: READ-only pending decision-queue view (ruling) ── */}
+      {mailboxOpen && <DecisionQueueCard onClose={() => setMailboxOpen(false)} />}
+
       {/* ── inspect card ── */}
       {inspect && <InspectCard target={inspect} onClose={() => { setInspect(null); setSel(null) }} />}
+
+      {/* ── THE killswitch lever: the ONE actuator; renders above the red
+            wash (break-through law) and stays truthful to the live key ── */}
+      <KillswitchLever
+        active={snapshot?.killswitch ?? false}
+        tick={tick}
+        canActuate={canActuate}
+      />
 
       {/* ── killswitch break-through: unsuppressible, above everything ── */}
       {snapshot?.killswitch && (
