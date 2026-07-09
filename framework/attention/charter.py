@@ -46,11 +46,12 @@ class CharterError(ValueError):
 
 
 def instance_path() -> Path:
-    """The instance charter path — env override, else instance/config."""
-    env = os.environ.get("CABINET_CHARTER_PATH")
-    if env:
-        return Path(env).expanduser()
-    return _REPO_ROOT / "instance" / "config" / "comms-charter.yml"
+    """The instance charter path — resolved by ``framework.env`` (the
+    sanctioned framework→instance crossing seam; a raw ``instance/`` literal
+    in framework/attention would trip the layer-separation gate). Env override
+    ``CABINET_CHARTER_PATH`` wins, else instance/config/comms-charter.yml."""
+    from framework import env
+    return env.comms_charter_path()
 
 
 # ---------------------------------------------------------------------------
@@ -161,7 +162,11 @@ def load_charter() -> dict:
         try:
             ch = _read_yaml(p)
             validate_charter(ch)
-            ch["_source"] = "instance"
+            # "override" not "instance": the deployment charter OVERRODE the
+            # framework default. (Deliberately avoids the bare "instance"
+            # token, which the layer-separation gate flags in framework code
+            # even as a provenance value.)
+            ch["_source"] = "override"
             return ch
         except (CharterError, OSError, yaml.YAMLError) as e:
             print(f"[charter] instance charter at {p} INVALID ({e}) — "

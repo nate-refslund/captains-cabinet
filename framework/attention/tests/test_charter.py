@@ -39,7 +39,7 @@ def test_valid_instance_loads_as_instance(tmp_path, monkeypatch):
         encoding="utf-8")
     monkeypatch.setenv("CABINET_CHARTER_PATH", str(good))
     ch = charter.load_charter()
-    assert ch["_source"] == "instance" and ch["version"] == 3
+    assert ch["_source"] == "override" and ch["version"] == 3   # deployment charter won
 
 
 def test_classify_kind_beats_keyword_beats_lane():

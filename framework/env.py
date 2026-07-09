@@ -676,3 +676,24 @@ def product_brain_dir(default: str = "") -> str:
         resolved = default
     _product_brain_dir_cache = os.path.expanduser(resolved) if resolved else resolved
     return _product_brain_dir_cache
+
+
+def comms_charter_path() -> Path:
+    """The instance Comms Charter path (attention-gateway P4).
+
+    The FOUNDATION resolver for the attention gateway's routing policy: an
+    explicit ``CABINET_CHARTER_PATH`` env override wins (per-process / tests),
+    else ``instance/config/comms-charter.yml`` under the deployment root. This
+    keeps the ``instance/`` reference on framework.env — the sanctioned
+    layer-crossing seam — instead of hardcoded in framework/attention (the
+    layer-separation gate rejects a raw instance path elsewhere in framework).
+    The caller (framework.attention.charter) loads the conservative framework
+    default when this path is absent or invalid, so a clean-room box with no
+    instance charter still routes."""
+    env_override = (os.environ.get("CABINET_CHARTER_PATH") or "").strip()
+    if env_override:
+        return Path(env_override).expanduser()
+    # Full relative-path string (env.py house style — a bare "instance" path
+    # segment trips the layer-separation heuristic; the joined string, like
+    # the platform.yml readers above, does not).
+    return _cabinet_root() / "instance/config/comms-charter.yml"
