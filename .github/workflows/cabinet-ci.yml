@@ -609,3 +609,25 @@ jobs:
         run: pip install pytest pyyaml
       - name: "Proof 1 — null hatch (one gate, clean checkout)"
         run: bash cabinet/scripts/null-hatch.sh
+
+  # CI-audit 2026-07-09: secret scanning with the EXISTING committed
+  # .gitleaks.toml (gitleaks auto-detects it at repo root). Event-native
+  # scan depth: push scans the pushed commit range, pull_request scans the
+  # PR commits, and the nightly schedule run is the FULL-HISTORY sweep
+  # (fetch-depth: 0 makes the history available). Action SHA-pinned per
+  # zizmor doctrine. Repo owner is a User account — no GITLEAKS_LICENSE
+  # needed (v2 requires one only for Organization repos).
+  gitleaks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7  # v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
