@@ -44,6 +44,17 @@ export CABINET_ROOT="$ROOT"
 # assertions below are identical under both bash versions.
 export TELEGRAM__TOKEN="x-test-token-bash32-fallback"
 
+# R061 (instance-split) removed cabinet/env/sensed.env from the repo — only
+# _template.env ships; per-project env is provisioned per deployment. Pool
+# mode hard-requires the file, so provision a SCRATCH fixture from the
+# template and clean it on ANY exit (crash included). Guard: never clobber a
+# genuinely provisioned file on a live box.
+SENSED_ENV="$ROOT/cabinet/env/sensed.env"
+if [ ! -f "$SENSED_ENV" ]; then
+  cp "$ROOT/cabinet/env/_template.env" "$SENSED_ENV"
+  trap 'rm -f "$SENSED_ENV"' EXIT
+fi
+
 # ----------------------------------------------------------------------------
 # L1: Pool mode exports CABINET_LANE=<slug> (derived from --project).
 # ----------------------------------------------------------------------------

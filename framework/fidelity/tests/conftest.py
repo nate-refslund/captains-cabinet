@@ -52,6 +52,11 @@ if not _retro_available():
         "test_run_e2e_smoke.py",
         "test_run_f1.py",
         "test_scorer.py",
+        # SOV-7 modules import the retro lib at module level too — added
+        # after this list was written and never registered, so they ERRORED
+        # at collection on every retro-less box (CI red since 2026-07-08).
+        "test_sov7_identity.py",
+        "test_sov7_outcome_judge.py",
     ]
     print(
         "[fidelity conftest] screenpipe retrodiction lib ABSENT -> skipping "
