@@ -1,0 +1,79 @@
+--- a/framework/frontdoor/channel.py
++++ b/framework/frontdoor/channel.py
+@@ -691,6 +691,76 @@
+     return {"status": "sent", "sent": True, "response": sent_resp}
+ 
+ 
++def send_poll(question: str, options: list, *, is_anonymous: bool = False,
++              allows_multiple_answers: bool = False, quiz_correct: int | None = None,
++              silent: bool = False, feed_meta: dict | None = None,
++              http_post=None) -> dict:
++    """Send a native Telegram poll — the AskUserQuestion-style select surface.
++
++    Same gate + scrub + feed-journal discipline as ``send``: ``allow_sends()``
++    first, recipient always ``CAPTAIN_TELEGRAM_ID``. ``options`` is 1-12 short
++    strings; a ``quiz_correct`` index turns it into a quiz. Non-anonymous by
++    default so the vote arrives structured on ``poll_answer`` (the poller
++    relays it). Returns the poll's ``message_ids`` for later stop/reference."""
++    if not env.allow_sends():
++        return {"status": "blocked-dev", "sent": False}
++    token = _token()
++    chat_id = _captain_id()
++    if not token or not chat_id:
++        return {"status": "error", "sent": False, "error": "telegram not configured"}
++    opts = [str(o)[:100] for o in (options or [])][:12]
++    if len(opts) < 1:
++        return {"status": "error", "sent": False, "error": "poll needs >=1 option"}
++    payload = {"chat_id": chat_id, "question": str(question)[:300],
++               "options": json.dumps(opts), "is_anonymous": bool(is_anonymous),
++               "allows_multiple_answers": bool(allows_multiple_answers)}
++    if quiz_correct is not None:
++        payload["type"] = "quiz"
++        payload["correct_option_id"] = int(quiz_correct)
++    if silent:
++        payload["disable_notification"] = True
++    post = http_post or _default_http_post
++    url = f"{_base()}/bot{token}/sendPoll"
++    # Capture the RAW (pre-scrub) response so we can read result.message_id —
++    # _post_one returns the SCRUBBED string, which _msgid_of can't parse (same
++    # wrapper pattern send()/edit_message use).
++    captured: list = []
++
++    def _cap(u, d, _sink=captured):
++        resp = post(u, d)
++        _sink.append(resp)
++        return resp
++
++    ok, sent_resp, err = _post_one(_cap, url, payload, token)
++    if not ok:
++        return {"status": "error", "sent": False, "error": err}
++    mid = _msgid_of(captured[-1]) if captured else None
++    _journal_out(lambda: _feed_row_out(str(question), "poll", mid, chat_id, feed_meta))
++    return {"status": "sent", "sent": True, "response": sent_resp,
++            "message_ids": [mid] if mid else []}
++
++
++def set_typing(action: str = "typing", *, http_post=None) -> dict:
++    """Show the ``typing…`` (or ``upload_photo``, ``record_voice`` …) status in
++    the Captain's chat via ``sendChatAction``. Ephemeral (clears after ~5s or
++    on the next message), so it is NOT feed-journaled — fire it before a
++    reply that takes a noticeable moment to compose (the investigation-bar
++    gather). Gate + scrub like every other send; best-effort by nature."""
++    if not env.allow_sends():
++        return {"status": "blocked-dev", "sent": False}
++    token = _token()
++    chat_id = _captain_id()
++    if not token or not chat_id:
++        return {"status": "error", "sent": False, "error": "telegram not configured"}
++    payload = {"chat_id": chat_id, "action": str(action)}
++    post = http_post or _default_http_post
++    url = f"{_base()}/bot{token}/sendChatAction"
++    ok, sent_resp, err = _post_one(post, url, payload, token)
++    if not ok:
++        return {"status": "error", "sent": False, "error": err}
++    return {"status": "sent", "sent": True}
++
++
+ def _default_multipart_post(url: str, fields: dict, filename: str, content: bytes) -> dict:
+     """Default transport: POST a multipart/form-data body (one file + fields).
+ 

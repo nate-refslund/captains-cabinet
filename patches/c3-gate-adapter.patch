@@ -1,0 +1,27 @@
+--- a/framework/attention/gate.py
++++ b/framework/attention/gate.py
+@@ -328,14 +328,19 @@
+ # ---------------------------------------------------------------------------
+ 
+ def _default_send(text, **kw):
+-    from framework.frontdoor import channel
+-    return channel.send(text, silent=kw.get("silent", False),
+-                        feed_meta=kw.get("feed_meta"))
++    # Route through the channel-agnostic adapter seam (framework.comms) so the
++    # gate's OWN delivery is the SAME one door the Comms MCP tools use — not a
++    # second, Telegram-hardcoded path. The Telegram adapter delegates back to
++    # channel.send, so live behavior is identical; a clean-room / null channel
++    # now governs gate delivery too (one door, resolved from instance config).
++    from framework.comms.get_channel import get_channel
++    return get_channel().send(text, silent=kw.get("silent", False),
++                              feed_meta=kw.get("feed_meta"))
+ 
+ 
+ def _default_edit(message_id, text, **kw):
+-    from framework.frontdoor import channel
+-    return channel.edit_message(message_id, text, feed_meta=kw.get("feed_meta"))
++    from framework.comms.get_channel import get_channel
++    return get_channel().edit(message_id, text, feed_meta=kw.get("feed_meta"))
+ 
+ 
+ def briefing_item(item: dict, decision: dict) -> dict:

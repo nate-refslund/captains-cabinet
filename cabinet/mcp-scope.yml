@@ -140,4 +140,10 @@ scaffolds:
 #   instance/agents/*/mcp.json), so the grant was dead policy weight (same
 #   class as the removed `host` grant). Re-grant when the server is actually
 #   wired; §10's peer-trust policy remains in place for that day.
-universal: [telegram, library, redis-trigger-channel]
+# - `cabinet-comms` ADDED (comms foundation, feat/telegram-hardening) — the
+#   channel-agnostic LLM-native comms surface (send_card/react/poll/pin/
+#   open_thread/stream_thinking/send_rich_card/read_feed). Every officer's
+#   ONE DOOR to the Captain: routes through framework.attention.gate + the
+#   bound ChannelAdapter, so it cannot bypass the charter/quiet-hours/floor.
+#   Inert until the server is registered in instance/config/extensions.yml.
+universal: [telegram, library, redis-trigger-channel, cabinet-comms]
