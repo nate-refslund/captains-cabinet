@@ -12,7 +12,7 @@ shared/interfaces/falsifier-series.jsonl:
   {date, acted_7d, approved_7d, reversal_rate_7d, stamped_rows_total,
    cells_accumulating, cells_graduated, proactive_cards_7d,
    memory_ingestion, recall_drops, session_insert_failures,
-   labels_7d, time_to_graduation_days}
+   labels_7d, time_to_graduation_days, cost_7d}
 
 Growth metrics (§4.2, 2026-07-09 — "verdict throughput is the gap", the
 egg-analysis verdict): labels_7d counts the week's raw label supply
@@ -22,6 +22,13 @@ reports days from the cell's first stamped row to the earliest
 row-granular time the graduation bar was met ({cells: {actor|lane|type:
 days}, median}) — the exact evidence the cell-granularity question
 (§4.3-3) is deferred on. Pure measurement, same read-only inputs.
+
+Change-cost telemetry (§4.2, 2026-07-09): cost_7d sums the revived cost
+ledger (cabinet:cost:tokens:daily:<date> hashes, live since 07-07 — fields
+<officer>_input/_output/_cache_write/_cache_read/_cost_micro) over the
+window and divides by the week's label supply: cost_micro_per_label is the
+org's actual price of one unit of learning — the number EIG ordering needs.
+null when unmeasurable (no readable day / zero labels), never a silent 0.
 
 Memory-ingestion liveness (P1c, 2026-07-07): the capture hooks feeding
 cabinet_memory are best-effort exit-0 BY DESIGN (a hook must never fail the
@@ -152,6 +159,60 @@ def _counter(redis_get: Optional[Callable[[str], str]], key: str) -> int:
         return int(redis_get(key) or 0)
     except Exception:
         return 0
+
+
+def _cost_7d(now: dt.datetime,
+             redis_hgetall: Optional[Callable[[str], Dict[str, str]]],
+             labels_total: int) -> Dict[str, Any]:
+    """Window cost from the daily cost-ledger hashes (read-only HGETALL).
+    Sums every <officer>_{input,output,cost_micro} field per day; a failed /
+    absent day contributes nothing. cost_micro_per_label = cost / the week's
+    label supply — null when either side is unmeasurable (zero labels means
+    "infinite price of learning", reported as null + the labels_7d field
+    already says why, never a fake 0)."""
+    totals = {"cost_micro": 0, "input_tokens": 0, "output_tokens": 0}
+    days_measured = 0
+    if redis_hgetall is not None:
+        for d in range(WINDOW_DAYS):
+            date = (now - dt.timedelta(days=d)).strftime("%Y-%m-%d")
+            try:
+                fields = redis_hgetall(f"cabinet:cost:tokens:daily:{date}") or {}
+            except Exception:
+                continue
+            if not fields:
+                continue
+            days_measured += 1
+            for name, val in fields.items():
+                try:
+                    v = int(val)
+                except (TypeError, ValueError):
+                    continue
+                if name.endswith("_cost_micro"):
+                    totals["cost_micro"] += v
+                elif name.endswith("_input"):
+                    totals["input_tokens"] += v
+                elif name.endswith("_output"):
+                    totals["output_tokens"] += v
+    per_label = None
+    if days_measured and labels_total > 0:
+        per_label = round(totals["cost_micro"] / labels_total)
+    return {**totals, "days_measured": days_measured,
+            "cost_micro_per_label": per_label}
+
+
+def _default_redis_hgetall(key: str) -> Dict[str, str]:
+    """HGETALL via redis-cli (read-only; launchd has no redis-py)."""
+    import shutil as _sh
+    cli = _sh.which("redis-cli") or "/opt/homebrew/bin/redis-cli"
+    host = os.environ.get("REDIS_HOST", "localhost")
+    port = os.environ.get("REDIS_PORT", "6379")
+    proc = subprocess.run([cli, "-h", host, "-p", port, "--raw",
+                           "HGETALL", key],
+                          capture_output=True, text=True, timeout=10)
+    if proc.returncode != 0:
+        return {}
+    lines = [l for l in proc.stdout.split("\n") if l != ""]
+    return {lines[i]: lines[i + 1] for i in range(0, len(lines) - 1, 2)}
 
 
 def _neon_conn() -> Optional[str]:
@@ -292,6 +353,8 @@ def compute_line(ledger: List[Dict[str, Any]], *,
                  now: Optional[dt.datetime] = None,
                  redis_get: Optional[Callable[[str], str]] = None,
                  ingestion: Optional[Dict[str, Dict[str, Any]]] = None,
+                 redis_hgetall: Optional[
+                     Callable[[str], Dict[str, str]]] = None,
                  ) -> Dict[str, Any]:
     """The pure daily falsifier line from a (deduped) consequence ledger.
 
@@ -369,6 +432,8 @@ def compute_line(ledger: List[Dict[str, Any]], *,
         "proactive_cards_7d": proactive_cards_7d,
         "labels_7d": {"verdict": labels_verdict_7d,
                       "outcome_resolved": outcome_resolved_7d},
+        # §4.2 change-cost telemetry — what a unit of learning costs.
+        "cost_7d": _cost_7d(now, redis_hgetall, labels_verdict_7d),
         "time_to_graduation_days": {"cells": grad_days,
                                     "median": median_days},
         # P1c memory-ingestion liveness (compact; null = unmeasurable, {} =
@@ -405,7 +470,8 @@ def main() -> int:
     ingestion = read_memory_ingestion()
     line = compute_line(read_ledger(), now=now,
                         redis_get=actfirst_canary._default_redis_get,
-                        ingestion=ingestion)
+                        ingestion=ingestion,
+                        redis_hgetall=_default_redis_hgetall)
 
     # Digest alerts (stdout → the job's log). Printed on EVERY run — including
     # the already-reported no-op path — so the daily digest never goes quiet
