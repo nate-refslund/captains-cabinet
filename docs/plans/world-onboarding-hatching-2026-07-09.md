@@ -297,6 +297,22 @@ assembled answers back" step does — same content, nicer table). Secrets are ab
 construction (the answers file never holds them). Buttons: `Back` (edit any phase) and
 `Sign` (H-2).
 
+**The candor covenant (CANDOR LAW, Captain ruling 2026-07-10).** The Charter parchment
+carries one standing covenant line above the signature, and the genesis interview SETS
+THE EXPECTATION before the Captain signs — verbatim:
+
+> *"Your cabinet will disagree with you, loudly, with evidence — its vetoes are yours,
+> its silence is never agreement."*
+
+This is not copy; it is the constitution's candor-over-comfort value surfacing at the
+one moment every Captain reads a contract: officers owe evidence-cited dissent BEFORE
+any compliance path, then obey the ruling (dissent-then-obey — Captain vetoes bind
+absolutely); agreement-as-target is banned org-wide; tone is configurable per persona,
+truthfulness is not (D15c: style is expression, values are genome). A new Captain who
+wants an agreeable cabinet learns HERE that this one optimizes for the mission and
+answers to them — it flatters no one. (Constitution amendment + role-def clauses staged
+on `feat/germline-window-3`; golden eval EVAL-024-CANDOR pins the behavior.)
+
 **Sign** (reauth-gated, §6.3) runs the EXISTING pipeline, unmodified:
 
 1. Server writes the final `instance/config/cabinet-init.answers.yml`.
