@@ -141,6 +141,26 @@ def _resolve_containment(args: List[str]) -> Optional[str]:
     return None
 
 
+_PATH_TOKEN_RE = re.compile(r"^[\w.-]+(/[\w.-]+)+$")
+
+
+def _missing_data_paths(args: List[str]) -> List[str]:
+    """Repo-relative path-shaped argv tokens that do not exist on disk.
+
+    Used ONLY by the data-optional mode: a binding over a RUNTIME artifact
+    (chronicle jsonl, memory store) can never find its data on a CI runner —
+    that is absent DATA, not broken GRAMMAR. Deterministic token shape check
+    (contains '/', no leading '-', pure word/dot/dash segments), never output
+    parsing. jq filters ('.x | length') and flags never match the shape."""
+    out = []
+    for tok in args[1:]:
+        if tok.startswith("-") or not _PATH_TOKEN_RE.match(tok):
+            continue
+        if not (_REPO_ROOT / tok).exists():
+            out.append(tok)
+    return out
+
+
 def execute_binding(binding: str) -> Tuple[bool, str]:
     """Run one source_binding inside the sandbox. (ok, value_or_reason)."""
     try:
@@ -221,6 +241,22 @@ def validate(morphology_path: Path) -> List[Finding]:
             findings.append(Finding(eid, "OK", "dark scope — renders dark, "
                                                "execution skipped"))
             continue
+        # DATA-OPTIONAL mode (CI, 2026-07-09): runtime artifacts (chronicle
+        # jsonl, memory store, ledgers) exist only on a live box — on a
+        # runner their absence is missing DATA, not broken grammar. The
+        # armed gate was permanently red on every fresh checkout (unmasked
+        # when the earlier pytest red was fixed). Live boxes do NOT set the
+        # env var, so a vanished chronicle there stays a hard FAIL
+        # (dead-pixel doctrine unchanged).
+        if os.environ.get("CABINET_WORLD_DATA_OPTIONAL") == "1":
+            try:
+                miss = _missing_data_paths(shlex.split(entry["source_binding"]))
+            except ValueError:
+                miss = []
+            if miss:
+                findings.append(Finding(
+                    eid, "SKIP", f"data absent on this box: {', '.join(miss)[:120]}"))
+                continue
         ok, value = execute_binding(entry["source_binding"])
         if ok:
             findings.append(Finding(eid, "OK", "binding live", value))
@@ -244,6 +280,7 @@ def main(argv: List[str]) -> int:
         return 0 if os.environ.get("CABINET_WORLD_REQUIRE_GRAMMAR") != "1" else 1
     findings = validate(morphology)
     fails = [f for f in findings if f.level == "FAIL"]
+    skips = [f for f in findings if f.level == "SKIP"]
     if as_json:
         print(json.dumps({
             "status": "fail" if fails else "ok",
@@ -254,7 +291,8 @@ def main(argv: List[str]) -> int:
             val = f" = {f.value}" if f.value else ""
             print(f"{f.level:4} {f.entry_id}: {f.message}{val}")
         print(f"WORLD_BINDINGS {'FAIL' if fails else 'GREEN'} "
-              f"(entries={len(findings)}, fails={len(fails)})")
+              f"(entries={len(findings)}, fails={len(fails)}, "
+              f"data-skips={len(skips)})")
     return 1 if fails else 0
 
 

@@ -59,6 +59,10 @@ FILES=(
   "framework/frontdoor/calendar_template.py"
   "framework/acting/action_lane.py"
   "framework/acting/run_action_lane.py"
+  "framework/frontdoor/channel.py"
+  "framework/attention/situation.py"
+  "framework/attention/feed.py"
+  "framework/attention/acted_overlay.py"
   # --- judged config (NOT runtime-written) + rules ---
   "instance/config/act-first-surfaces.yml"
   "cabinet/mcp-scope.yml"

@@ -83,6 +83,17 @@ files:
   - path: framework/acting/action_lane.py
   - path: framework/acting/run_action_lane.py
 
+  # --- ONE-DOOR transport floor (attention-gateway P3, 2026-07-09,
+  #     cp-final review): the allow_sends gate + token scrub + feed
+  #     journaling moved INTO channel.py, and situation/feed/acted_overlay
+  #     feed the suppression + act-once judgments — an officer edit to any
+  #     of them widens its own send/quiet surface. Wired into all four
+  #     lists in the same change (lockstep). ---
+  - path: framework/frontdoor/channel.py
+  - path: framework/attention/situation.py
+  - path: framework/attention/feed.py
+  - path: framework/attention/acted_overlay.py
+
   # --- judged config (NOT runtime-written) + rules ---
   - path: instance/config/act-first-surfaces.yml
   - path: cabinet/mcp-scope.yml

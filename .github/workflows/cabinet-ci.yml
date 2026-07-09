@@ -395,9 +395,14 @@ jobs:
       # (CABINET_WORLD_REQUIRE_GRAMMAR unset → exit 0); once the file lands,
       # REQUIRE_GRAMMAR=1 makes any binding failure fail the job.
       - name: World binding gate (grammar law, arms on first merge)
+        # CABINET_WORLD_DATA_OPTIONAL=1 (2026-07-09): bindings over RUNTIME
+        # artifacts (chronicle jsonl, memory store) can never find data on a
+        # fresh runner — grammar is validated, absent data SKIPs loudly. Live
+        # boxes don't set it, so a vanished chronicle there stays a hard FAIL.
         run: |
           if [ -f cabinet/world/morphology.yml ]; then
             CABINET_WORLD_REQUIRE_GRAMMAR=1 \
+            CABINET_WORLD_DATA_OPTIONAL=1 \
               python cabinet/scripts/world-binding-validator.py \
                 cabinet/world/morphology.yml
           else
