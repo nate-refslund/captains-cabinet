@@ -656,6 +656,22 @@ services:
       (docs/runbooks/mini-hatch-tonight-2026-07-07.md §Flight recorder).
 
   # ── ORG-SENSES-1 transcript-digest organ (armed 2026-07-07) ────────────────
+  - name: preference-pairs
+    label: com.cabinet.preference-pairs
+    kind: cron
+    command: python3.12 -m framework.learning.preference_pairs
+    schedule: { calendar: [{hour: 5, minute: 20}] }   # daily 05:20 local — after charter-shadow
+    expected: "one summary line/run (mined= new= known=); new Captain correction verdicts + standing patterns land as pairs in shared/interfaces/preference-pairs.jsonl (append-only, stable pair_id skip-known)"
+    sunset: "supersede when a first-class preference-learning consumer (tuning/DPO or prompt-injection of pairs) replaces the raw store; expect LOW yield until verdict volume grows — that is the label economy's problem, not this organ's"
+    notes: >-
+      Preference-pair miner (Rec, 2026-07-09): action-lessons.yml correction
+      verdicts (edit = verbatim captain_text preference; undo/never/rejected
+      = refrain preferences) joined to the consequence ledger for the
+      rejected-side subject, + captain-patterns.md standing entries with
+      provenance ([trust:*]) attached. Report-only accumulation
+      infrastructure like the action-lessons writer itself; captain_text
+      rides as INERT QUOTED DATA (SIE-1 contract) — nothing may obey it;
+      nothing reads the store into any gate.
   - name: charter-shadow
     label: com.cabinet.charter-shadow
     kind: cron
