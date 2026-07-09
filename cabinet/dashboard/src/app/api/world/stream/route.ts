@@ -22,6 +22,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import yaml from 'js-yaml'
 import { loadGrammar } from '@/lib/world/grammar'
+import { censusPath, parseCensus } from '@/lib/attention/queue'
 import type {
   ChronicleRecord,
   PresenceSnapshot,
@@ -110,6 +111,23 @@ type RedisLike = {
   disconnect?: () => void
 }
 
+/**
+ * pending_captain_items (world-spec §14 P1, command-center Stage 1): the ONE
+ * glance int the HUD chip, lantern gantry, and mailbox flag all share —
+ * |Decisions| incl. overflow, from the census artifact the framework's 300s
+ * surface drain writes. Cheap fs read per snapshot (no extra Redis client on
+ * the 3s poll path); an absent/stale census reads 0 — the chip hides at
+ * zero, exactly the pre-gateway world.
+ */
+function pendingCaptainItems(): number {
+  try {
+    const parsed = parseCensus(fs.readFileSync(censusPath(), 'utf8'), Date.now())
+    return parsed ? parsed.pendingCaptainItems : 0
+  } catch {
+    return 0
+  }
+}
+
 async function readSnapshot(redis: RedisLike | null): Promise<WorldSnapshot> {
   const grammarLoaded = loadGrammar()
   const grammar = {
@@ -127,6 +145,7 @@ async function readSnapshot(redis: RedisLike | null): Promise<WorldSnapshot> {
       chronicle: [],
       grammar,
       clock: captainClock(),
+      pendingCaptainItems: pendingCaptainItems(),
     }
   }
   let presence: PresenceSnapshot | null = null
@@ -173,6 +192,7 @@ async function readSnapshot(redis: RedisLike | null): Promise<WorldSnapshot> {
     chronicle,
     grammar,
     clock: captainClock(),
+    pendingCaptainItems: pendingCaptainItems(),
   }
 }
 
