@@ -71,7 +71,10 @@
 #                rung with a grey "unmeasured" card — never interpolated.
 # =============================================================================
 schema: cabinet.world.growth-ladders/v1
-version: 1
+# v2 delta (grammar v3 wave, Captain-ratified 2026-07-09): era VOCAB completed
+# for every ladder (VALUE edit — Captain-tunable; addendum 1.1/15.2: ERA styles,
+# RUNG measures). No basket/threshold/rung/base change; calibration untouched.
+version: 2
 candidate: balanced
 calibrated:
   date: '2026-07-09'
@@ -119,6 +122,7 @@ ladders:
     rungs: [bare_pole, pennant]
     hysteresis_evals: 1
     class: quick
+    vocab: {camp: pennant_cloth, hamlet: pennant_cloth, town: flag, beyond_bay: crested_flag}
   noticeboard:
     metric: world_chronicle_keyframes
     source: world_chronicle
@@ -127,6 +131,7 @@ ladders:
     rungs: [none, board]
     hysteresis_evals: 2
     class: quick
+    vocab: {camp: stake_notes, hamlet: plank_board, town: cork_board, beyond_bay: post_kiosk}
   workshop:
     metric: evolved_skills
     source: census_keyframe
@@ -136,6 +141,7 @@ ladders:
     rungs: [bare_wall, tool_rack, shed, shed_full_rack]
     hysteresis_evals: 2
     class: great
+    vocab: {camp: toolbox, hamlet: workbench, town: workshop_hut, beyond_bay: workshop_hall}
   library:
     metric: memory_rows_total
     source: census_keyframe
@@ -155,6 +161,7 @@ ladders:
     rungs: [desk_papers, journal_stack, journal_shelf, archive_row]
     hysteresis_evals: 2
     class: quick
+    vocab: {camp: crate_desk, hamlet: plank_desk, town: writing_desk, beyond_bay: archive_bureau}
   well:
     metric: ev_self_improvement_loop_completed
     source: census_keyframe
@@ -163,6 +170,7 @@ ladders:
     rungs: [none, well]
     hysteresis_evals: 2
     class: great
+    vocab: {camp: spring_stones, hamlet: well_frame, town: stone_well, beyond_bay: well_house}
   firepit:
     metric: ev_self_improvement_loop_completed
     source: census_keyframe
@@ -172,6 +180,7 @@ ladders:
     rungs: [bare_ground, stone_ring, ring_seats, gathering_circle]
     hysteresis_evals: 2
     class: quick
+    vocab: {camp: campfire, hamlet: stone_hearth, town: brazier, beyond_bay: plaza_hearth}
   field_plots:
     metric: outcomes_active_system_self
     source: outcomes_yml
@@ -180,6 +189,7 @@ ladders:
     rungs: [none, plot_1, plots_2, plots_3, plots_4]
     hysteresis_evals: 2
     class: quick
+    vocab: {camp: forage_patch, hamlet: tilled_plot, town: fenced_field, beyond_bay: terraced_field}
   outbuildings:
     metric: commits_since_genesis
     source: commits_ledger
@@ -189,6 +199,7 @@ ladders:
     rungs: [none, coop, small_barn, barn_stable, great_barn]
     hysteresis_evals: 2
     class: great
+    vocab: {camp: leanto, hamlet: timber_shed, town: barn, beyond_bay: great_barn}
   law_plot:
     metric: captain_rules
     source: census_keyframe
@@ -198,6 +209,7 @@ ladders:
     rungs: [first_post, post_row, wood_fence, stone_fence]
     hysteresis_evals: 2
     class: quick
+    vocab: {camp: carved_post, hamlet: post_row, town: wood_fence, beyond_bay: stone_wall}
   veto_plinth:
     metric: captain_vetoes_total
     source: census_keyframe
@@ -206,6 +218,7 @@ ladders:
     rungs: [empty_plinth, veto_stone]
     hysteresis_evals: 2
     class: quick
+    vocab: {camp: flat_stone, hamlet: flat_stone, town: stone_plinth, beyond_bay: stone_plinth}
   observatory:
     metric: cells_accumulating
     source: census_keyframe
@@ -215,6 +228,7 @@ ladders:
     rungs: [star_post, chart_table, dome_frame, dome]
     hysteresis_evals: 2
     class: great
+    vocab: {camp: stargazing_post, hamlet: chart_tent, town: observatory_hut, beyond_bay: observatory_dome}
   pens:
     metric: services_rows_total
     source: census_keyframe
@@ -224,6 +238,7 @@ ladders:
     rungs: [pen_1, pen_2, pen_row, pen_yard]
     hysteresis_evals: 2
     class: quick
+    vocab: {camp: stake_pen, hamlet: timber_pen, town: fenced_yard, beyond_bay: stable_yard}
   water_store:
     metric: memory_embed_queue_xlen
     source: redis_snapshot
@@ -242,6 +257,7 @@ ladders:
     rungs: [none, bay_1, bays_2, bay_row]
     hysteresis_evals: 2
     class: quick
+    vocab: {camp: waste_pit, hamlet: compost_bay, town: compost_row, beyond_bay: compost_works}
   quay:
     metric: commits_since_genesis
     source: commits_ledger
@@ -260,6 +276,7 @@ ladders:
     rungs: [none, berth_1, berths_2, berths_3, berths_4, berths_5, berths_6, berths_7plus]
     hysteresis_evals: 2
     class: quick
+    vocab: {camp: mooring_post, hamlet: jetty_berth, town: stone_berth, beyond_bay: double_berth}
   cargo_stacks:
     metric: ev_work_item_completed
     source: census_keyframe
@@ -269,6 +286,7 @@ ladders:
     rungs: [none, crates_low, crates_mid, crates_high]
     hysteresis_evals: 2
     class: quick
+    vocab: {camp: bundles, hamlet: crates, town: crate_stacks, beyond_bay: container_rows}
   harbor_boat:
     metric: outcomes_achieved
     source: outcomes_yml
@@ -277,6 +295,7 @@ ladders:
     rungs: [rowboat, packet_boat]
     hysteresis_evals: 2
     class: great
+    vocab: {camp: rowboat, hamlet: packet_boat, town: packet_boat, beyond_bay: steam_packet}
   warehouse:
     metric: outcomes_achieved
     source: outcomes_yml
@@ -285,6 +304,7 @@ ladders:
     rungs: [none, shed, warehouse, warehouse_row]
     hysteresis_evals: 2
     class: great
+    vocab: {camp: tarp_cache, hamlet: timber_shed, town: warehouse, beyond_bay: warehouse_row}
   harbormaster_hut:
     metric: ev_role_defined
     source: census_keyframe
@@ -294,6 +314,7 @@ ladders:
     rungs: [none, hut]
     hysteresis_evals: 2
     class: great
+    vocab: {camp: signal_post, hamlet: timber_hut, town: harbor_office, beyond_bay: harbor_office}
   lighthouse:
     metric: cells_accumulating
     source: census_keyframe
@@ -303,6 +324,7 @@ ladders:
     rungs: [dark_cairn, stone_base, tower_part, tower_full]
     hysteresis_evals: 2
     class: great
+    vocab: {camp: dark_cairn, hamlet: stone_base, town: masonry_tower, beyond_bay: masonry_tower}
   lighthouse_lamp:
     metric: cells_graduated
     source: census_keyframe
@@ -311,6 +333,7 @@ ladders:
     rungs: [dark, lit]
     hysteresis_evals: 1
     class: quick
+    vocab: {camp: oil_lamp, hamlet: oil_lamp, town: fresnel_lamp, beyond_bay: fresnel_lamp}
   lantern_posts:
     metric: ev_graduation_transition
     source: census_keyframe
@@ -329,6 +352,7 @@ ladders:
     rungs: [none, lit_1, lit_2, lit_3plus]
     hysteresis_evals: 1
     class: quick
+    vocab: {camp: torch_flame, hamlet: lantern_flame, town: streetlight_glow, beyond_bay: streetlight_glow}
   road:
     metric: org_events_total
     source: census_keyframe
@@ -349,3 +373,4 @@ ladders:
     rungs: [reef_buoy, dock_r0, warehouses_r1, town_r2, district_r3]
     hysteresis_evals: 2
     class: great
+    vocab: {camp: reef_ring, hamlet: timber_ring, town: stone_ring, beyond_bay: stone_ring}
