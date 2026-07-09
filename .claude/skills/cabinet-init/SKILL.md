@@ -1,6 +1,6 @@
 ---
 name: cabinet-init
-description: Onboarding interview for a new Cabinet deployment. Use when a captain sets up this repo for the first time (or adds/changes lanes) — interviews for captain profile, lanes, org shape, autonomy posture, and seed outcomes, writes instance/config/cabinet-init.answers.yml, runs cabinet/scripts/generate-instance.py, and prints the exact activation steps. Idempotent on re-run.
+description: Onboarding interview for a new Cabinet deployment. Use when a captain sets up this repo for the first time (or adds/changes lanes) — interviews for captain profile, lanes, org shape, autonomy posture, and seed outcomes, writes instance/config/cabinet-init.answers.yml, runs cabinet/scripts/generate-instance.py, and prints the exact activation steps. Idempotent on re-run. A zero-question fast lane exists for defaults-accepting hatches (generate-instance.py --defaults).
 ---
 
 # Cabinet Init — the onboarding interview
@@ -18,6 +18,52 @@ printed deploy steps.
 renamed captain). The answers file is the single input; the generator
 overwrites only files it generated before (marker-checked), never
 hand-authored ones. Before appending outcomes, check for existing ids.
+
+## Fast lane — one confirm, zero questions (`--defaults`)
+
+For a stranger/demo hatch — or any captain happy to start from safe
+defaults and refine later — skip the interview entirely:
+
+```bash
+python3.12 cabinet/scripts/generate-instance.py --defaults [--captain-name NAME]
+# clone ships a previous deployment's instance/ (or its answers file)?
+# the refusal teaches the one-confirm fix — and names the previous captain
+# whenever the inherited platform.yml records one:
+python3.12 cabinet/scripts/generate-instance.py --defaults --adopt
+```
+
+`--defaults` writes a marker-stamped
+`instance/config/cabinet-init.answers.yml` and then runs the exact same
+generation path as the interview (same path jail, secret-shape refusal,
+marker-checked overwrites, idempotent byte-identical re-runs; nothing
+activates). It never overwrites an interview-written answers file (no
+marker ⇒ refusal teaching `--defaults --adopt`, which archives it to
+`instance/_pre-adopt-<stamp>/` — nothing deleted; `--force` deliberately
+does **not** override that one refusal — an interview record is archived,
+never clobbered). A custom `--answers` target must be named
+`*.answers.yml` — the one filename shape no generated instance file can
+occupy — so the defaults write can never land on a generator output like
+`posture.yml`. A refused generation still leaves the marker-stamped
+defaults answers file behind: harmless, regeneratable, and the `--adopt`
+re-run completes from it. The defaults it picks, exactly:
+
+| Field | Default |
+|---|---|
+| `captain.name` | `--captain-name`, else `$USER`, else `Captain` (an invalid explicit name refuses loud; an unusable `$USER` falls back silently) |
+| `captain.timezone` | `UTC` — placeholder, edit later |
+| `captain.telegram_chat_id` | `"0000"` — placeholder address (not a secret); set after the bot exists |
+| `cabinet` | `id: main` · `mode: single` · `org_shape: portfolio` · default `officer_model` |
+| `lanes` | one placeholder lane: `First Lane` / `first-lane`, no repos, no boards, `task_system: none` |
+| `autonomy` | `posture: propose_first` · `flavor: org` (OrgSource recall, no personal estate) · `target_posture: guardian` — explicitly consent-safe; nothing can scaffold sovereign |
+| `integrations` | `bot_token_env: TELEGRAM_COS_TOKEN` (env-var NAME only), no bot username yet |
+
+To refine afterwards: edit the answers file and re-run **without**
+`--defaults` (a `--defaults` re-run rewrites the file with fresh
+defaults — it carries the generated-by marker, so the generator owns
+it), or run this interview — it loads the existing answers and asks
+only about gaps/changes (placeholder values count as answered, so
+correct them when refining). The full interview below stays the default
+lane for real captains.
 
 ## Flow
 
@@ -246,7 +292,9 @@ placeholders only:
    python3 cabinet/scripts/generate-instance.py --adopt
    # --adopt archives each conflicting file to instance/_pre-adopt-<stamp>/
    # (never deletes) and generates fresh; an existing posture.yml ruling is
-   # still never touched.
+   # still never touched. The overwrite refusal teaches this itself: when
+   # instance/config/platform.yml carries a DIFFERENT captain_name than the
+   # answers, the refusal names the previous captain and suggests --adopt.
    ```
 
    It generates (portfolio shape): per-lane
