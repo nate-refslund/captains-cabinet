@@ -51,22 +51,33 @@ git checkout claude/convergence-v2    # OR master once this branch is merged
 bash cabinet/scripts/setup-mac.sh
 ```
 
-`setup-mac.sh` is the single interactive orchestrator. In order it: runs the
-**API-key wizard** (Step 0 — `setup-env.sh`, which walks you through every
-required + optional key, opens signup pages, masks paste input, and writes
-`cabinet/.env` at `chmod 600` — no hand-editing), installs missing Homebrew
-deps (tmux, jq, python3, redis), starts Redis (+ enables AOF), creates required
-directories, bootstraps officer roles, installs the Captain-layer Mac tool
-stack, launches the Cabinet Chrome (sign into Linear/Notion/etc. when it
-opens), prompts for TCC grants, installs any declared extensions
-(`instance/config/extensions.yml`), builds the dashboard, loads the preset,
-verifies the policy engine, and runs the framework test suite. Idempotent.
+`setup-mac.sh` is the single orchestrator; the default (also `--fast`) is a
+FAST boot. In order it: runs the **key wizard** (Step 0 — `setup-env.sh`;
+every key is recommended or optional, nothing is critical-tier — it opens
+signup pages, masks paste input, and writes `cabinet/.env` at `chmod 600`;
+`setup-env.sh --defaults` writes a minimal local-only `.env` with zero cloud
+accounts), installs missing Homebrew deps (tmux, jq, python3, redis), starts
+Redis (+ enables AOF), provisions the LOCAL work store when no connection
+string is configured (`provision-local-postgres.sh` — PostgreSQL 16 +
+pgvector; Neon is the documented cloud alternative, no longer a
+prerequisite), creates required directories, bootstraps officer roles,
+installs the Captain-layer Mac tool stack, installs any declared extensions
+(`instance/config/extensions.yml`), loads the preset, verifies the policy
+engine, and runs the FAST proofs (null-hatch gate + clean-room pytest
+subset). Idempotent.
+
+Opt-in flags (combinable): `--with-sensors` (the old Steps 9-11: screenpipe,
+cua, browser MCPs, Cabinet Chrome profile, TCC grant prompts),
+`--with-dashboard` (npm ci + dashboard build), `--full-suite` (full
+framework pytest suite), `--all` (all of the above).
 
 Verify: `bash cabinet/scripts/setup-mac.sh --check` returns exit 0.
 
 > The wizard already created `cabinet/.env`. To re-run it later (add/replace
-> keys): `bash cabinet/scripts/setup-env.sh --force`. To bootstrap headless
-> (CI/clone) and fill `.env` yourself: `SKIP_ENV_WIZARD=1 bash cabinet/scripts/setup-mac.sh`.
+> keys): `bash cabinet/scripts/setup-env.sh --force`. Headless (CI/clone):
+> `bash cabinet/scripts/setup-env.sh --defaults`, or
+> `SKIP_ENV_WIZARD=1 bash cabinet/scripts/setup-mac.sh` to skip the wizard
+> and fill `.env` yourself.
 
 ## 4. Configuration
 

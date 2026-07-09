@@ -1,7 +1,11 @@
 #!/bin/bash
 # install-mac-tools.sh — install the Captain-layer tool stack on a Mac mini.
 #
-# Idempotent. Safe to re-run. Called by setup-mac.sh Step 9.
+# Idempotent. Safe to re-run. Called by setup-mac.sh Step 9 — ONLY when the
+# Captain opts in with --with-sensors (critical-path diet, 2026-07-09): the
+# fast default boot skips the whole sensor layer, and
+# cabinet/scripts/null-hatch.sh is the CI-wired proof that core boots
+# without it. Run standalone anytime to add the layer later.
 #
 # What it installs:
 #   1. screenpipe (brew)            — 24/7 screen + audio memory layer
