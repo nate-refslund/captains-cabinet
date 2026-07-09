@@ -428,6 +428,34 @@ def main() -> int:
         except Exception:
             pass  # threading id is best-effort; never block receive
 
+    def record_recent_msg(message_id: int, text: str) -> None:
+        """Push (id, text, ts) onto a bounded ring so the Chair can resolve ANY
+        recent Captain message to its id — not just the latest.
+
+        channel.send threads onto cabinet:last-captain-msg-id (the LATEST) only;
+        this ring (cabinet:captain:recent-msgs, newest-first, last 30) lets the
+        Chair target an EARLIER message by content and pass its id to
+        channel.send(reply_to=…). Fixes the always-reply-to-latest bug — the Chair
+        had no way to see an earlier message's id. Degrade-safe: any redis-cli
+        failure is swallowed; the ring is a nicety, never a precondition for
+        delivering the DM."""
+        try:
+            entry = json.dumps({"id": int(message_id),
+                                "text": (text or "")[:280],
+                                "ts": int(time.time())})
+            subprocess.run(
+                ["redis-cli", "-h", redis_host, "LPUSH",
+                 "cabinet:captain:recent-msgs", entry],
+                capture_output=True, timeout=10,
+            )
+            subprocess.run(
+                ["redis-cli", "-h", redis_host, "LTRIM",
+                 "cabinet:captain:recent-msgs", "0", "29"],
+                capture_output=True, timeout=10,
+            )
+        except Exception:
+            pass  # ring is best-effort; never block receive
+
     def save_offset(o: int) -> None:
         tmp = offset_file + ".tmp"
         with open(tmp, "w") as f:
@@ -551,6 +579,7 @@ def main() -> int:
                     # continue — the loop-end offset advance must still run.
                     mid = int(msg.get("message_id", 0))
                     set_last_captain_msg_id(mid)
+                    record_recent_msg(mid, caption)   # ring: file msgs resolvable by caption/id too
                     fa({"direction": "in", "kind": "file-error",
                         "telegram_message_id": mid, "file_kind": att["kind"]})
                     err_line = (f"[tg-file-error name={sanitize_filename(att.get('name', '?'))} "
@@ -566,6 +595,7 @@ def main() -> int:
                     mid = int(msg.get("message_id", 0))
                     react(mid, pick_reaction(mid, classify_inbound(caption, has_attachment=True)))
                     set_last_captain_msg_id(mid)
+                    record_recent_msg(mid, caption)   # ring: file msgs resolvable by caption/id too
                     fa({"direction": "in", "kind": "file", "telegram_message_id": mid,
                         "file_kind": att["kind"]})
                     local = None
@@ -585,6 +615,7 @@ def main() -> int:
                     mid = int(msg.get("message_id", 0))
                     react(mid, pick_reaction(mid, classify_inbound(text)))  # deterministic read-ack
                     set_last_captain_msg_id(mid)   # id the Chair threads replies onto
+                    record_recent_msg(mid, text)   # ring: Chair can target THIS msg later by content
                     # CHAIR-REPLY-WIRE (2026-07-07, one-bot migration hardening):
                     # a reply threaded onto a Chair message carrying the
                     # ⟦sp:<prompt_id>⟧ marker is a screenpipe pipe-prompt answer —
