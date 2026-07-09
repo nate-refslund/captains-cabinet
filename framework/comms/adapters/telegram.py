@@ -37,10 +37,9 @@ class TelegramAdapter:
                                     markdown=markdown, feed_meta=feed_meta)
 
     def react(self, message_id, emoji):
-        # channel.py has no set-reaction helper yet (the poller sets the receipt
-        # reaction); the LLM-contextual react is a thin sanctioned call added at
-        # C3 when the officer surface lands. Until then: advertised, no-op-safe.
-        return unsupported("react")
+        # The LLM-contextual react (supersedes the poller's instant receipt
+        # reaction) via channel.set_reaction (setMessageReaction, C3).
+        return channel.set_reaction(message_id, emoji)
 
     def poll(self, question, options, *, multi=False, silent=False, feed_meta=None):
         return channel.send_poll(question, options, allows_multiple_answers=multi,

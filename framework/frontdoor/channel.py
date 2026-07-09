@@ -845,6 +845,21 @@ def open_thread(name: str, *, icon_color: "int | None" = None, http_post=None) -
     return res
 
 
+def set_reaction(message_id: int, emoji: "str | None", *, http_post=None) -> dict:
+    """Set (or clear) the bot's single reaction on a message
+    (``setMessageReaction``). This is the LLM-CONTEXTUAL react layer (an officer
+    picks an emoji that fits the message) that supersedes the poller's instant
+    deterministic receipt-reaction. ``emoji=None``/"" clears the reaction.
+    Gate + scrub via the shared spine; a non-whitelisted emoji is rejected by
+    Telegram and surfaces as an error the caller degrades from."""
+    extra = {"message_id": int(message_id)}
+    if emoji:
+        extra["reaction"] = json.dumps([{"type": "emoji", "emoji": str(emoji)}])
+    else:
+        extra["reaction"] = json.dumps([])   # clear
+    return _gated_method("setMessageReaction", extra, http_post=http_post)
+
+
 def _default_multipart_post(url: str, fields: dict, filename: str, content: bytes) -> dict:
     """Default transport: POST a multipart/form-data body (one file + fields).
 
