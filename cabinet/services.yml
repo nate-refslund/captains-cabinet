@@ -110,6 +110,11 @@ services:
       # CABINET_NEEDS_WIRED: "1"  # DARK by default (sovereign amendment 2026-07-05, §8 step 8):
       #                           # uncomment + redeploy to arm the FI-4 binder needs verbs
       #                           # (grant/deny/later/snooze NEED-<hex> + rearm <kind>).
+      # P3 one-door (review cp3 H1): the binder's edit: re-card runs IN THIS
+      # process via action_exec._tg_send -> channel.send, whose allow_sends()
+      # gate needs the runtime marker; without it every Captain edit: raises
+      # (loud by design — never a silent blackhole). Rollback: remove + redeploy.
+      CABINET_ENV: "runtime"
     expected: "offset advances on Captain messages; binder wire records verdicts in-process (F0.5); Captain `never:` persists to captain-vetoes.yml (TI-4, armed 2026-07-04)"
     notes: >-
       SOLE getUpdates poller (two pollers on one token 409-conflict). Generated
@@ -146,6 +151,10 @@ services:
     kind: daemon
     command: python3.12 framework/acting/run_action_lane.py
     schedule: { interval_s: 1800 }
+    # P3 one-door (review cp3 H2): cards send via channel.send's allow_sends()
+    # gate — without the runtime marker every present raises loudly. Kept HERE
+    # so a plist regeneration can never wipe the hand-edited plist fix.
+    env: { CABINET_ENV: runtime }
     expected: "≤2 action cards/run, ≤5/day (Redis budget) to Captain Telegram; approve executes via action_exec (Monday/Reminders); log every 30min"
     notes: >-
       The 2026-07-03 Captain-ruled pivot of the draft lane (parked): proactive
@@ -176,6 +185,7 @@ services:
     disabled: true
     command: bash cabinet/scripts/run-draft-lane.sh
     schedule: { interval_s: 300 }
+    env: { CABINET_ENV: runtime }   # P3 one-door: see action-lane note
     expected: "(parked — nothing asserted while disabled)"
     notes: >-
       PARKED 2026-07-04 (lane-ops), superseded by the Captain's act-not-draft

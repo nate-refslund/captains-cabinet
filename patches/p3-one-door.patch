@@ -1,0 +1,87 @@
+Subject: attention-gateway P3 — one door: lane posters route through the gated channel
+
+GERMLINE CARRY NOTE: applies ON TOP of p1-action-lane-canonical-dedup.patch
+and p2-acted-overlay-world-grounding.patch (sequential). Same carry
+contract: authored from scratch copies, applied on-branch with `git apply`,
+PR diff is the proposal, Captain merge = apply + live-checkout relock.
+
+What it wires (spec §4.4 + §13 transport verdict):
+- run_action_lane._tg and action_exec._tg_send stop posting raw to
+  api.telegram.org and route through framework.frontdoor.channel.send —
+  killswitch/allow_sends gate, token scrub, 4096 chunking, transport retry,
+  and the P3 feed-journal row, with the same loud-failure contract
+  (ANY non-sent status raises, INCLUDING blocked-dev — cp3 H1/H2: a
+  production process missing CABINET_ENV=runtime must page, never silently
+  blackhole cards while ledger rows record them as presented).
+- Requires CABINET_ENV=runtime in the lane plists (added in the same
+  commit, non-germline): without the runtime marker the allow_sends gate
+  would silently block every card.
+- Pinned by framework/tests/test_single_telegram_door.py (shrink-only
+  allowlist; the kill-list files may never carry a raw call again).
+
+Spec: docs/plans/cabinet-attention-gateway-spec-2026-07-08.md §8 P3.
+
+--- a/framework/acting/run_action_lane.py
++++ b/framework/acting/run_action_lane.py
+@@ -904,14 +904,22 @@
+     # deliberately NO fallback to TELEGRAM_BOT_TOKEN: that is the Screenpipe
+     # bot, whose updates never reach the binder (the first 5 live cards landed
+     # there and could not be verdicted).
+-    token = os.environ.get("TELEGRAM_COS_TOKEN", "")
+-    chat = os.environ.get("CAPTAIN_TELEGRAM_ID", "")
+-    if not token or not chat:
+-        raise RuntimeError("telegram env missing (TELEGRAM_COS_TOKEN / CAPTAIN_TELEGRAM_ID)")
+-    data = urllib.parse.urlencode({"chat_id": chat, "text": text}).encode()
+-    urllib.request.urlopen(
+-        urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage",
+-                               data=data), timeout=20)
++    # ONE DOOR (P3, attention-gateway spec §4.4/§13): route through the gated
++    # front-door channel — killswitch/allow_sends, token scrub, 4096 chunking,
++    # transport retry, feed-journal row. Same env contract as before
++    # (TELEGRAM_COS_TOKEN + CAPTAIN_TELEGRAM_ID; the poller binds replies).
++    # ANY non-sent status RAISES — including blocked-dev (review cp3 H1/H2:
++    # a production process missing CABINET_ENV=runtime must fail LOUDLY, not
++    # silently blackhole cards while ledger rows record them as presented;
++    # dev sessions likewise must not pretend to present). Dry-run never
++    # reaches this function.
++    from framework.frontdoor import channel
++    res = channel.send(text, feed_meta={"kind": "action-card"})
++    if res.get("status") == "blocked-dev":
++        raise RuntimeError("channel send refused (blocked-dev): set "
++                           "CABINET_ENV=runtime for live sends")
++    if not res.get("sent"):
++        raise RuntimeError(f"channel send failed: {str(res)[:200]}")
+ 
+ 
+ def _store_action(pid: str, prop: action_lane.ActionProposal, cid: str = "") -> None:
+--- a/framework/frontdoor/action_exec.py
++++ b/framework/frontdoor/action_exec.py
+@@ -1333,14 +1333,20 @@
+     binder — the first 5 live cards landed there and could not be verdicted).
+     Raises on missing env: an unpresentable card must surface as a skipped/
+     failed re-card, never a silent one. Token read at call time, never logged."""
+-    token = os.environ.get("TELEGRAM_COS_TOKEN", "")
+-    chat = os.environ.get("CAPTAIN_TELEGRAM_ID", "")
+-    if not token or not chat:
+-        raise RuntimeError("telegram env missing (TELEGRAM_COS_TOKEN / CAPTAIN_TELEGRAM_ID)")
+-    data = urllib.parse.urlencode({"chat_id": chat, "text": text}).encode()
+-    urllib.request.urlopen(
+-        urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage",
+-                               data=data), timeout=20)
++    # ONE DOOR (P3, attention-gateway spec §4.4/§13): route through the gated
++    # front-door channel — killswitch/allow_sends, token scrub, 4096 chunking,
++    # transport retry, feed-journal row. Same env contract as the raw poster
++    # this replaces. ANY non-sent status RAISES — including blocked-dev
++    # (review cp3 H1: the binder's edit: re-card runs inside the cos-inbound
++    # poller; a missing CABINET_ENV=runtime there must fail LOUDLY, never
++    # record recarded ledger rows while sending nothing).
++    from framework.frontdoor import channel
++    res = channel.send(text, feed_meta={"kind": "re-card"})
++    if res.get("status") == "blocked-dev":
++        raise RuntimeError("channel send refused (blocked-dev): set "
++                           "CABINET_ENV=runtime for live sends")
++    if not res.get("sent"):
++        raise RuntimeError(f"channel send failed: {str(res)[:200]}")
+ 
+ 
+ def _apply_edit_to_steps(steps: list, edit_text: str) -> list:

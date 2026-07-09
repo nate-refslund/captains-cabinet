@@ -47,6 +47,11 @@
     <string>1</string>
     <key>CABINET_VETO_WIRED</key>
     <string>1</string>
+    <!-- P3 one-door (review cp3 H1): the binder's edit: re-card sends via
+         channel.send in THIS process; allow_sends() needs the runtime
+         marker or every Captain edit: raises. -->
+    <key>CABINET_ENV</key>
+    <string>runtime</string>
   </dict>
   <key>RunAtLoad</key>
   <true/>

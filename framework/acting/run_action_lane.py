@@ -904,14 +904,22 @@ def _tg(text: str) -> None:
     # deliberately NO fallback to TELEGRAM_BOT_TOKEN: that is the Screenpipe
     # bot, whose updates never reach the binder (the first 5 live cards landed
     # there and could not be verdicted).
-    token = os.environ.get("TELEGRAM_COS_TOKEN", "")
-    chat = os.environ.get("CAPTAIN_TELEGRAM_ID", "")
-    if not token or not chat:
-        raise RuntimeError("telegram env missing (TELEGRAM_COS_TOKEN / CAPTAIN_TELEGRAM_ID)")
-    data = urllib.parse.urlencode({"chat_id": chat, "text": text}).encode()
-    urllib.request.urlopen(
-        urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage",
-                               data=data), timeout=20)
+    # ONE DOOR (P3, attention-gateway spec §4.4/§13): route through the gated
+    # front-door channel — killswitch/allow_sends, token scrub, 4096 chunking,
+    # transport retry, feed-journal row. Same env contract as before
+    # (TELEGRAM_COS_TOKEN + CAPTAIN_TELEGRAM_ID; the poller binds replies).
+    # ANY non-sent status RAISES — including blocked-dev (review cp3 H1/H2:
+    # a production process missing CABINET_ENV=runtime must fail LOUDLY, not
+    # silently blackhole cards while ledger rows record them as presented;
+    # dev sessions likewise must not pretend to present). Dry-run never
+    # reaches this function.
+    from framework.frontdoor import channel
+    res = channel.send(text, feed_meta={"kind": "action-card"})
+    if res.get("status") == "blocked-dev":
+        raise RuntimeError("channel send refused (blocked-dev): set "
+                           "CABINET_ENV=runtime for live sends")
+    if not res.get("sent"):
+        raise RuntimeError(f"channel send failed: {str(res)[:200]}")
 
 
 def _store_action(pid: str, prop: action_lane.ActionProposal, cid: str = "") -> None:
