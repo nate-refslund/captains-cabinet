@@ -2,7 +2,7 @@
   "purpose": "Calibration corpus for the Cabinet World aesthetic judge (positive = LimeZu showcase scenes; negative = Captain-rejected builds + synthetic prop-scatter).",
   "note": "Image files are gitignored (LimeZu license); this manifest is the tracked record. Verify with `build_corpus.py verify`.",
   "counts": {
-    "positive": 9,
+    "positive": 11,
     "negative": 5
   },
   "images": [
@@ -93,6 +93,22 @@
       "sha256": "210d5d5385de7e0aa663149f7dbac65950dd9312ec91665461001d7e0bffc025",
       "provenance": "LimeZu Modern Interiors showcase (itch.io limezu/moderninteriors, image 671751/4589297, first GIF frame)",
       "why": "Restaurant kitchen + dining interior: wall-hugging appliances, set tables, patterned floor, characters seated \u2014 furnished-interior bar for Z2."
+    },
+    {
+      "id": "pos-mockup-unified-close",
+      "class": "positive",
+      "file": "corpus/positive/pos-mockup-unified-close.png",
+      "sha256": "c5d92373dbd360dd6c9e531d51f922ea69fb1a5db3111ea1c9a728840d17af32",
+      "provenance": "Captain-approved 7.5 direction mockup (compose_unified.py, world-unified/unified-close.png, ratified direction 2026-07-07)",
+      "why": "THE close-zoom cozy bar: village heart crop \u2014 lamp posts, benches, flower beds, rugs of path texture, drop shadows under every prop, animals in the yard. Texture-level reference for close/mid tiers."
+    },
+    {
+      "id": "pos-mockup-unified-world",
+      "class": "positive",
+      "file": "corpus/positive/pos-mockup-unified-world.png",
+      "sha256": "a5cea5fce9e57c96841ecd0ddba3df7c051eceeb3223a3eaae867f86f7794797",
+      "provenance": "Captain-approved 7.5 direction mockup (compose_unified.py, world-unified/unified-world.png, ratified direction 2026-07-07)",
+      "why": "THE density bar: full unified island \u2014 three-pass ground, purposeful prop clusters, fenced pasture + gardens, working quay with berth chalk + crate stacks, fauna, mist bands. Live frames are pairwise-judged against this exact look."
     },
     {
       "id": "pos-office-floor",

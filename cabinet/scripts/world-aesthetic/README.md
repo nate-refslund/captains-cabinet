@@ -112,16 +112,19 @@ emits `GATE_CRASH` (error) without taking the others down.
 
 ## Calibration corpus & licensing (why `corpus/` is gitignored)
 
-`corpus/positive/` holds official LimeZu showcase scenes (licensed art) and
-`corpus/negative/` the Captain-rejected build screenshots + two synthetic
-scatter renders. **Licensed pixels are never committed** — `.gitignore`
-excludes `corpus/*` except `corpus/manifest.json` (sha256 + provenance for
-every image). Only code, the manifest, and derived-number calibrations are
-tracked.
+`corpus/positive/` holds official LimeZu showcase scenes (licensed art) PLUS
+the Captain-approved 7.5 direction mockups (`pos-mockup-unified-world` /
+`pos-mockup-unified-close`, promoted 2026-07-09 — the density/coziness bar
+live frames are pairwise-judged against is THE MOCKUPS, not just the
+showcases); `corpus/negative/` holds the Captain-rejected build screenshots +
+two synthetic scatter renders. **Licensed pixels are never committed** —
+`.gitignore` excludes `corpus/*` except `corpus/manifest.json` (sha256 +
+provenance for every image). Only code, the manifest, and derived-number
+calibrations are tracked.
 
 * `build_corpus.py synthetic|manifest|verify` — regenerate the synthetic
   negatives, rebuild the manifest, verify corpus bytes against it
-  (currently 14/14 OK).
+  (currently 16/16 OK).
 * `calibrate.py palette|clustering|prove|all` — fit `calibration/*.json`
   from the corpus. Palette floor semantics: a quantized bin joins the
   palette when it reaches `min_bin_share` in **at least one** positive

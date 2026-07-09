@@ -27,6 +27,12 @@ Sections (all idempotent; `--only ui,portraits,regions,forge` to subset):
              tent→cottage ladder, lighthouse raw pieces (Beach), and the
              farm 6_Trees sheet (corpus tree canon — the palette positives'
              own oaks, promoted for the live engine's forest border).
+  cozy       COZY-DENSITY pass promotions (2026-07-09): the staged-future
+             farm singles the ratified mockups were composed from (trunks,
+             hay, boxes, rocks, grass-tuft decals) + first fauna art (dog,
+             chickens) + two tiny derived sheets (grass_variants strip
+             recomposed from the staged complete tileset; fish_leap own-
+             pixel splash — grammar fish day0, no pack source exists).
   forge      Derived sprites, deterministic PIL composition (no RNG, no
              timestamps), provenance in the `pack` field:
                * lighthouse_unlit / lighthouse_lit — Captain ruling
@@ -307,6 +313,100 @@ def install_regions(ins: Installer) -> None:
         if not src.exists():
             raise SystemExit(f"missing farm sheet: {src}")
         ins.copy_png(src, dest, PACK_FARM)
+
+
+# ---------------------------------------------------------------- cozy
+# COZY-DENSITY pass (2026-07-09, Captain feedback: live render less
+# detailed/decorative/alive than the approved 7.5 mockups). Promotes the
+# staged-future farm singles the RATIFIED mockups themselves were composed
+# from (compose_unified.py provenance — palette-proven by construction),
+# plus the first fauna art (grammar fauna block: flip `staged` off in the
+# SAME commit that binds these cuts).
+COZY_FARM_PROPS = [
+    "Trunk_Big_1", "Trunk_Big_2", "Trunk_Small_1",
+    "Hay_Dry_Pile", "Hay_Dry_Pile_Small",
+    "Wood_Board_Load", "Box_Single", "Box_Load",
+    "Rock_Small", "Rock_Medium", "Rock_Big",
+]
+COZY_TUFTS = [f"Grass_Tufts_Flowers_16x16_{i}" for i in range(1, 12)]
+COZY_ANIMALS = [
+    "Dogs/Dog_Labrador_Brown_16x16",
+    "Chickens_and_Roosters/Chicken_Brown_16x16",
+    "Chickens_and_Roosters/Chicken_White_16x16",
+]
+# compose_unified GRASS_V — the mockups' grass variant daubs (tile coords on
+# the staged 0_Complete_Tileset sheet); recomposed into one tiny strip so
+# the engine never ships the whole staged tileset.
+GRASS_VARIANT_TILES = [(8, 13), (10, 13), (10, 17), (8, 17)]
+
+
+def install_cozy(ins: Installer) -> None:
+    for n in COZY_FARM_PROPS:
+        src = FARM_SG / "Props_and_Buildings_16x16" / f"{n}_16x16.png"
+        if not src.exists():
+            raise SystemExit(f"missing farm single: {src}")
+        ins.copy_png(src, f"farm/props/{n}_16x16.png", PACK_FARM)
+    for n in COZY_TUFTS:
+        src = FARM_SG / "0_Complete_Tileset_Singles_16x16" / f"{n}.png"
+        if not src.exists():
+            raise SystemExit(f"missing tuft single: {src}")
+        ins.copy_png(src, f"farm/tufts/{n}.png", PACK_FARM)
+    for rel in COZY_ANIMALS:
+        src = FARM_SG.parent / "Animals_16x16" / f"{rel}.png"
+        if not src.exists():
+            raise SystemExit(f"missing animal sheet: {src}")
+        ins.copy_png(src, f"farm/animals/{Path(rel).name}.png", PACK_FARM)
+    forge_grass_variants(ins)
+    forge_fish_leap(ins)
+
+
+def forge_grass_variants(ins: Installer) -> None:
+    """The mockup lineage's 4 grass variant daub tiles (compose_unified
+    GRASS_V) recomposed into one 64x16 strip — pack pixels only, fixed
+    crop coordinates, deterministic."""
+    comp = Image.open(FARM_SG.parent / "0_Complete_Tileset_16x16.png"
+                      ).convert("RGBA")
+    strip = Image.new("RGBA", (len(GRASS_VARIANT_TILES) * GRID, GRID),
+                      (0, 0, 0, 0))
+    for i, (tx, ty) in enumerate(GRASS_VARIANT_TILES):
+        tile = comp.crop((tx * GRID, ty * GRID, (tx + 1) * GRID,
+                          (ty + 1) * GRID))
+        strip.alpha_composite(tile, (i * GRID, 0))
+    prov = (PACK_FARM + " — derived: 4 grass variant tiles recomposed from "
+            "0_Complete_Tileset (compose_unified GRASS_V coords, the "
+            "ratified mockups' own daub tiles)")
+    ins.image_png(strip, "derived/terrain/grass_variants.png", prov)
+
+
+def forge_fish_leap(ins: Installer) -> None:
+    """Quay fish splash, 2 frames 16x16 (grammar fauna `fish` day0: 'one
+    splash off the rowboat jetty'). No pack ships fish sprites (audited
+    2026-07-09: farm Animals has no fish; Exteriors/Beach ship none) — own
+    pixels in proven accent hues only (compose_unified water family +
+    FOAM), deterministic fixed coordinates."""
+    from PIL import ImageDraw
+    body = (52, 90, 172)     # compose_unified wave_d fallback (proven)
+    belly = (226, 236, 246)  # FOAM_B family
+    sheet = Image.new("RGBA", (2 * GRID, GRID), (0, 0, 0, 0))
+    d = ImageDraw.Draw(sheet)
+    # frame 0: rising arc — small silver-blue body + spray behind
+    d.polygon([(4, 10), (8, 5), (11, 7), (8, 11)], fill=body + (255,))
+    d.point((9, 6), fill=belly + (255,))
+    d.line([(11, 7), (13, 5)], fill=body + (255,))  # tail
+    for x, y in ((3, 12), (5, 13), (2, 14)):
+        d.point((x, y), fill=FOAM_A + (220,))
+    # frame 1: re-entry splash — droplet fan + ring
+    ox = GRID
+    d.polygon([(ox + 7, 9), (ox + 10, 6), (ox + 12, 9), (ox + 9, 12)],
+              fill=body + (255,))
+    d.point((ox + 10, 7), fill=belly + (255,))
+    for x, y in ((6, 5), (12, 4), (9, 3), (4, 8), (14, 7)):
+        d.point((ox + x, y), fill=FOAM_A + (235,))
+    d.arc([ox + 4, 11, ox + 14, 15], 200, 340, fill=CHALK + (170,))
+    prov = ("own pixels — derived: quay fish leap 2f (grammar fish day0), "
+            "proven accent hues (wave/foam family); no pack source exists "
+            "(audited 2026-07-09)")
+    ins.image_png(sheet, "derived/props/fish_leap2.png", prov)
 
 
 # ---------------------------------------------------------------- forge
@@ -603,7 +703,7 @@ def update_manifest(rows: dict[str, dict], dry: bool) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--only", default="ui,portraits,regions,forge")
+    ap.add_argument("--only", default="ui,portraits,regions,cozy,forge")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--qa-out", default=None,
                     help="write lighthouse QA renders to this dir")
@@ -618,6 +718,8 @@ def main() -> int:
         install_portraits(ins)
     if "regions" in parts:
         install_regions(ins)
+    if "cozy" in parts:
+        install_cozy(ins)
     if "forge" in parts:
         unlit, lit = forge(ins)
     update_manifest(ins.rows, args.dry_run)

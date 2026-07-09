@@ -38,6 +38,10 @@ import {
   type WorldResolution,
 } from '@/lib/world/era-engine'
 import { buildWorldGeo, type WorldGeo } from '@/lib/world/world-geo'
+import {
+  buildOutdoorDressing,
+  type OutdoorDressing,
+} from '@/lib/world/outdoor-dressing'
 import { buildWorldBuildings, type WorldBuilding } from '@/lib/world/world-buildings'
 import {
   clampZoom,
@@ -141,6 +145,7 @@ export default function EngineClient({ canActuate = false }: { canActuate?: bool
   const cameraRef = useRef(camera)
   cameraRef.current = camera
   const buildingsRef = useRef<WorldBuilding[]>([])
+  const dressingRef = useRef<OutdoorDressing | null>(null)
   const dragRef = useRef<{ x: number; y: number; moved: boolean; camX: number; camY: number } | null>(null)
   const hostRef = useRef<HTMLDivElement | null>(null)
   const [hostSize, setHostSize] = useState({ w: 1024, h: 640 })
@@ -324,9 +329,15 @@ export default function EngineClient({ canActuate = false }: { canActuate?: bool
               siteKeyframes: {},
               fauna: {
                 bounds: { w: 240, h: 192 },
-                flowerAnchors: [],
-                quayWater: [],
+                // cozy pass 2026-07-09: real anchors from the dressing
+                // table (flowers → butterflies-when-unstaged, quay water →
+                // fish, porch → the dog, pens yard → chickens). Cat stays
+                // staged (no art yet) — perch stays null.
+                flowerAnchors: dressingRef.current?.flowerAnchors ?? [],
+                quayWater: dressingRef.current?.quayWater ?? [],
                 catPerch: null,
+                dogPerch: dressingRef.current?.dogPerch ?? null,
+                chickenSpots: dressingRef.current?.chickenSpots ?? [],
               },
               config: cfg,
             })
@@ -358,6 +369,11 @@ export default function EngineClient({ canActuate = false }: { canActuate?: bool
     [resolution, geo]
   )
   buildingsRef.current = buildings
+  const dressing = useMemo(
+    () => buildOutdoorDressing(geo, buildings, resolution),
+    [geo, buildings, resolution]
+  )
+  dressingRef.current = dressing
 
   const presenceBySlug = useMemo(() => {
     const m: Record<string, OfficerPresence> = {}
@@ -602,9 +618,13 @@ export default function EngineClient({ canActuate = false }: { canActuate?: bool
 
   // Label positions MIRROR engine-canvas officerPositions exactly (same
   // seeded math) so the DOM text sits on the drawn motes.
+  // Cozy pass (gap #5 interim): name+verb chips only at CLOSE zoom — the
+  // approved mockups carry ZERO floating labels; at island/mid tiers
+  // identity is the sprite (portrait rail + inspect keep names one click
+  // away). Full pixel two-tier typography stays the v1b row.
   const officerLabels = useMemo(() => {
     const gh = buildings.find((b) => b.element === 'great_house')
-    if (!gh || lodTier(camera.z) === 'coast' || lodTier(camera.z) === 'archipelago') return []
+    if (!gh || lodTier(camera.z) !== 'close') return []
     const open = cutaway.openId === gh.id
     const slugs = Object.keys(presenceBySlug).sort()
     return slugs.map((slug, i) => {

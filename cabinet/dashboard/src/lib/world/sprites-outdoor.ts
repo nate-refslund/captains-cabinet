@@ -187,6 +187,73 @@ export const WORKSITE_KIT = {
 /** Era-appropriate water store: stacked buckets (farm props pack). */
 export const BUCKET_LOAD = 'farm/props/Bucket_Load_16x16'
 
+// ── COZY-DENSITY pass bindings (2026-07-09) ────────────────────────────────
+// The approved 7.5 mockups are now the harness's positive class; these
+// bindings close the density gap with the SAME pack pixels the mockups
+// were composed from (installer `cozy` section). Cut provenance: farm
+// terrain/animal coords ported 1:1 from the ratified compose_unified.py
+// recipes (GRASS (3,2) · GVAR (8,8) · chicken rows idle/walk/peck at
+// y=16/32/48 · dog sleep row y=384) — the mockups' own verified cuts.
+
+/** The mockups' ground truth: farm terrain sheet (three-pass ground). */
+export const FARM_TER = 'farm/1_Terrains_16x16'
+export const TER_GRASS: SpriteCut = { x: 48, y: 32, w: 16, h: 16 }
+export const TER_GVAR: SpriteCut = { x: 128, y: 128, w: 16, h: 16 }
+/** 4 grass variant daubs recomposed to a strip (derived, pack pixels). */
+export const GRASS_VARIANTS = 'derived/terrain/grass_variants'
+export const GRASS_VARIANT_CUTS: readonly SpriteCut[] = [0, 1, 2, 3].map(
+  (i) => ({ x: i * 16, y: 0, w: 16, h: 16 })
+)
+
+/** Grass tuft/flower decal singles (the mockup meadow's accent set). */
+export const TUFT_SHEETS = Array.from(
+  { length: 11 },
+  (_, i) => `farm/tufts/Grass_Tufts_Flowers_16x16_${i + 1}`
+)
+
+/** Outdoor decor singles (all whole-file; quay/yard/forest-edge dressing). */
+export const DECOR_PROPS = {
+  boxSingle: 'farm/props/Box_Single_16x16',
+  boxLoad: 'farm/props/Box_Load_16x16',
+  trunkBig1: 'farm/props/Trunk_Big_1_16x16',
+  trunkBig2: 'farm/props/Trunk_Big_2_16x16',
+  trunkSmall: 'farm/props/Trunk_Small_1_16x16',
+  hayPile: 'farm/props/Hay_Dry_Pile_16x16',
+  haySmall: 'farm/props/Hay_Dry_Pile_Small_16x16',
+  boardLoad: 'farm/props/Wood_Board_Load_16x16',
+  rockSmall: 'farm/props/Rock_Small_16x16',
+  rockMedium: 'farm/props/Rock_Medium_16x16',
+  rockBig: 'farm/props/Rock_Big_16x16',
+  barrel1: 'exteriors/harbor/ME_Singles_Camping_16x16_Pier_Barrel_1',
+  barrel2: 'exteriors/harbor/ME_Singles_Camping_16x16_Pier_Barrel_2',
+} as const
+
+/** lantern_posts ladder art: the forged era torch post (dark/lit). */
+export const TORCH_UNLIT = 'derived/props/torch_post_unlit'
+export const TORCH_LIT = 'derived/props/torch_post_lit'
+
+/** Fauna sheets (grammar fauna block: staged flipped OFF in this same
+ * commit — dog, chicken_flock, fish now render). */
+export const DOG_SHEET = 'farm/animals/Dog_Labrador_Brown_16x16'
+export const CHICKEN_SHEETS = [
+  'farm/animals/Chicken_Brown_16x16',
+  'farm/animals/Chicken_White_16x16',
+]
+export const FISH_SHEET = 'derived/props/fish_leap2'
+export const FISH_CUTS: readonly SpriteCut[] = [
+  { x: 0, y: 0, w: 16, h: 16 },
+  { x: 16, y: 0, w: 16, h: 16 },
+]
+/** Dog sleep frames (compose_unified dog_sleep: 48×32 at y=384). */
+export function dogSleepCut(i: number): SpriteCut {
+  return { x: (i % 2) * 48, y: 384, w: 48, h: 32 }
+}
+/** Chicken frames (compose_unified chick recipe: rows idle/walk/peck). */
+export function chickenCut(anim: 'idle' | 'walk' | 'peck', i: number): SpriteCut {
+  const y = anim === 'idle' ? 16 : anim === 'walk' ? 32 : 48
+  return { x: (i % 6) * 16, y, w: 16, h: 16 }
+}
+
 /** Elements whose era-vocab art is STAGED: the renderer draws the honest
  * worksite marker (fences + sign + cleared earth) instead of a wrong-object
  * substitution (v1a review: library→market-stall / observatory→signpost
@@ -300,6 +367,18 @@ export function requiredOutdoorSheets(scene: OutdoorScene): string[] {
     ROOM_SHEET,
     ...DESK_SHEETS,
     UI_SHEET,
+    // cozy-density pass (2026-07-09): mockup-lineage ground + dressing +
+    // first fauna art — same loud-failure contract as every sheet above.
+    FARM_TER,
+    GRASS_VARIANTS,
+    ...TUFT_SHEETS,
+    ...Object.values(DECOR_PROPS),
+    STREET_PROPS.bench,
+    TORCH_UNLIT,
+    TORCH_LIT,
+    DOG_SHEET,
+    ...CHICKEN_SHEETS,
+    FISH_SHEET,
   ]
 }
 
@@ -319,6 +398,12 @@ const SHEET_CUTS: Record<string, SpriteCut[]> = {
   [FARM_TREES]: [...TREE_CUTS],
   [ROOM_SHEET]: [FLOOR_CUT, WALL_CUT],
   [UI_SHEET]: Object.values(VERB_ICONS),
+  [FARM_TER]: [TER_GRASS, TER_GVAR],
+  [GRASS_VARIANTS]: [...GRASS_VARIANT_CUTS],
+  [DOG_SHEET]: [dogSleepCut(0), dogSleepCut(1)],
+  [CHICKEN_SHEETS[0]]: [chickenCut('idle', 0), chickenCut('peck', 5)],
+  [CHICKEN_SHEETS[1]]: [chickenCut('idle', 0), chickenCut('peck', 5)],
+  [FISH_SHEET]: [...FISH_CUTS],
 }
 
 function cutFits(row: ManifestRow, cut: SpriteCut): boolean {

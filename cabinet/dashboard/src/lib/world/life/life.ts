@@ -243,6 +243,7 @@ export function lifeStep(
     fish: 'fish',
     cat: 'cat',
     dog: 'dog',
+    chicken: 'chicken_flock',
   }
   const fauna: FaunaSprite[] = cfg?.fauna
     ? faunaAt({ ...input.fauna, tick, clockHour: input.clockHour }).filter(
