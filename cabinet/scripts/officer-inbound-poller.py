@@ -299,10 +299,17 @@ def handle_callback_query(cbq: dict, *, captain, api_post, inject, feed_append, 
     (≤64 bytes) — chain state lives in Redis/ledger, not the button."""
     cq_id = cbq.get("id")
     if cq_id:
-        try:
-            api_post("answerCallbackQuery", {"callback_query_id": str(cq_id)})
-        except Exception as exc:
-            log(f"answerCallbackQuery failed (non-fatal): {type(exc).__name__}")
+        # Retry the ack (2 attempts): under a flaky network a single blip leaves
+        # the Captain's button spinner hanging even though the callback DATA
+        # arrived fine. A ≤~10s-old query still answers; still non-fatal.
+        for _attempt in range(2):
+            try:
+                api_post("answerCallbackQuery", {"callback_query_id": str(cq_id)})
+                break
+            except Exception as exc:
+                if _attempt:
+                    log(f"answerCallbackQuery failed after retry (non-fatal): "
+                        f"{type(exc).__name__}")
     frm = str((cbq.get("from") or {}).get("id", ""))
     if frm != str(captain):
         log(f"skip callback from={frm or '?'} (not captain)")
@@ -482,7 +489,15 @@ def main() -> int:
             with urllib.request.urlopen(f"{api}/getUpdates?{params}", timeout=35) as resp:  # noqa: S310 (fixed https host)
                 data = json.load(resp)
         except Exception as e:
-            log(f"getUpdates error: {e}")
+            # A bare socket read-timeout on the long-poll is EXPECTED under a
+            # flaky uplink (the 25s long-poll returned nothing and the 35s
+            # socket read then lapsed) — it is not an error, so it does not
+            # spam the log at error level; the loop just re-polls. Anything
+            # else (HTTP status, 409, DNS) is logged loudly as before.
+            _timeout_blip = ("timed out" in str(e).lower()
+                             and "409" not in str(e))
+            if not _timeout_blip:
+                log(f"getUpdates error: {e}")
             # Self-heal a 409 Conflict: another getUpdates poller exists (Telegram
             # allows only one per token). This Cabinet is single-Telegram-voice, the
             # officer launches without --channels, and the watchdog is the SOLE poller
