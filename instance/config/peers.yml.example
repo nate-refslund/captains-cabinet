@@ -1,0 +1,58 @@
+# =============================================================
+# peers.yml.example — the framework-shippable TWIN (egg row R120)
+# =============================================================
+# Copy to instance/config/peers.yml and describe YOUR peer Cabinets. The
+# entry below is a placeholder: consented_by_captain ships FALSE — a fresh
+# instance must never arrive with a pre-consented peer. Secrets never go
+# inline; shared_secret_ref is the NAME of an env var only.
+#
+# Peer Cabinets this instance communicates with via Cabinet MCP.
+# Single source of truth for multi-Cabinet state (Phase 2 CP3).
+#
+# This is one Cabinet's view of its peers. When a second Cabinet
+# is stood up, IT gets its own peers.yml pointing back at this one.
+#
+# Schema per peer (required unless noted):
+#   id                    — slug matching the peer's $CABINET_ID (implied by the map key)
+#   role                  — human-readable role (e.g. 'personal-cabinet')
+#   endpoint              — stdio path OR http(s) URL; Phase 2 uses stdio, Phase 3 adds HTTP
+#   capacity              — work | personal
+#   trust_level           — low | medium | high (affects default allowed_tools)
+#   consented_by_captain  — BOOLEAN; must be true before any call to this peer succeeds
+#   allowed_tools         — list of Cabinet MCP tool names this peer may be CALLED WITH
+#   peer_version          — OPTIONAL; peer's server.py SERVER_VERSION so CP4+ can guard
+#                           capability negotiation when peers drift
+#   shared_secret_ref     — OPTIONAL; name of the env var holding a shared secret.
+#                           Required before Phase 3 HTTP transport. Never put secret
+#                           inline — this is a reference only.
+#   notes                 — optional, for humans
+#
+# Enforcement: load-preset.sh validates schema at boot (Phase 2 CP3).
+# pre-tool-use.sh enforces per-call in section 10 (Phase 2 CP4).
+#
+# To stand up a live peer: set consented_by_captain=true AND verify the
+# peer's own peers.yml lists this Cabinet back.
+
+peers:
+  example-peer:
+    role: personal-cabinet
+    # Format: http://<host>:<port>/mcp  OR  stdio:<abs-path> for local-only.
+    # Use http:// when the peer Cabinet runs in a separate Docker stack.
+    # Use stdio: only when both Cabinets share the same filesystem (rare/dev).
+    endpoint: http://example-peer-host:7471/mcp
+    capacity: personal
+    trust_level: low
+    consented_by_captain: false   # Captain flips to true to enable this peer
+    # shared_secret_ref: name of the env var holding the bearer secret.
+    # Set the SAME value in BOTH cabinets' .env. Never put the secret inline.
+    shared_secret_ref: CABINET_PEER_SECRET_EXAMPLE_PEER
+    allowed_tools:
+      - identify
+      - presence
+      - availability
+      - send_message
+      - request_handoff
+    notes: >
+      Placeholder peer — replace with your real peer Cabinet, keep
+      consented_by_captain false until the Captain rules it live and the
+      peer's own peers.yml lists this Cabinet back.

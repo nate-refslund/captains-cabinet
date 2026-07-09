@@ -1,0 +1,59 @@
+# =============================================================
+# roster.yml.example — the framework-shippable TWIN (egg row R120)
+# =============================================================
+# Copy to instance/config/roster.yml to declare YOUR officer roster.
+# cabinet-init writes this file on a fresh hatch; bootstrap-roles.sh
+# auto-prefers it over the built-in functional seed when present
+# (explicit --roster still wins). The roster below mirrors the built-in
+# seed (with cro shown as type: consultant to demonstrate the type field —
+# the built-in seed itself is all-fulltime) — replace slugs/titles/models
+# with your deployment's roster.
+#
+# SCHEMA (parsed by bootstrap-roles.sh with fixed 2/4-space indents —
+# keep the exact block style below; inline lists for capabilities):
+#   roster:                       # top-level section opens the roster
+#     <slug>:                     # 2-space key: officer slug ([a-z0-9-])
+#       title: "..."              # required
+#       model: "..."              # required — LLM model id for this officer
+#       capabilities: [a, b]      # required — inline list, csv semantics
+#       authority_level: "..."    # required — e.g. captain_proxy | mission_executor
+#       type: fulltime            # optional — fulltime (default) | consultant
+#                                 # (seed-side; the spawn-side twin is the
+#                                 #  officers: block in platform.yml — if you
+#                                 #  activate that block, keep the two in
+#                                 #  agreement)
+#   Other 4-space keys (telegram:, ...) are intentionally ignored.
+# Every role needs title/model/capabilities/authority_level or
+# bootstrap-roles.sh exits 2 naming the missing field.
+
+roster:
+  cos:
+    title: "Chief of Staff"
+    model: "claude-fable-5"
+    capabilities: [logs_captain_decisions, reviews_specs, reviews_implementations, validates_deployments]
+    authority_level: "captain_proxy"
+    type: fulltime
+  cto:
+    title: "Chief Technology Officer"
+    model: "claude-fable-5"
+    capabilities: [deploys_code, reviews_implementations, engineering_execution]
+    authority_level: "mission_executor"
+    type: fulltime
+  cpo:
+    title: "Chief Product Officer"
+    model: "claude-fable-5"
+    capabilities: [reviews_specs, product_strategy, backlog_management]
+    authority_level: "mission_executor"
+    type: fulltime
+  cro:
+    title: "Chief Research Officer"
+    model: "claude-sonnet-4-6"
+    capabilities: [reviews_research, market_intelligence, research_sweep]
+    authority_level: "mission_executor"
+    type: consultant
+  coo:
+    title: "Chief Operating Officer"
+    model: "claude-sonnet-4-6"
+    capabilities: [validates_deployments, operational_health, quality_gate]
+    authority_level: "mission_executor"
+    type: fulltime
