@@ -65,6 +65,13 @@ export interface ConstructionGrammar {
 export interface FaunaSpeciesGrammar {
   home: string
   decorative: true
+  /**
+   * STAGED scope (grammar v3 amendment, 2026-07-09): true = the species'
+   * pack art is not installed yet, so the renderer draws NOTHING for it —
+   * grammar and render stay truth-aligned (no invented pixels, no untrue
+   * day0 claims) until the art lands in the world-asset manifest.
+   */
+  staged?: boolean
   codex?: GrammarCodex
 }
 
@@ -220,7 +227,7 @@ function parseFauna(
     }
     const codex = parseCodex(s.codex)
     if (!codex) problems.push(`fauna.${species}: codex missing/incomplete`)
-    out[species] = { home, decorative: true, codex }
+    out[species] = { home, decorative: true, staged: s.staged === true, codex }
   }
   return Object.keys(out).length > 0 ? out : undefined
 }

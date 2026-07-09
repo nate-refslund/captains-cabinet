@@ -23847,6 +23847,16 @@
       "sha256": "db8abaa4395d638e94da6ef44239ac2d4934cf9325284a5b40047fb96e3a2635",
       "pack": "own pixels \u2014 interim 9-slice dialog frame (T3 \u00a79.2; superseded by ui/frame_<theme> when the Modern UI pack frames land)",
       "license": "CC0 (authored in-repo)"
+    },
+    {
+      "id": "farm/6_Trees_16x16",
+      "path": "farm/6_Trees_16x16.png",
+      "w": 800,
+      "h": 3104,
+      "grid": 16,
+      "sha256": "9795a903eff2836640475789b85880027745c6ac13b968d12d7eb2c346c4fb7a",
+      "pack": "LimeZu Modern Farm (16x16)",
+      "license": "LimeZu commercial \u2014 do not redistribute"
     }
   ]
 }

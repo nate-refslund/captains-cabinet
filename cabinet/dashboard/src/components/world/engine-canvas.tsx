@@ -1,53 +1,89 @@
 'use client'
 
 /**
- * EngineCanvas — the ONE continuous world (T1, spec v2 D1/D3).
+ * EngineCanvas — the ONE continuous world (T1, spec v2 D1/D3) + the T2
+ * LIFE layer (v1a review fixes, 2026-07-09).
  *
- * Replaces the three-scene renderer (wardroom/street/island scene swap —
- * supersession #5: the scenes enum is retired). One PixiJS stage renders
- * the whole archipelago canvas from:
- *  - the chunked procedural base field (lib/world/chunks.ts) over the
- *    authored geography (lib/world/world-geo.ts) — coastline autotiled via
- *    the shore-mask table (foam strokes oriented per variant; same legal
- *    class as blob shadows/lamp pools: procedural pass, no invented art);
- *  - era×rung-resolved buildings (lib/world/world-buildings.ts) — interim
- *    pack cuts, visibly-placeholder rects when a sheet is missing (LOUD);
- *  - product isles + reef-buoys (retired/instance-test lanes — honest
- *    markers) + mist pockets over reserved anchor slots (grey-unmeasured
- *    made geographic);
- *  - LOD rules (lib/world/lod.ts): coast/archipelago collapse buildings to
- *    seeded footprint blocks, cull props/officers, aggregate light masses —
- *    the dark lighthouse survives every zoom (honest zero);
- *  - roof-cutaway IN PLACE at close zoom (single-active; roofAlpha fades
- *    the roof sprite; a simple interior floor + present officers reveal
- *    beneath — the world keeps ticking around the open room);
- *  - the weather layer bound to REAL signals (lib/world/weather.ts) with
- *    deterministic seeded rain, and day/night tint from the server-stamped
- *    snapshot clock.
+ * One PixiJS stage renders the whole archipelago canvas from:
+ *  - compositor-grade terrain (v1a must-fix): sheet-tile base + fnv1a-seeded
+ *    dither patterns in SHEET-SAMPLED hues (lib/world/terrain-pattern.ts —
+ *    the engine port of the GREEN offline compositor's three-pass ground
+ *    painting + wave-dash water), coast carved per-tile through landAt()
+ *    (coastWobble — never a perfect circle), forest-border tree mass;
+ *  - era×rung-resolved buildings (lib/world/world-buildings.ts) with the
+ *    RECOMPOSED lighthouse (Captain ruling 2026-07-09: the lamp must fit
+ *    the tower — the 21_Beach banded tower, staged per the growth ladder;
+ *    NEVER the water-tank/silo body) and honest worksite markers for
+ *    staged-vocab elements (library/observatory) instead of wrong-object
+ *    substitutions;
+ *  - REAL officer characters (Premade_Character sheets — the same binder
+ *    the Wardroom uses) at island/mid/close, seated at real desks inside
+ *    the roof-cutaway interior (Room_Builder floor + wall + office desks);
+ *  - the T2 LIFE layer (lib/world/life): commute walkers on the road with
+ *    the verb-icon pixel bubble, construction sites (worksite kit + crew
+ *    figures), apprentice figures — all grammar-gated fail-closed;
+ *  - product isles + reef-buoys + mist pockets (opaque corpus-grey dither);
+ *  - LOD rules (lib/world/lod.ts) — footprints in corpus-native slate;
+ *  - weather bound to REAL signals; night that READS as night (deep wash +
+ *    zoom-scaled lamp pools + window glow); rain that reads as rain.
  *
- * Doctrine unchanged from the sibling renderers: pure renderer, no writes,
- * no wall clock, no unseeded RNG, no world-space text (DOM labels), CSP
- * eval-free boot, loud failure via onIssues.
+ * Doctrine unchanged: pure renderer, no writes, no wall clock, no unseeded
+ * RNG, no world-space text (DOM labels), CSP eval-free boot, loud failure
+ * via onIssues.
  */
 import { useEffect, useRef } from 'react'
-import type { Container, Graphics, Sprite, Texture } from 'pixi.js'
+import type { Container, Graphics, Sprite, Texture, TilingSprite } from 'pixi.js'
 import type { OfficerPresence } from '@/lib/world/types'
 import { TILE } from '@/lib/world/layout'
 import { fnv1a } from '@/lib/world/hash'
 import type { SpriteCut, WorldAssetManifest } from '@/lib/world/sprites'
 import {
+  CHAR_FRAME_H,
+  CHAR_FRAME_W,
+  charFrame,
+  characterSheetFor,
+  deskSheetFor,
+  FLOOR_CUT,
+  ROOM_SHEET,
+  WALL_CUT,
+  type CharFacing,
+} from '@/lib/world/sprites'
+import {
+  BUCKET_LOAD,
   F,
   FARM_SHEET,
+  FARM_TREES,
+  LIGHTHOUSE_LIT_SHEET,
+  LIGHTHOUSE_SHEET,
+  lighthouseCutFor,
+  TREE_CUTS,
+  STAGED_VOCAB_ELEMENTS,
   STREET_PROPS,
+  UI_SHEET,
   V,
   VILLAGE_SHEET,
+  verbIconCut,
+  WORKSITE_KIT,
   bucketOf,
-  moteColor,
   resolveOutdoorSprites,
   type DayBucket,
 } from '@/lib/world/sprites-outdoor'
-import { baseTile, shoreMask, shoreVariant } from '@/lib/world/chunks'
-import type { WorldGeo } from '@/lib/world/world-geo'
+import {
+  FOAM_WHITE,
+  FOOT_SLATE,
+  FOOT_SLATE_2,
+  grassFlecks,
+  INK_BLACK,
+  MIST_GREY,
+  mistDots,
+  PATTERN_PX,
+  PLANK_BROWN,
+  WATER_BASE,
+  waterDashes,
+  waterTones,
+} from '@/lib/world/terrain-pattern'
+import { baseTile, landAt, shoreMask, shoreVariant } from '@/lib/world/chunks'
+import { roadPoint, type WorldGeo } from '@/lib/world/world-geo'
 import type { WorldBuilding } from '@/lib/world/world-buildings'
 import {
   LOD_RULES,
@@ -59,16 +95,20 @@ import {
 import type { WeatherState } from '@/lib/world/weather'
 import { rainDrops } from '@/lib/world/weather'
 import type { WorldResolution } from '@/lib/world/era-engine'
+import type { LifeOut } from '@/lib/world/life/life'
+import { lotPerimeter } from '@/lib/world/life/sites'
 
+/** Day/night ambience — night must READ as night (v1a should-fix: the old
+ * 0.22 wash left forced-23:00 looking like overcast day). */
 const AMBIENT: Record<DayBucket, { color: number; alpha: number } | null> = {
-  dawn: { color: 0xffe8d0, alpha: 0.06 },
+  dawn: { color: 0xffe8d0, alpha: 0.08 },
   day: null,
-  dusk: { color: 0xffc890, alpha: 0.1 },
-  night: { color: 0x2a3560, alpha: 0.22 },
+  dusk: { color: 0xffc890, alpha: 0.16 },
+  night: { color: 0x232e5e, alpha: 0.42 },
 }
 
 export interface EngineTarget {
-  kind: 'officer' | 'building' | 'lane' | 'mailbox' | 'ground'
+  kind: 'officer' | 'building' | 'lane' | 'mailbox' | 'site' | 'ground'
   id: string
 }
 
@@ -77,6 +117,7 @@ export interface EngineCanvasProps {
   buildings: WorldBuilding[]
   resolution: WorldResolution | null
   officers: Record<string, OfficerPresence>
+  life: LifeOut | null
   camera: EngineCamera
   cutaway: CutawayState
   weather: WeatherState
@@ -93,23 +134,21 @@ interface PixiHandles {
   draw: (props: EngineCanvasProps) => void
 }
 
-/** Interim sprite-hint → verified pack cut (visibly interim where noted). */
+/** Interim sprite-hint → verified pack cut. Staged-vocab elements
+ * (STAGED_VOCAB_ELEMENTS) and the lighthouse resolve elsewhere. */
 const HINT_CUT: Record<string, { sheet: string; cut?: SpriteCut } | null> = {
   great_house: { sheet: VILLAGE_SHEET, cut: V.hq },
   cottage: null, // seeded roof palette — resolved per building id
-  library: { sheet: FARM_SHEET, cut: F.stall },
-  workshop: { sheet: FARM_SHEET, cut: F.furnace },
+  workshop: { sheet: FARM_SHEET, cut: F.kilnShed }, // era-honest work shed
   well: { sheet: FARM_SHEET, cut: F.well },
-  observatory: { sheet: VILLAGE_SHEET, cut: V.signpost },
   barn: { sheet: FARM_SHEET, cut: F.barn },
   law_plot: { sheet: VILLAGE_SHEET, cut: V.lawPlot },
   warehouse: { sheet: FARM_SHEET, cut: F.kilnShed },
   hut: { sheet: VILLAGE_SHEET, cut: V.cottage[1] },
-  lighthouse: { sheet: FARM_SHEET, cut: F.silo }, // interim beacon (precedent)
   silo: { sheet: FARM_SHEET, cut: F.silo },
   stall: { sheet: FARM_SHEET, cut: F.crate },
   firepit: { sheet: VILLAGE_SHEET, cut: V.rock },
-  water_store: { sheet: FARM_SHEET, cut: F.crate2 },
+  water_store: { sheet: BUCKET_LOAD }, // buckets — era water store
   pen: { sheet: VILLAGE_SHEET, cut: V.hedge },
   mailbox: { sheet: STREET_PROPS.mailbox },
 }
@@ -133,7 +172,7 @@ export default function EngineCanvas(props: EngineCanvasProps) {
 
       const app = new PIXI.Application()
       await app.init({
-        background: 0x0e1a26, // deep sea beyond the canvas — the world is unbounded
+        background: WATER_BASE, // open sea — never a foreign void
         resizeTo: hostRef.current,
         antialias: false,
         roundPixels: true,
@@ -194,10 +233,47 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         return t
       }
 
+      // ── compositor-grade patterns (baked ONCE; fnv1a-seeded, replayable) ──
+      function bakePattern(
+        base: Texture | null,
+        fallback: number,
+        dashes: ReturnType<typeof waterDashes>
+      ): Texture {
+        const c = new PIXI.Container()
+        if (base) {
+          c.addChild(
+            new PIXI.TilingSprite({ texture: base, width: PATTERN_PX, height: PATTERN_PX })
+          )
+        } else {
+          const g = new PIXI.Graphics()
+          g.rect(0, 0, PATTERN_PX, PATTERN_PX).fill(fallback)
+          c.addChild(g)
+        }
+        const g2 = new PIXI.Graphics()
+        for (const d of dashes) g2.rect(d.x, d.y, d.len, d.h).fill(d.color)
+        c.addChild(g2)
+        const rt = PIXI.RenderTexture.create({ width: PATTERN_PX, height: PATTERN_PX })
+        app.renderer.render({ container: c, target: rt })
+        c.destroy({ children: true })
+        return rt
+      }
+      const waterPattern = bakePattern(texFor(VILLAGE_SHEET, V.water), WATER_BASE, [
+        ...waterTones(), // tonal bands FIRST…
+        ...waterDashes(), // …dashes on top (blocks never flat)
+      ])
+      const grassPattern = bakePattern(texFor(VILLAGE_SHEET, V.grass), 0x76c564, grassFlecks())
+
+      // ── layers ──────────────────────────────────────────────────────────
+      // The sea is SCREEN-space (the world is unbounded — no foreign void
+      // beyond the canvas, ever); everything else lives in world space.
+      const seaSprite: TilingSprite = new PIXI.TilingSprite({
+        texture: waterPattern,
+        width: app.renderer.width,
+        height: app.renderer.height,
+      })
+      app.stage.addChild(seaSprite)
       const world: Container = new PIXI.Container()
       app.stage.addChild(world)
-      const seaLayer: Container = new PIXI.Container()
-      world.addChild(seaLayer)
       const terrainLayer: Container = new PIXI.Container()
       world.addChild(terrainLayer)
       const shoreG: Graphics = new PIXI.Graphics()
@@ -205,11 +281,9 @@ export default function EngineCanvas(props: EngineCanvasProps) {
       const propLayer: Container = new PIXI.Container()
       propLayer.sortableChildren = true
       world.addChild(propLayer)
-      const interiorG: Graphics = new PIXI.Graphics() // cutaway floors/desks
-      world.addChild(interiorG)
       const placeholderG: Graphics = new PIXI.Graphics()
       world.addChild(placeholderG)
-      const dynG: Graphics = new PIXI.Graphics() // motes, buoys, light masses
+      const dynG: Graphics = new PIXI.Graphics() // buoys, mist, small marks
       world.addChild(dynG)
       const fxG: Graphics = new PIXI.Graphics() // world-space tint, fog, wash
       world.addChild(fxG)
@@ -220,15 +294,41 @@ export default function EngineCanvas(props: EngineCanvasProps) {
       const buildingSprites = new Map<string, Sprite>()
       let builtKey = ''
 
+      // ── pooled dynamic display objects (officers, walkers, interiors) ────
+      const pool = new Map<string, Container>()
+      const poolUsed = new Set<string>()
+      function pooled<T extends Container>(key: string, make: () => T): T {
+        let obj = pool.get(key) as T | undefined
+        if (!obj) {
+          obj = make()
+          pool.set(key, obj)
+          propLayer.addChild(obj)
+        }
+        poolUsed.add(key)
+        obj.visible = true
+        return obj
+      }
+      function sweepPool() {
+        for (const [key, obj] of pool) {
+          if (!poolUsed.has(key)) {
+            pool.delete(key)
+            obj.destroy({ children: true })
+          }
+        }
+        poolUsed.clear()
+      }
+
       function clearStatics() {
-        seaLayer.removeChildren().forEach((c) => c.destroy())
         terrainLayer.removeChildren().forEach((c) => c.destroy())
         propLayer.removeChildren().forEach((c) => c.destroy())
         buildingSprites.clear()
+        pool.clear()
+        poolUsed.clear()
         shoreG.clear()
       }
 
-      /** Foam strokes oriented per shore autotile variant (procedural pass). */
+      /** Foam strokes oriented per shore autotile variant (procedural pass;
+       * hues sheet-sampled — never a foreign white). */
       function drawShore(geo: WorldGeo) {
         shoreG.clear()
         for (const isl of geo.islands) {
@@ -243,7 +343,7 @@ export default function EngineCanvas(props: EngineCanvasProps) {
               const py = ty * TILE
               const seed = fnv1a(`foam:${tx},${ty}`)
               const off = 3 + (seed % 5)
-              const foam = { width: 2, color: 0xdce9f2, alpha: 0.5 }
+              const foam = { width: 2, color: FOAM_WHITE, alpha: 1 }
               if (v === 'edge_n' || v.startsWith('corner_n') || v === 'cove') {
                 shoreG.moveTo(px + 2, py + 3).lineTo(px + off + 6, py + 3).stroke(foam)
               }
@@ -264,59 +364,73 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         }
       }
 
+      /** Per-tile terrain over each island bbox: the coastline is landAt()
+       * (coastWobble — no perfect circles), the heart is the dithered grass
+       * pattern, sand rings the coast, the forest border is tree MASS. */
       function buildTerrain(p: EngineCanvasProps) {
         const geo = p.geo
-        const cw = geo.canvas.w * TILE
-        const ch = geo.canvas.h * TILE
-        const waterTex = texFor(VILLAGE_SHEET, V.water)
-        if (waterTex) {
-          const water = new PIXI.TilingSprite({ texture: waterTex, width: cw, height: ch })
-          seaLayer.addChild(water)
-        } else {
-          const g = new PIXI.Graphics()
-          g.rect(0, 0, cw, ch).fill(0x14283a)
-          seaLayer.addChild(g)
-        }
         for (const isl of geo.islands) {
           if (isl.r <= 0) continue
+          const pad = 2
+          const x0 = isl.cx - isl.r - pad
+          const y0 = isl.cy - isl.r - pad
+          const x1 = isl.cx + isl.r + pad
+          const y1 = isl.cy + isl.r + pad
+          // land mask (per-tile rects — the wobbled coast, not a circle)
+          const mask = new PIXI.Graphics()
+          for (let ty = y0; ty <= y1; ty++) {
+            for (let tx = x0; tx <= x1; tx++) {
+              if (landAt(tx, ty, geo)) mask.rect(tx * TILE, ty * TILE, TILE, TILE)
+            }
+          }
+          mask.fill(0xffffff)
+          const grass = new PIXI.TilingSprite({
+            texture: grassPattern,
+            width: (x1 - x0 + 1) * TILE,
+            height: (y1 - y0 + 1) * TILE,
+          })
+          grass.position.set(x0 * TILE, y0 * TILE)
+          grass.mask = mask
+          terrainLayer.addChild(mask)
+          terrainLayer.addChild(grass)
+          // per-tile dressing: sand fringe, meadow decals, forest mass
           const sandTex = texFor(VILLAGE_SHEET, V.sand)
-          if (sandTex) {
-            const sand = new PIXI.TilingSprite({ texture: sandTex, width: cw, height: ch })
-            const m = new PIXI.Graphics()
-            m.circle(isl.cx * TILE, isl.cy * TILE, isl.r * TILE).fill(0xffffff)
-            sand.mask = m
-            terrainLayer.addChild(m)
-            terrainLayer.addChild(sand)
-          }
-          const grassTex = texFor(VILLAGE_SHEET, V.grass)
-          if (grassTex) {
-            const grass = new PIXI.TilingSprite({ texture: grassTex, width: cw, height: ch })
-            const m = new PIXI.Graphics()
-            m.circle(isl.cx * TILE, isl.cy * TILE, Math.max(1, isl.r - 1.2) * TILE).fill(0xffffff)
-            grass.mask = m
-            terrainLayer.addChild(m)
-            terrainLayer.addChild(grass)
-          }
-          // forest ring: tree rows seeded between clearR and r (base field law)
-          const treeTexA = texFor(VILLAGE_SHEET, V.treeRow)
-          const treeTexB = texFor(VILLAGE_SHEET, V.treeRow2)
-          if (treeTexA || treeTexB) {
-            const count = Math.max(6, Math.round(isl.r * 0.9))
-            for (let i = 0; i < count; i++) {
-              const h = fnv1a(`${isl.id}:forest:${i}`)
-              const a = ((h % 360) * Math.PI) / 180
-              const band = Math.max(1, isl.r - isl.clearR - 2)
-              const rr = isl.clearR + 1 + ((h >>> 9) % band)
-              const tx = Math.round(isl.cx + Math.cos(a) * rr)
-              const ty = Math.round(isl.cy + Math.sin(a) * rr)
-              if (baseTile(tx, ty, geo) !== 'forest') continue
-              const tex = (h & 1) === 0 ? treeTexA : treeTexB
-              if (!tex) continue
-              const sp = new PIXI.Sprite(tex)
-              sp.anchor.set(0.5, 1)
-              sp.position.set(tx * TILE, ty * TILE)
-              sp.zIndex = ty * TILE - 2000 // canopy band behind buildings
-              propLayer.addChild(sp)
+          const flowerTex = texFor(VILLAGE_SHEET, V.flowerbed)
+          const pebbleTex = texFor(VILLAGE_SHEET, V.pebbles)
+          // corpus tree canon: the SAME farm-pack oaks the palette
+          // positives were composed from (Serene tree rows retired —
+          // ~11% palette-foreign per pixel)
+          const treeTexes = TREE_CUTS.map((c) => texFor(FARM_TREES, c)).filter(
+            (t): t is Texture => t !== null
+          )
+          for (let ty = y0; ty <= y1; ty++) {
+            for (let tx = x0; tx <= x1; tx++) {
+              const t = baseTile(tx, ty, geo)
+              if (t === 'sand' && sandTex) {
+                const sp = new PIXI.Sprite(sandTex)
+                sp.position.set(tx * TILE, ty * TILE)
+                terrainLayer.addChild(sp)
+              } else if (t === 'meadow') {
+                const h = fnv1a(`meadow-decal:${tx},${ty}`)
+                const tex = (h & 3) === 0 ? pebbleTex : flowerTex
+                if (tex) {
+                  const sp = new PIXI.Sprite(tex)
+                  sp.position.set(tx * TILE + (h % 4), ty * TILE + ((h >>> 4) % 4))
+                  terrainLayer.addChild(sp)
+                }
+              } else if (t === 'forest') {
+                // tree-border MASS: seeded oaks on a 3×2 lattice, canopies
+                // overlapping into a real border (compositor bar)
+                const h = fnv1a(`forest:${tx},${ty}`)
+                if (tx % 3 === (h >>> 3) % 3 && ty % 2 === 0 && treeTexes.length > 0) {
+                  const tex = treeTexes[h % treeTexes.length]
+                  const sp = new PIXI.Sprite(tex)
+                  sp.anchor.set(0.5, 1)
+                  sp.position.set(tx * TILE + (h % 8) - 4, (ty + 1) * TILE + ((h >>> 6) % 8))
+                  sp.zIndex = ty * TILE - 2000 // canopy band behind buildings
+                  propLayer.addChild(sp)
+                }
+              }
             }
           }
         }
@@ -349,8 +463,115 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         drawShore(geo)
       }
 
+      /** Honest STAGED-vocab marker: cleared earth + striped fences + the
+       * worksite sign (never a wrong-object substitution — v1a era fix). */
+      function buildStagedMarker(b: WorldBuilding) {
+        const groundTex = texFor(WORKSITE_KIT.ground)
+        const signTex = texFor(WORKSITE_KIT.sign)
+        const fenceA = texFor(WORKSITE_KIT.fenceA)
+        const fenceB = texFor(WORKSITE_KIT.fenceB)
+        const moundsTex = texFor(WORKSITE_KIT.mounds)
+        const c = new PIXI.Container()
+        if (groundTex) {
+          for (let ty = 0; ty < b.h; ty++) {
+            for (let tx = 0; tx < b.w; tx++) {
+              const g = new PIXI.Sprite(groundTex)
+              g.position.set((b.x + tx) * TILE, (b.y + ty) * TILE)
+              c.addChild(g)
+            }
+          }
+        }
+        // SPARSE lot dressing (dense perimeter fencing read as a red mass
+        // at island zoom): corner barriers only + the sign carries the story
+        const corners = [
+          { x: b.x - 1, y: b.y - 1 },
+          { x: b.x + b.w, y: b.y - 1 },
+          { x: b.x - 1, y: b.y + b.h },
+          { x: b.x + b.w, y: b.y + b.h },
+        ]
+        for (const pt of corners) {
+          const h = fnv1a(`stagedfence:${b.id}:${pt.x},${pt.y}`)
+          const tex = (h & 1) === 0 ? fenceA : fenceB
+          if (!tex) continue
+          const f = new PIXI.Sprite(tex)
+          f.anchor.set(0.5, 1)
+          f.position.set(pt.x * TILE + TILE / 2, (pt.y + 1) * TILE)
+          f.zIndex = (pt.y + 1) * TILE
+          c.addChild(f)
+        }
+        if (moundsTex) {
+          const m = new PIXI.Sprite(moundsTex)
+          m.anchor.set(0.5, 1)
+          m.position.set((b.x + b.w / 2) * TILE, (b.y + b.h - 0.5) * TILE)
+          c.addChild(m)
+        }
+        if (signTex) {
+          const s = new PIXI.Sprite(signTex)
+          s.anchor.set(0.5, 1)
+          s.position.set((b.x + 0.6) * TILE, (b.y + b.h + 0.4) * TILE)
+          s.zIndex = (b.y + b.h + 0.4) * TILE
+          c.addChild(s)
+        }
+        c.zIndex = (b.y + b.h) * TILE
+        propLayer.addChild(c)
+      }
+
+      /** The RECOMPOSED lighthouse (banded tower, staged per rung; the
+       * dark_cairn rung composes shore rocks). */
+      function buildLighthouse(b: WorldBuilding) {
+        const cut = lighthouseCutFor(b.rungName)
+        const bx = (b.x + b.w / 2) * TILE
+        const by = (b.y + b.h) * TILE
+        if (cut) {
+          const tex = texFor(LIGHTHOUSE_SHEET, cut)
+          if (tex) {
+            const sp = new PIXI.Sprite(tex)
+            sp.anchor.set(0.5, 1)
+            sp.position.set(bx, by)
+            sp.zIndex = by
+            buildingSprites.set(b.id, sp)
+            propLayer.addChild(sp)
+          }
+          // under-construction dressing while the tower is partial
+          if (b.rungName !== 'tower_full') {
+            const signTex = texFor(WORKSITE_KIT.sign)
+            if (signTex) {
+              const s = new PIXI.Sprite(signTex)
+              s.anchor.set(0.5, 1)
+              s.position.set(bx - 2.2 * TILE, by + 4)
+              s.zIndex = by + 4
+              propLayer.addChild(s)
+            }
+          }
+          return
+        }
+        // dark_cairn: rocks + nothing else — ambition visible from birth
+        const rockTex = texFor(VILLAGE_SHEET, V.rock)
+        if (rockTex) {
+          for (const [dx, dy] of [
+            [-0.6, 0],
+            [0.5, -0.2],
+            [0, 0.5],
+          ] as const) {
+            const r = new PIXI.Sprite(rockTex)
+            r.anchor.set(0.5, 1)
+            r.position.set(bx + dx * TILE, by + dy * TILE)
+            r.zIndex = by + dy * TILE
+            propLayer.addChild(r)
+          }
+        }
+      }
+
       function buildBuildings(p: EngineCanvasProps) {
         for (const b of p.buildings) {
+          if (b.element === 'lighthouse') {
+            buildLighthouse(b)
+            continue
+          }
+          if (STAGED_VOCAB_ELEMENTS.has(b.element)) {
+            buildStagedMarker(b)
+            continue
+          }
           const hint =
             b.sprite === 'cottage'
               ? { sheet: VILLAGE_SHEET, cut: V.cottage[fnv1a(`${b.id}:roof`) % V.cottage.length] }
@@ -379,17 +600,17 @@ export default function EngineCanvas(props: EngineCanvasProps) {
 
       function buildFootprints(p: EngineCanvasProps) {
         // coast/archipelago LOD: seeded footprint blocks from the SAME
-        // building list (silhouettes; light mass drawn in dynamics).
+        // building list — corpus-native slates (palette gate).
         const g = new PIXI.Graphics()
         for (const b of p.buildings) {
           const h = fnv1a(`fp:${b.id}`)
-          const c = 0x2c3242 + ((h % 5) << 3)
-          g.rect(b.x * TILE, b.y * TILE, b.w * TILE, b.h * TILE).fill({ color: c, alpha: 0.95 })
+          const c = (h & 1) === 0 ? FOOT_SLATE : FOOT_SLATE_2
+          g.rect(b.x * TILE, b.y * TILE, b.w * TILE, b.h * TILE).fill({ color: c })
         }
         // the lighthouse silhouette survives every zoom — honest-zero anomaly
         const lh = p.buildings.find((b) => b.element === 'lighthouse')
         if (lh) {
-          g.rect((lh.x + 1) * TILE, (lh.y - 2) * TILE, TILE, 2 * TILE).fill({ color: 0x1c2030 })
+          g.rect((lh.x + 1) * TILE, (lh.y - 2) * TILE, TILE, 2 * TILE).fill({ color: INK_BLACK })
         }
         terrainLayer.addChild(g)
       }
@@ -414,6 +635,7 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         if (LOD_RULES[lodTier(p.camera.z)].buildingsAsFootprints) return
         for (const b of p.buildings) {
           if (buildingSprites.has(b.id)) continue
+          if (STAGED_VOCAB_ELEMENTS.has(b.element) || b.element === 'lighthouse') continue
           placeholderG
             .rect(b.x * TILE, b.y * TILE, b.w * TILE, b.h * TILE)
             .fill({ color: 0x39415a, alpha: 0.7 })
@@ -456,52 +678,224 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         })
       }
 
+      /** One pooled character sprite (LimeZu Premade sheet frame). */
+      function characterSprite(
+        key: string,
+        slug: string,
+        anim: 'work' | 'walk' | 'idle',
+        facing: CharFacing,
+        tick: number,
+        wx: number,
+        wy: number,
+        opts?: { alpha?: number; scale?: number }
+      ): boolean {
+        const sheet = characterSheetFor(slug)
+        const cut = charFrame(anim === 'idle' ? 'work' : anim, facing, tick, fnv1a(slug) % 6)
+        const tex = texFor(sheet, {
+          x: cut.x,
+          y: cut.y,
+          w: CHAR_FRAME_W,
+          h: CHAR_FRAME_H,
+        })
+        if (!tex) return false
+        const sp = pooled(key, () => new PIXI.Sprite())
+        if (sp instanceof PIXI.Sprite) {
+          sp.texture = tex
+          sp.anchor.set(0.5, 1)
+          sp.position.set(wx * TILE, wy * TILE)
+          sp.zIndex = wy * TILE
+          sp.alpha = opts?.alpha ?? 1
+          sp.scale.set(opts?.scale ?? 1)
+        }
+        return true
+      }
+
+      /** Cutaway interior: real floor/wall/desks (Room_Builder + office
+       * singles — v1a fix: no more 1-tile colored slivers on a brown box). */
+      function interiorContainer(b: WorldBuilding, slugs: string[]): void {
+        const c = pooled(`interior:${b.id}`, () => {
+          const cont = new PIXI.Container()
+          const floorTex = texFor(ROOM_SHEET, FLOOR_CUT)
+          const wallTex = texFor(ROOM_SHEET, WALL_CUT)
+          if (floorTex) {
+            const floor = new PIXI.TilingSprite({
+              texture: floorTex,
+              width: b.w * TILE - 4,
+              height: b.h * TILE - 4,
+            })
+            floor.position.set(b.x * TILE + 2, b.y * TILE + 2)
+            cont.addChild(floor)
+          } else {
+            const g = new PIXI.Graphics()
+            g.rect(b.x * TILE + 2, b.y * TILE + 2, b.w * TILE - 4, b.h * TILE - 4).fill(0x8a6a48)
+            cont.addChild(g)
+          }
+          if (wallTex) {
+            const wall = new PIXI.TilingSprite({
+              texture: wallTex,
+              width: b.w * TILE - 4,
+              height: TILE,
+            })
+            wall.position.set(b.x * TILE + 2, b.y * TILE + 2)
+            cont.addChild(wall)
+          }
+          // desks: one per officer slot (same grid officerPositions uses)
+          slugs.forEach((slug, i) => {
+            const deskTex = texFor(deskSheetFor(slug))
+            if (!deskTex) return
+            const col = i % 3
+            const row = Math.floor(i / 3)
+            const d = new PIXI.Sprite(deskTex)
+            d.anchor.set(0.5, 1)
+            d.position.set(
+              (b.x + 1 + col * ((b.w - 2) / 2.5)) * TILE,
+              (b.y + 1.3 + row * 1.6) * TILE
+            )
+            cont.addChild(d)
+          })
+          cont.zIndex = b.y * TILE + 1
+          return cont
+        })
+        c.zIndex = b.y * TILE + 1
+      }
+
       function drawDynamics(p: EngineCanvasProps) {
         dynG.clear()
-        interiorG.clear()
         const tier = lodTier(p.camera.z)
         const rules = LOD_RULES[tier]
         const bucket = bucketOf(p.clockHour)
+        const dark = bucket === 'night' || bucket === 'dusk'
 
-        // cutaway: roof alpha per building; interior floor under the fade
+        // cutaway: roof alpha per building; REAL interior under the fade
+        const slugs = Object.keys(p.officers).sort()
         for (const b of p.buildings) {
           const sp = buildingSprites.get(b.id)
           const a = rules.cutawayEligible ? roofAlpha(p.cutaway, b.id, p.tick) : 1
           if (sp) sp.alpha = a
-          if (a < 0.95 && b.interior) {
-            // simple interior: warm plank floor + wall caps + desk blocks —
-            // the officers inside are drawn below (revealed mid-verb)
-            interiorG
-              .rect(b.x * TILE + 2, b.y * TILE + 2, b.w * TILE - 4, b.h * TILE - 4)
-              .fill({ color: 0x8a6a48, alpha: 0.95 })
-            interiorG
-              .rect(b.x * TILE + 2, b.y * TILE + 2, b.w * TILE - 4, 4)
-              .fill({ color: 0x4c3826, alpha: 0.95 })
-            const desks = Math.min(4, Math.max(1, Math.floor(b.w / 2)))
-            for (let i = 0; i < desks; i++) {
-              interiorG
-                .rect((b.x + 1 + i * 1.4) * TILE, (b.y + 1) * TILE, 14, 8)
-                .fill({ color: 0x5c452e, alpha: 0.95 })
-            }
-          }
-          // pending rung: construction scaffold chip (visible-work seam —
-          // the full crewed pipeline is T2's site system)
+          if (a < 0.95 && b.interior) interiorContainer(b, slugs)
+          // pending rung: honest worksite cone (visible-work seam)
           if (b.pending && !rules.buildingsAsFootprints) {
-            dynG
-              .rect(b.x * TILE, (b.y - 0.4) * TILE, 10, 6)
-              .fill({ color: 0xd9a441, alpha: 0.9 })
+            const coneTex = texFor(WORKSITE_KIT.cone)
+            if (coneTex) {
+              const cone = pooled(`pend:${b.id}`, () => new PIXI.Sprite())
+              if (cone instanceof PIXI.Sprite) {
+                cone.texture = coneTex
+                cone.anchor.set(0.5, 1)
+                cone.position.set((b.x + 0.5) * TILE, (b.y + 0.2) * TILE)
+                cone.zIndex = (b.y + 0.2) * TILE
+              }
+            }
           }
         }
 
-        // officers (motes; inside on cutaway) — culled at coast/archipelago
+        // officers: REAL character sprites (walk/idle frames; dimmed away)
         if (rules.officers) {
           for (const o of officerPositions(p)) {
             const pres = p.officers[o.slug]
             const live = Boolean(pres?.present)
-            dynG
-              .rect(o.x * TILE - 2, o.y * TILE - 8, 5, 8)
-              .fill({ color: moteColor(fnv1a(o.slug)), alpha: live ? 1 : 0.35 })
-            dynG.rect(o.x * TILE - 2, o.y * TILE - 8, 5, 8).stroke({ width: 1, color: 0x0c0e12 })
+            characterSprite(`officer:${o.slug}`, o.slug, 'work', 'down', p.tick, o.x, o.y, {
+              alpha: live ? 1 : 0.4,
+            })
+          }
+        }
+
+        // ── T2 LIFE: commute walkers + bubbles, sites + crews, apprentices ──
+        if (rules.officers && p.life) {
+          for (const cm of p.life.commuters) {
+            const t = cm.walk.to === 'quay' ? cm.progress : 1 - cm.progress
+            const pos = roadPoint(t)
+            const facing: CharFacing = cm.walk.to === 'quay' ? 'down' : 'up'
+            characterSprite(
+              `walker:${cm.slug}`,
+              cm.slug,
+              'walk',
+              cm.glance ? 'left' : facing,
+              p.tick,
+              pos.x + 0.5,
+              pos.y + 1
+            )
+            // the verb-icon PIXEL bubble (grammar v3 bubble law)
+            if (cm.walk.bubble) {
+              const iconTex = texFor(UI_SHEET, verbIconCut(cm.walk.bubble.verb))
+              const bub = pooled(`bubble:${cm.slug}`, () => {
+                const cont = new PIXI.Container()
+                const g = new PIXI.Graphics()
+                g.roundRect(0, 0, 20, 16, 3).fill(0xf4efe2).stroke({ width: 1, color: FOOT_SLATE })
+                g.poly([6, 16, 10, 16, 6, 21]).fill(0xf4efe2)
+                cont.addChild(g)
+                return cont
+              })
+              if (iconTex && bub.children.length < 2) {
+                const ic = new PIXI.Sprite(iconTex)
+                ic.position.set(3, 2)
+                bub.addChild(ic)
+              }
+              bub.position.set((pos.x + 0.9) * TILE, (pos.y - 1.6) * TILE)
+              bub.zIndex = 100000 // bubbles float over the scene
+            }
+          }
+          for (const s of p.life.sites) {
+            const f = s.site.footprint
+            const siteC = pooled(`site:${s.site.id}`, () => {
+              const cont = new PIXI.Container()
+              const groundTex = texFor(WORKSITE_KIT.ground)
+              if (groundTex) {
+                for (let ty = 0; ty < f.h; ty++) {
+                  for (let tx = 0; tx < f.w; tx++) {
+                    const g = new PIXI.Sprite(groundTex)
+                    g.position.set((f.x + tx) * TILE, (f.y + ty) * TILE)
+                    cont.addChild(g)
+                  }
+                }
+              }
+              const fenceA = texFor(WORKSITE_KIT.fenceA)
+              const fenceB = texFor(WORKSITE_KIT.fenceB)
+              for (const pt of lotPerimeter(f)) {
+                const h = fnv1a(`sitefence:${s.site.id}:${pt.x},${pt.y}`)
+                const tex = (h & 1) === 0 ? fenceA : fenceB
+                if (!tex) continue
+                const fs = new PIXI.Sprite(tex)
+                fs.anchor.set(0.5, 1)
+                fs.position.set(pt.x * TILE + TILE / 2, (pt.y + 1) * TILE)
+                cont.addChild(fs)
+              }
+              const signTex = texFor(WORKSITE_KIT.sign)
+              if (signTex) {
+                const sg = new PIXI.Sprite(signTex)
+                sg.anchor.set(0.5, 1)
+                sg.position.set((f.x + 0.5) * TILE, (f.y + f.h + 0.6) * TILE)
+                cont.addChild(sg)
+              }
+              cont.zIndex = (f.y + f.h) * TILE
+              return cont
+            })
+            siteC.zIndex = (f.y + f.h) * TILE
+            // crew figures: decorative-honest wrights (staging of a real
+            // witnessed transition; the sign codex says exactly that)
+            for (const w of s.crew) {
+              characterSprite(
+                `wright:${w.id}`,
+                w.id,
+                'walk',
+                w.facing,
+                p.tick,
+                w.x,
+                w.y,
+                { scale: 1 }
+              )
+            }
+          }
+          for (const fig of p.life.apprentices.figures) {
+            characterSprite(
+              `apprentice:${fig.id}`,
+              fig.id,
+              'walk',
+              'down',
+              p.tick,
+              fig.x,
+              fig.y,
+              { scale: 0.75, alpha: 0.95 }
+            )
           }
         }
 
@@ -512,60 +906,74 @@ export default function EngineCanvas(props: EngineCanvasProps) {
           if (site.render === 'reef_buoy') {
             dynG.circle(px, py, 5).fill({ color: 0xc63228 })
             dynG.circle(px, py, 5).stroke({ width: 1, color: 0x35110d })
-            dynG.circle(px, py + 8, 7).stroke({ width: 1, color: 0x88a5b8, alpha: 0.5 })
+            dynG.circle(px, py + 8, 7).stroke({ width: 1, color: MIST_GREY })
           } else if (site.render === 'mist_reserved') {
-            const h = fnv1a(`mist:${site.slot}`)
-            for (let i = 0; i < 26; i++) {
-              const a = (((h >>> (i % 24)) + i * 37) % 360) * (Math.PI / 180)
-              const rr = (fnv1a(`mist:${site.slot}:${i}`) % 60) + 12
-              dynG
-                .circle(px + Math.cos(a) * rr, py + Math.sin(a) * rr, 3)
-                .fill({ color: 0x9aa4ad, alpha: 0.18 })
+            // OPAQUE corpus-grey dither (alpha blends leave the palette)
+            for (const d of mistDots(site.slot)) {
+              dynG.rect(px + d.x, py + d.y, d.r, d.r).fill({ color: MIST_GREY })
             }
-            dynG.circle(px, py, 4).fill({ color: 0x8b949c }) // grey buoy (dual-code)
+            dynG.circle(px, py, 4).fill({ color: MIST_GREY }) // grey buoy (dual-code)
           } else if (site.render === 'isle') {
-            // dock jetty marker; warehouses at ring r1
-            dynG.rect(px - 10, py + (site.cy < 100 ? 12 : -14), 20, 5).fill({ color: 0x6b4d30 })
+            // dock jetty marker; warehouses at ring r1 (corpus browns)
+            dynG
+              .rect(px - 10, py + (site.cy < 100 ? 12 : -14), 20, 5)
+              .fill({ color: PLANK_BROWN })
             if (site.ringRung >= 2 && !rules.buildingsAsFootprints) {
-              dynG.rect(px - 8, py - 6, 14, 10).fill({ color: 0x7d5a38 })
-              dynG.rect(px - 8, py - 10, 14, 5).fill({ color: 0x4c3826 })
+              dynG.rect(px - 8, py - 6, 14, 10).fill({ color: PLANK_BROWN })
+              dynG.rect(px - 8, py - 10, 14, 5).fill({ color: FOOT_SLATE })
             }
           }
         }
 
-        // light masses (dusk/night; and always at far LOD as state lights)
-        const dark = bucket === 'night' || bucket === 'dusk'
-        if (rules.lightMassAggregate) {
-          // per-isle presence light; main island glow scaled to live officers
-          const live = Object.values(p.officers).filter((o) => o.present).length
-          const main = p.geo.islands.find((i) => i.id === 'main')
-          if (main && live > 0) {
-            fxG
-              .circle(main.cx * TILE, main.cy * TILE, (10 + live * 4) * 2)
-              .fill({ color: 0xffc35c, alpha: dark ? 0.16 : 0.08 })
-          }
-          for (const site of p.geo.laneSites) {
-            if (site.render !== 'isle') continue
-            fxG
-              .circle(site.cx * TILE, site.cy * TILE, 18)
-              .fill({ color: 0xffc35c, alpha: dark ? 0.14 : 0.06 })
-          }
-        } else if (dark) {
-          for (const b of p.buildings) {
-            if (!b.interior) continue
-            fxG
-              .rect((b.x + 0.6) * TILE, (b.y + 1) * TILE, 5, 5)
-              .fill({ color: 0xffc35c, alpha: 0.8 })
+        // light masses — DUSK/NIGHT ONLY (day glows read foreign at noon)
+        if (dark) {
+          if (rules.lightMassAggregate) {
+            const live = Object.values(p.officers).filter((o) => o.present).length
+            const main = p.geo.islands.find((i) => i.id === 'main')
+            if (main && live > 0) {
+              fxG
+                .circle(main.cx * TILE, main.cy * TILE, (14 + live * 5) * 2)
+                .fill({ color: 0xffc35c, alpha: 0.2 })
+            }
+            for (const site of p.geo.laneSites) {
+              if (site.render !== 'isle') continue
+              fxG
+                .circle(site.cx * TILE, site.cy * TILE, 24)
+                .fill({ color: 0xffc35c, alpha: 0.18 })
+            }
+          } else {
+            // window-glow lamp pools per lived-in building (island tier+)
+            for (const b of p.buildings) {
+              if (!b.interior) continue
+              const wx = (b.x + 0.9) * TILE
+              const wy = (b.y + b.h * 0.55) * TILE
+              fxG.circle(wx, wy, 14).fill({ color: 0xffc35c, alpha: 0.2 })
+              fxG.circle(wx, wy, 8).fill({ color: 0xffc35c, alpha: 0.3 })
+              fxG.rect(wx - 3, wy - 3, 6, 6).fill({ color: 0xffe9a8, alpha: 0.9 })
+              if (b.w >= 4) {
+                const wx2 = (b.x + b.w - 0.9) * TILE
+                fxG.circle(wx2, wy, 10).fill({ color: 0xffc35c, alpha: 0.2 })
+                fxG.rect(wx2 - 2, wy - 3, 5, 5).fill({ color: 0xffe9a8, alpha: 0.85 })
+              }
+            }
           }
         }
-        // the lighthouse lamp: LIT only when cells_graduated > 0 (honest 0)
+        // the lighthouse lamp: LIT only when cells_graduated > 0 (honest 0).
+        // Lit = the ratified derived lit variant (lamp-room glass in the
+        // proven warm hue) + a glow pool — the biggest visual event in the
+        // world's life, and never a minute earlier.
         const lamp = p.resolution?.elements.lighthouse_lamp
         const lh = p.buildings.find((b) => b.element === 'lighthouse')
         if (lh && lamp && lamp.rungName === 'lit') {
+          const sp = buildingSprites.get(lh.id)
+          const litCut = lighthouseCutFor(lh.rungName)
+          const litTex = litCut ? texFor(LIGHTHOUSE_LIT_SHEET, litCut) : null
+          if (sp && litTex) sp.texture = litTex
           fxG
             .circle((lh.x + lh.w / 2) * TILE, lh.y * TILE, 40)
-            .fill({ color: 0xffe9a8, alpha: 0.25 })
+            .fill({ color: 0xffe9a8, alpha: 0.3 })
         }
+        sweepPool()
       }
 
       function drawWeather(p: EngineCanvasProps, bucket: DayBucket) {
@@ -584,24 +992,41 @@ export default function EngineCanvas(props: EngineCanvasProps) {
           }
           weatherG.rect(0, vh * 0.78, vw, vh * 0.22).fill({ color: 0x9aa4ad, alpha: 0.18 })
         }
-        // rain/storm: deterministic seeded drops (pure f(tick))
+        // rain/storm: deterministic seeded drops (pure f(tick)) — v1a fix:
+        // the sky must TELL the story (denser, longer, near-camera layer)
         if (kind === 'rain' || kind === 'storm') {
-          const drops = rainDrops(p.tick, kind === 'storm' ? 160 : 80, vw, vh)
-          for (const d of drops) {
+          const drops = rainDrops(p.tick, kind === 'storm' ? 340 : 220, vw, vh)
+          for (let i = 0; i < drops.length; i++) {
+            const d = drops[i]
+            const near = i % 4 === 0 // near-camera streak layer
             weatherG
               .moveTo(d.x, d.y)
-              .lineTo(d.x - 2, d.y + d.len * 3)
-              .stroke({ width: 1, color: 0xb8cbe0, alpha: kind === 'storm' ? 0.6 : 0.4 })
+              .lineTo(d.x - (near ? 4 : 2), d.y + d.len * (near ? 6 : 4))
+              .stroke({
+                width: near ? 2 : 1,
+                color: 0xb8cbe0,
+                alpha: kind === 'storm' ? (near ? 0.8 : 0.6) : near ? 0.7 : 0.5,
+              })
           }
-          weatherG.rect(0, 0, vw, vh).fill({ color: 0x1a2230, alpha: kind === 'storm' ? 0.28 : 0.12 })
+          weatherG.rect(0, 0, vw, vh).fill({ color: 0x1a2230, alpha: kind === 'storm' ? 0.3 : 0.18 })
         }
         // ambient day/night tint (world-space, from the server-stamped clock)
         const amb = AMBIENT[bucket]
         const cw = p.geo.canvas.w * TILE
         const ch = p.geo.canvas.h * TILE
-        if (amb) fxG.rect(0, 0, cw, ch).fill({ color: amb.color, alpha: amb.alpha })
-        // killswitch red wash (reserved hue; dual-coded with the DOM banner)
-        if (p.killswitch) fxG.rect(0, 0, cw, ch).fill({ color: 0xcc2222, alpha: 0.14 })
+        if (amb) {
+          fxG.rect(-PATTERN_PX * 4, -PATTERN_PX * 4, cw + PATTERN_PX * 8, ch + PATTERN_PX * 8).fill({
+            color: amb.color,
+            alpha: amb.alpha,
+          })
+        }
+        // the open sea matches the night (multiply-tint precomputed from
+        // the SAME wash: water(80,167,232) under night 0x232e5e@0.42 →
+        // per-channel multiplier 0xc2b2bf; day/dawn/dusk leave it true)
+        seaSprite.tint = bucket === 'night' ? 0xc2b2bf : 0xffffff
+        // killswitch red wash — SCREEN-space (the storm is the whole sky),
+        // dual-coded with the DOM banner
+        if (p.killswitch) weatherG.rect(0, 0, vw, vh).fill({ color: 0xcc2222, alpha: 0.14 })
       }
 
       function draw(p: EngineCanvasProps) {
@@ -618,6 +1043,15 @@ export default function EngineCanvas(props: EngineCanvasProps) {
           vw / 2 - p.camera.x * TILE * s,
           vh / 2 - p.camera.y * TILE * s
         )
+        // the open sea scrolls with the world (screen-space tiling). The
+        // pattern scale floors at 0.75: at archipelago zoom a 1:1 scale
+        // shrinks the wave dashes below a pixel and the sea collapses into
+        // one flat dominant mass (CLUSTER_FLAT_VOID) — the floor keeps the
+        // corpus wave texture readable at every LOD.
+        seaSprite.width = vw
+        seaSprite.height = vh
+        seaSprite.tileScale.set(Math.max(s, 0.75))
+        seaSprite.tilePosition.set(world.position.x, world.position.y)
         placeholderBuildings(p)
         const bucket = bucketOf(p.clockHour)
         drawWeather(p, bucket) // clears fxG first
@@ -635,6 +1069,23 @@ export default function EngineCanvas(props: EngineCanvasProps) {
           for (const o of officerPositions(p)) {
             if (Math.abs(wx - o.x) < 0.8 && Math.abs(wy - o.y + 0.3) < 1) {
               return { kind: 'officer', id: o.slug }
+            }
+          }
+          // commute walkers inspect as their officer (the walk is presence
+          // animation of a real verb shift — the card cites the mechanism)
+          if (p.life) {
+            for (const cm of p.life.commuters) {
+              const t = cm.walk.to === 'quay' ? cm.progress : 1 - cm.progress
+              const pos = roadPoint(t)
+              if (Math.abs(wx - (pos.x + 0.5)) < 0.9 && Math.abs(wy - (pos.y + 1) + 0.5) < 1.2) {
+                return { kind: 'officer', id: cm.slug }
+              }
+            }
+            for (const st of p.life.sites) {
+              const f = st.site.footprint
+              if (wx >= f.x - 1 && wx <= f.x + f.w + 1 && wy >= f.y - 1 && wy <= f.y + f.h + 1) {
+                return { kind: 'site', id: st.site.id }
+              }
             }
           }
         }

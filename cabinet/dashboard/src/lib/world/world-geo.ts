@@ -231,6 +231,37 @@ export function buildWorldGeo(input: WorldGeoInput): WorldGeo {
   }
 }
 
+/**
+ * Point along the road spine (world tiles) at parameter t ∈ [0,1]:
+ * t=0 the village rise (Great House yard), t=1 the quay line. Commute
+ * walks interpolate along this (T2 LIFE — walks ride the road, never
+ * teleport). Pure + deterministic.
+ */
+export function roadPoint(t: number): { x: number; y: number } {
+  const pts = ROAD_SPINE_LOCAL.map(([lx, ly]) => toWorld(lx, ly))
+  const clamped = Math.max(0, Math.min(1, t))
+  const segLens: number[] = []
+  let total = 0
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const l = Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y)
+    segLens.push(l)
+    total += l
+  }
+  if (total === 0) return { ...pts[0] }
+  let d = clamped * total
+  for (let i = 0; i < segLens.length; i++) {
+    if (d <= segLens[i] || i === segLens.length - 1) {
+      const f = segLens[i] === 0 ? 0 : d / segLens[i]
+      return {
+        x: pts[i].x + (pts[i + 1].x - pts[i].x) * f,
+        y: pts[i].y + (pts[i + 1].y - pts[i].y) * f,
+      }
+    }
+    d -= segLens[i]
+  }
+  return { ...pts[pts.length - 1] }
+}
+
 /** Deterministic coastline wobble (±1 tile) — seeded per tile, stable. */
 export function coastWobble(tx: number, ty: number): number {
   return (fnv1a(`coast:${tx},${ty}`) % 3) - 1

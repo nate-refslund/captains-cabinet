@@ -28,6 +28,8 @@ import { cookies } from 'next/headers'
 import { loadGrowthLadders } from '@/lib/world/ladders-loader'
 import type { EngineEval, LaneRecord } from '@/lib/world/era-engine'
 import type { WeatherSignals } from '@/lib/world/weather'
+import { loadLifeGrammar } from '@/lib/world/life/life-grammar'
+import type { WorkSite } from '@/lib/world/life/sites'
 
 export const dynamic = 'force-dynamic'
 
@@ -114,6 +116,47 @@ function readOutcomes(): {
     active,
     activeSystemSelf,
     activeLanesEver: Object.keys(lanes).length,
+  }
+}
+
+/**
+ * T2 LIFE data (v1a review fix: the life layer must reach the renderer).
+ * Site ledger: shared/interfaces/world-sites.jsonl (P-SITES, append-only,
+ * fixed repo path). Honest absence: file missing → [] — the world simply
+ * has no sites yet; foldSiteLedger() validates entries client-side.
+ */
+function readSiteLedger(): WorkSite[] {
+  try {
+    const p = path.join(repoRoot(), 'shared', 'interfaces', 'world-sites.jsonl')
+    if (!fs.existsSync(p)) return []
+    const out: WorkSite[] = []
+    for (const line of fs.readFileSync(p, 'utf8').split('\n')) {
+      const t = line.trim()
+      if (!t) continue
+      try {
+        const row = JSON.parse(t) as WorkSite
+        if (row && typeof row === 'object' && !Array.isArray(row)) out.push(row)
+      } catch {
+        /* fold reports malformed entries; unparseable lines are skipped */
+      }
+    }
+    return out
+  } catch {
+    return []
+  }
+}
+
+/** Product lanes = lanes with a projects/<lane>.yml (instance data). */
+function readProductLanes(): string[] {
+  try {
+    const dir = path.join(repoRoot(), 'instance', 'config', 'projects')
+    return fs
+      .readdirSync(dir)
+      .filter((f) => f.endsWith('.yml'))
+      .map((f) => f.replace(/\.yml$/, ''))
+      .sort()
+  } catch {
+    return []
   }
 }
 
@@ -269,5 +312,11 @@ export async function GET(_req: NextRequest) {
       : null,
     weather,
     orgEventsTotal: num(latestKf, 'org_events_total') ?? 0,
+    // T2 LIFE feed (grammar-gated fail-closed: absent blocks → behavior OFF)
+    life: {
+      grammar: loadLifeGrammar(),
+      siteEntries: readSiteLedger(),
+      productLanes: readProductLanes(),
+    },
   })
 }

@@ -24,7 +24,9 @@ Sections (all idempotent; `--only ui,portraits,regions,forge` to subset):
              singles + staged-future farm singles promotions):
              construction scaffolds (Worksite), buoys (Camping/harbor),
              torch/lantern/streetlight era variants, bucket→tank ladder,
-             tent→cottage ladder, lighthouse raw pieces (Beach).
+             tent→cottage ladder, lighthouse raw pieces (Beach), and the
+             farm 6_Trees sheet (corpus tree canon — the palette positives'
+             own oaks, promoted for the live engine's forest border).
   forge      Derived sprites, deterministic PIL composition (no RNG, no
              timestamps), provenance in the `pack` field:
                * lighthouse_unlit / lighthouse_lit — Captain ruling
@@ -266,6 +268,15 @@ ME_REGIONS: dict[str, list[str]] = {
     ],
 }
 
+# corpus tree canon (v1a terrain fix): the aesthetic-gate palette was
+# fitted from positives composed with the farm-pack trees (compose_unified
+# TREECUTS) — promote the whole tree sheet so the live engine's forest
+# border draws the SAME palette-proven trees (the Serene tree-row strips
+# measure ~11% foreign per pixel and were a top offender at island zoom).
+FARM_SHEET_PROMOTIONS = [
+    ("6_Trees_16x16", "farm/6_Trees_16x16.png"),
+]
+
 # bucket→tank ladder bottom end: promote staged-future farm singles
 FARM_REGIONS = [
     "Props_and_Buildings_16x16/Bucket_1_Single_16x16",
@@ -290,6 +301,12 @@ def install_regions(ins: Installer) -> None:
         if not src.exists():
             raise SystemExit(f"missing farm single: {src}")
         ins.copy_png(src, f"farm/props/{Path(rel).name}.png", PACK_FARM)
+    for name, dest in FARM_SHEET_PROMOTIONS:
+        # whole sheets live one level above the singles dir
+        src = FARM_SG.parent / f"{name}.png"
+        if not src.exists():
+            raise SystemExit(f"missing farm sheet: {src}")
+        ins.copy_png(src, dest, PACK_FARM)
 
 
 # ---------------------------------------------------------------- forge

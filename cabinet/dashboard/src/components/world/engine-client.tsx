@@ -55,6 +55,16 @@ import {
   type WeatherSignals,
   type WeatherState,
 } from '@/lib/world/weather'
+import {
+  initialLifeState,
+  lifeStep,
+  type LifeOut,
+  type LifeState,
+} from '@/lib/world/life/life'
+import type { LifeGrammar } from '@/lib/world/life/life-grammar'
+import type { WorkSite } from '@/lib/world/life/sites'
+import { layoutLabels } from '@/lib/world/labels'
+import { STAGED_VOCAB_ELEMENTS } from '@/lib/world/sprites-outdoor'
 import InspectCard, { type InspectTarget } from './inspect-card'
 import PortraitRail from './portrait-rail'
 import KillswitchLever from './killswitch-lever'
@@ -82,6 +92,12 @@ interface EnginePayload {
   eval: EngineEval | null
   weather: WeatherSignals
   orgEventsTotal: number
+  /** T2 LIFE feed (grammar-gated fail-closed; absent → behaviors OFF). */
+  life?: {
+    grammar: LifeGrammar
+    siteEntries: WorkSite[]
+    productLanes: string[]
+  }
 }
 
 function parseUrlState(search: string): { camera: EngineCamera; sel: string | null; at: string | null } {
@@ -118,6 +134,10 @@ export default function EngineClient({ canActuate = false }: { canActuate?: bool
   const engineStateRef = useRef<EngineState>(initialEngineState())
   const weatherRef = useRef<WeatherState>(initialWeather())
   const cutawayRef = useRef<CutawayState>(initialCutaway())
+  const lifeStateRef = useRef<LifeState>(initialLifeState())
+  const lifeFeedRef = useRef<EnginePayload['life'] | null>(null)
+  const lifeOutRef = useRef<LifeOut | null>(null)
+  const [lifeOut, setLifeOut] = useState<LifeOut | null>(null)
   const cameraRef = useRef(camera)
   cameraRef.current = camera
   const buildingsRef = useRef<WorldBuilding[]>([])
@@ -167,6 +187,7 @@ export default function EngineClient({ canActuate = false }: { canActuate?: bool
         const e = (await r.json()) as EnginePayload
         if (stop) return
         setEngine(e)
+        lifeFeedRef.current = e.life ?? null
         if (e.ladders.config && e.eval) {
           // Config changed (hot-reload) → fresh engine state: hysteresis
           // holders re-seed from the eval pair (prev then latest), exactly
@@ -250,6 +271,69 @@ export default function EngineClient({ canActuate = false }: { canActuate?: bool
           const cand = cutawayCandidate(buildingsRef.current, cameraRef.current, vp)
           cutawayRef.current = cutawayStep(cutawayRef.current, cand, tickRef.current)
           setCutaway(cutawayRef.current)
+          // T2 LIFE step (pure reducer; grammar-gated fail-closed). Officer
+          // positions mirror the canvas's seeded great-house yard slots.
+          const feed = lifeFeedRef.current
+          const gh = buildingsRef.current.find((b) => b.element === 'great_house')
+          if (feed && snap && gh) {
+            const officers: Record<
+              string,
+              { presence: OfficerPresence; x: number; y: number }
+            > = {}
+            const slugsSorted = (snap.officers ?? []).map((o) => o.slug).sort()
+            slugsSorted.forEach((slug, i) => {
+              const o = (snap.officers ?? []).find((x) => x.slug === slug)
+              if (!o) return
+              const h = fnv1a(`officer:${slug}`)
+              officers[slug] = {
+                presence: o.presence,
+                x: gh.x + 0.5 + ((h >>> 4) % (gh.w * 2)) / 2,
+                y: gh.y + gh.h + 1 + (i % 2),
+              }
+            })
+            // time as DATA: the newest chronicle ts (never a wall clock)
+            let nowTsMs = Date.parse(snap.connectedAt) || 0
+            for (const r of snap.chronicle ?? []) {
+              const t = r.ts ? Date.parse(r.ts) : NaN
+              if (Number.isFinite(t) && t > nowTsMs) nowTsMs = t
+            }
+            // staged fauna species render nothing until their art lands
+            // (grammar v3 fauna entries declare the staged scope) — drop
+            // them from the active config so grammar and render align.
+            const cfg = feed.grammar
+              ? {
+                  ...feed.grammar,
+                  fauna: feed.grammar.fauna
+                    ? Object.fromEntries(
+                        Object.entries(feed.grammar.fauna).filter(
+                          ([, v]) => !(v as { staged?: boolean }).staged
+                        )
+                      )
+                    : undefined,
+                }
+              : null
+            const step = lifeStep(lifeStateRef.current, {
+              tick: tickRef.current,
+              nowTsMs,
+              clockHour: snap.clock?.hour ?? null,
+              killswitch: snap.killswitch,
+              officers,
+              records: snap.chronicle ?? [],
+              productLanes: new Set(feed.productLanes ?? []),
+              siteEntries: feed.siteEntries ?? [],
+              siteKeyframes: {},
+              fauna: {
+                bounds: { w: 240, h: 192 },
+                flowerAnchors: [],
+                quayWater: [],
+                catPerch: null,
+              },
+              config: cfg,
+            })
+            lifeStateRef.current = step.state
+            lifeOutRef.current = step.out
+            setLifeOut(step.out)
+          }
           setTick(tickRef.current)
         }
       }
@@ -337,6 +421,24 @@ export default function EngineClient({ canActuate = false }: { canActuate?: bool
         setMailboxOpen(true)
         return
       }
+      if (target.kind === 'site') {
+        // T2 construction site — the sign card (WHAT/NOW/PROOF discipline:
+        // crew figures are decorative-honest staging of a witnessed event)
+        const st = lifeOutRef.current?.sites.find((s) => s.site.id === target.id)
+        if (!st) return
+        setInspect({
+          kind: 'station',
+          id: st.site.id,
+          title:
+            `${st.site.element} → ${st.site.targetStage} — ` +
+            `${st.progress.phase} (${Math.round(st.progress.progress * 100)}%) · ` +
+            `witness ${st.site.witness.kind}:${st.site.witness.ref}`,
+          codex: lifeFeedRef.current?.grammar?.construction?.codex ?? null,
+          presence: null,
+          proof: null,
+        })
+        return
+      }
       if (target.kind === 'lane') {
         const slot = Number(target.id.split(':')[1])
         const site = geo.laneSites.find((s) => s.slot === slot)
@@ -364,11 +466,14 @@ export default function EngineClient({ canActuate = false }: { canActuate?: bool
       const morphEntry = (g?.morphology?.entries ?? []).find((e) =>
         e.id.includes(b.element)
       )
+      const staged = STAGED_VOCAB_ELEMENTS.has(b.element)
+        ? ' · era art STAGED — honest worksite marker until proper art lands'
+        : ''
       const now = el
         ? el.measured
-          ? `${b.element}: ${el.rungName}${el.vocab ? ` (${el.vocab})` : ''} — metric ${el.value ?? '—'}${el.pending !== null ? ` · rung ${el.pending} pending hysteresis` : ''}`
-          : `${b.element}: unmeasured — baseline rung renders grey, never interpolated`
-        : b.element
+          ? `${b.element}: ${el.rungName}${el.vocab ? ` (${el.vocab})` : ''} — metric ${el.value ?? '—'}${el.pending !== null ? ` · rung ${el.pending} pending hysteresis` : ''}${staged}`
+          : `${b.element}: unmeasured — baseline rung renders grey, never interpolated${staged}`
+        : b.element + staged
       setInspect({
         kind: 'station',
         id: b.id,
@@ -542,6 +647,7 @@ export default function EngineClient({ canActuate = false }: { canActuate?: bool
           buildings={buildings}
           resolution={resolution}
           officers={presenceBySlug}
+          life={lifeOut}
           camera={camera}
           cutaway={cutaway}
           weather={weather}
@@ -554,25 +660,42 @@ export default function EngineClient({ canActuate = false }: { canActuate?: bool
         />
       )}
 
-      {/* ── officer labels: DOM text over the world ── */}
-      {!eraMode && (
-        <div className="pointer-events-none absolute inset-0 z-10">
-          {officerLabels.map((m) => {
-            const p = project(m.x, m.y - 1.2)
-            if (p.x < -100 || p.x > hostSize.w + 100 || p.y < -50 || p.y > hostSize.h + 50) return null
-            return (
-              <div key={m.slug} className="absolute -translate-x-1/2 text-center" style={{ left: p.x, top: p.y }}>
-                <div className="text-[11px] font-semibold leading-tight text-zinc-100 [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]">
-                  {m.slug}
-                </div>
-                <div className="text-[10px] leading-tight text-zinc-300 [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]">
-                  {m.verb ?? 'no live verb'}
-                </div>
-              </div>
+      {/* ── officer labels: DOM text over the world (collision-laid-out —
+           v1a fix: colliding labels garbled at the great-house yard) ── */}
+      {!eraMode &&
+        (() => {
+          const projected = officerLabels
+            .map((m) => ({ m, p: project(m.x, m.y - 2.2) }))
+            .filter(
+              ({ p }) =>
+                !(p.x < -100 || p.x > hostSize.w + 100 || p.y < -50 || p.y > hostSize.h + 50)
             )
-          })}
-        </div>
-      )}
+          const laid = layoutLabels(projected.map(({ m, p }) => ({ id: m.slug, x: p.x, y: p.y })))
+          return (
+            <div className="pointer-events-none absolute inset-0 z-10">
+              {laid.map((l, i) => {
+                const m = projected[i].m
+                return (
+                  <div
+                    key={m.slug}
+                    className="absolute -translate-x-1/2 text-center"
+                    style={{ left: l.x, top: l.y + l.dy }}
+                  >
+                    {l.displaced && (
+                      <div className="mx-auto h-3 w-px bg-zinc-400/60" aria-hidden />
+                    )}
+                    <div className="text-[11px] font-semibold leading-tight text-zinc-100 [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]">
+                      {m.slug}
+                    </div>
+                    <div className="text-[10px] leading-tight text-zinc-300 [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]">
+                      {m.verb ?? 'no live verb'}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )
+        })()}
 
       {/* ── top HUD ── */}
       <div className="pointer-events-none absolute left-0 right-0 top-0 z-20 flex flex-wrap items-center gap-2 px-3 py-2 text-xs">
