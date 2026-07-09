@@ -54,7 +54,8 @@
 # B2+ additions land here as they ship (per Plan B services.yml spec):
 #   heartbeat-watchdog (F0.12), memory-worker (B2.12), ledger-liveness (F0.7),
 #   probe-github/vercel/sentry/ci (B2.3-6), verifier (B2.7), mission-supervisor
-#   (B2.11), gate-runner/flywheel/dreaming/gate-drift-replay/judge-calibration (B5),
+#   (B2.11), gate-runner/flywheel/dreaming/gate-drift-replay (B5 — judge-
+#   calibration shipped out of this set 2026-07-09, see its row below),
 #   cmp-lite (B6.4), executor under user cabinet-exec (B4.7).
 #
 # DELIBERATELY ABSENT — com.cabinet.gate-apply (sovereign amendment 2026-07-05,
@@ -435,6 +436,25 @@ services:
       Downstream of verifier+probes: they supply the verdict rows whose cell
       crossings this emitter surfaces. Same missing-file posture as
       regression-corpus (flip disabled rather than thrash).
+  - name: judge-calibration
+    label: com.cabinet.judge-calibration
+    kind: cron
+    command: python3.12 cabinet/scripts/judge-calibration.py
+    schedule: { calendar: [{hour: 5, minute: 35}] }   # daily 05:35 local — after the 04:30 regression-corpus refresh, before the 06:45 curator-health watch
+    expected: "daily measurement log line; judge-calibration-status.json in $CABINET_EVENT_LOG_DIR rewritten atomically on every successful measurement (including a below-bar one). Exit 1 = bar honestly NOT met (agreement <80% or <10 pairs — the EXPECTED state while verdict_human supply is thin; the failing proof keeps judge_verdicts_may_demote() False, which is the fail-closed floor working, NOT a service fault). Exit 2 = measurement error (nothing written; the old proof ages out on its own 14d clock) — that one is a real fault."
+    notes: >-
+      D5 step 1a (operative-egg-ledger row A2, lane alpha-additive — armed
+      2026-07-09, the report-only measurement everything else in the D5/CG-10
+      chain waits on; never started before this row). Deterministic and
+      OFFLINE (cabinet/scripts/judge-calibration.py header contract): measures
+      verdict_judge vs verdict_human agreement on rows ALREADY on the
+      consequence ledger — no LLM, no network, no credentials. Widens no
+      authority: verdict_judge fuel stays comment-only until CG-10 (CG-1
+      Option B, e76706f3) and the hard bar (>=80% over >=10 pairs,
+      JUDGE_HARD_BAR/MIN_PAIRS code constants) is deliberately not a flag.
+      Daily because the proof carries a 14-day max-age — a monthly cadence
+      could never keep it fresh. INSTALL SOURCE is the generate-plists.py
+      pipeline (same as memory-reconcile / self-improvement-loop).
 
   # ── Growth + hygiene organs (armed 2026-07-07) ─────────────────────────────
   # Two organs that existed but were NEVER scheduled: the R8 learning loop
@@ -444,8 +464,10 @@ services:
   # templates in cabinet/launchd/ instantiated via
   # envsubst '$REPO_ROOT $HOME $USER' into ~/Library/LaunchAgents (loading is
   # a deliberate human step — same posture as the flip agents above). NOT
-  # armed here: judge-calibration and the rest of the future-B5 verdict-fuel
-  # set — they stay in the B2+ comment block until their wave ships them.
+  # armed here: the rest of the future-B5 verdict-fuel set (gate-runner /
+  # flywheel / dreaming / gate-drift-replay) stays in the B2+ comment block
+  # until its wave ships it — judge-calibration LEFT that set 2026-07-09
+  # (armed above as the D5 step-1a report-only measurement, ledger row A2).
   - name: self-improvement-loop
     label: com.cabinet.self-improvement-loop
     kind: cron
