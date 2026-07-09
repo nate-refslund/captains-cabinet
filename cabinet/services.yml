@@ -656,6 +656,26 @@ services:
       (docs/runbooks/mini-hatch-tonight-2026-07-07.md §Flight recorder).
 
   # ── ORG-SENSES-1 transcript-digest organ (armed 2026-07-07) ────────────────
+  - name: exhaust-archive
+    label: com.cabinet.exhaust-archive
+    kind: cron
+    command: python3.12 cabinet/scripts/exhaust-archive.py
+    schedule: { calendar: [{hour: 4, minute: 40}] }   # daily 04:40 local — after the 04:10 transcript-digest
+    expected: "one summary line/night (streams= archived= embedded=); new cabinet:triggers:* entries appended verbatim to ~/.cabinet/archive/triggers/*.jsonl and landing in cabinet_memory as source_type=trigger-archive via cabinet:memory:embed_queue"
+    sunset: "retire if the trigger plane moves off Redis Streams or a first-class event store supersedes per-stream JSONL archives; rows carry metadata.sunset (supersede-on-rearchive)"
+    notes: >-
+      ORG-SENSES-2 (operative-egg-ledger row, W10 2026-07-09): the org's
+      nervous-system traffic (officer wakes, mission pushes, killswitch/veto
+      verbs) lived only inside Redis retention — XTRIM/rebuild erased who was
+      told what, when. Read-only sweep (SCAN + XRANGE exclusive-from; never
+      XDEL/XTRIM/ACK — officer consumer groups untouched): verbatim
+      append-only JSONL archive (captain_verified provenance intact) + a
+      secret-scrubbed embed per entry (stable source_id trig:<stream>:<id>,
+      upsert on re-run; 500/sweep flood guard). Chair-DM plane: inbound DMs
+      already land durably at capture (capture-captain-dm.sh -> telegram_dm
+      rows in cabinet_memory); outbound turns are hash-only in the feed
+      journal by design — archiving their text would be NEW capture, which
+      this row is not.
   - name: transcript-digest
     label: com.cabinet.transcript-digest
     kind: cron
