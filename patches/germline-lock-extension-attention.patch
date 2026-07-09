@@ -1,0 +1,82 @@
+Subject: attention-gateway — germline lock-set extension (one-door transport floor)
+
+GERMLINE CARRY NOTE: same contract as the p1/p2/p3 patches — authored from
+scratch copies, applied on-branch with `git apply`, PR diff is the proposal,
+Captain merge = apply, live relock covers the new entries.
+
+WHY (final merge review, 2026-07-09): P3 moved the spec §4.10 floors —
+allow_sends gate, token scrub, transport feed journaling — INTO
+framework/frontdoor/channel.py, and the suppression/act-once judgments now
+read framework/attention/{situation,feed,acted_overlay}.py. None were in the
+locked set, so an officer edit could widen its own send/quiet surface (the
+exact forge class the germline boundary exists for). All four join
+immutable-core.yml (single source), germline-lock.sh FILES, hook §5 + §5b,
+and base-safety.yml in ONE change — the lockstep meta-test enforces the
+five-surface consistency.
+
+--- a/framework/policies/immutable-core.yml
++++ b/framework/policies/immutable-core.yml
+@@ -82,6 +82,17 @@
+   - path: framework/frontdoor/calendar_template.py
+   - path: framework/acting/action_lane.py
+   - path: framework/acting/run_action_lane.py
++
++  # --- ONE-DOOR transport floor (attention-gateway P3, 2026-07-09,
++  #     cp-final review): the allow_sends gate + token scrub + feed
++  #     journaling moved INTO channel.py, and situation/feed/acted_overlay
++  #     feed the suppression + act-once judgments — an officer edit to any
++  #     of them widens its own send/quiet surface. Wired into all four
++  #     lists in the same change (lockstep). ---
++  - path: framework/frontdoor/channel.py
++  - path: framework/attention/situation.py
++  - path: framework/attention/feed.py
++  - path: framework/attention/acted_overlay.py
+ 
+   # --- judged config (NOT runtime-written) + rules ---
+   - path: instance/config/act-first-surfaces.yml
+--- a/cabinet/scripts/germline-lock.sh
++++ b/cabinet/scripts/germline-lock.sh
+@@ -59,6 +59,10 @@
+   "framework/frontdoor/calendar_template.py"
+   "framework/acting/action_lane.py"
+   "framework/acting/run_action_lane.py"
++  "framework/frontdoor/channel.py"
++  "framework/attention/situation.py"
++  "framework/attention/feed.py"
++  "framework/attention/acted_overlay.py"
+   # --- judged config (NOT runtime-written) + rules ---
+   "instance/config/act-first-surfaces.yml"
+   "cabinet/mcp-scope.yml"
+--- a/cabinet/scripts/hooks/pre-tool-use.sh
++++ b/cabinet/scripts/hooks/pre-tool-use.sh
+@@ -1053,7 +1053,7 @@
+     # dir-cover already on this line. instance/config/posture-narrow is
+     # DELIBERATELY unprotected: narrow-only cap, Captain's binder verb
+     # writes it at runtime (axes spec §1).
+-    *"memory/golden-evals/"*|*"framework/policies/"*|*"framework/authority/classifier.py"|*"framework/authority/lane.py"|*"framework/authority/matrix.py"|*"framework/authority/veto.py"|*"framework/authority/deploy_classifier.py"|*"framework/fidelity/graduation.py"|*"framework/authority/policy_engine.py"|*"cabinet/mcp-scope.yml"|*"cabinet/officer-capabilities.conf"|*".claude/rules/brain-bridge.md"|*".claude/rules/courses-of-action.md"|*"instance/config/autonomy.yml"|*"shared/interfaces/captain-vetoes.yml"|*"shared/interfaces/action-lessons.yml"|*"instance/config/act-first-surfaces.yml"|*"framework/frontdoor/action_exec.py"|*"framework/frontdoor/action_undo.py"|*"framework/frontdoor/actfirst_canary.py"|*"framework/frontdoor/veto_registry.py"|*"framework/frontdoor/tell_surface.py"|*"framework/frontdoor/calendar_template.py"|*"framework/acting/action_lane.py"|*"framework/acting/run_action_lane.py"|*".claude/settings.json"|*"cabinet/scripts/hooks/"*|*"cabinet/scripts/policy-shadow.py"|*"cabinet/scripts/kill-switch.sh"|*"cabinet/scripts/germline-lock.sh"|*"framework/authority/posture.py"|*"framework/authority/grants.py"|*"framework/authority/needs.py"|*"framework/learning/gate.py"|*"framework/learning/apply_watch.py"|*"cabinet/scripts/grant-apply.sh"|*"cabinet/scripts/gate-apply.sh"|*"cabinet/launchd/com.cabinet.gate-apply.plist"|*"shared/interfaces/gate-apply-watch.jsonl"|*"instance/config/posture.yml"|*"instance/config/standing-grants.yml"|*"instance/config/policies/"*|*"shared/interfaces/needs-ledger.jsonl"|*"framework/learning/trust_ladder.py"|*".claude/rules/axes-contract.md"|*"framework/schemas/extension-manifest.schema.json"|*"cabinet/scripts/validate-extension.sh"|*"instance/config/trust-ladder.yml"|*"instance/config/posture-presets/"*)
++    *"memory/golden-evals/"*|*"framework/policies/"*|*"framework/authority/classifier.py"|*"framework/authority/lane.py"|*"framework/authority/matrix.py"|*"framework/authority/veto.py"|*"framework/authority/deploy_classifier.py"|*"framework/fidelity/graduation.py"|*"framework/authority/policy_engine.py"|*"cabinet/mcp-scope.yml"|*"cabinet/officer-capabilities.conf"|*".claude/rules/brain-bridge.md"|*".claude/rules/courses-of-action.md"|*"instance/config/autonomy.yml"|*"shared/interfaces/captain-vetoes.yml"|*"shared/interfaces/action-lessons.yml"|*"instance/config/act-first-surfaces.yml"|*"framework/frontdoor/action_exec.py"|*"framework/frontdoor/action_undo.py"|*"framework/frontdoor/actfirst_canary.py"|*"framework/frontdoor/veto_registry.py"|*"framework/frontdoor/tell_surface.py"|*"framework/frontdoor/calendar_template.py"|*"framework/acting/action_lane.py"|*"framework/acting/run_action_lane.py"|*"framework/frontdoor/channel.py"|*"framework/attention/situation.py"|*"framework/attention/feed.py"|*"framework/attention/acted_overlay.py"|*".claude/settings.json"|*"cabinet/scripts/hooks/"*|*"cabinet/scripts/policy-shadow.py"|*"cabinet/scripts/kill-switch.sh"|*"cabinet/scripts/germline-lock.sh"|*"framework/authority/posture.py"|*"framework/authority/grants.py"|*"framework/authority/needs.py"|*"framework/learning/gate.py"|*"framework/learning/apply_watch.py"|*"cabinet/scripts/grant-apply.sh"|*"cabinet/scripts/gate-apply.sh"|*"cabinet/launchd/com.cabinet.gate-apply.plist"|*"shared/interfaces/gate-apply-watch.jsonl"|*"instance/config/posture.yml"|*"instance/config/standing-grants.yml"|*"instance/config/policies/"*|*"shared/interfaces/needs-ledger.jsonl"|*"framework/learning/trust_ladder.py"|*".claude/rules/axes-contract.md"|*"framework/schemas/extension-manifest.schema.json"|*"cabinet/scripts/validate-extension.sh"|*"instance/config/trust-ladder.yml"|*"instance/config/posture-presets/"*)
+       echo "BLOCKED: Germline file — read-only for officers and loops (no loop may edit its own judge). Propose the change to the Captain; only the Captain applies germline edits." >&2
+       exit 2
+       ;;
+@@ -1187,7 +1187,7 @@
+     exit 2
+   fi
+   # Same protected set as section 5's germline case list — KEEP IN LOCKSTEP.
+-  GERM_PATH_RE='memory/golden-evals/|framework/policies/|framework/authority/(classifier|lane|matrix|veto|deploy_classifier|posture|grants|needs|policy_engine)\.py|framework/fidelity/graduation\.py|cabinet/mcp-scope\.yml|cabinet/officer-capabilities\.conf|\.claude/rules/(brain-bridge|courses-of-action|axes-contract)\.md|instance/config/(autonomy|posture|standing-grants|trust-ladder)\.yml|shared/interfaces/(captain-vetoes|action-lessons)\.yml|shared/interfaces/(needs-ledger|gate-apply-watch)\.jsonl|instance/config/act-first-surfaces\.yml|instance/config/policies/|instance/config/posture-presets/|framework/frontdoor/(action_exec|action_undo|actfirst_canary|veto_registry|tell_surface|calendar_template)\.py|framework/acting/(action_lane|run_action_lane)\.py|framework/learning/(gate|apply_watch|trust_ladder)\.py|framework/schemas/extension-manifest\.schema\.json|\.claude/settings\.json|cabinet/scripts/hooks/|cabinet/scripts/policy-shadow\.py|cabinet/scripts/kill-switch\.sh|cabinet/scripts/germline-lock\.sh|cabinet/scripts/validate-extension\.sh|cabinet/scripts/(grant|gate)-apply\.sh|cabinet/launchd/com\.cabinet\.gate-apply\.plist'
++  GERM_PATH_RE='memory/golden-evals/|framework/policies/|framework/authority/(classifier|lane|matrix|veto|deploy_classifier|posture|grants|needs|policy_engine)\.py|framework/fidelity/graduation\.py|cabinet/mcp-scope\.yml|cabinet/officer-capabilities\.conf|\.claude/rules/(brain-bridge|courses-of-action|axes-contract)\.md|instance/config/(autonomy|posture|standing-grants|trust-ladder)\.yml|shared/interfaces/(captain-vetoes|action-lessons)\.yml|shared/interfaces/(needs-ledger|gate-apply-watch)\.jsonl|instance/config/act-first-surfaces\.yml|instance/config/policies/|instance/config/posture-presets/|framework/frontdoor/(action_exec|action_undo|actfirst_canary|veto_registry|tell_surface|calendar_template|channel)\.py|framework/attention/(situation|feed|acted_overlay)\.py|framework/acting/(action_lane|run_action_lane)\.py|framework/learning/(gate|apply_watch|trust_ladder)\.py|framework/schemas/extension-manifest\.schema\.json|\.claude/settings\.json|cabinet/scripts/hooks/|cabinet/scripts/policy-shadow\.py|cabinet/scripts/kill-switch\.sh|cabinet/scripts/germline-lock\.sh|cabinet/scripts/validate-extension\.sh|cabinet/scripts/(grant|gate)-apply\.sh|cabinet/launchd/com\.cabinet\.gate-apply\.plist'
+   if printf '%s' "$CMD_SQ" | grep -qE "$GERM_PATH_RE"; then
+     # Target token: optional opening quote, then ONE shell word containing a
+     # germline path (germ paths never contain spaces/quotes, so excluding
+--- a/framework/policies/base-safety.yml
++++ b/framework/policies/base-safety.yml
+@@ -120,6 +120,10 @@
+       - "*framework/frontdoor/calendar_template.py"
+       - "*framework/acting/action_lane.py"
+       - "*framework/acting/run_action_lane.py"
++      - "*framework/frontdoor/channel.py"
++      - "*framework/attention/situation.py"
++      - "*framework/attention/feed.py"
++      - "*framework/attention/acted_overlay.py"
+       # ENFORCER-TRIAD LAG CLOSURE (sovereign amendment 2026-07-05): these
+       # entered hook sec 5/5b + germline-lock on 2026-07-04 but lagged here.
+       # immutable-core.yml is the single source; the lockstep meta-test

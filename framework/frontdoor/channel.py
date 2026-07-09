@@ -24,10 +24,14 @@ arch §7); the implementation is deferred to a later slice.
 """
 from __future__ import annotations
 
+import hashlib
+import html
 import json
 import os
+import re
 import socket
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -204,9 +208,28 @@ def _default_http_post(url: str, data: dict) -> dict:
             raw = resp.read().decode("utf-8")
         return json.loads(raw) if raw else {}
     except urllib.error.HTTPError as exc:  # pragma: no cover - network path
-        raise RuntimeError(f"telegram HTTP {exc.code}") from None
+        # Surface Telegram's own error description (never carries the token) so
+        # callers can distinguish benign 400s — e.g. editMessageText's "message
+        # is not modified" (a no-op, not a failure). _post_one scrubs the result
+        # regardless, so a token that ever leaked into a body cannot escape.
+        raise RuntimeError(f"telegram HTTP {exc.code}{_http_error_detail(exc)}") from None
     except Exception as exc:  # pragma: no cover - network path
         raise RuntimeError(f"telegram transport error: {type(exc).__name__}") from None
+
+
+def _http_error_detail(exc: urllib.error.HTTPError) -> str:  # pragma: no cover - network path
+    """Best-effort Telegram error ``description`` (``": <desc>"`` or ``""``).
+
+    Telegram returns ``{"ok": false, "error_code": N, "description": "..."}`` on a
+    4xx. Reading it lets callers act on the *reason* (e.g. the not-modified no-op)
+    without another round-trip. Any read/parse failure yields ``""`` — the caller
+    still gets ``telegram HTTP <code>`` exactly as before."""
+    try:
+        obj = json.loads(exc.read().decode("utf-8", "replace"))
+        desc = obj.get("description") if isinstance(obj, dict) else None
+        return f": {desc}" if desc else ""
+    except Exception:
+        return ""
 
 
 # Transport-retry budget for a TRANSIENT network failure (the request never got
@@ -260,7 +283,8 @@ def _is_transient_transport(exc: BaseException, scrubbed: str) -> bool:
     return "transport error" in s
 
 
-def _post_one(post, url: str, payload: dict, token: str, *, sleep=None) -> tuple:
+def _post_one(post, url: str, payload: dict, token: str, *, sleep=None,
+              retry_plain_400: bool = True) -> tuple:
     """POST ONE message payload; sanitize, retry transient transport, fall back
     to plain text on a 400.
 
@@ -317,7 +341,11 @@ def _post_one(post, url: str, payload: dict, token: str, *, sleep=None) -> tuple
     # still delivers as plain text. (Reached only for a non-transient failure or
     # an exhausted transport-retry; a 400 is non-transient so it lands here on its
     # first occurrence, exactly as before.)
-    if "400" in first_err:
+    # retry_plain_400=False (edits): a 400 must surface VERBATIM — for
+    # editMessageText the "message is not modified" 400 is the caller's noop
+    # signal, and the strip-parse_mode retry would instead "succeed" by
+    # rewriting the standing card as raw markup (review cp3 M1).
+    if "400" in first_err and retry_plain_400:
         plain = {k: v for k, v in payload.items() if k != "parse_mode"}
         try:
             resp = post(url, plain)
@@ -328,7 +356,138 @@ def _post_one(post, url: str, payload: dict, token: str, *, sleep=None) -> tuple
     return False, None, first_err
 
 
-def send(text: str, *, http_post=None) -> dict:
+# ---------------------------------------------------------------------------
+# Feed journal at the transport layer (attention-gateway P3, spec §4.3/§4.10.2).
+# Every successful send/edit is journaled so the org can ask "what did we already
+# send about this?" — the dedup data, undo receipts, and comms-retro stats are
+# all made of these rows. Journaling can NEVER unmake a delivery: a missing feed
+# module is bootstrap-tolerated, and an append that RAISES prints a loud
+# JOURNAL-GAP marker but the send still returns success (delivery beats
+# journaling; gaps must be visible, not silent).
+# ---------------------------------------------------------------------------
+_feed_import_warned = False
+
+
+def _msgid_of(resp: object) -> int | None:
+    """Pull Telegram's assigned ``result.message_id`` from a RAW (pre-scrub)
+    response, or None. message_id is always an integer, so it never carries the
+    token — safe to surface and to key the standing-card index on."""
+    if isinstance(resp, dict):
+        result = resp.get("result")
+        if isinstance(result, dict):
+            mid = result.get("message_id")
+            if isinstance(mid, bool):  # bool is an int subclass — reject it
+                return None
+            if isinstance(mid, int):
+                return mid
+    return None
+
+
+def _feed_row_out(text: str, default_kind: str, message_id: int | None,
+                  chat: str, feed_meta: dict | None) -> dict:
+    """Build an outbound feed row: transport facts win over caller ``feed_meta``.
+
+    ``feed_meta`` carries the situation context (situation_key, class, urgency,
+    mode, charter_version, gate_trace, …). The delivery facts — message_id, chat,
+    content length/hash, direction — are authoritative from the transport and are
+    set AFTER spreading feed_meta so they can't be forged by it. ``kind`` defaults
+    to the call site's ``default_kind`` but honors an explicit ``feed_meta['kind']``."""
+    row = dict(feed_meta or {})
+    row["direction"] = "out"
+    row["kind"] = (feed_meta or {}).get("kind", default_kind)
+    row["telegram_message_id"] = message_id
+    row["chat"] = chat
+    row["content_len"] = len(text or "")
+    row["content_hash"] = hashlib.sha1((text or "").encode("utf-8")).hexdigest()
+    return row
+
+
+def _journal_out(row_fn) -> None:
+    """Append an outbound feed row — best-effort, never fails a send.
+
+    Takes a THUNK (``row_fn() -> dict``) so row CONSTRUCTION runs inside the
+    same swallow as the append (review cp3 L1: a construction crash must not
+    fail a delivered send either). Lazy import so a bootstrap box without the
+    feed module still sends: an ImportError is noted ONCE on stderr and
+    swallowed. Any other failure prints a loud ``JOURNAL-GAP`` marker (a
+    delivered-but-unjournaled send is a real gap and must be visible) and
+    returns normally — the message is out."""
+    global _feed_import_warned
+    try:
+        from framework.attention import feed
+    except Exception:
+        if not _feed_import_warned:
+            print("[channel] feed journal module not available yet — outbound "
+                  "sends are not being journaled (bootstrap tolerance)",
+                  file=sys.stderr)
+            _feed_import_warned = True
+        return
+    try:
+        feed.append_event(row_fn())
+    except Exception as exc:  # delivery already happened — surface, never raise
+        print(f"[channel] JOURNAL-GAP: feed journaling failed "
+              f"({type(exc).__name__}: {exc}) — message DELIVERED but NOT journaled",
+              file=sys.stderr)
+
+
+# ---------------------------------------------------------------------------
+# Conservative Markdown → Telegram-HTML (opt-in via send(..., markdown=True)).
+# Everything is html.escape-d FIRST, so untrusted text can never inject markup;
+# only the five supported tokens become tags. Plain text (no tokens) is returned
+# byte-identical with parse_mode=None — the default path is unchanged.
+# ---------------------------------------------------------------------------
+_MD_FENCE = re.compile(r"```(.*?)```", re.S)
+_MD_INLINE_CODE = re.compile(r"`([^`\n]+)`")
+_MD_BOLD = re.compile(r"\*\*(.+?)\*\*", re.S)
+_MD_ITALIC = re.compile(r"(?<![\*\w])\*(?!\s)([^*\n]+?)(?<!\s)\*(?![\*\w])")
+_MD_LINK = re.compile(r"\[([^\]\n]+)\]\((https?://[^\s)]+)\)")
+
+
+def _has_markdown(text: str) -> bool:
+    return bool(
+        _MD_FENCE.search(text) or _MD_INLINE_CODE.search(text)
+        or _MD_BOLD.search(text) or _MD_ITALIC.search(text) or _MD_LINK.search(text)
+    )
+
+
+def render_markdown(text: str) -> tuple[str, str | None]:
+    """Return ``(rendered, parse_mode)`` for a message body.
+
+    No supported token present → ``(text, None)`` unchanged (Telegram renders it
+    verbatim, so raw ``<script>`` in plain text is inert — no parse_mode, no
+    interpretation). Any token present → the whole string is html.escape-d and
+    the five tokens (**bold**, *italic*, `code`, ```blocks```, [text](url)) become
+    Telegram HTML tags, returned with ``"HTML"``. Code content is protected from
+    the bold/italic/link passes and escaped on restore, so markup inside code is
+    shown literally."""
+    if not text or not _has_markdown(text):
+        return text, None
+
+    stash: dict[str, tuple[str, str]] = {}
+
+    def _protect(kind: str, content: str) -> str:
+        key = f"\x00{kind}{len(stash)}\x00"  # NUL-fenced, survives html.escape untouched
+        stash[key] = (kind, content)
+        return key
+
+    tmp = _MD_FENCE.sub(lambda m: _protect("PRE", m.group(1)), text)
+    tmp = _MD_INLINE_CODE.sub(lambda m: _protect("CODE", m.group(1)), tmp)
+    tmp = html.escape(tmp, quote=False)
+    tmp = _MD_BOLD.sub(lambda m: f"<b>{m.group(1)}</b>", tmp)
+    tmp = _MD_ITALIC.sub(lambda m: f"<i>{m.group(1)}</i>", tmp)
+    tmp = _MD_LINK.sub(
+        lambda m: f'<a href="{m.group(2).replace(chr(34), "&quot;")}">{m.group(1)}</a>',
+        tmp,
+    )
+    for key, (kind, content) in stash.items():
+        esc = html.escape(content, quote=False)
+        tmp = tmp.replace(key, f"<pre>{esc}</pre>" if kind == "PRE" else f"<code>{esc}</code>")
+    return tmp, "HTML"
+
+
+def send(text: str, *, http_post=None, reply_to: int | None = None,
+         silent: bool = False, reply_markup: dict | None = None,
+         feed_meta: dict | None = None, markdown: bool = False) -> dict:
     """Send ``text`` to the Captain via Telegram — the ONLY front-door send path.
 
     Gated by ``env.allow_sends()`` as the FIRST line: a non-runtime session
@@ -341,10 +500,19 @@ def send(text: str, *, http_post=None) -> dict:
     before the failure) so the caller does not falsely ACK. A normal-length
     message is sent as ONE post exactly as before.
 
+    Optional keyword args (all default to today's behavior when omitted):
+      * ``reply_to`` — thread onto THIS specific message_id (true threading);
+        otherwise fall back to the Captain's latest message (inbound watchdog).
+      * ``silent`` — ``disable_notification`` (batch/FYI tiers send without a ping).
+      * ``reply_markup`` — an inline-keyboard dict, JSON-encoded onto the payload.
+      * ``feed_meta`` — situation context stamped onto the feed journal row.
+      * ``markdown`` — opt into conservative Markdown→Telegram-HTML rendering.
+
     Returns a dict with at least ``status`` and ``sent`` — ``response`` for a
-    single send, or ``chunks``/``responses`` for a multi-part one. The token and
-    the token-bearing request URL are guaranteed absent from the return value and
-    from any error path.
+    single send, or ``chunks``/``responses`` for a multi-part one — plus
+    ``message_ids`` (the Telegram message_ids assigned, for the standing-card
+    index / feed). The token and the token-bearing request URL are guaranteed
+    absent from the return value and from any error path.
     """
     # (1) THE GATE — checked first, before reading any secret or touching net.
     if not env.allow_sends():
@@ -358,35 +526,58 @@ def send(text: str, *, http_post=None) -> dict:
     post = http_post or _default_http_post
     url = f"{_base()}/bot{token}/sendMessage"
 
-    # Thread onto the Captain's latest message when we know it (set by the inbound
-    # watchdog). allow_sending_without_reply=True means a stale/deleted id still
-    # delivers (just unthreaded) rather than erroring. Unknown id -> plain send.
-    # The thread anchor is shared across every chunk of a multi-part message.
-    last_id = _last_captain_msg_id()
+    # Thread anchor: an explicit reply_to threads onto THAT exact message (true
+    # threading — fixes the always-last-message anchor); otherwise fall back to
+    # the Captain's latest message (set by the inbound watchdog). Only the
+    # fallback consults Redis. allow_sending_without_reply=True means a
+    # stale/deleted id still delivers (just unthreaded) rather than erroring. The
+    # anchor is shared across every chunk of a multi-part message.
+    anchor_id = reply_to if reply_to is not None else _last_captain_msg_id()
     reply_parameters = None
-    if last_id is not None:
+    if anchor_id is not None:
         reply_parameters = {
-            "message_id": last_id,
+            "message_id": anchor_id,
             "allow_sending_without_reply": True,
         }
+
+    # Opt-in Markdown → Telegram HTML. Plain text is returned byte-identical with
+    # parse_mode=None, so the default path (markdown=False) is exactly unchanged.
+    body_text, parse_mode = render_markdown(text) if markdown else (text, None)
 
     # Telegram hard-limits a single message at 4096 chars; over that it 400s and
     # the message is LOST. Split an over-limit body into multiple ≤4096 chunks on
     # line/paragraph boundaries (never mid-line) and send them sequentially. A
     # normal-length message yields exactly ONE chunk → identical behavior to
     # before (single post, no marker, same payload).
-    chunks = _split_for_telegram(text)
+    chunks = _split_for_telegram(body_text)
     multipart = len(chunks) > 1
 
     responses = []
+    message_ids: list[int | None] = []
     for idx, chunk in enumerate(chunks, start=1):
         # Number multi-part chunks so the Captain sees ordering; a single-chunk
         # (normal-length) message is sent verbatim with NO marker.
         body = f"({idx}/{len(chunks)}) {chunk}" if multipart else chunk
         payload = {"chat_id": chat_id, "text": body}
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
+        if silent:
+            payload["disable_notification"] = True
+        if reply_markup is not None:
+            payload["reply_markup"] = json.dumps(reply_markup)
         if reply_parameters is not None:
             payload["reply_parameters"] = reply_parameters
-        ok, sent_resp, err = _post_one(post, url, payload, token)
+        # Capture the RAW (pre-scrub) response so we can read the integer
+        # message_id Telegram assigned. The wrapper is transparent to _post_one's
+        # scrub/retry — it only observes the successful body.
+        captured: list = []
+
+        def _cap(u, d, _sink=captured):
+            resp = post(u, d)
+            _sink.append(resp)
+            return resp
+
+        ok, sent_resp, err = _post_one(_cap, url, payload, token)
         if not ok:
             # A chunk failed even after the plain-text retry — stop and report.
             # Earlier chunks already delivered; surfacing the failure (rather than
@@ -398,13 +589,106 @@ def send(text: str, *, http_post=None) -> dict:
                 "error": err,
                 "chunks": len(chunks),
                 "sent_chunks": idx - 1,
+                "message_ids": message_ids,
             }
         responses.append(sent_resp)
+        message_ids.append(_msgid_of(captured[-1]) if captured else None)
+
+    # Feed journal at the transport layer — one row per send(), carrying the
+    # FINAL delivered message_id and the content hash. Runs only after every
+    # chunk landed; a journal failure never unmakes the delivery.
+    _journal_out(lambda: _feed_row_out(
+        text, "message", message_ids[-1] if message_ids else None, chat_id, feed_meta))
 
     if multipart:
         return {"status": "sent", "sent": True, "chunks": len(chunks),
-                "responses": responses}
-    return {"status": "sent", "sent": True, "response": responses[0]}
+                "responses": responses, "message_ids": message_ids}
+    return {"status": "sent", "sent": True, "response": responses[0],
+            "message_ids": message_ids}
+
+
+def edit_message(message_id: int, text: str, *, reply_markup: dict | None = None,
+                 http_post=None, feed_meta: dict | None = None,
+                 markdown: bool = False) -> dict:
+    """Edit a standing message in place (``editMessageText``) — same gate as send.
+
+    Standing cards flip state (``open → acted ✓``) by editing ONE message instead
+    of posting a new one; Telegram edits do not notify. Security model is
+    identical to ``send()``: gated FIRST by ``allow_sends()``, recipient is always
+    ``CAPTAIN_TELEGRAM_ID`` (never a parameter), token + token-bearing URL scrubbed
+    from every return/error path.
+
+    A ``"message is not modified"`` 400 (the new text equals the current text) is
+    a NO-OP, not a failure — it returns ``{"status": "noop", "sent": False}`` so
+    an idempotent re-render is harmless. ``feed_meta`` is journaled with
+    ``kind="edit"``.
+    """
+    if not env.allow_sends():
+        return {"status": "blocked-dev", "sent": False}
+
+    token = _token()
+    chat_id = _captain_id()
+    if not token or not chat_id:
+        return {"status": "error", "sent": False, "error": "telegram not configured"}
+
+    body_text, parse_mode = render_markdown(text) if markdown else (text, None)
+    payload = {"chat_id": chat_id, "message_id": int(message_id), "text": body_text}
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
+    if reply_markup is not None:
+        payload["reply_markup"] = json.dumps(reply_markup)
+
+    post = http_post or _default_http_post
+    url = f"{_base()}/bot{token}/editMessageText"
+    captured: list = []
+
+    def _cap(u, d, _sink=captured):
+        resp = post(u, d)
+        _sink.append(resp)
+        return resp
+
+    ok, sent_resp, err = _post_one(_cap, url, payload, token,
+                                   retry_plain_400=False)
+    if not ok:
+        # "message is not modified" is Telegram telling us the edit was a no-op
+        # (identical text) — not an error. retry_plain_400=False above is what
+        # guarantees this 400 arrives here verbatim instead of being "fixed"
+        # by the parse-strip retry into a raw-markup rewrite (cp3 M1).
+        if "not modified" in (err or "").lower():
+            return {"status": "noop", "sent": False}
+        return {"status": "error", "sent": False, "error": err}
+
+    # editMessageText returns the edited Message (has message_id) or bare `true`;
+    # fall back to the message_id we were handed (it IS the target) when absent.
+    mid = (_msgid_of(captured[-1]) if captured else None) or int(message_id)
+    _journal_out(lambda: _feed_row_out(text, "edit", mid, chat_id, feed_meta))
+    return {"status": "sent", "sent": True, "response": sent_resp, "message_ids": [mid]}
+
+
+def answer_callback(callback_query_id: str, text: str = "", *, http_post=None) -> dict:
+    """Acknowledge an inline-button tap (``answerCallbackQuery``) — gate + scrub.
+
+    Always safe to call: it stops the client's loading spinner and (optionally)
+    shows a short toast. Gated by ``allow_sends()`` FIRST; the toast ``text`` is
+    token-scrubbed before it leaves. No chat_id is involved (the answer routes to
+    the callback), so only the token is required."""
+    if not env.allow_sends():
+        return {"status": "blocked-dev", "sent": False}
+
+    token = _token()
+    if not token:
+        return {"status": "error", "sent": False, "error": "telegram not configured"}
+
+    payload = {"callback_query_id": str(callback_query_id)}
+    if text:
+        payload["text"] = _scrub(text, token)
+
+    post = http_post or _default_http_post
+    url = f"{_base()}/bot{token}/answerCallbackQuery"
+    ok, sent_resp, err = _post_one(post, url, payload, token)
+    if not ok:
+        return {"status": "error", "sent": False, "error": err}
+    return {"status": "sent", "sent": True, "response": sent_resp}
 
 
 def _default_multipart_post(url: str, fields: dict, filename: str, content: bytes) -> dict:
@@ -442,14 +726,16 @@ def _default_multipart_post(url: str, fields: dict, filename: str, content: byte
         raise RuntimeError(f"telegram transport error: {type(exc).__name__}") from None
 
 
-def send_document(file_path: str, *, caption: str | None = None, http_post=None) -> dict:
+def send_document(file_path: str, *, caption: str | None = None, http_post=None,
+                  feed_meta: dict | None = None) -> dict:
     """Send a file to the Captain via Telegram sendDocument — same gate as ``send``.
 
     Identical security model to ``send()``: gated FIRST by ``env.allow_sends()``
     (a non-runtime session physically cannot send), the recipient is ALWAYS
     ``CAPTAIN_TELEGRAM_ID`` (never a parameter), and the token + token-bearing URL
     are scrubbed from every return value and error path. ``caption`` is optional
-    text shown with the document. Returns a dict with ``status`` + ``sent``.
+    text shown with the document. ``feed_meta`` is journaled with ``kind="document"``.
+    Returns a dict with ``status`` + ``sent``.
 
     The file is read from ``file_path`` on the local disk; a read failure returns
     a clean ``error`` result (no send attempted). ``http_post`` is injectable for
@@ -483,7 +769,10 @@ def send_document(file_path: str, *, caption: str | None = None, http_post=None)
     except BaseException as exc:  # noqa: BLE001 — must sanitize ALL failures
         return {"status": "error", "sent": False, "error": _scrub(exc, token)}
 
-    return {"status": "sent", "sent": True, "response": _scrub(resp, token)}
+    mid = _msgid_of(resp)  # raw response, pre-scrub — safe integer
+    _journal_out(lambda: _feed_row_out(caption or "", "document", mid, chat_id, feed_meta))
+    return {"status": "sent", "sent": True, "response": _scrub(resp, token),
+            "message_ids": [mid]}
 
 
 def _default_http_get(url: str, params: dict, timeout: int) -> dict:

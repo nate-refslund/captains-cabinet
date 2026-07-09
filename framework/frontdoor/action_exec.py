@@ -1333,14 +1333,20 @@ def _tg_send(text: str) -> None:
     binder — the first 5 live cards landed there and could not be verdicted).
     Raises on missing env: an unpresentable card must surface as a skipped/
     failed re-card, never a silent one. Token read at call time, never logged."""
-    token = os.environ.get("TELEGRAM_COS_TOKEN", "")
-    chat = os.environ.get("CAPTAIN_TELEGRAM_ID", "")
-    if not token or not chat:
-        raise RuntimeError("telegram env missing (TELEGRAM_COS_TOKEN / CAPTAIN_TELEGRAM_ID)")
-    data = urllib.parse.urlencode({"chat_id": chat, "text": text}).encode()
-    urllib.request.urlopen(
-        urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage",
-                               data=data), timeout=20)
+    # ONE DOOR (P3, attention-gateway spec §4.4/§13): route through the gated
+    # front-door channel — killswitch/allow_sends, token scrub, 4096 chunking,
+    # transport retry, feed-journal row. Same env contract as the raw poster
+    # this replaces. ANY non-sent status RAISES — including blocked-dev
+    # (review cp3 H1: the binder's edit: re-card runs inside the cos-inbound
+    # poller; a missing CABINET_ENV=runtime there must fail LOUDLY, never
+    # record recarded ledger rows while sending nothing).
+    from framework.frontdoor import channel
+    res = channel.send(text, feed_meta={"kind": "re-card"})
+    if res.get("status") == "blocked-dev":
+        raise RuntimeError("channel send refused (blocked-dev): set "
+                           "CABINET_ENV=runtime for live sends")
+    if not res.get("sent"):
+        raise RuntimeError(f"channel send failed: {str(res)[:200]}")
 
 
 def _apply_edit_to_steps(steps: list, edit_text: str) -> list:

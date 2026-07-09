@@ -120,6 +120,10 @@ policies:
       - "*framework/frontdoor/calendar_template.py"
       - "*framework/acting/action_lane.py"
       - "*framework/acting/run_action_lane.py"
+      - "*framework/frontdoor/channel.py"
+      - "*framework/attention/situation.py"
+      - "*framework/attention/feed.py"
+      - "*framework/attention/acted_overlay.py"
       # ENFORCER-TRIAD LAG CLOSURE (sovereign amendment 2026-07-05): these
       # entered hook sec 5/5b + germline-lock on 2026-07-04 but lagged here.
       # immutable-core.yml is the single source; the lockstep meta-test

@@ -91,10 +91,20 @@ def _release_singleton_lock() -> None:
 
 
 def _tg(text: str) -> dict:
-    data = urllib.parse.urlencode({"chat_id": CHAT, "text": text}).encode()
-    req = urllib.request.Request(
-        f"https://api.telegram.org/bot{TOKEN}/sendMessage", data=data)
-    return json.load(urllib.request.urlopen(req, timeout=20))
+    # ONE DOOR (P3, attention-gateway spec §4.4/§13): route through the gated
+    # front-door channel (killswitch, scrub, chunking, feed journal). Same
+    # loud-failure contract: ANY non-sent status raises — including
+    # blocked-dev (review cp3 H1/H2: a production process missing
+    # CABINET_ENV=runtime must page, never silently blackhole cards while
+    # ledger rows record them as presented).
+    from framework.frontdoor import channel
+    res = channel.send(text, feed_meta={"kind": "draft-card"})
+    if res.get("status") == "blocked-dev":
+        raise RuntimeError("channel send refused (blocked-dev): set "
+                           "CABINET_ENV=runtime for live sends")
+    if not res.get("sent"):
+        raise RuntimeError(f"channel send failed: {str(res)[:200]}")
+    return {"ok": True, "result": res.get("response") or res.get("responses")}
 
 
 def _store_draft(pid: str, thread: dict, draft: str) -> None:

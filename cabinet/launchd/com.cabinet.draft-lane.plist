@@ -23,6 +23,14 @@
     <string>/bin/bash</string>
     <string>/Users/nate/captains-cabinet/cabinet/scripts/run-draft-lane.sh</string>
   </array>
+  <!-- P3 one-door: the lane now sends via framework.frontdoor.channel,
+       whose allow_sends() gate requires the runtime marker - without it
+       every card is silently blocked-dev. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>CABINET_ENV</key>
+    <string>runtime</string>
+  </dict>
   <key>StartInterval</key>
   <integer>7200</integer>
   <key>RunAtLoad</key>

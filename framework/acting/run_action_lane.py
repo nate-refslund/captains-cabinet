@@ -51,6 +51,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from framework.acting import action_lane, lane_dedup as ld  # noqa: E402
+from framework.attention import acted_overlay  # noqa: E402  # P2 world-grounding
 from framework.env import vault_dir, shared_env_path, product_brain_dir  # noqa: E402
 from framework.acting.loop import (  # noqa: E402
     expire_event, pending_proposals, proposal_event, proposal_id)
@@ -67,12 +68,50 @@ from framework.frontdoor.action_exec import (  # noqa: E402
     deliver_action, _canonical_sha, _surfaces_path)
 
 
+# COVERED-EVIDENCE WINDOW (P1 hardening, adversarial review 2026-07-08): the
+# covered set used to read the ALL-TIME ledger, so one long-decided card
+# citing a rolling per-product digest file (the commits/deployment digests)
+# muted every FUTURE situation grounded in that file forever — the exact
+# false-positive direction the attention-gateway spec names as the bad one.
+# Only cards younger than this many days suppress; a re-worded duplicate can
+# therefore re-appear after the window (bounded annoyance — P4 standing
+# cards absorb it), while a genuinely new same-file situation is muted at
+# most this long. <=0 disables the window (all-time, the old behavior).
+# Fail-SAFE parse: an unparsable/non-finite env value falls back to the
+# default rather than crashing the lane at import (a bad knob must not kill
+# the lane) or silently disarming dedup (inf → empty covered set via the
+# except; nan → window off — both quiet failure modes, review cp1 Low-1).
+def _covered_window_days() -> float:
+    raw = os.environ.get("CABINET_COVERED_EVIDENCE_WINDOW_D", "14")
+    try:
+        val = float(raw)
+    except (TypeError, ValueError):
+        return 14.0
+    import math
+    return val if math.isfinite(val) else 14.0
+
+
+COVERED_WINDOW_D = _covered_window_days()
+
+
+def _covered_since() -> "str | None":
+    """The covered window's inclusive ISO floor (None = all-time). Shared by
+    covered_evidence_refs and the P2 acted-overlay so both planes read the
+    same clock."""
+    if COVERED_WINDOW_D <= 0:
+        return None
+    return (dt.datetime.now(dt.timezone.utc)
+            - dt.timedelta(days=COVERED_WINDOW_D)
+            ).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def covered_evidence_refs() -> frozenset:
-    """Evidence refs carried by ANY prior action card (open or decided) — the
-    stable dedup identity across runs (LLM subject slugs drift; refs don't)."""
+    """Evidence refs carried by prior action cards inside the covered window
+    (open or decided) — the stable dedup identity across runs (LLM subject
+    slugs drift; refs don't). Windowed per COVERED_WINDOW_D above."""
     refs: set = set()
     try:
-        for ev in read_ledger():
+        for ev in read_ledger(since=_covered_since()):
             act = ev.get("action") or ""
             # 'action-card' = a presented proposal row; 'acted:<kind>' = an
             # unattended act row. ACTED-EVENT IDENTITY FIX (germline batch
@@ -865,14 +904,22 @@ def _tg(text: str) -> None:
     # deliberately NO fallback to TELEGRAM_BOT_TOKEN: that is the Screenpipe
     # bot, whose updates never reach the binder (the first 5 live cards landed
     # there and could not be verdicted).
-    token = os.environ.get("TELEGRAM_COS_TOKEN", "")
-    chat = os.environ.get("CAPTAIN_TELEGRAM_ID", "")
-    if not token or not chat:
-        raise RuntimeError("telegram env missing (TELEGRAM_COS_TOKEN / CAPTAIN_TELEGRAM_ID)")
-    data = urllib.parse.urlencode({"chat_id": chat, "text": text}).encode()
-    urllib.request.urlopen(
-        urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage",
-                               data=data), timeout=20)
+    # ONE DOOR (P3, attention-gateway spec §4.4/§13): route through the gated
+    # front-door channel — killswitch/allow_sends, token scrub, 4096 chunking,
+    # transport retry, feed-journal row. Same env contract as before
+    # (TELEGRAM_COS_TOKEN + CAPTAIN_TELEGRAM_ID; the poller binds replies).
+    # ANY non-sent status RAISES — including blocked-dev (review cp3 H1/H2:
+    # a production process missing CABINET_ENV=runtime must fail LOUDLY, not
+    # silently blackhole cards while ledger rows record them as presented;
+    # dev sessions likewise must not pretend to present). Dry-run never
+    # reaches this function.
+    from framework.frontdoor import channel
+    res = channel.send(text, feed_meta={"kind": "action-card"})
+    if res.get("status") == "blocked-dev":
+        raise RuntimeError("channel send refused (blocked-dev): set "
+                           "CABINET_ENV=runtime for live sends")
+    if not res.get("sent"):
+        raise RuntimeError(f"channel send failed: {str(res)[:200]}")
 
 
 def _store_action(pid: str, prop: action_lane.ActionProposal, cid: str = "") -> None:
@@ -1031,6 +1078,24 @@ def main() -> int:
         print("done: no fresh signals in window")
         return 0
 
+    # P2 acted-state overlay (attention-gateway spec §8): what the cabinet
+    # already EXECUTED, from the ledger's acted rows × the undo journal.
+    # Rendered into the signals so the proposer sees acted/reversed state
+    # (gather-then-decide), and passed canonically to the propose core for
+    # the mechanical already-acted drop + reversed-refs un-covering. Build
+    # failure ⇒ world state UNKNOWN: cards still propose (fail toward
+    # presenting) but act-first is DISARMED below — never auto-act on an
+    # unverifiable world.
+    # named acted_view, NOT `acted` — the act-first loop below reuses `acted`
+    # as its per-run counter (review cp2 Low-2 shadowing landmine).
+    acted_view = None
+    try:
+        acted_view = acted_overlay.load_acted(since=_covered_since() or "")
+    except Exception as e:
+        print(f"acted-overlay: unavailable ({e}) — world state UNKNOWN this run")
+    if acted_view is not None:
+        signals += acted_overlay.render_overlay(acted_view)
+
     decided = set(ld.decided_subjects().keys())
     open_subjects = {  # any pending proposal's subject, action or draft
         (p.get("subject") or "") for p in pending_proposals() if isinstance(p, dict)}
@@ -1039,6 +1104,8 @@ def main() -> int:
         signals, as_of=now.strftime("%Y-%m-%dT%H:%M:%SZ"), llm=_llm,
         decided_subjects=decided, open_subjects=open_subjects,
         budget_left=budget, covered_evidence=covered_evidence_refs(),
+        acted_refs=(acted_view or {}).get("live_canonical") or frozenset(),
+        reversed_refs=(acted_view or {}).get("reversed_canonical") or frozenset(),
         directions=load_directions(), suppress_log=_suppress_log)
 
     # LANE CELL-KEY NORMALIZATION (germline batch 2026-07-05): collapse every
@@ -1074,6 +1141,13 @@ def main() -> int:
             print(f"act-first: veto cache rebuild errored ({e}) — acting disabled this run")
         if not veto_registry.veto_cache_ready():
             print("act-first: veto cache not ready — acting disabled this run (propose-only)")
+            act_first = False
+        # P2 world-grounding floor: an unverifiable acted-state means the lane
+        # cannot prove it is not about to duplicate a standing artifact —
+        # cards still PROPOSE (fail toward presenting), acting is off.
+        if act_first and acted_view is None:
+            print("act-first: acted-overlay unavailable — world state unknown; "
+                  "acting disabled this run (propose-only)")
             act_first = False
     prior_acted = _prior_acted_types() if act_first else frozenset()
     # yml-resolved once per run (fail-safe default on any read problem); never

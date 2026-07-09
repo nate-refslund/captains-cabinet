@@ -44,6 +44,11 @@
     <string>6379</string>
     <key>PATH</key>
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <!-- P3 one-door: the lane now sends via framework.frontdoor.channel,
+         whose allow_sends() gate requires the runtime marker - without it
+         every card is silently blocked-dev. -->
+    <key>CABINET_ENV</key>
+    <string>runtime</string>
   </dict>
   <key>StartInterval</key>
   <integer>1800</integer>
