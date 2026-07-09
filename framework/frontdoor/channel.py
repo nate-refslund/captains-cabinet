@@ -487,7 +487,8 @@ def render_markdown(text: str) -> tuple[str, str | None]:
 
 def send(text: str, *, http_post=None, reply_to: int | None = None,
          silent: bool = False, reply_markup: dict | None = None,
-         feed_meta: dict | None = None, markdown: bool = False) -> dict:
+         feed_meta: dict | None = None, markdown: bool = False,
+         thread_id: int | None = None, effect_id: str | None = None) -> dict:
     """Send ``text`` to the Captain via Telegram — the ONLY front-door send path.
 
     Gated by ``env.allow_sends()`` as the FIRST line: a non-runtime session
@@ -567,6 +568,12 @@ def send(text: str, *, http_post=None, reply_to: int | None = None,
             payload["reply_markup"] = json.dumps(reply_markup)
         if reply_parameters is not None:
             payload["reply_parameters"] = reply_parameters
+        # C0: route a lane's card into its own DM thread (message_thread_id,
+        # from open_thread) and/or add ONE reserved effect (ping-now tier).
+        if thread_id is not None:
+            payload["message_thread_id"] = int(thread_id)
+        if effect_id:
+            payload["message_effect_id"] = str(effect_id)
         # Capture the RAW (pre-scrub) response so we can read the integer
         # message_id Telegram assigned. The wrapper is transparent to _post_one's
         # scrub/retry — it only observes the successful body.
@@ -689,6 +696,253 @@ def answer_callback(callback_query_id: str, text: str = "", *, http_post=None) -
     if not ok:
         return {"status": "error", "sent": False, "error": err}
     return {"status": "sent", "sent": True, "response": sent_resp}
+
+
+def send_poll(question: str, options: list, *, is_anonymous: bool = False,
+              allows_multiple_answers: bool = False, quiz_correct: int | None = None,
+              silent: bool = False, feed_meta: dict | None = None,
+              http_post=None) -> dict:
+    """Send a native Telegram poll — the AskUserQuestion-style select surface.
+
+    Same gate + scrub + feed-journal discipline as ``send``: ``allow_sends()``
+    first, recipient always ``CAPTAIN_TELEGRAM_ID``. ``options`` is 1-12 short
+    strings; a ``quiz_correct`` index turns it into a quiz. Non-anonymous by
+    default so the vote arrives structured on ``poll_answer`` (the poller
+    relays it). Returns the poll's ``message_ids`` for later stop/reference."""
+    if not env.allow_sends():
+        return {"status": "blocked-dev", "sent": False}
+    token = _token()
+    chat_id = _captain_id()
+    if not token or not chat_id:
+        return {"status": "error", "sent": False, "error": "telegram not configured"}
+    opts = [str(o)[:100] for o in (options or [])][:12]
+    if len(opts) < 1:
+        return {"status": "error", "sent": False, "error": "poll needs >=1 option"}
+    # Bot API 7.3+ (May 2024): sendPoll `options` is an Array of InputPollOption
+    # objects ({"text": ...}), NOT bare strings — a bare-string array is rejected
+    # (cp-gauntlet HIGH). Each option text is already capped to the 1-100 char limit.
+    payload = {"chat_id": chat_id, "question": str(question)[:300],
+               "options": json.dumps([{"text": o} for o in opts]),
+               "is_anonymous": bool(is_anonymous),
+               "allows_multiple_answers": bool(allows_multiple_answers)}
+    if quiz_correct is not None:
+        payload["type"] = "quiz"
+        payload["correct_option_id"] = int(quiz_correct)
+    if silent:
+        payload["disable_notification"] = True
+    post = http_post or _default_http_post
+    url = f"{_base()}/bot{token}/sendPoll"
+    # Capture the RAW (pre-scrub) response so we can read result.message_id —
+    # _post_one returns the SCRUBBED string, which _msgid_of can't parse (same
+    # wrapper pattern send()/edit_message use).
+    captured: list = []
+
+    def _cap(u, d, _sink=captured):
+        resp = post(u, d)
+        _sink.append(resp)
+        return resp
+
+    ok, sent_resp, err = _post_one(_cap, url, payload, token)
+    if not ok:
+        return {"status": "error", "sent": False, "error": err}
+    mid = _msgid_of(captured[-1]) if captured else None
+    _journal_out(lambda: _feed_row_out(str(question), "poll", mid, chat_id, feed_meta))
+    return {"status": "sent", "sent": True, "response": sent_resp,
+            "message_ids": [mid] if mid else []}
+
+
+def set_typing(action: str = "typing", *, http_post=None) -> dict:
+    """Show the ``typing…`` (or ``upload_photo``, ``record_voice`` …) status in
+    the Captain's chat via ``sendChatAction``. Ephemeral (clears after ~5s or
+    on the next message), so it is NOT feed-journaled — fire it before a
+    reply that takes a noticeable moment to compose (the investigation-bar
+    gather). Gate + scrub like every other send; best-effort by nature."""
+    if not env.allow_sends():
+        return {"status": "blocked-dev", "sent": False}
+    token = _token()
+    chat_id = _captain_id()
+    if not token or not chat_id:
+        return {"status": "error", "sent": False, "error": "telegram not configured"}
+    payload = {"chat_id": chat_id, "action": str(action)}
+    post = http_post or _default_http_post
+    url = f"{_base()}/bot{token}/sendChatAction"
+    ok, sent_resp, err = _post_one(post, url, payload, token)
+    if not ok:
+        return {"status": "error", "sent": False, "error": err}
+    return {"status": "sent", "sent": True}
+
+
+def _gated_method(method: str, payload_extra: dict, *, http_post=None,
+                  capture=False) -> dict:
+    """Shared spine for the small Captain-chat Bot API methods (pin, unpin,
+    forum-topic): allow_sends() gate FIRST, recipient always CAPTAIN_TELEGRAM_ID,
+    token + URL scrubbed on every path. ``capture`` returns the raw result dict
+    (for methods whose result carries an id we need, e.g. createForumTopic)."""
+    if not env.allow_sends():
+        return {"status": "blocked-dev", "sent": False}
+    token = _token()
+    chat_id = _captain_id()
+    if not token or not chat_id:
+        return {"status": "error", "sent": False, "error": "telegram not configured"}
+    # chat_id LAST so payload_extra can NEVER override the recipient — the
+    # invariant "recipient is never a parameter" is structural on this shared
+    # spine, not just a convention (review cp1 nit-1).
+    payload = {**payload_extra, "chat_id": chat_id}
+    post = http_post or _default_http_post
+    url = f"{_base()}/bot{token}/{method}"
+    captured: list = []
+
+    def _cap(u, d, _sink=captured):
+        resp = post(u, d)
+        _sink.append(resp)
+        return resp
+
+    # retry_plain_400=False: these methods carry no parse_mode, so the
+    # plain-text 400 retry would just re-POST an identical (doomed) payload.
+    ok, sent_resp, err = _post_one(_cap if capture else post, url, payload, token,
+                                   retry_plain_400=False)
+    if not ok:
+        return {"status": "error", "sent": False, "error": err}
+    out = {"status": "sent", "sent": True, "response": sent_resp}
+    if capture and captured and isinstance(captured[-1], dict):
+        # The RAW (pre-scrub) result — intentionally unscrubbed because a
+        # Telegram ForumTopic/pin result carries NO token (only ints/strings),
+        # same precedent as _msgid_of reading the raw integer message_id.
+        out["result"] = captured[-1].get("result")
+    return out
+
+
+def pin(message_id: int, *, silent: bool = True, http_post=None) -> dict:
+    """Pin a message to the top of the Captain's DM (``pinChatMessage``) — used
+    for the standing decision-queue card so it survives scrollback. In a
+    private chat a pin is ALWAYS silent (no notification regardless), so
+    ``silent`` is a no-op there but kept for interface symmetry. Gate + scrub."""
+    extra = {"message_id": int(message_id)}
+    if silent:
+        extra["disable_notification"] = True
+    return _gated_method("pinChatMessage", extra, http_post=http_post)
+
+
+def unpin(message_id: "int | None" = None, *, http_post=None) -> dict:
+    """Unpin one message (``unpinChatMessage``) or, with no id, the most recent
+    pin. Gate + scrub."""
+    extra = {"message_id": int(message_id)} if message_id is not None else {}
+    return _gated_method("unpinChatMessage", extra, http_post=http_post)
+
+
+def open_thread(name: str, *, icon_color: "int | None" = None, http_post=None) -> dict:
+    """Open a per-lane thread in the Captain's DM (``createForumTopic`` —
+    supported in a private chat since Bot API 9.4). Returns the new
+    ``message_thread_id`` under ``thread_id`` so ``send(..., thread_id=...)``
+    can route a lane's cards (one thread per configured lane) into their own
+    thread without a group. Requires forum-topic mode enabled on the
+    bot's private chats (getMe.has_topics_enabled); a channel/bot without it
+    returns an error the caller degrades from (single-stream, as today)."""
+    extra = {"name": str(name)[:128]}
+    if icon_color is not None:
+        extra["icon_color"] = int(icon_color)
+    res = _gated_method("createForumTopic", extra, http_post=http_post, capture=True)
+    if res.get("sent") and isinstance(res.get("result"), dict):
+        tid = res["result"].get("message_thread_id")
+        if isinstance(tid, int):
+            res["thread_id"] = tid
+    return res
+
+
+def set_reaction(message_id: int, emoji: "str | None", *, http_post=None) -> dict:
+    """Set (or clear) the bot's single reaction on a message
+    (``setMessageReaction``). This is the LLM-CONTEXTUAL react layer (an officer
+    picks an emoji that fits the message) that supersedes the poller's instant
+    deterministic receipt-reaction. ``emoji=None``/"" clears the reaction.
+    Gate + scrub via the shared spine; a non-whitelisted emoji is rejected by
+    Telegram and surfaces as an error the caller degrades from."""
+    extra = {"message_id": int(message_id)}
+    if emoji:
+        extra["reaction"] = json.dumps([{"type": "emoji", "emoji": str(emoji)}])
+    else:
+        extra["reaction"] = json.dumps([])   # clear
+    return _gated_method("setMessageReaction", extra, http_post=http_post)
+
+
+def send_draft(draft_id: int, text: str = "", *, thread_id: "int | None" = None,
+               http_post=None) -> dict:
+    """Stream a live draft into the Captain's chat (``sendMessageDraft``) — the
+    real "Thinking…" indicator.
+
+    Empty ``text`` shows Telegram's "Thinking…" placeholder; calling again with
+    the SAME ``draft_id`` animates/replaces it in place (this is how you stream a
+    reply as it composes). EPHEMERAL: the draft is a ~30s preview that Telegram
+    discards — to PERSIST the finished message you MUST call ``send()`` (a normal
+    sendMessage) afterwards. So it is NOT feed-journaled (nothing was delivered).
+    Private-chat only; available to all bots since Bot API 9.5 (empty text since
+    10.0). ``draft_id`` must be non-zero. Same gate + scrub as every send."""
+    if not env.allow_sends():
+        return {"status": "blocked-dev", "sent": False}
+    token = _token()
+    chat_id = _captain_id()
+    if not token or not chat_id:
+        return {"status": "error", "sent": False, "error": "telegram not configured"}
+    payload = {"chat_id": chat_id, "draft_id": int(draft_id) or 1, "text": str(text or "")}
+    if thread_id is not None:
+        payload["message_thread_id"] = int(thread_id)
+    post = http_post or _default_http_post
+    url = f"{_base()}/bot{token}/sendMessageDraft"
+    # retry_plain_400=False: no parse_mode here, so the plain-text 400 retry would
+    # just re-POST an identical doomed payload.
+    ok, sent_resp, err = _post_one(post, url, payload, token, retry_plain_400=False)
+    if not ok:
+        return {"status": "error", "sent": False, "error": err}
+    return {"status": "sent", "sent": True}
+
+
+def send_rich(markdown: "str | None" = None, *, html: "str | None" = None,
+              silent: bool = False, reply_markup: dict | None = None,
+              feed_meta: dict | None = None, http_post=None) -> dict:
+    """Send a Rich Message (``sendRichMessage``, Bot API 10.1): tables, collapsible
+    ``<details>``, headings, task lists — the structured surface a multi-step
+    course-of-action card renders best in.
+
+    Provide EXACTLY ONE of ``markdown`` or ``html`` (the ``InputRichMessage`` body):
+    a table is a GFM pipe table (``| a | b |``) or ``<table>``; a collapsible is
+    ``<details><summary>…</summary>…</details>``. It is a REAL, persisted message,
+    so it carries the full ``send`` discipline — ``allow_sends()`` gate first,
+    recipient always ``CAPTAIN_TELEGRAM_ID``, token/URL scrubbed, feed-journaled
+    (``kind="rich"``). Telegram limits: 32768 chars, 500 blocks, 20 columns/table,
+    16 nesting levels — an overflow returns a 400 the caller degrades from (fall
+    back to ``send()``). Clients older than 10.1 render a plain-text fallback."""
+    if not env.allow_sends():
+        return {"status": "blocked-dev", "sent": False}
+    token = _token()
+    chat_id = _captain_id()
+    if not token or not chat_id:
+        return {"status": "error", "sent": False, "error": "telegram not configured"}
+    if bool(markdown) == bool(html):
+        return {"status": "error", "sent": False,
+                "error": "send_rich needs exactly one of markdown or html"}
+    # InputRichMessage: exactly one of markdown/html. JSON-encoded like every
+    # other complex Bot API param (reply_markup, poll options).
+    rich = {"markdown": markdown} if markdown else {"html": html}
+    payload = {"chat_id": chat_id, "rich_message": json.dumps(rich)}
+    if silent:
+        payload["disable_notification"] = True
+    if reply_markup is not None:
+        payload["reply_markup"] = json.dumps(reply_markup)
+    post = http_post or _default_http_post
+    url = f"{_base()}/bot{token}/sendRichMessage"
+    captured: list = []
+
+    def _cap(u, d, _sink=captured):
+        resp = post(u, d)
+        _sink.append(resp)
+        return resp
+
+    ok, sent_resp, err = _post_one(_cap, url, payload, token, retry_plain_400=False)
+    if not ok:
+        return {"status": "error", "sent": False, "error": err}
+    mid = _msgid_of(captured[-1]) if captured else None
+    _journal_out(lambda: _feed_row_out(markdown or html or "", "rich", mid, chat_id, feed_meta))
+    return {"status": "sent", "sent": True, "response": sent_resp,
+            "message_ids": [mid] if mid else []}
 
 
 def _default_multipart_post(url: str, fields: dict, filename: str, content: bytes) -> dict:

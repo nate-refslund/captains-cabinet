@@ -1,0 +1,109 @@
+--- a/framework/frontdoor/channel.py
++++ b/framework/frontdoor/channel.py
+@@ -487,7 +487,8 @@
+ 
+ def send(text: str, *, http_post=None, reply_to: int | None = None,
+          silent: bool = False, reply_markup: dict | None = None,
+-         feed_meta: dict | None = None, markdown: bool = False) -> dict:
++         feed_meta: dict | None = None, markdown: bool = False,
++         thread_id: int | None = None, effect_id: str | None = None) -> dict:
+     """Send ``text`` to the Captain via Telegram — the ONLY front-door send path.
+ 
+     Gated by ``env.allow_sends()`` as the FIRST line: a non-runtime session
+@@ -567,6 +568,12 @@
+             payload["reply_markup"] = json.dumps(reply_markup)
+         if reply_parameters is not None:
+             payload["reply_parameters"] = reply_parameters
++        # C0: route a lane's card into its own DM thread (message_thread_id,
++        # from open_thread) and/or add ONE reserved effect (ping-now tier).
++        if thread_id is not None:
++            payload["message_thread_id"] = int(thread_id)
++        if effect_id:
++            payload["message_effect_id"] = str(effect_id)
+         # Capture the RAW (pre-scrub) response so we can read the integer
+         # message_id Telegram assigned. The wrapper is transparent to _post_one's
+         # scrub/retry — it only observes the successful body.
+@@ -761,6 +768,83 @@
+     return {"status": "sent", "sent": True}
+ 
+ 
++def _gated_method(method: str, payload_extra: dict, *, http_post=None,
++                  capture=False) -> dict:
++    """Shared spine for the small Captain-chat Bot API methods (pin, unpin,
++    forum-topic): allow_sends() gate FIRST, recipient always CAPTAIN_TELEGRAM_ID,
++    token + URL scrubbed on every path. ``capture`` returns the raw result dict
++    (for methods whose result carries an id we need, e.g. createForumTopic)."""
++    if not env.allow_sends():
++        return {"status": "blocked-dev", "sent": False}
++    token = _token()
++    chat_id = _captain_id()
++    if not token or not chat_id:
++        return {"status": "error", "sent": False, "error": "telegram not configured"}
++    # chat_id LAST so payload_extra can NEVER override the recipient — the
++    # invariant "recipient is never a parameter" is structural on this shared
++    # spine, not just a convention (review cp1 nit-1).
++    payload = {**payload_extra, "chat_id": chat_id}
++    post = http_post or _default_http_post
++    url = f"{_base()}/bot{token}/{method}"
++    captured: list = []
++
++    def _cap(u, d, _sink=captured):
++        resp = post(u, d)
++        _sink.append(resp)
++        return resp
++
++    # retry_plain_400=False: these methods carry no parse_mode, so the
++    # plain-text 400 retry would just re-POST an identical (doomed) payload.
++    ok, sent_resp, err = _post_one(_cap if capture else post, url, payload, token,
++                                   retry_plain_400=False)
++    if not ok:
++        return {"status": "error", "sent": False, "error": err}
++    out = {"status": "sent", "sent": True, "response": sent_resp}
++    if capture and captured and isinstance(captured[-1], dict):
++        # The RAW (pre-scrub) result — intentionally unscrubbed because a
++        # Telegram ForumTopic/pin result carries NO token (only ints/strings),
++        # same precedent as _msgid_of reading the raw integer message_id.
++        out["result"] = captured[-1].get("result")
++    return out
++
++
++def pin(message_id: int, *, silent: bool = True, http_post=None) -> dict:
++    """Pin a message to the top of the Captain's DM (``pinChatMessage``) — used
++    for the standing decision-queue card so it survives scrollback. In a
++    private chat a pin is ALWAYS silent (no notification regardless), so
++    ``silent`` is a no-op there but kept for interface symmetry. Gate + scrub."""
++    extra = {"message_id": int(message_id)}
++    if silent:
++        extra["disable_notification"] = True
++    return _gated_method("pinChatMessage", extra, http_post=http_post)
++
++
++def unpin(message_id: "int | None" = None, *, http_post=None) -> dict:
++    """Unpin one message (``unpinChatMessage``) or, with no id, the most recent
++    pin. Gate + scrub."""
++    extra = {"message_id": int(message_id)} if message_id is not None else {}
++    return _gated_method("unpinChatMessage", extra, http_post=http_post)
++
++
++def open_thread(name: str, *, icon_color: "int | None" = None, http_post=None) -> dict:
++    """Open a per-lane thread in the Captain's DM (``createForumTopic`` —
++    supported in a private chat since Bot API 9.4). Returns the new
++    ``message_thread_id`` under ``thread_id`` so ``send(..., thread_id=...)``
++    can route a lane's cards (one thread per configured lane) into their own
++    thread without a group. Requires forum-topic mode enabled on the
++    bot's private chats (getMe.has_topics_enabled); a channel/bot without it
++    returns an error the caller degrades from (single-stream, as today)."""
++    extra = {"name": str(name)[:128]}
++    if icon_color is not None:
++        extra["icon_color"] = int(icon_color)
++    res = _gated_method("createForumTopic", extra, http_post=http_post, capture=True)
++    if res.get("sent") and isinstance(res.get("result"), dict):
++        tid = res["result"].get("message_thread_id")
++        if isinstance(tid, int):
++            res["thread_id"] = tid
++    return res
++
++
+ def _default_multipart_post(url: str, fields: dict, filename: str, content: bytes) -> dict:
+     """Default transport: POST a multipart/form-data body (one file + fields).
+ 
