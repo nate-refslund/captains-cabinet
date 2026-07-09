@@ -588,7 +588,13 @@ services:
     notes: >-
       ORG-SENSES-1 (operative-egg-ledger row): nightly digest of officer
       session JSONLs (default Claude config home's project dir for this repo
-      + the AUD-1 isolated config home's projects tree) and flight-recorder
+      + the AUD-1 isolated config home's projects tree), orchestrator
+      session JSONLs (ORCH-SESSION-DIGEST 2026-07-09: the captain-side
+      project dirs for $HOME + this repo, override via
+      CABINET_ORCH_TRANSCRIPT_DIRS; provenance
+      source_kind=orchestrator-session, officer-boot sessions keep
+      session-jsonl, each path digested once; heartbeat carries orch=)
+      and flight-recorder
       script(1) typescripts (~/hatch-logs, mini-hatch runbook §Flight
       recorder — the seed source) into Cabinet Memory. Digest-then-embed,
       never raw-embed: tool_result blocks are structurally excluded
