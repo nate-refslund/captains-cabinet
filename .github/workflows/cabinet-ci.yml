@@ -666,8 +666,6 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: .github/workflows/cabinet-ci.yml
-          cache: pip
           # No requirements.txt in this repo — key the pip cache on the
           # workflow file (invalidates exactly when the pinned deps here do).
           cache-dependency-path: .github/workflows/cabinet-ci.yml
