@@ -1,20 +1,29 @@
 #!/bin/bash
-# run-fidelity-f1.sh — launchd entry for the MONTHLY F1 fidelity batch
-# (lane-supply 2026-07-05; part of waking the eval stack the 2026-07-03
-# re-review found dead at runtime — F1 existed as framework/fidelity/run_f1.py
-# with a __main__ but NOTHING scheduled it).
+# run-fidelity-f1.sh — launchd entry for the WEEKLY F1 fidelity batch: the
+# LABEL MINE (W3 reframe 2026-07-09; originally lane-supply 2026-07-05, part
+# of waking the eval stack the 2026-07-03 re-review found dead at runtime —
+# F1 existed as framework/fidelity/run_f1.py with a __main__ but NOTHING
+# scheduled it).
 #
 # What one run does (framework/fidelity/run_f1.py): build held-out reply
 # cases → blind-drive the officer (leak-guarded, no side effects) → draft a
 # generic-assistant baseline → score (OAuth judge + Voyage STYLE) → aggregate
 # the decision-match rate and assert the clone still beats the 0.083
 # generic-assistant baseline. A regression here (exit nonzero + the assert
-# message in the log) is the monthly canary that the clone's judgment decayed.
+# message in the log) is the weekly canary that the clone's judgment decayed.
 #
-# MONTHLY because a batch is expensive (n≈24 officer drives + judge calls) and
-# fidelity drift is slow — the fast label loop is the hourly verifier + probes;
-# this is the slow calibration floor. Schedule: services.yml `fidelity-f1`,
-# calendar day 1 06:30 (generate-plists.py renders launchd Day/Hour/Minute).
+# WEEKLY, KNOBS ON (was: "MONTHLY because a batch is expensive"). The batch
+# is no longer framed as a cost canary — it is the org's richest label mine
+# (§4.3-5 reframe): with F1_WITH_INTENT=1 + F1_EMIT_SCORED=1 (Captain-
+# authorized D1 knobs, 2026-06-20 — run_f1.run_batch docstring) every scored
+# case persists a fidelity-case-scored consequence event, i.e. a LABEL.
+# Labels are calibration INPUT (judge-calibration / D5 chain), never
+# promotion fuel — the label floor and CG-10 stay fail-closed. Cost stays
+# bounded (~24 drives per role per run) and is watched on the revived cost
+# ledger (cabinet:cost:tokens:daily, live since 2026-07-07). Schedule:
+# services.yml `fidelity-f1`, weekly Monday 06:30 (generate-plists.py renders
+# launchd Weekday/Hour/Minute; weekday rows get an 8-day watchdog floor —
+# registry.py::_floor_for_entry).
 #
 # FAIL-SAFE: any failure (missing OAuth/Voyage creds, leaked cases, a lost
 # baseline) exits nonzero with the reason in the log and writes NO misleading
@@ -26,7 +35,16 @@
 # cabinet/.env / the PersonalSource shared env (instance platform.yml
 # shared_env_path) — never argv, never echoed.
 #
-# Knobs (env, optional): F1_ROLE (default cos), F1_CASES (default 24).
+# Knobs (env, optional):
+#   F1_ROLES        comma-separated lane roster (default "cos" — one lane;
+#                   extend incrementally, e.g. "cos,polads-ceo", as verdict
+#                   demand and cost budget allow).
+#   F1_ROLE         legacy single-role override (honored when F1_ROLES unset).
+#   F1_CASES        cases per role per run (default 24).
+#   F1_WITH_INTENT  default 1 here (label mine); set 0 to revert to
+#                   decision-only scoring.
+#   F1_EMIT_SCORED  default 1 here (labels persisted); set 0 for a dry run.
+#   F1_GATHER       default 0 (the F4 gather arm stays opt-in).
 #
 # Reversible:
 #   launchctl bootout gui/$(id -u)/com.cabinet.fidelity-f1 \
@@ -54,6 +72,24 @@ PY="${CABINET_PYTHON:-/opt/homebrew/bin/python3.12}"
 cd "$ROOT" || exit 1
 export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
 
-echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] fidelity-f1: starting monthly batch" \
-     "(role=${F1_ROLE:-cos}, cases=${F1_CASES:-24})"
-exec "$PY" framework/fidelity/run_f1.py "${F1_ROLE:-cos}" "${F1_CASES:-24}"
+# Label-mine defaults (explicit env always wins — the services.yml row sets
+# them too, so what launchd runs is manifest-visible).
+export F1_WITH_INTENT="${F1_WITH_INTENT:-1}"
+export F1_EMIT_SCORED="${F1_EMIT_SCORED:-1}"
+
+ROLES="${F1_ROLES:-${F1_ROLE:-cos}}"
+CASES="${F1_CASES:-24}"
+
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] fidelity-f1: starting weekly label-mine batch" \
+     "(roles=${ROLES}, cases/role=${CASES}, with_intent=${F1_WITH_INTENT}," \
+     "emit_scored=${F1_EMIT_SCORED}, gather=${F1_GATHER:-0})"
+
+rc=0
+IFS=',' read -ra _ROLE_ARR <<< "$ROLES"
+for role in "${_ROLE_ARR[@]}"; do
+  role="${role// /}"   # trim spaces
+  [ -z "$role" ] && continue
+  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] fidelity-f1: lane role=$role"
+  "$PY" framework/fidelity/run_f1.py "$role" "$CASES" || rc=$?
+done
+exit "$rc"

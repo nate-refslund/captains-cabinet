@@ -57,6 +57,15 @@ if not _retro_available():
         # at collection on every retro-less box (CI red since 2026-07-08).
         "test_sov7_identity.py",
         "test_sov7_outcome_judge.py",
+        # SIE-9 sim runner (agi-wires 2026-07-09, registered 2026-07-10):
+        # imports run_f1 -> oauth_llm -> retro.parse_json_block at module
+        # level, so it collection-errors on retro-less boxes exactly like
+        # test_run_f1.py (already listed). Also unblocks the World binding
+        # gate downstream: the collection error killed the framework suite,
+        # so cabinet/cache/org-runtime.sqlite3 (side-effect of the events
+        # emitter tests) never materialized and two codex mechanism_path
+        # checks failed on the runner.
+        "test_sim_runner.py",
     ]
     print(
         "[fidelity conftest] screenpipe retrodiction lib ABSENT -> skipping "

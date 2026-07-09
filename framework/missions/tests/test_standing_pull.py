@@ -1,4 +1,4 @@
-"""SOV-8 standing-pull tests — R1-R5 ranking, the outcomes.yml never-touch
+"""SOV-8 standing-pull tests — R1-R6 ranking, the outcomes.yml never-touch
 guarantee, sovereign gating, and idempotent writes."""
 
 from __future__ import annotations
@@ -74,6 +74,65 @@ class TestCollect:
         b = standing_pull.collect(root, NOW)
         assert [r["id"] for r in a] == [r["id"] for r in b]
         assert all(r["id"].startswith("standing-") for r in a)
+
+
+def _write_calibration(root, date, *, n_pred, n_truth):
+    p = root / "shared" / "interfaces" / "prediction-calibration.jsonl"
+    with open(p, "a") as fh:
+        fh.write(json.dumps({"date": date, "n_predictions": n_pred,
+                             "n_ground_truthed": n_truth}) + "\n")
+
+
+class TestR6Labels:
+    def test_unmeasured_when_series_absent(self, root):
+        rows = [r for r in standing_pull.collect(root, NOW)
+                if r["source"] == "R6"]
+        assert len(rows) == 1
+        assert "telemetry" in rows[0]["name"]
+
+    def test_starved_zero_labels_on_flowing_predictions(self, root):
+        _write_calibration(root, "2026-07-05", n_pred=12, n_truth=0)
+        rows = [r for r in standing_pull.collect(root, NOW)
+                if r["source"] == "R6"]
+        assert len(rows) == 1
+        assert rows[0]["name"] == "Repair label starvation"
+        assert "0/12" in rows[0]["description"]
+
+    def test_starved_low_ratio(self, root):
+        _write_calibration(root, "2026-07-05", n_pred=20, n_truth=2)  # 10% < 20%
+        rows = [r for r in standing_pull.collect(root, NOW)
+                if r["source"] == "R6"]
+        assert rows and rows[0]["name"] == "Repair label starvation"
+
+    def test_quiet_when_fed(self, root):
+        _write_calibration(root, "2026-07-05", n_pred=20, n_truth=8)
+        assert not [r for r in standing_pull.collect(root, NOW)
+                    if r["source"] == "R6"]
+
+    def test_quiet_on_tiny_sample_with_some_labels(self, root):
+        # 1/4 ground-truthed: under the floor but under min sample too — quiet
+        _write_calibration(root, "2026-07-05", n_pred=4, n_truth=1)
+        assert not [r for r in standing_pull.collect(root, NOW)
+                    if r["source"] == "R6"]
+
+    def test_stale_series_is_unmeasured_not_starved(self, root):
+        _write_calibration(root, "2026-06-20", n_pred=12, n_truth=0)
+        rows = [r for r in standing_pull.collect(root, NOW)
+                if r["source"] == "R6"]
+        assert len(rows) == 1 and "telemetry" in rows[0]["name"]
+
+    def test_newest_line_wins(self, root):
+        _write_calibration(root, "2026-07-04", n_pred=12, n_truth=0)
+        _write_calibration(root, "2026-07-05", n_pred=12, n_truth=6)
+        assert not [r for r in standing_pull.collect(root, NOW)
+                    if r["source"] == "R6"]
+
+    def test_r6_ranks_after_r1(self, root):
+        _write_need(root, blocking=True)
+        _write_calibration(root, "2026-07-05", n_pred=12, n_truth=0)
+        rows = standing_pull.collect(root, NOW)
+        srcs = [r["source"] for r in rows]
+        assert srcs.index("R1") < srcs.index("R6")
 
 
 class TestNeverTouchesOutcomes:

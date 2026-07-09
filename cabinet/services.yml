@@ -54,7 +54,8 @@
 # B2+ additions land here as they ship (per Plan B services.yml spec):
 #   heartbeat-watchdog (F0.12), memory-worker (B2.12), ledger-liveness (F0.7),
 #   probe-github/vercel/sentry/ci (B2.3-6), verifier (B2.7), mission-supervisor
-#   (B2.11), gate-runner/flywheel/dreaming/gate-drift-replay/judge-calibration (B5),
+#   (B2.11), gate-runner/flywheel/dreaming/gate-drift-replay (B5 — judge-
+#   calibration shipped out of this set 2026-07-09, see its row below),
 #   cmp-lite (B6.4), executor under user cabinet-exec (B4.7).
 #
 # DELIBERATELY ABSENT — com.cabinet.gate-apply (sovereign amendment 2026-07-05,
@@ -146,6 +147,30 @@ services:
       unfindable under launchd (FATAL hourly since ~Jul 3). The generator now
       renders cron rows; cabinet/launchd/com.cabinet.retro-trigger.plist is
       regenerated WITH PATH — Nate reloads it (no launchctl from lanes).
+  - name: research-sweep
+    label: com.cabinet.research-sweep
+    kind: cron
+    command: bash cabinet/cron/research-sweep.sh
+    schedule: { calendar: [{hour: 9, minute: 5}, {hour: 15, minute: 5}] }  # twice daily local
+    expected: "'Research sweep trigger pushed' log line per run; FATAL lines page via the no-silent-cron floor"
+    sunset: "retire if research briefs go unconsumed 60d (backlog-refine reads shared/interfaces/research-briefs/) or a dedicated research seat returns"
+    notes: >-
+      W10 (2026-07-09): script existed since the 5-officer era but was
+      UNSCHEDULED and fired trigger_send cro — a retired seat, so even a
+      manual run XADDed into a dead stream. Target now RESEARCH_SWEEP_OFFICER
+      (default cos, the Chair); cadence 2x/day, not the header's old 4h —
+      the Chair carries other duties.
+  - name: backlog-refine
+    label: com.cabinet.backlog-refine
+    kind: cron
+    command: bash cabinet/cron/backlog-refine.sh
+    schedule: { calendar: [{hour: 8, minute: 35}] }   # daily 08:35 local — after the 07:30 briefing
+    expected: "'Backlog refinement trigger pushed' log line per run; FATAL lines page via the no-silent-cron floor"
+    sunset: "retire if shared/backlog.md is superseded by the work-graph as the only backlog surface"
+    notes: >-
+      W10 (2026-07-09): same repair as research-sweep — unscheduled + fired
+      trigger_send cpo (retired seat). Target now BACKLOG_REFINE_OFFICER
+      (default cos); daily, not the header's old 12h.
   - name: action-lane
     label: com.cabinet.action-lane
     kind: daemon
@@ -154,13 +179,23 @@ services:
     # P3 one-door (review cp3 H2): cards send via channel.send's allow_sends()
     # gate — without the runtime marker every present raises loudly. Kept HERE
     # so a plist regeneration can never wipe the hand-edited plist fix.
-    env: { CABINET_ENV: runtime }
-    expected: "≤2 action cards/run, ≤5/day (Redis budget) to Captain Telegram; approve executes via action_exec (Monday/Reminders); log every 30min"
+    # W7 (2026-07-09): CABINET_GATHER_VIA_SOURCE=1 — the CG-2 seam goes LIVE
+    # after shadow-parity green (test_gather_via_source + test_org_decision_
+    # recall): gather routes through the bound PersonalSource — commitments
+    # rows + leak-scoped content_ts-fenced memory recall reach the proposer,
+    # so decisions stop being memory-blind (memory-audit P0). FAIL-CLOSED: a
+    # broken/absent source gathers EMPTY, never silently falls back to the
+    # vault walk. Revert = delete this one env key.
+    env: { CABINET_ENV: runtime, CABINET_GATHER_VIA_SOURCE: "1" }
+    expected: "≤2 action cards/run, ≤5/day (Redis budget) to Captain Telegram; approve executes via action_exec (Monday/Reminders); log every 30min; gather runs the source seam (flag ON 2026-07-09), not the raw vault walk"
     notes: >-
       The 2026-07-03 Captain-ruled pivot of the draft lane (parked): proactive
       ACTION proposals from captured commitments/meetings/decisions through the
       SAME binder gate. Propose-only; verdicts feed the live graduation engine.
       Pure core (action_lane.py) is retrodiction-ready for the sim harness.
+      Gather flows via the PersonalSource seam (W7 flip): watch the first tick
+      after deploy — a persistent "source unavailable — empty gather" log line
+      means fix the source binding, not blind-revert the flag.
   - name: frontdoor-briefing
     label: com.cabinet.frontdoor-briefing
     kind: daemon
@@ -303,6 +338,22 @@ services:
     schedule: { calendar: [{weekday: 1, hour: 7, minute: 15}] }   # Mondays 07:15 local
     expected: "weekly TI-7 journal-only create→verify→reverse canary per act-first kind; any failure freezes the kind (PAGE lines in log)"
     notes: runner sets its own PYTHONPATH + sources ~/.screenpipe/pipes/_shared/.env (no secrets in plist)
+  - name: prediction-calibration
+    label: com.cabinet.prediction-calibration
+    kind: watchdog
+    command: python3.12 -m framework.fidelity.prediction_scorer
+    schedule: { calendar: [{hour: 8, minute: 20}] }   # daily 08:20 local (after falsifier)
+    expected: "one JSON line/day appended to shared/interfaces/prediction-calibration.jsonl (idempotent per date) — Brier + calibration bins over acted cards' emitted confidence vs UNDO-3/binder ground truth"
+    notes: >-
+      W9 / ledger A10 (2026-07-09): the org emitted a confidence with every
+      action card and NEVER scored it. Report-only joiner — Redis
+      cabinet:action:* records (the predictions) x consequence ledger acted
+      rows (ttl_ok / silent_revert / binder verdicts, joined on the
+      correlation cid) -> Brier + per-bin calibration + per-lane series.
+      Pure measurement: nothing reads the series into a gate (promotion
+      mechanics stay defer-captain per D5/CG-10); it is the evidence chain
+      for judge-calibration and the prerequisite for EIG ordering. Read-only
+      except the one series append.
   - name: falsifier-daily
     label: com.cabinet.falsifier-daily
     kind: watchdog
@@ -403,14 +454,20 @@ services:
     label: com.cabinet.fidelity-f1
     kind: cron
     command: bash cabinet/scripts/run-fidelity-f1.sh
-    schedule: { calendar: [{day: 1, hour: 6, minute: 30}] }   # monthly, 1st 06:30 local
-    expected: "one monthly batch summary in log; exit nonzero + assert message if the clone stops beating the 0.083 generic-assistant baseline (fidelity-decay canary)"
+    schedule: { calendar: [{weekday: 1, hour: 6, minute: 30}] }   # weekly, Monday 06:30 local (W3 label-mine 2026-07-09; was monthly day-1)
+    env: { F1_ROLES: "cos", F1_WITH_INTENT: "1", F1_EMIT_SCORED: "1" }
+    expected: "one weekly batch summary in log; per scored case one fidelity-case-scored consequence event (the LABEL — emit_scored on); exit nonzero + assert message if the clone stops beating the 0.083 generic-assistant baseline (fidelity-decay canary)"
     notes: >-
-      F1 end-to-end fidelity batch (framework/fidelity/run_f1.py via
-      cabinet/scripts/run-fidelity-f1.sh; F1_ROLE/F1_CASES env knobs). Monthly:
-      the batch is expensive (officer drives + OAuth judge + Voyage) and drift
-      is slow — the fast label loop is verifier+probes above. Monthly calendar
-      rows get a 33-day watchdog floor (registry.py, lane-supply 2026-07-05).
+      F1 end-to-end fidelity batch, reframed 2026-07-09 (W3/§4.3-5) from cost
+      canary to LABEL MINE: weekly cadence, D1 knobs ON (with_intent +
+      emit_scored — Captain-authorized 2026-06-20, run_f1.run_batch
+      docstring), F1_ROLES lane roster extendable incrementally (start 1 lane
+      = cos; widen as verdict demand + cost budget allow). Labels are
+      calibration INPUT for the D5/judge-calibration chain, never promotion
+      fuel — the label floor and CG-10 stay fail-closed. Cost bounded
+      (~24 officer drives/role/run) and watched on cabinet:cost:tokens:daily
+      (cost ledger revived 2026-07-07). Weekday calendar rows get an 8-day
+      watchdog floor (registry.py::_floor_for_entry).
   - name: regression-corpus
     label: com.cabinet.regression-corpus
     kind: cron
@@ -435,6 +492,25 @@ services:
       Downstream of verifier+probes: they supply the verdict rows whose cell
       crossings this emitter surfaces. Same missing-file posture as
       regression-corpus (flip disabled rather than thrash).
+  - name: judge-calibration
+    label: com.cabinet.judge-calibration
+    kind: cron
+    command: python3.12 cabinet/scripts/judge-calibration.py
+    schedule: { calendar: [{hour: 5, minute: 35}] }   # daily 05:35 local — after the 04:30 regression-corpus refresh, before the 06:45 curator-health watch
+    expected: "daily measurement log line; judge-calibration-status.json in $CABINET_EVENT_LOG_DIR rewritten atomically on every successful measurement (including a below-bar one). Exit 1 = bar honestly NOT met (agreement <80% or <10 pairs — the EXPECTED state while verdict_human supply is thin; the failing proof keeps judge_verdicts_may_demote() False, which is the fail-closed floor working, NOT a service fault). Exit 2 = measurement error (nothing written; the old proof ages out on its own 14d clock) — that one is a real fault."
+    notes: >-
+      D5 step 1a (operative-egg-ledger row A2, lane alpha-additive — armed
+      2026-07-09, the report-only measurement everything else in the D5/CG-10
+      chain waits on; never started before this row). Deterministic and
+      OFFLINE (cabinet/scripts/judge-calibration.py header contract): measures
+      verdict_judge vs verdict_human agreement on rows ALREADY on the
+      consequence ledger — no LLM, no network, no credentials. Widens no
+      authority: verdict_judge fuel stays comment-only until CG-10 (CG-1
+      Option B, e76706f3) and the hard bar (>=80% over >=10 pairs,
+      JUDGE_HARD_BAR/MIN_PAIRS code constants) is deliberately not a flag.
+      Daily because the proof carries a 14-day max-age — a monthly cadence
+      could never keep it fresh. INSTALL SOURCE is the generate-plists.py
+      pipeline (same as memory-reconcile / self-improvement-loop).
 
   # ── Growth + hygiene organs (armed 2026-07-07) ─────────────────────────────
   # Two organs that existed but were NEVER scheduled: the R8 learning loop
@@ -444,8 +520,10 @@ services:
   # templates in cabinet/launchd/ instantiated via
   # envsubst '$REPO_ROOT $HOME $USER' into ~/Library/LaunchAgents (loading is
   # a deliberate human step — same posture as the flip agents above). NOT
-  # armed here: judge-calibration and the rest of the future-B5 verdict-fuel
-  # set — they stay in the B2+ comment block until their wave ships them.
+  # armed here: the rest of the future-B5 verdict-fuel set (gate-runner /
+  # flywheel / dreaming / gate-drift-replay) stays in the B2+ comment block
+  # until its wave ships it — judge-calibration LEFT that set 2026-07-09
+  # (armed above as the D5 step-1a report-only measurement, ledger row A2).
   - name: self-improvement-loop
     label: com.cabinet.self-improvement-loop
     kind: cron
@@ -578,6 +656,94 @@ services:
       (docs/runbooks/mini-hatch-tonight-2026-07-07.md §Flight recorder).
 
   # ── ORG-SENSES-1 transcript-digest organ (armed 2026-07-07) ────────────────
+  - name: memory-contradictions
+    label: com.cabinet.memory-contradictions
+    kind: cron
+    command: python3.12 cabinet/scripts/memory-contradictions.py
+    schedule: { calendar: [{weekday: 0, hour: 5, minute: 30}] }   # Sundays 05:30 local
+    expected: "one summary line/run (rows= proposals= new=); supersession candidates land status=proposed in shared/interfaces/memory-supersession-proposals.jsonl — NEVER applied by this organ"
+    sunset: "supersede when a measured-precision apply organ (post-soak Captain ruling) replaces propose-only; retire if cabinet_memory moves off superseded_by versioning"
+    notes: >-
+      §4.2 belief invalidation (2026-07-09): superseded_by plumbing is live
+      (schema, reconcile filters, drift repair) but nothing ever set it from
+      SEMANTIC conflict — contradictory beliefs both feed recall forever.
+      Deterministic propose-only pass (near-duplicate Jaccard>=0.75;
+      contradiction-cue >=0.35 + cue in the newer row only), bounded
+      per-source_type buckets, one constant read-only SELECT (falsifier
+      psql discipline). False-positive supersession is memory loss, so
+      apply stays OFF until precision is measured — same REPORT_ONLY soak
+      pattern as the self-improvement loop; propose-not-apply matches the
+      brain-build grant's conservative-defaults term.
+  - name: preference-pairs
+    label: com.cabinet.preference-pairs
+    kind: cron
+    command: python3.12 -m framework.learning.preference_pairs
+    schedule: { calendar: [{hour: 5, minute: 20}] }   # daily 05:20 local — after charter-shadow
+    expected: "one summary line/run (mined= new= known=); new Captain correction verdicts + standing patterns land as pairs in shared/interfaces/preference-pairs.jsonl (append-only, stable pair_id skip-known)"
+    sunset: "supersede when a first-class preference-learning consumer (tuning/DPO or prompt-injection of pairs) replaces the raw store; expect LOW yield until verdict volume grows — that is the label economy's problem, not this organ's"
+    notes: >-
+      Preference-pair miner (Rec, 2026-07-09): action-lessons.yml correction
+      verdicts (edit = verbatim captain_text preference; undo/never/rejected
+      = refrain preferences) joined to the consequence ledger for the
+      rejected-side subject, + captain-patterns.md standing entries with
+      provenance ([trust:*]) attached. Report-only accumulation
+      infrastructure like the action-lessons writer itself; captain_text
+      rides as INERT QUOTED DATA (SIE-1 contract) — nothing may obey it;
+      nothing reads the store into any gate.
+  - name: charter-shadow
+    label: com.cabinet.charter-shadow
+    kind: cron
+    command: python3.12 cabinet/scripts/charter-shadow.py
+    schedule: { calendar: [{hour: 5, minute: 10}] }   # daily 05:10 local — after the 04:40 exhaust-archive
+    expected: "one JSON line/day appended to shared/interfaces/charter-shadow-series.jsonl (idempotent per date) — charter-arm vs engine-arm agreement over the recorded policy.shadow_decision stream"
+    sunset: "self-terminating by design: once the Captain rules on the deletion question (either way), retire this row — the series exists to price that one decision"
+    notes: >-
+      Rec 3.3 (2026-07-09): prices the governance mass — a self-contained
+      ~40-line charter arm (destructive rm/db, .env writes, prod deploys)
+      replayed against the ENGINE decisions policy-shadow.py already records
+      in org_events. engine_only_blocks = what the 4.7k-LOC
+      matrix/posture/grants stack uniquely buys; the report's D9 deletion
+      case needs divergence <5% for a week. policy-shadow.py itself is
+      germline and untouched; the DELETION decision stays defer-captain —
+      this row only produces the evidence.
+  - name: calendar-intake
+    label: com.cabinet.calendar-intake
+    kind: cron
+    command: python3.12 -m framework.triggers.calendar_source
+    schedule: { interval_s: 900 }   # every 15 min
+    expected: "one summary line/run (events= enqueued= fired=); upcoming events land as calendar-upcoming intake items; calendar:<needle> on-event triggers fire one-shot via registry.mark_fired"
+    sunset: "retire if a richer perception plane (screenpipe-class sensor or CalDAV push) supersedes the poll, or if on-event triggers move to a real event bus"
+    notes: >-
+      W10d (2026-07-09): registry.due_event_triggers existed since Duty C and
+      NOTHING ever consumed it — an on-event trigger was write-only; upcoming
+      calendar events reached the org only at act-time overlap gathers. One
+      perception tick through already-granted surfaces: the signed read-only
+      EventKit helper (fail-closed CalendarReadError = tick reports, enqueues
+      nothing) -> intake items (durable capture, always-safe invariant) with
+      (uid,start) dedup in ~/.cabinet/state/calendar-intake.json; pending
+      calendar:<needle> on-event triggers fire (uid exact / title substring)
+      as ping-now intake items + mark_fired. Lookahead
+      CABINET_CAL_INTAKE_LEAD_MIN (default 120).
+  - name: exhaust-archive
+    label: com.cabinet.exhaust-archive
+    kind: cron
+    command: python3.12 cabinet/scripts/exhaust-archive.py
+    schedule: { calendar: [{hour: 4, minute: 40}] }   # daily 04:40 local — after the 04:10 transcript-digest
+    expected: "one summary line/night (streams= archived= embedded=); new cabinet:triggers:* entries appended verbatim to ~/.cabinet/archive/triggers/*.jsonl and landing in cabinet_memory as source_type=trigger-archive via cabinet:memory:embed_queue"
+    sunset: "retire if the trigger plane moves off Redis Streams or a first-class event store supersedes per-stream JSONL archives; rows carry metadata.sunset (supersede-on-rearchive)"
+    notes: >-
+      ORG-SENSES-2 (operative-egg-ledger row, W10 2026-07-09): the org's
+      nervous-system traffic (officer wakes, mission pushes, killswitch/veto
+      verbs) lived only inside Redis retention — XTRIM/rebuild erased who was
+      told what, when. Read-only sweep (SCAN + XRANGE exclusive-from; never
+      XDEL/XTRIM/ACK — officer consumer groups untouched): verbatim
+      append-only JSONL archive (captain_verified provenance intact) + a
+      secret-scrubbed embed per entry (stable source_id trig:<stream>:<id>,
+      upsert on re-run; 500/sweep flood guard). Chair-DM plane: inbound DMs
+      already land durably at capture (capture-captain-dm.sh -> telegram_dm
+      rows in cabinet_memory); outbound turns are hash-only in the feed
+      journal by design — archiving their text would be NEW capture, which
+      this row is not.
   - name: transcript-digest
     label: com.cabinet.transcript-digest
     kind: cron

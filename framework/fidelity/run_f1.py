@@ -111,13 +111,35 @@ def assert_beats_baseline(result: dict) -> None:
         f"clone decision_match_rate {rate} <= baseline {BASELINE_MATCH_RATE}")
 
 
+def _env_flag(name: str) -> bool:
+    """Truthy env knob (W3 label-mine wiring 2026-07-09): '1'/'true'/'yes'/'on'."""
+    import os
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 if __name__ == "__main__":
     import json
     import sys
 
     role = sys.argv[1] if len(sys.argv) > 1 else "cos"
     n = int(sys.argv[2]) if len(sys.argv) > 2 else 24
-    result = run_batch(officer_role=role, n_cases=n)
+    # D1 knobs (Captain-authorized 2026-06-20, run_batch docstring) reachable
+    # from the scheduled entry (W3 2026-07-09 — before this they were
+    # function-params only, so the cron batch could never feed the bar):
+    #   F1_WITH_INTENT=1  -> measure the intent axis (threads fenced cutoff
+    #                        context into score()).
+    #   F1_EMIT_SCORED=1  -> persist fidelity-case-scored consequence events
+    #                        (labels for calibration input; graduation bar FED).
+    #   F1_GATHER=1       -> F4 leak-guarded gather arm for the officer drive.
+    # All default OFF -> bare invocation stays byte-for-byte the old F1 path.
+    with_intent = _env_flag("F1_WITH_INTENT")
+    emit_scored = _env_flag("F1_EMIT_SCORED")
+    gather = None
+    if _env_flag("F1_GATHER"):
+        from framework.fidelity.officer_runner import gather_cutoff_context
+        gather = gather_cutoff_context
+    result = run_batch(officer_role=role, n_cases=n, gather=gather,
+                       with_intent=with_intent, emit_scored=emit_scored)
     print(json.dumps({k: v for k, v in result.items() if k != "scores"}, indent=2))
     assert_beats_baseline(result)
     print(f"OK - clone beats baseline: "
