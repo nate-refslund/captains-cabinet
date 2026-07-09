@@ -2175,7 +2175,7 @@ entries:
     wave: "-"
     status: "todo"
     gate_cmd: "grep -rnw sensed framework/ cabinet/scripts/ presets/ returns ZERO lane-coupled hits (generic fixture slugs renamed, lane-context checks generalized to any instance lane); bash cabinet/scripts/test-org-runtime.sh green on BOTH this live checkout AND a sensed-less clean-room checkout; decouple lands WITH the CI edit in the same change (never delete sensed.yml first — the :55-60 check requires active:false while present)"
-    note: "Created 2026-07-09 sealing the Captain call. Order of operations is the trap: the CI check is coupled to the file, so foundation decouple ships first (or same change), THEN instance surfaces are free to keep/kill their sensed.yml locally. Egg defaults must never ship a sensed lane."
+    note: "Created 2026-07-09 sealing the Captain call. Order of operations is the trap: the CI check is coupled to the file, so foundation decouple ships first (or same change), THEN instance surfaces are free to keep/kill their sensed.yml locally. Egg defaults must never ship a sensed lane. · 2026-07-09 CI-audit fix (this row's first slice, shipped): the orphaned root GITLINK `Sensed` (mode 160000 → commit 168381a0, NO .gitmodules — a phantom submodule that breaks fresh clones and tooling) was removed from the index via `git rm --cached Sensed`; the empty on-disk dir stays untracked. The lane-decouple half of this row remains todo."
     rollback: "git revert (test/CI edits only; instance sensed.yml untouched by the foundation half)"
     last_update: "2026-07-09"
   - id: "WORLD-V1A-BUILD"
