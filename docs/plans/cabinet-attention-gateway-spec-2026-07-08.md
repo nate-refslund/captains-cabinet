@@ -56,7 +56,7 @@ Append-only JSONL `~/Library/Application Support/cabinet/feed/feed-YYYY-MM-DD.js
 Row: `ts, direction(out|in), situation_key, class, urgency, mode(charter|chair|fallback), kind(card|edit|digest|briefing|page|reply), content_hash, content_len, telegram_message_id, chat, charter_version, gate_trace[], verdict{...}`.
 
 - Appended at the **transport layer** (`channel.py` send/edit) — cannot be skipped by any caller.
-- `recent_feed(n=50)` — the introspection primitive that was missing: the Cabinet reads its own feed the way the Captain does.
+- **Cursor-based reads, never re-reads (Captain directive 2026-07-09).** The introspection primitive is `feed_since(cursor, max_n=50) -> (rows, new_cursor)`: every consumer (T2 dossier assembly, comms-retro, gate dedup, briefing composer) carries its OWN durable cursor (last-consumed feed seq, per consumer id) and reads only what is NEW since it — the same 50 rows are never re-read and re-judged turn after turn. A missing/corrupt cursor falls back to a bounded tail read (`recent_feed(n)`) ONCE and immediately re-anchors. Rows are monotonically sequenced at append time (`seq`), so cursoring is exact, replayable, and cheap regardless of feed size.
 
 ### 4.4 One door — channel + intake hardening
 
