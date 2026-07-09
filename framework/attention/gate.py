@@ -185,13 +185,51 @@ def _load_charter():
     return _charter
 
 
+def _t2_required(item: dict, resolved: dict, urgency, pierces: bool,
+                 conf_floor: float) -> "str | None":
+    """The Chair-required mode-pick (spec §4.5 step 6, §4.6): an EXCEPTIONAL
+    item gets live Chair judgment instead of a mechanical send. Returns the
+    reason string, or None for routine (charter-mechanical) traffic. Only ever
+    consulted when the caller opts into T2 (chair_review=True) — so P4's pure
+    mechanical path is untouched by default."""
+    if resolved.get("show_injection_banner") and item.get("injection_suspect"):
+        return "chair-taint"                    # a real taint event: Chair triages
+    if resolved["class_id"] == "default":
+        return "chair-unclassified"             # novel/unmatched class
+    if urgency == "ping-now" and pierces:
+        return "chair-pingnow"                  # genuine ping-now: Chair authors it
+    steps = item.get("steps") or []
+    if any(s.get("action_type") or s.get("kind") in _ACTING_KINDS for s in steps):
+        return "chair-act-carrying"             # a step that would ACT on the world
+    try:
+        conf = float(item.get("confidence"))
+    except (TypeError, ValueError):
+        conf = 1.0
+    if conf < conf_floor:
+        return "chair-low-confidence"
+    return None
+
+
+# step kinds that execute a world change (act-carrying → Chair judgment)
+_ACTING_KINDS = frozenset({"reminder_create", "monday_task_create",
+                           "monday_task_update", "calendar_event_create",
+                           "delegate_work"})
+
+
 def decide(item: dict, *, ch: "dict | None" = None,
-           now: "datetime | None" = None, standing: "dict | None" = None) -> dict:
+           now: "datetime | None" = None, standing: "dict | None" = None,
+           chair_review: bool = False, conf_floor: float = 0.65) -> dict:
     """The pure gate decision. Returns a dict with ``action`` in
-    {send, edit, briefing, weekly, suppress}, the rendered ``text`` (send/edit),
-    ``message_id`` (edit), ``situation_key``, ``class_id``, ``silent``, and a
-    ``reason`` for the journal. Raises RuntimeError if the charter is
-    unavailable (the caller falls back — never silently sends ungoverned)."""
+    {send, edit, briefing, weekly, suppress, chair}, the rendered ``text``
+    (send/edit), ``message_id`` (edit), ``situation_key``, ``class_id``,
+    ``silent``, and a ``reason`` for the journal. Raises RuntimeError if the
+    charter is unavailable (the caller falls back — never silently sends
+    ungoverned).
+
+    ``chair_review`` (default False = P4 mechanical behavior, byte-identical):
+    when True, an exceptional item routes to the Chair (action=``chair``) for
+    live judgment instead of a mechanical send — the surface service files the
+    T2 request and enforces the SLA fallback."""
     charter = _load_charter()
     if ch is None:
         ch = charter.load_charter()
@@ -236,6 +274,20 @@ def decide(item: dict, *, ch: "dict | None" = None,
     deadline_imminent = (deadline is not None
                          and deadline.astimezone(_captain_tz()) < nb)
     pierces = resolved["floor"] or deadline_imminent
+
+    # (2.5) MODE PICK (P5, spec §4.5 step 6, §4.6) — before mechanical routing:
+    # an EXCEPTIONAL item gets live Chair judgment instead of a mechanical send.
+    # Opt-in (chair_review) so P4's mechanical path is byte-identical by default;
+    # the surface service files the T2 request + owns the SLA fallback.
+    if chair_review:
+        t2_reason = _t2_required(item, resolved, urgency, pierces, conf_floor)
+        if t2_reason:
+            return {**base, "action": "chair", "reason": t2_reason,
+                    "floor": resolved["floor"],
+                    "fallback": resolved.get("fallback")
+                    or ("mechanical-with-marker" if resolved["floor"]
+                        else "hold-briefing"),
+                    "sla_minutes": resolved.get("sla_minutes") or 10}
 
     if urgency == "ping-now":
         # A genuine ping-now (structurally justified) PROMOTES to a direct
@@ -286,23 +338,30 @@ def _default_edit(message_id, text, **kw):
     return channel.edit_message(message_id, text, feed_meta=kw.get("feed_meta"))
 
 
+def briefing_item(item: dict, decision: dict) -> dict:
+    """The canonical intake item a briefing/weekly-routed gate decision folds
+    into the front-door (source/kind/ts/urgency_tier/payload{summary}) — the
+    exact shape ``composer.render_item`` consumes. Pure, so the gate→composer
+    briefing path is testable without Redis."""
+    tier = "fyi" if decision.get("action") == "weekly" else "batch"
+    return {
+        "source": "attention-gate",
+        "kind": item.get("kind", "note"),
+        "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "urgency_tier": tier,
+        "payload": {"summary": decision.get("text") or item.get("subject", ""),
+                    "situation_key": decision.get("situation_key"),
+                    "class_id": decision.get("class_id")},
+    }
+
+
 def _default_briefing(item, decision):
     """Fold a briefing/weekly-routed item into the front-door intake so the
-    composer includes it in the next briefing. A canonical intake item:
-    source/kind/ts/payload{summary}. Best-effort — an intake failure is
-    logged, not raised (the item re-proposes on the next lane run)."""
+    composer includes it in the next briefing. Best-effort — an intake failure
+    is logged, not raised (the item re-proposes on the next lane run)."""
     try:
         from framework.frontdoor import intake
-        tier = "fyi" if decision.get("action") == "weekly" else "batch"
-        intake.enqueue({
-            "source": "attention-gate",
-            "kind": item.get("kind", "note"),
-            "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "urgency_tier": tier,
-            "payload": {"summary": decision.get("text") or item.get("subject", ""),
-                        "situation_key": decision.get("situation_key"),
-                        "class_id": decision.get("class_id")},
-        })
+        intake.enqueue(briefing_item(item, decision))
     except Exception as e:
         print(f"[gate] briefing enqueue failed ({e}) — item will re-propose",
               file=sys.stderr)
@@ -354,11 +413,43 @@ def deliver(decision: dict, *, send_fn=None, edit_fn=None, briefing_fn=None,
 
 
 def submit(item: dict, *, ch: "dict | None" = None, now: "datetime | None" = None,
-           send_fn=None, edit_fn=None, briefing_fn=None) -> dict:
-    """decide + deliver in one call (the surface service / shell producers)."""
+           send_fn=None, edit_fn=None, briefing_fn=None,
+           chair_review: bool = False, conf_floor: float = 0.65,
+           file_t2=None) -> dict:
+    """decide + deliver in one call (the surface service / shell producers).
+
+    With ``chair_review`` (opt-in), an exceptional item routes to the Chair:
+    ``decide`` returns ``action="chair"`` and this files a T2 judgment request
+    (dossier + SLA) instead of delivering — the Chair authors it, and the
+    surface service's SLA sweep is the fallback. Default (False) is the P4
+    mechanical path, byte-identical."""
     standing = load_standing()
-    decision = decide(item, ch=ch, now=now, standing=standing)
+    decision = decide(item, ch=ch, now=now, standing=standing,
+                      chair_review=chair_review, conf_floor=conf_floor)
+    if decision.get("action") == "chair":
+        file_t2 = file_t2 or _default_file_t2
+        rid = file_t2(item, decision, ch=ch, now=now)
+        save_standing(standing)
+        return {"decision": decision, "result": {"status": "chair-filed",
+                                                 "request_id": rid}}
     result = deliver(decision, send_fn=send_fn, edit_fn=edit_fn,
                      briefing_fn=briefing_fn, standing=standing, item=item)
     save_standing(standing)
     return {"decision": decision, "result": result}
+
+
+def _default_file_t2(item: dict, decision: dict, *, ch=None, now=None) -> str:
+    """File a T2 judgment request for a Chair-routed item — assembles the
+    dossier and hands it to framework.attention.t2. Lazy import (t2 imports
+    gate for its delivery defaults; keep the cycle at call time)."""
+    from framework.attention import t2
+    from datetime import datetime, timezone
+    charter = _load_charter()
+    resolved = charter.resolve(item, ch or charter.load_charter())
+    dossier = t2.assemble_dossier(item, decision, charter_section=resolved)
+    return t2.file_judgment_request(
+        item, decision, dossier,
+        sla_minutes=int(decision.get("sla_minutes") or 10),
+        now=now or datetime.now(timezone.utc),
+        fallback=decision.get("fallback") or "hold-briefing",
+        floor=bool(decision.get("floor")))

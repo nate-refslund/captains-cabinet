@@ -219,3 +219,72 @@ def test_attention_submit_sh_dry_mode(tmp_path):
     assert out.returncode == 0, out.stderr
     dec = json.loads(out.stdout.strip().splitlines()[-1])
     assert dec["class_id"] == "infra-page" and dec["action"] == "send"
+
+
+# --- P5 T2 mode-pick (chair_review) ------------------------------------------
+
+def test_chair_review_off_preserves_p4_mechanical():
+    """Default (chair_review=False) is byte-identical to P4: an exceptional
+    item still routes mechanically."""
+    it = _item(kind="infra-page", urgency="ping-now",
+               deadline_iso="2026-07-09T15:00:00Z")
+    d = gate.decide(it, ch=CH, now=NOON, standing={})   # no chair_review
+    assert d["action"] == "send"
+
+
+def test_chair_review_routes_genuine_pingnow_to_chair():
+    it = _item(kind="infra-page", urgency="ping-now",
+               deadline_iso="2026-07-09T15:00:00Z")
+    d = gate.decide(it, ch=CH, now=NOON, standing={}, chair_review=True)
+    assert d["action"] == "chair" and d["reason"] == "chair-pingnow"
+    assert d["floor"] is True and d["fallback"] == "mechanical-with-marker"
+
+
+def test_chair_review_routes_act_carrying_to_chair():
+    it = _item(steps=[{"kind": "reminder_create", "title": "Block cal"}])
+    d = gate.decide(it, ch=CH, now=NOON, standing={}, chair_review=True)
+    assert d["action"] == "chair" and d["reason"] == "chair-act-carrying"
+    assert d["fallback"] == "hold-briefing"   # non-floor
+
+
+def test_chair_review_routes_low_confidence_to_chair():
+    it = _item(confidence=0.4)
+    d = gate.decide(it, ch=CH, now=NOON, standing={}, chair_review=True)
+    assert d["action"] == "chair" and d["reason"] == "chair-low-confidence"
+
+
+def test_chair_review_routine_high_conf_stays_mechanical():
+    """A routine, high-confidence, non-acting standing-card item is NOT
+    exceptional — it sends mechanically even with chair_review on."""
+    it = _item(confidence=0.95, steps=[])
+    d = gate.decide(it, ch=CH, now=NOON, standing={}, chair_review=True)
+    assert d["action"] == "send"
+
+
+def test_chair_review_identity_dedup_still_wins():
+    """A standing card that already exists edits/suppresses BEFORE the mode
+    pick — an exceptional re-render must not re-file a T2 request."""
+    standing = {}
+    it = _item(steps=[{"kind": "reminder_create", "title": "x"}])
+    d1 = gate.decide(it, ch=CH, now=NOON, standing=standing, chair_review=True)
+    assert d1["action"] == "chair"
+    # simulate the card now existing (chair sent it)
+    from framework.attention.situation import situation_key
+    skey = situation_key(it["evidence"], it["subject"])
+    standing[skey] = {"message_id": 9, "render_hash": "different"}
+    d2 = gate.decide(it, ch=CH, now=NOON, standing=standing, chair_review=True)
+    assert d2["action"] == "edit"   # identity wins over mode-pick
+
+
+def test_gate_briefing_item_renders_through_composer():
+    """P5 acceptance: a briefing-routed gate decision produces a valid intake
+    item the composer folds into the next briefing (gate→intake→composer)."""
+    from framework.frontdoor import composer, intake
+    it = _item(kind="note")
+    d = gate.decide(it, ch=CH, now=NIGHT, standing={})   # night → briefing
+    assert d["action"] == "briefing"
+    intake_item = gate.briefing_item(it, d)
+    intake.validate_item(intake_item)                    # raises if malformed
+    rendered = composer.render_item(intake_item)
+    assert "attention-gate" in rendered
+    assert "briefing" in composer.compose([intake_item]).lower()
