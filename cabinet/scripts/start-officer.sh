@@ -346,7 +346,7 @@ tmux send-keys -t "cabinet:$WINDOW" \
 (
   # shellcheck source=lib/officer-boot.sh
   source /opt/founders-cabinet/cabinet/scripts/lib/officer-boot.sh
-  BOOT_PROMPT="You are $OFFICER. Read your role definition at .claude/agents/$OFFICER.md and your session start checklist. Read your foundation skills in memory/skills/. Read your tier 2 notes in instance/memory/tier2/$OFFICER/. Then announce yourself on the warroom: bash /opt/founders-cabinet/cabinet/scripts/send-to-group.sh '<b>$OFFICER online.</b> Session started. Checking for pending work.' — then check for pending triggers and overdue work immediately."
+  BOOT_PROMPT="You are $OFFICER. Read your role definition at .claude/agents/$OFFICER.md and your session start checklist.$(officer_role_registry_clause /opt/founders-cabinet "$OFFICER") Read your foundation skills in memory/skills/. Read your tier 2 notes in instance/memory/tier2/$OFFICER/. Then announce yourself on the warroom: bash /opt/founders-cabinet/cabinet/scripts/send-to-group.sh '<b>$OFFICER online.</b> Session started. Checking for pending work.' — then check for pending triggers and overdue work immediately."
   officer_boot_drive "cabinet:$WINDOW" "$BOOT_PROMPT"
   # No permanent /loop needed — Redis Trigger Channel delivers all triggers
   # and scheduled work instantly. /loop is available for ad-hoc use only.

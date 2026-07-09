@@ -482,11 +482,13 @@ class TestGatherFromEvents:
         assert raw["captain_attention_cost"] == 4.0
 
     def test_learning_rate(self, event_log_dir):
-        """learning_rate counts experience_recorded events."""
+        """learning_rate is a per-DAY rate (§4.2 fix): count / window_days —
+        window-invariant, so 7 records over 7 days == 1 record over 1 day."""
         for _ in range(5):
             emit("experience_recorded", actor="cto", payload={"lesson": "..."})
         raw = gather_from_events()
-        assert raw["learning_rate"] == 5.0
+        assert raw["learning_rate"] == pytest.approx(5.0 / 7)
+        assert gather_from_events(window_days=1)["learning_rate"] == 5.0
 
     def test_compute_ovi_from_event_data(self, event_log_dir, real_components_path):
         """End-to-end: gather_from_events → compute_ovi produces a valid snapshot."""

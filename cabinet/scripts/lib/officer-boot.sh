@@ -112,3 +112,33 @@ officer_loop_arm() {
   fi
   return 0
 }
+
+# officer_role_registry_clause <repo-root> <officer>
+#   W6/§4.3-4 (2026-07-09): the flag-gated live-registry boot wire.
+#
+#   The R8 self-improvement loop (framework/learning/self_improvement_loop.py,
+#   6h REPORT_ONLY soak) evolves roles by writing instance/roles/active/
+#   <officer>.yml — but officers boot from .claude/agents/<officer>.md ONLY,
+#   so every applied amendment was landing in a registry NO SESSION EVER READ
+#   (the "soaking a dead wire" finding). This clause makes boot-prompt
+#   assembly read the live registry too.
+#
+#   DARK BY DEFAULT (house build-dark/flip-gated pattern): emits the clause
+#   ONLY when CABINET_BOOT_ROLES_ACTIVE=1 AND the officer's registry file
+#   exists. Before flipping the flag, run the parity audit
+#   (cabinet/scripts/audit-role-parity.sh) — the P0 officer-config-
+#   contamination lesson (CC audit 2026-07-07): never point boot at a second
+#   config surface while the two surfaces silently disagree. Flipping
+#   REPORT_ONLY=0 on the loop itself stays Captain's ("arm after soak");
+#   restart the soak clock when this wire goes live so the soak observes
+#   reality.
+#
+#   Echoes the clause text (or nothing). Callers append: BOOT_PROMPT="...$(
+#   officer_role_registry_clause "$REPO_ROOT" "$OFFICER")".
+officer_role_registry_clause() {
+  local root="$1" officer="$2"
+  [ "${CABINET_BOOT_ROLES_ACTIVE:-0}" = "1" ] || return 0
+  local yml="$root/instance/roles/active/$officer.yml"
+  [ -f "$yml" ] || return 0
+  printf '%s' " Also read your live role-registry entry at instance/roles/active/$officer.yml — it is the evolution loop's operational view of your role (capabilities, authority_level, hats, applied charter amendments) and refreshes after your agent file was authored; treat it as the current roster truth alongside your role definition, and surface any contradiction between the two to the Chair instead of guessing."
+}
