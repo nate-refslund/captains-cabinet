@@ -56,7 +56,10 @@ Then host bootstrap:
 
 ```bash
 bash cabinet/scripts/setup-mac.sh          # idempotent; installs gaps, starts redis,
-                                           # creates dirs, .env wizard, runs the suite
+                                           # creates dirs, .env wizard, fast proofs
+                                           # (null-hatch + P-b subset; full pytest
+                                           # suite = --full-suite; sensors =
+                                           # --with-sensors; dashboard = --with-dashboard)
 bash cabinet/scripts/setup-mac.sh --check  # must exit 0
 ```
 
@@ -93,6 +96,8 @@ rehearsal's synthetic answers file is the shape reference):
 ```bash
 python3.12 cabinet/scripts/generate-instance.py --dry-run   # preview
 python3.12 cabinet/scripts/generate-instance.py
+# zero-question fast lane (what hatch.sh --defaults runs):
+python3.12 cabinet/scripts/generate-instance.py --defaults --adopt
 ```
 
 **This clone ships MY committed `instance/`** (the MacBook deployment's
@@ -179,7 +184,8 @@ bash cabinet/scripts/deploy-mac.sh --officer cos
 # graduation-transitions) — rendered from cabinet/services.yml:
 python3.12 cabinet/scripts/generate-plists.py
 for p in cabinet/launchd/generated/*.plist; do plutil -lint "$p"; done   # all OK
-for p in cabinet/launchd/generated/*.plist; do launchctl bootstrap gui/$(id -u) "$p"; done
+# bootout-first = idempotent on re-runs (no-op on a fresh box):
+for p in cabinet/launchd/generated/*.plist; do launchctl bootout gui/$(id -u) "$p" 2>/dev/null || true; launchctl bootstrap gui/$(id -u) "$p"; done
 launchctl print gui/$(id -u) | grep com.cabinet | head    # loaded + last-exit 0
 ```
 
@@ -187,6 +193,25 @@ Verify: `bash cabinet/scripts/health-check.sh`, `tmux attach -t officer-cos`
 (detach `C-b d`), Telegram round-trip with the Chair. Then ratify seed
 outcomes in `instance/config/outcomes.yml` (`status: active` +
 `captain_ratified: true`, keyed to YOUR `cabinet.id`).
+
+## 7 — First receipt (Perfect Cabinet PC-A, 2026-07-09)
+
+After the proofs (and independent of the launchd move-in above), land the
+LOCAL first receipt — the org's genesis output on disk, no Telegram needed:
+
+```bash
+bash cabinet/scripts/first-briefing.sh --local
+# prints: FIRST BRIEFING RECEIPT: instance/memory/first-briefing-<date>.md
+#         (N proposed outcome cards, propose-only)
+```
+
+`hatch.sh` runs this as its `first-receipt` step automatically and measures
+**TTFR** (proofs-done → first-receipt) in its flight log — see
+`docs/runbooks/hatch-v0-2026-07-09.md`. On a live deployment, echo the
+genesis proposal into the runtime ledger afterwards:
+`cabinet/scripts/append-interface.sh captain-decisions` with the entry on
+stdin (hook-guarded, append-only — a hatch-time step, never a build-session
+write).
 
 ## Mini-manual steps (human-only, with WHY)
 
