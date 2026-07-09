@@ -404,14 +404,20 @@ services:
     label: com.cabinet.fidelity-f1
     kind: cron
     command: bash cabinet/scripts/run-fidelity-f1.sh
-    schedule: { calendar: [{day: 1, hour: 6, minute: 30}] }   # monthly, 1st 06:30 local
-    expected: "one monthly batch summary in log; exit nonzero + assert message if the clone stops beating the 0.083 generic-assistant baseline (fidelity-decay canary)"
+    schedule: { calendar: [{weekday: 1, hour: 6, minute: 30}] }   # weekly, Monday 06:30 local (W3 label-mine 2026-07-09; was monthly day-1)
+    env: { F1_ROLES: "cos", F1_WITH_INTENT: "1", F1_EMIT_SCORED: "1" }
+    expected: "one weekly batch summary in log; per scored case one fidelity-case-scored consequence event (the LABEL — emit_scored on); exit nonzero + assert message if the clone stops beating the 0.083 generic-assistant baseline (fidelity-decay canary)"
     notes: >-
-      F1 end-to-end fidelity batch (framework/fidelity/run_f1.py via
-      cabinet/scripts/run-fidelity-f1.sh; F1_ROLE/F1_CASES env knobs). Monthly:
-      the batch is expensive (officer drives + OAuth judge + Voyage) and drift
-      is slow — the fast label loop is verifier+probes above. Monthly calendar
-      rows get a 33-day watchdog floor (registry.py, lane-supply 2026-07-05).
+      F1 end-to-end fidelity batch, reframed 2026-07-09 (W3/§4.3-5) from cost
+      canary to LABEL MINE: weekly cadence, D1 knobs ON (with_intent +
+      emit_scored — Captain-authorized 2026-06-20, run_f1.run_batch
+      docstring), F1_ROLES lane roster extendable incrementally (start 1 lane
+      = cos; widen as verdict demand + cost budget allow). Labels are
+      calibration INPUT for the D5/judge-calibration chain, never promotion
+      fuel — the label floor and CG-10 stay fail-closed. Cost bounded
+      (~24 officer drives/role/run) and watched on cabinet:cost:tokens:daily
+      (cost ledger revived 2026-07-07). Weekday calendar rows get an 8-day
+      watchdog floor (registry.py::_floor_for_entry).
   - name: regression-corpus
     label: com.cabinet.regression-corpus
     kind: cron
