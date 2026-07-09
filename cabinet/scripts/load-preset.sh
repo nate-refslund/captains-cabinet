@@ -453,4 +453,21 @@ if [ -d "$CABINET_ROOT/instance/agents" ]; then
   done
 fi
 
+# 3. Role-registry parity check (W6/§4.3-4, 2026-07-09). Now that
+# .claude/agents/ reflects the loaded preset, surface any drift against the
+# evolution loop's live registry (instance/roles/active/) — the second boot
+# surface behind the flag-gated CABINET_BOOT_ROLES_ACTIVE wire in
+# lib/officer-boot.sh. WARN-ONLY here (a preset load must not brick on a
+# registry finding); the audit's exit code gates the FLAG FLIP, not the load.
+if [ -x "$CABINET_ROOT/cabinet/scripts/audit-role-parity.sh" ]; then
+  _rp_out=$(mktemp /tmp/role-parity.XXXXXX)
+  if CABINET_ROOT="$CABINET_ROOT" bash "$CABINET_ROOT/cabinet/scripts/audit-role-parity.sh" >"$_rp_out" 2>&1; then
+    log "Role-registry parity: OK (instance/roles/active/ agrees with .claude/agents/)"
+  else
+    log "WARN: role-registry parity drift — do NOT flip CABINET_BOOT_ROLES_ACTIVE=1 until resolved:"
+    while IFS= read -r _rp_line; do log "  $_rp_line"; done < "$_rp_out"
+  fi
+  rm -f "$_rp_out"
+fi
+
 log "Preset '$ACTIVE_PRESET' loaded successfully"
