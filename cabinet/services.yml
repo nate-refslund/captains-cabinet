@@ -656,6 +656,22 @@ services:
       (docs/runbooks/mini-hatch-tonight-2026-07-07.md §Flight recorder).
 
   # ── ORG-SENSES-1 transcript-digest organ (armed 2026-07-07) ────────────────
+  - name: charter-shadow
+    label: com.cabinet.charter-shadow
+    kind: cron
+    command: python3.12 cabinet/scripts/charter-shadow.py
+    schedule: { calendar: [{hour: 5, minute: 10}] }   # daily 05:10 local — after the 04:40 exhaust-archive
+    expected: "one JSON line/day appended to shared/interfaces/charter-shadow-series.jsonl (idempotent per date) — charter-arm vs engine-arm agreement over the recorded policy.shadow_decision stream"
+    sunset: "self-terminating by design: once the Captain rules on the deletion question (either way), retire this row — the series exists to price that one decision"
+    notes: >-
+      Rec 3.3 (2026-07-09): prices the governance mass — a self-contained
+      ~40-line charter arm (destructive rm/db, .env writes, prod deploys)
+      replayed against the ENGINE decisions policy-shadow.py already records
+      in org_events. engine_only_blocks = what the 4.7k-LOC
+      matrix/posture/grants stack uniquely buys; the report's D9 deletion
+      case needs divergence <5% for a week. policy-shadow.py itself is
+      germline and untouched; the DELETION decision stays defer-captain —
+      this row only produces the evidence.
   - name: calendar-intake
     label: com.cabinet.calendar-intake
     kind: cron
