@@ -656,6 +656,24 @@ services:
       (docs/runbooks/mini-hatch-tonight-2026-07-07.md §Flight recorder).
 
   # ── ORG-SENSES-1 transcript-digest organ (armed 2026-07-07) ────────────────
+  - name: memory-contradictions
+    label: com.cabinet.memory-contradictions
+    kind: cron
+    command: python3.12 cabinet/scripts/memory-contradictions.py
+    schedule: { calendar: [{weekday: 0, hour: 5, minute: 30}] }   # Sundays 05:30 local
+    expected: "one summary line/run (rows= proposals= new=); supersession candidates land status=proposed in shared/interfaces/memory-supersession-proposals.jsonl — NEVER applied by this organ"
+    sunset: "supersede when a measured-precision apply organ (post-soak Captain ruling) replaces propose-only; retire if cabinet_memory moves off superseded_by versioning"
+    notes: >-
+      §4.2 belief invalidation (2026-07-09): superseded_by plumbing is live
+      (schema, reconcile filters, drift repair) but nothing ever set it from
+      SEMANTIC conflict — contradictory beliefs both feed recall forever.
+      Deterministic propose-only pass (near-duplicate Jaccard>=0.75;
+      contradiction-cue >=0.35 + cue in the newer row only), bounded
+      per-source_type buckets, one constant read-only SELECT (falsifier
+      psql discipline). False-positive supersession is memory loss, so
+      apply stays OFF until precision is measured — same REPORT_ONLY soak
+      pattern as the self-improvement loop; propose-not-apply matches the
+      brain-build grant's conservative-defaults term.
   - name: preference-pairs
     label: com.cabinet.preference-pairs
     kind: cron
