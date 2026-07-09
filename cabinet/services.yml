@@ -656,6 +656,24 @@ services:
       (docs/runbooks/mini-hatch-tonight-2026-07-07.md §Flight recorder).
 
   # ── ORG-SENSES-1 transcript-digest organ (armed 2026-07-07) ────────────────
+  - name: calendar-intake
+    label: com.cabinet.calendar-intake
+    kind: cron
+    command: python3.12 -m framework.triggers.calendar_source
+    schedule: { interval_s: 900 }   # every 15 min
+    expected: "one summary line/run (events= enqueued= fired=); upcoming events land as calendar-upcoming intake items; calendar:<needle> on-event triggers fire one-shot via registry.mark_fired"
+    sunset: "retire if a richer perception plane (screenpipe-class sensor or CalDAV push) supersedes the poll, or if on-event triggers move to a real event bus"
+    notes: >-
+      W10d (2026-07-09): registry.due_event_triggers existed since Duty C and
+      NOTHING ever consumed it — an on-event trigger was write-only; upcoming
+      calendar events reached the org only at act-time overlap gathers. One
+      perception tick through already-granted surfaces: the signed read-only
+      EventKit helper (fail-closed CalendarReadError = tick reports, enqueues
+      nothing) -> intake items (durable capture, always-safe invariant) with
+      (uid,start) dedup in ~/.cabinet/state/calendar-intake.json; pending
+      calendar:<needle> on-event triggers fire (uid exact / title substring)
+      as ping-now intake items + mark_fired. Lookahead
+      CABINET_CAL_INTAKE_LEAD_MIN (default 120).
   - name: exhaust-archive
     label: com.cabinet.exhaust-archive
     kind: cron
