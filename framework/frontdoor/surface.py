@@ -105,6 +105,11 @@ def drain_and_surface(*, consumer: str = _CONSUMER, count: int = 200) -> dict:
         census = attention_queue.build_queue()
         attention_queue.write_artifacts(census)
         queue_pending = census.get("pending_captain_items")
+        # Telegram skin: the ONE pinned standing queue card, silently edited
+        # in place (pins/edits never notify). Gated on allow_sends +
+        # CABINET_QUEUE_CARD inside refresh(); best-effort.
+        from framework.attention import queue_card
+        queue_card.refresh(census)
     except Exception as e:  # noqa: BLE001
         print(f"[surface] attention census skipped ({e})",
               file=__import__("sys").stderr)
