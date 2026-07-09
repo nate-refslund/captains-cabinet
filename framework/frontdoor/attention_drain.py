@@ -246,6 +246,20 @@ def _xack(backend, stream: str, entry_id: str) -> None:
         pass
 
 
+def _xdel(backend, stream: str, entry_id: str) -> None:
+    """H2 stream trim: retire a forwarded/duplicate card's stream copy. The
+    content already reached the front door (intake + forwarded marker), so
+    the stream row is pure queue growth. Best-effort — a failed XDEL just
+    leaves the row for hygiene.trim_forwarded_streams to sweep later."""
+    try:
+        if _is_redispy(backend):
+            backend._c.xdel(stream, entry_id)  # type: ignore[attr-defined]
+        else:
+            backend._run("XDEL", stream, entry_id, raw=True)  # type: ignore[attr-defined]
+    except Exception:
+        pass
+
+
 def _already_forwarded(backend, marker: str) -> bool:
     try:
         if _is_redispy(backend):
@@ -410,6 +424,18 @@ def drain_attention(*, count: int = 100, only_projects: set[str] | None = None) 
             rows = []
         for entry_id, fields in rows:
             marker = f"{project}:{entry_id}"
+            # H4 (supersede-in-place): a re-card of a situation already in
+            # this stream REPLACES it — the superseded entry is XDEL'd via
+            # the per-project situation index instead of growing the queue
+            # ("supersedes my 10:10Z card" as prose was queue growth).
+            # Best-effort + lazy import (hygiene ↔ drain are call-time-only).
+            try:
+                from framework.attention import hygiene as _hyg
+                _hyg.supersede_stream_entry(
+                    backend, project, _hyg.stream_situation_key(fields),
+                    entry_id)
+            except Exception:
+                pass
             # A card tagged with an OPEN need dedups on the need's fingerprint
             # id across projects/entries — the digest already surfaces the
             # need; only the FIRST card rides the briefing (demoted, see
@@ -422,6 +448,7 @@ def drain_attention(*, count: int = 100, only_projects: set[str] | None = None) 
             if _already_forwarded(backend, marker) or (
                     need_marker and _already_forwarded(backend, need_marker)):
                 _xack(backend, stream, entry_id)  # belt-and-braces: clear the dup
+                _xdel(backend, stream, entry_id)  # H2: trim the dead copy
                 skipped += 1
                 continue
             item = card_to_item(fields, project=project, needs_wired=wired)
@@ -440,6 +467,12 @@ def drain_attention(*, count: int = 100, only_projects: set[str] | None = None) 
             if need_marker:
                 _mark_forwarded(backend, need_marker)
             _xack(backend, stream, entry_id)
+            # H2 (trim forwarded streams): the card's content now lives in
+            # the front-door intake + forwarded-marker set — the stream copy
+            # is retired immediately instead of accumulating forever (the
+            # observed 23 never-trimmed items; legacy backlog is swept by
+            # hygiene.trim_forwarded_streams from the surface drain).
+            _xdel(backend, stream, entry_id)
             forwarded += 1
             by_project[project] = by_project.get(project, 0) + 1
 
