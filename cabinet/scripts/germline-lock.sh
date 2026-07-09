@@ -63,6 +63,11 @@ FILES=(
   "framework/attention/situation.py"
   "framework/attention/feed.py"
   "framework/attention/acted_overlay.py"
+  # --- war-room census + admission plane (command-center Stage 1) ---
+  "framework/attention/situations.py"
+  "framework/attention/queue.py"
+  "framework/attention/hygiene.py"
+  "framework/attention/queue_card.py"
   # --- judged config (NOT runtime-written) + rules ---
   "instance/config/act-first-surfaces.yml"
   "cabinet/mcp-scope.yml"

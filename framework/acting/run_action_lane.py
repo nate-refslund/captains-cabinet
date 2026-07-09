@@ -1037,6 +1037,25 @@ def _expire_stale_cards(now: dt.datetime) -> int:
             expired += 1
             print(f"card-expiry: expired open card -> {prop.get('subject')} "
                   f"(> {CARD_MAX_AGE_H:g}h, no verdict; graduation-neutral)")
+            # H5 (command-center 2026-07-10): expiry is ROUTING, not a
+            # verdict — journal the demotion as a first-class feed row so
+            # the war-room census + P6 attention cells read it natively
+            # (the situations view re-types bare ledger expiries anyway;
+            # this is the source-side record). Best-effort, never blocks.
+            try:
+                from framework.attention.feed import append_event
+                from framework.attention.situation import (
+                    situation_key as _sit_key)
+                append_event({
+                    "direction": "in", "kind": "demote",
+                    "situation_key": _sit_key(
+                        [r for r in (prop.get("refs") or [])
+                         if isinstance(r, str)],
+                        str(prop.get("subject") or "")),
+                    "demote_reason": "card-expiry",
+                })
+            except Exception:
+                pass
         except Exception as e:
             print(f"card-expiry: failed for {prop.get('subject')}: {e}")
             continue

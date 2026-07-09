@@ -90,3 +90,30 @@ bash cabinet/scripts/append-interface.sh captain-decisions   # entry on stdin
 
 ---
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+
+
+## W-WARROOM — war-room census joins the germline plane
+
+Staged DARK on this branch (command-center Stage 1, 2026-07-10). Rides the
+SAME unlock→pull→lock ceremony as H0 + candor + W4 + W8 — no extra Captain
+steps beyond the one window.
+
+What it changes (all four germline lists in lockstep + one lane file):
+1. `framework/policies/immutable-core.yml` — four war-room paths enter
+   Ring-0: `framework/attention/{situations,queue,hygiene,queue_card}.py`
+   (they decide what the Captain SEES — admission law, census, closure —
+   so an officer edit would re-weight its own visibility).
+2. `cabinet/scripts/germline-lock.sh` FILES — same four (lock skips them
+   until the master merge lands the files; arms automatically after).
+3. `cabinet/scripts/hooks/pre-tool-use.sh` §5 arm + §5b GERM_PATH_RE —
+   same four.
+4. `framework/policies/base-safety.yml` germline-readonly — same four.
+5. `framework/acting/run_action_lane.py` — the card-expiry sweep journals
+   a `demote` feed row per expiry (H5: expiry is routing, never a verdict;
+   the situations view already re-types bare expiries — this makes the
+   demotion first-class for P6 attention cells). Best-effort, no behavior
+   change to the sweep itself.
+
+Verify inside the window (after pull, before lock):
+    python3.12 -m pytest framework/tests/test_germline_lockstep_consistency.py -q
+    python3.12 -m pytest framework/attention/tests/ -q
