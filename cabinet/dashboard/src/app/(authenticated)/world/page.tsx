@@ -1,20 +1,39 @@
 /**
- * /world — Cabinet World, the Wardroom (E1).
+ * /world — Cabinet World, the ONE continuous world (T1 engine).
  *
- * OBSERVER-CLASS route: a pure read-model over the E0a/E0b chronicle. This
- * server component renders the client shell and nothing else — no server
- * actions exist under /world (CI ratchet), no write path ever will
- * (renderer-never-writes doctrine, kickoff 2026-07-07).
+ * OBSERVER-CLASS route with the ONE ruled exception: a pure read-model over
+ * the E0a/E0b chronicle — no server actions are declared under /world (CI
+ * ratchet). The single in-world actuator is the killswitch lever (Captain
+ * ruling 2026-07-09, two-tap + confirm + captain cookie), which reuses the
+ * EXISTING dashboard killswitch action; everything else stays read-only.
  *
- * Ships at /world → replaces /display after the E1 bake-off → becomes /
- * after two weeks of real defaulting (ratified flip criterion).
+ * T1 (spec v2 supersession #5): the three-scene shell (WorldClient —
+ * wardroom/street/island scene swap) is REPLACED by EngineClient: chunked
+ * unbounded tilemap, era×rung growth from hot-reloaded growth-ladders.yml,
+ * continuous LOD zoom to the archipelago, in-place roof cutaway, and the
+ * signal-bound weather layer. The legacy three-scene shell stays reachable
+ * at ?legacy=1 for the engine bake-off, then deletes.
+ *
+ * canActuate: the captain session cookie is verified HERE (server) and
+ * threaded down — without it the lever renders truth but refuses to act
+ * (view-only law).
  */
+import { cookies } from 'next/headers'
 import WorldClient from '@/components/world/world-client'
+import EngineClient from '@/components/world/engine-client'
 
 export const metadata = {
-  title: 'Cabinet World — Wardroom',
+  title: 'Cabinet World',
 }
 
-export default function WorldPage() {
-  return <WorldClient />
+export default async function WorldPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
+  const cookieStore = await cookies()
+  const canActuate = Boolean(cookieStore.get('cabinet_session')?.value)
+  const params = await searchParams
+  if (params.legacy === '1') return <WorldClient canActuate={canActuate} />
+  return <EngineClient canActuate={canActuate} />
 }

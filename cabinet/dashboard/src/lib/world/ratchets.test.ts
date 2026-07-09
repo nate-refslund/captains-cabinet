@@ -3,9 +3,15 @@
  * consensus graft; kickoff step 3 "CI ratchets at route creation").
  *
  * These greps are the mechanical form of the doctrine:
- *  1. NO write server-actions anywhere under the world trees ('use server').
+ *  1. NO write server-actions DECLARED anywhere under the world trees
+ *     ('use server') — and, per the Captain ruling 2026-07-09 (killswitch
+ *     lever = the ONE in-world actuator), EXACTLY ONE world file
+ *     (components/world/killswitch-lever.tsx) may IMPORT a server action,
+ *     and only the existing killswitch one. Every other world file stays
+ *     action-free (test 1b).
  *  2. NO POST/PUT/PATCH/DELETE exports from /api/world routes (GET-only —
- *     the world never grows a write path).
+ *     the world never grows a write path; the lever rides the pre-existing
+ *     dashboard action, not a world route).
  *  3. Text-only rendering: no dangerouslySetInnerHTML / innerHTML /
  *     insertAdjacentHTML in world components.
  *  4. Determinism: no Math.random / Date.now in the render path
@@ -54,10 +60,29 @@ describe('world CI ratchets', () => {
     expect(sources.length).toBeGreaterThan(4)
   })
 
-  it('1. no server actions under any world tree', () => {
+  it('1. no server actions declared under any world tree', () => {
     for (const p of sources) {
       expect(read(p), p).not.toMatch(/['"]use server['"]/)
     }
+  })
+
+  it('1b. ONE-actuator carve-out: only killswitch-lever.tsx imports a server action', () => {
+    // Captain ruling 2026-07-09: the killswitch lever is the single
+    // in-world actuator (two-tap + confirm + captain cookie), wired to the
+    // PRE-EXISTING dashboard killswitch action. This ratchet pins the
+    // carve-out to exactly that one file and exactly that one action —
+    // any second '@/actions/' import in the world trees is a regression.
+    const offenders: string[] = []
+    for (const p of sources) {
+      if (!/@\/actions\//.test(read(p))) continue
+      offenders.push(p)
+    }
+    expect(offenders.map((p) => path.basename(p))).toEqual(['killswitch-lever.tsx'])
+    const lever = read(
+      path.join(DASH, 'src', 'components', 'world', 'killswitch-lever.tsx')
+    )
+    // Only the killswitch action, nothing else, and no broadened imports.
+    expect(lever.match(/@\/actions\/[\w-]+/g)).toEqual(['@/actions/killswitch'])
   })
 
   it('2. /api/world routes are GET-only (no write verbs exported)', () => {
@@ -121,14 +146,19 @@ describe('world CI ratchets', () => {
     expect(route).toMatch(/sha256/)
   })
 
-  it('7. stream route clones the auth gate (cookie check present)', () => {
-    for (const rel of [
-      ['app', 'api', 'world', 'stream', 'route.ts'],
-      ['app', 'api', 'world', 'grammar', 'route.ts'],
-    ]) {
-      const text = read(path.join(DASH, 'src', ...rel))
-      expect(text).toMatch(/cabinet_session/)
-      expect(text).toMatch(/401/)
+  it('7. EVERY /api/world route carries the auth gate (cookie check + 401)', () => {
+    // v1a review fix: ratchets land AT route creation — this walks ALL
+    // route.ts files under app/api/world (like ratchet #2), so a new route
+    // can never ship (or lose) the gate unpinned.
+    const apiRoutes = sources.filter(
+      (p) =>
+        p.includes(path.join('app', 'api', 'world')) && path.basename(p) === 'route.ts'
+    )
+    expect(apiRoutes.length).toBeGreaterThanOrEqual(5) // stream/grammar/engine/rail/mailbox
+    for (const p of apiRoutes) {
+      const text = read(p)
+      expect(text, p).toMatch(/cabinet_session/)
+      expect(text, p).toMatch(/401/)
     }
   })
 
@@ -145,19 +175,22 @@ describe('world CI ratchets', () => {
     expect(valueBlock).not.toMatch(/unsafe-eval/)
     expect(valueBlock).not.toMatch(/worker-src/)
     // The renderer side: the patch import + workers disabled must be
-    // present, or the canvas boots black under the pinned header
-    // (2026-07-08 incident).
-    const canvas = read(
-      path.join(DASH, 'src', 'components', 'world', 'world-canvas.tsx')
-    )
-    expect(canvas).toMatch(/import\(\s*['"]pixi\.js\/unsafe-eval['"]\s*\)/)
-    expect(canvas).toMatch(/preferWorkers:\s*false/)
+    // present in EVERY pixi renderer, or the canvas boots black under the
+    // pinned header (2026-07-08 incident; engine-canvas pinned per v1a).
+    for (const name of ['world-canvas.tsx', 'outdoor-canvas.tsx', 'engine-canvas.tsx']) {
+      const canvas = read(path.join(DASH, 'src', 'components', 'world', name))
+      expect(canvas, name).toMatch(/import\(\s*['"]pixi\.js\/unsafe-eval['"]\s*\)/)
+      expect(canvas, name).toMatch(/preferWorkers:\s*false/)
+    }
   })
 
   it('9. silent-black is ratcheted: failures console.error AND badge in DOM', () => {
     // The loud-failure contract extends to EVERY canvas/asset class
-    // (world-alive §0): the Wardroom renderer AND the outdoor renderer.
-    for (const name of ['world-canvas.tsx', 'outdoor-canvas.tsx']) {
+    // (world-alive §0): the Wardroom renderer, the outdoor renderer AND
+    // the T1 continuous-world engine (v1a review fix: engine-canvas was
+    // compliant but unpinned — the 2026-07-08 silent-black regression
+    // class could have returned in the new renderer unnoticed).
+    for (const name of ['world-canvas.tsx', 'outdoor-canvas.tsx', 'engine-canvas.tsx']) {
       const canvas = read(path.join(DASH, 'src', 'components', 'world', name))
       // Boot rejection + manifest/texture gaps must be loud…
       expect(canvas, name).toMatch(/console\.error\(/)
@@ -167,13 +200,14 @@ describe('world CI ratchets', () => {
       expect(canvas, name).toMatch(/import\(\s*['"]pixi\.js\/unsafe-eval['"]\s*\)/)
       expect(canvas, name).toMatch(/preferWorkers:\s*false/)
     }
-    // …and the shell must render them as a visible DOM badge.
-    const client = read(
-      path.join(DASH, 'src', 'components', 'world', 'world-client.tsx')
-    )
-    expect(client).toMatch(/data-world-issues/)
-    expect(client).toMatch(/onIssues=/)
-    // Census absence badges too (growth surfaces at day-0 — §4 data path).
-    expect(client).toMatch(/data-world-census-badge/)
+    // …and the shells must render them as a visible DOM badge (both the
+    // three-scene shell and the T1 engine shell).
+    for (const name of ['world-client.tsx', 'engine-client.tsx']) {
+      const client = read(path.join(DASH, 'src', 'components', 'world', name))
+      expect(client, name).toMatch(/data-world-issues/)
+      expect(client, name).toMatch(/onIssues=/)
+      // Census absence badges too (growth surfaces at day-0 — §4 data path).
+      expect(client, name).toMatch(/data-world-census-badge/)
+    }
   })
 })

@@ -485,6 +485,14 @@ def build_presence(activity: Dict[str, Optional[str]],
     them)."""
     officers: Dict[str, Any] = {}
     for slug, raw in sorted(activity.items()):
+        # 'unknown' is the post-tool-use hook's fallback identity for
+        # non-officer sessions (OFFICER_NAME unset) — ambient machine
+        # noise, not an officer. It must never render as a world presence
+        # (v1a review fix: an 'unknown' officer stood in the cutaway
+        # interior). Chronicle ACTORS keep their honest 'unknown'; the
+        # presence overlay drops it upstream of every renderer.
+        if slug == "unknown":
+            continue
         entry: Dict[str, Any] = {"present": raw is not None}
         if raw:
             try:

@@ -18,7 +18,23 @@
  * as constants so the renderer never guesses.
  */
 import type { ManifestRow, SpriteCut, WorldAssetManifest } from './sprites'
-import { ASSET_BASE } from './sprites'
+import {
+  ASSET_BASE,
+  CHARACTER_COUNT,
+  CHAR_SHEET_MIN_H,
+  CHAR_SHEET_MIN_W,
+  DESK_SHEETS,
+  FLOOR_CUT,
+  ROOM_SHEET,
+  WALL_CUT,
+} from './sprites'
+
+/** The 20 premade character sheets (same universe the Wardroom binds —
+ * characterSheetFor picks per slug; the engine draws walk/idle frames). */
+export const ENGINE_CHARACTER_SHEETS = Array.from(
+  { length: CHARACTER_COUNT },
+  (_, i) => `characters/Premade_Character_${String(i + 1).padStart(2, '0')}`
+)
 
 // ── street kit (whole-file singles; dims pinned from the manifest gate) ────
 const STREET = (n: string) => `exteriors/street/${n}`
@@ -114,6 +130,91 @@ export const F = {
   crate2: { x: 444, y: 107, w: 18, h: 32 } as SpriteCut, // stacked pair
 }
 
+// ── corpus tree canon (farm pack 6_Trees — the SAME trees the aesthetic
+//    gate's palette positives were composed from; the Serene tree-row
+//    strips measured ~11% palette-foreign per pixel and are retired from
+//    the forest border) ─────────────────────────────────────────────────────
+export const FARM_TREES = 'farm/6_Trees_16x16'
+/** Verified 2026-07-09 (compose_unified TREECUTS ×16px; pines excluded —
+ * their strips clip into neighboring sprites). */
+export const TREE_CUTS: readonly SpriteCut[] = [
+  { x: 0, y: 64, w: 48, h: 80 }, // oakS
+  { x: 64, y: 48, w: 64, h: 96 }, // oakM
+  { x: 128, y: 32, w: 80, h: 112 }, // oakL
+]
+
+// ── lighthouse pack (21_Beach — the RECOMPOSED tower, Captain ruling
+//    2026-07-09: the lamp must fit the tower, NEVER the water-tank/silo
+//    body; supersedes the interim F.silo beacon). The bound sheets are the
+//    ratified t4 DERIVED variants (forge section of world-asset-install:
+//    unlit = honest-zero; lit = lamp-room glass remapped to the proven warm
+//    hue — swapped in ONLY when cells_graduated > 0). ──────────────────────
+export const LIGHTHOUSE_SHEET = 'derived/lighthouse/lighthouse_unlit'
+export const LIGHTHOUSE_LIT_SHEET = 'derived/lighthouse/lighthouse_lit'
+/** Sheet geometry (verified 2026-07-09, grid-overlay method): 112x256 —
+ * red/white banded tower, lamp gallery + red dome cap, door at the base. */
+export const LIGHTHOUSE_FULL: SpriteCut = { x: 0, y: 0, w: 112, h: 256 }
+/** Bottom 176px: banded body up to the gallery deck (tower_part rung). */
+export const LIGHTHOUSE_PART: SpriteCut = { x: 0, y: 80, w: 112, h: 176 }
+/** Bottom 96px: rounded masonry base + door (stone_base rung). */
+export const LIGHTHOUSE_BASE: SpriteCut = { x: 0, y: 160, w: 112, h: 96 }
+
+/**
+ * Growth-ladder rung → lighthouse composition (ladder `lighthouse`, rungs
+ * dark_cairn → stone_base → tower_part → tower_full). dark_cairn returns
+ * null: the renderer composes the shore-rock cairn from V.rock (morphology
+ * day0 "dark cairn on the shore rock"). The lamp overlay is a SEPARATE
+ * element (lighthouse_lamp flag) — unlit until cells_graduated > 0.
+ */
+export function lighthouseCutFor(rungName: string): SpriteCut | null {
+  if (rungName === 'stone_base') return LIGHTHOUSE_BASE
+  if (rungName === 'tower_part') return LIGHTHOUSE_PART
+  if (rungName === 'tower_full') return LIGHTHOUSE_FULL
+  return null // dark_cairn / unknown → rock cairn composition
+}
+
+// ── worksite kit (staged-vocab markers + T2 construction sites) ────────────
+const WORKSITE = (n: string) => `exteriors/worksite/ME_Singles_Worksite_16x16_${n}`
+export const WORKSITE_KIT = {
+  sign: WORKSITE('Sign_2'), // 16x48 round sign on post
+  fenceA: WORKSITE('Fence_1_1'), // 16x32 striped barrier
+  fenceB: WORKSITE('Fence_1_2'),
+  ground: WORKSITE('Ground_1_1'), // 16x16 cleared-earth patch
+  mounds: WORKSITE('Props_7'), // 48x16 dirt mounds
+  cone: WORKSITE('Cone_2'), // 16x32
+} as const
+
+/** Era-appropriate water store: stacked buckets (farm props pack). */
+export const BUCKET_LOAD = 'farm/props/Bucket_Load_16x16'
+
+/** Elements whose era-vocab art is STAGED: the renderer draws the honest
+ * worksite marker (fences + sign + cleared earth) instead of a wrong-object
+ * substitution (v1a review: library→market-stall / observatory→signpost
+ * dragged the era read below bar; markers are honest until proper art). */
+export const STAGED_VOCAB_ELEMENTS: ReadonlySet<string> = new Set([
+  'library',
+  'observatory',
+])
+
+// ── commute bubble verb icons (Modern UI pack, grammar v3 bubble law:
+//    PIXEL bubble carrying the verb's ICON — never text in world space).
+//    Cuts verified visually 2026-07-09 (8x crops of the shipped sheet). ──
+export const UI_SHEET = 'ui/16x16/Modern_UI_Style_1'
+export const VERB_ICONS = {
+  gear: { x: 465, y: 99, w: 14, h: 11 } as SpriteCut, // work-class default
+  mail: { x: 433, y: 131, w: 14, h: 12 } as SpriteCut, // replying
+  people: { x: 448, y: 99, w: 15, h: 11 } as SpriteCut, // coordinating
+  up: { x: 497, y: 114, w: 13, h: 11 } as SpriteCut, // deploying/shipping
+} as const
+
+/** Closed verb → icon mapping (keys align with commute VERB_GLOSS). */
+export function verbIconCut(verb: string): SpriteCut {
+  if (verb === 'replying') return VERB_ICONS.mail
+  if (verb === 'coordinating') return VERB_ICONS.people
+  if (verb === 'deploying' || verb === 'shipping') return VERB_ICONS.up
+  return VERB_ICONS.gear
+}
+
 // ── crop growth strips (7 stages × 16px wide; label band excluded) ─────────
 export const CROP_SHEETS = [
   'farm/crops/Wheat_Growth_Stages_16x16',
@@ -186,6 +287,19 @@ export function requiredOutdoorSheets(scene: OutdoorScene): string[] {
     ...CROP_SHEETS,
     STREET_PROPS.boat,
     STREET_PROPS.mailbox,
+    // T1 engine additions (v1a review fixes): the recomposed lighthouse,
+    // the staged-vocab worksite kit, era water store, officer characters
+    // (real LimeZu sprites at island/mid/close — Captain's E1 headline),
+    // and the cutaway interior kit (floor/wall + desks).
+    LIGHTHOUSE_SHEET,
+    LIGHTHOUSE_LIT_SHEET,
+    FARM_TREES,
+    ...Object.values(WORKSITE_KIT),
+    BUCKET_LOAD,
+    ...ENGINE_CHARACTER_SHEETS,
+    ROOM_SHEET,
+    ...DESK_SHEETS,
+    UI_SHEET,
   ]
 }
 
@@ -200,6 +314,11 @@ const SHEET_CUTS: Record<string, SpriteCut[]> = {
     F.silo, F.barn, F.kilnShed, F.furnace, F.well, F.stall, F.scarecrow,
     F.crate, F.crate2,
   ],
+  [LIGHTHOUSE_SHEET]: [LIGHTHOUSE_FULL, LIGHTHOUSE_PART, LIGHTHOUSE_BASE],
+  [LIGHTHOUSE_LIT_SHEET]: [LIGHTHOUSE_FULL],
+  [FARM_TREES]: [...TREE_CUTS],
+  [ROOM_SHEET]: [FLOOR_CUT, WALL_CUT],
+  [UI_SHEET]: Object.values(VERB_ICONS),
 }
 
 function cutFits(row: ManifestRow, cut: SpriteCut): boolean {
@@ -236,6 +355,12 @@ export function resolveOutdoorSprites(
     }
     if (id.startsWith('farm/crops/')) {
       ok = row.w >= CROP_STAGES * 16 && row.h >= 18
+    }
+    if (id.startsWith('characters/')) {
+      ok = row.w >= CHAR_SHEET_MIN_W && row.h >= CHAR_SHEET_MIN_H
+    }
+    if (DESK_SHEETS.includes(id)) {
+      ok = row.w === 32 && row.h === 48 // office singles canvas
     }
     if (!ok) {
       missing.push(id)
