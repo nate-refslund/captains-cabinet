@@ -106,14 +106,17 @@ def env(tmp_path, monkeypatch):
     """Isolated source/state/log dirs + tmp CABINET_ROOT for records."""
     src = tmp_path / "projects"
     src.mkdir()
+    orch = tmp_path / "orch-projects"
+    orch.mkdir()
     fr = tmp_path / "hatch-logs"
     fr.mkdir()
     monkeypatch.setenv("CABINET_TRANSCRIPT_DIRS", str(src))
+    monkeypatch.setenv("CABINET_ORCH_TRANSCRIPT_DIRS", str(orch))
     monkeypatch.setenv("CABINET_FLIGHT_RECORDER_DIRS", str(fr))
     monkeypatch.setenv("CABINET_TD_STATE", str(tmp_path / "state.json"))
     monkeypatch.setenv("CABINET_TD_LOG_DIR", str(tmp_path / "logs"))
     monkeypatch.setenv("CABINET_ROOT", str(tmp_path))  # records → tmp tier3
-    return {"src": src, "fr": fr, "tmp": tmp_path,
+    return {"src": src, "orch": orch, "fr": fr, "tmp": tmp_path,
             "state": tmp_path / "state.json"}
 
 
@@ -352,3 +355,77 @@ def test_unusable_file_marked_once(env, queued):
     assert s1["sessions_digested"] == 0
     s2 = td.run_sweep()
     assert s2["skipped_unchanged"] >= 1  # not re-parsed nightly
+
+
+# ---------------------------------------------------------------------------
+# Orchestrator sources (ORCH-SESSION-DIGEST, 2026-07-09)
+# ---------------------------------------------------------------------------
+
+def _write_orch_session(dirpath: Path, session_id: str) -> Path:
+    """A captain-side (orchestrator) session — NO officer boot prompt."""
+    lines = [
+        _jsonl_line(type="user", sessionId=session_id,
+                    timestamp="2026-07-09T08:00:00.000Z",
+                    message={"role": "user", "content":
+                             "Ship the improve-how-we-improve package"}),
+        _jsonl_line(type="assistant", sessionId=session_id,
+                    timestamp="2026-07-09T08:01:00.000Z",
+                    message={"role": "assistant", "content": [
+                        {"type": "text",
+                         "text": "Decision: ledger rows appended. "
+                                 "Lesson learned: dirty-guard first."},
+                        {"type": "tool_use", "name": "Bash", "id": "t1",
+                         "input": {"command": "git status"}},
+                    ]}),
+    ]
+    p = dirpath / f"{session_id}.jsonl"
+    p.write_text("\n".join(lines) + "\n")
+    return p
+
+
+def test_orchestrator_source_provenance(env, queued):
+    p = _write_orch_session(env["orch"], "sess-orch")
+    s = td.run_sweep()
+    assert s["orchestrator_digested"] == 1
+    assert s["sessions_digested"] == 0
+    d = queued[0]
+    assert d["source_id"] == "td:sess-orch"          # same stable upsert lane
+    assert d["metadata"]["source_kind"] == "orchestrator-session"
+    assert d["metadata"]["source_path"] == str(p)
+    assert d["officer"] == ""
+
+
+def test_orchestrator_officer_boot_keeps_session_kind(env, queued):
+    # An officer-boot session sitting in an orchestrator dir keeps officer
+    # provenance — the dir gives the hint, the session content decides.
+    _write_session(env["orch"], "sess-orch-officer")
+    s = td.run_sweep()
+    assert s["sessions_digested"] == 1
+    assert s["orchestrator_digested"] == 0
+    d = queued[0]
+    assert d["metadata"]["source_kind"] == "session-jsonl"
+    assert d["officer"] == "cos"
+
+
+def test_orchestrator_redaction_applies(env, queued):
+    # The orchestrator lane rides the SAME belt + scrub pipeline.
+    _write_session(env["orch"], "sess-orch-red", secret_in_prompt=True,
+                   taint_in_text=True)
+    td.run_sweep()
+    content = queued[0]["content"]
+    assert "TOOLRESULT-CANARY" not in content         # structural firewall
+    assert "captain-model" not in content             # taint belt
+    assert "hunter2" not in content                   # names-not-values
+    assert "NEON_CONNECTION_STRING" in content
+
+
+def test_orchestrator_overlap_dedup(env, queued, monkeypatch):
+    # The repo project dir sits in BOTH source lists on the live deployment;
+    # point both env vars at ONE dir and prove single digestion per path.
+    monkeypatch.setenv("CABINET_ORCH_TRANSCRIPT_DIRS", str(env["src"]))
+    _write_session(env["src"], "sess-overlap")
+    s = td.run_sweep()
+    assert len(queued) == 1                       # one digest, not two
+    assert s["sessions_digested"] == 1            # officer boot → session kind
+    assert s["orchestrator_digested"] == 0
+    assert s["skipped_unchanged"] == 0

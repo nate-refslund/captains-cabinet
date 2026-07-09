@@ -14,6 +14,15 @@ WHAT IT READS (all read-only):
     claude-config/projects/*) — override via CABINET_TRANSCRIPT_DIRS
     (colon-separated dirs; each is scanned non-recursively for *.jsonl,
     plus one level of project subdirs).
+  * ORCHESTRATOR session JSONLs (ORCH-SESSION-DIGEST, 2026-07-09): the
+    captain-side Claude Code project dirs — the default config home's
+    project slugs for the captain's $HOME and for this repo (both DERIVED
+    from Path.home()/_REPO_ROOT, never hardcoded) — override via
+    CABINET_ORCH_TRANSCRIPT_DIRS (same colon-separated semantics). Digests
+    from these dirs carry provenance source_kind=orchestrator-session; a
+    session there that opens with an officer boot prompt keeps session-jsonl
+    provenance, and each path is digested ONCE even though the repo's
+    project dir sits in both source lists (per-path dedupe).
   * Flight-recorder script(1) typescripts (mini-hatch runbook §Flight
     recorder — the seed source named by the ORG-SENSES-1 ledger row):
     CABINET_FLIGHT_RECORDER_DIRS, default ~/hatch-logs, files *.typescript.
@@ -111,6 +120,23 @@ def transcript_dirs() -> list[Path]:
            "claude-config" / "projects")
     dirs.append(iso)
     return dirs
+
+
+def orchestrator_transcript_dirs() -> list[Path]:
+    """ORCH-SESSION-DIGEST sources: the captain-side (orchestrator) Claude
+    Code project dirs — $HOME's and this repo's project slugs under the
+    default config home. Same env-override semantics as transcript_dirs();
+    defaults are DERIVED (clean-room discipline — no launcher literals)."""
+    env = os.environ.get("CABINET_ORCH_TRANSCRIPT_DIRS")
+    if env:
+        return [Path(p).expanduser() for p in env.split(":") if p.strip()]
+    home = Path.home()
+    projects = home / ".claude" / "projects"
+
+    def _slug(p: Path) -> str:
+        return "-" + str(p).strip("/").replace("/", "-")
+
+    return [projects / _slug(home), projects / _slug(_REPO_ROOT)]
 
 
 def flight_recorder_dirs() -> list[Path]:
@@ -608,6 +634,7 @@ def heartbeat(summary: dict) -> None:
         stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         line = (f"[transcript-digest {stamp}] DIGESTED "
                 f"sessions={summary['sessions_digested']} "
+                f"orch={summary['orchestrator_digested']} "
                 f"flight={summary['flight_digested']} "
                 f"queued={summary['queued']} "
                 f"records={summary['pattern_records']} "
@@ -629,14 +656,27 @@ def run_sweep(dry_run: bool = False, max_sessions: int = 200,
     state_path = state_path or default_state_path()
     state = load_state(state_path)
     summary = {
-        "sessions_digested": 0, "flight_digested": 0, "queued": 0,
+        "sessions_digested": 0, "orchestrator_digested": 0,
+        "flight_digested": 0, "queued": 0,
         "pattern_records": 0, "skipped_unchanged": 0, "queue_failures": 0,
         "dry_run": dry_run,
     }
 
+    # ORCH-SESSION-DIGEST: orchestrator/captain-side dirs claim first so
+    # their sessions carry orchestrator provenance; the per-session officer
+    # boot check below hands genuinely-officer sessions back to session-jsonl
+    # provenance, so overlap files (the repo's own project dir is in both
+    # lists) never flip an officer digest. Each path is digested ONCE.
     work: list[tuple[str, Path]] = []
+    claimed: set[Path] = set()
+    for p in discover_jsonls(orchestrator_transcript_dirs()):
+        if p not in claimed:
+            work.append(("orchestrator", p))
+            claimed.add(p)
     for p in discover_jsonls(transcript_dirs()):
-        work.append(("session", p))
+        if p not in claimed:
+            work.append(("session", p))
+            claimed.add(p)
     for p in discover_typescripts(flight_recorder_dirs()):
         work.append(("flight", p))
 
@@ -656,7 +696,7 @@ def run_sweep(dry_run: bool = False, max_sessions: int = 200,
             summary["skipped_unchanged"] += 1
             continue
 
-        if kind == "session":
+        if kind in ("session", "orchestrator"):
             sess = parse_session(path)
             if sess is None:
                 # unusable file — remember size so we don't re-parse nightly
@@ -664,7 +704,11 @@ def run_sweep(dry_run: bool = False, max_sessions: int = 200,
                                        "digest_version": DIGEST_VERSION,
                                        "unusable": True}
                 continue
-            digest = build_digest(sess, source_path=key)
+            source_kind = "session-jsonl"
+            if kind == "orchestrator" and not sess["officer"]:
+                source_kind = "orchestrator-session"
+            digest = build_digest(sess, source_path=key,
+                                  source_kind=source_kind)
         else:
             digest = digest_typescript(path)
             if digest is None:
@@ -679,8 +723,12 @@ def run_sweep(dry_run: bool = False, max_sessions: int = 200,
             queued_ok = queue_digest(digest)
         if queued_ok:
             summary["queued"] += 1
-            summary["sessions_digested" if kind == "session"
-                    else "flight_digested"] += 1
+            if kind == "flight":
+                summary["flight_digested"] += 1
+            elif digest["metadata"]["source_kind"] == "orchestrator-session":
+                summary["orchestrator_digested"] += 1
+            else:
+                summary["sessions_digested"] += 1
             state["files"][key] = {
                 "size": st.st_size, "mtime": st.st_mtime,
                 "session_id": digest["source_id"],
@@ -721,6 +769,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(summary, indent=2))
     else:
         print(f"[transcript-digest] sessions={summary['sessions_digested']} "
+              f"orch={summary['orchestrator_digested']} "
               f"flight={summary['flight_digested']} queued={summary['queued']} "
               f"records={summary['pattern_records']} "
               f"skipped={summary['skipped_unchanged']} "
