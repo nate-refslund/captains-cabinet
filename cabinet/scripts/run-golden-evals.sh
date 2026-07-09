@@ -3,7 +3,18 @@
 # Tests critical Cabinet behaviors by simulating scenarios and checking outcomes.
 # Run after infrastructure changes to verify nothing broke.
 #
-# Usage: run-golden-evals.sh [--verbose]
+# Usage: run-golden-evals.sh [--verbose] [--model <model-id>]
+#
+# Rec 3.4 (2026-07-09) — per-model ratchet: the suite is parametrized by a
+# model id (--model wins, else CABINET_EVAL_MODEL, else CABINET_MODEL, else
+# "unspecified") and appends ONE report-only line per run to
+# shared/interfaces/golden-eval-scalar.jsonl:
+#   {ts, date, model, pass, fail, skip, scalar}   scalar = pass/(pass+fail)
+# The fleet runs a pinned model with a fallback lineage (platform.yml) — this
+# series is the per-model evidence a fallback/ratchet decision needs.
+# REPORT-ONLY: nothing reads the scalar as an autonomy GATE — consuming it as
+# promotion mechanics stays defer-captain per D5/CG-10 (same as W1/W5). The
+# eval BODIES in memory/golden-evals/ are germline-locked; this runner is not.
 
 # IMPORTANT: Do NOT use set -e — we test for non-zero exit codes intentionally.
 set -uo pipefail
@@ -59,7 +70,16 @@ cleanup() {
   rm -f "/tmp/eval-transcript-$$.jsonl" 2>/dev/null
 }
 trap cleanup EXIT
-VERBOSE=${1:-""}
+VERBOSE=""
+EVAL_MODEL="${CABINET_EVAL_MODEL:-${CABINET_MODEL:-unspecified}}"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --model) EVAL_MODEL="${2:-unspecified}"; shift 2 ;;
+    --model=*) EVAL_MODEL="${1#--model=}"; shift ;;
+    --verbose|-v) VERBOSE="--verbose"; shift ;;
+    *) VERBOSE="$1"; shift ;;   # back-compat: first free arg was verbose
+  esac
+done
 PASS=0
 FAIL=0
 SKIP=0
@@ -1970,7 +1990,16 @@ fi
 log ""
 log "=== Results ==="
 TOTAL=$((PASS + FAIL + SKIP))
-log "Total: $TOTAL  |  Pass: $PASS  |  Fail: $FAIL  |  Skip: $SKIP"
+log "Total: $TOTAL  |  Pass: $PASS  |  Fail: $FAIL  |  Skip: $SKIP  |  Model: $EVAL_MODEL"
+
+# Rec 3.4 — per-model scalar series (report-only, best-effort: a failed
+# append never masks the suite verdict). Emission lives in the sourceable
+# lib so it is testable without running the (killswitch-toggling) suite.
+GOLDEN_SCALAR_SERIES="${GOLDEN_SCALAR_SERIES:-$CABINET_ROOT/shared/interfaces/golden-eval-scalar.jsonl}"
+# shellcheck source=/dev/null
+. "$CABINET_ROOT/cabinet/scripts/lib/golden-scalar.sh"
+golden_scalar_emit "$EVAL_MODEL" "$PASS" "$FAIL" "$SKIP" "$GOLDEN_SCALAR_SERIES" \
+  || log "WARN: golden-eval scalar line not emitted (see stderr)"
 if [ "$FAIL" -gt 0 ]; then
   log "STATUS: FAILED — $FAIL eval(s) broken"
   exit 1
