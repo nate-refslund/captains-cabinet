@@ -253,7 +253,11 @@ def decide(item: dict, *, ch: "dict | None" = None,
     rhash = _render_hash(text)
 
     base = {"situation_key": skey, "class_id": cid, "silent": resolved["silent"],
-            "text": text}
+            "text": text,
+            # one-card-one-decision surface: channel-neutral inline controls
+            # ride the decision to the transport untouched. Presentation-only:
+            # they never participate in routing or the render-hash identity.
+            "buttons": (item.get("buttons") or None)}
 
     # (1) Identity: a standing card already exists for this situation.
     existing = standing.get(skey)
@@ -366,12 +370,27 @@ def _default_send(text, **kw):
     # now governs gate delivery too (one door, resolved from instance config).
     from framework.comms.get_channel import get_channel
     return get_channel().send(text, silent=kw.get("silent", False),
-                              feed_meta=kw.get("feed_meta"))
+                              feed_meta=kw.get("feed_meta"),
+                              buttons=kw.get("buttons"))
 
 
 def _default_edit(message_id, text, **kw):
     from framework.comms.get_channel import get_channel
-    return get_channel().edit(message_id, text, feed_meta=kw.get("feed_meta"))
+    return get_channel().edit(message_id, text, feed_meta=kw.get("feed_meta"),
+                              buttons=kw.get("buttons"))
+
+
+def _call_transport(fn, *args, buttons=None, **kw):
+    """Invoke a send/edit transport, passing ``buttons`` only when set — and
+    falling back WITHOUT them for an injected legacy transport whose signature
+    predates the buttons seam (TypeError ⇒ retry plain). A card is better
+    delivered button-less than not delivered."""
+    if buttons:
+        try:
+            return fn(*args, buttons=buttons, **kw)
+        except TypeError:
+            pass
+    return fn(*args, **kw)
 
 
 def briefing_item(item: dict, decision: dict) -> dict:
@@ -419,8 +438,10 @@ def deliver(decision: dict, *, send_fn=None, edit_fn=None, briefing_fn=None,
     feed_meta = {"kind": decision.get("class_id"), "situation_key": skey}
 
     if action == "send":
-        res = send_fn(decision["text"], silent=decision.get("silent", False),
-                      feed_meta=feed_meta)
+        res = _call_transport(send_fn, decision["text"],
+                              silent=decision.get("silent", False),
+                              feed_meta=feed_meta,
+                              buttons=decision.get("buttons"))
         mids = (res or {}).get("message_ids") or []
         if mids:
             standing[skey] = {"message_id": mids[0], "state": "open",
@@ -432,7 +453,9 @@ def deliver(decision: dict, *, send_fn=None, edit_fn=None, briefing_fn=None,
         return res
 
     if action == "edit":
-        res = edit_fn(decision["message_id"], decision["text"], feed_meta=feed_meta)
+        res = _call_transport(edit_fn, decision["message_id"], decision["text"],
+                              feed_meta=feed_meta,
+                              buttons=decision.get("buttons"))
         cur = standing.get(skey)
         if cur is not None:
             cur["render_hash"] = decision.get("render_hash")

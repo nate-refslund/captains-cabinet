@@ -79,7 +79,7 @@ TOOLS: list[dict[str, Any]] = [
             "subject": _STR, "situation": _STR, "kind": _STR, "lane": _STR,
             "evidence": _ARR, "urgency": {"type": "string", "enum": ["ping-now", "batch-into-next-briefing", "FYI-digest"]},
             "steps": _ARR, "state": _STR, "deadline_iso": _STR, "pid_marker": _STR,
-            "injection_suspect": _BOOL, "chair_review": _BOOL,
+            "injection_suspect": _BOOL, "chair_review": _BOOL, "buttons": _ARR,
         }, required=["subject"]),
     },
     {
@@ -92,7 +92,7 @@ TOOLS: list[dict[str, Any]] = [
         ),
         "inputSchema": _obj({
             "subject": _STR, "evidence": _ARR, "situation": _STR,
-            "steps": _ARR, "state": _STR, "lane": _STR,
+            "steps": _ARR, "state": _STR, "lane": _STR, "buttons": _ARR,
         }, required=["subject"]),
     },
     {

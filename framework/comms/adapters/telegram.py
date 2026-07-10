@@ -87,11 +87,22 @@ class TelegramAdapter:
 
     @staticmethod
     def _kb(buttons):
-        """Channel-neutral ``buttons`` (list of {text, data} rows) → Telegram
-        inline_keyboard. None ⇒ None (plain message)."""
+        """Channel-neutral ``buttons`` (list of {text, data} tap buttons and/or
+        {text, url} link buttons, as one row or a list of rows) → Telegram
+        inline_keyboard. None ⇒ None (plain message). A ``url`` key wins over
+        ``data`` (a button is one or the other, never both)."""
         if not buttons:
             return None
         rows = buttons if buttons and isinstance(buttons[0], list) else [buttons]
-        return {"inline_keyboard": [
-            [{"text": str(b.get("text", "")), "callback_data": str(b.get("data", ""))[:64]}
-             for b in row] for row in rows]}
+        kb = []
+        for row in rows:
+            out = []
+            for b in row:
+                if b.get("url"):
+                    out.append({"text": str(b.get("text", "")),
+                                "url": str(b.get("url", ""))})
+                else:
+                    out.append({"text": str(b.get("text", "")),
+                                "callback_data": str(b.get("data", ""))[:64]})
+            kb.append(out)
+        return {"inline_keyboard": kb}

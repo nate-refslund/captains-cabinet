@@ -112,6 +112,19 @@ classes:
     reaction: ["🗓", "👀"]
     show_injection_banner: false
 
+  # The pacing engine's ONE standing triage card (captain-surface §4): "N
+  # decisions ready — Triage now / At next briefing / Snooze". One card per
+  # deployment, edited in place as the count changes — direct-now because the
+  # ask-first flow must be able to ASK off-cycle (its fallback class would
+  # hold the ask for the very briefing it offers to skip). NOT a floor class:
+  # quiet hours still gate it.
+  - id: triage-nudge
+    matchers: {kinds: ["triage-nudge"]}
+    route: direct-now
+    silent: false
+    reaction: ["👀"]
+    show_injection_banner: false
+
   # --- quiet tiers ---
   - id: digest
     matchers: {kinds: ["digest", "tell-digest"]}
