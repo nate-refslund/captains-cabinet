@@ -386,10 +386,10 @@ Classify by **BENEFICIARY** — where does the artifact land? Priority order:
    `file_path` args + paths in `command`, **excluding leading `cd <dir>`
    boilerplate** (officer prompts open every Bash with `cd <repo>`; cwd votes
    only when nothing else does). Path prefix map:
-   - Cabinet estate → Harvestholm: `/Users/nate/captains-cabinet`,
+   - Cabinet estate → Harvestholm: `~/captains-cabinet`,
      `/opt/founders-cabinet`, `~/Library/Application Support/cabinet`,
      `~/.cabinet`, cabinet-scoped scratchpads.
-   - Product/Nate estate → Lantern Quay: `/Users/nate/v0-politiske-annoncer`
+   - Product/Nate estate → Lantern Quay: `~/v0-politiske-annoncer`
      (polads), `jobdanmark-v2`, `dev-tasks`, `~/obsidian/screenpipe-brain` +
      `~/.screenpipe` (Nate's brain = mission side — the cabinet serving Nate).
    - No path at all (redis-cli probes, `date`, `gh` reads) → **ambient**

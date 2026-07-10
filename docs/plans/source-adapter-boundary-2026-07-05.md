@@ -5,9 +5,10 @@ plan for the NEXT (bigger) build; nothing here is implemented in this lane.
 
 **Ruling realized:** FOUNDATION-FIRST (captain-decisions.md, 2026-07-05) —
 `framework/` is the universal base for **any** captain and **either** flavor;
-this deployment (captain **Nate**, Flavor-A / screenpipe brain) is the first
-instance and proving ground, not the product. The DE-NATE sweep
-(`docs/plans/de-nate-foundation-2026-07-05.md`) parameterized the captain
+this deployment (the **first captain's**, Flavor-A / screenpipe brain) is the
+first instance and proving ground, not the product. The DE-PERSONALIZATION
+sweep (the 2026-07-05 launcher-parameterization foundation plan; instance
+coordination doc, archived at egg export) parameterized the captain
 *name*; it deliberately LEFT the screenpipe / vault / `BrainAdapter` *data
 coupling* in place and **flagged it** (that doc §4, category-5 flags: vault
 structure, board ids, product repos, `~/.screenpipe` state). This spec is the
@@ -42,8 +43,8 @@ the Captain amendment, surgically. This lane edits none of them.
 uses to *observe* the captain's world: vault/brain search, person intel, open
 commitments, drafting lessons, voice profile, and the captain-model priors
 (the `nate_model`-equivalent). This is exactly the "gather-then-decide" input
-side the brain-bridge rule governs (`.claude/rules/brain-bridge.md`: "the vault
-is Nate-truth — read first").
+side the brain-bridge rule governs (`.claude/rules/brain-bridge.md`: the vault
+is captain-truth — read first).
 
 **Adjacent, cross-referenced, NOT redefined here:**
 - **The dispatch / actuator half** (`queue_draft`, `email_lib`,
@@ -66,7 +67,7 @@ is Nate-truth — read first").
 (`gather_cutoff_context` content-ts exclusion-by-default stays exactly where it
 is, ABOVE the adapter — see §6 fidelity row). No rename of external
 brain-artifact identifiers inside the adapter (`nate_model`, `me_signal`,
-`voice.md` stay verbatim, per DE-NATE §3 — only the *interface method name* is
+`voice.md` stay verbatim, per DE-PERSONALIZATION §3 — only the *interface method name* is
 launcher-neutral).
 
 ---
@@ -147,7 +148,7 @@ honest.
 | `authority/veto.py` | comment: delegates to injected `send_backend` (`queue_draft`) | none — already injected |
 | `fidelity/consequence.py` | comment: external screenpipe emit path | none |
 | `fidelity/oauth_llm.py` | comment: screenpipe-memories `CLAUDE.md` ref | none |
-| `fidelity/officer_prompt.py` | `"nate_model patterns"` prompt LABEL (brain-artifact, kept) | none — DE-NATE §3 keep |
+| `fidelity/officer_prompt.py` | `"nate_model patterns"` prompt LABEL (brain-artifact, kept) | none — DE-PERSONALIZATION §3 keep |
 | `learning/experience.py` | comment: clean-room ratchet reference | none |
 | `probes/runner.py` | comment: env from `_shared/.env` (loaded elsewhere) | none |
 | `triggers/registry.py` | comment: the screenpipe `reminders` pipe it superseded | none |
@@ -354,8 +355,8 @@ instance/config/
 
 ## 5 · Phased migration — keep the RUNNING Flavor-A org unbroken
 
-**Safety invariant (the correctness proof, mirroring DE-NATE §1).** On Nate's
-live instance `get_source()` returns `ScreenpipeSource`, whose every method
+**Safety invariant (the correctness proof, mirroring DE-PERSONALIZATION §1).** On the
+first captain's live instance `get_source()` returns `ScreenpipeSource`, whose every method
 **delegates to the SAME** `draft_lib` / `commitments_lib` / `BrainAdapter` code
 that runs today. So every call returns a BYTE-IDENTICAL result and every
 existing test stays green with no assertion weakened. **A red test = behavior
@@ -460,8 +461,8 @@ adapter, not framework CORE, must keep owning that subprocess seam — it moves 
 
 ## 7 · Clean-room ratchet extension — "core imports the interface, not screenpipe"
 
-The DE-NATE build shipped `test_no_launcher_hardcode.py` (bare `Nate` / path)
-as the sister of `test_axes_contract.py` (axis branches). This seam adds the
+The DE-PERSONALIZATION build shipped `test_no_launcher_hardcode.py` (bare
+captain-name literal / home path) as the sister of `test_axes_contract.py` (axis branches). This seam adds the
 THIRD ratchet in the same family, plus a rule class on the existing layer gate.
 Both are shrink-only baseline ratchets so the RUNNING org is never broken by the
 guard while migration is in flight.
@@ -532,11 +533,11 @@ lib OR carries a `~/.screenpipe` / vault path literal, UNLESS covered by a
    that must stay pinned.
 3. **`model_patterns` naming.** Interface method is launcher-neutral
    (`model_patterns`); the Flavor-A adapter internally calls
-   `me_signal.nate_model("patterns")` (brain-artifact kept verbatim, DE-NATE §3).
+   `me_signal.nate_model("patterns")` (brain-artifact kept verbatim, DE-PERSONALIZATION §3).
    Confirm no `captain_model` invention.
 4. **Germline board-id files** (`action_exec`, `actfirst_canary`) migrate via
    the Captain amendment, surgically — confirm they ride the same amendment as
-   the axes/de-nate germline subset rather than a standalone unlock.
+   the axes/de-personalization germline subset rather than a standalone unlock.
 5. **Org source (Flavor-B) shape** is explicitly deferred — this spec only
    guarantees the SEAM + the null default. What an org machine-probe source
    supplies (repo signals, CI/deploy/probe evidence) is the axes-spec "org:

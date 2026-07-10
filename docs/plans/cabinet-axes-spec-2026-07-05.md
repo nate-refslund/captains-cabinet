@@ -47,9 +47,9 @@ All three share the verdict vocabulary, `graduation.evaluate()`, the undo plane,
 - `org`: senses product telemetry, optimizes product outcomes, label supply = machine probes first.
 - **CORRECTION (Captain, 2026-07-05):** external_comms grantability is **NOT flavor-structural**. Remove grants.py's `flavor=personal ⇒ external_comms refused` gate (AX-3). Replacement: **`never_grant:`** — an instance-level, Captain-locked list in `posture.yml`:
   ```yaml
-  never_grant: [external_comms]   # Nate's personal instance; ANY class list, any captain, any flavor
+  never_grant: [external_comms]   # the first captain's personal instance; ANY class list, any captain, any flavor
   ```
-  Loader semantics: a grant row whose class ∈ never_grant is dropped (fail-closed) + files a `kind=decision` need ONCE (not a grant-request need — asking for a never-grant is noise). Empty/absent list = all six classes grantable in sovereign. Nate's deployment keeps today's exact behavior via config; the framework stops encoding one captain's policy.
+  Loader semantics: a grant row whose class ∈ never_grant is dropped (fail-closed) + files a `kind=decision` need ONCE (not a grant-request need — asking for a never-grant is noise). Empty/absent list = all six classes grantable in sovereign. The first-instance deployment keeps today's exact behavior via config; the framework stops encoding one captain's policy.
 
 ## §3 · Deployment targets (topology axis)
 
@@ -74,18 +74,18 @@ classify(recipient) -> internal|external            # per instance org-domain co
 undo_contract: none | delete_window(seconds)        # Slack/Discord/Teams/Google Chat messages are deletable → pseudo-undo; email = none
 capabilities: [send, receive, edit, delete, react]
 ```
-- Shipped adapters (roadmap order): Teams + Outlook (exist today behind Nate-specific paths — refactor onto the contract), Slack, Gmail, Google Chat, Discord.
+- Shipped adapters (roadmap order): Teams + Outlook (exist today behind first-instance-specific paths — refactor onto the contract), Slack, Gmail, Google Chat, Discord.
 - Instances bind adapters in `extensions.yml`; an adapter with `undo_contract: none` can never make its action_type act-first-eligible regardless of posture (inverse-required rule already enforces this).
 - Every adapter ships with a mock for the arena/sim harness (no live sends in experiments — evolution-engine spec invariant).
 
-## §5 · Nate's two live deployments (concrete)
+## §5 · The first captain's two live deployments (concrete)
 
 | | MacBook (this machine) | Mac Mini |
 |---|---|---|
 | preset | `personal-macbook` | `org-macmini` |
 | flavor / target | personal / macbook | org / mac_mini |
 | level | **guardian** now; lanes argued → flip via ritual | **sovereign** at deploy |
-| never_grant | `[external_comms]` (ACT-AND-DRAFT, his policy) | `[]` (grants decide) |
+| never_grant | `[external_comms]` (ACT-AND-DRAFT, the captain's policy) | `[]` (grants decide) |
 | attestation | schg (ARMED, verified 2026-07-05) | schg at deploy |
 
 The third preset (`org-docker`) ships for future captains/servers; no live deployment yet.
@@ -101,7 +101,7 @@ The question this answers: *how do we make "axes are data, never branches" physi
 5. **Doctrine layer (for LLM authors):** new germline rule `.claude/rules/axes-contract.md` — the contract in prose, loaded by every officer/agent session (foundation devs and captain instances alike), mirrored in CLAUDE.md. New golden eval **eval-020-axes-contract**: asserts the linter exists, is green, and the allowlist matches immutable-core.
 6. **Filesystem (the backstop):** the axis kernel — posture.py, the matrix tables, the linter + its allowlist, `axes-contract.md` — joins the germline lock set (immutable-core-driven, lockstep meta-test extended). The contract can't be quietly edited out by the very agents it governs.
 
-Layers 1–3 bind the foundation; 4 binds captains; 5 binds LLM workers; 6 binds everyone. Same numbers Nate should expect in review: **one** posture resolver, **one** matrix, **18** parametrized invariant combos, **zero** axis branches outside the allowlist.
+Layers 1–3 bind the foundation; 4 binds captains; 5 binds LLM workers; 6 binds everyone. Same numbers the Captain should expect in review: **one** posture resolver, **one** matrix, **18** parametrized invariant combos, **zero** axis branches outside the allowlist.
 
 ## §7 · Maintenance & further development — costs, effects, pitfalls
 
@@ -126,7 +126,7 @@ Layers 1–3 bind the foundation; 4 binds captains; 5 binds LLM workers; 6 binds
 |---|---|---|
 | AX-1 | posture.py 3-level enum + narrow-only selection rules + `postures.earn_up` table + validator (earn_up-narrows rule) | S |
 | AX-2 | trust_ladder resurrection as earn_up surface (rung map, climb cards, events re-registered) | M |
-| AX-3 | grants.py: remove flavor-structural external gate; `never_grant:` loader + decision-need; Nate instance config line | S (germline) |
+| AX-3 | grants.py: remove flavor-structural external gate; `never_grant:` loader + decision-need; first-instance config line | S (germline) |
 | AX-4 | deployment_target + attestation backends (schg / ro_mount) + docker preset (Dockerfile, compose ro-mounts, cron renderer from services.yml) | M |
 | AX-5 | channel-adapter contract + Teams/Outlook refactor onto it + one greenfield adapter (Slack) + sim mocks | M-L |
 | AX-6 | axes contract: linter + 18-combo invariant suite + validate-extension.sh + manifest schema + `.claude/rules/axes-contract.md` + eval-020 + lock-set additions | M |

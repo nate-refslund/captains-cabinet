@@ -1,5 +1,13 @@
 # INSTALL-flip — arming the machine-label producers (L7-ops-scheduling)
 
+> **Fresh-deployment note (PC-E).** The rendered `com.cabinet.<name>.plist`
+> files named below are a live deployment's artifacts and do not ride the
+> public egg (only the `.template.plist` twins + `officer-entitlements.plist`
+> ship). On a fresh deployment, render them first — daemons/watchdogs/crons
+> via `python3.12 cabinet/scripts/generate-plists.py` (from
+> `cabinet/services.yml`, output under `cabinet/launchd/generated/`), officers
+> via `deploy-mac.sh` — then follow the same deliberate-human loading steps.
+
 Three NEW LaunchAgents ship with this lane. None are loaded by the repo — a
 human integrator runs the commands below on the target Mac (checkpoint
 2026-07-04 conditions 5 + 12; DO NOT script these — loading is a deliberate
@@ -13,7 +21,7 @@ human step of the flip protocol).
 
 Not yet scheduled (run manually or add via the fleet manifest, which the supply lane owns): `cabinet/scripts/emit-graduation-transitions.py` — sweeps per-cell graduation state and emits `graduation_transition` org events when a cell MOVES (unmeasured/propose_only/eligible/graduated/demote), so briefings can see cells moving instead of only counting snapshots. First run seeds its state file silently (`--emit-baseline` to override); `--dry-run` prints without emitting.
 
-Install + load (from the live checkout `/Users/nate/captains-cabinet`):
+Install + load (from the live cabinet checkout, e.g. `~/captains-cabinet`):
 
 ```sh
 cp cabinet/launchd/com.cabinet.undo-sweep.plist ~/Library/LaunchAgents/
@@ -108,9 +116,11 @@ cp cabinet/launchd/com.cabinet.backup.plist ~/Library/LaunchAgents/
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.cabinet.backup.plist
 ```
 
-NATE-DECISIONS deliberately left open (details in the backup plist header +
-`cabinet/services.yml` backup row): off-machine backup copy (recommend rsync
-to the UpCloud CPH box over Tailscale) and Redis AOF enablement
+Two hardening steps are deliberately left open as recorded Captain decisions
+— see the deliberately-NOT-wired notes where they live: the
+`cabinet/services.yml` backup row (rendered into the backup plist header) and
+the `cabinet/scripts/backup.sh` header: an off-machine backup copy (e.g. a
+post-backup rsync to a host you control) and Redis AOF enablement
 (`cabinet/scripts/enable-redis-aof.sh` exists; it restarts Redis, so flipping
 it stays a Captain step).
 
@@ -139,9 +149,10 @@ without it — there is no second hidden knob).
 
 Products the probes observe live in `instance/config/probes.yml` (repo slug /
 Vercel app / Sentry org+project / local checkout per product — seeded with
-PolAds; edit freely, config gaps skip fail-closed).
+the deployment's first product lane; edit freely, config gaps skip
+fail-closed).
 
-Install + load (from `/Users/nate/captains-cabinet`):
+Install + load (from the cabinet checkout):
 
 ```sh
 for p in verifier probe-github probe-vercel probe-sentry fidelity-f1; do
@@ -174,7 +185,7 @@ Notes for the integrator:
   (never a spurious pass); a silent source while local git shows activity
   pages healthchecks and emits nothing.
 - Healthchecks checks (`verifier`, `probe-github` 5m, `probe-vercel` 10m,
-  `probe-sentry` 15m) are still Nate's to create — `hc_ping` is fail-open
+  `probe-sentry` 15m) are still the Captain's to create — `hc_ping` is fail-open
   without `HEALTHCHECKS_PING_KEY`, so the agents run correctly before the
   checks exist; they just aren't externally dead-manned yet.
 - `mission-supervisor` stays STAGED DISABLED in the manifest (pull-only

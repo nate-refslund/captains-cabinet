@@ -1,6 +1,6 @@
 # Germline Window 3 — Captain Runbook (ONE ceremony: H0 pull + CANDOR + W4 + W8)
 
-**Lands:** `feat/germline-window-3` → the live checkout (`/Users/nate/captains-cabinet`), together with the H0 gateway pull. Window 2 executed 2026-07-07 (its branch is fully contained in master); this file is now the WINDOW-3 contract, same pattern.
+**Lands:** `feat/germline-window-3` → the live checkout (`~/captains-cabinet` on the live box), together with the H0 gateway pull. Window 2 executed 2026-07-07 (its branch is fully contained in master); this file is now the WINDOW-3 contract, same pattern.
 **Authored:** 2026-07-10 by the orchestrator (Fable 5). **Re-pin every sha at window time — base branches keep advancing.**
 **Captain wall-clock cost:** ~10 minutes, two sudo commands (steps 1 and 4 — the ONLY Captain-sudo steps). Everything else is orchestrator work with no sudo and no passwordless-sudo path (the boundary's whole design — see `cabinet/scripts/germline-lock.sh` header).
 **Apply contract:** `docs/proposals/germline-amendment-candor-2026-07-10.md` — reply **`"apply candor law"`** in the Captain DM before opening the window.
@@ -15,7 +15,7 @@
 ## 0. Preconditions — orchestrator verifies BEFORE requesting the window (no sudo)
 
 ```bash
-cd /Users/nate/captains-cabinet
+cd ~/captains-cabinet
 git fetch origin feat/germline-window-3 master feat/fidelity-harness-design
 git -C .claude/worktrees/germline-window-3 status --short          # must be clean
 # predict merge conflicts of window-3 onto CURRENT master (0 expected at stage time):
@@ -39,7 +39,7 @@ sudo bash cabinet/scripts/germline-lock.sh unlock
 ## 2. Orchestrator — H0 pull + merge + full gates ON THE MAIN CHECKOUT (no sudo)
 
 ```bash
-cd /Users/nate/captains-cabinet
+cd ~/captains-cabinet
 git pull --ff-only origin feat/fidelity-harness-design   # own branch current first
 git merge --no-ff origin/master                          # H0: gateway + everything since
 git merge --no-ff origin/feat/germline-window-3          # candor + W4 + W8

@@ -61,6 +61,14 @@ class TestPlistDark:
             (_REPO / "cabinet" / "scripts" / "germline-lock.sh").resolve(),
             (_REPO / "cabinet" / "scripts" / "hooks" /
              "pre-tool-use.sh").resolve(),
+            # Egg packaging EXCLUSION list (PC-E R160 launchd-portable-only):
+            # the manifest must NAME the plist to expect-absent it from the
+            # public egg — naming-for-exclusion is anti-arming (it removes
+            # the dark daemon from the artifact), the manifest itself never
+            # ships (self-exclusion delete row), and the launchctl-load
+            # sweep below still covers it.
+            (_REPO / "cabinet" / "scripts" /
+             "egg-export-manifest.txt").resolve(),
         }
         for root in roots:
             files = [root] if root.is_file() else (

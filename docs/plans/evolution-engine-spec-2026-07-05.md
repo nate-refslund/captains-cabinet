@@ -6,10 +6,10 @@
 
 ## §0 — Goal restated (Captain, 2026-07-05)
 
-The target artifact is the **framework** — the world's best foundational AI org / personal agent, for ANY captain, in EITHER flavor. Nate's deployment is the first instance and the proving ground, not the product. Consequences:
+The target artifact is the **framework** — the world's best foundational AI org / personal agent, for ANY captain, in EITHER flavor. The first captain's deployment is the first instance and the proving ground, not the product. Consequences:
 
 - Everything in this spec lands under `framework/` with zero launcher-specific assumptions; launcher specifics enter only through `instance/` config and source adapters.
-- Every evaluator, benchmark miner, and fitness function is written against framework schemas (consequence ledger, org_events, probes, undo journal) — never against Nate's vault layout, screenpipe paths, or Monday board IDs. Where today's code violates this (known: screenpipe_adapter imports, Monday creds from `~/.screenpipe`, vault paths in run_action_lane), the violation is *worked around via adapter seams now* and *queued as migration needs* — not silently re-baked into new code.
+- Every evaluator, benchmark miner, and fitness function is written against framework schemas (consequence ledger, org_events, probes, undo journal) — never against the first instance's vault layout, screenpipe paths, or Monday board IDs. Where today's code violates this (known: screenpipe_adapter imports, Monday creds from `~/.screenpipe`, vault paths in run_action_lane), the violation is *worked around via adapter seams now* and *queued as migration needs* — not silently re-baked into new code.
 - The doctrine in one line: **boundless lab, bounded deployment, universal substrate.**
 
 ## §1 — The four corrections to the addendum (Captain-presented, ratified)
@@ -43,9 +43,9 @@ New package: `framework/evolution/` — `archive.py`, `candidate.py`, `generator
 
 - **E0 · Reward-signal hygiene** (immediately after sovereign v1 merges; ~1 lane-day): `review.source` into consequence-event schema; universal `action_type` stamping on propose-only cards; honor `graduation-credit:false`; per-lane promotion sources **as an authority-matrix key** (`promotion_sources` per risk class — one enforcement story, never a fourth config file); schedule B2 probes + verifier + undo-sweep from `services.yml` with healthchecks (kills the "reward functions sitting dark" defect).
 - **E1 · League MVP**: archive + candidate + arena driver over the sim harness + league loop; 20 prompt/retrieval candidates vs existing fidelity/scenario evals; ranked archive; **no live promotion**. Proves search works.
-- **E2 · Benchmark factory**: mine consequence events, undo reversals, human edits/rejects, probe outcomes, injection attempts into living public/private suites; holdout_gen frozen + Ring-0-listed; per-launcher preference evals seeded from onboarding answers (generic mechanism, Nate = first dataset).
+- **E2 · Benchmark factory**: mine consequence events, undo reversals, human edits/rejects, probe outcomes, injection attempts into living public/private suites; holdout_gen frozen + Ring-0-listed; per-launcher preference evals seeded from onboarding answers (generic mechanism, the first instance = first dataset).
 - **E3 · Skill & memory evolution**: skill induction upgraded from skeletons to candidate-procedure search (cluster → generate → replay/sim → mutate → promote via Gate); memory policies (retrieval/summarization/decay/trust) as candidates scored by downstream task performance. Skills gain status lifecycle (candidate/tested/active/deprecated/failed) — extends the SOV-8 skill auto-promote wire.
-- **E4 · Launcher foundation** (parallel with E2/E3): source-map + adapter seams so framework/ imports zero Nate paths (screenpipe/vault/Monday behind `framework/sources/` interfaces with instance-bound adapters); cabinet-init extended to generate goal model, risk posture, seed preference cases, initial benchmark suite, source map; framework CI gains a **clean-room test**: full suite green on a bare instance with no personal sources present.
+- **E4 · Launcher foundation** (parallel with E2/E3): source-map + adapter seams so framework/ imports zero launcher-specific paths (screenpipe/vault/Monday behind `framework/sources/` interfaces with instance-bound adapters); cabinet-init extended to generate goal model, risk posture, seed preference cases, initial benchmark suite, source map; framework CI gains a **clean-room test**: full suite green on a bare instance with no personal sources present.
 - **E5 · Champion auto-promotion** (needs E1+E2 stable + correction-2 criterion): prompt/retrieval/skill champions auto-promote through the Gate in sovereign posture; machine-verifiable product policies promote on probe evidence; architecture search unlocks only per correction 2.
 
 ## §5 — Reconciliation pass (BEFORE E0 code — the three-stream collision)
@@ -57,4 +57,4 @@ Three concurrent streams hold opinions on the same files: sovereign build (feat/
 
 ## §6 — What stays true from tonight's rulings
 
-Standing grants + needs ledger + ACT-AND-DRAFT (external = per-item approval, structurally non-grantable) + Ring-0 + guardian-byte-identity are **invariants of the platform**, not Nate-instance quirks: they are exactly the deployment membrane that lets any captain run the lab at full speed. The league never bypasses the Gate; the Gate never edits itself; demote always narrows; evidence beats posture — in every posture, for every launcher.
+Standing grants + needs ledger + ACT-AND-DRAFT (external = per-item approval, structurally non-grantable) + Ring-0 + guardian-byte-identity are **invariants of the platform**, not first-instance quirks: they are exactly the deployment membrane that lets any captain run the lab at full speed. The league never bypasses the Gate; the Gate never edits itself; demote always narrows; evidence beats posture — in every posture, for every launcher.

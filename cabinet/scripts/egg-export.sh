@@ -40,8 +40,9 @@ egg-export.sh — cut the public egg as a fresh tree from git HEAD
 
 The exclusion/transform pass is data-driven from
 cabinet/scripts/egg-export-manifest.txt (row-cited: R059 R088 R116 R120
-R122 R123 R124 R125 R126 R127 R128 R145 R159). Writes egg-manifest.json
-into the export root and prints a one-screen summary.
+R122 R123 R124 R125 R126 R127 R128 R145 R159, plus the PC-E scrub-paths
+transforms launchd-portable-only + claude-egg-swap). Writes
+egg-manifest.json into the export root and prints a one-screen summary.
 
 PRIVATE-SIDE PREP ONLY — publishing remains CG-7 Captain-gated.
 EOF
@@ -280,6 +281,68 @@ t_bin_mount() {
   : > "$OUT/bin/.gitkeep"
 }
 
+# PC-E scrub-paths: the static committed cabinet/launchd/*.plist files are
+# THIS deployment's rendered artifacts (absolute /Users/... paths, the live
+# officer roster, incl. the germline-locked gate-apply plist) and are
+# live-consumed via ~/Library/LaunchAgents copies — never edited for scrub.
+# The egg ships the portable .template.plist twins + officer-entitlements
+# (generic hardened-runtime entitlements) + INSTALL-flip.md (scrubbed doc);
+# a fresh deployment renders its fleet from cabinet/services.yml
+# (generate-plists.py) and the templates (deploy-mac.sh).
+t_launchd_portable_only() {
+  local dir="$OUT/cabinet/launchd" f base plists
+  [ -d "$dir" ] || { verify_fail "cabinet/launchd missing from archive cut"; return 0; }
+  # collect-then-delete: enumerate BEFORE unlinking so rm never mutates the
+  # directory an open find stream is still reading (readdir-mutation skips;
+  # the recursive fail-closed sweep below would catch a miss, but the delete
+  # loop should not rely on it)
+  plists="$(find "$dir" -maxdepth 1 -type f -name '*.plist' | sort)"
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    base="$(basename "$f")"
+    case "$base" in
+      *.template.plist) : ;;               # portable twins ship
+      officer-entitlements.plist) : ;;     # generic entitlements — ships
+      *.plist) rm -f "$f" ;;               # rendered live artifact — leaves
+      *) : ;;                              # non-plist files (docs) ship
+    esac
+  done <<< "$plists"
+  # fail-closed: the portable set must have survived, the rendered set must
+  # not. The verification sweep is RECURSIVE (unlike the top-level delete
+  # loop above): a future TRACKED plist in any cabinet/launchd subdirectory
+  # fails the export until a manifest rule adjudicates it — it can never
+  # ship unchecked. (cabinet/launchd/generated/ is gitignored today, so no
+  # rendered output reaches a HEAD cut; this guards the rule, not the path.)
+  [ -f "$dir/com.cabinet.officer.template.plist" ] \
+    || verify_fail "officer template plist must ship: cabinet/launchd/com.cabinet.officer.template.plist"
+  [ -f "$dir/officer-entitlements.plist" ] \
+    || verify_fail "entitlements plist must ship: cabinet/launchd/officer-entitlements.plist"
+  while IFS= read -r f; do
+    base="$(basename "$f")"
+    case "$base" in
+      *.template.plist|officer-entitlements.plist) : ;;
+      *) verify_fail "rendered live plist survived the pass: ${f#"$OUT/"}" ;;
+    esac
+  done < <(find "$dir" -type f -name '*.plist' | sort)
+}
+
+# PC-E scrub-paths: the repo-root CLAUDE.md is officer-loaded LIVE deployment
+# context (deployment facts, absolute paths, live lane names) — never
+# semantically edited for scrub (live-coupling rule). The egg ships the
+# captain-agnostic operating context docs/templates/CLAUDE-egg.md AS
+# CLAUDE.md instead. Until the template is tracked at HEAD the swap cannot
+# fire on a fresh cut — print a LOUD note rather than fail (the publish gate
+# stays the fail-closed backstop: an unswapped live CLAUDE.md is gate-RED).
+t_claude_egg_swap() {
+  local tpl="$OUT/docs/templates/CLAUDE-egg.md"
+  if [ -f "$tpl" ]; then
+    mv "$tpl" "$OUT/CLAUDE.md"
+    rmdir "$OUT/docs/templates" 2>/dev/null || true
+  else
+    echo "egg-export: NOTE — docs/templates/CLAUDE-egg.md not in HEAD yet; CLAUDE.md ships UNSWAPPED (pre-integration cut; publish gate will flag it)"
+  fi
+}
+
 t_instance_verify() {
   local f rel bad=0
   [ -d "$OUT/instance" ] || { verify_fail "instance/ missing from export"; return 0; }
@@ -310,6 +373,8 @@ run_transform() {
     officer-skills-prune)   t_officer_skills_prune ;;
     act-first-default)      t_act_first_default ;;
     bin-mount)              t_bin_mount ;;
+    launchd-portable-only)  t_launchd_portable_only ;;
+    claude-egg-swap)        t_claude_egg_swap ;;
     instance-verify)        t_instance_verify ;;
     *) fail "unknown transform in manifest: '$1'" ;;
   esac

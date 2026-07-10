@@ -249,6 +249,57 @@ def test_ci_retargeted_to_master(export: Path):
         assert line == "branches: [master]", f"R159: {name} still has '{line}'"
 
 
+def test_launchd_ships_portable_templates_only(export: Path):
+    """PC-E scrub-paths: the static committed plists are the live deployment's
+    rendered artifacts (absolute home paths + live roster) — only the envsubst
+    .template.plist twins + officer-entitlements.plist may ship; a fresh
+    deployment renders its fleet from cabinet/services.yml + templates."""
+    launchd = export / "cabinet" / "launchd"
+    # recursive, mirroring the transform's fail-closed verification sweep:
+    # a plist anywhere under cabinet/launchd/ must be a portable template
+    # or the generic entitlements file
+    offenders = [
+        p.relative_to(export).as_posix() for p in launchd.rglob("*.plist")
+        if not p.name.endswith(".template.plist")
+        and p.name != "officer-entitlements.plist"
+    ]
+    assert not offenders, f"rendered live plists must not ship: {offenders}"
+    assert (launchd / "com.cabinet.officer.template.plist").is_file(), \
+        "the officer template twin must ship"
+    assert (launchd / "officer-entitlements.plist").is_file(), \
+        "the generic entitlements plist must ship"
+    assert (launchd / "INSTALL-flip.md").is_file(), \
+        "the (scrubbed) launchd install doc still ships"
+
+
+def test_claude_egg_swap_once_template_tracked(export: Path):
+    """PC-E scrub-paths: once docs/templates/CLAUDE-egg.md is tracked at HEAD,
+    the export's CLAUDE.md must BE the captain-agnostic template (swapped in
+    by claude-egg-swap) and the template path itself must be gone. Before the
+    template is tracked (pre-integration cut) the exporter prints a loud
+    UNSWAPPED note instead — same once-tracked pattern as the appshell rows."""
+    ls_tree = subprocess.run(
+        ["git", "-C", str(_REPO_ROOT), "ls-tree", "--name-only", "HEAD",
+         "docs/templates/CLAUDE-egg.md"],
+        capture_output=True, text=True, timeout=30,
+    )
+    # empty stdout means "not tracked" ONLY on a successful run — a broken
+    # git environment must fail the test, never silently skip the bindings
+    assert ls_tree.returncode == 0, (
+        f"git ls-tree failed rc={ls_tree.returncode}: {ls_tree.stderr}"
+    )
+    tracked = ls_tree.stdout.strip()
+    assert not (export / "docs" / "templates" / "CLAUDE-egg.md").exists(), \
+        "the template must never ship at its source path (swapped or not yet tracked)"
+    if not tracked:
+        pytest.skip("docs/templates/CLAUDE-egg.md not tracked at HEAD yet — "
+                    "swap activates in the commit that tracks it")
+    shipped = (export / "CLAUDE.md").read_text(encoding="utf-8")
+    assert "CLAUDE-egg.md" in shipped.splitlines()[0] or "CLAUDE-egg" in shipped[:400], \
+        "shipped CLAUDE.md must be the swapped-in captain-agnostic template"
+    assert "/Users/" not in shipped, "no absolute home paths in the shipped CLAUDE.md"
+
+
 def test_export_tooling_excluded_from_the_egg(export: Path):
     for private in ("cabinet/scripts/egg-export.sh",
                     "cabinet/scripts/egg-publish-gate.sh",

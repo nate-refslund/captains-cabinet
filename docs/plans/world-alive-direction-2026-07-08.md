@@ -10,7 +10,7 @@
 
 ## 0. Hard constraints (checklist the ship phase re-reads before every commit)
 
-- Repo `/Users/nate/captains-cabinet`, work branches off `feat/fidelity-harness-design` → `feat/world-grammar-v2`. GERMLINE is schg-locked — touch nothing in it.
+- Repo `~/captains-cabinet`, work branches off `feat/fidelity-harness-design` → `feat/world-grammar-v2`. GERMLINE is schg-locked — touch nothing in it.
 - **Pixels only via grammar law**: every new scene/prop/behavior lands as a `show-grammar.yml` / `morphology.yml` v2 entry FIRST; renderer consumes parsed law. No grammar change auto-merges — the PR is the door.
 - **Determinism ratchets:** no `Math.random` / `Date.now` / unseeded RNG anywhere in `lib/world/` or `components/world/` (CI greps). All variation = `fnv1a(stableId [+ ':' + salt])` + the logical tick. Wall-clock time enters ONLY as data on the SSE snapshot (server route may read the clock; the render path may not).
 - CSP for `/world` stays **byte-identical** (eval-free; keep the `pixi.js/unsafe-eval` AOT import; `preferWorkers` stays off).

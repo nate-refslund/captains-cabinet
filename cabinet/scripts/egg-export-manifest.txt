@@ -80,6 +80,14 @@ delete docs/runbooks/egg-export-2026-07-10.md
 # comparison table) — private-side prep that must never bulk-publish by riding
 # the egg. DRAFT headers additionally pin every file unpublishable in place.
 delete docs/launch
+# PC-E scrub-paths (fix pass 2026-07-10): WINDOW-RUNBOOK.md is the live
+# deployment's germline-window ceremony contract (Captain sudo steps, window
+# shas, private integration-branch names — the same name the ci-retarget
+# transform scrubs from CI files because instance history must not carry it).
+# Instance coordination material, same class as the R145 plans archive; the
+# live file keeps its real branch names (load-bearing for the ceremony) and
+# the egg simply never ships it.
+delete WINDOW-RUNBOOK.md
 # APPSHELL-V05 self-exclusion (Wave D shell area, spec section 4; rows landed
 # by the Wave-D integrator in the same commit that first tracks the files):
 # the Hatch Cabinet.app shell is dev-side tooling that BUILDS the distribution
@@ -126,6 +134,23 @@ transform act-first-default
 # R059: bin/ has zero tracked files (binaries rebuild on target via
 # build-calendar-helper.sh); the egg keeps an EMPTY bin/ mount point.
 transform bin-mount
+# PC-E scrub-paths (Wave E 2026-07-10; ledger row pending — proposed to the
+# integrator with this wave): the static committed launchd plists are THIS
+# deployment's rendered artifacts (absolute /Users/... paths + live roster,
+# incl. the germline-locked gate-apply plist) and are live-consumed — never
+# scrub-edited at source. Only the envsubst .template.plist twins +
+# officer-entitlements.plist ship; a fresh deployment renders its fleet from
+# cabinet/services.yml (generate-plists.py) + templates (deploy-mac.sh).
+transform launchd-portable-only
+# PC-E scrub-paths (Wave E 2026-07-10; ledger row pending, pairs with the
+# row above): the repo-root CLAUDE.md is officer-loaded LIVE deployment
+# context (live-coupling rule: never semantically scrub-edited). The egg
+# ships docs/templates/CLAUDE-egg.md (captain-agnostic operating context,
+# zero personal values) AS CLAUDE.md. Until the template is tracked at HEAD
+# the transform prints a loud UNSWAPPED note instead of failing (appshell
+# precedent: rules land in the commit that first tracks the files); the
+# publish gate stays the fail-closed backstop either way.
+transform claude-egg-swap
 # R120 + PC-C directive, fail-closed: after the pass, instance/ may contain
 # ONLY .example twins + structural files (.gitkeep, README.md, contexts/
 # _default.yml, projects/_template.yml, germ-keep policies/ + posture-presets/
@@ -156,6 +181,12 @@ expect-present docs/plans/sovereign-build-spec-2026-07-04.md
 expect-present cabinet/scripts/hatch.sh
 expect-present cabinet/scripts/null-hatch.sh
 expect-present bin/.gitkeep
+# PC-E scrub-paths: the portable launchd surface that must ride the egg
+expect-present cabinet/launchd/com.cabinet.officer.template.plist
+expect-present cabinet/launchd/com.cabinet.dashboard.template.plist
+expect-present cabinet/launchd/officer-entitlements.plist
+expect-present cabinet/launchd/INSTALL-flip.md
+expect-present CLAUDE.md
 expect-present .github/workflows/cabinet-ci.yml
 expect-present .gitleaks.toml
 # PC-D-APPFEEL (Wave D app-feel): the dashboard PWA/install surfaces are
@@ -202,3 +233,15 @@ expect-absent docs/launch
 expect-absent cabinet/scripts/appshell
 expect-absent cabinet/scripts/tests/test_appshell_build.py
 expect-absent docs/runbooks/hatch-appshell-v05-2026-07-10.md
+# PC-E scrub-paths fix pass: instance germline-window ceremony never ships
+# (paired delete rule above).
+expect-absent WINDOW-RUNBOOK.md
+# PC-E scrub-paths: spot-check the strongest rendered-plist leak vectors (the
+# transform's own fail-closed sweep covers the full non-template set) + the
+# swapped-away CLAUDE-egg template (absent BOTH pre- and post-tracking: pre,
+# it is not in the HEAD cut; post, claude-egg-swap moved it over CLAUDE.md).
+expect-absent cabinet/launchd/com.cabinet.officer.polads-ceo.plist
+expect-absent cabinet/launchd/com.cabinet.officer.stephie-ceo.plist
+expect-absent cabinet/launchd/com.cabinet.officer.cos.plist
+expect-absent cabinet/launchd/com.cabinet.gate-apply.plist
+expect-absent docs/templates/CLAUDE-egg.md

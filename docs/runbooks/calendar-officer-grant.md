@@ -1,7 +1,7 @@
 # Runbook — granting calendar Full Access to the launchd officer context
 
-**Scope:** why the signed `cabinet-calread` helper reads all calendars from Nate's
-Terminal but is silently denied in the officer context, and how to make the
+**Scope:** why the signed `cabinet-calread` helper reads all calendars from the
+Captain's Terminal but is silently denied in the officer context, and how to make the
 launchd-spawned officer chain reliably granted. This is the remedy the officer
 boot self-check line (`cabinet/scripts/calendar-boot-selfcheck.sh`) points to.
 
@@ -30,7 +30,7 @@ at launchd never benefits from that row.
 **Reconcile the two in-tension facts** (Terminal-works vs rebuild-invalidates) with
 the diagnostic before assuming: `bash cabinet/scripts/diagnose-calendar-tcc.sh`
 plus `sudo launchctl procinfo $(pgrep -n cabinet-calread) | grep responsible` in
-Nate's Terminal. If `responsible` is Terminal/iTerm → the grant is Terminal's and
+the Captain's Terminal. If `responsible` is Terminal/iTerm → the grant is Terminal's and
 never reaches the officer; if it's the helper's own cdhash-keyed row → it dies on
 rebuild. Either way the path below fixes it.
 
@@ -50,7 +50,7 @@ rebuild. Either way the path below fixes it.
    Fallback with no paid account: a **stable self-signed Code Signing cert** in the
    login keychain (also stabilizes the grant across rebuilds; does not pass
    `spctl`). **This box currently has ZERO signing identities** — a real
-   prerequisite Nate must install first.
+   prerequisite the Captain must install first.
 
 3. **Make the helper its OWN responsible process** (escape the launchd dead-end):
    - Primary: `open -W -a CabinetCalread.app --args read <s> <e> --out <tmp>` —
@@ -68,7 +68,7 @@ rebuild. Either way the path below fixes it.
    - Alternative: a small signed `POSIX_SPAWN_SETDISCLAIM` launcher (keeps stdio;
      non-public API).
 
-4. **Bootstrap the grant ONCE** from Nate's granted GUI login via the app's
+4. **Bootstrap the grant ONCE** from the Captain's granted GUI login via the app's
    foreground setup path. Because identity is now certificate-stable and the app is
    its own responsible process, the resulting TCC row is keyed to
    `com.cabinet.calread` + its DR and the launchd officer runs reuse it — no prompt.

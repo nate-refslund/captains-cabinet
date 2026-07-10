@@ -143,7 +143,7 @@ Verify: `bash cabinet/scripts/setup-mac.sh --check` returns exit 0.
 
 ```bash
 bash cabinet/scripts/bootstrap-project.sh <repo-url> <slug>
-# example: bash cabinet/scripts/bootstrap-project.sh https://github.com/your/app polads
+# example: bash cabinet/scripts/bootstrap-project.sh https://github.com/your/app bakery
 ```
 
 Generated `instance/config/projects/<slug>.yml`. Activate it:
@@ -211,7 +211,7 @@ This `envsubst`-substitutes paths into the plist templates in `cabinet/launchd/`
 
 - `com.cabinet.officer.<slug>.plist` — one per officer, fleet **derived from
   `instance/config/roster.yml`** (F0.2; no roster file ⇒ refuse, never a preset
-  default). Live portfolio roster: `cos`, `polads-ceo`, `stephie-ceo`,
+  default). Example portfolio roster: `cos`, `bakery-ceo`, `newsletter-ceo`,
   `comms-officer`.
 - `com.cabinet.limit-reset-watchdog.plist` (auto-resume after account session-limit reset)
 - `com.cabinet.dashboard.plist` (control panel + office-display server on `:3100`).
@@ -256,9 +256,9 @@ bash cabinet/scripts/verify-launchagents.sh
 Exit 0 = pass. Re-deploy if any fail. (The verifier treats the legacy templates
 as OPTIONAL — checked only if installed.)
 
-> **Portfolio-preset note.** The **portfolio** deployment (one persistent Chair
-> `cos` + domain officers `comms-officer`, `polads-ceo`, `stephie-ceo`) is what
-> `--all` deploys when the roster says so; its daemons (e.g.
+> **Portfolio-preset note.** A **portfolio** deployment (one persistent Chair
+> `cos` + domain officers, e.g. `comms-officer` + one `<lane>-ceo` per lane) is
+> what `--all` deploys when the roster says so; its daemons (e.g.
 > `com.cabinet.intake-surface`, `com.cabinet.frontdoor-briefing`,
 > `com.cabinet.officer-supervisor-mac`) are manifest rows registered by `cp`-ing
 > each plist into `~/Library/LaunchAgents/` and `launchctl load -w`-ing it — the
@@ -269,7 +269,7 @@ as OPTIONAL — checked only if installed.)
 > **TEMPORARY backstop (`com.cabinet.status-sweep`).** A 30-min `StartInterval`
 > cron (`run-status-sweep.sh`) that pushes a STATUS-SWEEP trigger to the Chair
 > (`cabinet:triggers:cos`) so the Chair periodically sweeps in-flight work + DMs
-> Nate a digest — a backstop to the Redis trigger Channel, which can't wake a
+> the Captain a digest — a backstop to the Redis trigger Channel, which can't wake a
 > slept/idle session. Beginner-cadence only; disable when no longer needed:
 > `launchctl bootout gui/$(id -u)/com.cabinet.status-sweep`. NOTE: `StartInterval`
 > does not fire while the Mac is asleep — wake-time backstop on the MacBook; true
@@ -348,9 +348,9 @@ Verify an officer is self-waking:
 
 ```bash
 # heartbeat should be seconds-fresh (post-tool-use writes it every tool call)
-redis-cli -h localhost GET cabinet:heartbeat:polads-ceo
+redis-cli -h localhost GET cabinet:heartbeat:bakery-ceo
 # the loop registered a cron (look for "Scheduled <id> (Every 5 minutes)")
-tmux capture-pane -t officer-polads-ceo -p | grep -i scheduled
+tmux capture-pane -t officer-bakery-ceo -p | grep -i scheduled
 ```
 
 ### 7.1 Interactive one-time steps (login / OAuth) `[CAPTAIN]`
