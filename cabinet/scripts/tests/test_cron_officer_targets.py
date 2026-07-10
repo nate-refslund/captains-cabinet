@@ -92,11 +92,25 @@ def test_repaired_scripts_default_to_a_live_officer(script, envvar):
 
 
 def test_repaired_scripts_are_scheduled():
+    """W10 pin, amended 2026-07-10: the repaired rows must never SILENTLY
+    regress to unscheduled/disabled (the original defect class), but a
+    DELIBERATE, documented parking is legitimate fleet truth — cos's
+    ABSENCE-DISABLE (2026-07-10) parks both crons while the Captain is dark,
+    with the re-enable path in the row comment. Machine-readable contract:
+    `disabled: true` on these rows is allowed ONLY alongside a non-empty
+    `disabled_reason`; a bare disable (or a missing/unscheduled row) still
+    fails exactly like the original pin."""
     import yaml
     services = yaml.safe_load(
         (_REPO / "cabinet" / "services.yml").read_text())["services"]
     by_name = {s.get("name"): s for s in services}
     for name in ("research-sweep", "backlog-refine"):
         row = by_name.get(name)
-        assert row and not row.get("disabled"), f"{name} row missing/disabled"
-        assert row.get("schedule", {}).get("calendar"), f"{name} unscheduled"
+        assert row, f"{name} row missing"
+        if row.get("disabled"):
+            reason = str(row.get("disabled_reason") or "").strip()
+            assert reason, (
+                f"{name} disabled WITHOUT a disabled_reason — silent "
+                f"unscheduling is the W10 regression this test pins")
+        else:
+            assert row.get("schedule", {}).get("calendar"), f"{name} unscheduled"

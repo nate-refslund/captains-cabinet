@@ -33,6 +33,11 @@
 #             rendered by the generator and NOT expected loaded by the
 #             outcome-watchdog's no-silent-cron floors (a parked or staged
 #             service — see draft-lane, mission-supervisor). Default false.
+#   disabled_reason: REQUIRED alongside `disabled: true` on any row a test pins
+#             as must-stay-scheduled (W10 class): a machine-readable statement
+#             that the parking is deliberate + documented (re-enable path in
+#             the row comment). test_cron_officer_targets accepts documented
+#             parking and still fails silent unscheduling.
 #   sunset:   optional apoptosis metadata (R10-class discipline, added with the
 #             Cabinet World rows 2026-07-07): the organ's KILL CRITERIA — when
 #             this row should be retired or superseded. Free text for humans +
@@ -152,6 +157,7 @@ services:
     kind: cron
     command: bash cabinet/cron/research-sweep.sh
     disabled: true   # ABSENCE-DISABLE (cos 2026-07-10): produces research briefs nobody consumes while the Captain is dark (its own sunset premise — shared/interfaces/research-briefs/ is empty). Re-enable on the Captain's return: delete this line + regenerate, AND rename ~/Library/LaunchAgents/com.cabinet.research-sweep.plist.disabled -> .plist + bootstrap. (The old redis:6379 FATAL was already fixed in b761c256; disabling here is purely for unconsumed output.)
+    disabled_reason: "ABSENCE-DISABLE (cos 2026-07-10): unconsumed output while the Captain is dark; deliberate documented parking, NOT the W10 silent-unscheduling regression — re-enable steps in the comment above"
     schedule: { calendar: [{hour: 9, minute: 5}, {hour: 15, minute: 5}] }  # twice daily local
     expected: "'Research sweep trigger pushed' log line per run; FATAL lines page via the no-silent-cron floor"
     sunset: "retire if research briefs go unconsumed 60d (backlog-refine reads shared/interfaces/research-briefs/) or a dedicated research seat returns"
@@ -166,6 +172,7 @@ services:
     kind: cron
     command: bash cabinet/cron/backlog-refine.sh
     disabled: true   # ABSENCE-DISABLE (cos 2026-07-10): backlog isn't worked while the Captain is dark; disabled alongside research-sweep (it reads the briefs). Re-enable on the Captain's return: delete this line + regenerate, AND rename ~/Library/LaunchAgents/com.cabinet.backlog-refine.plist.disabled -> .plist + bootstrap.
+    disabled_reason: "ABSENCE-DISABLE (cos 2026-07-10): backlog unworked while the Captain is dark; deliberate documented parking alongside research-sweep — re-enable steps in the comment above"
     schedule: { calendar: [{hour: 8, minute: 35}] }   # daily 08:35 local — after the 07:30 briefing
     expected: "'Backlog refinement trigger pushed' log line per run; FATAL lines page via the no-silent-cron floor"
     sunset: "retire if shared/backlog.md is superseded by the work-graph as the only backlog surface"
