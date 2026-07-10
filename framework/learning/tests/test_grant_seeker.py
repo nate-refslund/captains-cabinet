@@ -21,14 +21,14 @@ IN_WINDOW = "2026-07-01T09:00:00Z"
 
 def _need(nid, *, kind="standing_grant", cost="medium", count=1,
           risk_class="external_comms", action_type="external_email",
-          lane="polads", grant_line="- {id: GRANT-x}"):
+          lane="bakery", grant_line="- {id: GRANT-x}"):
     return {"id": nid, "kind": kind, "status": "open", "cost_of_delay": cost,
             "count": count, "risk_class": risk_class,
             "action_type": action_type, "lane": lane,
             "why": "blocked step", "proposed_grant_line": grant_line}
 
 
-def _acted(subject, *, lane="polads", ts=IN_WINDOW, review=None,
+def _acted(subject, *, lane="bakery", ts=IN_WINDOW, review=None,
            action_type="task_status_move"):
     ev = {"ts": ts, "actor": {"kind": "officer", "id": f"{lane}-ceo"},
           "lane": lane, "action": "board_move", "subject": subject,
@@ -88,12 +88,12 @@ class TestArgueLanes:
         ledger.append(_acted("s-confirmed", review={
             "verdict": "confirmed", "source": "verdict_human"}))
         out = grant_seeker.argue_lanes(ledger=ledger, root=root, now=NOW)
-        assert [c["lane"] for c in out["qualifying"]] == ["polads"]
+        assert [c["lane"] for c in out["qualifying"]] == ["bakery"]
         case = out["qualifying"][0]
         assert case["acted"] == 6 and case["wrong"] == 0
         assert case["need_id"] and case["need_id"].startswith("NEED-")
         text = (root / "shared" / "interfaces" / "needs-ledger.jsonl").read_text()
-        assert case["need_id"] in text and "lane polads earned" in text
+        assert case["need_id"] in text and "lane bakery earned" in text
         # deterministic id — re-running dedups instead of duplicating
         again = grant_seeker.argue_lanes(ledger=ledger, root=root, now=NOW)
         assert again["qualifying"][0]["need_id"] == case["need_id"]
@@ -106,7 +106,7 @@ class TestArgueLanes:
         out = grant_seeker.argue_lanes(ledger=ledger, root=tmp_path / "cab",
                                        now=NOW)
         assert out["qualifying"] == []
-        assert out["considered"]["polads"]["wrong"] == 1
+        assert out["considered"]["bakery"]["wrong"] == 1
 
     def test_thin_evidence_disqualifies(self, tmp_path, monkeypatch):
         monkeypatch.setenv("CABINET_NEEDS_WIRED", "1")
@@ -134,11 +134,11 @@ class TestArgueLanes:
                     / "needs-ledger.jsonl").exists()
 
     def test_render_lane_flip_line(self):
-        case = {"kind": "lane_flip", "lane": "polads",
-                "why": "lane polads earned a sovereign flip: 6 acted", "score": 7}
+        case = {"kind": "lane_flip", "lane": "bakery",
+                "why": "lane bakery earned a sovereign flip: 6 acted", "score": 7}
         lines = grant_seeker.render([case])
-        assert "lane flip case — polads" in lines[0]
-        assert "posture.yml lanes: {polads: sovereign}" in lines[0]
+        assert "lane flip case — bakery" in lines[0]
+        assert "posture.yml lanes: {bakery: sovereign}" in lines[0]
 
 
 class TestCLI:

@@ -252,14 +252,14 @@ def test_live_run_enqueues_once(monkeypatch):
     def _fake_enqueue(item, **k):
         calls["enqueue"] += 1
         assert item["source"] == "daily-recap"
-        return "1700000000000-0"
+        return "17000042-0"
 
     monkeypatch.setattr(dr.intake, "enqueue", _fake_enqueue)
 
     out = dr.enqueue_daily_recap(dry=False, today="2026-06-23", llm=_long_llm, entries=_ENTRIES)
 
     assert out["recap"] is True and out["dry"] is False
-    assert out["enqueued"] == "1700000000000-0"
+    assert out["enqueued"] == "17000042-0"
     assert calls == {"enqueue": 1}
 
 

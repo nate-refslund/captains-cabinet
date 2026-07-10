@@ -41,7 +41,7 @@ def wired_root(tmp_path, monkeypatch):
 
 
 def _file_need(**over):
-    kw = dict(risk_class="spend", action_type="pay_invoice", lane="polads",
+    kw = dict(risk_class="spend", action_type="pay_invoice", lane="bakery",
               why="pay the Voyage invoice", filed_by="test",
               scope_hint={"amount_eur": 25})
     kw.update(over)
@@ -381,9 +381,9 @@ def test_apply_refuses_bad_id_shape(wired_root):
 
 def test_apply_refuses_scope_mismatch(wired_root):
     """A tampered/widened proposed_grant_line (extra lane) cannot apply."""
-    nid = needs.need_id("standing_grant", "spend", "pay_invoice", "polads")
+    nid = needs.need_id("standing_grant", "spend", "pay_invoice", "bakery")
     wide = ('- {id: GRANT-%s, deployment: main, risk_class: spend, '
-            'action_types: ["pay_invoice"], lanes: ["polads", "stephie"], '
+            'action_types: ["pay_invoice"], lanes: ["bakery", "newsletter"], '
             'scope: {recipient_allowlist: [], max_eur_per_day: 25, '
             'vendor_allowlist: []}, rate: {max_per_day: 1}, '
             'expires: 2026-09-20, granted_by: "Captain", '
@@ -401,7 +401,7 @@ def test_apply_refuses_external_comms_without_org_flavor(wired_root):
     """Structural ACT-AND-DRAFT: no attested flavor=org ruling ⇒ external_comms
     grants refuse at apply time too."""
     nid = _file_need(risk_class="external_comms", action_type="external_email",
-                     scope_hint={"recipient": "a@stepnetwork.dk"})
+                     scope_hint={"recipient": "a@example.com"})
     needs.mark(nid, "approved_pending_apply", by="captain:binder")
     res = _run_apply(wired_root, nid, "--ceiling-ack")
     assert res.returncode == 4 and "flavor=org" in res.stderr
@@ -423,7 +423,7 @@ def test_apply_validator_fail_restores_byte_identical(wired_root, approved_need)
 
 
 def test_apply_handles_empty_flow_grants_list(wired_root, approved_need):
-    """Nate's handoff seeds `grants: []` — the append must rewrite it to a
+    """Ada's handoff seeds `grants: []` — the append must rewrite it to a
     block list, not produce invalid YAML."""
     gf = _grants_file(wired_root)
     gf.parent.mkdir(parents=True, exist_ok=True)

@@ -56,7 +56,7 @@ class TestSchemaFence:
 
     def test_free_text_refused(self):
         line = _fixture_line()
-        line["ev_work_item_completed"] = "Reply to kristoffer@stepnetwork.dk"
+        line["ev_work_item_completed"] = "Reply to casper@example.com"
         with pytest.raises(wc.CensusSchemaError):
             wc.validate_census(line)
 

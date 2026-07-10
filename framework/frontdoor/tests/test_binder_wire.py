@@ -14,7 +14,7 @@ from framework.acting import loop
 from framework.frontdoor import binder_wire
 
 
-def _proposal(subject="thread:kristoffer", ts="2026-07-02T10:00:00Z"):
+def _proposal(subject="thread:casper", ts="2026-07-02T10:00:00Z"):
     return loop.proposal_event(
         actor={"kind": "officer", "id": "officer:cos"},
         lane="send-1to1-reply", subject=subject, ts=ts,
@@ -42,7 +42,7 @@ class Recorder:
         return {"ok": True, "via": "email", "dest": "k@example.com"}
 
 
-def _redis_with_draft(prop, draft="Hej Kristoffer, ..."):
+def _redis_with_draft(prop, draft="Hej Casper, ..."):
     key = f"cabinet:draft:{_pid(prop)}"
     store = {key: json.dumps({"draft": draft, "person": "K", "channel": "email"})}
     return lambda k: store.get(k, "")
@@ -292,7 +292,7 @@ def test_no_pid_verdict_binds_single_open_proposal():
 
 
 def test_no_pid_verdict_with_multiple_open_never_guesses():
-    p1 = _proposal(subject="thread:kristoffer")
+    p1 = _proposal(subject="thread:casper")
     p2 = _proposal(subject="thread:lisa")
     rec = Recorder()
     r = binder_wire.handle_captain_update(
@@ -339,14 +339,14 @@ def test_action_record_routes_to_action_executor(monkeypatch):
     prop = _proposal()
     pid = _pid(prop)
     store = {f"cabinet:action:{pid}": _json.dumps(
-        {"lane": "polads", "steps": [{"kind": "reminder_create",
+        {"lane": "bakery", "steps": [{"kind": "reminder_create",
                                       "payload": {"title": "t"}}]})}
     rec = Recorder()
     called = {}
     def fake_deliver_action(p, override_text="", **kw):
         called["pid"] = p
         called["override"] = override_text
-        return {"ok": True, "via": "action-lane", "dest": "polads"}
+        return {"ok": True, "via": "action-lane", "dest": "bakery"}
     monkeypatch.setattr(action_exec, "deliver_action", fake_deliver_action)
     r = binder_wire.handle_captain_update(
         "approve", f"⚡ Action proposal ... ·{pid}·",
@@ -386,7 +386,7 @@ def _acted_row(pid=_ACTED_PID, step=1, kind="monday_task_create", *, canary=Fals
     created = created if created is not None else {
         "monday_id": "555", "board_id": "9", "update_id": "u1"}
     return action_undo.new_row(
-        pid=pid, cid="a" * 32, step=step, kind=kind, backend="monday", lane="polads",
+        pid=pid, cid="a" * 32, step=step, kind=kind, backend="monday", lane="bakery",
         subject=subject, actor={"kind": "officer", "id": "officer:cos"},
         created=created,
         inverse=action_undo.inverse_for(kind, "monday", {"board_id": "9"}, created, {}),
@@ -411,7 +411,7 @@ class ActedRec:
     def reverse(self, pid):
         self.order.append("reverse")
         self.reversed_pids.append(pid)
-        return {"ok": True, "via": "action-undo", "dest": "polads",
+        return {"ok": True, "via": "action-undo", "dest": "bakery",
                 "reversed": [{"step": 1}]}
 
     def freeze(self, kind, reason):
@@ -530,7 +530,7 @@ def test_never_veto_scope_is_server_side_only():
         journal_rows_for=lambda pid=None: [row], read_ledger_fn=lambda: [],
         now="2026-07-06T12:00:00Z")
     assert r["handled"] and r["primary"] == "never"
-    assert r["veto_scope"] == {"action_type": "board_status", "lane": "polads"}
+    assert r["veto_scope"] == {"action_type": "board_status", "lane": "bakery"}
     assert "999" not in str(r["veto_scope"]) and "everyone" not in str(r["veto_scope"])
     assert a.reversed_pids == []                             # never doesn't reverse the instance
 
@@ -657,11 +657,11 @@ def test_stale_index_expired_pointer_refused():
 
 
 def test_free_text_act_naming_never_binds():
-    """RT-A9: naming an act in words ("undo the JFM task") is not a server id —
+    """RT-A9: naming an act in words ("undo the bakery task") is not a server id —
     with several windows open nothing binds; the reply relays for the Chair."""
     a = ActedRec()
     r = binder_wire.handle_captain_update(
-        "undo the JFM task", "🗒 digest text", redis_get=lambda k: "",
+        "undo the bakery task", "🗒 digest text", redis_get=lambda k: "",
         emit=a.emit, reverse=a.reverse, freeze=a.freeze,
         journal_rows_for=lambda pid=None: [], read_ledger_fn=lambda: [],
         list_undo_windows=lambda: ["w1", "w2"], pending_source=lambda: [])
@@ -773,17 +773,17 @@ def test_acted_undo_captures_lesson_and_stamps_event():
     row = _acted_row()
     a, les = ActedRec(), LessonRec()
     r = binder_wire.handle_captain_update(
-        "undo: wrong board, this belongs on PolAds", f"·{_ACTED_PID}·",
+        "undo: wrong board, this belongs on Bakery", f"·{_ACTED_PID}·",
         redis_get=_undo_redis(), emit=a.emit, reverse=a.reverse, freeze=a.freeze,
         journal_rows_for=lambda pid=None: [row], read_ledger_fn=lambda: [],
         capture_lesson=les, now="2026-07-06T12:00:00Z")
     assert r["handled"] and r["lesson_ref"] == "lesson-001"
     call = les.calls[0]
     # VERBATIM correction text — the whole reply, never a paraphrase
-    assert call["captain_text"] == "undo: wrong board, this belongs on PolAds"
+    assert call["captain_text"] == "undo: wrong board, this belongs on Bakery"
     assert call["verdict"] == "undo" and call["pid"] == _ACTED_PID
     # deterministic fields come from the STORED record, never the reply text
-    assert call["action_type"] == "task_create" and call["lane"] == "polads"
+    assert call["action_type"] == "task_create" and call["lane"] == "bakery"
     ev = a.emitted[0]
     assert ev["review"]["lesson_ref"] == "lesson-001"
     assert "lesson:lesson-001" in ev["refs"]

@@ -35,11 +35,11 @@ CUTOFF = "2026-06-10T12:00:00+00:00"
 
 def _case(cid):
     return Case.from_retro_case({
-        "case_id": cid, "reply_key": cid, "slug": "ulrik", "person": "Ulrik",
+        "case_id": cid, "reply_key": cid, "slug": "otto", "person": "Otto",
         "channel": "msgraph", "language": "da", "reply_ts": CUTOFF,
         "subject": "s", "n_prior": 2,
         "thread_before": [{"date": "2026-06-09T00:00:00+00:00",
-                           "direction": "received", "who": "Ulrik <u@x>",
+                           "direction": "received", "who": "Otto <u@x>",
                            "source": "msgraph", "text": "hej"}],
         "real_reply": "Ja.",
     })
@@ -149,7 +149,7 @@ class TestQuarantinedBatch:
         (qdir / "consequence-events-2026-07-09.jsonl").write_text(json.dumps({
             "ts": "2026-07-09T08:00:00+00:00",
             "actor": {"kind": "officer", "id": "cos"},
-            "lane": "polads", "action": "auto-closed-commitment",
+            "lane": "bakery", "action": "auto-closed-commitment",
             "subject": "thread-abc", "refs": ["msg-1"],
         }) + "\n")
         runner, scorer_fn, baseline_llm = _fake_pipeline(monkeypatch, n=1)

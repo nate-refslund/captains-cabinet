@@ -29,13 +29,13 @@ AS_OF = dt.datetime(2026, 7, 9, 12, 0, 0, tzinfo=dt.timezone.utc)
 
 OUTCOMES_YML = """\
 outcomes:
-  - id: outcome-polads-001
-    name: "PolAds v1.0 staging closeout and production release"
+  - id: outcome-bakery-001
+    name: "Bakery v1.0 staging closeout and production release"
     status: active
-  - id: outcome-polads-005
+  - id: outcome-bakery-005
     name: "Draft outcome that must not surface"
     status: draft
-  - id: outcome-stephie-001
+  - id: outcome-newsletter-001
     name: "Achieved outcome that must not surface"
     status: achieved
   - id: outcome-system-self-003
@@ -66,11 +66,11 @@ class TestOpenCommitments:
     def test_active_outcomes_surface_as_owed_to_captain(self, org_root):
         rows = OrgSource().open_commitments("owed_to_captain")
         ids = [r["id"] for r in rows]
-        assert ids == ["outcome-polads-001", "outcome-system-self-003"]
+        assert ids == ["outcome-bakery-001", "outcome-system-self-003"]
         r = rows[0]
-        assert r["person"] == "polads" and r["slug"] == "polads"
-        assert r["text"].startswith("PolAds v1.0")
-        assert r["path"] == "instance/config/outcomes.yml#outcome-polads-001"
+        assert r["person"] == "bakery" and r["slug"] == "bakery"
+        assert r["text"].startswith("Bakery v1.0")
+        assert r["path"] == "instance/config/outcomes.yml#outcome-bakery-001"
         assert r["direction"] == "owed_to_captain"
         # explicit lane field wins over id-derived lane
         assert rows[1]["person"] == "system-self"
@@ -94,7 +94,7 @@ class TestOpenCommitments:
         assert len(OrgSource().open_commitments("owed_to_captain")) == 8
 
     def test_lane_derivation(self):
-        assert _lane_from_outcome_id("outcome-polads-001") == "polads"
+        assert _lane_from_outcome_id("outcome-bakery-001") == "bakery"
         assert _lane_from_outcome_id("outcome-system-self-002") == "system-self"
         assert _lane_from_outcome_id("weird-shape") == ""
 
@@ -103,7 +103,7 @@ class TestOpenCommitments:
 # leak, one clockless row — only the first may reach the proposer.
 _TSV = (
     "captain_decision\tcos\t2026-07-01 09:30\t0.912\t0.870\tcaptain"
-    "\tDecided: PolAds staging CI fix ships via PR 419\tdec-42\n"
+    "\tDecided: Bakery staging CI fix ships via PR 419\tdec-42\n"
     "captain_decision\tcos\t2026-08-01 09:30\t0.9\t0.9\tcaptain"
     "\tFUTURE leak decision\tdec-future\n"
     "working_note\tcto\tundated\t0.8\t0.8\tderived"
@@ -129,15 +129,15 @@ class TestSeamShadowParity:
 
         # the org's own open work is the commitments section
         assert ("--- OPEN COMMITMENT ref=instance/config/outcomes.yml"
-                "#outcome-polads-001 ---") in out
+                "#outcome-bakery-001 ---") in out
         # …and it seeded topic-anchored cabinet_memory recall (CONTEXT)
         assert "--- CONTEXT ref=dec-42 ---" in out
-        assert "PolAds staging CI fix" in out
+        assert "Bakery staging CI fix" in out
         # the content_ts fence held: future + clockless rows never surface
         assert "FUTURE leak decision" not in out
         assert "clockless note" not in out
         # search was topic-anchored (outcome text travels in the query)
-        assert queries and "PolAds v1.0" in queries[0]
+        assert queries and "Bakery v1.0" in queries[0]
 
     def test_flag_off_org_binding_never_reaches_the_seam(
             self, org_root, monkeypatch, tmp_path):

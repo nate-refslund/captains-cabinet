@@ -23,7 +23,7 @@ TS2 = "2026-07-08T12:00:00Z"
 TS3 = "2026-07-08T13:00:00Z"
 
 
-def prop_row(ts=TS0, subject="sign testament", refs=(REF,), decision=None,
+def prop_row(ts=TS0, subject="sign deed", refs=(REF,), decision=None,
              action="action-card", actor_id="cos", outcome=None):
     row = {
         "ts": ts, "actor": {"kind": "officer", "id": actor_id}, "lane": "l",
@@ -48,8 +48,8 @@ class TestIdentityFold(unittest.TestCase):
         # Three differently-phrased cards sharing one commitment id → ONE
         # situation (the H1 76→31 collapse, at the fold).
         view = derive(ledger=[
-            prop_row(TS0, "sign the testament", [f"vault/x.md — note, {REF}"]),
-            prop_row(TS1, "testament signing reminder", [REF]),
+            prop_row(TS0, "sign the deed", [f"vault/x.md — note, {REF}"]),
+            prop_row(TS1, "deed signing reminder", [REF]),
             prop_row(TS2, "bring passport for signing", [f"{REF} (again)"]),
         ])
         self.assertEqual(len(view), 1)

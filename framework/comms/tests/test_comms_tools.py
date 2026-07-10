@@ -87,12 +87,12 @@ def test_send_card_routes_through_gate_with_adapter_send(monkeypatch):
     monkeypatch.setattr(gate, "submit", fake_submit)
     a = FakeAdapter()
     r = tools.send_card(subject="Deploy failing", situation="prod 500s",
-                        lane="polads", steps=[{"do": "rollback"}],
+                        lane="bakery", steps=[{"do": "rollback"}],
                         chair_review=True, adapter=a)
     assert r["status"] == "sent"
     # the gate got the STRUCTURED item and the ADAPTER's send/edit as the backend
     assert seen["item"]["subject"] == "Deploy failing"
-    assert seen["item"]["lane"] == "polads"
+    assert seen["item"]["lane"] == "bakery"
     assert seen["send_fn"] == a.send and seen["edit_fn"] == a.edit
     assert seen["chair_review"] is True
 
@@ -114,11 +114,11 @@ def test_edit_card_reuses_identity_and_flips_state(monkeypatch):
     from framework.attention import gate
     seen = {}
     monkeypatch.setattr(gate, "submit", lambda item, **kw: seen.update(item=item) or {"status": "edited"})
-    tools.edit_card(subject="Deploy PolAds", evidence=["monday:5091706356"],
+    tools.edit_card(subject="Deploy Bakery", evidence=["monday:42424242"],
                     state="done", steps=[{"title": "rolled out"}], adapter=FakeAdapter())
     # identity fields forwarded verbatim → same situation_key as the original send
-    assert seen["item"]["subject"] == "Deploy PolAds"
-    assert seen["item"]["evidence"] == ["monday:5091706356"]
+    assert seen["item"]["subject"] == "Deploy Bakery"
+    assert seen["item"]["evidence"] == ["monday:42424242"]
     assert seen["item"]["state"] == "done"
     # edit_card no longer takes a situation_key it would ignore
     import inspect
@@ -154,7 +154,7 @@ def test_set_status_degrades_without_capability():
 
 def test_open_thread_returns_thread_id():
     a = FakeAdapter()
-    assert tools.open_thread(lane="polads", adapter=a)["thread_id"] == 99
+    assert tools.open_thread(lane="bakery", adapter=a)["thread_id"] == 99
 
 
 def test_read_feed_returns_rows_and_cursor(monkeypatch):

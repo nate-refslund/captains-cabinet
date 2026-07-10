@@ -162,10 +162,10 @@ class TestExperienceRecords:
 def _write_md_record(
     root: Path,
     *,
-    name: str = "2026-06-24-polads-ceo-1782277573-20176",
-    officer: str = "polads-ceo",
+    name: str = "2026-06-24-bakery-ceo-17822775-20176",
+    officer: str = "bakery-ceo",
     outcome: str = "success",
-    task: str = "First Mac-native polads-ceo boot",
+    task: str = "First Mac-native bakery-ceo boot",
     what: str = "Gathered-then-decided per courses-of-action.",
     lessons: str = "Verify session identity at boot.",
     counterfactual: str | None = "Check env first",
@@ -200,9 +200,9 @@ class TestStoreUnification:
         recs = list_records()
         assert len(recs) == 1
         r = recs[0]
-        assert r["actor"] == "polads-ceo"
+        assert r["actor"] == "bakery-ceo"
         assert r["lesson_type"] == "pattern"          # success → pattern
-        assert r["trigger_signal"] == "First Mac-native polads-ceo boot"
+        assert r["trigger_signal"] == "First Mac-native bakery-ceo boot"
         assert r["applicability_scope"] == "this_role"  # induction-eligible
         assert r["created_at"] == "2026-06-24T05:06:13Z"
         assert r["id"] == path.stem
@@ -250,7 +250,7 @@ class TestStoreUnification:
                trigger_signal="jsonl side", body="b")
         _write_md_record(tmp_path, name="md-side", officer="cos",
                          outcome="success", task="md side")
-        _write_md_record(tmp_path, name="md-other", officer="stephie-ceo",
+        _write_md_record(tmp_path, name="md-other", officer="newsletter-ceo",
                          outcome="failure", task="other")
         assert len(list_records()) == 3
         assert len(list_records(actor="cos")) == 2

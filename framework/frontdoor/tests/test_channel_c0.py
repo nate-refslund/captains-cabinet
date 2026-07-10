@@ -45,11 +45,11 @@ class TestForumTopic:
         monkeypatch.setattr(channel, "_last_captain_msg_id", lambda: None)
         monkeypatch.setattr(channel.time, "sleep", lambda *a, **k: None)
         post = RecordingPost(response={"ok": True,
-                                       "result": {"message_thread_id": 77, "name": "polads"}})
-        r = channel.open_thread("polads", http_post=post)
+                                       "result": {"message_thread_id": 77, "name": "bakery"}})
+        r = channel.open_thread("bakery", http_post=post)
         assert r["sent"] and "createForumTopic" in post.calls[-1]["url"]
         assert r["thread_id"] == 77
-        assert _payload(post)["name"] == "polads"
+        assert _payload(post)["name"] == "bakery"
 
     def test_open_thread_gates_in_dev(self, monkeypatch):
         monkeypatch.setattr(env, "allow_sends", lambda: False)
@@ -62,11 +62,11 @@ class TestSendRouting:
         monkeypatch.setattr(channel, "_last_captain_msg_id", lambda: None)
         monkeypatch.setattr(channel.time, "sleep", lambda *a, **k: None)
         post = RecordingPost()
-        channel.send("lane card", thread_id=77, effect_id="5104841245755180586",
+        channel.send("lane card", thread_id=77, effect_id="51048412",
                      http_post=post)
         d = _payload(post)
         assert d["message_thread_id"] == 77
-        assert d["message_effect_id"] == "5104841245755180586"
+        assert d["message_effect_id"] == "51048412"
 
     def test_send_without_new_kwargs_is_unchanged(self, monkeypatch):
         _runtime(monkeypatch)

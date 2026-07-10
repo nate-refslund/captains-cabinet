@@ -27,7 +27,7 @@ def _row(pid="p1", step=1, kind="monday_task_create", *, canary=False, created=N
     created = created if created is not None else {
         "monday_id": "555", "board_id": "9", "update_id": "u1"}
     row = au.new_row(
-        pid=pid, cid="a" * 32, step=step, kind=kind, backend="monday", lane="polads",
+        pid=pid, cid="a" * 32, step=step, kind=kind, backend="monday", lane="bakery",
         subject=subject, actor={"kind": "officer", "id": "officer:cos"}, created=created,
         inverse=au.inverse_for(kind, "monday", {"board_id": "9"}, created, {}),
         executed_at=executed_at, jid=f"j{step}", status=status, canary=canary)
@@ -179,7 +179,7 @@ def test_confirm_then_ttl_sweep_preserves_confirm_end_to_end():
 # --- per-cell human-revert-rate ----------------------------------------------
 
 def _acted(ts, outcome, review=None, *, required=False, action_type="board_status"):
-    e = {"ts": ts, "actor": {"kind": "officer", "id": "officer:cos"}, "lane": "polads",
+    e = {"ts": ts, "actor": {"kind": "officer", "id": "officer:cos"}, "lane": "bakery",
          "action": "acted:monday_task_update", "subject": "s" + ts,
          "action_type": action_type, "refs": [],
          "proposal": {"required": required,
@@ -204,7 +204,7 @@ def test_human_revert_rate_counts_human_undos_only():
                {"verdict": "confirmed", "source": "verdict_human"}, required=True),
     ]
     rates = ar.human_revert_rates(ledger)
-    key = "officer:officer:cos|polads|board_status"
+    key = "officer:officer:cos|bakery|board_status"
     assert rates[key]["acts"] == 4                 # the 4 acted (required=false) rows
     assert rates[key]["human_reverts"] == 1        # only the verdict_human undo
     assert abs(rates[key]["rate"] - 0.25) < 1e-9
@@ -236,8 +236,8 @@ def test_item_state_and_activity_parse_and_filter():
 
 def test_make_probe_attributes_nate_revert_and_skips_non_monday():
     fm = FakeMonday(state="archived", logs=[
-        {"event": "archive_pulse", "user_id": "NATE", "created_at": "2026-07-07T00:00:00Z"}])
-    probe = ar.make_monday_probe(fm, nate_user_id="NATE")
+        {"event": "archive_pulse", "user_id": "ADA", "created_at": "2026-07-07T00:00:00Z"}])
+    probe = ar.make_monday_probe(fm, nate_user_id="ADA")
     res = probe({"created": {"monday_id": "555"}, "executed_at": "2026-07-04T00:00:00Z"})
     assert res["archived"] is True and res["reverted_by_nate"] is True
     # a non-Monday row (calendar backend, no monday_id) is reported intact.
@@ -300,8 +300,8 @@ def test_ttl_sweep_supersedes_executor_emitted_acted_row(monkeypatch):
                                                           "estate_per_day": 40}})
     import json
     steps = [{"kind": "monday_task_create",
-              "payload": {"board_id": "5091706356", "title": "t"}}]
-    rec = {"lane": "polads", "subject": "close cmt", "steps": steps,
+              "payload": {"board_id": "42424242", "title": "t"}}]
+    rec = {"lane": "bakery", "subject": "close cmt", "steps": steps,
            "steps_sha256": ax._canonical_sha(steps)}
 
     def getter(k):

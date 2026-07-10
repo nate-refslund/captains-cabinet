@@ -36,6 +36,17 @@ if str(_REPO_ROOT) not in sys.path:
 from framework.authority.policy_engine import _eval_authority_matrix  # noqa: E402
 from framework.authority import matrix as M  # noqa: E402
 
+
+@pytest.fixture(autouse=True)
+def _synthetic_org_domains(monkeypatch):
+    """Pin the internal-domain set to the synthetic fixture domains so the
+    internal/external comms classification is hermetic — never coupled to
+    this deployment's instance/config org_domains value (classifier freezes
+    env.org_domains() at import time, so patch the module constant)."""
+    from framework.authority import classifier as _clf
+    monkeypatch.setattr(_clf, "_INTERNAL_DOMAINS", ("testburg.example",))
+
+
 _GOLDEN_DIR = _REPO_ROOT / "memory" / "golden-evals"
 
 
@@ -191,7 +202,7 @@ class TestUnmeasuredCellCannotAuto:
         result = _eval_authority_matrix(
             pol,
             "mcp__brain__queue_draft",
-            {"recipient": "teammate@stepnetwork.dk", "body": "hi", "channel": "teams"},
+            {"recipient": "teammate@testburg.example", "body": "hi", "channel": "teams"},
             "cto",
         )
         assert result is not None
@@ -208,7 +219,7 @@ class TestUnmeasuredCellCannotAuto:
             ("Bash", {"command": "git push origin feature-branch"}),
             (
                 "mcp__brain__queue_draft",
-                {"recipient": "teammate@stepnetwork.dk", "body": "hi"},
+                {"recipient": "teammate@testburg.example", "body": "hi"},
             ),
         ]
         for tool, ti in sweep:

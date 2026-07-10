@@ -412,9 +412,9 @@ class TestEventIdPassthrough:
             aggregate_id="eng",
             actor="captain",
             payload={},
-            event_id="11111111-2222-3333-4444-555555555555",
+            event_id="11111111-2222-3333-4444-5a5a5a5a5a5a",
         )
-        assert result["event_id"] == "11111111-2222-3333-4444-555555555555"
+        assert result["event_id"] == "11111111-2222-3333-4444-5a5a5a5a5a5a"
 
 
 class TestPostgresSchemaAlignment:

@@ -19,7 +19,7 @@ def _row(i=1, text="don't ping about resolved threads", **over):
         "pid": f"pid-{i}",
         "cid": None,
         "action_type": "monday_task_create",
-        "lane": "polads",
+        "lane": "bakery",
         "verdict": "edit",
         "captain_text": text,
         "taxonomy": "wrong-timing",
@@ -111,7 +111,7 @@ def test_slot_present_in_proposer_system_source():
 
 
 def test_directions_and_lessons_coexist():
-    directions = {"directions": {"polads-v1": {"mission": "ship v1"}}}
+    directions = {"directions": {"bakery-v1": {"mission": "ship v1"}}}
     seen = {}
 
     def llm(system, user):

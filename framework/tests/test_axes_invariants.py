@@ -208,7 +208,7 @@ def test_never_grant_refused_in_every_combo(tmp_path, level, flavor, target):
     rows = [
         {
             "id": "GRANT-%s" % rc, "deployment": "main", "risk_class": rc,
-            "action_types": [action_types[rc]], "lanes": ["polads"],
+            "action_types": [action_types[rc]], "lanes": ["bakery"],
             "scope": {}, "rate": {"max_per_day": 5},
             "expires": "2026-09-01", "granted_by": "Captain (test)",
             "granted_at": "2026-07-05T00:00:00Z",

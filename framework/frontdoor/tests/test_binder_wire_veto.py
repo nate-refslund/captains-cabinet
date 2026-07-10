@@ -17,7 +17,7 @@ def _acted_row(pid=_ACTED_PID, step=1, kind="monday_task_create",
                executed_at="2026-07-04T10:00:00Z", subject="thr-x"):
     created = {"monday_id": "555", "board_id": "9", "update_id": "u1"}
     return action_undo.new_row(
-        pid=pid, cid="a" * 32, step=step, kind=kind, backend="monday", lane="polads",
+        pid=pid, cid="a" * 32, step=step, kind=kind, backend="monday", lane="bakery",
         subject=subject, actor={"kind": "officer", "id": "officer:cos"},
         created=created,
         inverse=action_undo.inverse_for(kind, "monday", {"board_id": "9"}, created, {}),
@@ -60,7 +60,7 @@ def test_pid_never_records_veto_when_wired():
         journal_rows_for=lambda pid=None: [row], read_ledger_fn=lambda: [],
         record_veto=rec_veto, now="2026-07-06T12:00:00Z")
     assert r["primary"] == "never" and r["veto_id"] == "veto-001"
-    assert r["veto_scope"] == {"action_type": "board_status", "lane": "polads"}
+    assert r["veto_scope"] == {"action_type": "board_status", "lane": "bakery"}
     # recorded with the SERVER-derived scope (== veto_scope) + verbatim reply text
     assert calls == [(r["veto_scope"], "never: stop auto-creating tasks",
                       "2026-07-06T12:00:00Z")]
@@ -80,7 +80,7 @@ def test_pid_never_captain_unverified_records_nothing():
         record_veto=lambda *a2: calls.append(1) or {"id": "veto-001"},
         captain_verified=False, now="2026-07-06T12:00:00Z")
     assert r["primary"] == "never" and "veto_id" not in r
-    assert r["veto_scope"] == {"action_type": "board_status", "lane": "polads"}
+    assert r["veto_scope"] == {"action_type": "board_status", "lane": "bakery"}
     assert calls == []                                 # NOTHING recorded — unforgeable
 
 
@@ -134,7 +134,7 @@ def test_lift_unverified_falls_through_to_passthrough():
 def test_freeform_never_opens_pending_and_presents():
     stored, presented = {}, []
     r = binder_wire.handle_captain_update(
-        "never: create tasks on the polads board", "",
+        "never: create tasks on the bakery board", "",
         pending_source=lambda: [], list_undo_windows=lambda: [],
         redis_get=lambda k: "", redis_set=lambda k, v: stored.__setitem__(k, v),
         present=lambda m: presented.append(m), now="2026-07-06T12:00:00Z")
@@ -159,12 +159,12 @@ def test_veto_confirm_records_with_strict_scope_args():
         calls.append((scope, verbatim, ts))
         return {"id": "veto-003"}
     r = binder_wire.handle_captain_update(
-        "veto confirm action_type=task_create board=5091706356 note=ignored", "",
+        "veto confirm action_type=task_create board=42424242 note=ignored", "",
         redis_get=lambda k: store.get(k, ""), redis_del=lambda k: dels.append(k),
         record_veto=rec_veto, now="2026-07-06T12:00:00Z")
     assert r["handled"] and r["veto"] == "confirmed" and r["veto_id"] == "veto-003"
     # only deterministic fields survive; free-text 'note=' is dropped [RT-A10]
-    assert calls[0][0] == {"action_type": "task_create", "board": "5091706356"}
+    assert calls[0][0] == {"action_type": "task_create", "board": "42424242"}
     assert calls[0][1] == "never: no tasks here"
     assert dels == ["cabinet:veto-pending"]            # pending cleared on record
 

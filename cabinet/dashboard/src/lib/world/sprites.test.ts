@@ -77,7 +77,7 @@ describe('world sprite resolution', () => {
   })
 
   it('per-slug picks are deterministic and inside the known sets', () => {
-    for (const slug of ['cos', 'polads-ceo', 'stephie-ceo', 'comms-officer']) {
+    for (const slug of ['cos', 'bakery-ceo', 'newsletter-ceo', 'comms-officer']) {
       expect(deskSheetFor(slug)).toBe(deskSheetFor(slug))
       expect(DESK_SHEETS).toContain(deskSheetFor(slug))
       expect(characterSheetFor(slug)).toBe(characterSheetFor(slug))

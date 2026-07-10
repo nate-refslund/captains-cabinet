@@ -29,13 +29,13 @@ def _case():
     return Case.from_retro_case({
         "case_id": "abc1234567",
         "reply_key": "msgraph|MID1",
-        "slug": "ulrik", "person": "Ulrik", "channel": "msgraph",
+        "slug": "otto", "person": "Otto", "channel": "msgraph",
         "language": "da", "reply_ts": CUTOFF, "subject": "Re: lon",
         "n_prior": 3,
         "thread_before": [
-            {"slug": "ulrik", "person": "Ulrik",
+            {"slug": "otto", "person": "Otto",
              "date": "2026-06-09T08:00:00+00:00", "direction": "received",
-             "who": "Ulrik <u@x>", "source": "msgraph", "to": "", "cc": "",
+             "who": "Otto <u@x>", "source": "msgraph", "to": "", "cc": "",
              "text": "kan vi snakke lon?"},
         ],
         "real_reply": "Ja, lad os tage det fredag.",
@@ -92,10 +92,10 @@ class TestBriefExcluded:
         # post-cutoff facts -> it must NEVER appear in the output, and the
         # output must carry no free-text source field.
         brain = FakeBrain(
-            brief="LEAK_BRIEF: Nate already replied with the Husqvarna URL on "
+            brief="LEAK_BRIEF: Ada already replied with the Husqvarna URL on "
                   "2026-06-11. Lawn is 3000 m2.",
             vault_hits=[{"path": "1-Daily/2026-05-12.md", "heading": "house",
-                         "text": "new house at Mosevraavej, big lawn",
+                         "text": "new house at Kagevej, big lawn",
                          "ts": "2026-05-12T09:00:00+00:00", "source": "vault"}],
         )
         ctx = officer_runner.gather_cutoff_context(_case(), brain=brain)
@@ -146,7 +146,7 @@ class TestTier2Unreachable:
         # in the Flavor-A adapter's own tests (flavor_a tests).
         brain = FakeBrain(vault_hits=[])
         officer_runner.gather_cutoff_context(_case(), brain=brain)
-        assert ("search", "ulrik") in brain.calls or \
+        assert ("search", "otto") in brain.calls or \
                any(c[0] == "search" for c in brain.calls)
         # no Tier-2 method was ever added/called
         assert not brain.tier2_invoked
@@ -240,19 +240,19 @@ class TestPersonIntelDatedSectionStripped:
         # held-out reply -> only the atemporal frontmatter survives.
         dossier = (
             "---\n"
-            "role: VP Product & Publishers\n"
+            "role: head baker & site lead\n"
             "relationship: manager\n"
-            "primary_email: ulrik@x\n"
+            "primary_email: otto@x\n"
             "---\n"
             "\n"
             "## Notes from replies\n"
-            "- 2026-06-11: Nate agreed to the Husqvarna mower (LEAK).\n"
+            "- 2026-06-11: Ada agreed to the Husqvarna mower (LEAK).\n"
         )
         brain = FakeBrain(person_md=dossier)
         ctx = officer_runner.gather_cutoff_context(_case(), brain=brain)
         ps = ctx["person_static"]
-        assert "VP Product & Publishers" in ps
-        assert "primary_email: ulrik@x" in ps
+        assert "head baker & site lead" in ps
+        assert "primary_email: otto@x" in ps
         assert "Notes from replies" not in ps
         assert "Husqvarna" not in ps
         assert "2026-06-11" not in ps
@@ -260,7 +260,7 @@ class TestPersonIntelDatedSectionStripped:
     def test_static_frontmatter_strips_any_iso_dated_line(self):
         # Any line carrying an ISO date is dropped even outside the Notes block.
         md = ("role: x\n"
-              "Last interaction 2026-06-11T08:00:00+00:00 with Nate (LEAK)\n"
+              "Last interaction 2026-06-11T08:00:00+00:00 with Ada (LEAK)\n"
               "relationship: peer\n")
         out = officer_runner._static_frontmatter(md)
         assert "role: x" in out
@@ -278,24 +278,24 @@ class TestPersonIntelDatedSectionStripped:
         # the Notes block is dropped; a compact-dated line is dropped too; the
         # ## Contact attributes survive.
         dossier = (
-            "role: VP Product\n"
+            "role: head pastry chef\n"
             "relationship: manager\n"
             "\n"
             "## Notes from replies\n"
-            "- 2026/06/11: Nate agreed to the Husqvarna mower (SLASH LEAK).\n"
+            "- 2026/06/11: Ada agreed to the Husqvarna mower (SLASH LEAK).\n"
             "- 20260611 compact-dated note (COMPACT LEAK).\n"
             "\n"
             "## Contact\n"
-            "primary_email: ulrik@x\n"
+            "primary_email: otto@x\n"
             "phone: +45 12 34 56 78\n"
         )
         out = officer_runner._static_frontmatter(dossier)
         # atemporal section after Notes survives
         assert "## Contact" in out
-        assert "primary_email: ulrik@x" in out
+        assert "primary_email: otto@x" in out
         assert "+45 12 34 56 78" in out
         # the role frontmatter still survives
-        assert "role: VP Product" in out
+        assert "role: head pastry chef" in out
         # the dated Notes lines are gone (slash + compact forms both stripped)
         assert "Husqvarna" not in out
         assert "2026/06/11" not in out
@@ -307,7 +307,7 @@ class TestPersonIntelDatedSectionStripped:
         # Broadened date forms: slash-dated and compact-dated lines anywhere are
         # stripped, not only ISO-hyphen dates.
         md = ("role: x\n"
-              "Last sync 2026/06/11 with Nate (SLASH LEAK)\n"
+              "Last sync 2026/06/11 with Ada (SLASH LEAK)\n"
               "Backfilled 20260611 (COMPACT LEAK)\n"
               "relationship: peer\n")
         out = officer_runner._static_frontmatter(md)
@@ -331,7 +331,7 @@ class TestCommitmentsFenced:
                  "source_date": "2026-06-11T09:00:00+00:00", "status": "open"},
             ],
             owed_to=[
-                {"commitment_id": "c3", "text": "Ulrik to review",
+                {"commitment_id": "c3", "text": "Otto to review",
                  "source_date": "2026-05-02T09:00:00+00:00", "status": "open"},
             ],
         )
@@ -355,7 +355,7 @@ class TestReadNotePathValidation:
         "../../etc/passwd",
         "..",
         "/etc/passwd",
-        "1-Daily/../../0-Self/nate-model.md",
+        "1-Daily/../../0-Self/ada-model.md",
         "\x00/etc/passwd",
         "//etc/passwd",
     ])
@@ -434,7 +434,7 @@ class TestRealVaultHitShape:
     datetime/mtime ts must NEVER admit a hit. These drive gather_cutoff_context
     with the real shape to prove exactly that."""
 
-    BRIEF = ("BRIEF_PROSE: Nate already replied with the Husqvarna URL on "
+    BRIEF = ("BRIEF_PROSE: Ada already replied with the Husqvarna URL on "
              "2026-06-11 (un-fenceable summary that must never reach the officer)")
 
     @staticmethod
@@ -455,7 +455,7 @@ class TestRealVaultHitShape:
         # (a) ref = pre-cutoff daily-note path + datetime ts → ADMITTED via
         # _content_ts path-date (NOT via the datetime ts, which is post-cutoff).
         hit = self._real_hit("1-Daily/2026-05-12.md",
-                             "new house at Mosevraavej, big lawn ~3000 m2")
+                             "new house at Kagevej, big lawn ~3000 m2")
         brain = FakeBrain(vault_hits=[hit], brief=self.BRIEF)
         ctx = officer_runner.gather_cutoff_context(_case(), brain=brain)
         assert len(ctx["vault_hits"]) == 1

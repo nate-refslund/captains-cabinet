@@ -84,7 +84,7 @@ def _mk_counter():
     return store, inc
 
 
-def _acted(action_type, ts, *, verdict=None, source=None, lane="polads"):
+def _acted(action_type, ts, *, verdict=None, source=None, lane="bakery"):
     ev = {"ts": ts, "actor": {"kind": "officer", "id": "officer:cos"}, "lane": lane,
           "action": "acted:" + action_type, "subject": "s-" + ts,
           "action_type": action_type, "refs": [],

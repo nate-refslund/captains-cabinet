@@ -34,7 +34,7 @@ def _sit(i, deadline=None):
     key = f"sit-{i:02d}"
     return {
         "key": key, "aliases": [key], "refs": [f"cmt-{i:012x}"],
-        "subject": f"situation {i}", "lane": "polads", "state": "pending",
+        "subject": f"situation {i}", "lane": "bakery", "state": "pending",
         "live": True, "demotions": 0, "open_pids": [f"pid-{i}"],
         "pid": f"pid-{i}", "created_ts": f"2026-07-{9 - (i % 2):02d}T09:00:00Z",
         "last_ts": "2026-07-09T09:00:00Z",
@@ -116,6 +116,8 @@ class TestSeederPlan(unittest.TestCase):
 
     def test_live_covered_items_skip(self):
         seeder = self._load()
+        # slug/subject pins the REAL seed row in cabinet/scripts/seed-war-room.py
+        # (source-coupled: flips in lockstep with that script's seed list)
         live = [{"subject": "Ship the PolAds v1.0 release checklist",
                  "refs": ["monday:5091706356"]}]
         actions = {i["slug"]: a for i, a, _w in seeder.plan(live)}

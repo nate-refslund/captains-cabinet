@@ -67,7 +67,7 @@ def _emit(
     status: str = "ok",
     decision: str = "approved",
     actor=None,
-    lane: str = "polads",
+    lane: str = "bakery",
     action_type: str = "internal_message",
     refs=None,
 ):
@@ -104,7 +104,7 @@ def _emit_n(
     verdict: str = "confirmed",
     status: str = "ok",
     action_type: str = "local_edit",
-    lane: str = "polads",
+    lane: str = "bakery",
     actor=None,
     start_days_ago: int = 60,
     spacing_days: float = 1.0,
@@ -124,9 +124,9 @@ def _emit_n(
 
 
 # A cell whose action_type maps to the `reversible` risk_class (default bar).
-REVERSIBLE_CELL = ("officer:cos", "polads", "local_edit")
-INTERNAL_CELL = ("officer:cos", "polads", "internal_message")
-DEPLOY_CELL = ("officer:cos", "polads", "vercel_deploy_preview")
+REVERSIBLE_CELL = ("officer:cos", "bakery", "local_edit")
+INTERNAL_CELL = ("officer:cos", "bakery", "internal_message")
+DEPLOY_CELL = ("officer:cos", "bakery", "vercel_deploy_preview")
 
 
 # --------------------------------------------------------------------------

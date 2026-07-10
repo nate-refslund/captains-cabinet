@@ -23,7 +23,7 @@ if not retro_available():  # flavor-A coupling — mirror the conftest guard
     pytest.skip("screenpipe retrodiction lib absent (flavor-A coupling)",
                 allow_module_level=True)
 
-from framework.fidelity import leakguard, officer_runner, scorer
+from framework.fidelity import leakguard, officer_prompt, officer_runner, scorer
 from framework.fidelity.officer_prompt import (
     build_agent_eval_system, build_clone_eval_system, build_eval_system,
     format_situation)
@@ -33,8 +33,16 @@ from framework.fidelity.types import Case, OfficerDecision
 CUTOFF = "2026-06-10T12:00:00+00:00"
 
 _VOICE = "VOICE-SENTINEL: korte saetninger, ingen tankestreger."
-_PATTERNS = "[PRIVATE NATE-MODEL] PATTERNS-SENTINEL: beslutter hurtigt."
-_PERSON = "PERSON-SENTINEL: Ulrik, VP Product & Publishers."
+_PATTERNS = "[PRIVATE ADA-MODEL] PATTERNS-SENTINEL: beslutter hurtigt."
+_PERSON = "PERSON-SENTINEL: Otto, head baker & site lead."
+
+
+@pytest.fixture(autouse=True)
+def _synthetic_captain(monkeypatch):
+    """Pin the captain identity to the synthetic fixture captain (Ada) so the
+    AGENT/CLONE framing assertions are hermetic — never coupled to this
+    deployment's instance/config captain_name value."""
+    monkeypatch.setattr(officer_prompt, "captain_name", lambda: "Ada")
 
 
 class _FakeBrain:
@@ -60,13 +68,13 @@ class _FakeBrain:
 
 def _case():
     return Case.from_retro_case({
-        "case_id": "abc1234567", "reply_key": "k", "slug": "ulrik",
-        "person": "Ulrik", "channel": "msgraph", "language": "da",
+        "case_id": "abc1234567", "reply_key": "k", "slug": "otto",
+        "person": "Otto", "channel": "msgraph", "language": "da",
         "reply_ts": CUTOFF, "subject": "Re: lon", "n_prior": 1,
         "thread_before": [
-            {"slug": "ulrik", "person": "Ulrik",
+            {"slug": "otto", "person": "Otto",
              "date": "2026-06-09T08:00:00+00:00", "direction": "received",
-             "who": "Ulrik <u@x>", "source": "msgraph", "to": "", "cc": "",
+             "who": "Otto <u@x>", "source": "msgraph", "to": "", "cc": "",
              "text": "kan vi snakke lon?"},
         ],
         "real_reply": "Ja, lad os tage det fredag.",
@@ -123,7 +131,7 @@ class TestIdentityModeRouting:
                                 brain=_FakeBrain(), identity_mode="agent")
         system = seen["system"]
         assert "AGENT IDENTITY" in system
-        assert "ON NATE'S BEHALF" in system
+        assert "ON ADA'S BEHALF" in system
         assert "CLONE IDENTITY" not in system
         # the same identity priors still inform the agent
         assert _VOICE in system
@@ -206,7 +214,7 @@ class TestBuildAgentEvalSystem:
         s = build_clone_eval_system(_case(), "chair", self._IDENTITY)
         assert "CLONE IDENTITY" in s
         assert "AGENT IDENTITY" not in s
-        assert "ON NATE'S BEHALF" not in s
+        assert "ON ADA'S BEHALF" not in s
 
 
 # ---------------------------------------------------------------------------
@@ -231,10 +239,10 @@ class TestMeasureIntentStamping:
                 decision_verdict="divergent", mechanics_flags=[],
                 endorsement_adjusted=False, composite=0.0,
                 intent_verdict="intent-aligned",
-                intent_grounded_fact="From Ulrik at 2026-06-09: lon.",
+                intent_grounded_fact="From Otto at 2026-06-09: lon.",
                 intent_composite=1.0,
                 outcome_verdict="as_good_or_better",
-                outcome_grounded_fact="From Ulrik at 2026-06-09: lon.")
+                outcome_grounded_fact="From Otto at 2026-06-09: lon.")
 
         monkeypatch.setattr(measure_intent, "build_cases",
                             lambda n: [case])

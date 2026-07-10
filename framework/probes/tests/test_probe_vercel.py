@@ -76,7 +76,7 @@ class FakeVercel:
 
 
 def _decided(cid, subject="vercel-deploy"):
-    p = loop.proposal_event(actor={"kind": "officer", "id": "polads-ceo"},
+    p = loop.proposal_event(actor={"kind": "officer", "id": "bakery-ceo"},
                             lane="deploy", subject=subject,
                             ts="2026-07-03T01:00:00Z", refs=[c.ref_for(cid)])
     p["proposal"]["decision"] = "approved"

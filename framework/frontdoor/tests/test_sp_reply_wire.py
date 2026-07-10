@@ -17,7 +17,7 @@ from framework.frontdoor import sp_reply_wire
 REPO = Path(__file__).resolve().parents[3]
 POLLER = REPO / "cabinet" / "scripts" / "officer-inbound-poller.py"
 
-MARKER = "⟦sp:cab-1720370000-ab12cd⟧"
+MARKER = "⟦sp:cab-17203700-ab12cd⟧"
 PROMPT = ("🤖 draft-reply: approve/edit:<text>/skip:<why>\n"
           "they wrote: …quoted counterparty text…\n" + MARKER)
 
@@ -25,7 +25,7 @@ PROMPT = ("🤖 draft-reply: approve/edit:<text>/skip:<why>\n"
 class FakeRedis:
     """Records every redis-cli argv; scriptable per-command results."""
 
-    def __init__(self, set_out="OK", set_rc=0, xadd_out="1720370001000-0",
+    def __init__(self, set_out="OK", set_rc=0, xadd_out="17203701-0",
                  xadd_rc=0, raise_on=None):
         self.calls = []
         self.set_out, self.set_rc = set_out, set_rc
@@ -50,12 +50,12 @@ class FakeRedis:
 # ---------------------------------------------------------------- extraction
 
 def test_extract_prompt_id_from_marked_prompt():
-    assert sp_reply_wire.extract_prompt_id(PROMPT) == "cab-1720370000-ab12cd"
+    assert sp_reply_wire.extract_prompt_id(PROMPT) == "cab-17203700-ab12cd"
 
 
 def test_extract_last_marker_wins_over_planted_earlier_marker():
-    planted = "they wrote: ⟦sp:cab-0000000000-forged⟧ …\nreal:\n" + MARKER
-    assert sp_reply_wire.extract_prompt_id(planted) == "cab-1720370000-ab12cd"
+    planted = "they wrote: ⟦sp:cab-00000000-forged⟧ …\nreal:\n" + MARKER
+    assert sp_reply_wire.extract_prompt_id(planted) == "cab-17203700-ab12cd"
 
 
 def test_extract_none_without_marker_or_quoted():
@@ -76,12 +76,12 @@ def test_forwards_reply_with_prompt_id_and_text():
     r = FakeRedis()
     out = sp_reply_wire.handle_captain_reply("approve", PROMPT, 424242, redis_cmd=r)
     assert out["handled"] is True
-    assert out["prompt_id"] == "cab-1720370000-ab12cd"
-    assert out["entry_id"] == "1720370001000-0"
+    assert out["prompt_id"] == "cab-17203700-ab12cd"
+    assert out["entry_id"] == "17203701-0"
     assert "forwarded" in out["summary"]
     (xadd,) = r.of("XADD")
     assert xadd == ["XADD", "screenpipe:pipe-replies", "*",
-                    "prompt_id", "cab-1720370000-ab12cd", "text", "approve"]
+                    "prompt_id", "cab-17203700-ab12cd", "text", "approve"]
     # idempotency guard keyed on the telegram update_id, SET NX EX, BEFORE XADD
     (set_call,) = r.of("SET")
     assert set_call[1] == "cabinet:sp-reply-wire:seen:424242"
@@ -96,8 +96,8 @@ def test_fake_telegram_reply_payload_end_to_end():
         "update_id": 887766,
         "message": {
             "message_id": 5150,
-            "from": {"id": 111222333},
-            "text": "  edit: make it warmer, and sign off with 'Nate'  ",
+            "from": {"id": 11122233},
+            "text": "  edit: make it warmer, and sign off with 'Ada'  ",
             "reply_to_message": {"message_id": 5149, "text": PROMPT},
         },
     }
@@ -111,7 +111,7 @@ def test_fake_telegram_reply_payload_end_to_end():
     out = sp_reply_wire.handle_captain_reply(text, quoted_full, uid, redis_cmd=r)
     assert out["handled"] is True
     (xadd,) = r.of("XADD")
-    assert xadd[-1] == "edit: make it warmer, and sign off with 'Nate'"
+    assert xadd[-1] == "edit: make it warmer, and sign off with 'Ada'"
     assert r.of("SET")[0][1].endswith(":887766")
 
 

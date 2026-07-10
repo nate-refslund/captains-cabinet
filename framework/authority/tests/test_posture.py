@@ -98,8 +98,8 @@ def test_unknown_key_is_corrupt_guardian(tmp_path):
     {"posture": "yolo"},
     {"basis": ""},
     {"deployment": ""},
-    {"lanes": "polads"},
-    {"lanes": {"polads": "wide-open"}},
+    {"lanes": "bakery"},
+    {"lanes": {"bakery": "wide-open"}},
     {"caps": {"hard_multiplier": 0}},
     {"caps": {"hard_multiplier": 10, "soft": 1}},
     {"max_auto_exec_steps": 0},
@@ -119,9 +119,9 @@ def test_missing_required_key_resolves_guardian(tmp_path):
 
 
 def test_deployment_mismatch_treated_absent(tmp_path, monkeypatch):
-    write_posture(tmp_path, deployment="mini-polads")  # CABINET_ID defaults "main"
+    write_posture(tmp_path, deployment="mini-bakery")  # CABINET_ID defaults "main"
     assert P.resolve_posture(root=tmp_path, is_locked_fn=LOCKED) == "guardian"
-    monkeypatch.setenv("CABINET_ID", "mini-polads")
+    monkeypatch.setenv("CABINET_ID", "mini-bakery")
     assert P.resolve_posture(root=tmp_path, is_locked_fn=LOCKED) == "sovereign"
 
 
@@ -130,16 +130,16 @@ def test_deployment_mismatch_treated_absent(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_lane_override_widens_named_lane_only(tmp_path):
-    write_posture(tmp_path, posture="guardian", lanes={"polads": "sovereign"})
-    assert P.resolve_posture("polads", root=tmp_path, is_locked_fn=LOCKED) == "sovereign"
-    assert P.resolve_posture("stephie", root=tmp_path, is_locked_fn=LOCKED) == "guardian"
+    write_posture(tmp_path, posture="guardian", lanes={"bakery": "sovereign"})
+    assert P.resolve_posture("bakery", root=tmp_path, is_locked_fn=LOCKED) == "sovereign"
+    assert P.resolve_posture("newsletter", root=tmp_path, is_locked_fn=LOCKED) == "guardian"
     assert P.resolve_posture(root=tmp_path, is_locked_fn=LOCKED) == "guardian"
 
 
 def test_lane_override_narrows_named_lane(tmp_path):
-    write_posture(tmp_path, posture="sovereign", lanes={"polads": "guardian"})
-    assert P.resolve_posture("polads", root=tmp_path, is_locked_fn=LOCKED) == "guardian"
-    assert P.resolve_posture("stephie", root=tmp_path, is_locked_fn=LOCKED) == "sovereign"
+    write_posture(tmp_path, posture="sovereign", lanes={"bakery": "guardian"})
+    assert P.resolve_posture("bakery", root=tmp_path, is_locked_fn=LOCKED) == "guardian"
+    assert P.resolve_posture("newsletter", root=tmp_path, is_locked_fn=LOCKED) == "sovereign"
 
 
 # ---------------------------------------------------------------------------

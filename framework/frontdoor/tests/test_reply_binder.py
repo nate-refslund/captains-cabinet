@@ -40,7 +40,7 @@ def _proposal(*, ts="2026-06-22T08:00:00Z", subject="reply to Dana re DPA",
 def _item_for(prop, *, kind="draft-proposal", source="draft-reply"):
     """A canonical intake item whose correlation_id binds it to `prop`."""
     return {
-        "id": "1700000000000-0",          # Redis-assigned stream id (ack key)
+        "id": "17000042-0",          # Redis-assigned stream id (ack key)
         "source": source,
         "kind": kind,
         "ts": prop["ts"],

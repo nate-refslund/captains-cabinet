@@ -62,7 +62,7 @@ def _emit_reviewed(subject, verdict, source, ts="2026-07-04T08:00:00+00:00",
     if source is not None:
         review["source"] = source
     emit_consequence(
-        ts=ts, actor={"kind": "officer", "id": "cos"}, lane="polads",
+        ts=ts, actor={"kind": "officer", "id": "cos"}, lane="bakery",
         action=f"act-{subject}", subject=subject,
         action_type=action_type,
         proposal={"required": True, "decision": "approved",
@@ -72,11 +72,11 @@ def _emit_reviewed(subject, verdict, source, ts="2026-07-04T08:00:00+00:00",
     )
 
 
-_CELL = ("officer:cos", "polads", "internal_message")
+_CELL = ("officer:cos", "bakery", "internal_message")
 # [CG-1 Option B] board_status is deterministic-inverse-backed (registered
 # monday_compare_restore inverse via ACTION_TYPE_MAP monday_task_update) — the
 # admissible-fuel cell the sovereign-count pins seed.
-_PM_CELL = ("officer:cos", "polads", "board_status")
+_PM_CELL = ("officer:cos", "bakery", "board_status")
 
 
 def _floor_met(monkeypatch):
@@ -97,7 +97,7 @@ class TestReviewSourceVocabulary:
         ev = {
             "ts": "2026-07-04T08:00:00+00:00",
             "actor": {"kind": "officer", "id": "cos"},
-            "lane": "polads", "action": "a", "subject": "s",
+            "lane": "bakery", "action": "a", "subject": "s",
             "review": {"verdict": "confirmed", "source": "verdict_gate"},
         }
         assert validate_consequence(ev) is None
@@ -106,7 +106,7 @@ class TestReviewSourceVocabulary:
         ev = {
             "ts": "2026-07-04T08:00:00+00:00",
             "actor": {"kind": "officer", "id": "cos"},
-            "lane": "polads", "action": "a", "subject": "s",
+            "lane": "bakery", "action": "a", "subject": "s",
             "review": {"verdict": "confirmed", "source": "verdict_wishful"},
         }
         with pytest.raises(ConsequenceValidationError, match="review.source"):

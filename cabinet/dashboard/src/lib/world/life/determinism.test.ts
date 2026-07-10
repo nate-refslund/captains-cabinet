@@ -22,7 +22,7 @@ import type { LifeGrammar } from './life-grammar'
 import { parseLifeGrammar } from './life-grammar'
 
 const NOW = Date.parse('2026-07-09T12:00:00Z')
-const LANES = new Set(['polads', 'stephie'])
+const LANES = new Set(['bakery', 'newsletter'])
 
 const CONFIG: LifeGrammar = parseLifeGrammar(`
 version: 3
@@ -73,13 +73,13 @@ function rec(
 function inputAt(tick: number): LifeInput {
   IID = 1000 + tick // stable iids per tick
   const records: ChronicleRecord[] = [
-    rec('work.completed', 5, 'polads-ceo', { lane: 'polads' }),
+    rec('work.completed', 5, 'bakery-ceo', { lane: 'bakery' }),
     rec('loop.completed', 20, 'cos'),
     rec('loop.started', 90, 'cos'),
     rec('tool.call', 30, 'cos', { tool: 'Agent' }),
   ]
   // A noisy alternating voter for the ping-pong ratchet.
-  if (tick % 2 === 0) records.push(rec('work.assigned', 8, 'cos', { lane: 'polads' }))
+  if (tick % 2 === 0) records.push(rec('work.assigned', 8, 'cos', { lane: 'bakery' }))
   else records.push(rec('skill.promoted', 8, 'cos'))
   const killswitch = tick >= 300 && tick < 380
   return {
@@ -89,7 +89,7 @@ function inputAt(tick: number): LifeInput {
     killswitch,
     officers: {
       cos: { presence: { present: true, verb: 'working' }, x: 10, y: 8 },
-      'polads-ceo': {
+      'bakery-ceo': {
         presence:
           tick < 200
             ? { present: true, verb: 'deploying' }
@@ -210,7 +210,7 @@ describe('commute departs and arrives on schedule under a clean signal', () => {
       const input: LifeInput = {
         ...base,
         killswitch: false,
-        records: [rec('work.completed', 5, 'cos', { lane: 'polads' })],
+        records: [rec('work.completed', 5, 'cos', { lane: 'bakery' })],
       }
       const r = lifeStep(state, input)
       state = r.state

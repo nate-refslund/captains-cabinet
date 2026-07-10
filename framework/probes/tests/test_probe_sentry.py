@@ -1,6 +1,6 @@
 """B2.5 Sentry probe — FIXTURED only (zero live Sentry/git). Mirrors the
 reference GitHub-probe tests: pure classify truth-table + injected-fake client,
-never touches Nate's Sentry org."""
+never touches Ada's Sentry org."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -85,7 +85,7 @@ class FakeSentry:
 
 
 def _decided(cid, subject="sentry-release"):
-    p = loop.proposal_event(actor={"kind": "officer", "id": "polads-ceo"},
+    p = loop.proposal_event(actor={"kind": "officer", "id": "bakery-ceo"},
                             lane="feature-impl", subject=subject,
                             ts="2026-07-03T01:00:00Z", refs=[c.ref_for(cid)])
     p["proposal"]["decision"] = "approved"
@@ -109,7 +109,7 @@ def test_run_probe_emits_regressed_failed():
     cid = c.mint()
     stats = [_release(cid, burn=3.0, new_issues=5)]
     emitted = []
-    r = ps.run_probe(org="step-network", project="polads",
+    r = ps.run_probe(org="step-network", project="bakery",
                      client=FakeSentry(stats, baseline=1.0), now=_NOW,
                      rows=[_decided(cid)],
                      emit=lambda **kw: _record(emitted, **kw), hc=lambda *a, **k: "pinged")
@@ -124,7 +124,7 @@ def test_run_probe_within_budget_ok_when_feed_advanced():
     stats = [_release(cid, version="v9", burn=0.4, last_event="2026-07-03T03:30:00Z")]
     prior = {"v9": "2026-07-03T03:00:00Z"}          # older prior → feed advanced
     emitted = []
-    r = ps.run_probe(org="step-network", project="polads",
+    r = ps.run_probe(org="step-network", project="bakery",
                      client=FakeSentry(stats, baseline=1.0), now=_NOW,
                      prior_seen=prior, rows=[_decided(cid)],
                      emit=lambda **kw: _record(emitted, **kw), hc=lambda *a, **k: "")
@@ -141,7 +141,7 @@ def test_run_probe_frozen_feed_refuses_healthy_zero():
     stats = [_release(cid, version="v9", burn=0.1, last_event=frozen)]
     prior = {"v9": frozen}
     emitted = []
-    r = ps.run_probe(org="step-network", project="polads",
+    r = ps.run_probe(org="step-network", project="bakery",
                      client=FakeSentry(stats, baseline=1.0), now=_NOW,
                      prior_seen=prior, rows=[_decided(cid)],
                      emit=lambda **kw: _record(emitted, **kw), hc=lambda *a, **k: "")
@@ -154,7 +154,7 @@ def test_run_probe_first_sighting_within_budget_is_unknown():
     cid = c.mint()
     stats = [_release(cid, version="v9", burn=0.4)]
     emitted = []
-    r = ps.run_probe(org="step-network", project="polads",
+    r = ps.run_probe(org="step-network", project="bakery",
                      client=FakeSentry(stats, baseline=1.0), now=_NOW,
                      prior_seen={}, rows=[_decided(cid)],
                      emit=lambda **kw: _record(emitted, **kw), hc=lambda *a, **k: "")
@@ -166,7 +166,7 @@ def test_run_probe_outside_window_unknown_even_with_spike():
     cid = c.mint()
     stats = [_release(cid, burn=9.0, deployed="2026-07-02T20:00:00Z")]   # 8h old
     emitted = []
-    r = ps.run_probe(org="step-network", project="polads",
+    r = ps.run_probe(org="step-network", project="bakery",
                      client=FakeSentry(stats, baseline=1.0), now=_NOW,
                      rows=[_decided(cid)],
                      emit=lambda **kw: _record(emitted, **kw), hc=lambda *a, **k: "")
@@ -177,7 +177,7 @@ def test_run_probe_outside_window_unknown_even_with_spike():
 def test_run_probe_freshness_silent_source_pages_no_emit():
     # empty Sentry feed but local commits landed → not fresh: hc fail, no emit
     pinged = []
-    r = ps.run_probe(org="step-network", project="polads",
+    r = ps.run_probe(org="step-network", project="bakery",
                      client=FakeSentry([], baseline=1.0, commits=["s1", "s2"]),
                      now=_NOW, rows=[],
                      emit=lambda **kw: pinged.append(("emit",)),
@@ -189,7 +189,7 @@ def test_run_probe_freshness_silent_source_pages_no_emit():
 def test_run_probe_unattributable_cid_skipped():
     cid = c.mint()   # valid trailer, but NO matching decided proposal in rows
     stats = [_release(cid, burn=3.0)]
-    r = ps.run_probe(org="step-network", project="polads",
+    r = ps.run_probe(org="step-network", project="bakery",
                      client=FakeSentry(stats, baseline=1.0), now=_NOW,
                      rows=[],                       # empty ledger
                      emit=lib.emit_outcome, hc=lambda *a, **k: "")
@@ -200,7 +200,7 @@ def test_run_probe_no_trailer_skipped_no_cid():
     # a release whose commit carries no Cabinet trailer is skipped, never joined
     stats = [_release(None, version="v-untagged", trailer=False, burn=3.0)]
     emitted = []
-    r = ps.run_probe(org="step-network", project="polads",
+    r = ps.run_probe(org="step-network", project="bakery",
                      client=FakeSentry(stats, baseline=1.0), now=_NOW,
                      rows=[], emit=lambda **kw: _record(emitted, **kw), hc=lambda *a, **k: "")
     assert r["emitted"] == [] and emitted == []

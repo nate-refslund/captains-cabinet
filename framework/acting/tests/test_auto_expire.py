@@ -1,7 +1,7 @@
 """FIX 2 — stale-OPEN draft proposals must AUTO-EXPIRE so they stop suppressing
 future genuinely-new inbound.
 
-Root cause this covers: when Nate replies to the counterparty HIMSELF, his reply
+Root cause this covers: when Ada replies to the counterparty HIMSELF, his reply
 bypasses the approve gate, so the open proposal is never decided. It dangles
 pending forever, and the recency-aware dedup then swallows every later message on
 that thread (it compares new inbound against the OLD pending proposal's ts —
@@ -67,7 +67,7 @@ class TestAutoExpireSelfReplied:
     def test_self_reply_expires_open_proposal(self, monkeypatch):
         _emit_open("morten-stagaard", "2026-06-25T14:53:00+00:00")
         assert "morten-stagaard" in _open_subjects()  # open before the sweep
-        # Nate replied himself after the proposal -> precise detector says True.
+        # Ada replied himself after the proposal -> precise detector says True.
         monkeypatch.setattr(get_source(), "captain_replied_since", lambda slug, when: True)
 
         n = rdl._auto_expire_self_replied()
@@ -98,42 +98,42 @@ class TestAutoExpireSelfReplied:
         assert ld.open_proposal_blocks(newer, open_ts) is False
 
     def test_expire_decided_at_is_proposal_ts_not_now(self, monkeypatch):
-        # Clock-poisoning regression (the Kristoffer UAT-TEST-#3 miss): the
+        # Clock-poisoning regression (the Casper UAT-TEST-#3 miss): the
         # auto-expire's decided_at (the SUPPRESSION clock that
         # decided_subjects/already_handled read) MUST be the proposal's own ts —
         # the moment the draft was made — NOT the (hours-later) wall-clock moment
         # the sweep fires. Otherwise a genuinely-new inbound that arrived BEFORE
         # the sweep is wrongly judged already-handled and the lane never drafts it.
         #
-        # Proposal created at 10:08. Nate replies himself -> it dangles. The sweep
+        # Proposal created at 10:08. Ada replies himself -> it dangles. The sweep
         # fires now (well after 10:08) and expires it. We then assert the recorded
         # decided_at is 10:08 (the proposal ts), and prove the consequence via
         # already_handled: a 19:40 inbound (NEWER than 10:08) re-presents, while a
         # 09:00 inbound (OLDER than 10:08, covered by that proposal) stays handled.
-        _emit_open("Kristoffer", "2026-06-25T10:08:55+00:00")
+        _emit_open("Casper", "2026-06-25T10:08:55+00:00")
         monkeypatch.setattr(get_source(), "captain_replied_since", lambda slug, when: True)
 
         rdl._auto_expire_self_replied()
 
         decided = ld.decided_subjects(rows=read_ledger())
         # decided_at is the PROPOSAL ts (10:08), NOT the wall-clock expiry moment.
-        assert decided["Kristoffer"] == ld.parse_dt("2026-06-25T10:08:55+00:00")
+        assert decided["Casper"] == ld.parse_dt("2026-06-25T10:08:55+00:00")
 
         # A genuinely-new inbound newer than the proposal ts -> NOT handled (drafts).
-        new_thread = {"slug": "Kristoffer", "person": "Kristoffer",
+        new_thread = {"slug": "Casper", "person": "Casper",
                       "last": {"date": "2026-06-25T19:40:01+00:00",
                                "text": "UAT TEST #3", "source": "teams"}}
         assert ld.already_handled(new_thread, decided) is False
 
         # An older inbound (covered by that proposal) -> still handled (no
         # over-correction; the fix does not resurrect already-covered messages).
-        old_thread = {"slug": "Kristoffer", "person": "Kristoffer",
+        old_thread = {"slug": "Casper", "person": "Casper",
                       "last": {"date": "2026-06-25T09:00:00+00:00",
                                "text": "older", "source": "teams"}}
         assert ld.already_handled(old_thread, decided) is True
 
     def test_no_self_reply_keeps_proposal_open(self, monkeypatch):
-        # Detector says False (Nate has NOT replied since) and the proposal is
+        # Detector says False (Ada has NOT replied since) and the proposal is
         # fresh -> the backstop does not fire -> it stays open (awaiting decision).
         _emit_open("lisa", "2026-06-25T14:53:00+00:00")
         monkeypatch.setattr(get_source(), "captain_replied_since", lambda slug, when: False)
@@ -148,39 +148,39 @@ class TestAutoExpireSelfReplied:
     def test_stale_proposal_expires_via_time_backstop(self, monkeypatch):
         # Detector can't tell (None) but the proposal is older than the backstop
         # window -> expire anyway so a stale draft never dangles forever.
-        _emit_open("ulrik", "2026-06-20T09:00:00+00:00")  # days old
+        _emit_open("otto", "2026-06-20T09:00:00+00:00")  # days old
         monkeypatch.setattr(get_source(), "captain_replied_since", lambda slug, when: None)
         monkeypatch.setattr(rdl, "PROPOSAL_MAX_AGE_H", 36.0)
 
         n = rdl._auto_expire_self_replied()
 
         assert n == 1
-        assert "ulrik" not in _open_subjects()
+        assert "otto" not in _open_subjects()
 
     def test_false_detection_blocks_time_backstop(self, monkeypatch):
         # Even a STALE proposal is kept open when the detector POSITIVELY says
-        # 'Nate has not replied' (False) — he genuinely still owes a reply, so the
+        # 'Ada has not replied' (False) — he genuinely still owes a reply, so the
         # draft should remain his to decide, not be silently expired by age.
-        _emit_open("ulrik", "2026-06-20T09:00:00+00:00")  # days old
+        _emit_open("otto", "2026-06-20T09:00:00+00:00")  # days old
         monkeypatch.setattr(get_source(), "captain_replied_since", lambda slug, when: False)
         monkeypatch.setattr(rdl, "PROPOSAL_MAX_AGE_H", 36.0)
 
         n = rdl._auto_expire_self_replied()
 
         assert n == 0
-        assert "ulrik" in _open_subjects()
+        assert "otto" in _open_subjects()
 
     def test_backstop_disabled_when_age_zero(self, monkeypatch):
         # PROPOSAL_MAX_AGE_H <= 0 disables the time backstop (precise-only): a
         # stale proposal with an undeterminable detector stays open.
-        _emit_open("ulrik", "2026-06-20T09:00:00+00:00")
+        _emit_open("otto", "2026-06-20T09:00:00+00:00")
         monkeypatch.setattr(get_source(), "captain_replied_since", lambda slug, when: None)
         monkeypatch.setattr(rdl, "PROPOSAL_MAX_AGE_H", 0.0)
 
         n = rdl._auto_expire_self_replied()
 
         assert n == 0
-        assert "ulrik" in _open_subjects()
+        assert "otto" in _open_subjects()
 
     def test_decided_proposals_are_untouched(self, monkeypatch):
         # A DECIDED proposal is not "open" -> the sweep ignores it (no double

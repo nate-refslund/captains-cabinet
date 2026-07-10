@@ -35,8 +35,8 @@ def vault(tmp_path):
 # --- OPERATIONAL sections ----------------------------------------------------
 
 def test_operational_core_sections_present(vault):
-    _write(vault, "6-Commitments/owed_by_nate/cmt-1.md", "Nate owes Lisa the licences")
-    _write(vault, "2-Meetings/2026-07-03-scrum.md", "PolAds scrum notes")
+    _write(vault, "6-Commitments/owed_by_nate/cmt-1.md", "Ada owes Lisa the licences")
+    _write(vault, "2-Meetings/2026-07-03-scrum.md", "Bakery scrum notes")
     _write(vault, "5-Reflections/Decisions/dec-1.md", "Decided: Option B staging")
     out = ral.gather_signals(AS_OF, vault=vault)
     assert "--- OPEN COMMITMENT ref=6-Commitments/owed_by_nate/cmt-1.md ---" in out
@@ -46,14 +46,14 @@ def test_operational_core_sections_present(vault):
 
 
 def test_product_health_alert_filter(vault):
-    _write(vault, "9-Codebases/PolAds/health.md",
-           "---\nalert: true\nproduct: polads\n---\nProd SyntaxError spike")
-    _write(vault, "9-Codebases/STEPhie/health.md",
-           "---\nalert: false\nproduct: stephie\n---\nall green")
+    _write(vault, "9-Codebases/Bakery/health.md",
+           "---\nalert: true\nproduct: bakery\n---\nProd SyntaxError spike")
+    _write(vault, "9-Codebases/Newsletter/health.md",
+           "---\nalert: false\nproduct: newsletter\n---\nall green")
     out = ral.gather_signals(AS_OF, vault=vault)
-    assert "--- PRODUCT HEALTH ref=9-Codebases/PolAds/health.md ---" in out
+    assert "--- PRODUCT HEALTH ref=9-Codebases/Bakery/health.md ---" in out
     assert "SyntaxError spike" in out
-    assert "STEPhie/health.md" not in out          # alert:false is dropped
+    assert "Newsletter/health.md" not in out          # alert:false is dropped
 
 
 def test_code_section_groups_by_product_cap_2(vault):
@@ -68,9 +68,9 @@ def test_code_section_groups_by_product_cap_2(vault):
 
 
 def test_people_radar_section(vault):
-    _write(vault, "3-People/_radar/dennis.md", "Dennis: quiet 30d, worth reconnecting")
+    _write(vault, "3-People/_radar/frode.md", "Frode: quiet 30d, worth reconnecting")
     out = ral.gather_signals(AS_OF, vault=vault)
-    assert "--- PEOPLE ref=3-People/_radar/dennis.md ---" in out
+    assert "--- PEOPLE ref=3-People/_radar/frode.md ---" in out
 
 
 def test_missing_folders_degrade_to_empty(vault):
@@ -105,7 +105,7 @@ def test_strategic_opportunities_unwindowed_and_status_filtered(vault, monkeypat
     _write(vault, "7-Opportunities/market/o2.md",
            "---\nstatus: parked\n---\nold idea", mtime=ANCIENT)
     dirs = vault / "directions.yml"
-    dirs.write_text("missions:\n  polads: ship v1\n")
+    dirs.write_text("missions:\n  bakery: ship v1\n")
     monkeypatch.setattr(ral, "DIRECTIONS_PATH", dirs)
     out = ral.gather_signals(AS_OF, vault=vault, profile="strategic")
     assert "--- OPPORTUNITY ref=7-Opportunities/market/o1.md ---" in out
@@ -116,10 +116,10 @@ def test_strategic_opportunities_unwindowed_and_status_filtered(vault, monkeypat
 
 def test_strategic_health_is_unfiltered(vault):
     # STRATEGIC health has NO alert filter → an alert:false health note is kept
-    _write(vault, "9-Codebases/PolAds/health.md",
+    _write(vault, "9-Codebases/Bakery/health.md",
            "---\nalert: false\n---\nquiet-but-worth-seeing", mtime=RECENT)
     out = ral.gather_signals(AS_OF, vault=vault, profile="strategic")
-    assert "9-Codebases/PolAds/health.md" in out
+    assert "9-Codebases/Bakery/health.md" in out
 
 
 # --- cid-echo suppression (TI-7 wired into gather) ---------------------------

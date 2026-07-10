@@ -72,7 +72,7 @@ def acme_answers() -> dict:
                 "slug": "acme-store",
                 "repos": ["acme/storefront"],
                 "task_system": "plugin:dev-tasks",
-                "boards": ["1234567890"],
+                "boards": ["42424242"],
                 "neon_project": "acme-store-db",
                 "vercel_project": "storefront",
             },
@@ -198,7 +198,7 @@ class TestPortfolioGeneration:
         assert "{{" not in text and "}}" not in text
         assert "Acme Storefront" in text
         assert "acme/storefront" in text
-        assert "1234567890" in text
+        assert "42424242" in text
         # frontmatter parses and carries the generated role id
         fm = yaml.safe_load(text.split("---", 2)[1])
         assert fm["name"] == "acme-store-ceo"
@@ -336,7 +336,7 @@ class TestGuardrails:
 
     def test_secret_values_refused(self, cab_root):
         secrets = [
-            ("integrations", {"telegram": {"ceo_bot": "8273645123:AAH8f2kQp9zYx-W7vNqLm3RtUv5sJcDbE21"}}),
+            ("integrations", {"telegram": {"ceo_bot": "82736451:AAH8f2kQp9zYx-W7vNqLm3RtUv5sJcDbE21"}}),
             ("lanes_desc", "-----BEGIN RSA PRIVATE KEY-----"),
             ("lanes_desc", "sk-ant-api03-aaaaaaaaaaaaaaaaaaaa"),
             ("lanes_desc", "postgres://user:hunter2pass@db.example.com/x"),
@@ -888,6 +888,9 @@ class TestDefaultsFastLane:
 # ---------------------------------------------------------------------------
 
 class TestUniversality:
+    # DETECTOR PATTERN LIST (never relax/narrow): the launcher deployment's
+    # real lane/org/name/host/chat-id tokens, quoted here solely so the
+    # universality guard can prove the generated artifacts carry none of them.
     FORBIDDEN = [
         r"\bpolads\b", r"\bstephie\b", r"\bstepnetwork\b", r"\bnate\b",
         r"\bhq-macbook\b", r"8631324091", r"\bjfm\b",

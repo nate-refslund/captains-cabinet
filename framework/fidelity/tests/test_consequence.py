@@ -33,7 +33,7 @@ def _act_event(**overrides):
     base = {
         "ts": "2026-06-18T08:00:00+00:00",
         "actor": {"kind": "officer", "id": "cos"},
-        "lane": "polads",
+        "lane": "bakery",
         "action": "drafted-reply",
         "subject": "thread-abc",
         "refs": ["msg-1"],
@@ -158,7 +158,7 @@ class TestEmit:
         ev = emit_consequence(
             ts="2026-06-18T08:00:00+00:00",
             actor={"kind": "officer", "id": "cos"},
-            lane="polads",
+            lane="bakery",
             action="drafted-reply",
             subject="thread-abc",
             refs=["msg-1"],
@@ -191,12 +191,12 @@ class TestEmit:
         emit_consequence(
             ts="2026-06-18T08:00:00+00:00",
             actor={"kind": "officer", "id": "cos"},
-            lane="polads", action="drafted-reply", subject="t1",
+            lane="bakery", action="drafted-reply", subject="t1",
         )
         emit_consequence(
             ts="2026-06-18T08:01:00+00:00",
             actor={"kind": "officer", "id": "cos"},
-            lane="polads", action="drafted-reply", subject="t2",
+            lane="bakery", action="drafted-reply", subject="t2",
         )
         files = list(Path(event_log_dir).glob("consequence-events-*.jsonl"))
         assert len(files) == 1
@@ -241,13 +241,13 @@ class TestReadLedgerDedup:
         emit_consequence(
             ts="2026-06-18T08:00:00+00:00",
             actor={"kind": "officer", "id": "cos"},
-            lane="polads", action="drafted-reply", subject="thread-abc",
+            lane="bakery", action="drafted-reply", subject="thread-abc",
             proposal={"required": True, "decision": None, "decided_at": None},
         )
         emit_consequence(
             ts="2026-06-18T08:00:00+00:00",
             actor={"kind": "officer", "id": "cos"},
-            lane="polads", action="drafted-reply", subject="thread-abc",
+            lane="bakery", action="drafted-reply", subject="thread-abc",
             proposal={"required": True, "decision": "approved",
                       "decided_at": "2026-06-18T08:05:00+00:00"},
             outcome={"status": "ok", "evidence": "sent-xyz"},
@@ -261,12 +261,12 @@ class TestReadLedgerDedup:
         emit_consequence(
             ts="2026-06-18T08:00:00+00:00",
             actor={"kind": "officer", "id": "cos"},
-            lane="polads", action="drafted-reply", subject="t1",
+            lane="bakery", action="drafted-reply", subject="t1",
         )
         emit_consequence(
             ts="2026-06-18T08:00:00+00:00",
             actor={"kind": "officer", "id": "cos"},
-            lane="polads", action="drafted-reply", subject="t2",
+            lane="bakery", action="drafted-reply", subject="t2",
         )
         assert len(read_ledger()) == 2
 
@@ -289,7 +289,7 @@ class TestReadLedgerDedup:
         emit_consequence(
             ts="2026-06-18T08:00:00+00:00",
             actor={"kind": "officer", "id": "cos"},
-            lane="polads", action="drafted-reply", subject="t1",
+            lane="bakery", action="drafted-reply", subject="t1",
         )
         # ...and a hand-written org_events-shaped row (string actor) that
         # could only co-exist if the filenames collided. The reader must
@@ -367,7 +367,7 @@ class TestActionTypeField:
         ev = emit_consequence(
             ts="2026-06-18T08:00:00+00:00",
             actor={"kind": "officer", "id": "cos"},
-            lane="polads", action="drafted-reply", subject="t1",
+            lane="bakery", action="drafted-reply", subject="t1",
             action_type="external_message",
         )
         assert ev["action_type"] == "external_message"
@@ -381,7 +381,7 @@ class TestActionTypeField:
         ev = emit_consequence(
             ts="2026-06-18T08:00:00+00:00",
             actor={"kind": "officer", "id": "cos"},
-            lane="polads", action="drafted-reply", subject="t1",
+            lane="bakery", action="drafted-reply", subject="t1",
         )
         assert "action_type" not in ev
         events = read_ledger()
@@ -392,7 +392,7 @@ class TestActionTypeField:
             emit_consequence(
                 ts="2026-06-18T08:00:00+00:00",
                 actor={"kind": "officer", "id": "cos"},
-                lane="polads", action="drafted-reply", subject="t1",
+                lane="bakery", action="drafted-reply", subject="t1",
                 action_type="nuke_prod",
             )
         assert list(Path(event_log_dir).glob("consequence-events-*.jsonl")) == []
@@ -408,7 +408,7 @@ class TestComputeRatios:
     `action`; the cell key uses the action_type, proving the re-key."""
 
     def _emit_decided(self, ts, subject, decision, status, verdict,
-                      actor=None, lane="polads", action="drafted-reply",
+                      actor=None, lane="bakery", action="drafted-reply",
                       action_type="internal_message"):
         actor = actor or {"kind": "officer", "id": "cos"}
         outcome = None
@@ -435,7 +435,7 @@ class TestComputeRatios:
         self._emit_decided("2026-06-18T08:01:00+00:00", "b", "approved", None, None)
         self._emit_decided("2026-06-18T08:02:00+00:00", "c", "edited", None, None)
         self._emit_decided("2026-06-18T08:03:00+00:00", "d", "rejected", None, None)
-        cell = compute_ratios()[("officer:cos", "polads", "internal_message")]
+        cell = compute_ratios()[("officer:cos", "bakery", "internal_message")]
         assert cell.sample_count == 4
         assert cell.approval_unchanged_rate == 0.5
         assert cell.approved == 2 and cell.edited == 1 and cell.rejected == 1
@@ -444,7 +444,7 @@ class TestComputeRatios:
         self._emit_decided("2026-06-18T08:00:00+00:00", "a", "approved", None, None)
         self._emit_decided("2026-06-18T08:01:00+00:00", "b", "expired", None, None)
         self._emit_decided("2026-06-18T08:02:00+00:00", "c", None, None, None)  # pending
-        cell = compute_ratios()[("officer:cos", "polads", "internal_message")]
+        cell = compute_ratios()[("officer:cos", "bakery", "internal_message")]
         assert cell.approval_unchanged_rate == 1.0  # 1 approved / 1 decided
 
     def test_outcome_held_rate(self, event_log_dir):
@@ -454,7 +454,7 @@ class TestComputeRatios:
         self._emit_decided("2026-06-18T08:02:00+00:00", "c", "approved", "ok", None)
         self._emit_decided("2026-06-18T08:03:00+00:00", "d", "approved", "failed", None)
         self._emit_decided("2026-06-18T08:04:00+00:00", "e", "approved", "unknown", None)
-        cell = compute_ratios()[("officer:cos", "polads", "internal_message")]
+        cell = compute_ratios()[("officer:cos", "bakery", "internal_message")]
         assert cell.outcome_held_rate == 0.75
         assert cell.ok == 3 and cell.failed == 1
 
@@ -469,7 +469,7 @@ class TestComputeRatios:
                 review["source"] = source
             emit_consequence(
                 ts="2026-06-18T08:00:00+00:00",
-                actor={"kind": "officer", "id": "cos"}, lane="polads",
+                actor={"kind": "officer", "id": "cos"}, lane="bakery",
                 action=f"act-{subject}", subject=subject,
                 action_type="internal_message",
                 proposal={"required": True, "decision": "approved",
@@ -479,7 +479,7 @@ class TestComputeRatios:
         emit("j1", "confirmed", "verdict_judge")   # promotion-inert
         emit("l1", "confirmed", None)              # legacy/unattributed: inert
         emit("j2", "wrong", "verdict_judge")       # machine wrong DOES demote
-        cell = compute_ratios()[("officer:cos", "polads", "internal_message")]
+        cell = compute_ratios()[("officer:cos", "bakery", "internal_message")]
         assert cell.confirmed == 1                 # only the human confirm
         assert cell.wrong == 1                     # judge wrong counted
         assert cell.review_confirmed_rate == 0.5
@@ -489,7 +489,7 @@ class TestComputeRatios:
         self._emit_decided("2026-06-18T08:00:00+00:00", "a", "approved", "ok", "confirmed")
         self._emit_decided("2026-06-18T08:01:00+00:00", "b", "approved", "ok", "wrong")
         self._emit_decided("2026-06-18T08:02:00+00:00", "c", "approved", "ok", "unknown")
-        cell = compute_ratios()[("officer:cos", "polads", "internal_message")]
+        cell = compute_ratios()[("officer:cos", "bakery", "internal_message")]
         assert cell.review_confirmed_rate == 0.5
         assert cell.confirmed == 1 and cell.wrong == 1
 
@@ -510,18 +510,18 @@ class TestComputeRatios:
         # Same free-text action, DIFFERENT action_type → distinct cells (proves
         # the key is action_type, not the free-text action).
         self._emit_decided("2026-06-18T08:00:00+00:00", "a", "approved", None, None,
-                           actor={"kind": "officer", "id": "cos"}, lane="polads",
+                           actor={"kind": "officer", "id": "cos"}, lane="bakery",
                            action="drafted-reply", action_type="internal_message")
         self._emit_decided("2026-06-18T08:01:00+00:00", "b", "approved", None, None,
-                           actor={"kind": "officer", "id": "cto"}, lane="stephie",
+                           actor={"kind": "officer", "id": "cto"}, lane="newsletter",
                            action="drafted-reply", action_type="internal_message")
         self._emit_decided("2026-06-18T08:02:00+00:00", "c", "approved", None, None,
-                           actor={"kind": "officer", "id": "cos"}, lane="polads",
+                           actor={"kind": "officer", "id": "cos"}, lane="bakery",
                            action="drafted-reply", action_type="board_status")
         cells = compute_ratios()
-        assert ("officer:cos", "polads", "internal_message") in cells
-        assert ("officer:cto", "stephie", "internal_message") in cells
-        assert ("officer:cos", "polads", "board_status") in cells
+        assert ("officer:cos", "bakery", "internal_message") in cells
+        assert ("officer:cto", "newsletter", "internal_message") in cells
+        assert ("officer:cos", "bakery", "board_status") in cells
         assert len(cells) == 3
 
     def test_same_action_type_different_free_text_action_merges(self, event_log_dir):
@@ -529,17 +529,17 @@ class TestComputeRatios:
         # free-text action collapse into ONE cell — the free-text action is
         # descriptive only, not part of the key.
         self._emit_decided("2026-06-18T08:00:00+00:00", "a", "approved", None, None,
-                           action="drafted-reply-to-sean", action_type="internal_message")
+                           action="drafted-reply-to-bo", action_type="internal_message")
         self._emit_decided("2026-06-18T08:01:00+00:00", "b", "approved", None, None,
                            action="drafted-reply-to-lisa", action_type="internal_message")
         cells = compute_ratios()
-        assert list(cells.keys()) == [("officer:cos", "polads", "internal_message")]
-        assert cells[("officer:cos", "polads", "internal_message")].sample_count == 2
+        assert list(cells.keys()) == [("officer:cos", "bakery", "internal_message")]
+        assert cells[("officer:cos", "bakery", "internal_message")].sample_count == 2
 
     def test_dedup_applied_before_counting(self, event_log_dir):
         self._emit_decided("2026-06-18T08:00:00+00:00", "a", None, None, None)
         self._emit_decided("2026-06-18T08:00:00+00:00", "a", "approved", "ok", "confirmed")
-        cell = compute_ratios()[("officer:cos", "polads", "internal_message")]
+        cell = compute_ratios()[("officer:cos", "bakery", "internal_message")]
         assert cell.sample_count == 1
         assert cell.approval_unchanged_rate == 1.0
         assert cell.outcome_held_rate == 1.0
@@ -549,7 +549,7 @@ class TestComputeRatios:
         self._emit_decided("2026-06-18T08:00:00+00:00", "a", "approved", "ok", "confirmed")
         ledger = read_ledger()
         cells = compute_ratios(ledger=ledger)
-        assert cells[("officer:cos", "polads", "internal_message")].sample_count == 1
+        assert cells[("officer:cos", "bakery", "internal_message")].sample_count == 1
 
 
 class TestComputeRatiosUnstampedSentinel:
@@ -582,19 +582,19 @@ class TestComputeRatiosUnstampedSentinel:
         # enum value ('local_edit') must NOT join the stamped 'local_edit' cell.
         emit_consequence(  # stamped local_edit
             ts="2026-06-18T08:00:00+00:00",
-            actor={"kind": "officer", "id": "cos"}, lane="polads",
+            actor={"kind": "officer", "id": "cos"}, lane="bakery",
             action="edited-config", subject="s1", action_type="local_edit",
         )
         emit_consequence(  # unstamped, free text literally 'local_edit'
             ts="2026-06-18T08:01:00+00:00",
-            actor={"kind": "officer", "id": "cos"}, lane="polads",
+            actor={"kind": "officer", "id": "cos"}, lane="bakery",
             action="local_edit", subject="s2",
         )
         cells = compute_ratios()
         # the stamped cell holds exactly its own event...
-        assert cells[("officer:cos", "polads", "local_edit")].sample_count == 1
+        assert cells[("officer:cos", "bakery", "local_edit")].sample_count == 1
         # ...and the unstamped event lives in the sentinel bucket, NOT conflated
-        assert cells[("officer:cos", "polads", UNSTAMPED_ACTION_TYPE)].sample_count == 1
+        assert cells[("officer:cos", "bakery", UNSTAMPED_ACTION_TYPE)].sample_count == 1
 
     def test_sentinel_is_not_a_real_action_type(self, event_log_dir):
         # the sentinel must be disjoint from the classifier's enum so it can
@@ -605,11 +605,11 @@ class TestComputeRatiosUnstampedSentinel:
         for i, subj in enumerate(("a", "b", "c")):
             emit_consequence(
                 ts=f"2026-06-18T08:0{i}:00+00:00",
-                actor={"kind": "pipe", "id": "y"}, lane="polads",
+                actor={"kind": "pipe", "id": "y"}, lane="bakery",
                 action=f"free-{subj}", subject=subj,
             )
         cells = compute_ratios()
-        assert cells[("pipe:y", "polads", UNSTAMPED_ACTION_TYPE)].sample_count == 3
+        assert cells[("pipe:y", "bakery", UNSTAMPED_ACTION_TYPE)].sample_count == 3
 
 
 class TestPathSafetyGuards:
@@ -623,7 +623,7 @@ class TestPathSafetyGuards:
         emit_consequence(
             ts="2026-06-18T08:00:00+00:00",
             actor={"kind": "officer", "id": "cos"},
-            lane="polads", action="drafted-reply", subject="t1",
+            lane="bakery", action="drafted-reply", subject="t1",
         )
         files = list(Path(event_log_dir).resolve().glob("consequence-events-*.jsonl"))
         assert len(files) == 1
@@ -638,7 +638,7 @@ class TestPathSafetyGuards:
         emit_consequence(
             ts="2026-06-18T08:00:00+00:00",
             actor={"kind": "officer", "id": "cos"},
-            lane="polads", action="drafted-reply", subject="t1",
+            lane="bakery", action="drafted-reply", subject="t1",
         )
         # ...and an outside-the-fence file that a planted symlink points at.
         outside_dir = tmp_path.parent / (tmp_path.name + "-outside")
@@ -662,7 +662,7 @@ class TestPathSafetyGuards:
         emit_consequence(
             ts="2026-06-18T08:00:00+00:00",
             actor={"kind": "officer", "id": "cos"},
-            lane="polads", action="drafted-reply", subject="real",
+            lane="bakery", action="drafted-reply", subject="real",
         )
         real = list(Path(event_log_dir).glob("consequence-events-2*.jsonl"))[0]
         link = Path(event_log_dir) / "consequence-events-1111-11-11.jsonl"

@@ -67,7 +67,7 @@ import { POST } from './route'
 // ---------------------------------------------------------------------------
 
 /** 35-char secret for use in all tokens below */
-const SECRET35 = 'ABCDEFGHIJabcdefghij_-1234567890123'
+const SECRET35 = 'ABCDEFGHIJabcdefghij_-12345x67890xy'
 /** Minimal valid bot token: exactly 8 digits + colon + exactly 35 alphanumeric/underscore/hyphen */
 const VALID_TOKEN = `12345678:${SECRET35}`
 /** 8 digits exactly (lower bound of regex) */
@@ -402,7 +402,7 @@ describe('POST adopt-bot — existing slot same token', () => {
 // ---------------------------------------------------------------------------
 
 describe('POST adopt-bot — existing slot different token (orphan)', () => {
-  const OLD_TOKEN = `11111111:BBBBBBGHIJbbbbbbbbbb_-1234567890123`
+  const OLD_TOKEN = `11111111:BBBBBBGHIJbbbbbbbbbb_-12345x67890xy`
 
   it('captures orphanToken and fires second writeAuditEvent with event_type orphan_bot', async () => {
     const existingSlot = { role: 'cos', bot_token: OLD_TOKEN, adopted_at: '2024-01-01T00:00:00Z' }

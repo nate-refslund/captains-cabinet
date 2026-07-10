@@ -69,11 +69,11 @@ describe('freshness + strict cost-viz', () => {
 
 describe('rail roster', () => {
   it('cos first, alpha after, and the unknown actor NEVER gets a slot', () => {
-    expect(railOrder(['stephie-ceo', 'unknown', 'cos', 'comms-officer', 'polads-ceo'])).toEqual([
+    expect(railOrder(['newsletter-ceo', 'unknown', 'cos', 'comms-officer', 'bakery-ceo'])).toEqual([
       'cos',
+      'bakery-ceo',
       'comms-officer',
-      'polads-ceo',
-      'stephie-ceo',
+      'newsletter-ceo',
     ])
   })
 })

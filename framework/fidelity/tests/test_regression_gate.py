@@ -113,7 +113,7 @@ def _seed_corpus(tmp_path):
     rows = [
         {"ts": "2026-07-03T20:43:15Z",
          "actor": {"kind": "officer", "id": "officer:cos"},
-         "lane": "nate", "action": "action-card", "subject": f"s-{i}",
+         "lane": "ada", "action": "action-card", "subject": f"s-{i}",
          "refs": [],
          "proposal": {"required": True, "decision": "edited",
                       "decided_at": "2026-07-03T21:07:40Z"},

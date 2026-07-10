@@ -27,8 +27,8 @@ spec.loader.exec_module(wch)
 
 
 HOSTILE_STRINGS = [
-    "kristoffer@stepnetwork.dk",
-    "Reply to TV2 about the DPA redline",
+    "casper@example.com",
+    "Reply to Kanal9 about the contract redline",
     "ghp_AbCdEf123456789012345678901234567890",
     "AKIAIOSFODNN7EXAMPLE",
     "xoxb-1234-abcdef",
@@ -124,10 +124,10 @@ class TestScrubAtIngest:
 
     def test_ident_guard(self):
         assert wch.ident_ok("pm_write")
-        assert wch.ident_ok("polads-ceo")
+        assert wch.ident_ok("bakery-ceo")
         assert not wch.ident_ok("a b c")             # spaces = free text
         assert not wch.ident_ok("x" * 81)            # unbounded
-        assert not wch.ident_ok("naref@jfmedier.dk") # email
+        assert not wch.ident_ok("ada@example.org") # email
         assert not wch.ident_ok("Bearer abc")
         assert not wch.ident_ok(42)                  # non-str
         assert not wch.ident_ok(None)
@@ -148,10 +148,10 @@ class TestPipelineOnFixtureEstate:
         rows = [
             ("e1", "session_started", "session", "cos",
              json.dumps({"note": HOSTILE_STRINGS[0]}), "2026-07-07T09:00:00Z"),
-            ("e2", "work_item_completed", "work_item", "polads-ceo",
+            ("e2", "work_item_completed", "work_item", "bakery-ceo",
              json.dumps({"action_type": "pm_write",
                          "title": HOSTILE_STRINGS[1]}), "2026-07-07T09:05:00Z"),
-            ("e3", "policy.shadow_decision", "policy", "stephie-ceo",
+            ("e3", "policy.shadow_decision", "policy", "newsletter-ceo",
              json.dumps({"action_type": "bash_exec", "risk_class": "low",
                          "posture": "guardian", "verdict": "allow",
                          "command": HOSTILE_STRINGS[2]}), "2026-07-07T09:06:00Z"),
@@ -273,10 +273,10 @@ class TestPresenceSnapshot:
         activity = {
             "cos": json.dumps({"verb": "working", "object": "cabinet/x.py",
                                "since": "2026-07-07T16:47:28Z"}),
-            "polads-ceo": json.dumps({"verb": "deploying",
+            "bakery-ceo": json.dumps({"verb": "deploying",
                                       "object": "token ghp_" + "a" * 30,
                                       "since": "2026-07-07T16:46:29Z"}),
-            "stephie-ceo": None,
+            "newsletter-ceo": None,
         }
         snap = wch.build_presence(activity, {"cos": 100}, False, 42,
                                   "2026-07-07T17:00:00Z")
@@ -284,8 +284,8 @@ class TestPresenceSnapshot:
         assert snap["officers"]["cos"]["object"] == "cabinet/x.py"
         # Secret-shaped object dropped entirely (ephemeral surface still
         # never carries credential shapes).
-        assert "object" not in snap["officers"]["polads-ceo"]
-        assert snap["officers"]["stephie-ceo"] == {"present": False}
+        assert "object" not in snap["officers"]["bakery-ceo"]
+        assert snap["officers"]["newsletter-ceo"] == {"present": False}
         assert snap["killswitch"] is False
         assert snap["iid_high"] == 42
         # Pure: same inputs, same snapshot.

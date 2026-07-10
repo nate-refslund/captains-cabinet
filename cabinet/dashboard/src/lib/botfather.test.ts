@@ -31,18 +31,18 @@ describe('extractTokenFromForward — valid tokens', () => {
   it('extracts token from full BotFather message', () => {
     const msg =
       "Done! Congratulations on your new bot. You will find it at t.me/mybot. " +
-      "Use this token to access the HTTP API:\n1234567890:AAFabcdefghijKLMNO_pqrstuvwxyxxz123\n\nKeep your token secure."
+      "Use this token to access the HTTP API:\n12345678:AAFabcdefghijKLMNO_pqrstuvwxyxxz123\n\nKeep your token secure."
     const result = extractTokenFromForward(msg)
     expect(result).not.toBeNull()
-    expect(result!.token).toBe('1234567890:AAFabcdefghijKLMNO_pqrstuvwxyxxz123')
+    expect(result!.token).toBe('12345678:AAFabcdefghijKLMNO_pqrstuvwxyxxz123')
     expect(result!.lastFour).toBe('z123')
   })
 
   it('extracts token when message is just the token', () => {
-    const msg = '987654321:ABCdef_GHIjklMNOpqr-STUvwxyzxxx1234'
+    const msg = '98765432:ABCdef_GHIjklMNOpqr-STUvwxyzxxx1234'
     const result = extractTokenFromForward(msg)
     expect(result).not.toBeNull()
-    expect(result!.token).toBe('987654321:ABCdef_GHIjklMNOpqr-STUvwxyzxxx1234')
+    expect(result!.token).toBe('98765432:ABCdef_GHIjklMNOpqr-STUvwxyzxxx1234')
   })
 
   it('handles 12-digit bot ID (upper bound)', () => {
@@ -85,12 +85,12 @@ describe('isValidToken — rejects malformed tokens', () => {
 
   it('rejects too-short secret (34 chars)', () => {
     // 34 chars after colon — one short
-    expect(isValidToken('123456789:ABCdef_GHIjklMNOpqr-STUvwxyz123')).toBe(false)
+    expect(isValidToken('12345678:ABCdef_GHIjklMNOpqr-STUvwxyz123')).toBe(false)
   })
 
   it('rejects token with invalid characters in secret', () => {
     // Contains '@' which is not in [a-zA-Z0-9_-]
-    expect(isValidToken('123456789:ABCdef_GHIjklMNOpqr-STUvwxy@12')).toBe(false)
+    expect(isValidToken('12345678:ABCdef_GHIjklMNOpqr-STUvwxy@12')).toBe(false)
   })
 
   it('rejects plain text', () => {
@@ -102,7 +102,7 @@ describe('isValidToken — rejects malformed tokens', () => {
   })
 
   it('rejects token with spaces', () => {
-    expect(isValidToken('123456789: ABCdef_GHIjklMNOpqr-STUvwxyz123')).toBe(false)
+    expect(isValidToken('12345678: ABCdef_GHIjklMNOpqr-STUvwxyz123')).toBe(false)
   })
 })
 
@@ -123,10 +123,10 @@ describe('extractTokenFromForward — edge cases', () => {
   })
 
   it('extracts first token when multiple appear (unlikely in practice)', () => {
-    const msg = '111111111:ABCdef_GHIjklMNOpqr-STUvwxyzxxx1234 and 222222222:XYZdef_GHIjklMNOpqr-STUvwxyzxxx5678'
+    const msg = '11111111:ABCdef_GHIjklMNOpqr-STUvwxyzxxx1234 and 22222222:XYZdef_GHIjklMNOpqr-STUvwxyzxxx5678'
     const result = extractTokenFromForward(msg)
     expect(result).not.toBeNull()
-    expect(result!.token).toBe('111111111:ABCdef_GHIjklMNOpqr-STUvwxyzxxx1234')
+    expect(result!.token).toBe('11111111:ABCdef_GHIjklMNOpqr-STUvwxyzxxx1234')
   })
 })
 
@@ -135,11 +135,11 @@ describe('extractTokenFromForward — edge cases', () => {
 // ---------------------------------------------------------------------------
 describe('tokenLastFour', () => {
   it('returns last 4 chars of secret portion', () => {
-    expect(tokenLastFour('123456789:ABCdef_GHIjklMNOpqr-STUvwxyz1234')).toBe('1234')
+    expect(tokenLastFour('12345678:ABCdef_GHIjklMNOpqr-STUvwxyz1234')).toBe('1234')
   })
 
   it('returns last 4 chars when secret ends in underscores', () => {
-    expect(tokenLastFour('123456789:ABCdef_GHIjklMNOpqr-STUvwxyz___')).toBe('z___')
+    expect(tokenLastFour('12345678:ABCdef_GHIjklMNOpqr-STUvwxyz___')).toBe('z___')
   })
 
   it('returns ???? for token missing colon', () => {
@@ -148,13 +148,13 @@ describe('tokenLastFour', () => {
 
   it('handles short secret gracefully (edge case)', () => {
     // Only 2 chars after colon — returns '??ab' (padded)
-    expect(tokenLastFour('123456789:ab')).toBe('??ab')
+    expect(tokenLastFour('12345678:ab')).toBe('??ab')
   })
 
   it('returns confirmation shape matching spec §3', () => {
     // Spec: "Got token ending `...XYZ` — adopt as {officer}?"
     // lastFour is what goes in ...XYZ
-    const token = '987654321:ABCdef_GHIjklMNOpqr-STUvwxyzABCD'
+    const token = '98765432:ABCdef_GHIjklMNOpqr-STUvwxyzABCD'
     expect(tokenLastFour(token)).toBe('ABCD')
     // verify the caller can build "...ABCD" confirmation
     expect(`...${tokenLastFour(token)}`).toBe('...ABCD')

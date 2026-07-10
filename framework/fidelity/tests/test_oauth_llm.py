@@ -54,7 +54,7 @@ class TestRawLlm:
     def test_drops_user_setting_source_to_close_global_leak(self):
         # USER-GLOBAL leak fix: --setting-sources project,local omits `user`, so
         # ~/.claude/CLAUDE.md (screenpipe-memories) + memory are NOT loaded.
-        # Verified live 2026-06-19: PolAds probe -> UNKNOWN with the flag,
+        # Verified live 2026-06-19: Bakery probe -> UNKNOWN with the flag,
         # AUTH_OK still works (HOME/keychain untouched).
         argv = oauth_llm._build_argv("SYS", "claude-sonnet-4-6")
         assert "--setting-sources" in argv

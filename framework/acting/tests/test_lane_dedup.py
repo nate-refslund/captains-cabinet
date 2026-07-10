@@ -11,7 +11,7 @@ import datetime
 from framework.acting import lane_dedup as ld
 
 
-def _thread(slug="kristoffer", date="2026-06-20T10:00:00+00:00", text="hej Nate"):
+def _thread(slug="casper", date="2026-06-20T10:00:00+00:00", text="hej Ada"):
     return {"slug": slug, "person": slug.title(),
             "last": {"date": date, "text": text, "source": "msgraph"}}
 
@@ -48,18 +48,18 @@ class TestParseDt:
 
 class TestDecidedSubjects:
     def test_maps_subject_to_decided_at(self):
-        rows = [_decided_row("kristoffer", "2026-06-20T09:00:00+00:00")]
+        rows = [_decided_row("casper", "2026-06-20T09:00:00+00:00")]
         d = ld.decided_subjects(rows=rows)
-        assert "kristoffer" in d
-        assert d["kristoffer"] == ld.parse_dt("2026-06-20T09:00:00+00:00")
+        assert "casper" in d
+        assert d["casper"] == ld.parse_dt("2026-06-20T09:00:00+00:00")
 
     def test_keeps_latest_decision_per_subject(self):
         rows = [
-            _decided_row("kristoffer", "2026-06-20T09:00:00+00:00"),
-            _decided_row("kristoffer", "2026-06-21T09:00:00+00:00"),  # newer
+            _decided_row("casper", "2026-06-20T09:00:00+00:00"),
+            _decided_row("casper", "2026-06-21T09:00:00+00:00"),  # newer
         ]
         d = ld.decided_subjects(rows=rows)
-        assert d["kristoffer"] == ld.parse_dt("2026-06-21T09:00:00+00:00")
+        assert d["casper"] == ld.parse_dt("2026-06-21T09:00:00+00:00")
 
     def test_pending_proposal_excluded(self):
         rows = [{"ts": "2026-06-20T09:00:00+00:00",
@@ -82,19 +82,19 @@ class TestDecidedSubjects:
 class TestAlreadyHandledTimestamp:
     def test_decided_and_no_new_message_is_handled(self):
         # last inbound (10:00) is OLDER than the decision (12:00) -> handled.
-        decided = {"kristoffer": ld.parse_dt("2026-06-20T12:00:00+00:00")}
+        decided = {"casper": ld.parse_dt("2026-06-20T12:00:00+00:00")}
         t = _thread(date="2026-06-20T10:00:00+00:00")
         assert ld.already_handled(t, decided) is True
 
     def test_decided_equal_time_is_handled(self):
         # last inbound == decision time -> not strictly newer -> handled.
-        decided = {"kristoffer": ld.parse_dt("2026-06-20T12:00:00+00:00")}
+        decided = {"casper": ld.parse_dt("2026-06-20T12:00:00+00:00")}
         t = _thread(date="2026-06-20T12:00:00+00:00")
         assert ld.already_handled(t, decided) is True
 
     def test_new_inbound_after_decision_re_presents(self):
         # a fresh message (13:00) AFTER the decision (12:00) -> NOT handled.
-        decided = {"kristoffer": ld.parse_dt("2026-06-20T12:00:00+00:00")}
+        decided = {"casper": ld.parse_dt("2026-06-20T12:00:00+00:00")}
         t = _thread(date="2026-06-20T13:00:00+00:00")
         assert ld.already_handled(t, decided) is False
 
@@ -123,7 +123,7 @@ class TestAlreadyHandledSignatureFallback:
         # cannot fire -> fall back to the signature.
         t = _thread(date="garbage-date", text="hello")
         sig = ld.last_inbound_sig(t)
-        decided = {"kristoffer": ld.parse_dt("2026-06-20T12:00:00+00:00")}
+        decided = {"casper": ld.parse_dt("2026-06-20T12:00:00+00:00")}
         monkeypatch.setattr(ld, "handled_signature", lambda slug: sig)
         assert ld.already_handled(t, decided) is True
 
@@ -131,7 +131,7 @@ class TestAlreadyHandledSignatureFallback:
 class TestRedisKeyHygiene:
     def test_slug_with_spaces_and_colons_is_flattened(self):
         # The redis key must never carry spaces/colons that fracture the keyspace.
-        k = ld._handled_key("Anna Grobelscheg: PolAds")
+        k = ld._handled_key("Anna Kruse: Bakery")
         assert k.startswith("cabinet:draft-handled:")
         suffix = k[len("cabinet:draft-handled:"):]
         assert " " not in suffix and ":" not in suffix
@@ -147,17 +147,17 @@ def _open_row(subject, ts):
 
 class TestOpenSubjectTs:
     def test_maps_subject_to_proposal_ts(self):
-        rows = [_open_row("kristoffer", "2026-06-24T21:00:00+00:00")]
+        rows = [_open_row("casper", "2026-06-24T21:00:00+00:00")]
         d = ld.open_subject_ts(rows=rows)
-        assert d["kristoffer"] == ld.parse_dt("2026-06-24T21:00:00+00:00")
+        assert d["casper"] == ld.parse_dt("2026-06-24T21:00:00+00:00")
 
     def test_keeps_newest_open_ts_per_subject(self):
         rows = [
-            _open_row("kristoffer", "2026-06-24T21:00:00+00:00"),
-            _open_row("kristoffer", "2026-06-25T07:00:00+00:00"),  # newer
+            _open_row("casper", "2026-06-24T21:00:00+00:00"),
+            _open_row("casper", "2026-06-25T07:00:00+00:00"),  # newer
         ]
         d = ld.open_subject_ts(rows=rows)
-        assert d["kristoffer"] == ld.parse_dt("2026-06-25T07:00:00+00:00")
+        assert d["casper"] == ld.parse_dt("2026-06-25T07:00:00+00:00")
 
     def test_decided_proposal_excluded(self):
         rows = [_decided_row("lisa", "2026-06-24T09:00:00+00:00")]
@@ -175,25 +175,25 @@ class TestOpenSubjectTs:
 
 class TestOpenProposalBlocks:
     """Fix 3: an OPEN proposal suppresses a thread ONLY until a genuinely-new
-    inbound arrives — the Kristoffer Round-2 bug, where a Round-1 draft sat open
+    inbound arrives — the Casper Round-2 bug, where a Round-1 draft sat open
     overnight and silently swallowed the 11h-newer Round-2 message."""
 
     def test_open_and_no_new_message_blocks(self):
         # Last inbound (20:00) is OLDER than the open proposal (21:00) -> blocked
         # (the pending draft already covers this message).
-        open_ts = {"kristoffer": ld.parse_dt("2026-06-24T21:00:00+00:00")}
+        open_ts = {"casper": ld.parse_dt("2026-06-24T21:00:00+00:00")}
         t = _thread(date="2026-06-24T20:00:00+00:00")
         assert ld.open_proposal_blocks(t, open_ts) is True
 
     def test_open_equal_time_blocks(self):
-        open_ts = {"kristoffer": ld.parse_dt("2026-06-24T21:00:00+00:00")}
+        open_ts = {"casper": ld.parse_dt("2026-06-24T21:00:00+00:00")}
         t = _thread(date="2026-06-24T21:00:00+00:00")
         assert ld.open_proposal_blocks(t, open_ts) is True
 
     def test_new_inbound_after_open_proposal_re_presents(self):
         # THE FIX: a fresh message (2026-06-25 08:53) after the open proposal
         # (2026-06-24 21:00) -> NOT blocked -> the lane re-presents Round-2.
-        open_ts = {"kristoffer": ld.parse_dt("2026-06-24T21:00:00+00:00")}
+        open_ts = {"casper": ld.parse_dt("2026-06-24T21:00:00+00:00")}
         t = _thread(date="2026-06-25T08:53:34+00:00")
         assert ld.open_proposal_blocks(t, open_ts) is False
 
@@ -205,29 +205,29 @@ class TestOpenProposalBlocks:
     def test_unparseable_inbound_with_open_proposal_blocks(self):
         # Open proposal exists but the inbound date is garbage -> cannot prove a
         # newer message -> block (don't double-draft a pending thread).
-        open_ts = {"kristoffer": ld.parse_dt("2026-06-24T21:00:00+00:00")}
+        open_ts = {"casper": ld.parse_dt("2026-06-24T21:00:00+00:00")}
         t = _thread(date="garbage-date")
         assert ld.open_proposal_blocks(t, open_ts) is True
 
 
 class TestSubjectHasOpenProposal:
     """Live (moment-of-use) dup guard: the duplicate-draft fix. Two concurrent
-    runs both snapshot 'no open Maria proposal' before either emits; re-reading
+    runs both snapshot 'no open Petra proposal' before either emits; re-reading
     the ledger right before emit makes the second run SEE the first's proposal."""
 
     def test_open_proposal_for_subject_is_true(self):
-        rows = [_open_row("Maria-Skougaard-Andersen", "2026-06-25T09:56:53+00:00")]
-        assert ld.subject_has_open_proposal("Maria-Skougaard-Andersen", rows=rows) is True
+        rows = [_open_row("Petra-Berg-Holm", "2026-06-25T09:56:53+00:00")]
+        assert ld.subject_has_open_proposal("Petra-Berg-Holm", rows=rows) is True
 
     def test_no_open_proposal_for_subject_is_false(self):
         rows = [_open_row("someone-else", "2026-06-25T09:56:53+00:00")]
-        assert ld.subject_has_open_proposal("Maria-Skougaard-Andersen", rows=rows) is False
+        assert ld.subject_has_open_proposal("Petra-Berg-Holm", rows=rows) is False
 
     def test_decided_proposal_does_not_count_as_open(self):
         # A decided proposal must NOT block a fresh draft via this guard (the
         # recency path handles decided threads separately).
-        rows = [_decided_row("Maria-Skougaard-Andersen", "2026-06-25T09:00:00+00:00")]
-        assert ld.subject_has_open_proposal("Maria-Skougaard-Andersen", rows=rows) is False
+        rows = [_decided_row("Petra-Berg-Holm", "2026-06-25T09:00:00+00:00")]
+        assert ld.subject_has_open_proposal("Petra-Berg-Holm", rows=rows) is False
 
 
 class TestOpenProposalBlocksLive:

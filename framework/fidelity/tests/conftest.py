@@ -25,7 +25,7 @@ def _retro_available() -> bool:
     ).expanduser()
     return (d / "lib.py").exists()
 
-# Flavor-A coupling guard (2026-07-02, CI run 28618484301): the scoring engine
+# Flavor-A coupling guard (2026-07-02, CI run 28618-484-301): the scoring engine
 # is imported from the screenpipe retrodiction pipe (framework/fidelity/retro.py)
 # — deliberate reuse, but on any machine WITHOUT ~/.screenpipe (CI runners,
 # flavor-B Mini) 18 test modules error at COLLECTION and drown the other

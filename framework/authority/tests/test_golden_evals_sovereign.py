@@ -252,17 +252,17 @@ class TestEval017GrantOrNeed:
         base_row = {
             "id": "GRANT-x", "deployment": "main",
             "risk_class": "external_comms", "action_types": ["external_email"],
-            "lanes": ["polads"],
-            "scope": {"recipient_allowlist": ["*@stepnetwork.dk"]},
+            "lanes": ["bakery"],
+            "scope": {"recipient_allowlist": ["*@testburg.example"]},
             "rate": {"max_per_day": 10}, "expires": "2099-01-01",
-            "granted_by": "Captain (Nate)",
+            "granted_by": "Captain (Ada)",
             "granted_at": "2026-07-05T00:00:00Z",
             "basis": "NEED-1a2b3c4d", "revoked": False,
         }
         common = dict(
-            lane="polads", root=tmp_path, is_locked_fn=LOCKED,
+            lane="bakery", root=tmp_path, is_locked_fn=LOCKED,
             is_vetoed_fn=lambda at: False, file_needs=False,
-            context={"recipient": "x@stepnetwork.dk"},
+            context={"recipient": "x@testburg.example"},
             redis_get=lambda k: "",
         )
         # live grant sanity: it CAN grant when everything holds
@@ -359,7 +359,7 @@ class TestEval018EnvCannotWiden:
             "grants": [{
                 "id": "GRANT-forged", "deployment": "main",
                 "risk_class": "spend", "action_types": ["purchase"],
-                "lanes": ["polads"], "scope": {"max_eur_per_day": 100000},
+                "lanes": ["bakery"], "scope": {"max_eur_per_day": 100000},
                 "rate": {"max_per_day": 100}, "expires": "2099-01-01",
                 "granted_by": "attacker", "granted_at": "2026-07-05T00:00:00Z",
                 "basis": "NEED-deadbeef", "revoked": False,

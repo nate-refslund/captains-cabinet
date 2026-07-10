@@ -24,7 +24,7 @@ import {
 } from './commute'
 
 const NOW = Date.parse('2026-07-09T12:00:00Z')
-const LANES = new Set(['polads', 'stephie'])
+const LANES = new Set(['bakery', 'newsletter'])
 
 let IID = 0
 function rec(
@@ -47,7 +47,7 @@ function rec(
 
 describe('voteFor — §3.2 closed classification', () => {
   it('product lane votes quay; self lanes vote village', () => {
-    expect(voteFor(rec('tool.call', 10, { lane: 'polads' }), LANES)).toBe('quay')
+    expect(voteFor(rec('tool.call', 10, { lane: 'bakery' }), LANES)).toBe('quay')
     expect(voteFor(rec('tool.call', 10, { lane: 'system-self' }), LANES)).toBe(
       'village'
     )
@@ -76,7 +76,7 @@ describe('dominantFocus — recency-weighted window', () => {
   it('fresh quay evidence outweighs stale village evidence', () => {
     const records = [
       rec('loop.completed', 140), // village, weight 0.5^(140/75) ≈ 0.27
-      rec('work.completed', 5, { lane: 'polads' }), // quay ≈ 0.95
+      rec('work.completed', 5, { lane: 'bakery' }), // quay ≈ 0.95
     ]
     const f = dominantFocus('cos', records, 'working', NOW, LANES)
     expect(f.district).toBe('quay')
@@ -86,7 +86,7 @@ describe('dominantFocus — recency-weighted window', () => {
   it('records outside the 150 s window are ignored', () => {
     const f = dominantFocus(
       'cos',
-      [rec('work.completed', 200, { lane: 'polads' })],
+      [rec('work.completed', 200, { lane: 'bakery' })],
       'working',
       NOW,
       LANES
@@ -103,7 +103,7 @@ describe('dominantFocus — recency-weighted window', () => {
   it("other officers' records never vote for this officer", () => {
     const f = dominantFocus(
       'cos',
-      [rec('work.completed', 5, { actor: 'polads-ceo', lane: 'polads' })],
+      [rec('work.completed', 5, { actor: 'bakery-ceo', lane: 'bakery' })],
       'working',
       NOW,
       LANES
@@ -114,10 +114,10 @@ describe('dominantFocus — recency-weighted window', () => {
 
 describe('thought bubble — verb ICON in world-space, gloss on the card', () => {
   it('carries the REAL trigger verb (icon key) + closed card text', () => {
-    const b = bubbleFor({ verb: 'reviewing', lane: 'polads' })
+    const b = bubbleFor({ verb: 'reviewing', lane: 'bakery' })
     expect(b).toEqual({
       verb: 'reviewing',
-      cardText: 'I should review the queue · polads',
+      cardText: 'I should review the queue · bakery',
       kind: 'verb_icon',
     })
   })
@@ -125,7 +125,7 @@ describe('thought bubble — verb ICON in world-space, gloss on the card', () =>
     expect(bubbleFor({ verb: 'somebody.new_verb', lane: null })).toBeNull()
   })
   it('non-identifier lane slugs are dropped, never rendered', () => {
-    const b = bubbleFor({ verb: 'deploying', lane: 'Nate <naref@x.dk>' })
+    const b = bubbleFor({ verb: 'deploying', lane: 'Ada <ada@x.dk>' })
     expect(b?.cardText).toBe('I should ship this')
   })
   it('every gloss is short, closed, and free of markup (card-side only)', () => {
@@ -171,7 +171,7 @@ function drive(
 const range = (n: number) => Array.from({ length: n }, (_, i) => i)
 
 describe('commuteStep — switch rule 0.6 share / 2 evals / 180 s dwell', () => {
-  const quayRecords = [rec('work.completed', 5, { lane: 'polads' })]
+  const quayRecords = [rec('work.completed', 5, { lane: 'bakery' })]
 
   it('switches only after SWITCH_EVALS consecutive evaluations', () => {
     const { walks, arrivals, state } = drive(
@@ -224,9 +224,9 @@ describe('commuteStep — switch rule 0.6 share / 2 evals / 180 s dwell', () => 
 
   it('ping-pong evidence never switches (share < 0.6 stays put)', () => {
     const noisy = [
-      rec('work.completed', 4, { lane: 'polads' }),
+      rec('work.completed', 4, { lane: 'bakery' }),
       rec('loop.completed', 6),
-      rec('work.assigned', 12, { lane: 'polads' }),
+      rec('work.assigned', 12, { lane: 'bakery' }),
       rec('loop.started', 14),
     ]
     const { walks } = drive(

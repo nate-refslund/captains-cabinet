@@ -8,19 +8,27 @@ from framework.fidelity.types import Case
 CUTOFF = "2026-06-10T12:00:00+00:00"
 
 
+@pytest.fixture(autouse=True)
+def _synthetic_captain(monkeypatch):
+    """Pin the captain identity to the synthetic fixture captain (Ada) so the
+    prompt-content assertions are hermetic — never coupled to this
+    deployment's instance/config captain_name value."""
+    monkeypatch.setattr(officer_prompt, "captain_name", lambda: "Ada")
+
+
 def _case():
     return Case.from_retro_case({
-        "case_id": "abc1234567", "reply_key": "k", "slug": "ulrik",
-        "person": "Ulrik", "channel": "msgraph", "language": "da",
+        "case_id": "abc1234567", "reply_key": "k", "slug": "otto",
+        "person": "Otto", "channel": "msgraph", "language": "da",
         "reply_ts": CUTOFF, "subject": "Re: lon", "n_prior": 2,
         "thread_before": [
-            {"slug": "ulrik", "person": "Ulrik",
+            {"slug": "otto", "person": "Otto",
              "date": "2026-06-08T08:00:00+00:00", "direction": "sent",
-             "who": "Nate", "source": "msgraph", "to": "", "cc": "",
+             "who": "Ada", "source": "msgraph", "to": "", "cc": "",
              "text": "Hej, vi tager den i naeste uge."},
-            {"slug": "ulrik", "person": "Ulrik",
+            {"slug": "otto", "person": "Otto",
              "date": "2026-06-09T08:00:00+00:00", "direction": "received",
-             "who": "Ulrik <u@x>", "source": "msgraph", "to": "", "cc": "",
+             "who": "Otto <u@x>", "source": "msgraph", "to": "", "cc": "",
              "text": "kan vi snakke lon paa fredag?"},
         ],
         "real_reply": "Ja, fredag passer.",
@@ -89,9 +97,9 @@ class TestFormatSituation:
         s = officer_prompt.format_situation(_case())
         assert "Ja, fredag passer." not in s
 
-    def test_sent_messages_labelled_nate(self):
+    def test_sent_messages_labelled_captain(self):
         s = officer_prompt.format_situation(_case())
-        assert "Nate:" in s
+        assert "Ada:" in s
 
 
 def _identity():
@@ -104,7 +112,7 @@ def _identity():
         "voice": "VOICE-SENTINEL: korte saetninger, ingen tankestreger.",
         "patterns": "PATTERNS-SENTINEL: beslutter hurtigt, anbefaler direkte.",
         "lessons": "LESSONS-SENTINEL: spoerg ikke om audience, du kender den.",
-        "person_static": "PERSON-SENTINEL: Ulrik, VP Product & Publishers.",
+        "person_static": "PERSON-SENTINEL: Otto, head baker & site lead.",
     }
 
 
@@ -136,7 +144,7 @@ class TestBuildCloneEvalSystem:
         s = officer_prompt.build_clone_eval_system(_case(), "chair", _identity())
         low = s.lower()
         assert "never quote" in low or "never quote, paste" in low
-        # the fence names that these are Nate's private model (shape HOW only)
+        # the fence names that these are Ada's private model (shape HOW only)
         assert "private" in low
         assert "how you write" in low or "how you write and decide" in low
 
@@ -155,10 +163,10 @@ class TestBuildCloneEvalSystem:
         assert "private" in s.lower()
 
     def test_drives_as_nate_clone_framing(self):
-        """The clone arm drafts AS NATE'S CLONE — the prompt must frame the
-        officer as drafting in Nate's identity, not merely as the role."""
+        """The clone arm drafts AS ADA'S CLONE — the prompt must frame the
+        officer as drafting in Ada's identity, not merely as the role."""
         s = officer_prompt.build_clone_eval_system(_case(), "chair", _identity())
-        assert "Nate" in s
+        assert "Ada" in s
 
 
 def _mower_case():
@@ -172,15 +180,15 @@ def _mower_case():
         "date": "2026-05-01T08:00:00+00:00", "source": "msgraph",
         "text": "SECRET-OLDEST-MARKER: hej, helt andet emne her."})
     msgs.append({
-        "direction": "sent", "who": "Nate",
+        "direction": "sent", "who": "Ada",
         "date": "2026-05-02T08:00:00+00:00", "source": "msgraph",
-        "text": "Vi har koebt nyt hus paa Mosevraavej."})
+        "text": "Vi har koebt nyt hus paa Kagevej."})
     msgs.append({
         "direction": "received", "who": "Bo <b@x>",
         "date": "2026-05-03T08:00:00+00:00", "source": "msgraph",
         "text": "Stor graesplaene der, ikke?"})
     msgs.append({
-        "direction": "sent", "who": "Nate",
+        "direction": "sent", "who": "Ada",
         "date": "2026-05-04T08:00:00+00:00", "source": "msgraph",
         "text": "Ja, 3000 m2. Ingen kanttraad tak."})
     msgs.append({

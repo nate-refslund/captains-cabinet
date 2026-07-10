@@ -67,8 +67,8 @@ def _pctx(state="unmeasured", posture="guardian", **over):
 
 # kind -> (payload, stamped action_type). The five stampable lane kinds.
 _KINDS = {
-    "monday_task_create": ({"board_id": "5091706356", "title": "t"}, "task_create"),
-    "monday_task_update": ({"board_id": "5091706356", "monday_id": "42",
+    "monday_task_create": ({"board_id": "42424242", "title": "t"}, "task_create"),
+    "monday_task_update": ({"board_id": "42424242", "monday_id": "42",
                             "set": {"status": "Done"}}, "board_status"),
     "reminder_create": ({"title": "t", "due_iso": "2026-07-06"}, "calendar_event_create"),
     "delegate_work": ({"officer": "cos", "brief": "b"}, "officer_dispatch"),
@@ -80,7 +80,7 @@ def _card(kind, *, evidence=("6-Commitments/x.md",), conf=0.95):
     payload, _ = _KINDS[kind]
     step = ActionStep(kind=kind, title=f"do {kind}", payload=dict(payload))
     return ActionProposal(subject=f"s-{kind}", situation="w", steps=(step,),
-                          lane="polads", evidence=tuple(evidence),
+                          lane="bakery", evidence=tuple(evidence),
                           confidence=conf, urgency="batch")
 
 
@@ -228,7 +228,7 @@ def test_ctx_loads_when_posture_yml_present(tmp_path, monkeypatch):
     assert ctx is not None
     assert callable(ctx["resolve_verdict"]) and callable(ctx["risk_of"])
     # an unattested/corrupt ruling resolves guardian through the wire
-    assert ctx["resolve_posture"]("polads") == "guardian"
+    assert ctx["resolve_posture"]("bakery") == "guardian"
 
 
 def test_ctx_present_but_broken_matrix_degrades_loudly(tmp_path, monkeypatch, capsys):
@@ -464,7 +464,7 @@ def test_eligibility_honors_max_steps_param():
                              payload={"board_id": "1", "monday_id": "2",
                                       "set": {"status": "Done"}})
                   for i in range(3))
-    card = ActionProposal(subject="s", situation="w", steps=steps, lane="polads",
+    card = ActionProposal(subject="s", situation="w", steps=steps, lane="bakery",
                           evidence=("6-Commitments/x.md",), confidence=0.9,
                           urgency="batch")
     ok, why = r._card_act_first_eligible(card, "board_status")

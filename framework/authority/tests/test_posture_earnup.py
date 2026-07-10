@@ -109,11 +109,11 @@ def test_unlocked_sovereign_ruling_still_resolves_guardian_with_need(
 def test_unlocked_mixed_ruling_caps_at_guardian_and_files_need(
         tmp_path, monkeypatch):
     monkeypatch.setenv("CABINET_NEEDS_WIRED", "1")
-    write_posture(tmp_path, posture="earn_up", lanes={"polads": "sovereign"})
+    write_posture(tmp_path, posture="earn_up", lanes={"bakery": "sovereign"})
     # The sovereign lane override is capped at guardian (unattested)...
-    assert P.resolve_posture("polads", root=tmp_path) == "guardian"
+    assert P.resolve_posture("bakery", root=tmp_path) == "guardian"
     # ...while the earn_up default is honored.
-    assert P.resolve_posture("stephie", root=tmp_path) == "earn_up"
+    assert P.resolve_posture("newsletter", root=tmp_path) == "earn_up"
     assert P.resolve_posture(root=tmp_path) == "earn_up"
     # A ruling naming anything beyond earn_up is attestation-worthy ⇒ need.
     rows = _open_needs(tmp_path)
@@ -121,9 +121,9 @@ def test_unlocked_mixed_ruling_caps_at_guardian_and_files_need(
 
 
 def test_attested_lane_overrides_carry_earn_up(tmp_path):
-    write_posture(tmp_path, posture="guardian", lanes={"polads": "earn_up"})
-    assert P.resolve_posture("polads", root=tmp_path, is_locked_fn=LOCKED) == "earn_up"
-    assert P.resolve_posture("stephie", root=tmp_path, is_locked_fn=LOCKED) == "guardian"
+    write_posture(tmp_path, posture="guardian", lanes={"bakery": "earn_up"})
+    assert P.resolve_posture("bakery", root=tmp_path, is_locked_fn=LOCKED) == "earn_up"
+    assert P.resolve_posture("newsletter", root=tmp_path, is_locked_fn=LOCKED) == "guardian"
 
 
 def test_load_posture_config_contract_unchanged_for_unattested_earn_up(tmp_path):

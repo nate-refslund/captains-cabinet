@@ -100,7 +100,7 @@ _EXPECTED_GUARDIAN = {
 # The EXACT §2.1 sovereign table the floor must ship.
 # RECONCILE 2026-07-05: kept both — §2.1 table extended with main's two
 # fix-wave risk classes, MIRRORING the guardian rows (read_only_dispatch is
-# already act-and-tell; draft_only keeps the NATE-DECISION earn-up ladder —
+# already act-and-tell; draft_only keeps the ADA-DECISION earn-up ladder —
 # a posture never silently widens a Captain-ruled row; demote stays
 # posture-invariant).
 _EXPECTED_SOVEREIGN = {

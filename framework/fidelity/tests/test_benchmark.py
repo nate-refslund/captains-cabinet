@@ -44,11 +44,11 @@ class TestAutonomyUniverse:
 class TestBuildCases:
     def test_maps_retro_cases_to_case_objects(self, monkeypatch):
         fake_rc = {
-            "case_id": "c1", "reply_key": "k", "slug": "ulrik", "person": "Ulrik",
+            "case_id": "c1", "reply_key": "k", "slug": "otto", "person": "Otto",
             "channel": "msgraph", "language": "da",
             "reply_ts": "2026-06-10T12:00:00+00:00", "subject": "s", "n_prior": 2,
             "thread_before": [{"date": "2026-06-09T00:00:00+00:00",
-                               "direction": "received", "who": "Ulrik <u@x>",
+                               "direction": "received", "who": "Otto <u@x>",
                                "source": "msgraph", "text": "hej"}],
             "real_reply": "Ja.",
         }
@@ -86,7 +86,7 @@ def _mower_rc():
         "reply_ts": "2026-05-12T12:00:00+00:00", "subject": "s", "n_prior": 2,
         "thread_before": [
             {"date": "2026-05-11T09:00:00+00:00", "direction": "sent",
-             "who": "Nate <n@x>", "source": "msgraph",
+             "who": "Ada <n@x>", "source": "msgraph",
              "text": "Vi har lige overtaget huset med en stor plæne."},
             {"date": "2026-05-11T10:00:00+00:00", "direction": "received",
              "who": "Lars <l@x>", "source": "msgraph",
@@ -300,7 +300,7 @@ class TestBuildCasesFilter:
             "reply_ts": "2026-06-10T12:00:00+00:00", "subject": "s", "n_prior": 2,
             "thread_before": thread if thread is not None else [
                 {"date": "2026-06-09T09:00:00+00:00", "direction": "sent",
-                 "who": "Nate <n@x>", "source": "msgraph", "text": "status update"},
+                 "who": "Ada <n@x>", "source": "msgraph", "text": "status update"},
                 {"date": "2026-06-09T10:00:00+00:00", "direction": "received",
                  "who": "X <x@x>", "source": "msgraph",
                  "text": "Can you finish the DPA doc before launch?"},

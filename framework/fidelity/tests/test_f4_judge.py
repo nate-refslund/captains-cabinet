@@ -33,9 +33,9 @@ def _mower_case_dict():
         "language": "da",
         "reply_ts": CUTOFF,
         "thread_before": [
-            {"direction": "sent", "who": "Nate",
+            {"direction": "sent", "who": "Ada",
              "date": "2026-05-04T08:00:00+00:00", "source": "msgraph",
-             "text": "Ja, 3000 m2 graesplaene paa Mosevraavej. Ingen kanttraad."},
+             "text": "Ja, 3000 m2 graesplaene paa Kagevej. Ingen kanttraad."},
             {"direction": "received", "who": "Bo <b@x>",
              "date": "2026-05-05T08:00:00+00:00", "source": "msgraph",
              "text": "Vil du have hjaelp til at finde en robotplaeneklipper?"},
@@ -49,7 +49,7 @@ _MOWER_INTENT = ("Goal: source a no-boundary-wire robotic mower "
                  "Core: decisive, concrete, da on msgraph.")
 _MOWER_CTX = {
     "vault_hits": [{"ts": "2026-05-02T08:00:00+00:00",
-                    "text": "new house Mosevraavej, ~3000 m2 lawn"}],
+                    "text": "new house Kagevej, ~3000 m2 lawn"}],
 }
 
 
@@ -79,7 +79,7 @@ class TestHallucinatedGroundForcedDivergent:
                 "intent_what_diverged": "",
                 # A plausible-sounding but FABRICATED ground (no submarine
                 # anywhere in the cutoff material).
-                "intent_grounded_fact": ("From Bo at 2026-05-05: Nate already "
+                "intent_grounded_fact": ("From Bo at 2026-05-05: Ada already "
                                          "ordered a submarine and a yacht."),
             }
 
@@ -183,8 +183,8 @@ class TestGroundingHelper:
 
     def test_absent_fact_fails(self):
         assert scorer._grounding_ok(
-            "Nate already ordered a submarine and a yacht",
-            ctx_text="new house Mosevraavej ~3000 m2 lawn",
+            "Ada already ordered a submarine and a yacht",
+            ctx_text="new house Kagevej ~3000 m2 lawn",
             thread_text="Bo: finde en robotplaeneklipper?") is False
 
     def test_high_token_overlap_passes_without_exact_substring(self):

@@ -255,8 +255,8 @@ def _cost_hashes():
         "cabinet:cost:tokens:daily:2026-07-04": {
             "cos_input": "1000", "cos_output": "500",
             "cos_cache_read": "99999", "cos_cost_micro": "3000000",
-            "polads-ceo_input": "200", "polads-ceo_output": "100",
-            "polads-ceo_cost_micro": "1000000"},
+            "bakery-ceo_input": "200", "bakery-ceo_output": "100",
+            "bakery-ceo_cost_micro": "1000000"},
         "cabinet:cost:tokens:daily:2026-07-03": {
             "cos_input": "50", "cos_output": "25",
             "cos_cost_micro": "500000", "junk": "not-a-number"},

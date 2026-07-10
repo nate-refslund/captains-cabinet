@@ -58,7 +58,7 @@ def test_record_veto_refuses_catch_all_scope(vetofile):
     """A scope with no deterministic enforceable field would veto the whole
     estate — refused."""
     with pytest.raises(vr.VetoRegistryError):
-        vr.record_veto({"lane": "polads"}, "never: anything", path=vetofile)
+        vr.record_veto({"lane": "bakery"}, "never: anything", path=vetofile)
     with pytest.raises(vr.VetoRegistryError):
         vr.record_veto({}, "never:", path=vetofile)
     assert vr.load_vetoes(vetofile) == []          # nothing was written
@@ -68,10 +68,10 @@ def test_record_veto_scope_hygiene_drops_free_text(vetofile):
     """RT-A10: only deterministic fields survive; free text / unknown keys / an
     LLM slug are dropped, so paraphrase can never widen a veto."""
     v = vr.record_veto(
-        {"action_type": "task_create", "board": "5091706356",
+        {"action_type": "task_create", "board": "42424242",
          "note": "board 999 for everyone", "slug": "no-tasks", "": "x"},
         "never: create tasks", path=vetofile)
-    assert v["scope"] == {"action_type": "task_create", "board": "5091706356"}
+    assert v["scope"] == {"action_type": "task_create", "board": "42424242"}
     assert "note" not in v["scope"] and "slug" not in v["scope"]
 
 
@@ -88,7 +88,7 @@ def test_is_vetoed_board_scoped_requires_exact_board(vetofile):
     vr.record_veto({"action_type": "board_status", "board": "999"},
                    "never: status on 999", path=vetofile)
     assert vr.is_vetoed("board_status", board="999", path=vetofile) is True
-    assert vr.is_vetoed("board_status", board="5091706356", path=vetofile) is False
+    assert vr.is_vetoed("board_status", board="42424242", path=vetofile) is False
     # board-scoped veto must NOT fire on an action with no board
     assert vr.is_vetoed("board_status", board=None, path=vetofile) is False
 
@@ -136,14 +136,14 @@ def test_ids_monotonic_across_lift(vetofile):
 def test_demote_cell_for_veto_whole_kind_all_actors(vetofile):
     """A never: on an act-first kind demotes the (actor,lane,action_type) cell
     across ALL actors — not one slug."""
-    d = vr.demote_cell_for_veto({"action_type": "task_create", "lane": "polads"})
-    assert d == {"actor_id": None, "lane": "polads", "action_type": "task_create"}
+    d = vr.demote_cell_for_veto({"action_type": "task_create", "lane": "bakery"})
+    assert d == {"actor_id": None, "lane": "bakery", "action_type": "task_create"}
     # every actor's task_create cell on that lane is demoted
-    assert vr.cell_matches(("officer:cos", "polads", "task_create"), d) is True
-    assert vr.cell_matches(("officer:cpo", "polads", "task_create"), d) is True
+    assert vr.cell_matches(("officer:cos", "bakery", "task_create"), d) is True
+    assert vr.cell_matches(("officer:cpo", "bakery", "task_create"), d) is True
     # a different action_type or lane is untouched
-    assert vr.cell_matches(("officer:cos", "polads", "board_status"), d) is False
-    assert vr.cell_matches(("officer:cos", "stephie", "task_create"), d) is False
+    assert vr.cell_matches(("officer:cos", "bakery", "board_status"), d) is False
+    assert vr.cell_matches(("officer:cos", "newsletter", "task_create"), d) is False
 
 
 def test_board_only_veto_demotes_no_cell(vetofile):
@@ -151,8 +151,8 @@ def test_board_only_veto_demotes_no_cell(vetofile):
     nuking the whole matrix — the directive matches no cell (safe)."""
     d = vr.demote_cell_for_veto({"board": "999"})
     assert d["action_type"] is None
-    assert vr.cell_matches(("officer:cos", "polads", "task_create"), d) is False
-    assert vr.cell_matches(("officer:cos", "polads", "board_status"), d) is False
+    assert vr.cell_matches(("officer:cos", "bakery", "task_create"), d) is False
+    assert vr.cell_matches(("officer:cos", "bakery", "board_status"), d) is False
 
 
 # --- rebuild_cache / fail-closed ---------------------------------------------
@@ -248,17 +248,17 @@ def test_recorded_veto_blocks_matching_card_allows_others(vetofile):
     """Golden-eval seed: once a veto is recorded, the shared is_vetoed predicate
     (imported by BOTH the proposer pre-filter and the executor hard-stop) blocks
     the matching card and ONLY the matching card."""
-    vr.record_veto({"action_type": "task_create", "board": "5091706356"},
+    vr.record_veto({"action_type": "task_create", "board": "42424242"},
                    "never: auto-create tasks on the AI-Workspace board",
                    path=vetofile)
     rows = vr.load_vetoes(vetofile)
     # the exact card the Captain vetoed — blocked on both layers
-    assert vr.is_vetoed("task_create", board="5091706356", vetoes=rows) is True
+    assert vr.is_vetoed("task_create", board="42424242", vetoes=rows) is True
     # a different board / different kind — NOT over-blocked
     assert vr.is_vetoed("task_create", board="9999", vetoes=rows) is False
-    assert vr.is_vetoed("board_status", board="5091706356", vetoes=rows) is False
+    assert vr.is_vetoed("board_status", board="42424242", vetoes=rows) is False
     # which veto blocked it (for the tell surface)
-    m = vr.matching_vetoes("task_create", board="5091706356", vetoes=rows)
+    m = vr.matching_vetoes("task_create", board="42424242", vetoes=rows)
     assert len(m) == 1 and m[0]["id"] == "veto-001"
 
 
@@ -272,14 +272,14 @@ def test_binder_written_veto_roundtrips_writer_to_is_vetoed(vetofile):
     """The task's round-trip: write via the registry's OWN writer (the binder's
     `never:` path calls exactly record_veto), read via rebuild_cache +
     is_vetoed, then lift and confirm enforcement releases."""
-    v = vr.record_veto({"action_type": "task_create", "board": "5091706356"},
+    v = vr.record_veto({"action_type": "task_create", "board": "42424242"},
                        "never: auto-create on the tasks board",
                        ts="2026-07-04T10:00:00Z", path=vetofile, emit=EmitRec())
     # one row, BOTH dialects, stamped consistently by the single writer
     assert v["ts"] == v["recorded_at"] == "2026-07-04T10:00:00Z"
     assert v["status"] == "active" and v["lifted_at"] is None
     # persisted round-trip (yml -> load -> enforce)
-    assert vr.is_vetoed("task_create", board="5091706356", path=vetofile) is True
+    assert vr.is_vetoed("task_create", board="42424242", path=vetofile) is True
     # rebuild_cache caches the active row + ok sentinel (fake redis)
     store = {}
     res = vr.rebuild_cache(vetoes=vr.load_vetoes(vetofile),
@@ -295,7 +295,7 @@ def test_binder_written_veto_roundtrips_writer_to_is_vetoed(vetofile):
                           path=vetofile, emit=EmitRec())
     assert lifted["lifted_at"] == "2026-07-05T00:00:00Z"
     assert lifted["status"] == "lifted"
-    assert vr.is_vetoed("task_create", board="5091706356", path=vetofile) is False
+    assert vr.is_vetoed("task_create", board="42424242", path=vetofile) is False
 
 
 def test_registry_rows_are_readable_by_the_canary_divergence_audit(vetofile):
@@ -306,14 +306,14 @@ def test_registry_rows_are_readable_by_the_canary_divergence_audit(vetofile):
     was vacuous)."""
     from framework.frontdoor import actfirst_canary as ac
 
-    vr.record_veto({"action_type": "task_create", "board": "5091706356"},
+    vr.record_veto({"action_type": "task_create", "board": "42424242"},
                    "never: auto-create on the tasks board",
                    ts="2026-07-03T00:00:00Z", path=vetofile, emit=EmitRec())
     rows = ac.load_vetoes(path=vetofile)          # the auditor's OWN loader
     # an unattended-act row exactly as the lane emits it (RT-B1 marker:
     # proposal.required False + a stamped action_type)
     acted_after = {"action": "acted:task_create", "action_type": "task_create",
-                   "lane": "polads", "subject": "s",
+                   "lane": "bakery", "subject": "s",
                    "ts": "2026-07-03T12:00:00Z",
                    "proposal": {"required": False, "decision": None},
                    "outcome": {"status": "ok", "evidence": "acted act_first"}}

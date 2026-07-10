@@ -35,10 +35,10 @@ def _row(id, content, ts="2026-07-01T10:00:00Z", stype="captain_decision"):
 class TestPropose:
     def test_near_duplicate_newer_supersedes_older(self):
         rows = [
-            _row(1, "Todos board 5098236573 is the authoritative to-do store "
+            _row(1, "Todos board 42424242 is the authoritative to-do store "
                     "since June ninth replacing Apple Reminders entirely",
                  ts="2026-06-09T10:00:00Z"),
-            _row(2, "The Todos board 5098236573 is the authoritative to-do "
+            _row(2, "The Todos board 42424242 is the authoritative to-do "
                     "store since June ninth replacing Apple Reminders",
                  ts="2026-07-01T10:00:00Z"),
         ]
@@ -51,10 +51,10 @@ class TestPropose:
 
     def test_contradiction_cue_fires_on_shared_topic(self):
         rows = [
-            _row(1, "Monday People board 5096013693 is the CRM store for all "
+            _row(1, "Monday People board 42424243 is the CRM store for all "
                     "people and relationship data",
                  ts="2026-06-01T10:00:00Z"),
-            _row(2, "Monday People board 5096013693 is retired and replaced — "
+            _row(2, "Monday People board 42424243 is retired and replaced — "
                     "people and relationship data moved to the vault CRM",
                  ts="2026-07-05T10:00:00Z"),
         ]
@@ -66,12 +66,12 @@ class TestPropose:
         assert p["new"]["id"] == "2"
 
     def test_unrelated_rows_stay_quiet(self):
-        rows = [_row(1, "PolAds VIES autofill shipped for sponsor numbers"),
+        rows = [_row(1, "Bakery VIES autofill shipped for sponsor numbers"),
                 _row(2, "Cabinet world tileset uses LimeZu modern interiors")]
         assert mc.propose(rows) == []
 
     def test_cue_without_overlap_stays_quiet(self):
-        rows = [_row(1, "PolAds VIES autofill shipped for sponsors"),
+        rows = [_row(1, "Bakery VIES autofill shipped for sponsors"),
                 _row(2, "Never route calendar writes through AppleScript")]
         assert mc.propose(rows) == []
 

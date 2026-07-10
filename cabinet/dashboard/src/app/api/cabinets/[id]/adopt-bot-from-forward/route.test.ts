@@ -49,7 +49,7 @@ function makeParams(id = 'cab_abc') {
   return { params: Promise.resolve({ id }) }
 }
 
-const MOCK_EXTRACT_RESULT = { token: '12345678:ABCDEFabcdef_-12345678901234567', lastFour: '4567' }
+const MOCK_EXTRACT_RESULT = { token: '12345678:ABCDEFabcdef_-1234x678901x24567', lastFour: '4567' }
 
 beforeEach(() => {
   mockGuard.mockReset()
@@ -167,7 +167,7 @@ describe('POST adopt-bot-from-forward — happy path without officer', () => {
     const body = await res.json()
     expect(body.ok).toBe(true)
     expect(body.last_four).toBe('4567')
-    expect(body.token).toBe('12345678:ABCDEFabcdef_-12345678901234567')
+    expect(body.token).toBe('12345678:ABCDEFabcdef_-1234x678901x24567')
     expect(body.confirmation_message).toBe('Got token ending ...4567 — adopt?')
   })
 

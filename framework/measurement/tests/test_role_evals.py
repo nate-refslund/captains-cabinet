@@ -146,15 +146,15 @@ class TestRosterResolution:
         _write_capabilities_conf(tmp_path, ["cos:telegram_bot"])
         assert resolve_role_slug("t_role") == "t_role"
         assert resolve_role_slug("cos") == "cos"
-        assert resolve_role_slug("polads-ceo") == "polads-ceo"
+        assert resolve_role_slug("bakery-ceo") == "bakery-ceo"
 
     def test_extinct_slug_resolves_to_cos_from_conf(self, tmp_path):
         # The live portfolio-roster shape: Chair (cos) + lane CEOs + comms.
         _write_capabilities_conf(tmp_path, [
             "cos:captain_rules_retrieval",
             "cos:validates_deployments",
-            "polads-ceo:deploys_code",
-            "stephie-ceo:deploys_code",
+            "bakery-ceo:deploys_code",
+            "newsletter-ceo:deploys_code",
             "comms-officer:logs_captain_decisions",
         ])
         for extinct in ("cto", "cpo", "cro", "coo"):

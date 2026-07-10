@@ -9,10 +9,10 @@ from framework.probes import correlation as c
 from framework.probes import lib
 
 
-def _decided_proposal(cid, subject="polads-ceo-thread", ts="2026-07-03T01:00:00Z"):
+def _decided_proposal(cid, subject="bakery-ceo-thread", ts="2026-07-03T01:00:00Z"):
     """A proposal event that's been decided (approved) and carries the cid."""
     prop = loop.proposal_event(
-        actor={"kind": "officer", "id": "polads-ceo"}, lane="feature-impl",
+        actor={"kind": "officer", "id": "bakery-ceo"}, lane="feature-impl",
         subject=subject, ts=ts, refs=[c.ref_for(cid)])
     prop["proposal"]["decision"] = "approved"
     prop["proposal"]["decided_at"] = ts
@@ -22,7 +22,7 @@ def _decided_proposal(cid, subject="polads-ceo-thread", ts="2026-07-03T01:00:00Z
 def test_find_by_cid_hit_and_miss():
     cid = c.mint()
     rows = [_decided_proposal(cid), _decided_proposal(c.mint(), subject="other")]
-    assert lib.find_proposal_by_cid(cid, rows=rows)["subject"] == "polads-ceo-thread"
+    assert lib.find_proposal_by_cid(cid, rows=rows)["subject"] == "bakery-ceo-thread"
     assert lib.find_proposal_by_cid(c.mint(), rows=rows) is None
     assert lib.find_proposal_by_cid("not-a-cid", rows=rows) is None
 

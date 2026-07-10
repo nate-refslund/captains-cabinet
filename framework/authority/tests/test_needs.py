@@ -34,7 +34,7 @@ def _clean_env(monkeypatch, tmp_path):
 
 def file_need(root, **over):
     kw = dict(kind="standing_grant", risk_class="external_comms",
-              action_type="external_email", lane="polads",
+              action_type="external_email", lane="bakery",
               why="blocked step needs a grant", filed_by="test", root=root)
     kw.update(over)
     return N.file_need(kw.pop("kind"), **kw)
@@ -45,16 +45,16 @@ def file_need(root, **over):
 # ---------------------------------------------------------------------------
 
 def test_need_id_deterministic_and_hex8():
-    a = N.need_id("standing_grant", "external_comms", "external_email", "polads")
-    b = N.need_id("standing_grant", "external_comms", "external_email", "polads")
+    a = N.need_id("standing_grant", "external_comms", "external_email", "bakery")
+    b = N.need_id("standing_grant", "external_comms", "external_email", "bakery")
     assert a == b
     assert re.fullmatch(r"NEED-[0-9a-f]{8}", a)
-    assert a != N.need_id("standing_grant", "external_comms", "external_email", "stephie")
+    assert a != N.need_id("standing_grant", "external_comms", "external_email", "newsletter")
 
 
 def test_need_id_varies_with_cabinet_id(monkeypatch):
     a = N.need_id("access")
-    monkeypatch.setenv("CABINET_ID", "mini-polads")
+    monkeypatch.setenv("CABINET_ID", "mini-bakery")
     assert N.need_id("access") != a
 
 
@@ -154,7 +154,7 @@ def test_concurrent_appends_tolerated(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_standing_grant_composes_narrowest_line(tmp_path):
-    nid = file_need(tmp_path, scope_hint={"recipient": "anna@stepnetwork.dk"})
+    nid = file_need(tmp_path, scope_hint={"recipient": "ida@testburg.example"})
     row = N.list_open(NOW, root=tmp_path)[0]
     line = row["proposed_grant_line"]
     parsed = yaml.safe_load(line)
@@ -162,9 +162,9 @@ def test_standing_grant_composes_narrowest_line(tmp_path):
     g = parsed[0]
     assert g["id"] == "GRANT-" + nid[len("NEED-"):]
     assert g["action_types"] == ["external_email"]  # never empty
-    assert g["lanes"] == ["polads"]                 # never '*'
+    assert g["lanes"] == ["bakery"]                 # never '*'
     assert g["rate"] == {"max_per_day": 1}
-    assert g["scope"]["recipient_allowlist"] == ["anna@stepnetwork.dk"]
+    assert g["scope"]["recipient_allowlist"] == ["ida@testburg.example"]
     assert g["basis"] == nid
     assert g["revoked"] is False
 
@@ -301,7 +301,7 @@ def test_cross_check_closes_covered_grant_needs(tmp_path):
     N.file_need("decision", why="unrelated", filed_by="t", root=tmp_path)
 
     def covers(rc, at, *, lane):
-        granted = (rc, at, lane) == ("external_comms", "external_email", "polads")
+        granted = (rc, at, lane) == ("external_comms", "external_email", "bakery")
         return {"granted": granted, "grant_id": "GRANT-test1" if granted else None}
 
     closed = N.cross_check_grants(covers, root=tmp_path, now=NOW)

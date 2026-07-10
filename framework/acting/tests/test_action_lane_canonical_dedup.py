@@ -3,7 +3,7 @@
 Drives the REAL pure core with a fixture llm; covered_evidence carries a
 PRIOR run's annotated evidence string (as read back from ledger refs), the
 new proposal cites the same commitment with a different annotation and a
-fresh subject_hint — the exact 2026-07-07 testament pattern."""
+fresh subject_hint — the exact deed-signing drift pattern (the P1 story)."""
 import json
 
 from framework.acting import action_lane
@@ -16,25 +16,25 @@ def _llm_returning(proposals):
 
 
 PRIOR_RUN_EVIDENCE = ("6-Commitments/owed_to_nate/cmt-fca6836e2844.md — "
-                      "'Fredag den 10 juli klokken 14:50, Retten i Kolding'; reminder_set: false")
+                      "'Fredag den 10 juli klokken 14:50, Retten i Kageby'; reminder_set: false")
 
 REWORDED_PROPOSAL = {
-    "situation": "Testament signing Friday needs a calendar block.",
-    "subject_hint": "will-signing-kolding-fresh-wording",   # drifted slug
+    "situation": "Deed signing Friday needs a calendar block.",
+    "subject_hint": "will-signing-kageby-fresh-wording",   # drifted slug
     "lane": "personal",
     "urgency": "ping-now",
     "confidence": 0.9,
     "injection_suspect": False,
     "direction_fit": {"direction": "personal"},
-    "evidence": ["6-Commitments/owed_to_nate/cmt-fca6836e2844.md — Solveig booked Kolding courthouse"],
-    "steps": [{"kind": "reminder_create", "title": "Testament signing",
+    "evidence": ["6-Commitments/owed_to_nate/cmt-fca6836e2844.md — Sigrid booked Kageby courthouse"],
+    "steps": [{"kind": "reminder_create", "title": "Deed signing",
                "payload": {"title": "t", "due_iso": "2026-07-10T14:50:00+02:00"}}],
 }
 
 UNRELATED_PROPOSAL = {
     "situation": "EC connection details arrive today and need a chase block.",
     "subject_hint": "chase-ec-connection-details",
-    "lane": "polads",
+    "lane": "bakery",
     "urgency": "batch",
     "confidence": 0.8,
     "injection_suspect": False,
@@ -86,7 +86,7 @@ def test_same_batch_duplicate_dropped():
                   subject_hint="a-completely-different-slug",
                   evidence=["6-Commitments/owed_to_nate/cmt-fca6836e2844.md — third wording"])
     out = _run([], [REWORDED_PROPOSAL, second, UNRELATED_PROPOSAL], log)
-    assert [p.subject for p in out] == ["will-signing-kolding-fresh-wording",
+    assert [p.subject for p in out] == ["will-signing-kageby-fresh-wording",
                                         "chase-ec-connection-details"]
     assert any("evidence-overlap-canonical" in line for line in log)
 

@@ -1,6 +1,6 @@
 """SIE-7 — verdict_sim quarantine. The safety invariant that lets ~100 replay
 simulations run without ANY sim-generated event contaminating the live
-graduation / breaker / cell math Nate's real verdicts feed.
+graduation / breaker / cell math Ada's real verdicts feed.
 
 The fence is a single structural check at the write chokepoint: an event's sim
 marker MUST agree with the target dir's '-sim' suffix. These tests pin both
@@ -32,7 +32,7 @@ def _ev(**overrides):
     base = {
         "ts": "2026-06-18T08:00:00+00:00",
         "actor": {"kind": "officer", "id": "cos"},
-        "lane": "polads",
+        "lane": "bakery",
         "action": "auto-closed-commitment",
         "subject": "thread-abc",
         "refs": ["msg-1"],

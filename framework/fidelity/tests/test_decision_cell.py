@@ -4,7 +4,7 @@ Exercises the three pieces with stubbed LLMs (no network): the extractor's
 leak-scan + cache, the runner's ground-truth leak boundary, and the scorer's
 verdict→composite. The load-bearing safety property is in
 test_clone_never_sees_ground_truth: the clone is driven on the dilemma +
-identity ONLY and must never receive Nate's actual decision/why.
+identity ONLY and must never receive Ada's actual decision/why.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ candidate_id: 20260528-1947-approve-with-db-backup
 ## Situation (detected)
 You greenlit a potentially risky DB operation that Claude had flagged, noting you'd backed up prod.
 
-## Why / reasoning (Nate)
+## Why / reasoning (Ada)
 I prefer fast autonomous execution with a safety net over slow approval gates.
 """
 
@@ -51,7 +51,7 @@ class TestExtractor:
     def test_clean_case_admitted(self, tmp_path):
         clean = json.dumps({
             "dilemma": "Claude flagged a potentially risky DB operation and "
-                       "asked whether to proceed. What should Nate do?",
+                       "asked whether to proceed. What should Ada do?",
             "decision": "Greenlight it and proceed",
             "why": "prefers fast autonomous execution with a safety net"})
 
@@ -72,7 +72,7 @@ class TestExtractor:
     def test_leaking_dilemma_dropped(self, tmp_path):
         # The LLM (mis)returns a dilemma that reveals the choice -> must drop.
         leak = json.dumps({
-            "dilemma": "Nate greenlit and proceeded with the risky migration "
+            "dilemma": "Ada greenlit and proceeded with the risky migration "
                        "operation, approving the proceed after backup.",
             "decision": "greenlit proceeded approving migration operation backup",
             "why": "autonomy"})
@@ -85,7 +85,7 @@ class TestExtractor:
     def test_cache_prevents_rellm(self, tmp_path):
         d = self._dir(tmp_path)
         cache = tmp_path / "cache.json"
-        good = json.dumps({"dilemma": "Should Nate proceed with the flagged op?",
+        good = json.dumps({"dilemma": "Should Ada proceed with the flagged op?",
                            "decision": "yes proceed", "why": "autonomy net"})
         decision_cell.extract_decision_cases(
             decisions_dir=d, llm=lambda p, s: good, cache_path=cache)

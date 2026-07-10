@@ -56,7 +56,7 @@ def _base(**overrides):
     base = {
         "ts": "2026-06-19T08:00:00+00:00",
         "actor": {"kind": "officer", "id": "cos"},
-        "lane": "polads",
+        "lane": "bakery",
         "action": "fidelity-case-scored",
         "subject": "case-abc",
     }
@@ -140,7 +140,7 @@ class TestSchemaIntentFields:
         emit_consequence(
             ts="2026-06-19T08:00:00+00:00",
             actor={"kind": "officer", "id": "cos"},
-            lane="polads", action="fidelity-case-scored", subject="case-1",
+            lane="bakery", action="fidelity-case-scored", subject="case-1",
             action_type="internal_message",
             decision_verdict="divergent", intent_verdict="intent-aligned",
             intent_composite=1.0, endorsement="unknown",
@@ -159,7 +159,7 @@ class TestSchemaIntentFields:
         emit_consequence(
             ts="2026-06-19T08:00:00+00:00",
             actor={"kind": "officer", "id": "cos"},
-            lane="polads", action="x", subject="s",
+            lane="bakery", action="x", subject="s",
         )
         ev = read_ledger()[0]
         for f in ("decision_verdict", "intent_verdict",
@@ -181,7 +181,7 @@ def _case_score(**overrides):
         composite=0.0,
         raw={},
         intent_verdict="intent-aligned",
-        intent_grounded_fact="From Sean at 2026-06-10: roadmap",
+        intent_grounded_fact="From Bo at 2026-06-10: roadmap",
         intent_composite=1.0,
     )
     base.update(overrides)
@@ -191,7 +191,7 @@ def _case_score(**overrides):
 class TestBuildCaseScored:
     def test_build_carries_intent_fields(self):
         ev = fidelity_events.build_case_scored(
-            _case_score(), officer="cos", lane="polads", endorsement="unknown")
+            _case_score(), officer="cos", lane="bakery", endorsement="unknown")
         fidelity_events.validate_event(ev)  # must not raise
         assert ev["action"] == "fidelity-case-scored"
         assert ev["subject"] == "case-abc"
@@ -204,32 +204,32 @@ class TestBuildCaseScored:
     def test_review_verdict_aligned_maps_to_confirmed(self):
         ev = fidelity_events.build_case_scored(
             _case_score(intent_verdict="intent-aligned"),
-            officer="cos", lane="polads")
+            officer="cos", lane="bakery")
         assert ev["review"]["verdict"] == "confirmed"
 
     def test_review_verdict_divergent_maps_to_wrong(self):
         ev = fidelity_events.build_case_scored(
             _case_score(intent_verdict="intent-divergent", intent_composite=0.0),
-            officer="cos", lane="polads")
+            officer="cos", lane="bakery")
         assert ev["review"]["verdict"] == "wrong"
 
     @pytest.mark.parametrize("iv", ["intent-partial", "error", ""])
     def test_review_verdict_partial_error_empty_map_to_unknown(self, iv):
         ev = fidelity_events.build_case_scored(
             _case_score(intent_verdict=iv, intent_composite=0.5),
-            officer="cos", lane="polads")
+            officer="cos", lane="bakery")
         assert ev["review"]["verdict"] == "unknown"
 
     def test_endorsement_defaults_from_case_score(self):
         # when caller passes no endorsement, the scorer's endorsement_adjusted
         # state still produces a valid, present endorsement string.
         ev = fidelity_events.build_case_scored(
-            _case_score(), officer="cos", lane="polads")
+            _case_score(), officer="cos", lane="bakery")
         assert isinstance(ev.get("endorsement"), str) and ev["endorsement"]
 
     def test_emit_case_scored_writes_consequence_ledger(self, event_log_dir):
         out = fidelity_events.emit_case_scored(
-            _case_score(), officer="cos", lane="polads", endorsement="unknown")
+            _case_score(), officer="cos", lane="bakery", endorsement="unknown")
         assert out["action"] == "fidelity-case-scored"
         cfiles = list(Path(event_log_dir).glob("consequence-events-*.jsonl"))
         assert cfiles, "no consequence ledger file written"
@@ -245,9 +245,9 @@ class TestBuildCaseScored:
         # A judge 'wrong' (divergent case) DOES count — machines may demote.
         fidelity_events.emit_case_scored(
             _case_score(intent_verdict="intent-aligned"),
-            officer="cos", lane="polads", action_type="internal_message",
+            officer="cos", lane="bakery", action_type="internal_message",
             endorsement="unknown")
-        cell = compute_ratios()[("officer:cos", "polads", "internal_message")]
+        cell = compute_ratios()[("officer:cos", "bakery", "internal_message")]
         assert cell.intent_match_rate == 1.0          # measurable intent axis
         assert cell.confirmed == 0 and cell.wrong == 0  # zero promotion fuel
         assert cell.review_confirmed_rate is None
@@ -266,7 +266,7 @@ class TestIntentMatchRate:
         elif intent_verdict == "intent-divergent":
             review = {"verdict": "wrong"}
         emit_consequence(
-            ts=ts, actor={"kind": "officer", "id": "cos"}, lane="polads",
+            ts=ts, actor={"kind": "officer", "id": "cos"}, lane="bakery",
             action="fidelity-case-scored", subject=subject,
             action_type=action_type,
             decision_verdict="divergent", intent_verdict=intent_verdict,
@@ -281,7 +281,7 @@ class TestIntentMatchRate:
         self._emit_scored("2026-06-19T08:01:00+00:00", "b", "intent-aligned")
         self._emit_scored("2026-06-19T08:02:00+00:00", "c", "intent-divergent")
         self._emit_scored("2026-06-19T08:03:00+00:00", "d", "intent-partial")
-        cell = compute_ratios()[("officer:cos", "polads", "internal_message")]
+        cell = compute_ratios()[("officer:cos", "bakery", "internal_message")]
         assert cell.intent_aligned == 2
         assert cell.intent_divergent == 1
         assert round(cell.intent_match_rate, 4) == 0.6667
@@ -291,7 +291,7 @@ class TestIntentMatchRate:
         # unmeasured, never a silent 0.0/1.0).
         self._emit_scored("2026-06-19T08:00:00+00:00", "a", "intent-partial")
         self._emit_scored("2026-06-19T08:01:00+00:00", "b", "error")
-        cell = compute_ratios()[("officer:cos", "polads", "internal_message")]
+        cell = compute_ratios()[("officer:cos", "bakery", "internal_message")]
         assert cell.intent_match_rate is None
 
     def test_intent_match_rate_absent_field_is_none(self, event_log_dir):
@@ -299,12 +299,12 @@ class TestIntentMatchRate:
         # denominator → None.
         emit_consequence(
             ts="2026-06-19T08:00:00+00:00",
-            actor={"kind": "officer", "id": "cos"}, lane="polads",
+            actor={"kind": "officer", "id": "cos"}, lane="bakery",
             action="drafted-reply", subject="s",
             action_type="internal_message",
             proposal={"required": True, "decision": "approved",
                       "decided_at": "2026-06-19T08:05:00+00:00"},
         )
-        cell = compute_ratios()[("officer:cos", "polads", "internal_message")]
+        cell = compute_ratios()[("officer:cos", "bakery", "internal_message")]
         assert cell.intent_match_rate is None
         assert cell.intent_aligned == 0 and cell.intent_divergent == 0

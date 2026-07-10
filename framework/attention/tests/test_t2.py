@@ -31,7 +31,7 @@ def _decision(**kw):
 
 def _item(**kw):
     base = {"kind": "action-card", "subject": "Ship the thing",
-            "situation": "needs your call", "lane": "polads",
+            "situation": "needs your call", "lane": "bakery",
             "evidence": ["6-Commitments/owed_to_nate/cmt-abc.md"]}
     base.update(kw)
     return base

@@ -189,9 +189,9 @@ describe('engineStep over the shipped growth-ladders.yml', () => {
     const ev = {
       metrics,
       lanes: {
-        polads: { ever: 5, active: 3, achieved: 1, retired: 0 },
-        stephie: { ever: 2, active: 1, achieved: 1, retired: 0 },
-        stepnetwork: { ever: 1, active: 0, achieved: 0, retired: 1 },
+        bakery: { ever: 5, active: 3, achieved: 1, retired: 0 },
+        newsletter: { ever: 2, active: 1, achieved: 1, retired: 0 },
+        exampleco: { ever: 1, active: 0, achieved: 0, retired: 1 },
         'system-self': { ever: 3, active: 3, achieved: 0, retired: 0 },
       },
     }
@@ -209,10 +209,10 @@ describe('engineStep over the shipped growth-ladders.yml', () => {
     // earned structure: packet boat (2 achieved), warehouses ×2
     expect(out.elements.harbor_boat.rungName).toBe('packet_boat')
     expect(out.elements.warehouse.rung).toBe(2)
-    // isle rings: polads/stephie r1, stepnetwork reef (retired ruling)
-    expect(out.lanes.polads.rungName).toBe('warehouses_r1')
-    expect(out.lanes.stephie.rungName).toBe('warehouses_r1')
-    expect(out.lanes.stepnetwork.rungName).toBe('reef_buoy')
+    // isle rings: bakery/newsletter r1, exampleco reef (retired ruling)
+    expect(out.lanes.bakery.rungName).toBe('warehouses_r1')
+    expect(out.lanes.newsletter.rungName).toBe('warehouses_r1')
+    expect(out.lanes.exampleco.rungName).toBe('reef_buoy')
     expect(out.lanes['system-self']).toBeUndefined() // main island IS system-self
     // era vocab (hamlet on the 2nd eval): great house renders cottage family
     expect(second.out.elements.great_house.vocab).toBe('cottage')

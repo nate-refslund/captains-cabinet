@@ -2,7 +2,7 @@
 
 The mission-loop defect this pins down: the script hard-gated on '*-task-*'
 and REJECTED the ratified explicit node_id shapes from
-instance/config/outcomes.yml (polads-001-ci, sys-001-parity, …), so a
+instance/config/outcomes.yml (bakery-001-ci, sys-001-parity, …), so a
 completed outcome criterion could never be recorded — the compiler's DONE
 overlay (framework/missions/compiler.py:279, keyed on payload.task_id) never
 advanced. These tests run the real bash script as a subprocess against a

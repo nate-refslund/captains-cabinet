@@ -38,7 +38,7 @@ def _sandbox(tmp_path, monkeypatch):
 
 
 def _item(**kw):
-    base = {"kind": "action-card", "subject": "testament signing",
+    base = {"kind": "action-card", "subject": "deed signing",
             "situation": "needs a calendar block",
             "evidence": ["6-Commitments/owed_to_nate/cmt-fca6836e2844.md"],
             "steps": [{"title": "Block calendar"}]}
@@ -129,7 +129,7 @@ def test_nonfloor_note_saying_today_at_night_goes_to_briefing():
     """The headline cp4-gauntlet bug, pinned at the gate: a routine card whose
     text merely says 'today' must NOT send at 2am — no keyword pierces."""
     it = _item(kind="note", subject="prep deck",
-               situation="Nate wants it done today")
+               situation="Ada wants it done today")
     d = gate.decide(it, ch=CH, now=NIGHT, standing={})
     assert d["action"] == "briefing"
 

@@ -36,11 +36,11 @@ from framework.frontdoor.calendar_template import CALENDAR_EVENT_SCRIPT
 ACT_FIRST_KIND_CALLS = {
     "monday_task_create": (
         "mcp__claude_ai_monday_com__create_item",
-        {"board_id": "5091706356", "item_name": "Follow up VIES autofill"},
+        {"board_id": "42424242", "item_name": "Follow up VIES autofill"},
     ),
     "monday_task_update": (
         "mcp__claude_ai_monday_com__change_item_column_values",
-        {"board_id": "5091706356", "item_id": "123",
+        {"board_id": "42424242", "item_id": "123",
          "column_values": '{"status": {"label": "Done"}}'},
     ),
     "reminder_create": (

@@ -205,9 +205,9 @@ class TestOrgDomains:
         recipient domain, so config entries are normalized; order is preserved."""
         monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
         _write_cfg(tmp_path, "platform.yml",
-                   "org_domains:\n  - '  StepNetwork.DK '\n  - JFMedier.dk\n")
+                   "org_domains:\n  - '  Testburg.EXAMPLE '\n  - Second.Example\n")
         env._org_domains_cache = None
-        assert env.org_domains() == ("stepnetwork.dk", "jfmedier.dk")
+        assert env.org_domains() == ("testburg.example", "second.example")
 
     def test_reads_nested_domains_from_product_yml(self, tmp_path, monkeypatch,
                                                    isolated_org_domains_cache):
@@ -252,9 +252,9 @@ class TestTasksBoard:
                                            isolated_tasks_board_cache):
         monkeypatch.delenv("CABINET_TASKS_BOARD", raising=False)
         monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
-        _write_cfg(tmp_path, "platform.yml", 'tasks_board: "1234567890"\n')
+        _write_cfg(tmp_path, "platform.yml", 'tasks_board: "42424242"\n')
         env._tasks_board_cache = None
-        assert env.tasks_board() == "1234567890"
+        assert env.tasks_board() == "42424242"
 
     def test_absent_config_fails_closed_to_empty(self, tmp_path, monkeypatch,
                                                  isolated_tasks_board_cache):
@@ -270,19 +270,19 @@ class TestTasksBoard:
         """CABINET_TASKS_BOARD mirrors action_exec's ACTION_LANE_DEFAULT_BOARD —
         an explicit per-process override beats the configured board."""
         monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
-        _write_cfg(tmp_path, "platform.yml", 'tasks_board: "1111111111"\n')
-        monkeypatch.setenv("CABINET_TASKS_BOARD", "9999999999")
+        _write_cfg(tmp_path, "platform.yml", 'tasks_board: "11111111"\n')
+        monkeypatch.setenv("CABINET_TASKS_BOARD", "99999999")
         env._tasks_board_cache = None
-        assert env.tasks_board() == "9999999999"
+        assert env.tasks_board() == "99999999"
 
     def test_reads_nested_board_from_product_yml(self, tmp_path, monkeypatch,
                                                  isolated_tasks_board_cache):
         monkeypatch.delenv("CABINET_TASKS_BOARD", raising=False)
         monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
         _write_cfg(tmp_path, "product.yml",
-                   'product:\n  tasks_board: "2222222222"\n')
+                   'product:\n  tasks_board: "22222222"\n')
         env._tasks_board_cache = None
-        assert env.tasks_board() == "2222222222"
+        assert env.tasks_board() == "22222222"
 
     @launcher_instance_only
     def test_this_instance_yields_the_tasks_board(self, monkeypatch,

@@ -1,6 +1,6 @@
 """T4 — end-to-end flow integration test (stubbed deterministic LLM).
 
-Nate's directive: prove the WHOLE flow wires together. This test drives the
+Ada's directive: prove the WHOLE flow wires together. This test drives the
 FULL fidelity pipeline on a synthetic held-out case with NO live LLM call (the
 officer LLM is stubbed via run_case(llm=...), the judge via score(judge=...)),
 so it is deterministic, costs nothing, and stays leak-safe. It is the seam
@@ -50,7 +50,7 @@ ACTION_TYPE = "internal_message"
 LANE = "send-1to1-reply"
 OFFICER = "chair"
 
-# The held-out reply Nate actually sent. It carries a distinctive verbatim
+# The held-out reply Ada actually sent. It carries a distinctive verbatim
 # phrase that MUST never surface in the prompt — the only-because-withheld leak
 # check (its topic words DO appear in the thread, so `not in` is non-trivial).
 _REAL_REPLY = "Ja, lad os tage lon-snakken fredag kl 14 HEMMELIGT-SVAR-T4"
@@ -61,13 +61,13 @@ def _case() -> Case:
     c = Case.from_retro_case({
         "case_id": "e2ecase001",
         "reply_key": "msgraph|MID-T4",
-        "slug": "ulrik", "person": "Ulrik", "channel": "msgraph",
+        "slug": "otto", "person": "Otto", "channel": "msgraph",
         "language": "da", "reply_ts": CUTOFF, "subject": "Re: lon",
         "n_prior": 1,
         "thread_before": [
-            {"slug": "ulrik", "person": "Ulrik",
+            {"slug": "otto", "person": "Otto",
              "date": "2026-06-09T08:00:00+00:00", "direction": "received",
-             "who": "Ulrik <u@x>", "source": "msgraph", "to": "", "cc": "",
+             "who": "Otto <u@x>", "source": "msgraph", "to": "", "cc": "",
              "text": "kan vi snakke lon snart?"},
         ],
         "real_reply": _REAL_REPLY,
@@ -88,7 +88,7 @@ class _LeakTrapBrain:
             "hits": [
                 # PRE-cutoff content (path-dated 2026-05-12) — must SURVIVE.
                 {"path": "1-Daily/2026-05-12.md", "heading": "lon",
-                 "text": "Nate noted the salary review is due before summer",
+                 "text": "Ada noted the salary review is due before summer",
                  "ts": "2026-05-12T09:00:00+00:00", "source": "vault"},
                 # POST-cutoff content (path-dated 2026-06-20) — must be DROPPED.
                 {"path": "1-Daily/2026-06-20.md", "heading": "lon",
@@ -103,7 +103,7 @@ class _LeakTrapBrain:
             return [
                 # PRE-cutoff commitment — must SURVIVE.
                 {"commitment_id": "c-pre", "direction": direction,
-                 "text": "schedule the salary conversation with Ulrik",
+                 "text": "schedule the salary conversation with Otto",
                  "source_date": "2026-05-01T09:00:00+00:00",
                  "due": "2026-06-15", "status": "open"},
                 # POST-cutoff commitment — must be DROPPED.
@@ -116,7 +116,7 @@ class _LeakTrapBrain:
     def person_intel(self, slug):
         # Static atemporal frontmatter (timeless) + a dated leak line that the
         # _static_frontmatter strip must remove.
-        return ("role: VP Product & Publishers\n"
+        return ("role: head baker & site lead\n"
                 "relationship: manager\n"
                 "2026-06-20 POSTCUTOFF salary settled\n")
 
@@ -147,7 +147,7 @@ def _fake_embedder(texts):
 _CENTROIDS = {"msgraph": _fake_embedder(["x"])[0]}
 
 
-def _stub_judge(decision_verdict, intent_verdict, grounded="From Ulrik at 2026-06-09: lon"):
+def _stub_judge(decision_verdict, intent_verdict, grounded="From Otto at 2026-06-09: lon"):
     """A judge stand-in matching scorer.judge_with_oauth's return shape: a
     decision dict the retro scorer consumes (verdict + the keys score_case
     needs) plus the F4 intent axis. NEVER calls a live LLM."""
@@ -199,7 +199,7 @@ class TestGatherLeakSafe:
 
         # the dated leak line is stripped from the static frontmatter; the
         # atemporal attributes survive.
-        assert "VP Product & Publishers" in ctx["person_static"]
+        assert "head baker & site lead" in ctx["person_static"]
         assert "POSTCUTOFF" not in ctx["person_static"]
 
         # un-fenceable sources are surfaced, never silently passed through.

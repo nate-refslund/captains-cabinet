@@ -68,7 +68,7 @@ class FakeCi:
 
 
 def _decided(cid, subject="ci-thread"):
-    p = loop.proposal_event(actor={"kind": "officer", "id": "polads-ceo"},
+    p = loop.proposal_event(actor={"kind": "officer", "id": "bakery-ceo"},
                             lane="feature-impl", subject=subject,
                             ts="2026-07-03T01:00:00Z", refs=[c.ref_for(cid)])
     p["proposal"]["decision"] = "approved"

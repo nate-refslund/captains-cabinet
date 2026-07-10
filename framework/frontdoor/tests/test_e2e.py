@@ -154,7 +154,7 @@ def test_e2e_runtime_sends_one_message_to_captain_token_never_leaks(monkeypatch)
     # Force runtime sends ON, and supply env the channel reads.
     monkeypatch.setattr(env, "allow_sends", lambda: True)
     monkeypatch.setenv("TELEGRAM_COS_TOKEN", secret)
-    monkeypatch.setenv("CAPTAIN_TELEGRAM_ID", "555000111")
+    monkeypatch.setenv("CAPTAIN_TELEGRAM_ID", "55500011")
 
     post = _RecordingPost()
     out = run_frontdoor.run_send_path(
@@ -169,7 +169,7 @@ def test_e2e_runtime_sends_one_message_to_captain_token_never_leaks(monkeypatch)
     assert "api.telegram.org" in url
     assert url.endswith("/sendMessage")
     # recipient is ALWAYS the captain id — never overridable.
-    assert data["chat_id"] == "555000111"
+    assert data["chat_id"] == "55500011"
     # the exact composed text was sent.
     assert data["text"] == out["text"]
 

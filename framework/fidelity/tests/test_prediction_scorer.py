@@ -27,14 +27,14 @@ from framework.probes import correlation
 NOW = dt.datetime(2026, 7, 9, 8, 20, tzinfo=dt.timezone.utc)
 
 
-def _rec(cid, conf, lane="polads"):
+def _rec(cid, conf, lane="bakery"):
     return {"cid": cid, "confidence": conf, "lane": lane,
             "subject": "s", "steps": []}
 
 
 def _acted(cid, *, status=None, verdict=None):
     ev = {"ts": "2026-07-08T10:00:00Z",
-          "actor": {"kind": "officer", "id": "cos"}, "lane": "polads",
+          "actor": {"kind": "officer", "id": "cos"}, "lane": "bakery",
           "action": "acted-step", "subject": "s",
           "refs": [correlation.ref_for(cid)]}
     if status is not None:
@@ -98,14 +98,14 @@ class TestScoring:
         assert m["brier"] == pytest.approx(0.0)  # clamped to 1.0 / 0.0
 
     def test_calibration_bins_and_by_lane(self):
-        records = [_rec(_cid("c1"), 0.95, lane="polads"), _rec(_cid("c2"), 0.92, lane="polads"),
-                   _rec(_cid("c3"), 0.15, lane="stephie")]
+        records = [_rec(_cid("c1"), 0.95, lane="bakery"), _rec(_cid("c2"), 0.92, lane="bakery"),
+                   _rec(_cid("c3"), 0.15, lane="newsletter")]
         truth = {_cid("c1"): 1, _cid("c2"): 0, _cid("c3"): 0}
         m = ps.score_predictions(records, truth)
         top = [b for b in m["calibration"] if b["lo"] == 0.9][0]
         assert top["n"] == 2 and top["empirical_rate"] == 0.5
-        assert m["by_lane"]["polads"]["n"] == 2
-        assert m["by_lane"]["stephie"]["n"] == 1
+        assert m["by_lane"]["bakery"]["n"] == 2
+        assert m["by_lane"]["newsletter"]["n"] == 1
 
 
 class TestEmitter:

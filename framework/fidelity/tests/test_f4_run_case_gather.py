@@ -30,13 +30,13 @@ def _case():
     return Case.from_retro_case({
         "case_id": "abc1234567",
         "reply_key": "msgraph|MID1",
-        "slug": "ulrik", "person": "Ulrik", "channel": "msgraph",
+        "slug": "otto", "person": "Otto", "channel": "msgraph",
         "language": "da", "reply_ts": CUTOFF, "subject": "Re: lon",
         "n_prior": 3,
         "thread_before": [
-            {"slug": "ulrik", "person": "Ulrik",
+            {"slug": "otto", "person": "Otto",
              "date": "2026-06-09T08:00:00+00:00", "direction": "received",
-             "who": "Ulrik <u@x>", "source": "msgraph", "to": "", "cc": "",
+             "who": "Otto <u@x>", "source": "msgraph", "to": "", "cc": "",
              "text": "kan vi snakke lon?"},
         ],
         "real_reply": "Ja, lad os tage det fredag.",
@@ -175,10 +175,10 @@ def _fake_gather_factory(captured):
             ],
             "vault_hits": [
                 {"path": "1-Daily/2026-05-12.md", "heading": "house",
-                 "text": "new house at Mosevraavej, big lawn ~3000 m2",
+                 "text": "new house at Kagevej, big lawn ~3000 m2",
                  "ts": "2026-05-12T09:00:00+00:00", "source": "vault"},
             ],
-            "person_static": "role: VP Product & Publishers\nrelationship: manager",
+            "person_static": "role: head baker & site lead\nrelationship: manager",
             "excluded": [
                 "search_brain (mtime != content-ts; no mtime fallback)",
                 "gather_context.brief (un-fenceable prose)",
@@ -210,7 +210,7 @@ class TestGatherSetInjectsContextAndRules:
         assert "1-Daily/2026-05-12.md" in payload
         assert "3000 m2" in payload
         assert "send the deck" in payload
-        assert "VP Product & Publishers" in payload
+        assert "head baker & site lead" in payload
         # the context block is in the USER message, not the system prompt
         assert "1-Daily/2026-05-12.md" not in seen["system"]
         assert "3000 m2" not in seen["system"]

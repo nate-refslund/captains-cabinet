@@ -12,8 +12,8 @@ from framework.probes import correlation as c
 from framework.probes import verifier as v
 
 
-def _decided(cid, subject="polads-ceo-feature"):
-    p = loop.proposal_event(actor={"kind": "officer", "id": "polads-ceo"},
+def _decided(cid, subject="bakery-ceo-feature"):
+    p = loop.proposal_event(actor={"kind": "officer", "id": "bakery-ceo"},
                             lane="feature-impl", subject=subject,
                             ts="2026-07-03T01:00:00Z", refs=[c.ref_for(cid)])
     p["proposal"]["decision"] = "approved"
@@ -21,7 +21,7 @@ def _decided(cid, subject="polads-ceo-feature"):
     return p
 
 
-def _outcome_row(cid, status, subject="polads-ceo-feature"):
+def _outcome_row(cid, status, subject="bakery-ceo-feature"):
     """A probe outcome event carrying the cid (as the fleet would emit)."""
     p = _decided(cid, subject)
     p["outcome"] = ({"status": "unknown"} if status == "unknown"

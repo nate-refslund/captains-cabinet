@@ -322,10 +322,10 @@ def test_default_runner_reads_real_helper_stdout(monkeypatch):
 def test_exclude_drops_named_calendar(monkeypatch):
     # A partner's shared work calendar the Captain can SEE but does not own must
     # not count as a conflict on the Captain's time.
-    monkeypatch.setenv("CABINET_CAL_EXCLUDE", "Solveig's arbejde - Dyrenes Beskyttelse")
+    monkeypatch.setenv("CABINET_CAL_EXCLUDE", "Sigrid's arbejde - Byens Bageri")
     stdout = _json_out([
         _rec("Home", "2026-07-06T09:15:00", "2026-07-06T09:45:00", "mine"),
-        _rec("Solveig's arbejde - Dyrenes Beskyttelse",
+        _rec("Sigrid's arbejde - Byens Bageri",
              "2026-07-06T09:15:00", "2026-07-06T09:45:00", "hers"),
     ])
     hits = cr.read_events("2026-07-06T09:00:00", "2026-07-06T10:00:00",
@@ -337,7 +337,7 @@ def test_exclude_unset_includes_all_calendars(monkeypatch):
     monkeypatch.delenv("CABINET_CAL_EXCLUDE", raising=False)
     stdout = _json_out([
         _rec("Home", "2026-07-06T09:15:00", "2026-07-06T09:45:00", "mine"),
-        _rec("Solveig's arbejde - Dyrenes Beskyttelse",
+        _rec("Sigrid's arbejde - Byens Bageri",
              "2026-07-06T09:15:00", "2026-07-06T09:45:00", "hers"),
     ])
     hits = cr.read_events("2026-07-06T09:00:00", "2026-07-06T10:00:00",
@@ -441,7 +441,7 @@ def test_live_helper_returns_valid_json_array():
 # --- all-day availability filter (CABINET_CAL_ALLDAY_BUSY_BLOCKS) --------------
 # The consolidated helper emits EVERY event tagged all_day + availability; the
 # all-day/free-vs-busy POLICY lives here in the reader. These are mock-level
-# (injected runner, no subprocess). REAL all-day bound-shape + Nate's real
+# (injected runner, no subprocess). REAL all-day bound-shape + Ada's real
 # Vacation/holiday .availability mapping are validation_gated (granted Terminal).
 
 def _recx(cal, s_iso, e_iso, title, *, all_day=None, availability=None):

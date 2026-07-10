@@ -100,8 +100,8 @@ describe('GET /api/library/records/[recordId]/backlinks — happy path', () => {
 
   it('passes recordId verbatim to lib (no transformation)', async () => {
     mockGetBacklinks.mockResolvedValueOnce([])
-    await GET(makeReq(), makeParams('999999999999'))
-    expect(mockGetBacklinks).toHaveBeenCalledWith('999999999999')
+    await GET(makeReq(), makeParams('99999999'))
+    expect(mockGetBacklinks).toHaveBeenCalledWith('99999999')
   })
 })
 

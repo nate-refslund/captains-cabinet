@@ -93,7 +93,7 @@ def org_answers() -> dict:
                 "slug": "acme-store",
                 "repos": ["acme/storefront"],
                 "task_system": "plugin:dev-tasks",
-                "boards": ["1234567890"],
+                "boards": ["42424242"],
             },
         ],
         # flavor "org" is also the DEFAULT — declared explicitly here because

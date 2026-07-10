@@ -49,7 +49,7 @@ const GRAMMAR: ShowGrammar = {
   killswitchScene: { freeze: true, wash: 'red', codex: CODEX },
 }
 
-const SLUGS = ['comms-officer', 'cos', 'polads-ceo', 'stephie-ceo']
+const SLUGS = ['comms-officer', 'cos', 'bakery-ceo', 'newsletter-ceo']
 
 function present(verb: string): OfficerPresence {
   return { present: true, verb, since: '2026-07-08T10:00:00Z' }
@@ -94,10 +94,10 @@ function run(
 
 describe('determinism across the full behavior vocabulary', () => {
   const script = [
-    { ticks: 300, officers: { cos: present('working'), 'polads-ceo': present('coordinating'), 'stephie-ceo': present('coordinating'), 'comms-officer': EXPIRED }, clockHour: 10 },
-    { ticks: 100, officers: { cos: present('reviewing'), 'polads-ceo': present('coordinating'), 'stephie-ceo': present('working'), 'comms-officer': EXPIRED }, clockHour: 14 },
-    { ticks: 50, officers: { cos: present('reviewing'), 'polads-ceo': present('coordinating'), 'stephie-ceo': present('working'), 'comms-officer': EXPIRED }, clockHour: 14, killswitch: true },
-    { ticks: 200, officers: { cos: EXPIRED, 'polads-ceo': EXPIRED, 'stephie-ceo': EXPIRED, 'comms-officer': EXPIRED }, clockHour: 22 },
+    { ticks: 300, officers: { cos: present('working'), 'bakery-ceo': present('coordinating'), 'newsletter-ceo': present('coordinating'), 'comms-officer': EXPIRED }, clockHour: 10 },
+    { ticks: 100, officers: { cos: present('reviewing'), 'bakery-ceo': present('coordinating'), 'newsletter-ceo': present('working'), 'comms-officer': EXPIRED }, clockHour: 14 },
+    { ticks: 50, officers: { cos: present('reviewing'), 'bakery-ceo': present('coordinating'), 'newsletter-ceo': present('working'), 'comms-officer': EXPIRED }, clockHour: 14, killswitch: true },
+    { ticks: 200, officers: { cos: EXPIRED, 'bakery-ceo': EXPIRED, 'newsletter-ceo': EXPIRED, 'comms-officer': EXPIRED }, clockHour: 22 },
   ]
 
   it('same tick/clock/killswitch sequence → identical scene sequences', () => {
@@ -188,7 +188,7 @@ describe('chat pairing', () => {
     ...GRAMMAR,
     idleProgram: { ...GRAMMAR.idleProgram!, waypoints: ['kettle'] },
   }
-  const officers = { cos: EXPIRED, 'polads-ceo': EXPIRED }
+  const officers = { cos: EXPIRED, 'bakery-ceo': EXPIRED }
 
   it('two idle officers on one waypoint pair up: ellipsis chips, facing each other', () => {
     const frames = run([{ ticks: 800, officers, clockHour: 10 }], pairGrammar)
@@ -224,7 +224,7 @@ describe('chat pairing', () => {
 })
 
 describe('night — asleep at the bunk per the snapshot clock', () => {
-  const officers = { cos: EXPIRED, 'polads-ceo': EXPIRED }
+  const officers = { cos: EXPIRED, 'bakery-ceo': EXPIRED }
 
   it('night hours (and unknown clock) → bunk + asleep', () => {
     for (const clockHour of [22, 3, null]) {
@@ -258,7 +258,7 @@ describe('night — asleep at the bunk per the snapshot clock', () => {
 })
 
 describe('micro-loops at the desk', () => {
-  const officers = { cos: present('working'), 'stephie-ceo': present('working') }
+  const officers = { cos: present('working'), 'newsletter-ceo': present('working') }
 
   it('typing dominates; micro states are the only variation; deterministic', () => {
     const frames = run([{ ticks: 4096, officers, clockHour: 10 }])
@@ -288,7 +288,7 @@ describe('micro-loops at the desk', () => {
       }
     }
     const rolls: number[] = []
-    for (let w = 0; w < 40; w++) rolls.push(microRoll('cos', w), microRoll('stephie-ceo', w))
+    for (let w = 0; w < 40; w++) rolls.push(microRoll('cos', w), microRoll('newsletter-ceo', w))
     const expectSpecial = rolls.some((r) => r >= 10 && r <= 13)
     expect(sawSpecial).toBe(expectSpecial)
   })
@@ -313,13 +313,13 @@ describe('group scenes — coordinating meets at the table', () => {
   it('≥2 coordinating officers take DISTINCT seeded seats; dissolves when the condition does', () => {
     const meeting = {
       cos: present('coordinating'),
-      'polads-ceo': present('coordinating'),
-      'stephie-ceo': present('working'),
+      'bakery-ceo': present('coordinating'),
+      'newsletter-ceo': present('working'),
     }
     const dissolved = {
       cos: present('coordinating'),
-      'polads-ceo': present('working'),
-      'stephie-ceo': present('working'),
+      'bakery-ceo': present('working'),
+      'newsletter-ceo': present('working'),
     }
     const frames = run([
       { ticks: 300, officers: meeting, clockHour: 10 },
@@ -333,9 +333,9 @@ describe('group scenes — coordinating meets at the table', () => {
     expect(new Set(seats).size).toBe(2)
     for (const s of settled.scenes) {
       if (s.stationId.startsWith('seat:table:')) expect(s.anim).toBe('idle')
-      if (s.slug === 'stephie-ceo') expect(s.stationId).toBe('desk:stephie-ceo')
+      if (s.slug === 'newsletter-ceo') expect(s.stationId).toBe('desk:newsletter-ceo')
     }
-    // After polads-ceo drops the verb, cos coordinates SOLO → board mapping.
+    // After bakery-ceo drops the verb, cos coordinates SOLO → board mapping.
     const after = frames[599]
     const cos = after.scenes.find((s) => s.slug === 'cos')!
     expect(cos.stationId).toBe('board')

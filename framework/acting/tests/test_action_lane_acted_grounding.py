@@ -13,16 +13,16 @@ def _llm_returning(proposals):
     return llm
 
 
-TESTAMENT_PROPOSAL = {
-    "situation": "Testament signing Friday needs a calendar block.",
-    "subject_hint": "testament-signing-yet-another-wording",
+DEED_PROPOSAL = {
+    "situation": "Deed signing Friday needs a calendar block.",
+    "subject_hint": "deed-signing-yet-another-wording",
     "lane": "personal",
     "urgency": "ping-now",
     "confidence": 0.9,
     "injection_suspect": False,
     "direction_fit": {"direction": "personal"},
     "evidence": ["6-Commitments/owed_to_nate/cmt-fca6836e2844.md — reminder_set: false"],
-    "steps": [{"kind": "reminder_create", "title": "Testament signing",
+    "steps": [{"kind": "reminder_create", "title": "Deed signing",
                "payload": {"title": "t", "due_iso": "2026-07-10T14:50:00+02:00"}}],
 }
 
@@ -40,7 +40,7 @@ def _run(proposals, log, *, covered=(), acted_refs=frozenset(),
 
 def _acted_view(reversed_=False):
     ledger = [{
-        "action": "acted:reminder_create", "subject": "testament-signing",
+        "action": "acted:reminder_create", "subject": "deed-signing",
         "ts": "2026-07-07T16:09:28Z",
         "refs": ["cabinet-proposal-id:aaaa1111",
                  "6-Commitments/owed_to_nate/cmt-fca6836e2844.md — booked"]}]
@@ -51,11 +51,11 @@ def _acted_view(reversed_=False):
 
 
 def test_acted_situation_does_not_repropose():
-    """Spec P2 acceptance: acted testament situation → proposes nothing,
+    """Spec P2 acceptance: acted deed situation → proposes nothing,
     with the distinct already-acted reason (end-to-end overlay → core)."""
     v = _acted_view()
     log = []
-    out = _run([TESTAMENT_PROPOSAL], log,
+    out = _run([DEED_PROPOSAL], log,
                acted_refs=v["live_canonical"], reversed_refs=v["reversed_canonical"])
     assert out == []
     assert any(line.endswith("reason=already-acted") for line in log)
@@ -67,11 +67,11 @@ def test_captain_reversed_act_stops_suppressing():
     the covered window (reversed refs subtract from covered too)."""
     v = _acted_view(reversed_=True)
     log = []
-    out = _run([TESTAMENT_PROPOSAL], log,
+    out = _run([DEED_PROPOSAL], log,
                covered=["6-Commitments/owed_to_nate/cmt-fca6836e2844.md — booked"],
                acted_refs=v["live_canonical"], reversed_refs=v["reversed_canonical"])
     assert len(out) == 1
-    assert out[0].subject == "testament-signing-yet-another-wording"
+    assert out[0].subject == "deed-signing-yet-another-wording"
 
 
 def test_reversed_situation_survives_verbatim_covered_match():
@@ -80,7 +80,7 @@ def test_reversed_situation_survives_verbatim_covered_match():
     check fires before the canonical one)."""
     v = _acted_view(reversed_=True)
     verbatim = "6-Commitments/owed_to_nate/cmt-fca6836e2844.md — booked"
-    prop = dict(TESTAMENT_PROPOSAL, evidence=[verbatim])
+    prop = dict(DEED_PROPOSAL, evidence=[verbatim])
     log = []
     out = _run([prop], log, covered=[verbatim],
                acted_refs=v["live_canonical"], reversed_refs=v["reversed_canonical"])
@@ -89,7 +89,7 @@ def test_reversed_situation_survives_verbatim_covered_match():
 
 def test_verbatim_drop_still_fires_without_reversal():
     verbatim = "6-Commitments/owed_to_nate/cmt-fca6836e2844.md — booked"
-    prop = dict(TESTAMENT_PROPOSAL, evidence=[verbatim])
+    prop = dict(DEED_PROPOSAL, evidence=[verbatim])
     log = []
     out = _run([prop], log, covered=[verbatim])
     assert out == []
@@ -100,7 +100,7 @@ def test_unknown_world_state_still_proposes():
     """Probe-outage leg: no acted view at all (caller passes empties) —
     the card presents; nothing crashes."""
     log = []
-    out = _run([TESTAMENT_PROPOSAL], log)
+    out = _run([DEED_PROPOSAL], log)
     assert len(out) == 1
 
 
@@ -109,7 +109,7 @@ def test_acted_check_wins_over_generic_covered_reason():
     specific already-acted reason is logged, not evidence-overlap-canonical."""
     v = _acted_view()
     log = []
-    out = _run([TESTAMENT_PROPOSAL], log,
+    out = _run([DEED_PROPOSAL], log,
                covered=["6-Commitments/owed_to_nate/cmt-fca6836e2844.md — prior card"],
                acted_refs=v["live_canonical"], reversed_refs=v["reversed_canonical"])
     assert out == []

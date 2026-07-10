@@ -25,7 +25,7 @@ def open_prop(ts="2026-07-08T10:00:00Z", subject="s", refs=(REF,)):
 class TestClosurePropagation(unittest.TestCase):
     def test_one_event_retires_everything(self):
         prop = open_prop()
-        other = open_prop(subject="unrelated", refs=("cmt-999999999999",))
+        other = open_prop(subject="unrelated", refs=("cmt-99aa99bb99cc",))
         emitted, feed_rows, deleted = [], [], []
         standing = {_key_of_row(prop): {"message_id": 7, "state": "open"}}
 
@@ -212,12 +212,12 @@ class TestSupersedeInPlace(unittest.TestCase):
         try:
             skey = hygiene.stream_situation_key(
                 {"summary": f"deploy blocked {REF}", "body": ""})
-            first = hygiene.supersede_stream_entry(be, "polads", skey, "1-1")
+            first = hygiene.supersede_stream_entry(be, "bakery", skey, "1-1")
             self.assertIsNone(first)
-            second = hygiene.supersede_stream_entry(be, "polads", skey, "2-1")
+            second = hygiene.supersede_stream_entry(be, "bakery", skey, "2-1")
             self.assertEqual(second, "1-1")
             self.assertEqual(be.xdeleted,
-                             [("cabinet:captain-attention:polads", "1-1")])
+                             [("cabinet:captain-attention:bakery", "1-1")])
         finally:
             ad._is_redispy = orig
 
@@ -229,7 +229,7 @@ class TestSupersedeInPlace(unittest.TestCase):
         try:
             k1 = hygiene.stream_situation_key({"summary": f"a {REF}"})
             k2 = hygiene.stream_situation_key(
-                {"summary": "b cmt-999999999999"})
+                {"summary": "b cmt-99aa99bb99cc"})
             hygiene.supersede_stream_entry(be, "p", k1, "1-1")
             out = hygiene.supersede_stream_entry(be, "p", k2, "2-1")
             self.assertIsNone(out)

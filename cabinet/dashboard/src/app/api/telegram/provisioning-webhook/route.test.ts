@@ -52,8 +52,8 @@ import { GET, POST } from './route'
 const fetchMock = vi.fn()
 global.fetch = fetchMock as unknown as typeof fetch
 
-const CAPTAIN_CHAT_ID = '123456789'
-const CAPTAIN_CHAT_ID_NUM = 123456789
+const CAPTAIN_CHAT_ID = '12345678'
+const CAPTAIN_CHAT_ID_NUM = 12345678
 
 function setEnv(overrides: Record<string, string | undefined>) {
   for (const [k, v] of Object.entries(overrides)) {
@@ -83,8 +83,8 @@ function makeUpdate(overrides: {
   const msg: Record<string, unknown> = {
     message_id: overrides.messageId ?? 42,
     chat: { id: overrides.chatId ?? CAPTAIN_CHAT_ID_NUM, type: 'private' },
-    from: { id: overrides.chatId ?? CAPTAIN_CHAT_ID_NUM, first_name: 'Nate' },
-    date: 1700000000,
+    from: { id: overrides.chatId ?? CAPTAIN_CHAT_ID_NUM, first_name: 'Ada' },
+    date: 1_700_000_000,
   }
   if (overrides.text !== undefined) msg.text = overrides.text
   if (overrides.caption !== undefined) msg.caption = overrides.caption
@@ -221,7 +221,7 @@ describe('POST provisioning-webhook — Captain auth guard', () => {
 
   it('returns 200 + console.warn + no sendMessage for wrong chatId', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const res = await POST(makeReq(makeUpdate({ chatId: 999999999, text: 'hello' })))
+    const res = await POST(makeReq(makeUpdate({ chatId: 99999999, text: 'hello' })))
     expect(res.status).toBe(200)
     expect(fetchMock).not.toHaveBeenCalled()
     expect(mockHandleMessage).not.toHaveBeenCalled()
@@ -284,7 +284,7 @@ describe('POST provisioning-webhook — rawText extraction', () => {
 describe('POST provisioning-webhook — token redaction', () => {
   it('logs [TOKEN_REDACTED] for token-shaped substring in message text', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
-    const tokenLike = '12345678:ABCDEFGHIJabcdefghij_-1234567890123'
+    const tokenLike = '12345678:ABCDEFGHIJabcdefghij_-12345x67890xy'
     await POST(makeReq(makeUpdate({ chatId: CAPTAIN_CHAT_ID_NUM, text: tokenLike })))
     const logCalls = logSpy.mock.calls.map(c => c.join(' '))
     expect(logCalls.some(msg => msg.includes('[TOKEN_REDACTED]'))).toBe(true)

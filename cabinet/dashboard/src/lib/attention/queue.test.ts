@@ -33,11 +33,11 @@ function census(overrides: Record<string, unknown> = {}): string {
         age_h: 20.5, blast: { class: 'ceiling', reach: 'external' },
         decay_stage: 'ping-now', admission: 'decisions',
         pid: 'cos|action-card|subj|2026-07-09T12:00:00Z', h: 'qabc123',
-        what: 'reply to TV2 DPA counsel',
+        what: 'reply to Kanal9 contract counsel',
         why_now: { cost_of_delay: 'blocking', decay: 'waiting 20h' },
         refs: ['cmt-aaaaaaaaaaaa'], one_tap: { approve: 'per-item-approval' },
         blast_worst_case: 'a message reaches a human outside the machine',
-        filed_by: 'officer:cos', lane: 'polads',
+        filed_by: 'officer:cos', lane: 'bakery',
       },
     ],
     directions: [
@@ -55,7 +55,7 @@ describe('parseCensus', () => {
     const q = parseCensus(census(), NOW)
     expect(q).not.toBeNull()
     expect(q!.pendingCaptainItems).toBe(2)
-    expect(q!.decisions[0].what).toBe('reply to TV2 DPA counsel')
+    expect(q!.decisions[0].what).toBe('reply to Kanal9 contract counsel')
     expect(q!.decisions[0].pid).toContain('action-card')
     expect(q!.decisions[0].blast).toEqual({ class: 'ceiling', reach: 'external' })
     expect(q!.directions[0].kind).toBe('need')
@@ -93,7 +93,7 @@ describe('fallbackFromCards', () => {
   it('shapes live binder cards as an honest degraded queue', () => {
     const q = fallbackFromCards([
       {
-        cid: 'c1', subject: 's1', lane: 'polads', urgency: 'batch',
+        cid: 'c1', subject: 's1', lane: 'bakery', urgency: 'batch',
         confidence: 0.7, evidenceCount: 2, ts: '2026-07-09T10:00:00Z',
       },
     ])

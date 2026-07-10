@@ -25,7 +25,7 @@ import framework.env as env
 import framework.frontdoor.channel as channel
 
 TOKEN = "123456:SECRET-BOT-TOKEN-do-not-leak"
-CAPTAIN = "987654321"
+CAPTAIN = "98765432"
 
 
 @pytest.fixture(autouse=True)

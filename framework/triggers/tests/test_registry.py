@@ -58,7 +58,7 @@ def test_cancel(reg):
 
 
 def test_on_event_surfaced_by_key_only(reg):
-    t = reg.register_trigger(kind="on-event", payload={"about": "PR merged → tell Nate"},
+    t = reg.register_trigger(kind="on-event", payload={"about": "PR merged → tell Ada"},
                              event_key="pr.merged")
     assert reg.due_triggers() == []                       # never time-due
     assert [d["id"] for d in reg.due_event_triggers("pr.merged")] == [t["id"]]

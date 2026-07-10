@@ -64,7 +64,7 @@ def _fake_osa(cmd):
     return "ok"
 
 
-def _acted(action_type, ts, *, verdict=None, source=None, refs=None, lane="polads"):
+def _acted(action_type, ts, *, verdict=None, source=None, refs=None, lane="bakery"):
     """A synthetic acted ledger row (proposal.required False, RT-B1 marker)."""
     ev = {"ts": ts, "actor": {"kind": "officer", "id": "officer:cos"}, "lane": lane,
           "action": "acted:" + action_type, "subject": "s-" + ts,
@@ -95,7 +95,7 @@ def test_canary_kinds_are_exactly_the_act_first_eligible_set():
 def test_run_canary_all_kinds_roundtrip_no_freeze_zero_ledger(tmp_path):
     fm = FakeMonday(columns={"status": {"text": "Done"}})   # compare-restore matches
     out = ac.run_canary(monday_post=fm, osascript=_fake_osa,
-                        board="5091706356", now="2026-07-04T00:00:00Z")
+                        board="42424242", now="2026-07-04T00:00:00Z")
     assert [r["kind"] for r in out["results"]] == \
         ["monday_task_create", "monday_task_update", "reminder_create"]
     assert all(r["ok"] for r in out["results"])          # every reverse clean
@@ -323,7 +323,7 @@ def test_load_vetoes_absent_is_empty(tmp_path):
 
 def test_veto_divergence_flags_acted_after_active_veto():
     vetoes = [{"id": "veto-001", "ts": "2026-07-03T00:00:00Z", "status": "active",
-               "scope": {"action_type": "task_create", "lane": "polads"}}]
+               "scope": {"action_type": "task_create", "lane": "bakery"}}]
     led = [_acted("task_create", "2026-07-03T12:00:00Z"),          # AFTER the veto → page
            _acted("task_create", "2026-07-02T00:00:00Z"),          # before → fine
            _acted("board_status", "2026-07-04T00:00:00Z")]         # wrong type → no match

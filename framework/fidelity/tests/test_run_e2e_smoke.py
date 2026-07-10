@@ -1,6 +1,6 @@
 """T5 — small REAL reversible end-to-end smoke test (live OAuth judge, NO sends).
 
-Nate's directive: test the real flow, reversible only. This test exercises the
+Ada's directive: test the real flow, reversible only. This test exercises the
 SAME chain as the stubbed T4 seam test (test_e2e_flow.py), but against the LIVE
 seams: the real OAuth `claude -p` judge + real gather + real Voyage STYLE
 scoring on a SMALL n of held-out cases. It asserts the pipeline completes,
@@ -55,13 +55,13 @@ def event_log_dir(tmp_path, monkeypatch):
 
 def _case(cid: str) -> Case:
     return Case.from_retro_case({
-        "case_id": cid, "reply_key": f"msgraph|{cid}", "slug": "ulrik",
-        "person": "Ulrik", "channel": "msgraph", "language": "da",
+        "case_id": cid, "reply_key": f"msgraph|{cid}", "slug": "otto",
+        "person": "Otto", "channel": "msgraph", "language": "da",
         "reply_ts": CUTOFF, "subject": "Re: lon", "n_prior": 1,
         "thread_before": [
-            {"slug": "ulrik", "person": "Ulrik",
+            {"slug": "otto", "person": "Otto",
              "date": "2026-06-09T08:00:00+00:00", "direction": "received",
-             "who": "Ulrik <u@x>", "source": "msgraph", "to": "", "cc": "",
+             "who": "Otto <u@x>", "source": "msgraph", "to": "", "cc": "",
              "text": "kan vi snakke lon snart?"},
         ],
         "real_reply": "Ja, fredag kl 14.",
@@ -117,7 +117,7 @@ class TestRunSmokeStructure:
         scores = [
             CaseScore(f"c{i}", True, verdict, [], False, 1.0, {},
                       intent_verdict="intent-aligned",
-                      intent_grounded_fact="From Ulrik at 2026-06-09: lon",
+                      intent_grounded_fact="From Otto at 2026-06-09: lon",
                       intent_composite=1.0).__dict__
             for i in range(n_scored)
         ]

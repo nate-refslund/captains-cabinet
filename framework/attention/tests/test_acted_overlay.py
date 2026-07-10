@@ -1,6 +1,6 @@
 """P2 acted-overlay: ledger acted rows × undo journal → acted-state view.
 
-Fixtures mirror the REAL 2026-07-07 incident: the testament calendar event
+Fixtures replay the P1 story's double-act incident: the deed calendar event
 was acted TWICE; the Captain undid one (undo 2). The overlay must mark the
 undone act reversed, keep the standing one live, and render both."""
 
@@ -11,24 +11,24 @@ CID_LIVE = "aaaa111122223333"
 CID_UNDONE = "bbbb444455556666"
 
 LEDGER = [
-    {"action": "acted:reminder_create", "subject": "testament-signing-kolding",
+    {"action": "acted:reminder_create", "subject": "deed-signing-kageby",
      "ts": "2026-07-07T16:09:28Z", "actor": {"kind": "officer", "id": "cos"},
      "lane": "personal",
      "refs": [f"cabinet-proposal-id:{CID_LIVE}",
               "6-Commitments/owed_to_nate/cmt-fca6836e2844.md — reminder_set: false"]},
-    {"action": "acted:reminder_create", "subject": "testament-signing-kolding-dup",
+    {"action": "acted:reminder_create", "subject": "deed-signing-kageby-dup",
      "ts": "2026-07-07T17:30:00Z", "actor": {"kind": "officer", "id": "cos"},
      "lane": "personal",
      "refs": [f"cabinet-proposal-id:{CID_UNDONE}",
-              "6-Commitments/owed_to_nate/cmt-fca6836e2844.md — Solveig booked"]},
+              "6-Commitments/owed_to_nate/cmt-fca6836e2844.md — Sigrid booked"]},
     {"action": "acted:calendar_event_create", "subject": "chase-ec-details",
      "ts": "2026-07-07T16:09:28Z", "actor": {"kind": "officer", "id": "cos"},
-     "lane": "polads",
+     "lane": "bakery",
      "refs": [f"cabinet-proposal-id:cccc7777",
               "6-Commitments/owed_to_nate/cmt-8ab5d6355d15.md — due 2026-07-08"]},
     # non-acted rows must be ignored
     {"action": "action-card", "subject": "x", "ts": "2026-07-07T10:00:00Z",
-     "refs": ["6-Commitments/owed_to_nate/cmt-000000000000.md"]},
+     "refs": ["6-Commitments/owed_to_nate/cmt-00ab00cd00ef.md"]},
 ]
 
 JOURNAL = [
@@ -47,14 +47,14 @@ def _view():
 def test_join_marks_reversed_and_live():
     v = _view()
     by_subject = {e["subject"]: e for e in v["entries"]}
-    assert not by_subject["testament-signing-kolding"]["reversed"]
-    assert by_subject["testament-signing-kolding-dup"]["reversed"]
+    assert not by_subject["deed-signing-kageby"]["reversed"]
+    assert by_subject["deed-signing-kageby-dup"]["reversed"]
     assert not by_subject["chase-ec-details"]["reversed"]
     assert "x" not in by_subject   # action-card rows are not acted state
 
 
 def test_shared_ref_stays_live_when_one_act_stands():
-    """The testament cmt ref backs BOTH a standing act and an undone one —
+    """The deed cmt ref backs BOTH a standing act and an undone one —
     it must stay LIVE (something acted on it still exists in the world)."""
     v = _view()
     assert "cmt-fca6836e2844" in v["live_canonical"]
@@ -62,7 +62,7 @@ def test_shared_ref_stays_live_when_one_act_stands():
 
 
 def test_fully_reversed_situation_moves_to_reversed_set():
-    ledger = [LEDGER[1], LEDGER[2]]   # only the undone testament act + EC
+    ledger = [LEDGER[1], LEDGER[2]]   # only the undone deed act + EC
     v = load_acted(ledger_rows=ledger, journal_rows=JOURNAL)
     assert "cmt-fca6836e2844" in v["reversed_canonical"]
     assert "cmt-fca6836e2844" not in v["live_canonical"]
@@ -73,7 +73,7 @@ def test_since_floor_filters_ledger_not_journal():
     v = load_acted(since="2026-07-07T17:00:00Z",
                    ledger_rows=LEDGER, journal_rows=JOURNAL)
     subjects = {e["subject"] for e in v["entries"]}
-    assert subjects == {"testament-signing-kolding-dup"}
+    assert subjects == {"deed-signing-kageby-dup"}
 
 
 def test_missing_journal_row_is_conservatively_live():
@@ -86,7 +86,7 @@ def test_render_overlay_shapes():
     text = render_overlay(v)
     assert "ALREADY ACTED" in text
     assert "REVERSED-BY-CAPTAIN" in text
-    assert "testament-signing-kolding" in text
+    assert "deed-signing-kageby" in text
     assert render_overlay(None) == ""
     assert render_overlay({"entries": []}) == ""
 
@@ -108,9 +108,9 @@ def test_approved_then_undone_uncover_via_action_card_rows():
     ledger = [{"action": "action-card", "subject": "approved-thing",
                "ts": "2026-07-07T12:00:00Z",
                "refs": [f"cabinet-proposal-id:{CID_UNDONE}",
-                        "6-Commitments/owed_to_nate/cmt-999888777666.md — x"]}]
+                        "6-Commitments/owed_to_nate/cmt-99ab88cd77ef.md — x"]}]
     v = load_acted(ledger_rows=ledger, journal_rows=JOURNAL)
-    assert "cmt-999888777666" in v["reversed_canonical"]
+    assert "cmt-99ab88cd77ef" in v["reversed_canonical"]
 
 
 def test_env_drift_in_window_raises_unknown(monkeypatch, tmp_path):

@@ -157,7 +157,7 @@ def test_gate_ceiling_strings_byte_identical(monkeypatch, env, _isolated_root):
 # inverse + journal are viable), so the old earn-up propose golden is stale.
 # The parity obligation splits into two legs, both asserted across env
 # states: (1) the reversible allow is unchanged by the posture axis, and
-# (2) a genuine guardian propose cell (deploy_nonprod@unmeasured — NATE kept
+# (2) a genuine guardian propose cell (deploy_nonprod@unmeasured — ADA kept
 # it earn-up) emits the byte-identical propose string.
 @pytest.mark.parametrize("env", _ENV_STATES)
 def test_gate_reversible_allow_byte_identical(monkeypatch, env, _isolated_root):
@@ -193,7 +193,7 @@ def test_gate_propose_string_byte_identical(monkeypatch, env, _isolated_root):
 
 _ACTED = [{
     "pid": "p-1", "index": 1, "kind": "monday_task_create",
-    "summary": "Created task 'X' on board 5091706356",
+    "summary": "Created task 'X' on board 42424242",
     "receipt": "r-1", "undoable": True, "ts": "2026-07-04T10:00:00Z",
 }]
 
@@ -294,19 +294,19 @@ def test_attention_mapping_default_identical(monkeypatch):
     from framework.frontdoor import attention_drain as AD
     monkeypatch.delenv("CABINET_NEEDS_WIRED", raising=False)
     card = {
-        "source": "polads", "urgency": "blocking", "ts": "2026-07-04T10:00:00Z",
+        "source": "bakery", "urgency": "blocking", "ts": "2026-07-04T10:00:00Z",
         "summary": "standing grant approval needed — NEED-1a2b3c4d",
         "body": "requires captain approval",
     }
-    legacy = AD.card_to_item(dict(card), project="polads")
-    explicit = AD.card_to_item(dict(card), project="polads", needs_wired=False)
+    legacy = AD.card_to_item(dict(card), project="bakery")
+    explicit = AD.card_to_item(dict(card), project="bakery", needs_wired=False)
     assert explicit == legacy
     # unwired: NEED-tagged + ask-shaped card keeps its carded urgency tier
     # and carries no need_id payload — mapped exactly as before.
     assert legacy["urgency_tier"] == AD._URGENCY_TO_TIER["blocking"]
     assert "need_id" not in legacy["payload"]
     # wired: the same ping-now ask demotes to batch (the digest owns the ask)
-    demoted = AD.card_to_item(dict(card), project="polads", needs_wired=True)
+    demoted = AD.card_to_item(dict(card), project="bakery", needs_wired=True)
     assert demoted["urgency_tier"] == "batch"
 
 

@@ -23,7 +23,7 @@ def _item(*, source="morning-brief", kind="brief", ts="2026-06-22T07:00:00Z",
                "thread_ref": None}
     context.update(extra.pop("context_extra", {}))
     item = {
-        "id": extra.pop("id", "1700000000000-0"),
+        "id": extra.pop("id", "17000042-0"),
         "source": source,
         "kind": kind,
         "ts": ts,

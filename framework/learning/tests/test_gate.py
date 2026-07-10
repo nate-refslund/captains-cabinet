@@ -214,7 +214,7 @@ class TestRatify:
 # run_gate_review — D16 fuel, 5-condition bar
 # ---------------------------------------------------------------------------
 
-def _acted(subject, ts=NOW, *, actor_id="polads-ceo", lane="polads",
+def _acted(subject, ts=NOW, *, actor_id="bakery-ceo", lane="bakery",
            action_type="task_status_move", review=None,
            evidence="ttl-48h survived; artifact intact; no reversal; no cascade flag",
            status="ok"):
@@ -316,7 +316,7 @@ class TestRunGateReview:
         assert report["stamped"] == [] and emitted == []
         # …but a wrong on ANOTHER cell does not
         other = _acted("s-other-cell", ts="2026-07-02T12:00:00Z",
-                       lane="stephie", status="failed", evidence="captain-undo",
+                       lane="newsletter", status="failed", evidence="captain-undo",
                        review={"verdict": "wrong", "source": "verdict_human"})
         report, emitted = self._review([other, clean])
         assert [s["subject"] for s in report["stamped"]] == ["s-clean"]
@@ -351,7 +351,7 @@ class TestRunGateReview:
         stamped_ledger = [base, emitted[0]]
         # collapse manually mirrors read_ledger last-write-wins on identity
         cells_g = consequence.compute_ratios(ledger=[emitted[0]])
-        key = ("officer:polads-ceo", "polads", "task_status_move")
+        key = ("officer:bakery-ceo", "bakery", "task_status_move")
         # guardian compute: verdict_gate confirm does NOT count
         assert cells_g[key].confirmed == 0
         # sovereign compute: it does — task_status_move is deterministic-

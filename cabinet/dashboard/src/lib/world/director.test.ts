@@ -31,8 +31,8 @@ const GRAMMAR: ShowGrammar = {
 
 const OFFICERS: Record<string, OfficerPresence> = {
   cos: { present: true, verb: 'working', since: '2026-07-07T10:00:00Z' },
-  'polads-ceo': { present: true, verb: 'reviewing', since: '2026-07-07T10:00:00Z' },
-  'stephie-ceo': { present: false },
+  'bakery-ceo': { present: true, verb: 'reviewing', since: '2026-07-07T10:00:00Z' },
+  'newsletter-ceo': { present: false },
 }
 
 function runSequence(ticks: number[]) {
@@ -68,7 +68,7 @@ describe('grammar law', () => {
       stationId: 'desk:cos',
       anim: 'work',
     })
-    expect(targetStation('polads-ceo', OFFICERS['polads-ceo'], GRAMMAR)).toEqual(
+    expect(targetStation('bakery-ceo', OFFICERS['bakery-ceo'], GRAMMAR)).toEqual(
       { stationId: 'board', anim: 'work' }
     )
   })
@@ -82,8 +82,8 @@ describe('grammar law', () => {
   })
 
   it('expired presence is honestly asleep', () => {
-    expect(targetStation('stephie-ceo', { present: false }, GRAMMAR)).toEqual({
-      stationId: 'bunk:stephie-ceo',
+    expect(targetStation('newsletter-ceo', { present: false }, GRAMMAR)).toEqual({
+      stationId: 'bunk:newsletter-ceo',
       anim: 'asleep',
     })
   })
@@ -150,9 +150,9 @@ describe('motion', () => {
   })
 
   it('layout is stable: sorted slugs, fixed slots', () => {
-    const a = buildLayout(['stephie-ceo', 'cos', 'polads-ceo'])
-    const b = buildLayout(['cos', 'polads-ceo', 'stephie-ceo'])
+    const a = buildLayout(['newsletter-ceo', 'cos', 'bakery-ceo'])
+    const b = buildLayout(['cos', 'bakery-ceo', 'newsletter-ceo'])
     expect(a.desks.get('cos')).toEqual(b.desks.get('cos'))
-    expect(a.desks.get('stephie-ceo')).toEqual(b.desks.get('stephie-ceo'))
+    expect(a.desks.get('newsletter-ceo')).toEqual(b.desks.get('newsletter-ceo'))
   })
 })

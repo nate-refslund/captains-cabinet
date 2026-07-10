@@ -39,7 +39,7 @@ def test_classify_truth_table():
 
 def test_parse_handles_z_and_fractional():
     a = ps._parse("2026-07-03T02:00:00Z")
-    b = ps._parse("2026-07-03T02:00:00.123456789+00:00")   # ns fractional truncated
+    b = ps._parse("2026-07-03T02:00:00.1234567+00:00")   # sub-micro fractional truncated
     assert a.tzinfo is not None and a.utcoffset().total_seconds() == 0
     assert b.hour == 2 and b.minute == 0
 
@@ -102,7 +102,7 @@ class FakeResend:
 
 
 def _decided(cid, subject="support-thread"):
-    p = loop.proposal_event(actor={"kind": "officer", "id": "polads-ceo"},
+    p = loop.proposal_event(actor={"kind": "officer", "id": "bakery-ceo"},
                             lane="support-reply", subject=subject,
                             ts="2026-07-03T00:00:00Z", refs=[c.ref_for(cid)])
     p["proposal"]["decision"] = "approved"
@@ -123,7 +123,7 @@ def test_run_probe_resolved_ok_via_header():
     threads = [{"headers": {hdr_name: hdr_val}, "subject": "Re: ticket",
                 "outbound_at": "2026-07-03T00:00:00Z", "customer_reply_at": None}]
     emitted = []
-    r = ps.run_probe(mailbox="support@polads", client=FakeResend(threads),
+    r = ps.run_probe(mailbox="support@bakery", client=FakeResend(threads),
                      rows=[_decided(cid)], now="2026-07-06T01:00:00Z", enabled=True,
                      emit=lambda **kw: _record(emitted, **kw), hc=lambda *a, **k: "pinged")
     assert r["enabled"] is True and r["fresh"] is True

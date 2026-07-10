@@ -1,7 +1,7 @@
 """Mock-level tests for the fast EventKit delete (framework/frontdoor/
 calendar_delete). No subprocess is ever spawned — the runner is injected. The
 REAL uid==calendarItemExternalIdentifier equality + real removal are
-validation_gated to Nate's granted Terminal (see the calendar-followups runbook).
+validation_gated to Ada's granted Terminal (see the calendar-followups runbook).
 """
 from __future__ import annotations
 

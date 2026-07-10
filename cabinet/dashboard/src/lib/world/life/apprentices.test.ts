@@ -16,7 +16,7 @@ import {
 } from './apprentices'
 
 const NOW = Date.parse('2026-07-09T12:00:00Z')
-const POS = { cos: { x: 10, y: 8 }, 'polads-ceo': { x: 40, y: 30 } }
+const POS = { cos: { x: 10, y: 8 }, 'bakery-ceo': { x: 40, y: 30 } }
 
 let IID = 0
 function rec(
@@ -93,7 +93,7 @@ describe('apprenticesAt — figures for LIVE runs only', () => {
     expect(at([spawn(10, 'unknown')]).figures).toHaveLength(0)
   })
   it('an officer with no known position renders nothing (no free-floaters)', () => {
-    expect(at([spawn(10, 'stephie-ceo')]).figures).toHaveLength(0)
+    expect(at([spawn(10, 'newsletter-ceo')]).figures).toHaveLength(0)
   })
   it('deterministic: identical inputs → identical figures', () => {
     const records = [spawn(50), spawn(20), done(5)]

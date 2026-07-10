@@ -76,8 +76,8 @@ class _StubSource:
 # --- 1. flag-OFF parity -------------------------------------------------------
 
 def test_flag_off_matches_extracted_walk_exactly(vault, monkeypatch):
-    _write(vault, "6-Commitments/owed_by_nate/cmt-1.md", "Nate owes Lisa the licences")
-    _write(vault, "2-Meetings/2026-07-06-scrum.md", "PolAds scrum notes")
+    _write(vault, "6-Commitments/owed_by_nate/cmt-1.md", "Ada owes Lisa the licences")
+    _write(vault, "2-Meetings/2026-07-06-scrum.md", "Bakery scrum notes")
     _write(vault, "5-Reflections/Decisions/dec-1.md", "Decided: Option B staging")
     monkeypatch.setattr(ral, "product_brain_dir", lambda: "")
     out = ral.gather_signals(AS_OF, vault=vault)
@@ -149,7 +149,7 @@ def test_d13_floor_module_is_germline_locked():
 def test_flag_on_renders_commitments_and_fenced_context(vault, monkeypatch):
     rows = [
         {"direction": "owed_by_captain", "text": "send licences to Lisa",
-         "person": "lisa-stentoft", "path": "cmt-abc.md", "due": "2026-07-08"},
+         "person": "lena-baker", "path": "cmt-abc.md", "due": "2026-07-08"},
     ]
     hits = [
         {"text": "Lisa asked for the licences in the scrum",
@@ -171,7 +171,7 @@ def test_flag_on_renders_commitments_and_fenced_context(vault, monkeypatch):
     assert "FUTURE leak" not in out
     assert "undated note" not in out
     assert "raw meeting file" not in out
-    assert stub.search_calls == [("lisa-stentoft", "send licences to Lisa")]
+    assert stub.search_calls == [("lena-baker", "send licences to Lisa")]
 
 
 def test_flag_on_corpus_sections_ride_along(vault, tmp_path, monkeypatch):

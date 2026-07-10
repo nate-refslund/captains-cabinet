@@ -39,7 +39,7 @@ def _row(cmd=None, *, tool="Bash", path=None, engine="allow",
 class TestCharterArm:
     @pytest.mark.parametrize("cmd,expect", [
         ("rm -rf /", "block"),
-        ("rm -r -f /Users/nate", "block"),
+        ("rm -r -f /opt/testburg-cabinet", "block"),
         ("psql -c 'DROP TABLE cabinet_memory'", "block"),
         ("psql -c 'DELETE FROM users WHERE 1=1'", "block"),
         ("vercel --prod", "block"),
@@ -60,7 +60,7 @@ class TestCharterArm:
         # evaluation — the charter arm must NOT carry it
         assert cs.charter_decision(
             {"tool_name": "Write",
-             "tool_input": {"file_path": "/workspace/polads/src/app.ts"}}
+             "tool_input": {"file_path": "/workspace/bakery/src/app.ts"}}
         )["decision"] == "allow"
 
 

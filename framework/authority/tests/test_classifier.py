@@ -31,6 +31,18 @@ from framework.authority.classifier import (  # noqa: E402
 from framework.authority.lane import resolve_lane  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _synthetic_org_domains(monkeypatch):
+    """Pin the internal-domain set to the synthetic fixture domains so the
+    internal/external comms classification is hermetic — never coupled to
+    this deployment's instance/config org_domains value (classifier freezes
+    env.org_domains() at import time, so patch the module constant)."""
+    from framework.authority import classifier as _clf
+    monkeypatch.setattr(_clf, "_INTERNAL_DOMAINS",
+                        ("testburg.example", "testburg-media.example"))
+
+
+
 # ===================================================================
 # enum surface
 # ===================================================================
@@ -160,7 +172,7 @@ class TestComms:
     def test_external_message_by_domain(self):
         out = classify_action(
             "mcp__brain__queue_draft",
-            {"channel": "teams", "recipient": "anna@styria.com", "body": "hi"},
+            {"channel": "teams", "recipient": "anna@partner-external.example", "body": "hi"},
         )
         assert out == "external_message"
 
@@ -174,14 +186,14 @@ class TestComms:
     def test_internal_message_by_domain(self):
         out = classify_action(
             "mcp__brain__queue_draft",
-            {"channel": "teams", "recipient": "sean@stepnetwork.dk", "body": "hi"},
+            {"channel": "teams", "recipient": "bo@testburg.example", "body": "hi"},
         )
         assert out == "internal_message"
 
     def test_internal_email_by_domain(self):
         out = classify_action(
             "mcp__brain__queue_draft",
-            {"channel": "email", "recipient": "ulrik@jfmedier.dk", "body": "x"},
+            {"channel": "email", "recipient": "otto@testburg-media.example", "body": "x"},
         )
         assert out == "internal_email"
 
@@ -344,7 +356,7 @@ class TestCredentialsGrant:
 
     def test_oauth_grant_via_mcp(self):
         out = classify_action(
-            "mcp__claude_ai_PolAds_PO__complete_authentication",
+            "mcp__claude_ai_Bakery_PO__complete_authentication",
             {"grant": "oauth"},
         )
         assert out == "oauth_grant"
@@ -410,14 +422,14 @@ class TestFailSafe:
 
 class TestResolveLane:
     def test_cabinet_lane_wins(self, monkeypatch):
-        monkeypatch.setenv("CABINET_LANE", "polads")
-        monkeypatch.setenv("PROJECT", "stephie")
-        assert resolve_lane() == "polads"
+        monkeypatch.setenv("CABINET_LANE", "bakery")
+        monkeypatch.setenv("PROJECT", "newsletter")
+        assert resolve_lane() == "bakery"
 
     def test_falls_back_to_project(self, monkeypatch):
         monkeypatch.delenv("CABINET_LANE", raising=False)
-        monkeypatch.setenv("PROJECT", "stephie")
-        assert resolve_lane() == "stephie"
+        monkeypatch.setenv("PROJECT", "newsletter")
+        assert resolve_lane() == "newsletter"
 
     def test_none_when_unset(self, monkeypatch):
         monkeypatch.delenv("CABINET_LANE", raising=False)
@@ -426,8 +438,8 @@ class TestResolveLane:
 
     def test_empty_cabinet_lane_falls_through(self, monkeypatch):
         monkeypatch.setenv("CABINET_LANE", "")
-        monkeypatch.setenv("PROJECT", "stephie")
-        assert resolve_lane() == "stephie"
+        monkeypatch.setenv("PROJECT", "newsletter")
+        assert resolve_lane() == "newsletter"
 
     def test_no_path_interpolation(self, monkeypatch):
         # resolve_lane reads only the two named env vars verbatim — it does
@@ -538,7 +550,7 @@ class TestActWithUndoCarveOuts:
         # NAMED per-op tool (op = tool-name suffix) — the ONLY shape that earns
         # the soft class post-inversion (the lane's real path).
         assert classify_action("mcp__claude_ai_monday_com__create_item",
-                               {"board_id": "5091706356", "item_name": "x"}) == "task_create"
+                               {"board_id": "42424242", "item_name": "x"}) == "task_create"
         # A generic raw-body call is the ceiling now (allowlist inversion,
         # re-verify round 2) — never parsed, never softened.
         assert classify_action(
@@ -559,7 +571,7 @@ class TestActWithUndoCarveOuts:
     def test_monday_status_write_is_board_status(self):
         assert classify_action(
             "mcp__claude_ai_monday_com__change_item_column_values",
-            {"board_id": "5091706356"}) == "board_status"
+            {"board_id": "42424242"}) == "board_status"
 
     def test_calendar_template_is_calendar_event_create(self):
         # Realistic: a real osascript command embeds the RAW template (shell
@@ -651,7 +663,7 @@ class TestOutOfVocabMondayOpSmuggle:
         # named create_item op earns task_create regardless of its arguments.
         assert classify_action(
             "mcp__claude_ai_monday_com__create_item",
-            {"board_id": "5091706356", "item_name": "call mom (later)"}) == "task_create"
+            {"board_id": "42424242", "item_name": "call mom (later)"}) == "task_create"
 
     def test_named_status_tool_still_board_status(self):
         # Named status op stays board_status.
@@ -683,7 +695,7 @@ class TestOutOfVocabMondayOpSmuggle:
         # Shape 1 (named per-op MCP tools) is untouched by the generic body
         # extractor: the op IS the tool name.
         assert classify_action("mcp__claude_ai_monday_com__create_item",
-                               {"board_id": "5091706356"}) == "task_create"
+                               {"board_id": "42424242"}) == "task_create"
         assert classify_action("mcp__claude_ai_monday_com__delete_item",
                                {"item_id": "1"}) == "mcp_post"
 

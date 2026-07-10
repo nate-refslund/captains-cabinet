@@ -19,20 +19,20 @@ from framework.learning import preference_pairs as pp
 
 
 def _lesson(ref="lesson-001", verdict="edit", text="shorter, and in Danish",
-            pid="p1", action_type="pm_write", lane="polads"):
+            pid="p1", action_type="pm_write", lane="bakery"):
     return {"lesson_ref": ref, "ts": "2026-07-08T10:00:00Z", "pid": pid,
             "cid": None, "action_type": action_type, "lane": lane,
             "verdict": verdict, "captain_text": text,
             "taxonomy": "wrong-content"}
 
 
-LEDGER = {"p1": {"subject": "Draft reply to Tomas about VIES autofill",
+LEDGER = {"p1": {"subject": "Draft reply to Casper about VIES autofill",
                  "action": "action-card"}}
 
 PATTERNS_MD = """# Captain patterns
 
 ### officer-note 2026-07-05 — replies short [trust:officer]
-Nate prefers terse single-line replies. No padding.
+Ada prefers terse single-line replies. No padding.
 
 ### captain 2026-07-06 — never Reminders authority [trust:captain]
 Todos board is authoritative; Reminders is one-way nudges only.
@@ -47,7 +47,7 @@ class TestCorrectionPairs:
         assert p["kind"] == "correction" and p["verdict"] == "edit"
         assert p["preferred"] == "shorter, and in Danish"
         assert p["captain_text"] == "shorter, and in Danish"
-        assert p["rejected"]["subject"].startswith("Draft reply to Tomas")
+        assert p["rejected"]["subject"].startswith("Draft reply to Casper")
         assert p["rejected"]["action_type"] == "pm_write"
         assert p["source"] == "action-lessons:lesson-001"
 

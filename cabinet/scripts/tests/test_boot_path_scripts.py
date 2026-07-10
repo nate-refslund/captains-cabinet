@@ -67,11 +67,11 @@ GETME_REJECTED = '{"ok":false,"error_code":401,"description":"Unauthorized"}'
 GETUPDATES_FOUND = (
     '{"ok":true,"result":['
     '{"update_id":1,"message":{"message_id":1,'
-    '"from":{"id":777000111,"is_bot":false,"username":"cap_test"},'
-    '"chat":{"id":777000111,"type":"private"},"text":"hello"}},'
+    '"from":{"id":77700011,"is_bot":false,"username":"cap_test"},'
+    '"chat":{"id":77700011,"type":"private"},"text":"hello"}},'
     '{"update_id":2,"message":{"message_id":2,'
-    '"from":{"id":777000111,"is_bot":false,"username":"cap_test"},'
-    '"chat":{"id":-100987654,"type":"supergroup"},"text":"warroom"}}'
+    '"from":{"id":77700011,"is_bot":false,"username":"cap_test"},'
+    '"chat":{"id":-10098765,"type":"supergroup"},"text":"warroom"}}'
     "]}"
 )
 GETUPDATES_EMPTY = '{"ok":true,"result":[]}'
@@ -357,13 +357,13 @@ class TestTelegramCapture:
         r = run(["bash", str(TG_CAPTURE), "--env", "CAB_TEST_TOKEN", "--write", "--yes"],
                 env=self._env(cab_root, fake_curl_dir, FAKE_CURL_BODY=GETUPDATES_FOUND))
         assert r.returncode == 0, r.stdout + r.stderr
-        assert "777000111" in r.stdout
+        assert "77700011" in r.stdout
         assert "@cap_test" in r.stdout, "sender label must be shown for verification"
-        assert "-100987654" in r.stdout
+        assert "-10098765" in r.stdout
         assert FAKE_TOKEN not in r.stdout + r.stderr
         env_text = (cab_root / "cabinet" / ".env").read_text()
-        assert "CAPTAIN_TELEGRAM_ID=777000111\n" in env_text
-        assert "TELEGRAM_HQ_CHAT_ID=-100987654\n" in env_text
+        assert "CAPTAIN_TELEGRAM_ID=77700011\n" in env_text
+        assert "TELEGRAM_HQ_CHAT_ID=-10098765\n" in env_text
 
     def test_write_without_yes_noninteractive_refuses(self, cab_root, fake_curl_dir):
         # CAPTAIN_TELEGRAM_ID is the default-deny identity gate on inbound
@@ -373,7 +373,7 @@ class TestTelegramCapture:
         r = run(["bash", str(TG_CAPTURE), "--env", "CAB_TEST_TOKEN", "--write"],
                 env=self._env(cab_root, fake_curl_dir, FAKE_CURL_BODY=GETUPDATES_FOUND))
         assert r.returncode == 0, r.stdout + r.stderr
-        assert "777000111" in r.stdout          # candidate still reported
+        assert "77700011" in r.stdout          # candidate still reported
         assert "--yes" in r.stdout + r.stderr   # guidance to re-run
         env_text = (cab_root / "cabinet" / ".env").read_text()
         assert "CAPTAIN_TELEGRAM_ID=\n" in env_text, \
@@ -386,14 +386,14 @@ class TestTelegramCapture:
         run(["bash", str(TG_CAPTURE), "--env", "CAB_TEST_TOKEN", "--write", "--yes"],
             env=env_found)
         # second capture sees a DIFFERENT sender; existing value must survive
-        other = GETUPDATES_FOUND.replace("777000111", "999000999")
+        other = GETUPDATES_FOUND.replace("77700011", "99900099")
         env_other = self._env(cab_root, fake_curl_dir, FAKE_CURL_BODY=other)
         r = run(["bash", str(TG_CAPTURE), "--env", "CAB_TEST_TOKEN", "--write", "--yes"],
                 env=env_other)
         assert r.returncode == 0
         assert "NOT overwriting" in r.stdout + r.stderr
         env_text = (cab_root / "cabinet" / ".env").read_text()
-        assert "CAPTAIN_TELEGRAM_ID=777000111\n" in env_text
+        assert "CAPTAIN_TELEGRAM_ID=77700011\n" in env_text
 
     def test_request_uses_full_window_and_no_offset(self, cab_root, fake_curl_dir, tmp_path):
         # limit=100 is the API max — smaller shrinks the pending window and
@@ -415,9 +415,9 @@ class TestTelegramCapture:
         updates = [
             {"update_id": i,
              "message": {"message_id": i,
-                         "from": {"id": 777000111, "is_bot": False,
+                         "from": {"id": 77700011, "is_bot": False,
                                   "first_name": "Cap"},
-                         "chat": {"id": 777000111, "type": "private"},
+                         "chat": {"id": 77700011, "type": "private"},
                          "text": "hi"}}
             for i in range(100)
         ]

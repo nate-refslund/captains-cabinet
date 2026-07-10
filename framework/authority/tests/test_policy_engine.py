@@ -46,6 +46,20 @@ from framework.authority.policy_engine import (
 )
 
 
+import pytest as _pytest
+
+
+@_pytest.fixture(autouse=True)
+def _synthetic_org_domains(monkeypatch):
+    """Pin the internal-domain set to the synthetic fixture domains so the
+    internal/external comms classification is hermetic — never coupled to
+    this deployment's instance/config org_domains value (classifier freezes
+    env.org_domains() at import time, so patch the module constant)."""
+    from framework.authority import classifier as _clf
+    monkeypatch.setattr(_clf, "_INTERNAL_DOMAINS", ("testburg.example",))
+
+
+
 # ===================================================================
 # 1. BINARY DETECTION — Adversary bypass patterns from v3.0-v3.7.2
 # ===================================================================
@@ -1594,9 +1608,9 @@ class TestReadCellState:
     """read_cell_state is STUBBED to 'unmeasured' in A0 (F2 not built)."""
 
     def test_always_unmeasured(self):
-        assert read_cell_state("cto", "polads", "local_edit") == "unmeasured"
+        assert read_cell_state("cto", "bakery", "local_edit") == "unmeasured"
         assert read_cell_state("cos", None, "internal_message") == "unmeasured"
-        assert read_cell_state("cro", "stephie", "git_push_nonmain") == "unmeasured"
+        assert read_cell_state("cro", "newsletter", "git_push_nonmain") == "unmeasured"
 
     def test_unmeasured_even_with_weird_inputs(self):
         # Fail-safe: any input still reads unmeasured (no graduation source yet).
@@ -1624,20 +1638,20 @@ class TestReadCellStateFailClosed:
     def test_evaluate_exception_fails_closed_to_demote(self):
         with patch.object(self._graduation(), "evaluate",
                           side_effect=RuntimeError("evidence plane broken")):
-            assert read_cell_state("cos", "polads", "task_create") == "demote"
+            assert read_cell_state("cos", "bakery", "task_create") == "demote"
 
     def test_no_cell_rows_is_legit_unmeasured(self):
         # None = a cell with no evidence yet — the trust-first case, NOT an
         # error: a brand-new reversible cell is act_with_undo from day one.
         with patch.object(self._graduation(), "evaluate", return_value=None):
-            assert read_cell_state("cos", "polads", "task_create") == "unmeasured"
+            assert read_cell_state("cos", "bakery", "task_create") == "unmeasured"
 
     def test_out_of_vocab_state_fails_closed_to_demote(self):
         # An unknown state must never be trusted — it is a read failure, not a
         # new kind of permission.
         with patch.object(self._graduation(), "evaluate",
                           return_value={"state": "turbo-graduated"}):
-            assert read_cell_state("cos", "polads", "task_create") == "demote"
+            assert read_cell_state("cos", "bakery", "task_create") == "demote"
 
     def test_known_states_pass_through_verbatim(self):
         # The whole _CELL_STATES vocabulary passes through untouched — the
@@ -1647,7 +1661,7 @@ class TestReadCellStateFailClosed:
                       "demote"):
             with patch.object(self._graduation(), "evaluate",
                               return_value={"state": state}):
-                assert read_cell_state("cos", "polads", "task_create") == state
+                assert read_cell_state("cos", "bakery", "task_create") == state
 
     def test_cell_key_composes_single_officer_prefix(self):
         # CANONICAL ACTOR-ID JOIN (germline 2026-07-04): the query composes
@@ -1662,8 +1676,8 @@ class TestReadCellStateFailClosed:
             return {"state": "graduated"}
 
         with patch.object(self._graduation(), "evaluate", new=spy):
-            assert read_cell_state("cos", "polads", "task_create") == "graduated"
-        assert seen["cell"] == ("officer:cos", "polads", "task_create")
+            assert read_cell_state("cos", "bakery", "task_create") == "graduated"
+        assert seen["cell"] == ("officer:cos", "bakery", "task_create")
 
 
 class TestEvalAuthorityMatrix:
@@ -1712,7 +1726,7 @@ class TestEvalAuthorityMatrix:
         result = _eval_authority_matrix(
             pol,
             "mcp__brain__queue_draft",
-            {"recipient": "sean@stepnetwork.dk", "body": "hi", "channel": "teams"},
+            {"recipient": "bo@testburg.example", "body": "hi", "channel": "teams"},
             "cos",
         )
         # internal_comms graduated -> auto_with_veto_window, but stub state is
@@ -1796,7 +1810,7 @@ class TestEvalAuthorityMatrix:
             ("Bash", {"command": "oauth grant token"}, False),
             (
                 "mcp__brain__queue_draft",
-                {"recipient": "sean@stepnetwork.dk", "channel": "teams"},
+                {"recipient": "bo@testburg.example", "channel": "teams"},
                 False,
             ),
             (
@@ -1836,7 +1850,7 @@ class TestEvalAuthorityMatrix:
 
     def test_dispatch_via_evaluate_policy(self):
         """evaluate_policy() routes authority_matrix to the eval. The
-        propose-only probe is deploy_nonprod (earn-up kept, NATE-DECISION
+        propose-only probe is deploy_nonprod (earn-up kept, ADA-DECISION
         2026-07-04) — the old Edit probe now rides the act_with_undo allow
         branch (trust-inversion) and no longer blocks."""
         pol = _load_real_matrix_policy()
@@ -2128,7 +2142,7 @@ class TestResolveGatePosture:
     def test_kernel_absent_is_guardian(self):
         with patch.object(_pe, "_resolve_posture", None):
             assert resolve_gate_posture() == "guardian"
-            assert resolve_gate_posture("polads") == "guardian"
+            assert resolve_gate_posture("bakery") == "guardian"
 
     def test_kernel_exception_is_guardian(self):
         def boom(lane=None):
@@ -2181,7 +2195,7 @@ class TestGuardianGateByteParity:
         # RECONCILE 2026-07-05: kept both — under main's ratified floor a
         # reversible Edit at unmeasured is act_with_undo (allow when the
         # inverse + journal are viable), so the exact-propose-bytes pin moved
-        # to a cell that STILL proposes at unmeasured: deploy_nonprod (NATE
+        # to a cell that STILL proposes at unmeasured: deploy_nonprod (ADA
         # kept it earn-up). The reversible allow is asserted alongside so the
         # trust-inversion semantics stay pinned here too.
         pol = _load_real_matrix_policy()
@@ -2341,7 +2355,7 @@ class TestSovereignNonCeilingRouting:
             result = _eval_authority_matrix(
                 pol,
                 "mcp__brain__queue_draft",
-                {"recipient": "sean@stepnetwork.dk", "body": "hi", "channel": "teams"},
+                {"recipient": "bo@testburg.example", "body": "hi", "channel": "teams"},
                 "cos",
             )
         assert result is None  # notify_after is an ALLOW at the gate
@@ -2361,7 +2375,7 @@ class TestSovereignNonCeilingRouting:
             result = _eval_authority_matrix(
                 pol,
                 "mcp__brain__queue_draft",
-                {"recipient": "sean@stepnetwork.dk", "body": "hi", "channel": "teams"},
+                {"recipient": "bo@testburg.example", "body": "hi", "channel": "teams"},
                 "cos",
             )
         assert result is None  # the tell is best-effort, never blocks the allow
@@ -2372,7 +2386,7 @@ class TestSovereignNonCeilingRouting:
             result = _eval_authority_matrix(
                 pol,
                 "mcp__brain__queue_draft",
-                {"recipient": "sean@stepnetwork.dk", "body": "hi", "channel": "teams"},
+                {"recipient": "bo@testburg.example", "body": "hi", "channel": "teams"},
                 "cos",
             )
         assert result is not None  # guardian: propose_only, unchanged
@@ -2411,7 +2425,7 @@ class TestStandingGrantResolutionHelper:
         fake_n = _FakeNeeds(nid="NEED-feedbeef")
         with patch.object(_pe, "_grants", fake_g), patch.object(_pe, "_needs", fake_n):
             res = standing_grant_resolution(
-                "deploy_prod", "git_push_main", lane="polads", act=False
+                "deploy_prod", "git_push_main", lane="bakery", act=False
             )
         assert res["granted"] is False
         assert res["need_id"] == "NEED-feedbeef"
@@ -2696,7 +2710,7 @@ class TestEarnUpPostureSelection:
     def test_earn_up_passes_through_gate_posture(self):
         with _earn_up():
             assert resolve_gate_posture() == "earn_up"
-            assert resolve_gate_posture("polads") == "earn_up"
+            assert resolve_gate_posture("bakery") == "earn_up"
 
     def test_earn_up_table_sweep_all_non_ceiling_propose(self):
         """The frozen static floor: EVERY non-ceiling class propose_only at
@@ -2817,7 +2831,7 @@ class TestEarnUpLadderOverlay:
                 patch("framework.events.emitter.emit") as m_emit:
             result = _eval_authority_matrix(
                 pol, "mcp__brain__queue_draft",
-                {"recipient": "sean@stepnetwork.dk", "body": "hi",
+                {"recipient": "bo@testburg.example", "body": "hi",
                  "channel": "teams"},
                 "cos",
             )
@@ -2890,11 +2904,11 @@ class TestEarnUpLadderOverlay:
                     "propose_only", "classifier", "god-mode", 7, None):
             with patch("framework.learning.trust_ladder.rung_verdict_lift",
                        new=lambda lane=None, _v=bad, **kw: _v):
-                assert _pe._earn_up_rung_lift("polads") is None, bad
+                assert _pe._earn_up_rung_lift("bakery") is None, bad
         for ok in ("auto_with_veto_window", "notify_after", "auto"):
             with patch("framework.learning.trust_ladder.rung_verdict_lift",
                        new=lambda lane=None, _v=ok, **kw: _v):
-                assert _pe._earn_up_rung_lift("polads") == ok
+                assert _pe._earn_up_rung_lift("bakery") == ok
 
     def test_guardian_and_sovereign_never_enter_the_overlay(self):
         """The overlay branch requires posture==earn_up: a wide-open lift must
@@ -2905,7 +2919,7 @@ class TestEarnUpLadderOverlay:
                              lambda officer, lane, action_type: "graduated"), \
                 patch("framework.events.emitter.emit"):
             # guardian: deploy_nonprod@graduated -> classifier -> collapses to
-            # propose (NATE-DECISION 2026-07-04) — a wide-open lift changing
+            # propose (ADA-DECISION 2026-07-04) — a wide-open lift changing
             # this to allow would prove the overlay leaked out of earn_up.
             guardian_result = _eval_authority_matrix(
                 pol, "Bash", {"command": "git push origin feature/x"}, "cto"
@@ -2952,7 +2966,7 @@ class TestEarnUpLadderOverlay:
                 ):
                     result = _eval_authority_matrix(
                         pol, "mcp__brain__queue_draft",
-                        {"recipient": "sean@stepnetwork.dk", "body": "hi",
+                        {"recipient": "bo@testburg.example", "body": "hi",
                          "channel": "teams"},
                         "cos",
                     )
@@ -2996,7 +3010,7 @@ class TestEarnUpLadderOverlay:
                 ):
                     result = _eval_authority_matrix(
                         pol, "mcp__brain__queue_draft",
-                        {"recipient": "sean@stepnetwork.dk", "body": "hi",
+                        {"recipient": "bo@testburg.example", "body": "hi",
                          "channel": "teams"},
                         "cos",
                     )
@@ -3029,7 +3043,7 @@ class TestEarnUpLadderOverlay:
                 ):
                     result = _eval_authority_matrix(
                         pol, "mcp__brain__queue_draft",
-                        {"recipient": "sean@stepnetwork.dk", "body": "hi",
+                        {"recipient": "bo@testburg.example", "body": "hi",
                          "channel": "teams"},
                         "cos",
                     )

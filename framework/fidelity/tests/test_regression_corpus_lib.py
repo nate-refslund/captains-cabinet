@@ -44,7 +44,7 @@ def _row(**over):
     base = {
         "ts": "2026-07-03T20:43:15Z",
         "actor": {"kind": "officer", "id": "officer:cos"},
-        "lane": "nate",
+        "lane": "ada",
         "action": "action-card",
         "subject": "subj-default",
         "refs": [],
@@ -179,7 +179,7 @@ def test_case_shape_situation_verdict_cell():
     # sentinel for the missing action_type).
     assert case["cell"] == {
         "actor": "officer:officer:cos",
-        "lane": "nate",
+        "lane": "ada",
         "action_type": UNSTAMPED_ACTION_TYPE,
     }
     # situation is a replay REFERENCE — no draft content fields exist.

@@ -17,7 +17,7 @@ DATE = "2026-07-04"
 def _jrow(pid="pid-a", jid="j-1", *, status="executed", canary=False,
           executed_at="2026-07-04T08:00:00Z", ttl="2026-07-06T08:00:00Z", **over):
     row = {"jid": jid, "ts": executed_at, "pid": pid, "step": 0,
-           "kind": "monday_task_create", "backend": "monday", "lane": "polads",
+           "kind": "monday_task_create", "backend": "monday", "lane": "bakery",
            "subject": "subj", "actor": {"kind": "officer", "id": "officer:cos"},
            "action_type": "task_create", "status": status, "canary": canary,
            "created": {"monday_id": "555", "board_id": "9"},
@@ -292,7 +292,7 @@ def test_digest_manifest_binds_undo_by_index_in_binder():
 # --- 📈 LOOP readout (lane instrument, 2026-07-05) ----------------------------------
 
 def _lrow(ts, *, action_type="task_create", required=True, decision=None,
-          verdict=None, source=None, lane="polads", subject="s"):
+          verdict=None, source=None, lane="bakery", subject="s"):
     """A consequence-ledger row for the readout math (proposal/review channels
     only — the readout never touches outcome.status)."""
     ev = {"ts": ts, "actor": {"kind": "officer", "id": "officer:cos"},

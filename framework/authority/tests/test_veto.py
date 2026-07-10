@@ -171,7 +171,7 @@ def emitter():
 def _payload():
     return {
         "officer": "cos",
-        "recipient": "Sean",
+        "recipient": "Bo",
         "body": "Confirming the booking automation ships today.",
         "action_type": "internal_message",
         "lane": "ops",
@@ -220,7 +220,7 @@ def test_notify_composes_message_and_does_not_send(redis, clock, backend):
     assert draft_id in msg
     assert "kill" in msg.lower()
     assert "7" in msg
-    assert "Sean" in msg
+    assert "Bo" in msg
     # composing a notice must never fire the backend
     assert backend.calls == []
 
@@ -244,7 +244,7 @@ def test_scan_sends_after_send_at_via_backend(redis, clock, backend):
     sent = V.scan_and_send(clock(), redis=redis, send_backend=backend)
     assert sent == [draft_id]
     assert len(backend.calls) == 1
-    assert backend.calls[0]["recipient"] == "Sean"
+    assert backend.calls[0]["recipient"] == "Bo"
     assert redis.xlen(V.VETO_STREAM) == 0
     # the sent marker is durable
     assert redis.exists(V.sent_marker_key(draft_id))
@@ -343,7 +343,7 @@ def test_backend_failure_dead_letters_not_silent_drop(redis, clock):
 def test_backend_failure_one_bad_does_not_block_good(redis, clock):
     """A failing send for one draft must not prevent a sibling good send in the
     same scan — partial failure is isolated."""
-    sometimes = _SelectiveBackend(fail_recipients={"Sean"})
+    sometimes = _SelectiveBackend(fail_recipients={"Bo"})
     good_payload = {**_payload(), "recipient": "Lisa"}
     bad_id = V.enqueue_veto("cos", "ops", "internal_message", _payload(),
                             window_minutes=7, redis=redis, clock=clock)

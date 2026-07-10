@@ -45,8 +45,8 @@ def grant_row(**over):
         "deployment": "main",
         "risk_class": "external_comms",
         "action_types": ["external_email"],
-        "lanes": ["polads"],
-        "scope": {"recipient_allowlist": ["*@stepnetwork.dk"],
+        "lanes": ["bakery"],
+        "scope": {"recipient_allowlist": ["*@testburg.example"],
                   "max_eur_per_day": 0, "vendor_allowlist": []},
         "rate": {"max_per_day": 10},
         "expires": "2026-08-01T00:00:00Z",
@@ -84,7 +84,7 @@ def write_posture(root: Path, flavor="org", never_grant=None) -> Path:
 
 
 def check(**over):
-    kw = dict(lane="polads", now=NOW, context={"recipient": "x@stepnetwork.dk"},
+    kw = dict(lane="bakery", now=NOW, context={"recipient": "x@testburg.example"},
               grants=[grant_row()], redis_get=REDIS_EMPTY,
               is_vetoed_fn=NOT_VETOED, file_needs=False)
     kw.update(over)
@@ -275,9 +275,9 @@ def test_check_non_ceiling_class_never_grants():
 
 @pytest.mark.parametrize("kw", [
     dict(action_type="external_teams"),
-    dict(lane="stephie"),
+    dict(lane="newsletter"),
     dict(lane=None),
-    dict(grants=[grant_row(deployment="mini-polads")]),
+    dict(grants=[grant_row(deployment="mini-bakery")]),
     dict(grants=[grant_row(revoked=True)]),
     dict(now="2026-08-02T00:00:00Z"),                       # past expires
     dict(context={"recipient": "x@evil.com"}),              # allowlist miss
@@ -363,9 +363,9 @@ def test_check_vendor_hard_scope():
 def test_check_loads_from_locked_file(tmp_path):
     write_posture(tmp_path)
     write_grants(tmp_path, [grant_row()])
-    res = G.check("external_comms", "external_email", lane="polads",
+    res = G.check("external_comms", "external_email", lane="bakery",
                   root=tmp_path, now=NOW,
-                  context={"recipient": "a@stepnetwork.dk"},
+                  context={"recipient": "a@testburg.example"},
                   is_locked_fn=LOCKED, redis_get=REDIS_EMPTY,
                   is_vetoed_fn=NOT_VETOED)
     assert res["granted"] is True and res["grant_id"] == "GRANT-test1"
@@ -376,12 +376,12 @@ def test_check_loads_from_locked_file(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_covers_matches_without_act_time_data():
-    res = G.covers("external_comms", "external_email", lane="polads",
+    res = G.covers("external_comms", "external_email", lane="bakery",
                    now=NOW, grants=[grant_row()], redis_get=REDIS_EMPTY,
                    is_vetoed_fn=NOT_VETOED)
     assert res["granted"] is True and res["grant_id"] == "GRANT-test1"
     # …but still refuses a revoked/expired grant.
-    gone = G.covers("external_comms", "external_email", lane="polads",
+    gone = G.covers("external_comms", "external_email", lane="bakery",
                     now=NOW, grants=[grant_row(revoked=True)],
                     redis_get=REDIS_EMPTY, is_vetoed_fn=NOT_VETOED)
     assert gone["granted"] is False

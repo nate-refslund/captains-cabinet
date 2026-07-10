@@ -194,8 +194,8 @@ class TestEnqueueDrainAck:
 # ---------------------------------------------------------------------------
 class TestInjectionScreen:
     def test_clean_text_untouched(self):
-        cleaned, hits = intake.screen_text("PolAds invoice 42 needs review")
-        assert cleaned == "PolAds invoice 42 needs review"
+        cleaned, hits = intake.screen_text("Bakery invoice 42 needs review")
+        assert cleaned == "Bakery invoice 42 needs review"
         assert hits == []
 
     def test_invisible_chars_always_stripped(self):

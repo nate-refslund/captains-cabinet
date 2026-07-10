@@ -46,7 +46,7 @@ agents:
   cos:
     mcps: [notion, library, telegram, brain]
     rationale: coordination
-  polads-ceo:
+  bakery-ceo:
     mcps: [neon, vercel, brain]
 """
 
@@ -82,8 +82,8 @@ def test_scope_diff_already_in_scope(tmp_path):
 def test_scope_diff_multiple_officers_partial(tmp_path):
     root = _write_scope(tmp_path, _SCOPE_BODY)
     # brain present for both; make missing for both -> only make surfaces.
-    diff = compute_scope_diff("make", ["cos", "polads-ceo"], cabinet_root=root)
-    assert set(diff["officers_missing"]) == {"cos", "polads-ceo"}
+    diff = compute_scope_diff("make", ["cos", "bakery-ceo"], cabinet_root=root)
+    assert set(diff["officers_missing"]) == {"cos", "bakery-ceo"}
 
 
 def test_scope_diff_unreadable_degrades_not_silent(tmp_path):

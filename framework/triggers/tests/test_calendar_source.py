@@ -33,7 +33,7 @@ def triggers_file(tmp_path, monkeypatch):
     return f
 
 
-def _event(uid="E1", title="PolAds scrum", start="2026-07-09T09:00:00Z"):
+def _event(uid="E1", title="Bakery scrum", start="2026-07-09T09:00:00Z"):
     return {"uid": uid, "title": title, "start": start,
             "end": "2026-07-09T09:30:00Z", "calendar": "Work"}
 
@@ -54,7 +54,7 @@ class TestCalendarToIntake:
         item = enq[0]
         assert item["source"] == "calendar-intake"
         assert item["kind"] == "calendar-upcoming"
-        assert "PolAds scrum" in item["payload"]["summary"]
+        assert "Bakery scrum" in item["payload"]["summary"]
         # second tick: same event → deduped
         s2 = _tick([_event()], state_file, enq)
         assert s2["enqueued"] == 0 and len(enq) == 1
@@ -96,7 +96,7 @@ class TestCalendarToIntake:
 class TestOnEventConsumer:
     def test_uid_and_title_matching_fire_once(self, state_file, triggers_file):
         t1 = reg.register_trigger(kind="on-event", label="scrum prep",
-                                  event_key="calendar:polads",
+                                  event_key="calendar:bakery",
                                   payload={"about": "prep board"})
         enq = []
         s = _tick([_event()], state_file, enq)

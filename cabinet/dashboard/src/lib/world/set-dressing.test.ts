@@ -33,7 +33,7 @@ const MANIFEST_PATH = path.resolve(
 )
 
 describe('per-desk personalization', () => {
-  const slugs = ['cos', 'polads-ceo', 'stephie-ceo', 'comms-officer', 'cto', 'coo']
+  const slugs = ['cos', 'bakery-ceo', 'newsletter-ceo', 'comms-officer', 'cto', 'coo']
 
   it('lamp variant is deterministic and inside the 141–146 set', () => {
     for (const slug of slugs) {

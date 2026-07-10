@@ -37,7 +37,7 @@ def _hermetic_undo(tmp_path, monkeypatch):
 
 
 def _store(steps, **extra):
-    rec = {"lane": "polads", "steps": steps, **extra}
+    rec = {"lane": "bakery", "steps": steps, **extra}
     return lambda k: json.dumps(rec) if k.startswith("cabinet:action:") else ""
 
 
@@ -59,7 +59,7 @@ def test_create_task_executes_and_reports():
     spy = MondaySpy()
     r = ax.deliver_action(
         "pid1", redis_get=_store([{"kind": "monday_task_create",
-                                   "payload": {"board_id": "5091706356",
+                                   "payload": {"board_id": "42424242",
                                                "title": "Ship VIES autofill",
                                                "description": "from scrum"}}]),
         monday_post=spy, osascript=lambda c: "ok")
@@ -73,7 +73,7 @@ def test_update_task_label_based_writes():
     r = ax.deliver_action(
         "pid2", redis_get=_store([{"kind": "monday_task_update",
                                    "payload": {"monday_id": "999",
-                                               "board_id": "5091706356",
+                                               "board_id": "42424242",
                                                "set": {"status": "Done"},
                                                "why": "shipped in scrum"}}]),
         monday_post=spy, osascript=lambda c: "ok")
@@ -246,7 +246,7 @@ def test_write_ahead_journal_exists_before_mutation():
         return {"create_update": {"id": "u9"}}
     r = ax.deliver_action(
         "pidw", redis_get=_store([{"kind": "monday_task_create",
-                                   "payload": {"board_id": "5091706356", "title": "t",
+                                   "payload": {"board_id": "42424242", "title": "t",
                                                "description": "d"}}], cid="a" * 32),
         monday_post=monday, osascript=lambda c: "ok")
     assert r["ok"] is True
@@ -257,7 +257,7 @@ def test_write_ahead_journal_exists_before_mutation():
     assert len(final) == 1 and final[0]["executed_at"]
     assert final[0]["created"]["monday_id"] == "77"
     assert final[0]["inverse"] == {"op": "monday_archive_item",
-                                   "args": {"item_id": "77", "board_id": "5091706356",
+                                   "args": {"item_id": "77", "board_id": "42424242",
                                             "update_id": "u9"}}
 
 
@@ -327,8 +327,8 @@ def _surfaces(denylist=None, per_kind=20, estate=40):
     the Deals board outright (whole-board) and gates the Tasks board's UPDATE
     path (mirrors the live cascade_gated posture)."""
     if denylist is None:
-        denylist = {"1623368485": None,                      # whole board denied
-                    "5091706356": {"monday_task_update"}}    # update path gated
+        denylist = {"42424244": None,                      # whole board denied
+                    "42424242": {"monday_task_update"}}    # update path gated
     return {"denylist": denylist,
             "caps": {"per_kind_per_day": per_kind, "estate_per_day": estate}}
 
@@ -339,7 +339,7 @@ def _ks_getter(steps, ks="", counts=None, stamp=True, **extra):
     stamp by default — the TI-3 gate always stamps at store time, and the
     act-first path REQUIRES it (stamp=False exercises the refusal). ``extra``
     adds further record fields (subject / evidence — the _store_action shape)."""
-    body = {"lane": "polads", "steps": steps, **extra}
+    body = {"lane": "bakery", "steps": steps, **extra}
     if stamp:
         body["steps_sha256"] = ax._canonical_sha(steps)
     rec = json.dumps(body)
@@ -364,7 +364,7 @@ def test_provenance_banner_prefixes_created_title():
     spy = MondaySpy()
     ax.deliver_action(
         "pb1", redis_get=_store([{"kind": "monday_task_create",
-                                  "payload": {"board_id": "5091706356",
+                                  "payload": {"board_id": "42424242",
                                               "title": "Ship VIES autofill"}}]),
         monday_post=spy, osascript=lambda c: "ok")
     _, variables = spy.calls[0]
@@ -381,28 +381,28 @@ def test_apply_banner_is_idempotent():
 def test_strip_mentions_neutralizes_tokens_keeps_email():
     """[RT-A8] @-mention / user-id tokens are stripped (the sigil dropped) while a
     genuine email address is left intact."""
-    assert ax._strip_mentions("ping @Kristoffer now") == "ping Kristoffer now"
+    assert ax._strip_mentions("ping @Casper now") == "ping Casper now"
     assert ax._strip_mentions("cc @[AdOps Team] pls") == "cc AdOps Team pls"
-    assert ax._strip_mentions("mail oliver@step.dk") == "mail oliver@step.dk"
+    assert ax._strip_mentions("mail bo@testburg.example") == "mail bo@testburg.example"
 
 
 def test_mentions_stripped_in_created_body():
     spy = MondaySpy()
     ax.deliver_action(
         "pm1", redis_get=_store([{"kind": "monday_task_create",
-                                  "payload": {"board_id": "5091706356", "title": "t",
-                                              "description": "review with @Kristoffer"}}]),
+                                  "payload": {"board_id": "42424242", "title": "t",
+                                              "description": "review with @Casper"}}]),
         monday_post=spy, osascript=lambda c: "ok")
     # the create_update body is the 2nd call; assert no @-mention token survives
     body = spy.calls[1][1]["body"]
-    assert "@Kristoffer" not in body and "Kristoffer" in body
+    assert "@Casper" not in body and "Casper" in body
 
 
 def test_mentions_stripped_in_update_note():
     spy = MondaySpy()
     ax.deliver_action(
         "pm2", redis_get=_store([{"kind": "monday_task_update",
-                                  "payload": {"monday_id": "9", "board_id": "5091706356",
+                                  "payload": {"monday_id": "9", "board_id": "42424242",
                                               "set": {"status": "Done"},
                                               "why": "done, thanks @team"}}]),
         monday_post=spy, osascript=lambda c: "ok")
@@ -564,7 +564,7 @@ def test_killswitch_active_halts_execution():
     spy = MondaySpy()
     r = ax.deliver_action(
         "pk1", redis_get=_ks_getter(
-            [{"kind": "monday_task_create", "payload": {"board_id": "5091706356",
+            [{"kind": "monday_task_create", "payload": {"board_id": "42424242",
                                                         "title": "t"}}], ks="active"),
         monday_post=spy, osascript=lambda c: "ok")
     assert r["ok"] is False and r["halted"] == "killswitch"
@@ -576,8 +576,8 @@ def test_killswitch_unreachable_redis_halts():
     def g(k):
         if k == "cabinet:killswitch":
             raise ConnectionError("redis down")
-        return json.dumps({"lane": "polads", "steps": [
-            {"kind": "monday_task_create", "payload": {"board_id": "5091706356",
+        return json.dumps({"lane": "bakery", "steps": [
+            {"kind": "monday_task_create", "payload": {"board_id": "42424242",
                                                        "title": "t"}}]})
     r = ax.deliver_action("pk2", redis_get=g, monday_post=MondaySpy(),
                           osascript=lambda c: "ok")
@@ -597,9 +597,9 @@ def test_killswitch_state_unit():
 def test_toctou_record_fingerprint_mismatch_refuses():
     """A steps fingerprint stamped at card time that no longer matches the stored
     steps ⇒ refuse (a payload swapped in cabinet:action:<pid> never runs)."""
-    steps = [{"kind": "monday_task_create", "payload": {"board_id": "5091706356",
+    steps = [{"kind": "monday_task_create", "payload": {"board_id": "42424242",
                                                         "title": "t"}}]
-    rec = {"lane": "polads", "steps": steps, "steps_sha256": "deadbeef"}
+    rec = {"lane": "bakery", "steps": steps, "steps_sha256": "deadbeef"}
     spy = MondaySpy()
     r = ax.deliver_action(
         "pt1", redis_get=lambda k: json.dumps(rec) if k.startswith("cabinet:action:") else "",
@@ -609,9 +609,9 @@ def test_toctou_record_fingerprint_mismatch_refuses():
 
 
 def test_toctou_record_fingerprint_match_proceeds():
-    steps = [{"kind": "monday_task_create", "payload": {"board_id": "5091706356",
+    steps = [{"kind": "monday_task_create", "payload": {"board_id": "42424242",
                                                         "title": "t"}}]
-    rec = {"lane": "polads", "steps": steps, "steps_sha256": ax._canonical_sha(steps)}
+    rec = {"lane": "bakery", "steps": steps, "steps_sha256": ax._canonical_sha(steps)}
     r = ax.deliver_action(
         "pt2", redis_get=lambda k: json.dumps(rec) if k.startswith("cabinet:action:") else "",
         monday_post=MondaySpy(), osascript=lambda c: "ok")
@@ -654,20 +654,20 @@ def test_act_first_allowed_board_create_executes(monkeypatch):
     r = ax.deliver_action(
         "pa1", act_first=True,
         redis_get=_ks_getter([{"kind": "monday_task_create",
-                               "payload": {"board_id": "5091706356", "title": "t"}}]),
+                               "payload": {"board_id": "42424242", "title": "t"}}]),
         monday_post=spy, osascript=lambda c: "ok", redis_incr=lambda k, t: None)
     assert r["ok"] is True and r["executed"][0]["monday_id"] == "12345"
 
 
 def test_act_first_denied_board_downgrades_to_propose_only(monkeypatch):
-    # Deals (1623368485) is whole-board denied in the fixture (cascade-gated
+    # the deals board (42424244) is whole-board denied in the fixture (cascade-gated
     # CRM class) — an act-first create there downgrades, nothing executes.
     monkeypatch.setattr(ax, "_load_act_first_surfaces", lambda: _surfaces())
     spy = MondaySpy()
     r = ax.deliver_action(
         "pa2", act_first=True,
         redis_get=_ks_getter([{"kind": "monday_task_create",
-                               "payload": {"board_id": "1623368485", "title": "t"}}]),
+                               "payload": {"board_id": "42424244", "title": "t"}}]),
         monday_post=spy, osascript=lambda c: "ok", redis_incr=lambda k, t: None)
     assert r["ok"] is False and r["gate"] == "propose_only"
     assert any("Captain-denied" in x for x in r["reasons"])
@@ -682,20 +682,20 @@ def test_act_first_default_allow_unlisted_board_acts(monkeypatch):
     r = ax.deliver_action(
         "pa2b", act_first=True,
         redis_get=_ks_getter([{"kind": "monday_task_create",
-                               "payload": {"board_id": "5096013783", "title": "t"}}]),
+                               "payload": {"board_id": "42424245", "title": "t"}}]),
         monday_post=spy, osascript=lambda c: "ok", redis_incr=lambda k, t: None)
     assert r["ok"] is True and r["executed"][0]["monday_id"] == "12345"
 
 
 def test_act_first_update_on_gated_update_path_downgrades(monkeypatch):
-    """Board 5091706356's UPDATE path is cascade-gated (unidentified
+    """Board 42424242's UPDATE path is cascade-gated (unidentified
     change_column_value webhook) — an act-first update there downgrades while
     creates act freely."""
     monkeypatch.setattr(ax, "_load_act_first_surfaces", lambda: _surfaces())
     r = ax.deliver_action(
         "pa3", act_first=True,
         redis_get=_ks_getter([{"kind": "monday_task_update",
-                               "payload": {"monday_id": "9", "board_id": "5091706356",
+                               "payload": {"monday_id": "9", "board_id": "42424242",
                                            "set": {"status": "Done"}}}]),
         monday_post=MondaySpy(), osascript=lambda c: "ok", redis_incr=lambda k, t: None)
     assert r["ok"] is False and r["gate"] == "propose_only"
@@ -708,7 +708,7 @@ def test_approved_path_ignores_act_first_perimeter(monkeypatch):
     spy = MondaySpy()
     r = ax.deliver_action(
         "pa4", redis_get=_store([{"kind": "monday_task_create",
-                                  "payload": {"board_id": "1623368485",
+                                  "payload": {"board_id": "42424244",
                                               "title": "http://x.example approved"}}]),
         monday_post=spy, osascript=lambda c: "ok")
     assert r["ok"] is True                           # tripwire + board gate not applied
@@ -720,7 +720,7 @@ def test_act_first_tripwire_hit_downgrades(monkeypatch):
     r = ax.deliver_action(
         "pa5", act_first=True,
         redis_get=_ks_getter([{"kind": "monday_task_create",
-                               "payload": {"board_id": "5091706356", "title": "t",
+                               "payload": {"board_id": "42424242", "title": "t",
                                            "description": "wire to DK5000400440116243"}}]),
         monday_post=spy, osascript=lambda c: "ok", redis_incr=lambda k, t: None)
     assert r["ok"] is False and r["gate"] == "propose_only"
@@ -741,7 +741,7 @@ def test_act_first_person_key_downgrades(monkeypatch):
     r = ax.deliver_action(
         "pp1", act_first=True,
         redis_get=_ks_getter([{"kind": "monday_task_create",
-                               "payload": {"board_id": "5091706356", "title": "t",
+                               "payload": {"board_id": "42424242", "title": "t",
                                            "assignee": "ceo@rival.com"}}]),
         monday_post=MondaySpy(), osascript=lambda c: "ok", redis_incr=lambda k, t: None)
     assert r["ok"] is False and r["gate"] == "propose_only"
@@ -791,7 +791,7 @@ def test_act_first_caps_downgrade(monkeypatch):
     day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     monkeypatch.setattr(ax, "_load_act_first_surfaces", lambda: _surfaces(estate=40))
     getter = _ks_getter([{"kind": "monday_task_create",
-                          "payload": {"board_id": "5091706356", "title": "t"}}],
+                          "payload": {"board_id": "42424242", "title": "t"}}],
                         counts={"cabinet:actfirst:count:%s:estate" % day: "40"})
     r = ax.deliver_action("pcap", act_first=True, redis_get=getter,
                           monday_post=MondaySpy(), osascript=lambda c: "ok",
@@ -806,7 +806,7 @@ def test_act_first_records_caps_after_execution(monkeypatch):
     r = ax.deliver_action(
         "pcap2", act_first=True,
         redis_get=_ks_getter([{"kind": "monday_task_create",
-                               "payload": {"board_id": "5091706356", "title": "t"}}]),
+                               "payload": {"board_id": "42424242", "title": "t"}}]),
         monday_post=MondaySpy(), osascript=lambda c: "ok",
         redis_incr=lambda k, t: incs.append(k))
     assert r["ok"] is True
@@ -833,20 +833,22 @@ def test_load_surfaces_corrupt_file_gates_everything(monkeypatch, tmp_path):
     bad.write_text("denylist: [unclosed")
     monkeypatch.setattr(ax, "_surfaces_path", lambda: bad)
     surf = ax._load_act_first_surfaces()
-    assert not ax._board_not_denied("5091706356", "monday_task_create", surf["denylist"])
+    assert not ax._board_not_denied("42424242", "monday_task_create", surf["denylist"])
     assert not ax._board_not_denied("9999", "monday_task_create", surf["denylist"])
 
 
 def test_load_surfaces_parses_live_yml():
     """The real instance yml: empty Captain denylist + audit-proven
     cascade_gated boards. Tasks creates act; Tasks updates gated (unidentified
-    webhook); Bookings/Deals denied (email cascades); unlisted boards allowed."""
+    webhook); Bookings/Deals denied (email cascades); unlisted boards allowed.
+    LIVE-COUPLED by design: the board ids below are THIS instance's yml rows
+    (the yml is a live deployment value, transformed at egg export)."""
     surf = ax._load_act_first_surfaces()
     dl = surf["denylist"]
     assert ax._board_not_denied("5091706356", "monday_task_create", dl)
     assert not ax._board_not_denied("5091706356", "monday_task_update", dl)
-    assert not ax._board_not_denied("1549621337", "monday_task_create", dl)  # Bookings→Jannie
-    assert not ax._board_not_denied("1623368485", "monday_task_create", dl)  # Deals CRM
+    assert not ax._board_not_denied("1549621337", "monday_task_create", dl)  # bookings board
+    assert not ax._board_not_denied("1623368485", "monday_task_create", dl)  # deals board
     assert ax._board_not_denied("5096013783", "monday_task_create", dl)      # unlisted → allowed
 
 
@@ -868,7 +870,7 @@ def test_act_first_journal_failure_downgrades_before_mutation(monkeypatch):
     r = ax.deliver_action(
         "pj1", act_first=True,
         redis_get=_ks_getter([{"kind": "monday_task_create",
-                               "payload": {"board_id": "5091706356", "title": "t"}}]),
+                               "payload": {"board_id": "42424242", "title": "t"}}]),
         monday_post=spy, osascript=lambda c: "ok", redis_incr=lambda k, t: None)
     assert r["ok"] is False and r["gate"] == "propose_only"
     assert any("no undo handle" in x for x in r["reasons"])
@@ -894,9 +896,9 @@ def test_act_first_journal_failure_midchain_stops_and_reports(monkeypatch):
         "pj2", act_first=True,
         redis_get=_ks_getter([
             {"kind": "monday_task_create",
-             "payload": {"board_id": "5091706356", "title": "a"}},
+             "payload": {"board_id": "42424242", "title": "a"}},
             {"kind": "monday_task_create",
-             "payload": {"board_id": "5091706356", "title": "b"}}]),
+             "payload": {"board_id": "42424242", "title": "b"}}]),
         monday_post=spy, osascript=lambda c: "ok", redis_incr=lambda k, t: None)
     assert r["ok"] is False and r["gate"] == "propose_only"
     assert len(r["executed"]) == 1                  # step 1 reported
@@ -913,7 +915,7 @@ def test_approved_path_journal_failure_still_delivers(monkeypatch):
     spy = MondaySpy()
     r = ax.deliver_action(
         "pj3", redis_get=_store([{"kind": "monday_task_create",
-                                  "payload": {"board_id": "5091706356", "title": "t"}}]),
+                                  "payload": {"board_id": "42424242", "title": "t"}}]),
         monday_post=spy, osascript=lambda c: "ok")
     assert r["ok"] is True                          # delivery unbroken
     assert r["executed"][0]["monday_id"] == "12345"
@@ -927,7 +929,7 @@ def test_act_first_journal_disabled_downgrades(monkeypatch):
     r = ax.deliver_action(
         "pj4", act_first=True, journal=False,
         redis_get=_ks_getter([{"kind": "monday_task_create",
-                               "payload": {"board_id": "5091706356", "title": "t"}}]),
+                               "payload": {"board_id": "42424242", "title": "t"}}]),
         monday_post=spy, osascript=lambda c: "ok", redis_incr=lambda k, t: None)
     assert r["ok"] is False and r["gate"] == "propose_only"
     assert any("unjournaled" in x for x in r["reasons"])
@@ -1026,7 +1028,7 @@ def test_load_surfaces_missing_denylist_key_gates_everything(monkeypatch, tmp_pa
     p = _write_surfaces(tmp_path, "version: 1\ncascade_gated: []\n")
     monkeypatch.setattr(ax, "_surfaces_path", lambda: p)
     dl = ax._load_act_first_surfaces()["denylist"]
-    assert not ax._board_not_denied("5091706356", "monday_task_create", dl)
+    assert not ax._board_not_denied("42424242", "monday_task_create", dl)
     assert not ax._board_not_denied("9999", "monday_task_create", dl)
 
 
@@ -1036,7 +1038,7 @@ def test_load_surfaces_missing_cascade_gated_key_gates_everything(monkeypatch, t
     p = _write_surfaces(tmp_path, "version: 1\ndenylist: []\n")
     monkeypatch.setattr(ax, "_surfaces_path", lambda: p)
     dl = ax._load_act_first_surfaces()["denylist"]
-    assert not ax._board_not_denied("1549621337", "monday_task_create", dl)
+    assert not ax._board_not_denied("42424243", "monday_task_create", dl)
     assert not ax._board_not_denied("9999", "monday_task_create", dl)
 
 
@@ -1047,10 +1049,10 @@ def test_load_surfaces_mangled_board_id_gates_everything(monkeypatch, tmp_path):
     for section in ("denylist", "cascade_gated"):
         other = "cascade_gated" if section == "denylist" else "denylist"
         p = _write_surfaces(
-            tmp_path, "%s: []\n%s:\n  - board_id: \"15496x1337\"\n" % (other, section))
+            tmp_path, "%s: []\n%s:\n  - board_id: \"4242x4243\"\n" % (other, section))
         monkeypatch.setattr(ax, "_surfaces_path", lambda _p=p: _p)
         dl = ax._load_act_first_surfaces()["denylist"]
-        assert not ax._board_not_denied("1549621337", "monday_task_create", dl), section
+        assert not ax._board_not_denied("42424243", "monday_task_create", dl), section
         assert not ax._board_not_denied("9999", "monday_task_create", dl), section
 
 
@@ -1146,7 +1148,7 @@ def test_mission_propose_never_acts_first(monkeypatch):
     r = ax.deliver_action(
         "pi4", act_first=True,
         redis_get=_ks_getter([
-            {"kind": "monday_task_create", "payload": {"board_id": "5091706356",
+            {"kind": "monday_task_create", "payload": {"board_id": "42424242",
                                                        "title": "t"}},
             {"kind": "mission_propose", "payload": {"direction": "d", "mission": "m",
                                                     "why_now": "w",
@@ -1175,7 +1177,7 @@ def test_per_step_gated_delivery_holds_delegate(monkeypatch):
     r = ax.deliver_action(
         "pi5", act_first=True,
         redis_get=_ks_getter([
-            {"kind": "monday_task_create", "payload": {"board_id": "5091706356",
+            {"kind": "monday_task_create", "payload": {"board_id": "42424242",
                                                        "title": "t"}},
             {"kind": "delegate_work", "payload": {"officer": "cos", "brief": "do"}},
         ]),
@@ -1216,7 +1218,7 @@ def test_act_first_requires_steps_sha_stamp(monkeypatch):
                                                           "estate_per_day": 40}})
     spy = MondaySpy()
     steps = [{"kind": "monday_task_create",
-              "payload": {"board_id": "5091706356", "title": "t"}}]
+              "payload": {"board_id": "42424242", "title": "t"}}]
     # act-first + no stamp -> refused, nothing executed
     r = ax.deliver_action("pt1", act_first=True,
                           redis_get=_store(steps),
@@ -1242,9 +1244,9 @@ def test_act_first_requires_steps_sha_stamp(monkeypatch):
 
 def _recard_rec():
     steps = [{"kind": "monday_task_update", "title": "move to Done",
-              "payload": {"board_id": "5091706356", "monday_id": "42",
+              "payload": {"board_id": "42424242", "monday_id": "42",
                           "set": {"status": "Done"}}}]
-    return {"cid": "oldcid", "lane": "polads", "subject": "close cmt",
+    return {"cid": "oldcid", "lane": "bakery", "subject": "close cmt",
             "situation": "done in scrum", "steps": steps,
             "steps_sha256": ax._canonical_sha(steps),
             "evidence": ["6-Commitments/x.md"], "confidence": 0.95,
@@ -1291,7 +1293,7 @@ def test_recard_edited_reproposes_fresh_card(monkeypatch):
     assert key == f"cabinet:action:{new_pid}" and ttl == 604800
     rec = json.loads(payload)
     assert rec["recard_of"] == "OLDPID"
-    assert rec["subject"] == "close cmt" and rec["lane"] == "polads"
+    assert rec["subject"] == "close cmt" and rec["lane"] == "bakery"
     # the correction rides the step's per-kind annotation leg (update -> "why")…
     assert rec["steps"][0]["payload"]["why"] == (
         "[Captain correction]: status should be In Progress, not Done")
@@ -1357,7 +1359,7 @@ def _acted_getter(pid_steps=None):
     """An act-first-shaped stored record with the _store_action fields the
     executor's acted emit consumes (subject + evidence refs)."""
     steps = pid_steps or [{"kind": "monday_task_create",
-                           "payload": {"board_id": "5091706356", "title": "t"}}]
+                           "payload": {"board_id": "42424242", "title": "t"}}]
     return _ks_getter(steps, subject="close cmt",
                       evidence=["6-Commitments/x.md"], cid="c" * 32)
 

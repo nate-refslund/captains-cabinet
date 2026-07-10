@@ -51,7 +51,7 @@ def _session_lines(session_id: str, officer: str = "cos",
     """A minimal but shape-faithful officer session."""
     boot = (f"You are {officer}. Read your role definition at "
             f".claude/agents/{officer}.md and your session start checklist.")
-    prompt2 = "Fix the failing deploy gate for the polads lane"
+    prompt2 = "Fix the failing deploy gate for the bakery lane"
     asst_text = "Decision: I approved the gate fix. Lesson learned: check PATH."
     if secret_in_prompt:
         # Marker-matched so the line ENTERS the digest — the scrub must then

@@ -12,7 +12,7 @@ import {
   pointAlong,
 } from './path'
 
-const SLUGS = ['comms-officer', 'cos', 'polads-ceo', 'stephie-ceo']
+const SLUGS = ['comms-officer', 'cos', 'bakery-ceo', 'newsletter-ceo']
 
 describe('walkable grid', () => {
   const layout = buildLayout(SLUGS)

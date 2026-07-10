@@ -45,7 +45,7 @@ def _no_op_del(_k):
 
 
 def _journal_executed(pid, step, kind, backend, *, created,
-                      payload=None, prestate=None, lane="polads",
+                      payload=None, prestate=None, lane="bakery",
                       subject="thread-x", cid=""):
     """Write one COMMITTED journal row (write-ahead + enrichment collapsed)."""
     row = au.new_row(
@@ -299,7 +299,7 @@ def test_reverse_runs_in_reverse_step_order():
 
 def test_crash_row_reconcilable_never_reexecuted():
     wa = au.new_row(pid="pid6", cid="", step=1, kind="monday_task_create",
-                    backend="monday", lane="polads", subject="s", actor=None,
+                    backend="monday", lane="bakery", subject="s", actor=None,
                     inverse=au.inverse_for("monday_task_create", "monday", {}, {}, {}),
                     executed_at=None)                # write-ahead only — the mutation never returned
     au.journal_step(wa)
@@ -349,7 +349,7 @@ def test_acted_event_unknown_outcome_never_pending_and_validates():
     from framework.acting import loop
     from framework.fidelity.consequence import validate_consequence
     row = au.new_row(pid="p", cid="b" * 32, step=1, kind="monday_task_update",
-                     backend="monday", lane="polads", subject="thread-x",
+                     backend="monday", lane="bakery", subject="thread-x",
                      actor={"kind": "officer", "id": "officer:cos"},
                      created={"note_update_id": None}, executed_at=au._now())
     ev = au.acted_event({"kind": "monday_task_update", "title": "t"}, row)
@@ -364,7 +364,7 @@ def test_acted_event_action_type_stamped_or_absent():
     from framework.acting import loop
     # [GERM-2] a create is a live enum member now — the acted event carries it.
     row = au.new_row(pid="p2", cid="", step=1, kind="monday_task_create",
-                     backend="monday", lane="polads", subject="s", actor=None,
+                     backend="monday", lane="bakery", subject="s", actor=None,
                      executed_at=au._now())
     ev = au.acted_event(None, row)
     assert ev["action_type"] == "task_create"
@@ -372,7 +372,7 @@ def test_acted_event_action_type_stamped_or_absent():
     # The original invariant survives: an UNMAPPED kind stays ABSENT — never a
     # literal null and never a fabricated stamp.
     row2 = au.new_row(pid="p3", cid="", step=1, kind="future_kind",
-                      backend="monday", lane="polads", subject="s", actor=None,
+                      backend="monday", lane="bakery", subject="s", actor=None,
                       executed_at=au._now())
     ev2 = au.acted_event(None, row2)
     assert "action_type" not in ev2
@@ -431,7 +431,7 @@ def test_deliver_then_reverse_end_to_end(monkeypatch):
     from the journal alone — archive, never delete."""
     from framework.frontdoor import action_exec as ax
     monkeypatch.setattr(ax, "_redis", lambda *a, **k: "")
-    rec = {"lane": "polads", "subject": "s", "cid": "c" * 32,
+    rec = {"lane": "bakery", "subject": "s", "cid": "c" * 32,
            "steps": [{"kind": "monday_task_create",
                       "payload": {"board_id": "9", "title": "t", "description": "d"}}]}
     ax.deliver_action("pidI", redis_get=lambda k: json.dumps(rec),

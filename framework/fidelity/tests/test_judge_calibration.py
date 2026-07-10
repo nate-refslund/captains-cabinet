@@ -49,7 +49,7 @@ def _vrow(subject, verdict, source, ts, action="fidelity-case-scored", sim=False
     row = {
         "ts": ts,
         "actor": {"kind": "officer", "id": "officer:cos"},
-        "lane": "polads",
+        "lane": "bakery",
         "action": action,
         "subject": subject,
         "refs": [subject],

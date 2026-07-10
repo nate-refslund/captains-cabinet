@@ -88,7 +88,7 @@ def test_preset_never_grant_defaults_empty(name):
 
 def test_personal_preset_documents_the_external_comms_choice():
     """The never_grant comment carries the captain's [external_comms] example
-    (Nate's ACT-AND-DRAFT policy) — instance-scoped, never flavor-structural."""
+    (Ada's ACT-AND-DRAFT policy) — instance-scoped, never flavor-structural."""
     text = (PRESET_DIR / "personal-macbook.yml").read_text()
     assert "never_grant: [external_comms]" in text
 

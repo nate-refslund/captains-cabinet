@@ -46,7 +46,7 @@ class TestAdmissionPrototypeParity(unittest.TestCase):
             (item("reschedule scrum", ["calendar_event_create"]), "org"),
             (item("board sync + tell",
                   ["monday_task_update", "internal_comms"]), "org"),
-            (item("reply to TV2 DPA counsel", ["external_send"],
+            (item("reply to Kanal9 contract counsel", ["external_send"],
                   harm_at=(NOW + timedelta(hours=20)).isoformat(),
                   harm_class="external_deadline", blocked_leverage=3),
              "decisions"),
@@ -63,7 +63,7 @@ class TestAdmissionPrototypeParity(unittest.TestCase):
 
     def test_overflow_ranking(self):
         decisions = [
-            item("reply to TV2 DPA counsel", ["external_send"],
+            item("reply to Kanal9 contract counsel", ["external_send"],
                  harm_at=(NOW + timedelta(hours=20)).isoformat(),
                  harm_class="external_deadline", blocked_leverage=3,
                  created_ts=(NOW - timedelta(days=1)).isoformat()),
@@ -76,7 +76,7 @@ class TestAdmissionPrototypeParity(unittest.TestCase):
         rendered, overflow = q.render_room(decisions, NOW, cap=7)
         self.assertEqual(len(rendered), 7)
         self.assertEqual(len(overflow), 3)
-        self.assertTrue(rendered[0]["subject"].startswith("reply to TV2"),
+        self.assertTrue(rendered[0]["subject"].startswith("reply to Kanal9"),
                         "nearest external deadline must rank first")
 
 
@@ -141,7 +141,7 @@ class TestH5DemoteWiring(unittest.TestCase):
 
 def _sit(key="sit-1", **kw):
     base = {"key": key, "aliases": [key], "refs": ["cmt-aaaaaaaaaaaa"],
-            "subject": "test situation", "lane": "polads", "state": "pending",
+            "subject": "test situation", "lane": "bakery", "state": "pending",
             "live": True, "demotions": 0, "open_pids": ["cos|action-card|t|ts"],
             "pid": "cos|action-card|t|ts", "created_ts": "2026-07-09T09:00:00Z",
             "last_ts": "2026-07-09T09:00:00Z",
@@ -236,7 +236,7 @@ class TestBuildQueue(unittest.TestCase):
     def test_needs_and_t2_adapt(self):
         need = {"id": "NEED-ab12cd34", "kind": "standing_grant",
                 "risk_class": "spend", "action_type": "purchase",
-                "lane": "polads", "status": "open", "why": "provision plausible",
+                "lane": "bakery", "status": "open", "why": "provision plausible",
                 "cost_of_delay": "blocking", "filed_by": "officer:cro",
                 "count": 2, "first_seen": "2026-07-08T10:00:00Z",
                 "last_seen": "2026-07-09T10:00:00Z",
@@ -266,8 +266,8 @@ class TestBuildQueue(unittest.TestCase):
 class TestProjections(unittest.TestCase):
     def _queue(self):
         view = {"sit-1": _sit(
-            refs=["cmt-aaaaaaaaaaaa", "3-people/kristoffer/intel.md",
-                  "https://polads.eu/x"],
+            refs=["cmt-aaaaaaaaaaaa", "3-people/casper/intel.md",
+                  "https://bakery.example.com/x"],
             deadline_iso="2026-07-11T09:00:00Z",
             harm_class="external_deadline")}
         return q.build_queue(
@@ -282,7 +282,7 @@ class TestProjections(unittest.TestCase):
         self.assertEqual(row["what"], "test situation")
         self.assertEqual(row["pid"], "cos|action-card|t|ts")
         self.assertTrue(row["h"].startswith("q"))
-        self.assertIn("3-people/kristoffer/intel.md", row["refs"])
+        self.assertIn("3-people/casper/intel.md", row["refs"])
 
     def test_shared_census_is_pii_scrubbed(self):
         shared = q.to_shared_census(self._queue())
@@ -290,7 +290,7 @@ class TestProjections(unittest.TestCase):
         self.assertNotIn("test situation", blob)     # no free-text subjects
         self.assertNotIn("cos|action-card", blob)    # no pids (subject slugs)
         self.assertNotIn("3-people", blob)           # no vault paths
-        self.assertNotIn("polads.eu", blob)          # no URLs
+        self.assertNotIn("bakery.example.com", blob)          # no URLs
         row = shared["decisions"][0]
         self.assertIn("cmt-aaaaaaaaaaaa", row["refs"])   # opaque ids only
         self.assertEqual(row["h"], q.opaque_handle("cos|action-card|t|ts"))
@@ -319,8 +319,8 @@ class TestProjections(unittest.TestCase):
         self.assertTrue(q._shared_ref_ok("cmt-13e753b27b71"))
         self.assertTrue(q._shared_ref_ok("cabinet-proposal-id:721c7d48"))
         # …but a path/URL smuggled behind an allowed prefix is refused.
-        self.assertFalse(q._shared_ref_ok("cmt-x/3-people/nate.md"))
-        self.assertFalse(q._shared_ref_ok("monday:boards/5091706356"))
+        self.assertFalse(q._shared_ref_ok("cmt-x/3-people/ada.md"))
+        self.assertFalse(q._shared_ref_ok("monday:boards/42424242"))
         self.assertFalse(q._shared_ref_ok("need-a.b"))
 
     def test_shared_census_drops_uuid_shaped_vault_path(self):

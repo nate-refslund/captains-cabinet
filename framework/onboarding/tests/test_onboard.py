@@ -14,7 +14,7 @@ _RENDER = lambda lane, model: f"# {lane['slug']}-ceo for {lane['name']} ({model}
 
 
 def test_dry_run_writes_nothing(tmp_path):
-    rep = onboard.onboard_lane("/x", slug="acme", tracker_ref="1234567890",
+    rep = onboard.onboard_lane("/x", slug="acme", tracker_ref="42424242",
                                research_fn=lambda p: PROFILE, root=str(tmp_path), apply=False)
     assert rep["applied"] is False
     assert rep["lane_ceo_path"] is None
@@ -23,7 +23,7 @@ def test_dry_run_writes_nothing(tmp_path):
 
 
 def test_apply_writes_only_the_two_safe_files(tmp_path):
-    rep = onboard.onboard_lane("/x", slug="acme", tracker_ref="1234567890",
+    rep = onboard.onboard_lane("/x", slug="acme", tracker_ref="42424242",
                                research_fn=lambda p: PROFILE, render_fn=_RENDER,
                                root=str(tmp_path), apply=True)
     assert rep["applied"] is True

@@ -33,7 +33,7 @@ def _load_sweep():
 
 
 def _ev(ts, *, action_type="monday_task_create", required=True, decision=None,
-        outcome="unknown", verdict=None, source=None, lane="polads",
+        outcome="unknown", verdict=None, source=None, lane="bakery",
         actor_id="cos", subject="subj-1"):
     """A consequence-ledger row (mirrors the falsifier-report test fixture,
     plus the `subject` field read_ledger's _is_consequence_row requires).
@@ -50,7 +50,7 @@ def _ev(ts, *, action_type="monday_task_create", required=True, decision=None,
 
 
 def _fixtured_ledger():
-    """One measurable cell (officer:cos, polads, monday_task_create): 3 human-
+    """One measurable cell (officer:cos, bakery, monday_task_create): 3 human-
     confirmed samples → match_rate 1.0 but far below every bar's sample floor
     ⇒ graduation.evaluate returns `propose_only` (the fail-safe state)."""
     return [
@@ -66,7 +66,7 @@ def _fixtured_ledger():
     ]
 
 
-CELL = ("officer:cos", "polads", "monday_task_create")
+CELL = ("officer:cos", "bakery", "monday_task_create")
 
 
 # --- pure sweep() ------------------------------------------------------------------
@@ -86,7 +86,7 @@ def test_first_sweep_is_baseline_with_one_first_sighting():
     assert len(res["transitions"]) == 1
     t = res["transitions"][0]
     assert t["from_state"] is None and t["to_state"] == "propose_only"
-    assert t["cell"] == {"actor": "officer:cos", "lane": "polads",
+    assert t["cell"] == {"actor": "officer:cos", "lane": "bakery",
                          "action_type": "monday_task_create"}
     assert t["evidence"]["sample_count"] == 3
 

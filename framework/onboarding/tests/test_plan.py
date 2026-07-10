@@ -18,11 +18,11 @@ DEFAULTS = {"cabinet_default_plugins": ["corridor", "brain"],
 
 
 def test_answers_lane_core():
-    a = plan.build_lane_plan(ACME, slug="acme", tracker_ref="1234567890")["answers_lane"]
+    a = plan.build_lane_plan(ACME, slug="acme", tracker_ref="42424242")["answers_lane"]
     assert a["slug"] == "acme"
     assert a["name"] == "acme-shop"
     assert a["repos"] == ["https://github.com/acme-org/acme-shop"]
-    assert a["boards"] == ["1234567890"]       # opaque tracker ref, carried verbatim
+    assert a["boards"] == ["42424242"]       # opaque tracker ref, carried verbatim
     assert a["plugin"] == "dev-tasks"          # detected task route
 
 

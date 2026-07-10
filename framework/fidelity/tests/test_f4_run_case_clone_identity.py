@@ -3,14 +3,14 @@
 Design §1.6, §2.4, §4; ground retrodiction-clone-draft-reference / brain-
 identity-sources / cabinet-officer-prompt.
 
-The clone arm (gather set) must drive the officer to draft AS NATE'S CLONE:
+The clone arm (gather set) must drive the officer to draft AS ADA'S CLONE:
 run_case gathers the current-state identity priors leak-safe —
   - voice_profile()            (accepted current-state prior)
   - nate_model_patterns()      (accepted current-state prior, PRIVATE-fenced)
   - drafting_lessons(before_ts=case.cutoff_ts)  (STRICTLY pre-cutoff)
   - person_static              (already in the gathered ctx, atemporal frontmatter)
 — and builds the officer system via build_clone_eval_system, so the officer
-drafts in Nate's identity. The lessons date-filter is the only HARD cutoff:
+drafts in Ada's identity. The lessons date-filter is the only HARD cutoff:
 voice + nate_model are accepted current-state priors (like retrodiction).
 
 PRIVACY FENCE (paramount): the identity goes into the SYSTEM prompt ONLY. It
@@ -27,18 +27,27 @@ from __future__ import annotations
 
 import pytest
 
-from framework.fidelity import officer_runner, leakguard
+from framework.fidelity import officer_prompt, officer_runner, leakguard
 from framework.fidelity.officer_prompt import (
     build_clone_eval_system, build_eval_system, format_situation)
 from framework.fidelity.types import Case
 
 CUTOFF = "2026-06-10T12:00:00+00:00"
 
+
+@pytest.fixture(autouse=True)
+def _synthetic_captain(monkeypatch):
+    """Pin the captain identity to the synthetic fixture captain (Ada) so the
+    clone-framing assertions are hermetic — never coupled to this
+    deployment's instance/config captain_name value."""
+    monkeypatch.setattr(officer_prompt, "captain_name", lambda: "Ada")
+
+
 # Distinctive sentinels per identity prior — the tests assert they reach the
 # SYSTEM prompt (inform the draft) and NEVER the captured decision/output.
 _VOICE = "VOICE-SENTINEL: korte saetninger, ingen tankestreger."
-_PATTERNS = "[PRIVATE NATE-MODEL] PATTERNS-SENTINEL: beslutter hurtigt."
-_PERSON = "PERSON-SENTINEL: Ulrik, VP Product & Publishers."
+_PATTERNS = "[PRIVATE ADA-MODEL] PATTERNS-SENTINEL: beslutter hurtigt."
+_PERSON = "PERSON-SENTINEL: Otto, head baker & site lead."
 
 # Lessons file: two blocks strictly before the 2026-06-10 cutoff (must survive)
 # and one ON the cutoff date (must be dropped entirely by the date-filter).
@@ -88,13 +97,13 @@ def _case():
     return Case.from_retro_case({
         "case_id": "abc1234567",
         "reply_key": "msgraph|MID1",
-        "slug": "ulrik", "person": "Ulrik", "channel": "msgraph",
+        "slug": "otto", "person": "Otto", "channel": "msgraph",
         "language": "da", "reply_ts": CUTOFF, "subject": "Re: lon",
         "n_prior": 3,
         "thread_before": [
-            {"slug": "ulrik", "person": "Ulrik",
+            {"slug": "otto", "person": "Otto",
              "date": "2026-06-09T08:00:00+00:00", "direction": "received",
-             "who": "Ulrik <u@x>", "source": "msgraph", "to": "", "cc": "",
+             "who": "Otto <u@x>", "source": "msgraph", "to": "", "cc": "",
              "text": "kan vi snakke lon?"},
         ],
         "real_reply": "Ja, lad os tage det fredag.",
@@ -140,9 +149,9 @@ class TestCloneArmInjectsIdentity:
         assert _PATTERNS in system
         assert "LESSON-BEFORE-SENTINEL" in system
         assert _PERSON in system
-        # the clone framing is present (drafts AS Nate)
+        # the clone framing is present (drafts AS Ada)
         assert "CLONE IDENTITY" in system
-        assert "Nate" in system
+        assert "Ada" in system
 
     def test_clone_arm_gathers_identity_leak_safe(self):
         """The clone identity gather actually ran — voice, patterns and the
@@ -210,7 +219,7 @@ class TestPrivacyFence:
         out = str(dec.decision)
         assert _VOICE not in out
         assert _PATTERNS not in out
-        assert "PRIVATE NATE-MODEL" not in out
+        assert "PRIVATE ADA-MODEL" not in out
         assert "LESSON-BEFORE-SENTINEL" not in out
         # identity lives in the system prompt (informs), not the user payload
         assert _PATTERNS not in seen["payload"]

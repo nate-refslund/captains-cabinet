@@ -10,7 +10,7 @@ TS = "2026-06-21T10:00:00Z"
 
 def _proposal(**kw):
     return loop.proposal_event(actor=ACTOR, lane="send-1to1-reply",
-                               subject="kristoffer", ts=TS, **kw)
+                               subject="casper", ts=TS, **kw)
 
 
 class TestRouter:
@@ -34,7 +34,7 @@ class TestRouter:
         assert not r.policies  # a plain reason, not a standing rule
 
     def test_approve_plus_instruction_danish(self):
-        # Nate's example shape, in Danish: approve + a new imperative.
+        # Ada's example shape, in Danish: approve + a new imperative.
         r = loop.route_captain_response(
             "OK, gå også i gang med at bygge A og sig til når det er done")
         assert r.primary == "approve"
@@ -110,19 +110,19 @@ class TestLiveSplit:
     def test_propose_returns_correlation_key_and_pending_event(self):
         events, presented = [], []
         p = loop.propose(
-            thread_ref="thr", subject="kristoffer", ts=TS, actor=ACTOR,
+            thread_ref="thr", subject="casper", ts=TS, actor=ACTOR,
             gather=lambda tr: {}, draft_fn=lambda tr, ctx: "et udkast",
             present=lambda d, prop: presented.append((d, loop.proposal_id(prop))),
             emit=lambda **ev: events.append(ev))
         assert p["status"] == "proposed"
-        assert p["proposal_id"] == "cos|draft-reply|kristoffer|" + TS
+        assert p["proposal_id"] == "cos|draft-reply|casper|" + TS
         assert len(events) == 1 and events[0]["proposal"]["decision"] is None
         assert presented and presented[0][1] == p["proposal_id"]  # pid reaches present
 
     def test_handle_response_resolves_a_reloaded_pending_proposal(self):
         events, dispatched = [], []
         p = loop.propose(
-            thread_ref="thr", subject="kristoffer", ts=TS, actor=ACTOR,
+            thread_ref="thr", subject="casper", ts=TS, actor=ACTOR,
             gather=lambda tr: {}, draft_fn=lambda tr, ctx: "et udkast",
             present=lambda d, prop: None, emit=lambda **ev: events.append(ev))
         h = loop.handle_response(
@@ -156,7 +156,7 @@ class TestRunLaneEndToEndDry:
     def test_approve_records_proof(self):
         events, dispatched = [], []
         result = loop.run_lane(
-            thread_ref="thr-kristoffer", subject="kristoffer", ts=TS, actor=ACTOR,
+            thread_ref="thr-casper", subject="casper", ts=TS, actor=ACTOR,
             gather=lambda tr: {"ctx": "as-of-cutoff"},
             draft_fn=lambda tr, ctx: "perfekt 👌🏻 gør det så efterfølgende",
             present=lambda d, p: None,

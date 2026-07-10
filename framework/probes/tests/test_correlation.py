@@ -82,7 +82,7 @@ _TS = "2026-07-03T01:00:00Z"
 def _run_propose(refs=None, mint_cid=None):
     events = []
     p = loop.propose(
-        thread_ref="thr", subject="kristoffer", ts=_TS, actor=_ACTOR,
+        thread_ref="thr", subject="casper", ts=_TS, actor=_ACTOR,
         gather=lambda tr: {}, draft_fn=lambda tr, ctx: "et udkast",
         present=lambda d, prop: None, emit=lambda **ev: events.append(ev),
         refs=refs, mint_cid=mint_cid)
@@ -95,7 +95,7 @@ def test_propose_mints_correlation_id_into_refs():
     assert p["correlation_id"] == fixed
     assert c.ref_for(fixed) in events[0]["refs"]
     # identity tuple unchanged — the binder/pending logic is unaffected
-    assert p["proposal_id"] == "cos|draft-reply|kristoffer|" + _TS
+    assert p["proposal_id"] == "cos|draft-reply|casper|" + _TS
 
 
 def test_propose_preserves_an_explicit_cid_no_double_mint():

@@ -16,7 +16,7 @@ from framework.frontdoor import action_lessons as al
 
 def _capture(tmp_path, **over):
     kw = dict(pid="pid-1", verdict="undo", captain_text="undo: wrong board",
-              cid="c" * 32, action_type="task_create", lane="polads",
+              cid="c" * 32, action_type="task_create", lane="bakery",
               ts="2026-07-04T10:00:00Z", path=tmp_path / "lessons.yml")
     kw.update(over)
     return al.capture_lesson(**kw)
@@ -31,7 +31,7 @@ def test_capture_creates_file_and_full_row(tmp_path):
     assert row["pid"] == "pid-1"
     assert row["cid"] == "c" * 32
     assert row["action_type"] == "task_create"
-    assert row["lane"] == "polads"
+    assert row["lane"] == "bakery"
     assert row["verdict"] == "undo"
     assert row["captain_text"] == "undo: wrong board"
     assert row["taxonomy"] == "wrong-target"

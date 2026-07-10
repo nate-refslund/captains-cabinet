@@ -42,7 +42,7 @@ const KF: CensusKeyframe = {
   services_rows_disabled: 2,
   golden_evals_delta_vs_seed: -4,
 }
-const SLUGS = ['comms-officer', 'cos', 'polads-ceo', 'stephie-ceo']
+const SLUGS = ['comms-officer', 'cos', 'bakery-ceo', 'newsletter-ceo']
 // First census date fixed >30d back so the fixture pins the planters band
 // (the live band follows the REAL first keyframe date — honesty over vibes).
 const growth = buildGrowth([KF], '2026-06-01')

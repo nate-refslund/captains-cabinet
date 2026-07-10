@@ -45,9 +45,9 @@ def _mower_case_dict(case_id="mower12345"):
         "language": "da",
         "reply_ts": CUTOFF,
         "thread_before": [
-            {"direction": "sent", "who": "Nate",
+            {"direction": "sent", "who": "Ada",
              "date": "2026-05-04T08:00:00+00:00", "source": "msgraph",
-             "text": "Ja, 3000 m2 graesplaene paa Mosevraavej. Ingen kanttraad."},
+             "text": "Ja, 3000 m2 graesplaene paa Kagevej. Ingen kanttraad."},
             {"direction": "received", "who": "Bo <b@x>",
              "date": "2026-05-05T08:00:00+00:00", "source": "msgraph",
              "text": "Vil du have hjaelp til at finde en robotplaeneklipper?"},
@@ -61,7 +61,7 @@ _MOWER_INTENT = ("Goal: source a no-boundary-wire robotic mower "
                  "Core: decisive, concrete, da on msgraph.")
 _MOWER_CTX = {
     "vault_hits": [{"ts": "2026-05-02T08:00:00+00:00",
-                    "text": "new house Mosevraavej, ~3000 m2 lawn"}],
+                    "text": "new house Kagevej, ~3000 m2 lawn"}],
 }
 # An on-topic clone draft (clears the §3.3b floor against _MOWER_INTENT).
 _ONTOPIC_DRAFT = ("Til din 3000 m2 lawn anbefaler jeg en robotic "
@@ -260,7 +260,7 @@ class TestForcedGuards:
         unverifiable — demoted, not flipped into a fabricated loss)."""
         out = self._judge(monkeypatch, {
             "outcome_winner": "tie", "outcome_rationale": "both fine",
-            "outcome_grounded_fact": ("From Bo at 2026-05-05: Nate already "
+            "outcome_grounded_fact": ("From Bo at 2026-05-05: Ada already "
                                       "ordered a submarine and a yacht."),
         }, clone_draft=_ONTOPIC_DRAFT)
         assert out["outcome_verdict"] == "incomparable"
@@ -273,7 +273,7 @@ class TestForcedGuards:
         guard. Pins that the candidates never became the haystack."""
         out = self._judge(monkeypatch, {
             "outcome_winner": "tie", "outcome_rationale": "",
-            "outcome_grounded_fact": ("From Nate at 2026-05-06: Husqvarna "
+            "outcome_grounded_fact": ("From Ada at 2026-05-06: Husqvarna "
                                       "link HEMMELIGT SVAR."),
         }, clone_draft=_ONTOPIC_DRAFT)
         assert out["outcome_verdict"] == "incomparable"

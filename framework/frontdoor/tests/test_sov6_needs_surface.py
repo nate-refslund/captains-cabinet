@@ -40,7 +40,7 @@ GOLDEN = (
 def _acted():
     return [{"jid": "j-1", "ts": "2026-07-04T08:00:00Z", "pid": "pid-a",
              "step": 0, "kind": "monday_task_create", "backend": "monday",
-             "lane": "polads", "subject": "subj", "action_type": "task_create",
+             "lane": "bakery", "subject": "subj", "action_type": "task_create",
              "status": "executed",
              "created": {"monday_id": "555", "board_id": "9"},
              "payload": {"title": "Fix deploy gate"},
@@ -63,8 +63,8 @@ def _selfr():
 
 GRANT_LINE = (
     '- {id: GRANT-1a2b3c4d, deployment: main, risk_class: external_comms, '
-    'action_types: ["external_email"], lanes: ["polads"], '
-    'scope: {recipient_allowlist: ["*@stepnetwork.dk"], max_eur_per_day: 0, '
+    'action_types: ["external_email"], lanes: ["bakery"], '
+    'scope: {recipient_allowlist: ["*@example.com"], max_eur_per_day: 0, '
     'vendor_allowlist: []}, rate: {max_per_day: 10}, expires: 2026-10-03, '
     'granted_by: "Captain", granted_at: "2026-07-05T00:00:00Z", '
     'basis: "NEED-1a2b3c4d", revoked: false}'
@@ -74,7 +74,7 @@ GRANT_LINE = (
 def _need(**over):
     row = {"id": "NEED-1a2b3c4d", "kind": "standing_grant",
            "risk_class": "external_comms", "action_type": "external_email",
-           "lane": "polads", "status": "open", "count": 3,
+           "lane": "bakery", "status": "open", "count": 3,
            "why": "reply to the EU commission thread",
            "proposed_grant_line": GRANT_LINE}
     row.update(over)
@@ -177,8 +177,8 @@ def test_footer_grammar_only_when_needs_present():
 
 def test_grant_scope_plain_renders_machine_fields():
     plain = ts.grant_scope_plain(_need())
-    assert "external_email" in plain and "*@stepnetwork.dk" in plain
-    assert "lane polads" in plain and "max 10/day" in plain
+    assert "external_email" in plain and "*@example.com" in plain
+    assert "lane bakery" in plain and "max 10/day" in plain
     assert "until 2026-10-03" in plain
 
 
@@ -188,7 +188,7 @@ def test_grant_scope_plain_never_uses_prose():
     grants_line = next(l for l in out.split("\n")
                        if l.strip().startswith("grants if applied:"))
     assert "EVERYONE" not in grants_line and "EVERYTHING" not in grants_line
-    assert "*@stepnetwork.dk" in grants_line     # the machine truth
+    assert "*@example.com" in grants_line     # the machine truth
     # the prose still shows — but as labeled context on its own line
     assert 'why:' in out
 
@@ -202,7 +202,7 @@ def test_grant_scope_plain_unparseable_refuses():
 
 
 def test_grant_scope_plain_strips_markers():
-    line = GRANT_LINE.replace("*@stepnetwork.dk", "·evil· *@stepnetwork.dk")
+    line = GRANT_LINE.replace("*@example.com", "·evil· *@example.com")
     assert "·" not in ts.grant_scope_plain(_need(proposed_grant_line=line))
 
 
@@ -297,7 +297,7 @@ def test_gate_tell_renders_digest_line():
     events = [{"event_type": "policy_evaluated", "created_at": NOW,
                "payload": {"kind": "notify_after", "verdict": "notify_after",
                            "risk_class": "internal_comms",
-                           "action_type": "teams_message", "lane": "polads"}},
+                           "action_type": "teams_message", "lane": "bakery"}},
               {"event_type": "policy_evaluated", "created_at": NOW,
                "payload": {"kind": "standing_grant_allow",
                            "risk_class": "external_comms",
@@ -313,7 +313,7 @@ def test_gate_tell_renders_digest_line():
     assert out["digest"] is True
     text = box.items[0]["payload"]["summary"]
     assert "gate allowed (notify_after): internal_comms/teams_message" in text
-    assert "lane polads" in text
+    assert "lane bakery" in text
     assert "grant GRANT-1a2b3c4d" in text
     assert "something_else" not in text
 
@@ -341,39 +341,39 @@ def test_gate_tell_gather_crash_degrades_empty():
 # --- attention drain: NEED-tagged/ask-shaped dedup + tier demote ----------------
 
 def _card(summary="Sentry blocker", body="13k events/24h", urgency="blocking"):
-    return {"source": "polads-ceo", "project": "polads", "urgency": urgency,
+    return {"source": "bakery-ceo", "project": "bakery", "urgency": urgency,
             "summary": summary, "body": body, "ts": "2026-07-04T08:00:00Z"}
 
 
 def test_card_to_item_default_is_byte_identical():
     # dark default: mapping exactly as before (ping-now stays ping-now)
-    item = attention_drain.card_to_item(_card(), project="polads")
+    item = attention_drain.card_to_item(_card(), project="bakery")
     assert item["urgency_tier"] == "ping-now"
     assert "need_id" not in item["payload"]
 
 
 def test_need_tagged_ping_now_demotes_to_batch_when_wired():
     card = _card(body="blocked on NEED-1a2b3c4d — standing grant filed")
-    item = attention_drain.card_to_item(card, project="polads", needs_wired=True)
+    item = attention_drain.card_to_item(card, project="bakery", needs_wired=True)
     assert item["urgency_tier"] == "batch"
     assert item["payload"]["need_id"] == "NEED-1a2b3c4d"
     # same card, dark ⇒ untouched
-    dark = attention_drain.card_to_item(card, project="polads")
+    dark = attention_drain.card_to_item(card, project="bakery")
     assert dark["urgency_tier"] == "ping-now"
 
 
 def test_ask_shaped_ping_now_demotes_but_others_untouched():
     ask = _card(summary="Approval needed for the DPA send")
     assert attention_drain.card_to_item(
-        ask, project="polads", needs_wired=True)["urgency_tier"] == "batch"
+        ask, project="bakery", needs_wired=True)["urgency_tier"] == "batch"
     # a non-ask blocking card keeps its ping-now even when wired
     real = _card(summary="Prod is down, deploy gate wedged")
     assert attention_drain.card_to_item(
-        real, project="polads", needs_wired=True)["urgency_tier"] == "ping-now"
+        real, project="bakery", needs_wired=True)["urgency_tier"] == "ping-now"
     # demote never PROMOTES: a low-urgency ask stays fyi
     low = _card(summary="Approval needed eventually", urgency="low")
     assert attention_drain.card_to_item(
-        low, project="polads", needs_wired=True)["urgency_tier"] == "fyi"
+        low, project="bakery", needs_wired=True)["urgency_tier"] == "fyi"
 
 
 def test_card_need_id_normalizes_and_is_strict():
@@ -386,7 +386,7 @@ def test_card_need_id_normalizes_and_is_strict():
 def test_drain_dedups_open_need_cards(monkeypatch):
     """Two lane cards for the SAME open need: the first forwards (demoted),
     the second is ACK'd + skipped — the needs digest is the canonical surface."""
-    stream = "cabinet:captain-attention:polads"
+    stream = "cabinet:captain-attention:bakery"
     rows = [("1-1", _card(body="blocked on NEED-1a2b3c4d")),
             ("1-2", _card(summary="still blocked", body="see NEED-1a2b3c4d"))]
     forwarded: set = set()
@@ -418,7 +418,7 @@ def test_drain_dedups_open_need_cards(monkeypatch):
 
 def test_drain_closed_need_cards_not_deduped(monkeypatch):
     """A card naming a CLOSED need is new information — no dedup key."""
-    stream = "cabinet:captain-attention:polads"
+    stream = "cabinet:captain-attention:bakery"
     rows = [("2-1", _card(body="NEED-1a2b3c4d was granted, next step?"))]
     forwarded: set = set()
     enqueued: list = []

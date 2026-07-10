@@ -18,11 +18,11 @@ CUTOFF = "2026-06-10T12:00:00+00:00"
 
 def _case(cid):
     return Case.from_retro_case({
-        "case_id": cid, "reply_key": cid, "slug": "ulrik", "person": "Ulrik",
+        "case_id": cid, "reply_key": cid, "slug": "otto", "person": "Otto",
         "channel": "msgraph", "language": "da", "reply_ts": CUTOFF,
         "subject": "s", "n_prior": 2,
         "thread_before": [{"date": "2026-06-09T00:00:00+00:00",
-                           "direction": "received", "who": "Ulrik <u@x>",
+                           "direction": "received", "who": "Otto <u@x>",
                            "source": "msgraph", "text": "hej"}],
         "real_reply": "Ja.",
     })

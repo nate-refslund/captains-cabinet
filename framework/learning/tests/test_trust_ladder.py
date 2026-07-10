@@ -90,11 +90,11 @@ def test_junk_rung_names_dropped(tmp_path):
     root = _write_ladder(tmp_path, """
 rungs:
   - name: super-autonomous
-    lane: polads
+    lane: bakery
     grants:
       - { action_type: task_status_move }
   - name: ive-done
-    lane: polads
+    lane: bakery
     grants:
       - { action_type: task_status_move }
 """)
@@ -122,15 +122,15 @@ def _eval_factory(states: dict):
 def test_rung_earned_when_all_cells_graduated(tmp_path, monkeypatch):
     rungs = [
         T.Rung("would-like-to", None, [], None, []),
-        T.Rung("ive-done", "polads",
-               [("polads", "task_status_move"), ("polads", "label")], None, []),
+        T.Rung("ive-done", "bakery",
+               [("bakery", "task_status_move"), ("bakery", "label")], None, []),
     ]
     monkeypatch.setattr(T, "load_ladder", lambda *a, **k: rungs)
     monkeypatch.setattr(T, "current_rung",
                         lambda lane=None, *a, **k: "would-like-to")
     ev = _eval_factory({"task_status_move": ("graduated", 30),
                         "label": ("graduated", 25)})
-    res = T.evaluate_ladder("officer:cos", "polads", evaluate_fn=ev)
+    res = T.evaluate_ladder("officer:cos", "bakery", evaluate_fn=ev)
     assert [e["rung"]["name"] for e in res["earned"]] == ["ive-done"]
     assert res["pending"] == []
 
@@ -138,15 +138,15 @@ def test_rung_earned_when_all_cells_graduated(tmp_path, monkeypatch):
 def test_rung_pending_when_one_cell_not_graduated(tmp_path, monkeypatch):
     rungs = [
         T.Rung("would-like-to", None, [], None, []),
-        T.Rung("ive-done", "polads",
-               [("polads", "task_status_move"), ("polads", "label")], None, []),
+        T.Rung("ive-done", "bakery",
+               [("bakery", "task_status_move"), ("bakery", "label")], None, []),
     ]
     monkeypatch.setattr(T, "load_ladder", lambda *a, **k: rungs)
     monkeypatch.setattr(T, "current_rung",
                         lambda lane=None, *a, **k: "would-like-to")
     ev = _eval_factory({"task_status_move": ("graduated", 30),
                         "label": ("eligible", 18)})
-    res = T.evaluate_ladder("officer:cos", "polads", evaluate_fn=ev)
+    res = T.evaluate_ladder("officer:cos", "bakery", evaluate_fn=ev)
     assert res["earned"] == []
     assert [e["rung"]["name"] for e in res["pending"]] == ["ive-done"]
 
@@ -154,25 +154,25 @@ def test_rung_pending_when_one_cell_not_graduated(tmp_path, monkeypatch):
 def test_min_samples_override_blocks_earn(tmp_path, monkeypatch):
     rungs = [
         T.Rung("would-like-to", None, [], None, []),
-        T.Rung("ive-done", "polads", [("polads", "task_status_move")], 50, []),
+        T.Rung("ive-done", "bakery", [("bakery", "task_status_move")], 50, []),
     ]
     monkeypatch.setattr(T, "load_ladder", lambda *a, **k: rungs)
     monkeypatch.setattr(T, "current_rung",
                         lambda lane=None, *a, **k: "would-like-to")
     # graduated but only 30 samples < the rung's 50 override -> pending.
     ev = _eval_factory({"task_status_move": ("graduated", 30)})
-    res = T.evaluate_ladder("officer:cos", "polads", evaluate_fn=ev)
+    res = T.evaluate_ladder("officer:cos", "bakery", evaluate_fn=ev)
     assert res["earned"] == []
     assert [e["rung"]["name"] for e in res["pending"]] == ["ive-done"]
 
 
 def test_rung_with_no_grants_never_earned(tmp_path, monkeypatch):
     rungs = [T.Rung("would-like-to", None, [], None, []),
-             T.Rung("ive-done", "polads", [], None, [])]
+             T.Rung("ive-done", "bakery", [], None, [])]
     monkeypatch.setattr(T, "load_ladder", lambda *a, **k: rungs)
     monkeypatch.setattr(T, "current_rung",
                         lambda lane=None, *a, **k: "would-like-to")
-    res = T.evaluate_ladder("officer:cos", "polads", evaluate_fn=_eval_factory({}))
+    res = T.evaluate_ladder("officer:cos", "bakery", evaluate_fn=_eval_factory({}))
     assert res["earned"] == []
 
 
@@ -180,11 +180,11 @@ def test_none_evaluate_result_reads_unmeasured(tmp_path, monkeypatch):
     # graduation.evaluate returns None for a cell with no rows — must read as
     # unmeasured (never earned, never raise).
     rungs = [T.Rung("would-like-to", None, [], None, []),
-             T.Rung("ive-done", "polads", [("polads", "task_status_move")], None, [])]
+             T.Rung("ive-done", "bakery", [("bakery", "task_status_move")], None, [])]
     monkeypatch.setattr(T, "load_ladder", lambda *a, **k: rungs)
     monkeypatch.setattr(T, "current_rung",
                         lambda lane=None, *a, **k: "would-like-to")
-    res = T.evaluate_ladder("officer:cos", "polads", evaluate_fn=lambda cell: None)
+    res = T.evaluate_ladder("officer:cos", "bakery", evaluate_fn=lambda cell: None)
     assert res["earned"] == []
     assert [e["rung"]["name"] for e in res["pending"]] == ["ive-done"]
 
@@ -195,19 +195,19 @@ def test_none_evaluate_result_reads_unmeasured(tmp_path, monkeypatch):
 
 def test_ceiling_rung_is_blocked_not_earned(tmp_path, monkeypatch):
     # external_message maps to external_comms (hard ceiling) via the real matrix.
-    ceiling = T._grants_touch_ceiling([("polads", "external_message")])
+    ceiling = T._grants_touch_ceiling([("bakery", "external_message")])
     assert ceiling == ["external_comms"]  # sanity: matrix mapping holds
 
     rungs = [
         T.Rung("would-like-to", None, [], None, []),
-        T.Rung("ive-done", "polads", [("polads", "external_message")], None, ceiling),
+        T.Rung("ive-done", "bakery", [("bakery", "external_message")], None, ceiling),
     ]
     monkeypatch.setattr(T, "load_ladder", lambda *a, **k: rungs)
     monkeypatch.setattr(T, "current_rung",
                         lambda lane=None, *a, **k: "would-like-to")
     # even if the cell is fully graduated, it must NOT be 'earned'.
     ev = _eval_factory({"external_message": ("graduated", 100)})
-    res = T.evaluate_ladder("officer:cos", "polads", evaluate_fn=ev)
+    res = T.evaluate_ladder("officer:cos", "bakery", evaluate_fn=ev)
     assert res["earned"] == []
     assert [e["rung"]["name"] for e in res["blocked_by_ceiling"]] == ["ive-done"]
     assert res["blocked_by_ceiling"][0]["ceiling"] == ["external_comms"]
@@ -220,7 +220,7 @@ def test_ceiling_rung_is_blocked_not_earned(tmp_path, monkeypatch):
 def test_propose_surfaces_lowest_earned_non_ceiling(tmp_path, monkeypatch):
     rungs = [
         T.Rung("would-like-to", None, [], None, []),
-        T.Rung("ive-done", "polads", [("polads", "task_status_move")], None, []),
+        T.Rung("ive-done", "bakery", [("bakery", "task_status_move")], None, []),
     ]
     monkeypatch.setattr(T, "load_ladder", lambda *a, **k: rungs)
     monkeypatch.setattr(T, "current_rung",
@@ -230,7 +230,7 @@ def test_propose_surfaces_lowest_earned_non_ceiling(tmp_path, monkeypatch):
     enq = []
     emitted = []
     prop = T.propose_next_rung(
-        "officer:cos", "polads", evaluate_fn=ev,
+        "officer:cos", "bakery", evaluate_fn=ev,
         enqueue_fn=lambda item: enq.append(item) or "sid",
         emit_fn=lambda et, actor, payload: emitted.append((et, payload)),
         posture_fn=_EARN_UP,
@@ -240,36 +240,36 @@ def test_propose_surfaces_lowest_earned_non_ceiling(tmp_path, monkeypatch):
     assert prop["ceiling"] is False
     assert prop["enqueued_id"] == "sid"
     assert enq[0]["source"] == "trust-ladder"
-    assert ("trust_rung_proposed", {"actor_id": "officer:cos", "lane": "polads",
+    assert ("trust_rung_proposed", {"actor_id": "officer:cos", "lane": "bakery",
             "rung": "ive-done", "ceiling": False, "urgency_tier": "batch"}) in emitted
 
 
 def test_propose_returns_none_when_nothing_earned(tmp_path, monkeypatch):
     rungs = [
         T.Rung("would-like-to", None, [], None, []),
-        T.Rung("ive-done", "polads", [("polads", "task_status_move")], None, []),
+        T.Rung("ive-done", "bakery", [("bakery", "task_status_move")], None, []),
     ]
     monkeypatch.setattr(T, "load_ladder", lambda *a, **k: rungs)
     monkeypatch.setattr(T, "current_rung",
                         lambda lane=None, *a, **k: "would-like-to")
     ev = _eval_factory({"task_status_move": ("eligible", 10)})
-    prop = T.propose_next_rung("officer:cos", "polads", evaluate_fn=ev,
+    prop = T.propose_next_rung("officer:cos", "bakery", evaluate_fn=ev,
                                enqueue_fn=lambda i: "x", emit_fn=lambda *a, **k: None,
                                posture_fn=_EARN_UP)
     assert prop is None
 
 
 def test_propose_ceiling_rung_flagged_captain_only(tmp_path, monkeypatch):
-    ceiling = T._grants_touch_ceiling([("polads", "external_message")])
+    ceiling = T._grants_touch_ceiling([("bakery", "external_message")])
     rungs = [
         T.Rung("would-like-to", None, [], None, []),
-        T.Rung("ive-done", "polads", [("polads", "external_message")], None, ceiling),
+        T.Rung("ive-done", "bakery", [("bakery", "external_message")], None, ceiling),
     ]
     monkeypatch.setattr(T, "load_ladder", lambda *a, **k: rungs)
     monkeypatch.setattr(T, "current_rung",
                         lambda lane=None, *a, **k: "would-like-to")
     ev = _eval_factory({"external_message": ("graduated", 100)})
-    prop = T.propose_next_rung("officer:cos", "polads", evaluate_fn=ev,
+    prop = T.propose_next_rung("officer:cos", "bakery", evaluate_fn=ev,
                                enqueue_fn=lambda i: "x", emit_fn=lambda *a, **k: None,
                                posture_fn=_EARN_UP)
     assert prop is not None
@@ -280,14 +280,14 @@ def test_propose_ceiling_rung_flagged_captain_only(tmp_path, monkeypatch):
 def test_propose_does_not_emit_granted_event(tmp_path, monkeypatch):
     rungs = [
         T.Rung("would-like-to", None, [], None, []),
-        T.Rung("ive-done", "polads", [("polads", "task_status_move")], None, []),
+        T.Rung("ive-done", "bakery", [("bakery", "task_status_move")], None, []),
     ]
     monkeypatch.setattr(T, "load_ladder", lambda *a, **k: rungs)
     monkeypatch.setattr(T, "current_rung",
                         lambda lane=None, *a, **k: "would-like-to")
     ev = _eval_factory({"task_status_move": ("graduated", 30)})
     emitted = []
-    T.propose_next_rung("officer:cos", "polads", evaluate_fn=ev,
+    T.propose_next_rung("officer:cos", "bakery", evaluate_fn=ev,
                         enqueue_fn=lambda i: "x",
                         emit_fn=lambda et, actor, payload: emitted.append(et),
                         posture_fn=_EARN_UP)
@@ -303,13 +303,13 @@ def test_propose_real_emitter_type_is_registered(tmp_path, monkeypatch):
     from framework.events.emitter import replay
     rungs = [
         T.Rung("would-like-to", None, [], None, []),
-        T.Rung("ive-done", "polads", [("polads", "task_status_move")], None, []),
+        T.Rung("ive-done", "bakery", [("bakery", "task_status_move")], None, []),
     ]
     monkeypatch.setattr(T, "load_ladder", lambda *a, **k: rungs)
     monkeypatch.setattr(T, "current_rung",
                         lambda lane=None, *a, **k: "would-like-to")
     ev = _eval_factory({"task_status_move": ("graduated", 30)})
-    prop = T.propose_next_rung("officer:cos", "polads", evaluate_fn=ev,
+    prop = T.propose_next_rung("officer:cos", "bakery", evaluate_fn=ev,
                                enqueue_fn=lambda i: "x", posture_fn=_EARN_UP)
     assert prop is not None
     events = replay(event_types=["trust_rung_proposed"])
@@ -319,12 +319,12 @@ def test_propose_real_emitter_type_is_registered(tmp_path, monkeypatch):
 
 def test_grant_rung_emits_granted_event():
     emitted = {}
-    T.grant_rung("ive-done", lane="polads",
+    T.grant_rung("ive-done", lane="bakery",
                  emit_fn=lambda et, actor, payload: emitted.update(
                      {"et": et, "actor": actor, "payload": payload}))
     assert emitted["et"] == "trust_rung_granted"
     assert emitted["payload"]["rung"] == "ive-done"
-    assert emitted["payload"]["lane"] == "polads"
+    assert emitted["payload"]["lane"] == "bakery"
 
 
 def test_grant_rung_rejects_unknown_rung():
@@ -341,40 +341,40 @@ def test_current_rung_derives_from_attested_granted_rows(tmp_path):
     root = _write_ladder(tmp_path, """
 rungs:
   - name: ive-done
-    lane: polads
+    lane: bakery
     grants: [ { action_type: task_status_move } ]
 granted:
-  - { rung: intend-to, lane: polads }
-  - { rung: would-like-to, lane: polads }
+  - { rung: intend-to, lane: bakery }
+  - { rung: would-like-to, lane: bakery }
 """)
     # highest applicable row wins; a lower row does not lower the rung.
-    assert T.current_rung("polads", root, is_locked_fn=_LOCKED) == "intend-to"
+    assert T.current_rung("bakery", root, is_locked_fn=_LOCKED) == "intend-to"
     # a different lane is unaffected.
-    assert T.current_rung("stephie", root, is_locked_fn=_LOCKED) == T.BASE_RUNG
+    assert T.current_rung("newsletter", root, is_locked_fn=_LOCKED) == T.BASE_RUNG
 
 
 def test_current_rung_lane_none_grant_applies_to_all_lanes(tmp_path):
     root = _write_ladder(tmp_path, "granted:\n  - { rung: ive-done }\n")
-    assert T.current_rung("polads", root, is_locked_fn=_LOCKED) == "ive-done"
-    assert T.current_rung("stephie", root, is_locked_fn=_LOCKED) == "ive-done"
+    assert T.current_rung("bakery", root, is_locked_fn=_LOCKED) == "ive-done"
+    assert T.current_rung("newsletter", root, is_locked_fn=_LOCKED) == "ive-done"
 
 
 def test_current_rung_missing_file_is_base(tmp_path):
     root = tmp_path / "empty"
     root.mkdir()
-    assert T.current_rung("polads", root, is_locked_fn=_LOCKED) == T.BASE_RUNG
+    assert T.current_rung("bakery", root, is_locked_fn=_LOCKED) == T.BASE_RUNG
 
 
 def test_current_rung_unattested_file_grants_nothing(tmp_path):
     """SECURITY: a present-but-NOT-Captain-locked ladder file mints no rung —
     widening authority is honored only from the attested artifact."""
     root = _write_ladder(
-        tmp_path, "granted:\n  - { rung: ive-been-doing, lane: polads }\n")
-    assert T.current_rung("polads", root,
+        tmp_path, "granted:\n  - { rung: ive-been-doing, lane: bakery }\n")
+    assert T.current_rung("bakery", root,
                           is_locked_fn=lambda p: False) == T.BASE_RUNG
     # the default attestation on an ordinary (never-chflags'd) tmp file must
     # also read NOT locked ⇒ base.
-    assert T.current_rung("polads", root) == T.BASE_RUNG
+    assert T.current_rung("bakery", root) == T.BASE_RUNG
 
 
 def test_forged_granted_event_mints_nothing(tmp_path):
@@ -385,9 +385,9 @@ def test_forged_granted_event_mints_nothing(tmp_path):
     from framework.events.emitter import emit
     root = _write_ladder(tmp_path, _ladder_body("ive-done"))
     emit("trust_rung_granted", actor="captain",
-         payload={"rung": "ive-been-doing", "lane": "polads"})
-    assert T.current_rung("polads", root, is_locked_fn=_LOCKED) == T.BASE_RUNG
-    assert T.rung_verdict_lift("polads", posture="earn_up", cabinet_root=root,
+         payload={"rung": "ive-been-doing", "lane": "bakery"})
+    assert T.current_rung("bakery", root, is_locked_fn=_LOCKED) == T.BASE_RUNG
+    assert T.rung_verdict_lift("bakery", posture="earn_up", cabinet_root=root,
                                is_locked_fn=_LOCKED) is None
 
 
@@ -395,24 +395,24 @@ def test_grant_rung_event_alone_does_not_advance(tmp_path):
     """grant_rung records the AUDIT event (registered emitter type); without
     the Captain's granted row in the attested file the rung stays at base."""
     root = _write_ladder(tmp_path, _ladder_body("ive-done"))
-    T.grant_rung("ive-done", lane="polads")  # real emitter, tmp event log
-    assert T.current_rung("polads", root, is_locked_fn=_LOCKED) == T.BASE_RUNG
+    T.grant_rung("ive-done", lane="bakery")  # real emitter, tmp event log
+    assert T.current_rung("bakery", root, is_locked_fn=_LOCKED) == T.BASE_RUNG
 
 
 def test_malformed_granted_rows_dropped(tmp_path):
     root = _write_ladder(tmp_path, """
 granted:
-  - { rung: god-mode, lane: polads }                      # out-of-vocab
-  - { rung: ive-been-doing, lane: polads, extra: nope }   # unknown key
+  - { rung: god-mode, lane: bakery }                      # out-of-vocab
+  - { rung: ive-been-doing, lane: bakery, extra: nope }   # unknown key
   - ive-been-doing                                        # not a mapping
-  - { rung: intend-to, lane: polads }                     # the one valid row
+  - { rung: intend-to, lane: bakery }                     # the one valid row
 """)
-    assert T.current_rung("polads", root, is_locked_fn=_LOCKED) == "intend-to"
+    assert T.current_rung("bakery", root, is_locked_fn=_LOCKED) == "intend-to"
 
 
 def test_granted_not_a_list_grants_nothing(tmp_path):
     root = _write_ladder(tmp_path, "granted: { rung: ive-done }\n")
-    assert T.current_rung("polads", root, is_locked_fn=_LOCKED) == T.BASE_RUNG
+    assert T.current_rung("bakery", root, is_locked_fn=_LOCKED) == T.BASE_RUNG
 
 
 # --------------------------------------------------------------------------
@@ -422,7 +422,7 @@ def test_granted_not_a_list_grants_nothing(tmp_path):
 def _earned_setup(monkeypatch):
     rungs = [
         T.Rung("would-like-to", None, [], None, []),
-        T.Rung("ive-done", "polads", [("polads", "task_status_move")], None, []),
+        T.Rung("ive-done", "bakery", [("bakery", "task_status_move")], None, []),
     ]
     monkeypatch.setattr(T, "load_ladder", lambda *a, **k: rungs)
     monkeypatch.setattr(T, "current_rung",
@@ -435,7 +435,7 @@ def test_propose_inert_outside_earn_up(tmp_path, monkeypatch, posture):
     ev = _earned_setup(monkeypatch)
     enq, emitted = [], []
     prop = T.propose_next_rung(
-        "officer:cos", "polads", evaluate_fn=ev,
+        "officer:cos", "bakery", evaluate_fn=ev,
         enqueue_fn=lambda item: enq.append(item) or "sid",
         emit_fn=lambda et, actor, payload: emitted.append(et),
         posture_fn=lambda lane=None: posture,
@@ -452,7 +452,7 @@ def test_propose_inert_when_posture_kernel_broken(tmp_path, monkeypatch):
 
     enq = []
     prop = T.propose_next_rung(
-        "officer:cos", "polads", evaluate_fn=ev,
+        "officer:cos", "bakery", evaluate_fn=ev,
         enqueue_fn=lambda item: enq.append(item) or "sid",
         emit_fn=lambda *a, **k: None, posture_fn=boom,
     )
@@ -468,7 +468,7 @@ def test_propose_default_posture_resolution_is_inert_here(tmp_path, monkeypatch)
     ev = _earned_setup(monkeypatch)
     enq = []
     prop = T.propose_next_rung(
-        "officer:cos", "polads", evaluate_fn=ev,
+        "officer:cos", "bakery", evaluate_fn=ev,
         enqueue_fn=lambda item: enq.append(item) or "sid",
         emit_fn=lambda *a, **k: None,
     )
@@ -491,7 +491,7 @@ def test_rung_verdicts_is_the_frozen_map():
     assert set(T.RUNG_VERDICTS) == set(T.RUNG_ORDER)
 
 
-def _ladder_body(rung: str, lane: str = "polads",
+def _ladder_body(rung: str, lane: str = "bakery",
                  granted: str | None = None) -> str:
     """A ladder file body; `granted` adds the Captain's granted row (the
     attested-file authority source — tests inject is_locked_fn)."""
@@ -510,24 +510,24 @@ rungs:
 def test_ladder_rung_cap_missing_file_is_base(tmp_path):
     root = tmp_path / "empty"
     root.mkdir()
-    assert T.ladder_rung_cap("polads", cabinet_root=root) == T.BASE_RUNG
+    assert T.ladder_rung_cap("bakery", cabinet_root=root) == T.BASE_RUNG
 
 
 def test_ladder_rung_cap_is_highest_applicable_rung(tmp_path):
     root = _write_ladder(tmp_path, """
 rungs:
   - name: intend-to
-    lane: polads
+    lane: bakery
     grants: [ { action_type: internal_message } ]
   - name: ive-done
-    lane: polads
+    lane: bakery
     grants: [ { action_type: task_status_move } ]
   - name: ive-been-doing
-    lane: stephie
+    lane: newsletter
     grants: [ { action_type: label } ]
 """)
-    assert T.ladder_rung_cap("polads", cabinet_root=root) == "ive-done"
-    assert T.ladder_rung_cap("stephie", cabinet_root=root) == "ive-been-doing"
+    assert T.ladder_rung_cap("bakery", cabinet_root=root) == "ive-done"
+    assert T.ladder_rung_cap("newsletter", cabinet_root=root) == "ive-been-doing"
     # a lane the file defines nothing for stays at base (no lift).
     assert T.ladder_rung_cap("jobdanmark", cabinet_root=root) == T.BASE_RUNG
 
@@ -539,7 +539,7 @@ rungs:
 ])
 def test_lift_maps_granted_rung_per_frozen_map(tmp_path, rung, verdict):
     root = _write_ladder(tmp_path, _ladder_body(rung, granted=rung))
-    got = T.rung_verdict_lift("polads", posture="earn_up", cabinet_root=root,
+    got = T.rung_verdict_lift("bakery", posture="earn_up", cabinet_root=root,
                               is_locked_fn=_LOCKED)
     assert got == verdict
 
@@ -547,7 +547,7 @@ def test_lift_maps_granted_rung_per_frozen_map(tmp_path, rung, verdict):
 def test_lift_base_rung_is_no_lift(tmp_path):
     root = _write_ladder(tmp_path, _ladder_body("ive-done"))
     # nothing granted ⇒ effective rung = would-like-to ⇒ None (the floor).
-    assert T.rung_verdict_lift("polads", posture="earn_up", cabinet_root=root,
+    assert T.rung_verdict_lift("bakery", posture="earn_up", cabinet_root=root,
                                is_locked_fn=_LOCKED) is None
 
 
@@ -556,7 +556,7 @@ def test_lift_capped_by_ladder_file(tmp_path):
     # the lane ⇒ the lift is capped at intend-to.
     root = _write_ladder(
         tmp_path, _ladder_body("intend-to", granted="ive-been-doing"))
-    got = T.rung_verdict_lift("polads", posture="earn_up", cabinet_root=root,
+    got = T.rung_verdict_lift("bakery", posture="earn_up", cabinet_root=root,
                               is_locked_fn=_LOCKED)
     assert got == "auto_with_veto_window"
 
@@ -566,34 +566,34 @@ def test_lift_fail_closed_on_missing_ladder_file(tmp_path):
     root.mkdir()
     # no file ⇒ neither granted rows nor a cap ⇒ no lift (fail-closed) —
     # deleting the file is the Captain's mechanical kill handle.
-    assert T.rung_verdict_lift("polads", posture="earn_up", cabinet_root=root,
+    assert T.rung_verdict_lift("bakery", posture="earn_up", cabinet_root=root,
                                is_locked_fn=_LOCKED) is None
 
 
 def test_lift_fail_closed_on_corrupt_ladder_file(tmp_path):
     root = _write_ladder(tmp_path, "rungs: [ not : valid : yaml ][")
-    assert T.rung_verdict_lift("polads", posture="earn_up", cabinet_root=root,
+    assert T.rung_verdict_lift("bakery", posture="earn_up", cabinet_root=root,
                                is_locked_fn=_LOCKED) is None
 
 
 def test_lift_refuses_non_earn_up_posture(tmp_path):
     root = _write_ladder(tmp_path, _ladder_body("ive-done", granted="ive-done"))
     for posture in ("guardian", "sovereign", "", "EARN_UP"):
-        assert T.rung_verdict_lift("polads", posture=posture,
+        assert T.rung_verdict_lift("bakery", posture=posture,
                                    cabinet_root=root,
                                    is_locked_fn=_LOCKED) is None
     # sanity: earn_up itself lifts.
-    assert T.rung_verdict_lift("polads", posture="earn_up", cabinet_root=root,
+    assert T.rung_verdict_lift("bakery", posture="earn_up", cabinet_root=root,
                                is_locked_fn=_LOCKED) == "notify_after"
 
 
 def test_lift_is_per_lane(tmp_path):
     root = _write_ladder(
-        tmp_path, _ladder_body("ive-done", lane="polads", granted="ive-done"))
-    assert T.rung_verdict_lift("polads", posture="earn_up", cabinet_root=root,
+        tmp_path, _ladder_body("ive-done", lane="bakery", granted="ive-done"))
+    assert T.rung_verdict_lift("bakery", posture="earn_up", cabinet_root=root,
                                is_locked_fn=_LOCKED) == "notify_after"
     # another lane: no grant for it AND no file rung for it ⇒ no lift.
-    assert T.rung_verdict_lift("stephie", posture="earn_up", cabinet_root=root,
+    assert T.rung_verdict_lift("newsletter", posture="earn_up", cabinet_root=root,
                                is_locked_fn=_LOCKED) is None
 
 
@@ -604,5 +604,5 @@ def test_lift_fail_closed_on_broken_grant_read(tmp_path, monkeypatch):
         raise RuntimeError("granted rows unreadable")
 
     monkeypatch.setattr(T, "current_rung", boom)
-    assert T.rung_verdict_lift("polads", posture="earn_up", cabinet_root=root,
+    assert T.rung_verdict_lift("bakery", posture="earn_up", cabinet_root=root,
                                is_locked_fn=_LOCKED) is None

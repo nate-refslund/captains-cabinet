@@ -123,7 +123,7 @@ def test_briefing_send_failed_verifies_false_and_autofixes():
     assert "AUTO-FIX fired" in action
     assert len(probe.triggers) == 1
     assert "RE-RUN the briefing" in probe.triggers[0]
-    # the re-trigger must NOT instruct DMing the Captain (de-nate: resolver-driven)
+    # the re-trigger must NOT instruct DMing the Captain (de-personalized: resolver-driven)
     assert f"Do NOT DM {captain_name()}" in probe.triggers[0]
 
 
@@ -188,7 +188,7 @@ def test_briefing_no_log_fails():
 def test_briefing_satisfied_by_manual_delivery_marker():
     """The bug the Chair's first-fire revealed: the cron send FAILED (400), but
     the briefing was MANUALLY delivered (Chair stamped the schedule marker). The
-    OUTCOME (Nate got his briefing) is TRUE — must verify OK, NOT false-positive.
+    OUTCOME (Ada got her briefing) is TRUE — must verify OK, NOT false-positive.
     Marker value mirrors production: an ISO ts + trailing human annotation."""
     log = _briefing_log({
         "drained": 83, "sent": False, "recovered": 77,
@@ -348,9 +348,12 @@ def test_reflection_idle_officer_not_flagged():
     assert res.ok is True
 
 
-def test_reflection_worked_never_reflected_flagged():
+def test_reflection_worked_never_reflected_flagged(monkeypatch):
+    # pin the officer roster to the synthetic lane officer so the flag path is
+    # hermetic (FULLTIME_OFFICERS otherwise mirrors this instance's yml)
+    monkeypatch.setattr(reg, "FULLTIME_OFFICERS", ["bakery-ceo"])
     now = dt.datetime(2026, 6, 29, 12, 0, tzinfo=dt.timezone.utc)
-    redis = {"cabinet:last-experience:polads-ceo": now.strftime("%Y-%m-%dT%H:%M:%SZ")}
+    redis = {"cabinet:last-experience:bakery-ceo": now.strftime("%Y-%m-%dT%H:%M:%SZ")}
     probe = FakeProbe(now=now, redis=redis)
     res = reg.verify_officer_reflection(probe)
     assert res.ok is False

@@ -28,12 +28,12 @@ def _acted(**over):
         "step": 0,
         "kind": "monday_task_create",
         "backend": "monday",
-        "lane": "polads",
+        "lane": "bakery",
         "subject": "Auto-fill company data from VIES",
         "actor": {"kind": "officer", "id": "officer:cos"},
         "action_type": "task_create",
         "prestate": {},
-        "created": {"monday_id": "555", "board_id": "5091706356", "update_id": "9"},
+        "created": {"monday_id": "555", "board_id": "42424242", "update_id": "9"},
         "inverse": {"op": "monday_archive_item", "args": {}},
         "executed_at": "2026-07-04T08:40:01Z",
         "reversed_at": None,
@@ -42,7 +42,7 @@ def _acted(**over):
         "canary": False,
         "payload": {"title": "🤖 cabinet: Auto-fill company data from VIES",
                     "description": "Publisher onboarding needs a VIES lookup.",
-                    "board_id": "5091706356"},
+                    "board_id": "42424242"},
     }
     row.update(over)
     return row
@@ -204,7 +204,7 @@ def test_digest_all_four_sections_present():
     out = ts.build_digest(
         [_acted()],
         [_pending()],
-        [{"title": "PolAds VIES autofill opportunity", "source": "idea-tracker"}],
+        [{"title": "Bakery VIES autofill opportunity", "source": "idea-tracker"}],
         [{"type": "frozen", "kind": "board_status", "reason": "undo-rate 30%"}],
         now=NOW)
     assert "✅ ACTED (1)" in out
@@ -232,8 +232,8 @@ def test_digest_omits_empty_sections():
 def test_digest_acted_numbered_and_renders_exact_content():
     out = ts.build_digest([_acted(), _acted(pid="pid-2", jid="j-2",
                                             subject="second")], [], [], [], now=NOW)
-    assert " 1. Created task on board 5091706356" in out
-    assert " 2. Created task on board 5091706356" in out
+    assert " 1. Created task on board 42424242" in out
+    assert " 2. Created task on board 42424242" in out
     assert "🤖 cabinet: Auto-fill company data from VIES" in out
     assert "undo: `undo 1`" in out and "undo: `undo 2`" in out
 
@@ -368,11 +368,11 @@ def test_long_content_is_faithfully_truncated_not_summarized():
 def test_update_headline_and_set_content():
     row = _acted(first_ever_cell=True, kind="monday_task_update",
                  action_type="board_status",
-                 created={"monday_id": "555", "board_id": "5091706356"},
-                 payload={"monday_id": "555", "board_id": "5091706356",
+                 created={"monday_id": "555", "board_id": "42424242"},
+                 payload={"monday_id": "555", "board_id": "42424242",
                           "set": {"status": "Done"}})
     out = ts.render_receipt(row, now=NOW)
-    assert "Updated task item 555 on board 5091706356" in out
+    assert "Updated task item 555 on board 42424242" in out
     assert '"status": "Done"' in out
 
 

@@ -14,16 +14,16 @@ def _retro_case():
     return {
         "case_id": "abc1234567",
         "reply_key": "msgraph|MID1",
-        "slug": "ulrik",
-        "person": "Ulrik",
+        "slug": "otto",
+        "person": "Otto",
         "channel": "msgraph",
         "language": "da",
         "reply_ts": CUTOFF,
         "subject": "Re: lon",
         "n_prior": 3,
         "thread_before": [
-            {"slug": "ulrik", "person": "Ulrik", "date": "2026-06-09T08:00:00+00:00",
-             "direction": "received", "who": "Ulrik <u@x>", "source": "msgraph",
+            {"slug": "otto", "person": "Otto", "date": "2026-06-09T08:00:00+00:00",
+             "direction": "received", "who": "Otto <u@x>", "source": "msgraph",
              "to": "", "cc": "", "text": "kan vi snakke lon?"},
         ],
         "real_reply": "Ja, lad os tage det fredag.",
@@ -38,7 +38,7 @@ class TestCaseModel:
         assert c.lane == "send-1to1-reply"
         assert c.decision_type == "reply"
         assert c.held_out is True
-        assert c.channel == "msgraph" and c.slug == "ulrik"
+        assert c.channel == "msgraph" and c.slug == "otto"
 
     def test_to_retro_case_roundtrips_scoring_keys(self):
         c = Case.from_retro_case(_retro_case())

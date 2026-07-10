@@ -123,14 +123,14 @@ def test_ttl_ok_row_confirms_on_the_same_gate_cell():
     # (binder_wire.acted_verdict_event:216) → verifier emits verdict_judge
     # confirmed ON the row's own (actor, lane, action_type) cell.
     cid = c.mint()
-    row = _acted(cid, lane="polads-ceo", action_type="task_create",
+    row = _acted(cid, lane="bakery-ceo", action_type="task_create",
                  outcome={"status": "ok",
                           "evidence": "ttl-48h survived; artifact intact"})
     res = rv.run(rows=[row], dry_run=True, now="2026-07-05T03:00:00Z")
     assert res["would_write"] == 1
     em = res["emitted"][0]
     assert em["verdict"] == "confirmed" and em["demote"] is False
-    assert em["cell"] == {"actor": "officer:cos", "lane": "polads-ceo",
+    assert em["cell"] == {"actor": "officer:cos", "lane": "bakery-ceo",
                           "action_type": "task_create"}
     ev = res["collected_events"][0]
     validate_consequence(ev)
@@ -138,7 +138,7 @@ def test_ttl_ok_row_confirms_on_the_same_gate_cell():
                             "reviewed_at": "2026-07-05T03:00:00Z"}
     # cell key fields inherited unchanged — the gate reads this exact tuple
     assert (ev["actor"], ev["lane"], ev["action_type"]) == (
-        {"kind": "officer", "id": "cos"}, "polads-ceo", "task_create")
+        {"kind": "officer", "id": "cos"}, "bakery-ceo", "task_create")
 
 
 def test_probe_failed_row_becomes_wrong_verdict_judge():

@@ -105,16 +105,16 @@ class TestComputeMatrix:
 
     def test_distinct_cells_are_separated(self):
         a1 = {"kind": "officer", "id": "chair"}
-        a2 = {"kind": "officer", "id": "polads-ceo"}
+        a2 = {"kind": "officer", "id": "bakery-ceo"}
         rows = [
             _row(a1, "send-1to1-reply", "reply", "match"),
             _row(a2, "triage", "prioritize", "divergent"),
         ]
         matrix = compute_matrix(case_scores=rows)
         assert ("officer:chair", "send-1to1-reply", "reply") in matrix
-        assert ("officer:polads-ceo", "triage", "prioritize") in matrix
+        assert ("officer:bakery-ceo", "triage", "prioritize") in matrix
         assert matrix[("officer:chair", "send-1to1-reply", "reply")].decision_match_rate == 1.0
-        assert matrix[("officer:polads-ceo", "triage", "prioritize")].divergent_rate == 1.0
+        assert matrix[("officer:bakery-ceo", "triage", "prioritize")].divergent_rate == 1.0
 
     def test_empty_input_yields_empty_matrix(self):
         assert compute_matrix(case_scores=[], ledger=[]) == {}

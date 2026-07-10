@@ -69,7 +69,7 @@ def test_word_today_does_not_reach_a_floor_class():
     ch = charter.load_charter()
     cid = charter.classify(
         {"kind": "action-card", "subject": "prep deck",
-         "situation": "Nate wants it done today"}, ch)
+         "situation": "Ada wants it done today"}, ch)
     assert cid not in set(ch["quiet_hours"]["floor_classes"])
 
 

@@ -77,7 +77,7 @@ class TestShippedFloor:
         # [GERM-2] +pm_write +calendar_write (act_with_undo classes).
         # 2026-07-04 trust-inversion split-outs: +read_only_dispatch
         # (investigation_run, notify_after) +draft_only (earn-up kept,
-        # NATE-DECISION — outbound-adjacent) moved OUT of reversible.
+        # ADA-DECISION — outbound-adjacent) moved OUT of reversible.
         pol = M.matrix_policy(loaded)
         expected = {
             "reversible", "read_only_dispatch", "draft_only",
