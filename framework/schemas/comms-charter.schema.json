@@ -184,6 +184,22 @@
           ]
         }
       }
+    },
+    "escalation": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Tiered-escalation gate thresholds (captain-surface spec §5.2) — the vacuous-proof heuristic is charter DATA, not env or a framework constant.",
+      "properties": {
+        "min_content_words": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "restate_overlap": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
     }
   }
 }

@@ -697,3 +697,21 @@ def comms_charter_path() -> Path:
     # segment trips the layer-separation heuristic; the joined string, like
     # the platform.yml readers above, does not).
     return _cabinet_root() / "instance/config/comms-charter.yml"
+
+
+def comms_surface_path() -> Path:
+    """The instance comms-surface config path (captain-surface TG engine).
+
+    Sibling of ``comms_charter_path`` — the FOUNDATION resolver for the
+    pacing/pin/briefing-card engine's instance bindings (cap, ask-first vs
+    auto-push, dashboard URL). ``CABINET_SURFACE_CONFIG_PATH`` env override
+    wins (tests / per-process), else ``instance/config/comms-surface.yml``
+    under the deployment root. The caller
+    (``framework.comms.surface.config``) falls back to quiet foundation
+    defaults when the file is absent or invalid, so a clean-room box runs
+    unconfigured. Keeping the ``instance/`` reference HERE — the sanctioned
+    layer-crossing seam — is what the layer-separation gate expects."""
+    env_override = (os.environ.get("CABINET_SURFACE_CONFIG_PATH") or "").strip()
+    if env_override:
+        return Path(env_override).expanduser()
+    return _cabinet_root() / "instance/config/comms-surface.yml"

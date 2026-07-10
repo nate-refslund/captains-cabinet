@@ -8,14 +8,16 @@
  * world mailbox alias, and (Stage 2) the wardroom war-table all render from
  * THIS payload — one census, N skins.
  *
- * READ-ONLY BY DOCTRINE (CI ratchet pins GET-only): verdicts happen in the
- * Telegram binder, never here — an approve button in the dashboard would be
- * a second door (gateway §4.4 / F0.8). Free text (subjects, why-now lines)
- * rides ONLY this cookie-authed response; the shared/interfaces artifact
- * stays PII-scrubbed (ids only).
+ * This route stays GET-only. Decisions go through the ONE write door,
+ * POST /api/attention/verdict (Ruling A 2026-07-10: WRITE-CLASS-2 = YES,
+ * equal-authority-door — same gate + reply grammar as Telegram; the CI
+ * ratchet pins exactly one write route under /api/attention). Free text
+ * (subjects, why-now lines) rides ONLY this cookie-authed response; the
+ * shared/interfaces artifact stays PII-scrubbed (ids only).
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { readQueue, type QueuePayload } from '@/lib/attention/queue'
+import { COOKIE_NAME, verifySessionValue } from '@/lib/attention/verdict'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,10 +31,13 @@ export interface AttentionQueuePayload extends QueuePayload {
 }
 
 export async function GET(_req: NextRequest) {
-  // Auth gate cloned from /api/world/stream (ratchet #7 pattern).
+  // Auth gate: full HMAC signature verify, matching the write door's session
+  // check (equal-authority-door law cuts both ways — this census carries
+  // un-scrubbed free text, so a forged/unsigned cookie must not read it;
+  // cookie-PRESENCE-only was the /api/world/stream clone's weaker gate).
   const { cookies } = await import('next/headers')
   const cookieStore = await cookies()
-  if (!cookieStore.get('cabinet_session')?.value) {
+  if (!verifySessionValue(cookieStore.get(COOKIE_NAME)?.value)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

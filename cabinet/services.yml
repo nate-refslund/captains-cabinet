@@ -33,6 +33,11 @@
 #             rendered by the generator and NOT expected loaded by the
 #             outcome-watchdog's no-silent-cron floors (a parked or staged
 #             service — see draft-lane, mission-supervisor). Default false.
+#   disabled_reason: REQUIRED alongside `disabled: true` on any row a test pins
+#             as must-stay-scheduled (W10 class): a machine-readable statement
+#             that the parking is deliberate + documented (re-enable path in
+#             the row comment). test_cron_officer_targets accepts documented
+#             parking and still fails silent unscheduling.
 #   sunset:   optional apoptosis metadata (R10-class discipline, added with the
 #             Cabinet World rows 2026-07-07): the organ's KILL CRITERIA — when
 #             this row should be retired or superseded. Free text for humans +
@@ -151,6 +156,8 @@ services:
     label: com.cabinet.research-sweep
     kind: cron
     command: bash cabinet/cron/research-sweep.sh
+    disabled: true   # ABSENCE-DISABLE (cos 2026-07-10): produces research briefs nobody consumes while the Captain is dark (its own sunset premise — shared/interfaces/research-briefs/ is empty). Re-enable on the Captain's return: delete this line + regenerate, AND rename ~/Library/LaunchAgents/com.cabinet.research-sweep.plist.disabled -> .plist + bootstrap. (The old redis:6379 FATAL was already fixed in b761c256; disabling here is purely for unconsumed output.)
+    disabled_reason: "ABSENCE-DISABLE (cos 2026-07-10): unconsumed output while the Captain is dark; deliberate documented parking, NOT the W10 silent-unscheduling regression — re-enable steps in the comment above"
     schedule: { calendar: [{hour: 9, minute: 5}, {hour: 15, minute: 5}] }  # twice daily local
     expected: "'Research sweep trigger pushed' log line per run; FATAL lines page via the no-silent-cron floor"
     sunset: "retire if research briefs go unconsumed 60d (backlog-refine reads shared/interfaces/research-briefs/) or a dedicated research seat returns"
@@ -164,6 +171,8 @@ services:
     label: com.cabinet.backlog-refine
     kind: cron
     command: bash cabinet/cron/backlog-refine.sh
+    disabled: true   # ABSENCE-DISABLE (cos 2026-07-10): backlog isn't worked while the Captain is dark; disabled alongside research-sweep (it reads the briefs). Re-enable on the Captain's return: delete this line + regenerate, AND rename ~/Library/LaunchAgents/com.cabinet.backlog-refine.plist.disabled -> .plist + bootstrap.
+    disabled_reason: "ABSENCE-DISABLE (cos 2026-07-10): backlog unworked while the Captain is dark; deliberate documented parking alongside research-sweep — re-enable steps in the comment above"
     schedule: { calendar: [{hour: 8, minute: 35}] }   # daily 08:35 local — after the 07:30 briefing
     expected: "'Backlog refinement trigger pushed' log line per run; FATAL lines page via the no-silent-cron floor"
     sunset: "retire if shared/backlog.md is superseded by the work-graph as the only backlog surface"
@@ -207,7 +216,11 @@ services:
     # C3 (captain-decisions 2026-07-10): admission law ON — the briefing's
     # "Needs you (N)" section calls build_queue() directly, so it carries the
     # same flag as intake-surface (SURFACE-PARITY-LAW: one census, N skins).
-    env: { CABINET_ADMISSION_LAW: "1" }
+    # CAPTAIN-SURFACE-V2 interim (PR #135, 2026-07-10): CABINET_QUEUE_CARD=0 —
+    # kill-switch the old jargon-wording pinned queue card until the window-4
+    # re-point lands (docs/proposals/germline-window-4-deferral-2026-07-10.md).
+    # Revert = delete this one env key.
+    env: { CABINET_ADMISSION_LAW: "1", CABINET_QUEUE_CARD: "0" }
     expected: "2 delivered briefings/day (outcome-watchdog expectation: DELIVERED, not exited-0)"
   - name: intake-surface
     label: com.cabinet.intake-surface
@@ -218,7 +231,9 @@ services:
     # chains route to the org (acted-digest lines w/ undo), only captain-gated
     # chains enter the Decisions room. Observability untouched (feed/digest/
     # chronicle keep everything). Revert = delete this one env key.
-    env: { CABINET_ENV: runtime, CABINET_ADMISSION_LAW: "1" }
+    # CAPTAIN-SURFACE-V2 interim (PR #135, 2026-07-10): CABINET_QUEUE_CARD=0 —
+    # same kill-switch as frontdoor-briefing (SURFACE-PARITY-LAW: one census).
+    env: { CABINET_ENV: runtime, CABINET_ADMISSION_LAW: "1", CABINET_QUEUE_CARD: "0" }
     expected: "ping-now items surface <10min; queue drains (XLEN not monotonically growing)"
 
   # ── Acting ───────────────────────────────────────────────────────────────
