@@ -98,7 +98,7 @@ def open_subject_ts(rows: list | None = None) -> dict:
     The OPEN-proposal companion to ``decided_subjects``. The propose loop dedups a
     thread that already has an open proposal awaiting the captain's decision — but a blunt
     'subject in open set' check silently swallows a GENUINELY NEW inbound that
-    arrives while the prior draft is still undecided (the reported Kristoffer
+    arrives while the prior draft is still undecided (the reported Casper
     Round-2 bug: a Round-1 draft sat open since the night before, so the 11h-newer
     Round-2 message was dropped). Keyed on each open proposal's ``ts`` (when it was
     proposed) so the loop can compare it against the live last-inbound time and
@@ -133,7 +133,7 @@ def subject_has_open_proposal(slug: str, rows: list | None = None) -> bool:
     Why this exists (duplicate-draft fix): the lane reads open_subject_ts() ONCE
     at the start of main(), then spends tens of seconds in the LLM gather/draft
     before it emits its own proposal. Two concurrent lane runs (a manual run + the
-    5-min cron overlapping) therefore both snapshot 'no open proposal for Maria'
+    5-min cron overlapping) therefore both snapshot 'no open proposal for Lisa'
     before either has emitted, both draft, and the captain gets the SAME draft twice.
     Re-reading the ledger immediately before emit/present closes that window: a
     proposal that landed DURING our draft is now visible and we skip. Cheap (one

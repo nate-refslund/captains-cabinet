@@ -9,7 +9,7 @@
 > canonical work store is a LOCAL task board (SQLite; Neon optional, never
 > required). External PM tools (Monday, Jira, Linear) are optional
 > `TaskAdapter` plugins: local wins, the adapter mirrors. For THIS deployment,
-> Monday Tasks board 5091706356 is the **STEP collaboration mirror**, not the
+> the deployment's Monday Tasks board is the **upstream-org collaboration mirror**, not the
 > canonical store — Monday's only remaining surface is PM (dev-tasks plugin,
 > todos, commitment→task promotion, completion-tracker closes, briefs reading
 > due tasks via the adapter). All Monday-born SYNTHESIS re-points to the vault
@@ -21,12 +21,12 @@
 
 ## The three work classes
 
-Every piece of work in a lane (polads, stephie-stepnetwork, system-self) is
+Every piece of work in a lane (product lanes + system-self) is
 exactly one of:
 
 | Class | What it is | Where it lives | Lifecycle |
 |---|---|---|---|
-| **STREAM** | Continuous product work: bugs, tasks, small features | Local task board (canonical, Amendment 2026-07-02); mirrored to Monday Tasks board **5091706356** via TaskAdapter (per-product filter via the dev-tasks plugin) | claim → execute → close locally; adapter mirrors; never ends |
+| **STREAM** | Continuous product work: bugs, tasks, small features | Local task board (canonical, Amendment 2026-07-02); mirrored to the configured Monday Tasks board (instance/config) via TaskAdapter (per-product filter via the dev-tasks plugin) | claim → execute → close locally; adapter mirrors; never ends |
 | **MISSIONS** | Bounded, Captain-ratified state changes | `instance/config/outcomes.yml` (rolling window, 1–2 active per lane) | draft → active → achieved → retired |
 | **INTAKE** | Classification machinery feeding the other two | Scheduled CoS routine (cron trigger, R3) | runs forever; never an outcome |
 
@@ -36,7 +36,7 @@ intake wrapped in an outcome produces a mission that can never achieve.
 ## STREAM — continuous product work
 
 - The **local task board is the canonical backlog** per product (Amendment
-  2026-07-02); the Monday Tasks board (5091706356) is its STEP collaboration
+  2026-07-02); the configured Monday Tasks board is its upstream-org collaboration
   mirror via the TaskAdapter. Officers claim items locally (today still via
   the dev-tasks plugin against Monday until the adapter cutover lands),
   execute, and close locally; the adapter mirrors the close.
@@ -84,7 +84,7 @@ compliance pushes, big features) — proposed *to* the Captain, never
 authored *by* him.
 
 Good examples:
-- *"PolAds v1.0 staging closeout and production release"* — the world
+- *"Product-A v1.0 staging closeout and production release"* — the world
   changes from "CI red, UAT bugs open, no prod" to "CI green, bugs closed,
   v1.0 live". Verifiable, then done.
 - *"Typed policy engine promoted from shadow to enforcing"* — a one-way
@@ -94,7 +94,7 @@ Bad examples:
 - *"Standing intake: CoS triages Captain-dropped tasks into proposals"* —
   an activity that never completes; it can never reach `achieved`. That is
   intake machinery (see below), not a mission.
-- *"Keep PolAds healthy / maintain the backlog"* — stewardship of a lane.
+- *"Keep Product-A healthy / maintain the backlog"* — stewardship of a lane.
   That is the stream itself; wrapping it in an outcome creates a permanent
   zombie slot.
 
@@ -122,7 +122,7 @@ not at sprint boundaries.
 
 **Recurring waves are stream, not monthly missions.** UAT/feedback waves
 recur; authoring "June wave", "July wave", … outcomes forever would be
-pure ceremony (Captain-attention waste). `outcome-polads-003` runs **once
+pure ceremony (Captain-attention waste). `outcome-product-a-003` runs **once
 as a bootstrap mission** — maximally legible work while the fleet earns
 trust — and its retirement is the handover: subsequent wave items flow
 through the stream, and the recurring quality bar lives as **stream SLOs**
@@ -136,7 +136,7 @@ as plain stream.
 A scheduled CoS routine (cron trigger; implemented in R3 of the
 clone-convergence plan — `docs/clone-convergence-plan-2026-06-09.md`):
 
-1. **Sweep** sources: Monday Nate's-Todos board **5098236573** + any
+1. **Sweep** sources: the Captain's configured Monday Todos board + any
    unclassified stream items on the Tasks board.
 2. **Classify** each item to a lane (or decline with reason).
 3. **Gather-then-decide**: pull the evidence (brain search, Monday context,

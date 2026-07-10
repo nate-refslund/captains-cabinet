@@ -256,10 +256,17 @@ GREP_PATTERNS="sub:refslund sub:stepnetwork sub:jfmedier sub:polads sub:stephie 
 # intended PUBLIC CONSTANT in cabinet/scripts/git-hooks/pre-push (delete-ref
 # detection) + cabinet/scripts/test-pre-push-hook.sh, both of which ship.
 # Fixed-value mask: it can never hide a real chat/board id.
+# Entry 4 — ledger row CG-22: the nil-UUID placeholder PREFIX (34 chars,
+# through the fourth group + ten zeros) carried by the 19 all-zero
+# sequential placeholder ids in cabinet/dashboard/src/lib/config.ts
+# ('00000000-0000-0000-0000-0000000000NN') — synthetic by construction,
+# same all-zero-constant class as CG-21. The dashes make the string
+# impossible inside a real digit-run id, so the mask can never hide one.
 ADJUDICATED_ALLOWLIST=(
   "nate-refslund/captains-cabinet"  # CG-19
   "Refslund"  # CG-20
   "0000000000000000000000000000000000000000"  # CG-21
+  "00000000-0000-0000-0000-0000000000"  # CG-22
 )
 # ledger row per entry, INDEX-PARALLEL to ADJUDICATED_ALLOWLIST — the [adj]
 # console lines + report header derive citations from here, so adding an
@@ -268,6 +275,7 @@ ADJUDICATED_ROWS=(
   "CG-19"
   "CG-20"
   "CG-21"
+  "CG-22"
 )
 [ "${#ADJUDICATED_ALLOWLIST[@]}" -eq "${#ADJUDICATED_ROWS[@]}" ] \
   || fail "ADJUDICATED_ALLOWLIST/ADJUDICATED_ROWS length mismatch (${#ADJUDICATED_ALLOWLIST[@]} vs ${#ADJUDICATED_ROWS[@]}) — every entry needs its recorded ledger row"

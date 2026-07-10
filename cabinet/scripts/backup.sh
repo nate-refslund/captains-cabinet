@@ -23,7 +23,7 @@
 # companion drill: `bash cabinet/scripts/restore-drill.sh` (temp-dir only,
 # never touches live state).
 #
-# NATE-DECISIONS deliberately not wired here (see the services.yml backup row):
+# CAPTAIN-DECISIONS deliberately not wired here (see the services.yml backup row):
 #   * Off-machine copy — a local snapshot dies with the disk; recommended:
 #     post-backup rsync of $BACKUP_DEST to the UpCloud CPH box over Tailscale.
 #   * Redis AOF — BGSAVE below is point-in-time only; enable-redis-aof.sh

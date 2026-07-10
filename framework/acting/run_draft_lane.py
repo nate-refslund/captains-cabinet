@@ -267,11 +267,11 @@ def main() -> None:
     # on unless a fresh message actually arrived). Both maps are read once so the
     # per-thread check is a dict lookup, not a per-thread ledger scan.
     #
-    # Fix 3 (Kristoffer Round-2 bug): the OPEN-proposal dedup is now RECENCY-AWARE
+    # Fix 3 (Casper Round-2 bug): the OPEN-proposal dedup is now RECENCY-AWARE
     # — open_proposal_blocks() suppresses a thread only while NO inbound newer than
     # the pending proposal has arrived. Previously a blunt `slug in open_subjects`
     # check swallowed every genuinely-new message on a thread whose prior draft was
-    # still undecided (Kristoffer R1 sat open overnight, so R2 — 11h newer — never
+    # still undecided (Casper R1 sat open overnight, so R2 — 11h newer — never
     # surfaced). Now a real new message on an open thread re-presents, exactly like
     # the decided path already does.
     src = get_source()  # the bound personal source (Flavor-A screenpipe adapter)

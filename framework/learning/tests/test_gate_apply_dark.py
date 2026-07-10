@@ -61,14 +61,23 @@ class TestPlistDark:
             (_REPO / "cabinet" / "scripts" / "germline-lock.sh").resolve(),
             (_REPO / "cabinet" / "scripts" / "hooks" /
              "pre-tool-use.sh").resolve(),
-            # Egg packaging EXCLUSION list (PC-E R160 launchd-portable-only):
-            # the manifest must NAME the plist to expect-absent it from the
-            # public egg — naming-for-exclusion is anti-arming (it removes
-            # the dark daemon from the artifact), the manifest itself never
-            # ships (self-exclusion delete row), and the launchctl-load
-            # sweep below still covers it.
+            # Egg packaging rules (PC-E R160 launchd-portable-only + its
+            # amendment): the manifest NAMES the plist to pin its packaging
+            # rule, and the exporter NAMES it to rewrite the EXPORT COPY
+            # portable-dark (source untouched, Disabled/RunAtLoad preserved).
+            # Naming-for-packaging is anti-arming — neither file copies to
+            # /Library/LaunchDaemons or bootstraps anything, neither ships
+            # in the egg (self-exclusion delete rows), and the
+            # launchctl-load sweep below still covers both.
             (_REPO / "cabinet" / "scripts" /
              "egg-export-manifest.txt").resolve(),
+            (_REPO / "cabinet" / "scripts" / "egg-export.sh").resolve(),
+            # ...and the pytest twin that PINS the portable-dark packaging
+            # contract (tests may name the label per this test's docstring;
+            # this one lives under cabinet/scripts/tests so the roots sweep
+            # sees it). Also export-deleted, never ships.
+            (_REPO / "cabinet" / "scripts" / "tests" /
+             "test_egg_export.py").resolve(),
         }
         for root in roots:
             files = [root] if root.is_file() else (

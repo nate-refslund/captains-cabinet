@@ -24,7 +24,7 @@ redis-cli -h "$MEM_REDIS_HOST" -p "$MEM_REDIS_PORT" XGROUP CREATE "$MEM_QUEUE_KE
 log() { echo "[memory-worker $(date -u +%H:%M:%S)] $1"; }
 
 # Self-heal (lane-ops 2026-07-04): if Redis loses the stream/group (flush,
-# restart without AOF — BGSAVE-only durability is a known NATE-DECISION gap),
+# restart without AOF — BGSAVE-only durability is a known CAPTAIN-DECISION gap),
 # XREADGROUP errors NOGROUP on every call. The old code swallowed stderr to
 # /dev/null, so the empty result looked like "no messages", BLOCK never
 # engaged (errors return immediately) and the loop busy-spun forever while

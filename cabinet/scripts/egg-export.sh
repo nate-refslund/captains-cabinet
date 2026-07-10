@@ -40,8 +40,9 @@ egg-export.sh — cut the public egg as a fresh tree from git HEAD
 
 The exclusion/transform pass is data-driven from
 cabinet/scripts/egg-export-manifest.txt (row-cited: R059 R088 R116 R120
-R122 R123 R124 R125 R126 R127 R128 R145 R159, plus the PC-E scrub-paths
-transforms launchd-portable-only + claude-egg-swap). Writes
+R122 R123 R124 R125 R126 R127 R128 R145 R159 R160 R161 R162 — incl. the
+PC-E transforms launchd-portable-only, claude-egg-swap and
+framework-docs-archive). Writes
 egg-manifest.json into the export root and prints a one-screen summary.
 
 PRIVATE-SIDE PREP ONLY — publishing remains CG-7 Captain-gated.
@@ -225,6 +226,41 @@ What remains here is the NORMATIVE spec set pinned by germline artifacts:
 EOF
 }
 
+# PC-E (Wave-E integrator, R162): the DATED framework/docs design snapshots
+# are instance history — authored on the launching deployment, they cite its
+# absolute paths, live lane names and the Captain by name throughout, and
+# rewording a dated design record would falsify it (same doctrine as R145).
+# The undated LIVING contract docs (work-model.md — cited by the shipping
+# guide —, consequence-ledger.md, outcome-watchdog.md) stay and are scrubbed
+# at source instead.
+t_framework_docs_archive() {
+  local dir="$OUT/framework/docs" entry base
+  [ -d "$dir" ] || { verify_fail "framework/docs missing from archive cut"; return 0; }
+  for entry in "$dir"/*; do
+    [ -e "$entry" ] || continue
+    base="$(basename "$entry")"
+    case "$base" in
+      *-2026-*.md) rm -f "$entry" ;;   # dated design snapshot — instance history
+      *) : ;;                          # living contract docs ship
+    esac
+  done
+  cat > "$dir/ARCHIVED-NOTE.md" <<'EOF'
+# framework/docs — dated design snapshots archived at egg export (R162)
+
+The launching deployment's DATED design documents (authority-matrix,
+fidelity-harness, cohesive-architecture, meta-cognition direction snapshots)
+are instance history: they cite that deployment's absolute paths, live lane
+names and its Captain throughout, and stay with the source instance. Code
+comments citing them by filename refer to that instance's design record.
+
+The undated LIVING contract docs ship here unchanged:
+
+- work-model.md (the work-classes contract the guide references)
+- consequence-ledger.md
+- outcome-watchdog.md
+EOF
+}
+
 t_ci_retarget_master() {
   local wf tmp bad
   for wf in "$OUT"/.github/workflows/*.yml "$OUT"/.github/workflows/*.yaml; do
@@ -303,6 +339,25 @@ t_launchd_portable_only() {
     case "$base" in
       *.template.plist) : ;;               # portable twins ship
       officer-entitlements.plist) : ;;     # generic entitlements — ships
+      com.cabinet.gate-apply.plist)
+        # GERMLINE-LOCKSTEP EXCEPTION (R160 amendment, Wave-E integrator):
+        # this DARK root-daemon definition is a WIRED germline FILES entry —
+        # the export's own lockstep suite (test_germline_lockstep_
+        # consistency.py, run by gate (b) null-hatch) requires it ON DISK
+        # and enumerated as the one LaunchDaemons plist, so deleting it
+        # bricked gate (b). It ships PORTABLE-DARK instead: instance-absolute
+        # paths rewritten to the deploy-mac envsubst placeholders (the
+        # .template.plist convention), DARK semantics (Disabled=true,
+        # RunAtLoad=false, Label, ritual comment) byte-preserved. sed writes
+        # an .egg-tmp sibling inside --out, mv'd into place (safety
+        # contract). Content is fail-closed verified below. The germline-
+        # locked SOURCE plist is never touched.
+        sed -E \
+          -e 's|/Users/[^/<"]+/captains-cabinet|${REPO_ROOT}|g' \
+          -e 's|/Users/[^/<"]+/|${HOME}/|g' \
+          "$f" > "$f.egg-tmp" && mv "$f.egg-tmp" "$f" \
+          || verify_fail "gate-apply portable rewrite failed"
+        ;;
       *.plist) rm -f "$f" ;;               # rendered live artifact — leaves
       *) : ;;                              # non-plist files (docs) ship
     esac
@@ -317,10 +372,24 @@ t_launchd_portable_only() {
     || verify_fail "officer template plist must ship: cabinet/launchd/com.cabinet.officer.template.plist"
   [ -f "$dir/officer-entitlements.plist" ] \
     || verify_fail "entitlements plist must ship: cabinet/launchd/officer-entitlements.plist"
+  # gate-apply portable-dark content contract: present, no absolute home
+  # path survived the rewrite, placeholder present, DARK flag key intact
+  local ga="$dir/com.cabinet.gate-apply.plist"
+  if [ ! -f "$ga" ]; then
+    verify_fail "gate-apply portable-dark plist must ship: cabinet/launchd/com.cabinet.gate-apply.plist"
+  else
+    if grep -q '/Users/' "$ga"; then
+      verify_fail "gate-apply plist still carries an absolute home path after the portable rewrite"
+    fi
+    grep -q '{REPO_ROOT}' "$ga" \
+      || verify_fail "gate-apply plist rewrite did not produce the REPO_ROOT placeholder"
+    grep -q '<key>Disabled</key>' "$ga" \
+      || verify_fail "gate-apply plist lost its Disabled key — DARK contract broken"
+  fi
   while IFS= read -r f; do
     base="$(basename "$f")"
     case "$base" in
-      *.template.plist|officer-entitlements.plist) : ;;
+      *.template.plist|officer-entitlements.plist|com.cabinet.gate-apply.plist) : ;;
       *) verify_fail "rendered live plist survived the pass: ${f#"$OUT/"}" ;;
     esac
   done < <(find "$dir" -type f -name '*.plist' | sort)
@@ -367,6 +436,7 @@ run_transform() {
   case "$1" in
     interfaces-header-only) t_interfaces_header_only ;;
     plans-archive)          t_plans_archive ;;
+    framework-docs-archive) t_framework_docs_archive ;;
     ci-retarget-master)     t_ci_retarget_master ;;
     contexts-prune)         t_contexts_prune ;;
     projects-prune)         t_projects_prune ;;

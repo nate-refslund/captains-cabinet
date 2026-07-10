@@ -253,15 +253,21 @@ def test_launchd_ships_portable_templates_only(export: Path):
     """PC-E scrub-paths: the static committed plists are the live deployment's
     rendered artifacts (absolute home paths + live roster) — only the envsubst
     .template.plist twins + officer-entitlements.plist may ship; a fresh
-    deployment renders its fleet from cabinet/services.yml + templates."""
+    deployment renders its fleet from cabinet/services.yml + templates.
+    ONE germline-lockstep exception (R160 amendment): the DARK germline-wired
+    com.cabinet.gate-apply.plist ships PORTABLE-DARK (placeholder paths,
+    Disabled/RunAtLoad preserved) because the export's own lockstep suite —
+    run by publish-gate (b) null-hatch — requires the wired FILES entry on
+    disk and enumerated as the one LaunchDaemons plist."""
     launchd = export / "cabinet" / "launchd"
     # recursive, mirroring the transform's fail-closed verification sweep:
-    # a plist anywhere under cabinet/launchd/ must be a portable template
-    # or the generic entitlements file
+    # a plist anywhere under cabinet/launchd/ must be a portable template,
+    # the generic entitlements file, or the portable-dark gate-apply twin
     offenders = [
         p.relative_to(export).as_posix() for p in launchd.rglob("*.plist")
         if not p.name.endswith(".template.plist")
         and p.name != "officer-entitlements.plist"
+        and p.name != "com.cabinet.gate-apply.plist"
     ]
     assert not offenders, f"rendered live plists must not ship: {offenders}"
     assert (launchd / "com.cabinet.officer.template.plist").is_file(), \
@@ -270,6 +276,28 @@ def test_launchd_ships_portable_templates_only(export: Path):
         "the generic entitlements plist must ship"
     assert (launchd / "INSTALL-flip.md").is_file(), \
         "the (scrubbed) launchd install doc still ships"
+    # portable-dark content contract on the shipped gate-apply plist
+    ga = launchd / "com.cabinet.gate-apply.plist"
+    assert ga.is_file(), "gate-apply portable-dark plist must ship (R160 amendment)"
+    ga_text = ga.read_text(encoding="utf-8")
+    assert "/Users/" not in ga_text, \
+        "gate-apply plist must carry no absolute home path after the rewrite"
+    assert "${REPO_ROOT}" in ga_text, \
+        "gate-apply plist must carry the envsubst REPO_ROOT placeholder"
+    assert "<key>Disabled</key>" in ga_text and "<key>RunAtLoad</key>" in ga_text, \
+        "gate-apply plist DARK keys must survive the rewrite"
+
+
+def test_framework_docs_dated_snapshots_archived(export: Path):
+    """R162 (Wave-E integrator): dated framework/docs design snapshots are
+    instance history and leave the egg; the living contract docs + the
+    ARCHIVED-NOTE stub ship."""
+    docs = export / "framework" / "docs"
+    dated = [p.name for p in docs.glob("*-2026-*.md")]
+    assert dated == [], f"dated design snapshots must not ship: {dated}"
+    for keeper in ("ARCHIVED-NOTE.md", "work-model.md",
+                   "consequence-ledger.md", "outcome-watchdog.md"):
+        assert (docs / keeper).is_file(), f"living doc must ship: {keeper}"
 
 
 def test_claude_egg_swap_once_template_tracked(export: Path):

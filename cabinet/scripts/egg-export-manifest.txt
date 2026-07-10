@@ -114,6 +114,13 @@ transform interfaces-header-only
 # plan + ledger pair (instance coordination artifacts). The 4 NORMATIVE specs
 # pinned by germline artifacts stay; an ARCHIVED-NOTE.md stub records the rule.
 transform plans-archive
+# R162 (PC-E integrator): the DATED framework/docs design snapshots
+# (*-2026-*.md) are instance history — they cite the launching deployment's
+# absolute paths, live lane names and its Captain throughout; rewording a
+# dated design record would falsify it (R145 doctrine). The undated LIVING
+# contract docs (work-model.md — guide-referenced —, consequence-ledger.md,
+# outcome-watchdog.md) stay; an ARCHIVED-NOTE.md stub records the rule.
+transform framework-docs-archive
 # R159: CI branch triggers retarget to the export default branch (master) at
 # packaging time — until then CI keeps running on the live integration branch.
 transform ci-retarget-master
@@ -134,15 +141,20 @@ transform act-first-default
 # R059: bin/ has zero tracked files (binaries rebuild on target via
 # build-calendar-helper.sh); the egg keeps an EMPTY bin/ mount point.
 transform bin-mount
-# PC-E scrub-paths (Wave E 2026-07-10; ledger row pending — proposed to the
-# integrator with this wave): the static committed launchd plists are THIS
-# deployment's rendered artifacts (absolute /Users/... paths + live roster,
-# incl. the germline-locked gate-apply plist) and are live-consumed — never
-# scrub-edited at source. Only the envsubst .template.plist twins +
+# PC-E scrub-paths (Wave E 2026-07-10; ledger row R160): the static committed
+# launchd plists are THIS deployment's rendered artifacts (absolute
+# /Users/... paths + live roster) and are live-consumed — never scrub-edited
+# at source. Only the envsubst .template.plist twins +
 # officer-entitlements.plist ship; a fresh deployment renders its fleet from
 # cabinet/services.yml (generate-plists.py) + templates (deploy-mac.sh).
+# ONE germline-lockstep exception (R160 amendment, Wave-E integrator): the
+# DARK germline-wired com.cabinet.gate-apply.plist ships PORTABLE-DARK
+# (paths rewritten to ${REPO_ROOT}/${HOME} placeholders, Disabled/RunAtLoad
+# preserved, source never touched) because the export's own lockstep suite
+# requires the wired FILES entry on disk and enumerated — deleting it
+# bricked gate (b) null-hatch.
 transform launchd-portable-only
-# PC-E scrub-paths (Wave E 2026-07-10; ledger row pending, pairs with the
+# PC-E scrub-paths (Wave E 2026-07-10; ledger row R161, pairs with the
 # row above): the repo-root CLAUDE.md is officer-loaded LIVE deployment
 # context (live-coupling rule: never semantically scrub-edited). The egg
 # ships docs/templates/CLAUDE-egg.md (captain-agnostic operating context,
@@ -243,5 +255,18 @@ expect-absent WINDOW-RUNBOOK.md
 expect-absent cabinet/launchd/com.cabinet.officer.polads-ceo.plist
 expect-absent cabinet/launchd/com.cabinet.officer.stephie-ceo.plist
 expect-absent cabinet/launchd/com.cabinet.officer.cos.plist
-expect-absent cabinet/launchd/com.cabinet.gate-apply.plist
 expect-absent docs/templates/CLAUDE-egg.md
+# R160 amendment (Wave-E integrator): gate-apply ships PORTABLE-DARK — the
+# germline-lockstep suite inside the export requires the wired FILES entry
+# on disk (content verified path-free by the transform's fail-closed sweep).
+expect-present cabinet/launchd/com.cabinet.gate-apply.plist
+# R162: dated framework/docs design snapshots are archived out; the living
+# contract docs + the stub ship.
+expect-absent framework/docs/authority-matrix-design-2026-06-19.md
+expect-absent framework/docs/fidelity-harness-design-2026-06-18.md
+expect-absent framework/docs/cabinet-architecture-cohesive-2026-06-22.md
+expect-absent framework/docs/meta-cognition-direction-2026-06-25.md
+expect-present framework/docs/ARCHIVED-NOTE.md
+expect-present framework/docs/work-model.md
+expect-present framework/docs/consequence-ledger.md
+expect-present framework/docs/outcome-watchdog.md

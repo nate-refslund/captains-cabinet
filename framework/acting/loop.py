@@ -247,7 +247,7 @@ def expire_event(proposal_ev: dict, *, reviewed_at: str | None = None,
     resolution?". For an auto-expired self-reply it MUST be the proposal's own
     creation ts (when the draft was made), NOT the (possibly hours-later) expiry
     moment, or a genuinely-new inbound that arrived before the sweep is wrongly
-    judged already-handled and the lane never drafts it (the Kristoffer
+    judged already-handled and the lane never drafts it (the Casper
     UAT-TEST-#3 miss). ``reviewed_at`` stays the real audit time of the expiry.
     When ``decided_at`` is not given it falls back to ``reviewed_at`` then the
     proposal ts (the prior behavior, preserved for policy/instruction expiries)."""

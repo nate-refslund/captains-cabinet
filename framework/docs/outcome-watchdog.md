@@ -11,7 +11,7 @@ active. Every existing monitor said "green" — because they all check that the
 **PROCESS ran**. But the briefing's Telegram send `400`'d, and the failure was
 swallowed: the run-log recorded `send.sent == false` and silently re-queued the
 undelivered backlog, which snowballed to **77 recovered-but-undelivered items**
-over days. Nate never got those briefings, and nothing noticed.
+over days. The Captain never got those briefings, and nothing noticed.
 
 The gap is structural: **nothing verified the OUTCOME actually happened.** This
 watchdog adds exactly that layer — and only that layer. It composes with the
@@ -56,7 +56,7 @@ deployment's `watchdog.yml`):
 
 | id | Outcome verified | Tier | How it's verified (OUTCOME, not process) |
 |----|------------------|------|------------------------------------------|
-| `briefing-delivered` | Briefing DELIVERED to Nate 2×/day (07:30 + 19:30 local) | auto-fix | **Satisfied by delivery via ANY means** (refinement below). Checks the `cabinet:schedule:last-run:cos:briefing` marker first (the Chair stamps it on every delivery, incl. a manual one); if ≥ the due slot → OUTCOME TRUE. Else falls back to the cron log: newest record `send.sent == True` after the slot = delivered; a fresh `sent:false` = ran-but-send-failed; a stale success = didn't-run. |
+| `briefing-delivered` | Briefing DELIVERED to the Captain 2×/day (07:30 + 19:30 local) | auto-fix | **Satisfied by delivery via ANY means** (refinement below). Checks the `cabinet:schedule:last-run:cos:briefing` marker first (the Chair stamps it on every delivery, incl. a manual one); if ≥ the due slot → OUTCOME TRUE. Else falls back to the cron log: newest record `send.sent == True` after the slot = delivered; a fresh `sent:false` = ran-but-send-failed; a stale success = didn't-run. |
 | `officer-reflection` | Each fulltime officer that did recent work reflected within 48h | escalate-chair | Reuses the same `cabinet:schedule:last-run:<o>:reflection` + `cabinet:last-experience:<o>` stamps the anomaly-scan reads. Idle officers (no recent work) are not expected to reflect. |
 | `captain-decisions-logged` | Relayed Captain decisions are logged to `captain-decisions.md` | drift | Soft backstop to the real-time post-tool-use enforcement: flags if the newest dated entry is >7 days old (a structural lapse). |
 | `no-silent-cron-failure` | The cabinet's own crons produce output and don't silently error | escalate-chair | Per watched job log: error-marker in the tail (`FATAL`, `Traceback`, `trigger NOT pushed`) OR stale past cadence. |
@@ -90,9 +90,9 @@ real Redis) and guarantees a verify can't quietly reach for the network.
 | **ESCALATE_CHAIR** | Push ONE consolidated trigger to the Chair to triage (gather-then-decide, fix root cause). | `cabinet:triggers:cos` |
 | **DRIFT** | Append a proposal to `meta-cognition-proposals.md` via `mc_emit_proposal` (proposal-only, Captain-gated — **not** an alert). | meta-cognition sink |
 
-**Nate is never DM'd directly.** Per the `P-Alerts-To-Chair` pattern, every
-operational alert routes to the Chair; the Chair escalates to Nate only if
-genuinely stuck. Every Chair trigger explicitly says *"do NOT DM Nate the raw
+**The Captain is never DM'd directly.** Per the `P-Alerts-To-Chair` pattern, every
+operational alert routes to the Chair; the Chair escalates to the Captain only if
+genuinely stuck. Every Chair trigger explicitly says *"do NOT DM the Captain the raw
 failure."*
 
 **Anti-thrash:** each routed action is deduped on `(expectation_id, action)` via
@@ -107,10 +107,10 @@ never re-alerts.
 ## Refinements from first live fire (2026-06-29)
 
 The watchdog fired on its very first cycle and correctly detected the 07:30
-briefing's silent send failure → escalated to the Chair (not Nate). That live
+briefing's silent send failure → escalated to the Chair (not the Captain). That live
 fire surfaced two refinements, now built in:
 
-1. **Satisfied by ANY delivery, not just the cron's send.** The OUTCOME is "Nate
+1. **Satisfied by ANY delivery, not just the cron's send.** The OUTCOME is "the Captain
    got his briefing" — delivered by any means. The first fire flagged the 07:30
    slot as undelivered even though the Chair had *manually* delivered it after the
    cron missed (the Chair stamped `cabinet:schedule:last-run:cos:briefing =

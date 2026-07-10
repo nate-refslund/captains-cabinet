@@ -38,9 +38,10 @@ rule citing its `operative-egg-ledger` row. Summary:
 | `instance/config/{policies,posture-presets}/`, `contexts/_default.yml`, `projects/_template.yml` (R122/R123/R124/R125) | `instance/agents/`, `instance/fidelity/`, lane contexts/projects/officer-skills (R128/R124/R125) |
 | `shared/interfaces` as **header contract + empty body** (R116; captain-vetoes.yml is the model) | captain rules/knowledge content (R116) |
 | the 4 germline-pinned normative specs + `ARCHIVED-NOTE.md` stub | the rest of `docs/plans/` incl. the egg plan+ledger (R145) |
+| `framework/docs` LIVING contract docs (`work-model.md`, `consequence-ledger.md`, `outcome-watchdog.md`) + `ARCHIVED-NOTE.md` stub (R162 `framework-docs-archive`) | the DATED `framework/docs/*-2026-*.md` design snapshots — instance history (live paths, lane names, the Captain by name); rewording dated records would falsify them |
 | `act-first-surfaces.yml` **as the scrubbed `.example` bytes** (R126 — the germline lockstep suite requires the wired file on disk; live rulings leave) | the live ruled `act-first-surfaces.yml` (Captain rulings + board ids) |
 | empty `bin/` mount (R059); CI retargeted to `[master]` (R159) | node_modules/.next (R088); gitignored LimeZu assets (structural — archive ships tracked files only) |
-| launchd **`.template.plist` twins + `officer-entitlements.plist` + `INSTALL-flip.md`** (PC-E `launchd-portable-only`) | the rendered static `com.cabinet.*.plist` files — this deployment's artifacts (home paths + live roster; incl. the germline gate-apply plist); a fresh target renders from `services.yml` + templates |
+| launchd **`.template.plist` twins + `officer-entitlements.plist` + `INSTALL-flip.md` + `com.cabinet.gate-apply.plist` PORTABLE-DARK** (PC-E `launchd-portable-only`, R160 amendment: the germline-lockstep suite requires the wired gate-apply FILES entry on disk, so the export copy ships with envsubst-placeholder paths, DARK flags preserved, source untouched) | every other rendered static `com.cabinet.*.plist` — this deployment's artifacts (home paths + live roster); a fresh target renders from `services.yml` + templates |
 | **`docs/templates/CLAUDE-egg.md` swapped in AS `CLAUDE.md`** (PC-E `claude-egg-swap` — captain-agnostic operating context; prints a loud UNSWAPPED note until the template is tracked at HEAD) | the live officer-loaded `CLAUDE.md` (deployment facts, absolute paths — live-coupling rule: excluded via transform, never scrub-edited) |
 | — | the egg tooling itself (this runbook, exporter, manifest, gate — real-value doctrine) |
 | — | `docs/launch/` drafts (CG-7 **per-item** publication material — Show HN draft, business-model proposal; integration ruling 2026-07-10, they never bulk-publish by riding the egg) |
@@ -83,7 +84,8 @@ keeps them out). Remaining known RED sources until their owning rows land:
 real-value surfaces outside this wave (marketplace metadata, code/test
 fixtures), the unbounded digit-run guard's id-shaped test fixtures
 (epoch-millis stream ids, placeholder chat/bot-token ids, the all-zero SHA
-constant in the pre-push hook pair — adjudication row proposed), and the
+constant in the pre-push hook pair — adjudicated as CG-21, with the nil-UUID
+config placeholders as CG-22), and the
 LICENSE copyright surname (intended value — adjudication row proposed). The
 grouped report is the Captain's scrub worklist; fixes belong in the source
 rows (reword — e.g. underscored numeric literals, shorter fakes — or

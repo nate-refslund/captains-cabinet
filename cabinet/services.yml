@@ -388,11 +388,11 @@ services:
       LOCAL destination ~/Cabinet-Backups, 14-day retention, pruned by the
       script itself. Verify restorability with cabinet/scripts/restore-drill.sh
       (temp-dir only, never touches live state).
-      NATE-DECISION (off-machine copy, deliberately NOT wired): recommend
+      CAPTAIN-DECISION (off-machine copy, deliberately NOT wired): recommend
       rsync of ~/Cabinet-Backups to the UpCloud CPH box over Tailscale
       (8CPU/16GB node already on the tailnet) — an on-machine backup does not
       survive disk loss/theft. Say the word and ops wires a post-backup rsync.
-      NATE-DECISION (Redis AOF, deliberately NOT flipped): BGSAVE gives
+      CAPTAIN-DECISION (Redis AOF, deliberately NOT flipped): BGSAVE gives
       point-in-time snapshots only; cabinet/scripts/enable-redis-aof.sh exists
       and flips appendonly+everysec, but it restarts Redis (brief fleet trigger
       outage) so flipping it stays a Captain step.

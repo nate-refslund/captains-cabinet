@@ -440,6 +440,13 @@ class TestEval019GateRefusal:
             # covers both files.
             and not h.endswith("germline-lock.sh")
             and not h.endswith("pre-tool-use.sh")
+            # The egg exporter NAMES the plist to rewrite its EXPORT COPY
+            # portable-dark (PC-E R160 amendment) — packaging, not loading:
+            # it copies nothing to /Library/LaunchDaemons, bootstraps
+            # nothing, never ships in the egg, and the launchctl-load
+            # sweep in test_gate_apply_dark.py still covers it.
+            and not h.endswith("egg-export.sh")
+            and not h.endswith("test_egg_export.py")
         ]
         assert loaders == [], f"setup scripts must not load the dark daemon: {loaders}"
         # services.yml may DOCUMENT the darkness but never schedule it
