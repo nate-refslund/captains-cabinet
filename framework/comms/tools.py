@@ -33,7 +33,8 @@ def send_card(*, subject: str, situation: str = "", kind: str = "action-card",
               urgency: "str | None" = None, steps: "list | None" = None,
               state: str = "open", deadline_iso: "str | None" = None,
               pid_marker: "str | None" = None, injection_suspect: bool = False,
-              chair_review: bool = False, adapter=None, ch=None, now=None) -> dict:
+              chair_review: bool = False, escalation: "dict | None" = None,
+              adapter=None, ch=None, now=None) -> dict:
     """Present a card to the Captain — the officer gives the STRUCTURED situation
     (subject/situation/steps/evidence); the gate renders the terse card, dedups
     it into a standing card, honors quiet hours, and (chair_review) routes an
@@ -43,13 +44,20 @@ def send_card(*, subject: str, situation: str = "", kind: str = "action-card",
     The card's IDENTITY is content-derived — ``situation_key(evidence, subject)``.
     Re-sending the SAME subject+evidence with an updated ``state``/``steps`` is the
     UPDATE path: the gate finds the existing standing card and EDITS that one
-    message in place (no duplicate). ``edit_card`` is the named alias for that."""
+    message in place (no duplicate). ``edit_card`` is the named alias for that.
+
+    ``escalation`` is the tiered-escalation exhaustion proof
+    (``{"lane_tried", "chair_tried", "needs_captain_because"}`` — §3.9): when
+    the escalation gate is armed, a NEW open decision card without it BOUNCES
+    back to you (``status="bounced"`` + what's missing) instead of reaching
+    the Captain — fix it at your tier or attach the proof."""
     from framework.attention import gate
     a = _adapter(adapter)
     item = {"kind": kind, "subject": subject, "situation": situation,
             "lane": lane, "evidence": list(evidence or []), "urgency": urgency,
             "steps": list(steps or []), "state": state, "deadline_iso": deadline_iso,
-            "pid_marker": pid_marker, "injection_suspect": bool(injection_suspect)}
+            "pid_marker": pid_marker, "injection_suspect": bool(injection_suspect),
+            "escalation": escalation}
     return gate.submit(item, send_fn=a.send, edit_fn=a.edit,
                        chair_review=chair_review, ch=ch, now=now)
 

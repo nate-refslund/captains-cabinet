@@ -267,6 +267,19 @@ def decide(item: dict, *, ch: "dict | None" = None,
     if resolved["route"] == "mute":
         return {**base, "action": "suppress", "reason": "charter-mute"}
 
+    # (2.2) Tiered-escalation admission (captain-surface master prompt §3.9,
+    # 2026-07-10) — DARK unless CABINET_ESCALATION_GATE=1. A NEW captain-bound
+    # decision card must carry an exhaustion proof ("the lane tried X, the
+    # Chair tried Y, this needs the captain because Z") or it BOUNCES back to
+    # the org with the reason. Floor classes are exempt (a safety page is
+    # never blocked); standing-card edits returned at (1); non-open states and
+    # non-decision kinds pass inside check().
+    from framework.attention import escalation
+    esc = escalation.check(item, resolved=resolved)
+    if not esc.get("admitted", True):
+        return {**base, "action": "bounce", "reason": esc.get("reason"),
+                "bounce": esc}
+
     # (2.4) H5 — expiry-streak class demotion (stay-live-until-acted made
     # compatible with adaptive quieting: presentation decays, liveness
     # doesn't). A NEW card whose KIND crossed the charter demote bar folds
@@ -431,6 +444,21 @@ def deliver(decision: dict, *, send_fn=None, edit_fn=None, briefing_fn=None,
     if action in ("briefing", "weekly"):
         briefing_fn(item or {}, decision)
         return {"status": action, "sent": False}
+
+    if action == "bounce":
+        # Tiered-escalation gate (§3.9): the card goes BACK to the producing
+        # officer with the reason — journaled + org-evented so the pattern is
+        # auditable; nothing reaches the Captain.
+        try:
+            from framework.attention import escalation
+            escalation.journal_bounce(item or {}, decision)
+        except Exception:
+            pass
+        b = decision.get("bounce") or {}
+        return {"status": "bounced", "sent": False,
+                "reason": decision.get("reason"),
+                "missing": b.get("missing") or [],
+                "fix": b.get("fix") or ""}
 
     return {"status": "suppressed", "sent": False, "reason": decision.get("reason")}
 
