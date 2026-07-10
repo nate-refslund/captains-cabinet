@@ -85,6 +85,14 @@ class TestPlistDark:
             for f in files:
                 if not f.is_file() or f.resolve() in allowed:
                     continue
+                if "__pycache__" in f.parts or f.suffix == ".pyc":
+                    # Compiled-bytecode twins are DERIVATIVE artifacts, not
+                    # setup surfaces: running cabinet/scripts/tests writes
+                    # __pycache__/test_egg_export*.pyc whose bytecode embeds
+                    # the (allowlisted) source's label string, tripping this
+                    # sweep only when the suites run in that order. The
+                    # source .py files themselves are still swept above.
+                    continue
                 try:
                     text = f.read_text(errors="ignore")
                 except OSError:
