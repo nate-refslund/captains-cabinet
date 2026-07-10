@@ -2,14 +2,14 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "captains-cabinet",
   "displayName": "Captain's Cabinet",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "An autonomous, self-improving AI organization framework for Claude Code — Captain (founder) + a roster-derived officer fleet with event-sourced missions, durable role registry, OVI measurement, and pattern-learning ledger. Three-layer architecture (framework + preset + instance) for product-agnostic deployment; presets ship role archetypes (work: functional officers, portfolio: Chair + generated lane CEOs), the instance roster (instance data, never packaged) decides what actually runs.",
   "author": {
     "name": "Captain's Cabinet contributors",
-    "url": "https://github.com/nate-step/captains-cabinet"
+    "url": "https://github.com/nate-refslund/captains-cabinet"
   },
-  "homepage": "https://github.com/nate-step/captains-cabinet",
-  "repository": "https://github.com/nate-step/captains-cabinet",
+  "homepage": "https://github.com/nate-refslund/captains-cabinet",
+  "repository": "https://github.com/nate-refslund/captains-cabinet",
   "license": "BUSL-1.1",
   "keywords": [
     "ai-organization",

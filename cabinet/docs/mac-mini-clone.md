@@ -34,7 +34,7 @@ These steps are MACHINE-level and must be done fresh on every Mac:
 7. **LaunchAgent install** via `deploy-mac.sh` (envsubst-renders templates + bootstraps services — per Phase 2)
 8. **apcupsd config** (UPS-specific per-machine; Phase 1 Checkpoint 1.10)
 9. **Code-signing identity import from Keychain export** (per Phase 1 Checkpoint 1.11 in Spec 058 v1.2 — without this, TCC permissions don't persist across launches)
-10. **Cabinet repo clone** from GitHub (`gh repo clone nate-step/captains-cabinet ~/work/captains-cabinet`) — pulls in framework + presets + instance + scripts (mac-native branch picks up Phase 0 host-state tarball on first officer start)
+10. **Cabinet repo clone** from GitHub (`gh repo clone nate-refslund/captains-cabinet ~/work/captains-cabinet`) — pulls in framework + presets + instance + scripts (mac-native branch picks up Phase 0 host-state tarball on first officer start)
 
 ## Effort estimate per Mac (2 or 3)
 

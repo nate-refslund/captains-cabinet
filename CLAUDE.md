@@ -77,7 +77,7 @@ The bottleneck is always a dependency (data, decision, validation), never engine
 | **Notion** | Business brain — strategy, brand, research, decisions | `notion-search`, `notion-fetch`, `notion-create-pages`, `notion-update-page` |
 | **/tasks** | Canonical task backlog (Postgres `officer_tasks`) — product + Cabinet framework + Personal | Dashboard `/tasks` route OR direct `officer_tasks` queries |
 | **Linear** | Read-only archive (post-cutover, audit only — **do not write**) | GraphQL API, read-only |
-| **GitHub Issues** | Cabinet-framework backlog — infra, officer system, meta-features | `gh` CLI / GitHub API on `nate-step/captains-cabinet` |
+| **GitHub Issues** | Cabinet-framework backlog — infra, officer system, meta-features | `gh` CLI / GitHub API on `nate-refslund/captains-cabinet` |
 | **Git repo** | Code — the product itself | Git CLI in the lane's product checkout (path in `instance/config/projects/<lane>.yml`) |
 
 Keep framework work (GitHub Issues) separate from product work (/tasks) so the product officer never triages framework items. Dated cutover state (Spec-039, row counts, Linear→/tasks migration) lives in `instance/config/platform.yml` → "Knowledge-systems migration state".

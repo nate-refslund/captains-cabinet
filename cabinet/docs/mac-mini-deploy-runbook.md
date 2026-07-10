@@ -40,7 +40,7 @@ This document is opinionated and idempotent — every step can be re-run safely.
 ```bash
 mkdir -p ~/work
 cd ~/work
-git clone https://github.com/nate-step/captains-cabinet.git
+git clone https://github.com/nate-refslund/captains-cabinet.git
 cd captains-cabinet
 git checkout claude/convergence-v2    # OR master once this branch is merged
 ```

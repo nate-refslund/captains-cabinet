@@ -44,7 +44,7 @@ null-hatch gate below.
 
 ```bash
 mkdir -p ~/work && cd ~/work
-git clone https://github.com/nate-step/captains-cabinet.git captains-cabinet
+git clone https://github.com/nate-refslund/captains-cabinet.git captains-cabinet
 cd captains-cabinet
 git log -1 --oneline   # expect b1e41a70 or later — the rehearsal fixes MUST be present
 ```

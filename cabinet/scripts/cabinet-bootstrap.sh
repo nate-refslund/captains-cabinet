@@ -156,7 +156,7 @@ CABINET_ROOT="${CABINET_ROOT:-/opt/founders-cabinet}"
 CABINET_BOOTSTRAP_ROOT="${CABINET_BOOTSTRAP_ROOT:-/opt/founders-cabinet/spawned-cabinets}"
 STATE_FILE="/tmp/cabinet-bootstrap.${CABINET_SLUG:-_noname}.state"
 LOCK_FD=9
-FRAMEWORK_REPO_URL="https://github.com/nate-step/founders-cabinet"
+FRAMEWORK_REPO_URL="https://github.com/nate-refslund/captains-cabinet"
 
 # ---------------------------------------------------------------------------
 # Dry-run banner
