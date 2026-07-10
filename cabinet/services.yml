@@ -209,7 +209,11 @@ services:
     # C3 (captain-decisions 2026-07-10): admission law ON — the briefing's
     # "Needs you (N)" section calls build_queue() directly, so it carries the
     # same flag as intake-surface (SURFACE-PARITY-LAW: one census, N skins).
-    env: { CABINET_ADMISSION_LAW: "1" }
+    # CAPTAIN-SURFACE-V2 interim (PR #135, 2026-07-10): CABINET_QUEUE_CARD=0 —
+    # kill-switch the old jargon-wording pinned queue card until the window-4
+    # re-point lands (docs/proposals/germline-window-4-deferral-2026-07-10.md).
+    # Revert = delete this one env key.
+    env: { CABINET_ADMISSION_LAW: "1", CABINET_QUEUE_CARD: "0" }
     expected: "2 delivered briefings/day (outcome-watchdog expectation: DELIVERED, not exited-0)"
   - name: intake-surface
     label: com.cabinet.intake-surface
@@ -220,7 +224,9 @@ services:
     # chains route to the org (acted-digest lines w/ undo), only captain-gated
     # chains enter the Decisions room. Observability untouched (feed/digest/
     # chronicle keep everything). Revert = delete this one env key.
-    env: { CABINET_ENV: runtime, CABINET_ADMISSION_LAW: "1" }
+    # CAPTAIN-SURFACE-V2 interim (PR #135, 2026-07-10): CABINET_QUEUE_CARD=0 —
+    # same kill-switch as frontdoor-briefing (SURFACE-PARITY-LAW: one census).
+    env: { CABINET_ENV: runtime, CABINET_ADMISSION_LAW: "1", CABINET_QUEUE_CARD: "0" }
     expected: "ping-now items surface <10min; queue drains (XLEN not monotonically growing)"
 
   # ── Acting ───────────────────────────────────────────────────────────────
