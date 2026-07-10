@@ -128,6 +128,39 @@ _PACKAGES = {
                    ("render-only", "never installs")),
         "forbidden_lower": (),
     },
+    "candor": {
+        "doc": "germline-amendment-candor-2026-07-10.md",
+        "apply_token": '"apply candor law"',
+        # window-3 staged set: constitution values + role clauses + eval body
+        # + the W4/W8 germline riders (agi-wires dead-wires 4 + 8)
+        "germline_files": (
+            "constitution-base.md", "cos.md", "_lane-ceo.md.template",
+            "eval-024-candor.md", "action_lane.py", "run_action_lane.py",
+            "session-start.sh",
+        ),
+        "eval_coverage": None,
+        "rollback_re": r"\*\*One-revert rollback:\*\*(.*?)(?:\n---|\n## )",
+        "rollback_skip": (),
+        "rollback_extra": ("relock",),
+        # paste-ready apply record for the Captain's decision ledger
+        "blocks": ((r"```markdown\n(## CANDOR LAW APPLIED.*?)```",
+                    ("**What:**", "**Why:**", "**Captain:** Nate",
+                     "apply candor law")),),
+        # candor clauses pinned · riders named · dark-lane branch named ·
+        # non-germline enforcement half referenced · ceremony script named
+        "anchors": (
+            "candor-over-comfort", "dissent-then-obey", "EVAL-024-CANDOR",
+            "flatter no one", "D12", "D15c", "W4", "W8",
+            "feat/germline-window-3", "cabinet/evals/candor/",
+            "germline-lock.sh", "WINDOW-RUNBOOK.md",
+        ),
+        "anchors_lower": ("agreement-as-target banned",
+                          "silence is never agreement",
+                          "evidence-cited dissent"),
+        "flat_anchors": (),
+        "any_of": (("do NOT re-paste", "reference only"),),
+        "forbidden_lower": (),
+    },
 }
 
 _PKG_IDS = sorted(_PACKAGES)
