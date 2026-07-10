@@ -1,0 +1,176 @@
+# egg-export-manifest.txt — THE egg packaging manifest (fresh-cut export rules).
+# =============================================================================
+# Consumed by cabinet/scripts/egg-export.sh, which cuts a clean tree from git
+# HEAD (never the working tree, never git history — history carries personal/
+# employer data and the public artifact is NEVER this repo flipped) and then
+# applies these directives IN ORDER to the export copy ONLY. The source
+# checkout is strictly read-only to the exporter.
+#
+# Grammar (one directive per line; '#' starts a comment; blank lines ignored):
+#   delete <glob>            remove matching paths from the export
+#                            (single-level globs only — no '**'; absent = no-op)
+#   delete-name <basename>   remove every path with this basename, recursively
+#   transform <name>         run the named scripted transform in egg-export.sh
+#   expect-present <path>    verify: path must exist in the final export
+#   expect-absent <glob>     verify: glob must match nothing in the final export
+#   expect-absent-name <basename>  verify: no path with this basename anywhere
+#
+# Every rule cites its row in docs/plans/operative-egg-ledger-2026-07-07.yml.
+# R116 PROVENANCE NOTE (2026-07-10, PC-C): the R116 row's gate reads
+# "packaging manifest exists listing every interface file -> header-only rule"
+# and the row is marked done — but no such manifest artifact existed anywhere
+# in the repo (full-text search: the only mentions were the ledger row and the
+# plan row themselves). THIS file is that manifest, authored now.
+#
+# STRUCTURAL BASELINE (no directive needed — cited for completeness):
+#   R088  cabinet/dashboard/{node_modules,.next} + channels node_modules are
+#         untracked; `git archive HEAD` ships tracked files only. Defensive
+#         delete-name below anyway.
+#   .gitignore:177-196  LimeZu world assets, world-aesthetic corpus/goldens
+#         images, and judge runs are gitignored (only the sha manifests are
+#         tracked) — structurally excluded by the archive cut; verified by the
+#         expect-absent rules at the bottom.
+#   cabinet/fixtures/testburg/  SHIPS — it is the synthetic public demo estate
+#         (leak-audited by cabinet/scripts/tests/test_testburg_fixture.py).
+
+# --- deletes: instance data never ships --------------------------------------
+# R127: instance/flavor-a is the model personal-source pack — excluded entirely
+# (the shipped seam proof is that core stays green without it).
+delete instance/flavor-a
+# R128: instance/agents leaves; the cua-driver MCP overlay's template home is
+# cabinet/mcp-overlays/ (landed 1a8c94fb) and officer .md files regenerate.
+delete instance/agents
+# R120: live instance values are excluded; the .example twins ship. The egg
+# hatches a fresh instance via generate-instance.py — these are THIS
+# deployment's values, not framework DNA.
+delete instance/config/platform.yml
+delete instance/config/directions.yml
+delete instance/config/officer-emails.yml
+delete instance/config/peers.yml
+delete instance/config/probes.yml
+delete instance/config/sources.yml
+delete instance/config/warrooms.yml
+delete instance/config/outcomes.yml
+delete instance/config/adapters.yml
+delete instance/config/retention.yml
+delete instance/config/watchdog.yml
+# R126: the LIVE ruled act-first file leaves (Captain rulings + board ids);
+# the act-first-default transform below re-materializes the scrubbed
+# framework-shippable twin in its place.
+delete instance/config/act-first-surfaces.yml
+delete instance/config/authority-enforcing
+delete instance/config/hq-instance.yml.draft
+delete instance/config/role-registry.md
+# R120-class instance-split: fidelity regression corpus is built from this
+# deployment's live conversations — instance data, never egg content.
+delete instance/fidelity
+# R088 defensive (structurally absent already — see baseline note above):
+delete-name node_modules
+delete cabinet/dashboard/.next
+# CG-7 / real-value doctrine self-exclusion: the egg export tooling itself is
+# PRIVATE-SIDE PREP — the publish gate carries the real-value pattern list and
+# this manifest names live-value paths, so none of it ships in the egg.
+delete cabinet/scripts/egg-export.sh
+delete cabinet/scripts/egg-publish-gate.sh
+delete cabinet/scripts/egg-export-manifest.txt
+delete cabinet/scripts/tests/test_egg_export.py
+delete docs/runbooks/egg-export-2026-07-10.md
+# PC-C launch-kit privacy (integration ruling 2026-07-10): docs/launch/ is
+# CG-7 PER-ITEM publication material (Show HN draft, business-model proposal,
+# comparison table) — private-side prep that must never bulk-publish by riding
+# the egg. DRAFT headers additionally pin every file unpublishable in place.
+delete docs/launch
+
+# --- transforms (implemented in egg-export.sh, run in this order) ------------
+# R116: shared/interfaces ledgers ship as header contract + EMPTY body
+# (captain-vetoes.yml is the model). Interface-file rules, one each:
+#   captain-vetoes.yml                    -> header + version/next_id/vetoes: []
+#   captain-rules-index.yaml              -> header + '# 0 entries' + entries: []
+#   captain-knowledge-classification.yml  -> header + emptied-body note
+#   deployment-status.md                  -> ships AS-IS (already the generic
+#                                            fresh-deployment placeholder)
+#   product-specs/.gitkeep, research-briefs/.gitkeep, reviews/.gitkeep -> ship
+#   any OTHER file under shared/interfaces/  -> FAILS the export (fail-closed;
+#   gitignored runtime ledgers never reach the archive in the first place)
+transform interfaces-header-only
+# R145: docs/plans archived out at packaging — including the operative-egg
+# plan + ledger pair (instance coordination artifacts). The 4 NORMATIVE specs
+# pinned by germline artifacts stay; an ARCHIVED-NOTE.md stub records the rule.
+transform plans-archive
+# R159: CI branch triggers retarget to the export default branch (master) at
+# packaging time — until then CI keeps running on the live integration branch.
+transform ci-retarget-master
+# R124: lane context files leave; instance/config/contexts/_default.yml stays.
+transform contexts-prune
+# R125: project lane files leave; instance/config/projects/_template.yml stays.
+transform projects-prune
+# R120-class instance-split: live officer-skill notes leave; the README
+# documenting the surface stays.
+transform officer-skills-prune
+# R126 + germline lockstep: act-first-surfaces.yml is a WIRED germline FILES
+# entry (framework/tests/test_germline_lockstep_consistency.py requires it on
+# disk — it is deliberately NOT in that test's deployment-created exemptions).
+# The export ships the .example twin's bytes AS the file: empty lists,
+# status unratified, fail-closed by the file's own corruption-honesty
+# contract. Live rulings left in the delete above.
+transform act-first-default
+# R059: bin/ has zero tracked files (binaries rebuild on target via
+# build-calendar-helper.sh); the egg keeps an EMPTY bin/ mount point.
+transform bin-mount
+# R120 + PC-C directive, fail-closed: after the pass, instance/ may contain
+# ONLY .example twins + structural files (.gitkeep, README.md, contexts/
+# _default.yml, projects/_template.yml, germ-keep policies/ + posture-presets/
+# per R122/R123). Anything else FAILS the export.
+transform instance-verify
+
+# --- verification: what must have shipped ------------------------------------
+expect-present instance/config/platform.yml.example
+expect-present instance/config/sources.yml.example
+expect-present instance/config/act-first-surfaces.yml
+expect-present instance/config/act-first-surfaces.yml.example
+expect-present instance/config/contexts/_default.yml
+expect-present instance/config/projects/_template.yml
+expect-present instance/config/posture-presets/org-macmini.yml
+expect-present instance/config/policies/README.md
+expect-present cabinet/fixtures/testburg/README.md
+expect-present cabinet/fixtures/testburg/generate.py
+expect-present cabinet/mcp-overlays/cua-driver.mcp.json
+expect-present shared/interfaces/captain-vetoes.yml
+expect-present shared/interfaces/captain-rules-index.yaml
+expect-present shared/interfaces/deployment-status.md
+expect-present shared/interfaces/reviews/.gitkeep
+expect-present docs/plans/ARCHIVED-NOTE.md
+expect-present docs/plans/cabinet-axes-spec-2026-07-05.md
+expect-present docs/plans/source-adapter-boundary-2026-07-05.md
+expect-present docs/plans/evolution-engine-spec-2026-07-05.md
+expect-present docs/plans/sovereign-build-spec-2026-07-04.md
+expect-present cabinet/scripts/hatch.sh
+expect-present cabinet/scripts/null-hatch.sh
+expect-present bin/.gitkeep
+expect-present .github/workflows/cabinet-ci.yml
+expect-present .gitleaks.toml
+
+# --- verification: what must NOT have shipped --------------------------------
+expect-absent .git
+expect-absent instance/flavor-a
+expect-absent instance/agents
+expect-absent instance/fidelity
+expect-absent instance/config/platform.yml
+expect-absent instance/config/outcomes.yml
+expect-absent instance/config/hq-instance.yml.draft
+expect-absent docs/plans/operative-egg-plan-2026-07-07.md
+expect-absent docs/plans/operative-egg-ledger-2026-07-07.yml
+expect-absent docs/plans/EXECUTION-STATUS.md
+expect-absent docs/plans/proofs
+expect-absent cabinet/dashboard/public/world-assets/*.png
+expect-absent cabinet/dashboard/public/world-assets/*.zip
+expect-absent cabinet/scripts/world-aesthetic/corpus/*.png
+expect-absent cabinet/scripts/world-aesthetic/goldens/*.png
+expect-absent cabinet/dashboard/.next
+expect-absent-name node_modules
+expect-absent cabinet/scripts/egg-export.sh
+expect-absent cabinet/scripts/egg-publish-gate.sh
+expect-absent cabinet/scripts/egg-export-manifest.txt
+expect-absent cabinet/scripts/tests/test_egg_export.py
+expect-absent docs/runbooks/egg-export-2026-07-10.md
+expect-absent docs/launch
