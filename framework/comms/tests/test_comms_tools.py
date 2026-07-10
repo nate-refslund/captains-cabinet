@@ -173,6 +173,24 @@ def test_read_feed_is_fail_soft(monkeypatch):
     assert r["status"] == "error" and r["cursor"] == 5 and r["rows"] == []
 
 
+def test_read_feed_consumer_auto_cursor(monkeypatch):
+    """consumer mode auto-manages the durable cursor: load → feed_since → store,
+    so the officer never tracks a cursor itself."""
+    from framework.attention import feed
+    calls = {}
+    def fake_load(c): calls["loaded"] = c; return 5
+    def fake_since(cur, max_n=200): calls["since_from"] = cur; return ([{"seq": 6}], 6)
+    def fake_store(c, seq): calls["stored"] = (c, seq)
+    monkeypatch.setattr(feed, "load_cursor", fake_load)
+    monkeypatch.setattr(feed, "feed_since", fake_since)
+    monkeypatch.setattr(feed, "store_cursor", fake_store)
+    r = tools.read_feed(consumer="cos")
+    assert r["status"] == "ok" and r["cursor"] == 6 and r["rows"] == [{"seq": 6}]
+    assert calls["loaded"] == "cos"          # loaded cos's stored cursor
+    assert calls["since_from"] == 5          # read from there
+    assert calls["stored"] == ("cos", 6)     # persisted the advance (never re-read)
+
+
 def test_stream_thinking_streams_via_draft():
     a = FakeAdapter()
     tools.stream_thinking(draft_id=7, text="half", adapter=a)
