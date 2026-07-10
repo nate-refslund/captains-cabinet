@@ -80,6 +80,15 @@ delete docs/runbooks/egg-export-2026-07-10.md
 # comparison table) — private-side prep that must never bulk-publish by riding
 # the egg. DRAFT headers additionally pin every file unpublishable in place.
 delete docs/launch
+# APPSHELL-V05 self-exclusion (Wave D shell area, spec section 4; rows landed
+# by the Wave-D integrator in the same commit that first tracks the files):
+# the Hatch Cabinet.app shell is dev-side tooling that BUILDS the distribution
+# vehicle and never rides in it — stub/builder/lint/gate sources, tests and
+# runbook stay out of the egg. Pairing with the expect-absent rows below is
+# self-enforced by test_appshell_build.py::test_manifest_excludes_appshell_once_tracked.
+delete cabinet/scripts/appshell
+delete cabinet/scripts/tests/test_appshell_build.py
+delete docs/runbooks/hatch-appshell-v05-2026-07-10.md
 
 # --- transforms (implemented in egg-export.sh, run in this order) ------------
 # R116: shared/interfaces ledgers ship as header contract + EMPTY body
@@ -149,6 +158,21 @@ expect-present cabinet/scripts/null-hatch.sh
 expect-present bin/.gitkeep
 expect-present .github/workflows/cabinet-ci.yml
 expect-present .gitleaks.toml
+# PC-D-APPFEEL (Wave D app-feel): the dashboard PWA/install surfaces are
+# tracked source and must ship in the egg (gen-icons.mjs + PNGs ride along
+# as tracked files; the hatch-generated ~/Applications .webloc NEVER ships).
+expect-present cabinet/dashboard/src/app/manifest.ts
+expect-present cabinet/dashboard/src/app/icon.svg
+expect-present cabinet/dashboard/public/icons/icon-512.png
+expect-present cabinet/dashboard/src/app/api/health/route.ts
+# PC-D-COMPANION (Wave D companion, DESIGN-companion-2026-07-10 §3/§9): the
+# menu-bar companion ships as SOURCE + on-target build script, calread-style —
+# the built "bin/Cabinet Companion.app" bundle is gitignored so it never
+# enters a HEAD cut. Rows are verification, not inclusion: the export FAILS
+# LOUDLY if the companion source ever falls out of the cut.
+expect-present cabinet/companion/main.swift
+expect-present cabinet/companion/Info.plist
+expect-present cabinet/scripts/build-companion.sh
 
 # --- verification: what must NOT have shipped --------------------------------
 expect-absent .git
@@ -174,3 +198,7 @@ expect-absent cabinet/scripts/egg-export-manifest.txt
 expect-absent cabinet/scripts/tests/test_egg_export.py
 expect-absent docs/runbooks/egg-export-2026-07-10.md
 expect-absent docs/launch
+# APPSHELL-V05: the shell dev tooling must never ship (paired delete rows above).
+expect-absent cabinet/scripts/appshell
+expect-absent cabinet/scripts/tests/test_appshell_build.py
+expect-absent docs/runbooks/hatch-appshell-v05-2026-07-10.md
