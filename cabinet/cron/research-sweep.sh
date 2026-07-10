@@ -9,9 +9,14 @@
 
 TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
 
-REDIS_URL="${REDIS_URL:-redis://redis:6379}"
-REDIS_HOST=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f1)
-REDIS_PORT=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f2)
+# B4 Mac portability (matches cabinet/scripts/lib/triggers.sh): an explicit
+# REDIS_HOST (the generated launchd wrapper sets localhost) WINS; REDIS_URL is
+# the fallback for docker deployments that set it in the compose env. The old
+# unconditional derive clobbered the wrapper's REDIS_HOST with the docker-era
+# `redis` hostname → FATAL on every Mac-native run (2026-07-10 deploy).
+REDIS_URL="${REDIS_URL:-redis://localhost:6379}"
+REDIS_HOST="${REDIS_HOST:-$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f1)}"
+REDIS_PORT="${REDIS_PORT:-$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f2)}"
 
 TRIGGER_MSG="[$TIMESTAMP] Scheduled research sweep. Review current product priorities in shared/backlog.md, identify relevant research questions, and produce a research brief to shared/interfaces/research-briefs/ (Library if persistent value)."
 
