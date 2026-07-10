@@ -244,14 +244,30 @@ GREP_PATTERNS="sub:refslund sub:stepnetwork sub:jfmedier sub:polads sub:stephie 
 # Entry 1 — ledger row CG-19: the canonical public install coordinate (the
 # Captain's own GitHub handle); the install-rail manifests that carry it
 # (.claude-plugin/plugin.json + marketplace.json) SHIP in the egg by design.
+# Entry 2 — ledger row CG-20 (executed option (a), Wave-E integrator per the
+# Captain MIT + scrub-not-consent rulings 2026-07-10): the surname token in
+# the intended MIT LICENSE:3 copyright line + the 3 captains-cabinet-guide.md
+# authorship bylines. Case-SENSITIVE masking: the lowercase install
+# coordinate stays governed by CG-19 alone; any other lowercase 'refslund'
+# occurrence still fails. Breadth note per the CG-20 row: this masks the
+# capitalized token wherever it appears — every masked occurrence still
+# prints as an [adj] line for CG-7 review.
+# Entry 3 — ledger row CG-21: git's canonical null object id (40 zeros), an
+# intended PUBLIC CONSTANT in cabinet/scripts/git-hooks/pre-push (delete-ref
+# detection) + cabinet/scripts/test-pre-push-hook.sh, both of which ship.
+# Fixed-value mask: it can never hide a real chat/board id.
 ADJUDICATED_ALLOWLIST=(
   "nate-refslund/captains-cabinet"  # CG-19
+  "Refslund"  # CG-20
+  "0000000000000000000000000000000000000000"  # CG-21
 )
 # ledger row per entry, INDEX-PARALLEL to ADJUDICATED_ALLOWLIST — the [adj]
 # console lines + report header derive citations from here, so adding an
 # entry adjudicated under a different row can never leave a stale hardcode
 ADJUDICATED_ROWS=(
   "CG-19"
+  "CG-20"
+  "CG-21"
 )
 [ "${#ADJUDICATED_ALLOWLIST[@]}" -eq "${#ADJUDICATED_ROWS[@]}" ] \
   || fail "ADJUDICATED_ALLOWLIST/ADJUDICATED_ROWS length mismatch (${#ADJUDICATED_ALLOWLIST[@]} vs ${#ADJUDICATED_ROWS[@]}) — every entry needs its recorded ledger row"
