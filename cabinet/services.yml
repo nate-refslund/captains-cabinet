@@ -151,6 +151,7 @@ services:
     label: com.cabinet.research-sweep
     kind: cron
     command: bash cabinet/cron/research-sweep.sh
+    disabled: true   # ABSENCE-DISABLE (cos 2026-07-10): produces research briefs nobody consumes while the Captain is dark (its own sunset premise — shared/interfaces/research-briefs/ is empty). Re-enable on the Captain's return: delete this line + regenerate, AND rename ~/Library/LaunchAgents/com.cabinet.research-sweep.plist.disabled -> .plist + bootstrap. (The old redis:6379 FATAL was already fixed in b761c256; disabling here is purely for unconsumed output.)
     schedule: { calendar: [{hour: 9, minute: 5}, {hour: 15, minute: 5}] }  # twice daily local
     expected: "'Research sweep trigger pushed' log line per run; FATAL lines page via the no-silent-cron floor"
     sunset: "retire if research briefs go unconsumed 60d (backlog-refine reads shared/interfaces/research-briefs/) or a dedicated research seat returns"
@@ -164,6 +165,7 @@ services:
     label: com.cabinet.backlog-refine
     kind: cron
     command: bash cabinet/cron/backlog-refine.sh
+    disabled: true   # ABSENCE-DISABLE (cos 2026-07-10): backlog isn't worked while the Captain is dark; disabled alongside research-sweep (it reads the briefs). Re-enable on the Captain's return: delete this line + regenerate, AND rename ~/Library/LaunchAgents/com.cabinet.backlog-refine.plist.disabled -> .plist + bootstrap.
     schedule: { calendar: [{hour: 8, minute: 35}] }   # daily 08:35 local — after the 07:30 briefing
     expected: "'Backlog refinement trigger pushed' log line per run; FATAL lines page via the no-silent-cron floor"
     sunset: "retire if shared/backlog.md is superseded by the work-graph as the only backlog surface"
