@@ -1,0 +1,17 @@
+# comms-surface.yml — ACTIVE instance bindings for the Captain-surface engine
+# (framework/comms/surface/). THE THREE CAPTAIN KNOBS, ratified 2026-07-10
+# (captain-decisions officer-note @ 16:30Z, "3 KNOBS RATIFIED"):
+#
+#   (1) pin    = standing OVERVIEW card ("⚑ N need you" + top names when
+#                N≤5, edited in place) — replaces pin-as-single-item.
+#   (2) pacing = ask-first (the recommended default, now Captain-confirmed).
+#   (3) cap    = 5 active cards.
+#
+# All three are charter data — captain-tunable here later. Env vars still
+# win over this file (CABINET_SURFACE_PIN_MODE / _MODE / _CAP, …).
+
+pin_mode: overview
+
+pacing:
+  mode: ask-first
+  cap: 5

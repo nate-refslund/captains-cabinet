@@ -235,6 +235,21 @@ services:
     # same kill-switch as frontdoor-briefing (SURFACE-PARITY-LAW: one census).
     env: { CABINET_ENV: runtime, CABINET_ADMISSION_LAW: "1", CABINET_QUEUE_CARD: "0" }
     expected: "ping-now items surface <10min; queue drains (XLEN not monotonically growing)"
+  - name: surface-pin
+    label: com.cabinet.surface-pin
+    kind: cron
+    command: bash cabinet/cron/surface-pin-tick.sh
+    schedule: { interval_s: 300 }
+    # 3-KNOBS RATIFICATION (captain-decisions 2026-07-10 16:30Z): pin =
+    # standing OVERVIEW card ("⚑ N need you", edited in place) — this row is
+    # the PIN-ONLY partial arming of the captain-surface TG engine
+    # (`engine --pin-tick`; pin_mode: overview from
+    # instance/config/comms-surface.yml). Pacing + escalation gate stay DARK
+    # per the arming order. The wrapper sources cabinet/.env and sets
+    # CABINET_ENV=runtime + CABINET_ADMISSION_LAW=1 (same room as
+    # intake-surface). It supersedes the retired CABINET_QUEUE_CARD pinned
+    # card (msg 1013 unpinned 2026-07-10). Revert = remove this row.
+    expected: "one 'Surface pin tick ok' line per 300s run; error-reporting ticks exit 1 with a FATAL stderr line (observability floor today = doctor log-freshness on surface-pin.log; FATAL grep is a wanted upgrade)"
 
   # ── Acting ───────────────────────────────────────────────────────────────
   - name: draft-lane

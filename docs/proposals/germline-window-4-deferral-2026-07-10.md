@@ -29,7 +29,15 @@ indefinitely:
 - `pin_lifecycle` runs beside the locked `queue_card.py` refresher; the
   spec's own interim is the `CABINET_QUEUE_CARD=0` kill-switch (no diff
   needed to run dark). Nothing schedules the new engine until a deployment
-  arms it.
+  arms it. *(Status 2026-07-10 ~18:05Z, post-3-knobs ratification: the pin
+  half IS now armed — services row `surface-pin` runs `engine --pin-tick`
+  only, `pin_mode: overview`; the old card's stale pinned message 1013 was
+  superseded + unpinned via the comms tools under that ratification. The
+  window-4 `queue_card.py` re-point itself remains deferred exactly as
+  proposed — the flag stays the kill-switch for the locked refresher, and
+  pacing + escalation remain dark. NEW window-4 input found during the
+  triage: `situations.py` `_CAPTAIN_DECISIONS` never matches the ledger's
+  decision states — see GH issue #136.)*
 - `action_lane.render_card` and `tell_surface` digests keep their current
   (pre-plain) wording on the OLD surface; the new surfaces render through
   the plain layer independently. Ugly-but-honest beats a rushed germline

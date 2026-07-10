@@ -159,10 +159,16 @@ def main(argv: "list | None" = None) -> int:
     import json as _json
     ap = argparse.ArgumentParser(description="captain-surface TG engine")
     ap.add_argument("--tick", action="store_true", help="run one surface tick")
+    ap.add_argument("--pin-tick", action="store_true",
+                    help="run ONLY the pin lifecycle step (partial arming: "
+                         "pacing/escalation stay dark — 2026-07-10 order)")
     ap.add_argument("--callback", help="handle one cv2|… button tap")
     args = ap.parse_args(argv)
     if args.callback:
         print(_json.dumps(on_callback(args.callback)))
+        return 0
+    if args.pin_tick:
+        print(_json.dumps(_pin.step()))
         return 0
     if args.tick:
         print(_json.dumps(run_surface_tick()))

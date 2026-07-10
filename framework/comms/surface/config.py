@@ -29,10 +29,18 @@ DEFAULTS = {
     "hard_all_cap": 25,            # ceiling for the "show everything" override
     "briefing_card": False,        # briefing-as-card send path (dark until wired)
     "dashboard_url": "",           # deep-link base; empty = no links (fail-closed)
+    # Pin design (pin-recommendation doc, Captain-ratified 2026-07-10):
+    #   adopt    — the pin is the #1 item's own standing card (shipped mode)
+    #   overview — ONE live standing overview card ("⚑ N need you" + top
+    #              names when N≤5), edited in place, stays the pin.
+    # Foundation default stays "adopt" (the shipped behavior); the ratified
+    # instance value lives in instance/config/comms-surface.yml.
+    "pin_mode": "adopt",
 }
 
 _CAP_MIN, _CAP_MAX = 1, 7
 _MODES = ("ask-first", "auto-push")
+_PIN_MODES = ("adopt", "overview")
 
 
 def _instance_file() -> Path:
@@ -84,9 +92,14 @@ def load(*, instance: "dict | None" = None) -> dict:
     mode = str(pick("CABINET_SURFACE_MODE", "mode") or DEFAULTS["mode"]).strip().lower()
     if mode not in _MODES:
         mode = DEFAULTS["mode"]      # unknown mode narrows to ask-first, never louder
+    pin_mode = str(pick("CABINET_SURFACE_PIN_MODE", "pin_mode")
+                   or DEFAULTS["pin_mode"]).strip().lower()
+    if pin_mode not in _PIN_MODES:
+        pin_mode = DEFAULTS["pin_mode"]   # unknown pin design falls back to shipped
     return {
         "cap": cap,
         "mode": mode,
+        "pin_mode": pin_mode,
         "pileup": int(_num(pick("CABINET_SURFACE_PILEUP", "pileup"),
                            DEFAULTS["pileup"], 1, 50)),
         "snooze_hours": _num(pick("CABINET_SURFACE_SNOOZE_H", "snooze_hours"),

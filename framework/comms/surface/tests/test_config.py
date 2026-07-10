@@ -45,3 +45,22 @@ def test_corrupt_yaml_and_wild_values_fail_closed(monkeypatch, tmp_path):
     assert scfg.load()["cap"] == 7                 # clamped to the census cap
     monkeypatch.setenv("CABINET_SURFACE_CAP", "-3")
     assert scfg.load()["cap"] == 1
+
+
+def test_pin_mode_defaults_to_adopt_and_fails_closed(monkeypatch, tmp_path):
+    monkeypatch.setenv("CABINET_SURFACE_CONFIG_PATH",
+                       str(tmp_path / "absent.yml"))
+    assert scfg.load()["pin_mode"] == "adopt"      # foundation default
+    p = tmp_path / "comms-surface.yml"
+    p.write_text("pin_mode: sideways\n", encoding="utf-8")
+    monkeypatch.setenv("CABINET_SURFACE_CONFIG_PATH", str(p))
+    assert scfg.load()["pin_mode"] == "adopt"      # unknown value → shipped
+
+
+def test_pin_mode_overview_binds_from_yaml_and_env(monkeypatch, tmp_path):
+    p = tmp_path / "comms-surface.yml"
+    p.write_text("pin_mode: overview\n", encoding="utf-8")
+    monkeypatch.setenv("CABINET_SURFACE_CONFIG_PATH", str(p))
+    assert scfg.load()["pin_mode"] == "overview"   # the ratified knob (2026-07-10)
+    monkeypatch.setenv("CABINET_SURFACE_PIN_MODE", "adopt")
+    assert scfg.load()["pin_mode"] == "adopt"      # env wins over the file
