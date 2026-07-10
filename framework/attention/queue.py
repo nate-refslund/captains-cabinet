@@ -49,6 +49,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterable, Optional
@@ -87,7 +88,10 @@ _ATTENTION_DIR_DEFAULT = "~/Library/Application Support/cabinet/attention"
 # discipline): commitment ids, correlation ids, NEED ids, monday ids, UUIDs.
 # Vault paths and URLs are excluded (they can carry person/company names).
 _SHARED_REF_PREFIXES = ("cmt-", "cabinet-proposal-id:", "need-", "monday:")
-_UUID_LEN = 36
+# Strict RFC-4122 shape — "36 chars + 4 hyphens" let uuid-SHAPED vault paths
+# (e.g. 7-resources/my-prompts/2026-07-07.md) leak into the shared plane.
+_UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
 
 def _now() -> datetime:
@@ -751,9 +755,11 @@ def to_private_census(queue: dict) -> dict:
 
 def _shared_ref_ok(ref: str) -> bool:
     r = ref.lower()
+    if "/" in r or "." in r:
+        return False   # path/URL-shaped — never shared, even prefix-matched
     if any(r.startswith(p) for p in _SHARED_REF_PREFIXES):
         return True
-    return len(r) == _UUID_LEN and r.count("-") == 4    # bare uuid
+    return bool(_UUID_RE.fullmatch(r))                  # bare uuid, strictly
 
 
 def to_shared_census(queue: dict) -> dict:

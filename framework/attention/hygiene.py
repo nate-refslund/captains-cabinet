@@ -154,6 +154,41 @@ def propagate_closure(refs: Iterable, *, reason: str, by: str,
     return {"closed": closed, "situations": sorted(keys_seen)}
 
 
+def propagate_view_closures(view: "dict | None" = None, *,
+                            by: str = "system:surface-drain",
+                            **kw) -> dict:
+    """H2 drain wiring (review 2026-07-10): fire ``propagate_closure`` for
+    every situation the situations.py view itself derives as resolved/acted
+    while overlapping ledger proposals remain OPEN — the Mercantila failure
+    class (a CLOSURE that retires nothing). Called from the 300s surface
+    drain; this is real-resolution evidence (a ``closure`` feed row or an
+    un-reversed ``acted:*`` world row won the fold), never silence — so the
+    silence-never-closes law holds. Extra kwargs pass through to
+    ``propagate_closure`` (injectable transports for tests). Best-effort:
+    never raises past stderr."""
+    try:
+        if view is None:
+            from framework.attention.situations import build_view
+            view = build_view()
+        fired, closed = 0, 0
+        for sit in (view or {}).values():
+            state = sit.get("state")
+            if state not in ("resolved", "acted"):
+                continue
+            if not sit.get("open_pids"):
+                continue   # nothing left behind — closure already propagated
+            reason = "org-acted" if state == "acted" else "view-resolved"
+            out = propagate_closure(sit.get("refs") or [],
+                                    reason=reason, by=by, **kw)
+            fired += 1
+            closed += int(out.get("closed") or 0)
+        return {"situations": fired, "closed": closed}
+    except Exception as e:                                  # noqa: BLE001
+        print(f"[hygiene] view-closure propagation failed: {e}",
+              file=sys.stderr)
+        return {"situations": 0, "closed": 0, "error": str(e)}
+
+
 def sweep_zombie_cards(*, ledger_rows: "list | None" = None,
                        redis_scan: "Callable | None" = None,
                        redis_del: "Callable | None" = None) -> dict:

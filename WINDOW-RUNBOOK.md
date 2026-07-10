@@ -97,6 +97,9 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
 Staged DARK on this branch (command-center Stage 1, 2026-07-10). Rides the
 SAME unlock→pull→lock ceremony as H0 + candor + W4 + W8 — no extra Captain
 steps beyond the one window.
+**Apply contract:** `docs/proposals/germline-amendment-war-room-census-2026-07-10.md`
+(names the four Ring-0 entries for the amendment-doc lint; one-revert
+rollback = `git revert 875416fd`).
 
 What it changes (all four germline lists in lockstep + one lane file):
 1. `framework/policies/immutable-core.yml` — four war-room paths enter

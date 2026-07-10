@@ -37,7 +37,7 @@ W4/W8 provenance: agi-wires report 2026-07-08 dead-wires #4 and #8; deliberately
 ## 3. Non-entries (explicitly not in this amendment)
 
 - No authority-matrix / posture / grants change — candor is a VALUES amendment; verdict resolution is untouched.
-- No new Ring-0 / immutable-core entries — every edited path is already inside the locked set (or, for preset/constitution sources, already hook-protected constitution sources).
+- No new Ring-0 / immutable-core entries **in this candor package** — every path edited by THIS amendment is already inside the locked set (or, for preset/constitution sources, already hook-protected constitution sources). The one-ceremony branch DOES carry a separate rider that adds 4 immutable-core entries: the war-room census germline join (`framework/attention/{situations,queue,hygiene,queue_card}.py`, commit `875416fd`) — its own contract is `docs/proposals/germline-amendment-war-room-census-2026-07-10.md`, not this doc.
 - No `shared/interfaces/action-lessons.yml` seed commit — the ledger is runtime-appended (germline-lock SKIP class); `load_lessons()` treats an absent file as `[]` by contract, so committing a header-only file would only invite merge conflicts with live captures.
 - External comms stay per-item Captain-approved in every posture (reference: ACT-AND-DRAFT — unchanged, untouched).
 
