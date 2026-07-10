@@ -157,6 +157,52 @@ describe('the chain denies, in order, fail-closed', () => {
     expect(status).toBe(403)
   })
 
+  it('0.0.0.0-bound server: browser Origin matching the Host header passes the origin leg (live-deploy regression 2026-07-10)', async () => {
+    // Under `next start --hostname 0.0.0.0`, req.nextUrl.origin is
+    // http://0.0.0.0:<port> — an origin no browser ever sends. The route must
+    // compare against the HOST the browser addressed instead.
+    const cookie = sessionCookie()
+    const headers = new Headers({
+      'content-type': 'application/json',
+      cookie: `cabinet_session=${cookie}`,
+      host: 'localhost:3100',
+      origin: 'http://localhost:3100',
+      referer: 'http://localhost:3100/queue',
+    })
+    const csrf = lib.csrfTokenFor(cookie)
+    if (csrf) headers.set('X-Cabinet-CSRF', csrf)
+    const req = new NextRequestCtor('http://0.0.0.0:3100/api/attention/verdict', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ pid: PID, verb: 'approve', revision: freshRevision() }),
+    })
+    const res = await route.POST(req)
+    expect(res.status).toBe(200) // armed — NOT a 403 csrf deny
+    const json = (await res.json()) as Record<string, unknown>
+    expect(json.armed).toBe(true)
+  })
+
+  it('0.0.0.0-bound server: cross-site Origin still 403s (Host-derived origin does not weaken the gate)', async () => {
+    const cookie = sessionCookie()
+    const headers = new Headers({
+      'content-type': 'application/json',
+      cookie: `cabinet_session=${cookie}`,
+      host: 'localhost:3100',
+      origin: 'https://evil.example',
+    })
+    const csrf = lib.csrfTokenFor(cookie)
+    if (csrf) headers.set('X-Cabinet-CSRF', csrf)
+    const req = new NextRequestCtor('http://0.0.0.0:3100/api/attention/verdict', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ pid: PID, verb: 'approve', revision: freshRevision() }),
+    })
+    const res = await route.POST(req)
+    expect(res.status).toBe(403)
+    const json = (await res.json()) as Record<string, unknown>
+    expect(json.code).toBe('csrf')
+  })
+
   it('403 without the X-Cabinet-CSRF header, 403 with a wrong one', async () => {
     expect((await call({ csrf: null })).status).toBe(403)
     expect((await call({ csrf: 'a'.repeat(64) })).status).toBe(403)
