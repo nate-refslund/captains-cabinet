@@ -21,6 +21,12 @@ const IS_MOCK = process.env.MOCK_DATA === 'true' || !process.env.REDIS_URL
 //
 // Mode resolution: explicit CABINET_RUNTIME_MODE wins; else infer native when
 // CABINET_ROOT is set (deploy-mac.sh / start-officer-mac.sh export it).
+//
+// NOTE (Wave B): repo-FILE reads/writes no longer route through this module —
+// governance.ts and files.ts use direct node:fs against the checkout root. A
+// docker-mode dashboard without the checkout mounted therefore renders honest
+// "file not found" blocks for repo-file reads (docker mode is extinct per egg
+// plan R086; the exec path below survives for the remaining runtime probes).
 const RUNTIME_MODE: 'native' | 'docker' =
   process.env.CABINET_RUNTIME_MODE === 'native'
     ? 'native'
@@ -131,24 +137,9 @@ export interface CronJob {
   description: string
 }
 
-export async function dockerWriteFile(path: string, content: string): Promise<void> {
-  if (IS_MOCK) {
-    console.log(`[mock docker] Would write file: ${path}`)
-    return
-  }
-  // Base64 encode to avoid shell escaping issues
-  const b64 = Buffer.from(content).toString('base64')
-  await dockerExec(`echo '${b64}' | base64 -d > '${path}'`)
-}
-
-export async function dockerReadFile(path: string): Promise<string> {
-  if (IS_MOCK) {
-    console.log(`[mock docker] Would read file: ${path}`)
-    return ''
-  }
-  const { stdout } = await dockerExec(`cat '${path}' 2>/dev/null || echo ''`)
-  return stdout
-}
+// dockerWriteFile / dockerReadFile are GONE (Wave B): their only callers
+// (governance.ts, files.ts) now do real node:fs I/O — the mock branch here
+// used to console-log no-op a Captain's save while the action claimed success.
 
 export async function getCronSchedule(): Promise<CronJob[]> {
   if (IS_MOCK) {
