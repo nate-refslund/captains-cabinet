@@ -1,220 +1,170 @@
 /**
- * /queue — the classic-skin war room (command-center §4B).
+ * /queue — everything waiting on you, in plain words (captain-surface v2).
  *
- * Ranked Decisions shelf (the framework's deterministic lexicographic
- * order, amber gap-row borders) then Directions (the weekly shelf). Each
- * row expands to canonical refs + the copyable binder grammar
- * (`approve <pid>`) + the Telegram deep-link + the world
- * `?focus=wardroom` link.
+ * PLAIN-LANGUAGE LAW (Ruling B): big-type one-sentence cards, plain buttons,
+ * technical truth behind each card's Details ▸ disclosure. WRITE-CLASS-2
+ * (Ruling A): the buttons POST to the equal-authority verdict door — two-tap
+ * confirm, verified server-side, executed through the org's own gate.
  *
- * READ-ONLY BY LAW: no approve buttons — a dashboard verdict would be a
- * second door beside the authenticated Captain-DM receipt (gateway
- * §4.4 / F0.8). This page renders and deep-links; the binder decides.
+ * Deck laws kept: big-count masthead; "Nothing needs you." dark face; no
+ * auto-refresh over interactive cards; nothing pulses; reload is honest.
  */
-import Link from 'next/link'
+import { cookies } from 'next/headers'
 import { readQueue, type QueueRow } from '@/lib/attention/queue'
+import { COPY, plainCard } from '@/lib/attention/plain'
+import { COOKIE_NAME, csrfTokenFor, verifySessionValue } from '@/lib/attention/verdict'
+import QueueDecisionCard from '@/components/queue-decision-card'
 
 export const dynamic = 'force-dynamic'
 
-function fmtDeadline(iso: string | null): string {
-  if (!iso) return '—'
+function fmtUpdated(iso: string | null): string {
+  if (!iso) return ''
   const t = Date.parse(iso)
-  if (!Number.isFinite(t)) return '—'
-  const h = Math.round((t - Date.now()) / 3_600_000)
-  if (h < 0) return `${iso.slice(0, 16)} (passed)`
-  if (h < 48) return `${iso.slice(0, 16)} (~${h}h)`
-  return iso.slice(0, 10)
+  if (!Number.isFinite(t)) return ''
+  return `${COPY.updated_prefix} ${new Date(t).toISOString().slice(11, 16)}`
 }
 
-function fmtAge(ageH: number | null): string {
-  if (ageH === null) return '—'
-  if (ageH < 48) return `${Math.round(ageH)}h`
-  return `${Math.round(ageH / 24)}d`
-}
-
-function Row({
+function Card({
   row,
-  shelf,
+  accent,
+  csrf,
   telegram,
 }: {
   row: QueueRow
-  shelf: 'decisions' | 'directions'
+  accent: boolean
+  csrf: string | null
   telegram: string | null
 }) {
-  const amber = shelf === 'decisions'
+  const plain = plainCard(row)
   return (
-    <details
-      className={`rounded-lg border bg-zinc-900 ${
-        amber ? 'border-l-4 border-zinc-800 border-l-amber-600/70' : 'border-zinc-800'
-      }`}
-    >
-      <summary
-        className="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 text-sm"
-        style={{ padding: '10px 14px' }}
-      >
-        <span className="font-medium text-white">
-          {row.what ?? '(untitled situation)'}
-        </span>
-        <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-zinc-400">
-          {row.kind}
-        </span>
-        {row.lane ? (
-          <span className="text-xs text-zinc-500">{row.lane}</span>
-        ) : null}
-        <span className="ml-auto flex items-center gap-3 text-xs text-zinc-500">
-          {row.blast ? (
-            <span
-              className={
-                row.blast.class === 'ceiling' ? 'text-red-400' : 'text-zinc-500'
-              }
-              title={row.blast_worst_case ?? undefined}
-            >
-              blast: {row.blast.class}/{row.blast.reach}
-            </span>
-          ) : null}
-          <span>age {fmtAge(row.age_h)}</span>
-          <span className={row.deadline_iso ? 'text-amber-300' : ''}>
-            due {fmtDeadline(row.deadline_iso)}
-          </span>
-        </span>
-      </summary>
-      <div
-        className="border-t border-zinc-800 text-xs text-zinc-400"
-        style={{ padding: '10px 14px' }}
-      >
-        {row.why_now?.decay ? (
-          <p className="mb-2 text-zinc-400">{row.why_now.decay}</p>
-        ) : null}
-        {row.refs.length > 0 ? (
-          <div className="mb-2">
-            <div className="mb-1 text-[10px] uppercase tracking-wide text-zinc-500">
-              Proof — canonical refs
-            </div>
-            <ul className="space-y-0.5 font-mono text-[11px] text-zinc-400">
-              {row.refs.map((r) => (
-                <li key={r}>{r}</li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-        <div className="mb-2">
-          <div className="mb-1 text-[10px] uppercase tracking-wide text-zinc-500">
-            Verdict — in the binder (HQ Chair), never here
-          </div>
-          {row.pid ? (
-            <code className="block select-all rounded bg-zinc-950 px-2 py-1 font-mono text-[11px] text-emerald-300">
-              approve {row.pid}
-            </code>
-          ) : (
-            <p className="text-zinc-500">
-              answer via the binder grammar on this card&apos;s standing message
-            </p>
-          )}
-        </div>
-        <div className="flex gap-4 text-[11px]">
-          {telegram ? (
-            <a
-              href={telegram}
-              target="_blank"
-              rel="noreferrer"
-              className="text-sky-400 hover:underline"
-            >
-              open Telegram binder ↗
-            </a>
-          ) : (
-            <span className="text-zinc-500">binder: Telegram (HQ Chair) DM</span>
-          )}
-          <Link
-            href="/world?focus=wardroom"
-            className="text-sky-400 hover:underline"
-          >
-            view in world (wardroom)
-          </Link>
-        </div>
-      </div>
-    </details>
+    <QueueDecisionCard
+      anchorId={row.pid ?? row.id}
+      headline={plain.headline}
+      sentence={plain.sentence}
+      stateName={plain.stateName}
+      kindName={plain.kindName}
+      buttons={plain.buttons}
+      ritual={plain.ritual}
+      decided={plain.decided}
+      decidable={plain.decidable}
+      pid={row.pid}
+      revision={plain.revision}
+      csrf={csrf}
+      telegramHref={telegram}
+      accent={accent}
+      copy={{
+        confirmYes: COPY.confirm_yes,
+        confirmNo: COPY.confirm_no,
+        confirmBack: COPY.confirm_back,
+        laterBriefing: COPY.later_briefing,
+        ritualHint: COPY.ritual_hint,
+        detailsLabel: COPY.details_label,
+        detailsSources: COPY.details_sources,
+        detailsTyping: COPY.details_typing,
+        openTelegram: COPY.open_telegram,
+        noButtons: COPY.no_buttons,
+        working: COPY.working,
+      }}
+      details={{
+        kind: row.kind,
+        state: row.state,
+        urgency: row.urgency,
+        blastClass: row.blast?.class ?? null,
+        blastReach: row.blast?.reach ?? null,
+        blastWorstCase: row.blast_worst_case,
+        decayRaw: row.why_now?.decay ?? null,
+        refs: row.refs,
+        pid: row.pid,
+        revision: plain.revision,
+        filedBy: row.filed_by,
+      }}
+    />
   )
 }
 
 export default async function QueuePage() {
   const queue = await readQueue()
+  const cookieStore = await cookies()
+  const session = cookieStore.get(COOKIE_NAME)?.value
+  const csrf = session && verifySessionValue(session) ? csrfTokenFor(session) : null
   const telegram = process.env.HQ_CHAIR_BOT_USERNAME
     ? `https://t.me/${process.env.HQ_CHAIR_BOT_USERNAME}`
     : null
   const n = queue.pendingCaptainItems
+  const dark = n === 0 && queue.directions.length === 0
 
   return (
-    <div>
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-white">
-            ⚑ Needs you{n > 0 ? ` (${n})` : ''}
-          </h1>
-          <p className="mt-1 text-sm text-zinc-400">
-            The one attention census — ranked decisions first, weekly
-            directions after. Read-only: verdicts happen in the Telegram
-            binder.
-          </p>
-        </div>
-        <div className="text-right text-xs text-zinc-500">
-          <div>
-            source: {queue.source}
-            {queue.generatedAt ? ` · ${queue.generatedAt}` : ''}
+    <div className="mx-auto max-w-3xl">
+      <div className="mb-8">
+        {dark ? (
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900 text-center" style={{ padding: '56px 24px' }}>
+            <p className="text-2xl italic text-zinc-100">{COPY.masthead_dark}</p>
+            <p className="mt-3 text-sm text-emerald-400">{COPY.masthead_dark_sub}</p>
           </div>
-          {queue.admissionEnforced ? (
-            <div className="text-amber-400">admission law: enforced</div>
-          ) : (
-            <div>admission law: observing (C3 pending)</div>
-          )}
-        </div>
+        ) : (
+          <div className="flex items-end justify-between">
+            <div>
+              <div
+                className="font-semibold leading-none text-white"
+                style={{ fontSize: 'clamp(56px, 12vw, 104px)', letterSpacing: '-0.04em', fontVariantNumeric: 'tabular-nums' }}
+              >
+                {n}
+              </div>
+              <div className="mt-1 text-lg text-zinc-400">
+                {n === 1 ? COPY.masthead_need_one : COPY.masthead_need_many}
+              </div>
+            </div>
+            <div className="text-right text-xs text-zinc-500">{fmtUpdated(queue.generatedAt)}</div>
+          </div>
+        )}
       </div>
 
-      {n === 0 && queue.directions.length === 0 ? (
-        <div
-          className="rounded-lg border border-zinc-800 bg-zinc-900 text-center"
-          style={{ padding: '48px' }}
-        >
-          <p className="text-zinc-300">Nothing needs you.</p>
-          <p className="mx-auto mt-2 max-w-2xl text-xs text-zinc-500">
-            The polished empty table is the designed reward state — the org is
-            deciding what it can and holding only what genuinely needs the
-            Captain.
-          </p>
-        </div>
-      ) : (
+      {!dark ? (
         <>
           <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-amber-300">
-            Decisions{queue.cap ? ` — cap ${queue.cap}` : ''}
+            {COPY.decisions_header}
             {queue.overflow > 0 ? (
               <span className="ml-2 font-normal normal-case text-zinc-400">
-                +{queue.overflow} over the cap → consolidation need filed
+                +{queue.overflow} {COPY.overflow_note}
               </span>
             ) : null}
           </h2>
           {queue.decisions.length === 0 ? (
-            <p className="mb-6 text-sm text-zinc-500">none — shelf clear.</p>
+            <p className="mb-8 text-sm text-zinc-500">{COPY.decisions_empty}</p>
           ) : (
-            <div className="mb-6 space-y-2">
+            <div className="mb-8 space-y-3">
               {queue.decisions.map((row) => (
-                <Row key={row.id} row={row} shelf="decisions" telegram={telegram} />
+                <Card key={row.id} row={row} accent csrf={csrf} telegram={telegram} />
               ))}
             </div>
           )}
 
           <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-400">
-            Directions — weekly shelf
+            {COPY.directions_header}
           </h2>
           {queue.directions.length === 0 ? (
-            <p className="text-sm text-zinc-500">none.</p>
+            <p className="text-sm text-zinc-500">{COPY.directions_empty}</p>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-3">
               {queue.directions.map((row) => (
-                <Row key={row.id} row={row} shelf="directions" telegram={telegram} />
+                <Card key={row.id} row={row} accent={false} csrf={csrf} telegram={telegram} />
               ))}
             </div>
           )}
+
+          <p className="mt-10 text-xs text-zinc-600">
+            {COPY.footer_hint}
+            {telegram ? (
+              <>
+                {' '}
+                <a href={telegram} target="_blank" rel="noreferrer" className="text-sky-500 hover:underline">
+                  {COPY.open_telegram}
+                </a>
+              </>
+            ) : null}
+          </p>
         </>
-      )}
+      ) : null}
     </div>
   )
 }

@@ -1,0 +1,31 @@
+# comms-surface.yml — instance bindings for the Captain-surface TG engine
+# (framework/comms/surface/). Copy to comms-surface.yml to override the
+# foundation defaults; every key is optional and validated fail-closed
+# (bad values fall back to the quiet defaults). Env vars win over this file
+# (CABINET_SURFACE_*, CABINET_DASHBOARD_URL, CABINET_BRIEFING_CARD).
+
+pacing:
+  # Active single-decision cards at once (1..7). Default 5.
+  cap: 5
+  # ask-first (default, recommended — one nudge card asks before any batch)
+  # or auto-push (top cards present themselves as they become ready).
+  # THE one Captain-confirmable knob from the 2026-07-10 master prompt.
+  mode: ask-first
+  # Fresh decisions accumulated between briefings before the ONE nudge card
+  # updates ("N decisions ready"). Default 3.
+  pileup: 3
+  # The nudge's Snooze duration, hours. Default 2.
+  snooze_hours: 2
+  # Urgent (wrong-by-tomorrow) jumps allowed per rolling window. Default 2.
+  urgent_interrupts: 2
+  urgent_window_hours: 12
+
+# Deep-link base for "Open" buttons / "Details:" lines on cards. Empty (the
+# default) = cards render without links. https URLs also get link buttons;
+# http URLs render as plain text lines only.
+dashboard_url: ""
+
+# Send the 07:30/19:30 briefing as ONE card with a Triage control instead of
+# the classic text (needs the briefing runner wired to
+# framework.comms.surface.briefing_card.maybe_send). Default false.
+briefing_card: false

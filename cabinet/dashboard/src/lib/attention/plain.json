@@ -1,0 +1,211 @@
+{
+  "banned": {
+    "act-then-tell": "done — here's what I did",
+    "admission": "(hide it)",
+    "binder": "Telegram",
+    "blast": "'If you approve: …' sentence",
+    "canonical": "(drop it)",
+    "ceiling": "highest caution",
+    "census": "the list",
+    "charter": "(hide it)",
+    "consolidation need": "(hide it)",
+    "decay": "bumped down",
+    "demote": "bump down",
+    "demoted": "bumped down",
+    "demotion": "bumped down",
+    "demotions": "bumped down",
+    "dormant": "parked",
+    "falsifier": "(hide it)",
+    "founder-action": "your to-do",
+    "germline": "the cabinet's core rules",
+    "graduated cell": "standing approval",
+    "injection-suspect": "came from an untrusted outside message",
+    "lane": "the product's name",
+    "needs ledger": "permission ask",
+    "opaque handle": "(never shown)",
+    "pid": "(never shown)",
+    "pids": "(never shown)",
+    "shelf": "this week",
+    "situation_key": "(never shown)",
+    "standing card": "this message",
+    "standing message": "this message",
+    "t2": "the Chair asked you",
+    "undo-rate": "(hide it)",
+    "untitled situation": "(no title)",
+    "verdict": "your decision",
+    "verdicts": "your decisions",
+    "wardroom": "the map"
+  },
+  "button_labels": {
+    "acted": [
+      "↩ Undo",
+      "👍 Fine"
+    ],
+    "action-proposal": [
+      "✓ Approve",
+      "✎ Change…",
+      "✗ No"
+    ],
+    "draft-outbound": [
+      "Send it",
+      "✎ Change…",
+      "Don't send"
+    ],
+    "escalation": [
+      "I'll decide",
+      "Ask the Chair"
+    ],
+    "need": [
+      "Yes, allow",
+      "Not now",
+      "Never"
+    ],
+    "nudge": [
+      "Triage now",
+      "At next briefing",
+      "Snooze 2h"
+    ]
+  },
+  "consequence_templates": {
+    "approve": "{risk} If you confirm, I go ahead: {what}",
+    "approve:draft-outbound": "{risk} If you confirm, the message goes out exactly as drafted. Haven't read it? It's on this item's Telegram card — open that first.",
+    "approve:escalation": "Nothing runs yet — this marks it as yours to decide. The Chair brings it to you in Telegram to settle.",
+    "approve:need": "{risk} If you confirm, the cabinet gets this permission.",
+    "later": "Nothing happens now — it comes back at the next briefing.",
+    "no": "Nothing happens — I record the no and stop suggesting it.",
+    "no:draft-outbound": "The message is not sent.",
+    "no:escalation": "The Chair settles it and tells you what it chose.",
+    "no:need": "The cabinet does not get this permission."
+  },
+  "copy": {
+    "answer_telegram": "Answer in Telegram (HQ Chair).",
+    "confirm_back": "Back",
+    "confirm_no": "Yes, I'm sure",
+    "confirm_yes": "Yes, do it",
+    "decisions_empty": "Nothing here.",
+    "decisions_header": "Needs a decision",
+    "details_label": "Details",
+    "details_sources": "Where this comes from",
+    "details_typing": "Prefer typing? Send this in Telegram:",
+    "directions_empty": "Nothing here.",
+    "directions_header": "This week — no rush",
+    "footer_hint": "Tap a button to decide — or answer on the item's Telegram message.",
+    "later_briefing": "At the next briefing",
+    "masthead_dark": "Nothing needs you.",
+    "masthead_dark_sub": "All clear — your team is handling the rest. ✅",
+    "masthead_need_many": "need you",
+    "masthead_need_one": "needs you",
+    "no_buttons": "To decide this one, answer on its Telegram message.",
+    "no_title": "(no title)",
+    "open_telegram": "Open in Telegram ↗",
+    "overflow_note": "more waiting — I've asked the Chair to sort them out.",
+    "ritual_hint": "To say yes, sign it off in Telegram — tap 'Open in Telegram'.",
+    "updated_prefix": "Updated",
+    "working": "Working…"
+  },
+  "decided_states": [
+    "acted",
+    "decided"
+  ],
+  "door_buttons": {
+    "": {
+      "approve": "✓ Approve",
+      "later": "Later",
+      "no": "✗ No"
+    },
+    "draft-outbound": {
+      "approve": "Send it",
+      "later": "Later",
+      "no": "Don't send"
+    },
+    "escalation": {
+      "approve": "I'll decide",
+      "later": "Later",
+      "no": "Ask the Chair"
+    },
+    "need": {
+      "approve": "Yes, allow",
+      "later": "Not now",
+      "no": "Never"
+    }
+  },
+  "kind_name_default": "Needs you",
+  "kind_names": {
+    "action-proposal": "Suggestion",
+    "draft-outbound": "Draft message",
+    "escalation": "Escalated to you",
+    "founder-action": "Your to-do",
+    "germline-handback": "Rule change — needs your sign-off",
+    "need": "Permission request",
+    "outcome-ratification": "Goal sign-off",
+    "pipe-prompt": "Automation question"
+  },
+  "kind_risk_defaults": {
+    "outcome-ratification": "This sets the goal your team steers by — nothing runs by itself.",
+    "pipe-prompt": "I'll follow whatever you answer."
+  },
+  "messages": {
+    "bad_request": "I couldn't read that request — reload the page and try again.",
+    "bad_verb": "That choice isn't available for this item.",
+    "bridge_fail": "Something went wrong recording your decision — nothing was done. Try again, or answer in Telegram.",
+    "csrf": "That request didn't come from your own dashboard page — reload and try again.",
+    "decided": "Already decided — nothing more to do here.",
+    "expired_token": "That confirmation expired — start again from the card.",
+    "gone": "This one is no longer waiting — it may already be decided.",
+    "journal_warn": "Heads up: this attempt may be missing from the journal.",
+    "no_session": "You're not signed in — open the dashboard sign-in page first.",
+    "not_here": "This one can't be decided from here right now — answer on its Telegram message.",
+    "rate_limited": "Too many decisions too fast — wait a moment and try again.",
+    "replay": "That confirmation was already used — start again from the card.",
+    "ritual": "This one needs the sign-off ritual in Telegram — tap 'Open in Telegram'.",
+    "stale": "This one changed since you loaded the page — here's the fresh version.",
+    "stale_census": "My list is out of date right now — try again in a minute, or answer in Telegram."
+  },
+  "no_return_worst_cases": [
+    "a message reaches a human outside the machine",
+    "money leaves the org"
+  ],
+  "results": {
+    "approved": "Approved — done.",
+    "approved_delivery_failed": "Your approval is recorded, but the follow-through hit an error — the Chair will finish it.",
+    "approved_underway": "Approved — under way.",
+    "declined": "Noted — I won't do it.",
+    "deferred": "Parked — it comes back at the next briefing.",
+    "denied": "Okay — I won't do that without asking."
+  },
+  "risk_default": "If you approve, I go ahead with it.",
+  "risk_default_ceiling": "This is a high-caution change — double-check before saying yes.",
+  "risk_sentences": {
+    "a Chair judgment lands without you": "If you don't answer, the Chair will decide this one.",
+    "a capability/resource is granted": "This gives the cabinet a new tool or access.",
+    "a ceiling-class artifact ships (prod/secret/net)": "This touches production or secrets — highest caution.",
+    "a message reaches a human outside the machine": "This sends a message to a real person outside.",
+    "a reversible internal artifact needs undoing": "Worst case: an internal change gets undone. Low risk.",
+    "a standing grant widens org authority": "This gives the cabinet a lasting new permission.",
+    "a wrong approve amends the germline plane": "This changes the cabinet's own core rules — hardest to undo.",
+    "money leaves the org": "This spends money.",
+    "the Chair is holding a judgment open": "The Chair is waiting on you for this.",
+    "unclassified chain — treated as low, gated": "I couldn't sort this one, so it waits for you. Low risk."
+  },
+  "ritual_kinds": [
+    "germline-handback",
+    "outcome-ratification"
+  ],
+  "state_name_default": "Waiting for you",
+  "state_names": {
+    "acted": "Done",
+    "decided": "You decided",
+    "dormant": "Parked",
+    "open": "New",
+    "pending": "Waiting for you",
+    "surfaced": "Shown to you"
+  },
+  "undo_templates": {
+    "approve": "Undo: most changes can be pulled back from the receipt — tap ↩ Undo there.",
+    "approve:ceiling": "Hard to undo once done — double-check before you confirm.",
+    "approve:no-return": "Once this is done it can't be pulled back from here — read it once more before you confirm.",
+    "later": "It comes back on its own — nothing to undo.",
+    "no": "You can always re-open it from its Telegram message."
+  },
+  "v": 1
+}

@@ -10,9 +10,10 @@
  * mailbox's live-Redis view of cabinet:action:* (pending binder cards) so
  * the strip/queue page never lie dark while the binder is live.
  *
- * READ-ONLY BY DOCTRINE: this lib reads a file and GETs Redis — it exposes
- * no write verb of any kind (the GET-only vitest ratchet covers its routes;
- * approve buttons in the dashboard would be a second door, gateway §4.4).
+ * READ-ONLY LIB: this lib reads a file and GETs Redis — it exposes no write
+ * verb of any kind. Decisions travel through the ONE write door,
+ * POST /api/attention/verdict (Ruling A 2026-07-10: equal-authority-door;
+ * the CI ratchet pins exactly one write route under /api/attention).
  */
 import fs from 'node:fs'
 import os from 'node:os'
