@@ -148,14 +148,20 @@ change the answers file and re-run the generator instead.
 ### 2.0 — Host bootstrap
 
 ```bash
-bash cabinet/scripts/setup-mac.sh          # interactive orchestrator; idempotent
+bash cabinet/scripts/setup-mac.sh          # fast-boot orchestrator; idempotent
 bash cabinet/scripts/setup-mac.sh --check  # verify: exit 0
 ```
 
-Installs missing deps, starts Redis, creates directories, runs the API-key
-wizard into `cabinet/.env` (chmod 600; headless alternative:
-`SKIP_ENV_WIZARD=1 bash cabinet/scripts/setup-mac.sh`), loads the preset, and
-runs the framework test suite.
+Installs missing deps, starts Redis, creates directories, runs the key
+wizard into `cabinet/.env` (chmod 600; every key recommended or optional —
+nothing critical-tier; headless: `bash cabinet/scripts/setup-env.sh
+--defaults`, or `SKIP_ENV_WIZARD=1 bash cabinet/scripts/setup-mac.sh`),
+provisions the LOCAL work store when no connection string is configured
+(`provision-local-postgres.sh` — PostgreSQL 16 + pgvector; Neon = cloud
+alternative), loads the preset, and runs the FAST proofs (null-hatch +
+clean-room pytest subset). Opt-in: sensors = `--with-sensors` (the old
+Steps 9-11), dashboard build = `--with-dashboard`, full pytest suite =
+`--full-suite`, everything = `--all`.
 
 ### 2.1 — The onboarding interview (`/cabinet-init`)
 
@@ -170,6 +176,8 @@ posture, seed outcomes, integrations), writes
 
 ```bash
 python3 cabinet/scripts/generate-instance.py            # --dry-run to preview
+# zero-question fast lane (no interview; what hatch.sh --defaults runs):
+python3 cabinet/scripts/generate-instance.py --defaults --adopt
 ```
 
 **If your clone ships a previous deployment's `instance/`** (committed

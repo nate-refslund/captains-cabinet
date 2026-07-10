@@ -1,0 +1,7 @@
+{"actor": "cos", "agg": "officer_session", "esrc": "framework", "iid": 1, "kind": "session_started", "ref": "ev-0707-hatch-cos", "src": "org_events", "ts": "2026-07-07T06:05:00Z", "v": 1, "verb": "session.started"}
+{"actor": "cto", "agg": "officer_session", "esrc": "framework", "iid": 2, "kind": "session_started", "ref": "ev-0707-hatch-cto", "src": "org_events", "ts": "2026-07-07T06:06:10Z", "v": 1, "verb": "session.started"}
+{"actor": "cos", "agg": "mission", "attrs": {"lane": "bakery-site"}, "esrc": "framework", "iid": 3, "kind": "mission_created", "ref": "ev-0707-mission-bake", "src": "org_events", "ts": "2026-07-07T06:20:00Z", "v": 1, "verb": "mission.created"}
+{"actor": "cos", "agg": "work_item", "attrs": {"lane": "bakery-site"}, "esrc": "framework", "iid": 4, "kind": "work_item_assigned", "ref": "ev-0707-assign-menu", "src": "org_events", "ts": "2026-07-07T06:25:00Z", "v": 1, "verb": "work.assigned"}
+{"actor": "cto", "attrs": {"tool": "Read"}, "iid": 5, "kind": "tool_call", "ref": "2026-07-07.jsonl:0", "src": "toollog", "ts": "2026-07-07T07:02:00Z", "v": 1, "verb": "tool.call"}
+{"actor": "cto", "attrs": {"tool": "Edit"}, "iid": 6, "kind": "tool_call", "ref": "2026-07-07.jsonl:214", "src": "toollog", "ts": "2026-07-07T07:41:00Z", "v": 1, "verb": "tool.call"}
+{"actor": "cos", "agg": "captain_channel", "esrc": "framework", "iid": 7, "kind": "digest_published", "ref": "ev-0707-digest", "src": "org_events", "ts": "2026-07-07T17:30:00Z", "v": 1, "verb": "comms.digest"}

@@ -45,7 +45,7 @@ class GitHubIssuesAdapter(TaskAdapter):
         if not self.repo:
             raise ValueError(
                 "github-issues adapter requires tasks.config.repo "
-                "(e.g. 'nate-step/captains-cabinet')"
+                "(e.g. 'nate-refslund/captains-cabinet')"
             )
 
     # ----- lifecycle -----

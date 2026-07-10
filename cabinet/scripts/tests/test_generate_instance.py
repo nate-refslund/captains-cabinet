@@ -120,6 +120,16 @@ def run_gen(root: Path, answers: dict, **kwargs) -> list:
     return gi.generate(root, write_answers(root, answers), **kwargs)
 
 
+def run_cli(cab_root: Path, *extra: str) -> subprocess.CompletedProcess:
+    """Run the generator CLI with stdin CLOSED — any prompt would hit EOF
+    and fail loud, so exit 0 doubles as the zero-prompts proof."""
+    return subprocess.run(
+        [sys.executable, str(_SCRIPTS_DIR / "generate-instance.py"),
+         "--root", str(cab_root), *extra],
+        stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Happy path — portfolio shape
 # ---------------------------------------------------------------------------
@@ -609,6 +619,268 @@ class TestActiveProjectAndAdopt:
         hand.write_text("slug: acme-store\nname: Hand Authored\nactive: true\n")
         with pytest.raises(gi.GenerationError, match="REFUSING to overwrite"):
             run_gen(cab_root, acme_answers())
+
+
+# ---------------------------------------------------------------------------
+# --defaults fast lane (init-fastlane 2026-07-09) — one confirm, zero questions
+# ---------------------------------------------------------------------------
+
+class TestDefaultsFastLane:
+    def test_defaults_happy_path_zero_prompts(self, cab_root):
+        """python3.12 generate-instance.py --defaults [--captain-name NAME]:
+        exit 0, instance generated, no prompts (stdin is DEVNULL)."""
+        res = run_cli(cab_root, "--defaults", "--captain-name", "Dana Prime")
+        assert res.returncode == 0, res.stderr
+
+        # the defaults answers file: marker-stamped, consent-safe values
+        answers_path = cab_root / "instance/config/cabinet-init.answers.yml"
+        text = answers_path.read_text()
+        assert gi.MARKER in text
+        answers = yaml.safe_load(text)
+        assert answers["captain"]["name"] == "Dana Prime"
+        assert answers["captain"]["timezone"] == "UTC"
+        assert answers["captain"]["telegram_chat_id"] == "0000"
+        assert answers["cabinet"] == {
+            "id": "main", "mode": "single", "org_shape": "portfolio",
+            "officer_model": gi.DEFAULT_MODEL,
+        }
+        assert answers["autonomy"] == {
+            "posture": "propose_first", "flavor": "org",
+            "target_posture": "guardian",
+        }
+        assert [lane["slug"] for lane in answers["lanes"]] == ["first-lane"]
+        assert answers["integrations"]["telegram"]["bot_token_env"] == "TELEGRAM_COS_TOKEN"
+
+        # the full instance generated through the EXISTING path
+        for rel in [
+            "instance/config/contexts/first-lane.yml",
+            "instance/config/projects/first-lane.yml",
+            "instance/agents/first-lane-ceo.md",
+            "instance/config/roster.yml",
+            "instance/config/sources.yml",
+            "instance/config/posture.yml",
+            "instance/config/active-project.txt",
+        ]:
+            assert (cab_root / rel).is_file(), f"missing {rel}"
+        platform = yaml.safe_load((cab_root / "instance/config/platform.yml").read_text())
+        assert platform["captain_name"] == "Dana Prime"
+        posture = yaml.safe_load((cab_root / "instance/config/posture.yml").read_text())
+        assert posture["posture"] == "guardian"      # consent-safe, explicit
+        assert posture["flavor"] == "org"
+        src = yaml.safe_load((cab_root / "instance/config/sources.yml").read_text())
+        assert src["adapter"] == "framework.sources.org:OrgSource"
+        ctx = yaml.safe_load((cab_root / "instance/config/contexts/first-lane.yml").read_text())
+        assert ctx["active"] is False                # nothing activates
+        assert (cab_root / "instance/config/active-project.txt").read_text() == "first-lane\n"
+
+    def test_default_captain_name_resolution(self, monkeypatch):
+        """--captain-name wins; else $USER (if NAME_RE-valid); else 'Captain'.
+        An INVALID explicit name refuses loud; an unusable ambient $USER
+        falls back silently (it was never asked for)."""
+        assert gi.default_captain_name("Ada") == "Ada"
+        assert gi.default_captain_name("  Ada  ") == "Ada"
+        for bad in ("bad:name", "   ", "a\nb"):
+            with pytest.raises(gi.GenerationError, match="captain-name"):
+                gi.default_captain_name(bad)
+        monkeypatch.setenv("USER", "zoe")
+        assert gi.default_captain_name(None) == "zoe"
+        monkeypatch.setenv("USER", "bad:user")
+        assert gi.default_captain_name(None) == "Captain"
+        monkeypatch.delenv("USER", raising=False)
+        assert gi.default_captain_name(None) == "Captain"
+        # NAME_RE-valid but YAML-reserved/typed-scalar names must round-trip
+        # as the EXACT string — an unquoted `name: yes` loads back as True
+        # (silent substitute = invented data). _yaml_str quotes exactly these
+        # and leaves plain names bare (byte-stable for shell greppers).
+        assert gi._yaml_str("Ada") == "Ada"
+        assert gi._yaml_str("Dana Prime") == "Dana Prime"
+        for reserved in ("yes", "Null", "true", "OFF", "0000", "2026-01-01"):
+            assert gi.default_captain_name(reserved) == reserved
+            assert gi._yaml_str(reserved) == f'"{reserved}"'
+            loaded = yaml.safe_load(gi.render_default_answers(reserved))
+            assert loaded["captain"]["name"] == reserved
+
+    def test_defaults_idempotent_rerun_byte_identical(self, cab_root):
+        assert run_cli(cab_root, "--defaults", "--captain-name", "Dana").returncode == 0
+        snapshot = {p: p.read_bytes()
+                    for p in (cab_root / "instance").rglob("*") if p.is_file()}
+        assert run_cli(cab_root, "--defaults", "--captain-name", "Dana").returncode == 0
+        for p, before in snapshot.items():
+            assert p.read_bytes() == before, f"{p} changed on --defaults re-run"
+        after = {p for p in (cab_root / "instance").rglob("*") if p.is_file()}
+        assert after == set(snapshot), "re-run created unexpected files"
+
+    def test_defaults_then_plain_run_parity(self, cab_root):
+        """--defaults rides the EXACT existing generation path: a plain run
+        (no --defaults) over the defaults-written answers file is
+        byte-identical."""
+        assert run_cli(cab_root, "--defaults", "--captain-name", "Dana").returncode == 0
+        snapshot = {p: p.read_bytes()
+                    for p in (cab_root / "instance").rglob("*") if p.is_file()}
+        assert run_cli(cab_root).returncode == 0     # plain lane, same answers
+        for p, before in snapshot.items():
+            assert p.read_bytes() == before
+
+    def test_defaults_inherited_instance_suggests_adopt(self, cab_root):
+        """Inherited clone (platform.yml captain differs + a marker-less
+        file): the refusal names the previous captain and teaches --adopt;
+        --defaults --adopt then completes with exit 0, archiving (never
+        deleting) the previous deployment's file."""
+        platform = cab_root / "instance/config/platform.yml"
+        platform.write_text(PLATFORM_FIXTURE.replace(
+            "captain_name: Placeholder", "captain_name: Prev Captain"))
+        hand_src = cab_root / "instance/config/sources.yml"
+        hand_src.write_text("# hand-authored live binding\nadapter: flavor_a.x:HandAuthored\n")
+
+        res = run_cli(cab_root, "--defaults", "--captain-name", "Dana")
+        assert res.returncode == 2
+        assert "REFUSING to overwrite" in res.stderr
+        assert "'Prev Captain'" in res.stderr        # the inherited signal, named
+        assert "--adopt" in res.stderr               # the taught fix
+        assert not list((cab_root / "instance/config/contexts").glob("*.yml"))
+
+        res2 = run_cli(cab_root, "--defaults", "--captain-name", "Dana", "--adopt")
+        assert res2.returncode == 0, res2.stderr
+        assert yaml.safe_load(platform.read_text())["captain_name"] == "Dana"
+        assert gi.MARKER in hand_src.read_text()
+        archived = list((cab_root / "instance").glob("_pre-adopt-*/config/sources.yml"))
+        assert len(archived) == 1
+        assert "HandAuthored" in archived[0].read_text()
+
+    def test_plain_run_hint_only_when_captain_differs(self, cab_root):
+        """The inherited teach rides every refusal (not just --defaults) and
+        fires ONLY when the existing platform captain actually differs."""
+        hand = cab_root / "instance/config/contexts/acme-store.yml"
+        hand.write_text("slug: acme-store\nname: Hand Authored\nactive: true\n")
+        with pytest.raises(gi.GenerationError) as exc:
+            run_gen(cab_root, acme_answers())        # fixture captain 'Placeholder' != 'Ada'
+        assert "--adopt" in str(exc.value)
+        assert "'Placeholder'" in str(exc.value)
+
+        platform = cab_root / "instance/config/platform.yml"
+        platform.write_text(PLATFORM_FIXTURE.replace(
+            "captain_name: Placeholder", "captain_name: Ada"))
+        with pytest.raises(gi.GenerationError) as exc2:
+            run_gen(cab_root, acme_answers())        # same captain — a rename/own-file case
+        assert "REFUSING to overwrite" in str(exc2.value)
+        assert "looks inherited" not in str(exc2.value)
+
+    def test_defaults_refuses_interview_answers_without_adopt(self, cab_root):
+        """An existing answers file WITHOUT the marker is an interview record:
+        --defaults refuses (file untouched) and teaches both fixes;
+        --defaults --adopt archives it and starts from defaults."""
+        answers_path = write_answers(cab_root, acme_answers())
+        before = answers_path.read_bytes()
+
+        res = run_cli(cab_root, "--defaults", "--captain-name", "Dana")
+        assert res.returncode == 2
+        assert "--defaults --adopt" in res.stderr
+        assert "WITHOUT --defaults" in res.stderr
+        # inherited-clone signal: platform.yml carries 'Placeholder' and the
+        # defaults captain would be 'Dana' — the refusal names the previous
+        # captain (same teach as the generation-pass refusals)
+        assert "looks inherited" in res.stderr
+        assert "'Placeholder'" in res.stderr
+        # refused run shows no happy-path banner above the error
+        assert "defaults fast lane:" not in res.stdout
+        assert answers_path.read_bytes() == before   # never clobbered
+
+        res2 = run_cli(cab_root, "--defaults", "--captain-name", "Dana", "--adopt")
+        assert res2.returncode == 0, res2.stderr
+        assert gi.MARKER in answers_path.read_text()
+        assert yaml.safe_load(answers_path.read_text())["captain"]["name"] == "Dana"
+        archived = list((cab_root / "instance").glob(
+            "_pre-adopt-*/config/cabinet-init.answers.yml"))
+        assert len(archived) == 1
+        assert archived[0].read_bytes() == before    # archived, never deleted
+
+    def test_defaults_answers_refusal_hint_only_when_captain_differs(self, cab_root):
+        """The answers-file refusal names the previous captain ONLY on a real
+        inherited signal — refusing over one's OWN interview record (same
+        platform captain) must not claim the instance looks inherited."""
+        platform = cab_root / "instance/config/platform.yml"
+        platform.write_text(PLATFORM_FIXTURE.replace(
+            "captain_name: Placeholder", "captain_name: Dana"))
+        write_answers(cab_root, acme_answers())      # marker-less interview record
+        res = run_cli(cab_root, "--defaults", "--captain-name", "Dana")
+        assert res.returncode == 2
+        assert "REFUSING to overwrite" in res.stderr
+        assert "looks inherited" not in res.stderr
+
+    def test_defaults_answers_target_never_a_generator_output(self, cab_root):
+        """--defaults WRITES the answers target, so the target must be named
+        '*.answers.yml' — the one filename shape no generated instance file
+        can occupy. Without the fence, a marker-stamped generator output
+        (posture.yml — Captain-ruled never-touched once written) would read
+        as 'generator-owned answers file' and be rewritten permanently.
+        Unconditional: --force/--adopt do not widen it, and the refusal must
+        not carry the 'REFUSING to overwrite' cue (hatch.sh greps that to
+        auto-run --adopt, the wrong fix for a mis-aimed --answers)."""
+        assert run_cli(cab_root, "--defaults", "--captain-name", "Dana").returncode == 0
+        posture = cab_root / "instance/config/posture.yml"
+        before = posture.read_bytes()
+        assert gi.MARKER in before.decode()          # marker-stamped output...
+        for extra in ((), ("--force",), ("--adopt",)):
+            res = run_cli(cab_root, "--defaults", "--captain-name", "Dana",
+                          "--answers", str(posture), *extra)
+            assert res.returncode == 2, res.stdout
+            assert ".answers.yml" in res.stderr      # ...refused, fix taught
+            assert "REFUSING to overwrite" not in res.stderr
+            assert "defaults fast lane:" not in res.stdout   # no banner on refusal
+            assert posture.read_bytes() == before    # never touched
+        # an ABSENT reserved target is refused too — a squatted
+        # active-project.txt would feed YAML answers to bootstrap-roles.sh
+        target = cab_root / "instance/config/active-project.txt"
+        target.unlink()
+        res = run_cli(cab_root, "--defaults", "--captain-name", "Dana",
+                      "--answers", str(target))
+        assert res.returncode == 2
+        assert not target.exists()
+
+    def test_defaults_reserved_captain_name_end_to_end(self, cab_root):
+        """--captain-name yes must land as the STRING 'yes' in both the
+        answers file and platform.yml (never bool True, never a silent
+        'Captain' fallback); plain names stay unquoted in platform.yml."""
+        res = run_cli(cab_root, "--defaults", "--captain-name", "yes")
+        assert res.returncode == 0, res.stderr
+        answers = yaml.safe_load(
+            (cab_root / "instance/config/cabinet-init.answers.yml").read_text())
+        assert answers["captain"]["name"] == "yes"
+        platform_text = (cab_root / "instance/config/platform.yml").read_text()
+        assert 'captain_name: "yes"' in platform_text
+        assert yaml.safe_load(platform_text)["captain_name"] == "yes"
+
+    def test_defaults_dry_run_writes_nothing(self, cab_root):
+        before = {p: p.read_bytes() for p in cab_root.rglob("*") if p.is_file()}
+        res = run_cli(cab_root, "--defaults", "--captain-name", "Dana", "--dry-run")
+        assert res.returncode == 0, res.stderr
+        after = {p: p.read_bytes() for p in cab_root.rglob("*") if p.is_file()}
+        assert after == before                       # no new files, no changed BYTES
+        assert "[dry-run] would write instance/config/cabinet-init.answers.yml" in res.stdout
+
+    def test_captain_name_requires_defaults(self, cab_root):
+        res = run_cli(cab_root, "--captain-name", "Dana")
+        assert res.returncode == 2
+        assert "--captain-name requires --defaults" in res.stderr
+
+    def test_defaults_answers_write_stays_jailed(self, cab_root, tmp_path):
+        """--defaults WRITES the answers file, so the instance/ path jail
+        applies to it: an --answers path outside instance/ is refused."""
+        outside = tmp_path / "outside-answers.yml"
+        res = run_cli(cab_root, "--defaults", "--captain-name", "Dana",
+                      "--answers", str(outside))
+        assert res.returncode == 2
+        assert "PATH REFUSED" in res.stderr
+        assert not outside.exists()
+
+    def test_defaults_output_universality(self, cab_root):
+        """defaults-generated artifacts carry no deployment-specific tokens."""
+        assert run_cli(cab_root, "--defaults", "--captain-name", "Dana").returncode == 0
+        for p in (cab_root / "instance").rglob("*"):
+            if p.is_file() and p.suffix in {".yml", ".md"}:
+                text = p.read_text().lower()
+                for pattern in TestUniversality.FORBIDDEN:
+                    assert not re.search(pattern, text), f"{p} contains {pattern}"
 
 
 # ---------------------------------------------------------------------------

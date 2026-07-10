@@ -47,8 +47,14 @@ if command -v docker >/dev/null 2>&1; then
   LOG=/var/log/cabinet/restart-officers-oneshot.log
   mkdir -p "$(dirname "$LOG")" 2>/dev/null || LOG=/dev/stderr
   echo "=== $(date -u +%FT%TZ) — restart-fleet (docker) fired ===" >> "$LOG"
+  # Container names are INSTANCE config, never hardcoded here
+  # (INSTANCE-SENSED-CLEANUP): pass them space-separated via
+  # CABINET_OFFICER_CONTAINERS when arming the cron line.
+  if [ -z "${CABINET_OFFICER_CONTAINERS:-}" ]; then
+    echo "no CABINET_OFFICER_CONTAINERS configured — nothing to restart" >> "$LOG"
+  fi
   restarted=0
-  for container in sensed-officers personal-cabinet-officers; do
+  for container in ${CABINET_OFFICER_CONTAINERS:-}; do
     if docker ps --format '{{.Names}}' | grep -q "^${container}$"; then
       echo "Restarting $container..." >> "$LOG"
       docker restart "$container" >> "$LOG" 2>&1 && restarted=$((restarted+1)) \

@@ -89,7 +89,16 @@ LOG_PATH="$REPO_ROOT/$LOG_REL"
 # would create a new inode on next touch, breaking flock coordination
 # across concurrent pushes. .git/ is per-repo, private, and stable.
 # (COO adversary L-1 on 549062a.)
-EVAL_LOCK_FILE="$REPO_ROOT/.git/cabinet-golden-evals.lock"
+# Worktree-safe (2026-07-10): in a LINKED WORKTREE "$REPO_ROOT/.git" is a
+# FILE (the gitdir pointer), so it cannot hold the lock — the redirect
+# died with "Not a directory" and blocked the push before any eval ran.
+# Use the COMMON git dir instead: one lock shared by the main checkout
+# and every linked worktree, which is also the correct serialization
+# scope (EVAL-008's evaltest_* Redis keys are shared per HOST, not per
+# working tree). cd/pwd resolves the relative ".git" rev-parse emits at
+# the main checkout; fallback preserves the old path if rev-parse fails.
+GIT_COMMON_DIR="$(cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd)"
+EVAL_LOCK_FILE="${GIT_COMMON_DIR:-$REPO_ROOT/.git}/cabinet-golden-evals.lock"
 
 # Capture pushed refs once — stdin is single-use. Both the force-push
 # loop (FW-007) and the golden-evals gate (FW-025) need to scan it.

@@ -7,6 +7,11 @@ cabinet/.env
 # framework/frontdoor/calread_helper/)
 /bin/cabinet-calread
 
+# Built menu-bar companion bundle (arch-specific, assembled + ad-hoc-signed
+# on-target via cabinet/scripts/build-companion.sh; source lives in
+# cabinet/companion/ — the bundle must never enter git or the egg)
+/bin/Cabinet Companion.app/
+
 # Claude Code auto-memory (per-developer, not part of the framework)
 .claude/memory/
 .claude/scheduled_tasks.lock
@@ -106,6 +111,11 @@ instance/loop-prompts/
 # Officer working notes (accumulated at runtime)
 instance/memory/tier2/**/*.md
 !instance/memory/tier2/**/.gitkeep
+
+# Day-1 synthetic runtime artifacts (hatch-seeded local renders — a careless
+# `git add` must never commit them)
+instance/memory/demo-receipt.md
+instance/memory/first-briefing-*.md
 
 # Runtime archives (migration snapshots, etc.)
 instance/archive/

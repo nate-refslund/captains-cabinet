@@ -1,0 +1,24 @@
+P1 null-hatch proof — captured 2026-07-09 (perfect-cabinet Wave A, honesty area)
+worktree: /Users/nate/cabinet-worktrees/perfect-cabinet (branch feat/perfect-cabinet) @ 73a89d0c
+command: bash cabinet/scripts/null-hatch.sh   (A15 gate_cmd; runs against git archive HEAD)
+--- full transcript below (unedited; NULL-HATCH-EXIT-CODE line = captured $?) ---
+null-hatch: sandbox staged (committed tree, no sources.yml, poisoned $HOME/.screenpipe)
+null-hatch: [1/4] Testburg render — identity is launcher-driven, not baked
+.....................                                                    [100%]
+21 passed in 0.16s
+null-hatch: [2/4] NullPersonalSource honest-empties + null dispatch no-ops
+OK: clean-room null source imports + runs without crash
+null-hatch: [3/4] framework CORE import slice under the null source
+OK: 17 framework CORE modules import under the null source
+null-hatch: [4/4] null-path suite subset (framework/sources + framework/tests)
+........................................................................ [ 13%]
+........................................................................ [ 27%]
+........................................................................ [ 41%]
+........................................................................ [ 55%]
+........................................................................ [ 68%]
+........................................................................ [ 82%]
+........................................................................ [ 96%]
+...................                                                      [100%]
+523 passed in 4.48s
+null-hatch: PROOF 1 — NULL HATCH: PASS (egg boots with no captain data, no screenpipe, no instance source, adapters absent)
+NULL-HATCH-EXIT-CODE: 0

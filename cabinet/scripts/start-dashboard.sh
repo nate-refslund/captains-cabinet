@@ -1,8 +1,17 @@
 #!/bin/bash
 # start-dashboard.sh — run the Cabinet dashboard (Next.js) Mac-native.
 #
-# Serves on http://localhost:3100. The office wall-display lives at
-# http://localhost:3100/display (read-only, unauthenticated by design).
+# Serves on http://127.0.0.1:3100. The office wall-display lives at
+# http://127.0.0.1:3100/display (read-only, unauthenticated by design).
+#
+# Port/bind config (Wave D app-feel, D4): CABINET_DASHBOARD_PORT (default
+# 3100) and CABINET_DASHBOARD_HOST (default 0.0.0.0 — CURRENT behavior kept:
+# the live box is reached over Tailscale at http://<host>:<port>). Explicit
+# env (launchd plist) wins over cabinet/.env, which wins over the default —
+# captured BEFORE the .env sourcing below so `set -a` cannot flip precedence.
+# Loopback-only opt-in: CABINET_DASHBOARD_HOST=127.0.0.1. Flipping the
+# DEFAULT to loopback is captain-gated (CC-LOOP / OC-LOOPBACK ruling) — do
+# not change it here without that ruling.
 #
 # Wrapped by the com.cabinet.dashboard LaunchAgent (KeepAlive). Sources
 # cabinet/.env so the dashboard sees NEON_CONNECTION_STRING, DASHBOARD_PASSWORD,
@@ -17,7 +26,11 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CABINET_ROOT="${CABINET_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
 DASH_DIR="$CABINET_ROOT/cabinet/dashboard"
-PORT="${CABINET_DASHBOARD_PORT:-3100}"
+# Capture explicit-env values BEFORE cabinet/.env is sourced: the `set -a`
+# sourcing below overwrites the environment, so a naive PORT= after it would
+# let .env override the launchd plist env (precedence trap, D4a).
+ENV_DASH_PORT="${CABINET_DASHBOARD_PORT:-}"
+ENV_DASH_HOST="${CABINET_DASHBOARD_HOST:-}"
 
 if [ ! -d "$DASH_DIR" ]; then
   echo "start-dashboard: $DASH_DIR not found" >&2
@@ -31,6 +44,13 @@ if [ -f "$CABINET_ROOT/cabinet/.env" ]; then
   . "$CABINET_ROOT/cabinet/.env"
   set +a
 fi
+
+# Precedence: explicit env (launchd plist) > cabinet/.env > default (D4a fix
+# — previously PORT was resolved before the sourcing, so .env was ignored).
+# HOST default 0.0.0.0 = the current all-interfaces bind (Tailscale reach);
+# the default flip to loopback is captain-gated — see the header.
+PORT="${ENV_DASH_PORT:-${CABINET_DASHBOARD_PORT:-3100}}"
+HOST="${ENV_DASH_HOST:-${CABINET_DASHBOARD_HOST:-0.0.0.0}}"
 
 # Mac-native data layer + localhost Redis.
 export CABINET_ROOT
@@ -50,5 +70,5 @@ if [ ! -d "$DASH_DIR/.next" ]; then
   npm run build 2>&1 | tail -10 || { echo "start-dashboard: build failed" >&2; exit 1; }
 fi
 
-echo "start-dashboard: serving on http://localhost:$PORT  (display: /display)"
-exec npm start -- --port "$PORT"
+echo "start-dashboard: serving on http://127.0.0.1:$PORT  (display: /display; bind: $HOST)"
+exec npm start -- --port "$PORT" --hostname "$HOST"

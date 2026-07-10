@@ -18,13 +18,28 @@ Send-only + gated end-to-end: run_send_path delegates to channel.send, which is
 hard-gated on framework.env.allow_sends() (a dev/test session composes but does
 NOT send). No reply handling here — the interactive reply→orchestration is the
 LLM-Chair capstone.
+
+LOCAL-FIRST genesis receipt (Perfect Cabinet Wave A, Captain 2026-07-09): with
+``--local-render`` (or ``run_briefing(local_render=True)``) ONE briefing is
+composed from the LOCAL genesis surfaces (framework.onboarding.genesis: the
+org-PROPOSED outcome cards, the focus letter, the research-brief status),
+written to ``instance/memory/first-briefing-<UTC date>.md`` and printed —
+never sent. In this mode the synthesis/recap/digest legs and the Redis intake
+are DELIBERATELY not touched: a genesis instance has no estate to gather, and
+a scratch-instance run on a developer Mac must never consume the LIVE
+``cabinet:frontdoor:intake`` consumer-group items (a drain marks them
+delivered). The normal path — and the Telegram send through channel.py +
+allow_sends — is byte-identical to before and still used when configured.
+``--now`` makes the run-immediately contract explicit for wrappers (the module
+has no in-code schedule window; launchd owns the cadence).
 """
 from __future__ import annotations
 
 import os
 
-from framework.frontdoor import (daily_recap, morning_synthesis, run_frontdoor,
-                                 tell_digest)
+from framework import env
+from framework.frontdoor import (composer, daily_recap, morning_synthesis,
+                                 run_frontdoor, tell_digest)
 
 
 def _is_pm() -> bool:
@@ -61,6 +76,64 @@ def _default_needs_you() -> "dict | None":
     return {"needs_you": True, "id": intake.enqueue(item)}
 
 
+def _run_local_render(*, genesis_fn=None, now: str | None = None) -> dict:
+    """The LOCAL-FIRST genesis receipt: compose ONE briefing from the local
+    genesis surfaces and WRITE it — never send, never touch Redis.
+
+    Items come from ``genesis_fn`` (default:
+    ``framework.onboarding.genesis.genesis_intake_items`` — the org-PROPOSED
+    outcome cards + focus letter + research-brief status, file reads only).
+    The composed markdown lands atomically at
+    ``<root>/instance/memory/first-briefing-<UTC date>.md`` (root honors
+    ``CABINET_ROOT``, so scratch instances are targeted by env). channel.py is
+    never called; the result mirrors run_send_path's shape with
+    ``sent: False`` + ``local_render: True`` + ``receipt_path``. Honest empty:
+    zero genesis items still write the receipt, saying so plainly."""
+    from datetime import datetime, timezone
+
+    from framework.onboarding import genesis  # lazy: only the local path needs it
+
+    gather = genesis_fn or genesis.genesis_intake_items
+    items = list(gather() or [])
+    text = composer.compose(items, max_per_tier=None)  # the first briefing shows ALL cards
+
+    utcnow = datetime.now(timezone.utc)
+    date = utcnow.strftime("%Y-%m-%d")
+    stamp = now or utcnow.strftime("%Y-%m-%dT%H:%M:%SZ")
+    # Path knowledge lives with the genesis surfaces (layer-sep FINAL-C):
+    # onboarding owns WHERE the receipt lands; this module composes the text.
+    path = genesis.first_briefing_path(date)
+    body = (
+        f"# First briefing — {date} (LOCAL-FIRST receipt)\n\n"
+        f"- composed: {stamp} on this machine, from local genesis surfaces only\n"
+        "- sent: no — the Telegram channel engages post-hatch when configured "
+        "(channel.py + allow_sends untouched)\n"
+        "- propose-only: every outcome card below is a DRAFT "
+        "(captain_ratified: false); ratify by moving it into "
+        "instance/config/outcomes.yml\n\n"
+        + (text if text else
+           "(honest empty — no genesis items were staged; run the genesis "
+           "proposal step: python3.12 -m framework.onboarding.genesis)")
+        + "\n"
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(body, encoding="utf-8")
+    os.replace(tmp, path)
+
+    return {
+        "synthesis": {"skipped": "local-render (genesis has no estate to gather)"},
+        "recap": None,
+        "digest": {"skipped": "local-render"},
+        "send": {
+            "drained": len(items), "item_ids": [], "text": text,
+            "sent": False, "send": None, "acked": 0, "recovered": 0,
+            "allow_sends": env.allow_sends(), "local_render": True,
+            "receipt_path": str(path),
+        },
+    }
+
+
 def run_briefing(
     *,
     hours: int = 72,
@@ -74,6 +147,8 @@ def run_briefing(
     digest_fn=None,
     needs_you_fn=None,
     run_mode: str | None = None,
+    local_render: bool = False,
+    genesis_fn=None,
 ) -> dict:
     """Enqueue a fresh synthesis (+ the PM daily recap + the TI-5 digest +
     the war-room "Needs you (N)" section), then run one send pass.
@@ -96,6 +171,15 @@ def run_briefing(
     ``_default_digest``). Best-effort: a digest failure logs into
     the result and never blocks the briefing. Kill-switch CABINET_TELL_DIGEST=0.
 
+    LOCAL-FIRST genesis receipt: ``local_render=True`` short-circuits to
+    ``_run_local_render`` — the briefing is composed from the local genesis
+    surfaces (``genesis_fn`` seam; default
+    framework.onboarding.genesis.genesis_intake_items), written to
+    ``instance/memory/first-briefing-<UTC date>.md`` and returned, with the
+    synthesis/recap/digest legs and the Redis intake deliberately untouched
+    (module docstring has the why). All other seams are ignored in that mode;
+    the normal path below is unchanged.
+
     Seams: ``enqueue_fn`` overrides the synthesis enqueue; ``recap_fn`` overrides
     the daily-recap enqueue; ``digest_fn`` overrides the TI-5 digest enqueue;
     ``run_mode`` forces AM/PM; ``send_fn`` / ``drain_fn`` / ``ack_fn`` forward to
@@ -103,6 +187,9 @@ def run_briefing(
     never appears in the result (channel.send scrubs; run_send_path only
     re-surfaces the scrubbed dict).
     """
+    if local_render:
+        return _run_local_render(genesis_fn=genesis_fn)
+
     enqueue = enqueue_fn or morning_synthesis.enqueue_synthesis
     syn = enqueue(hours=hours, limit=limit)
 
@@ -153,9 +240,35 @@ def run_briefing(
             "needs_you": needs_you, "send": send}
 
 
+def _parse_args(argv=None):
+    """CLI flags (additive; a ZERO-ARG invocation — the launchd wrapper's call —
+    behaves exactly as before these flags existed).
+
+    --now           run one briefing pass immediately. The module already runs
+                    immediately when invoked (launchd owns the cadence; there
+                    is no in-code schedule window) — the flag makes that
+                    contract explicit for wrappers like first-briefing.sh.
+    --local-render  the LOCAL-FIRST genesis receipt: compose from the local
+                    genesis surfaces, write instance/memory/
+                    first-briefing-<UTC date>.md, print to stdout — never send,
+                    never touch Redis (see _run_local_render).
+    """
+    import argparse
+    ap = argparse.ArgumentParser(prog="framework.frontdoor.run_briefing")
+    ap.add_argument("--now", action="store_true",
+                    help="run one briefing pass immediately (explicit "
+                         "run-now contract; bypasses any wrapper scheduling)")
+    ap.add_argument("--local-render", action="store_true", dest="local_render",
+                    help="compose locally from genesis surfaces and write "
+                         "instance/memory/first-briefing-<UTC date>.md instead "
+                         "of sending (no Redis, no Telegram)")
+    return ap.parse_args(argv)
+
+
 if __name__ == "__main__":  # pragma: no cover — invoked by the launchd wrapper
     import json
-    out = run_briefing()
+    args = _parse_args()
+    out = run_briefing(local_render=args.local_render)
     printable = {
         "synthesis": out["synthesis"],
         "recap": {k: v for k, v in (out["recap"] or {}).items()
@@ -165,3 +278,10 @@ if __name__ == "__main__":  # pragma: no cover — invoked by the launchd wrappe
         "send": {k: v for k, v in out["send"].items() if k != "text"},
     }
     print(json.dumps(printable, indent=2, default=str))
+    if args.local_render:
+        # Shell-consumable receipt handle (first-briefing.sh parses this line),
+        # then the composed briefing itself — "print to stdout instead of send".
+        print(f"FIRST_BRIEFING_RECEIPT={out['send']['receipt_path']}")
+        if out["send"]["text"]:
+            print("\n--- first briefing (local render, NOT sent) ---\n")
+            print(out["send"]["text"])

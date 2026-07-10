@@ -21,7 +21,10 @@ set -uo pipefail
 # The container default (/opt/founders-cabinet) is gone — anyone running this
 # in a container should export CABINET_ROOT explicitly (start-officer.sh does).
 CABINET_ROOT="${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)}"
-RUNTIME_DIR="/tmp/cabinet-runtime"
+# CABINET_RUNTIME_DIR override: tests point it at a scratch dir so a fixture
+# run can never clobber the live /tmp/cabinet-runtime officers read (same
+# override discipline as action_undo's CABINET_UNDO_DIR). Default unchanged.
+RUNTIME_DIR="${CABINET_RUNTIME_DIR:-/tmp/cabinet-runtime}"
 ACTIVE_PRESET_FILE="$CABINET_ROOT/instance/config/active-preset"
 
 mkdir -p "$RUNTIME_DIR"
@@ -165,6 +168,42 @@ PY
     exit 1
   fi
 fi
+
+# ---------------------------------------------------------------
+# Materialize the governance twins (Perfect Cabinet Wave B, day-1 legibility)
+# ---------------------------------------------------------------
+# posture.yml + trust-ladder.yml are the Captain-readable governance state.
+# Absent files already resolve to the same consent-safe defaults in code
+# (posture.py -> guardian; trust_ladder.py -> the would-like-to floor), but an
+# absent file SHOWS nothing — so on first boot we materialize the shipped
+# .example twins (guardian ruling / floor ladder) to make day-one governance
+# state visible and editable. ABSENT-ONLY by construction: an existing file is
+# NEVER overwritten (these paths are germline-listed and may be schg-locked on
+# a ruled deployment — the lock skips absent paths, so the copy below can only
+# ever create, never collide with the boundary). Idempotent across re-runs.
+# load-preset.sh is the one step BOTH hatch.sh (step 6) and the manual runbook
+# path run, so every hatch route materializes the same state.
+for _gov_pair in \
+  "posture.yml.example:posture.yml" \
+  "trust-ladder.yml.example:trust-ladder.yml"; do
+  _gov_example="$CABINET_ROOT/instance/config/${_gov_pair%%:*}"
+  _gov_target="$CABINET_ROOT/instance/config/${_gov_pair##*:}"
+  # -L beside -e: a DANGLING symlink pre-planted at the target fails -e but
+  # must still count as present — cp would otherwise create the file THROUGH
+  # the link at a symlink-chosen path (review nit 2026-07-10).
+  if [ -e "$_gov_target" ] || [ -L "$_gov_target" ]; then
+    log "Governance path present, untouched: ${_gov_pair##*:} (never overwritten)"
+  elif [ -f "$_gov_example" ]; then
+    if cp "$_gov_example" "$_gov_target" 2>/dev/null; then
+      log "Materialized ${_gov_pair##*:} from its .example twin (consent-safe default: guardian posture / floor ladder — see docs/how-your-cabinet-is-governed.md)"
+    else
+      log "WARN: could not materialize ${_gov_pair##*:} (copy failed); absent file resolves the same safe default in code"
+    fi
+  else
+    log "WARN: ${_gov_pair%%:*} missing — nothing to materialize (absent file resolves the safe default in code)"
+  fi
+done
+unset _gov_pair _gov_example _gov_target
 
 # ---------------------------------------------------------------
 # Determine active preset

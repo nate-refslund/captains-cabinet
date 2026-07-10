@@ -1,0 +1,10 @@
+# Testburg demo product config — synthetic, demo fixture only.
+# Served to the dashboard by cabinet/scripts/demo-dashboard.sh via
+# CONFIG_PATH so the demo never reads a real instance/config/product.yml.
+# Keys mirror the product block of cabinet/dashboard/src/lib/config.ts.
+product:
+  name: Testburg Bakery Cabinet
+  description: Demo cabinet for the fictional captain Ada Testburg (synthetic fixture — cabinet/fixtures/testburg)
+  captain_name: Ada Testburg
+  repo: ""
+  repo_branch: main

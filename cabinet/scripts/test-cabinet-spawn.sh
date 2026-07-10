@@ -124,7 +124,8 @@ echo ""
 echo "T4: --skip-create works when project is already provisioned"
 
 # Self-provision a throwaway "already provisioned" project env as the fixture
-# (egg R061: sensed.env left the repo; only _template.env ships in cabinet/env/)
+# (egg R061: instance lane .env files left the repo; only _template.env ships
+# in cabinet/env/)
 FIXTURE_SLUG="tfx-spawn"
 FIXTURE_ENV="$CABINET_ROOT/cabinet/env/$FIXTURE_SLUG.env"
 if [ -e "$FIXTURE_ENV" ]; then

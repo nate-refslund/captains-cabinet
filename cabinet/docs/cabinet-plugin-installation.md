@@ -66,7 +66,7 @@ The plugin manifest (`.claude-plugin/plugin.json`) declares (counts corrected 20
   slash-invocable, and the drifted command wrappers were folded into the
   SKILL.md files and deleted (audit #21)
 - **1 path-scoped rule** (org-runtime-native)
-- **7 MCP servers** (notion, neon, linear, vercel, redis-trigger-channel, library, make)
+- **6 MCP servers** (notion, neon, vercel, redis-trigger-channel, library, make)
 - **settings** with hooks, voice, defaultMode, and statusLine wiring
 
 ## Prerequisites (auto-checked by `setup-mac.sh --check`)
@@ -129,11 +129,13 @@ are never packaged into the marketplace.
 | `agent-teams-pack` | agent-team-workflow | Copy of the core skill |
 | `preset-portfolio-pack` | portfolio-preset activation guide | Payload referenced at `presets/portfolio/` — requires the core plugin |
 | `preset-personal-pack` | personal-preset activation guide | Payload referenced at `presets/personal/` — requires the core plugin |
+| `lighthouse-log-pack` | daily-lighthouse-log (keeper's log composed from the world chronicle into the officer's own tier2 note) | Original — authored in the pack: no core copy, no `sunset:` line; the running exemplar for `docs/authoring-a-pack.md` |
 
-**Additive posture (this wave):** packs are parallel copies — the originals
-stay in `.claude/skills/` and the core plugin still ships them, because live
-officers load them from there. Removing the originals is a later wave, gated
-on its sibling ratchets.
+**Additive posture (this wave):** the core-skill packs are parallel copies —
+the originals stay in `.claude/skills/` and the core plugin still ships them,
+because live officers load them from there. Removing the originals is a later
+wave, gated on its sibling ratchets. (`lighthouse-log-pack` is an original
+authored in the pack — nothing to copy or reap.)
 
 **Install (Captain, interactive):**
 

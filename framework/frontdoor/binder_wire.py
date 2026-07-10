@@ -1220,15 +1220,30 @@ def handle_captain_update(
             # ordering) — if the emit had raised, we would never get here.
             if routed.primary not in ("approve", "edit"):
                 return
+            # Receipt grammar (Wave B): the stored action card's ``situation``
+            # IS the proposing rationale. deliver_action DELETES the record
+            # after execution, so it must be read BEFORE dispatch to stamp the
+            # journal's ``why`` afterwards (interim unlocked carry — the real
+            # fix is write-time stamping inside the germline action_exec).
+            _is_action = False
+            _situation: Optional[str] = None
             if deliver is None:
                 # PAYLOAD ROUTING (2026-07-03 pivot): an action card stores its
                 # chain under cabinet:action:<pid>; a reply draft under
                 # cabinet:draft:<pid>. Route by which record exists — same gate,
                 # different executor. Action-first: the pivot lane is the live
                 # one (draft lane parked by Captain ruling).
-                if redis_get(f"cabinet:action:{pid}"):
+                _raw_action = redis_get(f"cabinet:action:{pid}")
+                if _raw_action:
                     from framework.frontdoor import action_exec
                     fn = action_exec.deliver_action
+                    _is_action = True
+                    try:
+                        _rec = json.loads(_raw_action)
+                        if isinstance(_rec, dict):
+                            _situation = _rec.get("situation")
+                    except Exception:
+                        _situation = None
                 else:
                     from framework.frontdoor import chair_drafts
                     fn = chair_drafts.deliver_draft
@@ -1258,6 +1273,21 @@ def handle_captain_update(
                 delivery["result"] = fn(pid, override_text=override or "")
             except Exception as e:  # record the failure; verdict already landed
                 delivery["result"] = {"ok": False, "error": str(e)[:200]}
+            # Receipt grammar (Wave B): after a SUCCESSFUL action delivery,
+            # stamp the captured rationale onto the executed journal rows via
+            # the unlocked seam (append-only enrichment; last-write-wins by
+            # jid). Best-effort and honest: stamp_journal_why never raises,
+            # never invents (empty situation = no-op), never overwrites an
+            # existing why — and a stamping failure must never disturb a
+            # delivery whose verdict already landed.
+            if _is_action and _situation and \
+                    isinstance(delivery.get("result"), dict) and \
+                    delivery["result"].get("ok"):
+                try:
+                    from framework.frontdoor import action_language
+                    action_language.stamp_journal_why(pid, _situation)
+                except Exception:
+                    pass
 
         # SIE-1 (propose seam): an `edit:`/`skip:` on a still-open proposal is a
         # correction verdict — append ONE structured lesson row and hand its ref

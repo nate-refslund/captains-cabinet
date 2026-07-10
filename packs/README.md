@@ -21,6 +21,7 @@ bash cabinet/scripts/validate-extension.sh packs/<pack-name>
 | `agent-teams-pack` | agent-team-workflow | **Copied** from `.claude/skills/` |
 | `preset-portfolio-pack` | Portfolio-preset activation guide skill + README | Payload **referenced** at `presets/portfolio/` (core plugin/repo) |
 | `preset-personal-pack` | Personal-preset activation guide skill + README | Payload **referenced** at `presets/personal/` (core plugin/repo) |
+| `lighthouse-log-pack` | daily-lighthouse-log — the day's keeper's log, composed from the world chronicle into the officer's own tier2 note | **Original — authored in the pack** (no core copy, no `sunset:` line; also the running exemplar for `docs/authoring-a-pack.md`) |
 
 The `work` preset stays CORE payload (it ships inside the `captains-cabinet`
 plugin, not as a pack). Instance-specific presets are never packaged into the
@@ -29,8 +30,10 @@ deployment-specific stays in `instance/` or a local preset directory.
 
 ## Additive posture (this wave)
 
-Packs are **parallel copies**: the originals remain in `.claude/skills/` and
-the core plugin still ships them, because live officers load them from there.
+The core-skill packs are **parallel copies**: the originals remain in
+`.claude/skills/` and the core plugin still ships them, because live officers
+load them from there. (`lighthouse-log-pack` is the exception — an original
+authored in the pack, nothing to copy or reap.)
 Copies are content-identical to the originals except for three deliberate
 deltas: doctrine copies gain a date-typed `sunset: '2026-10-05'` line (the
 apoptosis reaper scans `packs/*/skills/*/SKILL.md` and raises a propose-only

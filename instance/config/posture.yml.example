@@ -4,6 +4,14 @@
 # runs under. Verdict semantics live in the germline floor
 # (framework/policies/authority-matrix.yml); this file only selects.
 #
+# THIS EXAMPLE SHIPS THE CONSENT-SAFE DEFAULT: posture guardian — the exact
+# behavior an ABSENT file resolves to (propose-first everywhere autonomy has
+# not been earned; hard ceilings Captain-gated forever). load-preset.sh
+# materializes it to posture.yml on a fresh hatch ONLY when that file is
+# absent, so day one shows the real governance state without changing it.
+# Widening beyond guardian is ALWAYS a deliberate Captain ritual (below) —
+# never a default, never automated.
+#
 # ABSENT file = guardian = today's exact behavior, byte-identical. The ruling
 # takes effect ONLY when ALL of (framework/authority/posture.py):
 #   present ∧ real path (a symlinked ruling is never attestable)
@@ -23,34 +31,35 @@
 # deliberately unlocked — the binder verb writes it) is a second narrow-only
 # cap. There is NO dev/test bypass of the lock attestation.
 #
-# Activate (Captain, in an unlock window):
-#   cp instance/config/posture.yml.example instance/config/posture.yml
+# Tune + attest (Captain, in an unlock window):
 #   $EDITOR instance/config/posture.yml   # set deployment/flavor/posture
 #   git add + commit
 #   sudo chflags schg instance/config/posture.yml
 # Roll back: sudo chflags noschg … ; rm instance/config/posture.yml (absent ⇒ inert).
 version: 1
 status: ruled                  # only 'ruled' activates; anything else is corrupt
-ruled_at: 2026-07-05T00:00:00Z
-basis: "<verbatim Captain directive essence>"
-deployment: mini-polads        # MUST equal CABINET_ID env (default "main")
+ruled_at: 2026-07-09T00:00:00Z
+basis: "hatch default — guardian (propose-first) until the Captain rules otherwise"
+deployment: main               # MUST equal CABINET_ID env (default "main")
 flavor: org                    # org | personal — the identity axis (evidence
                                # supply + optimization target), NEVER authority
                                # semantics; external-comms refusal is the
                                # instance-scoped `never_grant` below, not flavor
                                # (Captain correction 2026-07-05)
-posture: sovereign             # guardian | earn_up | sovereign
-lanes: {polads: sovereign}     # OPTIONAL per-lane override of `posture`
+posture: guardian              # guardian | earn_up | sovereign
+# lanes: {}                    # OPTIONAL per-lane override of `posture`, e.g.
+                               # {testburg-market: earn_up} — a lane may only
+                               # be listed with a posture from the vocabulary
 caps: {hard_multiplier: 10}    # runaway hard-stop = per-kind/day cap × this;
                                # freeze-on-hit in EVERY posture (FI-5)
-max_auto_exec_steps: 5         # sovereign only; guardian/earn_up are FORCED 2
-never_grant: []                # OPTIONAL: risk classes the Captain NEVER
+# max_auto_exec_steps: 5       # sovereign only; guardian/earn_up are FORCED 2
+# never_grant: []              # OPTIONAL: risk classes the Captain NEVER
                                # grants, any flavor (e.g. [external_comms]).
                                # Grant rows in these classes are dropped
                                # fail-closed at load + ONE kind=decision need
                                # per class. Empty/absent = all six ceiling
                                # classes grantable in sovereign.
-deployment_target: mac_mini    # OPTIONAL: macbook | mac_mini | docker — the
+# deployment_target: mac_mini  # OPTIONAL: macbook | mac_mini | docker — the
                                # topology axis; selects the attestation
                                # backend (AX-4). Absent ⇒ inferred:
                                # /.dockerenv ⇒ docker, else macbook.

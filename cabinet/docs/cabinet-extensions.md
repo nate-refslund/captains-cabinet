@@ -45,32 +45,36 @@ For an extra MCP server (declared in `mcps:`), it's added to every officer's
 `mcp__<name>` entry in its `tools:` allowlist to call it. Same overlay
 mechanism.
 
-## Worked example — STEP-Network's dev-tasks plugin
+## Worked example — an org-internal workflow plugin
 
-STEP-Network products use the [`dev-tasks`](https://github.com/STEP-Network/dev-tasks)
-plugin (Monday.com + GitHub + Vercel workflow: 44 Monday MCP tools, 15 skills,
-4 subagents, 34 hooks). It's **not** shipped by default — it hard-fails on
-non-STEP repos by design. A STEP Captain enables it:
+Say your org has an internal `dev-flow` plugin (a Monday.com + GitHub +
+Vercel workflow bundle: MCP tools, skills like `/dev-flow:pickup-task` +
+`/dev-flow:ship-pr`, subagents, hooks). Org-internal plugins typically need
+`gh` auth with org membership plus their own API tokens, and may hard-fail
+on repos outside the org by design — it's **not** shipped by default; only
+enable one if it's YOUR stack. A Captain enables it:
 
-1. `instance/config/extensions.yml`:
+1. `instance/config/extensions.yml` (the shipped
+   `extensions.yml.example` carries this exact commented shape):
    ```yaml
    plugins:
-     - name: dev-tasks
-       marketplace: dev-tasks-marketplace
-       source: STEP-Network/dev-tasks
+     - name: dev-flow
+       marketplace: dev-flow-marketplace
+       source: <your-org>/dev-flow
        required_env: [MONDAY_API_TOKEN]
        optional: false
    ```
 2. `MONDAY_API_TOKEN` in `cabinet/.env` (the secrets wizard prompts for it).
-3. `cp .claude/project-config.json.template .claude/project-config.json` and
-   fill `monday.productId` etc.
+3. Any project config the plugin documents (e.g.
+   `cp .claude/project-config.json.template .claude/project-config.json` and
+   fill the product ids).
 4. Grant officers: e.g. `instance/agents/cto.md` with
-   `tools: …, mcp__plugin_dev-tasks_dev-tasks`.
+   `tools: …, mcp__plugin_dev-flow_dev-flow`.
 5. `bash cabinet/scripts/install-extensions.sh` → installs + verifies.
 
-The cabinet's own `task_adapters/monday.py` was removed in favor of this
-plugin — for Monday users, the plugin is strictly better than a homegrown
-adapter.
+The cabinet's own `task_adapters/monday.py` was removed in favor of exactly
+this kind of plugin — for Monday users, a maintained org plugin is strictly
+better than a homegrown adapter.
 
 ## Creating your own (skills, MCPs, plugins, officers, presets)
 

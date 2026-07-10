@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Founder's Cabinet mark (Wave D app-feel) — ORIGINAL artwork, authored
+       in-repo 2026-07-10: pure geometry only (no text, no fonts, no traced
+       assets; explicitly non-LimeZu — the commercial packs are gitignored and
+       never feed brand art). Compass-seal: dark rounded-square field, thin
+       border ring, 3/4-arc + center dot. Re-skin = edit this file, then
+       re-run cabinet/dashboard/scripts/gen-icons.mjs (source of truth for
+       every PNG; Next auto-links this SVG as the favicon). -->
+  <rect x="0" y="0" width="512" height="512" rx="96" fill="#09090b"/>
+  <rect x="11" y="11" width="490" height="490" rx="86" fill="none" stroke="#27272a" stroke-width="6"/>
+  <path d="M 406 256 A 150 150 0 1 1 256 106" fill="none" stroke="#f4f4f5" stroke-width="30" stroke-linecap="round"/>
+  <circle cx="256" cy="256" r="34" fill="#f4f4f5"/>
+</svg>

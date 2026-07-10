@@ -897,6 +897,36 @@ renderer host); which dashboard is "the" archipelago renderer vs every dashboard
 rendering all registered sources (default: every dashboard renders all, read-only —
 no designated master); mother-cabinet migration timing (bare→prefixed namespaces).
 
+## 11. GATEKEEPER STALENESS ADDENDUM (2026-07-10, Wave-D appshell — supersedes the right-click→Open clauses in §2/§7/§8)
+
+This design's stranger Gatekeeper passage (§2 preconditions row 3 "right-click →
+Open → Open, once", §7.1 "Gatekeeper right-click→Open documentation", §7.2's
+commercialization-lane framing, and the §8 FAQ line) predates the Wave-D appshell
+v0.5 empirical matrix and is STALE as written:
+
+- **The right-click→Open bypass for quarantined unsigned apps was REMOVED in
+  macOS 15 Sequoia and stays gone in Tahoe.** The real passage on a quarantined
+  unsigned/ad-hoc app is Settings ▸ Privacy & Security ▸ **Open Anyway** → second
+  warning → admin auth. Tahoe 26.2 reports: some unsigned apps are declared
+  "damaged" and auto-trashed with NO Open Anyway offered — that lane can dead-end
+  entirely. Matrix + transport table of record:
+  `docs/runbooks/hatch-appshell-v05-2026-07-10.md` ("Hand-transport + Gatekeeper
+  (2026 reality)"); the AirDrop/browser row on a 26.2 box still carries its
+  honest-empty manual-test slot there.
+- **Quarantine-free transports are unaffected**: scp / curl / local share / USB
+  set no quarantine xattr, and the ad-hoc-signed app runs on double-click on
+  Apple Silicon (the v0.5 recommended hand-transport lane).
+- **Consequence for the V1B stranger bar**: a downloaded-zip distribution cannot
+  honestly document "two clicks with a picture" — the download lane needs either
+  the Open-Anyway ceremony documented (more clicks, admin auth, may dead-end on
+  26.2+) or the Developer ID + notarization item pulled FORWARD from the
+  commercialization lane for any download-transport distribution. Hand-transport
+  (scp/USB) keeps the original low-ceremony promise. This is a V1B design input,
+  not a ruling — the lane choice stays with the V1B build + Captain.
+
+Per append-only doctrine the original clauses stand un-edited above; where they
+conflict with this addendum, the addendum wins.
+
 ---
 *Sources: `.claude/skills/cabinet-init/SKILL.md` · `cabinet/scripts/generate-instance.py`
 · `docs/plans/world-unified-spec-v2-2026-07-09.md` (+ §15 addenda; world-next track docs)

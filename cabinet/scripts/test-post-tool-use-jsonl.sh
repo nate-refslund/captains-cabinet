@@ -50,10 +50,11 @@ run_hook() {
 
 echo "=== FW-075: post-tool-use.sh JSONL project field ==="
 
-# T1: pool mode — valid slug surfaces in JSONL
-LINE=$(run_hook "sensed")
+# T1: pool mode — valid slug surfaces in JSONL (synthetic testburg fixture
+# slug — foundation fixtures never name instance lanes, INSTANCE-SENSED-CLEANUP)
+LINE=$(run_hook "testburg")
 PROJ=$(echo "$LINE" | jq -r '.project // "<MISSING>"' 2>/dev/null)
-assert_field "T1 pool slug 'sensed' lands in JSONL" "$PROJ" "sensed"
+assert_field "T1 pool slug 'testburg' lands in JSONL" "$PROJ" "testburg"
 
 # T2: legacy mode — empty CABINET_ACTIVE_PROJECT → empty project field
 LINE=$(run_hook "")
@@ -83,14 +84,14 @@ PROJ=$(echo "$LINE" | jq -r '.project // "<MISSING>"' 2>/dev/null)
 assert_field "T6 32-char boundary slug accepted" "$PROJ" "$BOUNDARY"
 
 # T7: existing fields still emitted (officer, tool, ts, cabinet_id)
-LINE=$(run_hook "sensed")
+LINE=$(run_hook "testburg")
 OFFICER=$(echo "$LINE" | jq -r '.officer' 2>/dev/null)
 TOOL=$(echo "$LINE" | jq -r '.tool' 2>/dev/null)
 assert_field "T7a JSONL retains officer field" "$OFFICER" "test-officer"
 assert_field "T7b JSONL retains tool field" "$TOOL" "Bash"
 
-# T8: emit is valid JSON (would fail jq parse otherwise)
-LINE=$(run_hook "step-network")
+# T8: emit is valid JSON (would fail jq parse otherwise; hyphenated slug)
+LINE=$(run_hook "testburg-market")
 JSON_VALID=$(echo "$LINE" | jq -e . 2>/dev/null > /dev/null && echo "valid" || echo "invalid")
 assert_field "T8 emit is valid JSON" "$JSON_VALID" "valid"
 

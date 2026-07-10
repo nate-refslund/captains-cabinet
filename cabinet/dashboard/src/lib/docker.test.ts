@@ -1,6 +1,11 @@
-// docker.ts — dev/mock-path contract for 8 exported helpers.
+// docker.ts — dev/mock-path contract for the exported runtime-probe helpers.
 // Module captures IS_MOCK at load from REDIS_URL+MOCK_DATA. With
 // REDIS_URL unset (default vitest env), mock path runs end-to-end.
+//
+// dockerWriteFile/dockerReadFile are GONE (Wave B): repo-file I/O moved to
+// real node:fs in governance.ts/files.ts — the mock write here used to
+// console-log no-op a Captain's save while the action claimed success.
+// A source pin below keeps them from quietly returning.
 //
 // Real path (docker exec / crontab -l / curl telegram) requires
 // child_process mocking + is deferred — this harness pins the mock
@@ -64,22 +69,10 @@ describe('isClaudeAlive(role) — mock path', () => {
   })
 })
 
-describe('dockerWriteFile + dockerReadFile — mock path', () => {
-  it('dockerWriteFile does not throw in mock mode', async () => {
-    await expect(
-      mod.dockerWriteFile('/tmp/mock-path', 'content')
-    ).resolves.toBeUndefined()
-  })
-
-  it('dockerReadFile returns empty string in mock mode', async () => {
-    expect(await mod.dockerReadFile('/tmp/any-path')).toBe('')
-  })
-
-  it('dockerWriteFile handles binary-ish content (base64 path in real mode)', async () => {
-    // In mock it just logs, but sanity check no throw on unusual content
-    await expect(
-      mod.dockerWriteFile('/tmp/x', '\x00\x01\xff')
-    ).resolves.toBeUndefined()
+describe('dockerWriteFile + dockerReadFile — pruned (Wave B)', () => {
+  it('the silent no-op file transport is gone from the module surface', () => {
+    expect('dockerWriteFile' in mod).toBe(false)
+    expect('dockerReadFile' in mod).toBe(false)
   })
 })
 

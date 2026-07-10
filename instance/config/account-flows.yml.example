@@ -27,9 +27,9 @@ flows:
     # Fields the Chair fills (safe, non-secret). Each is a label the driver
     # locates on the page. Never put a secret here.
     chair_fills:
-      - { field: "Full name", value: "Nathaniel Refslund" }
-      - { field: "Organization", value: "STEP Network" }
-      - { field: "Work email", value: "naref@stepnetwork.dk" }
+      - { field: "Full name", value: "Ada Testburg" }
+      - { field: "Organization", value: "Testburg" }
+      - { field: "Work email", value: "ada@example.com" }
     # The credential boundary — the field(s) that are YOURS. The Chair stops
     # here and surfaces "credential needed". It never fills these.
     captain_supplies:
@@ -47,7 +47,7 @@ flows:
   - service: example-paid-tool
     signup_url: https://paid.example.com/start
     chair_fills:
-      - { field: "Company", value: "STEP Network" }
+      - { field: "Company", value: "Testburg" }
     captain_supplies:
       - "Card details"
       - "Password"

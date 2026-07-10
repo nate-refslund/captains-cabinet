@@ -85,6 +85,20 @@ def test_canary_rows_never_reconciled():
     assert rec.emitted == [] and res["ttl_ok"] == [] and res["silent_reverts"] == []
 
 
+def test_demo_rows_never_reconciled():
+    """The hatch-seeded receipt-anatomy row (emit-demo-receipt.sh, demo: true)
+    is inert for the sweep: a past-TTL demo row must never mint a machine
+    label — with no Monday item its probe reports intact, so without the skip
+    it would conservatively verdict a FALSE ttl_ok from fake work."""
+    row = _row(created={})                          # demo rows create nothing real
+    row["demo"] = True
+    rec = Rec()
+    res = ar.run_sweep(now="2026-07-08T10:00:00Z", journal_rows=[row],
+                       monday_probe=lambda r: {"exists": True, "archived": False},
+                       read_ledger_fn=lambda: [], emit=rec.emit, gc=False)
+    assert rec.emitted == [] and res["ttl_ok"] == [] and res["silent_reverts"] == []
+
+
 def test_non_executed_and_reversed_rows_skipped():
     reversed_row = _row(status="reversed")
     crash_row = _row(step=2, executed_at=None)       # write-ahead only, never executed
