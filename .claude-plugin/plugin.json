@@ -10,7 +10,7 @@
   },
   "homepage": "https://github.com/nate-refslund/captains-cabinet",
   "repository": "https://github.com/nate-refslund/captains-cabinet",
-  "license": "BUSL-1.1",
+  "license": "MIT",
   "keywords": [
     "ai-organization",
     "agents",

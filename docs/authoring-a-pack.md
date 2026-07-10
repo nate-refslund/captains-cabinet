@@ -148,7 +148,7 @@ Step 2 — `.claude-plugin/plugin.json` (the Claude Code half):
   "version": "0.1.0",
   "description": "One officer skill, daily-lighthouse-log: ...",
   "author": { "name": "Captain's Cabinet contributors" },
-  "license": "BUSL-1.1",
+  "license": "MIT",
   "keywords": ["ai-organization", "daily-log"],
   "skills": ["./skills/"]
 }
@@ -156,7 +156,7 @@ Step 2 — `.claude-plugin/plugin.json` (the Claude Code half):
 
 `name` must match the pack directory and the extension manifest's `name`;
 keep `version` in lockstep between the two manifests. Pick the license
-that fits YOUR pack — `BUSL-1.1` is this repo's, not a requirement.
+that fits YOUR pack — `MIT` is this repo's, not a requirement.
 
 Step 3 — `manifest.yml` (the Cabinet half). The exemplar's, complete:
 

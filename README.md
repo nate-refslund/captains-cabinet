@@ -177,10 +177,10 @@ Pre-release: external PRs are not yet accepted. [`CONTRIBUTING.md`](./CONTRIBUTI
 
 ## License
 
-**Business Source License 1.1** (see [`LICENSE`](./LICENSE)).
+**MIT** (see [`LICENSE`](./LICENSE)).
 
-Free to fork, self-host, modify, and use internally — as a founder, an employee, a solo operator, or a team. Commercial hosted/managed offerings competing with the Licensor's paid service are reserved until the Change Date (4 years per version), at which point that version converts to Apache 2.0.
+Use it, modify it, self-host it, embed it, sell it — people and businesses may do what they want with the code, commercially or not, hosted or not. The only conditions are MIT's own: keep the copyright and permission notice in copies.
 
-**Naming.** The open-source framework is **Captain's Cabinet** — this repo, which you fork and run yourself. A commercial productization built on it (installer, billing, managed dashboard, support) uses the shorter **Cabinet** name. Only this repo is open-source.
+**Trademark.** The MIT grant covers the code, not the name: **"Captain's Cabinet"** and the project's marks are not licensed. Fork freely — just ship your fork under a name of your own.
 
 See [`captains-cabinet-guide.md`](./captains-cabinet-guide.md) for the full operating doctrine.

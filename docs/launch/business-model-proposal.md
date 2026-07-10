@@ -12,31 +12,35 @@ instead of a whiteboard.
 
 ## 1. What the license already decides
 
-The repo ships under **Business Source License 1.1** (`LICENSE`), which
-already draws the commercial line — no new licensing work is needed for
-launch:
+The repo ships under **MIT** (`LICENSE`; Captain relicensing ruling
+2026-07-10), so the license decides almost everything, and decides it in
+users' favor:
 
-- **Free forever for users:** fork, self-host, modify, production use —
-  as a founder, an employee, a solo operator, or a team.
-- **Reserved:** offering the Licensed Work to third parties on a hosted or
-  embedded basis that competes with the Licensor's paid managed service.
-- **Change Date:** each version converts to **Apache 2.0 four years** after
-  that version's publication.
-- **Naming split (README):** the open-source framework is **Captain's
-  Cabinet** (this repo); a commercial productization built on it
-  (installer, billing, managed dashboard, support) uses the shorter name
-  **Cabinet**. Only the repo is open source.
+- **Free for everyone, forever:** use, modify, self-host, embed, resell —
+  people and businesses may do what they want with the code, including
+  offering it to third parties as a hosted or managed service. Nothing is
+  reserved.
+- **The moat is not the license.** What stays with the project: the
+  **"Captain's Cabinet" name and marks** (not licensed — see the README
+  trademark notice) and being the **canonical source** — upstream velocity,
+  the eval gates, the receipts doctrine, and the trust of running the
+  reference deployment.
+- **Hosted = canonical, not exclusive.** Anyone may sell hosting for this
+  software, including direct competitors. A first-party hosted offering
+  earns its place by being canonical — first-party updates, monitored
+  proof gates, restore drills — never by legal exclusivity.
 
-So the model below is the standard BSL shape: open core with a reserved
-hosted lane — chosen at licensing time, sketched here.
+So the model below is a pure open-source shape: MIT core + trademark +
+canonical-operator services + voluntary support (donations).
 
 ## 2. Proposed tier sketch (draft — all names/pricing illustrative)
 
 | Tier | What it is | Price posture |
 |---|---|---|
-| **Self-host** | The whole repo: full governance core (receipts, authority matrix, hard ceilings, kill switch, gate), all presets, hatch tooling. No feature-crippling — the open tier IS the product | **Free** (BSL grant) |
-| **Hosted managed instance** | The BSL-reserved lane: a managed Cabinet org — provisioned host, updates, monitored proof gates, receipts-vault backup, restore drills. The customer stays the Captain; hard ceilings still route to THEM (governance is never the upsell) | Paid, monthly per org |
+| **Self-host** | The whole repo: full governance core (receipts, authority matrix, hard ceilings, kill switch, gate), all presets, hatch tooling. No feature-crippling — the open tier IS the product | **Free** (MIT) |
+| **Hosted managed instance** | The canonical first-party lane — **not exclusive; MIT lets anyone host**: a managed Cabinet org — provisioned host, first-party updates, monitored proof gates, receipts-vault backup, restore drills. The customer stays the Captain; hard ceilings still route to THEM (governance is never the upsell) | Paid, monthly per org |
 | **Support + marketplace** | Paid support (onboarding help, upgrade windows, SLA) and a preset/skill marketplace with **rev-share** to third-party authors | Paid support plans; marketplace % rev-share |
+| **Donations** | An Open Collective for the open-source project itself (to be created at launch — see §4): transparent budget, voluntary support from users and businesses who host it themselves or elsewhere. Never a feature or governance gate | Voluntary (Open Collective) |
 
 Two commitments worth making explicit in any public pricing page later:
 governance features are never paywalled (a free self-hoster gets every
@@ -90,6 +94,10 @@ In order; the first two are absolute:
 7. **Hosted-at-v1 decision** — whether the hosted tier launches at all in
    v1, or the launch is self-host + support only (lower risk, lower COGS,
    defers the floor problem).
+8. **Donations rail setup** — create the project's Open Collective (fiscal
+   host choice, payout policy, where the link appears) before any public
+   "support us" pointer ships. Donations stay voluntary support for the
+   open-source work — never a feature or governance gate.
 
 ## 5. Explicit non-goals
 

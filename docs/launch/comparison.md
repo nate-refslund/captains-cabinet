@@ -26,7 +26,7 @@ corrections after publication are welcome and will be applied.
 | **Account / model requirement** | Claude Code + Max subscription; Telegram bot for the Captain interface | unverified | unverified |
 | **Verification discipline** | ~4,069-test framework suite + CI proof gates (null-hatch, clean-room ratchets, dry renders); daily falsifier series designed to expose failure | unverified | unverified |
 | **Kill switch** | Fail-closed halt enforced in code (unreachable state store ⇒ halt); anyone-can-halt live today (activation unauthenticated); Captain-only resume is design doctrine — code enforcement pending | unverified | unverified |
-| **License** | BSL 1.1 (self-host free, production included; only competing hosted/embedded offerings reserved; converts to Apache 2.0 per version after 4 years) | unverified | unverified |
+| **License** | MIT — any use permitted, including commercial hosting by anyone; the "Captain's Cabinet" name and marks are not licensed | unverified | unverified |
 
 ## Reading notes
 

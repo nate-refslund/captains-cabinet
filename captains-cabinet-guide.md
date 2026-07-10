@@ -442,4 +442,4 @@ The Cabinet is always in session.
 
 *Captain's Cabinet is authored by Nathaniel Refslund. This is a living document, amended through the org's own gated loops with Captain ratification.*
 
-*© 2026 Nathaniel Refslund. All rights reserved.*
+*© 2026 Nathaniel Refslund. Released under the [MIT License](./LICENSE).*

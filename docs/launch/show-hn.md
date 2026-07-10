@@ -136,10 +136,10 @@ is never written to the live undo journal, and a fresh org's `/receipts`
 page is honestly empty until the org has actually acted. Demo artifacts
 always say they are demo; honest empties beat invented data.
 
-License: BSL 1.1 (free to self-host, fork, modify, and use — production
-included; the Additional Use Grant reserves only hosted/embedded offerings
-to third parties that compete with the licensor's paid managed service;
-each version converts to Apache 2.0 after four years).
+License: MIT. Fork it, modify it, self-host it, sell it — commercial
+hosting by anyone included; nothing is reserved. The only thing not
+licensed is the "Captain's Cabinet" name and marks — ship a fork under a
+name of your own.
 
 ---
 
