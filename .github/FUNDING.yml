@@ -1,0 +1,13 @@
+# .github/FUNDING.yml — the repo's sponsor button (renders when the repo is
+# public). Donations flow through Open Collective: public ledger, per-donor
+# attribution, spend visible to everyone — see docs/TRANSPARENCY.md for how
+# token costs are metered and mirrored there.
+#
+# PLACEHOLDER SLUG: the collective does not exist yet. Creating it (Open
+# Source Collective application, identity + bank) is a Captain errand; the
+# final slug lands here in that same change. Until then the button simply
+# won't resolve — harmless while the repo is private.
+open_collective: captains-cabinet
+# GitHub Sponsors — deliberately off for now. If the Captain opts in later,
+# uncomment and add the handle in that change:
+# github: []

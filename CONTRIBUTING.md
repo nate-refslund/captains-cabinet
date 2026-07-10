@@ -67,6 +67,19 @@ As visible in `git log`:
 - **Trailer:** agent-authored commits carry a `Co-Authored-By:` trailer
   identifying the model.
 
+## Sign-off (DCO) — required on every contribution
+
+Every commit needs a `Signed-off-by:` trailer — use `git commit -s`. The
+sign-off certifies the [Developer Certificate of Origin 1.1](./docs/DCO.txt):
+a one-line statement that you have the right to contribute the change under
+this repo's [MIT license](./LICENSE).
+
+Why the DCO and not a CLA: it is the lightest honest mechanism available.
+There is no paperwork, no copyright assignment, and no separate agreement to
+sign — you keep your copyright, the certificate rides in the commit itself,
+and provenance stays auditable in `git log` forever. Forgot the trailer?
+`git commit --amend -s` fixes the tip; `git rebase --signoff` fixes a branch.
+
 ## Gates you will hit
 
 These are in-tree git hooks (activated by `install-git-hooks.sh`) plus CI —
@@ -106,3 +119,51 @@ bash cabinet/scripts/germline-lock.sh status
 ```
 
 A recorded handback always beats a workaround.
+
+## Contribution flow
+
+*(Describes the flow as it works from day one of the public cut; while the
+repo is pre-release it binds the repo's own agents.)*
+
+1. **Issue first, diff second.** For anything non-trivial, open an issue
+   before writing code — bug / feature / hatch-report templates live in
+   `.github/ISSUE_TEMPLATE/`. The design conversation happens on the issue.
+2. **Diagnostics without leaks.** `bash cabinet/scripts/cabinet-feedback.sh
+   --dry-run` gathers doctor output + the latest hatch flight-log tail +
+   versions, scrubs every line through the leak-scrub suite, and prints the
+   redacted bundle for your review. Run it without `--dry-run` and it can
+   open the issue prefilled — only after an explicit interactive y/N
+   consent; it never posts anything on its own.
+3. **PRs.** Fork → branch → run the suites you touched → the PR template
+   checklist: tests, docs-track-code, no germline edits, and DCO sign-off
+   (see "Sign-off (DCO)" above).
+4. **Labels.** `good first issue` = self-contained, shape already scoped by
+   a maintainer, no doctrine context needed. `help wanted` = wanted and
+   review-ready, but needs more context than a first issue. Both are
+   maintainer-curated — ask on the issue before starting if unclear.
+5. **Hatch reports are contributions.** A hatch report with a TTFR number
+   tunes the onboarding path exactly like code does — file one even when
+   nothing broke (`hatch-report` template).
+
+**Discussions (planned):** GitHub Discussions is enabled at publication with
+three categories — Q&A (setup + doctrine questions), Show and tell (hatch
+reports, packs, worlds), and Ideas (pre-issue design talk). Until then,
+issues carry everything; the issue-chooser config gains contact links in the
+same change that enables Discussions.
+
+**Funding:** donations run through Open Collective (`.github/FUNDING.yml` —
+placeholder slug until the collective exists). How token costs are metered
+and mirrored to the public ledger: `docs/TRANSPARENCY.md`.
+
+<!-- PUBLISH-FLIP (staged, NOT live — contribution design 2026-07-10): when
+     the public cut ships, replace the "Pre-release status" section at the
+     top of this file with the block below, in the same change that flips
+     the repo public.
+
+## Status — contributions welcome
+
+Captain's Cabinet is public. Issues, PRs, and hatch reports are all
+welcome — start with "Contribution flow" below. For anything non-trivial,
+file an issue first so the design conversation happens before the diff.
+
+-->

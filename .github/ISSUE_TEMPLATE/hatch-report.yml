@@ -1,0 +1,62 @@
+name: Hatch report
+description: >-
+  How your first hatch went — green or red. Time-to-first-run reports are
+  how the onboarding path actually improves.
+labels: ["hatch-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Every hatch report — especially the boring, successful ones — is
+        signal. TTFR (time to first run) is the number this project tunes
+        for: wall-clock time from starting `bash cabinet/scripts/hatch.sh`
+        to your first briefing rendering.
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux
+        - Other (say which below)
+    validations:
+      required: true
+  - type: input
+    id: ttfr
+    attributes:
+      label: TTFR — minutes to first run
+      description: >-
+        From starting hatch.sh to the first briefing rendering. Rough is
+        fine; "did not get there" is a valid and valuable answer.
+      placeholder: "35"
+    validations:
+      required: true
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: Hatch outcome
+      options:
+        - Green — first briefing rendered
+        - Red — a step failed (details below)
+        - Aborted — gave up or ran out of time
+    validations:
+      required: true
+  - type: textarea
+    id: friction
+    attributes:
+      label: Where it hurt
+      description: >-
+        Failed steps, confusing prompts, missing prerequisites, docs that
+        lied. For failures, `bash cabinet/scripts/cabinet-feedback.sh
+        --dry-run` produces a leak-scrubbed doctor + flight-log bundle you
+        can paste here after reviewing it.
+      render: text
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+    validations:
+      required: false

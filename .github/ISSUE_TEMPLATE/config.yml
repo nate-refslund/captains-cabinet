@@ -1,0 +1,5 @@
+# Issue template chooser config. Blank issues stay enabled — templates are
+# rails, not gates. contact_links stay empty until the Discussions categories
+# from CONTRIBUTING.md ("Contribution flow") exist; a dead link is worse than
+# no link.
+blank_issues_enabled: true

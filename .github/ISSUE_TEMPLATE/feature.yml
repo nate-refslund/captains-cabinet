@@ -1,0 +1,43 @@
+name: Feature request
+description: Propose a capability or a change of behavior.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        File the issue **before** the diff for anything non-trivial — the
+        design conversation happens here first (see CONTRIBUTING.md,
+        "Contribution flow").
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What can't you do today, or what costs more attention than it should?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed shape
+      description: >-
+        How you imagine it working. Cabinet doctrine favors propose-only
+        surfaces, receipts (what/why/undo), and fail-closed gates — proposals
+        that fit that grain land faster.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
+  - type: dropdown
+    id: will-pr
+    attributes:
+      label: Would you PR this yourself?
+      options:
+        - "Yes, with design agreement first"
+        - "Maybe"
+        - "No — filing the idea"
+    validations:
+      required: false

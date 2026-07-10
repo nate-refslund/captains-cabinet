@@ -321,3 +321,30 @@ def test_genesis_intake_items_shape_and_content(tmp_path):
 
 def test_genesis_intake_items_honest_empty_on_bare_root(tmp_path):
     assert genesis.genesis_intake_items(tmp_path) == []
+
+
+def test_contribute_fund_fyi_card_renders_once_and_propose_only(tmp_path):
+    """The contribution design's single placement: ONE genesis-contribute FYI
+    card per genesis briefing — propose-only, never an activatable outcome,
+    absent entirely on bare roots (asked once, never nagged)."""
+    _write_answers(tmp_path)
+    genesis.run_genesis_proposal(tmp_path)
+    items = genesis.genesis_intake_items(tmp_path, now="2026-07-10T00:00:00Z")
+    for it in items:
+        intake.validate_item(it)                 # canonical shape holds
+
+    cards = [i for i in items if i["kind"] == "genesis-contribute"]
+    assert len(cards) == 1                       # exactly once, never repeated
+    card = cards[0]
+    assert card["urgency_tier"] == "fyi"         # information — never action
+    s = card["payload"]["summary"]
+    assert "cabinet-feedback" in s               # the contribute pointer
+    assert "opencollective.com/captains-cabinet" in s    # the fund pointer
+    assert "Propose-only" in s                   # says so, visibly
+    assert "asked once" in s                     # never-nag contract, visibly
+    # It must never read as an activatable outcome card: not the proposal
+    # kind, and never the literal the first-briefing receipt gate counts.
+    assert card["kind"] != "outcome-proposal"
+    assert "Proposed outcome:" not in s
+    # Asked once at GENESIS only — a bare root renders no ask at all.
+    assert genesis.genesis_intake_items(tmp_path / "bare") == []

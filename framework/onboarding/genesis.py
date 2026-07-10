@@ -507,7 +507,12 @@ def _load_proposal_rows(base: Path) -> list[dict]:
 def genesis_intake_items(root: Path | None = None, now: str | None = None) -> list[dict]:
     """Read the genesis surfaces (proposals file, focus letter, research brief)
     into canonical intake items for ``composer.compose``. File reads only —
-    no Redis, no network. Honest empties: absent surfaces yield NO items."""
+    no Redis, no network. Honest empties: absent surfaces yield NO items.
+
+    When (and only when) a real genesis briefing is rendering — i.e. at least
+    one surface produced an item — ONE extra ``genesis-contribute`` FYI card
+    is appended: the contribute/fund ask (contribution design 2026-07-10),
+    asked once at genesis and never again."""
     base = Path(root) if root else cabinet_root()
     ts = _utc_now_iso(now)
     items: list[dict] = []
@@ -560,6 +565,33 @@ def genesis_intake_items(root: Path | None = None, now: str | None = None) -> li
             "payload": {"summary": f"🧭 Your focus letter is on file ({FOCUS_REL}) "
                                    "— the proposals above are anchored to it"},
             "context": {"why": "the first letter carries bearing, not tasks"},
+        })
+
+    # Contribute + fund FYI — the contribution design's SINGLE placement
+    # (DESIGN-contribution-donations-2026-07-10 §4): one card in the genesis
+    # briefing, asked once, never nagged, no onboarding-time asks. Appended
+    # only when a real genesis briefing is rendering (bare roots stay honestly
+    # empty). Propose-only by construction: fyi tier is information — nothing
+    # acts on it, and it never carries the receipt-gate's outcome-card literal.
+    if items:
+        items.append({
+            "source": "onboarding-genesis", "kind": "genesis-contribute",
+            "ts": ts, "urgency_tier": "fyi",
+            "payload": {"summary": (
+                "🤝 If this cabinet earns its keep, two ways to give back. "
+                "Contribute: file issues/PRs — bash cabinet/scripts/"
+                "cabinet-feedback.sh builds a leak-scrubbed diagnostic bundle "
+                "and, only with your explicit consent, opens it as a prefilled "
+                "issue ('good first issue' labels mark starter work). Fund: "
+                "https://opencollective.com/captains-cabinet — public spend "
+                "ledger (placeholder until the collective is live; how costs "
+                "are metered and mirrored: docs/TRANSPARENCY.md). "
+                "Propose-only ask — asked once at genesis, never again; "
+                "ignore it freely."
+            )},
+            "context": {"why": "the ONE contribute/fund ask — asked once at "
+                               "genesis, never nagged; FYI only, nothing acts "
+                               "on it"},
         })
     return items
 
