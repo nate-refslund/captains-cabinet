@@ -77,9 +77,9 @@ fi
 SH
 chmod +x "$FAKE_BIN/claude"
 mkdir -p "$FAKE_REPO/instance/config"
-printf 'sensed\n' > "$FAKE_REPO/instance/config/active-project.txt"
+printf 'testburg\n' > "$FAKE_REPO/instance/config/active-project.txt"
 OUT="$(PATH="$FAKE_BIN:$PATH" CABINET_SOURCE_REPO="$FAKE_REPO" CABINET_MAC_DRY_RUN=1 bash "$FAKE_REPO/cabinet/scripts/start-officer-mac.sh" cos 2>/dev/null)"
-printf '%s' "$OUT" | grep -q 'CABINET_LANE=sensed' \
+printf '%s' "$OUT" | grep -q 'CABINET_LANE=testburg' \
   && pass "start-officer-mac exports CABINET_LANE from active-project.txt [FIX-4]" \
   || fail "CABINET_LANE export missing from mac dry-run output"
 

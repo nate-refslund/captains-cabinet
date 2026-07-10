@@ -56,17 +56,16 @@
 #                 kind=decision need is filed). Relative paths resolve
 #                 against CABINET_ROOT.
 plugins: []
-  # Example — STEP-Network's dev-tasks plugin (Monday.com + GitHub + Vercel
-  # workflow: 44 Monday MCP tools, 15 skills like /dev-tasks:pickup-task +
-  # /dev-tasks:ship-pr, 4 subagents, 34 hooks). STEP-internal; needs gh auth
-  # with STEP-Network membership + MONDAY_API_TOKEN. Uncomment if that's YOUR
-  # stack — it hard-fails on non-STEP repos by design, so don't enable it
-  # unless you're a STEP product.
+  # Example — an org-internal workflow plugin (say, a Monday.com + GitHub +
+  # Vercel bundle: MCP tools, skills like /dev-flow:pickup-task +
+  # /dev-flow:ship-pr, subagents, hooks). Org-internal plugins typically need
+  # gh auth with org membership + their own API tokens, and may hard-fail on
+  # repos outside the org by design — only enable one if it's YOUR stack.
   #
-  # - name: dev-tasks
-  #   marketplace: dev-tasks-marketplace
-  #   source: STEP-Network/dev-tasks          # <org>/<repo> or a local path
-  #   description: STEP-Network Monday + GitHub + Vercel workflow
+  # - name: dev-flow
+  #   marketplace: dev-flow-marketplace
+  #   source: <your-org>/dev-flow              # <org>/<repo> or a local path
+  #   description: Org-internal Monday + GitHub + Vercel workflow
   #   required_env: [MONDAY_API_TOKEN]
   #   optional: false                          # false = abort setup on failure
   #
@@ -107,14 +106,15 @@ plugins: []
 # need). Remote/dir-less servers render as before; authoring them still
 # goes through the gate via the extend-cabinet skill.
 mcps: []
-  # Example — Nate's deployment: the screenpipe brain bridge (Obsidian vault
+  # Example — a deployment-local brain bridge (personal knowledge-base
   # search, person intel, commitments, queue_draft outbound gate, reasoning
-  # log). Local stdio server, no env/secrets. If you enable it, also grant it
-  # per-officer in cabinet/mcp-scope.yml and read .claude/rules/brain-bridge.md
-  # — those rules are mandatory for any officer using it.
+  # log). Local stdio server, no env/secrets. If you enable one, also grant
+  # it per-officer in cabinet/mcp-scope.yml and read
+  # .claude/rules/brain-bridge.md — those rules are mandatory for any officer
+  # using it.
   # - name: brain
   #   command: /opt/homebrew/bin/python3.12
-  #   args: ["/Users/nate/.screenpipe/pipes/brain-mcp/server.py"]
+  #   args: ["/absolute/path/to/brain-mcp/server.py"]
   #
   # Example — a generic stdio MCP server:
   # - name: my_service

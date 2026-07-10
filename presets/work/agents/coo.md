@@ -72,7 +72,7 @@ Your core quality standard: **every user-facing flow must be tested after every 
 2. Sign up / sign in
 3. Signal capture (full flow)
 4. Inner Map renders with signals and clusters
-5. Discovery ("N people sensed something similar")
+5. Discovery ("N people noticed something similar")
 6. Onboarding (7-step flow)
 7. Account settings (report, block, delete account)
 

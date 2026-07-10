@@ -16,10 +16,16 @@ LOG=/var/log/cabinet/restart-officers-oneshot.log
 mkdir -p "$(dirname "$LOG")"
 echo "=== $(date -u +%FT%TZ) — restart-all-officers-oneshot fired ===" >> "$LOG"
 
-# Restart both officer containers. supervisor inside each respawns the claude
-# sessions with --continue, preserving conversation history. New sessions
-# read settings.json fresh, so the new hooks become active.
-for container in sensed-officers personal-cabinet-officers; do
+# Restart the deployment's officer containers. supervisor inside each
+# respawns the claude sessions with --continue, preserving conversation
+# history. New sessions read settings.json fresh, so the new hooks become
+# active. Container names are INSTANCE config, never hardcoded here
+# (INSTANCE-SENSED-CLEANUP): pass them space-separated via
+# CABINET_OFFICER_CONTAINERS when arming the cron line.
+if [ -z "${CABINET_OFFICER_CONTAINERS:-}" ]; then
+  echo "no CABINET_OFFICER_CONTAINERS configured — nothing to restart" >> "$LOG"
+fi
+for container in ${CABINET_OFFICER_CONTAINERS:-}; do
   if docker ps --format '{{.Names}}' | grep -q "^${container}$"; then
     echo "Restarting $container..." >> "$LOG"
     docker restart "$container" >> "$LOG" 2>&1 || echo "WARN: restart $container failed" >> "$LOG"

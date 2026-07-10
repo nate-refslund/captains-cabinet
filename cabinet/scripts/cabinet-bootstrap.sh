@@ -479,7 +479,8 @@ step_init_instance_dirs() {
 
   # FW-082 hotfix-7 (CoS field report msg 2274 substrate-gap fold #5): when
   # the framework is cloned, it includes the source cabinet's existing
-  # instance/config/projects/ (e.g. Sensed's sensed.yml). New cabinet must
+  # instance/config/projects/ (the source instance's per-lane <slug>.yml
+  # files). New cabinet must
   # start with NO inherited projects — Captain creates them via
   # create-project.sh fresh per cabinet. Wipe before mkdir to guarantee
   # clean state on first init (idempotent: safe if dir doesn't exist yet).
