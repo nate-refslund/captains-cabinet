@@ -82,6 +82,77 @@ class TestClosurePropagation(unittest.TestCase):
         self.assertEqual(out["closed"], 0)
 
 
+class TestViewClosureWiring(unittest.TestCase):
+    """propagate_view_closures — the 300s-drain H2 caller (review 2026-07-10):
+    a view-derived resolved/acted situation with ledger proposals still open
+    (the Mercantila class) gets its closure actually PROPAGATED."""
+
+    def _resolved_with_open(self):
+        from framework.attention import situations
+        prop = open_prop()  # open proposal, ts 2026-07-08T10:00:00Z
+        feed = [{"seq": 1, "direction": "in", "kind": "closure",
+                 "situation_key": _key_of_row(prop),
+                 "ts": "2026-07-09T10:00:00Z",
+                 "closure_reason": "captain-word", "closed_by": "captain"}]
+        view = situations.derive(ledger_rows=[prop], journal_rows=[],
+                                 feed_rows=feed, standing={})
+        sit = view[_key_of_row(prop)]
+        self.assertEqual(sit["state"], "resolved")     # view says resolved…
+        self.assertTrue(sit["open_pids"])              # …but nothing retired
+        return prop, view
+
+    def test_drain_wiring_retires_leftovers(self):
+        prop, view = self._resolved_with_open()
+        emitted, feed_rows, deleted = [], [], []
+        out = hygiene.propagate_view_closures(
+            view, now=NOW, ledger_rows=[prop],
+            emit=lambda **ev: emitted.append(ev),
+            append_feed=feed_rows.append,
+            redis_del=deleted.append, standing={})
+        self.assertEqual(out, {"situations": 1, "closed": 1})
+        self.assertEqual(emitted[0]["proposal"]["decision"], "expired")
+        self.assertEqual(feed_rows[0]["closure_reason"], "view-resolved")
+        self.assertEqual(feed_rows[0]["closed_by"], "system:surface-drain")
+        self.assertEqual(len(deleted), 1)
+
+    def test_live_or_fully_closed_situations_do_not_fire(self):
+        from framework.attention import situations
+        prop = open_prop()
+        pending_view = situations.derive(ledger_rows=[prop], journal_rows=[],
+                                         feed_rows=[], standing={})
+        fired = []
+        out = hygiene.propagate_view_closures(
+            pending_view, now=NOW, ledger_rows=[prop],
+            emit=lambda **ev: fired.append(ev),
+            append_feed=lambda r: None, redis_del=lambda k: None, standing={})
+        self.assertEqual(out, {"situations": 0, "closed": 0})   # still open
+        resolved = {"k": {"state": "resolved", "open_pids": [],
+                          "refs": [REF]}}
+        out = hygiene.propagate_view_closures(
+            resolved, now=NOW, ledger_rows=[],
+            emit=lambda **ev: fired.append(ev),
+            append_feed=lambda r: None, redis_del=lambda k: None, standing={})
+        self.assertEqual(out, {"situations": 0, "closed": 0})   # nothing left
+        self.assertEqual(fired, [])
+
+    def test_errors_degrade_never_raise(self):
+        boom = {"k": {"state": "resolved", "open_pids": ["p"], "refs": None}}
+
+        class Exploding(dict):
+            def values(self):
+                raise RuntimeError("fold blew up")
+
+        out = hygiene.propagate_view_closures(Exploding(k=1), now=NOW)
+        self.assertEqual(out["closed"], 0)
+        self.assertIn("error", out)
+        # a bad sit dict degrades per-item via propagate_closure's own guards
+        out2 = hygiene.propagate_view_closures(
+            boom, now=NOW, ledger_rows=[],
+            emit=lambda **ev: None, append_feed=lambda r: None,
+            redis_del=lambda k: None, standing={})
+        self.assertEqual(out2["closed"], 0)
+
+
 class TestZombieSweep(unittest.TestCase):
     def test_sweeps_only_non_open_cards(self):
         from framework.acting.loop import proposal_id

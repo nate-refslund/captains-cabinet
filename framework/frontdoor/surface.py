@@ -93,12 +93,26 @@ def drain_and_surface(*, consumer: str = _CONSUMER, count: int = 200) -> dict:
     except Exception as e:  # noqa: BLE001
         print(f"[surface] T2 sweep skipped ({e})", file=__import__("sys").stderr)
 
+    # H2 hygiene sweeps FIRST (command-center §5 H2), so the census built
+    # below reflects them same-tick: closure propagation for situations the
+    # view derives as resolved/acted while overlapping ledger proposals
+    # remain open (org-acted via the overlay / Captain word / world-proof —
+    # the Mercantila class: a CLOSURE that retires nothing), then zombie
+    # cabinet:action keys whose proposals already closed, then forwarded
+    # captain-attention stream copies. Best-effort.
+    try:
+        from framework.attention import hygiene
+        hygiene.propagate_view_closures()
+        hygiene.sweep_zombie_cards()
+        hygiene.trim_forwarded_streams()
+    except Exception as e:  # noqa: BLE001
+        print(f"[surface] hygiene sweeps skipped ({e})",
+              file=__import__("sys").stderr)
+
     # War-room census (command-center Stage 1): each 300s drain recomputes the
     # ONE attention queue and writes both projections — the private authed
     # census (dashboard/API source) and the PII-scrubbed shared/interfaces
-    # artifact — plus the H2 hygiene sweeps (zombie cabinet:action keys whose
-    # proposals already closed; forwarded captain-attention stream copies).
-    # All best-effort: the census must never brick the drain.
+    # artifact. All best-effort: the census must never brick the drain.
     queue_pending = None
     try:
         from framework.attention import queue as attention_queue
@@ -112,13 +126,6 @@ def drain_and_surface(*, consumer: str = _CONSUMER, count: int = 200) -> dict:
         queue_card.refresh(census)
     except Exception as e:  # noqa: BLE001
         print(f"[surface] attention census skipped ({e})",
-              file=__import__("sys").stderr)
-    try:
-        from framework.attention import hygiene
-        hygiene.sweep_zombie_cards()
-        hygiene.trim_forwarded_streams()
-    except Exception as e:  # noqa: BLE001
-        print(f"[surface] hygiene sweeps skipped ({e})",
               file=__import__("sys").stderr)
 
     batch_pending = sum(1 for it in items if (it.get("urgency_tier") or "batch") != "ping-now")

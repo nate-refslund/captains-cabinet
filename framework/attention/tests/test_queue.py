@@ -296,6 +296,46 @@ class TestProjections(unittest.TestCase):
         self.assertEqual(row["h"], q.opaque_handle("cos|action-card|t|ts"))
         self.assertEqual(shared["pending_captain_items"], 1)
 
+    def test_scrub_rejects_uuid_shaped_vault_paths(self):
+        # Live leak class (review 2026-07-10): a vault path that happens to
+        # be 36 chars with 4 hyphens passed the old "bare uuid" heuristic
+        # and rode into the PII-scrubbed shared artifact.
+        leaked = "7-resources/my-prompts/2026-07-07.md"
+        self.assertEqual(len(leaked), 36)
+        self.assertEqual(leaked.count("-"), 4)
+        self.assertFalse(q._shared_ref_ok(leaked))
+        # A person-named vault path of the same hyphen shape must never leak.
+        self.assertFalse(q._shared_ref_ok("3-People/annag/2026-07-07-int.md"))
+        # Real RFC-4122 UUIDs still pass (case-insensitive).
+        self.assertTrue(
+            q._shared_ref_ok("0f8fad5b-d9cb-469f-a165-70867728950e"))
+        self.assertTrue(
+            q._shared_ref_ok("0F8FAD5B-D9CB-469F-A165-70867728950E"))
+        # Not-quite UUIDs do not.
+        self.assertFalse(
+            q._shared_ref_ok("0f8fad5b-d9cb-469f-a165-7086772895zz"))
+        self.assertFalse(q._shared_ref_ok("0f8fad5b-d9cb-469f-a165-708677"))
+        # Prefix-allowed opaque grades stay allowed…
+        self.assertTrue(q._shared_ref_ok("cmt-13e753b27b71"))
+        self.assertTrue(q._shared_ref_ok("cabinet-proposal-id:721c7d48"))
+        # …but a path/URL smuggled behind an allowed prefix is refused.
+        self.assertFalse(q._shared_ref_ok("cmt-x/3-people/nate.md"))
+        self.assertFalse(q._shared_ref_ok("monday:boards/5091706356"))
+        self.assertFalse(q._shared_ref_ok("need-a.b"))
+
+    def test_shared_census_drops_uuid_shaped_vault_path(self):
+        view = {"sit-1": _sit(
+            refs=["cmt-aaaaaaaaaaaa", "7-resources/my-prompts/2026-07-07.md"],
+            deadline_iso="2026-07-11T09:00:00Z",
+            harm_class="external_deadline")}
+        queue = q.build_queue(
+            now=NOW, view=view, needs_rows=[], t2_rows=[], redis_cards={},
+            charter={}, resolve_step=matrix_stub, enforce_admission=True,
+            file_overflow_need=lambda *a, **k: None)
+        shared = q.to_shared_census(queue)
+        self.assertNotIn("7-resources", str(shared))
+        self.assertIn("cmt-aaaaaaaaaaaa", shared["decisions"][0]["refs"])
+
     def test_artifact_writer_writes_both(self):
         import json as _json
         import tempfile
