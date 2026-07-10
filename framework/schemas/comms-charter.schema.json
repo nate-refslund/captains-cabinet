@@ -2,25 +2,58 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://captains-cabinet/schemas/comms-charter.schema.json",
   "title": "Comms Charter",
-  "description": "The Chair-authored policy that routes every Captain-facing message (attention-gateway spec §4.7). Instance override at instance/config/comms-charter.yml; conservative framework default at framework/attention/charter-default.yml. A charter that fails this schema loads the framework default fail-closed.",
+  "description": "The Chair-authored policy that routes every Captain-facing message (attention-gateway spec \u00a74.7). Instance override at instance/config/comms-charter.yml; conservative framework default at framework/attention/charter-default.yml. A charter that fails this schema loads the framework default fail-closed.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version", "quiet_hours", "classes"],
+  "required": [
+    "version",
+    "quiet_hours",
+    "classes"
+  ],
   "properties": {
-    "version": {"type": "integer", "minimum": 1},
-    "voice": {"type": "string", "maxLength": 2000},
-    "verbosity": {"enum": ["terse", "verbose"]},
-    "ack_style": {"enum": ["confirm-line", "silent-fyi"]},
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "voice": {
+      "type": "string",
+      "maxLength": 2000
+    },
+    "verbosity": {
+      "enum": [
+        "terse",
+        "verbose"
+      ]
+    },
+    "ack_style": {
+      "enum": [
+        "confirm-line",
+        "silent-fyi"
+      ]
+    },
     "quiet_hours": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["start", "end", "floor_classes"],
+      "required": [
+        "start",
+        "end",
+        "floor_classes"
+      ],
       "properties": {
-        "start": {"type": "string", "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"},
-        "end": {"type": "string", "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"},
+        "start": {
+          "type": "string",
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+        },
+        "end": {
+          "type": "string",
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+        },
         "floor_classes": {
           "type": "array",
-          "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*$"
+          }
         }
       }
     },
@@ -30,35 +63,125 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "route"],
+        "required": [
+          "id",
+          "route"
+        ],
         "properties": {
-          "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*$"
+          },
           "matchers": {
             "type": "object",
             "additionalProperties": false,
             "properties": {
-              "kinds": {"type": "array", "items": {"type": "string"}},
-              "keywords": {"type": "array", "items": {"type": "string"}},
-              "lanes": {"type": "array", "items": {"type": "string"}}
+              "kinds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "keywords": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "lanes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
             }
           },
-          "route": {"enum": ["direct-now", "standing-card", "next-briefing", "weekly-rollup", "mute"]},
-          "urgency_override": {"enum": ["ping-now", "batch", "fyi"]},
-          "silent": {"type": "boolean"},
-          "reaction": {"type": "array", "items": {"type": "string"}},
-          "template": {"type": "string"},
-          "verbosity": {"enum": ["terse", "verbose"]},
+          "route": {
+            "enum": [
+              "direct-now",
+              "standing-card",
+              "next-briefing",
+              "weekly-rollup",
+              "mute"
+            ]
+          },
+          "urgency_override": {
+            "enum": [
+              "ping-now",
+              "batch",
+              "fyi"
+            ]
+          },
+          "silent": {
+            "type": "boolean"
+          },
+          "reaction": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "template": {
+            "type": "string"
+          },
+          "verbosity": {
+            "enum": [
+              "terse",
+              "verbose"
+            ]
+          },
           "budget": {
             "type": "object",
             "additionalProperties": false,
             "properties": {
-              "max_pings_per_day": {"type": "integer", "minimum": 0},
-              "demote_after_expiries": {"type": "integer", "minimum": 1}
+              "max_pings_per_day": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "demote_after_expiries": {
+                "type": "integer",
+                "minimum": 1
+              }
             }
           },
-          "sla_minutes": {"type": "integer", "minimum": 1},
-          "fallback": {"enum": ["mechanical-with-marker", "hold-briefing"]},
-          "show_injection_banner": {"type": "boolean"}
+          "sla_minutes": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "fallback": {
+            "enum": [
+              "mechanical-with-marker",
+              "hold-briefing"
+            ]
+          },
+          "show_injection_banner": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "attention_queue": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "War-room census settings (command-center C4).",
+      "properties": {
+        "decisions_render_cap": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "world": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "World-skin charter keys (muster landing, C4).",
+      "properties": {
+        "muster_landing": {
+          "enum": [
+            "off",
+            "ping-now",
+            "any"
+          ]
         }
       }
     }

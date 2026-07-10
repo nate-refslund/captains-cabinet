@@ -598,3 +598,88 @@ outcomes:
         verifier_role: cos
         risk_level: high
         rollback_note: "Feature flag off; Vercel rollback"
+
+  # ===========================================================
+  # LANE: system-self — captains-cabinet world (WORLD-ONBOARDING-V1B core slice)
+  # ===========================================================
+  # ORG-BUILDS-ORG-PILOT (docs/plans/operative-egg-ledger-2026-07-07.yml row):
+  # the first real build wave compiled through the org's OWN mission plane
+  # (outcomes.yml -> compiler -> work graph -> officers pull/route) instead of
+  # an orchestrator-driven dynamic workflow. Scope = hatching doc §7.1 bullets
+  # 1-3 ONLY (dialog framework, desk interview, first letter). Explicitly NOT
+  # in scope here: Hatch Cabinet.app / hatch.sh launcher, errand rack, the full
+  # §6 security plane (beyond the focus route's own gates), arrival choreography,
+  # multi-cabinet — those stay with the WORLD-ONBOARDING-V1B wave proper.
+  # Spec of record: docs/plans/world-onboarding-hatching-2026-07-09.md.
+  # Build branch: feat/world-hatching-v1b (worktree off master in THIS repo;
+  # multi-writer FF-verify push protocol; never force). No production deploy
+  # surface (local dashboard); normal review gates apply.
+  # Ratified under the Captain's 2026-07-07 standing full-autonomy grant
+  # (ratify-yourself for cabinet-improving work) — recorded in the pilot
+  # ledger row; flip status to draft to pause.
+  - id: outcome-world-onboarding-v1b-001
+    name: "Hatching v1b core: dialog framework + desk interview + first letter"
+    description: >
+      The in-world onboarding core from the hatching design doc ships through
+      officer lanes: the reusable pixel dialog framework, the interview at the
+      desk (full question map -> progressive answers.yml -> Charter + SIGN ->
+      generator), and the first letter (/api/hatch/focus -> onboarding-focus.md
+      -> Chair genesis brief). Work happens in the captains-cabinet repo on
+      branch feat/world-hatching-v1b. This outcome is also the
+      ORG-BUILDS-ORG-PILOT dogfood: completion exhaust (experience records +
+      verdict rows) is part of the acceptance.
+    status: active
+    captain_ratified: true
+    measurable_criteria:
+      - node_id: hatch-dialog
+        title: "Dialog framework: 32x32 pack frames + typewriter + input-row variant + H-2 hatching button set"
+        owner_role: polads-ceo
+        acceptance_criteria:
+          - "ONE reusable dialog component in cabinet/dashboard world UI (pulled forward from the v3 library-query dialog family per hatching doc §7.1 — same component, earlier customer; no fork)"
+          - "Typewriter reveal + input-row variant + hatching button set; buttons render ONLY inside hatching-mode dialogs — living-world dialogs stay read-only + deep-link per the 2026-07-09 room ruling (H-2)"
+          - "vitest suites cover typewriter, input-row, and button gating; determinism: same props + ticks => byte-identical frames"
+          - "Quality gates green: cd cabinet/dashboard && npm test; npx tsc --noEmit; python3.12 -m pytest framework/tests -q; python3.12 cabinet/scripts/world-binding-validator.py; python3.12 cabinet/scripts/world-asset-gate.py; python3.12 -m pytest cabinet/scripts/world-aesthetic/tests -q"
+        evidence_required: "PR on captains-cabinet (feat/world-hatching-v1b) + green gate transcript + experience record (record-experience.sh)"
+        verifier_role: cos
+        risk_level: low
+        rollback_note: "git revert — additive component, dark outside hatching mode"
+      - node_id: hatch-interview
+        title: "The interview at the desk: §2.3 question map, progressive answers.yml, Charter + SIGN -> generator, consequence props"
+        owner_role: stephie-ceo
+        depends_on: [hatch-dialog]
+        acceptance_criteria:
+          - "Full hatching doc §2 desk interview: §2.3 question map (every cabinet-init SKILL.md phase-1..4 + 6 field), progressive answers.yml, CONNECT (§2.5), Charter + SIGN -> generate-instance.py dry-run preview, real run, --adopt flow (§2.6); generator + cabinet-init semantics UNMODIFIED (reuse map §7.3)"
+          - "Consequence props land as ONE grammar-law PR (signpost, buoy+stake, jetty manifest, house-plots, flag bundle + strongbox, memory chest, telegraph post + pegs, address plate, errand rack, arrival rowboat pass) with codex on every entry + the H-1 tempo clause"
+          - "Props render DECLARED CONFIG, never earned capability: buoys say staked-not-earned, plots are stakes, the flag does not hoist early, the cairn stays DARK (honest zeros)"
+          - "Pipeline fidelity (§7.4 criterion 4): generated instance/ byte-identical to running the cabinet-init skill + generator by hand on the same answers; re-run idempotent; --adopt archives, never deletes"
+          - "Quality gates green: the same six-command world bar + npx tsc --noEmit as hatch-dialog"
+        evidence_required: "PR link(s) + byte-identity fidelity proof (diff transcript) + green gate transcript + experience record"
+        verifier_role: cos
+        risk_level: medium
+        rollback_note: "git revert — interview lives only in the hatching window; living world untouched"
+      - node_id: hatch-first-letter
+        title: "The first letter: /api/hatch/focus -> onboarding-focus.md -> Chair genesis brief"
+        owner_role: polads-ceo
+        depends_on: [hatch-interview]
+        acceptance_criteria:
+          - "Focus letter per hatching doc §4: written at the desk, stored as onboarding-focus.md, consumed by the Chair genesis brief (§4.2); focus not seed outcomes; honesty line §4.3 rendered verbatim"
+          - "The write surface exists ONLY inside the hatching window (§0 server-side terminal state): post-genesis /api/hatch/* return 410 — including with genesis.stamp manually deleted on a live org; every hatch write has a ledger echo line, names-not-values (§6)"
+          - "Security tests for the route (vitest): origin-reject, Host-allowlist reject, rate-limit trip, secret-echo scan = zero hits over responses + logs (§7.4 criterion 3, scoped to this endpoint)"
+          - "Quality gates green: the same six-command world bar + npx tsc --noEmit"
+        evidence_required: "PR link + 410-lifecycle test transcript + green gate transcript + experience record"
+        verifier_role: cos
+        risk_level: medium
+        rollback_note: "Route is dark post-genesis by design; git revert removes it entirely"
+      - node_id: hatch-verify
+        title: "Wave verification + pilot exhaust: six-command bar from clean state, evidence audit, verdict + experience rows minted"
+        owner_role: cos
+        depends_on: [hatch-dialog, hatch-interview, hatch-first-letter]
+        acceptance_criteria:
+          - "Run the full six-command world bar + npx tsc --noEmit against the integrated branch from a clean state; all green"
+          - "Audit each node's evidence against its acceptance criteria; record completions/verifications via cabinet/scripts/work-graph-complete.sh (work_item_verified events)"
+          - "Pilot exhaust exists: experience records for every node + verdict rows — the ORG-BUILDS-ORG-PILOT ledger gate reads this exhaust as the acceptance"
+          - "Report to the Captain via the normal briefing queue (batch-into-next-briefing): what the org built, what stalled, every manual nudge needed"
+        evidence_required: "Verification transcript + org-event extract (work_item_completed/verified) + experience-record paths"
+        verifier_role: polads-ceo
+        risk_level: low
+        rollback_note: "Verification only; no state change beyond ledger events"

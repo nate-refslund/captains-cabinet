@@ -62,7 +62,10 @@ except ImportError:
 #   captain_attention_cost = count(captain_decision_logged + captain_boundary_set
 #                            + captain_outcome_ratified in window) — anything
 #                            that required Captain input is attention cost
-#   learning_rate         = count(experience_recorded in window)
+#   learning_rate         = count(experience_recorded in window) / window_days
+#                            — a real per-day RATE (§4.2 growth-metrics fix,
+#                            2026-07-09: the raw count silently rescaled with
+#                            any window change and was a volume, not a rate)
 #   verification_pass_rate = count(work_item_verified) / count(work_item_completed)
 #                            in window; defaults to 0 if no completions
 #
@@ -143,8 +146,10 @@ def gather_from_events(
     # (inverse direction in the OVI weighting: fewer is better)
     captain_attention_cost = float(len(attention_events))
 
-    # learning_rate — count of experience records in the window
-    learning_rate = float(len(learning_events))
+    # learning_rate — experience records PER DAY (window-invariant rate; the
+    # raw count masqueraded as a rate and rescaled with the window — §4.2 fix)
+    learning_rate = (float(len(learning_events)) / float(window_days)
+                     if window_days > 0 else 0.0)
 
     return {
         "task_throughput": task_throughput,

@@ -14,6 +14,19 @@ The induction layer DRAFTS the skill (writes to `memory/skills/evolved/`)
 but never promotes it without a validation pass — that's the existing
 golden-eval discipline owned by the CoS.
 
+RUNNABLE DRAFTS (§4.2 upgrade, 2026-07-09): a draft used to ship an empty
+"(Filled in by the CoS...)" Procedure skeleton — procedural memory that
+wasn't executable, so the evolution-loop promotion gate had nothing real to
+validate. `distill_procedure()` now extracts imperative steps
+DETERMINISTICALLY from the cluster's own evidence bodies (no LLM — the
+distillation is reviewable and replayable), and `derive_scenario()` mints
+the first validation scenario from the newest evidence. Governance is
+UNCHANGED and is what makes this safe: drafts land `status: draft` in the
+hook-write-protected memory/skills tree, surface through the (REPORT_ONLY-
+soaking) self-improvement loop as proposals, and only the existing
+`promote_draft` gate — validation-evals-green, CoS-owned — flips them.
+Induction still never self-promotes; golden evals remain the promotion bar.
+
 Usage:
     from framework.learning.skill_induction import induce_drafts
 
@@ -87,19 +100,78 @@ def _cluster_records(
     return clusters
 
 
+_IMPERATIVE_CUES = re.compile(
+    r"(?i)\b(always|never|must(?: not)?|should(?: not)?|use|run|check|"
+    r"prefer|avoid|ensure|verify|gather|read|write|wait|before|after|"
+    r"instead|do not|don't)\b")
+_MAX_STEPS = 7
+_MIN_STEP_CHARS = 15
+_MAX_STEP_CHARS = 300
+
+
+def distill_procedure(bodies: list[str]) -> list[str]:
+    """Imperative steps distilled DETERMINISTICALLY from evidence bodies.
+
+    Sentence-splits each body and keeps directive sentences (imperative-cue
+    match), deduped case-insensitively, capped at _MAX_STEPS. No LLM: the
+    same evidence always distills to the same steps, so a reviewer can
+    replay the derivation. Returns [] when the evidence carries no
+    directive sentence — the caller then quotes the lessons verbatim as
+    apply-this-lesson steps (a runnable floor, still evidence-grounded)."""
+    steps: list[str] = []
+    seen: set[str] = set()
+    for body in bodies:
+        for raw in re.split(r"(?<=[.!?])\s+|\n+", body or ""):
+            sent = raw.strip().rstrip(".")
+            if not (_MIN_STEP_CHARS <= len(sent) <= _MAX_STEP_CHARS):
+                continue
+            if not _IMPERATIVE_CUES.search(sent):
+                continue
+            key = sent.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            steps.append(sent)
+            if len(steps) >= _MAX_STEPS:
+                return steps
+    return steps
+
+
+def derive_scenario(cluster: dict[str, Any]) -> str:
+    """The first validation scenario, minted from the newest evidence so the
+    promotion gate has a concrete case to run (authoring more remains the
+    validator's job)."""
+    newest = (cluster.get("sample_bodies") or [""])[0] or ""
+    newest = " ".join(newest.split())[:220]
+    return (f"Scenario 1 (auto-derived): the signal "
+            f"\"{cluster['trigger_signal']}\" appears again -> apply the "
+            f"Procedure; success = the recorded failure mode does not recur "
+            f"(evidence: {newest or 'see Origin section'}).")
+
+
 def _skills_evolved_dir() -> Path:
     root = Path(os.environ.get("CABINET_ROOT", Path(__file__).parent.parent.parent))
     return root / "memory" / "skills" / "evolved"
 
 
 def _draft_skill_yaml(cluster: dict[str, Any]) -> tuple[str, str]:
-    """Build a SKILL.md skeleton from a cluster. Returns (filename, body)."""
+    """Build a RUNNABLE draft SKILL.md from a cluster. Returns (filename, body)."""
     slug = f"induced-{cluster['lesson_type']}-{_slugify(cluster['trigger_signal'])}"
     filename = f"{slug}.md"
     actors_str = ", ".join(cluster["actors"]) or "(unknown)"
     bodies_block = ""
     for i, b in enumerate(cluster["sample_bodies"], start=1):
         bodies_block += f"\n#### Sample evidence #{i}\n\n{b}\n"
+
+    # §4.2: runnable draft — distill the procedure from the evidence itself.
+    steps = distill_procedure(cluster.get("sample_bodies") or [])
+    distilled = bool(steps)
+    if not steps:
+        steps = [f"Apply the recorded lesson: {' '.join((b or '').split())[:200]}"
+                 for b in (cluster.get("sample_bodies") or []) if b][:_MAX_STEPS]
+    steps_block = "\n".join(f"{i}. {st}." for i, st in enumerate(steps, 1)) \
+        or "1. (no evidence bodies — validator must author the procedure)"
+    scenario = derive_scenario(cluster)
 
     body = f"""---
 name: {slug}
@@ -110,6 +182,8 @@ date: {datetime.now(timezone.utc).strftime('%Y-%m-%d')}
 validated_against: []
 usage_count: 0
 induction:
+  procedure_distilled: {str(distilled).lower()}
+  distilled_steps: {len(steps)}
   cluster_size: {cluster['size']}
   trigger_signal: "{cluster['trigger_signal']}"
   lesson_type: {cluster['lesson_type']}
@@ -133,20 +207,22 @@ same signal, this skill's procedure should apply.
 
 ## Procedure
 
-(Filled in by the CoS during validation. The induction layer cannot infer
-imperative steps from past lessons — that requires Captain or CoS review.)
+{"Distilled DETERMINISTICALLY from the cluster's evidence bodies (replayable — no LLM). The validator edits, reorders, or extends during review; promotion still requires the eval below." if distilled else "No directive sentences in the evidence — each lesson is quoted as a runnable floor. The validator should rewrite these into imperative steps during review."}
 
-1. ...
+{steps_block}
 
 ## Expected Outcome
 
-...
+The recurring signal "{cluster['trigger_signal']}" stops producing the
+failure mode recorded in the evidence ({cluster['size']} occurrences,
+{cluster['first_seen'][:10]} → {cluster['last_seen'][:10]}).
 
 ## Validation Scenarios
 
-(Author at least 1 scenario before promotion.)
+(Auto-derived scenario 1 below; author more before promotion if the
+procedure carries more than one behavior.)
 
-- Scenario 1: input → expected output
+- {scenario}
 
 ## Origin
 

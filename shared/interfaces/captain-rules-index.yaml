@@ -4,7 +4,7 @@
 # Re-run cabinet/scripts/captain-rules/index.sh after any source-file edit
 # (pre-commit hook enforces freshness).
 
-# 38 entries
+# 39 entries
 entries:
   - id: A1
     source: captain-patterns.md
@@ -326,6 +326,16 @@ entries:
     added_by: cos
     excerpt: "The Chair is the orchestrator + lead. Delegate deep/tool-heavy work (exploration, research, multi-step builds, non-trivial acts) to subagents + Agent Teams; keep only conclusions in the Chair's context, not tool-call noise. Stand up 24/7 teams + domain officers for persistent domains. Price/tokens are NOT a constraint."
     full_ref: shared/interfaces/captain-patterns.md#P-Orchestrate-Delegate
+  - id: P-Owning-Officer-Verifies
+    source: captain-patterns.md
+    section: pattern
+    title: "Owning officer authors + verifies domain-technical proposals before the Captain sees them"
+    trigger_words: ["SQL", "prod write", "production write", "database change", "schema", "deploy", "deployment", "code change", "migration", "run this query", "change CVR", "technical proposal", "lane-technical", "spawned subagent", "helper agent", "subagent", "verified by", "route to the officer", "owning officer", "lane CEO", "accountable officer", "product DB"]
+    scope: all_officers
+    added: 2026-07-08
+    added_by: cos
+    excerpt: "Any Captain-facing proposal touching a lane's code, DB, deploy, schema, or compliance MUST be authored AND verified by that lane's accountable officer BEFORE it reaches the Captain. The Chair routes to that officer and carries the single voice; it NEVER substitutes its own — or a spawned subagent's — analysis for the accountable officer's verification. A spawned crew/subagent is the Chair's instrument, not the accountable officer. No 'verified-by: <officer>' provenance -> do not send; route first, even under deadline."
+    full_ref: shared/interfaces/captain-patterns.md#P-Owning-Officer-Verifies
   - id: P-Prefer-Principles
     source: captain-patterns.md
     section: pattern

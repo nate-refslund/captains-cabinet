@@ -253,21 +253,24 @@ construction:            # D4: structure NEVER pops in — the visible-work pipe
     day0: "no sites — nothing has ever been built"
 
 fauna:                   # §15.5 population law: fauna for joy; HUMAN-shaped sprites = real actors only
-  # STAGED SCOPE AMENDMENT (v1a review, 2026-07-09): no fauna pack art is
-  # installed in the world-asset manifest yet, so every species below is
-  # `staged: true` — the renderer draws NOTHING for a staged species (no
-  # invented pixels) and this grammar stays truth-aligned with the screen.
-  # When a species' verified pack art lands in the manifest, flip its
-  # staged flag off in the same commit that binds the cuts; the day0 lines
-  # below describe the day the species HATCHES, not today's render.
+  # STAGED SCOPE AMENDMENT (v1a review, 2026-07-09): a staged species has no
+  # pack art installed in the world-asset manifest, so the renderer draws
+  # NOTHING for it (no invented pixels) and this grammar stays truth-aligned
+  # with the screen. When a species' verified pack art lands in the manifest,
+  # flip its staged flag off in the same commit that binds the cuts.
+  # COZY-DENSITY PASS (2026-07-09, same-commit flips per the rule above):
+  # dog + chicken_flock + fish art LANDED (installer `cozy` section: farm
+  # Animals sheets with the mockups' own compose_unified cut recipes; fish =
+  # derived own-pixel splash, no pack source exists) — staged flipped OFF
+  # for exactly those three. cat/birds/butterflies stay staged (no art yet).
   dog:
     home: village
     decorative: true
-    staged: true         # dark until dog art lands — nothing renders
+    staged: false        # cozy pass 2026-07-09: Labrador sleep art landed
     codex:
-      represents: "Carries no data — exists for joy. STAGED: no dog art is installed yet, so no dog renders (grammar and screen stay truth-aligned). Petting, once live, is a client-only seeded reaction riding the inspect click: zero state, zero writes. Exactly one dog, forever — scarcity keeps the bound/decorative boundary legible."
+      represents: "Carries no data — exists for joy. Pippin sleeps by the Great House porch (pack sleep frames, slow seeded breathing loop). Petting is a client-only seeded reaction riding the inspect click: zero state, zero writes. Exactly one dog, forever — scarcity keeps the bound/decorative boundary legible."
       mechanism_path: "docs/plans/world-unified-spec-v2-2026-07-09.md"
-      day0: "staged dark — the dog arrives with its pack art (target: there from the egg)"
+      day0: "asleep by the cottage door from the egg on"
   cat:
     home: wardroom_kettle_counter
     decorative: true
@@ -295,19 +298,19 @@ fauna:                   # §15.5 population law: fauna for joy; HUMAN-shaped sp
   fish:
     home: quay_water
     decorative: true
-    staged: true         # dark until fish art lands — nothing renders
+    staged: false        # cozy pass 2026-07-09: derived splash art landed
     codex:
-      represents: "Carries no data — fish jump at the quay for joy, seeded, wave-tile adjacent (helps the open-water <= 30 percent gate rule, never claims a signal). STAGED: no fish art installed yet, so no splashes render."
+      represents: "Carries no data — fish jump at the quay for joy, seeded, wave-tile adjacent (helps the open-water <= 30 percent gate rule, never claims a signal). Art = derived 2-frame leap/splash in proven wave/foam hues (no pack ships fish — audited)."
       mechanism_path: "docs/plans/world-unified-spec-v2-2026-07-09.md"
-      day0: "staged dark — arrives with its pack art (target: one splash off the rowboat jetty)"
+      day0: "one splash off the rowboat jetty"
   chicken_flock:
     home: coop_yard
     decorative: true
-    staged: true         # dark until flock art lands — nothing renders
+    staged: false        # cozy pass 2026-07-09: chicken peck art landed
     codex:
-      represents: "DEMOTED to fauna (§15.5 — supersedes the bestiary chick-per-subagent mapping): the flock carries no data; the ev_subagent_completed tier + live tool.call[Agent]/crew.completed bindings moved to the apprentices block (cross-link). STAGED: no flock art installed yet. Card says carries no data — exists for joy."
+      represents: "DEMOTED to fauna (§15.5 — supersedes the bestiary chick-per-subagent mapping): the flock carries no data; the ev_subagent_completed tier + live tool.call[Agent]/crew.completed bindings moved to the apprentices block (cross-link). A capped seeded flock pecks the pens yard (pack idle/walk/peck rows). Card says carries no data — exists for joy."
       mechanism_path: "docs/plans/world-unified-spec-v2-2026-07-09.md"
-      day0: "staged dark — no coop yet; fauna arrives with the yard"
+      day0: "no coop yet; the flock arrives with the yard"
 
 apprentices:             # subagents are REAL actors (§15.5) — small transient figures, never crowd-fill
   appear: "live chronicle tool.call[Agent] verb — an apprentice figure spawns near the spawning officer's current workplace"

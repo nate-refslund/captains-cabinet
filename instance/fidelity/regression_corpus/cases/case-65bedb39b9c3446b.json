@@ -1,0 +1,34 @@
+{
+  "case_format": 1,
+  "case_id": "case-65bedb39b9c3446b",
+  "cell": {
+    "action_type": "__unstamped__",
+    "actor": "officer:cos",
+    "lane": "nate"
+  },
+  "human_verdict": {
+    "decided_at": "2026-07-03T21:07:40Z",
+    "evidence": "captain edited the draft before it shipped",
+    "kind": "edit",
+    "proposal_decision": "edited",
+    "review_source": "verdict_human",
+    "review_verdict": "wrong",
+    "reviewed_at": "2026-07-03T21:07:40Z"
+  },
+  "situation": {
+    "action": "action-card",
+    "action_type": null,
+    "actor": {
+      "id": "cos",
+      "kind": "officer"
+    },
+    "lane": "nate",
+    "proposal_required": true,
+    "refs": [
+      "6-Commitments/owed_by_nate/cmt-2469de5fe905.md",
+      "6-Commitments/owed_by_nate/cmt-13e753b27b71.md"
+    ],
+    "subject": "cvr-rettelse-mandag-block",
+    "ts": "2026-07-03T20:43:15Z"
+  }
+}

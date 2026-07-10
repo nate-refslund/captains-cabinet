@@ -59,6 +59,38 @@ export const ROAD_SPINE_LOCAL: ReadonlyArray<readonly [number, number]> = [
 /** Crossroads tile in main-island local coords. */
 export const CROSSROADS_LOCAL = { x: 30, y: 26 } as const
 
+/**
+ * Path spurs (cozy pass 2026-07-09 — mockup path logic: every lived-in
+ * door connects to the street; v1a cottages floated beside the road).
+ * Local polylines from the fixed building anchors (world-buildings law
+ * constants: dwellings at (16,14)/(11,14)/(16,20)/(11,20), workshop
+ * (20,12), barn (42,14)) to the road spine. 1-wide worn lanes.
+ */
+export const ROAD_SPURS_LOCAL: ReadonlyArray<
+  ReadonlyArray<readonly [number, number]>
+> = [
+  [
+    [18, 17],
+    [24, 17],
+    [29, 17],
+  ], // dwelling row 1 → spine
+  [
+    [18, 23],
+    [24, 24],
+    [30, 25],
+  ], // dwelling row 2 → crossroads approach
+  [
+    [22, 15],
+    [26, 16],
+    [29, 16],
+  ], // workshop yard → spine
+  [
+    [45, 19],
+    [38, 18],
+    [31, 17],
+  ], // barn door → spine
+] as const
+
 export function toWorld(lx: number, ly: number): { x: number; y: number } {
   return { x: MAIN_OFFSET.x + lx, y: MAIN_OFFSET.y + ly }
 }
@@ -219,7 +251,21 @@ export function buildWorldGeo(input: WorldGeoInput): WorldGeo {
   const worldSpine = ROAD_SPINE_LOCAL.map(
     ([lx, ly]) => [MAIN_OFFSET.x + lx, MAIN_OFFSET.y + ly] as const
   )
-  for (const [x, y] of carvePolyline(worldSpine)) roadTiles.add(`${x},${y}`)
+  for (const [x, y] of carvePolyline(worldSpine)) {
+    roadTiles.add(`${x},${y}`)
+    // cozy-density pass (2026-07-09): the mockups' street is an organic
+    // 2–3-tile dirt band, not a 1-tile carve. Widen with a seeded flank
+    // (side alternates per tile) + an occasional second flank bulge.
+    // The walkable spine (roadPoint) is unchanged — width is visual.
+    const side = fnv1a(`roadw:${x},${y}`) % 2 === 0 ? 1 : -1
+    roadTiles.add(`${x + side},${y}`)
+    if (fnv1a(`roadw2:${x},${y}`) % 5 === 0) roadTiles.add(`${x - side},${y}`)
+  }
+  // door-to-street spurs (1-wide worn lanes — mockup path logic)
+  for (const spur of ROAD_SPURS_LOCAL) {
+    const w = spur.map(([lx, ly]) => [MAIN_OFFSET.x + lx, MAIN_OFFSET.y + ly] as const)
+    for (const [x, y] of carvePolyline(w)) roadTiles.add(`${x},${y}`)
+  }
 
   return {
     canvas: { w: CANVAS.w, h: CANVAS.h },

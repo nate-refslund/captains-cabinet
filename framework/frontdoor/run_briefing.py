@@ -63,6 +63,19 @@ def _default_digest() -> dict:
     return tell_digest.enqueue_digest(readout=tell_digest.gather_loop_readout())
 
 
+def _default_needs_you() -> "dict | None":
+    """Compose + enqueue the war-room 'Needs you (N)' section from the live
+    census. Returns the enqueue receipt, or None when nothing pends (an
+    empty shelf renders as silence, not an empty header)."""
+    from framework.attention import queue as attention_queue
+    from framework.attention import queue_card
+    item = queue_card.briefing_needs_you_item(attention_queue.build_queue())
+    if item is None:
+        return None
+    from framework.frontdoor import intake
+    return {"needs_you": True, "id": intake.enqueue(item)}
+
+
 def _run_local_render(*, genesis_fn=None, now: str | None = None) -> dict:
     """The LOCAL-FIRST genesis receipt: compose ONE briefing from the local
     genesis surfaces and WRITE it — never send, never touch Redis.
@@ -131,15 +144,17 @@ def run_briefing(
     pending_fn=None,
     recap_fn=None,
     digest_fn=None,
+    needs_you_fn=None,
     run_mode: str | None = None,
     local_render: bool = False,
     genesis_fn=None,
 ) -> dict:
-    """Enqueue a fresh synthesis (+ the PM daily recap + the TI-5 digest), then
-    run one send pass.
+    """Enqueue a fresh synthesis (+ the PM daily recap + the TI-5 digest +
+    the war-room "Needs you (N)" section), then run one send pass.
 
     Returns ``{'synthesis': <enqueue result>, 'recap': <recap result|None>,
-    'digest': <tell_digest result>, 'send': <run_send_path result>}``.
+    'digest': <tell_digest result>, 'needs_you': <enqueue receipt|None>,
+    'send': <run_send_path result>}``.
 
     PM-only recap: when this is the evening run (``run_mode == 'PM'``, else the
     CABINET_RUN_MODE env), the daily recap is enqueued AFTER the synthesis so it
@@ -196,6 +211,18 @@ def run_briefing(
     except Exception as e:  # best-effort: never block the briefing send
         digest = {"digest": False, "error": str(e)[:300]}
 
+    # War-room census: the "Needs you (N)" briefing section (command-center
+    # §4C) — ONE intake item from the same census every skin renders
+    # (SURFACE-PARITY), enqueued before the send pass so this run composes
+    # it. Silent when nothing pends. ``needs_you_fn`` seam for tests;
+    # best-effort — a census failure never blocks the briefing.
+    needs_you = None
+    try:
+        enqueue_item = needs_you_fn or _default_needs_you
+        needs_you = enqueue_item()
+    except Exception as e:
+        needs_you = {"needs_you": False, "error": str(e)[:300]}
+
     # recover_pending=True is the fix for the single-voice comms-awareness gap:
     # surface.py (every 5 min) reads the intake with ">" and surfaces ONLY
     # ping-now in real time, leaving batch/fyi items delivered-but-unacked in the
@@ -208,7 +235,8 @@ def run_briefing(
     send = run_frontdoor.run_send_path(
         send_fn=send_fn, drain_fn=drain_fn, ack_fn=ack_fn, pending_fn=pending_fn,
         recover_pending=True)
-    return {"synthesis": syn, "recap": recap, "digest": digest, "send": send}
+    return {"synthesis": syn, "recap": recap, "digest": digest,
+            "needs_you": needs_you, "send": send}
 
 
 def _parse_args(argv=None):

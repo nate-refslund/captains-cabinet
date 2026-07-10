@@ -15,6 +15,18 @@ version: 1
 verbosity: terse            # short cards; verbose only on Captain request
 ack_style: silent-fyi       # apply-and-FYI, no confirmation ping by default
 
+# War-room census (command-center C4, Captain-ratified 2026-07-10): the
+# Decisions shelf renders at most N cards — charter DATA, not a framework
+# constant. Overflow files ONE consolidation need, never a hidden backlog.
+attention_queue:
+  decisions_render_cap: 7
+
+# World landing (C4): only structural urgency may hijack the opening camera.
+# off | ping-now | any — consumed by the Stage-2 world skin; carried as
+# charter data now so the ratified default ships with the census.
+world:
+  muster_landing: ping-now
+
 quiet_hours:
   start: "21:00"
   end: "07:00"

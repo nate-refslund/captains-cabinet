@@ -202,3 +202,102 @@ def test_series_append_is_idempotent_per_date(tmp_path):
     series.write_text('not-json\n{"date": "2026-07-04", "acted_7d": 0}\n')
     assert fr._already_reported(series, "2026-07-04") is True    # corrupt line skipped
     assert fr._already_reported(series, "2026-07-05") is False
+
+
+# --- §4.2 growth metrics (2026-07-09): label supply + time-to-graduation ----
+
+def test_compute_line_counts_the_label_supply():
+    """labels_7d is the week's raw verdict/outcome supply — the learning
+    core's fuel gauge (egg verdict: 'verdict throughput is the gap')."""
+    fr = _load_falsifier_report()
+    line = fr.compute_line(_fixtured_ledger(), now=NOW, redis_get=lambda k: "")
+    # window rows: 2 acted scored (confirmed+wrong) + 1 approved confirmed
+    # + 1 unstamped (no verdict) → 3 verdicts; outcomes ok/failed/ok/ok → 4.
+    assert line["labels_7d"] == {"verdict": 3, "outcome_resolved": 4}
+
+
+def test_compute_line_time_to_graduation_empty_when_none_graduated():
+    fr = _load_falsifier_report()
+    line = fr.compute_line(_fixtured_ledger(), now=NOW, redis_get=lambda k: "")
+    assert line["time_to_graduation_days"] == {"cells": {}, "median": None}
+    # median over empty set is None — honest unmeasured, never a silent 0
+
+
+def test_compute_line_time_to_graduation_for_a_graduated_cell():
+    """A cell that clears the full default bar (20 samples / 0.85 match /
+    clean last-10 / 14d recency via the wrong-only clock bounded by cell age /
+    7d seasoning) reports days from its FIRST stamped row to the earliest
+    row-granular bar crossing."""
+    fr = _load_falsifier_report()
+    ledger = [
+        _ev(f"2026-06-{d:02d}T10:00:00Z", action_type="monday_task_create",
+            required=False, outcome="ok", verdict="confirmed",
+            source="verdict_human")
+        for d in range(1, 26)          # 25 clean daily samples
+    ]
+    line = fr.compute_line(ledger, now=NOW, redis_get=lambda k: "")
+    assert line["cells_graduated"] == 1
+    cells = line["time_to_graduation_days"]["cells"]
+    assert len(cells) == 1
+    key, days = next(iter(cells.items()))
+    assert key == "officer:officer:cos|acme|monday_task_create"
+    # bar needs 20 samples (day 20) and >=14d recency — earliest crossing is
+    # row-granular, so the span sits between the sample floor (19d) and the
+    # full fixture span (24d); the exact day depends on the recency ramp.
+    assert 13.0 <= days <= 24.0
+    assert line["time_to_graduation_days"]["median"] == days
+
+
+# --- §4.2 change-cost telemetry (2026-07-09): cost_7d on the cost ledger ----
+
+def _cost_hashes():
+    return {
+        "cabinet:cost:tokens:daily:2026-07-04": {
+            "cos_input": "1000", "cos_output": "500",
+            "cos_cache_read": "99999", "cos_cost_micro": "3000000",
+            "polads-ceo_input": "200", "polads-ceo_output": "100",
+            "polads-ceo_cost_micro": "1000000"},
+        "cabinet:cost:tokens:daily:2026-07-03": {
+            "cos_input": "50", "cos_output": "25",
+            "cos_cost_micro": "500000", "junk": "not-a-number"},
+    }
+
+
+def test_compute_line_cost_7d_sums_the_ledger_and_prices_a_label():
+    fr = _load_falsifier_report()
+    hashes = _cost_hashes()
+    line = fr.compute_line(_fixtured_ledger(), now=NOW,
+                           redis_get=lambda k: "",
+                           redis_hgetall=lambda k: hashes.get(k, {}))
+    cost = line["cost_7d"]
+    assert cost["cost_micro"] == 4_500_000
+    assert cost["input_tokens"] == 1250 and cost["output_tokens"] == 625
+    assert cost["days_measured"] == 2
+    # 3 verdict labels in the window → 1.5M micro per label
+    assert cost["cost_micro_per_label"] == 1_500_000
+
+
+def test_compute_line_cost_per_label_is_null_when_unmeasurable():
+    fr = _load_falsifier_report()
+    # no hgetall injected → days_measured 0 → per-label null, never 0
+    line = fr.compute_line(_fixtured_ledger(), now=NOW, redis_get=lambda k: "")
+    assert line["cost_7d"]["days_measured"] == 0
+    assert line["cost_7d"]["cost_micro_per_label"] is None
+    # measured cost but ZERO labels → still null (infinite learning price)
+    ledger = [_ev("2026-07-03T09:00:00Z", action_type="monday_task_create",
+                  decision="approved")]
+    hashes = _cost_hashes()
+    line = fr.compute_line(ledger, now=NOW, redis_get=lambda k: "",
+                           redis_hgetall=lambda k: hashes.get(k, {}))
+    assert line["labels_7d"]["verdict"] == 0
+    assert line["cost_7d"]["cost_micro_per_label"] is None
+
+
+def test_compute_line_cost_broken_redis_degrades():
+    fr = _load_falsifier_report()
+
+    def broken(_k):
+        raise RuntimeError("redis down")
+    line = fr.compute_line(_fixtured_ledger(), now=NOW,
+                           redis_get=lambda k: "", redis_hgetall=broken)
+    assert line["cost_7d"]["days_measured"] == 0   # degrade, never crash

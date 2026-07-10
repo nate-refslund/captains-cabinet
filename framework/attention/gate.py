@@ -218,7 +218,8 @@ _ACTING_KINDS = frozenset({"reminder_create", "monday_task_create",
 
 def decide(item: dict, *, ch: "dict | None" = None,
            now: "datetime | None" = None, standing: "dict | None" = None,
-           chair_review: bool = False, conf_floor: float = 0.65) -> dict:
+           chair_review: bool = False, conf_floor: float = 0.65,
+           demoted_kinds: "frozenset | set | None" = None) -> dict:
     """The pure gate decision. Returns a dict with ``action`` in
     {send, edit, briefing, weekly, suppress, chair}, the rendered ``text``
     (send/edit), ``message_id`` (edit), ``situation_key``, ``class_id``,
@@ -229,7 +230,14 @@ def decide(item: dict, *, ch: "dict | None" = None,
     ``chair_review`` (default False = P4 mechanical behavior, byte-identical):
     when True, an exceptional item routes to the Chair (action=``chair``) for
     live judgment instead of a mechanical send — the surface service files the
-    T2 request and enforces the SLA fallback."""
+    T2 request and enforces the SLA fallback.
+
+    ``demoted_kinds`` (H5, default None = byte-identical): kinds whose expiry
+    streak crossed the charter's ``budget.demote_after_expiries`` bar
+    (framework.attention.queue.demoted_kinds). A NEW card of a demoted kind
+    routes to the briefing instead of a fresh send — a 5×-expired class stops
+    regenerating pings every 30 minutes; standing-card EDITS and floor
+    classes are untouched (edits are silent; floors are never quieted)."""
     charter = _load_charter()
     if ch is None:
         ch = charter.load_charter()
@@ -258,6 +266,16 @@ def decide(item: dict, *, ch: "dict | None" = None,
     # (2) mute route
     if resolved["route"] == "mute":
         return {**base, "action": "suppress", "reason": "charter-mute"}
+
+    # (2.4) H5 — expiry-streak class demotion (stay-live-until-acted made
+    # compatible with adaptive quieting: presentation decays, liveness
+    # doesn't). A NEW card whose KIND crossed the charter demote bar folds
+    # into the briefing instead of minting a fresh send. Floor classes are
+    # exempt (never quieted); the standing-edit path already returned above.
+    if demoted_kinds and not resolved["floor"] \
+            and item.get("kind") in demoted_kinds:
+        return {**base, "action": "briefing",
+                "reason": "class-demoted-expiry-streak"}
 
     # (3) Timing — quiet hours + ping-now demotion (Captain tz).
     #
@@ -328,14 +346,19 @@ def _parse_iso(s):
 # ---------------------------------------------------------------------------
 
 def _default_send(text, **kw):
-    from framework.frontdoor import channel
-    return channel.send(text, silent=kw.get("silent", False),
-                        feed_meta=kw.get("feed_meta"))
+    # Route through the channel-agnostic adapter seam (framework.comms) so the
+    # gate's OWN delivery is the SAME one door the Comms MCP tools use — not a
+    # second, Telegram-hardcoded path. The Telegram adapter delegates back to
+    # channel.send, so live behavior is identical; a clean-room / null channel
+    # now governs gate delivery too (one door, resolved from instance config).
+    from framework.comms.get_channel import get_channel
+    return get_channel().send(text, silent=kw.get("silent", False),
+                              feed_meta=kw.get("feed_meta"))
 
 
 def _default_edit(message_id, text, **kw):
-    from framework.frontdoor import channel
-    return channel.edit_message(message_id, text, feed_meta=kw.get("feed_meta"))
+    from framework.comms.get_channel import get_channel
+    return get_channel().edit(message_id, text, feed_meta=kw.get("feed_meta"))
 
 
 def briefing_item(item: dict, decision: dict) -> dict:
@@ -412,6 +435,21 @@ def deliver(decision: dict, *, send_fn=None, edit_fn=None, briefing_fn=None,
     return {"status": "suppressed", "sent": False, "reason": decision.get("reason")}
 
 
+def _live_demoted_kinds() -> "frozenset | None":
+    """H5 live wiring for the submit path: kinds past the charter expiry-
+    streak bar, from the recent ledger. Best-effort — None (no demotions)
+    on any read failure, so a broken ledger can never mute the channel."""
+    try:
+        from datetime import timedelta
+        from framework.attention.queue import demoted_kinds
+        from framework.fidelity.consequence import read_ledger
+        since = (datetime.now(timezone.utc) - timedelta(days=30)) \
+            .strftime("%Y-%m-%dT%H:%M:%SZ")
+        return frozenset(demoted_kinds(read_ledger(since=since)))
+    except Exception:
+        return None
+
+
 def submit(item: dict, *, ch: "dict | None" = None, now: "datetime | None" = None,
            send_fn=None, edit_fn=None, briefing_fn=None,
            chair_review: bool = False, conf_floor: float = 0.65,
@@ -422,10 +460,15 @@ def submit(item: dict, *, ch: "dict | None" = None, now: "datetime | None" = Non
     ``decide`` returns ``action="chair"`` and this files a T2 judgment request
     (dossier + SLA) instead of delivering — the Chair authors it, and the
     surface service's SLA sweep is the fallback. Default (False) is the P4
-    mechanical path, byte-identical."""
+    mechanical path, byte-identical.
+
+    H5: the live path consults the expiry-streak demotion set (charter
+    ``budget.demote_after_expiries``) so a serially-expired class folds into
+    the briefing instead of re-pinging — fail-open to no-demotions."""
     standing = load_standing()
     decision = decide(item, ch=ch, now=now, standing=standing,
-                      chair_review=chair_review, conf_floor=conf_floor)
+                      chair_review=chair_review, conf_floor=conf_floor,
+                      demoted_kinds=_live_demoted_kinds())
     if decision.get("action") == "chair":
         file_t2 = file_t2 or _default_file_t2
         rid = file_t2(item, decision, ch=ch, now=now)

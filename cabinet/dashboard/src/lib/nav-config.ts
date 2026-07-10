@@ -14,9 +14,9 @@ export type NavLink = {
  *   Dashboard / Cabinets / Costs / Library / Settings
  *
  * Advanced (all items, zero regression from the pre-Spec-032 nav):
- *   Dashboard / World / Project / Cabinets / Officers / Tasks / Capability
- *   Gaps / Health / Settings / Governance / Receipts / Integrations / Costs
- *   / Crons / Library / Terminal (external)
+ *   Dashboard / Needs You / World / Project / Cabinets / Officers / Tasks /
+ *   Capability Gaps / Health / Settings / Governance / Receipts /
+ *   Integrations / Costs / Crons / Library / Terminal (external)
  *
  * Receipts (perfect-cabinet Wave B): read-only browser over the undo
  * journal — the what/why/cost/undo receipt surface, next to Governance.
@@ -31,6 +31,7 @@ export type NavLink = {
 
 export const ADVANCED_NAV: NavLink[] = [
   { href: '/', label: 'Dashboard' },
+  { href: '/queue', label: 'Needs You' },
   { href: '/world', label: 'World' },
   { href: '/project', label: 'Project' },
   { href: '/cabinets', label: 'Cabinets' },

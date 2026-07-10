@@ -179,6 +179,10 @@ instance/config/act-first-enabled
 shared/interfaces/world-chronicle.jsonl
 shared/interfaces/world/
 
+# War-room census artifact (attention queue.write_artifacts — rewritten each
+# 300s surface drain; PII-scrubbed runtime projection, never committed)
+shared/interfaces/attention-queue.json
+
 # Cabinet World assets (E1): LimeZu packs are commercial-licensed — binaries
 # NEVER committed. Only the content-addressed manifest is tracked; every
 # asset must pass cabinet/scripts/world-asset-gate.py before the renderer

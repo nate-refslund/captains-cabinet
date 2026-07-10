@@ -36,12 +36,12 @@ components:
     legacy_db_query: "SELECT count(*) FROM decision_log WHERE decided_at > NOW() - interval '7 days'"
 
   - name: learning_rate
-    description: "Novel experience records per period"
+    description: "Novel experience records per DAY (window-invariant rate)"
     weight: 0.15
     source: events
     direction: normal
-    default_range: [0, 30]
-    derivation: "count(experience_recorded events in window)"
+    default_range: [0, 5]
+    derivation: "count(experience_recorded events in window) / window_days (per-day rate; §4.2 growth-metrics fix 2026-07-09 — range rescaled from 0-30/window to 0-5/day)"
     legacy_db_query: "SELECT count(*) FROM experience_records WHERE created_at > NOW() - interval '7 days'"
 
   - name: verification_pass_rate

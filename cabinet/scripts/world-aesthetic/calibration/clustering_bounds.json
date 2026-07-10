@@ -65,11 +65,11 @@
       }
     ]
   },
-  "generated": "2026-07-08T09:56:17+00:00",
+  "generated": "2026-07-09T20:43:01+00:00",
   "generator": "calibrate.py/v1",
   "image": {
-    "flat_max": 0.379,
-    "dominant_max": 0.3166,
+    "flat_max": 0.4018,
+    "dominant_max": 0.3526,
     "busy_cv_min": 0.4101,
     "params": {
       "block_px": 8,
@@ -129,6 +129,24 @@
           "flat_mass": 0.1155,
           "dominant_share": 0.1086,
           "busy_cv": 0.7531
+        }
+      },
+      {
+        "file": "pos-mockup-unified-close.png",
+        "sha256": "c5d92373dbd360dd6c9e531d51f922ea69fb1a5db3111ea1c9a728840d17af32",
+        "stats": {
+          "flat_mass": 0.2828,
+          "dominant_share": 0.2464,
+          "busy_cv": 1.1069
+        }
+      },
+      {
+        "file": "pos-mockup-unified-world.png",
+        "sha256": "a5cea5fce9e57c96841ecd0ddba3df7c051eceeb3223a3eaae867f86f7794797",
+        "stats": {
+          "flat_mass": 0.2289,
+          "dominant_share": 0.2257,
+          "busy_cv": 0.9476
         }
       },
       {

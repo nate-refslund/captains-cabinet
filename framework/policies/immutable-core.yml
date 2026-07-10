@@ -94,6 +94,20 @@ files:
   - path: framework/attention/feed.py
   - path: framework/attention/acted_overlay.py
 
+  # --- WAR-ROOM census + admission plane (command-center Stage 1,
+  #     2026-07-10): situations/queue decide WHAT THE CAPTAIN SEES (the
+  #     situation fold, the admission law, the ranked census every skin
+  #     renders); hygiene RETIRES cards/streams (closure verb); queue_card
+  #     is a standing Captain-DM sender. An officer edit to any of them
+  #     re-weights its own visibility or silently closes its own asks —
+  #     judge-plane by construction. Wired into all four lists in the same
+  #     change (lockstep). Files land via the master merge; the lock skips
+  #     absent paths until then. ---
+  - path: framework/attention/situations.py
+  - path: framework/attention/queue.py
+  - path: framework/attention/hygiene.py
+  - path: framework/attention/queue_card.py
+
   # --- judged config (NOT runtime-written) + rules ---
   - path: instance/config/act-first-surfaces.yml
   - path: cabinet/mcp-scope.yml

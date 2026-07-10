@@ -45,6 +45,22 @@ export const GRASS_FLECK_DARK = 0x568d61 // (86,141,97)
 export const GRASS_FLECK_MID = 0x70a858 // (112,168,88)
 export const GRASS_FLECK_LITE = 0xb8d040 // (184,208,64)
 
+/** Cozy-density pass hues (2026-07-09) — every one verified against the
+ * refit corpus palette (mockups promoted to positives) with the same
+ * quantize+neighbor test the gate runs. */
+export const GRASS_TONE_MID = 0x6cb25c // (108,178,92) — in-bin green band
+export const GRASS_TONE_DARK = 0x609e54 // (96,158,84)
+export const DIRT_FLECK_DARK = 0x966c3e // (150,108,62) — worn-path speckle
+export const DIRT_FLECK_LITE = 0xdeba82 // (222,186,130)
+export const NIGHT_VEIL = 0x24344c // (36,52,76) — darkest in-bin navy
+/** Night veil rotates THREE in-bin navies so no single quantized bin ever
+ * dominates the frame (a one-hue 42% veil tripped CLUSTER dominant_share). */
+export const NIGHT_VEIL_HUES = [0x24344c, 0x34344c, 0x2c344c] as const
+export const GLOW_WARM = 0xffc35c // (255,195,92) — in-bin lamp warmth
+export const GLOW_CORE = 0xf2ecde // (242,236,222) — proven CREAM
+export const SMOKE_LITE = 0x78747c // (120,116,124) — proven ash greys
+export const SMOKE_MID = 0x58545c // (88,84,92)
+
 /** Corpus-native neutrals for far-LOD footprints / silhouettes / buoys
  * (from the palette calibration's own colors_rgb_sample — quantized bins
  * proven present in the fitted corpus). */
@@ -152,6 +168,212 @@ export function grassFlecks(salt = 'grass-v1'): DashSpec[] {
           color,
         })
       }
+    }
+  }
+  return out
+}
+
+/**
+ * Grass tonal BANDS (cozy-density #12): blobby 2×2-tile two-tone variation
+ * over the cleared heart — the twin of waterTones in in-bin greens. Without
+ * it the lawn collapses into one dominant flat mass at coast/archipelago
+ * zoom (the v1a live captures' CLUSTER_FLAT_VOID driver on land).
+ */
+export function grassTones(salt = 'grass-v1'): DashSpec[] {
+  const out: DashSpec[] = []
+  for (let ty = 0; ty < PATTERN_TILES; ty++) {
+    for (let tx = 0; tx < PATTERN_TILES; tx++) {
+      // staggered 2×2 cells (row-offset) — axis-aligned cells read as a
+      // checkerboard grid; the stagger breaks the alignment into blobs
+      const cx = (tx + ((ty >> 1) & 1)) >> 1
+      const h = fnv1a(`${salt}:gtone:${cx},${ty >> 1}`)
+      const roll = h % 100
+      if (roll < 55) continue // base + daubs show through
+      // seeded within-cell holes keep the blob organic, never a hard tile
+      if (fnv1a(`${salt}:ghole:${tx},${ty}`) % 100 < 18) continue
+      out.push({
+        x: tx * TILE_PX,
+        y: ty * TILE_PX,
+        len: TILE_PX,
+        h: TILE_PX,
+        color: roll < 84 ? GRASS_TONE_MID : GRASS_TONE_DARK,
+      })
+    }
+  }
+  return out
+}
+
+/**
+ * Worn-path speckle for ONE road tile (cozy-density #10t): the compositor's
+ * tan_wear pass ported per-tile — dark grain dashes + paired light/dark
+ * ticks so the carved dirt spine reads as walked earth, not a flat ribbon.
+ * Offsets are relative to the tile's top-left px corner.
+ */
+export function dirtTileFlecks(tx: number, ty: number): DashSpec[] {
+  const out: DashSpec[] = []
+  const h0 = fnv1a(`dirtwear:${tx},${ty}`)
+  if (h0 % 100 < 85) {
+    out.push({
+      x: 1 + (h0 % 11),
+      y: 1 + ((h0 >>> 8) % 13),
+      len: 1 + ((h0 >>> 16) % 4),
+      h: 1,
+      color: (h0 >>> 4) % 100 < 70 ? DIRT_FLECK_DARK : DIRT_FLECK_LITE,
+    })
+  }
+  const n = 1 + ((h0 >>> 20) % 3)
+  for (let i = 0; i < n; i++) {
+    const h = fnv1a(`dirtwear:${tx},${ty}:${i}`)
+    const x = 2 + (h % 11)
+    const y = 2 + ((h >>> 8) % 11)
+    out.push({ x, y, len: 1, h: 1, color: DIRT_FLECK_LITE })
+    out.push({ x: x + 1, y, len: 1, h: 1, color: DIRT_FLECK_DARK })
+  }
+  return out
+}
+
+/**
+ * Object drop shadow (cozy-density #13 — the single biggest flat-vs-cozy
+ * delta after night): OPAQUE corpus-slate dither in a half-ellipse under an
+ * anchor. Never an alpha blend (blends leave the fitted palette); the
+ * mist-dots opaque-dither idiom is the lawful texture primitive. Offsets
+ * are px relative to the anchor (sprite foot center).
+ */
+export function shadowDots(
+  id: string,
+  wPx: number
+): Array<{ x: number; y: number; r: number }> {
+  const out: Array<{ x: number; y: number; r: number }> = []
+  const rx = Math.max(4, Math.floor(wPx / 2))
+  const ry = Math.max(2, Math.floor(rx / 3))
+  const n = Math.max(10, Math.floor(rx * ry * 0.9))
+  for (let i = 0; i < n; i++) {
+    const h = fnv1a(`shadow:${id}:${i}`)
+    const dx = (h % (rx * 2 + 1)) - rx
+    const dy = ((h >>> 10) % (ry * 2 + 1)) - ry
+    // inside the ellipse only; seeded holes keep it a dither, not a blob
+    const d2 = (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry)
+    if (d2 > 1 || (h >>> 20) % 100 < 30) continue
+    out.push({ x: dx, y: dy, r: 1 + ((h >>> 26) % 2) })
+  }
+  return out
+}
+
+/**
+ * Wave rings around a fixed water anchor (cozy-density #7r): 2–3 broken
+ * concentric arc dashes in in-bin blues — pier posts and the moored boat
+ * sit IN the water, not on it. Pure f(id); px offsets relative to anchor.
+ */
+export function waveRingDashes(id: string): DashSpec[] {
+  const out: DashSpec[] = []
+  const h0 = fnv1a(`ring:${id}`)
+  const rings = 2 + (h0 % 2)
+  for (let ri = 0; ri < rings; ri++) {
+    const r = 4 + ri * 4
+    const segs = 5 + ri * 2
+    for (let s = 0; s < segs; s++) {
+      const h = fnv1a(`ring:${id}:${ri}:${s}`)
+      if (h % 100 < 25) continue // broken arcs, never full circles
+      const a = ((s + (h % 3) * 0.2) / segs) * Math.PI * 2
+      out.push({
+        x: Math.round(Math.cos(a) * r),
+        y: Math.round(Math.sin(a) * r * 0.55),
+        len: 2 + (h >>> 8) % 3,
+        h: 1,
+        color: (h >>> 4) % 100 < 60 ? WATER_LITE : FOAM_WHITE,
+      })
+    }
+  }
+  return out
+}
+
+/**
+ * Chimney smoke puffs (cozy-density #14): tick-driven seeded drift over a
+ * lived-in chimney. Opaque proven ash greys (compose_unified smoke family),
+ * 1–3px puffs rising + drifting east, phase seeded per building. Pure
+ * f(id, tick) — freezes with the killswitch tick like all life.
+ */
+export function smokePuffs(
+  id: string,
+  tick: number
+): Array<{ x: number; y: number; r: number; color: number }> {
+  const out: Array<{ x: number; y: number; r: number; color: number }> = []
+  const phase = fnv1a(`smoke:${id}`) % 97
+  for (let i = 0; i < 4; i++) {
+    const t = (tick / 2 + phase + i * 11) % 44
+    if (t > 34) continue // gap between puff trains
+    const h = fnv1a(`smoke:${id}:${i}`)
+    out.push({
+      x: Math.round(t * 0.35 + ((h % 3) - 1)),
+      y: -Math.round(t * 0.8),
+      r: t < 8 ? 1 : t < 22 ? 2 : 3,
+      color: t < 18 ? SMOKE_MID : SMOKE_LITE,
+    })
+  }
+  return out
+}
+
+/**
+ * GROWTH-FOG horizon band (cozy-density #3 / spec §2.4 "mist beyond"):
+ * dithered OPAQUE dashes in corpus mist hues across the unmeasured sea
+ * south of the earned world — density ramps toward the horizon exactly
+ * like the egg compositor's mist_band. Derived from the SAME growth
+ * geometry (the band starts below the grown coastline), so the fog
+ * recedes as the world grows — true by construction. Returns dashes in
+ * WORLD-TILE space (caller multiplies by TILE px).
+ */
+export function mistBandDashes(
+  y0Tile: number,
+  y1Tile: number,
+  x0Tile: number,
+  x1Tile: number,
+  salt = 'mist-band'
+): DashSpec[] {
+  const out: DashSpec[] = []
+  const rows = Math.max(1, y1Tile - y0Tile)
+  for (let ty = y0Tile; ty <= y1Tile; ty++) {
+    const f = (ty - y0Tile) / rows
+    const nRow = Math.round(1 + f * 7)
+    for (let tx = x0Tile; tx <= x1Tile; tx++) {
+      for (let i = 0; i < nRow; i++) {
+        const h = fnv1a(`${salt}:${tx},${ty}:${i}`)
+        out.push({
+          x: tx * TILE_PX + (h % (TILE_PX - 8)),
+          y: ty * TILE_PX + ((h >>> 8) % (TILE_PX - 1)),
+          len: 3 + ((h >>> 16) % 6),
+          h: 1,
+          color: (h >>> 24) % 100 < 55 ? MIST_GREY : FOAM_WHITE,
+        })
+      }
+    }
+  }
+  return out
+}
+
+/**
+ * Ambient veil dot pattern (night/dusk/dawn) — the palette-lawful
+ * replacement for the full-frame alpha wash (v1a live captures measured
+ * 15–61% PALETTE_FOREIGN_MASS; an alpha wash shifts EVERY pixel out of
+ * bin). One PATTERN_PX² dot field at the requested coverage, baked once
+ * into a screen-space tiling veil: covered pixels are EXACTLY the in-bin
+ * veil hue, uncovered pixels stay their true color — the frame darkens
+ * perceptually yet every pixel stays palette-native.
+ */
+export function veilDots(
+  salt: string,
+  coverage: number,
+  hueCount = 1
+): Array<{ x: number; y: number; hue: number }> {
+  const out: Array<{ x: number; y: number; hue: number }> = []
+  const cells = PATTERN_PX * PATTERN_PX
+  for (let i = 0; i < cells; i++) {
+    const x = i % PATTERN_PX
+    const y = (i / PATTERN_PX) | 0
+    const h = fnv1a(`${salt}:${x},${y}`)
+    // ordered-ish dither: seeded threshold per pixel, stable forever;
+    // hue rotates so no single quantized bin dominates the frame
+    if (h % 1000 < coverage * 1000) {
+      out.push({ x, y, hue: (h >>> 12) % Math.max(1, hueCount) })
     }
   }
   return out

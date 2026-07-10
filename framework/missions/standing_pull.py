@@ -1,4 +1,4 @@
-"""Standing pull [sovereign spec §4 SOV-8] — R1-R5 ranked internal work
+"""Standing pull [sovereign spec §4 SOV-8] — R1-R6 ranked internal work
 sources → `shared/interfaces/standing-missions.yml`.
 
 Sovereign doctrine: the cabinet never idles waiting for a Captain outcome —
@@ -12,6 +12,9 @@ unblocks or protects the estate:
                                   you cannot measure is theater")
   R5  hygiene                    (proposals parked pending_captain, draft
                                   skills awaiting validation)
+  R6  label starvation           (prediction-calibration series: predictions
+                                  flow but ground truth doesn't — the learning
+                                  core runs on labels, so repair the supply)
 
 The pull writes ONE file — `shared/interfaces/standing-missions.yml`, in the
 outcomes-schema shape (`deployment:` + `outcomes:` list) so the mission
@@ -40,9 +43,12 @@ _FRAMEWORK_ROOT = Path(__file__).resolve().parents[2]
 if str(_FRAMEWORK_ROOT) not in sys.path:
     sys.path.insert(0, str(_FRAMEWORK_ROOT))
 
-SOURCES = ("R1", "R2", "R3", "R4", "R5")
+SOURCES = ("R1", "R2", "R3", "R4", "R5", "R6")
 DEFAULT_CAP = 5           # standing outcomes written per pull (highest rank first)
 FALSIFIER_STALE_DAYS = 3  # R4 fires when the series is silent this long
+LABEL_RATIO_FLOOR = 0.2   # R6: below this ground-truthed/predictions = starved
+LABEL_MIN_PREDICTIONS = 5  # R6 ratio only judged on a non-trivial sample
+LABEL_STALE_DAYS = 3      # R6: series silent this long = supply unmeasured
 
 
 def _root(root: str | Path | None = None) -> Path:
@@ -290,6 +296,74 @@ def _r5_hygiene(root: Path) -> list[dict[str, Any]]:
     return out
 
 
+def _r6_labels(root: Path, now: str) -> list[dict[str, Any]]:
+    """Label-starvation repair (2026-07-09, report #1 priority): the learning
+    core runs on labels, and the prediction-calibration series (W9/A10) is
+    where the supply is measured. Fires when predictions flow but ground
+    truth doesn't (ratio under LABEL_RATIO_FLOOR on a non-trivial sample, or
+    zero labels at all), or when the supply is UNMEASURED (series absent /
+    stale) — an unmeasured label economy is starvation you can't even see."""
+    try:
+        series = root / "shared" / "interfaces" / "prediction-calibration.jsonl"
+        nowdt = datetime.strptime(now, "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=timezone.utc)
+        floor = (nowdt - timedelta(days=LABEL_STALE_DAYS)).date().isoformat()
+        newest: dict[str, Any] = {}
+        if series.exists():
+            for line in series.read_text().splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(row, dict) and \
+                        str(row.get("date") or "") >= str(newest.get("date") or ""):
+                    newest = row
+        newest_date = str(newest.get("date") or "")
+        if not newest_date or newest_date < floor:
+            detail = newest_date or "never"
+            return [{
+                "source": "R6",
+                "rank": (1, detail),
+                "id": _sid("R6", "unmeasured"),
+                "name": "Restore label-supply telemetry",
+                "description": _no_marker(
+                    f"[standing/R6] prediction-calibration.jsonl newest line is "
+                    f"{detail} (> {LABEL_STALE_DAYS}d stale) — the label economy "
+                    "is unmeasured; get the prediction scorer emitting again")[:300],
+                "criteria": [
+                    "prediction-calibration.jsonl carries a line dated within 1 day",
+                ],
+            }]
+        n_pred = int(newest.get("n_predictions") or 0)
+        n_truth = int(newest.get("n_ground_truthed") or 0)
+        starved = (n_pred > 0 and n_truth == 0) or (
+            n_pred >= LABEL_MIN_PREDICTIONS
+            and n_truth / n_pred < LABEL_RATIO_FLOOR)
+        if not starved:
+            return []
+        return [{
+            "source": "R6",
+            "rank": (0, newest_date),
+            "id": _sid("R6", "starved"),
+            "name": "Repair label starvation",
+            "description": _no_marker(
+                f"[standing/R6] {newest_date}: {n_truth}/{n_pred} predictions "
+                "ground-truthed — the org acts and predicts but barely learns. "
+                "Grow verdict supply: reconcile acted rows past TTL, surface "
+                "binder verdicts, widen F1 label mining")[:300],
+            "criteria": [
+                "newest prediction-calibration line shows n_ground_truthed/"
+                f"n_predictions >= {LABEL_RATIO_FLOOR} (sample >= "
+                f"{LABEL_MIN_PREDICTIONS})",
+            ],
+        }]
+    except Exception:
+        return []
+
+
 # ---------------------------------------------------------------------------
 # collect / write / run
 # ---------------------------------------------------------------------------
@@ -298,14 +372,14 @@ def collect(
     root: str | Path | None = None,
     now: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Every standing-work candidate, ranked: R1 before R2 … before R5, then
+    """Every standing-work candidate, ranked: R1 before R2 … before R6, then
     each source's own rank tuple. Read-only; never raises."""
     rootp = _root(root)
     ts = _now(now)
     candidates: list[dict[str, Any]] = []
     for src, rows in (("R1", _r1_needs(rootp, ts)), ("R2", _r2_gaps(rootp)),
                       ("R3", _r3_integrity(ts)), ("R4", _r4_falsifier(rootp, ts)),
-                      ("R5", _r5_hygiene(rootp))):
+                      ("R5", _r5_hygiene(rootp)), ("R6", _r6_labels(rootp, ts))):
         for row in rows:
             row["_order"] = (SOURCES.index(src), *row.pop("rank"))
             candidates.append(row)
@@ -397,7 +471,7 @@ def run(
 def main(argv: list[str] | None = None) -> int:  # pragma: no cover - thin CLI
     import argparse
     parser = argparse.ArgumentParser(
-        description="Standing pull — R1-R5 ranked sources → standing-missions.yml "
+        description="Standing pull — R1-R6 ranked sources → standing-missions.yml "
                     "(sovereign only; never touches outcomes.yml).")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--cap", type=int, default=DEFAULT_CAP)

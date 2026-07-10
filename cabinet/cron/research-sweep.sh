@@ -1,12 +1,22 @@
 #!/bin/bash
-# research-sweep.sh — Triggers CRO to run a research sweep
-# Runs every 4 hours via cron
+# research-sweep.sh — Triggers the research owner to run a research sweep.
+# Target officer: RESEARCH_SWEEP_OFFICER (default cos — the CRO seat was
+# retired; the live roster is cos + lane CEOs + comms-officer, and research
+# sweeps are the Chair's org-plane duty now). Scheduled via the
+# cabinet/services.yml row `research-sweep` (twice daily); this header used
+# to claim 4h/CRO — fixed 2026-07-09 (W10: the cron fired into a dead
+# officer stream for as long as the CRO seat has been retired).
 
 TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
 
-REDIS_URL="${REDIS_URL:-redis://redis:6379}"
-REDIS_HOST=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f1)
-REDIS_PORT=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f2)
+# B4 Mac portability (matches cabinet/scripts/lib/triggers.sh): an explicit
+# REDIS_HOST (the generated launchd wrapper sets localhost) WINS; REDIS_URL is
+# the fallback for docker deployments that set it in the compose env. The old
+# unconditional derive clobbered the wrapper's REDIS_HOST with the docker-era
+# `redis` hostname → FATAL on every Mac-native run (2026-07-10 deploy).
+REDIS_URL="${REDIS_URL:-redis://localhost:6379}"
+REDIS_HOST="${REDIS_HOST:-$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f1)}"
+REDIS_PORT="${REDIS_PORT:-$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f2)}"
 
 TRIGGER_MSG="[$TIMESTAMP] Scheduled research sweep. Review current product priorities in shared/backlog.md, identify relevant research questions, and produce a research brief to shared/interfaces/research-briefs/ (Library if persistent value)."
 
@@ -40,11 +50,12 @@ fi
 
 # trigger_send writes to stderr on XADD failure; capture stderr so we can
 # distinguish real success from silent-drop and refuse to print false-positive.
-_send_err=$(OFFICER_NAME=cron trigger_send cro "$TRIGGER_MSG" 2>&1 >/dev/null)
+TARGET_OFFICER="${RESEARCH_SWEEP_OFFICER:-cos}"
+_send_err=$(OFFICER_NAME=cron trigger_send "$TARGET_OFFICER" "$TRIGGER_MSG" 2>&1 >/dev/null)
 _send_rc=$?
 if [ "$_send_rc" -ne 0 ] || [ -n "$_send_err" ]; then
   echo "[$TIMESTAMP] research-sweep.sh FATAL: trigger_send failed (rc=$_send_rc, err=${_send_err:-none}) — trigger NOT pushed" >&2
   exit 1
 fi
 
-echo "[$TIMESTAMP] Research sweep trigger pushed"
+echo "[$TIMESTAMP] Research sweep trigger pushed to $TARGET_OFFICER"

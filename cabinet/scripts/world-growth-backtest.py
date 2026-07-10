@@ -545,8 +545,60 @@ def replay(config: dict, history: dict) -> dict:
 
 # ── timelapse strip rendering (compositor lineage; optional) ────────────────
 
+def _fnv1a(s: str) -> int:
+    h = 0x811C9DC5
+    for ch in s.encode():
+        h ^= ch
+        h = (h * 0x01000193) & 0xFFFFFFFF
+    return h
+
+
+# Ambience buckets mirror the engine (sprites-outdoor bucketOf); veils are
+# OPAQUE seeded dither in in-bin hues — the palette-lawful ambience idiom
+# (an alpha wash shifts every pixel out of the corpus bins; the cozy pass
+# replaced it on the live engine too). day → byte-identical passthrough.
+_VEILS = {
+    "dawn": ([(242, 236, 222)], 0.08),   # proven CREAM
+    "dusk": ([(255, 200, 144)], 0.16),   # in-bin warm
+    # night rotates THREE in-bin navies so no single quantized bin ever
+    # dominates the frame (one-hue 42% veil tripped CLUSTER dominant_share)
+    "night": ([(36, 52, 76), (52, 52, 76), (44, 52, 76)], 0.42),
+}
+
+
+def _bucket_of(hour: int) -> str:
+    if 6 <= hour < 8:
+        return "dawn"
+    if 8 <= hour < 18:
+        return "day"
+    if 18 <= hour < 21:
+        return "dusk"
+    return "night"
+
+
+def _apply_ambience(im, hour: int):
+    """Beauty-shot ambience for a chrome-free frame: hour arrives as DATA
+    (render input, never a wall clock — determinism-lawful; same frame +
+    same hour = same bytes forever)."""
+    bucket = _bucket_of(hour)
+    veil = _VEILS.get(bucket)
+    if veil is None:
+        return im
+    hues, coverage = veil
+    out = im.copy().convert("RGB")
+    px = out.load()
+    thr = int(coverage * 1000)
+    for y in range(out.height):
+        for x in range(out.width):
+            h = _fnv1a(f"veil:{bucket}:{x},{y}")
+            if h % 1000 < thr:
+                px[x, y] = hues[(h >> 12) % len(hues)]
+    return out
+
+
 def render_strip(timeline: dict, out_png: Path, compositor_dir: Path,
-                 frame_dates: Optional[List[str]] = None) -> None:
+                 frame_dates: Optional[List[str]] = None,
+                 frame_hour: Optional[int] = None) -> None:
     sys.path.insert(0, str(compositor_dir / "world-unified"))
     sys.path.insert(0, str(compositor_dir / "world-next"))
     import compose_growth as G          # noqa: E402  (imports compose_unified as U)
@@ -861,9 +913,14 @@ def render_strip(timeline: dict, out_png: Path, compositor_dir: Path,
         if frame_dates and rec["date"] in frame_dates:
             # chrome-free world frame at up x2 — the aesthetic-gate unit, same
             # scale the ratified compose lineage gates at ("the gate judges
-            # the world, not the chrome"; strip gutter = analysis chrome)
+            # the world, not the chrome"; strip gutter = analysis chrome).
+            # frame_hour (optional beauty-shot data): ambience veil applied
+            # to the NATIVE frame only — the strip stays neutral-day.
             native = out_png.parent / f"frame-{cand}-{rec['date']}.png"
-            U.up(frame, 2).convert("RGB").save(native)
+            native_im = U.up(frame, 2).convert("RGB")
+            if frame_hour is not None:
+                native_im = _apply_ambience(native_im, frame_hour)
+            native_im.save(native)
         frame = frame.resize((thumb_w, thumb_h), Image.NEAREST)
         strip.paste(frame, (x, y))
         n_growth = sum(1 for c in rec["changes"] if c["kind"] == "growth")

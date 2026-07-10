@@ -78,6 +78,12 @@ export interface WorldSnapshot {
    * world falls back honestly (night-at-bunk / day render).
    */
   clock?: SnapshotClock | null
+  /**
+   * pending_captain_items (world-spec §14 P1): |Decisions| incl. overflow
+   * from the attention census — the ONE int the HUD chip, lantern gantry,
+   * and mailbox flag all render. 0 when the census is dark (chip hidden).
+   */
+  pendingCaptainItems?: number
 }
 
 export interface GrammarStatus {

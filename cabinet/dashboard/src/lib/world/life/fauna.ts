@@ -18,7 +18,7 @@
  */
 import { fnv1a } from '../hash'
 
-export type FaunaKind = 'bird' | 'butterfly' | 'fish' | 'cat' | 'dog'
+export type FaunaKind = 'bird' | 'butterfly' | 'fish' | 'cat' | 'dog' | 'chicken'
 
 export interface FaunaSprite {
   id: string
@@ -44,6 +44,11 @@ export interface FaunaInput {
   quayWater: Array<{ x: number; y: number }>
   /** The one cat's perch (null = no cat placed yet). */
   catPerch?: { x: number; y: number } | null
+  /** The one dog's perch (cozy pass 2026-07-09 — pack sleep-art landed;
+   * null = no Great House porch yet). Exactly one dog, forever. */
+  dogPerch?: { x: number; y: number } | null
+  /** Chicken-yard spots (pens/barn yard) — a flock, never a crowd. */
+  chickenSpots?: Array<{ x: number; y: number }>
   /** Optional salt so two deployments never share fauna schedules. */
   seedSalt?: string
 }
@@ -158,6 +163,64 @@ function fishAt(
   }
 }
 
+// ── chickens: seeded peck loop in the pens yard ─────────────────────────────
+export const CHICKEN_CAP = 3
+export const CHICKEN_WINDOW = 48 // 12 s per posture window
+
+export type ChickenAnim = 'idle' | 'walk' | 'peck'
+
+/** frame encodes anim row * 8 + subframe (renderer: row=frame>>3, sub=&7). */
+export function chickenAnimOf(frame: number): { anim: ChickenAnim; sub: number } {
+  const row = frame >> 3
+  return { anim: row === 0 ? 'idle' : row === 1 ? 'walk' : 'peck', sub: frame & 7 }
+}
+
+function chickenAt(
+  i: number,
+  spot: { x: number; y: number },
+  tick: number,
+  salt: string
+): FaunaSprite {
+  const seed = `${salt}chicken:${i}`
+  const w = Math.floor((tick + (fnv1a(`${seed}:phase`) % 31)) / CHICKEN_WINDOW)
+  const roll = fnv1a(`${seed}:${w}`) % 10
+  // mostly pecking about, sometimes a small seeded wander step
+  const anim: ChickenAnim = roll < 5 ? 'peck' : roll < 8 ? 'idle' : 'walk'
+  const dx =
+    anim === 'walk'
+      ? (((fnv1a(`${seed}:dx:${w}`) % 3) - 1) * ((tick % CHICKEN_WINDOW) / CHICKEN_WINDOW)) * 0.8
+      : 0
+  const sub = Math.floor(tick / 6) % (anim === 'peck' ? 4 : 2)
+  const row = anim === 'idle' ? 0 : anim === 'walk' ? 1 : 2
+  return {
+    id: `fauna:chicken:${i}`,
+    kind: 'chicken',
+    x: spot.x + dx,
+    y: spot.y,
+    frame: row * 8 + sub,
+    facing: fnv1a(`${seed}:face:${w}`) % 2 === 0 ? 'left' : 'right',
+    layer: 'ground',
+  }
+}
+
+// ── the dog: asleep on the Great House porch (pack sleep frames) ────────────
+function dogAt(
+  perch: { x: number; y: number },
+  tick: number,
+  salt: string
+): FaunaSprite {
+  return {
+    id: 'fauna:dog',
+    kind: 'dog',
+    x: perch.x,
+    y: perch.y,
+    // slow breathing loop over the two pack sleep frames
+    frame: Math.floor(tick / 16) % 2,
+    facing: fnv1a(`${salt}dog:facing`) % 2 === 0 ? 'left' : 'right',
+    layer: 'ground',
+  }
+}
+
 // ── the cat: perch loop + client-only pet reaction ──────────────────────────
 export const CAT_LOOP_WINDOW = 64 // 16 s per posture window
 export const PET_REACTION_TICKS = 12
@@ -247,6 +310,13 @@ export function faunaCard(kind: FaunaKind): FaunaCard {
       proof: 'Decorative by law (bestiary v1a). Exactly one dog, forever.',
       decorative: true,
     },
+    chicken: {
+      what: 'A yard chicken.',
+      now: joy,
+      proof:
+        'Seeded ambience (fnv1a peck loop); carries no count, no data — the flock was demoted to fauna by §15.5.',
+      decorative: true,
+    },
   }
   return cards[kind]
 }
@@ -272,6 +342,12 @@ export function faunaAt(input: FaunaInput): FaunaSprite[] {
     const f = fishAt(i, a, input.tick, salt)
     if (f) out.push(f)
   })
+  if (isDay(input.clockHour)) {
+    ;(input.chickenSpots ?? []).slice(0, CHICKEN_CAP).forEach((s, i) => {
+      out.push(chickenAt(i, s, input.tick, salt))
+    })
+  }
   if (input.catPerch) out.push(catAt(input.catPerch, input.tick, salt))
+  if (input.dogPerch) out.push(dogAt(input.dogPerch, input.tick, salt))
   return out
 }
