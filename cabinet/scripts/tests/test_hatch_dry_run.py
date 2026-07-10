@@ -78,6 +78,9 @@ def test_dry_run_defaults_prints_plan_and_exits_zero(tmp_path):
     assert "start-officer-mac.sh cos --dry-run" in out
     assert "deploy-mac.sh --officer cos --dry-run" in out
     assert "first-briefing.sh --local" in out
+    # Wave B: the demo-receipt step rides the plan right after the first receipt
+    assert "emit-demo-receipt.sh" in out
+    assert out.index("first-briefing.sh --local") < out.index("emit-demo-receipt.sh")
     # flight-recorder stamps are part of the printed plan
     assert "HATCH_PROOFS_DONE" in out
     assert "FIRST_RECEIPT_DONE" in out

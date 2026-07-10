@@ -18,6 +18,10 @@
 #   4. proofs                P-a null-hatch.sh · P-b clean-room pytest subset ·
 #                            P-c dry renders · P-d kill-switch drill (--with-drill)
 #   5. FIRST RECEIPT         first-briefing.sh --local (prints where it landed)
+#      + DEMO receipt        emit-demo-receipt.sh — one LABELED demo receipt
+#                            (real schema path + real renderer, NEVER
+#                            journaled) so the Captain sees receipt anatomy
+#                            in minute one
 #   6. move-in               DEFERRED by default (--no-launchd is the v0 default;
 #                            --with-launchd runs runbook section 6)
 #
@@ -55,7 +59,8 @@ usage() {
 Usage: bash cabinet/scripts/hatch.sh [flags]
 
 One command to hatch a Captain's Cabinet: host setup -> instance ->
-activation -> proof gates -> first receipt (the genesis briefing), with a
+activation -> proof gates -> first receipt (the genesis briefing) -> one
+LABELED demo receipt (receipt anatomy, emit-demo-receipt.sh), with a
 flight log timing every step. v0 stops short of launchd by default and
 prints numbered ERRAND NOTES for every human-only step.
 
@@ -189,14 +194,19 @@ emit_plan() {
   echo "12. [first-receipt] bash cabinet/scripts/first-briefing.sh --local"
   echo "                    then print where the briefing landed"
   echo "    -- stamp FIRST_RECEIPT_DONE; TTFR = proofs-done -> first-receipt --"
+  echo "13. [demo-receipt]  bash cabinet/scripts/emit-demo-receipt.sh"
+  echo "                    ONE labeled DEMO receipt (demo:true row built via the"
+  echo "                    real schema path, rendered by the real receipt"
+  echo "                    renderer — NEVER journaled: the live undo journal"
+  echo "                    stays empty) -> instance/memory/demo-receipt.md"
   if [ "$WITH_LAUNCHD" = "1" ]; then
-    echo "13. [move-in]       bash cabinet/scripts/deploy-mac.sh --officer cos"
+    echo "14. [move-in]       bash cabinet/scripts/deploy-mac.sh --officer cos"
     echo "                    $PY cabinet/scripts/generate-plists.py"
     echo "                    plutil -lint + launchctl bootout (idempotent re-run) + bootstrap"
     echo "                    gui/\$(id -u) for each generated plist"
     echo "                    bash cabinet/scripts/health-check.sh"
   else
-    echo "13. [move-in]       DEFERRED (v0 default --no-launchd) — printed as an errand note"
+    echo "14. [move-in]       DEFERRED (v0 default --no-launchd) — printed as an errand note"
   fi
   echo ""
   echo "Flight recorder: per-step timings + stamps -> flight log; summary table,"
@@ -476,6 +486,14 @@ else
   tail -n 8 "$RECEIPT_LOG" 2>/dev/null | sed 's/^/  | /' || true
 fi
 
+# 5b. DEMO receipt — one labeled receipt-anatomy example beside the briefing
+# (Wave B day-1 legibility). Same wiring discipline as the first receipt: the
+# script's own machine-readable DEMO_RECEIPT= line is the contract.
+run_step demo-receipt "DEMO receipt: seed one labeled receipt-anatomy example (emit-demo-receipt.sh)" \
+  bash cabinet/scripts/emit-demo-receipt.sh
+DEMO_LOG="$HATCH_LOG_DIR/step-demo-receipt.log"
+DEMO_LANDING="$(sed -n 's/^DEMO_RECEIPT=//p' "$DEMO_LOG" 2>/dev/null | tail -1 || true)"
+
 # 6. move-in (runbook section 6) — deferred by default
 if [ "$WITH_LAUNCHD" = "1" ]; then
   run_step movein-chair "move-in: deploy the Chair (launchd)" \
@@ -515,6 +533,12 @@ GEN_LOG_HINT="$HATCH_LOG_DIR/step-gen.log"
 TELEGRAM_NAMED="$(telegram_named)"
 print_errand_notes "$WITH_LAUNCHD" "$TELEGRAM_NAMED" "$GEN_LOG_HINT"
 flight_summary
+echo ""
+echo "==== WHERE THINGS LIVE (minute one) ===="
+echo "First briefing:        ${RECEIPT_LANDING:-see $RECEIPT_LOG}"
+echo "DEMO receipt:          ${DEMO_LANDING:-see $DEMO_LOG}"
+echo "                       (labeled demo — receipt anatomy; reply-to-undo works on real receipts only)"
+echo "How it's governed:     docs/how-your-cabinet-is-governed.md  (one page, plain language)"
 echo ""
 echo "==== HATCH VERDICT: GREEN (v0 chain complete) ===="
 if [ "$WITH_LAUNCHD" = "1" ]; then

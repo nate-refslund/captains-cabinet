@@ -107,6 +107,11 @@ instance/loop-prompts/
 instance/memory/tier2/**/*.md
 !instance/memory/tier2/**/.gitkeep
 
+# Day-1 synthetic runtime artifacts (hatch-seeded local renders — a careless
+# `git add` must never commit them)
+instance/memory/demo-receipt.md
+instance/memory/first-briefing-*.md
+
 # Runtime archives (migration snapshots, etc.)
 instance/archive/
 

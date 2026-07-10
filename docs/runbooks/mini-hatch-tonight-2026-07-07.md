@@ -135,6 +135,9 @@ bash cabinet/scripts/bootstrap-roles.sh --roster instance/config/roster.yml
 
 # 4.5 Assemble the runtime
 bash cabinet/scripts/load-preset.sh
+#     (also materializes instance/config/posture.yml + trust-ladder.yml from
+#     their .example twins when absent — guardian/floor defaults; existing
+#     files or symlinks are never overwritten)
 ```
 
 TCC grants (`grant-mac-permissions.sh`) are **NOT in tonight's path** — see

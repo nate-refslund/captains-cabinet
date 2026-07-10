@@ -117,6 +117,8 @@ captains-cabinet/
 
 ## Safety
 
+The whole governance model on one page, plain language: [`docs/how-your-cabinet-is-governed.md`](./docs/how-your-cabinet-is-governed.md).
+
 - **Hard ceiling, forever:** external comms, production deploys, spend, secrets, network writes, credential grants are Captain-gated at every confidence level. Carve-outs are enumerated executor conditions, never lifted ceiling rows. CI asserts no ceiling cell can resolve to auto.
 - **Germline write-protection:** the policy engine, authority matrix, golden evals, and watchdogs are unwritable by officers — no loop may edit its own judge.
 - **Kill switch:** anyone — any officer, any watchdog, the Captain — can halt the fleet; only the Captain can resume. Designed fail-closed: if the switch's state store is unreachable, work stops.
