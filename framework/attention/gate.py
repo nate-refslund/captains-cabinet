@@ -253,7 +253,11 @@ def decide(item: dict, *, ch: "dict | None" = None,
     rhash = _render_hash(text)
 
     base = {"situation_key": skey, "class_id": cid, "silent": resolved["silent"],
-            "text": text}
+            "text": text,
+            # one-card-one-decision surface: channel-neutral inline controls
+            # ride the decision to the transport untouched. Presentation-only:
+            # they never participate in routing or the render-hash identity.
+            "buttons": (item.get("buttons") or None)}
 
     # (1) Identity: a standing card already exists for this situation.
     existing = standing.get(skey)
@@ -266,6 +270,19 @@ def decide(item: dict, *, ch: "dict | None" = None,
     # (2) mute route
     if resolved["route"] == "mute":
         return {**base, "action": "suppress", "reason": "charter-mute"}
+
+    # (2.2) Tiered-escalation admission (captain-surface master prompt §3.9,
+    # 2026-07-10) — DARK unless CABINET_ESCALATION_GATE=1. A NEW captain-bound
+    # decision card must carry an exhaustion proof ("the lane tried X, the
+    # Chair tried Y, this needs the captain because Z") or it BOUNCES back to
+    # the org with the reason. Floor classes are exempt (a safety page is
+    # never blocked); standing-card edits returned at (1); non-open states and
+    # non-decision kinds pass inside check().
+    from framework.attention import escalation
+    esc = escalation.check(item, resolved=resolved)
+    if not esc.get("admitted", True):
+        return {**base, "action": "bounce", "reason": esc.get("reason"),
+                "bounce": esc}
 
     # (2.4) H5 — expiry-streak class demotion (stay-live-until-acted made
     # compatible with adaptive quieting: presentation decays, liveness
@@ -353,12 +370,27 @@ def _default_send(text, **kw):
     # now governs gate delivery too (one door, resolved from instance config).
     from framework.comms.get_channel import get_channel
     return get_channel().send(text, silent=kw.get("silent", False),
-                              feed_meta=kw.get("feed_meta"))
+                              feed_meta=kw.get("feed_meta"),
+                              buttons=kw.get("buttons"))
 
 
 def _default_edit(message_id, text, **kw):
     from framework.comms.get_channel import get_channel
-    return get_channel().edit(message_id, text, feed_meta=kw.get("feed_meta"))
+    return get_channel().edit(message_id, text, feed_meta=kw.get("feed_meta"),
+                              buttons=kw.get("buttons"))
+
+
+def _call_transport(fn, *args, buttons=None, **kw):
+    """Invoke a send/edit transport, passing ``buttons`` only when set — and
+    falling back WITHOUT them for an injected legacy transport whose signature
+    predates the buttons seam (TypeError ⇒ retry plain). A card is better
+    delivered button-less than not delivered."""
+    if buttons:
+        try:
+            return fn(*args, buttons=buttons, **kw)
+        except TypeError:
+            pass
+    return fn(*args, **kw)
 
 
 def briefing_item(item: dict, decision: dict) -> dict:
@@ -406,8 +438,10 @@ def deliver(decision: dict, *, send_fn=None, edit_fn=None, briefing_fn=None,
     feed_meta = {"kind": decision.get("class_id"), "situation_key": skey}
 
     if action == "send":
-        res = send_fn(decision["text"], silent=decision.get("silent", False),
-                      feed_meta=feed_meta)
+        res = _call_transport(send_fn, decision["text"],
+                              silent=decision.get("silent", False),
+                              feed_meta=feed_meta,
+                              buttons=decision.get("buttons"))
         mids = (res or {}).get("message_ids") or []
         if mids:
             standing[skey] = {"message_id": mids[0], "state": "open",
@@ -419,7 +453,9 @@ def deliver(decision: dict, *, send_fn=None, edit_fn=None, briefing_fn=None,
         return res
 
     if action == "edit":
-        res = edit_fn(decision["message_id"], decision["text"], feed_meta=feed_meta)
+        res = _call_transport(edit_fn, decision["message_id"], decision["text"],
+                              feed_meta=feed_meta,
+                              buttons=decision.get("buttons"))
         cur = standing.get(skey)
         if cur is not None:
             cur["render_hash"] = decision.get("render_hash")
@@ -431,6 +467,21 @@ def deliver(decision: dict, *, send_fn=None, edit_fn=None, briefing_fn=None,
     if action in ("briefing", "weekly"):
         briefing_fn(item or {}, decision)
         return {"status": action, "sent": False}
+
+    if action == "bounce":
+        # Tiered-escalation gate (§3.9): the card goes BACK to the producing
+        # officer with the reason — journaled + org-evented so the pattern is
+        # auditable; nothing reaches the Captain.
+        try:
+            from framework.attention import escalation
+            escalation.journal_bounce(item or {}, decision)
+        except Exception:
+            pass
+        b = decision.get("bounce") or {}
+        return {"status": "bounced", "sent": False,
+                "reason": decision.get("reason"),
+                "missing": b.get("missing") or [],
+                "fix": b.get("fix") or ""}
 
     return {"status": "suppressed", "sent": False, "reason": decision.get("reason")}
 

@@ -40,7 +40,7 @@ This document is opinionated and idempotent — every step can be re-run safely.
 ```bash
 mkdir -p ~/work
 cd ~/work
-git clone https://github.com/nate-step/captains-cabinet.git
+git clone https://github.com/nate-refslund/captains-cabinet.git
 cd captains-cabinet
 git checkout claude/convergence-v2    # OR master once this branch is merged
 ```
@@ -51,22 +51,33 @@ git checkout claude/convergence-v2    # OR master once this branch is merged
 bash cabinet/scripts/setup-mac.sh
 ```
 
-`setup-mac.sh` is the single interactive orchestrator. In order it: runs the
-**API-key wizard** (Step 0 — `setup-env.sh`, which walks you through every
-required + optional key, opens signup pages, masks paste input, and writes
-`cabinet/.env` at `chmod 600` — no hand-editing), installs missing Homebrew
-deps (tmux, jq, python3, redis), starts Redis (+ enables AOF), creates required
-directories, bootstraps officer roles, installs the Captain-layer Mac tool
-stack, launches the Cabinet Chrome (sign into Linear/Notion/etc. when it
-opens), prompts for TCC grants, installs any declared extensions
-(`instance/config/extensions.yml`), builds the dashboard, loads the preset,
-verifies the policy engine, and runs the framework test suite. Idempotent.
+`setup-mac.sh` is the single orchestrator; the default (also `--fast`) is a
+FAST boot. In order it: runs the **key wizard** (Step 0 — `setup-env.sh`;
+every key is recommended or optional, nothing is critical-tier — it opens
+signup pages, masks paste input, and writes `cabinet/.env` at `chmod 600`;
+`setup-env.sh --defaults` writes a minimal local-only `.env` with zero cloud
+accounts), installs missing Homebrew deps (tmux, jq, python3, redis), starts
+Redis (+ enables AOF), provisions the LOCAL work store when no connection
+string is configured (`provision-local-postgres.sh` — PostgreSQL 16 +
+pgvector; Neon is the documented cloud alternative, no longer a
+prerequisite), creates required directories, bootstraps officer roles,
+installs the Captain-layer Mac tool stack, installs any declared extensions
+(`instance/config/extensions.yml`), loads the preset, verifies the policy
+engine, and runs the FAST proofs (null-hatch gate + clean-room pytest
+subset). Idempotent.
+
+Opt-in flags (combinable): `--with-sensors` (the old Steps 9-11: screenpipe,
+cua, browser MCPs, Cabinet Chrome profile, TCC grant prompts),
+`--with-dashboard` (npm ci + dashboard build), `--full-suite` (full
+framework pytest suite), `--all` (all of the above).
 
 Verify: `bash cabinet/scripts/setup-mac.sh --check` returns exit 0.
 
 > The wizard already created `cabinet/.env`. To re-run it later (add/replace
-> keys): `bash cabinet/scripts/setup-env.sh --force`. To bootstrap headless
-> (CI/clone) and fill `.env` yourself: `SKIP_ENV_WIZARD=1 bash cabinet/scripts/setup-mac.sh`.
+> keys): `bash cabinet/scripts/setup-env.sh --force`. Headless (CI/clone):
+> `bash cabinet/scripts/setup-env.sh --defaults`, or
+> `SKIP_ENV_WIZARD=1 bash cabinet/scripts/setup-mac.sh` to skip the wizard
+> and fill `.env` yourself.
 
 ## 4. Configuration
 
@@ -203,7 +214,17 @@ This `envsubst`-substitutes paths into the plist templates in `cabinet/launchd/`
   default). Live portfolio roster: `cos`, `polads-ceo`, `stephie-ceo`,
   `comms-officer`.
 - `com.cabinet.limit-reset-watchdog.plist` (auto-resume after account session-limit reset)
-- `com.cabinet.dashboard.plist` (control panel + office-display server on `:3100`)
+- `com.cabinet.dashboard.plist` (control panel + office-display server on `:3100`).
+  Port/bind config (Wave D app-feel): `CABINET_DASHBOARD_PORT` (default 3100)
+  and `CABINET_DASHBOARD_HOST` (default `0.0.0.0` — UNCHANGED: the dashboard
+  stays reachable over Tailscale at `http://<host>:3100`); explicit env
+  (launchd plist) > `cabinet/.env` > default. Loopback-only opt-in:
+  `CABINET_DASHBOARD_HOST=127.0.0.1` in the mini's `cabinet/.env`. Flipping
+  the DEFAULT to loopback is captain-gated (CC-LOOP / OC-LOOPBACK ruling) —
+  **migration step if that flip ever lands**: add
+  `CABINET_DASHBOARD_HOST=0.0.0.0` to the mini's `cabinet/.env` BEFORE
+  deploying the flip if tailnet http reach must persist (or front the
+  dashboard with `tailscale serve`) — no silent loss of documented reach.
 
 Everything else in the daemon/watchdog fleet is **owned by `cabinet/services.yml`**
 (the F0.4 fleet manifest): render with `python3.12 cabinet/scripts/generate-plists.py`

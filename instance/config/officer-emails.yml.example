@@ -1,0 +1,26 @@
+# =============================================================
+# officer-emails.yml.example — the framework-shippable TWIN (egg row R120)
+# =============================================================
+# Copy to instance/config/officer-emails.yml and map YOUR identities.
+# Every address and login below is an obvious placeholder — never commit a
+# real personal email or GitHub login to a shipped example.
+#
+# Spec 039 §5.4 — assignee resolution for tracker email + GH login → officer
+# slug. Two top-level keys: `emails` (assignee.email) and `github_logins`
+# (GH Issues assignee.login). Map source identifier → Cabinet officer slug
+# (or 'captain' — ETL sets founder_action=TRUE when slug='captain').
+emails:
+  cos@cabinet.example.com: cos
+  cpo@cabinet.example.com: cpo
+  cto@cabinet.example.com: cto
+  coo@cabinet.example.com: coo
+  cro@cabinet.example.com: cro
+  # The Captain's own address(es):
+  jane.captain@example.com: captain
+github_logins:
+  example-org-cos: cos
+  example-org-cpo: cpo
+  example-org-cto: cto
+  example-org-coo: coo
+  example-org-cro: cro
+  jane-captain: captain

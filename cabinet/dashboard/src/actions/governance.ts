@@ -1,110 +1,78 @@
 'use server'
 
+/**
+ * governance.ts — read/write the four governance documents.
+ *
+ * The fabricated mock-constitution fallback is DEAD (perfect-cabinet Wave B):
+ * a fresh hatch used to see an invented constitution exactly when it mattered
+ * most (no Redis configured ⇒ mock mode). Reads AND writes are now REAL
+ * `node:fs` operations, always — the documents live in the checkout, so Redis
+ * stays optional for this page. A genuinely missing file renders an honest
+ * "file not found" block, never invented content. Writes used to route
+ * through the docker/mock shell transport, which silently NO-OP'd whenever
+ * Redis was unconfigured while the action still reported success — on a
+ * fresh hatch a Captain's save vanished without a trace. A save now either
+ * really writes the file or really returns an error.
+ *
+ * Path safety: `GOVERNANCE_FILES` is a hardcoded allowlist of repo-relative
+ * paths — the WHOLE universe this module can touch. Keys are checked with an
+ * own-property guard (a hostile key like `__proto__` must never resolve
+ * through the prototype chain), paths resolve against the checkout root per
+ * call (cabinet-root doctrine: the env var is honored per call), and no
+ * user-supplied path fragment ever reaches the filesystem.
+ */
+
+import { promises as fs } from 'node:fs'
+import path from 'node:path'
 import { cabinetPath } from '@/lib/cabinet-root'
-import { dockerWriteFile, dockerReadFile } from '@/lib/docker'
 import { revalidatePath } from 'next/cache'
 
-const IS_MOCK = process.env.MOCK_DATA === 'true' || !process.env.REDIS_URL
-
 const GOVERNANCE_FILES: Record<string, string> = {
-  constitution: cabinetPath('framework/constitution-base.md'),
-  safety: cabinetPath('framework/safety-boundaries-base.md'),
-  registry: cabinetPath('instance/config/role-registry.md'),
-  operating_manual: cabinetPath('CLAUDE.md'),
+  constitution: 'framework/constitution-base.md',
+  safety: 'framework/safety-boundaries-base.md',
+  registry: 'instance/config/role-registry.md',
+  operating_manual: 'CLAUDE.md',
 }
 
-const MOCK_CONTENT: Record<string, string> = {
-  constitution: `# Constitution of the Founder's Cabinet
+// Heads of the two honest failure blocks readGovernanceFile can render IN
+// PLACE of content. The editor loads whatever the read returns, so a Captain
+// hitting Save on an untouched placeholder would otherwise persist an error
+// message as a governance document — updateGovernanceFile refuses content
+// that begins with either. Built here and interpolated below so the guard
+// and the renderer can never drift apart.
+const MISS_BLOCK_HEAD = '> **file not found at `'
+const READ_ERROR_BLOCK_HEAD = '> **could not read `'
 
-## Article I — Purpose
-The Founder's Cabinet exists to serve as an AI-powered executive team for a solo founder.
-Each Officer operates autonomously within defined boundaries, accelerating execution while
-maintaining strategic alignment.
-
-## Article II — Chain of Command
-1. The Captain (founder) holds absolute authority over all Cabinet operations.
-2. No Officer may override, reinterpret, or circumvent a Captain directive.
-3. The Chief of Staff (CoS) coordinates across Officers but does not outrank them.
-
-## Article III — Operating Principles
-1. **Transparency** — All decisions, reasoning, and actions must be auditable.
-2. **Autonomy within bounds** — Officers act independently within their role definition.
-3. **Escalate, don't guess** — When uncertain, ask the Captain.
-4. **Ship, then iterate** — Bias toward action over analysis paralysis.
-5. **Memory is sacred** — Record what you learn. The next session starts where this one ends.
-
-## Article IV — Amendments
-Only the Captain may amend this Constitution. Officers may propose amendments through the
-self-improvement loop, but changes require explicit Captain approval.`,
-
-  safety: `# Safety Boundaries
-
-## Hard Limits (Never Violate)
-
-1. **No unauthorized deployments** — Production deploys require Captain approval.
-2. **No data deletion** — Never drop tables, delete user data, or purge logs without approval.
-3. **No secret exposure** — Never log, display, or transmit API keys or credentials.
-4. **No unauthorized spending** — Never provision paid services without approval.
-5. **No scope creep** — Stay within your role definition. Don't do another Officer's job.
-
-## Retry Limits
-- Maximum 3 retries on any failing operation before escalating.
-- Maximum 2 consecutive failed deploys before halting and notifying Captain.
-
-## Killswitch
-- Check \`cabinet:killswitch\` Redis key before any significant operation.
-- If set to any truthy value, halt all operations and notify Captain.
-
-## Escalation Protocol
-When stuck or uncertain:
-1. Check if another Officer has solved this (memory/skills/).
-2. Check Tier 2 notes for guidance.
-3. If still stuck after 3 attempts, DM the Captain with context.`,
-
-  registry: `# Role Registry
-
-## Active Officers
-
-| Role | Title | Responsibilities |
-|------|-------|-----------------|
-| CoS | Chief of Staff | Coordination, briefings, Captain communication, retros |
-| CTO | Chief Technology Officer | Architecture, code quality, deployments, infrastructure |
-| CPO | Chief Product Officer | Product specs, backlog, user stories, prioritization |
-| CRO | Chief Revenue Officer | Research, competitive analysis, market intelligence |
-
-## Shared Interfaces
-Officers communicate through \`shared/interfaces/\` for artifacts and Redis for notifications.
-
-## Hooks
-- Post-reply: Voice generation (when enabled)
-- Post-tool-use: Trigger delivery from Redis
-- Startup: Load Tier 1 + Tier 2 memory`,
-
-  operating_manual: `# Founder's Cabinet — Operating Context
-
-You are an Officer in the Founder's Cabinet. Read and follow the Constitution before doing any work.
-
-## Required Reading (Every Session)
-1. framework/constitution-base.md (+ preset addendum) — your operating principles
-2. framework/safety-boundaries-base.md (+ preset addendum) — hard limits, never violate
-3. instance/config/role-registry.md — who does what
-4. Your role definition in .claude/agents/<your-role>.md
-5. Your Tier 2 working notes in instance/memory/tier2/<your-role>/
-
-## Memory Protocol
-- Tier 1 (always loaded): This file + Constitution + Safety Boundaries
-- Tier 2 (your notes): Read at session start, write after significant work
-- Tier 3 (episodic): Query on demand from memory/tier3/ or PostgreSQL
-
-(This is mock content — the real file contains the full operating manual.)`,
+/** The allowlisted relative path for a key, or null — never a prototype hit. */
+function allowlistedPath(fileKey: string): string | null {
+  return Object.prototype.hasOwnProperty.call(GOVERNANCE_FILES, fileKey)
+    ? GOVERNANCE_FILES[fileKey]
+    : null
 }
 
 export async function updateGovernanceFile(fileKey: string, content: string) {
-  const path = GOVERNANCE_FILES[fileKey]
-  if (!path) return { success: false, error: 'Invalid document' }
+  const rel = allowlistedPath(fileKey)
+  if (!rel) return { success: false, error: 'Invalid document' }
+
+  const head = content.trimStart()
+  if (head.startsWith(MISS_BLOCK_HEAD) || head.startsWith(READ_ERROR_BLOCK_HEAD)) {
+    return {
+      success: false,
+      error:
+        'refusing to save: this is the "file not found / could not read" ' +
+        'placeholder the reader rendered, not document content — replace it ' +
+        'with the real document before saving',
+    }
+  }
 
   try {
-    await dockerWriteFile(path, content)
+    // Real write, mirroring the real-read contract below — never the docker/
+    // mock shell transport (which no-op'd without Redis yet reported success).
+    // The mkdir only ever creates the fixed allowlisted path's parents, so a
+    // Captain can restore a genuinely missing document from the editor.
+    const abs = cabinetPath(rel)
+    await fs.mkdir(path.dirname(abs), { recursive: true })
+    await fs.writeFile(abs, content, 'utf8')
     revalidatePath('/governance')
     return { success: true }
   } catch (err) {
@@ -116,14 +84,28 @@ export async function updateGovernanceFile(fileKey: string, content: string) {
 }
 
 export async function readGovernanceFile(fileKey: string): Promise<string> {
-  const path = GOVERNANCE_FILES[fileKey]
-  if (!path) return ''
+  const rel = allowlistedPath(fileKey)
+  if (!rel) return ''
 
-  if (IS_MOCK) {
-    return MOCK_CONTENT[fileKey] || `# ${fileKey}\n\n(Mock content for ${fileKey})`
+  try {
+    return await fs.readFile(cabinetPath(rel), 'utf8')
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (code === 'ENOENT' || code === 'ENOTDIR') {
+      // HONEST MISS — the block says exactly what is absent and where;
+      // fabricating a constitution here is what Wave B killed.
+      return (
+        `${MISS_BLOCK_HEAD}${rel}\`** — this checkout has no such ` +
+        `document, so there is nothing to show. (No fabricated fallback: ` +
+        `if you expected content here, restore the file in the repo.)`
+      )
+    }
+    return (
+      `${READ_ERROR_BLOCK_HEAD}${rel}\`** — ` +
+      `${err instanceof Error ? err.message : 'unknown read error'}. ` +
+      `(Real read failed; nothing is fabricated in its place.)`
+    )
   }
-
-  return dockerReadFile(path)
 }
 
 export async function readAllGovernanceFiles(): Promise<Record<string, string>> {

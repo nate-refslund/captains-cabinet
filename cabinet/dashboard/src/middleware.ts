@@ -60,5 +60,19 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  // Wave D app-feel: browsers fetch the PWA manifest + icons WITHOUT cookies
+  // (a cookie-gated manifest 307s to /login and install never triggers), so
+  // EXACTLY these five surfaces leave auth: the manifest, the three icon
+  // paths, and the /api/health liveness boolean. Static brand assets + an
+  // {ok:true} — no config, no state, no secrets. Every other route,
+  // including every other /api/*, stays behind the HMAC cookie check above.
+  //
+  // NOTE: the exclusions are PREFIX matches (regex alternatives, dots
+  // unescaped), not exact paths — `api/health` also un-authenticates
+  // /api/healthz, /api/health-report, /api/health/anything. The health
+  // namespace is therefore pinned closed (exactly api/health/route.ts,
+  // nothing nested, no health-prefixed siblings) by a tripwire in
+  // cabinet/scripts/tests/test_dashboard_pwa_static.py — adding a route
+  // under that prefix is a conscious auth adjudication, not a file drop.
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|icon.svg|apple-icon.png|icons/|api/health).*)'],
 }

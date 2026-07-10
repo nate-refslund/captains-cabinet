@@ -121,6 +121,12 @@ def _store_draft(pid: str, thread: dict, draft: str) -> None:
         "channel": channel,
         "draft": draft,
         "why": f"draft reply to {thread.get('person')}'s {channel} message (cabinet draft lane)",
+        # Verify-at-fire anchors (captain-surface §3.5/§3.6, 2026-07-10):
+        # queued_ts is the clock for "did the captain reply AFTER this was
+        # queued?"; lane scopes the still-awaiting cancel to reply drafts.
+        "lane": ld.lane_for(thread),
+        "queued_ts": datetime.datetime.now(datetime.timezone.utc)
+                     .strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     host = os.environ.get("REDIS_HOST", "localhost")
     try:
@@ -259,6 +265,21 @@ def main() -> None:
     # longer appear in open_subject_ts() and therefore no longer suppress a
     # genuinely-new inbound on the same thread this very tick.
     _auto_expire_self_replied()
+    # Captain-surface rail 3 (§3.6, 2026-07-10): reconcile the QUEUED-draft
+    # store (cabinet:draft:*) against the captain's actual outbound via the
+    # sources seam — a thread he handled himself retires its queued draft
+    # instead of dangling until fire time (the Sofie case). Best-effort;
+    # honest-empty when no personal source is bound. CABINET_DRAFT_RECONCILE=0
+    # disables.
+    if os.environ.get("CABINET_DRAFT_RECONCILE", "1") != "0":
+        try:
+            from framework.acting import draft_reconcile
+            r = draft_reconcile.reconcile_queue()
+            if r.get("withdrawn"):
+                print(f"draft-reconcile: retired {r['withdrawn']} queued "
+                      f"draft(s) already handled by the captain")
+        except Exception as e:
+            print(f"draft-reconcile: skipped ({e})")
     cap = captain_name()
     actor = {"kind": "officer", "id": "cos"}
     # Dedup against OPEN proposals (already awaiting your decision) AND against

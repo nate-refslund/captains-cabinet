@@ -6,11 +6,12 @@
 # so no legacy call sites break. New callers should prefer send-to-warroom.sh
 # directly with an explicit context.
 #
-# Mapping lives in instance/config/warrooms.yml:
+# Mapping lives in instance/config/warrooms.yml (synthetic example slugs —
+# your instance declares its own lanes):
 #
-#     sensed:   "<chat_id>"
-#     step:     "<chat_id>"
-#     personal: "<chat_id>"
+#     testburg:        "<chat_id>"
+#     testburg-market: "<chat_id>"
+#     personal:        "<chat_id>"
 #
 # The active product warroom usually maps to $TELEGRAM_HQ_CHAT_ID so the
 # current container env keeps working.
@@ -21,7 +22,7 @@
 #   send-to-warroom.sh <context_slug> "<message>"
 #
 # Example:
-#   send-to-warroom.sh sensed "Deploy green. PR 547 shipped."
+#   send-to-warroom.sh testburg "Deploy green. PR 547 shipped."
 
 CONTEXT="${1:?Usage: send-to-warroom.sh <context_slug> \"message\"}"
 MESSAGE="${2:?Usage: send-to-warroom.sh <context_slug> \"message\"}"

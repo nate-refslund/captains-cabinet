@@ -16,6 +16,11 @@
 #                                                              #   cabinet/services.yml + generate-plists.py
 #   bash cabinet/scripts/deploy-mac.sh --dry-run               # show what would be done, don't execute
 #   bash cabinet/scripts/deploy-mac.sh --officer X --force     # override the consultant guard
+#   bash cabinet/scripts/deploy-mac.sh --stop <name|all>       # bootout installed com.cabinet.* LaunchAgents
+#                                                              #   (RUNTIME truth: enumerates ~/Library/LaunchAgents,
+#                                                              #   never the manifest; idempotent; NEVER bootstraps;
+#                                                              #   plist files stay on disk — redeploy to restart.
+#                                                              #   Wave D / D2, DESIGN-companion-2026-07-10 §3)
 #
 # Consultant guard: --officer <name> refuses roles whose
 # instance/roles/active/<name>.yml says officer_type: consultant —
@@ -39,6 +44,7 @@ TEMPLATES_DIR="$REPO_ROOT/cabinet/launchd"
 
 OFFICER=""
 DAEMON=""
+STOP=""
 ALL=false
 DRY_RUN=false
 FORCE=false
@@ -47,12 +53,20 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --officer) OFFICER="${2:?--officer requires a name (or 'all')}"; shift 2 ;;
     --daemon)  DAEMON="${2:?--daemon requires a name}"; shift 2 ;;
+    --stop)    STOP="${2:?--stop requires a name (or 'all')}"; shift 2 ;;
     --all)     ALL=true; shift ;;
     --dry-run) DRY_RUN=true; shift ;;
     --force)   FORCE=true; shift ;;
     *) echo "deploy-mac.sh: unknown flag '$1'" >&2; exit 64 ;;
   esac
 done
+
+# --stop is teardown-only — combining it with deploy selectors would blur
+# whether the invocation starts or stops things. Refuse loudly.
+if [ -n "$STOP" ] && { [ "$ALL" = true ] || [ -n "$OFFICER" ] || [ -n "$DAEMON" ]; }; then
+  echo "deploy-mac.sh: --stop cannot be combined with --all/--officer/--daemon" >&2
+  exit 64
+fi
 
 mkdir -p "$LAUNCHD_DIR" "$LOGS_DIR"
 
@@ -65,6 +79,8 @@ mkdir -p "$LAUNCHD_DIR" "$LOGS_DIR"
 # anything, including the generated .claude/agents/ directory.
 if $DRY_RUN; then
   echo "deploy-mac.sh: --dry-run — skipping sync-agents.sh (no writes)"
+elif [ -n "$STOP" ]; then
+  : # --stop is teardown-only — agent sync belongs to the deploy legs
 elif ! bash "$REPO_ROOT/cabinet/scripts/sync-agents.sh" 2>&1; then
   echo "deploy-mac.sh: sync-agents.sh failed — officers will boot without --agent flag" >&2
 fi
@@ -201,7 +217,64 @@ EOF
   ' "$roster"
 }
 
+# --stop leg (Wave D / D2 — DESIGN-companion-2026-07-10 §3). Acts on RUNTIME
+# truth: the plists actually installed in ~/Library/LaunchAgents — never
+# services.yml or the roster, so it is immune to manifest drift (companion
+# spec OC-6). Reuses the deploy leg's idempotent bootout primitive; NEVER
+# bootstraps; never deletes plist files (redeploy restarts a stopped agent).
+stop_one() {
+  local plist="$1" label
+  label="$(basename "$plist" .plist)"
+  if $DRY_RUN; then
+    echo "=== WOULD-BOOTOUT $label ==="
+    return 0
+  fi
+  # Idempotent like the deploy leg's own pre-flight bootout: an already-stopped
+  # agent is success, not an error (the post-state is "not running" either way).
+  # (Comment wording matters here: test_deploy_mac_stop.py source-pins this
+  # slice to contain no b-o-o-t-s-t-r-a-p reference at all — the stop leg only
+  # ever boots agents OUT.)
+  launchctl bootout "gui/$(id -u)" "$plist" 2>/dev/null || true
+  echo "stopped: $label"
+}
+
+stop_agents() {
+  local target="$1"
+  if [ "$target" = "all" ]; then
+    local p matched=false
+    for p in "$LAUNCHD_DIR"/com.cabinet.*.plist; do
+      [ -e "$p" ] || continue   # unmatched glob → literal pattern; skip
+      matched=true
+      stop_one "$p"
+    done
+    if [ "$matched" = false ]; then
+      echo "deploy-mac.sh: no com.cabinet.*.plist installed in $LAUNCHD_DIR — nothing to stop"
+    fi
+    return 0
+  fi
+  # Single name: accept both spellings the deploy legs write —
+  # com.cabinet.<name>.plist (daemons) and com.cabinet.officer.<name>.plist.
+  local c plist=""
+  for c in "$LAUNCHD_DIR/com.cabinet.$target.plist" \
+           "$LAUNCHD_DIR/com.cabinet.officer.$target.plist"; do
+    if [ -f "$c" ]; then plist="$c"; break; fi
+  done
+  if [ -z "$plist" ]; then
+    cat >&2 <<EOF
+deploy-mac.sh: --stop $target — neither com.cabinet.$target.plist nor
+  com.cabinet.officer.$target.plist is installed in $LAUNCHD_DIR.
+  --stop acts on runtime truth (installed LaunchAgents); nothing was changed.
+EOF
+    exit 2
+  fi
+  stop_one "$plist"
+}
+
 # Execute
+if [ -n "$STOP" ]; then
+  stop_agents "$STOP"
+  exit 0
+fi
 if [ "$ALL" = true ]; then
   OFFICERS_LIST=$(roster_officers)
   [ -n "$OFFICERS_LIST" ] || { echo "deploy-mac.sh: roster.yml parsed to an empty officer list — refusing." >&2; exit 2; }
@@ -247,8 +320,11 @@ EOF
   # dashboard-kiosk is OPT-IN (needs a physical monitor on the Mac mini).
   # Office-display deployments add it explicitly:
   #   bash cabinet/scripts/deploy-mac.sh --daemon dashboard-kiosk
-  # Headless servers skip it; the dashboard server above stays reachable
-  # over Tailscale at http://<host>:3100 regardless.
+  # Headless servers skip it; the dashboard server above binds
+  # CABINET_DASHBOARD_HOST (default 0.0.0.0 — unchanged) and so stays
+  # reachable over Tailscale at http://<host>:3100 regardless. Loopback-only
+  # opt-in: CABINET_DASHBOARD_HOST=127.0.0.1 in cabinet/.env; flipping the
+  # DEFAULT is captain-gated (CC-LOOP) — see cabinet/docs/mac-mini-deploy-runbook.md.
 else
   # --officer and --daemon are independent selectors and may be combined in
   # one invocation (previously the elif chain silently dropped --daemon
@@ -269,7 +345,7 @@ else
     DEPLOYED_ANY=true
   fi
   if [ "$DEPLOYED_ANY" = false ]; then
-    echo "Usage: deploy-mac.sh [--officer <name>|all] [--daemon <name>] [--all] [--dry-run] [--force]" >&2
+    echo "Usage: deploy-mac.sh [--officer <name>|all] [--daemon <name>] [--all] [--stop <name>|all] [--dry-run] [--force]" >&2
     exit 64
   fi
 fi

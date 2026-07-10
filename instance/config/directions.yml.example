@@ -1,0 +1,51 @@
+# =============================================================
+# directions.yml.example — the framework-shippable TWIN (egg row R120)
+# =============================================================
+# Copy to instance/config/directions.yml and author YOUR directions.
+# Every lane, mission, and instrument below is a placeholder — replace
+# them with your deployment's real bets (except system-self, which is
+# framework doctrine and ships as-is).
+#
+# CONTRACT (record ratification in captain-decisions.md):
+#   - Directions are CAPTAIN-AUTHORED, durable, few; revised ~quarterly.
+#     The org derives outcomes FROM directions; it NEVER authors directions.
+#   - Outcomes stay bounded verifiable state changes (work-model semantics
+#     unchanged) but flip to AI-DERIVED → Captain-ratified. Every proposed
+#     outcome must cite the direction bet it serves + expected instrument delta.
+#   - instruments are TREND INSTRUMENTS for the direction-drift retro check
+#     ("outcomes achieving, instruments flat ⇒ regenerate outcomes"),
+#     NOT deadline targets.
+#   - Window cap (1-2 active outcomes/lane) and Captain ratification stay.
+# Consumed by: the renewal loop (manual one-shot derivation first; automated
+# per plan addendum "Directions layer").
+
+directions:
+  product-a:
+    mission: >
+      <ONE-SENTENCE DURABLE MISSION for your first product lane — what
+      winning looks like, not a deadline.>
+    instruments:
+      - example_lead_time            # a trend you expect the bets to move
+      - example_self_serve_rate      # % of the journey completed unassisted
+      - example_repeat_rate          # customers coming back
+    bets:
+      - <first durable bet this lane is making>
+      - <second durable bet>
+    not_goals:
+      - <explicit non-goal so the org never drifts there>
+
+  system-self:
+    # Captain-owned like all directions; the org proposes outcomes against it.
+    mission: >
+      A self-improving org that compounds: verified outcomes per Captain-minute
+      trending up, escalation rate trending down, evidence never starving.
+    instruments:
+      - verified_outcomes_per_captain_minute
+      - escalation_rate
+      - autonomy_coverage        # % actions in graduated cells
+      - repeat_incident_rate
+      - ledger_liveness
+    bets:
+      - the master plans (docs/plans/) executed to their milestone ladders
+    not_goals:
+      - never self-author directions; never lift the hard ceiling; never edit its own judge

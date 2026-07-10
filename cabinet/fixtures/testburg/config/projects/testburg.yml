@@ -1,0 +1,9 @@
+# Testburg project card (synthetic — see cabinet/fixtures/testburg/README.md).
+# Staged by demo-dashboard.sh into <stage>/projects/ so the dashboard's
+# env-honoring file readers (lib/config.ts PROJECTS_DIR/ACTIVE_PROJECT_FILE)
+# resolve a Testburg identity, never a real product slug.
+product:
+  name: Testburg
+  description: Ada Testburg's demo estate (bakery-site + newsletter lanes)
+  repo: ""
+  repo_branch: main

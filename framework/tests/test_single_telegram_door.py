@@ -21,6 +21,14 @@ ALLOWED = {
     # reachability wait (api.telegram.org:443) before composing a briefing:
     "cabinet/scripts/chair-preflight.sh",
     "cabinet/scripts/run-frontdoor-briefing.sh",
+    # Pre-boot Captain-run errand helpers (PC-A; spec §13 amendment
+    # 2026-07-10 in cabinet-attention-gateway-spec-2026-07-08.md): read-only
+    # probes, not senders — getMe token validation and getUpdates chat-id
+    # capture (timeout=0, NO offset — never consumes updates, never sends).
+    # They run before any instance/.env exists, so they cannot ride
+    # channel.py; tokens ride env/.env, never argv.
+    "cabinet/scripts/telegram-validate-token.sh",
+    "cabinet/scripts/telegram-capture-chat-id.sh",
     # Voice sender — rides on an already-sent text reply; migration TODO:
     "cabinet/scripts/send-voice.sh",
     # Hook pager — rare infra alert; migrate to attention-submit (P4 TODO):

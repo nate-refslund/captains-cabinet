@@ -1,0 +1,17 @@
+R098 gate evidence — captured 2026-07-09 (perfect-cabinet Wave A, honesty area)
+worktree: /Users/nate/cabinet-worktrees/perfect-cabinet (branch feat/perfect-cabinet) @ 73a89d0c
+ledger row: R098 (docs/plans/operative-egg-ledger-2026-07-07.yml) — status in ledger: done
+gate_cmd (verbatim from the row):
+  grep -n '044-library-embedding-hardening' cabinet/scripts/load-preset.sh cabinet/scripts/cabinet-bootstrap.sh  # both hit; fresh-DB smoke: apply then check library_records.embedded_at exists
+
+--- run (re-captured 2026-07-10 @ 73a89d0c — the 2026-07-09 transcript had been
+    reordered by file, which the verbatim arg order cannot produce; below is the
+    raw, unedited output of the verbatim command; hits and exit code unchanged) ---
+cabinet/scripts/load-preset.sh:260:    "$CABINET_ROOT/cabinet/sql/044-library-embedding-hardening.sql" \
+cabinet/scripts/cabinet-bootstrap.sh:960:#   - 037-library-phase-a.sql + 044-library-embedding-hardening.sql alter
+cabinet/scripts/cabinet-bootstrap.sh:976:cabinet/sql/044-library-embedding-hardening.sql
+--- exit code: 0 ---
+
+VERDICT: GREEN — settled=already-done. Both scripts carry 044 in their apply lists
+(load-preset.sh:260 Neon apply list; cabinet-bootstrap.sh:976 schema_apply_list; :960 is the doc comment).
+No edit applied — the R098 fix (note: FIXED, refuted drop honored) is present in this branch.

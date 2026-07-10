@@ -40,24 +40,29 @@ else
   pass "active-project.txt absent (deployment-local) -> runtime fail-safe path"
 fi
 
-# Lane context files (captains-cabinet.yml, sensed.yml, ...) are instance-
-# split (egg plan R124): they stay on this live deployment but leave the egg
-# at packaging — only the generic contexts/_default.yml ships. Mirror the
-# active-project.txt pattern above: absent lane context = clean/egg checkout
-# -> pass-with-note, never a hard fail. When present, the invariant is still
-# asserted.
-if [ -f "$REPO_ROOT/instance/config/contexts/captains-cabinet.yml" ]; then
-  pass "captains-cabinet context exists"
-else
-  pass "captains-cabinet lane context absent (instance-split, leaves at packaging) -> runtime fail-safe path"
-fi
-
-if [ -f "$REPO_ROOT/instance/config/contexts/sensed.yml" ]; then
-  grep -q '^active:[[:space:]]*false' "$REPO_ROOT/instance/config/contexts/sensed.yml" \
-    && pass "Sensed context preserved but inactive" \
-    || fail "Sensed context must be active: false"
-else
-  pass "sensed lane context absent (instance-split, leaves at packaging) -> runtime fail-safe path"
+# Lane context files (instance/config/contexts/<lane>.yml) are instance-
+# split (egg plan R124): they stay on a live deployment but leave the egg at
+# packaging — only the generic contexts/_default.yml ships. Mirror the
+# active-project.txt pattern above: no lane contexts = clean/egg checkout ->
+# pass-with-note, never a hard fail. When present, the check is lane-
+# agnostic (INSTANCE-SENSED-CLEANUP: foundation never names instance lanes):
+# every lane declaration must carry an EXPLICIT `active: true|false` state —
+# the fail-safe activation invariant the old per-lane checks asserted. An
+# optional trailing `# comment` is tolerated; a glued `false# x` stays
+# rejected (YAML reads that scalar as a string, not a boolean).
+LANE_CONTEXTS=0
+for LANE_FILE in "$REPO_ROOT"/instance/config/contexts/*.yml; do
+  [ -e "$LANE_FILE" ] || continue            # unmatched glob (no contexts at all)
+  case "$(basename "$LANE_FILE")" in
+    _default.yml) continue ;;                # portfolio defaults — not a lane declaration
+  esac
+  LANE_CONTEXTS=$((LANE_CONTEXTS + 1))
+  grep -Eq '^active:[[:space:]]*(true|false)([[:space:]]+#.*)?[[:space:]]*$' "$LANE_FILE" \
+    && pass "lane context $(basename "$LANE_FILE") declares an explicit active state" \
+    || fail "lane context $(basename "$LANE_FILE") must declare 'active: true|false' explicitly"
+done
+if [ "$LANE_CONTEXTS" -eq 0 ]; then
+  pass "no lane contexts present (instance-split, leaves at packaging) -> runtime fail-safe path"
 fi
 
 python3 "$ORG" roles define \

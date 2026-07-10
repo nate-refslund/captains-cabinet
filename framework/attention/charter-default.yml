@@ -27,6 +27,15 @@ attention_queue:
 world:
   muster_landing: ping-now
 
+# Tiered-escalation gate (captain-surface spec §5.2): the vacuous-proof
+# heuristic thresholds are charter DATA. A proof field with fewer than
+# min_content_words distinct content words, or whose content words overlap
+# the ask itself by >= restate_overlap (it merely restates the question),
+# does not count as exhaustion evidence.
+escalation:
+  min_content_words: 4
+  restate_overlap: 0.8
+
 quiet_hours:
   start: "21:00"
   end: "07:00"
@@ -110,6 +119,19 @@ classes:
     route: direct-now
     silent: true
     reaction: ["🗓", "👀"]
+    show_injection_banner: false
+
+  # The pacing engine's ONE standing triage card (captain-surface §4): "N
+  # decisions ready — Triage now / At next briefing / Snooze". One card per
+  # deployment, edited in place as the count changes — direct-now because the
+  # ask-first flow must be able to ASK off-cycle (its fallback class would
+  # hold the ask for the very briefing it offers to skip). NOT a floor class:
+  # quiet hours still gate it.
+  - id: triage-nudge
+    matchers: {kinds: ["triage-nudge"]}
+    route: direct-now
+    silent: false
+    reaction: ["👀"]
     show_injection_banner: false
 
   # --- quiet tiers ---

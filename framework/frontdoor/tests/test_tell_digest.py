@@ -73,6 +73,19 @@ def test_gather_acted_filters_dead_and_canary_and_expired():
     assert [r["pid"] for r in out] == ["live"]
 
 
+def test_gather_acted_skips_demo_rows():
+    """demo:true rows never earn a digest line or an undo handle — mirrors
+    action_reconcile.run_sweep's skip (defense-in-depth: the hatch demo seeder
+    never journals its row, but a future demo-stamped row must stay invisible
+    to the digest)."""
+    rows = [
+        _jrow(pid="live", jid="j1"),
+        _jrow(pid="demo-hatch-receipt", jid="j2", lane="demo", demo=True),
+    ]
+    out = td.gather_acted_rows(now=NOW, journal_rows=rows)
+    assert [r["pid"] for r in out] == ["live"]
+
+
 def test_gather_self_rows_frozen_kinds():
     rows = [
         _jrow(),

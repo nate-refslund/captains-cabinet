@@ -2,6 +2,13 @@
 
 A self-improving AI organization that builds, ships, and operates real work 24/7 — while you steer from Telegram.
 
+**Don't hire an AI assistant. Run an AI company — every action leaves a receipt: what, why, cost, undo.** First receipt in minutes once hatched. Full org move-in is built to a ratified 90-minute bar — not yet timed end-to-end on a bare Mac.
+
+> **Pre-release.** This repository is private today: the public artifact is
+> produced by a fresh-cut export (live instance values never ship in it), and
+> publication is gated on governance approval. Pre-release means exactly that —
+> no releases yet, no support promises yet.
+
 ## What This Is
 
 Captain's Cabinet is a framework for running an autonomous AI org on a Mac. **Officers** — persistent Claude Code sessions under launchd and tmux — own domains, coordinate through durable state, and execute continuously. **You are the Captain**: you set direction, ratify outcomes, and answer only the questions machines cannot answer.
@@ -70,31 +77,30 @@ The full statements, with rationale, are in [`captains-cabinet-guide.md`](./capt
 
 One append-only **consequence ledger** records every proposal, every Captain verdict (captured mechanically, in-process with the action — never by an LLM's discipline), and every machine-probed outcome (deploy held, CI green, thread resolved), joined by correlation IDs propagated into the artifacts themselves. **Graduation math** reads the ledger per action class — never per agent — and computes each cell's earned confidence; the **authority matrix** maps risk class × confidence to a verdict (auto / propose / gated), with unmeasured always meaning propose-only. Demotion is automatic: wrong verdicts, detected fabrication, model upgrades, or a starving ledger (a dead-man watchdog pages and revokes autonomy when evidence stops flowing). Above it all sits a **hard ceiling — six action classes (external comms, production deploys, spend, secrets, network writes, credential grants) that stay Captain-gated at every confidence level, forever.** Autonomy is a computed, demotable property of one ledger — never a vibe.
 
+## What You See
+
+Two dashboard surfaces carry that story. Both screenshots show the synthetic **Testburg** demo cabinet — fixtures exist precisely so no demo ever shows a real deployment's data.
+
+![The /receipts page: every acted step as a read-only receipt — human-phrase action, why it happened, attributed cost or an honest "unattributed", and the remaining undo window](./docs/assets/testburg-receipts.png)
+
+*`/receipts` — the receipt journal. What / why / cost / undo on every acted step; the page renders receipts, it never acts (undo is a reply verb in the Captain's Telegram binder).*
+
+![The /governance page: the real constitution and safety-boundaries files rendered from disk, marked Captain-only to edit](./docs/assets/testburg-governance.png)
+
+*`/governance` — the actual governing documents officers load each session, rendered from the real files. Only the Captain edits them.*
+
 ## Quickstart
 
-Prerequisites: a Mac with [Homebrew](https://brew.sh), [Claude Code](https://claude.com/claude-code) with a Max subscription, and a Telegram bot token from @BotFather.
+Prerequisites: a Mac with [Homebrew](https://brew.sh), [Claude Code](https://claude.com/claude-code) with a Max subscription, and a Telegram bot token (connect after your first briefing — not needed to boot).
 
 ```bash
-# 1. Clone
 git clone <your-fork-url> captains-cabinet && cd captains-cabinet
-
-# 2. Host setup — installs deps, starts Redis, loads the preset, runs tests
-bash cabinet/scripts/setup-mac.sh          # or --check to preflight only
-
-# 3. Onboarding interview — run inside Claude Code in this repo
-claude
-> /cabinet-init
-# Interviews you (captain profile, lanes, org shape, autonomy posture,
-# seed outcomes), generates instance/, and prints exact activation steps.
-# Nothing it generates activates by itself.
-
-# 4. Credentials
-cp cabinet/.env.example cabinet/.env       # fill in tokens; chmod 600
-
-# 5. Deploy the fleet (LaunchAgents from templates; --dry-run to inspect)
-bash cabinet/scripts/deploy-mac.sh --all --dry-run
-bash cabinet/scripts/deploy-mac.sh --all
+bash cabinet/scripts/hatch.sh --defaults
 ```
+
+One command orchestrates the rehearsed chain: host setup → instance generation → activation → proof gates (null-hatch, clean-room ratchets, dry renders) → **your first briefing — the first receipt**, with a flight log timing every step. The few human-only steps (BotFather token, germline scope lines, TCC grants) print as numbered **errand notes** — the hatch never automates them.
+
+By default the hatch stops short of launchd: nothing goes live until you run the printed move-in instructions (or re-run with `--with-launchd`). `--dry-run` prints the full plan without executing anything. Full flag table and what v0 skips: [`docs/runbooks/hatch-v0-2026-07-09.md`](./docs/runbooks/hatch-v0-2026-07-09.md); the step-by-step manual path is in the [appendix](#appendix-manual-hatch).
 
 Officers start propose-first: everything consequential is proposed to you on Telegram until cells graduate on evidence. Expect to approve a lot in week one — that is the ramp working.
 
@@ -106,14 +112,17 @@ captains-cabinet/
 │                         #   fidelity/, watchdog/, acting/, schemas
 ├── presets/              # Use-case shapes (portfolio, work, personal, _template)
 ├── instance/             # This deployment: config/ (directions.yml, outcomes.yml,
-│                         #   platform.yml), roles, tier-2 notes  (largely gitignored)
+│                         #   platform.yml), roles, tier-2 notes. Runtime state is
+│                         #   gitignored; live values are excluded from the public
+│                         #   export cut — .example twins + structure ship instead
 ├── cabinet/
 │   ├── scripts/          # setup-mac.sh, deploy-mac.sh, start-officer*, hooks/, lib/
 │   ├── launchd/          # Service templates → ~/Library/LaunchAgents
 │   └── dashboard/        # Operator dashboard (scorecard, evidence, fleet)
 ├── memory/               # Skills (foundation + evolved/), golden-evals/, tier3/
 ├── shared/interfaces/    # Captain decisions/patterns/intents, cross-officer artifacts
-├── docs/                 # Design records; docs/plans/ = the master plans
+├── docs/                 # Design records; docs/plans/ = specs & build plans
+│                         #   (operative ledgers archived out of the public export)
 ├── CLAUDE.md             # Officer operating context (loaded every session)
 └── captains-cabinet-guide.md   # The operating doctrine
 ```
@@ -128,11 +137,43 @@ captains-cabinet/
 
 ## Safety
 
+The whole governance model on one page, plain language: [`docs/how-your-cabinet-is-governed.md`](./docs/how-your-cabinet-is-governed.md).
+
 - **Hard ceiling, forever:** external comms, production deploys, spend, secrets, network writes, credential grants are Captain-gated at every confidence level. Carve-outs are enumerated executor conditions, never lifted ceiling rows. CI asserts no ceiling cell can resolve to auto.
 - **Germline write-protection:** the policy engine, authority matrix, golden evals, and watchdogs are unwritable by officers — no loop may edit its own judge.
 - **Kill switch:** anyone — any officer, any watchdog, the Captain — can halt the fleet; only the Captain can resume. Designed fail-closed: if the switch's state store is unreachable, work stops.
 - **Propose-first by default:** unmeasured action classes are propose-only by construction.
 - **Evidence starvation revokes autonomy:** a lane whose verdicts stop landing is automatically demoted and paged — staleness is loss of proof.
+
+## Appendix: manual hatch
+
+The pre-`hatch.sh` five-step path — still valid, and exactly what `hatch.sh` orchestrates:
+
+```bash
+# 1. Clone
+git clone <your-fork-url> captains-cabinet && cd captains-cabinet
+
+# 2. Host setup — installs deps, starts Redis, loads the preset, runs tests
+bash cabinet/scripts/setup-mac.sh          # or --check to preflight only
+
+# 3. Onboarding interview — run inside Claude Code in this repo
+claude
+> /cabinet-init
+# Interviews you (captain profile, lanes, org shape, autonomy posture),
+# generates instance/, and prints exact activation steps.
+# Nothing it generates activates by itself.
+
+# 4. Credentials
+cp cabinet/.env.example cabinet/.env       # fill in tokens; chmod 600
+
+# 5. Deploy the fleet (LaunchAgents from templates; --dry-run to inspect)
+bash cabinet/scripts/deploy-mac.sh --all --dry-run
+bash cabinet/scripts/deploy-mac.sh --all
+```
+
+## Contributing & Security
+
+Pre-release: external PRs are not yet accepted. [`CONTRIBUTING.md`](./CONTRIBUTING.md) has the dev setup, test suites, and the gates the repo enforces on itself; vulnerability reporting and scope are in [`SECURITY.md`](./SECURITY.md).
 
 ## License
 

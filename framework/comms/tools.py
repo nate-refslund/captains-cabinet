@@ -33,7 +33,9 @@ def send_card(*, subject: str, situation: str = "", kind: str = "action-card",
               urgency: "str | None" = None, steps: "list | None" = None,
               state: str = "open", deadline_iso: "str | None" = None,
               pid_marker: "str | None" = None, injection_suspect: bool = False,
-              chair_review: bool = False, adapter=None, ch=None, now=None) -> dict:
+              chair_review: bool = False, escalation: "dict | None" = None,
+              buttons: "list | None" = None,
+              adapter=None, ch=None, now=None) -> dict:
     """Present a card to the Captain — the officer gives the STRUCTURED situation
     (subject/situation/steps/evidence); the gate renders the terse card, dedups
     it into a standing card, honors quiet hours, and (chair_review) routes an
@@ -43,28 +45,45 @@ def send_card(*, subject: str, situation: str = "", kind: str = "action-card",
     The card's IDENTITY is content-derived — ``situation_key(evidence, subject)``.
     Re-sending the SAME subject+evidence with an updated ``state``/``steps`` is the
     UPDATE path: the gate finds the existing standing card and EDITS that one
-    message in place (no duplicate). ``edit_card`` is the named alias for that."""
+    message in place (no duplicate). ``edit_card`` is the named alias for that.
+
+    ``escalation`` is the tiered-escalation exhaustion proof
+    (``{"lane_tried", "chair_tried", "needs_captain_because"}`` — §3.9): when
+    the escalation gate is armed, a NEW open decision card without it BOUNCES
+    back to you (``status="bounced"`` + what's missing) instead of reaching
+    the Captain — fix it at your tier or attach the proof.
+
+    ``buttons`` (one-card-one-decision surface): channel-neutral inline
+    controls — a row (or rows) of ``{text, data}`` tap buttons / ``{text,
+    url}`` link buttons, rendered by the bound adapter when the gate's
+    decision is a direct send/edit. Charter routing (briefing, quiet hours,
+    dedup-suppress) is untouched by their presence, and buttons are NOT part
+    of the render-hash identity — a buttons-only change with identical text
+    suppresses as no-change (flip ``state``/text to force the edit)."""
     from framework.attention import gate
     a = _adapter(adapter)
     item = {"kind": kind, "subject": subject, "situation": situation,
             "lane": lane, "evidence": list(evidence or []), "urgency": urgency,
             "steps": list(steps or []), "state": state, "deadline_iso": deadline_iso,
-            "pid_marker": pid_marker, "injection_suspect": bool(injection_suspect)}
+            "pid_marker": pid_marker, "injection_suspect": bool(injection_suspect),
+            "escalation": escalation,
+            "buttons": (list(buttons) if buttons else None)}
     return gate.submit(item, send_fn=a.send, edit_fn=a.edit,
                        chair_review=chair_review, ch=ch, now=now)
 
 
 def edit_card(*, subject: str, evidence: "list | None" = None, situation: str = "",
               steps: "list | None" = None, state: str = "done", lane: "str | None" = None,
-              adapter=None, ch=None, now=None) -> dict:
+              buttons: "list | None" = None, adapter=None, ch=None, now=None) -> dict:
     """Update a standing card in place (e.g. flip a step to done). Re-describe the
     SAME situation — the same ``subject`` + ``evidence`` that created the card, so
     the gate's identity path (``situation_key(evidence, subject)``) finds the
     existing message — with the new ``state``/``steps``. The gate then EDITS that
     one message instead of posting a new card. Identity is content-derived, so
-    subject+evidence MUST match the original send_card, or a fresh card results."""
+    subject+evidence MUST match the original send_card, or a fresh card results.
+    ``buttons`` replaces the card's inline controls on the edit (None clears)."""
     return send_card(subject=subject, evidence=evidence, situation=situation,
-                     steps=steps, state=state, lane=lane,
+                     steps=steps, state=state, lane=lane, buttons=buttons,
                      adapter=adapter, ch=ch, now=now)
 
 

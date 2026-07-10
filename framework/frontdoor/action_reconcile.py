@@ -25,6 +25,12 @@ current ledger record is still ``outcome=unknown`` are reconciled. A human
 confirm/undo already moved the cell to ok/failed, so the sweep skips it and can
 never double-emit or overwrite a human verdict.
 
+Rows stamped ``canary: true`` (the guard's own probe traffic) or ``demo: true``
+are never reconciled at all — synthetic rows must not mint machine outcome
+labels. (The hatch's demo receipt, emit-demo-receipt.sh, is never journaled at
+all since the 2026-07-10 fix pass; the demo skip stays as defense-in-depth for
+any future demo-stamped row.)
+
 Also GCs undo-journal files older than the 30-day retention floor and computes
 the per-cell human-revert-rate for TI-7 / the retro to consume.
 
@@ -172,8 +178,14 @@ def run_sweep(*, now: Optional[str] = None,
     reverts: List[str] = []
     skipped = 0
     for r in rows:
+        # canary rows are the guard's own probe traffic; demo rows are
+        # synthetic (demo: true) — neither is a real act, so neither may mint
+        # a ttl_ok/silent_revert machine label (a probe-less past-TTL demo
+        # row would otherwise conservatively verdict ttl_ok: a fake ok-label
+        # from fake work). Defense-in-depth: the hatch's demo receipt
+        # (emit-demo-receipt.sh) is never journaled at all since 2026-07-10.
         if (r.get("status") != "executed" or not r.get("executed_at")
-                or r.get("canary")):
+                or r.get("canary") or r.get("demo")):
             continue
         if not _past_ttl(r, now):
             continue

@@ -7,11 +7,14 @@ import { describe, it, expect } from 'vitest'
 import { ADVANCED_NAV, CONSUMER_NAV, navForMode } from './nav-config'
 
 describe('ADVANCED_NAV — static shape', () => {
-  it('has 16 items (15 internal + 1 external Terminal)', () => {
+  it('has 17 items (16 internal + 1 external Terminal)', () => {
     // 2026-07-02: Library page added in the June work without this pin updating
     // 2026-07-07: World added (Cabinet World E1 Wardroom — /world, observer-class)
+    // 2026-07-10: Receipts added (perfect-cabinet Wave B — read-only undo-journal browser)
     // 2026-07-10: Needs You added (/queue — the classic war-room skin, read-only)
-    expect(ADVANCED_NAV).toHaveLength(16)
+    // (Receipts + Needs You landed in parallel branches, each claiming 16 — the
+    //  2026-07-10 merge union is 17.)
+    expect(ADVANCED_NAV).toHaveLength(17)
   })
 
   it('every link has an href and a label', () => {
@@ -28,6 +31,7 @@ describe('ADVANCED_NAV — static shape', () => {
   it('contains all Spec 032 advanced-mode routes', () => {
     const labels = ADVANCED_NAV.map(l => l.label)
     expect(labels).toContain('Dashboard')
+    expect(labels).toContain('Needs You')
     expect(labels).toContain('World')
     expect(labels).toContain('Project')
     expect(labels).toContain('Cabinets')
@@ -36,6 +40,7 @@ describe('ADVANCED_NAV — static shape', () => {
     expect(labels).toContain('Health')
     expect(labels).toContain('Settings')
     expect(labels).toContain('Governance')
+    expect(labels).toContain('Receipts')
     expect(labels).toContain('Integrations')
     expect(labels).toContain('Costs')
     expect(labels).toContain('Crons')

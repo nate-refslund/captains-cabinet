@@ -11,10 +11,10 @@
       "name": "captains-cabinet",
       "source": {
         "source": "github",
-        "repo": "nate-step/captains-cabinet",
-        "ref": "claude/convergence-v2"
+        "repo": "nate-refslund/captains-cabinet",
+        "ref": "master"
       },
-      "description": "Full Captains Cabinet plugin: framework + presets (work, portfolio, personal) + 21 skills + 6 slash commands + 7 MCP servers. The officer fleet is roster-derived (instance/config/roster.yml) — the work preset ships 8 role archetypes, the portfolio preset ships the Chair plus generated lane CEOs.",
+      "description": "Full Captains Cabinet plugin: framework + presets (work, portfolio, personal) + 21 skills + 6 slash commands + 6 MCP servers. The officer fleet is roster-derived (instance/config/roster.yml) — the work preset ships 8 role archetypes, the portfolio preset ships the Chair plus generated lane CEOs.",
       "category": "ai-organization",
       "tags": ["ai-organization", "officers", "autonomous", "event-sourced"]
     },
@@ -22,8 +22,8 @@
       "name": "captains-cabinet-personal",
       "source": {
         "source": "github",
-        "repo": "nate-step/captains-cabinet",
-        "ref": "claude/convergence-v2"
+        "repo": "nate-refslund/captains-cabinet",
+        "ref": "master"
       },
       "description": "Personal Cabinet variant — coaching-focused, lighter governance, Captain triplet only. Selects the personal preset via instance/config/active-preset at first run.",
       "category": "ai-organization",
@@ -33,8 +33,8 @@
       "name": "doctrine-pack",
       "source": {
         "source": "github",
-        "repo": "nate-step/captains-cabinet",
-        "ref": "claude/convergence-v2",
+        "repo": "nate-refslund/captains-cabinet",
+        "ref": "master",
         "path": "packs/doctrine-pack"
       },
       "description": "Optional doctrine skills: holistic-thinking, production-quality-ownership, individual-reflection, cross-officer-retro, spec-quality-gate. Parallel copies of the core plugin's skills — the core still ships the originals this wave.",
@@ -45,8 +45,8 @@
       "name": "vercel-lane-pack",
       "source": {
         "source": "github",
-        "repo": "nate-step/captains-cabinet",
-        "ref": "claude/convergence-v2",
+        "repo": "nate-refslund/captains-cabinet",
+        "ref": "master",
         "path": "packs/vercel-lane-pack"
       },
       "description": "Vercel-lane deployment skills: deploy-and-verify (push, poll Vercel, validate live, then announce) and engineering-development-loop. Skip if your lanes do not deploy on Vercel.",
@@ -57,8 +57,8 @@
       "name": "agent-teams-pack",
       "source": {
         "source": "github",
-        "repo": "nate-step/captains-cabinet",
-        "ref": "claude/convergence-v2",
+        "repo": "nate-refslund/captains-cabinet",
+        "ref": "master",
         "path": "packs/agent-teams-pack"
       },
       "description": "Agent Teams workflow skill for current CLI reality (>= v2.1.178, TeamCreate removed): implicit teams, teammates via the Agent tool's name param, worker+reviewer patterns, worktree isolation, model routing, headless boundary. Requires CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1.",
@@ -69,8 +69,8 @@
       "name": "preset-portfolio-pack",
       "source": {
         "source": "github",
-        "repo": "nate-step/captains-cabinet",
-        "ref": "claude/convergence-v2",
+        "repo": "nate-refslund/captains-cabinet",
+        "ref": "master",
         "path": "packs/preset-portfolio-pack"
       },
       "description": "Portfolio preset orientation + activation guide (one persistent Chair + per-lane CEO officers). References the presets/portfolio payload shipped with the core plugin — install captains-cabinet first.",
@@ -81,13 +81,25 @@
       "name": "preset-personal-pack",
       "source": {
         "source": "github",
-        "repo": "nate-step/captains-cabinet",
-        "ref": "claude/convergence-v2",
+        "repo": "nate-refslund/captains-cabinet",
+        "ref": "master",
         "path": "packs/preset-personal-pack"
       },
       "description": "Personal preset orientation + activation guide (coaching-focused, consent-gated autonomy). References the presets/personal payload shipped with the core plugin — install captains-cabinet first.",
       "category": "ai-organization",
       "tags": ["ai-organization", "preset", "personal", "coaching"]
+    },
+    {
+      "name": "lighthouse-log-pack",
+      "source": {
+        "source": "github",
+        "repo": "nate-refslund/captains-cabinet",
+        "ref": "master",
+        "path": "packs/lighthouse-log-pack"
+      },
+      "description": "Daily keeper's log skill: compose a short, honest digest of the day's org events from the world chronicle into a Tier 2 note (honest zeros, demo rows labeled, no network). Authored-in-pack original — also the pack-authoring exemplar that docs/authoring-a-pack.md builds step by step.",
+      "category": "ai-organization",
+      "tags": ["ai-organization", "daily-log", "memory", "exemplar"]
     }
   ]
 }

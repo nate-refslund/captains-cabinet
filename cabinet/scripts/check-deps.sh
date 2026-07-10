@@ -34,7 +34,7 @@ done
 
 if [ "${#MISSING[@]}" -gt 0 ]; then
   echo "[check-deps] ${#MISSING[@]} tool(s) missing: ${MISSING[*]}" >&2
-  echo "[check-deps] File a GitHub issue on nate-step/captains-cabinet to track the fix." >&2
+  echo "[check-deps] File a GitHub issue on nate-refslund/captains-cabinet to track the fix." >&2
 else
   echo "[check-deps] All required tools present."
 fi

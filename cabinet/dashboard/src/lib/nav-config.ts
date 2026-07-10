@@ -13,9 +13,13 @@ export type NavLink = {
  * Consumer (5 items, mirrors the 4 content cards + Cabinets — Spec 034):
  *   Dashboard / Cabinets / Costs / Library / Settings
  *
- * Advanced (all 12 items, zero regression from the pre-Spec-032 nav):
- *   Dashboard / Project / Cabinets / Officers / Health / Settings / Governance
- *   / Integrations / Costs / Crons / Library / Terminal (external)
+ * Advanced (all items, zero regression from the pre-Spec-032 nav):
+ *   Dashboard / Needs You / World / Project / Cabinets / Officers / Tasks /
+ *   Capability Gaps / Health / Settings / Governance / Receipts /
+ *   Integrations / Costs / Crons / Library / Terminal (external)
+ *
+ * Receipts (perfect-cabinet Wave B): read-only browser over the undo
+ * journal — the what/why/cost/undo receipt surface, next to Governance.
  *
  * Terminal-to-Advanced per CoS plan review 2026-04-17 — a raw-shell utility
  * doesn't fit the consumer "check in" intent.
@@ -37,6 +41,7 @@ export const ADVANCED_NAV: NavLink[] = [
   { href: '/health', label: 'Health' },
   { href: '/settings', label: 'Settings' },
   { href: '/governance', label: 'Governance' },
+  { href: '/receipts', label: 'Receipts' },
   { href: '/integrations', label: 'Integrations' },
   { href: '/costs', label: 'Costs' },
   { href: '/crons', label: 'Crons' },

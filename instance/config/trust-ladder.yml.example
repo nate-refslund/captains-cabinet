@@ -3,9 +3,12 @@
 # THE earn_up SURFACE ONLY (axes spec 2026-07-05 §1 L1). This file is consulted
 # exclusively when instance/config/posture.yml (or the CABINET_POSTURE narrow
 # env/file) resolves the `earn_up` posture — guardian and sovereign never read
-# it. Copy to trust-ladder.yml and tune. If ABSENT or corrupt, the conservative
+# it. load-preset.sh materializes this example to trust-ladder.yml on a fresh
+# hatch ONLY when that file is absent. If ABSENT or corrupt, the conservative
 # default is a single `would-like-to` rung (propose everything, lift nothing)
-# — the safe floor.
+# — the safe floor. THIS EXAMPLE SHIPS EXACTLY THAT FLOOR, stated explicitly,
+# plus commented synthetic examples (Testburg lanes) showing how a ladder
+# grows. Nothing here grants any autonomy by itself.
 #
 # This is the Captain-readable map of NAMED rungs a lane climbs as cells prove
 # out. It sits ABOVE the per-cell graduation machine
@@ -49,50 +52,48 @@
 # This is enforced in code, not just here.
 
 rungs:
-  # --- PolAds lane ---------------------------------------------------------
-  - name: ive-done                 # graduated cells act, report after (notify_after)
-    lane: polads
-    grants:
-      - { action_type: task_status_move }   # Monday/Linear status moves
-      - { action_type: board_status }
-      - { action_type: label }
-      - { action_type: tier2_note }
-    # min_samples is OPTIONAL — omit to use the matrix `bars` floor (20 for
-    # `default`). Set it to require MORE proof than the matrix floor for this
-    # specific rung.
-    # min_samples: 30
+  # --- THE FLOOR (the shipped default) -------------------------------------
+  # One base rung, every lane: propose everything, lift nothing. This is
+  # byte-equivalent to the fail-closed default an absent file resolves to —
+  # written out so the materialized file SHOWS the real day-one state.
+  - name: would-like-to
+    lane: null                     # null = every lane
+    grants: []                     # the floor grants nothing
 
-  - name: intend-to                # internal comms with a veto window
-    lane: polads
-    grants:
-      - { action_type: internal_message }   # Teams/internal DMs (queue_draft, internal recipient)
-      - { action_type: internal_email }
-    min_samples: 30                # internal_comms bar is already 30 in the matrix; explicit here
-
-  - name: ive-done
-    lane: polads
-    grants:
-      - { action_type: vercel_deploy_preview }
-      - { action_type: git_push_nonmain }
-    min_samples: 30
-
-  # --- STEPhie lane (same shape, separate climb — trust is per-lane) -------
-  - name: ive-done
-    lane: stephie
-    grants:
-      - { action_type: task_status_move }
-      - { action_type: board_status }
-      - { action_type: label }
-
-  # --- A CEILING rung, shown for documentation -----------------------------
-  # This is computed Captain-only (external_message -> external_comms ceiling).
-  # The ladder will surface it when the cell graduates, but will NEVER
-  # auto-advance to it, and the gate overlay never lifts the external_comms
-  # row. Listed here so the example shows the ceiling behavior.
-  - name: ive-done
-    lane: polads
-    grants:
-      - { action_type: external_message }    # -> external_comms (HARD CEILING)
+  # --- SYNTHETIC EXAMPLES (Testburg lanes) — uncomment + rename to grow ----
+  # - name: ive-done               # graduated cells act, report after (notify_after)
+  #   lane: testburg-market
+  #   grants:
+  #     - { action_type: task_status_move }   # board/task status moves
+  #     - { action_type: board_status }
+  #     - { action_type: label }
+  #     - { action_type: tier2_note }
+  #   # min_samples is OPTIONAL — omit to use the matrix `bars` floor (20 for
+  #   # `default`). Set it to require MORE proof than the matrix floor for
+  #   # this specific rung.
+  #   # min_samples: 30
+  #
+  # - name: intend-to              # internal comms with a veto window
+  #   lane: testburg-market
+  #   grants:
+  #     - { action_type: internal_message }
+  #     - { action_type: internal_email }
+  #   min_samples: 30              # internal_comms bar is already 30 in the matrix
+  #
+  # - name: ive-done               # a second lane climbs separately (trust is per-lane)
+  #   lane: testburg-harbor
+  #   grants:
+  #     - { action_type: task_status_move }
+  #     - { action_type: board_status }
+  #
+  # A CEILING rung, shown for documentation: computed Captain-only
+  # (external_message -> external_comms ceiling). The ladder will surface it
+  # when the cell graduates, but will NEVER auto-advance to it, and the gate
+  # overlay never lifts the external_comms row.
+  # - name: ive-done
+  #   lane: testburg-market
+  #   grants:
+  #     - { action_type: external_message }   # -> external_comms (HARD CEILING)
 
 # --- GRANTED ROWS — the Captain's actual grants (closed shape) -------------
 # Authority lives HERE, in the locked file — never in events. Each row:
@@ -105,7 +106,7 @@ rungs:
 # row, highest rung the `rungs:` map still defines for the lane).
 #
 # granted:
-#   - { rung: ive-done, lane: polads, granted_at: 2026-07-05, note: "scrum ok" }
+#   - { rung: ive-done, lane: testburg-market, granted_at: 2026-07-09, note: "example" }
 
 # NOTE (deliberate absence): the pre-ripout `auto_grant_nonceiling` flag does
 # NOT exist anymore. Every rung — ceiling or not — is grant-by-Captain only;

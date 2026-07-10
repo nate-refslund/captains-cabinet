@@ -1,0 +1,21 @@
+# manifest.yml — Cabinet extension manifest for the Lighthouse Log capability pack.
+# Schema: framework/schemas/extension-manifest.schema.json; validated by
+#   bash cabinet/scripts/validate-extension.sh packs/lighthouse-log-pack
+# This pack is the AUTHORING EXEMPLAR — docs/authoring-a-pack.md rebuilds it
+# field by field. instance/config/extensions.yml is the governed path that
+# points officers at this pack (see cabinet/docs/cabinet-plugin-installation.md
+# § Capability packs).
+# Pure skill bundle: emits no action_types, so no risk classes and no undo
+# surface (undo_contract none = never act-first-eligible, honestly).
+name: lighthouse-log-pack
+version: "0.1.0"
+kind: skill
+action_types: []
+risk_classes: []
+undo_contract: none
+axis_compat:
+  autonomy_level: [earn_up, guardian, sovereign]
+  flavor: [personal, org]
+  deployment_target: [macbook, mac_mini, docker]
+entrypoints:
+  skill_daily_lighthouse_log: skills/daily-lighthouse-log/SKILL.md

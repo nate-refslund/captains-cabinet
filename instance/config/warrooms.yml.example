@@ -1,0 +1,23 @@
+# =============================================================
+# warrooms.yml.example — the framework-shippable TWIN (egg row R120)
+# =============================================================
+# Copy to instance/config/warrooms.yml and map YOUR contexts. The chat ids
+# below are placeholders — never commit a real group chat id; prefer the
+# ${VAR} env-interpolation form so ids live in .env (values-in-env doctrine).
+#
+# Context-scoped warroom chat_id mapping.
+#
+# Flat map: <context_slug>: <chat_id>
+# chat_id may interpolate env vars (${VAR}) so you can point a context
+# at an existing group without duplicating the id.
+#
+# Adding a new warroom:
+#   1. Declare the context_slug in instance/config/contexts/<slug>.yml first.
+#   2. Create a new Telegram group and invite the relevant officer bots.
+#   3. Add the row here. send-to-warroom.sh will resolve it on next call.
+
+product-a: "${TELEGRAM_HQ_CHAT_ID}"
+# product-b: "<YOUR-TELEGRAM-GROUP-CHAT-ID>"
+# adhoc is routed to the active product warroom — ad-hoc Inbox triage happens
+# in the main group rather than a separate channel. Split later if noise warrants.
+adhoc:     "${TELEGRAM_HQ_CHAT_ID}"

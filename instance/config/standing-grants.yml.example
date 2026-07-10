@@ -15,7 +15,7 @@
 # risk_class is listed, fail-closed at load, + ONE kind=decision need per
 # class (never a recurring grant-request need). Empty/absent never_grant =
 # all six ceiling classes grantable — the rows below still decide. E.g.
-# Nate's personal instance keeps external outbound per-item-approved
+# a personal instance keeps external outbound per-item-approved
 # (ACT-AND-DRAFT) via, in posture.yml:
 #   never_grant: [external_comms]
 #
@@ -36,11 +36,11 @@
 # Activate: cp → edit → commit → sudo chflags schg instance/config/standing-grants.yml
 version: 1
 grants:
-  - {id: GRANT-example-stepnetwork-mail, deployment: mini-polads,
+  - {id: GRANT-example-testburg-mail, deployment: testburg-mini,
      risk_class: external_comms, action_types: [external_email],
-     lanes: [polads],
-     scope: {recipient_allowlist: ["*@stepnetwork.dk"], max_eur_per_day: 0,
+     lanes: [testburg-market],
+     scope: {recipient_allowlist: ["*@example.com"], max_eur_per_day: 0,
              vendor_allowlist: []},
      rate: {max_per_day: 10}, expires: 2026-10-03,
-     granted_by: "Captain (Nate)", granted_at: 2026-07-05T00:00:00Z,
+     granted_by: "Captain (Ada Testburg)", granted_at: 2026-07-05T00:00:00Z,
      basis: "NEED-1a2b3c4d", revoked: false}

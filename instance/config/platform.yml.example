@@ -1,0 +1,259 @@
+# =============================================================
+# platform.yml.example — the framework-shippable TWIN (egg row R120)
+# =============================================================
+# Copy to instance/config/platform.yml and fill in YOUR deployment's
+# identity. Every value below is an obvious placeholder or a fail-closed
+# default — nothing here is a real captain, org, board, or path. Secrets
+# NEVER belong in this file (values-in-env doctrine: API keys live in .env;
+# this file carries names/ids/preferences only).
+#
+# Settings that stay the same across ALL projects: officer personalities,
+# voice, research tools, embeddings. This file is merged with the active
+# project config to produce instance/config/product.yml — do not edit
+# product.yml directly.
+# =============================================================
+
+# Founder's name — used in voice messages and officer communication
+captain_name: Jane                    # Default: "Captain" if not set
+
+# Founder's role/title — framework code (e.g. the fidelity decision cell) names
+# the Captain's role via framework.env.captain_role(). Default: "the Captain".
+captain_role: Founder
+
+# Founder's timezone — ALL officer communication uses this timezone.
+# Officers display times in this timezone, never UTC or ambiguous abbreviations.
+# Uses IANA timezone identifier (e.g., Europe/Berlin, America/New_York, Asia/Tokyo).
+# Scripts can resolve: TZ=<this value> date +%H:%M
+captain_timezone: Europe/Berlin       # <YOUR-IANA-TIMEZONE> — auto-adjusts for DST
+
+# Founder's Telegram chat ID — used by hooks to detect Captain conversations
+# Find yours: look at the chat_id field in incoming Telegram messages
+captain_telegram_chat_id: "<YOUR-TELEGRAM-CHAT-ID>"
+
+# =============================================================
+# Org identity — internal email domains + task-board ids
+# =============================================================
+# Instance-specific identifiers the universal-base framework reads via
+# framework.env resolvers (they are NOT hardcoded in framework/).
+#
+# org_domains — the org's internal email domains. The action classifier
+# (framework/authority/classifier.py) treats a recipient at one of these (or a
+# subdomain) as internal_comms; everything else is external_comms (the
+# always-gated ceiling). framework.env.org_domains() reads this list and
+# fails closed to EMPTY (a deployment with none set treats every recipient as
+# external). Domains are matched case-insensitively.
+org_domains:
+  - example.com
+  - example.org
+
+# tasks_board — the Monday board id lane-created tasks land on (action_exec's
+# DEFAULT_TASKS_BOARD + the act-first canary's synthetic probe board).
+# framework.env.tasks_board() reads this (env CABINET_TASKS_BOARD overrides) and
+# fails closed to "" (the executor's isdigit() guard then refuses rather than
+# landing on another deployment's board).
+tasks_board: ""                       # e.g. "1234567890" — YOUR Monday board id
+
+# =============================================================
+# Flavor-A source paths — the personal-sensing estate this instance reads
+# =============================================================
+# Instance+flavor-specific filesystem paths the universal-base framework reads
+# via framework.env resolvers, so framework/ carries no launcher's sensing
+# path (source-adapter boundary, docs/plans/source-adapter-boundary-2026-07-05.md
+# §5 — Tier-2 credential/path reparents). A clean-room / Flavor-B deployment
+# OMITS these keys and the resolvers fail closed to "" (no credentials loaded,
+# no retrodiction scoring lib — never a crash, never a foreign path).
+# Uncomment and point at YOUR estate only if this instance runs Flavor-A:
+#
+# shared_env_path — the shared credentials .env file the action lane loads
+# MONDAY_API_TOKEN / MONDAY_API_KEY from. Fails closed to "" when unset.
+# shared_env_path: ~/path/to/your/shared/.env
+#
+# retro_pipe_dir — the retrodiction SCORING pipe dir (holds lib.py) the
+# fidelity EvaluationEngine loads its leak-safe scoring logic from.
+# retro_pipe_dir: ~/path/to/your/retrodiction-pipe
+#
+# vault_dir — the brain/notes VAULT dir the fidelity decision-cell reads its
+# held-out Decisions corpus from.
+# vault_dir: ~/path/to/your/vault
+#
+# state_dir — the personal-source runtime-STATE dir (decision-cache +
+# autonomy-outcomes ledger; the outcome-watchdog's watched dir).
+# state_dir: ~/path/to/your/state
+
+# =============================================================
+# Spending Limits — daily caps on Anthropic API spend
+# =============================================================
+# Per-officer and cabinet-wide caps enforced by pre-tool-use.sh.
+# Framework ships safe defaults at framework/defaults/spending-limits.yml;
+# this block overrides them for THIS Cabinet. Any key set to 0 disables
+# enforcement for that scope. When a cap blocks, the hook prints the
+# reason on stderr; Telegram reply/react/group always bypass the gate
+# so an over-cap officer can DM the Captain for a raise.
+spending_limits:
+  daily_per_officer_usd: 25           # 0 = unlimited
+  daily_cabinet_wide_usd: 100         # 0 = unlimited
+  coordinating_officer_multiplier: 3.0  # Framework default
+  telegram_whitelist_enabled: true    # Always-on safety net, cheap to keep enabled
+  telegram_whitelist_hourly_cap: 100
+
+# =============================================================
+# Dashboard — Consumer Mode (Spec 032)
+# =============================================================
+# The Consumer/Advanced toggle surfaces a 4-card natural-language dashboard
+# for non-developer founders, while Advanced keeps the current admin UI.
+# Consumer is the default for first-time users. Once a user toggles to
+# Advanced, the toggle stays there permanently (no re-defaulting).
+#
+# Set consumer_mode_enabled: false to disable the feature entirely — the
+# dashboard behaves exactly as pre-Spec-032, full admin nav only.
+dashboard:
+  consumer_mode_enabled: true         # Master switch for the toggle + Consumer UI
+
+# =============================================================
+# Founder Accountability — how officers push on blocking issues
+# =============================================================
+# Officers ask the Captain for commitment dates on founder-action items,
+# then remind and escalate if missed. Adjust cadence to your preference.
+accountability:
+  reminder_before: 2h          # How long before deadline to send a reminder (e.g., 2h, 1d, 30m)
+  follow_up_after: 1h          # How long after a missed deadline to follow up
+  escalation_after: 24h        # When ALL officers start including it as #1 in every DM
+  tone: balanced               # direct | gentle | balanced
+  # direct: "You committed to X. You missed it. New date?"
+  # gentle: "Hey, just checking in on X — still planning to get to it today?"
+  # balanced: "Reminder: X is overdue. What's your new timeline?"
+
+# =============================================================
+# Communication Preferences — how officers communicate with the founder
+# =============================================================
+# Controls DM frequency, research visibility, and notification style.
+# Founders who want fewer messages adjust these settings.
+communication:
+  research_visibility: summary   # full | summary | minimal
+  # full: Every research finding DM'd with action/no-action classification
+  # summary: Batch findings into daily briefing, only DM [ACTIONABLE] items
+  # minimal: Only DM critical/urgent findings, everything else in briefing
+
+  briefing_frequency: daily      # 2x_daily | daily | weekly
+  # 2x_daily: Morning (07:00) + evening (19:00) briefings
+  # daily: Morning briefing only
+  # weekly: One weekly summary (Monday morning)
+
+  officer_dm_policy: proactive   # proactive | on_request | minimal
+  # proactive: Officers DM founder with status updates, proposals, blockers
+  # on_request: Officers only DM when founder asks or when [ACTIONABLE]
+  # minimal: Officers post to warroom only, DM only for founder-action items
+
+  tech_radar_routing: cos_only   # captain | cos_only | silent
+  # captain: Tech radar items DM'd to founder with action classification
+  # cos_only: Route to CoS, include in briefing but don't DM separately
+  # silent: Log to tech-radar.md only, no notifications
+
+# =============================================================
+# Officer Types — fulltime vs consultant
+# =============================================================
+# fulltime: always-on, persistent session, supervisor auto-restarts
+# consultant: on-demand, starts via cron/trigger, supervisor does NOT restart
+#
+# Consultant officers have full identity (role def, memory, Telegram, tools)
+# but aren't always running. They activate on schedule or when triggered,
+# do their work, then sit idle. Designed for low-frequency, non-interactive
+# roles (research sweeps, periodic audits, compliance checks).
+#
+# To configure: add officer key with type field. Officers not listed default
+# to fulltime. IMPORTANT: Use inline YAML format (single line per officer,
+# 2-space indent). The supervisor parses this with grep — multi-line block
+# style will not be detected.
+#
+# NOTE: officer type is declared in TWO places — roster.yml `type:` (read by
+# bootstrap-roles.sh when seeding roles) and this officers: block (read by
+# cabinet-spawn.sh when starting sessions). Keep them in agreement; see
+# roster.yml.example for the seed-side twin.
+#
+# NOTE on the spawn parser (cabinet/scripts/cabinet-spawn.sh): introducing a
+# LIVE `officers:` block REPLACES the fallback roster (cos cto cpo coo cro).
+# If you activate this block, list your FULL live roster so spawn doesn't
+# drop an officer. The `type:` field and the officer key MUST be on the SAME
+# line (inline-YAML); keys may contain hyphens.
+#
+# officers:
+#   cos: { type: fulltime }
+#   cto: { type: fulltime }
+#   cpo: { type: fulltime }
+#   coo: { type: fulltime }
+#   cro: { type: consultant, schedule: "0 */4 * * *" }
+
+# =============================================================
+# Model routing — concrete IDs live with the launcher, not here
+# =============================================================
+# The LLM model is NOT parsed from this file — it comes from CABINET_MODEL /
+# start-officer-mac.sh (Mac) / start-officer.sh (Docker), the CABINET_MODEL env
+# in the officer LaunchAgent, DEFAULT_MODEL in generate-instance.py, and the
+# `model:` frontmatter in each agent def. Record your deployment's current
+# values + lineage here as comments if you want a single reference point.
+
+# =============================================================
+# Organizational Health — officer governance and auditing
+# =============================================================
+organizational_health:
+  audit_cadence: auto            # auto | daily | weekly | manual
+  # auto: CoS runs audit during reflection (every 6h) when officer activity is high,
+  #   or during retro (every 24h) when activity is normal. Baseline: at least once per retro.
+  # daily: Run audit every 24h
+  # weekly: Run audit every 7 days
+  # manual: Only run when CoS or Captain requests
+
+  cross_validation: true         # Auto-notify reviewers when artifacts are created
+  trigger_ack_warning: 60        # Minutes before unACK'd trigger triggers a warning
+  correction_tracking: true      # Track correction frequency for role fitness signal
+
+# =============================================================
+# Research APIs — CRO Tools
+# =============================================================
+research:
+  apis:
+    - perplexity  # General research
+    - brave       # Web search
+    - exa         # Semantic search
+  # API keys go in .env, not here
+
+# =============================================================
+# Embeddings
+# =============================================================
+embeddings:
+  provider: voyage
+  models:
+    storage: voyage-4-large    # 1024d, for document storage
+    query: voyage-4-lite       # 1024d, for retrieval queries
+  dimensions: 1024
+
+# =============================================================
+# Voice — Officer Voice Messages (optional)
+# =============================================================
+# When enabled, officers send a voice message alongside text replies.
+# Requires ELEVENLABS_API_KEY in .env (never here).
+# Browse voices at https://elevenlabs.io/voice-library or via API:
+#   curl -s https://api.elevenlabs.io/v1/voices -H "xi-api-key: $ELEVENLABS_API_KEY" | jq '.voices[] | {name, voice_id}'
+#
+# Voice config is officer-agnostic: add any officer key to the maps below.
+# Officers not listed use the top-level defaults (model, stability 0.5, speed 1.0).
+# To add a new officer's voice: add their key to naturalize_prompts, voices,
+# and optionally models/stability/speeds.
+voice:
+  enabled: false                # Set to true to activate voice messages
+  provider: elevenlabs
+  model: eleven_flash_v2_5      # Fastest model (~75ms latency)
+  mode: all                     # all | captain-dm | group | briefings
+  naturalize: true              # Rewrite structured text into natural speech via Haiku before TTS
+  naturalize_prompts:
+    cos: "You are a warm, sharp chief of staff. Speak to the founder like a trusted colleague — candid, concise, human. Show genuine enthusiasm for wins and honest concern for blockers."
+  voices:
+    cos: "<YOUR-ELEVENLABS-VOICE-ID>"
+
+# =============================================================
+# Image Generation (optional)
+# =============================================================
+image_generation:
+  enabled: false
+  provider: gemini
+  model: gemini-3.1-flash-image-preview

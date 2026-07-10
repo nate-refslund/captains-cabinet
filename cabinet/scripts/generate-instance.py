@@ -60,7 +60,30 @@ archives each conflicting file to instance/_pre-adopt-<UTC-stamp>/<relpath>
 (inside instance/, path-contained, nothing deleted) and generates fresh. An
 existing posture.yml is STILL never touched (Captain ruling), and --adopt never
 widens what --force would not: it only relocates files the generator was about
-to refuse over.
+to refuse over. When a refusal fires on an instance/ whose platform.yml carries
+a DIFFERENT captain than the answers (the inherited-clone signal), the refusal
+message names the previous captain and teaches --adopt as the fix.
+
+Defaults fast lane (--defaults, init-fastlane 2026-07-09): a zero-question
+non-interactive hatch for a stranger/demo deployment. Writes a marker-stamped
+consent-safe answers file (captain from --captain-name, else $USER, else
+"Captain"; timezone UTC placeholder; chat id "0000" placeholder; cabinet
+id main/single/portfolio; one placeholder lane `first-lane`; autonomy
+propose_first + flavor org + target_posture guardian; env-var NAMES only)
+and then runs the EXACT same generation path as the interview. It never
+overwrites an interview-written answers file (no marker => refusal teaching
+--adopt, which archives it like every other adopted file; --force
+deliberately does NOT override this one refusal — the answers file is the
+captain's interview record, and archive-over-clobber is the only honest
+path); a marker-stamped defaults answers file is rewritten (the generator
+owns it). The answers TARGET must be named `*.answers.yml` — the one
+filename shape no generated instance file can occupy — so a custom
+--answers can never aim the defaults write at a generator output
+(posture.yml, platform.yml, sources.yml, roster.yml, active-project.txt,
+contexts/, projects/), marker-stamped or not. All existing guardrails
+(path jail, secret refusal, marker overwrite protection, idempotency)
+apply unchanged. The full interview stays the default lane for real
+captains.
 
 sources.yml emission rule (Wave-1 OrgSource, 2026-07-07): the answers'
 `autonomy.flavor` key is the signal for whether this deployment has a personal
@@ -100,6 +123,9 @@ Idempotent: re-running with unchanged answers rewrites byte-identical files.
 Usage:
   python3 cabinet/scripts/generate-instance.py [--answers PATH] [--root PATH]
                                                [--dry-run] [--force] [--adopt]
+  python3 cabinet/scripts/generate-instance.py --defaults [--captain-name NAME] [--adopt]
+                                               # zero-question fast lane: write a
+                                               # defaults answers file, then generate
   python3 cabinet/scripts/generate-instance.py --example   # print a starter answers file
 """
 
@@ -155,6 +181,14 @@ CHAIR_CAPABILITIES = "[logs_captain_decisions, reviews_specs, reviews_implementa
 LANE_CEO_CAPABILITIES = "[deploys_code, logs_captain_decisions]"
 
 DEFAULT_MODEL = "claude-opus-4-8[1m]"
+
+# Defaults fast lane (--defaults): the fixed consent-safe answers set. All
+# placeholders are syntactically valid (they pass load_answers) and obviously
+# placeholders — honest defaults, never invented captain data.
+DEFAULTS_CAPTAIN_FALLBACK = "Captain"
+DEFAULTS_LANE_NAME = "First Lane"
+DEFAULTS_LANE_SLUG = "first-lane"
+DEFAULTS_CHAT_ID_PLACEHOLDER = "0000"
 
 # Posture scaffold vocabulary (sovereign amendment 2026-07-05, FI-1).
 POSTURE_FLAVORS = frozenset({"org", "personal"})
@@ -350,15 +384,40 @@ def _instance_path(root: Path, *parts: str) -> Path:
     return resolved
 
 
-def _check_overwrite(path: Path, force: bool) -> None:
-    """Refuse to clobber a file the generator does not own (no marker)."""
+def _check_overwrite(path: Path, force: bool, hint: str = "") -> None:
+    """Refuse to clobber a file the generator does not own (no marker).
+
+    ``hint`` (optional) is appended to the refusal so the message can teach
+    the right fix — e.g. the inherited-instance --adopt suggestion."""
     if path.exists() and MARKER not in path.read_text(encoding="utf-8"):
         if not force:
-            raise GenerationError(
+            msg = (
                 f"REFUSING to overwrite {path}: existing file lacks the "
                 f"'{MARKER}' marker (hand-authored?). Re-run with --force to "
                 f"overwrite, or move the file aside."
             )
+            if hint:
+                msg += "\n" + hint
+            raise GenerationError(msg)
+
+
+def _existing_captain_name(root: Path) -> str:
+    """Best-effort read of the CURRENT instance's captain (the top-level
+    `captain_name:` key in instance/config/platform.yml). Read-only; used
+    solely as the inherited-instance signal for refusal messages — a value
+    differing from the incoming answers' captain means this instance/ likely
+    belongs to a previous deployment and --adopt is the fix."""
+    platform = root / "instance" / "config" / "platform.yml"
+    if not platform.is_file():
+        return ""
+    try:
+        text = platform.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    m = re.search(r"^captain_name:\s*([^#\n]*)", text, re.MULTILINE)
+    if not m:
+        return ""
+    return m.group(1).strip().strip("'\"")
 
 
 def _atomic_write(path: Path, content: str) -> None:
@@ -702,11 +761,28 @@ def _set_top_level_key_if_absent(text: str, key: str, value: str, comment: str =
     return f"{text}{sep}{key}: {value}{suffix}\n"
 
 
+def _yaml_str(value: str) -> str:
+    """Render ``value`` as a YAML scalar that round-trips as EXACTLY that
+    string. Plain-safe values emit bare (byte-stable for every existing
+    config, and shell greppers — e.g. hooks/post-tool-use.sh's awk — keep
+    seeing unquoted names). Values YAML would silently retype — captain
+    names like "yes"/"Null" (bool/null), "0000" (int), "2026-01-01" (date) —
+    emit double-quoted, because a name that loads back as True is invented
+    data. Quoting needs no escaping: every call site is NAME_RE-validated,
+    and NAME_RE forbids '"' and '\\'."""
+    try:
+        if yaml.safe_load(value) == value:
+            return value
+    except yaml.YAMLError:
+        pass
+    return f'"{value}"'
+
+
 def render_platform(existing: str, answers: dict, lanes: list, org_shape: str,
                     product_brain: str) -> str:
     captain = answers["captain"]
     text = existing
-    text = _set_top_level_key(text, "captain_name", str(captain["name"]))
+    text = _set_top_level_key(text, "captain_name", _yaml_str(str(captain["name"])))
     text = _set_top_level_key(text, "captain_timezone", str(captain["timezone"]))
     text = _set_top_level_key(text, "captain_telegram_chat_id", f'"{captain["telegram_chat_id"]}"')
     # Org product-brain corpus dir (only when absent — a hand-edited value
@@ -736,11 +812,17 @@ def render_platform(existing: str, answers: dict, lanes: list, org_shape: str,
         # markers — appending a second one would silently shadow it.
         for line in text.splitlines():
             if re.match(r"^officers:\s*(#.*)?$", line):
+                # Wording contract: starts with "REFUSING to overwrite" — the
+                # cue hatch.sh greps to offer/perform the --adopt path.
                 raise GenerationError(
-                    "platform.yml already has an unmanaged top-level 'officers:' "
-                    "block — migrate it into the cabinet-init managed block "
-                    "(remove it, then re-run) instead of letting two blocks shadow "
-                    "each other."
+                    "REFUSING to overwrite platform.yml: it already has an "
+                    "unmanaged top-level 'officers:' block — a previous "
+                    "deployment's config in an inherited clone? Re-run with "
+                    "--adopt to archive the whole file to "
+                    "instance/_pre-adopt-<stamp>/ (nothing deleted) and render "
+                    "fresh. Otherwise migrate the block into the cabinet-init "
+                    "managed block (remove it, then re-run) instead of letting "
+                    "two blocks shadow each other."
                 )
         sep = "" if text.endswith("\n") else "\n"
         text = f"{text}{sep}\n{block}\n"
@@ -865,6 +947,198 @@ integrations:
 
 
 # ---------------------------------------------------------------------------
+# Defaults fast lane (--defaults) — zero questions, one confirm
+# ---------------------------------------------------------------------------
+
+def default_captain_name(explicit: str | None) -> str:
+    """Resolve the defaults-lane captain name: --captain-name, else $USER,
+    else the honest fallback "Captain". An EXPLICIT name failing NAME_RE
+    refuses loud (the captain asked for it, so a silent substitute would be
+    invented data); an unusable ambient $USER falls back silently (it was
+    never asked for)."""
+    if explicit is not None:
+        name = explicit.strip()
+        if not name or "\n" in name or not NAME_RE.match(name):
+            raise GenerationError(
+                f"--captain-name {explicit!r} must match {NAME_RE.pattern} "
+                f"(plain display name)"
+            )
+        return name
+    ambient = (os.environ.get("USER") or "").strip()
+    if ambient and NAME_RE.match(ambient):
+        return ambient
+    return DEFAULTS_CAPTAIN_FALLBACK
+
+
+def render_default_answers(captain_name: str) -> str:
+    """The --defaults answers file: a fixed, consent-safe, syntactically valid
+    answers set (guardian + propose-first, org flavor, portfolio shape, one
+    placeholder lane, env-var NAMES only). Marker-stamped: the generator owns
+    it and a --defaults re-run rewrites it; edit it and re-run WITHOUT
+    --defaults (or run the cabinet-init interview, which loads it and asks
+    only about gaps) to refine. The name scalar rides ``_yaml_str`` so a
+    YAML-reserved name ("yes", "Null", "0000") round-trips as that exact
+    string instead of silently retyping to True/None/0."""
+    captain_scalar = _yaml_str(captain_name)
+    return f"""\
+# {MARKER} — DEFAULTS fast lane (generate-instance.py --defaults).
+# A consent-safe answers set written with ZERO questions asked: guardian
+# posture, propose-first, org flavor, portfolio shape, one placeholder lane.
+# Placeholder values are marked below. To refine: edit this file and re-run
+# WITHOUT --defaults (a --defaults re-run REWRITES this file — it carries the
+# generated-by marker, so the generator owns it), or run the cabinet-init
+# interview skill, which loads it and asks only about gaps/changes.
+version: 1
+
+captain:
+  name: {captain_scalar}
+  timezone: UTC                  # placeholder — set your IANA zone (e.g. Europe/Madrid)
+  telegram_chat_id: "{DEFAULTS_CHAT_ID_PLACEHOLDER}"       # placeholder address (not a secret) — set your numeric chat id
+
+cabinet:
+  id: main                       # single-instance default
+  mode: single
+  org_shape: portfolio           # one Chair + on-demand lane CEOs
+  officer_model: {DEFAULT_MODEL}
+
+lanes:
+  - name: {DEFAULTS_LANE_NAME}             # placeholder lane — rename to your first real product
+    slug: {DEFAULTS_LANE_SLUG}
+    repos: []
+    task_system: none
+    boards: []
+
+# Consent-safe autonomy: guardian, propose-first everywhere; the hard
+# ceilings (secrets / spend / external comms / production deploys) never
+# resolve unconditional auto in any posture. flavor: org binds OrgSource
+# recall and declares NO personal estate. target_posture is EXPLICITLY
+# guardian so nothing in the defaults lane can scaffold sovereign.
+autonomy:
+  posture: propose_first
+  flavor: org
+  target_posture: guardian
+
+integrations:
+  telegram:
+    ceo_bot: ""                        # bot USERNAME once created (TOKEN-TBD)
+    bot_token_env: TELEGRAM_COS_TOKEN  # env var NAME; the token VALUE goes in cabinet/.env
+  mcp_env_names: []
+"""
+
+
+def prepare_default_answers(root: Path, answers_path: Path, captain_name: str | None,
+                            adopt: bool = False, dry_run: bool = False) -> tuple[Path, Path | None]:
+    """--defaults: materialize the defaults answers set at ``answers_path``
+    and return ``(path_for_generate, tmp_path_or_None)``. Zero prompts.
+
+    Rules (all existing doctrine, applied to the one new write):
+      * The answers WRITE stays inside the instance/ jail — a --answers path
+        resolving outside <root>/instance/ is refused.
+      * The target filename must end with ``.answers.yml`` — the one
+        namespace no generated instance file can occupy (the outputs are
+        fixed names like posture.yml/platform.yml/active-project.txt, and
+        SLUG_RE forbids dots in context/project slugs) — so --defaults can
+        never rewrite a generator output even when it carries the marker.
+        Unconditional shape rule: neither --force nor --adopt widens it.
+      * An existing answers file WITHOUT the generated-by marker is an
+        interview-written (or a previous deployment's) record: REFUSE with
+        the fix — naming the previous captain when platform.yml records a
+        different one (the inherited-clone signal) — unless --adopt, which
+        archives it to instance/_pre-adopt-<stamp>/<relpath> (nothing
+        deleted) first. --force deliberately does NOT override this one
+        refusal: the file is the captain's interview record, and
+        archive-over-clobber is the only honest path (everywhere else
+        --force keeps its usual marker-override meaning).
+      * With the marker, the file is generator-owned and is rewritten
+        (idempotent: unchanged inputs => byte-identical content).
+      * --dry-run writes NOTHING into the repo: the defaults land in a
+        tempfile (returned as tmp_path for the caller to unlink).
+    """
+    root = root.resolve()
+    instance_root = (root / "instance").resolve()
+    resolved = answers_path.resolve()
+    if resolved != instance_root and instance_root not in resolved.parents:
+        raise GenerationError(
+            f"PATH REFUSED: --defaults writes the answers file, and the "
+            f"generator writes only under instance/ — {answers_path} resolves "
+            f"outside {instance_root}. Use the default answers path or one "
+            f"under instance/."
+        )
+    if resolved.is_dir():
+        raise GenerationError(f"--answers {answers_path} is a directory, not an answers file")
+    if not resolved.name.endswith(".answers.yml"):
+        # Namespace fence, not a marker check — deliberately NOT worded
+        # "REFUSING to overwrite" (hatch.sh greps that cue to offer --adopt,
+        # the wrong fix here). Without it, a marker-stamped generator output
+        # (e.g. the posture.yml RULING scaffold — never touched once written,
+        # Captain ruling) would read as "generator-owned answers file" and be
+        # rewritten, permanently: generate() then sees it existing and skips
+        # re-rendering. --force does not apply — shape rule, not overwrite.
+        raise GenerationError(
+            f"ANSWERS PATH REFUSED: --defaults writes the answers file and "
+            f"requires a '*.answers.yml' filename — {answers_path} could "
+            f"collide with a generated instance file (posture.yml, "
+            f"platform.yml, sources.yml, roster.yml, active-project.txt, "
+            f"contexts/, projects/). Use the default "
+            f"instance/config/cabinet-init.answers.yml or another "
+            f"*.answers.yml path under instance/."
+        )
+    rel = resolved.relative_to(root)
+
+    name = default_captain_name(captain_name)
+    content = render_default_answers(name)
+
+    needs_archive = resolved.exists() and MARKER not in resolved.read_text(encoding="utf-8")
+    if needs_archive and not adopt:
+        msg = (
+            f"REFUSING to overwrite {resolved}: existing answers file "
+            f"lacks the '{MARKER}' marker — an interview-written (or a "
+            f"previous deployment's) record. Run WITHOUT --defaults to "
+            f"generate from it, or re-run with --defaults --adopt to "
+            f"archive it to instance/_pre-adopt-<stamp>/ (nothing "
+            f"deleted) and start from defaults."
+        )
+        prior = _existing_captain_name(root)
+        if prior and prior != name:
+            msg += (
+                f"\nThis instance/ looks inherited from a previous "
+                f"deployment (platform.yml captain_name: {prior!r}; "
+                f"--defaults would set captain {name!r})."
+            )
+        raise GenerationError(msg)
+
+    # Banner only after every refusal check — a refused run should show the
+    # refusal, not a happy-path narration above it.
+    print(f"defaults fast lane: captain {name!r} · timezone UTC (placeholder) · "
+          f"cabinet 'main' (single, portfolio) · posture guardian/propose-first · "
+          f"flavor org · lane '{DEFAULTS_LANE_SLUG}' (placeholder) — zero questions; "
+          f"edit {rel} and re-run without --defaults to refine.")
+
+    if needs_archive:
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        dest = instance_root / f"_pre-adopt-{stamp}" / resolved.relative_to(instance_root)
+        if dry_run:
+            print(f"[dry-run] would adopt-archive {rel} -> "
+                  f"{dest.relative_to(root)} (answers file without marker)")
+        else:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(resolved), str(dest))
+            print(f"adopt-archived {rel} -> {dest.relative_to(root)} "
+                  f"(answers file without marker)")
+
+    if dry_run:
+        fd, tmp = tempfile.mkstemp(prefix=".cabinet-init-defaults.", suffix=".yml")
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(content)
+        print(f"[dry-run] would write {rel} (defaults answers)")
+        return Path(tmp), Path(tmp)
+
+    _atomic_write(resolved, content)
+    print(f"wrote {rel} (defaults answers)")
+    return resolved, None
+
+
+# ---------------------------------------------------------------------------
 # Main generation pass
 # ---------------------------------------------------------------------------
 
@@ -878,6 +1152,22 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
     model = str(cabinet.get("officer_model", DEFAULT_MODEL))
     lanes = answers["lanes"]
     integrations = answers.get("integrations") or {}
+
+    # Inherited-instance signal: an existing platform.yml carrying a DIFFERENT
+    # captain than the answers means this instance/ likely shipped from a
+    # previous deployment — when a marker refusal fires, teach --adopt (the
+    # built fix) instead of leaving the new captain at --force/hand-edits.
+    prior_captain = _existing_captain_name(root)
+    new_captain = str((answers.get("captain") or {}).get("name", ""))
+    inherited_hint = ""
+    if not adopt and prior_captain and prior_captain != new_captain:
+        inherited_hint = (
+            f"This instance/ looks inherited from a previous deployment "
+            f"(platform.yml captain_name: {prior_captain!r}, answers say "
+            f"{new_captain!r}) — re-run with --adopt to archive its "
+            f"conflicting files under instance/_pre-adopt-<stamp>/ (nothing "
+            f"deleted) and generate fresh."
+        )
 
     # ---- adoption plumbing (--adopt; see module docstring) ----
     # Conflicting files a previous deployment left behind are ARCHIVED (never
@@ -1005,7 +1295,7 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
                 and MARKER not in path.read_text(encoding="utf-8")):
             _adopt_aside(path, "no generated-by marker")
             continue
-        _check_overwrite(path, force)
+        _check_overwrite(path, force, inherited_hint)
 
     # ---- write (or report) ----
     written = []
@@ -1098,6 +1388,15 @@ def main(argv=None) -> int:
                              "instance files to instance/_pre-adopt-<stamp>/ and generate "
                              "fresh — the fresh-captain path for a clone that ships "
                              "another deployment's instance/")
+    parser.add_argument("--defaults", action="store_true",
+                        help="zero-question fast lane: write a consent-safe defaults "
+                             "answers file (guardian/propose-first, org flavor, portfolio "
+                             "shape, one placeholder lane; captain from --captain-name, "
+                             "else $USER) and generate from it — no prompts; the full "
+                             "interview (cabinet-init skill) stays the default lane")
+    parser.add_argument("--captain-name", default=None, metavar="NAME",
+                        help="captain display name for --defaults "
+                             "(default: $USER, else 'Captain')")
     parser.add_argument("--example", action="store_true",
                         help="print a starter answers file to stdout and exit")
     args = parser.parse_args(argv)
@@ -1106,15 +1405,28 @@ def main(argv=None) -> int:
         sys.stdout.write(EXAMPLE_ANSWERS)
         return 0
 
+    if args.captain_name is not None and not args.defaults:
+        print("[generate-instance] ERROR: --captain-name requires --defaults",
+              file=sys.stderr)
+        return 2
+
     root = Path(args.root).resolve() if args.root else Path(__file__).resolve().parents[2]
     answers_path = Path(args.answers).resolve() if args.answers else root / "instance/config/cabinet-init.answers.yml"
 
+    tmp_answers: Path | None = None
     try:
+        if args.defaults:
+            answers_path, tmp_answers = prepare_default_answers(
+                root, answers_path, args.captain_name,
+                adopt=args.adopt, dry_run=args.dry_run)
         generate(root, answers_path, dry_run=args.dry_run, force=args.force,
                  adopt=args.adopt)
     except GenerationError as e:
         print(f"[generate-instance] ERROR: {e}", file=sys.stderr)
         return 2
+    finally:
+        if tmp_answers is not None and tmp_answers.exists():
+            tmp_answers.unlink()
     return 0
 
 

@@ -8,7 +8,7 @@ plugs the binder no-pid label leak — the Captain's ruled flip prerequisite"). 
 per briefing run:
 
   1. GATHER — acted journal rows still inside their undo window (non-canary,
-     not reversed/voided), pending propose-class proposals (the AWAITING leg —
+     non-demo, not reversed/voided), pending propose-class proposals (the AWAITING leg —
      this is what plugs the no-pid leak: the Captain sees what is open instead
      of replying into a void), frozen kinds (SELF), scouted items (WATCHING —
      injectable; no default producer yet, see checkpoint PRO-2/PRO-3).
@@ -48,6 +48,16 @@ preserves the exact pre-2026-07-05 behavior so fixtured tests stay hermetic
 decide when that is safe). ``gather_loop_readout`` never raises — a readout
 failure must never cost the digest (fail-safe: no readout on error, never a
 blocked tell).
+
+RECEIPT GRAMMAR — the "— why" clause (Wave B RECEIPTS, 2026-07-09): after
+``_build_digest_text`` renders the legs, ``action_language.digest_with_why``
+appends each ACTED item's compact ``— why: …`` clause (the proposing card's
+rationale, when a journal row carries the additive ``why`` field — see
+framework/frontdoor/action_language.py for the grammar + the germline
+handback). Same unlocked-decoration pattern as the LOOP readout above
+(tell_surface._acted_section is germline-locked). Rows without a why — the
+entire pre-grammar world — render BYTE-IDENTICALLY, and a decoration failure
+never costs the digest.
 """
 from __future__ import annotations
 
@@ -59,7 +69,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-from framework.frontdoor import tell_surface
+from framework.frontdoor import action_language, tell_surface
 
 # RECONCILE 2026-07-05: kept both — HEAD's loop-readout exports (gather/render
 # readout + card rates + undo trend + falsifier series) + sovereign's needs /
@@ -135,10 +145,14 @@ def _default_pending() -> List[Dict[str, Any]]:
 def gather_acted_rows(*, now: str,
                       journal_rows: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
     """The acted journal rows the digest may offer an undo handle for: executed,
-    non-canary, undo window still open, and NOT already reversed / failed-
-    reversal / voided (the reversal journals a superseding status row for the
-    same jid — its original ``executed`` row must not resurface with a dead
-    handle). Sorted by execution time so index assignment is deterministic."""
+    non-canary, non-demo, undo window still open, and NOT already reversed /
+    failed-reversal / voided (the reversal journals a superseding status row
+    for the same jid — its original ``executed`` row must not resurface with a
+    dead handle). Sorted by execution time so index assignment is
+    deterministic. The ``demo`` skip mirrors ``action_reconcile.run_sweep``'s
+    (defense-in-depth: the hatch demo seeder never journals its row since the
+    2026-07-10 fix pass, but any future demo-stamped row must never earn a
+    digest line or an undo handle)."""
     rows = journal_rows if journal_rows is not None else _default_journal_rows()
     dead: set = set()
     for r in rows:
@@ -148,7 +162,7 @@ def gather_acted_rows(*, now: str,
             dead.add((r.get("pid"), r.get("jid")))
     out: List[Dict[str, Any]] = []
     for r in rows:
-        if not isinstance(r, dict) or r.get("canary"):
+        if not isinstance(r, dict) or r.get("canary") or r.get("demo"):
             continue
         if r.get("status") != "executed" or not r.get("executed_at"):
             continue
@@ -617,6 +631,17 @@ def enqueue_digest(*, now: Optional[str] = None,
     # build_digest's signature), then HEAD's 📈 LOOP readout is appended below
     # that output. Both legs ride ONE digest text.
     text = _build_digest_text(acted, awaiting, watching, selfr, needs, now=now_s)
+    # RECEIPT GRAMMAR (Wave B, 2026-07-09): ACTED items whose journal row
+    # carries the additive ``why`` field gain their compact "— why" clause
+    # here in the unlocked orchestrator (tell_surface._acted_section is
+    # germline-locked — same decoration pattern as the 📈 LOOP readout).
+    # digest_with_why is internally defensive; the belt-and-braces wrap keeps
+    # a decoration failure from ever costing the briefing. Rows without a
+    # why render byte-identically.
+    try:
+        text = action_language.digest_with_why(text, acted)
+    except Exception:
+        pass
     readout_text = render_loop_readout(readout)
     if text and readout_text:
         # Below the footer, not inside a tell_surface section — the germline

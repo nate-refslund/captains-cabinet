@@ -1,0 +1,165 @@
+# Hatch Cabinet.app v0.5.1 — thin-shell runbook (HATCH-APPSHELL-V05)
+
+- **Status**: shipped with Wave D on `feat/perfect-cabinet` (survey base 2d8f99d9).
+- **Design of record for the STRANGER launcher**: `docs/plans/world-onboarding-hatching-2026-07-09.md`
+  (WORLD-ONBOARDING-V1B, ledger row still `todo` — unmodified by this shell). v0.5 is a
+  *forward shim*, not that launcher.
+- **Sources**: `cabinet/scripts/appshell/` (stub, builder, runner template, lint, gate) +
+  `cabinet/scripts/tests/test_appshell_build.py`. The whole appshell area is dev-side
+  tooling: it builds the vehicle and never rides in it (egg-manifest exclusion rows are
+  tracked with the `APPSHELL-V05` ledger row).
+
+## What v0.5 honestly is
+- A **double-clickable entry to the technical-captain face** — the documented Terminal
+  fallback face of `hatch.sh` ("same engine, second face"). Terminal is deliberate: the
+  engine has no native-UI mode yet, and a progress window over a headless run would hide
+  errand notes and failures (fake status). The engine's errand notes render verbatim in
+  Terminal; the shell adds no chrome beyond one end-of-run notice (exit code + log paths).
+- The run is **self-recorded**: the runner wraps the engine in `script(1)`, writing
+  `~/hatch-logs/hatch-<UTCstamp>/terminal-transcript.txt` beside the engine's own
+  `--flight-log` at `~/hatch-logs/hatch-<UTCstamp>/flight.log` (v0 shipped without
+  self-recording by design; the shell adds it as pure orchestration).
+- **First receipt in minutes once hatched.** Single-install only (one prefix:
+  `~/Cabinet/captains-cabinet`).
+- Zero hatch logic in the shell: it execs `hatch.sh`, `cabinet-doctor.sh`, and (at build
+  time) `egg-export.sh`. Nothing else.
+
+## What v0.5 is NOT — the fenced list
+The strings below are WORLD-ONBOARDING-V1B gate items (see that ledger row) or framing
+this program forbids. v0.5 does **not** claim them, and
+`cabinet/scripts/appshell/claims-lint.sh` mechanically rejects each one — case-insensitive,
+widened against respellings — in every user-facing shell string and in this runbook outside
+this single fenced block. The fence itself is fail-closed: a fence that is opened but never
+closed, or a second fence in the same file, is a lint violation in its own right (an
+unterminated fence additionally disables stripping for that file, so nothing below it can
+silently escape the patterns):
+
+```forbidden-claims
+ZERO Terminal
+zero commands, zero ENTER, zero typing
+at most one native admin prompt
+≤90 min wall-clock
+non-technical captain, fresh macOS user account
+opens the living world and can never re-hatch
+zero hand-edits beyond documented steps
+/api/hatch/* 410
+byte-identical
+multi-cabinet
+5-minute install
+```
+
+## Build (dev Mac only — the hatch target never compiles anything)
+```
+bash cabinet/scripts/appshell/build-hatch-app.sh --out /path/outside/repo
+bash cabinet/scripts/appshell/appshell-gate.sh          # full acceptance gate, exit 0 = PASS
+python3.12 -m pytest cabinet/scripts/tests/test_appshell_build.py -q
+```
+The builder cuts a **fresh egg** via `egg-export.sh` (git-archive of HEAD shaped by the
+manifest — never this working tree), zips it into the bundle, compiles the single-file
+Swift stub with `swiftc` (Command Line Tools; no Xcode project), renders the runner and
+Info.plist templates, then **ad-hoc signs** the bundle (`codesign --sign -`) and verifies
+(`plutil -lint`, `codesign --verify --strict`). Provenance lands in
+`Contents/Resources/payload/payload-info.json` (source HEAD + branch, egg-manifest sha256,
+payload sha256, build UTC).
+
+### Bundle layout
+```
+Hatch Cabinet.app/
+  Contents/
+    Info.plist                      org.captainscabinet.hatch, v0.5.1, macOS >= 14
+    MacOS/HatchCabinet              the stub (ad-hoc signed)
+    Resources/
+      hatch-run.command             runner (installed into the prefix on hatch)
+      payload/
+        cabinet-egg.zip             fresh egg cut
+        payload-info.json           provenance + hashes
+    _CodeSignature/                 bundle seal (ad-hoc)
+```
+
+## Hand-transport + Gatekeeper (2026 reality)
+| Transport of the zip/.app | Quarantine | First-run on macOS 15 Sequoia / 26 Tahoe |
+|---|---|---|
+| **scp / curl / local share / USB** (v0.5 RECOMMENDED) | No | Double-click runs. Ad-hoc signature suffices on Apple Silicon. |
+| **AirDrop / browser download** | **Yes** (propagates into the .app) | "Apple could not verify…" — the right-click→Open bypass was REMOVED in Sequoia and stays gone in Tahoe → Settings ▸ Privacy & Security ▸ **Open Anyway** → second warning → admin auth → runs. Tahoe 26.2 reports: some unsigned apps get "damaged"/auto-trash with NO Open Anyway — test before relying on this row. Captain's-own-machine escape: `xattr -d com.apple.quarantine` (documented here, never scripted by the shell). |
+| **Developer ID + notarized + stapled DMG** (v1.0 lane) | Yes (handled) | Single "downloaded from the Internet — Open?" confirm. The only acceptable stranger UX for downloads. $99/yr — Captain purchase call; publishing stays blocked by CG-7 regardless. |
+
+**Hand-transport example** (dev Mac → target; quarantine-free end to end, so the .app
+runs on double-click):
+
+```
+# dev Mac: zip the built bundle (--keepParent keeps the .app as the zip root)
+ditto -c -k --keepParent "/path/outside/repo/Hatch Cabinet.app" "hatch-cabinet-0.5.1.zip"
+scp "hatch-cabinet-0.5.1.zip" captain@target-host:~/
+# target: unzip, then double-click "Hatch Cabinet.app" in Finder
+ditto -x -k "hatch-cabinet-0.5.1.zip" ~/Applications/
+```
+
+**Honest empty**: the AirDrop/browser row on a macOS 26.2 box has not been exercised for
+this artifact yet — record the observed outcome here after the manual matrix run.
+
+## Launch flows
+- **First launch** (prefix absent/empty) — dialog offers exactly:
+  - **[Hatch]** (default): engine `--defaults`; move-in stays off (the engine prints it as
+    an errand note).
+  - **[Hatch + move-in]** → a SECOND explicit confirm naming `--with-launchd` and the
+    macOS "Background Items Added" notification (one-actuator rule: never one accidental
+    click; on the confirm, **Back is the default/Return button** — arming move-in always
+    takes a deliberate click). `--with-drill` is NEVER offered (halts a live fleet);
+    `--clean-room` is not offered (dev/test face).
+  - **[Cancel]**.
+  Then: payload unpacked to the prefix (`ditto`), quarantine stripped **on the extracted
+  payload only** (never on the .app — no Gatekeeper evasion), runner installed, Terminal
+  opened on `hatch-run.command` via Launch Services (`open -a Terminal`) — **no
+  Apple-events automation of Terminal** (verify once per target: no automation/TCC prompt
+  should appear).
+- **Re-launch** (prefix non-empty — a real install OR a partial tree left by an
+  interrupted unpack; the dialog says so honestly): "Cabinet already present" →
+  **[Run doctor in Terminal]** (`cabinet-doctor.sh`, probe-only/read-only) / **[Quit]**.
+  Never re-unpacks, never overwrites, no world claims. The runner-missing and error
+  alerts name the recovery step for a partial tree: remove the partial folder, then
+  relaunch.
+- **Kill-switch**: no control surface in this shell, by absence; `kill-switch.sh` is never
+  invoked by any v0.5 path.
+- **Headless smoke** (CI): `HATCH_APP_SMOKE=1 CABINET_HATCH_PREFIX=$TMPDIR/prefix
+  "Hatch Cabinet.app/Contents/MacOS/HatchCabinet"` → unpack + `hatch.sh --dry-run
+  --defaults`, exit 0, no dialogs, no Terminal.
+
+## Logs
+Every hatch run mints `~/hatch-logs/hatch-<UTCstamp>/` with `terminal-transcript.txt`
+(script(1) full transcript; skipped with an honest note when there is no tty) and
+`flight.log` (the engine's own flight log). The one shell-added notice at end of run
+reports exit code + these paths, nothing else.
+
+## Dashboard bind status — honest, as of this build (2026-07-10, base 2d8f99d9)
+- The shell opens **no ports and no URLs** and never invokes `start-dashboard.sh`. Even
+  `hatch.sh --with-launchd` (the move-in this app can offer) deploys the Chair +
+  measurement-plane plists — **not** `com.cabinet.dashboard`.
+- When the dashboard IS brought up later (`deploy-mac.sh --all` / `--daemon dashboard`,
+  or the forthcoming APP-FEEL hatch tail), the bind default is **all interfaces
+  (0.0.0.0)**: at the 2d8f99d9 base `start-dashboard.sh` passes no hostname to Next.js,
+  and the APP-FEEL area lands the canonical **`CABINET_DASHBOARD_HOST`** plumbing in this
+  same wave with the default **deliberately unchanged** — the live box is reached over
+  Tailscale.
+- The default flip to loopback (`127.0.0.1`) is **owned by the APP-FEEL area** and
+  **gated on the pending OC-LOOPBACK Captain call** (which includes the
+  verify-no-LAN-consumer check). Until that ruling lands, treat the bind as **AMBER:
+  all-interfaces by default** — stated here so the status is never silent. This shell
+  asserts nothing on the variable name and needs no change when the flip happens.
+
+## Known limits (honest)
+- The payload is an egg export with **no `.git`** — the post-hatch `git pull` update
+  story does not apply. Until the Captain rules on a payload-update mechanism, update =
+  re-hatch into a fresh prefix (open Captain call in the spec).
+- Ad-hoc signed only. Notarization (Developer ID, $99/yr) is the v1.0 stranger lane —
+  Captain purchase call; CG-7 blocks publishing either way. This artifact is
+  **private-side prep** for the Captain's own machines.
+- macOS 14+ (`LSMinimumSystemVersion`), Apple Silicon dev build.
+
+## Manual verification checklist (once per target)
+1. Double-click → first-launch dialog appears with the three buttons above.
+2. Hatch → Terminal opens on the runner; engine plan + errand notes render in Terminal.
+3. Confirm **no automation/TCC prompt** appears for Terminal (Launch Services handoff).
+4. `~/hatch-logs/hatch-<stamp>/terminal-transcript.txt` is non-empty after the run; the
+   end-of-run notice shows the exit code + paths.
+5. Re-launch the .app → doctor/quit dialog (no re-unpack offered).
+6. AirDrop-transport row of the Gatekeeper matrix on a 26.2 box — record outcome above.
