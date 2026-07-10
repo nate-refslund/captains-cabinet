@@ -134,4 +134,8 @@ modules; the personal estate is reached only through
 `framework.sources.get_source()` (tri-state contract, honest-empty when
 unbound). No germline-locked file was modified: the wiring seams
 (`gate.py`, `tools.py`, `chair_drafts.py`, `run_draft_lane.py`) are all
-outside the germline census — no window-4 diff required by this arm.
+outside the germline census — no window-4 diff arises from these four rails
+themselves. The WAVE-level window-4 deliverable (the 3 spec-listed locked-
+file diffs) is explicitly deferred — see
+`docs/proposals/germline-window-4-deferral-2026-07-10.md` (Captain to
+ratify the deferral or order the diffs staged).

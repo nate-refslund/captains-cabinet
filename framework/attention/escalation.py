@@ -42,6 +42,7 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -60,6 +61,87 @@ _FIX_GUIDANCE = (
     "needs the captain, attach escalation={lane_tried, chair_tried, "
     "needs_captain_because} — what each tier already tried, and the "
     "credential/approval/decision only the captain holds.")
+
+# ---------------------------------------------------------------------------
+# Vacuous-proof heuristic (spec §5.2): non-empty is not enough — a proof that
+# restates the ask, or carries fewer than N distinct content words, is no
+# evidence a tier actually tried. Thresholds are CHARTER DATA
+# (charter-default.yml `escalation:` block; instance charter may override),
+# with conservative in-module fallbacks when the charter is unreadable.
+# ---------------------------------------------------------------------------
+
+DEFAULT_THRESHOLDS = {"min_content_words": 4, "restate_overlap": 0.8}
+
+_STOPWORDS = frozenset(
+    "a an and are as at be but by can did do for from had has have i if in "
+    "is it its me my no not of on or our so that the them they this to try "
+    "tried us was we what when why will with yet you your".split())
+
+_WORD_RE = re.compile(r"[0-9a-zA-ZæøåÆØÅ]{2,}")
+
+
+def thresholds() -> dict:
+    """The gate's vacuity thresholds — charter data with safe fallbacks.
+    Never raises; a broken charter yields the conservative defaults."""
+    out = dict(DEFAULT_THRESHOLDS)
+    try:
+        from framework.attention import charter
+        esc = (charter.load_charter() or {}).get("escalation") or {}
+        if isinstance(esc.get("min_content_words"), int) \
+                and esc["min_content_words"] >= 1:
+            out["min_content_words"] = esc["min_content_words"]
+        if isinstance(esc.get("restate_overlap"), (int, float)) \
+                and 0 <= esc["restate_overlap"] <= 1:
+            out["restate_overlap"] = float(esc["restate_overlap"])
+    except Exception:
+        pass
+    return out
+
+
+def _content_words(text) -> set:
+    return {w for w in _WORD_RE.findall(str(text or "").lower())
+            if w not in _STOPWORDS}
+
+
+def vacuous(proof_text, ask_text, *, th: "dict | None" = None) -> "str | None":
+    """Why this proof field is vacuous, or None when it holds up.
+    'too-thin'         — fewer than min_content_words distinct content words;
+    'restates-the-ask' — its content words are ≥ restate_overlap contained in
+                         the ask's own words (it repeats the question)."""
+    th = th or thresholds()
+    words = _content_words(proof_text)
+    if len(words) < int(th["min_content_words"]):
+        return "too-thin"
+    ask = _content_words(ask_text)
+    if ask and words:
+        overlap = len(words & ask) / len(words)
+        if overlap >= float(th["restate_overlap"]):
+            return "restates-the-ask"
+    return None
+
+
+def _ask_text(item: dict) -> str:
+    return " ".join(str((item or {}).get(k) or "")
+                    for k in ("subject", "what", "situation", "title"))
+
+
+def vacuous_fields(item: dict, *, th: "dict | None" = None) -> dict:
+    """{field: reason} for every REQUIRED_FIELD whose non-empty value fails
+    the vacuity heuristic. Empty dict = the proof holds up."""
+    proof = (item or {}).get("escalation")
+    if not isinstance(proof, dict):
+        return {}
+    th = th or thresholds()
+    ask = _ask_text(item)
+    out: dict = {}
+    for f in REQUIRED_FIELDS:
+        val = str(proof.get(f) or "").strip()
+        if not val:
+            continue  # missing_fields() already covers absence
+        why = vacuous(val, ask, th=th)
+        if why:
+            out[f] = why
+    return out
 
 
 def armed(env: "dict | None" = None) -> bool:
@@ -117,6 +199,12 @@ def check(item: dict, *, resolved: "dict | None" = None,
     if missing:
         return {"admitted": False, "reason": "escalation-unexhausted",
                 "missing": missing, "fix": _FIX_GUIDANCE}
+    vac = vacuous_fields(item)
+    if vac:
+        # Present but hollow ("tried stuff") — no evidence a tier tried.
+        return {"admitted": False, "reason": "escalation-vacuous",
+                "missing": sorted(vac), "vacuous": vac,
+                "fix": _FIX_GUIDANCE}
     return {"admitted": True, "reason": "exhaustion-proof-present",
             "missing": [], "fix": ""}
 

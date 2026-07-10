@@ -98,10 +98,23 @@ def _proj(card: dict, now: "datetime | None") -> dict:
         "age_h": age_h,
         "deadline_iso": (card.get("deadline_iso") or why.get("deadline_iso")
                          or card.get("harm_at")),
-        "blast": {"class": blast.get("class")},
+        "blast": {"class": blast.get("class"), "reach": blast.get("reach")},
         "blast_worst_case": (blast.get("worst_case")
                              or card.get("blast_worst_case")),
     }
+
+
+def undoable(card: dict) -> bool:
+    """Whether a fired approve on this card can honestly offer ↩ Undo.
+    False for ceiling class AND for no-return actions (external reach, money
+    out, a message an outside human already read) — single source:
+    ``plain.no_return``."""
+    blast = card.get("blast_radius") or card.get("blast") or {}
+    blast = blast if isinstance(blast, dict) else {}
+    if str(blast.get("class") or "").lower() == "ceiling":
+        return False
+    worst = blast.get("worst_case") or card.get("blast_worst_case")
+    return not plainlaw.no_return(blast.get("reach"), worst)
 
 
 def _summary(card: dict) -> str:
@@ -122,6 +135,24 @@ def _context(proj: dict, now: "datetime | None") -> str:
     if clock:
         parts.append((" — ".join(clock)).capitalize() + ".")
     return " ".join(p for p in parts if p)
+
+
+def proof_lines(card: dict) -> str:
+    """The exhaustion proof in plain words (spec §5.3): 'Your team tried: X.
+    The Chair tried: Y. It needs you because: Z.' Empty when the card carries
+    no complete proof. A lint tooth asserts these render on every
+    captain-bound escalation card."""
+    esc = card.get("escalation")
+    if not isinstance(esc, dict):
+        return ""
+    lane = _scrub(esc.get("lane_tried")).strip().rstrip(".")
+    chair = _scrub(esc.get("chair_tried")).strip().rstrip(".")
+    why = _scrub(esc.get("needs_captain_because")
+                 or esc.get("why_captain")).strip().rstrip(".")
+    if not (lane and chair and why):
+        return ""
+    return plainlaw.ESCALATION_PROOF_TEMPLATE.format(
+        lane=lane, chair=chair, captain=why)
 
 
 def _marker(card: dict) -> "str | None":
@@ -177,8 +208,9 @@ def buttons_for(card: dict, *, state: str = "open",
             row.append(u)
         return [row]
     if state == "done":
-        blast = card.get("blast_radius") or card.get("blast") or {}
-        if str(blast.get("class") or "").lower() != "ceiling":
+        # Undo is offered ONLY when it is true: never on ceiling class, never
+        # on a no-return action (money out / a message a human outside read).
+        if undoable(card):
             h = handle_of(str(card.get("id") or ""))
             return [[{"text": "↩ Undo", "data": cb("undo", h)}]]
     return None
@@ -212,6 +244,9 @@ def render(card: dict, *, state: str = "open", now: "datetime | None" = None,
     proj = _proj(card, now)
     if state == "open":
         situation_bits = [_context(proj, now)]
+        proof = proof_lines(card)
+        if proof:
+            situation_bits.append(proof)
         if _decision_row(card) is None and is_decision(card):
             situation_bits.append(
                 "This one needs your typed sign-off — reply here to do it.")

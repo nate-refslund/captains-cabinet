@@ -122,7 +122,9 @@ describe('read-only ratchet — attention routes never grow a write path', () =>
     expect(route).not.toMatch(
       /export\s+(async\s+)?function\s+(POST|PUT|PATCH|DELETE)/
     )
-    expect(route).toMatch(/cabinet_session/)
+    // Signature-verified session (equal-authority-door law on the READ
+    // leg too): presence-only cookie checks are not auth.
+    expect(route).toMatch(/verifySessionValue\(/)
     expect(route).toMatch(/401/)
   })
   it('no write/expiry verbs anywhere in the attention lib or route', () => {

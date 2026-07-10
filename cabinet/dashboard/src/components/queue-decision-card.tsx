@@ -32,8 +32,13 @@ export interface CardDetails {
 
 export interface CardCopy {
   confirmYes: string
+  /** Confirm label for the 'no' verb — "Yes, do it" must never bind to a
+   * refusal in a non-technical reader's head. */
+  confirmNo: string
   confirmBack: string
   laterBriefing: string
+  /** Idle-face hint on ritual cards (no approve button): where "yes" lives. */
+  ritualHint: string
   detailsLabel: string
   detailsSources: string
   detailsTyping: string
@@ -225,16 +230,34 @@ export default function QueueDecisionCard(props: QueueDecisionCardProps) {
         <div className="mt-3 rounded border border-zinc-700 bg-zinc-950 px-3 py-2">
           <p className="text-sm text-zinc-200">{phase.arm.consequence}</p>
           <p className="mt-1 text-xs text-zinc-500">{phase.arm.undo}</p>
+          {/* Draft sends: the draft text lives on the item's Telegram card —
+              give the reader the door to it BEFORE the confirm tap. */}
+          {props.details.kind === 'draft-outbound' &&
+          phase.arm.verb === 'approve' &&
+          props.telegramHref ? (
+            <a
+              href={props.telegramHref}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-1 inline-block text-sm text-sky-400 hover:underline"
+            >
+              {props.copy.openTelegram}
+            </a>
+          ) : null}
           <div className="mt-2 flex gap-2">
             <button
               onClick={() => void fire(phase.arm)}
-              className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-600"
+              className="min-h-11 rounded bg-emerald-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-600"
             >
-              {phase.arm.verb === 'later' ? props.copy.laterBriefing : props.copy.confirmYes}
+              {phase.arm.verb === 'no'
+                ? props.copy.confirmNo
+                : phase.arm.verb === 'later'
+                  ? props.copy.laterBriefing
+                  : props.copy.confirmYes}
             </button>
             <button
               onClick={() => setPhase({ name: 'idle' })}
-              className="rounded border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800"
+              className="min-h-11 rounded border border-zinc-700 px-4 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800"
             >
               {props.copy.confirmBack}
             </button>
@@ -250,23 +273,28 @@ export default function QueueDecisionCard(props: QueueDecisionCardProps) {
                 <span className="text-sm text-zinc-500">{props.copy.working}</span>
               ) : (
                 <>
+                  {props.ritual ? (
+                    <span className="basis-full text-sm text-zinc-400">
+                      {props.copy.ritualHint}
+                    </span>
+                  ) : null}
                   {!props.ritual ? (
                     <button
                       onClick={() => void arm('approve')}
-                      className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-600"
+                      className="min-h-11 rounded bg-emerald-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-600"
                     >
                       {props.buttons.approve}
                     </button>
                   ) : null}
                   <button
                     onClick={() => void arm('later')}
-                    className="rounded border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800"
+                    className="min-h-11 rounded border border-zinc-700 px-4 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800"
                   >
                     {props.buttons.later} ▾
                   </button>
                   <button
                     onClick={() => void arm('no')}
-                    className="rounded border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800"
+                    className="min-h-11 rounded border border-zinc-700 px-4 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800"
                   >
                     {props.buttons.no}
                   </button>

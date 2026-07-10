@@ -199,3 +199,46 @@ def test_send_card_with_proof_reaches_the_channel(monkeypatch):
                           escalation=dict(PROOF), adapter=a, ch=CH, now=NOON)
     assert out["decision"]["action"] == "send"
     assert len(a.sent) == 1
+
+
+# ---------------------------------------------------------------------------
+# Vacuous-proof heuristic (spec §5.2) — non-empty is not evidence
+# ---------------------------------------------------------------------------
+
+def test_vacuous_proof_bounces_too_thin(monkeypatch):
+    monkeypatch.setenv("CABINET_ESCALATION_GATE", "1")
+    res = escalation.check(_item(escalation={**PROOF,
+                                             "lane_tried": "tried stuff"}))
+    assert res["admitted"] is False
+    assert res["reason"] == "escalation-vacuous"
+    assert res["missing"] == ["lane_tried"]
+    assert res["vacuous"] == {"lane_tried": "too-thin"}
+    assert "escalation=" in res["fix"]
+
+
+def test_restating_the_ask_is_not_evidence(monkeypatch):
+    monkeypatch.setenv("CABINET_ESCALATION_GATE", "1")
+    restate = "prod deploy is blocked, needs the captain's billing approval"
+    res = escalation.check(_item(escalation={**PROOF,
+                                             "chair_tried": restate}))
+    assert res["admitted"] is False
+    assert res["reason"] == "escalation-vacuous"
+    assert res["vacuous"] == {"chair_tried": "restates-the-ask"}
+
+
+def test_substantive_proof_still_admits(monkeypatch):
+    monkeypatch.setenv("CABINET_ESCALATION_GATE", "1")
+    res = escalation.check(_item(escalation=dict(PROOF)))
+    assert res["admitted"] is True
+
+
+def test_thresholds_are_charter_data():
+    th = escalation.thresholds()
+    # charter-default.yml `escalation:` block (instance may override).
+    assert th["min_content_words"] >= 1
+    assert 0 <= th["restate_overlap"] <= 1
+    assert escalation.vacuous("tried stuff", "anything else entirely",
+                              th=escalation.DEFAULT_THRESHOLDS) == "too-thin"
+    assert escalation.vacuous(
+        "rotated the deploy token and restarted the runner after log review",
+        "prod deploy blocked", th=escalation.DEFAULT_THRESHOLDS) is None

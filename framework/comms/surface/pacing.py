@@ -44,7 +44,10 @@ STATE_FILE = "pacing-state.json"
 
 # The one standing nudge/pacing card — constant identity, edited in place
 # forever (never a second nudge message; the count just changes).
-NUDGE_SUBJECT = "Decisions waiting"
+# NEUTRAL subject: the same card carries the pending count AND the all-clear
+# face, so the identity line must contradict neither ("Decisions waiting /
+# All clear" read as nonsense at a glance). One-time re-mint 2026-07-10.
+NUDGE_SUBJECT = "Your decisions"
 NUDGE_EVIDENCE = ["thread:comms-surface-nudge"]
 NUDGE_KIND = "triage-nudge"
 
@@ -283,13 +286,14 @@ def plan(census: dict, state: dict, now: datetime,
 
 
 def _tentative(card: dict, now: datetime, *, urgent: bool) -> dict:
-    blast = (card.get("blast_radius") or {})
     return {"h": _dc.handle_of(str(card.get("id") or "")),
             "subject": _dc.render(card)["subject"],
             "evidence": [f"thread:{card.get('id')}"],
             "message_id": None,
             "urgent": bool(urgent),
-            "reversible": str(blast.get("class") or "").lower() != "ceiling",
+            # ↩ Undo is only ever offered when it is TRUE: never on ceiling
+            # class, never on a no-return action (money out / external send).
+            "reversible": _dc.undoable(card),
             "presented_at": _iso(now)}
 
 
@@ -376,15 +380,23 @@ def mark_resolved(state: dict, item_id: str, outcome: str,
 # Executor — every op through framework.comms.tools (the one door)
 # ---------------------------------------------------------------------------
 
-_NUDGE_BUTTONS = [[
-    {"text": "▶ Triage now", "data": _dc.cb("tri", "now")},
-    {"text": "🗓 At next briefing", "data": _dc.cb("tri", "brief")},
-    {"text": "😴 Snooze", "data": _dc.cb("tri", "snz")},
-]]
+# Nudge decision buttons: labels come from the ONE plain-language source
+# (plain.BUTTON_LABELS["nudge"]) so the duration in "Snooze 2h" and any copy
+# change land here without a second edit. Verbs are this engine's grammar.
+# "Triage now" is master-prompt-§4 verbatim (exception recorded in
+# captain-decisions 2026-07-10) — the label is data, not a literal here.
+_NUDGE_VERBS = (("tri", "now"), ("tri", "brief"), ("tri", "snz"))
 _BATCH_BUTTONS = [[
     {"text": "▶ Show next", "data": _dc.cb("more")},
     {"text": "✅ Done for now", "data": _dc.cb("stop")},
 ]]
+
+
+def _nudge_buttons() -> list:
+    from framework.attention import plain as plainlaw
+    labels = plainlaw.BUTTON_LABELS["nudge"]
+    return [[{"text": label, "data": _dc.cb(verb, arg)}
+             for label, (verb, arg) in zip(labels, _NUDGE_VERBS)]]
 
 
 def _nudge_kwargs(op: tuple, cfg: dict) -> dict:
@@ -393,17 +405,19 @@ def _nudge_kwargs(op: tuple, cfg: dict) -> dict:
     if kind == "nudge":
         situation = (f"{op[1]} decision(s) are ready when you are. "
                      f"Nothing sends until you say so.")
-        buttons = _NUDGE_BUTTONS
+        buttons = _nudge_buttons()
     elif kind == "batch_offer":
-        situation = f"Batch done. {op[1]} more waiting."
-        buttons = _BATCH_BUTTONS
+        situation = f"That's this round done. {op[1]} more waiting."
+        buttons = [list(_BATCH_BUTTONS[0])]
     else:  # all_clear
         situation = "All clear — nothing needs you right now."
     url = _links.queue_url(cfg)
     if url and buttons:
         u = _links.url_button("🔎 See the list", url)
         if u:
-            buttons = [buttons[0] + [u]]
+            # The link rides its OWN row — a 4-across row truncates labels on
+            # phones, and a truncated button is no longer unambiguous.
+            buttons = buttons + [[u]]
     return {"subject": NUDGE_SUBJECT, "situation": situation,
             "kind": NUDGE_KIND, "evidence": list(NUDGE_EVIDENCE),
             "state": "open", "buttons": buttons}

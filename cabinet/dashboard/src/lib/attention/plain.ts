@@ -28,6 +28,8 @@ type Tables = {
   risk_sentences: Record<string, string>
   risk_default: string
   risk_default_ceiling: string
+  kind_risk_defaults: Record<string, string>
+  no_return_worst_cases: string[]
   door_buttons: Record<string, Record<string, string>>
   ritual_kinds: string[]
   messages: Record<string, string>
@@ -71,7 +73,18 @@ export function riskSentence(row: QueueRow): string {
   const raw = row.blast_worst_case
   if (raw && TABLES.risk_sentences[raw]) return TABLES.risk_sentences[raw]
   if (row.blast?.class === 'ceiling') return TABLES.risk_default_ceiling
+  // Per-kind fallback (a question has no "I go ahead with it").
+  const kindDefault = TABLES.kind_risk_defaults[row.kind ?? '']
+  if (kindDefault) return kindDefault
   return TABLES.risk_default
+}
+
+/** True when the action, once fired, cannot be pulled back from a receipt
+ * (external reach, money out, a message an outside human already read).
+ * Mirrors framework.attention.plain.no_return. */
+export function noReturn(row: QueueRow): boolean {
+  if ((row.blast?.reach ?? '').toLowerCase() === 'external') return true
+  return TABLES.no_return_worst_cases.includes(row.blast_worst_case ?? '')
 }
 
 export function agePlain(ageH: number | null): string {
@@ -174,8 +187,13 @@ export function consequenceFor(row: QueueRow, verb: Verb): string {
 }
 
 export function undoFor(row: QueueRow, verb: Verb): string {
-  if (verb === 'approve' && row.blast?.class === 'ceiling') {
-    return TABLES.undo_templates['approve:ceiling']
+  if (verb === 'approve') {
+    // No-return first: never promise a pull-back on money out the door or
+    // a message a human outside already read.
+    if (noReturn(row)) return TABLES.undo_templates['approve:no-return']
+    if (row.blast?.class === 'ceiling') {
+      return TABLES.undo_templates['approve:ceiling']
+    }
   }
   const tpl = TABLES.undo_templates[verb] ?? TABLES.undo_templates.later
   return fill(tpl, row)

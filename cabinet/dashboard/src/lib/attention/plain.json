@@ -68,16 +68,19 @@
   },
   "consequence_templates": {
     "approve": "{risk} If you confirm, I go ahead: {what}",
-    "approve:draft-outbound": "{risk} If you confirm, the message goes out as drafted.",
+    "approve:draft-outbound": "{risk} If you confirm, the message goes out exactly as drafted. Haven't read it? It's on this item's Telegram card — open that first.",
+    "approve:escalation": "Nothing runs yet — this marks it as yours to decide. The Chair brings it to you in Telegram to settle.",
     "approve:need": "{risk} If you confirm, the cabinet gets this permission.",
     "later": "Nothing happens now — it comes back at the next briefing.",
     "no": "Nothing happens — I record the no and stop suggesting it.",
     "no:draft-outbound": "The message is not sent.",
+    "no:escalation": "The Chair settles it and tells you what it chose.",
     "no:need": "The cabinet does not get this permission."
   },
   "copy": {
     "answer_telegram": "Answer in Telegram (HQ Chair).",
     "confirm_back": "Back",
+    "confirm_no": "Yes, I'm sure",
     "confirm_yes": "Yes, do it",
     "decisions_empty": "Nothing here.",
     "decisions_header": "Needs a decision",
@@ -95,7 +98,8 @@
     "no_buttons": "To decide this one, answer on its Telegram message.",
     "no_title": "(no title)",
     "open_telegram": "Open in Telegram ↗",
-    "overflow_note": "more waiting — I've asked the Chair to merge or resolve them.",
+    "overflow_note": "more waiting — I've asked the Chair to sort them out.",
+    "ritual_hint": "To say yes, sign it off in Telegram — tap 'Open in Telegram'.",
     "updated_prefix": "Updated",
     "working": "Working…"
   },
@@ -114,6 +118,11 @@
       "later": "Later",
       "no": "Don't send"
     },
+    "escalation": {
+      "approve": "I'll decide",
+      "later": "Later",
+      "no": "Ask the Chair"
+    },
     "need": {
       "approve": "Yes, allow",
       "later": "Not now",
@@ -130,6 +139,10 @@
     "need": "Permission request",
     "outcome-ratification": "Goal sign-off",
     "pipe-prompt": "Automation question"
+  },
+  "kind_risk_defaults": {
+    "outcome-ratification": "This sets the goal your team steers by — nothing runs by itself.",
+    "pipe-prompt": "I'll follow whatever you answer."
   },
   "messages": {
     "bad_request": "I couldn't read that request — reload the page and try again.",
@@ -148,6 +161,10 @@
     "stale": "This one changed since you loaded the page — here's the fresh version.",
     "stale_census": "My list is out of date right now — try again in a minute, or answer in Telegram."
   },
+  "no_return_worst_cases": [
+    "a message reaches a human outside the machine",
+    "money leaves the org"
+  ],
   "results": {
     "approved": "Approved — done.",
     "approved_delivery_failed": "Your approval is recorded, but the follow-through hit an error — the Chair will finish it.",
@@ -186,6 +203,7 @@
   "undo_templates": {
     "approve": "Undo: most changes can be pulled back from the receipt — tap ↩ Undo there.",
     "approve:ceiling": "Hard to undo once done — double-check before you confirm.",
+    "approve:no-return": "Once this is done it can't be pulled back from here — read it once more before you confirm.",
     "later": "It comes back on its own — nothing to undo.",
     "no": "You can always re-open it from its Telegram message."
   },

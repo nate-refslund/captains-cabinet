@@ -86,6 +86,32 @@ RISK_SENTENCES: dict[str, str] = {
 RISK_DEFAULT_CEILING = "This is a high-caution change — double-check before saying yes."
 RISK_DEFAULT = "If you approve, I go ahead with it."
 
+#: Per-kind risk fallbacks — kinds where "I go ahead with it" is absurd
+#: (a question has no approve; a ratification runs nothing). Checked before
+#: RISK_DEFAULT, after the exact producer-string and ceiling checks.
+KIND_RISK_DEFAULTS: dict[str, str] = {
+    "pipe-prompt": "I'll follow whatever you answer.",
+    "outcome-ratification":
+        "This sets the goal your team steers by — nothing runs by itself.",
+}
+
+#: Worst-case strings with NO undo path once fired — money out the door,
+#: a message in a human's inbox. The undo line must never promise a pull-back
+#: on these (single source: the dashboard reads this list from plain.json).
+NO_RETURN_WORST_CASES: frozenset[str] = frozenset({
+    "money leaves the org",
+    "a message reaches a human outside the machine",
+})
+
+
+def no_return(reach: "str | None", worst_case: "str | None") -> bool:
+    """True when the action, once fired, cannot be pulled back from a
+    receipt: it left the machine (external reach) or is a known no-return
+    worst case (money / an outside human read it)."""
+    if str(reach or "").lower() == "external":
+        return True
+    return str(worst_case or "") in NO_RETURN_WORST_CASES
+
 # ---------------------------------------------------------------------------
 # Buttons (spec §2.1) — full per-kind sets for the TG renderer, plus the
 # three-verb door set the dashboard uses. Labels only; verbs are fixed.
@@ -105,6 +131,8 @@ DOOR_BUTTONS: dict[str, dict[str, str]] = {
     "": {"approve": "✓ Approve", "later": "Later", "no": "✗ No"},
     "draft-outbound": {"approve": "Send it", "later": "Later", "no": "Don't send"},
     "need": {"approve": "Yes, allow", "later": "Not now", "no": "Never"},
+    "escalation": {"approve": "I'll decide", "later": "Later",
+                   "no": "Ask the Chair"},
 }
 
 #: Kinds whose approve is a sign-off ritual — never a dashboard tap.
@@ -146,19 +174,34 @@ RESULTS: dict[str, str] = {
 #: Two-step confirm templates ({what} / {risk} filled by the renderer).
 CONSEQUENCE_TEMPLATES: dict[str, str] = {
     "approve": "{risk} If you confirm, I go ahead: {what}",
-    "approve:draft-outbound": "{risk} If you confirm, the message goes out as drafted.",
+    "approve:draft-outbound":
+        "{risk} If you confirm, the message goes out exactly as drafted. "
+        "Haven't read it? It's on this item's Telegram card — open that first.",
     "approve:need": "{risk} If you confirm, the cabinet gets this permission.",
+    "approve:escalation":
+        "Nothing runs yet — this marks it as yours to decide. The Chair "
+        "brings it to you in Telegram to settle.",
     "no": "Nothing happens — I record the no and stop suggesting it.",
     "no:draft-outbound": "The message is not sent.",
     "no:need": "The cabinet does not get this permission.",
+    "no:escalation": "The Chair settles it and tells you what it chose.",
     "later": "Nothing happens now — it comes back at the next briefing.",
 }
 UNDO_TEMPLATES: dict[str, str] = {
     "approve": "Undo: most changes can be pulled back from the receipt — tap ↩ Undo there.",
     "approve:ceiling": "Hard to undo once done — double-check before you confirm.",
+    "approve:no-return":
+        "Once this is done it can't be pulled back from here — read it "
+        "once more before you confirm.",
     "no": "You can always re-open it from its Telegram message.",
     "later": "It comes back on its own — nothing to undo.",
 }
+
+#: The escalation exhaustion proof, in plain words (spec §5.3) — rendered on
+#: every captain-bound escalation card that carries a proof; a lint tooth
+#: asserts the three lines appear.
+ESCALATION_PROOF_TEMPLATE = ("Your team tried: {lane}. The Chair tried: "
+                             "{chair}. It needs you because: {captain}.")
 
 #: Static surface copy shared with the dashboard (single source of truth).
 COPY: dict[str, str] = {
@@ -169,12 +212,14 @@ COPY: dict[str, str] = {
     "updated_prefix": "Updated",
     "decisions_header": "Needs a decision",
     "decisions_empty": "Nothing here.",
-    "overflow_note": "more waiting — I've asked the Chair to merge or resolve them.",
+    "overflow_note": "more waiting — I've asked the Chair to sort them out.",
     "directions_header": "This week — no rush",
     "directions_empty": "Nothing here.",
     "confirm_yes": "Yes, do it",
+    "confirm_no": "Yes, I'm sure",
     "confirm_back": "Back",
     "later_briefing": "At the next briefing",
+    "ritual_hint": "To say yes, sign it off in Telegram — tap 'Open in Telegram'.",
     "details_label": "Details",
     "details_sources": "Where this comes from",
     "details_typing": "Prefer typing? Send this in Telegram:",
@@ -268,6 +313,9 @@ def risk_sentence(card: dict) -> str:
     blast = card.get("blast") or {}
     if isinstance(blast, dict) and blast.get("class") == "ceiling":
         return RISK_DEFAULT_CEILING
+    kind_default = KIND_RISK_DEFAULTS.get(str(card.get("kind") or ""))
+    if kind_default:
+        return kind_default
     return RISK_DEFAULT
 
 
@@ -314,8 +362,14 @@ def consequence_for(card: dict, verb: str) -> str:
 
 def undo_for(card: dict, verb: str) -> str:
     blast = card.get("blast") or {}
-    if verb == "approve" and isinstance(blast, dict) and blast.get("class") == "ceiling":
-        return UNDO_TEMPLATES["approve:ceiling"]
+    blast = blast if isinstance(blast, dict) else {}
+    if verb == "approve":
+        # No-return actions FIRST: an undo line must never promise a
+        # pull-back on money out the door or a message a human already read.
+        if no_return(blast.get("reach"), card.get("blast_worst_case")):
+            return UNDO_TEMPLATES["approve:no-return"]
+        if blast.get("class") == "ceiling":
+            return UNDO_TEMPLATES["approve:ceiling"]
     return _fill(UNDO_TEMPLATES.get(verb) or UNDO_TEMPLATES["later"], card)
 
 
@@ -410,6 +464,8 @@ def export_plain_json() -> dict:
         "risk_sentences": dict(RISK_SENTENCES),
         "risk_default": RISK_DEFAULT,
         "risk_default_ceiling": RISK_DEFAULT_CEILING,
+        "kind_risk_defaults": dict(KIND_RISK_DEFAULTS),
+        "no_return_worst_cases": sorted(NO_RETURN_WORST_CASES),
         "button_labels": {k: list(v) for k, v in BUTTON_LABELS.items()},
         "door_buttons": {k: dict(v) for k, v in DOOR_BUTTONS.items()},
         "ritual_kinds": sorted(RITUAL_KINDS),

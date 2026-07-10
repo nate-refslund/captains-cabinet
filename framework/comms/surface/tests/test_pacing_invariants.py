@@ -299,3 +299,38 @@ def test_state_round_trip_via_files(day, adapter, charter):
     loaded = pacing.load_state()
     assert len(loaded["active"]) == 4
     assert loaded["updated_at"]
+
+
+def test_nudge_card_buttons_single_source_and_own_link_row():
+    """The nudge labels come from plain.BUTTON_LABELS (one source of truth —
+    'Snooze 2h' keeps its duration) and the 🔎 link rides its OWN row so no
+    row exceeds three buttons on a phone."""
+    from framework.attention import plain as plainlaw
+    from framework.comms.surface import pacing
+
+    bare = pacing._nudge_kwargs(("nudge", 3), {"dashboard_url": ""})
+    assert [b["text"] for b in bare["buttons"][0]] \
+        == plainlaw.BUTTON_LABELS["nudge"]
+
+    linked = pacing._nudge_kwargs(
+        ("nudge", 3), {"dashboard_url": "https://cabinet.example"})
+    assert len(linked["buttons"]) == 2
+    assert all(len(row) <= 3 for row in linked["buttons"])
+    assert linked["buttons"][1][0].get("url")
+
+
+def test_nudge_lifecycle_wording_holds_at_a_glance():
+    """Neutral standing identity: the subject must contradict neither the
+    pending face nor the all-clear face; no process vocabulary ('batch')."""
+    from framework.comms.surface import pacing
+
+    assert pacing.NUDGE_SUBJECT == "Your decisions"
+    ac = pacing._nudge_kwargs(("all_clear",), {"dashboard_url": ""})
+    assert ac["subject"] == pacing.NUDGE_SUBJECT
+    assert "All clear" in ac["situation"]
+    batch = pacing._nudge_kwargs(("batch_offer", 2), {"dashboard_url": ""})
+    assert "round done" in batch["situation"]
+    assert "Batch" not in batch["situation"]
+    linked = pacing._nudge_kwargs(
+        ("batch_offer", 2), {"dashboard_url": "https://cabinet.example"})
+    assert all(len(row) <= 3 for row in linked["buttons"])

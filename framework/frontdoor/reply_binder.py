@@ -24,11 +24,86 @@ never a mutation/delete of a prior row.
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Callable
 
 from framework.acting import loop
 from framework.fidelity.consequence import emit_consequence
 from framework.frontdoor import intake
+
+# ---------------------------------------------------------------------------
+# Plain-verb synonyms (captain-surface spec §3.6): the Captain may TYPE the
+# same plain words the buttons show — one authority path either way.
+#
+#   * verdict synonyms ride the EXISTING verdict grammar: "yes"/"ok" already
+#     parse as approve (loop._APPROVE_RE); a bare "no" is normalized to the
+#     skip grammar here so it records a real skip verdict instead of falling
+#     through as a policy/instruction reply.
+#   * throttle synonyms ("pause", "later", "all of them", "top 1") never
+#     touch the ledger — they re-pace the surface via pacing.on_control,
+#     exactly like the equivalent inline buttons.
+#
+# Telegram text is UNTRUSTED: every synonym is an EXACT match on the whole
+# (whitespace-normalized) reply — free text never widens authority, and an
+# unmatched reply flows through the ordinary binder path unchanged.
+# ---------------------------------------------------------------------------
+
+_PLAIN_NO_RE = re.compile(r"^\s*(no|nope|nej)\s*[.!]*\s*$", re.IGNORECASE)
+_PLAIN_NO_SKIP = "skip: no — typed plain reply"
+
+#: whole-reply throttle phrase -> (pacing verb, arg). Same verbs as the
+#: nudge/batch inline buttons (decision_card.CB_VERBS pacing subset).
+THROTTLE_SYNONYMS: dict = {
+    "pause": ("tri", "snz"),
+    "snooze": ("tri", "snz"),
+    "later": ("tri", "brief"),
+    "all of them": ("all", ""),
+    "top 1": ("top1", ""),
+    "top1": ("top1", ""),
+}
+
+
+def normalize_plain_reply(reply_text: str) -> str:
+    """Map a bare plain 'no' onto the org's skip grammar. Everything else
+    passes through byte-identical (yes/ok/approve already parse)."""
+    if _PLAIN_NO_RE.match(reply_text or ""):
+        return _PLAIN_NO_SKIP
+    return reply_text
+
+
+def throttle_of(reply_text: str) -> "tuple[str, str] | None":
+    """(pacing verb, arg) when the WHOLE reply is a throttle phrase."""
+    key = " ".join(str(reply_text or "").lower().split()).strip(" .!")
+    return THROTTLE_SYNONYMS.get(key)
+
+
+def route_plain_reply(reply_text: str, *, now=None, state: "dict | None" = None,
+                      save: "Callable[[dict], Any] | None" = None) -> "dict | None":
+    """Typed throttle verbs → the pacing engine (same effect as the buttons).
+
+    Returns None when the reply is NOT a throttle (caller proceeds to
+    ``bind()``); else applies ``pacing.on_control`` to durable pacing state
+    and returns ``{"handled": True, "throttle": verb, "routing": …}``.
+    ``state``/``save`` are injectable for tests; live default loads and
+    persists ``pacing-state.json``."""
+    t = throttle_of(reply_text)
+    if t is None:
+        return None
+    from datetime import datetime, timezone
+
+    from framework.comms.surface import pacing
+    verb, arg = t
+    now = now or datetime.now(timezone.utc)
+    st = pacing.load_state() if state is None else state
+    new_state, routing = pacing.on_control(st, verb, arg, now)
+    if save is not None:
+        save(new_state)
+    elif state is None:
+        pacing.save_state(new_state)
+    else:
+        state.clear()
+        state.update(new_state)
+    return {"handled": True, "throttle": verb, "routing": routing}
 
 
 def _noop_dispatch(routed, draft, proposal) -> None:
@@ -89,6 +164,10 @@ def bind(
       'no-match'       — no pending proposal matched any item's correlation_id
                          (nothing recorded, nothing acked).
     """
+    # §3.6 plain-verb synonyms: a bare typed "no" rides the skip grammar so
+    # tapped and typed replies land on the one authority path. (Throttle
+    # phrases never reach bind() — callers run route_plain_reply() first.)
+    reply_text = normalize_plain_reply(reply_text)
     routed = loop.route_captain_response(reply_text)
 
     # Open proposals keyed by their stable correlation id.

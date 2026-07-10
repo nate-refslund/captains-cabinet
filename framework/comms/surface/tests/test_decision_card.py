@@ -131,3 +131,39 @@ def test_escalation_proof_forwards_untouched(day):
     kwargs = dc.render(make_card(21, escalation=proof), now=day)
     assert kwargs["escalation"] == proof
     assert dc.render(make_card(22), now=day)["escalation"] is None
+
+
+def test_done_state_never_offers_undo_on_no_return_actions(day):
+    """Money out / an external send cannot be pulled back — the ✅ face must
+    not offer ↩ Undo on them (finding: false safety promise)."""
+    money = make_card(30, blast_class="org", worst="money leaves the org")
+    assert dc.render(money, state="done", now=day)["buttons"] is None
+    ext_msg = make_card(31, kind="draft-outbound", blast_class="org",
+                        worst="a message reaches a human outside the machine")
+    assert dc.render(ext_msg, state="done", now=day)["buttons"] is None
+    reach = make_card(32, blast_class="org")
+    reach["blast_radius"]["reach"] = "external"
+    assert dc.render(reach, state="done", now=day)["buttons"] is None
+    # Internal reversible still gets its honest Undo.
+    assert dc.undoable(make_card(33)) is True
+    assert dc.render(make_card(33), state="done", now=day)["buttons"]
+
+
+def test_escalation_proof_renders_three_plain_lines(day):
+    """Spec §5.3: admitted captain-bound escalations SHOW the exhaustion
+    proof in plain words — and the lint tooth holds on the rendered card."""
+    proof = {"lane_tried": "retried the deploy twice and rotated the token",
+             "chair_tried": "cross-checked the project and reran from main",
+             "needs_captain_because": "the billing credential is captain-held"}
+    kwargs = dc.render(make_card(34, kind="escalation", escalation=proof),
+                       now=day)
+    s = kwargs["situation"]
+    assert "Your team tried:" in s
+    assert "The Chair tried:" in s
+    assert "It needs you because:" in s
+    assert plainlaw.lint(s) == []
+    # An incomplete proof renders no half-sentence.
+    partial = {k: v for k, v in proof.items() if k != "chair_tried"}
+    k2 = dc.render(make_card(35, kind="escalation", escalation=partial),
+                   now=day)
+    assert "Your team tried:" not in k2["situation"]

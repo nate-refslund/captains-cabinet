@@ -27,6 +27,15 @@ attention_queue:
 world:
   muster_landing: ping-now
 
+# Tiered-escalation gate (captain-surface spec §5.2): the vacuous-proof
+# heuristic thresholds are charter DATA. A proof field with fewer than
+# min_content_words distinct content words, or whose content words overlap
+# the ask itself by >= restate_overlap (it merely restates the question),
+# does not count as exhaustion evidence.
+escalation:
+  min_content_words: 4
+  restate_overlap: 0.8
+
 quiet_hours:
   start: "21:00"
   end: "07:00"

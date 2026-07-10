@@ -4,7 +4,7 @@
  * and the plainCard rules the /queue surface depends on.
  */
 import { describe, expect, it } from 'vitest'
-import { consequenceFor, duePlain, plainCard, revisionOf } from './plain'
+import { consequenceFor, duePlain, plainCard, revisionOf, riskSentence, undoFor } from './plain'
 import type { QueueRow } from './queue'
 
 const NOW = Date.parse('2026-07-10T12:00:00Z')
@@ -87,8 +87,44 @@ describe('plainCard rules', () => {
   })
 
   it('draft messages confirm with the drafted-send consequence', () => {
-    expect(consequenceFor(row({ kind: 'draft-outbound' }), 'approve')).toContain(
-      'goes out as drafted'
-    )
+    const c = consequenceFor(row({ kind: 'draft-outbound' }), 'approve')
+    expect(c).toContain('goes out exactly as drafted')
+    // Blind-approve guard: the confirm face points the reader at the draft
+    // text (it lives on the item's Telegram card) BEFORE the fire tap.
+    expect(c).toContain("Haven't read it?")
+  })
+
+  it('no-return approves never promise a receipt pull-back', () => {
+    const money = row({
+      blast: { class: 'org', reach: 'org' },
+      blast_worst_case: 'money leaves the org',
+    })
+    expect(undoFor(money, 'approve')).toContain("can't be pulled back")
+    const ext = row({ blast: { class: 'org', reach: 'external' } })
+    expect(undoFor(ext, 'approve')).toContain("can't be pulled back")
+    const internal = row({
+      blast: { class: 'low', reach: 'internal' },
+      blast_worst_case: null,
+    })
+    expect(undoFor(internal, 'approve')).toContain('pulled back from the receipt')
+  })
+
+  it('question/ratification kinds never claim "I go ahead with it"', () => {
+    const q = row({ kind: 'pipe-prompt', blast: null, blast_worst_case: null })
+    expect(riskSentence(q)).toBe("I'll follow whatever you answer.")
+    const r = row({
+      kind: 'outcome-ratification',
+      blast: null,
+      blast_worst_case: null,
+    })
+    expect(riskSentence(r)).not.toContain('I go ahead')
+  })
+
+  it('escalation cards get decide-or-delegate buttons', () => {
+    const e = plainCard(row({ kind: 'escalation' }), NOW)
+    expect(e.buttons.approve).toBe("I'll decide")
+    expect(e.buttons.no).toBe('Ask the Chair')
+    const c = consequenceFor(row({ kind: 'escalation' }), 'approve')
+    expect(c).toContain('Nothing runs yet')
   })
 })

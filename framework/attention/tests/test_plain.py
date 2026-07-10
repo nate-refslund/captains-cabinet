@@ -118,9 +118,59 @@ class TestSummaryShape(unittest.TestCase):
                          "due 2026-07-19")
 
     def test_ceiling_undo_is_honest(self):
-        c = card(blast={"class": "ceiling", "reach": "external"})
+        # Internal ceiling: hard-to-undo warning.
+        c = card(blast={"class": "ceiling", "reach": "org"},
+                 blast_worst_case=None)
         self.assertEqual(plain.undo_for(c, "approve"),
                          plain.UNDO_TEMPLATES["approve:ceiling"])
+        # External reach beats ceiling: once fired it LEFT the machine —
+        # never promise a pull-back.
+        c = card(blast={"class": "ceiling", "reach": "external"})
+        self.assertEqual(plain.undo_for(c, "approve"),
+                         plain.UNDO_TEMPLATES["approve:no-return"])
+
+    def test_no_return_undo_never_promises_a_pullback(self):
+        # The two highest-stakes confirms: money out, external message.
+        for worst in sorted(plain.NO_RETURN_WORST_CASES):
+            c = card(blast={"class": "org", "reach": "org"},
+                     blast_worst_case=worst)
+            self.assertEqual(plain.undo_for(c, "approve"),
+                             plain.UNDO_TEMPLATES["approve:no-return"], worst)
+            self.assertNotIn("pulled back from the receipt",
+                             plain.undo_for(c, "approve"))
+        # External reach alone is enough.
+        c = card(blast={"class": "org", "reach": "external"},
+                 blast_worst_case=None)
+        self.assertEqual(plain.undo_for(c, "approve"),
+                         plain.UNDO_TEMPLATES["approve:no-return"])
+        # A plain internal reversible keeps the receipt-undo promise.
+        c = card(blast={"class": "low", "reach": "internal"},
+                 blast_worst_case=None)
+        self.assertIn("pulled back", plain.undo_for(c, "approve"))
+
+    def test_kind_risk_defaults(self):
+        # A question has no "I go ahead with it"; a ratification runs nothing.
+        q = {"kind": "pipe-prompt", "what": "Include the private calendar?"}
+        self.assertEqual(plain.risk_sentence(q),
+                         plain.KIND_RISK_DEFAULTS["pipe-prompt"])
+        r = {"kind": "outcome-ratification", "what": "Goal sign-off — polads"}
+        self.assertEqual(plain.risk_sentence(r),
+                         plain.KIND_RISK_DEFAULTS["outcome-ratification"])
+        # Exact producer strings and ceiling still win over kind defaults.
+        q2 = dict(q, blast={"class": "ceiling"})
+        self.assertEqual(plain.risk_sentence(q2), plain.RISK_DEFAULT_CEILING)
+
+    def test_escalation_door_is_decidable(self):
+        # An either/or headline must never get a generic [✓ Approve].
+        btns = plain.door_buttons("escalation")
+        self.assertEqual(btns["approve"], "I'll decide")
+        self.assertEqual(btns["no"], "Ask the Chair")
+        c = {"kind": "escalation",
+             "what": "Two officers disagree: ship the beta, or hold it"}
+        approve = plain.consequence_for(c, "approve")
+        self.assertIn("Nothing runs yet", approve)
+        self.assertNotIn("I go ahead", approve)
+        self.assertIn("The Chair settles it", plain.consequence_for(c, "no"))
 
 
 class TestLinterBites(unittest.TestCase):

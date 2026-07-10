@@ -59,7 +59,9 @@ def render(headline: str, census: dict, *, now: "datetime | None" = None,
     if url and buttons:
         u = _links.url_button("🔎 Full list", url)
         if u:
-            buttons = [buttons[0] + [u]]
+            # Own row: 3-across already fills a phone width — a fourth
+            # button truncates labels (same law as the pacing nudge card).
+            buttons = buttons + [[u]]
     situation = " ".join(b for b in (head, ready) if b)
     local = now.astimezone(_cfg.captain_tz())
     subject = ("Morning briefing" if local.hour < 14 else "Evening briefing")

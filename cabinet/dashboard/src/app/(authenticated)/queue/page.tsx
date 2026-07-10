@@ -54,8 +54,10 @@ function Card({
       accent={accent}
       copy={{
         confirmYes: COPY.confirm_yes,
+        confirmNo: COPY.confirm_no,
         confirmBack: COPY.confirm_back,
         laterBriefing: COPY.later_briefing,
+        ritualHint: COPY.ritual_hint,
         detailsLabel: COPY.details_label,
         detailsSources: COPY.details_sources,
         detailsTyping: COPY.details_typing,
