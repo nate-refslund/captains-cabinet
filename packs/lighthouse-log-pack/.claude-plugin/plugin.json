@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "lighthouse-log-pack",
+  "displayName": "Cabinet Lighthouse Log Pack",
+  "version": "0.1.0",
+  "description": "One officer skill, daily-lighthouse-log: compose a short, honest keeper's log of the day's org events from the world chronicle and file it as a Tier 2 note. Honest zeros stated as zeros; demo rows labeled; no network, no scripts. Also the pack-authoring exemplar — docs/authoring-a-pack.md builds this pack step by step.",
+  "author": {
+    "name": "Captain's Cabinet contributors"
+  },
+  "license": "BUSL-1.1",
+  "keywords": [
+    "ai-organization",
+    "daily-log",
+    "chronicle",
+    "memory",
+    "exemplar"
+  ],
+  "skills": [
+    "./skills/"
+  ]
+}
