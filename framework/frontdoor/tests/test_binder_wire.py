@@ -903,3 +903,90 @@ def test_default_lesson_capture_writes_real_ledger_via_env(tmp_path, monkeypatch
     assert rows[0]["taxonomy"] == "wrong-timing"
     assert rows[0]["lesson_ref"] == r["lesson_ref"]
     assert a.emitted[0]["review"]["lesson_ref"] == rows[0]["lesson_ref"]
+
+
+# --- Receipt grammar (Wave B): approved-path why-stamping via the unlocked seam ---
+#
+# The stored action card's ``situation`` IS the proposing rationale. Until the
+# germline write-time stamp (action_exec/action_undo) lands in an unlock
+# window, the dispatch closure captures it BEFORE delivery (deliver_action
+# deletes the record) and best-effort stamps it onto the executed journal rows
+# via action_language.stamp_journal_why AFTER a successful delivery.
+
+def _redis_with_action(prop, situation="Lisa asked for the deploy-gate task"):
+    key = f"cabinet:action:{_pid(prop)}"
+    store = {key: json.dumps({"situation": situation, "steps": []})}
+    return lambda k: store.get(k, "")
+
+
+def test_approved_action_delivery_stamps_why_via_unlocked_seam(monkeypatch):
+    from framework.frontdoor import action_exec, action_language
+    prop = _proposal()
+    delivered, stamped = [], []
+    monkeypatch.setattr(action_exec, "deliver_action",
+                        lambda pid, override_text="": (
+                            delivered.append((pid, override_text)) or
+                            {"ok": True, "via": "monday", "dest": "board"}))
+    monkeypatch.setattr(action_language, "stamp_journal_why",
+                        lambda pid, why, **kw: (
+                            stamped.append((pid, why)) or {"stamped": 1}))
+    r = binder_wire.handle_captain_update(
+        "send", _quoted_for(prop),
+        pending_source=lambda: [prop], deliver=None, emit=lambda **e: None,
+        redis_get=_redis_with_action(prop))
+    assert r["handled"] is True and r["primary"] == "approve"
+    assert delivered == [(_pid(prop), "")]
+    assert stamped == [(_pid(prop), "Lisa asked for the deploy-gate task")]
+
+
+def test_failed_action_delivery_stamps_nothing(monkeypatch):
+    from framework.frontdoor import action_exec, action_language
+    prop = _proposal()
+    stamped = []
+    monkeypatch.setattr(action_exec, "deliver_action",
+                        lambda pid, override_text="": {"ok": False,
+                                                       "error": "backend down"})
+    monkeypatch.setattr(action_language, "stamp_journal_why",
+                        lambda pid, why, **kw: stamped.append((pid, why)))
+    r = binder_wire.handle_captain_update(
+        "send", _quoted_for(prop),
+        pending_source=lambda: [prop], deliver=None, emit=lambda **e: None,
+        redis_get=_redis_with_action(prop))
+    assert r["handled"] is True
+    assert stamped == []                 # no successful act -> nothing to explain
+
+
+def test_action_record_without_situation_stamps_nothing(monkeypatch):
+    from framework.frontdoor import action_exec, action_language
+    prop = _proposal()
+    stamped = []
+    monkeypatch.setattr(action_exec, "deliver_action",
+                        lambda pid, override_text="": {"ok": True, "via": "m",
+                                                       "dest": "d"})
+    monkeypatch.setattr(action_language, "stamp_journal_why",
+                        lambda pid, why, **kw: stamped.append((pid, why)))
+    key = f"cabinet:action:{_pid(prop)}"
+    store = {key: json.dumps({"steps": []})}    # no situation on the card
+    r = binder_wire.handle_captain_update(
+        "send", _quoted_for(prop),
+        pending_source=lambda: [prop], deliver=None, emit=lambda **e: None,
+        redis_get=lambda k: store.get(k, ""))
+    assert r["handled"] is True
+    assert stamped == []                 # never invent a why
+
+
+def test_stamping_failure_never_disturbs_the_delivery(monkeypatch):
+    from framework.frontdoor import action_exec, action_language
+    prop = _proposal()
+    monkeypatch.setattr(action_exec, "deliver_action",
+                        lambda pid, override_text="": {"ok": True, "via": "m",
+                                                       "dest": "d"})
+    def _boom(pid, why, **kw):
+        raise RuntimeError("journal offline")
+    monkeypatch.setattr(action_language, "stamp_journal_why", _boom)
+    r = binder_wire.handle_captain_update(
+        "send", _quoted_for(prop),
+        pending_source=lambda: [prop], deliver=None, emit=lambda **e: None,
+        redis_get=_redis_with_action(prop))
+    assert r["handled"] is True and r["primary"] == "approve"
+    assert "DELIVERED" in r["summary"]   # verdict + delivery both landed
