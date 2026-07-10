@@ -29,6 +29,28 @@
 # are NEVER automated — they print as numbered ERRAND NOTES for the human,
 # exactly like BotFather tokens and TCC clicks (design doc §3).
 #
+# CLEAN-ROOM CONTAINMENT (--clean-room; 2026-07-10 fix, PC-B verifier
+# follow-up (a)): CABINET_RUNTIME_DIR is exported into the run's scratch
+# area beside the flight log (<log dir>/cabinet-runtime) BEFORE any step
+# runs, so a scratch hatch can never overwrite the live
+# /tmp/cabinet-runtime/{constitution.md,safety-boundaries.md} that officers
+# consume at boot (create-officer.sh / sync-agents.sh; load-preset.sh:27
+# honors the override — step 6 is the chain's only runtime-dir writer). An
+# explicit ambient CABINET_RUNTIME_DIR is respected (load-preset's own
+# test-override contract) UNLESS it resolves to — or nests under — the
+# live default (the containment must not self-defeat; adversarial fixes
+# 2026-07-10): a routed runtime dir OR a flight-log dir landing on
+# /tmp/cabinet-runtime in any spelling (the /private/tmp alias, slash
+# runs, '.'/'..' segments and symlinks are normalized before the compare)
+# is REFUSED, exit 64, before hatch writes anything at all — the
+# flight-log parent is no longer pre-created; flight_init makes it only
+# after the guards pass. So a --flight-log directly in /tmp (routes the
+# runtime dir onto the live path), a --flight-log INSIDE
+# /tmp/cabinet-runtime (flight.log + step-*.log would pollute the live
+# governance dir), and an ambient override aimed at or under the live dir
+# all refuse. The routed path prints in the clean-room banner and lands in
+# the flight log.
+#
 # Flight recorder: per-step wall-clock timings + stamps (HATCH_START,
 # HATCH_PROOFS_DONE, FIRST_RECEIPT_DONE) land in a flight log; the summary
 # table, TTFR (proofs-done -> first-receipt) and total time print at the end.
@@ -74,7 +96,14 @@ Flags:
                        or the live Redis (load-preset's expected-active marks
                        are pointed at an unused port; skipped honestly), DB
                        schema apply stays best-effort (load-preset's own
-                       honest skip). Refuses --with-launchd / --with-drill.
+                       honest skip), and CABINET_RUNTIME_DIR is routed into
+                       the run's scratch area beside the flight log so the
+                       live /tmp/cabinet-runtime is never written (an ambient
+                       CABINET_RUNTIME_DIR is respected unless it resolves to
+                       or inside that live dir — refused, exit 64, as is a
+                       --flight-log directly in /tmp or anywhere inside
+                       /tmp/cabinet-runtime; refusals fire before anything is
+                       written). Refuses --with-launchd / --with-drill.
   --dry-run            Print the full numbered plan + errand notes, execute
                        nothing, exit 0.
   --with-launchd       Run the move-in (runbook section 6): deploy the Chair,
@@ -174,7 +203,9 @@ emit_plan() {
   if [ "$CLEAN_ROOM" = "1" ]; then
     echo " 6. [load-preset]   env REDIS_HOST=127.0.0.1 REDIS_PORT=$CLEANROOM_REDIS_PORT bash cabinet/scripts/load-preset.sh"
     echo "                    (clean-room: expected-active Redis marks pointed at an unused port —"
-    echo "                    skipped honestly; DB schema apply is load-preset's own best-effort)"
+    echo "                    skipped honestly; DB schema apply is load-preset's own best-effort;"
+    echo "                    CABINET_RUNTIME_DIR -> ${CABINET_RUNTIME_DIR:-<flight-log dir>/cabinet-runtime} —"
+    echo "                    the live /tmp/cabinet-runtime is never written)"
   else
     echo " 6. [load-preset]   bash cabinet/scripts/load-preset.sh"
   fi
@@ -372,6 +403,80 @@ do_first_receipt() {
   bash cabinet/scripts/first-briefing.sh --local
 }
 
+# ---- clean-room containment path helpers ----------------------------------------
+# lex_norm_path <path> — PURELY LEXICAL normalization, never touches the
+# filesystem: collapses '//' runs and '.' segments, pops '..' normpath-style,
+# strips the trailing '/'. Used for the containment compares (and for a
+# not-yet-existing flight-log parent) where realpath has nothing to resolve,
+# so spelled variants like /tmp//cabinet-runtime, /tmp/./cabinet-runtime or
+# /tmp/gone/../cabinet-runtime normalize to one compare form. Lexical '..'
+# popping can differ from physical resolution only through an existing
+# symlinked prefix — for a REFUSAL compare, over-normalizing can only
+# over-refuse, which is fail-safe. Subshell body keeps `set -f` (no
+# glob-expansion of split segments) contained. Bash 3.2-safe.
+lex_norm_path() (
+  set -f
+  local IFS='/' seg out="" abs=0 n
+  local parts=()
+  case "$1" in /*) abs=1 ;; esac
+  for seg in $1; do
+    case "$seg" in
+      ''|'.') ;;
+      '..')
+        n=${#parts[@]}
+        if [ "$n" -gt 0 ] && [ "${parts[$((n - 1))]}" != ".." ]; then
+          unset "parts[$((n - 1))]"
+        elif [ "$abs" = "0" ]; then
+          parts+=("..")
+        fi
+        ;;
+      *) parts+=("$seg") ;;
+    esac
+  done
+  for seg in ${parts[@]+"${parts[@]}"}; do out="$out/$seg"; done
+  if [ "$abs" = "1" ]; then
+    printf '%s' "${out:-/}"
+  else
+    printf '%s' "${out#/}"
+  fi
+)
+
+# resolve_for_compare <path> — the strongest honest resolution for the
+# containment refusals below: lexical normalization, then PHYSICAL
+# resolution of the deepest EXISTING ancestor (realpath) with the
+# not-yet-existing remainder re-appended — so /tmp vs /private/tmp (one
+# directory on macOS) and symlinked spellings compare equal even when the
+# leaf does not exist yet. Relative paths return lexically normalized only
+# (they resolve under the repo root and can never spell the live
+# /tmp/cabinet-runtime); a box without realpath falls back to the lexical
+# form (the refusal case patterns carry both literal spellings for exactly
+# that fallback).
+resolve_for_compare() {
+  local p head tail=""
+  p="$(lex_norm_path "$1")"
+  case "$p" in
+    /*) ;;
+    *) printf '%s' "$p"; return 0 ;;
+  esac
+  if ! command -v realpath >/dev/null 2>&1; then
+    printf '%s' "$p"
+    return 0
+  fi
+  head="$p"
+  while [ "$head" != "/" ]; do
+    if [ -e "$head" ]; then
+      head="$(realpath "$head" 2>/dev/null || printf '%s' "$head")"
+      if [ "$head" = "/" ]; then head=""; fi
+      printf '%s%s' "$head" "$tail"
+      return 0
+    fi
+    tail="/${head##*/}$tail"
+    head="${head%/*}"
+    if [ -z "$head" ]; then head="/"; fi
+  done
+  printf '%s' "$p"
+}
+
 # ---- the run -------------------------------------------------------------------
 STAMP="$(date -u +%Y%m%d-%H%M%S)"
 if [ -n "$FLIGHT_LOG_ARG" ]; then
@@ -382,16 +487,83 @@ if [ -n "$FLIGHT_LOG_ARG" ]; then
       echo "          ($REPO_ROOT); step logs will land inside the working tree." >&2
       echo "          An absolute path is recommended." >&2 ;;
   esac
-  FLIGHT_LOG="$FLIGHT_LOG_ARG"
-  LOG_DIR="$(cd "$(dirname "$FLIGHT_LOG_ARG")" 2>/dev/null && pwd || true)"
-  if [ -z "$LOG_DIR" ]; then
-    mkdir -p "$(dirname "$FLIGHT_LOG_ARG")"
-    LOG_DIR="$(cd "$(dirname "$FLIGHT_LOG_ARG")" && pwd)"
+  # Resolve the log dir WITHOUT creating anything: the clean-room guard below
+  # must judge (and possibly refuse) this run before its first write — a
+  # refused run writes nothing, not even the flight-log parent (fix-pass
+  # 2026-07-10; the old pre-guard mkdir -p is gone — flight_init mkdir-s the
+  # dir once the run is allowed to proceed). An existing parent resolves via
+  # cd; a not-yet-existing one lexically, to the same absolute form mkdir -p
+  # will create.
+  _flight_parent="$(dirname "$FLIGHT_LOG_ARG")"
+  case "$_flight_parent" in
+    /*) ;;
+    *) _flight_parent="$REPO_ROOT/$_flight_parent" ;;
+  esac
+  if ! LOG_DIR="$(cd "$_flight_parent" 2>/dev/null && pwd)"; then
+    LOG_DIR="$(lex_norm_path "$_flight_parent")"
   fi
+  unset _flight_parent
   FLIGHT_LOG="$LOG_DIR/$(basename "$FLIGHT_LOG_ARG")"
 else
   LOG_DIR="$HOME/hatch-logs/hatch-$STAMP"
   FLIGHT_LOG="$LOG_DIR/flight.log"
+fi
+
+# Clean-room containment (2026-07-10, PC Wave-C hatch-hardening; PC-B verifier
+# follow-up (a)): load-preset.sh (step 6) assembles constitution.md +
+# safety-boundaries.md into ${CABINET_RUNTIME_DIR:-/tmp/cabinet-runtime} — the
+# LIVE files officers read at boot. Route the runtime dir into this run's
+# scratch area BEFORE any step runs (same throwaway discipline as the
+# clean-room HOME); an explicit ambient CABINET_RUNTIME_DIR is respected
+# (load-preset.sh's own test-override contract) UNLESS it resolves to — or
+# nests under — the live default, which is refused below.
+if [ "$CLEAN_ROOM" = "1" ]; then
+  export CABINET_RUNTIME_DIR="${CABINET_RUNTIME_DIR:-$LOG_DIR/cabinet-runtime}"
+  # The containment must not self-defeat (adversarial fixes, 2026-07-10): a
+  # flight log directly in /tmp makes LOG_DIR=/tmp, so the default above
+  # resolves to /tmp/cabinet-runtime — the exact live path this routing
+  # exists to protect; an ambient CABINET_RUNTIME_DIR aimed there (or UNDER
+  # it — scratch twins inside the live governance dir are pollution too)
+  # has the same effect. Refuse, never work around (the
+  # --with-launchd/--with-drill posture). resolve_for_compare normalizes
+  # spellings (//, /./, .., trailing /) and resolves the deepest existing
+  # ancestor physically — /tmp and /private/tmp alias one directory on
+  # macOS — with both literal spellings kept in the patterns for
+  # realpath-less boxes. The refusals fire before flight_init AND before
+  # the flight-log parent exists — a refused run writes nothing at all.
+  # Seam 1 (fix-pass 2026-07-10), checked FIRST so the refusal names the
+  # flag the user actually got wrong: a --flight-log INSIDE the live dir
+  # (e.g. /tmp/cabinet-runtime/flight.log) routes the runtime dir to a
+  # NESTED scratch path — the runtime-dir compare below would catch it, but
+  # blame the derived CABINET_RUNTIME_DIR — while flight_init + run_step
+  # would write flight.log and step-*.log INTO the live governance dir
+  # under the very banner claiming it is never written. Refuse a log dir
+  # that resolves to (or under) the live dir.
+  _routed_logdir="$(resolve_for_compare "$LOG_DIR")"
+  case "$_routed_logdir" in
+    /tmp/cabinet-runtime|/tmp/cabinet-runtime/*|/private/tmp/cabinet-runtime|/private/tmp/cabinet-runtime/*)
+      echo "hatch.sh: --clean-room refuses a flight-log dir of $LOG_DIR —" >&2
+      echo "          that is the live runtime dir (or inside it): flight.log +" >&2
+      echo "          step-*.log would pollute the governance files officers read at" >&2
+      echo "          boot. Put the flight log in its own directory, e.g." >&2
+      echo "          --flight-log /tmp/hatch-scratch/flight.log" >&2
+      exit 64
+      ;;
+  esac
+  # Seam 2 (the original adversarial fix): the routed runtime dir itself.
+  _routed_runtime="$(resolve_for_compare "$CABINET_RUNTIME_DIR")"
+  case "$_routed_runtime" in
+    /tmp/cabinet-runtime|/tmp/cabinet-runtime/*|/private/tmp/cabinet-runtime|/private/tmp/cabinet-runtime/*)
+      echo "hatch.sh: --clean-room refuses CABINET_RUNTIME_DIR=$CABINET_RUNTIME_DIR —" >&2
+      echo "          that IS (or sits inside) the live runtime dir the clean-room" >&2
+      echo "          containment exists to protect (a --flight-log directly in /tmp" >&2
+      echo "          routes here; so does an ambient CABINET_RUNTIME_DIR override)." >&2
+      echo "          Put the flight log in its own directory, or point" >&2
+      echo "          CABINET_RUNTIME_DIR at a scratch path." >&2
+      exit 64
+      ;;
+  esac
+  unset _routed_runtime _routed_logdir
 fi
 
 command -v "$PY" >/dev/null 2>&1 || {
@@ -402,6 +574,11 @@ command -v "$PY" >/dev/null 2>&1 || {
 flight_init "$LOG_DIR" "$FLIGHT_LOG"
 flight_stamp HATCH_START
 echo "==== HATCH v0 — recording to $LOG_DIR (flight-recorder rule) ===="
+if [ "$CLEAN_ROOM" = "1" ]; then
+  echo "==== CLEAN-ROOM — CABINET_RUNTIME_DIR -> $CABINET_RUNTIME_DIR ===="
+  echo "     (scratch-routed runtime dir: the live /tmp/cabinet-runtime is never written)"
+  flight_line "CLEAN_ROOM_RUNTIME_DIR $CABINET_RUNTIME_DIR"
+fi
 emit_plan
 
 if [ "$TELEGRAM_NAMED" = "0" ]; then
@@ -420,7 +597,8 @@ if [ "$CLEAN_ROOM" = "1" ]; then
   run_step setup-mac "host preflight (clean-room: check only, no installs)" \
     bash cabinet/scripts/setup-mac.sh --check
   echo "    clean-room: install/service phases skipped (deps verified present);"
-  echo "    launchd and the live Redis are never touched in this mode."
+  echo "    launchd, the live Redis, and the live /tmp/cabinet-runtime are never"
+  echo "    touched in this mode (runtime dir scratch-routed — see banner above)."
 else
   run_step setup-mac "host bootstrap (boot-path fast lane)" \
     bash cabinet/scripts/setup-mac.sh --fast
