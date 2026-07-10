@@ -60,7 +60,7 @@ echo '{}' | OFFICER_NAME=cos bash cabinet/scripts/hooks/session-start.sh | grep 
 # W4: composed proposer prompt renders the lessons block or the no-lessons
 # note — NEVER the literal %%LESSONS%% token (dry-run, propose-only):
 python3.12 -m framework.acting.run_action_lane --dry-run 2>&1 | grep -F "%%LESSONS%%" && echo W4-RED || echo W4-OK
-# CANDOR: harness self-test 13/13
+# CANDOR: harness self-test 16/16 (review tighten 2026-07-10: negation/retraction guard + 3 bypass fixtures)
 python3.12 cabinet/evals/candor/harness.py --self-test | tail -1
 ```
 

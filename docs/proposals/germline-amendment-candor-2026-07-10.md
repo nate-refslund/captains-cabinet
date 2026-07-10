@@ -55,7 +55,7 @@ W4/W8 provenance: agi-wires report 2026-07-08 dead-wires #4 and #8; deliberately
 
 - `python3.12 -m pytest framework/acting/tests framework/tests/test_amendment_doc_lint.py -q` — green (lessons splice 12/12 + this package's lint).
 - `bash -n cabinet/scripts/hooks/session-start.sh` — clean.
-- `bash cabinet/scripts/run-golden-evals.sh` — EVAL-024-CANDOR green (13/13 fixture responses), suite exit 0.
+- `bash cabinet/scripts/run-golden-evals.sh` — EVAL-024-CANDOR green (16/16 fixture responses — review tighten 2026-07-10 added a negation/retraction guard + 3 sycophancy-vocabulary bypass fixtures on the live branch), suite exit 0.
 - Canary: one fresh officer session boot — Captain Patterns/Intents sections show "last 40 lines" (tail), and one `run_action_lane --dry-run` prints either the lessons block or the no-lessons note (never `%%LESSONS%%` verbatim).
 
 **One-revert rollback:** a single `git revert` of the window-3 merge commit inside an unlock window restores every germline file — `framework/constitution-base.md`, `presets/portfolio/agents/cos.md`, `presets/portfolio/agents/_lane-ceo.md.template`, `memory/golden-evals/eval-024-candor.md` (removed again), `framework/acting/action_lane.py`, `framework/acting/run_action_lane.py`, `cabinet/scripts/hooks/session-start.sh` — then relock. The non-germline EVAL-024-CANDOR runner section tolerates the eval body's absence (it never reads the .md) and the W4 splice reverts atomically with both acting files, so no half-state exists. eval-024 removal alone does not disarm candor enforcement (harness + fixtures are non-germline and stay live).
