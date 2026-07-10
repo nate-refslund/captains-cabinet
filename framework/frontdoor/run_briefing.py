@@ -100,8 +100,9 @@ def _run_local_render(*, genesis_fn=None, now: str | None = None) -> dict:
     utcnow = datetime.now(timezone.utc)
     date = utcnow.strftime("%Y-%m-%d")
     stamp = now or utcnow.strftime("%Y-%m-%dT%H:%M:%SZ")
-    root = genesis.cabinet_root()
-    path = root / "instance" / "memory" / f"first-briefing-{date}.md"
+    # Path knowledge lives with the genesis surfaces (layer-sep FINAL-C):
+    # onboarding owns WHERE the receipt lands; this module composes the text.
+    path = genesis.first_briefing_path(date)
     body = (
         f"# First briefing — {date} (LOCAL-FIRST receipt)\n\n"
         f"- composed: {stamp} on this machine, from local genesis surfaces only\n"

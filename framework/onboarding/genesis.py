@@ -51,6 +51,7 @@ FOCUS_REL = "instance/config/onboarding-focus.md"
 PROPOSALS_REL = "instance/config/outcomes-proposed.yml"
 LIBRARY_DIR_REL = "instance/memory/library"
 BRIEF_REL = LIBRARY_DIR_REL + "/genesis-research-brief.md"
+FIRST_BRIEFING_DIR_REL = "instance/memory"
 
 GENERATED_MARKER = "generated-by: framework.onboarding.genesis"
 IOU_LINE = "research brief queued — will be produced when officers wake"
@@ -71,6 +72,15 @@ def cabinet_root() -> Path:
     local so onboarding stays import-light)."""
     env_root = os.environ.get("CABINET_ROOT")
     return Path(env_root) if env_root else Path(__file__).resolve().parents[2]
+
+
+def first_briefing_path(date: str) -> Path:
+    """Where the LOCAL-FIRST genesis receipt lands: the first-briefing
+    markdown on the instance memory surface (Captain ruling 2026-07-09,
+    Perfect Cabinet Wave A). Path knowledge lives HERE beside the other
+    genesis instance surfaces (layer-separation FINAL-C: frontdoor composes
+    the text; onboarding owns where genesis artifacts live)."""
+    return cabinet_root() / FIRST_BRIEFING_DIR_REL / f"first-briefing-{date}.md"
 
 
 def _utc_now_iso(now: str | None = None) -> str:

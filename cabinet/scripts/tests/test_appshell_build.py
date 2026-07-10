@@ -36,6 +36,7 @@ import plistlib
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -53,7 +54,11 @@ _BUILD_TIMEOUT = 600  # fresh egg cut + swiftc; generous for cold runners
 _SMOKE_TIMEOUT = 300
 _LINT_TIMEOUT = 60
 
-_HAVE_SWIFTC = shutil.which("swiftc") is not None
+# Dev-Mac only: the builder needs xcrun/ditto/plutil/codesign beyond swiftc,
+# so a bare `swiftc` on PATH is NOT enough — GitHub's ubuntu runners ship a
+# Linux Swift toolchain that fooled the PATH-only probe and ran the builder
+# to its honest exit 3 (master CI first exposure, 2026-07-10).
+_HAVE_SWIFTC = sys.platform == "darwin" and shutil.which("swiftc") is not None
 
 # ---------------------------------------------------------------------------
 # helpers

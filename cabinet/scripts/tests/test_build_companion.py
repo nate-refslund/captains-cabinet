@@ -37,6 +37,7 @@ import plistlib
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -177,8 +178,11 @@ def test_egg_manifest_rows():
 # build half — honest skip when the toolchain is absent
 # --------------------------------------------------------------------------
 
-_HAS_SWIFTC = shutil.which("swiftc") is not None
-needs_swiftc = pytest.mark.skipif(not _HAS_SWIFTC, reason="swiftc not available (CLT not installed)")
+# Dev-Mac only: main.swift imports AppKit, which compiles on darwin alone —
+# a bare `swiftc` on PATH is NOT enough (GitHub's ubuntu runners ship a Linux
+# Swift toolchain that fooled the PATH-only probe; master CI 2026-07-10).
+_HAS_SWIFTC = sys.platform == "darwin" and shutil.which("swiftc") is not None
+needs_swiftc = pytest.mark.skipif(not _HAS_SWIFTC, reason="swiftc not available or not macOS (AppKit compiles on darwin only)")
 
 
 @pytest.fixture(scope="module")

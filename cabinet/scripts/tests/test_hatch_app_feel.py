@@ -27,7 +27,10 @@ from __future__ import annotations
 import os
 import plistlib
 import subprocess
+import sys
 from pathlib import Path
+
+import pytest
 
 _SCRIPTS_DIR = Path(__file__).resolve().parent.parent
 _REPO_ROOT = _SCRIPTS_DIR.parent.parent
@@ -211,6 +214,10 @@ def test_no_launchd_hint_drops_no_file(tmp_path):
     )
 
 
+@pytest.mark.skipif(sys.platform != "darwin",
+                    reason="asserts the REAL plutil validation path "
+                           "(/usr/bin/plutil is macOS-only; sibling tests "
+                           "shim plutil and run anywhere)")
 def test_with_launchd_writes_valid_webloc_and_opens(tmp_path):
     p, home, shims = _run_tail(tmp_path)  # real plutil validates the artifact
     assert p.returncode == 0, (p.stdout, p.stderr)

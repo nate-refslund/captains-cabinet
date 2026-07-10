@@ -8,6 +8,7 @@ raises if touched — local render must never reach the intake or channel.py
 from datetime import datetime, timezone
 
 from framework.frontdoor import run_briefing as rb
+from framework.onboarding.genesis import FIRST_BRIEFING_DIR_REL
 
 _CARD = {
     "source": "onboarding-genesis", "kind": "outcome-proposal",
@@ -47,7 +48,7 @@ def test_local_render_writes_receipt_and_never_sends(tmp_path, monkeypatch):
     assert send["drained"] == 2
 
     date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    path = tmp_path / "instance" / "memory" / f"first-briefing-{date}.md"
+    path = tmp_path / FIRST_BRIEFING_DIR_REL / f"first-briefing-{date}.md"
     assert str(path) == send["receipt_path"]
     body = path.read_text()
     assert "LOCAL-FIRST receipt" in body
@@ -64,7 +65,7 @@ def test_local_render_honest_empty_still_writes_receipt(tmp_path, monkeypatch):
     out = rb.run_briefing(local_render=True, genesis_fn=lambda: [])
     send = out["send"]
     assert send["drained"] == 0 and send["sent"] is False
-    body = (tmp_path / "instance" / "memory").glob("first-briefing-*.md")
+    body = (tmp_path / FIRST_BRIEFING_DIR_REL).glob("first-briefing-*.md")
     text = next(iter(body)).read_text()
     assert "honest empty" in text            # says so plainly, invents nothing
 
