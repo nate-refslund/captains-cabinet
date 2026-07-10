@@ -110,8 +110,16 @@ export async function POST(req: NextRequest) {
 
   // b. CSRF — strict same-origin (when headers present) + double-submit
   //    custom header (forces preflight; this app serves no CORS).
+  //    The expected origin derives from the HOST the browser addressed, not
+  //    req.nextUrl.origin: under `next start --hostname 0.0.0.0` nextUrl
+  //    resolves to http://0.0.0.0:<port>, an origin no browser ever sends,
+  //    which made the door deny every legitimate page tap (found live,
+  //    deploy 2026-07-10). Host is what the browser targeted — a cross-site
+  //    attacker cannot make Origin match it (DNS rebinding shifts BOTH).
+  const host = req.headers.get('host')
+  const requestOrigin = host ? `${req.nextUrl.protocol}//${host}` : req.nextUrl.origin
   const sameOrigin = checkSameOrigin(
-    req.nextUrl.origin,
+    requestOrigin,
     req.headers.get('origin'),
     req.headers.get('referer')
   )
