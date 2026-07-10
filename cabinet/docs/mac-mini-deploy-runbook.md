@@ -214,7 +214,17 @@ This `envsubst`-substitutes paths into the plist templates in `cabinet/launchd/`
   default). Live portfolio roster: `cos`, `polads-ceo`, `stephie-ceo`,
   `comms-officer`.
 - `com.cabinet.limit-reset-watchdog.plist` (auto-resume after account session-limit reset)
-- `com.cabinet.dashboard.plist` (control panel + office-display server on `:3100`)
+- `com.cabinet.dashboard.plist` (control panel + office-display server on `:3100`).
+  Port/bind config (Wave D app-feel): `CABINET_DASHBOARD_PORT` (default 3100)
+  and `CABINET_DASHBOARD_HOST` (default `0.0.0.0` — UNCHANGED: the dashboard
+  stays reachable over Tailscale at `http://<host>:3100`); explicit env
+  (launchd plist) > `cabinet/.env` > default. Loopback-only opt-in:
+  `CABINET_DASHBOARD_HOST=127.0.0.1` in the mini's `cabinet/.env`. Flipping
+  the DEFAULT to loopback is captain-gated (CC-LOOP / OC-LOOPBACK ruling) —
+  **migration step if that flip ever lands**: add
+  `CABINET_DASHBOARD_HOST=0.0.0.0` to the mini's `cabinet/.env` BEFORE
+  deploying the flip if tailnet http reach must persist (or front the
+  dashboard with `tailscale serve`) — no silent loss of documented reach.
 
 Everything else in the daemon/watchdog fleet is **owned by `cabinet/services.yml`**
 (the F0.4 fleet manifest): render with `python3.12 cabinet/scripts/generate-plists.py`

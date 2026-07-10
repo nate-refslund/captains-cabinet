@@ -239,6 +239,7 @@ emit_plan() {
   else
     echo "14. [move-in]       DEFERRED (v0 default --no-launchd) — printed as an errand note"
   fi
+  echo "15. [app-feel]      dashboard URL + Add-to-Dock hints; --with-launchd: probe + open + .webloc"
   echo ""
   echo "Flight recorder: per-step timings + stamps -> flight log; summary table,"
   echo "TTFR and total time print at the end."
@@ -712,11 +713,21 @@ TELEGRAM_NAMED="$(telegram_named)"
 print_errand_notes "$WITH_LAUNCHD" "$TELEGRAM_NAMED" "$GEN_LOG_HINT"
 flight_summary
 echo ""
+# app-feel: dashboard port — explicit env wins; else cabinet/.env; else 3100.
+# (A port is config, not a secret — values-in-env doctrine concerns tokens.)
+DASH_PORT="${CABINET_DASHBOARD_PORT:-}"
+if [ -z "$DASH_PORT" ] && [ -f cabinet/.env ]; then
+  DASH_PORT="$(sed -n 's/^CABINET_DASHBOARD_PORT=//p' cabinet/.env | tail -1)" || DASH_PORT=""
+fi
+DASH_PORT="${DASH_PORT:-3100}"; DASH_URL="http://127.0.0.1:${DASH_PORT}/"
 echo "==== WHERE THINGS LIVE (minute one) ===="
 echo "First briefing:        ${RECEIPT_LANDING:-see $RECEIPT_LOG}"
 echo "DEMO receipt:          ${DEMO_LANDING:-see $DEMO_LOG}"
 echo "                       (labeled demo — receipt anatomy; reply-to-undo works on real receipts only)"
 echo "How it's governed:     docs/how-your-cabinet-is-governed.md  (one page, plain language)"
+echo "Menu-bar companion:    bash cabinet/scripts/build-companion.sh && open \"bin/Cabinet Companion.app\""
+echo "Dashboard:             ${DASH_URL} (wall display: ${DASH_URL}display)"
+echo "App feel:              Safari File>Add to Dock, or Chrome menu > Cast, save and share > Install page as app"
 echo ""
 echo "==== HATCH VERDICT: GREEN (v0 chain complete) ===="
 if [ "$WITH_LAUNCHD" = "1" ]; then
@@ -727,3 +738,43 @@ else
   echo "The org is NOT live yet — v0 defaults to --no-launchd. Move in via the"
   echo "errand note above, or re-run: bash cabinet/scripts/hatch.sh --with-launchd"
 fi
+
+# ---- app-feel (Wave D) — bookmark + auto-open; convenience tail, NEVER a gate ----
+# EOF is reached only on the GREEN path (step_fail exits 1 earlier). This tail
+# must preserve exit 0: every branch returns 0; invocation carries || fallback.
+app_feel() {
+  local webloc ok
+  if [ "$CLEAN_ROOM" = "1" ]; then
+    echo "[app-feel] clean-room: skipped (no browser, no ~/Applications writes)"; return 0
+  fi
+  if [ "$WITH_LAUNCHD" != "1" ]; then
+    echo "[app-feel] dashboard not started (--no-launchd default). Start: bash cabinet/scripts/start-dashboard.sh"
+    echo "           then open $DASH_URL — no bookmark dropped for a server that isn't running."
+    return 0
+  fi
+  webloc="$HOME/Applications/Founder's Cabinet.webloc"
+  if mkdir -p "$HOME/Applications" \
+     && printf '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n<dict>\n\t<key>URL</key>\n\t<string>%s</string>\n</dict>\n</plist>\n' "$DASH_URL" > "$webloc.tmp" \
+     && plutil -lint "$webloc.tmp" >/dev/null \
+     && mv "$webloc.tmp" "$webloc"; then
+    echo "[app-feel] bookmark: $webloc (opens in your default browser)"
+  else
+    rm -f "$webloc.tmp" || true
+    echo "[app-feel] bookmark skipped: could not write/validate $webloc (non-fatal)"
+  fi
+  ok=0
+  for _ in $(seq 1 60); do
+    curl -fsS --max-time 2 "${DASH_URL}api/health" >/dev/null 2>&1 && { ok=1; break; } || true
+    sleep 2
+  done
+  if [ "$ok" = "1" ] && [ -z "${SSH_CONNECTION:-}" ] && [ "${HATCH_NO_OPEN:-0}" != "1" ]; then
+    open "$DASH_URL" || echo "[app-feel] auto-open failed — open $DASH_URL manually"
+  elif [ "$ok" = "1" ]; then
+    echo "[app-feel] dashboard is UP — open $DASH_URL (auto-open skipped: SSH/HATCH_NO_OPEN)"
+  else
+    echo "[app-feel] AMBER: dashboard not reachable yet at ${DASH_URL}api/health (first build ~1-2 min)."
+    echo "           Check: launchctl print gui/\$(id -u)/com.cabinet.dashboard — then open $DASH_URL"
+  fi
+  return 0
+}
+app_feel || echo "[app-feel] non-fatal: app-feel step hit an unexpected error; the hatch verdict above stands"
