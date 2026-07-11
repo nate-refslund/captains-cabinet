@@ -41,6 +41,26 @@ These tests pin, WITHOUT running the live chain:
     a concurrent officer boot rewriting the twins mid-window — a real
     breach reproduces on the retry, so the check stays fail-closed).
 
+Seam 3 (hardening C11, 2026-07-11 — lesson `hatch-hatches-the-tree-it-runs-
+in`): a clean-room hatch run from a git worktree rewrote that CHECKOUT's
+tracked instance/config/platform.yml in place (337->14 lines) + sources.yml
+and littered 8 untracked instance/ paths — the seams above protect the live
+/tmp runtime dir, not the tree the run sits in. hatch.sh now refuses
+--clean-room inside a git work tree whose instance/config/platform.yml is
+git-tracked with a real deployment config (>50 lines), unless
+HATCH_ALLOW_TRACKED_INSTANCE=1. The tests below drive the extracted
+tracked_instance_guard predicate in ISOLATION under /bin/bash (macOS 3.2)
+against scratch fixtures — refusal, env bypass, and the fresh-hatch-target
+no-op decision table — plus a fail-safe end-to-end probe of the wired
+refusal (neutered PATH: a hypothetically broken guard dies at the
+non-writing python3.12 preflight instead of hatching). Verify-pass fix
+(2026-07-11): the refusal's prescribed remediation must itself pass the
+guard — the old advice (`git clone "$REPO_ROOT" …`) was refusal-shaped,
+because every clone of this repo tracks the same 337-line platform.yml;
+the message now prescribes a `git archive | tar -x` export, and a probe
+below executes that advice against a refusal-shaped fixture repo and
+asserts the export passes silently.
+
 Run: python3.12 -m pytest cabinet/scripts/tests/test_hatch_cleanroom_containment.py -q
 """
 
@@ -51,6 +71,8 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
+
+import pytest
 
 _SCRIPTS_DIR = Path(__file__).resolve().parent.parent
 _REPO_ROOT = _SCRIPTS_DIR.parent.parent
@@ -73,8 +95,9 @@ _REFUSE_PIN = (
 
 def _run_hatch(args, home: Path, extra_env: dict | None = None):
     env = dict(os.environ)
-    # pin plan output against ambient overrides
-    for k in ("CABINET_RUNTIME_DIR", "HATCH_CLEANROOM_REDIS_PORT"):
+    # pin plan output + guard behavior against ambient overrides
+    for k in ("CABINET_RUNTIME_DIR", "HATCH_CLEANROOM_REDIS_PORT",
+              "HATCH_ALLOW_TRACKED_INSTANCE"):
         env.pop(k, None)
     env["HOME"] = str(home)
     if extra_env:
@@ -398,3 +421,246 @@ def test_cleanroom_env_routes_writes_to_scratch_and_live_stays_untouched(tmp_pat
         "live /tmp/cabinet-runtime changed under a clean-room-routed run "
         f"(reproduced on retry): before={mismatch[0]} after={mismatch[1]}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Seam 3 — tracked-instance checkout refusal (hardening C11, 2026-07-11;
+# lesson `hatch-hatches-the-tree-it-runs-in`). The predicate is driven in
+# ISOLATION (extracted verbatim from hatch.sh, run under /bin/bash — the
+# macOS 3.2 portability floor) so no probe can start a real, mutating hatch.
+# ---------------------------------------------------------------------------
+
+_GUARD_FN_OPEN = "tracked_instance_guard() {"
+_GUARD_CALL = 'if ! tracked_instance_guard "$REPO_ROOT"; then'
+_PLATFORM_YML = "instance/config/platform.yml"
+# bash+git+wc live here on macOS and Linux; brew's python3.12 does NOT —
+# the e2e probes below require that, so a hypothetically broken guard dies
+# at hatch.sh's non-writing python3.12 preflight instead of hatching.
+_NEUTERED_PATH = "/usr/bin:/bin"
+
+
+def _extract_guard_fn() -> str:
+    """The guard's shell source, sliced verbatim out of hatch.sh — the
+    probes drive the SHIPPED predicate, never a reimplementation."""
+    text = _HATCH.read_text(encoding="utf-8")
+    start = text.index(_GUARD_FN_OPEN)
+    end = text.index("\n}", start)
+    return text[start:end + 2]
+
+
+def _run_guard(root: Path, allow: str | None = None):
+    """Invoke the extracted predicate against <root>. rc 0 = silent no-op
+    (real-hatch-target shape), rc 1 = refuse (tracked-instance checkout)."""
+    env = dict(os.environ)
+    for k in ("HATCH_ALLOW_TRACKED_INSTANCE",
+              "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"):
+        env.pop(k, None)
+    if allow is not None:
+        env["HATCH_ALLOW_TRACKED_INSTANCE"] = allow
+    script = _extract_guard_fn() + '\ntracked_instance_guard "$1"\n'
+    return subprocess.run(
+        ["/bin/bash", "-c", script, "guard-probe", str(root)],
+        env=env, capture_output=True, text=True, timeout=30,
+    )
+
+
+def _scratch_tree(base: Path, *, git: bool, lines: int | None,
+                  tracked: bool = True) -> Path:
+    """A scratch checkout shape: optionally a git tree, optionally carrying
+    an N-line platform.yml, optionally git-tracked (staged counts — the
+    guard asks git, not the commit graph)."""
+    base.mkdir(parents=True, exist_ok=True)
+    env = dict(os.environ)
+    for k in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"):
+        env.pop(k, None)
+    if git:
+        subprocess.run(["git", "init", "-q"], cwd=base, env=env,
+                       capture_output=True, text=True, timeout=30, check=True)
+    if lines is not None:
+        cfg = base / _PLATFORM_YML
+        cfg.parent.mkdir(parents=True)
+        cfg.write_text(
+            "".join(f"key_{i}: value_{i}\n" for i in range(lines)),
+            encoding="utf-8")
+        if git and tracked:
+            subprocess.run(["git", "add", _PLATFORM_YML], cwd=base, env=env,
+                           capture_output=True, text=True, timeout=30,
+                           check=True)
+    return base
+
+
+# -- decision table, proven row by row --------------------------------------
+
+def test_tracked_instance_guard_refuses_tracked_real_config(tmp_path):
+    """(a) git work tree + tracked platform.yml + >50 lines -> refuse."""
+    root = _scratch_tree(tmp_path / "wt", git=True, lines=60)
+    p = _run_guard(root)
+    assert p.returncode == 1, (p.stdout, p.stderr)
+
+
+def test_tracked_instance_guard_env_bypass(tmp_path):
+    """(b) HATCH_ALLOW_TRACKED_INSTANCE=1 bypasses — and ONLY the literal
+    '1' does (a stray '0' must not read as consent)."""
+    root = _scratch_tree(tmp_path / "wt", git=True, lines=60)
+    assert _run_guard(root, allow="1").returncode == 0
+    assert _run_guard(root, allow="0").returncode == 1
+
+
+def test_tracked_instance_guard_silent_on_fresh_hatch_targets(tmp_path):
+    """(c) every real-hatch-target shape passes silently — the guard's
+    prime contract is zero effect on fresh boxes."""
+    rows = {
+        # a fresh box: not a git tree, no instance config yet
+        "no-git-no-config": dict(git=False, lines=None),
+        # a hatched box: not a git tree, GENERATED (unversioned) long config
+        "no-git-long-config": dict(git=False, lines=337),
+        # a git tree that never versioned its instance/
+        "git-no-config": dict(git=True, lines=None),
+        # a git tree with a generated-but-untracked long config
+        "git-untracked-long-config": dict(git=True, lines=60, tracked=False),
+        # a tracked STUB config (the guard targets real deployment configs)
+        "git-tracked-stub": dict(git=True, lines=14),
+        # the boundary is strict: exactly 50 lines still passes
+        "git-tracked-boundary-50": dict(git=True, lines=50),
+    }
+    for name, shape in rows.items():
+        root = _scratch_tree(tmp_path / name, **shape)
+        p = _run_guard(root)
+        assert p.returncode == 0, (name, p.stdout, p.stderr)
+        assert p.stderr == "", (name, p.stderr)
+
+
+# -- the remediation must not self-defeat (verify pass 2026-07-11) -----------
+# Adversarial finding: origin/master itself tracks a 337-line platform.yml,
+# so EVERY `git clone` of this repo is refusal-shaped — the old error text's
+# verbatim advice (`git clone "$REPO_ROOT" /tmp/hatch-scratch && cd …`)
+# produced a second exit-64 and funneled operators into the
+# HATCH_ALLOW_TRACKED_INSTANCE=1 bypass as the routine path. The refusal now
+# prescribes a `git archive | tar -x` EXPORT (not a git tree -> the guard
+# no-ops) and demotes the clone to clone-plus-bypass advice.
+
+def test_prescribed_remediation_passes_the_guard(tmp_path):
+    """Execute the refusal message's own advice against a refusal-shaped
+    repo and prove the result does NOT trip the guard: a committed 337-line
+    platform.yml refuses (rc 1), its `git archive HEAD | tar -x` export
+    passes silently (rc 0). The guard driven here is the SHIPPED predicate,
+    extracted verbatim."""
+    repo = _scratch_tree(tmp_path / "refusal-shaped", git=True, lines=337)
+    env = dict(os.environ)
+    for k in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"):
+        env.pop(k, None)
+    subprocess.run(
+        ["git", "-c", "user.email=probe@test", "-c", "user.name=probe",
+         "commit", "-qm", "refusal-shaped fixture"],
+        cwd=repo, env=env, capture_output=True, text=True, timeout=30,
+        check=True)
+    assert _run_guard(repo).returncode == 1, (
+        "fixture must be refusal-shaped before the remediation is applied"
+    )
+    scratch = tmp_path / "hatch-scratch"
+    scratch.mkdir()
+    archive = subprocess.run(
+        ["/bin/bash", "-c",
+         'git -C "$1" archive HEAD | tar -x -C "$2"',
+         "remediation-probe", str(repo), str(scratch)],
+        env=env, capture_output=True, text=True, timeout=30)
+    assert archive.returncode == 0, archive.stderr
+    assert (scratch / _PLATFORM_YML).is_file(), (
+        "the export must carry the instance config (hatch adopts it)"
+    )
+    p = _run_guard(scratch)
+    assert p.returncode == 0, (p.stdout, p.stderr)
+    assert p.stderr == "", "the export must pass silently, no bypass needed"
+
+
+def test_refusal_text_does_not_prescribe_a_bare_clone():
+    """Static pin on the refusal heredoc: the old self-defeating line
+    (`git clone "$REPO_ROOT" /tmp/hatch-scratch && cd …`) must stay gone,
+    the git-archive export must be the prescribed path, and every clone
+    mention must carry the refuses-identically warning."""
+    text = _HATCH.read_text(encoding="utf-8")
+    assert 'git clone \\"$REPO_ROOT\\"' not in text, (
+        "the refusal text re-grew the bare-clone advice — a clone of this "
+        "repo tracks the same platform.yml and refuses identically"
+    )
+    block = text[text.index(_GUARD_CALL):text.index("exit 64",
+                                                    text.index(_GUARD_CALL))]
+    assert "archive HEAD | tar -x -C /tmp/hatch-scratch" in block
+    assert "refuses identically" in block
+    assert "HATCH_ALLOW_TRACKED_INSTANCE=1" in block
+
+
+# -- wiring + fail-safe end-to-end probes ------------------------------------
+
+def test_tracked_instance_guard_wiring():
+    """One definition, one call, and the call sits with the other clean-room
+    refusals: after the seam-1/2 runtime-dir guards, before flight_init — a
+    refused run writes nothing."""
+    text = _HATCH.read_text(encoding="utf-8")
+    assert text.count(_GUARD_FN_OPEN) == 1
+    assert text.count(_GUARD_CALL) == 1
+    assert text.index(_GUARD_FN_OPEN) < text.index(_GUARD_CALL), (
+        "the guard function must be defined before its call site"
+    )
+    assert (
+        text.rindex(_REFUSE_PIN)
+        < text.index(_GUARD_CALL)
+        < text.index('flight_init "$LOG_DIR"')
+    ), "the seam-3 refusal must follow seams 1+2 and precede flight_init"
+
+
+def _skip_unless_e2e_probe_is_failsafe():
+    if shutil.which("python3.12", path=_NEUTERED_PATH):
+        pytest.skip(
+            "python3.12 resolves inside the neutered PATH — a hypothetically "
+            "broken guard could proceed into a real hatch; the isolated "
+            "predicate tests above carry the coverage on this box")
+    if _run_guard(_REPO_ROOT).returncode != 1:
+        pytest.skip(
+            "this checkout is not a git tree with a tracked long "
+            "platform.yml — the wired refusal has nothing to fire on here")
+
+
+def test_clean_room_refuses_tracked_instance_checkout_end_to_end(tmp_path):
+    """The wired refusal, driven through the real hatch.sh: exit 64, the
+    error names the git-archive scratch-EXPORT alternative + the override
+    (verify pass 2026-07-11: a bare `git clone` of this repo also tracks
+    platform.yml and refuses identically — the message must not prescribe
+    it as the unqualified remediation), and NOTHING is written (the
+    refusal fires before flight_init)."""
+    _skip_unless_e2e_probe_is_failsafe()
+    parent = tmp_path / "logs-not-yet"
+    p = _run_hatch(["--clean-room", "--flight-log", str(parent / "flight.log")],
+                   home=tmp_path, extra_env={"PATH": _NEUTERED_PATH})
+    assert p.returncode == 64, (p.stdout, p.stderr)
+    assert "refuses to run in this checkout" in p.stderr
+    assert "archive HEAD | tar -x" in p.stderr, (
+        "the refusal must prescribe the git-archive export — the one "
+        "remediation shape that passes the guard without a bypass"
+    )
+    assert "refuses identically" in p.stderr, (
+        "the refusal must warn that a bare clone trips the same guard"
+    )
+    assert "HATCH_ALLOW_TRACKED_INSTANCE=1" in p.stderr
+    assert not parent.exists(), "a refused run must not create its log parent"
+    assert list(tmp_path.iterdir()) == [], "a refused run must write nothing"
+
+
+def test_clean_room_tracked_instance_bypass_end_to_end(tmp_path):
+    """HATCH_ALLOW_TRACKED_INSTANCE=1 gets past the guard — the run then
+    dies at the python3.12 preflight (the neutered PATH), which sits AFTER
+    every clean-room refusal and BEFORE flight_init, so the probe proves
+    the bypass without writing (or hatching) anything."""
+    _skip_unless_e2e_probe_is_failsafe()
+    parent = tmp_path / "logs-not-yet"
+    p = _run_hatch(["--clean-room", "--flight-log", str(parent / "flight.log")],
+                   home=tmp_path,
+                   extra_env={"PATH": _NEUTERED_PATH,
+                              "HATCH_ALLOW_TRACKED_INSTANCE": "1"})
+    assert p.returncode == 1, (p.stdout, p.stderr)
+    assert "refuses to run in this checkout" not in p.stderr
+    assert "python3.12 is required" in p.stderr, (
+        "the bypassed run must reach (and stop at) the preflight"
+    )
+    assert not parent.exists()
+    assert list(tmp_path.iterdir()) == []

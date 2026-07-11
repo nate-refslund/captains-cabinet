@@ -49,7 +49,19 @@
 # /tmp/cabinet-runtime (flight.log + step-*.log would pollute the live
 # governance dir), and an ambient override aimed at or under the live dir
 # all refuse. The routed path prints in the clean-room banner and lands in
-# the flight log.
+# the flight log. Seam 3 (hardening C11, 2026-07-11 — lesson
+# `hatch-hatches-the-tree-it-runs-in`): a clean-room run inside a git work
+# tree whose instance/config/platform.yml is tracked with a real deployment
+# config (>50 lines) is REFUSED, exit 64 — a hatch there rewrites the
+# checkout's tracked instance config in place; use a throwaway scratch
+# EXPORT (`git archive HEAD | tar -x -C /tmp/hatch-scratch` — a plain clone
+# of this repo tracks the same platform.yml and refuses identically), or
+# HATCH_ALLOW_TRACKED_INSTANCE=1 to override (routine only on a throwaway
+# clone). Fresh hatch targets are untouched by the guard (not a git tree /
+# no tracked long platform.yml). KNOWN RESIDUAL SEAM (2026-07-11 verify
+# pass): this guard is clean-room-scoped — a plain non-clean-room hatch
+# run from such a checkout still rewrites the tracked platform.yml in
+# place. In-scope containment per hardening Brief 1 is clean-room only.
 #
 # Flight recorder: per-step wall-clock timings + stamps (HATCH_START,
 # HATCH_PROOFS_DONE, FIRST_RECEIPT_DONE) land in a flight log; the summary
@@ -103,7 +115,12 @@ Flags:
                        or inside that live dir — refused, exit 64, as is a
                        --flight-log directly in /tmp or anywhere inside
                        /tmp/cabinet-runtime; refusals fire before anything is
-                       written). Refuses --with-launchd / --with-drill.
+                       written). Refuses a checkout whose tracked
+                       instance/config/platform.yml carries a real deployment
+                       config — hatch from a scratch EXPORT (git archive |
+                       tar -x; a plain clone refuses identically), or set
+                       HATCH_ALLOW_TRACKED_INSTANCE=1 to override. Refuses
+                       --with-launchd / --with-drill.
   --dry-run            Print the full numbered plan + errand notes, execute
                        nothing, exit 0.
   --with-launchd       Run the move-in (runbook section 6): deploy the Chair,
@@ -478,6 +495,31 @@ resolve_for_compare() {
   printf '%s' "$p"
 }
 
+# tracked_instance_guard <repo root> — returns 1 (refuse) ONLY when the tree
+# hatch would write into is a git work tree whose instance/config/platform.yml
+# is git-tracked AND real-deployment-sized (>50 lines). The paid lesson
+# `hatch-hatches-the-tree-it-runs-in` (2026-07-11): a clean-room hatch run
+# from a git worktree rewrote that checkout's TRACKED platform.yml in place
+# (337->14 lines) + sources.yml and littered 8 untracked instance/ paths —
+# the Wave-C containment covered /tmp runtime dirs, not the checkout's own
+# instance/. Real hatch targets are a no-op here (a fresh box is not a git
+# tree, or carries no tracked long platform.yml — its instance/ is generated,
+# not versioned). HATCH_ALLOW_TRACKED_INSTANCE=1 bypasses deliberately.
+# Fail-open on probe anomalies: the prime contract is zero effect on targets.
+# REMEDIATION SHAPE (verify pass 2026-07-11): every clone of THIS repo also
+# tracks platform.yml >50 lines, so a bare `git clone` is refusal-shaped too
+# — the refusal below therefore prescribes a `git archive | tar -x` export
+# (not a git tree -> silent pass) and names the bypass as clone-only advice.
+tracked_instance_guard() {
+  local n
+  [ "${HATCH_ALLOW_TRACKED_INSTANCE:-0}" = "1" ] && return 0
+  git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+  git -C "$1" ls-files --error-unmatch instance/config/platform.yml >/dev/null 2>&1 || return 0
+  n="$(wc -l < "$1/instance/config/platform.yml" 2>/dev/null || echo 0)"
+  [ "$n" -gt 50 ] 2>/dev/null || return 0
+  return 1
+}
+
 # ---- the run -------------------------------------------------------------------
 STAMP="$(date -u +%Y%m%d-%H%M%S)"
 if [ -n "$FLIGHT_LOG_ARG" ]; then
@@ -565,6 +607,26 @@ if [ "$CLEAN_ROOM" = "1" ]; then
       ;;
   esac
   unset _routed_runtime _routed_logdir
+  # Seam 3 (hardening C11, 2026-07-11 — lesson `hatch-hatches-the-tree-it-runs-
+  # in`): the checkout's OWN instance/. Seams 1+2 protect the live /tmp runtime
+  # dir; nothing protected the tracked instance config of the git tree the run
+  # sits in. Refuse — verification hatches belong in throwaway scratch clones.
+  if ! tracked_instance_guard "$REPO_ROOT"; then
+    echo "hatch.sh: --clean-room refuses to run in this checkout ($REPO_ROOT) —" >&2
+    echo "          instance/config/platform.yml is git-tracked here with a real" >&2
+    echo "          deployment config; the hatch chain would rewrite it (and" >&2
+    echo "          sources.yml) in place and litter untracked instance/ paths." >&2
+    echo "          Run from a throwaway scratch EXPORT instead (a plain git" >&2
+    echo "          clone tracks the same platform.yml and refuses identically):" >&2
+    echo "            mkdir -p /tmp/hatch-scratch" >&2
+    echo "            git -C \"$REPO_ROOT\" archive HEAD | tar -x -C /tmp/hatch-scratch" >&2
+    echo "            cd /tmp/hatch-scratch" >&2
+    echo "          (a scratch clone works too, but needs" >&2
+    echo "          HATCH_ALLOW_TRACKED_INSTANCE=1 — safe there: it is throwaway)." >&2
+    echo "          If this tree really is the hatch target," >&2
+    echo "          set HATCH_ALLOW_TRACKED_INSTANCE=1 to override." >&2
+    exit 64
+  fi
 fi
 
 command -v "$PY" >/dev/null 2>&1 || {
