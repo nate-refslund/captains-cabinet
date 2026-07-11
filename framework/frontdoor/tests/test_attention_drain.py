@@ -126,6 +126,38 @@ def _del(*keys):
             pass
 
 
+def _is_redispy(backend) -> bool:
+    return backend.__class__.__name__ == "_RedisPyBackend"
+
+
+def _xgroup_create(backend, stream: str, group: str) -> None:
+    """Mirror captain-attention.sh push-time creation:
+    XGROUP CREATE <stream> <group> 0 MKSTREAM (captain-attention.sh:97,140)."""
+    try:
+        if _is_redispy(backend):
+            backend._c.xgroup_create(stream, group, id="0", mkstream=True)
+        else:
+            backend._run("XGROUP", "CREATE", stream, group, "0", "MKSTREAM")
+    except Exception:
+        pass
+
+
+def _xreadgroup(backend, stream: str, group: str, consumer: str,
+                start: str) -> list[tuple[str, dict]]:
+    if _is_redispy(backend):
+        res = backend._c.xreadgroup(group, consumer, {stream: start}, count=10)
+        return intake._flatten_xread(res, stream)
+    out = backend._run("XREADGROUP", "GROUP", group, consumer,
+                       "COUNT", "10", "STREAMS", stream, start, raw=True)
+    return intake._parse_cli_xread(out, stream)
+
+
+def _xlen(backend, stream: str) -> int:
+    if _is_redispy(backend):
+        return int(backend._c.xlen(stream))
+    return int(backend._run("XLEN", stream, raw=True).strip() or "0")
+
+
 @pytest.fixture
 def isolated_keys(monkeypatch):
     """Unique source + target keys, with env routing intake to the target."""
@@ -201,34 +233,144 @@ def test_drain_is_idempotent_no_double_enqueue(isolated_keys):
 
 @redis_required
 def test_drain_uses_own_group_not_the_ceo_group(isolated_keys):
-    """The drainer must NOT consume the CEO's ceo-reader-<project> delivery."""
+    """Production reality (2026-07-11 finding): captain-attention.sh creates
+    ceo-reader-<project> at PUSH time (:97,140) and post-tool-use.sh §3b
+    (:292-322) consumes the delivery in single_ceo mode — often BEFORE the
+    drain runs. The drainer must read via its OWN group, forward exactly
+    once, and NEVER XDEL the stream copy while the live CEO group still owes
+    it (entry in its PEL, un-ACKed)."""
     k = isolated_keys
+    backend = intake._redis()
+    ceo_group = "ceo-reader-" + k["project"]
+
+    # Push-time group creation, then the card (captain-attention.sh order).
+    _xgroup_create(backend, k["source"], ceo_group)
     _push_card(k["source"], source="bakery-ceo", urgency="low",
                summary="fyi item", body="context", ts="2026-06-24T06:00:00Z")
 
-    attention_drain.drain_attention(only_projects={k["project"]})
+    # CEO scan consumes the delivery BEFORE the drain; no XACK yet — the
+    # entry now sits in the CEO group's PEL (the group is LIVE).
+    rows = _xreadgroup(backend, k["source"], ceo_group, "ceo-worker", ">")
+    assert len(rows) == 1, "CEO group must receive its own delivery"
+    entry_id = rows[0][0]
 
-    # The CEO's own consumer group should still see the card as NEW (lag>0),
-    # proving the drainer read via a SEPARATE group.
+    # (a) the drainer forwarded exactly once to the intake.
+    res = attention_drain.drain_attention(only_projects={k["project"]})
+    assert res["forwarded"] == 1
+    items = intake.drain(consumer="test-reader-ceo", stream_key=k["target"])
+    assert len(items) == 1
+    assert items[0]["payload"]["summary"] == "[%s] fyi item" % k["project"]
+
+    # (b) the entry is STILL retrievable by the CEO group: in its PEL, and a
+    # '0' re-read returns it WITH its fields (an XDEL'd entry re-reads as
+    # id-with-nil-fields — the content would be gone).
+    assert attention_drain._entry_in_pel(
+        backend, k["source"], ceo_group, entry_id), \
+        "drain must not destroy the CEO group's pending delivery"
+    rereads = _xreadgroup(backend, k["source"], ceo_group, "ceo-worker", "0")
+    by_id = dict(rereads)
+    assert entry_id in by_id, "CEO '0' re-read must still return the entry"
+    assert by_id[entry_id].get("summary") == "fyi item", \
+        "the entry's CONTENT must survive the drain (no XDEL under a live PEL)"
+
+    # (c) a second drain pass does not double-forward.
+    second = attention_drain.drain_attention(only_projects={k["project"]})
+    assert second["forwarded"] == 0
+    assert intake.drain(consumer="test-reader-ceo",
+                        stream_key=k["target"]) == []
+
+
+@redis_required
+def test_vestigial_never_read_group_does_not_block_trim(isolated_keys):
+    """H2 preserved: a push-time-created but NEVER-read ceo-reader group
+    (last-delivered-id 0-0) is vestigial and must not block the trim — after
+    forwarding, the stream copy IS retired. (Accepted edge per the 2026-07-11
+    ruling: the card's content reached the front door via the forward; only
+    the stream copy trims.)"""
+    k = isolated_keys
     backend = intake._redis()
-    ceo_group = "ceo-reader-" + k["project"]
-    # create the CEO group at 0 then read '>' — it should deliver the card.
-    if backend.__class__.__name__ == "_RedisPyBackend":
-        try:
-            backend._c.xgroup_create(k["source"], ceo_group, id="0", mkstream=True)
-        except Exception:
-            pass
-        res = backend._c.xreadgroup(ceo_group, "ceo-worker", {k["source"]: ">"}, count=10)
-        rows = intake._flatten_xread(res, k["source"])
-    else:
-        try:
-            backend._run("XGROUP", "CREATE", k["source"], ceo_group, "0", "MKSTREAM")
-        except Exception:
-            pass
-        out = backend._run("XREADGROUP", "GROUP", ceo_group, "ceo-worker",
-                           "COUNT", "10", "STREAMS", k["source"], ">", raw=True)
-        rows = intake._parse_cli_xread(out, k["source"])
-    assert len(rows) == 1, "CEO group must still receive its own delivery"
+    _xgroup_create(backend, k["source"], "ceo-reader-" + k["project"])  # no scan ever
+    _push_card(k["source"], source="bakery-ceo", urgency="medium",
+               summary="stranded card", body="b", ts="2026-07-11T06:00:00Z")
+
+    res = attention_drain.drain_attention(only_projects={k["project"]})
+    assert res["forwarded"] == 1
+    items = intake.drain(consumer="test-reader-vg", stream_key=k["target"])
+    assert len(items) == 1
+    assert _xlen(backend, k["source"]) == 0, \
+        "vestigial (never-read) group must not block the H2 trim"
+
+
+@redis_required
+def test_probe_error_fails_safe_to_no_trim(isolated_keys, monkeypatch):
+    """A failing group probe must NEVER trim (fail safe — the delivery
+    contract outranks queue growth; the 300s hygiene sweeper owns growth),
+    but the forward itself still happens."""
+    k = isolated_keys
+    backend = intake._redis()
+    _push_card(k["source"], source="bakery-ceo", urgency="high",
+               summary="probe-error card", body="b", ts="2026-07-11T06:01:00Z")
+
+    def _boom(backend, stream):
+        raise RuntimeError("probe down")
+
+    monkeypatch.setattr(attention_drain, "_stream_groups", _boom)
+
+    res = attention_drain.drain_attention(only_projects={k["project"]})
+    assert res["forwarded"] == 1, "forward must still happen on probe error"
+    items = intake.drain(consumer="test-reader-pe", stream_key=k["target"])
+    assert len(items) == 1
+    assert _xlen(backend, k["source"]) == 1, \
+        "probe error must fail safe to NOT trimming"
+
+
+# ---------------------------------------------------------------------------
+# Trim-guard unit tests — no Redis required.
+# ---------------------------------------------------------------------------
+def test_stream_id_comparison_is_numeric_not_string():
+    # The classic trap: lexically '10-2' > '10-10', but 10-2 is the OLDER id.
+    assert "10-2" > "10-10"                     # the trap _id_tuple avoids
+    assert attention_drain._id_tuple("10-2") < attention_drain._id_tuple("10-10")
+    assert attention_drain._id_tuple("10-2") == (10, 2)
+    assert attention_drain._id_tuple("9-99") < attention_drain._id_tuple("10-0")
+    assert (attention_drain._id_tuple("1783772057092-0")
+            > attention_drain._id_tuple("999999999999-99"))
+    assert attention_drain._id_tuple("0-0") == (0, 0)
+    with pytest.raises(ValueError):
+        attention_drain._id_tuple("not-an-id")
+
+
+def test_safe_to_trim_contract_unit(monkeypatch):
+    """Pins the consumption-aware contract, incl. the 10-2 vs 10-10 case: a
+    string compare would call entry 10-2 'newer than' last-delivered 10-10
+    (still owed → never trim); the numeric compare knows it was already
+    delivered, so the PEL alone decides."""
+    monkeypatch.setattr(attention_drain, "_stream_groups",
+                        lambda b, s: [("ceo-reader-x", "10-10")])
+    pel = {"present": False}
+    monkeypatch.setattr(attention_drain, "_entry_in_pel",
+                        lambda b, s, g, e: pel["present"])
+    # delivered (10-2 <= 10-10 numerically) and ACKed (not in PEL) → safe.
+    assert attention_drain._safe_to_trim(None, "st", "10-2") is True
+    # delivered but still in the PEL → not safe.
+    pel["present"] = True
+    assert attention_drain._safe_to_trim(None, "st", "10-2") is False
+    # beyond last-delivered (11-0 > 10-10) → not safe, PEL irrelevant.
+    pel["present"] = False
+    assert attention_drain._safe_to_trim(None, "st", "11-0") is False
+    # vestigial (never-read) group never blocks.
+    monkeypatch.setattr(attention_drain, "_stream_groups",
+                        lambda b, s: [("ceo-reader-x", "0-0")])
+    assert attention_drain._safe_to_trim(None, "st", "11-0") is True
+    # the drain's own group never blocks (it just read the entry).
+    monkeypatch.setattr(
+        attention_drain, "_stream_groups",
+        lambda b, s: [(attention_drain._DRAIN_GROUP, "1-0")])
+    assert attention_drain._safe_to_trim(None, "st", "5-0") is True
+    # malformed last-delivered-id → probe error → fail safe.
+    monkeypatch.setattr(attention_drain, "_stream_groups",
+                        lambda b, s: [("ceo-reader-x", "garbage")])
+    assert attention_drain._safe_to_trim(None, "st", "5-0") is False
 
 
 @redis_required

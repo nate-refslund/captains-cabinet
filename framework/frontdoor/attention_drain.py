@@ -250,7 +250,12 @@ def _xdel(backend, stream: str, entry_id: str) -> None:
     """H2 stream trim: retire a forwarded/duplicate card's stream copy. The
     content already reached the front door (intake + forwarded marker), so
     the stream row is pure queue growth. Best-effort — a failed XDEL just
-    leaves the row for hygiene.trim_forwarded_streams to sweep later."""
+    leaves the row for hygiene.trim_forwarded_streams to sweep later.
+
+    CALLERS MUST GATE THIS on ``_safe_to_trim`` (2026-07-11 finding): a
+    group-blind XDEL can delete an entry the CEO's own consumer group
+    (``ceo-reader-<project>``) was still owed — the CEO-plane delivery
+    contract outranks queue growth."""
     try:
         if _is_redispy(backend):
             backend._c.xdel(stream, entry_id)  # type: ignore[attr-defined]
@@ -258,6 +263,103 @@ def _xdel(backend, stream: str, entry_id: str) -> None:
             backend._run("XDEL", stream, entry_id, raw=True)  # type: ignore[attr-defined]
     except Exception:
         pass
+
+
+# ---------------------------------------------------------------------------
+# Consumption-aware trim guard (2026-07-11 finding). captain-attention.sh
+# creates ``ceo-reader-<project>`` at PUSH time (captain-attention.sh:97,140:
+# XGROUP CREATE ... 0 MKSTREAM) and post-tool-use.sh §3b (:292-322) consumes
+# it in single_ceo mode — so the stream has a second legitimate reader whose
+# delivery the drain's H2 trim must never destroy. Contract:
+#   * XDEL a forwarded/duplicate entry ONLY when no OTHER live consumer
+#     group still owes it (the drain's own group is exempt — it just read it).
+#   * LIVE = the group has consumed at least once (last-delivered-id != 0-0).
+#     Never-read groups are vestigial and never block: push-time creation
+#     means a group can exist long before any reader; H2's stranded-card
+#     cleanup survives. (Accepted edge: cards pushed before a CEO's FIRST
+#     scan trim after forwarding — the CONTENT still reaches the Captain via
+#     the front door; only the stream copy is retired.)
+#   * A LIVE group still owes the entry iff entry_id > its last-delivered-id
+#     ((ms,seq) numeric compare — NEVER string compare: '10-2' < '10-10')
+#     OR the entry sits in its PEL (delivered but not yet ACKed).
+#   * ANY probe error fails safe to NOT trimming: the 300s hygiene sweeper
+#     owns queue growth; the delivery contract owns correctness.
+# ---------------------------------------------------------------------------
+def _id_tuple(entry_id: str) -> tuple[int, int]:
+    """Redis stream id 'ms-seq' → (int ms, int seq) for numeric ordering.
+
+    Raises on malformed input — callers treat that as a probe error and
+    fail safe (no trim)."""
+    ms, _, seq = entry_id.strip().partition("-")
+    return (int(ms), int(seq))
+
+
+def _stream_groups(backend, stream: str) -> list[tuple[str, str]]:
+    """[(group_name, last_delivered_id), ...] for every consumer group on
+    ``stream``. Raises on probe failure — _safe_to_trim fails safe.
+
+    redis-cli --raw XINFO GROUPS prints a flat key/value line alternation
+    per group. A nil value (e.g. entries-read on a never-read group under
+    Redis 7+) prints as an EMPTY line, so we strip only TRAILING blanks and
+    walk strict key/value pairs — a global empty-line filter would misalign
+    the pairs."""
+    if _is_redispy(backend):
+        return [
+            (g["name"] if isinstance(g["name"], str) else g["name"].decode(),
+             g["last-delivered-id"] if isinstance(g["last-delivered-id"], str)
+             else g["last-delivered-id"].decode())
+            for g in backend._c.xinfo_groups(stream)  # type: ignore[attr-defined]
+        ]
+    out = backend._run("XINFO", "GROUPS", stream, raw=True)  # type: ignore[attr-defined]
+    lines = out.split("\n")
+    while lines and lines[-1] == "":
+        lines.pop()
+    groups: list[tuple[str, str]] = []
+    name: str | None = None
+    for i in range(0, len(lines) - 1, 2):
+        key, val = lines[i], lines[i + 1]
+        if key == "name":
+            name = val
+        elif key == "last-delivered-id" and name is not None:
+            groups.append((name, val))
+    return groups
+
+
+def _entry_in_pel(backend, stream: str, group: str, entry_id: str) -> bool:
+    """True iff ``entry_id`` sits in ``group``'s PEL (delivered, not ACKed).
+
+    Raises on probe failure — _safe_to_trim fails safe."""
+    if _is_redispy(backend):
+        rows = backend._c.xpending_range(  # type: ignore[attr-defined]
+            stream, group, min=entry_id, max=entry_id, count=1)
+        return bool(rows)
+    out = backend._run(  # type: ignore[attr-defined]
+        "XPENDING", stream, group, entry_id, entry_id, "1", raw=True)
+    return any(ln.strip() == entry_id for ln in out.split("\n"))
+
+
+def _safe_to_trim(backend, stream: str, entry_id: str) -> bool:
+    """May the drain XDEL this forwarded/duplicate entry's stream copy?
+
+    Implements the consumption-aware contract above: True only when no
+    OTHER live consumer group (last-delivered-id != 0-0) still owes the
+    entry, where "owes" = entry_id beyond its last-delivered-id (numeric
+    (ms,seq) compare) or entry in its PEL. Any error → False (fail safe:
+    keep the entry; hygiene sweeps later)."""
+    try:
+        entry = _id_tuple(entry_id)
+        for group, last_id in _stream_groups(backend, stream):
+            if group == _DRAIN_GROUP:
+                continue  # our own group — we just read it, by definition
+            if last_id == "0-0":
+                continue  # vestigial: created (push-time) but never read
+            if entry > _id_tuple(last_id):
+                return False  # live group has not been delivered it yet
+            if _entry_in_pel(backend, stream, group, entry_id):
+                return False  # delivered but the group has not ACKed it
+        return True
+    except Exception:
+        return False
 
 
 def _already_forwarded(backend, marker: str) -> bool:
@@ -448,7 +550,13 @@ def drain_attention(*, count: int = 100, only_projects: set[str] | None = None) 
             if _already_forwarded(backend, marker) or (
                     need_marker and _already_forwarded(backend, need_marker)):
                 _xack(backend, stream, entry_id)  # belt-and-braces: clear the dup
-                _xdel(backend, stream, entry_id)  # H2: trim the dead copy
+                # H2 trim, consumption-aware (2026-07-11): the dup's stream
+                # copy is retired ONLY when no other live consumer group
+                # (ceo-reader-<project>, see _safe_to_trim) still owes it —
+                # the CEO-plane delivery contract outranks queue growth.
+                # Guard says no / probe errors → leave it; hygiene sweeps.
+                if _safe_to_trim(backend, stream, entry_id):
+                    _xdel(backend, stream, entry_id)
                 skipped += 1
                 continue
             item = card_to_item(fields, project=project, needs_wired=wired)
@@ -467,12 +575,18 @@ def drain_attention(*, count: int = 100, only_projects: set[str] | None = None) 
             if need_marker:
                 _mark_forwarded(backend, need_marker)
             _xack(backend, stream, entry_id)
-            # H2 (trim forwarded streams): the card's content now lives in
-            # the front-door intake + forwarded-marker set — the stream copy
-            # is retired immediately instead of accumulating forever (the
-            # observed 23 never-trimmed items; legacy backlog is swept by
-            # hygiene.trim_forwarded_streams from the surface drain).
-            _xdel(backend, stream, entry_id)
+            # H2 (trim forwarded streams), consumption-aware (2026-07-11):
+            # the card's content now lives in the front-door intake +
+            # forwarded-marker set, but the stream copy is retired ONLY when
+            # no other live consumer group (ceo-reader-<project>, created at
+            # push time by captain-attention.sh and consumed by
+            # post-tool-use.sh §3b in single_ceo mode) still owes it — the
+            # CEO-plane delivery contract outranks queue growth. Vestigial
+            # (never-read) groups don't block, so the observed 23-item
+            # backlog class still trims; anything the guard leaves behind is
+            # swept by hygiene.trim_forwarded_streams once consumed.
+            if _safe_to_trim(backend, stream, entry_id):
+                _xdel(backend, stream, entry_id)
             forwarded += 1
             by_project[project] = by_project.get(project, 0) + 1
 
