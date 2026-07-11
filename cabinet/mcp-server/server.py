@@ -86,6 +86,42 @@ REDIS_PORT = os.environ.get("REDIS_PORT", "6379")
 
 
 # ---------------------------------------------------------------
+# A6 typed-envelope probe — REPORT-ONLY, fail-open by design
+# ---------------------------------------------------------------
+# Ledger row A6 (typed envelope v1 over the existing bus): each XADD site
+# below calls _envelope_report() BESIDE — never around — its XADD. The probe
+# only appends conformance lines to shared/interfaces/envelope-violations.jsonl
+# via framework/triggers/envelope.py. It NEVER drops, mutates, tags, or delays
+# an entry: report-only means the bus must be unaffected even if envelope.py
+# is buggy, so every exception (import failure included) is swallowed into
+# ENVELOPE_REPORT_ERRORS. Kill-knob: CABINET_ENVELOPE_REPORT=0 (default ON).
+# Enforcement + division-blocking stay Captain-gated (HANDBACK #14).
+_ENVELOPE_MOD: Any = None
+_ENVELOPE_IMPORT_TRIED = False
+ENVELOPE_REPORT_ERRORS = 0
+
+
+def _envelope_report(site: str, stream: str, fields: dict) -> None:
+    """Report-only envelope conformance probe (see block comment above)."""
+    global _ENVELOPE_MOD, _ENVELOPE_IMPORT_TRIED, ENVELOPE_REPORT_ERRORS
+    try:
+        if os.environ.get("CABINET_ENVELOPE_REPORT", "1") == "0":
+            return
+        if _ENVELOPE_MOD is None:
+            if _ENVELOPE_IMPORT_TRIED:
+                return  # import already failed once — stay silent, stay open
+            _ENVELOPE_IMPORT_TRIED = True
+            root = str(CABINET_ROOT)
+            if root not in sys.path:
+                sys.path.insert(0, root)
+            from framework.triggers import envelope as _env
+            _ENVELOPE_MOD = _env
+        _ENVELOPE_MOD.report_only(site, stream, fields)
+    except Exception:
+        ENVELOPE_REPORT_ERRORS += 1
+
+
+# ---------------------------------------------------------------
 # Config readers (PyYAML not available; regex-based stdlib substitutes)
 # ---------------------------------------------------------------
 
@@ -423,6 +459,19 @@ def tool_send_message(params: dict) -> dict:
         # (matches "Officer → Officer (Redis push)" pattern in CLAUDE.md). Future
         # extension: honor an explicit `to_role` param when relays carry it.
         target_role = params.get("to_role", "cos")
+        # A6 report-only probe — beside, never around, the XADD (fail-open).
+        _envelope_report(
+            "server.send_message.self_delivery",
+            f"cabinet:triggers:{target_role}",
+            {
+                "source": "cross-cabinet",
+                "from_cabinet": from_cabinet,
+                "from_agent": from_agent,
+                "content": content,
+                "reply_to": str(reply_to or ""),
+                "ts": str(int(time.time())),
+            },
+        )
         try:
             out = subprocess.run(
                 [
@@ -453,6 +502,18 @@ def tool_send_message(params: dict) -> dict:
     if "send_message" not in peer.get("allowed_tools", []):
         return {"status": "refused", "reason": "send_message_not_in_peer_allowed_tools"}
 
+    # A6 report-only probe — beside, never around, the XADD (fail-open).
+    _envelope_report(
+        "server.send_message.peer_outbound",
+        f"cabinet:inbox:{to_cabinet}",
+        {
+            "from_cabinet": this_cabinet_id(),
+            "from_agent": from_agent,
+            "content": content,
+            "reply_to": str(reply_to or ""),
+            "ts": str(int(time.time())),
+        },
+    )
     try:
         out = subprocess.run(
             [
@@ -499,6 +560,19 @@ def tool_request_handoff(params: dict) -> dict:
     if "request_handoff" not in peer.get("allowed_tools", []):
         return {"status": "refused", "reason": "request_handoff_not_in_peer_allowed_tools"}
 
+    # A6 report-only probe — beside, never around, the XADD (fail-open).
+    _envelope_report(
+        "server.request_handoff.peer_outbound",
+        f"cabinet:inbox:{to_cabinet}",
+        {
+            "from_cabinet": this_cabinet_id(),
+            "from_agent": from_agent,
+            "kind": "handoff_request",
+            "context_slug": context_slug,
+            "reason": reason,
+            "ts": str(int(time.time())),
+        },
+    )
     try:
         out = subprocess.run(
             [
