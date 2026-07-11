@@ -54,6 +54,10 @@ delete instance/config/outcomes.yml
 delete instance/config/adapters.yml
 delete instance/config/retention.yml
 delete instance/config/watchdog.yml
+# R120-class: comms-surface.yml landed as a live instance value on the
+# captain-surface work (its .example twin ships); rule is a no-op while the
+# file is absent from a checkout, so it is safe on every branch.
+delete instance/config/comms-surface.yml
 # R126: the LIVE ruled act-first file leaves (Captain rulings + board ids);
 # the act-first-default transform below re-materializes the scrubbed
 # framework-shippable twin in its place.
