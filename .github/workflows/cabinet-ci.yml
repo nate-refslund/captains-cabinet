@@ -58,7 +58,7 @@ jobs:
       # pre-tool-use.sh + post-tool-use.sh derive host/port from REDIS_URL — the
       # REDIS_HOST/PORT above would otherwise be ignored, and redis-cli attempts
       # to resolve the (non-existent on GH runner) `redis` service hostname.
-      # First CI run (24855610921) failed EVAL-001/008/015/016 for exactly this.
+      # First CI run (2485561…) failed EVAL-001/008/015/016 for exactly this.
       REDIS_URL: redis://127.0.0.1:6379
 
     steps:
@@ -453,6 +453,23 @@ jobs:
         if: ${{ !cancelled() }}
         run: python -m pytest cabinet/scripts/tests -q
 
+      # Docs-track-code sweep (G6, hardening loop 2026-07-11): dead repo-path
+      # refs + dead relative links in LIVING docs fail CI — the repo rule
+      # "docs must track the code in the same commit" becomes mechanical.
+      # Read-only lint; allowlist + scope documented in the script header.
+      # Soaked GREEN locally across the 2026-07-11 hardening cycles first.
+      - name: Docs-track-code sweep (dead refs in living docs)
+        if: ${{ !cancelled() }}
+        run: bash cabinet/scripts/docs-track-code-sweep.sh
+
+      # Ledger status-parity gate (G5, hardening loop 2026-07-11): md-vs-yml
+      # status-cell parity + §9 vocabulary + stale-in-flight detection over
+      # the operative-egg ledger pair (A13 pins the id SET; this pins what
+      # A13 is blind to). Read-only lint.
+      - name: Ledger status-parity gate
+        if: ${{ !cancelled() }}
+        run: bash cabinet/scripts/ledger-status-parity.sh
+
       # World E1 grammar gate (2026-07-07): Growth doc §2 — "every mapping's
       # source_binding command executes at PR time … out-of-grammar = cannot
       # merge." The binding validator (allowlisted read-only sandbox) must run
@@ -478,15 +495,17 @@ jobs:
             echo "WORLD_BINDINGS SKIP — cabinet/world/morphology.yml absent (grammar law not yet merged; gate arms on first merge)"
           fi
 
-  # DN-6 (2026-07-05): the de-Nate FOUNDATION gate — framework/ must be
-  # launcher-agnostic (any captain, not just Nate). Two files, one job:
+  # DN-6 (2026-07-05): the launcher-agnostic FOUNDATION gate — framework/
+  # must serve any captain, never a hardcoded launcher. Two files, one job:
   #   * test_no_launcher_hardcode.py — the RATCHET. Text-walks framework/**/*.py
-  #     and fails on a bare `Nate` / `/Users/nate` outside a documented,
-  #     shrink-only allowlist. After the sweep, a NEW hardcoded launcher name in
-  #     framework is CI-red here, not a review note.
+  #     and fails on a bare launcher name or launcher home path outside a
+  #     documented, shrink-only allowlist (the banned literals live in that
+  #     test, not here). After the sweep, a NEW hardcoded launcher reference
+  #     in framework is CI-red here, not a review note.
   #   * test_clean_room.py — the RUNTIME proof. Drives CABINET_ROOT at a throwaway
   #     instance naming captain `Testburg` and asserts the fidelity identity
-  #     prompt renders Testburg (and `Captain` with no platform.yml), NOT Nate.
+  #     prompt renders Testburg (and `Captain` with no platform.yml), never
+  #     the launcher.
   # Its own job so a launcher-leak regression is a distinct, unmissable signal.
   clean-room-foundation:
     runs-on: ubuntu-latest
