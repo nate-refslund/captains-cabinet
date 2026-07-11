@@ -2757,6 +2757,19 @@ entries:
     note: "Recorded 2026-07-11 (hardening loop cycle 7). Design option (b) consumption-aware trim self-ratified per the 2026-07-07 full-autonomy grant (provenance: captain-decisions entry 2026-07-11); the GERMLINE EDIT itself stays captain-gated — this row is the route, the amendment doc carries the verified diff (applies cleanly, shadow-tree suites 1225 green both backends, live-Redis functional probe). Rides the same unlock window as the kill-switch fail-closed fix + posture/trust-ladder relock (HANDBACKS 2026-07-10 item 10). Known residual recorded in the doc: supersede_stream_entry H4 XDEL stays group-blind pending its own ruling."
     rollback: "do not apply the patch at the ceremony (or git revert the applied commit before relock) — sweeper returns to group-blind XDEL; drainer-side guard on master is unaffected"
     last_update: "2026-07-11"
+  # --- CG-24 germline-amendment row (appended 2026-07-12, hardening loop C17,
+  #     per germline etiquette: schg hook edits route through a CG row +
+  #     amendment docs under designs/hook-patches/, never a workaround) ---
+  - id: "CG-24"
+    title: "germline amendment (staged) — 3 verified hook-security patches from the C17 audit: (A) pre-tool-use.sh kill-switch halts mcp__* + Task on unreachable Redis (was fail-OPEN — Neon/Vercel/Make/Notion/subagents ran during the emergency stop; narrow telegram-comms carve-out); (C) pre-tool-use.sh germline gate resolves ..-traversal per-token across the §5/§5b/§5c screens (was reachable via reviews/../captain-vetoes.yml -> officer could erase own veto row); (D) post-tool-use.sh redacts token/secret/bearer/bot-token before logging + new logs 0600 (was verbatim 0644)"
+    class: "additive"
+    lane: "captain-gated"
+    wave: "CG"
+    status: "captain-gated"
+    gate_cmd: "at the ceremony: patch -p1 each diff in designs/hook-patches/ (provenance sha in the README) + bash -n each hook + germline-lock.sh relock same session (until then: designs/hook-patches/README-amendment-2026-07-12.md carries the 3 verified diffs, each confirmed to apply to the current schg hook with bash -n)"
+    note: "Recorded 2026-07-12 (hardening loop C17). Findings from the read-only hook-enforcement audit (wf_5cf66c2e-dd2, all sandbox-reproduced); patches authored vs scratch copies, fix-passed, adversarially reviewed (reviewer independently reproduced A against a fresh real-hook copy; caught + fixed C's whole-string-normpath error), orchestrator-confirmed apply-clean + bash -n on the CURRENT real hooks. GERMLINE EDIT stays captain-gated — this row is the route. Findings B (poisonable /tmp caches) + E (spend-cap->0 silent) deferred to a careful follow-up (B multi-site, E config-disabled today). SEPARATE from the code fix: rotate the tokens already leaked into the 0644 logs (Telegram bot token + any Bearer, ~10+1+47 hits since 2026-06-18). Full detail: HANDBACK-hook-enforcement-2026-07-12.md."
+    rollback: "do not apply at the ceremony (or git revert each applied patch before relock); no live surface changes until the Captain applies them in the unlock window"
+    last_update: "2026-07-12"
   - id: "R162"
     title: "egg-export manifest transform framework-docs-archive (Wave-E integrator) — the DATED framework/docs design snapshots (*-2026-*.md: authority-matrix-design, fidelity-harness-design, cabinet-architecture-cohesive, meta-cognition-direction) are instance history citing the launching deployment's absolute paths, live lane names and its Captain throughout (86 gate-(d) hits); rewording a dated design record would falsify it (R145 doctrine), so they archive out at packaging with an ARCHIVED-NOTE.md stub; the undated LIVING contract docs (work-model.md — cited by the shipping guide —, consequence-ledger.md, outcome-watchdog.md) STAY and were scrubbed at source in the same pass (instance examples -> generic, values-in-config pointers)"
     class: "instance-split"
