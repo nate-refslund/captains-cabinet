@@ -426,14 +426,21 @@ step_clone_framework() {
 
   info "Cloning framework repo into $cabinet_dir..."
 
-  # Inject PAT via GIT_ASKPASS — never embed in URL (mirrors create-project.sh)
+  # Inject PAT via GIT_ASKPASS — never embed in URL (mirrors create-project.sh:
+  # one line of stdout per prompt, PAT from env, never written to disk)
   local cred_script
   cred_script=$(mktemp /tmp/git-cred-XXXXXX.sh)
   chmod 700 "$cred_script"
-  printf '#!/bin/sh\necho "username=x-access-token"\necho "password=%s"\n' "${GITHUB_PAT}" > "$cred_script"
+  cat > "$cred_script" <<'ASKPASS'
+#!/bin/sh
+case "$1" in
+  [Uu]sername*) printf '%s\n' "x-access-token" ;;
+  *)            printf '%s\n' "${GITHUB_PAT}" ;;
+esac
+ASKPASS
 
   local clone_exit=0
-  GIT_ASKPASS="$cred_script" GIT_TERMINAL_PROMPT=0 \
+  GIT_ASKPASS="$cred_script" GITHUB_PAT="${GITHUB_PAT}" GIT_TERMINAL_PROMPT=0 \
     git clone --depth 1 "$FRAMEWORK_REPO_URL" "$cabinet_dir" 2>&1 \
     || clone_exit=$?
 

@@ -304,17 +304,26 @@ step_clone_repo() {
 
   info "Cloning $REPO_URL to $dest..."
 
-  # Inject PAT via git credential helper inline — never embed token in URL
+  # Inject PAT via GIT_ASKPASS — never embed token in URL
   # (feedback_git_push_u_tokenized_url.md: raw URL embedding echoes + persists token)
-  # We use a temporary credential helper script that writes the token once.
+  # Askpass contract: git invokes the script once PER PROMPT with the prompt
+  # text as $1 and reads ONE line of stdout. The old credential-helper-format
+  # two-line body answered every prompt with "username=..." so the PAT was
+  # never transmitted (private clones always 401'd). The PAT stays in the
+  # environment — never written to disk.
   local cred_script
   cred_script=$(mktemp /tmp/git-cred-XXXXXX.sh)
   chmod 700 "$cred_script"
-  # Write the credential helper — file perms 700, deleted after clone
-  printf '#!/bin/sh\necho "username=x-access-token"\necho "password=%s"\n' "${GITHUB_PAT}" > "$cred_script"
+  cat > "$cred_script" <<'ASKPASS'
+#!/bin/sh
+case "$1" in
+  [Uu]sername*) printf '%s\n' "x-access-token" ;;
+  *)            printf '%s\n' "${GITHUB_PAT}" ;;
+esac
+ASKPASS
 
   local clone_exit=0
-  GIT_ASKPASS="$cred_script" GIT_TERMINAL_PROMPT=0 \
+  GIT_ASKPASS="$cred_script" GITHUB_PAT="${GITHUB_PAT}" GIT_TERMINAL_PROMPT=0 \
     git clone --depth 1 "$REPO_URL" "$dest" 2>&1 \
     || clone_exit=$?
 
