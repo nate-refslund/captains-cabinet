@@ -1,6 +1,6 @@
 # Comms MCP — the LLM-native, channel-agnostic officer surface (spec)
 
-**Status:** DESIGN — building phased
+**Status:** C2 BUILT (LLM-native Comms MCP on master @e3c3b572, registered `cabinet/mcp-scope.yml:149`); remaining §8 phases still design — header trued 2026-07-11 (docs-track-code)
 **Date:** 2026-07-09
 **Author:** Captain-directed (Nate: "implement properly, to the FOUNDATION of cabinet — not just my instance; ALL the TG features are worth it")
 **Layer:** `framework/` (mechanism — MCP server, tool surface, channel Protocol) + `instance/config/` (which adapter, charter, scope)

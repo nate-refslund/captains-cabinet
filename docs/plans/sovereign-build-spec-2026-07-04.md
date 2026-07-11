@@ -1,5 +1,11 @@
 # Sovereign Posture — Merged Build Spec (synthesis of record)
 
+> **HISTORICAL RECORD** (banner added 2026-07-11, hardening loop — record
+> unedited below): paths cited may predate later moves, e.g.
+> `cabinet/scripts/lib/policy_engine.py` → `framework/authority/policy_engine.py`
+> (@3aa93ef8, CG-14) and the `constitution/` retirement (@5cfe9453). Current
+> execution truth lives in `operative-egg-ledger-2026-07-07.yml` + `EXECUTION-STATUS.md`.
+
 **Date:** 2026-07-04 · **Worktree:** `<live checkout>/.claude/worktrees/sovereign-posture` · **Branch:** `feat/sovereign-posture` @ 01015e5c
 **Live-checkout constraint:** a SECOND agent is improving the guardian track on `feat/fidelity-harness-design` in the live checkout. Build is **ADDITIVE-FIRST** — new modules wherever possible, surgical edits to shared germline files, each named in a `conflict_risk` note so rebase-before-merge can sequence overlaps. Germline edits are authored as worktree commits AND exported as diffs into the ONE amendment package; they land at the Captain's unlock window, not by racing the guardian agent's live commits.
 **Merge order of record (ALIGNMENT ranking, BOUNDLESS ceiling grafted):** CONSTITUTION kernel is the spine → RUNTIME ops conformed to kernel APIs → INTELLIGENCE fidelity/gate layer post-kill-list. ONE combined amendment, ONE apply token (`apply sovereign posture`), ONE unlock window.
