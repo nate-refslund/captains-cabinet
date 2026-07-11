@@ -600,4 +600,18 @@ fi
 redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" SET cabinet:doctor:heartbeat \
   "$(date -u +%Y-%m-%dT%H:%M:%SZ) $VERDICT" >/dev/null 2>&1 || true
 
+# Run history (G8a, hardening loop 2026-07-11): the redis heartbeat holds
+# only the LAST run, so "healthy over a rolling 7-day window" was never
+# measurable. Append one jsonl line per run to cabinet/logs/ (gitignored
+# runtime data, .gitignore `cabinet/logs/*`); self-prunes to 60 days.
+# Best-effort — history failure never changes the doctor's verdict.
+{
+  HIST="cabinet/logs/doctor-history.jsonl"
+  printf '{"ts":"%s","verdict":"%s","dead":%d,"warn":%d,"waived":%d,"skip":%d,"total":%d,"secs_since_wake":%s}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$VERDICT" "${#DEAD[@]}" "$N_WARN" "$N_WAIVED" "$N_SKIP" "$TOTAL" "$SECS_SINCE_WAKE" >> "$HIST"
+  if [ "$(wc -l < "$HIST" 2>/dev/null || echo 0)" -gt 200 ]; then
+    tail -n 120 "$HIST" > "$HIST.tmp" && mv "$HIST.tmp" "$HIST"
+  fi
+} 2>/dev/null || true
+
 [ ${#DEAD[@]} -eq 0 ] && exit 0 || exit 1
