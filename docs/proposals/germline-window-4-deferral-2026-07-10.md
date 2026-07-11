@@ -52,6 +52,25 @@ cards, the tell digest), and a diff written as a side-deliverable of a
 three-arm surface wave is exactly the kind of germline change the
 Captain-apply ceremony exists to slow down.
 
+## Tap receipts: edit-in-place is the INTERIM visible truth (2026-07-11)
+
+The tap-pipeline fix (`framework/comms/surface/tap_wire.py` + the inbound
+poller's instant-ack) makes a Captain tap's effect visible by EDITING the
+Telegram card in place (⏸ deferred face / ✅ ✗ verdict face / swapped
+keyboard receipt) and journaling to the feed — all on unlocked surfaces.
+Two things deliberately stay behind this window's ceremony:
+
+- **Card FOLD (census removal).** The census is folded by the LOCKED
+  queue/situations estate; a deferred/decided card's *situation row* may
+  therefore lag the card's visible face until the fold catches up (ledger
+  rows → next fold). The edited card is the interim visible truth; the
+  census is the durable truth and reconciles at its own cadence. Do not
+  "fix" the lag by editing the locked fold — it rides window-4.
+- **Title-strike on deferred cards.** The plain-text card render (locked
+  `channel.py` render seam sets no parse_mode) cannot strike titles; the
+  deferred face carries the "⏸ …" line instead. A markdown-capable render
+  is window-4 material (same `queue_card.py`/render re-point as item 1).
+
 ## What the Captain is asked to ratify
 
 - **Accept the deferral**: window-4 diffs move to their own follow-up wave

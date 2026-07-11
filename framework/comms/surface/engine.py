@@ -85,9 +85,13 @@ def on_callback(data: str, *, now: "datetime | None" = None,
         if entry.get("message_id") is not None:
             from framework.comms import tools
             try:
+                # "⏸ " prefix = the tap receipt the Captain sees at a glance
+                # (tap-pipeline fix 2026-07-11); the line itself stays the
+                # plain layer's deferred face. Title-strike stays parked
+                # behind window-4 (locked render seam).
                 tools.edit_card(subject=entry.get("subject") or "",
                                 evidence=list(entry.get("evidence") or []),
-                                situation=_dc.final_line("expired"),
+                                situation="⏸ " + _dc.final_line("expired"),
                                 state="expired", buttons=None,
                                 adapter=adapter, ch=ch, now=now)
             except Exception as e:  # noqa: BLE001

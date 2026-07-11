@@ -173,9 +173,13 @@ def verb_allowed(row: dict, verb: str) -> "tuple[bool, str]":
 # ---------------------------------------------------------------------------
 
 
-def canonical(verb: str, row: dict) -> "tuple[str | None, str]":
+def canonical(verb: str, row: dict, *,
+              skip_text: "str | None" = None) -> "tuple[str | None, str]":
     """(reply_text, quoted) for the wire — or (None, '') when the verb must
-    NOT touch the wire (proposal-card 'later': see module docstring)."""
+    NOT touch the wire (proposal-card 'later': see module docstring).
+    ``skip_text`` lets an equal-authority caller that is NOT the dashboard
+    (e.g. the Telegram tap door) record honest provenance in the skip reason;
+    the grammar and the wire path are identical either way."""
     pid = str(row.get("pid") or "")
     kind = str(row.get("kind") or "")
     if kind == "need":
@@ -186,7 +190,7 @@ def canonical(verb: str, row: dict) -> "tuple[str | None, str]":
     if verb == "approve":
         return "approve", f"·{pid}·"
     if verb == "no":
-        return _WIRE_SKIP_TEXT, f"·{pid}·"
+        return skip_text or _WIRE_SKIP_TEXT, f"·{pid}·"
     return None, ""  # later: surface-level defer only — never the wire
 
 
@@ -248,7 +252,8 @@ def fire(pid: str, verb: str, revision: str, *,
          census: "dict | None" = None,
          wire: "Callable[[str, str], dict] | None" = None,
          journal: "Callable[[dict], dict] | None" = None,
-         now: "datetime | None" = None) -> dict:
+         now: "datetime | None" = None,
+         skip_text: "str | None" = None) -> dict:
     """Validate freshness + legality, then submit through the org's wire.
 
     Returns {"ok": bool, ...}; ok=False carries code + plain message (+ the
@@ -281,7 +286,7 @@ def fire(pid: str, verb: str, revision: str, *,
     if not allowed:
         return deny(code)
 
-    text, quoted = canonical(verb, row)
+    text, quoted = canonical(verb, row, skip_text=skip_text)
 
     if text is None:
         # Surface-level defer (proposal-card "later") — ledger untouched.
