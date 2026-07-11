@@ -2743,6 +2743,19 @@ entries:
     note: "Recorded + EXECUTED 2026-07-10 (Perfect Cabinet Wave E integrator, gate-d recount fix pass) per the wave instruction's all-zero-placeholder class (CG-19 mechanism, Captain scrub-not-consent ruling 2026-07-10). The config.ts values are Notion-shaped placeholder ids awaiting real instance config — they are the DEFAULT-config exemplars and shape-load-bearing (UUID format), so a source reword would either break the shape or mint fake-looking real ids; the all-zero family is the honest placeholder form. Masked occurrences print as [adj] lines + grouped report per the mechanism; the Captain ratifies or strikes at CG-7."
     rollback: "delete the one ADJUDICATED_ALLOWLIST entry line + its ADJUDICATED_ROWS twin — gate (d) returns to zero-tolerance RED on the 19 config.ts placeholder lines"
     last_update: "2026-07-10"
+  # --- CG-23 germline-amendment row (appended 2026-07-11, hardening loop,
+  #     per germline etiquette: schg edits route through a CG row + an
+  #     amendment doc under docs/proposals/, never a workaround) ---
+  - id: "CG-23"
+    title: "germline amendment (staged dark) — consumption-aware trim guard in framework/attention/hygiene.py trim_forwarded_streams: gate every XDEL on attention_drain._safe_to_trim so the 300s sweeper stops destroying stream entries a LIVE consumer group (ceo-reader-<project>, single_ceo plane) still owes; closes the sweeper half of the 2026-07-11 H2-XDEL-vs-CEO-plane finding (the drainer half is guarded on master)"
+    class: "additive"
+    lane: "captain-gated"
+    wave: "CG"
+    status: "captain-gated"
+    gate_cmd: "after the ceremony: patch applied to framework/attention/hygiene.py + framework/attention & framework/frontdoor suites green + germline-lock.sh relock same day (until then: docs/proposals/germline-hygiene-trim-guard-addendum-2026-07-11.md carries the verified staged diff)"
+    note: "Recorded 2026-07-11 (hardening loop cycle 7). Design option (b) consumption-aware trim self-ratified per the 2026-07-07 full-autonomy grant (provenance: captain-decisions entry 2026-07-11); the GERMLINE EDIT itself stays captain-gated — this row is the route, the amendment doc carries the verified diff (applies cleanly, shadow-tree suites 1225 green both backends, live-Redis functional probe). Rides the same unlock window as the kill-switch fail-closed fix + posture/trust-ladder relock (HANDBACKS 2026-07-10 item 10). Known residual recorded in the doc: supersede_stream_entry H4 XDEL stays group-blind pending its own ruling."
+    rollback: "do not apply the patch at the ceremony (or git revert the applied commit before relock) — sweeper returns to group-blind XDEL; drainer-side guard on master is unaffected"
+    last_update: "2026-07-11"
   - id: "R162"
     title: "egg-export manifest transform framework-docs-archive (Wave-E integrator) — the DATED framework/docs design snapshots (*-2026-*.md: authority-matrix-design, fidelity-harness-design, cabinet-architecture-cohesive, meta-cognition-direction) are instance history citing the launching deployment's absolute paths, live lane names and its Captain throughout (86 gate-(d) hits); rewording a dated design record would falsify it (R145 doctrine), so they archive out at packaging with an ARCHIVED-NOTE.md stub; the undated LIVING contract docs (work-model.md — cited by the shipping guide —, consequence-ledger.md, outcome-watchdog.md) STAY and were scrubbed at source in the same pass (instance examples -> generic, values-in-config pointers)"
     class: "instance-split"
