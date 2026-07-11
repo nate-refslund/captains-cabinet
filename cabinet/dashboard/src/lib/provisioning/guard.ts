@@ -70,3 +70,42 @@ export async function requireProvisioningAccess(): Promise<
   if (flagResponse) return { response: flagResponse, user: null }
   return authCheck()
 }
+
+/**
+ * The explicit no-auth posture that middleware.ts ALSO bypasses (its first
+ * check): MOCK_DATA=true (the demo/kiosk toggle) or development with no
+ * password set. Kept identical to the middleware so page navigation and
+ * action dispatch share ONE auth posture — otherwise a demo build would let
+ * pages render but return "Unauthorized" from every button.
+ *
+ * This never opens a production deploy: MOCK_DATA is a deploy-time demo toggle
+ * (and when it IS set, middleware already serves every page unauthenticated,
+ * so the dashboard is open by that choice regardless of this gate). In a real
+ * production deploy MOCK_DATA is unset and DASHBOARD_PASSWORD is set, so this
+ * is false and the session check below is enforced.
+ */
+function isNoAuthPosture(): boolean {
+  return (
+    process.env.MOCK_DATA === 'true' ||
+    (!process.env.DASHBOARD_PASSWORD && process.env.NODE_ENV === 'development')
+  )
+}
+
+/**
+ * Server-ACTION auth gate.
+ *
+ * authCheck()/requireProvisioningAccess() return a NextResponse — the right
+ * shape for API ROUTE handlers, the wrong shape for Server Actions (which are
+ * global action-ID POST endpoints that return plain result objects, NOT
+ * Responses). Middleware gates page navigation but never covers action
+ * dispatch, so every mutating or secret-reading action must call THIS as its
+ * first statement and fold a `false` into its own error result shape.
+ *
+ * Reuses the exact same session scheme (verifySession → signed cabinet_session
+ * cookie, fail-closed in production per lib/auth.resolveSecret). No new auth
+ * primitive is introduced.
+ */
+export async function requireDashboardAuth(): Promise<boolean> {
+  if (isNoAuthPosture()) return true
+  return verifySession()
+}

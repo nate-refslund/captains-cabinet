@@ -3,6 +3,7 @@
 import { cabinetPath } from '@/lib/cabinet-root'
 import { dockerExec } from '@/lib/docker'
 import redis from '@/lib/redis'
+import { requireDashboardAuth } from '@/lib/provisioning/guard'
 import { revalidatePath } from 'next/cache'
 
 const IS_MOCK = process.env.MOCK_DATA === 'true' || !process.env.REDIS_URL
@@ -14,6 +15,9 @@ export interface ProjectInfo {
 }
 
 export async function switchProject(slug: string): Promise<{ success: boolean; error?: string }> {
+  if (!(await requireDashboardAuth())) {
+    return { success: false, error: 'Unauthorized' }
+  }
   try {
     if (IS_MOCK) {
       console.log(`[mock] Would switch to project: ${slug}`)
@@ -33,6 +37,7 @@ export async function switchProject(slug: string): Promise<{ success: boolean; e
 }
 
 export async function getActiveProject(): Promise<string> {
+  if (!(await requireDashboardAuth())) return ''
   if (IS_MOCK) {
     return 'sensed'
   }
@@ -49,6 +54,7 @@ export async function getActiveProject(): Promise<string> {
 }
 
 export async function getProjects(): Promise<ProjectInfo[]> {
+  if (!(await requireDashboardAuth())) return []
   if (IS_MOCK) {
     return [
       { slug: 'sensed', name: 'Sensed', active: true },

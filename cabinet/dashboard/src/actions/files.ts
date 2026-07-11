@@ -23,6 +23,7 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { cabinetPath } from '@/lib/cabinet-root'
+import { requireDashboardAuth } from '@/lib/provisioning/guard'
 import { revalidatePath } from 'next/cache'
 
 const ROLE_RE = /^[a-z]{2,4}$/
@@ -37,6 +38,9 @@ async function writeRoleFile(relDir: string, fileName: string, content: string) 
 }
 
 export async function updateRoleDefinition(role: string, content: string) {
+  if (!(await requireDashboardAuth())) {
+    return { success: false, error: 'Unauthorized' }
+  }
   try {
     if (!ROLE_RE.test(role)) {
       return { success: false, error: 'Invalid role identifier' }
@@ -53,6 +57,9 @@ export async function updateRoleDefinition(role: string, content: string) {
 }
 
 export async function updateLoopPrompt(role: string, content: string) {
+  if (!(await requireDashboardAuth())) {
+    return { success: false, error: 'Unauthorized' }
+  }
   try {
     if (!ROLE_RE.test(role)) {
       return { success: false, error: 'Invalid role identifier' }

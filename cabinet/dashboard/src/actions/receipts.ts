@@ -14,6 +14,7 @@
  */
 
 import { readJournal, shapeReceipt, type ReceiptView } from '@/components/receipts/journal'
+import { requireDashboardAuth } from '@/lib/provisioning/guard'
 
 /** Render cap — newest first; the page says "showing latest N of M". */
 const SHOW_CAP = 100
@@ -38,6 +39,21 @@ export interface ReceiptsPayload {
 }
 
 export async function listReceipts(): Promise<ReceiptsPayload> {
+  // The undo journal is a full record of every sensitive action taken — gate
+  // it. On unauth, return an empty, well-formed payload with an honest error
+  // (the page already renders `error` loudly), never the journal rows.
+  if (!(await requireDashboardAuth())) {
+    return {
+      receipts: [],
+      total: 0,
+      skipped: 0,
+      skippedFiles: 0,
+      missingDir: false,
+      error: 'Unauthorized',
+      journalDir: '',
+      cap: SHOW_CAP,
+    }
+  }
   const { rows, skipped, skippedFiles, missingDir, error, journalDir } =
     await readJournal()
   const nowMs = Date.now()

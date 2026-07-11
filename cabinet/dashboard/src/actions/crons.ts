@@ -4,6 +4,7 @@ import { exec as execCb } from 'child_process'
 import { promisify } from 'util'
 import { revalidatePath } from 'next/cache'
 import redis from '@/lib/redis'
+import { requireDashboardAuth } from '@/lib/provisioning/guard'
 
 const exec = promisify(execCb)
 const prefix = process.env.CABINET_PREFIX || 'cabinet'
@@ -25,6 +26,9 @@ export async function updateCronSchedule(
   _prev: { error?: string; success?: boolean } | null,
   formData: FormData
 ) {
+  if (!(await requireDashboardAuth())) {
+    return { error: 'Unauthorized' }
+  }
   const originalSchedule = formData.get('originalSchedule') as string
   const newSchedule = formData.get('schedule') as string
   const command = formData.get('command') as string
@@ -63,6 +67,9 @@ export async function addCronJob(
   _prev: { error?: string; success?: boolean } | null,
   formData: FormData
 ) {
+  if (!(await requireDashboardAuth())) {
+    return { error: 'Unauthorized' }
+  }
   const schedule = formData.get('schedule') as string
   const command = formData.get('command') as string
   const description = formData.get('description') as string
@@ -101,6 +108,9 @@ export async function deleteCronJob(
   _prev: { error?: string; success?: boolean } | null,
   formData: FormData
 ) {
+  if (!(await requireDashboardAuth())) {
+    return { error: 'Unauthorized' }
+  }
   const schedule = formData.get('schedule') as string
   const command = formData.get('command') as string
 
@@ -129,6 +139,9 @@ export async function deleteCronJob(
 // === Officer Task Actions ===
 
 export async function resetTaskTimer(officer: string, task: string) {
+  if (!(await requireDashboardAuth())) {
+    return { error: 'Unauthorized' }
+  }
   try {
     const now = new Date().toISOString().replace(/\.\d+Z$/, 'Z')
     await redis.set(`cabinet:schedule:last-run:${officer}:${task}`, now)
@@ -140,6 +153,9 @@ export async function resetTaskTimer(officer: string, task: string) {
 }
 
 export async function deleteTaskTimer(officer: string, task: string) {
+  if (!(await requireDashboardAuth())) {
+    return { error: 'Unauthorized' }
+  }
   try {
     await redis.del(`cabinet:schedule:last-run:${officer}:${task}`)
     revalidatePath('/crons')
@@ -153,6 +169,9 @@ export async function createTaskTimer(
   _prev: { error?: string; success?: boolean } | null,
   formData: FormData
 ) {
+  if (!(await requireDashboardAuth())) {
+    return { error: 'Unauthorized' }
+  }
   const officer = formData.get('officer') as string
   const task = formData.get('task') as string
 

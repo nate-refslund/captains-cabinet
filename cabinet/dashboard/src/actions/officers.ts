@@ -3,6 +3,7 @@
 import { cabinetPath } from '@/lib/cabinet-root'
 import { dockerExec } from '@/lib/docker'
 import redis from '@/lib/redis'
+import { requireDashboardAuth } from '@/lib/provisioning/guard'
 import { revalidatePath } from 'next/cache'
 
 /** `source cabinet/.env && export … && bash <script> <args>` against the
@@ -14,6 +15,9 @@ function envAndRun(script: string, args: string): string {
 }
 
 export async function startOfficer(role: string) {
+  if (!(await requireDashboardAuth())) {
+    return { success: false, error: 'Unauthorized' }
+  }
   try {
     await dockerExec(envAndRun('cabinet/scripts/start-officer.sh', role))
     await redis.set(`cabinet:officer:expected:${role}`, 'active')
@@ -29,6 +33,9 @@ export async function startOfficer(role: string) {
 }
 
 export async function stopOfficer(role: string) {
+  if (!(await requireDashboardAuth())) {
+    return { success: false, error: 'Unauthorized' }
+  }
   try {
     await dockerExec(`tmux kill-window -t cabinet:officer-${role}`)
     await redis.set(`cabinet:officer:expected:${role}`, 'stopped')
@@ -44,6 +51,9 @@ export async function stopOfficer(role: string) {
 }
 
 export async function restartOfficer(role: string) {
+  if (!(await requireDashboardAuth())) {
+    return { success: false, error: 'Unauthorized' }
+  }
   try {
     await dockerExec(`tmux kill-window -t cabinet:officer-${role}`)
     // Brief delay to let tmux clean up
@@ -62,6 +72,9 @@ export async function restartOfficer(role: string) {
 }
 
 export async function deleteOfficer(role: string) {
+  if (!(await requireDashboardAuth())) {
+    return { success: false, error: 'Unauthorized' }
+  }
   try {
     if (!/^[a-z]{2,4}$/.test(role)) {
       return { success: false, error: 'Invalid role identifier' }
@@ -117,6 +130,9 @@ export async function createOfficer(
   _prevState: { error?: string; success?: boolean } | null,
   formData: FormData
 ) {
+  if (!(await requireDashboardAuth())) {
+    return { error: 'Unauthorized' }
+  }
   const abbrev = (formData.get('abbreviation') as string).toLowerCase()
   const title = formData.get('title') as string
   const domain = formData.get('domain') as string

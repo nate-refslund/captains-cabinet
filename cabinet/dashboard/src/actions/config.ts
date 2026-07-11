@@ -2,6 +2,7 @@
 
 import { cabinetPath } from '@/lib/cabinet-root'
 import { dockerExec } from '@/lib/docker'
+import { requireDashboardAuth } from '@/lib/provisioning/guard'
 import { revalidatePath } from 'next/cache'
 
 const CONFIG_PATH = cabinetPath('instance/config/product.yml')
@@ -13,6 +14,9 @@ const EMBEDDINGS_FIELDS = ['provider', 'dimensions']
 const VOICE_OFFICER_FIELDS = ['stability', 'speeds', 'voices', 'models', 'naturalize_prompts']
 
 export async function updateProductConfig(field: string, value: string) {
+  if (!(await requireDashboardAuth())) {
+    return { success: false, error: 'Unauthorized' }
+  }
   try {
     if (!PRODUCT_FIELDS.includes(field)) {
       return { success: false, error: `Invalid field: ${field}` }
@@ -34,6 +38,9 @@ export async function updateProductConfig(field: string, value: string) {
 }
 
 export async function updateGlobalVoiceConfig(field: string, value: string) {
+  if (!(await requireDashboardAuth())) {
+    return { success: false, error: 'Unauthorized' }
+  }
   try {
     if (!VOICE_FIELDS.includes(field)) {
       return { success: false, error: `Invalid field: ${field}` }
@@ -54,6 +61,9 @@ export async function updateGlobalVoiceConfig(field: string, value: string) {
 }
 
 export async function updateImageGenConfig(field: string, value: string) {
+  if (!(await requireDashboardAuth())) {
+    return { success: false, error: 'Unauthorized' }
+  }
   try {
     if (!IMAGE_GEN_FIELDS.includes(field)) {
       return { success: false, error: `Invalid field: ${field}` }
@@ -73,6 +83,9 @@ export async function updateImageGenConfig(field: string, value: string) {
 }
 
 export async function updateEmbeddingsConfig(field: string, value: string) {
+  if (!(await requireDashboardAuth())) {
+    return { success: false, error: 'Unauthorized' }
+  }
   try {
     if (!EMBEDDINGS_FIELDS.includes(field) && field !== 'models.storage' && field !== 'models.query') {
       return { success: false, error: `Invalid field: ${field}` }
@@ -100,6 +113,9 @@ export async function updateEmbeddingsConfig(field: string, value: string) {
 }
 
 export async function updateOfficerVoiceConfig(role: string, field: string, value: string) {
+  if (!(await requireDashboardAuth())) {
+    return { success: false, error: 'Unauthorized' }
+  }
   try {
     if (!VOICE_OFFICER_FIELDS.includes(field)) {
       return { success: false, error: `Invalid field: ${field}` }
@@ -122,6 +138,9 @@ export async function updateOfficerVoiceConfig(role: string, field: string, valu
 }
 
 export async function updateNotionConfig(field: string, value: string) {
+  if (!(await requireDashboardAuth())) {
+    return { success: false, error: 'Unauthorized' }
+  }
   try {
     const safeValue = value.replace(/'/g, "'\\''")
     await dockerExec(
@@ -138,6 +157,9 @@ export async function updateNotionConfig(field: string, value: string) {
 }
 
 export async function updateLinearConfig(field: string, value: string) {
+  if (!(await requireDashboardAuth())) {
+    return { success: false, error: 'Unauthorized' }
+  }
   try {
     const safeValue = value.replace(/'/g, "'\\''")
     await dockerExec(

@@ -40,6 +40,23 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
+  // Fail-closed secret resolution (mirrors lib/auth.resolveSecret +
+  // verdict.ts doorSecret): in production an unset or 'changeme' password
+  // yields NO usable secret, so no cookie can be valid and every gated route
+  // redirects to /login. The middleware never verifies against the public
+  // 'changeme' fallback in production — otherwise an attacker who knows the
+  // well-known secret could forge a passing cookie.
+  const rawSecret = process.env.DASHBOARD_PASSWORD
+  const secret =
+    rawSecret && rawSecret !== 'changeme'
+      ? rawSecret
+      : process.env.NODE_ENV === 'production'
+        ? null
+        : 'changeme'
+  if (!secret) {
+    return NextResponse.redirect(new URL('/login', request.url))
+  }
+
   const cookie = request.cookies.get('cabinet_session')
   if (!cookie) {
     return NextResponse.redirect(new URL('/login', request.url))
@@ -50,7 +67,6 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  const secret = process.env.DASHBOARD_PASSWORD || 'changeme'
   const valid = await verify(token, sig, secret)
   if (!valid) {
     return NextResponse.redirect(new URL('/login', request.url))

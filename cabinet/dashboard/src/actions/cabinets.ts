@@ -12,6 +12,7 @@ import fs from 'fs'
 import path from 'path'
 import yaml from 'js-yaml'
 import { cabinetPath } from '@/lib/cabinet-root'
+import { requireDashboardAuth } from '@/lib/provisioning/guard'
 
 // ----------------------------------------------------------------
 // Types
@@ -64,6 +65,7 @@ const PRESETS_DIR = process.env.PRESETS_DIR || cabinetPath('presets')
  * Gracefully handles missing/malformed preset.yml — excludes those dirs.
  */
 export async function getPresets(): Promise<PresetInfo[]> {
+  if (!(await requireDashboardAuth())) return []
   const presets: PresetInfo[] = []
 
   let dirs: string[]
@@ -169,6 +171,7 @@ export interface OfficerSlot {
  * Returns empty array if preset not found.
  */
 export async function getPresetOfficers(presetSlug: string): Promise<OfficerSlot[]> {
+  if (!(await requireDashboardAuth())) return []
   const presetFile = path.join(PRESETS_DIR, presetSlug, 'preset.yml')
   try {
     const raw = fs.readFileSync(presetFile, 'utf8')

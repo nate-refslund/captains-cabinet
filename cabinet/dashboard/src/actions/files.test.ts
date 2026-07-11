@@ -21,6 +21,15 @@ import path from 'node:path'
 // context, which vitest does not provide.
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 
+// These tests exercise the POST-auth behaviour (real fs writes). The action's
+// requireDashboardAuth() first-statement guard calls verifySession → cookies(),
+// which throws outside a request scope in vitest — so mock the gate as
+// authenticated here. The guard's reject/allow behaviour lives in
+// actions-auth.test.ts.
+vi.mock('@/lib/provisioning/guard', () => ({
+  requireDashboardAuth: vi.fn(async () => true),
+}))
+
 import { updateLoopPrompt, updateRoleDefinition } from './files'
 
 let root: string

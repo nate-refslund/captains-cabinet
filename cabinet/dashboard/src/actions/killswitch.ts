@@ -1,6 +1,7 @@
 'use server'
 
 import redis from '@/lib/redis'
+import { requireDashboardAuth } from '@/lib/provisioning/guard'
 import { revalidatePath } from 'next/cache'
 
 /**
@@ -13,6 +14,9 @@ import { revalidatePath } from 'next/cache'
  * Legacy no-arg callers keep exact toggle semantics.
  */
 export async function toggleKillSwitch(intent?: 'activate' | 'deactivate') {
+  if (!(await requireDashboardAuth())) {
+    return { success: false, error: 'Unauthorized' }
+  }
   try {
     const current = await redis.get('cabinet:killswitch')
     const isActive = current === 'active'

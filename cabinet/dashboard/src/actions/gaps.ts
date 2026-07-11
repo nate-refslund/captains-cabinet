@@ -12,12 +12,14 @@
  */
 
 import { dockerExec } from '@/lib/docker'
+import { requireDashboardAuth } from '@/lib/provisioning/guard'
 import { revalidatePath } from 'next/cache'
 
 // gap ids are `gap-<8 hex>` — validate before interpolating into a shell cmd.
 const GAP_ID_RE = /^gap-[0-9a-f]{8}$/
 
 export async function approveGap(gapId: string): Promise<{ ok: boolean; error?: string }> {
+  if (!(await requireDashboardAuth())) return { ok: false, error: 'unauthorized' }
   if (!GAP_ID_RE.test(gapId)) return { ok: false, error: 'invalid gap id' }
   try {
     await dockerExec(
@@ -31,6 +33,7 @@ export async function approveGap(gapId: string): Promise<{ ok: boolean; error?: 
 }
 
 export async function declineGap(gapId: string, reason: string): Promise<{ ok: boolean; error?: string }> {
+  if (!(await requireDashboardAuth())) return { ok: false, error: 'unauthorized' }
   if (!GAP_ID_RE.test(gapId)) return { ok: false, error: 'invalid gap id' }
   // Sanitize the reason for safe single-quote shell embedding.
   const safeReason = (reason || 'declined via dashboard').replace(/'/g, "'\\''").slice(0, 400)

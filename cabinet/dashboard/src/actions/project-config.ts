@@ -2,6 +2,7 @@
 
 import { cabinetPath } from '@/lib/cabinet-root'
 import { dockerExec } from '@/lib/docker'
+import { requireDashboardAuth } from '@/lib/provisioning/guard'
 import { revalidatePath } from 'next/cache'
 
 const IS_MOCK = process.env.MOCK_DATA === 'true' || !process.env.REDIS_URL
@@ -41,6 +42,9 @@ export async function updateProjectConfig(
   path: string,
   value: string,
 ): Promise<{ success: boolean; error?: string }> {
+  if (!(await requireDashboardAuth())) {
+    return { success: false, error: 'Unauthorized' }
+  }
   try {
     if (!ALLOWED_SECTIONS.includes(section)) {
       return { success: false, error: `Section not allowed: ${section}` }

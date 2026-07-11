@@ -25,6 +25,7 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { cabinetPath } from '@/lib/cabinet-root'
+import { requireDashboardAuth } from '@/lib/provisioning/guard'
 import { revalidatePath } from 'next/cache'
 
 const GOVERNANCE_FILES: Record<string, string> = {
@@ -51,6 +52,9 @@ function allowlistedPath(fileKey: string): string | null {
 }
 
 export async function updateGovernanceFile(fileKey: string, content: string) {
+  if (!(await requireDashboardAuth())) {
+    return { success: false, error: 'Unauthorized' }
+  }
   const rel = allowlistedPath(fileKey)
   if (!rel) return { success: false, error: 'Invalid document' }
 
@@ -84,6 +88,10 @@ export async function updateGovernanceFile(fileKey: string, content: string) {
 }
 
 export async function readGovernanceFile(fileKey: string): Promise<string> {
+  // Governance docs (constitution, safety boundaries, role registry, operating
+  // manual) are internal operational content — gate the read too. '' mirrors
+  // the module's existing "unknown key → ''" convention (no data leaked).
+  if (!(await requireDashboardAuth())) return ''
   const rel = allowlistedPath(fileKey)
   if (!rel) return ''
 
@@ -109,6 +117,7 @@ export async function readGovernanceFile(fileKey: string): Promise<string> {
 }
 
 export async function readAllGovernanceFiles(): Promise<Record<string, string>> {
+  if (!(await requireDashboardAuth())) return {}
   const entries = Object.keys(GOVERNANCE_FILES)
   const results: Record<string, string> = {}
 
