@@ -38,6 +38,13 @@
 #      world-chronicle row is enabled, cabinet:world:chronicle:heartbeat must
 #      exist (the daemon SETs it EX 900 every tick — absence = daemon dead,
 #      distinct from launchd thinking the job is loaded).
+#  10. germline exists-without-schg watchdog (G7): every path in
+#      germline-lock.sh's FILES/DIRS locked set (parsed out of the arrays —
+#      never hardcoded) that EXISTS on disk must carry the schg flag; dirs
+#      are verified RECURSIVELY because that is what lock does (chflags -R).
+#      Exists-without-schg = boundary gap (DEAD); absent = legal (SKIP —
+#      lock itself skips absent paths). Read-only: stat/find only, never
+#      chflags, never sudo.
 #
 # OUTPUT: one line per finding (OK / WARN / WAIVED / SKIP / DEAD), then either
 #   CABINET_DOCTOR GREEN (checks=N warn=N waived=N)
@@ -70,7 +77,8 @@ command -v "$PY" >/dev/null 2>&1 || PY=python3
 REDIS_HOST="${REDIS_HOST:-127.0.0.1}"
 [ "$REDIS_HOST" = "redis" ] && REDIS_HOST=127.0.0.1   # docker-legacy residue guard
 REDIS_PORT="${REDIS_PORT:-6379}"
-LA_DIR="$HOME/Library/LaunchAgents"
+# (launchd plists are read via the embedded Python's own ~/Library/LaunchAgents
+# expansion in section 1 — no shell-level copy of that path is needed here)
 
 DEAD=()
 N_OK=0; N_WARN=0; N_WAIVED=0; N_SKIP=0
@@ -485,6 +493,95 @@ elif grep -qE '^  - name: world-chronicle$' cabinet/services.yml 2>/dev/null; th
   fi
 else
   skip "world-chronicle-daemon — no manifest row"
+fi
+
+# ============================================================
+# 10. germline exists-without-schg watchdog (G7)
+# ============================================================
+# The germline boundary is only real while every MATERIALIZED path in the
+# locked set carries schg — a path can sit unlocked after an unlock window
+# that never relocked, or land unlocked when a deployment materializes a
+# listed config (e.g. instance/config/posture.yml is deployment-created).
+# Source of truth: the FILES=( )/DIRS=( ) arrays in germline-lock.sh —
+# parsed out of the array literals (regex extraction, NEVER sourced — the
+# script executes cd/case logic on load), never hardcoded here.
+# DIR SEMANTICS: lock runs `chflags -R schg "$d"` (germline-lock.sh:167),
+# i.e. dirs lock RECURSIVELY — every inode under a listed dir must carry
+# the flag, not just the dir inode (the lock script's own `status` checks
+# only the dir inode, line 197; the -R lock semantics are what we verify).
+# Read-only: stat/find/sed only — never chflags, never sudo.
+GL_SCRIPT="cabinet/scripts/germline-lock.sh"
+gl_array() { # $1 = array name — one repo-relative entry per line, comments stripped
+  sed -n "/^$1=(/,/^)/p" "$GL_SCRIPT" | sed -n 's/^[[:space:]]*"\([^"]*\)".*/\1/p'
+}
+gl_entry_count() { # $1 = array name — entry-LOOKING lines in the same range
+  # (everything that is not the array-open line, the bare closing paren, a
+  # comment, or a blank line) — denominator for the drift tripwire below
+  sed -n "/^$1=(/,/^)/p" "$GL_SCRIPT" \
+    | sed -e "/^$1=(/d" -e '/^)/d' -e '/^[[:space:]]*#/d' -e '/^[[:space:]]*$/d' \
+    | grep -c .
+}
+gl_has_schg() { # flags field only (stat %Sf) — no filename false-positives
+  case ",$(stat -f '%Sf' "$1" 2>/dev/null)," in *,schg,*) return 0 ;; *) return 1 ;; esac
+}
+if [ ! -f "$GL_SCRIPT" ]; then
+  warn "germline — $GL_SCRIPT missing; exists-without-schg watchdog cannot run"
+else
+  GL_FILES="$(gl_array FILES)"; GL_DIRS="$(gl_array DIRS)"
+  if [ -z "$GL_FILES" ] || [ -z "$GL_DIRS" ]; then
+    warn "germline — could not parse FILES/DIRS arrays out of $GL_SCRIPT (files=$(printf '%s' "$GL_FILES" | grep -c .) dirs=$(printf '%s' "$GL_DIRS" | grep -c .)) — watchdog degraded, not silent"
+  else
+    # ADVISORY-1 tripwire (lane-B review 2026-07-11): PARTIAL parser drift
+    # must not be silent — an unquoted/single-quoted entry extracts as
+    # nothing while the empty-parse gate above stays green. Compare the
+    # extracted count against the entry-looking-line count in the same sed
+    # range; any mismatch means the watchdog is checking FEWER paths than
+    # the lock script lists.
+    GL_F_EXT="$(printf '%s\n' "$GL_FILES" | grep -c .)"
+    GL_D_EXT="$(printf '%s\n' "$GL_DIRS" | grep -c .)"
+    GL_F_RAW="$(gl_entry_count FILES)"
+    GL_D_RAW="$(gl_entry_count DIRS)"
+    if [ "$GL_F_EXT" -ne "$GL_F_RAW" ] || [ "$GL_D_EXT" -ne "$GL_D_RAW" ]; then
+      warn "germline — parser drift in $GL_SCRIPT: extracted $GL_F_EXT of $GL_F_RAW FILES + $GL_D_EXT of $GL_D_RAW DIRS entry lines (unquoted/single-quoted entries are invisible to this watchdog) — normalize the array style or fix gl_array"
+    fi
+    GL_LOCKED=0; GL_ABSENT=0; GL_GAPS=0
+    while IFS= read -r f; do
+      [ -z "$f" ] && continue
+      if [ ! -e "$f" ]; then
+        skip "germline $f — absent (not yet materialized; lock skips absent paths)"
+        GL_ABSENT=$((GL_ABSENT+1))
+      elif gl_has_schg "$f"; then
+        GL_LOCKED=$((GL_LOCKED+1))
+      else
+        dead "germline $f — exists but NOT schg-locked (boundary gap; lock ceremony needed)"
+        GL_GAPS=$((GL_GAPS+1))
+      fi
+    done <<< "$GL_FILES"
+    while IFS= read -r d; do
+      [ -z "$d" ] && continue
+      if [ ! -d "$d" ]; then
+        skip "germline $d/ — absent (not yet materialized; lock skips absent dirs)"
+        GL_ABSENT=$((GL_ABSENT+1))
+        continue
+      fi
+      # recursive check incl. the dir inode itself — chflags -R semantics
+      # (germline-lock.sh:167); one line per dir, capped examples (no spam)
+      GL_DIRGAPS="$(find "$d" 2>/dev/null | while IFS= read -r p; do
+        gl_has_schg "$p" || printf '%s\n' "$p"
+      done)"
+      if [ -z "$GL_DIRGAPS" ]; then
+        GL_LOCKED=$((GL_LOCKED+1))
+      else
+        GL_N="$(printf '%s\n' "$GL_DIRGAPS" | grep -c .)"
+        GL_EX="$(printf '%s\n' "$GL_DIRGAPS" | head -3 | tr '\n' ' ')"
+        dead "germline $d/ — exists but NOT schg-locked: $GL_N inode(s) unlocked under recursive lock (chflags -R, germline-lock.sh:167), e.g. ${GL_EX%% }— boundary gap; lock ceremony needed"
+        GL_GAPS=$((GL_GAPS+1))
+      fi
+    done <<< "$GL_DIRS"
+    if [ "$GL_GAPS" -eq 0 ]; then
+      ok "germline — $GL_LOCKED materialized path(s) schg-verified ($GL_ABSENT absent skipped; boundary armed for everything on disk)"
+    fi
+  fi
 fi
 
 # ============================================================
