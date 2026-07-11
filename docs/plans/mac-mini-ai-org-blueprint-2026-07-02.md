@@ -1,5 +1,11 @@
 # The Mac Mini AI Org — Deep Analysis & Redesign Blueprint
 
+> **HISTORICAL RECORD** (banner added 2026-07-11, hardening loop — record
+> unedited below): paths cited may predate later moves, e.g.
+> `cabinet/scripts/lib/policy_engine.py` → `framework/authority/policy_engine.py`
+> (@3aa93ef8, CG-14) and the `constitution/` retirement (@5cfe9453). Current
+> execution truth lives in `operative-egg-ledger-2026-07-07.yml` + `EXECUTION-STATUS.md`.
+
 **Scope:** `~/captains-cabinet` (branch `feat/fidelity-harness-design`, the live runtime) + `~/.screenpipe`, designed toward the highest level of a fully autonomous, self-improving AI org.
 **Focus:** **Flavor B** — the standalone Mac Mini org that owns an entire product end-to-end, *without* screenpipe. Flavor A (MacBook personal assistant *with* screenpipe) is covered in §7.
 **Date:** 2026-07-02 · **Method:** 3 orchestrated workflows, 28 agents, ~7M tokens: 13 read-only subsystem readers over both repos → 7 triangulated web researchers (2025–26 state of the art, all claims sourced) → 4 architecture panels with distinct lenses → 3 independent judges (vote, no debate) → 1 adversarial red team. Analysis artifacts referenced throughout live in the session scratchpad; every load-bearing repo claim carries a file reference.

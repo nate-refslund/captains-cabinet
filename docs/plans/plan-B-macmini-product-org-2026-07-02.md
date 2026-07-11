@@ -1,5 +1,11 @@
 # Plan B — The Standalone Mac Mini Product Org (Flavor B, no screenpipe)
 
+> **HISTORICAL RECORD** (banner added 2026-07-11, hardening loop — record
+> unedited below): paths cited may predate later moves, e.g.
+> `cabinet/scripts/lib/policy_engine.py` → `framework/authority/policy_engine.py`
+> (@3aa93ef8, CG-14) and the `constitution/` retirement (@5cfe9453). Current
+> execution truth lives in `operative-egg-ledger-2026-07-07.yml` + `EXECUTION-STATUS.md`.
+
 **Date:** 2026-07-02
 **Primary source:** `~/mac-mini-ai-org-blueprint-2026-07-02.md` — its §4 target architecture and §5 phase/gate skeleton are BINDING here; this plan expands them to implementation grade (files, schemas, commands, verification, ownership).
 **Design record:** `~/mac-mini-ai-org-blueprint-artifacts-2026-07-02/` — `design/arch-evidence-engine.md` (winning proposal), `design/redteam.md` (13 required amendments, each mapped in Appendix B), `design/votes.md` (must-survive ideas from losing lenses, each placed), `understand/*` (subsystem ground truth), `research/*` (2026 state of the art).

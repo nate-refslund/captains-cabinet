@@ -1,5 +1,11 @@
 # Plan A — The Personal Clone Org (MacBook · screenpipe · Obsidian brain · Chair)
 
+> **HISTORICAL RECORD** (banner added 2026-07-11, hardening loop — record
+> unedited below): paths cited may predate later moves, e.g.
+> `cabinet/scripts/lib/policy_engine.py` → `framework/authority/policy_engine.py`
+> (@3aa93ef8, CG-14) and the `constitution/` retirement (@5cfe9453). Current
+> execution truth lives in `operative-egg-ledger-2026-07-07.yml` + `EXECUTION-STATUS.md`.
+
 **Date:** 2026-07-02 · **Flavor:** A (personal clone / autonomous assistant) · **Companion:** Plan B (Mac Mini product org, `~/plan-B-macmini-product-org-2026-07-02.md`) shares Phase F0 (identical in intent, item IDs differ — map by intent; execute once).
 **Binding inputs:** `~/self-improving-org-report-2026-07-02.md` (§P0 12-item list + design rulings), `~/mac-mini-ai-org-blueprint-2026-07-02.md` (§2 diagnosis, §4.2 evidence plane, §6 principles, §7 flavor-A divergences), the understand/research artifacts under `~/mac-mini-ai-org-blueprint-artifacts-2026-07-02/`.
 
