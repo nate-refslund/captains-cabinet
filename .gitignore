@@ -120,6 +120,10 @@ instance/memory/first-briefing-*.md
 # Runtime archives (migration snapshots, etc.)
 instance/archive/
 
+# Runtime state + briefing renders (materialized by running services)
+instance/state/
+instance/memory/briefings/
+
 # Experience records, decision log, research archive
 memory/tier3/
 
@@ -173,6 +177,16 @@ cabinet/launchd/generated/
 # runtime artifacts (written by falsifier-daily / act-first flag) — never commit
 shared/interfaces/falsifier-series.jsonl
 instance/config/act-first-enabled
+
+# Learning-loop + eval runtime series (written by running lanes/daemons —
+# same class as falsifier-series; never commit)
+shared/interfaces/action-lessons.yml
+shared/interfaces/charter-shadow-series.jsonl
+shared/interfaces/golden-eval-scalar.jsonl
+shared/interfaces/memory-supersession-proposals.jsonl
+shared/interfaces/needs-ledger.jsonl
+shared/interfaces/prediction-calibration.jsonl
+shared/interfaces/preference-pairs.jsonl
 
 # Cabinet World runtime read-model outputs (world-census E0a / world-chronicle
 # E0b — append-only replay history; instance data, never committed)
