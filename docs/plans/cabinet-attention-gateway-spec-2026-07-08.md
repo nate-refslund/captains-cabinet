@@ -1,6 +1,6 @@
 # Attention Gateway — the Chair-owned Captain channel (spec)
 
-**Status:** DESIGN — Captain review pending
+**Status:** BUILT P1–P5 (merged to master, gauntlet-hardened — see §8 phase table); P6 open + retroactive P1–P5 ratification pending per HANDBACKS
 **Date:** 2026-07-08
 **Author:** Captain-side design session (Nate + Claude), from the 2026-07-08 feed investigation
 **Layer:** `framework/` (mechanism) + `instance/config/` (posture, preferences, charter settings)
