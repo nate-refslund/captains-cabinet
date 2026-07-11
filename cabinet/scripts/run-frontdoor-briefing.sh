@@ -35,6 +35,15 @@ export CAPTAIN_TELEGRAM_ID="$(grep '^CAPTAIN_TELEGRAM_ID=' "$ENV_FILE" | cut -d=
 export CABINET_ENV=runtime
 export REDIS_HOST="${REDIS_HOST:-localhost}"
 
+# Captain timezone for the gate's quiet-hours/briefing-slot math. Without it
+# the attention gate falls back to UTC and reads 07:30 LOCAL as 05:30 "local"
+# — inside the 21:00–07:00 quiet window — so the briefing CARD (which rides
+# the gate, unlike the old raw-channel wall) would be quiet-routed back into
+# the very intake it summarizes (found live 2026-07-11 arming briefing-as-
+# card). Same one-line resolution the outcome-watchdog wrapper uses.
+CAPTAIN_TZ_LINE="$(grep '^captain_timezone:' "$ROOT/instance/config/platform.yml" 2>/dev/null | awk '{print $2}')"
+export CABINET_CAPTAIN_TZ="${CABINET_CAPTAIN_TZ:-${CAPTAIN_TZ_LINE:-Europe/Berlin}}"
+
 # Run mode: the evening (PM) run additionally builds the comprehensive daily
 # recap (writes today's Monday Reflections item + the vault daily note, folds the
 # recap into this briefing). The morning (AM) run stays signals-only. We key off

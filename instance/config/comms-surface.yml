@@ -15,3 +15,12 @@ pin_mode: overview
 pacing:
   mode: ask-first
   cap: 5
+
+# PERSONAL-AGENT RESET (Captain interview 2026-07-11, binding): the 07:30 /
+# 19:30 briefing is ONE card — status + "N decisions ready — Triage" — sent
+# by framework.frontdoor.run_briefing through briefing_card.maybe_send. The
+# composed long body (synthesis + recap + digest text + pipe items) is
+# ARCHIVED to instance/memory/briefings/ as data instead of riding Telegram
+# as a (1/N)-chunked wall. Decisions ride the paced single-decision cards.
+# Flip back to the classic text briefing by deleting this one key.
+briefing_card: true

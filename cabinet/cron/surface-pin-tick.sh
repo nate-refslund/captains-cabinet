@@ -1,11 +1,15 @@
 #!/bin/bash
-# surface-pin-tick.sh — one Captain-surface PIN tick (overview standing card).
+# surface-pin-tick.sh — one full Captain-surface tick (pacing + overview pin).
 #
-# PARTIAL ARMING per the 2026-07-10 order (captain-decisions 16:30Z, "3 KNOBS
-# RATIFIED"): this runs ONLY the pin lifecycle (`engine --pin-tick` →
-# pin_lifecycle.step; pin_mode resolves from instance/config/comms-surface.yml
-# = overview). The pacing engine and the escalation gate stay DARK — arming
-# either is a separate deliberate step (safety-rails doc §arming).
+# ARMING HISTORY: pin-only per the 2026-07-10 order (engine --pin-tick;
+# pacing + escalation dark). PERSONAL-AGENT RESET (Captain interview
+# 2026-07-11, binding) armed the NEXT step of the same order: `engine --tick`
+# = run_surface_tick → pacing.step (ask-first, cap 5 — the ratified knobs in
+# instance/config/comms-surface.yml) + pin_lifecycle.step (overview card).
+# Decisions now ride paced single-decision cards; the ONE standing nudge
+# card asks before any batch; urgent jumps stay budgeted. The ESCALATION
+# gate remains DARK (CABINET_ESCALATION_GATE unset) — arming it is still a
+# separate deliberate step (safety-rails doc §arming).
 #
 # Scheduled via the cabinet/services.yml row `surface-pin` (300s). Idempotent:
 # the gate's standing-card dedup suppresses no-change ticks, edits never
@@ -36,15 +40,26 @@ fi
 export CABINET_ENV="${CABINET_ENV:-runtime}"
 export CABINET_ADMISSION_LAW="${CABINET_ADMISSION_LAW:-1}"
 
+# Localhost Redis for the gate's briefing-route enqueue (the intake backend's
+# baked default is the docker-era host `redis`, unreachable on the Mac —
+# the pin-only tick never wrote intake so this only bit once pacing armed).
+export REDIS_HOST="${REDIS_HOST:-localhost}"
+
+# Captain timezone for the gate's quiet-hours math — without it the gate
+# falls back to UTC and quiet-routes daytime pacing cards (same fix as the
+# briefing wrapper, 2026-07-11). One-line read; never source the config.
+CAPTAIN_TZ_LINE="$(grep '^captain_timezone:' "$CABINET_ROOT/instance/config/platform.yml" 2>/dev/null | awk '{print $2}')"
+export CABINET_CAPTAIN_TZ="${CABINET_CAPTAIN_TZ:-${CAPTAIN_TZ_LINE:-Europe/Berlin}}"
+
 cd "$CABINET_ROOT" || {
   echo "[$TIMESTAMP] surface-pin-tick.sh FATAL: cd $CABINET_ROOT failed" >&2
   exit 1
 }
 
-OUT=$(python3.12 -m framework.comms.surface.engine --pin-tick 2>&1)
+OUT=$(python3.12 -m framework.comms.surface.engine --tick 2>&1)
 RC=$?
 if [ "$RC" -ne 0 ]; then
-  echo "[$TIMESTAMP] surface-pin-tick.sh FATAL: pin tick rc=$RC — ${OUT:-no output}" >&2
+  echo "[$TIMESTAMP] surface-pin-tick.sh FATAL: surface tick rc=$RC — ${OUT:-no output}" >&2
   exit 1
 fi
 # The engine is fail-soft (a broken tick reports ("card","error",…) ops and
@@ -57,4 +72,4 @@ case "$OUT" in
     echo "[$TIMESTAMP] surface-pin-tick.sh FATAL: tick reported errors — $OUT" >&2
     exit 1;;
 esac
-echo "[$TIMESTAMP] Surface pin tick ok: $OUT"
+echo "[$TIMESTAMP] Surface tick ok: $OUT"

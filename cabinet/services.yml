@@ -220,6 +220,13 @@ services:
     # kill-switch the old jargon-wording pinned queue card until the window-4
     # re-point lands (docs/proposals/germline-window-4-deferral-2026-07-10.md).
     # Revert = delete this one env key.
+    # ONE-VOICE-RESET (Captain interview 2026-07-11): briefing-as-card ARMED
+    # via instance/config/comms-surface.yml `briefing_card: true` — this run
+    # now delivers ONE card (status + "N decisions ready — Triage"); the
+    # composed body is archived to instance/memory/briefings/ as data, never
+    # sent as a (1/N)-chunked wall. "sent": true in the run output = the CARD
+    # delivered (the delivered-marker grep below keys off it). Revert =
+    # delete the yml key (classic text path is byte-identical underneath).
     env: { CABINET_ADMISSION_LAW: "1", CABINET_QUEUE_CARD: "0" }
     expected: "2 delivered briefings/day (outcome-watchdog expectation: DELIVERED, not exited-0)"
   - name: intake-surface
@@ -241,15 +248,18 @@ services:
     command: bash cabinet/cron/surface-pin-tick.sh
     schedule: { interval_s: 300 }
     # 3-KNOBS RATIFICATION (captain-decisions 2026-07-10 16:30Z): pin =
-    # standing OVERVIEW card ("⚑ N need you", edited in place) — this row is
-    # the PIN-ONLY partial arming of the captain-surface TG engine
-    # (`engine --pin-tick`; pin_mode: overview from
-    # instance/config/comms-surface.yml). Pacing + escalation gate stay DARK
-    # per the arming order. The wrapper sources cabinet/.env and sets
-    # CABINET_ENV=runtime + CABINET_ADMISSION_LAW=1 (same room as
-    # intake-surface). It supersedes the retired CABINET_QUEUE_CARD pinned
-    # card (msg 1013 unpinned 2026-07-10). Revert = remove this row.
-    expected: "one 'Surface pin tick ok' line per 300s run; error-reporting ticks exit 1 with a FATAL stderr line (observability floor today = doctor log-freshness on surface-pin.log; FATAL grep is a wanted upgrade)"
+    # standing OVERVIEW card ("⚑ N need you", edited in place). Was the
+    # PIN-ONLY partial arming (`engine --pin-tick`); the PERSONAL-AGENT
+    # RESET (Captain interview 2026-07-11) armed the next step of the same
+    # order: the wrapper now runs `engine --tick` = pacing (ask-first, cap 5
+    # — the ratified knobs in instance/config/comms-surface.yml) + the pin
+    # lifecycle. Decisions ride paced single-decision cards; the escalation
+    # gate stays DARK (CABINET_ESCALATION_GATE unset). The wrapper sources
+    # cabinet/.env and sets CABINET_ENV=runtime + CABINET_ADMISSION_LAW=1
+    # (same room as intake-surface). It supersedes the retired
+    # CABINET_QUEUE_CARD pinned card (msg 1013 unpinned 2026-07-10).
+    # Revert pacing arming = `--tick` → `--pin-tick` in the wrapper.
+    expected: "one 'Surface tick ok' line per 300s run; error-reporting ticks exit 1 with a FATAL stderr line (observability floor today = doctor log-freshness on surface-pin.log; FATAL grep is a wanted upgrade)"
 
   # ── Acting ───────────────────────────────────────────────────────────────
   - name: draft-lane

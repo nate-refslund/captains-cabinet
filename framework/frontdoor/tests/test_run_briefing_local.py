@@ -103,7 +103,10 @@ def test_normal_path_unchanged_by_new_kwargs():
         pending_fn=lambda **kw: [],
         send_fn=fake_send,
         ack_fn=lambda ids, *, stream_key=None: len(ids),
-        digest_fn=lambda: {"digest": False, "skipped": "stubbed in test"})
+        digest_fn=lambda: {"digest": False, "skipped": "stubbed in test"},
+        # classic-path contract: the briefing-card knob is deployment data
+        # and must not leak into this hermetic regression guard.
+        card_mode=False)
 
     assert out["send"]["sent"] is True
     assert "Dana awaits reply" in calls["text"]

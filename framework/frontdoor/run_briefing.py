@@ -76,6 +76,117 @@ def _default_needs_you() -> "dict | None":
     return {"needs_you": True, "id": intake.enqueue(item)}
 
 
+# ---------------------------------------------------------------------------
+# Briefing-as-card (ONE-VOICE-RESET, Captain interview 2026-07-11)
+#
+# When the deployment arms `briefing_card` (instance/config/comms-surface.yml
+# or CABINET_BRIEFING_CARD=1 — framework.comms.surface.config), the briefing
+# stops sending the composed long body as a (1/N)-chunked Telegram wall:
+#
+#   * the drain/compose leg still runs UNCHANGED (durable intake, dedup,
+#     recover_pending), but its send seam ARCHIVES the composed body to
+#     instance/memory/briefings/<UTC stamp>.md — content preserved as DATA
+#     (synthesis, PM recap, TI-5 digest text with its undo indexes, every
+#     screenpipe pipe item). Items are ACKed only after the archive write
+#     succeeds (loss-safe: unarchived content stays pending on the stream).
+#     The `cabinet:digest:<date>` undo manifest is persisted by the digest
+#     leg exactly as before, so `undo <n>` replies keep binding.
+#   * ONE briefing card goes out instead (briefing_card.maybe_send → gateway
+#     → charter class `briefing` → direct send, edit-in-place per slot):
+#     plain headline + "N decisions ready" + the Triage control. Decisions
+#     themselves ride the paced single-decision cards, never the briefing.
+#   * the "Needs you (N)" intake section is skipped — the same numbers render
+#     on the card and the pinned overview (one list, several skins).
+#
+# The classic text path is byte-identical when the knob is off (the default).
+# ---------------------------------------------------------------------------
+
+def _briefing_card_mode() -> bool:
+    """True when briefing-as-card is armed. Fail-closed to the classic text
+    path on any config error (a broken knob must not lose the briefing)."""
+    try:
+        from framework.comms.surface import config as _scfg
+        return bool(_scfg.load().get("briefing_card"))
+    except Exception:
+        return False
+
+
+def _briefings_dir():
+    """The archive home: <repo>/instance/memory/briefings (CABINET_ROOT wins,
+    else file-relative — the same root convention the rest of frontdoor uses)."""
+    from pathlib import Path
+    root = os.environ.get("CABINET_ROOT", "").strip()
+    base = Path(root) if root else Path(__file__).resolve().parents[2]
+    return base / "instance" / "memory" / "briefings"
+
+
+def _archive_briefing_body(text: str) -> str:
+    """Write the composed briefing body to a per-run archive file, atomically
+    (tmp + os.replace). Returns the path. RAISES on failure — the caller's
+    send seam then reports sent=False so the drained items stay PENDING on
+    the intake stream (never ACK content that is not durably on disk)."""
+    from datetime import datetime, timezone
+    d = _briefings_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%SZ")
+    path = d / f"briefing-{stamp}.md"
+    body = (f"# Briefing body — {stamp} (archived, not sent)\n\n"
+            "This is the data the briefing card summarized. It used to be a "
+            "multi-part Telegram message; since 2026-07-11 it lands here and "
+            "the card carries the headline.\n\n---\n\n" + text + "\n")
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(body, encoding="utf-8")
+    os.replace(tmp, path)
+    return str(path)
+
+
+def _archive_send_fn(sink: dict):
+    """The card-mode send seam for run_send_path: archive instead of send.
+    Mirrors channel.send's calling convention. sent=True ONLY after a
+    successful archive write, so ACK semantics stay loss-safe."""
+    def _send(text, *, http_post=None):  # http_post ignored — no network here
+        try:
+            path = _archive_briefing_body(text)
+        except Exception as e:  # noqa: BLE001 — report, keep items pending
+            return {"status": "error", "sent": False,
+                    "error": f"archive failed: {type(e).__name__}: {e}"[:300]}
+        sink["archive_path"] = path
+        return {"status": "archived", "sent": True, "archive_path": path}
+    return _send
+
+
+def _plain_headline(gather: dict, digest: "dict | None") -> str:
+    """One plain sentence for the card: counts only, NEVER item payload text
+    (untrusted pipe content must not ride the card surface — the full body
+    lives in the archive file). Honest on an archive failure: content that
+    did not land on disk is reported as still queued, not as kept."""
+    n = int(gather.get("drained") or 0)
+    if n and gather.get("sent"):
+        head = f"Gathered {n} update{'s' if n != 1 else ''} into today's notes (kept on file)"
+    elif n:
+        head = (f"Gathered {n} update{'s' if n != 1 else ''} — saving them hit "
+                "an error, so they stay queued for the next round")
+    else:
+        head = "Nothing new to gather this round"
+    acted = 0
+    if isinstance(digest, dict):
+        try:
+            acted = int(digest.get("acted") or 0)
+        except (TypeError, ValueError):
+            acted = 0
+    if acted:
+        head += (f". {acted} thing{'s were' if acted != 1 else ' was'} done for "
+                 f"you — reply `undo <n>` to reverse one")
+    return head + "."
+
+
+def _default_briefing_card(headline: str) -> dict:
+    """Live card send: briefing_card.maybe_send (re-checks the knob, builds
+    the live census, rides the gateway/charter like every officer card)."""
+    from framework.comms.surface import briefing_card
+    return briefing_card.maybe_send(headline)
+
+
 def _run_local_render(*, genesis_fn=None, now: str | None = None) -> dict:
     """The LOCAL-FIRST genesis receipt: compose ONE briefing from the local
     genesis surfaces and WRITE it — never send, never touch Redis.
@@ -149,6 +260,8 @@ def run_briefing(
     run_mode: str | None = None,
     local_render: bool = False,
     genesis_fn=None,
+    card_mode: bool | None = None,
+    card_send_fn=None,
 ) -> dict:
     """Enqueue a fresh synthesis (+ the PM daily recap + the TI-5 digest +
     the war-room "Needs you (N)" section), then run one send pass.
@@ -180,12 +293,25 @@ def run_briefing(
     (module docstring has the why). All other seams are ignored in that mode;
     the normal path below is unchanged.
 
+    BRIEFING-AS-CARD (ONE-VOICE-RESET 2026-07-11): when armed (`briefing_card`
+    knob; ``card_mode`` seam overrides), the composed body is ARCHIVED (send
+    seam → instance/memory/briefings/, ACK only after the write) and ONE
+    briefing card goes out via briefing_card.maybe_send. In that mode the
+    result's ``send`` leg reports the CARD delivery — its ``sent`` is True
+    only when the card reached the Captain (the launchd wrapper's delivered-
+    marker grep keys off exactly that), the raw drain/compose receipt moves
+    to ``gather`` (with its own ``sent`` key REMOVED so no other "sent": true
+    can satisfy the wrapper), and the needs-you enqueue is skipped (the same
+    numbers render on the card + the pinned overview). Knob off = the classic
+    path below, byte-identical.
+
     Seams: ``enqueue_fn`` overrides the synthesis enqueue; ``recap_fn`` overrides
     the daily-recap enqueue; ``digest_fn`` overrides the TI-5 digest enqueue;
     ``run_mode`` forces AM/PM; ``send_fn`` / ``drain_fn`` / ``ack_fn`` forward to
-    run_send_path — all for tests (no real network / Redis / brain). The token
-    never appears in the result (channel.send scrubs; run_send_path only
-    re-surfaces the scrubbed dict).
+    run_send_path; ``card_mode`` / ``card_send_fn`` override the briefing-card
+    knob and card transport — all for tests (no real network / Redis / brain).
+    The token never appears in the result (channel.send scrubs; run_send_path
+    only re-surfaces the scrubbed dict).
     """
     if local_render:
         return _run_local_render(genesis_fn=genesis_fn)
@@ -212,17 +338,28 @@ def run_briefing(
     except Exception as e:  # best-effort: never block the briefing send
         digest = {"digest": False, "error": str(e)[:300]}
 
+    # Briefing-as-card? Resolve ONCE per run (seam wins, else the knob).
+    as_card = _briefing_card_mode() if card_mode is None else bool(card_mode)
+
     # War-room census: the "Needs you (N)" briefing section (command-center
     # §4C) — ONE intake item from the same census every skin renders
     # (SURFACE-PARITY), enqueued before the send pass so this run composes
     # it. Silent when nothing pends. ``needs_you_fn`` seam for tests;
-    # best-effort — a census failure never blocks the briefing.
+    # best-effort — a census failure never blocks the briefing. In card mode
+    # it is SKIPPED: the identical numbers render on the briefing card and
+    # the pinned overview, so an intake copy would only duplicate the list
+    # into the archive.
     needs_you = None
-    try:
-        enqueue_item = needs_you_fn or _default_needs_you
-        needs_you = enqueue_item()
-    except Exception as e:
-        needs_you = {"needs_you": False, "error": str(e)[:300]}
+    if as_card:
+        needs_you = {"needs_you": False,
+                     "skipped": "briefing-card mode — the numbers render on "
+                                "the card + the pinned overview"}
+    else:
+        try:
+            enqueue_item = needs_you_fn or _default_needs_you
+            needs_you = enqueue_item()
+        except Exception as e:
+            needs_you = {"needs_you": False, "error": str(e)[:300]}
 
     # recover_pending=True is the fix for the single-voice comms-awareness gap:
     # surface.py (every 5 min) reads the intake with ">" and surfaces ONLY
@@ -233,11 +370,62 @@ def run_briefing(
     # NEVER. The briefing is the designated place batch/fyi reaches the Captain, so it
     # recovers that pending backlog, composes it into the one voice, sends, and
     # ACKs. (surface.py is unchanged: still real-time ping-now only.)
+    # Card mode: the drain/compose leg keeps running (durable intake, dedup,
+    # recover_pending) but its send seam ARCHIVES the body instead of posting
+    # a chunked wall. An explicit test-provided send_fn still wins.
+    sink: dict = {}
+    effective_send_fn = send_fn
+    if as_card and effective_send_fn is None:
+        effective_send_fn = _archive_send_fn(sink)
+
     send = run_frontdoor.run_send_path(
-        send_fn=send_fn, drain_fn=drain_fn, ack_fn=ack_fn, pending_fn=pending_fn,
-        recover_pending=True)
-    return {"synthesis": syn, "recap": recap, "digest": digest,
-            "needs_you": needs_you, "send": send}
+        send_fn=effective_send_fn, drain_fn=drain_fn, ack_fn=ack_fn,
+        pending_fn=pending_fn, recover_pending=True)
+
+    if not as_card:
+        return {"synthesis": syn, "recap": recap, "digest": digest,
+                "needs_you": needs_you, "send": send}
+
+    # ONE briefing card (status + "N decisions ready — Triage"). Best-effort:
+    # a card failure is reported honestly (sent=False → the wrapper does not
+    # stamp a delivered briefing) but never raises.
+    try:
+        send_card = card_send_fn or _default_briefing_card
+        card = send_card(_plain_headline(
+            send, digest if isinstance(digest, dict) else None))
+    except Exception as e:  # noqa: BLE001
+        card = {"status": "error", "sent": False, "error": str(e)[:300]}
+    card = card if isinstance(card, dict) else {"status": "invalid", "sent": False}
+    # gate.submit (the live tools.send_card spine) returns {decision, result}
+    # — the delivery truth is the inner result; a seam-provided flat dict is
+    # used as-is. Keep the gate's routing reason when the card did NOT send,
+    # so a quiet-routed/suppressed card is diagnosable from the run output.
+    card_decision = card.get("decision") if isinstance(card.get("decision"), dict) else {}
+    if isinstance(card.get("result"), dict):
+        card = card["result"]
+
+    # Honest delivered-marker: in card mode the ONLY "sent" key in the whole
+    # result is the CARD's (the gather leg's own sent/send keys are dropped —
+    # its outcome is the "archived" fields), so the launchd wrapper's
+    # '"sent": true' grep can never be satisfied by the archive leg.
+    gather = {k: v for k, v in send.items() if k not in ("sent", "send", "text")}
+    return {
+        "synthesis": syn, "recap": recap, "digest": digest,
+        "needs_you": needs_you,
+        "gather": gather,
+        "send": {
+            "mode": "briefing-card",
+            "sent": bool(card.get("sent")),
+            "card_status": str(card.get("status") or ""),
+            "card_message_ids": list(card.get("message_ids") or []),
+            **({} if card.get("sent") else {"card_why": str(
+                card.get("error") or card_decision.get("reason") or "")[:200]}),
+            "gathered": send.get("drained"),
+            "recovered": send.get("recovered"),
+            "acked": send.get("acked"),
+            "archive_path": sink.get("archive_path"),
+        },
+    }
 
 
 def _parse_args(argv=None):
