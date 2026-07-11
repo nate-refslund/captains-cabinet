@@ -11,7 +11,7 @@ check a condition, do something, then optionally schedule the next wake.
 
 **Pattern:**
 - `/loop 5m bash cabinet/scripts/verify-launchagents.sh` — temporary watch, every 5 min
-- `/loop bash cabinet/scripts/check-deploy.sh` — self-paces via `ScheduleWakeup`
+- `/loop bash <your-check-script>` — self-paces via `ScheduleWakeup`
 
 (The old example here looped `mission-supervisor.sh` — don't: routing is
 pull-only per Captain ruling; the supervisor is a manual push-nudge, see

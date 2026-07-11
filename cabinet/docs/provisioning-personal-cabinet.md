@@ -24,7 +24,7 @@ Framework prep built around these being deferred. Answer them before starting.
 - `peers.yml` config schema + loader validation at boot (`CABINET_MODE=multi` enforces, single-mode warns)
 - Trust policy enforcement in `pre-tool-use.sh` §10
 - `split-cabinet.sh` migration — dry-run default, `--apply` to execute; covers all 8 Cabinet-infrastructure tables
-- 41-test behavior-level golden eval at `memory/golden-evals/phase-2/pre-captain-test.sh`
+- 41-test behavior-level golden eval — REMOVED in R137 (commit 0557344e: the phase-0/1/2 scripts cd'd into a container-dead path and had zero callers); no phase-2 suite exists at HEAD
 
 ## Step-by-step
 
@@ -153,8 +153,8 @@ Edit `/opt/founders-cabinet-personal/instance/config/contexts/` to add real pers
 
 Before declaring Personal Cabinet live:
 
-- [ ] `bash memory/golden-evals/phase-2/pre-captain-test.sh` — 41/41 PASS on Work Cabinet
-- [ ] Same suite on Personal Cabinet adapted for personal preset (see below)
+- [ ] Behavior-level golden-eval gate — the 41-test phase-2 suite was REMOVED in R137 (commit 0557344e); a replacement acceptance gate needs Captain sign-off before this box can be checked
+- [ ] Same gate on Personal Cabinet adapted for personal preset (see below)
 - [ ] `mcp__cabinet__identify` on Personal returns `cabinet_id=personal, capacity=personal`
 - [ ] `mcp__cabinet__presence` between the two Cabinets returns `online`
 - [ ] A test message sent Work → Personal lands in the right Redis stream
