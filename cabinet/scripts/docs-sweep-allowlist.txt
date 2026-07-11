@@ -1,0 +1,72 @@
+# docs-sweep-allowlist.txt — legitimate living-doc references to paths that
+# do NOT exist at HEAD (gitignored secrets, hatch/provision-created instance
+# files, runtime ledgers). Consumed by cabinet/scripts/docs-track-code-sweep.sh
+# (one glob pattern per line; # comments). RULE: every entry says WHY, and an
+# entry is only legitimate while the doc reference describes a file the
+# RUNTIME creates — if the creating mechanism dies, remove the entry so the
+# sweep flags the rot. Seeded 2026-07-11 from a full calibration run over the
+# living-doc set (every entry below was an observed, verified hit).
+
+# --- secrets / local-config with tracked twins --------------------------
+# gitignored (.gitignore line 2); tracked twin cabinet/.env.example; docs
+# reference it as the secrets destination the wizard writes.
+cabinet/.env
+# created by hand from the TRACKED .claude/project-config.json.template
+# (cabinet-extensions.md documents the cp step; install-extensions.sh reads it).
+.claude/project-config.json
+
+# --- instance layer: hatch/provision-created config ---------------------
+# All written by cabinet-init / assemble-config / activate-project at hatch
+# time on a deployed instance; absent at HEAD by design. Enumerated (not
+# instance/config/*) because instance/config ALSO holds tracked files
+# (platform.yml, sources.yml) whose death the sweep must keep catching.
+instance/config/product.yml
+instance/config/extensions.yml
+instance/config/extra-mcps.json
+instance/config/roster.yml
+instance/config/active-project.txt
+instance/config/posture.yml
+instance/config/standing-grants.yml
+instance/config/cabinet-init.answers.yml
+instance/config/calendar.yml
+instance/config/outcomes-proposed.yml
+# instance agent overlays — MOSTLY hatch/preset-created, but NOT all
+# untracked: instance/agents/cos.md and instance/agents/cos/mcp.json ARE
+# tracked at HEAD (git ls-tree). Enumerated (not instance/agents/*) because
+# allowlist globs match via bash [[ == ]] where * crosses '/', so a blanket
+# entry would waive a future dead reference to those tracked files.
+# Observed hit: cabinet/docs/cabinet-extensions.md example overlay.
+instance/agents/cto.md
+# runtime memory artifacts (demo-receipt.md is written by the hatch demo).
+# NOTE: * crosses '/' here too, and tracked .gitkeep files exist under
+# instance/memory/tier2/** — accepted: .gitkeep deaths are not a doc-rot
+# class this sweep needs to catch, and runtime memory paths are open-ended.
+instance/memory/*
+
+# --- shared/interfaces runtime ledgers ----------------------------------
+# Enumerated (not shared/interfaces/*) because tracked files live there too
+# (captain-vetoes.yml, deployment-status.md, ...) and must stay swept.
+# Captain-law ledgers: gitignored (shared/interfaces/**/*.md), append-only
+# via cabinet/scripts/append-interface.sh. Only the two with observed
+# path-shaped doc references are listed; captain-patterns.md appears in
+# living docs only as a bare filename (never extracted), so per the RULE
+# above it earns no entry until a real reference appears.
+shared/interfaces/captain-decisions.md
+shared/interfaces/captain-intents.md
+# runtime interface doc, same gitignore family.
+shared/interfaces/tech-radar.md
+# root-apply watch ledger — born at the first Captain-armed apply
+# (germline-lock.sh lists it as a lock target that may not exist yet).
+shared/interfaces/gate-apply-watch.jsonl
+# world census daemon output (cabinet-doctor check 9 reads it at runtime).
+shared/interfaces/world-chronicle.jsonl
+# dated world chronicle files (docs cite the chronicle-YYYY-MM-DD.jsonl shape).
+shared/interfaces/world/*
+
+# --- other runtime-created ----------------------------------------------
+# written by the very runbook step that references it
+# (cabinet/docs/mac-mini-setup.md CUA driver pin: mkdir -p + echo > it).
+cabinet/config/cua-driver-version.txt
+# Next.js build output of the dashboard (docs/runbooks/world-qa-verify.md
+# tells the operator to rm it) — never tracked.
+cabinet/dashboard/.next
