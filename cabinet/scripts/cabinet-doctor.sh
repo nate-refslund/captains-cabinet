@@ -81,6 +81,26 @@ waived() { echo "WAIVED $1"; N_WAIVED=$((N_WAIVED+1)); }
 skip()   { echo "SKIP   $1"; N_SKIP=$((N_SKIP+1)); }
 dead()   { echo "DEAD   $1"; DEAD+=("$1"); }
 
+# ---- sleep-aware wake grace -------------------------------------------------
+# Log-mtime and redis-TTL staleness windows keep counting through macOS sleep,
+# so the first post-wake run called provably-live services DEAD (false DEAD
+# n=8 every post-sleep morning; world-chronicle declared dead while its PID
+# wrote records 1s later — 2026-07-11 recon). Inside WAKE_GRACE_S of the last
+# wake, STALENESS-class verdicts downgrade to WARN; loaded/parse/path checks
+# are unaffected. Fresh-hatch acceptance runs are unaffected too: their logs
+# are fresh, so they take the OK path, not this one.
+WAKE_GRACE_S="${CABINET_DOCTOR_WAKE_GRACE_S:-1800}"
+SECS_SINCE_WAKE="$(sysctl -n kern.waketime 2>/dev/null | awk -v now="$(date +%s)" \
+  '{ for (i=1; i<=NF; i++) if ($i == "sec") { v=$(i+2); gsub(/[^0-9]/, "", v); if (v != "") print now - v; exit } }')"
+case "$SECS_SINCE_WAKE" in ''|*[!0-9]*) SECS_SINCE_WAKE=999999 ;; esac
+stale_verdict() { # staleness-class finding: DEAD normally, WARN in wake grace
+  if [ "$SECS_SINCE_WAKE" -lt "$WAKE_GRACE_S" ]; then
+    warn "$1 (post-wake grace: woke ${SECS_SINCE_WAKE}s ago < ${WAKE_GRACE_S}s)"
+  else
+    dead "$1"
+  fi
+}
+
 # ---- known Captain-gated waivers (cite the pending amendment) --------------
 # scope grant `cabinet`: universally granted but registered in no config layer
 # — filed as finding #3b in
@@ -177,7 +197,7 @@ while IFS=$'\t' read -r name label kind sched age installed; do
     if [ "$age" = "-" ]; then
       dead "service $name — no log file found (installed plist=$installed; StandardOut/ErrorPath missing or never written)"
     elif [ "$age" -gt "$window" ]; then
-      dead "service $name — log stale ${age}s > window ${window}s"
+      stale_verdict "service $name — log stale ${age}s > window ${window}s"
     else
       ok "service $name — loaded, log fresh (${age}s <= ${window}s)"
     fi
@@ -448,7 +468,7 @@ case "$WORLD_STALE" in
   NOROW)    skip "world-chronicle — no world-census manifest row" ;;
   DISABLED) skip "world-chronicle — world-census row disabled (parked)" ;;
   MISSING)  dead "world-chronicle — world-census enabled but no keyframe ever landed (replay fog accruing)" ;;
-  STALE*)   dead "world-chronicle — ${WORLD_STALE#STALE } — census writer dead, replay fog accruing (E0a)" ;;
+  STALE*)   stale_verdict "world-chronicle — ${WORLD_STALE#STALE } — census writer dead, replay fog accruing (E0a)" ;;
   *)        warn "world-chronicle — probe output unparseable: $WORLD_STALE" ;;
 esac
 
@@ -461,7 +481,7 @@ elif grep -qE '^  - name: world-chronicle$' cabinet/services.yml 2>/dev/null; th
   if [ -n "$WCHB" ] && [ "$WCHB" != "(nil)" ]; then
     ok "world-chronicle-daemon — heartbeat live ($WCHB)"
   else
-    dead "world-chronicle-daemon — row enabled but cabinet:world:chronicle:heartbeat absent (daemon dead; E0b)"
+    stale_verdict "world-chronicle-daemon — row enabled but cabinet:world:chronicle:heartbeat absent (daemon dead; E0b — key is SET EX 900, so it also expires during host sleep)"
   fi
 else
   skip "world-chronicle-daemon — no manifest row"
