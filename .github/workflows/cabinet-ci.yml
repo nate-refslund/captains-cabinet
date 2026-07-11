@@ -417,8 +417,16 @@ jobs:
           cache-dependency-path: .github/workflows/cabinet-ci.yml
       - name: Install test dependencies
         run: pip install pytest pyyaml jsonschema
+      # Collection census: the fidelity conftest silently collect_ignores 19
+      # flavor-A-coupled modules (288 tests) when the retrodiction lib is
+      # absent — true on every CI runner until plan A2.1 vendors it. This
+      # line makes the collected-count visible per run so collection drift
+      # is measurable, and -rs below names every runtime skip in the counts
+      # (2026-07-11 hardening-loop audit: gap verified bit-exact vs local).
+      - name: Collection census
+        run: python -m pytest framework/ --collect-only -q | tail -2
       - name: Framework test suite
-        run: python -m pytest framework/ -q
+        run: python -m pytest framework/ -q -rs
 
       # Run SEPARATELY from framework/ — cabinet/scripts/*/tests all use the
       # basename `tests`, which collides under one pytest invocation (known
