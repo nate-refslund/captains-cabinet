@@ -22,6 +22,7 @@ import subprocess
 import sys
 import threading
 import time
+import types
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -830,11 +831,164 @@ def run_cost_tests() -> None:
     test_cost_http_transport()
 
 
+# ---------------------------------------------------------------
+# send_message self-delivery target_role validation (C15-P2 hardening)
+# ---------------------------------------------------------------
+
+class _RunSpy:
+    """Stand-in for subprocess.run that records calls and never touches Redis.
+    Mirrors the file's monkeypatch-by-attribute style (see _setup_cost_server_hset)."""
+
+    def __init__(self, stdout: str = "1700000000-0", stderr: str = "") -> None:
+        self.calls: list = []
+        self._stdout = stdout
+        self._stderr = stderr
+
+    def run(self, *args, **kwargs):  # noqa: ANN002, ANN003
+        self.calls.append((args, kwargs))
+        return types.SimpleNamespace(
+            stdout=self._stdout, stderr=self._stderr, returncode=0
+        )
+
+
+def _call_self_delivery(
+    to_role: object, roster=("cos", "polads-ceo"), roster_raises: bool = False
+) -> "tuple[dict, list]":
+    """Drive tool_send_message's self-delivery branch with subprocess.run spied and
+    read_hired_agents patched. Returns (result, list_of_redis_run_calls). Omit to_role
+    (pass the sentinel _MISSING) to exercise the default. Restores both patches."""
+    sys.path.insert(0, str(SERVER.parent))
+    import server as srv
+
+    spy = _RunSpy()
+    orig_subprocess = srv.subprocess
+    orig_roster = srv.read_hired_agents
+
+    def fake_roster() -> list:
+        if roster_raises:
+            raise RuntimeError("mcp-scope.yml unreadable")
+        return list(roster)
+
+    # Replace only server's view of subprocess (a namespace exposing run + the
+    # TimeoutExpired the except clause references) — no global module mutation.
+    srv.subprocess = types.SimpleNamespace(
+        run=spy.run, TimeoutExpired=subprocess.TimeoutExpired
+    )
+    srv.read_hired_agents = fake_roster
+    try:
+        params = {
+            "to_cabinet": srv.this_cabinet_id(),  # == self → self-delivery branch
+            "from_agent": "peer-agent",
+            "content": "hello from a peer",
+        }
+        if to_role is not _MISSING:
+            params["to_role"] = to_role
+        result = srv.tool_send_message(params)
+    finally:
+        srv.subprocess = orig_subprocess
+        srv.read_hired_agents = orig_roster
+    return result, spy.calls
+
+
+_MISSING = object()
+
+
+def test_self_delivery_rejects_path_traversal_target() -> None:
+    """to_role='../evil' fails _valid_slug → refused, NO XADD issued."""
+    result, calls = _call_self_delivery("../evil")
+    if result.get("status") == "refused" and result.get("reason") == "invalid_target_role":
+        ok("self-delivery: '../evil' target refused (invalid_target_role)")
+    else:
+        fail("self-delivery: '../evil' refused", f"got {result}")
+    assert calls == [], f"redis XADD must not run for rejected target; got {calls}"
+    ok("self-delivery: '../evil' → no redis XADD")
+
+
+def test_self_delivery_rejects_unknown_officer() -> None:
+    """to_role='nonexistent-officer' is a valid slug but not in roster → refused, NO XADD."""
+    result, calls = _call_self_delivery("nonexistent-officer", roster=("cos", "polads-ceo"))
+    if result.get("status") == "refused" and result.get("reason") == "unknown_target_role":
+        ok("self-delivery: unknown officer refused (unknown_target_role)")
+    else:
+        fail("self-delivery: unknown officer refused", f"got {result}")
+    assert calls == [], f"redis XADD must not run for unknown officer; got {calls}"
+    ok("self-delivery: unknown officer → no redis XADD")
+
+
+def test_self_delivery_allows_cos() -> None:
+    """to_role='cos' (documented default coordinator) proceeds → XADD to triggers:cos."""
+    result, calls = _call_self_delivery("cos")
+    if result.get("status") == "delivered" and result.get("to_role") == "cos":
+        ok("self-delivery: 'cos' target delivered")
+    else:
+        fail("self-delivery: 'cos' delivered", f"got {result}")
+    assert len(calls) == 1, f"expected exactly one redis XADD; got {calls}"
+    argv = calls[0][0][0]
+    assert "cabinet:triggers:cos" in argv, f"XADD must target triggers:cos; got {argv}"
+    ok("self-delivery: 'cos' → XADD cabinet:triggers:cos")
+
+
+def test_self_delivery_allows_rostered_officer() -> None:
+    """A real rostered officer proceeds → XADD to its own trigger stream."""
+    result, calls = _call_self_delivery("polads-ceo", roster=("cos", "polads-ceo"))
+    if result.get("status") == "delivered" and result.get("to_role") == "polads-ceo":
+        ok("self-delivery: rostered officer delivered")
+    else:
+        fail("self-delivery: rostered officer delivered", f"got {result}")
+    assert len(calls) == 1, f"expected exactly one redis XADD; got {calls}"
+    argv = calls[0][0][0]
+    assert "cabinet:triggers:polads-ceo" in argv, f"XADD must target triggers:polads-ceo; got {argv}"
+    ok("self-delivery: rostered officer → XADD cabinet:triggers:polads-ceo")
+
+
+def test_self_delivery_defaults_to_cos() -> None:
+    """Missing to_role defaults to 'cos' and proceeds (legitimate relay unchanged)."""
+    result, calls = _call_self_delivery(_MISSING)
+    if result.get("status") == "delivered" and result.get("to_role") == "cos":
+        ok("self-delivery: missing to_role → defaults to cos, delivered")
+    else:
+        fail("self-delivery: default to cos", f"got {result}")
+    assert len(calls) == 1, f"expected exactly one redis XADD; got {calls}"
+    argv = calls[0][0][0]
+    assert "cabinet:triggers:cos" in argv, f"default XADD must target triggers:cos; got {argv}"
+    ok("self-delivery: default → XADD cabinet:triggers:cos")
+
+
+def test_self_delivery_roster_failure_falls_back_to_slug_not_open() -> None:
+    """read_hired_agents raising degrades to slug-only, never fail-open to arbitrary:
+    a valid-slug non-rostered target now PROCEEDS, but '../evil' is STILL rejected."""
+    # (a) valid slug proceeds under slug-only fallback (roster unavailable)
+    result, calls = _call_self_delivery("some-officer", roster_raises=True)
+    if result.get("status") == "delivered" and result.get("to_role") == "some-officer":
+        ok("self-delivery: roster-fail → valid slug proceeds (slug-only fallback)")
+    else:
+        fail("self-delivery: roster-fail slug-only proceed", f"got {result}")
+    assert len(calls) == 1, f"valid slug should still XADD under fallback; got {calls}"
+    # (b) NOT fail-open: a malformed target is still rejected even when roster errors
+    result2, calls2 = _call_self_delivery("../evil", roster_raises=True)
+    if result2.get("status") == "refused" and result2.get("reason") == "invalid_target_role":
+        ok("self-delivery: roster-fail → '../evil' still refused (not fail-open)")
+    else:
+        fail("self-delivery: roster-fail not fail-open", f"got {result2}")
+    assert calls2 == [], f"malformed target must not XADD even on roster failure; got {calls2}"
+
+
+def run_self_delivery_tests() -> None:
+    print("\n-- send_message self-delivery target_role validation (C15-P2) --")
+    test_self_delivery_rejects_path_traversal_target()
+    test_self_delivery_rejects_unknown_officer()
+    test_self_delivery_allows_cos()
+    test_self_delivery_allows_rostered_officer()
+    test_self_delivery_defaults_to_cos()
+    test_self_delivery_roster_failure_falls_back_to_slug_not_open()
+
+
 if __name__ == "__main__":
     run_stdio_tests()
     run_http_tests()
     run_unit_tests()
     run_cost_tests()
+    run_self_delivery_tests()
 
     print(f"\n{'='*50}")
     print(f"Results: {PASS} passed, {FAIL} failed")

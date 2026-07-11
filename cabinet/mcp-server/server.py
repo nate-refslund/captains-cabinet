@@ -459,6 +459,28 @@ def tool_send_message(params: dict) -> dict:
         # (matches "Officer → Officer (Redis push)" pattern in CLAUDE.md). Future
         # extension: honor an explicit `to_role` param when relays carry it.
         target_role = params.get("to_role", "cos")
+        # C15-P2 hardening — bound the target stream to a known officer. target_role
+        # selects cabinet:triggers:<role> (fixed prefix, so NOT redis key-injection),
+        # but an unvalidated value lets any bearer-authed caller inject a trigger into
+        # ANY officer's stream — which that officer XREADGROUPs and acts on (prompt-
+        # injection into the officer nervous system). Require a well-formed slug AND
+        # membership in the hired-agents roster ('cos' always allowed as the documented
+        # default coordinator). Roster-read failure degrades to slug-only (still blocks
+        # '../evil' / malformed keys) and logs — never fail-open to an arbitrary role.
+        # This is input validation only; the deeper relay/peer-consent contract is
+        # unchanged (residual gap tracked for the Captain as a big-rock).
+        if not _valid_slug(target_role):
+            return {"status": "refused", "reason": "invalid_target_role", "to_role": target_role}
+        try:
+            roster = read_hired_agents()
+        except Exception as e:  # noqa: BLE001 — degrade closed to slug-only, never fail-open
+            roster = []
+            sys.stderr.write(
+                f"[cabinet-mcp] send_message roster read failed ({e}); "
+                "target_role validation degraded to slug-only\n"
+            )
+        if roster and target_role != "cos" and target_role not in roster:
+            return {"status": "refused", "reason": "unknown_target_role", "to_role": target_role}
         # A6 report-only probe — beside, never around, the XADD (fail-open).
         _envelope_report(
             "server.send_message.self_delivery",
@@ -599,7 +621,10 @@ def tool_request_handoff(params: dict) -> dict:
 # ---------------------------------------------------------------
 
 # Slug validation: lowercase alphanumeric + hyphen, starting with alnum, max 32 chars.
-_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
+# \Z not $ — in Python $ also matches just before a trailing newline, so "cos\n"
+# would pass and (in roster-degraded mode) mint a junk cabinet:triggers: key
+# (recurring class: same trailing-newline smuggle fixed in the A6 ULID regex).
+_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}\Z")
 _MAX_DAYS = 90
 
 # Dimensions tracked per HSET field suffix (stop-hook.sh FW-072 source).
