@@ -406,6 +406,14 @@ jobs:
   framework-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # SPIKE (hardening loop 2026-07-11): redis service closes 23 of 24 runtime
+    # skips; the 5 sovereign tests need the germline hook rc=0 on a fresh empty
+    # redis — unproven on a runner, hence branch-spike before master.
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
         with:
@@ -427,6 +435,8 @@ jobs:
         run: python -m pytest framework/ --collect-only -q | tail -2
       - name: Framework test suite
         run: python -m pytest framework/ -q -rs
+        env:
+          REDIS_HOST: localhost
 
       # Run SEPARATELY from framework/ — cabinet/scripts/*/tests all use the
       # basename `tests`, which collides under one pytest invocation (known
