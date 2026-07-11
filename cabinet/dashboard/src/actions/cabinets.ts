@@ -11,6 +11,7 @@
 import fs from 'fs'
 import path from 'path'
 import yaml from 'js-yaml'
+import { headers } from 'next/headers'
 import { cabinetPath } from '@/lib/cabinet-root'
 import { requireDashboardAuth } from '@/lib/provisioning/guard'
 
@@ -111,7 +112,8 @@ export async function getPresets(): Promise<PresetInfo[]> {
 // ----------------------------------------------------------------
 // Cabinet management actions (thin wrappers over the API routes)
 // These run on the server so we avoid exposing the base URL in client
-// bundles and get proper cookie forwarding automatically.
+// bundles; each call gates on requireDashboardAuth and explicitly forwards
+// the caller's session cookie to the internal API route (see cabinetsPost).
 // ----------------------------------------------------------------
 
 /** Base URL for internal API calls from server actions */
@@ -121,13 +123,20 @@ function apiBase(): string {
 }
 
 async function cabinetsPost(id: string, subpath: string): Promise<{ ok: boolean; message?: string; state?: string }> {
+  // Gate the mutating action itself: middleware never covers server-action
+  // dispatch, so (per the P1 broken-access-control fix) every mutating action
+  // gates on requireDashboardAuth as its first statement.
+  if (!(await requireDashboardAuth())) return { ok: false, message: 'Unauthorized' }
+  // Forward the caller's session cookie on the internal API hop. An outbound
+  // fetch() does NOT inherit the incoming request's cookies, so without this
+  // the route-side requireProvisioningAccess() saw no cookie and denied every
+  // call — even from a legitimately authenticated captain. Mirrors the cookie
+  // forwarding used by the cabinets page server components.
+  const cookieHeader = (await headers()).get('cookie') || ''
   const url = `${apiBase()}/api/cabinets/${id}/${subpath}`
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    // Server actions run in the same process — cookies() is read
-    // by requireProvisioningAccess() on the API side automatically
-    // when both share the same Next.js runtime instance.
+    headers: { 'Content-Type': 'application/json', cookie: cookieHeader },
     cache: 'no-store',
   })
   if (!res.ok) {

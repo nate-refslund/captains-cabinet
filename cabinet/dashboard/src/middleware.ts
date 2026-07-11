@@ -1,5 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+/**
+ * Constant-time comparison of two hex strings. The middleware runs in the Edge
+ * runtime (Web Crypto only — no Node `crypto.timingSafeEqual`), so this is done
+ * by hand: length-guard, then XOR-accumulate over every char so the loop cost
+ * is independent of WHERE the first mismatch is. A plain === would short-circuit
+ * at the first differing hex char and leak, via timing, how much of the HMAC an
+ * attacker has guessed. Length is allowed to leak (same as timingSafeEqual's
+ * equal-length requirement) — the secret bytes are what must stay constant-time.
+ */
+function timingSafeEqualHex(a: string, b: string): boolean {
+  if (a.length !== b.length) return false
+  let mismatch = 0
+  for (let i = 0; i < a.length; i++) {
+    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  }
+  return mismatch === 0
+}
+
 async function verify(
   token: string,
   sig: string,
@@ -17,12 +35,14 @@ async function verify(
   const expected = Array.from(new Uint8Array(signature))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('')
-  return expected === sig
+  return timingSafeEqualHex(expected, sig)
 }
 
 export async function middleware(request: NextRequest) {
-  // Skip auth in mock/dev mode when no password is configured
-  if (process.env.MOCK_DATA === 'true' || (!process.env.DASHBOARD_PASSWORD && process.env.NODE_ENV === 'development')) {
+  // Skip auth in mock/dev mode when no password is configured. MOCK_DATA is a
+  // dev/demo affordance, honoured ONLY outside production so a single env var
+  // can never re-open a production deploy (mirrors guard.ts isNoAuthPosture).
+  if ((process.env.MOCK_DATA === 'true' && process.env.NODE_ENV !== 'production') || (!process.env.DASHBOARD_PASSWORD && process.env.NODE_ENV === 'development')) {
     return NextResponse.next()
   }
 

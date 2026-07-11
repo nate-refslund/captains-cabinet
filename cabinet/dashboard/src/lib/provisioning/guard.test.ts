@@ -79,3 +79,26 @@ describe('no-auth posture — bypasses without consulting a session', () => {
     expect(mockVerify).toHaveBeenCalledOnce()
   })
 })
+
+describe('MOCK_DATA never opens a production deploy (AUTHZ-ADV-2)', () => {
+  // The MOCK_DATA demo/kiosk toggle is a dev-only affordance. A single env var
+  // on a production build must NOT re-open every guarded action — the signed
+  // session must still be enforced.
+  beforeEach(() => {
+    vi.stubEnv('MOCK_DATA', 'true')
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('DASHBOARD_PASSWORD', 'a-real-password')
+  })
+
+  it('MOCK_DATA=true in production still delegates to verifySession (no bypass)', async () => {
+    mockVerify.mockResolvedValue(false)
+    expect(await requireDashboardAuth()).toBe(false)
+    expect(mockVerify).toHaveBeenCalledOnce()
+  })
+
+  it('MOCK_DATA=true in production admits ONLY a valid session', async () => {
+    mockVerify.mockResolvedValue(true)
+    expect(await requireDashboardAuth()).toBe(true)
+    expect(mockVerify).toHaveBeenCalledOnce()
+  })
+})

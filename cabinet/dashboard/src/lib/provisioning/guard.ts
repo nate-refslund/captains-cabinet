@@ -78,15 +78,17 @@ export async function requireProvisioningAccess(): Promise<
  * action dispatch share ONE auth posture — otherwise a demo build would let
  * pages render but return "Unauthorized" from every button.
  *
- * This never opens a production deploy: MOCK_DATA is a deploy-time demo toggle
- * (and when it IS set, middleware already serves every page unauthenticated,
- * so the dashboard is open by that choice regardless of this gate). In a real
- * production deploy MOCK_DATA is unset and DASHBOARD_PASSWORD is set, so this
- * is false and the session check below is enforced.
+ * This NEVER opens a production deploy: MOCK_DATA is a dev/demo affordance, so
+ * it is honoured ONLY when NODE_ENV !== 'production' (mirrored by the
+ * middleware's first check). If MOCK_DATA is somehow set on a production
+ * build, this gate stays false and the signed-session check below is enforced
+ * — a single env var can never re-open a production deploy. The dev
+ * no-password branch is already production-inert (it requires
+ * NODE_ENV === 'development').
  */
 function isNoAuthPosture(): boolean {
   return (
-    process.env.MOCK_DATA === 'true' ||
+    (process.env.MOCK_DATA === 'true' && process.env.NODE_ENV !== 'production') ||
     (!process.env.DASHBOARD_PASSWORD && process.env.NODE_ENV === 'development')
   )
 }

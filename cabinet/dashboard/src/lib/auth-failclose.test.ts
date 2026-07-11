@@ -105,3 +105,48 @@ describe('non-production keeps the changeme dev fallback', () => {
     expect(await verifySession()).toBe(true)
   })
 })
+
+describe('verifySession — constant-time signature compare (AUTHZ-ADV-3)', () => {
+  const REAL = 'a-real-strong-password'
+  beforeEach(() => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('DASHBOARD_PASSWORD', REAL)
+  })
+
+  async function mintSigned(): Promise<string> {
+    let signed = ''
+    mockCookieStore.set.mockImplementation((_n: string, v: string) => {
+      signed = v
+    })
+    await createSession()
+    return signed
+  }
+
+  it('accepts the exact correct signature', async () => {
+    const signed = await mintSigned()
+    mockCookieStore.get.mockReturnValue({ value: signed })
+    expect(await verifySession()).toBe(true)
+  })
+
+  it('rejects a wrong signature of the SAME length (reaches timingSafeEqual, returns false — never throws)', async () => {
+    const signed = await mintSigned()
+    const [token, sig] = signed.split('.')
+    // Flip the first hex char: guarantees a mismatch while keeping equal length,
+    // so the code path reaches crypto.timingSafeEqual (not the length guard).
+    const forged = (sig[0] === '0' ? '1' : '0') + sig.slice(1)
+    expect(forged.length).toBe(sig.length)
+    expect(forged).not.toBe(sig)
+    mockCookieStore.get.mockReturnValue({ value: `${token}.${forged}` })
+    // .resolves pins that it returns false rather than throwing on the compare.
+    await expect(verifySession()).resolves.toBe(false)
+  })
+
+  it('rejects a wrong-LENGTH signature without throwing (length guard before timingSafeEqual)', async () => {
+    const signed = await mintSigned()
+    const [token] = signed.split('.')
+    // 'deadbeef' (8 hex) vs the 64-hex HMAC — unequal Buffer lengths would make
+    // timingSafeEqual throw; the length guard returns false first.
+    mockCookieStore.get.mockReturnValue({ value: `${token}.deadbeef` })
+    await expect(verifySession()).resolves.toBe(false)
+  })
+})

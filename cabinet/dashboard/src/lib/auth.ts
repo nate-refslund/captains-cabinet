@@ -58,7 +58,15 @@ export async function verifySession(): Promise<boolean> {
   if (!cookie) return false
   const [token, sig] = cookie.value.split('.')
   if (!token || !sig) return false
-  return sig === sign(token, secret)
+  // Constant-time compare (mirrors checkPassword). A plain === leaks, via
+  // response timing, how many leading hex chars of the HMAC an attacker
+  // guessed right. Length-guard first so timingSafeEqual never throws on an
+  // attacker-chosen wrong-length signature.
+  const expected = sign(token, secret)
+  const a = Buffer.from(sig)
+  const b = Buffer.from(expected)
+  if (a.length !== b.length) return false
+  return crypto.timingSafeEqual(a, b)
 }
 
 export async function destroySession() {
