@@ -188,7 +188,14 @@ def _held_open(path: Path) -> Optional[bool]:
     if exe is None:
         return None
     try:
-        p = subprocess.run([exe, "-F", "pan", "--", str(path)],
+        # -w suppresses WARNING chatter only (hard errors still reach
+        # stderr -> None path below). Without it, a running Docker service
+        # (e.g. CI redis container) makes lsof warn about unstat-able
+        # overlay/nsfs mounts, flipping every no-holder verdict from False
+        # to indeterminate -> copytruncate instead of unlink (proven on the
+        # 2026-07-11 spike runner: test_apoptosis unlink asserts failed
+        # only with the container present).
+        p = subprocess.run([exe, "-w", "-F", "pan", "--", str(path)],
                            capture_output=True, text=True, timeout=10)
     except Exception:  # noqa: BLE001 — unknown beats wrong; caller truncates
         return None
