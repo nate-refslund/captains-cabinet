@@ -48,7 +48,7 @@ enum Const {
     static let redisPort = "6379"
     /// GUI apps do not inherit the brew PATH; redis-cli lives in /opt/homebrew/bin (spec §4).
     static let sanitizedPath = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-    static let defaultRoot = "/Users/nate/captains-cabinet"
+    static let defaultRoot = NSHomeDirectory() + "/captains-cabinet"
     static let defaultDashboardPort = 3100
     static let redisTimeout: TimeInterval = 2
     static let probeTimeout: TimeInterval = 1

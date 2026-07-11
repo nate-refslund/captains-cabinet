@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """One-time pivot hygiene (2026-07-03): expire the orphaned draft-lane proposals.
 
-The Captain pivoted the Cabinet AWAY from draft-replies (Nate handles replying)
+The Captain pivoted the Cabinet AWAY from draft-replies (the Captain handles replying)
 toward proactive action proposals; the draft-lane presenter is parked. That
 leaves draft proposals that were presented but will now NEVER receive a decision
 dangling 'pending' forever. Post M-2 (ledger-liveness reads unwindowed) the

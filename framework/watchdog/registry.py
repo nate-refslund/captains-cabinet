@@ -16,7 +16,7 @@ Design goals (why it is shaped this way):
     reads a FILE, a Redis key (via redis-cli subprocess), or a launchd/log
     timestamp — the cheapest possible probe, never a Graph/Vercel/LLM call.
     (The in-repo imports are ``framework.env.captain_name`` + ``state_dir`` +
-    ``watchdog_config_path`` — de-nate / source-adapter resolvers: import-light
+    ``watchdog_config_path`` — launcher-agnostic / source-adapter resolvers: import-light
     stdlib at load, any lazy read degrades to a generic default on any failure,
     so the watchdog never dies for them.)
   * EXTENSIBLE BY ADDING A ROW. An expectation is one `Expectation(...)` literal
@@ -224,8 +224,9 @@ def _iter_json_records(text: str) -> list[dict]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Paths/keys the verifies read. Centralized so a path move is one edit and the
-# docs-track-code grep finds them. Resolved launcher-agnostically (de-nate /
-# source-adapter): CABINET_ROOT-anchored repo paths via _cabinet_root();
+# docs-track-code grep finds them. Resolved launcher-agnostically (per the
+# launcher-agnostic amendment / source-adapter): CABINET_ROOT-anchored repo
+# paths via _cabinet_root();
 # HOME-anchored runtime dirs (.cabinet logs / Library/Logs) via Path.home();
 # the brain STATE dir via framework.env.state_dir() (instance config) — never a
 # hardcoded home literal. On the live Mac these resolve byte-identically to the

@@ -85,7 +85,7 @@ except Exception as e:                                    # noqa: BLE001 — any
 
 probe = action_reconcile.make_monday_probe(
     action_exec._monday_post,
-    # Optional: attributing a revert to Nate's own hand upgrades the label to
+    # Optional: attributing a revert to the Captain's own hand upgrades the label to
     # verdict_human. Absent id ⇒ silent reverts stay verdict_judge (still valid).
     nate_user_id=os.environ.get("NATE_MONDAY_USER_ID") or None)
 

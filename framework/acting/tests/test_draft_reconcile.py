@@ -61,7 +61,7 @@ def _sandbox(tmp_path, monkeypatch):
 
 
 def test_unbound_source_is_honest_empty_and_touches_nothing():
-    kv = _store(("aaa111", _rec("sofie")))
+    kv = _store(("aaa111", _rec("alice")))
     res = draft_reconcile.reconcile_queue(source=NullPersonalSource(), kv=kv)
     assert res["status"] == "source-unbound"
     assert res["checked"] == 0 and res["withdrawn"] == 0
@@ -70,9 +70,9 @@ def test_unbound_source_is_honest_empty_and_touches_nothing():
 
 
 def test_captain_outbound_withdraws_the_matching_draft_only():
-    kv = _store(("aaa111", _rec("sofie", person="Sofie")),
-                ("bbb222", _rec("kristoffer")))
-    src = FakeSource(replied={"sofie": True, "kristoffer": None})
+    kv = _store(("aaa111", _rec("alice", person="Alice")),
+                ("bbb222", _rec("bob")))
+    src = FakeSource(replied={"alice": True, "bob": None})
     res = draft_reconcile.reconcile_queue(source=src, kv=kv)
     assert res["status"] == "ok" and res["checked"] == 2
     assert res["withdrawn"] == 1 and res["withdrawn_pids"] == ["aaa111"]
@@ -81,7 +81,7 @@ def test_captain_outbound_withdraws_the_matching_draft_only():
     row = draft_queue.withdrawal_of("aaa111")
     assert row is not None and row["actor"] == "draft-reconcile"
     # Plain reason, names the person (it can be echoed back to the captain).
-    assert "Sofie" in row["reason"] and "replied" in row["reason"]
+    assert "Alice" in row["reason"] and "replied" in row["reason"]
 
 
 def test_resolved_thread_alone_does_not_withdraw_by_default():

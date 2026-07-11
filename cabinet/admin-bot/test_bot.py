@@ -67,7 +67,7 @@ def make_mock_context(captain_user_id: int, args: list = None):
     return mock_context
 
 
-CAPTAIN_ID = 8631324091
+CAPTAIN_ID = 1122334455
 OTHER_USER_ID = 1234567890
 
 
@@ -80,12 +80,12 @@ class TestConfigLoaders(unittest.TestCase):
     def test_load_captain_user_id_from_platform_yml(self):
         """load_captain_user_id must parse captain_telegram_chat_id."""
         import bot as bot_module
-        yml_content = 'captain_telegram_chat_id: "8631324091"\n'
+        yml_content = 'captain_telegram_chat_id: "1122334455"\n'
         with patch("builtins.open", unittest.mock.mock_open(read_data=yml_content)):
             with patch.object(Path, "exists", return_value=True):
                 with patch.object(Path, "read_text", return_value=yml_content):
                     uid = bot_module.load_captain_user_id()
-        self.assertEqual(uid, 8631324091)
+        self.assertEqual(uid, 1122334455)
         self.assertIsInstance(uid, int)
 
     def test_load_bot_token_from_env_file(self):

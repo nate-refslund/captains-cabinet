@@ -530,7 +530,7 @@ class _LCG:
         self.s = h or 1
 
     def ri(self, a: int, b: int) -> int:
-        self.s = (self.s * 1664525 + 1013904223) & 0xFFFFFFFF
+        self.s = (self.s * 1664525 + 1_013_904_223) & 0xFFFFFFFF
         return a + self.s % (b - a + 1)
 
 

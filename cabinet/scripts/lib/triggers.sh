@@ -136,7 +136,7 @@ trigger_wake_officer() {
     # turn this triggers. Paste-safe submit (text, settle, C-m separately, then
     # verify + nudge a second C-m) mirrors officer_loop_arm: a fused trailing
     # C-m is swallowed as a paste and never submits (observed 2026-06-24).
-    local _nudge="🔔 Trigger received — a new officer message is queued on your stream (cabinet:triggers:${target}). Take one tool action now so the post-tool-use hook surfaces it, then process + ACK it per your loop prompt (gather-then-decide; surface to the Chair; never DM Nate)."
+    local _nudge="🔔 Trigger received — a new officer message is queued on your stream (cabinet:triggers:${target}). Take one tool action now so the post-tool-use hook surfaces it, then process + ACK it per your loop prompt (gather-then-decide; surface to the Chair; never DM the Captain)."
     tmux send-keys -t "$session" "$_nudge" 2>/dev/null || exit 0
     sleep 0.6
     tmux send-keys -t "$session" C-m 2>/dev/null
@@ -184,7 +184,7 @@ trigger_send() {
   # memory.sh's `set -a; source cabinet/.env` (NEON_CONNECTION_STRING +
   # others) into the calling officer's session JSONL. The disown drops the
   # job from the parent's job table entirely so no completion notice fires.
-  # set-u-safe root (2026-07-02, CI 28619006556): a `CABINET_ROOT=x . triggers.sh`
+  # set-u-safe root (2026-07-02, CI 2861900…): a `CABINET_ROOT=x . triggers.sh`
   # source prefix unwinds after the source, so this function self-resolves.
   local mem_root="${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
   if [ -f "$mem_root/cabinet/scripts/lib/memory.sh" ]; then

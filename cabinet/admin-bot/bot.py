@@ -100,7 +100,7 @@ def load_captain_user_id() -> int:
         sys.exit(1)
 
     for line in PLATFORM_YML.read_text().splitlines():
-        # Match: captain_telegram_chat_id: "8631324091"
+        # Match: captain_telegram_chat_id: "1122334455"
         m = re.match(r'^\s*captain_telegram_chat_id:\s*["\']?(\d+)["\']?', line)
         if m:
             return int(m.group(1))

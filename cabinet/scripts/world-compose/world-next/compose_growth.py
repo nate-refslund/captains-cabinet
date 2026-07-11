@@ -87,8 +87,8 @@ def _grass_fleck_colors():
 # (sea dashes, swells, mist) must sit in a palette bin — native by the same
 # test the gate runs. Composition-side filter; thresholds untouched.
 import json as _json
-_PALJ = _json.load(open("/Users/nate/captains-cabinet/cabinet/scripts/"
-                        "world-aesthetic/calibration/palette.json"))
+_PALJ = _json.load(open(_Path(__file__).resolve().parents[2]
+                        / "world-aesthetic" / "calibration" / "palette.json"))
 _PBITS = _PALJ["quant_bits"]; _PBINS = set(_PALJ["bins"])
 _PNR = _PALJ.get("neighbor_radius", 1)
 

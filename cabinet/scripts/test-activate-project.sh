@@ -24,7 +24,7 @@ mkdir -p "$ROOT/cabinet" "$ROOT/instance/config/projects"
 ln -s "$REPO_ROOT/cabinet/scripts" "$ROOT/cabinet/scripts"
 cp "$REPO_ROOT/instance/config/projects/_template.yml" "$ROOT/instance/config/projects/_template.yml"
 cat > "$ROOT/instance/config/platform.yml" <<'YAML'
-captain_name: Nate
+captain_name: ExampleCaptain
 captain_timezone: Europe/Copenhagen
 YAML
 git init "$FIXTURE_REPO" >/dev/null

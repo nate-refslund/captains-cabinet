@@ -23,7 +23,7 @@
 # Examples:
 #   sentry.sh issues sentry-step-polads
 #   sentry.sh issues sentry-step-polads "Unexpected token"
-#   sentry.sh event 118570797
+#   sentry.sh event 11857079
 
 set -euo pipefail
 

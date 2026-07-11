@@ -3,7 +3,7 @@
 
 Destination: $CABINET_ROOT/cabinet/scripts/check-brain-health.py (staged 2026-07-06
 at ~/.screenpipe/state/brain-probes/staging/ by the brain-quality Wave F
-drill-contract lane; installed by Nate together with the memory-curator-health
+drill-contract lane; installed by the Captain together with the memory-curator-health
 services.yml row staged alongside).
 
 Reads ~/.screenpipe/state/brain_health.json (written by the screenpipe

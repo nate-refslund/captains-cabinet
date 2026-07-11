@@ -12,9 +12,9 @@
 # Usage:
 #   library-discovery-fetch.sh <project_id> <source_type> <source_arg>
 #
-#   library-discovery-fetch.sh "step-network" "website" "https://stepnetwork.dk"
-#   library-discovery-fetch.sh "politiske-annoncer" "github" "stepnetwork/politiske-annoncer"
-#   library-discovery-fetch.sh "stephie-mcp" "github" "stepnetwork/stephie-mcp"
+#   library-discovery-fetch.sh "example-co" "website" "https://example.com"
+#   library-discovery-fetch.sh "example-product" "github" "exampleco/example-product"
+#   library-discovery-fetch.sh "example-mcp" "github" "exampleco/example-mcp"
 #
 # Output: /tmp/library-discovery/<project_id>/<source_type>.{md,json,raw}
 

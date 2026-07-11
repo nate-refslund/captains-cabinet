@@ -2,7 +2,7 @@
 # chair-preflight.sh — verify the Chair (CoS front-door brain) is launch-ready.
 #
 # READ-ONLY: no mutations, no sends, NO launch. It prints READY + the launch
-# command for Nate to run under supervision. Secrets are read into local vars and
+# command for the Captain to run under supervision. Secrets are read into local vars and
 # NEVER echoed (only the resolved bot username is shown).
 set -uo pipefail
 

@@ -166,7 +166,7 @@ function buildStructuralQr(modules: number, data: string): Uint8Array {
   // Fill non-reserved cells with hash-derived pattern
   let prng = hash
   const nextBit = () => {
-    prng = (prng * 1664525 + 1013904223) | 0
+    prng = (prng * 1664525 + 1_013_904_223) | 0
     return ((prng >>> 16) & 1) as 0 | 1
   }
 

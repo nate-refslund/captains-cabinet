@@ -89,7 +89,7 @@ for n in NAMED:
 #    path/email/secret is a FACT, not a behavior. Collapsing it loses the fact.
 PATTERNS = [
     r"\b\d{8,}\b",                       # long numeric IDs (Monday board/pulse ids)
-    r"\bboard\s*[#:]?\s*\d+",            # "board 5096013693"
+    r"\bboard\s*[#:]?\s*\d+",            # "board 12345"
     r"\bpulse[s]?\s*[#:/]?\s*\d+",       # monday pulse ids
     r"claude-[a-z0-9.\-\[\]]+",          # model ids (claude-opus-4-8[1m], claude-fable-5)
     r"\b(opus|sonnet|haiku|fable|mythos)[ \-]?\d",  # model lineage tokens

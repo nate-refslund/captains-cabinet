@@ -8,7 +8,7 @@
 # when it finishes). It SETs a redis key cabinet:chair:active-thread:<slug> with a
 # TTL, which framework.acting.screenpipe_adapter.chair_holds_thread() reads in
 # find_threads() to DROP the locked thread BEFORE the gate/drafter — neither
-# drafting it nor pinging Nate about it.
+# drafting it nor pinging the Captain about it.
 #
 # The TTL means a crashed/forgetful Chair auto-frees the thread (default 12h);
 # re-running this command refreshes the lock (call it again to extend). It is the

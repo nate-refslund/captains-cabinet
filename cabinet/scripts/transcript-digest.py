@@ -8,7 +8,7 @@ exhaust was write-only — nothing digested it).
 
 WHAT IT READS (all read-only):
   * Officer session JSONLs under the default Claude config home's project
-    dir for this repo (~/.claude/projects/-Users-nate-captains-cabinet by
+    dir for this repo (~/.claude/projects/<slugified-repo-path> by
     default on the hq deployment) AND the isolated cabinet config home's
     projects tree (AUD-1 pilot: ~/Library/Application Support/cabinet/
     claude-config/projects/*) — override via CABINET_TRANSCRIPT_DIRS

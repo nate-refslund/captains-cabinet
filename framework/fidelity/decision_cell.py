@@ -394,7 +394,8 @@ def _clone_identity(case: DecisionCase, brain) -> dict:
     ``brain`` is a ``framework.sources.PersonalSource`` (the bound personal
     source; default ``get_source()``). ``model_patterns()`` is the launcher-
     neutral method that on Flavor-A maps to ``me_signal.nate_model('patterns')``
-    (the brain artifact kept verbatim, DE-NATE §3 — only the METHOD name changed);
+    (the brain artifact kept verbatim, 2026-07-05 launcher-agnostic amendment §3
+    — only the METHOD name changed);
     it is byte-identical to the prior ``BrainAdapter.nate_model_patterns()``."""
     def _v(x):
         return (x or "").strip() or "(unavailable)"

@@ -1,11 +1,11 @@
 #!/bin/bash
 # prepare-account-flow.sh — Chair-driven account signup, up to the credential
 # boundary (sibling of framework/learning/self_proposal.py — both PREPARE +
-# SURFACE for Nate's one-tap; neither self-grants).
+# SURFACE for the Captain's one-tap; neither self-grants).
 #
 # Drives a signup up to the credential/OTP boundary, then surfaces a
-# "credential needed" card to Nate via the front-door intake. The credential
-# entry stays Nate's — the Chair NEVER reads, types, stores, or logs it.
+# "credential needed" card to the Captain via the front-door intake. The credential
+# entry stays the Captain's — the Chair NEVER reads, types, stores, or logs it.
 #
 # HARD LINE (shared/interfaces/captain-patterns.md →
 # autonomy-boundary-accounts-and-self-guards): this script PREPARES + SURFACES
@@ -16,7 +16,7 @@
 # hold `claude-in-chrome` MCP scope, which is NOT granted today. When scope is
 # absent, this script degrades to surfacing the WHOLE signup as a manual step
 # (it never silently no-ops). Granting claude-in-chrome is itself a
-# self-proposal (prepare_mcp_proposal surfaces the scope line; Nate applies it).
+# self-proposal (prepare_mcp_proposal surfaces the scope line; the Captain applies it).
 #
 # Usage:
 #   prepare-account-flow.sh --service <name> [--urgency ping-now|batch]

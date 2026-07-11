@@ -1,6 +1,6 @@
 """voice_charset — captain-voice charset rule (framework-vendored copy).
 
-VENDORED 2026-07-02 (CI 28619006556) from ~/.screenpipe/pipes/_shared/voice_charset.py
+VENDORED 2026-07-02 (CI 2861900…) from ~/.screenpipe/pipes/_shared/voice_charset.py
 so flavor-B / CI installs get the SAME one implementation without the screenpipe
 estate. The _shared copy remains live for the pipes until the A3 re-point turns
 it into a re-export of this file — until then, changes go to BOTH (they are

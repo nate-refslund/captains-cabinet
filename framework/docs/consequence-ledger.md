@@ -60,7 +60,7 @@ ONLY on events emitted under `CABINET_SIM_MODE=1`, never written as `false`. The
 single write chokepoint (`_write_to_log`) enforces that the marker agrees with
 the target dir's `-sim` suffix: a `sim:true` row can land ONLY in a `-sim` event
 dir and a non-sim row NEVER lands there, so simulated consequences can never
-contaminate the live graduation / breaker / cell math Nate's real verdicts feed.
+contaminate the live graduation / breaker / cell math the Captain's real verdicts feed.
 `read_ledger` additionally drops sim rows for live consumers (defense in depth).
 This is what lets ~100 replay simulations run against years of history in
 parallel with — and fully isolated from — the live estate.

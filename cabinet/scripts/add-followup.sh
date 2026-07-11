@@ -25,7 +25,7 @@
 #     --check-from <YYYY-MM-DD> \
 #     --verify "<concrete how-to-check: thread-id / Monday board+status / brain query>" \
 #     --resolved-if "<what counts as done → stay silent>" \
-#     --nudge "<what to tell Nate if still open at check time>" \
+#     --nudge "<what to tell the Captain if still open at check time>" \
 #     [--watch-signal "<thread/source to watch for early-catch>"] \
 #     [--status open]            # default open
 #
@@ -107,7 +107,7 @@ is_iso_date "$CHECK_FROM" || die "invalid --check-from '$CHECK_FROM' (want YYYY-
 [ -n "$VERIFY" ]      || die "missing required field: --verify (the CONCRETE how-to-check)" 2
 verify_is_vague "$VERIFY" && die "--verify is too vague ('$VERIFY') — name a concrete signal: a thread-id, a Monday board+status, or a brain/Outlook query" 2
 [ -n "$RESOLVED_IF" ] || die "missing required field: --resolved-if (what counts as done → stay silent)" 2
-[ -n "$NUDGE" ]       || die "missing required field: --nudge (what to tell Nate if still open)" 2
+[ -n "$NUDGE" ]       || die "missing required field: --nudge (what to tell the Captain if still open)" 2
 
 case "$STATUS" in open|done|replied|snoozed) : ;; *) die "invalid --status '$STATUS' (open|done|replied|snoozed)" 2 ;; esac
 

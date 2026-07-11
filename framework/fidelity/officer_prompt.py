@@ -49,7 +49,7 @@ def build_eval_system(case: Case, officer_role: str) -> str:
 # draft AS THE CAPTAIN'S CLONE — mirroring retrodiction's draft_case: the IDENTITY
 # (voice + nate_model patterns + date-filtered drafting lessons + person
 # frontmatter) is what shapes the draft; the role charter stays as light role
-# context. Assembly order mirrors draft_case's CLONE_PAYLOAD: NATE MODEL
+# context. Assembly order mirrors draft_case's CLONE_PAYLOAD: CAPTAIN MODEL
 # (patterns) -> VOICE -> DRAFTING LESSONS -> COUNTERPARTY.
 #
 # PRIVACY FENCE (paramount). The priors INFORM how the officer writes and

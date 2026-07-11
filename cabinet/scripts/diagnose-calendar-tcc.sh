@@ -10,7 +10,7 @@
 # rm) on ANY exit/interrupt via trap. The unique label means a failed bootout can
 # never collide with the real fleet.
 #
-# Run this in Nate's granted context to reconcile the two in-tension facts
+# Run this in the Captain's granted context to reconcile the two in-tension facts
 # (Terminal-works vs rebuild-invalidates). From a write-only background context it
 # will report writeOnly/denied — expected, not a bug.
 set -uo pipefail

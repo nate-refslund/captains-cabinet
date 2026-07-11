@@ -66,7 +66,7 @@ Degradation table (§8 of the spec):
 | Notifications denied/unavailable | events fall back to a "Last event: …" menu line, silently honest |
 
 Root discovery: bundle self-locate (`<root>/bin/Cabinet Companion.app` ⇒ two
-dirs up) → `CABINET_ROOT` env → `/Users/nate/captains-cabinet`; each candidate
+dirs up) → `CABINET_ROOT` env → `~/captains-cabinet` (home-relative last resort); each candidate
 is validated by `cabinet/scripts/cabinet-doctor.sh` existing.
 
 Dashboard port: `cabinet/.env` is line-scanned for the single anchored

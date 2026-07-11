@@ -71,7 +71,7 @@ for _p in (str(RETRO_PIPE_DIR), str(_SHARED_DIR), str(RETRO_PIPE_DIR.parent)):
     if _p not in sys.path and _exists_unprivileged(Path(_p)):
         sys.path.insert(0, _p)
 
-# Import-safe when the lib is absent (2026-07-02, CI run 28618484301): a clean
+# Import-safe when the lib is absent (2026-07-02, CI run 2861848…): a clean
 # runner / flavor-B Mini has no ~/.screenpipe, and an import-time crash here
 # took 18 test modules down at COLLECTION. Absence now degrades to a stub
 # module whose every attribute raises with guidance on FIRST USE — importers

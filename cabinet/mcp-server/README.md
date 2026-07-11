@@ -7,7 +7,7 @@ Phase 1 CP8 prototype — Cabinet MCP stdio server. One tool: `cabinet:identify(
 ```json
 {
   "cabinet_id": "main",
-  "captain_id": "Nate",
+  "captain_id": "Captain",
   "available_agents": ["cos", "cto", "cpo", "cro", "coo"],
   "server": { "name": "cabinet", "version": "0.1.0" }
 }

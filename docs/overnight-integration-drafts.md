@@ -1,4 +1,4 @@
-# Overnight integration drafts — for morning authorization (Nate)
+# Overnight integration drafts — for morning authorization (the Captain)
 
 Autonomous overnight work parks every change that would touch a GERMLINE file
 here instead of applying it. Nothing below is applied. Review, then apply by

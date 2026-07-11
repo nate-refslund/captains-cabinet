@@ -1,4 +1,4 @@
-# Courses of Action §1 — READY TO PASTE (germline; only Nate applies)
+# Courses of Action §1 — READY TO PASTE (germline; only the Captain applies)
 
 `.claude/rules/courses-of-action.md` is in the `pre-tool-use.sh` germline set
 (line 936 case alternation), so no officer/loop may edit it — the hook blocks

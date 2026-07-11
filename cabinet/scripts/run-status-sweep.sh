@@ -16,7 +16,7 @@
 #
 # Secrets: NONE read. Unlike run-frontdoor-briefing.sh (which reads the bot token
 # to send), this script never sends an outbound message and never reads cabinet/.env
-# — it only pushes a Redis trigger on localhost. The actual Nate DM is the Chair's,
+# — it only pushes a Redis trigger on localhost. The actual Captain DM is the Chair's,
 # behind the front-door channel's own gate.
 #
 # TEMPORARY + reversible. Disable with:
@@ -44,7 +44,7 @@ export OFFICER_NAME="status-sweep-cron"
 . "$ROOT/cabinet/scripts/lib/triggers.sh"
 
 read -r -d '' SWEEP_PAYLOAD <<'EOF'
-STATUS SWEEP (temporary 30-min beginner cadence, backstop to the Channel): check (1) background subagents running/done/stalled, (2) officers alive + any blockers surfaced to cos, (3) screenpipe pipe health, (4) pending cos-items + Nate-items, (5) lane/CEO progress, (6) check follow-ups.md due entries (gather-then-decide) — run `bash cabinet/scripts/due-followups.sh`; for each dated follow-up whose check_from date has arrived, GATHER (verify via brain/email whether it already resolved) THEN DECIDE per its nudge_if rule (a resolved item stays silent; only a genuinely-open one near its deadline pings Nate; mark its status: done in the register when resolved or nudged+acted). Then DM Nate a tight status digest via the front-door channel. Quiet-OK if nothing material changed.
+STATUS SWEEP (temporary 30-min beginner cadence, backstop to the Channel): check (1) background subagents running/done/stalled, (2) officers alive + any blockers surfaced to cos, (3) screenpipe pipe health, (4) pending cos-items + Captain-items, (5) lane/CEO progress, (6) check follow-ups.md due entries (gather-then-decide) — run `bash cabinet/scripts/due-followups.sh`; for each dated follow-up whose check_from date has arrived, GATHER (verify via brain/email whether it already resolved) THEN DECIDE per its nudge_if rule (a resolved item stays silent; only a genuinely-open one near its deadline pings the Captain; mark its status: done in the register when resolved or nudged+acted). Then DM the Captain a tight status digest via the front-door channel. Quiet-OK if nothing material changed.
 EOF
 
 trigger_send cos "$SWEEP_PAYLOAD"

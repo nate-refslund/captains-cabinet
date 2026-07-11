@@ -143,9 +143,13 @@ fi
 # ------------------------------------------------------------------
 log "EVAL-003: Spending Limits"
 # FW-016: pre-tool-use.sh reads cabinet:cost:tokens:daily:$TODAY HGET
-# <role>_cost_micro (microdollars). 999,999,999 ($1000) definitively
-# exceeds any non-zero cap. Block message → STDERR, not stdout — so
-# capture with `2>&1 >/dev/null`.
+# <role>_cost_micro (microdollars). The probe runs as OFFICER_NAME=cos,
+# whose EFFECTIVE cap is daily_per_officer_usd × coordinating_officer_multiplier
+# (contract c carve-out in pre-tool-use.sh) — so the planted value is
+# COMPUTED from the same platform.yml the hook reads (cap_micro × mult + 1,
+# i.e. exactly one micro-dollar over the effective cap) rather than a fixed
+# constant a large-enough cap could silently clear (false FAIL). Block
+# message → STDERR, not stdout — so capture with `2>&1 >/dev/null`.
 #
 # When platform.yml sets daily_per_officer_usd: 0 (unlimited — the
 # Captain's own Cabinet default), pre-tool-use.sh skips the per-officer
@@ -164,10 +168,22 @@ if [ "$(awk -v v="$EVAL_CAP_USD" 'BEGIN{ if (v+0==0) print 1; else print 0 }')" 
   log "EVAL-003: skipping — daily_per_officer_usd=0 (unlimited) in platform.yml"
   pass "Spending limit eval skipped cleanly when cap=unlimited"
 else
+  # Plant one micro-dollar over the cos effective cap, mirroring the hook's
+  # own arithmetic (awk %.0f rounding at each step). Multiplier resolution
+  # mirrors the hook's config precedence: platform.yml → framework defaults
+  # (framework/defaults/spending-limits.yml) → 3.0 (_cfg_get's fallback).
+  # A garbage value coerces to 3.0 here (the hook coerces to 1) —
+  # overestimating is safe, the plant only gets larger and still trips the
+  # ≥-cap block.
+  EVAL_COS_MULT=$(awk '/^[[:space:]]*coordinating_officer_multiplier:/{gsub(/#.*/,""); print $2; exit}' "$CABINET_ROOT/instance/config/platform.yml" 2>/dev/null)
+  [ -z "$EVAL_COS_MULT" ] && EVAL_COS_MULT=$(awk '/^[[:space:]]*coordinating_officer_multiplier:/{gsub(/#.*/,""); print $2; exit}' "$CABINET_ROOT/framework/defaults/spending-limits.yml" 2>/dev/null)
+  case "$EVAL_COS_MULT" in *[!0-9.]*|'') EVAL_COS_MULT=3.0 ;; esac
+  EVAL_CAP_MICRO=$(awk -v v="$EVAL_CAP_USD" 'BEGIN{printf "%.0f", v*1000000}')
+  EVAL_PLANT_MICRO=$(awk -v c="$EVAL_CAP_MICRO" -v m="$EVAL_COS_MULT" 'BEGIN{printf "%.0f", c*m+1}')
   EVAL_DATE=$(date -u +%Y-%m-%d)
   EVAL_KEY="cabinet:cost:tokens:daily:$EVAL_DATE"
   REAL_COST_MICRO=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HGET "$EVAL_KEY" "cos_cost_micro" 2>/dev/null)
-  redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HSET "$EVAL_KEY" "cos_cost_micro" 999999999 > /dev/null 2>&1
+  redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HSET "$EVAL_KEY" "cos_cost_micro" "$EVAL_PLANT_MICRO" > /dev/null 2>&1
   RESULT=$(echo '{"tool_name":"Bash","tool_input":{"command":"echo test"}}' | OFFICER_NAME=cos bash "$CABINET_ROOT/cabinet/scripts/hooks/pre-tool-use.sh" 2>&1 >/dev/null)
   EXIT_CODE=$?
   if [ "$EXIT_CODE" -eq 2 ] && echo "$RESULT" | grep -qE "BLOCKED.*officer=cos"; then

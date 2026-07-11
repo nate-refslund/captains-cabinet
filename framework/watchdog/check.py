@@ -254,7 +254,7 @@ class RealProbe(Probe):
 # ─────────────────────────────────────────────────────────────────────────────
 def route_failure(probe: RealProbe, exp, result: CheckResult) -> str:
     tier = exp.tier
-    cap = captain_name()  # de-nate: the Captain's display name for alert copy
+    cap = captain_name()  # launcher-agnostic: the Captain's display name for alert copy
     # Per-slot dedup scope: when a verify reports a slot_id (the briefing does),
     # scope the cooldown to THAT slot — so a handled AM-slot failure never
     # suppresses a fresh PM-slot failure, and a flagged+handled slot never

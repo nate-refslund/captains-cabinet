@@ -91,14 +91,14 @@ def crop_w(im, w_px):
 
 # ---------------------------------------------------------------- determinism
 def fnv1a(s):
-    h = 2166136261
+    h = 0x811C9DC5
     for ch in s:
         h ^= ord(ch); h = (h * 16777619) & 0xFFFFFFFF
     return h
 class LCG:
     def __init__(self, seed): self.s = fnv1a(seed) or 1
     def n(self):
-        self.s = (self.s * 1664525 + 1013904223) & 0xFFFFFFFF
+        self.s = (self.s * 1664525 + 1_013_904_223) & 0xFFFFFFFF
         return self.s
     def rf(self): return self.n() / 0xFFFFFFFF
     def ri(self, a, b): return a + self.n() % (b - a + 1)
