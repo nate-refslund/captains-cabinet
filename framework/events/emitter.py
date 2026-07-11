@@ -89,6 +89,7 @@ VALID_EVENT_TYPES = frozenset({
     "fidelity_case_evaluated",      # blind officer decision captured for a held-out case
     "fidelity_case_leak_detected",  # anti-leakage breach → case hard-failed, never scored
     "fidelity_case_scored",         # [T3] scored case: intent axis + intent-mapped review.verdict
+    "fidelity_case_labeled",        # [Design C v0] Captain verdict_human label on a scored case (judge-calibration pairing)
     # Graduation visibility (lane instrument, 2026-07-05): a per-cell autonomy
     # STATE TRANSITION (unmeasured/propose_only/eligible/graduated/demote)
     # observed by the sweep cabinet/scripts/emit-graduation-transitions.py.
@@ -379,6 +380,7 @@ _AGGREGATE_MAP: dict[str, tuple[str, str]] = {
     "fidelity_case_evaluated":     ("fidelity",    "case_id"),
     "fidelity_case_leak_detected": ("fidelity",    "case_id"),
     "fidelity_case_scored":        ("fidelity",    "case_id"),
+    "fidelity_case_labeled":       ("fidelity",    "case_id"),
     "role_evolved":               ("role",        "role_slug"),
     "skill_promoted":             ("skill",       "skill_slug"),
     "self_improvement_loop_started":   ("self_improvement", "loop_id"),

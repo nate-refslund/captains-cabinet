@@ -10,8 +10,14 @@ top of it.
   (validates hand-rolled — NO jsonschema dep — then appends to
   consequence-events-*.jsonl). The graduation read path.
 - Org-event ledger: framework.events.emitter.emit with the snake_case event
-  type (fidelity_case_evaluated / fidelity_case_leak_detected) and the
-  consequence dict as payload. The org-runtime audit trail.
+  type (fidelity_case_evaluated / fidelity_case_leak_detected /
+  fidelity_case_scored / fidelity_case_labeled) and the consequence dict as
+  payload. The org-runtime audit trail.
+
+[Design C v0, 2026-07-11] build_case_labeled/emit_case_labeled is the HUMAN-
+side writer of the judge-calibration pair stream: Captain verdicts on F1-
+scored case ids, emitted on the dedicated LABEL_LANE so their promotion fuel
+is isolated (see the constant), never in sim.
 """
 
 from __future__ import annotations
@@ -21,6 +27,7 @@ from typing import Any
 
 from framework.events.emitter import emit as _emit_org_event
 from framework.fidelity.consequence import (
+    _sim_mode,
     emit_consequence,
     validate_consequence,
 )
@@ -29,6 +36,21 @@ from framework.fidelity.types import OfficerDecision
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+# [Design C v0, 2026-07-11 — judge-calibration-pairing-proposal §3] The
+# DEDICATED lane every Captain label row carries. Hard-coded, never a
+# parameter: compute_ratios buckets promotion fuel by (actor, lane,
+# action_type), so a label row's `confirmed` accrues ONLY to this
+# judge-calibration cell — a lane no acting lane consults (mitigation 1,
+# promotion-fuel isolation). A caller-supplied lane (e.g. "send-1to1-reply")
+# would leak human-confirm fuel into a live acting cell.
+LABEL_LANE = "judge-calibration"
+LABEL_ACTION = "fidelity-case-labeled"
+
+# A label is a rendered human judgment — 'unknown' is not a label (skip = no
+# row at all), mirroring collect_pairs' _SCOREABLE set exactly.
+_LABEL_VERDICTS = ("confirmed", "wrong")
 
 
 # [T3] Map the F4 scorer's INTENT verdict to a consequence review.verdict so an
@@ -159,6 +181,55 @@ def build_case_scored(case_score: Any, officer: str, lane: str,
     return event
 
 
+def build_case_labeled(case_id: str, verdict: str, officer: str,
+                       evidence: str | None = None,
+                       reviewed_at: str | None = None) -> dict[str, Any]:
+    """[Design C v0] Consequence-event for a CAPTAIN LABEL on an F1-scored
+    fidelity case — the missing human-side writer of the judge-calibration
+    flywheel (proposal 2026-07-11 §3: the 0.80-agreement gate could never arm
+    because no code path emitted verdict_human on a case-id subject).
+
+    Mirrors build_case_scored's shape exactly, with the review flipped to the
+    human side: subject = case_id (native pairing key — collect_pairs needs
+    ZERO changes and every already-banked verdict_judge scored row becomes
+    pairable retroactively), review = {verdict, source: "verdict_human"},
+    action = 'fidelity-case-labeled' (distinct from 'fidelity-case-scored',
+    so the judge row is never superseded — both sides of the pair coexist,
+    which is the whole point).
+
+    `officer` is the officer whose decision the Captain judged (same actor
+    convention as binder_wire's acted verdict_human rows: the actor stays the
+    judged officer; review.source is what marks the verdict human).
+
+    lane is HARD-CODED to LABEL_LANE — see the constant's comment (promotion-
+    fuel isolation, mitigation 1). NEVER sim: this builder never stamps the
+    sim marker, and emit_case_labeled refuses to run in a sim process.
+
+    Raises ValueError on a non-label verdict ('unknown' etc.) — a skip is the
+    absence of a row, never a row.
+    """
+    if verdict not in _LABEL_VERDICTS:
+        raise ValueError(
+            f"label verdict must be one of {list(_LABEL_VERDICTS)}; "
+            f"got {verdict!r} (skip = emit nothing)")
+    review: dict[str, Any] = {"verdict": verdict, "source": "verdict_human"}
+    if reviewed_at:
+        review["reviewed_at"] = reviewed_at
+    return {
+        "ts": _now(),
+        "actor": {"kind": "officer", "id": officer},
+        "lane": LABEL_LANE,
+        "action": LABEL_ACTION,
+        "subject": case_id,
+        "refs": [case_id],
+        "proposal": {"required": False},
+        "outcome": {"status": "ok",
+                    "evidence": evidence
+                    or "captain label via label-fidelity-cases CLI"},
+        "review": review,
+    }
+
+
 def _emit_both(consequence_event: dict[str, Any], officer: str,
                org_event_type: str) -> dict[str, Any]:
     """Append to the consequence ledger (validates) + mirror to the org-event
@@ -212,3 +283,23 @@ def emit_case_scored(case_score: Any, officer: str, lane: str,
     ev = build_case_scored(case_score, officer, lane,
                            action_type=action_type, endorsement=endorsement)
     return _emit_both(ev, officer, "fidelity_case_scored")
+
+
+def emit_case_labeled(case_id: str, verdict: str, officer: str,
+                      evidence: str | None = None,
+                      reviewed_at: str | None = None) -> dict[str, Any]:
+    """[Design C v0] Build + dual-emit a fidelity-case-labeled event (the
+    Captain's verdict_human label on an F1-scored case).
+
+    SIM REFUSAL (NEVER sim, by construction): a replay-simulation process must
+    never mint human calibration labels — SIE-7 already drops sim rows at the
+    collect_pairs read, but a label is a claim about what the CAPTAIN judged,
+    so a sim emit is refused loudly here rather than quarantined silently."""
+    if _sim_mode():
+        raise RuntimeError(
+            "emit_case_labeled refused: CABINET_SIM_MODE is set — human "
+            "calibration labels must never be minted by a sim process "
+            "(SIE-7 posture; run the labeling CLI in a live shell)")
+    ev = build_case_labeled(case_id, verdict, officer,
+                            evidence=evidence, reviewed_at=reviewed_at)
+    return _emit_both(ev, officer, "fidelity_case_labeled")
