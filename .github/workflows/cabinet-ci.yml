@@ -406,6 +406,14 @@ jobs:
   framework-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # SPIKE (hardening loop 2026-07-11): redis service closes 23 of 24 runtime
+    # skips; the 5 sovereign tests need the germline hook rc=0 on a fresh empty
+    # redis — unproven on a runner, hence branch-spike before master.
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
         with:
@@ -417,6 +425,11 @@ jobs:
           cache-dependency-path: .github/workflows/cabinet-ci.yml
       - name: Install test dependencies
         run: pip install pytest pyyaml jsonschema
+      # redis-tools: the redis-gated test guards probe via the redis-cli
+      # BINARY (test_intake.py:32) — the service container alone leaves
+      # them skipping (proven: spike run 29148145402 still skipped 23).
+      - name: Install redis-cli
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq redis-tools
       # Collection census: the fidelity conftest silently collect_ignores 19
       # flavor-A-coupled modules (288 tests) when the retrodiction lib is
       # absent — true on every CI runner until plan A2.1 vendors it. This
@@ -427,6 +440,8 @@ jobs:
         run: python -m pytest framework/ --collect-only -q | tail -2
       - name: Framework test suite
         run: python -m pytest framework/ -q -rs
+        env:
+          REDIS_HOST: localhost
 
       # Run SEPARATELY from framework/ — cabinet/scripts/*/tests all use the
       # basename `tests`, which collides under one pytest invocation (known
