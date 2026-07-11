@@ -176,6 +176,7 @@ cabinet/launchd/generated/
 
 # runtime artifacts (written by falsifier-daily / act-first flag) — never commit
 shared/interfaces/falsifier-series.jsonl
+shared/interfaces/envelope-violations.jsonl
 instance/config/act-first-enabled
 
 # Learning-loop + eval runtime series (written by running lanes/daemons —
