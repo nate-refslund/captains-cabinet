@@ -145,6 +145,11 @@ reports exit code + these paths, nothing else.
   verify-no-LAN-consumer check). Until that ruling lands, treat the bind as **AMBER:
   all-interfaces by default** — stated here so the status is never silent. This shell
   asserts nothing on the variable name and needs no change when the flip happens.
+- **Update 2026-07-12 — ruling landed:** the CC-LOOP / OC-LOOPBACK call is ruled and
+  `start-dashboard.sh` now defaults to **loopback (`127.0.0.1`)**; remote reach is
+  `tailscale serve` (the blessed path) or the `CABINET_DASHBOARD_HOST=0.0.0.0` opt-out
+  in `cabinet/.env`. The AMBER treat-as-all-interfaces guidance above is resolved;
+  as predicted, this shell needed no change.
 
 ## Known limits (honest)
 - The payload is an egg export with **no `.git`** — the post-hatch `git pull` update

@@ -5,13 +5,14 @@
 # http://127.0.0.1:3100/display (read-only, unauthenticated by design).
 #
 # Port/bind config (Wave D app-feel, D4): CABINET_DASHBOARD_PORT (default
-# 3100) and CABINET_DASHBOARD_HOST (default 0.0.0.0 — CURRENT behavior kept:
-# the live box is reached over Tailscale at http://<host>:<port>). Explicit
-# env (launchd plist) wins over cabinet/.env, which wins over the default —
-# captured BEFORE the .env sourcing below so `set -a` cannot flip precedence.
-# Loopback-only opt-in: CABINET_DASHBOARD_HOST=127.0.0.1. Flipping the
-# DEFAULT to loopback is captain-gated (CC-LOOP / OC-LOOPBACK ruling) — do
-# not change it here without that ruling.
+# 3100) and CABINET_DASHBOARD_HOST (default 127.0.0.1 — loopback-only; the
+# CC-LOOP / OC-LOOPBACK ruling landed 2026-07-12 and flipped the previous
+# 0.0.0.0 default). Explicit env (launchd plist) wins over cabinet/.env,
+# which wins over the default — captured BEFORE the .env sourcing below so
+# `set -a` cannot flip precedence. Remote reach: `tailscale serve` is the
+# blessed path; tailnet/LAN opt-out = CABINET_DASHBOARD_HOST=0.0.0.0 in
+# cabinet/.env (a live box that needs plain tailnet http reach sets it
+# BEFORE this flip deploys — see cabinet/docs/mac-mini-deploy-runbook.md).
 #
 # Wrapped by the com.cabinet.dashboard LaunchAgent (KeepAlive). Sources
 # cabinet/.env so the dashboard sees NEON_CONNECTION_STRING, DASHBOARD_PASSWORD,
@@ -47,10 +48,11 @@ fi
 
 # Precedence: explicit env (launchd plist) > cabinet/.env > default (D4a fix
 # — previously PORT was resolved before the sourcing, so .env was ignored).
-# HOST default 0.0.0.0 = the current all-interfaces bind (Tailscale reach);
-# the default flip to loopback is captain-gated — see the header.
+# HOST default 127.0.0.1 = loopback-only (CC-LOOP ruling 2026-07-12); remote
+# reach via `tailscale serve` or the CABINET_DASHBOARD_HOST=0.0.0.0 opt-out —
+# see the header.
 PORT="${ENV_DASH_PORT:-${CABINET_DASHBOARD_PORT:-3100}}"
-HOST="${ENV_DASH_HOST:-${CABINET_DASHBOARD_HOST:-0.0.0.0}}"
+HOST="${ENV_DASH_HOST:-${CABINET_DASHBOARD_HOST:-127.0.0.1}}"
 
 # Mac-native data layer + localhost Redis.
 export CABINET_ROOT

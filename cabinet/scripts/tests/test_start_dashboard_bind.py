@@ -5,13 +5,16 @@ D4a (the shipped fix): CABINET_DASHBOARD_PORT used to be resolved BEFORE the
 ignored; naively moving the resolution below the sourcing would flip
 precedence the other way (.env would override the launchd plist env). The
 fix captures explicit-env values FIRST and composes after the sourcing:
-explicit env (launchd plist) > cabinet/.env > default. Same commit lands the
-CABINET_DASHBOARD_HOST plumbing with the DEFAULT KEPT at 0.0.0.0 (current
-all-interfaces behavior — the live box is reached over Tailscale); flipping
-the default to loopback is captain-gated (CC-LOOP / OC-LOOPBACK).
+explicit env (launchd plist) > cabinet/.env > default. The
+CABINET_DASHBOARD_HOST plumbing shipped with the default KEPT at 0.0.0.0;
+the CC-LOOP / OC-LOOPBACK ruling landed 2026-07-12 and flipped the DEFAULT
+to loopback (127.0.0.1). Remote reach is `tailscale serve` (the blessed
+path) or the documented CABINET_DASHBOARD_HOST=0.0.0.0 opt-out.
 
 Pins: wiring order (capture before sourcing, composition after), the exact
-composition literals incl. the 0.0.0.0 default, the 127.0.0.1 echo origin,
+composition literals incl. the 127.0.0.1 loopback default, the 0.0.0.0
+opt-out through BOTH env legs (explicit env and cabinet/.env), the
+127.0.0.1 echo origin,
 the --hostname plumbing on the exec line, a FUNCTIONAL precedence probe
 (scratch CABINET_ROOT + npm shim — the real script runs end-to-end, no
 server started), and the program-wide dead-name gate: the two retired
@@ -36,7 +39,7 @@ _SCRIPT = _SCRIPTS_DIR / "start-dashboard.sh"
 _CAPTURE_PORT = 'ENV_DASH_PORT="${CABINET_DASHBOARD_PORT:-}"'
 _CAPTURE_HOST = 'ENV_DASH_HOST="${CABINET_DASHBOARD_HOST:-}"'
 _COMPOSE_PORT = 'PORT="${ENV_DASH_PORT:-${CABINET_DASHBOARD_PORT:-3100}}"'
-_COMPOSE_HOST = 'HOST="${ENV_DASH_HOST:-${CABINET_DASHBOARD_HOST:-0.0.0.0}}"'
+_COMPOSE_HOST = 'HOST="${ENV_DASH_HOST:-${CABINET_DASHBOARD_HOST:-127.0.0.1}}"'
 _EXEC_LINE = 'exec npm start -- --port "$PORT" --hostname "$HOST"'
 
 # Built from fragments so the dead-name gate (and the program-wide
@@ -72,15 +75,17 @@ def test_capture_before_sourcing_and_composition_after():
         )
 
 
-def test_default_bind_stays_all_interfaces_and_exec_carries_hostname():
-    """Standing constraint (OC-LOOPBACK pending): the bind DEFAULT stays
-    0.0.0.0 — plumbing ships, the flip is captain-gated. The composition
-    literal above pins the default; the exec line pins the mechanism."""
+def test_default_bind_is_loopback_and_exec_carries_hostname():
+    """THE contract since the CC-LOOP / OC-LOOPBACK ruling (2026-07-12): the
+    bind DEFAULT is loopback 127.0.0.1; 0.0.0.0 is the documented opt-out
+    (tailnet/LAN reach — `tailscale serve` is the blessed remote path). The
+    composition literal above pins the default; the exec line pins the
+    mechanism."""
     text = _SCRIPT.read_text(encoding="utf-8")
-    assert _COMPOSE_HOST in text  # 0.0.0.0 default, exact
+    assert _COMPOSE_HOST in text  # 127.0.0.1 default, exact
     assert _EXEC_LINE in text, "exec line lost the --port/--hostname plumbing"
-    assert "captain-gated" in text, (
-        "the header must say plainly that flipping the default is gated"
+    assert "CC-LOOP" in text, (
+        "the header must carry the ruling provenance for the loopback default"
     )
 
 
@@ -128,24 +133,31 @@ def _probe(tmp_path: Path, env_file: str, explicit: dict) -> str:
 
 
 def test_explicit_env_beats_dotenv(tmp_path):
+    """Explicit env (the launchd-plist leg) beats cabinet/.env on BOTH vars —
+    and the 0.0.0.0 opt-out works through it."""
     out = _probe(tmp_path,
-                 "CABINET_DASHBOARD_PORT=4111\n",
-                 {"CABINET_DASHBOARD_PORT": "4222"})
+                 "CABINET_DASHBOARD_PORT=4111\n"
+                 "CABINET_DASHBOARD_HOST=127.0.0.1\n",
+                 {"CABINET_DASHBOARD_PORT": "4222",
+                  "CABINET_DASHBOARD_HOST": "0.0.0.0"})
     assert "npm-argv: start -- --port 4222 --hostname 0.0.0.0" in out, out
 
 
 def test_dotenv_used_when_no_explicit_env(tmp_path):
-    """THE D4a bug: before the fix, a port in cabinet/.env was ignored."""
+    """THE D4a bug: before the fix, a port in cabinet/.env was ignored. Also
+    the documented opt-out leg: CABINET_DASHBOARD_HOST=0.0.0.0 in
+    cabinet/.env opens the bind for tailnet/LAN reach."""
     out = _probe(tmp_path,
                  "CABINET_DASHBOARD_PORT=4111\n"
-                 "CABINET_DASHBOARD_HOST=127.0.0.1\n",
+                 "CABINET_DASHBOARD_HOST=0.0.0.0\n",
                  {})
-    assert "npm-argv: start -- --port 4111 --hostname 127.0.0.1" in out, out
+    assert "npm-argv: start -- --port 4111 --hostname 0.0.0.0" in out, out
 
 
 def test_defaults_when_nothing_configured(tmp_path):
+    """Nothing configured => loopback-only (CC-LOOP ruling 2026-07-12)."""
     out = _probe(tmp_path, "SOME_OTHER_VAR=1\n", {})
-    assert "npm-argv: start -- --port 3100 --hostname 0.0.0.0" in out, out
+    assert "npm-argv: start -- --port 3100 --hostname 127.0.0.1" in out, out
     assert "http://127.0.0.1:3100" in out, out
 
 

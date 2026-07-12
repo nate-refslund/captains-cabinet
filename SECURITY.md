@@ -52,9 +52,11 @@ mostly don't apply. What does apply:
 - **Secret handling** — anything that moves values out of `cabinet/.env` / the
   keychain into tracked files, logs, or outbound surfaces (the rule is: names
   in files, values in env/keychain).
-- **Operator dashboard** — designed for local, single-operator use; reports
-  that defeat its auth or expose it beyond the operator's machine are in
-  scope.
+- **Operator dashboard** — designed for local, single-operator use; it binds
+  loopback (`127.0.0.1`) by default, and remote reach is an explicit opt-in
+  (`tailscale serve`, or `CABINET_DASHBOARD_HOST=0.0.0.0`). Reports that
+  defeat its auth, escape the loopback default, or expose it beyond the
+  operator's machine are in scope.
 
 Out of scope: your own instance-layer modifications, and vulnerabilities in
 the upstream stack (Claude Code, Homebrew, Redis, macOS) — report those
