@@ -27,7 +27,7 @@ The unit of fidelity is the *intent behind* the action — not its surface text,
 not even its literal decision. Worked example from the first live run: a Teams
 reply that was just a pasted Husqvarna-mower URL is not "share this string" —
 the intent was *find a robotic mower with no boundary-wire (LiDAR instead) that
-handles the 3000+ m² lawn at the new house (Mosevråvej)*; that link is one
+handles the large lawn at the new house*; that link is one
 fitting option among few. A faithful clone must therefore **(a) gather the full
 context before deciding** — the conversation's real goal *plus* real-world facts
 screenpipe already captures (the house and its details) — and **(b) be credited
