@@ -180,7 +180,7 @@ class TestAuthorityShadowEmission:
             ("Bash", {"command": "cat /workspace/product/.env"}),
             (
                 "mcp__brain__queue_draft",
-                {"recipient": "sean@stepnetwork.dk", "channel": "teams"},
+                {"recipient": "colleague@stepnetwork.dk", "channel": "teams"},
             ),
             (
                 "mcp__brain__queue_draft",
@@ -481,7 +481,7 @@ class TestPostureShadowMirror:
                     mod,
                     {
                         "tool_name": "mcp__brain__queue_draft",
-                        "tool_input": {"recipient": "sean@stepnetwork.dk", "channel": "teams"},
+                        "tool_input": {"recipient": "colleague@stepnetwork.dk", "channel": "teams"},
                     },
                     db,
                     officer="cos",
