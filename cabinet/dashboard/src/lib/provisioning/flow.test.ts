@@ -469,8 +469,23 @@ describe('Token extraction', () => {
 // 6. Polling loop marks done when active
 // ---------------------------------------------------------------------------
 
-describe('Polling loop', () => {
-  it('calls sendMessage with live URL when state becomes active', async () => {
+// Build a mock SSE Response whose body streams the given frames then closes.
+// startSSEConsumer reads res.body.getReader() and splits on \n\n, so this
+// exercises the real notification path (a JSON-only mock never drove it,
+// which is why the prior test could only assert toBeDefined()).
+function mockSSEResponse(frames: string[]): Response {
+  const encoder = new TextEncoder()
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const f of frames) controller.enqueue(encoder.encode(f))
+      controller.close()
+    },
+  })
+  return { ok: true, status: 200, body } as unknown as Response
+}
+
+describe('Polling loop (SSE consumer)', () => {
+  it('sends the live-URL notification when state becomes active', async () => {
     const { startPollingLoop } = await import('./flow')
 
     const sent: string[] = []
@@ -490,25 +505,39 @@ describe('Polling loop', () => {
       updatedAt: new Date().toISOString(),
     }
 
-    // First poll returns provisioning, second returns active
-    mockFetch
-      .mockResolvedValueOnce(mockApiResponse({
-        cabinet_id: 'cab_test123',
-        state: 'provisioning',
-        state_entered_at: new Date().toISOString(),
-        last_event_id: 1,
-      }))
-      .mockResolvedValueOnce(mockApiResponse({
-        cabinet_id: 'cab_test123',
-        state: 'active',
-        state_entered_at: new Date().toISOString(),
-        last_event_id: 5,
-      }))
+    // The SSE stream emits provisioning then active, then closes.
+    mockFetch.mockResolvedValueOnce(
+      mockSSEResponse([
+        'data: {"state":"provisioning","cabinet_id":"cab_test123"}\n\n',
+        'data: {"state":"active","cabinet_id":"cab_test123"}\n\n',
+      ])
+    )
 
     await startPollingLoop('chat6', state, sendMessage, 5)
 
-    // Wait for async timers in tests (vitest fake timers would be used here)
-    // For now just verify structure is correct
-    expect(startPollingLoop).toBeDefined()
+    // Real assertions: sendMessage fired, the active message announced the
+    // cabinet live AND carried the dashboard URL (the whole point of the path).
+    expect(sendMessage).toHaveBeenCalled()
+    const liveMsg = sent.find((t) => /is live/i.test(t))
+    expect(liveMsg, `no live message in: ${JSON.stringify(sent)}`).toBeTruthy()
+    expect(liveMsg).toMatch(/Open the dashboard: https?:\/\//)
+  })
+
+  it('does not announce live for a non-active stream', async () => {
+    const { startPollingLoop } = await import('./flow')
+    const sent: string[] = []
+    const sendMessage = vi.fn(async (msg: { text: string }) => {
+      sent.push(msg.text)
+    })
+    const state: ProvisioningState = {
+      step: 'polling_status', preset: 'personal', name: 'my-cabinet',
+      capacity: 'personal', cabinetId: 'cab_test123', officers: [],
+      currentOfficerIndex: 0, pendingToken: null, updatedAt: new Date().toISOString(),
+    }
+    mockFetch.mockResolvedValueOnce(
+      mockSSEResponse(['data: {"state":"provisioning","cabinet_id":"cab_test123"}\n\n'])
+    )
+    await startPollingLoop('chat7', state, sendMessage, 5)
+    expect(sent.some((t) => /is live/i.test(t))).toBe(false)
   })
 })
