@@ -21,10 +21,10 @@ class TestPrepLines:
         assert rdl._prep_lines({"gathered": [], "check_yourself": []}) == ""
 
     def test_gathered_items_marked_check(self):
-        out = rdl._prep_lines({"gathered": ["open commitments with Lisa: 2"],
+        out = rdl._prep_lines({"gathered": ["open commitments with Lena: 2"],
                                "check_yourself": []})
         assert "🔎 prep:" in out
-        assert "✓ open commitments with Lisa: 2" in out
+        assert "✓ open commitments with Lena: 2" in out
         assert out.endswith("\n\n")  # trails into the draft block
 
     def test_check_yourself_items_flagged(self):

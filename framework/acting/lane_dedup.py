@@ -133,7 +133,7 @@ def subject_has_open_proposal(slug: str, rows: list | None = None) -> bool:
     Why this exists (duplicate-draft fix): the lane reads open_subject_ts() ONCE
     at the start of main(), then spends tens of seconds in the LLM gather/draft
     before it emits its own proposal. Two concurrent lane runs (a manual run + the
-    5-min cron overlapping) therefore both snapshot 'no open proposal for Lisa'
+    5-min cron overlapping) therefore both snapshot 'no open proposal for Lena'
     before either has emitted, both draft, and the captain gets the SAME draft twice.
     Re-reading the ledger immediately before emit/present closes that window: a
     proposal that landed DURING our draft is now visible and we skip. Cheap (one

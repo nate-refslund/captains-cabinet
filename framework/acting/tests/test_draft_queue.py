@@ -31,8 +31,8 @@ def _sandbox(tmp_path, monkeypatch):
 
 
 def _kv_with(pid="abc123", **extra):
-    rec = {"person": "Sofie", "slug": "sofie", "channel": "email",
-           "draft": "Hi Sofie — here is the plan.", **extra}
+    rec = {"person": "Alice", "slug": "alice", "channel": "email",
+           "draft": "Hi Alice — here is the plan.", **extra}
     return FakeKV({f"cabinet:draft:{pid}": json.dumps(rec)}), rec
 
 
@@ -49,7 +49,7 @@ def test_withdraw_removes_record_and_journals_full_undo_trail():
     assert row["reason"] == "no longer needed" and row["actor"] == "test"
     # The FULL record rides the journal row — that is the undo trail.
     assert row["record"]["draft"] == rec["draft"]
-    assert row["record"]["slug"] == "sofie"
+    assert row["record"]["slug"] == "alice"
 
 
 def test_supersede_links_the_newer_draft():
@@ -109,10 +109,10 @@ def test_pending_lists_records_and_skips_garbage():
 
 def test_journal_fire_cancel_row_is_found_by_withdrawal_of():
     verdict = {"reason": "captain-already-replied",
-               "captain_reason": "Not sent — you already replied to Sofie "
+               "captain_reason": "Not sent — you already replied to Alice "
                                  "yourself after this draft was written.",
                "checks": {"captain_replied_since": True}}
-    draft_queue.journal_fire_cancel("fff000", {"slug": "sofie"}, verdict)
+    draft_queue.journal_fire_cancel("fff000", {"slug": "alice"}, verdict)
     w = draft_queue.withdrawal_of("fff000")
     assert w is not None and w["kind"] == "fire-cancel"
     assert "you already replied" in w["captain_reason"]

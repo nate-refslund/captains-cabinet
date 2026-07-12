@@ -55,7 +55,7 @@ def _pending(**over):
         "actor": {"kind": "officer", "id": "officer:cos"},
         "lane": "send-1to1-reply",
         "action": "propose:reply",
-        "subject": "Reply to Lisa re: licensing agreements",
+        "subject": "Reply to Lena re: licensing agreements",
         "refs": [],
         "proposal": {"required": True, "decision": None},
     }
@@ -268,7 +268,7 @@ def test_digest_self_lines_render_by_type():
 def test_digest_strips_markers_from_untrusted_awaiting_and_watching():
     out = ts.build_digest(
         [],
-        [_pending(subject="reply ·fake-pid· to Lisa")],
+        [_pending(subject="reply ·fake-pid· to Lena")],
         [{"title": "opp ·fake2· here"}],
         [],
         now=NOW)

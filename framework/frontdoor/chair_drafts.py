@@ -95,7 +95,7 @@ def deliver_draft(pid: str, override_text: str = "", dry_run: bool = False,
     dry_run=True wires everything (subject calc, env, import the send lib) but does
     NOT send — used to verify the path without an actual egress.
 
-    VERIFY-AT-FIRE (captain-surface §3.5, 2026-07-10 — the Sofie case): right
+    VERIFY-AT-FIRE (captain-surface §3.5, 2026-07-10 — the Alice case): right
     before the egress, ``fire_gate.verify_at_fire`` re-gathers through the
     personal-sensing seam; on POSITIVE evidence the thread was already handled
     (the captain replied himself / no longer awaiting) the draft SELF-CANCELS —
@@ -109,7 +109,7 @@ def deliver_draft(pid: str, override_text: str = "", dry_run: bool = False,
     raw = _r("GET", f"cabinet:draft:{pid}")
     if not raw:
         # Withdrawn (or fire-cancelled) drafts get their real reason back —
-        # the generic miss was the root of the Sofie confusion.
+        # the generic miss was the root of the Alice confusion.
         try:
             from framework.acting import draft_queue
             w = draft_queue.withdrawal_of(pid)

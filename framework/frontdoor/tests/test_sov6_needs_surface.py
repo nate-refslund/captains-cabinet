@@ -29,7 +29,7 @@ GOLDEN = (
     "🗒 Act-then-tell digest — 2026-07-04 09:00\n\n"
     "✅ ACTED (1)\n 3. Created task on board 9\n      title: Fix deploy gate\n"
     "      undo: `undo 3` (47h left)\n\n"
-    "⚡ AWAITING (1)\n • [send-1to1-reply] thread:lisa — pending 2h\n\n"
+    "⚡ AWAITING (1)\n • [send-1to1-reply] thread:lena — pending 2h\n\n"
     "👁 WATCHING (1)\n • vercel deploy failing  [health]\n\n"
     "🫀 SELF (1)\n • ❄️ board_status frozen — canary red\n\n"
     "Per ACTED line: `undo <n>` reverses / `👍 <n>` confirms / "
@@ -50,7 +50,7 @@ def _acted():
 
 def _awaiting():
     return [{"ts": "2026-07-04T07:00:00Z", "lane": "send-1to1-reply",
-             "action": "draft-reply", "subject": "thread:lisa"}]
+             "action": "draft-reply", "subject": "thread:lena"}]
 
 
 def _watching():

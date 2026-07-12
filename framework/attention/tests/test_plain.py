@@ -17,7 +17,7 @@ NOW = datetime(2026, 7, 10, 12, 0, tzinfo=timezone.utc)
 
 GOLDEN_CARD = {
     "id": "sit-x", "kind": "action-proposal", "state": "pending",
-    "pid": "prop-abc", "what": "Reply to Sofie about the DPA redline",
+    "pid": "prop-abc", "what": "Reply to Alice about the DPA redline",
     "deadline_iso": "2026-07-12T10:00:00Z", "age_h": 47.0,
     "blast": {"class": "external", "reach": "external"},
     "blast_worst_case": "a message reaches a human outside the machine",
@@ -90,7 +90,7 @@ class TestTablesLintClean(unittest.TestCase):
 class TestSummaryShape(unittest.TestCase):
     def test_one_sentence_summary_reads_plain(self):
         s = plain.plain_summary(GOLDEN_CARD, now=NOW)
-        self.assertIn("Suggestion — polads: Reply to Sofie", s)
+        self.assertIn("Suggestion — polads: Reply to Alice", s)
         self.assertIn("real person outside", s)
         self.assertIn("waiting 47 hours", s.lower())
         self.assertIn("due in", s)

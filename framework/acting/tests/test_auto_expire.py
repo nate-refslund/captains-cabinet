@@ -135,7 +135,7 @@ class TestAutoExpireSelfReplied:
     def test_no_self_reply_keeps_proposal_open(self, monkeypatch):
         # Detector says False (Ada has NOT replied since) and the proposal is
         # fresh -> the backstop does not fire -> it stays open (awaiting decision).
-        _emit_open("lisa", "2026-06-25T14:53:00+00:00")
+        _emit_open("lena", "2026-06-25T14:53:00+00:00")
         monkeypatch.setattr(get_source(), "captain_replied_since", lambda slug, when: False)
         # Pin "now" close to the proposal so the age backstop can't trip.
         monkeypatch.setattr(rdl, "PROPOSAL_MAX_AGE_H", 36.0)
@@ -143,7 +143,7 @@ class TestAutoExpireSelfReplied:
         n = rdl._auto_expire_self_replied()
 
         assert n == 0
-        assert "lisa" in _open_subjects()
+        assert "lena" in _open_subjects()
 
     def test_stale_proposal_expires_via_time_backstop(self, monkeypatch):
         # Detector can't tell (None) but the proposal is older than the backstop

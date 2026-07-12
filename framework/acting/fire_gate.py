@@ -3,7 +3,7 @@
 THE PRINCIPLE (captain-surface master prompt §3.5, 2026-07-10; standing
 captain-pattern): verify-first at fire time, not just at enqueue. Between the
 moment a draft was queued/approved and the moment it actually fires, the world
-may have moved — the WORKED CASE: the captain replied to Sofie himself, so the
+may have moved — the WORKED CASE: the captain replied to Alice himself, so the
 queued draft must SELF-CANCEL, never fire. This generalizes the cabinet's
 gather-then-decide discipline to the last instant of the send path.
 

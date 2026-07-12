@@ -34,7 +34,7 @@ class FakeSource:
 
 
 def _rec(**kw):
-    base = {"slug": "sofie", "person": "Sofie", "channel": "email",
+    base = {"slug": "alice", "person": "Alice", "channel": "email",
             "draft": "Hi — following up.", "lane": "send-1to1-reply",
             "queued_ts": "2026-07-10T08:00:00Z"}
     base.update(kw)
@@ -47,10 +47,10 @@ def test_captain_already_replied_cancels():
     assert v["action"] == "cancel"
     assert v["reason"] == "captain-already-replied"
     # Plain-language law: the captain-facing line names the person plainly.
-    assert "Sofie" in v["captain_reason"] and "Not sent" in v["captain_reason"]
+    assert "Alice" in v["captain_reason"] and "Not sent" in v["captain_reason"]
     # The probe got the QUEUE moment as its clock (tz-aware).
     name, slug, when = src.calls[0]
-    assert slug == "sofie" and when == datetime(2026, 7, 10, 8, 0,
+    assert slug == "alice" and when == datetime(2026, 7, 10, 8, 0,
                                                 tzinfo=timezone.utc)
 
 
@@ -59,7 +59,7 @@ def test_no_longer_awaiting_cancels_a_reply_draft():
     v = fire_gate.verify_at_fire(_rec(), source=src)
     assert v["action"] == "cancel"
     assert v["reason"] == "thread-no-longer-awaiting"
-    assert "Sofie" in v["captain_reason"]
+    assert "Alice" in v["captain_reason"]
 
 
 def test_uncertainty_fires_never_vetoes_the_captain():

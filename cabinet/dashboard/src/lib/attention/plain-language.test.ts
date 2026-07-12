@@ -43,7 +43,7 @@ function row(overrides: Partial<QueueRow>): QueueRow {
     admission: null,
     pid: 'prop-abc',
     h: null,
-    what: 'Reply to Sofie about the DPA redline',
+    what: 'Reply to Alice about the DPA redline',
     why_now: { decay: 'waiting 47h; 2 demotions' },
     refs: ['cmt-4821'],
     one_tap: { approve: 'direct', veto: 'direct', defer: 'direct' },

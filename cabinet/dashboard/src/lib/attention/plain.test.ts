@@ -24,7 +24,7 @@ function row(overrides: Partial<QueueRow>): QueueRow {
     admission: null,
     pid: 'prop-abc',
     h: null,
-    what: 'Reply to Sofie',
+    what: 'Reply to Alice',
     why_now: null,
     refs: [],
     one_tap: { approve: 'direct', veto: 'direct', defer: 'direct' },
@@ -41,10 +41,10 @@ describe('revisionOf — the cross-language content fingerprint', () => {
       revisionOf({
         pid: 'prop-abc',
         state: 'pending',
-        what: 'Reply to Sofie',
+        what: 'Reply to Alice',
         deadline_iso: '2026-07-12T10:00:00Z',
       })
-    ).toBe('9fb0ea6b9b60a93f')
+    ).toBe('3c71acd88ad8ab07')
   })
 
   it('treats missing fields as empty (second golden vector)', () => {

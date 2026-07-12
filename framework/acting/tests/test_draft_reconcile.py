@@ -85,8 +85,8 @@ def test_captain_outbound_withdraws_the_matching_draft_only():
 
 
 def test_resolved_thread_alone_does_not_withdraw_by_default():
-    kv = _store(("ccc333", _rec("tomas")))
-    src = FakeSource(replied={"tomas": None}, awaiting={"tomas": False})
+    kv = _store(("ccc333", _rec("carol")))
+    src = FakeSource(replied={"carol": None}, awaiting={"carol": False})
     res = draft_reconcile.reconcile_queue(source=src, kv=kv)
     assert res["withdrawn"] == 0
     assert res["corroborated_resolved"] == 1
@@ -95,8 +95,8 @@ def test_resolved_thread_alone_does_not_withdraw_by_default():
 
 def test_resolved_thread_withdraws_when_explicitly_enabled(monkeypatch):
     monkeypatch.setenv("CABINET_RECONCILE_ON_RESOLVED", "1")
-    kv = _store(("ccc333", _rec("tomas", person="Tomas")))
-    src = FakeSource(replied={"tomas": None}, awaiting={"tomas": False})
+    kv = _store(("ccc333", _rec("carol", person="Carol")))
+    src = FakeSource(replied={"carol": None}, awaiting={"carol": False})
     res = draft_reconcile.reconcile_queue(source=src, kv=kv)
     assert res["withdrawn"] == 1
     assert "cabinet:draft:ccc333" not in kv.store
@@ -104,7 +104,7 @@ def test_resolved_thread_withdraws_when_explicitly_enabled(monkeypatch):
 
 
 def test_missing_queued_ts_never_probes_with_a_fabricated_clock():
-    rec = _rec("lisa")
+    rec = _rec("lena")
     del rec["queued_ts"]
     kv = _store(("ddd444", rec))
 
@@ -113,13 +113,13 @@ def test_missing_queued_ts_never_probes_with_a_fabricated_clock():
             raise AssertionError("probed without a queue moment")
 
     res = draft_reconcile.reconcile_queue(
-        source=Exploding(awaiting={"lisa": None}), kv=kv)
+        source=Exploding(awaiting={"lena": None}), kv=kv)
     assert res["withdrawn"] == 0
     assert "cabinet:draft:ddd444" in kv.store
 
 
 def test_a_probe_error_leaves_the_draft_queued():
-    kv = _store(("eee555", _rec("jakob")))
+    kv = _store(("eee555", _rec("dave")))
 
     class Flaky(FakeSource):
         def captain_replied_since(self, slug, when):

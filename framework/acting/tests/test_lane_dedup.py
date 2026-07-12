@@ -65,7 +65,7 @@ class TestDecidedSubjects:
         rows = [{"ts": "2026-06-20T09:00:00+00:00",
                  "actor": {"kind": "officer", "id": "cos"},
                  "lane": "send-1to1-reply", "action": "draft-reply",
-                 "subject": "lisa",
+                 "subject": "lena",
                  "proposal": {"required": True, "decision": None}}]
         assert ld.decided_subjects(rows=rows) == {}
 
@@ -73,10 +73,10 @@ class TestDecidedSubjects:
         rows = [{"ts": "2026-06-20T09:00:00+00:00",
                  "actor": {"kind": "officer", "id": "cos"},
                  "lane": "send-1to1-reply", "action": "draft-reply",
-                 "subject": "lisa",
+                 "subject": "lena",
                  "proposal": {"required": True, "decision": "approved"}}]
         d = ld.decided_subjects(rows=rows)
-        assert d["lisa"] == ld.parse_dt("2026-06-20T09:00:00+00:00")
+        assert d["lena"] == ld.parse_dt("2026-06-20T09:00:00+00:00")
 
 
 class TestAlreadyHandledTimestamp:
@@ -160,14 +160,14 @@ class TestOpenSubjectTs:
         assert d["casper"] == ld.parse_dt("2026-06-25T07:00:00+00:00")
 
     def test_decided_proposal_excluded(self):
-        rows = [_decided_row("lisa", "2026-06-24T09:00:00+00:00")]
+        rows = [_decided_row("lena", "2026-06-24T09:00:00+00:00")]
         assert ld.open_subject_ts(rows=rows) == {}
 
     def test_superseded_with_outcome_excluded(self):
         rows = [{"ts": "2026-06-24T21:00:00+00:00",
                  "actor": {"kind": "officer", "id": "cos"},
                  "lane": "send-1to1-reply", "action": "draft-reply",
-                 "subject": "lisa",
+                 "subject": "lena",
                  "proposal": {"required": True, "decision": None},
                  "outcome": {"status": "ok", "evidence": "shipped"}}]
         assert ld.open_subject_ts(rows=rows) == {}
