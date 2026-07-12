@@ -585,6 +585,48 @@ else
 fi
 
 # ============================================================
+# N. embed-seam — semantic-search degrade signal (R4, 2026-07-12)
+# The LOUD signal the org-memory study (§5-R4) asks for: if no VOYAGE_API_KEY
+# is resolvable, memory_search runs keyless LEXICAL-ONLY — conceptual recall of
+# law/knowledge is DEGRADED but not dead (a keyless Mini hatch is a valid,
+# deliberate state), so this is WARN/AMBER, never DEAD. Also reports the active
+# EMBED-SEAM (provider/model/dims) and, best-effort, flags dims drift vs the
+# stamped cabinet_embedding_meta row. Keys are regex-extracted, NEVER sourced
+# and NEVER printed (same discipline as the mcp env check above).
+# ============================================================
+ES_PROVIDER="${EMBED_PROVIDER:-voyage}"
+ES_MODEL="${EMBED_MODEL:-voyage-4-large}"
+ES_DIMS="${EMBED_DIMS:-1024}"
+ES_VKEY="${VOYAGE_API_KEY:-}"
+if [ -z "$ES_VKEY" ] && [ -f "$REPO_ROOT/cabinet/.env" ]; then
+  ES_VKEY="$(grep -E '^VOYAGE_API_KEY=' "$REPO_ROOT/cabinet/.env" | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")"
+fi
+if [ -n "$ES_VKEY" ]; then
+  ok "embed-seam — VOYAGE key resolvable; hybrid+rerank search active (provider=$ES_PROVIDER model=$ES_MODEL dims=$ES_DIMS)"
+else
+  warn "embed-seam — no VOYAGE_API_KEY resolvable: memory_search DEGRADED to keyless LEXICAL-ONLY (conceptual recall of law/knowledge reduced; rerank off). Set VOYAGE_API_KEY to restore hybrid+rerank retrieval."
+fi
+unset ES_VKEY
+# Best-effort dims-drift check — never fails the doctor. If the store is
+# reachable AND stamped, compare its stamped dims to the configured seam; an
+# unstamped store (no row) is silently skipped (not every deploy is stamped).
+ES_NEON="${NEON_CONNECTION_STRING:-}"
+if [ -z "$ES_NEON" ] && [ -f "$REPO_ROOT/cabinet/.env" ]; then
+  ES_NEON="$(grep -E '^NEON_CONNECTION_STRING=' "$REPO_ROOT/cabinet/.env" | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")"
+fi
+if [ -n "$ES_NEON" ] && command -v psql >/dev/null 2>&1; then
+  ES_META_DIMS="$(PGCONNECT_TIMEOUT=5 psql "$ES_NEON" -tAc "SELECT dims FROM cabinet_embedding_meta WHERE id=1;" 2>/dev/null | tr -d '[:space:]')"
+  if [ -n "$ES_META_DIMS" ]; then
+    if [ "$ES_META_DIMS" = "$ES_DIMS" ]; then
+      ok "embed-seam — store stamped dims=$ES_META_DIMS matches configured EMBED_DIMS"
+    else
+      warn "embed-seam — DIMS DRIFT: store stamped dims=$ES_META_DIMS but EMBED_DIMS=$ES_DIMS — a full re-embed backfill is required before the switch takes effect"
+    fi
+  fi
+fi
+unset ES_NEON
+
+# ============================================================
 # verdict + heartbeat
 # ============================================================
 TOTAL=$((N_OK + N_WARN + N_WAIVED + ${#DEAD[@]}))

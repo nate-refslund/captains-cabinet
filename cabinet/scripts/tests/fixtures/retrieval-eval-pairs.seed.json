@@ -1,0 +1,109 @@
+{
+  "generated_at": "2026-07-12T17:57:08Z",
+  "generator": "harvest-retrieval-eval.sh",
+  "cabinet_id": "hq-macbook",
+  "recall_k": 10,
+  "note": "Self-generated from this cabinet_memory (high-signal, non-exhaust rows). Regenerate on any instance: bash cabinet/scripts/harvest-retrieval-eval.sh --out <file>. Each query is derived from a row leading content; expected_ref is that row source_id. Run the gate with retrieval-eval.sh --pairs <file>.",
+  "pairs": [
+    {
+      "query": "Skill: Captain-Intent Inference (5th improvement loop — WHY before WHAT) Status: promoted Created by:",
+      "expected_ref": "memory/skills/evolved/captain-intent-inference.md",
+      "source_type": "skill"
+    },
+    {
+      "query": "Skill: Create a New Preset Status: draft Created by: CoS, Phase 0 CP6 (2026-04-16) Trigger: The",
+      "expected_ref": "memory/skills/create-preset.md",
+      "source_type": "skill"
+    },
+    {
+      "query": "--- name: [skill-name-kebab-case] description: [one-line trigger description — loaded at session start for pro",
+      "expected_ref": "memory/skills/TEMPLATE.md",
+      "source_type": "skill"
+    },
+    {
+      "query": "[success] EC European-Repository onboarding routing + Oliver Gray consultant routing (48h sensing cycle) Stan",
+      "expected_ref": "2026-07-10-comms-officer-1783665312-99188",
+      "source_type": "experience_record"
+    },
+    {
+      "query": "[success] Absence prod-eyes reflection (CoS-nudged) Produced: warroom-regression triage+G4, Sentry read-grant",
+      "expected_ref": "2026-07-11-polads-ceo-1783776884-76284",
+      "source_type": "experience_record"
+    },
+    {
+      "query": "Skill: Captain-Gated Deliverable (draft — pending evolution-loop validation) Status: draft (evolved/ —",
+      "expected_ref": "memory/skills/evolved/captain-gated-deliverable.md",
+      "source_type": "skill"
+    },
+    {
+      "query": "Comms Officer — Tier 2 Working Notes Owner: comms-officer · Started 2026-06-24 (boot session) · update aft",
+      "expected_ref": "instance/memory/tier2/comms-officer/working-notes.md",
+      "source_type": "working_note"
+    },
+    {
+      "query": "stephie-ceo — Individual Reflection 2026-07-06 Trigger: cos REFLECTION-DUE nudge (48h ceiling, low-pri) + m",
+      "expected_ref": "instance/memory/tier2/stephie-ceo/reflections/2026-07-06-reflection.md",
+      "source_type": "reflection"
+    },
+    {
+      "query": "Individual reflection — PolAds lane, 2026-07-10 (pre-departure re-triage) Officer: polads-ceo · Trigg",
+      "expected_ref": "instance/memory/tier2/polads-ceo/reflections/2026-07-10-retriage-dormancy.md",
+      "source_type": "reflection"
+    },
+    {
+      "query": "EXTERNAL-COMMS GRANTABILITY IS INSTANCE-SCOPED, NOT FLAVOR-STRUCTURAL (2026-07-05, Captain-ruled, in-sessio",
+      "expected_ref": "2026-07-05-external-comms-grantability-is-instance-scoped-not-flavor-struct",
+      "source_type": "captain_decision"
+    },
+    {
+      "query": "[success] Fix stale job-banners e2e as a Chair-green-lit held draft PR One-line selector fix (mode-manual -",
+      "expected_ref": "2026-07-09-stephie-ceo-1783589420-80342",
+      "source_type": "experience_record"
+    },
+    {
+      "query": "Reflection — Absence prod-eyes window (2026-07-10 → 07-11) polads-ceo · triggered by CoS retro-kaizen nudge",
+      "expected_ref": "instance/memory/tier2/polads-ceo/reflections/2026-07-11-absence-prodeyes.md",
+      "source_type": "reflection"
+    },
+    {
+      "query": "Spec 065 — Mac Migration Phase 8 Plan (Documentation + Release) - Version: v1.1 (CTO 6 MUST-fold) - D",
+      "expected_ref": "shared/interfaces/product-specs/065-mac-migration-phase8-plan.md",
+      "source_type": "product_spec"
+    },
+    {
+      "query": "Paddle VAT/tax — advertiser-type-based inclusion (2026-06-25) DECISION: For pro 01kvz56cnxtpv12zx0g6vs7189",
+      "expected_ref": "2026-06-25-paddle-vat-tax-advertiser-type-based-inclusion",
+      "source_type": "captain_decision"
+    },
+    {
+      "query": "2026-06-24 — 3 UAT: PolAds-BRANDED payment receipt (relayed decision — BACKFILLED) - Decision: After p",
+      "expected_ref": "2026-06-24-3-uat-polads-branded-payment-receipt-relayed-decision-backfilled",
+      "source_type": "captain_decision"
+    },
+    {
+      "query": "--- name: grep-verify-folds description: When you claim a fold/amendment/v1.1+/finding-absorption to a spec, d",
+      "expected_ref": "memory/skills/evolved/grep-verify-folds.md",
+      "source_type": "skill"
+    },
+    {
+      "query": "THREE AUTONOMY LEVELS × FLAVORS × DEPLOYMENTS (2026-07-05, Captain-directed, in-session) Directive. Thr",
+      "expected_ref": "2026-07-05-three-autonomy-levels-flavors-deployments-captain-directed-in-se",
+      "source_type": "captain_decision"
+    },
+    {
+      "query": "Skill: Telegram Communication Status: promoted Created by: foundation (evolved by CoS per Captain d",
+      "expected_ref": "memory/skills/telegram-communication.md",
+      "source_type": "skill"
+    },
+    {
+      "query": "SOURCE-ADAPTER PASS 2 — ADVERSARIAL REVIEW COMPLETE + CLEAR (2026-07-06, integrator on Opus) The deferred 3",
+      "expected_ref": "2026-07-06-source-adapter-pass-2-adversarial-review-complete-clear-integrat",
+      "source_type": "captain_decision"
+    },
+    {
+      "query": "MONDAY AGENT TOKEN = the Captain's own full-privilege key (2026-07-04, Captain-ruled) Decision (Nate):",
+      "expected_ref": "2026-07-04-monday-agent-token-the-captain-s-own-full-privilege-key-captain-",
+      "source_type": "captain_decision"
+    }
+  ]
+}
