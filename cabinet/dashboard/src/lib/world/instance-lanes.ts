@@ -31,8 +31,9 @@ import type { LaneRecord } from './era-engine'
 
 /** Instance-only test lanes (Captain ruling 2026-07-09: 'sensed' is an
  * instance-test app, never foundation — reef-buoy render). Instance data
- * pending its own config field — tracked for the instance-split ledger
- * row; kept verbatim from the engine route it moved out of. */
+ * pending its own config field — tracked as ledger row R163
+ * (instance_test_lanes -> instance config, read fail-honest to the EMPTY
+ * set); kept verbatim from the engine route it moved out of. */
 const INSTANCE_TEST_LANES = new Set(['sensed'])
 
 interface OutcomeRow {
@@ -111,7 +112,8 @@ export function outcomeLanes(root: string): OutcomeLanes {
 /**
  * Declared lanes: the first top-level `slug:` scalar per
  * instance/config/contexts/*.yml. Semantics mirror the framework's
- * _context_slugs byte-for-byte: strip quotes, lowercase, the first
+ * _context_slugs byte-for-byte: strip quote RUNS (double then single —
+ * the python strip('"').strip("'") order), lowercase, the first
  * `slug:`-prefixed line ends that file's scan (empty value ⇒ the file
  * contributes nothing — e.g. _default.yml has no slug and is skipped);
  * an unreadable file is skipped; an unreadable dir ⇒ []. Sorted for
@@ -135,7 +137,8 @@ export function declaredLanes(root: string): string[] {
               .slice(1)
               .join(':')
               .trim()
-              .replace(/^["']|["']$/g, '')
+              .replace(/^"+|"+$/g, '')
+              .replace(/^'+|'+$/g, '')
               .toLowerCase()
             if (val) slugs.add(val)
             break

@@ -1,7 +1,11 @@
 /**
  * Instance lane readers (Wave G) — parse laws + fail-honest fallbacks.
  * All fixtures are synthetic Testburg vocabulary in a tmpdir; lane names
- * are instance data, so no real lane may appear here.
+ * are instance data, so no real lane may appear here — ONE recorded
+ * exception: the outcomes fixture uses the INSTANCE_TEST_LANES pinned
+ * member ('sensed') to exercise the instanceTest mark, until ledger row
+ * R163 flips that set to instance config and frees this fixture in the
+ * same commit (lockstep law).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import fs from 'node:fs/promises'
@@ -27,6 +31,10 @@ beforeAll(async () => {
   await write(
     'instance/config/contexts/newsletter.yml',
     'slug: "Newsletter"\nname: Newsletter\n' // quoted + uppercase → lowercased
+  )
+  await write(
+    'instance/config/contexts/orchard.yml',
+    'slug: ""orchard""\nname: Orchard\n' // quote RUNS strip (python strip('"'))
   )
   await write(
     'instance/config/contexts/_default.yml',
@@ -94,8 +102,11 @@ afterAll(async () => {
 })
 
 describe('declaredLanes — the context slug universe', () => {
-  it('parses the first slug: scalar per contexts/*.yml (quotes stripped, lowercased)', () => {
-    expect(declaredLanes(root)).toEqual(['bakery', 'newsletter'])
+  it('parses the first slug: scalar per contexts/*.yml (quote runs stripped, lowercased)', () => {
+    // orchard rides in as ""orchard"" — run-strip parity with
+    // _context_slugs / env.lanes() / cabinet_lanes (strip('"') eats the RUN,
+    // where a single-char strip would leave '"orchard"')
+    expect(declaredLanes(root)).toEqual(['bakery', 'newsletter', 'orchard'])
   })
   it('unreadable dir ⇒ [] (honest absence, never a default)', () => {
     expect(declaredLanes(path.join(root, 'no-such-root'))).toEqual([])

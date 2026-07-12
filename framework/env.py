@@ -290,7 +290,9 @@ def officers(default: "tuple[str, ...]" = ()) -> "tuple[str, ...]":
     the EMPTY tuple — so a deployment with no roster resolves () and consumers
     fail LOUDLY at their own seam (delegate_work rejects every officer, a
     prompt enum renders empty), never a baked-in literal roster, never another
-    launcher's officers."""
+    launcher's officers. NB: the FIRST call's resolution — fallback included —
+    is cached for the process, so every caller must pass a uniform ``default``
+    (all in-repo callers pass the empty one)."""
     global _officers_cache
     if _officers_cache is not None:
         return _officers_cache
@@ -328,7 +330,9 @@ def deploys_code_officer(default: str = "") -> str:
     Absence / unreadable conf / no holder falls back to ``default`` — the
     empty string — so a deployment with no deploying officer resolves "" and
     the consumer fails loudly at its own seam (an eval prints FAIL), never a
-    baked-in officer name."""
+    baked-in officer name. NB: the FIRST call's resolution — fallback included
+    — is cached for the process, so every caller must pass a uniform
+    ``default``."""
     global _deploys_code_officer_cache
     if _deploys_code_officer_cache is not None:
         return _deploys_code_officer_cache
@@ -372,7 +376,9 @@ def lanes(default: "tuple[str, ...]" = ()) -> "tuple[str, ...]":
     Unreadable dir / no slugs falls back to ``default`` — the EMPTY tuple — so
     a deployment with no contexts resolves () and consumers fail honestly at
     their own seam (a world renders mist, a gate files under its stable
-    catch-all), never an invented lane list."""
+    catch-all), never an invented lane list. NB: the FIRST call's resolution —
+    fallback included — is cached for the process, so every caller must pass a
+    uniform ``default``."""
     global _lanes_cache
     if _lanes_cache is not None:
         return _lanes_cache
@@ -416,7 +422,8 @@ def lane_default(default: str = "") -> str:
     falls back to ``default`` — the empty string — which the acting runner's
     lane normalization files under the stable ``adhoc`` catch-all cell: a
     generic deployment never inherits another launcher's default lane and
-    never crashes."""
+    never crashes. NB: the FIRST call's resolution — fallback included — is
+    cached for the process, so every caller must pass a uniform ``default``."""
     global _lane_default_cache
     if _lane_default_cache is not None:
         return _lane_default_cache
