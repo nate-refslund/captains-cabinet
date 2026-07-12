@@ -129,6 +129,12 @@ transform framework-docs-archive
 # packaging time — until then CI keeps running on the live integration branch.
 transform ci-retarget-master
 # R124: lane context files leave; instance/config/contexts/_default.yml stays.
+# Wave G (lane-name instance-split, resolver-core): the synthetic Testburg
+# lane-declaration twins bakery-site.yml.example / newsletter.yml.example ALSO
+# stay — a fresh hatch's concrete model for declaring the lanes the shared
+# resolvers enumerate (framework/env.py lanes(), cabinet/scripts/lib/lanes.sh
+# cabinet_lanes, dashboard declaredLanes()). `.example` matches no *.yml glob,
+# so the twins are never live lanes; live lane contexts still never ship.
 transform contexts-prune
 # R125: project lane files leave; instance/config/projects/_template.yml stays.
 transform projects-prune
@@ -179,6 +185,8 @@ expect-present instance/config/sources.yml.example
 expect-present instance/config/act-first-surfaces.yml
 expect-present instance/config/act-first-surfaces.yml.example
 expect-present instance/config/contexts/_default.yml
+expect-present instance/config/contexts/bakery-site.yml.example
+expect-present instance/config/contexts/newsletter.yml.example
 expect-present instance/config/projects/_template.yml
 expect-present instance/config/posture-presets/org-macmini.yml
 expect-present instance/config/policies/README.md

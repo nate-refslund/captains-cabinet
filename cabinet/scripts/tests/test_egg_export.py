@@ -156,7 +156,12 @@ def test_instance_contains_only_examples_and_structure(export: Path):
 
 def test_contexts_and_projects_pruned(export: Path):
     contexts = sorted(f.name for f in (export / "instance/config/contexts").iterdir())
-    assert contexts == ["_default.yml"], f"R124: only _default.yml stays, got {contexts}"
+    assert contexts == [
+        "_default.yml", "bakery-site.yml.example", "newsletter.yml.example",
+    ], (
+        "R124 + Wave G: _default.yml plus the Testburg lane-declaration "
+        f".example twins stay (live lane contexts never ship), got {contexts}"
+    )
     projects = sorted(f.name for f in (export / "instance/config/projects").iterdir())
     assert projects == ["_template.yml"], f"R125: only _template.yml stays, got {projects}"
     skills = sorted(f.name for f in (export / "instance/officer-skills").iterdir())
