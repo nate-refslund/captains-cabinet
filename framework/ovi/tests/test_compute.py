@@ -338,10 +338,49 @@ class TestComputeSample:
         assert len(log_files) == 1
 
     def test_math_properties_verified(self):
-        """The internal assertions in compute_sample pass."""
+        """Smoke: compute_sample's internal assertions don't raise.
+        NOTE: those asserts are stripped under `python -O`, so this test alone
+        proves little — the real math oracle is the two tests below."""
         # If math is wrong, compute_sample raises AssertionError
         for seed in range(10):
             compute_sample(seed=seed, emit_event=False)
+
+    def test_composite_is_weighted_mean_of_components(self, real_components_path):
+        """Independent test-layer oracle for the WEIGHTING step (survives -O).
+
+        Recompute the composite independently from the snapshot's raw_data —
+        per-component normalize (via the pure normalize_value fn, NOT any
+        production assert) paired each with ITS OWN weight, weighted-mean,
+        then the SAME round(,4) the engine applies (compute.py:333,341) — and
+        assert EXACT equality. A weights-mis-applied bug (e.g. a weight paired
+        with the wrong component) whose result still lands in [0,1] passes the
+        smoke test above but fails here. Verified to have teeth: swapping two
+        weights shifts the result ~4e-3, far above any rounding noise."""
+        comps = _load_components(real_components_path)
+        total_w = sum(c["weight"] for c in comps)
+        assert total_w > 0
+        for seed in range(5):
+            snap = compute_sample(seed=seed, emit_event=False)
+            raw = snap["raw_data"]
+            weighted_sum = 0.0
+            for c in comps:
+                lo, hi = c.get("default_range", [0, 1])
+                n = normalize_value(raw[c["name"]], lo, hi, c.get("direction", "normal"))
+                weighted_sum += n * c["weight"]
+            expected = round(weighted_sum / total_w, 4)
+            assert snap["composite_score"] == expected, (
+                f"seed={seed}: composite {snap['composite_score']} != "
+                f"independently recomputed weighted mean {expected}"
+            )
+            assert 0.0 <= snap["composite_score"] <= 1.0
+
+    def test_composite_deterministic_for_seed(self):
+        """Same seed → byte-identical composite (independent determinism check,
+        not reliant on any internal assertion)."""
+        a = compute_sample(seed=7, emit_event=False)
+        b = compute_sample(seed=7, emit_event=False)
+        assert a["composite_score"] == b["composite_score"]
+        assert a["components"] == b["components"]
 
 
 # ---------------------------------------------------------------------------
