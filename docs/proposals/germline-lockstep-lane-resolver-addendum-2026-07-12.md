@@ -99,10 +99,27 @@ ruling now lives as data with provenance).
 - `run_action_lane.py` comment/docstring lane mentions stay (dated
   germline-batch records; recon: leave-with-reason). Its `_context_slugs`
   enumerator is the extract-to-`env.py` candidate for a LATER window —
-  `env.lanes()` was built parse-mirrored so that merge is a no-op.
+  `env.lanes()` was built parse-mirrored so that merge is a no-op
+  (exact only while `CABINET_ROOT` is unset or equals the repo root:
+  `env.lanes()` honors `CABINET_ROOT`, `_context_slugs` is
+  `__file__`-anchored — the later-window extract must carry that clause).
 - `cabinet/officer-capabilities.conf` is itself schg: a hatched instance
   customizing its roster needs the egg to ship it unlocked (recon-named,
   egg-side question — not this row).
+- THIS DOC itself rides the egg with its lane literals intact:
+  `egg-export.sh` has no `docs/proposals` manifest rule (only `docs/plans`
+  archives out, R145), so the export carries this addendum verbatim — its
+  retired-lane literals land in the egg, scanned by `egg-publish-gate.sh`
+  gate (d) `sub:polads`/`sub:stephie` with no proposals adjudication entry
+  (review export 2026-07-12: 13 gate-(d) hits; annotation since — this
+  bullet included — only adds more). Same
+  exposure class as the 4 older germline addenda already shipping, but a
+  NEW carrier: post-ceremony the pair SOURCES go clean while this doc
+  keeps the retired literals in the egg, structurally blocking the
+  gate-(d) whole-export countdown to zero. Packaging decision routed to
+  the egg area — an R145-class archive transform for `docs/proposals`
+  germline addenda, a delete rule, or a recorded CG adjudication row
+  (egg-side question, not this row; recorded 2026-07-12 fix pass).
 
 ## The staged diffs (verbatim; apply with `patch -p1` from the repo root)
 

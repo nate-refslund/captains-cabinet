@@ -698,6 +698,22 @@ class TestOfficers:
         env._officers_cache = None
         assert env.officers() == ("town-crier", "bakery-ceo", "market-ceo")
 
+    def test_dedup_is_global_first_seen_not_adjacent_only(
+            self, tmp_path, monkeypatch, isolated_officers_cache):
+        # INTERLEAVED (non-contiguous) officer blocks — the twin-divergence
+        # trap the officers() docstring prescribes for the bash twin
+        # (awk '!seen[$1]++', NEVER adjacent-only `uniq`). A regression to
+        # adjacent-only dedup in either twin would emit town-crier twice
+        # here; _TESTBURG_CONF above is contiguous-only and cannot catch it.
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_conf(tmp_path, (
+            "town-crier:captain_rules_retrieval\n"
+            "bakery-ceo:deploys_code\n"
+            "town-crier:logs_captain_decisions\n"
+        ))
+        env._officers_cache = None
+        assert env.officers() == ("town-crier", "bakery-ceo")
+
     def test_comments_blanks_and_malformed_lines_skipped(
             self, tmp_path, monkeypatch, isolated_officers_cache):
         monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
