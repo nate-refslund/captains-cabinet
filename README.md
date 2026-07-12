@@ -175,6 +175,11 @@ bash cabinet/scripts/deploy-mac.sh --all
 
 Pre-release: external PRs are not yet accepted. [`CONTRIBUTING.md`](./CONTRIBUTING.md) has the dev setup, test suites, and the gates the repo enforces on itself; vulnerability reporting and scope are in [`SECURITY.md`](./SECURITY.md).
 
+## Credits
+
+- World/tile art by **LimeZu** ([limezu.itch.io](https://limezu.itch.io)), used under LimeZu's commercial license. The asset binaries are **not** in this repo and are never redistributed (gitignored) — purchasers install the packs locally; without them the world renders in placeholder-graphics mode.
+- The Testburg demo estate (fixtures, demo dashboard, screenshots) is synthetic data.
+
 ## License
 
 **MIT** (see [`LICENSE`](./LICENSE)).

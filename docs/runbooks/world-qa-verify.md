@@ -30,9 +30,9 @@ the drawing buffer is invalidated, so:
    **8/8 byte-distinct frames over 5s** on an officer sprite — page
    compositor screenshots see the live WebGL output, unlike canvas readback.
 2. **DOM signals**: the world's text layer is DOM by construction (labels,
-   chips, clock, chronicle ticker, killswitch banner). Clock text changing
-   and chip/label reconciliation are cheap liveness signals with no GPU
-   readback at all.
+   chips, clock, chronicle ticker with the always-on LimeZu art credit,
+   killswitch banner). Clock text changing and chip/label reconciliation
+   are cheap liveness signals with no GPU readback at all.
 3. If a pixel-exact extract is ever truly needed, expose a debug `extract()`
    path (render-to-texture → `pixi.Extract` on demand) rather than flipping
    `preserveDrawingBuffer` globally. Do not enable `preserveDrawingBuffer`

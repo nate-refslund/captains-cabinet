@@ -791,30 +791,36 @@ export default function EngineClient({ canActuate = false }: { canActuate?: bool
         </div>
       )}
 
-      {/* ── chronicle ticker (citations-only; click = PROOF) ── */}
-      <div className="absolute bottom-0 left-0 right-0 z-20 flex gap-2 overflow-x-auto border-t border-zinc-800 bg-zinc-950/90 px-2 py-1 text-[11px]">
-        {ticker.length === 0 ? (
-          <span className="text-zinc-600">chronicle quiet…</span>
-        ) : (
-          ticker.map((r: ChronicleRecord) => (
-            <button
-              key={r.iid}
-              onClick={() =>
-                setInspect({
-                  kind: 'record',
-                  id: String(r.iid),
-                  title: `${r.verb} — chronicle #${r.iid}`,
-                  codex: null,
-                  proof: r,
-                  presence: null,
-                })
-              }
-              className="whitespace-nowrap rounded px-1 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
-            >
-              {r.verb} · {r.actor}
-            </button>
-          ))
-        )}
+      {/* ── chronicle ticker (citations-only; click = PROOF) + art credit ── */}
+      <div className="absolute bottom-0 left-0 right-0 z-20 flex items-center gap-2 border-t border-zinc-800 bg-zinc-950/90 px-2 py-1 text-[11px]">
+        <div className="flex flex-1 gap-2 overflow-x-auto">
+          {ticker.length === 0 ? (
+            <span className="text-zinc-600">chronicle quiet…</span>
+          ) : (
+            ticker.map((r: ChronicleRecord) => (
+              <button
+                key={r.iid}
+                onClick={() =>
+                  setInspect({
+                    kind: 'record',
+                    id: String(r.iid),
+                    title: `${r.verb} — chronicle #${r.iid}`,
+                    codex: null,
+                    proof: r,
+                    presence: null,
+                  })
+                }
+                className="whitespace-nowrap rounded px-1 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+              >
+                {r.verb} · {r.actor}
+              </button>
+            ))
+          )}
+        </div>
+        {/* LimeZu license credit (Captain-ratified 2026-07-12): always visible at default zoom. */}
+        <span data-world-credit className="shrink-0 whitespace-nowrap text-[10px] text-zinc-500">
+          Art: LimeZu — limezu.itch.io
+        </span>
       </div>
 
       {/* ── Legend Law panel (grammar + growth-ladders provenance) ── */}

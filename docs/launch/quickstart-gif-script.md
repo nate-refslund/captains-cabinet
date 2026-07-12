@@ -23,6 +23,24 @@ first briefing → receipt anatomy → `/receipts`. Total runtime target
 - **No caption may say or imply a five-minute install.** The honest claim
   is "first receipt in minutes once hatched".
 
+## LIMEZU CREDIT RULES (Captain-ratified license conditions, 2026-07-12)
+
+Binding on every published visual from this script or any other launch
+material:
+
+- Any published image/GIF containing Cabinet World scenes carries
+  **"Art: LimeZu — limezu.itch.io"** nearby (caption, post body, or the
+  hosting README). The in-product bottom-bar credit satisfies this when it
+  is legible in frame; otherwise add the caption.
+- **NEVER publish raw or near-raw tilesheets or 1:1 sprite grids** — only
+  composed, product-zoom scenes. No NFT use of the art, ever.
+- The non-commercial **Modern tiles_Free pack must never enter the
+  pipeline** (asset dirs, manifest, renders, or captures).
+
+(This script's shots 1–5 are terminal/dashboard surfaces and never open
+`/world`, so today's shot list publishes no world scenes — the rules bind
+any future world footage.)
+
 ## Pre-flight (before recording)
 
 - Terminal ~100×30, dark theme, font ≥15 pt, plain prompt (`PS1='$ '`),
