@@ -343,6 +343,21 @@ def test_export_tooling_excluded_from_the_egg(export: Path):
             f"private-side export tooling must not ship: {private}"
 
 
+def test_pensionist_shot_baselines_excluded(export: Path):
+    """Wave G scripts-sweep fix pass (R120-class instance-split): the
+    committed pensionist screenshot baselines are THIS instance's review
+    artifacts — pre-fixture-flip surface vocabulary is baked into the
+    PIXELS, invisible to gate (d)'s text grep — and must never ship. The
+    harness itself (scripts + rubric + README with the regen steps) rides,
+    so a fresh deployment captures its own baselines."""
+    assert not (export / "cabinet/scripts/pensionist/shots").exists(), \
+        "instance screenshot baselines must not ship"
+    for keeper in ("gen_fixtures.py", "render_tg.py", "run.py",
+                   "rubric.md", "README.md"):
+        assert (export / "cabinet/scripts/pensionist" / keeper).is_file(), \
+            f"pensionist harness file must still ship: {keeper}"
+
+
 def test_egg_manifest_json(export: Path):
     meta = json.loads((export / "egg-manifest.json").read_text(encoding="utf-8"))
     assert meta["source_commit"] == _head_commit()

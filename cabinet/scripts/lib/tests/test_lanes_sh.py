@@ -168,6 +168,20 @@ def test_deploys_code_officer_no_holder_is_empty_rc1(tmp_path):
     assert proc.stdout == ""
 
 
+def test_deploys_code_officer_skips_malformed_multi_colon_rows(tmp_path):
+    """TWIN PARITY with env.deploys_code_officer (partition at the FIRST
+    colon, compare the FULL remainder): a malformed multi-colon row
+    `officer:deploys_code:extra` is NOT a holder on either side — the
+    resolver skips it and takes the next clean row (the old `awk -F: $2`
+    parse wrongly matched it while python skipped, a twin divergence)."""
+    _seed_conf(tmp_path,
+               "shadow-ceo:deploys_code:extra\n"
+               "bakery-ceo:deploys_code\n")
+    proc = _run("cabinet_deploys_code_officer", tmp_path)
+    assert proc.returncode == 0
+    assert _lines(proc) == ["bakery-ceo"]
+
+
 # ----------------------------------------------------------- org domains ----
 
 def test_org_domains_platform_top_level_lowercased_order_kept(tmp_path):

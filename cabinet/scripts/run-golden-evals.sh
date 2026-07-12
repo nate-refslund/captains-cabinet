@@ -55,6 +55,11 @@ export REDIS_HOST REDIS_PORT
 source "$CABINET_ROOT/cabinet/scripts/lib/lanes.sh" 2>/dev/null \
   || echo "WARN: lanes.sh not loadable — probe-officer resolution will fail loudly in EVAL-006/011/013" >&2
 EV_PROBE_OFFICER="$(cabinet_deploys_code_officer 2>/dev/null || true)"
+# SAFETY NOTE (Wave G fix pass): EV_PROBE_OFFICER is interpolated UNESCAPED
+# into a grep BRE (EVAL-006) and exported as OFFICER_NAME for hook probes
+# (EVAL-011/013). Safe while officer-capabilities.conf stays germline
+# schg-locked and slug-shaped; validate/escape HERE first if that conf ever
+# becomes instance-writable.
 
 # Safety: always clean up test artifacts on exit (prevents blocking all officers)
 cleanup() {
@@ -274,7 +279,10 @@ if [ -f "$CAP_FILE" ]; then
   # capability-ROUTING mechanics; the officer ids follow officer-capabilities.conf.
   # Wave G 2026-07-12: the deploy-officer NAME is now resolved from the conf
   # (lanes.sh cabinet_deploys_code_officer) and cross-checked against the raw
-  # conf row — same probe officer on this instance, no name literal.
+  # conf row — same probe officer on this instance, no name literal. The
+  # assertion is therefore resolver/conf COHERENCE (a first holder exists and
+  # its exact conf row is present) — it no longer pins WHICH officer deploys;
+  # the roster is instance data.
   if [ -z "$EV_PROBE_OFFICER" ]; then
     fail "no deploys_code officer resolved from officer-capabilities.conf (cabinet_deploys_code_officer)"
   elif grep -q "^${EV_PROBE_OFFICER}:deploys_code$" "$CAP_FILE"; then

@@ -101,6 +101,13 @@ delete WINDOW-RUNBOOK.md
 delete cabinet/scripts/appshell
 delete cabinet/scripts/tests/test_appshell_build.py
 delete docs/runbooks/hatch-appshell-v05-2026-07-10.md
+# R120-class instance-split (Wave G scripts-sweep fix pass 2026-07-12): the
+# committed pensionist screenshot baselines are THIS instance's review
+# artifacts — pre-fixture-flip surface vocabulary is baked into the PIXELS,
+# invisible to gate (d)'s text grep — never egg content. The harness itself
+# (gen_fixtures.py, render_tg.py, run.py, rubric.md, README.md) ships; a
+# fresh deployment captures its own baselines per the README's regen steps.
+delete cabinet/scripts/pensionist/shots
 
 # --- transforms (implemented in egg-export.sh, run in this order) ------------
 # R116: shared/interfaces ledgers ship as header contract + EMPTY body
@@ -257,6 +264,11 @@ expect-absent docs/launch
 expect-absent cabinet/scripts/appshell
 expect-absent cabinet/scripts/tests/test_appshell_build.py
 expect-absent docs/runbooks/hatch-appshell-v05-2026-07-10.md
+# Wave G scripts-sweep fix pass: instance screenshot baselines never ship
+# (paired delete rule above); the harness scripts must still ride.
+expect-absent cabinet/scripts/pensionist/shots
+expect-present cabinet/scripts/pensionist/run.py
+expect-present cabinet/scripts/pensionist/README.md
 # PC-E scrub-paths fix pass: instance germline-window ceremony never ships
 # (paired delete rule above).
 expect-absent WINDOW-RUNBOOK.md

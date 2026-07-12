@@ -13,8 +13,8 @@
 #                                first `slug:` scalar per file; _default.yml
 #                                has no slug and is skipped by construction).
 #                                DELIBERATELY UNFILTERED by `active:` — on the
-#                                launcher instance the polads/stephie contexts
-#                                are active:false R2-pending declarations while
+#                                launcher instance some contexts are
+#                                active:false R2-pending declarations while
 #                                their officers RUN LIVE, so an active-filtered
 #                                enum would silently drop running lanes.
 #   cabinet_officers             officer slugs — one per line, first-seen file
@@ -94,15 +94,21 @@ cabinet_officers() {
 
 # The first officer holding the deploys_code capability (file order). Empty =>
 # no holder declared => rc 1 (an eval/probe consumer must fail loudly, never
-# invent a default officer).
+# invent a default officer). TWIN PARITY with env.deploys_code_officer:
+# partition at the FIRST colon and compare the FULL remainder, so a malformed
+# multi-colon row (`x:deploys_code:y`) is NOT a holder on either side (the
+# old `-F: $2` parse matched it; python never did).
 cabinet_deploys_code_officer() {
   local conf="$CABINET_ROOT/cabinet/officer-capabilities.conf"
   [ -f "$conf" ] && [ -r "$conf" ] || return 1
   local officer
-  officer=$(LC_ALL=C awk -F: '
+  officer=$(LC_ALL=C awk '
     /^[ \t]*#/ { next }
-    NF >= 2 {
-      o = $1; c = $2
+    {
+      i = index($0, ":")
+      if (i == 0) next
+      o = substr($0, 1, i - 1)
+      c = substr($0, i + 1)
       gsub(/^[ \t]+|[ \t]+$/, "", o)
       gsub(/^[ \t\r]+|[ \t\r]+$/, "", c)
       if (o != "" && c == "deploys_code") { print o; exit }
@@ -116,9 +122,14 @@ cabinet_deploys_code_officer() {
 # platform.yml first, then product.yml; a top-level `org_domains:` list, or
 # (product.yml) one nested directly under `product:`. Items lowercased,
 # whitespace/quote-stripped, inline `#` comments dropped, ORDER PRESERVED
-# (env.py preserves order; no sort here). First file yielding a non-empty
-# list wins; none => empty + rc 1 (framework treats every recipient as
-# external then — the conservative ceiling; consumers here likewise get no
+# (env.py preserves order; no sort here). BLOCK-STYLE lists ONLY
+# (`org_domains:` header + `- item` lines — the form the live file and the
+# .example twin both declare); the python twin's yaml.safe_load ALSO accepts
+# inline-flow `org_domains: [a, b]`, which THIS parser resolves to nothing
+# (rc 1 — the twins diverge only in the documented stricter direction: no
+# anchors, never wrong anchors — declare block-form). First file yielding a
+# non-empty list wins; none => empty + rc 1 (framework treats every recipient
+# as external then — the conservative ceiling; consumers here likewise get no
 # free anchors).
 cabinet_org_domains() {
   local rel p out
