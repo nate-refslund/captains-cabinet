@@ -23,10 +23,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import fs from 'node:fs'
 import path from 'node:path'
-import yaml from 'js-yaml'
 import { cookies } from 'next/headers'
 import { loadGrowthLadders } from '@/lib/world/ladders-loader'
-import type { EngineEval, LaneRecord } from '@/lib/world/era-engine'
+import type { EngineEval } from '@/lib/world/era-engine'
+import {
+  declaredLanes,
+  outcomeLanes,
+  probeWiredLanes,
+  type OutcomeLanes,
+} from '@/lib/world/instance-lanes'
+import { berthLanes } from '@/lib/world/world-geo'
 import type { WeatherSignals } from '@/lib/world/weather'
 import { loadLifeGrammar } from '@/lib/world/life/life-grammar'
 import type { WorkSite } from '@/lib/world/life/sites'
@@ -47,77 +53,9 @@ type RedisLike = {
   quit(): Promise<unknown>
 }
 
-/** Instance-only test lanes (Captain ruling 2026-07-09: 'sensed' is an
- * instance-test app, never foundation — reef-buoy render). */
-const INSTANCE_TEST_LANES = new Set(['sensed'])
-
-interface OutcomeRow {
-  id?: string
-  lane?: string
-  status?: string
-}
-
-/** Lane of an outcome: explicit lane: else the outcome-<lane>-NNN id. */
-function laneOf(o: OutcomeRow): string | null {
-  if (typeof o.lane === 'string' && o.lane) return o.lane
-  const m = /^outcome-(.+)-\d+$/.exec(o.id ?? '')
-  return m ? m[1] : null
-}
-
-function readOutcomes(): {
-  lanes: Record<string, LaneRecord>
-  achieved: number
-  active: number
-  activeSystemSelf: number
-  activeLanesEver: number
-} {
-  const lanes: Record<string, LaneRecord> = {}
-  let achieved = 0
-  let active = 0
-  let activeSystemSelf = 0
-  try {
-    const raw = fs.readFileSync(
-      path.join(repoRoot(), 'instance', 'config', 'outcomes.yml'),
-      'utf8'
-    )
-    const doc = (yaml.load(raw, { schema: yaml.JSON_SCHEMA }) ?? {}) as {
-      outcomes?: OutcomeRow[]
-    }
-    for (const o of doc.outcomes ?? []) {
-      const lane = laneOf(o)
-      if (!lane) continue
-      const status = o.status ?? 'draft'
-      if (status === 'draft') continue // never ratified — not "ever"
-      const rec = (lanes[lane] ??= {
-        ever: 0,
-        active: 0,
-        achieved: 0,
-        retired: 0,
-        instanceTest: INSTANCE_TEST_LANES.has(lane),
-      })
-      rec.ever += 1
-      if (status === 'active') {
-        rec.active += 1
-        active += 1
-        if (lane === 'system-self') activeSystemSelf += 1
-      }
-      if (status === 'achieved') {
-        rec.achieved += 1
-        achieved += 1
-      }
-      if (status === 'retired') rec.retired += 1
-    }
-  } catch {
-    /* honest absence: empty lanes → everything unmeasured/reef */
-  }
-  return {
-    lanes,
-    achieved,
-    active,
-    activeSystemSelf,
-    activeLanesEver: Object.keys(lanes).length,
-  }
-}
+/* The outcomes fold, declared-lane universe, and probe join live in
+ * lib/world/instance-lanes.ts (Wave G instance-split: lane names are
+ * instance data; the readers are import-testable there). */
 
 /**
  * T2 LIFE data (v1a review fix: the life layer must reach the renderer).
@@ -207,7 +145,7 @@ function buildEval(
   kf: Keyframe | undefined,
   firstDate: string | null,
   chronicleKeyframes: number,
-  outcomes: ReturnType<typeof readOutcomes>,
+  outcomes: OutcomeLanes,
   embedQueueLen: number | null
 ): EngineEval {
   const metrics: Record<string, number | null> = {}
@@ -244,7 +182,7 @@ export async function GET(_req: NextRequest) {
 
   const ladders = loadGrowthLadders()
   const census = readCensus()
-  const outcomes = readOutcomes()
+  const outcomes = outcomeLanes(repoRoot())
 
   // ── live signals (best-effort; every failure degrades to honest null) ────
   let killswitch = false
@@ -312,6 +250,14 @@ export async function GET(_req: NextRequest) {
       : null,
     weather,
     orgEventsTotal: num(latestKf, 'org_events_total') ?? 0,
+    // Isle berth bindings (instance world-state — Wave G): slot i ← the
+    // i-th lane by BIRTH ORDER (first ratified appearance in outcomes.yml,
+    // = the fold's key order) that is a declared context lane. Undeclared
+    // pseudo-lanes and system-self (the main island) never berth. Empty
+    // config ⇒ all-null ⇒ mist — honest absence, never invented names.
+    berths: berthLanes(Object.keys(outcomes.lanes), declaredLanes(repoRoot())),
+    // Lanes with a probes.yml row (isle why-string provenance).
+    probeWiredLanes: probeWiredLanes(repoRoot()),
     // T2 LIFE feed (grammar-gated fail-closed: absent blocks → behavior OFF)
     life: {
       grammar: loadLifeGrammar(),

@@ -49,7 +49,7 @@ function row(overrides: Partial<QueueRow>): QueueRow {
     one_tap: { approve: 'direct', veto: 'direct', defer: 'direct' },
     blast_worst_case: 'a message reaches a human outside the machine',
     filed_by: 'officer:cos',
-    lane: 'polads',
+    lane: 'testburg-lane',
     ...overrides,
   }
 }

@@ -16,22 +16,28 @@ import {
   shoreVariant,
 } from './chunks'
 import {
+  berthLanes,
   buildWorldGeo,
   carvePolyline,
   CANVAS,
-  ISLE_ANCHORS,
+  ISLE_SLOTS,
   MAIN_OFFSET,
   QUAY_CENTER,
   type WorldGeo,
 } from './world-geo'
 
+// Testburg fixture lanes (synthetic — lane names are instance data, so
+// tests use the fixture-town vocabulary, mirroring era-engine.test.ts):
+// bakery = thriving lane, newsletter = earning lane, exampleco = retired.
 const GEO: WorldGeo = buildWorldGeo({
   orgEventsTotal: 168_917, // R = 54 by the fold law, capped to the 60×48 core
   lanes: {
-    polads: { ever: 5, active: 3, achieved: 1, retired: 0 },
-    stephie: { ever: 2, active: 1, achieved: 1, retired: 0 },
-    stepnetwork: { ever: 1, active: 0, achieved: 0, retired: 1 },
+    bakery: { ever: 5, active: 3, achieved: 1, retired: 0 },
+    newsletter: { ever: 2, active: 1, achieved: 1, retired: 0 },
+    exampleco: { ever: 1, active: 0, achieved: 0, retired: 1 },
   },
+  berths: ['bakery', 'newsletter', 'exampleco'],
+  probeWiredLanes: ['bakery'],
 })
 
 describe('chunk math', () => {
@@ -71,24 +77,66 @@ describe('authored geography', () => {
     expect(landAt(-500, -500, GEO)).toBe(false) // unbounded: off-canvas samples fine
   })
   it('active lanes earn isles; retired lane renders reef-buoy (ruling)', () => {
-    const polads = GEO.laneSites.find((s) => s.lane === 'polads')!
-    expect(polads.render).toBe('isle')
-    expect(polads.ringRung).toBe(2)
-    const retired = GEO.laneSites.find((s) => s.lane === 'stepnetwork')!
+    const bakery = GEO.laneSites.find((s) => s.lane === 'bakery')!
+    expect(bakery.render).toBe('isle')
+    expect(bakery.ringRung).toBe(2)
+    const retired = GEO.laneSites.find((s) => s.lane === 'exampleco')!
     expect(retired.render).toBe('reef_buoy')
     expect(retired.why).toContain('retired')
     expect(landAt(retired.cx, retired.cy, GEO)).toBe(false) // a buoy has no land
     const reserved = GEO.laneSites.filter((s) => s.render === 'mist_reserved')
     expect(reserved).toHaveLength(2) // slots 4/5 under mist + grey buoys
   })
+  it('slot stability: berth order binds slots, slot i geometry never moves', () => {
+    // slot 1 = first-born lane, slot 2 = second, slot 3 = third (retired
+    // lanes KEEP their berth — a reef buoy marks it; the slot never re-lets)
+    expect(GEO.laneSites.map((s) => [s.slot, s.lane])).toEqual([
+      [1, 'bakery'],
+      [2, 'newsletter'],
+      [3, 'exampleco'],
+      [4, null],
+      [5, null],
+    ])
+    // geometry is morphology law: sites sit exactly on their slot anchors
+    for (const site of GEO.laneSites) {
+      const slot = ISLE_SLOTS.find((s) => s.slot === site.slot)!
+      expect([site.cx, site.cy]).toEqual([slot.cx, slot.cy])
+    }
+  })
   it('instance-test lane → reef-buoy even with achieved outcomes (sensed law)', () => {
     const geo = buildWorldGeo({
       orgEventsTotal: 1000,
-      lanes: { polads: { ever: 5, active: 3, achieved: 2, retired: 0, instanceTest: true } },
+      lanes: { bakery: { ever: 5, active: 3, achieved: 2, retired: 0, instanceTest: true } },
+      berths: ['bakery'],
     })
-    const site = geo.laneSites.find((s) => s.lane === 'polads')!
+    const site = geo.laneSites.find((s) => s.lane === 'bakery')!
     expect(site.render).toBe('reef_buoy')
     expect(site.why).toContain('instance-only')
+  })
+  it('probe provenance is input data: wired lane says probe-verified, others say unverified', () => {
+    const bakery = GEO.laneSites.find((s) => s.lane === 'bakery')!
+    expect(bakery.why).toContain('probe-verified lane')
+    const newsletter = GEO.laneSites.find((s) => s.lane === 'newsletter')!
+    expect(newsletter.render).toBe('isle')
+    expect(newsletter.why).toContain('unverified by probe — probes.yml has no row')
+  })
+  it('a berthed lane with no outcome record renders an honest reef-buoy', () => {
+    const geo = buildWorldGeo({
+      orgEventsTotal: 1000,
+      lanes: {},
+      berths: ['bakery'],
+    })
+    const site = geo.laneSites.find((s) => s.lane === 'bakery')!
+    expect(site.render).toBe('reef_buoy')
+    expect(site.why).toContain('no ratified outcome yet')
+  })
+  it('no berth feed ⇒ every slot is mist (honest absence, never invented names)', () => {
+    const geo = buildWorldGeo({ orgEventsTotal: 1000, lanes: {} })
+    expect(geo.laneSites.filter((s) => s.render === 'mist_reserved')).toHaveLength(
+      ISLE_SLOTS.length
+    )
+    expect(geo.laneSites.every((s) => s.lane === null)).toBe(true)
+    expect(geo.islands).toHaveLength(1) // main island only
   })
   it('the road spine carves dirt from the village rise to the quay', () => {
     expect(GEO.roadTiles.size).toBeGreaterThan(20)
@@ -108,15 +156,51 @@ describe('authored geography', () => {
   it('the quay line renders reclaimed stone (beside the road mouth)', () => {
     expect(baseTile(QUAY_CENTER.x + 3, QUAY_CENTER.y, GEO)).toBe('quay')
   })
-  it('anchors are law: fan slots pairwise ≥ 58 apart (no tier-7 collision)', () => {
-    for (let i = 0; i < ISLE_ANCHORS.length; i++) {
-      for (let j = i + 1; j < ISLE_ANCHORS.length; j++) {
-        const a = ISLE_ANCHORS[i]
-        const b = ISLE_ANCHORS[j]
+  it('slots are law: fan slots pairwise ≥ 58 apart (no tier-7 collision)', () => {
+    for (let i = 0; i < ISLE_SLOTS.length; i++) {
+      for (let j = i + 1; j < ISLE_SLOTS.length; j++) {
+        const a = ISLE_SLOTS[i]
+        const b = ISLE_SLOTS[j]
         const d = Math.hypot(a.cx - b.cx, a.cy - b.cy)
         expect(d).toBeGreaterThan(58)
       }
     }
+  })
+})
+
+describe('berth fold — lane names are instance data', () => {
+  const SLOTS = ISLE_SLOTS.length
+  it('binds in BIRTH order (ledger appearance), never alphabetical', () => {
+    expect(berthLanes(['zz-mill', 'aa-bakehouse'], ['zz-mill', 'aa-bakehouse'])).toEqual([
+      'zz-mill',
+      'aa-bakehouse',
+      ...Array(SLOTS - 2).fill(null),
+    ])
+  })
+  it('undeclared pseudo-lanes never claim a berth (outcome-id wrinkle law)', () => {
+    // an outcome id that regex-parses to a non-lane must not berth
+    expect(
+      berthLanes(['bakery', 'flour-delivery-q3', 'newsletter'], ['bakery', 'newsletter'])
+    ).toEqual(['bakery', 'newsletter', ...Array(SLOTS - 2).fill(null)])
+  })
+  it('system-self never berths — the main island IS system-self', () => {
+    expect(
+      berthLanes(['system-self', 'bakery'], ['system-self', 'bakery'])
+    ).toEqual(['bakery', ...Array(SLOTS - 1).fill(null)])
+  })
+  it('dedups repeats; a lane holds exactly one berth', () => {
+    expect(
+      berthLanes(['bakery', 'bakery', 'newsletter'], ['bakery', 'newsletter'])
+    ).toEqual(['bakery', 'newsletter', ...Array(SLOTS - 2).fill(null)])
+  })
+  it('caps at the fan (a 6th lane waits — morphology change, not data)', () => {
+    const lanes = ['b1', 'b2', 'b3', 'b4', 'b5', 'b6']
+    expect(berthLanes(lanes, lanes)).toEqual(lanes.slice(0, SLOTS))
+  })
+  it('empty/unknown inputs ⇒ all-null berths (honest absence)', () => {
+    expect(berthLanes([], [])).toEqual(Array(SLOTS).fill(null))
+    expect(berthLanes(['bakery'], [])).toEqual(Array(SLOTS).fill(null))
+    expect(berthLanes([], ['bakery'])).toEqual(Array(SLOTS).fill(null))
   })
 })
 
