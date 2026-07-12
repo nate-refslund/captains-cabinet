@@ -232,42 +232,42 @@ class TestSubjectHasOpenProposal:
 
 class TestOpenProposalBlocksLive:
     """RECENCY-AWARE Layer-2 pre-emit dup guard (open_proposal_blocks_live).
-    Regression cover for the Morten-Stagaard 17:05 DPA miss: the blunt
+    Regression cover for the Milo-Archer 17:05 DPA miss: the blunt
     subject_has_open_proposal predecessor skipped on ANY open proposal, so a
     legitimately-NEW inbound that passed the recency-aware top-of-loop gate was
     then killed here by a STALE older open proposal. The live variant must apply
     the SAME last_dt <= when recency test as open_proposal_blocks."""
 
     def test_morten_newer_inbound_not_blocked_by_stale_open(self):
-        # The exact failure: an open draft for Morten's 14:53 (12:53Z) message
+        # The exact failure: an open draft for Milo's 14:53 (12:53Z) message
         # sits undecided; his 17:05 (15:05Z) reply is genuinely NEW. The live
         # guard must NOT block it (newer than the open proposal) -> it re-presents.
-        rows = [_open_row("Morten-Stagaard", "2026-06-25T13:15:58+00:00")]
-        t = _thread(slug="Morten-Stagaard", date="2026-06-25T15:05:13+00:00")
+        rows = [_open_row("Milo-Archer", "2026-06-25T13:15:58+00:00")]
+        t = _thread(slug="Milo-Archer", date="2026-06-25T15:05:13+00:00")
         assert ld.open_proposal_blocks_live(t, rows=rows) is False
 
     def test_same_message_open_proposal_blocks(self):
         # A proposal that landed DURING our draft for the SAME (or older-than-our)
         # inbound is a true duplicate -> block. Inbound 13:00Z <= open 13:15Z.
-        rows = [_open_row("Morten-Stagaard", "2026-06-25T13:15:58+00:00")]
-        t = _thread(slug="Morten-Stagaard", date="2026-06-25T13:00:00+00:00")
+        rows = [_open_row("Milo-Archer", "2026-06-25T13:15:58+00:00")]
+        t = _thread(slug="Milo-Archer", date="2026-06-25T13:00:00+00:00")
         assert ld.open_proposal_blocks_live(t, rows=rows) is True
 
     def test_no_open_proposal_not_blocked(self):
         rows = [_open_row("someone-else", "2026-06-25T13:15:58+00:00")]
-        t = _thread(slug="Morten-Stagaard", date="2026-06-25T15:05:13+00:00")
+        t = _thread(slug="Milo-Archer", date="2026-06-25T15:05:13+00:00")
         assert ld.open_proposal_blocks_live(t, rows=rows) is False
 
     def test_decided_proposal_not_blocked(self):
         # A decided proposal is handled by the decided/already_handled path, not
         # this open-proposal guard -> not blocked here.
-        rows = [_decided_row("Morten-Stagaard", "2026-06-25T13:00:00+00:00")]
-        t = _thread(slug="Morten-Stagaard", date="2026-06-25T15:05:13+00:00")
+        rows = [_decided_row("Milo-Archer", "2026-06-25T13:00:00+00:00")]
+        t = _thread(slug="Milo-Archer", date="2026-06-25T15:05:13+00:00")
         assert ld.open_proposal_blocks_live(t, rows=rows) is False
 
     def test_unparseable_inbound_with_open_proposal_blocks(self):
         # Open proposal exists but inbound date is garbage -> cannot prove newer
         # -> block (conservative: never double-draft a pending thread).
-        rows = [_open_row("Morten-Stagaard", "2026-06-25T13:15:58+00:00")]
-        t = _thread(slug="Morten-Stagaard", date="garbage")
+        rows = [_open_row("Milo-Archer", "2026-06-25T13:15:58+00:00")]
+        t = _thread(slug="Milo-Archer", date="garbage")
         assert ld.open_proposal_blocks_live(t, rows=rows) is True

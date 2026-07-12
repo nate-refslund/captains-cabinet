@@ -2,7 +2,7 @@
 # chair-release-thread.sh — the Chair RELEASES a thread it had claimed, so the
 # draft-lane resumes normal handling of it.
 #
-# The counterpart to chair-claim-thread.sh (FIX 1 of the wrong-Morten draft
+# The counterpart to chair-claim-thread.sh (FIX 1 of the wrong-Milo draft
 # race). The Chair calls this when it has finished hand-crafting (and queued /
 # sent) its reply on a thread. It DELs the redis key
 # cabinet:chair:active-thread:<slug>; once gone, screenpipe_adapter.chair_holds_thread()
@@ -20,7 +20,7 @@
 #
 # Usage:
 #   chair-release-thread.sh <slug>
-#   chair-release-thread.sh Morten-Stagaard
+#   chair-release-thread.sh Milo-Archer
 set -uo pipefail
 
 SLUG="${1:-}"

@@ -327,7 +327,7 @@ def main() -> None:
         #       _live), mirroring the top-of-loop gate: a STALE older open proposal
         #       (an earlier draft the captain hasn't decided) must NOT suppress the
         #       genuinely-new message we just drafted — that blunt check was the
-        #       Morten-Stagaard 17:05 DPA miss (older 14:53 draft sat open, so the
+        #       Milo-Archer 17:05 DPA miss (older 14:53 draft sat open, so the
         #       newer 17:05 reply was silently dropped here).
         #   (2) FRESHNESS: the captain may have replied himself while we drafted (he is
         #       faster than the 5-min lane), making his message the newest. A

@@ -156,7 +156,7 @@ def open_proposal_blocks_live(thread: dict, rows: list | None = None) -> bool:
     two checkpoints disagree: the blunt predecessor ``subject_has_open_proposal``
     skipped on ANY open proposal, so a thread that correctly passed the
     recency-aware top-of-loop gate (because a newer message arrived) was then
-    killed here by a STALE older open proposal — the Morten-Stagaard 17:05 DPA
+    killed here by a STALE older open proposal — the Milo-Archer 17:05 DPA
     failure (an earlier draft for the 14:53 message sat open and undecided, so the
     legitimately-new 17:05 reply was silently suppressed). Reading the ledger live
     still closes the concurrent-duplicate window the Layer-2 guard exists for: a
