@@ -31,7 +31,7 @@ ROW = {
     "blast": {"class": "external", "reach": "external"},
     "blast_worst_case": "a message reaches a human outside the machine",
     "one_tap": {"approve": "direct", "veto": "direct", "defer": "direct"},
-    "refs": ["cmt-4821"], "lane": "polads",
+    "refs": ["cmt-4821"], "lane": "testburg",
 }
 RITUAL_ROW = {
     **ROW, "id": "sit-2", "pid": "gl-hand-1", "kind": "germline-handback",
