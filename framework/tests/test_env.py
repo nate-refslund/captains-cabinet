@@ -609,3 +609,238 @@ class TestActivePreset:
         p.write_text("portfolio\n", encoding="utf-8")
         monkeypatch.setenv("CABINET_ACTIVE_PRESET", "step-network")
         assert env.active_preset() == "step-network"
+
+
+# ---------------------------------------------------------------------------
+# Lane / officer roster resolvers (PC-E-LOCKSTEP instance-split, Wave G)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def isolated_officers_cache():
+    """Clear the process-wide officers cache for the test, then restore the
+    original so sibling tests are untouched — mirrors isolated_role_cache."""
+    saved = env._officers_cache
+    env._officers_cache = None
+    try:
+        yield
+    finally:
+        env._officers_cache = saved
+
+
+@pytest.fixture
+def isolated_deploys_code_officer_cache():
+    saved = env._deploys_code_officer_cache
+    env._deploys_code_officer_cache = None
+    try:
+        yield
+    finally:
+        env._deploys_code_officer_cache = saved
+
+
+@pytest.fixture
+def isolated_lanes_cache():
+    saved = env._lanes_cache
+    env._lanes_cache = None
+    try:
+        yield
+    finally:
+        env._lanes_cache = saved
+
+
+@pytest.fixture
+def isolated_lane_default_cache():
+    saved = env._lane_default_cache
+    env._lane_default_cache = None
+    try:
+        yield
+    finally:
+        env._lane_default_cache = saved
+
+
+def _write_conf(root, body: str) -> None:
+    p = root / "cabinet" / "officer-capabilities.conf"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(body, encoding="utf-8")
+
+
+def _write_context(root, name: str, body: str) -> None:
+    # Single "instance/config" path literal — same layer-separation-gate note
+    # as _write_cfg above.
+    p = root / "instance/config" / "contexts" / name
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(body, encoding="utf-8")
+
+
+_TESTBURG_CONF = """# Testburg fixture roster
+# comment line with a colon: ignored
+town-crier:captain_rules_retrieval
+town-crier:logs_captain_decisions
+
+bakery-ceo:deploys_code
+bakery-ceo:logs_captain_decisions
+market-ceo:deploys_code
+market-ceo:captain_rules_retrieval
+"""
+
+
+class TestOfficers:
+    """The officers() resolver — instance-DRIVEN, fail-closed to EMPTY.
+
+    The officer whitelist / prompt-enum / roster surfaces read the roster via
+    this resolver, never a baked-in literal set (PC-E-LOCKSTEP pair (a)/(e)
+    consumers land at the germline ceremony; this pins the resolver they bind
+    to). Fixture vocabulary is synthetic Testburg — never instance lanes."""
+
+    def test_reads_officer_column_file_order_deduped(
+            self, tmp_path, monkeypatch, isolated_officers_cache):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_conf(tmp_path, _TESTBURG_CONF)
+        env._officers_cache = None
+        assert env.officers() == ("town-crier", "bakery-ceo", "market-ceo")
+
+    def test_comments_blanks_and_malformed_lines_skipped(
+            self, tmp_path, monkeypatch, isolated_officers_cache):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_conf(tmp_path,
+                    "# header\n\nnot-a-row\nbakery-ceo:deploys_code\n")
+        env._officers_cache = None
+        assert env.officers() == ("bakery-ceo",)
+
+    def test_absent_conf_fails_closed_to_empty(
+            self, tmp_path, monkeypatch, isolated_officers_cache):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))  # empty tmp — no conf
+        env._officers_cache = None
+        assert env.officers() == ()
+
+    def test_caller_default_honored_when_unreadable(
+            self, tmp_path, monkeypatch, isolated_officers_cache):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        env._officers_cache = None
+        assert env.officers(default=("town-crier",)) == ("town-crier",)
+
+    def test_result_is_cached_process_wide(
+            self, tmp_path, monkeypatch, isolated_officers_cache):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_conf(tmp_path, "bakery-ceo:deploys_code\n")
+        env._officers_cache = None
+        assert env.officers() == ("bakery-ceo",)
+        _write_conf(tmp_path, "market-ceo:deploys_code\n")  # ignored — cached
+        assert env.officers() == ("bakery-ceo",)
+
+
+class TestDeploysCodeOfficer:
+    """The deploys_code_officer() resolver — first conf-file-order holder,
+    fail-closed to "" (an eval consumer then prints FAIL, never probes a
+    baked-in officer)."""
+
+    def test_first_holder_in_file_order(
+            self, tmp_path, monkeypatch, isolated_deploys_code_officer_cache):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_conf(tmp_path, _TESTBURG_CONF)
+        env._deploys_code_officer_cache = None
+        assert env.deploys_code_officer() == "bakery-ceo"
+
+    def test_no_holder_fails_closed_to_empty(
+            self, tmp_path, monkeypatch, isolated_deploys_code_officer_cache):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_conf(tmp_path, "town-crier:logs_captain_decisions\n")
+        env._deploys_code_officer_cache = None
+        assert env.deploys_code_officer() == ""
+
+    def test_absent_conf_fails_closed_to_empty(
+            self, tmp_path, monkeypatch, isolated_deploys_code_officer_cache):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        env._deploys_code_officer_cache = None
+        assert env.deploys_code_officer() == ""
+
+
+class TestLanes:
+    """The lanes() resolver — the instance context-slug enum, fail-closed to
+    EMPTY. Parse mirrors run_action_lane._context_slugs byte-for-byte so the
+    two can merge at a germline window."""
+
+    def test_reads_sorted_slugs_from_contexts(
+            self, tmp_path, monkeypatch, isolated_lanes_cache):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_context(tmp_path, "testburg.yml", "slug: testburg\nactive: true\n")
+        _write_context(tmp_path, "market.yml", 'slug: "testburg-market"\n')
+        _write_context(tmp_path, "harbor.yml", "slug: 'Testburg-Harbor'\n")
+        env._lanes_cache = None
+        assert env.lanes() == ("testburg", "testburg-harbor", "testburg-market")
+
+    def test_file_without_slug_skipped(
+            self, tmp_path, monkeypatch, isolated_lanes_cache):
+        """_default.yml has no slug: scalar — skipped, exactly like the
+        acting-lane parser skips it."""
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_context(tmp_path, "_default.yml", "description: defaults only\n")
+        _write_context(tmp_path, "testburg.yml", "slug: testburg\n")
+        env._lanes_cache = None
+        assert env.lanes() == ("testburg",)
+
+    def test_active_false_context_still_enumerated(
+            self, tmp_path, monkeypatch, isolated_lanes_cache):
+        """THE recon-named trap: a context declared active: false can still
+        have a RUNNING lane officer — the enum must NEVER filter on active:
+        (an activation-filtered enum would silently drop live lanes)."""
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_context(tmp_path, "dormant.yml",
+                       "slug: testburg-dormant\nactive: false\n")
+        env._lanes_cache = None
+        assert env.lanes() == ("testburg-dormant",)
+
+    def test_absent_dir_fails_closed_to_empty(
+            self, tmp_path, monkeypatch, isolated_lanes_cache):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))  # no contexts dir
+        env._lanes_cache = None
+        assert env.lanes() == ()
+        env._lanes_cache = None
+        assert env.lanes(default=("testburg",)) == ("testburg",)
+
+    def test_result_is_cached_process_wide(
+            self, tmp_path, monkeypatch, isolated_lanes_cache):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_context(tmp_path, "testburg.yml", "slug: testburg\n")
+        env._lanes_cache = None
+        assert env.lanes() == ("testburg",)
+        _write_context(tmp_path, "more.yml", "slug: testburg-more\n")  # ignored
+        assert env.lanes() == ("testburg",)
+
+
+class TestLaneDefault:
+    """The lane_default() resolver — instance-DRIVEN, fail-closed to "".
+
+    PC-E-LOCKSTEP pair (e): the acting lane's proposal default lane is a
+    Captain ruling encoded as instance data; a generic deployment resolves ""
+    and the runner's lane normalization files cards under the stable adhoc
+    catch-all."""
+
+    def test_reads_from_platform_yml(
+            self, tmp_path, monkeypatch, isolated_lane_default_cache):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "platform.yml", "lane_default: testburg\n")
+        env._lane_default_cache = None
+        assert env.lane_default() == "testburg"
+
+    def test_reads_nested_product_yml(
+            self, tmp_path, monkeypatch, isolated_lane_default_cache):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "product.yml",
+                   "product:\n  lane_default: testburg-market\n")
+        env._lane_default_cache = None
+        assert env.lane_default() == "testburg-market"
+
+    def test_platform_yml_wins_over_product_yml(
+            self, tmp_path, monkeypatch, isolated_lane_default_cache):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "platform.yml", "lane_default: testburg\n")
+        _write_cfg(tmp_path, "product.yml",
+                   "product:\n  lane_default: testburg-market\n")
+        env._lane_default_cache = None
+        assert env.lane_default() == "testburg"
+
+    def test_absent_config_fails_closed_to_empty(
+            self, tmp_path, monkeypatch, isolated_lane_default_cache):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))  # empty tmp — no config
+        env._lane_default_cache = None
+        assert env.lane_default() == ""
