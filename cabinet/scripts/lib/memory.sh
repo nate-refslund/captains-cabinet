@@ -28,6 +28,27 @@ MEM_REDIS_PORT="${REDIS_PORT:-6379}"
 MEM_QUEUE_KEY="cabinet:memory:embed_queue"
 
 # =============================================================
+# EMBED-SEAM (R4, 2026-07-12 — closes operative-egg-ledger:1938)
+# The embedding provider/model/dims are a NAMED SEAM so a fresh captain can
+# point the semantic spine at a different provider WITHOUT editing this
+# library. Defaults reproduce today's deployment EXACTLY (Voyage voyage-4-large,
+# 1024-dim) — nothing changes for the current cabinet unless these are set.
+#
+# WIRED PROVIDERS: only "voyage" has an arm in memory_get_embedding today.
+# EMBED_PROVIDER is recorded (memory_embedding_stamp) + surfaced by the
+# cabinet-doctor embed-seam probe. Pointing at an unwired provider DEGRADES
+# cleanly (loud stderr WARN + return 1 → the keyless lexical arm), never a
+# silent wrong-endpoint call. Adding a provider = add an arm below + a one-off
+# re-embed backfill (a dims change re-embeds every row — deliberately NOT an
+# auto-organ; see cabinet/sql/046-embedding-meta.sql + the doctor probe).
+EMBED_PROVIDER="${EMBED_PROVIDER:-voyage}"
+EMBED_MODEL="${EMBED_MODEL:-voyage-4-large}"
+EMBED_DIMS="${EMBED_DIMS:-1024}"
+# Cross-encoder reranker (R2). Same seam discipline: default reproduces the
+# proven in-house choice; a fresh captain can retune without editing the lib.
+EMBED_RERANK_MODEL="${EMBED_RERANK_MODEL:-rerank-2.5}"
+
+# =============================================================
 # TENANT RESOLUTION (cabinet_id scoping)
 # Canonical resolver = env CABINET_ID, default 'main' — same precedence as
 # framework/authority/posture.py cabinet_id() and load-preset.sh's CP9b
@@ -68,6 +89,16 @@ memory_cabinet_scope() {
 # =============================================================
 memory_get_embedding() {
   local text="$1"
+  # EMBED-SEAM dispatch (R4): only the "voyage" provider is wired. An unwired
+  # EMBED_PROVIDER must DEGRADE loudly (→ caller falls back to lexical), never
+  # POST a foreign model to the Voyage endpoint. Compared case-insensitively.
+  case "$(printf '%s' "${EMBED_PROVIDER:-voyage}" | tr '[:upper:]' '[:lower:]')" in
+    voyage) : ;;
+    *)
+      echo "memory.sh WARN: EMBED_PROVIDER='${EMBED_PROVIDER}' has no wired arm (only 'voyage') — DEGRADING (add an arm in memory_get_embedding + re-embed backfill)" >&2
+      return 1
+      ;;
+  esac
   # Use :- to survive `set -u` in callers (pre-captain-dm.sh + worker both
   # enable it). Without the default, an unset VOYAGE_API_KEY raises rather
   # than returning a clean 1.
@@ -75,11 +106,46 @@ memory_get_embedding() {
   # voyage-4-large accepts up to 32K tokens (~128K chars). Cut to 32000 chars
   # keeps well under the limit with headroom for over-tokenization.
   text=$(echo "$text" | tr '\n' ' ' | cut -c1-32000)
+  # Model comes from the EMBED-SEAM (EMBED_MODEL), defaulting to voyage-4-large.
   curl -s --max-time 30 https://api.voyageai.com/v1/embeddings \
     -H "Authorization: Bearer $VOYAGE_API_KEY" \
     -H "Content-Type: application/json" \
-    -d "$(jq -n --arg text "$text" '{input: [$text], model: "voyage-4-large"}')" \
+    -d "$(jq -n --arg text "$text" --arg model "${EMBED_MODEL:-voyage-4-large}" '{input: [$text], model: $model}')" \
     | jq -r '.data[0].embedding | @json'
+}
+
+# =============================================================
+# EMBED-SEAM STAMP (R4, 2026-07-12): record the active provider/model/dims in
+# the one-row cabinet_embedding_meta table (cabinet/sql/046-embedding-meta.sql)
+# so cabinet-doctor can detect drift between the configured seam and what the
+# store was embedded with. Idempotent; run at DEPLOY/bootstrap — NEVER on the
+# read path (that would add a write to every search). Self-sufficient: creates
+# the table if absent, so a captain can stamp an existing estate in one call.
+# Requires a writable NEON_CONNECTION_STRING.
+# =============================================================
+memory_embedding_stamp() {
+  if [ -z "${NEON_CONNECTION_STRING:-}" ]; then
+    echo "memory.sh: no NEON_CONNECTION_STRING — cannot stamp cabinet_embedding_meta" >&2
+    return 1
+  fi
+  psql "$NEON_CONNECTION_STRING" -q \
+    -v provider="${EMBED_PROVIDER:-voyage}" \
+    -v model="${EMBED_MODEL:-voyage-4-large}" \
+    -v dims="${EMBED_DIMS:-1024}" \
+    <<'SQLEOF'
+CREATE TABLE IF NOT EXISTS cabinet_embedding_meta (
+  id INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  provider TEXT NOT NULL, model TEXT NOT NULL, dims INT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+INSERT INTO cabinet_embedding_meta (id, provider, model, dims, updated_at)
+VALUES (1, :'provider', :'model', (:'dims')::int, NOW())
+ON CONFLICT (id) DO UPDATE SET
+  provider = EXCLUDED.provider,
+  model    = EXCLUDED.model,
+  dims     = EXCLUDED.dims,
+  updated_at = NOW();
+SQLEOF
 }
 
 # =============================================================
@@ -217,6 +283,12 @@ memory_queue_embed() {
 # The similarity floor (min_score) applies to vec, not final — a lexically
 # strong but semantically unrelated row must not sneak in.
 #
+# RERANK (R2): the blended score above ranks a POOL of limit*4 candidates;
+# memory_rerank then reorders that pool with a Voyage cross-encoder and cuts
+# to top-k. Fail-soft — keyless/error yields the blended top-k unchanged. The
+# 8-column output contract is identical either way (only intra-top-k order and
+# which pool rows make the cut can change).
+#
 # Tenant scoping: results are fenced to this cabinet's rows —
 # cabinet_id = memory_cabinet_scope() OR 'main' (legacy transition rows);
 # CABINET_ID unset → unscoped (all rows). See the transition comment inline.
@@ -261,15 +333,28 @@ memory_search() {
   local cid_scope
   cid_scope="$(memory_cabinet_scope)"
 
+  # Rerank pool (R2, 2026-07-12): over-fetch a blended-ranked pool of limit*4
+  # rows so the Voyage cross-encoder (memory_rerank, below) has a real
+  # candidate set to reorder before the cut to top-k. The candidate CTE
+  # already pulls GREATEST(limit*5,50), so this pool is a strict subset — no
+  # extra HNSW cost. Fail-soft: if rerank is unavailable the pool is simply
+  # cut to top-k in blended order (today's behavior).
+  local rerank_pool=$(( limit * 4 ))
+  [ "$rerank_pool" -lt "$limit" ] && rerank_pool="$limit"
+
   # Use tab separator (safer than | — content may contain |)
   # Strip any tabs/newlines from preview so one row = one line, cleanly parseable
   # Filters passed via psql -v (parameterized, injection-safe)
   # candidates CTE keeps the HNSW index in play: pull a vector-ordered pool
   # (5x limit, floor 50), then re-rank the pool by the blended score.
-  psql "$NEON_CONNECTION_STRING" -q -t -A -F $'\t' \
+  # The 9th column (rerank_text) is INTERNAL — it feeds memory_rerank and is
+  # stripped before the 8-col contract leaves this function.
+  local _pool_rows
+  _pool_rows=$(psql "$NEON_CONNECTION_STRING" -q -t -A -F $'\t' \
     -v embedding="$query_embedding" \
     -v query="$query" \
     -v limit="$limit" \
+    -v pool="$rerank_pool" \
     -v st_filter="${source_type_filter:-}" \
     -v of_filter="${officer_filter:-}" \
     -v min_score="$min_score" \
@@ -323,12 +408,107 @@ SELECT
   round(final_score::numeric, 3) as score,
   COALESCE(NULLIF(regexp_replace(LEFT(metadata->>'trust', 32), E'[\t\n\r ]+', '', 'g'), ''), 'derived') as trust,
   regexp_replace(LEFT(COALESCE(summary, content), 200), E'[\t\n\r]+', ' ', 'g') as preview,
-  COALESCE(source_id, id::text) as ref
+  COALESCE(source_id, id::text) as ref,
+  regexp_replace(LEFT(COALESCE(summary, content), 1024), E'[\t\n\r]+', ' ', 'g') as rerank_text
 FROM final
 WHERE vec_sim >= (:'min_score')::float8
 ORDER BY final_score DESC
-LIMIT (:'limit')::int;
+LIMIT (:'pool')::int;
 SQLEOF
+)
+
+  # R2 rerank stage + cut to top-k. Emits the 8-column memory_search contract
+  # (source_type/who/when_at/similarity/score/trust/preview/ref); the internal
+  # 9th rerank_text column is consumed here and never surfaces. Fail-soft — a
+  # keyless box or any rerank error yields the blended top-k unchanged.
+  memory_rerank "$query" "$limit" "$_pool_rows"
+}
+
+# =============================================================
+# RERANK (R2, 2026-07-12): single Voyage cross-encoder stage.
+# Reorders the blended candidate pool produced by memory_search by a Voyage
+# /rerank call, then cuts to top-k — the single largest known quality lift on
+# the org retrieval path (SOTA: hybrid+rerank −67% retrieval failures vs −49%
+# hybrid alone). FAIL-SOFT BY CONSTRUCTION: keyless, curl/jq error, or an
+# empty/garbled response all fall back to the blended order — the exact mirror
+# of memory_search's lexical-degrade arm. Rerank can therefore NEVER blank or
+# corrupt a result set; the worst case is today's blended behavior.
+# Bash 3.2-safe (macOS ships 3.2 — no mapfile/readarray/nameref).
+#
+# Args: query, topk, pool_rows (newline-separated; 9 tab columns each, the 9th
+#       = rerank_text). Emits <=topk rows of the 8-column contract.
+# =============================================================
+_memory_blended_topk() {
+  # stdin: pool rows (9 tab cols). $1: topk. Emits <=topk rows, columns 1-8.
+  local topk="$1" line count=0
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    [ "$count" -ge "$topk" ] && break
+    printf '%s\n' "$line" | cut -f1-8
+    count=$((count+1))
+  done
+}
+
+memory_rerank() {
+  local query="$1" topk="$2" rows="$3"
+
+  # Build an index-stable array of non-empty pool lines (for reordering).
+  local _pool=()
+  local _line
+  while IFS= read -r _line; do
+    [ -n "$_line" ] && _pool+=("$_line")
+  done <<< "$rows"
+  local _n=${#_pool[@]}
+  [ "$_n" -eq 0 ] && return 0
+
+  # Fail-soft arm 1 (keyless): no rerank possible → blended top-k. In practice
+  # memory_search already degraded to lexical before reaching here when the key
+  # is absent; this keeps memory_rerank independently correct + unit-testable.
+  if [ -z "${VOYAGE_API_KEY:-}" ]; then
+    printf '%s\n' "${_pool[@]}" | _memory_blended_topk "$topk"
+    return 0
+  fi
+
+  # documents[] = the 9th (rerank_text) column of each pool row, IN POOL ORDER
+  # so the returned .index maps straight back into _pool. jq -R reads each line
+  # as a JSON string; -s slurps them to an array.
+  local _docs_json
+  _docs_json=$(printf '%s\n' "${_pool[@]}" | awk -F'\t' '{print $9}' | jq -R . | jq -s . 2>/dev/null)
+
+  local _resp="" _order=""
+  if [ -n "$_docs_json" ] && [ "$_docs_json" != "null" ]; then
+    # VOYAGE_API_KEY travels ONLY in the Authorization header (never logged).
+    _resp=$(curl -s --max-time 30 https://api.voyageai.com/v1/rerank \
+      -H "Authorization: Bearer ${VOYAGE_API_KEY}" \
+      -H "Content-Type: application/json" \
+      -d "$(jq -nc --arg q "$query" --argjson docs "$_docs_json" --argjson k "$topk" \
+            --arg model "${EMBED_RERANK_MODEL:-rerank-2.5}" \
+            '{query:$q, documents:$docs, model:$model, top_k:$k}')" 2>/dev/null)
+    # Voyage returns the ranking under .data (current API) or .results (older),
+    # each element {index, relevance_score}. Accept either envelope and sort by
+    # relevance_score DESC ourselves rather than trusting response order; .index
+    # is 0-based into documents[].
+    _order=$(printf '%s' "$_resp" | jq -r \
+      '(.data // .results // []) | sort_by(-(.relevance_score // 0)) | .[].index' 2>/dev/null)
+  fi
+
+  # Fail-soft arm 2 (any rerank error / empty result) → blended top-k unchanged.
+  if [ -z "$_order" ]; then
+    echo "memory.sh WARN: rerank unavailable (error/empty response) — DEGRADED to blended order" >&2
+    printf '%s\n' "${_pool[@]}" | _memory_blended_topk "$topk"
+    return 0
+  fi
+
+  # Reorder by the reranked indices, cut to top-k, strip the 9th column.
+  local _idx _count=0
+  while IFS= read -r _idx; do
+    [ "$_count" -ge "$topk" ] && break
+    case "$_idx" in ''|*[!0-9]*) continue ;; esac
+    if [ "$_idx" -lt "$_n" ]; then
+      printf '%s\n' "${_pool[$_idx]}" | cut -f1-8
+      _count=$((_count+1))
+    fi
+  done <<< "$_order"
 }
 
 # =============================================================
