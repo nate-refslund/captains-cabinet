@@ -36,6 +36,21 @@ def _hermetic_undo(tmp_path, monkeypatch):
     yield
 
 
+@pytest.fixture(autouse=True)
+def _synthetic_officer_roster(monkeypatch):
+    """PC-E-LOCKSTEP pair (a): once the staged germline patch lands,
+    action_exec's delegate/investigation whitelist reads the INSTANCE roster
+    (env.officers(), process-cached) instead of a baked-in officer set. Pin a
+    synthetic roster for the whole module — "cos" (the structural Chair id
+    these tests exercise) plus a testburg lane officer — so the suite is
+    hermetic on ANY instance conf (fresh hatches customize the roster; the
+    suite must never read it). INERT until that germline patch lands (today's
+    whitelist is a module literal) — pre-staging keeps the suite green in
+    both states, the _CLEAN_CALINFO pattern above."""
+    monkeypatch.setattr(ax.env, "_officers_cache", ("cos", "bakery-ceo"))
+    yield
+
+
 def _store(steps, **extra):
     rec = {"lane": "bakery", "steps": steps, **extra}
     return lambda k: json.dumps(rec) if k.startswith("cabinet:action:") else ""
@@ -1108,8 +1123,8 @@ def test_investigation_dispatch_is_read_only(monkeypatch):
     monkeypatch.setattr(ax.subprocess, "run", fake_run)
     r = ax.deliver_action(
         "pi1", redis_get=_store([{"kind": "investigation_run",
-                                  "payload": {"officer": "polads-ceo",
-                                              "question": "Is VIES rate-limited?"}}]),
+                                  "payload": {"officer": "cos",
+                                              "question": "Is the api rate-limited?"}}]),
         monday_post=MondaySpy(), osascript=lambda c: "ok")
     assert r["ok"] is True
     ex = r["executed"][0]
