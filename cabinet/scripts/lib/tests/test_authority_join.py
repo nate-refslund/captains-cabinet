@@ -59,10 +59,13 @@ def test_gate_classifies_ceiling_and_reversible_identically():
 
 
 def test_gate_resolve_lane_precedence(monkeypatch):
-    monkeypatch.setenv("CABINET_LANE", "polads")
-    monkeypatch.setenv("PROJECT", "stephie")
-    assert policy_engine.resolve_lane() == "polads"
+    # Synthetic testburg lane values (Wave G 2026-07-12): resolve_lane is a
+    # pure env passthrough, so the fixture tokens are free — foundation
+    # fixtures never name instance lanes.
+    monkeypatch.setenv("CABINET_LANE", "testburg")
+    monkeypatch.setenv("PROJECT", "testburg-market")
+    assert policy_engine.resolve_lane() == "testburg"
     monkeypatch.delenv("CABINET_LANE", raising=False)
-    assert policy_engine.resolve_lane() == "stephie"
+    assert policy_engine.resolve_lane() == "testburg-market"
     monkeypatch.delenv("PROJECT", raising=False)
     assert policy_engine.resolve_lane() is None
