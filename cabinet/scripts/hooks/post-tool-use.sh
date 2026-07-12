@@ -103,12 +103,72 @@ if [ "$_LIVE_CNT" = "0" ] || [ "$((_LIVE_CNT % LIVENESS_REFRESH_INTERVAL))" = "0
 fi
 
 # ============================================================
+# SECRET REDACTION (audit Finding D, 2026-07-12; rev 2026-07-12)
+# ============================================================
+# Scrub known secret shapes from tool I/O BEFORE it reaches the on-disk log
+# (this block previously logged tool_input + tool_response verbatim to a
+# world-readable file). Defense-in-depth alongside the 0600 file mode set
+# below. Uses /usr/bin/perl — base macOS, always present, same "full
+# toolchain assumed" footing as this hook's existing jq/redis-cli deps.
+# Quote chars are written as \x22 (") / \x27 (') / \x5c (\) so the perl
+# program stays inside single quotes with no shell-escaping. Fail-safe: if
+# perl is somehow unavailable, DROP the payload rather than log it raw.
+#
+# Rules (order-independent; a redacted [REDACTED] span never re-matches):
+#   1. Authorization: Bearer <token> header.
+#   2. Telegram bot-token shape \d{8,10}:AA<secret> — bounded + word-anchored
+#      so line numbers / epoch:id (grep -n, redis stream ids) are NOT eaten.
+#   3. JSON "key":"value" for secret-ish keys — ESCAPE-TOLERANT: the quote
+#      delimiters match \x5c?\x22 (bare " OR backslash-escaped \" as it
+#      appears in a jq-compacted nested body), and value chars allow inner
+#      \-escapes but stop at the closing quote. Catches curl -d bodies and
+#      JSON API responses that jq-compaction leaves escape-quoted.
+#   4. keyword=value assignments — keyword may carry up to 3 trailing
+#      _SUFFIX words (AWS_SECRET_ACCESS_KEY), value must be >=8 chars and not
+#      start with =/~ so code comparisons (token == x) and short RHS
+#      identifiers (authToken = await) are left intact.
+#   5. Bare high-entropy token shapes (AWS AKIA, GitHub ghp_, OpenAI sk-,
+#      Slack xox*-) — caught regardless of surrounding = or quotes.
+redact_secrets() {
+  if command -v perl >/dev/null 2>&1; then
+    perl -0777 -pe '
+      s/(?i)(Authorization\s*:\s*Bearer\s+)[A-Za-z0-9._~+\/=-]+/${1}[REDACTED]/g;
+      s/\b[0-9]{8,10}:AA[A-Za-z0-9_-]{30,46}\b/[REDACTED]/g;
+      s/(?i)(\x5c?\x22[^\x22\x5c]*?(?:bot[_-]?token|api[_-]?key|password|secret|token|bearer|auth)\x5c?\x22\s*:\s*\x5c?\x22)(?:[^\x22\x5c]|\x5c[^\x22])*(\x5c?\x22)/${1}[REDACTED]${2}/g;
+      s/(?i)([\w.-]*?(?:bot[_-]?token|api[_-]?key|password|secret|token|bearer|auth)(?:[_-][A-Za-z]{1,10}){0,3}\s*=\s*(?![=~]))([\x5c]?[\x22\x27]?)[^\x22\x27\x5c\s,;&|]{8,}/${1}${2}[REDACTED]/g;
+      s/\bAKIA[0-9A-Z]{16}\b/[REDACTED]/g;
+      s/\b(?:ghp|gho|ghs|ghu|ghr|github_pat)_[A-Za-z0-9_]{20,}\b/[REDACTED]/g;
+      s/\bsk-[A-Za-z0-9_-]{20,}\b/[REDACTED]/g;
+      s/\bxox[baprs]-[A-Za-z0-9-]{10,}\b/[REDACTED]/g;
+    '
+  else
+    printf '%s' '{"redacted":"perl-unavailable"}'
+  fi
+}
+
+# ============================================================
 # 1. STRUCTURED LOG ENTRY
 # ============================================================
 LOG_FILE="$LOG_DIR/${TODAY}.jsonl"
 
-# Truncate output for logging (max 500 chars)
-TRUNCATED_OUTPUT=$(echo "$TOOL_OUTPUT" | head -c 500)
+# Secrets hygiene (audit Finding D): logs must be owner-only (0600) so at-rest
+# logs + backup tarballs aren't readable by other local users / tenants on
+# shared targets. New file → created 0600 via a umask subshell; the noclobber
+# (set -C) makes creation O_EXCL so a racing concurrent hook can never truncate
+# an already-appended line (D-R5 TOCTOU). An EXISTING file left at the legacy
+# 0644 default is tightened to 0600 once, in place (D-R4); a file deliberately
+# set to any other mode is left untouched. NOTE: historical *.jsonl predating
+# this patch are only self-healed on their own day-of-write — do a one-time
+# `chmod 600 "$LOG_DIR"/*.jsonl` at rollout (see deploy notes / ledger row).
+if [ ! -e "$LOG_FILE" ]; then
+  ( umask 077; set -C; : > "$LOG_FILE" ) 2>/dev/null
+elif [ "$(stat -f %Lp "$LOG_FILE" 2>/dev/null)" = "644" ]; then
+  chmod 600 "$LOG_FILE" 2>/dev/null
+fi
+
+# Truncate output for logging (max 500 chars). Redact BEFORE truncating so a
+# secret straddling the 500-char boundary is fully matched, then sliced.
+TRUNCATED_OUTPUT=$(echo "$TOOL_OUTPUT" | redact_secrets | head -c 500)
 
 # Phase 1 CP9: cabinet_id for multi-Cabinet forward compat. Default 'main'
 # in Phase 1 (single Cabinet); Phase 2 sets CABINET_ID per instance so logs
@@ -138,7 +198,7 @@ fi
 # invisible gaps that poison retro activity math (audit Finding #3,
 # 2026-04-21). Disk-full, RO mount, perm error — all would have been
 # invisible prior to this guard.
-echo "{\"ts\":\"$TIMESTAMP\",\"cabinet_id\":\"$CABINET_ID\",\"officer\":\"$OFFICER\",\"project\":\"$PROJECT_FIELD\",\"tool\":\"$TOOL_NAME\",\"input\":$(echo "$TOOL_INPUT" | jq -c '.' 2>/dev/null || echo '{}'),\"output_preview\":$(echo "$TRUNCATED_OUTPUT" | jq -Rs '.' 2>/dev/null || echo '\"\"')}" >> "$LOG_FILE" || echo "post-tool-use: LOG WRITE FAILED for $LOG_FILE (disk full? RO mount?) — log entry dropped for $OFFICER at $TIMESTAMP" >&2
+echo "{\"ts\":\"$TIMESTAMP\",\"cabinet_id\":\"$CABINET_ID\",\"officer\":\"$OFFICER\",\"project\":\"$PROJECT_FIELD\",\"tool\":\"$TOOL_NAME\",\"input\":$(echo "$TOOL_INPUT" | redact_secrets | jq -c '.' 2>/dev/null || echo '{}'),\"output_preview\":$(echo "$TRUNCATED_OUTPUT" | jq -Rs '.' 2>/dev/null || echo '\"\"')}" >> "$LOG_FILE" || echo "post-tool-use: LOG WRITE FAILED for $LOG_FILE (disk full? RO mount?) — log entry dropped for $OFFICER at $TIMESTAMP" >&2
 
 # NOTE: Accurate per-tool cost tracking is handled by the cost-aware
 # Anthropic wrapper which writes microdollar-accurate values to the

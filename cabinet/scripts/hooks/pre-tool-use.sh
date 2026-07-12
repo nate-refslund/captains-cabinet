@@ -131,8 +131,24 @@ if [ "$KILLSWITCH" = "active" ]; then
 fi
 if [ "$KS_EXIT" -ne 0 ]; then
   case "$TOOL_NAME" in
-    Bash|Write|Edit|MultiEdit|NotebookEdit)
-      echo "KILL SWITCH UNVERIFIABLE — Redis unreachable at $REDIS_HOST:$REDIS_PORT; state-changing tools are halted until the control plane answers (read/comms tools still allowed)." >&2
+    # NARROW COMMS ALLOWLIST (default-DENY carve-out): the Captain-facing
+    # channel must stay live so an officer can report the outage instead of
+    # going silently dark — the reply/react subset of contract b's comms
+    # surfaces (IS_TELEGRAM_COMMS, ~line 178). send-to-group rides the Bash
+    # arm and remains blocked here, as before — so this door lets an officer
+    # respond in an existing chat, not initiate a new outbound message. Kept
+    # BEFORE the mcp__* catch-all so first-match wins; falls through = allowed.
+    mcp__plugin_telegram_telegram__reply|mcp__plugin_telegram_telegram__react)
+      : # allowed — Captain-comms door stays open during the outage
+      ;;
+    # DEFAULT-DENY the mutating surface when the control plane can't be
+    # verified. Native state-changing tools (as before) PLUS every MCP server
+    # and Task subagent-spawn — previously these fell OPEN here, so a mutating
+    # MCP (Neon prod-DB writes, Vercel deploy, Make, Monday, brain queue_draft)
+    # or a Task spawn RAN during the halt. Read/observe native tools (Read,
+    # Grep, Glob, LS) are unlisted, so they still fall through and stay allowed.
+    Bash|Write|Edit|MultiEdit|NotebookEdit|Task|mcp__*)
+      echo "KILL SWITCH UNVERIFIABLE — Redis unreachable at $REDIS_HOST:$REDIS_PORT; state-changing tools, MCP servers, and subagent spawns are halted until the control plane answers (read + Captain-comms tools still allowed)." >&2
       exit 2
       ;;
   esac
@@ -993,6 +1009,16 @@ if [ "$TOOL_NAME" = "Edit" ] || [ "$TOOL_NAME" = "Write" ]; then
   # (e.g. tier2 double-slash false-blocks self-writes today; collapsed
   # paths resolve correctly).
   FILE_PATH=$(printf '%s' "$FILE_PATH" | tr -s '/')
+  # Finding C (2026-07-12): also resolve `..` LEXICALLY before matching, so
+  # `shared/interfaces/reviews/../captain-vetoes.yml` (or any parent-dir hop)
+  # cannot reach the real germline file behind the suffix-anchored patterns
+  # below (a native Write there truncates — e.g. an officer erasing its own
+  # veto row). os.path.normpath is pure-lexical (no realpath — the target may
+  # not exist): collapses a/b/../c -> a/c AND preserves leading `..` (does NOT
+  # over-block legit relative paths that don't escape into germline). Falls
+  # back to the tr-only value if python3 is unavailable — fail toward today's
+  # behavior, never crash the gate. KEEP IN LOCKSTEP with §5b/§5c.
+  FILE_PATH=$(printf '%s' "$FILE_PATH" | python3 -c 'import os,sys; sys.stdout.write(os.path.normpath(sys.stdin.read()))' 2>/dev/null || printf '%s' "$FILE_PATH")
   case "$FILE_PATH" in
     # GERMLINE SET (2026-06-10) — the files that JUDGE officer/loop
     # behavior: golden evals, the typed policy engine + its policies, MCP
@@ -1171,6 +1197,22 @@ if [ "$TOOL_NAME" = "Bash" ]; then
   # and the operator cannot be split from its target), then join remaining
   # newlines to spaces so a multi-line command scans as one line.
   CMD_SQ=$(printf '%s' "$CMD" | tr -s '/' | sed 's/\\$//' | tr '\n' ' ')
+  # Finding C (2026-07-12): also resolve `..` LEXICALLY so a parent-dir hop like
+  # `echo forged > shared/interfaces/reviews/../captain-vetoes.yml` cannot dodge
+  # the GERM_PATH_RE pre-filter + target-anchored write arms below. normpath is
+  # pure-lexical (no realpath — target may not exist). CRITICAL: apply it
+  # PER PATH TOKEN, never to the whole command string — a whole-string normpath
+  # treats spaces/operators as path chars, so a `..` in a LATER token cancels the
+  # segment holding an EARLIER germline filename (`echo > <germ> && cat x/../y`,
+  # or a trailing `<tok>/..` arg), erasing the germline substring and skipping the
+  # entire screen. The regex matches each maximal run of non-separator chars (a
+  # path token) — whitespace and shell metachars `;|&<>()"' \x60` are the
+  # boundaries — and normpaths ONLY that run, so `..` can never cross a token
+  # edge. Trailing `/` is re-appended (normpath strips it) so directory-dest arms
+  # like the Edit-C basename-forge screen below still fire on `cp x germ_dir/`.
+  # Fallback to the un-normalized copy if python3 is unavailable (fail toward
+  # today's behavior). KEEP IN LOCKSTEP with §5c's copy of this line.
+  CMD_SQ=$(printf '%s' "$CMD_SQ" | python3 -c 'import os,re,sys; _n=lambda t:(lambda p:p+"/" if t.endswith("/") and not p.endswith("/") else p)(os.path.normpath(t)); sys.stdout.write(re.sub(r"[^\s;|&<>()\x22\x27\x60]+",lambda m:_n(m.group(0)),sys.stdin.read()))' 2>/dev/null || printf '%s' "$CMD_SQ")
   # Edit C (2026-07-04): cp/mv/rsync/install/ln with an ENTIRELY-germline parent
   # DIR as the write destination (basename-join forge, e.g.
   # `cp /tmp/evil framework/authority/x.py` or into cabinet/scripts/hooks/ to
@@ -1375,6 +1417,13 @@ if [ "$TOOL_NAME" = "Bash" ]; then
   # Match-only copy: squeeze slashes, fold line-continuations, join newlines
   # (same normalization as §5b — see its header for why each step exists).
   CMD_SQ=$(printf '%s' "$CMD" | tr -s '/' | sed 's/\\$//' | tr '\n' ' ')
+  # Finding C (2026-07-12): resolve `..` LEXICALLY, PER PATH TOKEN (same
+  # normalizer as §5b — KEEP IN LOCKSTEP; see its header for why whole-string
+  # normpath is unsafe) so `echo forged-law >> shared/interfaces/x/../captain-patterns.md`
+  # — and the underblock form `echo >> <caplaw> && cat x/../y` — cannot dodge the
+  # CAPLAW_PATH_RE pre-filter + target-anchored write arms below.
+  # Fallback to the un-normalized copy if python3 is unavailable.
+  CMD_SQ=$(printf '%s' "$CMD_SQ" | python3 -c 'import os,re,sys; _n=lambda t:(lambda p:p+"/" if t.endswith("/") and not p.endswith("/") else p)(os.path.normpath(t)); sys.stdout.write(re.sub(r"[^\s;|&<>()\x22\x27\x60]+",lambda m:_n(m.group(0)),sys.stdin.read()))' 2>/dev/null || printf '%s' "$CMD_SQ")
   # The captain-law plane: 3 append-only ledgers + the skills dir + the
   # sanctioned appender itself. KEEP IN LOCKSTEP with the §5 CAPTAIN-LAW arm.
   CAPLAW_PATH_RE='shared/interfaces/captain-(patterns|intents|decisions)\.md|memory/skills/|cabinet/scripts/append-interface\.sh'
