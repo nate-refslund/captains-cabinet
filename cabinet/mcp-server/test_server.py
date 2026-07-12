@@ -896,10 +896,8 @@ _MISSING = object()
 def test_self_delivery_rejects_path_traversal_target() -> None:
     """to_role='../evil' fails _valid_slug → refused, NO XADD issued."""
     result, calls = _call_self_delivery("../evil")
-    if result.get("status") == "refused" and result.get("reason") == "invalid_target_role":
-        ok("self-delivery: '../evil' target refused (invalid_target_role)")
-    else:
-        fail("self-delivery: '../evil' refused", f"got {result}")
+    assert result.get("status") == "refused" and result.get("reason") == "invalid_target_role", f"got {result}"
+    ok("self-delivery: '../evil' target refused (invalid_target_role)")
     assert calls == [], f"redis XADD must not run for rejected target; got {calls}"
     ok("self-delivery: '../evil' → no redis XADD")
 
@@ -907,10 +905,8 @@ def test_self_delivery_rejects_path_traversal_target() -> None:
 def test_self_delivery_rejects_unknown_officer() -> None:
     """to_role='nonexistent-officer' is a valid slug but not in roster → refused, NO XADD."""
     result, calls = _call_self_delivery("nonexistent-officer", roster=("cos", "polads-ceo"))
-    if result.get("status") == "refused" and result.get("reason") == "unknown_target_role":
-        ok("self-delivery: unknown officer refused (unknown_target_role)")
-    else:
-        fail("self-delivery: unknown officer refused", f"got {result}")
+    assert result.get("status") == "refused" and result.get("reason") == "unknown_target_role", f"got {result}"
+    ok("self-delivery: unknown officer refused (unknown_target_role)")
     assert calls == [], f"redis XADD must not run for unknown officer; got {calls}"
     ok("self-delivery: unknown officer → no redis XADD")
 
@@ -918,10 +914,8 @@ def test_self_delivery_rejects_unknown_officer() -> None:
 def test_self_delivery_allows_cos() -> None:
     """to_role='cos' (documented default coordinator) proceeds → XADD to triggers:cos."""
     result, calls = _call_self_delivery("cos")
-    if result.get("status") == "delivered" and result.get("to_role") == "cos":
-        ok("self-delivery: 'cos' target delivered")
-    else:
-        fail("self-delivery: 'cos' delivered", f"got {result}")
+    assert result.get("status") == "delivered" and result.get("to_role") == "cos", f"got {result}"
+    ok("self-delivery: 'cos' target delivered")
     assert len(calls) == 1, f"expected exactly one redis XADD; got {calls}"
     argv = calls[0][0][0]
     assert "cabinet:triggers:cos" in argv, f"XADD must target triggers:cos; got {argv}"
@@ -931,10 +925,8 @@ def test_self_delivery_allows_cos() -> None:
 def test_self_delivery_allows_rostered_officer() -> None:
     """A real rostered officer proceeds → XADD to its own trigger stream."""
     result, calls = _call_self_delivery("polads-ceo", roster=("cos", "polads-ceo"))
-    if result.get("status") == "delivered" and result.get("to_role") == "polads-ceo":
-        ok("self-delivery: rostered officer delivered")
-    else:
-        fail("self-delivery: rostered officer delivered", f"got {result}")
+    assert result.get("status") == "delivered" and result.get("to_role") == "polads-ceo", f"got {result}"
+    ok("self-delivery: rostered officer delivered")
     assert len(calls) == 1, f"expected exactly one redis XADD; got {calls}"
     argv = calls[0][0][0]
     assert "cabinet:triggers:polads-ceo" in argv, f"XADD must target triggers:polads-ceo; got {argv}"
@@ -944,10 +936,8 @@ def test_self_delivery_allows_rostered_officer() -> None:
 def test_self_delivery_defaults_to_cos() -> None:
     """Missing to_role defaults to 'cos' and proceeds (legitimate relay unchanged)."""
     result, calls = _call_self_delivery(_MISSING)
-    if result.get("status") == "delivered" and result.get("to_role") == "cos":
-        ok("self-delivery: missing to_role → defaults to cos, delivered")
-    else:
-        fail("self-delivery: default to cos", f"got {result}")
+    assert result.get("status") == "delivered" and result.get("to_role") == "cos", f"got {result}"
+    ok("self-delivery: missing to_role → defaults to cos, delivered")
     assert len(calls) == 1, f"expected exactly one redis XADD; got {calls}"
     argv = calls[0][0][0]
     assert "cabinet:triggers:cos" in argv, f"default XADD must target triggers:cos; got {argv}"
@@ -959,17 +949,13 @@ def test_self_delivery_roster_failure_falls_back_to_slug_not_open() -> None:
     a valid-slug non-rostered target now PROCEEDS, but '../evil' is STILL rejected."""
     # (a) valid slug proceeds under slug-only fallback (roster unavailable)
     result, calls = _call_self_delivery("some-officer", roster_raises=True)
-    if result.get("status") == "delivered" and result.get("to_role") == "some-officer":
-        ok("self-delivery: roster-fail → valid slug proceeds (slug-only fallback)")
-    else:
-        fail("self-delivery: roster-fail slug-only proceed", f"got {result}")
+    assert result.get("status") == "delivered" and result.get("to_role") == "some-officer", f"got {result}"
+    ok("self-delivery: roster-fail → valid slug proceeds (slug-only fallback)")
     assert len(calls) == 1, f"valid slug should still XADD under fallback; got {calls}"
     # (b) NOT fail-open: a malformed target is still rejected even when roster errors
     result2, calls2 = _call_self_delivery("../evil", roster_raises=True)
-    if result2.get("status") == "refused" and result2.get("reason") == "invalid_target_role":
-        ok("self-delivery: roster-fail → '../evil' still refused (not fail-open)")
-    else:
-        fail("self-delivery: roster-fail not fail-open", f"got {result2}")
+    assert result2.get("status") == "refused" and result2.get("reason") == "invalid_target_role", f"got {result2}"
+    ok("self-delivery: roster-fail → '../evil' still refused (not fail-open)")
     assert calls2 == [], f"malformed target must not XADD even on roster failure; got {calls2}"
 
 

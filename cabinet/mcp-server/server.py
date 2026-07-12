@@ -479,6 +479,15 @@ def tool_send_message(params: dict) -> dict:
                 f"[cabinet-mcp] send_message roster read failed ({e}); "
                 "target_role validation degraded to slug-only\n"
             )
+        if not roster:
+            # Empty roster (missing/blank mcp-scope.yml) reads the SAME as a
+            # read failure — the officer-membership check is skipped, leaving
+            # only _valid_slug. Log it so this degradation is never silent
+            # (cp7 review follow-up: silent empty != visible exception path).
+            sys.stderr.write(
+                "[cabinet-mcp] send_message: empty officer roster; "
+                "target_role validation degraded to slug-only\n"
+            )
         if roster and target_role != "cos" and target_role not in roster:
             return {"status": "refused", "reason": "unknown_target_role", "to_role": target_role}
         # A6 report-only probe — beside, never around, the XADD (fail-open).
