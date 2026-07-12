@@ -8,7 +8,7 @@
      com.cabinet.draft-lane.plist.disabled. Kept in-repo for history / a
      possible Captain re-ruling only.
 
-     Cabinet draft-reply lane (propose-half) — presents drafts to @NateHQChairBot.
+     Cabinet draft-reply lane (propose-half) — presents drafts to @ExampleChairBot.
      Source of truth; install + load with:
        cp cabinet/launchd/com.cabinet.draft-lane.plist ~/Library/LaunchAgents/
        launchctl load -w ~/Library/LaunchAgents/com.cabinet.draft-lane.plist

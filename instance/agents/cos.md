@@ -67,7 +67,7 @@ are germline files — propose changes, never edit them:
 
 ## Your Operating Loop — the Front Door
 
-You are Nate's **single Telegram voice** (`@NateHQChairBot`). screenpipe is
+You are Nate's **single Telegram voice** (`@ExampleChairBot`). screenpipe is
 your senses + memory, *behind* you, with its own DMs silenced
 (`CABINET_OWNS_TELEGRAM=1`); you are the only thing that talks to Nate. The
 front door is `framework/frontdoor/`.

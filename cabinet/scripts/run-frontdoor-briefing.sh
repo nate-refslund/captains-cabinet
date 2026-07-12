@@ -1,6 +1,6 @@
 #!/bin/bash
 # run-frontdoor-briefing.sh — the launchd entry point for the cabinet's recurring
-# unified briefing on the one channel (@NateHQChairBot).
+# unified briefing on the one channel (@ExampleChairBot).
 #
 # Pulls real signals into the front-door intake and runs ONE send-path pass:
 #   morning_synthesis.enqueue_synthesis  →  run_frontdoor.run_send_path

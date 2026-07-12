@@ -2,7 +2,7 @@
 # run-draft-lane.sh — launchd entry for the cabinet's draft-reply lane (PROPOSE-half).
 #
 # Finds awaiting-reply threads, drafts each in the Captain's voice (should-reply gate
-# filtered), and PRESENTS the draft to the Chair's Telegram (@NateHQChairBot) with
+# filtered), and PRESENTS the draft to the Chair's Telegram (@ExampleChairBot) with
 # Send / Edit: / Skip:. PROPOSE-ONLY — nothing is sent to any recipient here; the
 # approve→send (via the brain's queue_draft gate) is handled by the Chair in-session.
 # Restores the daily draft loop that the screenpipe draft-reply pipe used to provide.

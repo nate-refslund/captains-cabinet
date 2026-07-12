@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!-- Chair (CoS front-door officer) as a durable LaunchAgent — Nate's single
-     Telegram voice (@NateHQChairBot). Independent of any interactive session;
+     Telegram voice (@ExampleChairBot). Independent of any interactive session;
      survives logout/reboot. Install + load:
        cp cabinet/launchd/com.cabinet.officer.cos.plist ~/Library/LaunchAgents/
        launchctl load -w ~/Library/LaunchAgents/com.cabinet.officer.cos.plist
