@@ -14,44 +14,50 @@
 #   - Window cap (1-2 active outcomes/lane) and Captain ratification stay.
 # Consumed by: the renewal loop (manual one-shot derivation first; automated
 # per plan addendum "Directions layer" at its planned slot post-B4.11/M2).
+#
+# PUBLIC-TREE SCRUB 2026-07-12: mission/bets VALUES below are neutralized to
+# generic example-org wording (real product strategy removed — the repo is
+# public). Lane keys, instrument names and the schema shape are live and
+# unchanged; the deployment's real direction text lives in the untracked
+# instance overlay.
 
 directions:
   stephie:
     mission: >
-      The best 24/7, fast, on-demand advertiser & agency service for ordering
-      and booking high-performing ads across our network.
+      The best 24/7, fast, on-demand customer service surface for ordering
+      and booking the lane's product offering.
     instruments:
-      - request_to_live_lead_time          # from ad request/booking to live campaign
+      - request_to_live_lead_time          # from request/booking to live delivery
       - self_served_booking_rate           # % bookings completed end-to-end with no human touch
-      - campaign_performance_vs_benchmark  # delivered performance vs network benchmark
-      - repeat_booking_rate                # advertisers/agencies coming back
+      - campaign_performance_vs_benchmark  # delivered performance vs benchmark
+      - repeat_booking_rate                # customers coming back
       - service_availability               # 24/7 responsiveness of the service surface
     bets:
-      - generalize the proven AI job-banner flow (/create/job-banners) into the booking front-door
+      - generalize the proven creator flow into the booking front-door
       - officer-backed 24/7 service desk (order/book/adjust on demand)
-      - performance-optimization loop (measure -> adjust -> report per campaign)
+      - performance-optimization loop (measure -> adjust -> report per engagement)
     not_goals:
-      - "TODO-CAPTAIN: confirm not-goals (e.g. 'not a generic design tool'; 'not replacing human agency relationships')"
+      - "TODO-CAPTAIN: confirm not-goals (e.g. 'not a generic design tool'; 'not replacing human relationships')"
 
   polads:
     mission: >
-      Compliant-by-construction European political-ads transparency — publishers
-      and advertisers get effortless EU-regulation compliance, self-serve,
-      launch-grade by Sept 1.
+      Compliant-by-construction regulatory transparency — the lane's
+      customers get effortless regulation compliance, self-serve,
+      launch-grade by the ratified launch date.
     instruments:
       - v1_live                            # binary: v1.0 in production
-      - self_serve_registration_completion # advertisers/publishers finishing flows unassisted
-      - compliance_report_correctness      # Art. 5/6-grade reporting accuracy
+      - self_serve_registration_completion # customers finishing flows unassisted
+      - compliance_report_correctness      # regulation-grade reporting accuracy
       - support_load_per_customer          # inbound support volume per active customer
       - basic_to_pro_conversion            # subscription upgrade rate
     bets:
-      - subscription & billing finalization (Basic + Pro)
-      - publisher dashboard
-      - advertiser registration flow
+      - subscription & billing finalization (tiered)
+      - customer dashboard
+      - registration flow
       - AI-based support
     not_goals:
-      - no adjudicating political status (platform is a conduit — Captain/Oliver ruling 2026)
-      - no non-EU markets yet
+      - no adjudicating regulated status (platform is a conduit — Captain ruling 2026)
+      - no out-of-region markets yet
 
   system-self:
     # Captain-owned like all directions; the org proposes outcomes against it.

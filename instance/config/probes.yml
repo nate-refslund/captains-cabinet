@@ -5,7 +5,7 @@
 # layer: THIS deployment's products; edit freely — a wrong/missing entry makes
 # the probe SKIP that product with a printed reason (fail-closed: no verdict,
 # never a fabricated observation). No secrets belong here: tokens live in
-# cabinet/.env / ~/.screenpipe/pipes/_shared/.env and reach the probes via
+# cabinet/.env / the personal-source shared .env and reach the probes via
 # environment only (cabinet/scripts/run-probes.sh sources them).
 #
 # SCHEMA
@@ -20,23 +20,22 @@
 # Cabinet-Proposal-Id) — the runner chdirs there before each probe cycle. A
 # missing checkout = that product is skipped this run.
 #
-# Seeded 2026-07-05 with PolAds only (identity from the screenpipe codebase
-# pillar: vercel_app v0-politiske-annoncer, Neon restless-king-62586913; Sentry
-# org step-network per step-network.sentry.io; project slug from the live
-# Sentry workspace — VERIFY on first live run, a wrong slug degrades to
-# skips/empty reads, never to false verdicts). Add stephie/jobdanmark lanes
-# when their acted cards start carrying deploy-shaped chains.
+# PUBLIC-TREE SCRUB 2026-07-12: the entries below are neutralized placeholders
+# (real repo slugs, org slugs and local checkout paths are deployment-personal
+# and never belong in this tracked file). The live product map belongs in the
+# deployment's untracked overlay; with placeholders in place every probe
+# fail-closes to SKIP with a printed reason — by design, never a false verdict.
 
 github:
-  - repo: STEP-Network/v0-politiske-annoncer
-    checkout: /Users/nate/v0-politiske-annoncer
+  - repo: example-org/example-product
+    checkout: /absolute/path/to/example-product
 
 vercel:
-  - app: v0-politiske-annoncer
-    checkout: /Users/nate/v0-politiske-annoncer
+  - app: example-product
+    checkout: /absolute/path/to/example-product
 
 sentry:
-  org: step-network
+  org: example-org
   projects:
-    - project: sentry-step-polads
-      checkout: /Users/nate/v0-politiske-annoncer
+    - project: example-product
+      checkout: /absolute/path/to/example-product

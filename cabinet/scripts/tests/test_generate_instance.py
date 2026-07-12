@@ -889,11 +889,16 @@ class TestDefaultsFastLane:
 
 class TestUniversality:
     # DETECTOR PATTERN LIST (never relax/narrow): the launcher deployment's
-    # real lane/org/name/host/chat-id tokens, quoted here solely so the
-    # universality guard can prove the generated artifacts carry none of them.
+    # lane/org/name/host tokens, quoted here solely so the universality
+    # guard can prove the generated artifacts carry none of them.
+    # Chat-id token: the REAL launcher chat id was scrubbed from the public
+    # tree (2026-07-12) — the pattern now pins the tracked platform.yml
+    # placeholder (10 zeros), so generated artifacts can never echo the
+    # launcher's tracked config value either (defaults use "0000", answers
+    # carry their own id — neither matches a 10-zero run).
     FORBIDDEN = [
         r"\bpolads\b", r"\bstephie\b", r"\bstepnetwork\b", r"\bnate\b",
-        r"\bhq-macbook\b", r"8631324091", r"\bjfm\b",
+        r"\bhq-macbook\b", r"0000000000", r"\bjfm\b",
     ]
 
     @pytest.mark.parametrize("rel", [

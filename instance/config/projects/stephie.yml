@@ -2,18 +2,19 @@
 # Project: STEPhie
 # =============================================================
 # R2 prep draft for the HQ (MacBook) instance. status: pending —
-# nothing activates until switch-project/activate-project is run by Nate.
-# Repo identity from the screenpipe codebase pillar
-# (~/.screenpipe/pipes/_shared/codebase_config.py, Monday product 2730518827).
-# The stepnetwork.dk website (STEP-Network/step-network-website) shares this
-# lane; add a projects/stepnetwork.yml the same way if/when it gets its own
-# missions beyond the verification outcome.
+# nothing activates until switch-project/activate-project is run by the
+# Captain. PUBLIC-TREE SCRUB 2026-07-12: repo/tracker/database identity
+# values below are neutralized placeholders — the real product identity is
+# deployment-personal and lives in the untracked instance overlay.
+# The lane's website repo shares this lane; add a projects/stepnetwork.yml
+# the same way if/when it gets its own missions beyond the verification
+# outcome.
 # =============================================================
 
 product:
   name: STEPhie
-  description: "STEP Network MCP tool suite + AI chatbot/banner-creator platform (ai.step.dk)"
-  repo: https://github.com/STEP-Network/stephie-mcp
+  description: "Tool suite + AI assistant/creator platform (the stephie lane's product)"
+  repo: https://github.com/example-org/stephie
   repo_branch: main
   mount_path: /workspace/product   # mac-native local checkout path decided at activation
 
@@ -22,7 +23,7 @@ activation:
   mode: existing_repo_url
   activated_at: ""
   activation_mission_id: ""
-  notes: "HQ instance R2 prep — Nate activates; outcomes live in instance/config/outcomes.yml (gated to CABINET_ID=hq-macbook)"
+  notes: "HQ instance R2 prep — the Captain activates; outcomes live in instance/config/outcomes.yml (gated to CABINET_ID=hq-macbook)"
 
 # =============================================================
 # Notion — not used for STEPhie (knowledge lives in the brain vault
@@ -82,22 +83,23 @@ linear:
   workspace_url: ""
 
 # =============================================================
-# Neon — STEPhie database
+# Neon — lane database (placeholder; real project name is
+# deployment-personal)
 # =============================================================
 neon:
-  project: stephie-v2-db           # Neon project id plain-smoke-85194168
+  project: example-stephie-db
 
 # =============================================================
-# Vercel — STEPhie hosting (cabinet investigated 2026-06-22)
+# Vercel — lane hosting (placeholder; real app name is deployment-personal)
 # =============================================================
 vercel:
-  project: ""                      # ai.step.dk / ai.stepnetwork.dk app — CONFIRM exact
-                                   # Vercel project name (no local .vercel link to auto-detect)
+  project: ""                      # CONFIRM exact app name at activation
+                                   # (no local .vercel link to auto-detect)
 
 # =============================================================
-# Monday — product pulse 2730518827 (on the SHARED task board 5091839409;
-# each task → epic → product). Routing via the dev-tasks plugin in the repo,
-# NOT a cabinet adapter (see Tasks note below).
+# Tracker — product pulse lives on the deployment's SHARED task board
+# (each task → epic → product). Routing via the dev-tasks plugin in the
+# repo, NOT a cabinet adapter (see Tasks note below).
 # =============================================================
 
 # =============================================================

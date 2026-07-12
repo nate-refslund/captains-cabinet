@@ -1,5 +1,5 @@
 flipped: 2026-07-03T19:05Z
-by: Captain (Nate) — verbatim "flip it"
+by: Captain — verbatim "flip it"
 basis: docs/policy-shadow-parity-proof-v2-2026-07-03.md (100% covered-rule parity, 0 fail-open, 0 fail-safe)
 scope: typed STATELESS policy set enforcing; 3 stateful attestation gates + all legacy bash rules remain in pre-tool-use.sh
 revert: rm this file (instant, all sessions, no restarts)

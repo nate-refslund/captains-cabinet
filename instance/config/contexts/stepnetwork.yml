@@ -4,12 +4,12 @@
 # active: false. No warroom rows, no officer routing, no activity start from
 # this file alone; those require explicit R2 activation by the Captain.
 slug: stepnetwork
-name: stepnetwork.dk
+name: stepnetwork
 capacity: work
 description: |
-  stepnetwork.dk — STEP Network's marketing + publisher-onboarding website.
-  Repo STEP-Network/step-network-website (Next.js 16, Neon via
-  @vercel/postgres, Monday.com sync via webhooks + cron). Pairs with the
-  stephie context as the stephie-stepnetwork lane.
+  stepnetwork — the deployment's marketing + onboarding website lane.
+  Repo, hosting and sync-integration identity are deployment-personal and
+  live in the untracked instance overlay (public-tree scrub 2026-07-12).
+  Pairs with the stephie context as the stephie-stepnetwork lane.
   Declared for the HQ (MacBook) instance; inactive until R2 activation.
 active: false
