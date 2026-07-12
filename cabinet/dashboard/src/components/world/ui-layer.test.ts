@@ -13,6 +13,9 @@
  *     wears the pixel frame.
  *  D. LEVER CEREMONY: the lever uses the tick-driven two-tap machine, pins
  *     actuation behind canActuate, and prints the honest CLI fallback.
+ *  E. LIMEZU CREDIT: both world shells render the always-visible LimeZu
+ *     art credit in the bottom bar (Captain-ratified license condition,
+ *     2026-07-12) — plain text, never behind the legend toggle.
  */
 import { describe, expect, it } from 'vitest'
 import fs from 'fs'
@@ -121,5 +124,31 @@ describe('D. killswitch lever ceremony', () => {
     expect(src(...LEVER)).toMatch(
       /halt on their next tool invocation — not instantly/
     )
+  })
+})
+
+describe('E. LimeZu art credit (ratified license condition, 2026-07-12)', () => {
+  const SHELLS = [
+    ['engine-client', ['components', 'world', 'engine-client.tsx']],
+    ['world-client', ['components', 'world', 'world-client.tsx']],
+  ] as const
+  it('both world shells carry the exact credit line, unconditionally rendered', () => {
+    for (const [name, rel] of SHELLS) {
+      const text = src(...rel)
+      expect(text, name).toMatch(/data-world-credit/)
+      expect(text, name).toMatch(/Art: LimeZu — limezu\.itch\.io/)
+    }
+  })
+  it('the credit sits in the always-on bottom bar, not inside the legendOpen panel', () => {
+    for (const [name, rel] of SHELLS) {
+      const text = src(...rel)
+      const creditAt = text.indexOf('data-world-credit')
+      expect(creditAt, name).toBeGreaterThan(-1)
+      // The credit span must not live inside the conditional legend panel:
+      // it appears before the `{legendOpen && (` block in both shells.
+      const legendPanelAt = text.indexOf('{legendOpen && (')
+      expect(legendPanelAt, name).toBeGreaterThan(-1)
+      expect(creditAt, name).toBeLessThan(legendPanelAt)
+    }
   })
 })

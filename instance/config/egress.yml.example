@@ -1,0 +1,47 @@
+# =============================================================
+# instance/config/egress.yml — enforced egress allowlist (per-deployment override)
+# =============================================================
+# EXAMPLE / TEMPLATE. Copy to instance/config/egress.yml to override the
+# framework default (framework/defaults/egress.yml). Instance values win over
+# the framework default: scalars (`enforce`, `proxy_port`, `allow_product`)
+# replace the default; `allow_hosts` is UNIONED with the framework floor so the
+# control-plane hosts (api.anthropic.com, api.telegram.org) always survive.
+#
+# You usually do NOT edit this by hand — run:
+#   cabinet/scripts/egress-guard.sh enable    # set enforce: true here + install the proxy
+#   cabinet/scripts/egress-guard.sh disable   # set enforce: false here + tear it down
+#   cabinet/scripts/egress-guard.sh status    # show resolved allowlist + proxy state
+#   cabinet/scripts/egress-guard.sh dry-run   # show what WOULD be allowed/blocked, install nothing
+#
+# Coverage vs honest residual — raw sockets/nc/ssh and any MCP that ignores
+# proxy env are NOT caught by this proxy layer: docs/runbooks/egress-allowlist.md.
+# =============================================================
+
+# Turn the allowlist ON for this deployment. The framework default is false =
+# allow all. Setting true installs the allowlisting proxy; the guard FAILS
+# CLOSED (errors non-zero, installs nothing) if it cannot verify the proxy.
+enforce: true
+
+# Local forward-proxy bind port (127.0.0.1). Inherit the default (8899) by
+# omitting this key; set 0 to let the OS choose a free port.
+# proxy_port: 8899
+
+# Keep auto-including your own product hosts (org_domains from platform.yml /
+# product.yml). Set false only if you want to list product hosts explicitly.
+allow_product: true
+
+# Hosts to permit IN ADDITION to the framework floor (api.anthropic.com,
+# api.telegram.org) and your product's org_domains. Add the hosts your MCPs
+# and tools actually call — anything not listed is refused when enforce is
+# true. Subdomains of a listed host are allowed (`foo.com` covers
+# `foo.com` and `api.foo.com`, but NOT `evilfoo.com`). Uncomment what you use:
+allow_hosts:
+  # - api.github.com          # GitHub MCP / gh CLI
+  # - api.githubcopilot.com   # GitHub MCP transport
+  # - api.exa.ai              # Exa search MCP
+  # - api.perplexity.ai       # Perplexity MCP
+  # - api.search.brave.com    # Brave Search MCP
+  # - api.vercel.com          # Vercel MCP / CLI
+  # - console.neon.tech       # Neon MCP
+  # - api.monday.com          # Monday.com MCP
+  # - us.api.anthropic.com    # regional Claude endpoint, if you route there

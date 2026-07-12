@@ -29,6 +29,10 @@ instance/config/posture.yml
 instance/config/standing-grants.yml
 instance/config/cabinet-init.answers.yml
 instance/config/calendar.yml
+# per-deployment egress-allowlist override — created by egress-guard.sh enable
+# (else copied from the tracked twin instance/config/egress.yml.example);
+# absent at HEAD by design like the sibling instance config above.
+instance/config/egress.yml
 instance/config/outcomes-proposed.yml
 # instance agent overlays — MOSTLY hatch/preset-created, but NOT all
 # untracked: instance/agents/cos.md and instance/agents/cos/mcp.json ARE

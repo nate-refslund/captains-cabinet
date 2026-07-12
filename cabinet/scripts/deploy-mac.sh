@@ -321,10 +321,12 @@ EOF
   # Office-display deployments add it explicitly:
   #   bash cabinet/scripts/deploy-mac.sh --daemon dashboard-kiosk
   # Headless servers skip it; the dashboard server above binds
-  # CABINET_DASHBOARD_HOST (default 0.0.0.0 — unchanged) and so stays
-  # reachable over Tailscale at http://<host>:3100 regardless. Loopback-only
-  # opt-in: CABINET_DASHBOARD_HOST=127.0.0.1 in cabinet/.env; flipping the
-  # DEFAULT is captain-gated (CC-LOOP) — see cabinet/docs/mac-mini-deploy-runbook.md.
+  # CABINET_DASHBOARD_HOST (default 127.0.0.1 — loopback-only since the
+  # CC-LOOP ruling, 2026-07-12) so it is NOT reachable over the tailnet by
+  # default. Remote reach: front it with `tailscale serve` (the blessed
+  # path), or opt out with CABINET_DASHBOARD_HOST=0.0.0.0 in cabinet/.env —
+  # a live box that needs plain http://<host>:3100 reach sets that BEFORE
+  # this flip deploys; see cabinet/docs/mac-mini-deploy-runbook.md.
 else
   # --officer and --daemon are independent selectors and may be combined in
   # one invocation (previously the elif chain silently dropped --daemon
