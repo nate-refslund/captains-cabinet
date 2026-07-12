@@ -1,10 +1,14 @@
 # Security Policy
 
-## Status: pre-release
+## Status: pre-release, public source
 
-Captain's Cabinet is **pre-release**. This repository is private today; the
-public artifact is produced by a fresh-cut export (live instance values never
-ship in it) and publication is gated on governance approval. There are no
+Captain's Cabinet is **pre-release**. This repository is **public**. The
+supported release artifact remains the fresh-cut egg export (live instance
+values never ship in it); export publication stays gated on governance
+approval. The tracked tree at the current tip has been scrubbed of
+instance-personal values, but git history from the repository's earlier
+private period may still contain former instance values — treat anything
+found there as retired/rotated, not as live configuration. There are no
 published releases yet.
 
 ## Supported versions
