@@ -119,17 +119,27 @@ roster_slugs() {
 # Map assignee name → officer slug or "captain". The officer match is derived
 # from the live roster (above), not a static abbreviation list: the assignee's
 # lowercased first-name token matches a real officer slug exactly, or that slug
-# starts with the token (so "PolAds" → polads-ceo, "Cos"/"Chair-bot" → cos).
-# No match → fall back to the first-name truncation default (unchanged).
+# starts with the token (e.g. a lane-CEO first name maps to its officer slug;
+# "Cos"/"Chair-bot" → cos). No match → fall back to the first-name truncation
+# default (unchanged).
 map_assignee() {
   local name="$1"
   if [ -z "$name" ]; then echo ""; return; fi
   local lower
   lower=$(echo "$name" | tr '[:upper:]' '[:lower:]')
-  # Known captain names — extend as needed
-  if echo "$lower" | grep -qiE "^(nate|nathaniel|refslund)"; then
-    echo "captain"
-    return
+  # Captain names — instance-configurable via CAPTAIN_ALIASES in cabinet/.env
+  # (comma-separated first-name tokens, case-insensitive; see .env.example).
+  # Product/captain-agnostic foundation (2026-07-14): the framework ships no
+  # default name here — unset/empty means no assignee is recognized as the
+  # captain, falling through to the roster/truncation defaults below, never
+  # a hardcoded person.
+  if [ -n "${CAPTAIN_ALIASES:-}" ]; then
+    local alias_re
+    alias_re="^($(echo "$CAPTAIN_ALIASES" | tr ',' '|'))"
+    if echo "$lower" | grep -qiE "$alias_re"; then
+      echo "captain"
+      return
+    fi
   fi
   # Officer match against the derived roster (first-name token).
   local token
