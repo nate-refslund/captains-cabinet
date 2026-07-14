@@ -7,14 +7,14 @@ import { describe, it, expect } from 'vitest'
 import { ADVANCED_NAV, CONSUMER_NAV, navForMode } from './nav-config'
 
 describe('ADVANCED_NAV — static shape', () => {
-  it('has 17 items (16 internal + 1 external Terminal)', () => {
+  it('has 18 items (17 internal + 1 external Terminal)', () => {
     // 2026-07-02: Library page added in the June work without this pin updating
     // 2026-07-07: World added (Cabinet World E1 Wardroom — /world, observer-class)
     // 2026-07-10: Receipts added (perfect-cabinet Wave B — read-only undo-journal browser)
     // 2026-07-10: Needs You added (/queue — the classic war-room skin, read-only)
     // (Receipts + Needs You landed in parallel branches, each claiming 16 — the
     //  2026-07-10 merge union is 17.)
-    expect(ADVANCED_NAV).toHaveLength(17)
+    expect(ADVANCED_NAV).toHaveLength(18)
   })
 
   it('every link has an href and a label', () => {
@@ -31,6 +31,7 @@ describe('ADVANCED_NAV — static shape', () => {
   it('contains all Spec 032 advanced-mode routes', () => {
     const labels = ADVANCED_NAV.map(l => l.label)
     expect(labels).toContain('Dashboard')
+    expect(labels).toContain('Orientation')
     expect(labels).toContain('Needs You')
     expect(labels).toContain('World')
     expect(labels).toContain('Project')
@@ -70,13 +71,14 @@ describe('ADVANCED_NAV — static shape', () => {
 })
 
 describe('CONSUMER_NAV — static shape', () => {
-  it('has 5 items (the 4 content cards + Cabinets per Spec 034)', () => {
-    expect(CONSUMER_NAV).toHaveLength(5)
+  it('has 6 items (the onboarding door + 4 content cards + Cabinets)', () => {
+    expect(CONSUMER_NAV).toHaveLength(6)
   })
 
   it('contains exactly Dashboard / Cabinets / Costs / Library / Settings', () => {
     expect(CONSUMER_NAV.map(l => l.label)).toEqual([
       'Dashboard',
+      'Orientation',
       'Cabinets',
       'Costs',
       'Library',

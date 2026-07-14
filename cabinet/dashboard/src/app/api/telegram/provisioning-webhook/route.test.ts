@@ -3,7 +3,7 @@
 // Scope: GET health-check, POST feature-flag guard, JSON parse failures,
 //   non-message update silently ACK'd, Captain-auth guard (configured vs. not,
 //   wrong vs. right chatId), rawText extraction (text/caption/both/empty),
-//   token-redaction in console.log, handleMessage dispatch, sendReplies
+//   privacy-safe logging, handleMessage dispatch, sendReplies
 //   (first with replyTo, additional chained), sendTelegramMessage internals
 //   (missing token, fetch !ok, fetch throws, text > 4096 truncation),
 //   loadState post-dispatch → polling loop fire-and-forget, handleMessage throws,
@@ -26,11 +26,17 @@ const {
   mockHandleMessage,
   mockStartPollingLoop,
   mockLoadState,
+  mockOnboardingIntent,
+  mockHandleOnboarding,
+  mockHandleOnboardingCallback,
 } = vi.hoisted(() => ({
   mockFeatureFlagCheck: vi.fn(),
   mockHandleMessage: vi.fn(),
   mockStartPollingLoop: vi.fn(),
   mockLoadState: vi.fn(),
+  mockOnboardingIntent: vi.fn(),
+  mockHandleOnboarding: vi.fn(),
+  mockHandleOnboardingCallback: vi.fn(),
 }))
 
 vi.mock('@/lib/provisioning/guard', () => ({
@@ -41,6 +47,12 @@ vi.mock('@/lib/provisioning/flow', () => ({
   handleMessage: mockHandleMessage,
   startPollingLoop: mockStartPollingLoop,
   loadState: mockLoadState,
+}))
+
+vi.mock('@/lib/onboarding/telegram', () => ({
+  isOnboardingIntent: mockOnboardingIntent,
+  handleTelegramOnboarding: mockHandleOnboarding,
+  handleTelegramOnboardingCallback: mockHandleOnboardingCallback,
 }))
 
 import { GET, POST } from './route'
@@ -109,6 +121,9 @@ beforeEach(() => {
   mockHandleMessage.mockReset()
   mockStartPollingLoop.mockReset()
   mockLoadState.mockReset()
+  mockOnboardingIntent.mockReset().mockReturnValue(false)
+  mockHandleOnboarding.mockReset().mockResolvedValue([])
+  mockHandleOnboardingCallback.mockReset().mockResolvedValue([])
   fetchMock.mockReset()
 
   // Feature flag enabled by default
@@ -274,6 +289,74 @@ describe('POST provisioning-webhook — rawText extraction', () => {
       String(CAPTAIN_CHAT_ID_NUM),
       'real text'
     )
+  })
+})
+
+describe('POST provisioning-webhook — canonical onboarding skin', () => {
+  it('remains available when multi-Cabinet provisioning is disabled', async () => {
+    const { NextResponse } = await import('next/server')
+    mockFeatureFlagCheck.mockReturnValueOnce(
+      NextResponse.json({ ok: false, disabled: true }, { status: 503 })
+    )
+    mockOnboardingIntent.mockReturnValueOnce(true)
+    mockHandleOnboarding.mockResolvedValueOnce([{ text: 'Orientation', plain: true }])
+    const response = await POST(makeReq(makeUpdate({ text: '/onboard' })))
+    expect(response.status).toBe(200)
+    expect(mockHandleOnboarding).toHaveBeenCalled()
+  })
+
+  it('routes /onboard to the shared onboarding handler, not provisioning state', async () => {
+    mockOnboardingIntent.mockReturnValueOnce(true)
+    mockHandleOnboarding.mockResolvedValueOnce([{
+      text: 'Same canonical card',
+      plain: true,
+      buttons: [[{ text: 'Continue', callback_data: 'onboard:continue' }]],
+    }])
+    await POST(makeReq(makeUpdate({ text: '/onboard' })))
+    expect(mockHandleOnboarding).toHaveBeenCalledWith('/onboard', 'telegram-update-1')
+    expect(mockHandleMessage).not.toHaveBeenCalled()
+    const payload = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(payload.parse_mode).toBeUndefined()
+    expect(payload.reply_markup.inline_keyboard[0][0].callback_data).toBe('onboard:continue')
+  })
+
+  it('never writes the Captain source path or purpose to process logs', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const privateCommand = '/onboard folder /Users/ada/SecretProduct | Prepare acquisition'
+    mockOnboardingIntent.mockReturnValueOnce(true)
+    mockHandleOnboarding.mockResolvedValueOnce([{ text: 'Proposed', plain: true }])
+
+    await POST(makeReq(makeUpdate({ text: privateCommand })))
+
+    const logs = logSpy.mock.calls.map((call) => call.join(' ')).join('\n')
+    expect(logs).toContain('[ONBOARDING_COMMAND_REDACTED]')
+    expect(logs).not.toContain('/Users/ada/SecretProduct')
+    expect(logs).not.toContain('Prepare acquisition')
+    logSpy.mockRestore()
+  })
+
+  it('resolves an authenticated onboarding callback and clears the spinner', async () => {
+    mockHandleOnboardingCallback.mockResolvedValueOnce([{ text: 'Resolved', plain: true }])
+    const update = {
+      update_id: 9,
+      callback_query: {
+        id: 'callback-9',
+        from: { id: CAPTAIN_CHAT_ID_NUM, first_name: 'Ada' },
+        data: 'onboard:continue',
+        message: {
+          message_id: 77,
+          chat: { id: CAPTAIN_CHAT_ID_NUM, type: 'private' },
+          date: 1_700_000_000,
+        },
+      },
+    }
+    await POST(makeReq(update))
+    expect(mockHandleOnboardingCallback).toHaveBeenCalledWith(
+      'onboard:continue',
+      'telegram-update-9'
+    )
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[1][0]).toContain('/answerCallbackQuery')
   })
 })
 

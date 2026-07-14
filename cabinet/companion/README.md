@@ -7,6 +7,10 @@ companion process itself only ever READS Redis (PING/GET), never calls
 launchctl, and never edits anything; actuations shell the repo's existing
 scripts (`kill-switch.sh`, `deploy-mac.sh`), which do their own writing.
 
+`Continue Orientation` opens the authenticated `/onboarding` route. The app
+shell keeps no onboarding state and performs no onboarding action itself; the
+Dashboard, Telegram, and World all consume the same canonical journey core.
+
 Spec: `DESIGN-companion-2026-07-10.md` (Wave D / D1). Tests:
 `cabinet/scripts/tests/test_build_companion.py`.
 
@@ -62,7 +66,7 @@ Degradation table (§8 of the spec):
 | Repo root not found | OFF "cabinet repo not found at <path>"; menu offers only Quit + Open Companion Log |
 | Root ok, Redis down | OFF "Redis unreachable at 127.0.0.1:6379 — cabinet not running"; "Hatch in Terminal…" appears **only** when `cabinet/scripts/hatch.sh` exists on disk; Run Doctor stays enabled (the doctor prints the precise DEAD lines) |
 | Redis up, keys absent | AMBER "hatched but quiet — no presence/doctor data" |
-| Dashboard probe fails | Open Dashboard / Open World disabled with "dashboard not running" — never a dead-URL open |
+| Dashboard probe fails | Open Dashboard / Continue Orientation / Open World disabled with "dashboard not running" — never a dead-URL open |
 | Notifications denied/unavailable | events fall back to a "Last event: …" menu line, silently honest |
 
 Root discovery: bundle self-locate (`<root>/bin/Cabinet Companion.app` ⇒ two

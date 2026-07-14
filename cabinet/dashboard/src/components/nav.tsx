@@ -13,6 +13,7 @@ import { navForMode, ADVANCED_NAV, type NavLink } from "@/lib/nav-config"
 // Kept colocated here so icon definitions stay with the nav that uses them.
 const ICON_FOR_HREF: Record<string, () => React.ReactElement> = {
   '/': DashboardIcon,
+  '/onboarding': OrientationIcon,
   '/project': ProjectIcon,
   '/cabinets': CabinetsIcon,
   '/officers': OfficersIcon,
@@ -26,6 +27,15 @@ const ICON_FOR_HREF: Record<string, () => React.ReactElement> = {
   '/library': LibraryIcon,
   '/gaps': GapsIcon,
   'https://terminal.sensed.app': TerminalIcon,
+}
+
+function OrientationIcon() {
+  return (
+    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 3.75 4.5 8.25 12 12.75l7.5-4.5L12 3.75Z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75 12 17.25l7.5-4.5M4.5 17.25 12 21l7.5-3.75" />
+    </svg>
+  )
 }
 
 function DashboardIcon() {

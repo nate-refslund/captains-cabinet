@@ -88,6 +88,7 @@ describe('middleware matcher (both directions)', () => {
       '/display',
       '/api/tasks',
       '/api/auth',
+      '/api/onboarding',
       '/api/world/engine',
       '/iconsmith', // must not ride the icons/ prefix exclusion
     ]) {

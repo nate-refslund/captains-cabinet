@@ -358,7 +358,9 @@ Optimization pressure against any proxy grows reward hacking with iteration coun
 
 Trusting the org with a new product is never ad-hoc. It is a staged SOP with machine-checked gates — the same ramp every time, which is what makes the org a reusable machine rather than a bespoke build. *(SOP artifacts land per plan phase B6; the stages below are the ratified contract.)*
 
-**Stage 0 — Interview.** The `cabinet-init` skill interviews the Captain: profile, lanes, org shape, autonomy posture, seed outcomes, integrations. It generates the `instance/` configuration and prints activation steps. **Nothing it generates activates by itself.**
+**Stage -1 — Generate the deployment.** The `cabinet-init` skill gathers purpose, profile, lanes, org shape, autonomy destination, and integrations. It generates `instance/` configuration and prints activation steps. **Nothing it generates activates by itself.**
+
+**Stage 0 — First Window and First Dividend.** Dashboard `/onboarding`, Telegram `/onboard`, and the World overlay render one canonical card from `framework/onboarding/journey.py`. The Captain chooses one folder and purpose, reviews a hash-bound read-only Charter, and receives one deterministic source-cited finding. Entering a folder is not consent to inspect it; the exact Charter hash must be ratified first. Relationship destination is recorded but grants zero authority. Revoke, event-backed undo, and typed purge work on every surface. Design: `docs/plans/onboarding-v2-design-of-record-2026-07-14.md`.
 
 **Stage 1 — Read-only shadow week.** The org watches and maps, writing nothing. Output: a product dossier — architecture map, operational runbook, a machine-readable deploy policy (canary %, rollback triggers, blast-radius caps), an **oracle inventory** (which machine-truth probes apply to this product, with the queries), and this product's Captain-required registry entries. The Estate Mapper (§6) runs here: discovery → classification → Source Map → approved sync plan.
 
@@ -427,7 +429,7 @@ Trusting the org with a new product is never ad-hoc. It is a staged SOP with mac
 | **Golden evals** | Known-good validation scenarios every promoted change must pass. |
 | **Scorecard** | The ledger-derived raw metric vector (no composites) in the weekly brief. |
 | **North star** | Verified outcomes per Captain-minute, trending up. |
-| **Staged onboarding SOP** | Interview → shadow week dossier → propose-only n≥20 → per-cell graduation. |
+| **Staged onboarding SOP** | Generate → First Window + cited dividend → deep orientation dossier → Strategy Mirror/Formation → propose-only evidence → per-cell commissioning and graduation. |
 | **Federation** | Spawning a new cabinet instance — permanently the highest-consequence, propose-only act. |
 
 ---
