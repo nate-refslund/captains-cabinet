@@ -1,0 +1,27 @@
+# Per-lane TELLS for the verified-noise discriminator.
+#
+# The CORE logic (two-signal magnitude+recency gate, freshness cutoffs, attribution
+# tree, verdict precedence, smoke-outranks-count) is lane-agnostic and lives in
+# framework/frontdoor/signal_discriminator.py. THIS file supplies the per-lane TELLS
+# it reads — keyed by the Sentry PROJECT slug (CABINET_SENTRY_PROJECT).
+#
+# Contract of record:
+#   shared/interfaces/polads-sentry-triage-discriminator-contract-2026-07-14.md
+# Reference impl (polads-ceo):
+#   instance/tools/polads-sentry-triage.sh
+#
+# FAIL-OPEN: a lane absent from this table (or this whole file absent) resolves to
+# EMPTY tells. With empty tells the discriminator can only ever (a) suppress a
+# FROZEN issue by recency alone, or (b) return INCONCLUSIVE for a fresh unattributable
+# issue → which is EMITTED. It never suppresses a fresh error it cannot positively
+# explain. So this file only ever makes the discriminator SHARPER (adds prod-smoke +
+# fresh-issue attribution + the staging≠prod fix); it is never load-bearing for safety.
+
+sentry:
+  # PolAds lane (org step-network). polads-ceo is the reference impl + the verifier.
+  sentry-step-polads:
+    prod_hosts: [polads.eu, www.polads.eu]       # EXACT allowlist — test.polads.eu is deliberately NOT here
+    staging_host_patterns: ["test.", "xtest."]    # host fragments ⇒ NOISE (the staging≠prod must-fix from the contract)
+    bot_host_patterns: ["vercel.app"]             # preview-hash deploy hosts ⇒ bot/crawler NOISE
+    template_path_pattern: '\[[a-zA-Z]'           # unresolved next.js route template (/[locale]/[id]) ⇒ NOISE
+    smoke_paths: [/da/search, /en/terms-of-sale]  # prod serving ground-truth (all 200 ⇒ PROD_OK)

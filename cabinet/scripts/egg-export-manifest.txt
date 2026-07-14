@@ -67,6 +67,7 @@ delete instance/config/outcomes.yml
 delete instance/config/adapters.yml
 delete instance/config/retention.yml
 delete instance/config/watchdog.yml
+delete instance/config/signals.yml
 # R120-class: comms-surface.yml landed as a live instance value on the
 # captain-surface work (its .example twin ships); rule is a no-op while the
 # file is absent from a checkout, so it is safe on every branch.
@@ -242,6 +243,7 @@ expect-present instance/config/sources.yml.example
 # governance editor/actions, create-officer.sh, load-preset.sh,
 # officer-boot.sh, demo-dashboard.sh, a pytest file).
 expect-present instance/config/role-registry.md.example
+expect-present instance/config/signals.yml.example
 # R166: the synthetic template for the UNTRACKED captain-specific publish-scan
 # pattern file must ship — egg-side cabinet-feedback.sh reads the live twin
 # when the captain configures one (the live .local is untracked and can never

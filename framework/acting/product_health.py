@@ -49,5 +49,15 @@ def sentry_health(org: str, project: str, *, stats_period: str = "24h", limit: i
             ev = int(i.get("count"))
         except (TypeError, ValueError):
             ev = 0
-        issues.append({"title": (i.get("title") or "").strip(), "events": ev})
+        issues.append({
+            "title": (i.get("title") or "").strip(),
+            "events": ev,
+            # Recency + attribution fields for the verified-noise discriminator
+            # (framework.frontdoor.signal_discriminator). Additive — existing
+            # consumers that read only title/events are unaffected. last_seen is the
+            # signal that separates a cumulative-count spike from a LIVE incident.
+            "short_id": (i.get("shortId") or "").strip(),
+            "id": str(i.get("id") or ""),
+            "last_seen": (i.get("lastSeen") or ""),
+        })
     return {"project": project, "count": len(issues), "issues": issues}
