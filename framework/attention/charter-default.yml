@@ -149,6 +149,21 @@ classes:
     reaction: ["👀"]
     show_injection_banner: false
 
+  - id: advisory
+    # The "Noticed" lane (onboarding design 2026-07-14 Phase 1): deterministic
+    # advisor findings from framework/attention/advisor.py. Briefing-route
+    # ONLY — never ping-now, never a floor class (the advisor is a nudge
+    # layer; a nudge that can wake the Captain is a design bug). The budget
+    # keys are CHARTER DATA the advisor reads: max_per_briefing caps
+    # emissions per pass, cooldown_days suppresses re-noticing the same
+    # finding id, max_open caps concurrently-open advisories.
+    matchers: {kinds: ["advisory"]}
+    route: next-briefing
+    silent: true
+    reaction: ["👀"]
+    budget: {max_per_briefing: 3, cooldown_days: 14, max_open: 7}
+    show_injection_banner: false
+
   # --- catch-all: batch into the next briefing (disturb-minimal default) ---
   - id: default
     route: next-briefing

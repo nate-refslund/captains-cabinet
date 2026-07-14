@@ -141,6 +141,21 @@
               "demote_after_expiries": {
                 "type": "integer",
                 "minimum": 1
+              },
+              "max_per_briefing": {
+                "description": "Advisory-class budget (onboarding design 2026-07-14 Phase 1): max advisor emissions per detector pass.",
+                "type": "integer",
+                "minimum": 0
+              },
+              "cooldown_days": {
+                "description": "Advisory-class budget: days before the SAME finding id may be re-noticed.",
+                "type": "integer",
+                "minimum": 0
+              },
+              "max_open": {
+                "description": "Advisory-class budget: cap on concurrently-open advisories.",
+                "type": "integer",
+                "minimum": 0
               }
             }
           },

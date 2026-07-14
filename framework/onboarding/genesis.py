@@ -32,6 +32,12 @@ refresh it with sourced research when they wake.
 composer-shaped intake items for the local first briefing
 (``framework.frontdoor.run_briefing --now --local-render``).
 
+``merge_proposals`` (onboarding design 2026-07-14 Phase 1) is the
+MERGE-BY-CARD-ID writer other organs use to ADD cards to the staging file
+after genesis: existing rows (Captain-edited or not) are preserved verbatim,
+only NEW ids are appended — the merge complement to ``write_proposals``'s
+write-once protection, same propose-only file, same draft-only rows.
+
 No Redis, no Telegram, no network beyond the single gated CLI invocation.
 Env knobs (names-in-env doctrine; malformed values fall back, never crash):
 ``CABINET_GENESIS_BRIEF_TIMEOUT`` (CLI budget, default 90s) and
@@ -338,6 +344,90 @@ def write_proposals(cards: list[dict], root: Path | None = None, *,
     return {"status": "written", "path": str(path), "written": True}
 
 
+def load_proposals_doc(root: Path | None = None) -> dict:
+    """The parsed outcomes-proposed.yml document, read-only. Absent or
+    unparseable → ``{}`` (honest empty — callers never guess at drafts)."""
+    base = Path(root) if root else cabinet_root()
+    path = base / PROPOSALS_REL
+    if not path.is_file():
+        return {}
+    try:
+        import yaml  # local: keep the module import-light
+        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+        return doc if isinstance(doc, dict) else {}
+    except Exception:
+        return {}
+
+
+def merge_proposals(cards: list[dict], root: Path | None = None, *,
+                    answers: dict | None = None, now: str | None = None,
+                    focus_present: bool = False) -> dict:
+    """MERGE-BY-CARD-ID writer for the propose-only staging file (onboarding
+    design 2026-07-14 Phase 1; Phase 3's strategy passes ride it too).
+
+    ``write_proposals`` is write-once because the Captain may have edited the
+    drafts — a blind append/overwrite would clobber those edits. This writer
+    preserves EVERY existing row's body verbatim (existing card ids win,
+    including any Captain-added keys) and appends only cards whose id is NEW,
+    each stamped with a per-row ``proposed_at``. The top-of-file comment block
+    of an existing file is preserved as-is (Captain comments survive); an
+    absent file degrades to ``write_proposals``. An existing file that does
+    not parse as the expected shape is NEVER rewritten — honest refusal
+    (``status: unmergeable-existing``), not a clobber. Propose-only exactly
+    like write_proposals: merged rows are ``status: draft`` +
+    ``captain_ratified: false`` in the file the mission compiler structurally
+    never reads."""
+    base = Path(root) if root else cabinet_root()
+    path = base / PROPOSALS_REL
+    ts = _utc_now_iso(now)
+    if not path.exists():
+        res = write_proposals(cards, base, answers=answers, now=ts,
+                              focus_present=focus_present)
+        res.update(added=len(cards) if res["written"] else 0, merged=False)
+        return res
+
+    import yaml  # local: keep the module import-light
+    try:
+        raw = path.read_text(encoding="utf-8")
+        doc = yaml.safe_load(raw)
+    except Exception:
+        doc, raw = None, ""
+    rows = doc.get("outcomes") if isinstance(doc, dict) else None
+    if not isinstance(rows, list):
+        return {"status": "unmergeable-existing", "path": str(path),
+                "written": False, "added": 0, "merged": False}
+
+    existing_ids = {str(r.get("id")) for r in rows if isinstance(r, dict)}
+    new_cards = [c for c in cards if str(c.get("id")) not in existing_ids]
+    if not new_cards:
+        return {"status": "no-new-cards", "path": str(path),
+                "written": False, "added": 0, "merged": True}
+
+    shaped = _proposals_doc(new_cards, answers or {}, now=ts,
+                            focus_present=focus_present)["outcomes"]
+    for row in shaped:
+        row["proposed_at"] = ts
+    doc["outcomes"] = rows + shaped
+    doc["last_merged_at"] = ts
+
+    # Preserve the existing leading comment block (Captain comments survive);
+    # only a file with no comment head gets the standard header stamped.
+    head_lines = []
+    for line in raw.splitlines():
+        if line.startswith("#") or not line.strip():
+            head_lines.append(line)
+        else:
+            break
+    header = ("\n".join(head_lines).strip() + "\n") if any(
+        ln.startswith("#") for ln in head_lines
+    ) else _PROPOSALS_HEADER.format(marker=GENERATED_MARKER)
+    body = header + yaml.safe_dump(doc, sort_keys=False, allow_unicode=True,
+                                   width=100)
+    _atomic_write(path, body)
+    return {"status": "merged", "path": str(path), "written": True,
+            "added": len(shaped), "merged": True}
+
+
 def run_genesis_proposal(root: Path | None = None, *, now: str | None = None) -> dict:
     """ONBOARD-1 orchestration: answers (+ focus) → cards → staging file.
 
@@ -528,16 +618,8 @@ def research_brief(root: Path | None = None, *, run_fn=None, net_check_fn=None,
 # The briefing gather — genesis surfaces → composer-shaped intake items.
 # ---------------------------------------------------------------------------
 def _load_proposal_rows(base: Path) -> list[dict]:
-    path = base / PROPOSALS_REL
-    if not path.is_file():
-        return []
-    try:
-        import yaml  # local: keep the module import-light
-        doc = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        rows = doc.get("outcomes") if isinstance(doc, dict) else None
-        return [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
-    except Exception:
-        return []
+    rows = load_proposals_doc(base).get("outcomes")
+    return [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
 
 
 def genesis_intake_items(root: Path | None = None, now: str | None = None) -> list[dict]:

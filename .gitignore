@@ -130,6 +130,10 @@ instance/state/
 instance/cache/
 instance/memory/briefings/
 
+# Formation runs (Phase 3): per-run journals, IOU artifacts, flight logs,
+# and their _pre-adopt undo archives — runtime data, never committed
+instance/onboarding/formation/
+
 # Experience records, decision log, research archive
 memory/tier3/
 
