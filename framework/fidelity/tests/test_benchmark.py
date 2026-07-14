@@ -81,7 +81,7 @@ def _mower_rc():
     carries a token ('husqvarna') that does NOT appear anywhere in the thread,
     so a benchmark intent contaminated by real_reply is detectable."""
     return {
-        "case_id": "mower1", "reply_key": "k", "slug": "lars", "person": "Lars",
+        "case_id": "mower1", "reply_key": "k", "slug": "alex", "person": "Alex",
         "channel": "msgraph", "language": "da",
         "reply_ts": "2026-05-12T12:00:00+00:00", "subject": "s", "n_prior": 2,
         "thread_before": [
@@ -89,7 +89,7 @@ def _mower_rc():
              "who": "Ada <n@x>", "source": "msgraph",
              "text": "Vi har lige overtaget huset med en stor plæne."},
             {"date": "2026-05-11T10:00:00+00:00", "direction": "received",
-             "who": "Lars <l@x>", "source": "msgraph",
+             "who": "Alex <l@x>", "source": "msgraph",
              "text": "Kan du anbefale en robotplæneklipper uden afgraensningskabel?"},
         ],
         "real_reply": "https://www.husqvarna.com/dk/robotplaeneklippere/automower/",
@@ -123,7 +123,7 @@ class TestBenchmarkIntent:
         assert "husqvarna" not in intent_lc
         assert "automower" not in intent_lc
         # A token from the pre-cutoff thread SHOULD ground the intent.
-        assert "robotpl" in intent_lc or "lars" in intent_lc
+        assert "robotpl" in intent_lc or "alex" in intent_lc
 
     def test_intent_equals_pure_function_of_thread(self, monkeypatch):
         """The cached intent must equal intent_and_context(case) computed from
@@ -249,7 +249,7 @@ class TestScoreableFilter:
         assert benchmark.is_scoreable(_case(reply, _CLEAN_THREAD))
 
     def test_short_ack_excluded(self):
-        for ack in ("Ja.", "Tak! 👌🏻", "okay, Nielsen 👌🏻", "Lyder godt!"):
+        for ack in ("Ja.", "Tak! 👌🏻", "okay, Jensen 👌🏻", "Lyder godt!"):
             assert not benchmark.is_scoreable(_case(ack, _CLEAN_THREAD)), ack
 
     def test_six_word_reply_is_scoreable(self):

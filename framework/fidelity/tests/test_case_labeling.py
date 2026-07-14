@@ -256,9 +256,9 @@ def test_presentation_hides_every_judge_derived_field():
     cli = _load_cli()
     row = _scored_row("c-anchor", "wrong")
     text = cli.present_case(row, content={
-        "person": "Tomás", "channel": "email",
+        "person": "Dana", "channel": "email",
         "reply_ts": "2026-03-14T09:22:00Z",
-        "thread_before": [{"date": "2026-03-14", "who": "Tomás",
+        "thread_before": [{"date": "2026-03-14", "who": "Dana",
                            "text": "Can we ship it?", "direction": "recv"}],
         "real_reply": "Yes — ship it after the VAT check.",
     })

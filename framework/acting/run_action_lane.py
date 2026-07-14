@@ -995,7 +995,7 @@ def _expire_stale_cards(now: dt.datetime) -> int:
         confirmed/wrong), so an expiry can never register as a demotion.
         decided_at = the card's OWN ts (the suppression clock — a genuinely-new
         same-subject situation arriving before the sweep must not be judged
-        already-handled; the draft lane's Kristoffer-miss rationale,
+        already-handled; the draft lane's UAT-TEST-#3-miss rationale,
         loop.expire_event docstring); reviewed_at = the real expiry moment
         (the audit clock).
       * best-effort DEL of cabinet:action:<pid> — the TTL alignment: the

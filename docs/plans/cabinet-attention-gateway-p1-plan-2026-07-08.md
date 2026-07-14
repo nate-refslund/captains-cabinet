@@ -57,18 +57,18 @@ import pytest
 from framework.attention.situation import (
     canonical_refs, situation_key, situations_overlap)
 
-# The five observed spellings of the testament commitment evidence.
-TESTAMENT_VARIANTS = [
-    "6-Commitments/owed_to_nate/cmt-fca6836e2844.md — 'Fredag den 10 juli klokken 14:50, Retten i Kolding'; reminder_set: false",
-    "6-Commitments/owed_to_nate/cmt-fca6836e2844.md — 'Kolding courthouse, Friday 10 July 14:50, testament signing'",
-    "6-Commitments/owed_to_nate/cmt-fca6836e2844.md — Solveig har booket tid hos retten i Kolding til underskrivelse af testamente fredag d. 10. juli kl. 14:50",
-    "6-Commitments/owed_to_nate/cmt-fca6836e2844.md — Solveig booked Kolding courthouse Friday 10 July 14:50; fulfilled_date 2026-06-22",
-    "6-Commitments/owed_to_nate/cmt-fca6836e2844.md — 'booket tid hos retten i Kolding … Fredag den 10 juli klokken 14:50'; reminder_set: false",
+# The five observed spellings of the document-signing commitment evidence.
+SIGNING_VARIANTS = [
+    "6-Commitments/owed_to_nate/cmt-fca6836e2844.md — 'Fredag den 10 juli klokken 14:50, Rådhuset'; reminder_set: false",
+    "6-Commitments/owed_to_nate/cmt-fca6836e2844.md — 'town hall, Friday 10 July 14:50, document signing'",
+    "6-Commitments/owed_to_nate/cmt-fca6836e2844.md — Lena har booket tid hos rådhuset til underskrivelse af dokumenterne fredag d. 10. juli kl. 14:50",
+    "6-Commitments/owed_to_nate/cmt-fca6836e2844.md — Lena booked town hall Friday 10 July 14:50; fulfilled_date 2026-06-22",
+    "6-Commitments/owed_to_nate/cmt-fca6836e2844.md — 'booket tid hos rådhuset … Fredag den 10 juli klokken 14:50'; reminder_set: false",
 ]
 
 
-def test_testament_variants_all_share_canonical_refs():
-    canon = [canonical_refs([v]) for v in TESTAMENT_VARIANTS]
+def test_signing_variants_all_share_canonical_refs():
+    canon = [canonical_refs([v]) for v in SIGNING_VARIANTS]
     for c in canon:
         assert "6-Commitments/owed_to_nate/cmt-fca6836e2844.md" in c
         assert "cmt-fca6836e2844" in c
@@ -81,7 +81,7 @@ def test_ref_prefix_and_cross_directory_same_commitment():
     # Observed: same commitment cited via owed_by AND owed_to paths, one with
     # a literal 'ref=' prefix. The bare cmt id must bridge them.
     a = canonical_refs(["ref=6-Commitments/owed_by_nate/cmt-d45d00936ac1.md"])
-    b = canonical_refs(["6-Commitments/owed_to_nate/cmt-d45d00936ac1.md — Iben returning 2026-07-27"])
+    b = canonical_refs(["6-Commitments/owed_to_nate/cmt-d45d00936ac1.md — colleague-D returning 2026-07-27"])
     assert "cmt-d45d00936ac1" in a and "cmt-d45d00936ac1" in b
     assert a & b
 
@@ -151,11 +151,11 @@ def test_non_string_and_none_inputs_are_safe():
 
 
 def test_situation_key_stable_and_ref_order_free():
-    k1 = situation_key([TESTAMENT_VARIANTS[0]])
-    k2 = situation_key([TESTAMENT_VARIANTS[0]])
+    k1 = situation_key([SIGNING_VARIANTS[0]])
+    k2 = situation_key([SIGNING_VARIANTS[0]])
     assert k1 == k2 and k1.startswith("sit-")
     # same canonical set, different raw spelling -> same key
-    assert situation_key([TESTAMENT_VARIANTS[1]]) == k1
+    assert situation_key([SIGNING_VARIANTS[1]]) == k1
 
 
 def test_situation_key_falls_back_to_subject_slug_when_refless():
@@ -176,7 +176,7 @@ Expected: FAIL/ERROR with `ModuleNotFoundError: No module named 'framework.atten
 WHY (2026-07-08 feed incident): every dedup key in the acting lanes was LLM
 prose — subject slugs re-worded per run, evidence refs annotated per run
 ("path — <fresh paraphrase>") — so 'same evidence = same situation' never
-fired and one testament reminder became 6+ cards and 2 duplicate calendar
+fired and one document-signing reminder became 6+ cards and 2 duplicate calendar
 events. This module extracts the STABLE ids embedded in those strings
 (vault paths, commitment ids, correlation ids, event UUIDs, monday ids,
 URLs) so identity comparison is deterministic prose-free set overlap.
@@ -322,7 +322,7 @@ Claude-Session: https://claude.ai/code/session_0141Y3vXipPQTR4jBgypRpC2"
 Drives the REAL pure core with a fixture llm; covered_evidence carries a
 PRIOR run's annotated evidence string (as read back from ledger refs), the
 new proposal cites the same commitment with a different annotation and a
-fresh subject_hint — the exact 2026-07-07 testament pattern."""
+fresh subject_hint — the exact 2026-07-07 document-signing pattern."""
 import json
 
 from framework.acting import action_lane
@@ -335,18 +335,18 @@ def _llm_returning(proposals):
 
 
 PRIOR_RUN_EVIDENCE = ("6-Commitments/owed_to_nate/cmt-fca6836e2844.md — "
-                      "'Fredag den 10 juli klokken 14:50, Retten i Kolding'; reminder_set: false")
+                      "'Fredag den 10 juli klokken 14:50, Rådhuset'; reminder_set: false")
 
 REWORDED_PROPOSAL = {
-    "situation": "Testament signing Friday needs a calendar block.",
-    "subject_hint": "will-signing-kolding-fresh-wording",   # drifted slug
+    "situation": "Document signing Friday needs a calendar block.",
+    "subject_hint": "papers-signing-town-hall-fresh-wording",   # drifted slug
     "lane": "personal",
     "urgency": "ping-now",
     "confidence": 0.9,
     "injection_suspect": False,
     "direction_fit": {"direction": "personal"},
-    "evidence": ["6-Commitments/owed_to_nate/cmt-fca6836e2844.md — Solveig booked Kolding courthouse"],
-    "steps": [{"kind": "reminder_create", "title": "Testament signing",
+    "evidence": ["6-Commitments/owed_to_nate/cmt-fca6836e2844.md — Lena booked town hall"],
+    "steps": [{"kind": "reminder_create", "title": "Document signing",
                "payload": {"title": "t", "due_iso": "2026-07-10T14:50:00+02:00"}}],
 }
 
@@ -484,12 +484,12 @@ OBSERVED_CARDS = [
     ("create-tracking-tasks-for-all-four-commercialization-proof-gates",
      ["5-Reflections/Decisions/2026-07-06-Four-proofs-required-before-commercialization-substrate-API-key-SDK-unit.md — four proof gates listed",
       "5-Reflections/Decisions/2026-07-06-Consumer-subscription-substrate-is-contractually-dead.md — API-key SDK is only durable substrate"]),
-    ("calendar-block-testament-signing-at-kolding-courthouse-fri-10-july-14-50",
-     ["6-Commitments/owed_to_nate/cmt-fca6836e2844.md — 'Fredag den 10 juli klokken 14:50, Retten i Kolding'; reminder_set: false"]),
+    ("calendar-block-document-signing-at-town-hall-fri-10-july-14-50",
+     ["6-Commitments/owed_to_nate/cmt-fca6836e2844.md — 'Fredag den 10 juli klokken 14:50, Rådhuset'; reminder_set: false"]),
     ("toolbox-commits-cc49aa29-151890fc-missing-monday-ids",
      ["9-Codebases/Toolbox/commits.md — commits cc49aa2920 and 151890fc0c flagged ⚠️ no Monday id"]),
-    ("will-signing-kolding-courthouse-fri-10-july-14-50",
-     ["6-Commitments/owed_to_nate/cmt-fca6836e2844.md — 'Kolding courthouse, Friday 10 July 14:50, testament signing'"]),
+    ("papers-signing-town-hall-fri-10-july-14-50",
+     ["6-Commitments/owed_to_nate/cmt-fca6836e2844.md — 'town hall, Friday 10 July 14:50, document signing'"]),
     ("advertiser-sign-off-on-publisher-filled-details-decision-not-recorded",
      ["6-Commitments/owed_to_nate/cmt-540d7a19bffd.md — Anna answered whether advertiser must sign off on publisher-filled targeting/delivery details",
       "6-Commitments/owed_to_nate/cmt-781c7a756d51.md — same topic, fulfilled 2026-07-06",
@@ -498,20 +498,20 @@ OBSERVED_CARDS = [
      ["product-brain/architecture.md — status: template, all placeholders unfilled",
       "9-Codebases/Toolbox/deployment.md — live prod stack documented in deployment digest but not in product-brain",
       "9-Codebases/Dev-Tasks-Plugin/deployment.md — same"]),
-    ("testament-signing-at-kolding-courthouse-friday-10-july-14-50",
-     ["6-Commitments/owed_to_nate/cmt-fca6836e2844.md — Solveig har booket tid hos retten i Kolding til underskrivelse af testamente fredag d. 10. juli kl. 14:50",
+    ("document-signing-at-town-hall-friday-10-july-14-50",
+     ["6-Commitments/owed_to_nate/cmt-fca6836e2844.md — Lena har booket tid hos rådhuset til underskrivelse af dokumenterne fredag d. 10. juli kl. 14:50",
       "6-Commitments/owed_to_nate/cmt-fca6836e2844.md — reminder_set: false"]),
-    ("reminder-testament-signing-at-kolding-courthouse-friday-10-july-14-50",
-     ["6-Commitments/owed_to_nate/cmt-fca6836e2844.md — Solveig booked Kolding courthouse Friday 10 July 14:50; fulfilled_date 2026-06-22"]),
+    ("reminder-document-signing-at-town-hall-friday-10-july-14-50",
+     ["6-Commitments/owed_to_nate/cmt-fca6836e2844.md — Lena booked town hall Friday 10 July 14:50; fulfilled_date 2026-06-22"]),
     ("toolbox-commits-missing-monday-ids-trace-gap",
      ["9-Codebases/Toolbox/commits.md — commits cc49aa2920 and 151890fc0c both flagged ⚠️ no Monday id"]),
-    ("testament-signing-kolding-courthouse-fri-10-jul-14-50-calendar-block-needed",
-     ["6-Commitments/owed_to_nate/cmt-fca6836e2844.md — 'booket tid hos retten i Kolding … Fredag den 10 juli klokken 14:50'; reminder_set: false"]),
+    ("document-signing-town-hall-fri-10-jul-14-50-calendar-block-needed",
+     ["6-Commitments/owed_to_nate/cmt-fca6836e2844.md — 'booket tid hos rådhuset … Fredag den 10 juli klokken 14:50'; reminder_set: false"]),
     ("chase-just-political-advertising-portals-connection-details-due-2026-07-08",
      ["6-Commitments/owed_to_nate/cmt-8ab5d6355d15.md"]),
     ("polads-encode-advertiser-sign-off-policy-publisher-fills-advertiser-optional",
      ["6-Commitments/owed_to_nate/cmt-b54c519f5c3e.md"]),
-    ("order-product-mastery-book-for-office-tomas-due-before-iben-returns-2026-07-27",
+    ("order-product-mastery-book-for-office-colleague-b-due-before-colleague-d-returns-2026-07-27",
      ["ref=6-Commitments/owed_by_nate/cmt-d45d00936ac1.md"]),
     ("capture-polads-liability-decision-advertiser-confirmation-of-publisher-filled-fi",
      ["ref=6-Commitments/owed_to_nate/cmt-b54c519f5c3e.md"]),
@@ -532,9 +532,9 @@ OBSERVED_CARDS = [
      ["6-Commitments/owed_to_nate/cmt-dead64477e1e.md — status:open, due 2026-07-08",
       "6-Commitments/owed_to_nate/cmt-66b9806f4e9c.md — status:open, due 2026-07-08",
       "6-Commitments/owed_to_nate/cmt-8ab5d6355d15.md — status:open, due 2026-07-08"]),
-    ("book-order-product-mastery-for-tomas-reminder-before-iben-returns-27-jul",
+    ("book-order-product-mastery-for-colleague-b-reminder-before-colleague-d-returns-27-jul",
      ["6-Commitments/owed_by_nate/cmt-d45d00936ac1.md — status:open, due 2026-07-27, reminder_set:false",
-      "6-Commitments/owed_to_nate/cmt-d45d00936ac1.md — Iben returning 2026-07-27"]),
+      "6-Commitments/owed_to_nate/cmt-d45d00936ac1.md — colleague-D returning 2026-07-27"]),
     ("styria-sign-off-answer-update-polads-advertiser-publisher-liability-spec",
      ["6-Commitments/owed_to_nate/cmt-b54c519f5c3e.md — fulfilled 2026-07-07, Anna answered: publisher fills targeting/delivery, optional advertiser confirmation"]),
     ("stepnetwork-dk-commits-missing-monday-ids-traceability-gap",
@@ -567,15 +567,15 @@ def test_observed_feed_collapses_to_true_situation_count():
     assert len(groups) <= 8, groups
 
     by_slug = {slug: g for g in groups for slug in g}
-    # All five same-day testament spellings land in ONE group.
-    testament = by_slug["calendar-block-testament-signing-at-kolding-courthouse-fri-10-july-14-50"]
-    assert len([s for s in testament if "signing" in s or "testament" in s]) >= 5
+    # All five same-day signing spellings land in ONE group.
+    signing_group = by_slug["calendar-block-document-signing-at-town-hall-fri-10-july-14-50"]
+    assert len([s for s in signing_group if "signing" in s]) >= 5
     # The EC chase pair + the triple-commitment variant collapse together.
     assert (by_slug["chase-just-political-advertising-portals-connection-details-due-2026-07-08"]
             is by_slug["ec-dg-just-connection-details-due-today-chase-if-not-received"])
     # Both book cards collapse despite owed_by/owed_to + ref= spelling drift.
-    assert (by_slug["order-product-mastery-book-for-office-tomas-due-before-iben-returns-2026-07-27"]
-            is by_slug["book-order-product-mastery-for-tomas-reminder-before-iben-returns-27-jul"])
+    assert (by_slug["order-product-mastery-book-for-office-colleague-b-due-before-colleague-d-returns-2026-07-27"]
+            is by_slug["book-order-product-mastery-for-colleague-b-reminder-before-colleague-d-returns-27-jul"])
 
 
 def test_first_card_would_have_suppressed_every_followup():
@@ -589,7 +589,7 @@ def test_first_card_would_have_suppressed_every_followup():
         presented.append(slug)
         covered.update(evidence)
     assert len(presented) <= 8, presented
-    assert sum("testament" in s or "signing" in s for s in presented) == 1
+    assert sum("signing" in s for s in presented) == 1
 ```
 
 - [ ] **Step 2: Run test to verify current state**
