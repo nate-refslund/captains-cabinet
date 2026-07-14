@@ -75,10 +75,10 @@ def test_group_by_tier_empty_list():
 
 def test_render_item_carries_source_and_why():
     line = composer.render_item(
-        _item(source="commitment-ledger", summary="call Frederik",
+        _item(source="commitment-ledger", summary="call Robin",
               why="owed since Tue"))
     assert "commitment-ledger" in line
-    assert "call Frederik" in line
+    assert "call Robin" in line
     assert "owed since Tue" in line
 
 

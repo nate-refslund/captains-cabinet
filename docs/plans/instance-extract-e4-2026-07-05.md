@@ -27,7 +27,7 @@ recorded here.
 
 `framework/autoreply/` → `instance/flavor-a/autoreply/` (git-tracked rename,
 5 files: `__init__.py`, `kristoffer_uat.py`, `wiring.py`, `tests/__init__.py`,
-`tests/test_kristoffer_uat.py`). It is the scoped **Kristoffer-Møller-Nielsen**
+`tests/test_kristoffer_uat.py`). It is the scoped **single-colleague**
 UAT auto-reply cell — named after a specific colleague, carrying instance-only
 identifiers (`copy_to_nate` / `nate_copy` params, `nate_model`, `KRISTOFFER_*`
 slugs). Flavor-A-instance-specific *by construction*: a colleague-scoped

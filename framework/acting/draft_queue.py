@@ -3,7 +3,7 @@
 THE GAP THIS CLOSES (captain-surface master prompt §3.6, 2026-07-10): the draft
 queue had NO withdraw path — once a draft was presented and stored
 (``cabinet:draft:<id>``), a stale draft could only be left untapped, which is
-the root of the worked Sofie confusion (the captain replied himself and the
+the root of the worked Casey confusion (the captain replied himself and the
 queued draft kept dangling, ready to fire). This module is the foundation
 primitive the safety rails share:
 

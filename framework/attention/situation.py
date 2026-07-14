@@ -3,7 +3,7 @@
 WHY (2026-07-08 feed incident): every dedup key in the acting lanes was LLM
 prose — subject slugs re-worded per run, evidence refs annotated per run
 ("path — <fresh paraphrase>") — so 'same evidence = same situation' never
-fired and one testament reminder became 6+ cards and 2 duplicate calendar
+fired and one document-signing reminder became 6+ cards and 2 duplicate calendar
 events. This module extracts the STABLE ids embedded in those strings
 (vault paths, commitment ids, correlation ids, event UUIDs, monday ids,
 scheme'd cabinet ids, URLs) so identity comparison is deterministic

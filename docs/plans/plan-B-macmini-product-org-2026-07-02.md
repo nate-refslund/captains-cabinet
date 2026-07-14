@@ -484,7 +484,7 @@ Encoded as `CC/framework/onboarding/sop.md` + stage-gate checks in `framework/on
 2. Gate throughput shows ongoing admits AND rejects (a loop that has never rejected anything is not live).
 3. Product #2 at Stage-2 or beyond through the SOP with zero framework changes.
 
-**Rollback note.** Every B6 channel is individually severable: Support-Drafter has a disarm flag and ships disarmed (the Kristoffer-autoreply template pattern: scope fence in code, arm flag default-off); the jury falls back to Captain-gated; tool/prompt/evolution channels are Gate-fed, so disabling the Gate freezes them safely (fail closed); product #2 is held propose-only by stage-gate until proven.
+**Rollback note.** Every B6 channel is individually severable: Support-Drafter has a disarm flag and ships disarmed (the colleague-autoreply template pattern: scope fence in code, arm flag default-off); the jury falls back to Captain-gated; tool/prompt/evolution channels are Gate-fed, so disabling the Gate freezes them safely (fail closed); product #2 is held propose-only by stage-gate until proven.
 
 **Captain-attention budget: 4 Nate-only actions** — B6.2 activation approval, B6.7 Stage-0 interview + Stage-2/3 ratifications (2), B6.8 federation-posture ratify. Recurring: monthly calibration (B5.7), weekly batched debt session (B2.13).
 

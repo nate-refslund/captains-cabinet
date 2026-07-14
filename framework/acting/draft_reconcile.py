@@ -1,7 +1,7 @@
 """framework.acting.draft_reconcile — reconcile queued drafts against the
 captain's ACTUAL outbound (captain-surface master prompt §3.6, 2026-07-10).
 
-THE CONSUMER HALF of the Sofie fix: the verify-at-fire gate
+THE CONSUMER HALF of the Casey fix: the verify-at-fire gate
 (``framework.acting.fire_gate``) catches a stale draft at the last instant;
 this consumer retires it EARLY, so the captain's queue stays honest to reality
 between fires. It sweeps the queued-draft store (``draft_queue.pending()``)
