@@ -4,12 +4,43 @@
 Officer LaunchAgent template.
 
 Per Spec 059 v1.1 Checkpoint 2.3 + Captain ratifications:
-- KeepAlive: SuccessfulExit=false + ThrottleInterval=30 (NOT Crashed=true) — restart on any non-zero exit (msg 2603 decision 1)
+- KeepAlive=true (unconditional restart) + ThrottleInterval=30. Checkpoint
+  2.3 originally ratified SuccessfulExit=false here (msg 2603 decision 1,
+  restart on any non-zero exit only), but every officer actually running
+  today (cos, comms-officer, and the two product-lane CEO plists this
+  change retires) has always used unconditional KeepAlive=true instead —
+  none of the live fleet has ever been deployed from this template, so that
+  ratification was never exercised in practice. Retiring the two CEO plists
+  in favor of THIS template (2026-07-14 product/captain-agnostic
+  foundation) makes the template's policy load-bearing for the first time;
+  reverted to match the always-on-24/7 behavior every real officer plist
+  actually has, rather than silently rolling out an unverified change to a
+  fleet-safety-critical restart policy. Reconciling the two policies is a
+  separate, deliberate decision — not a side effect of a config-generation
+  refactor.
 - WorkingDirectory key (CTO v1.1 #2 — without this, scripts can't locate cabinet/.env)
 - SoftResourceLimits NumberOfFiles=4096 (CTO v1.1 #3 — default 256 hits EMFILE under MCP load)
 - EnvironmentVariables REDIS_HOST + REDIS_PORT (Spec 064 v1.1 CTO #6 — Mac portability)
 - StandardOutPath/ErrorPath ~/Library/Logs/cabinet/ (Mac convention, NOT /var/log/)
 - Label uses reverse-DNS bundle ID (Spec 058 v1.2 CRO F2 — TCC code-signing pairing)
+
+Product/captain-agnostic foundation (2026-07-14): CABINET_ENV, CLAUDE_CONFIG_DIR
+and CLAUDE_SECURESTORAGE_CONFIG_DIR below were previously only set in
+individually hand-committed per-officer plists (e.g. the two product-lane
+CEO plists this change retires in favor of this template + the roster). Both
+are FLEET-WIDE, officer-independent values, not per-product config, so they
+belong here instead of duplicated per officer:
+- CABINET_ENV=runtime (framework/env.py) gates framework/frontdoor/channel.py's
+  allow_sends() — every officer needs this to send for real, not just the
+  ones that happened to have a hand-copied plist.
+- CLAUDE_CONFIG_DIR/CLAUDE_SECURESTORAGE_CONFIG_DIR (AUD-1 fleet rollout,
+  audit 2026-07-07 #1): dedicated officer config home, isolated from the
+  Captain's personal ~/.claude (no personal plugin set/auto-memory/corridor
+  mandate). Computed from ${HOME} — no new envsubst variable needed.
+  SECURESTORAGE set to EMPTY is deliberate: it drops Claude Code's
+  per-config-dir keychain suffix so the officer shares the default
+  "Claude Code-credentials" OAuth item (a fresh config home has no
+  credentials of its own; duplicating the item would race refresh rotation).
 
 Variables substituted by deploy-mac.sh via envsubst BEFORE writing to ~/Library/LaunchAgents/:
 - ${USER}        — invoking user (id -un)
@@ -56,13 +87,16 @@ Variables substituted by deploy-mac.sh via envsubst BEFORE writing to ~/Library/
     <string>en_US.UTF-8</string>
     <key>LC_ALL</key>
     <string>en_US.UTF-8</string>
+    <key>CABINET_ENV</key>
+    <string>runtime</string>
+    <key>CLAUDE_CONFIG_DIR</key>
+    <string>${HOME}/Library/Application Support/cabinet/claude-config</string>
+    <key>CLAUDE_SECURESTORAGE_CONFIG_DIR</key>
+    <string></string>
   </dict>
 
   <key>KeepAlive</key>
-  <dict>
-    <key>SuccessfulExit</key>
-    <false/>
-  </dict>
+  <true/>
 
   <key>ThrottleInterval</key>
   <integer>30</integer>
