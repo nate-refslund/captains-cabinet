@@ -31,10 +31,14 @@
 #       instance/config/publish-scan-patterns.local
 #     (tracked synthetic-placeholder twin: publish-scan-patterns.local.example;
 #     gitignored; the egg is cut with `git archive` so an untracked file can
-#     never ship). FAIL-CLOSED: a missing patterns file, or one carrying no
-#     `pattern` directives, ABORTS the gate (exit 2) — a publish scan is
-#     never vacuous. EGG_GATE_PATTERNS_FILE overrides the location for
-#     TESTS ONLY (same trust model as EGG_GATE_GREP).
+#     never ship). FAIL-CLOSED: a missing patterns file, one carrying no
+#     `pattern` directives, or one whose pattern values still appear
+#     verbatim among the synthetic template's DIRECTIVE lines (an unedited
+#     copy scans for placeholders — a vacuous GREEN; template '#' prose is
+#     never matched: real word-class values can sit inside ordinary English
+#     words) ABORTS the gate (exit 2) — a publish scan is never vacuous.
+#     EGG_GATE_PATTERNS_FILE overrides the location for TESTS ONLY (same
+#     trust model as EGG_GATE_GREP).
 #
 # The grep ENGINE is pinned (EGG_GATE_GREP overrides; default /usr/bin/grep)
 # and proven by a planted-sample self-test before any scan: ugrep/busybox
@@ -240,7 +244,29 @@ ADJUDICATED_ROWS=(
 # '#' comment lines and blank lines are ignored. Anything else aborts,
 # naming file:LINE-NUMBER only (never the content — a malformed line may
 # carry a real value and must not smear into logs or reports).
-[ -f "$PATTERNS_FILE" ] || fail "no captain-specific scan patterns configured — refusing to publish (create $PATTERNS_FILE_DEFAULT from ${PATTERNS_FILE_DEFAULT}.example; tests may point EGG_GATE_PATTERNS_FILE at a fixture)"
+[ -f "$PATTERNS_FILE" ] || fail "no captain-specific scan patterns configured — refusing to publish (create $PATTERNS_FILE_DEFAULT from ${PATTERNS_FILE_DEFAULT}.example and replace EVERY placeholder — verbatim template copies are refused; tests may point EGG_GATE_PATTERNS_FILE at a fixture)"
+
+# Template-copy refusal (review fix on R166): an UNEDITED copy of the
+# synthetic template satisfies the non-empty check below yet scans for
+# placeholders, not real values — a vacuous GREEN. Any pattern value still
+# appearing verbatim among a template twin's DIRECTIVE lines (the sibling
+# <patterns-file>.example plus the tracked default template) aborts.
+# '#' prose is stripped before matching — a real word-class value can sit
+# inside an ordinary English word in template prose, and a prose match
+# would refuse a correctly seeded live file. The abort names file:LINE and
+# the template only — NEVER the value: on a half-edited file the flagged
+# value may be a real one and must not smear into logs.
+TEMPLATE_TWINS=("${PATTERNS_FILE}.example")
+[ "${PATTERNS_FILE}.example" = "$ROOT/${PATTERNS_FILE_DEFAULT}.example" ] \
+  || TEMPLATE_TWINS+=("$ROOT/${PATTERNS_FILE_DEFAULT}.example")
+TWIN_SRCS=(); TWIN_DATA=(); TWIN_N=0
+for tmpl in "${TEMPLATE_TWINS[@]}"; do
+  [ -f "$tmpl" ] || continue
+  tdata="$WORK/template-twin.$TWIN_N.data"
+  "$GREP" -av '^#' -- "$tmpl" > "$tdata" || true  # all-comment twin => empty data
+  TWIN_SRCS[$TWIN_N]="$tmpl"; TWIN_DATA[$TWIN_N]="$tdata"
+  TWIN_N=$((TWIN_N + 1))
+done
 
 SCAN_SPECS=()
 for spec in $GREP_PATTERNS; do SCAN_SPECS+=("$spec"); done
@@ -255,7 +281,16 @@ while IFS= read -r pline || [ -n "$pline" ]; do
     'pattern '*)
       spec="${pline#pattern }"
       case "$spec" in
-        sub:?*|word:?*|id:?*) SCAN_SPECS+=("$spec"); LOCAL_PATTERN_N=$((LOCAL_PATTERN_N + 1)) ;;
+        sub:?*|word:?*|id:?*)
+          pval="${spec#*:}"
+          ti=0
+          while [ "$ti" -lt "$TWIN_N" ]; do
+            if "$GREP" -qaiF -- "$pval" "${TWIN_DATA[$ti]}"; then
+              fail "pattern value at $PATTERNS_FILE:$DATA_LINE_N appears verbatim among the synthetic template's directives (${TWIN_SRCS[$ti]}) — an unedited template copy scans for placeholders, not real values; replace EVERY placeholder (the value is withheld from this message by design)"
+            fi
+            ti=$((ti + 1))
+          done
+          SCAN_SPECS+=("$spec"); LOCAL_PATTERN_N=$((LOCAL_PATTERN_N + 1)) ;;
         *) fail "unsupported pattern directive at $PATTERNS_FILE:$DATA_LINE_N (format: pattern <sub|word|id>:<value>)" ;;
       esac ;;
     'allow '*)

@@ -593,6 +593,80 @@ def test_gate_patternless_file_fails_closed(tmp_path: Path):
     assert "PUBLISH GATE:" not in proc.stdout, proc.stdout
 
 
+def test_gate_allow_only_file_fails_closed(tmp_path: Path):
+    """A patterns file carrying ONLY `allow` directives (zero `pattern`
+    directives) is still a vacuous configuration — allow lines are
+    adjudication masks, not scan patterns, and must never count toward
+    suite non-emptiness (a refactor that tallied them would silently
+    reopen the vacuous-scan hole)."""
+    fake = _mk_fake_export(tmp_path, "innocuous content\n")
+    fixture = _mk_patterns_file(tmp_path, "allow QZ-1 qzhandle/qz-cabinet\n")
+    proc = _run_gate("--export", str(fake), patterns_file=fixture)
+    assert proc.returncode == 2, (proc.returncode, proc.stdout, proc.stderr)
+    assert "no 'pattern' directives — refusing a vacuous publish scan" \
+        in proc.stderr, proc.stderr
+    assert "PUBLISH GATE:" not in proc.stdout, proc.stdout
+
+
+def test_gate_verbatim_template_copy_fails_closed(tmp_path: Path):
+    """CONFIRMED review vector: `cp`-ing the tracked synthetic template to
+    the live path satisfies the non-empty check yet scans only placeholder
+    tokens — with gates (a)-(c) green that is a vacuous GREEN. Any pattern
+    value still verbatim in the tracked template must ABORT (exit 2),
+    without echoing the value."""
+    fake = _mk_fake_export(tmp_path, "innocuous content\n")
+    example = (_REPO_ROOT / "instance" / "config" /
+               "publish-scan-patterns.local.example")
+    fixture = _mk_patterns_file(
+        tmp_path, example.read_text(encoding="utf-8"))
+    proc = _run_gate("--export", str(fake), patterns_file=fixture)
+    assert proc.returncode == 2, (proc.returncode, proc.stdout, proc.stderr)
+    assert "appears verbatim among the synthetic template's directives" \
+        in proc.stderr, proc.stderr
+    # the flagged placeholder value itself never smears into the abort
+    assert "yourlastname" not in proc.stderr, proc.stderr
+    assert "PUBLISH GATE:" not in proc.stdout, proc.stdout
+
+
+def test_gate_template_placeholder_remnant_fails_closed(tmp_path: Path):
+    """Sibling-twin variant + value-withholding: ONE placeholder left
+    unreplaced among otherwise real-shaped values still aborts, naming
+    file:LINE-NUMBER and the template — never the value (on a half-edited
+    file the flagged value may be a real one)."""
+    fake = _mk_fake_export(tmp_path, "innocuous content\n")
+    fixture = _mk_patterns_file(
+        tmp_path, "pattern sub:qzrealshaped\npattern sub:qzremnanttoken\n")
+    (tmp_path / (fixture.name + ".example")).write_text(
+        "# synthetic template twin\npattern sub:qzremnanttoken\n",
+        encoding="utf-8")
+    proc = _run_gate("--export", str(fake), patterns_file=fixture)
+    assert proc.returncode == 2, (proc.returncode, proc.stdout, proc.stderr)
+    assert "appears verbatim among the synthetic template's directives" \
+        in proc.stderr, proc.stderr
+    assert ":2 " in proc.stderr, proc.stderr          # the line NUMBER...
+    assert "qzremnanttoken" not in proc.stderr        # ...never the value
+    assert "PUBLISH GATE:" not in proc.stdout, proc.stdout
+
+
+def test_gate_template_prose_substring_is_not_refused(tmp_path: Path):
+    """False-positive guard on the template-copy refusal: only the
+    template's DIRECTIVE lines carry placeholders — its '#' prose can
+    legitimately contain a real value as a substring of an ordinary
+    English word (word-class first names especially). A value found
+    solely in prose must LOAD, not abort: refusing it would brick the
+    gate on a correctly seeded live file."""
+    fake = _mk_fake_export(tmp_path, "innocuous content\n")
+    fixture = _mk_patterns_file(
+        tmp_path, "pattern word:qzprose\npattern sub:qzdistinct\n")
+    (tmp_path / (fixture.name + ".example")).write_text(
+        "# prose where coordiqzprose rides inside an ordinary word\n"
+        "pattern sub:qzplaceholder\n", encoding="utf-8")
+    proc = _run_gate("--export", str(fake), patterns_file=fixture)
+    assert proc.returncode != 2, (proc.returncode, proc.stdout, proc.stderr)
+    assert "appears verbatim among" not in proc.stderr, proc.stderr
+    assert "PUBLISH GATE:" in proc.stdout, proc.stdout  # a verdict was reached
+
+
 def test_gate_malformed_patterns_file_fails_closed(tmp_path: Path):
     """An unrecognized directive aborts, naming file:LINE-NUMBER only —
     the line CONTENT (which may carry a real value) must not smear into

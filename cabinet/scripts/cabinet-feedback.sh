@@ -93,8 +93,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 ROOT="${CABINET_FEEDBACK_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd -P)}"
 [ -d "$ROOT" ] || die "root not found: $ROOT"
 
-# The canonical public repo — CG-19 adjudicated install coordinate (the exact
-# string on the publish gate's ADJUDICATED_ALLOWLIST; never split or reword).
+# The canonical public repo — the CG-19 adjudicated install coordinate.
+# Since R166 the publish gate masks it via the `allow CG-19 <this exact
+# string>` directive in the UNTRACKED patterns file (no longer a tracked
+# ADJUDICATED_ALLOWLIST line) — never split or reword this literal: a
+# mismatched allow entry stops masking and the gate goes RED, never GREEN.
 CANONICAL_REPO="nate-refslund/captains-cabinet"
 ISSUE_LABEL="cabinet-feedback"
 
@@ -177,6 +180,15 @@ if [ -f "$PATTERNS_LOCAL" ]; then
   PL_PATTERN_N=0
   PL_CLEAN="$WORK/patterns.data"
   sed -e 's/[[:space:]]*$//' "$PATTERNS_LOCAL" > "$PL_CLEAN"
+  # Template twin for the copy-refusal check, DIRECTIVE lines only ('#'
+  # prose stripped): a real word-class value can sit inside an ordinary
+  # English word in template prose, and a prose match would refuse a
+  # correctly seeded live file.
+  PL_TWIN_DATA=""
+  if [ -f "${PATTERNS_LOCAL}.example" ]; then
+    PL_TWIN_DATA="$WORK/template-twin.data"
+    "$GREP" -av '^#' -- "${PATTERNS_LOCAL}.example" > "$PL_TWIN_DATA" || true
+  fi
   while IFS= read -r pline || [ -n "$pline" ]; do
     PL_LINE_N=$((PL_LINE_N + 1))
     case "$pline" in
@@ -184,7 +196,18 @@ if [ -f "$PATTERNS_LOCAL" ]; then
       'pattern '*)
         spec="${pline#pattern }"
         case "$spec" in
-          sub:?*|word:?*|id:?*) SPECS+=("$spec"); PL_PATTERN_N=$((PL_PATTERN_N + 1)) ;;
+          sub:?*|word:?*|id:?*)
+            # template-copy refusal (mirrors the publish gate): a value still
+            # verbatim among the tracked synthetic twin's DIRECTIVE lines
+            # means an unedited template copy — it would scrub placeholders,
+            # not real values. Abort names file:LINE only; the value never
+            # smears into output.
+            pval="${spec#*:}"
+            if [ -n "$PL_TWIN_DATA" ] \
+               && "$GREP" -qaiF -- "$pval" "$PL_TWIN_DATA"; then
+              die "pattern value at $PATTERNS_LOCAL:$PL_LINE_N appears verbatim among the synthetic template twin's directives — an unedited template copy scrubs placeholders, not real values; replace EVERY placeholder (value withheld from this message by design)"
+            fi
+            SPECS+=("$spec"); PL_PATTERN_N=$((PL_PATTERN_N + 1)) ;;
           *) die "unsupported pattern directive at $PATTERNS_LOCAL:$PL_LINE_N (format: pattern <sub|word|id>:<value>)" ;;
         esac ;;
       'allow '*) continue ;;   # publish-gate adjudication masks — not a scrub concern

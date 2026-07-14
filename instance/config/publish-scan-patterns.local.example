@@ -10,15 +10,22 @@
 # CONSUMERS (both fail closed):
 #   cabinet/scripts/egg-publish-gate.sh   gate (d) real-value scan — ABORTS
 #                                         (exit 2) if the live file is
-#                                         missing or has no pattern lines:
+#                                         missing, has no pattern lines, OR
+#                                         still carries any placeholder
+#                                         value from this template's
+#                                         DIRECTIVE lines verbatim (an
+#                                         unedited copy would scan for
+#                                         placeholders, not real values):
 #                                         a publish scan is never vacuous.
 #   cabinet/scripts/cabinet-feedback.sh   leak-scrub suite for diagnostic
 #                                         bundles — on a private-side
 #                                         checkout it REFUSES to build an
 #                                         under-scrubbed bundle without the
-#                                         live file; on packaged egg cuts
-#                                         the file is optional (baseline
-#                                         scrub always applies).
+#                                         live file, and refuses verbatim
+#                                         placeholder values the same way;
+#                                         on packaged egg cuts the file is
+#                                         optional (baseline scrub always
+#                                         applies).
 #
 # FORMAT — one directive per line; blank lines and '#' comments ignored:
 #   pattern <kind>:<value>
@@ -40,7 +47,10 @@
 #       the CG-19 canonical install coordinate + the CG-20 authorship
 #       surname token.
 #
-# Every value below is a SYNTHETIC placeholder — replace them all.
+# Every value below is a SYNTHETIC placeholder — replace them all: both
+# consumers REFUSE (exit 2) a live file whose pattern values still appear
+# among this template's directives ('#' prose is never matched — a real
+# word-class value may legitimately sit inside an ordinary English word).
 pattern sub:yourlastname
 pattern sub:youremployer
 pattern sub:yourproductname

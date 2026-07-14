@@ -66,8 +66,13 @@ R116 note: the ledger row claimed a packaging manifest existed; none did —
   the tracked gate carries the GENERIC classes only; the captain-specific
   suite loads from the UNTRACKED `instance/config/publish-scan-patterns.local`
   (template: its `.local.example` twin — `pattern <kind>:<value>` +
-  `allow <LEDGER-ROW> <string>` directives). **A missing or pattern-less
-  file ABORTS the gate (exit 2)** — a publish scan is never vacuous;
+  `allow <LEDGER-ROW> <string>` directives). **A missing file, a
+  pattern-less file, or a file whose pattern values still appear verbatim
+  among the synthetic template's DIRECTIVE lines ABORTS the gate (exit
+  2)** — an unedited template copy would scan for placeholders, not real
+  values, so a publish scan is never vacuous (the abort names file:line,
+  never the value; template `#` prose is never matched — a real word-class
+  value can sit inside an ordinary English word);
   `EGG_GATE_PATTERNS_FILE` overrides the location for tests only. ANY hit =
   FAIL + grouped report; colleague-name hits are the per-person **consent
   items for the Captain** before any public cut. Sole exception: exact

@@ -387,6 +387,50 @@ def test_malformed_patterns_directive_fails_closed(tmp_path):
     assert "qzsecrettoken" not in err              # ...never the content
 
 
+def test_template_verbatim_patterns_value_fails_closed(tmp_path):
+    """Mirror of the publish gate's template-copy refusal (review fix on
+    R166): a patterns value still verbatim in the tracked synthetic twin
+    means an unedited template copy — it would scrub placeholders, not real
+    values. Abort exit 2, naming file:LINE-NUMBER only; the value (which on
+    a half-edited file may be a real one) never smears into output."""
+    root = _mk_root(tmp_path, gate="absent",
+                    patterns="pattern sub:qzedited\npattern sub:qzremnant\n",
+                    doctor_lines=("nominal",))
+    (root / "instance" / "config" /
+     "publish-scan-patterns.local.example").write_text(
+        "# synthetic template twin\npattern sub:qzremnant\n",
+        encoding="utf-8")
+    home = _mk_home(tmp_path)
+    rc, out, err = _run(["--dry-run"], _env(root, home))
+    assert rc == 2
+    assert "appears verbatim among the synthetic template twin's directives" \
+        in err
+    assert ":2 " in err                            # the line NUMBER...
+    assert "qzremnant" not in err                  # ...never the value
+    assert "bundle" not in out                     # nothing was built
+
+
+def test_template_prose_substring_is_not_refused(tmp_path):
+    """False-positive guard on the twin-copy refusal (mirrors the gate):
+    template '#' prose can carry a real value inside an ordinary English
+    word; only DIRECTIVE lines are placeholder carriers. A value found
+    solely in prose must scrub normally, never die."""
+    root = _mk_root(tmp_path, gate="absent",
+                    patterns="pattern word:qzprose\n",
+                    doctor_lines=("token qzprose appears here",
+                                  "all services nominal"))
+    (root / "instance" / "config" /
+     "publish-scan-patterns.local.example").write_text(
+        "# prose where coordiqzprose rides inside an ordinary word\n"
+        "pattern sub:qzplaceholder\n", encoding="utf-8")
+    home = _mk_home(tmp_path)
+    rc, out, err = _run(["--dry-run"], _env(root, home))
+    assert rc == 0, err
+    bundle = _bundle_of(out)
+    assert "qzprose" not in bundle.lower()       # the value scrubbed...
+    assert "all services nominal" in bundle      # ...bundle still built
+
+
 def test_egg_cut_with_patterns_file_scrubs_captain_tokens(tmp_path):
     """Packaged-egg shape (gate absent) WITH a configured patterns file:
     the captain tokens scrub and the mode is announced as captain+baseline,
