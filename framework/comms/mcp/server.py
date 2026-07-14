@@ -80,6 +80,14 @@ TOOLS: list[dict[str, Any]] = [
             "evidence": _ARR, "urgency": {"type": "string", "enum": ["ping-now", "batch-into-next-briefing", "FYI-digest"]},
             "steps": _ARR, "state": _STR, "deadline_iso": _STR, "pid_marker": _STR,
             "injection_suspect": _BOOL, "chair_review": _BOOL, "buttons": _ARR,
+            # Tiered-escalation exhaustion proof (§3.9). MUST be advertised
+            # here: tools/call strips unknown args (load-bearing security,
+            # below), so omitting it would bounce every gated decision card
+            # with no compliant path to attach the proof the bounce demands.
+            "escalation": {"type": "object", "properties": {
+                "lane_tried": _STR, "chair_tried": _STR,
+                "needs_captain_because": _STR,
+            }},
         }, required=["subject"]),
     },
     {

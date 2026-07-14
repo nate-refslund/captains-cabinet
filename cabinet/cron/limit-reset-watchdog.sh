@@ -295,7 +295,11 @@ RESET_RE='reset[s]?[[:space:]]*(at[[:space:]]*)?[0-9]{1,2}([:.][0-9]{2})?[[:spac
 # banner — excluded belt-and-braces even though RESET_RE already drops them.
 SELF_NUDGE_RE='resume your active-task|never-stop loop|surface to the Chair'
 
-for o in "${OFFICERS[@]}"; do
+# Empty-safe expansion (bash 3.2 + set -u): on an unseeded host both roster
+# derivations can yield nothing, and a bare "${OFFICERS[@]}" is an
+# unbound-variable fatal there. ${OFFICERS[@]+...} expands to zero words when
+# the array is empty, so the tick no-ops through to the heartbeat line below.
+for o in ${OFFICERS[@]+"${OFFICERS[@]}"}; do
   SESSION="officer-${o}"
 
   # ----- DETECT + PARSE + STORE -------------------------------------------

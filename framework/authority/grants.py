@@ -24,7 +24,9 @@ action_type ∈ action_types ∧ lane match ∧ not expired (≤90d horizon enfo
 at load) ∧ not revoked (file flag OR Redis tombstone
 `cabinet:grant:revoked:<id>` — **Redis unreachable ⇒ treated revoked**) ∧
 rate not exhausted (`cabinet:grant:count:<id>:<date>` — **unreadable ⇒ not
-granted**) ∧ no active Captain veto ∧ the class **hard-scope predicate**
+granted**; the act path RESERVES the slot atomically via INCR-and-compare,
+so concurrent checks cannot both pass a max_per_day ceiling) ∧ no active
+Captain veto ∧ the class **hard-scope predicate**
 (recipient∈allowlist / amount≤max_eur_per_day / vendor∈allowlist — a missing
 context field FAILS the predicate: no allow without executor-supplied scope
 data, per the REDTEAM never-allow-without-enforcing-executor rule).
@@ -416,10 +418,13 @@ def _match(
     grants: list[dict[str, Any]] | None,
     is_locked_fn,
     redis_get,
+    redis_incr,
+    redis_expire,
     is_vetoed_fn,
     file_needs: bool,
     require_scope: bool,
     require_rate: bool,
+    reserve_rate: bool,
 ) -> dict[str, Any]:
     if risk_class not in CEILING_RISK_CLASSES:
         # Ceilings-only: a check for a non-ceiling class is a wiring bug —
@@ -478,21 +483,55 @@ def _match(
         if tomb:
             reasons.append(f"{gid}: revoked (tombstone)")
             continue
-        if require_rate:
-            try:
-                raw = get(f"{_COUNT_PREFIX}{gid}:{today}")
-                used = int(raw) if raw else 0
-            except Exception:
-                reasons.append(f"{gid}: rate counter unreadable — not granted")
-                continue
-            if used >= int((g.get("rate") or {}).get("max_per_day") or 0):
-                reasons.append(f"{gid}: daily rate exhausted ({used})")
-                continue
         if require_scope:
             ok, why = _hard_scope_ok(risk_class, g.get("scope") or {}, context)
             if not ok:
                 reasons.append(f"{gid}: {why}")
                 continue
+        if require_rate:
+            # Rate is deliberately the LAST condition: on the act path the
+            # check itself atomically RESERVES the day slot (INCR, compare
+            # the returned value), so it must only fire once every other
+            # condition has already passed. The old GET-here / INCR-later-in-
+            # record_use pattern was check-then-increment: two concurrent
+            # ceiling acts both read used=0 under max_per_day=1 and both
+            # executed — the race failed OPEN a fail-closed ceiling.
+            key = f"{_COUNT_PREFIX}{gid}:{today}"
+            max_per_day = int((g.get("rate") or {}).get("max_per_day") or 0)
+            if reserve_rate:
+                if max_per_day <= 0:
+                    reasons.append(f"{gid}: daily rate exhausted (0)")
+                    continue
+                try:
+                    used = int((redis_incr or _default_redis_incr)(key))
+                except Exception:
+                    reasons.append(f"{gid}: rate counter unreadable — "
+                                   f"not granted")
+                    continue
+                if used == 1:
+                    try:  # day-keyed anyway — a missing TTL never widens
+                        (redis_expire or _default_redis_expire)(
+                            key, _COUNT_TTL_S)
+                    except Exception as exc:
+                        print(f"grants: WARN rate-key TTL failed for {gid}: "
+                              f"{exc}", file=sys.stderr)
+                if used > max_per_day:
+                    # Over-reserve leaves the counter inflated past max —
+                    # harmless: the day key is already exhausted.
+                    reasons.append(f"{gid}: daily rate exhausted ({used - 1})")
+                    continue
+            else:
+                # Probe/shadow path — pure read, never consumes a slot.
+                try:
+                    raw = get(key)
+                    used = int(raw) if raw else 0
+                except Exception:
+                    reasons.append(f"{gid}: rate counter unreadable — "
+                                   f"not granted")
+                    continue
+                if used >= max_per_day:
+                    reasons.append(f"{gid}: daily rate exhausted ({used})")
+                    continue
         return {"granted": True, "grant_id": gid,
                 "reason": f"standing grant {gid} matched "
                           f"({risk_class}/{action_type}, lane {lane})"}
@@ -511,18 +550,29 @@ def check(
     grants: list[dict[str, Any]] | None = None,
     is_locked_fn: Optional[Callable[[Path], bool]] = None,
     redis_get: Optional[Callable[[str], str]] = None,
+    redis_incr: Optional[Callable[[str], str]] = None,
+    redis_expire: Optional[Callable[[str, int], None]] = None,
     is_vetoed_fn: Optional[Callable[[str | None], bool]] = None,
     file_needs: bool = True,
+    reserve_rate: bool | None = None,
 ) -> dict[str, Any]:
     """FI-2 allow decision → {granted, grant_id, reason}. THE only path a
     ceiling row may resolve to an allow, and it enforces every condition —
     including the class hard-scope predicate against `context`
-    ({recipient|amount_eur|vendor}); missing context fails closed."""
+    ({recipient|amount_eur|vendor}); missing context fails closed.
+
+    Rate is reserved ATOMICALLY on the act path: the day counter is INCR'd
+    and the returned value compared, so concurrent checks can never both
+    pass a max_per_day ceiling. `reserve_rate` defaults to `file_needs` —
+    the module's existing act-vs-probe bit (the gate passes file_needs=act):
+    act path reserves, shadow/probe path stays a pure non-consuming read."""
     return _match(
         risk_class, action_type, lane=lane, root=root, now=now,
         context=context, grants=grants, is_locked_fn=is_locked_fn,
-        redis_get=redis_get, is_vetoed_fn=is_vetoed_fn, file_needs=file_needs,
+        redis_get=redis_get, redis_incr=redis_incr, redis_expire=redis_expire,
+        is_vetoed_fn=is_vetoed_fn, file_needs=file_needs,
         require_scope=True, require_rate=True,
+        reserve_rate=file_needs if reserve_rate is None else reserve_rate,
     )
 
 
@@ -545,8 +595,9 @@ def covers(
     return _match(
         risk_class, action_type, lane=lane, root=root, now=now,
         context=None, grants=grants, is_locked_fn=is_locked_fn,
-        redis_get=redis_get, is_vetoed_fn=is_vetoed_fn, file_needs=False,
-        require_scope=False, require_rate=False,
+        redis_get=redis_get, redis_incr=None, redis_expire=None,
+        is_vetoed_fn=is_vetoed_fn, file_needs=False,
+        require_scope=False, require_rate=False, reserve_rate=False,
     )
 
 
@@ -557,15 +608,18 @@ def record_use(
     redis_incr: Optional[Callable[[str], str]] = None,
     redis_expire: Optional[Callable[[str, int], None]] = None,
 ) -> bool:
-    """Count an attributed allow against the day-keyed rate counter.
+    """Post-act attribution hook — TTL refresh ONLY (no increment).
 
-    Best-effort (returns False on failure): the READ side is the enforcement
-    — an uncountable use leaves the counter unreadable or stale, and the next
-    `check` fails closed on unreadable counters.
+    The day slot is RESERVED atomically inside `check` (act-path INCR,
+    compare the returned value), so incrementing again here would count
+    every attributed allow twice and halve the effective allowance. This
+    re-stamps the day key's TTL as hygiene and stays best-effort (returns
+    False on failure): the READ side is the enforcement. `redis_incr` is
+    kept for signature compatibility and intentionally unused.
     """
+    del redis_incr  # reservation moved into check() — never INCR here
     key = f"{_COUNT_PREFIX}{grant_id}:{_now(now).strftime('%Y-%m-%d')}"
     try:
-        (redis_incr or _default_redis_incr)(key)
         (redis_expire or _default_redis_expire)(key, _COUNT_TTL_S)
         return True
     except Exception as exc:

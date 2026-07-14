@@ -107,6 +107,32 @@ class TestAutonomyPolicy:
         assert "custom_risk" in p.ceiling
         assert HARD_CEILING_TOUCHES <= p.ceiling
 
+    def test_ambiguous_defaults_to_auto_is_refused(self, tmp_path):
+        # The knob is consumed, but 'auto' cannot invert the human-in-loop
+        # invariant — the file value is refused, the safe default stands.
+        cfg = tmp_path / "instance" / "config"
+        cfg.mkdir(parents=True)
+        (cfg / "autonomy.yml").write_text(
+            "classifier:\n  ambiguous_defaults_to: auto\n")
+        p = load_autonomy(cabinet_root=tmp_path)
+        assert p.ambiguous_defaults_to == "propose"
+        assert p.ambiguous_kind == "tool"
+
+    def test_ambiguous_kind_wired_into_classify(self, tmp_path):
+        # The policy knob actually reaches classify(): an ambiguous need
+        # resolves to the propose kind, never 'procedure'.
+        cfg = tmp_path / "instance" / "config"
+        cfg.mkdir(parents=True)
+        (cfg / "autonomy.yml").write_text(
+            "classifier:\n  ambiguous_defaults_to: propose\n")
+        p = load_autonomy(cabinet_root=tmp_path)
+        assert classify("do the thing with the stuff", ambiguous_default=p.ambiguous_kind) == "tool"
+
+    def test_classify_refuses_procedure_as_ambiguous_default(self):
+        # Even a caller passing 'procedure' cannot make ambiguity auto-skill.
+        assert classify("do the thing with the stuff",
+                        ambiguous_default="procedure") != "procedure"
+
 
 # ---------------------------------------------------------------------------
 # can_auto_apply — only 'auto' kind with no ceiling touch

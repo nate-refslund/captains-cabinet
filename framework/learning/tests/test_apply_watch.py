@@ -91,6 +91,26 @@ class TestEvaluate:
         merged = apply_watch._merged(apply_watch.watch_path(root))
         assert merged["pack-w"]["status"] == "watching"
 
+    def test_red_after_window_still_closes(self, root):
+        """memory-learning-5: a red signal arriving AFTER watch_until (e.g.
+        daemon downtime past window end) must not roll back a window-survived
+        pack — the red scan is capped at the window end."""
+        apply_watch.record_apply("pack-late", applied_at=APPLIED,
+                                 revert_plan="p", root=root)
+        seen = {}
+
+        def late_red(applied_at, end):
+            seen["end"] = end
+            # red only exists in the post-window world
+            return ["late red"] if end > "2026-07-08T00:00:00Z" else []
+
+        decisions = apply_watch.evaluate(now=PAST_WINDOW, root=root,
+                                         red_signals_fn=late_red)
+        assert seen["end"] == "2026-07-08T00:00:00Z"  # capped at watch_until
+        assert decisions[0]["decision"] == "close"
+        merged = apply_watch._merged(apply_watch.watch_path(root))
+        assert merged["pack-late"]["status"] == "closed"
+
     def test_broken_red_probe_reads_as_no_signal(self, root):
         apply_watch.record_apply("pack-p", applied_at=APPLIED,
                                  revert_plan="p", root=root)

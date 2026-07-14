@@ -291,6 +291,17 @@ def _flatten_xread(res, key: str) -> list[tuple[str, dict]]:
     return out
 
 
+# Error-class prefixes redis prints as the FIRST token of an error reply.
+# raw/piped redis-cli output carries no "(error) " marker, so these are the
+# only way to tell "WRONGTYPE ..." from data (see _RedisCliBackend._run).
+_REDIS_ERROR_PREFIXES = (
+    "ERR", "WRONGTYPE", "NOGROUP", "OOM", "LOADING", "MISCONF", "NOAUTH",
+    "NOPERM", "READONLY", "MASTERDOWN", "BUSYGROUP", "BUSYKEY", "EXECABORT",
+    "NOSCRIPT", "NOREPLICAS", "CLUSTERDOWN", "CROSSSLOT", "TRYAGAIN",
+    "MOVED", "ASK", "UNBLOCKED", "WRONGPASS",
+)
+
+
 class _RedisCliBackend:
     """stdlib-only backend: shells out to redis-cli (mirrors triggers.sh)."""
 
@@ -309,10 +320,19 @@ class _RedisCliBackend:
                 f"redis-cli failed ({proc.returncode}): "
                 f"{proc.stderr.strip() or proc.stdout.strip()}")
         out = proc.stdout
-        if "ERR" in out and args and args[0] not in ("XGROUP",):
-            # redis-cli prints errors to stdout in non-raw mode.
-            if out.strip().startswith("ERR") or out.strip().startswith("(error)"):
-                raise RuntimeError(f"redis error: {out.strip()}")
+        stripped = out.strip()
+        # redis-cli prints errors to STDOUT: "(error) CODE ..." formatted,
+        # bare "CODE ..." when raw/piped. Match ANY error-class reply — not
+        # just ones containing "ERR": WRONGTYPE/NOGROUP/OOM/LOADING/MISCONF
+        # are ordinary ops states and must raise, never pass through as data
+        # (an enqueue() returning an error string AS a message id silently
+        # loses a Captain-bound item). XGROUP stays exempt (BUSYGROUP is an
+        # expected reply; _ensure_group ignores it).
+        if args and args[0] not in ("XGROUP",):
+            if stripped.startswith("(error)") or any(
+                    stripped == code or stripped.startswith(code + " ")
+                    for code in _REDIS_ERROR_PREFIXES):
+                raise RuntimeError(f"redis error: {stripped}")
         return out
 
     def ping(self) -> bool:
@@ -320,7 +340,13 @@ class _RedisCliBackend:
 
     def xadd(self, key: str, field: str, value: str) -> str:
         # Pass the JSON value as a single argv element (no shell, so safe).
-        return self._run("XADD", key, "*", field, value).strip()
+        out = self._run("XADD", key, "*", field, value).strip()
+        # Fail-closed: the ONLY valid XADD reply is a '<ms>-<seq>' stream id.
+        # Anything else (unrecognized error text, empty reply) must raise so
+        # enqueue() never hands an error string back as a message id.
+        if not _looks_like_id(out):
+            raise RuntimeError(f"redis XADD returned a non-id reply: {out!r}")
+        return out
 
     def _ensure_group(self, key: str) -> None:
         # MKSTREAM so the group can be created before any XADD; ignore BUSYGROUP.

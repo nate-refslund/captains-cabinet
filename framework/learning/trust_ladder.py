@@ -313,7 +313,9 @@ def current_rung(lane: Optional[str] = None,
     authority changes to Captain-authenticated surfaces; the schg/ro_mount
     lock IS that surface). Absent / unlocked / corrupt file, or no applicable
     row ⇒ would-like-to (the conservative floor). A grant row with no lane
-    applies to every lane; another lane's row never applies.
+    applies to every lane; another lane's row never applies — including when
+    the queried lane is None (estate-wide): only lane-less rows apply then,
+    so a lane-scoped grant never lifts lane-less cells.
     """
     best_idx = RUNG_ORDER.index(BASE_RUNG)
     try:
@@ -321,7 +323,7 @@ def current_rung(lane: Optional[str] = None,
     except Exception:
         return RUNG_ORDER[best_idx]
     for row in rows:
-        if lane is not None and row["lane"] not in (None, lane):
+        if row["lane"] is not None and row["lane"] != lane:
             continue
         idx = RUNG_ORDER.index(row["rung"])
         if idx > best_idx:
@@ -337,7 +339,8 @@ def current_rung(lane: Optional[str] = None,
 def ladder_rung_cap(lane: Optional[str] = None,
                     cabinet_root: str | Path | None = None) -> str:
     """The highest rung the Captain-authored ladder FILE defines that applies
-    to `lane` (a rung with lane=None applies to every lane).
+    to `lane` (a rung with lane=None applies to every lane; a lane-scoped rung
+    never applies to a lane=None query — same lane rule as current_rung).
 
     This is the overlay's file-side CAP: a granted rung only lifts up to what
     the ladder file still defines, so deleting/corrupting the file drops every
@@ -348,7 +351,7 @@ def ladder_rung_cap(lane: Optional[str] = None,
     for rung in load_ladder(cabinet_root):
         if rung.name not in RUNG_ORDER:
             continue
-        if lane is not None and rung.lane not in (None, lane):
+        if rung.lane is not None and rung.lane != lane:
             continue
         best_idx = max(best_idx, RUNG_ORDER.index(rung.name))
     return RUNG_ORDER[best_idx]
@@ -460,7 +463,7 @@ def evaluate_ladder(actor_id: str, lane: Optional[str] = None,
     for rung in ladder:
         if rung.name not in RUNG_ORDER:
             continue
-        if lane is not None and rung.lane not in (None, lane):
+        if rung.lane is not None and rung.lane != lane:
             continue
         # only rungs strictly above the current granted rung are candidates
         if RUNG_ORDER.index(rung.name) <= cur_idx:

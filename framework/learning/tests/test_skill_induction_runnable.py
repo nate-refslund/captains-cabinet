@@ -89,3 +89,25 @@ class TestGovernanceUnchanged:
         induce_body = src.split("def induce_drafts", 1)[1].split("\ndef ", 1)[0]
         assert "promote_draft" not in induce_body
         assert "status: validated" not in induce_body
+
+    def test_reinduction_never_demotes_promoted_skill(self, tmp_path, monkeypatch):
+        """memory-learning-2: the recurring induce_drafts pass must never
+        overwrite a promoted (status: validated) skill back to draft — only
+        still-draft (or absent) files are (re)written."""
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        monkeypatch.setattr(si, "list_records", lambda: [])
+        monkeypatch.setattr(si, "_cluster_records",
+                            lambda *a, **k: [_cluster([DIRECTIVE])])
+        monkeypatch.setattr(si, "emit", lambda *a, **k: None)
+        first = si.induce_drafts()
+        assert len(first) == 1
+        path = first[0]
+        assert si.draft_status(path) == "draft"
+        # a still-draft skill IS refreshed on re-run (idempotent overwrite)
+        assert si.induce_drafts() == [path]
+        # promote, then re-run: the promoted skill is skipped, byte-identical
+        assert si.promote_draft(path) is True
+        validated_body = path.read_text()
+        assert si.induce_drafts() == []
+        assert path.read_text() == validated_body
+        assert si.draft_status(path) == "validated"

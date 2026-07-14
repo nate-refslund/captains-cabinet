@@ -472,7 +472,7 @@ services:
   - name: draft-lane
     label: com.cabinet.draft-lane
     kind: daemon
-    disabled: true
+    disabled: true   # ABSENCE-DISABLE annotation — real rows comment inline; must still parse DISABLED
     command: bash cabinet/scripts/run-draft-lane.sh
     schedule: { interval_s: 300 }
 """
@@ -516,6 +516,28 @@ def test_manifest_parser_extracts_all_shapes():
     dl = entries["draft-lane"]
     assert dl["disabled"] is True
     assert entries["retro-trigger"]["label"] == "com.cabinet.retro-trigger"
+
+
+def test_manifest_parser_strips_trailing_comments_on_all_keys():
+    """`disabled: true   # ABSENCE-DISABLE …` must parse DISABLED. The strip
+    used to apply to `schedule:` only, so the two deliberately-parked rows in
+    the real services.yml parsed as ENABLED and false-paged the Chair every
+    sweep, eating slots in the 8-problem cap (bug-hunt 2026-07-14,
+    runtime-services-1). Comments now strip for EVERY key, apoptosis-parity."""
+    snippet = """\
+services:
+  - name: research-sweep
+    label: com.cabinet.research-sweep   # trailing label comment
+    kind: cron   # trailing kind comment
+    disabled: true   # ABSENCE-DISABLE (cos 2026-07-10): parked while the Captain is dark
+    command: bash cabinet/cron/research-sweep.sh
+    schedule: { interval_s: 3600 }   # hourly
+"""
+    (row,) = reg._parse_services_manifest(snippet)
+    assert row["disabled"] is True   # the incident: this parsed False
+    assert row["kind"] == "cron"
+    assert row["label"] == "com.cabinet.research-sweep"
+    assert row["schedule_kind"] == "interval" and row["interval_s"] == 3600
 
 
 def test_manifest_parser_monthly_shapes():

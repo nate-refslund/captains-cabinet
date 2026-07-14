@@ -359,6 +359,35 @@ def test_current_rung_lane_none_grant_applies_to_all_lanes(tmp_path):
     assert T.current_rung("newsletter", root, is_locked_fn=_LOCKED) == "ive-done"
 
 
+def test_lane_scoped_rows_never_apply_to_lane_none_query(tmp_path):
+    """AX widening fix (memory-learning-3): a lane-scoped granted/ladder row
+    must NOT lift lane-less (lane=None, estate-wide) cells — when the queried
+    lane is None only lane-less rows apply, in current_rung, ladder_rung_cap,
+    evaluate_ladder, and therefore rung_verdict_lift."""
+    root = _write_ladder(tmp_path, """
+rungs:
+  - name: ive-done
+    lane: bakery
+    grants: [ { action_type: task_status_move } ]
+granted:
+  - { rung: ive-done, lane: bakery }
+""")
+    # the bakery lane itself is lifted...
+    assert T.current_rung("bakery", root, is_locked_fn=_LOCKED) == "ive-done"
+    # ...but the lane-less (estate-wide) query stays at the floor.
+    assert T.current_rung(None, root, is_locked_fn=_LOCKED) == T.BASE_RUNG
+    assert T.ladder_rung_cap(None, root) == T.BASE_RUNG
+    assert T.rung_verdict_lift(None, posture="earn_up", cabinet_root=root,
+                               is_locked_fn=_LOCKED) is None
+    # evaluate_ladder(lane=None) never considers the bakery-scoped rung.
+    ev = T.evaluate_ladder(
+        "officer:cos", None,
+        _eval_factory({"task_status_move": ("graduated", 30)}),
+        cabinet_root=root)
+    assert ev["earned"] == [] and ev["pending"] == []
+    assert ev["blocked_by_ceiling"] == []
+
+
 def test_current_rung_missing_file_is_base(tmp_path):
     root = tmp_path / "empty"
     root.mkdir()

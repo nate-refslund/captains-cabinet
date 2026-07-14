@@ -50,6 +50,7 @@ class FakeRedis:
     def __init__(self):
         self.streams: dict[str, list] = {}
         self.kv: dict[str, str] = {}
+        self.ttls: dict[str, int] = {}
         self._seq = 0
 
     # --- stream ops -------------------------------------------------------
@@ -86,7 +87,14 @@ class FakeRedis:
         return 1 if key in self.kv else 0
 
     def delete(self, key):
+        self.ttls.pop(key, None)
         return 1 if self.kv.pop(key, None) is not None else 0
+
+    def expire(self, key, ttl):
+        if key in self.kv:
+            self.ttls[key] = int(ttl)
+            return 1
+        return 0
 
     def rpush(self, key, value):
         self.kv.setdefault(key, [])
@@ -299,6 +307,56 @@ def test_double_scan_sends_exactly_once(redis, clock, backend):
     assert len(first) == 1
     assert second == []
     assert len(backend.calls) == 1  # NOT two — the sent marker held
+
+
+def test_overlapping_scan_nx_loser_reaps_never_double_sends(clock, backend):
+    """framework-core-2: two overlapping sweeps can both pass the exists()
+    pre-check; the sweep that LOSES the SET NX claim must reap the entry
+    instead of falling through and sending a second copy."""
+
+    class RacedRedis(FakeRedis):
+        # exists() reports 0 for everything — simulating the concurrent
+        # winner claiming the marker AFTER this sweep's exists() ran.
+        def exists(self, key):
+            return 0
+
+    redis = RacedRedis()
+    draft_id = V.enqueue_veto("cos", "ops", "internal_message", _payload(),
+                              window_minutes=7, redis=redis, clock=clock)
+    # The concurrent winner already holds the marker (its SET NX won).
+    redis.set(V.sent_marker_key(draft_id), "1")
+    clock.advance(7 * 60 + 1)
+    sent = V.scan_and_send(clock(), redis=redis, send_backend=backend)
+    assert sent == []
+    assert backend.calls == []          # the loser never fires the backend
+    assert redis.xlen(V.VETO_STREAM) == 0  # ...but reaps its stale view
+
+
+def test_sent_marker_carries_ttl(redis, clock, backend):
+    """Success markers must not accumulate forever — the claim sets a TTL."""
+    draft_id = V.enqueue_veto("cos", "ops", "internal_message", _payload(),
+                              window_minutes=7, redis=redis, clock=clock)
+    clock.advance(7 * 60 + 1)
+    sent = V.scan_and_send(clock(), redis=redis, send_backend=backend)
+    assert sent == [draft_id]
+    assert redis.ttls.get(V.sent_marker_key(draft_id)) == V.SENT_MARKER_TTL_S
+
+
+def test_scan_sends_even_if_expire_unsupported(clock, backend):
+    """The marker TTL is hygiene only — an injected redis whose EXPIRE fails
+    (or is missing) must never block the send itself."""
+
+    class NoExpire(FakeRedis):
+        def expire(self, key, ttl):
+            raise RuntimeError("EXPIRE unsupported")
+
+    redis = NoExpire()
+    draft_id = V.enqueue_veto("cos", "ops", "internal_message", _payload(),
+                              window_minutes=7, redis=redis, clock=clock)
+    clock.advance(7 * 60 + 1)
+    sent = V.scan_and_send(clock(), redis=redis, send_backend=backend)
+    assert sent == [draft_id]
+    assert len(backend.calls) == 1
 
 
 def test_scan_skips_entry_already_marked_sent(redis, clock, backend):

@@ -139,10 +139,11 @@ def classify(need: str, evidence: str = "", ambiguous_default: str = "tool") -> 
         return "integration" if integ_signal else "tool"
     if proc > tool:
         return "procedure"
-    # Tie or both zero → ambiguous → safe default (propose). Never 'procedure'.
-    if ambiguous_default not in VALID_KINDS:
+    # Tie or both zero → ambiguous → safe default (propose). Never 'procedure'
+    # (the auto-skill lane) — enforced here, not just documented.
+    if ambiguous_default not in VALID_KINDS or ambiguous_default == "procedure":
         ambiguous_default = "tool"
-    return "integration" if (integ_signal and ambiguous_default != "procedure") else ambiguous_default
+    return "integration" if integ_signal else ambiguous_default
 
 
 def infer_touches(need: str, evidence: str = "", declared: list[str] | None = None) -> set[str]:
@@ -180,6 +181,15 @@ class AutonomyPolicy:
     def ceiling(self) -> frozenset[str]:
         return HARD_CEILING_TOUCHES | self.extra_ceiling
 
+    @property
+    def ambiguous_kind(self) -> str:
+        """classify()'s `ambiguous_default` under this policy — the vocabulary
+        map from the autonomy.yml knob ('propose' → 'tool', a propose kind).
+        `auto` is REFUSED at load time and anything unexpected reads as 'tool'
+        here too: an ambiguous gap must never default into 'procedure' (the
+        auto-skill lane)."""
+        return "tool"
+
 
 def load_autonomy(cabinet_root: str | Path | None = None) -> AutonomyPolicy:
     """Load instance/config/autonomy.yml, or conservative defaults if absent.
@@ -211,7 +221,10 @@ def load_autonomy(cabinet_root: str | Path | None = None) -> AutonomyPolicy:
         policy.auto_after_clean_approvals = 10
 
     clf = data.get("classifier") or {}
-    if clf.get("ambiguous_defaults_to") in ("propose", "auto"):
+    # Only 'propose' is honored. 'auto' is REFUSED (kept at the safe default):
+    # an ambiguous gap defaulting into the auto-skill lane would invert the
+    # module's err-toward-human-in-loop invariant, so the file cannot ask for it.
+    if clf.get("ambiguous_defaults_to") == "propose":
         policy.ambiguous_defaults_to = clf["ambiguous_defaults_to"]
 
     hc = (data.get("hard_ceiling") or {}).get("always_propose_if_touches") or []
@@ -372,7 +385,8 @@ def record_gap(need: str, kind: str | None = None, evidence: str = "",
             return g
 
     gid = gap_id_for(need)
-    inferred_kind = kind if kind in VALID_KINDS else classify(need, evidence)
+    inferred_kind = kind if kind in VALID_KINDS else classify(
+        need, evidence, load_autonomy().ambiguous_kind)
     inferred_touches = sorted(infer_touches(need, evidence, touches))
     emit("capability_gap_recorded", actor=actor, payload={
         "gap_id": gid, "product_slug": product_slug, "need": need,
@@ -513,7 +527,8 @@ def route_open_gaps(product_slug: str | None = None, policy: AutonomyPolicy | No
         if g["status"] != STATUS_OPEN:
             continue
         gid = g["gap_id"]
-        kind = g.get("kind") or classify(g["need"], g.get("evidence", ""))
+        kind = g.get("kind") or classify(g["need"], g.get("evidence", ""),
+                                         policy.ambiguous_kind)
         touches = set(g.get("touches") or [])
         try:
             if kind == "procedure" and can_auto_apply(kind, touches, policy):

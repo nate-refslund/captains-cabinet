@@ -959,6 +959,79 @@ def test_self_delivery_roster_failure_falls_back_to_slug_not_open() -> None:
     assert calls2 == [], f"malformed target must not XADD even on roster failure; got {calls2}"
 
 
+# ---------------------------------------------------------------
+# request_handoff XADD result validation (comms-attention-6)
+# ---------------------------------------------------------------
+
+def _call_request_handoff(stdout: str, stderr: str = "") -> "tuple[dict, list]":
+    """Drive tool_request_handoff with subprocess.run spied (returning the given
+    redis-cli stdout/stderr) and peer_by_id patched to a consented peer that
+    allows request_handoff. Returns (result, list_of_redis_run_calls)."""
+    sys.path.insert(0, str(SERVER.parent))
+    import server as srv
+
+    spy = _RunSpy(stdout=stdout, stderr=stderr)
+    orig_subprocess = srv.subprocess
+    orig_peer_by_id = srv.peer_by_id
+    orig_env = os.environ.get("CABINET_ENVELOPE_REPORT")
+
+    srv.subprocess = types.SimpleNamespace(
+        run=spy.run, TimeoutExpired=subprocess.TimeoutExpired
+    )
+    srv.peer_by_id = lambda peer_id: {
+        "id": peer_id,
+        "consented_by_captain": True,
+        "allowed_tools": ["request_handoff"],
+    }
+    os.environ["CABINET_ENVELOPE_REPORT"] = "0"  # keep the A6 probe out of the test
+    try:
+        result = srv.tool_request_handoff({
+            "to_cabinet": "peer-cabinet",
+            "context_slug": "personal-context",
+            "reason": "crossed into personal territory",
+        })
+    finally:
+        srv.subprocess = orig_subprocess
+        srv.peer_by_id = orig_peer_by_id
+        if orig_env is None:
+            os.environ.pop("CABINET_ENVELOPE_REPORT", None)
+        else:
+            os.environ["CABINET_ENVELOPE_REPORT"] = orig_env
+    return result, spy.calls
+
+
+def test_request_handoff_queued_on_valid_id() -> None:
+    """A real stream id from XADD → status queued, handoff_id carries the id."""
+    result, calls = _call_request_handoff("1700000000-0")
+    assert result.get("status") == "queued" and result.get("handoff_id") == "1700000000-0", f"got {result}"
+    assert len(calls) == 1, f"expected exactly one redis XADD; got {calls}"
+    ok("request_handoff: valid XADD id → queued with handoff_id")
+
+
+def test_request_handoff_errors_on_empty_xadd_result() -> None:
+    """Redis down → redis-cli prints nothing → must be status error, never queued."""
+    result, calls = _call_request_handoff("", stderr="Could not connect to Redis at 127.0.0.1:6379: Connection refused")
+    assert result.get("status") == "error", f"empty XADD result must be an error; got {result}"
+    assert "handoff_id" not in result, f"no handoff_id on failure; got {result}"
+    assert len(calls) == 1, f"expected exactly one redis XADD attempt; got {calls}"
+    ok("request_handoff: empty XADD result → status error (not silently queued)")
+
+
+def test_request_handoff_errors_on_error_reply() -> None:
+    """An '(error ...)' reply on stdout (WRONGTYPE/OOM/etc.) → status error."""
+    result, calls = _call_request_handoff("(error) WRONGTYPE Operation against a key holding the wrong kind of value")
+    assert result.get("status") == "error", f"'(error' reply must be an error; got {result}"
+    assert "handoff_id" not in result, f"no handoff_id on failure; got {result}"
+    ok("request_handoff: '(error' reply → status error")
+
+
+def run_request_handoff_tests() -> None:
+    print("\n-- request_handoff XADD result validation (comms-attention-6) --")
+    test_request_handoff_queued_on_valid_id()
+    test_request_handoff_errors_on_empty_xadd_result()
+    test_request_handoff_errors_on_error_reply()
+
+
 def run_self_delivery_tests() -> None:
     print("\n-- send_message self-delivery target_role validation (C15-P2) --")
     test_self_delivery_rejects_path_traversal_target()
@@ -974,6 +1047,7 @@ if __name__ == "__main__":
     run_http_tests()
     run_unit_tests()
     run_cost_tests()
+    run_request_handoff_tests()
     run_self_delivery_tests()
 
     print(f"\n{'='*50}")

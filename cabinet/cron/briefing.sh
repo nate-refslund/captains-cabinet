@@ -9,9 +9,14 @@
 TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
 BRIEFING_TYPE="${1:-morning}"
 
-REDIS_URL="${REDIS_URL:-redis://redis:6379}"
-REDIS_HOST=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f1)
-REDIS_PORT=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f2)
+# B4 Mac portability (matches research-sweep.sh + lib/triggers.sh): an
+# explicit REDIS_HOST (the generated launchd wrapper sets localhost) WINS;
+# REDIS_URL is the fallback for docker deployments that set it in the compose
+# env. The old unconditional derive clobbered the caller's REDIS_HOST with the
+# docker-era `redis` hostname → FATAL on every Mac-native run.
+REDIS_URL="${REDIS_URL:-redis://localhost:6379}"
+REDIS_HOST="${REDIS_HOST:-$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f1)}"
+REDIS_PORT="${REDIS_PORT:-$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f2)}"
 
 TRIGGER_MSG="[$TIMESTAMP] Daily $BRIEFING_TYPE briefing due. Compile status from all Officers and send briefing to Warroom Telegram group. Include: progress since last briefing, current blockers, upcoming priorities, decisions needed from Captain. CAPABILITY GAPS: run 'python3 cabinet/scripts/org-runtime.py gaps list' — if any gaps are status=pending_captain, surface them in the decisions-needed section as 'N capability proposal(s) awaiting your approve/decline at /gaps' with each need + proposed approach + any hard-ceiling touches; also note how many gaps were auto-resolved as skills since the last briefing. Omit the section entirely if there are zero gaps."
 

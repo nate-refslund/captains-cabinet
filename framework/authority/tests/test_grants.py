@@ -319,6 +319,75 @@ def test_check_rate_counter_unreadable_blocks():
     assert res["granted"] is False and "rate counter unreadable" in res["reason"]
 
 
+def test_check_act_path_reserves_rate_atomically():
+    """framework-core-3: concurrent ceiling acts must not both pass a
+    max_per_day ceiling. The act path INCRs and compares the RETURNED value,
+    so even when both callers would read a stale count (redis_get says 0
+    throughout), the second reservation loses."""
+    counter = {"n": 0}
+
+    def incr(key):
+        counter["n"] += 1
+        return str(counter["n"])
+
+    kw = dict(grants=[grant_row(rate={"max_per_day": 1})],
+              redis_incr=incr, redis_expire=lambda k, t: None,
+              reserve_rate=True)
+    first = check(**kw)
+    second = check(**kw)
+    assert first["granted"] is True
+    assert second["granted"] is False and "rate exhausted" in second["reason"]
+    assert counter["n"] == 2
+
+
+def test_check_file_needs_defaults_reserve_on(tmp_path):
+    """file_needs=True is the gate/act path — reserve_rate defaults to it,
+    so the gate's check consumes the slot itself (atomic with the compare)."""
+    calls = []
+    res = check(file_needs=True, root=tmp_path,
+                redis_incr=lambda k: calls.append(k) or "1",
+                redis_expire=lambda k, t: None)
+    assert res["granted"] is True
+    assert calls == ["cabinet:grant:count:GRANT-test1:2026-07-10"]
+
+
+def test_check_probe_path_never_consumes_rate():
+    """file_needs=False (shadow/probe) stays a pure read — no INCR ever."""
+    calls = []
+    res = check(redis_incr=lambda k: calls.append(k) or "1")
+    assert res["granted"] is True
+    assert calls == []
+
+
+def test_check_reserve_fires_only_after_all_other_conditions():
+    """Rate is the LAST condition — a scope-denied act must not burn a slot."""
+    calls = []
+    res = check(reserve_rate=True, context={"recipient": "x@evil.com"},
+                redis_incr=lambda k: calls.append(k) or "1",
+                redis_expire=lambda k, t: None)
+    assert res["granted"] is False
+    assert calls == []
+
+
+def test_check_reserve_incr_unreadable_blocks():
+    def boom(key):
+        raise RuntimeError("down")
+    res = check(reserve_rate=True, redis_incr=boom,
+                redis_expire=lambda k, t: None)
+    assert res["granted"] is False
+    assert "rate counter unreadable" in res["reason"]
+
+
+def test_check_reserve_sets_ttl_on_first_increment_only():
+    expires = []
+    check(reserve_rate=True, redis_incr=lambda k: "1",
+          redis_expire=lambda k, t: expires.append((k, t)))
+    check(reserve_rate=True, redis_incr=lambda k: "2",
+          redis_expire=lambda k, t: expires.append((k, t)))
+    assert expires == [("cabinet:grant:count:GRANT-test1:2026-07-10",
+                        G._COUNT_TTL_S)]
+
+
 def test_check_vetoed_blocks_before_grants():
     res = check(is_vetoed_fn=lambda at: True)
     assert res["granted"] is False and "veto" in res["reason"]
@@ -387,19 +456,21 @@ def test_covers_matches_without_act_time_data():
     assert gone["granted"] is False
 
 
-def test_record_use_increments_day_key():
+def test_record_use_refreshes_ttl_without_second_increment():
+    # The day slot is reserved atomically inside check() (act-path INCR);
+    # a second INCR here would double-count every attributed allow.
     calls = []
-    G.record_use("GRANT-test1", now=NOW,
-                 redis_incr=lambda k: calls.append(("incr", k)) or "1",
-                 redis_expire=lambda k, t: calls.append(("expire", k)))
-    assert calls[0] == ("incr", "cabinet:grant:count:GRANT-test1:2026-07-10")
-    assert calls[1][0] == "expire"
+    assert G.record_use(
+        "GRANT-test1", now=NOW,
+        redis_incr=lambda k: calls.append(("incr", k)) or "1",
+        redis_expire=lambda k, t: calls.append(("expire", k))) is True
+    assert calls == [("expire", "cabinet:grant:count:GRANT-test1:2026-07-10")]
 
 
 def test_record_use_failure_is_reported_not_raised():
-    def boom(k):
+    def boom(k, t):
         raise RuntimeError("down")
-    assert G.record_use("GRANT-test1", now=NOW, redis_incr=boom) is False
+    assert G.record_use("GRANT-test1", now=NOW, redis_expire=boom) is False
 
 
 # ---------------------------------------------------------------------------

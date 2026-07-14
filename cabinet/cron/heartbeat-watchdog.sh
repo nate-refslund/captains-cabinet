@@ -64,6 +64,7 @@ fi
 REDIS_HOST="${REDIS_HOST:-localhost}"
 REDIS_PORT="${REDIS_PORT:-6379}"
 SENTINEL_DIR="$HOME/Library/Caches/cabinet"
+LA_DIR="$HOME/Library/LaunchAgents"
 
 # Rate-limit: max N restarts per officer per hour.
 RESTART_CAP_PER_HOUR=3
@@ -79,7 +80,16 @@ if [ -d "$ROLES_DIR" ]; then
     [ -f "$role_yml" ] || continue
     otype=$(awk -F': *' '$1=="officer_type"{print $2; exit}' "$role_yml" | tr -d '[:space:]')
     if [ "${otype:-fulltime}" != "consultant" ]; then
-      FULLTIME_OFFICERS+=("$(basename "$role_yml" .yml)")
+      slug="$(basename "$role_yml" .yml)"
+      # Same installed-plist filter as the fallback path below: this is a
+      # RESTARTER, so a roster-seeded slug with no LaunchAgent on THIS host
+      # (seeded but not yet deploy-mac'd, or deployed elsewhere) must not be
+      # kickstarted — every attempt fails and false-alerts forever.
+      if [ -f "$LA_DIR/com.cabinet.officer.$slug.plist" ]; then
+        FULLTIME_OFFICERS+=("$slug")
+      else
+        echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) heartbeat-watchdog: skipping $slug — roster-seeded but no installed LaunchAgent on this host" >&2
+      fi
     fi
   done
 fi
@@ -100,7 +110,6 @@ if [ "${#FULLTIME_OFFICERS[@]}" -eq 0 ]; then
   # kickstarted regardless of how .claude/agents/ drifts, and every officer
   # with a persistent agent on this host is fulltime by construction.
   AGENTS_DIR="$REPO_ROOT/.claude/agents"
-  LA_DIR="$HOME/Library/LaunchAgents"
   if [ -d "$AGENTS_DIR" ]; then
     for agent_md in "$AGENTS_DIR"/*.md; do
       [ -f "$agent_md" ] || continue
@@ -182,7 +191,10 @@ if [ "$REDIS_PING" != "PONG" ]; then
   exit 0
 fi
 
-for o in "${FULLTIME_OFFICERS[@]}"; do
+# Empty-safe expansion (bash 3.2 + set -u): on an unseeded/undeployed host the
+# roster is legitimately empty and a bare "${FULLTIME_OFFICERS[@]}" is an
+# unbound-variable fatal there. ${ARR[@]+...} expands to zero words when empty.
+for o in ${FULLTIME_OFFICERS[@]+"${FULLTIME_OFFICERS[@]}"}; do
   # Probe 1 — LIVENESS heartbeat (the death signal)
   LIVE_EXISTS=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" EXISTS "cabinet:heartbeat:liveness:$o" 2>/dev/null || echo "0")
 

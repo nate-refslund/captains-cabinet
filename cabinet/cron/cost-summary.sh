@@ -66,7 +66,10 @@ fi
 MSG="💰 Cabinet cost summary $TODAY"
 
 TOTAL_MICRO=0
-for o in "${OFFICERS[@]}"; do
+# Empty-safe expansion (bash 3.2 + set -u): the totals-only branch above means
+# OFFICERS can be legitimately empty, and a bare "${OFFICERS[@]}" is an
+# unbound-variable fatal there. ${OFFICERS[@]+...} expands to zero words.
+for o in ${OFFICERS[@]+"${OFFICERS[@]}"}; do
   # HGET the per-officer aggregate field from today's HSET
   DAILY_MICRO=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" HGET "cabinet:cost:tokens:daily:$TODAY" "${o}_cost_micro" 2>/dev/null)
   [[ "$DAILY_MICRO" =~ ^[0-9]+$ ]] || DAILY_MICRO=0
