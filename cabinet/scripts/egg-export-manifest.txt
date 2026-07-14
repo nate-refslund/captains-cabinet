@@ -68,6 +68,10 @@ delete instance/config/role-registry.md
 # R120-class instance-split: fidelity regression corpus is built from this
 # deployment's live conversations — instance data, never egg content.
 delete instance/fidelity
+# R120-class: instance/tools holds this deployment's live product tooling
+# (e.g. a Sentry triage script) — instance data, never egg content. The
+# fidelity merge (2026-07-14) added the dir; excluded per the 2026-07-07 grant.
+delete instance/tools
 # R088 defensive (structurally absent already — see baseline note above):
 delete-name node_modules
 delete cabinet/dashboard/.next
