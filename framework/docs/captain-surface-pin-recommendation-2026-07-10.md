@@ -55,3 +55,22 @@ once the shipped mode has real-Telegram acceptance evidence.
   follow-up commit on this branch before merge.
 
 Recorded as a PR-#135 review item; nothing merges without this ruling.
+
+## RULED (2026-07-10, post-merge) — overview, via the knob
+
+The Captain ratified the second option with a design change (captain-
+decisions officer-note @ 16:30Z, "3 KNOBS RATIFIED"): **the pin is a live
+standing OVERVIEW card** — "⚑ N need you" + the top item names when N≤5,
+edited in place — replacing pin-as-single-item. Shipped as the follow-up
+this doc anticipated:
+
+- `pin_mode: adopt | overview` knob in `comms-surface.yml`
+  (foundation default `adopt`; this instance sets `overview`);
+- renderer `framework/comms/surface/overview_card.py` (constant identity
+  anchor `thread:comms-surface-pin-overview`; names ride as step lines;
+  optional per-item "why only you" sentences from
+  `$CABINET_ATTENTION_DIR/why-captain.json`);
+- lifecycle `pin_lifecycle.overview_step` (pin once, edit in place forever,
+  all-clear face at N=0 — never a dead pin, never swap churn);
+- armed pin-only per the arming order (`engine --pin-tick`, services row
+  `surface-pin`); pacing + escalation stay dark.

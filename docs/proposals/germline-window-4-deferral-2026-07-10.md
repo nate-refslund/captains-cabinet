@@ -29,7 +29,15 @@ indefinitely:
 - `pin_lifecycle` runs beside the locked `queue_card.py` refresher; the
   spec's own interim is the `CABINET_QUEUE_CARD=0` kill-switch (no diff
   needed to run dark). Nothing schedules the new engine until a deployment
-  arms it.
+  arms it. *(Status 2026-07-10 ~18:05Z, post-3-knobs ratification: the pin
+  half IS now armed — services row `surface-pin` runs `engine --pin-tick`
+  only, `pin_mode: overview`; the old card's stale pinned message 1013 was
+  superseded + unpinned via the comms tools under that ratification. The
+  window-4 `queue_card.py` re-point itself remains deferred exactly as
+  proposed — the flag stays the kill-switch for the locked refresher, and
+  pacing + escalation remain dark. NEW window-4 input found during the
+  triage: `situations.py` `_CAPTAIN_DECISIONS` never matches the ledger's
+  decision states — see GH issue #136.)*
 - `action_lane.render_card` and `tell_surface` digests keep their current
   (pre-plain) wording on the OLD surface; the new surfaces render through
   the plain layer independently. Ugly-but-honest beats a rushed germline
@@ -43,6 +51,25 @@ are load-bearing (the live pinned census card, the action lane's captain
 cards, the tell digest), and a diff written as a side-deliverable of a
 three-arm surface wave is exactly the kind of germline change the
 Captain-apply ceremony exists to slow down.
+
+## Tap receipts: edit-in-place is the INTERIM visible truth (2026-07-11)
+
+The tap-pipeline fix (`framework/comms/surface/tap_wire.py` + the inbound
+poller's instant-ack) makes a Captain tap's effect visible by EDITING the
+Telegram card in place (⏸ deferred face / ✅ ✗ verdict face / swapped
+keyboard receipt) and journaling to the feed — all on unlocked surfaces.
+Two things deliberately stay behind this window's ceremony:
+
+- **Card FOLD (census removal).** The census is folded by the LOCKED
+  queue/situations estate; a deferred/decided card's *situation row* may
+  therefore lag the card's visible face until the fold catches up (ledger
+  rows → next fold). The edited card is the interim visible truth; the
+  census is the durable truth and reconciles at its own cadence. Do not
+  "fix" the lag by editing the locked fold — it rides window-4.
+- **Title-strike on deferred cards.** The plain-text card render (locked
+  `channel.py` render seam sets no parse_mode) cannot strike titles; the
+  deferred face carries the "⏸ …" line instead. A markdown-capable render
+  is window-4 material (same `queue_card.py`/render re-point as item 1).
 
 ## What the Captain is asked to ratify
 

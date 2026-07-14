@@ -137,22 +137,38 @@ def _census_index(census: dict) -> dict:
 
 
 def _pending_pool(census: dict, active: dict,
-                  holds: "dict | None" = None) -> list:
+                  holds: "dict | None" = None,
+                  deferred: "dict | None" = None) -> list:
     """Ranked decision cards not yet on the surface (census order = rank).
     ``holds`` = per-item "Later" parks (item_id → until-iso) — a held item
-    waits out its hold instead of re-presenting."""
+    waits out its hold instead of re-presenting. ``deferred`` = cards the
+    GATE routed elsewhere (e.g. briefing under quiet hours / a class
+    demotion), stamped deferred-until-the-next-briefing by the executor —
+    excluded so a 300s tick does not re-route the same card into the
+    briefing intake 288×/day (found live 2026-07-11 arming pacing: the H5
+    class demotion re-enqueued the same urgent card every tick)."""
     pool = []
     holds = holds or {}
+    deferred = deferred or {}
     for shelf in ("decisions", "overflow_cards"):
         for c in census.get(shelf) or []:
             if not isinstance(c, dict) or not c.get("id"):
                 continue
             cid = str(c["id"])
-            if cid in active or cid in holds:
+            if cid in active or cid in holds or cid in deferred:
                 continue
             if _dc.is_decision(c):
                 pool.append(c)
     return pool
+
+
+def _deferral_expired(until, now: datetime) -> bool:
+    """True when a deferral's retry time has passed. Values are until-ISO
+    stamps (deferred-until-next-briefing). LEGACY values (pre-2026-07-11
+    state) were bare gate action strings with no time — those parse as None
+    and count as expired, so old state self-heals with at most one retry."""
+    dt = _parse_iso(until)
+    return dt is None or dt <= now
 
 
 def urgent_eligible(card: dict, now: datetime) -> bool:
@@ -214,14 +230,17 @@ def plan(census: dict, state: dict, now: datetime,
             ops.append(("clear", cid, "resolved"))
             entry = st["active"].pop(cid)
             st["handles"].pop(entry.get("h") or "", None)
-    # deferred entries that left the census stop being tracked
+    # deferred entries that left the census stop being tracked; one whose
+    # retry time (the next briefing) has passed expires so the card may
+    # present again this pass.
     st["deferred"] = {k: v for k, v in (st.get("deferred") or {}).items()
-                      if k in idx}
+                      if k in idx and not _deferral_expired(v, now)}
 
     # 2. urgent lane — bounded jumps, independent of triage state
     budget = _urgent_budget_left(st, now, cfg)
     if budget > 0:
-        for card in _pending_pool(census, st["active"], st["holds"]):
+        for card in _pending_pool(census, st["active"], st["holds"],
+                                  st["deferred"]):
             if budget <= 0:
                 break
             if urgent_eligible(card, now):
@@ -237,7 +256,7 @@ def plan(census: dict, state: dict, now: datetime,
     mode = st["mode"] or cfg["mode"]
     cap_eff = int(st["cap_override"] or cfg["cap"])
     cap_eff = max(1, min(cap_eff, int(cfg["hard_all_cap"])))
-    pending = _pending_pool(census, st["active"], st["holds"])
+    pending = _pending_pool(census, st["active"], st["holds"], st["deferred"])
     presenting_allowed = (mode == "auto-push") or st["triage_open"]
 
     # Batch pause (ask-first only): the Captain cleared a FULL batch in one
@@ -486,7 +505,15 @@ def step(*, census: "dict | None" = None, now: "datetime | None" = None,
                             st["presented_in_batch"] -= 1
                     if kind == "urgent" and st["urgent_sends"]:
                         st["urgent_sends"].pop()   # refund the reserved slot
-                    st["deferred"][cid] = action
+                    # Deferred-until-next-briefing: the gate routed this card
+                    # to the briefing — do NOT retry it every 300s tick (each
+                    # retry re-enqueues a briefing intake copy). It rides the
+                    # briefing it was routed to; the deferral expires there.
+                    try:
+                        until = _iso(_cfg.next_briefing(now))
+                    except Exception:          # clock/config trouble → legacy
+                        until = action         # value = expired-on-next-pass
+                    st["deferred"][cid] = until
                 report["ops"].append((kind, cid, action))
             elif kind in ("nudge", "batch_offer", "all_clear"):
                 res = tools.send_card(**_nudge_kwargs(op, cfg),

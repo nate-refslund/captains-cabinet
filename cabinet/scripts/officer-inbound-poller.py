@@ -23,6 +23,13 @@ GUARANTEES
 ----------
 * Captain-only: relays ONLY messages whose ``from.id == CAPTAIN_TELEGRAM_ID``.
   Every other sender is skipped (the bot is publicly addressable).
+* Inline taps are INSTANT + MECHANICAL (2026-07-11): every callback_query is
+  answerCallbackQuery'd on dequeue (verb toast; expired ids logged once,
+  never retried) and applied server-side via
+  ``framework.comms.surface.tap_wire`` — defer/pacing taps park + flip the
+  card durably, Approve/No ride the dashboard's verdict door. The tmux
+  bracket-line relay remains the fail-open floor and the Chair's
+  lesson-harvest channel (⚙-noted when already applied).
 * No loss: the update offset is advanced only AFTER a message is delivered (or
   deliberately skipped); a crash mid-deliver re-delivers on restart rather than
   dropping. Offset persisted to ``TELEGRAM_STATE_DIR/inbound-offset.txt``.
@@ -98,6 +105,67 @@ _REACTION_VOCAB = {
 _CB_DATA_RE = re.compile(r"[^\w:.|-]")
 _FNAME_RE = re.compile(r"[^\w.-]")
 _ID_RE = re.compile(r"[^\w-]")
+
+# ---------------------------------------------------------------------------
+# getUpdates timing — ONE source so the pair can never drift into the
+# read<long-poll inversion that turns every quiet poll into a timeout storm.
+# The socket read must outlive the server-side hold by a response margin;
+# a lapsed read is a NETWORK event (flaky uplink), not a config error — its
+# damage is bounded by re-polling immediately (no extra sleep) so a queued
+# tap isn't pushed past Telegram's ~15s answerCallbackQuery window (the
+# 2026-07-09 line-1394 failure: storm-delayed dequeue → 400 expired id).
+# ---------------------------------------------------------------------------
+LONG_POLL_S = 25                      # Telegram-side getUpdates hold
+READ_TIMEOUT_S = LONG_POLL_S + 10     # socket read = hold + response margin
+ACK_TIMEOUT_S = 5                     # answerCallbackQuery must be INSTANT —
+                                      # a slow ack is as bad as none
+
+_EXPIRED_ACK_MARKERS = ("query is too old", "query id is invalid",
+                        "response timeout expired")
+
+
+def _ack_expired(exc: Exception) -> bool:
+    """True when an answerCallbackQuery failure means the callback id is past
+    Telegram's answer window (HTTP 400 "query is too old and response timeout
+    expired or query ID is invalid"). Expired is FINAL — a retry can never
+    succeed, so the caller logs once and moves on to applying the tap."""
+    if getattr(exc, "code", None) != 400:
+        return False
+    body = ""
+    try:
+        if hasattr(exc, "read"):
+            body = exc.read().decode("utf-8", "replace")
+    except Exception:
+        body = ""
+    body = (body or str(exc)).lower()
+    return any(m in body for m in _EXPIRED_ACK_MARKERS)
+
+
+def answer_callback_now(api_post, cq_id, toast: str = "", *, log=log) -> str:
+    """Ack ONE inline-button tap the instant it is dequeued — before any other
+    handling. Returns ``ok`` | ``expired`` | ``failed`` (journaled truth).
+
+    One attempt, short timeout, verb-appropriate ``toast`` so the Captain SEES
+    the tap land. An EXPIRED id (past Telegram's window) is logged once and
+    NEVER retried; exactly one retry for a transient (non-expired) blip —
+    a flaky-network ack failure must not leave the spinner hanging when a
+    second attempt would clear it."""
+    payload = {"callback_query_id": str(cq_id)}
+    if toast:
+        payload["text"] = str(toast)[:200]
+    for attempt in (0, 1):
+        try:
+            api_post("answerCallbackQuery", payload)
+            return "ok"
+        except Exception as exc:
+            if _ack_expired(exc):
+                log("callback ack expired (id past Telegram's answer window) "
+                    "— not retrying; applying the tap anyway")
+                return "expired"
+            if attempt:
+                log(f"answerCallbackQuery failed after retry (non-fatal): "
+                    f"{type(exc).__name__}")
+    return "failed"
 
 
 def classify_inbound(text: str, has_attachment: bool = False) -> str:
@@ -291,34 +359,81 @@ def download_inbound_file(att: dict, *, file_api: str, state_dir: str,
     return local
 
 
-def handle_callback_query(cbq: dict, *, captain, api_post, inject, feed_append, log=log) -> None:
-    """Answer an inline-button tap, then relay it into the session as a bracket line.
+def handle_callback_query(cbq: dict, *, captain, api_post, inject, feed_append,
+                          log=log, apply_tap=None) -> None:
+    """Instant-ack an inline-button tap, then apply it MECHANICALLY.
 
-    answerCallbackQuery fires FIRST (clears the client spinner; harmless even for a
-    stray). Relay + feed happen only for the Captain. callback_data is ids-only
-    (≤64 bytes) — chain state lives in Redis/ledger, not the button."""
+    Order is law (tap pipeline fix 2026-07-11):
+      1. answerCallbackQuery fires FIRST, on dequeue, before ANY other
+         handling — one attempt + short timeout via ``answer_callback_now``,
+         with a verb-appropriate toast (``tap_wire.classify`` is pure). An
+         expired id (storm-delayed dequeue) is logged once, never retried.
+      2. Captain check — a stray's tap is acked (spinner cleared) but never
+         applied, journaled, or relayed (the bot is publicly addressable).
+      3. Mechanical apply (``tap_wire.apply_tap``): defer/pacing taps park
+         the card + flip its face + advance pacing durably; Approve/No route
+         the SAME server-side verdict door the dashboard uses. NO LLM in the
+         loop. Fail-open by construction: if the framework import or the
+         apply itself breaks, the tap falls back to the pre-wire bracket-line
+         relay so DM receive never degrades.
+      4. Feed journal (ack state + apply outcome), then the bracket-line
+         relay ONLY where the Chair is still needed (decision receipts for
+         lesson-harvest, edit/undo follow-ups, foreign buttons).
+
+    callback_data stays ids-only (≤64 bytes, ``[\\w:.|-]``) — chain state
+    lives in Redis/ledger/census, never in the button."""
+    data = cbq.get("data", "")
+    toast = ""
+    tap_wire = None
+    try:
+        from framework.comms.surface import tap_wire as _tw
+        tap_wire = _tw
+        toast = _tw.classify(data)[2]
+    except Exception:
+        toast = ""   # framework unavailable → spinner-clear ack + relay path
+
     cq_id = cbq.get("id")
+    ack_state = "skipped"
     if cq_id:
-        # Retry the ack (2 attempts): under a flaky network a single blip leaves
-        # the Captain's button spinner hanging even though the callback DATA
-        # arrived fine. A ≤~10s-old query still answers; still non-fatal.
-        for _attempt in range(2):
-            try:
-                api_post("answerCallbackQuery", {"callback_query_id": str(cq_id)})
-                break
-            except Exception as exc:
-                if _attempt:
-                    log(f"answerCallbackQuery failed after retry (non-fatal): "
-                        f"{type(exc).__name__}")
+        ack_state = answer_callback_now(api_post, cq_id, toast, log=log)
+
     frm = str((cbq.get("from") or {}).get("id", ""))
     if frm != str(captain):
         log(f"skip callback from={frm or '?'} (not captain)")
         return
     mid = int((cbq.get("message") or {}).get("message_id", 0) or 0)
-    data = cbq.get("data", "")
-    inject(format_callback_line(mid, data))
-    feed_append({"direction": "in", "kind": "callback",
-                 "telegram_message_id": mid, "callback_data": sanitize_callback_data(data)})
+
+    result = None
+    if apply_tap is not None or tap_wire is not None:
+        try:
+            result = (apply_tap or tap_wire.apply_tap)(data, message_id=mid)
+        except Exception as e:  # fail-open: relay is the floor, never less
+            log(f"tap-wire apply failed (falling back to relay): "
+                f"{type(e).__name__}: {e}")
+            result = None
+    result = result if isinstance(result, dict) else {}
+    handled = bool(result.get("handled"))
+    relay = bool(result.get("relay", True))
+    summary = str(result.get("summary") or "")
+
+    if handled or (result.get("mode") and result["mode"] != "foreign"):
+        log(f"tap-wire: mode={result.get('mode')} handled={handled} "
+            f"ack={ack_state} {summary}"[:300])
+
+    row = {"direction": "in", "kind": "callback", "telegram_message_id": mid,
+           "callback_data": sanitize_callback_data(data), "ack": ack_state}
+    for k in ("mode", "item_id", "outcome"):
+        if result.get(k):
+            row[k] = str(result[k])[:120]
+    feed_append(row)
+
+    if relay or not handled:
+        line = format_callback_line(mid, data)
+        if handled and summary:
+            # the ⚙ note = "already applied mechanically; harvest lessons,
+            # never double-deliver" (same contract as the binder-wire DM note)
+            line = f"{line} [⚙ {summary[:160]}]"
+        inject(line)
 
 
 def handle_message_reaction(upd: dict, *, captain, inject, feed_append, log=log) -> None:
@@ -375,16 +490,32 @@ def main() -> int:
     redis_host = os.environ.get("REDIS_HOST", "localhost")
     log(f"started officer={officer} session={session} captain={captain} offset={offset}")
 
-    def api_post(path: str, payload: dict) -> dict:
+    def api_post(path: str, payload: dict, timeout: "float | None" = None) -> dict:
         """POST JSON to a Bot API method (e.g. answerCallbackQuery). Token stays in
-        `api` and is never logged."""
+        `api` and is never logged. The ack path gets the SHORT deadline by
+        default — an instant ack is the whole point (ACK_TIMEOUT_S)."""
+        t = timeout or (ACK_TIMEOUT_S if path == "answerCallbackQuery" else 10)
         body = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
             f"{api}/{path}", data=body,
             headers={"Content-Type": "application/json"}, method="POST",
         )
-        with urllib.request.urlopen(req, timeout=10) as r:  # noqa: S310 (fixed https host)
+        with urllib.request.urlopen(req, timeout=t) as r:  # noqa: S310 (fixed https host)
             return json.loads(r.read().decode("utf-8") or "{}")
+
+    def apply_tap_live(data: str, *, message_id=None) -> dict:
+        """The poller's live tap_wire binding: mechanical apply + the tapped
+        card's keyboard receipt (editMessageReplyMarkup — content-preserving,
+        same transport class as the poller's receipt reactions; journaled by
+        the caller's feed row). Recipient is ALWAYS the Captain's chat."""
+        from framework.comms.surface import tap_wire
+
+        def _mark(mid2: int, kb: list) -> None:
+            api_post("editMessageReplyMarkup", {
+                "chat_id": int(captain), "message_id": int(mid2),
+                "reply_markup": {"inline_keyboard": kb}})
+
+        return tap_wire.apply_tap(data, message_id=message_id, edit_markup=_mark)
 
     def get_json(path: str, params: dict) -> dict:
         """GET a Bot API method (e.g. getFile) and parse the JSON body."""
@@ -511,21 +642,26 @@ def main() -> int:
         try:
             params = urllib.parse.urlencode({
                 "offset": offset + 1,
-                "timeout": 25,
+                "timeout": LONG_POLL_S,
                 "allowed_updates": json.dumps(ALLOWED_UPDATES),
             })
-            with urllib.request.urlopen(f"{api}/getUpdates?{params}", timeout=35) as resp:  # noqa: S310 (fixed https host)
+            with urllib.request.urlopen(f"{api}/getUpdates?{params}", timeout=READ_TIMEOUT_S) as resp:  # noqa: S310 (fixed https host)
                 data = json.load(resp)
         except Exception as e:
             # A bare socket read-timeout on the long-poll is EXPECTED under a
-            # flaky uplink (the 25s long-poll returned nothing and the 35s
-            # socket read then lapsed) — it is not an error, so it does not
-            # spam the log at error level; the loop just re-polls. Anything
-            # else (HTTP status, 409, DNS) is logged loudly as before.
+            # flaky uplink (the LONG_POLL_S hold returned nothing and the
+            # READ_TIMEOUT_S socket read then lapsed) — it is not an error,
+            # so it does not spam the log at error level. It already burned
+            # READ_TIMEOUT_S while updates queued server-side, so re-poll
+            # IMMEDIATELY: every extra second pushes a queued tap closer to
+            # Telegram's ~15s answerCallbackQuery window (line-1394 failure
+            # mode). Anything else (HTTP status, 409, DNS) logs loudly and
+            # keeps the 5s backoff.
             _timeout_blip = ("timed out" in str(e).lower()
                              and "409" not in str(e))
-            if not _timeout_blip:
-                log(f"getUpdates error: {e}")
+            if _timeout_blip:
+                continue
+            log(f"getUpdates error: {e}")
             # Self-heal a 409 Conflict: another getUpdates poller exists (Telegram
             # allows only one per token). This Cabinet is single-Telegram-voice, the
             # officer launches without --channels, and the watchdog is the SOLE poller
@@ -555,7 +691,8 @@ def main() -> int:
             if cbq is not None:
                 try:
                     handle_callback_query(cbq, captain=captain, api_post=api_post,
-                                          inject=raw_inject, feed_append=fa, log=log)
+                                          inject=raw_inject, feed_append=fa, log=log,
+                                          apply_tap=apply_tap_live)
                 except Exception as e:
                     log(f"callback handling (non-fatal): {e}")
             elif mr is not None:

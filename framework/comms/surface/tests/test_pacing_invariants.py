@@ -249,6 +249,72 @@ def test_quiet_hours_passthrough_no_sends_no_actives(night, adapter, charter,
     assert report["active"] == 0
 
 
+def test_gate_routed_cards_do_not_retry_every_tick(night, adapter, charter,
+                                                   briefing_intake):
+    """Deferred-until-next-briefing (2026-07-11 arming fix): a card the gate
+    routed to the briefing must NOT be re-routed by every 300s tick — one
+    briefing copy per briefing window, not 288/day."""
+    def _decision_copies():
+        return [x for x in briefing_intake
+                if (x.get("decision") or {}).get("class_id") == "action-card"]
+
+    census = make_census([make_card(i) for i in range(5)])
+    state = pacing.load_state()
+    state["triage_open"] = True
+    pacing.step(census=census, now=night, state=state,
+                cfg=CFG, adapter=adapter, ch=charter)
+    assert len(_decision_copies()) == 5
+
+    # 5 minutes later, same night, same census: the deferrals hold — ZERO
+    # new decision-card briefing copies, zero sends. (The engine may record
+    # its one-shot all-clear — the surface emptied — which is not a retry.)
+    pacing.step(census=census, now=night + timedelta(minutes=5), state=state,
+                cfg=CFG, adapter=adapter, ch=charter)
+    assert len(_decision_copies()) == 5
+    assert adapter.sends == []
+
+    # a third tick adds NOTHING at all (all-clear was one-shot)
+    total_after_two = len(briefing_intake)
+    pacing.step(census=census, now=night + timedelta(minutes=10), state=state,
+                cfg=CFG, adapter=adapter, ch=charter)
+    assert len(briefing_intake) == total_after_two
+    assert len(_decision_copies()) == 5
+
+    # deferral stamps are until-ISO times in the future (next briefing)
+    assert state["deferred"]
+    for until in state["deferred"].values():
+        assert pacing._parse_iso(until) is not None
+        assert not pacing._deferral_expired(until, night + timedelta(minutes=10))
+
+
+def test_deferral_expires_at_the_next_briefing(day):
+    """After the deferred-until instant passes, the card may present again
+    (plan drops the expired deferral before pooling)."""
+    card = make_card(1)
+    census = make_census([card])
+    cid = str(card["id"])
+    st = fresh()
+    st["triage_open"] = True
+    st["deferred"] = {cid: pacing._iso(day + timedelta(minutes=30))}
+    ops, st1 = pacing.plan(census, st, day, CFG)
+    assert _ops("present", ops) == []          # still held
+    st1["triage_open"] = True
+    ops2, st2 = pacing.plan(census, st1, day + timedelta(hours=1), CFG)
+    assert len(_ops("present", ops2)) == 1     # deferral expired → presents
+    assert st2["deferred"] == {}
+
+
+def test_legacy_action_string_deferrals_self_heal(day):
+    """Pre-fix state stored bare gate action strings ('briefing') with no
+    time — they count as expired, so old state retries once and re-stamps."""
+    census = make_census([make_card(1)])
+    st = fresh()
+    st["triage_open"] = True
+    st["deferred"] = {"sit-1": "briefing"}
+    ops, _ = pacing.plan(census, st, day, CFG)
+    assert len(_ops("present", ops)) == 1
+
+
 def test_daytime_step_sends_capped_cards_with_buttons(day, adapter, charter):
     census = make_census([make_card(i) for i in range(7)])
     state = pacing.load_state()

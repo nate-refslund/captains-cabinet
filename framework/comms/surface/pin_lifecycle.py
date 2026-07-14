@@ -20,6 +20,13 @@ thrash the Captain's pin.
 
 Durable state: ``$CABINET_ATTENTION_DIR/pin-state.json`` (ids + timestamps
 only).
+
+TWO pin designs, selected by the ``pin_mode`` knob (config.py — Captain-
+ratified 2026-07-10): ``adopt`` (this module's original single-item design,
+above) and ``overview`` — ONE live standing overview card ("⚑ N need you" +
+top names when N≤5, renderer ``overview_card.py``) that is pinned once and
+then edited in place forever; it never advances or swaps, so the pin can
+never go dead or thrash. ``step()`` dispatches on the resolved knob.
 """
 from __future__ import annotations
 
@@ -170,14 +177,19 @@ def sync(census: dict, state: dict, now: datetime,
 def step(*, census: "dict | None" = None, now: "datetime | None" = None,
          state: "dict | None" = None, engaged: "set | frozenset" = frozenset(),
          cfg: "dict | None" = None, adapter=None, ch=None) -> dict:
-    """One pin tick. Adopts the item's existing standing card
-    (``standing_message_id``) when the census carries one; otherwise sends
-    the single-decision card first (through the gate) and pins that. A
-    quiet-hours-routed send simply leaves the pin empty this tick — the pin
-    never out-shouts the charter."""
+    """One pin tick. In ``adopt`` mode (default): adopts the item's existing
+    standing card (``standing_message_id``) when the census carries one;
+    otherwise sends the single-decision card first (through the gate) and
+    pins that. A quiet-hours-routed send simply leaves the pin empty this
+    tick — the pin never out-shouts the charter. In ``overview`` mode the
+    tick maintains the ONE standing overview card instead (edit-in-place;
+    ``engaged`` is irrelevant — the card advances by re-render)."""
     from framework.comms import tools
     now = now or datetime.now(timezone.utc)
     cfg = cfg or _cfg.load()
+    if str(cfg.get("pin_mode") or "adopt") == "overview":
+        return overview_step(census=census, now=now, state=state, cfg=cfg,
+                             adapter=adapter, ch=ch)
     persist = state is None
     if state is None:
         state = load_state()
@@ -185,8 +197,28 @@ def step(*, census: "dict | None" = None, now: "datetime | None" = None,
         from framework.attention.queue import build_queue
         census = build_queue(now=now)
 
-    ops, st = sync(census, state, now, engaged=engaged)
     report = {"ops": []}
+    # Knob round-trip (overview → adopt): retire the standing overview pin
+    # first — the single-item design starts clean (mirror of overview_step's
+    # adopt handoff), and its keys never leak into adopt state.
+    if str((state or {}).get("mode") or "") == "overview" \
+            and (state or {}).get("message_id"):
+        try:
+            res = tools.unpin(message_id=state.get("message_id"),
+                              adapter=adapter)
+            report["ops"].append(("unpin", "overview-retired",
+                                  (res or {}).get("status")))
+        except Exception as e:  # noqa: BLE001
+            print(f"[surface.pin] overview handoff unpin failed: {e}",
+                  file=sys.stderr)
+        cleared = _fresh_state()
+        if persist:
+            state = cleared
+        else:
+            state.clear()
+            state.update(cleared)
+
+    ops, st = sync(census, state, now, engaged=engaged)
     for op in ops:
         try:
             if op[0] == "unpin":
@@ -233,10 +265,104 @@ def step(*, census: "dict | None" = None, now: "datetime | None" = None,
             print(f"[surface.pin] op {op[0]} failed: {e}", file=sys.stderr)
             report["ops"].append((op[0], "error", str(e)[:120]))
 
+    st["mode"] = "adopt"          # stamp the design so a flip BACK hands off
+    st.pop("pinned", None)        # overview-only key: never survives adopt
     if persist:
         save_state(st)
     else:
         state.clear()
         state.update(st)
     report["pinned"] = st.get("item_id")
+    return report
+
+
+# ---------------------------------------------------------------------------
+# Overview mode (pin_mode: overview — Captain-ratified 2026-07-10)
+# ---------------------------------------------------------------------------
+
+def overview_step(*, census: "dict | None" = None,
+                  now: "datetime | None" = None, state: "dict | None" = None,
+                  cfg: "dict | None" = None, adapter=None, ch=None) -> dict:
+    """One overview tick: render the standing "⚑ N need you" card, deliver
+    it through the gate (send once / edit in place / suppress on no-change),
+    and keep it pinned. Never unpins on all-clear — the n=0 face IS the
+    quiet state. A quiet-hours-routed first send defers the pin to the next
+    tick (the card never out-shouts the charter)."""
+    from framework.comms import tools
+    from framework.comms.surface import overview_card as _ov
+    now = now or datetime.now(timezone.utc)
+    cfg = cfg or _cfg.load()
+    persist = state is None
+    if state is None:
+        state = load_state()
+    if census is None:
+        from framework.attention.queue import build_queue
+        census = build_queue(now=now)
+
+    st = dict(_fresh_state(), **{k: v for k, v in (state or {}).items()})
+    report: dict = {"mode": "overview", "ops": []}
+
+    # One-time handoff from adopt mode: retire the old single-item pin so the
+    # overview card is the ONE pin (its own message stays, just unpinned).
+    if st.get("mode") != "overview" and st.get("item_id") \
+            and st.get("message_id"):
+        try:
+            res = tools.unpin(message_id=st.get("message_id"), adapter=adapter)
+            report["ops"].append(("unpin", "adopt-retired",
+                                  (res or {}).get("status")))
+        except Exception as e:  # noqa: BLE001
+            print(f"[surface.pin] adopt handoff unpin failed: {e}",
+                  file=sys.stderr)
+        st = _fresh_state()
+    st["mode"] = "overview"
+
+    try:
+        kwargs = _ov.render(census, now=now, cfg=cfg)
+        res = tools.send_card(subject=kwargs["subject"],
+                              situation=kwargs["situation"],
+                              kind=kwargs["kind"], lane=kwargs["lane"],
+                              evidence=kwargs["evidence"],
+                              steps=kwargs["steps"], state=kwargs["state"],
+                              deadline_iso=kwargs["deadline_iso"],
+                              pid_marker=kwargs["pid_marker"],
+                              buttons=kwargs["buttons"],
+                              adapter=adapter, ch=ch, now=now)
+        decision = (res or {}).get("decision") or {}
+        action = str(decision.get("action") or "error")
+        mid = None
+        if action == "send":
+            mids = ((res or {}).get("result") or {}).get("message_ids") or []
+            mid = mids[0] if mids else None
+        elif action in ("edit", "suppress"):
+            mid = decision.get("message_id") or st.get("message_id")
+            if mid is None and decision.get("situation_key"):
+                from framework.attention import gate as _gate
+                mid = ((_gate.load_standing().get(
+                    decision["situation_key"]) or {}).get("message_id"))
+        report["ops"].append(("card", action, mid))
+
+        if mid is not None:
+            if int(mid) != int(st.get("message_id") or 0) \
+                    or not st.get("pinned"):
+                pres = tools.pin(message_id=int(mid), adapter=adapter)
+                # live channel says "sent", the null/test adapters say "ok"
+                pinned = str((pres or {}).get("status")) in ("ok", "sent")
+                report["ops"].append(("pin", int(mid),
+                                      (pres or {}).get("status")))
+                st["pinned"] = pinned
+            st["message_id"] = int(mid)
+        else:
+            # nothing on the surface yet (e.g. quiet hours routed the first
+            # send to the briefing) — retry next tick, never force.
+            report["ops"].append(("pin", None, "deferred"))
+    except Exception as e:  # noqa: BLE001 — one tick must never crash the loop
+        print(f"[surface.pin] overview tick failed: {e}", file=sys.stderr)
+        report["ops"].append(("card", "error", str(e)[:120]))
+
+    if persist:
+        save_state(st)
+    else:
+        state.clear()
+        state.update(st)
+    report["pinned_message_id"] = st.get("message_id")
     return report

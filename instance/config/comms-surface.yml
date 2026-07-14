@@ -1,0 +1,26 @@
+# comms-surface.yml — ACTIVE instance bindings for the Captain-surface engine
+# (framework/comms/surface/). THE THREE CAPTAIN KNOBS, ratified 2026-07-10
+# (captain-decisions officer-note @ 16:30Z, "3 KNOBS RATIFIED"):
+#
+#   (1) pin    = standing OVERVIEW card ("⚑ N need you" + top names when
+#                N≤5, edited in place) — replaces pin-as-single-item.
+#   (2) pacing = ask-first (the recommended default, now Captain-confirmed).
+#   (3) cap    = 5 active cards.
+#
+# All three are charter data — captain-tunable here later. Env vars still
+# win over this file (CABINET_SURFACE_PIN_MODE / _MODE / _CAP, …).
+
+pin_mode: overview
+
+pacing:
+  mode: ask-first
+  cap: 5
+
+# PERSONAL-AGENT RESET (Captain interview 2026-07-11, binding): the 07:30 /
+# 19:30 briefing is ONE card — status + "N decisions ready — Triage" — sent
+# by framework.frontdoor.run_briefing through briefing_card.maybe_send. The
+# composed long body (synthesis + recap + digest text + pipe items) is
+# ARCHIVED to instance/memory/briefings/ as data instead of riding Telegram
+# as a (1/N)-chunked wall. Decisions ride the paced single-decision cards.
+# Flip back to the classic text briefing by deleting this one key.
+briefing_card: true

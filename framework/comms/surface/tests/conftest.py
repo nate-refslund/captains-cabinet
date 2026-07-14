@@ -18,7 +18,13 @@ def _surface_env(tmp_path, monkeypatch):
     monkeypatch.setenv("CABINET_ATTENTION_DIR", str(tmp_path / "attention"))
     monkeypatch.setenv("CABINET_CAPTAIN_TZ", "UTC")
     monkeypatch.setenv("CABINET_BRIEFING_TIMES", "07:30,19:30")
+    # Hermetic instance config: the LIVE deployment now ships a real
+    # instance/config/comms-surface.yml (pin_mode: overview, 2026-07-10) —
+    # tests must resolve foundation defaults unless they bind their own file.
+    monkeypatch.setenv("CABINET_SURFACE_CONFIG_PATH",
+                       str(tmp_path / "comms-surface-absent.yml"))
     for var in ("CABINET_SURFACE_CAP", "CABINET_SURFACE_MODE",
+                "CABINET_SURFACE_PIN_MODE",
                 "CABINET_SURFACE_PILEUP", "CABINET_SURFACE_SNOOZE_H",
                 "CABINET_SURFACE_URGENT_N", "CABINET_SURFACE_URGENT_WINDOW_H",
                 "CABINET_SURFACE_ALL_CAP", "CABINET_DASHBOARD_URL",

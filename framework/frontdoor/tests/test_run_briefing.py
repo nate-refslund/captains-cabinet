@@ -1,5 +1,8 @@
 """run_briefing — enqueues a synthesis, then runs the send path. All seams mocked
-(no brain, no Redis, no network).
+(no brain, no Redis, no network). Every call pins ``card_mode=False``: these tests
+are the CLASSIC text-path contract, and the briefing-card knob is deployment
+data (instance/config/comms-surface.yml) that must not leak into a hermetic
+suite. Card mode has its own suite (test_run_briefing_card_mode.py).
 
 The briefing runs the send path with ``recover_pending=True`` (the fix for the
 single-voice comms-awareness gap), so every test mocks ``pending_fn`` too — else
@@ -42,7 +45,7 @@ def test_enqueues_then_sends_unified():
 
     out = rb.run_briefing(enqueue_fn=fake_enqueue, send_fn=fake_send,
                           drain_fn=fake_drain, ack_fn=fake_ack,
-                          pending_fn=lambda **kw: [], digest_fn=_no_digest)
+                          pending_fn=lambda **kw: [], digest_fn=_no_digest, card_mode=False)
 
     assert out["synthesis"]["enqueued"] == 2
     assert out["send"]["sent"] is True
@@ -61,6 +64,7 @@ def test_nothing_to_send_is_safe():
         ack_fn=lambda ids, *, stream_key=None: len(ids),
         pending_fn=lambda **kw: [],
         digest_fn=_no_digest,
+        card_mode=False,
     )
     assert out["send"]["drained"] == 0
     assert out["send"]["sent"] is False  # empty compose → nothing sent
@@ -98,7 +102,7 @@ def test_briefing_recovers_pending_backlog_left_by_surface():
     out = rb.run_briefing(
         enqueue_fn=lambda *, hours, limit: {"enqueued": 0, "ids": [], "sources": []},
         drain_fn=fake_drain, pending_fn=fake_pending,
-        send_fn=fake_send, ack_fn=fake_ack, digest_fn=_no_digest)
+        send_fn=fake_send, ack_fn=fake_ack, digest_fn=_no_digest, card_mode=False)
 
     # Both pending (comms-officer) items are recovered, composed into ONE message,
     # and surfaced to the Captain — the relevant-no-reply case no longer vanishes.
@@ -132,7 +136,7 @@ def test_briefing_dedupes_item_both_pending_and_fresh():
         enqueue_fn=lambda *, hours, limit: {"enqueued": 0, "ids": [], "sources": []},
         drain_fn=fake_drain, pending_fn=fake_pending,
         send_fn=fake_send, ack_fn=lambda ids, *, stream_key=None: len(ids),
-        digest_fn=_no_digest)
+        digest_fn=_no_digest, card_mode=False)
 
     assert out["send"]["drained"] == 1          # deduped
     assert out["send"]["item_ids"] == ["dup"]   # single id
@@ -168,7 +172,7 @@ def test_digest_enqueued_before_send_and_rides_briefing():
         enqueue_fn=lambda *, hours, limit: {"enqueued": 0, "ids": [], "sources": []},
         drain_fn=fake_drain, pending_fn=lambda **kw: [],
         send_fn=fake_send, ack_fn=lambda ids, *, stream_key=None: len(ids),
-        digest_fn=fake_digest)
+        digest_fn=fake_digest, card_mode=False)
 
     assert calls["order"] == ["digest", "drain"]   # enqueue precedes the drain
     assert out["digest"] == {"digest": True, "enqueued": "d1", "acted": 1}
@@ -189,7 +193,7 @@ def test_digest_failure_never_blocks_briefing():
         pending_fn=lambda **kw: [],
         send_fn=lambda text, *, http_post=None: {"status": "sent", "sent": True},
         ack_fn=lambda ids, *, stream_key=None: len(ids),
-        digest_fn=broken_digest)
+        digest_fn=broken_digest, card_mode=False)
 
     assert out["digest"]["digest"] is False
     assert "journal unreadable" in out["digest"]["error"]

@@ -25,4 +25,19 @@ fi
 export TELEGRAM_STATE_DIR="${TELEGRAM_STATE_DIR:-$HOME/Library/Application Support/cabinet/telegram-state/$OFFICER}"
 mkdir -p "$TELEGRAM_STATE_DIR"
 
+# Captain timezone for the poller's MECHANICAL tap handling (tap_wire →
+# pacing next-briefing horizons) — without it the defer math falls back to
+# UTC and parks cards ~2h past the briefing the Captain meant (observed live
+# 2026-07-11: ride_briefing_until 19:30Z instead of 17:30Z). Same one-line
+# read as surface-pin-tick.sh; never source the config.
+CAPTAIN_TZ_LINE="$(grep '^captain_timezone:' "$REPO_ROOT/instance/config/platform.yml" 2>/dev/null | awk '{print $2}')"
+export CABINET_CAPTAIN_TZ="${CABINET_CAPTAIN_TZ:-${CAPTAIN_TZ_LINE:-Europe/Berlin}}"
+
+# Localhost Redis for the gate's briefing-route enqueue when a tap re-tick
+# routes a card to the briefing (the intake backend's baked default is the
+# docker-era host `redis`, unreachable on the Mac — same fix as
+# surface-pin-tick.sh). The poller's own redis-cli calls already default to
+# localhost; this aligns the in-process framework path with them.
+export REDIS_HOST="${REDIS_HOST:-localhost}"
+
 exec "$PY" "$REPO_ROOT/cabinet/scripts/officer-inbound-poller.py" "$OFFICER"
