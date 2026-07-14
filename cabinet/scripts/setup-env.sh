@@ -231,6 +231,59 @@ RECOMMENDED_KEYS=(
   NOTION_API_KEY
 )
 
+# ---------------------------------------------------------------------------
+# MCP env-var NAMES the Captain declared in the onboarding interview
+# (instance/config/cabinet-init.answers.yml -> integrations.mcp_env_names).
+# generate-instance.py validates these (UPPER_SNAKE, :345) but the wizard
+# never read them, so a declared server's key silently went unasked. Here we
+# fold them into the walk. READ-ONLY, NAMES ONLY (never values); any failure
+# (no file / bad YAML / no python3.12) => empty, never crashes the wizard.
+# Names already offered by an explicit prompt below are skipped; that skip set
+# is derived from this script's own prompt_key call sites, so it cannot rot.
+# ---------------------------------------------------------------------------
+ANSWERS_FILE="$CABINET_ROOT/instance/config/cabinet-init.answers.yml"
+
+_declared_mcp_env_names() {
+  [ -f "$ANSWERS_FILE" ] || return 0
+  command -v python3.12 >/dev/null 2>&1 || return 0
+  python3.12 - "$ANSWERS_FILE" <<'PY' 2>/dev/null
+import re, sys
+try:
+    import yaml
+    d = yaml.safe_load(open(sys.argv[1], encoding="utf-8")) or {}
+except Exception:
+    sys.exit(0)
+if not isinstance(d, dict):
+    sys.exit(0)
+integ = d.get("integrations")
+names = integ.get("mcp_env_names") if isinstance(integ, dict) else None
+seen = set()
+for n in names or []:
+    # Same shape generate-instance.py enforces — guarantees shell-safe tokens.
+    if isinstance(n, str) and re.fullmatch(r"[A-Z][A-Z0-9_]*", n) and n not in seen:
+        seen.add(n)
+        print(n)
+PY
+}
+
+# Keys already offered by an explicit prompt_key "LITERAL" call in this script.
+_statically_prompted() {
+  grep -oE 'prompt_key "[A-Z][A-Z0-9_]*"' "${BASH_SOURCE[0]}" 2>/dev/null \
+    | sed -E 's/.*"([^"]*)".*/\1/' | sort -u
+}
+
+# Populate once, before any mode branch needs it. Empty array is safe; every
+# expansion below is length-guarded (macOS bash 3.2 + `set -u`).
+MCP_ENV_NAMES=()
+if [ -f "$ANSWERS_FILE" ]; then
+  _static_set=" $(_statically_prompted | tr '\n' ' ') "
+  while IFS= read -r _n; do
+    [ -n "$_n" ] || continue
+    case "$_static_set" in *" $_n "*) continue ;; esac
+    MCP_ENV_NAMES+=("$_n")
+  done < <(_declared_mcp_env_names)
+fi
+
 # Auto-generate runtime secrets that need no account anywhere. Shared by
 # the interactive wizard tail and --defaults.
 apply_runtime_defaults() {
@@ -281,6 +334,19 @@ if [ "$MODE" = "check" ]; then
     ok "All ${#RECOMMENDED_KEYS[@]} recommended keys present"
   else
     warn "Missing recommended (connect after your first briefing): ${missing_recommended[*]}"
+  fi
+  # MCP keys the Captain declared in the interview but hasn't filled yet.
+  if [ "${#MCP_ENV_NAMES[@]}" -gt 0 ]; then
+    mcp_missing=()
+    for k in "${MCP_ENV_NAMES[@]}"; do
+      v="$(current_value "$k")"
+      [ -z "$v" ] && mcp_missing+=("$k")
+    done
+    if [ "${#mcp_missing[@]}" -eq 0 ]; then
+      ok "All ${#MCP_ENV_NAMES[@]} declared MCP keys present"
+    else
+      warn "Declared MCP keys not yet set (from your interview): ${mcp_missing[*]}"
+    fi
   fi
   if [ -z "$(current_value "NEON_CONNECTION_STRING")" ]; then
     info "Work store: local PostgreSQL default (provisioned by setup-mac.sh Step 3.5 / provision-local-postgres.sh)"
@@ -393,6 +459,29 @@ prompt_key "NOTION_API_KEY" \
   "https://www.notion.so/my-integrations" \
   "RECOMMENDED" \
   "CoS (briefings), CRO (research), CPO (specs)"
+
+# ──────────────────────────────────────────────────────────────────────────
+# SECTION 1b — MCP keys you named in your onboarding interview
+# (rendered only when integrations.mcp_env_names is non-empty; the env-var
+#  NAMES your declared MCP servers need, minus any already prompted above)
+# ──────────────────────────────────────────────────────────────────────────
+if [ "${#MCP_ENV_NAMES[@]}" -gt 0 ]; then
+  echo ""
+  echo "═══════════════════════════════════════════════════════"
+  echo "  SECTION 1b — MCP keys you declared when you hatched"
+  echo "═══════════════════════════════════════════════════════"
+  echo ""
+  info "You listed these under integrations.mcp_env_names in your interview —"
+  info "the env-var NAMES your officers' MCP servers need. Paste each value or"
+  info "skip and connect later; boot never blocks on them."
+  for _mcp_key in "${MCP_ENV_NAMES[@]}"; do
+    prompt_key "$_mcp_key" \
+      "MCP integration key you named in the onboarding interview (integrations.mcp_env_names) — a server your officers use needs it. Paste the value or skip." \
+      "" \
+      "RECOMMENDED" \
+      "officers with this MCP server in scope"
+  done
+fi
 
 # ──────────────────────────────────────────────────────────────────────────
 # SECTION 2 — Work store (local by default; Neon = cloud alternative)
@@ -574,6 +663,15 @@ if [ "${#missing_recommended[@]}" -eq 0 ]; then
   ok "All ${#RECOMMENDED_KEYS[@]} recommended keys filled"
 else
   info "Not yet connected (fine — connect after your first briefing): ${missing_recommended[*]}"
+fi
+if [ "${#MCP_ENV_NAMES[@]}" -gt 0 ]; then
+  mcp_missing=()
+  for k in "${MCP_ENV_NAMES[@]}"; do
+    [ -z "$(current_value "$k")" ] && mcp_missing+=("$k")
+  done
+  if [ "${#mcp_missing[@]}" -gt 0 ]; then
+    info "Declared MCP keys still unset: ${mcp_missing[*]}"
+  fi
 fi
 if [ -z "$(current_value "NEON_CONNECTION_STRING")" ]; then
   info "Work store: local PostgreSQL 16 + pgvector will be provisioned by setup-mac.sh"
