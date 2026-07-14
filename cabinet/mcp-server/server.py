@@ -95,7 +95,10 @@ REDIS_PORT = os.environ.get("REDIS_PORT", "6379")
 # an entry: report-only means the bus must be unaffected even if envelope.py
 # is buggy, so every exception (import failure included) is swallowed into
 # ENVELOPE_REPORT_ERRORS. Kill-knob: CABINET_ENVELOPE_REPORT=0 (default ON).
-# Enforcement + division-blocking stay Captain-gated (HANDBACK #14).
+# A12 ENFORCEMENT now lands beside this probe in _envelope_enforce() (Captain
+# ruling 2026-07-14 "flip to block"): a TYPED envelope that fails validate() is
+# REFUSED at the producer. Scope additions beyond validate()'s existing checks
+# (division-blocking, taint-join law) stay Captain-gated (HANDBACK #14).
 _ENVELOPE_MOD: Any = None
 _ENVELOPE_IMPORT_TRIED = False
 ENVELOPE_REPORT_ERRORS = 0
@@ -119,6 +122,53 @@ def _envelope_report(site: str, stream: str, fields: dict) -> None:
         _ENVELOPE_MOD.report_only(site, stream, fields)
     except Exception:
         ENVELOPE_REPORT_ERRORS += 1
+
+
+def _envelope_enforce(site: str, stream: str, fields: dict) -> "tuple[bool, list]":
+    """A12 typed-envelope ENFORCEMENT gate — "flip to block" (Captain 2026-07-14).
+
+    Returns (blocked, reasons). blocked=True → the caller MUST refuse the send
+    (skip the XADD below) and surface `reasons`. NEVER raises into the caller.
+
+    The A6 probe above only COUNTS a bad envelope; this gate BLOCKS it. Under
+    ENFORCED (envelope.py default) a TYPED envelope that fails validate() is
+    refused; it enforces ONLY the checks validate() already performs — no new
+    scope. Legacy/untyped entries are grandfathered and never blocked.
+
+    Fail-direction: envelope.enforce() fails CLOSED for a typed envelope it
+    cannot cleanly judge (the Captain's safer direction). If the probe MODULE
+    cannot even be imported, this wrapper still honors fail-closed for TYPED
+    entries via a minimal local presence check, while leaving legacy traffic
+    OPEN — blocking the grandfathered bus on a probe-infra fault is the one
+    outcome the flip must never cause.
+    """
+    global _ENVELOPE_MOD, _ENVELOPE_IMPORT_TRIED, ENVELOPE_REPORT_ERRORS
+    try:
+        if _ENVELOPE_MOD is None and not _ENVELOPE_IMPORT_TRIED:
+            _ENVELOPE_IMPORT_TRIED = True
+            root = str(CABINET_ROOT)
+            if root not in sys.path:
+                sys.path.insert(0, root)
+            from framework.triggers import envelope as _env
+            _ENVELOPE_MOD = _env
+        if _ENVELOPE_MOD is not None:
+            blocked, _verdict, reasons = _ENVELOPE_MOD.enforce(fields)
+            return (bool(blocked), list(reasons or []))
+    except Exception:
+        ENVELOPE_REPORT_ERRORS += 1
+    # Module unavailable (import failed) or an unexpected wrapper error: honor
+    # the fail-CLOSED direction for TYPED entries only; legacy/untyped stays
+    # open so a probe-infra fault never breaks the grandfathered bus.
+    try:
+        typed = isinstance(fields, dict) and "envelope" in fields
+    except Exception:
+        typed = False
+    # Honor the warn-only rollback knob here too: if the Captain set
+    # CABINET_ENVELOPE_ENFORCE=0, even the probe-infra fail-closed path must NOT
+    # block (warn-only means warn-only, module-present or not).
+    if typed and os.environ.get("CABINET_ENVELOPE_ENFORCE", "1") != "0":
+        return (True, ["envelope enforcement unavailable — fail-closed on typed entry"])
+    return (False, [])
 
 
 # ---------------------------------------------------------------
@@ -491,18 +541,29 @@ def tool_send_message(params: dict) -> dict:
         if roster and target_role != "cos" and target_role not in roster:
             return {"status": "refused", "reason": "unknown_target_role", "to_role": target_role}
         # A6 report-only probe — beside, never around, the XADD (fail-open).
+        _sd_fields = {
+            "source": "cross-cabinet",
+            "from_cabinet": from_cabinet,
+            "from_agent": from_agent,
+            "content": content,
+            "reply_to": str(reply_to or ""),
+            "ts": str(int(time.time())),
+        }
         _envelope_report(
             "server.send_message.self_delivery",
             f"cabinet:triggers:{target_role}",
-            {
-                "source": "cross-cabinet",
-                "from_cabinet": from_cabinet,
-                "from_agent": from_agent,
-                "content": content,
-                "reply_to": str(reply_to or ""),
-                "ts": str(int(time.time())),
-            },
+            _sd_fields,
         )
+        # A12 enforcement — refuse the send if a TYPED envelope fails validate()
+        # (legacy/untyped is grandfathered); the XADD below never runs on block.
+        _sd_blocked, _sd_reasons = _envelope_enforce(
+            "server.send_message.self_delivery",
+            f"cabinet:triggers:{target_role}",
+            _sd_fields,
+        )
+        if _sd_blocked:
+            return {"status": "refused", "reason": "envelope_invalid",
+                    "to_role": target_role, "violations": _sd_reasons}
         try:
             out = subprocess.run(
                 [
@@ -534,17 +595,28 @@ def tool_send_message(params: dict) -> dict:
         return {"status": "refused", "reason": "send_message_not_in_peer_allowed_tools"}
 
     # A6 report-only probe — beside, never around, the XADD (fail-open).
+    _po_fields = {
+        "from_cabinet": this_cabinet_id(),
+        "from_agent": from_agent,
+        "content": content,
+        "reply_to": str(reply_to or ""),
+        "ts": str(int(time.time())),
+    }
     _envelope_report(
         "server.send_message.peer_outbound",
         f"cabinet:inbox:{to_cabinet}",
-        {
-            "from_cabinet": this_cabinet_id(),
-            "from_agent": from_agent,
-            "content": content,
-            "reply_to": str(reply_to or ""),
-            "ts": str(int(time.time())),
-        },
+        _po_fields,
     )
+    # A12 enforcement — refuse the send if a TYPED envelope fails validate()
+    # (legacy/untyped is grandfathered); the XADD below never runs on block.
+    _po_blocked, _po_reasons = _envelope_enforce(
+        "server.send_message.peer_outbound",
+        f"cabinet:inbox:{to_cabinet}",
+        _po_fields,
+    )
+    if _po_blocked:
+        return {"status": "refused", "reason": "envelope_invalid",
+                "to_cabinet": to_cabinet, "violations": _po_reasons}
     try:
         out = subprocess.run(
             [
@@ -592,18 +664,29 @@ def tool_request_handoff(params: dict) -> dict:
         return {"status": "refused", "reason": "request_handoff_not_in_peer_allowed_tools"}
 
     # A6 report-only probe — beside, never around, the XADD (fail-open).
+    _ho_fields = {
+        "from_cabinet": this_cabinet_id(),
+        "from_agent": from_agent,
+        "kind": "handoff_request",
+        "context_slug": context_slug,
+        "reason": reason,
+        "ts": str(int(time.time())),
+    }
     _envelope_report(
         "server.request_handoff.peer_outbound",
         f"cabinet:inbox:{to_cabinet}",
-        {
-            "from_cabinet": this_cabinet_id(),
-            "from_agent": from_agent,
-            "kind": "handoff_request",
-            "context_slug": context_slug,
-            "reason": reason,
-            "ts": str(int(time.time())),
-        },
+        _ho_fields,
     )
+    # A12 enforcement — refuse the send if a TYPED envelope fails validate()
+    # (legacy/untyped is grandfathered); the XADD below never runs on block.
+    _ho_blocked, _ho_reasons = _envelope_enforce(
+        "server.request_handoff.peer_outbound",
+        f"cabinet:inbox:{to_cabinet}",
+        _ho_fields,
+    )
+    if _ho_blocked:
+        return {"status": "refused", "reason": "envelope_invalid",
+                "to_cabinet": to_cabinet, "violations": _ho_reasons}
     try:
         out = subprocess.run(
             [

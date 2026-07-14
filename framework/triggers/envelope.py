@@ -1,11 +1,15 @@
-"""Typed envelope v1 for the cabinet Redis-Streams bus — REPORT-ONLY (A6).
+"""Typed envelope v1 for the cabinet Redis-Streams bus — VALIDATE + ENFORCE.
 
 Ledger context (docs/plans/operative-egg-ledger-2026-07-07.yml): row A6 ships
 the envelope schema + validator over the EXISTING untyped bus; row A12 is the
-bus-hardening acceptance gate that later makes it binding. THIS MODULE NEVER
-ENFORCES: enforcement, division-blocking, and any scope additions are
-HANDBACK #14 (Captain-gated). The untyped legacy path is grandfathered until
-the A12 gate per the A6 row's own rollback note.
+bus-hardening gate that makes it BINDING. Two side-effectful surfaces now
+exist: report_only() (A6 warn-only census — counts, never blocks) and
+enforce() (A12 "flip to block", Captain ruling 2026-07-14 — a TYPED envelope
+that fails validate() is REFUSED at the producer). enforce() enforces ONLY the
+checks validate() already performs; SCOPE ADDITIONS beyond that
+(division-blocking, the taint-join LAW) remain Captain-gated (HANDBACK #14 /
+CG-9(d)). The untyped LEGACY path stays grandfathered — enforce() never blocks
+it — until a separate Captain scope decision condemns it.
 
 Choke points (followed from the code, not the plan row — the plan named
 framework/triggers/registry.py, but that file is the durable at-time/interval
@@ -13,18 +17,28 @@ reminder registry and never touches Redis; the actual bus producers are):
   * cabinet/scripts/lib/triggers.sh  trigger_send() XADD (:172-176) — every
     officer/cron sender incl. run-status-sweep.sh rides it   [wiring BLOCKED
     this wave: multi-writer guard — file owned by feat/fidelity-harness-design]
-  * cabinet/mcp-server/server.py XADD sites :430 (cross-cabinet self-delivery
-    → cabinet:triggers:<role>), :460 (send_message → cabinet:inbox:<peer>),
-    :506 (request_handoff → cabinet:inbox:<peer>)             [wired, report-only]
+  * cabinet/mcp-server/server.py XADD sites: cross-cabinet self-delivery
+    (→ cabinet:triggers:<role>), send_message (→ cabinet:inbox:<peer>),
+    request_handoff (→ cabinet:inbox:<peer>)
+    [wired, ENFORCED per Captain ruling 2026-07-14 "flip to block" — each site
+     calls _envelope_enforce() and REFUSES the XADD on a typed-invalid envelope;
+     legacy/untyped entries stay open (grandfathered). Line numbers omitted — they drift]
 Consumers: officers via XREADGROUP group officer-<name>
 (cabinet/scripts/start-officer-mac.sh:485-505) and
 cabinet/scripts/exhaust-archive.py (STREAM_PATTERN cabinet:triggers:*).
 
-FAIL-OPEN BY DESIGN: in report-only mode the bus MUST be unaffected even if
-this module is buggy. report_only() swallows every exception into a counter;
-validate() never raises on any input. Producers call report_only() beside —
-never around — their XADD; a validator crash costs one counter tick, not a
-message.
+FAIL DIRECTIONS (two surfaces, two directions):
+  * report_only() is FAIL-OPEN — in warn-only census the bus must be unaffected
+    even if this module is buggy: it swallows every exception into a counter,
+    and validate() never raises on any input. Producers call it BESIDE — never
+    around — their XADD; a validator crash costs one counter tick, not a message.
+  * enforce() is FAIL-CLOSED for TYPED envelopes — a typed envelope it cannot
+    cleanly judge is BLOCKED (the Captain's safer direction: never silently
+    send a suspect typed envelope). Producers call it as a GATE before the XADD
+    and refuse the send when it returns blocked. Legacy/untyped entries are
+    exempt via a leading presence check taken BEFORE any fallible work, so an
+    enforcement bug can never break the grandfathered bus. enforce() never
+    raises into the producer.
 
 Names-not-values logging: violation lines carry field NAMES, byte sizes and a
 short whitelist of bounded identity fields only. Bus messages can echo env
@@ -435,3 +449,102 @@ def report_only(site: str, stream: str, fields: dict,
             f.write(json.dumps(line, ensure_ascii=False) + "\n")
     except Exception:
         REPORT_ERRORS += 1
+
+
+# --------------------------------------------------------------------------
+# Enforcement wiring (A12 "flip to block" — Captain ruling 2026-07-14)
+# --------------------------------------------------------------------------
+# report_only() above COUNTS a non-conforming envelope but the producer still
+# SENDS it (fail-open census). enforce() is the BINDING gate the A12 row makes
+# authoritative: under ENFORCED, a TYPED envelope that fails validate() is
+# BLOCKED — the producer refuses the send (no XADD). It enforces EXACTLY the
+# checks validate()/classify_fields() already perform; it adds NO new
+# validation scope (division-blocking, the taint-join law → Captain-gated).
+#
+# GRANDFATHER (the bus-breakage guard): a legacy untyped entry (no "envelope"
+# field) is the A6-grandfathered path and, as measured 2026-07-11, 100% of
+# current live bus traffic. It is NEVER blocked — condemning the legacy path is
+# a separate Captain scope decision, not this flip. The typed/legacy split is a
+# single near-unbreakable presence check taken BEFORE any fallible work, so an
+# enforcement bug cannot become a bus-wide outage of grandfathered traffic.
+#
+# FAIL-DIRECTION (deliberate): enforce() fails CLOSED (BLOCK) for a TYPED
+# envelope it cannot cleanly judge — the safer direction the Captain intends.
+# classify_fields()/validate() never raise on a dict, so that path is only
+# reachable under a truly pathological failure; it still fails closed there and
+# NEVER raises into the producer. Legacy/untyped stays open.
+#
+# SWITCH: ENFORCED (module constant, default True per the 2026-07-14 ruling) is
+# the greppable, reversible mode flag; env CABINET_ENVELOPE_ENFORCE=0 drops the
+# gate to warn-only (report_only() still logs; nothing is blocked). This knob is
+# INDEPENDENT of the report kill-knob (CABINET_ENVELOPE_REPORT) — census and
+# enforcement are separate concerns; set both to 0 to disable envelopes wholly.
+
+ENFORCE_ENV = "CABINET_ENVELOPE_ENFORCE"     # "0" = warn-only knob (default: ENFORCED)
+ENFORCED = True                              # Captain ruling 2026-07-14 "flip to block"
+
+# Count of sends refused by enforce() this process (audit/observability sibling
+# to REPORT_ERRORS / REPORT_SUPPRESSED).
+ENFORCE_BLOCKED = 0
+
+
+def enforcement_enabled() -> bool:
+    """True when enforce() may BLOCK a send. Default follows ENFORCED (True per
+    the 2026-07-14 Captain ruling); CABINET_ENVELOPE_ENFORCE=0 reverts to
+    warn-only (no blocking — report_only() still records the violation)."""
+    return os.environ.get(ENFORCE_ENV, "1" if ENFORCED else "0") != "0"
+
+
+def enforce_blocked() -> int:
+    """Number of sends enforce() has refused this process (observability)."""
+    return ENFORCE_BLOCKED
+
+
+def enforce(fields: Any) -> tuple[bool, str, list[str]]:
+    """Enforcement decision for one outbound bus entry (the flat field/value
+    dict as it would be XADDed). Returns (blocked, verdict, reasons):
+
+      * blocked=True  → the producer MUST refuse the send (do NOT XADD);
+                        ``reasons`` carries the validate() failure reasons.
+      * blocked=False → the send proceeds unchanged.
+
+    Semantics — enforces ONLY what validate() already checks (via
+    classify_fields), NO new scope:
+      * legacy_untyped (no "envelope" field, or a non-dict entry) → NOT blocked
+        (A6-grandfathered; the bus-breakage guard — see the module comment).
+      * ok      (typed + validate() passed)                       → NOT blocked.
+      * invalid (typed + validate() failed, or a non-str / non-JSON envelope
+                 field)  → BLOCKED when enforcement_enabled(); returned
+                 not-blocked (verdict still "invalid") in warn-only mode.
+
+    NOTE — replay (A12 class 2) is intentionally NOT enforced here: validate()
+    accepts the same id twice by design (at-least-once bus; dedupe is the
+    consumer's job via ReplayWindow), so blocking a replayed id at the producer
+    would be a NEW scope AND would break correct redelivery. Its defense stays
+    consumer-side.
+
+    NEVER raises. Fail-direction = BLOCK for a TYPED envelope on an unexpected
+    error (fail-closed); the leading typed/legacy split keeps grandfathered
+    traffic exempt from both enforcement and that fail-closed path.
+    """
+    global ENFORCE_BLOCKED
+    # Leading typed/legacy split BEFORE any heavier work. A non-dict entry cannot
+    # be a typed envelope → legacy (open). The `in` test can only misbehave on a
+    # pathological dict SUBCLASS (poisoned __contains__/__eq__), which no real
+    # producer builds; if it raises we treat the entry as suspect-typed and let
+    # the fail-closed judge below block it — enforce() itself still NEVER raises.
+    try:
+        is_typed = isinstance(fields, dict) and "envelope" in fields
+    except Exception:  # pragma: no cover — pathological dict-like only
+        is_typed = True
+    if not is_typed:
+        return (False, "legacy_untyped", [])
+    try:
+        verdict, reasons = classify_fields(fields)
+    except Exception as e:  # pragma: no cover — classify_fields never raises on a dict
+        # Typed envelope we could not judge → FAIL-CLOSED (Captain's direction).
+        verdict, reasons = "invalid", [f"enforce internal error: {type(e).__name__}"]
+    if verdict == "invalid" and enforcement_enabled():
+        ENFORCE_BLOCKED += 1
+        return (True, verdict, reasons[:MAX_REASONS])
+    return (False, verdict, reasons[:MAX_REASONS])
