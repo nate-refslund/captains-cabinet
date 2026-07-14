@@ -7,9 +7,9 @@ slug: polads
 name: PolAds
 capacity: work
 description: |
-  PolAds (polads.eu) — EU political advertisement transparency platform
-  (EU Regulation 2025/1410). Repo STEP-Network/v0-politiske-annoncer
-  (Vercel app v0-politiske-annoncer, Neon politiske-annoncer). Current
-  class of work: v1.0 production push + UAT closeout on xtest.polads.eu.
+  PolAds — the deployment's regulatory-transparency product lane. Repo,
+  hosting and database identity are deployment-personal and live in the
+  untracked instance overlay (public-tree scrub 2026-07-12). Current class
+  of work: v1.0 production push + UAT closeout on the staging deployment.
   Declared for the HQ (MacBook) instance; inactive until R2 activation.
 active: false

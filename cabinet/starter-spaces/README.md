@@ -56,6 +56,15 @@ Once Phase 0 preset refactor lands, starter-spaces/ will move under `presets/wor
 
 ## Shipped starters
 
-- **blank** — empty Space with no custom fields. Freeform title + markdown + labels only.
+All nine ship today. Install any with `install-starter-space.sh <name>` (the
+`<name>` is the filename minus `.json`):
 
-More starters ship in Sprint B and C (Issues, Business Brain, Research Archive, Decisions Log, Playbooks, Team Handbook, Customer Insights, ADR).
+- **blank** — empty Space, no custom fields. Freeform title + markdown + labels; good for ad-hoc notes or sketching a schema before committing to it.
+- **business-brain** — strategic context: vision, brand, pricing, positioning, target users, competitive landscape, principles. Always-on reference for every officer.
+- **customer-insights** — everything learned about users (interviews, surveys, usage, support, cohorts), tagged by source + theme so the cabinet can answer "what do we know about churn" without re-researching.
+- **decisions-log** — the Captain decision trail with the WHY, so officers apply principles not just the letter (mirrors `shared/interfaces/captain-decisions.md`).
+- **issues** — cabinet-native issue tracker (labels, priority, state, assignee, due date, watchers, comments) with semantic search and cross-Space references.
+- **playbooks** — SOPs / runbooks: each record a repeatable procedure with trigger, steps, and expected outcome; officers invoke by name via semantic search.
+- **research-archive** — research briefs, competitive intel, market sweeps, each tagged with a decay rate (evergreen / fast-moving / time-sensitive).
+- **team-handbook** — how this cabinet operates: comms norms, escalation rules, review conventions, meeting structures. GitLab-Handbook-style, for an AI org.
+- **adr** — architecture decision records (Nygard format); each record immutable once accepted, supersession links back.

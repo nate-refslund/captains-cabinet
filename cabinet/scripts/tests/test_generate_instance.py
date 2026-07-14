@@ -889,11 +889,16 @@ class TestDefaultsFastLane:
 
 class TestUniversality:
     # DETECTOR PATTERN LIST (never relax/narrow): the launcher deployment's
-    # real lane/org/name/host/chat-id tokens, quoted here solely so the
-    # universality guard can prove the generated artifacts carry none of them.
+    # lane/org/name/host tokens, quoted here solely so the universality
+    # guard can prove the generated artifacts carry none of them.
+    # Chat-id token: the REAL launcher chat id was scrubbed from the public
+    # tree (2026-07-12) — the pattern now pins the tracked platform.yml
+    # placeholder (10 zeros), so generated artifacts can never echo the
+    # launcher's tracked config value either (defaults use "0000", answers
+    # carry their own id — neither matches a 10-zero run).
     FORBIDDEN = [
         r"\bpolads\b", r"\bstephie\b", r"\bstepnetwork\b", r"\bnate\b",
-        r"\bhq-macbook\b", r"8631324091", r"\bjfm\b",
+        r"\bhq-macbook\b", r"0000000000", r"\bjfm\b",
     ]
 
     @pytest.mark.parametrize("rel", [
@@ -913,3 +918,74 @@ class TestUniversality:
                 text = p.read_text().lower()
                 for pattern in self.FORBIDDEN:
                     assert not re.search(pattern, text), f"{p} contains {pattern}"
+
+
+# ---------------------------------------------------------------------------
+# Forward-compat pin — an unknown top-level `mission:` key is TOLERATED
+# ---------------------------------------------------------------------------
+class TestUnknownMissionKeyTolerated:
+    """The purpose-first interview (onboarding-vision-2026-07-14 Phase 2) will
+    add a machine-readable top-level ``mission:`` block to
+    cabinet-init.answers.yml. That upgrade only works if the zero-LLM
+    generator IGNORES an unknown top-level key rather than rejecting it. Pin
+    that tolerance TODAY so the interview change can never silently trip the
+    generator — and so anyone who later adds strict top-level validation is
+    forced to reconcile with this contract (Phase 0 zero-risk fix)."""
+
+    def _build_root(self, base: Path) -> Path:
+        (base / "instance/config/contexts").mkdir(parents=True)
+        (base / "instance/config/projects").mkdir(parents=True)
+        (base / "instance/agents").mkdir(parents=True)
+        (base / "presets/portfolio/agents").mkdir(parents=True)
+        shutil.copy(
+            _REPO_ROOT / "presets/portfolio/agents/_lane-ceo.md.template",
+            base / "presets/portfolio/agents/_lane-ceo.md.template",
+        )
+        (base / "instance/config/platform.yml").write_text(PLATFORM_FIXTURE)
+        return base
+
+    @staticmethod
+    def _generated_tree(root: Path) -> dict:
+        """Every GENERATED instance file → text. Excludes the answers file
+        itself (it legitimately differs between the two arms — one carries the
+        mission block)."""
+        out = {}
+        for p in sorted((root / "instance").rglob("*")):
+            if p.is_file() and p.name != "cabinet-init.answers.yml":
+                out[str(p.relative_to(root))] = p.read_text(encoding="utf-8")
+        return out
+
+    _MISSION_BLOCK = {
+        "purpose": "Make EU political-ad compliance effortless for publishers.",
+        "success_90d": "Three publishers live on the transparency flow.",
+        "never_touch": ["production deploys without review", "captain PII"],
+    }
+
+    def test_generated_tree_identical_with_and_without_mission(self, tmp_path):
+        baseline_root = self._build_root(tmp_path / "baseline")
+        run_gen(baseline_root, acme_answers())
+        baseline = self._generated_tree(baseline_root)
+
+        mission_root = self._build_root(tmp_path / "withmission")
+        answers = acme_answers()
+        answers["mission"] = dict(self._MISSION_BLOCK)
+        run_gen(mission_root, answers)
+        with_mission = self._generated_tree(mission_root)
+
+        assert set(baseline) == set(with_mission), (
+            "the mission key changed WHICH files were generated")
+        for rel in baseline:
+            assert baseline[rel] == with_mission[rel], (
+                f"the mission key changed generated content of {rel} — the "
+                "generator must ignore unknown top-level keys, not consume them")
+
+    def test_cli_exit_zero_with_mission_key(self, tmp_path):
+        """End-to-end through the CLI with stdin closed (zero-prompt proof):
+        a top-level mission block must not raise or prompt."""
+        root = self._build_root(tmp_path / "cli")
+        answers = acme_answers()
+        answers["mission"] = dict(self._MISSION_BLOCK)
+        path = write_answers(root, answers)
+        res = run_cli(root, "--answers", str(path))
+        assert res.returncode == 0, res.stderr
+        assert (root / "instance/config/roster.yml").is_file()

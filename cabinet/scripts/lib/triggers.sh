@@ -178,30 +178,13 @@ trigger_send() {
     echo "trigger_send WARN: XADD to $stream failed (${_xadd_err:-redis unreachable?}) — trigger NOT queued, sender=$sender" >&2
   fi
 
-  # Cabinet Memory: queue trigger for semantic indexing (fire-and-forget).
-  # FW-077: redirect bg subshell stdout+stderr to /dev/null and disown so
-  # bash's job-control "Done" message cannot leak the env vars exported by
-  # memory.sh's `set -a; source cabinet/.env` (NEON_CONNECTION_STRING +
-  # others) into the calling officer's session JSONL. The disown drops the
-  # job from the parent's job table entirely so no completion notice fires.
-  # set-u-safe root (2026-07-02, CI 2861900…): a `CABINET_ROOT=x . triggers.sh`
-  # source prefix unwinds after the source, so this function self-resolves.
-  local mem_root="${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
-  if [ -f "$mem_root/cabinet/scripts/lib/memory.sh" ]; then
-    (
-      source "$mem_root/cabinet/scripts/lib/memory.sh" 2>/dev/null
-      if declare -f memory_queue_embed > /dev/null; then
-        local source_id="trg-$(date -u +%Y%m%dT%H%M%S)-${sender}-to-${target}"
-        local metadata
-        metadata=$(jq -nc --arg sender "$sender" --arg target "$target" \
-          '{sender: $sender, target: $target}')
-        memory_queue_embed "officer_trigger" "$source_id" "$sender" "$sender" \
-          "[$sender → $target] $message" "$metadata" \
-          "$(date -u +%Y-%m-%dT%H:%M:%SZ)" 2>/dev/null || true
-      fi
-    ) >/dev/null 2>&1 &
-    disown 2>/dev/null || true
-  fi
+  # Cabinet Memory embed of officer_trigger REMOVED 2026-07-12 (org-memory
+  # study §4 C3): the trigger exhaust is nervous-system plumbing, not
+  # knowledge — embedding every trigger_send made officer_trigger 59% of the
+  # semantic store and crowded the HNSW candidate pool before ranking. The
+  # durable "who was told what when" record is kept by the XADD data plane
+  # (above) and the append-only trigger-archive JSONL (exhaust-archive.py);
+  # grep answers audit questions without a paid Voyage embed per trigger.
 
   # Control plane: wake the target's live session so this trigger becomes an
   # actual LLM turn within seconds. The XADD above is the durable data plane;

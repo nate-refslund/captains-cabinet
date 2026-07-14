@@ -122,6 +122,7 @@ instance/archive/
 
 # Runtime state + briefing renders (materialized by running services)
 instance/state/
+instance/cache/
 instance/memory/briefings/
 
 # Experience records, decision log, research archive

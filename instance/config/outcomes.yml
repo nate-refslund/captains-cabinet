@@ -2,58 +2,49 @@
 # LIVE MISSION FILE — the compiler reads this file by name.
 # Activated by the Captain 2026-06-10 (renamed from .draft).
 # =============================================================
-# R2 prep (clone-convergence plan, docs/clone-convergence-plan-2026-06-09.md).
-# Authored 2026-06-10 from live grounding:
-#   - 9-Codebases/{PolAds,STEPhie,stepnetwork-dk}/architecture.md + deployment.md
-#   - 0-Inbox/todos-live.md (open work as of 2026-06-09)
-#   - Monday item ids cited inline where the work is already tracked
-#     (June UAT wave pulled live via dev-tasks 2026-06-10).
+# PUBLIC-TREE SCRUB 2026-07-12: outcome VALUES below are neutralized to
+# generic example-org wording — real product strategy prose, colleague
+# names, work-tracker item ids and repo/host identities were removed
+# because this repository is public. STRUCTURE is live and untouched:
+# outcome ids, node ids, statuses, roles, dependencies and the deployment
+# gate are the real execution state that the compiler, ledgers and
+# graduation math key on. The deployment's real mission text lives in the
+# untracked instance overlay (same schema — see below); pre-scrub text
+# survives only in this repository's pre-publication git history.
 #
 # Schema: framework/schemas/outcome.schema.json (Mission Compiler v2 rich
 # criteria). Validated with jsonschema before commit.
 #
-# SAFETY — two gates, both now OPEN for the six outcomes below:
+# SAFETY — two gates, both OPEN for the outcomes below:
 #   1. FILENAME gate: the compiler (framework/missions/session_bridge.py)
 #      reads instance/config/outcomes.yml — this file.
 #   2. STATUS gate: the compiler compiles only outcomes with status: active
 #      (captain_ratified is a human record the compiler does NOT read).
-#      The Captain ratification pass (2026-06-10) ALREADY set 5 of the 6
-#      outcomes below to status: active / captain_ratified: true
-#      (polads-001, stephie-001, stepnetwork-001, system-self-001,
-#      system-self-002), and the Captain ratified outcome-polads-003 on
-#      2026-06-10 — ALL SIX are status: active. This file is live: the
-#      compiler will mission-compile all six once the runtime is deployed.
 #      To pause one, flip its status to draft.
 #
 # AUTONOMY CEILING (applies to every criterion marked risk_level: high):
 #   external_comms / production deploys / spending are ALWAYS propose-only.
-#   Outbound messages go via the brain MCP queue_draft -> Telegram approval;
-#   production deploys and enforcement flips need explicit Captain approval.
-#   This mirrors the R4 hard ceiling — graduation never lifts these here.
+#   Outbound messages go via the approval queue -> Captain approval;
+#   production deploys and enforcement flips need explicit Captain
+#   approval. This mirrors the R4 hard ceiling — graduation never lifts
+#   these here.
 #
-# WORK MODEL (Captain-agreed 2026-06-10) — products are LANES, not outcomes.
-# Three work classes per lane; full contract: docs/work-model.md.
-#   1. STREAM — continuous product work. The Monday Tasks board 5091706356
-#      (per-product filter via the dev-tasks plugin) is the canonical
-#      backlog; officers claim, execute, close back to Monday. Stream work
-#      is NEVER wrapped in outcomes. Propose-first per the autonomy
-#      manifest (vault 6-Areas/autonomy-manifest.md) until a lane graduates.
+# WORK MODEL (Captain-agreed 2026-06-10) — products are LANES, not
+# outcomes. Three work classes per lane; full contract:
+# framework/docs/work-model.md.
+#   1. STREAM — continuous product work on the lane's canonical backlog;
+#      never wrapped in outcomes. Propose-first until a lane graduates.
 #   2. MISSIONS — this file. A ROLLING WINDOW of 1-2 active bounded
 #      outcomes per lane — not a roadmap. Inclusion test: the outcome
 #      describes a verifiable STATE CHANGE, never an activity. Lifecycle:
-#      draft -> active (Captain-ratified) -> achieved -> retired. Products
-#      never finish — outcomes do: when one achieves, its slot refills via
-#      the RENEWAL LOOP (the lane's product-owner role — the lane-CEO in
-#      the portfolio preset, CPO in the functional preset — drafts a
-#      successor from its lane's epic queue + stream pressure -> the
-#      coordinating role (Chair/CoS) consolidates the proposal into its
-#      briefing's decision queue -> Captain ratifies -> successor goes
-#      active). Marking 'achieved': CoS proposes when every criterion
-#      carries verified evidence; Captain confirms.
-#   3. INTAKE — machinery, not a mission: a scheduled CoS routine (cron
-#      trigger -> sweep Monday Nate's-Todos 5098236573 + unclassified
-#      stream items -> classify to lane -> propose-only via brain
-#      ask_nate). Removed from this file — see docs/work-model.md (Intake).
+#      draft -> active (Captain-ratified) -> achieved -> retired. When one
+#      achieves, its slot refills via the RENEWAL LOOP (lane product-owner
+#      drafts a successor -> coordinating role consolidates -> Captain
+#      ratifies).
+#   3. INTAKE — machinery, not a mission: a scheduled coordinating-officer
+#      routine sweeps the to-do surface + unclassified stream items,
+#      classifies to lane, and proposes-only. See
+#      framework/docs/work-model.md (Intake).
 #
 # Lanes: polads | stephie-stepnetwork | system-self
 # (lane is encoded in the outcome id/description; the schema has no lane key)
@@ -61,197 +52,182 @@
 # DEPLOYMENT GATE — this file is pinned to the hq-macbook cabinet. The
 # compiler (compile_from_yaml) skips the WHOLE file with a stderr warning
 # on any deployment whose CABINET_ID env does not equal this value, so
-# another machine pulling this branch (e.g. the Mac Mini soak) never
-# compiles hq's missions and never double-executes cos-owned system-self
-# tasks. hq must run with CABINET_ID=hq-macbook for these outcomes to
-# compile (default CABINET_ID is "main").
-# AMENDMENT 2026-07-02 (Captain-ratified derivation card, docs/plans/outcome-derivation-2026-07-02.md):
-# outcomes below now AI-DERIVED from Captain-owned directions (instance/config/directions.yml)
-# and Captain-RATIFIED — per the directions-layer ruling. Work-model STREAM canonicality
-# amended same day (local board canonical; Monday = STEP mirror) — see docs/work-model.md.
+# another machine pulling this branch never compiles hq's missions and
+# never double-executes cos-owned system-self tasks. hq must run with
+# CABINET_ID=hq-macbook for these outcomes to compile (default CABINET_ID
+# is "main").
+# AMENDMENT 2026-07-02 (Captain-ratified derivation card,
+# docs/plans/outcome-derivation-2026-07-02.md): outcomes below are
+# AI-DERIVED from Captain-owned directions (instance/config/directions.yml)
+# and Captain-RATIFIED — per the directions-layer ruling.
 deployment: hq-macbook
 
 outcomes:
   # ===========================================================
-  # LANE: polads — STEP-Network/v0-politiske-annoncer
+  # LANE: polads
   # ===========================================================
   # SLOT 1/2 for lane polads — on achieved: renewal loop proposes successor
   - id: outcome-polads-001
-    name: "PolAds v1.0 staging closeout and production release"
+    name: "Lane product v1.0 staging closeout and production release"
     description: >
-      Close the staging/UAT blockers on test.polads.eu and ship the v1.0
-      production release of polads.eu (EU Reg 2025/1410 transparency portal).
-      Grounded in: staging CI broken since 2026-05-14 blocking all PR merges
-      (Monday 2924046344), open UAT bug class (Monday 2955117972, 2955147585,
-      PR #158 label-export font omission), v1.0 production target June 2026.
+      Close the staging/UAT blockers on the lane product's staging
+      deployment and ship its v1.0 production release. Grounded in live
+      tracker state at authoring time (staging CI broken and blocking PR
+      merges; an open UAT bug class; a v1.0 production target).
     status: active
     captain_ratified: true
     measurable_criteria:
       - node_id: polads-001-ci
-        title: "Unblock staging CI — Test job + Hook Tests green"
+        title: "Unblock staging CI — required jobs green"
         owner_role: polads-ceo
         acceptance_criteria:
-          - "'Test' job and 'Hook Tests' pass on the staging branch for 3 consecutive PR runs (broken since 2026-05-14, Monday 2924046344)"
-          - "No open PR on staging is merge-blocked by these two jobs"
-        evidence_required: "Links to 3 consecutive green GitHub Actions runs on staging PRs"
+          - "The required CI jobs pass on the staging branch for 3 consecutive PR runs"
+          - "No open PR on staging is merge-blocked by those jobs"
+        evidence_required: "Links to 3 consecutive green CI runs on staging PRs"
         verifier_role: stephie-ceo
         risk_level: medium
         rollback_note: "CI-config-only changes; revert the workflow commit to restore prior state"
       - node_id: polads-001-uat
-        title: "Close the open UAT bug class on test.polads.eu"
+        title: "Close the open UAT bug class on the staging deployment"
         owner_role: polads-ceo
         depends_on: [polads-001-ci]
         acceptance_criteria:
-          - "Sponsor 'EU eligibility category' no longer hard-blocks submission on 'Same as the advertiser' (Monday 2955117972)"
-          - "Places address autocomplete shows full city/postal/country after selection (Monday 2955147585)"
-          - "PNG/JPG label exports render text correctly on the Vercel serverless runtime (PR #158 resvg font class)"
+          - "Every tracked UAT bug in the open wave is fixed and verified on the staging deployment"
           - "Each fix lands with a regression test"
-        evidence_required: "Merged PR links + passing regression tests + UAT retest note on test.polads.eu"
+        evidence_required: "Merged PR links + passing regression tests + UAT retest note on the staging deployment"
         verifier_role: stephie-ceo
         risk_level: medium
         rollback_note: "Per-fix revert via git; staging-only until polads-001-prod"
       - node_id: polads-001-prod
-        title: "Ship v1.0 to production (polads.eu)"
+        title: "Ship v1.0 to production"
         owner_role: polads-ceo
         depends_on: [polads-001-uat]
         acceptance_criteria:
-          - "Production deployment READY on Vercel app v0-politiske-annoncer"
-          - "Post-deploy smoke pass: public search, transparency-notice detail, registration entry"
+          - "Production deployment READY on the hosting platform"
+          - "Post-deploy smoke pass over the public entry flows"
           - "PROPOSE-ONLY: deploy executes only after explicit Captain approval (production hard ceiling)"
           - "BILLING FREEZE (Captain 2026-06-29 + card #2 2026-07-02): billing/subscription surfaces are EXCLUDED from this node's smoke scope and do NOT ship under this gate — polads-004-live owns the billing prod flip"
-        evidence_required: "Vercel production deployment id + smoke-check transcript + Captain approval record"
+        evidence_required: "Production deployment id + smoke-check transcript + Captain approval record"
         verifier_role: cos
         risk_level: high
-        rollback_note: "Vercel instant rollback: promote the previous READY production deployment"
+        rollback_note: "Instant rollback: promote the previous READY production deployment"
         captain_attention_estimate: 0.5
-        budget_note: "No new spend; existing Vercel/Neon plans"
+        budget_note: "No new spend; existing hosting/database plans"
 
-  # SLOT 2/2 for lane polads (slot freed by the Captain's deletion of the
-  # Stack Auth outcome, 2026-06-10) — Captain-ratified active. Fills
-  # the window. RATIFIED by the Captain 2026-06-10 (via his renamed live copy).
-  # BOOTSTRAP MISSION: runs once; recurring UAT waves afterwards
-  # flow through the STREAM with stream SLOs (docs/work-model.md — "Recurring
-  # waves"), never as new monthly outcomes. On achieved: renewal proposes a
-  # successor only if something genuinely campaign-shaped exists.
+  # SLOT 2/2 for lane polads (slot freed by the Captain's deletion of a
+  # prior outcome, 2026-06-10) — Captain-ratified active. BOOTSTRAP
+  # MISSION: runs once; recurring UAT waves afterwards flow through the
+  # STREAM with stream SLOs (framework/docs/work-model.md — "Recurring
+  # waves"), never as new monthly outcomes.
   - id: outcome-polads-003
-    name: "June UAT feedback wave closed on test.polads.eu"
+    name: "June UAT feedback wave closed on the staging deployment"
     description: >
-      Close the June 2026 UAT feedback wave, anchored on the PolAds Beta
-      version epic (Monday 2833952138) — three cited triage items
-      (2975934613, 2968573291, 2979382320) sit on the Live version
-      (2738006659) / Maintenance & Hotfixes (2743409388) epics and are
-      included by id: all 5 Critical items fixed and verified on the
-      preview/test deployment, every remaining wave item triaged out of
-      Needs Refinement, and Monday closed back via the dev-tasks plugin.
-      Grounded ONLY in live Monday data pulled 2026-06-10.
-    status: achieved  # 2026-07-02 card #3: 4/5 Criticals Done (PRs #419/#425/#468), Beta epic 88/88; remainder (2979104881, 2979083289, 2975934613) = stream
+      Close the June 2026 UAT feedback wave: all critical items fixed and
+      verified on the staging deployment, every remaining wave item triaged
+      out of the refinement queue, and the tracker closed back through the
+      sanctioned task route. Grounded ONLY in live tracker data pulled
+      2026-06-10.
+    status: achieved  # 2026-07-02 card #3: criticals done, wave epic closed; remainder = stream
     captain_ratified: true
     measurable_criteria:
       - node_id: polads-003-critical
-        title: "All 5 Critical June-wave items fixed + verified on the preview/test deployment"
+        title: "All critical June-wave items fixed + verified on the staging deployment"
         owner_role: polads-ceo
         acceptance_criteria:
-          - "[Publisher] NME logo link no longer leads to a Forbidden page — links to newsmediaeurope.eu (Monday 2979108084)"
-          - "[Publisher] Chatbot knows and answers from the DPA document (Monday 2979102928)"
-          - "[Citizen] 'Search advertisements' button works (Monday 2979116873)"
-          - "[General] Header flag/language options work on Windows (Monday 2979117218)"
-          - "[Publisher] No content overflow when expanding hierarchy items (Monday 2979104881)"
-          - "Each fix verified on the preview/test deployment (test.polads.eu), with regression coverage where testable"
-        evidence_required: "Merged PR links + regression tests + per-item verification notes on the preview/test deployment"
+          - "Every wave item tracked critical is fixed"
+          - "Each fix verified on the staging deployment, with regression coverage where testable"
+        evidence_required: "Merged PR links + regression tests + per-item verification notes on the staging deployment"
         verifier_role: stephie-ceo
         risk_level: medium
-        rollback_note: "Per-fix git revert; preview/test only — production ships via polads-001-prod's gate"
+        rollback_note: "Per-fix git revert; staging only — production ships via polads-001-prod's gate"
       - node_id: polads-003-triage
-        title: "Every remaining June-wave item triaged — zero left in Needs Refinement"
+        title: "Every remaining June-wave item triaged — zero left in the refinement queue"
         owner_role: polads-ceo
         acceptance_criteria:
-          - "Each remaining wave item — Missing: 2979083289 (Proff.dk auto-fill), 2979083232 (simplify address entry), 2979096043 (cursor hover), 2979103985 (contact-vs-booking email clarity), 2979102931 (sign-agreement text), 2979103189 (email-code login tedium), 2979083204 (register-button timing), 2979083180 (field contrast), 2979142477 (empty partnership footer), 2979121193 (AI form-filling idea), 2979108633 (do-i-need-to-register quiz), 2975934613 (EU Repository feedback); Medium: 2979382320 (NME logo colours/wording), 2968573291 (test.polAd.eu language alignment) — is refined with priority + estimate, declined with a written reason, or folded into an epic"
-          - "Zero June-wave items remain in 'Needs Refinement' on the Beta version epic (Monday 2833952138) — catch-all for any wave item not cited above"
-        evidence_required: "Per-item disposition list (refined / declined / folded) with Monday ids"
+          - "Each remaining wave item is refined with priority + estimate, declined with a written reason, or folded into an epic"
+          - "Zero June-wave items remain in the refinement queue on the wave epic"
+        evidence_required: "Per-item disposition list (refined / declined / folded) with tracker ids"
         verifier_role: stephie-ceo
         risk_level: low
         rollback_note: "Triage is metadata-only; dispositions revertible per item"
       - node_id: polads-003-closeback
-        title: "Monday closed back via the dev-tasks plugin with per-item status updates"
+        title: "Tracker closed back via the sanctioned task route with per-item status updates"
         owner_role: polads-ceo
         depends_on: [polads-003-critical, polads-003-triage]
         acceptance_criteria:
-          - "Every June-wave item carries its final status in Monday, written via the dev-tasks plugin"
+          - "Every June-wave item carries its final status in the tracker, written via the sanctioned task route"
           - "PROPOSE-FIRST: each status write is proposed to the Captain before applying, until the polads lane graduates per the autonomy manifest"
-        evidence_required: "Monday status trail + proposal/approval records for the writes"
+        evidence_required: "Tracker status trail + proposal/approval records for the writes"
         verifier_role: stephie-ceo
         risk_level: medium
-        rollback_note: "Monday status changes are item-scoped and manually revertible"
+        rollback_note: "Tracker status changes are item-scoped and manually revertible"
 
   # ===========================================================
-  # LANE: stephie-stepnetwork — STEP-Network/stephie-mcp +
-  #                             STEP-Network/step-network-website
+  # LANE: stephie-stepnetwork
   # ===========================================================
   # SLOT 1/2 for lane stephie-stepnetwork — on achieved: renewal loop proposes successor
   - id: outcome-stephie-001
-    name: "STEPhie Banner Creator feedback round 1 closed with Sofie"
+    name: "Creator-tool feedback round 1 closed with the pilot user"
     description: >
-      Land the four Banner Creator fixes from Sofie Holbaek's feedback round
-      (Monday 2959309890), deploy to ai.stepnetwork.dk, and queue her the
-      promised retest ping. Spec the canvas drag/reposition tool — her
-      biggest current blocker ("ikke nok frihed til at flytte rundt").
-    status: achieved  # 2026-07-02 card: job-banners shipped at /create/job-banners (Captain-verified); successor = stephie-002
+      Land the creator-tool fixes from the pilot user's first feedback
+      round, deploy to the lane's production host, and queue the promised
+      retest ping. Spec the canvas drag/reposition tool — the pilot user's
+      biggest reported blocker.
+    status: achieved  # 2026-07-02 card: successor slice shipped (Captain-verified); successor = stephie-002
     captain_ratified: true
     measurable_criteria:
       - node_id: stephie-001-fixes
-        title: "Implement the four feedback-round-1 fixes in the Banner Creator"
+        title: "Implement the four feedback-round-1 fixes in the creator tool"
         owner_role: stephie-ceo
         acceptance_criteria:
-          - "Image-click: the image-handling repro documented in Sofie's round-1 feedback (Monday 2959309890) is re-run step-for-step on the preview deployment and no longer reproduces — pass = the documented broken behavior does not occur"
-          - "Sudden-logout: the logout repro from Monday 2959309890 no longer reproduces AND a continuous 30-minute active editing session on the preview deployment completes with zero unprompted logouts (soak bar adjustable by Captain at ratification)"
-          - "Upload-new-image works inside Image Sequence"
-          - "Duplicate-element shortcut + button added"
+          - "Each documented feedback repro is re-run step-for-step on the preview deployment and no longer reproduces"
+          - "Session-stability repro no longer reproduces AND a continuous 30-minute active editing session on the preview deployment completes with zero unprompted logouts"
           - "Each fix lands with a regression test covering its repro (same bar as polads-001-uat)"
-          - "All four verified on a preview deployment before any production step"
-        evidence_required: "PR links on STEP-Network/stephie-mcp + passing regression tests + preview deployment URL with verification notes"
+          - "All fixes verified on a preview deployment before any production step"
+        evidence_required: "PR links on the lane repo + passing regression tests + preview deployment URL with verification notes"
         verifier_role: polads-ceo
         risk_level: medium
         rollback_note: "Per-fix git revert; preview-only until stephie-001-deploy"
       - node_id: stephie-001-deploy
-        title: "Deploy fixes to ai.stepnetwork.dk and queue the retest ping to Sofie"
+        title: "Deploy fixes to the production host and queue the retest ping"
         owner_role: stephie-ceo
         depends_on: [stephie-001-fixes]
         acceptance_criteria:
-          - "Fixes live on ai.stepnetwork.dk"
+          - "Fixes live on the lane's production host"
           - "PROPOSE-ONLY (production): deploy executes only after Captain approval"
-          - "PROPOSE-ONLY (external_comms): the Teams ping to Sofie goes via brain queue_draft -> Telegram approval; officers never send directly"
-        evidence_required: "Vercel deployment id + queued-draft record (Telegram approval trail)"
+          - "PROPOSE-ONLY (external_comms): the retest ping goes via the draft queue -> Captain approval; officers never send directly"
+        evidence_required: "Deployment id + queued-draft record (approval trail)"
         verifier_role: cos
         risk_level: high
-        rollback_note: "Vercel rollback to previous deployment; draft can be discarded at the Telegram gate"
+        rollback_note: "Host rollback to previous deployment; draft can be discarded at the approval gate"
         captain_attention_estimate: 0.5
       - node_id: stephie-001-dragspec
         title: "Spec the canvas drag/reposition (hand) tool"
         owner_role: stephie-ceo
         acceptance_criteria:
-          - "Spec covers element repositioning on the canvas, referencing Sofie's screen recordings (Optagelse 2026-06-03 150638.mp4, Flyt logo.mp4)"
+          - "Spec covers element repositioning on the canvas, referencing the pilot user's recorded repro sessions"
           - "Measurable acceptance criteria + effort estimate included; spec is a proposal, not an implementation commitment"
-        evidence_required: "Spec document in shared/interfaces/product-specs/ (or Monday doc via dev-tasks)"
+        evidence_required: "Spec document in shared/interfaces/product-specs/ (or a tracker doc via the sanctioned task route)"
         verifier_role: cos
         risk_level: low
 
   # SLOT 2/2 for lane stephie-stepnetwork — on achieved: renewal loop proposes successor
   - id: outcome-stepnetwork-001
-    name: "stepnetwork.dk publisher-onboarding pipeline verified healthy"
+    name: "Website lane onboarding pipeline verified healthy"
     description: >
-      Verification-first outcome for the website lane: prove the publisher
-      onboarding wizard -> Monday.com sync path works and that the scheduled
+      Verification-first outcome for the website lane: prove the visitor
+      onboarding wizard -> tracker sync path works and that the scheduled
       sync jobs are not failing silently. Read-mostly; a safe first mission
-      for this lane (repo STEP-Network/step-network-website).
+      for this lane.
     status: retired  # 2026-07-02 card: lane dormant by Captain ruling — website owned elsewhere; direction question parked
     captain_ratified: true
     measurable_criteria:
       - node_id: stepnet-001-e2e
-        title: "E2E coverage green for onboarding wizard -> Monday sync"
+        title: "E2E coverage green for onboarding wizard -> tracker sync"
         owner_role: stephie-ceo
         acceptance_criteria:
-          - "Playwright E2E exercising the dynamic onboarding wizard through submission passes locally and in CI"
-          - "Monday sync assertion uses a test board/mocked client — no writes to live Monday boards from tests"
+          - "E2E suite exercising the dynamic onboarding wizard through submission passes locally and in CI"
+          - "Tracker sync assertion uses a test board/mocked client — no writes to live boards from tests"
         evidence_required: "Green E2E run link + test file paths"
         verifier_role: polads-ceo
         risk_level: medium
@@ -261,21 +237,21 @@ outcomes:
         owner_role: stephie-ceo
         depends_on: [stepnet-001-e2e]
         acceptance_criteria:
-          - "All vercel.json cron jobs (daily / 15-min Monday syncs) enumerated, and every run in the 7-day window classified pass/fail from Vercel logs"
+          - "All scheduled sync jobs enumerated, and every run in the 7-day window classified pass/fail from host logs"
           - "Every failure row is paired with a written diagnosis (cause + proposed fix); a failure lacking a diagnosis fails this criterion — the pairing is the check, no judgment word"
           - "Fixes are proposed, not auto-applied"
-        evidence_required: "Cron run audit summary (job, schedule, last 7 days status) from Vercel logs"
+        evidence_required: "Cron run audit summary (job, schedule, last 7 days status) from host logs"
         verifier_role: polads-ceo
         risk_level: low
 
   # ===========================================================
-  # LANE: system-self — cabinet + screenpipe self-maintenance
+  # LANE: system-self — cabinet + personal-source self-maintenance
   # ===========================================================
-  # WINDOW AMENDMENT 2026-07-05 (Captain-directed, Nate): system-self window
-  # widened 2 -> 3 active outcomes, reserving SLOT 3 for outcome-system-self-003
-  # (brain quality — self-improving memory/retrieval organ). -003 stays draft
-  # (staged: ~/.screenpipe/state/brain-probes/staging/outcome-system-self-003.yml)
-  # until its machinery is built + live-fire-verified, then ratified at hand-off.
+  # WINDOW AMENDMENT 2026-07-05 (Captain-directed): system-self window
+  # widened 2 -> 3 active outcomes, reserving SLOT 3 for
+  # outcome-system-self-003 (brain quality — self-improving
+  # memory/retrieval organ), ratified at hand-off after live-fire
+  # verification.
   # SLOT 1/3 for lane system-self — on achieved: renewal loop proposes successor
   - id: outcome-system-self-001
     name: "Typed policy engine promoted from shadow to enforcing"
@@ -326,9 +302,9 @@ outcomes:
     name: "Inbound-mail quarantine pass before LLM exposure"
     description: >
       R4 EchoLeak-class defense: trust-scoring + injection-sanitization in
-      the screenpipe inbox path (draft_lib / inbox-triage) so no LLM sees
-      raw inbound mail content unscreened. screenpipe edits follow the
-      house convention: timestamped backups, not git.
+      the personal-source inbox path so no LLM sees raw inbound mail
+      content unscreened. Personal-source edits follow the house
+      convention: timestamped backups, not git.
     status: active
     captain_ratified: true
     measurable_criteria:
@@ -336,18 +312,18 @@ outcomes:
         title: "Quarantine module: trust-scoring + injection sanitization with pytest corpus"
         owner_role: cos
         acceptance_criteria:
-          - "Module in ~/.screenpipe/pipes/_shared scores sender trust and sanitizes/flags injection patterns before content reaches any LLM call"
+          - "Module in the personal-source shared library scores sender trust and sanitizes/flags injection patterns before content reaches any LLM call"
           - "pytest corpus covers known injection shapes (instruction smuggling, tool-call coercion, link-exfil patterns)"
         evidence_required: "Module + passing pytest output; pre-change backup path noted"
         verifier_role: stephie-ceo
         risk_level: medium
-        rollback_note: "Restore from ~/.screenpipe/state/backups-YYYYMMDD copy of touched files"
+        rollback_note: "Restore from the timestamped backup copy of touched files"
       - node_id: sys-002-wire
         title: "Quarantine wired into draft-reply/inbox paths in shadow-log mode"
         owner_role: cos
         depends_on: [sys-002-module]
         acceptance_criteria:
-          - "Every inbound mail passes the quarantine before any LLM call in draft-reply / inbox-triage"
+          - "Every inbound mail passes the quarantine before any LLM call in the draft-reply / inbox-triage paths"
           - "Decisions logged (allow/sanitize/quarantine) without changing behavior until reviewed — shadow first, same pattern as the policy engine"
         evidence_required: "Wiring diff + shadow-decision log sample from a real run"
         verifier_role: stephie-ceo
@@ -366,22 +342,21 @@ outcomes:
 
   # SLOT 3/3 for lane system-self — on achieved: renewal loop proposes successor
   # RATIFIED 2026-07-06 under the Captain's recorded pre-authorization
-  # (2026-07-06: "1. yes, go when it makes sense" — condition: machinery built
-  # + live-fire verified). Met: brain-health sensor live (06/18h), memory-curator
-  # live (07/19h) with braked act-with-undo (cap25 / self-veto+auto-revert+freeze /
-  # identity-guard / mutex), live-fire drill PASSED (incl. honest-NULL trap),
-  # adversarial review PASS — its 3 conditions applied (stale-restore guard,
-  # person-alias propose-only, mid-run freeze re-check). Evidence:
-  # ~/.screenpipe/state/curator-ledger.jsonl + brain_health.json + staging/ratification-packet.md
+  # (2026-07-06: "1. yes, go when it makes sense" — condition: machinery
+  # built + live-fire verified). Met: brain-health sensor live,
+  # memory-curator live with braked act-with-undo, live-fire drill PASSED
+  # (incl. honest-NULL trap), adversarial review PASS — its 3 conditions
+  # applied. Evidence lives in the deployment-local state ledgers.
   - id: outcome-system-self-003
     name: Brain quality baseline + Memory Curator live
     description: >
-      The memory estate (vault + embeddings + graph + memories store) gains a
-      self-maintaining quality organ: durable probe baseline recorded, brain-health
-      sensor running on schedule, Memory Curator machinery live with braked
-      act-with-undo fix-classes, and every regression surfaced by the first full
-      sensor run closed. Bounded: achieved when the four nodes verify; ongoing
-      curation is machinery (services/pipes), not this outcome.
+      The memory estate (vault + embeddings + graph + memories store) gains
+      a self-maintaining quality organ: durable probe baseline recorded,
+      brain-health sensor running on schedule, Memory Curator machinery
+      live with braked act-with-undo fix-classes, and every regression
+      surfaced by the first full sensor run closed. Bounded: achieved when
+      the four nodes verify; ongoing curation is machinery, not this
+      outcome.
     lane: system-self
     status: active
     captain_ratified: true
@@ -390,10 +365,10 @@ outcomes:
         title: Durable probe baseline + brain-health sensor live
         owner_role: cos
         acceptance_criteria:
-          - frozen-core-14 probe suite + graded expectations + baseline in ~/.screenpipe/state/brain-probes/ (DONE 2026-07-05, verify present)
-          - brain-health pipe runs 2x/day via launchd; writes state/brain_health.json with p@1/p@3, integrity counters, per-writer output freshness, capture-volume watchdog
+          - frozen-core probe suite + graded expectations + baseline recorded in the deployment-local state dir (DONE 2026-07-05, verify present)
+          - brain-health pipe runs 2x/day via launchd; writes its health snapshot with retrieval precision, integrity counters, per-writer output freshness, capture-volume watchdog
           - dead-end retrieval ledger live (dead-end rows only carry query text, truncated; hash+intent otherwise)
-        evidence_required: state/brain_health.json trend history >= 3 runs; launchctl list shows the agent
+        evidence_required: health-snapshot trend history >= 3 runs; launchctl list shows the agent
         verifier_role: polads-ceo
         risk_level: low
         rollback_note: unload plist; ledger/state files are additive
@@ -402,9 +377,9 @@ outcomes:
         owner_role: cos
         depends_on: [brain-003-a]
         acceptance_criteria:
-          - screenpipe pipe memory-curator executes whitelisted reversible fix-classes ONLY (dedup-nonidentity, content_ts re-stamp, alias-add, re-park suppressed re-mints)
-          - brakes verified in code: per-run mutation cap; pre+post probe subset with auto-revert+freeze on regression (self-veto); identity/cross-person merges excluded (propose-only); ops-ledger explicit action vocab
-          - cabinet services.yml row reads brain_health.json under watchdog freshness floor; regression -> Redis trigger -> cos brain-audit skill
+          - the curator pipe executes whitelisted reversible fix-classes ONLY (dedup-nonidentity, content-timestamp re-stamp, alias-add, re-park suppressed re-mints)
+          - brakes verified in code — per-run mutation cap; pre+post probe subset with auto-revert+freeze on regression (self-veto); identity/cross-person merges excluded (propose-only); ops-ledger explicit action vocab
+          - cabinet services row reads the health snapshot under a watchdog freshness floor; regression -> trigger -> coordinating-officer brain-audit skill
         evidence_required: curator ops-ledger shows >=1 braked run; injected quarantine-tagged synthetic defect detected+fixed+verified (live-fire drill, synthetic entity only)
         verifier_role: polads-ceo
         risk_level: medium
@@ -415,8 +390,8 @@ outcomes:
         depends_on: [brain-003-a]
         acceptance_criteria:
           - every defect the first full sensor sweep surfaces is fixed or explicitly deferred-with-reason in the curator ledger
-          - frozen-core-14 p@1 >= 0.90 after closure
-        evidence_required: brain_health.json before/after + curator ledger entries
+          - frozen-core probe precision back above the ratified bar after closure
+        evidence_required: health snapshot before/after + curator ledger entries
         verifier_role: polads-ceo
         risk_level: low
         rollback_note: per-fix ops-ledger reverts
@@ -425,7 +400,7 @@ outcomes:
         owner_role: cos
         depends_on: [brain-003-b]
         acceptance_criteria:
-          - all brain-quality asks route through ONE Telegram kind + daily digest (morning-brief style); act-with-undo classes report via confirm/undo digest, not per-item asks
+          - all brain-quality asks route through ONE messaging kind + daily digest; act-with-undo classes report via confirm/undo digest, not per-item asks
           - cap designed (<=1 digest/day, <=1 structural batch/week) but OFF per field-test disturb-MAX ruling
         evidence_required: digest messages observed; no per-item ask spam in field test
         verifier_role: polads-ceo
@@ -438,41 +413,38 @@ outcomes:
   # INTAKE — not an outcome (removed 2026-06-10)
   # ===========================================================
   # The standing adhoc intake (formerly an outcome here) is MACHINERY,
-  # not a mission: a scheduled CoS routine (cron trigger -> sweep Monday
-  # Nate's-Todos 5098236573 + unclassified stream items -> classify to
-  # lane -> propose-only via brain ask_nate -> approved items become
-  # stream tasks or outcome proposals). A never-achievable outcome breaks
+  # not a mission: a scheduled coordinating-officer routine (cron trigger
+  # -> sweep the Captain's to-do surface + unclassified stream items ->
+  # classify to lane -> propose-only). A never-achievable outcome breaks
   # the draft->active->achieved->retired lifecycle and pollutes OVI.
-  # See docs/work-model.md (Intake) and the R3 intake routine in
-  # docs/clone-convergence-plan-2026-06-09.md.
-  # CAPTAIN APPROVAL 2026-06-10: Nate ratified standing intake (as the
-  # then-outcome adhoc-001); that approval carries over to this routine —
-  # build it in R3 without re-asking. Per-item proposals still gate via
-  # ask_nate as specified.
+  # See framework/docs/work-model.md (Intake).
+  # CAPTAIN APPROVAL 2026-06-10: the Captain ratified standing intake (as a
+  # then-outcome); that approval carries over to this routine — build it in
+  # R3 without re-asking. Per-item proposals still gate via the ask queue
+  # as specified.
 
   # ===========================================================
   # 2026-07-02 — AI-derived from directions.yml, Captain-ratified (card #3/#7)
   # ===========================================================
   # SLOT 2/2 for lane polads (freed by polads-003 achieved)
   - id: outcome-polads-004
-    name: "PolAds Basic+Pro subscription & billing live end-to-end"
+    name: "Lane subscription & billing live end-to-end"
     description: >
-      From price-model-approved-but-unbillable (Subscription epic 0/37, Paddle
-      Stuck in sandbox, entitlements half-enforced) to: a customer can
-      subscribe, be correctly entitled Basic vs Pro, and be charged with a
+      From price-model-approved-but-unbillable to: a customer can
+      subscribe, be correctly entitled per tier, and be charged with a
       reconciled ledger in production. Direction fit: bet "subscription &
-      billing finalization" — instrument delta: basic_to_pro_conversion
-      unmeasurable -> live; v1_live prerequisite for Sept 1. Derivation:
-      docs/plans/outcome-derivation-2026-07-02.md.
+      billing finalization" — instrument delta: tier-conversion
+      unmeasurable -> live; v1_live prerequisite for the launch date.
+      Derivation: docs/plans/outcome-derivation-2026-07-02.md.
     status: active
     captain_ratified: true
     measurable_criteria:
       - node_id: polads-004-entitlements
-        title: "Basic/Pro entitlement matrix enforced server-side, verified on staging"
+        title: "Tier entitlement matrix enforced server-side, verified on staging"
         owner_role: polads-ceo
         acceptance_criteria:
           - "Written one-page entitlement matrix (Captain-visible)"
-          - "Basic lock/greyout (3036217684), Basic wallet/credits open (3036649194), Pro share-credits (3038863708), dashboard T7 Pro-gate (3024648996) each conform to the matrix with a regression test"
+          - "Each tracked entitlement surface conforms to the matrix with a regression test"
         evidence_required: "Matrix doc + merged PR links + staging verification notes"
         verifier_role: stephie-ceo
         risk_level: medium
@@ -481,28 +453,28 @@ outcomes:
         title: "Wallet/credit ledger + checkout correctness closed"
         owner_role: polads-ceo
         acceptance_criteria:
-          - "Wallet-ledger UNIQUE index + qty-from-billed-amount (3018114858)"
-          - "UpgradeCheckout state machine unit-tested (3019803817)"
-          - "Live-amendment 1-credit charge wired per rule 3032953940 (3033388843)"
+          - "Ledger uniqueness constraint + quantity-from-billed-amount landed"
+          - "Checkout state machine unit-tested"
+          - "Metered-amendment charge wired per the ratified billing rule"
           - "No double-charge path demonstrable (ledger-integrity test)"
         evidence_required: "Merged PRs + green tests + ledger-integrity test output"
         verifier_role: stephie-ceo
         risk_level: medium
         rollback_note: "Schema changes via reversible migration; git revert for logic"
       - node_id: polads-004-paddle
-        title: "Paddle production readiness decided and configured"
+        title: "Payment-provider production readiness decided and configured"
         owner_role: polads-ceo
         acceptance_criteria:
-          - "EU/US compliance investigation (3004954017) resolved with a written disposition"
+          - "Compliance investigation resolved with a written disposition"
           - "VAT/tax + payout policy documented"
           - "Sandbox->production configuration plan written"
-          - "PROPOSE-ONLY: any spend/production Paddle config change executes only after explicit Captain approval (spend hard ceiling)"
+          - "PROPOSE-ONLY: any spend/production payment-provider config change executes only after explicit Captain approval (spend hard ceiling)"
         evidence_required: "Decision doc + config diff proposal + Captain approval record"
         verifier_role: cos
         risk_level: high
         rollback_note: "Config-only until approved; sandbox remains fallback"
       - node_id: polads-004-live
-        title: "First real Basic->Pro upgrade + top-up transaction in production, reconciled"
+        title: "First real tier-upgrade + top-up transaction in production, reconciled"
         owner_role: polads-ceo
         depends_on: [polads-004-entitlements, polads-004-ledger, polads-004-paddle]
         acceptance_criteria:
@@ -513,39 +485,39 @@ outcomes:
         evidence_required: "Sanitized transaction record + ledger reconciliation + approval trail"
         verifier_role: cos
         risk_level: high
-        rollback_note: "Vercel rollback + billing feature-flag off; Paddle sandbox re-point"
+        rollback_note: "Host rollback + billing feature-flag off; payment provider re-pointed to sandbox"
 
   # QUEUED DRAFT (window cap; activates when polads-001 achieves, or Captain may rule it stream — card #4)
   - id: outcome-polads-005
-    name: "Publisher dashboard converged-v4 cutover live"
+    name: "Customer dashboard next-gen cutover live"
     description: >
-      Publishers move from the old dashboard to converged-v4 (Home/Records/
-      Market-Insight/Pro-gate) in production, 24-locale parity. Direction fit:
-      bet "publisher dashboard" — support_load_per_customer down,
-      basic_to_pro_conversion up (T7 teaser). Honesty note: T-series already
-      flows as stream in Sprint 11; this outcome adds the verification+cutover
-      gate. Node sketch in docs/plans/outcome-derivation-2026-07-02.md.
+      Customers move from the old dashboard to the next-gen dashboard in
+      production, full locale parity. Direction fit: bet "customer
+      dashboard" — support-load instrument down, tier-conversion up.
+      Honesty note: the underlying series already flows as stream; this
+      outcome adds the verification+cutover gate. Node sketch in
+      docs/plans/outcome-derivation-2026-07-02.md.
     status: draft
     captain_ratified: false
     measurable_criteria:
-      - "T-series complete + verified with tests (T2 3024989131, T4 3024990331, T6 3024988454, T7 3024648996, T8 3025020850, T9 3025000015, T10 3025762374)"
-      - "i18n 24-locale parity sweep evidence"
+      - "Tracked dashboard series complete + verified with tests"
+      - "Full-locale parity sweep evidence"
       - "PROPOSE-ONLY: production cutover + smoke needs explicit Captain approval (production hard ceiling)"
 
 
   # SLOT 1/2 for lane stephie (successor to stephie-001; slot 2 deliberately empty)
   - id: outcome-stephie-002
-    name: "Booking front-door v0 — job-banner flow generalized to a second bookable format with order handoff"
+    name: "Booking front-door v0 — proven creator flow generalized to a second bookable format with order handoff"
     description: >
-      From single-purpose job-banner tool (/create/job-banners) to a booking
-      front-door: an advertiser takes >=1 additional ad format from request ->
-      creative -> structured order draft end-to-end on staging, live behind a
-      flag. Direction fit: bet "generalize the proven AI job-banner flow into
-      the booking front-door" — instrument delta: self_served_booking_rate
-      0 -> first pilot value; request_to_live_lead_time first baseline.
-      GATE: stephie-002-spec scope is bounded by directions.yml stephie
-      not_goals — Captain must fill that TODO before the spec finalizes
-      (card #11). Derivation: docs/plans/outcome-derivation-2026-07-02.md.
+      From single-purpose creator tool to a booking front-door: a customer
+      takes >=1 additional format from request -> creative -> structured
+      order draft end-to-end on staging, live behind a flag. Direction fit:
+      bet "generalize the proven creator flow into the booking front-door"
+      — instrument delta: self-served booking rate 0 -> first pilot value;
+      request-to-live lead time first baseline. GATE: stephie-002-spec
+      scope is bounded by directions.yml stephie not_goals — Captain must
+      fill that TODO before the spec finalizes (card #11). Derivation:
+      docs/plans/outcome-derivation-2026-07-02.md.
     status: active
     captain_ratified: true
     measurable_criteria:
@@ -554,8 +526,8 @@ outcomes:
         owner_role: stephie-ceo
         acceptance_criteria:
           - "Format model: what makes a format bookable"
-          - "Reuse map of the job-banner canvas pipeline"
-          - "GAM order-handoff shape defined"
+          - "Reuse map of the proven creator pipeline"
+          - "Ad-server order-handoff shape defined"
           - "Measurable acceptance criteria + effort estimate; bounded by directions.yml stephie not_goals (Captain TODO filled first)"
         evidence_required: "Spec doc in shared/interfaces/product-specs/ + spec-quality-gate pass"
         verifier_role: polads-ceo
@@ -566,22 +538,22 @@ outcomes:
         owner_role: stephie-ceo
         depends_on: [stephie-002-spec]
         acceptance_criteria:
-          - "An advertiser produces a campaign-ready creative of the chosen second format end-to-end on a preview deployment"
-          - "Regression tests on the generalized (non-job-specific) pipeline pieces"
-        evidence_required: "PR links on STEP-Network/stephie-mcp + preview URL + verification notes"
+          - "A customer produces a campaign-ready creative of the chosen second format end-to-end on a preview deployment"
+          - "Regression tests on the generalized pipeline pieces"
+        evidence_required: "PR links on the lane repo + preview URL + verification notes"
         verifier_role: polads-ceo
         risk_level: medium
         rollback_note: "Preview-only; git revert"
       - node_id: stephie-002-order
-        title: "Booking request -> structured order draft (read-only GAM verification)"
+        title: "Booking request -> structured order draft (read-only ad-server verification)"
         owner_role: stephie-ceo
         depends_on: [stephie-002-format2]
         acceptance_criteria:
-          - "Submitted booking request yields a validated order object (GAM order draft or internal booking record)"
-          - "Read-only GAM verification of targeting/inventory references"
-          - "First tasks created in GAM Campaign Order epic 2730544524"
-          - "PROPOSE-ONLY: any GAM write / live order creation requires explicit Captain approval"
-        evidence_required: "Order object samples + read-only GAM verification transcript"
+          - "Submitted booking request yields a validated order object (ad-server order draft or internal booking record)"
+          - "Read-only ad-server verification of targeting/inventory references"
+          - "First tasks created in the order epic on the tracker"
+          - "PROPOSE-ONLY: any ad-server write / live order creation requires explicit Captain approval"
+        evidence_required: "Order object samples + read-only ad-server verification transcript"
         verifier_role: polads-ceo
         risk_level: medium
         rollback_note: "No external writes until approved; internal records reversible"
@@ -590,14 +562,14 @@ outcomes:
         owner_role: stephie-ceo
         depends_on: [stephie-002-order]
         acceptance_criteria:
-          - "Front-door live on ai.stepnetwork.dk behind a feature flag"
+          - "Front-door live on the lane's production host behind a feature flag"
           - "One pilot booking exercised"
-          - "request_to_live_lead_time + self_served_booking_rate baselines recorded for the direction instruments"
-          - "PROPOSE-ONLY: production deploy needs Captain approval; any advertiser-facing pilot comms via brain queue_draft (external_comms ceiling)"
+          - "Lead-time + self-served-booking-rate baselines recorded for the direction instruments"
+          - "PROPOSE-ONLY: production deploy needs Captain approval; any customer-facing pilot comms via the draft queue (external_comms ceiling)"
         evidence_required: "Deployment id + flag config + baseline measurement note"
         verifier_role: cos
         risk_level: high
-        rollback_note: "Feature flag off; Vercel rollback"
+        rollback_note: "Feature flag off; host rollback"
 
   # ===========================================================
   # LANE: system-self — captains-cabinet world (WORLD-ONBOARDING-V1B core slice)

@@ -8,7 +8,9 @@
 # =============================================================
 
 # Founder's name — used in voice messages and officer communication
-captain_name: Nate                    # Default: "Captain" if not set
+# (public-tree scrub 2026-07-12: personal values live in the deployment's
+# untracked overlay / cabinet/.env, never in this tracked file)
+captain_name: Captain                 # Default: "Captain" if not set
 
 # Founder's role/title — framework code (e.g. the fidelity decision cell) names
 # the Captain's role via framework.env.captain_role(). Default: "the Captain".
@@ -22,7 +24,9 @@ captain_timezone: Europe/Berlin       # CEST/CET — auto-adjusts for DST
 
 # Founder's Telegram chat ID — used by hooks to detect Captain conversations
 # Find yours: look at the chat_id field in incoming Telegram messages
-captain_telegram_chat_id: "8631324091"
+# Synthetic placeholder (public-tree scrub 2026-07-12): the real chat id is
+# deployment-local and never belongs in this tracked file.
+captain_telegram_chat_id: "0000000000"
 
 # =============================================================
 # Org identity — internal email domains + Monday board ids
@@ -205,7 +209,7 @@ communication:
 # -------------------------------------------------------------------------
 # Comms Officer registration — PREPARED 2026-06-24, NOT YET ACTIVE.
 # -------------------------------------------------------------------------
-# Domain officer (portfolio/hq deployment): owns Nate's Outlook + Teams comms
+# Domain officer (portfolio/hq deployment): owns the Captain's Outlook + Teams comms
 # end-to-end. Telegram-DARK (no bot, no Captain DM — surfaces ONLY through the
 # Chair via cabinet:frontdoor:intake + the captain-attention queue). Model
 # claude-opus-4-8[1m] (fleet default; comes from CABINET_MODEL /
@@ -269,7 +273,7 @@ officers:
 #     of 2026-04-26 06:25 UTC.
 #   - Linear is a READ-ONLY archive post-cutover (retained for audit; do not
 #     write to Linear).
-#   - GitHub Issues on nate-step/founders-cabinet remain the Cabinet-framework
+#   - GitHub Issues on the framework repo remain the Cabinet-framework
 #     backlog (infra / officer-system / meta-features).
 
 # =============================================================

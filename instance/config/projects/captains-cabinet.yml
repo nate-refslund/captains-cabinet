@@ -8,7 +8,7 @@
 product:
   name: "Captain's Cabinet"
   description: "Self-organizing AI organization runtime for one product"
-  repo: https://github.com/nate-step/captains-cabinet
+  repo: https://github.com/example-org/captains-cabinet  # placeholder (public-tree scrub 2026-07-12); inert — activation mode is existing_repo_path
   repo_branch: master
   mount_path: /workspace/captains-cabinet
 

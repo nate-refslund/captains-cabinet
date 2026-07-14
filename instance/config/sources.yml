@@ -1,5 +1,5 @@
 # instance/config/sources.yml — the LIVE personal-sensing SOURCE binding for THIS
-# deployment (captain Nate, Flavor-A / screenpipe brain).
+# deployment (Flavor-A / screenpipe brain).
 #
 # framework.sources.get_source() reads this file, adds `instance/flavor-a` to
 # sys.path, importlib-loads the module named below, instantiates the class, and

@@ -1,5 +1,5 @@
 # =============================================================
-# DRAFT for Nate review — HQ (MacBook) cabinet instance identity
+# DRAFT for Captain review — HQ (MacBook) cabinet instance identity
 # =============================================================
 # PORTFOLIO ROSTER REWRITE (Captain-decided redesign 2026-06-10): the hq
 # deployment moves from 5 functional officers (cos/cto/cpo/cro/coo) to a
@@ -64,7 +64,7 @@
 
 cabinet_id: hq-macbook
 cabinet_mode: multi
-machine: nates-macbook-pro
+machine: hq-macbook-pro            # machine label (public-tree scrub 2026-07-12: personal hostname generalized)
 preset: portfolio
 description: >
   Second cabinet instance of the same repo/branch (convergence-v2) on the
@@ -112,8 +112,8 @@ roster:
 # -------------------------------------------------------------
 # Warroom — Telegram group for HQ broadcast
 # -------------------------------------------------------------
-# TOKEN-TBD: Nate creates the HQ group + invites the Chair bot, then sets
-# the chat id in cabinet/.env. Never put the literal id/token in this file.
+# TOKEN-TBD: the Captain creates the HQ group + invites the Chair bot, then
+# sets the chat id in cabinet/.env. Never put the literal id/token in this file.
 # Wire-up at activation: add per-context rows in instance/config/warrooms.yml
 # pointing at ${TELEGRAM_HQ_CHAT_ID} (rows for the new contexts are NOT added
 # yet — contexts ship inactive). Lane CEOs post lane updates here — it is
@@ -124,7 +124,7 @@ warroom:
 # -------------------------------------------------------------
 # Telegram — single-bot Chair surface (portfolio preset default)
 # -------------------------------------------------------------
-# TOKEN-TBD: Nate provides ONE new BotFather bot for the HQ Chair (do NOT
+# TOKEN-TBD: the Captain provides ONE new BotFather bot for the HQ Chair (do NOT
 # reuse the Mini's tokens — two pollers on one token steal each other's
 # updates). Username goes here once created; the token goes ONLY in
 # cabinet/.env under the env var name listed. bot_mode single_ceo with

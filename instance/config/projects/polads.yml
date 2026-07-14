@@ -2,16 +2,17 @@
 # Project: PolAds
 # =============================================================
 # R2 prep draft for the HQ (MacBook) instance. status: pending —
-# nothing activates until switch-project/activate-project is run by Nate.
-# Repo identity from the screenpipe codebase pillar
-# (~/.screenpipe/pipes/_shared/codebase_config.py, Monday product 2723505568).
+# nothing activates until switch-project/activate-project is run by the
+# Captain. PUBLIC-TREE SCRUB 2026-07-12: repo/tracker/database identity
+# values below are neutralized placeholders — the real product identity is
+# deployment-personal and lives in the untracked instance overlay.
 # =============================================================
 
 product:
   name: PolAds
-  description: "EU political advertisement transparency platform (polads.eu, EU Reg 2025/1410)"
-  repo: https://github.com/STEP-Network/v0-politiske-annoncer
-  repo_branch: main                # staging branch also active (staging -> xtest.polads.eu)
+  description: "Regulatory-transparency platform (the polads lane's product)"
+  repo: https://github.com/example-org/polads
+  repo_branch: main                # staging branch also active
   mount_path: /workspace/product   # mac-native local checkout path decided at activation
 
 activation:
@@ -19,7 +20,7 @@ activation:
   mode: existing_repo_url
   activated_at: ""
   activation_mission_id: ""
-  notes: "HQ instance R2 prep — Nate activates; outcomes live in instance/config/outcomes.yml (gated to CABINET_ID=hq-macbook)"
+  notes: "HQ instance R2 prep — the Captain activates; outcomes live in instance/config/outcomes.yml (gated to CABINET_ID=hq-macbook)"
 
 # =============================================================
 # Notion — not used for PolAds (knowledge lives in the brain vault
@@ -79,20 +80,21 @@ linear:
   workspace_url: ""
 
 # =============================================================
-# Neon — PolAds production database
+# Neon — lane production database (placeholder; real project name is
+# deployment-personal)
 # =============================================================
 neon:
-  project: politiske-annoncer      # Neon project id restless-king-62586913
+  project: example-polads-db
 
 # =============================================================
-# Vercel — PolAds hosting (cabinet investigated 2026-06-22)
+# Vercel — lane hosting (placeholder; real app name is deployment-personal)
 # =============================================================
 vercel:
-  project: v0-politiske-annoncer   # Vercel app (xtest.polads.eu staging, polads.eu prod)
+  project: example-polads-app
 
 # =============================================================
-# Monday — product pulse 2723505568 (on the SHARED task board 5091839409;
-# each task → epic → product). Routing is via the dev-tasks plugin in the
+# Tracker — product pulse lives on the deployment's SHARED task board
+# (each task → epic → product). Routing is via the dev-tasks plugin in the
 # repo, NOT a cabinet adapter (see Tasks note below).
 # =============================================================
 

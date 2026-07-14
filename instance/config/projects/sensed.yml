@@ -9,7 +9,7 @@
 product:
   name: Sensed
   description: "Dual-map product for meaningful and anomalous human experiences"
-  repo: https://github.com/nate-step/Sensed
+  repo: https://github.com/example-org/Sensed  # placeholder (public-tree scrub 2026-07-12); legacy config, activation pending
   repo_branch: main
   mount_path: /workspace/product
 
