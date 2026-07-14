@@ -78,6 +78,54 @@ def save_standing(standing: dict) -> None:
         os.close(lf)
 
 
+def _mutate_standing(skey: str, updater):
+    """Atomically apply ``updater`` to ``standing[skey]`` under the flock,
+    RE-READING the on-disk map INSIDE the lock so a concurrent gate pass's
+    changes to OTHER keys (and to this key) survive. ``save_standing`` guarded
+    only the write, not the load→decide→save read-modify-write, so two passes
+    that loaded the same snapshot wrote last-writer-wins and dropped each other's
+    entries — a lost entry then re-mints a duplicate Captain card and orphans the
+    original message_id. Here the read+merge+write is one critical section.
+    ``updater(old_or_None)`` returns the new value to SET, or ``None`` to DELETE
+    the key. Returns the merged map (callers keep an in-memory copy coherent)."""
+    import fcntl
+    d = _attention_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    lock = d / ".standing.lock"
+    lf = os.open(str(lock), os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        fcntl.flock(lf, fcntl.LOCK_EX)
+        current = load_standing()
+        newval = updater(current.get(skey))
+        if newval is None:
+            current.pop(skey, None)
+        else:
+            current[skey] = newval
+        tmp = _standing_file().with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(current, ensure_ascii=False, indent=0),
+                       encoding="utf-8")
+        os.replace(tmp, _standing_file())
+        return current
+    finally:
+        fcntl.flock(lf, fcntl.LOCK_UN)
+        os.close(lf)
+
+
+def _edit_succeeded(res) -> bool:
+    """A CONFIDENT standing-card edit success. Biased to False when unsure: an
+    ambiguous/failed edit then DROPS the standing entry so the next pass re-sends
+    a FRESH card (annoyance) instead of persisting a render_hash for a message
+    that may be gone — which would suppress every future update for that
+    situation forever (permanent silence, the darker failure)."""
+    if not isinstance(res, dict):
+        return False
+    if res.get("error") or str(res.get("status") or "").lower() in (
+            "error", "failed", "unsupported", "noop", "not-found", "not_found"):
+        return False
+    return bool(res.get("message_ids") or res.get("sent") is True
+                or res.get("ok") is True)
+
+
 # ---------------------------------------------------------------------------
 # Render — TERSE (Captain 2026-07-09)
 # ---------------------------------------------------------------------------
@@ -428,7 +476,6 @@ def deliver(decision: dict, *, send_fn=None, edit_fn=None, briefing_fn=None,
     send (new message_id) and edit (new render_hash/state). Never raises on an
     edit no-op. Returns the transport result (or a status dict)."""
     action = decision.get("action")
-    persist = standing is None
     if standing is None:
         standing = load_standing()
     send_fn = send_fn or _default_send
@@ -444,12 +491,15 @@ def deliver(decision: dict, *, send_fn=None, edit_fn=None, briefing_fn=None,
                               buttons=decision.get("buttons"))
         mids = (res or {}).get("message_ids") or []
         if mids:
-            standing[skey] = {"message_id": mids[0], "state": "open",
-                              "render_hash": decision.get("render_hash"),
-                              "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                              "class_id": decision.get("class_id")}
-            if persist:
-                save_standing(standing)
+            newval = {"message_id": mids[0], "state": "open",
+                      "render_hash": decision.get("render_hash"),
+                      "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                      "class_id": decision.get("class_id")}
+            standing[skey] = newval  # keep the caller's in-memory copy coherent
+            # Merge-under-lock: persist ONLY this key, re-reading a concurrent
+            # pass's other keys — never blindly overwrite the whole map (the RMW
+            # race that dropped entries + re-minted duplicate cards).
+            _mutate_standing(skey, lambda _old: newval)
         return res
 
     if action == "edit":
@@ -458,10 +508,24 @@ def deliver(decision: dict, *, send_fn=None, edit_fn=None, briefing_fn=None,
                               buttons=decision.get("buttons"))
         cur = standing.get(skey)
         if cur is not None:
-            cur["render_hash"] = decision.get("render_hash")
-            cur["ts"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-            if persist:
-                save_standing(standing)
+            if _edit_succeeded(res):
+                rhash = decision.get("render_hash")
+                ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+                def _upd(old):
+                    base = dict(old) if isinstance(old, dict) else dict(cur)
+                    base["render_hash"] = rhash
+                    base["ts"] = ts
+                    return base
+                standing[skey] = _upd(cur)
+                _mutate_standing(skey, _upd)
+            else:
+                # Edit hit a dead/absent message — DROP the entry so the next
+                # pass re-sends a FRESH card instead of forever suppressing or
+                # retrying a doomed edit (permanent silence on the Captain
+                # surface). Annoyance over silence, per the map's own contract.
+                standing.pop(skey, None)
+                _mutate_standing(skey, lambda _old: None)
         return res
 
     if action in ("briefing", "weekly"):
@@ -523,12 +587,16 @@ def submit(item: dict, *, ch: "dict | None" = None, now: "datetime | None" = Non
     if decision.get("action") == "chair":
         file_t2 = file_t2 or _default_file_t2
         rid = file_t2(item, decision, ch=ch, now=now)
-        save_standing(standing)
+        # decide()/file_t2() do not mutate the standing map — nothing to persist.
+        # (The old blanket save_standing here rewrote an unchanged, possibly
+        # stale snapshot and could clobber a concurrent pass's entries.)
         return {"decision": decision, "result": {"status": "chair-filed",
                                                  "request_id": rid}}
     result = deliver(decision, send_fn=send_fn, edit_fn=edit_fn,
                      briefing_fn=briefing_fn, standing=standing, item=item)
-    save_standing(standing)
+    # deliver() now persists its single-key change atomically (merge-under-lock);
+    # a blanket save here would overwrite that with submit's stale snapshot and
+    # re-introduce the RMW race this fix closes.
     return {"decision": decision, "result": result}
 
 

@@ -83,6 +83,66 @@ def test_identical_rerender_suppresses():
     assert d2["action"] == "suppress" and "no-change" in d2["reason"]
 
 
+def test_mutate_standing_merges_other_keys_and_deletes():
+    """RMW fix: _mutate_standing re-reads the on-disk map UNDER the lock and
+    applies exactly one key, so a concurrent pass's OTHER keys survive (no
+    last-writer-wins clobber that dropped entries + re-minted duplicate cards);
+    a None updater deletes."""
+    gate.save_standing({"k1": {"message_id": 1, "render_hash": "h1"}})
+    gate._mutate_standing("k2", lambda _old: {"message_id": 2, "render_hash": "h2"})
+    assert set(gate.load_standing()) == {"k1", "k2"}          # k1 NOT clobbered
+    gate._mutate_standing("k1", lambda _old: None)
+    assert set(gate.load_standing()) == {"k2"}                # delete works
+
+
+def test_deliver_persists_per_key_preserving_concurrent_entry():
+    """A stale-snapshot deliver must not lose a concurrent deliver's entry:
+    deliver() persists its single key via merge-under-lock, re-reading disk."""
+    send = lambda t, **k: {"sent": True, "message_ids": [321]}
+    editf = lambda m, t, **k: {"sent": True, "message_ids": [m]}
+    dA = gate.decide(_item(subject="alpha", evidence=["a.md"]), ch=CH, now=NOON, standing={})
+    dB = gate.decide(_item(subject="beta", evidence=["b.md"]), ch=CH, now=NOON, standing={})
+    assert dA["situation_key"] != dB["situation_key"]
+    gate.deliver(dA, send_fn=send, edit_fn=editf, standing={})     # disk: {A}
+    gate.deliver(dB, send_fn=send, edit_fn=editf, standing={})     # stale {} → merge
+    disk = gate.load_standing()
+    assert dA["situation_key"] in disk and dB["situation_key"] in disk
+
+
+def test_failed_edit_drops_entry_so_next_pass_resends():
+    """comms-attention-1: an edit that hits a DEAD message must DROP the standing
+    entry (→ fresh re-send next pass), not persist a render_hash that forever
+    suppresses every future update (silent darkening)."""
+    send = lambda t, **k: {"sent": True, "message_ids": [777]}
+    fail_edit = lambda m, t, **k: {"status": "error", "sent": False}
+    d1 = gate.decide(_item(), ch=CH, now=NOON, standing={})
+    gate.deliver(d1, send_fn=send, edit_fn=lambda m, t, **k: {"sent": True, "message_ids": [m]}, standing={})
+    skey = d1["situation_key"]
+    assert skey in gate.load_standing()
+    st = gate.load_standing()
+    d2 = gate.decide(_item(steps=[{"title": "Block"}, {"title": "Confirm"}], state="acted"),
+                     ch=CH, now=NOON, standing=st)
+    assert d2["action"] == "edit"
+    gate.deliver(d2, send_fn=send, edit_fn=fail_edit, standing=st)
+    assert skey not in gate.load_standing()      # dropped, not darkened
+
+
+def test_successful_edit_updates_render_hash_and_keeps_entry():
+    send = lambda t, **k: {"sent": True, "message_ids": [777]}
+    ok_edit = lambda m, t, **k: {"sent": True, "message_ids": [m]}
+    d1 = gate.decide(_item(), ch=CH, now=NOON, standing={})
+    gate.deliver(d1, send_fn=send, edit_fn=ok_edit, standing={})
+    skey = d1["situation_key"]
+    h0 = gate.load_standing()[skey]["render_hash"]
+    st = gate.load_standing()
+    d2 = gate.decide(_item(steps=[{"title": "Block"}, {"title": "Confirm"}], state="acted"),
+                     ch=CH, now=NOON, standing=st)
+    assert d2["action"] == "edit"
+    gate.deliver(d2, send_fn=send, edit_fn=ok_edit, standing=st)
+    disk = gate.load_standing()
+    assert skey in disk and disk[skey]["render_hash"] != h0
+
+
 def test_batch_card_at_night_goes_to_briefing():
     d = gate.decide(_item(kind="note"), ch=CH, now=NIGHT, standing={})
     assert d["action"] == "briefing"
