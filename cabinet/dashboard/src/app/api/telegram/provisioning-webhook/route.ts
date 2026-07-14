@@ -10,7 +10,8 @@
  * Dispatches to `provisioning-flow.ts` for state machine logic.
  * Replies to Captain via Telegram Bot API (sendMessage).
  *
- * Feature flag: Returns 503 if CABINETS_PROVISIONING_ENABLED is not set.
+ * Feature flag: Multi-Cabinet provisioning returns 503 when disabled. The
+ * canonical post-hatch `/onboard` journey remains available independently.
  *
  * Polling: After all bots adopted, starts a background polling loop that
  * sends live status updates. PR 5 will replace this with SSE push.
@@ -26,6 +27,11 @@ import {
   loadState,
 } from '@/lib/provisioning/flow'
 import type { BotMessage } from '@/lib/provisioning/flow'
+import {
+  handleTelegramOnboarding,
+  handleTelegramOnboardingCallback,
+  isOnboardingIntent,
+} from '@/lib/onboarding/telegram'
 
 export const dynamic = 'force-dynamic'
 
@@ -60,6 +66,12 @@ interface TelegramMessage {
 interface TelegramUpdate {
   update_id: number
   message?: TelegramMessage
+  callback_query?: {
+    id: string
+    from: TelegramUser
+    message?: TelegramMessage
+    data?: string
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -99,7 +111,11 @@ const TELEGRAM_API_BASE = 'https://api.telegram.org/bot'
 async function sendTelegramMessage(
   chatId: number,
   text: string,
-  replyToMessageId?: number
+  replyToMessageId?: number,
+  options?: {
+    plain?: boolean
+    buttons?: Array<Array<{ text: string; callback_data: string }>>
+  }
 ): Promise<void> {
   const token = process.env.MANAGER_BOT_TOKEN
   if (!token) {
@@ -112,10 +128,13 @@ async function sendTelegramMessage(
   const body: Record<string, unknown> = {
     chat_id: chatId,
     text: truncated,
-    parse_mode: 'Markdown',
   }
+  if (!options?.plain) body.parse_mode = 'Markdown'
   if (replyToMessageId) {
     body.reply_to_message_id = replyToMessageId
+  }
+  if (options?.buttons && options.buttons.length > 0) {
+    body.reply_markup = { inline_keyboard: options.buttons }
   }
 
   try {
@@ -144,13 +163,33 @@ async function sendReplies(
 ): Promise<void> {
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i]
-    await sendTelegramMessage(chatId, msg.text, i === 0 ? replyToId : undefined)
+    await sendTelegramMessage(chatId, msg.text, i === 0 ? replyToId : undefined, {
+      plain: msg.plain,
+      buttons: msg.buttons,
+    })
     // If message has additional chained messages, send them too
     if (msg.additional) {
       for (const extra of msg.additional) {
-        await sendTelegramMessage(chatId, extra.text)
+        await sendTelegramMessage(chatId, extra.text, undefined, {
+          plain: extra.plain,
+          buttons: extra.buttons,
+        })
       }
     }
+  }
+}
+
+async function answerCallbackQuery(callbackId: string): Promise<void> {
+  const token = process.env.MANAGER_BOT_TOKEN
+  if (!token) return
+  try {
+    await fetch(`${TELEGRAM_API_BASE}${token}/answerCallbackQuery`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ callback_query_id: callbackId }),
+    })
+  } catch {
+    // The reply card still lands; clearing Telegram's spinner is best-effort.
   }
 }
 
@@ -159,9 +198,10 @@ async function sendReplies(
 // ---------------------------------------------------------------------------
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  // Feature flag guard
+  // The multi-Cabinet provisioning flag does not gate the canonical
+  // post-hatch orientation. Evaluate it now, but apply it only after parsing
+  // enough of the authenticated update to distinguish /onboard.
   const flagResponse = featureFlagCheck()
-  if (flagResponse) return flagResponse
 
   // Parse update
   let update: TelegramUpdate
@@ -172,9 +212,30 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ ok: true })
   }
 
+  const callback = update.callback_query
+  if (callback?.data?.startsWith('onboard:') && callback.message) {
+    const chatId = callback.message.chat.id
+    if (!isCaptainChat(chatId)) {
+      console.warn(`[provisioning-webhook] Rejected callback from unauthorized chat_id: ${chatId}`)
+      return NextResponse.json({ ok: true })
+    }
+    const replies = await handleTelegramOnboardingCallback(
+      callback.data,
+      `telegram-update-${update.update_id}`
+    )
+    await sendReplies(chatId, replies, callback.message.message_id)
+    await answerCallbackQuery(callback.id)
+    return NextResponse.json({ ok: true })
+  }
+
   const message = update.message
+  const isOnboardingMessage = Boolean(
+    message && (message.text || message.caption) &&
+    isOnboardingIntent(message.text || message.caption || '')
+  )
+  if (flagResponse && !isOnboardingMessage) return flagResponse
   if (!message) {
-    // Non-message update (callback query, etc.) — not handled in PR 4
+    // Unknown callback queries and other non-message updates are acknowledged.
     return NextResponse.json({ ok: true })
   }
 
@@ -196,8 +257,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ ok: true })
   }
 
-  // Token redaction for logging
-  const logSafeText = rawText.replace(/[0-9]{8,12}:[a-zA-Z0-9_-]{35,}/g, '[TOKEN_REDACTED]')
+  // A First Window command may contain a private absolute path and purpose.
+  // Keep both out of process logs; the canonical core records only bounded,
+  // structured receipts. Retain token redaction for the older provisioning
+  // flow, whose inputs do not contain onboarding source details.
+  const logSafeText = isOnboardingMessage
+    ? '[ONBOARDING_COMMAND_REDACTED]'
+    : rawText.replace(/[0-9]{8,12}:[a-zA-Z0-9_-]{35,}/g, '[TOKEN_REDACTED]')
   console.log(`[provisioning-webhook] chat=${chatId} text="${logSafeText}"`)
 
   // ------------------------------------------------------------------
@@ -205,7 +271,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // ------------------------------------------------------------------
   let replies: BotMessage[]
   try {
-    replies = await handleMessage(String(chatId), rawText)
+    replies = isOnboardingMessage
+      ? await handleTelegramOnboarding(rawText, `telegram-update-${update.update_id}`)
+      : await handleMessage(String(chatId), rawText)
   } catch (err) {
     console.error('[provisioning-webhook] handleMessage error:', err)
     await sendTelegramMessage(chatId, 'Something went wrong. Please try again or say "cancel".')

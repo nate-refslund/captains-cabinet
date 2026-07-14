@@ -846,6 +846,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         openDash.isEnabled = rootOK && dashboardUp
         if !dashboardUp { openDash.toolTip = "dashboard not running (loopback probe failed)" }
         menu.addItem(openDash)
+        let openOrientation = actionItem("Continue Orientation", #selector(openOrientationAction))
+        openOrientation.isEnabled = rootOK && dashboardUp
+        if !dashboardUp { openOrientation.toolTip = "dashboard not running (loopback probe failed)" }
+        menu.addItem(openOrientation)
         let openWorld = actionItem("Open World", #selector(openWorldAction))
         openWorld.isEnabled = rootOK && dashboardUp
         if !dashboardUp { openWorld.toolTip = "dashboard not running (loopback probe failed)" }
@@ -945,6 +949,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // ---- actions ----
 
     @objc private func openDashboard() { openLoopback(path: "/") }
+
+    /// Commercial app shell: route into the SAME Dashboard-owned journey.
+    /// The companion stores no onboarding state and performs no onboarding act.
+    @objc private func openOrientationAction() { openLoopback(path: "/onboarding") }
 
     /// /world is auth-gated — the first open bounces to /login; expected, documented.
     @objc private func openWorldAction() { openLoopback(path: "/world") }

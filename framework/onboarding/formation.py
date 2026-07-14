@@ -1,11 +1,15 @@
-"""framework.onboarding.formation — the Formation stage machine (Phase 3 SCAFFOLD).
+"""framework.onboarding.formation — the deep Formation stage machine (scaffold).
 
-Formation is the propose-only deep self-setup run (onboarding vision 2026-07-14
-§4 Phase 3): discover → consent → ingest/organize → strategy map → the T+24h
+Formation is the post-First-Dividend, propose-only deep self-setup run
+(``docs/plans/onboarding-v2-design-of-record-2026-07-14.md``): discover →
+consent → ingest/organize → strategy map → the T+24h
 strategic briefing. THIS module is the SKELETON only — run-id + journal
 helpers, resume logic, undo, and stage entry-point STUBS. Every stage writes
 an honest IOU artifact ("not yet built — Phase 3 increment N"); no stage does
-fake work, calls an LLM, touches the network, or reads any Captain data.
+fake work, calls an LLM, touches the network, or reads any Captain data. The
+production First Window + hash-bound Charter live in
+``framework.onboarding.journey``; this scaffold MUST NOT duplicate that state
+or be presented as though deep orientation is implemented.
 
 Safety model (structural, not conventional):
 * PROPOSE-ONLY / NOTHING ACTIVATES — every artifact lands under

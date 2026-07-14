@@ -152,6 +152,12 @@ def test_source_doctrine_greps(src: str):
     assert '"STOP"' in src, 'typed-confirm literal "STOP" missing'
     assert '"RESUME"' in src, 'typed-confirm literal "RESUME" missing'
 
+    # Commercial app shell routes into the shared journey. It must not grow a
+    # companion-owned onboarding writer or a second source of truth.
+    assert 'Continue Orientation' in src
+    assert 'openLoopback(path: "/onboarding")' in src
+    assert "framework.onboarding.journey" not in src
+
 
 def test_info_plist_contract():
     with PLIST.open("rb") as fh:
