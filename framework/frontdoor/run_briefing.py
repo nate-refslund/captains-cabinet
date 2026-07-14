@@ -41,6 +41,12 @@ from framework import env
 from framework.frontdoor import (composer, daily_recap, morning_synthesis,
                                  run_frontdoor, tell_digest)
 
+# Instance-memory layout the frontdoor writes into, declared as a single named
+# REL constant — the same convention as framework.onboarding.genesis's
+# FIRST_BRIEFING_DIR_REL / LIBRARY_DIR_REL. Keeps the instance-path dependency
+# named and greppable in one place rather than scattered Path segments.
+_BRIEFINGS_DIR_REL = "instance/memory/briefings"
+
 
 def _is_pm() -> bool:
     """True when the wrapper flagged this as the evening (PM) run.
@@ -117,7 +123,7 @@ def _briefings_dir():
     from pathlib import Path
     root = os.environ.get("CABINET_ROOT", "").strip()
     base = Path(root) if root else Path(__file__).resolve().parents[2]
-    return base / "instance" / "memory" / "briefings"
+    return base / _BRIEFINGS_DIR_REL
 
 
 def _archive_briefing_body(text: str) -> str:
