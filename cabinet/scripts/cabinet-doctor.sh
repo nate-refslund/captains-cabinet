@@ -128,11 +128,20 @@ LAUNCHCTL_SNAPSHOT="$(launchctl list 2>/dev/null | awk '$3 ~ /^com\.cabinet\./ {
 
 SVC_TSV="$("$PY" - <<'PYEOF'
 import sys, yaml, time, os, plistlib, re
+from pathlib import Path
 root = os.getcwd()
 data = yaml.safe_load(open("cabinet/services.yml"))
+# Product/captain-agnostic foundation (2026-07-14): officer rows are no
+# longer hardcoded in services.yml -- merge them in from the roster so the
+# tmux-session liveness coverage below (kind == "officer") stays unchanged.
+# Absent/empty roster.yml (fresh clone) means nothing to merge, same as
+# before this file had any officers to check.
+sys.path.insert(0, os.path.join(root, "cabinet", "scripts"))
+import lib_roster
+services = list(data["services"]) + lib_roster.officer_service_rows(Path(root))
 now = time.time()
 la = os.path.expanduser("~/Library/LaunchAgents")
-for s in data["services"]:
+for s in services:
     name, label, kind = s["name"], s["label"], s.get("kind", "daemon")
     if s.get("disabled"):
         print(f"{name}\t{label}\t{kind}\tdisabled\t-\t-")

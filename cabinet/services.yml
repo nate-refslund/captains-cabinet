@@ -72,31 +72,31 @@
 
 services:
   # ── Officers (keepalive; tmux sessions via start-officer-mac.sh; roster-derived) ──
-  - name: officer-cos
-    label: com.cabinet.officer.cos
-    kind: officer
-    command: bash cabinet/scripts/start-officer-mac.sh cos
-    schedule: keepalive
-    expected: "redis heartbeat cabinet:heartbeat:cos (idle≠dead — progress-aware semantics land with F0.12)"
-    notes: sole Telegram voice; no self-wake loop by design (woken by DMs/triggers/briefings)
-  - name: officer-polads-ceo
-    label: com.cabinet.officer.polads-ceo
-    kind: officer
-    command: bash cabinet/scripts/start-officer-mac.sh polads-ceo
-    schedule: keepalive
-    expected: "redis heartbeat cabinet:heartbeat:polads-ceo"
-  - name: officer-stephie-ceo
-    label: com.cabinet.officer.stephie-ceo
-    kind: officer
-    command: bash cabinet/scripts/start-officer-mac.sh stephie-ceo
-    schedule: keepalive
-    expected: "redis heartbeat cabinet:heartbeat:stephie-ceo"
-  - name: officer-comms-officer
-    label: com.cabinet.officer.comms-officer
-    kind: officer
-    command: bash cabinet/scripts/start-officer-mac.sh comms-officer
-    schedule: keepalive
-    expected: "redis heartbeat cabinet:heartbeat:comms-officer"
+  # Product/captain-agnostic foundation (2026-07-14): officer rows are no
+  # longer hardcoded here — a fresh clone's roster is empty, so there is
+  # nothing to list until instance/config/roster.yml (deployment-local,
+  # gitignored; roster.yml.example ships the shape) is seeded. Officer
+  # identity is DERIVED at read time, the same F0.2 pattern deploy-mac.sh
+  # already uses to render officer LaunchAgents:
+  #   - cabinet-doctor.sh merges cabinet/scripts/lib_roster.py's
+  #     officer_service_rows() alongside the rows below before its per-row
+  #     keepalive/tmux-session check, so officer health coverage is
+  #     unchanged — just roster-sourced instead of hand-copied YAML.
+  #   - framework/watchdog/registry.py needs NO merge: verify_no_silent_
+  #     cron_failure's officer-label exclusion already has a broader
+  #     `com.cabinet.officer.` label-prefix fallback for officers absent
+  #     from this manifest's text (written for "an officer hired after this
+  #     manifest was written appears with no row") — zero rows here is
+  #     already a covered case, not a gap.
+  #   - `python3 cabinet/scripts/generate-services-officers.py [--yaml]`
+  #     prints the current roster's rows for human inspection/documentation
+  #     only; it never writes back into this tracked file (that would
+  #     re-introduce a specific deployment's concrete officer slugs — e.g.
+  #     product-lane CEOs — into a framework file that must stay generic).
+  # Per-slug `expected:`/`notes:` OVERRIDES (optional 4-space roster.yml
+  # fields, ignored by the bash awk parsers elsewhere) restore any hand-
+  # authored annotation a specific officer used to carry here; the generic
+  # `redis heartbeat cabinet:heartbeat:<slug>` applies when absent.
 
   # ── Captain channel ──────────────────────────────────────────────────────
   - name: cos-inbound
