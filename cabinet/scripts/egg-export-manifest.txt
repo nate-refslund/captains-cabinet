@@ -72,8 +72,11 @@ delete instance/fidelity
 delete-name node_modules
 delete cabinet/dashboard/.next
 # CG-7 / real-value doctrine self-exclusion: the egg export tooling itself is
-# PRIVATE-SIDE PREP — the publish gate carries the real-value pattern list and
-# this manifest names live-value paths, so none of it ships in the egg.
+# PRIVATE-SIDE PREP, so none of it ships in the egg. (Since R166 the publish
+# gate carries pattern CLASSES only — the captain-specific literals live in
+# UNTRACKED instance/config/publish-scan-patterns.local — but the tooling
+# stays excluded: this manifest names live-value paths and the exporter/gate
+# remain private-side prep.)
 delete cabinet/scripts/egg-export.sh
 delete cabinet/scripts/egg-publish-gate.sh
 delete cabinet/scripts/egg-export-manifest.txt
@@ -189,6 +192,11 @@ transform instance-verify
 # --- verification: what must have shipped ------------------------------------
 expect-present instance/config/platform.yml.example
 expect-present instance/config/sources.yml.example
+# R166: the synthetic template for the UNTRACKED captain-specific publish-scan
+# pattern file must ship — egg-side cabinet-feedback.sh reads the live twin
+# when the captain configures one (the live .local is untracked and can never
+# ride a git-archive cut)
+expect-present instance/config/publish-scan-patterns.local.example
 expect-present instance/config/act-first-surfaces.yml
 expect-present instance/config/act-first-surfaces.yml.example
 expect-present instance/config/contexts/_default.yml

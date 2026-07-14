@@ -21,6 +21,7 @@ Run: python3.12 -m pytest cabinet/scripts/tests/test_egg_export.py -q
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -54,11 +55,39 @@ def _run_export(out: Path, *extra: str) -> subprocess.CompletedProcess:
     )
 
 
-def _run_gate(*args: str) -> subprocess.CompletedProcess:
+def _run_gate(*args: str, patterns_file: Path | None = None) -> subprocess.CompletedProcess:
+    """Run the gate; `patterns_file` rides the EGG_GATE_PATTERNS_FILE test
+    seam (R166) so gate (d) scans a SYNTHETIC suite — hermetic on machines
+    with AND without a real instance/config/publish-scan-patterns.local."""
+    env = dict(os.environ)
+    if patterns_file is not None:
+        env["EGG_GATE_PATTERNS_FILE"] = str(patterns_file)
     return subprocess.run(
         ["bash", str(_GATE_SH), *args],
-        cwd=_REPO_ROOT, capture_output=True, text=True, timeout=60,
+        cwd=_REPO_ROOT, capture_output=True, text=True, timeout=60, env=env,
     )
+
+
+# The synthetic gate-(d) fixture suite (R166): every token is a nonsense
+# qz* placeholder — no real name/employer/product value may appear in this
+# tracked test source. Shape mirrors a real captain file: sub tokens, a
+# word token + its hostname-possessive twin, a colleague token, and one
+# adjudicated allow entry (row id synthetic too).
+_SYN_PATTERNS = (
+    "# synthetic fixture suite (test-only)\n"
+    "pattern sub:qzemployer\n"
+    "pattern sub:qzhandle\n"
+    "pattern sub:qzcolleague\n"
+    "pattern word:qzcaptain\n"
+    "pattern word:qzcaptains\n"
+    "allow QZ-1 qzhandle/qz-cabinet\n"
+)
+
+
+def _mk_patterns_file(tmp_path: Path, content: str = _SYN_PATTERNS) -> Path:
+    f = tmp_path / "publish-scan-patterns.fixture"
+    f.write_text(content, encoding="utf-8")
+    return f
 
 
 def _head_commit() -> str:
@@ -129,8 +158,9 @@ def test_live_values_absent_example_twins_present(export: Path):
     for twin in ("platform.yml.example", "sources.yml.example",
                  "directions.yml.example", "peers.yml.example",
                  "officer-emails.yml.example", "probes.yml.example",
-                 "warrooms.yml.example", "roster.yml.example"):
-        assert (cfg / twin).is_file(), f"R120: {twin} must ship"
+                 "warrooms.yml.example", "roster.yml.example",
+                 "publish-scan-patterns.local.example"):
+        assert (cfg / twin).is_file(), f"R120/R166: {twin} must ship"
 
 
 def test_act_first_default_is_the_scrubbed_twin(export: Path):
@@ -471,45 +501,155 @@ def test_gate_requires_egg_manifest(tmp_path: Path):
 
 
 def test_gate_d_masking_and_leak_classes(tmp_path: Path):
-    """Gate (d) semantics against a tiny PLANTED fake export (values below are
-    synthetic leak-pattern PROBES per the real-value doctrine exception —
-    this test file never ships in the egg):
+    """Gate (d) semantics against a tiny PLANTED fake export, driven by the
+    SYNTHETIC fixture suite through the EGG_GATE_PATTERNS_FILE seam (R166 —
+    every probe token below is a qz* placeholder; no real value appears in
+    this tracked source):
 
-    * the adjudicated coordinate ALONE is masked ([adj] reported, 0 kept);
-    * the coordinate PLUS another banned token on one line still FAILS
+    * an adjudicated `allow` entry from the patterns file ALONE is masked
+      ([adj] reported, 0 kept);
+    * the allow-entry PLUS another banned token on one line still FAILS
       (an inverted apply_allowlist would silently divert real hits);
     * a bare banned token FAILS;
-    * a 13-digit supergroup-shaped id FAILS (the unbounded {9,} digit run —
-      a 9-12 cap was fail-open for exactly this class);
-    * a hostname-shaped possessive FAILS via word:nates (word:nate's
-      boundary deliberately skips it);
+    * a 13-digit supergroup-shaped id FAILS via the TRACKED generic pattern
+      (the unbounded {9,} digit run — a 9-12 cap was fail-open for exactly
+      this class);
+    * a hostname-shaped possessive FAILS via the word:<name>s pattern
+      (the bare word:<name> boundary deliberately skips it);
     * verdict is RED with exit code 1.
     """
     fake = tmp_path / "fake-export"
     fake.mkdir()
     (fake / "egg-manifest.json").write_text("{}\n", encoding="utf-8")
+    # the 13-digit run is concatenated so this SOURCE file never carries a
+    # 9+-digit run (the digit-run guard applies to test sources too)
+    supergroup_id = "-" + "100123" + "4567890"
     (fake / "planted.txt").write_text(
-        "install: nate-refslund/captains-cabinet\n"
-        "nate-refslund/captains-cabinet plus kristoffer on one line\n"
-        "a bare banned token: solveig\n"
-        "supergroup-shaped id: -1001234567890\n"
-        "hostname-shaped: Nates-MacBook-Pro\n",
+        "install: qzhandle/qz-cabinet\n"
+        "qzhandle/qz-cabinet plus qzcolleague on one line\n"
+        "a bare banned token: qzemployer\n"
+        f"supergroup-shaped id: {supergroup_id}\n"
+        "hostname-shaped: Qzcaptains-MacBook-Pro\n",
         encoding="utf-8",
     )
-    proc = _run_gate("--export", str(fake))
+    proc = _run_gate("--export", str(fake),
+                     patterns_file=_mk_patterns_file(tmp_path))
     out = proc.stdout
-    # allowlist masking: both coordinate lines diverted for the refslund
+    # allowlist masking: both allow-entry lines diverted for the qzhandle
     # pattern — reported, never silently dropped, never counted as hits
-    assert "[adj] (sub) 'refslund'" in out, out
-    assert "[ok ] (sub) 'refslund' — 0 hits" in out, out
+    assert "[adj] (sub) 'qzhandle'" in out, out
+    assert "[ok ] (sub) 'qzhandle' — 0 hits" in out, out
     # ...but the OTHER banned token on the shared line still fails
-    assert "[HIT] (sub) 'kristoffer'" in out, out
-    assert "[HIT] (sub) 'solveig'" in out, out
+    assert "[HIT] (sub) 'qzcolleague'" in out, out
+    assert "[HIT] (sub) 'qzemployer'" in out, out
     # the two leak classes the fix pass pinned
     assert "[HIT] (id) '[0-9]{9,}'" in out, out
-    assert "[HIT] (word) 'nates'" in out, out
+    assert "[HIT] (word) 'qzcaptains'" in out, out
     # grouped verdict: gate (d) FAILs and the whole gate is RED (exit 1 —
-    # not 2, which would mean a usage/self-test abort, not a verdict)
+    # not 2, which would mean a usage/self-test/pattern-config abort)
     assert "GATE (d) real-value grep suite .................... FAIL" in out, out
     assert "PUBLISH GATE: RED" in out, out
     assert proc.returncode == 1, (proc.returncode, out, proc.stderr)
+
+
+# ---------------------------------------------------------------------------
+# Publish gate — R166 pattern-source contract (fail-closed, never vacuous)
+# ---------------------------------------------------------------------------
+
+def _mk_fake_export(tmp_path: Path, planted: str) -> Path:
+    fake = tmp_path / "fake-export"
+    fake.mkdir()
+    (fake / "egg-manifest.json").write_text("{}\n", encoding="utf-8")
+    (fake / "planted.txt").write_text(planted, encoding="utf-8")
+    return fake
+
+
+def test_gate_missing_patterns_file_fails_closed(tmp_path: Path):
+    """A REAL publish run without the captain-specific patterns file must
+    ABORT (exit 2) — never a vacuous scan, never a vacuous GREEN. Hermetic
+    via the seam: EGG_GATE_PATTERNS_FILE points at a nonexistent path, the
+    same missing-file code path the default location takes on an
+    unconfigured machine."""
+    fake = _mk_fake_export(tmp_path, "innocuous content\n")
+    proc = _run_gate("--export", str(fake),
+                     patterns_file=tmp_path / "no-such-patterns-file")
+    assert proc.returncode == 2, (proc.returncode, proc.stdout, proc.stderr)
+    assert "no captain-specific scan patterns configured — refusing to publish" \
+        in proc.stderr, proc.stderr
+    # aborted BEFORE any verdict: a vacuous GREEN must be impossible
+    assert "PUBLISH GATE:" not in proc.stdout, proc.stdout
+
+
+def test_gate_patternless_file_fails_closed(tmp_path: Path):
+    """A patterns file with zero `pattern` directives (comments only) is a
+    vacuous configuration — the gate must refuse it, not scan with generics
+    alone."""
+    fake = _mk_fake_export(tmp_path, "innocuous content\n")
+    fixture = _mk_patterns_file(tmp_path, "# only comments here\n\n")
+    proc = _run_gate("--export", str(fake), patterns_file=fixture)
+    assert proc.returncode == 2, (proc.returncode, proc.stdout, proc.stderr)
+    assert "no 'pattern' directives — refusing a vacuous publish scan" \
+        in proc.stderr, proc.stderr
+    assert "PUBLISH GATE:" not in proc.stdout, proc.stdout
+
+
+def test_gate_malformed_patterns_file_fails_closed(tmp_path: Path):
+    """An unrecognized directive aborts, naming file:LINE-NUMBER only —
+    the line CONTENT (which may carry a real value) must not smear into
+    stderr."""
+    fake = _mk_fake_export(tmp_path, "innocuous content\n")
+    fixture = _mk_patterns_file(
+        tmp_path, "pattern sub:qzemployer\nscrub sub:qzsecrettoken\n")
+    proc = _run_gate("--export", str(fake), patterns_file=fixture)
+    assert proc.returncode == 2, (proc.returncode, proc.stdout, proc.stderr)
+    assert "unrecognized directive at" in proc.stderr, proc.stderr
+    assert ":2 " in proc.stderr, proc.stderr          # the line NUMBER...
+    assert "qzsecrettoken" not in proc.stderr         # ...never the content
+
+
+def test_gate_generic_id_pattern_keeps_teeth(tmp_path: Path):
+    """The TRACKED generic suite must still scan when the captain file
+    carries none of it: a planted 9-digit id is caught with a minimal
+    patterns file holding only an unrelated token."""
+    digits = "98765" + "4321"                          # 9-digit run, split in source
+    fake = _mk_fake_export(tmp_path, f"board id {digits} planted\n")
+    fixture = _mk_patterns_file(tmp_path, "pattern sub:qzunrelatedtoken\n")
+    proc = _run_gate("--export", str(fake), patterns_file=fixture)
+    out = proc.stdout
+    assert "[HIT] (id) '[0-9]{9,}'" in out, out
+    assert "GATE (d) real-value grep suite .................... FAIL" in out, out
+    assert proc.returncode == 1, (proc.returncode, out, proc.stderr)
+
+
+def test_gate_source_carries_no_captain_pattern_values():
+    """Self-audit (the R166 point): none of the REAL captain-specific
+    pattern values may appear in the tracked gate source or the synthetic
+    .example twin. Values are read at runtime from the live patterns file —
+    this test source carries none of them — so the test runs only on a
+    configured captain machine and SKIPS where the file is absent (CI)."""
+    live = _REPO_ROOT / "instance" / "config" / "publish-scan-patterns.local"
+    if not live.is_file():
+        pytest.skip("no live publish-scan-patterns.local on this machine "
+                    "(CI shape) — the captain-machine self-audit has nothing "
+                    "to compare against")
+    values: list[str] = []
+    for raw in live.read_text(encoding="utf-8").splitlines():
+        ln = raw.strip()
+        if ln.startswith("pattern "):
+            spec = ln[len("pattern "):]
+            values.append(spec.split(":", 1)[1])
+        elif ln.startswith("allow "):
+            parts = ln.split(None, 2)
+            if len(parts) == 3:
+                values.append(parts[2])
+    assert values, "live patterns file parsed to zero values — fix the file"
+    gate_low = _GATE_SH.read_text(encoding="utf-8").lower()
+    example_low = (_REPO_ROOT / "instance" / "config" /
+                   "publish-scan-patterns.local.example").read_text(
+                       encoding="utf-8").lower()
+    leaked = [v for v in values if len(v) >= 3
+              and (v.lower() in gate_low or v.lower() in example_low)]
+    assert not leaked, (
+        f"{len(leaked)} captain-specific value(s) leaked into tracked "
+        "sources (values withheld from this assertion output by design — "
+        "diff the live patterns file against the named sources)")

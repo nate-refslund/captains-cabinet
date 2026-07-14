@@ -20,6 +20,22 @@
 #       never relaxed.
 #   (e) verdict: PUBLISH GATE: GREEN/RED
 #
+# PATTERN SOURCE (R166 — the tracked source carries pattern CLASSES only):
+#   * GREP_PATTERNS below holds the GENERIC, captain-agnostic classes
+#     (standalone 9+-digit id runs). No real name/employer/product value is
+#     tracked in this file.
+#   * The captain-SPECIFIC suite (name tokens, employer/product tokens,
+#     colleague first names, home-path prefix) + any name-bearing
+#     adjudicated-allowlist entries load at runtime from the UNTRACKED
+#     per-captain file
+#       instance/config/publish-scan-patterns.local
+#     (tracked synthetic-placeholder twin: publish-scan-patterns.local.example;
+#     gitignored; the egg is cut with `git archive` so an untracked file can
+#     never ship). FAIL-CLOSED: a missing patterns file, or one carrying no
+#     `pattern` directives, ABORTS the gate (exit 2) — a publish scan is
+#     never vacuous. EGG_GATE_PATTERNS_FILE overrides the location for
+#     TESTS ONLY (same trust model as EGG_GATE_GREP).
+#
 # The grep ENGINE is pinned (EGG_GATE_GREP overrides; default /usr/bin/grep)
 # and proven by a planted-sample self-test before any scan: ugrep/busybox
 # front-ends match ZERO lines for the word-boundary ERE in (d) — a silent
@@ -30,11 +46,14 @@
 # report. The export directory itself is never modified (scratch work goes
 # to mktemp; pytest runs with bytecode + cache writes disabled).
 #
-# THIS FILE NEVER SHIPS IN THE EGG (it carries the real-value pattern list —
-# see the self-exclusion block in egg-export-manifest.txt).
+# THIS FILE NEVER SHIPS IN THE EGG (private-side prep — see the
+# self-exclusion block in egg-export-manifest.txt). Since R166 it carries no
+# real values itself; it stays excluded because the export tooling as a
+# whole is private-side prep.
 #
 # Usage: bash cabinet/scripts/egg-publish-gate.sh --export /path/to/egg
-# Exit:  0 = GREEN, 1 = RED. Publishing remains CG-7 Captain-gated either way.
+# Exit:  0 = GREEN, 1 = RED, 2 = usage/self-test/pattern-config abort.
+#        Publishing remains CG-7 Captain-gated either way.
 set -euo pipefail
 
 usage() {
@@ -47,6 +66,9 @@ egg-publish-gate.sh — fail-closed pre-publish gate over a fresh-cut export
 
 Runs: (a) gitleaks  (b) null-hatch  (c) no-launcher-hardcode pytest
       (d) real-value + colleague grep suite  (e) GREEN/RED verdict.
+Gate (d)'s captain-specific patterns load from the UNTRACKED
+instance/config/publish-scan-patterns.local (template: its .example twin);
+a missing or pattern-less file aborts the gate — never a vacuous GREEN.
 Publishing remains CG-7 Captain-gated regardless of a GREEN verdict.
 EOF
 }
@@ -127,22 +149,146 @@ rematches() {
 
 # planted samples: each kind MUST fire exactly once — an engine that
 # under-matches (ugrep: 0 word hits) OR over-matches (plain-substring: the
-# negative line 'coordinated designate' would fire word:nate) fails the gate
-# before any scan runs. Runtime-only fixture; deleted with $WORK on exit.
+# embedded negative line would fire the word probe) fails the gate before
+# any scan runs. Probe tokens are SYNTHETIC (R166: no real name may appear
+# in this tracked source — engine semantics are token-agnostic).
+# Runtime-only fixture; deleted with $WORK on exit.
 SELFTEST_DIR="$WORK/grep-selftest"
 mkdir -p "$SELFTEST_DIR"
 printf '%s\n' \
-  'planted sub sample: xrefslundx' \
-  'planted word sample: nate bounded here' \
-  'planted word negative: coordinated designate' \
+  'planted sub sample: xqzsubprobex' \
+  'planted word sample: qzwordprobe bounded here' \
+  'planted word negative: embeddedqzwordprobetoken' \
   'planted id sample: 501234567890 standalone' \
   > "$SELFTEST_DIR/planted.txt"
-ST_SUB="$(scan_hits sub refslund "$SELFTEST_DIR" | wc -l | tr -d ' ')"
-ST_WORD="$(scan_hits word nate "$SELFTEST_DIR" | wc -l | tr -d ' ')"
+ST_SUB="$(scan_hits sub qzsubprobe "$SELFTEST_DIR" | wc -l | tr -d ' ')"
+ST_WORD="$(scan_hits word qzwordprobe "$SELFTEST_DIR" | wc -l | tr -d ' ')"
 ST_ID="$(scan_hits id '[0-9]{9,}' "$SELFTEST_DIR" | wc -l | tr -d ' ')"
 if [ "$ST_SUB" != "1" ] || [ "$ST_WORD" != "1" ] || [ "$ST_ID" != "1" ]; then
   fail "grep engine self-test failed (sub=$ST_SUB word=$ST_WORD id=$ST_ID, expected 1/1/1; GREP=$GREP) — this engine would scan fail-open or over-match; point EGG_GATE_GREP at a BSD/GNU grep"
 fi
+
+# --- gate (d) pattern suite (fail-closed load; R166) ------------------------------
+# Kind semantics (mirroring the authoritative fixture leak audit in
+# cabinet/scripts/tests/test_testburg_fixture.py — its BANNED_PATTERNS list
+# is the plain-substring twin of this suite):
+#   sub:  case-insensitive substring (distinctive tokens)
+#   word: case-insensitive word-boundary (name tokens that are common English
+#         substrings — an embedded participle must not drown the report). A
+#         separate word:<name>s pattern covers hostname-shaped possessives
+#         ('<Name>s-MacBook-Pro') that the bare word boundary deliberately
+#         skips; embedded English stays ignored by the boundary.
+#   id:   chat/board-id-shaped standalone decimal runs — 9+ digits,
+#         UNBOUNDED like the authoritative _DIGIT_RUN guard (telegram
+#         supergroup/channel ids are 13-digit runs; an upper bound is
+#         fail-open for exactly that class). Boundaries exclude digits
+#         embedded in hashes/hex. Epoch-millis and placeholder-id test
+#         fixtures WILL hit: reword them at the source (underscored numeric
+#         literals, shorter fakes) or adjudicate the exact string — never
+#         relax the pattern.
+#
+# TRACKED patterns = GENERIC CLASSES ONLY (captain-agnostic, safe to ship).
+# The line format below is a CONTRACT: cabinet-feedback.sh extracts it with
+# sed 's/^GREP_PATTERNS="\(.*\)"$/\1/p' — keep it one line, double-quoted.
+GREP_PATTERNS="id:[0-9]{9,}"
+
+# Captain-specific patterns + name-bearing adjudications: UNTRACKED file.
+PATTERNS_FILE_DEFAULT="instance/config/publish-scan-patterns.local"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+ROOT="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
+PATTERNS_FILE="${EGG_GATE_PATTERNS_FILE:-$ROOT/$PATTERNS_FILE_DEFAULT}"
+
+# --- adjudicated allowlist (RECORDED decision — never a silent pattern relax) ---
+# EXACT strings masked out of hit content before a pattern re-test. An entry
+# exists ONLY with a recorded adjudication row in
+# docs/plans/operative-egg-ledger-2026-07-07.yml (lane captain-gated: the
+# Captain ratifies or strikes it at the CG-7 publish review — publishing
+# stays CG-7-blocked regardless of a GREEN verdict). Masked occurrences
+# ALWAYS print ([adj] lines), land in the grouped report, and annotate the
+# PASS line; any OTHER banned token on the same line still fails.
+# TRACKED entries below are the two GENERIC all-zero constants only (they
+# carry no personal value). Name-bearing adjudications — the CG-19 canonical
+# install coordinate and the CG-20 authorship surname token at this
+# deployment — are `allow <ROW> <string>` directives in the untracked
+# patterns file (R166), each still requiring its recorded ledger row.
+# Entry 1 — ledger row CG-21: git's canonical null object id (40 zeros), an
+# intended PUBLIC CONSTANT in cabinet/scripts/git-hooks/pre-push (delete-ref
+# detection) + cabinet/scripts/test-pre-push-hook.sh, both of which ship.
+# Fixed-value mask: it can never hide a real chat/board id.
+# Entry 2 — ledger row CG-22: the nil-UUID placeholder PREFIX (34 chars,
+# through the fourth group + ten zeros) carried by the 19 all-zero
+# sequential placeholder ids in cabinet/dashboard/src/lib/config.ts
+# ('00000000-0000-0000-0000-0000000000NN') — synthetic by construction,
+# same all-zero-constant class as CG-21. The dashes make the string
+# impossible inside a real digit-run id, so the mask can never hide one.
+ADJUDICATED_ALLOWLIST=(
+  "0000000000000000000000000000000000000000"  # CG-21
+  "00000000-0000-0000-0000-0000000000"  # CG-22
+)
+# ledger row per entry, INDEX-PARALLEL to ADJUDICATED_ALLOWLIST — the [adj]
+# console lines + report header derive citations from here, so adding an
+# entry adjudicated under a different row can never leave a stale hardcode
+ADJUDICATED_ROWS=(
+  "CG-21"
+  "CG-22"
+)
+
+# --- load the captain-specific suite (fail-closed, data-only parse) -------------
+# The file is DATA, never sourced: one directive per line —
+#   pattern <kind>:<value>          kind in sub|word|id, value non-empty
+#   allow <LEDGER-ROW> <string>     adjudicated exact-string mask entry
+# '#' comment lines and blank lines are ignored. Anything else aborts,
+# naming file:LINE-NUMBER only (never the content — a malformed line may
+# carry a real value and must not smear into logs or reports).
+[ -f "$PATTERNS_FILE" ] || fail "no captain-specific scan patterns configured — refusing to publish (create $PATTERNS_FILE_DEFAULT from ${PATTERNS_FILE_DEFAULT}.example; tests may point EGG_GATE_PATTERNS_FILE at a fixture)"
+
+SCAN_SPECS=()
+for spec in $GREP_PATTERNS; do SCAN_SPECS+=("$spec"); done
+LOCAL_PATTERN_N=0
+DATA_LINE_N=0
+# sanitize a scratch copy once: strip trailing whitespace + CR (CRLF safety)
+sed -e 's/[[:space:]]*$//' "$PATTERNS_FILE" > "$WORK/patterns.data"
+while IFS= read -r pline || [ -n "$pline" ]; do
+  DATA_LINE_N=$((DATA_LINE_N + 1))
+  case "$pline" in
+    ''|'#'*) continue ;;
+    'pattern '*)
+      spec="${pline#pattern }"
+      case "$spec" in
+        sub:?*|word:?*|id:?*) SCAN_SPECS+=("$spec"); LOCAL_PATTERN_N=$((LOCAL_PATTERN_N + 1)) ;;
+        *) fail "unsupported pattern directive at $PATTERNS_FILE:$DATA_LINE_N (format: pattern <sub|word|id>:<value>)" ;;
+      esac ;;
+    'allow '*)
+      arest="${pline#allow }"
+      arow="${arest%% *}"
+      aentry="${arest#* }"
+      if [ -z "$arow" ] || [ -z "$aentry" ] || [ "$arest" = "$arow" ]; then
+        fail "malformed allow directive at $PATTERNS_FILE:$DATA_LINE_N (format: allow <LEDGER-ROW> <exact-string>)"
+      fi
+      ADJUDICATED_ALLOWLIST+=("$aentry")
+      ADJUDICATED_ROWS+=("$arow") ;;
+    *)
+      fail "unrecognized directive at $PATTERNS_FILE:$DATA_LINE_N (directives: pattern | allow; '#' for comments)" ;;
+  esac
+done < "$WORK/patterns.data"
+[ "$LOCAL_PATTERN_N" -ge 1 ] || fail "$PATTERNS_FILE carries no 'pattern' directives — refusing a vacuous publish scan (fill it from ${PATTERNS_FILE_DEFAULT}.example)"
+
+[ "${#ADJUDICATED_ALLOWLIST[@]}" -eq "${#ADJUDICATED_ROWS[@]}" ] \
+  || fail "ADJUDICATED_ALLOWLIST/ADJUDICATED_ROWS length mismatch (${#ADJUDICATED_ALLOWLIST[@]} vs ${#ADJUDICATED_ROWS[@]}) — every entry needs its recorded ledger row"
+# literal-masking contract: bash ${var//entry/} treats the entry as a glob
+# pattern, so entries are constrained to glob-inert characters — fail closed
+# on anything else rather than mask approximately. Row ids print into the
+# [adj] console lines + report header, so they ride the same charset.
+for entry in "${ADJUDICATED_ALLOWLIST[@]}"; do
+  case "$entry" in
+    *[!A-Za-z0-9./_-]*) fail "allowlist entry outside [A-Za-z0-9./_-] (literal masking contract): $entry" ;;
+  esac
+done
+for row in "${ADJUDICATED_ROWS[@]}"; do
+  case "$row" in
+    *[!A-Za-z0-9./_-]*) fail "allowlist row id outside [A-Za-z0-9./_-]: $row" ;;
+  esac
+done
 
 PASS_A=0; PASS_B=0; PASS_C=0; PASS_D=0
 line() { printf '%s\n' "-------------------------------------------------------------------------"; }
@@ -211,82 +357,9 @@ else
 fi
 
 # --- (d) real-value + colleague grep suite ---------------------------------------
-# Patterns mirror the authoritative fixture leak list in
-# cabinet/scripts/tests/test_testburg_fixture.py (BANNED_PATTERNS + digit-run
-# guard) — quoted here as DETECTION patterns per the real-value doctrine
-# exception; this script never ships. Kinds:
-#   sub:  case-insensitive substring (distinctive tokens)
-#   word: case-insensitive word-boundary (names that are common English
-#         substrings — 'designate' must not drown the report). word:nates
-#         covers hostname-shaped possessives ('<name>s-MacBook-Pro') that
-#         the word:nate boundary deliberately skips; embedded English
-#         ('hallucinates', 'coordinates') stays ignored by the boundary.
-#   id:   chat/board-id-shaped standalone decimal runs — 9+ digits,
-#         UNBOUNDED like the authoritative _DIGIT_RUN guard (telegram
-#         supergroup/channel ids are 13-digit runs; an upper bound is
-#         fail-open for exactly that class). Boundaries exclude digits
-#         embedded in hashes/hex. Epoch-millis and placeholder-id test
-#         fixtures WILL hit: reword them at the source (underscored numeric
-#         literals, shorter fakes) or adjudicate the exact string — never
-#         relax the pattern.
 line
 echo "GATE (d) real-value + colleague grep suite over the whole export"
-GREP_PATTERNS="sub:refslund sub:stepnetwork sub:jfmedier sub:polads sub:stephie sub:naref sub:kristoffer sub:ulrik sub:solveig sub:/users/nate word:nate word:nates word:maria id:[0-9]{9,}"
-
-# --- adjudicated allowlist (RECORDED decision — never a silent pattern relax) ---
-# EXACT strings masked out of hit content before a pattern re-test. An entry
-# exists ONLY with a recorded adjudication row in
-# docs/plans/operative-egg-ledger-2026-07-07.yml (lane captain-gated: the
-# Captain ratifies or strikes it at the CG-7 publish review — publishing
-# stays CG-7-blocked regardless of a GREEN verdict). Masked occurrences
-# ALWAYS print ([adj] lines), land in the grouped report, and annotate the
-# PASS line; any OTHER banned token on the same line still fails.
-# Entry 1 — ledger row CG-19: the canonical public install coordinate (the
-# Captain's own GitHub handle); the install-rail manifests that carry it
-# (.claude-plugin/plugin.json + marketplace.json) SHIP in the egg by design.
-# Entry 2 — ledger row CG-20 (executed option (a), Wave-E integrator per the
-# Captain MIT + scrub-not-consent rulings 2026-07-10): the surname token in
-# the intended MIT LICENSE:3 copyright line + the 3 captains-cabinet-guide.md
-# authorship bylines. Case-SENSITIVE masking: the lowercase install
-# coordinate stays governed by CG-19 alone; any other lowercase 'refslund'
-# occurrence still fails. Breadth note per the CG-20 row: this masks the
-# capitalized token wherever it appears — every masked occurrence still
-# prints as an [adj] line for CG-7 review.
-# Entry 3 — ledger row CG-21: git's canonical null object id (40 zeros), an
-# intended PUBLIC CONSTANT in cabinet/scripts/git-hooks/pre-push (delete-ref
-# detection) + cabinet/scripts/test-pre-push-hook.sh, both of which ship.
-# Fixed-value mask: it can never hide a real chat/board id.
-# Entry 4 — ledger row CG-22: the nil-UUID placeholder PREFIX (34 chars,
-# through the fourth group + ten zeros) carried by the 19 all-zero
-# sequential placeholder ids in cabinet/dashboard/src/lib/config.ts
-# ('00000000-0000-0000-0000-0000000000NN') — synthetic by construction,
-# same all-zero-constant class as CG-21. The dashes make the string
-# impossible inside a real digit-run id, so the mask can never hide one.
-ADJUDICATED_ALLOWLIST=(
-  "nate-refslund/captains-cabinet"  # CG-19
-  "Refslund"  # CG-20
-  "0000000000000000000000000000000000000000"  # CG-21
-  "00000000-0000-0000-0000-0000000000"  # CG-22
-)
-# ledger row per entry, INDEX-PARALLEL to ADJUDICATED_ALLOWLIST — the [adj]
-# console lines + report header derive citations from here, so adding an
-# entry adjudicated under a different row can never leave a stale hardcode
-ADJUDICATED_ROWS=(
-  "CG-19"
-  "CG-20"
-  "CG-21"
-  "CG-22"
-)
-[ "${#ADJUDICATED_ALLOWLIST[@]}" -eq "${#ADJUDICATED_ROWS[@]}" ] \
-  || fail "ADJUDICATED_ALLOWLIST/ADJUDICATED_ROWS length mismatch (${#ADJUDICATED_ALLOWLIST[@]} vs ${#ADJUDICATED_ROWS[@]}) — every entry needs its recorded ledger row"
-# literal-masking contract: bash ${var//entry/} treats the entry as a glob
-# pattern, so entries are constrained to glob-inert characters — fail closed
-# on anything else rather than mask approximately
-for entry in "${ADJUDICATED_ALLOWLIST[@]}"; do
-  case "$entry" in
-    *[!A-Za-z0-9./_-]*) fail "allowlist entry outside [A-Za-z0-9./_-] (literal masking contract): $entry" ;;
-  esac
-done
+echo "        suite: ${#SCAN_SPECS[@]} spec(s) = tracked generic classes + $LOCAL_PATTERN_N captain-specific from the patterns file"
 
 # apply_allowlist KIND PAT MASKFILE — stdin: raw hits (file:line:content).
 # Emits hits that still match after exact-string masking; diverts hits fully
@@ -313,7 +386,7 @@ REPORT="$REPORT_DIR/real-value-report.txt"
 MASKFILE="$REPORT_DIR/allowlisted-masked.txt"
 : > "$REPORT"
 : > "$MASKFILE"
-for spec in $GREP_PATTERNS; do
+for spec in "${SCAN_SPECS[@]}"; do
   kind="${spec%%:*}"
   pat="${spec#*:}"
   raw="$(scan_hits "$kind" "$pat" "$EXPORT")"

@@ -2,9 +2,10 @@
 
 Contracts under test (Wave E contribution design):
 
-1. REDACTION-PROOF — planted real-value tokens (constructed AT RUNTIME from
-   the publish gate's own GREP_PATTERNS line; no banned literal ever appears
-   in this file's source) are scrubbed from the printed bundle, line-for-line
+1. REDACTION-PROOF — planted captain-suite tokens (SYNTHETIC qz*
+   placeholders fed through a fixture publish-scan-patterns.local, plus the
+   gate line's generic classes; no real value ever appears in this file's
+   source — R166) are scrubbed from the printed bundle, line-for-line
    replaced with "[scrubbed]".
 2. --dry-run NEVER invokes gh — proven via a PATH shim that logs every
    invocation (the log must not exist afterwards).
@@ -13,10 +14,14 @@ Contracts under test (Wave E contribution design):
    the shim with the fixed argv (repo slug parsed from the script under
    test, never hardcoded here).
 4. Honest failures — gh missing and gh unauthenticated each name themselves.
-5. FAIL-CLOSED — a present-but-unextractable pattern source aborts the run.
-6. BASELINE MODE — with the gate file absent (the packaged-egg shape: the
-   publish gate is private-side prep and never ships), $HOME paths, emails,
-   and 9+-digit id runs still scrub, and the mode is announced.
+5. FAIL-CLOSED — a present-but-unextractable pattern source aborts the run;
+   so do a private-side checkout (gate present) MISSING its captain
+   patterns file, and a malformed patterns-file directive (which aborts
+   naming file:LINE-NUMBER, never echoing the content).
+6. BASELINE MODE — with the gate file absent AND no patterns file (the
+   unconfigured packaged-egg shape), $HOME paths, emails, and 9+-digit id
+   runs still scrub, and the mode is announced; with a patterns file
+   present on an egg cut, its tokens scrub too.
 7. ZERO-HIT PASS-THROUGH — a bundle with no scrub hits prints IN FULL
    (regression: the two-file awk's empty-hit-list mis-fire silently emptied
    the whole bundle in exactly the clean-environment case).
@@ -56,26 +61,21 @@ gate_required = pytest.mark.skipif(
 # consecutive digits (the digit-run guard applies to test sources too).
 PLANTED_DIGITS = "123456" + "7890123"
 
-
-def _gate_specs() -> list[tuple[str, str]]:
-    """The authoritative suite, parsed from the gate script (reuse, no fork)."""
-    line = next(ln for ln in GATE.read_text(encoding="utf-8").splitlines()
-                if ln.startswith('GREP_PATTERNS="'))
-    raw = line.split('"', 2)[1]
-    return [tuple(spec.split(":", 1)) for spec in raw.split()]
-
-
-def _planted_tokens() -> tuple[str, str]:
-    """(sub-token, word-token) drawn from the real suite at runtime."""
-    specs = _gate_specs()
-    sub = next(p for k, p in specs if k == "sub" and not p.startswith("/"))
-    word = next(p for k, p in specs if k == "word")
-    return sub, word
+# Synthetic captain-suite tokens (R166): the gate's tracked GREP_PATTERNS
+# line carries GENERIC classes only, so the captain-specific tokens the
+# scrub must catch are planted here through a fixture patterns file — every
+# token a qz* placeholder; no real value appears in this source.
+SYN_SUB = "qzemployer"
+SYN_WORD = "qzcaptain"
+SYN_PATTERNS = f"# synthetic fixture\npattern sub:{SYN_SUB}\npattern word:{SYN_WORD}\nallow QZ-1 qzhandle/qz-cabinet\n"
 
 
 def _mk_root(tmp_path: Path, *, gate: str = "real",
+             patterns: str | None = SYN_PATTERNS,
              doctor_lines: tuple[str, ...] = ()) -> Path:
-    """Scratch CABINET_FEEDBACK_ROOT: optional gate copy + a FAKE doctor."""
+    """Scratch CABINET_FEEDBACK_ROOT: optional gate copy + optional captain
+    patterns file (SYNTHETIC by default; pass patterns=None for the
+    unconfigured-machine shape) + a FAKE doctor."""
     root = tmp_path / "root"
     scripts = root / "cabinet" / "scripts"
     scripts.mkdir(parents=True)
@@ -87,6 +87,11 @@ def _mk_root(tmp_path: Path, *, gate: str = "real",
             encoding="utf-8")
     elif gate != "absent":
         raise AssertionError(f"unknown gate mode {gate!r}")
+    if patterns is not None:
+        cfg = root / "instance" / "config"
+        cfg.mkdir(parents=True)
+        (cfg / "publish-scan-patterns.local").write_text(
+            patterns, encoding="utf-8")
     (scripts / "doctor-output.txt").write_text(
         "\n".join(doctor_lines) + "\n", encoding="utf-8")
     doctor = scripts / "cabinet-doctor.sh"
@@ -213,8 +218,11 @@ def _bundle_of(out: str) -> str:
 # 1. redaction-proof (full suite)
 # ---------------------------------------------------------------------------
 @gate_required
-def test_planted_real_values_are_scrubbed(tmp_path):
-    sub, word = _planted_tokens()
+def test_planted_captain_suite_tokens_are_scrubbed(tmp_path):
+    """Full mode: gate generic classes + fixture captain patterns. The
+    planted sub/word tokens come from the fixture patterns file; the digit
+    run from the gate's tracked generic class."""
+    sub, word = SYN_SUB, SYN_WORD
     root = _mk_root(tmp_path, doctor_lines=(
         f"token {sub} appears here",
         f"standalone {word} name",
@@ -238,7 +246,7 @@ def test_planted_real_values_are_scrubbed(tmp_path):
 
 @gate_required
 def test_title_tripping_the_suite_is_refused(tmp_path):
-    _, word = _planted_tokens()
+    word = SYN_WORD
     root = _mk_root(tmp_path, doctor_lines=("nominal",))
     home = _mk_home(tmp_path)
     rc, out, err = _run(["--dry-run", "--title", f"about {word} things"],
@@ -349,12 +357,60 @@ def test_present_but_unextractable_gate_fails_closed(tmp_path):
     assert "bundle" not in out                     # nothing was built
 
 
+def test_gate_present_but_patterns_file_missing_fails_closed(tmp_path):
+    """R166: a private-side checkout (gate file present) without the
+    captain-specific patterns file must REFUSE the bundle — the gate line
+    now carries generic classes only, so proceeding would scrub nothing
+    personal."""
+    root = _mk_root(tmp_path, gate="real", patterns=None,
+                    doctor_lines=("nominal",))
+    home = _mk_home(tmp_path)
+    rc, out, err = _run(["--dry-run"], _env(root, home))
+    assert rc == 2
+    assert "captain-specific scan patterns not configured" in err
+    assert "refusing to build an under-scrubbed bundle" in err
+    assert "bundle" not in out                     # nothing was built
+
+
+def test_malformed_patterns_directive_fails_closed(tmp_path):
+    """An unrecognized patterns-file directive aborts naming
+    file:LINE-NUMBER only — the content (which may carry a real value)
+    must not smear into stderr."""
+    root = _mk_root(tmp_path, gate="absent",
+                    patterns="pattern sub:qzemployer\nscrub sub:qzsecrettoken\n",
+                    doctor_lines=("nominal",))
+    home = _mk_home(tmp_path)
+    rc, out, err = _run(["--dry-run"], _env(root, home))
+    assert rc == 2
+    assert "unrecognized directive at" in err
+    assert ":2 " in err                            # the line NUMBER...
+    assert "qzsecrettoken" not in err              # ...never the content
+
+
+def test_egg_cut_with_patterns_file_scrubs_captain_tokens(tmp_path):
+    """Packaged-egg shape (gate absent) WITH a configured patterns file:
+    the captain tokens scrub and the mode is announced as captain+baseline,
+    not baseline-only."""
+    root = _mk_root(tmp_path, gate="absent", doctor_lines=(
+        f"token {SYN_SUB} appears here",
+        "all services nominal",
+    ))
+    home = _mk_home(tmp_path)
+    rc, out, err = _run(["--dry-run"], _env(root, home))
+    assert rc == 0, err
+    assert "BASELINE scrub only" not in err
+    bundle = _bundle_of(out)
+    assert SYN_SUB not in bundle.lower()
+    assert "captain patterns + baseline" in bundle  # suite-mode banner line
+    assert "all services nominal" in bundle
+
+
 # ---------------------------------------------------------------------------
 # 6. baseline mode (the packaged-egg shape) — runs everywhere
 # ---------------------------------------------------------------------------
 def test_baseline_mode_scrubs_home_email_and_digit_runs(tmp_path):
     home = _mk_home(tmp_path)
-    root = _mk_root(tmp_path, gate="absent", doctor_lines=(
+    root = _mk_root(tmp_path, gate="absent", patterns=None, doctor_lines=(
         f"home dir is {home} today",
         "mail me at someone@example.com please",
         f"id {PLANTED_DIGITS} run",

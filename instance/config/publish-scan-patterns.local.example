@@ -1,0 +1,53 @@
+# publish-scan-patterns.local.example — tracked synthetic TEMPLATE for the
+# UNTRACKED per-captain publish-scan pattern file (R166).
+#
+# Copy to publish-scan-patterns.local (same directory) and replace EVERY
+# placeholder with your deployment's real values. The live file is
+# gitignored and can never ride an egg cut (`git archive` ships tracked
+# files only) — it is the ONE home for the real-name scan literals that
+# must never appear in tracked sources.
+#
+# CONSUMERS (both fail closed):
+#   cabinet/scripts/egg-publish-gate.sh   gate (d) real-value scan — ABORTS
+#                                         (exit 2) if the live file is
+#                                         missing or has no pattern lines:
+#                                         a publish scan is never vacuous.
+#   cabinet/scripts/cabinet-feedback.sh   leak-scrub suite for diagnostic
+#                                         bundles — on a private-side
+#                                         checkout it REFUSES to build an
+#                                         under-scrubbed bundle without the
+#                                         live file; on packaged egg cuts
+#                                         the file is optional (baseline
+#                                         scrub always applies).
+#
+# FORMAT — one directive per line; blank lines and '#' comments ignored:
+#   pattern <kind>:<value>
+#       kind sub  = case-insensitive substring (distinctive tokens:
+#                   surname, employer, product names, email localpart,
+#                   home-directory prefix)
+#       kind word = case-insensitive word-boundary (name tokens that are
+#                   common English substrings; add a second <name>s form
+#                   to catch hostname-shaped possessives like
+#                   <Name>s-MacBook-Pro)
+#       kind id   = standalone digit-run regex (the generic 9+-digit run
+#                   id:[0-9]{9,} is already TRACKED in both consumers —
+#                   do not repeat it here; add only extra id shapes)
+#   allow <LEDGER-ROW> <exact-string>
+#       adjudicated exact-string mask (publish gate only; charset
+#       [A-Za-z0-9./_-]) — ONLY with a recorded adjudication row in the
+#       operative-egg ledger; every masked hit still prints as [adj] and
+#       lands in the grouped report. Example class at this deployment:
+#       the CG-19 canonical install coordinate + the CG-20 authorship
+#       surname token.
+#
+# Every value below is a SYNTHETIC placeholder — replace them all.
+pattern sub:yourlastname
+pattern sub:youremployer
+pattern sub:yourproductname
+pattern sub:youremaillocalpart
+pattern sub:/users/yourusername
+pattern word:yourfirstname
+pattern word:yourfirstnames
+pattern word:colleaguefirstname
+allow CG-19 yourgithubhandle/your-public-repo
+allow CG-20 Yourlastname

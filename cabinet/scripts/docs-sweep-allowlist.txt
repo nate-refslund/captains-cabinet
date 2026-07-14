@@ -14,6 +14,12 @@ cabinet/.env
 # created by hand from the TRACKED .claude/project-config.json.template
 # (cabinet-extensions.md documents the cp step; install-extensions.sh reads it).
 .claude/project-config.json
+# R166: the captain-specific publish-scan pattern suite (real-name literals) —
+# gitignored by design; tracked synthetic twin
+# instance/config/publish-scan-patterns.local.example; created by the captain
+# from that twin (egg-publish-gate.sh + cabinet-feedback.sh fail closed
+# without it on a private-side checkout, so the docs must name the live path).
+instance/config/publish-scan-patterns.local
 
 # --- instance layer: hatch/provision-created config ---------------------
 # All written by cabinet-init / assemble-config / activate-project at hatch

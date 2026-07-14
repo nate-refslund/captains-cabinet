@@ -13,15 +13,25 @@
 #      user's own `gh` auth — ONLY after an explicit interactive y/N consent.
 #      --dry-run stops after (3) and never invokes gh at all.
 #
-# PATTERN SOURCE (reuse, never fork — scrub doctrine):
-#   The suite is the GREP_PATTERNS line of cabinet/scripts/egg-publish-gate.sh,
-#   extracted at runtime. FAIL-CLOSED: if the gate file is present but the
-#   patterns cannot be extracted, this script refuses to build a bundle.
-#   In packaged egg cuts the gate file is deliberately absent (it is
-#   private-side prep, excluded by egg-export-manifest.txt); the scrub then
-#   honestly announces baseline mode. A BASELINE suite (your $HOME path, your
-#   username, email addresses, 9+-digit id runs) is ALWAYS applied in both
-#   modes, and your review before consent is the final gate either way.
+# PATTERN SOURCE (reuse, never fork — scrub doctrine; R166 split):
+#   Three merged sources:
+#   1. The GREP_PATTERNS line of cabinet/scripts/egg-publish-gate.sh —
+#      GENERIC pattern classes only since R166 — extracted at runtime.
+#      FAIL-CLOSED: if the gate file is present but the patterns cannot be
+#      extracted, this script refuses to build a bundle.
+#   2. The captain-specific suite in UNTRACKED
+#      instance/config/publish-scan-patterns.local (`pattern <kind>:<value>`
+#      directives; template: its .local.example twin; `allow` directives are
+#      the publish gate's masking concern and are IGNORED here — over-scrub
+#      is safe, under-scrub is not). FAIL-CLOSED: on a private-side checkout
+#      (gate file present) a missing patterns file refuses the bundle — an
+#      under-scrubbed bundle must never build. In packaged egg cuts (gate
+#      file deliberately absent — private-side prep, excluded by
+#      egg-export-manifest.txt) the patterns file is optional: honored when
+#      present, baseline mode announced when not.
+#   3. A BASELINE suite (your $HOME path, your username, email addresses,
+#      9+-digit id runs) — ALWAYS applied in every mode, and your review
+#      before consent is the final gate either way.
 #   Match semantics mirror the gate's scan_hits/rematches contract (sub =
 #   case-insensitive substring, word = case-insensitive word-boundary, id =
 #   standalone digit-run) and are PROVEN by a planted-sample self-test before
@@ -140,15 +150,48 @@ line_matches() {
 
 # --- load the suite -----------------------------------------------------------
 GATE="$ROOT/cabinet/scripts/egg-publish-gate.sh"
+PATTERNS_LOCAL="$ROOT/instance/config/publish-scan-patterns.local"
 SPECS=()
 SUITE_MODE="baseline"
 if [ -f "$GATE" ]; then
   GATE_LINE="$(sed -n 's/^GREP_PATTERNS="\(.*\)"$/\1/p' "$GATE" | head -1)"
   [ -n "$GATE_LINE" ] || die "found $GATE but could not extract GREP_PATTERNS — fail-closed, refusing to build an under-scrubbed bundle (the gate may have been reformatted; fix the extraction, never skip it)"
   read -r -a SPECS <<< "$GATE_LINE"
-  SUITE_MODE="full (publish-gate suite + baseline)"
+  # private-side checkout: the captain-specific suite is REQUIRED (R166 —
+  # the gate line carries generic classes only; without the local patterns
+  # a bundle would be scrubbed of nothing personal)
+  [ -f "$PATTERNS_LOCAL" ] || die "captain-specific scan patterns not configured — fail-closed, refusing to build an under-scrubbed bundle (copy instance/config/publish-scan-patterns.local.example to publish-scan-patterns.local and fill in your values)"
+  SUITE_MODE="full (publish-gate generic classes + captain patterns + baseline)"
+elif [ -f "$PATTERNS_LOCAL" ]; then
+  SUITE_MODE="captain patterns + baseline"
 else
-  echo "cabinet-feedback: note — publish-gate pattern source not present (packaged egg cuts exclude it); applying the BASELINE scrub only. Review the bundle with extra care." >&2
+  echo "cabinet-feedback: note — no publish-gate pattern source and no instance/config/publish-scan-patterns.local (packaged egg cuts exclude the gate); applying the BASELINE scrub only. Review the bundle with extra care." >&2
+fi
+# parse the captain-specific patterns file (DATA, never sourced): one
+# directive per line — `pattern <kind>:<value>` joins the suite; `allow ...`
+# lines (publish-gate adjudication masks) are ignored here; '#' comments and
+# blank lines skip; anything else dies naming file:LINE-NUMBER only (a
+# malformed line may carry a real value and must not smear into output).
+if [ -f "$PATTERNS_LOCAL" ]; then
+  PL_LINE_N=0
+  PL_PATTERN_N=0
+  PL_CLEAN="$WORK/patterns.data"
+  sed -e 's/[[:space:]]*$//' "$PATTERNS_LOCAL" > "$PL_CLEAN"
+  while IFS= read -r pline || [ -n "$pline" ]; do
+    PL_LINE_N=$((PL_LINE_N + 1))
+    case "$pline" in
+      ''|'#'*) continue ;;
+      'pattern '*)
+        spec="${pline#pattern }"
+        case "$spec" in
+          sub:?*|word:?*|id:?*) SPECS+=("$spec"); PL_PATTERN_N=$((PL_PATTERN_N + 1)) ;;
+          *) die "unsupported pattern directive at $PATTERNS_LOCAL:$PL_LINE_N (format: pattern <sub|word|id>:<value>)" ;;
+        esac ;;
+      'allow '*) continue ;;   # publish-gate adjudication masks — not a scrub concern
+      *) die "unrecognized directive at $PATTERNS_LOCAL:$PL_LINE_N (directives: pattern | allow; '#' for comments)" ;;
+    esac
+  done < "$PL_CLEAN"
+  [ "$PL_PATTERN_N" -ge 1 ] || die "$PATTERNS_LOCAL carries no 'pattern' directives — fail-closed, refusing to build an under-scrubbed bundle (fill it from its .local.example twin)"
 fi
 # Baseline suite — always on, both modes. One spec per array element, so a
 # HOME containing spaces stays a single pattern.

@@ -62,14 +62,23 @@ R116 note: the ledger row claimed a packaging manifest existed; none did —
 - **(d) real-value + colleague grep suite** over the whole export (names,
   employer domains, personal paths, chat/board-id-shaped digit runs — **9+
   digits, unbounded**, mirroring the authoritative testburg guard; supergroup
-  ids are 13-digit runs, so a cap would be fail-open). ANY hit = FAIL +
-  grouped report; colleague-name hits are the per-person **consent items for
-  the Captain** before any public cut. Sole exception: exact strings on the
-  recorded **adjudicated allowlist** (ledger row CG-19, captain-gated — the
-  Captain ratifies or strikes each entry at CG-7) are masked before a
-  same-engine re-test; every masked occurrence still prints as an `[adj]`
-  line and lands in the grouped report, and any **other** banned token on the
-  same line still fails. Patterns are never relaxed.
+  ids are 13-digit runs, so a cap would be fail-open). PATTERN SOURCE (R166):
+  the tracked gate carries the GENERIC classes only; the captain-specific
+  suite loads from the UNTRACKED `instance/config/publish-scan-patterns.local`
+  (template: its `.local.example` twin — `pattern <kind>:<value>` +
+  `allow <LEDGER-ROW> <string>` directives). **A missing or pattern-less
+  file ABORTS the gate (exit 2)** — a publish scan is never vacuous;
+  `EGG_GATE_PATTERNS_FILE` overrides the location for tests only. ANY hit =
+  FAIL + grouped report; colleague-name hits are the per-person **consent
+  items for the Captain** before any public cut. Sole exception: exact
+  strings on the recorded **adjudicated allowlist** (the two generic
+  all-zero constants tracked in the gate under CG-21/CG-22, plus this
+  deployment's name-bearing `allow` directives in the patterns file under
+  CG-19/CG-20 — captain-gated: the Captain ratifies or strikes each entry
+  at CG-7) are masked before a same-engine re-test; every masked occurrence
+  still prints as an `[adj]` line and lands in the grouped report, and any
+  **other** banned token on the same line still fails. Patterns are never
+  relaxed.
 - **(e) verdict** — `PUBLISH GATE: GREEN/RED` + the CG-7 reminder line.
   Reports (gitleaks JSON + the grouped real-value report) land in a durable
   mktemp dir whose path prints with the verdict; nothing is written into the
