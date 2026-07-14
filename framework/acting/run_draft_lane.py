@@ -268,7 +268,7 @@ def main() -> None:
     # Captain-surface rail 3 (§3.6, 2026-07-10): reconcile the QUEUED-draft
     # store (cabinet:draft:*) against the captain's actual outbound via the
     # sources seam — a thread he handled himself retires its queued draft
-    # instead of dangling until fire time (the Sofie case). Best-effort;
+    # instead of dangling until fire time (the Casey case). Best-effort;
     # honest-empty when no personal source is bound. CABINET_DRAFT_RECONCILE=0
     # disables.
     if os.environ.get("CABINET_DRAFT_RECONCILE", "1") != "0":

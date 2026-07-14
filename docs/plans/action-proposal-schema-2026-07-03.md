@@ -73,7 +73,7 @@ stamps today), so the pending card carries `action` and the executor's classifie
 ## 3. Lifecycle (reuses the hardened binder + M-1 honest outcomes)
 
 ```
-proposal_event(action="task-create", subject="commitment:frederik-call", …)
+proposal_event(action="task-create", subject="commitment:colleague-call", …)
    │  emit_consequence(...) → pending on the ledger
    ▼
 CARD to Captain  (·pid· = proposal_id; Chair echoes the pid — cp2 label-UX)

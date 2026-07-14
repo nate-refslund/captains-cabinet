@@ -190,7 +190,7 @@ def _mower_case():
     msgs.append({
         "direction": "sent", "who": "Ada",
         "date": "2026-05-04T08:00:00+00:00", "source": "msgraph",
-        "text": "Ja, 3000 m2. Ingen kanttraad tak."})
+        "text": "Ja, 2500 m2. Ingen kanttraad tak."})
     msgs.append({
         "direction": "received", "who": "Bo <b@x>",
         "date": "2026-05-05T08:00:00+00:00", "source": "msgraph",

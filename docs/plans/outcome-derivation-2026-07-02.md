@@ -28,12 +28,12 @@ self-serve, launch-grade by Sept 1. Bets: subscription & billing (Basic+Pro) ·
 publisher dashboard · advertiser registration flow · AI-based support.
 
 **Board evidence.**
-- Subscription & Pricing Model epic #2843293535: **0/37 done**, owner Kristoffer —
+- Subscription & Pricing Model epic #2843293535: **0/37 done**, owner colleague-C —
   the named #1 bet is the least-landed epic. But motion exists: Paddle account
   setup InP (3004956577), Paddle EU/US compliance **Stuck** (3004954017), Navision
   requirements InP (3004956572), WS-2a/3b/4b/4d billing follow-ups in NR
   (3018047387, 3019350020, 3018114858, 3019803817); price model approved by
-  Kristoffer 2026-07-01. Sprint 13/16 goals are subscription launch.
+  colleague-C 2026-07-01. Sprint 13/16 goals are subscription launch.
 - Basic/Pro entitlement mass sits in Publisher UX #3000598672 (13/84): Basic
   lock/greyout InP (3036217684), Basic wallet/credits NR (3036649194), Pro
   share-credits InP (3038863708), Pro post-login redirect NR (3036567320),

@@ -108,7 +108,7 @@ Violation = Tuple[str, int, str]  # (display_path, line_no, reason)
 
 _ALLOWLISTED_FILES: Dict[str, str] = {
     # EMPTY today. kristoffer_uat.py (the colleague-scoped auto-reply cell, named
-    # after Kristoffer-Møller-Nielsen and carrying instance-only identifiers) was
+    # for a specific colleague and carrying instance-only identifiers) was
     # the sole whole-file entry; E4 lane I3 MOVED it OUT of framework to
     # instance/flavor-a/autoreply/kristoffer_uat.py, so the launcher-agnostic base
     # no longer carries it and the exemption is gone with the file. A future
