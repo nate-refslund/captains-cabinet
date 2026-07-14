@@ -40,6 +40,13 @@ delete instance/flavor-a
 # R128: instance/agents leaves; the cua-driver MCP overlay's template home is
 # cabinet/mcp-overlays/ (landed 1a8c94fb) and officer .md files regenerate.
 delete instance/agents
+# CG-7 SCRUB (Captain ruling 2026-07-14, recorded captain-decisions.md): instance/tools
+# is live instance/product tooling — e.g. polads-sentry-triage.sh added by the
+# 2026-07-14 fidelity merge (a polads-lane sentry-triage script). It survived the
+# export pass and tripped the instance-verify safety-check (would ship a live
+# instance file in the public egg). Excluded per "scrub anything personal to the
+# captain / instance / lane / product". A fresh captain's egg carries no such tools.
+delete instance/tools
 # R120: live instance values are excluded; the .example twins ship. The egg
 # hatches a fresh instance via generate-instance.py — these are THIS
 # deployment's values, not framework DNA.
