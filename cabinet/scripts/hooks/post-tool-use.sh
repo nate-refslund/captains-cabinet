@@ -129,17 +129,28 @@ fi
 #      identifiers (authToken = await) are left intact.
 #   5. Bare high-entropy token shapes (AWS AKIA, GitHub ghp_, OpenAI sk-,
 #      Slack xox*-) — caught regardless of surrounding = or quotes.
+#   6. Telegram bot-token in canonical API-URL form (.../bot<token>/...) —
+#      rule 2's leading \b can't anchor after the word-char 'bot' prefix, so
+#      match the 'bot'-prefixed token explicitly; keep 'bot' legible, redact
+#      the token.
+#   7. URL-embedded credentials — any scheme://user:PASS@host (Neon
+#      postgres(ql)://, Upstash redis(s)://, git-auth https://, etc.). Redact
+#      ONLY the password span of the userinfo; scheme, user and host stay
+#      legible. Password stops at '/' or '@' (raw '/' is not valid unencoded
+#      in RFC-3986 userinfo) so it never spills across the path/query.
 redact_secrets() {
   if command -v perl >/dev/null 2>&1; then
     perl -0777 -pe '
       s/(?i)(Authorization\s*:\s*Bearer\s+)[A-Za-z0-9._~+\/=-]+/${1}[REDACTED]/g;
       s/\b[0-9]{8,10}:AA[A-Za-z0-9_-]{30,46}\b/[REDACTED]/g;
+      s/\bbot([0-9]{8,10}:AA[A-Za-z0-9_-]{30,46})\b/bot[REDACTED]/g;
       s/(?i)(\x5c?\x22[^\x22\x5c]*?(?:bot[_-]?token|api[_-]?key|password|secret|token|bearer|auth)\x5c?\x22\s*:\s*\x5c?\x22)(?:[^\x22\x5c]|\x5c[^\x22])*(\x5c?\x22)/${1}[REDACTED]${2}/g;
       s/(?i)([\w.-]*?(?:bot[_-]?token|api[_-]?key|password|secret|token|bearer|auth)(?:[_-][A-Za-z]{1,10}){0,3}\s*=\s*(?![=~]))([\x5c]?[\x22\x27]?)[^\x22\x27\x5c\s,;&|]{8,}/${1}${2}[REDACTED]/g;
       s/\bAKIA[0-9A-Z]{16}\b/[REDACTED]/g;
       s/\b(?:ghp|gho|ghs|ghu|ghr|github_pat)_[A-Za-z0-9_]{20,}\b/[REDACTED]/g;
       s/\bsk-[A-Za-z0-9_-]{20,}\b/[REDACTED]/g;
       s/\bxox[baprs]-[A-Za-z0-9-]{10,}\b/[REDACTED]/g;
+      s/(:\/\/[^:@\/\s]+:)[^@\/\s]+(@)/${1}[REDACTED]${2}/g;
     '
   else
     printf '%s' '{"redacted":"perl-unavailable"}'

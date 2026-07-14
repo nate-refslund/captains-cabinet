@@ -31,6 +31,12 @@ OFFICER="${OFFICER_NAME:-${CABINET_OFFICER:-unknown}}"
 DEDUP_WINDOW_SECONDS=60
 DEDUP_FILE="/tmp/.captain-rules-last-block-$OFFICER"
 
+# Portable millisecond clock. GNU `date +%s%3N` is not honored by BSD/macOS
+# date (emits a literal "3N"), so prefer python3 and fall back to seconds*1000.
+_now_ms() {
+  python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo "$(( $(date +%s 2>/dev/null || echo 0) * 1000 ))"
+}
+
 # Read JSON stdin; jq is used everywhere else in the cabinet hooks for parsing.
 INPUT="$(cat)"
 if [ -z "$INPUT" ]; then
@@ -124,7 +130,7 @@ if is_voice and file_id and msg_id:
 
     # Cache hit (24h TTL per Spec 046 AC #9)?
     if [ -f "$CACHE_FILE" ]; then
-      cache_age=$(( $(date +%s) - $(stat -c %Y "$CACHE_FILE" 2>/dev/null || echo 0) ))
+      cache_age=$(( $(date +%s) - $(stat -f %m "$CACHE_FILE" 2>/dev/null || stat -c %Y "$CACHE_FILE" 2>/dev/null || echo 0) ))
       if [ "$cache_age" -lt 86400 ]; then
         TRANSCRIPT="$(cat "$CACHE_FILE" 2>/dev/null)"
       fi
@@ -146,16 +152,16 @@ except Exception:
 ' 2>/dev/null)"
 
       if [ -n "$FILE_PATH" ]; then
-        VOICE_START_MS="$(date +%s%3N)"
+        VOICE_START_MS="$(_now_ms)"
         if curl -sS --max-time 30 -o "$TMP_AUDIO" "https://api.telegram.org/file/bot$TELEGRAM_BOT_TOKEN/$FILE_PATH" 2>/dev/null && [ -s "$TMP_AUDIO" ]; then
           TRANSCRIPT="$(bash "$REPO_ROOT/cabinet/scripts/transcribe-voice.sh" "$TMP_AUDIO" 2>/dev/null)"
-          VOICE_END_MS="$(date +%s%3N)"
+          VOICE_END_MS="$(_now_ms)"
           VOICE_LATENCY_MS=$((VOICE_END_MS - VOICE_START_MS))
           if [ -n "$TRANSCRIPT" ]; then
             # Cache + cost log per Spec 046 AC #4 + #10.
             printf '%s' "$TRANSCRIPT" > "$CACHE_FILE"
             mkdir -p "$REPO_ROOT/cabinet/logs" 2>/dev/null
-            AUDIO_BYTES="$(stat -c %s "$TMP_AUDIO" 2>/dev/null || echo 0)"
+            AUDIO_BYTES="$(stat -f %z "$TMP_AUDIO" 2>/dev/null || stat -c %s "$TMP_AUDIO" 2>/dev/null || echo 0)"
             VOICE_LOG="$(jq -cn \
               --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
               --arg message_id "$MSG_ID" \

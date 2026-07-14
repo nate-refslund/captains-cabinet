@@ -137,18 +137,35 @@ if [ "$KS_EXIT" -ne 0 ]; then
     # surfaces (IS_TELEGRAM_COMMS, ~line 178). send-to-group rides the Bash
     # arm and remains blocked here, as before — so this door lets an officer
     # respond in an existing chat, not initiate a new outbound message. Kept
-    # BEFORE the mcp__* catch-all so first-match wins; falls through = allowed.
+    # BEFORE the mcp__* catch-all so first-match wins; anything unrecognized
+    # hits the fail-closed default arm at the bottom.
     mcp__plugin_telegram_telegram__reply|mcp__plugin_telegram_telegram__react)
       : # allowed — Captain-comms door stays open during the outage
       ;;
-    # DEFAULT-DENY the mutating surface when the control plane can't be
-    # verified. Native state-changing tools (as before) PLUS every MCP server
+    # READ/OBSERVE ALLOWLIST: these native tools have no state-changing or
+    # egress side-effect, so an officer can still inspect the situation while
+    # the control plane is unverifiable. Listed EXPLICITLY (not relying on
+    # fall-through) so the fail-closed default arm below can refuse everything
+    # unrecognized without also denying safe reads.
+    Read|Grep|Glob|LS|TodoWrite)
+      : # allowed — read/observe only, no side-effect
+      ;;
+    # DEFAULT-DENY the mutating + egress surface when the control plane can't
+    # be verified. Native state-changing tools (as before) PLUS every MCP server
     # and Task subagent-spawn — previously these fell OPEN here, so a mutating
     # MCP (Neon prod-DB writes, Vercel deploy, Make, Monday, brain queue_draft)
-    # or a Task spawn RAN during the halt. Read/observe native tools (Read,
-    # Grep, Glob, LS) are unlisted, so they still fall through and stay allowed.
-    Bash|Write|Edit|MultiEdit|NotebookEdit|Task|mcp__*)
-      echo "KILL SWITCH UNVERIFIABLE — Redis unreachable at $REDIS_HOST:$REDIS_PORT; state-changing tools, MCP servers, and subagent spawns are halted until the control plane answers (read + Captain-comms tools still allowed)." >&2
+    # or a Task spawn RAN during the halt. Native egress (WebFetch/WebSearch)
+    # is denied too, so no outbound-network side-effect/exfil channel stays
+    # open during the halt (an ACTIVE killswitch already blocks these).
+    Bash|Write|Edit|MultiEdit|NotebookEdit|Task|WebFetch|WebSearch|mcp__*)
+      echo "KILL SWITCH UNVERIFIABLE — Redis unreachable at $REDIS_HOST:$REDIS_PORT; state-changing tools, MCP servers, subagent spawns, and network-egress tools are halted until the control plane answers (read + Captain-comms tools still allowed)." >&2
+      exit 2
+      ;;
+    # FAIL-CLOSED DEFAULT: anything unrecognized — including an empty TOOL_NAME
+    # (unparseable stdin) or a future native mutating tool — is REFUSED rather
+    # than allowed while the kill switch is unverifiable.
+    *)
+      echo "KILL SWITCH UNVERIFIABLE — Redis unreachable at $REDIS_HOST:$REDIS_PORT; tool '$TOOL_NAME' refused (fail-closed default) until the control plane answers (read + Captain-comms tools still allowed)." >&2
       exit 2
       ;;
   esac
@@ -217,27 +234,30 @@ case "$TOOL_NAME" in
 esac
 
 # -- Parse caps (fail-open + warn on config trouble, contract d) -------
-SPENDING_CONFIG_CACHE="/tmp/cabinet-spending-limits.tsv"
+# SECURITY (Finding B, C17 audit 2026-07-12): the enforcement cache used to be
+# a FIXED path in world-writable /tmp trusted on an mtime-only freshness check,
+# so any SAME-UID officer Bash could plant a poisoned cache (e.g.
+# daily_per_officer_usd 999999) that the gate then trusted — spend cap
+# bypassed. Ownership/permission checks CANNOT close this: officers run as the
+# SAME uid as the hook (single-user Mac — that is exactly why germline uses
+# schg, not perms), so an officer-owned 0600 cache with a fresh mtime passes
+# every -O/perm test. The only same-uid-safe fix without root is to NEVER trust
+# a persisted cache: recompute from the source yaml on EVERY call into an
+# UNPREDICTABLE per-invocation mktemp file that no officer can pre-plant (random
+# name, O_EXCL, 0600) or race (written then read in-process, then deleted). No
+# persistent trusted state remains to poison.
+# RESIDUAL (SEPARATE finding — CG row, NOT closed here): platform.yml and
+# framework/defaults/spending-limits.yml are themselves officer-writable (not
+# schg, not in the hook's GERM_PATH_RE), so a determined officer can still edit
+# the SOURCE cap. This patch closes the /tmp CACHE vector only; source integrity
+# for the spend/peers/contexts configs is a distinct exposure.
+# (cabinet/mcp-scope.yml IS schg + GERM_PATH_RE-guarded, so section 9 below is
+# airtight end-to-end.)
 PLATFORM_YML="$CABINET_ROOT/instance/config/platform.yml"
 FRAMEWORK_DEFAULTS_YML="$CABINET_ROOT/framework/defaults/spending-limits.yml"
+SPENDING_CONFIG_CACHE=$(mktemp "${TMPDIR:-/tmp}/cabinet-spending-limits.XXXXXX" 2>/dev/null)
 
-# Rebuild cache when either yaml has been touched since last build, the
-# cache is missing, OR a yaml that was present at last rebuild has been
-# removed (marker file tracks instance presence — without it a deleted
-# platform.yml would keep stale instance values in cache indefinitely).
-# Instance wins; framework defaults fill the gaps.
-_REBUILD=0
-_INSTANCE_MARKER="${SPENDING_CONFIG_CACHE}.instance-exists"
-if [ ! -f "$SPENDING_CONFIG_CACHE" ]; then
-  _REBUILD=1
-else
-  [ -f "$PLATFORM_YML" ] && [ "$PLATFORM_YML" -nt "$SPENDING_CONFIG_CACHE" ] && _REBUILD=1
-  [ -f "$FRAMEWORK_DEFAULTS_YML" ] && [ "$FRAMEWORK_DEFAULTS_YML" -nt "$SPENDING_CONFIG_CACHE" ] && _REBUILD=1
-  # yaml disappearance: marker says it existed last time, now it doesn't
-  [ -f "$_INSTANCE_MARKER" ] && [ ! -f "$PLATFORM_YML" ] && _REBUILD=1
-fi
-
-if [ "$_REBUILD" = "1" ]; then
+if [ -n "$SPENDING_CONFIG_CACHE" ]; then
   if ! python3 - "$PLATFORM_YML" "$FRAMEWORK_DEFAULTS_YML" "$SPENDING_CONFIG_CACHE" <<'PY' 2>/dev/null
 import re, sys
 instance, default, dst = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -280,18 +300,15 @@ with open(dst, 'w') as f:
         f.write(f"{k}\t{v}\n")
 PY
   then
-    # Parser crashed (missing python3, broken yaml, permissions on /tmp,
-    # whatever). Fail-open with warn — silent-brick is never acceptable
-    # (FW-002 contract d).
+    # Parser crashed (missing python3, broken yaml, whatever). Fail-open with
+    # warn — silent-brick is never acceptable (FW-002 contract d); _cfg_get's
+    # hardcoded fallbacks (75/300) apply when the cache is empty/unreadable.
     echo "pre-tool-use: WARN spending-limits parser failed, using hardcoded framework defaults (\$75/officer, \$300/cabinet)" >&2
   fi
-  # Track whether platform.yml existed at the time of this rebuild so a
-  # subsequent deletion triggers rebuild instead of leaving stale values.
-  if [ -f "$PLATFORM_YML" ]; then
-    touch "$_INSTANCE_MARKER" 2>/dev/null
-  else
-    rm -f "$_INSTANCE_MARKER" 2>/dev/null
-  fi
+else
+  # mktemp failed (astronomically rare). Fail-open + warn to the hardcoded
+  # framework defaults rather than brick the officer (FW-002 contract d).
+  echo "pre-tool-use: WARN spending-limits temp cache unavailable, using hardcoded framework defaults (\$75/officer, \$300/cabinet)" >&2
 fi
 
 # Read each key with a sane hardcoded fallback (for the case where parsing
@@ -310,6 +327,10 @@ CABINET_CAP_USD=$(_cfg_get daily_cabinet_wide_usd 300)
 COS_MULT=$(_cfg_get coordinating_officer_multiplier 3.0)
 TG_WHITELIST_ON=$(_cfg_get telegram_whitelist_enabled true)
 TG_HOURLY_CAP=$(_cfg_get telegram_whitelist_hourly_cap 10)
+
+# Finding B: enforcement values are captured in shell vars — remove the
+# per-invocation temp cache so no trusted-content file survives this call.
+[ -n "$SPENDING_CONFIG_CACHE" ] && rm -f "$SPENDING_CONFIG_CACHE"
 
 # Coerce non-numeric values to 0 (unlimited) rather than crash. If caps are
 # garbage, fail-open + warn.
@@ -1019,6 +1040,26 @@ if [ "$TOOL_NAME" = "Edit" ] || [ "$TOOL_NAME" = "Write" ]; then
   # back to the tr-only value if python3 is unavailable — fail toward today's
   # behavior, never crash the gate. KEEP IN LOCKSTEP with §5b/§5c.
   FILE_PATH=$(printf '%s' "$FILE_PATH" | python3 -c 'import os,sys; sys.stdout.write(os.path.normpath(sys.stdin.read()))' 2>/dev/null || printf '%s' "$FILE_PATH")
+  # G1 (2026-07-14): Finding C collapsed lexical `..` but left the gate
+  # SYMLINK-BLIND — a symlinked DIRECTORY COMPONENT (e.g. an officer's own
+  # instance/memory/tier2/<self>/si -> shared/interfaces) still resolves to the
+  # real germline file, so a native Write to
+  # instance/memory/tier2/<self>/si/captain-vetoes.yml truncates the real
+  # (schg-EXEMPT) veto registry = self-un-demotion. Resolve symlinks in the
+  # directory components with os.path.realpath BEFORE the membership test below:
+  # realpath follows symlinks in existing components and leaves a non-existent
+  # trailing basename lexical (so Write-to-a-new-file still resolves its parent
+  # dir). The germline arm is matched FIRST and is suffix-anchored, so a symlink
+  # that lands on a germline file now matches and BLOCKS, while a genuine
+  # own-tier2 write (real dirs, no symlink) resolves to itself and still reaches
+  # the tier2 arm. FAIL-CLOSED: if realpath yields nothing (python3 crash/absent)
+  # force a sentinel that matches the germline arm so the write is REFUSED, never
+  # passed through symlink-blind. KEEP IN LOCKSTEP with §5b/§5c (a symlinked
+  # Bash-write target is the named §5b variable-indirection-class residual).
+  FILE_PATH=$(printf '%s' "$FILE_PATH" | python3 -c 'import os,sys; p=sys.stdin.read(); sys.stdout.write(os.path.realpath(p) if p else "")' 2>/dev/null || printf '')
+  if [ -z "$FILE_PATH" ]; then
+    FILE_PATH="/__germline_unresolved__/shared/interfaces/captain-vetoes.yml"
+  fi
   case "$FILE_PATH" in
     # GERMLINE SET (2026-06-10) — the files that JUDGE officer/loop
     # behavior: golden evals, the typed policy engine + its policies, MCP
@@ -1826,20 +1867,18 @@ fi
 # writes a context_slug must reference a known slug AND must not cross
 # the capacity boundary of the acting officer.
 #
-# Cache layer: /tmp/cabinet-context-slugs.tsv (slug<TAB>capacity), rebuilt
-# when any yaml in the contexts dir is newer than the cache. Keeps the
-# hook fast (~1ms) on every call.
+# Cache: rebuilt from source into a private per-invocation mktemp (slug<TAB>
+# capacity) on EVERY call — never a persisted /tmp cache (Finding B). Pure-shell
+# rebuild keeps the hook fast (~1ms per call).
 
 CONTEXTS_DIR="$CABINET_ROOT/instance/config/contexts"
-SLUG_CACHE="/tmp/cabinet-context-slugs.tsv"
+# SECURITY (Finding B, C17 audit): rebuild EVERY call from source into an
+# unpredictable per-invocation mktemp; never trust a persisted /tmp cache a
+# same-uid officer could poison. Pure-shell rebuild is ~1ms. On mktemp failure
+# the block is skipped (fail-open on infra error, consistent with FW-002 d).
+SLUG_CACHE=$(mktemp "${TMPDIR:-/tmp}/cabinet-context-slugs.XXXXXX" 2>/dev/null)
 
-if [ -d "$CONTEXTS_DIR" ]; then
-  # Rebuild cache if stale or missing. Dir mtime covers both file modifications
-  # AND deletions (Linux bumps dir mtime on unlink); file-newer covers individual
-  # edits. Combined: cache reflects current yaml set even after a deletion.
-  if [ ! -f "$SLUG_CACHE" ] \
-     || [ -n "$(find "$CONTEXTS_DIR" -maxdepth 0 -newer "$SLUG_CACHE" 2>/dev/null)" ] \
-     || [ -n "$(find "$CONTEXTS_DIR" -maxdepth 1 -name '*.yml' -newer "$SLUG_CACHE" 2>/dev/null)" ]; then
+if [ -d "$CONTEXTS_DIR" ] && [ -n "$SLUG_CACHE" ]; then
     : > "$SLUG_CACHE"
     for f in "$CONTEXTS_DIR"/*.yml "$CONTEXTS_DIR"/*.yaml; do
       [ -f "$f" ] || continue
@@ -1848,7 +1887,6 @@ if [ -d "$CONTEXTS_DIR" ]; then
       cap=$(awk -F: '/^capacity:/{sub(/[ \t]*#.*$/,"",$2); gsub(/^[ \t]+|[ \t\r\n]+$/,"",$2); gsub(/^["'"'"']|["'"'"']$/,"",$2); print $2; exit}' "$f")
       [ -n "$slug" ] && [ -n "$cap" ] && printf "%s\t%s\n" "$slug" "$cap" >> "$SLUG_CACHE"
     done
-  fi
 
   # Extract context_slug from tool_input if present (any depth)
   SLUG_IN_CALL=$(echo "$TOOL_INPUT" | jq -r '.context_slug // (..|.context_slug? // empty)' 2>/dev/null | grep -v '^$' | head -1)
@@ -1877,6 +1915,8 @@ if [ -d "$CONTEXTS_DIR" ]; then
       exit 2
     fi
   fi
+  # Finding B: drop the per-invocation temp slug cache.
+  rm -f "$SLUG_CACHE"
 fi
 
 # ============================================================
@@ -1887,28 +1927,28 @@ fi
 # hook derives the server name and rejects the call if it is not in the
 # acting officer's scope.
 #
-# Cache: /tmp/cabinet-mcp-scope.tsv (officer\tcsv-of-mcps), rebuilt when
-# the yaml is newer than the cache. Same pattern as context cache.
+# Cache: rebuilt from source into a private per-invocation mktemp (officer\t
+# csv-of-mcps) on EVERY call — never a persisted /tmp cache (Finding B).
 
 MCP_SCOPE_FILE="$CABINET_ROOT/cabinet/mcp-scope.yml"
-MCP_SCOPE_CACHE="/tmp/cabinet-mcp-scope.tsv"
 
 if [ -f "$MCP_SCOPE_FILE" ] && echo "$TOOL_NAME" | grep -q '^mcp__'; then
-  # Rebuild cache if stale. Cache format per line:
-  #   agent\tmcp1,mcp2,...
+  # SECURITY (Finding B, C17 audit): scope is recomputed from the schg-locked
+  # source on EVERY mcp call into an unpredictable per-invocation mktemp — never
+  # a trusted persisted /tmp cache a same-uid officer could poison (repro: 'cos
+  # GRANTED neon'). mcp-scope.yml is schg + GERM_PATH_RE-guarded, so this path
+  # is airtight end-to-end. Cache format per line:  agent\tmcp1,mcp2,...
   # Universals from yaml's top-level 'universal:' list are merged into every
-  # agent's set at build time, so the hook's membership check stays a single
-  # string lookup per tool call.
-  if [ ! -f "$MCP_SCOPE_CACHE" ] || [ "$MCP_SCOPE_FILE" -nt "$MCP_SCOPE_CACHE" ]; then
-    # FAIL CLOSED (audit 4c, germline window 2 2026-07-07): a cache-build
-    # failure used to be swallowed (`2>/dev/null || true`) — stale/absent
-    # cache then resolved ALLOWED="" and the unknown-officer arm let the
-    # call through. That contradicted the axes-contract "corrupt allowlist
-    # loads EMPTY" doctrine. Now: build failure removes any partial cache
-    # and refuses the MCP call loudly, naming this file. The parser SHAPE
-    # is unchanged — gen-officer-mcp-config.py::parse_scope mirrors it
-    # (parity tests in cabinet/scripts/tests/test_gen_officer_mcp_config.py).
-    if ! python3 - "$MCP_SCOPE_FILE" "$MCP_SCOPE_CACHE" <<'PY' 2>/dev/null
+  # agent's set at build time, so the membership check stays one string lookup.
+  # FAIL CLOSED (audit 4c, germline window 2 2026-07-07; and on mktemp failure):
+  # no usable scope table -> refuse. A build failure used to be swallowed —
+  # stale/absent cache then resolved ALLOWED="" and the unknown-officer arm let
+  # the call through, contradicting the axes-contract "corrupt allowlist loads
+  # EMPTY" doctrine. The parser SHAPE is unchanged — gen-officer-mcp-config.py
+  # ::parse_scope mirrors it (parity tests in
+  # cabinet/scripts/tests/test_gen_officer_mcp_config.py).
+  MCP_SCOPE_CACHE=$(mktemp "${TMPDIR:-/tmp}/cabinet-mcp-scope.XXXXXX" 2>/dev/null)
+  if [ -z "$MCP_SCOPE_CACHE" ] || ! python3 - "$MCP_SCOPE_FILE" "$MCP_SCOPE_CACHE" <<'PY' 2>/dev/null
 import re, sys
 src, dst = sys.argv[1], sys.argv[2]
 text = open(src).read()
@@ -1949,16 +1989,16 @@ for line in text.splitlines():
 with open(dst, 'w') as f:
     f.write('\n'.join(out) + '\n')
 PY
-    then
-      rm -f "$MCP_SCOPE_CACHE"
-      echo "BLOCKED: mcp-scope cache build FAILED (cabinet/scripts/hooks/pre-tool-use.sh section 9 parsing cabinet/mcp-scope.yml). Corrupt scope loads EMPTY — MCP calls are refused until the yaml parses. Fix cabinet/mcp-scope.yml (Captain window) and retry." >&2
-      exit 2
-    fi
+  then
+    [ -n "$MCP_SCOPE_CACHE" ] && rm -f "$MCP_SCOPE_CACHE"
+    echo "BLOCKED: mcp-scope cache build FAILED (cabinet/scripts/hooks/pre-tool-use.sh section 9 parsing cabinet/mcp-scope.yml). Corrupt scope loads EMPTY — MCP calls are refused until the yaml parses. Fix cabinet/mcp-scope.yml (Captain window) and retry." >&2
+    exit 2
   fi
 
   # Resolve acting officer
   AGENT_KEY="${OFFICER:-unknown}"
   ALLOWED=$(awk -F'\t' -v a="$AGENT_KEY" '$1==a{print $2; exit}' "$MCP_SCOPE_CACHE" 2>/dev/null)
+  rm -f "$MCP_SCOPE_CACHE"
 
   # Derive MCP server from tool_name. Formats observed:
   #   mcp__<server>__<tool>                      (e.g. mcp__notion__API-post-page)
@@ -2002,18 +2042,21 @@ fi
 #   - consented_by_captain must be true
 #   - the tool must be in that peer's allowed_tools list
 #
-# Cache: /tmp/cabinet-peers.tsv (peer_id<TAB>consented<TAB>allowed_tools_csv)
-# rebuilt when peers.yml is newer than cache (same pattern as CP2 contexts).
+# Cache: rebuilt from source into a private per-invocation mktemp (peer_id<TAB>
+# consented<TAB>allowed_tools_csv) on EVERY call — never persisted (Finding B).
 #
 # Tools that DON'T cross Cabinets (local self-query): identify, presence,
 # availability. No peer check for those.
 
 PEERS_FILE="$CABINET_ROOT/instance/config/peers.yml"
-PEERS_CACHE="/tmp/cabinet-peers.tsv"
 
 if [ -f "$PEERS_FILE" ] && echo "$TOOL_NAME" | grep -q '^mcp__cabinet__'; then
-  # Rebuild cache if stale
-  if [ ! -f "$PEERS_CACHE" ] || [ "$PEERS_FILE" -nt "$PEERS_CACHE" ]; then
+  # SECURITY (Finding B, C17 audit): recompute from source every call into a
+  # private per-invocation mktemp; never trust a persisted /tmp cache (same-uid
+  # poisonable). A build/mktemp failure leaves the table empty, so the peer
+  # checks below refuse the cross-Cabinet call (fail-closed).
+  PEERS_CACHE=$(mktemp "${TMPDIR:-/tmp}/cabinet-peers.XXXXXX" 2>/dev/null)
+  if [ -n "$PEERS_CACHE" ]; then
     python3 - "$PEERS_FILE" "$PEERS_CACHE" <<'PY' 2>/dev/null || true
 import re, sys
 src, dst = sys.argv[1], sys.argv[2]
@@ -2084,6 +2127,7 @@ PY
       fi
       ;;
   esac
+  [ -n "$PEERS_CACHE" ] && rm -f "$PEERS_CACHE"
 fi
 
 exit 0

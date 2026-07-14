@@ -35,11 +35,15 @@ cabinet: main
 
 agents:
   cos:
-    mcps: [notion, library, telegram, brain, exa, brave-search, perplexity, claude-in-chrome]
+    mcps: [notion, library, telegram, brain, exa, brave-search, perplexity, claude-in-chrome, cua, cua-driver]
     rationale: >
       Coordination and briefings. Not code; CoS does not touch Neon or
       Vercel directly — that's CTO/COO. Library for Phase 1 inbox and
       memory lookups; Notion for legacy business brain until migration.
+      cua + cua-driver: the drives_computer capability boots the cua/cua-driver
+      overlay (start-officer-mac.sh) — the §9 gate must scope both server names
+      or every mcp__cua__* / mcp__cua-driver__* call is blocked call-time
+      (mcp-config-1, enforcement-reaudit 2026-07-14; Captain-authorized grant).
       (host grant removed 2026-07-07 — dangling: no live .mcp.json layer
       defines a `host` server; the only definition pointed at the extinct
       /opt/founders-cabinet deployment. See
