@@ -135,6 +135,7 @@ import argparse
 import os
 import re
 import shutil
+import json
 import sys
 import tempfile
 from datetime import datetime, timezone
@@ -527,7 +528,7 @@ def render_project(lane: dict, integrations: dict) -> str:
 
 product:
   name: {name}
-  description: "{lane.get('one_liner') or name + ' lane'}"
+  description: {_yaml_free(lane.get('one_liner') or name + ' lane')}
   repo: {repo}
   repo_branch: {lane.get('repo_branch', 'main')}
   mount_path: /workspace/product   # mac-native checkout path decided at activation
@@ -592,8 +593,8 @@ notion:
 # Linear
 # =============================================================
 linear:
-  team_key: "{linear_team}"
-  workspace_url: "{linear_url}"
+  team_key: {_yaml_free(linear_team)}
+  workspace_url: {_yaml_free(linear_url)}
 
 # =============================================================
 # Neon — product database (NAME only; connection string in cabinet/.env)
@@ -608,7 +609,7 @@ neon:
 telegram:
   bot_mode: single_ceo
   ceo_officer: cos
-  ceo_bot: "{ceo_bot}"             # TOKEN-TBD — token lives ONLY in cabinet/.env ({token_env})
+  ceo_bot: {_yaml_free(ceo_bot)}             # TOKEN-TBD — token lives ONLY in cabinet/.env ({token_env})
   officers: {{}}                     # populated only if bot_mode is ever switched to multi_officer
 """
 
@@ -776,6 +777,17 @@ def _yaml_str(value: str) -> str:
     except yaml.YAMLError:
         pass
     return f'"{value}"'
+
+
+def _yaml_free(value: str) -> str:
+    """A YAML double-quoted scalar for ARBITRARY FREE TEXT — one-liners, URLs,
+    bot usernames — that is NOT NAME_RE-validated. Unlike ``_yaml_str`` (which
+    assumes no ``"``/``\\`` and does NO escaping), this properly escapes quotes,
+    backslashes, and control chars so a stray quote can't abort generation and a
+    backslash can't silently mutate the stored value (egg-hatch-engine-5).
+    ``json.dumps`` output is a valid YAML double-quoted scalar (YAML's dq style
+    is a JSON-string superset); ``ensure_ascii=False`` keeps unicode readable."""
+    return json.dumps(str(value), ensure_ascii=False)
 
 
 def render_platform(existing: str, answers: dict, lanes: list, org_shape: str,

@@ -989,3 +989,35 @@ class TestUnknownMissionKeyTolerated:
         res = run_cli(root, "--answers", str(path))
         assert res.returncode == 0, res.stderr
         assert (root / "instance/config/roster.yml").is_file()
+
+
+class TestFreeTextYamlEscaping:
+    """egg-hatch-engine-5: free-text lane fields (one_liner, linear_workspace_url,
+    linear_team_key, ceo_bot) were interpolated RAW into double-quoted YAML — a
+    stray quote aborted generation, a backslash silently mutated the stored
+    value. Pin that they now round-trip through _yaml_free (json.dumps escaping)."""
+
+    def test_quotes_and_backslashes_round_trip(self, cab_root):
+        answers = acme_answers()
+        lane = answers["lanes"][0]
+        lane["task_system"] = "linear"
+        lane["one_liner"] = 'ship "fast" \\ safely'
+        lane["linear_team_key"] = 'te"am'
+        lane["linear_workspace_url"] = 'https://linear.app/a"b'
+        answers["integrations"]["telegram"]["ceo_bot"] = 'bot"x'
+        run_gen(cab_root, answers)  # must NOT raise on the quote
+        proj = yaml.safe_load(
+            (cab_root / "instance/config/projects/acme-store.yml").read_text())
+        # exact round-trip — quote survives, backslash NOT mutated
+        assert proj["product"]["description"] == 'ship "fast" \\ safely'
+        assert proj["linear"]["workspace_url"] == 'https://linear.app/a"b'
+        assert proj["linear"]["team_key"] == 'te"am'
+        assert proj["telegram"]["ceo_bot"] == 'bot"x'
+
+    def test_plain_one_liner_still_renders(self, cab_root):
+        answers = acme_answers()
+        answers["lanes"][0]["one_liner"] = "a clean simple tagline"
+        run_gen(cab_root, answers)
+        proj = yaml.safe_load(
+            (cab_root / "instance/config/projects/acme-store.yml").read_text())
+        assert proj["product"]["description"] == "a clean simple tagline"
