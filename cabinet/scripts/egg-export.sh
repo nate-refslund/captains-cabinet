@@ -298,7 +298,11 @@ _prune_dir_keep() {
   done
 }
 
-t_contexts_prune()       { _prune_dir_keep "$OUT/instance/config/contexts" "_default.yml"; }
+# R124 + Wave G (lane-name instance-split): _default.yml stays, plus the two
+# synthetic Testburg lane-declaration .example twins — the fresh-hatch model
+# for the lane resolvers (env.lanes() / lanes.sh cabinet_lanes / dashboard
+# declaredLanes()). `.example` matches no *.yml glob: never a live lane.
+t_contexts_prune()       { _prune_dir_keep "$OUT/instance/config/contexts" "_default.yml" "bakery-site.yml.example" "newsletter.yml.example"; }
 t_projects_prune()       { _prune_dir_keep "$OUT/instance/config/projects" "_template.yml"; }
 t_officer_skills_prune() { _prune_dir_keep "$OUT/instance/officer-skills" "README.md"; }
 

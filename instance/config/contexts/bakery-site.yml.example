@@ -1,0 +1,26 @@
+# EXAMPLE lane declaration (synthetic Testburg vocabulary — see
+# cabinet/fixtures/testburg/README.md; everything here is fiction). Ships in
+# the egg so a fresh hatch has a concrete model of a lane-context file:
+#   1. copy to instance/config/contexts/<your-lane>.yml
+#   2. set `slug:` to your lane (the FILENAME minus .yml must equal the slug —
+#      the hook-side lane cache is built from these filenames)
+#   3. commit — declaration alone makes the slug enumerable; activation is a
+#      separate explicit Captain step (see _default.yml).
+#
+# The shared lane resolvers enumerate instance/config/contexts/*.yml by each
+# file's first top-level `slug:` scalar: framework/env.py lanes(),
+# cabinet/scripts/lib/lanes.sh cabinet_lanes, and the dashboard's
+# declaredLanes(). This .example file matches no *.yml glob, so it is never a
+# live lane. NOTE (the active-flag rule): `active:` is an activation gate,
+# NOT a resolver filter — a declared lane enumerates even while
+# `active: false`, so officer/world derivations never silently drop a
+# declared-but-not-yet-activated lane.
+slug: bakery-site
+name: Bakery Site
+capacity: work
+description: |
+  Ada Testburg's bakery-site lane (synthetic example). The storefront web
+  product of the Testburg bakery. A product lane pairs 1:1 with
+  instance/config/projects/<slug>.yml — copy projects/_template.yml and
+  fill in the product block for your lane.
+active: false

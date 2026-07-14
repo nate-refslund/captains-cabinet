@@ -156,7 +156,12 @@ def test_instance_contains_only_examples_and_structure(export: Path):
 
 def test_contexts_and_projects_pruned(export: Path):
     contexts = sorted(f.name for f in (export / "instance/config/contexts").iterdir())
-    assert contexts == ["_default.yml"], f"R124: only _default.yml stays, got {contexts}"
+    assert contexts == [
+        "_default.yml", "bakery-site.yml.example", "newsletter.yml.example",
+    ], (
+        "R124 + Wave G: _default.yml plus the Testburg lane-declaration "
+        f".example twins stay (live lane contexts never ship), got {contexts}"
+    )
     projects = sorted(f.name for f in (export / "instance/config/projects").iterdir())
     assert projects == ["_template.yml"], f"R125: only _template.yml stays, got {projects}"
     skills = sorted(f.name for f in (export / "instance/officer-skills").iterdir())
@@ -336,6 +341,21 @@ def test_export_tooling_excluded_from_the_egg(export: Path):
                     "docs/runbooks/egg-export-2026-07-10.md"):
         assert not (export / private).exists(), \
             f"private-side export tooling must not ship: {private}"
+
+
+def test_pensionist_shot_baselines_excluded(export: Path):
+    """Wave G scripts-sweep fix pass (R120-class instance-split): the
+    committed pensionist screenshot baselines are THIS instance's review
+    artifacts — pre-fixture-flip surface vocabulary is baked into the
+    PIXELS, invisible to gate (d)'s text grep — and must never ship. The
+    harness itself (scripts + rubric + README with the regen steps) rides,
+    so a fresh deployment captures its own baselines."""
+    assert not (export / "cabinet/scripts/pensionist/shots").exists(), \
+        "instance screenshot baselines must not ship"
+    for keeper in ("gen_fixtures.py", "render_tg.py", "run.py",
+                   "rubric.md", "README.md"):
+        assert (export / "cabinet/scripts/pensionist" / keeper).is_file(), \
+            f"pensionist harness file must still ship: {keeper}"
 
 
 def test_egg_manifest_json(export: Path):

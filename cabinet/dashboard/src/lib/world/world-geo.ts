@@ -4,17 +4,20 @@
  *
  * Everything here is LAW-shaped data, not behavior: the 240×192-tile canvas,
  * the main island composed in at offset (90,8), the quay line, the road
- * spine (village rise → crossroads → quay), and the isle-anchor bearing fan
- * (fixed at birth, never rotated/mirrored/moved — layout_fold).
+ * spine (village rise → crossroads → quay), and the isle-slot bearing fan
+ * (fixed at birth, never rotated/mirrored/moved — layout_fold). Which LANE
+ * occupies which slot is instance data and arrives as input — see
+ * ISLE_SLOTS / berthLanes below.
  *
- * PURE: buildWorldGeo() is a function of the growth counters only; the
- * chunked base field (chunks.ts) samples it, so land growth (R ticking up,
- * isle rings raising) requires ZERO chunk rewrites.
+ * PURE: buildWorldGeo() is a function of its input (growth counters +
+ * berth bindings) only; the chunked base field (chunks.ts) samples it, so
+ * land growth (R ticking up, isle rings raising) requires ZERO chunk
+ * rewrites.
  */
 import { fnv1a } from './hash'
 import { landRadius } from './growth'
 import type { LaneRecord } from './era-engine'
-import { laneRung } from './era-engine'
+import { laneRung, MAIN_ISLAND_LANE } from './era-engine'
 
 /** Canvas + main-island composition constants (archipelago-positions/v1). */
 export const CANVAS = { w: 240, h: 192 } as const
@@ -25,23 +28,57 @@ export const QUAY_CENTER = { x: 120, y: 52 } as const
 /** Sea owns everything south of the quay line. */
 export const SEA_EDGE_Y = 54
 
-/** Isle anchor slots — morphology law, fixed at birth (30° fan, r=126). */
-export interface IsleAnchor {
+/**
+ * Isle berth slots — morphology law, fixed at birth (30° fan, r=126).
+ * GEOMETRY ONLY: which lane occupies which berth is INSTANCE world-state
+ * and arrives as input (WorldGeoInput.berths) — lane names never live in
+ * shared code (Wave G instance-split, 2026-07-12). Today's live supplier
+ * folds the outcomes ledger via berthLanes(); when the hatching flow's
+ * archipelago-positions.json ships (world-onboarding v1b row 6) it can
+ * take over as the authored berth source without touching this module.
+ */
+export interface IsleSlot {
   slot: number
-  lane: string | null
   cx: number
   cy: number
-  status: 'active' | 'retired' | 'reserved'
-  probeWired: boolean
 }
 
-export const ISLE_ANCHORS: readonly IsleAnchor[] = [
-  { slot: 1, lane: 'polads', cx: 200, cy: 150, status: 'active', probeWired: true },
-  { slot: 2, lane: 'stephie', cx: 40, cy: 150, status: 'active', probeWired: false },
-  { slot: 3, lane: 'stepnetwork', cx: 120, cy: 168, status: 'retired', probeWired: false },
-  { slot: 4, lane: null, cx: 238, cy: 95, status: 'reserved', probeWired: false },
-  { slot: 5, lane: null, cx: 2, cy: 95, status: 'reserved', probeWired: false },
+export const ISLE_SLOTS: readonly IsleSlot[] = [
+  { slot: 1, cx: 200, cy: 150 },
+  { slot: 2, cx: 40, cy: 150 },
+  { slot: 3, cx: 120, cy: 168 },
+  { slot: 4, cx: 238, cy: 95 },
+  { slot: 5, cx: 2, cy: 95 },
 ] as const
+
+/**
+ * Berth-assignment fold (pure): slot i binds laneOrder's i-th surviving
+ * lane. Law: BIRTH ORDER (first ratified appearance in the outcomes
+ * ledger), never alphabetical — a lane's berth is assigned when the lane
+ * is born and never moves. Survivors = lanes declared on this instance
+ * (a contexts/<slug>.yml slug), minus the main island's own lane
+ * (system-self IS the main island), deduplicated. Undeclared pseudo-lanes
+ * (e.g. an outcome id that regex-parses to a non-lane) never claim a
+ * berth. More lanes than slots: the overflow waits (a 6th berth is a
+ * world-morphology change, not data). Empty/unknown inputs ⇒ all-null
+ * berths ⇒ mist — honest absence, never invented names.
+ */
+export function berthLanes(
+  laneOrder: readonly string[],
+  declaredLanes: readonly string[]
+): (string | null)[] {
+  const declared = new Set(declaredLanes)
+  const berths: (string | null)[] = []
+  const seen = new Set<string>()
+  for (const lane of laneOrder) {
+    if (berths.length >= ISLE_SLOTS.length) break
+    if (lane === MAIN_ISLAND_LANE || !declared.has(lane) || seen.has(lane)) continue
+    seen.add(lane)
+    berths.push(lane)
+  }
+  while (berths.length < ISLE_SLOTS.length) berths.push(null)
+  return berths
+}
 
 /**
  * The road spine in MAIN-ISLAND local tiles: village rise (north) through
@@ -181,6 +218,18 @@ export interface WorldGeoInput {
   orgEventsTotal: number
   /** Per-lane outcome records (outcomes.yml derived). */
   lanes: Record<string, LaneRecord>
+  /**
+   * Slot→lane berth bindings (instance world-state): slot i renders
+   * berths[i-1]. Live path: the engine route serves berthLanes() over the
+   * instance config. Absent/short ⇒ unbound slots render mist_reserved —
+   * never invented names.
+   */
+  berths?: readonly (string | null)[]
+  /**
+   * Lanes with a probes.yml row (instance data — the isle why-string's
+   * provenance: probe-verified vs unverified).
+   */
+  probeWiredLanes?: readonly string[]
 }
 
 export function buildWorldGeo(input: WorldGeoInput): WorldGeo {
@@ -195,10 +244,13 @@ export function buildWorldGeo(input: WorldGeoInput): WorldGeo {
   const islands: IslandDisc[] = [main]
   const laneSites: LaneSite[] = []
 
-  for (const a of ISLE_ANCHORS) {
-    if (a.status === 'reserved') {
+  const probeWired = new Set(input.probeWiredLanes ?? [])
+  for (let i = 0; i < ISLE_SLOTS.length; i++) {
+    const a = ISLE_SLOTS[i]
+    const lane = input.berths?.[i] ?? null
+    if (lane === null) {
       laneSites.push({
-        lane: a.lane,
+        lane: null,
         slot: a.slot,
         cx: a.cx,
         cy: a.cy,
@@ -208,42 +260,42 @@ export function buildWorldGeo(input: WorldGeoInput): WorldGeo {
       })
       continue
     }
-    const rec = a.lane ? input.lanes[a.lane] : undefined
+    const rec = input.lanes[lane]
     const rung = laneRung(rec)
     const isInstance = rec?.instanceTest === true
-    const isRetired = a.status === 'retired' || (rec ? rec.active === 0 && rec.retired > 0 : false)
+    const isRetired = rec ? rec.active === 0 && rec.retired > 0 : false
     if (rung === 0) {
       laneSites.push({
-        lane: a.lane,
+        lane,
         slot: a.slot,
         cx: a.cx,
         cy: a.cy,
         render: 'reef_buoy',
         ringRung: 0,
         why: isInstance
-          ? `${a.lane} — instance-only test lane, never foundation (Captain ruling 2026-07-09)`
+          ? `${lane} — instance-only test lane, never foundation (Captain ruling 2026-07-09)`
           : isRetired
-            ? `${a.lane} — retired lane (outcomes.yml); reef-buoy is the honest marker`
-            : `${a.lane} — no ratified outcome yet`,
+            ? `${lane} — retired lane (outcomes.yml); reef-buoy is the honest marker`
+            : `${lane} — no ratified outcome yet`,
       })
       continue
     }
     const r = isleRadius(rung)
     islands.push({
-      id: `isle:${a.lane}`,
+      id: `isle:${lane}`,
       cx: a.cx,
       cy: a.cy,
       r,
       clearR: Math.max(2, r - 2),
     })
     laneSites.push({
-      lane: a.lane,
+      lane,
       slot: a.slot,
       cx: a.cx,
       cy: a.cy,
       render: 'isle',
       ringRung: rung,
-      why: `${a.lane} — ring r${rung - 1} earned (outcomes.yml${a.probeWired ? ', probe-verified lane' : '; unverified by probe — probes.yml has no row'})`,
+      why: `${lane} — ring r${rung - 1} earned (outcomes.yml${probeWired.has(lane) ? ', probe-verified lane' : '; unverified by probe — probes.yml has no row'})`,
     })
   }
 

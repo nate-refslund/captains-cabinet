@@ -67,7 +67,7 @@ add("After 'No'", skipped, state="skipped")
 # --- briefing as ONE card -----------------------------------------------------
 add("Morning briefing card",
     briefing_card.render(
-        "Quiet night. PolAds support queue is empty; one deploy shipped.",
+        "Quiet night. The bakery-site support queue is empty; one deploy shipped.",
         {"pending_captain_items": 5}, now=NOW, cfg=CFG))
 
 # --- pacing nudge lifecycle ----------------------------------------------------
@@ -77,8 +77,8 @@ add("All clear", pacing._nudge_kwargs(("all_clear",), CFG))
 
 # --- FYI digest fold (rides the briefing, shown as its summary text) ----------
 fyis = [{"what": "Nightly backup finished (14 GB)", "lane": "org", "kind": "fyi"},
-        {"what": "STEPhie banner-builder test suite green", "lane": "stephie", "kind": "fyi"},
-        {"what": "3 new sign-ups on PolAds yesterday", "lane": "polads", "kind": "fyi"}]
+        {"what": "Newsletter signup-form test suite green", "lane": "newsletter", "kind": "fyi"},
+        {"what": "3 new bread orders on the bakery site yesterday", "lane": "bakery-site", "kind": "fyi"}]
 item = digest.fold_fyi(fyis, now=NOW)
 PANELS.append(("FYI digest (folded into the briefing)",
                item["payload"]["summary"], None))

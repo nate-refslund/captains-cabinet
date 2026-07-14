@@ -35,7 +35,7 @@ rule citing its `operative-egg-ledger` row. Summary:
 |---|---|
 | framework/, cabinet/, packs/, presets/, docs (non-plans), `.example` twins | live `instance/config/*` values (R120) |
 | `cabinet/fixtures/testburg/` — the synthetic demo estate | `instance/flavor-a/` personal-source pack (R127) |
-| `instance/config/{policies,posture-presets}/`, `contexts/_default.yml`, `projects/_template.yml` (R122/R123/R124/R125) | `instance/agents/`, `instance/fidelity/`, lane contexts/projects/officer-skills (R128/R124/R125) |
+| `instance/config/{policies,posture-presets}/`, `contexts/_default.yml` **+ the Testburg lane-declaration twins `contexts/{bakery-site,newsletter}.yml.example`** (Wave G lane instance-split — the fresh-hatch model for the lane resolvers), `projects/_template.yml` (R122/R123/R124/R125) | `instance/agents/`, `instance/fidelity/`, live lane contexts/projects/officer-skills (R128/R124/R125) |
 | `shared/interfaces` as **header contract + empty body** (R116; captain-vetoes.yml is the model) | captain rules/knowledge content (R116) |
 | the 4 germline-pinned normative specs + `ARCHIVED-NOTE.md` stub | the rest of `docs/plans/` incl. the egg plan+ledger (R145) |
 | `framework/docs` LIVING contract docs (`work-model.md`, `consequence-ledger.md`, `outcome-watchdog.md`) + `ARCHIVED-NOTE.md` stub (R162 `framework-docs-archive`) | the DATED `framework/docs/*-2026-*.md` design snapshots — instance history (live paths, lane names, the Captain by name); rewording dated records would falsify them |

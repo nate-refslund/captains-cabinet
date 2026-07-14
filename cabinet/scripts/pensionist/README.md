@@ -11,7 +11,7 @@ vocabulary fails its arm.
 |---|---|
 | `gen_fixtures.py` | Synthetic private-census `out/queue.json` (invented review data — no real pids, no secrets). |
 | `render_tg.py` | Renders the branch's TG cards through the REAL pipeline (decision_card → charter → gate.render_card) to `out/tg.html` + `out/tg-lint.json` (plain.lint over every visible string — must be `[]`). |
-| `shots/` | Committed screenshot fixtures (dashboard /queue faces + the TG card sheet) — the review baseline of 2026-07-10. |
+| `shots/` | Committed screenshot fixtures (dashboard /queue faces + the TG card sheet) — the review baseline of 2026-07-10. INSTANCE review baselines: excluded from the egg export (a fresh deployment captures its own per "Regenerating shots"). STALE vs the 2026-07-12 synthetic-fixture flip — re-capture at the next manual pensionist run before trusting a PASS. |
 | `run.py` | The harness: each shot → vision model (claude CLI) → the 3 rubric questions → per-card PASS/WARN/FAIL, answers linted against `plain.BANNED`. |
 | `rubric.md` | The questions + the fail law. |
 

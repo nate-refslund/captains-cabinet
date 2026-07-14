@@ -58,6 +58,14 @@ export interface GrowthLaddersConfig {
   ladders: Record<string, LadderSpec>
 }
 
+/**
+ * The org's own lane — the main island itself. Framework vocabulary (every
+ * instance has a system-self lane: the org working on the org), NOT instance
+ * data, so it is the one lane name allowed in shared world code. It never
+ * earns an isle berth and the per_lane engine loop skips it.
+ */
+export const MAIN_ISLAND_LANE = 'system-self'
+
 /** Per-lane record derived from outcomes.yml (v1 isle-ring feed). */
 export interface LaneRecord {
   ever: number
@@ -359,7 +367,7 @@ export function engineStep(
     if (lad.mode === 'per_lane') {
       const lanes = ev.lanes ?? {}
       for (const lane of Object.keys(lanes).sort()) {
-        if (lane === 'system-self') continue // system-self IS the main island
+        if (lane === MAIN_ISLAND_LANE) continue // system-self IS the main island
         const h = laneHolds[lane] ?? initialHold()
         const next = holdStep(h, laneRung(lanes[lane]), lad.hysteresis_evals ?? 2)
         laneHolds[lane] = next
