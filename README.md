@@ -102,6 +102,17 @@ One command orchestrates the rehearsed chain: host setup → instance generation
 
 By default the hatch stops short of launchd: nothing goes live until you run the printed move-in instructions (or re-run with `--with-launchd`). `--dry-run` prints the full plan without executing anything. Full flag table and what v0 skips: [`docs/runbooks/hatch-v0-2026-07-09.md`](./docs/runbooks/hatch-v0-2026-07-09.md); the step-by-step manual path is in the [appendix](#appendix-manual-hatch).
 
+### After hatch: earn the first responsibility
+
+Open **Orientation** in Dashboard or World, or send `/onboard` in Telegram.
+Choose one specific folder and a purpose. The Cabinet shows a hash-bound,
+read-only Charter before inspecting anything, then returns one deterministic
+finding with file-and-line evidence. Every surface resumes the same card;
+revoke, undo, and typed purge are built in.
+
+The low-floor → high-ceiling journey is in
+[`docs/plans/onboarding-v2-design-of-record-2026-07-14.md`](./docs/plans/onboarding-v2-design-of-record-2026-07-14.md).
+
 Officers start propose-first: everything consequential is proposed to you on Telegram until cells graduate on evidence. Expect to approve a lot in week one — that is the ramp working.
 
 ## Repo Map

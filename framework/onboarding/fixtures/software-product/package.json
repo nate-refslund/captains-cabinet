@@ -1,0 +1,9 @@
+{
+  "name": "harbor-product",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "test": "vitest run",
+    "deploy:staging": "node scripts/deploy-staging.js"
+  }
+}

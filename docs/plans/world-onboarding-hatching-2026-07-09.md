@@ -6,6 +6,14 @@ Cabinet deployment happens **inside the world**, joyfully, instead of across Ter
 dashboard + hand-edited files. Captain-ratified direction 2026-07-09: *onboarding should
 happen as much as possible INSIDE the world; this is the sanctioned first write-surface.*
 
+> **2026-07-14 scope clarification:** this remains authoritative for installing
+> and hatching a deployment. The post-hatch intelligence journey — First Window,
+> First Dividend, deep orientation, Strategy Mirror, Formation, and commissioning
+> across Dashboard/Telegram/World — is superseded by
+> `onboarding-v2-design-of-record-2026-07-14.md`. World now provides an
+> authenticated overlay over the shared onboarding action service; that does not
+> create a World map/state write path.
+
 **Binding doctrine (not negotiable in this doc):**
 
 - **World-writes are CAPTAIN-identity only, config-plane only**, routed through the

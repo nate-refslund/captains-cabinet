@@ -93,6 +93,10 @@ export interface ProvisioningState {
 /** Message sent back to Telegram */
 export interface BotMessage {
   text: string
+  /** Plain messages omit Telegram Markdown parsing (paths/excerpts are data). */
+  plain?: boolean
+  /** Optional inline keyboard; onboarding uses callback_data only. */
+  buttons?: Array<Array<{ text: string; callback_data: string }>>
   /** If true, send as a follow-up message (chained) */
   additional?: BotMessage[]
 }

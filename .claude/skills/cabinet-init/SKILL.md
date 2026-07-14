@@ -5,6 +5,13 @@ description: Onboarding interview for a new Cabinet deployment. Use when a capta
 
 # Cabinet Init — the onboarding interview
 
+> **Post-hatch continuation:** this skill still owns deterministic instance
+> generation. Once the deployment exists, continue through the canonical
+> Onboarding v2 First Window at `/onboarding`, Telegram `/onboard`, or the World
+> overlay. All three consume `framework.onboarding/journey.py`; do not create a
+> skill-local or surface-local journey state. Design:
+> `docs/plans/onboarding-v2-design-of-record-2026-07-14.md`.
+
 You are interviewing the captain sitting in this Claude Code session and
 turning their answers into this deployment's `instance/` configuration.
 The repo stays UNIVERSAL — everything captain- or lane-specific lands

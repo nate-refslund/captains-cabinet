@@ -10,11 +10,11 @@ export type NavLink = {
 /**
  * Nav link set per dashboard mode (Spec 032).
  *
- * Consumer (5 items, mirrors the 4 content cards + Cabinets — Spec 034):
- *   Dashboard / Cabinets / Costs / Library / Settings
+ * Consumer (6 items, including the canonical post-hatch journey):
+ *   Dashboard / Orientation / Cabinets / Costs / Library / Settings
  *
  * Advanced (all items, zero regression from the pre-Spec-032 nav):
- *   Dashboard / Needs You / World / Project / Cabinets / Officers / Tasks /
+ *   Dashboard / Orientation / Needs You / World / Project / Cabinets / Officers / Tasks /
  *   Capability Gaps / Health / Settings / Governance / Receipts /
  *   Integrations / Costs / Crons / Library / Terminal (external)
  *
@@ -31,6 +31,7 @@ export type NavLink = {
 
 export const ADVANCED_NAV: NavLink[] = [
   { href: '/', label: 'Dashboard' },
+  { href: '/onboarding', label: 'Orientation' },
   { href: '/queue', label: 'Needs You' },
   { href: '/world', label: 'World' },
   { href: '/project', label: 'Project' },
@@ -51,6 +52,7 @@ export const ADVANCED_NAV: NavLink[] = [
 
 export const CONSUMER_NAV: NavLink[] = [
   { href: '/', label: 'Dashboard' },
+  { href: '/onboarding', label: 'Orientation' },
   { href: '/cabinets', label: 'Cabinets' },
   { href: '/costs', label: 'Costs' },
   { href: '/library', label: 'Library' },
