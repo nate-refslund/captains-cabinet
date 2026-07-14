@@ -30,7 +30,10 @@
 #
 # FAIL-HONEST CONTRACT (the tasks_board fail-closed precedent): pure stdout,
 # read-only, no caching, no network, no eval — config values are DATA, only
-# ever echoed. Unreadable/missing config => EMPTY output + rc 1. A readable
+# ever echoed. Unreadable/missing config SOURCE (contexts dir / conf /
+# platform+product files) => EMPTY output + rc 1; an unreadable INDIVIDUAL
+# contexts/*.yml is SKIPPED per-file — python-twin OSError-skip parity, the
+# readable rest still enumerate (rc 0, test-pinned). A readable
 # source that legitimately declares nothing => empty output + rc 0 for the
 # set-valued functions (an honest empty set), rc 1 for the scalar-valued
 # cabinet_deploys_code_officer (an empty scalar is never consumable). NEVER a
@@ -52,25 +55,36 @@ CABINET_ROOT="${CABINET_ROOT:-$(cd "$_LANES_LIB_DIR/../../.." && pwd)}"
 # `slug:` wins (even when its value is empty — the file yields nothing then);
 # value is whitespace-stripped, then double-quote-stripped, then
 # single-quote-stripped, then lowercased.
+#
+# ITERATION is per-file to mirror the twins' `except OSError: continue`: an
+# unreadable or non-regular *.yml is skipped and the readable rest still
+# enumerate (rc 0). A single awk over the whole glob arglist would fatally
+# abort at the first unreadable member (macOS awk), silently truncating every
+# alphabetically-later lane behind a clean rc — the plausible-partial-enum
+# trap (test-pinned). Only the dir-level guard fails the whole resolve (rc 1).
 cabinet_lanes() {
   local dir="$CABINET_ROOT/instance/config/contexts"
   [ -d "$dir" ] && [ -r "$dir" ] || return 1
-  LC_ALL=C awk '
-    FNR == 1 { taken = 0 }
-    taken { next }
-    {
-      line = $0
-      gsub(/^[ \t]+|[ \t\r]+$/, "", line)
-      if (line ~ /^slug:/) {
-        taken = 1
-        val = substr(line, index(line, ":") + 1)
-        gsub(/^[ \t]+|[ \t]+$/, "", val)
-        gsub(/^"+|"+$/, "", val)
-        gsub(/^'\''+|'\''+$/, "", val)
-        if (val != "") print tolower(val)
+  local f
+  for f in "$dir"/*.yml; do
+    [ -f "$f" ] && [ -r "$f" ] || continue
+    LC_ALL=C awk '
+      FNR == 1 { taken = 0 }
+      taken { next }
+      {
+        line = $0
+        gsub(/^[ \t]+|[ \t\r]+$/, "", line)
+        if (line ~ /^slug:/) {
+          taken = 1
+          val = substr(line, index(line, ":") + 1)
+          gsub(/^[ \t]+|[ \t]+$/, "", val)
+          gsub(/^"+|"+$/, "", val)
+          gsub(/^'\''+|'\''+$/, "", val)
+          if (val != "") print tolower(val)
+        }
       }
-    }
-  ' "$dir"/*.yml 2>/dev/null | LC_ALL=C sort -u
+    ' "$f" 2>/dev/null
+  done | LC_ALL=C sort -u
   return 0
 }
 

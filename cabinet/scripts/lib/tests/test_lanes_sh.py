@@ -10,17 +10,23 @@ literals. These tests pin:
   2. the ACTIVE-FLAG TRAP: `active: false` contexts MUST still enumerate (on
      the launcher instance the running lanes' contexts are active:false
      R2-pending declarations — an active-filtered enum silently drops them);
-  3. fail-honest semantics: unreadable config => empty output + rc 1; a
-     readable-but-empty declaration => honest empty set + rc 0 (set-valued),
-     rc 1 for the scalar deploys_code officer; NEVER an invented default.
+  3. fail-honest semantics: an unreadable config SOURCE (contexts dir, conf,
+     platform/product files) => empty output + rc 1; an unreadable INDIVIDUAL
+     contexts/*.yml is skipped per-file (the python twins' OSError-skip) and
+     the readable rest still enumerate (rc 0); a readable-but-empty
+     declaration => honest empty set + rc 0 (set-valued), rc 1 for the
+     scalar deploys_code officer; NEVER an invented default.
 
 All fixture vocabulary is synthetic Testburg (foundation fixtures never name
 instance lanes). No network, no Redis — subprocess bash over tmp_path config.
 """
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
+
+import pytest
 
 # test_library_mcp_client patches the global subprocess.Popen and the patch
 # can leak into later-alphabetical modules — capture the real one at import
@@ -134,6 +140,33 @@ def test_lanes_dir_with_no_slugs_is_honest_empty_rc0(tmp_path):
     proc = _run("cabinet_lanes", tmp_path)
     assert proc.returncode == 0
     assert proc.stdout == ""
+
+
+def test_lanes_unreadable_file_skipped_like_python_twins(tmp_path):
+    """PER-FILE SKIP PARITY (env.lanes / _context_slugs `except OSError:
+    continue`): one chmod-000 context among readable ones is skipped and the
+    readable REST still enumerate, rc 0 — never a truncated enum. Pins the
+    macOS-awk trap: a single awk over the whole glob arglist fatally aborts
+    at the first unreadable member, silently dropping every alphabetically-
+    later lane while still exiting 0 (a plausible-looking partial set —
+    zeta-market below is the truncation canary)."""
+    _seed_contexts(tmp_path, {
+        "alpha-bakery.yml": "slug: alpha-bakery\n",
+        "middle-locked.yml": "slug: shadow-never-listed\n",
+        "zeta-market.yml": "slug: zeta-market\n",
+    })
+    locked = tmp_path / "instance" / "config" / "contexts" / "middle-locked.yml"
+    locked.chmod(0)
+    if os.access(str(locked), os.R_OK):  # DAC-overriding euid (root/ACL)
+        locked.chmod(0o644)
+        pytest.skip("euid can read mode-000 files here — "
+                    "unreadable fixture impossible")
+    try:
+        proc = _run("cabinet_lanes", tmp_path)
+    finally:
+        locked.chmod(0o644)  # restore so tmp_path cleanup never trips
+    assert proc.returncode == 0
+    assert _lines(proc) == ["alpha-bakery", "zeta-market"]
 
 
 # ------------------------------------------------------------- officers ----
