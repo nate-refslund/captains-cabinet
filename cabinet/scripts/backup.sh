@@ -95,14 +95,25 @@ echo "  → $FS_FILES files, $FS_SIZE"
 # --- 2. Redis snapshot (BGSAVE then copy the dump.rdb) ---
 echo "[2/3] Redis snapshot..."
 if command -v redis-cli >/dev/null 2>&1 && redis-cli ping >/dev/null 2>&1; then
+  # Capture the pre-BGSAVE save-point, trigger BGSAVE, then wait until LASTSAVE
+  # ADVANCES. BGSAVE is ASYNC — the old loop broke on iteration 1 because
+  # `redis-cli LASTSAVE` always exits 0, so cp grabbed the PRE-BGSAVE dump and
+  # every backup's recovery point silently predated the run.
+  PRE_SAVE=$(redis-cli LASTSAVE 2>/dev/null | tr -dc '0-9' || true)
   redis-cli BGSAVE > /dev/null 2>&1 || true
-  # Wait briefly for BGSAVE to complete
-  for _ in 1 2 3 4 5; do
-    if redis-cli LASTSAVE 2>/dev/null > /dev/null; then
-      break
+  SAVED=0
+  for _ in $(seq 1 30); do
+    if [ -z "$PRE_SAVE" ]; then
+      # No baseline to compare (LASTSAVE unavailable) — brief wait, then proceed.
+      sleep 1; SAVED=1; break
+    fi
+    NOW_SAVE=$(redis-cli LASTSAVE 2>/dev/null | tr -dc '0-9' || true)
+    if [ -n "$NOW_SAVE" ] && [ "$NOW_SAVE" != "$PRE_SAVE" ]; then
+      SAVED=1; break
     fi
     sleep 1
   done
+  [ "$SAVED" -eq 1 ] || echo "  → WARN: BGSAVE did not complete within 30s; copying the most recent dump.rdb anyway (it may predate this run)"
   # Find the dump.rdb (Homebrew default vs Linux default)
   for rdb in /opt/homebrew/var/db/redis/dump.rdb /var/lib/redis/dump.rdb; do
     if [ -f "$rdb" ]; then
