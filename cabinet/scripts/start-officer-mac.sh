@@ -80,8 +80,13 @@ fi
 # we only need to materialise CLAUDE_CMD so tests can grep it. Side-effecting calls
 # are skipped — the dry-run gate exits 0 long before tmux/redis/boot logic anyway.
 if [ "${CABINET_MAC_DRY_RUN:-0}" != "1" ]; then
-  bash cabinet/scripts/load-preset.sh 2>&1 | tail -3 >&2
-  LOAD_PRESET_RC="${PIPESTATUS[0]}"
+  # `|| LOAD_PRESET_RC=...` so `set -euo pipefail` does not exit at THIS pipeline
+  # before the rc handler runs: pipefail makes a failed load-preset non-zero, and
+  # bare (no `||`) that aborts the whole boot here — the PIPESTATUS capture and
+  # the "don't abort" branch below were dead code. The `||` RHS is an assignment,
+  # so PIPESTATUS still reflects the failed pipeline (load-preset's rc, not tail's).
+  LOAD_PRESET_RC=0
+  bash cabinet/scripts/load-preset.sh 2>&1 | tail -3 >&2 || LOAD_PRESET_RC="${PIPESTATUS[0]}"
   if [ "$LOAD_PRESET_RC" -ne 0 ]; then
     echo "[ERROR] start-officer-mac.sh: load-preset.sh exited $LOAD_PRESET_RC — runtime constitution may be incomplete" >&2
     # Don't abort — let officer try to boot anyway, but logged for debug
@@ -119,6 +124,13 @@ MCP_BASE=".mcp.json.mac-native"
 [ ! -f "$MCP_BASE" ] && MCP_BASE=".mcp.json"   # graceful fallback if mac-native variant missing
 
 MERGED_MCP_PATH="$HOME/Library/Caches/cabinet/merged-mcp-${OFFICER}.json"
+if [ "${CABINET_MAC_DRY_RUN:-0}" = "1" ]; then
+  # --dry-run must write NOTHING to the live cache (contract at the dry-run gate
+  # below): route the merge output to a throwaway temp file so a rehearsal never
+  # creates/overwrites the live merged-mcp cache (or its Caches/ dir), which a
+  # concurrent real boot could otherwise pick up mid-write.
+  MERGED_MCP_PATH="$(mktemp -t "cabinet-dryrun-mcp-${OFFICER}.XXXXXX")"
+fi
 mkdir -p "$(dirname "$MERGED_MCP_PATH")"
 
 # Build the MCP overlay stack (highest precedence last):
@@ -152,13 +164,24 @@ if [ "${#MCP_LAYERS[@]}" -gt 1 ]; then
   # Final pass strips pseudo-server keys starting with "_" (comment/doc
   # entries like "_comment" in overlay files) — Claude Code would try to
   # boot them as real MCP servers otherwise.
+  MERGE_RC=0
   ( umask 077
     jq -s 'reduce .[1:][] as $o (.[0];
              . * $o | .mcpServers = (.mcpServers + ($o.mcpServers // {})))
            | .mcpServers |= with_entries(select(.key|startswith("_")|not))' \
        "${MCP_LAYERS[@]}" > "$MERGED_MCP_PATH"
-  )
-  SCOPE_INPUT="$MERGED_MCP_PATH"
+  ) || MERGE_RC=$?
+  if [ "$MERGE_RC" -ne 0 ]; then
+    # A layer is corrupt/truncated JSON (install-extensions.sh writes
+    # extra-mcps.json non-atomically). Do NOT let `set -e` crash-loop the officer
+    # at the jq merge — fall back to the curated base config (the designed
+    # fail-closed boot, minus overlays) with a loud error instead of dying before
+    # the fail-closed net downstream.
+    echo "[ERROR] start-officer-mac.sh: MCP overlay merge failed (rc=$MERGE_RC) — a layer is likely corrupt JSON (${MCP_LAYERS[*]}). Booting on the base MCP config without overlays." >&2
+    SCOPE_INPUT="$REPO_ROOT/$MCP_BASE"
+  else
+    SCOPE_INPUT="$MERGED_MCP_PATH"
+  fi
 else
   # Single layer — filter the base directly (covers both the mac-native base
   # and the bare .mcp.json fallback; the generator strips "_" pseudo-keys the
@@ -455,7 +478,7 @@ TAKEOVER
 fi
 
 # Kill any existing session for this officer (idempotent restart)
-tmux kill-session -t "$SESSION_NAME" 2>/dev/null || true
+tmux kill-session -t "=$SESSION_NAME" 2>/dev/null || true
 
 # Reap orphaned Telegram channel-plugin pollers. The kill-session above kills the
 # pane's process tree, but the --channels telegram plugin DETACHES (reparents to
@@ -617,7 +640,7 @@ while kill -0 "$PANE_PID" 2>/dev/null; do
     SHELL_PROMPT_STREAK=$((SHELL_PROMPT_STREAK + 1))
     if [ "$SHELL_PROMPT_STREAK" -ge 2 ]; then
       echo "[ERROR] start-officer-mac.sh: $OFFICER claude exited to shell (pane_pid=$PANE_PID still alive) — exiting non-zero for KeepAlive restart" >&2
-      tmux kill-session -t "$SESSION_NAME" 2>/dev/null || true
+      tmux kill-session -t "=$SESSION_NAME" 2>/dev/null || true
       exit 1
     fi
   else
