@@ -1,14 +1,21 @@
-"""The clean-room RATCHET — framework/ must carry no launcher identity [DN-6, E4/I4].
+"""The clean-room RATCHET — framework/ must carry no launcher OR product
+identity [DN-6, E4/I4, PCA-P1].
 
 De-Nate foundation build: framework/ is the universal base shared by every
 preset and every deployment, so it may not hardcode THIS launcher's captain
 (``Nate``), home path (``/Users/nate``), org domains (``stepnetwork`` / ``jfm``
-/ ``jfmedier`` / ``step.dk``), or Monday board ids (``50xxxxxxxx``). The one
-sanctioned way for framework code to address the captain is
+/ ``jfmedier`` / ``step.dk``), Monday board ids (``50xxxxxxxx``), or a specific
+PRODUCT/lane name (``polads`` / ``stephie`` and their ``-ceo`` officer forms).
+The one sanctioned way for framework code to address the captain is
 ``framework.env.captain_name()`` (resolved from ``instance/config/platform.yml``);
 the one sanctioned way to find the repo is ``CABINET_ROOT`` / a file-relative
 ``parents[N]`` root; org domains and board ids live in ``instance/config`` and
-reach framework code only through resolvers (mirroring ``captain_name()``).
+reach framework code only through resolvers (mirroring ``captain_name()``);
+product/lane names are resolved the same way, via ``framework.env.officers()``
+/ ``framework.env.lane_default()`` (read from ``instance/config/roster.yml`` /
+``platform.yml`` — the Product/captain-agnostic foundation, Captain directive
+2026-07-14: "polads should not be referenced in the repo... product/captain-
+agnostic ALWAYS").
 
 This module is the RATCHET that keeps it that way. It text-walks every
 ``framework/**/*.py`` (``tests/`` dirs, ``__pycache__`` and ``test_*``/``*_test``
@@ -25,7 +32,7 @@ Every pattern is a STATIC module regex (no dynamic/user-controlled construction,
 so no ReDoS surface) matched against repo source text.
 
 Scope of the ratchet, deliberately narrow — it is a launcher-IDENTITY ratchet
-over four literal families:
+over five literal families:
 
   * ``\\bNate\\b`` is CASE-SENSITIVE and word-bounded on purpose. It flags the
     captain's display name; it deliberately does NOT trip the legitimate
@@ -45,6 +52,13 @@ over four literal families:
   * ``50`` + 8 digits (a 10-digit Monday BOARD id) flags an instance board id.
     Anchored to exactly ten digits so it does not match inside a longer number
     (ms timestamps, item ids) and does not match non-``50`` Monday item ids.
+  * ``polads`` / ``stephie`` (case-insensitive, word-bounded — added PCA-P1,
+    Captain directive 2026-07-14) flag a hardcoded PRODUCT/lane identity.
+    Word-bounding still catches the ``-ceo`` officer forms and the ``.eu``
+    domain form because ``-``/``.`` are non-word characters (a boundary exists
+    on either side of the bare token), the same mechanism ``jfm`` relies on
+    above. Product/lane names live in ``instance/config`` and reach framework
+    only through ``framework.env.officers()`` / ``framework.env.lane_default()``.
 """
 from __future__ import annotations
 
@@ -68,12 +82,14 @@ _NATE = re.compile(r"\bNate\b")                       # case-sensitive display n
 _HOME_PATH = re.compile(r"/(?:Users|home)/[A-Za-z0-9._-]+")  # absolute home dir
 _ORG_DOMAIN = re.compile(r"\b(?:stepnetwork|jfmedier|jfm|step\.dk)\b", re.IGNORECASE)
 _BOARD_ID = re.compile(r"\b50\d{8}\b")                # 10-digit Monday board id
+_PRODUCT_TOKEN = re.compile(r"\b(?:polads|stephie)\b", re.IGNORECASE)  # PCA-P1
 
 _CHECKS: Tuple[Tuple["re.Pattern[str]", str], ...] = (
     (_NATE, "bare '%s' — not launcher-agnostic"),
     (_HOME_PATH, "hardcoded home path '%s'"),
     (_ORG_DOMAIN, "hardcoded org-domain literal '%s'"),
     (_BOARD_ID, "hardcoded Monday board-id '%s'"),
+    (_PRODUCT_TOKEN, "hardcoded product/lane token '%s' — not product-agnostic"),
 )
 
 Violation = Tuple[str, int, str]  # (display_path, line_no, reason)
@@ -133,27 +149,70 @@ _ALLOWLISTED_LINES: Dict[str, Tuple[str, ...]] = {
     # a silent widening. The allowlist may only ever SHRINK.
 }
 
-# TEMPORARY line residuals — E4 lane I4. Each entry is a Monday board-id literal
-# an owner extraction lane (I2, the org-domain + board-id sweep) has not YET
-# reworded out of a DOCSTRING. The RUNTIME code is already launcher-agnostic —
-# the board id travels as a function parameter
-# (actfirst_canary._discover_probe_target(board=...)); only the docstring CITATION
-# of "board 5091706356" leaks THIS instance's board id.
-# The needle IS the literal, so the exemption is surgical — it un-guards ONLY the
-# doc line and leaves the rest of the file (actfirst_canary.py is germline) fully
-# guarded for every check. FORCING FUNCTION: the moment the owner lane rewords the
-# docstring to name the board WITHOUT the number (as env.py did for the launcher
-# home path), the needle vanishes and
-# test_line_allowlist_needles_are_actually_present goes RED — forcing this
-# entry's deletion. Shrink-only; flagged as I4 deviations for I2. (The
-# daily_recap.py entry left 2026-07-07 with egg row R023: the Monday
-# Reflections leg and its board-id docstring citation were DELETED from the
-# module, so the needle — and the exemption — went with the code.)
-# FIXME(I2/board-id-sweep): reword the actfirst_canary docstring, then delete the entry here.
+# TEMPORARY line residuals — E4 lane I4 (board ids) + PCA-P1 (product/lane
+# tokens, added 2026-07-15). Each entry is a literal (board id OR product/
+# officer token) that is EITHER (a) an owner extraction lane has not YET
+# reworded out of a DOCSTRING — I4's original case: the RUNTIME code is
+# already launcher-agnostic, only the doc CITATION leaks the literal — OR (b)
+# lives in a file on cabinet/scripts/germline-lock.sh's schg FILES[] list
+# (verified via `germline-lock.sh` + `ls -lO` on the live tree — schg is a
+# live-tree-only filesystem flag, invisible in a worktree, so it must be
+# checked on the deployment, never assumed), where the real fix is verified
+# and STAGED DARK pending the next Captain-sudo germline ceremony. A germline
+# path is NEVER edited or worked around (cabinet-meta CLAUDE.md "Germline
+# etiquette") — a tracked, forcing-function-backed residual entry here is the
+# sanctioned handback, not a workaround.
+#
+# board id (I4, unchanged): actfirst_canary.py's docstring citation of "board
+# 5091706356" — the board id travels as a function parameter
+# (actfirst_canary._discover_probe_target(board=...)); only the docstring
+# names it. FIXME(I2/board-id-sweep): reword the docstring, then delete.
+#
+# product/lane tokens (PCA-P1, Captain directive 2026-07-14 "product/captain-
+# agnostic ALWAYS" — all five entries below are germline, confirmed schg on
+# the live tree 2026-07-15):
+#   * action_lane.py: PROPOSER_SYSTEM officer-enum literal (@158) and
+#     lane_default="polads" (@470) — the resolver-based fix (env.officers() /
+#     env.lane_default() at compose/call time) is VERIFIED and staged dark on
+#     feat/wave-g-lockstep; see ledger row CG-25 + docs/proposals/germline-
+#     lockstep-lane-resolver-addendum-2026-07-12.md. The @117 dataclass
+#     comment is dated design rationale CG-25 records as "recon disposition
+#     (leave-with-reason)". Applies at the next germline ceremony.
+#   * action_exec.py: _DELEGATE_OFFICERS whitelist literal (@848) — the same
+#     CG-25 staged patch (call-time frozenset(env.officers())).
+#   * run_action_lane.py (@185/232/249): dated design-rationale comments
+#     citing the same officer names — CG-25's note records this as "recon
+#     disposition (leave-with-reason)" too, kept as historical record, not
+#     part of the staged patch.
+#   * situation.py (@87) + graduation.py (@13): germline (both confirmed in
+#     germline-lock.sh FILES[]); product-token doc citations not covered by a
+#     prior named ledger row — filed as ledger row PCA-P1-RATCHET in the same
+#     commit as this entry.
+#
+# The needle IS the literal in every case, so the exemption is surgical — it
+# un-guards ONLY the cited line and leaves the rest of each file fully guarded
+# for every check, including this one. FORCING FUNCTION: the moment a lane
+# rewords a doc line to drop the literal (I4-style) or a germline ceremony
+# lands the resolver-based fix, the needle vanishes and
+# test_line_allowlist_needles_are_actually_present goes RED — forcing that
+# entry's deletion (the allowlist may only shrink). (The daily_recap.py entry
+# left 2026-07-07 with egg row R023 is the precedent: the Monday Reflections
+# leg and its board-id docstring citation were DELETED from the module, so the
+# needle — and the exemption — went with the code.)
+# FIXME(I2/board-id-sweep): reword the actfirst_canary docstring, then delete that entry.
+# FIXME(CG-25/germline-ceremony): once the ceremony applies the staged patch,
+# delete the action_lane.py + action_exec.py entries below.
+# FIXME(PCA-P1-RATCHET/germline-ceremony): once a ceremony reworks the doc
+# citations, delete the run_action_lane.py + situation.py + graduation.py entries.
 _TEMPORARY_LINE_RESIDUALS: Dict[str, Tuple[str, ...]] = {
     "framework/frontdoor/actfirst_canary.py": ("5091706356",),
+    "framework/acting/action_lane.py": ('"polads"', '"polads-ceo"'),
+    "framework/frontdoor/action_exec.py": ('"polads-ceo"',),
+    "framework/acting/run_action_lane.py": ("'polads-ceo'",),
+    "framework/attention/situation.py": ("polads.eu",),
+    "framework/fidelity/graduation.py": ('"polads"',),
 }
-_TEMP_LINE_BASELINE_MAX = 1  # target is always 0; this may only be LOWERED (shrink-only), never raised
+_TEMP_LINE_BASELINE_MAX = 7  # target is always 0; this may only be LOWERED (shrink-only), never raised
 
 # The whole-file temporary residual mechanism (residual pre-sweep misses an owner
 # lane had not yet cleaned, exempted at WHOLE-FILE granularity). EMPTY today — the
@@ -240,9 +299,10 @@ def scan_tree(
     lines_allowlist=None,  # type: Optional[Dict[str, Tuple[str, ...]]]
     rel_to=None,  # type: Optional[str | Path]
 ) -> List[Violation]:
-    """Read-only scan of every non-test .py under ``root`` for a launcher literal
-    (bare ``Nate``, an absolute home path, an org domain, or a Monday board id)
-    outside the allowlists.
+    """Read-only scan of every non-test .py under ``root`` for a launcher OR
+    product literal (bare ``Nate``, an absolute home path, an org domain, a
+    Monday board id, or a ``polads``/``stephie`` product/lane token) outside
+    the allowlists.
 
     ``files_allowlist`` maps a whole (rel_to-relative) path to a justification;
     ``lines_allowlist`` maps a path to needles that exempt only the lines that
@@ -282,8 +342,9 @@ def scan_tree(
     return violations
 
 
-_HINT = ("framework/ must be launcher-agnostic — address the captain via "
-         "framework.env.captain_name() and read org domains / board ids from "
+_HINT = ("framework/ must be launcher- AND product-agnostic — address the captain via "
+         "framework.env.captain_name(), officers/lanes via framework.env.officers() / "
+         "framework.env.lane_default(), and read org domains / board ids from "
          "instance/config resolvers (see .claude/rules or docs/plans/cabinet-axes-spec)")
 
 
@@ -292,8 +353,9 @@ _HINT = ("framework/ must be launcher-agnostic — address the captain via "
 # ---------------------------------------------------------------------------
 class TestNoLauncherHardcode:
     def test_framework_tree_has_no_launcher_hardcode(self):
-        """THE RATCHET: no launcher literal (Nate / home path / org domain /
-        board id) in framework/ outside the documented, shrink-only allowlist."""
+        """THE RATCHET: no launcher OR product literal (Nate / home path / org
+        domain / board id / polads-stephie product token) in framework/
+        outside the documented, shrink-only allowlist."""
         violations = scan_tree(_REPO_ROOT / "framework", rel_to=_REPO_ROOT)
         assert violations == [], (
             "%s\nOffenders: %s"
@@ -408,6 +470,18 @@ class TestScannerEngine:
         assert len(v) == 1
         assert "board-id" in v[0][2] and "5091706356" in v[0][2]
 
+    def test_flags_product_token_literals(self, tmp_path):
+        # Both bare tokens and their hyphenated -ceo/.eu forms must trip the
+        # check (word-bounding, not whole-token matching — mirrors how `jfm`
+        # is still caught inside `jfmedier` above).
+        self._write(tmp_path / "pkg" / "m.py",
+                    "OFFICER = 'polads-ceo'\nLANE = \"Stephie\"\nURL = 'stephie.dk'\n")
+        v = scan_tree(tmp_path, files_allowlist={}, lines_allowlist={})
+        reasons = " ".join(r[2] for r in v)
+        assert len(v) == 3
+        assert "product/lane token" in reasons
+        assert "polads" in reasons and "Stephie" in reasons
+
     def test_ignores_non_launcher_lookalikes(self, tmp_path):
         # Critical false-positive guard for a ratchet: bare 'step', a non-50
         # Monday item id, a 9- and 11-digit number, '/usr/local', and lowercase
@@ -418,7 +492,8 @@ class TestScannerEngine:
                     "NINE = 509170635\n"                 # 9 digits
                     "ELEVEN = 50917063560\n"             # 11 digits (no 10-digit boundary)
                     "P = '/usr/local/bin'\n"             # not a home path
-                    "nate_model = 1\n")                  # lowercase brain artifact
+                    "nate_model = 1\n"                   # lowercase brain artifact
+                    "poladsboard_other = 1\n")           # NOT polads-* — no boundary, must stay green
         assert scan_tree(tmp_path, files_allowlist={}, lines_allowlist={}) == []
 
     def test_ignores_lowercase_brain_artifacts(self, tmp_path):
