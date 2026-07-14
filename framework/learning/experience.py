@@ -169,7 +169,7 @@ def _migrate_legacy_store() -> None:
 # skill-induction input forever, with zero change to the write path the
 # fleet already exercises.
 
-# Field lines in the md contract look like: `- **Officer:** polads-ceo`
+# Field lines in the md contract look like: `- **Officer:** acme-ceo`
 _MD_FIELD_RE = re.compile(r"^-\s+\*\*(Officer|Date|Outcome|Tags):\*\*\s*(.*)$")
 
 # Outcome → lesson_type mapping. The md contract records a task OUTCOME

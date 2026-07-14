@@ -220,7 +220,7 @@ def _run_memory_search(query: str, source_types: str, limit: int,
 
 def _lane_from_outcome_id(oid: str) -> str:
     """Best-effort lane from an ``outcome-<lane>-NNN`` id (e.g.
-    ``outcome-polads-001`` → ``polads``); empty when the id has another
+    ``outcome-acme-001`` → ``acme``); empty when the id has another
     shape — the caller falls back to the id itself, never fabricates."""
     m = re.match(r"^outcome-(.+)-\d+$", oid)
     return m.group(1) if m else ""

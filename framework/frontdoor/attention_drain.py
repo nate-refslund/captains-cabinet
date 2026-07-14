@@ -1,12 +1,12 @@
 """framework.frontdoor.attention_drain — lane captain-attention cards → front-door intake.
 
-GAP THIS CLOSES (2026-06-24): lane officers (polads-ceo, stephie-ceo, …) that
+GAP THIS CLOSES (2026-06-24): lane officers (e.g. per-product CEO officers) that
 cannot DM the Captain card their decisions to a per-project Redis Stream
 ``cabinet:captain-attention:<project>`` (see cabinet/scripts/lib/captain-attention.sh).
 In the portfolio preset NOTHING drained those streams to the Chair: the only
 auto-scan (post-tool-use.sh §3b) is gated on ``OFFICER_NAME == CABINET_CEO_OFFICER``
 in ``single_ceo`` bot mode, so for separate lane CEOs the cards sat stranded
-(observed: 4 critical polads-ceo cards — Sentry blocker, DPA fix, deploy
+(observed: 4 critical lane-CEO cards — Sentry blocker, DPA fix, deploy
 approvals — never reached the Captain).
 
 This module is the missing bridge. ``drain_attention()`` discovers every

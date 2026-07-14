@@ -46,7 +46,8 @@ vars, errors and personal content (see exhaust-archive.py's scrub list); the
 violations file must never become a second copy of that content.
 
 Size bound: MAX_ENVELOPE_BYTES = 16384. Measured 2026-07-11 (read-only XRANGE
-over live cabinet:triggers:{cos,polads-ceo,stephie-ceo,comms-officer}):
+over live cabinet:triggers:{cos,<lane>-ceo,...,comms-officer} across every
+officer stream on the deployment):
 n=173 entries, min 168 / median 861 / p95 2018 / max 3259 bytes (sum of
 key+value byte lengths). Bound = ~5x observed max, generous headroom for
 typed-envelope overhead while still catching flood-shaped payloads.

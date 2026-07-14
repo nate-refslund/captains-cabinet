@@ -35,7 +35,7 @@ _DUE_FOLLOWUPS_SH = os.path.join(_REPO_ROOT, "cabinet", "scripts", "due-followup
 # Per the Captain's repeated correction, every operational/error/monitoring alert routes
 # to the CHAIR (cos) to triage — escalating to the Captain ONLY if genuinely necessary —
 # NOT straight onto his phone via the briefing. (This was the live source of the
-# "sentry-step-polads: N unresolved errors in 24h" ping the Captain kept flagging — it was
+# "sentry-<product>: N unresolved errors in 24h" ping the Captain kept flagging — it was
 # the cabinet's OWN front-door synthesis surfacing Sentry, NOT a Sentry-native rule.)
 # So those two sources are delivered as an OFFICER MESSAGE on the Chair's Redis
 # trigger stream `cabinet:triggers:cos` (the same path pipe-health uses + the exact
@@ -90,7 +90,7 @@ def notify_chair(message: str, *, sender: str = "frontdoor-synthesis") -> bool:
 def _operational_summary(items: list[dict]) -> str:
     """Compose the operational items (sentry/deploy health) into ONE Chair-bound
     message body. Each item's payload.summary is the human line the source already
-    built (e.g. 'Sentry — sentry-step-polads: 5 unresolved error(s) in 24h — …').
+    built (e.g. 'Sentry — sentry-<product>: 5 unresolved error(s) in 24h — …').
     A urgency_tier=='ping-now' item is flagged so the Chair can prioritize."""
     cap = captain_name()
     lines = [f"OPERATIONAL HEALTH (route: triage + escalate to {cap} only if needed):"]

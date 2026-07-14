@@ -48,12 +48,13 @@ def _record_cost(cost: Any) -> None:
 # cabinet, the eval LLM (officer AND judge) inherits POST-CUTOFF, this-session
 # context — an out-of-band leak past the payload-level cutoff fence (a bare
 # `claude -p` from the cabinet returned the held-out answer, citing .remember;
-# and the user-global memory leaked "what is PolAds"). BOTH tiers are now closed:
+# and the user-global memory leaked an answer to an internal-product-name
+# probe). BOTH tiers are now closed:
 #   (a) PROJECT tier: run the eval LLM from a CLEAN temp cwd (_eval_cwd) so it
 #       auto-discovers no project CLAUDE.md/.remember/hooks.
 #   (b) USER-GLOBAL tier: pass `--setting-sources project,local` so the `user`
 #       source (~/.claude/CLAUDE.md + memory) is NOT loaded. Verified: the
-#       PolAds probe returns UNKNOWN with the flag, AUTH_OK still works — HOME is
+#       internal-product-name probe returns UNKNOWN with the flag, AUTH_OK still works — HOME is
 #       left intact so the macOS keychain / OAuth is untouched (overriding HOME
 #       breaks the keychain, the dead end the earlier CABINET_EVAL_HOME approach
 #       hit). No clean-HOME, no separate login, no keychain risk.

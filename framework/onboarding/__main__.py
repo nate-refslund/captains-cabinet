@@ -37,7 +37,7 @@ def _default_presets_dir():
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="framework.onboarding")
-    ap.add_argument("slug", help="lane slug (kebab-case, e.g. polads)")
+    ap.add_argument("slug", help="lane slug (kebab-case, e.g. acme)")
     ap.add_argument("repo_path", help="local checkout path of the product repo")
     ap.add_argument("--tracker-ref", "--board", dest="tracker_ref", default=None,
                     help="opaque task-tracker ref (board/product id) — semantics "

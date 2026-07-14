@@ -322,7 +322,7 @@ def risk_sentence(card: dict) -> str:
 def plain_summary(card: dict, *, now: "datetime | None" = None) -> str:
     """Deterministic one-sentence summary from card fields only.
 
-    'Suggestion — polads: Reply to TV2 counsel. This sends a message to a
+    'Suggestion — acme: Reply to TV2 counsel. This sends a message to a
     real person outside. Waiting 2 days — due in 20 hours.'
     """
     what = str(card.get("what") or "").strip() or COPY["no_title"]
