@@ -69,11 +69,30 @@ done
 # ── Required-field enforcement: name the FIRST missing/invalid field ─────────
 is_iso_date() { printf '%s' "$1" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'; }
 
+# Org-domain anchors are INSTANCE DATA (Wave G lane-name instance-split,
+# 2026-07-12): a verify text naming one of THIS org's own domains (platform.yml
+# org_domains, read via lanes.sh cabinet_org_domains — the bash twin of
+# framework.env.org_domains()) counts as a concrete anchor, exactly like the
+# generic keyword anchors below. No domains configured / lib unreadable ⇒ no
+# free anchors (fail-closed: the vagueness gate only gets STRICTER).
+# shellcheck source=lib/lanes.sh
+source "$ROOT/cabinet/scripts/lib/lanes.sh" 2>/dev/null || true
+verify_has_org_domain_anchor() {
+  local v="$1" d
+  command -v cabinet_org_domains >/dev/null 2>&1 || return 1
+  while IFS= read -r d; do
+    [ -n "$d" ] || continue
+    case "$v" in *"$d"*) return 0 ;; esac
+  done < <(cabinet_org_domains 2>/dev/null || true)
+  return 1
+}
+
 # A VERIFY that's just a vague gesture ("see if done", "check if resolved",
 # "look into it") defeats the whole point — reject it. The check must point at a
 # CONCRETE signal: a thread/email, a Monday board/id/status, or a brain/Outlook
 # query. We reject when the text is too short OR matches a vague phrase AND
-# carries no concrete anchor (a quote, an @, a board/id/url/status keyword).
+# carries no concrete anchor (a quote, an @, a board/id/url/status keyword, or
+# an org domain from instance config).
 verify_is_vague() {
   local v; v="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
   # too short to be a real instruction
@@ -86,9 +105,11 @@ verify_is_vague() {
       # allow even a vague-sounding phrase IF it carries a concrete anchor
       case "$v" in
         *@*|*http*|*monday*|*board*|*thread*|*msg*|*query*|*search*\
-        |*outlook*|*teams*|*status*|*"polads.eu"*|*neon*|*"\""*) return 1 ;;
-        *) return 0 ;;
+        |*outlook*|*teams*|*status*|*neon*|*"\""*) return 1 ;;
       esac
+      # org domains from instance config anchor too (was a hardcoded literal)
+      verify_has_org_domain_anchor "$v" && return 1
+      return 0
       ;;
   esac
   return 1

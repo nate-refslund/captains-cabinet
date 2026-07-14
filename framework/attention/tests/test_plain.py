@@ -23,7 +23,7 @@ GOLDEN_CARD = {
     "blast_worst_case": "a message reaches a human outside the machine",
     "why_now": {"decay": "waiting 47h; 2 demotions"},
     "one_tap": {"approve": "direct", "veto": "direct", "defer": "direct"},
-    "lane": "polads",
+    "lane": "testburg",
 }
 
 
@@ -90,7 +90,7 @@ class TestTablesLintClean(unittest.TestCase):
 class TestSummaryShape(unittest.TestCase):
     def test_one_sentence_summary_reads_plain(self):
         s = plain.plain_summary(GOLDEN_CARD, now=NOW)
-        self.assertIn("Suggestion — polads: Reply to Casey", s)
+        self.assertIn("Suggestion — testburg: Reply to Casey", s)
         self.assertIn("real person outside", s)
         self.assertIn("waiting 47 hours", s.lower())
         self.assertIn("due in", s)
@@ -153,7 +153,7 @@ class TestSummaryShape(unittest.TestCase):
         q = {"kind": "pipe-prompt", "what": "Include the private calendar?"}
         self.assertEqual(plain.risk_sentence(q),
                          plain.KIND_RISK_DEFAULTS["pipe-prompt"])
-        r = {"kind": "outcome-ratification", "what": "Goal sign-off — polads"}
+        r = {"kind": "outcome-ratification", "what": "Goal sign-off — testburg"}
         self.assertEqual(plain.risk_sentence(r),
                          plain.KIND_RISK_DEFAULTS["outcome-ratification"])
         # Exact producer strings and ceiling still win over kind defaults.

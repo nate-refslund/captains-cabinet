@@ -74,7 +74,31 @@ PIECES_ROOT = Path(os.environ.get(
     str(Path.home() / "Downloads" / "Portrait Generator 1.5.0 Linux Build"
         / "Portrait Pieces"))) / "Portrait_Generator - 32x32"
 
-DEFAULT_ROSTER = ["cos", "polads-ceo", "stephie-ceo", "comms-officer"]
+CAPABILITIES_CONF = REPO_ROOT / "cabinet" / "officer-capabilities.conf"
+
+
+def default_roster() -> list[str]:
+    """Officer slugs from cabinet/officer-capabilities.conf — first-seen file
+    order (the conf groups an officer's capability rows, so this reproduces
+    roster order). Wave G (lane-name instance-split, 2026-07-12): the roster
+    is INSTANCE DATA, not a build-time literal; per-slug FNV-1a seeds are
+    unchanged, so every existing portrait recomposes byte-identically.
+    Unreadable conf ⇒ [] and main() fails LOUDLY (never an invented roster)."""
+    try:
+        lines = CAPABILITIES_CONF.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    roster: list[str] = []
+    for line in lines:
+        s = line.strip()
+        if not s or s.startswith("#") or ":" not in s:
+            continue
+        officer = s.split(":", 1)[0].strip()
+        if officer and officer not in roster:
+            roster.append(officer)
+    return roster
+
+
 CELL = 64                      # portrait cell in the 32x32-family sheets
 SHEET_W, SHEET_H = 640, 192    # 10 frames x 3 rows (talk / nod / shake)
 PROVENANCE_PACK = ("derived: LimeZu Portrait Generator pieces "
@@ -239,9 +263,13 @@ def row_for(rel: str, aid: str, img_path: Path, pack: str, license_: str,
 def main(argv: list[str]) -> int:
     args = [a for a in argv if not a.startswith("--")]
     flags = {a for a in argv if a.startswith("--")}
-    roster = args or DEFAULT_ROSTER
+    roster = args or default_roster()
     check = "--check" in flags
     do_frames = "--frames" in flags or check or not args
+    if not roster:
+        print(f"FAIL: no officer roster — pass slugs as args or fix "
+              f"{CAPABILITIES_CONF} (unreadable/empty)")
+        return 1
 
     if not PIECES_ROOT.is_dir():
         print(f"FAIL: pieces root missing: {PIECES_ROOT} "

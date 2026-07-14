@@ -1,0 +1,17 @@
+# EXAMPLE lane declaration (synthetic Testburg vocabulary — see
+# cabinet/fixtures/testburg/README.md; everything here is fiction). Second of
+# the two shipped example lanes: together with bakery-site.yml.example it
+# models a multi-lane declaration set (the resolvers return a SORTED, deduped
+# enum — file order never matters). Copy to
+# instance/config/contexts/<your-lane>.yml and edit; the filename minus .yml
+# must equal the slug. `active:` gates activation only — it never filters a
+# lane out of the resolver enum (see bakery-site.yml.example for the full
+# model notes).
+slug: newsletter
+name: Newsletter
+capacity: work
+description: |
+  Ada Testburg's newsletter lane (synthetic example). The weekly bakery
+  newsletter product. Declared-but-inactive lanes stay enumerable so shared
+  code sees the same lane universe the Captain declared.
+active: false

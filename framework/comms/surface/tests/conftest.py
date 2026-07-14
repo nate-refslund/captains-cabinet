@@ -139,7 +139,7 @@ def night():
 def make_card(i: int, *, kind: str = "action-proposal", state: str = "open",
               cod: str = "medium", deadline: "str | None" = None,
               pid: "str | None" = None, standing: "int | None" = None,
-              lane: "str | None" = "polads", worst: "str | None" = None,
+              lane: "str | None" = "testburg", worst: "str | None" = None,
               blast_class: str = "low",
               escalation: "dict | None" = None) -> dict:
     """A RAW census decision-card in the build_queue shape."""

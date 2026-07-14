@@ -55,6 +55,16 @@ org_domains:
 # landing on another deployment's board).
 tasks_board: "5091706356"
 
+# lane_default — the lane stamped on action-lane proposals whose LLM output
+# omitted a lane (framework/acting/action_lane.py propose_actions). A Captain
+# ruling encoded as INSTANCE data (PolAds-first ruling; moved here from the
+# framework signature default by PC-E-LOCKSTEP pair (e) — the framework reader
+# lands at the germline ceremony, until then this key is declared-but-unread).
+# framework.env.lane_default() reads this and fails closed to "" (the acting
+# runner's lane normalization then files the card under the stable "adhoc"
+# catch-all — never another deployment's lane).
+lane_default: polads
+
 # =============================================================
 # Flavor-A source paths — the screenpipe estate this instance senses through
 # =============================================================

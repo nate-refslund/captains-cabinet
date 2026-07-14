@@ -44,6 +44,23 @@ fi
 # the suite-side default fixed above.
 export REDIS_HOST REDIS_PORT
 
+# Wave G (lane-name instance-split, 2026-07-12): the deploy-probe officer for
+# EVAL-006 / EVAL-011 / EVAL-013 is INSTANCE DATA — resolved from
+# cabinet/officer-capabilities.conf (first deploys_code holder) via lanes.sh,
+# never a hardcoded lane-officer literal. Unresolved ⇒ EMPTY ⇒ the consuming
+# evals FAIL loudly (fail-honest: no baked-in fallback name). EVAL-024's
+# synthetic testburg pool slugs are a DIFFERENT vocabulary class (foundation
+# fixtures never name instance lanes) and stay pinned as-is.
+# shellcheck source=lib/lanes.sh
+source "$CABINET_ROOT/cabinet/scripts/lib/lanes.sh" 2>/dev/null \
+  || echo "WARN: lanes.sh not loadable — probe-officer resolution will fail loudly in EVAL-006/011/013" >&2
+EV_PROBE_OFFICER="$(cabinet_deploys_code_officer 2>/dev/null || true)"
+# SAFETY NOTE (Wave G fix pass): EV_PROBE_OFFICER is interpolated UNESCAPED
+# into a grep BRE (EVAL-006) and exported as OFFICER_NAME for hook probes
+# (EVAL-011/013). Safe while officer-capabilities.conf stays germline
+# schg-locked and slug-shaped; validate/escape HERE first if that conf ever
+# becomes instance-writable.
+
 # Safety: always clean up test artifacts on exit (prevents blocking all officers)
 cleanup() {
   redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" DEL cabinet:killswitch > /dev/null 2>&1
@@ -260,10 +277,18 @@ if [ -f "$CAP_FILE" ]; then
   # 2026-07-02: pins updated to the LIVE portfolio roster (Captain-ratified Q3
   # residue purge removed the extinct cto/cpo/cro/coo rows). The eval tests
   # capability-ROUTING mechanics; the officer ids follow officer-capabilities.conf.
-  if grep -q "^polads-ceo:deploys_code$" "$CAP_FILE"; then
-    pass "lane CEO (polads-ceo) has deploys_code capability"
+  # Wave G 2026-07-12: the deploy-officer NAME is now resolved from the conf
+  # (lanes.sh cabinet_deploys_code_officer) and cross-checked against the raw
+  # conf row — same probe officer on this instance, no name literal. The
+  # assertion is therefore resolver/conf COHERENCE (a first holder exists and
+  # its exact conf row is present) — it no longer pins WHICH officer deploys;
+  # the roster is instance data.
+  if [ -z "$EV_PROBE_OFFICER" ]; then
+    fail "no deploys_code officer resolved from officer-capabilities.conf (cabinet_deploys_code_officer)"
+  elif grep -q "^${EV_PROBE_OFFICER}:deploys_code$" "$CAP_FILE"; then
+    pass "lane CEO ($EV_PROBE_OFFICER) has deploys_code capability"
   else
-    fail "lane CEO (polads-ceo) missing deploys_code capability"
+    fail "resolver/conf disagree: '$EV_PROBE_OFFICER' has no ^<officer>:deploys_code$ row in officer-capabilities.conf"
   fi
   if grep -q "^cos:validates_deployments$" "$CAP_FILE"; then
     pass "Chair (cos) has validates_deployments capability"
@@ -574,6 +599,10 @@ fi
 log "EVAL-011: deploy-detection regex invariants (FW-027 Phase B / COO M-4)"
 EV11_HOOK="$CABINET_ROOT/cabinet/scripts/hooks/post-tool-use.sh"
 EV11_FAILURE=""
+# Wave G: hook probes run AS the resolved deploy officer; unresolved = loud fail.
+if [ -z "$EV_PROBE_OFFICER" ]; then
+  EV11_FAILURE="no deploys_code officer resolved (lanes.sh cabinet_deploys_code_officer) — hook probes need the live deploy officer"
+fi
 
 # FW-046: direct hook invocation (replaces fragile sed-extraction).
 # Block 6 of post-tool-use.sh echoes "REMINDER:" to stdout when a deploy
@@ -593,7 +622,9 @@ ev11_hook_probe() {
   # 2026-07-02: probe officer repinned cto -> polads-ceo (live deploys_code
   # holder per the Captain-ratified Q3 purge) — deploy detection is
   # capability-routed, so a dead officer id silently never fires.
-  echo "$json" | CABINET_HOOK_TEST_MODE=1 OFFICER_NAME=polads-ceo bash "$EV11_HOOK" 2>/dev/null
+  # Wave G 2026-07-12: that pin became a RESOLVER — EV_PROBE_OFFICER is the
+  # conf's first deploys_code holder (same officer on this instance).
+  echo "$json" | CABINET_HOOK_TEST_MODE=1 OFFICER_NAME="$EV_PROBE_OFFICER" bash "$EV11_HOOK" 2>/dev/null
   # Returns the hook stdout; caller checks for REMINDER presence
 }
 
@@ -827,6 +858,10 @@ fi
 log "EVAL-013: post-tool-use.sh FW-028 command-start anchor invariants"
 EV13_HOOK="$CABINET_ROOT/cabinet/scripts/hooks/post-tool-use.sh"
 EV13_FAILURE=""
+# Wave G: hook probes run AS the resolved deploy officer; unresolved = loud fail.
+if [ -z "$EV_PROBE_OFFICER" ]; then
+  EV13_FAILURE="no deploys_code officer resolved (lanes.sh cabinet_deploys_code_officer) — hook probes need the live deploy officer"
+fi
 
 if [ ! -f "$EV13_HOOK" ]; then
   EV13_FAILURE="post-tool-use.sh not found at $EV13_HOOK"
@@ -858,7 +893,7 @@ else
     json=$(jq -cn --arg cmd "$cmd" '{tool_name:"Bash",tool_input:{command:$cmd}}')
     # FW-047: CABINET_HOOK_TEST_MODE=1 suppresses block 5 + 6b
     # trigger_send fan-out. Stdout REMINDER observation unaffected.
-    echo "$json" | CABINET_HOOK_TEST_MODE=1 OFFICER_NAME=polads-ceo bash "$EV13_HOOK" 2>/dev/null  # 2026-07-02: live deploys_code holder (Q3 purge)
+    echo "$json" | CABINET_HOOK_TEST_MODE=1 OFFICER_NAME="$EV_PROBE_OFFICER" bash "$EV13_HOOK" 2>/dev/null  # 2026-07-02: live deploys_code holder (Q3 purge); Wave G 2026-07-12: resolved via lanes.sh
   }
 
   if [ -z "$EV13_FAILURE" ]; then

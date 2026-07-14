@@ -1,8 +1,10 @@
 """Generate a synthetic private-census queue.json for the pensionist UX review.
 
 Shape: framework/attention/queue.py to_private_census() output. All content is
-invented review data — no real pids, no secrets. generated_at is stamped fresh
-so the dashboard reader never falls back.
+invented review data — no real pids, no secrets. Vocabulary is the synthetic
+Testburg estate (bakery-site / newsletter lanes — Wave G 2026-07-12: fixtures
+never name instance lanes or products). generated_at is stamped fresh so the
+dashboard reader never falls back.
 """
 import json
 import sys
@@ -39,12 +41,12 @@ def card(id_, kind, what, *, lane=None, blast=("low", "internal"), worst=None,
 
 DECISIONS = [
     card("sit-d1", "draft-outbound",
-         "Reply to Rasmus: the party's CVR number is fixed on the live site",
-         lane="polads", blast=("org", "external"),
+         "Reply to the flour supplier: the shop's VAT number is fixed on the live site",
+         lane="bakery-site", blast=("org", "external"),
          worst="a message reaches a human outside the machine",
-         pid="prop-d1-reply-rasmus-cvr", approve="per-item-approval",
+         pid="prop-d1-reply-supplier-vat", approve="per-item-approval",
          age_h=26.4, deadline=20, urgency="batch",
-         refs=["thread:polads-support-1182", "draft:chair-2026-07-10-01"],
+         refs=["thread:bakery-site-support-1182", "draft:chair-2026-07-10-01"],
          decay="waiting 26h; 1 demotion"),
     card("sit-d2", "need",
          "Let the cabinet add events to your Work calendar",
@@ -53,17 +55,17 @@ DECISIONS = [
          pid="need-cal-write-2026", age_h=4.2,
          refs=["grant:calendar-write"]),
     card("sit-d3", "action-proposal",
-         "Pay the 39 euro monthly Paddle invoice so checkout testing keeps working",
-         lane="polads", blast=("org", "external"),
+         "Pay the 39 euro monthly card-checkout invoice so webshop testing keeps working",
+         lane="bakery-site", blast=("org", "external"),
          worst="money leaves the org",
-         pid="prop-d3-paddle-invoice", age_h=49.0, deadline=26,
-         refs=["invoice:paddle-2026-07"]),
+         pid="prop-d3-checkout-invoice", age_h=49.0, deadline=26,
+         refs=["invoice:checkout-2026-07"]),
     card("sit-d4", "escalation",
-         "Two officers disagree: ship the banner-builder beta this week, or hold it for more testing",
-         lane="stephie", blast=("low", "internal"),
+         "Two officers disagree: ship the newsletter signup beta this week, or hold it for more testing",
+         lane="newsletter", blast=("low", "internal"),
          worst="the Chair is holding a judgment open",
-         pid="esc-banner-beta", age_h=1.5, urgency="ping-now",
-         refs=["thread:stephie-banner-beta"]),
+         pid="esc-signup-beta", age_h=1.5, urgency="ping-now",
+         refs=["thread:newsletter-signup-beta"]),
     card("sit-d5", "germline-handback",
          "New standing rule: officers may send internal Teams replies without asking first",
          blast=("ceiling", "org"),
@@ -74,12 +76,12 @@ DECISIONS = [
 
 DIRECTIONS = [
     card("sit-r1", "outcome-ratification",
-         "Goal for the quarter: PolAds runs self-serve, you only handle sign-offs",
-         lane="polads", pid="outcome-q3-polads", approve="ritual-print",
+         "Goal for the quarter: the bakery site runs self-serve, you only handle sign-offs",
+         lane="bakery-site", pid="outcome-q3-bakery-site", approve="ritual-print",
          age_h=90.0),
     card("sit-r2", "action-proposal",
          "Tidy the duplicate people entries in the address book (undo kept for a week)",
-         lane="stephie", worst="a reversible internal artifact needs undoing",
+         lane="newsletter", worst="a reversible internal artifact needs undoing",
          pid="prop-r2-people-merge", age_h=70.0),
     card("sit-r3", "pipe-prompt",
          "Should the morning brief include your private calendar too?",

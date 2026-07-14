@@ -96,6 +96,11 @@ interface EnginePayload {
   eval: EngineEval | null
   weather: WeatherSignals
   orgEventsTotal: number
+  /** Isle berth bindings (instance world-state, server-folded — Wave G).
+   * Absent/empty ⇒ slots render mist (honest absence, no invented names). */
+  berths?: (string | null)[]
+  /** Lanes with a probes.yml row (isle why-string provenance). */
+  probeWiredLanes?: string[]
   /** T2 LIFE feed (grammar-gated fail-closed; absent → behaviors OFF). */
   life?: {
     grammar: LifeGrammar
@@ -361,6 +366,8 @@ export default function EngineClient({ canActuate = false }: { canActuate?: bool
       buildWorldGeo({
         orgEventsTotal: engine?.orgEventsTotal ?? 0,
         lanes: engine?.eval?.lanes ?? {},
+        berths: engine?.berths ?? [],
+        probeWiredLanes: engine?.probeWiredLanes ?? [],
       }),
     [engine]
   )

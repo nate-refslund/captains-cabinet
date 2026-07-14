@@ -141,7 +141,7 @@ def test_gate_armed_standing_edit_is_exempt(monkeypatch):
 
 def test_deliver_bounce_journals_and_returns_the_fix(monkeypatch):
     monkeypatch.setenv("CABINET_ESCALATION_GATE", "1")
-    it = _item(lane="polads")
+    it = _item(lane="testburg")
     d = gate.decide(it, ch=CH, now=NOON, standing={})
     sent = []
     res = gate.deliver(d, send_fn=lambda t, **k: sent.append(t) or {"sent": True},
@@ -154,7 +154,7 @@ def test_deliver_bounce_journals_and_returns_the_fix(monkeypatch):
     rows = escalation.bounce_rows()
     assert len(rows) == 1
     assert rows[0]["subject"] == "prod deploy is blocked"
-    assert rows[0]["lane"] == "polads"
+    assert rows[0]["lane"] == "testburg"
     assert rows[0]["missing"] == list(escalation.REQUIRED_FIELDS)
 
 

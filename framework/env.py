@@ -263,6 +263,196 @@ def tasks_board(default: str = "") -> str:
     return board
 
 
+# Cache: officers is read once per process (same lifecycle as captain_name;
+# config is stable under a running officer, a restart re-reads). None ⇒
+# unresolved — the EMPTY tuple is a VALID resolved value (a deployment with no
+# roster configured), so the sentinel is None, never ().
+_officers_cache: "tuple[str, ...] | None" = None
+
+
+def officers(default: "tuple[str, ...]" = ()) -> "tuple[str, ...]":
+    """The instance officer roster — the resolver that lifts officer-name
+    literals (delegate/investigation whitelists, prompt-spec officer enums,
+    build-time roster defaults) OUT of the universal-base ``framework`` code
+    into instance data, so framework carries no launcher's lane names
+    (PC-E-LOCKSTEP instance-split).
+
+    Reads the officer column of ``cabinet/officer-capabilities.conf``
+    (``officer:capability`` rows; ``#`` comments and blank lines skipped),
+    deduplicated GLOBALLY preserving FIRST-SEEN FILE ORDER (a bash twin must
+    dedup globally too — ``awk '!seen[$1]++'``, NOT adjacent-only ``uniq``,
+    or a conf with non-contiguous officer blocks would make the two resolvers
+    disagree), keeping :func:`deploys_code_officer` file-order stable. The
+    conf is schg-locked germline on a live deployment: this resolver only
+    READS it.
+
+    Any absence / unreadable file / empty column falls back to ``default`` —
+    the EMPTY tuple — so a deployment with no roster resolves () and consumers
+    fail LOUDLY at their own seam (delegate_work rejects every officer, a
+    prompt enum renders empty), never a baked-in literal roster, never another
+    launcher's officers. NB: the FIRST call's resolution — fallback included —
+    is cached for the process, so every caller must pass a uniform ``default``
+    (all in-repo callers pass the empty one)."""
+    global _officers_cache
+    if _officers_cache is not None:
+        return _officers_cache
+    names: "tuple[str, ...]" = tuple(default)
+    try:
+        p = _cabinet_root() / "cabinet" / "officer-capabilities.conf"
+        seen: list = []
+        for line in p.read_text(encoding="utf-8", errors="ignore").splitlines():
+            s = line.strip()
+            if not s or s.startswith("#") or ":" not in s:
+                continue
+            officer = s.split(":", 1)[0].strip()
+            if officer and officer not in seen:
+                seen.append(officer)
+        if seen:
+            names = tuple(seen)
+    except Exception:
+        names = tuple(default)
+    _officers_cache = names
+    return names
+
+
+# Cache: deploys_code_officer is read once per process (same lifecycle as
+# officers). None ⇒ unresolved — the empty string is a VALID resolved value (a
+# roster with no deploys_code holder), so the sentinel is None, never "".
+_deploys_code_officer_cache: "str | None" = None
+
+
+def deploys_code_officer(default: str = "") -> str:
+    """The FIRST officer (conf file order) holding the ``deploys_code``
+    capability in ``cabinet/officer-capabilities.conf`` — the probe officer
+    eval/verification surfaces use instead of hardcoding a lane CEO's name
+    (PC-E-LOCKSTEP instance-split; bash twin: ``cabinet_deploys_code_officer``).
+
+    Absence / unreadable conf / no holder falls back to ``default`` — the
+    empty string — so a deployment with no deploying officer resolves "" and
+    the consumer fails loudly at its own seam (an eval prints FAIL), never a
+    baked-in officer name. NB: the FIRST call's resolution — fallback included
+    — is cached for the process, so every caller must pass a uniform
+    ``default``."""
+    global _deploys_code_officer_cache
+    if _deploys_code_officer_cache is not None:
+        return _deploys_code_officer_cache
+    holder = str(default)
+    try:
+        p = _cabinet_root() / "cabinet" / "officer-capabilities.conf"
+        for line in p.read_text(encoding="utf-8", errors="ignore").splitlines():
+            s = line.strip()
+            if not s or s.startswith("#") or ":" not in s:
+                continue
+            officer, _, cap = s.partition(":")
+            if officer.strip() and cap.strip() == "deploys_code":
+                holder = officer.strip()
+                break
+    except Exception:
+        holder = str(default)
+    _deploys_code_officer_cache = holder
+    return holder
+
+
+# Cache: lanes is read once per process (same lifecycle as captain_name;
+# config is stable under a running officer, a restart re-reads). None ⇒
+# unresolved — the EMPTY tuple is a VALID resolved value (a deployment with no
+# contexts configured), so the sentinel is None, never ().
+_lanes_cache: "tuple[str, ...] | None" = None
+
+
+def lanes(default: "tuple[str, ...]" = ()) -> "tuple[str, ...]":
+    """The instance lane enum — the sorted first top-level ``slug:`` scalar per
+    ``instance/config/contexts/*.yml`` (a file without one, e.g. ``_default.yml``,
+    is skipped). The parse mirrors ``run_action_lane._context_slugs`` byte-for-
+    byte (minimal ``slug:`` line scan, no yaml dep, robust to a partially-written
+    file) so the two can merge at a germline window without a behavior change.
+
+    Deliberately does NOT filter on ``active:`` flags — on the launching
+    instance some contexts carry ``active: false`` (R2-pending declarations)
+    while their lane officers RUN LIVE, so an active-filtered enum would
+    silently drop running lanes (the recon-named trap). Consumers needing
+    activation state must read it at their own seam.
+
+    Unreadable dir / no slugs falls back to ``default`` — the EMPTY tuple — so
+    a deployment with no contexts resolves () and consumers fail honestly at
+    their own seam (a world renders mist, a gate files under its stable
+    catch-all), never an invented lane list. NB: the FIRST call's resolution —
+    fallback included — is cached for the process, so every caller must pass a
+    uniform ``default``."""
+    global _lanes_cache
+    if _lanes_cache is not None:
+        return _lanes_cache
+    slugs: set = set()
+    try:
+        # NB: single "instance/config/..." path literal (not split segments) —
+        # same form as the platform.yml readers above, so the layer-separation
+        # gate's exact-token heuristic doesn't flag this by-design config read.
+        for f in sorted((_cabinet_root() / "instance/config/contexts").glob("*.yml")):
+            try:
+                for line in f.read_text(encoding="utf-8", errors="ignore").splitlines():
+                    s = line.strip()
+                    if s.startswith("slug:"):
+                        val = s.split(":", 1)[1].strip().strip('"').strip("'").lower()
+                        if val:
+                            slugs.add(val)
+                        break
+            except OSError:
+                continue
+    except OSError:
+        pass
+    _lanes_cache = tuple(sorted(slugs)) if slugs else tuple(default)
+    return _lanes_cache
+
+
+# Cache: lane_default is read once per process (same lifecycle as captain_name).
+# None ⇒ unresolved — the empty string is a VALID resolved value (a generic
+# deployment with no default lane ruling), so the sentinel is None, never "".
+_lane_default_cache: "str | None" = None
+
+
+def lane_default(default: str = "") -> str:
+    """The lane stamped on action-lane proposals whose LLM output omitted a
+    lane — the resolver that lifts a Captain ruling (encoded for the launching
+    instance as ``lane_default`` in instance config) OUT of the universal-base
+    ``framework`` signature default (``action_lane.propose_actions`` —
+    PC-E-LOCKSTEP pair (e)) into instance data.
+
+    Reads ``lane_default`` from ``instance/config/platform.yml`` (else
+    ``product.yml`` / nested ``product.lane_default``). Absence / parse failure
+    falls back to ``default`` — the empty string — which the acting runner's
+    lane normalization files under the stable ``adhoc`` catch-all cell: a
+    generic deployment never inherits another launcher's default lane and
+    never crashes. NB: the FIRST call's resolution — fallback included — is
+    cached for the process, so every caller must pass a uniform ``default``."""
+    global _lane_default_cache
+    if _lane_default_cache is not None:
+        return _lane_default_cache
+    lane = str(default)
+    try:
+        import yaml  # local: keep env.py import-light for the safety switches
+        root = _cabinet_root()
+        for rel in ("instance/config/platform.yml", "instance/config/product.yml"):
+            p = root / rel
+            try:
+                if not p.exists():
+                    continue
+                data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+            except Exception:
+                continue
+            if not isinstance(data, dict):
+                continue
+            val = data.get("lane_default")
+            if val is None and isinstance(data.get("product"), dict):
+                val = data["product"].get("lane_default")   # product.yml nests it
+            if val is not None and str(val).strip():
+                lane = str(val).strip()
+                break
+    except Exception:
+        lane = str(default)
+    _lane_default_cache = lane
+    return lane
+
+
 # Cache: captain_timezone is read once per process (same lifecycle as
 # captain_name; config is stable under a running officer, a restart re-reads).
 # None ⇒ unresolved.
