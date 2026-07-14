@@ -27,10 +27,10 @@ The unit of fidelity is the *intent behind* the action — not its surface text,
 not even its literal decision. Worked example from the first live run: a Teams
 reply that was just a pasted Husqvarna-mower URL is not "share this string" —
 the intent was *find a robotic mower with no boundary-wire (LiDAR instead) that
-handles the large lawn at the new house*; that link is one
+handles the large lawn at the new property*; that link is one
 fitting option among few. A faithful clone must therefore **(a) gather the full
 context before deciding** — the conversation's real goal *plus* real-world facts
-screenpipe already captures (the house and its details) — and **(b) be credited
+screenpipe already captures (the property and its details) — and **(b) be credited
 for a different or even *better* action that serves the same intent** (e.g.
 researching and proposing fitting options, that link among them). Two
 load-bearing consequences: the officer-under-test must **gather context before
@@ -45,7 +45,7 @@ the F-phasing below) — that is where the real fidelity lives.
 intention is not free-floating — it is Nate's relevant *mission/goal* expressed
 through his *core* (values, voice, behaviour, principles). The clone forms an
 action by blending the two: *what am I pursuing here* (the mower for the new
-house; shipping PolAds v1) **×** *who I am* (the core — the screenpipe
+property; shipping PolAds v1) **×** *who I am* (the core — the screenpipe
 `nate-model` + voice profile). The officer should gather/recall the relevant
 mission-or-goal and reason from the core, then act; the judge scores **that
 blend**, not the surface. **Foundation-first:** nail this foundation — a

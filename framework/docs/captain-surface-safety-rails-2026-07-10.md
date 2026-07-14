@@ -17,7 +17,7 @@ At fire time the gate re-gathers through the sources seam:
 
 | Evidence at fire                                      | Outcome |
 |-------------------------------------------------------|---------|
-| `captain_replied_since(slug, queued_ts)` is `True`     | CANCEL — the captain handled the thread himself (the worked **Alice case**) |
+| `captain_replied_since(slug, queued_ts)` is `True`     | CANCEL — the captain handled the thread himself (the worked **Casey case**) |
 | `still_awaiting(slug)` is `False` (reply-lane records) | CANCEL — the thread no longer needs this reply |
 | anything else (`None`, unbound source, probe error)    | FIRE — honest uncertainty never vetoes an explicit approval |
 
@@ -36,8 +36,8 @@ yourself"). `dry_run` reports a would-cancel verdict without removing;
 - Both queue writers now stamp `queued_ts` (and the lane writer stamps `lane`):
   `chair_drafts.present_draft`, `run_draft_lane._store_draft`.
 
-Regression test: `framework/frontdoor/tests/test_fire_gate_alice.py` (the
-worked Alice case end-to-end at the chokepoint) +
+Regression test: `framework/frontdoor/tests/test_fire_gate_casey.py` (the
+worked Casey case end-to-end at the chokepoint) +
 `framework/acting/tests/test_fire_gate.py` (the decision matrix).
 
 ## Rail 2 — withdraw / supersede on the draft queue
@@ -50,7 +50,7 @@ never had (a stale draft could only be left untapped):
 - `supersede(old, new, reason=…)` — withdraw in favor of a fresher draft.
 - `withdrawal_of(id)` — why a draft is gone; `deliver_draft` consults it so a
   later `send` tap gets the real reason, never the generic
-  "expired or already sent" miss (the root of the Alice confusion).
+  "expired or already sent" miss (the root of the Casey confusion).
 - `pending()` — the queued records still awaiting fire.
 
 Every removal appends to `draft-queue-journal.jsonl`

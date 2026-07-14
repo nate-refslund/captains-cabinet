@@ -87,17 +87,17 @@ C7_ITEMS = [
      "subject": "Arm self-improvement REPORT_ONLY=0 after soak — ratify",
      "kind": "outcome-ratification", "keywords": ["report_only"]},
     # dated personal founder-actions (morning-brief carryovers)
-    {"slug": "kontrakt-passport", "lane": None,
-     "subject": "Bring passport for the kontrakt signing",
+    {"slug": "document-signing-passport", "lane": None,
+     "subject": "Bring passport for the document signing",
      "kind": "founder-action", "keywords": ["passport"],
      "deadline": "2026-07-10T12:00:00Z", "harm": "external_deadline"},
-    {"slug": "ajour-faktura", "lane": None,
-     "subject": "Betal advokat-faktura (kontraktunderskrift, "
+    {"slug": "advokat-faktura", "lane": None,
+     "subject": "Betal advokat-faktura (dokumentunderskrift, "
                 "sagsnr. 00000)",
      "kind": "founder-action", "keywords": ["advokat-faktura"],
      "deadline": "2026-07-13T12:00:00Z", "harm": "value_decay"},
     {"slug": "notar-appointment", "lane": None,
-     "subject": "Book notar appointment for the kontrakt signing",
+     "subject": "Book notar appointment for the document signing",
      "kind": "founder-action", "keywords": ["notar"],
      "harm": "value_decay"},
 ]

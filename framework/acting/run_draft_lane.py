@@ -268,7 +268,7 @@ def main() -> None:
     # Captain-surface rail 3 (§3.6, 2026-07-10): reconcile the QUEUED-draft
     # store (cabinet:draft:*) against the captain's actual outbound via the
     # sources seam — a thread he handled himself retires its queued draft
-    # instead of dangling until fire time (the Alice case). Best-effort;
+    # instead of dangling until fire time (the Casey case). Best-effort;
     # honest-empty when no personal source is bound. CABINET_DRAFT_RECONCILE=0
     # disables.
     if os.environ.get("CABINET_DRAFT_RECONCILE", "1") != "0":
@@ -327,7 +327,7 @@ def main() -> None:
         #       _live), mirroring the top-of-loop gate: a STALE older open proposal
         #       (an earlier draft the captain hasn't decided) must NOT suppress the
         #       genuinely-new message we just drafted — that blunt check was the
-        #       Milo-Archer 17:05 DPA miss (older 14:53 draft sat open, so the
+        #       Morten-Stagaard 17:05 DPA miss (older 14:53 draft sat open, so the
         #       newer 17:05 reply was silently dropped here).
         #   (2) FRESHNESS: the captain may have replied himself while we drafted (he is
         #       faster than the 5-min lane), making his message the newest. A

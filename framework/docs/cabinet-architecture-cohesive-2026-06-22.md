@@ -17,7 +17,7 @@ Today ~30 screenpipe pipes each fire into Telegram independently. On 2026-06-22,
 
 The cohesive architecture is the *only* shape in which both of these are simultaneously true:
 1. **"The thing that messages me knows everything"** — what it sent, why, who, the sources, the confidence — because **one brain composed it** and therefore holds the whole record.
-2. **"It can act after my reply"** — reply to Lena → *then* adapt PolAds — because the same brain that owns the thread also orchestrates the officers.
+2. **"It can act after my reply"** — reply to Lisa → *then* adapt PolAds — because the same brain that owns the thread also orchestrates the officers.
 
 System 1 / System 2 is the right mental model:
 - **System 1 = screenpipe** — fast, automatic, perceptual, always-on, narrow. Capture + memory + cheap reflex suggestions.
@@ -26,7 +26,7 @@ System 1 / System 2 is the right mental model:
 ## 2. The shape
 
 ```
-                YOU  ──  one channel (@ExampleChairBot)
+                YOU  ──  one channel (@example_cabinet_bot)
                  ▲ │
    only the      │ │ your message / reply
    cabinet  ─────┤ ▼

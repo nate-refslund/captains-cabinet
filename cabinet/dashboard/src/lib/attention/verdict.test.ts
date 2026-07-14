@@ -24,7 +24,7 @@ const ROW = {
   kind: 'action-proposal',
   state: 'pending',
   pid: PID,
-  what: 'Reply to Alice about the DPA redline',
+  what: 'Reply to Casey about the DPA redline',
   deadline_iso: '2026-07-12T10:00:00Z',
   age_h: 5,
   blast: { class: 'external', reach: 'external' },

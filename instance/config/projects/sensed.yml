@@ -23,6 +23,9 @@ activation:
 # =============================================================
 # Notion — Business Brain
 # =============================================================
+# All ids below are all-zero placeholders (public-tree scrub 2026-07-14);
+# the deployment re-seeds real ids via the untracked overlay. Notion probes
+# fail closed to SKIP until then.
 notion:
   cabinet_hq_id: 00000000-0000-0000-0000-000000000000
 

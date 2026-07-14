@@ -12,7 +12,7 @@ among them, with a one-line recommendation.
 
 Against the literal pasted URL the decision verdict is `divergent` (different
 surface). But the draft serves the SAME `mission × core` intent — source a
-no-boundary-wire mower for ~3000 m² at the new house, decisive, Danish, low
+no-boundary-wire mower for ~2500 m² at the new house, decisive, Danish, low
 ceremony — equally well or better. A surface-only scorer zeros this (the
 artificially-low F1 baseline). F4 must credit it.
 

@@ -26,7 +26,7 @@ NOW = datetime(2026, 7, 10, 12, 0, tzinfo=timezone.utc)
 
 ROW = {
     "id": "sit-1", "kind": "action-proposal", "state": "pending",
-    "pid": "prop-abc", "what": "Reply to Alice",
+    "pid": "prop-abc", "what": "Reply to Casey",
     "deadline_iso": "2026-07-12T10:00:00Z", "age_h": 5.0,
     "blast": {"class": "external", "reach": "external"},
     "blast_worst_case": "a message reaches a human outside the machine",
@@ -86,9 +86,9 @@ class Wire:
 class TestRevision(unittest.TestCase):
     def test_golden_vectors_match_the_dashboard(self):
         self.assertEqual(
-            rev({"pid": "prop-abc", "state": "pending", "what": "Reply to Alice",
+            rev({"pid": "prop-abc", "state": "pending", "what": "Reply to Casey",
                  "deadline_iso": "2026-07-12T10:00:00Z"}),
-            "3c71acd88ad8ab07")
+            "053c030785a15e81")
         self.assertEqual(
             rev({"pid": "prop-abc", "state": "pending", "what": None,
                  "deadline_iso": None}),
