@@ -731,6 +731,62 @@ def state_dir(default: str = "") -> str:
     return _state_dir_cache
 
 
+# Cache: git_repos is read once per process (same lifecycle as captain_name;
+# config is stable under a running officer, a restart re-reads). None ⇒
+# unresolved — the EMPTY tuple is a VALID resolved value (a deployment with no
+# git corpus configured), so the sentinel is None, never ().
+_git_repos_cache: "tuple[Path, ...] | None" = None
+
+
+def git_repos(default: "tuple[Path, ...]" = ()) -> "tuple[Path, ...]":
+    """The Captain's product/infra git repos mined for the fidelity decision
+    cell's git-derived DecisionCases — the resolver that lifts the repo list
+    OUT of the universal-base ``framework`` code (``decision_cell``'s default
+    git corpus) into instance config, so framework names no launcher's repos
+    (product/captain-agnostic instance-split; the ``org_domains()`` precedent
+    — a list-valued config with no env override).
+
+    Reads the ``git_repos`` list from ``instance/config/platform.yml`` (else
+    ``product.yml``; also accepts a nested ``product.git_repos``). Each entry
+    is ``~``-expanded to an absolute ``Path``; order is preserved. Any absence
+    / parse failure / empty list falls back to ``default`` — the EMPTY tuple —
+    so a generic deployment mines NO git repos for the corpus (fail-closed:
+    the corpus is decisions-only, never crashes, never scans another
+    launcher's repos). ``decision_cell.build_decision_corpus`` passes this as
+    ITS default when the caller supplies no explicit ``repos=``."""
+    global _git_repos_cache
+    if _git_repos_cache is not None:
+        return _git_repos_cache
+    repos: "tuple[Path, ...]" = tuple(default)
+    try:
+        import yaml  # local: keep env.py import-light for the safety switches
+        root = _cabinet_root()
+        for rel in ("instance/config/platform.yml", "instance/config/product.yml"):
+            p = root / rel
+            try:
+                if not p.exists():
+                    continue
+                data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+            except Exception:
+                continue
+            if not isinstance(data, dict):
+                continue
+            val = data.get("git_repos")
+            if val is None and isinstance(data.get("product"), dict):
+                val = data["product"].get("git_repos")   # product.yml nests it
+            if isinstance(val, (list, tuple)):
+                cleaned = tuple(
+                    Path(r).expanduser() for r in val
+                    if isinstance(r, str) and r.strip())
+                if cleaned:
+                    repos = cleaned
+                    break
+    except Exception:
+        repos = tuple(default)
+    _git_repos_cache = repos
+    return repos
+
+
 def watchdog_config_path(default: str = "") -> str:
     """The path to the outcome-watchdog's deployment table file — the resolver
     that lifts the ``instance/config/watchdog.yml`` path OUT of the universal-base

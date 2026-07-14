@@ -32,7 +32,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from framework.fidelity.oauth_llm import oauth_json_llm, oauth_raw_llm
-from framework.env import captain_name, captain_role, state_dir, vault_dir
+from framework.env import captain_name, captain_role, git_repos, state_dir, vault_dir
 from framework.fidelity.officer_prompt import _clone_privacy_fence
 from framework.sources import get_source
 from framework.fidelity.scorer import composite
@@ -348,10 +348,19 @@ def extract_git_decision_cases(repos, llm=oauth_raw_llm, cache_path=None,
 
 # The Captain's product/infra repos (Captain-directed) — NOT the cabinet harness
 # branch (that is this session's own build work, not a Captain product decision).
-# NOTE: these default repo names are Flavor-A instance-specific (see deviations);
-# a deployment overrides them via build_decision_corpus(repos=...).
-_DEFAULT_GIT_REPOS = [Path.home() / "v0-politiske-annoncer",
-                      Path.home() / "dev-tasks"]
+# Product/captain-agnostic instance-split: the repo list is INSTANCE data
+# (instance/config/platform.yml's git_repos key, via framework.env.git_repos()),
+# never a framework literal — see _default_git_repos() below. A deployment
+# overrides them per-call via build_decision_corpus(repos=...).
+def _default_git_repos() -> list[Path]:
+    """The git repos mined for the corpus when the caller supplies no explicit
+    ``repos=`` — the INSTANCE roster (env.git_repos(), instance/config/
+    platform.yml, process-cached), never a baked-in repo list (the
+    env.officers()/_delegate_officers() precedent). Call-time resolution so
+    tests inject a synthetic config and a restart picks up a config change.
+    Unreadable/empty config ⇒ empty list ⇒ the git corpus mines nothing
+    (fail-closed), never another launcher's repos."""
+    return list(git_repos())
 
 
 def build_decision_corpus(sources=("decisions", "git"), repos=None,
@@ -364,7 +373,7 @@ def build_decision_corpus(sources=("decisions", "git"), repos=None,
     if "decisions" in sources:
         out += extract_decision_cases()
     if "git" in sources:
-        out += extract_git_decision_cases(repos or _DEFAULT_GIT_REPOS, **kw)
+        out += extract_git_decision_cases(repos or _default_git_repos(), **kw)
     return out
 
 

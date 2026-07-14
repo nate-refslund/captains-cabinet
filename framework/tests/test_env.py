@@ -1,5 +1,6 @@
 """CABINET_ENV safety switch — fail-safe by default (dev), opt-in to runtime."""
 import os
+from pathlib import Path
 
 import pytest
 
@@ -540,6 +541,83 @@ class TestStateDir:
         monkeypatch.delenv("CABINET_ROOT", raising=False)
         env._state_dir_cache = None
         assert env.state_dir() == os.path.expanduser("~/.screenpipe/state")
+
+
+@pytest.fixture
+def isolated_git_repos_cache():
+    """Clear the process-wide git-repos cache for the test, then restore the
+    original so sibling tests (the fidelity decision-cell's real git corpus)
+    are untouched — mirrors isolated_org_domains_cache."""
+    saved = env._git_repos_cache
+    env._git_repos_cache = None
+    try:
+        yield
+    finally:
+        env._git_repos_cache = saved
+
+
+class TestGitRepos:
+    """The git_repos() resolver — instance-DRIVEN, fail-closed to EMPTY.
+
+    The fidelity decision-cell's git-derived DecisionCases corpus
+    (framework/fidelity/decision_cell.py build_decision_corpus's "git" source)
+    reads its default repo list via this resolver, never a literal. On THIS
+    deployment it must return the same two repos the removed hardcode had, so
+    the git corpus is byte-identical."""
+
+    def test_reads_repos_from_platform_yml(self, tmp_path, monkeypatch,
+                                           isolated_git_repos_cache):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "platform.yml",
+                   "git_repos:\n  - /tmp/repo-a\n  - /tmp/repo-b\n")
+        env._git_repos_cache = None
+        assert env.git_repos() == (Path("/tmp/repo-a"), Path("/tmp/repo-b"))
+
+    def test_absent_config_fails_closed_to_empty(self, tmp_path, monkeypatch,
+                                                 isolated_git_repos_cache):
+        """No platform.yml / product.yml => the EMPTY tuple: a generic
+        deployment mines no git repos, never crashes, never leaks a path."""
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))  # empty tmp — no config
+        env._git_repos_cache = None
+        assert env.git_repos() == ()
+
+    def test_leading_tilde_is_expanded_order_preserved(
+            self, tmp_path, monkeypatch, isolated_git_repos_cache):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "platform.yml",
+                   "git_repos:\n  - ~/repo-one\n  - ~/repo-two\n")
+        env._git_repos_cache = None
+        assert env.git_repos() == (Path("~/repo-one").expanduser(),
+                                    Path("~/repo-two").expanduser())
+
+    def test_reads_nested_repos_from_product_yml(self, tmp_path, monkeypatch,
+                                                 isolated_git_repos_cache):
+        """Single-product deployments nest it under ``product:`` in product.yml."""
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "product.yml",
+                   "product:\n  git_repos:\n    - /tmp/solo-repo\n")
+        env._git_repos_cache = None
+        assert env.git_repos() == (Path("/tmp/solo-repo"),)
+
+    def test_result_is_cached_process_wide(self, tmp_path, monkeypatch,
+                                           isolated_git_repos_cache):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "platform.yml", "git_repos:\n  - /tmp/first\n")
+        env._git_repos_cache = None
+        assert env.git_repos() == (Path("/tmp/first"),)
+        _write_cfg(tmp_path, "platform.yml", "git_repos:\n  - /tmp/second\n")
+        assert env.git_repos() == (Path("/tmp/first"),)   # cached, second ignored
+
+    @launcher_instance_only
+    def test_this_instance_yields_the_two_git_repos(self, monkeypatch,
+                                                     isolated_git_repos_cache):
+        """Byte-identity guard: with CABINET_ROOT unset the resolver reads THIS
+        worktree's instance/config/platform.yml, yielding the exact two repos
+        the decision_cell hardcode carried — so the git corpus is byte-identical."""
+        monkeypatch.delenv("CABINET_ROOT", raising=False)
+        env._git_repos_cache = None
+        assert env.git_repos() == (Path.home() / "v0-politiske-annoncer",
+                                    Path.home() / "dev-tasks")
 
 
 class TestWatchdogConfigPath:

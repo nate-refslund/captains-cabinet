@@ -79,6 +79,13 @@ tasks_board: ""                       # e.g. "1234567890" — YOUR Monday board 
 # state_dir — the personal-source runtime-STATE dir (decision-cache +
 # autonomy-outcomes ledger; the outcome-watchdog's watched dir).
 # state_dir: ~/path/to/your/state
+#
+# git_repos — the Captain's product/infra repos the fidelity decision-cell
+# mines for git-derived DecisionCases. Fails closed to EMPTY (no git corpus)
+# when unset.
+# git_repos:
+#   - ~/path/to/your/repo-one
+#   - ~/path/to/your/repo-two
 
 # =============================================================
 # Spending Limits — daily caps on Anthropic API spend

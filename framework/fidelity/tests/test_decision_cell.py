@@ -13,6 +13,7 @@ import json
 
 import pytest
 
+import framework.env as env
 from framework.fidelity import decision_cell
 from framework.fidelity.types import DecisionCase
 
@@ -223,6 +224,48 @@ class TestGitExtractor:
             sources=("git",), repos=[tmp_path / "r"], llm=lambda p, s: clean,
             cache_path=tmp_path / "g.json", log_runner=runner)
         assert len(cases) == 1 and cases[0].source == "git"
+
+
+class TestDefaultGitRepos:
+    """_default_git_repos() — the instance-config-driven default for
+    build_decision_corpus's git source (product/captain-agnostic instance-
+    split: no framework-literal repo list). The resolver's own file-IO parse
+    (platform.yml / product.yml, tilde-expansion, fail-closed-to-empty) is
+    exercised by framework/tests/test_env.py::TestGitRepos; these tests only
+    prove decision_cell delegates to it, cache-primed (mirrors the
+    _delegate_officers()/env.officers() precedent — re-testing file IO here
+    would add cross-resolver CABINET_ROOT blast for no coverage gain)."""
+
+    @pytest.fixture
+    def isolated_git_repos_cache(self):
+        saved = env._git_repos_cache
+        try:
+            yield
+        finally:
+            env._git_repos_cache = saved
+
+    def test_delegates_to_env_git_repos(self, tmp_path, isolated_git_repos_cache):
+        env._git_repos_cache = (tmp_path / "configured-repo",)
+        assert decision_cell._default_git_repos() == [tmp_path / "configured-repo"]
+
+    def test_fails_closed_to_empty_when_unconfigured(self, isolated_git_repos_cache):
+        env._git_repos_cache = ()
+        assert decision_cell._default_git_repos() == []
+
+    def test_build_corpus_uses_default_when_repos_omitted(
+            self, tmp_path, isolated_git_repos_cache):
+        """No explicit repos= => build_decision_corpus mines the
+        instance-configured repo, never a framework literal."""
+        env._git_repos_cache = (tmp_path / "r",)
+        runner = _fake_log([
+            ("h12345678ab", "2026-06-10T09:00:00+02:00", "fix: x",
+             "detailed body explaining the problem and the constraints faced " * 3)])
+        clean = json.dumps({"dilemma": "a real problem needs deciding here",
+                            "decision": "implement approach alpha", "why": "because reasons"})
+        cases = decision_cell.build_decision_corpus(
+            sources=("git",), llm=lambda p, s: clean,
+            cache_path=tmp_path / "g2.json", log_runner=runner)
+        assert len(cases) == 1 and cases[0].app == "git:r"
 
 
 class TestScorer:
