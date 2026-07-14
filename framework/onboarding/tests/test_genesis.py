@@ -88,6 +88,83 @@ def test_duplicate_lane_slugs_yield_unique_card_ids():
 
 
 # ---------------------------------------------------------------------------
+# ONBOARD-1 — mission-conditioned derivation (Phase 2, purpose-first interview)
+# ---------------------------------------------------------------------------
+MISSION = {
+    "purpose": "Make ad-transparency compliance effortless for publishers.",
+    "success_90d": "Three publishers live on the transparency flow.",
+    "never_touch": ["production deploys without review", "billing data"],
+}
+
+
+def test_mission_conditions_every_card_class():
+    cards = genesis.propose_outcome_cards({**ANSWERS, "mission": dict(MISSION)})
+    assert len(cards) == 4                       # conditioning, never new cards
+    store = next(c for c in cards if c["lane"] == "acme-store")
+    assert MISSION["purpose"] in store["why"]    # lane card cites the mission
+    library = next(c for c in cards if c["id"] == "proposed-library-grounding")
+    assert MISSION["purpose"] in library["why"]
+    loop = next(c for c in cards if c["id"] == "proposed-captain-loop")
+    assert MISSION["success_90d"] in loop["why"]         # the 90-day bar
+    assert "never touches" in loop["why"]                # the standing constraint
+    assert "production deploys without review" in loop["why"]
+    for c in cards:                              # propose-only holds, always
+        assert c["status"] == "draft" and c["captain_ratified"] is False
+
+
+def test_missionless_answers_derive_identical_cards():
+    """The mission block only ever ADDS conditioning: absent/None/malformed
+    mission keys all derive exactly the pre-Phase-2 cards (--defaults answers
+    carry no mission, so the fast lane's genesis output stays byte-stable)."""
+    baseline = genesis.propose_outcome_cards(ANSWERS)
+    for answers in ({**ANSWERS, "mission": None},
+                    {**ANSWERS, "mission": "not-a-dict"},
+                    {**ANSWERS, "mission": {}},
+                    {**ANSWERS, "mission": {"never_touch": "not-a-list"}}):
+        assert genesis.propose_outcome_cards(answers) == baseline
+
+
+def test_mission_and_focus_letter_compose_not_compete():
+    focus = "Explore Acme Storefront first."
+    cards = genesis.propose_outcome_cards(
+        {**ANSWERS, "mission": dict(MISSION)}, focus)
+    loop = next(c for c in cards if c["id"] == "proposed-captain-loop")
+    assert MISSION["success_90d"] in loop["why"]
+    assert "Explore Acme Storefront first" in loop["why"]   # both anchor
+
+
+def test_mission_excerpts_flattened_capped_and_never_touch_bounded():
+    mission = {
+        "purpose": "  spread\n over \t lines  " + "pad " * 60,   # >160 chars
+        "never_touch": ["a", "", "b", "c", "d"],                 # blanks dropped
+    }
+    cards = genesis.propose_outcome_cards({**ANSWERS, "mission": mission})
+    store = next(c for c in cards if c["lane"] == "acme-store")
+    assert "spread over lines" in store["why"]   # whitespace flattened
+    assert "\n" not in store["why"]
+    quoted = store["why"].split('The mission it serves: "', 1)[1]
+    assert len(quoted.rstrip('"')) <= 160        # excerpt capped
+    loop = next(c for c in cards if c["id"] == "proposed-captain-loop")
+    assert "a; b; c." in loop["why"]             # first 3 only, blanks gone
+    assert "; d" not in loop["why"]
+
+
+def test_run_genesis_proposal_carries_mission_into_staging(tmp_path):
+    _write_answers(tmp_path, {**ANSWERS, "mission": dict(MISSION)})
+    out = genesis.run_genesis_proposal(tmp_path, now="2026-07-14T00:00:00Z")
+    assert out["status"] == "written" and out["cards"] == 4
+    path = tmp_path / genesis.PROPOSALS_REL
+    assert path.name == "outcomes-proposed.yml"  # still the inert filename
+    doc = yaml.safe_load(path.read_text())
+    whys = " | ".join(str(r.get("why")) for r in doc["outcomes"])
+    assert MISSION["purpose"] in whys            # purpose reaches the staging file
+    assert MISSION["success_90d"] in whys
+    for row in doc["outcomes"]:                  # nothing pre-ratified, ever
+        assert row["status"] == "draft"
+        assert row["captain_ratified"] is False
+
+
+# ---------------------------------------------------------------------------
 # ONBOARD-1 — the staging file (propose-only, structurally inert)
 # ---------------------------------------------------------------------------
 def test_write_proposals_targets_the_inert_filename(tmp_path):

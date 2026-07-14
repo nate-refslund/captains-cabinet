@@ -7,7 +7,10 @@ errand). This module supplies the two genesis organs behind that receipt:
 
 ONBOARD-1 — ``propose_outcome_cards`` / ``run_genesis_proposal``: the org
 PROPOSES 2–4 outcome cards derived from the cabinet-init answers (lanes, org
-shape) + the optional focus letter (``instance/config/onboarding-focus.md``).
+shape, and — when the purpose-first interview recorded one — the ``mission:``
+block) + the focus letter (``instance/config/onboarding-focus.md``, a
+first-class Phase-0 artifact since onboarding-vision-2026-07-14; still
+tolerated absent).
 PROPOSE-ONLY by construction: every card is ``status: draft`` +
 ``captain_ratified: false`` and lands in ``instance/config/outcomes-proposed.yml``
 — a filename the mission compiler structurally never reads (its filename gate
@@ -131,6 +134,26 @@ def _focus_excerpt(focus_text: str | None, limit: int = 200) -> str | None:
     return flat[:limit] if flat else None
 
 
+def _mission_fields(answers: dict) -> tuple[str | None, str | None, list[str]]:
+    """The purpose-first interview's ``mission:`` block (Phase 2,
+    onboarding-vision-2026-07-14 §4), tolerantly read: absent/malformed →
+    all-empty (missionless answers MUST derive byte-identical cards to
+    today — the block only ever ADDS conditioning, never restructures).
+    Returns (purpose, success_90d, never_touch) as flattened, length-capped
+    excerpts — pure string work, no I/O, no LLM (the design forbids TTFR
+    creep inside the hatch chain)."""
+    mission = answers.get("mission")
+    if not isinstance(mission, dict):
+        return None, None, []
+    purpose = _focus_excerpt(str(mission.get("purpose") or "") or None, 160)
+    success = _focus_excerpt(str(mission.get("success_90d") or "") or None, 160)
+    raw_never = mission.get("never_touch")
+    never = []
+    if isinstance(raw_never, list):
+        never = [" ".join(str(n).split()) for n in raw_never if str(n).strip()]
+    return purpose, success, never[:3]
+
+
 # ---------------------------------------------------------------------------
 # ONBOARD-1 — the org PROPOSES outcome cards (propose-only, never activating).
 # ---------------------------------------------------------------------------
@@ -144,7 +167,13 @@ def propose_outcome_cards(answers: dict, focus_text: str | None = None) -> list[
     ``_MAX_LANE_CARDS`` lane cards (declared lane order) + the two org cards
     (Library grounding, Captain decision loop), so 0 lanes → 2 cards,
     1 lane → 3, ≥2 lanes → 4. Returns [] when answers carry no cabinet id at
-    all (nothing to key a proposal to — honest empty)."""
+    all (nothing to key a proposal to — honest empty).
+
+    MISSION-CONDITIONED (Phase 2, onboarding-vision-2026-07-14 §4): when the
+    answers carry the interview's ``mission:`` block, the cards quote the
+    stated purpose / 90-day bar / never-touch list — still PURE deterministic
+    string derivation (no LLM anywhere near the hatch chain). Missionless
+    answers derive exactly today's cards."""
     cabinet = answers.get("cabinet") or {}
     cabinet_id = str(cabinet.get("id") or "").strip()
     if not cabinet_id:
@@ -152,6 +181,7 @@ def propose_outcome_cards(answers: dict, focus_text: str | None = None) -> list[
 
     excerpt = _focus_excerpt(focus_text)
     focus_lower = (focus_text or "").lower()
+    purpose, success_90d, never_touch = _mission_fields(answers)
     cards: list[dict] = []
 
     seen_ids: set[str] = set()
@@ -170,6 +200,8 @@ def propose_outcome_cards(answers: dict, focus_text: str | None = None) -> list[
             (slug and slug in focus_lower) or (name and name.lower() in focus_lower)
         ):
             why += " Your focus letter names this lane."
+        if purpose:
+            why += f' The mission it serves: "{purpose}"'
         proof = (
             "A closed task in the lane's task system linked to the shipped "
             "change" + (f" in {repos[0]}" if repos else "")
@@ -206,6 +238,7 @@ def propose_outcome_cards(answers: dict, focus_text: str | None = None) -> list[
         "why": (
             "Gather-then-decide is org doctrine: an org that acts before it "
             "understands invents work."
+            + (f' The mission it must ground: "{purpose}"' if purpose else "")
             + (" Your focus letter is the first thing it reads." if excerpt else "")
         ),
         "proof_expected": (
@@ -225,6 +258,9 @@ def propose_outcome_cards(answers: dict, focus_text: str | None = None) -> list[
         "why": (
             "The hatch posture is propose-first; the governance loop exists "
             "only once a proposal has round-tripped through the Captain."
+            + (f' Your stated 90-day bar: "{success_90d}"' if success_90d else "")
+            + (" Standing constraint you stated — the org never touches: "
+               + "; ".join(never_touch) + "." if never_touch else "")
             + (f' Your focus letter opens: "{excerpt}"' if excerpt else "")
         ),
         "proof_expected": (

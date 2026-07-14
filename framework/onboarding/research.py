@@ -4,6 +4,11 @@ No network, no mutation, and NEVER reads .env / secret files: it inspects
 package.json / pyproject / README / .claude config / .mcp.json / .git config
 for NAMES (deps, plugins, repo url), never values. This is the gather-then-decide
 front end of onboarding — the Chair learns what a product IS before wiring it.
+
+Also home to ``inventory_mcp_estate`` (Phase 2, onboarding-vision-2026-07-14):
+the interview's consent-gated MCP-estate glance — server NAMES only, from the
+repo's declared surfaces, honoring the null-hatch zero-captain-data spirit
+(no consent ⇒ no reads at all).
 """
 from __future__ import annotations
 
@@ -114,3 +119,66 @@ def research_repo(repo_path: str) -> dict:
         "has_claude": (repo / ".claude").is_dir(),
         "path": str(repo),
     }
+
+
+# ---------------------------------------------------------------------------
+# MCP-estate inventory (Phase 2, onboarding-vision-2026-07-14 §4) — NAMES only.
+# ---------------------------------------------------------------------------
+_EXTENSIONS_REL = "instance/config/extensions.yml"
+
+
+def _extension_mcp_names(doc) -> list:
+    """`name:` fields under the extensions file's ``mcps:`` list — nothing
+    else is ever surfaced (no urls, no env names, no headers)."""
+    if not isinstance(doc, dict):
+        return []
+    return [str(e["name"]) for e in (doc.get("mcps") or [])
+            if isinstance(e, dict) and str(e.get("name") or "").strip()]
+
+
+def inventory_mcp_estate(root: str, *, consent: bool = False) -> dict:
+    """Consent-gated MCP-estate glance: server NAMES only, never values.
+
+    NULL-HATCH SPIRIT: without an explicit ``consent=True`` (the Captain's
+    in-interview yes) this reads NOTHING — not even a stat beyond the root —
+    and returns an honest ``{"consented": False, "servers": [], "sources": []}``.
+    With consent it surveys ONLY two declared surfaces under ``root``:
+
+    * ``.mcp.json`` — the KEYS of ``mcpServers`` (command/url/env/headers are
+      never read into the result), and
+    * ``instance/config/extensions.yml`` (or its ``.example`` sibling when the
+      real file does not exist) — each ``mcps:`` entry's ``name`` field.
+
+    Never the user-level Claude config (Open Captain Call #4 — the consent
+    boundary for that surface is unruled, so it stays out), never ``.env``.
+    Parse failures are honest empties, never a traceback. ``sources`` lists
+    the root-relative paths actually consulted."""
+    if consent is not True:
+        return {"consented": False, "servers": [], "sources": []}
+
+    base = Path(root).expanduser()
+    servers: set = set()
+    sources: list = []
+
+    mcp = _read_json(base / ".mcp.json")
+    if isinstance(mcp, dict) and isinstance(mcp.get("mcpServers"), dict):
+        servers.update(str(k) for k in mcp["mcpServers"])
+        sources.append(".mcp.json")
+
+    ext_rel = _EXTENSIONS_REL
+    ext_path = base / ext_rel
+    if not ext_path.is_file():
+        ext_rel = _EXTENSIONS_REL + ".example"
+        ext_path = base / ext_rel
+    if ext_path.is_file():
+        try:
+            import yaml  # local: keep the module import-light
+            names = _extension_mcp_names(
+                yaml.safe_load(ext_path.read_text(encoding="utf-8")))
+        except Exception:
+            names = []
+        else:
+            sources.append(ext_rel)
+        servers.update(names)
+
+    return {"consented": True, "servers": sorted(servers), "sources": sources}

@@ -1,6 +1,6 @@
 ---
 name: cabinet-init
-description: Onboarding interview for a new Cabinet deployment. Use when a captain sets up this repo for the first time (or adds/changes lanes) — interviews for captain profile, lanes, org shape, autonomy posture, and seed outcomes, writes instance/config/cabinet-init.answers.yml, runs cabinet/scripts/generate-instance.py, and prints the exact activation steps. Idempotent on re-run. A zero-question fast lane exists for defaults-accepting hatches (generate-instance.py --defaults).
+description: Onboarding interview for a new Cabinet deployment. Use when a captain sets up this repo for the first time (or adds/changes lanes) — interviews purpose-first (mission + focus letter), then for captain profile, lanes, org shape, autonomy posture, and seed outcomes, writes instance/config/cabinet-init.answers.yml, runs cabinet/scripts/generate-instance.py, and prints the exact activation steps. Idempotent on re-run. A zero-question fast lane exists for defaults-accepting hatches (generate-instance.py --defaults).
 ---
 
 # Cabinet Init — the onboarding interview
@@ -67,10 +67,49 @@ lane for real captains.
 
 ## Flow
 
-Work through the six phases in order. Ask conversationally, batch
-related questions, and confirm the assembled answers back before
+Work through the seven phases (0–6) in order. Ask conversationally,
+batch related questions, and confirm the assembled answers back before
 generating. If an answers file already exists, load it first and only
 ask about gaps/changes.
+
+### 0. Mission — purpose first
+
+Before any lane, board, or bot: ask what the org is FOR. Three
+questions, in the captain's own words:
+
+1. **Purpose** — "What is this org for? What should it make true?"
+2. **90-day success** — "What does success look like in ~90 days?"
+3. **Never touch** — "Anything the org must never touch or do without
+   you?" (a short list; it becomes a standing, visible constraint on
+   every proposed card).
+
+**Dual output — write BOTH:**
+
+- **The focus letter** — `instance/config/onboarding-focus.md`: a short
+  prose letter assembled from the answers (bearing, not tasks), read
+  back and corrected before writing. It is a first-class artifact now,
+  not an optional sidecar: genesis reads it
+  (`framework/onboarding/genesis.py`) and anchors the org's first
+  proposed outcome cards to it. Never overwrite an existing letter
+  without the captain's explicit yes.
+- **The `mission:` block** — a machine-readable top-level key in the
+  answers file (schema in "Write answers + generate" below):
+  `purpose`, `success_90d`, `never_touch: []`. The zero-LLM generator
+  deliberately ignores this key (a test pins that tolerance); genesis
+  conditions its proposed outcome cards on it. Propose-only as ever —
+  nothing in the mission block activates anything.
+
+**Optional MCP-estate glance (consent-gated, names only):** offer —
+never assume — "May I read the MCP server NAMES this repo declares
+(`.mcp.json` + `instance/config/extensions.yml`), to ground the lane
+questions? Names only, never values." Only on an explicit yes, call
+`framework.onboarding.research.inventory_mcp_estate(root, consent=True)`
+and narrate the names found. A no (or silence) skips it silently — it
+reads nothing without consent, and it never touches the captain's
+user-level Claude config.
+
+`--defaults` skips this phase entirely (no mission block, no letter) —
+the zero-question fast lane above is unchanged.
 
 ### 1. Captain profile
 
@@ -266,6 +305,10 @@ placeholders only:
    ```yaml
    version: 1
    captain: {name, timezone, telegram_chat_id}
+   mission:                                     # Phase 0 (purpose-first interview);
+     purpose: <one sentence>                    #  the generator IGNORES this key
+     success_90d: <one sentence>                #  (pinned by test) — only genesis
+     never_touch: []                            #  reads it, to condition proposals
    cabinet: {id, mode: single|multi, org_shape: portfolio|functional|custom, officer_model}
    lanes:
      - {name, slug, repos: [], task_system, boards: [],
