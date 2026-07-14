@@ -60,7 +60,19 @@ trap cleanup EXIT
 
 EGG="$WORK/egg"
 mkdir -p "$EGG" "$WORK/home"
-git -C "$REPO_ROOT" archive --format=tar HEAD | tar -xf - -C "$EGG"
+# Export the tree into the sandbox. Prefer `git archive HEAD` (committed tree,
+# excludes .gitignored runtime cruft) when REPO_ROOT is a git work tree. But a
+# DELIVERED egg has no .git, and hatch.sh --clean-room's own scratch export is
+# likewise gitless — there `git archive` dies "not a git repository" and the
+# whole clean-room proof fails at proof-a. Fall back to a straight tree copy
+# (minus VCS metadata) so the proof runs on the egg exactly as a stranger gets
+# it. The env scrub + unreadable ~/.screenpipe below still enforce the
+# clean-room premise regardless of export path.
+if git -C "$REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  git -C "$REPO_ROOT" archive --format=tar HEAD | tar -xf - -C "$EGG"
+else
+  tar -cf - -C "$REPO_ROOT" --exclude='./.git' . | tar -xf - -C "$EGG"
+fi
 
 export HOME="$WORK/home"
 

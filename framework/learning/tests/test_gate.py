@@ -101,6 +101,27 @@ class TestRing0:
             assert gate.touches_ring0([p], r0) == [p], p
         assert gate.touches_ring0(["framework/learning/loop_helper.py"], r0) == []
 
+    def test_touches_ring0_dot_leading_paths_not_char_stripped(self):
+        """Regression: `str.lstrip('./')` strips a leading RUN of '.'/'/'
+        chars, so a dot-leading Ring-0 path (e.g. the enforcer plane's
+        .claude/settings.json) normalized to 'claude/settings.json' and slipped
+        S0 entirely. Pin exact-file + dir-cover for dot-leading paths, that an
+        explicit './' prefix is still normalized, and that ordinary './' paths
+        and non-Ring-0 dotfiles behave."""
+        r0 = {"files": [".claude/settings.json"], "dirs": [".config/cabinet"]}
+        # dot-leading exact file — must be caught (the bug missed it)
+        assert gate.touches_ring0([".claude/settings.json"], r0) == [".claude/settings.json"]
+        # explicit ./ prefix on a dot-leading path — prefix stripped, still caught
+        assert gate.touches_ring0(["./.claude/settings.json"], r0) == ["./.claude/settings.json"]
+        # dot-leading dir cover — must be caught
+        assert gate.touches_ring0([".config/cabinet/x.yml"], r0) == [".config/cabinet/x.yml"]
+        # a non-Ring-0 dotfile is NOT a false positive
+        assert gate.touches_ring0([".github/workflows/ci.yml"], r0) == []
+        # the ordinary './'-prefix normalization still works
+        r0b = {"files": ["framework/authority/matrix.py"], "dirs": []}
+        assert gate.touches_ring0(
+            ["./framework/authority/matrix.py"], r0b) == ["./framework/authority/matrix.py"]
+
     def test_diff_paths_dedup_and_devnull(self):
         text = (
             "diff --git a/x.py b/x.py\n--- a/x.py\n+++ b/x.py\n"
