@@ -255,9 +255,16 @@ ok "Directories created"
 
 echo ""
 echo "=== Step 5: Load preset ==="
+# Guard the exit: under `set -euo pipefail` a bare `cmd | tail` in a THEN-body
+# aborts the whole host bootstrap on any non-zero, so wrap it in an `if` the
+# way the sibling steps do — a preset that can't assemble yet is
+# warn-and-continue, not a fatal.
 if [ -f "$CABINET_ROOT/cabinet/scripts/load-preset.sh" ]; then
-  bash "$CABINET_ROOT/cabinet/scripts/load-preset.sh" 2>&1 | tail -1
-  ok "Preset loaded"
+  if bash "$CABINET_ROOT/cabinet/scripts/load-preset.sh" 2>&1 | tail -1; then
+    ok "Preset loaded"
+  else
+    warn "load-preset.sh returned non-zero — continuing; assemble the runtime later (load-preset.sh)"
+  fi
 else
   warn "load-preset.sh not found, skipping"
 fi
@@ -268,9 +275,18 @@ echo "=== Step 5.5: Bootstrap durable roles ==="
 # mission compilation can find role owners. Idempotent — no-op if already
 # seeded. Without this, outcome → mission compilation fails with
 # "unknown role for <product>: cos".
+# GUARD: on a FRESH tree there is no instance/config/active-project.txt yet
+# (the generator writes it in a LATER hatch step), so bootstrap-roles exits 1
+# — and under `set -euo pipefail` an unguarded `bash … | tail` would kill the
+# whole host bootstrap here (the fresh-clone/egg hatch-blocker). Warn-and-
+# continue; the activation steps re-run bootstrap-roles --roster AFTER
+# generate-instance, which is where roles actually seed.
 if [ -f "$CABINET_ROOT/cabinet/scripts/bootstrap-roles.sh" ]; then
-  bash "$CABINET_ROOT/cabinet/scripts/bootstrap-roles.sh" 2>&1 | tail -10
-  ok "Roles bootstrapped"
+  if bash "$CABINET_ROOT/cabinet/scripts/bootstrap-roles.sh" 2>&1 | tail -10; then
+    ok "Roles bootstrapped"
+  else
+    warn "bootstrap-roles.sh returned non-zero (typically: no active-project.txt yet on a fresh tree — the generator writes it later). Continuing; roles seed at the post-generate activation step (bootstrap-roles.sh --roster)."
+  fi
 else
   warn "bootstrap-roles.sh not found, skipping (mission compilation will fail until you seed roles manually)"
 fi
@@ -334,7 +350,11 @@ else
   warn "No .env file — run: bash cabinet/scripts/setup-env.sh (or --defaults for local-only)"
 fi
 
-ACTIVE_PROJECT=$(cat "$CABINET_ROOT/instance/config/active-project.txt" 2>/dev/null | tr -d '[:space:]')
+# `|| true` inside the substitution: under `set -euo pipefail` a missing
+# active-project.txt makes `cat` exit 1, pipefail propagates it, and the
+# assignment would abort the script (killing Steps 9-14) with zero output.
+# Absent/empty → empty string, handled by the warn branch below.
+ACTIVE_PROJECT=$(cat "$CABINET_ROOT/instance/config/active-project.txt" 2>/dev/null | tr -d '[:space:]' || true)
 if [ -n "$ACTIVE_PROJECT" ] && [ "$ACTIVE_PROJECT" != "demo" ]; then
   ok "Active project: $ACTIVE_PROJECT"
 else

@@ -197,7 +197,14 @@ def touches_ring0(paths: list[str], ring0: dict[str, list[str]]) -> list[str]:
     files = set(ring0.get("files") or [])
     dirs = [d.rstrip("/") + "/" for d in (ring0.get("dirs") or [])]
     for p in paths:
-        norm = p.strip().lstrip("./")
+        # Strip a leading `./` PREFIX only — NOT `str.lstrip("./")`, which
+        # removes any leading run of '.'/'/' characters and so eats the leading
+        # dot of a dotfile path: ".claude/settings.json" → "claude/settings.json",
+        # silently missing every dot-leading Ring-0 target (e.g. the enforcer
+        # plane's .claude/settings.json) — the exact class S0 exists to refuse.
+        norm = p.strip()
+        while norm.startswith("./"):
+            norm = norm[2:]
         if _escapes_repo(p) or norm in files or any(norm.startswith(d) for d in dirs):
             hits.append(p)
     return hits
