@@ -20,7 +20,7 @@ def _past() -> str:
 
 
 def test_fires_when_pane_free(reg):
-    reg.register_trigger(kind="at-time", payload={"about": "ping Lisa"}, fire_at=_past())
+    reg.register_trigger(kind="at-time", payload={"about": "ping Lena"}, fire_at=_past())
     calls, logs = [], []
     n = firing.fire_due_triggers("sess", lambda: False, logs.append,
                                  tmux=lambda *a: calls.append(a))

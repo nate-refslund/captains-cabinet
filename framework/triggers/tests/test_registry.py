@@ -23,7 +23,7 @@ def _ts(delta_min: int) -> str:
 
 
 def test_at_time_due_then_oneshot(reg):
-    t = reg.register_trigger(kind="at-time", payload={"about": "reply to Lisa"},
+    t = reg.register_trigger(kind="at-time", payload={"about": "reply to Lena"},
                              fire_at=_ts(-5))
     due = reg.due_triggers()
     assert [d["id"] for d in due] == [t["id"]]

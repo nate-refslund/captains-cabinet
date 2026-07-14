@@ -35,12 +35,12 @@ def vault(tmp_path):
 # --- OPERATIONAL sections ----------------------------------------------------
 
 def test_operational_core_sections_present(vault):
-    _write(vault, "6-Commitments/owed_by_nate/cmt-1.md", "Ada owes Lisa the licences")
+    _write(vault, "6-Commitments/owed_by_nate/cmt-1.md", "Ada owes Lena the licences")
     _write(vault, "2-Meetings/2026-07-03-scrum.md", "Bakery scrum notes")
     _write(vault, "5-Reflections/Decisions/dec-1.md", "Decided: Option B staging")
     out = ral.gather_signals(AS_OF, vault=vault)
     assert "--- OPEN COMMITMENT ref=6-Commitments/owed_by_nate/cmt-1.md ---" in out
-    assert "owes Lisa" in out
+    assert "owes Lena" in out
     assert "--- MEETING ref=2-Meetings/2026-07-03-scrum.md ---" in out
     assert "--- DECISION ref=5-Reflections/Decisions/dec-1.md ---" in out
 

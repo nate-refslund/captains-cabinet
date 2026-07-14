@@ -2,7 +2,7 @@
 # chair-claim-thread.sh — the Chair CLAIMS a thread it is hand-crafting a reply
 # for, so the draft-lane never ALSO drafts (or surfaces) that same thread.
 #
-# This is FIX 1 of the draft-lane race that produced the wrong-Morten draft: the
+# This is FIX 1 of the draft-lane race that produced the wrong-Milo draft: the
 # autonomous lane drafted a thread the Chair was concurrently handling. The Chair
 # calls this the moment it takes ownership of a thread (and chair-release-thread.sh
 # when it finishes). It SETs a redis key cabinet:chair:active-thread:<slug> with a
@@ -24,8 +24,8 @@
 #
 # Usage:
 #   chair-claim-thread.sh <slug> [ttl_seconds]
-#   chair-claim-thread.sh Morten-Stagaard            # default 12h TTL
-#   chair-claim-thread.sh Morten-Stagaard 7200       # custom 2h TTL
+#   chair-claim-thread.sh Milo-Archer            # default 12h TTL
+#   chair-claim-thread.sh Milo-Archer 7200       # custom 2h TTL
 set -uo pipefail
 
 SLUG="${1:-}"

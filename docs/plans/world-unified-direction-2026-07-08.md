@@ -496,7 +496,7 @@ with exactly the right chassis:
   no new route, no new actuator, no write path; mailbox click renders card
   content in-world and **links out to the HQ Chair Telegram chat to act**.
 - **Nuance (not a blocker):** Telegram has **no per-message deep link into a
-  bot DM** — `t.me/<HQChairBot>` opens the chat, not the specific card message.
+  bot DM** — `t.me/<ExampleChairBot>` opens the chat, not the specific card message.
   Mitigation: the card body is fully rendered in-world from Redis; Telegram is
   only the act surface. (Card JSON free text stays in the authed dashboard
   response — same trust tier as `/tasks` — and must NEVER be copied into the

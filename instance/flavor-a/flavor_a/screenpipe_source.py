@@ -203,7 +203,7 @@ class ScreenpipeSource:
         # topic = the inbound message being replied to → topic-aware retrieval
         # (gather extracts EN+DA content nouns + folds them ahead of the person
         # terms, so the query is what the conversation is ABOUT, not just the
-        # person slug). Without it, search("Sobuc") hits the profile note, not
+        # person slug). Without it, search("Sevan") hits the profile note, not
         # the thread; a 0.4 relevance floor returns 0 rather than noise.
         #
         # An INJECTED context_lib/server (tests) is delegated in-process,

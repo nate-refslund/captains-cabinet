@@ -50,13 +50,13 @@ class TestStillAwaiting:
 
     def test_still_inbound_returns_true(self, monkeypatch):
         monkeypatch.setattr(sa, "_dl",
-                            lambda: _StubDL(slugs=["kristoffer", "lisa"]))
+                            lambda: _StubDL(slugs=["kristoffer", "lena"]))
         assert sa.still_awaiting("kristoffer") is True
 
     def test_nate_replied_slug_gone_returns_false(self, monkeypatch):
         # Slug is NO LONGER awaiting (dropped out because Nate's reply is newest)
         # -> False -> the lane drops the stale draft.
-        monkeypatch.setattr(sa, "_dl", lambda: _StubDL(slugs=["lisa"]))
+        monkeypatch.setattr(sa, "_dl", lambda: _StubDL(slugs=["lena"]))
         assert sa.still_awaiting("kristoffer") is False
 
     def test_brain_error_returns_none_failsafe(self, monkeypatch):
@@ -66,7 +66,7 @@ class TestStillAwaiting:
         assert sa.still_awaiting("kristoffer") is None
 
 
-def _cal_thread(text="", who="Lisa Stentoft <lisa@stepnetwork.dk>", slug="lisa-stentoft"):
+def _cal_thread(text="", who="Lena Baker <lena@stepnetwork.dk>", slug="lena-baker"):
     return {"slug": slug, "person": slug.replace("-", " ").title(),
             "last": {"date": "2026-06-24T08:00:00+00:00",
                      "text": text, "who": who, "source": "msgraph"}}
@@ -79,7 +79,7 @@ class TestIsCalendarInvite:
 
     # --- positives: real invite shapes ---
 
-    def test_the_lisa_bug_danish_recurring_invite(self):
+    def test_the_lena_bug_danish_recurring_invite(self):
         # The exact reported regression: a recurring DA organizer invite that
         # was surfacing as awaiting-reply.
         body = (
@@ -171,28 +171,28 @@ class TestChairHoldsThread:
     def test_present_key_is_held(self, monkeypatch):
         fake = _FakeRun(stdout="1\n")
         monkeypatch.setattr(sa.subprocess, "run", fake)
-        assert sa.chair_holds_thread("Morten-Stagaard") is True
+        assert sa.chair_holds_thread("Milo-Archer") is True
         # key derivation: sanitized slug under the active-thread namespace.
-        assert fake.last_key == "cabinet:chair:active-thread:Morten-Stagaard"
+        assert fake.last_key == "cabinet:chair:active-thread:Milo-Archer"
 
     def test_missing_key_is_not_held(self, monkeypatch):
         monkeypatch.setattr(sa.subprocess, "run", _FakeRun(stdout=""))
-        assert sa.chair_holds_thread("Morten-Stagaard") is False
+        assert sa.chair_holds_thread("Milo-Archer") is False
 
     def test_whitespace_only_value_is_not_held(self, monkeypatch):
         # redis-cli prints a trailing newline even for (nil)/empty -> not held.
         monkeypatch.setattr(sa.subprocess, "run", _FakeRun(stdout="\n"))
-        assert sa.chair_holds_thread("Morten-Stagaard") is False
+        assert sa.chair_holds_thread("Milo-Archer") is False
 
     def test_redis_error_is_not_held_failsafe(self, monkeypatch):
         # A redis outage must NEVER suppress the only drafter -> not held.
         monkeypatch.setattr(sa.subprocess, "run", _FakeRun(raises=True))
-        assert sa.chair_holds_thread("Morten-Stagaard") is False
+        assert sa.chair_holds_thread("Milo-Archer") is False
 
     def test_key_is_flattened(self):
         # Spaces/colons in a slug must not fracture the keyspace (mirrors the
         # handled-key hygiene, and the Chair-side helper's sed sanitization).
-        k = sa._active_thread_key("Anna Grobelscheg: PolAds")
+        k = sa._active_thread_key("Grace Fielder: PolAds")
         assert k.startswith("cabinet:chair:active-thread:")
         suffix = k[len("cabinet:chair:active-thread:"):]
         assert " " not in suffix and ":" not in suffix
@@ -212,26 +212,26 @@ class TestFindThreadsActiveLock:
         monkeypatch.setattr(sa, "chair_holds_thread", lambda slug: slug in locked)
 
     def test_locked_thread_is_dropped(self, monkeypatch):
-        self._wire(monkeypatch, ["morten-stagaard", "lisa"], {"morten-stagaard"})
+        self._wire(monkeypatch, ["milo-archer", "lena"], {"milo-archer"})
         out = {t["slug"] for t in sa.find_threads(hours=72)}
-        assert out == {"lisa"}  # the locked thread is gone, the other remains
+        assert out == {"lena"}  # the locked thread is gone, the other remains
 
     def test_no_lock_keeps_all(self, monkeypatch):
-        self._wire(monkeypatch, ["morten-stagaard", "lisa"], set())
+        self._wire(monkeypatch, ["milo-archer", "lena"], set())
         out = {t["slug"] for t in sa.find_threads(hours=72)}
-        assert out == {"morten-stagaard", "lisa"}  # nothing locked -> normal flow
+        assert out == {"milo-archer", "lena"}  # nothing locked -> normal flow
 
     def test_degrade_safe_no_redis_no_exclusion(self, monkeypatch):
         # chair_holds_thread already returns False on a redis error (its own
         # fail-safe); wiring the REAL helper with a raising subprocess proves the
         # whole find_threads path degrades to no-exclusion, not an empty result.
         monkeypatch.setattr(sa, "_dl",
-                            lambda: _StubDL(slugs=["morten-stagaard", "lisa"]))
+                            lambda: _StubDL(slugs=["milo-archer", "lena"]))
         monkeypatch.setattr(sa, "_load_skip_groups", lambda: [])
         monkeypatch.setattr(sa, "is_calendar_invite", lambda t: False)
         monkeypatch.setattr(sa.subprocess, "run", _FakeRun(raises=True))
         out = {t["slug"] for t in sa.find_threads(hours=72)}
-        assert out == {"morten-stagaard", "lisa"}  # redis down -> no thread dropped
+        assert out == {"milo-archer", "lena"}  # redis down -> no thread dropped
 
 
 def _sent(date):
@@ -259,7 +259,7 @@ class TestNateRepliedSince:
         self._convo(monkeypatch, [_recv("2026-06-25T11:00:00+00:00"),
                                   _sent("2026-06-25T13:00:00+00:00")])
         when = sa.parse_dt("2026-06-25T12:00:00+00:00")
-        assert sa.nate_replied_since("morten-stagaard", when) is True
+        assert sa.nate_replied_since("milo-archer", when) is True
 
     def test_only_older_self_reply_returns_false(self, monkeypatch):
         # His latest send (11:30) PREDATES the proposal (12:00) -> not newer ->
@@ -267,20 +267,20 @@ class TestNateRepliedSince:
         self._convo(monkeypatch, [_sent("2026-06-25T11:30:00+00:00"),
                                   _recv("2026-06-25T11:45:00+00:00")])
         when = sa.parse_dt("2026-06-25T12:00:00+00:00")
-        assert sa.nate_replied_since("morten-stagaard", when) is False
+        assert sa.nate_replied_since("milo-archer", when) is False
 
     def test_equal_time_is_not_newer(self, monkeypatch):
         # A send exactly AT the proposal time is not STRICTLY newer -> False.
         self._convo(monkeypatch, [_sent("2026-06-25T12:00:00+00:00")])
         when = sa.parse_dt("2026-06-25T12:00:00+00:00")
-        assert sa.nate_replied_since("morten-stagaard", when) is False
+        assert sa.nate_replied_since("milo-archer", when) is False
 
     def test_no_sent_messages_returns_false(self, monkeypatch):
         # Only inbound in the convo -> we COULD read it, there is simply no
         # self-reply -> False (definitively not, not "can't tell").
         self._convo(monkeypatch, [_recv("2026-06-25T13:00:00+00:00")])
         when = sa.parse_dt("2026-06-25T12:00:00+00:00")
-        assert sa.nate_replied_since("morten-stagaard", when) is False
+        assert sa.nate_replied_since("milo-archer", when) is False
 
     def test_unparseable_sent_dates_returns_none(self, monkeypatch):
         # A sent message exists but its date is garbage -> can't tell -> None ->
@@ -288,24 +288,24 @@ class TestNateRepliedSince:
         self._convo(monkeypatch, [{"direction": "sent", "date": "garbage",
                                    "who": "Nate", "text": "x"}])
         when = sa.parse_dt("2026-06-25T12:00:00+00:00")
-        assert sa.nate_replied_since("morten-stagaard", when) is None
+        assert sa.nate_replied_since("milo-archer", when) is None
 
     def test_empty_conversation_returns_none(self, monkeypatch):
         # No messages at all -> no datable self-reply -> None (fall back).
         self._convo(monkeypatch, [])
         when = sa.parse_dt("2026-06-25T12:00:00+00:00")
-        assert sa.nate_replied_since("morten-stagaard", when) is None
+        assert sa.nate_replied_since("milo-archer", when) is None
 
     def test_unreadable_conversation_returns_none(self, monkeypatch):
         # load_full_conversation raised -> None (best-effort, fall back).
         self._convo(monkeypatch, [], raises=True)
         when = sa.parse_dt("2026-06-25T12:00:00+00:00")
-        assert sa.nate_replied_since("morten-stagaard", when) is None
+        assert sa.nate_replied_since("milo-archer", when) is None
 
     def test_none_when_returns_none(self, monkeypatch):
         # An unparseable proposal ts (when=None) -> None (can't compare).
         self._convo(monkeypatch, [_sent("2026-06-25T13:00:00+00:00")])
-        assert sa.nate_replied_since("morten-stagaard", None) is None
+        assert sa.nate_replied_since("milo-archer", None) is None
 
 
 class TestNormalizeVoice:

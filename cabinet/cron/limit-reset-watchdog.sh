@@ -173,6 +173,24 @@ PY
 }
 
 # ---------------------------------------------------------------------------
+# Roll-forward clobber guard (never-wakes fix — officer-fleet-2). TRUE when an
+# already-armed reset key is already DUE (existing <= now) yet re-parsing the
+# STILL-VISIBLE banner produced a FUTURE epoch — i.e. the parser rolled an
+# already-elapsed clock forward to tomorrow. In that case DETECT must NOT
+# overwrite the key: keep the due epoch so THIS tick's WATCH+WAKE fires it,
+# instead of an idle pane (banner never scrolls away) deferring the wake
+# forever. Args: existing_stored_value  now_epoch  freshly_parsed_reset_epoch.
+# ---------------------------------------------------------------------------
+is_rollforward_clobber() {
+  local existing="$1" now="$2" reset="$3"
+  [[ "$existing" =~ ^[0-9]+$ ]] || return 1
+  [[ "$reset" =~ ^[0-9]+$ ]] || return 1
+  [ "$existing" -le "$now" ] || return 1
+  [ "$reset" -gt "$now" ] || return 1
+  return 0
+}
+
+# ---------------------------------------------------------------------------
 # SELF-TEST mode — `CABINET_LRW_SELFTEST=1 bash limit-reset-watchdog.sh`
 # Exercises parse_reset_to_epoch with a fixed reference now and asserts the
 # resolved UTC epoch. No Redis, no tmux, no side effects.
@@ -227,6 +245,18 @@ PY
   check "dotted p.m."           "resets 5:10 p.m."                              1782400200
   # garbage -> empty
   check "no time → empty"       "some unrelated text"                          ""
+  # Roll-forward clobber guard (officer-fleet-2 never-wakes fix). T = keep the
+  # due key (skip the store); F = store normally.
+  rf() { if is_rollforward_clobber "$1" "$2" "$3"; then echo T; else echo F; fi; }
+  rf_check() {
+    if [ "$2" = "$3" ]; then echo "  ok   | $1"; else echo "  FAIL | $1 got=$2 want=$3"; fails=$((fails+1)); fi
+  }
+  rf_check "rollfwd due+future → keep"        "$(rf 1000 2000 90000)" T
+  rf_check "no existing → store"              "$(rf ''   2000 90000)" F
+  rf_check "existing not yet due → store"     "$(rf 3000 2000 90000)" F
+  rf_check "reset == now (not future) → store" "$(rf 1000 2000 2000)" F
+  rf_check "reset earlier than now → store"   "$(rf 1000 2000 1500)"  F
+  rf_check "non-numeric existing → store"     "$(rf abc  2000 90000)" F
   echo "---"
   if [ "$fails" -eq 0 ]; then echo "ALL PASS"; exit 0; else echo "$fails FAIL(S)"; exit 1; fi
 fi
@@ -287,6 +317,14 @@ for o in "${OFFICERS[@]}"; do
 
       if [ -n "$RESET_EPOCH" ]; then
         EXISTING=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET "cabinet:limit-reset:$o" 2>/dev/null || echo "")
+        if is_rollforward_clobber "$EXISTING" "$NOW_EPOCH" "$RESET_EPOCH"; then
+          # Already-armed AND already-due, but the still-visible banner just
+          # re-parsed to a future epoch (elapsed-clock roll-forward). Do NOT
+          # overwrite — keep the due key so WATCH+WAKE below fires it THIS tick
+          # (else the idle pane defers the wake forever). Any post-wake re-arm
+          # self-clears via the 12h TTL, so no spurious future wake.
+          echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) limit-reset-watchdog: $o keeping DUE reset=$EXISTING (banner re-parsed forward to $RESET_EPOCH; wake fires this tick)" >&2
+        else
         # Store with a TTL guard so a stale key self-clears even if the wake
         # branch never runs. SET (overwrite) is fine — deterministic parse means
         # re-detecting the same banner yields the same epoch (idempotent).
@@ -302,6 +340,7 @@ for o in "${OFFICERS[@]}"; do
                   || date -u -r "$RESET_EPOCH" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || echo "$RESET_EPOCH")
           echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) limit-reset-watchdog: ARMED $o reset=$RESET_EPOCH ($HUMAN) active-task=$([ -n "$AT" ] && echo present || echo ABSENT) line='$LIMIT_LINE'" >&2
         fi
+        fi   # close the roll-forward-guard if/else
       else
         echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) limit-reset-watchdog: $o limit notice seen but no parseable reset time in: '$LIMIT_LINE'" >&2
       fi

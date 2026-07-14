@@ -159,7 +159,7 @@ def is_skipped_group(thread: dict, skip: list | None = None) -> bool:
 
 # ---------------------------------------------------------------------------
 # Calendar-invite exclusion. A meeting invitation / organizer-update mail
-# (e.g. Lisa Stentoft's recurring "Ugentlig Planlægning – Agenda") arrives as
+# (e.g. Lena Baker's recurring "Ugentlig Planlægning – Agenda") arrives as
 # an ordinary `received` email, so draft_lib.find_awaiting_threads surfaces it
 # as an awaiting-reply thread and the lane drafts a *prose reply* to it — which
 # is wrong twice over: a calendar invite is answered by Accept/Decline (a

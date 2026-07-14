@@ -27,7 +27,7 @@ def _jrow(pid="pid-a", jid="j-1", *, status="executed", canary=False,
     return row
 
 
-def _awaiting(subject="thread:lisa", ts="2026-07-04T07:00:00Z"):
+def _awaiting(subject="thread:lena", ts="2026-07-04T07:00:00Z"):
     return {"ts": ts, "actor": {"kind": "officer", "id": "officer:cos"},
             "lane": "send-1to1-reply", "action": "draft-reply",
             "subject": subject, "refs": [],
@@ -204,7 +204,7 @@ def test_awaiting_only_digest_needs_no_manifest():
     assert out["digest"] is True
     assert r.set_calls == []
     text = intake.items[0]["payload"]["summary"]
-    assert "⚡ AWAITING (1)" in text and "thread:lisa" in text
+    assert "⚡ AWAITING (1)" in text and "thread:lena" in text
 
 
 def test_empty_everything_skips_quietly():

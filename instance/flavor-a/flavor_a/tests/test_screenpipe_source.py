@@ -164,8 +164,8 @@ def test_search_routes_injected_context_lib_in_process():
             return {"hits": [{"text": "H"}], "topic_terms": ["t"]}
 
     src = ScreenpipeSource(context_lib=StubCtx())
-    out = src.search("Sobuc", topic="garden budget")
-    assert seen == {"sources": ["vault"], "handle": "Sobuc", "topic": "garden budget"}
+    out = src.search("Sevan", topic="workshop budget")
+    assert seen == {"sources": ["vault"], "handle": "Sevan", "topic": "workshop budget"}
     assert out == {"hits": [{"text": "H"}], "topic_terms": ["t"]}
 
 

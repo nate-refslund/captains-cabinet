@@ -175,7 +175,7 @@ def _fake_gather_factory(captured):
             ],
             "vault_hits": [
                 {"path": "1-Daily/2026-05-12.md", "heading": "house",
-                 "text": "new house at Kagevej, big lawn ~3000 m2",
+                 "text": "new house at Eksempelvej, big lawn ~2500 m2",
                  "ts": "2026-05-12T09:00:00+00:00", "source": "vault"},
             ],
             "person_static": "role: head baker & site lead\nrelationship: manager",
@@ -208,12 +208,12 @@ class TestGatherSetInjectsContextAndRules:
         assert len(payload) > len(situation)
         # the fenced records are rendered into the appended block
         assert "1-Daily/2026-05-12.md" in payload
-        assert "3000 m2" in payload
+        assert "2500 m2" in payload
         assert "send the deck" in payload
         assert "head baker & site lead" in payload
         # the context block is in the USER message, not the system prompt
         assert "1-Daily/2026-05-12.md" not in seen["system"]
-        assert "3000 m2" not in seen["system"]
+        assert "2500 m2" not in seen["system"]
 
     def test_gather_set_adds_conditional_permission_rules(self):
         case = _case()

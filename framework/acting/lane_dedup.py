@@ -133,7 +133,7 @@ def subject_has_open_proposal(slug: str, rows: list | None = None) -> bool:
     Why this exists (duplicate-draft fix): the lane reads open_subject_ts() ONCE
     at the start of main(), then spends tens of seconds in the LLM gather/draft
     before it emits its own proposal. Two concurrent lane runs (a manual run + the
-    5-min cron overlapping) therefore both snapshot 'no open proposal for Lisa'
+    5-min cron overlapping) therefore both snapshot 'no open proposal for Lena'
     before either has emitted, both draft, and the captain gets the SAME draft twice.
     Re-reading the ledger immediately before emit/present closes that window: a
     proposal that landed DURING our draft is now visible and we skip. Cheap (one
@@ -156,7 +156,7 @@ def open_proposal_blocks_live(thread: dict, rows: list | None = None) -> bool:
     two checkpoints disagree: the blunt predecessor ``subject_has_open_proposal``
     skipped on ANY open proposal, so a thread that correctly passed the
     recency-aware top-of-loop gate (because a newer message arrived) was then
-    killed here by a STALE older open proposal — the Morten-Stagaard 17:05 DPA
+    killed here by a STALE older open proposal — the Milo-Archer 17:05 DPA
     failure (an earlier draft for the 14:53 message sat open and undecided, so the
     legitimately-new 17:05 reply was silently suppressed). Reading the ledger live
     still closes the concurrent-duplicate window the Layer-2 guard exists for: a

@@ -93,9 +93,9 @@ def test_bare_vs_annotated_path():
 
 
 def test_multi_ref_string_yields_every_ref():
-    s = ("6-Commitments/owed_to_nate/cmt-540d7a19bffd.md — Anna answered, "
+    s = ("6-Commitments/owed_to_nate/cmt-540d7a19bffd.md — Grace answered, "
          "6-Commitments/owed_to_nate/cmt-781c7a756d51.md — same topic, fulfilled 2026-07-06, "
-         "6-Commitments/owed_to_nate/cmt-0ac4d1192cae.md — Anna's suggestion")
+         "6-Commitments/owed_to_nate/cmt-0ac4d1192cae.md — Grace's suggestion")
     c = canonical_refs([s])
     assert {"cmt-540d7a19bffd", "cmt-781c7a756d51", "cmt-0ac4d1192cae"} <= c
     assert "6-Commitments/owed_to_nate/cmt-781c7a756d51.md" in c
@@ -491,9 +491,9 @@ OBSERVED_CARDS = [
     ("papers-signing-town-hall-fri-10-july-14-50",
      ["6-Commitments/owed_to_nate/cmt-fca6836e2844.md — 'town hall, Friday 10 July 14:50, document signing'"]),
     ("advertiser-sign-off-on-publisher-filled-details-decision-not-recorded",
-     ["6-Commitments/owed_to_nate/cmt-540d7a19bffd.md — Anna answered whether advertiser must sign off on publisher-filled targeting/delivery details",
+     ["6-Commitments/owed_to_nate/cmt-540d7a19bffd.md — Grace answered whether advertiser must sign off on publisher-filled targeting/delivery details",
       "6-Commitments/owed_to_nate/cmt-781c7a756d51.md — same topic, fulfilled 2026-07-06",
-      "6-Commitments/owed_to_nate/cmt-0ac4d1192cae.md — Anna's suggestion on advertiser sign-off in licensing/agreement flow"]),
+      "6-Commitments/owed_to_nate/cmt-0ac4d1192cae.md — Grace's suggestion on advertiser sign-off in licensing/agreement flow"]),
     ("product-brain-architecture-md-is-empty-template-both-live-products-undocumented",
      ["product-brain/architecture.md — status: template, all placeholders unfilled",
       "9-Codebases/Toolbox/deployment.md — live prod stack documented in deployment digest but not in product-brain",
@@ -536,7 +536,7 @@ OBSERVED_CARDS = [
      ["6-Commitments/owed_by_nate/cmt-d45d00936ac1.md — status:open, due 2026-07-27, reminder_set:false",
       "6-Commitments/owed_to_nate/cmt-d45d00936ac1.md — colleague-D returning 2026-07-27"]),
     ("styria-sign-off-answer-update-polads-advertiser-publisher-liability-spec",
-     ["6-Commitments/owed_to_nate/cmt-b54c519f5c3e.md — fulfilled 2026-07-07, Anna answered: publisher fills targeting/delivery, optional advertiser confirmation"]),
+     ["6-Commitments/owed_to_nate/cmt-b54c519f5c3e.md — fulfilled 2026-07-07, Grace answered: publisher fills targeting/delivery, optional advertiser confirmation"]),
     ("stepnetwork-dk-commits-missing-monday-ids-traceability-gap",
      ["9-Codebases/stepnetwork-dk/commits.md"]),
 ]

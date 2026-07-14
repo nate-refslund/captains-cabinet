@@ -65,8 +65,8 @@ def _open_subjects():
 
 class TestAutoExpireSelfReplied:
     def test_self_reply_expires_open_proposal(self, monkeypatch):
-        _emit_open("morten-stagaard", "2026-06-25T14:53:00+00:00")
-        assert "morten-stagaard" in _open_subjects()  # open before the sweep
+        _emit_open("milo-archer", "2026-06-25T14:53:00+00:00")
+        assert "milo-archer" in _open_subjects()  # open before the sweep
         # Ada replied himself after the proposal -> precise detector says True.
         monkeypatch.setattr(get_source(), "captain_replied_since", lambda slug, when: True)
 
@@ -75,9 +75,9 @@ class TestAutoExpireSelfReplied:
         assert n == 1
         # The proposal is now EXPIRED (decided), so it no longer suppresses the
         # thread: open_subject_ts drops it entirely.
-        assert "morten-stagaard" not in _open_subjects()
+        assert "milo-archer" not in _open_subjects()
         # And the superseding row is a clean expiry (decision='expired', no outcome).
-        row = next(e for e in read_ledger() if e.get("subject") == "morten-stagaard")
+        row = next(e for e in read_ledger() if e.get("subject") == "milo-archer")
         assert row["proposal"]["decision"] == "expired"
         assert "outcome" not in row
         assert row["review"]["verdict"] == "unknown"
@@ -87,12 +87,12 @@ class TestAutoExpireSelfReplied:
         # suppressing a genuinely-new inbound. Before expiry the open proposal
         # (14:53) would block a newer message via open_proposal_blocks; after
         # expiry the subject is gone from open_ts, so the new message re-presents.
-        _emit_open("morten-stagaard", "2026-06-25T14:53:00+00:00")
+        _emit_open("milo-archer", "2026-06-25T14:53:00+00:00")
         monkeypatch.setattr(get_source(), "captain_replied_since", lambda slug, when: True)
         rdl._auto_expire_self_replied()
 
         open_ts = ld.open_subject_ts(rows=read_ledger())
-        newer = {"slug": "morten-stagaard",
+        newer = {"slug": "milo-archer",
                  "last": {"date": "2026-06-25T17:05:00+00:00", "text": "new!"}}
         # No open proposal remains for the subject -> the recency gate does not block.
         assert ld.open_proposal_blocks(newer, open_ts) is False
@@ -135,7 +135,7 @@ class TestAutoExpireSelfReplied:
     def test_no_self_reply_keeps_proposal_open(self, monkeypatch):
         # Detector says False (Ada has NOT replied since) and the proposal is
         # fresh -> the backstop does not fire -> it stays open (awaiting decision).
-        _emit_open("lisa", "2026-06-25T14:53:00+00:00")
+        _emit_open("lena", "2026-06-25T14:53:00+00:00")
         monkeypatch.setattr(get_source(), "captain_replied_since", lambda slug, when: False)
         # Pin "now" close to the proposal so the age backstop can't trip.
         monkeypatch.setattr(rdl, "PROPOSAL_MAX_AGE_H", 36.0)
@@ -143,7 +143,7 @@ class TestAutoExpireSelfReplied:
         n = rdl._auto_expire_self_replied()
 
         assert n == 0
-        assert "lisa" in _open_subjects()
+        assert "lena" in _open_subjects()
 
     def test_stale_proposal_expires_via_time_backstop(self, monkeypatch):
         # Detector can't tell (None) but the proposal is older than the backstop
@@ -187,7 +187,7 @@ class TestAutoExpireSelfReplied:
         # write); only PENDING proposals are reconciled here.
         emit_consequence(
             ts="2026-06-25T14:53:00+00:00", actor=ACTOR, lane="send-1to1-reply",
-            action="draft-reply", subject="anna",
+            action="draft-reply", subject="grace",
             proposal={"required": True, "decision": "approved",
                       "decided_at": "2026-06-25T15:00:00+00:00"},
             outcome={"status": "ok", "evidence": "shipped"},

@@ -89,8 +89,8 @@ class TestSearchRoutesToSubprocess:
                     "topic_terms": ["x"]}
 
         src = ScreenpipeSource(vault_search=fake_search)
-        out = src.search("ulrik", topic="garden budget")
-        assert captured == {"handle": "ulrik", "topic": "garden budget"}
+        out = src.search("ulrik", topic="workshop budget")
+        assert captured == {"handle": "ulrik", "topic": "workshop budget"}
         assert out["hits"][0]["text"] == "hit"
 
     def test_injected_context_lib_stays_in_process(self):

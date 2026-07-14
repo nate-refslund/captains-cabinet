@@ -166,7 +166,7 @@ def test_hit_shape_mapping_from_mocked_subprocess(monkeypatch, tmp_path):
         return _Proc()
 
     monkeypatch.setattr(org_mod.subprocess, "run", _fake_run)
-    query_text = "garden budget'; DROP TABLE x; --"
+    query_text = "workshop budget'; DROP TABLE x; --"
     out = OrgSource().search("some-slug", topic=query_text)
 
     # argv discipline: shell=False list; the untrusted text is a discrete argv

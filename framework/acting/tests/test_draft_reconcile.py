@@ -104,7 +104,7 @@ def test_resolved_thread_withdraws_when_explicitly_enabled(monkeypatch):
 
 
 def test_missing_queued_ts_never_probes_with_a_fabricated_clock():
-    rec = _rec("lisa")
+    rec = _rec("lena")
     del rec["queued_ts"]
     kv = _store(("ddd444", rec))
 
@@ -113,13 +113,13 @@ def test_missing_queued_ts_never_probes_with_a_fabricated_clock():
             raise AssertionError("probed without a queue moment")
 
     res = draft_reconcile.reconcile_queue(
-        source=Exploding(awaiting={"lisa": None}), kv=kv)
+        source=Exploding(awaiting={"lena": None}), kv=kv)
     assert res["withdrawn"] == 0
     assert "cabinet:draft:ddd444" in kv.store
 
 
 def test_a_probe_error_leaves_the_draft_queued():
-    kv = _store(("eee555", _rec("jakob")))
+    kv = _store(("eee555", _rec("dave")))
 
     class Flaky(FakeSource):
         def captain_replied_since(self, slug, when):
