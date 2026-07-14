@@ -1,5 +1,5 @@
 #!/bin/bash
-# pre-push — Force-push refusal on master (FW-007)
+# pre-push — master-push gates: FW-007 force-refusal + FW-025b layer-separation + FW-025 golden-evals
 #
 # Stops accidental destruction of master history in the shared working
 # tree. On 2026-04-17 an officer ran `git reset --hard origin/master`
@@ -41,8 +41,9 @@
 #
 # Emergency escape hatch (rare, last-resort):
 #   git push --no-verify origin master
-# bypasses ALL client-side hooks — including FW-007 force-push refusal
-# AND the FW-025 golden-eval gate. Use only when you're fixing a
+# bypasses ALL client-side hooks — including FW-007 force-push refusal,
+# the FW-025b layer-separation gate, AND the FW-025 golden-eval gate. Use
+# only when you're fixing a
 # broken stop-hook/eval that is itself blocking the fix push, or when
 # Redis is down and the eval suite cannot run. Document the usage in
 # shared/force-push-log.md anyway so the team knows why the normal
@@ -244,8 +245,39 @@ EOF
   return 0
 }
 
+# --- FW-025b: Layer-separation gate on master pushes ---
+# Shift-left of the CI "Layer-separation gate (FINAL-C)" step. On 2026-07-14
+# a merge landed 4 new FRAMEWORK_PATH_INSTANCE violations that passed the local
+# pre-push (golden-evals only) but went red in CI — master stayed red across a
+# whole push series before anyone noticed. This runs the SAME check locally so
+# a push that would regress layer separation is refused before it can land red.
+# Fast (~1s), stateless, no Redis/network — no flock needed. Same working-tree
+# scope caveat as FW-025 (FW-026): it evaluates the WORKING TREE, not the pushed
+# SHAs. Fail-closed: any non-zero exit (violation OR script error) aborts.
+run_layer_sep_gate() {
+  local ls_script="$REPO_ROOT/cabinet/scripts/check-layer-separation.sh"
+  if [ ! -x "$ls_script" ]; then
+    echo "pre-push: BLOCKED — $ls_script missing or not executable (FW-025b)" >&2
+    return 1
+  fi
+  echo "pre-push: FW-025b — checking layer separation before master push (~1s)..." >&2
+  if ! bash "$ls_script" >&2; then
+    cat >&2 <<EOF
+pre-push: BLOCKED — layer separation regressed (FW-025b). A framework/ file now
+  references instance/ or presets/ that is not in the baseline/allowlist. Prefer
+  fixing the coupling; if it is ratchet-down debt or Captain-ratified by-design,
+  follow the gate's own guidance printed above (--update-baseline or the
+  allowlist). Re-run to confirm:
+    bash cabinet/scripts/check-layer-separation.sh
+EOF
+    return 1
+  fi
+  return 0
+}
+
 if [ -z "$BLOCK_REASON" ]; then
   if $PUSHES_MASTER; then
+    run_layer_sep_gate || exit 1
     run_golden_evals_gate || exit 1
   fi
   exit 0
@@ -254,6 +286,7 @@ fi
 if is_announced; then
   echo "pre-push: $BLOCK_REASON allowed — announcement $FORCE_PUSH_ANNOUNCED present in $LOG_REL" >&2
   if $PUSHES_MASTER; then
+    run_layer_sep_gate || exit 1
     run_golden_evals_gate || exit 1
   fi
   exit 0

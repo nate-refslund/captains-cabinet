@@ -2,12 +2,15 @@
 # test-pre-push-hook.sh — regression harness for cabinet/scripts/git-hooks/pre-push
 #
 # Exercises the full decision tree of the pre-push hook:
-#   FW-007: force-push / delete refusal on master
-#   FW-025: golden-eval gate on master pushes (stubbed to always pass)
+#   FW-007:  force-push / delete refusal on master
+#   FW-025:  golden-eval gate on master pushes (stubbed to always pass)
+#   FW-025b: layer-separation gate on master pushes (stubbed to always pass)
 #
-# The eval gate (run-golden-evals.sh) is stubbed with exit 0 in every fixture
-# so this harness focuses exclusively on FW-007 force-push logic without
-# coupling to the eval suite's own regression coverage.
+# Both master-push gates (run-golden-evals.sh AND check-layer-separation.sh)
+# are stubbed with exit 0 in every fixture so this harness focuses exclusively
+# on FW-007 force-push logic without coupling to those suites' own regression
+# coverage. That the gates RUN on master pushes is asserted (Test 4); their
+# pass/fail behavior is covered by run-golden-evals.sh / check-layer-separation.sh.
 #
 # Run:  bash /opt/founders-cabinet/cabinet/scripts/test-pre-push-hook.sh
 # Exit 0 on all PASS, 1 on any FAIL.
@@ -100,13 +103,18 @@ setup_fixture() {
     echo "b" > b.txt
     git add b.txt
     git commit -qm "second"
-    # Stub eval gate (FW-025 not under test)
+    # Stub eval + layer-sep gates (FW-025 / FW-025b not under test here)
     mkdir -p cabinet/scripts shared
     cat > cabinet/scripts/run-golden-evals.sh <<'STUB'
 #!/bin/bash
 exit 0
 STUB
     chmod +x cabinet/scripts/run-golden-evals.sh
+    cat > cabinet/scripts/check-layer-separation.sh <<'STUB'
+#!/bin/bash
+exit 0
+STUB
+    chmod +x cabinet/scripts/check-layer-separation.sh
     # Real regular log file (starts empty)
     touch shared/force-push-log.md
   ) >/dev/null 2>&1
@@ -168,6 +176,8 @@ OUTPUT=$(echo "refs/heads/master $HEAD_SHA refs/heads/master $ANCESTOR_SHA" \
 RC=$?
 assert_eq "  exit code 0" "$RC" "0"
 assert_not_contains "  no BLOCKED" "$OUTPUT" "BLOCKED"
+# The layer-sep gate (FW-025b) runs on master pushes, ahead of the eval gate
+assert_contains "  layer-sep gate ran" "$OUTPUT" "FW-025b"
 # The eval gate message should appear because PUSHES_MASTER=true
 assert_contains "  eval gate ran" "$OUTPUT" "golden-eval suite"
 
