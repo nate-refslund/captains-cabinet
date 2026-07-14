@@ -47,7 +47,7 @@ def _mower_case_dict(case_id="mower12345"):
         "thread_before": [
             {"direction": "sent", "who": "Ada",
              "date": "2026-05-04T08:00:00+00:00", "source": "msgraph",
-             "text": "Ja, 3000 m2 graesplaene paa Kagevej. Ingen kanttraad."},
+             "text": "Ja, 2500 m2 graesplaene paa Eksempelvej. Ingen kanttraad."},
             {"direction": "received", "who": "Bo <b@x>",
              "date": "2026-05-05T08:00:00+00:00", "source": "msgraph",
              "text": "Vil du have hjaelp til at finde en robotplaeneklipper?"},
@@ -57,14 +57,14 @@ def _mower_case_dict(case_id="mower12345"):
 
 
 _MOWER_INTENT = ("Goal: source a no-boundary-wire robotic mower "
-                 "(robotplaeneklipper) for the 3000 m2 lawn. "
+                 "(robotplaeneklipper) for the 2500 m2 lawn. "
                  "Core: decisive, concrete, da on msgraph.")
 _MOWER_CTX = {
     "vault_hits": [{"ts": "2026-05-02T08:00:00+00:00",
-                    "text": "new house Kagevej, ~3000 m2 lawn"}],
+                    "text": "new house Eksempelvej, ~2500 m2 lawn"}],
 }
 # An on-topic clone draft (clears the §3.3b floor against _MOWER_INTENT).
-_ONTOPIC_DRAFT = ("Til din 3000 m2 lawn anbefaler jeg en robotic "
+_ONTOPIC_DRAFT = ("Til din 2500 m2 lawn anbefaler jeg en robotic "
                   "robotplaeneklipper helt uden boundary wire.")
 # A ground that genuinely exists in the thread (passes _grounding_ok).
 _REAL_GROUND = "From Bo at 2026-05-05: finde en robotplaeneklipper."

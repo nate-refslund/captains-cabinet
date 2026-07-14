@@ -182,7 +182,7 @@ def _mower_case():
     msgs.append({
         "direction": "sent", "who": "Ada",
         "date": "2026-05-02T08:00:00+00:00", "source": "msgraph",
-        "text": "Vi har koebt nyt hus paa Kagevej."})
+        "text": "Vi har koebt nyt hus paa Eksempelvej."})
     msgs.append({
         "direction": "received", "who": "Bo <b@x>",
         "date": "2026-05-03T08:00:00+00:00", "source": "msgraph",

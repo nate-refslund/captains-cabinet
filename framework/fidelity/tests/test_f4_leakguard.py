@@ -95,7 +95,7 @@ class TestBriefExcluded:
             brief="LEAK_BRIEF: Ada already replied with the Husqvarna URL on "
                   "2026-06-11. Lawn is 2500 m2.",
             vault_hits=[{"path": "1-Daily/2026-05-12.md", "heading": "house",
-                         "text": "new house at Kagevej, big lawn",
+                         "text": "new house at Eksempelvej, big lawn",
                          "ts": "2026-05-12T09:00:00+00:00", "source": "vault"}],
         )
         ctx = officer_runner.gather_cutoff_context(_case(), brain=brain)
@@ -455,7 +455,7 @@ class TestRealVaultHitShape:
         # (a) ref = pre-cutoff daily-note path + datetime ts → ADMITTED via
         # _content_ts path-date (NOT via the datetime ts, which is post-cutoff).
         hit = self._real_hit("1-Daily/2026-05-12.md",
-                             "new house at Kagevej, big lawn ~2500 m2")
+                             "new house at Eksempelvej, big lawn ~2500 m2")
         brain = FakeBrain(vault_hits=[hit], brief=self.BRIEF)
         ctx = officer_runner.gather_cutoff_context(_case(), brain=brain)
         assert len(ctx["vault_hits"]) == 1
