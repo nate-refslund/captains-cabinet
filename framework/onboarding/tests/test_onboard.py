@@ -95,3 +95,30 @@ def test_no_presets_dir_is_fail_closed_empty(tmp_path):
                                root=str(tmp_path), apply=False)
     sources = {p["source"] for p in rep["plan"]["plugin_manifest"]}
     assert sources <= {"repo"}                    # no cabinet-default rows appear
+
+
+def test_apply_refuses_to_clobber_markerless_role_def(tmp_path):
+    # egg-hatch-engine-4: a hand-authored (markerless) lane-CEO role def is
+    # gitignored → clobbering it is unrecoverable. apply must refuse intact.
+    ceo = tmp_path / "instance" / "agents" / "acme-ceo.md"
+    ceo.parent.mkdir(parents=True)
+    hand_tuned = "# acme-ceo — Captain hand-tuned role def\ncandor: absolute\n"
+    ceo.write_text(hand_tuned)
+    import pytest
+    with pytest.raises(RuntimeError, match="REFUSING to overwrite"):
+        onboard.onboard_lane("/x", slug="acme", research_fn=lambda p: PROFILE,
+                             render_fn=_RENDER, root=str(tmp_path), apply=True)
+    assert ceo.read_text() == hand_tuned           # bytes untouched
+    assert not (tmp_path / "docs" / "onboarding" / "acme.md").exists()
+
+
+def test_apply_regenerates_marker_owned_role_def(tmp_path):
+    # A file carrying the generated-by marker is generator-owned → re-onboard
+    # overwrites it cleanly (the default renderer stamps the marker).
+    ceo = tmp_path / "instance" / "agents" / "acme-ceo.md"
+    ceo.parent.mkdir(parents=True)
+    ceo.write_text(f"# {onboard._MARKER} — rendered earlier\nold body\n")
+    rep = onboard.onboard_lane("/x", slug="acme", research_fn=lambda p: PROFILE,
+                               render_fn=_RENDER, root=str(tmp_path), apply=True)
+    assert rep["applied"] is True
+    assert "old body" not in ceo.read_text()

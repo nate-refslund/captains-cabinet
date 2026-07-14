@@ -215,7 +215,10 @@ def evaluate(
       {pack_id, decision: rollback|close|watch, reason, revert_plan}
 
     * red signal inside the 72h window ⇒ `rollback` (+ the recorded plan);
-    * window elapsed with no red ⇒ `close` (apply survived);
+    * window elapsed with no red ⇒ `close` (apply survived) — the red scan is
+      capped at `watch_until`, so a red signal arriving AFTER the window
+      (e.g. daemon downtime past window end) can never roll back a
+      window-survived pack;
     * otherwise ⇒ `watch` (still inside the window, clean so far).
 
     Marks `rollback`/`closed` transitions in the ledger so re-runs are
@@ -231,8 +234,11 @@ def evaluate(
                 continue
             applied_at = str(row.get("applied_at") or "")
             watch_until = str(row.get("watch_until") or "")
+            # Cap the red scan at the window end: signals after watch_until
+            # belong to the post-window world, not this watch.
+            scan_end = watch_until if watch_until and watch_until < ts else ts
             try:
-                reds = list(reds_of(applied_at, ts))
+                reds = list(reds_of(applied_at, scan_end))
             except Exception:
                 reds = []
             if reds:

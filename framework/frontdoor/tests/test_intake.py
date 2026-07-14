@@ -368,3 +368,62 @@ class TestScreenAtEnqueue:
         got = intake.drain(stream_key=stream_key)
         assert got[0]["payload"]["injection_screen"]["hits"]
         assert got[0]["payload"]["summary"].startswith("⟪INTAKE-SCREEN:")
+
+
+# ===========================================================================
+# _RedisCliBackend error detection (comms-attention-5) — pure, no Redis.
+# redis-cli prints errors to STDOUT (exit 0): "(error) CODE ..." formatted,
+# bare "CODE ..." raw/piped. Every error class must raise — an error string
+# returned AS a message id from enqueue() is a silently lost Captain item.
+# ===========================================================================
+class TestRedisCliErrorDetection:
+    def _backend(self):
+        return intake._RedisCliBackend("localhost", 6379)
+
+    def _patch_cli(self, monkeypatch, stdout, returncode=0, stderr=""):
+        import subprocess as _sp
+
+        def fake_run(cmd, capture_output=True, text=True):
+            return _sp.CompletedProcess(cmd, returncode, stdout=stdout, stderr=stderr)
+
+        monkeypatch.setattr(intake.subprocess, "run", fake_run)
+
+    @pytest.mark.parametrize("reply", [
+        "(error) WRONGTYPE Operation against a key holding the wrong kind of value\n",
+        "WRONGTYPE Operation against a key holding the wrong kind of value\n",
+        "NOGROUP No such key 'k' or consumer group 'chair'\n",
+        "OOM command not allowed when used memory > 'maxmemory'.\n",
+        "LOADING Redis is loading the dataset in memory\n",
+        "MISCONF Redis is configured to save RDB snapshots\n",
+        "ERR unknown command 'XADDD'\n",
+        "(error) NOAUTH Authentication required.\n",
+    ])
+    def test_every_error_class_raises(self, monkeypatch, reply):
+        self._patch_cli(monkeypatch, reply)
+        with pytest.raises(RuntimeError, match="redis error"):
+            self._backend()._run("XADD", "k", "*", "item", "{}")
+
+    def test_xadd_never_returns_an_error_string_as_id(self, monkeypatch):
+        self._patch_cli(monkeypatch, "WRONGTYPE Operation against a key\n")
+        with pytest.raises(RuntimeError):
+            self._backend().xadd("k", "item", "{}")
+
+    def test_xadd_rejects_a_non_id_reply(self, monkeypatch):
+        # Even an unrecognized non-error reply must not come back as an id.
+        self._patch_cli(monkeypatch, "unexpected garbage\n")
+        with pytest.raises(RuntimeError, match="non-id"):
+            self._backend().xadd("k", "item", "{}")
+
+    def test_xadd_returns_a_valid_stream_id(self, monkeypatch):
+        self._patch_cli(monkeypatch, "1752480000000-0\n")
+        assert self._backend().xadd("k", "item", "{}") == "1752480000000-0"
+
+    def test_xgroup_busygroup_stays_exempt(self, monkeypatch):
+        # _ensure_group treats BUSYGROUP as "already exists" — must not raise.
+        self._patch_cli(monkeypatch, "BUSYGROUP Consumer Group name already exists\n")
+        out = self._backend()._run("XGROUP", "CREATE", "k", "grp", "0", "MKSTREAM")
+        assert "BUSYGROUP" in out
+
+    def test_ordinary_data_replies_pass_through(self, monkeypatch):
+        self._patch_cli(monkeypatch, "PONG\n")
+        assert self._backend().ping() is True

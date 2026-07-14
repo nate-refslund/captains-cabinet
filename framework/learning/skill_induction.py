@@ -240,9 +240,12 @@ def induce_drafts(
 ) -> list[Path]:
     """Cluster experience records → draft new skill files in memory/skills/evolved/.
 
-    Returns the list of written file paths. Idempotent: if a draft with the
+    Returns the list of written file paths. Idempotent: if a DRAFT with the
     same induced slug exists, the file is overwritten with the latest cluster
-    data (so re-running refreshes evidence).
+    data (so re-running refreshes evidence). A skill that has left `status:
+    draft` (promoted to validated, retired, ...) is NEVER overwritten —
+    re-induction must not clobber promotion metadata or validator edits back
+    to draft (only the CoS-owned promotion gate flips status, never this pass).
     """
     records = list_records()
     scope_filter = scope_filter or DEFAULT_SCOPE_FILTER
@@ -255,6 +258,8 @@ def induce_drafts(
     for cluster in clusters:
         filename, body = _draft_skill_yaml(cluster)
         path = skills_dir / filename
+        if path.exists() and draft_status(path) not in (None, "draft"):
+            continue  # promoted/retired skill — never re-stamp back to draft
         path.write_text(body)
         written.append(path)
         emit("digest_published", actor=actor, payload={

@@ -100,3 +100,43 @@ def test_unsupported_shape():
     r = unsupported("react")
     assert r == {"status": "unsupported", "sent": False, "capability": "react"}
     assert set(CAPABILITIES) >= {"send", "edit", "poll", "react", "thread"}
+
+
+# --- YAML-native null (comms-attention-4) -----------------------------------
+# `channel: null` / bare `channel:` parse to Python None — the module's own
+# documented off-switch. Key-present-None must bind the NullAdapter; only a
+# genuinely ABSENT key falls back to this deployment's telegram default.
+
+def _write_sources(tmp_path, body: str):
+    cfg = tmp_path / "instance" / "config"
+    cfg.mkdir(parents=True)
+    (cfg / "sources.yml").write_text(body, encoding="utf-8")
+
+
+def _point_resolver_at(tmp_path, monkeypatch):
+    from framework import env
+    monkeypatch.delenv("CABINET_CHANNEL", raising=False)
+    monkeypatch.setattr(env, "_cabinet_root", lambda: tmp_path)
+
+
+def test_yaml_native_null_binds_null_adapter(tmp_path, monkeypatch):
+    pytest.importorskip("yaml")
+    _write_sources(tmp_path, "channel: null\n")
+    _point_resolver_at(tmp_path, monkeypatch)
+    assert gc._configured_channel() == "null"
+    assert isinstance(gc.get_channel(force=True), NullAdapter)
+
+
+def test_yaml_bare_channel_key_binds_null_adapter(tmp_path, monkeypatch):
+    pytest.importorskip("yaml")
+    _write_sources(tmp_path, "channel:\n")   # bare key == YAML null
+    _point_resolver_at(tmp_path, monkeypatch)
+    assert gc._configured_channel() == "null"
+    assert isinstance(gc.get_channel(force=True), NullAdapter)
+
+
+def test_yaml_absent_channel_key_still_defaults_to_telegram(tmp_path, monkeypatch):
+    pytest.importorskip("yaml")
+    _write_sources(tmp_path, "other_key: 1\n")
+    _point_resolver_at(tmp_path, monkeypatch)
+    assert gc._configured_channel() == "telegram"

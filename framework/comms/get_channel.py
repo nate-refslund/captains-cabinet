@@ -39,8 +39,13 @@ def _configured_channel() -> str:
         p = env._cabinet_root() / "instance/config/sources.yml"
         if p.exists():
             data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-            if isinstance(data, dict):
-                val = data.get("channel")
+            if isinstance(data, dict) and "channel" in data:
+                val = data["channel"]
+                # YAML `channel: null` (or a bare `channel:`) parses to None —
+                # that is the documented off-switch, NOT an absent key. It
+                # must bind the NullAdapter, never fall through to telegram.
+                if val is None:
+                    return "null"
                 if isinstance(val, str) and val.strip():
                     return val.strip().lower()
     except Exception:

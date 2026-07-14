@@ -769,7 +769,13 @@ def _parse_services_manifest(text: str) -> list[dict]:
             continue
         km = re.match(r"^    ([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$", line)
         if km:
-            key, val = km.group(1), km.group(2).strip()
+            # Strip a trailing YAML comment from EVERY flow value before
+            # matching (apoptosis's sibling parser does the same). Rows
+            # annotate inline — `disabled: true   # ABSENCE-DISABLE …`,
+            # `schedule: … # daily 03:00` — and a schedule-only strip left
+            # `disabled: true  # …` parsing as ENABLED, so parked services
+            # false-paged every sweep (bug-hunt 2026-07-14).
+            key, val = km.group(1), km.group(2).split("#", 1)[0].strip()
             in_sched_block = False
             if key == "kind":
                 cur["kind"] = val
@@ -778,9 +784,6 @@ def _parse_services_manifest(text: str) -> list[dict]:
             elif key == "disabled":
                 cur["disabled"] = val.lower() in ("true", "yes", "1")
             elif key == "schedule":
-                # Strip a trailing YAML comment from flow values before
-                # matching (rows annotate cadence inline, e.g. `# daily 03:00`).
-                val = val.split("#", 1)[0].strip()
                 if val == "keepalive":
                     cur["schedule_kind"] = "keepalive"
                 elif "interval_s" in val:

@@ -7,7 +7,9 @@ or tracker-product creation, no git push, no germline edit, no send. Those are
 returned (and written into the report) as PROPOSALS for the Captain to approve.
 `apply=True` writes exactly two local, reversible artifacts: the lane-CEO role
 def (instance/agents/<slug>-ceo.md) and the readiness report (docs/onboarding/
-<slug>.md). `apply=False` is a pure dry run.
+<slug>.md). `apply=False` is a pure dry run. An existing role def WITHOUT the
+generated-by marker (hand-authored) is never overwritten — apply refuses
+(generate-instance's _check_overwrite contract).
 """
 from __future__ import annotations
 
@@ -16,6 +18,11 @@ import re
 from pathlib import Path
 
 from framework.onboarding import plan, research
+
+# Mirrors generate-instance.py MARKER (its _check_overwrite contract): a file
+# carrying this marker is generator-owned and may be regenerated; a file
+# WITHOUT it is hand-authored (Captain-tuned) and must never be clobbered.
+_MARKER = "generated-by: cabinet-init"
 
 
 def _repo_root() -> Path:
@@ -156,6 +163,15 @@ def onboard_lane(repo_path: str, *, slug: str, tracker_ref=None,
     role_text = render(pl["answers_lane"], model)
 
     ceo_path = base / "instance" / "agents" / f"{slug}-ceo.md"
+    if ceo_path.exists() and _MARKER not in ceo_path.read_text(encoding="utf-8"):
+        # Overwrite guard (generate-instance _check_overwrite contract): the
+        # role def is gitignored, so clobbering a hand-authored/Captain-tuned
+        # file here would be unrecoverable. Refuse; nothing is written.
+        raise RuntimeError(
+            f"REFUSING to overwrite {ceo_path}: existing file lacks the "
+            f"'{_MARKER}' marker (hand-authored?). Move the file aside to "
+            f"re-onboard, or fold your edits into a regenerable source."
+        )
     ceo_path.parent.mkdir(parents=True, exist_ok=True)
     ceo_path.write_text(role_text, encoding="utf-8")
 

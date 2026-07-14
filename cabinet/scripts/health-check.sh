@@ -4,9 +4,14 @@
 # Checks each Officer's Redis heartbeat (set by post-tool-use hook in Officers container).
 # Alerts Captain if an Officer's heartbeat is stale (>15 min).
 
-REDIS_URL="${REDIS_URL:-redis://redis:6379}"
-REDIS_HOST=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f1)
-REDIS_PORT=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f2)
+# B4 Mac portability (matches research-sweep.sh + lib/triggers.sh): an
+# explicit REDIS_HOST (caller/wrapper env) WINS; REDIS_URL is the fallback for
+# docker deployments that set it in the compose env / environment.cabinet. The
+# old unconditional derive clobbered the caller's REDIS_HOST with the
+# docker-era `redis` hostname → dead Redis on every Mac-native run.
+REDIS_URL="${REDIS_URL:-redis://localhost:6379}"
+REDIS_HOST="${REDIS_HOST:-$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f1)}"
+REDIS_PORT="${REDIS_PORT:-$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f2)}"
 
 TELEGRAM_COS_TOKEN="${TELEGRAM_COS_TOKEN:?not set}"
 CAPTAIN_TELEGRAM_ID="${CAPTAIN_TELEGRAM_ID:?not set}"

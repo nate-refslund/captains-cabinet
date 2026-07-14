@@ -619,6 +619,8 @@ def tool_request_handoff(params: dict) -> dict:
             capture_output=True, text=True, timeout=5,
         )
         handoff_id = out.stdout.strip()
+        if not handoff_id or handoff_id.startswith("(error"):
+            return {"status": "error", "message": f"redis XADD failed: {out.stderr}"}
         sys.stderr.write(f"[cabinet-mcp] request_handoff queued to={to_cabinet} ctx={context_slug} id={handoff_id}\n")
         return {"status": "queued", "to_cabinet": to_cabinet, "handoff_id": handoff_id}
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:

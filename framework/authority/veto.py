@@ -60,6 +60,10 @@ DEAD_LETTER_KEY = "cabinet:drafts:veto:deadletter"
 #: Prefix for the idempotency sent-marker keys (`sent:<draft_id>`).
 _SENT_PREFIX = "cabinet:drafts:veto:sent:"
 
+#: TTL on sent markers — orders of magnitude past any crash/retry window,
+#: but finite so success markers stop accumulating forever.
+SENT_MARKER_TTL_S = 14 * 24 * 3600
+
 #: The org event type emitted on a kill (a §4 demotion-signal candidate).
 GATE_DECISION_EVENT = "authority.gate_decision"
 
@@ -244,9 +248,12 @@ def scan_and_send(
       1. If a `sent:<draft_id>` marker already exists (a crash landed between
          mark and delete on a previous scan), REAP the stale entry without
          re-sending — idempotency.
-      2. Otherwise set the `sent:` marker FIRST, then fire the approved
-         `send_backend`. The marker-before-send ordering means a crash after the
-         marker but before delete still cannot double-send.
+      2. Otherwise CLAIM the `sent:` marker FIRST (SET NX, reply checked —
+         an overlapping sweep that loses the claim reaps the entry instead of
+         sending a second copy), then fire the approved `send_backend`. The
+         marker-before-send ordering means a crash after the marker but before
+         delete still cannot double-send. Markers carry a finite TTL
+         (`SENT_MARKER_TTL_S`) so they stop accumulating.
       3. On backend success: XDEL the entry. On backend FAILURE: dead-letter the
          entry (RPUSH to the DLQ), clear the sent marker (so a future operator
          requeue is honest), and XDEL from the live stream — a failure is never
@@ -271,8 +278,19 @@ def scan_and_send(
             redis.xdel(VETO_STREAM, entry_id)
             continue
 
-        # (2) mark BEFORE send so a crash here cannot double-send.
-        redis.set(marker, "1", nx=True)
+        # (2) mark BEFORE send so a crash here cannot double-send. The SET NX
+        #     reply IS the claim: an overlapping sweep that lost the race
+        #     must not fall through and send a second copy — the winner owns
+        #     the send; the loser reaps its view of the entry and moves on
+        #     (a stale XDEL under the winner is a harmless no-op).
+        if not redis.set(marker, "1", nx=True):
+            redis.xdel(VETO_STREAM, entry_id)
+            continue
+        try:  # finite marker life — hygiene only, never blocks the send
+            redis.expire(marker, SENT_MARKER_TTL_S)
+        except Exception as exc:
+            print(f"veto: WARN sent-marker TTL failed for {draft_id}: {exc}",
+                  file=sys.stderr)
 
         draft = _decode_payload(fields)
         try:

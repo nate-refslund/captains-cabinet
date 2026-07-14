@@ -84,6 +84,11 @@ def parse_scope(text: str) -> dict:
     Semantics mirror pre-tool-use.sh §9's cache builder exactly (same
     regexes, same universal merge, agents AND scaffolds sections). Returns
     {} when nothing parses — callers treat {} as fail-closed.
+
+    Duplicate agent keys: FIRST entry wins, with a loud [ERROR]. The hook's
+    cache lookup is awk `$1==a{print $2; exit}` — first match — so last-wins
+    here would boot an officer with one grant set and enforce another at
+    call time (finding mcp-config-2). Fix the duplicate in mcp-scope.yml.
     """
     out: dict = {}
     section = None
@@ -117,7 +122,17 @@ def parse_scope(text: str) -> dict:
                 if u not in seen:
                     mcps.append(u)
                     seen.add(u)
-            out[cur_agent] = mcps
+            if cur_agent in out:
+                # Duplicate agent key: keep the FIRST entry — the hook's awk
+                # lookup (`$1==a{print $2; exit}`) is first-match, and the two
+                # planes must never disagree about what a grant means.
+                log_err(
+                    "duplicate scope entry for agent '%s' — keeping the FIRST "
+                    "entry (matches the pre-tool-use.sh section 9 cache lookup); "
+                    "remove the duplicate from mcp-scope.yml" % cur_agent
+                )
+            else:
+                out[cur_agent] = mcps
             cur_agent = None
     return out
 

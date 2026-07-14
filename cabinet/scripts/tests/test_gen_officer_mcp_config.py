@@ -332,6 +332,70 @@ def test_parse_scope_matches_hook_semantics():
     assert scope_map["gamma"] == ["notion", "library", "telegram", "cabinet"]
 
 
+DUP_SCOPE_FIXTURE = SCOPE_FIXTURE + """\
+
+agents:
+  alpha:
+    mcps: [linear]
+    rationale: >
+      DUPLICATE key — must lose to the first alpha entry.
+"""
+
+
+def test_duplicate_agent_key_first_wins_and_errors(capsys):
+    """Finding mcp-config-2: the hook's cache lookup is awk first-match
+    (`$1==a{print $2; exit}`); the generator used to keep the LAST entry,
+    so a duplicate key gave the officer different grant sets at boot vs
+    call time. First entry must win here too, with a loud [ERROR]."""
+    scope_map = gen.parse_scope(DUP_SCOPE_FIXTURE)
+    assert scope_map["alpha"] == ["neon", "vercel", "brain", "telegram", "library", "cabinet"]
+    assert "linear" not in scope_map["alpha"]
+    err = capsys.readouterr().err
+    assert "[ERROR]" in err and "duplicate" in err and "alpha" in err
+
+
+def _run_hook_cache_builder(scope_text: str, tmp_path) -> dict:
+    """Run the ACTUAL pre-tool-use.sh §9 embedded cache builder (extracted
+    from the hook source) on scope_text, then apply the hook's awk
+    first-match lookup semantics to the TSV it writes."""
+    import subprocess
+    import sys as _sys
+
+    hook_src = (_SCRIPTS_DIR / "hooks" / "pre-tool-use.sh").read_text().splitlines()
+    marker = "\"$MCP_SCOPE_FILE\" \"$MCP_SCOPE_CACHE\" <<'PY'"
+    start = next(i for i, l in enumerate(hook_src) if marker in l)
+    end = next(i for i in range(start + 1, len(hook_src)) if hook_src[i] == "PY")
+    code = "\n".join(hook_src[start + 1 : end])
+
+    scope = tmp_path / "hook-scope.yml"
+    scope.write_text(scope_text)
+    cache = tmp_path / "hook-scope.tsv"
+    # Same invocation shape as the hook: python3 - <src> <dst> <<'PY'
+    subprocess.run(
+        [_sys.executable, "-", str(scope), str(cache)],
+        input=code, text=True, check=True,
+    )
+    hook_map = {}
+    for line in cache.read_text().splitlines():
+        if not line.strip():
+            continue
+        agent, csv = line.split("\t", 1)
+        # awk `$1==a{print $2; exit}` — FIRST match wins
+        hook_map.setdefault(agent, [m for m in csv.split(",") if m])
+    return hook_map
+
+
+def test_parity_with_hook_cache_builder(tmp_path, capsys):
+    """The structural plane (this generator) and the call-time plane (the
+    hook's cache builder + awk lookup) must resolve IDENTICAL grant sets —
+    including on a scope file with a duplicate agent key."""
+    for fixture in (SCOPE_FIXTURE, DUP_SCOPE_FIXTURE):
+        hook_map = _run_hook_cache_builder(fixture, tmp_path)
+        gen_map = gen.parse_scope(fixture)
+        assert gen_map == hook_map
+    capsys.readouterr()  # swallow the expected duplicate-key [ERROR]
+
+
 def test_parse_scope_section_reset_on_other_top_level_key():
     text = SCOPE_FIXTURE + "\nother_key: 1\n  sneaky:\n    mcps: [neon]\n"
     scope_map = gen.parse_scope(text)

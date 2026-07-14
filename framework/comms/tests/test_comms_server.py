@@ -106,3 +106,25 @@ def test_http_auth_constant_time_match(monkeypatch):
     assert server.verify_bearer("Bearer s3cret") is True
     assert server.verify_bearer("Bearer wrong") is False
     assert server.verify_bearer("s3cret") is False  # missing scheme
+
+
+def test_send_card_schema_advertises_escalation_and_it_survives(monkeypatch):
+    """The escalation exhaustion proof (§3.9) MUST be in send_card's
+    inputSchema: the server strips unknown args, so omitting it would bounce
+    every gated decision card with no compliant way to attach the proof."""
+    sc = server.get_tool("send_card")
+    esc = sc["inputSchema"]["properties"]["escalation"]
+    assert esc["type"] == "object"
+    assert set(esc["properties"]) == {"lane_tried", "chair_tried",
+                                      "needs_captain_because"}
+    seen = {}
+    monkeypatch.setattr(server.tools, "dispatch",
+                        lambda name, args: seen.update(name=name, args=args) or {"ok": True})
+    proof = {"lane_tried": "restarted the service twice",
+             "chair_tried": "batched + deduped, still open",
+             "needs_captain_because": "spend authority"}
+    server.handle({"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {
+        "name": "send_card",
+        "arguments": {"subject": "x", "escalation": proof},
+    }})
+    assert seen["args"]["escalation"] == proof

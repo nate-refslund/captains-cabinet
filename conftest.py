@@ -81,22 +81,43 @@ collect_ignore_glob = ["officers/*"]
 import pytest  # noqa: E402  (after the env fence on purpose — fence first)
 
 
+def _reset_channel_cache():
+    """Clear the comms channel-adapter module cache (best-effort)."""
+    try:
+        import framework.comms.get_channel as _gc
+        _gc._CACHE = None
+    except Exception:
+        pass
+
+
 @pytest.fixture(autouse=True)
 def _cabinet_root_env_fence():
-    """Restore CABINET_ROOT around every test (cross-suite leak fence).
+    """Two cross-suite leak fences around every test.
 
-    The measurement seed's role_evals/*.py and scenarios/*.py (shipped in
-    presets/work/measurement/, installed into framework/measurement/) set
-    os.environ["CABINET_ROOT"] = <tmpdir> inside their run() bodies with no
-    restore; when those suites run earlier in the same pytest process, later
-    suites (e.g. instance/flavor-a test_screenpipe_dispatch) resolve config
-    under a dead tmp root and fail-close to Null bindings. Snapshot/restore
-    per test so a leaked assignment can never cross a test boundary.
+    (1) CABINET_ROOT: the measurement seed's role_evals/*.py and scenarios/*.py
+    (shipped in presets/work/measurement/, installed into
+    framework/measurement/) set os.environ["CABINET_ROOT"] = <tmpdir> inside
+    their run() bodies with no restore; when those suites run earlier in the
+    same pytest process, later suites (e.g. instance/flavor-a
+    test_screenpipe_dispatch) resolve config under a dead tmp root and
+    fail-close to Null bindings. Snapshot/restore per test so a leaked
+    assignment can never cross a test boundary.
+
+    (2) The comms channel adapter: framework.comms.get_channel caches the
+    resolved ChannelAdapter in a module global (_CACHE). A suite that binds a
+    non-default channel (e.g. test_channel_seam forcing the null adapter via
+    get_channel(force=True)) leaves it cached — monkeypatch reverts the env, not
+    the global — so a LATER suite that expects the real channel (e.g. test_t2's
+    floor-page sweep) silently gets the NullAdapter and its send no-ops
+    ("fallback-send-failed"). Reset _CACHE per test so a bound adapter never
+    crosses a test boundary.
     """
     prev = os.environ.get("CABINET_ROOT")
+    _reset_channel_cache()
     try:
         yield
     finally:
+        _reset_channel_cache()
         if prev is None:
             os.environ.pop("CABINET_ROOT", None)
         else:
