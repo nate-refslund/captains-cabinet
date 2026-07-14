@@ -4,7 +4,7 @@
  * are instance data, so no real lane may appear here — ONE recorded
  * exception: the outcomes fixture uses the INSTANCE_TEST_LANES pinned
  * member ('sensed') to exercise the instanceTest mark, until ledger row
- * R163 flips that set to instance config and frees this fixture in the
+ * R164 flips that set to instance config and frees this fixture in the
  * same commit (lockstep law).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'

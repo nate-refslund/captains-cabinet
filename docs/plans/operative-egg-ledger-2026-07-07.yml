@@ -2793,15 +2793,17 @@ entries:
     note: "Built 2026-07-10 by the Wave-E integrator (gate-d recount fix pass; biggest mechanical residual class after the founding-amendment docs, which SHIP by the R031/R146 ratified decision and are NOT touched). Code comments citing the archived docs by filename stay (citations to the instance's design record, explained in the stub). The guide's one framework/docs reference (work-model.md) points at a kept living doc."
     rollback: "remove the manifest transform line + expect rows + the exporter t_framework_docs_archive function — dated snapshots ship again and gate (d) goes RED on their ~86 hits"
     last_update: "2026-07-10"
-  # --- R163 instance-split row (appended 2026-07-12, Wave-G resolver-core
-  #     fix pass: the INSTANCE_TEST_LANES deferral gets its execution handle) ---
-  - id: "R163"
+  # --- R164 instance-split row (appended 2026-07-12, Wave-G resolver-core
+  #     fix pass: the INSTANCE_TEST_LANES deferral gets its execution handle;
+  #     renumbered from R163 at Wave-G integration 2026-07-14 — the id raced
+  #     with master's captain-PII-scrub row, which keeps R163) ---
+  - id: "R164"
     title: "instance_test_lanes instance-split (Wave G follow-up) — cabinet/dashboard/src/lib/world/instance-lanes.ts INSTANCE_TEST_LANES = {'sensed'} (Captain ruling 2026-07-09: instance-test app, reef-buoy render) moved VERBATIM from the engine route by Wave G but still bakes an instance lane name into the shared module whose own header forbids exactly that, and forces the token into instance-lanes.test.ts fixtures; flip the set to an instance-config field (instance_test_lanes list, platform.yml sibling of lane_default) read FAIL-HONEST to the EMPTY set, and free the token from the vitest fixtures in the SAME commit (lockstep — the fixture pins the source set today)"
     class: "instance-split"
     lane: "alpha-additive"
     wave: "PC"
     status: "todo"
     gate_cmd: "! grep -qw sensed cabinet/dashboard/src/lib/world/instance-lanes.ts && ! grep -qw sensed cabinet/dashboard/src/lib/world/instance-lanes.test.ts  # post-flip: no baked instance-test lane in the shared module or its fixtures; instance-lanes vitest green testburg-only"
-    note: "Filed 2026-07-12 by the Wave-G resolver-core fix pass (review finding: the module comment promised 'tracked for the instance-split ledger row' but no such row existed — a deferral without an execution handle). The Wave-G move itself was verbatim (no regression); gate (d)'s instance-lane residual class keeps counting the literal until this row executes. Module + fixture comments cite this row id."
+    note: "Filed 2026-07-12 by the Wave-G resolver-core fix pass (review finding: the module comment promised 'tracked for the instance-split ledger row' but no such row existed — a deferral without an execution handle). The Wave-G move itself was verbatim (no regression); gate (d)'s instance-lane residual class keeps counting the literal until this row executes. Module + fixture comments cite this row id. RENUMBERED R163 -> R164 at Wave-G integration (2026-07-14): this branch and origin/master independently minted R163 in the same window — master's is the published captain-PII-scrub row and keeps the id; this row, its plan-doc parity row, and the two dashboard comment citations moved to R164 in the same commit (id renumber only, no supersession — the row body is unchanged)."
     rollback: "n/a until built (the flip lands as one revertable commit; until then the baked set + its fixture pin stand as recorded)"
     last_update: "2026-07-12"

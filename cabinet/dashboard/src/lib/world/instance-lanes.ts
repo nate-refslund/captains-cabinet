@@ -31,7 +31,7 @@ import type { LaneRecord } from './era-engine'
 
 /** Instance-only test lanes (Captain ruling 2026-07-09: 'sensed' is an
  * instance-test app, never foundation — reef-buoy render). Instance data
- * pending its own config field — tracked as ledger row R163
+ * pending its own config field — tracked as ledger row R164
  * (instance_test_lanes -> instance config, read fail-honest to the EMPTY
  * set); kept verbatim from the engine route it moved out of. */
 const INSTANCE_TEST_LANES = new Set(['sensed'])
