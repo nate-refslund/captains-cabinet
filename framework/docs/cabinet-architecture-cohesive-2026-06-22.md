@@ -26,7 +26,7 @@ System 1 / System 2 is the right mental model:
 ## 2. The shape
 
 ```
-                YOU  ──  one channel (@NateHQChairBot)
+                YOU  ──  one channel (@example_cabinet_bot)
                  ▲ │
    only the      │ │ your message / reply
    cabinet  ─────┤ ▼

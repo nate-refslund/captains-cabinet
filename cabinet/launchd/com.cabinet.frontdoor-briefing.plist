@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Cabinet front-door recurring briefing (one channel @NateHQChairBot).
+<!-- Cabinet front-door recurring briefing (one channel @example_cabinet_bot).
      Source of truth; installed to ~/Library/LaunchAgents/ + loaded with:
        cp cabinet/launchd/com.cabinet.frontdoor-briefing.plist ~/Library/LaunchAgents/
        launchctl load -w ~/Library/LaunchAgents/com.cabinet.frontdoor-briefing.plist

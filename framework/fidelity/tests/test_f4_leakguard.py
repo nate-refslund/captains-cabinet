@@ -93,7 +93,7 @@ class TestBriefExcluded:
         # output must carry no free-text source field.
         brain = FakeBrain(
             brief="LEAK_BRIEF: Ada already replied with the Husqvarna URL on "
-                  "2026-06-11. Lawn is 3000 m2.",
+                  "2026-06-11. Lawn is 2500 m2.",
             vault_hits=[{"path": "1-Daily/2026-05-12.md", "heading": "house",
                          "text": "new house at Kagevej, big lawn",
                          "ts": "2026-05-12T09:00:00+00:00", "source": "vault"}],
@@ -193,7 +193,7 @@ class TestContentTsPreferred:
     def test_content_ts_admits_a_pathless_conversation_chunk(self):
         # 3-People conversation: no date in the path; previously -> None
         # (excluded). With content_ts it returns the real authored time.
-        hit = {"ref": "3-People/sobuc/conversations.md", "heading": "msg",
+        hit = {"ref": "3-People/colleague-a/conversations.md", "heading": "msg",
                "content_ts": "2026-05-12T09:00:00+00:00",
                "mtime": 1_900_000_000.0}
         assert officer_runner._content_ts(hit) == "2026-05-12T09:00:00+00:00"
@@ -376,14 +376,14 @@ class TestReadNotePathValidation:
         # and ISO-scrubbed of any post-cutoff date line.
         brain = FakeBrain(notes={
             "1-Daily/2026-05-12.md":
-                "Looked at mowers for the new house lawn (~3000 m2).\n"
+                "Looked at mowers for the new house lawn (~2500 m2).\n"
                 "Follow-up 2026-06-11T09:00:00+00:00 leak line.\n",
         })
         ctx = officer_runner.gather_cutoff_context(
             _case(), brain=brain, read_paths=["1-Daily/2026-05-12.md"])
         notes = ctx.get("notes", [])
         body = " ".join(n.get("text", "") for n in notes)
-        assert "3000 m2" in body
+        assert "2500 m2" in body
         assert "2026-06-11" not in body  # post-cutoff date line scrubbed
 
     def test_read_note_post_cutoff_dated_path_rejected(self):
@@ -406,7 +406,7 @@ class TestReadNotePathValidation:
         # lines survive.
         brain = FakeBrain(notes={
             "1-Daily/2026-05-12.md":
-                "Looked at mowers for the new house lawn (~3000 m2).\n"
+                "Looked at mowers for the new house lawn (~2500 m2).\n"
                 "Follow-up 2026/06/11 with Husqvarna (SLASH LEAK)\n"
                 "Ordered backup blade 20260611 (COMPACT LEAK)\n"
                 "Plan: pick a model and order it before the weekend.\n",
@@ -421,7 +421,7 @@ class TestReadNotePathValidation:
         assert "2026/06/11" not in body
         assert "20260611" not in body
         # …and the undated content lines survive (the scrub is line-scoped)
-        assert "3000 m2" in body
+        assert "2500 m2" in body
         assert "pick a model and order it" in body
 
 
@@ -455,24 +455,24 @@ class TestRealVaultHitShape:
         # (a) ref = pre-cutoff daily-note path + datetime ts → ADMITTED via
         # _content_ts path-date (NOT via the datetime ts, which is post-cutoff).
         hit = self._real_hit("1-Daily/2026-05-12.md",
-                             "new house at Kagevej, big lawn ~3000 m2")
+                             "new house at Kagevej, big lawn ~2500 m2")
         brain = FakeBrain(vault_hits=[hit], brief=self.BRIEF)
         ctx = officer_runner.gather_cutoff_context(_case(), brain=brain)
         assert len(ctx["vault_hits"]) == 1
         # the hit's text survives (admitted, not just present-but-empty)
-        assert any("3000 m2" in (h.get("text") or "")
+        assert any("2500 m2" in (h.get("text") or "")
                    for h in ctx["vault_hits"])
 
     def test_non_dated_path_with_datetime_ts_excluded(self):
         # (b) ref = a NON-dated path + datetime ts → EXCLUDED. No derivable
         # content-ts; the datetime (mtime) ts must NOT admit it — mtime is the
         # wrong clock. This is the over-exclusion fence in action.
-        hit = self._real_hit("3-People/sobuc/conversations.md",
-                             "SOBUC_CONTENT must be excluded (mtime-only)")
+        hit = self._real_hit("3-People/colleague-a/conversations.md",
+                             "COLLEAGUE_A_CONTENT must be excluded (mtime-only)")
         brain = FakeBrain(vault_hits=[hit], brief=self.BRIEF)
         ctx = officer_runner.gather_cutoff_context(_case(), brain=brain)
         assert ctx["vault_hits"] == []
-        assert "SOBUC_CONTENT" not in repr(ctx)
+        assert "COLLEAGUE_A_CONTENT" not in repr(ctx)
 
     def test_post_cutoff_daily_note_path_excluded(self):
         # (c) ref = a POST-cutoff daily-note path → EXCLUDED (path date >= cutoff).

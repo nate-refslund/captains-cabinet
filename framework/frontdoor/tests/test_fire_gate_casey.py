@@ -1,8 +1,8 @@
-"""THE WORKED SOFIE CASE (captain-surface master prompt §3.5, 2026-07-10) —
+"""THE WORKED CASEY CASE (captain-surface master prompt §3.5, 2026-07-10) —
 the regression test for verify-at-fire on the send path.
 
-What happened: a reply draft to Sofie was queued and presented; the captain
-then replied to Sofie HIMSELF. The queued draft kept dangling, ready to fire
+What happened: a reply draft to Casey was queued and presented; the captain
+then replied to Casey HIMSELF. The queued draft kept dangling, ready to fire
 on a later (mis)tap — the confusion the master prompt names. The law: at fire
 time the send path re-gathers; a draft overtaken by reality SELF-CANCELS,
 never fires, and journals why.
@@ -58,7 +58,7 @@ class SpyDispatch:
     def deliver(self, *, record, override_text="", dry_run=False):
         if not self.allow:
             raise AssertionError(
-                "dispatch.deliver reached — the stale Sofie draft FIRED")
+                "dispatch.deliver reached — the stale Casey draft FIRED")
         self.delivered.append((record, override_text, dry_run))
         return {"ok": True, "via": record.get("channel"), "dry_run": dry_run}
 
@@ -81,10 +81,10 @@ class FakeSource:
         return self._awaiting
 
 
-SOFIE_REC = {
-    "slug": "sofie", "person": "Sofie", "channel": "email",
-    "recipient_email": "sofie@example.com",
-    "draft": "Hi Sofie — following up on the schedule.",
+CASEY_REC = {
+    "slug": "casey", "person": "Casey", "channel": "email",
+    "recipient_email": "casey@example.invalid",
+    "draft": "Hi Casey — following up on the schedule.",
     "why": "draft reply (lane)", "lane": "send-1to1-reply",
     "queued_ts": "2026-07-10T08:00:00Z",
 }
@@ -97,7 +97,7 @@ def _sandbox(tmp_path, monkeypatch):
 
 
 def _wire(monkeypatch, *, source, dispatch, store=None):
-    fake = FakeRedis(store or {"cabinet:draft:s0f1e1": json.dumps(SOFIE_REC)})
+    fake = FakeRedis(store or {"cabinet:draft:c4s3y1": json.dumps(CASEY_REC)})
     monkeypatch.setattr(chair_drafts, "_r", fake)
     monkeypatch.setattr(chair_drafts, "get_dispatch", lambda: dispatch)
     # fire_gate resolves the seam via framework.sources.get_source(), which
@@ -106,40 +106,40 @@ def _wire(monkeypatch, *, source, dispatch, store=None):
     return fake
 
 
-def test_sofie_case_queued_draft_self_cancels_never_fires(monkeypatch):
-    """The captain replied to Sofie himself AFTER the draft was queued →
+def test_casey_case_queued_draft_self_cancels_never_fires(monkeypatch):
+    """The captain replied to Casey himself AFTER the draft was queued →
     at fire the draft self-cancels: no egress, store cleared, journal row,
     plain-language reason back to the Chair."""
     dispatch = SpyDispatch(allow=False)   # any deliver() call = test failure
     fake = _wire(monkeypatch, source=FakeSource(replied=True),
                  dispatch=dispatch)
 
-    res = chair_drafts.deliver_draft("s0f1e1")
+    res = chair_drafts.deliver_draft("c4s3y1")
 
     assert res["ok"] is False and res.get("cancelled") is True
-    # Plain sentence (plain-language law) — names Sofie, says it wasn't sent.
-    assert "Not sent" in res["reason"] and "Sofie" in res["reason"]
+    # Plain sentence (plain-language law) — names Casey, says it wasn't sent.
+    assert "Not sent" in res["reason"] and "Casey" in res["reason"]
     # Never fired.
     assert dispatch.delivered == []
     # Self-cancelled: the queued record is gone.
-    assert "cabinet:draft:s0f1e1" not in fake.store
+    assert "cabinet:draft:c4s3y1" not in fake.store
     # Journaled with the evidence.
-    row = draft_queue.withdrawal_of("s0f1e1")
+    row = draft_queue.withdrawal_of("c4s3y1")
     assert row is not None and row["kind"] == "fire-cancel"
     assert row["checks"]["captain_replied_since"] is True
-    assert row["record"]["slug"] == "sofie"
+    assert row["record"]["slug"] == "casey"
 
 
-def test_sofie_case_second_tap_gets_the_honest_reason(monkeypatch):
+def test_casey_case_second_tap_gets_the_honest_reason(monkeypatch):
     """After the self-cancel, a later 'send' tap on the same id explains
     itself instead of the generic 'expired or already sent' miss."""
     dispatch = SpyDispatch(allow=False)
     fake = _wire(monkeypatch, source=FakeSource(replied=True),
                  dispatch=dispatch)
-    chair_drafts.deliver_draft("s0f1e1")            # self-cancels
-    res2 = chair_drafts.deliver_draft("s0f1e1")     # the captain taps again
+    chair_drafts.deliver_draft("c4s3y1")            # self-cancels
+    res2 = chair_drafts.deliver_draft("c4s3y1")     # the captain taps again
     assert res2["ok"] is False and res2.get("withdrawn") is True
-    assert "Sofie" in res2["reason"]
+    assert "Casey" in res2["reason"]
     assert dispatch.delivered == []
 
 
@@ -149,12 +149,12 @@ def test_still_needed_draft_fires_normally(monkeypatch):
     dispatch = SpyDispatch(allow=True)
     fake = _wire(monkeypatch, source=FakeSource(replied=False, awaiting=True),
                  dispatch=dispatch)
-    res = chair_drafts.deliver_draft("s0f1e1")
+    res = chair_drafts.deliver_draft("c4s3y1")
     assert res["ok"] is True
     assert len(dispatch.delivered) == 1
     assert res["verify"]["action"] == "fire"
     # Store cleared by the normal post-send path.
-    assert "cabinet:draft:s0f1e1" not in fake.store
+    assert "cabinet:draft:c4s3y1" not in fake.store
 
 
 def test_uncertainty_never_blocks_an_approved_send(monkeypatch):
@@ -163,7 +163,7 @@ def test_uncertainty_never_blocks_an_approved_send(monkeypatch):
     dispatch = SpyDispatch(allow=True)
     _wire(monkeypatch, source=FakeSource(replied=None, awaiting=None),
           dispatch=dispatch)
-    res = chair_drafts.deliver_draft("s0f1e1")
+    res = chair_drafts.deliver_draft("c4s3y1")
     assert res["ok"] is True and len(dispatch.delivered) == 1
 
 
@@ -173,9 +173,9 @@ def test_dry_run_reports_would_cancel_without_removing(monkeypatch):
     dispatch = SpyDispatch(allow=True)
     fake = _wire(monkeypatch, source=FakeSource(replied=True),
                  dispatch=dispatch)
-    res = chair_drafts.deliver_draft("s0f1e1", dry_run=True)
+    res = chair_drafts.deliver_draft("c4s3y1", dry_run=True)
     assert res["verify"]["action"] == "cancel"
-    assert "cabinet:draft:s0f1e1" in fake.store     # retained
+    assert "cabinet:draft:c4s3y1" in fake.store     # retained
     assert dispatch.delivered and dispatch.delivered[0][2] is True  # dry
 
 
@@ -183,6 +183,6 @@ def test_force_overrides_the_gate(monkeypatch):
     """An explicit 'send anyway' fires even when the gate would cancel."""
     dispatch = SpyDispatch(allow=True)
     _wire(monkeypatch, source=FakeSource(replied=True), dispatch=dispatch)
-    res = chair_drafts.deliver_draft("s0f1e1", force=True)
+    res = chair_drafts.deliver_draft("c4s3y1", force=True)
     assert res["ok"] is True and len(dispatch.delivered) == 1
     assert res["verify"]["reason"] == "forced"

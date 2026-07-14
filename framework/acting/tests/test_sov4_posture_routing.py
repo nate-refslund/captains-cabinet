@@ -403,7 +403,7 @@ def test_standing_grant_hit_still_never_acts(monkeypatch):
 
 def test_inbound_evidence_never_act_first_eligible():
     card = _card("monday_task_update",
-                 evidence=("3-People/frederik/conversations.md",))
+                 evidence=("3-People/x/conversations.md",))
     ok, why = r._card_act_first_eligible(card, "board_status")
     assert ok is False and "inbound provenance" in why
 

@@ -61,7 +61,7 @@ def _assess(rows, poller_alive=True):
 
 # (a) the canonical starvation: an old pending, channel up, no decisions.
 def test_a_pending_old_poller_alive_no_decisions_is_starving():
-    r = _assess([_proposal("Oliver", STARVE_H + 24)])
+    r = _assess([_proposal("Avery", STARVE_H + 24)])
     assert r["pending"] == 1 and r["oldest_h"] > STARVE_H
     assert r["decisions_recent"] == 0 and r["starving"] is True
 
@@ -69,7 +69,7 @@ def test_a_pending_old_poller_alive_no_decisions_is_starving():
 # (b) M-2 regression: a VERY old pending (300h) is still counted — proving the
 # decision does not depend on a read window (main() now feeds unwindowed rows).
 def test_b_ancient_pending_still_seen_starving():
-    r = _assess([_proposal("Oliver", 300.0)])
+    r = _assess([_proposal("Avery", 300.0)])
     assert r["pending"] == 1 and r["oldest_h"] >= 300.0
     assert r["starving"] is True
 
@@ -79,21 +79,21 @@ def test_b_ancient_pending_still_seen_starving():
 # decided_at, NOT the proposal's original ts.
 def test_c_recent_decision_by_decided_at_suppresses():
     rows = [
-        _proposal("Oliver", 300.0),                       # old, still pending
-        _decision("Lisa", ts_hours_ago=300.0,             # old proposal...
+        _proposal("Avery", 300.0),                       # old, still pending
+        _decision("Blake", ts_hours_ago=300.0,             # old proposal...
                   decided_hours_ago=1.0),                 # ...decided 1h ago
     ]
     r = _assess(rows)
-    assert r["pending"] == 1                              # Oliver still pending
-    assert r["decisions_recent"] == 1                     # Lisa decision counts (decided_at recent)
+    assert r["pending"] == 1                              # Avery still pending
+    assert r["decisions_recent"] == 1                     # Blake decision counts (decided_at recent)
     assert r["starving"] is False
 
 
 # a decision whose decided_at is OUTSIDE the window must NOT suppress.
 def test_c2_stale_decision_does_not_suppress():
     rows = [
-        _proposal("Oliver", 300.0),
-        _decision("Lisa", ts_hours_ago=300.0, decided_hours_ago=STARVE_H + 5),
+        _proposal("Avery", 300.0),
+        _decision("Blake", ts_hours_ago=300.0, decided_hours_ago=STARVE_H + 5),
     ]
     r = _assess(rows)
     assert r["decisions_recent"] == 0 and r["starving"] is True
@@ -102,13 +102,13 @@ def test_c2_stale_decision_does_not_suppress():
 # (d) poller dead → NOT starving (an outage the other dead-men own; silence here
 # is explained, not evidence-severance).
 def test_d_poller_dead_not_starving():
-    r = _assess([_proposal("Oliver", 300.0)], poller_alive=False)
+    r = _assess([_proposal("Avery", 300.0)], poller_alive=False)
     assert r["starving"] is False
 
 
 # (e) unparseable pending ts → counts as ANCIENT (fail-loud), starving.
 def test_e_unparseable_ts_counts_ancient_starving():
-    p = _proposal("Oliver", 1.0)
+    p = _proposal("Avery", 1.0)
     p["ts"] = "not-a-timestamp"
     r = _assess([p])
     assert r["oldest_h"] > STARVE_H and r["starving"] is True
@@ -129,13 +129,13 @@ def test_f_synthetic_excluded_from_math():
 # (g) nothing pending → not starving (empty ledger and resolved-only ledger).
 def test_g_no_pending_not_starving():
     assert _assess([])["starving"] is False
-    resolved_only = [_decision("Lisa", ts_hours_ago=300.0, decided_hours_ago=200.0)]
+    resolved_only = [_decision("Blake", ts_hours_ago=300.0, decided_hours_ago=200.0)]
     r = _assess(resolved_only)
     assert r["pending"] == 0 and r["starving"] is False
 
 
 # a FRESH pending (younger than STARVE_H) is normal, not starvation.
 def test_fresh_pending_under_threshold_not_starving():
-    r = _assess([_proposal("Oliver", STARVE_H - 2)])
+    r = _assess([_proposal("Avery", STARVE_H - 2)])
     assert r["pending"] == 1 and r["oldest_h"] < STARVE_H
     assert r["starving"] is False

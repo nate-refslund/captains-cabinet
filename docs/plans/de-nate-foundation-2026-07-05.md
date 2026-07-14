@@ -82,8 +82,8 @@ These are signals the code is Flavor-A-instance-specific. The CAPTAIN name was
 parameterized; the OTHER specific data was left as-is (it is NOT the captain's
 display name — forcing it into `captain_name()` would be wrong) and is flagged:
 
-1. **`framework/autoreply/kristoffer_uat.py`** — the scoped Kristoffer-Møller-
-   Nielsen auto-reply cell (colleague-scoped; `copy_to_nate`/`nate_copy` params,
+1. **`framework/autoreply/kristoffer_uat.py`** — the scoped single-colleague
+   auto-reply cell (colleague-scoped; `copy_to_nate`/`nate_copy` params,
    `nate_model`, `KRISTOFFER_*` slugs). Flavor-A-instance-specific by
    construction → **whole-file allowlisted** in the ratchet with a
    `TODO(DN): MOVE to instance/ (or a fixture)`. A colleague-scoped auto-reply

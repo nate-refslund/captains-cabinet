@@ -60,6 +60,20 @@ def _load_shadow_module():
     return mod
 
 
+@pytest.fixture(autouse=True)
+def _synthetic_org_domains(monkeypatch):
+    """Pin the internal-domain set to the synthetic fixture domain so the
+    internal/external comms classification is hermetic — never coupled to
+    this deployment's instance/config org_domains value (classifier freezes
+    env.org_domains() at import time, so patch the module constant; same
+    pattern as framework/authority/tests/test_classifier.py)."""
+    if str(_REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(_REPO_ROOT))
+    from framework.authority import classifier as _clf
+
+    monkeypatch.setattr(_clf, "_INTERNAL_DOMAINS", ("testburg.example",))
+
+
 def _events(db_path: str, event_type: str = "policy.shadow_decision") -> list[dict]:
     conn = sqlite3.connect(db_path)
     try:
@@ -180,7 +194,7 @@ class TestAuthorityShadowEmission:
             ("Bash", {"command": "cat /workspace/product/.env"}),
             (
                 "mcp__brain__queue_draft",
-                {"recipient": "sean@stepnetwork.dk", "channel": "teams"},
+                {"recipient": "casey@testburg.example", "channel": "teams"},
             ),
             (
                 "mcp__brain__queue_draft",
@@ -481,7 +495,7 @@ class TestPostureShadowMirror:
                     mod,
                     {
                         "tool_name": "mcp__brain__queue_draft",
-                        "tool_input": {"recipient": "sean@stepnetwork.dk", "channel": "teams"},
+                        "tool_input": {"recipient": "casey@testburg.example", "channel": "teams"},
                     },
                     db,
                     officer="cos",

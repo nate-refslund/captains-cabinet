@@ -85,8 +85,8 @@ def test_captain_outbound_withdraws_the_matching_draft_only():
 
 
 def test_resolved_thread_alone_does_not_withdraw_by_default():
-    kv = _store(("ccc333", _rec("tomas")))
-    src = FakeSource(replied={"tomas": None}, awaiting={"tomas": False})
+    kv = _store(("ccc333", _rec("dana")))
+    src = FakeSource(replied={"dana": None}, awaiting={"dana": False})
     res = draft_reconcile.reconcile_queue(source=src, kv=kv)
     assert res["withdrawn"] == 0
     assert res["corroborated_resolved"] == 1
@@ -95,8 +95,8 @@ def test_resolved_thread_alone_does_not_withdraw_by_default():
 
 def test_resolved_thread_withdraws_when_explicitly_enabled(monkeypatch):
     monkeypatch.setenv("CABINET_RECONCILE_ON_RESOLVED", "1")
-    kv = _store(("ccc333", _rec("tomas", person="Tomas")))
-    src = FakeSource(replied={"tomas": None}, awaiting={"tomas": False})
+    kv = _store(("ccc333", _rec("dana", person="Dana")))
+    src = FakeSource(replied={"dana": None}, awaiting={"dana": False})
     res = draft_reconcile.reconcile_queue(source=src, kv=kv)
     assert res["withdrawn"] == 1
     assert "cabinet:draft:ccc333" not in kv.store

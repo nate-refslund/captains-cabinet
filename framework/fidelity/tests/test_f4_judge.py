@@ -35,7 +35,7 @@ def _mower_case_dict():
         "thread_before": [
             {"direction": "sent", "who": "Ada",
              "date": "2026-05-04T08:00:00+00:00", "source": "msgraph",
-             "text": "Ja, 3000 m2 graesplaene paa Kagevej. Ingen kanttraad."},
+             "text": "Ja, 2500 m2 graesplaene paa Kagevej. Ingen kanttraad."},
             {"direction": "received", "who": "Bo <b@x>",
              "date": "2026-05-05T08:00:00+00:00", "source": "msgraph",
              "text": "Vil du have hjaelp til at finde en robotplaeneklipper?"},
@@ -45,11 +45,11 @@ def _mower_case_dict():
 
 
 _MOWER_INTENT = ("Goal: source a no-boundary-wire robotic mower "
-                 "(robotplaeneklipper) for the 3000 m2 lawn. "
+                 "(robotplaeneklipper) for the 2500 m2 lawn. "
                  "Core: decisive, concrete, da on msgraph.")
 _MOWER_CTX = {
     "vault_hits": [{"ts": "2026-05-02T08:00:00+00:00",
-                    "text": "new house Kagevej, ~3000 m2 lawn"}],
+                    "text": "new house Kagevej, ~2500 m2 lawn"}],
 }
 
 
@@ -86,7 +86,7 @@ class TestHallucinatedGroundForcedDivergent:
         monkeypatch.setattr(scorer, "oauth_json_llm", fake_oauth_json)
         out = scorer.judge_with_oauth(
             _mower_case_dict(),
-            clone_draft="Jeg anbefaler en LiDAR-robotplaeneklipper til 3000 m2.",
+            clone_draft="Jeg anbefaler en LiDAR-robotplaeneklipper til 2500 m2.",
             reconstructed_intent=_MOWER_INTENT,
             full_cutoff_context=_MOWER_CTX,
         )
@@ -121,8 +121,8 @@ class TestHallucinatedGroundForcedDivergent:
         out = scorer.judge_with_oauth(
             _mower_case_dict(),
             # An on-intent draft naturally echoes the goal vocabulary (robotic
-            # mower, no boundary wire, the 3000 m2 lawn) — well above the floor.
-            clone_draft=("Til din 3000 m2 lawn anbefaler jeg en robotic "
+            # mower, no boundary wire, the 2500 m2 lawn) — well above the floor.
+            clone_draft=("Til din 2500 m2 lawn anbefaler jeg en robotic "
                          "robotplaeneklipper helt uden boundary wire."),
             reconstructed_intent=_MOWER_INTENT,
             full_cutoff_context=_MOWER_CTX,
@@ -184,7 +184,7 @@ class TestGroundingHelper:
     def test_absent_fact_fails(self):
         assert scorer._grounding_ok(
             "Ada already ordered a submarine and a yacht",
-            ctx_text="new house Kagevej ~3000 m2 lawn",
+            ctx_text="new house Kagevej ~2500 m2 lawn",
             thread_text="Bo: finde en robotplaeneklipper?") is False
 
     def test_high_token_overlap_passes_without_exact_substring(self):
