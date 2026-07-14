@@ -305,7 +305,7 @@ def gather_cutoff_context(case: Case, *, brain=None,
 
     # --- vault hits (Tier-1 only; brief DROPPED; TOPIC-AWARE) --------------
     # The topic = the inbound message being replied to, so retrieval is driven
-    # by what the conversation is ABOUT (the garden budget, the house), not the
+    # by what the conversation is ABOUT (the workshop budget, the house), not the
     # bare person slug. Pre-cutoff by construction (thread_before is asserted
     # pre-cutoff). gather's 0.4 relevance floor returns 0 (not noise) when
     # nothing on-topic is indexed — correct + leak-safe.

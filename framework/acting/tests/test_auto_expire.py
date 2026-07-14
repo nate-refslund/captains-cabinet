@@ -187,7 +187,7 @@ class TestAutoExpireSelfReplied:
         # write); only PENDING proposals are reconciled here.
         emit_consequence(
             ts="2026-06-25T14:53:00+00:00", actor=ACTOR, lane="send-1to1-reply",
-            action="draft-reply", subject="anna",
+            action="draft-reply", subject="grace",
             proposal={"required": True, "decision": "approved",
                       "decided_at": "2026-06-25T15:00:00+00:00"},
             outcome={"status": "ok", "evidence": "shipped"},

@@ -131,7 +131,7 @@ class TestAlreadyHandledSignatureFallback:
 class TestRedisKeyHygiene:
     def test_slug_with_spaces_and_colons_is_flattened(self):
         # The redis key must never carry spaces/colons that fracture the keyspace.
-        k = ld._handled_key("Anna Kruse: Bakery")
+        k = ld._handled_key("Alma Kruse: Bakery")
         assert k.startswith("cabinet:draft-handled:")
         suffix = k[len("cabinet:draft-handled:"):]
         assert " " not in suffix and ":" not in suffix

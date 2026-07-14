@@ -172,7 +172,7 @@ class TestComms:
     def test_external_message_by_domain(self):
         out = classify_action(
             "mcp__brain__queue_draft",
-            {"channel": "teams", "recipient": "anna@partner-external.example", "body": "hi"},
+            {"channel": "teams", "recipient": "grace@partner-external.example", "body": "hi"},
         )
         assert out == "external_message"
 

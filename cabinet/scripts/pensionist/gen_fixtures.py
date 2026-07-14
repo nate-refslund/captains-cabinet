@@ -39,10 +39,10 @@ def card(id_, kind, what, *, lane=None, blast=("low", "internal"), worst=None,
 
 DECISIONS = [
     card("sit-d1", "draft-outbound",
-         "Reply to Rasmus: the party's CVR number is fixed on the live site",
+         "Reply to Ross: the party's CVR number is fixed on the live site",
          lane="polads", blast=("org", "external"),
          worst="a message reaches a human outside the machine",
-         pid="prop-d1-reply-rasmus-cvr", approve="per-item-approval",
+         pid="prop-d1-reply-ross-cvr", approve="per-item-approval",
          age_h=26.4, deadline=20, urgency="batch",
          refs=["thread:polads-support-1182", "draft:chair-2026-07-10-01"],
          decay="waiting 26h; 1 demotion"),

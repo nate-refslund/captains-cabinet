@@ -344,7 +344,7 @@ def test_backend_failure_one_bad_does_not_block_good(redis, clock):
     """A failing send for one draft must not prevent a sibling good send in the
     same scan — partial failure is isolated."""
     sometimes = _SelectiveBackend(fail_recipients={"Bo"})
-    good_payload = {**_payload(), "recipient": "Lisa"}
+    good_payload = {**_payload(), "recipient": "Lena"}
     bad_id = V.enqueue_veto("cos", "ops", "internal_message", _payload(),
                             window_minutes=7, redis=redis, clock=clock)
     good_id = V.enqueue_veto("cos", "ops", "internal_message", good_payload,

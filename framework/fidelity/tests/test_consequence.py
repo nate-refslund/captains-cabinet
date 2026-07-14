@@ -531,7 +531,7 @@ class TestComputeRatios:
         self._emit_decided("2026-06-18T08:00:00+00:00", "a", "approved", None, None,
                            action="drafted-reply-to-bo", action_type="internal_message")
         self._emit_decided("2026-06-18T08:01:00+00:00", "b", "approved", None, None,
-                           action="drafted-reply-to-lisa", action_type="internal_message")
+                           action="drafted-reply-to-lena", action_type="internal_message")
         cells = compute_ratios()
         assert list(cells.keys()) == [("officer:cos", "bakery", "internal_message")]
         assert cells[("officer:cos", "bakery", "internal_message")].sample_count == 2
