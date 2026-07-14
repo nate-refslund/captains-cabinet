@@ -105,6 +105,23 @@ class TestSurfaceParity(unittest.TestCase):
 
 
 class TestSeederPlan(unittest.TestCase):
+    """Exercises seed-war-room.py's plan()/item_refs() dedup logic generically.
+    Product/captain-agnostic foundation (2026-07-14): the script's real C7
+    census moved to instance/config/war-room-seed.yml (deployment-local,
+    gitignored) — this framework test must not depend on any deployment's
+    concrete data, so it supplies its own synthetic C7-shaped fixture and
+    calls plan(open_props, c7_items) directly (plan()'s current signature)."""
+
+    _ITEMS = [
+        {"slug": "example-launch", "lane": "example-product",
+         "subject": "Example Product v1.0 release — go/no-go",
+         "kind": "action-proposal", "keywords": ["example", "release"]},
+        {"slug": "example-germline-ritual", "lane": None,
+         "subject": "Example: arm the gateway",
+         "kind": "germline-handback", "keywords": ["gateway"],
+         "deadline": "2026-07-14T07:00:00Z"},
+    ]
+
     def _load(self):
         import importlib.util
         from pathlib import Path
@@ -116,30 +133,28 @@ class TestSeederPlan(unittest.TestCase):
 
     def test_live_covered_items_skip(self):
         seeder = self._load()
-        # slug/subject pins the REAL seed row in cabinet/scripts/seed-war-room.py
-        # (source-coupled: flips in lockstep with that script's seed list)
-        live = [{"subject": "Ship the PolAds v1.0 release checklist",
-                 "refs": ["monday:5091706356"]}]
-        actions = {i["slug"]: a for i, a, _w in seeder.plan(live)}
-        self.assertEqual(actions["polads-v1-release"], "skip-live")
-        self.assertEqual(actions["h0-germline-ritual"], "seed")
+        live = [{"subject": "Ship the Example Product v1.0 release checklist",
+                 "refs": ["monday:0000000000"]}]
+        actions = {i["slug"]: a for i, a, _w in seeder.plan(live, self._ITEMS)}
+        self.assertEqual(actions["example-launch"], "skip-live")
+        self.assertEqual(actions["example-germline-ritual"], "seed")
 
     def test_seed_anchor_makes_rerun_idempotent(self):
         seeder = self._load()
-        seeded = [{"subject": "H0: arm the gateway",
-                   "refs": ["thread:seed/h0-germline-ritual",
+        seeded = [{"subject": "Example: arm the gateway",
+                   "refs": ["thread:seed/example-germline-ritual",
                             "kind:germline-handback"]}]
-        actions = {i["slug"]: a for i, a, _w in seeder.plan(seeded)}
-        self.assertEqual(actions["h0-germline-ritual"], "skip-seeded")
+        actions = {i["slug"]: a for i, a, _w in seeder.plan(seeded, self._ITEMS)}
+        self.assertEqual(actions["example-germline-ritual"], "skip-seeded")
 
     def test_seeded_rows_carry_parseable_tags(self):
         seeder = self._load()
         from framework.attention import situations
-        item = next(i for i in seeder.C7_ITEMS
-                    if i["slug"] == "dg-just-coverage")
+        item = next(i for i in self._ITEMS
+                    if i["slug"] == "example-germline-ritual")
         refs = seeder.item_refs(item)
         self.assertEqual(situations.deadline_of(refs), "2026-07-14T07:00:00Z")
-        self.assertIn("thread:seed/dg-just-coverage",
+        self.assertIn("thread:seed/example-germline-ritual",
                       __import__("framework.attention.situation",
                                  fromlist=["canonical_refs"])
                       .canonical_refs(refs))

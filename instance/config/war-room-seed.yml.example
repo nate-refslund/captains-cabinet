@@ -1,0 +1,51 @@
+# =============================================================
+# war-room-seed.yml.example — the framework-shippable TWIN
+# =============================================================
+# Copy to instance/config/war-room-seed.yml to seed cabinet/scripts/
+# seed-war-room.py's day-one war-room census (Captain ruling C7,
+# command-center proposal §7): a ~15-item genuinely-needs-Captain list that
+# is the room's day-one truth; everything else enters only through the
+# admission law. This file is DEPLOYMENT-LOCAL (gitignored) — real product
+# names, dated personal founder-actions, and other captain/product-specific
+# items belong ONLY here, never in the tracked seed-war-room.py script.
+#
+# Absent or empty file => seed-war-room.py has nothing to seed (a fresh
+# clone seeds zero items; this is the correct product-agnostic default, not
+# an error). Re-run is idempotent regardless: the seeder first scans the
+# open proposal set for a subject-keyword match and skips already-covered
+# items, and skips anything whose `thread:seed/<slug>` anchor is already
+# open.
+#
+# SCHEMA — top-level `items:` is a list; each entry:
+#   slug:      required, kebab-case, stable identifier -> thread:seed/<slug>
+#   lane:      optional product/lane slug this item belongs to, or omit/null
+#              for a captain-personal or cross-lane item
+#   subject:   required, one-line human-readable description
+#   kind:      required, one of: action-proposal | founder-action |
+#              germline-handback | draft-outbound | outcome-ratification
+#   keywords:  required, list of lowercase tokens — ALL must appear in a
+#              live open proposal's subject for this item to count as
+#              already-carded (skip-live)
+#   deadline:  optional ISO-8601 timestamp
+#   harm:      optional, e.g. external_deadline | value_decay
+#   leverage:  optional integer weight
+#
+# Example (illustrative only — replace with your own deployment's real
+# day-one census; do not commit real captain/product data here, this file
+# ships in the framework repo):
+
+items:
+  - slug: example-launch-go-no-go
+    lane: example-product
+    subject: "Example Product v1.0 launch — go/no-go"
+    kind: action-proposal
+    keywords: [example-product, launch]
+    leverage: 5
+  - slug: example-external-deadline
+    lane: null
+    subject: "Example vendor token expires — rotate + reprovision"
+    kind: founder-action
+    keywords: [vendor, token]
+    deadline: "2026-01-01T18:00:00Z"
+    harm: external_deadline
+    leverage: 3
