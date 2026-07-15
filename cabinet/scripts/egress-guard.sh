@@ -336,7 +336,14 @@ write_env_file() {
 runtime_file_is_owned_regular() {
   local path="$1" owner=""
   [ -f "$path" ] && [ ! -L "$path" ] || return 1
-  owner=$(stat -f '%u' "$path" 2>/dev/null || stat -c '%u' "$path" 2>/dev/null || true)
+  # GNU stat accepts `-f` but interprets it as filesystem mode and can exit 0
+  # with a non-UID report. A simple `bsd || gnu` chain therefore fails on
+  # Linux. Accept the BSD result only when it is numeric; otherwise query the
+  # GNU form explicitly.
+  owner=$(stat -f '%u' "$path" 2>/dev/null || true)
+  case "$owner" in
+    ''|*[!0-9]*) owner=$(stat -c '%u' "$path" 2>/dev/null || true) ;;
+  esac
   [ "$owner" = "$(id -u)" ]
 }
 

@@ -43,7 +43,13 @@ if [ ! -O "$ENV_FILE" ]; then
   exit 1
 fi
 
-mode="$(stat -f '%Lp' "$ENV_FILE" 2>/dev/null || stat -c '%a' "$ENV_FILE" 2>/dev/null || true)"
+# GNU stat accepts `-f` as filesystem mode and may exit 0 with a non-mode
+# report, so a BSD-or-GNU `||` chain is not portable. Keep the BSD result only
+# when it is an octal mode; otherwise query the GNU form.
+mode="$(stat -f '%Lp' "$ENV_FILE" 2>/dev/null || true)"
+case "$mode" in
+  ''|*[!0-7]*) mode="$(stat -c '%a' "$ENV_FILE" 2>/dev/null || true)" ;;
+esac
 if [ "$mode" != "600" ]; then
   echo "Refusing to read cabinet/.env until its permissions are 600 (Captain only)." >&2
   echo "Fix it with: chmod 600 cabinet/.env" >&2
