@@ -33,6 +33,7 @@ import {
   handleTelegramOnboardingCallback,
   isOnboardingIntent,
 } from '@/lib/onboarding/telegram'
+import { recordOnboardingEvidence } from '@/lib/onboarding/bridge'
 
 export const dynamic = 'force-dynamic'
 
@@ -139,11 +140,30 @@ async function sendTelegramMessage(
   options?: {
     plain?: boolean
     buttons?: Array<Array<{ text: string; callback_data: string }>>
-  }
+  },
+  evidenceActionId?: string
 ): Promise<void> {
+  const recordTransport = async (
+    status: 'succeeded' | 'failed',
+    detail: Record<string, unknown>
+  ) => {
+    if (!evidenceActionId) return
+    try {
+      await recordOnboardingEvidence({
+        phase: 'transport', status,
+        action_id: `telegram-transport-${evidenceActionId}`,
+        trace_id: `trace-${evidenceActionId}`,
+        correlation_id: `corr-${evidenceActionId}`,
+        detail: { transport: 'telegram_bot_api', ...detail },
+      }, 'telegram')
+    } catch {
+      console.error('[provisioning-webhook] Telegram evidence unavailable')
+    }
+  }
   const token = process.env.MANAGER_BOT_TOKEN
   if (!token) {
     console.error('[provisioning-webhook] MANAGER_BOT_TOKEN not set — cannot send message')
+    await recordTransport('failed', { error_code: 'bot_token_unavailable' })
     return
   }
 
@@ -168,11 +188,14 @@ async function sendTelegramMessage(
       body: JSON.stringify(body),
     })
     if (!res.ok) {
-      const err = await res.text()
-      console.error('[provisioning-webhook] sendMessage failed:', err)
+      console.error('[provisioning-webhook] sendMessage failed', { status: res.status })
+      await recordTransport('failed', { error_code: 'telegram_http_error', http_status: res.status })
+    } else {
+      await recordTransport('succeeded', { http_status: res.status })
     }
-  } catch (err) {
-    console.error('[provisioning-webhook] sendMessage error:', err)
+  } catch {
+    console.error('[provisioning-webhook] sendMessage transport error')
+    await recordTransport('failed', { error_code: 'telegram_transport_error' })
   }
 }
 
@@ -183,21 +206,22 @@ async function sendTelegramMessage(
 async function sendReplies(
   chatId: number,
   messages: BotMessage[],
-  replyToId?: number
+  replyToId?: number,
+  evidenceActionId?: string
 ): Promise<void> {
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i]
     await sendTelegramMessage(chatId, msg.text, i === 0 ? replyToId : undefined, {
       plain: msg.plain,
       buttons: msg.buttons,
-    })
+    }, evidenceActionId)
     // If message has additional chained messages, send them too
     if (msg.additional) {
       for (const extra of msg.additional) {
         await sendTelegramMessage(chatId, extra.text, undefined, {
           plain: extra.plain,
           buttons: extra.buttons,
-        })
+        }, evidenceActionId)
       }
     }
   }
@@ -254,7 +278,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       callback.data,
       `telegram-update-${update.update_id}`
     )
-    await sendReplies(chatId, replies, callback.message.message_id)
+    await sendReplies(
+      chatId, replies, callback.message.message_id,
+      `telegram-update-${update.update_id}`
+    )
     await answerCallbackQuery(callback.id)
     return NextResponse.json({ ok: true })
   }
@@ -287,6 +314,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // Non-text message (photo, sticker, etc.) — ignore in PR 4
     return NextResponse.json({ ok: true })
   }
+  const isTypedOnboardingPurge = Boolean(
+    isOnboardingMessage && /^\/(?:onboard|onboarding)\s+purge\s+PURGE\s*$/.test(rawText)
+  )
 
   // A First Window command may contain a private absolute path and purpose.
   // Keep both out of process logs; the canonical core records only bounded,
@@ -305,15 +335,26 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     replies = isOnboardingMessage
       ? await handleTelegramOnboarding(rawText, `telegram-update-${update.update_id}`)
       : await handleMessage(String(chatId), rawText)
-  } catch (err) {
-    console.error('[provisioning-webhook] handleMessage error:', err)
-    await sendTelegramMessage(chatId, 'Something went wrong. Please try again or say "cancel".')
+  } catch {
+    console.error('[provisioning-webhook] handler failed', { onboarding: isOnboardingMessage })
+    await sendTelegramMessage(
+      chatId,
+      'Something went wrong. Please try again or say "cancel".',
+      undefined,
+      undefined,
+      isOnboardingMessage && !isTypedOnboardingPurge ? `telegram-update-${update.update_id}` : undefined
+    )
     return NextResponse.json({ ok: true })
   }
 
   // Send replies back to Captain
   if (replies.length > 0) {
-    await sendReplies(chatId, replies, messageId)
+    await sendReplies(
+      chatId,
+      replies,
+      messageId,
+      isOnboardingMessage && !isTypedOnboardingPurge ? `telegram-update-${update.update_id}` : undefined
+    )
   }
 
   // ------------------------------------------------------------------

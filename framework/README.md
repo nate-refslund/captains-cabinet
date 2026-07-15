@@ -9,6 +9,9 @@ Everything in this directory ships with the Captain's Cabinet framework and is *
 | `constitution-base.md` | Universal Constitution — identity, work principles, communication, quality, self-improvement, model usage. Assembled with the active preset's `constitution-addendum.md` at container start to form the runtime Constitution every Officer reads. |
 | `safety-boundaries-base.md` | Universal safety rules — Captain approvals required, spending limits, retry limits, scope boundaries, kill switch, prohibited actions. Active preset's `safety-addendum.md` can ADD restrictions (never relax). |
 | `schemas-base.sql` | Base database schema used by every Cabinet: `experience_records`, `decision_log`, `cabinet_memory`, `library_spaces`, `library_records`. |
+| `evidence/` | Universal Evidence Recorder v1: local append/hash/signature plane, redaction, independent verification, Captain controls, repair policy, and DOGFOOD-001. |
+| `onboarding/journey.py` | Canonical Onboarding v2 First Window and the first complete Evidence Recorder integration. |
+| `schemas/evidence-event.schema.json` | Closed public schema for one Evidence Recorder event. |
 
 ## What is NOT here
 

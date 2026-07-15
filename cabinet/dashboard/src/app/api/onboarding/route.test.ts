@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 
-const { getMock, applyMock } = vi.hoisted(() => ({
+const { getMock, applyMock, recordMock } = vi.hoisted(() => ({
   getMock: vi.fn(),
   applyMock: vi.fn(),
+  recordMock: vi.fn(),
 }))
 
 vi.mock('@/lib/onboarding/bridge', () => {
@@ -19,6 +20,7 @@ vi.mock('@/lib/onboarding/bridge', () => {
   return {
     getOnboarding: getMock,
     applyOnboardingAction: applyMock,
+    recordOnboardingEvidence: recordMock,
     OnboardingBridgeError,
   }
 })
@@ -50,6 +52,7 @@ function post(body: unknown, options: { origin?: string; contentLength?: number;
 beforeEach(() => {
   getMock.mockReset().mockResolvedValue(SNAPSHOT)
   applyMock.mockReset().mockResolvedValue(SNAPSHOT)
+  recordMock.mockReset().mockResolvedValue({ ok: true })
 })
 
 describe('GET /api/onboarding', () => {
@@ -82,6 +85,25 @@ describe('POST /api/onboarding', () => {
     const response = await POST(post({ action: 'continue', surface: 'world' }))
     expect(response.status).toBe(200)
     expect(applyMock).toHaveBeenCalledWith({ action: 'continue' }, 'world')
+  })
+
+  it('preserves companion provenance while using the same bridge', async () => {
+    const response = await POST(post({ action: 'continue', surface: 'companion' }))
+    expect(response.status).toBe(200)
+    expect(applyMock).toHaveBeenCalledWith({ action: 'continue' }, 'companion')
+  })
+
+  it('does not turn a committed action into a false failure when secondary transport evidence is unavailable', async () => {
+    recordMock.mockRejectedValueOnce(new Error('observation unavailable'))
+    const response = await POST(post({ action: 'pause' }))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual(SNAPSHOT)
+  })
+
+  it('does not recreate evidence immediately after typed purge', async () => {
+    const response = await POST(post({ action: 'purge', confirmation: 'PURGE' }))
+    expect(response.status).toBe(200)
+    expect(recordMock).not.toHaveBeenCalled()
   })
 
   it('refuses cross-origin posts', async () => {

@@ -36,6 +36,7 @@ HARNESSES=(
   "fw076-pool-mode.sh"
   "germline-readonly.sh"
   "germline-bash-write.sh"
+  "evidence-access.sh"
 )
 
 OVERALL_FAIL=0

@@ -1,0 +1,18 @@
+{
+  "checks": {
+    "anchor": "pass",
+    "hash_chain": "pass",
+    "json": "pass",
+    "local_signatures": "pass",
+    "owner_permissions": "pass",
+    "schema_shape": "pass",
+    "secret_shapes": "pass",
+    "sequence": "pass"
+  },
+  "errors": [],
+  "event_count": 76,
+  "last_event_hash": "3dbc6a9fb4a3dcb0e53f5c0d242b0d66c1dc33b4072234b6cb3bbd8d41e5391f",
+  "ok": true,
+  "schema": "cabinet.evidence-verification/v1",
+  "trial_id": "DOGFOOD-001"
+}

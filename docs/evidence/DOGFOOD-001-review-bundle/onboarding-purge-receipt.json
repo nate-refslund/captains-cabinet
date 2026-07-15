@@ -1,0 +1,12 @@
+{
+  "action_id": "dogfood-action-10",
+  "correlation_id": "corr-DOGFOOD-001",
+  "note": "State, events, manifests, charter, and derived excerpts were removed. No source path or content is retained here.",
+  "purged_at": "2026-07-15T08:00:10Z",
+  "purged_evidence_trial_id_hash": "45d74d2ec4be777cc7e48e8d631067dc3a40369268066653443743c141f60ece",
+  "purged_journey_id_hash": "fbb0ed4968fa7cf4f3d2fe023cd115443ba32b914c784c9c607202700aa880ad",
+  "schema": "cabinet.onboarding-purge-receipt/v1",
+  "status": "completed",
+  "surface": "dashboard",
+  "trace_id": "dogfood-trace-10"
+}

@@ -29,6 +29,7 @@ const {
   mockOnboardingIntent,
   mockHandleOnboarding,
   mockHandleOnboardingCallback,
+  mockRecordEvidence,
 } = vi.hoisted(() => ({
   mockFeatureFlagCheck: vi.fn(),
   mockHandleMessage: vi.fn(),
@@ -37,6 +38,7 @@ const {
   mockOnboardingIntent: vi.fn(),
   mockHandleOnboarding: vi.fn(),
   mockHandleOnboardingCallback: vi.fn(),
+  mockRecordEvidence: vi.fn(),
 }))
 
 vi.mock('@/lib/provisioning/guard', () => ({
@@ -53,6 +55,10 @@ vi.mock('@/lib/onboarding/telegram', () => ({
   isOnboardingIntent: mockOnboardingIntent,
   handleTelegramOnboarding: mockHandleOnboarding,
   handleTelegramOnboardingCallback: mockHandleOnboardingCallback,
+}))
+
+vi.mock('@/lib/onboarding/bridge', () => ({
+  recordOnboardingEvidence: mockRecordEvidence,
 }))
 
 import { GET, POST } from './route'
@@ -131,6 +137,7 @@ beforeEach(() => {
   mockOnboardingIntent.mockReset().mockReturnValue(false)
   mockHandleOnboarding.mockReset().mockResolvedValue([])
   mockHandleOnboardingCallback.mockReset().mockResolvedValue([])
+  mockRecordEvidence.mockReset().mockResolvedValue({ ok: true })
   fetchMock.mockReset()
 
   // Feature flag enabled by default
@@ -373,6 +380,10 @@ describe('POST provisioning-webhook — canonical onboarding skin', () => {
     const payload = JSON.parse(fetchMock.mock.calls[0][1].body)
     expect(payload.parse_mode).toBeUndefined()
     expect(payload.reply_markup.inline_keyboard[0][0].callback_data).toBe('onboard:continue')
+    expect(mockRecordEvidence).toHaveBeenCalledWith(
+      expect.objectContaining({ phase: 'transport', status: 'succeeded' }),
+      'telegram'
+    )
   })
 
   it('never writes the Captain source path or purpose to process logs', async () => {
@@ -388,6 +399,13 @@ describe('POST provisioning-webhook — canonical onboarding skin', () => {
     expect(logs).not.toContain('/Users/ada/SecretProduct')
     expect(logs).not.toContain('Prepare acquisition')
     logSpy.mockRestore()
+  })
+
+  it('does not recreate an evidence trial while delivering a successful typed-purge reply', async () => {
+    mockOnboardingIntent.mockReturnValueOnce(true)
+    mockHandleOnboarding.mockResolvedValueOnce([{ text: 'Purged', plain: true }])
+    await POST(makeReq(makeUpdate({ text: '/onboard purge PURGE' })))
+    expect(mockRecordEvidence).not.toHaveBeenCalled()
   })
 
   it('resolves an authenticated onboarding callback and clears the spinner', async () => {

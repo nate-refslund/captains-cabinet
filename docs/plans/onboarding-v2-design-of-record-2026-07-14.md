@@ -1,7 +1,7 @@
 # Cabinet Onboarding v2 — one earned organization, three truthful faces
 
 **Status:** Captain-approved design of record, 2026-07-14. The First Window
-vertical slice in §7 is implemented. This governs the intelligence journey
+vertical slice and Evidence Recorder v1 integration are implemented. This governs the intelligence journey
 after a Cabinet exists. `world-onboarding-hatching-2026-07-09.md` remains the
 install/hatch authority.
 
@@ -37,7 +37,8 @@ and organization.
   and resolve the same cards through the shared service. The map/state engine and
   `/api/world/*` readers gain no independent onboarding write path.
 - **Cabinet Companion/app shell** installs, starts, updates, notifies, and routes.
-  It is not a fourth database. `Continue Orientation` opens `/onboarding`.
+  It is not a fourth database. `Continue Orientation` opens `/onboarding` with
+  fresh trace/correlation IDs so the handoff is reviewable without app-shell state.
 
 Surfaces have capability parity, not pixel parity. A Dashboard evidence list can
 be a Telegram receipt and a World parchment, but card id, revision, allowed
@@ -156,6 +157,16 @@ The first slice lives under compiler-unreadable `instance/onboarding/v2/`:
 process lock, atomic owner-only files, idempotent action ids, optimistic
 revisions, fixed limits, no network/subprocess, and no source writes.
 
+Every action is also joined into the universal Evidence Recorder v1 plane at
+`instance/evidence/v1/`. The onboarding event log remains the canonical journey
+state history; the recorder is the tamper-evident correlation/audit plane. It
+records intent → policy → execution → verification → receipt → outcome plus
+refusal/error/undo and bounded UI/transport/feedback observations. Raw source,
+credentials, absolute paths, and hidden reasoning are excluded. Officers see
+only the redacted read-only projection; Captain controls retention,
+diagnostics, export, and purge. See
+`docs/runbooks/evidence-recorder-v1.md`.
+
 | Face | Reader/action path | Shadow state allowed? |
 |---|---|---|
 | Dashboard | `GET/POST /api/onboarding` | No |
@@ -197,18 +208,23 @@ duplicate actions, and lifecycle controls. Secret leakage is a hard failure.
 - Journey cannot activate outcomes, officers, posture, workflows, grants,
   external communications, spend, or deploy.
 - Revoke, undo, purge, stale revision, and idempotency are tested.
+- Evidence continuity, hash/signature/anchor verification, crash recovery,
+  transport/UI errors, source non-mutation, secret exclusion, redacted export,
+  and signed typed-purge receipts are tested.
 
 ## 7. Sequence from here
 
 1. First Window vertical slice — implemented.
-2. Replace Formation IOUs with bounded discovery and real progress while
+2. Evidence Recorder v1 universal plane + DOGFOOD-001 — implemented and verified.
+3. Replace Formation IOUs with bounded discovery and real progress while
    retaining Charter validation and spend/call caps.
-3. Source Map and provisional memory classes.
-4. Strategy Mirror → Captain Direction ratification.
-5. Formation dossier and organization ratification.
-6. Per-lane commissioning and deliberate sovereign ceremony.
-7. First Campaign and apprenticeship governance.
-8. Commercial hardening: notarization, secure credentials, update/restore,
+4. Source Map and provisional memory classes.
+5. Strategy Mirror → Captain Direction ratification.
+6. Formation dossier and organization ratification.
+7. Per-lane commissioning and deliberate sovereign ceremony.
+8. First Campaign and apprenticeship governance.
+9. Commercial hardening: notarization, sandbox/Keychain evidence signing,
+   secure credentials, update/restore,
    managed hosts, and real usability trials.
 
 Do not build three onboarding applications. Build one commissioning engine and

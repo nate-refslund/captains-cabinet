@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { getMock, applyMock } = vi.hoisted(() => ({
+const { getMock, applyMock, recordMock } = vi.hoisted(() => ({
   getMock: vi.fn(),
   applyMock: vi.fn(),
+  recordMock: vi.fn(),
 }))
 
 vi.mock('./bridge', () => {
@@ -14,6 +15,7 @@ vi.mock('./bridge', () => {
   return {
     getOnboarding: getMock,
     applyOnboardingAction: applyMock,
+    recordOnboardingEvidence: recordMock,
     OnboardingBridgeError,
   }
 })
@@ -60,6 +62,7 @@ const WELCOME = {
 beforeEach(() => {
   getMock.mockReset().mockResolvedValue(WELCOME)
   applyMock.mockReset().mockResolvedValue(WELCOME)
+  recordMock.mockReset().mockResolvedValue({ ok: true })
 })
 
 describe('Telegram onboarding intent', () => {
@@ -79,6 +82,25 @@ describe('Telegram onboarding intent', () => {
       'onboard:documents:earn',
       'onboard:documents:sovereign',
     ])
+  })
+
+  it('renders a purged journey as terminal and offers no stale action', () => {
+    const purged = {
+      ...WELCOME,
+      state: { ...WELCOME.state, stage: 'purged' },
+      card: {
+        ...WELCOME.card,
+        stage: 'purged',
+        status: 'complete',
+        title: 'Onboarding data was deleted',
+        body: 'The Charter, history, and live evidence trial were removed.',
+        options: [],
+      },
+    }
+    const message = formatTelegramOnboarding(purged as never)
+    expect(message.buttons).toEqual([])
+    expect(message.text).toContain('No action from an older Dashboard')
+    expect(message.text).not.toContain('Choose a Documents option')
   })
 })
 
@@ -138,5 +160,14 @@ describe('Telegram standalone journey', () => {
       expect.objectContaining({ action: 'purge', confirmation: 'PURGE' }),
       'telegram'
     )
+  })
+
+  it('records usefulness feedback through the bounded observation seam', async () => {
+    const reply = await handleTelegramOnboardingCallback('onboard:feedback:useful', 'tg-feedback')
+    expect(recordMock).toHaveBeenCalledWith(
+      expect.objectContaining({ phase: 'feedback', status: 'useful' }),
+      'telegram'
+    )
+    expect(reply[0].text).toContain('Feedback recorded')
   })
 })

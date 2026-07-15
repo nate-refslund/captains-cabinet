@@ -110,6 +110,14 @@ read-only Charter before inspecting anything, then returns one deterministic
 finding with file-and-line evidence. Every surface resumes the same card;
 revoke, undo, and typed purge are built in.
 
+Every Captain also gets Evidence Recorder v1: a local, owner-controlled,
+hash-chained trail joining intent, policy, execution, verification, receipt,
+error, undo, and outcome across Dashboard, Telegram, World, and the app shell.
+Raw credentials/source contents/hidden reasoning are excluded; officers see a
+redacted read-only projection, while the Captain controls retention,
+diagnostics, checksummed export, and typed purge. Runbook and verified
+DOGFOOD-001 bundle: [`docs/runbooks/evidence-recorder-v1.md`](./docs/runbooks/evidence-recorder-v1.md).
+
 The low-floor → high-ceiling journey is in
 [`docs/plans/onboarding-v2-design-of-record-2026-07-14.md`](./docs/plans/onboarding-v2-design-of-record-2026-07-14.md).
 

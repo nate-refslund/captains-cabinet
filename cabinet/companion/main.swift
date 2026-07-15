@@ -952,7 +952,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Commercial app shell: route into the SAME Dashboard-owned journey.
     /// The companion stores no onboarding state and performs no onboarding act.
-    @objc private func openOrientationAction() { openLoopback(path: "/onboarding") }
+    @objc private func openOrientationAction() {
+        let trace = "trace-companion-" + UUID().uuidString.lowercased()
+        let correlation = "corr-companion-" + UUID().uuidString.lowercased()
+        openLoopback(path: "/onboarding?from=companion&trace_id=\(trace)&correlation_id=\(correlation)")
+    }
 
     /// /world is auth-gated — the first open bounces to /login; expected, documented.
     @objc private func openWorldAction() { openLoopback(path: "/world") }

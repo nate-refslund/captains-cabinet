@@ -36,12 +36,15 @@ import re
 import shutil
 import stat
 import sys
+import time
 import uuid
 from contextlib import contextmanager
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
+
+from framework.evidence import EvidenceError, EvidenceRecorder
 
 SCHEMA = "cabinet.onboarding-journey/v2"
 CARD_SCHEMA = "cabinet.onboarding-card/v1"
@@ -53,6 +56,7 @@ EVENT_SCHEMA = "cabinet.onboarding-event/v1"
 DATA_REL = "instance/onboarding/v2"
 LOCK_REL = "instance/onboarding/.onboarding-v2.lock"
 PURGE_RECEIPTS_REL = "instance/onboarding/purge-receipts"
+EVIDENCE_REL = "instance/evidence/v1"
 STATE_NAME = "state.json"
 EVENTS_NAME = "events.jsonl"
 CHARTER_NAME = "orientation-charter.json"
@@ -105,9 +109,10 @@ _LONG_TOKEN_RE = re.compile(r"[A-Za-z0-9+/=_-]{32,}")
 class JourneyError(RuntimeError):
     """A user-correctable, code-bearing onboarding refusal."""
 
-    def __init__(self, code: str, message: str):
+    def __init__(self, code: str, message: str, *, detail: dict[str, Any] | None = None):
         super().__init__(message)
         self.code = code
+        self.detail = detail or {}
 
 
 def cabinet_root() -> Path:
@@ -239,6 +244,7 @@ def _fresh_state(now: str | None = None, *, stage: str = "welcome") -> dict[str,
     return {
         "schema": SCHEMA,
         "journey_id": f"journey-{uuid.uuid4().hex[:12]}",
+        "evidence_trial_id": f"onboarding-{uuid.uuid4().hex}",
         "revision": 0,
         "stage": stage,
         "purpose": None,
@@ -278,6 +284,12 @@ def _load_state(root: Path, *, create: bool = True) -> dict[str, Any]:
         raise JourneyError("state_unreadable", "Onboarding state is unreadable; no action was taken.") from exc
     if not isinstance(value, dict) or value.get("schema") != SCHEMA:
         raise JourneyError("state_schema", "Onboarding state has an unsupported schema; no action was taken.")
+    if not isinstance(value.get("evidence_trial_id"), str):
+        # Additive v2 migration for deployments created before Evidence
+        # Recorder v1. No source data is copied into the evidence plane.
+        value["evidence_trial_id"] = f"onboarding-{uuid.uuid4().hex}"
+        if create:
+            _atomic_json(path, value)
     # Crash recovery: the event is fsync'd before the projection is replaced.
     # If power is lost between those steps, replay the newest committed `after`
     # projection and its non-raw manifest instead of repeating the action.
@@ -299,6 +311,10 @@ def _load_state(root: Path, *, create: bool = True) -> dict[str, Any]:
     revision = value.get("revision")
     if isinstance(revision, bool) or not isinstance(revision, int):
         raise JourneyError("state_schema", "Onboarding state has an unreadable revision; no action was taken.")
+    if not isinstance(value.get("evidence_trial_id"), str):
+        value["evidence_trial_id"] = f"onboarding-{uuid.uuid4().hex}"
+        if create:
+            _atomic_json(path, value)
     return value
 
 
@@ -339,6 +355,8 @@ def _finish_purge(
         "action_id": str(receipt["action_id"]),
         "action": "purge",
         "surface": str(receipt["surface"]),
+        "trace_id": str(receipt.get("trace_id") or ""),
+        "correlation_id": str(receipt.get("correlation_id") or ""),
         "ts": str(receipt["purged_at"]),
         "reversible": False,
         "purged_journey_id_hash": str(receipt["purged_journey_id_hash"]),
@@ -365,13 +383,54 @@ def _recover_pending_purge(root: Path) -> None:
             receipt = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        if isinstance(receipt, dict) and receipt.get("status") == "started":
+        if not isinstance(receipt, dict):
+            continue
+        if receipt.get("status") == "started":
             # A malformed intent receipt (missing the fields _finish_purge needs)
             # must not KeyError out of every snapshot()/act() that runs recovery.
             # Leave it in place; a fresh purge from current state still works.
             if not all(isinstance(receipt.get(key), str) for key in _PURGE_RECEIPT_KEYS):
                 continue
-            _finish_purge(root, path, receipt)
+            _, receipt = _finish_purge(root, path, receipt)
+        pending_trial = receipt.get("pending_evidence_trial_id")
+        if isinstance(pending_trial, str):
+            recorder = EvidenceRecorder(root / EVIDENCE_REL)
+            trial_path = recorder.root / "trials" / pending_trial
+            if trial_path.is_dir():
+                recorder.purge_trial(
+                    pending_trial,
+                    confirmation=f"PURGE {pending_trial}",
+                    actor="captain",
+                )
+            completed = {key: value for key, value in receipt.items() if key != "pending_evidence_trial_id"}
+            completed["purged_evidence_trial_id_hash"] = hashlib.sha256(
+                pending_trial.encode("utf-8")
+            ).hexdigest()
+            _atomic_json(path, completed)
+
+
+def _complete_onboarding_evidence_purge(
+    root: Path,
+    *,
+    action_id: str,
+    trial_id: str,
+) -> dict[str, Any] | None:
+    """Scrub the transient clear trial id from the durable purge receipt."""
+    receipts = root / PURGE_RECEIPTS_REL
+    for path in sorted(receipts.glob("purge-*.json")):
+        try:
+            receipt = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(receipt, dict) or receipt.get("action_id") != action_id:
+            continue
+        completed = {key: value for key, value in receipt.items() if key != "pending_evidence_trial_id"}
+        completed["purged_evidence_trial_id_hash"] = hashlib.sha256(
+            trial_id.encode("utf-8")
+        ).hexdigest()
+        _atomic_json(path, completed)
+        return completed
+    return None
 
 
 def _event_for_action(root: Path, action_id: str | None) -> dict[str, Any] | None:
@@ -399,7 +458,7 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
         "evidence": [],
         "options": [],
     }
-    if stage in {"welcome", "purged"}:
+    if stage == "welcome":
         common.update(
             kind="first_window",
             title="Let me earn my first responsibility",
@@ -410,6 +469,17 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
             options=[
                 {"action": "propose_window", "label": "Choose a folder"},
             ],
+        )
+    elif stage == "purged":
+        common.update(
+            kind="purged",
+            title="Onboarding data was deleted",
+            body=(
+                "The Charter, onboarding history, bounded manifest, derived excerpts, "
+                "and live evidence trial were removed. Stale actions cannot reopen them."
+            ),
+            status="complete",
+            options=[],
         )
     elif stage == "charter_pending":
         charter = state["charter"]
@@ -622,6 +692,17 @@ def _scan_source(source: Path, charter_hash: str) -> tuple[dict[str, Any], list[
     total = 0
     truncated = False
     visited = 0  # every directory entry EXAMINED, so a huge tree of skipped files still terminates
+    excluded: dict[str, int] = {
+        "hidden": 0,
+        "sensitive_name": 0,
+        "symlink": 0,
+        "unsupported_type": 0,
+        "non_regular": 0,
+        "too_large": 0,
+        "unreadable_or_raced": 0,
+        "binary": 0,
+    }
+    candidates = 0
     for current, dirnames, filenames in os.walk(source, topdown=True, followlinks=False):
         current_path = Path(current)
         kept_dirs = []
@@ -632,7 +713,14 @@ def _scan_source(source: Path, charter_hash: str) -> tuple[dict[str, Any], list[
                 break
             child = current_path / dirname
             rel = child.relative_to(source)
-            if dirname in SKIP_DIRS or _is_hidden_rel(rel) or _is_sensitive(rel) or child.is_symlink():
+            if dirname in SKIP_DIRS or _is_hidden_rel(rel):
+                excluded["hidden"] += 1
+                continue
+            if _is_sensitive(rel):
+                excluded["sensitive_name"] += 1
+                continue
+            if child.is_symlink():
+                excluded["symlink"] += 1
                 continue
             kept_dirs.append(dirname)
         dirnames[:] = kept_dirs
@@ -643,16 +731,29 @@ def _scan_source(source: Path, charter_hash: str) -> tuple[dict[str, Any], list[
                 break
             path = current_path / filename
             rel = path.relative_to(source)
-            if _is_hidden_rel(rel) or _is_sensitive(rel) or not _allowed_file(path):
+            candidates += 1
+            if _is_hidden_rel(rel):
+                excluded["hidden"] += 1
+                continue
+            if _is_sensitive(rel):
+                excluded["sensitive_name"] += 1
+                continue
+            if not _allowed_file(path):
+                excluded["unsupported_type"] += 1
                 continue
             try:
                 lst = path.lstat()
-                if stat.S_ISLNK(lst.st_mode) or not stat.S_ISREG(lst.st_mode):
+                if stat.S_ISLNK(lst.st_mode):
+                    excluded["symlink"] += 1
+                    continue
+                if not stat.S_ISREG(lst.st_mode):
+                    excluded["non_regular"] += 1
                     continue
                 resolved = path.resolve(strict=True)
                 resolved.relative_to(source)
                 if lst.st_size > MAX_FILE_BYTES or total + lst.st_size > MAX_TOTAL_BYTES:
                     truncated = True
+                    excluded["too_large"] += 1
                     continue
                 flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
                 fd = os.open(path, flags)
@@ -663,17 +764,21 @@ def _scan_source(source: Path, charter_hash: str) -> tuple[dict[str, Any], list[
                         or opened.st_size > MAX_FILE_BYTES
                         or (opened.st_dev, opened.st_ino) != (lst.st_dev, lst.st_ino)
                     ):
+                        excluded["unreadable_or_raced"] += 1
                         continue
                     with os.fdopen(fd, "rb", closefd=False) as fh:
                         raw = fh.read(MAX_FILE_BYTES + 1)
                 finally:
                     os.close(fd)
             except (OSError, RuntimeError, ValueError):
+                excluded["unreadable_or_raced"] += 1
                 continue
             if len(raw) > MAX_FILE_BYTES or total + len(raw) > MAX_TOTAL_BYTES:
                 truncated = True
+                excluded["too_large"] += 1
                 continue
             if b"\x00" in raw[:4096]:
+                excluded["binary"] += 1
                 continue
             text = raw.decode("utf-8", errors="replace")
             digest = hashlib.sha256(raw).hexdigest()
@@ -700,9 +805,38 @@ def _scan_source(source: Path, charter_hash: str) -> tuple[dict[str, Any], list[
         "file_count": len(manifest_files),
         "total_bytes": total,
         "truncated_by_limits": truncated,
+        "scan_statistics": {
+            "candidate_files": candidates,
+            "included_files": len(manifest_files),
+            "excluded": excluded,
+        },
     }
     manifest = {**manifest_payload, "manifest_hash": _hash(manifest_payload)}
     return manifest, entries
+
+
+def _source_integrity_fingerprint(source: Path) -> dict[str, Any]:
+    """Hash source entry metadata without persisting paths or contents."""
+    rows: list[tuple[str, int, int, int, int, int]] = []
+    for current, dirnames, filenames in os.walk(source, topdown=True, followlinks=False):
+        current_path = Path(current)
+        dirnames[:] = sorted(dirnames)
+        for name in sorted([*dirnames, *filenames]):
+            path = current_path / name
+            try:
+                meta = path.lstat()
+                rel = path.relative_to(source).as_posix()
+            except (OSError, ValueError):
+                continue
+            rows.append((
+                rel,
+                int(meta.st_mode),
+                int(meta.st_size),
+                int(meta.st_mtime_ns),
+                int(meta.st_dev),
+                int(meta.st_ino),
+            ))
+    return {"hash": _hash(rows), "entry_count": len(rows)}
 
 
 def _command_drift(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -915,6 +1049,8 @@ def _commit(
     action: str,
     action_id: str,
     surface: str,
+    trace_id: str,
+    correlation_id: str,
     now: str,
     reversible: bool = True,
     undo_of: str | None = None,
@@ -929,6 +1065,8 @@ def _commit(
         "action_id": action_id,
         "action": action,
         "surface": surface,
+        "trace_id": trace_id,
+        "correlation_id": correlation_id,
         "ts": now,
         "reversible": reversible,
         "undo_of": undo_of,
@@ -944,10 +1082,33 @@ def _commit(
     _append_event(root, row)
     _atomic_json(_state_path(root), after)
     _sync_artifacts(root, after, manifest=manifest)
-    return {"ok": True, "event": {k: row[k] for k in ("event_id", "action_id", "action", "surface", "ts")}, "state": after, "card": _card(after)}
+    result = {
+        "ok": True,
+        "event": {k: row[k] for k in (
+            "event_id", "action_id", "trace_id", "correlation_id", "action", "surface", "ts"
+        )},
+        "state": after,
+        "card": _card(after),
+    }
+    if manifest is not None:
+        result["evidence_summary"] = {
+            "manifest_hash": manifest.get("manifest_hash"),
+            "scan_statistics": manifest.get("scan_statistics"),
+            "source_integrity": manifest.get("source_integrity"),
+        }
+    return result
 
 
-def _purge(root: Path, state: dict[str, Any], request: dict[str, Any], *, surface: str, now: str) -> dict[str, Any]:
+def _purge(
+    root: Path,
+    state: dict[str, Any],
+    request: dict[str, Any],
+    *,
+    surface: str,
+    trace_id: str,
+    correlation_id: str,
+    now: str,
+) -> dict[str, Any]:
     if request.get("confirmation") != "PURGE":
         raise JourneyError("purge_confirmation", "Type PURGE exactly to delete onboarding data.")
     action_id = str(request.get("action_id") or f"purge-{uuid.uuid4().hex}")
@@ -956,7 +1117,10 @@ def _purge(root: Path, state: dict[str, Any], request: dict[str, Any], *, surfac
         "purged_at": now,
         "purged_journey_id_hash": hashlib.sha256(state["journey_id"].encode("utf-8")).hexdigest(),
         "surface": surface,
+        "trace_id": trace_id,
+        "correlation_id": correlation_id,
         "action_id": action_id,
+        "pending_evidence_trial_id": state["evidence_trial_id"],
         "status": "started",
         "note": "Purge intent recorded; completion is pending.",
     }
@@ -968,7 +1132,7 @@ def _purge(root: Path, state: dict[str, Any], request: dict[str, Any], *, surfac
     return {"ok": True, "purged": True, "state": fresh, "card": _card(fresh), "receipt": completed}
 
 
-def act(
+def _act_core(
     request: dict[str, Any],
     root: Path | str | None = None,
     *,
@@ -988,6 +1152,11 @@ def act(
     if len(action_id) > 128 or not re.fullmatch(r"[A-Za-z0-9._:-]+", action_id):
         raise JourneyError("action_id_invalid", "The onboarding action id is invalid.")
     ts = _now(now)
+    trace_id = str(request.get("trace_id") or f"trace-{uuid.uuid4().hex}")
+    correlation_id = str(request.get("correlation_id") or f"corr-{uuid.uuid4().hex}")
+    for name, value in (("trace_id", trace_id), ("correlation_id", correlation_id)):
+        if len(value) > 128 or not re.fullmatch(r"[A-Za-z0-9._:-]+", value):
+            raise JourneyError(f"{name}_invalid", f"The onboarding {name.replace('_', ' ')} is invalid.")
 
     with _locked(base):
         state = _load_state(base)
@@ -1015,7 +1184,10 @@ def act(
             if expected_revision != int(state["revision"]):
                 raise JourneyError("revision_conflict", "This card changed on another surface. I refreshed it; please use the current choice.")
         if action == "purge":
-            return _purge(base, state, request, surface=surface, now=ts)
+            return _purge(
+                base, state, request, surface=surface, trace_id=trace_id,
+                correlation_id=correlation_id, now=ts,
+            )
         if action == "propose_window":
             source = _validate_source(request.get("source"))
             purpose = _validate_purpose(request.get("purpose"))
@@ -1034,7 +1206,11 @@ def act(
                 charter=charter,
                 first_dividend=None,
             )
-            return _commit(base, state, after, action=action, action_id=action_id, surface=surface, now=ts)
+            return _commit(
+                base, state, after, action=action, action_id=action_id,
+                surface=surface, trace_id=trace_id,
+                correlation_id=correlation_id, now=ts,
+            )
         if action == "ratify_charter":
             if state["stage"] != "charter_pending" or not state.get("charter") or not state.get("source"):
                 raise JourneyError("charter_not_pending", "There is no current Charter waiting for approval.")
@@ -1045,7 +1221,28 @@ def act(
             source = _validate_source(state["source"]["root"])
             if str(source) != state["charter"]["payload"]["source"]["root"]:
                 raise JourneyError("source_changed", "The source path no longer matches the approved Charter.")
+            source_before = _source_integrity_fingerprint(source)
             manifest, entries = _scan_source(source, expected_hash)
+            source_after = _source_integrity_fingerprint(source)
+            integrity = {
+                "before_hash": source_before["hash"],
+                "after_hash": source_after["hash"],
+                "before_entry_count": source_before["entry_count"],
+                "after_entry_count": source_after["entry_count"],
+                "unchanged": source_before == source_after,
+            }
+            manifest_payload = {key: value for key, value in manifest.items() if key != "manifest_hash"}
+            manifest_payload["source_integrity"] = integrity
+            manifest = {**manifest_payload, "manifest_hash": _hash(manifest_payload)}
+            if not integrity["unchanged"]:
+                raise JourneyError(
+                    "source_changed_during_scan",
+                    "The folder changed while I was reading it, so I did not publish a potentially stale result.",
+                    detail={
+                        "source_integrity": integrity,
+                        "scan_statistics": manifest.get("scan_statistics"),
+                    },
+                )
             dividend = _first_dividend(manifest, entries, ts)
             after = deepcopy(state)
             after["stage"] = "dividend_ready"
@@ -1055,19 +1252,31 @@ def act(
             after["charter"]["status"] = "ratified"
             after["charter"]["ratified_at"] = ts
             after["first_dividend"] = dividend
-            return _commit(base, state, after, action=action, action_id=action_id, surface=surface, now=ts, manifest=manifest)
+            return _commit(
+                base, state, after, action=action, action_id=action_id,
+                surface=surface, trace_id=trace_id,
+                correlation_id=correlation_id, now=ts, manifest=manifest,
+            )
         if action == "continue":
             if state["stage"] not in {"dividend_ready", "paused", "orientation_offered"}:
                 raise JourneyError("continue_unavailable", "There is nothing ready to continue yet.")
             after = deepcopy(state)
             after["stage"] = "orientation_offered"
-            return _commit(base, state, after, action=action, action_id=action_id, surface=surface, now=ts)
+            return _commit(
+                base, state, after, action=action, action_id=action_id,
+                surface=surface, trace_id=trace_id,
+                correlation_id=correlation_id, now=ts,
+            )
         if action == "pause":
             if state["stage"] not in {"dividend_ready", "orientation_offered"}:
                 raise JourneyError("pause_unavailable", "This journey is not currently running.")
             after = deepcopy(state)
             after["stage"] = "paused"
-            return _commit(base, state, after, action=action, action_id=action_id, surface=surface, now=ts)
+            return _commit(
+                base, state, after, action=action, action_id=action_id,
+                surface=surface, trace_id=trace_id,
+                correlation_id=correlation_id, now=ts,
+            )
         if action == "revoke":
             if not state.get("source"):
                 raise JourneyError("nothing_to_revoke", "No folder access has been granted.")
@@ -1075,7 +1284,11 @@ def act(
             after["stage"] = "revoked"
             after["access"] = "revoked"
             after["source"]["status"] = "revoked"
-            return _commit(base, state, after, action=action, action_id=action_id, surface=surface, now=ts)
+            return _commit(
+                base, state, after, action=action, action_id=action_id,
+                surface=surface, trace_id=trace_id,
+                correlation_id=correlation_id, now=ts,
+            )
         if action == "undo":
             events = _read_events(base)
             undone = {str(e.get("undo_of")) for e in events if e.get("undo_of")}
@@ -1088,15 +1301,314 @@ def act(
             after = deepcopy(target["before"])
             return _commit(
                 base, state, after, action=action, action_id=action_id, surface=surface,
-                now=ts, reversible=False, undo_of=str(target["event_id"]),
+                trace_id=trace_id, correlation_id=correlation_id, now=ts,
+                reversible=False, undo_of=str(target["event_id"]),
                 manifest=target.get("before_manifest"),
             )
         raise JourneyError("action_unknown", f"Unknown onboarding action: {action}.")
 
 
+def _evidence_append(
+    recorder: EvidenceRecorder,
+    context: Any,
+    *,
+    phase: str,
+    status: str,
+    detail: dict[str, Any] | None = None,
+    links: list[str] | None = None,
+    duration_ms: float | None = None,
+) -> dict[str, Any]:
+    try:
+        return recorder.append(
+            context,
+            phase=phase,
+            status=status,
+            actor={"kind": "captain" if phase in {"intent", "feedback"} else "system", "id": "captain" if phase in {"intent", "feedback"} else "onboarding-core"},
+            component={"name": "onboarding-core", "version": "2+evidence-v1"},
+            detail=detail,
+            links=links,
+            duration_ms=duration_ms,
+        )
+    except EvidenceError as exc:
+        raise JourneyError(
+            "evidence_unavailable",
+            "The Cabinet could not preserve a trustworthy evidence receipt, so no further onboarding action was taken.",
+        ) from exc
+
+
+def act(
+    request: dict[str, Any],
+    root: Path | str | None = None,
+    *,
+    now: str | None = None,
+) -> dict[str, Any]:
+    """Record and apply one canonical action across every onboarding surface."""
+    base = Path(root) if root else cabinet_root()
+    with _locked(base):
+        state = _load_state(base)
+        trial_id = str(state["evidence_trial_id"])
+        if state.get("stage") == "purged":
+            raise JourneyError(
+                "onboarding_purged",
+                "Onboarding data was purged. No later action can reopen its evidence trial.",
+            )
+
+    recorder = EvidenceRecorder(base / EVIDENCE_REL)
+    trial_path = recorder.root / "trials" / trial_id
+    if trial_path.exists():
+        try:
+            recorder.recover_interrupted(trial_id)
+        except EvidenceError as exc:
+            raise JourneyError(
+                "evidence_integrity",
+                "The onboarding evidence chain needs review before another action can run.",
+            ) from exc
+
+    raw = request if isinstance(request, dict) else {}
+    requested_surface = str(raw.get("surface") or "unknown")
+    surface = requested_surface if requested_surface in {
+        "dashboard", "telegram", "world", "companion", "cli", "test", "unknown"
+    } else "unknown"
+
+    def valid_or_none(name: str) -> str | None:
+        value = raw.get(name)
+        if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", value):
+            return None
+        return value
+
+    context = recorder.trace(
+        trial_id,
+        surface=surface,
+        trace_id=valid_or_none("trace_id"),
+        action_id=valid_or_none("action_id"),
+        correlation_id=valid_or_none("correlation_id"),
+    )
+    normalized = dict(raw)
+    normalized.setdefault("trace_id", context.trace_id)
+    normalized.setdefault("correlation_id", context.correlation_id)
+    # Keep a malformed caller-supplied action id for the core's refusal, but
+    # use the recorder-minted id for evidence continuity.
+    if "action_id" not in normalized:
+        normalized["action_id"] = context.action_id
+    action = str(raw.get("action") or "invalid_request")[:80]
+    started = time.monotonic_ns()
+    _evidence_append(
+        recorder,
+        context,
+        phase="intent",
+        status="started",
+        detail={
+            "action": action,
+            "before_revision": state.get("revision"),
+            "requested_surface": requested_surface,
+            "request_shape_valid": isinstance(request, dict),
+        },
+    )
+    _evidence_append(
+        recorder,
+        context,
+        phase="policy",
+        status="proposed",
+        detail={
+            "action": action,
+            "reason_code": "validation_and_authority_check_started",
+            "authority_effect": "none",
+        },
+    )
+    try:
+        result = _act_core(normalized if isinstance(request, dict) else request, base, now=now)
+    except JourneyError as exc:
+        elapsed = round((time.monotonic_ns() - started) / 1_000_000, 3)
+        refusal_detail = {
+            "action": action,
+            "error_code": exc.code,
+            "reason_code": "core_refusal",
+            **exc.detail,
+        }
+        _evidence_append(
+            recorder, context, phase="policy", status="refused",
+            detail=refusal_detail, duration_ms=elapsed,
+        )
+        _evidence_append(
+            recorder, context, phase="outcome", status="refused",
+            detail={"action": action, "error_code": exc.code}, duration_ms=elapsed,
+        )
+        raise
+    except Exception as exc:
+        elapsed = round((time.monotonic_ns() - started) / 1_000_000, 3)
+        error_code = f"unexpected_{type(exc).__name__.lower()}"
+        _evidence_append(
+            recorder, context, phase="error", status="failed",
+            detail={"action": action, "error_code": error_code}, duration_ms=elapsed,
+        )
+        _evidence_append(
+            recorder, context, phase="outcome", status="failed",
+            detail={"action": action, "error_code": error_code}, duration_ms=elapsed,
+        )
+        raise
+
+    elapsed = round((time.monotonic_ns() - started) / 1_000_000, 3)
+    result_status = (
+        "duplicate" if result.get("duplicate") else
+        "paused" if action == "pause" else
+        "revoked" if action == "revoke" else
+        "undone" if action == "undo" else
+        "purged" if action == "purge" else
+        "succeeded"
+    )
+    summary = result.get("evidence_summary") if isinstance(result.get("evidence_summary"), dict) else {}
+    after_revision = (result.get("state") or {}).get("revision")
+    _evidence_append(
+        recorder, context, phase="policy", status="allowed",
+        detail={"action": action, "reason_code": "core_contract_satisfied"},
+        duration_ms=elapsed,
+    )
+    _evidence_append(
+        recorder, context, phase="execution", status=result_status,
+        detail={
+            "action": action,
+            "before_revision": state.get("revision"),
+            "after_revision": after_revision,
+            "manifest_hash": summary.get("manifest_hash"),
+            "excluded": (summary.get("scan_statistics") or {}).get("excluded") if isinstance(summary.get("scan_statistics"), dict) else None,
+            "file_count": (summary.get("scan_statistics") or {}).get("included_files") if isinstance(summary.get("scan_statistics"), dict) else None,
+        },
+        duration_ms=elapsed,
+    )
+    _evidence_append(
+        recorder, context, phase="verification", status="verified",
+        detail={
+            "action": action,
+            "revision": after_revision,
+            "source_integrity": summary.get("source_integrity") or {"unchanged": True, "scope": "no_source_write_capability"},
+            "verification": "canonical_state_and_receipt_present",
+        },
+        duration_ms=elapsed,
+    )
+    event_ref = result.get("event", {}).get("event_id") if isinstance(result.get("event"), dict) else result.get("event_id")
+    _evidence_append(
+        recorder, context, phase="receipt", status="succeeded",
+        detail={"action": action, "receipt_id": event_ref or "idempotent-replay"},
+        links=[f"onboarding-event:{event_ref}"] if event_ref else [],
+        duration_ms=elapsed,
+    )
+    _evidence_append(
+        recorder, context, phase="outcome", status=result_status,
+        detail={"action": action, "result_code": result_status, "revision": after_revision},
+        duration_ms=elapsed,
+    )
+    result["evidence"] = {
+        "trial_id": context.trial_id,
+        "trace_id": context.trace_id,
+        "action_id": context.action_id,
+        "correlation_id": context.correlation_id,
+    }
+    if action == "purge":
+        try:
+            result["evidence_purge"] = recorder.purge_trial(
+                context.trial_id,
+                confirmation=f"PURGE {context.trial_id}",
+                actor="captain",
+            )
+            completed = _complete_onboarding_evidence_purge(
+                base,
+                action_id=str(normalized.get("action_id") or context.action_id),
+                trial_id=context.trial_id,
+            )
+            if completed is not None:
+                result["receipt"] = completed
+        except EvidenceError as exc:
+            raise JourneyError(
+                "evidence_purge_incomplete",
+                "Onboarding data was removed, but its evidence trial still needs a Captain purge retry.",
+            ) from exc
+    return result
+
+
+def observe(
+    request: dict[str, Any],
+    root: Path | str | None = None,
+) -> dict[str, Any]:
+    """Record a bounded surface/transport/feedback observation.
+
+    This is not a generic event writer. It can write only the three product
+    observation phases and never accepts authority, hashes, timestamps,
+    component provenance beyond the fixed onboarding components, or raw
+    source content.
+    """
+    if not isinstance(request, dict):
+        raise JourneyError("observation_shape", "The onboarding observation must be an object.")
+    base = Path(root) if root else cabinet_root()
+    with _locked(base):
+        state = _load_state(base)
+        if state.get("stage") == "purged":
+            raise JourneyError(
+                "onboarding_purged",
+                "Onboarding data was purged. No later signal can reopen its evidence trial.",
+            )
+    trial_id = str(state["evidence_trial_id"])
+    surface = str(request.get("surface") or "unknown")
+    if surface not in {"dashboard", "telegram", "world", "companion", "api", "cli", "test", "unknown"}:
+        raise JourneyError("surface_invalid", "Unknown onboarding surface.")
+    phase = str(request.get("phase") or "")
+    if phase not in {"transport", "ui", "feedback"}:
+        raise JourneyError("observation_phase", "That onboarding observation phase is not available.")
+    allowed_status = {
+        "transport": {"started", "succeeded", "failed", "retried", "interrupted", "recovered"},
+        "ui": {"started", "succeeded", "failed", "interrupted", "recovered"},
+        "feedback": {"useful", "not_useful", "corrected"},
+    }
+    status = str(request.get("status") or "")
+    if status not in allowed_status[phase]:
+        raise JourneyError("observation_status", "That onboarding observation status is not available.")
+
+    def safe_id(name: str, prefix: str) -> str:
+        value = str(request.get(name) or f"{prefix}-{uuid.uuid4().hex}")
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", value):
+            raise JourneyError(f"{name}_invalid", f"The onboarding {name.replace('_', ' ')} is invalid.")
+        return value
+
+    recorder = EvidenceRecorder(base / EVIDENCE_REL)
+    context = recorder.trace(
+        trial_id,
+        surface=surface,
+        trace_id=safe_id("trace_id", "trace"),
+        action_id=safe_id("action_id", "observe"),
+        correlation_id=safe_id("correlation_id", "corr"),
+    )
+    raw_detail = request.get("detail") if isinstance(request.get("detail"), dict) else {}
+    allowed_keys = {
+        "action", "error_code", "reason_code", "result_code", "transport",
+        "retry_count", "http_status", "feedback_rating", "feedback_category",
+        "comment", "revision", "rendered_stage", "app_shell_handoff",
+    }
+    detail = {key: raw_detail[key] for key in raw_detail if key in allowed_keys}
+    try:
+        event = recorder.append(
+            context,
+            phase=phase,
+            status=status,
+            actor={"kind": "captain" if phase == "feedback" else "surface", "id": "captain" if phase == "feedback" else surface},
+            component={"name": f"onboarding-{surface}", "version": "1"},
+            detail=detail,
+        )
+    except EvidenceError as exc:
+        raise JourneyError("evidence_unavailable", "The onboarding observation could not be preserved.") from exc
+    return {
+        "ok": True,
+        "evidence": {
+            "trial_id": trial_id,
+            "event_id": event["event_id"],
+            "trace_id": context.trace_id,
+            "action_id": context.action_id,
+            "correlation_id": context.correlation_id,
+        },
+    }
+
+
 def _cli(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="framework.onboarding.journey")
-    parser.add_argument("command", choices=["snapshot", "act"])
+    parser.add_argument("command", choices=["snapshot", "act", "observe"])
     parser.add_argument("--request", help="JSON action object; omit to read stdin")
     args = parser.parse_args(argv)
     try:
@@ -1108,7 +1620,7 @@ def _cli(argv: list[str] | None = None) -> int:
                 request = json.loads(raw)
             except ValueError as exc:
                 raise JourneyError("request_json", "The onboarding action was not valid JSON.") from exc
-            result = act(request)
+            result = act(request) if args.command == "act" else observe(request)
         print(json.dumps(result, ensure_ascii=False))
         return 0
     except JourneyError as exc:
