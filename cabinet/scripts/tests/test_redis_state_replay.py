@@ -6,6 +6,7 @@ import hashlib
 import importlib.util
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -91,6 +92,71 @@ class IsolatedRedis:
             env=env,
         )
 
+    def persistence_info(self) -> dict[str, str]:
+        result: dict[str, str] = {}
+        for line in self.cli("--raw", "INFO", "persistence").stdout.splitlines():
+            if ":" not in line:
+                continue
+            key, value = line.split(":", 1)
+            result[key] = value
+        return result
+
+    def wait_for_incremental_aof_drain(self) -> None:
+        """Wait for a quiescent isolated AOF without rewriting or compacting it."""
+        assert self.appendonly
+        for _ in range(400):
+            info = self.persistence_info()
+            if (
+                info.get("aof_rewrite_in_progress") == "0"
+                and info.get("aof_buffer_length") == "0"
+                and info.get("aof_pending_bio_fsync") == "0"
+                and info.get("aof_last_write_status") == "ok"
+            ):
+                return
+            time.sleep(0.05)
+        raise AssertionError("incremental AOF did not reach a drained state")
+
+    def replay_raw_incremental_aof(self) -> None:
+        """Restart from the incremental AOF without running BGREWRITEAOF."""
+        assert self.appendonly
+        self.wait_for_incremental_aof_drain()
+        appendonlydir = self.data / "appendonlydir"
+        assert list(appendonlydir.glob("*.incr.aof")), "incremental AOF is absent"
+        manifests = list(appendonlydir.glob("*.manifest"))
+        assert len(manifests) == 1, "multipart AOF manifest is absent or ambiguous"
+        manifest_before = manifests[0].read_bytes()
+        self.stop()
+        self.start()
+        assert manifests[0].read_bytes() == manifest_before
+
+    def stream_repair_manifest(self, path: Path, *, databases: int = 16) -> None:
+        command = (
+            '. "$1"; '
+            'redis_stream_repair_manifest "$2" "$3" redis-cli -s "$4"'
+        )
+        subprocess.run(
+            [
+                "/bin/bash", "-c", command, "redis-state-test",
+                str(SHELL_LIB), str(path), str(databases), str(self.socket),
+            ],
+            check=True,
+            timeout=60,
+        )
+
+    def apply_stream_repair(self, path: Path) -> None:
+        command = (
+            '. "$1"; '
+            'redis_stream_repair_apply "$2" redis-cli -s "$3"'
+        )
+        subprocess.run(
+            [
+                "/bin/bash", "-c", command, "redis-state-test",
+                str(SHELL_LIB), str(path), str(self.socket),
+            ],
+            check=True,
+            timeout=60,
+        )
+
 
 @pytest.fixture
 def redis_factory(tmp_path: Path):
@@ -134,6 +200,23 @@ def _populate_complex(redis: IsolatedRedis) -> None:
 
 def _assert_equal(before: Path, after: Path) -> None:
     redis_state.compare(redis_state.parse(before), redis_state.parse(after))
+
+
+def _consumer_names(redis: IsolatedRedis, stream: str, group: str) -> set[str]:
+    lines = redis.cli(
+        "--raw", "XINFO", "CONSUMERS", stream, group
+    ).stdout.splitlines()
+    return {lines[index + 1] for index, line in enumerate(lines[:-1]) if line == "name"}
+
+
+def _pending_delivery_count(
+    redis: IsolatedRedis, stream: str, group: str, entry_id: str
+) -> int:
+    lines = redis.cli(
+        "--raw", "XPENDING", stream, group, entry_id, entry_id, "1"
+    ).stdout.splitlines()
+    assert len(lines) == 4 and lines[0] == entry_id
+    return int(lines[3])
 
 
 def _finish_persistence(redis: IsolatedRedis) -> None:
@@ -238,6 +321,136 @@ def test_v3_logical_digest_survives_complex_aof_rewrite_and_replay(
     after = tmp_path / "aof-after.state"
     redis.fingerprint(after)
     _assert_equal(before, after)
+
+
+def test_stream_repair_restores_raw_aof_omissions_then_proves_converted_rdb(
+    tmp_path: Path, redis_factory
+):
+    """Repair native incremental-AOF Stream omissions, then prove the RDB."""
+    redis = redis_factory(appendonly=True)
+    stream = "raw-key-secret"
+    group = "raw-group-secret"
+    owner = "raw-owner-secret"
+    empty_consumer = "raw-empty-secret"
+    entry_id = redis.cli(
+        "--raw", "XADD", stream, "*", "field", "value"
+    ).stdout.strip()
+    redis.cli("XGROUP", "CREATE", stream, group, "0")
+    redis.cli(
+        "XREADGROUP", "GROUP", group, owner, "COUNT", "1",
+        "STREAMS", stream, ">",
+    )
+    claimed = redis.cli(
+        "--raw", "XAUTOCLAIM", stream, group, empty_consumer,
+        "999999999", "0", "COUNT", "1",
+    ).stdout.splitlines()
+    assert claimed[0] == "0-0" and entry_id not in claimed[1:]
+    assert _consumer_names(redis, stream, group) == {empty_consumer, owner}
+    redis.cli(
+        "XREADGROUP", "GROUP", group, owner, "COUNT", "1",
+        "STREAMS", stream, "0",
+    )
+    assert _pending_delivery_count(redis, stream, group, entry_id) == 2
+
+    before = tmp_path / "xautoclaim-before.state"
+    repair_manifest = tmp_path / "stream-repair.manifest"
+    redis.fingerprint(before)
+    redis.stream_repair_manifest(repair_manifest)
+    manifest_text = repair_manifest.read_text(encoding="utf-8")
+    assert stat.S_IMODE(repair_manifest.stat().st_mode) == 0o600
+    assert stream not in manifest_text
+    assert group not in manifest_text
+    assert empty_consumer not in manifest_text
+    assert owner not in manifest_text
+
+    redis.replay_raw_incremental_aof()
+    after = tmp_path / "xautoclaim-after.state"
+    redis.fingerprint(after)
+
+    assert _consumer_names(redis, stream, group) == {owner}
+    assert _pending_delivery_count(redis, stream, group, entry_id) == 1
+    with pytest.raises(redis_state.FingerprintError, match="durable state differs"):
+        _assert_equal(before, after)
+
+    redis.apply_stream_repair(repair_manifest)
+    repaired = tmp_path / "xautoclaim-repaired.state"
+    redis.fingerprint(repaired)
+    assert _consumer_names(redis, stream, group) == {empty_consumer, owner}
+    assert _pending_delivery_count(redis, stream, group, entry_id) == 2
+    _assert_equal(before, repaired)
+
+    redis.cli("SAVE")
+    converted = redis_factory(appendonly=False)
+    converted.stop()
+    shutil.copy2(redis.data / "dump.rdb", converted.data / "dump.rdb")
+    converted.start()
+    converted_state = tmp_path / "converted-rdb.state"
+    converted.fingerprint(converted_state)
+    assert _consumer_names(converted, stream, group) == {empty_consumer, owner}
+    assert _pending_delivery_count(converted, stream, group, entry_id) == 2
+    _assert_equal(before, converted_state)
+
+
+def test_v3_exact_proof_detects_xautoclaim_empty_consumer_lost_by_raw_aof_replay(
+    tmp_path: Path, redis_factory
+):
+    redis = redis_factory(appendonly=True)
+    entry_id = redis.cli(
+        "--raw", "XADD", "stream", "*", "field", "value"
+    ).stdout.strip()
+    redis.cli("XGROUP", "CREATE", "stream", "workers", "0")
+    redis.cli(
+        "XREADGROUP", "GROUP", "workers", "owner", "COUNT", "1",
+        "STREAMS", "stream", ">",
+    )
+    redis.cli(
+        "XAUTOCLAIM", "stream", "workers", "empty-consumer",
+        "999999999", "0", "COUNT", "1",
+    )
+    assert _consumer_names(redis, "stream", "workers") == {
+        "empty-consumer",
+        "owner",
+    }
+    assert _pending_delivery_count(redis, "stream", "workers", entry_id) == 1
+
+    before = tmp_path / "empty-consumer-before.state"
+    redis.fingerprint(before)
+    redis.replay_raw_incremental_aof()
+    after = tmp_path / "empty-consumer-after.state"
+    redis.fingerprint(after)
+
+    assert _consumer_names(redis, "stream", "workers") == {"owner"}
+    assert _pending_delivery_count(redis, "stream", "workers", entry_id) == 1
+    with pytest.raises(redis_state.FingerprintError, match="durable state differs"):
+        _assert_equal(before, after)
+
+
+def test_v3_exact_proof_detects_delivery_count_changed_by_raw_aof_replay(
+    tmp_path: Path, redis_factory
+):
+    """Native incremental AOF replay does not preserve a history reread count."""
+    redis = redis_factory(appendonly=True)
+    entry_id = redis.cli("--raw", "XADD", "stream", "*", "field", "value").stdout.strip()
+    redis.cli("XGROUP", "CREATE", "stream", "workers", "0")
+    redis.cli(
+        "XREADGROUP", "GROUP", "workers", "owner", "COUNT", "1",
+        "STREAMS", "stream", ">",
+    )
+    redis.cli(
+        "XREADGROUP", "GROUP", "workers", "owner", "COUNT", "1",
+        "STREAMS", "stream", "0",
+    )
+    assert _pending_delivery_count(redis, "stream", "workers", entry_id) == 2
+
+    before = tmp_path / "delivery-count-before.state"
+    redis.fingerprint(before)
+    redis.replay_raw_incremental_aof()
+    after = tmp_path / "delivery-count-after.state"
+    redis.fingerprint(after)
+
+    assert _pending_delivery_count(redis, "stream", "workers", entry_id) == 1
+    with pytest.raises(redis_state.FingerprintError, match="durable state differs"):
+        _assert_equal(before, after)
 
 
 @pytest.mark.parametrize("appendonly", [False, True], ids=["rdb", "aof"])

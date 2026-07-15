@@ -251,6 +251,79 @@ for _, record in ipairs(volatile) do out[#out + 1] = record end
 return out
 LUA
 
+# AOF replay can omit zero-pending consumers and can rebase PEL delivery
+# counts even though those fields are part of the exact v3 recovery proof.
+# Capture just that repairable state as hex so no raw stream, group, consumer,
+# or PEL identifier crosses the Redis protocol boundary.
+REDIS_STREAM_REPAIR_V1_LUA=""
+IFS= read -r -d '' REDIS_STREAM_REPAIR_V1_LUA <<'LUA' || true
+-- cabinet-redis-stream-repair-v1
+local function map_get(values, wanted)
+  for i = 1, #values, 2 do
+    if values[i] == wanted then return values[i + 1] end
+  end
+  return nil
+end
+
+local function hex(value)
+  return (string.gsub(value, ".", function(byte)
+    return string.format("%02x", string.byte(byte))
+  end))
+end
+
+local database = ARGV[1]
+if not string.match(database, "^%d+$") then
+  return redis.error_reply("invalid repair database")
+end
+local keys = redis.call("KEYS", "*")
+table.sort(keys)
+local out = {}
+for _, key in ipairs(keys) do
+  local type_reply = redis.call("TYPE", key)
+  local kind = type_reply.ok or type_reply
+  if kind == "stream" then
+    local groups = redis.call("XINFO", "GROUPS", key)
+    table.sort(groups, function(a, b) return map_get(a, "name") < map_get(b, "name") end)
+    for _, group in ipairs(groups) do
+      local group_name = map_get(group, "name")
+      local pending_count = tonumber(map_get(group, "pending"))
+      if group_name == nil or pending_count == nil or pending_count < 0 then
+        return redis.error_reply("incomplete stream group repair capture")
+      end
+      local consumers = redis.call("XINFO", "CONSUMERS", key, group_name)
+      table.sort(consumers, function(a, b) return map_get(a, "name") < map_get(b, "name") end)
+      for _, consumer in ipairs(consumers) do
+        local consumer_name = map_get(consumer, "name")
+        if consumer_name == nil then
+          return redis.error_reply("incomplete stream consumer repair capture")
+        end
+        out[#out + 1] = table.concat({
+          "CONSUMER", database, hex(key), hex(group_name), hex(consumer_name)
+        }, " ")
+      end
+      if pending_count > 0 then
+        local pending = redis.call("XPENDING", key, group_name, "-", "+", pending_count)
+        if #pending ~= pending_count then
+          return redis.error_reply("incomplete stream PEL repair capture")
+        end
+        for _, item in ipairs(pending) do
+          if item[1] == nil or item[2] == nil or tonumber(item[4]) == nil then
+            return redis.error_reply("incomplete stream PEL repair entry")
+          end
+          out[#out + 1] = table.concat({
+            "PEL", database, hex(key), hex(group_name), hex(item[1]),
+            hex(item[2]), string.format("%.0f", tonumber(item[4]))
+          }, " ")
+        end
+      end
+    end
+  elseif kind == "none" then
+    return redis.error_reply("key expired during stream repair capture")
+  end
+end
+return out
+LUA
+
 # The v3 SHA-256 implementation is deliberately self-contained so raw Redis
 # keys and values never cross the protocol boundary. That also makes each
 # EVAL_RO synchronous and server-blocking while it hashes one database. Large
@@ -348,4 +421,84 @@ redis_state_format() {
 
 expected_redis_databases() {
   python3.12 "$REDIS_STATE_TOOL" databases "$1"
+}
+
+# Usage: redis_stream_repair_manifest OUTPUT DATABASES redis-cli [options...]
+# The caller owns the write pause that surrounds this capture and the v3
+# fingerprint. DATABASES is explicit so a restored server cannot silently
+# shrink the inspection range through a changed Redis configuration.
+redis_stream_repair_manifest() (
+  local output="$1" databases="$2"
+  shift 2
+  local -a client=("$@")
+  local db result tmp
+  [ "${#client[@]}" -gt 0 ] || return 1
+  case "$databases" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$databases" -gt 0 ] && [ "$databases" -le 1024 ] || return 1
+
+  umask 077
+  tmp=$(mktemp "${output}.tmp.XXXXXX") || return 1
+  chmod 600 "$tmp" || { rm -f "$tmp"; return 1; }
+  {
+    printf 'FORMAT redis-stream-repair-v1\n'
+    printf 'DATABASES %s\n' "$databases"
+  } > "$tmp" || { rm -f "$tmp"; return 1; }
+
+  db=0
+  while [ "$db" -lt "$databases" ]; do
+    if ! redis_state_deadline_ok; then rm -f "$tmp"; return 1; fi
+    result=$("${client[@]}" -n "$db" --raw EVAL_RO "$REDIS_STREAM_REPAIR_V1_LUA" 0 "$db" 2>/dev/null) || {
+      rm -f "$tmp"
+      return 1
+    }
+    if [ -n "$result" ]; then
+      printf '%s\n' "$result" >> "$tmp" || { rm -f "$tmp"; return 1; }
+    fi
+    if ! redis_state_deadline_ok; then rm -f "$tmp"; return 1; fi
+    db=$((db + 1))
+  done
+  if ! python3.12 "$REDIS_STATE_TOOL" stream-repair-parse "$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  chmod 600 "$tmp" || { rm -f "$tmp"; return 1; }
+  mv "$tmp" "$output"
+)
+
+# Usage: redis_stream_repair_apply MANIFEST redis-cli [options...]
+# Apply is idempotent. It restores missing consumers and exact PEL ownership /
+# delivery counts, then re-captures the sidecar and refuses success unless the
+# repairable state is now byte-for-byte equivalent.
+redis_stream_repair_apply() (
+  local manifest="$1"
+  shift
+  local -a client=("$@")
+  local databases observed
+  [ "${#client[@]}" -gt 0 ] || return 1
+  databases=$(python3.12 "$REDIS_STATE_TOOL" stream-repair-databases "$manifest") || return 1
+  case "$databases" in ''|*[!0-9]*) return 1 ;; esac
+  if ! python3.12 "$REDIS_STATE_TOOL" stream-repair-apply "$manifest" -- "${client[@]}"; then
+    return 1
+  fi
+  umask 077
+  # Keep the recapture beside the protected caller-owned manifest so an abrupt
+  # process exit cannot strand reversible Redis identifiers in a shared temp
+  # directory. Backup staging is mode 0700 and its EXIT cleanup removes it.
+  observed=$(mktemp "${manifest}.observed.XXXXXX") || return 1
+  if ! redis_stream_repair_manifest "$observed" "$databases" "${client[@]}"; then
+    rm -f "$observed"
+    return 1
+  fi
+  if ! python3.12 "$REDIS_STATE_TOOL" stream-repair-compare "$manifest" "$observed"; then
+    python3.12 "$REDIS_STATE_TOOL" stream-repair-diff "$manifest" "$observed" >&2 || true
+    rm -f "$observed"
+    return 1
+  fi
+  rm -f "$observed"
+)
+
+# Offline, privacy-safe mismatch attribution. Output contains only database,
+# value type, changed component, and SHA-256 of the raw stream key.
+redis_stream_repair_diff() {
+  python3.12 "$REDIS_STATE_TOOL" stream-repair-diff "$1" "$2"
 }
