@@ -60,6 +60,17 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
+  // The Telegram webhook is a machine endpoint: Telegram's servers present no
+  // dashboard session cookie, so the cookie gate below would 307 every update
+  // to /login and the webhook would be dead in production. Let this ONE exact
+  // path through; its route handler enforces its own fail-closed
+  // X-Telegram-Bot-Api-Secret-Token check. Exact === match (not a prefix) so no
+  // other /api/telegram/* path is un-gated — a conscious auth adjudication,
+  // pinned by cabinet/dashboard/src/middleware.test.ts.
+  if (request.nextUrl.pathname === '/api/telegram/provisioning-webhook') {
+    return NextResponse.next()
+  }
+
   // Fail-closed secret resolution (mirrors lib/auth.resolveSecret +
   // verdict.ts doorSecret): in production an unset or 'changeme' password
   // yields NO usable secret, so no cookie can be valid and every gated route

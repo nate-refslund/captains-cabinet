@@ -30,6 +30,7 @@ import argparse
 import fcntl
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -68,6 +69,11 @@ ORIENTATION_MODE = "observe_only"
 MAX_FILES = 200
 MAX_TOTAL_BYTES = 2 * 1024 * 1024
 MAX_FILE_BYTES = 128 * 1024
+# Bound the total directory entries EXAMINED (not just accepted) during a scan
+# so a folder with a few eligible files buried in a huge tree of skipped ones
+# cannot hold the exclusive onboarding lock indefinitely and starve every
+# surface's snapshot/act. 50k entries is far above any real First Window.
+MAX_SCAN_ENTRIES = 50_000
 ALLOWED_SUFFIXES = {
     ".md", ".mdx", ".txt", ".rst", ".json", ".yml", ".yaml", ".toml",
     ".csv", ".tsv", ".py", ".ts", ".tsx", ".js", ".jsx", ".swift",
@@ -92,6 +98,8 @@ SECRET_LINE_RES = (
     re.compile(r"\b(?:sk-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[A-Z0-9]{16})\b"),
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
 )
+# A long run of key/token-shaped characters, entropy-tested in _redact_excerpt.
+_LONG_TOKEN_RE = re.compile(r"[A-Za-z0-9+/=_-]{32,}")
 
 
 class JourneyError(RuntimeError):
@@ -245,6 +253,17 @@ def _fresh_state(now: str | None = None, *, stage: str = "welcome") -> dict[str,
     }
 
 
+def _as_revision(value: Any) -> int:
+    """Coerce a persisted revision to int; an unreadable value sorts as -1 so it
+    can never win the replay comparison (and never crashes it)."""
+    if isinstance(value, bool):
+        return -1
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return -1
+
+
 def _load_state(root: Path, *, create: bool = True) -> dict[str, Any]:
     _recover_pending_purge(root)
     path = _state_path(root)
@@ -262,11 +281,13 @@ def _load_state(root: Path, *, create: bool = True) -> dict[str, Any]:
     # Crash recovery: the event is fsync'd before the projection is replaced.
     # If power is lost between those steps, replay the newest committed `after`
     # projection and its non-raw manifest instead of repeating the action.
+    # Revisions are coerced defensively so a single semi-valid persisted row
+    # yields a clean refusal below rather than a raw ValueError from every call.
     latest = next(
         (
             row for row in reversed(_read_events(root))
             if isinstance(row.get("after"), dict)
-            and int(row["after"].get("revision", -1)) > int(value.get("revision", -1))
+            and _as_revision(row["after"].get("revision")) > _as_revision(value.get("revision"))
         ),
         None,
     )
@@ -275,6 +296,9 @@ def _load_state(root: Path, *, create: bool = True) -> dict[str, Any]:
         if create:
             _atomic_json(path, value)
             _sync_artifacts(root, value, manifest=latest.get("manifest"))
+    revision = value.get("revision")
+    if isinstance(revision, bool) or not isinstance(revision, int):
+        raise JourneyError("state_schema", "Onboarding state has an unreadable revision; no action was taken.")
     return value
 
 
@@ -291,6 +315,11 @@ def _read_events(root: Path) -> list[dict[str, Any]]:
         if isinstance(row, dict):
             rows.append(row)
     return rows
+
+
+# The fields _finish_purge dereferences on a receipt; a started receipt missing
+# any of them cannot be safely completed (see _recover_pending_purge).
+_PURGE_RECEIPT_KEYS = ("purged_at", "action_id", "surface", "purged_journey_id_hash")
 
 
 def _finish_purge(
@@ -337,6 +366,11 @@ def _recover_pending_purge(root: Path) -> None:
         except (OSError, ValueError):
             continue
         if isinstance(receipt, dict) and receipt.get("status") == "started":
+            # A malformed intent receipt (missing the fields _finish_purge needs)
+            # must not KeyError out of every snapshot()/act() that runs recovery.
+            # Leave it in place; a fresh purge from current state still works.
+            if not all(isinstance(receipt.get(key), str) for key in _PURGE_RECEIPT_KEYS):
+                continue
             _finish_purge(root, path, receipt)
 
 
@@ -441,7 +475,7 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
         common.update(
             kind="revoked",
             title="Folder access is revoked",
-            body="The Cabinet will not read this source again. Derived onboarding artifacts remain until you undo or purge them.",
+            body="The Cabinet will not read this source again without a new First Window you approve. Derived onboarding artifacts remain until you undo or purge them.",
             options=[
                 {"action": "undo", "label": "Restore the previous state"},
                 {"action": "propose_window", "label": "Choose another folder"},
@@ -552,10 +586,25 @@ def _allowed_file(path: Path) -> bool:
     return path.suffix.lower() in ALLOWED_SUFFIXES or path.name.lower() in ALLOWED_BASENAMES
 
 
+def _shannon_entropy(token: str) -> float:
+    counts: dict[str, int] = {}
+    for ch in token:
+        counts[ch] = counts.get(ch, 0) + 1
+    n = len(token)
+    return -sum((c / n) * math.log2(c / n) for c in counts.values())
+
+
 def _redact_excerpt(text: str) -> str:
     clean = " ".join(text.strip().split())[:300]
     if any(rx.search(clean) for rx in SECRET_LINE_RES):
         return "[sensitive value redacted]"
+    # Catch an unlabeled, high-entropy secret (API key/token) sitting on a cited
+    # line even when no secret keyword or assignment shape flags it: a long,
+    # mixed-class, high-entropy run redacts rather than leaking verbatim into the
+    # first-dividend card. Long prose/paths stay (low entropy or no digits).
+    for token in _LONG_TOKEN_RE.findall(clean):
+        if any(c.isdigit() for c in token) and any(c.isalpha() for c in token) and _shannon_entropy(token) >= 3.5:
+            return "[sensitive value redacted]"
     return clean
 
 
@@ -572,10 +621,15 @@ def _scan_source(source: Path, charter_hash: str) -> tuple[dict[str, Any], list[
     entries: list[dict[str, Any]] = []
     total = 0
     truncated = False
+    visited = 0  # every directory entry EXAMINED, so a huge tree of skipped files still terminates
     for current, dirnames, filenames in os.walk(source, topdown=True, followlinks=False):
         current_path = Path(current)
         kept_dirs = []
         for dirname in sorted(dirnames):
+            visited += 1
+            if visited >= MAX_SCAN_ENTRIES:
+                truncated = True
+                break
             child = current_path / dirname
             rel = child.relative_to(source)
             if dirname in SKIP_DIRS or _is_hidden_rel(rel) or _is_sensitive(rel) or child.is_symlink():
@@ -583,7 +637,8 @@ def _scan_source(source: Path, charter_hash: str) -> tuple[dict[str, Any], list[
             kept_dirs.append(dirname)
         dirnames[:] = kept_dirs
         for filename in sorted(filenames):
-            if len(entries) >= MAX_FILES or total >= MAX_TOTAL_BYTES:
+            visited += 1
+            if len(entries) >= MAX_FILES or total >= MAX_TOTAL_BYTES or visited >= MAX_SCAN_ENTRIES:
                 truncated = True
                 break
             path = current_path / filename
@@ -630,7 +685,7 @@ def _scan_source(source: Path, charter_hash: str) -> tuple[dict[str, Any], list[
                 "lines": text.splitlines(),
             })
             total += len(raw)
-        if len(entries) >= MAX_FILES or total >= MAX_TOTAL_BYTES:
+        if len(entries) >= MAX_FILES or total >= MAX_TOTAL_BYTES or visited >= MAX_SCAN_ENTRIES:
             truncated = True
             break
     manifest_files = [
@@ -652,7 +707,13 @@ def _scan_source(source: Path, charter_hash: str) -> tuple[dict[str, Any], list[
 
 def _command_drift(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     findings: list[dict[str, Any]] = []
-    packages: list[tuple[dict[str, Any], set[str], str]] = []
+    # Union of the declared scripts of EVERY package.json inside the First
+    # Window. A documented command is drift only when NO package in the window
+    # declares it. Checking a single package.json (e.g. packages[0]) raised
+    # confident, citation-backed false "broken command" claims in any workspace
+    # or monorepo where the script lives in a sibling package.
+    declared: set[str] = set()
+    package_count = 0
     for entry in entries:
         if Path(entry["path"]).name != "package.json":
             continue
@@ -662,11 +723,15 @@ def _command_drift(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
             continue
         scripts = obj.get("scripts", {}) if isinstance(obj, dict) else {}
         if isinstance(scripts, dict):
-            packages.append((entry, {str(k) for k in scripts}, str(Path(entry["path"]).parent)))
-    if not packages:
+            package_count += 1
+            declared |= {str(k) for k in scripts}
+    if package_count == 0:
         return findings
+    # The script name must START with an alphanumeric character so an option
+    # flag ("yarn --version") is never captured and reported as a missing
+    # script — a leading hyphen was previously accepted by the character class.
     command_re = re.compile(
-        r"\b(?:npm\s+run|pnpm(?:\s+run)?|yarn)\s+([a-zA-Z0-9:_-]+)\b"
+        r"\b(?:npm\s+run|pnpm(?:\s+run)?|yarn)\s+([A-Za-z0-9][A-Za-z0-9:_-]*)\b"
     )
     builtin = {"add", "audit", "exec", "help", "init", "install", "remove", "run", "update"}
     for entry in entries:
@@ -675,20 +740,19 @@ def _command_drift(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
         for line_no, line in enumerate(entry["lines"], start=1):
             for match in command_re.finditer(line):
                 command = match.group(1)
-                if command in builtin:
+                if command in builtin or command in declared:
                     continue
-                _, scripts, _ = packages[0]
-                if command not in scripts:
-                    findings.append({
-                        "score": 100,
-                        "kind": "software_command_drift",
-                        "quality": "strong",
-                        "summary": (
-                            f"The documentation tells someone to run “{command}”, but that script is not declared in package.json. "
-                            "That can break onboarding or a release at the exact moment someone follows the documented path."
-                        ),
-                        "citations": [_citation(entry, line_no, line)],
-                    })
+                findings.append({
+                    "score": 100,
+                    "kind": "software_command_drift",
+                    "quality": "strong",
+                    "summary": (
+                        f"The documentation tells someone to run “{command}”, but no package.json in the "
+                        "approved folder declares that script. "
+                        "That can break onboarding or a release at the exact moment someone follows the documented path."
+                    ),
+                    "citations": [_citation(entry, line_no, line)],
+                })
     return findings
 
 
@@ -929,6 +993,11 @@ def act(
         state = _load_state(base)
         duplicate = _event_for_action(base, action_id)
         if duplicate:
+            # Idempotent replay only when the SAME action reuses the id. A reused
+            # id carrying a DIFFERENT action would otherwise return ok:true while
+            # silently dropping the new action — refuse it instead.
+            if str(duplicate.get("action")) != action:
+                raise JourneyError("action_id_reused", "That onboarding action id was already used for a different action.")
             current = _load_state(base)
             return {"ok": True, "duplicate": True, "event_id": duplicate.get("event_id"), "state": current, "card": _card(current)}
         expected = request.get("expected_revision")

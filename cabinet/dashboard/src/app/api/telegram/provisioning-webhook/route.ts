@@ -20,6 +20,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { createHash, timingSafeEqual } from 'node:crypto'
 import { featureFlagCheck } from '@/lib/provisioning/guard'
 import {
   handleMessage,
@@ -93,6 +94,29 @@ function isCaptainChat(chatId: number): boolean {
     return false
   }
   return String(chatId) === configured.trim()
+}
+
+/**
+ * Verify Telegram's per-webhook secret token — set once at setWebhook time and
+ * sent by Telegram on EVERY update as the X-Telegram-Bot-Api-Secret-Token
+ * header. This is the transport authentication: the request BODY (chat_id and
+ * all) is attacker-controllable, a header secret is not. Fail-closed — an unset
+ * TELEGRAM_WEBHOOK_SECRET rejects every update rather than running the
+ * onboarding/provisioning state machine (including the destructive purge) for
+ * an unauthenticated caller. isCaptainChat stays as a second, in-band check.
+ */
+function webhookSecretOk(req: NextRequest): boolean {
+  const configured = process.env.TELEGRAM_WEBHOOK_SECRET
+  if (!configured) {
+    console.warn('[provisioning-webhook] TELEGRAM_WEBHOOK_SECRET not set — rejecting all updates')
+    return false
+  }
+  const presented = req.headers.get('x-telegram-bot-api-secret-token') || ''
+  // SHA-256 both sides so timingSafeEqual always compares equal-length buffers
+  // (no length-mismatch throw) in constant time.
+  const a = createHash('sha256').update(presented).digest()
+  const b = createHash('sha256').update(configured.trim()).digest()
+  return timingSafeEqual(a, b)
 }
 
 // ---------------------------------------------------------------------------
@@ -198,6 +222,13 @@ async function answerCallbackQuery(callbackId: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  // Transport auth FIRST — before any body parse or dispatch. A forged request,
+  // or any request lacking Telegram's secret-token header, never reaches the
+  // onboarding/provisioning state machine.
+  if (!webhookSecretOk(req)) {
+    return NextResponse.json({ ok: false }, { status: 401 })
+  }
+
   // The multi-Cabinet provisioning flag does not gate the canonical
   // post-hatch orientation. Evaluate it now, but apply it only after parsing
   // enough of the authenticated update to distinguish /onboard.

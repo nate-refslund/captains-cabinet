@@ -7,6 +7,21 @@ import type {
   OnboardingSurface,
 } from '@/lib/onboarding/types'
 
+// A dedup/idempotency id that works in every context. crypto.randomUUID is
+// SECURE-CONTEXT ONLY — undefined over plain HTTP on a LAN/tailnet address,
+// which is a supported cabinet deploy mode — so calling it directly threw and
+// broke every onboarding action. Fall back to getRandomValues (available in
+// insecure contexts), then to a time+random id.
+function newActionId(surface: string): string {
+  const c: Crypto | undefined = globalThis.crypto
+  if (typeof c?.randomUUID === 'function') return `${surface}-${c.randomUUID()}`
+  if (typeof c?.getRandomValues === 'function') {
+    const bytes = c.getRandomValues(new Uint8Array(16))
+    return `${surface}-${Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')}`
+  }
+  return `${surface}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
+
 export default function OnboardingJourneyCard({
   surface = 'dashboard',
   variant = 'dashboard',
@@ -55,7 +70,7 @@ export default function OnboardingJourneyCard({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             action,
-            action_id: `${surface}-${crypto.randomUUID()}`,
+            action_id: newActionId(surface),
             expected_revision: journey.card.revision,
             surface,
             ...extra,
@@ -325,7 +340,18 @@ export default function OnboardingJourneyCard({
             </form>
           )}
         </>
-      ) : null}
+      ) : (
+        <div className="space-y-3">
+          <p className={muted}>The Cabinet orientation could not be loaded.</p>
+          <button
+            type="button"
+            onClick={() => { setError(null); setLoading(true); void load() }}
+            className={`min-h-11 rounded-md border px-4 py-2 text-sm font-medium ${variant === 'world' ? 'border-stone-700 bg-amber-100' : 'border-zinc-600 bg-zinc-800 hover:bg-zinc-700'}`}
+          >
+            Try again
+          </button>
+        </div>
+      )}
 
       <div aria-live="polite" className="mt-3 min-h-5 text-sm">
         {working && <span className={muted}>The Cabinet is working on that…</span>}

@@ -66,6 +66,7 @@ global.fetch = fetchMock as unknown as typeof fetch
 
 const CAPTAIN_CHAT_ID = '12345678'
 const CAPTAIN_CHAT_ID_NUM = 12345678
+const WEBHOOK_SECRET = 'wh_secret_token_123'
 
 function setEnv(overrides: Record<string, string | undefined>) {
   for (const [k, v] of Object.entries(overrides)) {
@@ -104,8 +105,14 @@ function makeUpdate(overrides: {
   return { update_id: 1, message: msg }
 }
 
-function makeReq(body: unknown, throwOnJson = false): NextRequest {
+// secretToken defaults to the valid webhook secret so the existing dispatch
+// tests pass the transport-auth gate; pass null to omit the header, or a
+// wrong string to exercise rejection.
+function makeReq(body: unknown, throwOnJson = false, secretToken: string | null = WEBHOOK_SECRET): NextRequest {
+  const headers = new Headers()
+  if (secretToken !== null) headers.set('x-telegram-bot-api-secret-token', secretToken)
   return {
+    headers,
     json: throwOnJson
       ? async () => { throw new SyntaxError('Bad JSON') }
       : async () => body,
@@ -140,6 +147,7 @@ beforeEach(() => {
   setEnv({
     CAPTAIN_TELEGRAM_CHAT_ID: CAPTAIN_CHAT_ID,
     MANAGER_BOT_TOKEN: 'bot_token_abc',
+    TELEGRAM_WEBHOOK_SECRET: WEBHOOK_SECRET,
   })
 })
 
@@ -246,6 +254,53 @@ describe('POST provisioning-webhook — Captain auth guard', () => {
 
   it('proceeds past auth for correct chatId', async () => {
     await POST(makeReq(makeUpdate({ chatId: CAPTAIN_CHAT_ID_NUM, text: 'hello' })))
+    expect(mockHandleMessage).toHaveBeenCalled()
+  })
+
+  it('rejects a callback_query from a non-Captain chat_id (no dispatch)', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const update = {
+      update_id: 5,
+      callback_query: { id: 'cq9', data: 'onboard:continue', message: { message_id: 3, chat: { id: 99999999, type: 'private' } } },
+    }
+    const res = await POST(makeReq(update))
+    expect(res.status).toBe(200)
+    expect(mockHandleOnboardingCallback).not.toHaveBeenCalled()
+    expect(warnSpy).toHaveBeenCalled()
+    warnSpy.mockRestore()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST — secret-token transport auth (X-Telegram-Bot-Api-Secret-Token)
+// ---------------------------------------------------------------------------
+
+describe('POST provisioning-webhook — secret-token transport auth', () => {
+  it('rejects with 401 when the secret-token header is absent', async () => {
+    const res = await POST(makeReq(makeUpdate({ text: 'hi' }), false, null))
+    expect(res.status).toBe(401)
+    expect(mockHandleMessage).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects with 401 on a wrong secret token', async () => {
+    const res = await POST(makeReq(makeUpdate({ text: 'hi' }), false, 'not-the-secret'))
+    expect(res.status).toBe(401)
+    expect(mockHandleMessage).not.toHaveBeenCalled()
+  })
+
+  it('fails closed with 401 when TELEGRAM_WEBHOOK_SECRET is unset (even with a header)', async () => {
+    setEnv({ TELEGRAM_WEBHOOK_SECRET: undefined })
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const res = await POST(makeReq(makeUpdate({ text: 'hi' })))
+    expect(res.status).toBe(401)
+    expect(mockHandleMessage).not.toHaveBeenCalled()
+    warnSpy.mockRestore()
+  })
+
+  it('dispatches when the secret token matches', async () => {
+    const res = await POST(makeReq(makeUpdate({ chatId: CAPTAIN_CHAT_ID_NUM, text: 'hi' })))
+    expect(res.status).toBe(200)
     expect(mockHandleMessage).toHaveBeenCalled()
   })
 })

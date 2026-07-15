@@ -118,6 +118,17 @@ describe('POST /api/onboarding', () => {
     expect(applyMock).not.toHaveBeenCalled()
   })
 
+  it('refuses a POST with no Content-Length before buffering the body', async () => {
+    const req = {
+      headers: new Headers({ 'content-type': 'application/json', origin: 'http://localhost' }),
+      nextUrl: new URL('http://localhost/api/onboarding'),
+      text: async () => JSON.stringify({ action: 'pause' }),
+    } as unknown as NextRequest
+    const response = await POST(req)
+    expect(response.status).toBe(413)
+    expect(applyMock).not.toHaveBeenCalled()
+  })
+
   it('maps a stale cross-surface card to 409', async () => {
     applyMock.mockRejectedValueOnce(
       new OnboardingBridgeError('revision_conflict', 'Refresh this card.', 400)
