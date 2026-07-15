@@ -172,7 +172,7 @@ def test_junk_rows_never_crash():
 
 def test_case_shape_situation_verdict_cell():
     row = _edited_row("s-shape")
-    row["refs"] = ["6-Commitments/owed_by_nate/cmt-abc.md"]
+    row["refs"] = ["6-Commitments/owed_by_captain/cmt-abc.md"]
     case = extract_corrections(ledger=[row])[0]
 
     # cell keys exactly like compute_ratios (actor flattened, unstamped
@@ -185,7 +185,7 @@ def test_case_shape_situation_verdict_cell():
     # situation is a replay REFERENCE — no draft content fields exist.
     sit = case["situation"]
     assert sit["subject"] == "s-shape"
-    assert sit["refs"] == ["6-Commitments/owed_by_nate/cmt-abc.md"]
+    assert sit["refs"] == ["6-Commitments/owed_by_captain/cmt-abc.md"]
     assert sit["ts"] == row["ts"]
     assert sit["action_type"] is None  # raw (unstamped) value preserved here
     # human verdict carries the raw decision/review fields + evidence.
