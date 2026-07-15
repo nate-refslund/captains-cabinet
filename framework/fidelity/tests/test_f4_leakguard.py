@@ -343,7 +343,7 @@ class TestCommitmentsFenced:
 
     def test_both_directions_queried(self):
         # The runner asks in CONTRACT direction values (base.PersonalSource —
-        # the Flavor-A adapter owns the owed_by_nate storage mapping).
+        # the Flavor-A adapter owns its own internal storage mapping).
         brain = FakeBrain()
         officer_runner.gather_cutoff_context(_case(), brain=brain)
         dirs = [c[1] for c in brain.calls if c[0] == "open_commitments"]

@@ -2,8 +2,8 @@
 
 Captain directive (2026-06-24, "make the drafts end here in this chat"): ALL
 outbound drafts present in the Chair chat (the Captain's HQ Chair bot) via present_draft()
-and deliver post-approval via deliver_draft(). The screenpipe bot is no longer in
-the approval path — it is back-end (capture/index) only.
+and deliver post-approval via deliver_draft(). The personal-source bot is no
+longer in the approval path — it is back-end (capture/index) only.
 
 SRC-3 (source-adapter boundary): the SEND execution (email_lib / teams_graph_lib
 over Microsoft Graph) + the signature helper (draft_lib.ensure_signature) are

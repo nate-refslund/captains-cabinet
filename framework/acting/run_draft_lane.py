@@ -295,7 +295,7 @@ def main() -> None:
     # still undecided (Casper R1 sat open overnight, so R2 — 11h newer — never
     # surfaced). Now a real new message on an open thread re-presents, exactly like
     # the decided path already does.
-    src = get_source()  # the bound personal source (Flavor-A screenpipe adapter)
+    src = get_source()  # the bound personal source (the Flavor-A adapter)
     open_ts = ld.open_subject_ts()
     decided = ld.decided_subjects()
     threads = src.find_threads(hours=72)

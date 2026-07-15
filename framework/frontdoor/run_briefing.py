@@ -3,7 +3,7 @@
 Scheduled by launchd (cabinet/scripts/run-frontdoor-briefing.sh). Pulls real
 signals into the durable intake (morning_synthesis) and runs the send path
 (run_frontdoor.run_send_path) → ONE unified message to the Captain on the single
-channel, replacing the screenpipe morning-brief DM that the cutover silenced.
+channel, replacing the personal-source morning-brief DM that the cutover silenced.
 
 PM augmentation: the wrapper sets ``CABINET_RUN_MODE=PM`` for the evening run
 (hour ≥ 17). In PM mode, AFTER the normal synthesis enqueue, we also enqueue the

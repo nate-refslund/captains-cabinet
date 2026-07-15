@@ -422,8 +422,8 @@ def run_decision_case(case: DecisionCase, llm=oauth_raw_llm,
     Identity informs HOW it decides and is privacy-fenced (never echoed).
 
     ``brain`` is an injectable ``framework.sources.PersonalSource``; it defaults
-    to ``get_source()`` — the bound personal source (the Flavor-A screenpipe
-    adapter on this deployment, byte-identical to the prior ``BrainAdapter()``
+    to ``get_source()`` — the bound personal source (the Flavor-A adapter on
+    this deployment, byte-identical to the prior ``BrainAdapter()``
     default). Tests inject a fake source in its place."""
     brain = brain or get_source()
     ident = _clone_identity(case, brain)

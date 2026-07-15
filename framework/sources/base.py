@@ -59,7 +59,7 @@ class PersonalSource(Protocol):
         returned carry the same contract values in their ``direction`` field).
         Flavor-A: ``BrainAdapter.open_commitments`` (officer_runner.py:377) →
         ``commitments_lib.load_all(...)`` filtered to non-closed rows, the
-        adapter mapping to/from its internal ``owed_by_nate`` storage values.
+        adapter mapping to/from its own internal storage values.
         Honest empty: ``[]``."""
         ...
 
@@ -89,9 +89,8 @@ class PersonalSource(Protocol):
     # --- RAW NOTE READ (vault-jailed) --------------------------------------
     def read_note(self, path: str) -> str:
         """Path-validated, vault-jailed raw note read. Flavor-A:
-        ``BrainAdapter.read_note`` (officer_runner.py:436) → an
-        ``OBSIDIAN_VAULT_PATH`` realpath-contained read (refuses any path that
-        escapes the vault)."""
+        ``BrainAdapter.read_note`` (officer_runner.py:436) → a vault-root
+        realpath-contained read (refuses any path that escapes the vault)."""
         ...
 
     # --- ACTING / BRIEFING SURFACE (T1 protocol widen, 2026-07-07) ----------

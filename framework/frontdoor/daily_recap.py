@@ -3,7 +3,7 @@ skeleton over the personal-source seam.
 
 COMPRESSED per the operative-egg plan R023
 (docs/plans/operative-egg-plan-2026-07-07.md). What this module was: the merge of
-three retired screenpipe daily pipes — it paginated the Captain's Monday Activity
+three retired personal-source daily pipes — it paginated the Captain's Monday Activity
 board (half-hourly slots), wrote a Monday Reflections "Daily Summary" item, and
 mirrored that item into the vault daily note byte-identical to vault-sync.
 Those Monday Activity/Reflections legs are DELETED: both boards were archived
