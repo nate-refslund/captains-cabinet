@@ -1,6 +1,6 @@
 'use client'
 
-import { FormEvent, useCallback, useEffect, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 import type {
   OnboardingAction,
   OnboardingResponse,
@@ -40,6 +40,39 @@ export default function OnboardingJourneyCard({
   const [source, setSource] = useState('~/Documents')
   const [purpose, setPurpose] = useState('Find one useful thing I may be missing.')
   const [destination, setDestination] = useState<'earn' | 'reversible' | 'sovereign'>('reversible')
+  const [feedbackRecorded, setFeedbackRecorded] = useState<string | null>(null)
+  const effectiveSurface = useRef<Extract<OnboardingSurface, 'dashboard' | 'world' | 'companion'>>(surface)
+  const handoffIds = useRef<{ trace_id?: string; correlation_id?: string }>({})
+
+  const reportEvidence = useCallback(async (
+    phase: 'transport' | 'ui' | 'feedback',
+    status: 'started' | 'succeeded' | 'failed' | 'retried' | 'interrupted' | 'recovered' | 'useful' | 'not_useful' | 'corrected',
+    detail: Record<string, unknown>,
+    ids: { action_id?: string; trace_id?: string; correlation_id?: string } = {}
+  ): Promise<boolean> => {
+    try {
+      const response = await fetch('/api/onboarding/evidence', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        keepalive: true,
+        body: JSON.stringify({
+          phase,
+          status,
+          surface: effectiveSurface.current,
+          action_id: ids.action_id || newActionId('observe'),
+          trace_id: ids.trace_id || newActionId('trace'),
+          correlation_id: ids.correlation_id || newActionId('corr'),
+          detail,
+        }),
+      })
+      if (!response.ok) return false
+      const body = await response.json() as { ok?: boolean }
+      return body.ok === true
+    } catch {
+      console.error('[onboarding-ui] evidence endpoint unavailable')
+      return false
+    }
+  }, [])
 
   const load = useCallback(async () => {
     try {
@@ -48,31 +81,68 @@ export default function OnboardingJourneyCard({
       if (!response.ok || !body.ok) throw new Error(body.error || 'Onboarding is unavailable.')
       setJourney(body)
       setError(null)
+      if (body.card.stage !== 'purged') {
+        void reportEvidence('ui', 'succeeded', {
+          rendered_stage: body.card.stage,
+          app_shell_handoff: effectiveSurface.current === 'companion',
+        }, handoffIds.current)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Onboarding is unavailable.')
+      void reportEvidence('transport', 'failed', { error_code: 'onboarding_load_failed' }, handoffIds.current)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [reportEvidence])
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('from') === 'companion') {
+      effectiveSurface.current = 'companion'
+      handoffIds.current = {
+        trace_id: params.get('trace_id') || undefined,
+        correlation_id: params.get('correlation_id') || undefined,
+      }
+      void reportEvidence('ui', 'started', { app_shell_handoff: true }, handoffIds.current)
+    }
     void load()
-  }, [load])
+  }, [load, reportEvidence])
+
+  useEffect(() => {
+    const onWindowError = () => {
+      void reportEvidence('ui', 'failed', { error_code: 'window_error' })
+    }
+    const onUnhandledRejection = () => {
+      void reportEvidence('ui', 'failed', { error_code: 'unhandled_rejection' })
+    }
+    window.addEventListener('error', onWindowError)
+    window.addEventListener('unhandledrejection', onUnhandledRejection)
+    return () => {
+      window.removeEventListener('error', onWindowError)
+      window.removeEventListener('unhandledrejection', onUnhandledRejection)
+    }
+  }, [reportEvidence])
 
   const send = useCallback(
     async (action: OnboardingAction, extra: Record<string, unknown> = {}) => {
       if (!journey) return
       setWorking(true)
       setError(null)
+      const ids = {
+        action_id: newActionId(effectiveSurface.current),
+        trace_id: newActionId('trace'),
+        correlation_id: newActionId('corr'),
+      }
+      void reportEvidence('ui', 'started', { action }, ids)
       try {
         const response = await fetch('/api/onboarding', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             action,
-            action_id: newActionId(surface),
+            ...ids,
             expected_revision: journey.card.revision,
-            surface,
+            surface: effectiveSurface.current,
             ...extra,
           }),
         })
@@ -85,14 +155,39 @@ export default function OnboardingJourneyCard({
         setEditScope(false)
         setPurgeArmed(false)
         setPurgeConfirmation('')
+        setFeedbackRecorded(null)
+        if (action !== 'purge') {
+          void reportEvidence('ui', 'succeeded', { action, rendered_stage: body.card.stage }, body.evidence || ids)
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'That choice could not be completed.')
+        if (action !== 'purge') {
+          void reportEvidence('transport', 'failed', { action, error_code: 'action_request_failed' }, ids)
+        }
       } finally {
         setWorking(false)
       }
     },
-    [journey, load, surface]
+    [journey, load, reportEvidence]
   )
+
+  async function recordFeedback(status: 'useful' | 'not_useful' | 'corrected', category: string) {
+    const ids = {
+      action_id: newActionId('feedback'),
+      trace_id: newActionId('trace'),
+      correlation_id: journey?.evidence?.correlation_id || newActionId('corr'),
+    }
+    const recorded = await reportEvidence('feedback', status, {
+      feedback_rating: status,
+      feedback_category: category,
+      rendered_stage: journey?.card.stage,
+    }, ids)
+    if (recorded) {
+      setFeedbackRecorded(status)
+    } else {
+      setError('Your feedback could not be preserved yet. Please try again.')
+    }
+  }
 
   function submitScope(event: FormEvent) {
     event.preventDefault()
@@ -125,7 +220,7 @@ export default function OnboardingJourneyCard({
     void send(action)
   }
 
-  const showForm = journey?.card.stage === 'welcome' || journey?.card.stage === 'purged' || editScope
+  const showForm = journey?.card.stage === 'welcome' || editScope
   const shell = variant === 'world'
     ? 'w-[min(92vw,28rem)] border-4 border-amber-900 bg-[#f4dfaa] text-stone-900 shadow-[6px_6px_0_#3f2b1d]'
     : 'w-full border border-zinc-700 bg-zinc-900 text-zinc-100 shadow-xl'
@@ -198,6 +293,21 @@ export default function OnboardingJourneyCard({
                 ))}
               </ul>
             </div>
+          )}
+
+          {journey.card.stage === 'dividend_ready' && (
+            <fieldset className={`mt-4 rounded-lg border p-3 ${variant === 'world' ? 'border-stone-500/70' : 'border-zinc-700'}`}>
+              <legend className="px-1 text-sm font-semibold">Did this earn its keep?</legend>
+              {feedbackRecorded ? (
+                <p role="status" className={`text-sm ${muted}`}>Feedback recorded: {feedbackRecorded.replace('_', ' ')}.</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" className="min-h-11 rounded-md border border-current/30 px-3 py-2 text-sm" onClick={() => void recordFeedback('useful', 'useful_as_shown')}>Yes, useful</button>
+                  <button type="button" className="min-h-11 rounded-md border border-current/30 px-3 py-2 text-sm" onClick={() => void recordFeedback('not_useful', 'insufficient_value')}>Not useful yet</button>
+                  <button type="button" className="min-h-11 rounded-md border border-current/30 px-3 py-2 text-sm" onClick={() => void recordFeedback('corrected', 'wrong_or_missing_context')}>Something is wrong</button>
+                </div>
+              )}
+            </fieldset>
           )}
 
           {showForm && (
@@ -308,7 +418,7 @@ export default function OnboardingJourneyCard({
                 Type PURGE to permanently delete this onboarding record
               </label>
               <p className={`mt-1 text-xs ${muted}`}>
-                This removes the Charter, event history, manifest, and derived excerpts. It cannot be undone.
+                This removes the Charter, onboarding history, evidence trial, manifest, and derived excerpts. Explicitly exported review bundles are kept until you delete them.
               </p>
               <input
                 id={`${surface}-purge-confirmation`}

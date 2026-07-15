@@ -436,7 +436,7 @@ def test_check_loads_from_locked_file(tmp_path):
                   root=tmp_path, now=NOW,
                   context={"recipient": "a@testburg.example"},
                   is_locked_fn=LOCKED, redis_get=REDIS_EMPTY,
-                  is_vetoed_fn=NOT_VETOED)
+                  is_vetoed_fn=NOT_VETOED, reserve_rate=False)
     assert res["granted"] is True and res["grant_id"] == "GRANT-test1"
 
 

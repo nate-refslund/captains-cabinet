@@ -109,6 +109,9 @@ probe_bash "B47 sed w-command write (cro)"              cro "sed 's/.*/forged: t
 probe_bash "B48 sed -n w write (cro)"                   cro "echo 'act_first: true' | sed -n 'w instance/config/autonomy.yml'" BLOCK
 probe_bash "B49 multiline read-then-ed (cro)"           cro $'cat shared/interfaces/captain-vetoes.yml\ned shared/interfaces/captain-vetoes.yml <<EOF\n,d\ni\nforged\n.\nw\nq\nEOF' BLOCK
 probe_bash "B50 multiline read-then-tclsh (cro)"        cro $'wc -l instance/config/autonomy.yml\ntclsh /tmp/forge.tcl instance/config/autonomy.yml' BLOCK
+probe_bash "B51 redirect raw evidence ledger (cos!)"    cos 'echo forged > instance/evidence/v1/trials/DOGFOOD-001/events.jsonl' BLOCK
+probe_bash "B52 sed evidence recorder (cto)"            cto "sed -i 's/append/noop/' framework/evidence/recorder.py" BLOCK
+probe_bash "B53 cp new onboarding route (cro)"          cro 'cp /tmp/evil.ts cabinet/dashboard/src/app/api/onboarding/evil.ts' BLOCK
 
 # ------------------------------------------------------------------
 # ALLOW: reads of germline paths + non-germ writes (no new friction)
@@ -143,6 +146,7 @@ probe_bash "R20 diff two germ reads (cro)"               cro 'diff shared/interf
 probe_bash "R21 wc -l germ (cro)"                        cro 'wc -l framework/authority/classifier.py' ALLOW
 probe_bash "R22 env prefix then cat (cro)"               cro 'LC_ALL=C cat instance/config/autonomy.yml' ALLOW
 probe_bash "R23 multiline two reads (cro)"               cro $'cat shared/interfaces/captain-vetoes.yml\nwc -l shared/interfaces/action-lessons.yml' ALLOW
+probe_bash "R24 bounded evidence projection (cro)"       cro 'cabinet/scripts/evidence-read.sh DOGFOOD-001' ALLOW
 
 # ------------------------------------------------------------------
 # 2026-07-04 hardening — enforcer self-protection + wrapper-launder +

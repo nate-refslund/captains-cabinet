@@ -25,6 +25,8 @@ describe('onboarding journey accessibility floor', () => {
     expect(component).toContain("purgeConfirmation !== 'PURGE'")
     expect(component).toContain('Type PURGE to permanently delete')
     expect(component).not.toContain('window.confirm')
+    expect(component).toContain("action !== 'purge'")
+    expect(component).toContain("body.card.stage !== 'purged'")
   })
 
   it('keeps evidence as DOM text with path and line, never canvas-only', () => {
@@ -40,6 +42,17 @@ describe('onboarding journey accessibility floor', () => {
     expect(component).not.toMatch(/\bMCP\b/)
     expect(component).not.toMatch(/\bRedis\b/)
     expect(component).not.toMatch(/\bYAML\b/)
+  })
+
+  it('only claims Captain feedback was recorded after the evidence endpoint confirms it', () => {
+    expect(component).toContain('const recorded = await reportEvidence')
+    expect(component).toContain('if (recorded)')
+    expect(component).toContain('Your feedback could not be preserved yet')
+  })
+
+  it('uses the insecure-LAN-safe id helper for action and evidence correlation ids', () => {
+    expect(component).not.toContain('crypto.randomUUID()')
+    expect(component.match(/newActionId\(/g)?.length).toBeGreaterThanOrEqual(8)
   })
 })
 

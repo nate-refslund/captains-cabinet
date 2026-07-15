@@ -11,11 +11,25 @@ import {
   applyOnboardingAction,
   getOnboarding,
   OnboardingBridgeError,
+  recordOnboardingEvidence,
 } from '@/lib/onboarding/bridge'
 import type {
   OnboardingActionRequest,
   OnboardingSurface,
 } from '@/lib/onboarding/types'
+
+async function recordTransport(
+  status: 'succeeded' | 'failed' | 'retried',
+  detail: Record<string, unknown>,
+  ids: { action_id?: string; trace_id?: string; correlation_id?: string } = {}
+): Promise<void> {
+  await recordOnboardingEvidence({
+    phase: 'transport',
+    status,
+    ...ids,
+    detail: { transport: 'dashboard_api_bridge', ...detail },
+  }, 'api')
+}
 
 export const dynamic = 'force-dynamic'
 const MAX_BODY_BYTES = 16 * 1024
@@ -85,13 +99,40 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return noStore({ ok: false, code: 'invalid_body', error: 'That onboarding request was not valid.' }, { status: 400 })
   }
-  const surface: OnboardingSurface = raw.surface === 'world' ? 'world' : 'dashboard'
+  const surface: OnboardingSurface = raw.surface === 'world'
+    ? 'world'
+    : raw.surface === 'companion'
+      ? 'companion'
+      : 'dashboard'
   const { surface: _ignored, ...request } = raw
   try {
-    return noStore(await applyOnboardingAction(request, surface))
+    const result = await applyOnboardingAction(request, surface)
+    if (request.action !== 'purge') {
+      try {
+        await recordTransport('succeeded', { action: request.action, http_status: 200 }, result.evidence || request)
+      } catch {
+        // Canonical action evidence already committed. A secondary transport
+        // observation must never turn a successful action into a false error.
+        console.error('[onboarding-api] transport evidence unavailable')
+      }
+    }
+    return noStore(result)
   } catch (error) {
     const known = error instanceof OnboardingBridgeError ? error : null
     const status = known?.code === 'revision_conflict' ? 409 : known?.status || 500
+    if (request.action !== 'purge') {
+      try {
+        await recordTransport(
+          status === 409 ? 'retried' : 'failed',
+          { action: request.action, error_code: known?.code || 'action_failed', http_status: status },
+          request
+        )
+      } catch {
+        // The core action itself already records success/refusal. This warning is
+        // intentionally content-free; no request bytes or child stderr escape.
+        console.error('[onboarding-api] transport evidence unavailable')
+      }
+    }
     return noStore(
       { ok: false, code: known?.code || 'action_failed', error: known?.message || 'The onboarding action could not be completed.' },
       { status }

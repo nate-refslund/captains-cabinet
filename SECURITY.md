@@ -61,6 +61,13 @@ mostly don't apply. What does apply:
   (`tailscale serve`, or `CABINET_DASHBOARD_HOST=0.0.0.0`). Reports that
   defeat its auth, escape the loopback default, or expose it beyond the
   operator's machine are in scope.
+- **Evidence plane** — recorder/verifier/redaction bypasses; direct officer
+  access to raw ledgers or signing material; forged/suppressed/deleted events;
+  broken hash/signature/anchor continuity; secret/source/hidden-reasoning
+  leakage; log-based prompt injection; unauthorized retention, diagnostic,
+  export, purge, or repair; and any path by which evidence grants authority.
+  The current same-UID limitation and commercial app sandbox/Keychain target
+  are documented in `docs/runbooks/evidence-recorder-v1.md`.
 
 Out of scope: your own instance-layer modifications, and vulnerabilities in
 the upstream stack (Claude Code, Homebrew, Redis, macOS) — report those

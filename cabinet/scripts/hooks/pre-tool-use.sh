@@ -1120,7 +1120,7 @@ if [ "$TOOL_NAME" = "Edit" ] || [ "$TOOL_NAME" = "Write" ]; then
     # dir-cover already on this line. instance/config/posture-narrow is
     # DELIBERATELY unprotected: narrow-only cap, Captain's binder verb
     # writes it at runtime (axes spec §1).
-    *"memory/golden-evals/"*|*"framework/policies/"*|*"framework/authority/classifier.py"|*"framework/authority/lane.py"|*"framework/authority/matrix.py"|*"framework/authority/veto.py"|*"framework/authority/deploy_classifier.py"|*"framework/fidelity/graduation.py"|*"framework/authority/policy_engine.py"|*"cabinet/mcp-scope.yml"|*"cabinet/officer-capabilities.conf"|*".claude/rules/brain-bridge.md"|*".claude/rules/courses-of-action.md"|*"instance/config/autonomy.yml"|*"shared/interfaces/captain-vetoes.yml"|*"shared/interfaces/action-lessons.yml"|*"instance/config/act-first-surfaces.yml"|*"framework/frontdoor/action_exec.py"|*"framework/frontdoor/action_undo.py"|*"framework/frontdoor/actfirst_canary.py"|*"framework/frontdoor/veto_registry.py"|*"framework/frontdoor/tell_surface.py"|*"framework/frontdoor/calendar_template.py"|*"framework/acting/action_lane.py"|*"framework/acting/run_action_lane.py"|*"framework/frontdoor/channel.py"|*"framework/attention/situation.py"|*"framework/attention/feed.py"|*"framework/attention/acted_overlay.py"|*"framework/attention/situations.py"|*"framework/attention/queue.py"|*"framework/attention/hygiene.py"|*"framework/attention/queue_card.py"|*".claude/settings.json"|*"cabinet/scripts/hooks/"*|*"cabinet/scripts/policy-shadow.py"|*"cabinet/scripts/kill-switch.sh"|*"cabinet/scripts/germline-lock.sh"|*"framework/authority/posture.py"|*"framework/authority/grants.py"|*"framework/authority/needs.py"|*"framework/learning/gate.py"|*"framework/learning/apply_watch.py"|*"cabinet/scripts/grant-apply.sh"|*"cabinet/scripts/gate-apply.sh"|*"cabinet/launchd/com.cabinet.gate-apply.plist"|*"shared/interfaces/gate-apply-watch.jsonl"|*"instance/config/posture.yml"|*"instance/config/standing-grants.yml"|*"instance/config/policies/"*|*"shared/interfaces/needs-ledger.jsonl"|*"framework/learning/trust_ladder.py"|*".claude/rules/axes-contract.md"|*"framework/schemas/extension-manifest.schema.json"|*"cabinet/scripts/validate-extension.sh"|*"instance/config/trust-ladder.yml"|*"instance/config/posture-presets/"*)
+    *"memory/golden-evals/"*|*"framework/policies/"*|*"framework/authority/classifier.py"|*"framework/authority/lane.py"|*"framework/authority/matrix.py"|*"framework/authority/veto.py"|*"framework/authority/deploy_classifier.py"|*"framework/fidelity/graduation.py"|*"framework/authority/policy_engine.py"|*"cabinet/mcp-scope.yml"|*"cabinet/officer-capabilities.conf"|*".claude/rules/brain-bridge.md"|*".claude/rules/courses-of-action.md"|*"instance/config/autonomy.yml"|*"shared/interfaces/captain-vetoes.yml"|*"shared/interfaces/action-lessons.yml"|*"instance/config/act-first-surfaces.yml"|*"framework/frontdoor/action_exec.py"|*"framework/frontdoor/action_undo.py"|*"framework/frontdoor/actfirst_canary.py"|*"framework/frontdoor/veto_registry.py"|*"framework/frontdoor/tell_surface.py"|*"framework/frontdoor/calendar_template.py"|*"framework/acting/action_lane.py"|*"framework/acting/run_action_lane.py"|*"framework/frontdoor/channel.py"|*"framework/attention/situation.py"|*"framework/attention/feed.py"|*"framework/attention/acted_overlay.py"|*"framework/attention/situations.py"|*"framework/attention/queue.py"|*"framework/attention/hygiene.py"|*"framework/attention/queue_card.py"|*".claude/settings.json"|*"cabinet/scripts/hooks/"*|*"cabinet/scripts/policy-shadow.py"|*"cabinet/scripts/kill-switch.sh"|*"cabinet/scripts/germline-lock.sh"|*"framework/authority/posture.py"|*"framework/authority/grants.py"|*"framework/authority/needs.py"|*"framework/learning/gate.py"|*"framework/learning/apply_watch.py"|*"cabinet/scripts/grant-apply.sh"|*"cabinet/scripts/gate-apply.sh"|*"cabinet/launchd/com.cabinet.gate-apply.plist"|*"shared/interfaces/gate-apply-watch.jsonl"|*"instance/config/posture.yml"|*"instance/config/standing-grants.yml"|*"instance/config/policies/"*|*"shared/interfaces/needs-ledger.jsonl"|*"framework/learning/trust_ladder.py"|*".claude/rules/axes-contract.md"|*"framework/schemas/extension-manifest.schema.json"|*"cabinet/scripts/validate-extension.sh"|*"instance/config/trust-ladder.yml"|*"instance/config/posture-presets/"*|*"framework/onboarding/journey.py"|*"framework/schemas/evidence-event.schema.json"|*"framework/evidence/"*|*"cabinet/dashboard/src/app/api/onboarding/"*|*"cabinet/dashboard/src/lib/onboarding/bridge.ts"|*"cabinet/dashboard/src/lib/onboarding/telegram.ts"|*"cabinet/dashboard/src/app/api/telegram/provisioning-webhook/route.ts"|*"cabinet/dashboard/src/components/onboarding/journey-card.tsx"|*"cabinet/companion/main.swift"|*"cabinet/scripts/evidence-read.sh"|*"instance/evidence/v1/"*)
       echo "BLOCKED: Germline file — read-only for officers and loops (no loop may edit its own judge). Propose the change to the Captain; only the Captain applies germline edits." >&2
       exit 2
       ;;
@@ -1182,6 +1182,40 @@ if [ "$TOOL_NAME" = "Edit" ] || [ "$TOOL_NAME" = "Write" ]; then
         echo "BLOCKED: Officers can only write to their own tier2 directory (instance/memory/tier2/${OFFICER}/)" >&2
         exit 2
       fi
+      ;;
+  esac
+fi
+
+# ============================================================
+# 5a. EVIDENCE RAW-READ INVERSION (Evidence Recorder v1)
+# ============================================================
+# Officers receive the bounded projection through evidence-read.sh. Raw JSONL,
+# anchors, purge receipts, control state, and especially .signing-key are not
+# an officer read surface. The app/core writer does not pass through this
+# officer hook, so its sanctioned append/recovery/purge lane remains intact.
+if [ "$TOOL_NAME" = "Read" ] || [ "$TOOL_NAME" = "Grep" ] || [ "$TOOL_NAME" = "Glob" ] \
+    || [ "$TOOL_NAME" = "Edit" ] || [ "$TOOL_NAME" = "Write" ]; then
+  EVIDENCE_READ_PATH=$(echo "$TOOL_INPUT" | jq -r '.file_path // .path // empty' 2>/dev/null | tr -s '/')
+  case "$EVIDENCE_READ_PATH" in
+    *"instance/evidence/"*|*"Library/Application"*"/cabinet/evidence/"*)
+      echo "BLOCKED: Raw evidence is Captain-controlled. Use cabinet/scripts/evidence-read.sh for the read-only redacted Cabinet projection." >&2
+      exit 2
+      ;;
+  esac
+fi
+
+if [ "$TOOL_NAME" = "Bash" ]; then
+  EVIDENCE_READ_CMD=$(echo "$TOOL_INPUT" | jq -r '.command // empty' 2>/dev/null | tr -s '/')
+  # Exact, argument-closed safe doorway. Exit before §5b sees the protected
+  # script path; compound commands, redirects, env prefixes, and extra shell
+  # syntax do not match and continue through the ordinary gates.
+  if printf '%s' "$EVIDENCE_READ_CMD" | grep -qE '^\.?/?cabinet/scripts/evidence-read\.sh[[:space:]]+[A-Za-z0-9][A-Za-z0-9._:-]{0,127}([[:space:]]+[0-9]{1,4})?[[:space:]]*$'; then
+    exit 0
+  fi
+  case "$EVIDENCE_READ_CMD" in
+    *"framework.evidence"*|*"framework.onboarding.journey"*|*"instance/evidence/"*|*"Library/Application"*"/cabinet/evidence/"*)
+      echo "BLOCKED: Direct shell access to raw evidence is unavailable to officers. Use cabinet/scripts/evidence-read.sh for the bounded projection." >&2
+      exit 2
       ;;
   esac
 fi
@@ -1261,7 +1295,7 @@ if [ "$TOOL_NAME" = "Bash" ]; then
   # is independent + target-anchored (germ dir must be the FINAL dest token).
   # Mixed dirs (cabinet/, .claude/rules/, instance/config/, shared/interfaces/)
   # are deliberately excluded — their residual is closed by the filesystem lock.
-  GERM_DIR_RE='framework/authority/|framework/frontdoor/|framework/acting/|framework/fidelity/|framework/policies/|cabinet/scripts/lib/|cabinet/scripts/hooks/|memory/golden-evals/|instance/config/policies/|instance/config/posture-presets/'
+  GERM_DIR_RE='framework/authority/|framework/frontdoor/|framework/acting/|framework/fidelity/|framework/policies/|cabinet/scripts/lib/|cabinet/scripts/hooks/|memory/golden-evals/|instance/config/policies/|instance/config/posture-presets/|framework/evidence/|cabinet/dashboard/src/app/api/onboarding/|instance/evidence/v1/'
   _GDIR_TGT="[\"']?[^[:space:];|&<>\"']*(${GERM_DIR_RE})[^[:space:];|&<>\"']*"
   # branch 1: germ dir as FINAL positional dest; branch 2: -t/--target-directory DEST form (dir not final)
   if printf '%s' "$CMD_SQ" | grep -qE "(^|[;&|\`([:space:]])(cp|mv|rsync|install|ln)[[:space:]]+(-[-a-zA-Z]+[[:space:]]+)*([^;|&]+[[:space:]]+)?${_GDIR_TGT}[\"']?([[:space:]]*(\$|[;&|<>#])|[[:space:]]+[0-9]+[<>])" \
@@ -1270,7 +1304,7 @@ if [ "$TOOL_NAME" = "Bash" ]; then
     exit 2
   fi
   # Same protected set as section 5's germline case list — KEEP IN LOCKSTEP.
-  GERM_PATH_RE='memory/golden-evals/|framework/policies/|framework/authority/(classifier|lane|matrix|veto|deploy_classifier|posture|grants|needs|policy_engine)\.py|framework/fidelity/graduation\.py|cabinet/mcp-scope\.yml|cabinet/officer-capabilities\.conf|\.claude/rules/(brain-bridge|courses-of-action|axes-contract)\.md|instance/config/(autonomy|posture|standing-grants|trust-ladder)\.yml|shared/interfaces/(captain-vetoes|action-lessons)\.yml|shared/interfaces/(needs-ledger|gate-apply-watch)\.jsonl|instance/config/act-first-surfaces\.yml|instance/config/policies/|instance/config/posture-presets/|framework/frontdoor/(action_exec|action_undo|actfirst_canary|veto_registry|tell_surface|calendar_template|channel)\.py|framework/attention/(situation|situations|feed|acted_overlay|queue|queue_card|hygiene)\.py|framework/acting/(action_lane|run_action_lane)\.py|framework/learning/(gate|apply_watch|trust_ladder)\.py|framework/schemas/extension-manifest\.schema\.json|\.claude/settings\.json|cabinet/scripts/hooks/|cabinet/scripts/policy-shadow\.py|cabinet/scripts/kill-switch\.sh|cabinet/scripts/germline-lock\.sh|cabinet/scripts/validate-extension\.sh|cabinet/scripts/(grant|gate)-apply\.sh|cabinet/launchd/com\.cabinet\.gate-apply\.plist'
+  GERM_PATH_RE='memory/golden-evals/|framework/policies/|framework/authority/(classifier|lane|matrix|veto|deploy_classifier|posture|grants|needs|policy_engine)\.py|framework/fidelity/graduation\.py|cabinet/mcp-scope\.yml|cabinet/officer-capabilities\.conf|\.claude/rules/(brain-bridge|courses-of-action|axes-contract)\.md|instance/config/(autonomy|posture|standing-grants|trust-ladder)\.yml|shared/interfaces/(captain-vetoes|action-lessons)\.yml|shared/interfaces/(needs-ledger|gate-apply-watch)\.jsonl|instance/config/act-first-surfaces\.yml|instance/config/policies/|instance/config/posture-presets/|framework/frontdoor/(action_exec|action_undo|actfirst_canary|veto_registry|tell_surface|calendar_template|channel)\.py|framework/attention/(situation|situations|feed|acted_overlay|queue|queue_card|hygiene)\.py|framework/acting/(action_lane|run_action_lane)\.py|framework/learning/(gate|apply_watch|trust_ladder)\.py|framework/schemas/extension-manifest\.schema\.json|\.claude/settings\.json|cabinet/scripts/hooks/|cabinet/scripts/policy-shadow\.py|cabinet/scripts/kill-switch\.sh|cabinet/scripts/germline-lock\.sh|cabinet/scripts/validate-extension\.sh|cabinet/scripts/(grant|gate)-apply\.sh|cabinet/launchd/com\.cabinet\.gate-apply\.plist|framework/onboarding/journey\.py|framework/schemas/evidence-event\.schema\.json|framework/evidence/|cabinet/dashboard/src/app/api/onboarding/|cabinet/dashboard/src/lib/onboarding/bridge\.ts|cabinet/dashboard/src/lib/onboarding/telegram\.ts|cabinet/dashboard/src/app/api/telegram/provisioning-webhook/route\.ts|cabinet/dashboard/src/components/onboarding/journey-card\.tsx|cabinet/companion/main\.swift|cabinet/scripts/evidence-read\.sh|instance/evidence/v1/'
   if printf '%s' "$CMD_SQ" | grep -qE "$GERM_PATH_RE"; then
     # Target token: optional opening quote, then ONE shell word containing a
     # germline path (germ paths never contain spaces/quotes, so excluding

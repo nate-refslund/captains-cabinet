@@ -110,6 +110,15 @@ FILES=(
   "framework/schemas/extension-manifest.schema.json"
   "cabinet/scripts/validate-extension.sh"
   "instance/config/trust-ladder.yml"
+  # --- evidence recorder v1 trusted integration seam ---
+  "framework/onboarding/journey.py"
+  "framework/schemas/evidence-event.schema.json"
+  "cabinet/dashboard/src/lib/onboarding/bridge.ts"
+  "cabinet/dashboard/src/lib/onboarding/telegram.ts"
+  "cabinet/dashboard/src/app/api/telegram/provisioning-webhook/route.ts"
+  "cabinet/dashboard/src/components/onboarding/journey-card.tsx"
+  "cabinet/companion/main.swift"
+  "cabinet/scripts/evidence-read.sh"
 )
 # whole directories locked -R (blocks edit AND new-file/rename/unlink inside —
 # closes the `cp evil framework/policies/newfile` class at the FS layer)
@@ -119,6 +128,8 @@ DIRS=(
   "memory/golden-evals"        # the behavioral judges
   "instance/config/policies"   # D8: the instance policy layer — no officer may drop a widening policy file
   "instance/config/posture-presets"  # axes: shipped axis points — a forged preset seeds a widened ruling
+  "framework/evidence"       # recorder + independent verifier + redaction/repair policy
+  "cabinet/dashboard/src/app/api/onboarding"  # server-side onboarding/evidence seam
 )
 # DELIBERATELY NOT LOCKED — a sanctioned Python API appends to these at runtime
 # (veto_registry.py / action_lessons.py / needs.py, same uid). Forging one only
@@ -130,6 +141,7 @@ SKIP=(
   "shared/interfaces/captain-vetoes.yml"
   "shared/interfaces/action-lessons.yml"
   "shared/interfaces/needs-ledger.jsonl"
+  "instance/evidence/v1/"
 )
 
 need_root() { [ "$(id -u)" = "0" ] || { echo "ERROR: '$1' needs root (schg is system-immutable). Re-run: sudo bash cabinet/scripts/germline-lock.sh $1" >&2; exit 2; }; }

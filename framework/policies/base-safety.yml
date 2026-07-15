@@ -177,7 +177,30 @@ policies:
       - "*cabinet/scripts/validate-extension.sh"
       - "*instance/config/trust-ladder.yml"
       - "*/instance/config/posture-presets/*"
+      # EVIDENCE RECORDER v1: static trusted writer/integration seams plus
+      # the sanctioned runtime append directory. Officers may read the
+      # redacted projection, never mutate the recorder or its evidence.
+      - "*framework/onboarding/journey.py"
+      - "*framework/schemas/evidence-event.schema.json"
+      - "*/framework/evidence/*"
+      - "*/cabinet/dashboard/src/app/api/onboarding/*"
+      - "*cabinet/dashboard/src/lib/onboarding/bridge.ts"
+      - "*cabinet/dashboard/src/lib/onboarding/telegram.ts"
+      - "*cabinet/dashboard/src/app/api/telegram/provisioning-webhook/route.ts"
+      - "*cabinet/dashboard/src/components/onboarding/journey-card.tsx"
+      - "*cabinet/companion/main.swift"
+      - "*cabinet/scripts/evidence-read.sh"
+      - "*/instance/evidence/v1/*"
     message: "Germline file -- read-only for officers and loops (no loop may edit its own judge). Propose the change to the Captain; only the Captain applies germline edits."
+
+  - name: evidence-raw-read-deny
+    type: path_block
+    description: "Officers consume the bounded redacted evidence projection, never raw ledgers or signing material"
+    tools: [Read, Grep, Glob, Edit, Write]
+    path_patterns:
+      - "*/instance/evidence/v1/*"
+      - "*/Library/Application Support/cabinet/evidence/v1/*"
+    message: "Raw evidence is Captain-controlled. Use cabinet/scripts/evidence-read.sh for the read-only redacted Cabinet projection."
 
   # Officer tier2 isolation (mirrors pre-tool-use.sh sec 5 tier2 arm): an officer
   # may only write under its OWN instance/memory/tier2/<officer>/ directory.

@@ -11,6 +11,8 @@ import { randomUUID } from 'node:crypto'
 import { cabinetRoot } from '@/lib/cabinet-root'
 import type {
   OnboardingActionRequest,
+  OnboardingObservationRequest,
+  OnboardingObservationResponse,
   OnboardingResponse,
   OnboardingSurface,
 } from './types'
@@ -39,7 +41,9 @@ export class OnboardingBridgeError extends Error {
   }
 }
 
-export function invocation(command: 'snapshot' | 'act'): {
+type CoreCommand = 'snapshot' | 'act' | 'observe'
+
+export function invocation(command: CoreCommand): {
   executable: string
   argv: string[]
   cwd: string
@@ -51,7 +55,10 @@ export function invocation(command: 'snapshot' | 'act'): {
   }
 }
 
-function run(command: 'snapshot' | 'act', input?: object): Promise<OnboardingResponse> {
+function run<T extends OnboardingResponse | OnboardingObservationResponse>(
+  command: CoreCommand,
+  input?: object
+): Promise<T> {
   const spec = invocation(command)
   return new Promise((resolve, reject) => {
     let child: ChildProcessWithoutNullStreams
@@ -99,9 +106,9 @@ function run(command: 'snapshot' | 'act', input?: object): Promise<OnboardingRes
         reject(new OnboardingBridgeError('core_output_limit', 'The onboarding core returned too much data.', 502))
         return
       }
-      let parsed: OnboardingResponse | null = null
+      let parsed: T | null = null
       try {
-        parsed = JSON.parse(stdout) as OnboardingResponse
+        parsed = JSON.parse(stdout) as T
       } catch {
         // stderr can contain local paths or interpreter detail; log only a
         // boolean marker, never the bytes.
@@ -124,7 +131,7 @@ function run(command: 'snapshot' | 'act', input?: object): Promise<OnboardingRes
 }
 
 export function getOnboarding(): Promise<OnboardingResponse> {
-  return run('snapshot')
+  return run<OnboardingResponse>('snapshot')
 }
 
 export function applyOnboardingAction(
@@ -140,9 +147,26 @@ export function applyOnboardingAction(
   if (request.purpose && request.purpose.length > 300) {
     throw new OnboardingBridgeError('purpose_too_long', 'Keep the first purpose under 300 characters.')
   }
-  return run('act', {
+  return run<OnboardingResponse>('act', {
     ...request,
     action_id: request.action_id || `web-${randomUUID()}`,
+    surface,
+  })
+}
+
+export function recordOnboardingEvidence(
+  request: OnboardingObservationRequest,
+  surface: OnboardingSurface
+): Promise<OnboardingObservationResponse> {
+  const phase = request?.phase
+  if (!['transport', 'ui', 'feedback'].includes(phase)) {
+    throw new OnboardingBridgeError('observation_phase', 'Choose a valid evidence observation.')
+  }
+  return run<OnboardingObservationResponse>('observe', {
+    ...request,
+    action_id: request.action_id || `observe-${randomUUID()}`,
+    trace_id: request.trace_id || `trace-${randomUUID()}`,
+    correlation_id: request.correlation_id || `corr-${randomUUID()}`,
     surface,
   })
 }

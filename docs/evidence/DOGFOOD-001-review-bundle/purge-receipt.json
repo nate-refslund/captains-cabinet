@@ -1,0 +1,11 @@
+{
+  "actor": "captain",
+  "content_retained": false,
+  "event_count": 83,
+  "last_event_hash": "27b8e3092b51c96672ab3a20a16003aefb4ec3fd0fc9f1071de402a18480e06a",
+  "purged_at": "2026-07-15T08:05:52.084573Z",
+  "purged_trial_id_hash": "45d74d2ec4be777cc7e48e8d631067dc3a40369268066653443743c141f60ece",
+  "receipt_signature": "9e28b3cc0f7f8e9ecab40d7ae222a6db050d42f11f596fbe7033207a93e3b4cd",
+  "schema": "cabinet.evidence-purge-receipt/v1",
+  "status": "completed"
+}
