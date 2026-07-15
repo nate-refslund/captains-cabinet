@@ -356,6 +356,24 @@ t_act_first_default() {
   cp "$ex" "$OUT/instance/config/act-first-surfaces.yml"
 }
 
+# R120 + R126-class, gate (b) null-hatch fix: instance/config/egress.yml is
+# ALSO a wired germline FILES entry (framework/tests/
+# test_germline_lockstep_consistency.py::test_wired_locked_entries_exist_on_disk
+# requires it on disk — it is not in that test's deployment-created
+# exemptions), and that suite runs INSIDE null-hatch.sh (gate b) against the
+# export tree. The R120 delete above (this Captain's real enforced-egress
+# ruling) previously left the export with NO file at that path at all,
+# bricking gate (b) exactly like the gate-apply.plist case above. Same fix
+# shape as act-first-default: ship the already-fail-closed .example twin's
+# bytes (enforce: true, empty allow_hosts) AS the live file — a fresh egg
+# gets a safe default and must apply its own allowlist during hatch, per the
+# R120 comment above.
+t_egress_default() {
+  local ex="$OUT/instance/config/egress.yml.example"
+  [ -f "$ex" ] || { verify_fail "egress.yml.example missing — cannot materialize the shipped default"; return 0; }
+  cp "$ex" "$OUT/instance/config/egress.yml"
+}
+
 t_bin_mount() {
   mkdir -p "$OUT/bin"
   : > "$OUT/bin/.gitkeep"
@@ -467,6 +485,7 @@ t_instance_verify() {
       instance/config/contexts/_default.yml) : ;;        # R124 keep
       instance/config/projects/_template.yml) : ;;       # R125 keep
       instance/config/act-first-surfaces.yml) : ;;       # R126: materialized from the .example twin (act-first-default)
+      instance/config/egress.yml) : ;;                   # R120/R126-class: materialized from the .example twin (egress-default, gate-b fix)
       instance/config/policies/*) : ;;                   # R123 germ-keep
       instance/config/posture-presets/*) : ;;            # R122 germ-keep
       instance/officer-skills/README.md) : ;;            # surface doc
@@ -487,6 +506,7 @@ run_transform() {
     projects-prune)         t_projects_prune ;;
     officer-skills-prune)   t_officer_skills_prune ;;
     act-first-default)      t_act_first_default ;;
+    egress-default)         t_egress_default ;;
     bin-mount)              t_bin_mount ;;
     launchd-portable-only)  t_launchd_portable_only ;;
     claude-egg-swap)        t_claude_egg_swap ;;

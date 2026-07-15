@@ -42,6 +42,7 @@ _INSTANCE_ALLOWED = (
     or rel == "instance/config/contexts/_default.yml"
     or rel == "instance/config/projects/_template.yml"
     or rel == "instance/config/act-first-surfaces.yml"  # R126: materialized from the twin
+    or rel == "instance/config/egress.yml"  # gate-b fix: materialized from the twin
     or rel.startswith("instance/config/policies/")
     or rel.startswith("instance/config/posture-presets/")
     or rel == "instance/officer-skills/README.md"
@@ -151,9 +152,13 @@ def test_agents_dir_absent(export: Path):
 
 def test_live_values_absent_example_twins_present(export: Path):
     cfg = export / "instance" / "config"
+    # NB: egress.yml is deliberately absent from this tuple — like
+    # act-first-surfaces.yml, it IS present in the export, but only ever as
+    # the materialized .example twin (see test_egress_default_is_the_scrubbed_twin),
+    # never the live ruled value. That distinction gets its own test.
     for live in ("platform.yml", "sources.yml", "directions.yml", "peers.yml",
                  "officer-emails.yml", "probes.yml", "warrooms.yml",
-                 "outcomes.yml", "egress.yml", "hq-instance.yml.draft",
+                 "outcomes.yml", "hq-instance.yml.draft",
                  "authority-enforcing"):
         assert not (cfg / live).exists(), f"R120: live {live} must not ship"
     for twin in ("platform.yml.example", "sources.yml.example",
@@ -174,6 +179,17 @@ def test_act_first_default_is_the_scrubbed_twin(export: Path):
     twin = (export / "instance/config/act-first-surfaces.yml.example").read_bytes()
     assert shipped == twin
     assert b"status: unratified" in shipped
+
+
+def test_egress_default_is_the_scrubbed_twin(export: Path):
+    """R120/R126-class + germline lockstep (gate-b null-hatch fix): the
+    shipped egress.yml must be BYTE-IDENTICAL to its .example twin (enforce:
+    true, empty allow_hosts — already fail-closed by the twin's own doc
+    contract) — never the live enforced-egress ruling."""
+    shipped = (export / "instance/config/egress.yml").read_bytes()
+    twin = (export / "instance/config/egress.yml.example").read_bytes()
+    assert shipped == twin
+    assert b"enforce: true" in shipped
 
 
 def test_instance_contains_only_examples_and_structure(export: Path):

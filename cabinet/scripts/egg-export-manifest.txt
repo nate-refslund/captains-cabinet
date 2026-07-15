@@ -213,6 +213,16 @@ transform officer-skills-prune
 # status unratified, fail-closed by the file's own corruption-honesty
 # contract. Live rulings left in the delete above.
 transform act-first-default
+# R120/R126-class + germline lockstep, gate (b) null-hatch fix (2026-07-15):
+# instance/config/egress.yml is ALSO a wired germline FILES entry (same
+# lockstep test, same "not in the deployment-created exemptions" class) —
+# deleting it above with no replacement left the export with nothing at that
+# path, and the lockstep test runs INSIDE null-hatch.sh (gate b) against the
+# export tree, so every export was gate-b RED. Same treatment as
+# act-first-default: ships the .example twin's bytes AS the file (enforce:
+# true, empty allow_hosts — already fail-closed by the twin's own doc
+# contract). Live enforced-egress ruling stays excluded per the delete above.
+transform egress-default
 # R059: bin/ has zero tracked files (binaries rebuild on target via
 # build-calendar-helper.sh); the egg keeps an EMPTY bin/ mount point.
 transform bin-mount
@@ -261,6 +271,9 @@ expect-present instance/config/egress.yml.example
 expect-present instance/config/publish-scan-patterns.local.example
 expect-present instance/config/act-first-surfaces.yml
 expect-present instance/config/act-first-surfaces.yml.example
+# R120/R126-class (gate-b null-hatch fix): the materialized default, same
+# treatment as act-first-surfaces.yml above.
+expect-present instance/config/egress.yml
 expect-present instance/config/contexts/_default.yml
 expect-present instance/config/contexts/bakery-site.yml.example
 expect-present instance/config/contexts/newsletter.yml.example
@@ -343,7 +356,6 @@ expect-absent instance/flavor-a
 expect-absent instance/agents
 expect-absent instance/fidelity
 expect-absent instance/config/platform.yml
-expect-absent instance/config/egress.yml
 expect-absent instance/config/outcomes.yml
 expect-absent instance/config/hq-instance.yml.draft
 expect-absent docs/plans/operative-egg-plan-2026-07-07.md
