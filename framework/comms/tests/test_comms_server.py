@@ -22,12 +22,82 @@ def test_initialized_notification_is_silent():
 def test_tools_list_exposes_the_full_surface():
     resp = server.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
     names = {t["name"] for t in resp["result"]["tools"]}
-    assert names == {"send_card", "edit_card", "react", "poll", "set_status",
+    assert names == {"reply_current", "react_current", "send_card", "edit_card", "react", "poll", "set_status",
                      "pin", "unpin", "open_thread", "answer_tap", "read_feed",
                      "stream_thinking", "send_rich_card"}
     # send_card advertises subject as required
     sc = next(t for t in resp["result"]["tools"] if t["name"] == "send_card")
     assert sc["inputSchema"]["required"] == ["subject"]
+
+
+def test_observe_only_server_exposes_only_current_message_verbs(monkeypatch):
+    monkeypatch.setenv("CABINET_OBSERVE_ONLY", "1")
+    listed = server.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+    assert {tool["name"] for tool in listed["result"]["tools"]} == {
+        "reply_current", "react_current"
+    }
+
+    blocked = server.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                             "params": {"name": "send_card", "arguments": {"subject": "x"}}})
+    assert blocked["error"]["code"] == -32601
+
+    schemas = {tool["name"]: tool["inputSchema"]["properties"]
+               for tool in listed["result"]["tools"]}
+    assert schemas["reply_current"]["text"]["maxLength"] == 3900
+    assert schemas["react_current"]["emoji"]["maxLength"] == 8
+
+
+def test_observe_reply_schema_strips_recipient_and_message_id(monkeypatch):
+    monkeypatch.setenv("CABINET_OBSERVE_ONLY", "1")
+    seen = {}
+    monkeypatch.setattr(server.tools, "dispatch",
+                        lambda name, args: seen.update(name=name, args=args) or {"sent": True})
+    server.handle({"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {
+        "name": "reply_current",
+        "arguments": {"text": "hello", "message_id": 1, "chat_id": "attacker"},
+    }})
+    assert seen == {"name": "reply_current", "args": {"text": "hello"}}
+
+
+def test_watchdog_observe_e2e_reply_react_allowed_arbitrary_send_refused(monkeypatch):
+    """MCP server -> tools -> adapter -> frontdoor with watchdog current id."""
+    from framework import env
+    from framework.comms import get_channel
+    from framework.frontdoor import channel
+
+    calls = []
+    monkeypatch.setenv("CABINET_OBSERVE_ONLY", "1")
+    monkeypatch.setenv("CABINET_ENV", "dev")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:e2e-secret")
+    monkeypatch.delenv("TELEGRAM_COS_TOKEN", raising=False)
+    monkeypatch.setenv("CAPTAIN_TELEGRAM_ID", "8080")
+    monkeypatch.setattr(env, "allow_sends", lambda: False)
+    monkeypatch.setattr(channel, "_last_captain_msg_id", lambda: 7070)
+    monkeypatch.setattr(channel, "_journal_out", lambda fn: None)
+    monkeypatch.setattr(
+        channel,
+        "_default_http_post",
+        lambda url, data: calls.append((url, data))
+        or {"ok": True, "result": {"message_id": 9090}},
+    )
+    monkeypatch.setattr(get_channel, "_CACHE", None)
+
+    blocked = server.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                             "params": {"name": "send_card", "arguments": {"subject": "new"}}})
+    assert blocked["error"]["code"] == -32601
+    assert calls == []
+
+    for name, arguments in (("reply_current", {"text": "ack"}),
+                            ("react_current", {"emoji": "👀"})):
+        response = server.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                                  "params": {"name": name, "arguments": arguments}})
+        body = json.loads(response["result"]["content"][0]["text"])
+        assert body["sent"] is True
+
+    assert calls[0][1]["chat_id"] == "8080"
+    assert calls[0][1]["reply_parameters"]["message_id"] == 7070
+    assert calls[1][1]["chat_id"] == "8080"
+    assert calls[1][1]["message_id"] == 7070
 
 
 def test_tools_call_routes_to_dispatch(monkeypatch):

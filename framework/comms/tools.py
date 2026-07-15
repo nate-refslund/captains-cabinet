@@ -17,6 +17,14 @@ from __future__ import annotations
 from framework.comms.get_channel import get_channel
 
 
+# Observe replies must remain one Telegram message.  The transport's normal
+# send path deliberately chunks at 3900 characters; keeping the dedicated
+# observe seam at or below that threshold prevents one permitted tool call from
+# fanning out into an arbitrary number of Captain notifications.
+OBSERVE_REPLY_MAX_CHARS = 3900
+OBSERVE_REACTION_MAX_CHARS = 8
+
+
 def _adapter(adapter=None):
     return adapter if adapter is not None else get_channel()
 
@@ -95,6 +103,42 @@ def react(*, message_id: int, emoji: str, adapter=None) -> dict:
         from framework.comms.channel_adapter import unsupported
         return unsupported("react")
     return a.react(int(message_id), str(emoji))
+
+
+def reply_current(*, text: str, adapter=None) -> dict:
+    """Observe-only reply to the latest Captain inbound.
+
+    Deliberately accepts no recipient or message id.  The adapter resolves the
+    watchdog-owned current message and the transport pins the Captain chat.
+    """
+    body = str(text)
+    if not body or len(body) > OBSERVE_REPLY_MAX_CHARS:
+        return {
+            "status": "error",
+            "sent": False,
+            "error": f"text must be 1..{OBSERVE_REPLY_MAX_CHARS} characters",
+        }
+    a = _adapter(adapter)
+    if not _cap(a, "observe_reply_current"):
+        from framework.comms.channel_adapter import unsupported
+        return unsupported("observe_reply_current")
+    return a.observe_reply_current(body)
+
+
+def react_current(*, emoji: str, adapter=None) -> dict:
+    """Observe-only reaction to the latest Captain inbound; no id parameter."""
+    value = str(emoji)
+    if not value or len(value) > OBSERVE_REACTION_MAX_CHARS:
+        return {
+            "status": "error",
+            "sent": False,
+            "error": "emoji must be one supported Telegram reaction",
+        }
+    a = _adapter(adapter)
+    if not _cap(a, "observe_react_current"):
+        from framework.comms.channel_adapter import unsupported
+        return unsupported("observe_react_current")
+    return a.observe_react_current(value)
 
 
 def poll(*, question: str, options: list, multi: bool = False,
@@ -198,6 +242,7 @@ def read_feed(*, consumer: "str | None" = None, cursor: int = 0, max_n: int = 20
 # server stays a thin transport and the surface is testable without a client.
 TOOLS = {
     "send_card": send_card, "edit_card": edit_card, "react": react,
+    "reply_current": reply_current, "react_current": react_current,
     "poll": poll, "set_status": set_status, "pin": pin, "unpin": unpin,
     "open_thread": open_thread, "answer_tap": answer_tap, "read_feed": read_feed,
     "stream_thinking": stream_thinking, "send_rich_card": send_rich_card,

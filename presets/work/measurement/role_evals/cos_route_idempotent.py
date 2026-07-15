@@ -43,9 +43,13 @@ def _setup():
 
 
 def _execute(ctx):
-    from framework.missions.supervisor import route_pending_tasks
+    from framework.missions.supervisor import (
+        confirm_delivered_assignments,
+        route_pending_tasks,
+    )
 
     first = route_pending_tasks()
+    confirm_delivered_assignments(first)
     second = route_pending_tasks()
     third = route_pending_tasks()
 

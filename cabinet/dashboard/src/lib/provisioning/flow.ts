@@ -29,7 +29,8 @@
  *   → if stable (active/suspended): "Cabinet X is active, use /archive to stop it"
  *   → otherwise: "Provisioning in progress — cancel not available after bot adoption"
  *
- * Security: Webhook handler verifies chat_id against CAPTAIN_TELEGRAM_CHAT_ID.
+ * Security: Webhook handler verifies chat_id against CAPTAIN_TELEGRAM_ID
+ * (with a fail-closed legacy alias) plus Telegram's webhook secret.
  *
  * Intent triggers (regex-based, no LLM inference):
  *   - "I want a Cabinet" | "new cabinet" | "create cabinet" | "/provision"

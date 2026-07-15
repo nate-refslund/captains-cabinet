@@ -31,9 +31,11 @@
 #     these files use "## " headings (see the files' entry format), so
 #     officer notes can NEVER collide with — or masquerade as — Captain law:
 #     content containing a line that starts with "## " (or a top-level "# ")
-#     is REJECTED unless the caller is the captain channel
-#     (CABINET_CAPTAIN_CHANNEL=1, set only by Captain-side tooling such as
-#     captain-rule-encoder.sh).
+#     is ALWAYS REJECTED. This is an officer-observation lane; Captain
+#     ratification uses a separate Captain-authenticated surface.
+#   - In a running officer session, the actual file append is performed by the
+#     fixed-policy captain-law broker outside the macOS sandbox. The officer can
+#     submit text, but cannot choose its identity, provenance, or heading level.
 #
 # Exit codes: 0 ok · 1 usage/validation refusal · 3 integrity check failed.
 
@@ -81,12 +83,26 @@ fi
 # Heading-collision gate: "## " is the Captain-entry heading format in all
 # three ledgers ("# " is the file title). Officer appends live under
 # "### officer-note" so retrieval/indexing can never read officer text as
-# Captain-ratified law. Captain-side tooling may pass CABINET_CAPTAIN_CHANNEL=1.
-if [ "${CABINET_CAPTAIN_CHANNEL:-0}" != "1" ]; then
-  if printf '%s\n' "$CONTENT" | grep -qE '^##?[[:space:]]'; then
-    echo "REFUSED: entry contains a '## ' (Captain-entry) or '# ' heading line. Officer appends are recorded under a '### officer-note' heading — use '###'-or-deeper headings (or plain text) inside your entry." >&2
+# Captain-ratified law. There is deliberately no environment-variable bypass:
+# an officer controls its own environment.
+if printf '%s\n' "$CONTENT" | grep -qE '^##?[[:space:]]'; then
+  echo "REFUSED: entry contains a '## ' (Captain-entry) or '# ' heading line. Officer appends are recorded under a '### officer-note' heading — use '###'-or-deeper headings (or plain text) inside your entry." >&2
+  exit 1
+fi
+
+# A Mac officer is sandboxed away from the triplet. Submit to the unsandboxed
+# fixed-policy broker, which re-validates the target/body and stamps the broker's
+# configured officer identity. Fail closed if the broker is unavailable; never
+# fall back to a direct write from inside an officer session.
+if [ -n "${CABINET_CAPTAIN_LAW_SOCKET:-}" ]; then
+  BROKER="$SCRIPT_DIR/captain-law-broker.py"
+  if [ ! -f "$BROKER" ]; then
+    echo "REFUSED: Captain-law broker client is missing: $BROKER" >&2
     exit 1
   fi
+  printf '%s' "$CONTENT" | python3.12 "$BROKER" client \
+    --socket "$CABINET_CAPTAIN_LAW_SOCKET" --target "$1"
+  exit $?
 fi
 
 WHO="${CLAUDE_OFFICER:-${OFFICER:-${OFFICER_NAME:-unknown}}}"

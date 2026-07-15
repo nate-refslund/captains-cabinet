@@ -184,8 +184,9 @@ def run_vercel_products(cfg: dict, *, client_factory: Callable[..., Any],
             out.append({"app": app, "skipped": f"checkout missing: {checkout}"})
             continue
         chdir(checkout)
+        team_id = entry.get("team_id") or os.environ.get("VERCEL_TEAM_ID") or None
         res = probe_vercel.run_probe(
-            product=app, client=client_factory(), rows=rows,
+            product=app, client=client_factory(team_id=team_id), rows=rows,
             emit=emit or lib.emit_outcome, hc=hc or lib.hc_ping)
         out.append({"app": app, **{k: res[k] for k in ("fresh", "emitted", "skipped")}})
     return out

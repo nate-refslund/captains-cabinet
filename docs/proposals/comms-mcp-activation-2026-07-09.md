@@ -1,6 +1,7 @@
 # Comms MCP — Activation Ritual (Captain-applied)
 
-**Status:** proposal — ready to activate after `feat/telegram-hardening` merges to `master`.
+**Status:** superseded/applied — the server is now registered in both shipped
+base MCP configs and structurally narrowed by the officer config generator.
 **What it activates:** the channel-agnostic, LLM-native **Comms MCP** (`cabinet-comms`) — every officer's one door to the Captain. Officers call `send_card` / `react` / `poll` / `pin` / `open_thread` / `stream_thinking` / `send_rich_card` / `read_feed` as MCP tools; each routes through `framework.attention.gate` (charter, dedup→standing card, quiet-hours, external-comms floor, Chair T2) and the bound `ChannelAdapter`, then the feed journals it. There is no path around the gate.
 
 The framework code (C1–C4) is in the PR. Activation is **instance registration + a germline scope grant + an officer role grant + a reboot** — all Captain-applied, because scope is germline and registration is live-deployment state. Nothing here runs by itself.
@@ -14,8 +15,10 @@ The framework code (C1–C4) is in the PR. Activation is **instance registration
 
 ---
 
-## Step 1 — Register the server (instance, live checkout)
-The registration lives in the **main checkout** (`/Users/nate/captains-cabinet/instance/config/`), not the worktree — it's untracked deployment state. Add to `instance/config/extensions.yml` under `mcps:`:
+## Step 1 — Register the server (historical; now shipped)
+The registration now lives directly in `.mcp.json` and
+`.mcp.json.mac-native`; no untracked extension step is required. The old
+instance recipe below is retained only as historical context:
 
 ```yaml
 mcps:
@@ -59,7 +62,7 @@ Verify: the officer's session lists `mcp__cabinet-comms__send_card` et al., and 
 ---
 
 ## Verification checklist
-- [ ] `install-extensions.sh` rendered `cabinet-comms` into `instance/config/extra-mcps.json`.
+- [x] Both shipped base MCP configs register `cabinet-comms`.
 - [ ] `mcp-scope.yml` shows `cabinet-comms` in `universal:` (or the intended officer), and the file is re-locked.
 - [ ] The officer role-def `tools:` includes `mcp__cabinet-comms`.
 - [ ] After reboot, `gen-officer-mcp-config.py` did NOT filter it out (it's in the boot `.mcp.json`).

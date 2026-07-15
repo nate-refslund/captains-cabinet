@@ -66,6 +66,29 @@ _ARR = {"type": "array"}
 
 TOOLS: list[dict[str, Any]] = [
     {
+        "name": "reply_current",
+        "description": (
+            "Observe-only: reply to the latest Captain inbound message. The "
+            "watchdog-owned current message and fixed Captain chat are resolved "
+            "internally; no recipient/message id can be supplied."
+        ),
+        "inputSchema": _obj({
+            "text": {"type": "string", "minLength": 1,
+                     "maxLength": tools.OBSERVE_REPLY_MAX_CHARS},
+        }, required=["text"]),
+    },
+    {
+        "name": "react_current",
+        "description": (
+            "Observe-only: react to the latest Captain inbound message. The "
+            "current message id is resolved internally."
+        ),
+        "inputSchema": _obj({
+            "emoji": {"type": "string", "minLength": 1,
+                      "maxLength": tools.OBSERVE_REACTION_MAX_CHARS},
+        }, required=["emoji"]),
+    },
+    {
         "name": "send_card",
         "description": (
             "Present ONE situation card to the Captain. Give the STRUCTURED "
@@ -175,9 +198,17 @@ TOOLS: list[dict[str, Any]] = [
     },
 ]
 
+_OBSERVE_TOOLS = frozenset({"reply_current", "react_current"})
+
+
+def _visible_tools() -> list[dict[str, Any]]:
+    if os.environ.get("CABINET_OBSERVE_ONLY") == "1":
+        return [tool for tool in TOOLS if tool["name"] in _OBSERVE_TOOLS]
+    return TOOLS
+
 
 def get_tool(name: str) -> "dict | None":
-    for t in TOOLS:
+    for t in _visible_tools():
         if t["name"] == name:
             return t
     return None
@@ -214,7 +245,7 @@ def handle(req: dict) -> "dict | None":
     if method == "tools/list":
         return {"jsonrpc": "2.0", "id": rid, "result": {"tools": [
             {"name": t["name"], "description": t["description"], "inputSchema": t["inputSchema"]}
-            for t in TOOLS
+            for t in _visible_tools()
         ]}}
 
     if method == "tools/call":

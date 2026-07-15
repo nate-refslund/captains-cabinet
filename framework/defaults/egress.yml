@@ -6,7 +6,7 @@
 # SHIPPED DEFAULT = ALLOW ALL. `enforce: false` means NO restriction is
 # installed and officers reach the network exactly as they do today. Nothing
 # in this file changes behaviour until a captain sets `enforce: true` (via the
-# override twin instance/config/egress.yml.example, or `egress-guard.sh enable`).
+# override twin instance/config/egress.yml.example during Captain provisioning).
 #
 # WHY THIS EXISTS
 #   Officers ingest untrusted content (email, web pages, Sentry issues) AND
@@ -14,32 +14,32 @@
 #   egress boundary a single prompt-injected instruction can move captain-
 #   private data off-box. This control lets a captain deny outbound egress by
 #   default and permit only an explicit allowlist — the classic containment
-#   posture — without touching any germline path.
+#   posture. The live instance override becomes Captain-owned germline policy.
 #
 # HOW ENFORCEMENT WORKS (only when enforce: true)
 #   `cabinet/scripts/egress-guard.sh apply` starts a small local forward proxy
 #   (cabinet/scripts/egress-proxy.py — python3 stdlib, bound to 127.0.0.1) that
 #   permits HTTP CONNECT + HTTP forwarding ONLY to resolved-allowlist hosts and
 #   returns 403 for everything else, then writes an HTTP_PROXY/HTTPS_PROXY/
-#   NO_PROXY export file for the officer launch to source. This catches curl,
-#   python-requests, and every MCP/client that honours proxy env vars, with no
-#   persistent sudo.
+#   NO_PROXY export file loaded by both officer launchers. This catches curl,
+#   python-requests, and every MCP/client that honours proxy env vars. The Mac
+#   launcher additionally installs a Seatbelt rule denying direct external
+#   TCP/UDP, so raw socket bypasses fail at the kernel boundary.
 #
 #   FAIL-CLOSED: if the proxy cannot be installed or verified, the guard errors
 #   non-zero and installs NOTHING (it never silently leaves egress open when a
 #   captain asked to enforce).
 #
-#   HONEST RESIDUAL: a proxy layer does NOT catch raw sockets (nc/ssh, a python
-#   `socket`) or any client that ignores proxy env. For a stronger kernel-level
-#   jail use the pf/pfctl anchor (sudo + macOS) described in the runbook; a
-#   future pre-tool-use.sh Bash-layer gate is the defense-in-depth companion.
+#   HONEST RESIDUAL: Linux/Docker has no Seatbelt equivalent here, so raw
+#   sockets need a host/container network policy. Existing sessions require a
+#   restart, and localhost services remain outside the officer boundary.
 #   Full coverage-vs-residual: docs/runbooks/egress-allowlist.md.
 #
 # OVERRIDE MODEL
 #   Instance config wins over this framework default (same pattern as
 #   framework/defaults/spending-limits.yml). Copy instance/config/
-#   egress.yml.example -> instance/config/egress.yml and edit there, OR let
-#   `egress-guard.sh enable` / `disable` flip `enforce:` for you.
+#   egress.yml.example -> instance/config/egress.yml during provisioning. Once
+#   locked, enable/disable require the Captain unlock/edit/relock ceremony.
 #   MERGE RULES: `enforce`, `proxy_port`, `allow_product` are scalar — the
 #   instance value replaces this default. `allow_hosts` is UNIONED (the
 #   framework floor below always survives) so enabling enforcement can never

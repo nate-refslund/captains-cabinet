@@ -39,11 +39,24 @@ fi
 TODAY_EPOCH=$(date -u +%s)
 FLAGGED=0
 
+# GNU date (CI/Linux) and BSD date (the Mac deployment target) use different
+# parsing flags. Keep the parsing choice outside awk so the living auditor and
+# its regression harness exercise the same portable path on both hosts.
+if date -u -d "1970-01-01" +%s >/dev/null 2>&1; then
+  DATE_PARSE='date -u -d'
+  DATE_SUFFIX=''
+else
+  DATE_PARSE='date -j -u -f "%Y-%m-%d %H:%M:%S"'
+  DATE_SUFFIX=' 00:00:00'
+fi
+
 awk -v today="$TODAY_EPOCH" \
     -v prop_thresh="$PROPOSED_STALE_DAYS" \
-    -v paus_thresh="$PAUSED_STALE_DAYS" '
+    -v paus_thresh="$PAUSED_STALE_DAYS" \
+    -v date_parse="$DATE_PARSE" \
+    -v date_suffix="$DATE_SUFFIX" '
   function age_days(dstr,    cmd, epoch) {
-    cmd = "date -u -d \"" dstr "\" +%s 2>/dev/null"
+    cmd = date_parse " \"" dstr date_suffix "\" +%s 2>/dev/null"
     cmd | getline epoch
     close(cmd)
     if (epoch == "" || epoch == 0) return -1

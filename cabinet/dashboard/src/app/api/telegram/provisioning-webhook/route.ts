@@ -4,7 +4,9 @@
  * Telegram webhook endpoint for the manager bot's conversational provisioning
  * flow. Telegram calls this URL with each incoming message.
  *
- * Auth: Verifies `chat_id` against `CAPTAIN_TELEGRAM_CHAT_ID` env var.
+ * Auth: Verifies `chat_id` against the Cabinet's canonical
+ *       `CAPTAIN_TELEGRAM_ID` env var (`CAPTAIN_TELEGRAM_CHAT_ID` remains a
+ *       compatibility alias).
  *       Non-Captain chat_ids receive a 403 and no bot reply.
  *
  * Dispatches to `provisioning-flow.ts` for state machine logic.
@@ -83,18 +85,30 @@ interface TelegramUpdate {
 /**
  * Verify that the incoming message is from the configured Captain chat.
  *
- * CAPTAIN_TELEGRAM_CHAT_ID is the Captain's personal chat_id (integer as string).
+ * CAPTAIN_TELEGRAM_ID is the Captain's personal chat_id (integer as string).
+ * CAPTAIN_TELEGRAM_CHAT_ID is accepted only as a compatibility alias; if both
+ * are set and disagree, the route rejects every update.
  * This single-Captain guard is intentional per spec §out-of-scope:
  * "Multi-Captain support is Phase 4".
  */
+function configuredCaptainChatId(): string | null {
+  const canonical = process.env.CAPTAIN_TELEGRAM_ID?.trim()
+  const legacy = process.env.CAPTAIN_TELEGRAM_CHAT_ID?.trim()
+  if (canonical && legacy && canonical !== legacy) {
+    console.error('[provisioning-webhook] Captain Telegram id aliases disagree — rejecting all messages')
+    return null
+  }
+  return canonical || legacy || null
+}
+
 function isCaptainChat(chatId: number): boolean {
-  const configured = process.env.CAPTAIN_TELEGRAM_CHAT_ID
+  const configured = configuredCaptainChatId()
   if (!configured) {
-    // If not configured, fail-closed: reject all (safe default)
-    console.warn('[provisioning-webhook] CAPTAIN_TELEGRAM_CHAT_ID not set — rejecting all messages')
+    // If not configured (or aliases conflict), fail-closed.
+    console.warn('[provisioning-webhook] CAPTAIN_TELEGRAM_ID not set — rejecting all messages')
     return false
   }
-  return String(chatId) === configured.trim()
+  return String(chatId) === configured
 }
 
 /**
@@ -128,7 +142,8 @@ const TELEGRAM_API_BASE = 'https://api.telegram.org/bot'
 
 /**
  * Send a text message to a Telegram chat via the Bot API.
- * Uses MANAGER_BOT_TOKEN env var.
+ * Uses the Cabinet's canonical TELEGRAM_COS_TOKEN; MANAGER_BOT_TOKEN remains
+ * a compatibility fallback for older provisioning-only deployments.
  *
  * Markdown parse_mode: 'Markdown' (v1) — safe for our backtick/bold patterns.
  * Messages longer than 4096 chars are truncated (Telegram limit).
@@ -142,7 +157,7 @@ async function sendTelegramMessage(
     buttons?: Array<Array<{ text: string; callback_data: string }>>
   },
   evidenceActionId?: string
-): Promise<void> {
+): Promise<boolean> {
   const recordTransport = async (
     status: 'succeeded' | 'failed',
     detail: Record<string, unknown>
@@ -160,11 +175,11 @@ async function sendTelegramMessage(
       console.error('[provisioning-webhook] Telegram evidence unavailable')
     }
   }
-  const token = process.env.MANAGER_BOT_TOKEN
+  const token = process.env.TELEGRAM_COS_TOKEN || process.env.MANAGER_BOT_TOKEN
   if (!token) {
-    console.error('[provisioning-webhook] MANAGER_BOT_TOKEN not set — cannot send message')
+    console.error('[provisioning-webhook] TELEGRAM_COS_TOKEN not set — cannot send message')
     await recordTransport('failed', { error_code: 'bot_token_unavailable' })
-    return
+    return false
   }
 
   const truncated = text.length > 4096 ? text.slice(0, 4093) + '…' : text
@@ -190,12 +205,15 @@ async function sendTelegramMessage(
     if (!res.ok) {
       console.error('[provisioning-webhook] sendMessage failed', { status: res.status })
       await recordTransport('failed', { error_code: 'telegram_http_error', http_status: res.status })
+      return false
     } else {
       await recordTransport('succeeded', { http_status: res.status })
+      return true
     }
   } catch {
     console.error('[provisioning-webhook] sendMessage transport error')
     await recordTransport('failed', { error_code: 'telegram_transport_error' })
+    return false
   }
 }
 
@@ -208,27 +226,55 @@ async function sendReplies(
   messages: BotMessage[],
   replyToId?: number,
   evidenceActionId?: string
-): Promise<void> {
+): Promise<boolean> {
+  let delivered = true
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i]
-    await sendTelegramMessage(chatId, msg.text, i === 0 ? replyToId : undefined, {
+    const sent = await sendTelegramMessage(chatId, msg.text, i === 0 ? replyToId : undefined, {
       plain: msg.plain,
       buttons: msg.buttons,
     }, evidenceActionId)
+    delivered = sent && delivered
     // If message has additional chained messages, send them too
     if (msg.additional) {
       for (const extra of msg.additional) {
-        await sendTelegramMessage(chatId, extra.text, undefined, {
+        const extraSent = await sendTelegramMessage(chatId, extra.text, undefined, {
           plain: extra.plain,
           buttons: extra.buttons,
         }, evidenceActionId)
+        delivered = extraSent && delivered
       }
     }
   }
+  return delivered
+}
+
+/**
+ * Canonical onboarding updates are retry-safe: their action id is derived from
+ * Telegram's stable update_id and the journey core is idempotent.  A successful
+ * state transition is therefore not enough to ACK the transport — the Captain's
+ * canonical reply must also have landed.  Non-2xx makes public Telegram webhook
+ * deployments retry; the local sole poller reads the explicit body and retains
+ * its offset for the same retry instead of falling through to the Chair LLM.
+ */
+function onboardingDeliveryResponse(
+  delivered: boolean,
+  deliveryRequired = true
+): NextResponse {
+  return NextResponse.json(
+    {
+      ok: delivered,
+      handled: true,
+      delivered,
+      delivery_required: deliveryRequired,
+      retryable: !delivered,
+    },
+    { status: delivered ? 200 : 503 }
+  )
 }
 
 async function answerCallbackQuery(callbackId: string): Promise<void> {
-  const token = process.env.MANAGER_BOT_TOKEN
+  const token = process.env.TELEGRAM_COS_TOKEN || process.env.MANAGER_BOT_TOKEN
   if (!token) return
   try {
     await fetch(`${TELEGRAM_API_BASE}${token}/answerCallbackQuery`, {
@@ -272,18 +318,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const chatId = callback.message.chat.id
     if (!isCaptainChat(chatId)) {
       console.warn(`[provisioning-webhook] Rejected callback from unauthorized chat_id: ${chatId}`)
-      return NextResponse.json({ ok: true })
+      return onboardingDeliveryResponse(true, false)
     }
+    // Telegram callback ids have a short answer window. Clear the spinner as
+    // soon as transport + Captain auth pass, before any First Window scan or
+    // reply delivery. The state action remains independently idempotent.
+    await answerCallbackQuery(callback.id)
     const replies = await handleTelegramOnboardingCallback(
       callback.data,
       `telegram-update-${update.update_id}`
     )
-    await sendReplies(
+    const delivered = replies.length > 0 && await sendReplies(
       chatId, replies, callback.message.message_id,
       `telegram-update-${update.update_id}`
     )
-    await answerCallbackQuery(callback.id)
-    return NextResponse.json({ ok: true })
+    return onboardingDeliveryResponse(delivered, replies.length > 0)
   }
 
   const message = update.message
@@ -294,6 +343,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (flagResponse && !isOnboardingMessage) return flagResponse
   if (!message) {
     // Unknown callback queries and other non-message updates are acknowledged.
+    if (callback?.data?.startsWith('onboard:')) {
+      return onboardingDeliveryResponse(true, false)
+    }
     return NextResponse.json({ ok: true })
   }
 
@@ -304,6 +356,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!isCaptainChat(chatId)) {
     console.warn(`[provisioning-webhook] Rejected message from unauthorized chat_id: ${chatId}`)
     // 200 to stop Telegram retries; no reply to non-Captain chats
+    if (isOnboardingMessage) return onboardingDeliveryResponse(true, false)
     return NextResponse.json({ ok: true })
   }
 
@@ -337,24 +390,30 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       : await handleMessage(String(chatId), rawText)
   } catch {
     console.error('[provisioning-webhook] handler failed', { onboarding: isOnboardingMessage })
-    await sendTelegramMessage(
+    const errorDelivered = await sendTelegramMessage(
       chatId,
       'Something went wrong. Please try again or say "cancel".',
       undefined,
       undefined,
       isOnboardingMessage && !isTypedOnboardingPurge ? `telegram-update-${update.update_id}` : undefined
     )
+    if (isOnboardingMessage) return onboardingDeliveryResponse(errorDelivered)
     return NextResponse.json({ ok: true })
   }
 
   // Send replies back to Captain
+  let repliesDelivered = true
   if (replies.length > 0) {
-    await sendReplies(
+    repliesDelivered = await sendReplies(
       chatId,
       replies,
       messageId,
       isOnboardingMessage && !isTypedOnboardingPurge ? `telegram-update-${update.update_id}` : undefined
     )
+  }
+
+  if (isOnboardingMessage && (!replies.length || !repliesDelivered)) {
+    return onboardingDeliveryResponse(false, replies.length > 0)
   }
 
   // ------------------------------------------------------------------
@@ -376,7 +435,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     })
   }
 
-  // Always return 200 — Telegram retries on any non-2xx
+  if (isOnboardingMessage) return onboardingDeliveryResponse(true)
+
+  // The legacy provisioning flow remains always-200. Canonical onboarding
+  // returns 503 above only when its visible reply did not land, so Telegram (or
+  // the local poller) can retry the same idempotent update.
   return NextResponse.json({ ok: true })
 }
 

@@ -1,0 +1,8 @@
+# Captain-owned live egress switch. This file is germline-locked: officers may
+# inspect it but cannot widen their own next restart. This deployment's 72-hour
+# dogfood posture is enforced and deliberately excludes product domains; only
+# the framework floor (Anthropic + Telegram) survives.
+
+enforce: true
+allow_product: false
+allow_hosts: []

@@ -209,6 +209,41 @@ def org_domains(default: "tuple[str, ...]" = ()) -> "tuple[str, ...]":
     return domains
 
 
+def signal_tells(project: str = "", default: "dict | None" = None, *,
+                 env_json: "str | None" = None) -> dict:
+    """Per-lane TELLS for the verified-noise discriminator (``framework.frontdoor.
+    signal_discriminator``) — the resolver that keeps the discriminator LOGIC
+    lane-agnostic by receiving the launcher-specific tells (prod hosts, staging/bot
+    patterns, smoke paths) as a RESOLVED value.
+
+    Read from the ``CABINET_SENTRY_TELLS`` env var (JSON), which the briefing wrapper
+    (``cabinet/scripts/run-frontdoor-briefing.sh`` — a cabinet/ script, free to read
+    instance/) populates from ``instance/config/signals.yml`` for the configured Sentry
+    project. This is the SAME env-graft seam as ``CABINET_SENTRY_ORG`` / ``_PROJECT`` —
+    framework/ never reads instance config directly, so the framework→instance boundary
+    stays clean. Any absence / invalid JSON FAILS CLOSED to ``default`` (empty dict) —
+    with which the discriminator can only suppress a FROZEN issue by recency or return
+    INCONCLUSIVE (emit); it never suppresses a fresh un-attributable error. Never raises.
+    ``env_json`` overrides the env read for tests; ``project`` is advisory (the wrapper
+    has already scoped the env to the one configured project)."""
+    fallback = {} if default is None else default
+    raw = env_json if env_json is not None else os.environ.get("CABINET_SENTRY_TELLS", "")
+    if not raw:
+        return fallback
+    try:
+        import json  # local: keep env.py import-light for the safety switches
+        data = json.loads(raw)
+    except Exception:
+        return fallback
+    if not isinstance(data, dict):
+        return fallback
+    # The wrapper exports the bare tells dict for the single configured project; tolerate
+    # a {project: tells} map too (index by project) in case the whole table is exported.
+    if project and isinstance(data.get(project), dict):
+        return data[project]
+    return data
+
+
 # Cache: tasks_board is read once per process (same lifecycle as captain_name).
 # None ⇒ unresolved — the empty string is a VALID resolved value (a generic
 # deployment with no board configured), so the sentinel is None, never "".

@@ -92,6 +92,16 @@ export CABINET_SENTRY_PROJECT="${CABINET_SENTRY_PROJECT:-$(_env_key CABINET_SENT
 export PATH="/opt/homebrew/bin:$PATH"
 
 PY="${CABINET_PYTHON:-/opt/homebrew/bin/python3.12}"
+
+# Verified-noise-discriminator TELLS for the configured Sentry project. The wrapper (a
+# cabinet/ script, free to read instance/) resolves them from instance/config/signals.yml
+# and hands framework the RESOLVED value as JSON env — framework.env.signal_tells reads
+# THIS var, never the file, so the framework/→instance/ boundary stays clean (same seam
+# as CABINET_SENTRY_* above; keeps the layer-separation gate green). Absent file / missing
+# project / bad yaml → '{}', and the discriminator then fails OPEN (recency-only
+# suppression + emit-on-uncertainty).
+export CABINET_SENTRY_TELLS="$("$PY" -c 'import sys,json,yaml; d=yaml.safe_load(open(sys.argv[1])) or {}; print(json.dumps((d.get("sentry",{}) or {}).get(sys.argv[2]) or {}))' "$ROOT/instance/config/signals.yml" "$CABINET_SENTRY_PROJECT" 2>/dev/null || echo '{}')"
+
 cd "$ROOT" || exit 1
 
 # Wake-race guard (observed 2026-06-30 + 07-01): launchd fires this briefing when

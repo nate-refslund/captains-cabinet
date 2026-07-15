@@ -218,6 +218,46 @@ def test_enforce_blocks_nonallowlisted_permits_allowlisted(tmp_path, sink, stop_
     assert "403" in _connect_status(pport, "denied.test:80")
 
 
+def test_plain_http_rewrites_attacker_host_to_validated_authority(tmp_path, stop_guard):
+    seen = []
+
+    class HostSink(BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            seen.append(self.headers.get("Host"))
+            body = b"OK"
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):  # noqa: N802
+            return
+
+    upstream = ThreadingHTTPServer(("127.0.0.1", 0), HostSink)
+    thread = Thread(target=upstream.serve_forever, daemon=True)
+    thread.start()
+    try:
+        root = _seed_root(tmp_path)
+        state = tmp_path / "state"
+        stop_guard.append((root, state))
+        _write_instance(root, "enforce: true\nproxy_port: 0\nallow_product: false\n"
+                              "allow_hosts:\n  - localhost\n")
+        applied = _run(["apply"], root, state)
+        assert applied.returncode == 0, applied.stderr
+        pport = _ready_port(state)
+        port = upstream.server_address[1]
+        response = _http_via_proxy(
+            pport,
+            f"http://localhost:{port}/",
+            headers={"Host": "denied.test"},
+        )
+        assert response.status == 200
+        assert seen == [f"localhost:{port}"]
+    finally:
+        upstream.shutdown()
+        upstream.server_close()
+
+
 def test_enforce_empty_allowlist_blocks_everything(tmp_path, sink, stop_guard):
     """An extreme but valid config (product off, only the floor) still refuses
     a non-floor host — deny-by-default holds."""
@@ -338,6 +378,50 @@ def test_enable_disable_roundtrip(tmp_path, stop_guard):
     assert not (state / "egress" / "proxy.env").exists()  # torn down -> allow all
     # comments from the seed survive the flag flips (line-oriented edit)
     assert inst.read_text(encoding="utf-8").count("#") > 5
+
+
+def test_apply_is_idempotent_and_runtime_state_is_machine_readable(tmp_path, stop_guard):
+    """Repeated officer boots reconcile one shared proxy without flapping it."""
+    root = _seed_root(tmp_path)
+    state = tmp_path / "state"
+    stop_guard.append((root, state))
+    _write_instance(root, "enforce: true\nproxy_port: 0\nallow_product: false\n"
+                          "allow_hosts:\n  - localhost\n")
+
+    first = _run(["apply"], root, state)
+    assert first.returncode == 0, first.stderr
+    first_pid = int((state / "egress" / "proxy.pid").read_text().strip())
+    first_port = _ready_port(state)
+
+    second = _run(["apply"], root, state)
+    assert second.returncode == 0, second.stderr
+    assert int((state / "egress" / "proxy.pid").read_text().strip()) == first_pid
+    assert _ready_port(state) == first_port
+
+    runtime = _run(["runtime-state"], root, state)
+    assert runtime.returncode == 0, runtime.stderr
+    assert runtime.stdout.strip() == "1\t%s" % (state / "egress" / "proxy.env")
+
+
+@pytest.mark.parametrize("artifact", ["proxy.env", "allow.hosts"])
+def test_runtime_state_attestation_rejects_tampered_artifact(tmp_path, stop_guard, artifact):
+    root = _seed_root(tmp_path)
+    state = tmp_path / "state"
+    stop_guard.append((root, state))
+    _write_instance(root, "enforce: true\nproxy_port: 0\nallow_product: false\n"
+                          "allow_hosts:\n  - localhost\n")
+    applied = _run(["apply"], root, state)
+    assert applied.returncode == 0, applied.stderr
+
+    target = state / "egress" / artifact
+    target.write_text("forged\n", encoding="utf-8")
+    attested = _run(["runtime-state"], root, state)
+    assert attested.returncode != 0
+    assert "FAIL-CLOSED" in attested.stderr
+
+    repaired = _run(["apply"], root, state)
+    assert repaired.returncode == 0, repaired.stderr
+    assert _run(["runtime-state"], root, state).returncode == 0
 
 
 def test_apply_warns_when_proxy_env_unwired(tmp_path, stop_guard):

@@ -47,9 +47,72 @@ done
 
 CABINET_ROOT="${CABINET_ROOT:-/opt/founders-cabinet}"
 
-# Source base env + active project env (if not already loaded)
+OFFICER_ENV_LIB="$CABINET_ROOT/cabinet/scripts/lib/officer-env.sh"
+if [ ! -f "$OFFICER_ENV_LIB" ]; then
+  # Test fixtures invoke the real launcher with a synthetic CABINET_ROOT.
+  OFFICER_ENV_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/officer-env.sh"
+fi
+if [ ! -f "$OFFICER_ENV_LIB" ]; then
+  echo "start-officer.sh: clean-environment library missing — refusing officer boot" >&2
+  exit 78
+fi
+# shellcheck source=lib/officer-env.sh
+source "$OFFICER_ENV_LIB"
+officer_env_scrub_authority
+
+# Resolve observe-only before parsing credentials so the effective (CUA-free)
+# MCP scope and the projected secret set remain in lockstep.
+export CABINET_OBSERVE_ONLY=0
+OBSERVE_CONTROL="$CABINET_ROOT/cabinet/scripts/observe-only.sh"
+if [ ! -f "$OBSERVE_CONTROL" ]; then
+  OBSERVE_CONTROL="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/observe-only.sh"
+fi
+OBSERVE_STATE="$(bash "$OBSERVE_CONTROL" status)" || {
+  echo "start-officer.sh: invalid observe-only marker — refusing officer boot" >&2
+  exit 78
+}
+if [ "$OBSERVE_STATE" = active ]; then
+  export CABINET_OBSERVE_ONLY=1
+  export CABINET_ENV=dev
+fi
+
+# Parse the reviewed officer subset of the base env.  Never source the shared
+# store: it also contains dashboard/session/verdict authority credentials.
 if [ -f "$CABINET_ROOT/cabinet/.env" ]; then
-  set -a; source "$CABINET_ROOT/cabinet/.env" 2>/dev/null; set +a
+  officer_env_load_file "$CABINET_ROOT/cabinet/.env" "$OFFICER"
+fi
+
+# Legacy Linux/Docker boots receive the same allowlisting proxy environment.
+# Unlike the Mac launcher, this path has no Seatbelt layer, so raw sockets still
+# require a host/container network policy (documented in the egress runbook).
+EGRESS_GUARD="$CABINET_ROOT/cabinet/scripts/egress-guard.sh"
+EGRESS_ENFORCE=0
+EGRESS_ENV_FILE=""
+if [ ! -f "$EGRESS_GUARD" ]; then
+  if [ "${CABINET_TEST_DRY_RUN:-0}" != "1" ]; then
+    echo "start-officer.sh: egress guard missing — refusing officer boot" >&2
+    exit 78
+  fi
+elif [ "${CABINET_TEST_DRY_RUN:-0}" != "1" ]; then
+  if ! bash "$EGRESS_GUARD" apply >&2; then
+    echo "start-officer.sh: egress reconciliation failed — refusing officer boot" >&2
+    exit 78
+  fi
+fi
+if [ -f "$EGRESS_GUARD" ] && [ "${CABINET_TEST_DRY_RUN:-0}" != "1" ]; then
+  EGRESS_RUNTIME="$(bash "$EGRESS_GUARD" runtime-state)" || {
+    echo "start-officer.sh: cannot resolve egress runtime state — refusing officer boot" >&2
+    exit 78
+  }
+  IFS=$'\t' read -r EGRESS_ENFORCE EGRESS_ENV_FILE <<< "$EGRESS_RUNTIME"
+  if [ "$EGRESS_ENFORCE" = "1" ]; then
+    if [ -f "$EGRESS_ENV_FILE" ]; then
+      officer_env_load_file "$EGRESS_ENV_FILE" "$OFFICER"
+    elif [ "${CABINET_TEST_DRY_RUN:-0}" != "1" ]; then
+      echo "start-officer.sh: egress is enforced but proxy env is absent — refusing officer boot" >&2
+      exit 78
+    fi
+  fi
 fi
 
 # Assemble runtime Cabinet state (framework + preset + instance) before
@@ -69,9 +132,9 @@ if [ "$POOL_MODE" = true ]; then
   fi
 else
   ACTIVE_SLUG=$(cat "$CABINET_ROOT/instance/config/active-project.txt" 2>/dev/null | tr -d '[:space:]')
-  # [FIX-4 hardening] Legacy ACTIVE_SLUG flows into CABINET_LANE → EXPORT_VARS →
-  # the unquoted `export $EXPORT_VARS` in the tmux send-keys string. Whitespace
-  # stripping alone does NOT remove `;`, `&&`, `$()`, or backticks, so a poisoned
+  # [FIX-4 hardening] Legacy ACTIVE_SLUG flows into CABINET_LANE and the clean
+  # one-shot officer environment. Whitespace stripping alone does NOT remove
+  # `;`, `&&`, `$()`, or backticks, so a poisoned
   # active-project.txt (gitignored, normally written by bootstrap-project.sh with
   # a clean slug) would be a shell-injection / RCE seam in the Docker path. Mirror
   # the --project allowlist (pool mode, above) and the Mac script's read: reject
@@ -84,7 +147,7 @@ else
   fi
 fi
 if [ -n "$ACTIVE_SLUG" ] && [ -f "$CABINET_ROOT/cabinet/env/${ACTIVE_SLUG}.env" ]; then
-  set -a; source "$CABINET_ROOT/cabinet/env/${ACTIVE_SLUG}.env" 2>/dev/null; set +a
+  officer_env_load_file "$CABINET_ROOT/cabinet/env/${ACTIVE_SLUG}.env" "$OFFICER" "$ACTIVE_SLUG"
 fi
 
 # ---------------------------------------------------------------
@@ -177,14 +240,16 @@ if [ "$BOT_MODE" = "single_ceo" ]; then
     _CEO_TOKEN_CANDIDATES+=("TELEGRAM_CEO_TOKEN")
 
     BOT_TOKEN=""
-    CEO_TOKEN_VAR=""
     for _candidate in "${_CEO_TOKEN_CANDIDATES[@]}"; do
       if [ -n "${!_candidate:-}" ]; then
         BOT_TOKEN="${!_candidate}"
-        CEO_TOKEN_VAR="$_candidate"
         break
       fi
     done
+    if [ -z "$BOT_TOKEN" ] && [ "$CABINET_OBSERVE_ONLY" = 1 ] \
+        && [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
+      BOT_TOKEN="$TELEGRAM_BOT_TOKEN"
+    fi
 
     if [ -z "$BOT_TOKEN" ]; then
       echo "start-officer.sh: single_ceo mode — no CEO bot token found in env" >&2
@@ -260,8 +325,53 @@ fi
 #   - multi_officer OR (single_ceo AND IS_CEO_OFFICER): include --channels plugin:telegram
 #   - single_ceo AND non-CEO: omit telegram plugin entirely (officer is Telegram-dark)
 MODEL="${CABINET_MODEL:-claude-fable-5}"
-_BASE_FLAGS="--model $MODEL --dangerously-load-development-channels server:redis-trigger-channel --dangerously-skip-permissions --effort max"
-if [ "$BOT_MODE" = "single_ceo" ] && [ "$IS_CEO_OFFICER" = false ]; then
+
+# Legacy/Linux now uses the same structural MCP filter as the Mac launcher.
+# In observe-only the generator replaces every static grant with the closed
+# local set {redis-trigger-channel, cabinet-comms}; remote MCPs never boot.
+MCP_GENERATOR="$CABINET_ROOT/cabinet/scripts/gen-officer-mcp-config.py"
+if [ ! -f "$MCP_GENERATOR" ]; then
+  MCP_GENERATOR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/gen-officer-mcp-config.py"
+fi
+if [ ! -f "$MCP_GENERATOR" ]; then
+  echo "start-officer.sh: MCP config generator missing — refusing officer boot" >&2
+  exit 78
+fi
+if [ "${CABINET_TEST_DRY_RUN:-0}" = "1" ]; then
+  OFFICER_CFG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/cabinet-mcp-dryrun.XXXXXX")"
+else
+  OFFICER_CFG_DIR="${XDG_CACHE_HOME:-${HOME:-/home/cabinet}/.cache}/cabinet"
+  mkdir -p "$OFFICER_CFG_DIR"
+  chmod 700 "$OFFICER_CFG_DIR"
+fi
+OFFICER_MCP_PATH="$OFFICER_CFG_DIR/officer-mcp-${OFFICER}.json"
+OFFICER_SETTINGS_PATH="$OFFICER_CFG_DIR/officer-settings-${OFFICER}.json"
+GEN_MCP_ARGS=(
+  --officer "$OFFICER"
+  --scope "$CABINET_ROOT/cabinet/mcp-scope.yml"
+  --input "$CABINET_ROOT/.mcp.json"
+)
+[ "$CABINET_OBSERVE_ONLY" = 1 ] && GEN_MCP_ARGS+=(--observe-only)
+GEN_MCP_ARGS+=(
+  --out-mcp "$OFFICER_MCP_PATH"
+  --out-settings "$OFFICER_SETTINGS_PATH"
+)
+if ! python3.12 "$MCP_GENERATOR" \
+      "${GEN_MCP_ARGS[@]}"; then
+  echo "start-officer.sh: MCP config generation failed — FAIL CLOSED" >&2
+  ( umask 077
+    printf '{"mcpServers":{}}\n' > "$OFFICER_MCP_PATH"
+    printf '{"enableAllProjectMcpServers":false}\n' > "$OFFICER_SETTINGS_PATH"
+  )
+fi
+MCP_FLAGS="--mcp-config $OFFICER_MCP_PATH --strict-mcp-config --settings $OFFICER_SETTINGS_PATH"
+
+_BASE_FLAGS="--model $MODEL $MCP_FLAGS --dangerously-load-development-channels server:redis-trigger-channel --dangerously-skip-permissions --effort max"
+if [ "$CABINET_OBSERVE_ONLY" = 1 ]; then
+  # Watchdog owns inbound during the soak; a second channels poller would race
+  # getUpdates and would widen the observe surface beyond cabinet-comms.
+  _CHANNEL_FLAGS=""
+elif [ "$BOT_MODE" = "single_ceo" ] && [ "$IS_CEO_OFFICER" = false ]; then
   # Non-CEO in single_ceo mode: no Telegram plugin. Officer operates headless —
   # Captain-attention reaches Captain via the queue (cabinet:captain-attention:<project>).
   _CHANNEL_FLAGS=""
@@ -279,10 +389,9 @@ fi
 # so legacy single-project deployments preserve the FW-072 cost-counter
 # legacy field shape (`<officer>_<dim>`); pool mode opts into the per-project
 # shape (`<officer>_<project>_<dim>`). Defensive unset before the conditional
-# guards against env-file pollution: if a future cabinet/env/<slug>.env ever
-# exports CABINET_ACTIVE_PROJECT, `set -a; source` would propagate it into
-# this shell — the unset ensures only the pool-mode branch can write it
-# into the tmux subshell.
+# guards against env-file pollution: if a future reviewed env-parser change
+# ever admits CABINET_ACTIVE_PROJECT, the unset ensures only the pool-mode
+# branch can write it into the officer environment.
 unset CABINET_ACTIVE_PROJECT
 # [FIX-4] CABINET_LANE is LOAD-BEARING: framework/authority/lane.py resolve_lane()
 # reads it FIRST as the lane dimension of the F+A cell tuple (officer, lane,
@@ -319,25 +428,71 @@ if [ -n "$ACTIVE_SLUG" ]; then
   EXPORT_VARS="$EXPORT_VARS CABINET_LANE=$ACTIVE_SLUG"
 fi
 
+# Materialize the resolved runtime values in this launcher shell, then build a
+# safely shell-quoted env -i prefix.  This avoids the old unquoted
+# `export $EXPORT_VARS` pane command and prevents stale tmux-global variables
+# (including a dashboard password) from reaching Claude.
+export OFFICER_NAME="$OFFICER"
+export CABINET_OFFICER="$OFFICER"
+export TELEGRAM_STATE_DIR="$STATE_DIR"
+export CABINET_BOT_MODE="$BOT_MODE"
+export CABINET_CEO_OFFICER="$CEO_OFFICER"
+if [ "$BOT_MODE" = "single_ceo" ] && [ "$IS_CEO_OFFICER" = false ]; then
+  unset TELEGRAM_BOT_TOKEN TELEGRAM_HQ_CHAT_ID
+else
+  export TELEGRAM_BOT_TOKEN="$BOT_TOKEN"
+  export TELEGRAM_HQ_CHAT_ID="${TELEGRAM_HQ_CHAT_ID:-}"
+fi
+if [ "$POOL_MODE" = true ]; then
+  export CABINET_ACTIVE_PROJECT="$ACTIVE_SLUG"
+fi
+if [ -n "$ACTIVE_SLUG" ]; then
+  export CABINET_LANE="$ACTIVE_SLUG"
+fi
+OFFICER_ENV_PREFIX="$(officer_env_command_prefix)"
+
 # Test hook: CABINET_TEST_DRY_RUN=1 dumps resolved arg-derived contracts and
 # exits before any side-effectful tmux/claude calls. Used by the FW-073
 # test harness to pin arg parsing + back-compat without spawning real sessions.
 # FW-084: also exposes BOT_MODE, CEO_OFFICER, IS_CEO_OFFICER for test assertions.
 if [ "${CABINET_TEST_DRY_RUN:-}" = "1" ]; then
+  DISPLAY_EXPORT_VARS="$(printf '%s' "$EXPORT_VARS" | sed -E 's/(TELEGRAM_BOT_TOKEN=)[^ ]*/\1<redacted>/g')"
   printf 'POOL_MODE=%s\nWINDOW=%s\nOFFICER_DIR=%s\nACTIVE_SLUG=%s\nEXPORT_VARS=%s\nBOT_MODE=%s\nCEO_OFFICER=%s\nIS_CEO_OFFICER=%s\n' \
-    "$POOL_MODE" "$WINDOW" "$OFFICER_DIR" "$ACTIVE_SLUG" "$EXPORT_VARS" \
+    "$POOL_MODE" "$WINDOW" "$OFFICER_DIR" "$ACTIVE_SLUG" "$DISPLAY_EXPORT_VARS" \
     "$BOT_MODE" "$CEO_OFFICER" "$IS_CEO_OFFICER"
+  rm -rf -- "$OFFICER_CFG_DIR"
   exit 0
 fi
+
+# Prepare the launch command in a mode-0700, self-unlinking script.  The env -i
+# prefix contains credentials and must never be typed into tmux pane history.
+printf -v _OFFICER_DIR_Q '%q' "$OFFICER_DIR"
+LAUNCH_COMMAND="cd $_OFFICER_DIR_Q && exec $OFFICER_ENV_PREFIX $CLAUDE_CMD"
+LAUNCH_DIR="${XDG_CACHE_HOME:-/home/cabinet/.cache}/cabinet/officer-launch"
+LAUNCH_SCRIPT="$(officer_env_write_one_shot_launcher "$LAUNCH_DIR" "$LAUNCH_COMMAND")"
 
 # Kill any existing session for this (officer, project) tuple
 tmux kill-window -t "cabinet:$WINDOW" 2>/dev/null
 
 # Start Claude Code session
-tmux new-window -t cabinet -n "$WINDOW"
-tmux send-keys -t "cabinet:$WINDOW" \
-  "export $EXPORT_VARS && cd $OFFICER_DIR && $CLAUDE_CMD" \
-  Enter
+if ! tmux new-window -t cabinet -n "$WINDOW" -c "$OFFICER_DIR" \
+    /usr/bin/env -i HOME="${HOME:-/home/cabinet}" PATH="$PATH" \
+    USER="${USER:-cabinet}" LOGNAME="${LOGNAME:-cabinet}" SHELL=/bin/bash \
+    /bin/bash --noprofile --norc "$LAUNCH_SCRIPT"; then
+  rm -f "$LAUNCH_SCRIPT"
+  echo "start-officer.sh: tmux failed to start $OFFICER" >&2
+  exit 1
+fi
+for _try in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+  [ ! -e "$LAUNCH_SCRIPT" ] && break
+  sleep 0.05
+done
+if [ -e "$LAUNCH_SCRIPT" ]; then
+  rm -f "$LAUNCH_SCRIPT"
+  tmux kill-window -t "cabinet:$WINDOW" 2>/dev/null || true
+  echo "start-officer.sh: one-shot launcher was not consumed — refusing officer boot" >&2
+  exit 78
+fi
 
 # Wait for Claude Code to initialize, auto-confirm any startup prompts, then
 # send the boot prompt. The prompt-handling + boot-submit logic is shared with

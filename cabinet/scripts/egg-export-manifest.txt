@@ -67,6 +67,11 @@ delete instance/config/outcomes.yml
 delete instance/config/adapters.yml
 delete instance/config/retention.yml
 delete instance/config/watchdog.yml
+delete instance/config/signals.yml
+# R120: enforced egress is deployment policy. The live file is intentionally
+# fail-closed for this Captain; a fresh commercial egg receives only the
+# documented .example twin and must apply its own allowlist during hatch.
+delete instance/config/egress.yml
 # R120-class: comms-surface.yml landed as a live instance value on the
 # captain-surface work (its .example twin ships); rule is a no-op while the
 # file is absent from a checkout, so it is safe on every branch.
@@ -121,6 +126,11 @@ delete WINDOW-RUNBOOK.md
 delete cabinet/scripts/appshell
 delete cabinet/scripts/tests/test_appshell_build.py
 delete docs/runbooks/hatch-appshell-v05-2026-07-10.md
+# R116: build-checkpoint reviews are private-side release provenance, not a
+# fresh Captain's runtime interface. Keep reviews/.gitkeep as structure while
+# excluding every committed checkpoint record before interfaces-header-only
+# enforces its closed file set.
+delete shared/interfaces/reviews/*.md
 # LANE C null-hatch fix (2026-07-15): framework/tests/test_amendment_doc_lint.py
 # is THIS deployment's own germline-amendment-PACKAGE lint (Captain apply
 # tokens, rollback lists, package promises for docs/proposals/germline-
@@ -172,7 +182,7 @@ transform plans-archive
 transform framework-docs-archive
 # R167 (personal-clean wave, 2026-07-15): docs/proposals/*.md ship un-archived
 # today — the gap R146 named but never implemented ("non-amendment proposals
-# archive"). The 18 docs/proposals/germline-amendment-*.md FOUNDING AMENDMENTS
+# archive"). The 20 docs/proposals/germline-amendment-*.md FOUNDING AMENDMENTS
 # stay frozen/verbatim (R031/R146 — ratified constitutional record, same
 # class as LICENSE's copyright line; test_amendment_doc_lint.py's union check
 # still globs this exact pattern against the live tree even though that lint
@@ -242,6 +252,8 @@ expect-present instance/config/sources.yml.example
 # governance editor/actions, create-officer.sh, load-preset.sh,
 # officer-boot.sh, demo-dashboard.sh, a pytest file).
 expect-present instance/config/role-registry.md.example
+expect-present instance/config/signals.yml.example
+expect-present instance/config/egress.yml.example
 # R166: the synthetic template for the UNTRACKED captain-specific publish-scan
 # pattern file must ship — egg-side cabinet-feedback.sh reads the live twin
 # when the captain configures one (the live .local is untracked and can never
@@ -269,7 +281,7 @@ expect-present docs/plans/sovereign-build-spec-2026-07-04.md
 # R167: dropped from the plans-archive keep-list (see R167 above) — the
 # coupling census now archives with the rest of docs/plans instance history.
 expect-absent docs/plans/source-adapter-boundary-2026-07-05.md
-# R167: the 18 ratified founding-amendment docs ship verbatim; the 8
+# R167: the 20 ratified founding-amendment docs ship verbatim; the 8
 # non-amendment addenda/activation runbooks archive with a stub.
 expect-present docs/proposals/ARCHIVED-NOTE.md
 expect-present docs/proposals/germline-amendment-attention-transport-2026-07-09.md
@@ -331,6 +343,7 @@ expect-absent instance/flavor-a
 expect-absent instance/agents
 expect-absent instance/fidelity
 expect-absent instance/config/platform.yml
+expect-absent instance/config/egress.yml
 expect-absent instance/config/outcomes.yml
 expect-absent instance/config/hq-instance.yml.draft
 expect-absent docs/plans/operative-egg-plan-2026-07-07.md

@@ -422,7 +422,7 @@ services:
     kind: daemon
     command: bash cabinet/scripts/backup.sh --retention-days 14
     schedule: { calendar: [{hour: 3, minute: 0}] }   # daily 03:00 local; sleep-missed slots coalesce on wake
-    expected: "a dated snapshot dir lands in ~/Cabinet-Backups daily (filesystem state + redis dump.rdb); restore-drill (cabinet/scripts/restore-drill.sh) passes when run"
+    expected: "a checksum-verified dated snapshot lands in ~/Cabinet-Backups daily (topology-preserved filesystem state + configured Postgres + fresh verified Redis RDB or fsynced AOF fallback); restore-drill passes"
     notes: >-
       Closes the CRIT-4 finding (19.7GB of runtime state with zero backups).
       LOCAL destination ~/Cabinet-Backups, 14-day retention, pruned by the
@@ -432,10 +432,10 @@ services:
       rsync of ~/Cabinet-Backups to the UpCloud CPH box over Tailscale
       (8CPU/16GB node already on the tailnet) — an on-machine backup does not
       survive disk loss/theft. Say the word and ops wires a post-backup rsync.
-      CAPTAIN-DECISION (Redis AOF, deliberately NOT flipped): BGSAVE gives
-      point-in-time snapshots only; cabinet/scripts/enable-redis-aof.sh exists
-      and flips appendonly+everysec, but it restarts Redis (brief fleet trigger
-      outage) so flipping it stays a Captain step.
+      Redis AOF remains the live durability layer. The backup prefers a bounded
+      fresh RDB; if BGSAVE is stuck and AOF is healthy, it pauses writes, waits
+      for fsync, copies the complete multipart set, and proves it by booting a
+      disposable Redis before marking the snapshot complete.
 
   # ── Verdict supply (lane-supply 2026-07-05) ────────────────────────────────
   # THE keystone wave: the 2026-07-03 re-review found the machine

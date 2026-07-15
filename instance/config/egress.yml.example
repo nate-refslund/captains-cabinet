@@ -7,14 +7,16 @@
 # replace the default; `allow_hosts` is UNIONED with the framework floor so the
 # control-plane hosts (api.anthropic.com, api.telegram.org) always survive.
 #
-# You usually do NOT edit this by hand — run:
-#   cabinet/scripts/egress-guard.sh enable    # set enforce: true here + install the proxy
-#   cabinet/scripts/egress-guard.sh disable   # set enforce: false here + tear it down
+# Provision this before the germline lock. After it is locked, enable/disable
+# require the Captain unlock/edit/relock ceremony:
+#   cabinet/scripts/egress-guard.sh enable    # unlock window: set true + install
+#   cabinet/scripts/egress-guard.sh disable   # unlock window: set false + teardown
 #   cabinet/scripts/egress-guard.sh status    # show resolved allowlist + proxy state
 #   cabinet/scripts/egress-guard.sh dry-run   # show what WOULD be allowed/blocked, install nothing
 #
-# Coverage vs honest residual — raw sockets/nc/ssh and any MCP that ignores
-# proxy env are NOT caught by this proxy layer: docs/runbooks/egress-allowlist.md.
+# Coverage vs honest residual — Mac officers also receive a Seatbelt raw-socket
+# denial; Linux/Docker needs a host/container network policy. Existing officers
+# must be restarted: docs/runbooks/egress-allowlist.md.
 # =============================================================
 
 # Turn the allowlist ON for this deployment. The framework default is false =

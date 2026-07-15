@@ -25,6 +25,7 @@ import { createClient } from "redis";
 
 const OFFICER = process.env.OFFICER_NAME || "unknown";
 const REDIS_URL = process.env.REDIS_URL || "redis://redis:6379";
+const OBSERVE_ONLY = process.env.CABINET_OBSERVE_ONLY === "1";
 
 // Guard against a broken launch path. If OFFICER_NAME was never exported into
 // this process (or the MCP-config "${OFFICER_NAME}" placeholder was passed
@@ -113,10 +114,13 @@ async function processPending(): Promise<void> {
  */
 async function pushToSession(content: string, messageId: string): Promise<void> {
   try {
+    const deliveredContent = OBSERVE_ONLY
+      ? `${content}\n\n[observe-only receipt: after processing this trigger, run cabinet/scripts/hooks/observe-ack.sh ${messageId}]`
+      : content;
     await server.notification({
       method: "notifications/claude/channel",
       params: {
-        content: content,
+        content: deliveredContent,
         meta: {
           source: "redis",
           stream: STREAM_KEY,

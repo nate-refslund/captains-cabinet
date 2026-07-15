@@ -49,12 +49,13 @@ REPO_ROOT = SCRIPTS_DIR.parent.parent
 
 SETUP_MAC = SCRIPTS_DIR / "setup-mac.sh"
 SETUP_ENV = SCRIPTS_DIR / "setup-env.sh"
+DASHBOARD_PASSWORD = SCRIPTS_DIR / "dashboard-password.sh"
 INSTALL_TOOLS = SCRIPTS_DIR / "install-mac-tools.sh"
 PROVISION_PG = SCRIPTS_DIR / "provision-local-postgres.sh"
 TG_VALIDATE = SCRIPTS_DIR / "telegram-validate-token.sh"
 TG_CAPTURE = SCRIPTS_DIR / "telegram-capture-chat-id.sh"
 
-ALL_SCRIPTS = [SETUP_MAC, SETUP_ENV, INSTALL_TOOLS, PROVISION_PG, TG_VALIDATE, TG_CAPTURE]
+ALL_SCRIPTS = [SETUP_MAC, SETUP_ENV, DASHBOARD_PASSWORD, INSTALL_TOOLS, PROVISION_PG, TG_VALIDATE, TG_CAPTURE]
 
 # Minimal PATH: system tools only — keeps Homebrew (brew/psql/pg_isready)
 # and any live network tooling out of the hermetic tests deterministically.
@@ -215,8 +216,13 @@ class TestSetupEnvDefaults:
         # auto-generated runtime values present
         dash = [l for l in text.splitlines() if l.startswith("DASHBOARD_PASSWORD=")][0]
         pg = [l for l in text.splitlines() if l.startswith("POSTGRES_PASSWORD=")][0]
+        webhook = [l for l in text.splitlines() if l.startswith("TELEGRAM_WEBHOOK_SECRET=")][0]
         assert len(dash.split("=", 1)[1]) >= 20
         assert len(pg.split("=", 1)[1]) >= 30
+        webhook_value = webhook.split("=", 1)[1]
+        assert len(webhook_value) == 64
+        assert webhook_value not in r.stdout + r.stderr
+        assert "dashboard-password.sh --copy" in r.stdout
         # every account key left unset — the de-cloud boot promise
         for key in ("TELEGRAM_COS_TOKEN", "CAPTAIN_TELEGRAM_ID", "TELEGRAM_HQ_CHAT_ID",
                     "GITHUB_PAT", "NEON_CONNECTION_STRING", "VOYAGE_API_KEY"):
@@ -237,6 +243,60 @@ class TestSetupEnvDefaults:
         r = run(["bash", str(SETUP_ENV), "--check"], env=env)
         assert r.returncode == 0, "no cloud account may be boot-critical"
         assert "boot-critical" in r.stdout
+
+
+class TestDashboardPasswordRecovery:
+    def test_copies_without_printing_secret(self, cab_root, tmp_path):
+        env = base_env(cab_root)
+        assert run(["bash", str(SETUP_ENV), "--defaults"], env=env).returncode == 0
+        password = next(
+            line.split("=", 1)[1]
+            for line in (cab_root / "cabinet" / ".env").read_text().splitlines()
+            if line.startswith("DASHBOARD_PASSWORD=")
+        )
+        fake_bin = tmp_path / "fake-bin"
+        fake_bin.mkdir()
+        copied = tmp_path / "clipboard"
+        pbcopy = fake_bin / "pbcopy"
+        pbcopy.write_text('#!/bin/bash\ncat > "$FAKE_PBCOPY_OUT"\n')
+        pbcopy.chmod(0o755)
+        recovery_env = base_env(
+            cab_root,
+            path=f"{fake_bin}:{MIN_PATH}",
+            FAKE_PBCOPY_OUT=str(copied),
+        )
+        result = run(["bash", str(DASHBOARD_PASSWORD), "--copy"], env=recovery_env)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert copied.read_text() == password
+        assert password not in result.stdout + result.stderr
+        assert "not printed" in result.stdout
+
+    def test_refuses_loose_env_permissions(self, cab_root):
+        env = base_env(cab_root)
+        assert run(["bash", str(SETUP_ENV), "--defaults"], env=env).returncode == 0
+        (cab_root / "cabinet" / ".env").chmod(0o644)
+        result = run(["bash", str(DASHBOARD_PASSWORD), "--copy"], env=env)
+        assert result.returncode == 1
+        assert "permissions are 600" in result.stderr
+
+    def test_reads_value_as_data_without_executing_env_content(self, cab_root, tmp_path):
+        env_file = cab_root / "cabinet" / ".env"
+        marker = tmp_path / "must-not-exist"
+        password = f"literal-$(touch {marker})"
+        env_file.write_text(f"DASHBOARD_PASSWORD={password}\n")
+        env_file.chmod(0o600)
+        fake_bin = tmp_path / "fake-bin"
+        fake_bin.mkdir()
+        copied = tmp_path / "clipboard"
+        pbcopy = fake_bin / "pbcopy"
+        pbcopy.write_text('#!/bin/bash\ncat > "$FAKE_PBCOPY_OUT"\n')
+        pbcopy.chmod(0o755)
+        env = base_env(cab_root, path=f"{fake_bin}:{MIN_PATH}", FAKE_PBCOPY_OUT=str(copied))
+        result = run(["bash", str(DASHBOARD_PASSWORD)], env=env)
+        assert result.returncode == 0
+        assert copied.read_text() == password
+        assert not marker.exists(), "cabinet/.env content must never be sourced or evaluated"
+        assert password not in result.stdout + result.stderr
 
 
 class TestWizardTelegramValidation:

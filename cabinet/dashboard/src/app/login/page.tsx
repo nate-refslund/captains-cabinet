@@ -11,7 +11,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="text-center">
           <h1 className="text-2xl font-bold text-white">
-            Founder&apos;s Cabinet
+            Captain&apos;s Cabinet
           </h1>
           <p className="mt-2 text-sm text-zinc-500">
             Enter the dashboard password to continue
@@ -51,6 +51,19 @@ export default function LoginPage() {
             {isPending ? 'Signing in...' : 'Sign in'}
           </button>
         </form>
+
+        <div className="mt-6 rounded-lg border border-zinc-800 bg-zinc-900/60 px-4 py-3 text-sm text-zinc-400">
+          <p className="font-medium text-zinc-300">Forgot the password?</p>
+          <p className="mt-1">
+            On the Cabinet Mac, open Terminal in the Cabinet folder and run:
+          </p>
+          <code className="mt-2 block overflow-x-auto rounded bg-zinc-950 px-2 py-1.5 text-xs text-zinc-300">
+            bash cabinet/scripts/dashboard-password.sh --copy
+          </code>
+          <p className="mt-2 text-xs text-zinc-500">
+            This copies it to your clipboard without printing it. Paste it above.
+          </p>
+        </div>
       </div>
     </div>
   )

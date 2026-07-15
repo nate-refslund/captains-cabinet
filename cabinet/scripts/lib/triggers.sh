@@ -176,6 +176,10 @@ trigger_send() {
     2>&1 > /dev/null)
   if [ $? -ne 0 ] || [ -n "$_xadd_err" ]; then
     echo "trigger_send WARN: XADD to $stream failed (${_xadd_err:-redis unreachable?}) — trigger NOT queued, sender=$sender" >&2
+    # A wake without a queued payload is actively misleading, and returning
+    # success lets callers record work as dispatched when Redis received
+    # nothing.  Propagate delivery failure so the caller can retry/rollback.
+    return 1
   fi
 
   # Cabinet Memory embed of officer_trigger REMOVED 2026-07-12 (org-memory
@@ -193,6 +197,53 @@ trigger_send() {
   # NEXT turn, which for an idle pane is up to a /loop-cadence away — root cause
   # 2026-06-25). Fully detached + best-effort: see trigger_wake_officer.
   trigger_wake_officer "$target"
+}
+
+# Remove only the stream prefix that this consumer group has conclusively
+# processed.  MAXLEN is unsafe for consumer groups: it knows nothing about the
+# pending-entry list and can evict both an unacknowledged payload and a payload
+# that the group has not read yet.  The safe MINID boundary is:
+#   * the oldest pending id, when any delivery remains unacknowledged; or
+#   * the group's last-delivered id, when the PEL is empty.
+# XTRIM MINID removes entries strictly *older* than the boundary, retaining the
+# boundary itself.  Probe/parse failures fail safe by skipping the trim.
+_trigger_trim_processed_prefix() {
+  local stream="$1" group="$2"
+  local boundary="" groups_info="" group_count="" only_group=""
+
+  # This trigger topology has one group per officer stream.  If an observer or
+  # future consumer adds another group, a boundary safe for one group may be
+  # unread/pending in the other.  Fail safe by retaining the stream rather than
+  # guessing at a cross-group minimum.
+  if ! groups_info=$(redis-cli --raw -h "$TRIG_REDIS_HOST" -p "$TRIG_REDIS_PORT" \
+    XINFO GROUPS "$stream" 2>/dev/null); then
+    return 0
+  fi
+  group_count=$(printf '%s\n' "$groups_info" | awk '$0 == "name" { count++ } END { print count + 0 }')
+  only_group=$(printf '%s\n' "$groups_info" | awk '$0 == "name" { getline; print; exit }')
+  if [ "$group_count" -ne 1 ] || [ "$only_group" != "$group" ]; then
+    return 0
+  fi
+
+  if ! boundary=$(redis-cli --raw -h "$TRIG_REDIS_HOST" -p "$TRIG_REDIS_PORT" \
+    XPENDING "$stream" "$group" - + 1 2>/dev/null \
+    | awk '/^[0-9]+-[0-9]+$/ { print; exit }'); then
+    boundary=""
+  fi
+
+  if [ -z "$boundary" ]; then
+    if ! boundary=$(printf '%s\n' "$groups_info" \
+      | awk '$0 == "last-delivered-id" { getline; print; exit }'); then
+      boundary=""
+    fi
+  fi
+
+  if [[ ! "$boundary" =~ ^[0-9]+-[0-9]+$ ]] || [ "$boundary" = "0-0" ]; then
+    return 0
+  fi
+
+  redis-cli -h "$TRIG_REDIS_HOST" -p "$TRIG_REDIS_PORT" \
+    XTRIM "$stream" MINID "$boundary" > /dev/null 2>&1 || true
 }
 
 # Read NEW triggers for an officer (marks them as pending until ACK'd)
@@ -341,9 +392,8 @@ trigger_ack() {
       XACK "$stream" "$group" "$id" > /dev/null 2>&1
   done
 
-  # Trim acknowledged messages (keep stream lean)
-  redis-cli -h "$TRIG_REDIS_HOST" -p "$TRIG_REDIS_PORT" \
-    XTRIM "$stream" MAXLEN '~' 100 > /dev/null 2>&1
+  # Keep the stream lean without deleting pending or unread payloads.
+  _trigger_trim_processed_prefix "$stream" "$group"
 }
 
 # Count pending (unacknowledged) triggers

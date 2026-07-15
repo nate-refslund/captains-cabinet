@@ -153,12 +153,14 @@ def test_live_values_absent_example_twins_present(export: Path):
     cfg = export / "instance" / "config"
     for live in ("platform.yml", "sources.yml", "directions.yml", "peers.yml",
                  "officer-emails.yml", "probes.yml", "warrooms.yml",
-                 "outcomes.yml", "hq-instance.yml.draft", "authority-enforcing"):
+                 "outcomes.yml", "egress.yml", "hq-instance.yml.draft",
+                 "authority-enforcing"):
         assert not (cfg / live).exists(), f"R120: live {live} must not ship"
     for twin in ("platform.yml.example", "sources.yml.example",
                  "directions.yml.example", "peers.yml.example",
                  "officer-emails.yml.example", "probes.yml.example",
                  "warrooms.yml.example", "roster.yml.example",
+                 "egress.yml.example",
                  "publish-scan-patterns.local.example",
                  "role-registry.md.example"):
         assert (cfg / twin).is_file(), f"R120/R166: {twin} must ship"
@@ -183,6 +185,12 @@ def test_instance_contains_only_examples_and_structure(export: Path):
         if not _INSTANCE_ALLOWED(rel):
             offenders.append(rel)
     assert not offenders, f"live instance files survived the pass: {offenders}"
+
+
+def test_private_checkpoint_reviews_do_not_ship(export: Path):
+    reviews = export / "shared/interfaces/reviews"
+    assert reviews.is_dir()
+    assert sorted(p.name for p in reviews.iterdir()) == [".gitkeep"]
 
 
 def test_contexts_and_projects_pruned(export: Path):
@@ -341,7 +349,7 @@ def test_framework_docs_dated_snapshots_archived(export: Path):
 
 def test_proposals_non_amendments_archived_amendments_kept(export: Path):
     """R167 (personal-clean wave, 2026-07-15): fills the gap R146 named but
-    never implemented — the 18 docs/proposals/germline-amendment-*.md
+        never implemented — the 20 docs/proposals/germline-amendment-*.md
     FOUNDING AMENDMENTS (R031/R146: ratified, frozen constitutional record)
     ship verbatim; every other file (addenda/activation runbooks, no
     ratified ship requirement) archives with an ARCHIVED-NOTE.md stub."""
@@ -354,14 +362,16 @@ def test_proposals_non_amendments_archived_amendments_kept(export: Path):
         "germline-amendment-cabinet-axes-2026-07-05.md",
         "germline-amendment-candor-2026-07-10.md",
         "germline-amendment-constitution-retirement-2026-07-07.md",
-        "germline-amendment-cosmetic-batch-2026-07-07.md",
-        "germline-amendment-de-nate-2026-07-05.md",
-        "germline-amendment-gather-rewire-2026-07-07.md",
+            "germline-amendment-cosmetic-batch-2026-07-07.md",
+            "germline-amendment-de-nate-2026-07-05.md",
+            "germline-amendment-evidence-recorder-v1-2026-07-15.md",
+            "germline-amendment-gather-rewire-2026-07-07.md",
         "germline-amendment-golden-evals-prune-2026-07-07.md",
         "germline-amendment-host-grant-removal-2026-07-07.md",
         "germline-amendment-instance-extract-2026-07-05.md",
-        "germline-amendment-manifest-sunset-2026-07-07.md",
-        "germline-amendment-policy-engine-pulldown-2026-07-07.md",
+            "germline-amendment-manifest-sunset-2026-07-07.md",
+            "germline-amendment-officer-security-boundary-2026-07-15.md",
+            "germline-amendment-policy-engine-pulldown-2026-07-07.md",
         "germline-amendment-source-adapter-2026-07-05.md",
         "germline-amendment-sovereign-posture-2026-07-05.md",
         "germline-amendment-task-create-2026-07-03.md",
@@ -377,7 +387,7 @@ def test_proposals_non_amendments_archived_amendments_kept(export: Path):
                  "germline-window-addendum-2026-07-07.md",
                  "sovereign-posture-activation-2026-07-09.md"):
         assert not (proposals / gone).exists(), f"R167: non-amendment proposal must not ship: {gone}"
-    # nothing else remains beyond the stub + the 18 amendments
+    # nothing else remains beyond the stub + the 20 amendments
     leftover = sorted(p.name for p in proposals.iterdir())
     assert leftover == sorted(["ARCHIVED-NOTE.md"] + amendments), leftover
 

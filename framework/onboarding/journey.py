@@ -508,7 +508,7 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
             body=finding["summary"],
             evidence=finding["citations"],
             options=[
-                {"action": "continue", "label": "Show me the deeper orientation"},
+                {"action": "continue", "label": "See the locked next step"},
                 {"action": "pause", "label": "Pause here"},
                 {"action": "revoke", "label": "Revoke folder access"},
                 {"action": "purge", "label": "Delete onboarding data", "danger": True},
@@ -517,11 +517,12 @@ def _card(state: dict[str, Any]) -> dict[str, Any]:
     elif stage == "orientation_offered":
         common.update(
             kind="deep_orientation",
-            title="The low floor is proven; the high ceiling stays gated",
+            title="Deeper Orientation has not started",
             body=(
-                "Next I can spend hours building a source map, Strategy Mirror, proposed officer shape, "
-                "and lane-by-lane autonomy examples. This invitation grants no new access or authority; "
-                "each additional source and every operational permission will be requested just in time."
+                "A later, separately approved step could spend longer learning how your work fits together, "
+                "reflect back priorities and conflicts, suggest a useful AI team, and show concrete examples "
+                "of what each officer may observe, propose, or do. That work is disabled and has not started. "
+                "No new access or authority was granted."
             ),
             options=[
                 {"action": "pause", "label": "Pause here"},
@@ -816,27 +817,76 @@ def _scan_source(source: Path, charter_hash: str) -> tuple[dict[str, Any], list[
 
 
 def _source_integrity_fingerprint(source: Path) -> dict[str, Any]:
-    """Hash source entry metadata without persisting paths or contents."""
+    """Hash bounded First-Window metadata without persisting paths or contents.
+
+    The before/after proof covers the same eligible, non-sensitive source
+    surface as the First Window.  It deliberately prunes hidden/system trees,
+    sensitive names and symlinks, and stops at the same entry/file/byte limits.
+    Otherwise a large ``.git`` or dependency tree could hold the onboarding
+    lock for minutes even though the approved scan would never inspect it.
+    """
     rows: list[tuple[str, int, int, int, int, int]] = []
+    visited = 0
+    total = 0
+    truncated = False
     for current, dirnames, filenames in os.walk(source, topdown=True, followlinks=False):
         current_path = Path(current)
-        dirnames[:] = sorted(dirnames)
-        for name in sorted([*dirnames, *filenames]):
+        kept_dirs: list[str] = []
+        for dirname in sorted(dirnames):
+            visited += 1
+            if visited >= MAX_SCAN_ENTRIES:
+                truncated = True
+                break
+            child = current_path / dirname
+            rel = child.relative_to(source)
+            if dirname in SKIP_DIRS or _is_hidden_rel(rel) or _is_sensitive(rel):
+                continue
+            try:
+                if stat.S_ISLNK(child.lstat().st_mode):
+                    continue
+            except OSError:
+                continue
+            kept_dirs.append(dirname)
+        dirnames[:] = kept_dirs
+        for name in sorted(filenames):
+            visited += 1
+            if len(rows) >= MAX_FILES or total >= MAX_TOTAL_BYTES or visited >= MAX_SCAN_ENTRIES:
+                truncated = True
+                break
             path = current_path / name
             try:
                 meta = path.lstat()
-                rel = path.relative_to(source).as_posix()
+                rel_path = path.relative_to(source)
             except (OSError, ValueError):
                 continue
+            if (
+                _is_hidden_rel(rel_path)
+                or _is_sensitive(rel_path)
+                or not _allowed_file(path)
+                or stat.S_ISLNK(meta.st_mode)
+                or not stat.S_ISREG(meta.st_mode)
+            ):
+                continue
+            if meta.st_size > MAX_FILE_BYTES or total + meta.st_size > MAX_TOTAL_BYTES:
+                truncated = True
+                continue
             rows.append((
-                rel,
+                rel_path.as_posix(),
                 int(meta.st_mode),
                 int(meta.st_size),
                 int(meta.st_mtime_ns),
                 int(meta.st_dev),
                 int(meta.st_ino),
             ))
-    return {"hash": _hash(rows), "entry_count": len(rows)}
+            total += int(meta.st_size)
+        if len(rows) >= MAX_FILES or total >= MAX_TOTAL_BYTES or visited >= MAX_SCAN_ENTRIES:
+            truncated = True
+            break
+    return {
+        "hash": _hash(rows),
+        "entry_count": len(rows),
+        "truncated_by_limits": truncated,
+    }
 
 
 def _command_drift(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -931,12 +981,26 @@ def _contradictions(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _risk_markers(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    urgent = re.compile(r"\b(urgent|blocked|overdue|needs action|action required)\b", re.I)
-    todo = re.compile(r"\b(todo|fixme|xxx)\b", re.I)
+    # A strong claim needs an explicit status marker, not a word appearing in
+    # ordinary prose.  The former substring regex treated "hook-blocked" in a
+    # technical document as a blocked work item and made the headline dividend
+    # lie.  Accept familiar Markdown prefixes and status labels, then require
+    # the marker at the start of the meaningful text.
+    markdown_prefix = re.compile(
+        r"^\s*(?:(?:#{1,6}|[-*+]|\d+[.)]|\[[ xX]\])\s+|[*_`]+)*"
+    )
+    urgent = re.compile(
+        r"^(?:(?:urgent|blocked|overdue|needs action|action required)\s*(?::|[-–—]\s|$)"
+        r"|(?:status|state|priority)\s*:\s*(?:urgent|blocked|overdue|needs action|action required)\b)",
+        re.I,
+    )
+    comment_prefix = re.compile(r"^\s*(?:(?://+|/\*+|<!--|#+|[-*+]|\[[ xX]\])\s*)+")
+    todo = re.compile(r"^(?:todo|fixme|xxx)\s*(?::|[-–—(]|$)", re.I)
     out: list[dict[str, Any]] = []
     for entry in entries:
         for line_no, line in enumerate(entry["lines"], start=1):
-            if urgent.search(line):
+            meaningful = markdown_prefix.sub("", line).lstrip("*_`")
+            if urgent.search(meaningful):
                 out.append({
                     "score": 80,
                     "kind": "attention_marker",
@@ -947,7 +1011,8 @@ def _risk_markers(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     ),
                     "citations": [_citation(entry, line_no, line)],
                 })
-            elif todo.search(line):
+            open_work = comment_prefix.sub("", line).lstrip("*_`")
+            if not urgent.search(meaningful) and todo.search(open_work):
                 out.append({
                     "score": 50,
                     "kind": "open_work_marker",
@@ -1160,6 +1225,16 @@ def _act_core(
 
     with _locked(base):
         state = _load_state(base)
+        # ``act`` performs an early lifecycle check before it records intent,
+        # but releases that lock while writing evidence.  A concurrent purge
+        # can complete in that interval.  The inner action lock is the commit
+        # boundary, so it must independently refuse the stale action; otherwise
+        # propose_window can recreate state after a successful purge.
+        if state.get("stage") == "purged":
+            raise JourneyError(
+                "onboarding_purged",
+                "Onboarding data was purged. No later action can reopen its evidence trial.",
+            )
         duplicate = _event_for_action(base, action_id)
         if duplicate:
             # Idempotent replay only when the SAME action reuses the id. A reused
@@ -1229,6 +1304,8 @@ def _act_core(
                 "after_hash": source_after["hash"],
                 "before_entry_count": source_before["entry_count"],
                 "after_entry_count": source_after["entry_count"],
+                "before_truncated_by_limits": source_before["truncated_by_limits"],
+                "after_truncated_by_limits": source_after["truncated_by_limits"],
                 "unchanged": source_before == source_after,
             }
             manifest_payload = {key: value for key, value in manifest.items() if key != "manifest_hash"}

@@ -94,9 +94,8 @@ def paths(tmp_path):
     }
 
 
-def run_main(paths, officer, extra_allow=""):
-    rc = gen.main(
-        [
+def run_main(paths, officer, extra_allow="", observe_only=False):
+    args = [
             "--officer", officer,
             "--scope", str(paths["scope"]),
             "--input", str(paths["merged"]),
@@ -104,7 +103,9 @@ def run_main(paths, officer, extra_allow=""):
             "--out-mcp", str(paths["out_mcp"]),
             "--out-settings", str(paths["out_settings"]),
         ]
-    )
+    if observe_only:
+        args.append("--observe-only")
+    rc = gen.main(args)
     mcp = json.loads(paths["out_mcp"].read_text())
     settings = json.loads(paths["out_settings"].read_text())
     return rc, mcp, settings
@@ -237,6 +238,29 @@ def test_extra_allow_infra_passthrough(paths):
     assert "redis-trigger-channel" in mcp["mcpServers"]
     # cua granted but not defined in the merged config → never fabricated
     assert "cua" not in mcp["mcpServers"]
+
+
+def test_observe_only_boots_only_local_trigger_and_comms(paths):
+    paths["scope"].write_text(
+        "agents:\n  alpha:\n    mcps: [neon, vercel]\n"
+        "universal: [redis-trigger-channel, cabinet-comms]\n"
+    )
+    merged = dict(MERGED_FIXTURE)
+    merged["mcpServers"] = dict(MERGED_FIXTURE["mcpServers"])
+    merged["mcpServers"]["cabinet-comms"] = {
+        "command": "python3.12", "args": ["server.py"]}
+    paths["merged"].write_text(json.dumps(merged))
+    rc, mcp, _ = run_main(
+        paths, "alpha", extra_allow="cua,neon", observe_only=True)
+    assert rc == 0
+    assert sorted(mcp["mcpServers"]) == [
+        "cabinet-comms", "redis-trigger-channel"]
+
+
+def test_observe_only_still_fails_closed_for_unknown_officer(paths):
+    rc, mcp, settings = run_main(paths, "mallory", observe_only=True)
+    assert rc == 0
+    _assert_fail_closed(mcp, settings)
 
 
 def test_pseudo_underscore_keys_always_stripped(paths):

@@ -1,0 +1,25 @@
+# Per-lane TELLS for the verified-noise discriminator.  (TEMPLATE — copy to signals.yml)
+#
+# The CORE logic (two-signal magnitude+recency gate, freshness cutoffs, attribution
+# tree, verdict precedence, smoke-outranks-count) is lane-agnostic and lives in
+# framework/frontdoor/signal_discriminator.py. THIS file supplies the per-lane TELLS it
+# reads — keyed by your Sentry PROJECT slug (the value of CABINET_SENTRY_PROJECT).
+#
+# Contract of record:
+#   docs/plans/frontdoor-signal-discriminator-2026-07-14.md
+#
+# FAIL-OPEN: a lane absent from this table (or this whole file absent) resolves to EMPTY
+# tells. With empty tells the discriminator can only ever (a) suppress a FROZEN issue by
+# recency alone, or (b) return INCONCLUSIVE for a fresh unattributable issue → which is
+# EMITTED. It never suppresses a fresh error it cannot positively explain. So this file
+# only ever makes the discriminator SHARPER (adds prod-smoke + fresh-issue attribution +
+# the staging≠prod fix); it is never load-bearing for safety.
+
+sentry:
+  # Replace this key with YOUR Sentry project slug (== CABINET_SENTRY_PROJECT).
+  your-sentry-project-slug:
+    prod_hosts: [example.com, www.example.com]     # EXACT allowlist — staging hosts must NOT be here
+    staging_host_patterns: ["test.", "staging."]    # leading subdomain labels ⇒ NOISE (staging ≠ prod)
+    bot_host_patterns: ["vercel.app"]               # deploy-preview / crawler host suffixes ⇒ NOISE
+    template_path_pattern: '\[[a-zA-Z]'             # unresolved route template (/[locale]/[id]) ⇒ NOISE
+    smoke_paths: [/, /health]                       # prod serving ground-truth (ALL 200 ⇒ PROD_OK)

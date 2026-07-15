@@ -13,12 +13,12 @@
 # All assertions run in DRY_RUN or rejection-exit mode — no real filesystem writes,
 # Docker operations, Redis writes, git clones, or Neon connections are made in CI.
 #
-# Run: bash /opt/founders-cabinet/cabinet/scripts/test-cabinet-bootstrap.sh
+# Run: bash cabinet/scripts/test-cabinet-bootstrap.sh
 # Exit 0 on all PASS, 1 on any FAIL.
 
 set -uo pipefail
 
-CABINET_ROOT="${CABINET_ROOT:-/opt/founders-cabinet}"
+CABINET_ROOT="${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 BOOTSTRAP="$CABINET_ROOT/cabinet/scripts/cabinet-bootstrap.sh"
 PASS=0
 FAIL=0

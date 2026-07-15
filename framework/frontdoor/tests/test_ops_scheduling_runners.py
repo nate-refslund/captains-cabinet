@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import datetime as dt
 import importlib.util
-import os
 import plistlib
 from pathlib import Path
 
@@ -68,8 +67,13 @@ def test_plist_parses_and_matches_conventions(label):
     assert label.startswith("com.cabinet.")
     # Producers must never fire mid-bootstrap (matches every existing plist).
     assert data["RunAtLoad"] is False
-    # Log convention: ~/.cabinet/logs/<name>.log, stdout+stderr merged.
-    assert data["StandardOutPath"].startswith(os.path.expanduser("~/.cabinet/logs/"))
+    # Log convention: <deployed checkout owner>/.cabinet/logs/<name>.log,
+    # stdout+stderr merged. Do not compare with the CI runner's HOME: these are
+    # intentionally live-rendered macOS plists whose absolute checkout prefix
+    # belongs to the target Mac, not the Linux verifier.
+    expected_logs = Path(live_prefix).parent / ".cabinet" / "logs"
+    assert Path(data["StandardOutPath"]).parent == expected_logs
+    assert data["StandardOutPath"].endswith(".log")
     assert data["StandardOutPath"] == data["StandardErrorPath"]
     # Exactly one schedule mechanism.
     assert ("StartInterval" in data) != ("StartCalendarInterval" in data)

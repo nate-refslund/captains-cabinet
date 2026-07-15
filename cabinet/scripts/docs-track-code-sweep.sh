@@ -11,7 +11,7 @@
 #   1. dead repo-path references in LIVING docs: any backtick-quoted or bare
 #      token shaped like a repo path (first segment is a repo top-level
 #      entry, last segment carries an extension — e.g. cabinet/scripts/foo.sh,
-#      docs/plans/bar.md, framework/x/y.py) must exist at HEAD. Home-anchored
+#      docs/plans/bar.md, framework/x/y.py) must exist in the tracked index. Home-anchored
 #      runs (~/...) and scheme URLs (http://...) are stripped before matching.
 #   2. dead RELATIVE markdown links [text](rel/path.md) in the same living
 #      set: #anchors stripped, scheme links (http/https/mailto/tel/data) and
@@ -27,7 +27,9 @@
 #   written, not living docs, and must keep their original references.
 #
 # EXISTENCE ORACLE: when the scan root is itself a git toplevel, "exists"
-#   means tracked at HEAD (git ls-tree — deterministic, ignores local litter);
+#   means tracked in the index (git ls-files --cached — deterministic, ignores
+#   local litter while allowing docs and their new target to enter the same
+#   commit, as G6 requires);
 #   otherwise a plain filesystem check (the pytest fixture-tree mode).
 #
 # ALLOWLIST: cabinet/scripts/docs-sweep-allowlist.txt (override with
@@ -140,18 +142,18 @@ if [ -n "$TOPLEVEL" ]; then
   TOPLEVEL=$(cd "$TOPLEVEL" && pwd -P) || TOPLEVEL=""
 fi
 if [ -n "$TOPLEVEL" ] && [ "$TOPLEVEL" = "$ROOT" ]; then
-  if TRACKED=$(git -C "$ROOT" ls-tree -r --name-only HEAD 2>/dev/null); then
+  if TRACKED=$(git -C "$ROOT" ls-files --cached 2>/dev/null); then
     GIT_MODE=1
   fi
 fi
 
 if [ "$GIT_MODE" = 1 ]; then
-  TOPS=$(git -C "$ROOT" ls-tree --name-only HEAD 2>/dev/null)
+  TOPS=$(printf '%s\n' "$TRACKED" | sed 's|/.*||' | sort -u)
 else
   TOPS=$(ls -A "$ROOT")
 fi
 
-# exists at HEAD (git mode: tracked file, or tracked-dir prefix) / on disk.
+# exists in the index (git mode: tracked file, or tracked-dir prefix) / on disk.
 # NB: feed the big lists via here-string, not `printf ... | grep -q`/`| awk`.
 # grep -q and awk `exit` close their stdin on the first match, which sends
 # SIGPIPE to the upstream printf — harmless today (no pipefail) but it spews

@@ -56,7 +56,8 @@ FAST boot. In order it: runs the **key wizard** (Step 0 — `setup-env.sh`;
 every key is recommended or optional, nothing is critical-tier — it opens
 signup pages, masks paste input, and writes `cabinet/.env` at `chmod 600`;
 `setup-env.sh --defaults` writes a minimal local-only `.env` with zero cloud
-accounts), installs missing Homebrew deps (tmux, jq, python3, redis), starts
+accounts and generates the private Telegram webhook authentication secret),
+installs missing Homebrew deps (tmux, jq, python3, redis), starts
 Redis (+ enables AOF), provisions the LOCAL work store when no connection
 string is configured (`provision-local-postgres.sh` — PostgreSQL 16 +
 pgvector; Neon is the documented cloud alternative, no longer a
@@ -77,7 +78,9 @@ Verify: `bash cabinet/scripts/setup-mac.sh --check` returns exit 0.
 > keys): `bash cabinet/scripts/setup-env.sh --force`. Headless (CI/clone):
 > `bash cabinet/scripts/setup-env.sh --defaults`, or
 > `SKIP_ENV_WIZARD=1 bash cabinet/scripts/setup-mac.sh` to skip the wizard
-> and fill `.env` yourself.
+> and fill `.env` yourself. To sign in without printing the generated
+> dashboard password, run `bash cabinet/scripts/dashboard-password.sh --copy`
+> on the Cabinet Mac and paste from the clipboard.
 
 ## 4. Configuration
 
@@ -202,6 +205,21 @@ Open System Settings → Privacy & Security:
 After signing + notarization, these consents persist across reboots.
 
 ## 7. Deploy LaunchAgents
+
+Before reconciling or deploying a live checkout with local changes, capture a
+verified recovery point. This does not stash, reset, fetch, stop services, or
+print secrets:
+
+```bash
+bash cabinet/scripts/pre-dogfood-snapshot.sh --root /Users/nate/captains-cabinet
+```
+
+The mode-700 destination contains a verified all-refs Git bundle, exact dirty
+files and patches, a separate local-only runtime-secret archive, and freshly
+validated Redis and Postgres snapshots. `worktree-before.txt` must be identical
+to `worktree-after.txt`; otherwise the command fails and the capture must be
+repeated from a quiescent state. Never attach `runtime-secrets.tgz` to the
+shareable dogfood evidence bundle.
 
 ```bash
 CABINET_ROOT="$(pwd)" bash cabinet/scripts/deploy-mac.sh --all
@@ -413,15 +431,16 @@ The Cabinet's durable state lives in three places:
 |---|---|---|
 | **Postgres (Neon)** | event ledger, role entities, work graph, OVI snapshots | Neon's built-in continuous backup (free tier: 7 days PITR) |
 | **Filesystem** | `shared/interfaces/captain-*.md`, `instance/roles/active/*.yml`, `memory/skills/evolved/*.md`, `memory/tier3/experience-records/` (canonical store since 2026-07-04 — both `.jsonl` and `.md` records) | Daily `rsync` to local NAS OR S3 |
-| **Redis** | Heartbeat, cost counters, trigger streams (ephemeral) | Optional `BGSAVE` daily snapshot if you want to recover pending triggers across a hard restart |
+| **Redis** | Heartbeat, cost counters, trigger streams | Bounded fresh RDB; healthy multipart AOF fallback is fsynced and restore-tested if BGSAVE is stuck |
 
 **The backup job is manifest-owned (lane-ops 2026-07-04)** — do NOT hand-roll
 a cron script (the old `~/bin/cabinet-backup.sh` rsync snippet that used to
 live here predates the fleet manifest and described none of the real
 machinery). The pieces:
 
-- **`cabinet/scripts/backup.sh`** — the actual backup (filesystem artifacts +
-  Redis `BGSAVE`; optional `--pg` for a self-hosted Postgres). Scheduled by
+- **`cabinet/scripts/backup.sh`** — the actual backup (topology-preserved filesystem artifacts +
+  a bounded fresh Redis RDB transfer, with a write-paused/fsynced and disposable-restore-tested AOF fallback + automatic `pg_dump` whenever `DATABASE_URL` or
+  `NEON_CONNECTION_STRING` is configured; use `--no-pg` only deliberately). Scheduled by
   the `backup` row in `cabinet/services.yml` (daily 03:00 local,
   `--retention-days 14`, destination `~/Cabinet-Backups`; the row's `expected:`
   floor puts it under outcome-watchdog no-silent-cron coverage). Render/load
@@ -430,11 +449,11 @@ machinery). The pieces:
   (newest snapshot → full restore into a throwaway temp dir → artifact
   verification; read-only against the backup, deliberately no `--apply`). A
   backup nobody has restored is a hope, not a backup.
-- **Deliberately NOT wired (Captain decisions, recorded on the services.yml
+- **Deliberately NOT wired (Captain decision, recorded on the services.yml
   `backup` row):** an off-machine copy (recommended: post-backup rsync of
   `~/Cabinet-Backups` to the UpCloud CPH box over Tailscale — a local
-  snapshot dies with the disk) and Redis AOF
-  (`cabinet/scripts/enable-redis-aof.sh` exists but restarts Redis).
+  snapshot dies with the disk). Redis AOF is already enabled on the live host
+  and is now a verified fallback for the daily capture.
 - **Ledger-hygiene backups are separate** from this daily job: the one-shot
   purge tools (`cabinet/scripts/ledger-purge-testrows.sh` for the JSONL
   event families, `cabinet/scripts/purge-sqlite-mirror.py` for the
@@ -444,6 +463,9 @@ machinery). The pieces:
 
 ## 11. Verification — 72h soak
 
+For a no-authority-expansion dogfood, first follow
+`docs/runbooks/observe-only-dogfood.md`. Do not start the clock until its
+process, CUA, source-write, posture, spend, and egress assertions are recorded.
 After everything is in place:
 
 1. Start a representative outcome:

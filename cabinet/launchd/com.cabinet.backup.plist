@@ -3,8 +3,9 @@
 <!-- DAILY Cabinet state backup (lane-ops 2026-07-04, closes CRIT-4: 19.7GB of
      runtime state with ZERO backups). 03:00 local it runs
      cabinet/scripts/backup.sh --retention-days 14, which snapshots
-     shared/interfaces/ + instance/ + memory/ (rsync) and the Redis dump.rdb
-     (BGSAVE) into ~/Cabinet-Backups/<YYYY-MM-DD>/ and prunes beyond 14 days.
+     shared/interfaces/ + instance/ + memory/ (topology-preserved rsync), a
+     fresh verified Redis RDB or fsynced/restore-tested AOF fallback, and the configured Postgres work store into
+     ~/Cabinet-Backups/<YYYY-MM-DD>/ and prunes beyond 14 days.
      Verify restorability any time with cabinet/scripts/restore-drill.sh
      (temp-dir only — never touches live state).
 
@@ -23,10 +24,8 @@
      backup does not survive disk loss/theft. Recommendation: post-backup
      rsync of ~/Cabinet-Backups to the UpCloud CPH box over Tailscale (the
      8CPU/16GB node already on the tailnet). Ops wires it on your word.
-     NATE-DECISION (Redis AOF — deliberately NOT flipped): BGSAVE is
-     point-in-time only; cabinet/scripts/enable-redis-aof.sh flips
-     appendonly+everysec but restarts Redis (brief trigger outage), so it
-     stays a Captain step.
+     Redis AOF is the live durability layer; backup.sh prefers a bounded fresh
+     RDB and uses only a paused, fsynced, disposable-restore-tested AOF fallback.
 
      No secrets in this file. KNOWN LIMIT: a 03:00 slot missed during sleep
      coalesces to one fire on wake; the per-day dated dir makes double-fires

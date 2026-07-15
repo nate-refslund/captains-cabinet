@@ -20,8 +20,9 @@ import os
 import subprocess
 
 from framework.acting import product_health
-from framework.env import captain_name
+from framework.env import captain_name, signal_tells
 from framework.frontdoor import intake
+from framework.frontdoor import signal_discriminator as sd
 from framework.sources import get_source
 
 # Repo root (…/framework/frontdoor/morning_synthesis.py → up 3). Used to locate
@@ -298,15 +299,27 @@ def _sentry_cfg() -> tuple[str, str]:
 
 
 def sentry_health_items(*, org: str | None = None, project: str | None = None,
-                        health: dict | None = None) -> list[dict]:
-    """Sentry error health → intake items, ONLY when there are unresolved errors.
+                        health: dict | None = None, tells: dict | None = None,
+                        smoke_ok: bool | None = None, url_fetcher=None,
+                        now=None) -> list[dict]:
+    """Sentry error health → intake items, run through the VERIFIED-NOISE DISCRIMINATOR
+    so the chronic / frozen / staging / bot false-positive class is SUPPRESSED before
+    it reaches the Chair (contract 2026-07-14; core logic in
+    ``framework.frontdoor.signal_discriminator``, which this delegates the judgment to).
 
-    ping-now if any single issue is an active incident (>= _INCIDENT_EVENTS events
-    in 24h — prod is actively erroring), else batch. Quiet when clean. Org/project
-    come from the instance env (CABINET_SENTRY_ORG / CABINET_SENTRY_PROJECT) so this
-    framework module stays product-agnostic. Best-effort: any failure → [].
+    Discriminator verdict → emission:
+      • NOISE              → ``[]`` — suppress; a settled/frozen/bot signal, not an
+                             incident (the 2026-07-14 "2811 cumulative, 83h-frozen" case).
+      • REAL_USER_SUSPECT  → ping-now, naming the affected prod route.
+      • PROD_SMOKE_NON_200  → ping-now — prod serving is down.
+      • INCONCLUSIVE       → FAIL-OPEN: emit exactly as the pre-discriminator code did
+                             (raw count tiering), so a lane with NO tells or an uncertain
+                             read degrades to today's behavior and never hides a real error.
 
-    ``health`` is injectable for tests (no network).
+    Org/project from the instance env (CABINET_SENTRY_ORG / CABINET_SENTRY_PROJECT);
+    per-lane TELLS from ``instance/config/signals.yml`` via ``sd.load_tells``. Best-effort
+    throughout: any failure → ``[]``. ``health`` / ``tells`` / ``smoke_ok`` / ``url_fetcher``
+    / ``now`` are injectable for tests (no network, no clock).
     """
     if org is None:
         org = _sentry_cfg()[0]
@@ -322,22 +335,56 @@ def sentry_health_items(*, org: str | None = None, project: str | None = None,
     issues = (health or {}).get("issues") or []
     if not issues:
         return []
+
+    # Pre-discriminator raw summary (the INCONCLUSIVE fail-open branch reproduces the
+    # exact behavior this module had before the discriminator was wired in).
     top = max((int(i.get("events", 0) or 0) for i in issues), default=0)
     titles = ", ".join(f"{(i.get('title') or '')[:60]} ({i.get('events', 0)})"
                        for i in issues[:3])
-    return [{
-        "source": "sentry-health",
-        "kind": "errors",
-        "ts": _now_iso(),
-        "urgency_tier": "ping-now" if top >= _INCIDENT_EVENTS else "batch",
-        "payload": {"summary": f"Sentry — {project}: {len(issues)} unresolved error(s) in 24h — {titles}"},
-        "context": {
-            "why": "unresolved product errors (Sentry)",
-            "project": project,
-            "count": len(issues),
-            "top_events": top,
-        },
-    }]
+
+    def _item(tier: str, summary: str, verdict: str, extra: dict | None = None) -> dict:
+        ctx = {"why": "unresolved product errors (Sentry)", "project": project,
+               "count": len(issues), "top_events": top, "verdict": verdict}
+        if extra:
+            ctx.update(extra)
+        return {"source": "sentry-health", "kind": "errors", "ts": _now_iso(),
+                "urgency_tier": tier, "payload": {"summary": summary}, "context": ctx}
+
+    # --- verified-noise discriminator (best-effort; never raises into the briefing) --
+    try:
+        if tells is None:
+            tells = signal_tells(project)
+        if url_fetcher is None:
+            token = os.environ.get("SENTRY_AUTH_TOKEN", "")
+            if token and org:
+                url_fetcher = lambda cid: sd.fetch_issue_url(cid, org, token)  # noqa: E731
+        if smoke_ok is None:
+            smoke_ok = sd.smoke_prod(tells.get("prod_hosts"), tells.get("smoke_paths"))
+        classified = [sd.classify_issue(i, tells, now=now, url_fetcher=url_fetcher)
+                      for i in issues]
+        verdict = sd.overall_sentry_verdict(classified, smoke_ok=smoke_ok)
+    except Exception:
+        # Discriminator itself failed → fail-open to the raw emit below.
+        verdict = sd.V_INCONCLUSIVE
+        classified = []
+
+    if verdict == sd.V_NOISE:
+        return []                                       # verified noise — suppress
+    if verdict == sd.V_PROD_NON_200:
+        return [_item("ping-now",
+                      f"Sentry — {project}: prod smoke NON-200 with {len(issues)} "
+                      f"unresolved error(s) — investigate serving state", verdict)]
+    if verdict == sd.V_REAL_USER:
+        real = next((c for c in classified if c.get("verdict") == sd.REAL_USER), {})
+        route = real.get("attribution") or "prod"
+        return [_item("ping-now",
+                      f"Sentry — {project}: real-user error on {route} — "
+                      f"{len(issues)} unresolved in 24h ({titles})", verdict, {"route": route})]
+
+    # INCONCLUSIVE (no tells / uncertain / discriminator error) ⇒ pre-discriminator emit.
+    return [_item("ping-now" if top >= _INCIDENT_EVENTS else "batch",
+                  f"Sentry — {project}: {len(issues)} unresolved error(s) in 24h — {titles}",
+                  verdict)]
 
 
 def _due_followups(script: str | None = None) -> list[dict]:

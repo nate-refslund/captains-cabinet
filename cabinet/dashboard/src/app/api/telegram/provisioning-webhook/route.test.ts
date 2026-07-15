@@ -7,7 +7,8 @@
 //   (first with replyTo, additional chained), sendTelegramMessage internals
 //   (missing token, fetch !ok, fetch throws, text > 4096 truncation),
 //   loadState post-dispatch → polling loop fire-and-forget, handleMessage throws,
-//   always-200 invariant.
+//   legacy provisioning always-200 behavior, and explicit onboarding delivery
+//   ACK/retry semantics.
 //
 // Mock strategy: vi.hoisted for guard/flow modules and global.fetch.
 //   featureFlagCheck is a plain function — mocked via @/lib/provisioning/guard.
@@ -152,7 +153,9 @@ beforeEach(() => {
   fetchMock.mockResolvedValue({ ok: true, text: async () => 'ok' })
 
   setEnv({
+    CAPTAIN_TELEGRAM_ID: undefined,
     CAPTAIN_TELEGRAM_CHAT_ID: CAPTAIN_CHAT_ID,
+    TELEGRAM_COS_TOKEN: undefined,
     MANAGER_BOT_TOKEN: 'bot_token_abc',
     TELEGRAM_WEBHOOK_SECRET: WEBHOOK_SECRET,
   })
@@ -264,6 +267,26 @@ describe('POST provisioning-webhook — Captain auth guard', () => {
     expect(mockHandleMessage).toHaveBeenCalled()
   })
 
+  it('uses the canonical CAPTAIN_TELEGRAM_ID without the legacy alias', async () => {
+    setEnv({
+      CAPTAIN_TELEGRAM_ID: CAPTAIN_CHAT_ID,
+      CAPTAIN_TELEGRAM_CHAT_ID: undefined,
+    })
+    await POST(makeReq(makeUpdate({ chatId: CAPTAIN_CHAT_ID_NUM, text: 'hello' })))
+    expect(mockHandleMessage).toHaveBeenCalled()
+  })
+
+  it('fails closed when Captain id aliases disagree', async () => {
+    setEnv({ CAPTAIN_TELEGRAM_ID: CAPTAIN_CHAT_ID, CAPTAIN_TELEGRAM_CHAT_ID: '99999999' })
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await POST(makeReq(makeUpdate({ chatId: CAPTAIN_CHAT_ID_NUM, text: 'hello' })))
+    expect(mockHandleMessage).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
+    errorSpy.mockRestore()
+    warnSpy.mockRestore()
+  })
+
   it('rejects a callback_query from a non-Captain chat_id (no dispatch)', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const update = {
@@ -355,6 +378,14 @@ describe('POST provisioning-webhook — rawText extraction', () => {
 })
 
 describe('POST provisioning-webhook — canonical onboarding skin', () => {
+  it('sends with the canonical Chair bot token', async () => {
+    setEnv({ TELEGRAM_COS_TOKEN: 'canonical-chair-token', MANAGER_BOT_TOKEN: undefined })
+    mockOnboardingIntent.mockReturnValueOnce(true)
+    mockHandleOnboarding.mockResolvedValueOnce([{ text: 'Orientation', plain: true }])
+    await POST(makeReq(makeUpdate({ text: '/onboard' })))
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/botcanonical-chair-token/sendMessage')
+  })
+
   it('remains available when multi-Cabinet provisioning is disabled', async () => {
     const { NextResponse } = await import('next/server')
     mockFeatureFlagCheck.mockReturnValueOnce(
@@ -374,7 +405,7 @@ describe('POST provisioning-webhook — canonical onboarding skin', () => {
       plain: true,
       buttons: [[{ text: 'Continue', callback_data: 'onboard:continue' }]],
     }])
-    await POST(makeReq(makeUpdate({ text: '/onboard' })))
+    const response = await POST(makeReq(makeUpdate({ text: '/onboard' })))
     expect(mockHandleOnboarding).toHaveBeenCalledWith('/onboard', 'telegram-update-1')
     expect(mockHandleMessage).not.toHaveBeenCalled()
     const payload = JSON.parse(fetchMock.mock.calls[0][1].body)
@@ -384,6 +415,13 @@ describe('POST provisioning-webhook — canonical onboarding skin', () => {
       expect.objectContaining({ phase: 'transport', status: 'succeeded' }),
       'telegram'
     )
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      handled: true,
+      delivered: true,
+      retryable: false,
+    })
   })
 
   it('never writes the Captain source path or purpose to process logs', async () => {
@@ -408,7 +446,7 @@ describe('POST provisioning-webhook — canonical onboarding skin', () => {
     expect(mockRecordEvidence).not.toHaveBeenCalled()
   })
 
-  it('resolves an authenticated onboarding callback and clears the spinner', async () => {
+  it('ACKs an authenticated onboarding callback before state work and reply delivery', async () => {
     mockHandleOnboardingCallback.mockResolvedValueOnce([{ text: 'Resolved', plain: true }])
     const update = {
       update_id: 9,
@@ -429,7 +467,47 @@ describe('POST provisioning-webhook — canonical onboarding skin', () => {
       'telegram-update-9'
     )
     expect(fetchMock).toHaveBeenCalledTimes(2)
-    expect(fetchMock.mock.calls[1][0]).toContain('/answerCallbackQuery')
+    expect(fetchMock.mock.calls[0][0]).toContain('/answerCallbackQuery')
+    expect(fetchMock.mock.calls[1][0]).toContain('/sendMessage')
+    expect(fetchMock.mock.invocationCallOrder[0]).toBeLessThan(
+      mockHandleOnboardingCallback.mock.invocationCallOrder[0]
+    )
+  })
+
+  it('returns explicit retryable failure when the canonical onboarding reply does not land', async () => {
+    mockOnboardingIntent.mockReturnValueOnce(true)
+    mockHandleOnboarding.mockResolvedValueOnce([{ text: 'Orientation', plain: true }])
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 502 })
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const response = await POST(makeReq(makeUpdate({ text: '/onboard' })))
+
+    expect(response.status).toBe(503)
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      handled: true,
+      delivered: false,
+      delivery_required: true,
+      retryable: true,
+    })
+    errorSpy.mockRestore()
+  })
+
+  it('returns retryable failure when an onboarding handler error cannot be reported', async () => {
+    mockOnboardingIntent.mockReturnValueOnce(true)
+    mockHandleOnboarding.mockRejectedValueOnce(new Error('scan failed'))
+    fetchMock.mockRejectedValueOnce(new Error('telegram down'))
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const response = await POST(makeReq(makeUpdate({ text: '/onboard' })))
+
+    expect(response.status).toBe(503)
+    await expect(response.json()).resolves.toMatchObject({
+      handled: true,
+      delivered: false,
+      retryable: true,
+    })
+    errorSpy.mockRestore()
   })
 })
 
@@ -660,10 +738,10 @@ describe('POST provisioning-webhook — polling loop', () => {
 })
 
 // ---------------------------------------------------------------------------
-// POST — always-200 invariant
+// POST — legacy provisioning always-200 invariant
 // ---------------------------------------------------------------------------
 
-describe('POST provisioning-webhook — always-200', () => {
+describe('POST provisioning-webhook — legacy provisioning always-200', () => {
   it('returns 200 even on complete internal failure cascade', async () => {
     mockHandleMessage.mockRejectedValueOnce(new Error('catastrophic'))
     fetchMock.mockRejectedValueOnce(new Error('network down'))

@@ -16,6 +16,12 @@ d41b18a4b75744edfbdaed8227264d9394779501:framework/frontdoor/tests/test_action_e
 # prove _redact_excerpt fires; removed from HEAD (f4f1ff28 builds it at runtime),
 # but the introducing commit stays flagged in a full-history scan. Provably fake.
 1974b55003cf37906e80aee1530fff1cdb156633:framework/onboarding/tests/test_journey.py:generic-api-key:321
+# Cabinet World hatch-secret scanner: all three values are deliberately fake
+# fixtures in SECRET_SAMPLES / a recursive scan assertion. The source was
+# later removed, but the introducing commit remains in full-history scans.
+afad1add65d55287dd6097dd7557d2b499d0fe00:cabinet/dashboard/src/lib/world/hatch-secret-scan.test.ts:generic-api-key:17
+afad1add65d55287dd6097dd7557d2b499d0fe00:cabinet/dashboard/src/lib/world/hatch-secret-scan.test.ts:generic-api-key:20
+afad1add65d55287dd6097dd7557d2b499d0fe00:cabinet/dashboard/src/lib/world/hatch-secret-scan.test.ts:generic-api-key:70
 # --- no-git twins (file:rule:line — no commit prefix) for the SAME fake
 # fixtures above, as seen by `gitleaks detect --no-git` over a fresh-cut egg
 # export (egg-publish-gate.sh gate (a) scans the export tree, not git — the
