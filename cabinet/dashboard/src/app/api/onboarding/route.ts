@@ -57,8 +57,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!sameOrigin(req)) {
     return noStore({ ok: false, code: 'origin_refused', error: 'This onboarding action did not come from the Cabinet app.' }, { status: 403 })
   }
-  const declared = Number(req.headers.get('content-length') || '0')
-  if (declared > MAX_BODY_BYTES) {
+  // Require a declared, bounded Content-Length. A missing header (chunked /
+  // streaming body) previously coerced to 0 and skipped this gate, so an
+  // unbounded body was fully buffered by req.text() before the byte check
+  // below ever ran. A legitimate JSON POST from a browser or the bridge always
+  // sends Content-Length.
+  const header = req.headers.get('content-length')
+  const declared = header === null ? NaN : Number(header)
+  if (!Number.isFinite(declared) || declared < 0 || declared > MAX_BODY_BYTES) {
     return noStore({ ok: false, code: 'body_too_large', error: 'That onboarding request is too large.' }, { status: 413 })
   }
   let text: string
