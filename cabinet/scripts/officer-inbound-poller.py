@@ -782,7 +782,10 @@ def main() -> int:
                     binder_note = ""
                     sp_marker = False
                     try:
-                        from framework.frontdoor import sp_reply_wire
+                        _flavor_a_dir = os.path.join(_REPO_ROOT, "instance", "flavor-a")
+                        if _flavor_a_dir not in sys.path:
+                            sys.path.insert(0, _flavor_a_dir)
+                        from flavor_a import screenpipe_reply_wire as sp_reply_wire
                         sp_marker = bool(sp_reply_wire.extract_prompt_id(quoted_full))
                         if sp_marker:
                             sr = sp_reply_wire.handle_captain_reply(text, quoted_full, uid, log=log)

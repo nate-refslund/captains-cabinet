@@ -1,5 +1,10 @@
-"""sp_reply_wire — MECHANICAL pipe-prompt reply forwarding at the Captain's
-inbound channel (CHAIR-REPLY-WIRE, one-bot migration hardening 2026-07-07).
+"""flavor_a.screenpipe_reply_wire — MECHANICAL pipe-prompt reply forwarding at
+the Captain's inbound channel (CHAIR-REPLY-WIRE, one-bot migration hardening
+2026-07-07). Re-homed from the former ``framework.frontdoor.sp_reply_wire``
+(personal-clean wave, 2026-07-15): this glue is 100% screenpipe-specific — it
+has no generic-seam identity, so it belongs in the Flavor-A adapter package
+alongside ``screenpipe_source.py`` / ``screenpipe_dispatch.py``, not in
+framework CORE. Function bodies are byte-identical to the original.
 
 WHY: the one-bot migration routes screenpipe's interactive pipe prompts to the
 Captain THROUGH the Chair — sp_lib's ``_tg_prompt_via_chair`` enqueues intake

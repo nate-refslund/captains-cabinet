@@ -7,14 +7,23 @@ skipped, note relayed). No network, no redis, no telegram.
 """
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from framework.frontdoor import sp_reply_wire
+# instance/flavor-a on sys.path so ``flavor_a`` imports; repo root so the poller
+# contract-grep below can locate it. tests/ [0] flavor_a [1] flavor-a [2]
+# instance [3] root [4] — same convention as test_screenpipe_source.py.
+_PKG_PARENT = Path(__file__).resolve().parents[2]   # instance/flavor-a
+REPO = Path(__file__).resolve().parents[4]          # worktree / repo root
+for _p in (str(REPO), str(_PKG_PARENT)):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
-REPO = Path(__file__).resolve().parents[3]
+from flavor_a import screenpipe_reply_wire as sp_reply_wire
+
 POLLER = REPO / "cabinet" / "scripts" / "officer-inbound-poller.py"
 
 MARKER = "⟦sp:cab-17203700-ab12cd⟧"
@@ -194,7 +203,7 @@ def test_poller_wires_sp_reply_before_binder():
     answer like a bare "approve" must never bind a pending cabinet draft —
     and (3) keeps the import guarded so a wire error degrades to passthrough."""
     text = POLLER.read_text()
-    assert "from framework.frontdoor import sp_reply_wire" in text
+    assert "from flavor_a import screenpipe_reply_wire as sp_reply_wire" in text
     assert "sp_reply_wire.extract_prompt_id(quoted_full)" in text
     assert "sp_reply_wire.handle_captain_reply(text, quoted_full, uid" in text
     assert "sp wire unavailable (passthrough preserved)" in text
