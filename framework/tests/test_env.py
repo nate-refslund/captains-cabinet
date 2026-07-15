@@ -403,7 +403,7 @@ def isolated_vault_dir_cache():
 def isolated_state_dir_cache():
     """Clear the process-wide state-dir cache for the test, then restore the
     original so sibling code (benchmark._DEFAULT_OUTCOMES, watchdog.registry's
-    SCREENPIPE_STATE_DIR) is untouched — mirrors isolated_tasks_board_cache."""
+    PERSONAL_SOURCE_STATE_DIR) is untouched — mirrors isolated_tasks_board_cache."""
     saved = env._state_dir_cache
     env._state_dir_cache = None
     try:

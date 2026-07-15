@@ -17,7 +17,7 @@ by its declared tier:
                     (proposal-only, Captain-gated; not an alert).
 
 Independence is the whole point: STDLIB ONLY, and it imports NOTHING it watches
-(no framework.frontdoor, no screenpipe libs, no org_runtime). When a watched
+(no framework.frontdoor, no personal-source libs, no org_runtime). When a watched
 system breaks, the checker keeps running. It is cheap — it reads logs + Redis +
 file mtimes; it never polls Graph/Vercel/an LLM.
 
@@ -27,9 +27,9 @@ fix/escalation ONCE per cooldown, not every 30-min cycle.
 
 Dead-man's-switch: on every run (pass or fail) the checker stamps its own
 heartbeat `cabinet:watchdog:outcome:heartbeat` = now (ISO). A SEPARATE, even
-simpler survivor (the screenpipe pipe-watchdog, calendar-scheduled + already
-proven immune to the StartInterval throttle) checks that heartbeat and pings the
-Chair if it goes stale. Who-watches-the-watchman.
+simpler survivor (the personal-source adapter's pipe-watchdog, calendar-scheduled
++ already proven immune to the StartInterval throttle) checks that heartbeat and
+pings the Chair if it goes stale. Who-watches-the-watchman.
 
 Usage:
   python3 -m framework.watchdog.check            # evaluate + route + heartbeat

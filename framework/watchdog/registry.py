@@ -11,7 +11,7 @@ snowballed to 77 recovered-but-undelivered items over days, fully silent.
 
 Design goals (why it is shaped this way):
   * STDLIB ONLY. No third-party imports, and — load-bearing — it NEVER imports
-    the systems it watches (framework.frontdoor, screenpipe libs, org_runtime).
+    the systems it watches (framework.frontdoor, personal-source libs, org_runtime).
     A watchdog built on top of the thing it watches dies with it. Each verify
     reads a FILE, a Redis key (via redis-cli subprocess), or a launchd/log
     timestamp — the cheapest possible probe, never a Graph/Vercel/LLM call.
@@ -949,7 +949,7 @@ def verify_no_silent_cron_failure(probe: "Probe") -> CheckResult:
 # CABINET_STATE_DIR overrides) — byte-identical to the removed hardcoded state
 # path on this deployment, and "" on a clean-room / Flavor-B box, where
 # verify_pipes_fresh degrades to nothing-to-watch (a skip, never a false alarm).
-SCREENPIPE_STATE_DIR = state_dir()
+PERSONAL_SOURCE_STATE_DIR = state_dir()
 # pipe → (log filename under the state dir, max staleness seconds). Instance
 # data (instance/config/watchdog.yml — egg R017; the cadence-aligned threshold
 # rationale is documented there, next to the values). Empty when unconfigured
@@ -969,16 +969,17 @@ def verify_pipes_fresh(probe: "Probe") -> CheckResult:
     (the index the brain search reads). Pure mtime read — no Graph poll."""
     eid = "pipes-fresh"
     # Flavor-B / unconfigured: no brain state dir → nothing to watch. A skip is
-    # neither pass nor fail (never routed), so a clean-room box with no screenpipe
-    # pipes never false-alarms on their absence (the "nothing to watch" degrade).
-    if not SCREENPIPE_STATE_DIR:
+    # neither pass nor fail (never routed), so a clean-room box with no
+    # personal-source pipes never false-alarms on their absence (the "nothing
+    # to watch" degrade).
+    if not PERSONAL_SOURCE_STATE_DIR:
         return CheckResult(eid, True,
                           "no brain state dir configured — nothing to watch",
                           skipped=True)
     now_epoch = probe.now().timestamp()
     stale = []
     for pipe, (fname, max_stale_s) in PIPE_FRESHNESS.items():
-        mtime = probe.file_mtime(f"{SCREENPIPE_STATE_DIR}/{fname}")
+        mtime = probe.file_mtime(f"{PERSONAL_SOURCE_STATE_DIR}/{fname}")
         if mtime is None:
             stale.append(f"{pipe} (no log)")
             continue
