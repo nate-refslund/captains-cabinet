@@ -153,12 +153,14 @@ def test_live_values_absent_example_twins_present(export: Path):
     cfg = export / "instance" / "config"
     for live in ("platform.yml", "sources.yml", "directions.yml", "peers.yml",
                  "officer-emails.yml", "probes.yml", "warrooms.yml",
-                 "outcomes.yml", "hq-instance.yml.draft", "authority-enforcing"):
+                 "outcomes.yml", "egress.yml", "hq-instance.yml.draft",
+                 "authority-enforcing"):
         assert not (cfg / live).exists(), f"R120: live {live} must not ship"
     for twin in ("platform.yml.example", "sources.yml.example",
                  "directions.yml.example", "peers.yml.example",
                  "officer-emails.yml.example", "probes.yml.example",
                  "warrooms.yml.example", "roster.yml.example",
+                 "egress.yml.example",
                  "publish-scan-patterns.local.example",
                  "role-registry.md.example"):
         assert (cfg / twin).is_file(), f"R120/R166: {twin} must ship"
@@ -183,6 +185,12 @@ def test_instance_contains_only_examples_and_structure(export: Path):
         if not _INSTANCE_ALLOWED(rel):
             offenders.append(rel)
     assert not offenders, f"live instance files survived the pass: {offenders}"
+
+
+def test_private_checkpoint_reviews_do_not_ship(export: Path):
+    reviews = export / "shared/interfaces/reviews"
+    assert reviews.is_dir()
+    assert sorted(p.name for p in reviews.iterdir()) == [".gitkeep"]
 
 
 def test_contexts_and_projects_pruned(export: Path):
