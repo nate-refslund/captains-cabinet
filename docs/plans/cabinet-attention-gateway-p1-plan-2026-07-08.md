@@ -80,7 +80,7 @@ def test_signing_variants_all_share_canonical_refs():
 def test_ref_prefix_and_cross_directory_same_commitment():
     # Observed: same commitment cited via owed_by AND owed_to paths, one with
     # a literal 'ref=' prefix. The bare cmt id must bridge them.
-    a = canonical_refs(["ref=6-Commitments/owed_by_nate/cmt-d45d00936ac1.md"])
+    a = canonical_refs(["ref=6-Commitments/owed_by_captain/cmt-d45d00936ac1.md"])
     b = canonical_refs(["6-Commitments/owed_to_nate/cmt-d45d00936ac1.md — colleague-D returning 2026-07-27"])
     assert "cmt-d45d00936ac1" in a and "cmt-d45d00936ac1" in b
     assert a & b
