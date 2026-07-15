@@ -3,6 +3,7 @@ import {
   applyOnboardingAction,
   getOnboarding,
   OnboardingBridgeError,
+  recordOnboardingEvidence,
 } from './bridge'
 import type {
   OnboardingAction,
@@ -30,13 +31,6 @@ export function isOnboardingIntent(text: string): boolean {
 
 function buttonsFor(result: OnboardingResponse): TelegramInlineButton[][] {
   const stage = result.card.stage
-  if (stage === 'welcome' || stage === 'purged') {
-    return [
-      [{ text: 'Documents · reversible (recommended)', callback_data: 'onboard:documents:reversible' }],
-      [{ text: 'Documents · earn every step', callback_data: 'onboard:documents:earn' }],
-      [{ text: 'Documents · broad autonomy later', callback_data: 'onboard:documents:sovereign' }],
-    ]
-  }
   const callback: Partial<Record<OnboardingAction, string>> = {
     ratify_charter: 'onboard:accept',
     continue: 'onboard:continue',
@@ -44,6 +38,27 @@ function buttonsFor(result: OnboardingResponse): TelegramInlineButton[][] {
     revoke: 'onboard:revoke',
     undo: 'onboard:undo',
     purge: 'onboard:purge_prompt',
+  }
+  if (stage === 'purged') return []
+  if (stage === 'welcome') {
+    return [
+      [{ text: 'Documents · reversible (recommended)', callback_data: 'onboard:documents:reversible' }],
+      [{ text: 'Documents · earn every step', callback_data: 'onboard:documents:earn' }],
+      [{ text: 'Documents · broad autonomy later', callback_data: 'onboard:documents:sovereign' }],
+    ]
+  }
+  if (stage === 'dividend_ready') {
+    return [
+      [{ text: '👍 Useful', callback_data: 'onboard:feedback:useful' }],
+      [{ text: 'Not useful yet', callback_data: 'onboard:feedback:not_useful' }],
+      [{ text: 'Something is wrong', callback_data: 'onboard:feedback:corrected' }],
+      ...result.card.options
+        .filter((option) => callback[option.action])
+        .map((option) => [{
+          text: option.label,
+          callback_data: callback[option.action]!,
+        }]),
+    ]
   }
   return result.card.options
     .filter((option) => callback[option.action])
@@ -62,13 +77,16 @@ export function formatTelegramOnboarding(result: OnboardingResponse): TelegramOn
       lines.push(`• ${citation.path}:${citation.line} — ${citation.excerpt}`)
     }
   }
-  if (result.card.stage === 'welcome' || result.card.stage === 'purged') {
+  if (result.card.stage === 'welcome') {
     lines.push(
       '',
       'Choose a Documents option below, or send:',
       '/onboard folder /full/path | what you want made easier | reversible',
       'The last word can be earn, reversible, or sovereign. It is a destination, not an authority grant.'
     )
+  }
+  if (result.card.stage === 'purged') {
+    lines.push('', 'No action from an older Dashboard, Telegram message, or World card can recreate that evidence trial.')
   }
   if (result.card.stage === 'charter_pending') {
     lines.push('', `Charter fingerprint: ${result.state.charter?.hash.slice(0, 12)}`)
@@ -111,11 +129,33 @@ async function action(
     {
       action: name,
       action_id: actionId,
+      trace_id: `trace-${actionId}`,
+      correlation_id: `corr-${actionId}`,
       expected_revision: current.card.revision,
       ...extra,
     },
     'telegram'
   )
+}
+
+async function feedback(
+  status: 'useful' | 'not_useful' | 'corrected',
+  actionId: string
+): Promise<TelegramOnboardingMessage[]> {
+  const category = status === 'useful'
+    ? 'useful_as_shown'
+    : status === 'not_useful'
+      ? 'insufficient_value'
+      : 'wrong_or_missing_context'
+  await recordOnboardingEvidence({
+    phase: 'feedback',
+    status,
+    action_id: `feedback-${actionId}`,
+    trace_id: `trace-feedback-${actionId}`,
+    correlation_id: `corr-${actionId}`,
+    detail: { feedback_rating: status, feedback_category: category },
+  }, 'telegram')
+  return [{ text: `Feedback recorded: ${status.replace('_', ' ')}.`, plain: true }]
 }
 
 function refusal(error: unknown): TelegramOnboardingMessage {
@@ -166,6 +206,9 @@ export async function handleTelegramOnboarding(
     if (/^pause$/i.test(command)) return [formatTelegramOnboarding(await action('pause', actionId))]
     if (/^revoke$/i.test(command)) return [formatTelegramOnboarding(await action('revoke', actionId))]
     if (/^undo$/i.test(command)) return [formatTelegramOnboarding(await action('undo', actionId))]
+    if (/^useful$/i.test(command)) return feedback('useful', actionId)
+    if (/^not[ _-]?useful$/i.test(command)) return feedback('not_useful', actionId)
+    if (/^(wrong|correction)$/i.test(command)) return feedback('corrected', actionId)
     if (/^purge\s+PURGE$/.test(command)) {
       return [formatTelegramOnboarding(await action('purge', actionId, { confirmation: 'PURGE' }))]
     }
@@ -201,5 +244,8 @@ export async function handleTelegramOnboardingCallback(
   if (command === 'revoke') return handleTelegramOnboarding('/onboard revoke', actionId)
   if (command === 'undo') return handleTelegramOnboarding('/onboard undo', actionId)
   if (command === 'purge_prompt') return handleTelegramOnboarding('/onboard purge', actionId)
+  if (command === 'feedback:useful') return feedback('useful', actionId)
+  if (command === 'feedback:not_useful') return feedback('not_useful', actionId)
+  if (command === 'feedback:corrected') return feedback('corrected', actionId)
   return handleTelegramOnboarding('/onboard', actionId)
 }

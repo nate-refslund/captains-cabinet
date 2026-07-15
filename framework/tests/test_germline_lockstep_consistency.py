@@ -283,9 +283,10 @@ def _maps_to_core(atom: str) -> bool:
     maps to some enumerated immutable-core path."""
     by_kind = _core_paths_by_kind()
     if atom.endswith("/"):
-        return any(
-            d == atom or d.endswith("/" + atom) for d in by_kind["dirs"]
-        )
+        directory_like = by_kind["dirs"] | {
+            path for path in by_kind["runtime_appended"] if path.endswith("/")
+        }
+        return any(d == atom or d.endswith("/" + atom) for d in directory_like)
     all_paths = set().union(*by_kind.values())
     return any(p == atom or p.endswith("/" + atom) for p in all_paths)
 
@@ -371,7 +372,7 @@ def test_schema_entries_well_formed():
         assert ".." not in path and "//" not in path, f"{path}: not normalized"
         if kind == "dirs":
             assert path.endswith("/"), f"dir entry {path} must end with '/'"
-        else:
+        elif kind != "runtime_appended":
             assert not path.endswith("/"), f"{kind} entry {path} must not end with '/'"
         assert path not in seen, f"duplicate immutable-core entry: {path}"
         seen.add(path)

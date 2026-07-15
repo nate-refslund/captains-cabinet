@@ -20,6 +20,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { createHash, timingSafeEqual } from 'node:crypto'
 import { featureFlagCheck } from '@/lib/provisioning/guard'
 import {
   handleMessage,
@@ -32,6 +33,7 @@ import {
   handleTelegramOnboardingCallback,
   isOnboardingIntent,
 } from '@/lib/onboarding/telegram'
+import { recordOnboardingEvidence } from '@/lib/onboarding/bridge'
 
 export const dynamic = 'force-dynamic'
 
@@ -95,6 +97,29 @@ function isCaptainChat(chatId: number): boolean {
   return String(chatId) === configured.trim()
 }
 
+/**
+ * Verify Telegram's per-webhook secret token — set once at setWebhook time and
+ * sent by Telegram on EVERY update as the X-Telegram-Bot-Api-Secret-Token
+ * header. This is the transport authentication: the request BODY (chat_id and
+ * all) is attacker-controllable, a header secret is not. Fail-closed — an unset
+ * TELEGRAM_WEBHOOK_SECRET rejects every update rather than running the
+ * onboarding/provisioning state machine (including the destructive purge) for
+ * an unauthenticated caller. isCaptainChat stays as a second, in-band check.
+ */
+function webhookSecretOk(req: NextRequest): boolean {
+  const configured = process.env.TELEGRAM_WEBHOOK_SECRET
+  if (!configured) {
+    console.warn('[provisioning-webhook] TELEGRAM_WEBHOOK_SECRET not set — rejecting all updates')
+    return false
+  }
+  const presented = req.headers.get('x-telegram-bot-api-secret-token') || ''
+  // SHA-256 both sides so timingSafeEqual always compares equal-length buffers
+  // (no length-mismatch throw) in constant time.
+  const a = createHash('sha256').update(presented).digest()
+  const b = createHash('sha256').update(configured.trim()).digest()
+  return timingSafeEqual(a, b)
+}
+
 // ---------------------------------------------------------------------------
 // Telegram API sender
 // ---------------------------------------------------------------------------
@@ -115,11 +140,30 @@ async function sendTelegramMessage(
   options?: {
     plain?: boolean
     buttons?: Array<Array<{ text: string; callback_data: string }>>
-  }
+  },
+  evidenceActionId?: string
 ): Promise<void> {
+  const recordTransport = async (
+    status: 'succeeded' | 'failed',
+    detail: Record<string, unknown>
+  ) => {
+    if (!evidenceActionId) return
+    try {
+      await recordOnboardingEvidence({
+        phase: 'transport', status,
+        action_id: `telegram-transport-${evidenceActionId}`,
+        trace_id: `trace-${evidenceActionId}`,
+        correlation_id: `corr-${evidenceActionId}`,
+        detail: { transport: 'telegram_bot_api', ...detail },
+      }, 'telegram')
+    } catch {
+      console.error('[provisioning-webhook] Telegram evidence unavailable')
+    }
+  }
   const token = process.env.MANAGER_BOT_TOKEN
   if (!token) {
     console.error('[provisioning-webhook] MANAGER_BOT_TOKEN not set — cannot send message')
+    await recordTransport('failed', { error_code: 'bot_token_unavailable' })
     return
   }
 
@@ -144,11 +188,14 @@ async function sendTelegramMessage(
       body: JSON.stringify(body),
     })
     if (!res.ok) {
-      const err = await res.text()
-      console.error('[provisioning-webhook] sendMessage failed:', err)
+      console.error('[provisioning-webhook] sendMessage failed', { status: res.status })
+      await recordTransport('failed', { error_code: 'telegram_http_error', http_status: res.status })
+    } else {
+      await recordTransport('succeeded', { http_status: res.status })
     }
-  } catch (err) {
-    console.error('[provisioning-webhook] sendMessage error:', err)
+  } catch {
+    console.error('[provisioning-webhook] sendMessage transport error')
+    await recordTransport('failed', { error_code: 'telegram_transport_error' })
   }
 }
 
@@ -159,21 +206,22 @@ async function sendTelegramMessage(
 async function sendReplies(
   chatId: number,
   messages: BotMessage[],
-  replyToId?: number
+  replyToId?: number,
+  evidenceActionId?: string
 ): Promise<void> {
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i]
     await sendTelegramMessage(chatId, msg.text, i === 0 ? replyToId : undefined, {
       plain: msg.plain,
       buttons: msg.buttons,
-    })
+    }, evidenceActionId)
     // If message has additional chained messages, send them too
     if (msg.additional) {
       for (const extra of msg.additional) {
         await sendTelegramMessage(chatId, extra.text, undefined, {
           plain: extra.plain,
           buttons: extra.buttons,
-        })
+        }, evidenceActionId)
       }
     }
   }
@@ -198,6 +246,13 @@ async function answerCallbackQuery(callbackId: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  // Transport auth FIRST — before any body parse or dispatch. A forged request,
+  // or any request lacking Telegram's secret-token header, never reaches the
+  // onboarding/provisioning state machine.
+  if (!webhookSecretOk(req)) {
+    return NextResponse.json({ ok: false }, { status: 401 })
+  }
+
   // The multi-Cabinet provisioning flag does not gate the canonical
   // post-hatch orientation. Evaluate it now, but apply it only after parsing
   // enough of the authenticated update to distinguish /onboard.
@@ -223,7 +278,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       callback.data,
       `telegram-update-${update.update_id}`
     )
-    await sendReplies(chatId, replies, callback.message.message_id)
+    await sendReplies(
+      chatId, replies, callback.message.message_id,
+      `telegram-update-${update.update_id}`
+    )
     await answerCallbackQuery(callback.id)
     return NextResponse.json({ ok: true })
   }
@@ -256,6 +314,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // Non-text message (photo, sticker, etc.) — ignore in PR 4
     return NextResponse.json({ ok: true })
   }
+  const isTypedOnboardingPurge = Boolean(
+    isOnboardingMessage && /^\/(?:onboard|onboarding)\s+purge\s+PURGE\s*$/.test(rawText)
+  )
 
   // A First Window command may contain a private absolute path and purpose.
   // Keep both out of process logs; the canonical core records only bounded,
@@ -274,15 +335,26 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     replies = isOnboardingMessage
       ? await handleTelegramOnboarding(rawText, `telegram-update-${update.update_id}`)
       : await handleMessage(String(chatId), rawText)
-  } catch (err) {
-    console.error('[provisioning-webhook] handleMessage error:', err)
-    await sendTelegramMessage(chatId, 'Something went wrong. Please try again or say "cancel".')
+  } catch {
+    console.error('[provisioning-webhook] handler failed', { onboarding: isOnboardingMessage })
+    await sendTelegramMessage(
+      chatId,
+      'Something went wrong. Please try again or say "cancel".',
+      undefined,
+      undefined,
+      isOnboardingMessage && !isTypedOnboardingPurge ? `telegram-update-${update.update_id}` : undefined
+    )
     return NextResponse.json({ ok: true })
   }
 
   // Send replies back to Captain
   if (replies.length > 0) {
-    await sendReplies(chatId, replies, messageId)
+    await sendReplies(
+      chatId,
+      replies,
+      messageId,
+      isOnboardingMessage && !isTypedOnboardingPurge ? `telegram-update-${update.update_id}` : undefined
+    )
   }
 
   // ------------------------------------------------------------------

@@ -10,6 +10,9 @@ scripts (`kill-switch.sh`, `deploy-mac.sh`), which do their own writing.
 `Continue Orientation` opens the authenticated `/onboarding` route. The app
 shell keeps no onboarding state and performs no onboarding action itself; the
 Dashboard, Telegram, and World all consume the same canonical journey core.
+Each handoff carries fresh trace and correlation IDs. The authenticated page
+records only a bounded `app_shell_handoff` observation in Evidence Recorder v1;
+no source path, credential, or app-shell state is added to the URL or ledger.
 
 Spec: `DESIGN-companion-2026-07-10.md` (Wave D / D1). Tests:
 `cabinet/scripts/tests/test_build_companion.py`.

@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://captains-cabinet.local/schemas/evidence-event.schema.json",
+  "title": "Cabinet Evidence Event v1",
+  "description": "One safe, untrusted operational observation in a locally signed and hash-chained trial ledger.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "event_id", "trial_id", "trace_id", "action_id",
+    "correlation_id", "sequence", "phase", "status", "surface", "actor",
+    "component", "ts", "timing", "detail", "links", "redactions",
+    "diagnostic_mode", "trust", "previous_hash", "event_hash", "signature"
+  ],
+  "properties": {
+    "schema": { "const": "cabinet.evidence-event/v1" },
+    "event_id": { "$ref": "#/$defs/id" },
+    "trial_id": { "$ref": "#/$defs/id" },
+    "trace_id": { "$ref": "#/$defs/id" },
+    "action_id": { "$ref": "#/$defs/id" },
+    "correlation_id": { "$ref": "#/$defs/id" },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "phase": {
+      "enum": ["intent", "policy", "execution", "verification", "receipt", "error", "undo", "outcome", "transport", "ui", "feedback", "system"]
+    },
+    "status": {
+      "enum": ["started", "allowed", "proposed", "succeeded", "refused", "failed", "retried", "interrupted", "recovered", "verified", "unverified", "undone", "duplicate", "paused", "revoked", "purged", "useful", "not_useful", "corrected", "diagnostic"]
+    },
+    "surface": {
+      "enum": ["dashboard", "telegram", "world", "companion", "api", "core", "cli", "system", "test", "unknown"]
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": { "enum": ["captain", "system", "surface", "officer", "verifier"] },
+        "id": { "$ref": "#/$defs/id" }
+      }
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "commit"],
+      "properties": {
+        "name": { "$ref": "#/$defs/id" },
+        "version": { "type": "string", "maxLength": 80 },
+        "commit": { "type": "string", "maxLength": 80 }
+      }
+    },
+    "ts": { "type": "string", "format": "date-time" },
+    "timing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["elapsed_ms", "duration_ms"],
+      "properties": {
+        "elapsed_ms": { "type": "number", "minimum": 0 },
+        "duration_ms": { "type": ["number", "null"], "minimum": 0 }
+      }
+    },
+    "detail": { "type": "object" },
+    "links": { "type": "array", "items": { "type": "string", "maxLength": 512 }, "maxItems": 64 },
+    "redactions": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "diagnostic_mode": { "type": "boolean" },
+    "trust": { "const": "untrusted_observation" },
+    "previous_hash": { "$ref": "#/$defs/hash" },
+    "event_hash": { "$ref": "#/$defs/hash" },
+    "signature": { "$ref": "#/$defs/hash" }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

@@ -155,7 +155,9 @@ def test_source_doctrine_greps(src: str):
     # Commercial app shell routes into the shared journey. It must not grow a
     # companion-owned onboarding writer or a second source of truth.
     assert 'Continue Orientation' in src
-    assert 'openLoopback(path: "/onboarding")' in src
+    assert 'openLoopback(path: "/onboarding?from=companion&trace_id=' in src
+    assert '&correlation_id=' in src
+    assert 'UUID().uuidString.lowercased()' in src
     assert "framework.onboarding.journey" not in src
 
 

@@ -29,7 +29,9 @@
 #   runtime_appended  — hook-blocked for direct officer Edit/Write/bash writes
 #                       but DELIBERATELY NOT schg-locked (germline-lock SKIP):
 #                       a sanctioned same-uid Python API appends at runtime
-#                       (veto_registry.py / action_lessons.py / needs.py).
+#                       (veto_registry.py / action_lessons.py / needs.py / the
+#                       evidence recorder). Entries may be one file or a
+#                       trailing-slash runtime directory.
 #                       Locking these breaks the demotion/learning/needs loops;
 #                       forging one only demotes or records — fail-safe.
 #   hook_protected    — hook/policy-blocked Captain-owned instance config that
@@ -168,6 +170,21 @@ files:
   # file is files-class, never SKIP; instance/config/trust-ladder.yml.example
   # stays unlocked (suffix-anchored hook arms + exact-path lock don't match).
   - path: instance/config/trust-ladder.yml
+
+  # --- EVIDENCE RECORDER v1 trusted integration seam (2026-07-15): the
+  #     canonical onboarding writer and the server-side Dashboard/Telegram
+  #     seams are part of the audit plane. If an officer can rewrite one, it
+  #     can suppress or counterfeit the evidence about its own work. The
+  #     browser observation payload remains explicitly untrusted, but its
+  #     shipped collection seam is protected against officer mutation. ---
+  - path: framework/onboarding/journey.py
+  - path: framework/schemas/evidence-event.schema.json
+  - path: cabinet/dashboard/src/lib/onboarding/bridge.ts
+  - path: cabinet/dashboard/src/lib/onboarding/telegram.ts
+  - path: cabinet/dashboard/src/app/api/telegram/provisioning-webhook/route.ts
+  - path: cabinet/dashboard/src/components/onboarding/journey-card.tsx
+  - path: cabinet/companion/main.swift
+  - path: cabinet/scripts/evidence-read.sh
   # DELIBERATELY NOT ENUMERATED: instance/config/posture-narrow — the
   # narrow-only runtime cap (single word guardian|earn_up) read by
   # resolve_posture as a CAP after file+env resolution. It can only NARROW
@@ -192,6 +209,11 @@ dirs:
   # widened ruling at the very moment a captain ratifies one, so the dir is
   # locked -R like the policy layer (no officer may drop or edit a preset).
   - path: instance/config/posture-presets/
+  # The recorder, independent verifier, redactor, repair policy, and bounded
+  # Captain CLI are one audit-plane package. The Dashboard API directory is
+  # its server-side transport seam (including tests that pin the contract).
+  - path: framework/evidence/
+  - path: cabinet/dashboard/src/app/api/onboarding/
 
 runtime_appended:
   - path: shared/interfaces/captain-vetoes.yml
@@ -199,6 +221,10 @@ runtime_appended:
   # ONE needs-ledger (FI-3): O_APPEND JSONL written by needs.py; DATA is
   # SKIP-class, the CODE (needs.py above) is locked.
   - path: shared/interfaces/needs-ledger.jsonl
+  # Sanctioned append/purge only through EvidenceRecorder. Direct officer
+  # writes are blocked by both hook paths and typed policy; schg would break
+  # append, recovery, retention, export, and Captain-typed purge.
+  - path: instance/evidence/v1/
 
 hook_protected:
   - path: instance/config/autonomy.yml

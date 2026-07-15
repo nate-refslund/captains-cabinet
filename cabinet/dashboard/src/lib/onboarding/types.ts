@@ -3,6 +3,7 @@ export type OnboardingSurface =
   | 'telegram'
   | 'world'
   | 'companion'
+  | 'api'
 
 export type OnboardingAction =
   | 'propose_window'
@@ -43,6 +44,7 @@ export interface OnboardingCard {
 export interface OnboardingState {
   schema: 'cabinet.onboarding-journey/v2'
   journey_id: string
+  evidence_trial_id: string
   revision: number
   stage: string
   purpose: string | null
@@ -75,15 +77,54 @@ export interface OnboardingResponse {
   purged?: boolean
   error?: string
   code?: string
+  evidence?: {
+    trial_id: string
+    trace_id: string
+    action_id: string
+    correlation_id: string
+  }
 }
 
 export interface OnboardingActionRequest {
   action: OnboardingAction
   action_id?: string
+  trace_id?: string
+  correlation_id?: string
   expected_revision?: number
   source?: string
   purpose?: string
   relationship_destination?: 'earn' | 'reversible' | 'sovereign'
   charter_hash?: string
   confirmation?: string
+}
+
+export interface OnboardingObservationRequest {
+  phase: 'transport' | 'ui' | 'feedback'
+  status:
+    | 'started'
+    | 'succeeded'
+    | 'failed'
+    | 'retried'
+    | 'interrupted'
+    | 'recovered'
+    | 'useful'
+    | 'not_useful'
+    | 'corrected'
+  action_id?: string
+  trace_id?: string
+  correlation_id?: string
+  detail?: Record<string, unknown>
+}
+
+export interface OnboardingObservationResponse {
+  ok: boolean
+  evidence?: {
+    trial_id: string
+    event_id: string
+    trace_id: string
+    action_id: string
+    correlation_id: string
+  }
+  error?: string
+  code?: string
 }

@@ -152,18 +152,22 @@ else
 fi
 
 # exists at HEAD (git mode: tracked file, or tracked-dir prefix) / on disk.
+# NB: feed the big lists via here-string, not `printf ... | grep -q`/`| awk`.
+# grep -q and awk `exit` close their stdin on the first match, which sends
+# SIGPIPE to the upstream printf — harmless today (no pipefail) but it spews
+# "printf: write error: Broken pipe" into CI logs (obscures real failures)
+# and would become an intermittent failure the moment anyone adds pipefail.
 path_exists() {
   if [ "$GIT_MODE" = 1 ]; then
-    printf '%s\n' "$TRACKED" | grep -qxF -- "$1" && return 0
-    printf '%s\n' "$TRACKED" \
-      | awk -v p="$1/" 'index($0, p) == 1 { found = 1; exit } END { exit found ? 0 : 1 }'
+    grep -qxF -- "$1" <<<"$TRACKED" && return 0
+    awk -v p="$1/" 'index($0, p) == 1 { found = 1; exit } END { exit found ? 0 : 1 }' <<<"$TRACKED"
   else
     [ -e "$ROOT/$1" ]
   fi
 }
 
 is_topdir() {
-  printf '%s\n' "$TOPS" | grep -qxF -- "$1"
+  grep -qxF -- "$1" <<<"$TOPS"
 }
 
 allowlisted() {

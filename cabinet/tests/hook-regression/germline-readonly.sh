@@ -116,6 +116,14 @@ probe "G34 Edit calendar_template.py (cpo)" cpo Edit  'framework/frontdoor/calen
 probe "G35 Edit action_lane.py (cto)"       cto Edit  'framework/acting/action_lane.py'                            BLOCK
 probe "G36 Write run_action_lane.py (cos!)" cos Write 'framework/acting/run_action_lane.py'                        BLOCK
 probe "G37 abs-path action_lane.py (cro)"   cro Edit  '/opt/founders-cabinet/framework/acting/action_lane.py'      BLOCK
+# Evidence Recorder v1 audit plane: static writer/integration seams and the
+# live append directory cannot be edited by the subjects they record.
+probe "G39 Edit evidence recorder (cos!)"   cos Edit  'framework/evidence/recorder.py'                             BLOCK
+probe "G40 Write raw evidence event (cto)"  cto Write 'instance/evidence/v1/trials/DOGFOOD-001/events.jsonl'      BLOCK
+probe "G41 Edit onboarding evidence API"    cro Edit  'cabinet/dashboard/src/app/api/onboarding/evidence/route.ts' BLOCK
+probe "G42 Edit onboarding journey writer" cpo Edit  'framework/onboarding/journey.py'                           BLOCK
+probe "G43 Edit companion correlation seam" cos Edit 'cabinet/companion/main.swift'                              BLOCK
+probe "G44 Edit bounded evidence reader"    cto Edit  'cabinet/scripts/evidence-read.sh'                         BLOCK
 
 # ------------------------------------------------------------------
 # ALLOW: false-positive guards (must NOT block)
@@ -175,6 +183,7 @@ probe "FP13 frontdoor sibling composer.py" cro Edit  'framework/frontdoor/compos
 probe "FP14 acting sibling loop.py (cto)"  cto Edit  'framework/acting/loop.py'                                   ALLOW
 probe "FP15 frontdoor test file (cro)"     cro Write 'framework/frontdoor/tests/test_action_exec.py'              ALLOW
 probe "FP16 acting test file (cro)"        cro Write 'framework/acting/tests/test_action_lane.py'                 ALLOW
+probe "FP17 evidence sibling note (cro)"   cro Write 'framework/evidence-notes.md'                                ALLOW
 # CG-15 / germline window 2 (2026-07-07, staging-review finding 4):
 # constitution/ is RETIRED — the runtime constitution assembles from
 # framework/constitution-base.md + preset addenda, and those assembly inputs
