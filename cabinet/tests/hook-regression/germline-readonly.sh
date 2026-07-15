@@ -40,12 +40,13 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 HOOK="$REPO_ROOT/cabinet/scripts/hooks/pre-tool-use.sh"
+TEST_BIN="$SCRIPT_DIR/fixtures"
 PASS=0; FAIL=0
 
 probe() {
   local label="$1" officer="$2" tool="$3" fpath="$4" expected="$5"
   local result
-  result=$(printf '{"tool_name":"%s","tool_input":{"file_path":"%s"}}' "$tool" "$fpath" | CABINET_HOOK_TEST_MODE=1 OFFICER_NAME="$officer" bash "$HOOK" 2>/dev/null; echo "EXIT:$?")
+  result=$(printf '{"tool_name":"%s","tool_input":{"file_path":"%s"}}' "$tool" "$fpath" | PATH="$TEST_BIN:$PATH" CABINET_HOOK_TEST_MODE=1 OFFICER_NAME="$officer" bash "$HOOK" 2>/dev/null; echo "EXIT:$?")
   local exit_code="${result##*EXIT:}"
   local verdict
   if [ "$expected" = "BLOCK" ]; then
@@ -124,6 +125,9 @@ probe "G41 Edit onboarding evidence API"    cro Edit  'cabinet/dashboard/src/app
 probe "G42 Edit onboarding journey writer" cpo Edit  'framework/onboarding/journey.py'                           BLOCK
 probe "G43 Edit companion correlation seam" cos Edit 'cabinet/companion/main.swift'                              BLOCK
 probe "G44 Edit bounded evidence reader"    cto Edit  'cabinet/scripts/evidence-read.sh'                         BLOCK
+probe "G45 Edit egress launchd template"   cos Edit  'cabinet/launchd/com.cabinet.egress-proxy.template.plist' BLOCK
+probe "G46 Write egress launchd template"  cto Write 'cabinet/launchd/com.cabinet.egress-proxy.template.plist' BLOCK
+probe "G47 abs egress launchd template"    cro Edit  '/opt/founders-cabinet/cabinet/launchd/com.cabinet.egress-proxy.template.plist' BLOCK
 
 # ------------------------------------------------------------------
 # ALLOW: false-positive guards (must NOT block)
@@ -196,6 +200,7 @@ probe "FP17 evidence sibling note (cro)"   cro Write 'framework/evidence-notes.m
 # in either direction.
 probe "FP17 constitution-base.md open (cos)"  cos Edit  'framework/constitution-base.md'                           ALLOW
 probe "FP18 safety-boundaries-base open (cto)" cto Edit 'framework/safety-boundaries-base.md'                      ALLOW
+probe "FP19 egress template example open"  cto Write 'cabinet/launchd/com.cabinet.egress-proxy.template.plist.example' ALLOW
 
 echo ""
 echo "=== Summary: PASS=$PASS  FAIL=$FAIL ==="

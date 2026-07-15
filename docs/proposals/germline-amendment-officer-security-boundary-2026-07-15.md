@@ -60,6 +60,7 @@ next restart.
 - `cabinet/scripts/observe-only.sh`
 - `cabinet/scripts/egress-guard.sh`
 - `cabinet/scripts/egress-proxy.py`
+- `cabinet/launchd/com.cabinet.egress-proxy.template.plist`
 - `framework/comms/channel_adapter.py`
 - `framework/comms/tools.py`
 - `framework/comms/mcp/server.py`

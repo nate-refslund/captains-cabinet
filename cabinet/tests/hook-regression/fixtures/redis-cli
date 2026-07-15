@@ -1,0 +1,4 @@
+#!/bin/sh
+# Hermetic hook-harness Redis stub: reachable, kill-switch key absent.
+# It deliberately emits no value and exits successfully for every command.
+exit 0

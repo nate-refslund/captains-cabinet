@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+Persistent owner for the enforced-egress proxy.
+
+Rendered by cabinet/scripts/egress-guard.sh with plistlib (not shell eval or
+envsubst), installed at ~/Library/LaunchAgents/com.cabinet.egress-proxy.plist,
+and bootstrapped directly into the user's launchd domain. The proxy must not
+be a child of a one-shot officer LaunchAgent: launchd reaps that job's process
+group when its wrapper exits.
+
+KeepAlive + RunAtLoad make the fixed-port proxy survive caller exit, recover
+after a crash, and return at login. The guard removes the installed plist on
+stop/disable, so enforcement cannot unexpectedly return after it is disabled.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${LABEL}</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>${PYTHON}</string>
+    <string>${PROXY_SCRIPT}</string>
+    <string>--port</string>
+    <string>${PROXY_PORT}</string>
+    <string>--allow-file</string>
+    <string>${ALLOW_FILE}</string>
+    <string>--ready-file</string>
+    <string>${READY_FILE}</string>
+    <string>--pid-file</string>
+    <string>${PID_FILE}</string>
+    <string>--connect-ports</string>
+    <string>${CONNECT_PORTS}</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>${REPO_ROOT}</string>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+
+  <key>Umask</key>
+  <integer>63</integer>
+
+  <key>StandardOutPath</key>
+  <string>/dev/null</string>
+
+  <key>StandardErrorPath</key>
+  <string>${LOG_FILE}</string>
+</dict>
+</plist>

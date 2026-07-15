@@ -20,6 +20,7 @@ Proves the four contract claims:
 from __future__ import annotations
 
 import os
+import plistlib
 import shutil
 import socket
 import subprocess
@@ -39,6 +40,7 @@ REPO = Path(__file__).resolve().parents[3]
 GUARD = REPO / "cabinet" / "scripts" / "egress-guard.sh"
 PROXY = REPO / "cabinet" / "scripts" / "egress-proxy.py"
 FRAMEWORK_DEFAULT = REPO / "framework" / "defaults" / "egress.yml"
+LAUNCHD_TEMPLATE = REPO / "cabinet" / "launchd" / "com.cabinet.egress-proxy.template.plist"
 
 
 # --------------------------------------------------------------- helpers ----
@@ -48,7 +50,18 @@ def _run(args, root: Path, state: Path, extra_env=None):
         "CABINET_ROOT": str(root),
         "CABINET_STATE_DIR": str(state),
         "CABINET_PYTHON": sys.executable,   # yaml-bearing interpreter parity
+        # HOME is intentionally redirected below, which would otherwise hide
+        # this interpreter's user-site PyYAML on macOS system Python.
+        "PYTHONPATH": os.pathsep.join(path for path in sys.path if path),
         "HOME": str(root),                  # keep any fallback under tmp
+        # Unit tests own their subprocess lifetime directly. Production macOS
+        # resolves auto -> launchd; pin child here so the hermetic suite never
+        # registers or removes a real user LaunchAgent.
+        "EGRESS_LAUNCH_MODE": "child",
+        # Child attestation on Darwin checks that no launchd owner survives a
+        # cross-mode transition. Keep that read hermetic too: the seeded stub
+        # reports the canonical launchctl service-not-found status (113).
+        "EGRESS_LAUNCHCTL": str(root / ".test-launchctl-absent"),
     }
     if extra_env:
         env.update(extra_env)
@@ -64,13 +77,27 @@ def _seed_root(tmp_path: Path, org_domains=None) -> Path:
     root = tmp_path / "root"
     (root / "framework" / "defaults").mkdir(parents=True)
     (root / "instance" / "config").mkdir(parents=True)
+    (root / "cabinet" / "launchd").mkdir(parents=True)
     shutil.copy(FRAMEWORK_DEFAULT, root / "framework" / "defaults" / "egress.yml")
+    shutil.copy(LAUNCHD_TEMPLATE, root / "cabinet" / "launchd" / LAUNCHD_TEMPLATE.name)
+    absent_launchctl = root / ".test-launchctl-absent"
+    absent_launchctl.write_text("#!/bin/sh\nexit 113\n", encoding="utf-8")
+    absent_launchctl.chmod(0o755)
     if org_domains is not None:
         (root / "instance" / "config" / "platform.yml").write_text(
             "org_domains:\n" + "".join("  - %s\n" % d for d in org_domains),
             encoding="utf-8",
         )
     return root
+
+
+def _free_port() -> int:
+    sock = socket.socket()
+    try:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+    finally:
+        sock.close()
 
 
 def _write_instance(root: Path, text: str) -> None:
@@ -392,6 +419,10 @@ def test_apply_is_idempotent_and_runtime_state_is_machine_readable(tmp_path, sto
     assert first.returncode == 0, first.stderr
     first_pid = int((state / "egress" / "proxy.pid").read_text().strip())
     first_port = _ready_port(state)
+    ready_text = (state / "egress" / "proxy.ready").read_text().strip()
+    assert ready_text == f"READY {first_port} PID {first_pid}"
+    assert ((state / "egress" / "proxy.pid").stat().st_mode & 0o777) == 0o600
+    assert ((state / "egress" / "proxy.ready").stat().st_mode & 0o777) == 0o600
 
     second = _run(["apply"], root, state)
     assert second.returncode == 0, second.stderr
@@ -401,6 +432,455 @@ def test_apply_is_idempotent_and_runtime_state_is_machine_readable(tmp_path, sto
     runtime = _run(["runtime-state"], root, state)
     assert runtime.returncode == 0, runtime.stderr
     assert runtime.stdout.strip() == "1\t%s" % (state / "egress" / "proxy.env")
+
+
+def test_launchd_mode_rejects_dynamic_port_before_registration(tmp_path):
+    root = _seed_root(tmp_path)
+    state = tmp_path / "state"
+    _write_instance(root, "enforce: true\nproxy_port: 0\nallow_product: false\n")
+    proc = _run(
+        ["apply"], root, state,
+        extra_env={"EGRESS_LAUNCH_MODE": "launchd", "EGRESS_LAUNCHCTL": "/usr/bin/false"},
+    )
+    assert proc.returncode != 0
+    assert "requires a fixed proxy_port" in proc.stderr
+    assert not (state / "egress" / "proxy.env").exists()
+    assert not (root / "Library" / "LaunchAgents" /
+                "com.cabinet.egress-proxy.plist").exists()
+
+
+def test_launchd_template_substitution_is_one_pass(tmp_path):
+    root = _seed_root(tmp_path)
+    state = tmp_path / "state-${LOG_FILE}-literal"
+    port = _free_port()
+    captured = tmp_path / "captured.plist"
+    launchctl = tmp_path / "capture-launchctl.py"
+    launchctl.write_text(
+        """#!/usr/bin/env python3
+import os
+import shutil
+import sys
+if len(sys.argv) > 1 and sys.argv[1] == "print":
+    raise SystemExit(113)
+if len(sys.argv) > 3 and sys.argv[1] == "bootstrap":
+    shutil.copyfile(sys.argv[3], os.environ["CAPTURED_PLIST"])
+    raise SystemExit(1)
+raise SystemExit(1)
+""",
+        encoding="utf-8",
+    )
+    launchctl.chmod(0o755)
+    _write_instance(root, f"enforce: true\nproxy_port: {port}\nallow_product: false\n")
+    proc = _run(
+        ["apply"], root, state,
+        extra_env={
+            "EGRESS_LAUNCH_MODE": "launchd",
+            "EGRESS_LAUNCHCTL": str(launchctl),
+            "CAPTURED_PLIST": str(captured),
+        },
+    )
+    assert proc.returncode != 0  # registration is intentionally refused
+    assert captured.exists(), proc.stderr
+    with captured.open("rb") as handle:
+        job = plistlib.load(handle)
+    args = job["ProgramArguments"]
+    ready = args[args.index("--ready-file") + 1]
+    assert ready == str(state / "egress" / "proxy.ready")
+    assert "${LOG_FILE}" in ready, "replacement text was expanded a second time"
+
+
+@pytest.mark.parametrize("ports", ["", "0", "65536", "443,garbage", "-1", "44.3"])
+def test_guard_rejects_malformed_connect_port_contract(tmp_path, ports):
+    root = _seed_root(tmp_path)
+    state = tmp_path / "state"
+    _write_instance(root, "enforce: false\n")
+    proc = _run(["status"], root, state,
+                extra_env={"EGRESS_CONNECT_PORTS": ports})
+    assert proc.returncode != 0
+    assert "invalid EGRESS_CONNECT_PORTS" in proc.stderr
+
+
+def test_guard_canonicalizes_connect_ports_before_attestation(tmp_path, stop_guard):
+    root = _seed_root(tmp_path)
+    state = tmp_path / "state"
+    stop_guard.append((root, state))
+    _write_instance(root, "enforce: true\nproxy_port: 0\nallow_product: false\n")
+    applied = _run(["apply"], root, state,
+                   extra_env={"EGRESS_CONNECT_PORTS": "443 443, 8443"})
+    assert applied.returncode == 0, applied.stderr
+    assert _run(
+        ["runtime-state"], root, state,
+        extra_env={"EGRESS_CONNECT_PORTS": "443,8443"},
+    ).returncode == 0
+
+
+def test_fixed_port_ready_drift_fails_attestation(tmp_path, stop_guard):
+    root = _seed_root(tmp_path)
+    state = tmp_path / "state"
+    stop_guard.append((root, state))
+    port = _free_port()
+    _write_instance(root, f"enforce: true\nproxy_port: {port}\nallow_product: false\n")
+    applied = _run(["apply"], root, state)
+    assert applied.returncode == 0, applied.stderr
+    pid = int((state / "egress" / "proxy.pid").read_text().strip())
+    drift = port + 1 if port < 65535 else port - 1
+    (state / "egress" / "proxy.ready").write_text(
+        f"READY {drift} PID {pid}\n", encoding="utf-8")
+    attested = _run(["runtime-state"], root, state)
+    assert attested.returncode != 0
+    assert "does not match configured fixed port" in attested.stderr
+
+
+def test_fixed_port_policy_change_replaces_owner_and_endpoint(tmp_path, stop_guard):
+    root = _seed_root(tmp_path)
+    state = tmp_path / "state"
+    stop_guard.append((root, state))
+    port_a = _free_port()
+    port_b = _free_port()
+    while port_b == port_a:
+        port_b = _free_port()
+    _write_instance(root, f"enforce: true\nproxy_port: {port_a}\nallow_product: false\n")
+    first = _run(["apply"], root, state)
+    assert first.returncode == 0, first.stderr
+    first_pid = int((state / "egress" / "proxy.pid").read_text().strip())
+    assert _ready_port(state) == port_a
+
+    _write_instance(root, f"enforce: true\nproxy_port: {port_b}\nallow_product: false\n")
+    drifted = _run(["runtime-state"], root, state)
+    assert drifted.returncode != 0
+    assert "does not match configured fixed port" in drifted.stderr
+
+    replaced = _run(["apply"], root, state)
+    assert replaced.returncode == 0, replaced.stderr
+    second_pid = int((state / "egress" / "proxy.pid").read_text().strip())
+    assert second_pid != first_pid
+    assert _ready_port(state) == port_b
+    for _ in range(50):
+        try:
+            os.kill(first_pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.02)
+    else:
+        pytest.fail("old fixed-port proxy survived policy replacement")
+
+
+def test_ready_marker_requires_exact_port_and_pid_format(tmp_path, stop_guard):
+    root = _seed_root(tmp_path)
+    state = tmp_path / "state"
+    stop_guard.append((root, state))
+    port = _free_port()
+    _write_instance(root, f"enforce: true\nproxy_port: {port}\nallow_product: false\n")
+    applied = _run(["apply"], root, state)
+    assert applied.returncode == 0, applied.stderr
+    pid = int((state / "egress" / "proxy.pid").read_text().strip())
+    (state / "egress" / "proxy.ready").write_text(
+        f"READY {port} PID {pid} trailing\n", encoding="utf-8")
+    attested = _run(["runtime-state"], root, state)
+    assert attested.returncode != 0
+    assert "not live/ready" in attested.stderr
+
+
+def test_status_fails_when_enforcement_is_requested_but_runtime_is_absent(tmp_path):
+    root = _seed_root(tmp_path)
+    state = tmp_path / "state"
+    _write_instance(root, "enforce: true\nproxy_port: 8899\nallow_product: false\n")
+    proc = _run(["status"], root, state)
+    assert proc.returncode != 0
+    assert "INVALID/STOPPED" in proc.stdout
+    assert "FAIL-CLOSED" in proc.stderr
+
+
+def test_launchd_stop_does_not_claim_absence_when_supervisor_query_fails(tmp_path):
+    root = _seed_root(tmp_path)
+    state = tmp_path / "state"
+    _write_instance(root, "enforce: false\n")
+    proc = _run(
+        ["stop"], root, state,
+        extra_env={"EGRESS_LAUNCH_MODE": "launchd", "EGRESS_LAUNCHCTL": "/usr/bin/false"},
+    )
+    assert proc.returncode != 0
+    assert "state could not be queried" in proc.stderr
+    assert "restriction state is not claimed" in proc.stderr
+
+
+def test_launchd_stop_succeeds_when_service_is_canonically_absent(tmp_path):
+    root = _seed_root(tmp_path)
+    state = tmp_path / "state"
+    _write_instance(root, "enforce: false\n")
+    egress = state / "egress"
+    egress.mkdir(parents=True)
+    stale_pid = 999999999
+    (egress / "proxy.pid").write_text(f"{stale_pid}\n", encoding="utf-8")
+    (egress / "proxy.ready").write_text(
+        f"READY 8899 PID {stale_pid}\n", encoding="utf-8")
+    (egress / "proxy.env").write_text("stale\n", encoding="utf-8")
+    installed = root / "Library" / "LaunchAgents" / "com.cabinet.egress-proxy.plist"
+    installed.parent.mkdir(parents=True)
+    installed.write_text("stale plist evidence\n", encoding="utf-8")
+
+    proc = _run(
+        ["stop"], root, state,
+        extra_env={
+            "EGRESS_LAUNCH_MODE": "launchd",
+            "EGRESS_LAUNCHCTL": str(root / ".test-launchctl-absent"),
+        },
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "proxy stopped" in proc.stdout
+    assert not installed.exists()
+    assert not (egress / "proxy.pid").exists()
+    assert not (egress / "proxy.ready").exists()
+    assert not (egress / "proxy.env").exists()
+
+
+def test_disabled_status_detects_launchd_job_without_runtime_markers(tmp_path):
+    root = _seed_root(tmp_path)
+    state = tmp_path / "state"
+    _write_instance(root, "enforce: false\n")
+    installed = root / "Library" / "LaunchAgents" / "com.cabinet.egress-proxy.plist"
+    installed.parent.mkdir(parents=True)
+    installed.write_text("leftover\n", encoding="utf-8")
+    present = tmp_path / "launchctl-present"
+    present.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    present.chmod(0o755)
+    status = _run(["status"], root, state,
+                  extra_env={"EGRESS_LAUNCHCTL": str(present)})
+    assert status.returncode != 0
+    assert "LAUNCHD JOB PRESENT" in status.stdout
+
+
+def test_invalid_launch_mode_fails_teardown_loudly(tmp_path):
+    root = _seed_root(tmp_path)
+    state = tmp_path / "state"
+    _write_instance(root, "enforce: false\n")
+    proc = _run(["stop"], root, state,
+                extra_env={"EGRESS_LAUNCH_MODE": "typo"})
+    assert proc.returncode != 0
+    assert "invalid EGRESS_LAUNCH_MODE" in proc.stderr
+    assert "restriction state is not claimed" in proc.stderr
+
+
+def test_child_stop_refuses_stale_pid_without_killing_unrelated_process(tmp_path):
+    root = _seed_root(tmp_path)
+    state = tmp_path / "state"
+    egress = state / "egress"
+    egress.mkdir(parents=True)
+    _write_instance(root, "enforce: false\n")
+    unrelated = subprocess.Popen(["sleep", "30"])
+    try:
+        (egress / "proxy.pid").write_text(f"{unrelated.pid}\n", encoding="utf-8")
+        (egress / "proxy.ready").write_text(
+            f"READY 8899 PID {unrelated.pid}\n", encoding="utf-8")
+        (egress / "proxy.env").write_text("forensic-marker\n", encoding="utf-8")
+        proc = _run(["stop"], root, state)
+        assert proc.returncode != 0
+        assert "refusing to kill stale/unattested" in proc.stderr
+        assert unrelated.poll() is None, "guard killed a reused/unrelated PID"
+        assert (egress / "proxy.pid").exists()
+        assert (egress / "proxy.ready").exists()
+        assert (egress / "proxy.env").exists()
+
+        # A refused stop must stay dirty on retry; deleting markers would turn
+        # this into a dishonest second-stop success while the PID is still up.
+        again = _run(["stop"], root, state)
+        assert again.returncode != 0
+        assert "refusing to kill stale/unattested" in again.stderr
+        assert unrelated.poll() is None
+        assert (egress / "proxy.pid").exists()
+    finally:
+        unrelated.terminate()
+        unrelated.wait(timeout=5)
+
+
+def test_launchd_mode_owns_lifetime_and_stop_removes_supervisor(tmp_path, stop_guard):
+    """On macOS the one-shot officer launcher must not own the proxy process.
+
+    A fake launchctl gives the guard a distinct supervisor process boundary,
+    records bootstrap/print/bootout calls, and starts the real local proxy. This
+    pins the production contract without touching the host's actual launchd:
+    apply installs a persistent direct LaunchAgent once, a second apply keeps
+    the same pid, runtime-state requires plist+job+PID attestation, and stop
+    boots out the service rather than trusting a mutable pid file.
+    """
+    root = _seed_root(tmp_path)
+    state = tmp_path / "state"
+    stop_guard.append((root, state))
+    port = _free_port()
+    _write_instance(root, f"enforce: true\nproxy_port: {port}\nallow_product: false\n"
+                          "allow_hosts:\n  - localhost\n")
+
+    fake = tmp_path / "fake_launchctl.py"
+    fake_log = tmp_path / "launchctl.log"
+    fake_state = tmp_path / "launchctl.state"
+    fake.write_text(
+        """#!/usr/bin/env python3
+import os
+import pathlib
+import plistlib
+import signal
+import subprocess
+import sys
+import time
+
+log = pathlib.Path(os.environ["FAKE_LAUNCHCTL_LOG"])
+state = pathlib.Path(os.environ["FAKE_LAUNCHCTL_STATE"])
+args = sys.argv[1:]
+with log.open("a", encoding="utf-8") as handle:
+    handle.write(" ".join(args) + "\\n")
+
+verb = args[0] if args else ""
+if verb == "print":
+    if not state.exists():
+        raise SystemExit(113)
+    pid = int(state.read_text(encoding="utf-8"))
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        raise SystemExit(113)
+    print("state = running")
+    print("    pid = %d" % pid)
+    raise SystemExit(0)
+if verb == "bootout":
+    if state.exists():
+        pid = int(state.read_text(encoding="utf-8"))
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        for _ in range(50):
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.02)
+    state.unlink(missing_ok=True)
+    raise SystemExit(0)
+if verb != "bootstrap" or len(args) != 3:
+    raise SystemExit(64)
+
+with open(args[2], "rb") as handle:
+    job = plistlib.load(handle)
+command = job["ProgramArguments"]
+err_path = job.get("StandardErrorPath", os.devnull)
+pathlib.Path(err_path).parent.mkdir(parents=True, exist_ok=True)
+with open(err_path, "ab", buffering=0) as err:
+    child = subprocess.Popen(
+        command,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=err,
+        start_new_session=True,
+        close_fds=True,
+    )
+state.write_text("%d\\n" % child.pid, encoding="utf-8")
+""",
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    env = {
+        "EGRESS_LAUNCH_MODE": "launchd",
+        "EGRESS_LAUNCHCTL": str(fake),
+        "FAKE_LAUNCHCTL_LOG": str(fake_log),
+        "FAKE_LAUNCHCTL_STATE": str(fake_state),
+    }
+
+    first = _run(["apply"], root, state, extra_env=env)
+    assert first.returncode == 0, first.stderr
+    first_pid = int((state / "egress" / "proxy.pid").read_text().strip())
+    os.kill(first_pid, 0)
+    assert _run(["runtime-state"], root, state, extra_env=env).returncode == 0
+    installed = root / "Library" / "LaunchAgents" / "com.cabinet.egress-proxy.plist"
+    with installed.open("rb") as handle:
+        job = plistlib.load(handle)
+    assert job["KeepAlive"] is True
+    assert job["RunAtLoad"] is True
+    assert job["ProgramArguments"][0] == sys.executable
+    assert job["ProgramArguments"][1] == str(PROXY)
+    assert job["ProgramArguments"][3] == str(port)
+    installed_bytes = installed.read_bytes()
+
+    second = _run(["apply"], root, state, extra_env=env)
+    assert second.returncode == 0, second.stderr
+    assert int((state / "egress" / "proxy.pid").read_text().strip()) == first_pid
+    calls = fake_log.read_text(encoding="utf-8").splitlines()
+    assert sum(line.startswith("bootstrap ") for line in calls) == 1
+    assert any(line.startswith("print gui/") for line in calls)
+
+    # The running PID is insufficient: a modified installed contract must
+    # fail runtime attestation even while the fake supervisor still owns it.
+    job["ThrottleInterval"] = 999
+    with installed.open("wb") as handle:
+        plistlib.dump(job, handle)
+    forged = _run(["runtime-state"], root, state, extra_env=env)
+    assert forged.returncode != 0
+    assert "process supervisor" in forged.stderr
+    installed.write_bytes(installed_bytes)
+    assert _run(["runtime-state"], root, state, extra_env=env).returncode == 0
+
+    # A process-contract change is serialized as bootout-before-bootstrap and
+    # yields a new directly supervised PID; it is not silently reused.
+    changed_env = {**env, "EGRESS_CONNECT_PORTS": "443,8443"}
+    drifted = _run(["runtime-state"], root, state, extra_env=changed_env)
+    assert drifted.returncode != 0
+    assert "process supervisor" in drifted.stderr
+    changed = _run(["apply"], root, state, extra_env=changed_env)
+    assert changed.returncode == 0, changed.stderr
+    second_pid = int((state / "egress" / "proxy.pid").read_text().strip())
+    assert second_pid != first_pid
+    calls = fake_log.read_text(encoding="utf-8").splitlines()
+    first_bootout = next(i for i, line in enumerate(calls) if line.startswith("bootout "))
+    second_bootstrap = [i for i, line in enumerate(calls) if line.startswith("bootstrap ")][1]
+    assert first_bootout < second_bootstrap
+
+    # Cross-mode launchd -> child: stop must still discover and boot out the
+    # launchd owner even though the newly requested mode says child.
+    child_mode = {**changed_env, "EGRESS_LAUNCH_MODE": "child"}
+    stopped = _run(["stop"], root, state, extra_env=child_mode)
+    assert stopped.returncode == 0, stopped.stderr
+    calls = fake_log.read_text(encoding="utf-8").splitlines()
+    assert any(line == "bootout gui/%d/com.cabinet.egress-proxy" % os.getuid()
+               for line in calls)
+    assert not installed.exists()
+    for _ in range(50):
+        try:
+            os.kill(second_pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.05)
+    else:
+        pytest.fail("launchd-owned proxy survived explicit stop")
+
+    # Cross-mode child -> launchd: a child-owned proxy is first started on the
+    # same fixed endpoint. Applying launchd policy must stop that exact child,
+    # then bootstrap a new direct supervisor owner rather than reuse it.
+    child_up = _run(["apply"], root, state, extra_env={
+        "EGRESS_LAUNCH_MODE": "child",
+        "EGRESS_LAUNCHCTL": str(root / ".test-launchctl-absent"),
+        "EGRESS_CONNECT_PORTS": "443,8443",
+    })
+    assert child_up.returncode == 0, child_up.stderr
+    child_pid = int((state / "egress" / "proxy.pid").read_text().strip())
+
+    launchd_up = _run(["apply"], root, state, extra_env=changed_env)
+    assert launchd_up.returncode == 0, launchd_up.stderr
+    final_pid = int((state / "egress" / "proxy.pid").read_text().strip())
+    assert final_pid != child_pid
+    for _ in range(50):
+        try:
+            os.kill(child_pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.05)
+    else:
+        pytest.fail("child-owned proxy survived launchd-mode reconciliation")
+
+    final_stop = _run(["disable"], root, state, extra_env=changed_env)
+    assert final_stop.returncode == 0, final_stop.stderr
+    assert "enforce: false" in (
+        root / "instance" / "config" / "egress.yml"
+    ).read_text(encoding="utf-8")
+    assert not installed.exists()
 
 
 @pytest.mark.parametrize("artifact", ["proxy.env", "allow.hosts"])
@@ -473,6 +953,17 @@ def test_check_matcher(allow, host, expect):
     assert (proc.stdout.strip() == ("ALLOW" if expect == 0 else "BLOCK"))
 
 
+@pytest.mark.parametrize("ports", ["", "0", "65536", "443,nope"])
+def test_proxy_backend_rejects_invalid_connect_ports(ports):
+    proc = subprocess.run(
+        [sys.executable, str(PROXY), "--connect-ports", ports, "--check", "x.test"],
+        env={**os.environ, "EGRESS_ALLOW_HOSTS": "x.test"},
+        capture_output=True, text=True, timeout=30,
+    )
+    assert proc.returncode != 0
+    assert "error:" in proc.stderr
+
+
 # --------------------------------- 7. no secrets in the proxy log -----------
 def test_proxy_log_has_no_secrets(tmp_path, stop_guard):
     root = _seed_root(tmp_path)
@@ -493,6 +984,23 @@ def test_proxy_log_has_no_secrets(tmp_path, stop_guard):
     assert "SUPERSECRET123" not in log            # query secret never logged
     assert "SECRETHDR" not in log                 # header secret never logged
     assert "token=" not in log                    # no path/query at all
+    assert ((state / "egress" / "proxy.log").stat().st_mode & 0o777) == 0o600
+
+
+def test_apply_rejects_symlinked_proxy_log(tmp_path):
+    root = _seed_root(tmp_path)
+    state = tmp_path / "state"
+    egress = state / "egress"
+    egress.mkdir(parents=True)
+    victim = tmp_path / "victim.txt"
+    victim.write_text("do-not-touch\n", encoding="utf-8")
+    (egress / "proxy.log").symlink_to(victim)
+    _write_instance(root, "enforce: true\nproxy_port: 0\nallow_product: false\n")
+    applied = _run(["apply"], root, state)
+    assert applied.returncode != 0
+    assert "proxy log is symlinked" in applied.stderr
+    assert victim.read_text(encoding="utf-8") == "do-not-touch\n"
+    assert not (egress / "proxy.env").exists()
 
 
 # --------------------------------- 8. static hygiene ------------------------

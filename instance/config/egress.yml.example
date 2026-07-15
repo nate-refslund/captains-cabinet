@@ -25,7 +25,9 @@
 enforce: true
 
 # Local forward-proxy bind port (127.0.0.1). Inherit the default (8899) by
-# omitting this key; set 0 to let the OS choose a free port.
+# omitting this key. macOS requires a fixed 1–65535 port so launchd restart does
+# not change the endpoint already projected to officers; 0 is legacy child/test
+# mode only.
 # proxy_port: 8899
 
 # Keep auto-including your own product hosts (org_domains from platform.yml /

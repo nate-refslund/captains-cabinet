@@ -51,6 +51,7 @@ FILES=(
   "cabinet/scripts/captain-law-broker.py"
   "cabinet/scripts/egress-guard.sh"
   "cabinet/scripts/egress-proxy.py"
+  "cabinet/launchd/com.cabinet.egress-proxy.template.plist"
   "cabinet/scripts/observe-only.sh"
   "cabinet/scripts/lib/officer-env.py"
   "cabinet/scripts/lib/officer-env.sh"

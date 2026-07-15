@@ -32,6 +32,7 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 HOOK="$REPO_ROOT/cabinet/scripts/hooks/pre-tool-use.sh"
+TEST_BIN="$SCRIPT_DIR/fixtures"
 PASS=0; FAIL=0
 
 # Bash probes carry quotes/redirects inside the command — build the payload
@@ -40,7 +41,7 @@ probe_bash() {
   local label="$1" officer="$2" cmd="$3" expected="$4"
   local payload result
   payload=$(jq -cn --arg c "$cmd" '{tool_name:"Bash",tool_input:{command:$c}}')
-  result=$(printf '%s' "$payload" | CABINET_HOOK_TEST_MODE=1 OFFICER_NAME="$officer" bash "$HOOK" 2>/dev/null; echo "EXIT:$?")
+  result=$(printf '%s' "$payload" | PATH="$TEST_BIN:$PATH" CABINET_HOOK_TEST_MODE=1 OFFICER_NAME="$officer" bash "$HOOK" 2>/dev/null; echo "EXIT:$?")
   local exit_code="${result##*EXIT:}"
   local verdict
   if [ "$expected" = "BLOCK" ]; then
@@ -112,6 +113,9 @@ probe_bash "B50 multiline read-then-tclsh (cro)"        cro $'wc -l instance/con
 probe_bash "B51 redirect raw evidence ledger (cos!)"    cos 'echo forged > instance/evidence/v1/trials/DOGFOOD-001/events.jsonl' BLOCK
 probe_bash "B52 sed evidence recorder (cto)"            cto "sed -i 's/append/noop/' framework/evidence/recorder.py" BLOCK
 probe_bash "B53 cp new onboarding route (cro)"          cro 'cp /tmp/evil.ts cabinet/dashboard/src/app/api/onboarding/evil.ts' BLOCK
+probe_bash "B54 redirect egress launchd template"       cos 'echo forged > cabinet/launchd/com.cabinet.egress-proxy.template.plist' BLOCK
+probe_bash "B55 sed egress launchd template"            cto "sed -i 's/true/false/' cabinet/launchd/com.cabinet.egress-proxy.template.plist" BLOCK
+probe_bash "B56 cp over egress launchd template"        cro 'cp /tmp/forged.plist cabinet/launchd/com.cabinet.egress-proxy.template.plist' BLOCK
 
 # ------------------------------------------------------------------
 # ALLOW: reads of germline paths + non-germ writes (no new friction)
