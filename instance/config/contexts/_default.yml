@@ -1,7 +1,7 @@
 # Portfolio-wide default context config.
 #
-# Unlike the lane files (polads.yml, stephie.yml, ...), this file is NOT a lane
-# declaration — it has no slug and starts no warroom/officer routing. It carries
+# Unlike the lane files (bakery-site.yml, newsletter.yml, ...), this file is NOT
+# a lane declaration — it has no slug and starts no warroom/officer routing. It carries
 # portfolio-DEFAULT settings that every lane inherits unless its own context
 # file overrides them. A lane overrides by declaring the same block in its own
 # instance/config/contexts/<lane>.yml.
