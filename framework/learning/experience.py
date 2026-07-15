@@ -111,7 +111,8 @@ def _migrate_legacy_store() -> None:
     operator step: the unification must hold on EVERY deployment that pulls
     this commit (Mac Mini targets, clean-room clones) without a hands-on
     migration — the same additive/self-healing migration discipline the
-    screenpipe pipes use. Cost once migrated: a single `is_dir()` check.
+    personal-source adapter's pipes use. Cost once migrated: a single
+    `is_dir()` check.
 
     Collision-safe: a same-named canonical file gets the legacy lines
     APPENDED (JSONL is append-only by contract, so concatenation is

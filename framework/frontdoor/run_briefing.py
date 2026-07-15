@@ -93,7 +93,7 @@ def _default_needs_you() -> "dict | None":
 #     recover_pending), but its send seam ARCHIVES the composed body to
 #     instance/memory/briefings/<UTC stamp>.md — content preserved as DATA
 #     (synthesis, PM recap, TI-5 digest text with its undo indexes, every
-#     screenpipe pipe item). Items are ACKed only after the archive write
+#     personal-source pipe item). Items are ACKed only after the archive write
 #     succeeds (loss-safe: unarchived content stays pending on the stream).
 #     The `cabinet:digest:<date>` undo manifest is persisted by the digest
 #     leg exactly as before, so `undo <n>` replies keep binding.

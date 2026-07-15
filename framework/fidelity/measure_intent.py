@@ -46,13 +46,13 @@ from pathlib import Path
 # tests under a full sweep). parents[2] resolves identically in production (run
 # from main), so it is byte-for-byte equivalent there. Matches run_action_lane.py:49.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-# [SRC-2 source-adapter] The screenpipe `_shared`/`pipes` sys.path bootstrap is no
-# longer inserted here — the personal-source ADAPTER owns it. The gather now flows
-# through framework.sources.get_source() -> the Flavor-A adapter (which sets up its
-# own path), and framework.fidelity.retro (imported just below) already puts
-# ~/.screenpipe/pipes{,/_shared,/retrodiction} on sys.path for a real run. Byte-
-# identical (retro provides the same paths); drops measure_intent's only
-# ~/.screenpipe literal (clean-room ratchet).
+# [SRC-2 source-adapter] The personal-source adapter's `_shared`/`pipes` sys.path
+# bootstrap is no longer inserted here — the personal-source ADAPTER owns it. The
+# gather now flows through framework.sources.get_source() -> the Flavor-A adapter
+# (which sets up its own path), and framework.fidelity.retro (imported just below)
+# already puts the adapter's `pipes{,/_shared,/retrodiction}` on sys.path for a
+# real run. Byte-identical (retro provides the same paths); drops
+# measure_intent's only adapter-specific path literal (clean-room ratchet).
 
 from framework.fidelity.benchmark import build_cases
 from framework.fidelity import officer_runner, scorer, leakguard

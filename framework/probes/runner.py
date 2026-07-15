@@ -25,7 +25,7 @@ product is safe (no concurrent probe shares the process).
 
 SECRETS: tokens are read from the environment ONLY (VERCEL_API_KEY,
 SENTRY_AUTH_TOKEN — sourced by cabinet/scripts/run-probes.sh from cabinet/.env
-+ ~/.screenpipe/pipes/_shared/.env). Never argv, never printed, never in
++ the personal-source adapter's `_shared/.env`). Never argv, never printed, never in
 plists. An empty value is ABSENT (cabinet/.env ships empty placeholders —
 "empty env values never claim keys").
 

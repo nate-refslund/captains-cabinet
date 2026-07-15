@@ -44,7 +44,7 @@ def _record_cost(cost: Any) -> None:
 # LEAK ISOLATION (verified 2026-06-19): `claude -p` is a full Claude Code agent
 # that auto-discovers BOTH (a) project context — CLAUDE.md, .remember/ session
 # buffer, SessionStart hooks from its cwd — and (b) user-global context —
-# ~/.claude/CLAUDE.md (screenpipe-memories) + ~/.claude.json. Run from the
+# ~/.claude/CLAUDE.md (personal memory notes) + ~/.claude.json. Run from the
 # cabinet, the eval LLM (officer AND judge) inherits POST-CUTOFF, this-session
 # context — an out-of-band leak past the payload-level cutoff fence (a bare
 # `claude -p` from the cabinet returned the held-out answer, citing .remember;

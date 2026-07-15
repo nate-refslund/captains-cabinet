@@ -1,15 +1,17 @@
 """framework.acting.lane_dedup — the draft/action-lane loop-plumbing.
 
-The PURE (zero-screenpipe) dedup / recency / handled-signature helpers the acting
-lanes use to decide WHICH awaiting thread to (re-)present: timestamp parsing, the
-decided/open proposal maps read from the consequence ledger, the recency-aware
-open/handled gates, the redis handled-signature, and audience->lane routing.
+The PURE (zero-adapter-coupling) dedup / recency / handled-signature helpers the
+acting lanes use to decide WHICH awaiting thread to (re-)present: timestamp
+parsing, the decided/open proposal maps read from the consequence ledger, the
+recency-aware open/handled gates, the redis handled-signature, and
+audience->lane routing.
 
-Extracted from the former ``framework.acting.screenpipe_adapter`` (SRC-3 source-
-adapter split): these functions carry NO screenpipe / vault coupling — they read
-the framework consequence ledger + redis only — so they stay in ``framework/``
-where any captain/flavor can use them, while the screenpipe-coupled acting
-surface (find_threads / gather / draft_fn / ...) re-homed to the Flavor-A adapter
+Extracted from the former framework-resident personal-source adapter module
+(SRC-3 source-adapter split): these functions carry NO adapter-specific / vault
+coupling — they read the framework consequence ledger + redis only — so they
+stay in ``framework/`` where any captain/flavor can use them, while the
+adapter-coupled acting surface (find_threads / gather / draft_fn / ...)
+re-homed to the Flavor-A adapter
 (``instance/flavor-a/flavor_a/acting.py``, reached via
 ``framework.sources.get_source()``). Bodies are byte-identical to the originals.
 """

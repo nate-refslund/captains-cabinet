@@ -4,8 +4,8 @@ Backs "remind me tomorrow about X", "every 30 min check Y", "when Z happens do A
 The Chair REGISTERS a trigger when the Captain asks; a checker (cabinet/scripts/check-triggers.py,
 launchd every minute) finds DUE triggers and fires them into the Chair's Redis trigger
 stream, which wakes the Chair to **gather-then-decide at fire time** (re-check before acting;
-never a stale nudge). This is the primitive the screenpipe `reminders` pipe needs before it
-can migrate into the cabinet.
+never a stale nudge). This is the primitive the personal-source adapter's `reminders` pipe
+needs before it can migrate into the cabinet.
 
 Storage: a JSON file (durable across restarts; atomic write), `instance/state/triggers.json`
 by default (override `CABINET_TRIGGERS_FILE`). Pure + dependency-free so it is unit-testable

@@ -1,8 +1,9 @@
 """voice_charset — captain-voice charset rule (framework-vendored copy).
 
-VENDORED 2026-07-02 (CI 2861900…) from ~/.screenpipe/pipes/_shared/voice_charset.py
-so flavor-B / CI installs get the SAME one implementation without the screenpipe
-estate. The _shared copy remains live for the pipes until the A3 re-point turns
+VENDORED 2026-07-02 (CI 2861900…) from the personal-source adapter's
+`_shared/voice_charset.py` so flavor-B / CI installs get the SAME one
+implementation without the adapter's personal-source estate. The _shared copy
+remains live for the pipes until the A3 re-point turns
 it into a re-export of this file — until then, changes go to BOTH (they are
 byte-synced below this header; drift check: diff the two files minus this block).
 
@@ -29,9 +30,10 @@ catch-all:
 
 Idempotent: keyboard-only text (incl. emojis + ae/oe/aa) passes through
 unchanged. Pure string transform: no I/O, never raises, only `re` +
-`unicodedata` deps so it imports cleanly with NO screenpipe deps — which is why
-both screenpipe's draft_lib AND the cabinet's acting adapter import this one
-implementation instead of each restating it (the E-2 de-duplication: the whole
+`unicodedata` deps so it imports cleanly with NO adapter-specific deps — which
+is why both the personal-source adapter's draft_lib AND the cabinet's acting
+adapter import this one implementation instead of each restating it (the E-2
+de-duplication: the whole
 point of the charset reframe was that the table never grows again, so two copies
 would re-introduce drift).
 """

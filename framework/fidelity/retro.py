@@ -1,12 +1,12 @@
-"""Thin shim that imports the screenpipe retrodiction scoring engine into the
-Cabinet's framework namespace.
+"""Thin shim that imports the personal-source adapter's retrodiction scoring
+engine into the Cabinet's framework namespace.
 
 The fidelity harness REUSES retrodiction's leak-safe scoring logic
 (extract_cases / score_case / judge_decision / cusum / score_draft /
 author_centroid / aggregate / mechanics_flags) — it does NOT re-derive it
 (docs/fidelity-harness-design-2026-06-18.md §25-37). This module is the single
 import seam; the rest of framework/fidelity/ imports from
-`framework.fidelity.retro`, never from a hardcoded screenpipe path.
+`framework.fidelity.retro`, never from a hardcoded adapter-specific path.
 
 The lib is loaded via an EXPLICIT importlib spec (unique module name
 'retrodiction_lib') so it can never shadow or be shadowed by another
@@ -49,8 +49,9 @@ _SHARED_DIR = RETRO_PIPE_DIR.parent / "_shared"
 def _exists_unprivileged(p: Path) -> bool:
     """``p.exists()`` that treats an UNREADABLE path as absent instead of
     crashing at import. The null-hatch gate (operative-egg A15/P1, and the
-    clean-room-source CI job it composes) plants ``~/.screenpipe`` as
-    present-but-mode-000, and ``Path.exists()`` PROPAGATES EACCES (pathlib
+    clean-room-source CI job it composes) plants an unreadable stand-in for
+    the adapter's state dir as present-but-mode-000, and ``Path.exists()``
+    PROPAGATES EACCES (pathlib
     swallows only ENOENT/ENOTDIR/EBADF/ELOOP) — which took this module down at
     import. A lib we cannot stat is a lib we cannot import: honest False,
     degrade to the ``_RetroUnavailable`` stub exactly like plain absence."""
@@ -72,7 +73,7 @@ for _p in (str(RETRO_PIPE_DIR), str(_SHARED_DIR), str(RETRO_PIPE_DIR.parent)):
         sys.path.insert(0, _p)
 
 # Import-safe when the lib is absent (2026-07-02, CI run 2861848…): a clean
-# runner / flavor-B Mini has no ~/.screenpipe, and an import-time crash here
+# runner / flavor-B Mini has no adapter-specific state dir, and an import-time crash here
 # took 18 test modules down at COLLECTION. Absence now degrades to a stub
 # module whose every attribute raises with guidance on FIRST USE — importers
 # can `import retro` + check `retro_available()`; only actual scoring calls
@@ -81,7 +82,7 @@ class _RetroUnavailable:
     def __getattr__(self, attr):
         raise RuntimeError(
             f"retrodiction lib not available (looked in {RETRO_PIPE_DIR}) — "
-            f"attribute {attr!r} needs the screenpipe retrodiction pipe "
+            f"attribute {attr!r} needs the personal-source adapter's retrodiction pipe "
             "(flavor-A coupling; set CABINET_RETRO_PIPE_DIR or wait for the "
             "A2.1 vendoring). retro_available() lets callers branch cleanly."
         )

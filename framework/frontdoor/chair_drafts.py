@@ -7,11 +7,12 @@ longer in the approval path — it is back-end (capture/index) only.
 
 SRC-3 (source-adapter boundary): the SEND execution (email_lib / teams_graph_lib
 over Microsoft Graph) + the signature helper (draft_lib.ensure_signature) are
-re-homed behind framework.sources.get_dispatch() — the Flavor-A ScreenpipeDispatch
-OWNS the screenpipe send libs, byte-identical to what ran when they were imported
-here; framework names no screenpipe lib and carries no ~/.screenpipe path. This
-module keeps the cabinet-side orchestration: present the draft, store/clear the
-redis draft record, and (post-approval) call the dispatch to send.
+re-homed behind framework.sources.get_dispatch() — the Flavor-A dispatch
+implementation OWNS the adapter's send libs, byte-identical to what ran when
+they were imported here; framework names no adapter-specific lib and carries
+no adapter-specific path. This module keeps the cabinet-side orchestration:
+present the draft, store/clear the redis draft record, and (post-approval)
+call the dispatch to send.
 
 Approval gate is preserved: deliver_draft() is the egress and runs ONLY after
 the Captain replies 'send' to a presented draft in the Chair chat. The Chair reply
@@ -87,10 +88,11 @@ def deliver_draft(pid: str, override_text: str = "", dry_run: bool = False,
 
     The redis draft GET/DEL stays cabinet-side here; the actual send execution
     (Graph thread-resolution, reply-vs-fresh, verify-sent, email_lib.send_email /
-    teams_graph_lib.send_teams_to_email) lives in the Flavor-A ScreenpipeDispatch
-    (get_dispatch().deliver), byte-identical to the former inline path. On a
-    clean-room / Flavor-B box the null dispatch no-ops (returns None) → treated as
-    "no dispatch", nothing sends, the draft is retained.
+    teams_graph_lib.send_teams_to_email) lives in the Flavor-A dispatch
+    implementation (get_dispatch().deliver), byte-identical to the former
+    inline path. On a clean-room / Flavor-B box the null dispatch no-ops
+    (returns None) → treated as "no dispatch", nothing sends, the draft is
+    retained.
 
     dry_run=True wires everything (subject calc, env, import the send lib) but does
     NOT send — used to verify the path without an actual egress.
