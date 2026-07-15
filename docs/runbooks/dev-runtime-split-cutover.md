@@ -74,9 +74,21 @@ go stale silently):
                                                  a timestamp — idempotent: re-provisioning
                                                  the same commit is a no-op), immutable once
                                                  validated
-      instance -> <abs path>/shared/instance   <- symlink (not a copy — one edit, every release sees it)
-      cabinet/.env -> <abs path>/shared/cabinet.env
-      cabinet/ framework/ ...                <- the rest of the checked-out repo tree
+      instance/                               <- REAL directory (NOT a whole-dir symlink —
+                                                 see runtime-provision.sh's own "WHY
+                                                 LEAF-LEVEL, NOT A WHOLE instance/ SYMLINK"
+                                                 header comment, the authoritative version).
+                                                 Only the individually-gitignored LEAVES are
+                                                 symlinked into shared/instance/ — e.g.
+                                                 config/roster.yml, state/, cache/,
+                                                 roles/{active,archive,hats}/, memory/ (full
+                                                 list = runtime-provision.sh's
+                                                 INSTANCE_PERSISTENT_{DIRS,SEEDED_DIRS,FILES}
+                                                 arrays). Git-tracked config (adapters.yml,
+                                                 comms-surface.yml, contexts/*.yml, ...) stays
+                                                 a REAL file here, updated by every deploy.
+      cabinet/.env -> <abs path>/shared/cabinet.env   <- symlink (the one WHOLE-FILE leaf)
+      cabinet/ framework/ ...                 <- the rest of the checked-out repo tree
   current -> releases/<full-sha>             <- STABLE symlink; this is the path
                                                  launchd's plists are rendered against
   previous -> releases/<full-sha>            <- the release 'current' pointed at just
@@ -208,12 +220,16 @@ bash "$LIVE/cabinet/scripts/runtime-provision.sh" provision "$RUNTIME" origin/ma
 RELEASE=$(bash "$LIVE/cabinet/scripts/runtime-provision.sh" provision "$RUNTIME" origin/master | sed -n 's/^PROVISIONED_SLOT=//p')
 ```
 
-This already wires `instance/` and `cabinet/.env` as symlinks into
-`$RUNTIME/shared/` (empty at this point — Step 2 populates them with the
-LIVE deployment's real data; `init` refuses to guess/fabricate it). Manual
-equivalent, if you ever need to reconstruct this by hand (uses only `git` +
-scripts already in this repo; note the real script keeps `repo.git`
-directly under `$RUNTIME`, not under `$RUNTIME/shared` — matched below):
+This already wires the individually-gitignored LEAVES of `instance/`
+(leaf-level, not the whole directory — see runtime-provision.sh's own "WHY
+LEAF-LEVEL, NOT A WHOLE instance/ SYMLINK" header comment, the authoritative
+version) plus `cabinet/.env` (a whole-file symlink, the one leaf that is)
+as symlinks into `$RUNTIME/shared/` (empty at this point — Step 2 populates
+them with the LIVE deployment's real data; `init` refuses to
+guess/fabricate it). Manual equivalent, if you ever need to reconstruct
+this by hand (uses only `git` + scripts already in this repo; note the real
+script keeps `repo.git` directly under `$RUNTIME`, not under
+`$RUNTIME/shared` — matched below):
 
 ```bash
 RUNTIME=~/.cabinet/runtime
@@ -279,21 +295,38 @@ rsync -a "$LIVE/instance/" "$RUNTIME/shared/instance/"
 rsync -a "$HOME/Library/Application Support/cabinet/" "$RUNTIME/shared/app-support/" 2>/dev/null || true
 ```
 
-If you provisioned via the REAL `runtime-provision.sh` above, `$RELEASE/
-instance` and `$RELEASE/cabinet/.env` are ALREADY symlinks into
-`$RUNTIME/shared/` (provision does this at Step 1, before shared/ has real
-content) — the rsync above just populated what those symlinks already
-expose, and there is nothing left to wire. Only the fully-manual path (no
-`runtime-provision.sh`) needs this extra step:
+If you provisioned via the REAL `runtime-provision.sh` above, `$RELEASE`'s
+gitignored `instance/` leaves and `cabinet/.env` are ALREADY symlinked into
+`$RUNTIME/shared/` (provision's `link_instance_data`, called at Step 1,
+before `shared/` had any real content) — the rsync above just populated
+what those symlinks already expose, and there is nothing left to wire.
+Confirm/refresh the wiring by re-running `provision` (idempotent — safe to
+call again for the same sha; this also picks up any shared/ leaf that
+didn't exist yet the first time):
 
 ```bash
-# manual-path only — $RELEASE still set from Step 1 in the same shell; if
-# starting a fresh shell instead, re-derive it as the newest release directory:
+# $RELEASE still set from Step 1 in the same shell; if starting a fresh
+# shell instead, re-derive it as the newest release directory:
 RELEASE=$(ls -td ~/.cabinet/runtime/releases/*/ | head -1); RELEASE=${RELEASE%/}
 
-ln -s "$RUNTIME/shared/instance"    "$RELEASE/instance"
-ln -s "$RUNTIME/shared/cabinet.env" "$RELEASE/cabinet/.env"
+bash "$LIVE/cabinet/scripts/runtime-provision.sh" provision "$RUNTIME" "$(basename "$RELEASE")"
 ```
+
+**Do not hand-roll a symlink for this.** `instance/` is NOT a single
+whole-directory symlink — it is a real directory where only the
+individually-gitignored LEAVES (`config/roster.yml`, `state/`, `cache/`,
+`memory/`, ...) are symlinked into `shared/instance/`, alongside ~50
+git-tracked config files that stay real and get updated by every future
+deploy (see runtime-provision.sh's own "WHY LEAF-LEVEL, NOT A WHOLE
+instance/ SYMLINK" header comment — an earlier version of this doc showed a
+whole-directory `ln -s` here, which is the exact bug that header documents
+fixing). A fully manual reproduction with no script at all would need to
+mirror `runtime-provision.sh`'s `INSTANCE_PERSISTENT_DIRS` /
+`INSTANCE_PERSISTENT_SEEDED_DIRS` / `INSTANCE_PERSISTENT_FILES` arrays
+leaf-by-leaf — deliberately not re-enumerated here so this doc can't drift
+from that list the way it already has once; the script is authoritative
+(§2's "if those scripts exist, use them" rule), and by this point in the
+runbook they do.
 
 **Germline callout — do this before the tree goes live.** A subset of what
 you just copied is boundary-locked on the live tree via macOS `schg`
