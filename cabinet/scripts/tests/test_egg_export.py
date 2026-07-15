@@ -159,7 +159,8 @@ def test_live_values_absent_example_twins_present(export: Path):
                  "directions.yml.example", "peers.yml.example",
                  "officer-emails.yml.example", "probes.yml.example",
                  "warrooms.yml.example", "roster.yml.example",
-                 "publish-scan-patterns.local.example"):
+                 "publish-scan-patterns.local.example",
+                 "role-registry.md.example"):
         assert (cfg / twin).is_file(), f"R120/R166: {twin} must ship"
 
 
