@@ -544,24 +544,24 @@ def test_cost_pool_mode() -> None:
     import server as srv
     orig = srv._redis_hgetall
     srv._redis_hgetall = lambda key: {
-        "cto_sensed_cost_micro": "5000000",
-        "cto_sensed_input": "1000",
-        "cto_sensed_output": "400",
-        "cto_sensed_cache_write": "0",
-        "cto_sensed_cache_read": "0",
+        "cto_acme_cost_micro": "5000000",
+        "cto_acme_input": "1000",
+        "cto_acme_output": "400",
+        "cto_acme_cache_write": "0",
+        "cto_acme_cache_read": "0",
     }
     try:
         result = srv.tool_cost_summary({"date": "2026-04-29"})
         proj_keys = list(result.get("by_project", {}).keys())
-        if "sensed" in proj_keys:
-            ok("cost T-2: pool mode → by_project contains 'sensed' key")
+        if "acme" in proj_keys:
+            ok("cost T-2: pool mode → by_project contains 'acme' key")
         else:
-            fail("cost T-2: pool mode → 'sensed' key", f"got keys: {proj_keys}")
+            fail("cost T-2: pool mode → 'acme' key", f"got keys: {proj_keys}")
         op_keys = list(result.get("by_officer_project", {}).keys())
-        if "cto:sensed" in op_keys:
-            ok("cost T-2: pool mode → by_officer_project contains 'cto:sensed'")
+        if "cto:acme" in op_keys:
+            ok("cost T-2: pool mode → by_officer_project contains 'cto:acme'")
         else:
-            fail("cost T-2: by_officer_project 'cto:sensed'", f"got keys: {op_keys}")
+            fail("cost T-2: by_officer_project 'cto:acme'", f"got keys: {op_keys}")
     finally:
         srv._redis_hgetall = orig
 

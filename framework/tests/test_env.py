@@ -232,14 +232,24 @@ class TestOrgDomains:
     def test_this_instance_yields_the_six_org_domains(self, monkeypatch,
                                                       isolated_org_domains_cache):
         """Byte-identity guard: with CABINET_ROOT unset the resolver reads THIS
-        worktree's instance/config/platform.yml, yielding the exact six domains
-        the classifier hardcode carried — so is_internal is byte-identical."""
+        worktree's instance/config/platform.yml, yielding exactly the domains
+        that file declares — so is_internal is byte-identical. The expected
+        list is derived from the on-disk YAML itself (never a hardcoded
+        literal here, mirroring env.org_domains's own local `import yaml`
+        idiom), so this framework-layer test carries no instance-specific
+        domain of its own; a fresh hatch's regenerated platform.yml correctly
+        SKIPS this guard via launcher_instance_only."""
+        import yaml
         monkeypatch.delenv("CABINET_ROOT", raising=False)
         env._org_domains_cache = None
-        assert env.org_domains() == (
-            "stepnetwork.dk", "jfmedier.dk", "jysk-fynske-medier.dk",
-            "polads.eu", "refslund.ai", "step.dk",
-        )
+        cfg = os.path.join(os.path.dirname(__file__), "..", "..",
+                           "instance/config/platform.yml")
+        with open(cfg, encoding="utf-8") as fh:
+            declared = yaml.safe_load(fh).get("org_domains") or []
+        expected = tuple(d.strip().lower() for d in declared
+                         if isinstance(d, str) and d.strip())
+        assert expected, "the launcher's real platform.yml must declare org_domains"
+        assert env.org_domains() == expected
 
 
 class TestTasksBoard:
