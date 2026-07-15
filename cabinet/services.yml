@@ -422,7 +422,7 @@ services:
     kind: daemon
     command: bash cabinet/scripts/backup.sh --retention-days 14
     schedule: { calendar: [{hour: 3, minute: 0}] }   # daily 03:00 local; sleep-missed slots coalesce on wake
-    expected: "a checksum-verified dated snapshot lands in ~/Cabinet-Backups daily (topology-preserved filesystem state + configured Postgres + fresh verified Redis RDB or fsynced AOF fallback); restore-drill passes"
+    expected: "a checksum-verified dated snapshot lands in ~/Cabinet-Backups daily (topology-preserved filesystem state + configured Postgres + fresh verified Redis RDB or fsynced AOF fallback); Redis logical-state v3 and restore-drill pass"
     notes: >-
       Closes the CRIT-4 finding (19.7GB of runtime state with zero backups).
       LOCAL destination ~/Cabinet-Backups, 14-day retention, pruned by the
@@ -435,7 +435,14 @@ services:
       Redis AOF remains the live durability layer. The backup prefers a bounded
       fresh RDB; if BGSAVE is stuck and AOF is healthy, it pauses writes, waits
       for fsync, copies the complete multipart set, and proves it by booting a
-      disposable Redis before marking the snapshot complete.
+      disposable Redis before marking the snapshot complete. Both paths use the
+      same type-aware SHA-256 logical-state v3 proof: durable state is exact;
+      expiring keys may disappear only after their recorded absolute deadline;
+      unsupported value types fail closed. The blocking logical fingerprint
+      has a 55-second internal deadline inside the 60-second write pause and
+      aborts rather than publishing if the keyspace outgrows that budget.
+      Legacy v2 snapshots retain their
+      strict DUMP-based comparison and request a fresh v3 snapshot on mismatch.
 
   # ── Verdict supply (lane-supply 2026-07-05) ────────────────────────────────
   # THE keystone wave: the 2026-07-03 re-review found the machine

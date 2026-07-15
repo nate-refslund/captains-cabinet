@@ -445,6 +445,15 @@ machinery). The pieces:
   `--retention-days 14`, destination `~/Cabinet-Backups`; the row's `expected:`
   floor puts it under outcome-watchdog no-silent-cron coverage). Render/load
   via `cabinet/scripts/generate-plists.py`.
+  Each Redis capture includes `redis-state.txt`: the v3 proof hashes canonical,
+  type-aware logical state with SHA-256, separates durable keys from keys with
+  absolute expiry deadlines, and allows a volatile key to be absent after its
+  recorded deadline. Changed, unexpected, prematurely missing, or unsupported
+  values fail closed. Its blocking source fingerprint has a 55-second internal
+  deadline inside the 60-second write pause, so keyspace growth fails the
+  backup clearly instead of overrunning the capture window. Restore drills
+  retain strict compatibility with legacy
+  v2 snapshots without weakening their exact comparison.
 - **`cabinet/scripts/restore-drill.sh`** — prove a snapshot actually restores
   (newest snapshot → full restore into a throwaway temp dir → artifact
   verification; read-only against the backup, deliberately no `--apply`). A

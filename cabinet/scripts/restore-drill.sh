@@ -32,6 +32,10 @@
 
 set -uo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/redis-state.sh
+. "$SCRIPT_DIR/lib/redis-state.sh"
+
 BACKUP_DEST="${BACKUP_DEST:-$HOME/Cabinet-Backups}"
 WANT_DATE=""
 
@@ -48,92 +52,22 @@ FAILS=0
 fail() { echo "  ✗ FAIL: $1"; FAILS=$((FAILS + 1)); }
 ok()   { echo "  ✓ $1"; }
 
-REDIS_STATE_LUA='local keys=redis.call("KEYS","*"); table.sort(keys); local h={}; local expiries={}; for i,k in ipairs(keys) do local d=redis.call("DUMP",k); h[i]=redis.sha1hex(tostring(string.len(k))..":"..k..d); local ttl=redis.call("PTTL",k); if ttl >= 0 then local t=redis.call("TIME"); local now=tonumber(t[1])*1000+math.floor(tonumber(t[2])/1000); expiries[#expiries+1]=redis.sha1hex(k)..":"..string.format("%.0f",now+ttl); end; end; local out={tostring(#keys)..":"..redis.sha1hex(table.concat(h))}; for _,e in ipairs(expiries) do out[#out+1]=e; end; return out'
-redis_state_fingerprint() {
-  local output="$1"
-  shift
-  local -a client=("$@")
-  local databases result first expiry db tmp="${output}.tmp.$$"
-  databases=$("${client[@]}" --raw CONFIG GET databases 2>/dev/null | tail -1)
-  case "$databases" in ''|*[!0-9]*) return 1 ;; esac
-  [ "$databases" -gt 0 ] && [ "$databases" -le 1024 ] || return 1
-  {
-    printf 'FORMAT redis-dump-content-expiry-v2\n'
-    printf 'DATABASES %s\n' "$databases"
-    db=0
-    while [ "$db" -lt "$databases" ]; do
-      result=$("${client[@]}" -n "$db" --raw EVAL_RO "$REDIS_STATE_LUA" 0 2>/dev/null) || exit 1
-      first=$(printf '%s\n' "$result" | sed -n '1p')
-      printf '%s\n' "$first" | grep -Eq '^[0-9]+:[0-9a-f]{40}$' || exit 1
-      printf 'DB %s %s\n' "$db" "$first"
-      while IFS= read -r expiry; do
-        [ -n "$expiry" ] || continue
-        printf '%s\n' "$expiry" | grep -Eq '^[0-9a-f]{40}:[0-9]+$' || exit 1
-        printf 'EXPIRY %s %s\n' "$db" "${expiry/:/ }"
-      done <<EOF
-$(printf '%s\n' "$result" | sed -n '2,$p')
-EOF
-      db=$((db + 1))
-    done
-  } > "$tmp" || { rm -f "$tmp"; return 1; }
-  mv "$tmp" "$output"
-}
-
-redis_state_equal() {
-  local expected="$1" actual="$2"
-  # Keep the recovery check aligned with backup.sh's fixed 2s clock tolerance.
-  python3.12 - "$expected" "$actual" 2000 <<'PY'
-import sys
-from pathlib import Path
-
-def load(path: str):
-    metadata = []
-    expiries = {}
-    for raw in Path(path).read_text(encoding="utf-8").splitlines():
-        parts = raw.split()
-        if parts and parts[0] == "EXPIRY" and len(parts) == 4:
-            key = (parts[1], parts[2])
-            if key in expiries:
-                raise ValueError(f"duplicate expiry record: {key}")
-            expiries[key] = int(parts[3])
-        else:
-            metadata.append(raw)
-    return metadata, expiries
-
-expected_meta, expected_expiry = load(sys.argv[1])
-actual_meta, actual_expiry = load(sys.argv[2])
-tolerance = int(sys.argv[3])
-if expected_meta != actual_meta:
-    raise SystemExit("Redis key/value digest differs")
-if expected_expiry.keys() != actual_expiry.keys():
-    raise SystemExit("Redis expiry key set differs")
-for key, deadline in expected_expiry.items():
-    delta = abs(deadline - actual_expiry[key])
-    if delta > tolerance:
-        raise SystemExit(f"Redis absolute expiry differs by {delta}ms for {key}")
-PY
-}
-
-expected_redis_databases() {
-  local state="$1" databases
-  databases=$(sed -n 's/^DATABASES //p' "$state")
-  case "$databases" in ''|*[!0-9]*) return 1 ;; esac
-  [ "$databases" -gt 0 ] && [ "$databases" -le 1024 ] || return 1
-  printf '%s\n' "$databases"
-}
-
 verify_restored_redis_state() {
-  local socket="$1" expected="$2" actual="$RESTORE_DIR/redis-state-actual.txt"
+  local socket="$1" expected="$2" actual="$RESTORE_DIR/redis-state-actual.txt" format
   [ -f "$expected" ] || {
     fail "redis-state.txt is missing; source/restored equality cannot be proven"
     return 1
   }
-  if ! redis_state_fingerprint "$actual" redis-cli -s "$socket"; then
+  format=$(redis_state_format "$expected" 2>/dev/null) || {
+    fail "redis-state.txt is malformed or uses an unsupported format"
+    return 1
+  }
+  if ! redis_state_fingerprint "$actual" "$format" redis-cli -s "$socket"; then
     fail "could not fingerprint the disposable Redis state"
     return 1
   fi
   if redis_state_equal "$expected" "$actual"; then
-    ok "restored Redis values and absolute expiries match the paused source"
+    ok "restored Redis recoverable state matches at restore time"
     return 0
   fi
   fail "restored Redis state differs from redis-state.txt"
@@ -313,8 +247,11 @@ critical_any "officer memory"     "cabinet-state/memory" \
 
 # ── 4. Redis dump integrity ─────────────────────────────────────────────────
 # Both formats are checked structurally, loaded with truncation recovery
-# disabled, and compared to the paused-source state digest recorded at backup
-# time. Neither path touches the live server.
+# disabled, and compared to the recoverable source-state proof recorded at
+# backup time. Current v3 fingerprints compare canonical logical type state with
+# SHA-256 and distinguish durable from deadline-bound keys; legacy v2 snapshots
+# retain their exact fail-closed DUMP comparison. Neither path touches the live
+# server.
 REDIS_MODE=$(cat "$SNAP/redis-backup-mode.txt" 2>/dev/null || true)
 if [ -z "$REDIS_MODE" ] && [ -f "$SNAP/redis-dump.rdb" ]; then REDIS_MODE=rdb; fi
 if [ "$REDIS_MODE" = rdb ] && [ -f "$SNAP/redis-dump.rdb" ]; then

@@ -10,7 +10,9 @@
 #      cos-law incident, never again).
 #   2. Redis snapshot (a bounded fresh `redis-cli --rdb` transfer; if Redis has
 #      a stuck BGSAVE but healthy AOF, a write-paused/fsynced multipart AOF copy
-#      is restored into a disposable Redis before it is accepted).
+#      is restored into a disposable Redis before it is accepted). Acceptance
+#      uses a v3 SHA-256 logical-state proof: durable keys compare exactly while
+#      an expiring key may be absent only after its recorded absolute deadline.
 #   3. Postgres pg_dump whenever DATABASE_URL or NEON_CONNECTION_STRING is
 #      configured (disable explicitly with --no-pg).
 #
@@ -48,6 +50,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Bug fix (R5): script lives at cabinet/scripts/, so repo root is two levels up.
 CABINET_ROOT="${CABINET_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
+# shellcheck source=lib/redis-state.sh
+. "$SCRIPT_DIR/lib/redis-state.sh"
 
 BACKUP_DEST="${BACKUP_DEST:-$HOME/Cabinet-Backups}"
 RETENTION_DAYS=14
@@ -150,82 +154,6 @@ acquire_backup_lock() {
   rm -rf "$stale"
   printf '%s\n' "$$" > "$LOCK_DIR/pid"
   LOCK_HELD=1
-}
-
-# Redis DEBUG DIGEST is disabled on secure deployments. Compute a deterministic
-# content digest inside Redis instead: sorted keys, DUMP serialization, and a
-# per-database SHA-1. Expiring keys additionally emit a hashed-key/absolute-
-# expiry record; source and restore must agree within a bounded clock tolerance.
-# This intentionally uses KEYS while writes are paused: exactness beats latency
-# in this rare fallback/backup path, but very large keyspaces should move to a
-# streaming digest before this becomes a sub-second operational requirement.
-REDIS_STATE_LUA='local keys=redis.call("KEYS","*"); table.sort(keys); local h={}; local expiries={}; for i,k in ipairs(keys) do local d=redis.call("DUMP",k); h[i]=redis.sha1hex(tostring(string.len(k))..":"..k..d); local ttl=redis.call("PTTL",k); if ttl >= 0 then local t=redis.call("TIME"); local now=tonumber(t[1])*1000+math.floor(tonumber(t[2])/1000); expiries[#expiries+1]=redis.sha1hex(k)..":"..string.format("%.0f",now+ttl); end; end; local out={tostring(#keys)..":"..redis.sha1hex(table.concat(h))}; for _,e in ipairs(expiries) do out[#out+1]=e; end; return out'
-redis_state_fingerprint() {
-  local output="$1"
-  shift
-  local -a client=("$@")
-  local databases result first expiry db tmp="${output}.tmp.$$"
-  databases=$("${client[@]}" --raw CONFIG GET databases 2>/dev/null | tail -1)
-  case "$databases" in
-    ''|*[!0-9]*) return 1 ;;
-  esac
-  [ "$databases" -gt 0 ] && [ "$databases" -le 1024 ] || return 1
-  {
-    printf 'FORMAT redis-dump-content-expiry-v2\n'
-    printf 'DATABASES %s\n' "$databases"
-    db=0
-    while [ "$db" -lt "$databases" ]; do
-      result=$("${client[@]}" -n "$db" --raw EVAL_RO "$REDIS_STATE_LUA" 0 2>/dev/null) || exit 1
-      first=$(printf '%s\n' "$result" | sed -n '1p')
-      printf '%s\n' "$first" | grep -Eq '^[0-9]+:[0-9a-f]{40}$' || exit 1
-      printf 'DB %s %s\n' "$db" "$first"
-      while IFS= read -r expiry; do
-        [ -n "$expiry" ] || continue
-        printf '%s\n' "$expiry" | grep -Eq '^[0-9a-f]{40}:[0-9]+$' || exit 1
-        printf 'EXPIRY %s %s\n' "$db" "${expiry/:/ }"
-      done <<EOF
-$(printf '%s\n' "$result" | sed -n '2,$p')
-EOF
-      db=$((db + 1))
-    done
-  } > "$tmp" || { rm -f "$tmp"; return 1; }
-  mv "$tmp" "$output"
-}
-
-redis_state_equal() {
-  local expected="$1" actual="$2"
-  # Absolute deadlines should be identical; 2s covers capture/startup clock
-  # sampling without masking a materially changed expiry policy.
-  python3.12 - "$expected" "$actual" 2000 <<'PY'
-import sys
-from pathlib import Path
-
-def load(path: str):
-    metadata = []
-    expiries = {}
-    for raw in Path(path).read_text(encoding="utf-8").splitlines():
-        parts = raw.split()
-        if parts and parts[0] == "EXPIRY" and len(parts) == 4:
-            key = (parts[1], parts[2])
-            if key in expiries:
-                raise ValueError(f"duplicate expiry record: {key}")
-            expiries[key] = int(parts[3])
-        else:
-            metadata.append(raw)
-    return metadata, expiries
-
-expected_meta, expected_expiry = load(sys.argv[1])
-actual_meta, actual_expiry = load(sys.argv[2])
-tolerance = int(sys.argv[3])
-if expected_meta != actual_meta:
-    raise SystemExit("Redis key/value digest differs")
-if expected_expiry.keys() != actual_expiry.keys():
-    raise SystemExit("Redis expiry key set differs")
-for key, deadline in expected_expiry.items():
-    delta = abs(deadline - actual_expiry[key])
-    if delta > tolerance:
-        raise SystemExit(f"Redis absolute expiry differs by {delta}ms for {key}")
-PY
 }
 
 fsync_snapshot_tree() {
@@ -348,6 +276,23 @@ REDIS_HOST_VALUE="${REDIS_HOST:-127.0.0.1}"
 REDIS_PORT_VALUE="${REDIS_PORT:-6379}"
 RDB_TIMEOUT_TENTHS="${REDIS_RDB_TIMEOUT_TENTHS:-100}"
 case "$RDB_TIMEOUT_TENTHS" in ''|*[!0-9]*) RDB_TIMEOUT_TENTHS=100 ;; esac
+REDIS_WRITE_PAUSE_MS=60000
+# Reserve five seconds for shell cleanup/unpause. The fingerprint helper checks
+# this deadline before and after every database; one blocking EVAL still cannot
+# be interrupted mid-database, so growth must stay comfortably below the cap.
+REDIS_WRITE_PAUSE_BUDGET_SECONDS=55
+
+redis_pause_deadline() {
+  local now
+  now=$(date +%s) || return 1
+  printf '%s\n' "$((now + REDIS_WRITE_PAUSE_BUDGET_SECONDS))"
+}
+
+redis_pause_budget_ok() {
+  local deadline="$1" now
+  now=$(date +%s) || return 1
+  [ "$now" -lt "$deadline" ]
+}
 
 rm -f "$DEST_DIR/redis-dump.rdb" "$DEST_DIR/redis-aof.tgz" \
   "$DEST_DIR/redis-backup-mode.txt" "$DEST_DIR/redis-verify.txt" \
@@ -356,7 +301,7 @@ rm -f "$DEST_DIR/redis-dump.rdb" "$DEST_DIR/redis-aof.tgz" \
 capture_rdb() {
   command -v redis-check-rdb >/dev/null 2>&1 || return 1
   command -v redis-server >/dev/null 2>&1 || return 1
-  local paused=0 captured=0 rdb_pid=""
+  local paused=0 captured=0 rdb_pid="" pause_deadline=""
   local rdb_tmp="$DEST_DIR/.redis-dump.rdb.tmp"
   local source_state="$DEST_DIR/.redis-source-state.tmp"
   local restored_state="$DEST_DIR/.redis-restored-state.tmp"
@@ -383,8 +328,9 @@ capture_rdb() {
   # Hold writes so the live-state digest and replication RDB describe the same
   # instant. Reads continue, and the pause is bounded by Redis itself.
   redis-cli -h "$REDIS_HOST_VALUE" -p "$REDIS_PORT_VALUE" \
-    CLIENT PAUSE 60000 WRITE >/dev/null || return 1
+    CLIENT PAUSE "$REDIS_WRITE_PAUSE_MS" WRITE >/dev/null || return 1
   paused=1
+  pause_deadline=$(redis_pause_deadline) || return 1
   redis-cli -h "$REDIS_HOST_VALUE" -p "$REDIS_PORT_VALUE" \
     --rdb "$rdb_tmp" >/dev/null 2>&1 &
   rdb_pid=$!
@@ -399,7 +345,8 @@ capture_rdb() {
   done
   [ "$rdb_ok" = 1 ] || return 1
   redis-check-rdb "$rdb_tmp" > "$DEST_DIR/redis-verify.txt" 2>&1 || return 1
-  redis_state_fingerprint "$source_state" \
+  REDIS_STATE_DEADLINE_EPOCH_SECONDS="$pause_deadline" \
+    redis_state_fingerprint "$source_state" v3 \
     redis-cli -h "$REDIS_HOST_VALUE" -p "$REDIS_PORT_VALUE" || return 1
   redis-cli -h "$REDIS_HOST_VALUE" -p "$REDIS_PORT_VALUE" CLIENT UNPAUSE >/dev/null || return 1
   paused=0
@@ -421,9 +368,9 @@ capture_rdb() {
     sleep 0.1
   done
   [ "$ready" = 1 ] || return 1
-  redis_state_fingerprint "$restored_state" redis-cli -s "$verify_socket" || return 1
+  redis_state_fingerprint "$restored_state" v3 redis-cli -s "$verify_socket" || return 1
   redis_state_equal "$source_state" "$restored_state" || {
-    echo "  → Redis RDB restored state differs from paused source" >&2
+    echo "  → Redis RDB does not match recoverable source state at restore time" >&2
     return 1
   }
   redis-cli -s "$verify_socket" SHUTDOWN NOSAVE >/dev/null 2>&1 || true
@@ -462,7 +409,7 @@ capture_aof_fallback() {
     return 1
   }
 
-  local paused=0 verify_dir="$DEST_DIR/.redis-aof-verify.$$"
+  local paused=0 verify_dir="$DEST_DIR/.redis-aof-verify.$$" pause_deadline=""
   local verify_socket="/tmp/cabinet-redis-verify-$$.sock"
   local captured=0
   local archive_tmp="$DEST_DIR/.redis-aof.tgz.tmp"
@@ -484,16 +431,23 @@ capture_aof_fallback() {
   }
   trap cleanup_redis_capture RETURN
 
-  redis-cli -h "$REDIS_HOST_VALUE" -p "$REDIS_PORT_VALUE" CLIENT PAUSE 60000 WRITE >/dev/null || return 1
+  redis-cli -h "$REDIS_HOST_VALUE" -p "$REDIS_PORT_VALUE" \
+    CLIENT PAUSE "$REDIS_WRITE_PAUSE_MS" WRITE >/dev/null || return 1
   paused=1
+  pause_deadline=$(redis_pause_deadline) || return 1
   waitaof=$(redis-cli -h "$REDIS_HOST_VALUE" -p "$REDIS_PORT_VALUE" --raw WAITAOF 1 0 5000 | head -1)
   [ "$waitaof" = 1 ] || {
     echo "  → Redis AOF did not fsync before capture" >&2
     return 1
   }
-  redis_state_fingerprint "$source_state" \
+  REDIS_STATE_DEADLINE_EPOCH_SECONDS="$pause_deadline" \
+    redis_state_fingerprint "$source_state" v3 \
     redis-cli -h "$REDIS_HOST_VALUE" -p "$REDIS_PORT_VALUE" || return 1
   tar -C "$redis_dir" -czf "$archive_tmp" "$appenddirname" || return 1
+  if ! redis_pause_budget_ok "$pause_deadline"; then
+    echo "  → Redis AOF capture exceeded the write-pause budget" >&2
+    return 1
+  fi
   redis-cli -h "$REDIS_HOST_VALUE" -p "$REDIS_PORT_VALUE" CLIENT UNPAUSE >/dev/null || return 1
   paused=0
 
@@ -527,9 +481,9 @@ capture_aof_fallback() {
     echo "  → disposable Redis could not restore the captured AOF" >&2
     return 1
   }
-  redis_state_fingerprint "$restored_state" redis-cli -s "$verify_socket" || return 1
+  redis_state_fingerprint "$restored_state" v3 redis-cli -s "$verify_socket" || return 1
   redis_state_equal "$source_state" "$restored_state" || {
-    echo "  → Redis AOF restored state differs from paused source" >&2
+    echo "  → Redis AOF does not match recoverable source state at restore time" >&2
     return 1
   }
   redis-cli -s "$verify_socket" SHUTDOWN NOSAVE >/dev/null 2>&1 || true

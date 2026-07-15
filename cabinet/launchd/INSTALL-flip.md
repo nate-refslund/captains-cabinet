@@ -105,7 +105,7 @@ loading rule:
 | Label | Cadence | What it fixes |
 | --- | --- | --- |
 | `com.cabinet.retro-trigger` | hourly | REGENERATED with `PATH` (the old hand-made plist had none; launchd's minimal PATH → `redis-cli: command not found` → FATAL hourly since ~Jul 3). Logs move to `~/Library/Logs/cabinet/retro-trigger.{log,err}`. |
-| `com.cabinet.backup` | daily 03:00 | Daily checksum-verified state backup to `~/Cabinet-Backups` (topology-preserved filesystem, configured Postgres, fresh Redis RDB or fsynced/restore-tested AOF fallback, 14-day retention). Drill: `bash cabinet/scripts/restore-drill.sh`. |
+| `com.cabinet.backup` | daily 03:00 | Daily checksum-verified state backup to `~/Cabinet-Backups` (topology-preserved filesystem, configured Postgres, fresh Redis RDB or fsynced/restore-tested AOF fallback, 14-day retention). Redis acceptance is a type-aware SHA-256 logical v3 proof: durable state exact, TTL state allowed to disappear only after its absolute deadline, unsupported types fail closed; its blocking source fingerprint has a 55-second deadline inside the 60-second write pause; old v2 snapshots remain strict and require a fresh v3 after any mismatch. Drill: `bash cabinet/scripts/restore-drill.sh`. |
 
 ```sh
 cp cabinet/launchd/com.cabinet.retro-trigger.plist ~/Library/LaunchAgents/
@@ -122,7 +122,8 @@ One hardening step is deliberately left open as a recorded Captain decision
 the `cabinet/scripts/backup.sh` header: an off-machine backup copy (e.g. a
 post-backup rsync to a host you control). Redis AOF is the live durability
 layer and backup.sh now uses it as a verified fallback when fresh RDB capture
-is unavailable.
+is unavailable. RDB and AOF validation share the same canonical logical-state
+v3 comparator; no raw Redis key or value is written to the proof file.
 
 ## Verdict-supply engine (lane-supply 2026-07-05) — THE keystone wave
 
