@@ -318,7 +318,10 @@ def test_semivalid_state_revision_is_a_clean_refusal_not_a_crash(tmp_path):
 
 
 def test_high_entropy_unlabeled_token_on_cited_line_is_redacted():
-    secret = "A7fQ9zK2mP4wX1bR8sT3uV6yD0eG5hJ2nL4kM9pC1oB"
+    # Build the high-entropy token at runtime — committing a static secret-shaped
+    # literal here trips the gitleaks generic-api-key rule (and this file is a
+    # regression target for exactly that class of leak).
+    secret = "Zx9" + hashlib.sha256(b"pr139-redaction-vector").hexdigest()
     assert journey._redact_excerpt(f"leftover {secret} value") == "[sensitive value redacted]"
     # a long path/identifier with no digits is not a secret and stays cited
     kept = "See src/components/onboarding/journey-card-and-orientation for details"

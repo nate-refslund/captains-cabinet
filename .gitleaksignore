@@ -12,6 +12,10 @@ b552baca58a0c94824a7caf6bc60e5c10ac2bc8d:cabinet/scripts/tests/test_transcript_d
 45e28757a80a8e75f2290619313bb46c500ad204:cabinet/scripts/tests/test_world_chronicle.py:github-pat:32
 2f00fce5639381f6963720aef721a7d4d2927fb3:framework/frontdoor/tests/test_actfirst_admission.py:generic-api-key:408
 d41b18a4b75744edfbdaed8227264d9394779501:framework/frontdoor/tests/test_action_exec.py:generic-api-key:528
+# PR #139 review: a redaction-belt test committed a fake high-entropy vector to
+# prove _redact_excerpt fires; removed from HEAD (f4f1ff28 builds it at runtime),
+# but the introducing commit stays flagged in a full-history scan. Provably fake.
+1974b55003cf37906e80aee1530fff1cdb156633:framework/onboarding/tests/test_journey.py:generic-api-key:321
 # --- no-git twins (file:rule:line — no commit prefix) for the SAME fake
 # fixtures above, as seen by `gitleaks detect --no-git` over a fresh-cut egg
 # export (egg-publish-gate.sh gate (a) scans the export tree, not git — the
