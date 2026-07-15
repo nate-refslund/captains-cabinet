@@ -182,8 +182,18 @@ restart_officer() {
   local officer="$1"
   local label="com.cabinet.officer.$officer"
   if launchctl print "gui/$(id -u)/$label" >/dev/null 2>&1; then
-    launchctl kickstart -k "gui/$(id -u)/$label"
-    echo "cabinet-deploy.sh: kickstarted live LaunchAgent $label"
+    if [ "$DRY_RUN" = "1" ]; then
+      # --dry-run must NEVER restart a live agent. A rehearsal that happens to
+      # share an officer slug with an already-loaded LaunchAgent would otherwise
+      # `kickstart -k` (SIGKILL + relaunch) the real one — the header's whole
+      # point is that --dry-run "calls start-officer-mac.sh with --dry-run
+      # instead of launchctl kickstart", which was only true when no live agent
+      # of that label existed. Report, don't execute.
+      echo "cabinet-deploy.sh: [dry-run] would kickstart live LaunchAgent $label (skipped)"
+    else
+      launchctl kickstart -k "gui/$(id -u)/$label"
+      echo "cabinet-deploy.sh: kickstarted live LaunchAgent $label"
+    fi
   else
     local extra=()
     [ "$DRY_RUN" = "1" ] && extra+=(--dry-run)
