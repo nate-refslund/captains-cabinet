@@ -221,6 +221,11 @@ transform instance-verify
 # --- verification: what must have shipped ------------------------------------
 expect-present instance/config/platform.yml.example
 expect-present instance/config/sources.yml.example
+# LANE C role-registry fix (2026-07-15): the ONE R120-deleted instance file
+# that previously shipped no twin at all (8 consumers read it: dashboard
+# governance editor/actions, create-officer.sh, load-preset.sh,
+# officer-boot.sh, demo-dashboard.sh, a pytest file).
+expect-present instance/config/role-registry.md.example
 # R166: the synthetic template for the UNTRACKED captain-specific publish-scan
 # pattern file must ship — egg-side cabinet-feedback.sh reads the live twin
 # when the captain configures one (the live .local is untracked and can never
