@@ -1,0 +1,549 @@
+#!/bin/bash
+# runtime-provision.sh — blue/green runtime-slot primitives for the dev/runtime
+# split (Captain-approved 2026-07-15: the fleet should run off a clean pinned
+# checkout, never the live dev tree — see docs/runbooks/dev-runtime-split-
+# cutover.md for the one-time migration this enables, and cabinet-deploy.sh
+# for the ongoing `cabinet deploy` command built on these primitives).
+#
+# THIS SCRIPT NEVER TOUCHES /Users/nate/captains-cabinet or any live officer.
+# It only manages a separate <runtime_root> directory tree (recommended
+# default ~/.cabinet/runtime — see cabinet-deploy.sh) that launchd gets
+# repointed at ONLY by the cutover runbook, a deliberate later step.
+#
+# LAYOUT (<runtime_root>/):
+#   repo.git/            bare MIRROR clone of the cabinet remote (`fetch`
+#                         updates it; every release worktree shares its
+#                         object store — cheap, and the same worktree
+#                         primitive this codebase already leans on for its
+#                         30+ parallel dev worktrees).
+#   releases/<sha>/       one `git worktree add --detach` per provisioned
+#                         commit — a full, independent checkout pinned at
+#                         that exact sha. Disposable; never developed in.
+#   shared/               persistent, NEVER per-release, survives every
+#                         future deploy — holds ONLY the individually-
+#                         gitignored instance-data leaves + secrets (see
+#                         "WHY LEAF-LEVEL, NOT A WHOLE instance/ SYMLINK"
+#                         below), e.g. shared/instance/config/roster.yml,
+#                         shared/instance/memory/, shared/cabinet.env.
+#   current                symlink -> releases/<sha> currently live. The
+#                         ONLY path launchd/officers should ever be pointed
+#                         at (stable across every future deploy).
+#   previous               symlink -> the release 'current' pointed at
+#                         immediately before the last promote/rollback
+#                         (the rollback target).
+#   .cabinet-deploy.log    append-only audit trail (promote/rollback lines;
+#                         cabinet-deploy.sh appends its own deploy/restart
+#                         lines here too).
+#
+# WHY instance DATA IS SHARED, NOT COPIED (read before changing this):
+# instance/ mixes git-TRACKED judged-config templates (platform.yml,
+# contexts/, posture-presets/, ...) with gitignored REAL deployment data
+# (roster.yml, posture.yml, memory/, state/, cache/, secrets). A blue/green
+# release is a FRESH worktree, so copying instance/ into each new slot would
+# either (a) go stale the instant an officer writes new state after
+# promotion — a ROLLBACK would then silently lose everything written since
+# promotion — or (b) need a hand-rolled tracked-vs-untracked path list that
+# rots the moment .gitignore's instance/ entries change. Symlinking the
+# gitignored leaves into shared/ instead means every release (old and new,
+# before AND after a rollback) reads and writes the exact same physical
+# files — zero divergence, zero data loss on rollback.
+#
+# WHY LEAF-LEVEL, NOT A WHOLE instance/ SYMLINK (fixed 2026-07-15 — an
+# earlier version of this file symlinked the entire instance/ directory in
+# one shot; that is a real bug, not a style choice): instance/config/ alone
+# ships ~50 git-TRACKED doctrine/example/schema files (adapters.yml,
+# comms-surface.yml, every contexts/*.yml, ...) that a future commit
+# legitimately updates, sitting right next to ~10 gitignored deployment-
+# local files (roster.yml, autonomy.yml, product.yml, ...). Symlinking the
+# WHOLE instance/ directory to shared/instance freezes the tracked files at
+# whatever the FIRST release happened to contain — every subsequent
+# `cabinet-deploy.sh deploy` would silently stop updating instance/config's
+# tracked defaults, defeating the entire point of pinning-and-updating
+# commits. So `link_instance_data` (below) symlinks only the individually-
+# gitignored leaves (files, linked only once a shared/ copy already exists —
+# never fabricated from nothing) plus the handful of directories that are
+# ENTIRELY gitignored (state/, cache/, archive/, loop-prompts/,
+# roles/{active,archive,hats}, secrets/) — verified against .gitignore +
+# `git ls-files` at fix time, not guessed. instance/memory/ is the one
+# exception that is BOTH gitignored-in-bulk AND ships a tracked
+# tier2/<officer>/{,reflections/}.gitkeep skeleton — seeded into shared/
+# from the release's own tree the first time only, then symlinked whole
+# like any other wholly-gitignored directory thereafter. KEEP THIS LIST IN
+# LOCKSTEP WITH .gitignore — same discipline as germline-lock.sh's own
+# "keep in lockstep with pre-tool-use.sh §5" rule.
+#
+# A second, load-bearing side effect of sharing (not copying) the
+# gitignored leaves: schg (system-immutable, see germline-lock.sh) is an
+# INODE flag, not a path flag — locking shared/instance/config/{posture,
+# trust-ladder,standing-grants}.yml and act-first-surfaces.yml ONCE keeps
+# them locked through every future release automatically, with no per-
+# deploy re-lock needed for that half of the germline set (the framework/+
+# cabinet/-side germline CODE, which DOES get a fresh inode per release via
+# the worktree checkout, still needs a per-slot relock — see
+# cabinet-deploy.sh's health gate and its printed post-promote reminder).
+#
+# germline-lock.sh's OWN chflags calls require root (verified: `need_root`
+# in that script — schg can only be set/cleared by root) and officers carry
+# no passwordless sudo — so THIS script never attempts to chflags anything.
+# A freshly-provisioned release is legitimately unarmed until an explicit,
+# Captain-available relock; that gap is inert until the slot is promoted.
+#
+# Usage:
+#   runtime-provision.sh init      <runtime_root> --remote <git-url> [--seed-fresh-instance]
+#   runtime-provision.sh fetch     <runtime_root>
+#   runtime-provision.sh resolve   <runtime_root> <ref>           # -> prints full sha
+#   runtime-provision.sh provision <runtime_root> <ref>           # -> PROVISIONED_SHA=/PROVISIONED_SLOT=
+#   runtime-provision.sh promote   <runtime_root> <sha>
+#   runtime-provision.sh rollback  <runtime_root>                 # current <-> previous
+#   runtime-provision.sh current   <runtime_root>                 # -> prints sha, or NONE
+#   runtime-provision.sh list      <runtime_root>
+#   runtime-provision.sh prune     <runtime_root> [--keep N]      # default 5; current+previous always kept
+#
+# --seed-fresh-instance (init only) is a SANDBOX/DEV convenience: it
+# provisions one throwaway release at the mirror's HEAD purely to run ITS
+# OWN generate-instance.py --defaults (a fresh preset instance, same as any
+# first hatch — no captain data anywhere in this path), harvests the result
+# into shared/instance as the seed, then discards the throwaway release. It
+# is NEVER the real cutover path — the real migration MOVES the live
+# deployment's actual instance/ data; see the cutover runbook.
+#
+# Exit codes: 0 success · 1 operational failure · 64 usage error.
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: runtime-provision.sh <command> [args]
+Commands:
+  init      <runtime_root> --remote <git-url> [--seed-fresh-instance]
+  fetch     <runtime_root>
+  resolve   <runtime_root> <ref>
+  provision <runtime_root> <ref>
+  promote   <runtime_root> <sha>
+  rollback  <runtime_root>
+  current   <runtime_root>
+  list      <runtime_root>
+  prune     <runtime_root> [--keep N]
+EOF
+}
+
+# ---- path helpers -------------------------------------------------------------
+# abs_path <path> — resolve to an absolute path without relying on GNU
+# realpath (not guaranteed present on macOS; mirrors hatch.sh's own
+# defensive resolution pattern). Existing dirs/files resolve physically; a
+# not-yet-existing leaf resolves its deepest existing ancestor and appends
+# the remainder lexically.
+abs_path() {
+  local p="$1"
+  if [ -d "$p" ]; then
+    (cd "$p" && pwd)
+  elif [ -e "$p" ]; then
+    (cd "$(dirname "$p")" && printf '%s/%s' "$(pwd)" "$(basename "$p")")
+  else
+    local parent
+    if parent="$(cd "$(dirname "$p")" 2>/dev/null && pwd)"; then
+      printf '%s/%s' "$parent" "$(basename "$p")"
+    else
+      printf '%s' "$p"
+    fi
+  fi
+}
+
+# require_runtime_root <path> — every command but `init` needs an
+# already-provisioned runtime_root; refuse to silently mkdir one.
+require_runtime_root() {
+  local root="$1"
+  [ -d "$root" ] && [ -d "$root/repo.git" ] || {
+    echo "runtime-provision.sh: '$root' is not an initialized runtime root (no repo.git/) — run 'init' first." >&2
+    exit 1
+  }
+}
+
+# git_r <runtime_root> <git-args...> — every git call against the bare
+# mirror goes through this one helper so the --git-dir wiring lives in
+# exactly one place.
+git_r() {
+  local root="$1"; shift
+  git --git-dir="$root/repo.git" "$@"
+}
+
+# swap_symlink <target> <link_path> — force-replace link_path with a
+# symlink to target.
+#
+# FIXED 2026-07-15 (was named atomic_symlink and did `ln -s target tmp; mv -f
+# tmp link_path` — empirically WRONG on macOS, verified with a throwaway
+# two-directory /tmp reproduction before this fix landed): when link_path
+# already exists and is itself a symlink pointing at a directory, BSD `mv`'s
+# target-directory detection follows the symlink (stat(), not lstat()) and
+# moves the source INSIDE the directory link_path points to, instead of
+# replacing link_path. Concretely: `current` never actually updated, and a
+# stray tmp symlink was littered inside the OLD release directory on every
+# single promote/rollback call — the core blue/green swap silently never
+# happened while both callers reported success. GNU coreutils' `-T` flag
+# fixes this on Linux; BSD/macOS `mv` has no equivalent, so this needed a
+# different primitive rather than a different mv flag.
+#
+# `ln -sfn` does not have that failure mode: `-n` means "treat link_path as
+# the file to replace, even if it is itself a symlink to a directory" —
+# exactly this case — and is the same idiom this repo already uses
+# elsewhere for symlink swaps (create-project.sh, start-officer.sh). It is
+# NOT a single-syscall atomic rename on BSD (unlink, then re-link — a brief
+# gap where link_path resolves to neither the old nor new target; GNU's `ln
+# -f` does the rename-based swap internally and has no such gap). Accepted
+# as a deliberate, low-stakes tradeoff: promote/rollback are explicit,
+# infrequent, operator/deploy-script-invoked actions, not a race-prone hot
+# path, and this is the already-proven pattern in this codebase — not a new
+# one. Renamed from atomic_symlink to swap_symlink (every call site updated
+# below) since "atomic" was never quite true and this fix is the moment to
+# stop implying it.
+swap_symlink() {
+  local target="$1" link_path="$2"
+  ln -sfn "$target" "$link_path"
+}
+
+# ---- instance-data linking (leaf-level — see file header "WHY LEAF-LEVEL,
+# NOT A WHOLE instance/ SYMLINK" for the full rationale/fix history) --------
+# Space-separated, not arrays (bash 3.2-safe; none of these paths contain
+# spaces). KEEP IN LOCKSTEP WITH .gitignore.
+INSTANCE_PERSISTENT_DIRS="instance/roles/active instance/roles/archive instance/roles/hats instance/loop-prompts instance/archive instance/state instance/cache instance/onboarding/formation secrets"
+# Gitignored in bulk but ships a tracked tier2/<officer>/{,reflections/}.gitkeep
+# skeleton — seeded into shared/ from the release's own tree once, then
+# symlinked whole like any PERSISTENT_DIRS entry thereafter.
+INSTANCE_PERSISTENT_SEEDED_DIRS="instance/memory"
+# Individual leaves inside an otherwise richly git-tracked directory.
+# Symlinked ONLY when a shared/ copy already exists — never fabricated, so
+# a from-scratch runtime root leaves the path absent, same as a from-scratch
+# checkout (every consumer already has its own not-found guard for that,
+# e.g. deploy-mac.sh/cabinet-deploy.sh's roster_officers()).
+INSTANCE_PERSISTENT_FILES="instance/config/product.yml instance/config/active-project.txt instance/config/active-preset instance/config/roster.yml instance/config/publish-scan-patterns.local instance/config/extensions.yml instance/config/required-plugins.yml instance/config/extra-mcps.json instance/config/autonomy.yml instance/config/act-first-enabled .claude/settings.local.json shared/interfaces/action-lessons.yml shared/interfaces/falsifier-series.jsonl shared/interfaces/envelope-violations.jsonl shared/interfaces/charter-shadow-series.jsonl shared/interfaces/golden-eval-scalar.jsonl shared/interfaces/memory-supersession-proposals.jsonl shared/interfaces/needs-ledger.jsonl shared/interfaces/prediction-calibration.jsonl shared/interfaces/preference-pairs.jsonl shared/interfaces/world-chronicle.jsonl shared/interfaces/attention-queue.json"
+
+# link_instance_data <slot> <root> — the leaf-level linking pass. Called
+# unconditionally from cmd_provision (both on a fresh worktree checkout and
+# when reusing an already-provisioned slot), so re-running `provision` for
+# an existing sha idempotently refreshes newly-added shared/ data too.
+link_instance_data() {
+  local slot="$1" root="$2" rel shared_abs rel_dir f
+
+  for rel in $INSTANCE_PERSISTENT_DIRS; do
+    shared_abs="$root/shared/$rel"
+    mkdir -p "$shared_abs"
+    rel_dir="$(dirname "$slot/$rel")"
+    mkdir -p "$rel_dir"
+    rm -rf "${slot:?}/${rel:?}"
+    ln -sfn "$shared_abs" "$slot/$rel"
+  done
+
+  for rel in $INSTANCE_PERSISTENT_SEEDED_DIRS; do
+    shared_abs="$root/shared/$rel"
+    if [ ! -e "$shared_abs" ] && [ -d "$slot/$rel" ]; then
+      mkdir -p "$(dirname "$shared_abs")"
+      cp -R "$slot/$rel" "$shared_abs"
+      echo "runtime-provision.sh: seeded shared/$rel from this release's tracked skeleton (first-ever provision)"
+    fi
+    mkdir -p "$shared_abs"
+    rel_dir="$(dirname "$slot/$rel")"
+    mkdir -p "$rel_dir"
+    rm -rf "${slot:?}/${rel:?}"
+    ln -sfn "$shared_abs" "$slot/$rel"
+  done
+
+  for rel in $INSTANCE_PERSISTENT_FILES; do
+    shared_abs="$root/shared/$rel"
+    [ -e "$shared_abs" ] || continue   # no prior instance-data yet — leave absent
+    rel_dir="$(dirname "$slot/$rel")"
+    mkdir -p "$rel_dir"
+    rm -f "${slot:?}/${rel:?}"
+    ln -sfn "$shared_abs" "$slot/$rel"
+  done
+
+  # secrets file — flattened name, matches shared/cabinet.env's existing spelling
+  mkdir -p "$slot/cabinet"
+  rm -f "${slot:?}/cabinet/.env"
+  ln -sfn "$root/shared/cabinet.env" "$slot/cabinet/.env"
+
+  # Wildcard leaves — discovered from whatever already exists in shared/,
+  # never from the release (gitignored content is never present there right
+  # after a fresh worktree checkout of a real commit). A brand-new
+  # instance-data store has nothing to discover yet; that is correct — a
+  # fresh deployment has no captain ledgers or per-officer *-ceo.md files
+  # until something creates them.
+  if [ -d "$root/shared/instance/agents" ]; then
+    for f in "$root/shared/instance/agents/"*-ceo.md; do
+      [ -e "$f" ] || continue
+      rel="instance/agents/$(basename "$f")"
+      mkdir -p "$(dirname "$slot/$rel")"
+      rm -f "${slot:?}/${rel:?}"
+      ln -sfn "$f" "$slot/$rel"
+    done
+  fi
+  for f in "$root/shared/".oauth-backup-*.json; do
+    [ -e "$f" ] || continue
+    rel="$(basename "$f")"
+    rm -f "${slot:?}/${rel:?}"
+    ln -sfn "$f" "$slot/$rel"
+  done
+  if [ -d "$root/shared/shared/interfaces" ]; then
+    find "$root/shared/shared/interfaces" -type f -name '*.md' 2>/dev/null | while IFS= read -r f; do
+      rel="shared/interfaces/${f#"$root/shared/shared/interfaces/"}"
+      case "$rel" in
+        shared/interfaces/deployment-status.md) continue ;;  # tracked file — never shadow it
+      esac
+      mkdir -p "$(dirname "$slot/$rel")"
+      rm -f "${slot:?}/${rel:?}"
+      ln -sfn "$f" "$slot/$rel"
+    done
+  fi
+}
+
+# ---- commands -------------------------------------------------------------------
+
+cmd_init() {
+  [ $# -ge 1 ] || { echo "usage: runtime-provision.sh init <runtime_root> --remote <git-url> [--seed-fresh-instance]" >&2; exit 64; }
+  local root="$1"; shift
+  local remote="" seed_fresh=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --remote) remote="${2:?--remote requires a git URL}"; shift 2 ;;
+      --seed-fresh-instance) seed_fresh=1; shift ;;
+      *) echo "runtime-provision.sh init: unknown flag '$1'" >&2; exit 64 ;;
+    esac
+  done
+  mkdir -p "$root"
+  root="$(abs_path "$root")"
+  mkdir -p "$root/releases" "$root/shared"
+
+  if [ -d "$root/repo.git" ]; then
+    echo "runtime-provision.sh: repo.git already present at $root/repo.git (idempotent — leaving as-is; run 'fetch' to update)"
+  else
+    [ -n "$remote" ] || { echo "runtime-provision.sh init: --remote <git-url> is required for a first init" >&2; exit 64; }
+    git clone --mirror "$remote" "$root/repo.git"
+    echo "runtime-provision.sh: cloned bare mirror of $remote -> $root/repo.git"
+  fi
+
+  if [ ! -e "$root/shared/instance" ]; then
+    if [ "$seed_fresh" = "1" ]; then
+      _seed_fresh_instance "$root"
+    else
+      mkdir -p "$root/shared/instance"
+      cat >&2 <<EOF
+runtime-provision.sh: shared/instance/ created EMPTY — no instance data seeded.
+  This runtime root is not yet usable for a real deploy. Either:
+    - the CUTOVER RUNBOOK migrates the live deployment's real instance/ data
+      here (docs/runbooks/dev-runtime-split-cutover.md), or
+    - re-run init with --seed-fresh-instance for a sandbox/dev instance
+      (generate-instance.py --defaults — NEVER real captain data).
+EOF
+    fi
+  fi
+  [ -e "$root/shared/cabinet.env" ] || : > "$root/shared/cabinet.env"
+  echo "runtime-provision.sh: runtime root ready at $root"
+}
+
+# _seed_fresh_instance <root> — SANDBOX/DEV ONLY, called only from `init
+# --seed-fresh-instance`. Provisions a throwaway release purely to run its
+# own generate-instance.py --defaults once, harvests the resulting
+# instance/ into shared/instance, then discards the throwaway worktree (the
+# real first release is provisioned fresh right after by the normal
+# `provision` flow).
+_seed_fresh_instance() {
+  local root="$1" seed_sha seed_slot py gen_log
+  seed_sha="$(git_r "$root" rev-parse --verify --quiet HEAD 2>/dev/null || git_r "$root" rev-parse --verify refs/heads/master)"
+  seed_slot="$root/releases/.seed-$$"
+  git_r "$root" worktree add --detach "$seed_slot" "$seed_sha" >/dev/null
+  py="python3.12"; command -v "$py" >/dev/null 2>&1 || py="python3"
+  gen_log="$(mktemp)"
+  if ! ( cd "$seed_slot" && "$py" cabinet/scripts/generate-instance.py --defaults ) >"$gen_log" 2>&1; then
+    # Mirrors hatch.sh's own do_generate_instance fallback verbatim: THIS
+    # repo's tracked instance/config/platform.yml already carries a real
+    # 'officers:' block (it is itself a live deployment's checkout, not a
+    # blank template), so generate-instance.py's own "inherited instance"
+    # refusal fires on ANY fresh checkout of it, every time — --adopt is the
+    # rehearsed, designed answer (archives the conflicting tracked file
+    # aside under instance/_pre-adopt-<stamp>/, deletes nothing), not a
+    # one-off retry hack.
+    if grep -q "REFUSING to overwrite" "$gen_log"; then
+      if ! ( cd "$seed_slot" && "$py" cabinet/scripts/generate-instance.py --defaults --adopt ) >>"$gen_log" 2>&1; then
+        echo "runtime-provision.sh: --seed-fresh-instance generate-instance.py --defaults --adopt ALSO reported non-zero — inspect $gen_log and $seed_slot/instance manually before trusting the seed" >&2
+      fi
+    else
+      echo "runtime-provision.sh: --seed-fresh-instance generate-instance.py step reported non-zero (not the known inherited-instance case) — see $gen_log; inspect $seed_slot/instance manually before trusting the seed" >&2
+    fi
+  fi
+  rm -f "$gen_log"
+  mkdir -p "$root/shared/instance"
+  if [ -d "$seed_slot/instance" ]; then
+    cp -a "$seed_slot/instance/." "$root/shared/instance/"
+    echo "runtime-provision.sh: seeded shared/instance from a fresh --defaults generate-instance.py run (sandbox data only, no captain data)"
+  fi
+  git_r "$root" worktree remove --force "$seed_slot" 2>/dev/null || rm -rf "$seed_slot"
+}
+
+cmd_fetch() {
+  [ $# -ge 1 ] || { echo "usage: runtime-provision.sh fetch <runtime_root>" >&2; exit 64; }
+  local root; root="$(abs_path "$1")"
+  require_runtime_root "$root"
+  git_r "$root" fetch --prune
+}
+
+cmd_resolve() {
+  [ $# -ge 2 ] || { echo "usage: runtime-provision.sh resolve <runtime_root> <ref>" >&2; exit 64; }
+  local root ref sha
+  root="$(abs_path "$1")"; ref="$2"
+  require_runtime_root "$root"
+  if sha="$(git_r "$root" rev-parse --verify --quiet "${ref}^{commit}")"; then
+    printf '%s\n' "$sha"; return 0
+  fi
+  # Tolerate the origin/<branch> spelling out of habit: a --mirror clone
+  # maps refs/heads/* directly (no refs/remotes/origin/* namespace), so
+  # origin/master isn't a ref here even though 'master' is.
+  case "$ref" in
+    origin/*)
+      local stripped="${ref#origin/}"
+      if sha="$(git_r "$root" rev-parse --verify --quiet "${stripped}^{commit}")"; then
+        printf '%s\n' "$sha"; return 0
+      fi
+      ;;
+  esac
+  echo "runtime-provision.sh resolve: cannot resolve ref '$ref' in $root/repo.git (fetch first?)" >&2
+  exit 1
+}
+
+cmd_provision() {
+  [ $# -ge 2 ] || { echo "usage: runtime-provision.sh provision <runtime_root> <ref>" >&2; exit 64; }
+  local root ref sha slot
+  root="$(abs_path "$1")"; ref="$2"
+  require_runtime_root "$root"
+  sha="$(cmd_resolve "$root" "$ref")"
+  slot="$root/releases/$sha"
+  if [ -d "$slot" ]; then
+    echo "runtime-provision.sh: release $sha already provisioned at $slot (idempotent)"
+  else
+    git_r "$root" worktree add --detach "$slot" "$sha"
+    echo "runtime-provision.sh: provisioned $sha -> $slot"
+  fi
+  # Persistent instance data + secrets: replace the individually-gitignored
+  # leaves (only — see file header "WHY LEAF-LEVEL...") with symlinks into
+  # the ONE shared physical tree. Called unconditionally (fresh checkout OR
+  # reusing an existing slot) so newly-added shared/ data gets picked up on
+  # a re-provision too. This deliberately means release worktrees always
+  # show those specific leaf paths as "modified/deleted" under `git status`
+  # — expected; they are disposable and never developed in (prune/promote-
+  # time removal always uses `git worktree remove --force`).
+  link_instance_data "$slot" "$root"
+  echo "runtime-provision.sh: instance data + secrets linked (shared/ <-> $slot)"
+  echo "PROVISIONED_SHA=$sha"
+  echo "PROVISIONED_SLOT=$slot"
+}
+
+cmd_promote() {
+  [ $# -ge 2 ] || { echo "usage: runtime-provision.sh promote <runtime_root> <sha>" >&2; exit 64; }
+  local root sha slot old_target=""
+  root="$(abs_path "$1")"; sha="$2"
+  require_runtime_root "$root"
+  slot="$root/releases/$sha"
+  [ -d "$slot" ] || { echo "runtime-provision.sh promote: no provisioned release for $sha (run 'provision' first)" >&2; exit 1; }
+  [ -L "$root/current" ] && old_target="$(readlink "$root/current")"
+  swap_symlink "$slot" "$root/current"
+  if [ -n "$old_target" ] && [ "$old_target" != "$slot" ]; then
+    swap_symlink "$old_target" "$root/previous"
+  fi
+  printf '%s promote sha=%s slot=%s prev=%s\n' "$(date -u +%FT%TZ)" "$sha" "$slot" "${old_target:-none}" >> "$root/.cabinet-deploy.log"
+  echo "runtime-provision.sh: current -> $slot"
+}
+
+cmd_rollback() {
+  [ $# -ge 1 ] || { echo "usage: runtime-provision.sh rollback <runtime_root>" >&2; exit 64; }
+  local root prev_target cur_target=""
+  root="$(abs_path "$1")"
+  require_runtime_root "$root"
+  [ -L "$root/previous" ] || { echo "runtime-provision.sh rollback: no 'previous' marker — nothing to roll back to" >&2; exit 1; }
+  prev_target="$(readlink "$root/previous")"
+  [ -d "$prev_target" ] || { echo "runtime-provision.sh rollback: previous target $prev_target no longer exists on disk" >&2; exit 1; }
+  [ -L "$root/current" ] && cur_target="$(readlink "$root/current")"
+  swap_symlink "$prev_target" "$root/current"
+  [ -n "$cur_target" ] && swap_symlink "$cur_target" "$root/previous"
+  printf '%s rollback current->%s prev->%s\n' "$(date -u +%FT%TZ)" "$prev_target" "${cur_target:-none}" >> "$root/.cabinet-deploy.log"
+  echo "runtime-provision.sh: rolled back — current -> $prev_target"
+}
+
+cmd_current() {
+  [ $# -ge 1 ] || { echo "usage: runtime-provision.sh current <runtime_root>" >&2; exit 64; }
+  local root; root="$(abs_path "$1")"
+  require_runtime_root "$root"
+  if [ -L "$root/current" ]; then
+    basename "$(readlink "$root/current")"
+  else
+    echo "NONE"
+  fi
+}
+
+cmd_list() {
+  [ $# -ge 1 ] || { echo "usage: runtime-provision.sh list <runtime_root>" >&2; exit 64; }
+  local root cur="" prev="" d sha marker
+  root="$(abs_path "$1")"
+  require_runtime_root "$root"
+  [ -L "$root/current" ] && cur="$(basename "$(readlink "$root/current")")"
+  [ -L "$root/previous" ] && prev="$(basename "$(readlink "$root/previous")")"
+  for d in "$root"/releases/*/; do
+    [ -d "$d" ] || continue   # unmatched glob -> literal pattern; skip
+    sha="$(basename "$d")"
+    case "$sha" in .seed-*) continue ;; esac
+    marker=""
+    [ "$sha" = "$cur" ] && marker="$marker current"
+    [ "$sha" = "$prev" ] && marker="$marker previous"
+    printf '%s%s\n' "$sha" "$marker"
+  done
+}
+
+cmd_prune() {
+  [ $# -ge 1 ] || { echo "usage: runtime-provision.sh prune <runtime_root> [--keep N]" >&2; exit 64; }
+  local root keep=5
+  root="$1"; shift
+  while [ $# -gt 0 ]; do
+    case "$1" in --keep) keep="${2:?--keep requires a number}"; shift 2 ;; *) echo "runtime-provision.sh prune: unknown flag '$1'" >&2; exit 64 ;; esac
+  done
+  root="$(abs_path "$root")"
+  require_runtime_root "$root"
+  local cur="" prev="" d sha candidates=()
+  [ -L "$root/current" ] && cur="$(basename "$(readlink "$root/current")")"
+  [ -L "$root/previous" ] && prev="$(basename "$(readlink "$root/previous")")"
+  for d in "$root"/releases/*/; do
+    [ -d "$d" ] || continue
+    sha="$(basename "$d")"
+    case "$sha" in .seed-*) continue ;; esac
+    [ "$sha" = "$cur" ] && continue
+    [ "$sha" = "$prev" ] && continue
+    candidates+=("$d")
+  done
+  [ "${#candidates[@]}" -gt 0 ] || { echo "runtime-provision.sh: nothing to prune"; return 0; }
+  local sorted i=0 rm_dir
+  sorted="$(for d in "${candidates[@]}"; do stat -f '%m %N' "$d" 2>/dev/null; done | sort -rn | awk '{print $2}')"
+  while IFS= read -r rm_dir; do
+    [ -z "$rm_dir" ] && continue
+    i=$((i+1))
+    if [ "$i" -gt "$keep" ]; then
+      git_r "$root" worktree remove --force "$rm_dir" 2>/dev/null || rm -rf "$rm_dir"
+      echo "runtime-provision.sh: pruned $(basename "$rm_dir")"
+    fi
+  done <<< "$sorted"
+}
+
+main() {
+  local cmd="${1:-}"
+  case "$cmd" in
+    -h|--help|"") usage; [ -n "$cmd" ] && exit 0 || exit 64 ;;
+  esac
+  shift
+  case "$cmd" in
+    init)      cmd_init "$@" ;;
+    fetch)     cmd_fetch "$@" ;;
+    resolve)   cmd_resolve "$@" ;;
+    provision) cmd_provision "$@" ;;
+    promote)   cmd_promote "$@" ;;
+    rollback)  cmd_rollback "$@" ;;
+    current)   cmd_current "$@" ;;
+    list)      cmd_list "$@" ;;
+    prune)     cmd_prune "$@" ;;
+    *) echo "runtime-provision.sh: unknown command '$cmd'" >&2; usage >&2; exit 64 ;;
+  esac
+}
+main "$@"
