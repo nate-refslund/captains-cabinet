@@ -51,10 +51,16 @@ manual equivalent using only scripts already proven in this repo, so the
 cutover is not blocked on Lane A/B landing first.
 
 Layout (Capistrano-style: code and data are physically separate so a code
-update never touches data, and a rollback never touches data either):
+update never touches data, and a rollback never touches data either). This
+is the ACTUAL layout `runtime-provision.sh` builds (see its own header
+comment for the authoritative version — reproduced here so this doc doesn't
+go stale silently):
 
 ```
 ~/.cabinet/runtime/                          <- the fleet runtime tree (root)
+  repo.git/                                  <- bare MIRROR clone (`fetch` updates it;
+                                                 every release worktree shares its object
+                                                 store)
   shared/
     instance/                                <- THE persistent instance data (roster.yml,
                                                  roles, memory, agents, loop-prompts, ...) —
@@ -63,14 +69,20 @@ update never touches data, and a rollback never touches data either):
                                                  versioned per-release; never deleted by a deploy.
     cabinet.env                              <- persistent copy of the secrets file
   releases/
-    20260715-143000-df7abb1d/                <- one clean checkout per deploy (name:
-                                                 <UTC stamp>-<short sha>), immutable once
+    <full-sha>/                              <- one `git worktree add --detach` per
+                                                 provisioned commit (named by full sha, not
+                                                 a timestamp — idempotent: re-provisioning
+                                                 the same commit is a no-op), immutable once
                                                  validated
-      instance -> ../../shared/instance       <- symlink (not a copy — one edit, every release sees it)
-      cabinet/.env -> ../../../shared/cabinet.env
+      instance -> <abs path>/shared/instance   <- symlink (not a copy — one edit, every release sees it)
+      cabinet/.env -> <abs path>/shared/cabinet.env
       cabinet/ framework/ ...                <- the rest of the checked-out repo tree
-  current -> releases/20260715-143000-df7abb1d   <- STABLE symlink; this is the path
-                                                     launchd's plists are rendered against
+  current -> releases/<full-sha>             <- STABLE symlink; this is the path
+                                                 launchd's plists are rendered against
+  previous -> releases/<full-sha>            <- the release 'current' pointed at just
+                                                 before the last promote/rollback (the
+                                                 rollback target)
+  .cabinet-deploy.log                        <- append-only promote/rollback/restart audit trail
 ```
 
 Why the plists point at `current` (the stable symlink) and not at a
@@ -137,6 +149,15 @@ Before starting, confirm:
 - [ ] No other wave is mid-deploy or mid-restart-drill on the live fleet
       right now (check for a live `deploy-mac.sh`/`restart-all-officers-
       oneshot.sh` run in progress before starting).
+- [ ] **The commit you provision in Step 1 must itself contain
+      `cabinet/scripts/runtime-provision.sh`.** Step 3's `promote` runs
+      `"$RELEASE/cabinet/scripts/runtime-provision.sh"` — the copy *inside
+      the provisioned release*, not the live tree's. If the branch that
+      built these two scripts (and this runbook) hasn't reached the ref you
+      provision yet, the release you just built won't have them and Step 3
+      fails with a plain file-not-found — merge that branch first, or
+      provision its exact sha explicitly instead of a bare `origin/master`
+      that might predate it.
 
 ## 4. Step-by-step
 
@@ -174,36 +195,47 @@ back to "exactly how things were" if anything downstream needs re-deriving.
 
 ### Step 1 — Provision the fleet runtime tree **[ME]**, zero live impact
 
-If `cabinet/scripts/runtime-provision.sh` exists:
+`cabinet/scripts/runtime-provision.sh` exists (built in this same wave) —
+use it; its own header comment is authoritative if this doc and the script
+ever disagree:
 
 ```bash
-bash "$LIVE/cabinet/scripts/runtime-provision.sh" --target ~/.cabinet/runtime \
-  --commit origin/master   # or an explicit sha
+RUNTIME=~/.cabinet/runtime
+bash "$LIVE/cabinet/scripts/runtime-provision.sh" init "$RUNTIME" \
+  --remote https://github.com/nate-refslund/captains-cabinet.git
+bash "$LIVE/cabinet/scripts/runtime-provision.sh" provision "$RUNTIME" origin/master   # or an explicit sha
+# -> prints PROVISIONED_SHA=<sha> and PROVISIONED_SLOT=<path>; that path is $RELEASE below
+RELEASE=$(bash "$LIVE/cabinet/scripts/runtime-provision.sh" provision "$RUNTIME" origin/master | sed -n 's/^PROVISIONED_SLOT=//p')
 ```
 
-Manual equivalent (uses only `git` + scripts already in this repo):
+This already wires `instance/` and `cabinet/.env` as symlinks into
+`$RUNTIME/shared/` (empty at this point — Step 2 populates them with the
+LIVE deployment's real data; `init` refuses to guess/fabricate it). Manual
+equivalent, if you ever need to reconstruct this by hand (uses only `git` +
+scripts already in this repo; note the real script keeps `repo.git`
+directly under `$RUNTIME`, not under `$RUNTIME/shared` — matched below):
 
 ```bash
 RUNTIME=~/.cabinet/runtime
 mkdir -p "$RUNTIME/shared/instance" "$RUNTIME/releases"
 
 # one persistent bare mirror — created once, fetched on every future deploy
-[ -d "$RUNTIME/shared/repo.git" ] || \
-  git clone --mirror https://github.com/nate-refslund/captains-cabinet.git "$RUNTIME/shared/repo.git"
-git -C "$RUNTIME/shared/repo.git" fetch --all --prune
+[ -d "$RUNTIME/repo.git" ] || \
+  git clone --mirror https://github.com/nate-refslund/captains-cabinet.git "$RUNTIME/repo.git"
+git --git-dir="$RUNTIME/repo.git" fetch --prune
 
-TARGET_SHA=$(git -C "$RUNTIME/shared/repo.git" rev-parse origin/master)   # or your named sha
-RELEASE="$RUNTIME/releases/$(date -u +%Y%m%d-%H%M%S)-${TARGET_SHA:0:8}"
+TARGET_SHA=$(git --git-dir="$RUNTIME/repo.git" rev-parse master)   # or your named sha
+RELEASE="$RUNTIME/releases/$TARGET_SHA"
 
-# Clone FROM THE LOCAL MIRROR (not GitHub again) — same filesystem, so git
-# hardlinks objects automatically: instant, no network round-trip beyond the
-# one `fetch` above. Deliberately KEEPS .git per release (unlike hatch.sh's
-# own git-archive clean-room export): several scripts in this repo
-# (generate-plists.py, germline-lock.sh) fall back to `git rev-parse
-# --show-toplevel` when no CABINET_ROOT is set — a real fleet target should
-# never depend on every future invocation remembering the override.
-git clone "$RUNTIME/shared/repo.git" "$RELEASE"
-git -C "$RELEASE" checkout --detach "$TARGET_SHA"
+# A linked WORKTREE off the mirror (not a fresh clone) — same object store,
+# no duplication, and this is the same worktree primitive this repo already
+# leans on for its 30+ parallel dev worktrees. Deliberately KEEPS .git
+# machinery per release (unlike hatch.sh's own git-archive clean-room
+# export): several scripts in this repo (generate-plists.py,
+# germline-lock.sh) fall back to `git rev-parse --show-toplevel` when no
+# CABINET_ROOT is set — a real fleet target should never depend on every
+# future invocation remembering the override.
+git --git-dir="$RUNTIME/repo.git" worktree add --detach "$RELEASE" "$TARGET_SHA"
 echo "provisioned: $RELEASE"
 ```
 
@@ -247,13 +279,16 @@ rsync -a "$LIVE/instance/" "$RUNTIME/shared/instance/"
 rsync -a "$HOME/Library/Application Support/cabinet/" "$RUNTIME/shared/app-support/" 2>/dev/null || true
 ```
 
-Then wire the copy into the release from Step 1 (symlinks — one shared
-copy, every release sees it; this is what makes a future code-only deploy
-never touch data):
+If you provisioned via the REAL `runtime-provision.sh` above, `$RELEASE/
+instance` and `$RELEASE/cabinet/.env` are ALREADY symlinks into
+`$RUNTIME/shared/` (provision does this at Step 1, before shared/ has real
+content) — the rsync above just populated what those symlinks already
+expose, and there is nothing left to wire. Only the fully-manual path (no
+`runtime-provision.sh`) needs this extra step:
 
 ```bash
-# $RELEASE still set from Step 1 in the same shell — if you're starting a
-# fresh shell instead, re-derive it as the newest release directory:
+# manual-path only — $RELEASE still set from Step 1 in the same shell; if
+# starting a fresh shell instead, re-derive it as the newest release directory:
 RELEASE=$(ls -td ~/.cabinet/runtime/releases/*/ | head -1); RELEASE=${RELEASE%/}
 
 ln -s "$RUNTIME/shared/instance"    "$RELEASE/instance"
@@ -278,21 +313,26 @@ sudo bash cabinet/scripts/germline-lock.sh lock
 bash cabinet/scripts/germline-lock.sh status    # confirm LOCKED, no sudo needed to check
 ```
 
-> **Known gap for the ongoing-update path (flag this to whoever builds
-> `cabinet-deploy.sh`, do not let it get silently lost):** because
+> **Ongoing-update path — this gap is handled, not just flagged:** because
 > `instance/` is a symlink into `shared/`, locking it once locks the shared
 > data for every release permanently. But the **code**-side germline files
 > (`framework/authority/*.py`, `.claude/settings.json`,
 > `cabinet/scripts/kill-switch.sh`, etc.) live *inside* each release
-> directory, not in `shared/` — a plain `git archive`/checkout materializes
-> new inodes every time, so **every future `cabinet-deploy.sh` release needs
-> its own fresh `sudo germline-lock.sh lock` run**, or a deploy can silently
-> go live with the enforcer boundary open on the new release while the old
-> one (and everyone's mental model) still says "locked." This is exactly the
-> failure class the doctor's germline watchdog (`cabinet-doctor.sh` §10)
-> exists to catch — make sure `cabinet-doctor.sh` runs (and is *watched*,
-> not just green-and-forgotten) after every future deploy, not only after
-> this one-time cutover.
+> directory, not in `shared/` — a fresh `git worktree add` materializes new
+> inodes every time, so every future release needs its own relock, or a
+> deploy could silently go live with the enforcer boundary open on the new
+> release while the old one (and everyone's mental model) still says
+> "locked." `cabinet-deploy.sh`'s health gate is built around exactly this:
+> it best-effort tries `sudo -n germline-lock.sh lock` on every new release
+> before promoting (silently succeeds if the Captain has cached sudo), runs
+> the real `cabinet-doctor.sh` §10 germline watchdog against the new slot
+> either way, and — since a no-sudo box legitimately can't self-relock —
+> treats an unarmed-boundary-only finding on a **not-yet-promoted** slot as a
+> loud WARN rather than a hard deploy-blocker (every other DEAD finding still
+> blocks unconditionally), then ALWAYS prints the post-promote germline
+> status in the clear. So after cutover this is never a silent gap: watch
+> for that WARN/status line on every deploy, and run the sudo relock by hand
+> when it shows unarmed.
 
 ### Step 3 — Repoint launchd **[CAPTAIN + ME]** — the actual cutover moment
 
@@ -307,7 +347,11 @@ fleet runtime tree's stable `current` symlink and re-running it rewrites
 every officer's plist in place, then bootout+bootstraps it:
 
 ```bash
-ln -sfn "$RELEASE" ~/.cabinet/runtime/current   # $RELEASE from Steps 1-2 (re-derive if a fresh shell)
+# $RELEASE from Steps 1-2 (re-derive as the newest releases/ dir if a fresh shell).
+# promote logs to .cabinet-deploy.log and sets 'previous' for a same-shaped
+# rollback (a plain `ln -sfn "$RELEASE" ~/.cabinet/runtime/current` is
+# equivalent here — there is no 'previous' yet on this first-ever cutover):
+bash "$RELEASE/cabinet/scripts/runtime-provision.sh" promote ~/.cabinet/runtime "$(basename "$RELEASE")"
 
 cd ~/.cabinet/runtime/current
 CABINET_SOURCE_REPO=~/.cabinet/runtime/current CABINET_ROOT=~/.cabinet/runtime/current \
@@ -447,9 +491,27 @@ already unhealthy before this runbook started).
 Going forward, "ship an update to the live fleet" means: land the change on
 `master` (same review discipline as always) → run
 `cabinet/scripts/cabinet-deploy.sh` with the commit you want live → it does
-Steps 1/3/4 of this runbook for you, automatically, every time — never a
-manual `deploy-mac.sh --officer all` again except for this one-time cutover
-and true disaster recovery.
+Steps 1/3a/4 of this runbook for you, automatically, every time (fetch →
+provision → health-gate → atomic promote → graceful restart, rolling back
+by construction if the gate is red) — never a manual `deploy-mac.sh
+--officer all` again except for this one-time cutover and true disaster
+recovery. Concrete invocation (see the script's own `--help`/header for the
+authoritative CLI if this ever drifts):
+
+```bash
+cd ~/.cabinet/runtime/current
+bash cabinet/scripts/cabinet-deploy.sh deploy   --runtime-root ~/.cabinet/runtime   # ships origin/master's tip
+REF=some-other-branch-or-sha   # fill this in — a bare ref word, never a literal <angle-bracket> placeholder
+bash cabinet/scripts/cabinet-deploy.sh deploy   --runtime-root ~/.cabinet/runtime --ref "$REF"
+bash cabinet/scripts/cabinet-deploy.sh status   --runtime-root ~/.cabinet/runtime
+bash cabinet/scripts/cabinet-deploy.sh rollback  --runtime-root ~/.cabinet/runtime   # only if a live slot misbehaves after promotion
+```
+
+Note: `cabinet-deploy.sh` still does NOT cover 3b (manifest daemons) or 3c
+(the static `cos-inbound` poller) — those only change when their OWN
+sources change (`cabinet/services.yml`, or the `cos-inbound` plist itself),
+which is rarer than a code deploy and is not currently automated. Re-run
+Step 3b/3c by hand on those occasions.
 
 ## 6. Non-goals — explicitly unaffected by this cutover
 
@@ -491,8 +553,8 @@ and true disaster recovery.
 ## 8. Command reference — condensed, paste-ready, NOT YET RUN
 
 Everything below is the same commands as above, back to back, for the
-session that actually executes cutover day. Replace `<RELEASE>` with the
-directory Step 1 produced.
+session that actually executes cutover day, run in one continuous shell so
+`$RELEASE`/`$RUNTIME`/`$LIVE` carry forward between steps as set.
 
 ```bash
 # Step 0 — snapshot
@@ -502,28 +564,28 @@ bash "$LIVE/cabinet/scripts/cabinet-doctor.sh" > "$SNAP/doctor-before.log" 2>&1
 bash "$LIVE/cabinet/scripts/verify-launchagents.sh" > "$SNAP/verify-before.log" 2>&1
 tar -czf "$SNAP/instance-and-env-backup.tar.gz" -C "$LIVE" instance cabinet/.env
 
-# Step 1 — provision + validate (zero live impact)
+# Step 1 — provision + validate (zero live impact) — via the real script
 RUNTIME=~/.cabinet/runtime
-mkdir -p "$RUNTIME/shared/instance" "$RUNTIME/releases"
-[ -d "$RUNTIME/shared/repo.git" ] || git clone --mirror https://github.com/nate-refslund/captains-cabinet.git "$RUNTIME/shared/repo.git"
-git -C "$RUNTIME/shared/repo.git" fetch --all --prune
-TARGET_SHA=$(git -C "$RUNTIME/shared/repo.git" rev-parse origin/master)
-RELEASE="$RUNTIME/releases/$(date -u +%Y%m%d-%H%M%S)-${TARGET_SHA:0:8}"
-git clone "$RUNTIME/shared/repo.git" "$RELEASE"
-git -C "$RELEASE" checkout --detach "$TARGET_SHA"
+bash "$LIVE/cabinet/scripts/runtime-provision.sh" init "$RUNTIME" \
+  --remote https://github.com/nate-refslund/captains-cabinet.git
+bash "$LIVE/cabinet/scripts/runtime-provision.sh" provision "$RUNTIME" origin/master
+RELEASE=$(bash "$LIVE/cabinet/scripts/runtime-provision.sh" provision "$RUNTIME" origin/master | sed -n 's/^PROVISIONED_SLOT=//p')
 CABINET_SOURCE_REPO="$RELEASE" CABINET_ROOT="$RELEASE" bash "$RELEASE/cabinet/scripts/start-officer-mac.sh" cos --dry-run
 CABINET_SOURCE_REPO="$RELEASE" CABINET_ROOT="$RELEASE" bash "$RELEASE/cabinet/scripts/deploy-mac.sh" --officer cos --dry-run
 
-# Step 2 — copy instance data + secrets, wire symlinks, lock germline [CAPTAIN sudo]
+# Step 2 — copy instance data + secrets, lock germline [CAPTAIN sudo]
+# ($RELEASE's instance/ + cabinet/.env are ALREADY symlinks into $RUNTIME/shared/
+# from Step 1's provision — this just populates what they expose. No re-wiring.)
 install -m 600 "$LIVE/cabinet/.env" "$RUNTIME/shared/cabinet.env"
 rsync -a "$LIVE/instance/" "$RUNTIME/shared/instance/"
 rsync -a "$HOME/Library/Application Support/cabinet/" "$RUNTIME/shared/app-support/" 2>/dev/null || true
-ln -s "$RUNTIME/shared/instance" "$RELEASE/instance"
-ln -s "$RUNTIME/shared/cabinet.env" "$RELEASE/cabinet/.env"
 ( cd "$RELEASE" && sudo bash cabinet/scripts/germline-lock.sh lock && bash cabinet/scripts/germline-lock.sh status )
 
 # Step 3 — the cutover moment (3a officers / 3b manifest daemons / 3c cos-inbound / 3d sweep)
-ln -sfn "$RELEASE" "$RUNTIME/current"
+# promote logs to $RUNTIME/.cabinet-deploy.log and sets 'previous' for a
+# same-shaped rollback (a plain `ln -sfn "$RELEASE" "$RUNTIME/current"` is
+# equivalent on this first-ever cutover, where there is no 'previous' yet):
+bash "$RELEASE/cabinet/scripts/runtime-provision.sh" promote "$RUNTIME" "$(basename "$RELEASE")"
 ( cd "$RUNTIME/current" && CABINET_SOURCE_REPO="$RUNTIME/current" CABINET_ROOT="$RUNTIME/current" \
     bash cabinet/scripts/deploy-mac.sh --officer all )
 ( cd "$RUNTIME/current" && CABINET_ROOT="$RUNTIME/current" python3.12 cabinet/scripts/generate-plists.py )
