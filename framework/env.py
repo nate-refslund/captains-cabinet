@@ -209,6 +209,41 @@ def org_domains(default: "tuple[str, ...]" = ()) -> "tuple[str, ...]":
     return domains
 
 
+def signal_tells(project: str = "", default: "dict | None" = None, *,
+                 env_json: "str | None" = None) -> dict:
+    """Per-lane TELLS for the verified-noise discriminator (``framework.frontdoor.
+    signal_discriminator``) — the resolver that keeps the discriminator LOGIC
+    lane-agnostic by receiving the launcher-specific tells (prod hosts, staging/bot
+    patterns, smoke paths) as a RESOLVED value.
+
+    Read from the ``CABINET_SENTRY_TELLS`` env var (JSON), which the briefing wrapper
+    (``cabinet/scripts/run-frontdoor-briefing.sh`` — a cabinet/ script, free to read
+    instance/) populates from ``instance/config/signals.yml`` for the configured Sentry
+    project. This is the SAME env-graft seam as ``CABINET_SENTRY_ORG`` / ``_PROJECT`` —
+    framework/ never reads instance config directly, so the framework→instance boundary
+    stays clean. Any absence / invalid JSON FAILS CLOSED to ``default`` (empty dict) —
+    with which the discriminator can only suppress a FROZEN issue by recency or return
+    INCONCLUSIVE (emit); it never suppresses a fresh un-attributable error. Never raises.
+    ``env_json`` overrides the env read for tests; ``project`` is advisory (the wrapper
+    has already scoped the env to the one configured project)."""
+    fallback = {} if default is None else default
+    raw = env_json if env_json is not None else os.environ.get("CABINET_SENTRY_TELLS", "")
+    if not raw:
+        return fallback
+    try:
+        import json  # local: keep env.py import-light for the safety switches
+        data = json.loads(raw)
+    except Exception:
+        return fallback
+    if not isinstance(data, dict):
+        return fallback
+    # The wrapper exports the bare tells dict for the single configured project; tolerate
+    # a {project: tells} map too (index by project) in case the whole table is exported.
+    if project and isinstance(data.get(project), dict):
+        return data[project]
+    return data
+
+
 # Cache: tasks_board is read once per process (same lifecycle as captain_name).
 # None ⇒ unresolved — the empty string is a VALID resolved value (a generic
 # deployment with no board configured), so the sentinel is None, never "".
@@ -462,8 +497,8 @@ _captain_timezone_cache: "str | None" = None
 def captain_timezone(default: str = "Europe/Berlin") -> str:
     """The Captain's IANA timezone NAME for this deployment — the resolver that
     lifts the 'today'-boundary timezone OUT of the universal-base ``framework``
-    acting code (``screenpipe_adapter._captain_tz``) into instance config, so
-    framework carries no hand-read of ``instance/config/platform.yml``.
+    acting code (the personal-source adapter's ``_captain_tz``) into instance
+    config, so framework carries no hand-read of ``instance/config/platform.yml``.
 
     Reads ``captain_timezone`` from ``instance/config/platform.yml`` (portfolio /
     live deployments), else ``instance/config/product.yml`` (single-product
@@ -513,11 +548,11 @@ _shared_env_path_cache: "str | None" = None
 def shared_env_path(default: str = "") -> str:
     """The filesystem path to the shared credentials ``.env`` file the action
     lane loads MONDAY_API_TOKEN / MONDAY_API_KEY (and friends) from — the
-    resolver that lifts the ``~/.screenpipe/pipes/_shared/.env`` credential path
-    OUT of the universal-base ``framework`` code (``action_exec._load_shared_env``
-    + ``actfirst_canary``'s env-perms check) into instance config, so framework
-    carries no launcher's ``.screenpipe`` path (source-adapter boundary §5,
-    Tier-2 credential reparent).
+    resolver that lifts the personal-source adapter's ``_shared/.env``
+    credential path OUT of the universal-base ``framework`` code
+    (``action_exec._load_shared_env`` + ``actfirst_canary``'s env-perms check)
+    into instance config, so framework carries no launcher's adapter-specific
+    path (source-adapter boundary §5, Tier-2 credential reparent).
 
     Resolution order: the env override ``CABINET_SHARED_ENV`` (an explicit
     per-process override, mirroring ``tasks_board``'s ``CABINET_TASKS_BOARD``) →
@@ -573,9 +608,9 @@ def retro_pipe_dir(default: str = "") -> str:
     """The filesystem path to the retrodiction SCORING pipe dir (the dir holding
     ``lib.py``) the fidelity EvaluationEngine (``framework.fidelity.retro``)
     loads its leak-safe scoring logic from — the resolver that lifts the
-    ``~/.screenpipe/pipes/retrodiction`` path OUT of the universal-base
+    personal-source adapter's ``retrodiction`` path OUT of the universal-base
     ``framework`` shim into instance config, so framework carries no launcher's
-    ``.screenpipe`` path (source-adapter boundary §5, the parallel EVALUATION
+    adapter-specific path (source-adapter boundary §5, the parallel EVALUATION
     seam). The SCORING functions stay in framework (they ARE the
     EvaluationEngine, not the sensing seam); only the PATH resolves here.
 
@@ -623,11 +658,11 @@ _vault_dir_cache: "str | None" = None
 
 
 def vault_dir(default: str = "") -> str:
-    """The captain's brain/Obsidian VAULT directory for this deployment — the
+    """The captain's brain/notes VAULT directory for this deployment — the
     resolver that lifts the vault path OUT of the universal-base ``framework``
     code (the fidelity decision-cell's Decisions corpus dir; on Flavor-A the
-    screenpipe brain vault) into instance config, so framework names no
-    launcher's vault path — and, crucially, no screenpipe-specific vault env key
+    adapter's personal-source vault) into instance config, so framework names no
+    launcher's vault path — and, crucially, no adapter-specific vault env key
     that a clean-room box does not set (source-adapter boundary §5, Tier-2 path
     reparent).
 
@@ -682,11 +717,11 @@ _state_dir_cache: "str | None" = None
 
 def state_dir(default: str = "") -> str:
     """The deployment's PERSONAL-SOURCE runtime-state directory — the resolver
-    that lifts the ``~/.screenpipe/state`` path OUT of the universal-base
-    ``framework`` code (the fidelity decision-cache + the autonomy-outcomes
-    ledger; the outcome-watchdog's watched brain-pipe dir) into instance config,
-    so framework names no launcher's state path (source-adapter boundary §5,
-    Tier-2 path reparent).
+    that lifts the personal-source adapter's ``state`` path OUT of the
+    universal-base ``framework`` code (the fidelity decision-cache + the
+    autonomy-outcomes ledger; the outcome-watchdog's watched brain-pipe dir)
+    into instance config, so framework names no launcher's state path
+    (source-adapter boundary §5, Tier-2 path reparent).
 
     Resolution order: the env override ``CABINET_STATE_DIR`` (an explicit
     per-process override) → ``state_dir`` in ``instance/config/platform.yml``

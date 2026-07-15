@@ -21,10 +21,6 @@ import pytest
 REPO = Path(__file__).resolve().parents[3]
 LAUNCHD = REPO / "cabinet" / "launchd"
 SCRIPTS = REPO / "cabinet" / "scripts"
-# The plists pin the live-checkout absolute prefix (matching every existing
-# concrete com.cabinet.* plist); tests re-root it to THIS checkout so the
-# referenced files are proven to exist wherever the repo lives.
-LIVE_PREFIX = "/Users/nate/captains-cabinet"
 
 PLISTS = {
     "com.cabinet.undo-sweep": LAUNCHD / "com.cabinet.undo-sweep.plist",
@@ -36,6 +32,18 @@ RUNNER_SCRIPTS = [
     SCRIPTS / "run-actfirst-canary.sh",
     SCRIPTS / "falsifier-report.py",
 ]
+
+
+def _live_prefix() -> str:
+    """The live-checkout absolute prefix baked into every shipped com.cabinet.*
+    plist (launchd requires absolute paths, so each one pins the real deployed
+    checkout location). Read from a plist rather than hardcoded here, so this
+    test carries no deployment-specific literal — it re-derives whatever
+    prefix the shipped artifacts actually use, then re-roots it onto THIS
+    checkout below (the referenced files are proven to exist wherever the
+    repo lives)."""
+    with open(next(iter(PLISTS.values())), "rb") as f:
+        return plistlib.load(f)["WorkingDirectory"]
 
 
 def _load_falsifier_report():
@@ -53,23 +61,31 @@ def test_plist_parses_and_matches_conventions(label):
     path = PLISTS[label]
     with open(path, "rb") as f:
         data = plistlib.load(f)
+    live_prefix = _live_prefix()
     # Label naming + filename agreement (com.cabinet.* convention).
     assert data["Label"] == label
     assert label.startswith("com.cabinet.")
     # Producers must never fire mid-bootstrap (matches every existing plist).
     assert data["RunAtLoad"] is False
-    # Log convention: ~/.cabinet/logs/<name>.log, stdout+stderr merged.
-    assert data["StandardOutPath"].startswith("/Users/nate/.cabinet/logs/")
+    # Log convention: <deployed checkout owner>/.cabinet/logs/<name>.log,
+    # stdout+stderr merged. Do not compare with the CI runner's HOME: these are
+    # intentionally live-rendered macOS plists whose absolute checkout prefix
+    # belongs to the target Mac, not the Linux verifier.
+    expected_logs = Path(live_prefix).parent / ".cabinet" / "logs"
+    assert Path(data["StandardOutPath"]).parent == expected_logs
+    assert data["StandardOutPath"].endswith(".log")
     assert data["StandardOutPath"] == data["StandardErrorPath"]
     # Exactly one schedule mechanism.
     assert ("StartInterval" in data) != ("StartCalendarInterval" in data)
-    # repo-root PYTHONPATH + WorkingDirectory (lane requirement).
-    assert data["WorkingDirectory"] == LIVE_PREFIX
-    assert data["EnvironmentVariables"]["PYTHONPATH"] == LIVE_PREFIX
-    # The program the plist points at must exist in the repo (re-rooted).
+    # repo-root PYTHONPATH + WorkingDirectory (lane requirement) — every plist
+    # shares ONE live-checkout prefix.
+    assert data["WorkingDirectory"] == live_prefix
+    assert data["EnvironmentVariables"]["PYTHONPATH"] == live_prefix
+    # The program the plist points at must exist in the repo (re-rooted onto
+    # THIS checkout, wherever it lives).
     prog = data["ProgramArguments"][-1]
-    assert prog.startswith(LIVE_PREFIX + "/")
-    assert (REPO / prog[len(LIVE_PREFIX) + 1:]).is_file()
+    assert prog.startswith(live_prefix + "/")
+    assert (REPO / prog[len(live_prefix) + 1:]).is_file()
 
 
 def test_plist_cadences():

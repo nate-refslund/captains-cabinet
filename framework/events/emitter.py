@@ -12,6 +12,7 @@ Usage:
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import sys
@@ -253,14 +254,85 @@ def _event_log_dir() -> Path:
     return Path(os.path.expanduser("~/Library/Application Support/cabinet/events"))
 
 
+def _warn_torn_record(log_file: Path, line_number: int | str, *, repaired: bool) -> None:
+    action = "discarded" if repaired else "ignored"
+    print(
+        f"event-emitter: WARN {action} torn final JSONL record in "
+        f"{log_file}:{line_number}",
+        file=sys.stderr,
+    )
+
+
+def _trim_torn_tail_locked(fd: int, log_file: Path) -> None:
+    """Drop a crash-torn, non-newline-terminated tail while holding LOCK_EX.
+
+    Every healthy writer appends exactly one newline-terminated record.  A
+    non-empty file whose final byte is not ``\\n`` therefore contains an
+    interrupted final append.  Repair before the next write so a valid new
+    event cannot be concatenated onto (and lost with) that torn fragment.
+    """
+    size = os.fstat(fd).st_size
+    if size == 0 or os.pread(fd, 1, size - 1) == b"\n":
+        return
+
+    cursor = size
+    truncate_at = 0
+    while cursor > 0:
+        start = max(0, cursor - 64 * 1024)
+        chunk = os.pread(fd, cursor - start, start)
+        newline = chunk.rfind(b"\n")
+        if newline >= 0:
+            truncate_at = start + newline + 1
+            break
+        cursor = start
+
+    os.ftruncate(fd, truncate_at)
+    _warn_torn_record(
+        log_file,
+        "tail",
+        repaired=True,
+    )
+
+
 def _write_to_log(event: dict[str, Any]) -> None:
-    """Append event to the local JSONL event log."""
+    """Durably append one event to the local JSONL ledger.
+
+    An advisory cross-process lock prevents interleaved repair/appends, O_APPEND
+    makes every physical write target EOF, and fsync makes the JSONL guarantee
+    survive a successful return.  A prior crash-torn tail is removed under the
+    same lock before the new record is appended.
+    """
     log_dir = _event_log_dir()
     log_dir.mkdir(parents=True, exist_ok=True)
 
     log_file = log_dir / f"events-{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.jsonl"
-    with open(log_file, "a") as f:
-        f.write(json.dumps(event, default=str) + "\n")
+    payload = (json.dumps(event, default=str) + "\n").encode("utf-8")
+    created = not log_file.exists()
+    fd = os.open(log_file, os.O_RDWR | os.O_CREAT | os.O_APPEND, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        _trim_torn_tail_locked(fd, log_file)
+        remaining = memoryview(payload)
+        while remaining:
+            try:
+                written = os.write(fd, remaining)
+            except InterruptedError:
+                continue
+            if written <= 0:
+                raise OSError("event ledger append made no progress")
+            remaining = remaining[written:]
+        os.fsync(fd)
+        if created:
+            dir_fd = os.open(log_dir, os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+    finally:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
 
 
 def _write_to_db(event: dict[str, Any]) -> None:
@@ -493,21 +565,41 @@ def replay(
 
     events = []
     for log_file in sorted(log_dir.glob("events-*.jsonl")):
-        with open(log_file) as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                event = json.loads(line)
+        fd = os.open(log_file, os.O_RDONLY)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_SH)
+            size = os.fstat(fd).st_size
+            with os.fdopen(os.dup(fd), "rb") as f:
+                line_number = 0
+                while True:
+                    raw_line = f.readline()
+                    if not raw_line:
+                        break
+                    line_number += 1
+                    if not raw_line.strip():
+                        continue
+                    try:
+                        event = json.loads(raw_line.decode("utf-8"))
+                    except (UnicodeDecodeError, json.JSONDecodeError):
+                        is_torn_tail = f.tell() == size and not raw_line.endswith(b"\n")
+                        if is_torn_tail:
+                            _warn_torn_record(log_file, line_number, repaired=False)
+                            continue
+                        raise
 
-                if since and event["created_at"] < since:
-                    continue
-                if event_types and event["event_type"] not in event_types:
-                    continue
-                if actor and event["actor"] != actor:
-                    continue
+                    if since and event["created_at"] < since:
+                        continue
+                    if event_types and event["event_type"] not in event_types:
+                        continue
+                    if actor and event["actor"] != actor:
+                        continue
 
-                events.append(event)
+                    events.append(event)
+        finally:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            finally:
+                os.close(fd)
 
     return events
 

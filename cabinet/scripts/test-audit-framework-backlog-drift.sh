@@ -11,12 +11,13 @@
 # no-date-skip, env threshold overrides, missing-file handling, output
 # format markers.
 #
-# Run: bash /opt/founders-cabinet/cabinet/scripts/test-audit-framework-backlog-drift.sh
+# Run: bash cabinet/scripts/test-audit-framework-backlog-drift.sh
 # Exit 0 on all PASS, 1 on any FAIL.
 
 set -uo pipefail
 
-AUDITOR="/opt/founders-cabinet/cabinet/scripts/audit-framework-backlog-drift.sh"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+AUDITOR="$SCRIPT_DIR/audit-framework-backlog-drift.sh"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
@@ -25,14 +26,23 @@ FAIL=0
 FAILURES=()
 
 # Absolute dates anchored on 2026-04-24 (the ship-day of this auditor).
-# Using `date -u -d` to compute so the test is stable if the system clock
-# drifts: we measure relative to "now" inside the auditor too.
+# Compute relative to the current UTC day using the platform's native date
+# syntax.  Cabinet is deployed on macOS while CI runs Linux, so the harness
+# must exercise the same auditor on both hosts.
+days_ago() {
+  local days="$1"
+  if date -u -d "$days days ago" +%Y-%m-%d >/dev/null 2>&1; then
+    date -u -d "$days days ago" +%Y-%m-%d
+  else
+    date -u -v-"${days}"d +%Y-%m-%d
+  fi
+}
 D_TODAY=$(date -u +%Y-%m-%d)
-D_2D_AGO=$(date -u -d "2 days ago" +%Y-%m-%d)
-D_5D_AGO=$(date -u -d "5 days ago" +%Y-%m-%d)
-D_10D_AGO=$(date -u -d "10 days ago" +%Y-%m-%d)
-D_20D_AGO=$(date -u -d "20 days ago" +%Y-%m-%d)
-D_60D_AGO=$(date -u -d "60 days ago" +%Y-%m-%d)
+D_2D_AGO=$(days_ago 2)
+D_5D_AGO=$(days_ago 5)
+D_10D_AGO=$(days_ago 10)
+D_20D_AGO=$(days_ago 20)
+D_60D_AGO=$(days_ago 60)
 
 assert_contains() {
   local label="$1"; local haystack="$2"; local needle="$3"

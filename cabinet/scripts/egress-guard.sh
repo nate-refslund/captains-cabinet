@@ -13,6 +13,7 @@
 # SUBCOMMANDS
 #   status    show whether enforcement is on + the resolved allowlist + proxy
 #             state (read-only; installs/changes nothing).
+#   runtime-state  print ENFORCE<TAB>PROXY_ENV for launchers (read-only).
 #   dry-run   show what WOULD be allowed/blocked if enforce were on, install
 #             nothing (works regardless of the current enforce value).
 #   apply     reconcile runtime to whatever egress.yml currently says:
@@ -27,10 +28,11 @@
 # ENFORCEMENT MECHANISM (enforce=true): a local forward proxy
 # (cabinet/scripts/egress-proxy.py, python3 stdlib, bound 127.0.0.1) that
 # allows CONNECT/HTTP only to the resolved allowlist and 403s the rest, plus an
-# exported HTTP_PROXY/HTTPS_PROXY/NO_PROXY file the officer launch sources.
-# Catches curl + python-requests + proxy-honouring MCPs, no persistent sudo.
-# HONEST RESIDUAL (raw sockets/nc/ssh + proxy-ignoring MCPs are NOT caught):
-# see the runbook.
+# exported HTTP_PROXY/HTTPS_PROXY/NO_PROXY file the officer launchers project
+# into their clean environments.  On macOS the launcher also asks Seatbelt to
+# deny direct external TCP/UDP, so proxy bypasses fail at the kernel boundary.
+# Legacy Linux/Docker launchers get the proxy layer but still require a host or
+# container network policy to catch raw sockets; see the runbook.
 #
 # Style contract: bash 3.2 portable (no mapfile / assoc arrays), set -u, clean
 # under `shellcheck -S warning`. Secrets are never logged. Tests:
@@ -70,6 +72,7 @@ usage() {
   cat >&2 <<'EOF'
 usage: egress-guard.sh {status|dry-run|apply|enable|disable|stop}
   status    show enforcement state + resolved allowlist + proxy state
+  runtime-state  machine-readable ENFORCE<TAB>PROXY_ENV for launchers
   dry-run   show what WOULD be allowed/blocked; install nothing
   apply     reconcile runtime to egress.yml (enforce=false -> allow all;
             enforce=true -> install the allowlisting proxy, fail closed)
@@ -270,14 +273,46 @@ stop_proxy() {
   rm -f "$PID_FILE" "$READY_FILE" "$ENV_FILE" 2>/dev/null || true
 }
 
+APPLY_LOCK=""
+acquire_apply_lock() {
+  mkdir -p "$EGRESS_DIR" 2>/dev/null || return 1
+  APPLY_LOCK="$EGRESS_DIR/apply.lock"
+  local i=0 owner=""
+  while [ "$i" -lt 100 ]; do
+    if mkdir "$APPLY_LOCK" 2>/dev/null; then
+      printf '%s\n' "$$" > "$APPLY_LOCK/pid"
+      return 0
+    fi
+    owner=$(cat "$APPLY_LOCK/pid" 2>/dev/null || true)
+    case "$owner" in
+      ''|*[!0-9]*) ;;
+      *)
+        if ! kill -0 "$owner" 2>/dev/null; then
+          rm -rf "$APPLY_LOCK" 2>/dev/null || true
+          continue
+        fi
+        ;;
+    esac
+    sleep 0.1
+    i=$((i + 1))
+  done
+  echo "egress-guard: FAIL-CLOSED — could not acquire runtime apply lock" >&2
+  return 1
+}
+
+release_apply_lock() {
+  [ -n "$APPLY_LOCK" ] && rm -rf "$APPLY_LOCK" 2>/dev/null || true
+  APPLY_LOCK=""
+}
+
 teardown() {
   stop_proxy
   rm -f "$ALLOW_FILE" 2>/dev/null || true
 }
 
-write_env_file() {
+render_env_file() {
   local addr="http://127.0.0.1:$PROXY_PORT"
-  cat > "$ENV_FILE" <<EOF
+  cat <<EOF
 # egress proxy env — written by egress-guard.sh apply (enforce=true).
 # Officer launch sources this to route proxy-honouring egress through the
 # allowlisting proxy. Absent/empty => no restriction (allow all).
@@ -290,10 +325,87 @@ export no_proxy="localhost,127.0.0.1,::1"
 EOF
 }
 
+write_env_file() {
+  local tmp="$ENV_FILE.tmp.$$"
+  umask 077
+  render_env_file > "$tmp"
+  chmod 600 "$tmp"
+  mv -f "$tmp" "$ENV_FILE"
+}
+
+runtime_file_is_owned_regular() {
+  local path="$1" owner=""
+  [ -f "$path" ] && [ ! -L "$path" ] || return 1
+  # GNU stat accepts `-f` but interprets it as filesystem mode and can exit 0
+  # with a non-UID report. A simple `bsd || gnu` chain therefore fails on
+  # Linux. Accept the BSD result only when it is numeric; otherwise query the
+  # GNU form explicitly.
+  owner=$(stat -f '%u' "$path" 2>/dev/null || true)
+  case "$owner" in
+    ''|*[!0-9]*) owner=$(stat -c '%u' "$path" 2>/dev/null || true) ;;
+  esac
+  [ "$owner" = "$(id -u)" ]
+}
+
+# Recompute the runtime contract from Captain config and compare it with every
+# artifact the launcher is about to trust.  The state directory is mutable
+# runtime data, not authority: a stale/forged pid, allowlist, ready file, or
+# proxy env makes launch fail closed rather than changing the effective policy.
+attest_runtime() {
+  [ "$ENFORCE" = 1 ] || return 0
+  if [ ! -d "$EGRESS_DIR" ] || [ -L "$EGRESS_DIR" ]; then
+    echo "egress-guard: FAIL-CLOSED — runtime state directory is absent or symlinked" >&2
+    return 1
+  fi
+  local path
+  for path in "$ALLOW_FILE" "$READY_FILE" "$PID_FILE" "$ENV_FILE"; do
+    if ! runtime_file_is_owned_regular "$path"; then
+      echo "egress-guard: FAIL-CLOSED — runtime attestation rejected $(basename "$path")" >&2
+      return 1
+    fi
+  done
+  local pid port command_line expected_allow actual_allow expected_env actual_env
+  pid=$(proxy_pid 2>/dev/null || true)
+  port=$(running_port 2>/dev/null || true)
+  if [ -z "$pid" ] || [ -z "$port" ]; then
+    echo "egress-guard: FAIL-CLOSED — attested proxy is not live/ready" >&2
+    return 1
+  fi
+  command_line=$(ps -p "$pid" -o command= 2>/dev/null || true)
+  case "$command_line" in
+    *"$PROXY_SCRIPT"*"--allow-file"*"$ALLOW_FILE"*"--ready-file"*"$READY_FILE"*) ;;
+    *)
+      echo "egress-guard: FAIL-CLOSED — proxy pid command does not match the reviewed backend/state" >&2
+      return 1 ;;
+  esac
+  expected_allow=""
+  set -f
+  # shellcheck disable=SC2086 # deliberate word-split of resolved allowlist
+  for path in $ALLOW_LIST; do
+    expected_allow="${expected_allow}${expected_allow:+
+}$path"
+  done
+  set +f
+  actual_allow=$(cat "$ALLOW_FILE" 2>/dev/null) || return 1
+  if [ "$actual_allow" != "$expected_allow" ]; then
+    echo "egress-guard: FAIL-CLOSED — runtime allowlist does not match Captain config" >&2
+    return 1
+  fi
+  PROXY_PORT="$port"
+  expected_env=$(render_env_file)
+  actual_env=$(cat "$ENV_FILE" 2>/dev/null) || return 1
+  if [ "$actual_env" != "$expected_env" ]; then
+    echo "egress-guard: FAIL-CLOSED — proxy environment failed attestation" >&2
+    return 1
+  fi
+  return 0
+}
+
 # Install the restriction. FAIL-CLOSED: any step that cannot be verified
 # returns non-zero and leaves NO proxy env behind (egress is never silently
 # left open when enforce=true).
 install_enforce() {
+  local desired="$EGRESS_DIR/allow.desired.$$"
   case "$PROXY_PORT" in
     ''|*[!0-9]*)
       echo "egress-guard: invalid proxy_port '$PROXY_PORT'" >&2
@@ -312,20 +424,40 @@ install_enforce() {
     return 1
   }
 
-  # Stop any prior proxy before rewriting the allowlist it reads.
-  stop_proxy
-
-  # Write the resolved allowlist (one host per line).
-  if ! : > "$ALLOW_FILE" 2>/dev/null; then
+  # Materialise the desired allowlist first.  If a matching verified proxy is
+  # already running, keep it: concurrent officer launches should not flap the
+  # shared proxy and interrupt sessions that are already constrained.
+  umask 077
+  if ! : > "$desired" 2>/dev/null; then
     echo "egress-guard: FAIL-CLOSED — cannot write allowlist: $ALLOW_FILE" >&2
     return 1
   fi
   set -f
   # shellcheck disable=SC2086 # deliberate word-split of the space-joined list
   for h in $ALLOW_LIST; do
-    printf '%s\n' "$h" >> "$ALLOW_FILE"
+    printf '%s\n' "$h" >> "$desired"
   done
   set +f
+
+  local live_pid="" live_port=""
+  live_pid=$(proxy_pid 2>/dev/null || true)
+  live_port=$(running_port 2>/dev/null || true)
+  if [ -n "$live_pid" ] && [ -n "$live_port" ] \
+    && [ -f "$ALLOW_FILE" ] && [ -f "$ENV_FILE" ] \
+    && cmp -s "$desired" "$ALLOW_FILE" \
+    && { [ "$PROXY_PORT" = 0 ] || [ "$PROXY_PORT" = "$live_port" ]; }; then
+    rm -f "$desired"
+    PROXY_PORT="$live_port"
+    write_env_file
+    return 0
+  fi
+
+  stop_proxy
+  if ! mv -f "$desired" "$ALLOW_FILE" 2>/dev/null; then
+    rm -f "$desired"
+    echo "egress-guard: FAIL-CLOSED — cannot install allowlist: $ALLOW_FILE" >&2
+    return 1
+  fi
 
   rm -f "$READY_FILE" 2>/dev/null || true
 
@@ -370,11 +502,8 @@ install_enforce() {
 
 # ---------------------------------------------------------------- verbs -----
 # Non-fatal wiring check. Enforcement only constrains officers whose launch
-# SOURCES the proxy.env this guard writes; as of this deliverable nothing in
-# the tree does. Warn (never fail) when no launch wrapper appears to source it,
-# so a captain does not believe running officers are constrained when they are
-# not. Heuristic: a line that actually sources proxy.env (`.`/`source`), not a
-# mere mention (excludes the runbook's own example line).
+# loads the proxy env this guard writes.  Accept either a traditional source
+# or the reviewed officer_env_load_file parser used by the clean launchers.
 warn_if_unwired() {
   command -v grep >/dev/null 2>&1 || return 0
   local wired
@@ -383,7 +512,7 @@ warn_if_unwired() {
   # as an example, and the runbook documents it; none is an officer launch
   # wrapper. Any OTHER file that sources proxy.env is real wiring. (Excluding
   # them is what keeps the warning firing in the real tree, not just in tests.)
-  wired=$(grep -rIlE '(source|\.)[[:space:]]+.*proxy\.env' "$ROOT" \
+  wired=$(grep -rIlE '((source|\.)[[:space:]]+.*proxy\.env|officer_env_load_file.*(proxy|EGRESS_ENV))' "$ROOT" \
             --exclude-dir=.git \
             --exclude='egress-guard.sh' \
             --exclude='egress-proxy.py' \
@@ -391,7 +520,7 @@ warn_if_unwired() {
             --exclude='egress-allowlist.md' 2>/dev/null \
           | head -1)
   [ -n "$wired" ] && return 0
-  echo "egress-guard: WARNING — no officer launch wrapper in the tree sources the proxy env file yet." >&2
+  echo "egress-guard: WARNING — no officer launch wrapper in the tree loads the proxy env file yet." >&2
   echo "  Enforcement is ACTIVE, but it constrains NOTHING ALREADY RUNNING until you add, in your officer launch:" >&2
   echo "    [ -f \"\$CABINET_STATE_DIR/egress/proxy.env\" ] && . \"\$CABINET_STATE_DIR/egress/proxy.env\"" >&2
   echo "  see docs/runbooks/egress-allowlist.md (\"Wiring officers to the proxy\")." >&2
@@ -400,20 +529,36 @@ warn_if_unwired() {
 
 cmd_apply() {
   resolve_into_vars || return 1
+  acquire_apply_lock || return 1
+  trap 'release_apply_lock' EXIT
+  trap 'release_apply_lock; exit 130' HUP INT TERM
+  local rc=0
   if [ "$ENFORCE" = 1 ]; then
-    if install_enforce; then
+    if install_enforce && attest_runtime; then
       local n
       n=$(printf '%s\n' "$ALLOW_LIST" | wc -w | tr -d ' ')
       echo "egress-guard: ENFORCING — proxy on http://127.0.0.1:$PROXY_PORT, $n host(s) allowed."
-      echo "egress-guard: officer launch must source $ENV_FILE (see runbook)."
+      echo "egress-guard: officer launch must load $ENV_FILE (see runbook)."
       warn_if_unwired
-      return 0
+      rc=0
+    else
+      rc=1
     fi
+  else
+    teardown
+    echo "egress-guard: enforce=false — allow all (no restriction active)."
+  fi
+  release_apply_lock
+  trap - EXIT HUP INT TERM
+  return "$rc"
+}
+
+cmd_runtime_state() {
+  resolve_into_vars || return 1
+  if [ "$ENFORCE" = 1 ] && ! attest_runtime; then
     return 1
   fi
-  teardown
-  echo "egress-guard: enforce=false — allow all (no restriction active)."
-  return 0
+  printf '%s\t%s\n' "$ENFORCE" "$ENV_FILE"
 }
 
 # Set the enforce flag in instance/config/egress.yml, preserving comments
@@ -550,9 +695,8 @@ cmd_status() {
   else
     echo "  proxy_env:       $ENV_FILE (absent)"
   fi
-  echo "  coverage:        proxy-honouring HTTP/HTTPS — curl, python-requests, most MCPs."
-  echo "  residual:        raw sockets/nc/ssh + proxy-ignoring MCPs NOT caught —"
-  echo "                   see docs/runbooks/egress-allowlist.md"
+  echo "  coverage:        proxy-honouring HTTP/HTTPS; Mac launchers also kernel-block direct external TCP/UDP."
+  echo "  residual:        Linux/Docker raw sockets need a host/container network policy — see runbook."
   return 0
 }
 
@@ -560,6 +704,7 @@ cmd_status() {
 cmd="${1:-status}"
 case "$cmd" in
   status)        cmd_status ;;
+  runtime-state) cmd_runtime_state ;;
   dry-run|dryrun) cmd_dry_run ;;
   apply)         cmd_apply ;;
   enable)        cmd_enable ;;

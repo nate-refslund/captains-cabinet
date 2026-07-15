@@ -432,7 +432,11 @@ if [ -n "$TRIG_MESSAGES" ]; then
   echo "$TRIG_MESSAGES"
   echo ""
   echo "Process these triggers now. Then ACK:"
-  echo "  . $CABINET_ROOT/cabinet/scripts/lib/triggers.sh && trigger_ack $OFFICER \"$TRIG_IDS\""
+  if [ "${CABINET_OBSERVE_ONLY:-0}" = 1 ]; then
+    echo "  cabinet/scripts/hooks/observe-ack.sh $TRIG_IDS"
+  else
+    echo "  . $CABINET_ROOT/cabinet/scripts/lib/triggers.sh && trigger_ack $OFFICER \"$TRIG_IDS\""
+  fi
 fi
 # ============================================================
 

@@ -1259,7 +1259,7 @@ def handle_captain_update(
                 # SRC-3: this is CHARSET-ONLY, so it binds the framework-vendored
                 # ``voice_charset`` directly (the single-source-of-truth charset
                 # model draft_lib.humanize also re-exports) rather than the
-                # re-homed Flavor-A acting adapter — no screenpipe dep in
+                # re-homed Flavor-A acting adapter — no adapter-specific dep in
                 # framework. Fail-OPEN to raw text — a normalization import must
                 # never block a delivery whose verdict has already landed. This
                 # chokepoint is inherited by the capture→action lane's edit path.

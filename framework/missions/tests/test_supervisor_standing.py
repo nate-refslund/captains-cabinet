@@ -142,14 +142,16 @@ class TestSovereignSecondSource:
         decisions = route_pending_tasks(dry_run=True)
         assert [d["task_id"] for d in decisions] == ["captain-task"]
 
-    def test_real_routing_emits_assignment_once(self, tmp_path,
-                                                engineering_role, monkeypatch):
+    def test_confirmed_delivery_emits_assignment_once(self, tmp_path,
+                                                      engineering_role, monkeypatch):
+        from framework.missions.supervisor import confirm_delivered_assignments
         from framework.events.emitter import replay
         _write_standing(tmp_path)
         _force_posture(monkeypatch, "sovereign")
-        first = route_pending_tasks(dry_run=False)
+        first = route_pending_tasks()
         assert [d["task_id"] for d in first] == ["standing-task"]
+        confirm_delivered_assignments(first)
         # idempotent: second pass routes nothing new
-        assert route_pending_tasks(dry_run=False) == []
+        assert route_pending_tasks() == []
         assigned = [ev for ev in replay(event_types=["work_item_assigned"])]
         assert len(assigned) == 1

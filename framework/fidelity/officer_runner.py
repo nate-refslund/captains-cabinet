@@ -295,7 +295,7 @@ def gather_cutoff_context(case: Case, *, brain=None,
 
     ``brain`` is an injectable ``framework.sources.PersonalSource`` (defaults to
     ``get_source()`` — the bound personal source; on this deployment the Flavor-A
-    screenpipe adapter, byte-identical to the prior ``BrainAdapter()`` default);
+    adapter, byte-identical to the prior ``BrainAdapter()`` default);
     ``read_paths`` is an optional list of explicit, pre-cutoff, vault-relative
     note paths to admit (each validated by _validate_read_path).
     """
@@ -335,7 +335,7 @@ def gather_cutoff_context(case: Case, *, brain=None,
 
     # --- commitments (both directions; genuinely ts-keyed) -----------------
     # CONTRACT direction values (base.PersonalSource) — the Flavor-A adapter
-    # maps them to/from its internal owed_by_nate storage values.
+    # maps them to/from its own internal storage values.
     commitments = leakguard.filter_mcp_result(
         list(brain.open_commitments("owed_by_captain") or [])
         + list(brain.open_commitments("owed_to_captain") or []),

@@ -86,8 +86,8 @@ def _oauth_ok() -> bool:
 def _voyage_ok() -> bool:
     """True iff the personal source is live AND the Voyage key resolves through
     the embeddings lib. ``framework.sources.get_source().available()`` is the
-    launcher-neutral liveness gate (replacing the former
-    ``~/.screenpipe/pipes/embeddings/lib.py`` presence probe): on Flavor-A it is
+    launcher-neutral liveness gate (replacing the former adapter-specific
+    ``pipes/embeddings/lib.py`` presence probe): on Flavor-A it is
     True iff the brain estate is present, so a clean-room box short-circuits to
     False. The embeddings lib is then located as the SIBLING of the retrodiction
     pipe (``retro.RETRO_PIPE_DIR.parent/embeddings/lib.py`` — instance config;

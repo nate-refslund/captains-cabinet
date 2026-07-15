@@ -59,6 +59,31 @@ over five literal families:
     on either side of the bare token), the same mechanism ``jfm`` relies on
     above. Product/lane names live in ``instance/config`` and reach framework
     only through ``framework.env.officers()`` / ``framework.env.lane_default()``.
+  * ``screenpipe`` / ``obsidian`` (case-insensitive, word-bounded — added
+    master-clean-screenpipe-personal, Captain directive 2026-07-15: the
+    framework SEAM is adapter-agnostic — a *personal-source* Protocol
+    (``framework.sources.base``), never a hardcoded product name) flag a
+    hardcoded PERSONAL-SOURCE-ADAPTER identity leaking into framework/ prose.
+    The concrete, pre-developed, opt-in adapter that ships this functionality
+    lives ENTIRELY in ``instance/flavor-a/`` (outside this ratchet's scan
+    tree — see ``framework/tests/test_no_screenpipe_in_core.py``, the sister
+    ratchet for the narrower import/path coupling) and is free to keep its own
+    name there; framework/ itself may only ever say "the personal-source
+    adapter" / "Flavor-A".
+  * bare ``nate`` (case-INSENSITIVE and word-bounded — same 2026-07-15
+    directive) closes the gap the case-sensitive ``\\bNate\\b`` display-name
+    check above deliberately leaves open: an ALL-CAPS convention tag
+    (``NATE-DECISION``) and a lowercase mention in prose. Word-bounding still
+    means the UNDERSCORE compounds ``nate_model`` / ``copy_to_nate`` /
+    ``nate_copy`` / ``me_signal`` never match, case-insensitive or not — an
+    underscore is a ``\\w`` character (no boundary either side), so this is
+    STRUCTURAL, not incidental (verified by
+    ``test_ignores_screenpipe_obsidian_nate_lookalikes`` below). A HYPHENATED
+    compound (``nate-model``) would NOT get the same free pass — a hyphen IS a
+    boundary — but no such form exists in framework/ today (the ratchet's own
+    scan is the proof; the only hyphen-adjacent hit repo-wide is the
+    ``NATE-DECISION`` tag this check exists to catch), so nothing needs
+    allowlisting for it now; a real one appearing would correctly go RED.
 """
 from __future__ import annotations
 
@@ -83,6 +108,12 @@ _HOME_PATH = re.compile(r"/(?:Users|home)/[A-Za-z0-9._-]+")  # absolute home dir
 _ORG_DOMAIN = re.compile(r"\b(?:stepnetwork|jfmedier|jfm|step\.dk)\b", re.IGNORECASE)
 _BOARD_ID = re.compile(r"\b50\d{8}\b")                # 10-digit Monday board id
 _PRODUCT_TOKEN = re.compile(r"\b(?:polads|stephie)\b", re.IGNORECASE)  # PCA-P1
+# master-clean-screenpipe-personal (2026-07-15): the framework SEAM must name
+# no concrete personal-source adapter and no bare owner-name variant the
+# case-sensitive _NATE above doesn't already cover. See module docstring.
+_SCREENPIPE = re.compile(r"\bscreenpipe\b", re.IGNORECASE)
+_OBSIDIAN = re.compile(r"\bobsidian\b", re.IGNORECASE)
+_NATE_TOKEN = re.compile(r"\bnate\b", re.IGNORECASE)  # any-case bare 'nate'
 
 _CHECKS: Tuple[Tuple["re.Pattern[str]", str], ...] = (
     (_NATE, "bare '%s' — not launcher-agnostic"),
@@ -90,6 +121,9 @@ _CHECKS: Tuple[Tuple["re.Pattern[str]", str], ...] = (
     (_ORG_DOMAIN, "hardcoded org-domain literal '%s'"),
     (_BOARD_ID, "hardcoded Monday board-id '%s'"),
     (_PRODUCT_TOKEN, "hardcoded product/lane token '%s' — not product-agnostic"),
+    (_SCREENPIPE, "hardcoded personal-source-adapter token '%s' — not adapter-agnostic"),
+    (_OBSIDIAN, "hardcoded personal-source-adapter token '%s' — not adapter-agnostic"),
+    (_NATE_TOKEN, "bare '%s' (any case) — not launcher-agnostic"),
 )
 
 Violation = Tuple[str, int, str]  # (display_path, line_no, reason)
@@ -198,6 +232,50 @@ _ALLOWLISTED_LINES: Dict[str, Tuple[str, ...]] = {
 #     prior named ledger row — filed as ledger row PCA-P1-RATCHET in the same
 #     commit as this entry.
 #
+# personal-source-adapter + owner-tag tokens (master-clean-screenpipe-personal,
+# Captain directive 2026-07-15 "the framework SEAM must be adapter-agnostic" —
+# every entry below is germline, confirmed via cabinet/scripts/germline-lock.sh
+# FILES[] on 2026-07-15; NONE of these seven files were edited for this sweep,
+# per "NEVER edit or work around an schg path" — a coordinated NON-germline
+# scrub landed everywhere else needing it in the SAME commit as this ratchet
+# extension, so every screenpipe/NATE-DECISION hit still in framework/ after
+# that scrub is, by construction, confined to these seven files):
+#   * action_exec.py (@14/610/613/953/965/1338/1341): shared-env-path docstring
+#     citations, the "Screenpipe Work" AppleScript Reminders-list default (both
+#     the payload fallback and the embedded osascript literal), and two
+#     "Screenpipe bot" comments distinguishing the adapter's own Telegram bot
+#     from the Chair's. Same file as the existing PCA-P1 entry above (deleted
+#     2026-07-15 when its product-token hits went to zero) — these
+#     personal-source-token hits are a SEPARATE, still-open residual.
+#   * hygiene.py (@18/45/361/384/389): the C5 estate-gate-triage docstrings,
+#     the persisted ``_TRIAGE_ACTION = "screenpipe-gate-triage"`` ledger
+#     action-id, and the ``file_screenpipe_triage_row`` function name itself.
+#     Deliberately NOT reworded: its idempotency check reads
+#     ``framework.fidelity.consequence.read_ledger()``, a live JSONL this git
+#     tree cannot see — renaming the literal risks re-filing the dated
+#     "ONCE" C5 ruling as a duplicate on any deployment that already recorded
+#     it under the old string. Kept as historical record (same disposition as
+#     the polads.eu / graduation.py entries above), on top of being germline.
+#     (2026-07-15 self-correction: an earlier pass on this same branch DID
+#     rename the function — a real germline-boundary violation, caught on
+#     re-verification against germline-lock.sh's FILES[] and reverted via
+#     `git checkout origin/master --` before this entry was written.)
+#   * actfirst_canary.py (@867/869) + run_action_lane.py (@902/904): docstring/
+#     comment citations of the removed ``~/.screenpipe`` env-perms path and the
+#     "Screenpipe bot" HQ-Chair-vs-adapter distinction — folded into these two
+#     files' EXISTING entries above (board-id / ``'polads-ceo'``).
+#   * veto.py (@20): "the Captain's external screenpipe brain-mcp" docstring
+#     citation (the approved ``queue_draft`` backend's home).
+#   * action_undo.py (@39/464) + policy_engine.py (@1732): the ``NATE-DECISION``
+#     comment-tag convention. Its rename target (``NATE-DECISION`` ->
+#     ``CAPTAIN-RULING``) is ALREADY planned and named — ledger row CG-13
+#     (docs/plans/operative-egg-plan-2026-07-07.md) + docs/proposals/germline-
+#     amendment-cosmetic-batch-2026-07-07.md — batched for the SAME germline
+#     unlock window as ``framework/policies/authority-matrix.yml`` /
+#     ``framework/authority/matrix.py`` (also ``NATE-DECISION``-tagged, also
+#     germline, not independently re-flagged here: one CG row, one window,
+#     covers all of it).
+#
 # The needle IS the literal in every case, so the exemption is surgical — it
 # un-guards ONLY the cited line and leaves the rest of each file fully guarded
 # for every check, including this one. FORCING FUNCTION: the moment a lane
@@ -212,14 +290,42 @@ _ALLOWLISTED_LINES: Dict[str, Tuple[str, ...]] = {
 # FIXME(I2/board-id-sweep): reword the actfirst_canary docstring, then delete that entry.
 # FIXME(PCA-P1-RATCHET/germline-ceremony): once a ceremony reworks the doc
 # citations, delete the run_action_lane.py + situation.py + graduation.py entries.
+# FIXME(CG-13/germline-ceremony): once the NATE-DECISION -> CAPTAIN-RULING batch
+# lands, delete the action_undo.py + policy_engine.py entries.
+# FIXME(master-clean-screenpipe-personal/germline-ceremony): once a ceremony
+# re-homes/rewords the screenpipe citations in action_exec.py, hygiene.py,
+# actfirst_canary.py, run_action_lane.py and veto.py, delete/narrow those
+# entries (the hygiene.py ``_TRIAGE_ACTION`` needle is dated historical record
+# and may outlive the ceremony — see its note above).
 _TEMPORARY_LINE_RESIDUALS: Dict[str, Tuple[str, ...]] = {
-    "framework/frontdoor/actfirst_canary.py": ("5091706356",),
+    "framework/frontdoor/actfirst_canary.py": (
+        "5091706356", "no launcher .screenpipe", "removed ~/.screenpipe",
+    ),
     "framework/acting/action_lane.py": ('"polads"',),
-    "framework/acting/run_action_lane.py": ("'polads-ceo'",),
+    "framework/acting/run_action_lane.py": (
+        "'polads-ceo'", "never the Screenpipe bot", "that is the Screenpipe",
+    ),
     "framework/attention/situation.py": ("polads.eu",),
     "framework/fidelity/graduation.py": ('"polads"',),
+    "framework/frontdoor/action_exec.py": (
+        "pipes/_shared/.env on this",
+        "no launcher .screenpipe",
+        "screenpipe/pipes/_shared/.env read",
+        '"Screenpipe Work"',
+        "Screenpipe bot). Mirrors",
+        "the Screenpipe bot, whose updates",
+    ),
+    "framework/attention/hygiene.py": (
+        "screenpipe estate gate",
+        "screenpipe-gate-triage",
+        "screenpipe Telegram estate gate",
+        "screenpipe Telegram gate",
+    ),
+    "framework/authority/veto.py": ("screenpipe brain-mcp",),
+    "framework/frontdoor/action_undo.py": ("NATE-DECISION",),
+    "framework/authority/policy_engine.py": ("NATE-DECISION",),
 }
-_TEMP_LINE_BASELINE_MAX = 5  # target is always 0; this may only be LOWERED (shrink-only), never raised
+_TEMP_LINE_BASELINE_MAX = 22  # target is always 0; this may only be LOWERED (shrink-only), never raised
 
 # The whole-file temporary residual mechanism (residual pre-sweep misses an owner
 # lane had not yet cleaned, exempted at WHOLE-FILE granularity). EMPTY today — the
@@ -306,10 +412,11 @@ def scan_tree(
     lines_allowlist=None,  # type: Optional[Dict[str, Tuple[str, ...]]]
     rel_to=None,  # type: Optional[str | Path]
 ) -> List[Violation]:
-    """Read-only scan of every non-test .py under ``root`` for a launcher OR
-    product literal (bare ``Nate``, an absolute home path, an org domain, a
-    Monday board id, or a ``polads``/``stephie`` product/lane token) outside
-    the allowlists.
+    """Read-only scan of every non-test .py under ``root`` for a launcher,
+    product, OR personal-source-adapter literal (bare ``Nate``/``nate`` any
+    case, an absolute home path, an org domain, a Monday board id, a
+    ``polads``/``stephie`` product/lane token, or a ``screenpipe``/``obsidian``
+    adapter token) outside the allowlists.
 
     ``files_allowlist`` maps a whole (rel_to-relative) path to a justification;
     ``lines_allowlist`` maps a path to needles that exempt only the lines that
@@ -349,10 +456,14 @@ def scan_tree(
     return violations
 
 
-_HINT = ("framework/ must be launcher- AND product-agnostic — address the captain via "
-         "framework.env.captain_name(), officers/lanes via framework.env.officers() / "
-         "framework.env.lane_default(), and read org domains / board ids from "
-         "instance/config resolvers (see .claude/rules or docs/plans/cabinet-axes-spec)")
+_HINT = ("framework/ must be launcher-, product-, AND adapter-agnostic — address the "
+         "captain via framework.env.captain_name(), officers/lanes via "
+         "framework.env.officers() / framework.env.lane_default(), read org domains / "
+         "board ids from instance/config resolvers (see .claude/rules or "
+         "docs/plans/cabinet-axes-spec), and reach the personal-source estate ONLY "
+         "through framework.sources.get_source() / get_dispatch() — the concrete "
+         "opt-in adapter (screenpipe, Obsidian, ...) lives entirely in "
+         "instance/flavor-a/ and may keep its own name there, never in framework/")
 
 
 # ---------------------------------------------------------------------------
@@ -360,9 +471,10 @@ _HINT = ("framework/ must be launcher- AND product-agnostic — address the capt
 # ---------------------------------------------------------------------------
 class TestNoLauncherHardcode:
     def test_framework_tree_has_no_launcher_hardcode(self):
-        """THE RATCHET: no launcher OR product literal (Nate / home path / org
-        domain / board id / polads-stephie product token) in framework/
-        outside the documented, shrink-only allowlist."""
+        """THE RATCHET: no launcher, product, OR personal-source-adapter
+        literal (Nate/nate any case / home path / org domain / board id /
+        polads-stephie product token / screenpipe-obsidian adapter token) in
+        framework/ outside the documented, shrink-only allowlist."""
         violations = scan_tree(_REPO_ROOT / "framework", rel_to=_REPO_ROOT)
         assert violations == [], (
             "%s\nOffenders: %s"
@@ -444,11 +556,20 @@ class TestScannerEngine:
         p.write_text(body, encoding="utf-8")
 
     def test_flags_bare_nate_and_home_path(self, tmp_path):
+        # 4, not 2: the any-case _NATE_TOKEN check (added master-clean-
+        # screenpipe-personal) ALSO fires on both lines — "Nate" on line 1
+        # (already caught by the case-sensitive display-name check too) and
+        # the lowercase "nate" inside the /Users/nate/x home path on line 2
+        # (already caught by the home-path check too). Two independent checks
+        # legitimately firing on the same literal is correct, not a bug — see
+        # test_line_needle_exempts_only_that_line / test_board_id_needle_
+        # exempts_the_doc_citation below for the same recount.
         self._write(tmp_path / "pkg" / "m.py",
                     "# Nate owns this\nHOME = '/Users/nate/x'\n")
         v = scan_tree(tmp_path, files_allowlist={}, lines_allowlist={})
         reasons = " ".join(r[2] for r in v)
-        assert len(v) == 2
+        assert len(v) == 4
+        assert [r[1] for r in v] == [1, 1, 2, 2]
         assert "'Nate'" in reasons and "launcher-agnostic" in reasons
         assert "home path" in reasons and "/Users/nate" in reasons
 
@@ -489,6 +610,55 @@ class TestScannerEngine:
         assert "product/lane token" in reasons
         assert "polads" in reasons and "Stephie" in reasons
 
+    def test_flags_screenpipe_and_obsidian_tokens(self, tmp_path):
+        # Case-insensitive, word-bounded — catches the capitalized runtime
+        # default ("Screenpipe Work"), a lowercase docstring mention, and an
+        # "Obsidian" vault reference. All three are personal-source-adapter
+        # identity, which framework/ may only ever call "the personal-source
+        # adapter" / "Flavor-A" (the concrete adapter lives in
+        # instance/flavor-a/, outside this scan tree).
+        self._write(tmp_path / "pkg" / "m.py",
+                    "LIST = 'Screenpipe Work'\n"
+                    "# reads from screenpipe pipes\n"
+                    "VAULT = 'Obsidian notes'\n")
+        v = scan_tree(tmp_path, files_allowlist={}, lines_allowlist={})
+        reasons = " ".join(r[2] for r in v)
+        assert len(v) == 3
+        assert "adapter-agnostic" in reasons
+        assert "Screenpipe" in reasons and "screenpipe" in reasons and "Obsidian" in reasons
+
+    def test_flags_nate_token_any_case(self, tmp_path):
+        # The any-case bare-'nate' check (distinct from the case-sensitive
+        # display-name _NATE above) catches an ALL-CAPS convention tag
+        # (the real NATE-DECISION shape) and a lowercase prose mention —
+        # neither of which the case-sensitive check alone would catch.
+        self._write(tmp_path / "pkg" / "m.py",
+                    "# NATE-DECISION (2026-07-04): keep this gate narrow\n"
+                    "# _CAP.lower() == 'nate' here, so the stop set tracks it\n")
+        v = scan_tree(tmp_path, files_allowlist={}, lines_allowlist={})
+        assert len(v) == 2
+        assert all(r[1] in (1, 2) for r in v)
+        reasons = " ".join(r[2] for r in v)
+        assert "any case" in reasons and "launcher-agnostic" in reasons
+
+    def test_ignores_screenpipe_obsidian_nate_lookalikes(self, tmp_path):
+        # False-positive guards for the three personal-source-token checks:
+        # a longer identifier that merely CONTAINS the token as a substring
+        # (no word boundary) must stay green, and the hyphenated nate_model /
+        # nate-model / me_signal / copy_to_nate / nate_copy brain-artifact
+        # compounds (the SAME set _BRAIN_ARTIFACTS_KEPT documents for the
+        # case-sensitive check) must ALSO stay green under the any-case
+        # variant — underscore is a `\w` char (no boundary either side) and
+        # the hyphen forms have no bare 'nate' neighbor in practice.
+        self._write(tmp_path / "pkg" / "m.py",
+                    "name = 'myscreenpipeclient'\n"    # substring, no boundary
+                    "x = 'obsidiante'\n"                # substring, no boundary
+                    "nate_model = 1\n"
+                    "nate_copy = 2\n"
+                    "def copy_to_nate(): pass\n"
+                    "y = 'me_signal'\n")
+        assert scan_tree(tmp_path, files_allowlist={}, lines_allowlist={}) == []
+
     def test_ignores_non_launcher_lookalikes(self, tmp_path):
         # Critical false-positive guard for a ratchet: bare 'step', a non-50
         # Monday item id, a 9- and 11-digit number, '/usr/local', and lowercase
@@ -522,21 +692,30 @@ class TestScannerEngine:
                          lines_allowlist={}) == []
 
     def test_line_needle_exempts_only_that_line(self, tmp_path):
+        # Line 2 trips BOTH the case-sensitive _NATE check and the any-case
+        # _NATE_TOKEN check (added master-clean-screenpipe-personal) on the
+        # same "Nate" literal — two entries, both on line 2 — while line 1
+        # stays fully exempt (the needle skips it before either check runs).
         self._write(tmp_path / "pkg" / "m.py",
                     "Nate — the anti-pattern doc\nNate elsewhere\n")
         v = scan_tree(tmp_path, files_allowlist={},
                       lines_allowlist={"pkg/m.py": ("anti-pattern doc",)})
-        assert [r[1] for r in v] == [2]  # only line 2 flagged
+        assert [r[1] for r in v] == [2, 2]  # only line 2, twice (two checks)
 
     def test_board_id_needle_exempts_the_doc_citation(self, tmp_path):
         # Proves the temporary-residual shape: a board-id needle exempts the
         # docstring line that cites it, while a bare Nate on another line is still
-        # caught (the exemption is surgical, not whole-file).
+        # caught (the exemption is surgical, not whole-file). len==2, not 1: the
+        # any-case _NATE_TOKEN check ALSO fires on line 2 (leftmost match "NATE",
+        # the variable name) alongside the case-sensitive _NATE hit on the same
+        # line ("'Nate'", the value) — see test_flags_bare_nate_and_home_path.
         self._write(tmp_path / "pkg" / "m.py",
                     "# board 5091706356 LACKS column status\nNATE = 'Nate'\n")
         v = scan_tree(tmp_path, files_allowlist={},
                       lines_allowlist={"pkg/m.py": ("5091706356",)})
-        assert len(v) == 1 and v[0][1] == 2 and "'Nate'" in v[0][2]
+        assert len(v) == 2 and all(r[1] == 2 for r in v)
+        reasons = " ".join(r[2] for r in v)
+        assert "'Nate'" in reasons and "NATE" in reasons
 
     def test_symlink_escape_is_refused(self, tmp_path):
         outside = tmp_path / "outside"

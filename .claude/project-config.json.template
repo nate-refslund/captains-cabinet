@@ -1,6 +1,6 @@
 {
-  "_comment": "Template for .claude/project-config.json — consumed by the dev-tasks plugin (STEP-Network/dev-tasks). Copy to .claude/project-config.json and fill in REQUIRED fields. Schema: https://raw.githubusercontent.com/STEP-Network/dev-tasks/main/plugin/schemas/project-config.schema.json",
-  "$schema": "https://raw.githubusercontent.com/STEP-Network/dev-tasks/main/plugin/schemas/project-config.schema.json",
+  "_comment": "Template for .claude/project-config.json — consumed by the dev-tasks plugin (your-org/dev-tasks). Copy to .claude/project-config.json and fill in REQUIRED fields. Schema: https://raw.githubusercontent.com/your-org/dev-tasks/main/plugin/schemas/project-config.schema.json",
+  "$schema": "https://raw.githubusercontent.com/your-org/dev-tasks/main/plugin/schemas/project-config.schema.json",
   "version": "1",
   "git": {
     "defaultBase": "claude/convergence-v2",

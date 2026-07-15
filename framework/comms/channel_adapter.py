@@ -21,6 +21,7 @@ from typing import Protocol, runtime_checkable
 CAPABILITIES = (
     "send", "edit", "react", "poll", "set_status", "pin", "thread",
     "answer_tap", "download_inbound", "draft", "rich",
+    "observe_reply_current", "observe_react_current",
 )
 
 
@@ -49,6 +50,14 @@ class ChannelAdapter(Protocol):
 
     def react(self, message_id: int, emoji: str) -> dict:
         """Set a single reaction on a message (the LLM-contextual layer)."""
+        ...
+
+    def observe_reply_current(self, text: str) -> dict:
+        """Observe-only reply to the transport's current Captain inbound."""
+        ...
+
+    def observe_react_current(self, emoji: str) -> dict:
+        """Observe-only reaction to the current Captain inbound."""
         ...
 
     def poll(self, question: str, options: list, *, multi: bool = False,

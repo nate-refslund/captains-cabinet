@@ -49,9 +49,11 @@ import re
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+from typing import NamedTuple
 
 # Repo root on sys.path so the watchdog can ALSO fire registered triggers — a fired
 # reminder/interval reuses the very same tmux wake path as a Captain DM. Fail-safe by
@@ -105,6 +107,29 @@ _REACTION_VOCAB = {
 _CB_DATA_RE = re.compile(r"[^\w:.|-]")
 _FNAME_RE = re.compile(r"[^\w.-]")
 _ID_RE = re.compile(r"[^\w-]")
+_ONBOARDING_INTENT_RE = re.compile(
+    r"^\s*/?(?:onboard|onboarding|orientation)\b", re.IGNORECASE
+)
+
+
+class OnboardingForwardResult(NamedTuple):
+    """Explicit local-skin result; truthiness is intentionally not overloaded."""
+
+    handled: bool
+    delivered: bool
+
+
+def onboarding_forward_disposition(result: OnboardingForwardResult) -> str:
+    """Return ``ack`` | ``retry`` | ``fallback`` for the sole poller.
+
+    ``retry`` is distinct from ``fallback``: the canonical state machine has
+    already handled the stable update id, but its reply did not land. Relaying
+    that same command through the Chair would create a second interpretation;
+    instead the poller retains the offset and retries the idempotent route.
+    """
+    if not result.handled:
+        return "fallback"
+    return "ack" if result.delivered else "retry"
 
 # ---------------------------------------------------------------------------
 # getUpdates timing — ONE source so the pair can never drift into the
@@ -216,6 +241,90 @@ def sanitize_filename(name: str) -> str:
 
 def _sanitize_id(value: str) -> str:
     return _ID_RE.sub("", str(value or ""))[:64]
+
+
+def is_onboarding_update(update: dict) -> bool:
+    """True for a canonical onboarding command or inline onboarding tap.
+
+    This is intentionally a narrow lexical router, not a second journey state
+    machine. The authenticated dashboard route remains the sole Telegram skin
+    over ``framework.onboarding.journey``.
+    """
+    callback = update.get("callback_query") or {}
+    if str(callback.get("data") or "").startswith("onboard:"):
+        return True
+    message = update.get("message") or {}
+    text = str(message.get("text") or message.get("caption") or "")
+    return bool(_ONBOARDING_INTENT_RE.search(text))
+
+
+def forward_onboarding_update(
+    update: dict,
+    *,
+    dashboard_url: str,
+    webhook_secret: str,
+    opener=urllib.request.urlopen,
+    timeout: float = 10,
+) -> OnboardingForwardResult:
+    """POST one polled onboarding update to the local authenticated skin.
+
+    Telegram cannot call the loopback-only Mac dashboard as a public webhook,
+    while Telegram permits only one getUpdates poller. This adapter lets that
+    sole poller hand only onboarding updates to the same route used by webhook
+    deployments. The webhook secret is sent only to a validated loopback URL;
+    Unavailability returns ``handled=False`` so the caller preserves the
+    existing visible Chair relay. An explicit delivery failure returns
+    ``handled=True, delivered=False`` so the caller retains its offset and
+    retries this same idempotent update without a second LLM interpretation.
+    """
+    unavailable = OnboardingForwardResult(False, False)
+    if not is_onboarding_update(update) or not webhook_secret:
+        return unavailable
+    try:
+        parsed = urllib.parse.urlparse(dashboard_url)
+    except ValueError:
+        return unavailable
+    if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
+        return unavailable
+    base = dashboard_url.rstrip("/")
+    endpoint = f"{base}/api/telegram/provisioning-webhook"
+    request = urllib.request.Request(
+        endpoint,
+        data=json.dumps(update, separators=(",", ":")).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "X-Telegram-Bot-Api-Secret-Token": webhook_secret,
+        },
+        method="POST",
+    )
+    status = 0
+    body = b""
+    try:
+        with opener(request, timeout=timeout) as response:
+            status = int(getattr(response, "status", response.getcode()))
+            body = response.read(4096)
+    except urllib.error.HTTPError as exc:
+        # The route deliberately returns 503 when Telegram reply delivery
+        # fails. HTTPError is still a readable response; preserve its explicit
+        # handled/delivered body so the local poller retries instead of taking
+        # the Chair fallback and consuming the update.
+        status = int(exc.code)
+        try:
+            body = exc.read(4096)
+        except Exception:
+            return unavailable
+    except Exception:
+        return unavailable
+    try:
+        parsed_body = json.loads(body.decode("utf-8") or "{}")
+    except (UnicodeDecodeError, ValueError):
+        return unavailable
+    if parsed_body.get("handled") is not True:
+        return unavailable
+    delivered = parsed_body.get("delivered") is True
+    if not 200 <= status < 300 and delivered:
+        return unavailable
+    return OnboardingForwardResult(True, delivered)
 
 
 def format_callback_line(message_id: int, data: str) -> str:
@@ -488,6 +597,8 @@ def main() -> int:
     api = f"https://api.telegram.org/bot{token}"
     file_api = f"https://api.telegram.org/file/bot{token}"  # file downloads use /file/bot<token>/<path>
     redis_host = os.environ.get("REDIS_HOST", "localhost")
+    dashboard_url = os.environ.get("CABINET_DASHBOARD_URL", "http://127.0.0.1:3100")
+    onboarding_webhook_secret = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "")
     log(f"started officer={officer} session={session} captain={captain} offset={offset}")
 
     def api_post(path: str, payload: dict, timeout: "float | None" = None) -> dict:
@@ -679,8 +790,36 @@ def main() -> int:
         if not data.get("ok"):
             log(f"getUpdates not ok: {data.get('description')}"); time.sleep(5); continue
 
+        retry_onboarding = False
         for upd in data.get("result", []):
             uid = int(upd.get("update_id", 0))
+            if is_onboarding_update(upd):
+                forwarded = forward_onboarding_update(
+                    upd,
+                    dashboard_url=dashboard_url,
+                    webhook_secret=onboarding_webhook_secret,
+                )
+                disposition = onboarding_forward_disposition(forwarded)
+                if disposition == "ack":
+                    # No source path, purpose, or callback data in logs. The
+                    # route already sent the canonical reply and recorded its
+                    # surface evidence; advancing the offset is the ACK.
+                    log(f"onboarding update_id={uid} routed to canonical local skin")
+                    offset = max(offset, uid)
+                    save_offset(offset)
+                    continue
+                if disposition == "retry":
+                    # Do not process a later update from this batch: advancing
+                    # past it would make Telegram discard the failed one. The
+                    # stable update_id makes the canonical action idempotent on
+                    # the next poll; only visible reply delivery is retried.
+                    log(f"onboarding update_id={uid} reply delivery failed — retaining offset for canonical retry")
+                    retry_onboarding = True
+                    break
+                # Recovery floor: preserve the pre-existing visible relay/tap
+                # path. A missing dashboard or secret must be diagnosable, but
+                # must never silently consume the Captain's command.
+                log(f"onboarding update_id={uid} local skin unavailable — preserving Chair relay fallback")
             cbq = upd.get("callback_query")
             mr = upd.get("message_reaction")
             pa = upd.get("poll_answer")
@@ -782,7 +921,10 @@ def main() -> int:
                     binder_note = ""
                     sp_marker = False
                     try:
-                        from framework.frontdoor import sp_reply_wire
+                        _flavor_a_dir = os.path.join(_REPO_ROOT, "instance", "flavor-a")
+                        if _flavor_a_dir not in sys.path:
+                            sys.path.insert(0, _flavor_a_dir)
+                        from flavor_a import screenpipe_reply_wire as sp_reply_wire
                         sp_marker = bool(sp_reply_wire.extract_prompt_id(quoted_full))
                         if sp_marker:
                             sr = sp_reply_wire.handle_captain_reply(text, quoted_full, uid, log=log)
@@ -827,6 +969,11 @@ def main() -> int:
             fire_due_triggers(session, pane_busy, log)
         except Exception as e:
             log(f"trigger firing (non-fatal): {e}")
+        if retry_onboarding:
+            # A hard Telegram outage must not hot-loop the local Dashboard or
+            # starve due-trigger maintenance. One second keeps callback retries
+            # prompt while bounding repeated send attempts.
+            time.sleep(1)
 
 
 if __name__ == "__main__":

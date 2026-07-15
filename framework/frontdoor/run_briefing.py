@@ -3,7 +3,7 @@
 Scheduled by launchd (cabinet/scripts/run-frontdoor-briefing.sh). Pulls real
 signals into the durable intake (morning_synthesis) and runs the send path
 (run_frontdoor.run_send_path) → ONE unified message to the Captain on the single
-channel, replacing the screenpipe morning-brief DM that the cutover silenced.
+channel, replacing the personal-source morning-brief DM that the cutover silenced.
 
 PM augmentation: the wrapper sets ``CABINET_RUN_MODE=PM`` for the evening run
 (hour ≥ 17). In PM mode, AFTER the normal synthesis enqueue, we also enqueue the
@@ -93,7 +93,7 @@ def _default_needs_you() -> "dict | None":
 #     recover_pending), but its send seam ARCHIVES the composed body to
 #     instance/memory/briefings/<UTC stamp>.md — content preserved as DATA
 #     (synthesis, PM recap, TI-5 digest text with its undo indexes, every
-#     screenpipe pipe item). Items are ACKed only after the archive write
+#     personal-source pipe item). Items are ACKed only after the archive write
 #     succeeds (loss-safe: unarchived content stays pending on the stream).
 #     The `cabinet:digest:<date>` undo manifest is persisted by the digest
 #     leg exactly as before, so `undo <n>` replies keep binding.

@@ -8,8 +8,11 @@
 #      git-tracked; since 2026-07-07 also .claude/agents/, the generated role
 #      defs that CARRY LIVE Captain-approved amendments — lost once in the
 #      cos-law incident, never again).
-#   2. Redis snapshot (via BGSAVE — async, non-blocking).
-#   3. Optional Postgres pg_dump (only if --pg is set + DATABASE_URL is set).
+#   2. Redis snapshot (a bounded fresh `redis-cli --rdb` transfer; if Redis has
+#      a stuck BGSAVE but healthy AOF, a write-paused/fsynced multipart AOF copy
+#      is restored into a disposable Redis before it is accepted).
+#   3. Postgres pg_dump whenever DATABASE_URL or NEON_CONNECTION_STRING is
+#      configured (disable explicitly with --no-pg).
 #
 # Each daily run goes into $BACKUP_DEST/<YYYY-MM-DD>/. Default destination is
 # ~/Cabinet-Backups; override via BACKUP_DEST env var or --dest flag. Old
@@ -26,16 +29,19 @@
 # CAPTAIN-DECISIONS deliberately not wired here (see the services.yml backup row):
 #   * Off-machine copy — a local snapshot dies with the disk; recommended:
 #     post-backup rsync of $BACKUP_DEST to the UpCloud CPH box over Tailscale.
-#   * Redis AOF — BGSAVE below is point-in-time only; enable-redis-aof.sh
-#     exists but restarts Redis, so flipping it stays a Captain step.
+#   * Redis AOF is the live durability layer. The backup prefers a fresh RDB;
+#     its AOF fallback pauses writes, waits for fsync, copies the complete set,
+#     and validates it in a disposable server before releasing the snapshot.
 #
 # Usage:
-#   bash cabinet/scripts/backup.sh                       # default location, no Postgres
+#   bash cabinet/scripts/backup.sh                       # auto-includes configured Postgres
 #   bash cabinet/scripts/backup.sh --dest /Volumes/NAS/cabinet-backups
-#   bash cabinet/scripts/backup.sh --pg                  # also pg_dump the DATABASE_URL
+#   bash cabinet/scripts/backup.sh --pg                  # require configured Postgres backup
+#   bash cabinet/scripts/backup.sh --no-pg               # explicit filesystem+Redis-only run
 #   bash cabinet/scripts/backup.sh --retention-days 30   # prune older backups
 #
-# Idempotent within a day — re-running overwrites today's snapshot.
+# Idempotent within a day — re-running atomically replaces today's snapshot
+# only after the replacement has been fully verified and synced to disk.
 
 set -euo pipefail
 
@@ -45,7 +51,33 @@ CABINET_ROOT="${CABINET_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
 
 BACKUP_DEST="${BACKUP_DEST:-$HOME/Cabinet-Backups}"
 RETENTION_DAYS=14
-INCLUDE_PG=0
+INCLUDE_PG=auto
+umask 077
+
+# Manual runs should have the same connection-name behavior as the generated
+# LaunchAgent, but the dotenv file is data, not shell code. Read only the four
+# settings this backup owns; never execute unrelated values.
+dotenv_value() {
+  local wanted="$1" file="$2" key value
+  [ -f "$file" ] || return 0
+  while IFS='=' read -r key value; do
+    key="${key#export }"
+    [ "$key" = "$wanted" ] || continue
+    case "$value" in
+      \"*\") value="${value#\"}"; value="${value%\"}" ;;
+      \'*\') value="${value#\'}"; value="${value%\'}" ;;
+    esac
+    printf '%s' "$value"
+    return 0
+  done < "$file"
+}
+for _backup_key in DATABASE_URL NEON_CONNECTION_STRING REDIS_HOST REDIS_PORT; do
+  if [ -z "${!_backup_key:-}" ]; then
+    _backup_value="$(dotenv_value "$_backup_key" "$CABINET_ROOT/cabinet/.env")"
+    if [ -n "$_backup_value" ]; then printf -v "$_backup_key" '%s' "$_backup_value"; fi
+  fi
+done
+unset _backup_key _backup_value
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -53,10 +85,10 @@ while [ $# -gt 0 ]; do
     --dest=*) BACKUP_DEST="${1#--dest=}"; shift ;;
     --retention-days) RETENTION_DAYS="$2"; shift 2 ;;
     --pg) INCLUDE_PG=1; shift ;;
+    --no-pg) INCLUDE_PG=0; shift ;;
     -h|--help)
-      # Print the whole header block (through the "Idempotent" line, currently
-      # line 36 — keep in sync when the header grows; lane-ops 2026-07-04).
-      sed -n '1,36p' "$0" | sed 's/^# \{0,1\}//' >&2
+      # Print through the stable marker instead of a brittle line count.
+      sed -n '1,/^# Idempotent/p' "$0" | sed 's/^# \{0,1\}//' >&2
       exit 0
       ;;
     *) echo "backup.sh: unknown arg: $1" >&2; exit 2 ;;
@@ -64,20 +96,238 @@ while [ $# -gt 0 ]; do
 done
 
 DATE=$(date +%Y-%m-%d)
-DEST_DIR="$BACKUP_DEST/$DATE"
-mkdir -p "$DEST_DIR"
+PUBLISHED_DIR="$BACKUP_DEST/$DATE"
+LOCK_DIR="$BACKUP_DEST/.backup.lock"
+DEST_DIR="$BACKUP_DEST/.${DATE}.staging.$$"
+LOCK_HELD=0
+PG_SERVICE=""
+PUBLISH_STARTED=0
 
-echo "=== Cabinet backup → $DEST_DIR ==="
+mkdir -p "$BACKUP_DEST"
+chmod 700 "$BACKUP_DEST" 2>/dev/null || true
+
+cleanup_backup() {
+  local rc=$?
+  [ -z "$PG_SERVICE" ] || rm -f "$PG_SERVICE"
+  # Once an atomic exchange may have happened, this path can contain the prior
+  # complete snapshot. Preserve it on any publication/fsync error for recovery.
+  if [ -n "$DEST_DIR" ] && [ "$PUBLISH_STARTED" = 0 ]; then rm -rf "$DEST_DIR"; fi
+  if [ "$LOCK_HELD" = 1 ]; then rm -rf "$LOCK_DIR"; fi
+  exit "$rc"
+}
+trap cleanup_backup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+# mkdir is the portable cross-process exclusion primitive on macOS. A live
+# owner is never displaced. A dead owner may be reclaimed only when its pid is
+# present; a missing pid refuses safely, avoiding the create-dir/write-pid race.
+acquire_backup_lock() {
+  if mkdir "$LOCK_DIR" 2>/dev/null; then
+    printf '%s\n' "$$" > "$LOCK_DIR/pid"
+    LOCK_HELD=1
+    return 0
+  fi
+  local owner=""
+  owner=$(cat "$LOCK_DIR/pid" 2>/dev/null || true)
+  case "$owner" in
+    ''|*[!0-9]*)
+      echo "backup.sh: another backup owns $LOCK_DIR (owner pid unavailable)" >&2
+      return 1
+      ;;
+  esac
+  if kill -0 "$owner" 2>/dev/null; then
+    echo "backup.sh: another backup is already running (pid $owner)" >&2
+    return 1
+  fi
+  local stale="$LOCK_DIR.stale.$$"
+  if ! mv "$LOCK_DIR" "$stale" 2>/dev/null || ! mkdir "$LOCK_DIR" 2>/dev/null; then
+    rm -rf "$stale"
+    echo "backup.sh: backup lock changed while reclaiming a stale owner" >&2
+    return 1
+  fi
+  rm -rf "$stale"
+  printf '%s\n' "$$" > "$LOCK_DIR/pid"
+  LOCK_HELD=1
+}
+
+# Redis DEBUG DIGEST is disabled on secure deployments. Compute a deterministic
+# content digest inside Redis instead: sorted keys, DUMP serialization, and a
+# per-database SHA-1. Expiring keys additionally emit a hashed-key/absolute-
+# expiry record; source and restore must agree within a bounded clock tolerance.
+# This intentionally uses KEYS while writes are paused: exactness beats latency
+# in this rare fallback/backup path, but very large keyspaces should move to a
+# streaming digest before this becomes a sub-second operational requirement.
+REDIS_STATE_LUA='local keys=redis.call("KEYS","*"); table.sort(keys); local h={}; local expiries={}; for i,k in ipairs(keys) do local d=redis.call("DUMP",k); h[i]=redis.sha1hex(tostring(string.len(k))..":"..k..d); local ttl=redis.call("PTTL",k); if ttl >= 0 then local t=redis.call("TIME"); local now=tonumber(t[1])*1000+math.floor(tonumber(t[2])/1000); expiries[#expiries+1]=redis.sha1hex(k)..":"..string.format("%.0f",now+ttl); end; end; local out={tostring(#keys)..":"..redis.sha1hex(table.concat(h))}; for _,e in ipairs(expiries) do out[#out+1]=e; end; return out'
+redis_state_fingerprint() {
+  local output="$1"
+  shift
+  local -a client=("$@")
+  local databases result first expiry db tmp="${output}.tmp.$$"
+  databases=$("${client[@]}" --raw CONFIG GET databases 2>/dev/null | tail -1)
+  case "$databases" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  [ "$databases" -gt 0 ] && [ "$databases" -le 1024 ] || return 1
+  {
+    printf 'FORMAT redis-dump-content-expiry-v2\n'
+    printf 'DATABASES %s\n' "$databases"
+    db=0
+    while [ "$db" -lt "$databases" ]; do
+      result=$("${client[@]}" -n "$db" --raw EVAL_RO "$REDIS_STATE_LUA" 0 2>/dev/null) || exit 1
+      first=$(printf '%s\n' "$result" | sed -n '1p')
+      printf '%s\n' "$first" | grep -Eq '^[0-9]+:[0-9a-f]{40}$' || exit 1
+      printf 'DB %s %s\n' "$db" "$first"
+      while IFS= read -r expiry; do
+        [ -n "$expiry" ] || continue
+        printf '%s\n' "$expiry" | grep -Eq '^[0-9a-f]{40}:[0-9]+$' || exit 1
+        printf 'EXPIRY %s %s\n' "$db" "${expiry/:/ }"
+      done <<EOF
+$(printf '%s\n' "$result" | sed -n '2,$p')
+EOF
+      db=$((db + 1))
+    done
+  } > "$tmp" || { rm -f "$tmp"; return 1; }
+  mv "$tmp" "$output"
+}
+
+redis_state_equal() {
+  local expected="$1" actual="$2"
+  # Absolute deadlines should be identical; 2s covers capture/startup clock
+  # sampling without masking a materially changed expiry policy.
+  python3.12 - "$expected" "$actual" 2000 <<'PY'
+import sys
+from pathlib import Path
+
+def load(path: str):
+    metadata = []
+    expiries = {}
+    for raw in Path(path).read_text(encoding="utf-8").splitlines():
+        parts = raw.split()
+        if parts and parts[0] == "EXPIRY" and len(parts) == 4:
+            key = (parts[1], parts[2])
+            if key in expiries:
+                raise ValueError(f"duplicate expiry record: {key}")
+            expiries[key] = int(parts[3])
+        else:
+            metadata.append(raw)
+    return metadata, expiries
+
+expected_meta, expected_expiry = load(sys.argv[1])
+actual_meta, actual_expiry = load(sys.argv[2])
+tolerance = int(sys.argv[3])
+if expected_meta != actual_meta:
+    raise SystemExit("Redis key/value digest differs")
+if expected_expiry.keys() != actual_expiry.keys():
+    raise SystemExit("Redis expiry key set differs")
+for key, deadline in expected_expiry.items():
+    delta = abs(deadline - actual_expiry[key])
+    if delta > tolerance:
+        raise SystemExit(f"Redis absolute expiry differs by {delta}ms for {key}")
+PY
+}
+
+fsync_snapshot_tree() {
+  python3.12 - "$1" <<'PY'
+import os
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+directories: list[Path] = []
+for current, dirnames, filenames in os.walk(root):
+    current_path = Path(current)
+    directories.append(current_path)
+    for name in filenames:
+        path = current_path / name
+        if path.is_symlink():
+            continue
+        fd = os.open(path, os.O_RDONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+for path in reversed(directories):
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+PY
+}
+
+# First publication is a single rename. Same-day replacement uses the native
+# atomic directory-exchange primitive, so the previous complete snapshot is
+# never absent or partially overwritten. Unsupported filesystems fail closed
+# and leave the published snapshot untouched.
+publish_snapshot() {
+  python3.12 - "$1" "$2" <<'PY'
+import ctypes
+import os
+import sys
+from pathlib import Path
+
+src = os.fsencode(sys.argv[1])
+dst = os.fsencode(sys.argv[2])
+parent = Path(sys.argv[2]).parent
+
+if not os.path.lexists(dst):
+    os.rename(src, dst)
+else:
+    libc = ctypes.CDLL(None, use_errno=True)
+    if sys.platform == "darwin" and hasattr(libc, "renamex_np"):
+        fn = libc.renamex_np
+        fn.argtypes = (ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint)
+        rc = fn(src, dst, 0x00000002)  # RENAME_SWAP
+    elif hasattr(libc, "renameat2"):
+        fn = libc.renameat2
+        fn.argtypes = (
+            ctypes.c_int, ctypes.c_char_p, ctypes.c_int,
+            ctypes.c_char_p, ctypes.c_uint,
+        )
+        rc = fn(-100, src, -100, dst, 0x00000002)  # AT_FDCWD, RENAME_EXCHANGE
+    else:
+        raise SystemExit("atomic directory exchange is unavailable")
+    if rc != 0:
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error), os.fsdecode(dst))
+
+fd = os.open(parent, os.O_RDONLY)
+try:
+    os.fsync(fd)
+finally:
+    os.close(fd)
+PY
+}
+
+acquire_backup_lock
+mkdir "$DEST_DIR"
+chmod 700 "$DEST_DIR" 2>/dev/null || true
+printf '%s\n' "backup started $(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$DEST_DIR/INCOMPLETE"
+
+FAILS=0
+backup_fail() { echo "  → FAIL: $1" >&2; FAILS=$((FAILS + 1)); }
+
+echo "=== Cabinet backup → $PUBLISHED_DIR ==="
 
 # --- 1. Filesystem (Cabinet runtime artifacts) ---
 echo "[1/3] Filesystem rsync..."
+rm -rf "$DEST_DIR/cabinet-state"
+mkdir -p "$DEST_DIR/cabinet-state/shared/interfaces" \
+  "$DEST_DIR/cabinet-state/instance" "$DEST_DIR/cabinet-state/memory"
 rsync -a --delete \
   --exclude='*.pyc' --exclude='__pycache__' \
   --exclude='.session-state.json' \
-  "$CABINET_ROOT/shared/interfaces/" \
-  "$CABINET_ROOT/instance/" \
-  "$CABINET_ROOT/memory/" \
-  "$DEST_DIR/cabinet-state/"
+  "$CABINET_ROOT/shared/interfaces/" "$DEST_DIR/cabinet-state/shared/interfaces/"
+rsync -a --delete \
+  --exclude='*.pyc' --exclude='__pycache__' \
+  --exclude='.session-state.json' \
+  "$CABINET_ROOT/instance/" "$DEST_DIR/cabinet-state/instance/"
+rsync -a --delete \
+  --exclude='*.pyc' --exclude='__pycache__' \
+  --exclude='.session-state.json' \
+  "$CABINET_ROOT/memory/" "$DEST_DIR/cabinet-state/memory/"
 # .claude/agents/ — gitignored GENERATED role defs that nevertheless carry
 # LIVE Captain-approved amendments applied by CoS between regenerations
 # (2026-07-07 cos-law loss: an amendment existed ONLY here and died with the
@@ -92,73 +342,343 @@ FS_FILES=$(find "$DEST_DIR/cabinet-state" -type f 2>/dev/null | wc -l | tr -d ' 
 FS_SIZE=$(du -sh "$DEST_DIR/cabinet-state" 2>/dev/null | awk '{print $1}')
 echo "  → $FS_FILES files, $FS_SIZE"
 
-# --- 2. Redis snapshot (BGSAVE then copy the dump.rdb) ---
+# --- 2. Redis snapshot (fresh transfer, never a stale server-side file) ---
 echo "[2/3] Redis snapshot..."
-if command -v redis-cli >/dev/null 2>&1 && redis-cli ping >/dev/null 2>&1; then
-  # Capture the pre-BGSAVE save-point, trigger BGSAVE, then wait until LASTSAVE
-  # ADVANCES. BGSAVE is ASYNC — the old loop broke on iteration 1 because
-  # `redis-cli LASTSAVE` always exits 0, so cp grabbed the PRE-BGSAVE dump and
-  # every backup's recovery point silently predated the run.
-  PRE_SAVE=$(redis-cli LASTSAVE 2>/dev/null | tr -dc '0-9' || true)
-  redis-cli BGSAVE > /dev/null 2>&1 || true
-  SAVED=0
-  for _ in $(seq 1 30); do
-    if [ -z "$PRE_SAVE" ]; then
-      # No baseline to compare (LASTSAVE unavailable) — brief wait, then proceed.
-      sleep 1; SAVED=1; break
+REDIS_HOST_VALUE="${REDIS_HOST:-127.0.0.1}"
+REDIS_PORT_VALUE="${REDIS_PORT:-6379}"
+RDB_TIMEOUT_TENTHS="${REDIS_RDB_TIMEOUT_TENTHS:-100}"
+case "$RDB_TIMEOUT_TENTHS" in ''|*[!0-9]*) RDB_TIMEOUT_TENTHS=100 ;; esac
+
+rm -f "$DEST_DIR/redis-dump.rdb" "$DEST_DIR/redis-aof.tgz" \
+  "$DEST_DIR/redis-backup-mode.txt" "$DEST_DIR/redis-verify.txt" \
+  "$DEST_DIR/redis-state.txt"
+
+capture_rdb() {
+  command -v redis-check-rdb >/dev/null 2>&1 || return 1
+  command -v redis-server >/dev/null 2>&1 || return 1
+  local paused=0 captured=0 rdb_pid=""
+  local rdb_tmp="$DEST_DIR/.redis-dump.rdb.tmp"
+  local source_state="$DEST_DIR/.redis-source-state.tmp"
+  local restored_state="$DEST_DIR/.redis-restored-state.tmp"
+  local verify_dir="$DEST_DIR/.redis-rdb-verify.$$"
+  local verify_socket="/tmp/cabinet-redis-rdb-verify-$$.sock"
+  cleanup_rdb_capture() {
+    if [ -n "$rdb_pid" ] && kill -0 "$rdb_pid" 2>/dev/null; then
+      kill "$rdb_pid" 2>/dev/null || true
+      wait "$rdb_pid" 2>/dev/null || true
     fi
-    NOW_SAVE=$(redis-cli LASTSAVE 2>/dev/null | tr -dc '0-9' || true)
-    if [ -n "$NOW_SAVE" ] && [ "$NOW_SAVE" != "$PRE_SAVE" ]; then
-      SAVED=1; break
+    if [ "$paused" = 1 ]; then
+      redis-cli -h "$REDIS_HOST_VALUE" -p "$REDIS_PORT_VALUE" CLIENT UNPAUSE >/dev/null 2>&1 || true
     fi
-    sleep 1
-  done
-  [ "$SAVED" -eq 1 ] || echo "  → WARN: BGSAVE did not complete within 30s; copying the most recent dump.rdb anyway (it may predate this run)"
-  # Find the dump.rdb (Homebrew default vs Linux default)
-  for rdb in /opt/homebrew/var/db/redis/dump.rdb /var/lib/redis/dump.rdb; do
-    if [ -f "$rdb" ]; then
-      cp "$rdb" "$DEST_DIR/redis-dump.rdb"
-      RDB_SIZE=$(du -h "$DEST_DIR/redis-dump.rdb" | awk '{print $1}')
-      echo "  → $rdb ($RDB_SIZE)"
+    redis-cli -s "$verify_socket" SHUTDOWN NOSAVE >/dev/null 2>&1 || true
+    rm -rf "$verify_dir" "$verify_socket"
+    rm -f "$rdb_tmp" "$source_state" "$restored_state"
+    if [ "$captured" != 1 ]; then
+      rm -f "$DEST_DIR/redis-dump.rdb" "$DEST_DIR/redis-backup-mode.txt" \
+        "$DEST_DIR/redis-verify.txt" "$DEST_DIR/redis-state.txt"
+    fi
+  }
+  trap cleanup_rdb_capture RETURN
+
+  # Hold writes so the live-state digest and replication RDB describe the same
+  # instant. Reads continue, and the pause is bounded by Redis itself.
+  redis-cli -h "$REDIS_HOST_VALUE" -p "$REDIS_PORT_VALUE" \
+    CLIENT PAUSE 60000 WRITE >/dev/null || return 1
+  paused=1
+  redis-cli -h "$REDIS_HOST_VALUE" -p "$REDIS_PORT_VALUE" \
+    --rdb "$rdb_tmp" >/dev/null 2>&1 &
+  rdb_pid=$!
+  local rdb_ok=0
+  for _i in $(seq 1 "$RDB_TIMEOUT_TENTHS"); do
+    if ! kill -0 "$rdb_pid" 2>/dev/null; then
+      if wait "$rdb_pid" && [ -s "$rdb_tmp" ]; then rdb_ok=1; fi
+      rdb_pid=""
       break
     fi
+    sleep 0.1
   done
-  if [ ! -f "$DEST_DIR/redis-dump.rdb" ]; then
-    echo "  → WARN: redis dump.rdb not found at known paths; skipping"
-  fi
-else
-  echo "  → SKIP: redis not running"
-fi
+  [ "$rdb_ok" = 1 ] || return 1
+  redis-check-rdb "$rdb_tmp" > "$DEST_DIR/redis-verify.txt" 2>&1 || return 1
+  redis_state_fingerprint "$source_state" \
+    redis-cli -h "$REDIS_HOST_VALUE" -p "$REDIS_PORT_VALUE" || return 1
+  redis-cli -h "$REDIS_HOST_VALUE" -p "$REDIS_PORT_VALUE" CLIENT UNPAUSE >/dev/null || return 1
+  paused=0
 
-# --- 3. Postgres pg_dump (optional) ---
-if [ "$INCLUDE_PG" -eq 1 ]; then
-  echo "[3/3] Postgres pg_dump..."
-  if [ -z "${DATABASE_URL:-}" ]; then
-    echo "  → SKIP: DATABASE_URL not set"
-  elif ! command -v pg_dump >/dev/null 2>&1; then
-    echo "  → SKIP: pg_dump not installed (brew install libpq && brew link --force libpq)"
-  else
-    pg_dump "$DATABASE_URL" 2>/dev/null | gzip > "$DEST_DIR/postgres.sql.gz" || true
-    if [ -s "$DEST_DIR/postgres.sql.gz" ]; then
-      PG_SIZE=$(du -h "$DEST_DIR/postgres.sql.gz" | awk '{print $1}')
-      echo "  → postgres.sql.gz ($PG_SIZE)"
-    else
-      echo "  → WARN: pg_dump failed or empty"
-      rm -f "$DEST_DIR/postgres.sql.gz"
+  mkdir "$verify_dir"
+  cp "$rdb_tmp" "$verify_dir/dump.rdb"
+  local databases
+  databases=$(sed -n 's/^DATABASES //p' "$source_state")
+  redis-server --port 0 --unixsocket "$verify_socket" --unixsocketperm 700 \
+    --dir "$verify_dir" --dbfilename dump.rdb --databases "$databases" \
+    --appendonly no --aof-load-truncated no --save '' --daemonize yes \
+    --pidfile "$verify_dir/redis.pid" --logfile "$verify_dir/redis.log" >/dev/null || return 1
+  local ready=0
+  for _i in $(seq 1 100); do
+    if redis-cli -s "$verify_socket" PING 2>/dev/null | grep -qx PONG; then
+      ready=1
+      break
+    fi
+    sleep 0.1
+  done
+  [ "$ready" = 1 ] || return 1
+  redis_state_fingerprint "$restored_state" redis-cli -s "$verify_socket" || return 1
+  redis_state_equal "$source_state" "$restored_state" || {
+    echo "  → Redis RDB restored state differs from paused source" >&2
+    return 1
+  }
+  redis-cli -s "$verify_socket" SHUTDOWN NOSAVE >/dev/null 2>&1 || true
+  rm -rf "$verify_dir" "$verify_socket"
+
+  mv "$rdb_tmp" "$DEST_DIR/redis-dump.rdb"
+  mv "$source_state" "$DEST_DIR/redis-state.txt"
+  rm -f "$restored_state"
+  printf 'STATE_EQUALITY verified\n' >> "$DEST_DIR/redis-verify.txt"
+  printf '%s\n' rdb > "$DEST_DIR/redis-backup-mode.txt"
+  chmod 600 "$DEST_DIR/redis-dump.rdb" "$DEST_DIR/redis-state.txt" 2>/dev/null || true
+  captured=1
+  trap - RETURN
+  echo "  → fresh verified redis-dump.rdb ($(du -h "$DEST_DIR/redis-dump.rdb" | awk '{print $1}'))"
+  return 0
+}
+
+capture_aof_fallback() {
+  command -v redis-server >/dev/null 2>&1 && command -v redis-check-aof >/dev/null 2>&1 || {
+    echo "  → Redis AOF fallback unavailable: redis-server/redis-check-aof is missing" >&2
+    return 1
+  }
+  local appendonly rewrite status redis_dir appenddirname waitaof
+  appendonly=$(redis-cli -h "$REDIS_HOST_VALUE" -p "$REDIS_PORT_VALUE" --raw CONFIG GET appendonly | tail -1)
+  rewrite=$(redis-cli -h "$REDIS_HOST_VALUE" -p "$REDIS_PORT_VALUE" --raw INFO persistence | sed -n 's/^aof_rewrite_in_progress:\([0-9]*\).*/\1/p')
+  status=$(redis-cli -h "$REDIS_HOST_VALUE" -p "$REDIS_PORT_VALUE" --raw INFO persistence | sed -n 's/^aof_last_write_status:\([^[:space:]]*\).*/\1/p')
+  [ "$appendonly" = yes ] && [ "$rewrite" = 0 ] && [ "$status" = ok ] || {
+    echo "  → Redis AOF fallback unavailable: append log is disabled, rewriting, or unhealthy" >&2
+    return 1
+  }
+  redis_dir=$(redis-cli -h "$REDIS_HOST_VALUE" -p "$REDIS_PORT_VALUE" --raw CONFIG GET dir | tail -1)
+  appenddirname=$(redis-cli -h "$REDIS_HOST_VALUE" -p "$REDIS_PORT_VALUE" --raw CONFIG GET appenddirname | tail -1)
+  case "$appenddirname" in ''|.|..|*/*) echo "  → Redis returned an unsafe appenddirname" >&2; return 1 ;; esac
+  [ -d "$redis_dir/$appenddirname" ] || {
+    echo "  → Redis AOF fallback unavailable: append directory is missing" >&2
+    return 1
+  }
+
+  local paused=0 verify_dir="$DEST_DIR/.redis-aof-verify.$$"
+  local verify_socket="/tmp/cabinet-redis-verify-$$.sock"
+  local captured=0
+  local archive_tmp="$DEST_DIR/.redis-aof.tgz.tmp"
+  local source_state="$DEST_DIR/.redis-source-state.tmp"
+  local restored_state="$DEST_DIR/.redis-restored-state.tmp"
+  cleanup_redis_capture() {
+    if [ "$paused" = 1 ]; then
+      redis-cli -h "$REDIS_HOST_VALUE" -p "$REDIS_PORT_VALUE" CLIENT UNPAUSE >/dev/null 2>&1 || true
+    fi
+    if [ -S "$verify_socket" ]; then
+      redis-cli -s "$verify_socket" SHUTDOWN NOSAVE >/dev/null 2>&1 || true
+    fi
+    rm -rf "$verify_dir" "$verify_socket"
+    rm -f "$archive_tmp" "$source_state" "$restored_state"
+    if [ "$captured" != 1 ]; then
+      rm -f "$DEST_DIR/redis-aof.tgz" "$DEST_DIR/redis-backup-mode.txt" \
+        "$DEST_DIR/redis-verify.txt" "$DEST_DIR/redis-state.txt"
+    fi
+  }
+  trap cleanup_redis_capture RETURN
+
+  redis-cli -h "$REDIS_HOST_VALUE" -p "$REDIS_PORT_VALUE" CLIENT PAUSE 60000 WRITE >/dev/null || return 1
+  paused=1
+  waitaof=$(redis-cli -h "$REDIS_HOST_VALUE" -p "$REDIS_PORT_VALUE" --raw WAITAOF 1 0 5000 | head -1)
+  [ "$waitaof" = 1 ] || {
+    echo "  → Redis AOF did not fsync before capture" >&2
+    return 1
+  }
+  redis_state_fingerprint "$source_state" \
+    redis-cli -h "$REDIS_HOST_VALUE" -p "$REDIS_PORT_VALUE" || return 1
+  tar -C "$redis_dir" -czf "$archive_tmp" "$appenddirname" || return 1
+  redis-cli -h "$REDIS_HOST_VALUE" -p "$REDIS_PORT_VALUE" CLIENT UNPAUSE >/dev/null || return 1
+  paused=0
+
+  mkdir -p "$verify_dir"
+  tar -C "$verify_dir" -xzf "$archive_tmp" || return 1
+  local aof_manifest="$verify_dir/$appenddirname/appendonly.aof.manifest"
+  [ -f "$aof_manifest" ] || {
+    echo "  → Redis AOF manifest is missing" >&2
+    return 1
+  }
+  redis-check-aof "$aof_manifest" > "$DEST_DIR/redis-verify.txt" 2>&1 || {
+    echo "  → redis-check-aof rejected the captured append log" >&2
+    return 1
+  }
+  local databases
+  databases=$(sed -n 's/^DATABASES //p' "$source_state")
+  redis-server --port 0 --unixsocket "$verify_socket" --unixsocketperm 700 \
+    --dir "$verify_dir" --appendonly yes --appenddirname "$appenddirname" \
+    --aof-load-truncated no --databases "$databases" --save '' \
+    --daemonize yes --pidfile "$verify_dir/redis.pid" \
+    --logfile "$verify_dir/redis.log" >/dev/null || return 1
+  local ready=0
+  for _ in $(seq 1 100); do
+    if redis-cli -s "$verify_socket" PING 2>/dev/null | grep -qx PONG; then
+      ready=1
+      break
+    fi
+    sleep 0.1
+  done
+  [ "$ready" = 1 ] || {
+    echo "  → disposable Redis could not restore the captured AOF" >&2
+    return 1
+  }
+  redis_state_fingerprint "$restored_state" redis-cli -s "$verify_socket" || return 1
+  redis_state_equal "$source_state" "$restored_state" || {
+    echo "  → Redis AOF restored state differs from paused source" >&2
+    return 1
+  }
+  redis-cli -s "$verify_socket" SHUTDOWN NOSAVE >/dev/null 2>&1 || true
+  rm -rf "$verify_dir" "$verify_socket"
+  mv "$archive_tmp" "$DEST_DIR/redis-aof.tgz"
+  mv "$source_state" "$DEST_DIR/redis-state.txt"
+  rm -f "$restored_state"
+  printf 'STATE_EQUALITY verified\n' >> "$DEST_DIR/redis-verify.txt"
+  printf '%s\n' aof > "$DEST_DIR/redis-backup-mode.txt"
+  chmod 600 "$DEST_DIR/redis-aof.tgz" "$DEST_DIR/redis-state.txt" 2>/dev/null || true
+  captured=1
+  trap - RETURN
+  echo "  → fresh verified redis-aof.tgz ($(du -h "$DEST_DIR/redis-aof.tgz" | awk '{print $1}'))"
+  return 0
+}
+
+if command -v redis-cli >/dev/null 2>&1 && \
+   redis-cli -h "$REDIS_HOST_VALUE" -p "$REDIS_PORT_VALUE" ping >/dev/null 2>&1; then
+  if ! capture_rdb; then
+    if ! capture_aof_fallback; then
+      backup_fail "fresh Redis RDB/AOF capture failed; no older snapshot was published"
     fi
   fi
 else
-  echo "[3/3] Postgres: skipped (--pg not set)"
+  backup_fail "Redis is unavailable; no trigger-state snapshot was produced"
 fi
+
+# --- 3. Postgres pg_dump (automatic when the Cabinet has a work store) ---
+PG_URL="${DATABASE_URL:-${NEON_CONNECTION_STRING:-}}"
+rm -f "$DEST_DIR/postgres.dump" "$DEST_DIR/postgres-verify.txt"
+if [ "$INCLUDE_PG" = "auto" ]; then
+  if [ -n "$PG_URL" ]; then INCLUDE_PG=1; else INCLUDE_PG=0; fi
+fi
+if [ "$INCLUDE_PG" = "1" ]; then
+  echo "[3/3] Postgres pg_dump..."
+  if [ -z "$PG_URL" ]; then
+    backup_fail "--pg requested but neither DATABASE_URL nor NEON_CONNECTION_STRING is set"
+  elif ! command -v pg_dump >/dev/null 2>&1; then
+    backup_fail "pg_dump not installed (brew install libpq && brew link --force libpq)"
+  elif ! command -v pg_restore >/dev/null 2>&1; then
+    backup_fail "pg_restore not installed; a Postgres dump cannot be validated"
+  else
+    PG_TMP="$DEST_DIR/.postgres.dump.tmp"
+    PG_SERVICE_DIR="${HOME}/Library/Caches/cabinet/backup"
+    mkdir -p "$PG_SERVICE_DIR"
+    chmod 700 "$PG_SERVICE_DIR"
+    PG_SERVICE="$PG_SERVICE_DIR/pg-service.$$"
+    rm -f "$PG_TMP"
+    PG_SERVICE_OK=0
+    if CABINET_BACKUP_PG_URL="$PG_URL" python3.12 - "$PG_SERVICE" <<'PY'
+import os
+import sys
+from pathlib import Path
+from urllib.parse import parse_qsl, unquote, urlsplit
+
+uri = os.environ.pop("CABINET_BACKUP_PG_URL")
+out = Path(sys.argv[1])
+parts = urlsplit(uri)
+if parts.scheme not in {"postgres", "postgresql"} or not parts.hostname:
+    raise SystemExit("invalid Postgres URI")
+fields = {"host": parts.hostname, "port": str(parts.port or 5432),
+          "dbname": unquote(parts.path.lstrip("/"))}
+if parts.username is not None:
+    fields["user"] = unquote(parts.username)
+if parts.password is not None:
+    fields["password"] = unquote(parts.password)
+allowed = {"sslmode", "sslrootcert", "sslcert", "sslkey", "channel_binding",
+           "connect_timeout", "application_name", "options"}
+for key, value in parse_qsl(parts.query, keep_blank_values=True):
+    if key in allowed:
+        fields[key] = value
+for key, value in fields.items():
+    if not value or any(c in value for c in "\r\n"):
+        raise SystemExit(f"invalid Postgres URI field: {key}")
+with out.open("x", encoding="utf-8") as handle:
+    handle.write("[backup]\n")
+    for key, value in fields.items():
+        handle.write(f"{key}={value}\n")
+out.chmod(0o600)
+PY
+    then
+      PG_SERVICE_OK=1
+    fi
+    if [ "$PG_SERVICE_OK" = 1 ] \
+      && PGSERVICEFILE="$PG_SERVICE" pg_dump --format=custom --no-owner --no-privileges \
+        --file="$PG_TMP" service=backup 2>/dev/null \
+      && [ -s "$PG_TMP" ] \
+      && pg_restore --list "$PG_TMP" > "$DEST_DIR/postgres-verify.txt" 2>&1; then
+      chmod 600 "$PG_TMP" 2>/dev/null || true
+      mv "$PG_TMP" "$DEST_DIR/postgres.dump"
+      rm -f "$PG_SERVICE"
+      PG_SERVICE=""
+      PG_SIZE=$(du -h "$DEST_DIR/postgres.dump" | awk '{print $1}')
+      echo "  → validated postgres.dump ($PG_SIZE)"
+    else
+      rm -f "$PG_TMP" "$PG_SERVICE"
+      PG_SERVICE=""
+      rm -f "$DEST_DIR/postgres-verify.txt"
+      backup_fail "pg_dump failed, was empty, or pg_restore rejected the snapshot"
+    fi
+  fi
+else
+  echo "[3/3] Postgres: not configured (use --pg to require it, --no-pg to suppress)"
+fi
+
+if [ "$FAILS" -gt 0 ]; then
+  echo "BACKUP FAILED: $FAILS required snapshot component(s) missing." >&2
+  exit 1
+fi
+
+# A completed staging snapshot is self-verifying and durable before it becomes
+# visible at the dated path. A failed rerun never touches the prior snapshot.
+rm -f "$DEST_DIR/INCOMPLETE"
+(
+  cd "$DEST_DIR"
+  find . -type f ! -name SHA256SUMS -print0 | sort -z \
+    | xargs -0 shasum -a 256 > SHA256SUMS
+  shasum -a 256 -c SHA256SUMS >/dev/null
+)
+chmod -R go-rwx "$DEST_DIR" 2>/dev/null || true
+fsync_snapshot_tree "$DEST_DIR"
+PUBLISH_STARTED=1
+publish_snapshot "$DEST_DIR" "$PUBLISHED_DIR"
+
+# After an atomic exchange DEST_DIR contains the prior complete snapshot; after
+# a first publication it no longer exists. In either case the dated path already
+# names the new fully-synced snapshot before this cleanup starts.
+rm -rf "$DEST_DIR"
+python3.12 - "$BACKUP_DEST" <<'PY'
+import os
+import sys
+
+fd = os.open(sys.argv[1], os.O_RDONLY)
+try:
+    os.fsync(fd)
+finally:
+    os.close(fd)
+PY
+DEST_DIR=""
+PUBLISH_STARTED=0
 
 # --- Prune older backups beyond retention ---
 echo ""
 echo "Pruning backups older than $RETENTION_DAYS days..."
 if [ -d "$BACKUP_DEST" ]; then
-  find "$BACKUP_DEST" -mindepth 1 -maxdepth 1 -type d \
+  find "$BACKUP_DEST" -mindepth 1 -maxdepth 1 -type d -name '20??-??-??' \
        -mtime "+$RETENTION_DAYS" -exec rm -rf {} \; 2>/dev/null || true
 fi
 
-TOTAL_KEPT=$(find "$BACKUP_DEST" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
+TOTAL_KEPT=$(find "$BACKUP_DEST" -mindepth 1 -maxdepth 1 -type d -name '20??-??-??' 2>/dev/null | wc -l | tr -d ' ')
 TOTAL_SIZE=$(du -sh "$BACKUP_DEST" 2>/dev/null | awk '{print $1}')
 echo "Backup complete. Retained $TOTAL_KEPT daily snapshot(s), total $TOTAL_SIZE in $BACKUP_DEST."

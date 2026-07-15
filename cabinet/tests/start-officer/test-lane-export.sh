@@ -110,8 +110,8 @@ fi
 # ----------------------------------------------------------------------------
 # L4: Legacy-mode CONTENT injection — a poisoned active-project.txt carrying
 #     shell metacharacters is the actual RCE vector (the slug flows through
-#     CABINET_LANE → the unquoted `export $EXPORT_VARS` in the tmux send-keys
-#     string). The slug allowlist on the legacy read (start-officer.sh) must
+#     CABINET_LANE into the generated officer launch command). The slug
+#     allowlist on the legacy read (start-officer.sh) must
 #     reject it: ACTIVE_SLUG cleared → no CABINET_LANE export → no side-effect.
 #     This is distinct from L3 (poisoned INHERITED env, scrubbed by unset);
 #     L3 alone gave false confidence that injection was covered.

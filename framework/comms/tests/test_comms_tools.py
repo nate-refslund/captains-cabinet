@@ -11,7 +11,8 @@ class FakeAdapter:
     def __init__(self, caps=None):
         self._caps = caps if caps is not None else {
             c: True for c in ("send", "edit", "react", "poll", "set_status",
-                              "pin", "thread", "answer_tap", "draft", "rich")}
+                              "pin", "thread", "answer_tap", "draft", "rich",
+                              "observe_reply_current", "observe_react_current")}
         self.calls = []
 
     def capabilities(self):
@@ -27,6 +28,14 @@ class FakeAdapter:
 
     def react(self, message_id, emoji):
         self.calls.append(("react", message_id, emoji))
+        return {"sent": True, "reaction": emoji}
+
+    def observe_reply_current(self, text):
+        self.calls.append(("observe_reply_current", text))
+        return {"sent": True, "message_ids": [14]}
+
+    def observe_react_current(self, emoji):
+        self.calls.append(("observe_react_current", emoji))
         return {"sent": True, "reaction": emoji}
 
     def poll(self, question, options, **kw):
@@ -139,6 +148,25 @@ def test_react_degrades_when_adapter_lacks_capability():
     assert a.calls == []  # never touched the adapter
 
 
+def test_observe_current_tools_have_no_recipient_or_message_id_surface():
+    a = FakeAdapter()
+    assert tools.reply_current(text="hello", adapter=a)["sent"] is True
+    assert tools.react_current(emoji="👀", adapter=a)["sent"] is True
+    assert ("observe_reply_current", "hello") in a.calls
+    assert ("observe_react_current", "👀") in a.calls
+
+
+def test_observe_current_tools_reject_fanout_and_oversized_reaction():
+    a = FakeAdapter()
+    reply = tools.reply_current(
+        text="x" * (tools.OBSERVE_REPLY_MAX_CHARS + 1), adapter=a)
+    reaction = tools.react_current(
+        emoji="x" * (tools.OBSERVE_REACTION_MAX_CHARS + 1), adapter=a)
+    assert reply["sent"] is False
+    assert reaction["sent"] is False
+    assert a.calls == []
+
+
 def test_poll_passes_options_and_multi():
     a = FakeAdapter()
     r = tools.poll(question="Ship it?", options=["yes", "no"], multi=True, adapter=a)
@@ -216,7 +244,7 @@ def test_send_rich_card_degrades_without_rich_cap():
 
 
 def test_registry_covers_every_tool():
-    for name in ("send_card", "edit_card", "react", "poll", "set_status",
+    for name in ("reply_current", "react_current", "send_card", "edit_card", "react", "poll", "set_status",
                  "pin", "unpin", "open_thread", "answer_tap", "read_feed",
                  "stream_thinking", "send_rich_card"):
         assert name in tools.TOOLS

@@ -414,10 +414,10 @@ def emit_consequence(
     gate reads and graduation math keys on. It is STAMPED by the same shared
     `framework.authority.classifier.classify_action()` the gate uses, so the
     ledger and the verdict table can never disagree about what an action *is*.
-    Stamp point: the live officer emit path is the external screenpipe
+    Stamp point: the live officer emit path is the external personal-source
     brain-bridge governance hook (log_reasoning / record_run), which passes the
     raw tool call through `classify_action()` at emit time — that wiring lives
-    outside this repo, in the screenpipe brain MCP. In-repo, the
+    outside this repo, in the personal-source brain MCP. In-repo, the
     fidelity_events.py builders are the reachable emit surface and may pass
     `action_type` once the per-case raw tool call is available. When no caller
     supplies it, `action_type` is left ABSENT (the unstamped / unmeasured

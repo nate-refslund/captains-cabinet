@@ -3,7 +3,7 @@ get_source()-surface evidence gather + labeled-section synthesis + batch intake
 item, with the dry-mode tripwire.
 
 Egg plan R023 (2026-07-07): the Monday Activity/Reflections legs and the
-obsidian-sync vault-note render are DELETED from the module (boards archived
+vault-sync vault-note render are DELETED from the module (boards archived
 2026-07-05), so these tests pin the compressed shape — no Monday, no vault, the
 single live side effect is the intake enqueue. Evidence is injected via the
 ``entries=`` seam; the gather tests patch the bound source's methods on the

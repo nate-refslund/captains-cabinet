@@ -216,6 +216,16 @@ step_validate_slug() {
 # Step 2 — Validate preset exists (partial AC #66 — existence check only)
 # ---------------------------------------------------------------------------
 step_validate_preset() {
+  # Underscore-prefixed directories are authoring scaffolds, not runnable
+  # presets.  In particular, `_template` intentionally lacks deployment
+  # decisions; treating it as real advanced all the way to Docker/bootstrap
+  # execution instead of failing at the preset boundary.
+  case "$PRESET_SLUG" in
+    _*)
+      err "Preset '$PRESET_SLUG' is an internal template, not a runnable preset"
+      exit 1
+      ;;
+  esac
   if [ "$DRY_RUN" = "1" ]; then
     dry "Would check: presets/$PRESET_SLUG/ exists and contains preset.yml"
     return 0

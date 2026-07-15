@@ -111,24 +111,24 @@ def item_activity(monday_post: Callable, item_id: str,
 def make_monday_probe(monday_post: Callable, *,
                       nate_user_id: Optional[str] = None) -> Callable[[dict], dict]:
     """Build the artifact probe the sweep injects: given a journal row, report
-    ``{exists, archived, reverted_by_nate}`` for its Monday item. A row with no
+    ``{exists, archived, reverted_by_captain}`` for its Monday item. A row with no
     Monday item (e.g. a calendar backend) is reported intact — the calendar
     surface has no cheap state probe, and we NEVER fabricate a revert we cannot
     prove."""
     def probe(row: dict) -> Dict[str, Any]:
         item_id = (row.get("created") or {}).get("monday_id")
         if not item_id:
-            return {"exists": True, "archived": False, "reverted_by_nate": False}
+            return {"exists": True, "archived": False, "reverted_by_captain": False}
         st = item_state(monday_post, str(item_id))
-        reverted_by_nate = False
+        reverted_by_captain = False
         if (not st.get("exists") or st.get("archived")) and nate_user_id:
             acts = item_activity(monday_post, str(item_id), since=row.get("executed_at"))
-            reverted_by_nate = any(
+            reverted_by_captain = any(
                 str(a.get("user_id")) == str(nate_user_id)
                 and a.get("event") in _REVERT_EVENTS for a in acts)
         return {"exists": st.get("exists", True),
                 "archived": st.get("archived", False),
-                "reverted_by_nate": reverted_by_nate}
+                "reverted_by_captain": reverted_by_captain}
     return probe
 
 
@@ -144,7 +144,7 @@ def _probe_verdict(row: dict, monday_probe: Optional[Callable]):
         return "ttl_ok", None, None
     if state.get("exists", True) and not state.get("archived", False):
         return "ttl_ok", None, None
-    if state.get("reverted_by_nate"):
+    if state.get("reverted_by_captain"):
         return ("silent_revert", "verdict_human",
                 f"silent revert attributed to {captain_name()} (Monday activity log)")
     return "silent_revert", "verdict_judge", None

@@ -78,7 +78,7 @@ bash cabinet/scripts/germline-lock.sh verify
 git push origin HEAD
 # Captain decision-ledger apply record: paste the §4 block of
 # docs/proposals/germline-amendment-candor-2026-07-10.md via the sanctioned interface:
-bash cabinet/scripts/append-interface.sh captain-decisions   # entry on stdin
+bash cabinet/scripts/append-interface.sh captain-decisions   # stdin; broker-stamped [trust:officer] on Mac
 # ledger/plan-doc parity rows for W4/W8 (agi-wires handback bookkeeping), same commit.
 ```
 

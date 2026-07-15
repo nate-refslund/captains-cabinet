@@ -16,11 +16,17 @@ fail() { echo "  FAIL: $1" >&2; exit 1; }
 
 echo "=== Mac dry-run eval ==="
 
-mkdir -p "$FAKE_BIN" "$FAKE_REPO/cabinet/scripts" "$FAKE_REPO/cabinet" "$FAKE_REPO/.claude/agents"
+mkdir -p "$FAKE_BIN" "$FAKE_REPO/cabinet/scripts" "$FAKE_REPO/cabinet" \
+  "$FAKE_REPO/.claude/agents" "$FAKE_REPO/instance/config"
 ln -s "$REPO_ROOT/cabinet/scripts/start-officer-mac.sh" "$FAKE_REPO/cabinet/scripts/start-officer-mac.sh"
+ln -s "$REPO_ROOT/cabinet/scripts/lib" "$FAKE_REPO/cabinet/scripts/lib"
+ln -s "$REPO_ROOT/cabinet/scripts/observe-only.sh" "$FAKE_REPO/cabinet/scripts/observe-only.sh"
+ln -s "$REPO_ROOT/cabinet/scripts/gen-officer-mcp-config.py" "$FAKE_REPO/cabinet/scripts/gen-officer-mcp-config.py"
 cp "$REPO_ROOT/cabinet/officer-capabilities.conf" "$FAKE_REPO/cabinet/officer-capabilities.conf"
+cp "$REPO_ROOT/cabinet/mcp-scope.yml" "$FAKE_REPO/cabinet/mcp-scope.yml"
 echo '{}' > "$FAKE_REPO/.mcp.json.mac-native"
 echo '# cos' > "$FAKE_REPO/.claude/agents/cos.md"
+printf 'git_repos: []\n' > "$FAKE_REPO/instance/config/platform.yml"
 
 cat > "$FAKE_BIN/claude" <<'SH'
 #!/bin/sh
@@ -42,6 +48,18 @@ printf '%s' "$OUT" | grep -q -- '--agent cos' \
 printf '%s' "$OUT" | grep -q "cd $FAKE_REPO" \
   && pass "start-officer-mac uses CABINET_SOURCE_REPO root" \
   || fail "CABINET_SOURCE_REPO root missing from command"
+printf '%s' "$OUT" | grep -q 'env -i' \
+  && ! printf '%s' "$OUT" | grep -q 'DASHBOARD_PASSWORD' \
+  && pass "start-officer-mac launches from a clean environment without dashboard authority" \
+  || fail "clean officer environment boundary missing"
+
+printf 'active\n' > "$FAKE_REPO/instance/config/observe-only"
+OUT="$(PATH="$FAKE_BIN:$PATH" CABINET_SOURCE_REPO="$FAKE_REPO" CABINET_MAC_DRY_RUN=1 bash "$FAKE_REPO/cabinet/scripts/start-officer-mac.sh" cos 2>/dev/null)"
+printf '%s' "$OUT" | grep -q 'observe_only=1' \
+  && printf '%s' "$OUT" | grep -q 'CABINET_ENV=<set>' \
+  && pass "observe-only dry-run pins the process cap and dev dispatch environment" \
+  || fail "observe-only process cap/dev dispatch environment missing"
+rm -f "$FAKE_REPO/instance/config/observe-only"
 
 OUT="$(PATH="$FAKE_BIN:$PATH" CABINET_MAC_DRY_RUN=1 bash "$FAKE_REPO/cabinet/scripts/start-officer-mac.sh" cos 2>/dev/null)"
 printf '%s' "$OUT" | grep -q "cd $FAKE_REPO" \

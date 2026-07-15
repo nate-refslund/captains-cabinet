@@ -30,8 +30,9 @@
 
 set -uo pipefail
 
-DRAFT_GEN="/opt/founders-cabinet/cabinet/scripts/captain-rules/draft-generator.sh"
-RATIFY="/opt/founders-cabinet/cabinet/scripts/captain-rules/ratify-rule.sh"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DRAFT_GEN="$SCRIPT_DIR/draft-generator.sh"
+RATIFY="$SCRIPT_DIR/ratify-rule.sh"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 

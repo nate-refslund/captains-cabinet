@@ -12,12 +12,13 @@
 # coverage. That the gates RUN on master pushes is asserted (Test 4); their
 # pass/fail behavior is covered by run-golden-evals.sh / check-layer-separation.sh.
 #
-# Run:  bash /opt/founders-cabinet/cabinet/scripts/test-pre-push-hook.sh
+# Run:  bash cabinet/scripts/test-pre-push-hook.sh
 # Exit 0 on all PASS, 1 on any FAIL.
 
 set -uo pipefail
 
-HOOK="/opt/founders-cabinet/cabinet/scripts/git-hooks/pre-push"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HOOK="$SCRIPT_DIR/git-hooks/pre-push"
 ZERO_SHA="0000000000000000000000000000000000000000"
 
 PASS=0
@@ -124,6 +125,23 @@ STUB
 # Pull HEAD_SHA and ANCESTOR_SHA out of a fixture repo.
 get_head_sha()     { git -C "$1" rev-parse HEAD; }
 get_ancestor_sha() { git -C "$1" rev-parse HEAD~1; }
+
+offset_iso() {
+  local amount="$1" unit="$2"
+  local expression="$amount $unit"
+  case "$amount" in -*) ;; *) expression="+$expression" ;; esac
+  if date -u -d "$expression" +%Y-%m-%dT%H:%M:%SZ >/dev/null 2>&1; then
+    date -u -d "$expression" +%Y-%m-%dT%H:%M:%SZ
+  else
+    local adjustment="$amount"
+    case "$amount" in -*) ;; *) adjustment="+$amount" ;; esac
+    case "$unit" in
+      hour|hours) date -u -v"${adjustment}"H +%Y-%m-%dT%H:%M:%SZ ;;
+      minute|minutes) date -u -v"${adjustment}"M +%Y-%m-%dT%H:%M:%SZ ;;
+      *) return 2 ;;
+    esac
+  fi
+}
 
 # ── Global fixture setup + cleanup ────────────────────────────────────────────
 FIXTURE=$(setup_fixture)
@@ -241,7 +259,7 @@ assert_contains "  stderr: malformed" "$OUTPUT" "malformed"
 
 # Test 9: FORCE_PUSH_ANNOUNCED timestamp in the future → exit 1, "in the future"
 echo "Test 9: future timestamp → exit 1 + 'in the future'"
-FUTURE_TS=$(date -u -d "+1 hour" +%Y-%m-%dT%H:%M:%SZ)
+FUTURE_TS=$(offset_iso 1 hour)
 OUTPUT=$(run_force_push "FORCE_PUSH_ANNOUNCED=$FUTURE_TS")
 RC=$?
 assert_eq "  exit code 1" "$RC" "1"
@@ -249,7 +267,7 @@ assert_contains "  stderr: in the future" "$OUTPUT" "in the future"
 
 # Test 10: FORCE_PUSH_ANNOUNCED timestamp > 300s old → exit 1, age message
 echo "Test 10: stale timestamp (>300s old) → exit 1 + age message"
-OLD_TS=$(date -u -d "10 minutes ago" +%Y-%m-%dT%H:%M:%SZ)
+OLD_TS=$(offset_iso -10 minutes)
 OUTPUT=$(run_force_push "FORCE_PUSH_ANNOUNCED=$OLD_TS")
 RC=$?
 assert_eq "  exit code 1" "$RC" "1"

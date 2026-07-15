@@ -127,7 +127,7 @@ def test_evidence_overlap_dedup_beats_reworded_slugs():
     overlap with a prior card's refs drops the proposal, phrasing be damned."""
     reworded = _p("master-dashboard-demo-monday-meeting-with-doris-buijs-cvdm")
     fresh = _p("genuinely-new")
-    fresh["evidence"] = ["6-Commitments/owed_by_nate/cmt-other.md"]
+    fresh["evidence"] = ["6-Commitments/owed_by_captain/cmt-other.md"]
     props = al.propose_actions(
         "signals...", as_of="t", llm=_llm_returning([reworded, fresh]),
         decided_subjects=set(), open_subjects={"master-dashboard-demo-monday-meeting-doris-cvdm"},

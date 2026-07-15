@@ -67,6 +67,12 @@ class TestConsumerSideAck:
             "in-file defense against someone 'fixing' the missing ACK back in"
         )
 
+    def test_observe_delivery_exposes_exact_consumer_receipt(self):
+        src = TRIGGER_CHANNEL.read_text()
+        assert 'process.env.CABINET_OBSERVE_ONLY === "1"' in src
+        assert "cabinet/scripts/hooks/observe-ack.sh ${messageId}" in src
+        assert "after processing this trigger" in src
+
     def test_triggers_lib_no_stale_auto_ack_claim(self):
         # Docs-track-code: the safety-net comment used to assert the channel
         # AUTO-ACKs on push; that claim is now false and must stay gone.

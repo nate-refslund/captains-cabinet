@@ -29,7 +29,8 @@ class TelegramAdapter:
         # advertised capabilities and method bodies stay in lockstep (honest).
         return {c: True for c in (
             "send", "edit", "react", "poll", "set_status", "pin", "thread",
-            "answer_tap", "draft", "rich")}
+            "answer_tap", "draft", "rich", "observe_reply_current",
+            "observe_react_current")}
 
     def send(self, body, *, silent=False, reply_to=None, thread_id=None,
              effect_id=None, buttons=None, markdown=False, feed_meta=None):
@@ -46,6 +47,12 @@ class TelegramAdapter:
         # The LLM-contextual react (supersedes the poller's instant receipt
         # reaction) via channel.set_reaction (setMessageReaction, C3).
         return channel.set_reaction(message_id, emoji)
+
+    def observe_reply_current(self, text):
+        return channel.reply_current_observe_only(text)
+
+    def observe_react_current(self, emoji):
+        return channel.react_current_observe_only(emoji)
 
     def poll(self, question, options, *, multi=False, silent=False, feed_meta=None):
         return channel.send_poll(question, options, allows_multiple_answers=multi,

@@ -835,7 +835,7 @@ def test_cron_missing_manifest_falls_back_to_static():
 # ─────────────────────────────────────────────────────────────────────────────
 def test_pipes_fresh_passes():
     now = dt.datetime(2026, 6, 29, 12, 0, tzinfo=dt.timezone.utc)
-    mtimes = {f"{reg.SCREENPIPE_STATE_DIR}/{fn}": now.timestamp()
+    mtimes = {f"{reg.PERSONAL_SOURCE_STATE_DIR}/{fn}": now.timestamp()
               for (fn, _s) in reg.PIPE_FRESHNESS.values()}
     probe = FakeProbe(now=now, mtimes=mtimes)
     res = reg.verify_pipes_fresh(probe)
@@ -847,7 +847,7 @@ def test_pipes_stale_fails():
     # the 2026-07-03 sleep-aware thresholds; 5h was the pre-change fixture).
     now = dt.datetime(2026, 6, 29, 12, 0, tzinfo=dt.timezone.utc)
     old = (now - dt.timedelta(hours=40)).timestamp()
-    mtimes = {f"{reg.SCREENPIPE_STATE_DIR}/{fn}": old
+    mtimes = {f"{reg.PERSONAL_SOURCE_STATE_DIR}/{fn}": old
               for (fn, _s) in reg.PIPE_FRESHNESS.values()}
     probe = FakeProbe(now=now, mtimes=mtimes)
     res = reg.verify_pipes_fresh(probe)
@@ -857,12 +857,13 @@ def test_pipes_stale_fails():
 
 def test_pipes_fresh_skips_when_state_dir_unconfigured(monkeypatch):
     """Flavor-B degrade (source-adapter SRC-4): with no brain state dir
-    configured (framework.env.state_dir() -> "" -> SCREENPIPE_STATE_DIR ""),
+    configured (framework.env.state_dir() -> "" -> PERSONAL_SOURCE_STATE_DIR ""),
     verify_pipes_fresh SKIPs — nothing to watch. A skip is neither pass nor fail
-    (never routed), so a clean-room box never false-alarms on absent screenpipe
-    pipes. On this deployment SCREENPIPE_STATE_DIR is non-empty, so the normal
-    freshness path (the two tests above) runs unchanged."""
-    monkeypatch.setattr(reg, "SCREENPIPE_STATE_DIR", "")
+    (never routed), so a clean-room box never false-alarms on absent
+    personal-source pipes. On this deployment PERSONAL_SOURCE_STATE_DIR is
+    non-empty, so the normal freshness path (the two tests above) runs
+    unchanged."""
+    monkeypatch.setattr(reg, "PERSONAL_SOURCE_STATE_DIR", "")
     now = dt.datetime(2026, 6, 29, 12, 0, tzinfo=dt.timezone.utc)
     probe = FakeProbe(now=now)
     res = reg.verify_pipes_fresh(probe)
@@ -926,7 +927,7 @@ def test_full_run_with_fake_probe_routes_only_failures():
     # cron: clean + fresh
     cron_path = f"{reg.CABINET_LOG_DIR}/status-sweep.log"
     # pipes: fresh
-    pipe_mtimes = {f"{reg.SCREENPIPE_STATE_DIR}/{fn}": now.timestamp()
+    pipe_mtimes = {f"{reg.PERSONAL_SOURCE_STATE_DIR}/{fn}": now.timestamp()
                    for (fn, _s) in reg.PIPE_FRESHNESS.values()}
     probe = FakeProbe(
         now=now, local=local,

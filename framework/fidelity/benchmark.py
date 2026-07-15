@@ -147,7 +147,7 @@ def _default_outcomes() -> Path:
     ``CABINET_AUTONOMY_OUTCOMES`` env override wins; else the deployment state
     dir (``framework.env.state_dir()``, or a generic ``~/.cabinet/state``
     fallback when unconfigured) + the ledger filename. Byte-identical to the
-    removed ``~/.screenpipe/state`` hardcode on this deployment."""
+    removed adapter-specific state-dir hardcode on this deployment."""
     override = os.environ.get("CABINET_AUTONOMY_OUTCOMES")
     if override:
         return Path(override).expanduser()

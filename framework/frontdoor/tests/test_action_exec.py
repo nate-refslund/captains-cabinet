@@ -656,7 +656,7 @@ def test_content_tripwire_categories():
     assert "email" in ax._content_tripwire(["ping ceo@rival.com"])
     assert "approval_claim" in ax._content_tripwire(["dette er godkendt"])
     assert "approval_claim" in ax._content_tripwire(["this was approved"])
-    assert "credential" in ax._content_tripwire(["api_key=sk-abcdef0123456789"])
+    assert "credential" in ax._content_tripwire(["api_key=not-a-real-credential-value-fixture"])
     assert "account_number" in ax._content_tripwire(["acct 4111 1111 1111 1111"])
     assert ax._content_tripwire(["Ship the VIES autofill for publishers"]) == []
 

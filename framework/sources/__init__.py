@@ -6,7 +6,8 @@ dynamically imports it, caches it, and FAIL-CLOSES to the null adapter on any
 absence / parse-fail / import-fail. Framework CORE calls ``get_source()`` (the
 READ side) and ``get_dispatch()`` (the WRITE/actuator side) and depends only on
 the ``base.PersonalSource`` / ``base.PersonalDispatch`` Protocols — never on
-screenpipe. ``sources.yml`` names the READ adapter under ``adapter:`` and the
+any concrete adapter directly. ``sources.yml`` names the READ adapter under
+``adapter:`` and the
 WRITE adapter under ``dispatch:``; both are DATA the instance owns.
 
 LAYER SEPARATION (the Corridor hard rule — ``check-layer-separation.sh``).

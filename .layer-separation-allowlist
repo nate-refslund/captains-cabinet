@@ -16,10 +16,12 @@
 #
 # HARD LIMIT — class discipline:
 #   * Only FRAMEWORK_PATH_INSTANCE entries may appear here (config reads).
-#   * The screenpipe rule classes (FRAMEWORK_IMPORTS_SCREENPIPE /
-#     FRAMEWORK_PATH_SCREENPIPE) may NEVER be allowlisted — their target is
-#     EMPTY (golden eval-021: framework core reaches the captain's estate
-#     only through framework.sources.get_source()).
+#   * The personal-source rule classes (FRAMEWORK_IMPORTS_PERSONAL_SOURCE /
+#     FRAMEWORK_PATH_PERSONAL_SOURCE) may NEVER be allowlisted — their target
+#     is EMPTY (golden eval-021: framework core reaches the captain's estate
+#     only through framework.sources.get_source()). Today's one concrete
+#     adapter is screenpipe (instance/flavor-a/); the rule class itself is
+#     adapter-agnostic so a future personal-source adapter is covered too.
 #   * Import-class (FRAMEWORK_IMPORTS_INSTANCE / _PRESETS,
 #     PRESETS_IMPORTS_INSTANCE) entries may never be allowlisted either.
 #

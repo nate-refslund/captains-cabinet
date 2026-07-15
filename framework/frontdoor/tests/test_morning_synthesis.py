@@ -61,7 +61,7 @@ def test_limit_respected(monkeypatch):
 
 def _cmt(person, text, due, **kw):
     d = {"person": person, "text": text, "due": due, "status": "open",
-         "direction": "owed_by_nate", "slug": person.split()[0].lower(),
+         "direction": "owed_by_captain", "slug": person.split()[0].lower(),
          "commitment_id": f"cmt-{person[:4].lower()}"}
     d.update(kw)
     return d
@@ -109,7 +109,7 @@ def test_commitment_items_respects_limit():
 
 
 def test_commitment_items_gather_failure_is_empty(monkeypatch):
-    def boom(direction="owed_by_nate"):
+    def boom(direction="owed_by_captain"):
         raise RuntimeError("ledger down")
     monkeypatch.setattr(get_source(), "briefing_commitments", boom)
     assert ms.commitment_items() == []
@@ -202,7 +202,7 @@ def test_gather_items_includes_all_sources(monkeypatch):
     monkeypatch.setattr(get_source(), "find_threads",
                         lambda hours=72: [_thread("dana", "Dana Reed", "a real question")])
     monkeypatch.setattr(get_source(), "briefing_commitments",
-                        lambda direction="owed_by_nate": [_cmt("Kim", "x", "2000-01-01")])
+                        lambda direction="owed_by_captain": [_cmt("Kim", "x", "2000-01-01")])
     monkeypatch.setattr(get_source(), "deploy_health",
                         lambda app, **kw: _health(app, failed=1, latest="READY"))
     monkeypatch.setattr(ms.product_health, "sentry_health",
@@ -302,7 +302,7 @@ def _wire_all_sources(monkeypatch):
     monkeypatch.setattr(get_source(), "find_threads",
                         lambda hours=72: [_thread("dana", "Dana Reed", "a real question")])
     monkeypatch.setattr(get_source(), "briefing_commitments",
-                        lambda direction="owed_by_nate": [_cmt("Kim", "x", "2000-01-01")])
+                        lambda direction="owed_by_captain": [_cmt("Kim", "x", "2000-01-01")])
     monkeypatch.setattr(get_source(), "deploy_health",
                         lambda app, **kw: _health(app, failed=1, latest="ERROR"))
     monkeypatch.setattr(ms.product_health, "sentry_health",
@@ -346,7 +346,7 @@ def test_enqueue_no_chair_message_when_no_operational(monkeypatch):
     # Only captain-facing sources present → the Chair is NOT pinged at all.
     monkeypatch.setattr(get_source(), "find_threads",
                         lambda hours=72: [_thread("dana", "Dana Reed", "a real question")])
-    monkeypatch.setattr(get_source(), "briefing_commitments", lambda direction="owed_by_nate": [])
+    monkeypatch.setattr(get_source(), "briefing_commitments", lambda direction="owed_by_captain": [])
     monkeypatch.setattr(get_source(), "deploy_health", lambda app, **kw: _health(app, failed=0, latest="READY"))
     monkeypatch.setattr(ms.product_health, "sentry_health", lambda o, p, **kw: _sentry([]))
     monkeypatch.setattr(ms, "_due_followups", lambda script=None: [])

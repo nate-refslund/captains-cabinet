@@ -32,5 +32,8 @@
     "typescript": "^5.7.0",
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^4.1.5"
+  },
+  "overrides": {
+    "postcss": "^8.5.10"
   }
 }

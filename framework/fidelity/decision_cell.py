@@ -122,8 +122,9 @@ _STOP = {"the", "a", "an", "and", "or", "to", "of", "in", "on", "for", "with",
 
 def _content_tokens(s: str) -> set:
     # The Captain's own name is a non-distinctive stopword — folded in
-    # dynamically so it tracks the deployment. _CAP.lower() == "nate" here, so
-    # the effective stop set is byte-identical to the prior literal.
+    # dynamically so it tracks the deployment (whatever _CAP resolves to on
+    # this launcher), so the effective stop set is byte-identical to the
+    # prior literal.
     stop = _STOP | {_CAP.lower()}
     toks = re.findall(r"\b\w+\b", (s or "").lower())
     return {t for t in toks if len(t) > 3 and t not in stop}
@@ -422,8 +423,8 @@ def run_decision_case(case: DecisionCase, llm=oauth_raw_llm,
     Identity informs HOW it decides and is privacy-fenced (never echoed).
 
     ``brain`` is an injectable ``framework.sources.PersonalSource``; it defaults
-    to ``get_source()`` — the bound personal source (the Flavor-A screenpipe
-    adapter on this deployment, byte-identical to the prior ``BrainAdapter()``
+    to ``get_source()`` — the bound personal source (the Flavor-A adapter on
+    this deployment, byte-identical to the prior ``BrainAdapter()``
     default). Tests inject a fake source in its place."""
     brain = brain or get_source()
     ident = _clone_identity(case, brain)

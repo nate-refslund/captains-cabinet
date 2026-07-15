@@ -9,8 +9,9 @@
 #   2. For each mission, find ready_tasks() — deps DONE, status PENDING/READY.
 #   3. Filter out tasks already assigned via the event ledger
 #      (`work_item_assigned` events) — strict idempotency.
-#   4. For each remaining task, emit `work_item_assigned` + push a Redis
-#      Stream trigger to the assigned officer.
+#   4. Push each remaining task to the officer's Redis Stream.
+#   5. Only after every push succeeds, confirm those exact current decisions
+#      and emit `work_item_assigned`. A Redis failure leaves work routable.
 #
 # Design: NO Postgres required. The event ledger is the source of truth for
 # both completion (Phase 1.1) and assignment (Phase 1.2). Postgres becomes
@@ -70,11 +71,8 @@ export OFFICER_NAME="${OFFICER_NAME:-mission_supervisor}"
 
 # --- identify newly-ready, unassigned tasks via Python module ---
 # Routing decisions JSON: [{task_id, officer, mission_id, outcome_id, description}, ...]
-# Emits work_item_assigned events as a side effect unless --dry-run is set.
-SUPERVISOR_ARGS=(--json)
-if [ "$DRY_RUN" -eq 1 ]; then
-  SUPERVISOR_ARGS+=(--dry-run)
-fi
+# Always project first. Assignment is committed below only after Redis delivery.
+SUPERVISOR_ARGS=(--json --dry-run)
 ROUTING_JSON="$(cd "$CABINET_ROOT" && python3 -m framework.missions.supervisor "${SUPERVISOR_ARGS[@]}")"
 
 # --- push Redis triggers for each newly-assigned task ---
@@ -84,6 +82,7 @@ ROUTING_JSON="$(cd "$CABINET_ROOT" && python3 -m framework.missions.supervisor "
 . "$CABINET_ROOT/cabinet/scripts/lib/triggers.sh"
 
 COUNT=0
+DELIVERED_JSON='[]'
 if [ -n "$ROUTING_JSON" ] && [ "$ROUTING_JSON" != "[]" ]; then
   while IFS= read -r line; do
     [ -z "$line" ] && continue
@@ -94,11 +93,23 @@ if [ -n "$ROUTING_JSON" ] && [ "$ROUTING_JSON" != "[]" ]; then
       printf 'mission-supervisor: [dry-run] would route %s → %s (%s)\n' "$task_id" "$officer" "$description" >&2
     else
       msg="Mission task ready: $description (id: $task_id) — run work-graph-complete.sh when done"
+      # trigger_send returns non-zero when XADD fails. With set -e this stops
+      # before assignment confirmation, so the task resurfaces next pass.
       trigger_send "$officer" "$msg"
+      DELIVERED_JSON="$(printf '%s' "$DELIVERED_JSON" | jq --argjson row "$line" '. + [$row]')"
       printf 'mission-supervisor: routed %s → %s\n' "$task_id" "$officer" >&2
     fi
     COUNT=$((COUNT + 1))
   done < <(printf '%s' "$ROUTING_JSON" | jq -c '.[]?')
+fi
+
+if [ "$DRY_RUN" -eq 0 ] && [ "$DELIVERED_JSON" != "[]" ]; then
+  CONFIRMED_JSON="$(printf '%s' "$DELIVERED_JSON" | \
+    (cd "$CABINET_ROOT" && python3 -m framework.missions.supervisor --confirm-stdin --json))"
+  if [ "$(printf '%s' "$CONFIRMED_JSON" | jq 'length')" -ne "$COUNT" ]; then
+    echo "mission-supervisor: FATAL delivery confirmation count mismatch — assignments not trusted" >&2
+    exit 1
+  fi
 fi
 
 # --- output ---

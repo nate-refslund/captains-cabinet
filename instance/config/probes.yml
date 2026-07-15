@@ -10,9 +10,11 @@
 #
 # SCHEMA
 #   github:   list of {repo: <owner/name gh slug>, checkout: <abs local path>}
-#   vercel:   list of {app: <vercel app name>, checkout: <abs local path>}
-#             (team scoping is hardcoded load-bearing in probe_vercel.TEAM_ID —
-#              the v9 projects list truncates ids, so probes query by app)
+#   vercel:   list of {app: <vercel app name>, checkout: <abs local path>,
+#                       team_id: <optional Vercel team id>}
+#             (`VERCEL_TEAM_ID` is the optional deployment-wide fallback;
+#              personal accounts omit both. The v9 projects list truncates
+#              ids, so probes still query deployments by app.)
 #   sentry:   {org: <sentry org slug>, projects: [{project, checkout}]}
 #
 # WHY checkout is required per product: the probes' freshness guard and the
@@ -33,6 +35,7 @@ github:
 vercel:
   - app: example-product
     checkout: /absolute/path/to/example-product
+    team_id: team_example
 
 sentry:
   org: example-org

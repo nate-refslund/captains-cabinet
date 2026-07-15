@@ -57,6 +57,24 @@ _URL_PREFIX = "api.telegram.org/bot"
 _TELEGRAM_LIMIT = 4096
 _CHUNK_BUDGET = 3900
 
+# Telegram accepts reactions only from this fixed Bot API set.  Validate at the
+# transport boundary so invalid/multi-emoji input makes zero network calls.
+_ALLOWED_REACTION_EMOJI = frozenset(
+    "👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 🤩 🤮 💩 🙏 👌 🕊 🤡 🥱 🥴 😍 🐳 "
+    "❤‍🔥 🌚 🌭 💯 🤣 ⚡ 🍌 🏆 💔 🤨 😐 🍓 🍾 💋 🖕 😈 😴 😭 🤓 👻 👨‍💻 👀 🎃 "
+    "🙈 😇 😨 🤝 ✍ 🤗 🫡 🎅 🎄 ☃ 💅 🤪 🗿 🆒 💘 🙉 🦄 😘 💊 🙊 😎 👾 🤷‍♂ 🤷 "
+    "🤷‍♀ 😡".split()
+)
+
+
+def _observe_reply_fits_one_message(text: str) -> bool:
+    """True only when ``text`` stays on the transport's one-chunk path."""
+
+    return (
+        0 < len(text) <= _CHUNK_BUDGET
+        and len(text.encode("utf-16-le")) // 2 <= _TELEGRAM_LIMIT
+    )
+
 
 def _hard_wrap(line: str, limit: int) -> list[str]:
     """Last-resort split of a SINGLE over-long line (no newline to break on).
@@ -134,7 +152,13 @@ def _split_for_telegram(text: str, limit: int = _CHUNK_BUDGET) -> list[str]:
 
 def _token() -> str:
     """Read the bot token from env ONLY. Never logged, printed, or returned."""
-    return os.environ.get("TELEGRAM_COS_TOKEN", "")
+    # Clean officer launchers project the role-selected token under the
+    # canonical generic name and deliberately remove raw per-role aliases.
+    # Keep the historical CoS name as a compatibility fallback for services
+    # and tests that have not yet moved to the clean launcher.
+    return os.environ.get("TELEGRAM_BOT_TOKEN", "") or os.environ.get(
+        "TELEGRAM_COS_TOKEN", ""
+    )
 
 
 def _captain_id() -> str:
@@ -149,6 +173,25 @@ def _base() -> str:
 # Redis key holding the Captain's most-recent message_id (written by the inbound
 # watchdog on every Captain DM). Reading it lets a reply thread onto that message.
 _LAST_CAPTAIN_MSG_KEY = "cabinet:last-captain-msg-id"
+
+# Unforgeable-by-argument module capability for the two observe-only current-
+# message operations.  It is never accepted by a public function or MCP schema.
+_OBSERVE_CURRENT_CAP = object()
+
+
+def _observe_current_allowed(capability: object | None) -> bool:
+    """Dedicated exception to CABINET_ENV=dev for current-message reply/react.
+
+    It exists only while the sticky observe posture is active AND ordinary
+    sends are disabled.  Thus it cannot become a generic allow_sends bypass in
+    runtime, and no caller can choose a recipient/message id.
+    """
+
+    return (
+        capability is _OBSERVE_CURRENT_CAP
+        and os.environ.get("CABINET_OBSERVE_ONLY") == "1"
+        and not env.allow_sends()
+    )
 
 
 def _last_captain_msg_id() -> int | None:
@@ -179,8 +222,19 @@ def _scrub(text: object, token: str) -> str:
     transformed.
     """
     s = str(text)
-    if token:
-        s = s.replace(token, "<redacted-token>")
+    # Redact the selected transport token *and* any Telegram token aliases that
+    # coexist in a legacy/non-clean process.  Clean officer launchers project a
+    # single TELEGRAM_BOT_TOKEN, but maintenance commands and older services can
+    # still carry both the generic and per-role names.  Scrubbing only the token
+    # chosen by _token() would let a stale alias escape in callback text/errors.
+    candidates = {token} if token else set()
+    candidates.update(
+        value
+        for key, value in os.environ.items()
+        if key.startswith("TELEGRAM_") and key.endswith("_TOKEN") and value
+    )
+    for candidate in candidates:
+        s = s.replace(candidate, "<redacted-token>")
     # Collapse any residual token-bearing URL fragment.
     while _URL_PREFIX in s:
         start = s.index(_URL_PREFIX)
@@ -485,10 +539,11 @@ def render_markdown(text: str) -> tuple[str, str | None]:
     return tmp, "HTML"
 
 
-def send(text: str, *, http_post=None, reply_to: int | None = None,
-         silent: bool = False, reply_markup: dict | None = None,
-         feed_meta: dict | None = None, markdown: bool = False,
-         thread_id: int | None = None, effect_id: str | None = None) -> dict:
+def _send_impl(text: str, *, http_post=None, reply_to: int | None = None,
+               silent: bool = False, reply_markup: dict | None = None,
+               feed_meta: dict | None = None, markdown: bool = False,
+               thread_id: int | None = None, effect_id: str | None = None,
+               _observe_cap: object | None = None) -> dict:
     """Send ``text`` to the Captain via Telegram — the ONLY front-door send path.
 
     Gated by ``env.allow_sends()`` as the FIRST line: a non-runtime session
@@ -516,7 +571,7 @@ def send(text: str, *, http_post=None, reply_to: int | None = None,
     absent from the return value and from any error path.
     """
     # (1) THE GATE — checked first, before reading any secret or touching net.
-    if not env.allow_sends():
+    if not env.allow_sends() and not _observe_current_allowed(_observe_cap):
         return {"status": "blocked-dev", "sent": False}
 
     token = _token()
@@ -612,6 +667,58 @@ def send(text: str, *, http_post=None, reply_to: int | None = None,
                 "responses": responses, "message_ids": message_ids}
     return {"status": "sent", "sent": True, "response": responses[0],
             "message_ids": message_ids}
+
+
+def send(text: str, *, http_post=None, reply_to: int | None = None,
+         silent: bool = False, reply_markup: dict | None = None,
+         feed_meta: dict | None = None, markdown: bool = False,
+         thread_id: int | None = None, effect_id: str | None = None) -> dict:
+    """Ordinary one-door send. It never receives the observe-only capability."""
+
+    return _send_impl(
+        text,
+        http_post=http_post,
+        reply_to=reply_to,
+        silent=silent,
+        reply_markup=reply_markup,
+        feed_meta=feed_meta,
+        markdown=markdown,
+        thread_id=thread_id,
+        effect_id=effect_id,
+    )
+
+
+def reply_current_observe_only(text: str, *, http_post=None) -> dict:
+    """Reply to the latest Captain inbound during observe-only dogfood.
+
+    The current inbound id comes from the watchdog-owned Redis key. There is no
+    chat-id or message-id parameter, and the recipient remains the fixed
+    CAPTAIN_TELEGRAM_ID. Outside observe+dev this dedicated doorway is closed.
+    """
+
+    if not _observe_current_allowed(_OBSERVE_CURRENT_CAP):
+        return {"status": "blocked-observe-only", "sent": False}
+    body = str(text)
+    if not _observe_reply_fits_one_message(body):
+        return {
+            "status": "error",
+            "sent": False,
+            "error": f"observe reply must fit one message (1..{_CHUNK_BUDGET} characters)",
+        }
+    message_id = _last_captain_msg_id()
+    if message_id is None:
+        return {
+            "status": "error",
+            "sent": False,
+            "error": "no current Captain inbound message",
+        }
+    return _send_impl(
+        body,
+        http_post=http_post,
+        reply_to=message_id,
+        feed_meta={"kind": "observe-reply", "reply_to": message_id},
+        _observe_cap=_OBSERVE_CURRENT_CAP,
+    )
 
 
 def edit_message(message_id: int, text: str, *, reply_markup: dict | None = None,
@@ -773,12 +880,12 @@ def set_typing(action: str = "typing", *, http_post=None) -> dict:
 
 
 def _gated_method(method: str, payload_extra: dict, *, http_post=None,
-                  capture=False) -> dict:
+                  capture=False, _observe_cap: object | None = None) -> dict:
     """Shared spine for the small Captain-chat Bot API methods (pin, unpin,
     forum-topic): allow_sends() gate FIRST, recipient always CAPTAIN_TELEGRAM_ID,
     token + URL scrubbed on every path. ``capture`` returns the raw result dict
     (for methods whose result carries an id we need, e.g. createForumTopic)."""
-    if not env.allow_sends():
+    if not env.allow_sends() and not _observe_current_allowed(_observe_cap):
         return {"status": "blocked-dev", "sent": False}
     token = _token()
     chat_id = _captain_id()
@@ -856,12 +963,40 @@ def set_reaction(message_id: int, emoji: "str | None", *, http_post=None) -> dic
     deterministic receipt-reaction. ``emoji=None``/"" clears the reaction.
     Gate + scrub via the shared spine; a non-whitelisted emoji is rejected by
     Telegram and surfaces as an error the caller degrades from."""
+    value = str(emoji) if emoji else ""
+    if value and value not in _ALLOWED_REACTION_EMOJI:
+        return {"status": "error", "sent": False, "error": "unsupported Telegram reaction"}
     extra = {"message_id": int(message_id)}
-    if emoji:
-        extra["reaction"] = json.dumps([{"type": "emoji", "emoji": str(emoji)}])
+    if value:
+        extra["reaction"] = json.dumps([{"type": "emoji", "emoji": value}])
     else:
         extra["reaction"] = json.dumps([])   # clear
     return _gated_method("setMessageReaction", extra, http_post=http_post)
+
+
+def react_current_observe_only(emoji: "str | None", *, http_post=None) -> dict:
+    """React to the latest Captain inbound through the observe-only doorway."""
+
+    if not _observe_current_allowed(_OBSERVE_CURRENT_CAP):
+        return {"status": "blocked-observe-only", "sent": False}
+    value = str(emoji) if emoji else ""
+    if value not in _ALLOWED_REACTION_EMOJI:
+        return {"status": "error", "sent": False, "error": "unsupported Telegram reaction"}
+    message_id = _last_captain_msg_id()
+    if message_id is None:
+        return {
+            "status": "error",
+            "sent": False,
+            "error": "no current Captain inbound message",
+        }
+    extra = {"message_id": message_id}
+    extra["reaction"] = json.dumps([{"type": "emoji", "emoji": value}])
+    return _gated_method(
+        "setMessageReaction",
+        extra,
+        http_post=http_post,
+        _observe_cap=_OBSERVE_CURRENT_CAP,
+    )
 
 
 def send_draft(draft_id: int, text: str = "", *, thread_id: "int | None" = None,

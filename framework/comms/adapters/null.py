@@ -26,6 +26,8 @@ class NullAdapter:
     def send(self, *a, **k): return self._noop("send")
     def edit(self, *a, **k): return self._noop("edit")
     def react(self, *a, **k): return self._noop("react")
+    def observe_reply_current(self, *a, **k): return self._noop("observe_reply_current")
+    def observe_react_current(self, *a, **k): return self._noop("observe_react_current")
     def poll(self, *a, **k): return self._noop("poll")
     def set_status(self, *a, **k): return self._noop("set_status")
     def pin(self, *a, **k): return self._noop("pin")

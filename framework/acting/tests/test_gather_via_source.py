@@ -76,14 +76,14 @@ class _StubSource:
 # --- 1. flag-OFF parity -------------------------------------------------------
 
 def test_flag_off_matches_extracted_walk_exactly(vault, monkeypatch):
-    _write(vault, "6-Commitments/owed_by_nate/cmt-1.md", "Ada owes Lena the licences")
+    _write(vault, "6-Commitments/owed_by_captain/cmt-1.md", "Ada owes Lena the licences")
     _write(vault, "2-Meetings/2026-07-06-scrum.md", "Bakery scrum notes")
     _write(vault, "5-Reflections/Decisions/dec-1.md", "Decided: Option B staging")
     monkeypatch.setattr(ral, "product_brain_dir", lambda: "")
     out = ral.gather_signals(AS_OF, vault=vault)
     parts = vault_signals.collect_sections(AS_OF, vault=vault, corpus_dir="")
     assert out == "\n\n".join(fenced for _, fenced in parts)
-    assert "--- OPEN COMMITMENT ref=6-Commitments/owed_by_nate/cmt-1.md ---" in out
+    assert "--- OPEN COMMITMENT ref=6-Commitments/owed_by_captain/cmt-1.md ---" in out
     assert "--- MEETING ref=2-Meetings/2026-07-06-scrum.md ---" in out
     assert "--- DECISION ref=5-Reflections/Decisions/dec-1.md ---" in out
 

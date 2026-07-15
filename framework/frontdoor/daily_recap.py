@@ -3,13 +3,13 @@ skeleton over the personal-source seam.
 
 COMPRESSED per the operative-egg plan R023
 (docs/plans/operative-egg-plan-2026-07-07.md). What this module was: the merge of
-three retired screenpipe daily pipes — it paginated the Captain's Monday Activity
+three retired personal-source daily pipes — it paginated the Captain's Monday Activity
 board (half-hourly slots), wrote a Monday Reflections "Daily Summary" item, and
-mirrored that item into the vault daily note byte-identical to obsidian-sync.
+mirrored that item into the vault daily note byte-identical to vault-sync.
 Those Monday Activity/Reflections legs are DELETED: both boards were archived
 2026-07-05 (the activity chain writes the Captain's own store directly now,
 outside the cabinet), which left the board read returning nothing and the live
-recap a silent no-op. The obsidian-sync byte-identical vault-note render went
+recap a silent no-op. The vault-sync byte-identical vault-note render went
 with them — its convergence partner (``sync_daily_summaries``) was deleted in the
 same migration, and the daily note is owned by the instance's own chain now.
 

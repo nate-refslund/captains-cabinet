@@ -139,6 +139,23 @@ policies:
       - "*cabinet/scripts/policy-shadow.py"
       - "*cabinet/scripts/kill-switch.sh"
       - "*cabinet/scripts/germline-lock.sh"
+      # Officer clean-env / sandbox / observe / egress boundary.
+      - "*cabinet/scripts/start-officer-mac.sh"
+      - "*cabinet/scripts/start-officer.sh"
+      - "*cabinet/scripts/gen-officer-mcp-config.py"
+      - "*cabinet/scripts/append-interface.sh"
+      - "*cabinet/scripts/captain-law-broker.py"
+      - "*cabinet/scripts/egress-guard.sh"
+      - "*cabinet/scripts/egress-proxy.py"
+      - "*cabinet/scripts/observe-only.sh"
+      - "*cabinet/scripts/lib/officer-env.py"
+      - "*cabinet/scripts/lib/officer-env.sh"
+      - "*cabinet/scripts/lib/officer-sandbox.sh"
+      - "*framework/comms/channel_adapter.py"
+      - "*framework/comms/tools.py"
+      - "*framework/comms/mcp/server.py"
+      - "*framework/comms/adapters/telegram.py"
+      - "*instance/config/egress.yml"
       - "*shared/interfaces/action-lessons.yml"
       # SOVEREIGN-POSTURE germline (amendment 2026-07-05): the posture/grants/
       # needs kernel, the gate-apply lane, the Captain-locked attestation
@@ -192,6 +209,14 @@ policies:
       - "*cabinet/scripts/evidence-read.sh"
       - "*/instance/evidence/v1/*"
     message: "Germline file -- read-only for officers and loops (no loop may edit its own judge). Propose the change to the Captain; only the Captain applies germline edits."
+
+  - name: officer-secret-read-deny
+    type: path_block
+    description: "Officer tools consume scoped credential projection, never dotenv source files"
+    tools: [Read, Grep, Glob, LS]
+    path_patterns:
+      - "*/.env*"
+    message: "Officer sessions cannot read .env credential sources. Use the role-scoped environment projection."
 
   - name: evidence-raw-read-deny
     type: path_block

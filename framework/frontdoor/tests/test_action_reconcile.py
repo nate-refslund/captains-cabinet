@@ -127,7 +127,7 @@ def test_silent_revert_emits_failed_wrong_verdict_judge():
 def test_silent_revert_nate_attributed_upgrades_to_human():
     row = _row()
     rec = Rec()
-    probe = lambda r: {"exists": False, "archived": True, "reverted_by_nate": True}
+    probe = lambda r: {"exists": False, "archived": True, "reverted_by_captain": True}
     ar.run_sweep(now="2026-07-08T10:00:00Z", journal_rows=[row], monday_probe=probe,
                  read_ledger_fn=lambda: [], emit=rec.emit, gc=False)
     ev = rec.emitted[0]
@@ -239,10 +239,10 @@ def test_make_probe_attributes_nate_revert_and_skips_non_monday():
         {"event": "archive_pulse", "user_id": "ADA", "created_at": "2026-07-07T00:00:00Z"}])
     probe = ar.make_monday_probe(fm, nate_user_id="ADA")
     res = probe({"created": {"monday_id": "555"}, "executed_at": "2026-07-04T00:00:00Z"})
-    assert res["archived"] is True and res["reverted_by_nate"] is True
+    assert res["archived"] is True and res["reverted_by_captain"] is True
     # a non-Monday row (calendar backend, no monday_id) is reported intact.
     assert ar.make_monday_probe(fm)({"created": {}}) == {
-        "exists": True, "archived": False, "reverted_by_nate": False}
+        "exists": True, "archived": False, "reverted_by_captain": False}
 
 
 def test_make_probe_no_nate_id_never_attributes():
@@ -250,7 +250,7 @@ def test_make_probe_no_nate_id_never_attributes():
         {"event": "delete_pulse", "user_id": "SOMEONE", "created_at": "2026-07-07T00:00:00Z"}])
     probe = ar.make_monday_probe(fm)                    # no nate_user_id configured
     res = probe({"created": {"monday_id": "555"}, "executed_at": "2026-07-04T00:00:00Z"})
-    assert res["archived"] is True and res["reverted_by_nate"] is False
+    assert res["archived"] is True and res["reverted_by_captain"] is False
 
 
 # --- journal GC (>30d) -------------------------------------------------------

@@ -48,6 +48,11 @@ fails (fail-closed swallows it too). Getting these into mcp-scope.yml
 `universal:` is a Captain germline amendment — see
 docs/proposals/germline-addendum-claude-code-audit-2026-07-07.md.
 
+``--observe-only`` replaces the static grant set with the structural minimum
+(``redis-trigger-channel`` + ``cabinet-comms``), after first proving that the
+scope file parses and the officer is listed. This prevents credentialed remote
+MCPs from booting or performing startup side effects during the dogfood soak.
+
 Stdlib-only on purpose (no pyyaml): this runs on every officer boot,
 including clean-room hatches where only the system python exists.
 
@@ -57,7 +62,7 @@ Usage:
       --input ~/Library/Caches/cabinet/merged-mcp-cos.json \
       --out-mcp ~/Library/Caches/cabinet/officer-mcp-cos.json \
       --out-settings ~/Library/Caches/cabinet/officer-settings-cos.json \
-      [--extra-allow redis-trigger-channel,cua]
+      [--extra-allow redis-trigger-channel,cua] [--observe-only]
 
 Exit codes: 0 = outputs written (including the fail-closed empty set);
 non-zero only when the outputs themselves could not be written (the shell
@@ -72,6 +77,9 @@ import os
 import re
 import sys
 import tempfile
+
+
+OBSERVE_ONLY_SERVERS = ("redis-trigger-channel", "cabinet-comms")
 
 
 def log_err(msg: str) -> None:
@@ -137,7 +145,12 @@ def parse_scope(text: str) -> dict:
     return out
 
 
-def resolve_allowed(officer: str, scope_path: str, extra_allow: list) -> list:
+def resolve_allowed(
+    officer: str,
+    scope_path: str,
+    extra_allow: list,
+    observe_only: bool = False,
+) -> list:
     """Return the officer's allowed server-name list, or [] fail-closed.
 
     extra_allow is honored ONLY when the scope parse succeeded AND the
@@ -166,6 +179,17 @@ def resolve_allowed(officer: str, scope_path: str, extra_allow: list) -> list:
             % (officer, scope_path)
         )
         return []
+    if observe_only:
+        granted = {name.lower() for name in scope_map[officer]}
+        missing = [name for name in OBSERVE_ONLY_SERVERS if name.lower() not in granted]
+        if missing:
+            log_err(
+                "observe-only infrastructure missing from officer scope (%s) — "
+                "FAIL CLOSED for the missing server(s)" % ",".join(missing)
+            )
+        # Never honor extra_allow here. The observe posture is a closed set,
+        # not the ordinary grant set with dangerous names subtracted.
+        return [name for name in OBSERVE_ONLY_SERVERS if name.lower() in granted]
     allowed = list(scope_map[officer])
     seen = set(allowed)
     for extra in extra_allow:
@@ -338,12 +362,18 @@ def main(argv=None) -> int:
         default="",
         help="csv of launcher infra pass-through servers (ignored on scope-parse failure)",
     )
+    ap.add_argument(
+        "--observe-only",
+        action="store_true",
+        help="boot only redis-trigger-channel + cabinet-comms; ignore all other grants",
+    )
     args = ap.parse_args(argv)
 
     os.umask(0o077)
 
     extra = [x.strip() for x in args.extra_allow.split(",") if x.strip()]
-    allowed = resolve_allowed(args.officer, args.scope, extra)
+    allowed = resolve_allowed(
+        args.officer, args.scope, extra, observe_only=args.observe_only)
     mcp_cfg = filter_config(args.input, allowed)
 
     # The overlay deliberately does NOT mirror the grants into
