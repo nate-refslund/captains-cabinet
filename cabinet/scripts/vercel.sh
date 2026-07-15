@@ -27,8 +27,9 @@
 #   vercel.sh --help
 #
 # Options / env:
-#   --team <id>     Override team (default: VERCEL_TEAM_ID or the step-network
-#                   team team_FEdAEOgfT3WhQ9c1moxCpO2s).
+#   --team <id>     Override team (default: $VERCEL_TEAM_ID; there is no
+#                   built-in default team — every deployment configures its
+#                   own via VERCEL_TEAM_ID or --team).
 #   VERCEL_TOKEN    API token; auto-loaded from cabinet/.env if unset
 #                   (VERCEL_API_KEY also accepted as a fallback name).
 #   VERCEL_TEAM_ID  Default team id.
@@ -43,7 +44,11 @@
 set -euo pipefail
 
 CABINET_DIR="${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
-DEFAULT_TEAM="${VERCEL_TEAM_ID:-team_FEdAEOgfT3WhQ9c1moxCpO2s}"
+# No built-in default team id (framework/cabinet code stays deployment-
+# agnostic — see framework/probes/probe_vercel.py's identical env-only
+# resolution). Every deployment must configure its own via VERCEL_TEAM_ID
+# (env or cabinet/.env) or --team; absence is caught explicitly below.
+DEFAULT_TEAM="${VERCEL_TEAM_ID:-}"
 API_BASE="https://api.vercel.com"
 
 # ────────────────────────────────────────────────────────────
@@ -72,6 +77,12 @@ SUBCMD="${1:-}"
 if [ -z "$SUBCMD" ]; then
   usage
   exit 2
+fi
+
+if [ -z "${TEAM:-}" ]; then
+  echo "ERROR: no Vercel team id configured." >&2
+  echo "       Set VERCEL_TEAM_ID (env or cabinet/.env) or pass --team <id>." >&2
+  exit 5
 fi
 
 # ────────────────────────────────────────────────────────────
