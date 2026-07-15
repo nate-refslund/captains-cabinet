@@ -36,6 +36,16 @@ export CABINET_TEST_DRY_RUN=1
 # Point the script at THIS repo so it resolves load-preset.sh + cabinet/env/<slug>.env
 # (the default /opt/founders-cabinet is the deployment path, absent in dev).
 export CABINET_ROOT="$ROOT"
+
+# Use an explicit fixture scope.  The live portfolio roster intentionally has
+# no `cto`; this harness tests lane assembly, not deployment-specific identity.
+TEST_SCOPE="$(mktemp)"
+printf '%s\n' \
+  'agents:' \
+  '  cto:' \
+  '    mcps: [telegram]' \
+  'universal: []' > "$TEST_SCOPE"
+export CABINET_MCP_SCOPE_FILE="$TEST_SCOPE"
 # Portability: the script's bot-token lookup uses bash-4 case-upper (${OFFICER^^}).
 # CI runs bash 5 (ubuntu-latest) where TELEGRAM_CTO_TOKEN resolves. On a bash-3.2
 # host (e.g. stock macOS dev) ${OFFICER^^} degrades to the empty string, so the
@@ -50,10 +60,16 @@ export TELEGRAM__TOKEN="x-test-token-bash32-fallback"
 # template and clean it on ANY exit (crash included). Guard: never clobber a
 # genuinely provisioned file on a live box.
 SENSED_ENV="$ROOT/cabinet/env/sensed.env"
+SENSED_CREATED=0
 if [ ! -f "$SENSED_ENV" ]; then
   cp "$ROOT/cabinet/env/_template.env" "$SENSED_ENV"
-  trap 'rm -f "$SENSED_ENV"' EXIT
+  SENSED_CREATED=1
 fi
+cleanup() {
+  rm -f "$TEST_SCOPE"
+  if [ "$SENSED_CREATED" -eq 1 ]; then rm -f "$SENSED_ENV"; fi
+}
+trap cleanup EXIT
 
 # ----------------------------------------------------------------------------
 # L1: Pool mode exports CABINET_LANE=<slug> (derived from --project).

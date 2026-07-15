@@ -30,6 +30,20 @@ export TELEGRAM_CTO_TOKEN="x-test-token"
 export TELEGRAM_HQ_CHAT_ID="x-test-chat"
 export CABINET_TEST_DRY_RUN=1
 
+# The launcher now rejects every env projection when its immutable officer
+# scope is missing or the requested officer is absent.  Give this argument
+# harness an explicit hermetic scope instead of accidentally relying on the
+# deployment roster (which no longer contains the historical `cto` fixture).
+TEST_SCOPE="$(mktemp)"
+printf '%s\n' \
+  'agents:' \
+  '  cto:' \
+  '    mcps: [telegram]' \
+  '  cos:' \
+  '    mcps: [telegram]' \
+  'universal: []' > "$TEST_SCOPE"
+export CABINET_MCP_SCOPE_FILE="$TEST_SCOPE"
+
 TEST_SLUG="tfx-pool"
 TEST_ENV="$ROOT/cabinet/env/$TEST_SLUG.env"
 if [ -e "$TEST_ENV" ]; then
@@ -37,7 +51,7 @@ if [ -e "$TEST_ENV" ]; then
   exit 1
 fi
 printf '# throwaway fixture env for test-args.sh (removed on exit)\n' > "$TEST_ENV"
-trap 'rm -f "$TEST_ENV"' EXIT
+trap 'rm -f "$TEST_ENV" "$TEST_SCOPE"' EXIT
 
 # ----------------------------------------------------------------------------
 # T1: Legacy invocation (no --project) — back-compat.
