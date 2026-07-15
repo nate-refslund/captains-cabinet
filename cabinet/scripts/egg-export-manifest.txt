@@ -154,8 +154,14 @@ delete cabinet/scripts/pensionist/shots
 #   gitignored runtime ledgers never reach the archive in the first place)
 transform interfaces-header-only
 # R145: docs/plans archived out at packaging — including the operative-egg
-# plan + ledger pair (instance coordination artifacts). The 4 NORMATIVE specs
+# plan + ledger pair (instance coordination artifacts). The 3 NORMATIVE specs
 # pinned by germline artifacts stay; an ARCHIVED-NOTE.md stub records the rule.
+# R167 amendment (personal-clean wave, 2026-07-15): source-adapter-boundary-
+# 2026-07-05.md dropped from the keep-list (see R167) — nothing in the
+# shipped egg requires its presence (only this exporter's own case-arm and
+# the dev-side test_egg_export.py cited it), and as a dated coupling CENSUS
+# it is the same "instance history" class R162 already archives rather than
+# rewords, so it now falls through to the same treatment.
 transform plans-archive
 # R162 (PC-E integrator): the DATED framework/docs design snapshots
 # (*-2026-*.md) are instance history — they cite the launching deployment's
@@ -164,6 +170,16 @@ transform plans-archive
 # contract docs (work-model.md — guide-referenced —, consequence-ledger.md,
 # outcome-watchdog.md) stay; an ARCHIVED-NOTE.md stub records the rule.
 transform framework-docs-archive
+# R167 (personal-clean wave, 2026-07-15): docs/proposals/*.md ship un-archived
+# today — the gap R146 named but never implemented ("non-amendment proposals
+# archive"). The 18 docs/proposals/germline-amendment-*.md FOUNDING AMENDMENTS
+# stay frozen/verbatim (R031/R146 — ratified constitutional record, same
+# class as LICENSE's copyright line; test_amendment_doc_lint.py's union check
+# still globs this exact pattern against the live tree even though that lint
+# itself no longer ships, per the LANE-C null-hatch fix above). The remaining
+# 8 non-amendment docs (addenda/activation runbooks, no ratified ship
+# requirement) archive with an ARCHIVED-NOTE.md stub, same shape as R145/R162.
+transform proposals-archive
 # R159: CI branch triggers retarget to the export default branch (master) at
 # packaging time — until then CI keeps running on the live integration branch.
 transform ci-retarget-master
@@ -248,9 +264,40 @@ expect-present shared/interfaces/deployment-status.md
 expect-present shared/interfaces/reviews/.gitkeep
 expect-present docs/plans/ARCHIVED-NOTE.md
 expect-present docs/plans/cabinet-axes-spec-2026-07-05.md
-expect-present docs/plans/source-adapter-boundary-2026-07-05.md
 expect-present docs/plans/evolution-engine-spec-2026-07-05.md
 expect-present docs/plans/sovereign-build-spec-2026-07-04.md
+# R167: dropped from the plans-archive keep-list (see R167 above) — the
+# coupling census now archives with the rest of docs/plans instance history.
+expect-absent docs/plans/source-adapter-boundary-2026-07-05.md
+# R167: the 18 ratified founding-amendment docs ship verbatim; the 8
+# non-amendment addenda/activation runbooks archive with a stub.
+expect-present docs/proposals/ARCHIVED-NOTE.md
+expect-present docs/proposals/germline-amendment-attention-transport-2026-07-09.md
+expect-present docs/proposals/germline-amendment-brain-bridge-split-2026-07-07.md
+expect-present docs/proposals/germline-amendment-cabinet-axes-2026-07-05.md
+expect-present docs/proposals/germline-amendment-candor-2026-07-10.md
+expect-present docs/proposals/germline-amendment-constitution-retirement-2026-07-07.md
+expect-present docs/proposals/germline-amendment-cosmetic-batch-2026-07-07.md
+expect-present docs/proposals/germline-amendment-de-nate-2026-07-05.md
+expect-present docs/proposals/germline-amendment-gather-rewire-2026-07-07.md
+expect-present docs/proposals/germline-amendment-golden-evals-prune-2026-07-07.md
+expect-present docs/proposals/germline-amendment-host-grant-removal-2026-07-07.md
+expect-present docs/proposals/germline-amendment-instance-extract-2026-07-05.md
+expect-present docs/proposals/germline-amendment-manifest-sunset-2026-07-07.md
+expect-present docs/proposals/germline-amendment-policy-engine-pulldown-2026-07-07.md
+expect-present docs/proposals/germline-amendment-source-adapter-2026-07-05.md
+expect-present docs/proposals/germline-amendment-sovereign-posture-2026-07-05.md
+expect-present docs/proposals/germline-amendment-task-create-2026-07-03.md
+expect-present docs/proposals/germline-amendment-trust-inversion-2026-07-04.md
+expect-present docs/proposals/germline-amendment-war-room-census-2026-07-10.md
+expect-absent docs/proposals/comms-mcp-activation-2026-07-09.md
+expect-absent docs/proposals/germline-addendum-claude-code-audit-2026-07-07.md
+expect-absent docs/proposals/germline-enforcement-fixes-2026-07-14-addendum.md
+expect-absent docs/proposals/germline-hygiene-trim-guard-addendum-2026-07-11.md
+expect-absent docs/proposals/germline-lockstep-lane-resolver-addendum-2026-07-12.md
+expect-absent docs/proposals/germline-window-4-deferral-2026-07-10.md
+expect-absent docs/proposals/germline-window-addendum-2026-07-07.md
+expect-absent docs/proposals/sovereign-posture-activation-2026-07-09.md
 expect-present cabinet/scripts/hatch.sh
 expect-present cabinet/scripts/null-hatch.sh
 expect-present bin/.gitkeep

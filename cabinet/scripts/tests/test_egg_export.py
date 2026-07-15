@@ -234,15 +234,18 @@ def test_plans_archived_with_stub(export: Path):
                  "de-nate-foundation-2026-07-05.md"):
         assert not (plans / gone).exists(), f"R145: {gone} must not ship"
     for spec in ("cabinet-axes-spec-2026-07-05.md",
-                 "source-adapter-boundary-2026-07-05.md",
                  "evolution-engine-spec-2026-07-05.md",
                  "sovereign-build-spec-2026-07-04.md"):
         assert (plans / spec).is_file(), f"R145: germline-pinned spec {spec} must ship"
+    # R167 (2026-07-15): dropped from the keep-list — a dated screenpipe-
+    # coupling census is instance history, same class the rest of this rule
+    # already archives; it must NOT ship.
+    assert not (plans / "source-adapter-boundary-2026-07-05.md").exists(), \
+        "R167: source-adapter-boundary-2026-07-05.md must not ship (dated coupling census, instance history)"
     # nothing else remains
     leftover = sorted(p.name for p in plans.iterdir())
     assert leftover == ["ARCHIVED-NOTE.md", "cabinet-axes-spec-2026-07-05.md",
                         "evolution-engine-spec-2026-07-05.md",
-                        "source-adapter-boundary-2026-07-05.md",
                         "sovereign-build-spec-2026-07-04.md"], leftover
 
 
@@ -334,6 +337,49 @@ def test_framework_docs_dated_snapshots_archived(export: Path):
     for keeper in ("ARCHIVED-NOTE.md", "work-model.md",
                    "consequence-ledger.md", "outcome-watchdog.md"):
         assert (docs / keeper).is_file(), f"living doc must ship: {keeper}"
+
+
+def test_proposals_non_amendments_archived_amendments_kept(export: Path):
+    """R167 (personal-clean wave, 2026-07-15): fills the gap R146 named but
+    never implemented — the 18 docs/proposals/germline-amendment-*.md
+    FOUNDING AMENDMENTS (R031/R146: ratified, frozen constitutional record)
+    ship verbatim; every other file (addenda/activation runbooks, no
+    ratified ship requirement) archives with an ARCHIVED-NOTE.md stub."""
+    proposals = export / "docs" / "proposals"
+    assert (proposals / "ARCHIVED-NOTE.md").is_file(), "R167: archived stub must ship"
+    amendments = sorted(p.name for p in proposals.glob("germline-amendment-*.md"))
+    assert amendments == [
+        "germline-amendment-attention-transport-2026-07-09.md",
+        "germline-amendment-brain-bridge-split-2026-07-07.md",
+        "germline-amendment-cabinet-axes-2026-07-05.md",
+        "germline-amendment-candor-2026-07-10.md",
+        "germline-amendment-constitution-retirement-2026-07-07.md",
+        "germline-amendment-cosmetic-batch-2026-07-07.md",
+        "germline-amendment-de-nate-2026-07-05.md",
+        "germline-amendment-gather-rewire-2026-07-07.md",
+        "germline-amendment-golden-evals-prune-2026-07-07.md",
+        "germline-amendment-host-grant-removal-2026-07-07.md",
+        "germline-amendment-instance-extract-2026-07-05.md",
+        "germline-amendment-manifest-sunset-2026-07-07.md",
+        "germline-amendment-policy-engine-pulldown-2026-07-07.md",
+        "germline-amendment-source-adapter-2026-07-05.md",
+        "germline-amendment-sovereign-posture-2026-07-05.md",
+        "germline-amendment-task-create-2026-07-03.md",
+        "germline-amendment-trust-inversion-2026-07-04.md",
+        "germline-amendment-war-room-census-2026-07-10.md",
+    ], amendments
+    for gone in ("comms-mcp-activation-2026-07-09.md",
+                 "germline-addendum-claude-code-audit-2026-07-07.md",
+                 "germline-enforcement-fixes-2026-07-14-addendum.md",
+                 "germline-hygiene-trim-guard-addendum-2026-07-11.md",
+                 "germline-lockstep-lane-resolver-addendum-2026-07-12.md",
+                 "germline-window-4-deferral-2026-07-10.md",
+                 "germline-window-addendum-2026-07-07.md",
+                 "sovereign-posture-activation-2026-07-09.md"):
+        assert not (proposals / gone).exists(), f"R167: non-amendment proposal must not ship: {gone}"
+    # nothing else remains beyond the stub + the 18 amendments
+    leftover = sorted(p.name for p in proposals.iterdir())
+    assert leftover == sorted(["ARCHIVED-NOTE.md"] + amendments), leftover
 
 
 def test_claude_egg_swap_once_template_tracked(export: Path):

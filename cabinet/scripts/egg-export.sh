@@ -40,9 +40,9 @@ egg-export.sh — cut the public egg as a fresh tree from git HEAD
 
 The exclusion/transform pass is data-driven from
 cabinet/scripts/egg-export-manifest.txt (row-cited: R059 R088 R116 R120
-R122 R123 R124 R125 R126 R127 R128 R145 R159 R160 R161 R162 — incl. the
-PC-E transforms launchd-portable-only, claude-egg-swap and
-framework-docs-archive). Writes
+R122 R123 R124 R125 R126 R127 R128 R145 R159 R160 R161 R162 R167 — incl.
+the PC-E transforms launchd-portable-only, claude-egg-swap,
+framework-docs-archive and the R167 proposals-archive). Writes
 egg-manifest.json into the export root and prints a one-screen summary.
 
 PRIVATE-SIDE PREP ONLY — publishing remains CG-7 Captain-gated.
@@ -203,7 +203,6 @@ t_plans_archive() {
     base="$(basename "$entry")"
     case "$base" in
       cabinet-axes-spec-2026-07-05.md) : ;;          # germline-pinned normative spec
-      source-adapter-boundary-2026-07-05.md) : ;;    # germline-pinned normative spec
       evolution-engine-spec-2026-07-05.md) : ;;      # germline-pinned normative spec
       sovereign-build-spec-2026-07-04.md) : ;;       # germline-pinned normative spec
       *) rm -rf "$entry" ;;
@@ -220,9 +219,15 @@ the public egg at export time and stay with the source instance.
 What remains here is the NORMATIVE spec set pinned by germline artifacts:
 
 - cabinet-axes-spec-2026-07-05.md
-- source-adapter-boundary-2026-07-05.md
 - evolution-engine-spec-2026-07-05.md
 - sovereign-build-spec-2026-07-04.md
+
+R167 amendment (2026-07-15): source-adapter-boundary-2026-07-05.md dropped
+from this keep-list — it is a dated screenpipe-coupling CENSUS (the same
+"instance history" class this rule already archives rather than rewords),
+nothing in the shipped egg requires its presence, and it carried the
+launching deployment's vault-path literals. It archives like the rest of
+docs/plans instead of shipping un-scrubbed.
 EOF
 }
 
@@ -258,6 +263,41 @@ The undated LIVING contract docs ship here unchanged:
 - work-model.md (the work-classes contract the guide references)
 - consequence-ledger.md
 - outcome-watchdog.md
+EOF
+}
+
+# R167 (personal-clean wave, 2026-07-15): fills the gap R146 named but never
+# implemented — "non-amendment proposals (calendar runbooks etc.) archive."
+# The 18 docs/proposals/germline-amendment-*.md docs are ratified FOUNDING
+# AMENDMENTS (R031/R146: frozen constitutional record, same class as
+# LICENSE's copyright line — never reworded) and ship verbatim; every other
+# file in docs/proposals/ (addenda, activation runbooks — no ratified ship
+# requirement) is instance history and archives with a stub, same shape as
+# t_plans_archive / t_framework_docs_archive.
+t_proposals_archive() {
+  local dir="$OUT/docs/proposals" entry base
+  [ -d "$dir" ] || { verify_fail "docs/proposals missing from archive cut"; return 0; }
+  for entry in "$dir"/*; do
+    [ -e "$entry" ] || continue
+    base="$(basename "$entry")"
+    case "$base" in
+      germline-amendment-*.md) : ;;   # ratified founding amendment — ships verbatim
+      *) rm -f "$entry" ;;
+    esac
+  done
+  cat > "$dir/ARCHIVED-NOTE.md" <<'EOF'
+# docs/proposals — non-amendment proposals archived at egg export (R146/R167)
+
+R146 ratified that `docs/proposals/germline-amendment-*.md` docs ship as
+FOUNDING AMENDMENTS — a frozen constitutional record of how this instance's
+germline was amended over time (same class as LICENSE's copyright line:
+rewording would falsify a ratified decision). Every other file here (addenda,
+activation runbooks — no ratified ship requirement, and several cited the
+launching deployment's absolute paths / real employer domains) is instance
+history: archived out of the public egg at export time, same shape as
+docs/plans (R145) and framework/docs (R162).
+
+The founding amendments ship unchanged in this directory.
 EOF
 }
 
@@ -441,6 +481,7 @@ run_transform() {
     interfaces-header-only) t_interfaces_header_only ;;
     plans-archive)          t_plans_archive ;;
     framework-docs-archive) t_framework_docs_archive ;;
+    proposals-archive)      t_proposals_archive ;;
     ci-retarget-master)     t_ci_retarget_master ;;
     contexts-prune)         t_contexts_prune ;;
     projects-prune)         t_projects_prune ;;
