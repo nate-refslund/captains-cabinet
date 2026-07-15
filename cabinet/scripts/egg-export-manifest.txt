@@ -182,7 +182,7 @@ transform plans-archive
 transform framework-docs-archive
 # R167 (personal-clean wave, 2026-07-15): docs/proposals/*.md ship un-archived
 # today — the gap R146 named but never implemented ("non-amendment proposals
-# archive"). The 18 docs/proposals/germline-amendment-*.md FOUNDING AMENDMENTS
+# archive"). The 20 docs/proposals/germline-amendment-*.md FOUNDING AMENDMENTS
 # stay frozen/verbatim (R031/R146 — ratified constitutional record, same
 # class as LICENSE's copyright line; test_amendment_doc_lint.py's union check
 # still globs this exact pattern against the live tree even though that lint
@@ -281,7 +281,7 @@ expect-present docs/plans/sovereign-build-spec-2026-07-04.md
 # R167: dropped from the plans-archive keep-list (see R167 above) — the
 # coupling census now archives with the rest of docs/plans instance history.
 expect-absent docs/plans/source-adapter-boundary-2026-07-05.md
-# R167: the 18 ratified founding-amendment docs ship verbatim; the 8
+# R167: the 20 ratified founding-amendment docs ship verbatim; the 8
 # non-amendment addenda/activation runbooks archive with a stub.
 expect-present docs/proposals/ARCHIVED-NOTE.md
 expect-present docs/proposals/germline-amendment-attention-transport-2026-07-09.md
