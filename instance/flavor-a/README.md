@@ -62,8 +62,8 @@ golden eval `memory/golden-evals/eval-021-source-boundary.md`).
 
 The seam itself is now genericized to "personal-source" (rule classes
 `FRAMEWORK_IMPORTS_PERSONAL_SOURCE` / `FRAMEWORK_PATH_PERSONAL_SOURCE`,
-`file_personal_source_triage_row`, this README) per the Captain's
-2026-07-15 decision — but the Captain also ruled the adapter itself is
+this README) per the Captain's 2026-07-15 decision — but the Captain also
+ruled the adapter itself is
 **not rebuilt from scratch and keeps the screenpipe name inside it**. The
 `flavor-a` / `flavor_a` naming (an existing "Flavor-A = personal estate,
 Flavor-B = org/clean-room" axis convention, documented throughout

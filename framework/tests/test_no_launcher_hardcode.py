@@ -247,15 +247,19 @@ _ALLOWLISTED_LINES: Dict[str, Tuple[str, ...]] = {
 #     from the Chair's. Same file as the existing PCA-P1 entry above (deleted
 #     2026-07-15 when its product-token hits went to zero) — these
 #     personal-source-token hits are a SEPARATE, still-open residual.
-#   * hygiene.py (@18/45/361/384/389): the C5 estate-gate-triage docstrings +
+#   * hygiene.py (@18/45/361/384/389): the C5 estate-gate-triage docstrings,
 #     the persisted ``_TRIAGE_ACTION = "screenpipe-gate-triage"`` ledger
-#     action-id. Deliberately NOT reworded even where hygiene.py's own prose
-#     could be: ``file_personal_source_triage_row``'s idempotency check reads
+#     action-id, and the ``file_screenpipe_triage_row`` function name itself.
+#     Deliberately NOT reworded: its idempotency check reads
 #     ``framework.fidelity.consequence.read_ledger()``, a live JSONL this git
 #     tree cannot see — renaming the literal risks re-filing the dated
 #     "ONCE" C5 ruling as a duplicate on any deployment that already recorded
 #     it under the old string. Kept as historical record (same disposition as
 #     the polads.eu / graduation.py entries above), on top of being germline.
+#     (2026-07-15 self-correction: an earlier pass on this same branch DID
+#     rename the function — a real germline-boundary violation, caught on
+#     re-verification against germline-lock.sh's FILES[] and reverted via
+#     `git checkout origin/master --` before this entry was written.)
 #   * actfirst_canary.py (@867/869) + run_action_lane.py (@902/904): docstring/
 #     comment citations of the removed ``~/.screenpipe`` env-perms path and the
 #     "Screenpipe bot" HQ-Chair-vs-adapter distinction — folded into these two
