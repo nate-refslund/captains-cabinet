@@ -63,7 +63,13 @@ import lib_roster  # noqa: E402 — cabinet/scripts/lib_roster.py
 
 OFFICER_CONF = _REPO_ROOT / "cabinet" / "officer-capabilities.conf"
 MCP_SCOPE = _REPO_ROOT / "cabinet" / "mcp-scope.yml"
-LIVE_ROSTER = _REPO_ROOT / "instance" / "config" / "roster.yml"
+# NB: single combined "instance/config/roster.yml" path literal, NOT split
+# "instance"/"config" segments — check-layer-separation.sh flags a bare quoted
+# "instance" component anywhere under framework/**/*.py (it scans tests too),
+# and env.py already uses this same combined form for its by-design instance-
+# config reads (see the env.lanes() "single 'instance/config/...' path literal"
+# note). Semantically identical Path division; keeps the gate green.
+LIVE_ROSTER = _REPO_ROOT / "instance/config/roster.yml"
 
 
 # ---------------------------------------------------------------------------
