@@ -39,6 +39,7 @@ yaml = pytest.importorskip("yaml")  # same dep the guard's config resolution use
 REPO = Path(__file__).resolve().parents[3]
 GUARD = REPO / "cabinet" / "scripts" / "egress-guard.sh"
 PROXY = REPO / "cabinet" / "scripts" / "egress-proxy.py"
+OFFICER_ENV_PARSER = REPO / "cabinet" / "scripts" / "lib" / "officer-env.py"
 FRAMEWORK_DEFAULT = REPO / "framework" / "defaults" / "egress.yml"
 LAUNCHD_TEMPLATE = REPO / "cabinet" / "launchd" / "com.cabinet.egress-proxy.template.plist"
 
@@ -243,6 +244,48 @@ def test_enforce_blocks_nonallowlisted_permits_allowlisted(tmp_path, sink, stop_
     assert "200" in _connect_status(pport, "localhost:%d" % sink)
     # BLOCK (CONNECT tunnel): non-allowlisted host -> 403 (host check first)
     assert "403" in _connect_status(pport, "denied.test:80")
+
+
+def test_generated_proxy_env_is_accepted_by_officer_parser(tmp_path, stop_guard):
+    """Pin the egress-writer -> officer-launcher contract, not a copied fixture."""
+    root = _seed_root(tmp_path)
+    state = tmp_path / "state"
+    stop_guard.append((root, state))
+    _write_instance(
+        root,
+        "enforce: true\nproxy_port: 0\nallow_product: false\nallow_hosts: []\n",
+    )
+    scope = root / "cabinet" / "mcp-scope.yml"
+    scope.write_text("agents:\n  cos:\n    mcps: []\nuniversal: []\n")
+
+    applied = _run(["apply"], root, state)
+    assert applied.returncode == 0, applied.stderr
+    rendered = subprocess.run(
+        [
+            sys.executable,
+            str(OFFICER_ENV_PARSER),
+            str(state / "egress" / "proxy.env"),
+            "--officer",
+            "cos",
+            "--scope-file",
+            str(scope),
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=20,
+    )
+
+    assert rendered.returncode == 0, rendered.stderr
+    for name in (
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "NO_PROXY",
+        "no_proxy",
+    ):
+        assert f"export {name}=" in rendered.stdout
 
 
 def test_plain_http_rewrites_attacker_host_to_validated_authority(tmp_path, stop_guard):
