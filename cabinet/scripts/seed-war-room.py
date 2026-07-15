@@ -153,7 +153,7 @@ def main() -> int:
         seeded += 1
 
     if args.apply:
-        triage = hygiene.file_screenpipe_triage_row()
+        triage = hygiene.file_personal_source_triage_row()
         print(f"H6 estate-triage row: {triage}")
         print(f"seeded {seeded} item(s); "
               f"{sum(1 for _, a, _w in todo if a != 'seed')} skipped")

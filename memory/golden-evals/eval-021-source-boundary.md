@@ -22,8 +22,9 @@ Four probes:
    `get_source()`.
 3. The layer-separation gate is asked to accept a NEW framework→screenpipe
    import or PATH literal beyond the committed `.layer-separation-baseline`
-   (`FRAMEWORK_IMPORTS_SCREENPIPE` / `FRAMEWORK_PATH_SCREENPIPE` rule classes),
-   or a symlink under `framework/` escapes the scanned tree.
+   (`FRAMEWORK_IMPORTS_PERSONAL_SOURCE` / `FRAMEWORK_PATH_PERSONAL_SOURCE` rule
+   classes — adapter-agnostic names; screenpipe is today's one concrete
+   target), or a symlink under `framework/` escapes the scanned tree.
 4. A clean-room / Flavor-B box runs framework with NO source binding
    (`instance/config/sources.yml` absent) and `~/.screenpipe` unreadable: the
    resolver must fail-closed to `NullPersonalSource`, and framework CORE must
@@ -56,8 +57,8 @@ Four probes:
    (`len(allowlist) <= _ALLOWLIST_BASELINE_MAX`, baseline 0). Every allowlist
    path must exist on disk (`test_every_allowlisted_path_exists`).
 3. `bash cabinet/scripts/check-layer-separation.sh` carries the
-   `FRAMEWORK_IMPORTS_SCREENPIPE` + `FRAMEWORK_PATH_SCREENPIPE` rule classes
-   alongside the instance/presets ones, using the SAME committed
+   `FRAMEWORK_IMPORTS_PERSONAL_SOURCE` + `FRAMEWORK_PATH_PERSONAL_SOURCE` rule
+   classes alongside the instance/presets ones, using the SAME committed
    `.layer-separation-baseline` shrink-only mechanism (comment/docstring
    filtered, `framework/sources/` excluded, symlink escapes refused): CI fails
    on a NEW framework→screenpipe coupling beyond the baseline; growing the

@@ -63,11 +63,12 @@
 # where <rule_id> is one of:
 #   FRAMEWORK_IMPORTS_INSTANCE, FRAMEWORK_IMPORTS_PRESETS,
 #   FRAMEWORK_PATH_INSTANCE,    FRAMEWORK_PATH_PRESETS,
-#   FRAMEWORK_IMPORTS_SCREENPIPE, FRAMEWORK_PATH_SCREENPIPE,
+#   FRAMEWORK_IMPORTS_PERSONAL_SOURCE, FRAMEWORK_PATH_PERSONAL_SOURCE,
 #   PRESETS_IMPORTS_INSTANCE
 # The allowlist may carry ONLY FRAMEWORK_PATH_INSTANCE entries (config-read
-# class); screenpipe/import classes are never allowlistable (see the
-# allowlist header + golden eval-021).
+# class); personal-source/import classes are never allowlistable (see the
+# allowlist header + golden eval-021). The rule class name is adapter-
+# agnostic; today's one concrete target is the screenpipe adapter.
 # Line numbers are intentionally omitted so trivial file edits don't churn
 # the baseline. The CI signal is "this file violates this rule" — once.
 
@@ -168,7 +169,7 @@ collect_violations() {
     grep -rnE '^[[:space:]]*(import|from)[[:space:]]+(draft_lib|commitments_lib|context_lib|me_signal|sp_lib|product_ops_lib|email_lib|teams_graph_lib|agent_reasoning)([[:space:]\.]|$)' \
          framework --include="*.py" --exclude-dir=tests --exclude-dir=sources \
          --exclude='test_*.py' --exclude='*_test.py' 2>/dev/null \
-      | awk -F: '{ path=$1; sub(/^[[:space:]]*/, "", $3); if ($3 !~ /^#/) print path ":FRAMEWORK_IMPORTS_SCREENPIPE" }' \
+      | awk -F: '{ path=$1; sub(/^[[:space:]]*/, "", $3); if ($3 !~ /^#/) print path ":FRAMEWORK_IMPORTS_PERSONAL_SOURCE" }' \
       >> "$out"
 
     # Rule: framework runtime screenpipe PATH literals (SRC-5) — a ~/.screenpipe
@@ -188,7 +189,7 @@ collect_violations() {
           if (stripped ~ /^#/) next;
           if (stripped ~ /^"""/ || stripped ~ /^'\''\'\''\'\''/) next;
           if (src ~ /help[[:space:]]*=/) next;
-          print path ":FRAMEWORK_PATH_SCREENPIPE";
+          print path ":FRAMEWORK_PATH_PERSONAL_SOURCE";
         }' \
       >> "$out"
   fi

@@ -14,10 +14,10 @@ The command-center prerequisite set (proposal 2026-07-10 §5) that turns
        semantics by situation ("supersedes my 10:10Z card" becomes XDEL of
        the superseded entry, not queue growth). Index:
        ``cabinet:attention:sit-index:<project>`` (situation_key → entry id).
-  H6 — ``file_screenpipe_triage_row``: the C5 ruling as a ledger row — the
-       screenpipe estate gate is EXCLUDED from room v1; its one-time triage
-       is recorded, never silently double-counted. Idempotent (no-ops when
-       the row already exists).
+  H6 — ``file_personal_source_triage_row``: the C5 ruling as a ledger row —
+       the screenpipe estate gate is EXCLUDED from room v1; its one-time
+       triage is recorded, never silently double-counted. Idempotent
+       (no-ops when the row already exists).
 
 Closure semantics vs H5: an EXPIRY is a demotion (situations.py re-types
 it); a CLOSURE here is deliberate — it writes BOTH the superseding ledger
@@ -355,9 +355,9 @@ def supersede_stream_entry(backend, project: str, skey: str,
 # H6 — the C5 estate-gate triage, as a ledger row (record, not mechanism)
 # ---------------------------------------------------------------------------
 
-def file_screenpipe_triage_row(*, emit: "Callable | None" = None,
-                               ledger_rows: "list | None" = None,
-                               now: "datetime | None" = None) -> dict:
+def file_personal_source_triage_row(*, emit: "Callable | None" = None,
+                                    ledger_rows: "list | None" = None,
+                                    now: "datetime | None" = None) -> dict:
     """Record the C5 ruling ONCE: the screenpipe Telegram estate gate
     (161 unanswered, median 18.6d at measurement) is EXCLUDED from war-room
     v1; its one-time triage sweep is a Captain to-do, not a census row. A

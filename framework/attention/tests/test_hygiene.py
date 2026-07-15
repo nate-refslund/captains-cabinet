@@ -241,7 +241,7 @@ class TestSupersedeInPlace(unittest.TestCase):
 class TestEstateTriage(unittest.TestCase):
     def test_files_once_then_noop(self):
         emitted = []
-        out1 = hygiene.file_screenpipe_triage_row(
+        out1 = hygiene.file_personal_source_triage_row(
             emit=lambda **ev: emitted.append(ev), ledger_rows=[], now=NOW)
         self.assertTrue(out1["filed"])
         self.assertEqual(len(emitted), 1)
@@ -250,7 +250,7 @@ class TestEstateTriage(unittest.TestCase):
         self.assertEqual(row["outcome"]["status"], "ok")
         self.assertNotIn("proposal", row)   # a record, never an open card
         # idempotent: with the row present, no second emission
-        out2 = hygiene.file_screenpipe_triage_row(
+        out2 = hygiene.file_personal_source_triage_row(
             emit=lambda **ev: emitted.append(ev), ledger_rows=[row], now=NOW)
         self.assertFalse(out2["filed"])
         self.assertEqual(len(emitted), 1)
@@ -258,7 +258,7 @@ class TestEstateTriage(unittest.TestCase):
     def test_row_validates_against_ledger_schema(self):
         from framework.fidelity.consequence import validate_consequence
         emitted = []
-        hygiene.file_screenpipe_triage_row(
+        hygiene.file_personal_source_triage_row(
             emit=lambda **ev: emitted.append(ev), ledger_rows=[], now=NOW)
         validate_consequence(emitted[0])    # raises on violation
 
