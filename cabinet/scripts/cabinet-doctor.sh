@@ -63,6 +63,22 @@
 # on the Captain. Each waiver cites its amendment doc. Remove the waiver in
 # the same change that lands the amendment (Docs-Must-Track-Code).
 #
+# NOT DESIGNED TO GREEN IN ISOLATION (2026-07-15 sandbox-confinement review,
+# finding #2): this is a WHOLE-FLEET liveness prober — §1 asks the HOST's
+# real launchd/tmux whether an officer is ALREADY loaded/running; §3 needs
+# real secrets resolvable (cabinet/.env); §5 needs the HOST's real
+# ~/.claude.json / ~/.claude/settings.json to already register a scope
+# grant; §9/9b need a live world-chronicle daemon actually ticking. None of
+# that exists for a freshly `git worktree add`-ed, not-yet-promoted, or
+# otherwise isolated checkout (e.g. a scratch runtime root used for a
+# cabinet-deploy.sh --dry-run rehearsal) — such a run WILL legitimately
+# report several non-germline DEAD findings. That is the checkout correctly
+# reporting "nobody has deployed me yet," not a doctor bug and not evidence
+# the checkout's own code is unhealthy. A GREEN run proves the checkout
+# ready to go LIVE; this is not a general-purpose "is this code correct"
+# linter. cabinet-deploy.sh's health_gate (which runs this script against a
+# not-yet-promoted slot) documents this same caveat at its call site.
+#
 # Scheduled daily via cabinet/services.yml (`cabinet-doctor` row). Also the
 # final acceptance gate of the Mini hatch runbook
 # (docs/runbooks/mini-hatch-tonight-2026-07-07.md §Flight recorder).
