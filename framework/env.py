@@ -623,7 +623,7 @@ _vault_dir_cache: "str | None" = None
 
 
 def vault_dir(default: str = "") -> str:
-    """The captain's brain/Obsidian VAULT directory for this deployment — the
+    """The captain's brain/notes VAULT directory for this deployment — the
     resolver that lifts the vault path OUT of the universal-base ``framework``
     code (the fidelity decision-cell's Decisions corpus dir; on Flavor-A the
     screenpipe brain vault) into instance config, so framework names no

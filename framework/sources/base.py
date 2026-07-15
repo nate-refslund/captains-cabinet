@@ -206,7 +206,7 @@ class PersonalDispatch(Protocol):
 
     def write_daily_note(self, date: str, content: str) -> dict:
         """Write the captain's daily note (``1-Daily/<date>.md``) **only when its
-        bytes changed** (sha256 compare — the obsidian-sync hash-match invariant),
+        bytes changed** (sha256 compare — the vault-sync hash-match invariant),
         under the deployment's vault root. Returns
         ``{"action": written|unchanged|skipped, "path": ...}``. The sole sanctioned
         full-note write path; a null/clean-room dispatch skips (no vault)."""
