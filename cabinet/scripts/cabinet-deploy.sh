@@ -62,19 +62,49 @@
 # never rewrites a plist); otherwise (sandbox, or pre-cutover) invoke
 # start-officer-mac.sh directly, honoring --dry-run.
 #
+# REDIS CONFINEMENT (2026-07-15 sandbox-confinement review, finding #1): the
+# doctor sub-process's own Redis calls (PING + heartbeat SET + world-
+# chronicle GET) are pinned to an unreachable sandbox endpoint whenever
+# --runtime-root is not the canonical live root (~/.cabinet/runtime) and no
+# REDIS_HOST/REDIS_PORT was already set in this script's own environment —
+# see health_gate()'s own comment for the exact resolution order. A
+# scratch-root rehearsal therefore cannot reach, PING, or overwrite the live
+# fleet's real Redis heartbeat.
+#
+# WHAT THE GATE STILL READS OUTSIDE --runtime-root — named here rather than
+# implied away: the doctor's services.yml/launchd/tmux check (its section 1)
+# asks the HOST's real launchctl/tmux whether an ALREADY-LOADED
+# com.cabinet.officer.* LaunchAgent/session exists — read-only, never
+# started/stopped/modified. Pre-cutover (or against any scratch root) that
+# legitimately finds nothing to match and DEADs those rows, same as several
+# other whole-fleet checks (MCP-env resolution, scope-grant registration,
+# world-chronicle freshness) — a fresh/isolated checkout correctly reporting
+# "nobody has deployed me yet" is not a doctor bug. See cabinet-doctor.sh's
+# own header ("NOT DESIGNED TO GREEN IN ISOLATION") for the full list and
+# rationale; a scratch-root health_gate rehearsal proves the deploy
+# ORCHESTRATION (fetch/resolve/provision/gate-decision/promote/restart-
+# dispatch/rollback), not a green whole-fleet claim.
+#
 # Usage:
 #   cabinet-deploy.sh deploy   --runtime-root <path> [--ref <git-ref>] [--dry-run]
 #   cabinet-deploy.sh rollback --runtime-root <path> [--dry-run]
 #   cabinet-deploy.sh status   --runtime-root <path>
 #   (action defaults to `deploy` if omitted)
 #
-# --dry-run: fetch/provision/health-gate/promote all still run for real (all
-# confined to --runtime-root, never the live fleet) — a scratch-runtime-root
+# --dry-run: fetch/provision/health-gate/promote all still run for real,
+# confined to --runtime-root's OWN filesystem tree — a scratch-runtime-root
 # promote is harmless; it is only ever dangerous for the LIVE runtime root,
-# which this flag exists to let you rehearse against safely. Only the
-# restart leg changes: it calls start-officer-mac.sh with --dry-run (its own
-# documented zero-side-effect contract: prints the assembled command, no
-# tmux/redis/boot) instead of `launchctl kickstart`.
+# which this flag exists to let you rehearse against safely. Two things the
+# health gate touches OUTSIDE that tree are confined/documented, never left
+# to an overclaim: the doctor's redis calls (PING + heartbeat SET +
+# world-chronicle GET — see health_gate()'s own comment; pinned away from
+# the live instance for any non-canonical --runtime-root) and its read-only
+# launchd/tmux liveness check (see the HEALTH GATE section above). Only the
+# restart leg changes with --dry-run: it calls start-officer-mac.sh with
+# --dry-run (its own documented zero-side-effect contract: prints the
+# assembled command, no tmux/redis/boot) instead of `launchctl kickstart` —
+# restart_officer()'s own DRY_RUN guard additionally ensures --dry-run never
+# kickstarts an ALREADY-LOADED live LaunchAgent either, for the same reason.
 #
 # --runtime-root has NO hardcoded fallback to a real path: it is REQUIRED
 # (flag or CABINET_DEPLOY_RUNTIME_ROOT env var) so this script can never
@@ -124,6 +154,18 @@ done
 [ -n "$RUNTIME_ROOT" ] || { echo "cabinet-deploy.sh: --runtime-root is required (or CABINET_DEPLOY_RUNTIME_ROOT)" >&2; exit 64; }
 RUNTIME_ROOT="$(cd "$RUNTIME_ROOT" 2>/dev/null && pwd)" || { echo "cabinet-deploy.sh: --runtime-root does not exist — run runtime-provision.sh init first" >&2; exit 64; }
 
+# CANONICAL_RUNTIME_ROOT — the one --runtime-root value this script treats
+# as "the real, eventually-live fleet path" (~/.cabinet/runtime, the
+# documented eventual default in the --runtime-root usage note above).
+# Resolved the same way RUNTIME_ROOT itself is (cd+pwd) so a symlinked
+# $HOME or a trailing slash can't produce a false mismatch; best-effort — if
+# that directory doesn't exist yet on this box (the common case
+# pre-cutover), it simply can never equal RUNTIME_ROOT, which is the
+# conservative (sandbox-confining) direction to fail in. Used by
+# health_gate() below to decide whether the doctor sub-process may touch
+# the real local Redis, or must be pinned away from it.
+CANONICAL_RUNTIME_ROOT="$(cd "$HOME/.cabinet/runtime" 2>/dev/null && pwd || true)"
+
 LOG="$RUNTIME_ROOT/.cabinet-deploy.log"
 log_line() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$1" >> "$LOG"; }
 
@@ -146,8 +188,42 @@ health_gate() {
 
   [ -f "$doctor_bin" ] || { echo "cabinet-deploy.sh: HEALTH GATE FAILED — $doctor_bin missing on the new slot" >&2; return 1; }
 
+  # ---- redis sandbox-confinement (2026-07-15 review finding #1) -----------
+  # The doctor sub-process defaults REDIS_HOST/REDIS_PORT to 127.0.0.1:6379
+  # (cabinet-doctor.sh's own fallback) whenever neither is set — the REAL
+  # local Redis the live fleet's heartbeats/trigger-bus/kill-switch already
+  # use. Left alone, EVERY health_gate call (including a scratch-root
+  # rehearsal that never intends to touch anything live) would PING that
+  # instance and unconditionally SET cabinet:doctor:heartbeat there
+  # (cabinet-doctor.sh's own final step) — a real, if narrow, live-fleet
+  # side effect this script's header promises never happens. Resolution
+  # order:
+  #   1. an explicit REDIS_HOST/REDIS_PORT already in THIS script's own
+  #      environment always wins, unchanged — lets a rehearsal deliberately
+  #      point the doctor at its own throwaway Redis (e.g.
+  #      `redis-server --port 6399`) and observe real PONG/heartbeat
+  #      behaviour without touching the live instance.
+  #   2. otherwise, when --runtime-root IS the canonical live root
+  #      ($CANONICAL_RUNTIME_ROOT, ~/.cabinet/runtime), leave both unset so
+  #      the doctor's own production default (127.0.0.1:6379) applies —
+  #      correct once this root is actually the live one (post-cutover).
+  #   3. otherwise (any other --runtime-root — a scratch/rehearsal path)
+  #      pin both to a loopback port nothing binds (127.0.0.1:1 — a
+  #      privileged, unassigned TCP port; connections fail closed with
+  #      ECONNREFUSED, not a hang) so the doctor's PING/heartbeat-SET/
+  #      world-chronicle-GET all report DEAD/absent instead of silently
+  #      succeeding against whatever happens to be listening on the
+  #      default.
+  local hg_redis_host="${REDIS_HOST:-}" hg_redis_port="${REDIS_PORT:-}"
+  if [ -z "$hg_redis_host" ] && [ -z "$hg_redis_port" ] \
+     && { [ -z "$CANONICAL_RUNTIME_ROOT" ] || [ "$RUNTIME_ROOT" != "$CANONICAL_RUNTIME_ROOT" ]; }; then
+    hg_redis_host=127.0.0.1
+    hg_redis_port=1
+    echo "cabinet-deploy.sh: --runtime-root is not the canonical live root (${CANONICAL_RUNTIME_ROOT:-~/.cabinet/runtime}) — pinning the doctor's redis calls to an unreachable sandbox endpoint (127.0.0.1:1) so this rehearsal cannot touch the live fleet's redis/heartbeat"
+  fi
+
   local out rc=0
-  out="$(CABINET_ROOT="$slot" CABINET_SOURCE_REPO="$slot" bash "$doctor_bin" 2>&1)" || rc=$?
+  out="$(CABINET_ROOT="$slot" CABINET_SOURCE_REPO="$slot" REDIS_HOST="$hg_redis_host" REDIS_PORT="$hg_redis_port" bash "$doctor_bin" 2>&1)" || rc=$?
   printf '%s\n' "$out" | sed 's/^/  [doctor] /'
 
   [ "$rc" -eq 0 ] && return 0
@@ -158,6 +234,7 @@ health_gate() {
   if [ -n "$non_germline_dead" ]; then
     echo "cabinet-deploy.sh: HEALTH GATE FAILED — non-germline DEAD finding(s) on the new slot:" >&2
     printf '%s\n' "$non_germline_dead" | sed 's/^/  /' >&2
+    echo "cabinet-deploy.sh: (a scratch/rehearsal --runtime-root pre-cutover is EXPECTED to DEAD out several whole-fleet checks here — not this script's bug; see cabinet-doctor.sh's own header, \"NOT DESIGNED TO GREEN IN ISOLATION\")" >&2
     return 1
   fi
   # Every DEAD line was the known, inert pre-promotion germline gap.
