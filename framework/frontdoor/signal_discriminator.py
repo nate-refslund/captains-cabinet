@@ -2,9 +2,9 @@
 
 Separates a LIVE operational failure from the chronic / frozen / staging / bot /
 R&D / stale false-positive class BEFORE the front-door synthesis relays it as an
-incident. This is the framework generalization of polads-ceo's reference impl
-(``instance/tools/polads-sentry-triage.sh``); the CONTRACT it implements is
-``shared/interfaces/polads-sentry-triage-discriminator-contract-2026-07-14.md``.
+incident. This is the framework generalization of an instance-owned reference
+implementation and contract; all lane-specific tells and verification fixtures
+remain outside the framework package.
 
 THE CORE INSIGHT (contract §): a Sentry issue's ``count`` is CUMULATIVE-since-
 firstSeen, NOT a 24h rate. ``statsPeriod=24h`` selects WHICH issues to list; the
