@@ -334,11 +334,17 @@ def test_initialize_sends_protocol_version_and_client_info():
 def test_close_terminates_subprocess_gracefully():
     fake = FakePopen([_make_ok_initialize(), None])
     client = _make_client_with_popen(fake)
-    client.close()
-    # Fake wait() returns 0 for a clean close; stdin should be closed
-    assert fake.stdin.closed
-    # Idempotent — calling close again should not raise
-    client.close()
+    try:
+        client.close()
+        # Fake wait() returns 0 for a clean close; stdin should be closed
+        assert fake.stdin.closed
+        # Idempotent — calling close again should not raise
+        client.close()
+    finally:
+        # _make_client_with_popen patches the process-global subprocess module;
+        # always unwind it so later integration tests execute real child
+        # processes instead of inheriting this test's FakePopen.
+        _teardown_client(client)
 
 
 # ---------------------------------------------------------------------------

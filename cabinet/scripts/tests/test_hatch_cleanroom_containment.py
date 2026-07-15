@@ -647,10 +647,10 @@ def test_clean_room_refuses_tracked_instance_checkout_end_to_end(tmp_path):
 
 
 def test_clean_room_tracked_instance_bypass_end_to_end(tmp_path):
-    """HATCH_ALLOW_TRACKED_INSTANCE=1 gets past the guard — the run then
-    dies at the python3.12 preflight (the neutered PATH), which sits AFTER
-    every clean-room refusal and BEFORE flight_init, so the probe proves
-    the bypass without writing (or hatching) anything."""
+    """HATCH_ALLOW_TRACKED_INSTANCE=1 gets past the guard, then the real
+    setup-mac preflight owns dependency refusal.  The hatch flight recorder
+    must name that failed step; Python is deliberately no longer rejected
+    before the bootstrap that installs it on a normal fresh Mac."""
     _skip_unless_e2e_probe_is_failsafe()
     parent = tmp_path / "logs-not-yet"
     p = _run_hatch(["--clean-room", "--flight-log", str(parent / "flight.log")],
@@ -659,8 +659,21 @@ def test_clean_room_tracked_instance_bypass_end_to_end(tmp_path):
                               "HATCH_ALLOW_TRACKED_INSTANCE": "1"})
     assert p.returncode == 1, (p.stdout, p.stderr)
     assert "refuses to run in this checkout" not in p.stderr
-    assert "python3.12 is required" in p.stderr, (
-        "the bypassed run must reach (and stop at) the preflight"
-    )
-    assert not parent.exists()
-    assert list(tmp_path.iterdir()) == []
+    assert "HATCH FAILED at step [setup-mac]" in p.stderr
+    assert (parent / "flight.log").is_file()
+    assert "STEP_END [setup-mac] status=fail" in (parent / "flight.log").read_text()
+
+
+def test_python_312_check_runs_after_setup_mac_bootstrap():
+    """The one-command hatch must let setup-mac install Python 3.12 before
+    checking it, while setup-mac itself checks/installs the exact pinned
+    interpreter rather than accepting an arbitrary generic python3."""
+    hatch = _HATCH.read_text(encoding="utf-8")
+    setup = (_REPO_ROOT / "cabinet/scripts/setup-mac.sh").read_text(encoding="utf-8")
+    setup_step = hatch.index('run_step setup-mac "host bootstrap')
+    python_check = hatch.index('command -v "$PY"', setup_step)
+    generate = hatch.index("do_generate_instance", python_check)
+    assert setup_step < python_check < generate
+    assert 'check_dep "Python 3.12" python3.12' in setup
+    assert 'brew install python@3.12' in setup
+    assert 'check_dep "Python 3" python3' not in setup

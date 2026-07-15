@@ -114,6 +114,34 @@ def test_vercel_empty_key_skips_probe_wide(tmp_path, monkeypatch):
     assert "VERCEL_API_KEY unset/empty" in out[0]["skipped"]
 
 
+def test_vercel_team_scope_is_passed_per_deployment(tmp_path, monkeypatch):
+    monkeypatch.setenv("VERCEL_API_KEY", "fixture-token")
+    cfg = _cfg(tmp_path)
+    cfg["vercel"][0]["team_id"] = "team_second_captain"
+    seen = []
+
+    class _FakeVercel:
+        def deployments(self, product, limit=50):
+            return []
+        def local_commits_since(self, window="15 minutes ago"):
+            return []
+        def rolled_back_uids(self, product, since_days=14):
+            return set()
+        def now_ms(self):
+            return 0
+
+    out = runner.run_vercel_products(
+        cfg,
+        client_factory=lambda **kw: seen.append(kw) or _FakeVercel(),
+        emit=lambda **kw: None,
+        hc=lambda *a, **kw: None,
+        chdir=lambda p: None,
+        rows=[],
+    )
+    assert seen == [{"team_id": "team_second_captain"}]
+    assert out[0]["fresh"] is True
+
+
 def test_sentry_empty_token_skips_probe_wide(tmp_path, monkeypatch):
     monkeypatch.setenv("SENTRY_AUTH_TOKEN", "")
     out = runner.run_sentry_products(_cfg(tmp_path),

@@ -124,19 +124,21 @@ git_repos:
 # =============================================================
 # Per-officer and cabinet-wide caps enforced by pre-tool-use.sh.
 # Framework ships safe defaults at framework/defaults/spending-limits.yml;
-# this block overrides them for THIS Cabinet. Any key set to 0 disables
-# enforcement for that scope. When a cap blocks, the hook prints the
+# this block overrides them for THIS Cabinet. The live deployment previously
+# disabled both caps; the 72-hour dogfood requires finite ceilings and keeps
+# these framework-safe values afterward unless the Captain explicitly revises
+# them. Any key set to 0 disables enforcement for that scope. When a cap blocks, the hook prints the
 # reason on stderr; Telegram reply/react/group always bypass the gate
 # so an over-cap officer can DM the Captain for a raise.
 #
 # Background: FW-002 in shared/cabinet-framework-backlog.md; incident
 # 2026-04-17 — CoS bricked for ~15 min by silent over-cap block.
 spending_limits:
-  daily_per_officer_usd: 0            # 0 = unlimited for Captain's own Cabinet
-  daily_cabinet_wide_usd: 0           # 0 = unlimited
-  coordinating_officer_multiplier: 3.0  # Framework default, harmless when caps = 0
+  daily_per_officer_usd: 75
+  daily_cabinet_wide_usd: 300
+  coordinating_officer_multiplier: 3.0  # CoS routing overhead carve-out; cabinet-wide cap still wins
   telegram_whitelist_enabled: true    # Always-on safety net, cheap to keep enabled
-  telegram_whitelist_hourly_cap: 100  # bumped 2026-04-19 per Captain "no limits" directive; FW-002.2 will add 0=unlimited semantic
+  telegram_whitelist_hourly_cap: 10
 
 # =============================================================
 # Dashboard — Consumer Mode (Spec 032)

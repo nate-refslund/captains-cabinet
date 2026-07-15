@@ -1,6 +1,7 @@
 # Runbook — enforced egress allowlist (opt-in)
 
-**What this is.** An OPT-IN outbound-network allowlist for the officer runtime.
+**What this is.** An OPT-IN framework outbound-network allowlist. This
+deployment has opted in for dogfood.
 The Captain's directive was: *"implement the possibility of an enforced egress
 allowlist (default allow all)."* This is that control — a real, enable-able
 egress jail that changes **nothing** until a captain turns it on.
@@ -9,8 +10,8 @@ egress jail that changes **nothing** until a captain turns it on.
 issues) *and* hold outbound tools (Bash `curl`/`wget`, web MCPs, python
 `requests`). With no egress boundary, one prompt-injected instruction can move
 captain-private data off-box. This control lets a captain deny outbound egress
-by default and permit only an explicit allowlist. It touches **no germline
-path** and installs nothing until enabled.
+by default and permit only an explicit allowlist. The live instance switch is
+Captain-owned immutable policy; widening it requires unlock/edit/relock.
 
 ---
 
@@ -19,14 +20,16 @@ path** and installs nothing until enabled.
 ```sh
 cabinet/scripts/egress-guard.sh status     # is it on? what's allowed? proxy up?
 cabinet/scripts/egress-guard.sh dry-run    # what WOULD be allowed/blocked (installs nothing)
-cabinet/scripts/egress-guard.sh enable     # turn enforcement ON  (+ start the proxy)
-cabinet/scripts/egress-guard.sh disable    # turn enforcement OFF (+ tear it down = allow all)
+cabinet/scripts/egress-guard.sh enable     # Captain unlock window only
+cabinet/scripts/egress-guard.sh disable    # Captain unlock window only
 cabinet/scripts/egress-guard.sh apply      # reconcile runtime to egress.yml (boot/launchd verb)
 cabinet/scripts/egress-guard.sh stop       # tear down the proxy regardless of config
 ```
 
-Default state ships as **allow all** (`enforce: false`). Enabling installs a
-local allowlisting forward proxy and **fails closed** if it cannot verify it.
+The generic framework default is **allow all**. This deployment pins
+`enforce: true`, `allow_product: false`, and no extra hosts, leaving only the
+Anthropic + Telegram framework floor. `apply` **fails closed** if it cannot
+attest the proxy.
 
 ---
 
@@ -38,9 +41,9 @@ pattern as `framework/defaults/spending-limits.yml`):
 - `framework/defaults/egress.yml` — shipped default: `enforce: false` (allow
   all), `allow_product: true`, and a minimal control-plane floor
   (`api.anthropic.com`, `api.telegram.org`).
-- `instance/config/egress.yml` — your per-deployment override (copy from
-  `instance/config/egress.yml.example`, or let `enable`/`disable` edit the
-  `enforce:` line for you). See that `.example` for every knob.
+- `instance/config/egress.yml` — Captain-owned per-deployment override. Copy
+  from the example before locking a new deployment; after locking,
+  `enable`/`disable` require the explicit unlock/relock ceremony.
 
 **Merge rules.** `enforce`, `proxy_port`, `allow_product` are scalar — the
 instance value replaces the default. `allow_hosts` is **unioned** with the
@@ -60,8 +63,15 @@ local forward proxy (`cabinet/scripts/egress-proxy.py`, python3 stdlib, bound to
 `127.0.0.1`) that permits HTTP `CONNECT` + HTTP forwarding **only** to the
 resolved allowlist and returns `403` for everything else (deny-by-default — a
 blocked host is never even resolved or dialed). It then writes an
-`HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` export file the officer launch sources.
-No persistent sudo.
+`HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` export file. Both officer launchers
+reconcile the guard and project that file through their reviewed clean-env
+parser before boot. On macOS, the launcher also generates a Seatbelt profile
+that rejects direct external TCP/UDP and permits localhost, making the verified
+proxy the only officer path to a remote host. No persistent sudo.
+
+Before reuse, the guard attests that runtime state files are owned regular
+files (never symlinks), the live PID command names the reviewed proxy with the
+exact allow/ready paths, and the allowlist and proxy env match resolved policy.
 
 **Fail-closed.** If the proxy cannot be installed or verified, the guard prints
 `FAIL-CLOSED …`, exits non-zero, and writes **no** proxy env — it never silently
@@ -69,79 +79,89 @@ leaves egress open when a captain asked to enforce. A boot/launchd caller must
 treat a non-zero `apply` as fatal (do not launch officers with egress believed-
 restricted-but-actually-open).
 
-### Wiring officers to the proxy
+### Officer wiring and restart semantics
 
-> ⚠️ **This is a required manual step — it is NOT done for you.** As of this
-> deliverable **no** officer launch wrapper, entrypoint, or launchd plist in
-> the tree sources `proxy.env`. Until **you** add the one line below to your
-> launch wrapper, `enable` starts and verifies the proxy but **constrains
-> nothing already running** — an officer launched without it inherits no proxy
-> env and reaches the network exactly as before. `enable`/`apply` print a
-> `WARNING` on stderr while nothing in the tree sources the file, so a green
-> `proxy: RUNNING` is never mistaken for "officers are constrained."
+`start-officer-mac.sh` and `start-officer.sh` call `apply`, require success,
+read `runtime-state`, and load `<state_dir>/egress/proxy.env` through
+`officer-env.py` (never by executing the file as arbitrary shell). Repeated
+launches reuse a matching healthy proxy rather than restarting it.
 
-`apply` writes the export file to `<state_dir>/egress/proxy.env` (state dir =
-`CABINET_STATE_DIR`, else `state_dir` from `platform.yml`, else `~/.cabinet/state`).
-The officer launch must **source** it so the proxy env is inherited:
-
-```sh
-# in the officer launch wrapper / entrypoint, before exec'ing the officer:
-[ -f "$CABINET_STATE_DIR/egress/proxy.env" ] && . "$CABINET_STATE_DIR/egress/proxy.env"
-```
-
-When `enforce: false`, that file is absent → officers inherit no proxy → **allow
-all**. `status` prints the exact `proxy_env` path for your deployment.
+This affects **new officer processes only**. Enabling the config does not
+retrofit environment or Seatbelt policy into sessions that are already
+running. Restart the officer fleet after enabling, then prove the boundary from
+inside a fresh officer session. When `enforce: false`, the proxy env is absent
+and the launchers install no network restriction: the shipped default remains
+allow-all. `status` prints the exact proxy and env state.
 
 ---
 
 ## EXACTLY what it covers — and what it does NOT
 
-Be honest with yourself about the boundary. This is a **proxy-honouring** layer.
+Coverage differs by deployment target.
 
-### ✅ Covered (caught by the proxy)
+### ✅ Covered on every target (allowlisting proxy)
 
 - `curl` / `wget` respecting `HTTP_PROXY`/`HTTPS_PROXY` (the default).
 - python `requests` / `urllib` / `httpx` (honour proxy env by default).
 - Most MCP servers and SDK HTTP clients that honour proxy env vars
   (anthropic, exa, perplexity, brave, vercel, neon, monday, github, …).
 - Both plain-HTTP (absolute-URI forwarding) and HTTPS (`CONNECT` tunnel).
+  Plain HTTP discards the caller's `Host` header and rebuilds it from the
+  validated URL.
   `CONNECT` is additionally restricted to the **HTTPS port (443)** by default,
   so an allowlisted host cannot be turned into a generic TCP tunnel to another
   port (`:22`, `:25`, …). If a deployment genuinely needs another CONNECT port,
   widen it by launching the proxy with `--connect-ports "443,<port>"` (or
   `EGRESS_CONNECT_PORTS`); the default stays 443-only.
 
-### ⚠️ Residual — NOT caught (do not oversell this)
+### ✅ Additional macOS boundary (Seatbelt)
 
-- **Raw sockets.** `nc`, `ssh`, a python `socket.connect()`, or any client that
-  dials an IP directly bypasses an HTTP proxy entirely.
-- **Proxy-ignoring MCPs/binaries.** A tool that does not read `HTTP_PROXY` (or
-  is explicitly told `--noproxy`) is not constrained by this layer.
+- Direct external TCP and UDP are denied for the officer process tree when
+  `enforce: true`; raw `nc`, `ssh`, `socket.connect()`, `--noproxy`, and
+  proxy-ignoring MCP clients cannot dial a remote address.
+- TCP/UDP to localhost remains available for the verified proxy, Redis, and
+  other local Cabinet services.
+
+### ⚠️ Honest residuals
+
+- **Linux/Docker raw sockets.** The legacy launcher projects the proxy env but
+  has no Seatbelt equivalent. A raw socket or proxy-ignoring client bypasses it
+  unless the host/container supplies an egress network policy.
+- **Already-running sessions.** They retain their old environment and sandbox
+  until restarted.
+- **Local-service deputies on macOS.** Localhost is deliberately allowed. An
+  exposed local service capable of making arbitrary outbound requests could
+  become a confused deputy; do not run untrusted forwarders on localhost and
+  keep their own authentication/allowlists enabled.
 - **DNS rebinding.** The allowlist matches the *hostname* presented; it does not
   pin the resolved IP, so an allowlisted name that later resolves to a hostile
   IP is still permitted.
-- **A client that unsets the env.** Anything running with the proxy env stripped
-  (e.g. a subprocess that scrubs its environment) escapes the layer.
+- **Opaque TLS after CONNECT.** The proxy validates CONNECT authority but does
+  not intercept TLS, so it cannot prove SNI or the HTTP host inside the tunnel.
+  An allowlisted shared/CDN endpoint retains a domain-fronting/other-tenant
+  residual. TLS interception or destination-specific network policy is needed
+  to close it; plain HTTP does not have this gap.
+- **Unsandboxed services.** The proxy and other host daemons are outside the
+  officer sandbox. Their own input validation is part of the boundary.
 
 ### Stronger / complementary controls
 
-- **`pf`/`pfctl` anchor (macOS, sudo).** A kernel-level packet-filter anchor that
-  blocks outbound to everything except the allowlist IPs catches raw sockets too.
-  It is stronger but needs **sudo** and per-relock discipline (germline etiquette:
-  route through a CG ledger row + a Captain unlock window), and it is IP-based, so
-  it needs periodic re-resolution of allowlist hostnames. Out of scope for this
-  no-sudo proxy layer; note it as the escalation if the residual matters for your
-  threat model.
+- **Container/host network policy.** Required on Linux/Docker when raw-socket
+  containment matters. Restrict the officer namespace to localhost/the proxy
+  and enforce the destination policy outside the officer process.
+- **`pf`/`pfctl` anchor (macOS, sudo).** An optional host-wide second boundary.
+  It is broader than per-officer Seatbelt and can cover unsandboxed local
+  deputies, but needs sudo, careful IP refresh, and germline ceremony.
 - **`cabinet/scripts/hooks/pre-tool-use.sh` Bash-layer gate (future, germline).**
   A pre-execution inspection of officer Bash that refuses `curl`/`nc`/etc. to a
   non-allowlisted host is the defense-in-depth companion that would close the
   raw-socket gap at the tool layer. It lives on a germline path and is a future
   ceremony item — **not** part of this deliverable.
 
-**Bottom line:** enabling this proxy meaningfully raises the bar for the common
-exfil paths (curl + python-requests + most MCPs) with no sudo, but it is **not**
-a complete network jail. For irreversible-harm threat models, pair it with the
-`pf` anchor and the future Bash-layer gate.
+**Bottom line:** macOS officer processes get proxy hostname allowlisting plus a
+kernel raw-socket denial. Linux/Docker gets proxy allowlisting only until an
+external network policy is installed. Neither claim covers already-running
+sessions or arbitrary unsandboxed localhost services.
 
 ---
 
@@ -153,21 +173,17 @@ a complete network jail. For irreversible-harm threat models, pair it with the
 2. **Add your MCP/tool hosts.** Copy `instance/config/egress.yml.example` to
    `instance/config/egress.yml` and uncomment/add the hosts you use (table
    below). Anything not listed is refused when enforcement is on.
-3. **Turn it on.** `cabinet/scripts/egress-guard.sh enable`. On success it
-   prints the proxy address and the `proxy.env` path — and a `WARNING` while
-   nothing sources it yet (see next step).
-4. **Wire the launch** to source `proxy.env` (see "Wiring officers to the
-   proxy"). **This is required and is not wired for you** — as of this
-   deliverable no launch/entrypoint/plist in the tree sources `proxy.env`, so
-   until you add the one-line source, enabling constrains **nothing already
-   running**. The step is done when the `enable`/`apply` `WARNING` stops
-   printing.
+3. **Turn it on.** In a Captain unlock window, edit/enable and relock the same
+   day. If config is already true, `egress-guard.sh apply` reconciles runtime
+   without changing policy.
+4. **Restart every officer.** The launchers apply and load enforcement before
+   each boot; old sessions cannot be retrofitted.
 5. **Verify.** `cabinet/scripts/egress-guard.sh status` shows `enforce: true`,
    the resolved allowlist, and `proxy: RUNNING`. Confirm an officer can still
    reach Claude + Telegram and its own product, and that a probe to an
    unlisted host is refused.
-6. **To turn it off:** `cabinet/scripts/egress-guard.sh disable` (returns to
-   allow-all and tears the proxy down).
+6. **To turn it off:** make a separate Captain unlock/edit/relock decision;
+   `disable` returns to allow-all and is intentionally unavailable to officers.
 
 ### Common MCP / tool hosts to add
 
@@ -199,9 +215,10 @@ Only add the ones you actually run. Subdomains of a listed host are covered.
 - **An officer suddenly can't reach a service.** Its host is not on the
   allowlist. `dry-run` to confirm, add the host to `instance/config/egress.yml`,
   re-`apply`.
-- **`status` says `proxy: RUNNING` but a tool still reaches a blocked host.**
-  That tool is in the residual set (raw socket / ignores proxy env). See the
-  residual section; the proxy layer cannot catch it.
+- **`status` says `proxy: RUNNING` but an old officer still reaches a blocked
+  host.** Restart it. On Linux/Docker, also check whether the client bypasses
+  proxy env; that path needs an external network policy. On macOS, a fresh
+  officer reaching the host is a release-blocking boundary failure.
 
 ## Verify (contributors)
 

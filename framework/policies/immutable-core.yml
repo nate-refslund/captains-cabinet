@@ -68,6 +68,29 @@ files:
   - path: cabinet/scripts/kill-switch.sh
   - path: cabinet/scripts/germline-lock.sh
 
+  # --- officer process/security boundary (2026-07-15): these files select
+  #     the clean credential projection, OS sandbox, observe posture, egress
+  #     policy/runtime attestation, and the only observe-safe Captain reply
+  #     door. A same-uid officer edit could otherwise prepare a weaker next
+  #     restart. The live egress switch is Captain-owned authority, not
+  #     officer-writable runtime data. ---
+  - path: cabinet/scripts/start-officer-mac.sh
+  - path: cabinet/scripts/start-officer.sh
+  - path: cabinet/scripts/gen-officer-mcp-config.py
+  - path: cabinet/scripts/append-interface.sh
+  - path: cabinet/scripts/captain-law-broker.py
+  - path: cabinet/scripts/egress-guard.sh
+  - path: cabinet/scripts/egress-proxy.py
+  - path: cabinet/scripts/observe-only.sh
+  - path: cabinet/scripts/lib/officer-env.py
+  - path: cabinet/scripts/lib/officer-env.sh
+  - path: cabinet/scripts/lib/officer-sandbox.sh
+  - path: framework/comms/channel_adapter.py
+  - path: framework/comms/tools.py
+  - path: framework/comms/mcp/server.py
+  - path: framework/comms/adapters/telegram.py
+  - path: instance/config/egress.yml
+
   # --- judged authority code (grants authority / renders judgment) ---
   - path: framework/authority/classifier.py
   - path: framework/authority/lane.py

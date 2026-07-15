@@ -19,7 +19,8 @@ straight off ``deployment.meta``; it falls back to the deploy's commit trailer
 (``Cabinet-Proposal-Id:`` in the commit message → git-trailer) when the meta key
 is absent (e.g. a git-push-triggered deploy). Team scoping is LOAD-BEARING: the
 v9 projects list truncates project ids, so the real client always queries
-deployments by ``app`` under the fixed ``teamId`` — never a truncated id.
+deployments by ``app`` under the deployment-configured ``teamId`` — never a
+truncated project id. Personal Vercel accounts omit ``teamId`` entirely.
 
 Rollback is a first-class failure: if the production alias is re-pointed to an
 OLDER deployment (an instant rollback), the newer, now-unaliased deploy that
@@ -45,7 +46,6 @@ from framework.probes import lib
 
 SLUG = "probe-vercel"
 CADENCE_S = 600                              # 10 min
-TEAM_ID = "team_FEdAEOgfT3WhQ9c1moxCpO2s"    # step-network — team scoping is load-bearing
 STABILITY_MIN = 60                           # a READY deploy must hold the alias this long → ok
 STABILITY_MS = STABILITY_MIN * 60 * 1000
 ROLLBACK_WINDOW_DAYS = 14                    # how far back a rollback can supersede a ready deploy
@@ -150,16 +150,19 @@ class VercelClient:
 
     BASE = "https://api.vercel.com"
 
-    def __init__(self, token: str | None = None, team_id: str = TEAM_ID, timeout: int = 20):
+    def __init__(self, token: str | None = None, team_id: str | None = None, timeout: int = 20):
         self.token = token or os.environ.get("VERCEL_API_KEY", "")
-        self.team_id = team_id
+        self.team_id = team_id or os.environ.get("VERCEL_TEAM_ID") or None
         self.timeout = timeout
 
     def _get(self, path: str, params: dict) -> Any:
         """One team-scoped GET → parsed JSON | None. Fail-closed: a missing token,
         HTTP error, or malformed body returns None (never raises into the probe).
         The host is fixed and params are urlencoded — no dynamic-URL SSRF surface."""
-        q = urllib.parse.urlencode({**params, "teamId": self.team_id})
+        scoped = dict(params)
+        if self.team_id:
+            scoped["teamId"] = self.team_id
+        q = urllib.parse.urlencode(scoped)
         req = urllib.request.Request(
             f"{self.BASE}{path}?{q}",
             headers={"Authorization": f"Bearer {self.token}"})

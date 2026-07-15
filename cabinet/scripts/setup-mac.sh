@@ -93,10 +93,11 @@ fail() { echo -e "  ${RED}[FAIL]${NC} $1"; }
 SKIPPED=()
 ISSUES=()
 
-# python interpreter for the proof/pytest steps — the runbook pins 3.12
-# semantics; fall back to python3 where 3.12 isn't linked yet.
-PYBIN="python3"
-command -v python3.12 >/dev/null 2>&1 && PYBIN="python3.12"
+# Python 3.12 is a real boot dependency: hatch.sh's generators and proof gates
+# are pinned to 3.12 semantics.  Do not report a generic `python3` as good and
+# then fail after the bootstrap step; a normal setup installs the exact formula
+# and --check refuses honestly when it is absent.
+PYBIN="python3.12"
 
 echo "=== Step 0: API key wizard ==="
 # Walks Captain through tiered API keys (recommended / optional), opens
@@ -145,7 +146,7 @@ MISSING=0
 check_dep "Homebrew" brew || MISSING=1
 check_dep "tmux" tmux || MISSING=1
 check_dep "jq" jq || MISSING=1
-check_dep "Python 3" python3 || MISSING=1
+check_dep "Python 3.12" python3.12 || MISSING=1
 check_dep "Redis CLI" redis-cli || MISSING=1
 check_dep "Node.js" node || MISSING=1
 check_dep "npm" npm || MISSING=1
@@ -175,7 +176,7 @@ if [ "$MISSING" -eq 1 ]; then
   command -v brew > /dev/null 2>&1 || { fail "Homebrew required. Install from https://brew.sh"; exit 1; }
   command -v tmux > /dev/null 2>&1 || brew install tmux
   command -v jq > /dev/null 2>&1 || brew install jq
-  command -v python3 > /dev/null 2>&1 || brew install python3
+  command -v python3.12 > /dev/null 2>&1 || brew install python@3.12
   command -v redis-cli > /dev/null 2>&1 || brew install redis
   command -v node > /dev/null 2>&1 || brew install node
   command -v npm > /dev/null 2>&1 || brew install node
@@ -214,11 +215,11 @@ fi
 
 echo ""
 echo "=== Step 3: Install Python dependencies ==="
-if pip3 install --quiet pyyaml psycopg2-binary requests pytest 2>/dev/null; then
+if "$PYBIN" -m pip install --quiet pyyaml psycopg2-binary requests pytest 2>/dev/null; then
   ok "Python deps installed"
 else
   # PEP 668 externally-managed Homebrew pythons refuse bare pip3 installs.
-  warn "pip3 install failed — ensure deps yourself: python3.12 -m pip install pyyaml pytest requests psycopg2-binary"
+  warn "python3.12 -m pip install failed — ensure deps yourself: python3.12 -m pip install pyyaml pytest requests psycopg2-binary"
 fi
 
 echo ""

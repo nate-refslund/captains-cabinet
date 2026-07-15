@@ -241,6 +241,8 @@ def test_ratification_records_exclusion_counts_and_source_non_mutation(tmp_path)
     out = ratify(tmp_path, proposed)
     summary = out["evidence_summary"]
     assert summary["source_integrity"]["unchanged"] is True
+    assert summary["source_integrity"]["before_truncated_by_limits"] is False
+    assert summary["source_integrity"]["after_truncated_by_limits"] is False
     assert summary["scan_statistics"]["included_files"] == 1
     assert summary["scan_statistics"]["excluded"]["hidden"] >= 1
     assert summary["scan_statistics"]["excluded"]["unsupported_type"] >= 1
@@ -305,6 +307,59 @@ def test_nontechnical_community_persona_returns_uncovered_welcome_desk_shift(tmp
     }]
 
 
+@pytest.mark.parametrize(
+    "marker",
+    [
+        "URGENT: Call the reserve volunteer.",
+        "BLOCKED: Waiting for the room key.",
+        "NEEDS ACTION: Confirm Saturday's host.",
+        "- [ ] ACTION REQUIRED: Replace the expired poster.",
+        "Status: overdue — return the borrowed books.",
+    ],
+)
+def test_explicit_attention_markers_remain_strong(marker, tmp_path):
+    source = tmp_path / "sources" / "explicit-marker"
+    source.mkdir(parents=True)
+    (source / "notes.md").write_text(marker + "\n")
+    finding = ratify(tmp_path, propose(tmp_path, source))["state"]["first_dividend"]["finding"]
+    assert finding["kind"] == "attention_marker"
+    assert finding["citations"][0]["excerpt"] == marker
+
+
+@pytest.mark.parametrize(
+    "prose",
+    [
+        "Direct edits are hook-blocked by the policy layer.",
+        "The blocked-list helper only formats CSS.",
+        "This document explains how overdue notices are rendered.",
+        "Use the needs action filter to narrow the table.",
+    ],
+)
+def test_attention_words_in_ordinary_prose_do_not_become_urgent_work(prose, tmp_path):
+    source = tmp_path / "sources" / "ordinary-prose"
+    source.mkdir(parents=True)
+    (source / "notes.md").write_text("# Technical notes\n\n" + prose + "\n")
+    finding = ratify(tmp_path, propose(tmp_path, source))["state"]["first_dividend"]["finding"]
+    assert finding["kind"] == "orientation_map"
+    assert finding["quality"] == "orientation_only"
+
+
+def test_todo_word_in_explanatory_prose_is_not_reported_as_open_work(tmp_path):
+    source = tmp_path / "sources" / "todo-prose"
+    source.mkdir(parents=True)
+    (source / "notes.md").write_text("This guide explains how the TODO label is rendered.\n")
+    finding = ratify(tmp_path, propose(tmp_path, source))["state"]["first_dividend"]["finding"]
+    assert finding["kind"] == "orientation_map"
+
+
+def test_explicit_code_comment_todo_remains_open_work(tmp_path):
+    source = tmp_path / "sources" / "todo-comment"
+    source.mkdir(parents=True)
+    (source / "worker.py").write_text("# TODO: handle the empty queue.\n")
+    finding = ratify(tmp_path, propose(tmp_path, source))["state"]["first_dividend"]["finding"]
+    assert finding["kind"] == "open_work_marker"
+
+
 def test_manifest_is_content_hashed_and_raw_source_is_not_persisted(tmp_path):
     source = estate(tmp_path, "software-product")
     out = ratify(tmp_path, propose(tmp_path, source))
@@ -339,6 +394,31 @@ def test_sensitive_hidden_binary_and_symlink_entries_are_excluded(tmp_path):
     )
     assert "must-never-appear" not in all_persisted
     assert "symlink bait" not in all_persisted
+
+
+def test_source_integrity_fingerprint_uses_first_window_scope_and_limits(tmp_path, monkeypatch):
+    source = tmp_path / "sources" / "bounded-integrity"
+    source.mkdir(parents=True)
+    (source / "README.md").write_text("Visible work.\n")
+    hidden = source / ".git" / "objects"
+    hidden.mkdir(parents=True)
+    for index in range(20):
+        (hidden / f"object-{index}").write_text("ignored\n")
+    (source / "archive.zip").write_bytes(b"ignored unsupported bytes")
+    outside = tmp_path / "outside.md"
+    outside.write_text("outside\n")
+    (source / "linked.md").symlink_to(outside)
+
+    fingerprint = journey._source_integrity_fingerprint(source)
+    assert fingerprint["entry_count"] == 1
+    assert fingerprint["truncated_by_limits"] is False
+
+    monkeypatch.setattr(journey, "MAX_SCAN_ENTRIES", 4)
+    for name in ("a.md", "b.md", "c.md", "d.md"):
+        (source / name).write_text(name)
+    bounded = journey._source_integrity_fingerprint(source)
+    assert bounded["entry_count"] < 5
+    assert bounded["truncated_by_limits"] is True
 
 
 def test_secret_shaped_cited_line_is_redacted(tmp_path):
@@ -494,6 +574,9 @@ def test_continue_moves_dividend_to_deep_orientation(tmp_path):
     out = journey.act({"action": "continue", "action_id": "cont-1", "surface": "dashboard"}, tmp_path)
     assert out["state"]["stage"] == "orientation_offered"
     assert out["card"]["kind"] == "deep_orientation"
+    assert out["card"]["title"] == "Deeper Orientation has not started"
+    assert "disabled and has not started" in out["card"]["body"]
+    assert "No new access or authority was granted" in out["card"]["body"]
     # continue is unavailable from the fresh welcome stage
     with pytest.raises(journey.JourneyError) as exc:
         journey.act({"action": "continue", "action_id": "cont-x", "surface": "dashboard"}, tmp_path / "fresh")
@@ -595,6 +678,44 @@ def test_purge_requires_typed_confirmation_and_removes_sensitive_history(tmp_pat
         }, tmp_path)
     assert observe_exc.value.code == "onboarding_purged"
     assert verify_store(tmp_path / journey.EVIDENCE_REL)["trial_count"] == 0
+
+
+def test_inner_action_lock_refuses_stale_action_after_concurrent_purge(tmp_path):
+    """The commit boundary must recheck purge, not trust act()'s early read.
+
+    ``act`` releases its first state lock while it records intent evidence.  A
+    purge can complete in that interval, leaving a stale caller to enter
+    ``_act_core`` afterward.  Calling the core directly models precisely that
+    post-purge interleaving and pins that it cannot recreate onboarding state.
+    """
+    source = estate(tmp_path, "software-product")
+    ratify(tmp_path, propose(tmp_path, source))
+    journey.act(
+        {
+            "action": "purge",
+            "action_id": "purge-wins-race",
+            "surface": "dashboard",
+            "confirmation": "PURGE",
+        },
+        tmp_path,
+    )
+
+    with pytest.raises(journey.JourneyError) as stale:
+        journey._act_core(
+            {
+                "action": "propose_window",
+                "action_id": "stale-proposal",
+                "surface": "telegram",
+                "source": str(source),
+                "purpose": "Understand this product",
+                "relationship_destination": "reversible",
+            },
+            tmp_path,
+        )
+
+    assert stale.value.code == "onboarding_purged"
+    assert journey.snapshot(tmp_path)["state"]["stage"] == "purged"
+    assert not (tmp_path / journey.DATA_REL / journey.CHARTER_NAME).exists()
 
 
 def test_interrupted_purge_is_completed_on_next_locked_read(tmp_path, monkeypatch):

@@ -39,7 +39,7 @@ key in its sandbox/Keychain so officers never share the key's OS principal.
 | `cabinet/dashboard/src/app/api/telegram/provisioning-webhook/route.ts` | Telegram delivery success/failure instrumentation. |
 | `cabinet/dashboard/src/components/onboarding/journey-card.tsx` | Dashboard/World UI, transport-error, handoff, and usefulness observation seam. |
 | `cabinet/companion/main.swift` | App-shell handoff correlation seam. |
-| `cabinet/scripts/evidence-read.sh` | The sole bounded officer read doorway. |
+| `cabinet/scripts/evidence-read.sh` | The bounded officer evidence-read doorway; observe-only also has a separate receipt-only trigger ACK doorway under the locked hooks directory. |
 | `instance/evidence/v1/` | Runtime-appended evidence store; hook/policy protected and deliberately not `schg` locked. |
 
 Enforcement files changed in the same amendment are

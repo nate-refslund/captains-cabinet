@@ -105,7 +105,7 @@ loading rule:
 | Label | Cadence | What it fixes |
 | --- | --- | --- |
 | `com.cabinet.retro-trigger` | hourly | REGENERATED with `PATH` (the old hand-made plist had none; launchd's minimal PATH → `redis-cli: command not found` → FATAL hourly since ~Jul 3). Logs move to `~/Library/Logs/cabinet/retro-trigger.{log,err}`. |
-| `com.cabinet.backup` | daily 03:00 | NEW — daily state backup to `~/Cabinet-Backups` (rsync of shared/interfaces + instance + memory, Redis BGSAVE copy, 14-day retention). Drill: `bash cabinet/scripts/restore-drill.sh`. |
+| `com.cabinet.backup` | daily 03:00 | Daily checksum-verified state backup to `~/Cabinet-Backups` (topology-preserved filesystem, configured Postgres, fresh Redis RDB or fsynced/restore-tested AOF fallback, 14-day retention). Drill: `bash cabinet/scripts/restore-drill.sh`. |
 
 ```sh
 cp cabinet/launchd/com.cabinet.retro-trigger.plist ~/Library/LaunchAgents/
@@ -116,13 +116,13 @@ cp cabinet/launchd/com.cabinet.backup.plist ~/Library/LaunchAgents/
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.cabinet.backup.plist
 ```
 
-Two hardening steps are deliberately left open as recorded Captain decisions
+One hardening step is deliberately left open as a recorded Captain decision
 — see the deliberately-NOT-wired notes where they live: the
 `cabinet/services.yml` backup row (rendered into the backup plist header) and
 the `cabinet/scripts/backup.sh` header: an off-machine backup copy (e.g. a
-post-backup rsync to a host you control) and Redis AOF enablement
-(`cabinet/scripts/enable-redis-aof.sh` exists; it restarts Redis, so flipping
-it stays a Captain step).
+post-backup rsync to a host you control). Redis AOF is the live durability
+layer and backup.sh now uses it as a verified fallback when fresh RDB capture
+is unavailable.
 
 ## Verdict-supply engine (lane-supply 2026-07-05) — THE keystone wave
 

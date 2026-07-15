@@ -29,7 +29,7 @@ runbook this one instantiates). Deep detail: `cabinet/docs/mac-mini-deploy-runbo
 | macOS 14+ on Apple Silicon (rehearsed on macOS 26.6 / Darwin 25.6) | launchd user agents + Homebrew paths assume `/opt/homebrew` | `sw_vers` |
 | Logged-in user session + auto-login + no sleep | the org lives in launchd **user** agents | `sudo pmset -a sleep 0 disksleep 0` |
 | Homebrew + `git`, `node`, `gh`, `jq`, `tmux`, `redis`, `gettext` | `gettext` provides `envsubst` (plist rendering); redis is the trigger bus | `brew install node gh jq tmux redis gettext` |
-| `python3.12` with `pytest` + `pyyaml` | the suite, the null-hatch gate, and generators are pinned to 3.12 semantics | `brew install python@3.12 && python3.12 -m pip install pytest pyyaml` |
+| `python3.12` with `pytest` + `pyyaml` | the suite, the null-hatch gate, and generators are pinned to 3.12 semantics; `setup-mac.sh` installs/checks this exact version | Usually automatic; manual recovery: `brew install python@3.12 && python3.12 -m pip install pytest pyyaml` |
 | Claude Code CLI | officers ARE Claude Code sessions | `npm i -g @anthropic-ai/claude-code && claude --version` |
 | `gh auth login` | the fork is private; clone + CI checks need it | `gh auth status` |
 | Tailscale — **optional** | remote SSH into the Mini afterwards; nothing in the hatch needs it | `brew install tailscale && sudo tailscale up` |

@@ -52,6 +52,27 @@ fi
 REPO_ROOT="${CABINET_SOURCE_REPO:-${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}}"
 export CABINET_SOURCE_REPO="$REPO_ROOT"
 export CABINET_ROOT="$REPO_ROOT"
+OFFICER_ENV_LIB="$REPO_ROOT/cabinet/scripts/lib/officer-env.sh"
+if [ ! -f "$OFFICER_ENV_LIB" ]; then
+  echo "[ERROR] start-officer-mac.sh: missing clean-environment library: $OFFICER_ENV_LIB" >&2
+  exit 78
+fi
+# shellcheck source=lib/officer-env.sh
+source "$OFFICER_ENV_LIB"
+officer_env_scrub_authority
+
+# Resolve the sticky observe posture BEFORE credential projection. The env
+# parser uses this effective posture to subtract CUA/CUA-driver credentials,
+# matching the later structural removal of the computer-control overlay.
+export CABINET_OBSERVE_ONLY=0
+OBSERVE_STATE="$(bash "$REPO_ROOT/cabinet/scripts/observe-only.sh" status)" || {
+  echo "[ERROR] start-officer-mac.sh: invalid observe-only marker — refusing officer boot" >&2
+  exit 78
+}
+if [ "$OBSERVE_STATE" = active ]; then
+  export CABINET_OBSERVE_ONLY=1
+  export CABINET_ENV=dev
+fi
 LOGS_DIR="$HOME/Library/Logs/cabinet"
 SESSION_NAME="officer-$OFFICER"
 # Fleet default: Opus 4.8 1M (Fable 5 is access-gated on this account, 2026-06-23; Captain-set).
@@ -65,13 +86,50 @@ mkdir -p "$LOGS_DIR"
 
 cd "$REPO_ROOT"
 
-# Source .env (TELEGRAM tokens, NEON_CONNECTION_STRING, etc.)
-# Audit-fix 2026-05-23: drop silent 2>/dev/null — surface a WARN to stderr so
-# missing/unreadable .env produces a visible diagnostic in officer.err.log.
+# Load only the reviewed officer environment.  cabinet/.env also contains the
+# dashboard password used for Captain session/verdict signatures; sourcing the
+# whole file collapsed that authority boundary.  The parser never executes the
+# dotenv file and the final Claude command runs under env -i.
 if [ -f "cabinet/.env" ]; then
-  set -a; source cabinet/.env; set +a
+  officer_env_load_file "$REPO_ROOT/cabinet/.env" "$OFFICER"
 else
   echo "[WARN] start-officer-mac.sh: cabinet/.env not found at $REPO_ROOT/cabinet/.env — officer will boot without secrets" >&2
+fi
+
+# Reconcile the deployment-wide egress guard before projecting its proxy env.
+# A real launch fails closed when enforcement is requested but the proxy is not
+# verified.  The later Seatbelt profile uses EGRESS_KERNEL_ENFORCED to block
+# raw external TCP/UDP as well as proxy-bypassing clients.
+EGRESS_GUARD="$REPO_ROOT/cabinet/scripts/egress-guard.sh"
+EGRESS_ENFORCE=0
+EGRESS_ENV_FILE=""
+EGRESS_KERNEL_ENFORCED=0
+if [ ! -f "$EGRESS_GUARD" ]; then
+  if [ "${CABINET_MAC_DRY_RUN:-0}" != "1" ]; then
+    echo "[ERROR] start-officer-mac.sh: egress guard missing — refusing officer boot" >&2
+    exit 78
+  fi
+elif [ "${CABINET_MAC_DRY_RUN:-0}" != "1" ]; then
+  if ! bash "$EGRESS_GUARD" apply >&2; then
+    echo "[ERROR] start-officer-mac.sh: egress reconciliation failed — refusing officer boot" >&2
+    exit 78
+  fi
+fi
+if [ -f "$EGRESS_GUARD" ]; then
+  EGRESS_RUNTIME="$(bash "$EGRESS_GUARD" runtime-state)" || {
+    echo "[ERROR] start-officer-mac.sh: cannot resolve egress runtime state — refusing officer boot" >&2
+    exit 78
+  }
+  IFS=$'\t' read -r EGRESS_ENFORCE EGRESS_ENV_FILE <<< "$EGRESS_RUNTIME"
+  if [ "$EGRESS_ENFORCE" = "1" ]; then
+    EGRESS_KERNEL_ENFORCED=1
+    if [ -f "$EGRESS_ENV_FILE" ]; then
+      officer_env_load_file "$EGRESS_ENV_FILE" "$OFFICER"
+    elif [ "${CABINET_MAC_DRY_RUN:-0}" != "1" ]; then
+      echo "[ERROR] start-officer-mac.sh: egress is enforced but proxy env is absent — refusing officer boot" >&2
+      exit 78
+    fi
+  fi
 fi
 
 # Assemble runtime constitution + safety + preset (idempotent).
@@ -111,6 +169,9 @@ read_capability() {
 
 HAS_TELEGRAM=$(read_capability "$OFFICER" "telegram_bot")
 HAS_CUA_DRIVER=$(read_capability "$OFFICER" "drives_computer")
+if [ "$CABINET_OBSERVE_ONLY" = 1 ]; then
+  HAS_CUA_DRIVER=false
+fi
 
 # ===========================================================
 # MCP config — Mac base + (if drives_computer) overlay
@@ -229,14 +290,22 @@ EXTRA_ALLOW=""
 if [ "$HAS_CUA_DRIVER" = "true" ]; then
   EXTRA_ALLOW="cua,cua-driver"
 fi
+GEN_MCP_ARGS=(
+  --officer "$OFFICER"
+  --scope "$REPO_ROOT/cabinet/mcp-scope.yml"
+  --input "$SCOPE_INPUT"
+  --extra-allow "$EXTRA_ALLOW"
+)
+if [ "$CABINET_OBSERVE_ONLY" = 1 ]; then
+  GEN_MCP_ARGS+=(--observe-only)
+fi
+GEN_MCP_ARGS+=(
+  --out-mcp "$OFFICER_MCP_PATH"
+  --out-settings "$OFFICER_SETTINGS_PATH"
+)
 
 if ! python3 "$REPO_ROOT/cabinet/scripts/gen-officer-mcp-config.py" \
-      --officer "$OFFICER" \
-      --scope "$REPO_ROOT/cabinet/mcp-scope.yml" \
-      --input "$SCOPE_INPUT" \
-      --extra-allow "$EXTRA_ALLOW" \
-      --out-mcp "$OFFICER_MCP_PATH" \
-      --out-settings "$OFFICER_SETTINGS_PATH"; then
+      "${GEN_MCP_ARGS[@]}"; then
   echo "[ERROR] start-officer-mac.sh: gen-officer-mcp-config.py failed — FAIL CLOSED: booting $OFFICER with an EMPTY MCP server set" >&2
   ( umask 077
     printf '{"mcpServers":{}}\n' > "$OFFICER_MCP_PATH"
@@ -281,7 +350,10 @@ if [ "$HAS_TELEGRAM" = "true" ]; then
     # token fight (Telegram 409 Conflict → nothing consumes; observed 2026-06-23). The
     # officer still SENDS via framework.frontdoor.channel.send (token exported above).
     # The Channels plugin's idle-delivery is unreliable; the watchdog is the fix.
-    if [ -f "$REPO_ROOT/cabinet/launchd/com.cabinet.officer.$OFFICER-inbound.plist" ]; then
+    if [ "$CABINET_OBSERVE_ONLY" = 1 ]; then
+      TELEGRAM_FLAG=""
+      echo "start-officer-mac.sh: $OFFICER observe-only receive is watchdog-owned — not loading --channels" >&2
+    elif [ -f "$REPO_ROOT/cabinet/launchd/com.cabinet.officer.$OFFICER-inbound.plist" ]; then
       TELEGRAM_FLAG=""
       echo "start-officer-mac.sh: $OFFICER receive via inbound watchdog — not loading --channels (token resolved from \$$RESOLVED_VAR for sends)" >&2
     else
@@ -305,6 +377,7 @@ fi
 
 # Export OFFICER_NAME for hooks (stop-hook.sh + post-tool-use.sh etc.)
 export OFFICER_NAME="$OFFICER"
+export CABINET_OFFICER="$OFFICER"
 
 # ===========================================================
 # CABINET_LANE — load-bearing lane dimension [FIX-4]
@@ -401,12 +474,157 @@ fi
 # Captain's personal ~/.claude/CLAUDE.md still loads via the cwd ANCESTOR walk
 # (the repo lives under $HOME); the 58KB @screenpipe-memories.md dossier
 # import does NOT load (external-includes gate, unapproved in the fresh home).
-CONFIG_HOME_PREFIX=""
-if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
-  CONFIG_HOME_PREFIX="CLAUDE_CONFIG_DIR='$CLAUDE_CONFIG_DIR' CLAUDE_SECURESTORAGE_CONFIG_DIR='${CLAUDE_SECURESTORAGE_CONFIG_DIR:-}' "
+# The clean env prefix below carries CLAUDE_CONFIG_DIR and
+# CLAUDE_SECURESTORAGE_CONFIG_DIR explicitly; no credential/config assignment
+# is typed into tmux pane history.
+
+# ===========================================================
+# OS-enforced Captain-law + secret-store boundary
+# ===========================================================
+# Text-matching hooks are useful guidance but cannot constrain a shell that
+# constructs paths dynamically.  macOS Seatbelt resolves the actual vnode and
+# denies reads of shared secret stores plus all writes to the three Captain-law
+# ledgers.  Officer observations use a fixed-policy broker started outside the
+# sandbox; the broker, not the request, chooses identity and provenance.
+SANDBOX_LIB="$REPO_ROOT/cabinet/scripts/lib/officer-sandbox.sh"
+if [ ! -f "$SANDBOX_LIB" ]; then
+  echo "[ERROR] start-officer-mac.sh: missing officer sandbox library: $SANDBOX_LIB" >&2
+  exit 78
+fi
+# shellcheck source=lib/officer-sandbox.sh
+source "$SANDBOX_LIB"
+
+BROKER_DIR="$HOME/Library/Caches/cabinet/captain-law"
+if [ "${CABINET_MAC_DRY_RUN:-0}" != "1" ]; then
+  mkdir -p "$BROKER_DIR"
+  chmod 700 "$BROKER_DIR"
+fi
+BROKER_SOCKET="$BROKER_DIR/$OFFICER.sock"
+
+if [ "${CABINET_MAC_DRY_RUN:-0}" = "1" ]; then
+  SANDBOX_PROFILE="$(mktemp -t "cabinet-officer-${OFFICER}.XXXXXX.sb")"
+else
+  SANDBOX_DIR="$HOME/Library/Caches/cabinet/officer-sandbox"
+  mkdir -p "$SANDBOX_DIR"
+  chmod 700 "$SANDBOX_DIR"
+  SANDBOX_PROFILE="$SANDBOX_DIR/$OFFICER.sb"
+fi
+OBSERVE_SOURCE_ROOTS=("$REPO_ROOT")
+SHARED_ENV_PATH=""
+CABINET_RUNTIME_STATE_DIR=""
+if ! SECURITY_PATH_OUTPUT="$(python3.12 - "$REPO_ROOT/instance/config/platform.yml" "$REPO_ROOT/instance/config/projects" <<'PY'
+import os
+import sys
+import yaml
+with open(sys.argv[1], encoding="utf-8") as handle:
+    data = yaml.safe_load(handle) or {}
+repos = data.get("git_repos") or []
+if not isinstance(repos, list) or any(not isinstance(item, str) for item in repos):
+    raise SystemExit("git_repos must be a string list")
+shared = data.get("shared_env_path") or ""
+state = os.environ.get("CABINET_STATE_DIR") or data.get("state_dir") or ""
+if not isinstance(shared, str) or not isinstance(state, str):
+    raise SystemExit("shared_env_path/state_dir must be strings")
+
+roots = list(repos)
+projects = sys.argv[2]
+if os.path.isdir(projects):
+    for name in sorted(os.listdir(projects)):
+        if not name.endswith((".yml", ".yaml")):
+            continue
+        try:
+            with open(os.path.join(projects, name), encoding="utf-8") as handle:
+                project = yaml.safe_load(handle) or {}
+        except Exception as exc:
+            raise SystemExit(f"invalid project config {name}: {exc}")
+        product = project.get("product") if isinstance(project, dict) else None
+        mount = product.get("mount_path") if isinstance(product, dict) else None
+        if isinstance(mount, str) and mount.strip():
+            roots.append(mount.strip())
+
+def clean(value):
+    value = os.path.abspath(os.path.expanduser(value)) if value else ""
+    if any(ch in value for ch in "\r\n\t"):
+        raise SystemExit("security path contains a control character")
+    return value
+
+print("shared\t" + clean(shared))
+print("state\t" + clean(state))
+seen = set()
+for item in roots:
+    value = clean(item)
+    if value and value not in seen:
+        seen.add(value)
+        print("root\t" + value)
+PY
+  )"; then
+  echo "[ERROR] start-officer-mac.sh: cannot resolve officer security paths — refusing officer boot" >&2
+  exit 78
+fi
+while IFS=$'\t' read -r _security_kind _security_path; do
+  case "$_security_kind" in
+    shared) SHARED_ENV_PATH="$_security_path" ;;
+    state) CABINET_RUNTIME_STATE_DIR="$_security_path" ;;
+    root) [ -n "$_security_path" ] && OBSERVE_SOURCE_ROOTS+=("$_security_path") ;;
+  esac
+done <<< "$SECURITY_PATH_OUTPUT"
+officer_sandbox_write_profile "$REPO_ROOT" "$SANDBOX_PROFILE" "$BROKER_DIR" "$BROKER_SOCKET" \
+  "$EGRESS_KERNEL_ENFORCED" "$CABINET_OBSERVE_ONLY" "$SHARED_ENV_PATH" \
+  "$CABINET_RUNTIME_STATE_DIR" "${OBSERVE_SOURCE_ROOTS[@]}"
+
+SANDBOX_CMD=""
+if command -v sandbox-exec >/dev/null 2>&1; then
+  printf -v _SANDBOX_Q '%q' "$SANDBOX_PROFILE"
+  SANDBOX_CMD="sandbox-exec -f $_SANDBOX_Q"
+elif [ "${CABINET_MAC_DRY_RUN:-0}" != "1" ]; then
+  echo "[ERROR] start-officer-mac.sh: sandbox-exec unavailable — refusing to boot without the Captain-law/secret boundary" >&2
+  exit 78
+else
+  # CI may exercise the Mac dry-run on Linux.  The real Mac boot path above is
+  # fail-closed; dry-run still exposes that no executable sandbox is present.
+  SANDBOX_CMD=""
 fi
 
-# Build the claude invocation
+if [ "${CABINET_MAC_DRY_RUN:-0}" != "1" ]; then
+  BROKER_PIDFILE="$BROKER_DIR/$OFFICER.pid"
+  if [ -f "$BROKER_PIDFILE" ]; then
+    OLD_BROKER_PID="$(cat "$BROKER_PIDFILE" 2>/dev/null || true)"
+    if [[ "$OLD_BROKER_PID" =~ ^[0-9]+$ ]] \
+      && ps -p "$OLD_BROKER_PID" -o command= 2>/dev/null | grep -Fq "captain-law-broker.py serve"; then
+      kill "$OLD_BROKER_PID" 2>/dev/null || true
+    fi
+  fi
+  rm -f "$BROKER_SOCKET"
+  BROKER_CAPABILITY="$(python3.12 -c 'import secrets; print(secrets.token_hex(32))')"
+  CABINET_LAW_BROKER_CAPABILITY="$BROKER_CAPABILITY" \
+    nohup python3.12 "$REPO_ROOT/cabinet/scripts/captain-law-broker.py" serve \
+    --socket "$BROKER_SOCKET" --root "$REPO_ROOT" --officer "$OFFICER" \
+    >> "$LOGS_DIR/captain-law-broker-$OFFICER.log" 2>&1 &
+  BROKER_PID=$!
+  printf '%s\n' "$BROKER_PID" > "$BROKER_PIDFILE"
+  chmod 600 "$BROKER_PIDFILE"
+  _broker_ready=0
+  for _try in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    if [ -S "$BROKER_SOCKET" ]; then _broker_ready=1; break; fi
+    sleep 0.05
+  done
+  if [ "$_broker_ready" != "1" ]; then
+    echo "[ERROR] start-officer-mac.sh: Captain-law broker did not become ready — refusing officer boot" >&2
+    kill "$BROKER_PID" 2>/dev/null || true
+    exit 78
+  fi
+  export CABINET_CAPTAIN_LAW_SOCKET="$BROKER_SOCKET"
+  export CABINET_CAPTAIN_LAW_CAPABILITY="$BROKER_CAPABILITY"
+fi
+
+# The clean env is assembled only after the launcher has resolved the officer's
+# one Telegram token, lane, config home, and broker socket.  No other parent or
+# tmux-server variables cross this boundary.
+OFFICER_ENV_PREFIX="$(officer_env_command_prefix)"
+
+# Build the claude invocation.  The real form is written to a mode-0700,
+# self-unlinking launcher immediately before tmux starts; it is never typed
+# into pane history (the env prefix contains credentials).
 # $MODEL is single-quoted: model ids can carry a [1m] context suffix (e.g.
 # claude-opus-4-8[1m]) and this command is typed into a zsh pane, which would
 # glob the unquoted brackets ("zsh: no matches found"). Single quotes pass it literally.
@@ -415,7 +633,8 @@ fi
 # SERVER's global env. When the server was first started by another officer (e.g. cos),
 # a new session would otherwise launch claude as OFFICER_NAME=cos and mis-attribute every
 # heartbeat / cost / log / tier2 write to cos. Forcing them here pins the real identity.
-CLAUDE_CMD="cd $REPO_ROOT && OFFICER_NAME='$OFFICER' CABINET_OFFICER='$OFFICER' ${CONFIG_HOME_PREFIX}claude --model '$MODEL' $FALLBACK_FLAG $MCP_FLAG $SETTINGS_FLAG $TELEGRAM_FLAG $AGENT_FLAG --dangerously-skip-permissions --effort max"
+printf -v _REPO_ROOT_Q '%q' "$REPO_ROOT"
+CLAUDE_CMD="cd $_REPO_ROOT_Q && exec ${SANDBOX_CMD:+$SANDBOX_CMD }$OFFICER_ENV_PREFIX claude --model '$MODEL' $FALLBACK_FLAG $MCP_FLAG $SETTINGS_FLAG $TELEGRAM_FLAG $AGENT_FLAG --dangerously-skip-permissions --effort max"
 
 # ===========================================================
 # Dry-run gate — print plan & exit before any tmux/redis/launch side-effects.
@@ -424,7 +643,18 @@ CLAUDE_CMD="cd $REPO_ROOT && OFFICER_NAME='$OFFICER' CABINET_OFFICER='$OFFICER' 
 # native --agent flag was picked up, then exits 0.
 # ===========================================================
 if [ "${CABINET_MAC_DRY_RUN:-0}" = "1" ]; then
-  echo "$CLAUDE_CMD"
+  # Never print credential values during a rehearsal.  The executable command
+  # above uses the real clean prefix; the displayed plan carries names only.
+  REDACTED_ENV_PREFIX="$(officer_env_redacted_prefix)"
+  REDACTED_CLAUDE_CMD="cd $REPO_ROOT && ${SANDBOX_CMD:+$SANDBOX_CMD }$REDACTED_ENV_PREFIX claude --model '$MODEL' $FALLBACK_FLAG $MCP_FLAG $SETTINGS_FLAG $TELEGRAM_FLAG $AGENT_FLAG --dangerously-skip-permissions --effort max"
+  echo "$REDACTED_CLAUDE_CMD"
+  if [ -n "$SANDBOX_CMD" ]; then
+    echo "security_sandbox=true"
+  else
+    echo "security_sandbox=unavailable-dry-run"
+  fi
+  echo "egress_enforced=$EGRESS_KERNEL_ENFORCED"
+  echo "observe_only=$CABINET_OBSERVE_ONLY"
   if [ -n "$AGENT_FLAG" ]; then
     echo "native_agent=true"
   else
@@ -436,6 +666,7 @@ if [ "${CABINET_MAC_DRY_RUN:-0}" = "1" ]; then
   if [ -n "${CABINET_LANE:-}" ]; then
     echo "CABINET_LANE=$CABINET_LANE"
   fi
+  rm -f "$SANDBOX_PROFILE"
   exit 0
 fi
 
@@ -527,13 +758,33 @@ redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" \
 redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" \
   DEL 'cabinet:triggers:${OFFICER_NAME}' > /dev/null 2>&1 || true
 
-# Start fresh detached session; stamp the owning repo root into the session
-# env so the takeover guard above can tell checkouts apart on future runs.
-tmux new-session -d -s "$SESSION_NAME" -x 220 -y 50
+# Start fresh detached session through a one-shot launcher.  Do not use
+# send-keys for CLAUDE_CMD: it contains the clean officer environment and would
+# persist API credentials in tmux pane history.  BROKER_DIR is already 0700 and
+# the officer sandbox cannot read it; the launcher unlinks itself before exec.
+LAUNCH_SCRIPT="$(officer_env_write_one_shot_launcher "$BROKER_DIR" "$CLAUDE_CMD")"
+if ! tmux new-session -d -s "$SESSION_NAME" -x 220 -y 50 -c "$REPO_ROOT" \
+    /usr/bin/env -i HOME="$HOME" PATH="$PATH" USER="${USER:-}" \
+    LOGNAME="${LOGNAME:-}" SHELL=/bin/bash \
+    /bin/bash --noprofile --norc "$LAUNCH_SCRIPT"; then
+  rm -f "$LAUNCH_SCRIPT"
+  echo "[ERROR] start-officer-mac.sh: tmux failed to start $OFFICER" >&2
+  exit 1
+fi
 tmux set-environment -t "=$SESSION_NAME" CABINET_REPO_ROOT "$REPO_ROOT" 2>/dev/null || true
-
-# Send the launch command into the tmux session
-tmux send-keys -t "$SESSION_NAME" "$CLAUDE_CMD" C-m
+# A healthy child removes the credential-bearing launcher immediately.  If it
+# did not even open the file, delete it here and fail closed instead of leaving
+# a secret artifact behind.
+for _try in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+  [ ! -e "$LAUNCH_SCRIPT" ] && break
+  sleep 0.05
+done
+if [ -e "$LAUNCH_SCRIPT" ]; then
+  rm -f "$LAUNCH_SCRIPT"
+  tmux kill-session -t "=$SESSION_NAME" 2>/dev/null || true
+  echo "[ERROR] start-officer-mac.sh: one-shot launcher was not consumed — refusing officer boot" >&2
+  exit 78
+fi
 
 # ===========================================================
 # Auto-confirm startup prompts + submit boot prompt.

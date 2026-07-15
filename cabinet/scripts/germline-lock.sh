@@ -43,6 +43,23 @@ FILES=(
   "cabinet/scripts/policy-shadow.py"
   "cabinet/scripts/kill-switch.sh"
   "cabinet/scripts/germline-lock.sh"
+  # --- officer clean-env / sandbox / observe / egress boundary ---
+  "cabinet/scripts/start-officer-mac.sh"
+  "cabinet/scripts/start-officer.sh"
+  "cabinet/scripts/gen-officer-mcp-config.py"
+  "cabinet/scripts/append-interface.sh"
+  "cabinet/scripts/captain-law-broker.py"
+  "cabinet/scripts/egress-guard.sh"
+  "cabinet/scripts/egress-proxy.py"
+  "cabinet/scripts/observe-only.sh"
+  "cabinet/scripts/lib/officer-env.py"
+  "cabinet/scripts/lib/officer-env.sh"
+  "cabinet/scripts/lib/officer-sandbox.sh"
+  "framework/comms/channel_adapter.py"
+  "framework/comms/tools.py"
+  "framework/comms/mcp/server.py"
+  "framework/comms/adapters/telegram.py"
+  "instance/config/egress.yml"
   # --- judged authority code (grants authority / renders judgment) ---
   "framework/authority/classifier.py"
   "framework/authority/lane.py"
@@ -202,10 +219,14 @@ case "$cmd" in
     locked=0; unlocked=0
     for f in "${FILES[@]}"; do
       [ -e "$f" ] || continue
+      # macOS immutable flags are exposed only by ls -O.
+      # shellcheck disable=SC2010
       if ls -lO "$f" 2>/dev/null | grep -q schg; then locked=$((locked+1)); else unlocked=$((unlocked+1)); echo "UNLOCKED  $f"; fi
     done
     for d in "${DIRS[@]}"; do
       [ -d "$d" ] || continue
+      # macOS immutable flags are exposed only by ls -O.
+      # shellcheck disable=SC2010
       if ls -ldO "$d" 2>/dev/null | grep -q schg; then locked=$((locked+1)); else unlocked=$((unlocked+1)); echo "UNLOCKED  $d/"; fi
     done
     echo "--- $locked locked, $unlocked unlocked (of ${#FILES[@]} files + ${#DIRS[@]} dirs) ---"
@@ -214,6 +235,8 @@ case "$cmd" in
   verify)
     # non-root proof the lock holds: try to write a locked file, expect failure
     probe="framework/authority/classifier.py"
+    # macOS immutable flags are exposed only by ls -O.
+    # shellcheck disable=SC2010
     if ! ls -lO "$probe" 2>/dev/null | grep -q schg; then echo "verify: $probe is NOT locked — run lock first"; exit 1; fi
     if printf '' >> "$probe" 2>/dev/null; then echo "VERIFY FAILED — wrote to locked $probe (boundary NOT holding)"; exit 1
     else echo "VERIFY OK — write to schg-locked $probe was refused (Operation not permitted)"; fi

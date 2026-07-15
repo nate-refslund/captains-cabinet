@@ -20,18 +20,21 @@ Design choices:
   it gets one deduped `work_item_unroutable` ledger event plus a stderr
   warning per pass, and resurfaces automatically once the role is created.
 
-- **Separation of concerns.** This module returns *routing decisions* as
-  plain dicts. The shell wrapper in `cabinet/cron/mission-supervisor.sh`
-  calls `trigger_send` to push Redis Stream messages. Tests can exercise
-  the Python here without needing Redis.
+- **Delivery-before-assignment.** This module first returns *routing
+  decisions* as plain dicts. The shell wrapper pushes Redis Stream messages,
+  then confirms the successfully delivered decisions back here. Only that
+  confirmation emits ``work_item_assigned``. A Redis failure therefore leaves
+  the task routable rather than black-holing it behind a premature event.
 
 Usage:
     from framework.missions.supervisor import route_pending_tasks
-    routed = route_pending_tasks()  # emits work_item_assigned + returns list
+    projected = route_pending_tasks()  # projection only; emits no assignment
+    # Deliver each projected row, then acknowledge only the rows Redis accepted:
+    confirmed = confirm_delivered_assignments(delivered_rows)
 
     # CLI (for the shell wrapper):
-    python3 -m framework.missions.supervisor --json
     python3 -m framework.missions.supervisor --json --dry-run
+    printf '[...]' | python3 -m framework.missions.supervisor --confirm-stdin --json
 """
 
 from __future__ import annotations
@@ -145,9 +148,9 @@ def find_unassigned_ready_tasks(
         outcomes_path: optional path to outcomes.yml
         compile_actor: actor label for the compile (and unroutable events)
         emit_mission_events: pass-through to compile_from_yaml(emit_event=…).
-            Defaults False — this function is a projection. Only the real
-            (non-dry-run) routing pass in route_pending_tasks sets it True,
-            because that is the single compile whose missions are acted on.
+            Defaults False — ordinary discovery is a projection. Delivery
+            confirmation is the only caller that sets it True, because that
+            is the single compile whose missions are durably assigned.
 
     Returns:
         list of routing decisions:
@@ -235,42 +238,94 @@ def find_unassigned_ready_tasks(
 
 def route_pending_tasks(
     outcomes_path: str | Path | None = None,
-    dry_run: bool = False,
+    dry_run: bool = True,
     actor: str = "mission_supervisor",
 ) -> list[dict[str, Any]]:
-    """Find unassigned ready tasks and emit work_item_assigned events.
+    """Project unassigned ready tasks without recording an assignment.
+
+    Assignment is deliberately impossible through this API.  A caller must
+    first deliver the projected rows and pass only the successful deliveries
+    to :func:`confirm_delivered_assignments`.  Keeping ``dry_run`` as a
+    compatibility keyword lets older callers fail loudly instead of silently
+    restoring the pre-delivery black-hole bug.
 
     Args:
         outcomes_path: optional path to outcomes.yml
-        dry_run: if True, return decisions without emitting events
-        actor: actor label for emitted events
+        dry_run: must be True; False is refused
+        actor: actor label used while compiling the projection
 
     Returns:
         list of routing decisions (same shape as find_unassigned_ready_tasks).
     """
-    decisions = find_unassigned_ready_tasks(
+    if not dry_run:
+        raise ValueError(
+            "direct assignment recording is disabled; deliver the projection "
+            "and call confirm_delivered_assignments"
+        )
+
+    return find_unassigned_ready_tasks(
         outcomes_path=outcomes_path,
         compile_actor=actor,
-        # The real routing pass is the ONE compile that materializes
-        # missions (its mission_ids land in durable work_item_assigned
-        # events) — it keeps emitting mission_created. Dry-run is a pure
-        # projection and stays silent.
-        emit_mission_events=not dry_run,
+        emit_mission_events=False,
     )
 
-    if dry_run:
-        return decisions
 
-    for d in decisions:
+def confirm_delivered_assignments(
+    delivered: list[dict[str, Any]],
+    outcomes_path: str | Path | None = None,
+    actor: str = "mission_supervisor",
+) -> list[dict[str, Any]]:
+    """Emit assignments only for decisions already delivered to Redis.
+
+    Every caller-supplied row must still match the current compiled ready set;
+    this makes stdin an acknowledgement, not an authority-bearing routing
+    source. Already-confirmed task ids are idempotent no-ops. If the process
+    crashes after Redis delivery but before this confirmation, the next pass
+    may deliver a duplicate trigger, but it can never silently lose the task.
+    """
+    if not isinstance(delivered, list):
+        raise ValueError("delivered assignments must be a list")
+    if len(delivered) > 1000:
+        raise ValueError("too many delivered assignments")
+
+    assigned_before = already_assigned_ids()
+    # This is the one materializing compile. It happens only after the wrapper
+    # has proved delivery of the rows it is about to acknowledge.
+    pending = find_unassigned_ready_tasks(
+        outcomes_path=outcomes_path,
+        compile_actor=actor,
+        emit_mission_events=True,
+    )
+    by_id = {str(row["task_id"]): row for row in pending}
+    confirmed: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    required = {"task_id", "officer", "mission_id", "outcome_id", "description"}
+    stable = {"task_id", "officer", "outcome_id", "description"}
+    for supplied in delivered:
+        if not isinstance(supplied, dict) or set(supplied) != required:
+            raise ValueError("delivered assignment shape is invalid")
+        task_id = str(supplied["task_id"])
+        if task_id in seen:
+            continue
+        seen.add(task_id)
+        if task_id in assigned_before:
+            continue
+        current = by_id.get(task_id)
+        # mission_id is minted during compilation and therefore changes on a
+        # projection/confirmation recompile. Validate the stable routing
+        # identity; use the materializing compile's mission_id in the event.
+        if current is None or any(supplied[key] != current[key] for key in stable):
+            raise ValueError(f"delivered assignment is stale or does not match current routing: {task_id}")
         emit("work_item_assigned", actor=actor, payload={
-            "task_id": d["task_id"],
-            "mission_id": d["mission_id"],
-            "outcome_id": d["outcome_id"],
-            "assigned_role": d["officer"],
-            "description": d["description"],
+            "task_id": current["task_id"],
+            "mission_id": current["mission_id"],
+            "outcome_id": current["outcome_id"],
+            "assigned_role": current["officer"],
+            "description": current["description"],
+            "delivery": "redis_stream_confirmed",
         })
-
-    return decisions
+        confirmed.append(current)
+    return confirmed
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -293,18 +348,34 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Path to outcomes.yml (defaults to instance/config/outcomes.yml)",
     )
+    parser.add_argument(
+        "--confirm-stdin",
+        action="store_true",
+        help="Read delivered decision rows from stdin and emit assignments only after validating them against the current ready set",
+    )
     args = parser.parse_args(argv)
 
-    decisions = route_pending_tasks(
-        outcomes_path=args.outcomes,
-        dry_run=args.dry_run,
-    )
+    if args.confirm_stdin and args.dry_run:
+        parser.error("--confirm-stdin and --dry-run are mutually exclusive")
+    if args.confirm_stdin:
+        raw = sys.stdin.read(1_048_577)
+        if len(raw) > 1_048_576:
+            parser.error("confirmation payload is too large")
+        try:
+            delivered = json.loads(raw or "[]")
+            decisions = confirm_delivered_assignments(
+                delivered, outcomes_path=args.outcomes,
+            )
+        except (ValueError, json.JSONDecodeError) as exc:
+            parser.error(str(exc))
+    else:
+        decisions = route_pending_tasks(outcomes_path=args.outcomes)
 
     if args.json:
         print(json.dumps(decisions))
     else:
-        print(f"mission-supervisor: {len(decisions)} task(s) "
-              f"{'identified' if args.dry_run else 'routed'}")
+        state = "confirmed" if args.confirm_stdin else "identified"
+        print(f"mission-supervisor: {len(decisions)} task(s) {state}")
         for d in decisions:
             print(f"  → {d['officer']}: {d['task_id']} ({d['description']})")
 

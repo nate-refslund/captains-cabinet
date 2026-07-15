@@ -17,6 +17,7 @@ from framework.missions.supervisor import (
     route_pending_tasks,
     already_assigned_ids,
     already_unroutable_ids,
+    confirm_delivered_assignments,
 )
 from framework.events.emitter import emit, replay
 
@@ -189,19 +190,15 @@ class TestFindUnassignedReady:
 
 
 # ---------------------------------------------------------------------------
-# route_pending_tasks (emits events)
+# route_pending_tasks (projection only)
 # ---------------------------------------------------------------------------
 
 
 class TestRoutePendingTasks:
-    def test_emits_assignment_events(self, outcomes_yml, seeded_roles):
+    def test_default_is_projection_only(self, outcomes_yml, seeded_roles):
         decisions = route_pending_tasks(outcomes_path=outcomes_yml)
         assert len(decisions) >= 1
-
-        events = replay(event_types=["work_item_assigned"])
-        assigned_ids = {(e.get("payload") or {}).get("task_id") for e in events}
-        for d in decisions:
-            assert d["task_id"] in assigned_ids
+        assert replay(event_types=["work_item_assigned"]) == []
 
     def test_dry_run_returns_decisions_without_emitting(
         self, outcomes_yml, seeded_roles,
@@ -212,12 +209,18 @@ class TestRoutePendingTasks:
         events = replay(event_types=["work_item_assigned"])
         assert events == []
 
-    def test_idempotent_when_rerun(self, outcomes_yml, seeded_roles):
+    def test_projection_repeats_until_delivery_is_confirmed(
+        self, outcomes_yml, seeded_roles,
+    ):
         first = route_pending_tasks(outcomes_path=outcomes_yml)
         assert len(first) >= 1
-        second = route_pending_tasks(outcomes_path=outcomes_yml)
-        # second pass routes nothing (all already assigned)
-        assert second == []
+        assert route_pending_tasks(outcomes_path=outcomes_yml)
+        confirm_delivered_assignments(first, outcomes_path=outcomes_yml)
+        assert route_pending_tasks(outcomes_path=outcomes_yml) == []
+
+    def test_direct_assignment_mode_is_refused(self, outcomes_yml, seeded_roles):
+        with pytest.raises(ValueError, match="direct assignment recording is disabled"):
+            route_pending_tasks(outcomes_path=outcomes_yml, dry_run=False)
 
     def test_unmatched_roles_skip_silently(self, outcomes_yml):
         """When no roles match the criteria, no routing happens; no crash."""
@@ -225,6 +228,49 @@ class TestRoutePendingTasks:
         decisions = route_pending_tasks(outcomes_path=outcomes_yml)
         # All nodes will have assigned_role = None, so nothing to route
         assert decisions == []
+
+
+class TestDeliveryConfirmation:
+    def test_projection_then_confirmation_emits_assignment(
+        self, outcomes_yml, seeded_roles,
+    ):
+        delivered = route_pending_tasks(outcomes_path=outcomes_yml, dry_run=True)
+        assert delivered
+        assert replay(event_types=["work_item_assigned"]) == []
+        confirmed = confirm_delivered_assignments(
+            delivered, outcomes_path=outcomes_yml,
+        )
+        assert [row["task_id"] for row in confirmed] == [row["task_id"] for row in delivered]
+        assigned = replay(event_types=["work_item_assigned"])
+        assert {e["payload"]["task_id"] for e in assigned} == {
+            row["task_id"] for row in delivered
+        }
+        assert all(e["payload"]["delivery"] == "redis_stream_confirmed" for e in assigned)
+
+    def test_failed_delivery_path_leaves_task_routable(
+        self, outcomes_yml, seeded_roles,
+    ):
+        projected = route_pending_tasks(outcomes_path=outcomes_yml, dry_run=True)
+        # Simulate Redis failure: no confirmation call.
+        assert replay(event_types=["work_item_assigned"]) == []
+        rerouted = route_pending_tasks(outcomes_path=outcomes_yml, dry_run=True)
+        stable = lambda row: {k: row[k] for k in ("task_id", "officer", "outcome_id", "description")}
+        assert [stable(row) for row in rerouted] == [stable(row) for row in projected]
+
+    def test_confirmation_refuses_forged_or_stale_decision(
+        self, outcomes_yml, seeded_roles,
+    ):
+        projected = route_pending_tasks(outcomes_path=outcomes_yml, dry_run=True)
+        forged = [dict(projected[0], officer="ghost-role")]
+        with pytest.raises(ValueError, match="stale or does not match"):
+            confirm_delivered_assignments(forged, outcomes_path=outcomes_yml)
+        assert replay(event_types=["work_item_assigned"]) == []
+
+    def test_confirmation_is_idempotent(self, outcomes_yml, seeded_roles):
+        projected = route_pending_tasks(outcomes_path=outcomes_yml, dry_run=True)
+        assert confirm_delivered_assignments(projected, outcomes_path=outcomes_yml)
+        assert confirm_delivered_assignments(projected, outcomes_path=outcomes_yml) == []
+        assert len(replay(event_types=["work_item_assigned"])) == len(projected)
 
 
 # ---------------------------------------------------------------------------
@@ -243,11 +289,12 @@ class TestMissionEventEmission:
         find_unassigned_ready_tasks(outcomes_path=outcomes_yml)
         assert replay(event_types=["mission_created"]) == []
 
-    def test_real_routing_pass_still_emits_mission_created(
+    def test_confirmation_materializes_mission_created(
         self, outcomes_yml, seeded_roles,
     ):
-        """The non-dry-run routing pass is the single materializing compile."""
-        route_pending_tasks(outcomes_path=outcomes_yml)
+        """Only delivery confirmation is the materializing compile."""
+        projected = route_pending_tasks(outcomes_path=outcomes_yml)
+        confirm_delivered_assignments(projected, outcomes_path=outcomes_yml)
         events = replay(event_types=["mission_created"])
         assert len(events) == 1  # one active outcome in the fixture
         assert events[0]["payload"]["outcome_id"] == "outcome-test"
@@ -304,6 +351,7 @@ class TestGhostRoleRouting:
     ):
         first = route_pending_tasks(outcomes_path=ghost_outcomes_yml)
         assert "ghost-task" not in [d["task_id"] for d in first]
+        confirm_delivered_assignments(first, outcomes_path=ghost_outcomes_yml)
 
         # Captain creates the missing role — the task must resurface
         from framework.roles.lifecycle import create_role
@@ -313,6 +361,8 @@ class TestGhostRoleRouting:
         second = route_pending_tasks(outcomes_path=ghost_outcomes_yml)
         routed = {d["task_id"]: d["officer"] for d in second}
         assert routed.get("ghost-task") == "ghost-role"
+
+        confirm_delivered_assignments(second, outcomes_path=ghost_outcomes_yml)
 
         assigned = replay(event_types=["work_item_assigned"])
         assert "ghost-task" in {

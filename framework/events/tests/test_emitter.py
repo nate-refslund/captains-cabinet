@@ -2,6 +2,7 @@
 
 import json
 import os
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -99,6 +100,91 @@ class TestReplay:
         events = replay(since=e1["created_at"])
         # since is exclusive-ish (string comparison)
         assert len(events) >= 0  # depends on timing
+
+    def test_torn_final_record_is_reported_skipped_and_repaired_on_next_emit(
+        self, event_log_dir, capsys
+    ):
+        first = emit("role_created", actor="captain", payload={"slug": "eng"})
+        (log_file,) = event_log_dir.glob("events-*.jsonl")
+        with open(log_file, "ab") as handle:
+            handle.write(b'{"event_type":"crash-torn"')
+            handle.flush()
+            os.fsync(handle.fileno())
+
+        assert replay() == [first]
+        warning = capsys.readouterr().err
+        assert "ignored torn final JSONL record" in warning
+        assert "crash-torn" not in warning  # never echo potentially secret content
+
+        second = emit("mission_created", actor="cos", payload={"name": "continue"})
+        repaired_warning = capsys.readouterr().err
+        assert "discarded torn final JSONL record" in repaired_warning
+        assert replay() == [first, second]
+        raw = log_file.read_bytes()
+        assert raw.endswith(b"\n")
+        assert b"crash-torn" not in raw
+
+    def test_complete_malformed_record_remains_a_hard_integrity_error(
+        self, event_log_dir
+    ):
+        emit("role_created", actor="captain", payload={"slug": "eng"})
+        (log_file,) = event_log_dir.glob("events-*.jsonl")
+        with open(log_file, "ab") as handle:
+            handle.write(b'{"malformed":\n')
+            handle.flush()
+            os.fsync(handle.fileno())
+
+        with pytest.raises(json.JSONDecodeError):
+            replay()
+
+    def test_concurrent_appends_remain_one_complete_record_per_event(
+        self, event_log_dir
+    ):
+        workers = 8
+        per_worker = 20
+        repo = Path(__file__).resolve().parents[3]
+        code = (
+            "import os\n"
+            "from framework.events.emitter import emit\n"
+            f"for index in range({per_worker}):\n"
+            "    emit('notification_received', actor=os.environ['WORKER'], "
+            "payload={'worker': os.environ['WORKER'], 'index': index, 'body': 'x' * 512})\n"
+        )
+        processes = []
+        for worker in range(workers):
+            env = os.environ.copy()
+            env.update(
+                CABINET_EVENT_LOG_DIR=str(event_log_dir),
+                CABINET_FRAMEWORK_STORE_MIRROR="0",
+                WORKER=f"writer-{worker}",
+            )
+            env.pop("DATABASE_URL", None)
+            processes.append(
+                subprocess.Popen(
+                    [sys.executable, "-c", code],
+                    cwd=repo,
+                    env=env,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+            )
+        for process in processes:
+            stdout, stderr = process.communicate(timeout=20)
+            assert process.returncode == 0, (stdout, stderr)
+
+        replayed = replay()
+        assert len(replayed) == workers * per_worker
+        assert {
+            (event["payload"]["worker"], event["payload"]["index"])
+            for event in replayed
+        } == {
+            (f"writer-{worker}", index)
+            for worker in range(workers)
+            for index in range(per_worker)
+        }
+        (log_file,) = event_log_dir.glob("events-*.jsonl")
+        assert len(log_file.read_bytes().splitlines()) == workers * per_worker
 
 
 class TestEventTypes:

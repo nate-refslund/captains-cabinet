@@ -21,6 +21,11 @@
       "args": ["run", "${CABINET_SOURCE_REPO}/cabinet/channels/redis-trigger-channel/index.ts"],
       "env": { "OFFICER_NAME": "${OFFICER_NAME:-captain-session}", "REDIS_URL": "redis://localhost:6379" }
     },
+    "cabinet-comms": {
+      "command": "python3.12",
+      "args": ["${CABINET_SOURCE_REPO}/framework/comms/mcp/server.py"],
+      "env": { "COMMS_MCP_TRANSPORT": "stdio" }
+    },
     "library": {
       "command": "bun",
       "args": ["run", "${CABINET_SOURCE_REPO}/cabinet/channels/library-mcp/index.ts"],

@@ -33,7 +33,11 @@ SECURITY NOTE
   The allowlist is matched on the HOSTNAME presented by the client. This is a
   proxy-honouring control: it does not bind clients that ignore proxy env or
   open raw sockets, and it does not defend against DNS rebinding of an
-  allowlisted name. See the runbook's residual section.
+  allowlisted name. Plain HTTP rewrites Host to the validated URI authority so
+  a client cannot domain-front another virtual host. CONNECT is opaque after
+  the tunnel opens: without TLS interception the proxy cannot verify SNI, so
+  allowlisted shared/CDN endpoints remain an explicitly documented residual.
+  See the runbook's residual section.
 """
 from __future__ import annotations
 
@@ -237,9 +241,18 @@ def _make_handler(allow, connect_ports):
                     body = b""
             fwd = {}
             for k in self.headers.keys():
-                if k.lower() in HOP_BY_HOP:
+                if k.lower() in HOP_BY_HOP or k.lower() == "host":
                     continue
                 fwd[k] = self.headers.get(k)
+            # The absolute URI is the policy input. Never forward an attacker-
+            # supplied Host header that names a different vhost on the same
+            # upstream address. Preserve an explicit/non-default port only.
+            host_header = host
+            if ":" in host and not host.startswith("["):
+                host_header = f"[{host}]"
+            if parts.port is not None and parts.port != 80:
+                host_header = f"{host_header}:{parts.port}"
+            fwd["Host"] = host_header
             fwd["Connection"] = "close"
             conn = None
             try:

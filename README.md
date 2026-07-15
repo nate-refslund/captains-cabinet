@@ -105,6 +105,11 @@ By default the hatch stops short of launchd: nothing goes live until you run the
 ### After hatch: earn the first responsibility
 
 Open **Orientation** in Dashboard or World, or send `/onboard` in Telegram.
+On a loopback-only Mac deployment, the sole Telegram `getUpdates` poller
+forwards only `/onboard` commands and `onboard:*` taps to the same authenticated
+local onboarding route; if that route is unavailable, the message remains
+visible through the Chair relay instead of being dropped. Public webhook
+deployments use the same route and `TELEGRAM_WEBHOOK_SECRET` directly.
 Choose one specific folder and a purpose. The Cabinet shows a hash-bound,
 read-only Charter before inspecting anything, then returns one deterministic
 finding with file-and-line evidence. Every surface resumes the same card;

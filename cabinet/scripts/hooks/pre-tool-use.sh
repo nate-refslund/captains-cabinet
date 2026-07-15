@@ -74,6 +74,133 @@ if [ -x "$POLICY_SHADOW" ]; then
 fi
 
 # ============================================================
+# 0a. OBSERVE-ONLY DOGFOOD CAP (narrow-only, fail-closed)
+# ============================================================
+# The Captain-side marker is re-read on EVERY tool call, so enabling constrains
+# already-running officers immediately. Fresh launchers add three more layers:
+# CABINET_ENV=dev (dispatch disabled), no computer-control MCP, and Mac
+# Seatbelt source-write denies. Removing the marker never widens an existing
+# process that inherited CABINET_OBSERVE_ONLY=1; restart is required.
+OBSERVE_MARKER="$CABINET_ROOT/instance/config/observe-only"
+OBSERVE_ONLY="${CABINET_OBSERVE_ONLY:-0}"
+if [ -e "$OBSERVE_MARKER" ] || [ -L "$OBSERVE_MARKER" ]; then
+  if [ -f "$OBSERVE_MARKER" ] && [ ! -L "$OBSERVE_MARKER" ] \
+    && [ "$(tr -d '[:space:]' < "$OBSERVE_MARKER" 2>/dev/null)" = active ]; then
+    OBSERVE_ONLY=1
+  else
+    echo "OBSERVE-ONLY FAIL-CLOSED — marker is present but invalid; all officer tools are halted until the Captain repairs it." >&2
+    exit 2
+  fi
+fi
+if [ "$OBSERVE_ONLY" = 1 ]; then
+  case "$TOOL_NAME" in
+    # Native read/inspection surfaces continue through every ordinary gate
+    # below (secret/evidence raw-read inversions still apply).
+    Read|Grep|Glob|LS|TodoWrite)
+      ;;
+    # Keep the existing Captain conversation alive. These continue through
+    # spending, MCP scope, and every normal Telegram rule below.
+    mcp__plugin_telegram_telegram__reply|mcp__plugin_telegram_telegram__react|mcp__cabinet-comms__reply_current|mcp__cabinet-comms__react_current)
+      ;;
+    # Two germline, argument-closed shell doorways remain: bounded redacted
+    # evidence reads and receipt-only trigger ACKs. No interpreter prefix,
+    # redirects, or shell composition. Section 5a independently validates the
+    # same shapes before the ordinary Bash screens.
+    Bash)
+      OBSERVE_CMD=$(echo "$TOOL_INPUT" | jq -r '.command // empty' 2>/dev/null | tr -s '/')
+      if ! printf '%s' "$OBSERVE_CMD" | grep -qE '^(\.?/?cabinet/scripts/evidence-read\.sh[[:space:]]+[A-Za-z0-9][A-Za-z0-9._:-]{0,127}([[:space:]]+[0-9]{1,4})?|\.?/?cabinet/scripts/hooks/observe-ack\.sh[[:space:]]+[0-9]+-[0-9]+([[:space:]]+[0-9]+-[0-9]+){0,49})[[:space:]]*$'; then
+        echo "OBSERVE-ONLY BLOCK — Bash is disabled during the 72-hour soak (only bounded evidence-read and receipt ACK doorways remain)." >&2
+        exit 2
+      fi
+      ;;
+    *)
+      echo "OBSERVE-ONLY BLOCK — tool '$TOOL_NAME' can mutate state, spawn authority, or call an untyped MCP; this soak permits inspection and Captain reply/react only." >&2
+      exit 2
+      ;;
+  esac
+fi
+
+# ============================================================
+# 0b. OFFICER SECRET-READ INVERSION (native tools)
+# ============================================================
+# Per-MCP credential projection is meaningless if Read/Grep/Glob/LS can open
+# the master dotenv store directly.  Resolve existing path aliases before the
+# decision so `/tmp/alias -> product/.env` is blocked too.  Seatbelt repeats
+# this at the vnode boundary for subprocesses and recursive search tools.
+case "$TOOL_NAME" in
+  Read|Grep|Glob|LS)
+    SECRET_READ_PATHS=$(printf '%s' "$TOOL_INPUT" \
+      | jq -r '[.file_path, .path, .pattern] | .[] // empty' 2>/dev/null || true)
+    if [ -n "$SECRET_READ_PATHS" ]; then
+      if ! SECRET_READ_PATHS="$SECRET_READ_PATHS" CABINET_ROOT="$CABINET_ROOT" \
+          python3 - <<'PY'
+import os
+import re
+import sys
+from pathlib import Path
+
+root = Path(os.environ["CABINET_ROOT"]).expanduser().resolve()
+home = Path.home().resolve()
+
+shared = None
+platform = root / "instance/config/platform.yml"
+try:
+    import yaml
+    data = yaml.safe_load(platform.read_text(encoding="utf-8")) or {}
+    value = data.get("shared_env_path")
+    if isinstance(value, str) and value.strip():
+        shared = Path(os.path.expanduser(value.strip())).resolve(strict=False)
+except Exception:
+    # Generic .env* denial below still fails closed for the configured file's
+    # normal name if the optional YAML parser/config is unavailable.
+    pass
+
+master_dirs = {(root / "cabinet/env").resolve(strict=False)}
+if shared is not None:
+    master_dirs.add(shared.parent)
+
+
+def within(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+def blocked(raw: str) -> bool:
+    if not raw or "\x00" in raw or "\n" in raw or "\r" in raw:
+        return bool(raw)
+    raw = os.path.expanduser(raw)
+    # A glob that asks for any .env* name is a direct secret enumeration even
+    # when its static prefix does not exist yet.
+    if re.search(r"(^|/)\.env[^/]*($|/)", raw):
+        return True
+    has_magic = any(ch in raw for ch in "*?[")
+    static = re.split(r"[*?[\]]", raw, maxsplit=1)[0] if has_magic else raw
+    candidate = Path(static or ".")
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    resolved = candidate.resolve(strict=False)
+    if resolved.name.startswith(".env"):
+        return True
+    if shared is not None and resolved == shared:
+        return True
+    return any(within(resolved, directory) for directory in master_dirs)
+
+
+paths = os.environ.get("SECRET_READ_PATHS", "").splitlines()
+sys.exit(2 if any(blocked(item) for item in paths) else 0)
+PY
+      then
+        echo "BLOCKED: Officer sessions cannot read master credential sources or .env* files. Credentials arrive only through the role-scoped environment projection." >&2
+        exit 2
+      fi
+    fi
+    ;;
+esac
+
+# ============================================================
 # 1. KILL SWITCH CHECK (fail-closed — CRIT-5 hardening 2026-07-03)
 # ============================================================
 # Two deliberate properties:
@@ -1120,7 +1247,7 @@ if [ "$TOOL_NAME" = "Edit" ] || [ "$TOOL_NAME" = "Write" ]; then
     # dir-cover already on this line. instance/config/posture-narrow is
     # DELIBERATELY unprotected: narrow-only cap, Captain's binder verb
     # writes it at runtime (axes spec §1).
-    *"memory/golden-evals/"*|*"framework/policies/"*|*"framework/authority/classifier.py"|*"framework/authority/lane.py"|*"framework/authority/matrix.py"|*"framework/authority/veto.py"|*"framework/authority/deploy_classifier.py"|*"framework/fidelity/graduation.py"|*"framework/authority/policy_engine.py"|*"cabinet/mcp-scope.yml"|*"cabinet/officer-capabilities.conf"|*".claude/rules/brain-bridge.md"|*".claude/rules/courses-of-action.md"|*"instance/config/autonomy.yml"|*"shared/interfaces/captain-vetoes.yml"|*"shared/interfaces/action-lessons.yml"|*"instance/config/act-first-surfaces.yml"|*"framework/frontdoor/action_exec.py"|*"framework/frontdoor/action_undo.py"|*"framework/frontdoor/actfirst_canary.py"|*"framework/frontdoor/veto_registry.py"|*"framework/frontdoor/tell_surface.py"|*"framework/frontdoor/calendar_template.py"|*"framework/acting/action_lane.py"|*"framework/acting/run_action_lane.py"|*"framework/frontdoor/channel.py"|*"framework/attention/situation.py"|*"framework/attention/feed.py"|*"framework/attention/acted_overlay.py"|*"framework/attention/situations.py"|*"framework/attention/queue.py"|*"framework/attention/hygiene.py"|*"framework/attention/queue_card.py"|*".claude/settings.json"|*"cabinet/scripts/hooks/"*|*"cabinet/scripts/policy-shadow.py"|*"cabinet/scripts/kill-switch.sh"|*"cabinet/scripts/germline-lock.sh"|*"framework/authority/posture.py"|*"framework/authority/grants.py"|*"framework/authority/needs.py"|*"framework/learning/gate.py"|*"framework/learning/apply_watch.py"|*"cabinet/scripts/grant-apply.sh"|*"cabinet/scripts/gate-apply.sh"|*"cabinet/launchd/com.cabinet.gate-apply.plist"|*"shared/interfaces/gate-apply-watch.jsonl"|*"instance/config/posture.yml"|*"instance/config/standing-grants.yml"|*"instance/config/policies/"*|*"shared/interfaces/needs-ledger.jsonl"|*"framework/learning/trust_ladder.py"|*".claude/rules/axes-contract.md"|*"framework/schemas/extension-manifest.schema.json"|*"cabinet/scripts/validate-extension.sh"|*"instance/config/trust-ladder.yml"|*"instance/config/posture-presets/"*|*"framework/onboarding/journey.py"|*"framework/schemas/evidence-event.schema.json"|*"framework/evidence/"*|*"cabinet/dashboard/src/app/api/onboarding/"*|*"cabinet/dashboard/src/lib/onboarding/bridge.ts"|*"cabinet/dashboard/src/lib/onboarding/telegram.ts"|*"cabinet/dashboard/src/app/api/telegram/provisioning-webhook/route.ts"|*"cabinet/dashboard/src/components/onboarding/journey-card.tsx"|*"cabinet/companion/main.swift"|*"cabinet/scripts/evidence-read.sh"|*"instance/evidence/v1/"*)
+    *"memory/golden-evals/"*|*"framework/policies/"*|*"framework/authority/classifier.py"|*"framework/authority/lane.py"|*"framework/authority/matrix.py"|*"framework/authority/veto.py"|*"framework/authority/deploy_classifier.py"|*"framework/fidelity/graduation.py"|*"framework/authority/policy_engine.py"|*"cabinet/mcp-scope.yml"|*"cabinet/officer-capabilities.conf"|*".claude/rules/brain-bridge.md"|*".claude/rules/courses-of-action.md"|*"instance/config/autonomy.yml"|*"shared/interfaces/captain-vetoes.yml"|*"shared/interfaces/action-lessons.yml"|*"instance/config/act-first-surfaces.yml"|*"framework/frontdoor/action_exec.py"|*"framework/frontdoor/action_undo.py"|*"framework/frontdoor/actfirst_canary.py"|*"framework/frontdoor/veto_registry.py"|*"framework/frontdoor/tell_surface.py"|*"framework/frontdoor/calendar_template.py"|*"framework/acting/action_lane.py"|*"framework/acting/run_action_lane.py"|*"framework/frontdoor/channel.py"|*"framework/attention/situation.py"|*"framework/attention/feed.py"|*"framework/attention/acted_overlay.py"|*"framework/attention/situations.py"|*"framework/attention/queue.py"|*"framework/attention/hygiene.py"|*"framework/attention/queue_card.py"|*".claude/settings.json"|*"cabinet/scripts/hooks/"*|*"cabinet/scripts/policy-shadow.py"|*"cabinet/scripts/kill-switch.sh"|*"cabinet/scripts/germline-lock.sh"|*"framework/authority/posture.py"|*"framework/authority/grants.py"|*"framework/authority/needs.py"|*"framework/learning/gate.py"|*"framework/learning/apply_watch.py"|*"cabinet/scripts/grant-apply.sh"|*"cabinet/scripts/gate-apply.sh"|*"cabinet/launchd/com.cabinet.gate-apply.plist"|*"shared/interfaces/gate-apply-watch.jsonl"|*"instance/config/posture.yml"|*"instance/config/standing-grants.yml"|*"instance/config/policies/"*|*"shared/interfaces/needs-ledger.jsonl"|*"framework/learning/trust_ladder.py"|*".claude/rules/axes-contract.md"|*"framework/schemas/extension-manifest.schema.json"|*"cabinet/scripts/validate-extension.sh"|*"instance/config/trust-ladder.yml"|*"instance/config/posture-presets/"*|*"framework/onboarding/journey.py"|*"framework/schemas/evidence-event.schema.json"|*"framework/evidence/"*|*"cabinet/dashboard/src/app/api/onboarding/"*|*"cabinet/dashboard/src/lib/onboarding/bridge.ts"|*"cabinet/dashboard/src/lib/onboarding/telegram.ts"|*"cabinet/dashboard/src/app/api/telegram/provisioning-webhook/route.ts"|*"cabinet/dashboard/src/components/onboarding/journey-card.tsx"|*"cabinet/companion/main.swift"|*"cabinet/scripts/evidence-read.sh"|*"instance/evidence/v1/"*|*"cabinet/scripts/start-officer-mac.sh"|*"cabinet/scripts/start-officer.sh"|*"cabinet/scripts/gen-officer-mcp-config.py"|*"cabinet/scripts/append-interface.sh"|*"cabinet/scripts/captain-law-broker.py"|*"cabinet/scripts/egress-guard.sh"|*"cabinet/scripts/egress-proxy.py"|*"cabinet/scripts/observe-only.sh"|*"cabinet/scripts/lib/officer-env.py"|*"cabinet/scripts/lib/officer-env.sh"|*"cabinet/scripts/lib/officer-sandbox.sh"|*"framework/comms/channel_adapter.py"|*"framework/comms/tools.py"|*"framework/comms/mcp/server.py"|*"framework/comms/adapters/telegram.py"|*"instance/config/egress.yml")
       echo "BLOCKED: Germline file — read-only for officers and loops (no loop may edit its own judge). Propose the change to the Captain; only the Captain applies germline edits." >&2
       exit 2
       ;;
@@ -1148,7 +1275,7 @@ if [ "$TOOL_NAME" = "Edit" ] || [ "$TOOL_NAME" = "Write" ]; then
     # memory/skills/evolved/ review — Captain-applied, per the audit.
     # KEEP IN LOCKSTEP with CAPLAW_PATH_RE in §5c below — a path added here
     # without §5c reopens the bash-redirect write bypass for it.
-    *"shared/interfaces/captain-patterns.md"|*"shared/interfaces/captain-intents.md"|*"shared/interfaces/captain-decisions.md"|*"memory/skills/"*|*"cabinet/scripts/append-interface.sh")
+    *"shared/interfaces/captain-patterns.md"|*"shared/interfaces/captain-intents.md"|*"shared/interfaces/captain-decisions.md"|*"memory/skills/"*)
       echo "BLOCKED: Captain-law file — officer-authored text may not become standing law via direct Write/Edit (no provenance). Append to captain-patterns / captain-intents / captain-decisions through the sanctioned interface: cabinet/scripts/append-interface.sh <target> with the entry on stdin (append-only, provenance-stamped). memory/skills/ and append-interface.sh itself are Captain-applied only — propose the change to the Captain." >&2
       exit 2
       ;;
@@ -1206,10 +1333,10 @@ fi
 
 if [ "$TOOL_NAME" = "Bash" ]; then
   EVIDENCE_READ_CMD=$(echo "$TOOL_INPUT" | jq -r '.command // empty' 2>/dev/null | tr -s '/')
-  # Exact, argument-closed safe doorway. Exit before §5b sees the protected
-  # script path; compound commands, redirects, env prefixes, and extra shell
+  # Exact, argument-closed safe doorways. Exit before §5b sees the protected
+  # script paths; compound commands, redirects, env prefixes, and extra shell
   # syntax do not match and continue through the ordinary gates.
-  if printf '%s' "$EVIDENCE_READ_CMD" | grep -qE '^\.?/?cabinet/scripts/evidence-read\.sh[[:space:]]+[A-Za-z0-9][A-Za-z0-9._:-]{0,127}([[:space:]]+[0-9]{1,4})?[[:space:]]*$'; then
+  if printf '%s' "$EVIDENCE_READ_CMD" | grep -qE '^(\.?/?cabinet/scripts/evidence-read\.sh[[:space:]]+[A-Za-z0-9][A-Za-z0-9._:-]{0,127}([[:space:]]+[0-9]{1,4})?|\.?/?cabinet/scripts/hooks/observe-ack\.sh[[:space:]]+[0-9]+-[0-9]+([[:space:]]+[0-9]+-[0-9]+){0,49})[[:space:]]*$'; then
     exit 0
   fi
   case "$EVIDENCE_READ_CMD" in
@@ -1304,7 +1431,7 @@ if [ "$TOOL_NAME" = "Bash" ]; then
     exit 2
   fi
   # Same protected set as section 5's germline case list — KEEP IN LOCKSTEP.
-  GERM_PATH_RE='memory/golden-evals/|framework/policies/|framework/authority/(classifier|lane|matrix|veto|deploy_classifier|posture|grants|needs|policy_engine)\.py|framework/fidelity/graduation\.py|cabinet/mcp-scope\.yml|cabinet/officer-capabilities\.conf|\.claude/rules/(brain-bridge|courses-of-action|axes-contract)\.md|instance/config/(autonomy|posture|standing-grants|trust-ladder)\.yml|shared/interfaces/(captain-vetoes|action-lessons)\.yml|shared/interfaces/(needs-ledger|gate-apply-watch)\.jsonl|instance/config/act-first-surfaces\.yml|instance/config/policies/|instance/config/posture-presets/|framework/frontdoor/(action_exec|action_undo|actfirst_canary|veto_registry|tell_surface|calendar_template|channel)\.py|framework/attention/(situation|situations|feed|acted_overlay|queue|queue_card|hygiene)\.py|framework/acting/(action_lane|run_action_lane)\.py|framework/learning/(gate|apply_watch|trust_ladder)\.py|framework/schemas/extension-manifest\.schema\.json|\.claude/settings\.json|cabinet/scripts/hooks/|cabinet/scripts/policy-shadow\.py|cabinet/scripts/kill-switch\.sh|cabinet/scripts/germline-lock\.sh|cabinet/scripts/validate-extension\.sh|cabinet/scripts/(grant|gate)-apply\.sh|cabinet/launchd/com\.cabinet\.gate-apply\.plist|framework/onboarding/journey\.py|framework/schemas/evidence-event\.schema\.json|framework/evidence/|cabinet/dashboard/src/app/api/onboarding/|cabinet/dashboard/src/lib/onboarding/bridge\.ts|cabinet/dashboard/src/lib/onboarding/telegram\.ts|cabinet/dashboard/src/app/api/telegram/provisioning-webhook/route\.ts|cabinet/dashboard/src/components/onboarding/journey-card\.tsx|cabinet/companion/main\.swift|cabinet/scripts/evidence-read\.sh|instance/evidence/v1/'
+  GERM_PATH_RE='memory/golden-evals/|framework/policies/|framework/authority/(classifier|lane|matrix|veto|deploy_classifier|posture|grants|needs|policy_engine)\.py|framework/fidelity/graduation\.py|cabinet/mcp-scope\.yml|cabinet/officer-capabilities\.conf|\.claude/rules/(brain-bridge|courses-of-action|axes-contract)\.md|instance/config/(autonomy|posture|standing-grants|trust-ladder|egress)\.yml|shared/interfaces/(captain-vetoes|action-lessons)\.yml|shared/interfaces/(needs-ledger|gate-apply-watch)\.jsonl|instance/config/act-first-surfaces\.yml|instance/config/policies/|instance/config/posture-presets/|framework/frontdoor/(action_exec|action_undo|actfirst_canary|veto_registry|tell_surface|calendar_template|channel)\.py|framework/attention/(situation|situations|feed|acted_overlay|queue|queue_card|hygiene)\.py|framework/acting/(action_lane|run_action_lane)\.py|framework/learning/(gate|apply_watch|trust_ladder)\.py|framework/schemas/extension-manifest\.schema\.json|\.claude/settings\.json|cabinet/scripts/hooks/|cabinet/scripts/policy-shadow\.py|cabinet/scripts/kill-switch\.sh|cabinet/scripts/germline-lock\.sh|cabinet/scripts/validate-extension\.sh|cabinet/scripts/(grant|gate)-apply\.sh|cabinet/launchd/com\.cabinet\.gate-apply\.plist|framework/onboarding/journey\.py|framework/schemas/evidence-event\.schema\.json|framework/evidence/|cabinet/dashboard/src/app/api/onboarding/|cabinet/dashboard/src/lib/onboarding/bridge\.ts|cabinet/dashboard/src/lib/onboarding/telegram\.ts|cabinet/dashboard/src/app/api/telegram/provisioning-webhook/route\.ts|cabinet/dashboard/src/components/onboarding/journey-card\.tsx|cabinet/companion/main\.swift|cabinet/scripts/evidence-read\.sh|instance/evidence/v1/|cabinet/scripts/(start-officer-mac|start-officer|append-interface|egress-guard|observe-only)\.sh|cabinet/scripts/gen-officer-mcp-config\.py|cabinet/scripts/(captain-law-broker|egress-proxy)\.py|cabinet/scripts/lib/officer-env\.(sh|py)|cabinet/scripts/lib/officer-sandbox\.sh|framework/comms/(channel_adapter|tools)\.py|framework/comms/mcp/server\.py|framework/comms/adapters/telegram\.py'
   if printf '%s' "$CMD_SQ" | grep -qE "$GERM_PATH_RE"; then
     # Target token: optional opening quote, then ONE shell word containing a
     # germline path (germ paths never contain spaces/quotes, so excluding

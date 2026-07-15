@@ -629,11 +629,6 @@ if [ "$CLEAN_ROOM" = "1" ]; then
   fi
 fi
 
-command -v "$PY" >/dev/null 2>&1 || {
-  echo "hatch.sh: $PY is required (brew install python@3.12) — the suite and generators are pinned to 3.12" >&2
-  exit 1
-}
-
 flight_init "$LOG_DIR" "$FLIGHT_LOG"
 flight_stamp HATCH_START
 echo "==== HATCH v0 — recording to $LOG_DIR (flight-recorder rule) ===="
@@ -666,6 +661,15 @@ else
   run_step setup-mac "host bootstrap (boot-path fast lane)" \
     bash cabinet/scripts/setup-mac.sh --fast
 fi
+
+# setup-mac is the bootstrap owner for Python 3.12.  Checking before it ran
+# made the advertised one-command hatch fail on the exact fresh Mac it exists
+# to prepare.  Re-check after the step so clean-room stays install-free while a
+# normal hatch can install the pinned interpreter before any Python consumer.
+command -v "$PY" >/dev/null 2>&1 || {
+  echo "hatch.sh: setup-mac completed without $PY; run 'brew install python@3.12' and retry" >&2
+  exit 1
+}
 
 # 2. instance generation (init fast-lane; rehearsed adoption on refusal)
 do_generate_instance

@@ -11,6 +11,19 @@ _STABLE = _NOW - pv.STABILITY_MS - 60_000      # ready 61 min ago → past the w
 _IN_WINDOW = _NOW - 60_000                      # ready 1 min ago → inside the window
 
 
+def test_vercel_client_team_scope_is_deployment_config_not_launcher_default(monkeypatch):
+    monkeypatch.delenv("VERCEL_TEAM_ID", raising=False)
+    personal = pv.VercelClient(token="fixture")
+    assert personal.team_id is None
+    configured = pv.VercelClient(token="fixture", team_id="team_fixture")
+    assert configured.team_id == "team_fixture"
+
+
+def test_vercel_client_env_team_scope_fallback(monkeypatch):
+    monkeypatch.setenv("VERCEL_TEAM_ID", "team_from_env")
+    assert pv.VercelClient(token="fixture").team_id == "team_from_env"
+
+
 # --- pure timing + join helpers ---------------------------------------------
 
 def test_alias_stable_arithmetic():

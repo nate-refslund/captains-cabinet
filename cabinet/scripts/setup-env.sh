@@ -17,7 +17,8 @@
 #   (no args)        Interactive wizard. Skips keys already filled.
 #   --defaults       Non-interactive: write a minimal cabinet/.env with
 #                    local defaults + auto-generated values only
-#                    (DASHBOARD_PASSWORD, POSTGRES_PASSWORD); leaves all
+#                    (DASHBOARD_PASSWORD, POSTGRES_PASSWORD,
+#                    TELEGRAM_WEBHOOK_SECRET); leaves all
 #                    optional keys unset. Exit 0. Used by setup-mac.sh when
 #                    stdin is not a TTY (hatch engine / CI).
 #   --check          Validate cabinet/.env: exit 1 only if the file is
@@ -296,9 +297,11 @@ apply_runtime_defaults() {
     if [ -n "$GEN_PWD" ]; then
       set_env_key "DASHBOARD_PASSWORD" "$GEN_PWD"
       ok "DASHBOARD_PASSWORD auto-generated (24 chars, base64)"
+      info "To sign in, copy it securely: bash cabinet/scripts/dashboard-password.sh --copy"
     fi
   else
     ok "DASHBOARD_PASSWORD already set"
+    info "To sign in, copy it securely: bash cabinet/scripts/dashboard-password.sh --copy"
   fi
 
   # Local postgres password (used by provision-local-postgres.sh for the
@@ -312,6 +315,21 @@ apply_runtime_defaults() {
     fi
   else
     ok "POSTGRES_PASSWORD already set"
+  fi
+
+  # Telegram authenticates every webhook delivery with this local transport
+  # secret. It is not a BotFather/account credential and is safe to generate
+  # before Telegram is connected. The value is stored only in cabinet/.env
+  # (chmod 600) and is never printed.
+  existing="$(current_value "TELEGRAM_WEBHOOK_SECRET")"
+  if [ -z "$existing" ]; then
+    GEN_PWD="$(openssl rand -hex 32 2>/dev/null | head -c 64)"
+    if [ -n "$GEN_PWD" ]; then
+      set_env_key "TELEGRAM_WEBHOOK_SECRET" "$GEN_PWD"
+      ok "Telegram webhook authentication secret generated (value not shown)"
+    fi
+  else
+    ok "Telegram webhook authentication secret already set (value not shown)"
   fi
 }
 
