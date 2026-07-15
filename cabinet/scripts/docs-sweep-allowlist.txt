@@ -80,3 +80,11 @@ cabinet/config/cua-driver-version.txt
 # Next.js build output of the dashboard (docs/runbooks/world-qa-verify.md
 # tells the operator to rm it) — never tracked.
 cabinet/dashboard/.next
+# fleet runtime tree's persistent secrets copy — created by
+# runtime-provision.sh's `init` command (cmd_init: `: > "$root/shared/
+# cabinet.env"` when absent) inside the SEPARATE --runtime-root tree
+# (~/.cabinet/runtime by convention), never this repo's own shared/
+# directory. docs/runbooks/dev-runtime-split-cutover.md's ASCII layout
+# diagram references it by that runtime-tree-relative path; the token
+# happens to collide with this repo's real top-level shared/ dir name.
+shared/cabinet.env
