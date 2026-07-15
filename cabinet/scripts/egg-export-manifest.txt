@@ -35,7 +35,13 @@
 
 # --- deletes: instance data never ships --------------------------------------
 # R127: instance/flavor-a is the model personal-source pack — excluded entirely
-# (the shipped seam proof is that core stays green without it).
+# (the shipped seam proof is that core stays green without it). Packaged +
+# documented as a shippable opt-in built-in adapter (instance/flavor-a/
+# README.md, Lane A personal-clean wave 2026-07-15); this delete rule is
+# LEFT IN PLACE pending a Captain call on the README's flagged precondition
+# (pervasive real personal-identity content in this pack's own docstrings +
+# test fixtures needs its own scrub pass first) — see the README before
+# flipping this rule.
 delete instance/flavor-a
 # R128: instance/agents leaves; the cua-driver MCP overlay's template home is
 # cabinet/mcp-overlays/ (landed 1a8c94fb) and officer .md files regenerate.
