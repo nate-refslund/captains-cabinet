@@ -6,6 +6,12 @@
      shared/interfaces/ + instance/ + memory/ (topology-preserved rsync), a
      fresh verified Redis RDB or fsynced/restore-tested AOF fallback, and the configured Postgres work store into
      ~/Cabinet-Backups/<YYYY-MM-DD>/ and prunes beyond 14 days.
+     Both Redis paths use a type-aware SHA-256 logical-state v3 proof: durable
+     state is exact, TTL keys may disappear only after their absolute deadline,
+     and unsupported value types fail closed. Its blocking source fingerprint
+     has a 55-second deadline inside the 60-second write pause and aborts the
+     backup if the keyspace outgrows that window. Legacy v2 snapshots retain their
+     strict DUMP comparison and require a fresh v3 after any mismatch.
      Verify restorability any time with cabinet/scripts/restore-drill.sh
      (temp-dir only — never touches live state).
 
