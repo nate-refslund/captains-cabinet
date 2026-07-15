@@ -168,7 +168,7 @@ governs the fresh-instance case specifically.
 | Path | Why |
 |---|---|
 | `instance/state/triggers.json` | Confirmed by content — a literal pending-trigger queue (e.g. an `at-time` trigger tied to old PR #133 verification). Textbook stale queue. |
-| `~/Library/Application Support/cabinet/attention/{pacing-state.json,pin-state.json,.pacing.lock,.pin.lock,.standing.lock}` | Attention-pacing/pin queue state. |
+| `~/Library/Application Support/cabinet/attention/{pacing-state.json,pin-state.json,.pacing.lock,.pin.lock,.standing.lock,queue.json,standing-cards.json,why-captain.json,queue-card.json}` (9 files — verification pass, §6, exhaustive listing found 4 more than the first pass named: `queue.json`, `standing-cards.json`, `why-captain.json`, `queue-card.json`) | Attention-pacing/pin queue state — the materialized queue/card/rationale surfaces the front-door mechanism rebuilds from live signals. |
 | `~/Library/Application Support/cabinet/feed/{feed-2026-07-09..15.jsonl,cursors/}` (7 daily files as of the §6 recheck; the range grows one file/day, so this count is expected to keep moving) | Event feed + read-cursors — an inbox by construction. |
 | `~/Library/Application Support/cabinet/telegram-state/{comms-officer,cos,first-lane-ceo,ghost-officer,polads-ceo,sbx-alpha,sbx-beta,stephie-ceo,zzz-sandbox-echo}/` (9 dirs — verification pass, §6, found 4 more than the first manifest pass named: `sbx-alpha`, `sbx-beta`, `stephie-ceo`, `zzz-sandbox-echo`) | Per-officer/sandbox Telegram chat/session state — moot once the bot token is rotated (ruling) and the roster resets; the `sbx-*`/`zzz-sandbox-echo` dirs are test scaffolding, same disposition. |
 
@@ -193,10 +193,10 @@ governs the fresh-instance case specifically.
 | `instance/archive/**` (docs/ 26 files + docs/onboarding/ 2 files = 28, presets/step-network 11 files, proposals/*.md ×3, refslund.ai/{customer-templates 8 files,runbooks 1 file}, shared/cabinet-framework-backlog.md — exact recount, §6; the first pass's "~20" for docs/ was an approximation, not an error) | Gitignored — the repo's OWN "Runtime archives (migration snapshots, etc.)" holding pen. Already-retired material; the "old...archived" principle applies generally, not just to the world. |
 | `~/Library/Application Support/cabinet/apoptosis-state.json` | Hygiene/pruning-sweep state — fresh instance starts with nothing pending pruning. |
 | `~/Library/Application Support/cabinet/claude-config/**` (**4,931 files** — `.claude.json`, `.cc-writes/`, `.last-cleanup`, `.last-update-result.json`, README.md) | The shared `CLAUDE_CONFIG_DIR` officers' Claude Code sessions use — MCP consents, session/project history for the OLD officer fleet. By far the largest single dataset in this inventory; carrying it forward defeats "fresh instance" (leaks old consent/session state into new officers). Regenerates on first launch. |
-| `~/Library/Application Support/cabinet/events/config-drift-*.jsonl` (18 files at the §6 recheck, down from 119 at the first pass — this one is a REAL change, not a miscount: something pruned this log in the interim, consistent with this repo's self-pruning-log pattern elsewhere; either count supports the identical DROP disposition) | Historical config-drift monitoring log — fresh instance starts a new drift baseline. |
+| `~/Library/Application Support/cabinet/events/{config-drift-*.jsonl (18), tool-failures-*.jsonl (20), events-2026-*.jsonl (29), consequence-events-*.jsonl (23), instructions-loaded-*.jsonl (28), judge-calibration-status.json (1)}` — 119 files total, EVERY file in the directory accounted for by exhaustive recount (verification pass, §6) | Corrected from the first pass, which measured 119 as if it were the `config-drift-*.jsonl`-specific count (that subset is actually 18) and left the other 101 files in this directory entirely unclassified. All six are runtime operational/learning-loop logs of the OLD instance (tool-failure log, generic event log, consequence/outcome events — same class as §2c's consequence ledger, just a second physical location — instructions-loaded audit trail, judge-calibration state) — fresh instance starts new logs and a fresh (unmeasured) calibration state. |
 | `~/Library/Application Support/cabinet/ledger-backups/{a14-actor-id-20260707_075752Z-28605,purge-20260704_232009Z-48377,purge-20260705_083736Z-80700}/` (72 files) | Backups of ledgers that are themselves DROP; also covered by the pre-cutover tar-archive safety net. |
 | `~/Library/Application Support/cabinet/probe-sentry-seen.json` | Dedup/seen-cache for a Sentry probe — regenerates (worst case: re-processes a few old issues once). |
-| `~/Library/Application Support/cabinet/undo/{canary-receipts.jsonl,frozen-kinds.jsonl,frozen-kinds.jsonl.bak-1783207967,undo-journal-2026-07-04.jsonl,undo-journal-2026-07-06.jsonl}` | Undo journal for actions taken by the OLD officer set — nothing to undo once they're gone. |
+| `~/Library/Application Support/cabinet/undo/{canary-receipts.jsonl,frozen-kinds.jsonl,frozen-kinds.jsonl.bak-1783207967,undo-journal-2026-07-*.jsonl}` — a date-bound series; exhaustive recount (verification pass, §6) found 7 dated `undo-journal-` files (07-04,06,07,08,09,10,13), 5 more than the first pass's 2 named dates. Stated as a glob, not an exact date list, since this directory grows ~daily and any fixed enumeration will be stale again before cutover | Undo journal for actions taken by the OLD officer set — nothing to undo once they're gone; the rule (glob, not date) is stable regardless of exactly how many accumulate before cutover. |
 
 ## 3. Grey areas — resolved (stated rule applied; folded into §1/§2 counts above)
 
@@ -300,6 +300,15 @@ other workflows are concurrently active against this exact live tree today
 defect — each is called out below as either a genuine live-tree change or a
 first-pass miscount.
 
+This pass covers, exhaustively (not sampled), every top-level subdirectory of
+`~/Library/Application Support/cabinet/` (all 11: `apoptosis-state.json`,
+`attention/`, `claude-config/`, `events/`, `feed/`, `ledger-backups/`,
+`probe-sentry-seen.json`, `state/`, `telegram-state/`, `undo/`, `world/`) and
+every file under `instance/config/` and the other `instance/` subdirectories,
+plus `shared/interfaces/` top-level and its `reviews/`/`world/`/`product-specs/`
+children — cross-checked file-by-file against the first pass's table, not
+just its prose descriptions.
+
 **Gaps found and fixed (real paths that weren't in either KEEP or DROP):**
 - `instance/config/contexts/*` (9 real `.yml` + 2 `.example`, all confirmed
   TRACKED) and `instance/config/projects/*` (5 files, all TRACKED) — entirely
@@ -311,27 +320,48 @@ first-pass miscount.
   named only 5 of the 9 real directories present; the missing 4
   (`sbx-alpha`, `sbx-beta`, `stephie-ceo`, `zzz-sandbox-echo`) are folded into
   the same §2g row under the same rule.
+- `~/Library/Application Support/cabinet/attention/` — the first pass named
+  5 of 9 real files; the missing 4 (`queue.json`, `standing-cards.json`,
+  `why-captain.json`, `queue-card.json`) are folded into the same §2g row,
+  same rule (materialized attention-surface state).
+- `~/Library/Application Support/cabinet/events/` — the first pass named
+  only the `config-drift-*.jsonl` subset (and, per the count correction
+  below, even that subset's count was actually the WHOLE directory's file
+  count). The other 101 files — `tool-failures-*.jsonl` (20),
+  `events-2026-*.jsonl` (29), `consequence-events-*.jsonl` (23),
+  `instructions-loaded-*.jsonl` (28), `judge-calibration-status.json` (1) —
+  were entirely unclassified. Added to §2j as DROP, same runtime-log/
+  learning-state reasoning as the rest of that section (`consequence-events`
+  is the same class as §2c's consequence ledger, a second physical location).
+- `~/Library/Application Support/cabinet/undo/` — the first pass named 2 of
+  7 real dated `undo-journal-*.jsonl` files; rewritten as a glob rule (see
+  count correction below) rather than re-enumerating dates that will be
+  stale again by cutover.
 - `instance/.DS_Store`, `instance/config/.DS_Store` — macOS Finder noise,
   unmentioned; added to §2j as trivial DROP.
 
-**Counts corrected (with cause distinguished):**
+**Counts corrected (with cause distinguished — miscount vs. genuine drift):**
 - Launchd generated plists: first pass said "44 files" but its own named list
   had only 43 entries, and a fresh recount of `cabinet/launchd/generated/`
   found the identical 43-item set — this was the first pass's own arithmetic
   slip, not a live-tree change.
-- `events/config-drift-*.jsonl`: 18 files now vs. 119 claimed — a REAL
-  live-tree change (something pruned this log between passes); disposition
-  (DROP) is unaffected either way.
+- `events/`: the first pass's "119 files" was actually the WHOLE directory's
+  file count, mislabeled as the `config-drift-*.jsonl`-specific count (that
+  subset is really 18) — a miscount/mislabel, not drift, and the real defect
+  was the 101 unclassified files above, not the number itself.
 - `feed/feed-2026-07-*.jsonl`: 7 files (07-09 through 07-15) vs. the first
   pass's implied 4 (07-09..12) — expected drift, the range grows one file per
   day; disposition unaffected.
+- `undo/undo-journal-2026-07-*.jsonl`: 7 dated files (07-04,06,07,08,09,10,13)
+  vs. 2 named — partly first-pass under-enumeration, partly the range growing
+  since; disposition unaffected either way, hence the glob rewrite above.
 - `instance/archive/docs/` (+`onboarding/` subdir): exact recount is 28 files
   vs. the first pass's "~20" — the "~" already signaled an estimate, not an
   error; disposition unaffected.
 
 **Confirmed exactly correct on recheck (no changes needed):** `instance/config/`
 enumerated exhaustively file-by-file against §1f/§2d/§2i/§3 (every real path
-outside the two gaps above lands correctly); `instance/memory/tier2/` — all 9
+outside the gaps above lands correctly); `instance/memory/tier2/` — all 9
 officer buckets present as named; `instance/fidelity/regression_corpus/cases/`
 — 11 files, matching exactly (the 3 newest untracked cases are already inside
 that count, not additional to it); `instance/roles/active/` — exactly the 4
@@ -346,11 +376,16 @@ verified this distinction explicitly rather than assuming one tree answers
 both a "what real data exists" question and a "what's tracked" question);
 `~/Library/Application Support/cabinet/state/` — exactly the one claimed file
 (`graduation-transitions.json`), content confirmed to be trust-ladder cell
-data; `shared/interfaces/` top-level flat files, `product-specs/` (2 files) —
-all exactly as listed.
+data; `~/Library/Application Support/cabinet/ledger-backups/` — exactly 72
+files across the 3 named subdirectories; `shared/interfaces/` top-level flat
+files, `product-specs/` (2 files) — all exactly as listed.
 
-**Net effect on the counts in §1/§2**: 16 real paths added across KEEP (+16:
-9 contexts .yml + 2 contexts .example + 5 projects .yml) and DROP (+7: 1
-legend.json + 4 telegram-state dirs + 2 .DS_Store); zero paths reclassified
-between KEEP and DROP. Every real path this pass touched now lands in exactly
-one list, per the task's requirement.
+**Net effect on the counts in §1/§2**: 32 real paths added across KEEP (+16:
+9 contexts .yml + 2 contexts .example + 5 projects .yml) and DROP (+16: 1
+legend.json + 4 telegram-state dirs + 4 attention files + 5 undo-journal
+dates + 2 .DS_Store; the 101 events/ files are a count/classification
+correction to an existing row rather than newly-counted individual paths).
+Zero paths reclassified between KEEP and DROP. Every real path this pass
+touched — across all 11 Application Support subdirectories and all of
+`instance/config/` exhaustively — now lands in exactly one list, per the
+task's requirement.
