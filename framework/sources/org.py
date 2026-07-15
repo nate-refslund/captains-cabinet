@@ -1,8 +1,8 @@
 """framework/sources/org.py — the ORG (Flavor-B / clean-room) PersonalSource.
 
 ``OrgSource`` gives an org deployment REAL query-driven recall where the null
-adapter has none: on a clean-room box with no screenpipe, no vault and no
-``instance/flavor-a`` tree, everything previously fail-closed to
+adapter has none: on a clean-room box with no personal-source adapter, no
+vault and no ``instance/flavor-a`` tree, everything previously fail-closed to
 ``NullPersonalSource`` and the draft/brief lanes (``run_draft_lane``,
 ``morning_synthesis``, the fidelity ``officer_runner``) got zero hits from
 ``get_source().search()``. This adapter backs ``search()`` with the CABINET's
@@ -64,8 +64,9 @@ query path to reuse, and duplicating a second ranked SQL surface in this
 adapter would violate the one-client rule above — fold it in when the
 search-memory upgrade exposes it.
 
-LAYER SEP: stdlib only, no screenpipe/_shared import, no bare quoted instance
-token — this module lives in the FRAMEWORK tree (it senses cabinet-owned data,
+LAYER SEP: stdlib only, no personal-source-adapter/_shared import, no bare
+quoted instance token — this module lives in the FRAMEWORK tree (it senses
+cabinet-owned data,
 not any launcher's personal estate) and is bound, like every adapter, only as
 DATA via ``instance/config/sources.yml`` → ``get_source()``.
 

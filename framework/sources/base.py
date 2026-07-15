@@ -2,13 +2,15 @@
 
 The launcher-neutral Protocols framework CORE depends on to OBSERVE (read) and
 DISPATCH (write) the captain's personal world. Framework CORE imports THESE,
-never a screenpipe ``_shared`` lib: the Flavor-A deployment binds a screenpipe
-adapter that satisfies them, a clean-room / Flavor-B box binds the null adapter
-(``framework/sources/null.py``) or an org source. Structural (``Protocol``) so
-any of those satisfies the contract WITHOUT inheritance.
+never a personal-source adapter's ``_shared`` lib: the Flavor-A deployment
+binds a concrete personal-source adapter that satisfies them, a clean-room /
+Flavor-B box binds the null adapter (``framework/sources/null.py``) or an org
+source. Structural (``Protocol``) so any of those satisfies the contract
+WITHOUT inheritance.
 
 stdlib + typing ONLY — this module must stay importable on a box with no
-screenpipe, no vault, no ``~/.screenpipe``. It names no backend; each method's
+personal-source adapter, no vault, no adapter-specific state dir. It names no
+backend; each method's
 docstring records the Flavor-A call it maps to (the method-origin ledger,
 source-adapter-boundary spec §4.1), which lives in the ADAPTER, not here.
 """
@@ -20,8 +22,9 @@ from typing import Optional, Protocol, runtime_checkable
 @runtime_checkable
 class PersonalSource(Protocol):
     """The captain's personal-sensing (READ) surface. Framework CORE depends on
-    THIS, never on screenpipe. Flavor-A binds the screenpipe adapter; a
-    clean-room / Flavor-B box binds ``NullPersonalSource`` or an org source."""
+    THIS, never on any concrete adapter. Flavor-A binds a concrete
+    personal-source adapter; a clean-room / Flavor-B box binds
+    ``NullPersonalSource`` or an org source."""
 
     def available(self) -> bool:
         """Cheap liveness probe (mirrors
@@ -34,14 +37,14 @@ class PersonalSource(Protocol):
         """Leak-scoped vault retrieval for ``handle`` (optionally topic-aware).
         Returns ``{"hits": [{text, path|ref|heading, content_ts, ...}],
         "topic_terms": ...}``. Flavor-A: ``BrainAdapter.gather_vault``
-        (officer_runner.py:346) / ``screenpipe_adapter.gather`` →
+        (officer_runner.py:346) / the adapter's ``gather`` →
         ``context_lib.gather(handle, sources=["vault"], topic=topic)`` — Tier-1
         vault ONLY (never fans out to the live sent/screen/monday tiers)."""
         ...
 
     def find_reply_candidates(self, *, since: Optional[str] = None) -> list:
         """Threads awaiting the captain's reply (noise-filtered, should-reply
-        gated). Flavor-A: ``screenpipe_adapter.find_threads`` → ``draft_lib``
+        gated). Flavor-A: the adapter's ``find_threads`` → ``draft_lib``
         thread discovery."""
         ...
 
