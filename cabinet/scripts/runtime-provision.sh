@@ -345,14 +345,30 @@ EOF
 # real first release is provisioned fresh right after by the normal
 # `provision` flow).
 _seed_fresh_instance() {
-  local root="$1" seed_sha seed_slot py
+  local root="$1" seed_sha seed_slot py gen_log
   seed_sha="$(git_r "$root" rev-parse --verify --quiet HEAD 2>/dev/null || git_r "$root" rev-parse --verify refs/heads/master)"
   seed_slot="$root/releases/.seed-$$"
   git_r "$root" worktree add --detach "$seed_slot" "$seed_sha" >/dev/null
   py="python3.12"; command -v "$py" >/dev/null 2>&1 || py="python3"
-  if ! ( cd "$seed_slot" && "$py" cabinet/scripts/generate-instance.py --defaults >/dev/null 2>&1 ); then
-    echo "runtime-provision.sh: --seed-fresh-instance generate-instance.py step reported non-zero — inspect $seed_slot/instance manually before trusting the seed" >&2
+  gen_log="$(mktemp)"
+  if ! ( cd "$seed_slot" && "$py" cabinet/scripts/generate-instance.py --defaults ) >"$gen_log" 2>&1; then
+    # Mirrors hatch.sh's own do_generate_instance fallback verbatim: THIS
+    # repo's tracked instance/config/platform.yml already carries a real
+    # 'officers:' block (it is itself a live deployment's checkout, not a
+    # blank template), so generate-instance.py's own "inherited instance"
+    # refusal fires on ANY fresh checkout of it, every time — --adopt is the
+    # rehearsed, designed answer (archives the conflicting tracked file
+    # aside under instance/_pre-adopt-<stamp>/, deletes nothing), not a
+    # one-off retry hack.
+    if grep -q "REFUSING to overwrite" "$gen_log"; then
+      if ! ( cd "$seed_slot" && "$py" cabinet/scripts/generate-instance.py --defaults --adopt ) >>"$gen_log" 2>&1; then
+        echo "runtime-provision.sh: --seed-fresh-instance generate-instance.py --defaults --adopt ALSO reported non-zero — inspect $gen_log and $seed_slot/instance manually before trusting the seed" >&2
+      fi
+    else
+      echo "runtime-provision.sh: --seed-fresh-instance generate-instance.py step reported non-zero (not the known inherited-instance case) — see $gen_log; inspect $seed_slot/instance manually before trusting the seed" >&2
+    fi
   fi
+  rm -f "$gen_log"
   mkdir -p "$root/shared/instance"
   if [ -d "$seed_slot/instance" ]; then
     cp -a "$seed_slot/instance/." "$root/shared/instance/"
