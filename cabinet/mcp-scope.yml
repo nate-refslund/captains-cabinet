@@ -30,6 +30,22 @@
 # (merged into every officer's .mcp.json at boot). Every hired officer gets
 # it (functional roster + portfolio lane CEOs); usage rules are MANDATORY:
 # .claude/rules/brain-bridge.md.
+#
+# INSTANCE DATA, not a framework default (germline-4file-prep, 2026-07-15):
+# the `agents:` keys below are THIS deployment's hired roster — a fresh hatch
+# replaces the lane-CEO entries with its own (cabinet/scripts/generate-
+# instance.py's hatch instructions already direct this: "list each lane CEO
+# under agents:"). It is schg-locked alongside cabinet/officer-
+# capabilities.conf as JUDGED config, in tension with per-hatch
+# customization for a FRESH deployment — flagged, not resolved, in
+# docs/proposals/germline-lockstep-lane-resolver-addendum-2026-07-12.md
+# ("egg-side question") and carried forward in docs/proposals/germline-
+# 4file-prep-mcp-officer-conf-2026-07-15.md. instance/config/roster.yml
+# (deployment-local, gitignored) is the parallel roster record — its header
+# names this file as the MCP-scope counterpart ("MCP scope lives there, not
+# here"). framework/tests/test_roster_conf_lockstep.py checks the agents:
+# keys agree with roster.yml's officer set whenever roster.yml exists; a
+# no-op on a fresh checkout / CI where roster.yml is absent.
 
 cabinet: main
 

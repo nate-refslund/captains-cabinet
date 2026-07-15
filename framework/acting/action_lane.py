@@ -42,6 +42,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from framework import env  # instance-config resolvers (officers, lane_default)
 from framework.env import captain_name
 from framework.attention.situation import canonical_refs, path_grade
 
@@ -142,6 +143,20 @@ _CAPTAIN_SLOT = "%%CAPTAIN%%"
 # pure and replay-stable — the runner loads the ledger, the core never reads
 # disk.
 _LESSONS_SLOT = "%%LESSONS%%"
+# PC-E-LOCKSTEP pair (e): %%OFFICERS%% carries the INSTANCE officer roster
+# (env.officers(), conf-derived, process-cached) rendered as the delegate_work
+# officer enum — the spec names no launcher's officers. An empty roster renders
+# an empty enum and the executor's roster check rejects any invented target
+# (fail-closed at the acting seam).
+_OFFICERS_SLOT = "%%OFFICERS%%"
+
+
+def _officer_enum() -> str:
+    """The delegate_work officer enum for the prompt spec — `"a"|"b"` rendered
+    from env.officers() (conf file order; the same roster the executor's
+    whitelist reads, so spec and enforcement can never disagree)."""
+    return "|".join('"%s"' % o for o in env.officers())
+
 
 PROPOSER_SYSTEM = """You are the action-proposal core of %%CAPTAIN%%'s cabinet.
 %%CAPTAIN%% handles ALL communication himself. You propose ACTIONS the captured world
@@ -155,7 +170,7 @@ EXECUTABLE action kinds:
 - monday_task_update: {monday_id, set: {status?|priority?|due?|description?}, why}
 - reminder_create: {title, due_iso, notes?} — lands as a CALENDAR event/block on
   %%CAPTAIN%%'s calendar (never a personal to-do app)
-- delegate_work: {officer: "polads-ceo"|"stephie-ceo"|"comms-officer"|"cos",
+- delegate_work: {officer: %%OFFICERS%%,
   brief: str} — dispatches a precise implementation brief to that officer's
   lane so the work actually gets DONE on approval
 
@@ -467,7 +482,7 @@ def propose_actions(
     decided_subjects: set,
     open_subjects: set,
     budget_left: int,
-    lane_default: str = "polads",
+    lane_default: str = "",
     covered_evidence: frozenset = frozenset(),
     acted_refs: frozenset = frozenset(),
     reversed_refs: frozenset = frozenset(),
@@ -503,6 +518,15 @@ def propose_actions(
       drops, SEC-4 RT-A12). Default None = no-op, so the core stays pure and
       replay-deterministic; the runner passes a real logger.
     """
+    # PC-E-LOCKSTEP pair (e): the proposal default lane is INSTANCE data (a
+    # Captain ruling, `lane_default` in instance config), not a framework
+    # literal. A caller-supplied value wins; unset resolves env.lane_default()
+    # — process-cached instance config, replay-stable within a run, the same
+    # class of read as captain_name() below. "" on a generic deployment: the
+    # runner's _normalize_lane then files cards under the stable adhoc
+    # catch-all, never an invented lane.
+    lane_default = lane_default or env.lane_default()
+
     def _drop(subject: str, reason: str) -> None:
         if suppress_log:
             try:
@@ -516,6 +540,8 @@ def propose_actions(
     valid_ids = _direction_ids(directions)
     enforce_dir = bool(isinstance(directions, dict) and directions.get("directions"))
     system = PROPOSER_SYSTEM.replace(_CAPTAIN_SLOT, captain_name()).replace(
+        _OFFICERS_SLOT, _officer_enum()
+    ).replace(
         _DIRECTIONS_SLOT, render_directions(directions) or "(no directions loaded)"
     ).replace(
         _LESSONS_SLOT,

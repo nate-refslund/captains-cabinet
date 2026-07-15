@@ -169,17 +169,26 @@ _ALLOWLISTED_LINES: Dict[str, Tuple[str, ...]] = {
 # names it. FIXME(I2/board-id-sweep): reword the docstring, then delete.
 #
 # product/lane tokens (PCA-P1, Captain directive 2026-07-14 "product/captain-
-# agnostic ALWAYS" — all five entries below are germline, confirmed schg on
+# agnostic ALWAYS" — all entries below are germline, confirmed schg on
 # the live tree 2026-07-15):
 #   * action_lane.py: PROPOSER_SYSTEM officer-enum literal (@158) and
 #     lane_default="polads" (@470) — the resolver-based fix (env.officers() /
-#     env.lane_default() at compose/call time) is VERIFIED and staged dark on
-#     feat/wave-g-lockstep; see ledger row CG-25 + docs/proposals/germline-
-#     lockstep-lane-resolver-addendum-2026-07-12.md. The @117 dataclass
-#     comment is dated design rationale CG-25 records as "recon disposition
-#     (leave-with-reason)". Applies at the next germline ceremony.
+#     env.lane_default() at compose/call time) LANDED in this worktree
+#     (germline-4file-prep commit 3abe4876, applying ledger row CG-25 +
+#     docs/proposals/germline-lockstep-lane-resolver-addendum-2026-07-12.md
+#     verbatim); both cited needles are gone from the file EXCEPT the @~118
+#     dataclass comment (`"polads"`), which is dated design rationale kept
+#     as historical record, by design, not part of the staged patch — so
+#     only that one needle remains below. Byte-for-byte officer-resolution
+#     parity vs. the retired literals re-verified independently
+#     (germline-4file-prep, 2026-07-15). Live-tree schg relock is the only
+#     remaining step, and it is a filesystem ceremony this text-scan ratchet
+#     cannot observe either way.
 #   * action_exec.py: _DELEGATE_OFFICERS whitelist literal (@848) — the same
-#     CG-25 staged patch (call-time frozenset(env.officers())).
+#     CG-25 patch (call-time frozenset(env.officers())) LANDED in this
+#     worktree (germline-4file-prep commit b71fe796); zero remaining
+#     polads/stephie hits in the file, so its entry is DELETED below rather
+#     than narrowed (the forcing function this module documents next).
 #   * run_action_lane.py (@185/232/249): dated design-rationale comments
 #     citing the same officer names — CG-25's note records this as "recon
 #     disposition (leave-with-reason)" too, kept as historical record, not
@@ -192,27 +201,25 @@ _ALLOWLISTED_LINES: Dict[str, Tuple[str, ...]] = {
 # The needle IS the literal in every case, so the exemption is surgical — it
 # un-guards ONLY the cited line and leaves the rest of each file fully guarded
 # for every check, including this one. FORCING FUNCTION: the moment a lane
-# rewords a doc line to drop the literal (I4-style) or a germline ceremony
-# lands the resolver-based fix, the needle vanishes and
-# test_line_allowlist_needles_are_actually_present goes RED — forcing that
-# entry's deletion (the allowlist may only shrink). (The daily_recap.py entry
-# left 2026-07-07 with egg row R023 is the precedent: the Monday Reflections
-# leg and its board-id docstring citation were DELETED from the module, so the
-# needle — and the exemption — went with the code.)
+# rewords a doc line to drop the literal (I4-style) or the resolver-based fix
+# lands, the needle vanishes and test_line_allowlist_needles_are_actually_present
+# goes RED — forcing that entry's deletion (the allowlist may only shrink).
+# (The daily_recap.py entry left 2026-07-07 with egg row R023 is the
+# precedent: the Monday Reflections leg and its board-id docstring citation
+# were DELETED from the module, so the needle — and the exemption — went with
+# the code. The action_exec.py entry below, deleted 2026-07-15 the same way
+# the moment germline-4file-prep's patch landed, is the second precedent.)
 # FIXME(I2/board-id-sweep): reword the actfirst_canary docstring, then delete that entry.
-# FIXME(CG-25/germline-ceremony): once the ceremony applies the staged patch,
-# delete the action_lane.py + action_exec.py entries below.
 # FIXME(PCA-P1-RATCHET/germline-ceremony): once a ceremony reworks the doc
 # citations, delete the run_action_lane.py + situation.py + graduation.py entries.
 _TEMPORARY_LINE_RESIDUALS: Dict[str, Tuple[str, ...]] = {
     "framework/frontdoor/actfirst_canary.py": ("5091706356",),
-    "framework/acting/action_lane.py": ('"polads"', '"polads-ceo"'),
-    "framework/frontdoor/action_exec.py": ('"polads-ceo"',),
+    "framework/acting/action_lane.py": ('"polads"',),
     "framework/acting/run_action_lane.py": ("'polads-ceo'",),
     "framework/attention/situation.py": ("polads.eu",),
     "framework/fidelity/graduation.py": ('"polads"',),
 }
-_TEMP_LINE_BASELINE_MAX = 7  # target is always 0; this may only be LOWERED (shrink-only), never raised
+_TEMP_LINE_BASELINE_MAX = 5  # target is always 0; this may only be LOWERED (shrink-only), never raised
 
 # The whole-file temporary residual mechanism (residual pre-sweep misses an owner
 # lane had not yet cleaned, exempted at WHOLE-FILE granularity). EMPTY today — the

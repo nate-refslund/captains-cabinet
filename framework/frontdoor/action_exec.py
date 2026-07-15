@@ -845,7 +845,16 @@ def _exec_calendar_event(payload: dict, osascript: Callable,
     return {"calendar": out_cal, "uid": uid, "title": title[:80]}
 
 
-_DELEGATE_OFFICERS = {"cos", "polads-ceo", "stephie-ceo", "comms-officer"}
+def _delegate_officers() -> frozenset:
+    """The valid delegate/investigation officer targets — the INSTANCE roster
+    (cabinet/officer-capabilities.conf via env.officers(), process-cached),
+    never a baked-in officer set (PC-E-LOCKSTEP pair (a); the conf officer set
+    was verified byte-equal to the retired literal on the launching instance).
+    Call-time resolution so tests inject a synthetic roster and a restart
+    picks up a roster change. Unreadable/empty conf ⇒ empty set ⇒ every
+    officer rejected LOUDLY at the checks below (fail-closed, the tasks_board
+    precedent) — never a foreign roster, never a silent accept."""
+    return frozenset(env.officers())
 
 
 def _exec_delegate(payload: dict) -> dict:
@@ -855,7 +864,7 @@ def _exec_delegate(payload: dict) -> dict:
     is whitelist-validated; the brief travels as an argv value, never shell."""
     officer = (payload.get("officer") or "").strip()
     brief = (payload.get("brief") or "").strip()
-    if officer not in _DELEGATE_OFFICERS:
+    if officer not in _delegate_officers():
         raise RuntimeError(f"delegate_work: unknown officer {officer!r}")
     if not brief:
         raise RuntimeError("delegate_work needs a brief")
@@ -918,7 +927,7 @@ def _exec_investigation(payload: dict) -> dict:
     an argv value, never shell."""
     officer = (payload.get("officer") or "").strip()
     question = (payload.get("question") or "").strip()
-    if officer not in _DELEGATE_OFFICERS:
+    if officer not in _delegate_officers():
         raise RuntimeError(f"investigation_run: unknown officer {officer!r}")
     if not question:
         raise RuntimeError("investigation_run needs a question")
