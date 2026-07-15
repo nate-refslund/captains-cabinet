@@ -291,6 +291,7 @@ expect-present docs/proposals/germline-amendment-candor-2026-07-10.md
 expect-present docs/proposals/germline-amendment-constitution-retirement-2026-07-07.md
 expect-present docs/proposals/germline-amendment-cosmetic-batch-2026-07-07.md
 expect-present docs/proposals/germline-amendment-de-nate-2026-07-05.md
+expect-present docs/proposals/germline-amendment-egress-launchd-owner-2026-07-15.md
 expect-present docs/proposals/germline-amendment-gather-rewire-2026-07-07.md
 expect-present docs/proposals/germline-amendment-golden-evals-prune-2026-07-07.md
 expect-present docs/proposals/germline-amendment-host-grant-removal-2026-07-07.md
@@ -315,6 +316,7 @@ expect-present cabinet/scripts/null-hatch.sh
 expect-present bin/.gitkeep
 # PC-E scrub-paths: the portable launchd surface that must ride the egg
 expect-present cabinet/launchd/com.cabinet.officer.template.plist
+expect-present cabinet/launchd/com.cabinet.egress-proxy.template.plist
 expect-present cabinet/launchd/com.cabinet.dashboard.template.plist
 expect-present cabinet/launchd/officer-entitlements.plist
 expect-present cabinet/launchd/INSTALL-flip.md

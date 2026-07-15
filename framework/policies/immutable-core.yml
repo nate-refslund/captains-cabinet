@@ -81,6 +81,7 @@ files:
   - path: cabinet/scripts/captain-law-broker.py
   - path: cabinet/scripts/egress-guard.sh
   - path: cabinet/scripts/egress-proxy.py
+  - path: cabinet/launchd/com.cabinet.egress-proxy.template.plist
   - path: cabinet/scripts/observe-only.sh
   - path: cabinet/scripts/lib/officer-env.py
   - path: cabinet/scripts/lib/officer-env.sh
