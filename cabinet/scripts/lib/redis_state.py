@@ -11,7 +11,9 @@ comparison semantics.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import re
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +24,9 @@ V3_FORMAT = "redis-logical-content-expiry-v3"
 _SHA1 = re.compile(r"[0-9a-f]{40}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _UINT = re.compile(r"(?:0|[1-9][0-9]*)\Z")
+_HEX = re.compile(r"(?:[0-9a-f]{2})*\Z")
+_STREAM_ID = re.compile(rb"(?:0|[1-9][0-9]*)-(?:0|[1-9][0-9]*)\Z")
+STREAM_REPAIR_FORMAT = "redis-stream-repair-v1"
 
 
 class FingerprintError(ValueError):
@@ -55,6 +60,31 @@ class Fingerprint:
     volatile: dict[tuple[int, str], VolatileKey]
 
 
+@dataclass(frozen=True, order=True)
+class StreamConsumer:
+    database: int
+    key_hex: str
+    group_hex: str
+    consumer_hex: str
+
+
+@dataclass(frozen=True, order=True)
+class StreamPelEntry:
+    database: int
+    key_hex: str
+    group_hex: str
+    id_hex: str
+    owner_hex: str
+    delivery_count: int
+
+
+@dataclass(frozen=True)
+class StreamRepairManifest:
+    databases: int
+    consumers: frozenset[StreamConsumer]
+    pel: dict[tuple[int, str, str, str], StreamPelEntry]
+
+
 def _uint(value: str, *, field: str, maximum: int | None = None) -> int:
     if not _UINT.fullmatch(value):
         raise FingerprintError(f"invalid {field}: {value!r}")
@@ -74,6 +104,274 @@ def _sha256(value: str, *, field: str) -> str:
     if not _SHA256.fullmatch(value):
         raise FingerprintError(f"invalid {field}: {value!r}")
     return value
+
+
+def _hex(value: str, *, field: str) -> str:
+    if not _HEX.fullmatch(value):
+        raise FingerprintError(f"invalid lowercase even-length hex {field}")
+    return value
+
+
+def _decode_hex(value: str, *, field: str) -> bytes:
+    _hex(value, field=field)
+    try:
+        return bytes.fromhex(value)
+    except ValueError as exc:  # Defensive: the strict regex should make this unreachable.
+        raise FingerprintError(f"invalid hex {field}") from exc
+
+
+def parse_stream_repair(path: str | Path) -> StreamRepairManifest:
+    """Parse the privacy-preserving Redis Streams recovery sidecar.
+
+    Empty Redis identifiers are valid, so records deliberately use ``split(" ")``
+    rather than whitespace splitting: an empty hex field remains an empty field.
+    """
+
+    source = Path(path)
+    try:
+        lines = source.read_text(encoding="ascii").splitlines()
+    except (OSError, UnicodeError) as exc:
+        raise FingerprintError(f"cannot read stream repair manifest: {exc}") from exc
+    if len(lines) < 2:
+        raise FingerprintError("stream repair manifest is missing its two-line header")
+    if any(not line or "\t" in line or "\r" in line for line in lines):
+        raise FingerprintError("blank lines, tabs, and carriage returns are forbidden")
+    if lines[0] != f"FORMAT {STREAM_REPAIR_FORMAT}":
+        raise FingerprintError(
+            f"line 1 must be exactly 'FORMAT {STREAM_REPAIR_FORMAT}'"
+        )
+    database_parts = lines[1].split(" ")
+    if len(database_parts) != 2 or database_parts[0] != "DATABASES":
+        raise FingerprintError("line 2 must be exactly 'DATABASES <count>'")
+    databases = _uint(database_parts[1], field="database count", maximum=1024)
+    if databases == 0:
+        raise FingerprintError("database count must be positive")
+
+    consumers: set[StreamConsumer] = set()
+    pel: dict[tuple[int, str, str, str], StreamPelEntry] = {}
+    for line_number, raw in enumerate(lines[2:], start=3):
+        parts = raw.split(" ")
+        try:
+            if len(parts) == 5 and parts[0] == "CONSUMER":
+                database = _uint(parts[1], field="database id", maximum=1023)
+                record = StreamConsumer(
+                    database,
+                    _hex(parts[2], field="stream key"),
+                    _hex(parts[3], field="group name"),
+                    _hex(parts[4], field="consumer name"),
+                )
+                if record in consumers:
+                    raise FingerprintError("duplicate consumer record")
+                consumers.add(record)
+                continue
+            if len(parts) == 7 and parts[0] == "PEL":
+                database = _uint(parts[1], field="database id", maximum=1023)
+                key_hex = _hex(parts[2], field="stream key")
+                group_hex = _hex(parts[3], field="group name")
+                id_hex = _hex(parts[4], field="PEL id")
+                owner_hex = _hex(parts[5], field="PEL owner")
+                stream_id = _decode_hex(id_hex, field="PEL id")
+                if not _STREAM_ID.fullmatch(stream_id):
+                    raise FingerprintError("PEL id does not decode to a canonical stream id")
+                record = StreamPelEntry(
+                    database,
+                    key_hex,
+                    group_hex,
+                    id_hex,
+                    owner_hex,
+                    _uint(parts[6], field="PEL delivery count", maximum=2**63 - 1),
+                )
+                identity = (database, key_hex, group_hex, id_hex)
+                if identity in pel:
+                    raise FingerprintError("duplicate PEL record")
+                pel[identity] = record
+                continue
+            raise FingerprintError("unknown or malformed stream repair record")
+        except FingerprintError as exc:
+            raise FingerprintError(f"line {line_number}: {exc}") from exc
+
+    for record in consumers:
+        if record.database >= databases:
+            raise FingerprintError(
+                f"consumer database id {record.database} exceeds configured count"
+            )
+    for record in pel.values():
+        if record.database >= databases:
+            raise FingerprintError(
+                f"PEL database id {record.database} exceeds configured count"
+            )
+        owner = StreamConsumer(
+            record.database,
+            record.key_hex,
+            record.group_hex,
+            record.owner_hex,
+        )
+        if owner not in consumers:
+            raise FingerprintError("PEL owner has no matching consumer record")
+    return StreamRepairManifest(databases, frozenset(consumers), pel)
+
+
+def compare_stream_repair(
+    expected: StreamRepairManifest, actual: StreamRepairManifest
+) -> None:
+    if expected.databases != actual.databases:
+        raise FingerprintError("Redis stream repair database counts differ")
+    if expected.consumers != actual.consumers:
+        raise FingerprintError("Redis stream consumer identities differ")
+    if expected.pel != actual.pel:
+        raise FingerprintError("Redis stream PEL state differs")
+
+
+def diff_stream_repair(
+    expected: StreamRepairManifest, actual: StreamRepairManifest
+) -> list[str]:
+    """Return a privacy-safe component attribution for a sidecar mismatch."""
+
+    if expected.databases != actual.databases:
+        raise FingerprintError("Redis stream repair database counts differ")
+
+    components: set[tuple[int, str, str]] = set()
+
+    def key_hash(key_hex: str) -> str:
+        return hashlib.sha256(_decode_hex(key_hex, field="stream key")).hexdigest()
+
+    expected_consumers: dict[tuple[int, str, str], set[str]] = {}
+    actual_consumers: dict[tuple[int, str, str], set[str]] = {}
+    for record in expected.consumers:
+        expected_consumers.setdefault(
+            (record.database, record.key_hex, record.group_hex), set()
+        ).add(record.consumer_hex)
+    for record in actual.consumers:
+        actual_consumers.setdefault(
+            (record.database, record.key_hex, record.group_hex), set()
+        ).add(record.consumer_hex)
+    for identity in expected_consumers.keys() | actual_consumers.keys():
+        if expected_consumers.get(identity, set()) != actual_consumers.get(identity, set()):
+            components.add((identity[0], "consumer_identity", key_hash(identity[1])))
+
+    expected_ids = set(expected.pel)
+    actual_ids = set(actual.pel)
+    for identity in expected_ids ^ actual_ids:
+        components.add((identity[0], "pel_identity", key_hash(identity[1])))
+    for identity in expected_ids & actual_ids:
+        before = expected.pel[identity]
+        after = actual.pel[identity]
+        if before.owner_hex != after.owner_hex:
+            components.add((identity[0], "pel_owner", key_hash(identity[1])))
+        if before.delivery_count != after.delivery_count:
+            components.add((identity[0], "pel_delivery_count", key_hash(identity[1])))
+
+    return [
+        f"DB {database} TYPE stream COMPONENT {component} KEY_SHA256 {digest}"
+        for database, component, digest in sorted(components)
+    ]
+
+
+_STREAM_REPAIR_CONSUMER_LUA = r'''
+local function unhex(value)
+  if string.len(value) % 2 ~= 0 or string.find(value, "[^0-9a-f]") then
+    return redis.error_reply("invalid repair hex")
+  end
+  return (string.gsub(value, "..", function(pair)
+    return string.char(tonumber(pair, 16))
+  end))
+end
+local key, group, consumer = unhex(ARGV[1]), unhex(ARGV[2]), unhex(ARGV[3])
+if type(key) ~= "string" or type(group) ~= "string" or type(consumer) ~= "string" then
+  return redis.error_reply("invalid repair identifier")
+end
+local result = redis.call("XGROUP", "CREATECONSUMER", key, group, consumer)
+if result ~= 0 and result ~= 1 then return redis.error_reply("consumer repair failed") end
+return 1
+'''.strip()
+
+_STREAM_REPAIR_PEL_LUA = r'''
+local function unhex(value)
+  if string.len(value) % 2 ~= 0 or string.find(value, "[^0-9a-f]") then
+    return redis.error_reply("invalid repair hex")
+  end
+  return (string.gsub(value, "..", function(pair)
+    return string.char(tonumber(pair, 16))
+  end))
+end
+local key, group, id, owner = unhex(ARGV[1]), unhex(ARGV[2]), unhex(ARGV[3]), unhex(ARGV[4])
+if type(key) ~= "string" or type(group) ~= "string" or type(id) ~= "string" or type(owner) ~= "string" then
+  return redis.error_reply("invalid repair identifier")
+end
+if not string.match(ARGV[5], "^%d+$") then return redis.error_reply("invalid retry count") end
+local entries = redis.call("XRANGE", key, id, id)
+if #entries == 0 then
+  local pending = redis.call("XPENDING", key, group, id, id, 1)
+  if #pending == 1
+      and pending[1][1] == id
+      and pending[1][2] == owner
+      and pending[1][4] == tonumber(ARGV[5]) then
+    return 1
+  end
+  return redis.error_reply("dangling PEL repair refused")
+end
+local claimed = redis.call(
+  "XCLAIM", key, group, owner, 0, id, "JUSTID", "FORCE", "RETRYCOUNT", ARGV[5]
+)
+if #claimed ~= 1 or claimed[1] ~= id then return redis.error_reply("PEL repair failed") end
+return 1
+'''.strip()
+
+
+def _run_repair_command(
+    client: list[str], database: int, script: str, arguments: list[str], component: str
+) -> None:
+    key_sha256 = hashlib.sha256(
+        _decode_hex(arguments[0], field="stream key")
+    ).hexdigest()
+    try:
+        completed = subprocess.run(
+            [*client, "-n", str(database), "--raw", "EVAL", script, "0", *arguments],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=False,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise FingerprintError(
+            f"Redis stream {component} repair command failed for DB {database} "
+            f"KEY_SHA256 {key_sha256}"
+        ) from exc
+    # redis-cli can exit 0 while printing a server-side EVAL error; keep this
+    # exact response check and the manifest parser fail-closed.
+    if completed.returncode != 0 or completed.stdout.strip() != b"1":
+        raise FingerprintError(
+            f"Redis stream {component} repair was refused for DB {database} "
+            f"KEY_SHA256 {key_sha256}"
+        )
+
+
+def apply_stream_repair(manifest: StreamRepairManifest, client: list[str]) -> None:
+    if not client or any(not part for part in client):
+        raise FingerprintError("Redis client command is missing or malformed")
+    for record in sorted(manifest.consumers):
+        _run_repair_command(
+            client,
+            record.database,
+            _STREAM_REPAIR_CONSUMER_LUA,
+            [record.key_hex, record.group_hex, record.consumer_hex],
+            "consumer",
+        )
+    for record in sorted(manifest.pel.values()):
+        _run_repair_command(
+            client,
+            record.database,
+            _STREAM_REPAIR_PEL_LUA,
+            [
+                record.key_hex,
+                record.group_hex,
+                record.id_hex,
+                record.owner_hex,
+                str(record.delivery_count),
+            ],
+            "PEL",
+        )
 
 
 def parse(path: str | Path) -> Fingerprint:
@@ -253,6 +551,19 @@ def _main(argv: list[str] | None = None) -> int:
     compare_parser.add_argument("expected")
     compare_parser.add_argument("actual")
     compare_parser.add_argument("--tolerance-ms", type=int, default=2000)
+    stream_parse_parser = subparsers.add_parser("stream-repair-parse")
+    stream_parse_parser.add_argument("manifest")
+    stream_databases_parser = subparsers.add_parser("stream-repair-databases")
+    stream_databases_parser.add_argument("manifest")
+    stream_compare_parser = subparsers.add_parser("stream-repair-compare")
+    stream_compare_parser.add_argument("expected")
+    stream_compare_parser.add_argument("actual")
+    stream_diff_parser = subparsers.add_parser("stream-repair-diff")
+    stream_diff_parser.add_argument("expected")
+    stream_diff_parser.add_argument("actual")
+    stream_apply_parser = subparsers.add_parser("stream-repair-apply")
+    stream_apply_parser.add_argument("manifest")
+    stream_apply_parser.add_argument("client", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
     try:
         if args.command == "parse":
@@ -262,12 +573,32 @@ def _main(argv: list[str] | None = None) -> int:
         elif args.command == "format":
             fingerprint = parse(args.fingerprint)
             print("v2" if fingerprint.format == V2_FORMAT else "v3")
-        else:
+        elif args.command == "compare":
             compare(
                 parse(args.expected),
                 parse(args.actual),
                 tolerance_ms=args.tolerance_ms,
             )
+        elif args.command == "stream-repair-parse":
+            parse_stream_repair(args.manifest)
+        elif args.command == "stream-repair-databases":
+            print(parse_stream_repair(args.manifest).databases)
+        elif args.command == "stream-repair-compare":
+            compare_stream_repair(
+                parse_stream_repair(args.expected),
+                parse_stream_repair(args.actual),
+            )
+        elif args.command == "stream-repair-diff":
+            differences = diff_stream_repair(
+                parse_stream_repair(args.expected),
+                parse_stream_repair(args.actual),
+            )
+            if differences:
+                print("\n".join(differences))
+                return 1
+        else:
+            client = args.client[1:] if args.client[:1] == ["--"] else args.client
+            apply_stream_repair(parse_stream_repair(args.manifest), client)
     except FingerprintError as exc:
         print(f"redis-state: {exc}", file=sys.stderr)
         return 1

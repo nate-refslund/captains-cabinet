@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import tarfile
+import time
 from pathlib import Path
 
 import pytest
@@ -46,7 +47,8 @@ def _env(tmp_path: Path, root: Path, fakebin: Path) -> dict[str, str]:
     })
     for key in (
         "DATABASE_URL", "NEON_CONNECTION_STRING", "FAIL_RDB", "FAKE_TTL_MODE",
-        "FAKE_STATE_MODE", "FAKE_V2_MISMATCH",
+        "FAKE_STATE_MODE", "FAKE_V2_MISMATCH", "FAKE_AOF_DRAIN_STUCK",
+        "REDIS_AOF_DRAIN_SECONDS", "BLOCK_RDB", "FAKE_REDIS_TRACE",
     ):
         env.pop(key, None)
     return env
@@ -57,10 +59,19 @@ def _fake_redis(fakebin: Path, aof_root: Path | None = None) -> None:
     if aof_root is not None:
         aof = f'''\
   *" CONFIG GET appendonly "*) echo appendonly; echo yes ;;
-  *" INFO persistence "*) echo aof_rewrite_in_progress:0; echo aof_last_write_status:ok ;;
+  *" INFO persistence "*)
+    echo aof_rewrite_in_progress:0
+    echo aof_last_write_status:ok
+    if [ "${{FAKE_AOF_DRAIN_STUCK:-0}}" = 1 ]; then
+      echo aof_buffer_length:1
+      echo aof_pending_bio_fsync:1
+    else
+      echo aof_buffer_length:0
+      echo aof_pending_bio_fsync:0
+    fi
+    ;;
   *" CONFIG GET dir "*) echo dir; echo {aof_root!s} ;;
   *" CONFIG GET appenddirname "*) echo appenddirname; echo appendonlydir ;;
-  *" WAITAOF "*) echo 1; echo 0 ;;
 '''
     else:
         aof = '  *" CONFIG GET appendonly "*) echo appendonly; echo no ;;\n'
@@ -69,6 +80,9 @@ args=" $* "
 case "$args" in
   *" --rdb "*)
     [ "${{FAIL_RDB:-0}}" != 1 ] || exit 1
+    if [ "${{BLOCK_RDB:-0}}" = 1 ]; then
+      while :; do sleep 0.1; done
+    fi
     want=0
     for arg in "$@"; do
       if [ "$want" = 1 ]; then echo -n REDIS-FRESH > "$arg"; exit 0; fi
@@ -78,6 +92,9 @@ case "$args" in
   *" CONFIG GET databases "*) echo databases; echo 2 ;;
   *" EVAL_RO "*)
     case "$args" in
+      *"cabinet-redis-stream-repair-v1"*)
+        # No Streams in the unit fixture: a valid empty repair manifest.
+        ;;
       *"cabinet-redis-state-v2"*)
         if [ "${{FAKE_V2_MISMATCH:-0}}" = 1 ]; then
           case "$args" in *" -s "*) echo 0:{'d' * 40} ;; *) echo {V2_DIGEST} ;; esac
@@ -106,14 +123,29 @@ case "$args" in
         ;;
     esac
     ;;
-{aof}  *" CLIENT PAUSE "*|*" CLIENT UNPAUSE "*) echo OK ;;
+{aof}  *" CLIENT PAUSE "*|*" CLIENT UNPAUSE "*)
+    if [ -n "${{FAKE_REDIS_TRACE:-}}" ]; then printf '%s\n' "$args" >> "$FAKE_REDIS_TRACE"; fi
+    echo OK
+    ;;
   *" SHUTDOWN NOSAVE "*) exit 0 ;;
   *" PING "*|*" ping "*) echo PONG ;;
   *) echo OK ;;
 esac
 ''')
     _exe(fakebin / "redis-check-rdb", 'test -s "$1"\ngrep -q REDIS-FRESH "$1"\necho "RDB valid"\n')
-    _exe(fakebin / "redis-server", "exit 0\n")
+    _exe(fakebin / "redis-server", '''\
+dir=""
+want_dir=0
+for arg in "$@"; do
+  if [ "$want_dir" = 1 ]; then dir="$arg"; want_dir=0; continue; fi
+  [ "$arg" = --dir ] && want_dir=1
+done
+if [ -n "$dir" ]; then
+  mkdir -p "$dir"
+  [ -f "$dir/dump.rdb" ] || printf REDIS-FRESH > "$dir/dump.rdb"
+fi
+exit 0
+''')
     if aof_root is not None:
         _exe(fakebin / "redis-check-aof", '''\
 manifest="$1"
@@ -268,6 +300,41 @@ def test_live_process_lock_refuses_concurrent_backup(tmp_path: Path):
     assert (lock / "pid").read_text().strip() == str(os.getpid())
 
 
+def test_sigterm_during_capture_explicitly_unpauses_and_cleans_staging(tmp_path: Path):
+    root = _instance(tmp_path)
+    fakebin = tmp_path / "bin"
+    fakebin.mkdir()
+    _fake_redis(fakebin)
+    trace = tmp_path / "redis.trace"
+    env = _env(tmp_path, root, fakebin)
+    env.update({"BLOCK_RDB": "1", "FAKE_REDIS_TRACE": str(trace)})
+    proc = subprocess.Popen(
+        ["/bin/bash", str(BACKUP), "--no-pg"],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        for _ in range(100):
+            if trace.exists() and "CLIENT PAUSE" in trace.read_text():
+                break
+            time.sleep(0.05)
+        else:
+            raise AssertionError("backup never entered the Redis write pause")
+        proc.terminate()
+        _stdout, _stderr = proc.communicate(timeout=10)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait(timeout=5)
+
+    assert proc.returncode == 143
+    assert "CLIENT UNPAUSE" in trace.read_text()
+    assert not list((tmp_path / "backups").glob(".*.staging.*"))
+    assert not (tmp_path / "backups/.backup.lock").exists()
+
+
 def test_redis_absolute_expiry_allows_bounded_restore_clock_skew(tmp_path: Path):
     root = _instance(tmp_path)
     fakebin = tmp_path / "bin"
@@ -346,7 +413,12 @@ def test_rdb_and_aof_capture_reject_all_nonexpiry_state_drift(
     result = _run(tmp_path, root, fakebin, "--no-pg", extra=extra)
 
     assert result.returncode == 1
-    assert "does not match recoverable source state at restore time" in result.stderr
+    expected = (
+        "does not match recoverable source state after Streams repair"
+        if capture_mode == "aof"
+        else "does not match recoverable source state at restore time"
+    )
+    assert expected in result.stderr
     assert not list((tmp_path / "backups").glob("20??-??-??"))
 
 
@@ -360,8 +432,13 @@ def test_backup_accepts_checked_nontruncated_equal_aof(tmp_path: Path):
 
     assert result.returncode == 0, (result.stdout, result.stderr)
     snap = _snapshot(tmp_path)
-    assert (snap / "redis-backup-mode.txt").read_text().strip() == "aof"
+    assert (snap / "redis-backup-mode.txt").read_text().strip() == "rdb"
+    assert (snap / "redis-dump.rdb").read_bytes() == b"REDIS-FRESH"
+    assert not (snap / "redis-aof.tgz").exists()
     assert "AOF valid" in (snap / "redis-verify.txt").read_text()
+    assert "PROVENANCE aof-converted" in (snap / "redis-verify.txt").read_text()
+    assert "STREAM_REPAIR verified" in (snap / "redis-verify.txt").read_text()
+    assert "RDB_CONVERSION verified" in (snap / "redis-verify.txt").read_text()
     assert "STATE_EQUALITY verified" in (snap / "redis-verify.txt").read_text()
 
 
@@ -380,7 +457,50 @@ def test_aof_capture_allows_volatile_key_expired_during_replay(tmp_path: Path):
     )
 
     assert result.returncode == 0, (result.stdout, result.stderr)
-    assert (_snapshot(tmp_path) / "redis-backup-mode.txt").read_text().strip() == "aof"
+    assert (_snapshot(tmp_path) / "redis-backup-mode.txt").read_text().strip() == "rdb"
+
+
+def test_backup_refuses_aof_that_cannot_globally_drain(tmp_path: Path):
+    root = _instance(tmp_path)
+    fakebin = tmp_path / "bin"
+    fakebin.mkdir()
+    _fake_redis(fakebin, _aof_source(tmp_path))
+
+    result = _run(
+        tmp_path,
+        root,
+        fakebin,
+        "--no-pg",
+        extra={
+            "FAIL_RDB": "1",
+            "FAKE_AOF_DRAIN_STUCK": "1",
+            "REDIS_AOF_DRAIN_SECONDS": "1",
+        },
+    )
+
+    assert result.returncode == 1
+    assert "did not reach a healthy global drain" in result.stderr
+    assert not list((tmp_path / "backups").glob("20??-??-??"))
+
+
+@pytest.mark.parametrize("value", ["0", "11", "not-a-number"])
+def test_backup_refuses_invalid_aof_drain_bound(tmp_path: Path, value: str):
+    root = _instance(tmp_path)
+    fakebin = tmp_path / "bin"
+    fakebin.mkdir()
+    _fake_redis(fakebin)
+
+    result = _run(
+        tmp_path,
+        root,
+        fakebin,
+        "--no-pg",
+        extra={"REDIS_AOF_DRAIN_SECONDS": value},
+    )
+
+    assert result.returncode == 2
+    assert "must be an integer from 1 through 10" in result.stderr
+    assert not list((tmp_path / "backups").glob("20??-??-??"))
 
 
 def test_backup_refuses_truncated_aof(tmp_path: Path):
