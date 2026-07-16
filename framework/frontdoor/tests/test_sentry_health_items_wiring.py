@@ -12,7 +12,7 @@ from framework.frontdoor import signal_discriminator as sd
 
 NOW = datetime.datetime(2026, 7, 14, 21, 0, 0, tzinfo=datetime.timezone.utc)
 TELLS = {
-    "prod_hosts": ["polads.eu", "www.polads.eu"],
+    "prod_hosts": ["acme.example", "www.acme.example"],
     "staging_host_patterns": ["test.", "xtest."],
     "bot_host_patterns": ["vercel.app"],
     "template_path_pattern": r"\[[a-zA-Z]",
@@ -25,11 +25,11 @@ def _iso(mins: float) -> str:
 
 
 def _health(issues: list[dict]) -> dict:
-    return {"project": "sentry-step-polads", "count": len(issues), "issues": issues}
+    return {"project": "sentry-step-acme", "count": len(issues), "issues": issues}
 
 
 def _items(health, **kw):
-    return ms.sentry_health_items(org="step-network", project="sentry-step-polads",
+    return ms.sentry_health_items(org="step-network", project="sentry-step-acme",
                                   health=health, now=NOW, **kw)
 
 
@@ -45,18 +45,18 @@ def test_wiring_suppresses_frozen_2811_noise():
 def test_wiring_emits_fresh_real_user_pingnow_with_route():
     health = _health([{"shortId": "S-9", "id": "902", "events": 3, "last_seen": _iso(4)}])
     items = _items(health, tells=TELLS, smoke_ok=True,
-                   url_fetcher=lambda cid: "https://polads.eu/da/complaint")
+                   url_fetcher=lambda cid: "https://acme.example/da/complaint")
     assert len(items) == 1
     assert items[0]["urgency_tier"] == "ping-now"
     assert items[0]["context"]["verdict"] == sd.V_REAL_USER
-    assert "polads.eu/da/complaint" in items[0]["payload"]["summary"]
+    assert "acme.example/da/complaint" in items[0]["payload"]["summary"]
 
 
 def test_wiring_staging_fresh_is_suppressed_not_realuser():
-    """The staging must-fix, end to end: a FRESH test.polads.eu error must NOT emit."""
+    """The staging must-fix, end to end: a FRESH test.acme.example error must NOT emit."""
     health = _health([{"shortId": "S-6", "id": "903", "events": 80, "last_seen": _iso(4)}])
     assert _items(health, tells=TELLS, smoke_ok=True,
-                  url_fetcher=lambda cid: "https://test.polads.eu/en/register") == []
+                  url_fetcher=lambda cid: "https://test.acme.example/en/register") == []
 
 
 def test_wiring_prod_smoke_down_emits_pingnow():
