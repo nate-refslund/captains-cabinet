@@ -17,16 +17,50 @@ hash-chained, locally HMAC-signed, and closed by a signed anchor. Events carry:
 - stable trial, trace, action, correlation, event, and linked receipt IDs;
 - bounded details such as error/reason code, revision, counts, exclusions,
   source-integrity hashes, transport result, and Captain usefulness/correction;
+- reserved v1.1 detail vocabulary (all optional, additive): delegation
+  lineage (`parent_trial_id` — the structured parent→child key, `spawned_by`,
+  `delegation_depth`), scheduled-trigger provenance (`scheduled_by`,
+  `trigger_kind`, `scheduled_for`), an opaque egress approval reference
+  (`egress_approval_ref` — never a URL, email, or destination), cost/resource
+  observations (`input_tokens`, `output_tokens`, `cost_usd`, `resource_kind`
+  — recorded for the Captain, never exposed in the officer projection), and
+  broker/runtime-sourced model provenance (`model_id`, `effort_tier`,
+  `skill_revision` — never read from environment variables);
 - redaction categories, diagnostic-mode state, and an explicit
   `untrusted_observation` label.
 
 Successful, refused, failed, retried, interrupted, recovered, duplicate,
-paused, revoked, undone, and purged paths are all first-class evidence.
+paused, revoked, undone, and purged paths are all first-class evidence — and
+so are absences: work that was missed, deliberately skipped, or expired
+records its non-occurrence as a terminal status (`missed`, `skipped`,
+`expired`).
 
 The recorder never accepts caller-supplied sequence/hash/signature/timestamp
 fields. It never stores raw credentials, unrestricted source contents,
 absolute local paths, or hidden chain-of-thought. Evidence content is always
 treated as untrusted data and never grants authority.
+
+Every detail key additionally carries a trust class registered in
+`framework/evidence/classification.py`: today all detail keys are
+producer-asserted (recorded faithfully, not corroborated); only
+recorder-minted fields (ids, timestamps, hashes, signatures) are
+independently established. Component version/commit may fall back to
+`CABINET_BUILD_VERSION`/`CABINET_GIT_COMMIT` and are therefore untrusted
+provenance — never fuel-bearing; broker-attested model/effort/skill
+provenance rides the reserved detail keys instead. Trial lineage is
+structured: a child trial minted by delegation or re-mint carries
+`parent_trial_id` in its genesis event detail (an `evidence-parent:<id>`
+link is an optional mirror; the detail key is authoritative).
+
+Act-class producers (Onboarding v2 today; every future producer) record
+through one shared helper inside the locked evidence package
+(`framework/evidence/lifecycle.py`): the same intent → policy → execution →
+verification → receipt → outcome lifecycle with refusal/error branches,
+evidence-before-action fail-closed semantics, id unification across the
+producer and evidence planes, and trial re-mint lineage. The helper is an
+import seam for sanctioned code admitted by ceremony — it adds no CLI, no
+generic emit command, and no environment-derived store, and every payload
+still flows through the recorder's sanitization and signing unchanged.
 
 ## Data locations and permissions
 
@@ -220,3 +254,66 @@ typed purge. Verify its files with:
 cd docs/evidence/DOGFOOD-001-review-bundle
 shasum -a 256 -c SHA256SUMS
 ```
+
+## Per-class retention (Phase 1, additive)
+
+`control.json` carries an optional `retention_classes` map next to the
+scalar `retention_days` dial, so high-churn day-bounded trials and
+long-lived authority/outcome trials stop sharing one number. A retention
+class is the `<class>` segment of the day-bounded trial taxonomy
+`evt-<class>-<yyyymmdd>` (e.g. `evt-digest-anchor-20260716` → class
+`digest-anchor`); trials that do not match the taxonomy always keep the
+scalar dial. Defaults preserve current behavior exactly:
+
+- `retention_classes` unset/`null` → the retention pass is byte-for-byte
+  the previous scalar behavior.
+- Old `control.json` files (written before the key existed) keep verifying
+  unchanged — the control signature covers only present keys.
+- A trial whose effective policy is "forever" is skipped without being
+  verified (verification advances anti-rollback watermarks; a no-op
+  retention pass must not have side effects).
+
+Changing the map is a Captain control mutation behind the same capability
+token as every other control change (read-only `control` stays tokenless):
+
+```bash
+python3.12 -m framework.evidence --store instance/evidence/v1 \
+  --captain-token-file <path> control \
+  --retention-class transport=45 --retention-class ui=45
+```
+
+`--retention-class` flags REPLACE the whole stored map; unset classes fall
+back to `--retention-days`; `--clear-retention-classes` returns everything
+to the scalar dial. `retain` then applies per-class ages at the usual trial
+granularity with the usual verified-purge + signed-receipt semantics.
+
+## External anchoring + the daily digest-anchor trial (Phase 1)
+
+The store's hash chain, tip anchors, and signed watermarks all live INSIDE
+the store, so restoring an old copy of the whole store resets protection —
+absence is not provable locally (the verifier's documented residual). The
+daily anchor job closes it from outside:
+
+- `cabinet/scripts/evidence-anchor.py` (services.yml row `evidence-anchor`,
+  staged) exports a content-free record — trial tip hashes, watermark rows,
+  `control.json` digest, purge-receipt manifest, Captain-label file digests
+  — to TWO Captain-owned surfaces outside the store: an appended+committed
+  JSONL line in the private meta repo and a plain-English Telegram receipt
+  through the front-door channel (design decision D3: both). Each run also
+  compares the live store against the last exported record and pages
+  (FATAL line, exit 2) on rollback, tip divergence, missing trials without
+  purge receipts, or watermark deletion/regression. `--check` runs the
+  comparison standalone (the restore drill).
+- The same run appends one event per day to the evidence trial
+  `evt-digest-anchor-<yyyymmdd>` recording checksums of the org-events day
+  file, the consequence-ledger day file, and the trigger-archive manifest —
+  the weaker breadth ledgers become tamper-evident without touching their
+  emitters.
+- Read-only by construction: the job never opens `.signing-key`, never runs
+  the verifier (verify advances watermarks), and its one write path is the
+  sanctioned recorder append seam. Collection/check logic lives in
+  `framework/evidence_anchor.py` (deliberately outside the germline
+  package; all paths explicit, no env-driven store selection). Unconfigured
+  surfaces skip cleanly — bindings live in the deployment-local
+  `evidence-anchor.yml`; start from the committed template
+  `instance/config/evidence-anchor.yml.example`.

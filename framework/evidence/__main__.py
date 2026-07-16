@@ -72,6 +72,22 @@ def _parser() -> argparse.ArgumentParser:
     control = commands.add_parser("control")
     control.add_argument("--retention-days", type=int)
     control.add_argument("--forever", action="store_true")
+    control.add_argument(
+        "--retention-class",
+        action="append",
+        metavar="NAME=DAYS",
+        help=(
+            "Per-class retention for day-bounded taxonomy trials "
+            "(evt-<class>-<yyyymmdd>). Repeatable; when given, the flags "
+            "REPLACE the whole stored map. Unset classes fall back to "
+            "--retention-days."
+        ),
+    )
+    control.add_argument(
+        "--clear-retention-classes",
+        action="store_true",
+        help="Remove every per-class retention override (back to the scalar dial).",
+    )
     control.add_argument("--diagnostic", choices=["on", "off"])
     control.add_argument("--diagnostic-until")
 
@@ -261,10 +277,37 @@ def main(argv: list[str] | None = None) -> int:
                 result = recorder.export_bundle(args.trial, args.output)
             elif args.command == "control":
                 current = recorder.control()
-                if args.retention_days is None and not args.forever and args.diagnostic is None:
+                if (
+                    args.retention_days is None
+                    and not args.forever
+                    and args.diagnostic is None
+                    and not args.retention_class
+                    and not args.clear_retention_classes
+                ):
                     result = current
                 else:
                     _require_captain_capability(recorder, args)
+                    if args.clear_retention_classes:
+                        retention_classes = None
+                    elif args.retention_class:
+                        retention_classes = {}
+                        for item in args.retention_class:
+                            name, sep, days_text = str(item).partition("=")
+                            try:
+                                class_days = int(days_text)
+                            except ValueError:
+                                class_days = None
+                            if not sep or not name or class_days is None:
+                                raise EvidenceError(
+                                    "retention_class_invalid",
+                                    "Use --retention-class NAME=DAYS (e.g. transport=45).",
+                                )
+                            retention_classes[name] = class_days
+                    else:
+                        preserved_classes = current.get("retention_classes")
+                        retention_classes = (
+                            preserved_classes if isinstance(preserved_classes, dict) else None
+                        )
                     preserved_until = current.get("diagnostic_until")
                     if args.diagnostic is not None:
                         diagnostic_mode = args.diagnostic == "on"
@@ -293,6 +336,7 @@ def main(argv: list[str] | None = None) -> int:
                         ),
                         diagnostic_mode=diagnostic_mode,
                         diagnostic_until=diagnostic_until,
+                        retention_classes=retention_classes,
                     )
             elif args.command == "purge":
                 _require_captain_capability(recorder, args)

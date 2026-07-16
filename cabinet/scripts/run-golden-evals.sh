@@ -2070,6 +2070,42 @@ else
 fi
 
 # ------------------------------------------------------------------
+# EVAL-025-NEVER-A-SCORE: evidence aggregates are never officer scores
+# ------------------------------------------------------------------
+# NEVER-A-SCORE LAW (whole-cabinet evidence design §2.5, 2026-07-16):
+# evidence-derived aggregates are monitoring metrics and kill criteria
+# ONLY — never officer-visible scores, never inputs to generation or
+# selection. The deterministic harness + pinned fixtures live NON-GERMLINE
+# at cabinet/evals/never-a-score/ (the eval BODY
+# memory/golden-evals/eval-025-never-a-score.md rides the Phase-1 evidence
+# ceremony — the golden-evals dir is schg-locked live). Static, read-only
+# checks: no unsanctioned consumer of the report-only golden-eval-scalar
+# series; no score/aggregate/cost/fuel-shaped key in the officer evidence
+# projection allow-list; the projection shape + UNTRUSTED OBSERVATIONS
+# boundary + raw-read deny + REPORT-ONLY doctrine all pinned; the officer
+# doorway (evidence-read.sh) still projects only. Section id
+# EVAL-025-NEVER-A-SCORE (body series: 024 = candor; 002/023 unused).
+# Fail-closed: a missing harness or missing/malformed fixture is a FAIL,
+# not a skip — only a missing python3 interpreter skips.
+log "EVAL-025-NEVER-A-SCORE: evidence-metric-as-score static law scan"
+EV25NS_HARNESS="$CABINET_ROOT/cabinet/evals/never-a-score/harness.py"
+EV25NS_PY="$(command -v python3.12 || command -v python3)"
+if [ ! -f "$EV25NS_HARNESS" ]; then
+  fail "never-a-score harness missing at $EV25NS_HARNESS"
+elif [ -z "$EV25NS_PY" ]; then
+  skip "no python3 interpreter available for the never-a-score harness"
+else
+  EV25NS_OUT=$("$EV25NS_PY" "$EV25NS_HARNESS" --self-test --repo-root "$CABINET_ROOT" 2>&1)
+  EV25NS_EC=$?
+  if [ "$EV25NS_EC" -eq 0 ]; then
+    EV25NS_SUMMARY=$(echo "$EV25NS_OUT" | grep "^NEVER-A-SCORE-EVAL:" | head -1)
+    pass "never-a-score law scan green (${EV25NS_SUMMARY:-all law pins hold})"
+  else
+    fail "never-a-score law scan RED (exit=$EV25NS_EC): $(echo "$EV25NS_OUT" | grep -E "VIOLATION|NEVER-A-SCORE-EVAL" | head -3 | tr '\n' '|')"
+  fi
+fi
+
+# ------------------------------------------------------------------
 # Summary
 # ------------------------------------------------------------------
 log ""

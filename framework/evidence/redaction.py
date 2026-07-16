@@ -69,6 +69,21 @@ SECRET_VALUE_RES = (
     re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"),
 )
 ABSOLUTE_PATH_RE = re.compile(r"(?<![A-Za-z0-9_.-])(?:/[A-Za-z0-9_.~@+ -]+){2,}")
+# Writer-side-only secret shapes (v1.1 vocabulary wave).  Applied by
+# sanitize_string IN ADDITION to SECRET_VALUE_RES, and deliberately NOT part
+# of contains_secret_shape: the verify-time scan runs over already-stored
+# rows, so widening it could permanently fail trials recorded before these
+# patterns existed.  Writer-side widening is always safe — it redacts more,
+# never less, and happens before hashing, so stored bytes still equal hashed
+# bytes.  Promote a pattern into SECRET_VALUE_RES only in a ceremony that
+# accounts for every existing store.
+WRITER_SECRET_VALUE_RES = (
+    # Bare JWTs (three dot-joined base64url segments) — broker/session
+    # tokens that the R-4 model/broker provenance keys must never carry.
+    re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\b"),
+    # Slack workspace/bot/user tokens.
+    re.compile(r"\bxox[abeoprs]-[A-Za-z0-9-]{10,}\b"),
+)
 
 
 def _path_marker(value: str) -> str:
@@ -101,7 +116,7 @@ def sanitize_string(value: str) -> tuple[str, list[str]]:
         notes.append("invalid_unicode")
 
     def apply_secret_patterns(text: str) -> str:
-        for rx in SECRET_VALUE_RES:
+        for rx in SECRET_VALUE_RES + WRITER_SECRET_VALUE_RES:
             if rx.search(text):
                 text = rx.sub("[REDACTED_SECRET]", text)
                 notes.append("secret_value")
