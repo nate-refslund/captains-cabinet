@@ -40,7 +40,7 @@ This document is opinionated and idempotent — every step can be re-run safely.
 ```bash
 mkdir -p ~/work
 cd ~/work
-git clone https://github.com/nate-refslund/captains-cabinet.git
+git clone <your-fork-url> captains-cabinet
 cd captains-cabinet
 git checkout claude/convergence-v2    # OR master once this branch is merged
 ```
@@ -211,7 +211,7 @@ verified recovery point. This does not stash, reset, fetch, stop services, or
 print secrets:
 
 ```bash
-bash cabinet/scripts/pre-dogfood-snapshot.sh --root /Users/nate/captains-cabinet
+bash cabinet/scripts/pre-dogfood-snapshot.sh --root /Users/<captain>/captains-cabinet
 ```
 
 The mode-700 destination contains a verified all-refs Git bundle, exact dirty

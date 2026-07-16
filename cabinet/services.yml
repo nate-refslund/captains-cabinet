@@ -151,7 +151,7 @@ services:
       generate-plists.py, so the hand-made plist had no PATH and redis-cli was
       unfindable under launchd (FATAL hourly since ~Jul 3). The generator now
       renders cron rows; cabinet/launchd/com.cabinet.retro-trigger.plist is
-      regenerated WITH PATH — Nate reloads it (no launchctl from lanes).
+      regenerated WITH PATH — the Captain reloads it (no launchctl from lanes).
   - name: research-sweep
     label: com.cabinet.research-sweep
     kind: cron
@@ -272,7 +272,7 @@ services:
     expected: "(parked — nothing asserted while disabled)"
     notes: >-
       PARKED 2026-07-04 (lane-ops), superseded by the Captain's act-not-draft
-      ruling (2026-07-03: Nate owns ALL outbound comms; inbound becomes ACTION
+      ruling (2026-07-03: the Captain owns ALL outbound comms; inbound becomes ACTION
       proposals via the action-lane, not reply drafts). The LaunchAgents copy
       is already sitting as com.cabinet.draft-lane.plist.disabled; this row is
       the manifest-side park so the generator stops rendering it and the
@@ -637,7 +637,7 @@ services:
   # memory_ingestion object + ALERT lines are the OBSERVABILITY half). INSTALL
   # SOURCE is the generate-plists.py pipeline (review fix 2026-07-07 — the
   # original hand-made cabinet/launchd/com.cabinet.memory-reconcile.plist
-  # hardcoded /Users/nate paths, breaking every clean-room install, and was
+  # hardcoded an absolute /Users/<captain> path, breaking every clean-room install, and was
   # deleted): python3.12 cabinet/scripts/generate-plists.py → cp
   # cabinet/launchd/generated/com.cabinet.memory-reconcile.plist
   # ~/Library/LaunchAgents/ → launchctl bootstrap (same pattern as
@@ -664,7 +664,7 @@ services:
       (sourced by the script) + psql/redis-cli on PATH; queue-push failures
       exit non-zero so launchd surfaces them.
 
-  # brain-quality Wave F watch (installed 2026-07-07, Nate directive)
+  # brain-quality Wave F watch (installed 2026-07-07, Captain directive)
   - name: memory-curator-health
     label: com.cabinet.memory-curator-health
     kind: cron

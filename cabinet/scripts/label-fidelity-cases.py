@@ -72,6 +72,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from framework import env  # noqa: E402
 from framework.fidelity.fidelity_events import (  # noqa: E402
     LABEL_ACTION,
     LABEL_LANE,
@@ -242,7 +243,7 @@ def present_case(row: dict[str, Any], content: Optional[dict] = None) -> str:
         if thread:
             lines.append("--- thread before cutoff (last 6) ---")
             for m in thread[-6:]:
-                sender = "Nate" if m.get("direction") == "sent" else (
+                sender = env.captain_name() if m.get("direction") == "sent" else (
                     (m.get("who") or "").split("<")[0].strip()
                     or m.get("person") or who)
                 lines.append(f"  [{(m.get('date') or '')[:16]}] {sender}: "
