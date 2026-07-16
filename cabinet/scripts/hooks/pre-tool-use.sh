@@ -108,6 +108,18 @@ if [ "$OBSERVE_ONLY" = 1 ]; then
     # same shapes before the ordinary Bash screens.
     Bash)
       OBSERVE_CMD=$(echo "$TOOL_INPUT" | jq -r '.command // empty' 2>/dev/null | tr -s '/')
+      # PR#140 finding 5a-3: the doorway allow is SINGLE-LINE only. `grep -qE
+      # '^...$'` returns success if ANY line matches, so a multi-line command
+      # whose FIRST line is the legit doorway would smuggle every following line
+      # (e.g. `evidence-read.sh <trial><NL>cat .../.signing-key`) into an allow.
+      # A multi-line command is never a bounded doorway — refuse it BEFORE the
+      # shape check. (§5a's evidence-read doorway carries the identical guard.)
+      case "$OBSERVE_CMD" in
+        *$'\n'*)
+          echo "OBSERVE-ONLY BLOCK — multi-line Bash is not a bounded doorway during the soak; issue one bounded command per call." >&2
+          exit 2
+          ;;
+      esac
       if ! printf '%s' "$OBSERVE_CMD" | grep -qE '^(\.?/?cabinet/scripts/evidence-read\.sh[[:space:]]+[A-Za-z0-9][A-Za-z0-9._:-]{0,127}([[:space:]]+[0-9]{1,4})?|\.?/?cabinet/scripts/hooks/observe-ack\.sh[[:space:]]+[0-9]+-[0-9]+([[:space:]]+[0-9]+-[0-9]+){0,49})[[:space:]]*$'; then
         echo "OBSERVE-ONLY BLOCK — Bash is disabled during the 72-hour soak (only bounded evidence-read and receipt ACK doorways remain)." >&2
         exit 2
@@ -1323,6 +1335,20 @@ fi
 if [ "$TOOL_NAME" = "Read" ] || [ "$TOOL_NAME" = "Grep" ] || [ "$TOOL_NAME" = "Glob" ] \
     || [ "$TOOL_NAME" = "Edit" ] || [ "$TOOL_NAME" = "Write" ]; then
   EVIDENCE_READ_PATH=$(echo "$TOOL_INPUT" | jq -r '.file_path // .path // empty' 2>/dev/null | tr -s '/')
+  # PR#140 finding 5a-1: the case below matches a LITERAL 'instance/evidence/'
+  # substring, so `instance/config/../evidence/v1/.signing-key` (no substring —
+  # the OS resolves `..` to the HMAC signing key) slipped. Normalize LEXICALLY
+  # (os.path.normpath collapses `..`) THEN os.path.realpath (a symlinked dir
+  # component — e.g. instance/pub -> instance/evidence — also resolves to the raw
+  # store; normpath alone is symlink-blind). normpath first so a non-existent
+  # trailing basename still folds; realpath then follows symlinks in existing
+  # components. FAIL-CLOSED: empty python3 output forces a sentinel that MATCHES
+  # the block case, never a normalize-blind pass. Mirrors §5's Edit/Write
+  # normalization pair (KEEP IN LOCKSTEP).
+  if [ -n "$EVIDENCE_READ_PATH" ]; then
+    EVIDENCE_READ_PATH=$(printf '%s' "$EVIDENCE_READ_PATH" | python3 -c 'import os,sys; p=sys.stdin.read(); sys.stdout.write(os.path.realpath(os.path.normpath(p)) if p else "")' 2>/dev/null || printf '')
+    [ -z "$EVIDENCE_READ_PATH" ] && EVIDENCE_READ_PATH="/__evidence_unresolved__/instance/evidence/v1/raw"
+  fi
   case "$EVIDENCE_READ_PATH" in
     *"instance/evidence/"*|*"Library/Application"*"/cabinet/evidence/"*)
       echo "BLOCKED: Raw evidence is Captain-controlled. Use cabinet/scripts/evidence-read.sh for the read-only redacted Cabinet projection." >&2
@@ -1336,15 +1362,98 @@ if [ "$TOOL_NAME" = "Bash" ]; then
   # Exact, argument-closed safe doorways. Exit before §5b sees the protected
   # script paths; compound commands, redirects, env prefixes, and extra shell
   # syntax do not match and continue through the ordinary gates.
-  if printf '%s' "$EVIDENCE_READ_CMD" | grep -qE '^(\.?/?cabinet/scripts/evidence-read\.sh[[:space:]]+[A-Za-z0-9][A-Za-z0-9._:-]{0,127}([[:space:]]+[0-9]{1,4})?|\.?/?cabinet/scripts/hooks/observe-ack\.sh[[:space:]]+[0-9]+-[0-9]+([[:space:]]+[0-9]+-[0-9]+){0,49})[[:space:]]*$'; then
-    exit 0
-  fi
+  # PR#140 finding 5a-3: the doorway allow is SINGLE-LINE only. `grep -qE '^...$'`
+  # returns success if ANY line matches, so a two-line command whose FIRST line is
+  # the legit `evidence-read.sh <trial>` and whose SECOND line is `cat
+  # .../.signing-key` was approved wholesale (the exit 0 smuggled the second line).
+  # A multi-line command is never a bounded doorway — refuse the doorway match for
+  # it and let it fall through to the raw-store / rm / interpreter blocks below.
+  # (§0a's observe-only doorway carries the identical guard.)
   case "$EVIDENCE_READ_CMD" in
+    *$'\n'*) : ;;  # multi-line — never a doorway; fall through to the blocks below
+    *)
+      if printf '%s' "$EVIDENCE_READ_CMD" | grep -qE '^(\.?/?cabinet/scripts/evidence-read\.sh[[:space:]]+[A-Za-z0-9][A-Za-z0-9._:-]{0,127}([[:space:]]+[0-9]{1,4})?|\.?/?cabinet/scripts/hooks/observe-ack\.sh[[:space:]]+[0-9]+-[0-9]+([[:space:]]+[0-9]+-[0-9]+){0,49})[[:space:]]*$'; then
+        exit 0
+      fi
+      ;;
+  esac
+  # PR#140 finding 5a-1/5a-2: normalize PER PATH TOKEN (mirror §5b's CMD_SQ
+  # normpath) so `cat instance/config/../evidence/v1/.signing-key` and
+  # `rm -rf instance/x/../evidence/v1` fold to the literal store substring the
+  # case below matches. Per-token, NEVER whole-string — a `..` in a later token
+  # would erase an earlier store filename. Two normalizations per token: (a)
+  # normpath for the lexical `..` forms, trailing `/` re-appended (normpath strips
+  # it); (b) realpath — if a token's REAL path resolves INTO the store (a symlinked
+  # dir component like instance/pub -> evidence, which normpath is blind to), the
+  # token is replaced with a canonical `instance/evidence/` marker so the case
+  # below fires (parity with the §5a Read arm's realpath). realpath is read-only.
+  # The store test is slash-anchored ('/instance/evidence/'), so a sibling like
+  # instance/evidence-notes.md is NOT over-matched. Fallback to the un-normalized
+  # copy if python3 is unavailable (fail toward the substring match, which still
+  # catches the literal no-`..` forms).
+  EVIDENCE_CMD_NORM=$(printf '%s' "$EVIDENCE_READ_CMD" | python3 -c '
+import os, re, sys
+def _n(t):
+    p = os.path.normpath(t)
+    if t.endswith("/") and not p.endswith("/"):
+        p += "/"
+    try:
+        rp = os.path.realpath(t).rstrip("/") + "/"
+    except Exception:
+        rp = ""
+    if "/instance/evidence/" in rp or "/cabinet/evidence/" in rp:
+        return "instance/evidence/__resolved__"
+    return p
+sys.stdout.write(re.sub(r"[^\s;|&<>()\x22\x27\x60]+", lambda m: _n(m.group(0)), sys.stdin.read()))
+' 2>/dev/null || printf '%s' "$EVIDENCE_READ_CMD")
+  # Raw store paths / dotted recorder modules anywhere in the normalized command —
+  # reads AND destructive ops both trip this: the officer surface is the bounded
+  # projection only.
+  case "$EVIDENCE_CMD_NORM" in
     *"framework.evidence"*|*"framework.onboarding.journey"*|*"instance/evidence/"*|*"Library/Application"*"/cabinet/evidence/"*)
       echo "BLOCKED: Direct shell access to raw evidence is unavailable to officers. Use cabinet/scripts/evidence-read.sh for the bounded projection." >&2
       exit 2
       ;;
   esac
+  # PR#140 finding 5a-2 (defense-in-depth): the evidence store is APPEND-ONLY; a
+  # delete/move wipes recorded onboarding events. In the NORMAL path the realpath
+  # normalizer above already routes every store delete — `..`-hop AND bare-parent
+  # `rm -rf instance/evidence` — to the case block (bare tokens resolve to the
+  # slash-suffixed `instance/evidence/__resolved__` marker, which the case matches).
+  # This arm is the GUARANTEE when that normalizer degrades: python3 unavailable →
+  # EVIDENCE_CMD_NORM falls back to the un-normalized command, and then the case's
+  # trailing-slash pattern misses a bare `instance/evidence` (no slash) — exactly
+  # the store-wipe finding #2 named (§5b's GERM_PATH_RE also lists the store only
+  # as 'instance/evidence/v1/' WITH a slash, so a normpath'd 'instance/evidence/v1'
+  # misses §5b's rm-allowlist too). Independent target-anchored arm, GERM_PATH_RE
+  # untouched (the lockstep meta-test pins it to immutable-core.yml). A destructive
+  # verb whose target token contains the store root — dev `instance/evidence...` or
+  # deployed `.../cabinet/evidence...`, with or without a trailing slash or `/v1` —
+  # is refused fail-closed (reads via the bounded projection are unaffected; a
+  # store-adjacent sibling like `instance/evidence-notes` under a destructive verb
+  # is over-matched, an accepted fail-closed FP — rephrase). `mv` is included:
+  # moving the store dir away is deletion-equivalent for the audit trail.
+  EVID_ANCH='(^|[;&|`([:space:]])'
+  EVID_STORE_TGT="[\"']?[^[:space:];|&<>\"']*(instance|cabinet)/evidence[^[:space:];|&<>\"']*"
+  if printf '%s' "$EVIDENCE_CMD_NORM" | grep -qE "${EVID_ANCH}(rm|rmdir|unlink|shred|mv)[[:space:]]+([^;|&]*[[:space:]])?${EVID_STORE_TGT}"; then
+    echo "BLOCKED: Destructive operation on the append-only evidence store. It records onboarding events for the Captain's audit; officers may not delete or move it. Use cabinet/scripts/evidence-read.sh for the bounded projection." >&2
+    exit 2
+  fi
+  # PR#140 finding 5a-4 (hook screen; the recorder-side capability check is a
+  # separate group): an interpreter importing the recorder modules dodges the
+  # dotted `framework.evidence` / `framework.onboarding.journey` substrings via the
+  # `from framework import evidence` form (and import aliases / extra whitespace /
+  # string concatenation). Fail-closed STRUCTURAL cut: a Python interpreter
+  # invocation (python/ipython/pypy, any version, at start / after a separator /
+  # path-prefixed) that names BOTH `framework` and an evidence|onboarding|journey
+  # module token is refused. Requiring the interpreter token avoids false-blocking
+  # a plain `grep evidence framework/...` source read (which stays allowed).
+  if printf '%s' "$EVIDENCE_CMD_NORM" | grep -qE '(^|[[:space:];|&`(/])(python[0-9.]*|ipython[0-9.]*|pypy[0-9.]*)([[:space:]]|$)' \
+     && printf '%s' "$EVIDENCE_CMD_NORM" | grep -qE 'framework' \
+     && printf '%s' "$EVIDENCE_CMD_NORM" | grep -qE 'evidence|onboarding|journey'; then
+    echo "BLOCKED: Interpreter access to the evidence/onboarding recorder modules (framework.evidence / framework.onboarding.journey) is unavailable to officers. Use cabinet/scripts/evidence-read.sh for the bounded projection." >&2
+    exit 2
+  fi
 fi
 
 # ============================================================
