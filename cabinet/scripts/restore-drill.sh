@@ -116,6 +116,11 @@ postgres_bin_candidates() {
     /Applications/Postgres.app/Contents/Versions/latest/bin; do
     [ -d "$candidate" ] && printf '%s\n' "$candidate"
   done
+  # Optional locations are probes, not requirements. Without an explicit
+  # success status, this function inherits the final `[ -d ... ]` result and
+  # can discard valid candidates emitted earlier whenever the last optional
+  # location is absent.
+  return 0
 }
 
 find_pg_restore_bin() {

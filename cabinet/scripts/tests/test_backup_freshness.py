@@ -747,9 +747,14 @@ def test_restore_drill_fails_when_pg_restore_is_missing(tmp_path: Path):
     fakebin.mkdir()
     _fake_redis(fakebin)
 
+    env = _restore_env(fakebin, snap)
+    # Pin the deliberately empty directory so host-installed optional
+    # PostgreSQL locations cannot make this negative test machine-dependent.
+    env["CABINET_POSTGRES_BIN_DIR"] = str(fakebin)
+
     result = subprocess.run(
         ["/bin/bash", str(RESTORE), "--date", snap.name],
-        env=_restore_env(fakebin, snap), capture_output=True, text=True, timeout=30,
+        env=env, capture_output=True, text=True, timeout=30,
     )
 
     assert result.returncode == 1
@@ -809,6 +814,30 @@ def test_restore_drill_restores_postgres_into_disposable_cluster(tmp_path: Path)
     assert "--no-privileges" in restore_args
     assert "--exit-on-error" in restore_args
     assert "postgres-socket" in restore_args
+
+
+def test_restore_drill_discovers_postgres_toolchain_from_path(tmp_path: Path):
+    snap = _restore_snapshot(tmp_path, "rdb", postgres=True)
+    fakebin = tmp_path / "restore-bin"
+    fakebin.mkdir()
+    _fake_redis(fakebin)
+    _fake_postgres_toolchain(fakebin)
+    trace = tmp_path / "pg-trace"
+    env = _restore_env(fakebin, snap)
+    env.update({
+        "PG_TRACE": str(trace),
+        "PG_ARGS": str(tmp_path / "pg-args"),
+    })
+    env.pop("CABINET_POSTGRES_BIN_DIR", None)
+
+    result = subprocess.run(
+        ["/bin/bash", str(RESTORE), "--date", snap.name],
+        env=env, capture_output=True, text=True, timeout=30,
+    )
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert "restores into disposable PostgreSQL (7 user relations" in result.stdout
+    assert trace.read_text().splitlines()[-1] == "stop"
 
 
 def test_restore_drill_fails_on_disposable_postgres_restore_error(tmp_path: Path):
