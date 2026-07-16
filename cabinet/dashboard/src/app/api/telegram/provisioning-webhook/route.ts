@@ -288,6 +288,32 @@ async function answerCallbackQuery(callbackId: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Typed-purge detection
+// ---------------------------------------------------------------------------
+
+/**
+ * Mirror of the INTENT grammar in `@/lib/onboarding/telegram.ts` — keep the
+ * two in lockstep (telegram.ts does not export it). The journey strips this
+ * prefix and then treats `purge PURGE` as a confirmed purge, so `/onboard`,
+ * `/onboarding`, `/orientation`, slashless, leading-whitespace, and
+ * case-variant intent forms ALL really purge.
+ */
+const ONBOARDING_INTENT = /^\s*\/?(?:onboard|onboarding|orientation)\b/i
+
+/**
+ * True for exactly the messages the onboarding journey treats as a confirmed
+ * typed purge. Derived from the same grammar as `handleTelegramOnboarding`
+ * (strip INTENT, then `/^purge\s+PURGE$/` on the trimmed remainder) instead of
+ * a separate slash-only regex, so the post-purge evidence suppression can
+ * never diverge from what actually purges: a divergent form would purge the
+ * trial and then attempt to observe into the store it just removed.
+ */
+function isTypedOnboardingPurgeText(text: string): boolean {
+  if (!ONBOARDING_INTENT.test(text)) return false
+  return /^purge\s+PURGE$/.test(text.replace(ONBOARDING_INTENT, '').trim())
+}
+
+// ---------------------------------------------------------------------------
 // Webhook handler
 // ---------------------------------------------------------------------------
 
@@ -367,9 +393,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // Non-text message (photo, sticker, etc.) — ignore in PR 4
     return NextResponse.json({ ok: true })
   }
-  const isTypedOnboardingPurge = Boolean(
-    isOnboardingMessage && /^\/(?:onboard|onboarding)\s+purge\s+PURGE\s*$/.test(rawText)
-  )
+  const isTypedOnboardingPurge = isOnboardingMessage && isTypedOnboardingPurgeText(rawText)
 
   // A First Window command may contain a private absolute path and purpose.
   // Keep both out of process logs; the canonical core records only bounded,

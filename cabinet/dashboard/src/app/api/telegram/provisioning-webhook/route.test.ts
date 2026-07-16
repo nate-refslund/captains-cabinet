@@ -446,6 +446,49 @@ describe('POST provisioning-webhook — canonical onboarding skin', () => {
     expect(mockRecordEvidence).not.toHaveBeenCalled()
   })
 
+  // The purge-suppression gate must accept EXACTLY the grammar the journey
+  // itself treats as a confirmed purge — telegram.ts strips
+  // /^\s*\/?(?:onboard|onboarding|orientation)\b/i and then tests
+  // /^purge\s+PURGE$/. Every one of these forms really purges, so none of
+  // them may attempt a post-purge observation into the trial just removed.
+  for (const purgeForm of [
+    'orientation purge PURGE',
+    '/orientation purge PURGE',
+    'onboard purge PURGE',
+    '/onboarding purge PURGE',
+    '  /Onboard purge PURGE',
+    '/ONBOARDING purge PURGE  ',
+  ]) {
+    it(`suppresses the post-purge observation for the real purge form ${JSON.stringify(purgeForm)}`, async () => {
+      mockOnboardingIntent.mockReturnValueOnce(true)
+      mockHandleOnboarding.mockResolvedValueOnce([{ text: 'Purged', plain: true }])
+      await POST(makeReq(makeUpdate({ text: purgeForm })))
+      expect(mockHandleOnboarding).toHaveBeenCalledWith(purgeForm, 'telegram-update-1')
+      expect(mockRecordEvidence).not.toHaveBeenCalled()
+    })
+  }
+
+  // Parity in the other direction: messages the journey does NOT treat as a
+  // confirmed purge (the unconfirmed prompt, trailing garbage, a lowercase
+  // confirmation) must keep recording delivery evidence — suppression must
+  // never widen into an evidence hole for ordinary onboarding traffic.
+  for (const nonPurgeForm of [
+    '/onboard purge',
+    '/onboard purge PURGE extra',
+    '/onboard purge purge',
+    '/onboard status',
+  ]) {
+    it(`still records delivery evidence for non-purge form ${JSON.stringify(nonPurgeForm)}`, async () => {
+      mockOnboardingIntent.mockReturnValueOnce(true)
+      mockHandleOnboarding.mockResolvedValueOnce([{ text: 'Card', plain: true }])
+      await POST(makeReq(makeUpdate({ text: nonPurgeForm })))
+      expect(mockRecordEvidence).toHaveBeenCalledWith(
+        expect.objectContaining({ phase: 'transport', status: 'succeeded' }),
+        'telegram'
+      )
+    })
+  }
+
   it('ACKs an authenticated onboarding callback before state work and reply delivery', async () => {
     mockHandleOnboardingCallback.mockResolvedValueOnce([{ text: 'Resolved', plain: true }])
     const update = {

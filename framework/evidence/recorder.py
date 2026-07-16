@@ -85,9 +85,19 @@ def _utc_now() -> str:
 
 
 def _canonical(value: Any) -> bytes:
-    return json.dumps(
-        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-    ).encode("utf-8")
+    # Sanitization is the single scrub boundary; this wrap is defense in
+    # depth only.  It never alters the bytes of a serializable payload, so
+    # stored bytes always equal hashed bytes — an unencodable payload fails
+    # as a typed error instead of an uncontrolled crash.
+    try:
+        return json.dumps(
+            value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise EvidenceError(
+            "payload_unserializable",
+            "The evidence payload could not be serialized for hashing.",
+        ) from exc
 
 
 def _digest(value: Any) -> str:
@@ -193,6 +203,7 @@ class EvidenceRecorder:
         self._ensure_control()
         self.control()
         self.recover_purges()
+        self.recover_pending()
 
     def _load_or_create_key(self) -> bytes:
         path = self.root / ".signing-key"
@@ -351,16 +362,46 @@ class EvidenceRecorder:
                 return True
         return False
 
+    @staticmethod
+    def _remove_ghost_trial_dir(trial: Path) -> None:
+        """Remove a trial directory re-created after its purge completed.
+
+        Only content-free directories (no event ledger) are removed; anything
+        holding evidence is left in place for review, never silently deleted.
+        """
+        if trial.is_dir() and not trial.is_symlink() and not (trial / "events.jsonl").exists():
+            shutil.rmtree(trial, ignore_errors=True)
+
+    @staticmethod
+    def _ensure_trial_lock_marker(trial: Path) -> None:
+        # The verifier requires an owner-only .lock file inside every trial
+        # directory; keep writing it even though the real mutex now lives
+        # outside the directory.
+        fd = os.open(
+            trial / ".lock",
+            os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
+        try:
+            os.fchmod(fd, 0o600)
+        finally:
+            os.close(fd)
+
     @contextmanager
     def _lock(self, trial_id: str) -> Iterator[Path]:
         trial = self._trial_dir(trial_id)
         if trial.is_symlink():
             raise EvidenceError("trial_symlink", "An evidence trial must not be a symbolic link.")
-        if not trial.exists() and self._trial_was_purged(trial_id):
-            raise EvidenceError("trial_purged", "That evidence trial was purged and cannot be reopened.")
-        _secure_dir(trial)
+        # The mutex lives OUTSIDE the trial directory so that a purge's
+        # directory deletion cannot orphan it: a raced appender keeps
+        # contending on the same inode and observes the purge after the
+        # fact instead of re-creating a ghost trial directory.  Lock files
+        # are never unlinked (an unlinked lock file would let two writers
+        # hold "the" lock on different inodes).
+        locks = self.root / "locks"
+        _secure_dir(locks)
         fd = os.open(
-            trial / ".lock",
+            locks / f"{trial_id}.lock",
             os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0),
             0o600,
         )
@@ -368,10 +409,15 @@ class EvidenceRecorder:
             os.fchmod(handle.fileno(), 0o600)
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
             try:
-                # Re-check after taking the lock. A purge may have completed
-                # while this caller was waiting on an already-open lock file.
+                # Check purge state under the lock, BEFORE any directory is
+                # created. A purge may have completed while this caller was
+                # waiting; heal a raced re-created empty directory instead of
+                # leaving a ghost that fails verification forever.
                 if self._trial_was_purged(trial_id):
+                    self._remove_ghost_trial_dir(trial)
                     raise EvidenceError("trial_purged", "That evidence trial was purged and cannot be reopened.")
+                _secure_dir(trial)
+                self._ensure_trial_lock_marker(trial)
                 yield trial
             finally:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
@@ -402,8 +448,19 @@ class EvidenceRecorder:
         if not path.is_file():
             return []
         rows: list[dict[str, Any]] = []
-        for raw in path.read_text(encoding="utf-8").splitlines():
-            row = json.loads(raw)
+        # The writer frames records with "\n" only, so the reader must split
+        # on "\n" only — str.splitlines() would also split on U+2028/U+2029/
+        # NEL inside an event payload, bricking reads of a ledger the
+        # byte-oriented verifier correctly reports as healthy.  Blank-line
+        # skipping mirrors the verifier's bytes.strip() (ASCII whitespace
+        # only) so reader and verifier accept exactly the same ledgers.
+        for raw in path.read_text(encoding="utf-8").split("\n"):
+            if not raw.strip(" \t\n\r\x0b\x0c"):
+                continue
+            try:
+                row = json.loads(raw)
+            except ValueError as exc:
+                raise EvidenceError("ledger_invalid", "The evidence ledger contains an invalid row.") from exc
             if not isinstance(row, dict):
                 raise EvidenceError("ledger_invalid", "The evidence ledger contains an invalid row.")
             rows.append(row)
@@ -465,10 +522,17 @@ class EvidenceRecorder:
             os.fsync(handle.fileno())
         _fsync_dir(trial)
 
-    def _recover_pending_locked(self, trial_id: str, trial: Path) -> None:
+    def _recover_pending_locked(self, trial_id: str, trial: Path) -> dict[str, Any] | None:
+        """Finish an interrupted append exactly once.
+
+        Returns the reconciled write-ahead event when an unreconciled
+        ``pending.json`` was found, and ``None`` when there was nothing to
+        reconcile.  Callers use that fact to decide whether a real
+        interruption happened; they must never infer one from trace status.
+        """
         pending_path = trial / "pending.json"
         if not pending_path.is_file():
-            return
+            return None
         try:
             pending = json.loads(pending_path.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
@@ -500,6 +564,7 @@ class EvidenceRecorder:
         _atomic_json(trial / "anchor.json", self._anchor(event))
         pending_path.unlink()
         _fsync_dir(trial)
+        return event
 
     def append(
         self,
@@ -596,48 +661,87 @@ class EvidenceRecorder:
             return event
 
     def recover_interrupted(self, trial_id: str) -> list[dict[str, Any]]:
-        """Close traces that have a started record but no terminal record."""
+        """Reconcile an interrupted write and truthfully mark its trace.
+
+        ``interrupted``/``recovered`` system events are synthesized ONLY when
+        an unreconciled write-ahead record (``pending.json``) was actually
+        found and reconciled — the one durable proof that a previous process
+        died mid-append.  A trace that is merely in flight (non-terminal
+        latest status, no pending write) gets NO synthetic events: fabricated
+        interruptions would corrupt the audit record the Captain reviews.
+        """
         with self._lock(trial_id) as trial:
-            self._recover_pending_locked(trial_id, trial)
+            reconciled = self._recover_pending_locked(trial_id, trial)
             if not (trial / "events.jsonl").exists():
                 return []
             result = verify_trial(self.root, trial_id)
             if not result["ok"]:
                 raise EvidenceError("ledger_integrity", "Evidence continuity failed; recovery stopped.")
-            rows = self._rows(trial)
-        latest: dict[str, dict[str, Any]] = {}
-        for row in rows:
-            latest[str(row.get("trace_id"))] = row
+        if reconciled is None:
+            return []
+        context = self.trace(
+            trial_id,
+            surface="system",
+            trace_id=str(reconciled.get("trace_id")),
+            action_id=str(reconciled.get("action_id")),
+            correlation_id=str(reconciled.get("correlation_id")),
+        )
         recovered: list[dict[str, Any]] = []
-        for trace_id, row in latest.items():
-            status = row.get("status")
-            if status in TERMINAL_STATUSES and status != "interrupted":
-                continue
-            context = self.trace(
-                trial_id,
-                surface="system",
-                trace_id=trace_id,
-                action_id=str(row.get("action_id")),
-                correlation_id=str(row.get("correlation_id")),
-            )
-            if status != "interrupted":
-                recovered.append(self.append(
-                    context,
-                    phase="system",
-                    status="interrupted",
-                    actor={"kind": "system", "id": "evidence-recorder"},
-                    component={"name": "evidence-recorder", "version": "1"},
-                    detail={"reason_code": "previous_process_interrupted"},
-                ))
+        if reconciled.get("status") != "interrupted":
             recovered.append(self.append(
                 context,
                 phase="system",
-                status="recovered",
+                status="interrupted",
                 actor={"kind": "system", "id": "evidence-recorder"},
                 component={"name": "evidence-recorder", "version": "1"},
-                detail={"reason_code": "interrupted_write_reconciled"},
+                detail={"reason_code": "previous_process_interrupted"},
             ))
+        recovered.append(self.append(
+            context,
+            phase="system",
+            status="recovered",
+            actor={"kind": "system", "id": "evidence-recorder"},
+            component={"name": "evidence-recorder", "version": "1"},
+            detail={"reason_code": "interrupted_write_reconciled"},
+        ))
         return recovered
+
+    def recover_pending(self) -> list[str]:
+        """Heal crash and race aftermath across the whole store, on start.
+
+        A process that died mid-append leaves ``pending.json`` and possibly a
+        stale anchor; such a trial would fail verification forever even
+        though nothing was tampered with.  Finishing the exactly-once
+        reconciliation here means a plain restart heals crashed trials before
+        any verify runs.  Ghost directories re-created for already-purged
+        trials are removed the same way.  A trial whose recovery fails is
+        left untouched — it stays fail-closed at use time; construction must
+        never brick the rest of the store over one damaged trial.
+        """
+        healed: list[str] = []
+        trial_root = self.root / "trials"
+        if not trial_root.is_dir():
+            return healed
+        for path in sorted(trial_root.iterdir()):
+            if path.is_symlink() or not path.is_dir() or not TRIAL_ID_RE.fullmatch(path.name):
+                continue
+            try:
+                if (path / "pending.json").is_file():
+                    if self.recover_interrupted(path.name):
+                        healed.append(path.name)
+                elif not (path / "events.jsonl").exists() and self._trial_was_purged(path.name):
+                    # _lock heals the ghost under the surviving lock, then
+                    # refuses the purged trial; the refusal is the point.
+                    try:
+                        with self._lock(path.name):
+                            pass  # pragma: no cover - purged trials never yield
+                    except EvidenceError:
+                        pass
+                    if not path.exists():
+                        healed.append(path.name)
+            except EvidenceError:
+                continue
+        return healed
 
     def read_events(self, trial_id: str) -> list[dict[str, Any]]:
         trial = self._trial_dir(trial_id)
@@ -769,15 +873,21 @@ class EvidenceRecorder:
             "verification": verification,
         }
 
-    def enforce_retention(self, *, actor: str = "captain") -> dict[str, Any]:
+    def enforce_retention(
+        self, *, actor: str = "captain", exclude: set[str] | None = None,
+    ) -> dict[str, Any]:
         """Apply the Captain's current age policy to live trials.
 
         Explicit exports are outside the live trial set and deliberately
-        survive. The operation is Captain-only; a future scheduler may invoke
-        it only through a separately attested Captain grant.
+        survive. ``exclude`` names trial ids that are live-referenced by a
+        running journey and must survive this pass regardless of age — a
+        purge mid-flight would make its next real action unrecordable. The
+        operation is Captain-only; a future scheduler may invoke it only
+        through a separately attested Captain grant.
         """
         if actor != "captain":
             raise EvidenceError("captain_required", "Only the Captain can enforce evidence retention.")
+        excluded = {str(item) for item in (exclude or set())}
         days = self.control().get("retention_days")
         if days is None:
             return {
@@ -792,6 +902,8 @@ class EvidenceRecorder:
         trial_paths = sorted(trial_root.iterdir()) if trial_root.is_dir() else []
         for path in trial_paths:
             if not path.is_dir() or not TRIAL_ID_RE.fullmatch(path.name):
+                continue
+            if path.name in excluded:
                 continue
             result = verify_trial(self.root, path.name)
             if not result["ok"]:
