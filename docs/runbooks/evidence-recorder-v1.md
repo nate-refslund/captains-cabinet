@@ -61,6 +61,31 @@ It excludes free-form comments and source excerpts and begins with an explicit
 Run from the Cabinet repository. The commands below are Captain controls, not
 officer tools.
 
+### Captain capability token (required for mutating commands)
+
+Mutating commands — any `control` change, `purge`, `retain`, and `export` —
+never execute on a caller-supplied `"captain"` string. The caller must present
+a Captain capability token: a value derived from the store's private signing
+key (`HMAC(signing-key, "cabinet.evidence-captain-capability/v1")`). Mint it
+once, keep it outside the officer tool surface (mode `0600`), and present it via
+`--captain-token-file` or `$CABINET_CAPTAIN_TOKEN_FILE`:
+
+```bash
+python3.12 -m framework.evidence --store instance/evidence/v1 \
+  grant-token --output /captain/chosen/captain.token
+export CABINET_CAPTAIN_TOKEN_FILE=/captain/chosen/captain.token
+```
+
+`grant-token` requires read access to the store's private signing key and
+refuses to overwrite an existing token file. Read-only commands (`verify`,
+`project`, and `control` with no change) require no token. This is
+defense-in-depth, not a complete boundary: in a same-UID deployment any process
+that can read the signing key can re-derive the token, so full closure comes
+from the separate-UID deployment boundary plus the officer hook layer that
+structurally blocks importing the recorder modules.
+
+### Read-only (no token)
+
 Verify one live trial or the whole store:
 
 ```bash
@@ -68,14 +93,19 @@ python3.12 -m framework.evidence --store instance/evidence/v1 verify --trial <tr
 python3.12 -m framework.evidence --store instance/evidence/v1 verify
 ```
 
+### Mutating (token required)
+
 Create a redacted, checksummed review bundle:
 
 ```bash
 python3.12 -m framework.evidence --store instance/evidence/v1 \
+  --captain-token-file /captain/chosen/captain.token \
   export <trial-id> --output /captain/chosen/review-bundle
 ```
 
-Read or change retention and temporarily enable diagnostic mode:
+Read or change retention and temporarily enable diagnostic mode (reading
+`control` needs no token; changing it does — shown here via the exported env
+var):
 
 ```bash
 python3.12 -m framework.evidence --store instance/evidence/v1 control
@@ -87,12 +117,14 @@ python3.12 -m framework.evidence --store instance/evidence/v1 retain
 ```
 
 Diagnostic mode still passes the same redaction boundary. It records that the
-mode was active and expires by default after 24 hours.
+mode was active and expires by default after 24 hours. A lapsed diagnostic
+window is never replayed into an unrelated retention change.
 
 Typed purge is fail-closed and trial-specific:
 
 ```bash
 python3.12 -m framework.evidence --store instance/evidence/v1 \
+  --captain-token-file /captain/chosen/captain.token \
   purge <trial-id> --confirmation 'PURGE <trial-id>'
 ```
 
@@ -115,8 +147,30 @@ hash, sequence, signature, anchor, or pending continuity fails.
 `framework.evidence.verifier` and the `verify` CLI path are read-only: they do
 not initialize a store, create a key, recover a write, or call recorder
 append/purge code. They re-derive the ledger from the bytes already present.
+The verifier also maintains one signed anti-rollback watermark sidecar
+(`.verify-watermarks.json`) in the store root: a monotonic high-water mark of
+each trial's verified length and tip hash, keyed by hashed trial id. It never
+mutates ledgers, anchors, controls, or receipts; a present-but-invalid sidecar
+is treated as tamper evidence and fails closed rather than being rewritten.
 Review bundles contain the verifier result plus `SHA256SUMS` and a
 plain-language audit report.
+
+Two continuity behaviors are visible in an audit and never drop a real action:
+
+- **Trial re-mint on tombstone.** If retention or a Captain CLI purge
+  tombstones the *live* onboarding trial, the journey mints a fresh trial under
+  its state lock so later actions keep recording instead of wedging on
+  `evidence_unavailable`. The fresh trial opens with a `system/recovered`
+  genesis event whose `purged_trial_id_hash` links the tombstone, so the audit
+  shows exactly where and why the trial lineage restarted. Purge *finality*
+  still wins: a purged journey is never re-minted.
+- **Deletion never blocked by a broken evidence plane.** A typed `PURGE`
+  proceeds even when the evidence ledger cannot be verified (e.g. a corrupt
+  byte). Onboarding source-derived data is deleted, and the evidence-side
+  failure is recorded inside the purge receipt (`evidence_purge_status:
+  pending`) with the pending marker kept so recovery or a Captain force-purge
+  can finish the evidence-side deletion. Reporting the purge as failed would
+  wrongly tell the Captain the data was not deleted.
 
 ## Cabinet self-diagnosis and repair
 

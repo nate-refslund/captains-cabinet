@@ -33,12 +33,26 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!sameOrigin(req)) {
     return response({ ok: false, code: 'origin_refused', error: 'That evidence signal did not come from the Cabinet app.' }, { status: 403 })
   }
-  const declared = Number(req.headers.get('content-length') || 0)
-  if (declared > MAX_BODY_BYTES) {
+  // Require a declared, bounded Content-Length BEFORE buffering. A missing
+  // header (chunked / streaming body) previously coerced to 0 and skipped this
+  // gate, so an unbounded body was fully buffered by req.text() before the
+  // byte check below ever ran. Mirrors the sibling /api/onboarding gate: a
+  // legitimate JSON POST from a browser or the bridge always sends
+  // Content-Length, so no real observation is lost by refusing here.
+  const header = req.headers.get('content-length')
+  const declared = header === null ? NaN : Number(header)
+  if (!Number.isFinite(declared) || declared < 0 || declared > MAX_BODY_BYTES) {
     return response({ ok: false, code: 'body_too_large', error: 'That evidence signal is too large.' }, { status: 413 })
   }
-  const text = await req.text()
-  if (new TextEncoder().encode(text).length > MAX_BODY_BYTES) {
+  let text: string
+  try {
+    text = await req.text()
+  } catch {
+    return response({ ok: false, code: 'invalid_json', error: 'That evidence signal was not valid.' }, { status: 400 })
+  }
+  // Re-check the real bytes — a lying small Content-Length must not smuggle an
+  // oversized body past the declared gate.
+  if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) {
     return response({ ok: false, code: 'body_too_large', error: 'That evidence signal is too large.' }, { status: 413 })
   }
   let raw: (OnboardingObservationRequest & { surface?: string }) | null = null

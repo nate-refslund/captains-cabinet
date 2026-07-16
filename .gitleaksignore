@@ -22,6 +22,13 @@ d41b18a4b75744edfbdaed8227264d9394779501:framework/frontdoor/tests/test_action_e
 afad1add65d55287dd6097dd7557d2b499d0fe00:cabinet/dashboard/src/lib/world/hatch-secret-scan.test.ts:generic-api-key:17
 afad1add65d55287dd6097dd7557d2b499d0fe00:cabinet/dashboard/src/lib/world/hatch-secret-scan.test.ts:generic-api-key:20
 afad1add65d55287dd6097dd7557d2b499d0fe00:cabinet/dashboard/src/lib/world/hatch-secret-scan.test.ts:generic-api-key:70
+# Evidence Recorder hardening (PR #149): test_redaction.py Finding-17 SECRET_SHAPES
+# table + keyword-tail guard — deliberately fake fixtures (sk-abc…, ghp_ABC…,
+# aws_secret_access_key=wJalr… = AWS's own documented EXAMPLE key) proving
+# sanitize_string redacts every shape. Provably fake; introduced at 3d8a13f5.
+3d8a13f57a67ad7be51b5f144079e888f149cc7b:framework/evidence/tests/test_redaction.py:generic-api-key:174
+3d8a13f57a67ad7be51b5f144079e888f149cc7b:framework/evidence/tests/test_redaction.py:generic-api-key:175
+3d8a13f57a67ad7be51b5f144079e888f149cc7b:framework/evidence/tests/test_redaction.py:generic-api-key:278
 # --- no-git twins (file:rule:line — no commit prefix) for the SAME fake
 # fixtures above, as seen by `gitleaks detect --no-git` over a fresh-cut egg
 # export (egg-publish-gate.sh gate (a) scans the export tree, not git — the
@@ -34,3 +41,6 @@ cabinet/scripts/tests/test_transcript_digest.py:aws-access-token:144
 cabinet/scripts/tests/test_transcript_digest.py:aws-access-token:155
 cabinet/scripts/tests/test_world_chronicle.py:github-pat:32
 framework/frontdoor/tests/test_actfirst_admission.py:generic-api-key:418
+framework/evidence/tests/test_redaction.py:generic-api-key:174
+framework/evidence/tests/test_redaction.py:generic-api-key:175
+framework/evidence/tests/test_redaction.py:generic-api-key:278
