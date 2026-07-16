@@ -127,6 +127,65 @@ class TestCaptainRole:
         env._captain_role_cache = None
         assert env.captain_role() == "Head-of-Tech"
 
+
+@pytest.fixture
+def isolated_slug_cache():
+    """Clear the process-wide captain-slug cache for the test, then restore the
+    original so sibling tests are untouched (mirrors isolated_role_cache)."""
+    saved = env._captain_slug_cache
+    env._captain_slug_cache = None
+    try:
+        yield
+    finally:
+        env._captain_slug_cache = saved
+
+
+class TestCaptainSlug:
+    """The captain_slug() resolver — the officer_tasks OWNER slug that marks a
+    row as the Captain's (the reminder arm routes it to the needs-card surface).
+    A ROLE token, never a display name: the generic default is the literal
+    ``captain`` (the /tasks ETL + events-schema convention), config-overridable,
+    fail-closed to generic — never a leaked launcher name."""
+
+    def test_absent_config_falls_back_to_captain(self, tmp_path, monkeypatch,
+                                                 isolated_slug_cache):
+        monkeypatch.delenv("CABINET_CAPTAIN_SLUG", raising=False)
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))  # empty tmp — no config
+        env._captain_slug_cache = None
+        assert env.captain_slug() == "captain"
+
+    def test_env_override_wins(self, tmp_path, monkeypatch, isolated_slug_cache):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "platform.yml", "captain_slug: skipper\n")
+        monkeypatch.setenv("CABINET_CAPTAIN_SLUG", "helm")
+        env._captain_slug_cache = None
+        assert env.captain_slug() == "helm"   # env beats config
+
+    def test_reads_slug_from_platform_yml(self, tmp_path, monkeypatch,
+                                          isolated_slug_cache):
+        monkeypatch.delenv("CABINET_CAPTAIN_SLUG", raising=False)
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "platform.yml", "captain_slug: skipper\n")
+        env._captain_slug_cache = None
+        assert env.captain_slug() == "skipper"
+
+    def test_reads_nested_slug_from_product_yml(self, tmp_path, monkeypatch,
+                                                isolated_slug_cache):
+        monkeypatch.delenv("CABINET_CAPTAIN_SLUG", raising=False)
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "product.yml", "product:\n  captain_slug: skipper\n")
+        env._captain_slug_cache = None
+        assert env.captain_slug() == "skipper"
+
+    def test_never_leaks_a_personal_name_by_default(self, tmp_path, monkeypatch,
+                                                    isolated_slug_cache):
+        """The default is a generic role token — never captain_name()'s value."""
+        monkeypatch.delenv("CABINET_CAPTAIN_SLUG", raising=False)
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "platform.yml", "captain_name: Wendy Wanderlust\n")
+        env._captain_slug_cache = None
+        assert env.captain_slug() == "captain"   # name never becomes the slug
+
     def test_result_is_cached_process_wide(self, tmp_path, monkeypatch,
                                            isolated_role_cache):
         """First resolution wins for the process (a restart re-reads)."""

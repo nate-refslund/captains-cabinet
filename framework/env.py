@@ -153,6 +153,67 @@ def captain_role(default: str = "the Captain") -> str:
     return role
 
 
+# Cache: captain_slug is read once per process (same lifecycle as captain_name).
+# None ⇒ unresolved — the role token "captain" is a VALID resolved default (not a
+# personal name), so the sentinel is None, never "".
+_captain_slug_cache: "str | None" = None
+
+
+def captain_slug(default: str = "captain") -> str:
+    """The OWNER slug that marks a row (an ``officer_tasks`` row) as the
+    Captain's — the resolver the reminder arm uses to route a Captain-owned
+    due row to the needs-ledger card surface instead of an officer's Redis
+    stream, WITHOUT hardcoding a personal name (product/captain-agnostic law).
+
+    The value is a ROLE token, not a display name: the generic default is the
+    literal ``captain`` — the SAME slug the /tasks ETL already stamps on
+    founder rows (``cabinet/scripts/lib/etl-common.py`` — "caller checks slug
+    == 'captain'") and the events schema uses for the Captain actor
+    (``framework/events/schema.sql``). It is deliberately distinct from
+    ``captain_name()`` (which is the DISPLAY name shown to the Captain): a slug
+    is an identity key that lives in a DB column and must stay stable + generic.
+
+    Resolution order: the env override ``CABINET_CAPTAIN_SLUG`` (an explicit
+    per-process override, mirroring ``tasks_board``'s ``CABINET_TASKS_BOARD``) →
+    ``captain_slug`` in ``instance/config/platform.yml`` (else ``product.yml`` /
+    nested ``product.captain_slug``) → the generic ``default`` (``"captain"``).
+    Any absence / parse failure falls back to ``default`` — a generic
+    deployment resolves ``captain``, never crashes, never leaks a launcher's
+    name. NB: the FIRST call's resolution — fallback included — is cached for
+    the process, so every caller must pass a uniform ``default``."""
+    global _captain_slug_cache
+    if _captain_slug_cache is not None:
+        return _captain_slug_cache
+    env_override = (os.environ.get("CABINET_CAPTAIN_SLUG") or "").strip()
+    if env_override:
+        _captain_slug_cache = env_override
+        return env_override
+    slug = str(default)
+    try:
+        import yaml  # local: keep env.py import-light for the safety switches
+        root = _cabinet_root()
+        for rel in ("instance/config/platform.yml", "instance/config/product.yml"):
+            p = root / rel
+            try:
+                if not p.exists():
+                    continue
+                data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+            except Exception:
+                continue
+            if not isinstance(data, dict):
+                continue
+            val = data.get("captain_slug")
+            if val is None and isinstance(data.get("product"), dict):
+                val = data["product"].get("captain_slug")   # product.yml nests it
+            if isinstance(val, str) and val.strip():
+                slug = val.strip()
+                break
+    except Exception:
+        slug = str(default)
+    _captain_slug_cache = slug
+    return slug
+
+
 # Cache: org_domains is read once per process (same lifecycle as captain_name;
 # config is stable under a running officer, a restart re-reads). None ⇒
 # unresolved — the EMPTY tuple is a VALID resolved value (a generic deployment

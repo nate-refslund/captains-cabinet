@@ -261,6 +261,47 @@ services:
     # Revert pacing arming = `--tick` → `--pin-tick` in the wrapper.
     expected: "one 'Surface tick ok' line per 300s run; error-reporting ticks exit 1 with a FATAL stderr line (observability floor today = doctor log-freshness on surface-pin.log; FATAL grep is a wanted upgrade)"
 
+  # ── Tasks: due-at reminders (Spec 041, armed 2026-07-16) ───────────────────
+  - name: due-at-reminder-tick
+    label: com.cabinet.due-at-reminder-tick
+    kind: cron
+    command: bash cabinet/scripts/due-at-reminder-tick.sh
+    schedule: { interval_s: 300 }   # every 5 min — a CADENCE ("fire within ~5 min of due_at"), not a wall-clock slot (a due time can land at any minute)
+    expected: "one line per run — `[due-at-reminder-tick] fired=N carded=C snooze_bumped=B fail=M elapsed_at=<iso>` (a heartbeat even on a quiet tick, so the derived 300s freshness floor is honestly met — the limit-reset-watchdog log-only-on-events lesson); each due OFFICER reminder XADDs a task_reminder trigger onto the owning officer's cabinet:triggers:<officer_slug> stream, each due CAPTAIN reminder (type='reminder' or captain-slug owner) files a needs-ledger one-tap card instead, both marked reminder_fired_at in the same claim; the reconcile phase then applies Captain card verdicts (grant closes, later bumps due_at +7d)"
+    notes: >-
+      Spec 041 (/tasks due_at auto-fire) — schema shipped in cabinet/sql/
+      041-tasks-due-at.sql (due_at + reminder_fired_at columns, the
+      officer_tasks_due_pending_idx partial index, and the
+      officer_tasks_due_at_rearm_trg re-arm trigger that clears
+      reminder_fired_at on any due_at change) and this worker shipped, but the
+      worker was SCHEDULED NOWHERE — reminders NEVER fired (its header still
+      carried a convergence-era /opt crontab suggestion). This row is the
+      missing clock. ONE command per row: the generated-plist wrapper `exec`s
+      the command, so a `&&` chain would die at the first program (pinned
+      fleet-wide by test_no_enabled_service_chains_past_the_exec_wrapper, paid
+      2026-07-15) — the atomic SQL claim AND the trigger fan-out live in this
+      one script, never a chain. interval_s (not calendar) because due_at is a
+      moving target, not a fixed slot; 300s matches the "within ~5 min of due"
+      bar and mirrors intake-surface/surface-pin. Conn string:
+      NEON_CONNECTION_STRING from cabinet/.env (sourced by the wrapper AND by
+      the script for direct runs) — the tasks Neon where officer_tasks lives,
+      same DB the dashboard reads; a box with no conn string degrades LOUDLY
+      (one stderr line, exit 0), never fabricated cred plumbing. Idempotent by
+      construction: the SELECT ... FOR UPDATE SKIP LOCKED claim flips
+      reminder_fired_at in the same statement, so a re-run after a fire yields
+      zero new triggers; a due_at bump re-arms via the trigger. Task title is
+      UNTRUSTED and is query OUTPUT only (never interpolated into SQL, never
+      carried on the claim TSV — the claim RETURNING is machine fields only
+      and both routes re-read the title by id, so an embedded newline/tab can
+      never forge a routing row) — it reaches the officer trigger through a
+      jq -cn --arg/--argjson payload and the Captain card via STDIN to
+      captain-reminder-arm.py file-card. The same worker is the Captain-arm
+      delivery leg (docs/runbooks/captain-reminders.md): captain rows card to
+      the needs ledger, and the reconcile phase runs every tick (grant =
+      close granted; later = one guarded parameterized due_at bump, the 041
+      re-arm trigger refires it). Captain-arm install: the generated plist
+      (deploy-mac.sh / cabinet-bootstrap), same step as every other cron row.
+
   # ── Acting ───────────────────────────────────────────────────────────────
   - name: draft-lane
     label: com.cabinet.draft-lane
