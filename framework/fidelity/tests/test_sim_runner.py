@@ -175,3 +175,11 @@ class TestRunF1EnvKnobs:
     def test_env_flag_unset_is_false(self, monkeypatch):
         monkeypatch.delenv("F1_X_PROBE", raising=False)
         assert run_f1._env_flag("F1_X_PROBE") is False
+
+    def test_gather_env_resolves_the_real_runtime_seam(self, monkeypatch):
+        from framework.fidelity.officer_runner import gather_cutoff_context
+
+        monkeypatch.setenv("F1_GATHER", "1")
+        assert run_f1._gather_from_env() is gather_cutoff_context
+        monkeypatch.setenv("F1_GATHER", "0")
+        assert run_f1._gather_from_env() is None
