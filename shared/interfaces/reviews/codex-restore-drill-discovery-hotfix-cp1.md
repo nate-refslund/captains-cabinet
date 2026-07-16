@@ -43,4 +43,20 @@ Non-blocking P3 notes were limited to host sensitivity of the pre-fix
 reproduction and a possible future review of independently selected client and
 server toolchain versions.
 
+## CI clock-fixture addendum
+
+The first PR run exposed an unrelated wall-clock decay in
+`test_stale_open_need_expires_on_read`: a record was filed at real current time
+but read at a hardcoded `2026-08-15`, which ceased being more than 30 days later
+on July 16. The test module now freezes implicit `N._now()` calls to its existing
+`NOW` constant while preserving every explicitly supplied timestamp. The
+affected module passed 27 tests and the full framework passed 5,092 tests with
+28 skips.
+
+Fable reviewed the exact test-only delta and returned **APPROVE — no remaining
+P0–P2**. It confirmed that the original function is captured before monkeypatch,
+so there is no recursion; the fixture is function-scoped and restored after
+each test; explicit timestamps retain production parsing; and production code
+is unchanged.
+
 `CHECKPOINT VERDICT: PASS`
