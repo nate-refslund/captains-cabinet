@@ -1,0 +1,9 @@
+# memory-ranking.fingerprint — sha256 over the RANKING-BLOCK marker regions
+# of cabinet/scripts/lib/memory.sh (blended weights + vec floor + pool order
+# + rerank stage + the no-rerank seam). CI pins this to the live ranking code
+# (cabinet/scripts/tests/test_retrieval_eval_gate.py): any ranking edit is a
+# red build until a store-local eval run that HOLDS both arms' floors
+# re-stamps it:  bash cabinet/scripts/retrieval-eval-nightly.sh --stamp
+# (stamps ONLY on a both-arm PASS; commit the refreshed file WITH the ranking
+# change). Hand-editing the hex defeats the gate's purpose — don't.
+42c71ad786dfce68da53c3df4256e1f6ca51574427d3359687407b46d3aa842a

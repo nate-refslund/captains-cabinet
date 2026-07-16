@@ -332,6 +332,12 @@ expect-absent docs/proposals/germline-lockstep-lane-resolver-addendum-2026-07-12
 expect-absent docs/proposals/germline-window-4-deferral-2026-07-10.md
 expect-absent docs/proposals/germline-window-addendum-2026-07-07.md
 expect-absent docs/proposals/sovereign-posture-activation-2026-07-09.md
+# BC boot-pack (memwave3 2026-07-15): the staged session-start digest package
+# (addendum doc + its .patch artifact, plain FILES directly under
+# docs/proposals — t_proposals_archive rm -f's entries and a subdirectory
+# would abort the export under set -e) is instance history: archived out.
+expect-absent docs/proposals/germline-session-start-digest-addendum-2026-07-15.md
+expect-absent docs/proposals/germline-session-start-digest-2026-07-15.patch
 expect-present cabinet/scripts/hatch.sh
 expect-present cabinet/scripts/null-hatch.sh
 expect-present bin/.gitkeep

@@ -402,7 +402,13 @@ def test_proposals_non_amendments_archived_amendments_kept(export: Path):
                  "germline-lockstep-lane-resolver-addendum-2026-07-12.md",
                  "germline-window-4-deferral-2026-07-10.md",
                  "germline-window-addendum-2026-07-07.md",
-                 "sovereign-posture-activation-2026-07-09.md"):
+                 "sovereign-posture-activation-2026-07-09.md",
+                 # BC boot-pack staged package (memwave3 2026-07-15): plain
+                 # files directly under docs/proposals/ BY CONTRACT — a
+                 # subdirectory would crash t_proposals_archive's rm -f loop
+                 # under set -e (leftover pin below also enforces no-subdir).
+                 "germline-session-start-digest-addendum-2026-07-15.md",
+                 "germline-session-start-digest-2026-07-15.patch"):
         assert not (proposals / gone).exists(), f"R167: non-amendment proposal must not ship: {gone}"
     # nothing else remains beyond the stub + the 20 amendments
     leftover = sorted(p.name for p in proposals.iterdir())

@@ -981,7 +981,13 @@ COMPOSE
 #   - 041-tasks-due-at.sql alters officer_tasks — after 038-officer-tasks.sql
 #     (its DDL is NOT folded into 038; it ships as a lockstep add-on).
 #   - 045-org-runtime-slice.sql is self-contained (creates its own pgcrypto
-#     extension) — last, mirroring load-preset.sh's Neon list position.
+#     extension) — after the library/officer DDL, mirroring load-preset.sh's
+#     Neon list position.
+#   - 046-embedding-meta.sql is self-contained (embed-seam provenance
+#     singleton) — last; memory_embedding_stamp --if-absent writes its one
+#     row right after the apply loop (see the stamp arm in step_apply_schemas
+#     — the R4 follow-up wiring, 2026-07-15; an existing row is provenance
+#     and is never overwritten).
 # load-preset.sh keeps its own Neon list for EXISTING cabinets — mirror
 # additions there in the same change (Docs Must Track the Code).
 schema_apply_list() {
@@ -1002,6 +1008,7 @@ cabinet/sql/038-officer-tasks.sql
 cabinet/sql/041-tasks-due-at.sql
 cabinet/sql/039-linear-to-tasks-schema.sql
 cabinet/sql/045-org-runtime-slice.sql
+cabinet/sql/046-embedding-meta.sql
 LIST
 }
 
@@ -1059,6 +1066,7 @@ step_apply_schemas() {
         dry "  $rel"
       done < <(schema_apply_list)
       dry "Would apply preset schema: presets/${PRESET_SLUG}/schemas.sql (if present)"
+      dry "Would stamp cabinet_embedding_meta (embed-seam provider/model/dims) via memory_embedding_stamp --if-absent (existing provenance preserved)"
       dry "  Neon URL: $(redact_neon_url "$NEON_DATABASE_URL")"
     else
       dry "No Neon URL — would skip schema application (CAPTAIN ACTION REQUIRED later)"
@@ -1093,6 +1101,36 @@ step_apply_schemas() {
 
   # Self-check (warn-only): flag DDL on disk that the apply list above missed
   schema_list_selfcheck "$cabinet_dir"
+
+  # EMBED-SEAM stamp (R4 follow-up, 2026-07-15 — ends 046's dormant-ship):
+  # record the active provider/model/dims in cabinet_embedding_meta right
+  # after the DDL lands, so the cabinet-doctor embed-seam drift probe reports
+  # from day one. --if-absent: on the normal fresh hatch the store is empty
+  # and this insert IS the provenance; if the captain pointed bootstrap at a
+  # REUSED database, the historic stamp is preserved and the doctor surfaces
+  # any mismatch as DIMS/SEAM DRIFT instead of this arm silently re-blessing
+  # it (re-stamping is the re-embed organ's job). Values ride the stamp's
+  # parameterized psql -v seam. Subshell PINNED to the hatched estate (review
+  # fix 2026-07-15): the top-level CABINET_ROOT above is the HOST framework
+  # root and subshells inherit it, so memory.sh's .env resolution would read
+  # the HOST estate's cabinet/.env — CABINET_ROOT is re-exported to the NEW
+  # checkout so the stamp records the hatched estate's own seam. CABINET_ID
+  # mirrors what bootstrap wrote into the new .env, and with the DSN also
+  # set memory.sh skips its set -a .env source entirely — no .env secrets
+  # are ever loaded into this subshell. EMBED_* is unset so a deployer-shell
+  # override can't masquerade as the new estate's provenance: the stamp
+  # resolves the new cabinet/.env, else the compiled defaults — exactly what
+  # the estate itself resolves at runtime. Fail-soft like the schema arms
+  # above: a stamp failure never fails bootstrap.
+  if ( export NEON_CONNECTION_STRING="$NEON_DATABASE_URL"; \
+       export CABINET_ROOT="$cabinet_dir" CABINET_ID="$CABINET_SLUG"; \
+       unset EMBED_PROVIDER EMBED_MODEL EMBED_DIMS; \
+       source "$cabinet_dir/cabinet/scripts/lib/memory.sh" > /dev/null 2>&1 && \
+       memory_embedding_stamp --if-absent > /dev/null 2>&1 ); then
+    info "Ensured cabinet_embedding_meta stamp (fresh hatch inserts from the new cabinet's own env; existing provenance preserved)"
+  else
+    info "WARN: failed to stamp cabinet_embedding_meta — doctor embed-seam drift probe reports SKIP until stamped (next load-preset.sh run retries)"
+  fi
 
   # Apply preset-specific schemas
   local preset_schema="$preset_dir/schemas.sql"

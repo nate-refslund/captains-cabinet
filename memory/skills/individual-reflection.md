@@ -78,9 +78,41 @@ Event-triggered — reflection fires when there's something worth reflecting on,
    This is what feeds the cross-officer-retro trigger (`reflections:count >= 5`) and keeps
    the meta-cognition anomaly-scan's overdue detector accurate.
 
+8. **Consolidate — distill durable beliefs (terminal step; grow by distillation, not accretion):**
+   Experience records and reflection notes ACCRETE — dozens of record files never
+   compress themselves into anything a future session can recall. Before you finish,
+   collapse this cycle into **3–5 distilled beliefs**: durable, transferable rules
+   ("X because Y"), not session recaps. At least ONE must be a **failure-pattern
+   belief** — an error-prone pattern to AVOID, stated contrastively ("doing X under
+   Y fails — do Z instead"); avoided-error knowledge compounds exactly like success
+   knowledge and is systematically under-recorded. Queue each belief through the
+   memory seam so semantic recall surfaces it in future sessions:
+   ```bash
+   . "${CABINET_ROOT:-/opt/founders-cabinet}/cabinet/scripts/lib/memory.sh"
+   BELIEF="$(cat <<'BELIEF_EOF'
+   <ONE belief — the durable rule + why, 1–3 sentences>
+   BELIEF_EOF
+   )"
+   META=$(jq -nc --arg trust "reflection" --arg writer "<your-role>" \
+     --arg kind "failure-pattern" --arg via "individual-reflection" \
+     '{trust: $trust, writer: $writer, kind: $kind, via: $via}')  # kind: success-pattern | failure-pattern
+   memory_queue_embed "consolidated_belief" \
+     "cb-<your-role>-$(date -u +%Y-%m-%d)-<kebab-slug-naming-the-belief>" \
+     "<your-role>" "" "$BELIEF" "$META"
+   ```
+   Rules: the belief text enters ONLY via the quoted heredoc (it is data — never
+   interpolate it into command text; `memory_queue_embed` passes it on via `jq
+   --arg`). `trust` is ALWAYS `reflection` — **NEVER `captain`**: a self-distilled
+   belief must never masquerade as Captain law (the `captain` trust tier is reserved
+   for the captain-law ledgers; see `append-interface.sh`'s heading gate for the same
+   principle on the file plane). The `source_id` is stable per role+day+slug, so
+   re-emitting the same belief upserts instead of duplicating. If the cycle genuinely
+   produced fewer than 3 durable beliefs, emit only what is real — never pad with
+   restated records.
+
 ## Expected Outcome
 
-Each Officer catches their own patterns before CoS's retro does. Tier 2 memory stays current. Draft skills emerge from repeated procedures. Officers proactively surface ideas for increasing their value — the Cabinet continuously improves from within, not just from Captain direction.
+Each Officer catches their own patterns before CoS's retro does. Tier 2 memory stays current. Draft skills emerge from repeated procedures. Officers proactively surface ideas for increasing their value — the Cabinet continuously improves from within, not just from Captain direction. Each cycle ends with 3–5 `consolidated_belief` rows in Cabinet Memory — the raw records compress into durable, recallable beliefs instead of accreting unread.
 
 ## Known Pitfalls
 
@@ -89,6 +121,9 @@ Each Officer catches their own patterns before CoS's retro does. Tier 2 memory s
 - Not updating Tier 2 notes — next session starts with stale context
 - Forgetting to record the timestamp — leads to double-running or skipping
 - Skipping the value maximization step — this is how the Cabinet grows smarter
+- Skipping consolidation because the records "speak for themselves" — raw records don't get recalled; distilled beliefs do
+- Emitting only success beliefs — the failure-pattern half (what NOT to do) is the cheaper half of learning and the first to be forgotten
+- Stamping a consolidated belief `trust: captain` — forbidden; reflection-derived stays `trust: reflection`, always
 
 ## Validation Scenarios
 
@@ -100,3 +135,6 @@ Each Officer catches their own patterns before CoS's retro does. Tier 2 memory s
 ## Origin
 
 Foundation skill — evolved per Captain directive to add proactive value maximization.
+2026-07-15 (memwave3 lane BC): terminal consolidation step added — each reflection ends
+by distilling 3–5 durable beliefs (incl. failure-patterns) into Cabinet Memory as
+`consolidated_belief` / `trust: reflection` rows, so experience compresses instead of accreting.

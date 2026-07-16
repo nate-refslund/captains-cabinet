@@ -1,6 +1,6 @@
 ---
 name: individual-reflection
-description: Per-officer event-triggered reflection. Use after compaction, completion milestones, or CoS reflection trigger — never on a fixed clock. Skip if idle. Produces draft skills + value-maximization ideas.
+description: Per-officer event-triggered reflection. Use after compaction, completion milestones, or CoS reflection trigger — never on a fixed clock. Skip if idle. Produces draft skills + value-maximization ideas. Terminates by queueing 3–5 consolidated beliefs (incl. ≥1 failure-pattern) to Cabinet Memory.
 ---
 
 <!-- single-source wrapper (egg R155, pairs R138): the canonical body of this

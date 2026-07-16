@@ -664,6 +664,31 @@ services:
       (sourced by the script) + psql/redis-cli on PATH; queue-push failures
       exit non-zero so launchd surfaces them.
 
+  # ── Retrieval refinement gate (Lane D, 2026-07-15) ─────────────────────────
+  - name: retrieval-eval
+    label: com.cabinet.retrieval-eval
+    kind: cron
+    command: bash cabinet/scripts/retrieval-eval-nightly.sh
+    schedule: { calendar: [{hour: 3, minute: 50}] }   # nightly 03:50 local — AFTER the 03:30 memory-reconcile (the gate must measure the post-reconcile store, or a damaging consolidation wave hides for a day) and after the 03:45 apoptosis sweep starts (no contention — the sweep touches logs/__pycache__, this row only reads Neon + Voyage); BEFORE the 07:10 cabinet-doctor, which reads tonight's verdict
+    expected: "one verdict JSONL line/night appended to cabinet/logs/retrieval-eval-history.jsonl (runtime path, gitignored via cabinet/logs/*) carrying recall@k + MRR + pass per arm for BOTH arms — production hybrid+rerank AND --no-rerank blended order (a blended-arm breach is a real finding even when the rerank arm passes); exit 1 on a floor breach so launchd surfaces it; credless boxes (clean-room/CI) log a skip line and exit 0"
+    notes: >-
+      The standing gate over memory_search ranking quality (recall@k >= 0.60
+      + MRR >= 0.50 per arm, self-harvested pairs via
+      harvest-retrieval-eval.sh --limit 12, --limit 20 > k=10 so the k-cut
+      stays order-sensitive). Closes the R1 landing residual (960d4c4d):
+      rerank rescues pool damage, so the eval also runs a
+      CABINET_MEMORY_RERANK=off arm measuring the BLENDED order directly.
+      Store-local by design (queries the live cabinet_memory) — GitHub CI
+      cannot run it; CI instead pins the ranking-change fingerprint
+      (cabinet/scripts/tests/fixtures/memory-ranking.fingerprint via
+      test_retrieval_eval_gate.py), regenerated ONLY by a passing
+      retrieval-eval-nightly.sh --stamp run. cabinet-doctor check 11 reads
+      the verdict ledger (--probe): breach or >48h stale = WARN/AMBER,
+      credless = SKIP. Runbook: cabinet/runbooks/org-memory-day1.md §7.
+      Floors env-overridable (RE_FLOOR / RE_MRR_FLOOR /
+      RE_BLENDED_MRR_FLOOR); secrets stay in cabinet/.env (sourced via
+      lib/memory.sh, never printed).
+
   # brain-quality Wave F watch (installed 2026-07-07, Captain directive)
   - name: memory-curator-health
     label: com.cabinet.memory-curator-health
@@ -710,11 +735,26 @@ services:
       layers env-resolve (variable NAMES only, values never read); skill
       frontmatter parses with zero leading bytes; mcp-scope.yml grants
       registered in some config layer; statusline exit 0; Redis PING;
-      killswitch status DRY-check. Read-only by contract (never launchctl
+      killswitch status DRY-check; captain-law-digest freshness (BC
+      boot-pack 2026-07-15 — memory-distill.py --check, read-only: recorded
+      ledger sha256s vs live; stale → WARN/AMBER never DEAD, absent digest
+      silent — regeneration stays Captain-gated review + --apply). Read-only
+      by contract (never launchctl
       bootstrap/bootout, never killswitch activate); known Captain-gated
       findings print WAIVED (cited to their amendment doc) so GREEN stays
-      meaningful. Also the final acceptance gate of the Mini hatch runbook
+      meaningful. Embed-seam dims-drift probe is explicit tri-state since
+      the 2026-07-15 stamp wiring (load-preset.sh + cabinet-bootstrap.sh
+      stamp cabinet_embedding_meta IF-ABSENT at deploy — an existing stamp
+      is provenance and is never overwritten, so a config flip keeps the
+      WARN alive until a real re-embed; the probe resolves its configured
+      side env > cabinet/.env > default, same chain as memory.sh): OK on
+      dims match, WARN on drift (re-embed backfill required), clean SKIP
+      when unstamped / store unreachable / no connection resolvable. Also
+      the final acceptance gate of the Mini hatch runbook
       (docs/runbooks/mini-hatch-tonight-2026-07-07.md §Flight recorder).
+      Since 2026-07-15 additionally probes the retrieval-eval nightly
+      verdict ledger (check 11 — floor breach / >48h staleness = WARN,
+      credless box = SKIP) via retrieval-eval-nightly.sh --probe.
 
   # ── ORG-SENSES-1 transcript-digest organ (armed 2026-07-07) ────────────────
   - name: memory-contradictions

@@ -16,7 +16,7 @@ bash cabinet/scripts/validate-extension.sh packs/<pack-name>
 
 | Pack | Contents | Copied or referenced? |
 |---|---|---|
-| `doctrine-pack` | 5 doctrine skills: holistic-thinking, production-quality-ownership, individual-reflection, cross-officer-retro, spec-quality-gate | **Copied** from `.claude/skills/` (copies carry date-typed `sunset: '2026-10-05'` frontmatter — the apoptosis reaper scans `packs/*/skills/*/SKILL.md` and cards the removal-wave review once it passes) |
+| `doctrine-pack` | 5 doctrine skills: holistic-thinking, production-quality-ownership, individual-reflection, cross-officer-retro, spec-quality-gate | **Copied** — pack frontmatter over the canonical `memory/skills/` bodies (the `.claude/skills/` files are R155 pointer wrappers, not bodies; the two retro skills' copy⇄canonical parity is pinned by `cabinet/scripts/tests/test_memory_distill.py`). Copies carry date-typed `sunset: '2026-10-05'` frontmatter — the apoptosis reaper scans `packs/*/skills/*/SKILL.md` and cards the removal-wave review once it passes |
 | `vercel-lane-pack` | deploy-and-verify + engineering-development-loop (both are Vercel-flow skills) | **Copied** from `.claude/skills/` |
 | `agent-teams-pack` | agent-team-workflow | **Copied** from `.claude/skills/` |
 | `preset-portfolio-pack` | Portfolio-preset activation guide skill + README | Payload **referenced** at `presets/portfolio/` (core plugin/repo) |
