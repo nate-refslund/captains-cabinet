@@ -1,0 +1,37 @@
+# evidence-anchor.yml — instance bindings for the daily external evidence
+# anchoring job (cabinet/scripts/evidence-anchor.py; staged services.yml row
+# `evidence-anchor`). Copy to evidence-anchor.yml and uncomment what applies.
+#
+# Every surface is OPTIONAL: the job is credless-safe and skips any
+# unconfigured surface cleanly (exit 0). The evidence store itself is never
+# configured here — the job always reads the repo's instance/evidence/v1.
+
+# Directory inside the Captain's PRIVATE meta repo (off-store, Captain-owned,
+# versioned) where the daily anchor record is appended as one JSONL line
+# (evidence-anchors.jsonl) and committed. ~ and ${VARS} are expanded.
+# Unset → the meta-repo surface is skipped.
+#anchor_dir: ~/cabinet-meta/evidence-anchors
+
+# Commit the anchor file after writing (requires anchor_dir inside a git work
+# tree; the job commits ONLY that file and never pushes — the meta repo's own
+# sync policy owns pushes). Default: true.
+#git_commit: true
+
+# Send the daily plain-English receipt to the Captain via the front-door
+# Telegram channel (framework/frontdoor/channel.py). The recipient and token
+# come from the runtime env the channel already owns (CAPTAIN_TELEGRAM_ID +
+# TELEGRAM_BOT_TOKEN/TELEGRAM_COS_TOKEN in cabinet/.env) — never configured
+# here, never hardcoded. Outside the runtime (or without those env names) it
+# skips without a network attempt. Default: true.
+#telegram: true
+
+# Captain-label surfaces whose digests ride the daily anchor record (the
+# HP-3 precursor: label digests land off-store daily, so later label
+# authentication has an external anchor to check against). Repo-relative or
+# absolute; absent files are recorded as null digests. Default: the four
+# Captain-law ledgers below.
+#captain_label_files:
+#  - shared/interfaces/captain-vetoes.yml
+#  - shared/interfaces/captain-decisions.md
+#  - shared/interfaces/captain-patterns.md
+#  - shared/interfaces/captain-intents.md

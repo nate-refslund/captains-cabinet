@@ -43,6 +43,7 @@ import re
 import shutil
 import stat
 import sys
+import time
 import uuid
 from contextlib import contextmanager
 from copy import deepcopy
@@ -50,13 +51,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from framework.evidence import (
-    ActLifecycle,
-    EvidenceError,
-    EvidenceRecorder,
-    remint_trial,
-    valid_id_or_none,
-)
+from framework.evidence import EvidenceError, EvidenceRecorder
 
 SCHEMA = "cabinet.onboarding-journey/v2"
 CARD_SCHEMA = "cabinet.onboarding-card/v1"
@@ -1468,32 +1463,32 @@ def _act_core(
         raise JourneyError("action_unknown", f"Unknown onboarding action: {action}.")
 
 
-# The onboarding producer bindings for the shared act-class recording helper
-# (framework.evidence.lifecycle).  These strings are byte-exact with every
-# v1 event already on disk — do NOT "improve" them.
-_EVIDENCE_COMPONENT = {"name": "onboarding-core", "version": "2+evidence-v1"}
-
-
-def _evidence_actor(phase: str) -> dict[str, str]:
-    captain = phase in {"intent", "feedback"}
-    return {
-        "kind": "captain" if captain else "system",
-        "id": "captain" if captain else "onboarding-core",
-    }
-
-
-def _evidence_unavailable() -> JourneyError:
-    return JourneyError(
-        "evidence_unavailable",
-        "The Cabinet could not preserve a trustworthy evidence receipt, so no further onboarding action was taken.",
-    )
-
-
-def _evidence_integrity() -> JourneyError:
-    return JourneyError(
-        "evidence_integrity",
-        "The onboarding evidence chain needs review before another action can run.",
-    )
+def _evidence_append(
+    recorder: EvidenceRecorder,
+    context: Any,
+    *,
+    phase: str,
+    status: str,
+    detail: dict[str, Any] | None = None,
+    links: list[str] | None = None,
+    duration_ms: float | None = None,
+) -> dict[str, Any]:
+    try:
+        return recorder.append(
+            context,
+            phase=phase,
+            status=status,
+            actor={"kind": "captain" if phase in {"intent", "feedback"} else "system", "id": "captain" if phase in {"intent", "feedback"} else "onboarding-core"},
+            component={"name": "onboarding-core", "version": "2+evidence-v1"},
+            detail=detail,
+            links=links,
+            duration_ms=duration_ms,
+        )
+    except EvidenceError as exc:
+        raise JourneyError(
+            "evidence_unavailable",
+            "The Cabinet could not preserve a trustworthy evidence receipt, so no further onboarding action was taken.",
+        ) from exc
 
 
 def _remint_evidence_trial(
@@ -1514,7 +1509,8 @@ def _remint_evidence_trial(
     exactly where (and why) the trial lineage restarted. Purge FINALITY still
     wins: a purged journey is never re-minted.
     """
-    def swap_live_trial(purged: str) -> tuple[str, bool]:
+    tombstone_hash = hashlib.sha256(purged_trial_id.encode("utf-8")).hexdigest()
+    with _locked(base):
         state = _load_state(base)
         if state.get("stage") == "purged":
             raise JourneyError(
@@ -1522,25 +1518,27 @@ def _remint_evidence_trial(
                 "Onboarding data was purged. No later action can reopen its evidence trial.",
             )
         current = str(state.get("evidence_trial_id"))
-        if current != purged:
+        if current != purged_trial_id:
             # A concurrent caller already re-minted; adopt its live trial so
             # the journey never forks into two evidence lineages.
-            return current, False
+            return current
         fresh = f"onboarding-{uuid.uuid4().hex}"
         state["evidence_trial_id"] = fresh
         _atomic_json(_state_path(base), state)
-        return fresh, True
-
-    return remint_trial(
-        recorder,
-        purged_trial_id,
-        surface=surface,
-        state_lock=lambda: _locked(base),
-        swap_live_trial=swap_live_trial,
-        actor_policy=_evidence_actor,
-        component=dict(_EVIDENCE_COMPONENT),
-        unavailable_error=_evidence_unavailable,
-    )
+        context = recorder.trace(fresh, surface=surface)
+        _evidence_append(
+            recorder,
+            context,
+            phase="system",
+            status="recovered",
+            detail={
+                "action": "remint_evidence_trial",
+                "reason_code": "prior_trial_tombstoned",
+                "purged_trial_id_hash": tombstone_hash,
+            },
+            links=[f"evidence-tombstone:{tombstone_hash}"],
+        )
+    return fresh
 
 
 def act(
@@ -1571,45 +1569,119 @@ def act(
     action = _scrub_lone_surrogates(str(raw.get("action") or "invalid_request"))[:80]
 
     recorder = EvidenceRecorder(base / EVIDENCE_REL)
-    recording = ActLifecycle(
-        recorder,
-        trial_id=trial_id,
-        surface=surface,
-        actor_policy=_evidence_actor,
-        component=dict(_EVIDENCE_COMPONENT),
-        producer_error=JourneyError,
-        unavailable_error=_evidence_unavailable,
-        integrity_error=_evidence_integrity,
-        remint=lambda purged: _remint_evidence_trial(
-            base, recorder, purged, surface=surface
-        ),
-        producer_purged_code="onboarding_purged",
-        # Deletion must stay available even when the evidence ledger cannot
-        # be verified; for ``purge`` evidence failures degrade and are
-        # recorded in the onboarding purge receipt below instead of blocking.
-        degrade_on_failure=action == "purge",
-    )
-    # Pre-flight reconcile before anything runs: a tombstoned live trial (a
-    # crash-interrupted purge left its receipt) re-mints so onboarding keeps
-    # recording instead of wedging forever; any other evidence failure
-    # refuses the action (or degrades, purge only).
-    recording.recover_interrupted()
+    degraded_evidence: dict[str, Any] | None = None
+    reminted = False
+    trial_path = recorder.root / "trials" / trial_id
+    if trial_path.exists():
+        try:
+            recorder.recover_interrupted(trial_id)
+        except EvidenceError as exc:
+            if exc.code == "trial_purged":
+                # The live trial was tombstoned (a crash-interrupted purge
+                # left its receipt) while the journey stayed live: re-mint so
+                # onboarding keeps recording instead of wedging forever.
+                trial_id = _remint_evidence_trial(base, recorder, trial_id, surface=surface)
+                reminted = True
+            elif action == "purge":
+                # Deletion must stay available even when the evidence ledger
+                # cannot be verified; the failure is recorded in the
+                # onboarding purge receipt below instead of blocking purge.
+                degraded_evidence = {"error_code": exc.code, "phase": "recover_interrupted"}
+            else:
+                raise JourneyError(
+                    "evidence_integrity",
+                    "The onboarding evidence chain needs review before another action can run.",
+                ) from exc
 
-    context = recording.begin(
-        trace_id=valid_id_or_none(raw.get("trace_id")),
-        action_id=valid_id_or_none(raw.get("action_id")),
-        correlation_id=valid_id_or_none(raw.get("correlation_id")),
+    def valid_or_none(name: str) -> str | None:
+        value = raw.get(name)
+        if not isinstance(value, str) or not _REQUEST_ID_RE.fullmatch(value):
+            return None
+        return value
+
+    context = recorder.trace(
+        trial_id,
+        surface=surface,
+        trace_id=valid_or_none("trace_id"),
+        action_id=valid_or_none("action_id"),
+        correlation_id=valid_or_none("correlation_id"),
     )
+
+    def record(
+        *,
+        phase: str,
+        status: str,
+        detail: dict[str, Any] | None = None,
+        links: list[str] | None = None,
+        duration_ms: float | None = None,
+    ) -> dict[str, Any] | None:
+        """Append one evidence event for this action.
+
+        A ``trial_purged`` failure re-mints ONCE (retention/CLI can tombstone
+        the live trial between any two appends) and retries on the fresh
+        trial with the same trace/action/correlation ids. For ``purge`` any
+        remaining evidence failure degrades instead of raising: a broken
+        evidence plane must never make onboarding data undeletable.
+        """
+        nonlocal context, trial_id, degraded_evidence, reminted
+        if degraded_evidence is not None:
+            return None
+        try:
+            return _evidence_append(
+                recorder, context, phase=phase, status=status,
+                detail=detail, links=links, duration_ms=duration_ms,
+            )
+        except JourneyError as exc:
+            cause_code = getattr(exc.__cause__, "code", None)
+            if cause_code == "trial_purged" and not reminted:
+                reminted = True
+                try:
+                    trial_id = _remint_evidence_trial(base, recorder, trial_id, surface=surface)
+                    context = recorder.trace(
+                        trial_id, surface=surface, trace_id=context.trace_id,
+                        action_id=context.action_id, correlation_id=context.correlation_id,
+                    )
+                    return _evidence_append(
+                        recorder, context, phase=phase, status=status,
+                        detail=detail, links=links, duration_ms=duration_ms,
+                    )
+                except JourneyError as retry_exc:
+                    if retry_exc.code == "onboarding_purged":
+                        # The journey itself was purged concurrently: purge
+                        # finality wins and there is no trial left to record
+                        # into — let the core's own purged refusal surface.
+                        return None
+                    if action != "purge":
+                        raise
+                    degraded_evidence = {
+                        "error_code": getattr(retry_exc.__cause__, "code", None) or retry_exc.code,
+                        "phase": phase,
+                    }
+                    return None
+            if action != "purge":
+                raise
+            degraded_evidence = {"error_code": cause_code or exc.code, "phase": phase}
+            return None
 
     normalized = dict(raw)
     # The committed canonical event and the evidence trail must carry the
-    # SAME ids: the helper overwrites trace/correlation with the recorder-
-    # validated context ids and KEEPS a malformed caller action id for the
-    # core's deterministic refusal (see ActLifecycle.unify_ids).
-    recording.unify_ids(normalized)
+    # SAME ids: overwrite (never setdefault) trace/correlation with the
+    # recorder-validated context ids so a malformed caller id cannot fork
+    # the two planes the audit correlates.
+    normalized["trace_id"] = context.trace_id
+    normalized["correlation_id"] = context.correlation_id
+    # Keep a malformed caller-supplied action id for the core's deterministic
+    # refusal (silently re-minting it would break idempotent replay); the
+    # core now enforces the same id anchor as the evidence plane, so an id
+    # that forks the planes can never commit.
+    if "action_id" not in normalized:
+        normalized["action_id"] = context.action_id
     if isinstance(raw.get("action"), str):
         normalized["action"] = _scrub_lone_surrogates(raw["action"])
-    recording.intent(
+    started = time.monotonic_ns()
+    record(
+        phase="intent",
+        status="started",
         detail={
             "action": action,
             "before_revision": state.get("revision"),
@@ -1617,7 +1689,9 @@ def act(
             "request_shape_valid": isinstance(request, dict),
         },
     )
-    recording.proposed(
+    record(
+        phase="policy",
+        status="proposed",
         detail={
             "action": action,
             "reason_code": "validation_and_authority_check_started",
@@ -1627,24 +1701,36 @@ def act(
     try:
         result = _act_core(normalized if isinstance(request, dict) else request, base, now=now)
     except JourneyError as exc:
-        recording.refused(
-            refusal_detail={
-                "action": action,
-                "error_code": exc.code,
-                "reason_code": "core_refusal",
-                **exc.detail,
-            },
-            outcome_detail={"action": action, "error_code": exc.code},
+        elapsed = round((time.monotonic_ns() - started) / 1_000_000, 3)
+        refusal_detail = {
+            "action": action,
+            "error_code": exc.code,
+            "reason_code": "core_refusal",
+            **exc.detail,
+        }
+        record(
+            phase="policy", status="refused",
+            detail=refusal_detail, duration_ms=elapsed,
+        )
+        record(
+            phase="outcome", status="refused",
+            detail={"action": action, "error_code": exc.code}, duration_ms=elapsed,
         )
         raise
     except Exception as exc:
+        elapsed = round((time.monotonic_ns() - started) / 1_000_000, 3)
         error_code = f"unexpected_{type(exc).__name__.lower()}"
-        recording.failed(
-            error_detail={"action": action, "error_code": error_code},
-            outcome_detail={"action": action, "error_code": error_code},
+        record(
+            phase="error", status="failed",
+            detail={"action": action, "error_code": error_code}, duration_ms=elapsed,
+        )
+        record(
+            phase="outcome", status="failed",
+            detail={"action": action, "error_code": error_code}, duration_ms=elapsed,
         )
         raise
 
+    elapsed = round((time.monotonic_ns() - started) / 1_000_000, 3)
     result_status = (
         "duplicate" if result.get("duplicate") else
         "paused" if action == "pause" else
@@ -1655,11 +1741,14 @@ def act(
     )
     summary = result.get("evidence_summary") if isinstance(result.get("evidence_summary"), dict) else {}
     after_revision = (result.get("state") or {}).get("revision")
-    event_ref = result.get("event", {}).get("event_id") if isinstance(result.get("event"), dict) else result.get("event_id")
-    recording.completed(
-        result_status=result_status,
-        allowed_detail={"action": action, "reason_code": "core_contract_satisfied"},
-        execution_detail={
+    record(
+        phase="policy", status="allowed",
+        detail={"action": action, "reason_code": "core_contract_satisfied"},
+        duration_ms=elapsed,
+    )
+    record(
+        phase="execution", status=result_status,
+        detail={
             "action": action,
             "before_revision": state.get("revision"),
             "after_revision": after_revision,
@@ -1667,19 +1756,30 @@ def act(
             "excluded": (summary.get("scan_statistics") or {}).get("excluded") if isinstance(summary.get("scan_statistics"), dict) else None,
             "file_count": (summary.get("scan_statistics") or {}).get("included_files") if isinstance(summary.get("scan_statistics"), dict) else None,
         },
-        verification_detail={
+        duration_ms=elapsed,
+    )
+    record(
+        phase="verification", status="verified",
+        detail={
             "action": action,
             "revision": after_revision,
             "source_integrity": summary.get("source_integrity") or {"unchanged": True, "scope": "no_source_write_capability"},
             "verification": "canonical_state_and_receipt_present",
         },
-        receipt_detail={"action": action, "receipt_id": event_ref or "idempotent-replay"},
-        receipt_links=[f"onboarding-event:{event_ref}"] if event_ref else [],
-        outcome_detail={"action": action, "result_code": result_status, "revision": after_revision},
+        duration_ms=elapsed,
     )
-    # A mid-action re-mint swaps the live trial; report the ids the events
-    # actually landed under.
-    context = recording.context
+    event_ref = result.get("event", {}).get("event_id") if isinstance(result.get("event"), dict) else result.get("event_id")
+    record(
+        phase="receipt", status="succeeded",
+        detail={"action": action, "receipt_id": event_ref or "idempotent-replay"},
+        links=[f"onboarding-event:{event_ref}"] if event_ref else [],
+        duration_ms=elapsed,
+    )
+    record(
+        phase="outcome", status=result_status,
+        detail={"action": action, "result_code": result_status, "revision": after_revision},
+        duration_ms=elapsed,
+    )
     result["evidence"] = {
         "trial_id": context.trial_id,
         "trace_id": context.trace_id,
@@ -1732,10 +1832,10 @@ def act(
                 )
                 if annotated is not None:
                     result["receipt"] = annotated
-        if recording.degraded_evidence is not None:
+        if degraded_evidence is not None:
             annotated = _annotate_purge_receipt(
                 base, purge_action_id,
-                {"evidence_append_error": str(recording.degraded_evidence.get("error_code"))},
+                {"evidence_append_error": str(degraded_evidence.get("error_code"))},
             )
             if annotated is not None:
                 result["receipt"] = annotated

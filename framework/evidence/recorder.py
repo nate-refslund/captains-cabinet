@@ -38,6 +38,11 @@ STATUSES = frozenset({
     "retried", "interrupted", "recovered", "verified", "unverified",
     "undone", "duplicate", "paused", "revoked", "purged", "useful",
     "not_useful", "corrected", "diagnostic",
+    # v1.1 absence vocabulary (R-2): the non-occurrence of an expected or
+    # scheduled action is first-class evidence.  Additive only — every
+    # stored v1 event keeps verifying.  Lockstep: verifier.STATUSES and
+    # framework/schemas/evidence-event.schema.json move in the same commit.
+    "missed", "skipped", "expired",
 })
 SURFACES = frozenset({
     "dashboard", "telegram", "world", "companion", "api", "core", "cli",
@@ -45,10 +50,40 @@ SURFACES = frozenset({
 })
 ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 PROVENANCE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:+@-]{0,79}$")
+# Per-class retention (Phase 1, additive): a retention class is the
+# <class> segment of the day-bounded trial taxonomy ``evt-<class>-<yyyymmdd>``.
+# Only taxonomy trials ever match a class; every other trial id keeps the
+# scalar ``retention_days`` dial, so an unset ``retention_classes`` map is
+# byte-for-byte the pre-existing behavior.
+RETENTION_CLASS_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+TRIAL_CLASS_RE = re.compile(r"^evt-([a-z0-9][a-z0-9_-]{0,63})-\d{8}$")
 TERMINAL_STATUSES = frozenset({
     "succeeded", "refused", "failed", "interrupted", "recovered", "undone",
     "purged", "duplicate", "paused", "revoked", "useful", "not_useful",
     "corrected",
+    # v1.1 absence statuses are terminal: a non-occurrence is final.
+    "missed", "skipped", "expired",
+})
+
+# Officer-visible detail keys for cabinet_projection().  Fail-closed: any
+# detail key not listed here is silently dropped from the officer view.
+# Additions are governance-changing (design §2.6) and ceremony-gated.  The
+# v1.1 keys admitted below are safe-by-construction identifiers or enum-like
+# strings; cost/resource observations (input_tokens, output_tokens,
+# cost_usd, resource_kind) and effort/depth/schedule-time fields stay OUT of
+# the officer projection per the never-a-score law unless the Captain
+# explicitly rules them in.  The trust class of every key is registered in
+# framework/evidence/classification.py.
+PROJECTION_ALLOWED_DETAIL = frozenset({
+    "action", "error_code", "reason_code", "result_code", "file_count",
+    "total_bytes", "excluded", "verification", "source_integrity",
+    "feedback_rating", "feedback_category", "transport", "retry_count",
+    "revision", "before_revision", "after_revision", "receipt_id",
+    "undo_of", "manifest_hash", "charter_hash", "purge_scope",
+    # v1.1 vocabulary wave — delegation lineage, scheduling provenance,
+    # egress approval reference, and broker-sourced model/skill provenance.
+    "parent_trial_id", "spawned_by", "scheduled_by", "trigger_kind",
+    "model_id", "skill_revision", "egress_approval_ref",
 })
 
 
@@ -244,6 +279,7 @@ class EvidenceRecorder:
         self._write_control({
             "schema": CONTROL_SCHEMA,
             "retention_days": None,
+            "retention_classes": None,
             "diagnostic_mode": False,
             "diagnostic_until": None,
             "updated_at": _utc_now(),
@@ -282,6 +318,7 @@ class EvidenceRecorder:
         retention_days: int | None,
         diagnostic_mode: bool,
         diagnostic_until: str | None = None,
+        retention_classes: dict[str, int] | None = None,
     ) -> dict[str, Any]:
         if actor != "captain":
             raise EvidenceError("captain_required", "Only the Captain can change evidence controls.")
@@ -293,6 +330,36 @@ class EvidenceRecorder:
                 raise EvidenceError("retention_invalid", "Retention must be between 1 and 3650 days, or forever.") from exc
             if isinstance(retention_days, bool) or not 1 <= parsed_days <= 3650:
                 raise EvidenceError("retention_invalid", "Retention must be between 1 and 3650 days, or forever.")
+        parsed_classes: dict[str, int] | None = None
+        if retention_classes is not None:
+            if not isinstance(retention_classes, dict):
+                raise EvidenceError(
+                    "retention_class_invalid",
+                    "Per-class retention must map class names to day counts.",
+                )
+            parsed_classes = {}
+            for class_name, class_days in retention_classes.items():
+                name = str(class_name)
+                if not RETENTION_CLASS_RE.fullmatch(name):
+                    raise EvidenceError(
+                        "retention_class_invalid",
+                        "A retention class must be lowercase [a-z0-9_-], 1-64 chars.",
+                    )
+                try:
+                    parsed_class_days = int(class_days)
+                except (TypeError, ValueError) as exc:
+                    raise EvidenceError(
+                        "retention_class_invalid",
+                        "Per-class retention must be between 1 and 3650 days.",
+                    ) from exc
+                if isinstance(class_days, bool) or not 1 <= parsed_class_days <= 3650:
+                    raise EvidenceError(
+                        "retention_class_invalid",
+                        "Per-class retention must be between 1 and 3650 days.",
+                    )
+                parsed_classes[name] = parsed_class_days
+            if not parsed_classes:
+                parsed_classes = None
         if diagnostic_mode and not diagnostic_until:
             diagnostic_until = (datetime.now(timezone.utc) + timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
         if diagnostic_mode:
@@ -305,6 +372,7 @@ class EvidenceRecorder:
         value = {
             "schema": CONTROL_SCHEMA,
             "retention_days": parsed_days,
+            "retention_classes": parsed_classes,
             "diagnostic_mode": bool(diagnostic_mode),
             "diagnostic_until": diagnostic_until if diagnostic_mode else None,
             "updated_at": _utc_now(),
@@ -761,13 +829,7 @@ class EvidenceRecorder:
         explicitly labels every field untrusted so it can never become an
         instruction or authority input.
         """
-        allowed_detail = {
-            "action", "error_code", "reason_code", "result_code", "file_count",
-            "total_bytes", "excluded", "verification", "source_integrity",
-            "feedback_rating", "feedback_category", "transport", "retry_count",
-            "revision", "before_revision", "after_revision", "receipt_id",
-            "undo_of", "manifest_hash", "charter_hash", "purge_scope",
-        }
+        allowed_detail = PROJECTION_ALLOWED_DETAIL
         events = self.read_events(trial_id)[-max(1, min(int(limit), 1000)):]
         records = []
         for event in events:
@@ -803,7 +865,7 @@ class EvidenceRecorder:
         statuses = Counter(str(event.get("status")) for event in events)
         phases = Counter(str(event.get("phase")) for event in events)
         surfaces = Counter(str(event.get("surface")) for event in events)
-        failures = [event for event in events if event.get("status") in {"refused", "failed", "interrupted"}]
+        failures = [event for event in events if event.get("status") in {"refused", "failed", "interrupted", "missed", "expired"}]
         lines = [
             f"# Evidence review — {trial_id}",
             "",
@@ -815,7 +877,7 @@ class EvidenceRecorder:
             "- Statuses: " + (", ".join(f"{key}={value}" for key, value in sorted(statuses.items())) or "none"),
             "- Phases: " + (", ".join(f"{key}={value}" for key, value in sorted(phases.items())) or "none"),
             "- Surfaces: " + (", ".join(f"{key}={value}" for key, value in sorted(surfaces.items())) or "none"),
-            f"- Refused, failed, or interrupted records: {len(failures)}",
+            f"- Refused, failed, interrupted, missed, or expired records: {len(failures)}",
             "",
             "## Integrity checks",
             "",
@@ -888,15 +950,29 @@ class EvidenceRecorder:
         if actor != "captain":
             raise EvidenceError("captain_required", "Only the Captain can enforce evidence retention.")
         excluded = {str(item) for item in (exclude or set())}
-        days = self.control().get("retention_days")
-        if days is None:
+        control = self.control()
+        days = control.get("retention_days")
+        raw_classes = control.get("retention_classes")
+        classes: dict[str, int] = {}
+        if isinstance(raw_classes, dict):
+            # The control file is signature-verified, so these values were
+            # validated by configure(); re-check shape defensively anyway.
+            for class_name, class_days in raw_classes.items():
+                if isinstance(class_days, bool) or not isinstance(class_days, int):
+                    raise EvidenceError(
+                        "retention_class_invalid",
+                        "Evidence controls carry an invalid per-class retention value.",
+                    )
+                classes[str(class_name)] = class_days
+        if days is None and not classes:
             return {
                 "ok": True,
                 "schema": "cabinet.evidence-retention/v1",
                 "retention_days": None,
+                "retention_classes": None,
                 "purged": [],
             }
-        cutoff = datetime.now(timezone.utc) - timedelta(days=int(days))
+        now = datetime.now(timezone.utc)
         purged: list[dict[str, Any]] = []
         trial_root = self.root / "trials"
         trial_paths = sorted(trial_root.iterdir()) if trial_root.is_dir() else []
@@ -905,6 +981,20 @@ class EvidenceRecorder:
                 continue
             if path.name in excluded:
                 continue
+            # Per-class override applies only to taxonomy trials
+            # (``evt-<class>-<yyyymmdd>``); everything else keeps the scalar
+            # dial. A trial with no effective policy is skipped WITHOUT
+            # being verified (verification advances watermarks — a side
+            # effect a no-op retention pass must not have).
+            class_match = TRIAL_CLASS_RE.fullmatch(path.name)
+            trial_class = class_match.group(1) if class_match else None
+            if trial_class is not None and trial_class in classes:
+                effective_days = classes[trial_class]
+            else:
+                effective_days = days
+            if effective_days is None:
+                continue
+            cutoff = now - timedelta(days=int(effective_days))
             result = verify_trial(self.root, path.name)
             if not result["ok"]:
                 raise EvidenceError(
@@ -936,7 +1026,8 @@ class EvidenceRecorder:
         return {
             "ok": True,
             "schema": "cabinet.evidence-retention/v1",
-            "retention_days": int(days),
+            "retention_days": int(days) if days is not None else None,
+            "retention_classes": classes or None,
             "purged": purged,
         }
 

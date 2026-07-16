@@ -6,6 +6,7 @@ became a policy decision, execution, verification, receipt, error, undo, and
 outcome across product surfaces.
 """
 
+from .lifecycle import ActLifecycle, remint_trial, valid_id_or_none
 from .policy import RepairRequest, repair_verdict
 from .recorder import (
     EvidenceError,
@@ -19,6 +20,7 @@ from .recorder import (
 from .verifier import verify_store, verify_trial
 
 __all__ = [
+    "ActLifecycle",
     "EvidenceError",
     "EvidenceRecorder",
     "RepairRequest",
@@ -27,7 +29,9 @@ __all__ = [
     "new_correlation_id",
     "new_trace_id",
     "new_trial_id",
+    "remint_trial",
     "repair_verdict",
+    "valid_id_or_none",
     "verify_store",
     "verify_trial",
 ]

@@ -55,6 +55,10 @@ STATUSES = frozenset({
     "retried", "interrupted", "recovered", "verified", "unverified",
     "undone", "duplicate", "paused", "revoked", "purged", "useful",
     "not_useful", "corrected", "diagnostic",
+    # v1.1 absence vocabulary (R-2).  Enum widening is additive: every
+    # stored v1 event keeps verifying.  Lockstep: recorder.STATUSES and
+    # framework/schemas/evidence-event.schema.json move in the same commit.
+    "missed", "skipped", "expired",
 })
 SURFACES = frozenset({
     "dashboard", "telegram", "world", "companion", "api", "core", "cli",

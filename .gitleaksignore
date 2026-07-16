@@ -22,6 +22,13 @@ d41b18a4b75744edfbdaed8227264d9394779501:framework/frontdoor/tests/test_action_e
 afad1add65d55287dd6097dd7557d2b499d0fe00:cabinet/dashboard/src/lib/world/hatch-secret-scan.test.ts:generic-api-key:17
 afad1add65d55287dd6097dd7557d2b499d0fe00:cabinet/dashboard/src/lib/world/hatch-secret-scan.test.ts:generic-api-key:20
 afad1add65d55287dd6097dd7557d2b499d0fe00:cabinet/dashboard/src/lib/world/hatch-secret-scan.test.ts:generic-api-key:70
+# Evidence Phase 1 (PR #154): test_vocabulary_v11.py BARE_JWT — a deliberately
+# fake three-segment JWT (header {alg:HS256}, payload {sub:officer-cos},
+# signature base64("Abcdefghijklmnop")) proving the writer redacts bare JWTs
+# in reserved v1.1 detail keys. Removed from HEAD in the follow-up commit
+# (built at runtime, the PR #139 pattern), but the introducing commit stays
+# flagged in full-history scans. Provably fake.
+4467476f210e52260ae1e8ac8b59231dd1b38f71:framework/evidence/tests/test_vocabulary_v11.py:jwt:44
 # Evidence Recorder hardening (PR #149): test_redaction.py Finding-17 SECRET_SHAPES
 # table + keyword-tail guard — deliberately fake fixtures (sk-abc…, ghp_ABC…,
 # aws_secret_access_key=wJalr… = AWS's own documented EXAMPLE key) proving

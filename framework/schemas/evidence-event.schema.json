@@ -23,7 +23,8 @@
       "enum": ["intent", "policy", "execution", "verification", "receipt", "error", "undo", "outcome", "transport", "ui", "feedback", "system"]
     },
     "status": {
-      "enum": ["started", "allowed", "proposed", "succeeded", "refused", "failed", "retried", "interrupted", "recovered", "verified", "unverified", "undone", "duplicate", "paused", "revoked", "purged", "useful", "not_useful", "corrected", "diagnostic"]
+      "$comment": "v1.1 vocabulary wave appended the absence statuses missed/skipped/expired (R-2): additive enum widening only, so every stored v1 event still validates. Lockstep with recorder.STATUSES and verifier.STATUSES (one ceremony commit).",
+      "enum": ["started", "allowed", "proposed", "succeeded", "refused", "failed", "retried", "interrupted", "recovered", "verified", "unverified", "undone", "duplicate", "paused", "revoked", "purged", "useful", "not_useful", "corrected", "diagnostic", "missed", "skipped", "expired"]
     },
     "surface": {
       "enum": ["dashboard", "telegram", "world", "companion", "api", "core", "cli", "system", "test", "unknown"]
@@ -41,6 +42,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["name", "version", "commit"],
+      "$comment": "version/commit may fall back to the CABINET_BUILD_VERSION/CABINET_GIT_COMMIT environment variables (the recorder's A10 seam): env-derived provenance is UNTRUSTED and never fuel-bearing. Broker-attested provenance rides the reserved detail keys model_id/effort_tier/skill_revision instead.",
       "properties": {
         "name": { "$ref": "#/$defs/id" },
         "version": { "type": "string", "maxLength": 80 },
@@ -57,7 +59,26 @@
         "duration_ms": { "type": ["number", "null"], "minimum": 0 }
       }
     },
-    "detail": { "type": "object" },
+    "detail": {
+      "type": "object",
+      "$comment": "Deliberately open (no additionalProperties:false): detail is the additive vocabulary channel, and every value passes bounded redaction before hashing. The v1.1 reserved keys below are optional producer conventions — unlisted keys remain legal, old events without them still validate. Officer visibility is separately allow-listed in the recorder projection (fail-closed drop), and the trust class of every key (producer_asserted vs independently_established) is registered in framework/evidence/classification.py.",
+      "properties": {
+        "parent_trial_id": { "$ref": "#/$defs/id", "description": "R-3 structured lineage key: trial id of the minting parent, carried in the child trial's genesis event detail. Authoritative over any optional 'evidence-parent:<id>' links[] mirror." },
+        "spawned_by": { "type": "string", "maxLength": 128, "description": "Delegation/spawn provenance: component or agent that delegated this work." },
+        "delegation_depth": { "type": "integer", "minimum": 0, "description": "Delegation chain depth from the root task (0 = root). Not officer-projected." },
+        "scheduled_by": { "type": "string", "maxLength": 128, "description": "Scheduled-trigger provenance: scheduler or service that owned the trigger." },
+        "trigger_kind": { "type": "string", "maxLength": 64, "description": "Trigger provenance kind, e.g. cron, launchd, event, manual, retry." },
+        "scheduled_for": { "type": "string", "format": "date-time", "description": "Intended execution time; pairs with the absence statuses missed/skipped/expired. Not officer-projected." },
+        "egress_approval_ref": { "type": "string", "maxLength": 128, "description": "Opaque Captain-approval reference id for an external send. Never a URL, email address, or destination handle — destination-shaped values are rewritten by redaction." },
+        "input_tokens": { "type": "integer", "minimum": 0, "description": "Cost/resource observation. Producer-asserted; excluded from the officer projection (never-a-score)." },
+        "output_tokens": { "type": "integer", "minimum": 0, "description": "Cost/resource observation. Producer-asserted; excluded from the officer projection (never-a-score)." },
+        "cost_usd": { "type": "number", "minimum": 0, "description": "Finite cost observation (a non-finite producer value is stored as the redaction marker string). Excluded from the officer projection (never-a-score)." },
+        "resource_kind": { "type": "string", "maxLength": 64, "description": "Resource category, e.g. llm, compute, storage, network. Excluded from the officer projection." },
+        "model_id": { "type": "string", "maxLength": 128, "description": "R-4: model identifier sourced from broker/runtime state, never from environment variables. Producer-asserted until broker-attested; never fuel-bearing on its own." },
+        "effort_tier": { "type": "string", "maxLength": 64, "description": "R-4: effort tier sourced from broker/runtime state, never env. Producer-asserted. Not officer-projected." },
+        "skill_revision": { "type": "string", "maxLength": 128, "description": "R-4: skill/version identifier sourced from runtime state, never env. Producer-asserted." }
+      }
+    },
     "links": { "type": "array", "items": { "type": "string", "maxLength": 512 }, "maxItems": 64 },
     "redactions": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
     "diagnostic_mode": { "type": "boolean" },
