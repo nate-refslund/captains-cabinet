@@ -1540,8 +1540,11 @@ def test_detect_and_apply_are_separate_single_command_rows():
         assert row["schedule"]["calendar"] and not row.get("disabled")
     d_cal = det["schedule"]["calendar"][0]
     a_cal = app["schedule"]["calendar"][0]
-    # same day, detect 05:30 first, apply 05:45 after
-    assert d_cal["weekday"] == a_cal["weekday"]
+    # SAME firing days (shape-agnostic: daily = no weekday key on either row,
+    # per the 2026-07-16 Captain daily-cadence ruling; a weekday pin must match
+    # on BOTH rows or apply consumes proposals the detect pass never wrote),
+    # detect 05:30 strictly before apply 05:45 within each firing day.
+    assert d_cal.get("weekday") == a_cal.get("weekday")
     assert d_cal["hour"] == a_cal["hour"]
     assert (d_cal["minute"], a_cal["minute"]) == (30, 45)
     assert "soak" in app["notes"]
