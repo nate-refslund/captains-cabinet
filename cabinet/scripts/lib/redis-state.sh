@@ -150,7 +150,12 @@ local function logical_digest(key, kind)
     local info = redis.call("ARINFO", key)
     local count = tonumber(map_get(info, "count"))
     local length = tonumber(map_get(info, "len"))
-    local next_insert = map_get(info, "next-insert-index")
+    -- ARINFO reports 0 for both a never-used insertion cursor and the
+    -- terminal/exhausted cursor. ARNEXT preserves the distinction: 0 means
+    -- the next insert uses index 0, while RESP null means no insert is
+    -- possible. Hash ARNEXT's recovery-relevant answer instead of ARINFO's
+    -- lossy projection.
+    local next_insert = redis.call("ARNEXT", key)
     if count == nil or length == nil or next_insert == nil then
       return redis.error_reply("incomplete Redis array metadata")
     end
