@@ -72,6 +72,17 @@ marker fails closed and refuses new officer boots.
   `F1_GATHER=1`, backup restore, and rollback drills are green and recorded
   before the 72-hour clock begins. The frozen regression-corpus fingerprint
   is an integrity check only; it does not prove the gather-first behavior ran.
+- The rollback drill is the exact fleet drill, not a service-count smoke test:
+  `bash cabinet/scripts/test-recovery.sh --evidence-dir <readiness-dir>/recovery`.
+  It refuses to begin unless the kill switch is active, the loaded jobs equal
+  the enabled `cabinet/services.yml` rows plus roster officers, observe-only
+  is active at `earn_up`, egress is attested, and Cabinet Doctor is green. It
+  boots out and restores only that allowlist; disabled/legacy plists are never
+  activation inputs. The evidence captures exact pre/post label and session
+  sets, the raw observe-posture hash plus kill-switch status, egress
+  runtime/status attestations, Redis result, and the Cabinet Doctor semantic
+  verdict. Run `--dry-run` first to prove every precondition without changing
+  the fleet.
 - A synthetic trigger is delivered with an observe-only receipt, its exact
   `cabinet/scripts/hooks/observe-ack.sh <id>` command succeeds, pending returns
   to zero, and replaying the same receipt is an idempotent `already_clear`
