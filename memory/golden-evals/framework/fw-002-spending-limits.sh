@@ -217,7 +217,7 @@ echo "-- Contract d: cap=0 means unlimited --"
 run "cap=0 officer under cap → allow" \
   "testofficer" '{"tool_name":"Bash","tool_input":{"command":"echo hi"}}' 0 0 ""
 run "cap=0 officer at \$1000 → still allow (unlimited)" \
-  "testofficer" '{"tool_name":"Bash","tool_input":{"command":"echo hi"}}' 1000000000 0 ""
+  "testofficer" '{"tool_name":"Bash","tool_input":{"command":"echo hi"}}' "$((1000 * 1000000))" 0 ""
 
 # --- Test group 2: simulate a fork's framework defaults by writing test caps
 # directly into the PRIVATE cache. The cache is newer than both repo yamls
@@ -273,9 +273,9 @@ run_keep_cache "cos at \$76 with 3x → allow (effective cap \$225)" \
   "cos" '{"tool_name":"Bash","tool_input":{"command":"echo hi"}}' 76000000 0 ""
 # cos at $226 → BLOCK
 run_keep_cache "cos at \$226 with 3x → block" \
-  "cos" '{"tool_name":"Bash","tool_input":{"command":"echo hi"}}' 226000000 2 "BLOCKED"
+  "cos" '{"tool_name":"Bash","tool_input":{"command":"echo hi"}}' "$((226 * 1000000))" 2 "BLOCKED"
 run_keep_cache "cos block mentions coordinator multiplier" \
-  "cos" '{"tool_name":"Bash","tool_input":{"command":"echo hi"}}' 226000000 2 "coordinator multiplier"
+  "cos" '{"tool_name":"Bash","tool_input":{"command":"echo hi"}}' "$((226 * 1000000))" 2 "coordinator multiplier"
 # Reset cos cost after cos tests so the cabinet-wide group below stays exact
 rcli HDEL "$KEY" cos_cost_micro >/dev/null 2>&1
 
@@ -300,10 +300,10 @@ telegram_whitelist_enabled	true
 telegram_whitelist_hourly_cap	10
 EOF
 touch "$CACHE"
-rcli HSET "$KEY" testofficer_cost_micro 600000000 >/dev/null 2>&1
-rcli HSET "$KEY" otherofficer_cost_micro 600000000 >/dev/null 2>&1
+rcli HSET "$KEY" testofficer_cost_micro "$((600 * 1000000))" >/dev/null 2>&1
+rcli HSET "$KEY" otherofficer_cost_micro "$((600 * 1000000))" >/dev/null 2>&1
 run_keep_cache "cabinet-wide \$1200 > \$1000 → block" \
-  "testofficer" '{"tool_name":"Bash","tool_input":{"command":"echo hi"}}' 600000000 2 "cabinet-wide"
+  "testofficer" '{"tool_name":"Bash","tool_input":{"command":"echo hi"}}' "$((600 * 1000000))" 2 "cabinet-wide"
 rcli HDEL "$KEY" otherofficer_cost_micro testofficer_cost_micro >/dev/null 2>&1
 
 echo ""
