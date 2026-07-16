@@ -68,8 +68,10 @@ marker fails closed and refuses new officer boots.
 - Overlong `reply_current` text and unsupported reactions fail with zero
   Telegram requests; arbitrary/new-message sends remain blocked.
 - The authority resolver reports `earn_up`; spend caps are non-zero.
-- Evidence projection, Cabinet Doctor, fidelity, backup restore, and rollback
-  drills are green and recorded before the 72-hour clock begins.
+- Evidence projection, Cabinet Doctor, the bounded F1 canary with
+  `F1_GATHER=1`, backup restore, and rollback drills are green and recorded
+  before the 72-hour clock begins. The frozen regression-corpus fingerprint
+  is an integrity check only; it does not prove the gather-first behavior ran.
 - The rollback drill is the exact fleet drill, not a service-count smoke test:
   `bash cabinet/scripts/test-recovery.sh --evidence-dir <readiness-dir>/recovery`.
   It refuses to begin unless the kill switch is active, the loaded jobs equal
