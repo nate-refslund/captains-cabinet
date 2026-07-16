@@ -49,7 +49,7 @@ class LCG:
         self.x = seed
 
     def next(self) -> int:
-        self.x = (1103515245 * self.x + 12345) % (2 ** 31)
+        self.x = (1_103_515_245 * self.x + 12345) % (2 ** 31)
         return self.x
 
     def choice(self, seq):

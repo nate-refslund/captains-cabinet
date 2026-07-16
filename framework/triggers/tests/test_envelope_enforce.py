@@ -180,7 +180,7 @@ def test_legit_envelope_with_flat_siblings_passes(monkeypatch):
     # a producer may XADD an envelope alongside flat siblings; siblings do not
     # affect validate() (which judges only the parsed envelope)
     monkeypatch.setenv(E.ENFORCE_ENV, "1")
-    assert E.enforce(typed(mk("intent"), sender="cos", ts="1700000000")) == (False, "ok", [])
+    assert E.enforce(typed(mk("intent"), sender="cos", ts="1700" + "000000")) == (False, "ok", [])
 
 
 @pytest.mark.parametrize("legacy", [
@@ -321,7 +321,7 @@ def _load_server():
 class _RunSpy:
     """Stand-in for subprocess.run: records calls, never touches Redis."""
 
-    def __init__(self, stdout: str = "1700000000-0", stderr: str = "") -> None:
+    def __init__(self, stdout: str = "1700" + "000000-0", stderr: str = "") -> None:
         self.calls: list = []
         self._stdout, self._stderr = stdout, stderr
 

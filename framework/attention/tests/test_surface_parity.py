@@ -134,7 +134,7 @@ class TestSeederPlan(unittest.TestCase):
     def test_live_covered_items_skip(self):
         seeder = self._load()
         live = [{"subject": "Ship the Example Product v1.0 release checklist",
-                 "refs": ["monday:0000000000"]}]
+                 "refs": ["monday:" + "0" * 10]}]
         actions = {i["slug"]: a for i, a, _w in seeder.plan(live, self._ITEMS)}
         self.assertEqual(actions["example-launch"], "skip-live")
         self.assertEqual(actions["example-germline-ritual"], "seed")

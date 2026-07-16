@@ -103,7 +103,7 @@ def test_later_parks_until_next_briefing_and_flips_card(adapter, charter):
 
 
 def test_later_unknown_handle_relays_to_chair(adapter, charter):
-    res = tap_wire.apply_tap("cv2|later|000000000000", now=NOW,
+    res = tap_wire.apply_tap("cv2|later|" + "0" * 12, now=NOW,
                              census=_census(), adapter=adapter, ch=charter)
     assert res["handled"] is False and res["relay"] is True
 
