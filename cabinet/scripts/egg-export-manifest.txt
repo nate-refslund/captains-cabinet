@@ -150,6 +150,14 @@ delete framework/tests/test_amendment_doc_lint.py
 # (gen_fixtures.py, render_tg.py, run.py, rubric.md, README.md) ships; a
 # fresh deployment captures its own baselines per the README's regen steps.
 delete cabinet/scripts/pensionist/shots
+# R168 (confirmed-gaps review, 2026-07-16): .claude/skills/brain-audit/SKILL.md
+# is THIS deployment's memory-curator maintenance runbook — it names local
+# ~/.screenpipe and ~/Obsidian/screenpipe-brain paths, a launching-deployment
+# service (memory-curator-health), and Wave-F provenance nowhere else in the
+# framework/cabinet layer. It is dev-adjacent operational tooling for this
+# specific brain/vault integration, not a framework skill any fresh Captain
+# needs — same instance-split class as instance/tools (CG-7 SCRUB) above.
+delete .claude/skills/brain-audit
 
 # --- transforms (implemented in egg-export.sh, run in this order) ------------
 # R116: shared/interfaces ledgers ship as header contract + EMPTY body
@@ -383,6 +391,9 @@ expect-absent docs/runbooks/hatch-appshell-v05-2026-07-10.md
 # LANE C null-hatch fix: the amendment-package lint is dev/instance ceremony
 # tooling (paired delete rule above) — never ships.
 expect-absent framework/tests/test_amendment_doc_lint.py
+# R168: the brain-audit skill is this deployment's memory-curator runbook
+# (paired delete rule above) — never ships.
+expect-absent .claude/skills/brain-audit
 # Wave G scripts-sweep fix pass: instance screenshot baselines never ship
 # (paired delete rule above); the harness scripts must still ride.
 expect-absent cabinet/scripts/pensionist/shots
