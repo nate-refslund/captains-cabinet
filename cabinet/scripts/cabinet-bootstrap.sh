@@ -68,7 +68,7 @@ Usage: cabinet-bootstrap.sh <cabinet-slug> --preset <preset-slug>
                             [--neon-database-url <url>]
                             [--dry-run]
 
-  --preset <slug>          Required. Preset at presets/<slug>/ (e.g. step-network)
+  --preset <slug>          Required. Preset at presets/<slug>/ (e.g. work)
   --captain-name <name>    Optional. Captain name for new cabinet's product.yml
   --peer-cabinet ...       Optional, repeatable. Format: slug:host:port:secret-ref
   --neon-database-url <url>  Optional. Neon connection string for cabinet management DB
@@ -599,8 +599,8 @@ step_generate_peer_secrets() {
       echo ""
     fi
     # FW-084: Telegram bot token wiring depends on the preset's bot_mode_default.
-    # step-network preset defaults to single_ceo: ONE bot per project.
-    # work preset defaults to multi_officer: 5 bots per project (legacy).
+    # A preset opts into single_ceo (ONE bot per project) via its preset.yml;
+    # work's default is multi_officer: 5 bots per project (legacy).
     local _preset_bot_mode="multi_officer"
     local _preset_yml="$CABINET_ROOT/presets/$PRESET_SLUG/preset.yml"
     if [ -f "$_preset_yml" ]; then
@@ -619,8 +619,8 @@ step_generate_peer_secrets() {
       echo "# TELEGRAM BOT MODE: single_ceo (one bot per project)"
       echo "# Captain action: create ONE bot per project via @BotFather"
       echo "# Pattern: TELEGRAM_<UPPER_PROJECT_SLUG>_CEO_TOKEN=<token>"
-      echo "# Example for project 'step-network':"
-      echo "#   TELEGRAM_STEP_NETWORK_CEO_TOKEN=<token from BotFather>"
+      echo "# Example for project 'acme':"
+      echo "#   TELEGRAM_ACME_CEO_TOKEN=<token from BotFather>"
       echo ""
     else
       echo "# CAPTAIN ACTION REQUIRED: Add officer Telegram bot tokens"
@@ -1178,15 +1178,9 @@ step_first_boot_heartbeat() {
 # Step 16 — CAPTAIN ACTION REQUIRED + enter active state (AC #71)
 # ---------------------------------------------------------------------------
 step_captain_action() {
-  # Preset-aware copy: step-network drops Notion message (preset deprecated Notion)
-  local is_step_network=false
-  if [ "$PRESET_SLUG" = "step-network" ]; then
-    is_step_network=true
-  fi
-
   if [ "$DRY_RUN" = "1" ]; then
     dry "Would emit preset-aware CAPTAIN ACTION REQUIRED message (AC #71)"
-    dry "  Preset: $PRESET_SLUG (step-network drops Notion items)"
+    dry "  Preset: $PRESET_SLUG"
     dry "  Would notify CoS via notify-officer.sh"
     dry "  Would mark cabinet as active (Telegram-bots-pending flag)"
     return 0
@@ -1231,13 +1225,12 @@ ${peer_env_note}
   - peers.yml: cat $cabinet_dir/instance/config/peers.yml
 "
 
-  # Preset-aware: step-network drops Notion message; other presets include it
-  local notion_note=""
-  if [ "$is_step_network" = false ]; then
-    notion_note="
+  # Every preset includes the Notion HQ DB step (the single-preset opt-out
+  # this special-cased by preset slug was dead code — that preset no longer
+  # exists under presets/ — removed 2026-07-16, see LESSONS.md).
+  local notion_note="
   5. Notion HQ DB — provision Cabinet HQ pages for this cabinet
      and fill notion section in $cabinet_dir/instance/config/product.yml"
-  fi
 
   local full_message="${common_actions}${notion_note}"
   info ""

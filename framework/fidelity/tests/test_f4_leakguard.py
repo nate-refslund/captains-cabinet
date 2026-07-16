@@ -92,7 +92,7 @@ class TestBriefExcluded:
         # post-cutoff facts -> it must NEVER appear in the output, and the
         # output must carry no free-text source field.
         brain = FakeBrain(
-            brief="LEAK_BRIEF: Ada already replied with the Husqvarna URL on "
+            brief="LEAK_BRIEF: Ada already replied with the Acme URL on "
                   "2026-06-11. Lawn is 2500 m2.",
             vault_hits=[{"path": "1-Daily/2026-05-12.md", "heading": "house",
                          "text": "new house at Eksempelvej, big lawn",
@@ -104,7 +104,7 @@ class TestBriefExcluded:
         assert "brief" not in ctx
         # no free-text prose source field smuggled in
         for v in ctx.values():
-            assert not (isinstance(v, str) and "Husqvarna URL" in v)
+            assert not (isinstance(v, str) and "Acme URL" in v)
 
 
 class TestTopicAwareRetrieval:
@@ -246,7 +246,7 @@ class TestPersonIntelDatedSectionStripped:
             "---\n"
             "\n"
             "## Notes from replies\n"
-            "- 2026-06-11: Ada agreed to the Husqvarna mower (LEAK).\n"
+            "- 2026-06-11: Ada agreed to the Acme mower (LEAK).\n"
         )
         brain = FakeBrain(person_md=dossier)
         ctx = officer_runner.gather_cutoff_context(_case(), brain=brain)
@@ -254,7 +254,7 @@ class TestPersonIntelDatedSectionStripped:
         assert "head baker & site lead" in ps
         assert "primary_email: otto@x" in ps
         assert "Notes from replies" not in ps
-        assert "Husqvarna" not in ps
+        assert "Acme" not in ps
         assert "2026-06-11" not in ps
 
     def test_static_frontmatter_strips_any_iso_dated_line(self):
@@ -282,7 +282,7 @@ class TestPersonIntelDatedSectionStripped:
             "relationship: manager\n"
             "\n"
             "## Notes from replies\n"
-            "- 2026/06/11: Ada agreed to the Husqvarna mower (SLASH LEAK).\n"
+            "- 2026/06/11: Ada agreed to the Acme mower (SLASH LEAK).\n"
             "- 20260611 compact-dated note (COMPACT LEAK).\n"
             "\n"
             "## Contact\n"
@@ -297,7 +297,7 @@ class TestPersonIntelDatedSectionStripped:
         # the role frontmatter still survives
         assert "role: head pastry chef" in out
         # the dated Notes lines are gone (slash + compact forms both stripped)
-        assert "Husqvarna" not in out
+        assert "Acme" not in out
         assert "2026/06/11" not in out
         assert "20260611" not in out
         assert "COMPACT LEAK" not in out
@@ -407,7 +407,7 @@ class TestReadNotePathValidation:
         brain = FakeBrain(notes={
             "1-Daily/2026-05-12.md":
                 "Looked at mowers for the new house lawn (~2500 m2).\n"
-                "Follow-up 2026/06/11 with Husqvarna (SLASH LEAK)\n"
+                "Follow-up 2026/06/11 with Acme (SLASH LEAK)\n"
                 "Ordered backup blade 20260611 (COMPACT LEAK)\n"
                 "Plan: pick a model and order it before the weekend.\n",
         })
@@ -434,7 +434,7 @@ class TestRealVaultHitShape:
     datetime/mtime ts must NEVER admit a hit. These drive gather_cutoff_context
     with the real shape to prove exactly that."""
 
-    BRIEF = ("BRIEF_PROSE: Ada already replied with the Husqvarna URL on "
+    BRIEF = ("BRIEF_PROSE: Ada already replied with the Acme URL on "
              "2026-06-11 (un-fenceable summary that must never reach the officer)")
 
     @staticmethod
@@ -491,7 +491,7 @@ class TestRealVaultHitShape:
         brain = FakeBrain(vault_hits=[hit], brief=self.BRIEF)
         ctx = officer_runner.gather_cutoff_context(_case(), brain=brain)
         assert "BRIEF_PROSE" not in repr(ctx)
-        assert "Husqvarna" not in repr(ctx)
+        assert "Acme" not in repr(ctx)
         assert "brief" not in ctx
 
 
