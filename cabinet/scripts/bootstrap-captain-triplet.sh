@@ -8,7 +8,7 @@
 #
 #   - captain-rule-encoder.sh appends to nothing (file created on first write)
 #   - pre-captain-dm.sh's query.sh has nothing to match against
-#   - CLAUDE.md's "Required Reading #9–11" points to missing files
+#   - CLAUDE.md's always-on ledger list ("What loads, where truth lives") points to missing files
 #
 # This script creates the files with a stable header so officers know what
 # they are and how to read them. Safe to re-run: existing files are not
