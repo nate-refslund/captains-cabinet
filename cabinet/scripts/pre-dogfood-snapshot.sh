@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Capture a verified local recovery point before reconciling a live Cabinet.
-# Secret values are never printed. The destination is mode 700.
+# This script owns checkout/secret/Postgres recovery only. Redis recovery is
+# deliberately delegated to backup.sh + restore-drill.sh so there is one
+# reviewed capture, replay, and equality-proof path. Secret values are never
+# printed. The destination is mode 700.
 
 set -euo pipefail
 
@@ -12,12 +15,15 @@ Defaults:
   --root  repository root containing this script
   --dest  ~/.cabinet-recovery/pre-dogfood-<UTC timestamp>
 
-Environment:
-  REDIS_HOST / REDIS_PORT  Redis endpoint (defaults 127.0.0.1:6379)
-
 Postgres is required when DATABASE_URL or NEON_CONNECTION_STRING is present
 in cabinet/.env. A configured database that cannot be dumped or validated
 makes the snapshot fail closed.
+
+Redis is intentionally excluded. Before reconciliation or a dogfood soak,
+run both `bash cabinet/scripts/backup.sh` and
+`bash cabinet/scripts/restore-drill.sh`; that separate green restore drill is
+the mandatory Redis T0 gate. This command's VERIFIED verdict does not cover
+Redis.
 EOF
 }
 
@@ -95,94 +101,22 @@ else
   tar -czf "$DEST/runtime-secrets.tgz" --files-from /dev/null
 fi
 
-# redis-cli --rdb requests and writes a fresh replication snapshot.
-REDIS_HOST="${REDIS_HOST:-127.0.0.1}"
-REDIS_PORT="${REDIS_PORT:-6379}"
-command -v redis-cli >/dev/null 2>&1 || fail "redis-cli is unavailable"
-redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" PING 2>/dev/null | grep -qx PONG \
-  || fail "Redis is unreachable"
+# Redis recovery intentionally has no implementation here. The daily backup
+# path owns all Redis capture and validation, including replay-unstable Streams
+# state. Duplicating a weaker path here previously allowed a fresh-connection
+# WAITAOF no-op, a raw AOF publication, and a PING+DBSIZE-only "verification"
+# to masquerade as a recovery proof. Keep the scope exclusion in the artifact
+# itself so this script's VERIFIED line cannot be read as a whole-Cabinet gate.
+cat > "$DEST/redis-excluded.txt" <<'EOF'
+Redis is intentionally excluded from this checkout/Postgres recovery snapshot.
 
-redis_rdb_ok=0
-redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" --rdb "$DEST/redis.rdb.tmp" >/dev/null &
-redis_rdb_pid=$!
-for _ in $(seq 1 100); do
-  if ! kill -0 "$redis_rdb_pid" 2>/dev/null; then
-    if wait "$redis_rdb_pid"; then redis_rdb_ok=1; fi
-    break
-  fi
-  sleep 0.1
-done
-if kill -0 "$redis_rdb_pid" 2>/dev/null; then
-  kill "$redis_rdb_pid" 2>/dev/null || true
-  wait "$redis_rdb_pid" 2>/dev/null || true
-fi
+Mandatory Redis T0 gate before reconciliation or a dogfood soak:
+  bash cabinet/scripts/backup.sh
+  bash cabinet/scripts/restore-drill.sh
 
-if [ "$redis_rdb_ok" -eq 1 ]; then
-  command -v redis-check-rdb >/dev/null 2>&1 || fail "redis-check-rdb is unavailable"
-  mv "$DEST/redis.rdb.tmp" "$DEST/redis.rdb"
-  redis-check-rdb "$DEST/redis.rdb" > "$DEST/redis-verify.txt" 2>&1 \
-    || fail "Redis snapshot validation failed"
-  printf '%s\n' rdb > "$DEST/redis-backup-mode.txt"
-else
-  rm -f "$DEST/redis.rdb.tmp"
-  # A stuck server-side BGSAVE must not make recovery impossible. When AOF is
-  # healthy, briefly pause writes, wait for the local append log to fsync, and
-  # copy the complete multipart AOF set. Reads continue during the pause.
-  command -v redis-server >/dev/null 2>&1 || fail "fresh RDB timed out and redis-server is unavailable for AOF validation"
-  appendonly="$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" --raw CONFIG GET appendonly | tail -1)"
-  aof_rewrite="$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" --raw INFO persistence | sed -n 's/^aof_rewrite_in_progress:\([0-9]*\).*/\1/p')"
-  aof_status="$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" --raw INFO persistence | sed -n 's/^aof_last_write_status:\([^[:space:]]*\).*/\1/p')"
-  [ "$appendonly" = yes ] || fail "fresh RDB timed out and Redis AOF is disabled"
-  [ "$aof_rewrite" = 0 ] || fail "fresh RDB timed out while an AOF rewrite is active"
-  [ "$aof_status" = ok ] || fail "fresh RDB timed out and AOF write status is not healthy"
-  redis_dir="$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" --raw CONFIG GET dir | tail -1)"
-  appenddirname="$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" --raw CONFIG GET appenddirname | tail -1)"
-  [ -d "$redis_dir/$appenddirname" ] || fail "Redis AOF directory is missing"
-
-  redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" CLIENT PAUSE 60000 WRITE >/dev/null \
-    || fail "could not pause Redis writes for AOF capture"
-  redis_paused=1
-  trap 'if [ "${redis_paused:-0}" = 1 ]; then redis-cli -h "${REDIS_HOST:-127.0.0.1}" -p "${REDIS_PORT:-6379}" CLIENT UNPAUSE >/dev/null 2>&1 || true; fi; rm -f "${PG_SERVICE:-}"' EXIT
-  waitaof="$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" --raw WAITAOF 1 0 5000 | head -1)"
-  if [ "$waitaof" != 1 ]; then
-    redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" CLIENT UNPAUSE >/dev/null 2>&1 || true
-    redis_paused=0
-    fail "Redis AOF did not fsync before capture"
-  fi
-  tar -C "$redis_dir" -czf "$DEST/redis-aof.tgz.tmp" "$appenddirname"
-  redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" CLIENT UNPAUSE >/dev/null \
-    || fail "Redis write pause could not be released"
-  redis_paused=0
-  mv "$DEST/redis-aof.tgz.tmp" "$DEST/redis-aof.tgz"
-
-  redis_verify_dir="$DEST/.redis-verify"
-  mkdir -p "$redis_verify_dir"
-  tar -C "$redis_verify_dir" -xzf "$DEST/redis-aof.tgz"
-  redis_verify_socket="$redis_verify_dir/redis.sock"
-  redis-server --port 0 --unixsocket "$redis_verify_socket" --unixsocketperm 700 \
-    --dir "$redis_verify_dir" --appendonly yes --appenddirname "$appenddirname" \
-    --daemonize yes --pidfile "$redis_verify_dir/redis.pid" \
-    --logfile "$redis_verify_dir/redis.log" >/dev/null \
-    || fail "disposable Redis AOF validation server failed to start"
-  redis_verify_ready=0
-  for _ in $(seq 1 100); do
-    if redis-cli -s "$redis_verify_socket" PING 2>/dev/null | grep -qx PONG; then
-      redis_verify_ready=1
-      break
-    fi
-    sleep 0.1
-  done
-  if [ "$redis_verify_ready" != 1 ]; then
-    fail "Redis AOF validation server could not load the captured data"
-  fi
-  {
-    printf 'PING PONG\n'
-    printf 'DBSIZE %s\n' "$(redis-cli -s "$redis_verify_socket" DBSIZE)"
-  } > "$DEST/redis-verify.txt"
-  redis-cli -s "$redis_verify_socket" SHUTDOWN NOSAVE >/dev/null 2>&1 || true
-  rm -rf "$redis_verify_dir"
-  printf '%s\n' aof > "$DEST/redis-backup-mode.txt"
-fi
+Only a green restore drill from the reviewed daily backup path proves Redis
+recovery. The pre-dogfood-snapshot.sh VERIFIED verdict does not cover Redis.
+EOF
 
 dotenv_value() {
   local wanted="$1" file="$2" key value

@@ -18,7 +18,7 @@ def _write_exe(path: Path, body: str) -> None:
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git unavailable")
-def test_snapshot_preserves_dirty_git_and_validates_fresh_stores(tmp_path: Path):
+def test_snapshot_preserves_dirty_git_and_validates_postgres_without_redis(tmp_path: Path):
     repo = tmp_path / "repo"
     repo.mkdir()
     subprocess.run(["git", "init", "-q", "-b", "master"], cwd=repo, check=True)
@@ -34,13 +34,11 @@ def test_snapshot_preserves_dirty_git_and_validates_fresh_stores(tmp_path: Path)
 
     fake = tmp_path / "bin"
     fake.mkdir()
+    redis_called = tmp_path / "redis-called"
     _write_exe(
         fake / "redis-cli",
-        'if [ "$5" = "PING" ]; then echo PONG; exit 0; fi\n'
-        'if [ "$5" = "--rdb" ]; then printf REDIS-FRESH > "$6"; exit 0; fi\n'
-        'exit 2\n',
+        f'printf called > "{redis_called}"\nexit 99\n',
     )
-    _write_exe(fake / "redis-check-rdb", 'grep -q REDIS-FRESH "$1"\n')
     _write_exe(
         fake / "pg_dump",
         'for arg in "$@"; do case "$arg" in --file=*) out="${arg#--file=}";; esac; done\n'
@@ -61,7 +59,14 @@ def test_snapshot_preserves_dirty_git_and_validates_fresh_stores(tmp_path: Path)
     assert (dest / "repository.bundle").is_file()
     assert (dest / "dirty-files.tgz").is_file()
     assert (dest / "runtime-secrets.tgz").is_file()
-    assert (dest / "redis.rdb").read_bytes() == b"REDIS-FRESH"
+    assert not redis_called.exists()
+    redis_exclusion = (dest / "redis-excluded.txt").read_text()
+    assert "backup.sh" in redis_exclusion
+    assert "restore-drill.sh" in redis_exclusion
+    assert "VERIFIED verdict does not cover Redis" in redis_exclusion
+    assert not (dest / "redis.rdb").exists()
+    assert not (dest / "redis-aof.tgz").exists()
+    assert not (dest / "redis-backup-mode.txt").exists()
     assert (dest / "postgres.dump").read_bytes() == b"POSTGRES-FRESH"
     assert (dest / "worktree-before.txt").read_bytes() == (dest / "worktree-after.txt").read_bytes()
     assert (dest.stat().st_mode & 0o077) == 0

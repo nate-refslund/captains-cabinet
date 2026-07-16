@@ -79,7 +79,10 @@ fi
 # Parse the reviewed officer subset of the base env.  Never source the shared
 # store: it also contains dashboard/session/verdict authority credentials.
 if [ -f "$CABINET_ROOT/cabinet/.env" ]; then
-  officer_env_load_file "$CABINET_ROOT/cabinet/.env" "$OFFICER"
+  if ! officer_env_load_file "$CABINET_ROOT/cabinet/.env" "$OFFICER"; then
+    echo "start-officer.sh: base officer environment rejected — refusing officer boot" >&2
+    exit 78
+  fi
 fi
 
 # Legacy Linux/Docker boots receive the same allowlisting proxy environment.
@@ -107,7 +110,10 @@ if [ -f "$EGRESS_GUARD" ] && [ "${CABINET_TEST_DRY_RUN:-0}" != "1" ]; then
   IFS=$'\t' read -r EGRESS_ENFORCE EGRESS_ENV_FILE <<< "$EGRESS_RUNTIME"
   if [ "$EGRESS_ENFORCE" = "1" ]; then
     if [ -f "$EGRESS_ENV_FILE" ]; then
-      officer_env_load_file "$EGRESS_ENV_FILE" "$OFFICER"
+      if ! officer_env_load_file "$EGRESS_ENV_FILE" "$OFFICER"; then
+        echo "start-officer.sh: enforced egress environment rejected — refusing officer boot" >&2
+        exit 78
+      fi
     elif [ "${CABINET_TEST_DRY_RUN:-0}" != "1" ]; then
       echo "start-officer.sh: egress is enforced but proxy env is absent — refusing officer boot" >&2
       exit 78
@@ -147,7 +153,10 @@ else
   fi
 fi
 if [ -n "$ACTIVE_SLUG" ] && [ -f "$CABINET_ROOT/cabinet/env/${ACTIVE_SLUG}.env" ]; then
-  officer_env_load_file "$CABINET_ROOT/cabinet/env/${ACTIVE_SLUG}.env" "$OFFICER" "$ACTIVE_SLUG"
+  if ! officer_env_load_file "$CABINET_ROOT/cabinet/env/${ACTIVE_SLUG}.env" "$OFFICER" "$ACTIVE_SLUG"; then
+    echo "start-officer.sh: project officer environment rejected — refusing officer boot" >&2
+    exit 78
+  fi
 fi
 
 # ---------------------------------------------------------------
