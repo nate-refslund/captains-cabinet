@@ -140,11 +140,11 @@ awk -v t="$TREND" 'BEGIN { exit !(t > 0) }' \
 DIGEST_JSON="$(python3 "$ORG" digest publish-sanitized \
   --week-start 2026-05-18 \
   --title "Runtime learning digest" \
-  --content "Sensed is legacy. Contact captain@example.com. Secret sk-testsecret123. See https://example.com/private." \
+  --content "Acme is legacy. Contact captain@example.com. Secret sk-testsecret123. See https://example.com/private." \
   --output-dir "$DIGEST_DIR")"
 DIGEST_PATH="$(printf '%s' "$DIGEST_JSON" | json_value '.path')"
 [ -f "$DIGEST_PATH" ] && pass "sanitized digest file published" || fail "digest file missing"
-if grep -qiE 'Sensed|captain@example.com|sk-testsecret123|https://example.com' "$DIGEST_PATH"; then
+if grep -qiE 'Acme|captain@example.com|sk-testsecret123|https://example.com' "$DIGEST_PATH"; then
   fail "digest leaked unsanitized sensitive or legacy product content"
 else
   pass "digest redaction removed legacy product/private details"
