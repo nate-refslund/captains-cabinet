@@ -4,8 +4,14 @@
      runtime state with ZERO backups). 03:00 local it runs
      cabinet/scripts/backup.sh --retention-days 14, which snapshots
      shared/interfaces/ + instance/ + memory/ (topology-preserved rsync), a
-     fresh verified Redis RDB or fsynced/restore-tested AOF fallback, and the configured Postgres work store into
+     fresh verified Redis RDB or AOF-converted RDB fallback, and the configured Postgres work store into
      ~/Cabinet-Backups/<YYYY-MM-DD>/ and prunes beyond 14 days.
+     Both Redis paths use a type-aware SHA-256 logical-state v3 proof: durable
+     state is exact, TTL keys may disappear only after their absolute deadline,
+     and unsupported value types fail closed. Its blocking source fingerprint
+     has a 55-second deadline inside the 60-second write pause and aborts the
+     backup if the keyspace outgrows that window. Legacy v2 snapshots retain their
+     strict DUMP comparison and require a fresh v3 after any mismatch.
      Verify restorability any time with cabinet/scripts/restore-drill.sh
      (temp-dir only — never touches live state).
 
@@ -25,7 +31,14 @@
      rsync of ~/Cabinet-Backups to the UpCloud CPH box over Tailscale (the
      8CPU/16GB node already on the tailnet). Ops wires it on your word.
      Redis AOF is the live durability layer; backup.sh prefers a bounded fresh
-     RDB and uses only a paused, fsynced, disposable-restore-tested AOF fallback.
+     RDB. Under CLIENT PAUSE WRITE, the fallback waits for a bounded global AOF
+     drain (buffer length 0, pending bio fsync 0, last write OK, no rewrite),
+     without claiming global fsync. It replays the copy in a disposable Redis,
+     repairs known Streams operational omissions from an identifier-only
+     manifest, exactly re-proves v3 logical state, converts the result to RDB,
+     and exactly re-proves that RDB in a second disposable before publishing it
+     with aof-converted provenance. The exact v3 logical-state proof, not the
+     drain, is the authoritative completeness gate.
 
      No secrets in this file. KNOWN LIMIT: a 03:00 slot missed during sleep
      coalesces to one fire on wake; the per-day dated dir makes double-fires

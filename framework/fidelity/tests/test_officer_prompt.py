@@ -200,7 +200,7 @@ def _mower_case():
         "person": "Bo", "channel": "msgraph", "language": "da",
         "reply_ts": "2026-05-06T12:00:00+00:00", "subject": "mower",
         "n_prior": 5, "thread_before": msgs,
-        "real_reply": "Her er en Husqvarna-mejetaerskerlink HEMMELIGT-SVAR.",
+        "real_reply": "Her er en Acme-mejetaerskerlink HEMMELIGT-SVAR.",
     })
 
 
@@ -225,7 +225,7 @@ class TestIntentAndContext:
         out = officer_prompt.intent_and_context(c)
         joined = out["reconstructed_intent"] + " " + out["mission_or_goal"]
         assert "HEMMELIGT-SVAR" not in joined
-        assert "Husqvarna" not in joined
+        assert "Acme" not in joined
 
     def test_only_last_five_messages(self):
         """Derived from the LAST <=5 messages of thread_before ONLY — an

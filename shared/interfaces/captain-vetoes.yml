@@ -1,26 +1,30 @@
 # captain-vetoes.yml — THE CAPTAIN'S VETO REGISTRY (TI-4)
 # =============================================================================
-# CAPTAIN-AUTHORED. Every entry below is Nate's, verbatim, and nothing else may
-# write here as prose — the registry API (framework/frontdoor/veto_registry.py)
-# appends structured rows on his explicit `never:` / `veto confirm` from the
-# CAPTAIN_TELEGRAM_ID-gated channel, and lifts them on his `lift veto-NNN`.
+# CAPTAIN-AUTHORED. Every entry below is the Captain's, verbatim, and nothing
+# else may write here as prose — the registry API
+# (framework/frontdoor/veto_registry.py) appends structured rows on the
+# Captain's explicit `never:` / `veto confirm` from the
+# CAPTAIN_TELEGRAM_ID-gated channel, and lifts them on the Captain's
+# `lift veto-NNN`.
 #
 # CONTRACT (do not weaken):
 #   * germline-protected — the pre-tool-use hook write-protects this path; no
-#     officer or loop may edit it. Only Nate (via the gated verbs) or a Captain
-#     germline apply changes it.
-#   * verbatim — every row keeps Nate's exact words in `verbatim`; the enforced
-#     `scope` is derived from DETERMINISTIC fields (action_type + board /
-#     content-hash family), NEVER from a paraphrase or an LLM slug [RT-A10].
+#     officer or loop may edit it. Only the Captain (via the gated verbs) or
+#     a germline apply changes it.
+#   * verbatim — every row keeps the Captain's exact words in `verbatim`; the
+#     enforced `scope` is derived from DETERMINISTIC fields (action_type +
+#     board / content-hash family), NEVER from a paraphrase or an LLM slug
+#     [RT-A10].
 #   * monotonic + lift-only — ids never repeat and rows are never deleted; a
 #     retired veto is marked with `lifted_at`, its history preserved.
-#   * no expiry — a veto stands until Nate lifts it. Silence never clears it.
+#   * no expiry — a veto stands until the Captain lifts it. Silence never
+#     clears it.
 #
 # A `never:` on an act-first kind DEMOTES the whole (actor, lane, action_type)
 # cell out of act_with_undo — it does not merely filter one card [RT-A10].
 #
 # Starts empty (DARK build): the machinery is live, the registry fills only when
-# Nate uses it.
+# the Captain uses it.
 # =============================================================================
 version: 1
 next_id: 1

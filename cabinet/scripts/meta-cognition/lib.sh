@@ -16,7 +16,7 @@
 #      The hard SELECTOR for "concrete memories/facts EXEMPT". Returns 0 (true,
 #      LEAVE AS IS — do NOT generalize/collapse) when the candidate text matches
 #      the LEAVE-AS-IS allow-list: safety-boundaries, authority-matrix,
-#      NATE_EMAILS, board/model IDs, SECRET_PATTERNS, and concrete identifiers
+#      CAPTAIN_EMAILS, board/model IDs, SECRET_PATTERNS, and concrete identifiers
 #      (URLs, tokens, IDs, dates, paths). Returns 1 (false) for genuine
 #      behavioral/governance/execution rules that ARE candidates for
 #      collapse-to-principle.
@@ -55,7 +55,7 @@ MC_REDIS_PORT="${REDIS_PORT:-6379}"
 # "leave as is") when it is a concrete fact, identifier, or a safety/authority
 # germline reference — never a generalizable behavior. This is the selector that
 # stops the harvester from collapsing genuine facts (board IDs, model IDs,
-# NATE_EMAILS, secrets) into a lossy "principle". Case-insensitive substring +
+# CAPTAIN_EMAILS, secrets) into a lossy "principle". Case-insensitive substring +
 # regex match. Conservative by design: when in doubt, LEAVE AS IS.
 #
 # Usage: mc_is_leave_as_is "<candidate text>"  → exit 0 (leave as is) / 1 (eligible)
@@ -74,7 +74,7 @@ low = text.lower()
 NAMED = [
     "safety-boundaries", "safety_boundaries", "safety boundaries",
     "authority-matrix", "authority_matrix", "authority matrix",
-    "nate_emails", "nate emails",
+    "captain_emails", "captain emails",
     "secret_patterns", "secret pattern",
     "killswitch", "kill switch",
     ".claude/rules", "framework/policies", "framework/authority",

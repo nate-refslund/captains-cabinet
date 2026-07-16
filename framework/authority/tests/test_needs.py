@@ -30,6 +30,13 @@ def _clean_env(monkeypatch, tmp_path):
     # Most tests exercise the WIRED seam; the no-op test clears this.
     monkeypatch.setenv("CABINET_NEEDS_WIRED", "1")
     monkeypatch.setenv("CABINET_EVENT_LOG_DIR", str(tmp_path / "events"))
+    # The lifecycle assertions use the fixed NOW timeline below. Freeze
+    # implicit writes to that same clock so the 30/90-day boundary tests do
+    # not decay as the real calendar advances.
+    real_now = N._now
+    monkeypatch.setattr(
+        N, "_now", lambda value=None: real_now(NOW if value is None else value)
+    )
 
 
 def file_need(root, **over):

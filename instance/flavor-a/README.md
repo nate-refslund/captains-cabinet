@@ -122,3 +122,31 @@ personal content and is left as-is, consistent with how every sibling
 …) is handled today: tracked in this private repo, excluded only at
 egg-export time (R120-class rules) — not converted to a gitignored+
 `.example` pair as a one-off for this file alone.
+
+## Mac install + permissions (only if you opt in)
+
+The shipped `cabinet/scripts/{setup-mac,install-mac-tools,grant-mac-
+permissions}.sh` cover the framework-required tool stack (cua-driver,
+chrome-devtools-mcp, Playwright, Stagehand) and are excluded from this
+note — they run on every deployment. This adapter's own dependency,
+`screenpipe` (the 24/7 screen+audio capture layer at
+[screenpi.pe](https://screenpi.pe)), is confined here instead (R168,
+2026-07-16 confirmed-gaps pass) so the shipped scripts stay silent about
+a specific personal-productivity brand a fresh Captain has never chosen:
+
+1. Install: `brew install screenpipe` (or download from
+   [screenpi.pe](https://screenpi.pe) if you don't use Homebrew), then
+   `brew services start screenpipe` and complete its own setup wizard.
+2. Grant macOS TCC permissions to the `screenpipe` process (System
+   Settings → Privacy & Security):
+   - **Screen Recording** — screen/window capture.
+   - **Accessibility** — window/app context.
+   - **Microphone** — audio transcription.
+   - **Input Monitoring** (optional) — keyboard/clipboard timeline.
+3. Verify it's running: `pgrep -f screenpipe`.
+4. Wire it in: add the two `adapter:`/`dispatch:` lines from the top of
+   this file to `instance/config/sources.yml` (see "Contract" above).
+
+Do this BEFORE or AFTER the framework-required Mac setup — the two are
+independent; nothing in `setup-mac.sh`'s default (no `--with-sensors`)
+path touches screenpipe at all.

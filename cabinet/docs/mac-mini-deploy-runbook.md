@@ -40,7 +40,7 @@ This document is opinionated and idempotent — every step can be re-run safely.
 ```bash
 mkdir -p ~/work
 cd ~/work
-git clone https://github.com/nate-refslund/captains-cabinet.git
+git clone <your-fork-url> captains-cabinet
 cd captains-cabinet
 git checkout claude/convergence-v2    # OR master once this branch is merged
 ```
@@ -211,15 +211,23 @@ verified recovery point. This does not stash, reset, fetch, stop services, or
 print secrets:
 
 ```bash
-bash cabinet/scripts/pre-dogfood-snapshot.sh --root /Users/nate/captains-cabinet
+bash cabinet/scripts/pre-dogfood-snapshot.sh --root /Users/<captain>/captains-cabinet
 ```
 
 The mode-700 destination contains a verified all-refs Git bundle, exact dirty
-files and patches, a separate local-only runtime-secret archive, and freshly
-validated Redis and Postgres snapshots. `worktree-before.txt` must be identical
-to `worktree-after.txt`; otherwise the command fails and the capture must be
-repeated from a quiescent state. Never attach `runtime-secrets.tgz` to the
-shareable dogfood evidence bundle.
+files and patches, a separate local-only runtime-secret archive, and a freshly
+validated Postgres snapshot when configured. Redis is deliberately excluded:
+the script records that exclusion instead of duplicating a weaker capture path.
+Before reconciliation or dogfood, run the separate mandatory Redis T0 gate:
+
+```bash
+bash cabinet/scripts/backup.sh
+bash cabinet/scripts/restore-drill.sh
+```
+
+`worktree-before.txt` must be identical to `worktree-after.txt`; otherwise the
+checkout/Postgres capture fails and must be repeated from a quiescent state.
+Never attach `runtime-secrets.tgz` to the shareable dogfood evidence bundle.
 
 ```bash
 CABINET_ROOT="$(pwd)" bash cabinet/scripts/deploy-mac.sh --all
@@ -378,7 +386,7 @@ tmux capture-pane -t officer-bakery-ceo -p | grep -i scheduled
 Officers run unattended with full host shell access, so they self-install
 plugins/MCPs via the `claude plugin` / `claude mcp` CLI. The only things they
 *can't* do alone are inherently-interactive auth prompts — `gh auth login`
-(needed once for private plugin marketplaces like STEP-Network/dev-tasks),
+(needed once for private plugin marketplaces, e.g. a Monday-integration plugin),
 `claude /login` if you're not using an API key, OAuth device-code pastes.
 
 Do those once by attaching to a live officer session and typing as the user:
@@ -431,7 +439,7 @@ The Cabinet's durable state lives in three places:
 |---|---|---|
 | **Postgres (Neon)** | event ledger, role entities, work graph, OVI snapshots | Neon's built-in continuous backup (free tier: 7 days PITR) |
 | **Filesystem** | `shared/interfaces/captain-*.md`, `instance/roles/active/*.yml`, `memory/skills/evolved/*.md`, `memory/tier3/experience-records/` (canonical store since 2026-07-04 — both `.jsonl` and `.md` records) | Daily `rsync` to local NAS OR S3 |
-| **Redis** | Heartbeat, cost counters, trigger streams | Bounded fresh RDB; healthy multipart AOF fallback is fsynced and restore-tested if BGSAVE is stuck |
+| **Redis** | Heartbeat, cost counters, trigger streams | Bounded fresh RDB; healthy multipart AOF fallback is drained, replayed, repaired, exactly proved, converted to RDB, and exactly re-proved if BGSAVE is stuck |
 
 **The backup job is manifest-owned (lane-ops 2026-07-04)** — do NOT hand-roll
 a cron script (the old `~/bin/cabinet-backup.sh` rsync snippet that used to
@@ -439,12 +447,31 @@ live here predates the fleet manifest and described none of the real
 machinery). The pieces:
 
 - **`cabinet/scripts/backup.sh`** — the actual backup (topology-preserved filesystem artifacts +
-  a bounded fresh Redis RDB transfer, with a write-paused/fsynced and disposable-restore-tested AOF fallback + automatic `pg_dump` whenever `DATABASE_URL` or
+  a bounded fresh Redis RDB transfer, with a write-paused, globally drained,
+  replayed, repaired, converted-to-RDB AOF fallback + automatic `pg_dump` whenever `DATABASE_URL` or
   `NEON_CONNECTION_STRING` is configured; use `--no-pg` only deliberately). Scheduled by
   the `backup` row in `cabinet/services.yml` (daily 03:00 local,
   `--retention-days 14`, destination `~/Cabinet-Backups`; the row's `expected:`
   floor puts it under outcome-watchdog no-silent-cron coverage). Render/load
   via `cabinet/scripts/generate-plists.py`.
+  Under `CLIENT PAUSE WRITE`, global AOF drain means a bounded wait for
+  `aof_buffer_length=0`, `aof_pending_bio_fsync=0`, last write OK, and no AOF
+  rewrite; it is not described as a global-fsync guarantee. The AOF copy is
+  replayed in a disposable Redis, known Streams operational omissions are
+  repaired from an identifier-only manifest, and exact v3 state is proved.
+  The result is converted to RDB, booted in a second disposable Redis, and
+  exactly re-proved before publication as an RDB with `aof-converted`
+  provenance. The exact v3 logical-state proof—not the drain—is the
+  authoritative completeness gate.
+  Each Redis capture includes `redis-state.txt`: the v3 proof hashes canonical,
+  type-aware logical state with SHA-256, separates durable keys from keys with
+  absolute expiry deadlines, and allows a volatile key to be absent after its
+  recorded deadline. Changed, unexpected, prematurely missing, or unsupported
+  values fail closed. Its blocking source fingerprint has a 55-second internal
+  deadline inside the 60-second write pause, so keyspace growth fails the
+  backup clearly instead of overrunning the capture window. Restore drills
+  retain strict compatibility with legacy
+  v2 snapshots without weakening their exact comparison.
 - **`cabinet/scripts/restore-drill.sh`** — prove a snapshot actually restores
   (newest snapshot → full restore into a throwaway temp dir → artifact
   verification; read-only against the backup, deliberately no `--apply`). A

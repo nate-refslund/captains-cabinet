@@ -21,7 +21,11 @@ import sys
 from pathlib import Path
 
 
-_KEY_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
+# POSIX/shell environment names may contain either case.  The reviewed
+# allowlists below decide what reaches an officer; syntax validation must not
+# reject the lowercase proxy aliases that egress-guard deliberately emits for
+# clients that ignore the uppercase variants.
+_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 # Non-credential runtime settings every officer may receive. Credential names
 # live in MCP_ENV_ALLOWLIST below and are selected only when the officer's

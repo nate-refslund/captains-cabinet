@@ -316,9 +316,10 @@ Only for a **personal-flavor** deployment (the Captain's own clone-org on
 their daily machine, or a Mini deliberately bound to the Captain's estate).
 Never required; the core org runs entirely without it.
 
-1. Install the personal stack: `brew install screenpipe`,
-   `brew services start screenpipe`, complete its setup wizard (configure
-   exclusions: password managers, banking, personal email; set retention).
+1. Install the personal stack per `instance/flavor-a/README.md`'s "Mac
+   install + permissions" section (brew install + its setup wizard —
+   configure exclusions: password managers, banking, personal email; set
+   retention).
 2. Bind the source seam: copy `instance/config/sources.yml.example` to
    `instance/config/sources.yml` and set `adapter:` to the Flavor-A adapter
    under `instance/flavor-a/` (see the example file's contract — the module

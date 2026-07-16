@@ -737,7 +737,7 @@ def main() -> int:
 
     def deliver(text: str, quoted: str = "", binder_note: str = "") -> None:
         """Idle-gate, then inject the Captain DM into the officer pane as a turn.
-        `quoted` is the message Nate REPLIED TO (Telegram reply-threading) — prefixed
+        `quoted` is the message the Captain REPLIED TO (Telegram reply-threading) — prefixed
         so the officer sees the exact draft / proposal / message being answered, with
         no need to ask 'which one'. `binder_note` (F0.5) is the mechanical binder
         wire's outcome — when present, recording+delivery ALREADY happened; the
@@ -851,8 +851,8 @@ def main() -> int:
                 frm = str((msg.get("from") or {}).get("id", ""))
                 text = (msg.get("text") or "").strip()
                 caption = (msg.get("caption") or "").strip()
-                # Telegram reply-threading: if Nate REPLIED TO a message (a draft, a
-                # proposal card, a briefing line), capture what he's answering so the
+                # Telegram reply-threading: if the Captain REPLIED TO a message (a draft, a
+                # proposal card, a briefing line), capture what they're answering so the
                 # officer has the exact context without having to ask 'which one'.
                 rt = msg.get("reply_to_message") or {}
                 # FULL quoted text for the binder (2026-07-03): the ·pid· marker sits at

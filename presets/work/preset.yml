@@ -53,7 +53,7 @@ workspace_mount: /workspace/product
 # work preset preserves the legacy multi_officer setup (predates the
 # single_ceo collapse in AC #62); other presets may use single_ceo.
 # Override per-project in instance/config/projects/<slug>.yml `telegram.bot_mode`.
-telegram_bot_mode: multi_officer  # multi_officer (legacy) | single_ceo (step-network default)
+telegram_bot_mode: multi_officer  # multi_officer (legacy) | single_ceo (one bot per project)
 
 # Onboarding defaults — consumed by framework/onboarding
 # (plan.load_preset_defaults). The framework hardcodes no plugin/MCP names:

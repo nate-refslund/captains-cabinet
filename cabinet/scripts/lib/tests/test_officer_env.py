@@ -12,6 +12,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[4]
 PARSER = ROOT / "cabinet" / "scripts" / "lib" / "officer-env.py"
 SHELL_LIB = ROOT / "cabinet" / "scripts" / "lib" / "officer-env.sh"
+LEGACY_LAUNCHER = ROOT / "cabinet" / "scripts" / "start-officer.sh"
 
 
 def _module():
@@ -131,6 +132,115 @@ def test_credentials_follow_declared_mcp_scope(tmp_path: Path):
     assert "VERCEL_TOKEN" not in rendered
     assert "MAKE_MCP_TOKEN" not in rendered
     assert "MONDAY_API_TOKEN" not in rendered
+
+
+def test_lowercase_proxy_aliases_from_egress_guard_are_projected(tmp_path: Path):
+    env = tmp_path / "proxy.env"
+    env.write_text(
+        "HTTP_PROXY=http://127.0.0.1:8899\n"
+        "HTTPS_PROXY=http://127.0.0.1:8899\n"
+        "http_proxy=http://127.0.0.1:8899\n"
+        "https_proxy=http://127.0.0.1:8899\n"
+        "NO_PROXY=localhost,127.0.0.1,::1\n"
+        "no_proxy=localhost,127.0.0.1,::1\n"
+    )
+
+    rendered = _module().render(env, "cto", scope_file=_scope(tmp_path))
+
+    for name in (
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "NO_PROXY",
+        "no_proxy",
+    ):
+        assert f"export {name}=" in rendered
+
+
+@pytest.mark.parametrize("name", ("9BAD", "bad-name", "bad.name", "bad name"))
+def test_environment_name_still_rejects_non_posix_syntax(tmp_path: Path, name: str):
+    env = tmp_path / ".env"
+    env.write_text(f"{name}=value\n")
+
+    with pytest.raises(ValueError, match="invalid environment name"):
+        _module().parse_dotenv(env)
+
+
+def test_lowercase_unknown_name_parses_but_is_not_projected(tmp_path: Path):
+    env = tmp_path / ".env"
+    env.write_text("dashboard_password=must-not-project\nhttp_proxy=http://127.0.0.1:8899\n")
+
+    rendered = _module().render(env, "cto", scope_file=_scope(tmp_path))
+
+    assert "dashboard_password" not in rendered
+    assert "must-not-project" not in rendered
+    assert "export http_proxy=" in rendered
+
+
+def test_lowercase_proxy_aliases_cross_eval_and_clean_env_boundary(tmp_path: Path):
+    root = tmp_path / "root"
+    (root / "cabinet").mkdir(parents=True)
+    (root / "cabinet/mcp-scope.yml").write_text(_scope(tmp_path).read_text())
+    env = tmp_path / "proxy.env"
+    env.write_text(
+        "HTTP_PROXY=http://127.0.0.1:8899\n"
+        "http_proxy=http://127.0.0.1:8899\n"
+        "NO_PROXY=localhost,127.0.0.1,::1\n"
+        "no_proxy=localhost,127.0.0.1,::1\n"
+    )
+    command = f"""
+      set -e
+      source {SHELL_LIB!s}
+      export CABINET_ROOT={root!s}
+      officer_env_load_file {env!s} cto
+      prefix="$(officer_env_command_prefix)"
+      eval "$prefix /usr/bin/env"
+    """
+
+    result = subprocess.run(
+        ["/bin/bash", "-c", command], text=True, capture_output=True, check=False)
+
+    assert result.returncode == 0, result.stderr
+    child = dict(
+        line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+    assert child["HTTP_PROXY"] == "http://127.0.0.1:8899"
+    assert child["http_proxy"] == "http://127.0.0.1:8899"
+    assert child["NO_PROXY"] == "localhost,127.0.0.1,::1"
+    assert child["no_proxy"] == "localhost,127.0.0.1,::1"
+
+
+def test_legacy_launcher_rejects_malformed_enforced_egress_env(tmp_path: Path):
+    root = tmp_path / "root"
+    scripts = root / "cabinet" / "scripts"
+    scripts.mkdir(parents=True)
+    (root / "cabinet/mcp-scope.yml").write_text(
+        "agents:\n  cto:\n    mcps: []\nuniversal: []\n")
+    proxy_env = tmp_path / "proxy.env"
+    proxy_env.write_text("bad-name=value\n")
+    guard = scripts / "egress-guard.sh"
+    guard.write_text(
+        "#!/bin/bash\n"
+        "case \"$1\" in\n"
+        "  apply) exit 0 ;;\n"
+        f"  runtime-state) printf '1\\t%s\\n' {str(proxy_env)!r} ;;\n"
+        "  *) exit 64 ;;\n"
+        "esac\n"
+    )
+    guard.chmod(0o755)
+
+    result = subprocess.run(
+        ["/bin/bash", str(LEGACY_LAUNCHER), "cto"],
+        env={**os.environ, "CABINET_ROOT": str(root)},
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=20,
+    )
+
+    assert result.returncode == 78
+    assert "enforced egress environment rejected" in result.stderr
+    assert "invalid environment name" in result.stderr
 
 
 def test_cua_backend_credentials_and_launcher_telegram_fallbacks_project(tmp_path: Path):

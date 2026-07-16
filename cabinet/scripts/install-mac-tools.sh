@@ -7,15 +7,18 @@
 # cabinet/scripts/null-hatch.sh is the CI-wired proof that core boots
 # without it. Run standalone anytime to add the layer later.
 #
-# What it installs:
-#   1. screenpipe (brew)            — 24/7 screen + audio memory layer
-#   2. chrome-devtools-mcp (npm)    — authenticated browser automation
-#   3. @playwright/mcp (npm)        — deterministic E2E browser testing
-#   4. @browserbasehq/stagehand     — AI-native semantic browser actions
-#   5. trycua/cua-driver            — native macOS GUI control (MCP)
+# What it installs (framework-required tools; run on every --with-sensors
+# opt-in regardless of which OPTIONAL personal-source adapter, if any, you
+# also use — see instance/flavor-a/README.md's own "Mac install +
+# permissions" section for that adapter's separate install step, R168
+# 2026-07-16):
+#   1. chrome-devtools-mcp (npm)    — authenticated browser automation
+#   2. @playwright/mcp (npm)        — deterministic E2E browser testing
+#   3. @browserbasehq/stagehand     — AI-native semantic browser actions
+#   4. trycua/cua-driver            — native macOS GUI control (MCP)
 #
 # After install, the operator still needs to:
-#   - Grant macOS Screen Recording / Accessibility / Mic permissions
+#   - Grant macOS Screen Recording / Accessibility permissions
 #     (use cabinet/scripts/grant-mac-permissions.sh)
 #   - Launch the dedicated Cabinet Chrome profile
 #     (use cabinet/scripts/start-cabinet-chrome.sh)
@@ -39,23 +42,8 @@ echo "  Captain-layer tools installer"
 echo "==========================================="
 echo ""
 
-# 1) screenpipe — Mac screen+audio memory layer
-echo "[1/5] screenpipe"
-if command -v screenpipe >/dev/null 2>&1; then
-  ok "screenpipe already installed ($(command -v screenpipe))"
-elif command -v brew >/dev/null 2>&1; then
-  if brew install screenpipe 2>&1 | tail -3; then
-    ok "screenpipe installed via brew"
-  else
-    warn "screenpipe install via brew failed — try: brew install screenpipe"
-  fi
-else
-  warn "Homebrew not found; install screenpipe manually from https://screenpi.pe"
-fi
-echo ""
-
-# 2) chrome-devtools-mcp — authenticated browser via CDP
-echo "[2/5] chrome-devtools-mcp"
+# 1) chrome-devtools-mcp — authenticated browser via CDP
+echo "[1/4] chrome-devtools-mcp"
 if npm list -g chrome-devtools-mcp >/dev/null 2>&1; then
   ok "chrome-devtools-mcp already installed globally"
 else
@@ -69,8 +57,8 @@ else
 fi
 echo ""
 
-# 3) Playwright MCP — deterministic browser testing
-echo "[3/5] @playwright/mcp"
+# 2) Playwright MCP — deterministic browser testing
+echo "[2/4] @playwright/mcp"
 if npx -y @playwright/mcp@latest --help >/dev/null 2>&1; then
   ok "@playwright/mcp cache warmed"
 else
@@ -86,9 +74,9 @@ if command -v npx >/dev/null 2>&1; then
 fi
 echo ""
 
-# 4) Stagehand v3 — AI-native semantic actions on top of CDP
+# 3) Stagehand v3 — AI-native semantic actions on top of CDP
 # NOT an MCP. Officers invoke from Node code when they need act/extract.
-echo "[4/5] @browserbasehq/stagehand (lib, not MCP)"
+echo "[3/4] @browserbasehq/stagehand (lib, not MCP)"
 if command -v npm >/dev/null 2>&1; then
   if npm install -g @browserbasehq/stagehand >/dev/null 2>&1; then
     ok "Stagehand v3 installed globally"
@@ -98,8 +86,8 @@ if command -v npm >/dev/null 2>&1; then
 fi
 echo ""
 
-# 5) trycua/cua-driver — native macOS GUI control via MCP
-echo "[5/5] cua-driver"
+# 4) trycua/cua-driver — native macOS GUI control via MCP
+echo "[4/4] cua-driver"
 if command -v cua-driver >/dev/null 2>&1; then
   ok "cua-driver already installed ($(command -v cua-driver))"
 else
@@ -134,4 +122,7 @@ echo "         (opens System Settings; Captain clicks Allow)"
 echo ""
 echo "  Then: bash cabinet/scripts/start-cabinet-chrome.sh"
 echo "         (launches dedicated Chrome profile; log into web apps ONCE)"
+echo ""
+echo "  Using the optional personal-source adapter? Its install step is"
+echo "  separate — see instance/flavor-a/README.md."
 echo "==========================================="

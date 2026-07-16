@@ -219,19 +219,19 @@ def get_adapter(project_config: dict[str, Any]) -> TaskAdapter:
         from cabinet.scripts.task_adapters.github_issues import GitHubIssuesAdapter
         return GitHubIssuesAdapter(tasks_block)
     if system == "monday":
-        # The cabinet's own Monday adapter was removed in favor of the
-        # STEP-Network/dev-tasks Claude plugin (44 Monday MCP tools + 15
-        # workflow skills). Officers reach Monday via the plugin's
-        # mcp__dev-tasks tools, NOT through this adapter interface.
+        # The cabinet's own Monday adapter was removed in favor of a
+        # dedicated Monday Claude plugin (dev-tasks-style: dozens of Monday
+        # MCP tools + workflow skills). Officers reach Monday via the
+        # plugin's mcp__dev-tasks tools, NOT through this adapter interface.
         #
-        # Configure dev-tasks via instance/config/extensions.yml +
-        # .claude/project-config.json. For non-STEP Monday integrations,
-        # restore the old adapter: `git show <pre-plugin-commit>:cabinet/scripts/task_adapters/monday.py`
+        # Configure the plugin via instance/config/extensions.yml +
+        # .claude/project-config.json. To restore the built-in adapter
+        # instead: `git show <pre-plugin-commit>:cabinet/scripts/task_adapters/monday.py`
         raise ValueError(
-            "Monday adapter removed — use STEP-Network/dev-tasks plugin. "
-            "Set tasks.system to 'github-issues' (cabinet default) or "
-            "'linear', and declare dev-tasks in instance/config/extensions.yml "
-            "+ .claude/project-config.json."
+            "Monday adapter removed — configure a dev-tasks-style Monday "
+            "plugin instead. Set tasks.system to 'github-issues' (cabinet "
+            "default) or 'linear', and declare the plugin in "
+            "instance/config/extensions.yml + .claude/project-config.json."
         )
     if system == "jira":
         from cabinet.scripts.task_adapters.jira import JiraAdapter
