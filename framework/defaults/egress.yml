@@ -60,8 +60,8 @@ proxy_port: 8899
 # deployment's instance config: the `org_domains` list in
 # instance/config/platform.yml (else product.yml / nested product.org_domains)
 # — the same source framework/env.py org_domains() reads. Each domain and its
-# subdomains are allowed (suffix match), so e.g. `polads.eu` also covers
-# `xtest.polads.eu`. NO captain- or industry-specific host is hardcoded in the
+# subdomains are allowed (suffix match), so e.g. `acme.example` also covers
+# `xtest.acme.example`. NO captain- or industry-specific host is hardcoded in the
 # framework; a deployment with no org_domains simply contributes none.
 allow_product: true
 

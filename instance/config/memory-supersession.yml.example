@@ -1,0 +1,44 @@
+# instance/config/memory-supersession.yml — auto-apply posture for the
+# memory supersession loop (cabinet/scripts/memory-supersede-apply.py;
+# detect on the services.yml row memory-contradictions, Sundays 05:30;
+# soak+apply on its own row memory-supersede-apply, Sundays 05:45).
+#
+# auto_apply:
+#   soak  — DEFAULT, per 2026-07-15 Captain ratification of memory Wave 3:
+#           propose-only for the first 14 days from the organ's first
+#           soak-ledger entry; auto-apply (near-duplicate class ONLY) arms
+#           by itself once the ledger shows >= 14 days AND zero UNRESOLVED
+#           reversals. At half-soak (day 7+) the organ files ONE Captain
+#           heads-up card on the needs ledger (counts + arming date), so
+#           arming is never observation-free — and the card's one-taps
+#           BIND: approve lets the soak arm, veto HOLDS the gate (posture
+#           held-by-captain-veto, re-read from the live needs row every
+#           run until a later grant on the same card re-rules it).
+#           Contradiction-cue pairs never auto-apply on similarity — they
+#           file Captain one-tap cards on the needs ledger, retried each
+#           run until a need id is recorded; APPROVING a card (binder
+#           grant → needs status approved_pending_apply — for these
+#           decision cards the binder approval IS the ruling; nothing
+#           outside the organ ever writes "granted" for them) is executed
+#           by the organ's next pass once the gate arms (same guarded,
+#           reversible UPDATE — the approval waives only the similarity
+#           bar), after which the organ closes the need (status granted,
+#           the receipt); a veto simply never approves and both rows stay.
+#   hold  — propose-only FOREVER: the organ keeps recording would-apply
+#           decisions and filing cue cards but never writes superseded_by
+#           (Captain-approved cards included — hold outranks everything).
+#
+# A missing file defaults to soak (the ratified posture). An unrecognized
+# value, unparseable yaml, or an EXISTING file that cannot be read fails
+# safe to hold — a typo or a broken read must never arm.
+#
+# Reversal recovery (the latch): any --undo appends a "reversal" entry to
+# shared/interfaces/memory-supersession-soak.jsonl and re-blocks arming.
+# The ONLY supported re-arm is the Captain ruling
+#   python3.12 cabinet/scripts/memory-supersede-apply.py \
+#     --resolve-reversals "why the reversal is settled"
+# which appends a reversal-resolved marker (only reversals AFTER the latest
+# marker block). NEVER truncate or hand-edit the soak ledger to recover:
+# consumed-but-open pairs live there. (If surgery ever happens anyway, the
+# organ reopens consumed pairs from their proposals-file stamps.)
+auto_apply: soak

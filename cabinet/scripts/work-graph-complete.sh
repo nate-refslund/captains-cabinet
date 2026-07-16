@@ -12,13 +12,13 @@
 # Usage:
 #   work-graph-complete.sh <node_id> [--status done|failed|verified] [--evidence FILE_OR_TEXT]
 #   work-graph-complete.sh outcome-launch-mvp-task-003 --status done --evidence /tmp/api-deploy.log
-#   work-graph-complete.sh polads-001-ci --status done --evidence "3 green staging runs"
+#   work-graph-complete.sh acme-001-ci --status done --evidence "3 green staging runs"
 #   work-graph-complete.sh outcome-x-task-001 --status failed --evidence "Tests red on PR #42"
 #
 # <node_id> accepts BOTH work-graph id shapes (2026-07-05 fix — see the
 # resolution block below): compiler-generated "<outcome_id>-task-NNN" ids AND
 # the ratified explicit node_id values from instance/config/outcomes.yml
-# (e.g. polads-001-ci, sys-001-parity). Unknown ids exit 2 without emitting.
+# (e.g. acme-001-ci, sys-001-parity). Unknown ids exit 2 without emitting.
 #
 # Resume signal:
 #   Exit 0 + emitted event = success. Exit non-zero = failure (see stderr).
@@ -47,7 +47,7 @@ Records completion of a mission work-graph node.
 Arguments:
   <node_id>                  Either a compiler task id "<outcome_id>-task-NNN"
                              OR a ratified node_id from instance/config/outcomes.yml
-                             (e.g. polads-001-ci, sys-001-parity)
+                             (e.g. acme-001-ci, sys-001-parity)
 
 Options:
   --status done|failed|verified   Completion status (default: done)
@@ -125,7 +125,7 @@ CABINET_ROOT="${CABINET_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd
 # --- resolve outcome_id + task_index from node_id ---
 # TWO accepted id shapes (2026-07-05 fix — the old hard gate on '*-task-*'
 # rejected every RATIFIED explicit node_id from instance/config/outcomes.yml,
-# e.g. polads-001-ci / sys-001-parity / stephie-002-spec, so a completed
+# e.g. acme-001-ci / sys-001-parity / widgets-002-spec, so a completed
 # outcome criterion was UNCOUNTABLE: the emit never happened and the mission
 # compiler's DONE overlay — which keys on payload.task_id,
 # framework/missions/compiler.py:279 — never advanced the graph):
@@ -299,7 +299,7 @@ fi
 echo "$EVENT_JSON" | python3 -c 'import json, sys; e = json.load(sys.stdin); print(e["id"])'
 echo "work-graph-complete: ${EVENT_TYPE} emitted for ${NODE_ID} (status=${STATUS}, actor=${ACTOR})" >&2
 
-# --- stamp the reflection-experience marker (fix 2026-07-06, polads-ceo finding) ---
+# --- stamp the reflection-experience marker (fix 2026-07-06, acme-ceo finding) ---
 # Completing a work-graph node IS a "did work" event, but only record-experience.sh
 # stamped cabinet:last-experience:<officer>. So an officer who advanced the graph via
 # this script read reflection_due=0 and never auto-reflected — the outcome-watchdog

@@ -13,8 +13,8 @@ allowed-tools: Bash
 - `task_*` id → `python3 cabinet/scripts/org-runtime.py claude-tasks show "<arg>"`
 - a role slug → `python3 cabinet/scripts/org-runtime.py roles show --role "<arg>"`.
   Valid slugs are whatever `roles list` / `instance/config/roster.yml` says is
-  active — never a hardcoded fleet (the live portfolio roster is cos,
-  polads-ceo, stephie-ceo, comms-officer).
+  active — never a hardcoded fleet (e.g. a live portfolio roster might be cos,
+  acme-ceo, widgets-ceo, comms-officer).
 - no argument → run the standing checks below.
 
 Use the local org runtime CLI for durable state checks:

@@ -1,15 +1,21 @@
-"""pytest config for ETL transform tests (FW-023).
+"""pytest config for the cabinet/scripts/lib test suite.
+
+(Originally written for the FW-023 ETL-transform tests; those were carved
+out of this directory to the Spec-039 set in f855ae96 (R073). Of the ETL
+modules only etl-common.py remains in lib/, loaded here by
+test_library_mcp_client.py.)
 
 Stubs `requests` + `yaml` in sys.modules ONLY when the real package is not
-installed. Pure-function tests (_map_state, _map_status, _extract_fw_marker)
-can then import etl-linear / etl-github / etl-common in containers lacking
-those packages, while environments with real packages installed (CI, dev
+installed. Tests can then import lib modules in containers lacking those
+packages, while environments with real packages installed (CI, dev
 machines post-FW-024) get the real modules — so framework tests that share
 the pytest session (and need `yaml.safe_load`) don't get poisoned by a stub
 import order race.
 
-Also inserts the parent `lib/` dir onto sys.path so `test_etl_fixtures` +
-the hyphenated ETL modules resolve.
+Also inserts the parent `lib/` dir onto sys.path so underscore-named lib
+modules import directly (e.g. `from work_graph import WorkGraph`); the
+hyphenated modules (etl-common.py, library-mcp-client.py, …) load via
+explicit spec_from_file_location helpers in their test files.
 
 History: previously this file unconditionally stubbed yaml/requests, which
 broke framework tests running in the same pytest session once the

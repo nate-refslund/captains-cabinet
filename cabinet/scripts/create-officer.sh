@@ -16,7 +16,7 @@
 #
 # Example:
 #   create-officer.sh cmo "Chief Marketing Officer" "Marketing, growth, brand" \
-#     sensed_cmo_bot 1234567890:AAH... \
+#     acme_cmo_bot 12345678:AAH... \
 #     --voice-id "abc123" --voice-prompt "Speaks like an excited marketer" \
 #     --voice-stability 0.4 --voice-speed 1.1 \
 #     --interface "marketing-briefs"
@@ -77,7 +77,7 @@ if ! echo "$OFFICER" | grep -qE '^[a-z]{2,4}$'; then
 fi
 
 if ! echo "$BOT_TOKEN" | grep -qE '^[0-9]+:'; then
-  echo "Error: Bot token format looks wrong (expected: 1234567890:AAH...)" >&2
+  echo "Error: Bot token format looks wrong (expected: 12345678:AAH...)" >&2
   exit 1
 fi
 

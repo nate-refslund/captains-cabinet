@@ -17,14 +17,14 @@ const ALLOWED_SECTIONS = ['product', 'notion', 'linear', 'neon', 'telegram']
  * Resolve the active project slug so we know which YAML to edit.
  */
 async function getActiveSlug(): Promise<string> {
-  if (IS_MOCK) return 'sensed'
+  if (IS_MOCK) return 'widgets'
   try {
     const { stdout } = await dockerExec(
-      `cat ${cabinetPath('instance/config/active-project.txt')} 2>/dev/null || echo sensed`
+      `cat ${cabinetPath('instance/config/active-project.txt')} 2>/dev/null || echo widgets`
     )
-    return stdout.trim() || 'sensed'
+    return stdout.trim() || 'widgets'
   } catch {
-    return 'sensed'
+    return 'widgets'
   }
 }
 

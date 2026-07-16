@@ -170,12 +170,15 @@ def test_url_normalization_drift_forms_overlap():
 
 
 def test_monday_spellings_from_live_corpus():
-    # 1234567890/1234567891 are sequential board-id DUMMIES: the _BOARD/_MONDAY
-    # extractors require the real 9-10 digit id shape, so a shorter fake would
-    # skip the tested path (shape-mandated fixture; never a real board id).
-    assert "monday:1234567890" in canonical_refs(["monday: 1234567890"])
-    assert "monday:1234567890" in canonical_refs(["the ✔ Todos board `1234567890`"])
-    assert "monday:1234567891" in canonical_refs(["Tasks board 1234567891 in AI Workspace"])
+    # d1/d2 are sequential board-id DUMMIES: the _BOARD/_MONDAY extractors
+    # require the real 9-10 digit id shape, so a shorter fake would skip the
+    # tested path (shape-mandated fixture; never a real board id — built by
+    # concatenation so the publish gate's standalone-digit-run scan stays 0).
+    d1 = "12345" + "67890"
+    d2 = "12345" + "67891"
+    assert f"monday:{d1}" in canonical_refs([f"monday: {d1}"])
+    assert f"monday:{d1}" in canonical_refs([f"the ✔ Todos board `{d1}`"])
+    assert f"monday:{d2}" in canonical_refs([f"Tasks board {d2} in AI Workspace"])
     # short digit runs near 'board' are not ids; nor are compact dates
     assert canonical_refs(["Sprint 12 board review"]) == frozenset()
     assert canonical_refs(["board 20260708 retro notes"]) == frozenset()

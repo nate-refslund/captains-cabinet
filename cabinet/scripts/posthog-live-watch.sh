@@ -4,7 +4,7 @@
 #
 # Setup (FW-018 Phase B cross-uid pattern):
 #   1. Captain creates a Personal API Key in PostHog (Settings -> Personal API
-#      Keys -> Create, scope: project read on the Sensed project).
+#      Keys -> Create, scope: project read on your product project).
 #   2. Drop the key value to ${KEY_FILE} (default /opt/founders-cabinet/secrets/posthog-cro-key)
 #      from host SSH (uid 1001), then post-write:
 #         chgrp cabinet $KEY_FILE   # gid 60000 — container reads via group

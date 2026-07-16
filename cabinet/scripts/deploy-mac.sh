@@ -278,7 +278,7 @@ EOF
 # (instance/config/roster.yml — the authoritative, deployment-local seed source
 # that bootstrap-roles.sh consumes), never hardcoded. The previous hardcoded
 # `cos cto cpo cro coo` deployed the retired 5-officer work-preset fleet — on
-# the live portfolio deployment (cos, polads-ceo, stephie-ceo, comms-officer) a
+# a live portfolio deployment (e.g. cos, acme-ceo, widgets-ceo, comms-officer) a
 # redeploy would have replaced the WORKING org with a dead one (blueprint §2.3-D,
 # red-team amendment RT#13). No roster file ⇒ refuse loudly; never fall back to
 # a preset default.

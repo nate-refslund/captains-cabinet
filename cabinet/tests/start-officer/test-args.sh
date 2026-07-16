@@ -25,7 +25,7 @@ pass() { echo "PASS: $1"; PASS=$((PASS + 1)); }
 
 # Mock TELEGRAM_<UPPER>_TOKEN (required by script). Pool mode requires the
 # slug's env file in cabinet/env/ — self-provision a throwaway fixture env
-# (egg R061: sensed.env left the repo; only _template.env ships).
+# (egg R061: per-project .env files left the repo; only _template.env ships).
 export TELEGRAM_CTO_TOKEN="x-test-token"
 export TELEGRAM_HQ_CHAT_ID="x-test-chat"
 export CABINET_TEST_DRY_RUN=1

@@ -360,7 +360,7 @@ entries:
     tier: T0
     replay: git
     codex:
-      represents: "Retired outcomes/lanes in outcomes.yml plus instance-only lanes (Captain rulings 2026-07-09): a retired or inactive lane keeps its fixed fan anchor (anchors never move — layout_fold; stepnetwork S at (120,168), spec §2.2) but renders a grey reef buoy whose inspect card says exactly retired/instance. The 'sensed' lane is an INSTANCE-only test app — never foundation, never an isle in egg defaults; stephie is an instance lane too (renders on this deployment, never in egg defaults). Buoys dual-code the grey-unmeasured horizon fog; grey stays the unmeasured hue, never an alarm."
+      represents: "Retired outcomes/lanes in outcomes.yml plus instance-only lanes (Captain rulings 2026-07-09): a retired or inactive lane keeps its fixed fan anchor (anchors never move — layout_fold; e.g. a retired lane's anchor at a fixed south position, spec §2.2) but renders a grey reef buoy whose inspect card says exactly retired/instance. A lane listed in instance_test_lanes (instance config, R164) is an INSTANCE-only test app — never foundation, never an isle in egg defaults; any other instance-only lane is the same (renders on that deployment, never in egg defaults). Buoys dual-code the grey-unmeasured horizon fog; grey stays the unmeasured hue, never an alarm."
       mechanism_path: "instance/config/outcomes.yml"
       day0: "open water — an egg has no retired lanes"
   - id: mailbox_pending

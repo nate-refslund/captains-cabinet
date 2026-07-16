@@ -10,11 +10,16 @@
 //
 // validateContextSlug uses CONTEXTS_DIR (defaults to
 // <checkout-root>/instance/config/contexts via the cabinet-root resolver)
-// which contains the real adhoc/personal/sensed YAMLs — those give us a
-// happy-path check without any fs mocking.
+// which contains this checkout's real context YAMLs — those give us a
+// happy-path check without any fs mocking. Lane names are instance data, so
+// the happy-path slug is DISCOVERED from disk, never hardcoded here.
+
+import path from 'node:path'
+import { readdir } from 'node:fs/promises'
 
 import { describe, it, expect } from 'vitest'
 
+import { cabinetRoot } from '@/lib/cabinet-root'
 import {
   WIP_CAP,
   RECENT_DONE_LIMIT,
@@ -22,6 +27,25 @@ import {
   coerceWipCapError,
   validateContextSlug,
 } from './tasks'
+
+/** First real context slug on THIS checkout (mirrors tasks.ts CONTEXTS_DIR
+ * resolution + CONTEXT_SLUG_RE). The egg prunes lane contexts, so a clean
+ * export yields null and the happy-path probes degrade to no-ops there
+ * instead of failing. */
+async function firstRealContextSlug(): Promise<string | null> {
+  const dir =
+    process.env.CONTEXTS_DIR || path.join(cabinetRoot(), 'instance/config/contexts')
+  try {
+    const slugs = (await readdir(dir))
+      .filter((f) => f.endsWith('.yml'))
+      .map((f) => f.slice(0, -'.yml'.length))
+      .filter((s) => /^[a-z0-9][a-z0-9-]{0,63}$/.test(s))
+      .sort()
+    return slugs[0] ?? null
+  } catch {
+    return null
+  }
+}
 
 describe('constants', () => {
   it('WIP_CAP is 3 (Spec 038 AC #5 — per-(officer,context) cap)', () => {
@@ -111,7 +135,7 @@ describe('coerceWipCapError — errcode gate', () => {
   it('returns WipCapExceededError when code=23514 + WIP limit substring', () => {
     const err = {
       code: '23514',
-      message: 'WIP limit (3) exceeded for officer cto in context sensed',
+      message: 'WIP limit (3) exceeded for officer cto in context acme',
     }
     const coerced = coerceWipCapError(err, 'cto')
     expect(coerced).toBeInstanceOf(WipCapExceededError)
@@ -160,7 +184,7 @@ describe('validateContextSlug — regex + fs.access', () => {
   })
 
   it('throws on uppercase slug (regex rejects)', async () => {
-    await expect(validateContextSlug('Sensed')).rejects.toThrow('is invalid')
+    await expect(validateContextSlug('Acme')).rejects.toThrow('is invalid')
   })
 
   it('throws on slug with underscore (regex rejects)', async () => {
@@ -168,7 +192,7 @@ describe('validateContextSlug — regex + fs.access', () => {
   })
 
   it('throws on slug starting with dash (regex requires alnum first)', async () => {
-    await expect(validateContextSlug('-sensed')).rejects.toThrow('is invalid')
+    await expect(validateContextSlug('-acme')).rejects.toThrow('is invalid')
   })
 
   it('throws on slug with path traversal', async () => {
@@ -185,13 +209,14 @@ describe('validateContextSlug — regex + fs.access', () => {
   })
 
   it('throws on valid regex but missing YAML file', async () => {
-    // 'nosuch' matches the regex but contexts dir only has adhoc/personal/sensed
+    // 'nosuch' matches the regex but the contexts dir has no nosuch.yml
     await expect(validateContextSlug('nosuch')).rejects.toThrow('not found')
   })
 
-  it('resolves to trimmed slug for sensed (real YAML exists)', async () => {
-    const result = await validateContextSlug('sensed')
-    expect(result).toBe('sensed')
+  it('resolves to trimmed slug for a real on-disk context YAML', async () => {
+    const slug = await firstRealContextSlug()
+    if (!slug) return // egg/clean checkout: lane contexts pruned — nothing to probe
+    expect(await validateContextSlug(slug)).toBe(slug)
   })
 
   it('resolves for adhoc + personal (all 3 real contexts)', async () => {
@@ -200,8 +225,9 @@ describe('validateContextSlug — regex + fs.access', () => {
   })
 
   it('trims whitespace before validation + returns trimmed', async () => {
-    const result = await validateContextSlug('  sensed  ')
-    expect(result).toBe('sensed')
+    const slug = await firstRealContextSlug()
+    if (!slug) return // egg/clean checkout: lane contexts pruned — nothing to probe
+    expect(await validateContextSlug(`  ${slug}  `)).toBe(slug)
   })
 
   it('accepts single-char slug (regex min length 1)', async () => {

@@ -538,7 +538,7 @@ prompt_key "LINEAR_API_KEY" \
   "CPO (backlog), CTO (issue ops), CoS (cross-officer)"
 
 prompt_key "MONDAY_API_TOKEN" \
-  "Monday.com personal API token. Drives the STEP-Network/dev-tasks Claude plugin (44 MCP tools + 15 workflow skills). Replaces the cabinet's own Monday adapter (which was removed in favor of the plugin)." \
+  "Monday.com personal API token. Drives the dev-tasks Claude plugin (44 MCP tools + 15 workflow skills). Replaces the cabinet's own Monday adapter (which was removed in favor of the plugin)." \
   "https://developer.monday.com/api-reference/docs/authentication" \
   "OPTIONAL" \
   "dev-tasks plugin → CPO (backlog), CTO (issues), CoS (cross-officer)"

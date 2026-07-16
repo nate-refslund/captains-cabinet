@@ -26,7 +26,7 @@ const ICON_FOR_HREF: Record<string, () => React.ReactElement> = {
   '/crons': CronsIcon,
   '/library': LibraryIcon,
   '/gaps': GapsIcon,
-  'https://terminal.sensed.app': TerminalIcon,
+  'https://terminal.example.com': TerminalIcon,
 }
 
 function OrientationIcon() {

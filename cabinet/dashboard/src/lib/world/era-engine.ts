@@ -73,8 +73,9 @@ export interface LaneRecord {
   achieved: number
   retired: number
   /**
-   * Captain ruling 2026-07-09: instance-only test lanes ('sensed') are
-   * NEVER foundation — they render as reef-buoys regardless of outcomes.
+   * Captain ruling 2026-07-09: instance-only test lanes (configured via
+   * instance_test_lanes in instance config, R164) are NEVER foundation —
+   * they render as reef-buoys regardless of outcomes.
    */
   instanceTest?: boolean
 }

@@ -151,7 +151,7 @@ describe('authenticated caller proceeds', () => {
   beforeEach(() => mockVerify.mockResolvedValue(true))
 
   it('config.updateProductConfig reaches the write path', async () => {
-    const res = await updateProductConfig('name', 'Sensed')
+    const res = await updateProductConfig('name', 'Acme')
     expect(res).toEqual({ success: true })
     expect(mockDockerExec).toHaveBeenCalled()
   })

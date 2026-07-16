@@ -41,8 +41,7 @@ cabinet/.env
 # instance/officer-skills/README.md). Do NOT re-track the materialized links.
 cabinet/officer-skills/cos.txt
 cabinet/officer-skills/comms-officer.txt
-cabinet/officer-skills/polads-ceo.txt
-cabinet/officer-skills/stephie-ceo.txt
+cabinet/officer-skills/*-ceo.txt
 
 # Runtime Cabinet state assembled by cabinet/scripts/load-preset.sh
 # Derived from framework/ + presets/<active>/ + instance/ on each start.
@@ -205,6 +204,7 @@ shared/interfaces/action-lessons.yml
 shared/interfaces/charter-shadow-series.jsonl
 shared/interfaces/golden-eval-scalar.jsonl
 shared/interfaces/memory-supersession-proposals.jsonl
+shared/interfaces/memory-supersession-soak.jsonl
 shared/interfaces/needs-ledger.jsonl
 shared/interfaces/prediction-calibration.jsonl
 shared/interfaces/preference-pairs.jsonl

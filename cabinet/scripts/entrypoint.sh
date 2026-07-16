@@ -82,7 +82,7 @@ exec su cabinet -s /bin/bash -c '
   # FW-082 hotfix-5: AUTO_START_OFFICERS env (set per cabinet by
   # cabinet-bootstrap.sh in spawned compose) auto-launches each officer in
   # its own tmux window. Format: comma-separated "officer[:project]".
-  # Examples: "cos" / "cos:stephie" / "cos,cto,cpo,cro,coo".
+  # Examples: "cos" / "cos:widgets" / "cos,cto,cpo,cro,coo".
   # Unset/empty = legacy behavior (officers started manually via start-officer.sh).
   if [ -n "${AUTO_START_OFFICERS:-}" ]; then
     echo ""

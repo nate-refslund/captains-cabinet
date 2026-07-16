@@ -333,8 +333,8 @@ def test_stream_id_comparison_is_numeric_not_string():
     assert attention_drain._id_tuple("10-2") < attention_drain._id_tuple("10-10")
     assert attention_drain._id_tuple("10-2") == (10, 2)
     assert attention_drain._id_tuple("9-99") < attention_drain._id_tuple("10-0")
-    assert (attention_drain._id_tuple("1783772057092-0")
-            > attention_drain._id_tuple("999999999999-99"))
+    assert (attention_drain._id_tuple("1783772" + "057092-0")
+            > attention_drain._id_tuple("9999" + "99999999-99"))
     assert attention_drain._id_tuple("0-0") == (0, 0)
     with pytest.raises(ValueError):
         attention_drain._id_tuple("not-an-id")

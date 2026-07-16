@@ -98,7 +98,7 @@ assert_contains "T2.2 error mentions git URL shape" "$out" "git URL"
 echo ""
 echo "T3: DRY_RUN=1 prints planned actions"
 
-out=$(DRY_RUN=1 bash "$SPAWN" "step-network" "https://github.com/exampleco/step-network" 2>&1); rc=$?
+out=$(DRY_RUN=1 bash "$SPAWN" "example-org" "https://github.com/exampleco/example-org" 2>&1); rc=$?
 assert_exit "T3.1 dry-run exits 0" "$rc" 0
 assert_contains "T3.1 dry-run mentions DRY RUN" "$out" "DRY RUN"
 assert_contains "T3.2 dry-run shows provision step" "$out" "Would invoke"
@@ -109,7 +109,7 @@ assert_contains "T3.6 dry-run shows CoS notification" "$out" "Would notify CoS"
 assert_contains "T3.7 dry-run shows Captain action items" "$out" "CAPTAIN ACTION REQUIRED"
 
 # DRY_RUN must NOT touch the state file
-STATE_FILE="/tmp/cabinet-spawn.step-network.state"
+STATE_FILE="/tmp/cabinet-spawn.example-org.state"
 if [ -f "$STATE_FILE" ]; then
   assert_contains "T3.8 dry-run should not leave state file" "FAIL: state file found at $STATE_FILE" "PASS"
 else
@@ -214,14 +214,14 @@ assert_exit "T7.1 dry-run with GITHUB_PAT exits 0" "$rc" 0
 assert_not_contains "T7.2 GITHUB_PAT not echoed in output" "$out" "super-secret-token-abc123"
 
 # ---------------------------------------------------------------------------
-# T8: slug with hyphens is valid (common case: "step-network")
+# T8: slug with hyphens is valid (common case: "example-org")
 # ---------------------------------------------------------------------------
 echo ""
 echo "T8: Valid hyphenated slug"
 
-out=$(DRY_RUN=1 bash "$SPAWN" "step-network" "https://github.com/exampleco/step-network" 2>&1); rc=$?
+out=$(DRY_RUN=1 bash "$SPAWN" "example-org" "https://github.com/exampleco/example-org" 2>&1); rc=$?
 assert_exit "T8.1 hyphenated slug exits 0" "$rc" 0
-assert_contains "T8.2 slug appears in plan output" "$out" "step-network"
+assert_contains "T8.2 slug appears in plan output" "$out" "example-org"
 
 # ---------------------------------------------------------------------------
 # T9: validate.sh missing exits 1 (AC #49)

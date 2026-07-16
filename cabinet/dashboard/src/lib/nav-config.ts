@@ -47,7 +47,7 @@ export const ADVANCED_NAV: NavLink[] = [
   { href: '/costs', label: 'Costs' },
   { href: '/crons', label: 'Crons' },
   { href: '/library', label: 'Library' },
-  { href: 'https://terminal.sensed.app', label: 'Terminal', external: true },
+  { href: 'https://terminal.example.com', label: 'Terminal', external: true },
 ]
 
 export const CONSUMER_NAV: NavLink[] = [

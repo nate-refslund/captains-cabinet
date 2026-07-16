@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# vercel.sh — Vercel query helper for Cabinet officers (esp. the PolAds CEO).
+# vercel.sh — Vercel query helper for Cabinet officers (esp. a product CEO).
 #
 # Lets officers verify deployments and diagnose log-drains directly, without a
 # Vercel MCP (the per-officer MCP token can go stale / 403). Officers are
@@ -15,11 +15,11 @@
 #                                            target, and any build error.
 #   vercel.sh logdrains                      Configured log-drains (status,
 #                                            destination URL, sources, envs) —
-#                                            diagnose the failing PolAds drain.
+#                                            diagnose a failing drain.
 #   vercel.sh promote <project> <deployment-id>
 #                                            Promote a READY deployment to
 #                                            production (flips every prod alias,
-#                                            e.g. polads.eu, to it), then polls
+#                                            e.g. acme.example, to it), then polls
 #                                            until the alias flip completes.
 #                                            Idempotent: re-promoting the current
 #                                            prod deployment is reported as a
@@ -295,7 +295,7 @@ cmd_deployment() {
 
 # ────────────────────────────────────────────────────────────
 # Subcommand: promote <project> <deployment-id>
-# Flips the production alias(es) (polads.eu et al.) to a READY deployment.
+# Flips the production alias(es) (acme.example et al.) to a READY deployment.
 #
 # Vercel's promote API keys on the project's prj_ id (not the slug), so we
 # resolve it first. We then refuse to promote anything that is not READY — a
@@ -385,7 +385,7 @@ cmd_promote() {
 
 # ────────────────────────────────────────────────────────────
 # Subcommand: logdrains
-# Lists configured log-drains so the CEO can see/diagnose the failing PolAds
+# Lists configured log-drains so the CEO can see/diagnose a failing
 # drain. NEVER prints the drain's secret headers (x-sentry-auth etc.).
 # ────────────────────────────────────────────────────────────
 cmd_logdrains() {

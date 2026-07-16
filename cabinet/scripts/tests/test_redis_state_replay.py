@@ -342,7 +342,7 @@ def test_stream_repair_restores_raw_aof_omissions_then_proves_converted_rdb(
     )
     claimed = redis.cli(
         "--raw", "XAUTOCLAIM", stream, group, empty_consumer,
-        "999999999", "0", "COUNT", "1",
+        "9" * 9, "0", "COUNT", "1",
     ).stdout.splitlines()
     assert claimed[0] == "0-0" and entry_id not in claimed[1:]
     assert _consumer_names(redis, stream, group) == {empty_consumer, owner}
@@ -405,7 +405,7 @@ def test_v3_exact_proof_detects_xautoclaim_empty_consumer_lost_by_raw_aof_replay
     )
     redis.cli(
         "XAUTOCLAIM", "stream", "workers", "empty-consumer",
-        "999999999", "0", "COUNT", "1",
+        "9" * 9, "0", "COUNT", "1",
     )
     assert _consumer_names(redis, "stream", "workers") == {
         "empty-consumer",
@@ -488,7 +488,7 @@ def test_v3_redis_8_array_distinguishes_unset_and_terminal_insert_cursor(
     unset = tmp_path / "array-unset-cursor.state"
     redis.fingerprint(unset)
 
-    redis.cli("ARSEEK", "array", "18446744073709551615")
+    redis.cli("ARSEEK", "array", str(2**64 - 1))
     assert redis.cli("--json", "ARNEXT", "array").stdout.strip() == "null"
     terminal = tmp_path / "array-terminal-cursor.state"
     redis.fingerprint(terminal)
@@ -507,7 +507,7 @@ def test_v3_redis_8_array_terminal_insert_cursor_survives_replay(
         pytest.skip("Redis built-in array type requires Redis 8.8+")
 
     redis.cli("ARSET", "array", "0", "value")
-    redis.cli("ARSEEK", "array", "18446744073709551615")
+    redis.cli("ARSEEK", "array", str(2**64 - 1))
     assert redis.cli("--json", "ARNEXT", "array").stdout.strip() == "null"
     before = tmp_path / f"array-terminal-{appendonly}-before.state"
     redis.fingerprint(before)

@@ -10,7 +10,7 @@
  *
  * Token format (per Telegram docs, current as of Apr 2026):
  *   {8-12 digits}:{35 base64url chars}
- * e.g. 123456789:ABCDEFabcdef_-1234567890ABCDEFabcde
+ * e.g. 12345678:ABCDEFabcdef_-1234567890ABCDEFabcde
  *
  * Security note: token values MUST NOT be logged. Callers are responsible for
  * ensuring they don't embed raw tokens in error messages or audit payloads that
@@ -54,7 +54,7 @@ export interface ExtractedToken {
  * Extract a Telegram bot token from raw forwarded BotFather message text.
  *
  * BotFather sends something like:
- *   "Use this token to access the HTTP API: 1234567890:AAFabcdefghij-KLMNO_pqrstuvwxyz123"
+ *   "Use this token to access the HTTP API: 12345678:AAFabcdefghij-KLMNO_pqrstuvwxyz123"
  *   or just the token on its own line in some flows.
  *
  * Returns null if no valid token is found. Never throws.

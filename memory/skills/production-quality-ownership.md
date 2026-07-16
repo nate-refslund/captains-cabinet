@@ -44,7 +44,7 @@ Does this fit the framework for any founder, or just our setup?
 - Configurable: anything founder-specific goes in config, not code
 - Implementation-agnostic: the guide describes concepts, not mechanisms
 
-If you made something that only works for Sensed's officer set, flag it.
+If you made something that only works for one instance's officer set, flag it.
 
 ### 5. COMPLETENESS
 Did I finish, or is there hanging work I parked mentally?

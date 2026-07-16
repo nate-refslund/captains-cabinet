@@ -45,7 +45,7 @@ fi
 # packaging — only the generic contexts/_default.yml ships. Mirror the
 # active-project.txt pattern above: no lane contexts = clean/egg checkout ->
 # pass-with-note, never a hard fail. When present, the check is lane-
-# agnostic (INSTANCE-SENSED-CLEANUP: foundation never names instance lanes):
+# agnostic (INSTANCE-LANE-CLEANUP: foundation never names instance lanes):
 # every lane declaration must carry an EXPLICIT `active: true|false` state —
 # the fail-safe activation invariant the old per-lane checks asserted. An
 # optional trailing `# comment` is tolerated; a glued `false# x` stays
@@ -140,11 +140,11 @@ awk -v t="$TREND" 'BEGIN { exit !(t > 0) }' \
 DIGEST_JSON="$(python3 "$ORG" digest publish-sanitized \
   --week-start 2026-05-18 \
   --title "Runtime learning digest" \
-  --content "Sensed is legacy. Contact captain@example.com. Secret sk-testsecret123. See https://example.com/private." \
+  --content "Acme is legacy. Contact captain@example.com. Secret sk-testsecret123. See https://example.com/private." \
   --output-dir "$DIGEST_DIR")"
 DIGEST_PATH="$(printf '%s' "$DIGEST_JSON" | json_value '.path')"
 [ -f "$DIGEST_PATH" ] && pass "sanitized digest file published" || fail "digest file missing"
-if grep -qiE 'Sensed|captain@example.com|sk-testsecret123|https://example.com' "$DIGEST_PATH"; then
+if grep -qiE 'Acme|captain@example.com|sk-testsecret123|https://example.com' "$DIGEST_PATH"; then
   fail "digest leaked unsanitized sensitive or legacy product content"
 else
   pass "digest redaction removed legacy product/private details"

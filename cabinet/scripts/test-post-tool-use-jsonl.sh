@@ -51,7 +51,7 @@ run_hook() {
 echo "=== FW-075: post-tool-use.sh JSONL project field ==="
 
 # T1: pool mode — valid slug surfaces in JSONL (synthetic testburg fixture
-# slug — foundation fixtures never name instance lanes, INSTANCE-SENSED-CLEANUP)
+# slug — foundation fixtures never name instance lanes, INSTANCE-LANE-CLEANUP)
 LINE=$(run_hook "testburg")
 PROJ=$(echo "$LINE" | jq -r '.project // "<MISSING>"' 2>/dev/null)
 assert_field "T1 pool slug 'testburg' lands in JSONL" "$PROJ" "testburg"

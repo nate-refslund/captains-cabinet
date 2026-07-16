@@ -201,12 +201,12 @@ export async function getEnvVars(): Promise<Record<string, string>> {
       BRAVE_SEARCH_API_KEY: 'BSA-...mock3333',
       EXA_API_KEY: 'exa-...mock4444',
       MAPBOX_TOKEN: 'pk.ey...mock5555',
-      TELEGRAM_HQ_CHAT_ID: '-1001234567890',
-      CAPTAIN_TELEGRAM_ID: '123456789',
-      TELEGRAM_COS_TOKEN: '7001234567:AAE...mock',
-      TELEGRAM_CTO_TOKEN: '7001234568:AAE...mock',
-      TELEGRAM_CPO_TOKEN: '7001234569:AAE...mock',
-      TELEGRAM_CRO_TOKEN: '7001234570:AAE...mock',
+      TELEGRAM_HQ_CHAT_ID: '-10012345',
+      CAPTAIN_TELEGRAM_ID: '12345678',
+      TELEGRAM_COS_TOKEN: '70012345:AAE...mock',
+      TELEGRAM_CTO_TOKEN: '70012346:AAE...mock',
+      TELEGRAM_CPO_TOKEN: '70012347:AAE...mock',
+      TELEGRAM_CRO_TOKEN: '70012348:AAE...mock',
     }
   }
   try {

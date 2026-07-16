@@ -853,18 +853,42 @@ def test_load_surfaces_corrupt_file_gates_everything(monkeypatch, tmp_path):
 
 
 def test_load_surfaces_parses_live_yml():
-    """The real instance yml: empty Captain denylist + audit-proven
-    cascade_gated boards. Tasks creates act; Tasks updates gated (unidentified
-    webhook); Bookings/Deals denied (email cascades); unlisted boards allowed.
-    LIVE-COUPLED by design: the board ids below are THIS instance's yml rows
-    (the yml is a live deployment value, transformed at egg export)."""
+    """The instance yml IN THIS WORKTREE parses, and every row it declares is
+    enforced exactly: kinds-rows gate only their kinds (other kinds still
+    act), whole-board rows gate every kind, and unlisted boards stay allowed
+    (default-allow). LIVE-COUPLED by design — but the expectations are
+    DERIVED from the yml rows themselves (test_env's byte-identity idiom: no
+    deployment's board id is hardcoded here), so the guard holds unchanged
+    on any instance's ruling and on the egg's shipped empty example."""
+    import yaml
     surf = ax._load_act_first_surfaces()
     dl = surf["denylist"]
-    assert ax._board_not_denied("5091706356", "monday_task_create", dl)
-    assert not ax._board_not_denied("5091706356", "monday_task_update", dl)
-    assert not ax._board_not_denied("1549621337", "monday_task_create", dl)  # bookings board
-    assert not ax._board_not_denied("1623368485", "monday_task_create", dl)  # deals board
-    assert ax._board_not_denied("5096013783", "monday_task_create", dl)      # unlisted → allowed
+    assert ax._DENY_ALL_SENTINEL not in dl       # the live yml must parse
+    path = ax._surfaces_path()
+    expected: dict = {}
+    if path.exists():
+        data = yaml.safe_load(path.read_text()) or {}
+        for section in ("denylist", "cascade_gated"):
+            for row in (data.get(section) or []):
+                if not isinstance(row, dict) or row.get("board_id") is None:
+                    continue
+                bid = str(row["board_id"]).strip()
+                kinds = {str(k) for k in (row.get("kinds") or [])}
+                if expected.get(bid, ()) is None or not kinds:
+                    expected[bid] = None         # whole-board gate dominates
+                elif bid in expected:
+                    expected[bid] |= kinds
+                else:
+                    expected[bid] = kinds
+    assert dl == expected                        # parse fidelity, byte-identical
+    for bid, entry in dl.items():
+        if entry is None:                        # whole board gated
+            assert not ax._board_not_denied(bid, "monday_task_create", dl)
+        else:                                    # exactly the listed kinds gated
+            for kind in entry:
+                assert not ax._board_not_denied(bid, kind, dl)
+            assert ax._board_not_denied(bid, "kind-not-gated-here", dl)
+    assert ax._board_not_denied("42424242", "monday_task_create", dl)  # unlisted → allowed
 
 
 # =============================================================================

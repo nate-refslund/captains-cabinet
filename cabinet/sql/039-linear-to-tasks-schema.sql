@@ -3,7 +3,7 @@
 --
 -- Extends the Spec 038 v1.2 baseline (cabinet/sql/038-officer-tasks.sql)
 -- with first-class columns for the Linear → /tasks migration across three
--- Cabinet contexts (sensed / cabinet-framework / personal). All changes are
+-- Cabinet contexts (product / cabinet-framework / personal). All changes are
 -- ADDITIVE — no column rename, no type narrowing, no destructive DDL. Safe
 -- to re-run (idempotent).
 --

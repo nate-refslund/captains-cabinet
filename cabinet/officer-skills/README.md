@@ -14,9 +14,9 @@ and are materialized here as untracked, gitignored symlinks (see
 
     ln -s ../../instance/officer-skills/<officer>.txt cabinet/officer-skills/<officer>.txt
 
-Live-roster overlays as of 2026-07-07: `cos`, `comms-officer`, `polads-ceo`,
-`stephie-ceo` — the full active portfolio roster
-(`instance/config/roster.yml`).
+Live-roster overlays are whatever `instance/config/roster.yml` currently
+lists — e.g. `cos`, `comms-officer`, plus any per-product `<product>-ceo`
+roles this deployment has configured — never a hardcoded fleet.
 
 The retired work-preset fleet files (`coo.txt`, `cpo.txt`, `cro.txt`,
 `cto.txt`) were deleted 2026-07-07 (audit #24a): they targeted the retired

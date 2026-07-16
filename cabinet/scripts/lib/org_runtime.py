@@ -1835,7 +1835,10 @@ SECRET_RE = re.compile(r"\b(?:sk|pk|ghp|xox[baprs]|AIza)[A-Za-z0-9_\-]{8,}\b")
 UUID_RE = re.compile(r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b")
 EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b")
 URL_RE = re.compile(r"https?://[^\s)]+")
-SENSED_RE = re.compile(r"\bSensed\b", re.IGNORECASE)
+# Example legacy-product literal — a deployment names its own retired
+# product(s) here; "Acme" is this repo's generic worked example (see
+# test-org-runtime.sh), never a real product name.
+LEGACY_PRODUCT_RE = re.compile(r"\bAcme\b", re.IGNORECASE)
 
 
 def sanitize_digest(raw: str) -> str:
@@ -1844,7 +1847,7 @@ def sanitize_digest(raw: str) -> str:
     text = UUID_RE.sub("[REDACTED_ID]", text)
     text = EMAIL_RE.sub("[REDACTED_EMAIL]", text)
     text = URL_RE.sub("[REDACTED_URL]", text)
-    text = SENSED_RE.sub("[legacy-product]", text)
+    text = LEGACY_PRODUCT_RE.sub("[legacy-product]", text)
     return text
 
 

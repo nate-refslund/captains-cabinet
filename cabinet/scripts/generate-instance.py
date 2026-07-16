@@ -923,7 +923,7 @@ lanes:
     slug: acme-store
     repos: ["acme/storefront"]   # org/name or URL; first repo becomes product.repo
     task_system: "plugin:dev-tasks"   # plugin:<name> | linear | github-issues | none
-    boards: ["1234567890"]       # board/team ids in the task system
+    boards: ["12345678"]       # board/team ids in the task system
     neon_project: acme-store-db  # NAME only
     vercel_project: storefront   # NAME only
   - name: Acme Labs

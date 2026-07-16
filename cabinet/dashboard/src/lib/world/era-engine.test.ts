@@ -133,7 +133,7 @@ describe('rung modes', () => {
     expect(laneRung(undefined)).toBe(0)
     expect(laneRung({ ever: 0, active: 0, achieved: 0, retired: 0 })).toBe(0)
     expect(laneRung({ ever: 1, active: 0, achieved: 0, retired: 1 })).toBe(0) // retired → reef
-    expect(laneRung({ ever: 3, active: 2, achieved: 1, retired: 0, instanceTest: true })).toBe(0) // 'sensed' law
+    expect(laneRung({ ever: 3, active: 2, achieved: 1, retired: 0, instanceTest: true })).toBe(0) // instance-test law
     expect(laneRung({ ever: 1, active: 1, achieved: 0, retired: 0 })).toBe(1) // dock r0
     expect(laneRung({ ever: 3, active: 2, achieved: 1, retired: 0 })).toBe(2) // warehouses r1
   })

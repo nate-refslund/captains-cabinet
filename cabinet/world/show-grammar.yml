@@ -268,7 +268,7 @@ fauna:                   # §15.5 population law: fauna for joy; HUMAN-shaped sp
     decorative: true
     staged: false        # cozy pass 2026-07-09: Labrador sleep art landed
     codex:
-      represents: "Carries no data — exists for joy. Pippin sleeps by the Great House porch (pack sleep frames, slow seeded breathing loop). Petting is a client-only seeded reaction riding the inspect click: zero state, zero writes. Exactly one dog, forever — scarcity keeps the bound/decorative boundary legible."
+      represents: "Carries no data — exists for joy. The dog sleeps by the Great House porch (pack sleep frames, slow seeded breathing loop). Petting is a client-only seeded reaction riding the inspect click: zero state, zero writes. Exactly one dog, forever — scarcity keeps the bound/decorative boundary legible."
       mechanism_path: "docs/plans/world-unified-spec-v2-2026-07-09.md"
       day0: "asleep by the cottage door from the egg on"
   cat:

@@ -12,7 +12,7 @@
 -- updated_at trigger untouched). Idempotent CREATEs throughout.
 --
 -- Apply to:
---   - Sensed Neon (Work Cabinet) — where library_records lives today.
+--   - product Neon (Work Cabinet) — where library_records lives today.
 --   - Personal cabinet_memory (when Spec 044 v2 Gap 5 dual-bootstrap ships).
 --
 -- App-side follow-up (Spec 044 v2 Phase 2):

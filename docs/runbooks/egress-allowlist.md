@@ -54,7 +54,7 @@ officer↔captain control plane.
 adds the captain's OWN domains from `org_domains` in `instance/config/platform.yml`
 (else `product.yml` / nested `product.org_domains`) — the exact source
 `framework/env.py` `org_domains()` reads. Each domain and its subdomains are
-allowed (`polads.eu` also covers `xtest.polads.eu`). **No** captain- or
+allowed (`acme.example` also covers `xtest.acme.example`). **No** captain- or
 industry-specific host is hardcoded in the framework; a deployment with no
 `org_domains` simply contributes none.
 

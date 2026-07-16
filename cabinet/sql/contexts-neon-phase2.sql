@@ -5,8 +5,8 @@
 -- cabinet_memory + library_records, but missed library_spaces. The pool-
 -- architecture greenlight (Captain msg 2160, 2026-04-28) requires every
 -- project-scoped table to carry a slug so multi-project cabinets can split
--- cleanly. Sensed-vs-framework Spaces commingle in the same row-set today,
--- which blocks the planned `split-cabinet.sh --project sensed` migration.
+-- cleanly. Product-vs-framework Spaces commingle in the same row-set today,
+-- which blocks the planned `split-cabinet.sh --project acme` migration.
 --
 -- Pattern follows phase1 (additive + idempotent + nullable). NOT NULL
 -- constraint applies in a future phase3 after operational backfill of

@@ -257,7 +257,8 @@ class TestTasksBoard:
 
     action_exec's DEFAULT_TASKS_BOARD and the act-first canary read the board id
     via this resolver, never a literal. On THIS deployment it must return
-    "5091706356" so the executor + canary are byte-identical."""
+    exactly the board id the live platform.yml declares, so the executor +
+    canary are byte-identical."""
 
     def test_reads_board_from_platform_yml(self, tmp_path, monkeypatch,
                                            isolated_tasks_board_cache):
@@ -298,12 +299,23 @@ class TestTasksBoard:
     @launcher_instance_only
     def test_this_instance_yields_the_tasks_board(self, monkeypatch,
                                                   isolated_tasks_board_cache):
-        """Byte-identity guard: this worktree's platform.yml yields 5091706356,
-        so DEFAULT_TASKS_BOARD + the canary probe board are byte-identical."""
+        """Byte-identity guard: the resolver returns exactly the tasks_board
+        THIS worktree's platform.yml declares, so DEFAULT_TASKS_BOARD + the
+        canary probe board are byte-identical. The expected id is derived
+        from the on-disk YAML itself (never a hardcoded literal here — the
+        same idiom as the org_domains guard above), so no deployment's board
+        id ships in this test."""
+        import yaml
         monkeypatch.delenv("CABINET_TASKS_BOARD", raising=False)
         monkeypatch.delenv("CABINET_ROOT", raising=False)
         env._tasks_board_cache = None
-        assert env.tasks_board() == "5091706356"
+        cfg = os.path.join(os.path.dirname(__file__), "..", "..",
+                           "instance/config/platform.yml")
+        with open(cfg, encoding="utf-8") as fh:
+            declared = str((yaml.safe_load(fh) or {}).get("tasks_board") or "")
+        assert declared and declared.isdigit(), \
+            "the launcher's real platform.yml must declare tasks_board"
+        assert env.tasks_board() == declared
 
 
 @pytest.fixture

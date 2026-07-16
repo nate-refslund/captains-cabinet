@@ -20,7 +20,7 @@
 #   --apply             actually write (default: dry-run — count + sample + zero writes)
 #
 # Each table's UPDATE runs as a single transaction. For Cabinet tables
-# at Sensed scale (~2k rows/table) this completes in well under a
+# at typical instance scale (~2k rows/table) this completes in well under a
 # second; if future growth makes this too heavy (>100k rows/table),
 # add a ctid-chunked loop here — not before.
 #

@@ -51,7 +51,7 @@ org_domains:
 # framework.env.tasks_board() reads this (env CABINET_TASKS_BOARD overrides) and
 # fails closed to "" (the executor's isdigit() guard then refuses rather than
 # landing on another deployment's board).
-tasks_board: ""                       # e.g. "1234567890" — YOUR Monday board id
+tasks_board: ""                       # e.g. "12345678" — YOUR Monday board id
 
 # =============================================================
 # Flavor-A source paths — the personal-sensing estate this instance reads

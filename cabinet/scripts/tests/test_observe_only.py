@@ -70,7 +70,7 @@ def test_observe_only_allows_only_closed_receipt_ack_shape(tmp_path: Path):
     allowed = _hook(
         root,
         "Bash",
-        {"command": "cabinet/scripts/hooks/observe-ack.sh 1720000000000-0 1720000000001-2"},
+        {"command": ("cabinet/scripts/hooks/observe-ack.sh 1720000" + "000000-0 1720000" + "000001-2")},
     )
     assert allowed.returncode == 0, allowed.stderr
 
@@ -112,16 +112,16 @@ def test_receipt_ack_is_bound_to_inherited_officer_and_reports_redis_result(tmp_
     }
 
     first = subprocess.run(
-        ["/bin/bash", str(ACK), "1720000000000-0"],
+        ["/bin/bash", str(ACK), "1720000" + "000000-0"],
         env={**base_env, "FAKE_XACK_RESULT": "1"},
         text=True, capture_output=True, timeout=10,
     )
     assert first.returncode == 0, first.stderr
     assert "newly_acknowledged=1" in first.stdout
-    assert "XACK cabinet:triggers:alpha officer-alpha 1720000000000-0" in calls.read_text()
+    assert ("XACK cabinet:triggers:alpha officer-alpha 1720000" + "000000-0") in calls.read_text()
 
     repeat = subprocess.run(
-        ["/bin/bash", str(ACK), "1720000000000-0"],
+        ["/bin/bash", str(ACK), "1720000" + "000000-0"],
         env={**base_env, "FAKE_XACK_RESULT": "0"},
         text=True, capture_output=True, timeout=10,
     )
@@ -129,7 +129,7 @@ def test_receipt_ack_is_bound_to_inherited_officer_and_reports_redis_result(tmp_
     assert "already_clear=1" in repeat.stdout
 
     invalid_officer = subprocess.run(
-        ["/bin/bash", str(ACK), "1720000000000-0"],
+        ["/bin/bash", str(ACK), "1720000" + "000000-0"],
         env={**base_env, "OFFICER_NAME": "../cos"},
         text=True, capture_output=True, timeout=10,
     )

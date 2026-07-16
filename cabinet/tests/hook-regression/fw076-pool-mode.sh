@@ -1,6 +1,6 @@
 #!/bin/bash
 # FW-076 pool-mode harness: generalized /workspace/<slug>/ write-gate coverage
-# Exercises 3 representative slugs (sensed, acme-org, a1) across 9 attack
+# Exercises 3 representative slugs (widgets, acme-org, a1) across 9 attack
 # classes + 12 ALLOW probes (false-positive guards).
 #
 # 27 BLOCK probes (3 slugs × 9 attack classes: redirect, sed-i, tee, cp-last,
@@ -30,18 +30,18 @@ probe() {
 }
 
 # ------------------------------------------------------------------
-# SLUG: sensed
+# SLUG: widgets
 # ------------------------------------------------------------------
-echo "=== BLOCK: slug=sensed (must BLOCK for non-CTO) ==="
-probe "sensed P1 redirect"           'echo x > /workspace/sensed/README.md'                         BLOCK
-probe "sensed P2 sed -i"             'sed -i "s/x/y/" /workspace/sensed/src/app.ts'                 BLOCK
-probe "sensed P3 tee"                'tee /workspace/sensed/log.md'                                 BLOCK
-probe "sensed P4 cp last-arg"        'cp /tmp/x /workspace/sensed/dst'                              BLOCK
-probe "sensed P5 cp -t"              'cp -t /workspace/sensed/ /tmp/src'                            BLOCK
-probe "sensed P6 cp --target-dir"    'cp --target-directory=/workspace/sensed/ /tmp/src'            BLOCK
-probe "sensed P7 patch"              'patch /workspace/sensed/foo < fix.patch'                      BLOCK
-probe "sensed P8 perl -i"            'perl -i -pe "s/x/y/" /workspace/sensed/file.ts'              BLOCK
-probe "sensed P9 tar -C"             'tar -xf archive.tar -C /workspace/sensed/'                   BLOCK
+echo "=== BLOCK: slug=widgets (must BLOCK for non-CTO) ==="
+probe "widgets P1 redirect"           'echo x > /workspace/widgets/README.md'                         BLOCK
+probe "widgets P2 sed -i"             'sed -i "s/x/y/" /workspace/widgets/src/app.ts'                 BLOCK
+probe "widgets P3 tee"                'tee /workspace/widgets/log.md'                                 BLOCK
+probe "widgets P4 cp last-arg"        'cp /tmp/x /workspace/widgets/dst'                              BLOCK
+probe "widgets P5 cp -t"              'cp -t /workspace/widgets/ /tmp/src'                            BLOCK
+probe "widgets P6 cp --target-dir"    'cp --target-directory=/workspace/widgets/ /tmp/src'            BLOCK
+probe "widgets P7 patch"              'patch /workspace/widgets/foo < fix.patch'                      BLOCK
+probe "widgets P8 perl -i"            'perl -i -pe "s/x/y/" /workspace/widgets/file.ts'              BLOCK
+probe "widgets P9 tar -C"             'tar -xf archive.tar -C /workspace/widgets/'                   BLOCK
 
 # ------------------------------------------------------------------
 # SLUG: acme-org (hyphenated slug — validates [a-z0-9-]* accepts hyphens)
@@ -90,32 +90,32 @@ probe "FP4 space-in-slug"            'echo x > "/workspace/foo bar/README.md"'  
 echo ""
 echo "=== ALLOW: legitimate read ops on pool slugs (must NOT block) ==="
 # cat is a read — no write-target in product path → ALLOW
-probe "FP5 cat sensed read"          'cat /workspace/sensed/src/app.ts'                             ALLOW
+probe "FP5 cat widgets read"          'cat /workspace/widgets/src/app.ts'                             ALLOW
 # grep is read-only → ALLOW
-probe "FP6 grep sensed read"         'grep "foo" /workspace/sensed/src/app.ts'                     ALLOW
+probe "FP6 grep widgets read"         'grep "foo" /workspace/widgets/src/app.ts'                     ALLOW
 # cd + ls: no write op → ALLOW
-probe "FP7 cd sensed + ls"           'cd /workspace/sensed && ls'                                  ALLOW
-# tee writing to /tmp, reading from sensed → ALLOW
-probe "FP8 cat sensed | tee /tmp"    'cat /workspace/sensed/x | tee /tmp/y'                        ALLOW
-# cp reading FROM sensed, writing to /tmp → ALLOW
-probe "FP9 cp sensed -> /tmp"        'cp /workspace/sensed/x /tmp/y'                               ALLOW
-# git log in sensed: read-only git op → ALLOW
-probe "FP10 git log sensed"          'git -C /workspace/sensed log --oneline'                      ALLOW
-# rsync reading FROM sensed to /tmp → ALLOW (rsync -t = --times, not --target)
-probe "FP11 rsync sensed -> /tmp"    'rsync -rt /workspace/sensed/ /tmp/dst'                       ALLOW
+probe "FP7 cd widgets + ls"           'cd /workspace/widgets && ls'                                  ALLOW
+# tee writing to /tmp, reading from widgets → ALLOW
+probe "FP8 cat widgets | tee /tmp"    'cat /workspace/widgets/x | tee /tmp/y'                        ALLOW
+# cp reading FROM widgets, writing to /tmp → ALLOW
+probe "FP9 cp widgets -> /tmp"        'cp /workspace/widgets/x /tmp/y'                               ALLOW
+# git log in widgets: read-only git op → ALLOW
+probe "FP10 git log widgets"          'git -C /workspace/widgets log --oneline'                      ALLOW
+# rsync reading FROM widgets to /tmp → ALLOW (rsync -t = --times, not --target)
+probe "FP11 rsync widgets -> /tmp"    'rsync -rt /workspace/widgets/ /tmp/dst'                       ALLOW
 
 # CTO bypass: same command that would block non-CTO must pass for CTO
 # (tested inline with OFFICER_NAME=cto)
 echo ""
 echo "=== ALLOW: CTO bypass on pool slugs (CTO must not be blocked) ==="
-cto_result=$(echo '{"tool_name":"Bash","tool_input":{"command":"echo x > /workspace/sensed/README.md"}}' | CABINET_HOOK_TEST_MODE=1 OFFICER_NAME=cto bash "$HOOK" 2>/dev/null; echo "EXIT:$?")
+cto_result=$(echo '{"tool_name":"Bash","tool_input":{"command":"echo x > /workspace/widgets/README.md"}}' | CABINET_HOOK_TEST_MODE=1 OFFICER_NAME=cto bash "$HOOK" 2>/dev/null; echo "EXIT:$?")
 cto_exit="${cto_result##*EXIT:}"
 if [ "$cto_exit" = "0" ]; then
   verdict="PASS"; PASS=$((PASS+1))
 else
   verdict="FAIL"; FAIL=$((FAIL+1))
 fi
-printf "%-6s | %-56s | exit=%s\n" "$verdict" "FP12 CTO bypass sensed redirect" "$cto_exit"
+printf "%-6s | %-56s | exit=%s\n" "$verdict" "FP12 CTO bypass widgets redirect" "$cto_exit"
 
 echo ""
 echo "=== Summary: PASS=$PASS  FAIL=$FAIL ==="

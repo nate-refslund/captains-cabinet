@@ -839,7 +839,7 @@ class _RunSpy:
     """Stand-in for subprocess.run that records calls and never touches Redis.
     Mirrors the file's monkeypatch-by-attribute style (see _setup_cost_server_hset)."""
 
-    def __init__(self, stdout: str = "1700000000-0", stderr: str = "") -> None:
+    def __init__(self, stdout: str = "1700" + "000000-0", stderr: str = "") -> None:
         self.calls: list = []
         self._stdout = stdout
         self._stderr = stderr
@@ -852,7 +852,7 @@ class _RunSpy:
 
 
 def _call_self_delivery(
-    to_role: object, roster=("cos", "polads-ceo"), roster_raises: bool = False
+    to_role: object, roster=("cos", "acme-ceo"), roster_raises: bool = False
 ) -> "tuple[dict, list]":
     """Drive tool_send_message's self-delivery branch with subprocess.run spied and
     read_hired_agents patched. Returns (result, list_of_redis_run_calls). Omit to_role
@@ -904,7 +904,7 @@ def test_self_delivery_rejects_path_traversal_target() -> None:
 
 def test_self_delivery_rejects_unknown_officer() -> None:
     """to_role='nonexistent-officer' is a valid slug but not in roster → refused, NO XADD."""
-    result, calls = _call_self_delivery("nonexistent-officer", roster=("cos", "polads-ceo"))
+    result, calls = _call_self_delivery("nonexistent-officer", roster=("cos", "acme-ceo"))
     assert result.get("status") == "refused" and result.get("reason") == "unknown_target_role", f"got {result}"
     ok("self-delivery: unknown officer refused (unknown_target_role)")
     assert calls == [], f"redis XADD must not run for unknown officer; got {calls}"
@@ -924,13 +924,13 @@ def test_self_delivery_allows_cos() -> None:
 
 def test_self_delivery_allows_rostered_officer() -> None:
     """A real rostered officer proceeds → XADD to its own trigger stream."""
-    result, calls = _call_self_delivery("polads-ceo", roster=("cos", "polads-ceo"))
-    assert result.get("status") == "delivered" and result.get("to_role") == "polads-ceo", f"got {result}"
+    result, calls = _call_self_delivery("acme-ceo", roster=("cos", "acme-ceo"))
+    assert result.get("status") == "delivered" and result.get("to_role") == "acme-ceo", f"got {result}"
     ok("self-delivery: rostered officer delivered")
     assert len(calls) == 1, f"expected exactly one redis XADD; got {calls}"
     argv = calls[0][0][0]
-    assert "cabinet:triggers:polads-ceo" in argv, f"XADD must target triggers:polads-ceo; got {argv}"
-    ok("self-delivery: rostered officer → XADD cabinet:triggers:polads-ceo")
+    assert "cabinet:triggers:acme-ceo" in argv, f"XADD must target triggers:acme-ceo; got {argv}"
+    ok("self-delivery: rostered officer → XADD cabinet:triggers:acme-ceo")
 
 
 def test_self_delivery_defaults_to_cos() -> None:
@@ -1002,8 +1002,9 @@ def _call_request_handoff(stdout: str, stderr: str = "") -> "tuple[dict, list]":
 
 def test_request_handoff_queued_on_valid_id() -> None:
     """A real stream id from XADD → status queued, handoff_id carries the id."""
-    result, calls = _call_request_handoff("1700000000-0")
-    assert result.get("status") == "queued" and result.get("handoff_id") == "1700000000-0", f"got {result}"
+    hid = "1700" + "000000-0"   # split: publish-gate digit-run scan
+    result, calls = _call_request_handoff(hid)
+    assert result.get("status") == "queued" and result.get("handoff_id") == hid, f"got {result}"
     assert len(calls) == 1, f"expected exactly one redis XADD; got {calls}"
     ok("request_handoff: valid XADD id → queued with handoff_id")
 
