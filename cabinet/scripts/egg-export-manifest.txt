@@ -296,6 +296,10 @@ expect-present instance/config/posture-presets/org-macmini.yml
 expect-present instance/config/policies/README.md
 expect-present cabinet/fixtures/testburg/README.md
 expect-present cabinet/fixtures/testburg/generate.py
+# Vault wave (2026-07-17): the egg ships the org vault scaffold — a fresh
+# captain's default knowledge corpus; vault/README.md carries the
+# doc-placement one-pager the onboarding flow points at.
+expect-present vault/README.md
 expect-present cabinet/mcp-overlays/cua-driver.mcp.json
 expect-present shared/interfaces/captain-vetoes.yml
 expect-present shared/interfaces/captain-rules-index.yaml

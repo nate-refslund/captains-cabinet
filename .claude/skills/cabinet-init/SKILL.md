@@ -351,11 +351,13 @@ placeholders only:
    `instance/config/contexts/<slug>.yml` + `projects/<slug>.yml`,
    `instance/agents/<slug>-ceo.md` (rendered from the lane-CEO
    template), the marked `officers:` block + captain keys in
-   `instance/config/platform.yml` (plus a `product_brain_dir:` key —
-   only when absent — defaulting to `product-brain`, relative to the
+   `instance/config/platform.yml` (plus an `org_vault_dir:` key —
+   only when absent, and never over a hand-edited legacy
+   `product_brain_dir:` key — defaulting to `vault`, relative to the
    deployment root; canonical resolver
-   `framework.env.product_brain_dir()`, `CABINET_PRODUCT_BRAIN_DIR`
-   overrides), `instance/config/roster.yml`
+   `framework.env.org_vault_dir()`, `CABINET_ORG_VAULT_DIR`
+   overrides, legacy `CABINET_PRODUCT_BRAIN_DIR` alias honored),
+   `instance/config/roster.yml`
    for `bootstrap-roles.sh --roster`,
    `instance/config/active-project.txt` (first lane slug, only when
    absent — bootstrap-roles.sh needs it for the product slug and

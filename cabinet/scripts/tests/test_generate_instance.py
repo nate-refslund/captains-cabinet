@@ -428,13 +428,13 @@ class TestShapesAndExample:
 
 
 # ---------------------------------------------------------------------------
-# sources.yml emission (org flavor → OrgSource) + product_brain_dir stamping
+# sources.yml emission (org flavor → OrgSource) + org_vault_dir stamping
 # ---------------------------------------------------------------------------
 
-class TestSourcesAndProductBrain:
+class TestSourcesAndOrgVault:
     def test_org_flavor_emits_orgsource_binding(self, cab_root):
         """org flavor (explicit) → marked sources.yml binding OrgSource; the
-        platform gains product_brain_dir (relative to the deployment root)."""
+        platform gains org_vault_dir (relative to the deployment root)."""
         answers = acme_answers()
         answers["autonomy"] = {"posture": "propose_first", "flavor": "org"}
         run_gen(cab_root, answers)
@@ -450,7 +450,7 @@ class TestSourcesAndProductBrain:
         assert "dispatch" not in src
 
         platform = yaml.safe_load((cab_root / "instance/config/platform.yml").read_text())
-        assert platform["product_brain_dir"] == "product-brain"
+        assert platform["org_vault_dir"] == "vault"
 
     def test_default_flavor_is_org_and_emits(self, cab_root):
         """No autonomy.flavor key at all (the acme fixture) → defaults to org
@@ -499,15 +499,31 @@ class TestSourcesAndProductBrain:
         run_gen(cab_root, acme_answers())
         assert src_path.read_bytes() == before
 
-    def test_hand_edited_product_brain_dir_survives(self, cab_root):
-        """product_brain_dir is set-if-absent: a captain's hand-edited value
+    def test_hand_edited_org_vault_dir_survives(self, cab_root):
+        """org_vault_dir is set-if-absent: a captain's hand-edited value
         must survive every re-run (there is no answers source for it)."""
+        platform = cab_root / "instance/config/platform.yml"
+        platform.write_text(PLATFORM_FIXTURE + 'org_vault_dir: "custom/corpus"\n')
+        run_gen(cab_root, acme_answers())
+        parsed = yaml.safe_load(platform.read_text())
+        assert parsed["org_vault_dir"] == "custom/corpus"
+        assert platform.read_text().count("org_vault_dir") == 1
+
+    def test_hand_edited_legacy_product_brain_dir_suppresses_stamping(self, cab_root):
+        """Vault-rename back-compat: a pre-rename platform.yml carrying a
+        hand-edited product_brain_dir must NOT gain an org_vault_dir stamp —
+        the resolver reads the new key FIRST, so stamping it would silently
+        override the captain's legacy curation."""
         platform = cab_root / "instance/config/platform.yml"
         platform.write_text(PLATFORM_FIXTURE + 'product_brain_dir: "custom/corpus"\n')
         run_gen(cab_root, acme_answers())
-        parsed = yaml.safe_load(platform.read_text())
+        text = platform.read_text()
+        assert "org_vault_dir" not in text, (
+            "generator stamped org_vault_dir over a hand-edited legacy "
+            "product_brain_dir — the legacy value would stop winning"
+        )
+        parsed = yaml.safe_load(text)
         assert parsed["product_brain_dir"] == "custom/corpus"
-        assert platform.read_text().count("product_brain_dir") == 1
 
     def test_dry_run_emits_no_sources(self, cab_root):
         run_gen(cab_root, acme_answers(), dry_run=True)

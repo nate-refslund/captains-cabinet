@@ -3,8 +3,9 @@
 Wave-1 (2026-07-07) made a FRESH org-flavor instance recall-capable on day 1:
 `cabinet/scripts/generate-instance.py` emits `instance/config/sources.yml`
 binding `framework.sources.org:OrgSource` (the cabinet_memory-backed
-PersonalSource) and stamps platform.yml with the `product_brain_dir` corpus
-key. These tests lock that emission chain through the REAL CLI (subprocess,
+PersonalSource) and stamps platform.yml with the `org_vault_dir` corpus
+key (vault wave 2026-07-17; formerly `product_brain_dir`). These tests lock
+that emission chain through the REAL CLI (subprocess,
 argv list — never a shell string) so any future change that breaks day-1 org
 recall fails HERE, loudly:
 
@@ -12,8 +13,8 @@ recall fails HERE, loudly:
     "generated-by: cabinet-init" marker (regenerability), and deliberately
     has NO ``dispatch:`` binding (an org box has no personal actuator estate
     — get_dispatch() must fail-close to NullPersonalDispatch);
-  * platform.yml carries the ``product_brain_dir`` key (the org corpus dir
-    surfaced by ``framework.env.product_brain_dir()``);
+  * platform.yml carries the ``org_vault_dir`` key (the org corpus dir
+    surfaced by ``framework.env.org_vault_dir()``);
   * NO secret-shaped string appears anywhere under the generated root —
     scanned with the generator's OWN ``SECRET_PATTERNS`` so this lock can
     never drift from the refusal list;
@@ -152,7 +153,7 @@ def run_cli_ok(root: Path, answers: dict) -> "subprocess.CompletedProcess":
 
 
 # ---------------------------------------------------------------------------
-# The org emission contract — sources.yml + product_brain_dir
+# The org emission contract — sources.yml + org_vault_dir
 # ---------------------------------------------------------------------------
 
 class TestOrgSourcesEmission:
@@ -175,18 +176,18 @@ class TestOrgSourcesEmission:
         assert parsed.get("dispatch") is None
         assert not re.search(r"^dispatch:", text, re.M)
 
-    def test_platform_carries_product_brain_dir(self, cab_root):
+    def test_platform_carries_org_vault_dir(self, cab_root):
         run_cli_ok(cab_root, org_answers())
         text = (cab_root / "instance/config/platform.yml").read_text()
-        assert re.search(r"^product_brain_dir:", text, re.M), (
-            "platform.yml must carry a top-level product_brain_dir key"
+        assert re.search(r"^org_vault_dir:", text, re.M), (
+            "platform.yml must carry a top-level org_vault_dir key"
         )
         platform = yaml.safe_load(text)
-        # RELATIVE to the deployment root (⇒ <root>/product-brain), never an
+        # RELATIVE to the deployment root (⇒ <root>/vault), never an
         # absolute machine path: generated config must stay relocatable and
         # launcher-free (an absolute tmp/live path would carry the machine's
         # username and trip the universality ratchet).
-        assert platform["product_brain_dir"] == "product-brain"
+        assert platform["org_vault_dir"] == "vault"
 
     def test_rerun_is_idempotent_on_the_emitted_binding(self, cab_root):
         """The marker convention must keep the emitted files regenerable:

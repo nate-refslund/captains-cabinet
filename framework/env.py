@@ -944,47 +944,61 @@ def active_preset(default: str = "work") -> str:
     return default
 
 
-# Cache: product_brain_dir is read once per process (same lifecycle as
+# Cache: org_vault_dir is read once per process (same lifecycle as
 # vault_dir). None ⇒ unresolved — the EMPTY string is a VALID resolved value
 # (a deployment with no org corpus), so the sentinel is None, never "".
-_product_brain_dir_cache: "str | None" = None
+_org_vault_dir_cache: "str | None" = None
 
 
-def product_brain_dir(default: str = "") -> str:
-    """The ORG's product-brain markdown corpus directory — the flavor-B twin of
-    ``vault_dir()``. Where the vault is the captain's PERSONAL brain (absent on
-    clean-room org boxes, where ``vault_dir()`` fail-closes to ``""`` and the
-    lane gathers zero vault sections), the product-brain corpus is the ORG's
-    OWN knowledge (architecture, decisions, incidents, deploy notes — the
-    plan-B B4.14 corpus), written by officers via normal file writes and
-    gathered by ``run_action_lane.gather_signals``'s corpus sections.
+def org_vault_dir(default: str = "") -> str:
+    """The cabinet's VAULT — the org's own knowledge-corpus directory
+    (``vault/``, Captain-ratified 2026-07-16 as the default vault; the
+    directory and this resolver were formerly named product-brain).
 
-    Resolution order: the env override ``CABINET_PRODUCT_BRAIN_DIR`` (an
-    explicit per-process override, mirroring ``vault_dir``'s
-    ``CABINET_VAULT_DIR``) → the ``product_brain_dir`` key in
-    ``instance/config/platform.yml`` (else ``product.yml``) IF the directory it
-    names exists — the key generate-instance.py stamps; relative values resolve
-    against the repo root, absolute/``~`` values are honored as-is, so a
-    captain relocates the corpus by editing config (review fix 2026-07-07: the
-    stamped key used to be dead config that nothing read) → ``<repo>/
-    product-brain`` IF that directory exists (the corpus ships in-repo, so any
-    checkout that carries it resolves it with zero config) → the generic
-    ``default`` (``""``). A non-empty value is ``~``-expanded. Every non-env
-    arm is existence-gated, so a deployment with NO corpus (or a configured
-    path that does not exist) resolves ``""``/the next arm — the caller then
-    treats the corpus sections as empty (fail-closed: no corpus ⇒ no
-    sections), never crashes, and never scans another launcher's paths."""
-    global _product_brain_dir_cache
-    if _product_brain_dir_cache is not None:
-        return _product_brain_dir_cache
-    env_override = (os.environ.get("CABINET_PRODUCT_BRAIN_DIR") or "").strip()
-    if env_override:
-        _product_brain_dir_cache = os.path.expanduser(env_override)
-        return _product_brain_dir_cache
+    Where ``vault_dir()`` above resolves the captain's PERSONAL brain (an
+    external notes vault, absent on clean-room org boxes), this resolver names
+    the ORG's OWN knowledge — architecture, decisions, incidents, deploy
+    notes, designs, plans, any captain/org doc (see ``vault/README.md``) —
+    written by officers via normal file writes and gathered by
+    ``run_action_lane.gather_signals``'s corpus sections. The DISTINCT name is
+    deliberate: reusing ``vault_dir`` for the org corpus would have silently
+    repointed the personal-vault seam (fidelity Decisions corpus, flavor-A
+    gather) at the in-repo corpus.
+
+    Resolution order:
+      1. env ``CABINET_ORG_VAULT_DIR`` (explicit per-process override,
+         mirroring ``vault_dir``'s ``CABINET_VAULT_DIR``; honored verbatim)
+      2. env ``CABINET_PRODUCT_BRAIN_DIR`` — the pre-rename alias, still
+         honored so existing deployments/launchers keep resolving
+      3. the ``org_vault_dir`` key in ``instance/config/platform.yml`` (else
+         ``product.yml``) IF the directory it names exists — the key
+         generate-instance.py stamps; relative values resolve against the
+         repo root, absolute/``~`` values are honored as-is, so a captain
+         relocates the corpus by editing config
+      4. the legacy ``product_brain_dir`` key — same semantics, still honored
+         so a hand-edited pre-rename config keeps working
+      5. ``<repo>/vault`` IF that directory exists (the corpus ships in-repo,
+         so any checkout that carries it resolves with zero config)
+      6. legacy ``<repo>/product-brain`` IF it exists (un-migrated checkout)
+      7. the generic ``default`` (``""``).
+    A non-empty value is ``~``-expanded. Every non-env arm is existence-gated,
+    so a deployment with NO corpus (or a configured path that does not exist)
+    resolves ``""``/the next arm — the caller then treats the corpus sections
+    as empty (fail-closed: no corpus ⇒ no sections), never crashes, and never
+    scans another launcher's paths."""
+    global _org_vault_dir_cache
+    if _org_vault_dir_cache is not None:
+        return _org_vault_dir_cache
+    for env_name in ("CABINET_ORG_VAULT_DIR", "CABINET_PRODUCT_BRAIN_DIR"):
+        env_override = (os.environ.get(env_name) or "").strip()
+        if env_override:
+            _org_vault_dir_cache = os.path.expanduser(env_override)
+            return _org_vault_dir_cache
     resolved = default
     try:
         root = _cabinet_root()
-        # platform.yml / product.yml key (stamped by generate-instance.py).
+        # platform.yml / product.yml key (stamped by generate-instance.py);
+        # the new key name wins, the legacy key is honored after it.
         try:
             import yaml  # local: keep env.py import-light for the safety switches
             for rel in ("instance/config/platform.yml", "instance/config/product.yml"):
@@ -997,27 +1011,44 @@ def product_brain_dir(default: str = "") -> str:
                     continue
                 if not isinstance(data, dict):
                     continue
-                val = data.get("product_brain_dir")
-                if val is None and isinstance(data.get("product"), dict):
-                    val = data["product"].get("product_brain_dir")
+                val = None
+                for key in ("org_vault_dir", "product_brain_dir"):
+                    cand_val = data.get(key)
+                    if cand_val is None and isinstance(data.get("product"), dict):
+                        cand_val = data["product"].get(key)
+                    if isinstance(cand_val, str) and cand_val.strip():
+                        val = cand_val
+                        break
                 if isinstance(val, str) and val.strip():
                     cand_str = os.path.expanduser(val.strip())
                     cand_path = Path(cand_str)
                     if not cand_path.is_absolute():
                         cand_path = root / cand_str
                     if cand_path.is_dir():
-                        _product_brain_dir_cache = str(cand_path)
-                        return _product_brain_dir_cache
+                        _org_vault_dir_cache = str(cand_path)
+                        return _org_vault_dir_cache
                     break  # key set but dir absent → fall through (fail-closed)
         except Exception:
             pass
-        cand = root / "product-brain"
-        if cand.is_dir():
-            resolved = str(cand)
+        for rel_default in ("vault", "product-brain"):
+            cand = root / rel_default
+            if cand.is_dir():
+                resolved = str(cand)
+                break
     except Exception:
         resolved = default
-    _product_brain_dir_cache = os.path.expanduser(resolved) if resolved else resolved
-    return _product_brain_dir_cache
+    _org_vault_dir_cache = os.path.expanduser(resolved) if resolved else resolved
+    return _org_vault_dir_cache
+
+
+def product_brain_dir(default: str = "") -> str:
+    """DEPRECATED pre-2026-07-16 name of :func:`org_vault_dir` — a working
+    alias, kept because the schg-locked germline acting lane
+    (``framework/acting/run_action_lane.py``) imports this symbol and can only
+    be modernized in a Captain unlock window (and out-of-tree scripts may
+    still call it). New code calls ``org_vault_dir()``; resolution — including
+    the legacy ``CABINET_PRODUCT_BRAIN_DIR`` env alias — is identical."""
+    return org_vault_dir(default)
 
 
 def comms_charter_path() -> Path:

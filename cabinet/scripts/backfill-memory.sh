@@ -3,9 +3,10 @@
 # Sources: experience_records, cabinet_research (both from internal PG),
 #          ALL hook-watched knowledge files (captain-decisions.md per-H2-entry,
 #          captain-patterns/intents, tech radar, product specs, backlog, tier2
-#          working notes + reflections, skills, product-brain corpus,
-#          constitution), and framework extras (CLAUDE.md, agent defs, guide,
-#          officer CLAUDE.md).
+#          working notes + reflections, skills, the org vault corpus
+#          (vault/, legacy product-brain/ checkouts included), the docs/
+#          tree (framework_doc), constitution), and framework extras
+#          (CLAUDE.md, agent defs, guide, officer CLAUDE.md).
 #
 # Parsing/queueing logic is SHARED with the live hook: this script sources
 # cabinet/scripts/hooks/post-file-write-memory.sh in library mode
@@ -161,13 +162,37 @@ for f in "$CABINET_ROOT/shared/interfaces/captain-decisions.md" \
   pfwm_queue_watched_file "$f" "$WRITER" && WF_COUNT=$((WF_COUNT+1))
 done
 
-# product-brain corpus (source_type=product_brain, whole-file embeds) — find,
-# not a glob, because the corpus nests to arbitrary depth (decisions/,
-# incidents/, per-product subdirs). Same TEMPLATE skip as above.
+# Org vault corpus (source_type=product_brain — the DB taxonomy name predates
+# the 2026-07-16 vault rename; whole-file embeds) + docs/ tree
+# (source_type=framework_doc, joined the memory index 2026-07-17). find, not a
+# glob, because both trees nest to arbitrary depth. Same TEMPLATE skip as
+# above. Queued with an EXPLICIT source_type (mirroring pfwm_queue_watched_file
+# byte-for-byte in meta shape) rather than via pfwm_source_type: the hook's own
+# vault/ + docs/ watch patterns land in a germline ceremony
+# (patches/germline-vault-hook-watch-2026-07-17.patch) and backfill must not
+# depend on that timing. Legacy product-brain/ is still walked for
+# un-migrated checkouts.
+queue_typed_file() {  # $1=source_type  $2=path
+  local st="$1" f="$2" content rel ts meta
+  [ ! -f "$f" ] && return 1
+  content=$(cat "$f") || return 1
+  [ -z "$(printf '%s' "$content" | tr -d '[:space:]')" ] && return 1
+  rel="${f#${CABINET_ROOT}/}"
+  ts="$(pfwm_content_ts "$f")"  # "" when underivable — NEVER mtime
+  meta=$(jq -nc --arg officer "$WRITER" --arg writer "$WRITER" \
+    --arg trust "$(pfwm_trust_for "$st")" \
+    '{edited_by: $officer, writer: $writer, trust: $trust}')
+  memory_queue_embed "$st" "$rel" "$WRITER" "" "$content" "$meta" "$ts"
+}
 while IFS= read -r -d '' f; do
   [[ "$(basename "$f")" == TEMPLATE* ]] && continue
-  pfwm_queue_watched_file "$f" "$WRITER" && WF_COUNT=$((WF_COUNT+1))
-done < <(find "$CABINET_ROOT/product-brain" -type f -name '*.md' -print0 2>/dev/null)
+  queue_typed_file product_brain "$f" && WF_COUNT=$((WF_COUNT+1))
+done < <(find "$CABINET_ROOT/vault" "$CABINET_ROOT/product-brain" \
+           -type f -name '*.md' -print0 2>/dev/null)
+while IFS= read -r -d '' f; do
+  [[ "$(basename "$f")" == TEMPLATE* ]] && continue
+  queue_typed_file framework_doc "$f" && WF_COUNT=$((WF_COUNT+1))
+done < <(find "$CABINET_ROOT/docs" -type f -name '*.md' -print0 2>/dev/null)
 
 log "watched knowledge files queued: $WF_COUNT"
 

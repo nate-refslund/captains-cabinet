@@ -36,8 +36,8 @@ is not on disk.
    and (for org-flavor answers, i.e. `autonomy.flavor` other than
    `personal`) `instance/config/sources.yml` binding
    `framework.sources.org:OrgSource` so a fresh org instance has real
-   recall; `platform.yml` also gains a `product_brain_dir:` key when
-   absent (default `product-brain`, relative to the deployment root).
+   recall; `platform.yml` also gains an `org_vault_dir:` key when
+   absent (default `vault`, relative to the deployment root).
 2. **Manual:** `echo portfolio > instance/config/active-preset`, fill
    `instance/config/` per `presets/README.md`, then let the preset loader
    (`cabinet/scripts/load-preset.sh`, called by `start-officer.sh`) assemble

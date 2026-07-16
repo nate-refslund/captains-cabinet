@@ -182,7 +182,7 @@ def test_flag_on_corpus_sections_ride_along(vault, tmp_path, monkeypatch):
     monkeypatch.setenv("CABINET_GATHER_VIA_SOURCE", "1")
     monkeypatch.setattr(ral, "product_brain_dir", lambda: str(corpus))
     out = ral.gather_signals(AS_OF, vault=vault)
-    assert "--- CORPUS ref=product-brain/architecture.md ---" in out
+    assert "--- CORPUS ref=vault/architecture.md ---" in out
 
 
 # --- 3. fail-closed -----------------------------------------------------------

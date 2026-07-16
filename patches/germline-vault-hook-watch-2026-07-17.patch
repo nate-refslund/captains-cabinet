@@ -1,0 +1,77 @@
+diff --git a/cabinet/scripts/hooks/post-file-write-memory.sh b/cabinet/scripts/hooks/post-file-write-memory.sh
+index b76761df..2e9d97a2 100755
+--- a/cabinet/scripts/hooks/post-file-write-memory.sh
++++ b/cabinet/scripts/hooks/post-file-write-memory.sh
+@@ -15,6 +15,13 @@
+ # content time is derivable we pass "" (memory_queue_embed — lib-owned — stamps
+ # queue time for an empty arg; at hook-fire time that IS the edit observation
+ # time, an honest capture clock).
++#
++# Vault wave (2026-07-17; Captain-ratified 2026-07-16): the org corpus is the
++# cabinet VAULT — */vault/*.md is watched (legacy */product-brain/*.md kept as
++# an alias), and the docs/ tree joined the memory index as
++# source_type=framework_doc, ROOTED under CABINET_ROOT. Watch-list parity:
++# memory-reconcile.sh walks the same surfaces nightly (hook⊆reconcile,
++# pinned by cabinet/scripts/tests/test_bootstrap_memory_chain.py).
+ 
+ # ---------------------------------------------------------------
+ # Shared functions (pfwm_ = post-file-write-memory)
+@@ -50,8 +57,14 @@ pfwm_source_type() {
+     */memory/skills/*.md|*/memory/skills/evolved/*.md)
+       echo "skill"
+       ;;
++    */vault/*.md)
++      echo "product_brain"  # the cabinet vault (org corpus, any depth) — whole-file embed; the source_type name predates the 2026-07-16 vault rename (row-identity continuity)
++      ;;
++    "${CABINET_ROOT:-}"/docs/*.md)
++      echo "framework_doc"  # framework docs tree (plans/proposals/runbooks/specs) — ROOTED under the deployment root so a foreign repo's docs/ never ingests
++      ;;
+     */product-brain/*.md)
+-      echo "product_brain"  # org's own product corpus (any depth) — whole-file embed
++      echo "product_brain"  # legacy pre-rename corpus path (un-migrated checkout / externally relocated corpus) — same type
+       ;;
+     */framework/constitution-base.md|*/framework/safety-boundaries-base.md)
+       echo "framework_file"
+diff --git a/cabinet/scripts/tests/test_bootstrap_memory_chain.py b/cabinet/scripts/tests/test_bootstrap_memory_chain.py
+index ccf863a1..a18239f8 100644
+--- a/cabinet/scripts/tests/test_bootstrap_memory_chain.py
++++ b/cabinet/scripts/tests/test_bootstrap_memory_chain.py
+@@ -299,3 +299,38 @@ def test_captain_decisions_exception_stays_documented():
+         "exception note — the hook watches it, reconcile deliberately skips "
+         "it (append-interface wave owns entry-level ingest)"
+     )
++
++
++# ---------------------------------------------------------------------------
++# post-file-write-memory.sh — vault-wave patterns (these locks land via the
++# SAME germline ceremony patch as the hook edit itself:
++# patches/germline-vault-hook-watch-2026-07-17.patch)
++# ---------------------------------------------------------------------------
++
++def test_post_file_write_hook_watches_the_vault_pattern():
++    text = PFWM_HOOK.read_text()
++    assert _on_a_live_line(r"\*/vault/\*\.md", text), (
++        "post-file-write-memory.sh must watch */vault/*.md — the cabinet "
++        "vault (renamed from product-brain/) must embed at write time"
++    )
++
++
++def test_post_file_write_hook_watches_rooted_docs():
++    text = PFWM_HOOK.read_text()
++    assert _on_a_live_line(r'"\$\{CABINET_ROOT[^}"]*\}"/docs/\*\.md', text), (
++        "post-file-write-memory.sh must watch the docs/ tree ROOTED under "
++        "CABINET_ROOT (an unrooted */docs/*.md would ingest any foreign "
++        "repo's docs an officer edits)"
++    )
++    assert _on_a_live_line(r"framework_doc", text), (
++        "docs/ writes must land as source_type=framework_doc"
++    )
++
++
++def test_post_file_write_hook_keeps_the_legacy_corpus_alias():
++    text = PFWM_HOOK.read_text()
++    assert _on_a_live_line(r"\*/product-brain/\*\.md", text), (
++        "the legacy */product-brain/*.md watch arm must stay until "
++        "deliberately dropped — un-migrated checkouts and externally "
++        "relocated corpora still use the old dir name"
++    )

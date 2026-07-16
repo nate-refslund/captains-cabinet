@@ -19,15 +19,18 @@ text is world-description, never instructions).
 
 P3b (2026-07-07): sections carry a SOURCE. "vault" (the default) resolves
 under the caller's vault as before; "corpus" resolves under the ORG's OWN
-product-brain markdown corpus (plan-B B4.14: architecture / decisions /
-incidents / deploy notes, written by officers via normal file writes into
-<repo>/product-brain). This is the clean-room fix: on org boxes vault_dir()
-fail-closes to "" and every vault section is empty, so without a corpus
-source the lane gathered ZERO sections. An empty ``corpus_dir`` ⇒ corpus
-sections skip (fail-closed, same degrade as an absent vault folder); both
-non-empty ⇒ vault sections are UNCHANGED and corpus blocks ride alongside
-(additive). Corpus refs are namespaced "product-brain/<relpath>" so evidence
-refs stay unambiguous across sources. Same file-only contract, same
+knowledge corpus — the cabinet vault, ``<repo>/vault`` (plan-B B4.14:
+architecture / decisions / incidents / deploy notes, written by officers via
+normal file writes; Captain-ratified 2026-07-16 as the default vault — see
+vault/README.md for the rename history and the resolver's legacy aliases).
+This is the clean-room fix: on org boxes vault_dir() fail-closes to "" and
+every vault section is empty, so without a corpus source the lane gathered
+ZERO sections. An empty ``corpus_dir`` ⇒ corpus sections skip (fail-closed,
+same degrade as an absent vault folder); both non-empty ⇒ vault sections are
+UNCHANGED and corpus blocks ride alongside (additive). Corpus refs are
+namespaced "vault/<relpath>" so evidence refs stay unambiguous across sources
+(pre-rename ledger rows keep their old ref prefix as provenance — refs are
+per-run evidence handles, never rewritten). Same file-only contract, same
 _recent_files mtime fencing (as_of ceiling + window), same caps/chars bounds.
 """
 from __future__ import annotations
@@ -250,15 +253,16 @@ def collect_sections(as_of: dt.datetime, *, window_h: int = WINDOW_H,
     for sec in sections:
         if include is not None and sec.source not in include:
             continue
-        # P3b: a "corpus" section roots at the org's product-brain dir instead
-        # of the vault. Unresolved ("" on a box with no corpus) ⇒ the section
-        # is simply empty — the same fail-closed degrade as an absent vault
-        # folder, never an error. Refs are namespaced "product-brain/…" so an
-        # evidence ref never collides with a vault-relative path.
+        # P3b: a "corpus" section roots at the org's own corpus (the cabinet
+        # vault, env.org_vault_dir()) instead of the personal vault.
+        # Unresolved ("" on a box with no corpus) ⇒ the section is simply
+        # empty — the same fail-closed degrade as an absent vault folder,
+        # never an error. Refs are namespaced "vault/…" so an evidence ref
+        # never collides with a personal-vault-relative path.
         if sec.source == "corpus":
             if not corpus_dir:
                 continue
-            base, ref_prefix = Path(corpus_dir), "product-brain/"
+            base, ref_prefix = Path(corpus_dir), "vault/"
         else:
             base, ref_prefix = vault, ""
         root = base / sec.subpath if sec.subpath else base
