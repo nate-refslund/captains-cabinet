@@ -144,7 +144,7 @@ vercel_get() {
       ;;
     401|403)
       echo "ERROR: Vercel returned HTTP $code (token expired or unauthorized) — the token may need refreshing." >&2
-      echo "       Refresh the VERCEL_TOKEN in cabinet/.env (a working token authenticates as the step-network team)." >&2
+      echo "       Refresh the VERCEL_TOKEN in cabinet/.env (a working token authenticates as the configured Vercel team)." >&2
       ;;
     404)
       echo "ERROR: Vercel returned HTTP 404 (not found): ${path}" >&2
@@ -196,7 +196,7 @@ vercel_post() {
       ;;
     401|403)
       echo "ERROR: Vercel returned HTTP $code (token expired or unauthorized) — the token may need refreshing." >&2
-      echo "       Refresh the VERCEL_TOKEN in cabinet/.env (a working token authenticates as the step-network team)." >&2
+      echo "       Refresh the VERCEL_TOKEN in cabinet/.env (a working token authenticates as the configured Vercel team)." >&2
       ;;
     404)
       echo "ERROR: Vercel returned HTTP 404 (not found): ${path}" >&2

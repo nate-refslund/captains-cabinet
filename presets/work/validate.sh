@@ -3,7 +3,6 @@
 # Preset validation gate (Spec 034 v3 AC #49 — CRO H3 fix).
 # Run by cabinet-spawn.sh BEFORE any container starts. Non-zero exit aborts spawn.
 #
-# Mirrors the pattern in presets/step-network/validate.sh.
 # Checks required files, addenda content, preset.yml schema, and agent role-defs.
 
 set -euo pipefail

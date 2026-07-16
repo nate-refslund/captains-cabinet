@@ -87,8 +87,8 @@ class TestGetAdapter:
         assert adapter.repo == "owner/repo"
 
     def test_monday_raises_with_dev_tasks_message(self):
-        """The cabinet's Monday adapter was removed in favor of the
-        STEP-Network/dev-tasks Claude plugin. Officers use the plugin's
+        """The cabinet's Monday adapter was removed in favor of a
+        dev-tasks-style Claude plugin. Officers use the plugin's
         mcp__dev-tasks tools directly. The factory must explicitly tell
         the operator to use the plugin instead."""
         with pytest.raises(ValueError, match="dev-tasks"):

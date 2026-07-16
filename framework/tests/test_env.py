@@ -695,8 +695,8 @@ class TestActivePreset:
         p = tmp_path / "instance/config" / "active-preset"
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text("portfolio\n", encoding="utf-8")
-        monkeypatch.setenv("CABINET_ACTIVE_PRESET", "step-network")
-        assert env.active_preset() == "step-network"
+        monkeypatch.setenv("CABINET_ACTIVE_PRESET", "acme")
+        assert env.active_preset() == "acme"
 
 
 # ---------------------------------------------------------------------------
