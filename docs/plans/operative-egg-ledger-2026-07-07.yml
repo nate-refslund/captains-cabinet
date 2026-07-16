@@ -1862,6 +1862,15 @@ entries:
     gate_cmd: "crash between deliver and wake no longer loses the trigger (kill-between test); library-mcp 6 read tools annotated readOnlyHint"
     note: "done 2026-07-07 — channel xAck-on-emit + channel-side xTrim REMOVED (trim now only post-ACK in trigger_ack); triggers stay pending until officer trigger_ack, or the post-tool-use XAUTOCLAIM safety net re-surfaces them and writes the ids_file the officer ACK pipeline consumes = at-least-once (dupes possible, silent loss not). Kill-between drill PASSED live on a scratch stream (deliver-no-ack -> pending=1 -> XAUTOCLAIM worker recovers id -> XACK -> pending=0). library-mcp: readOnlyHint on exactly the 6 read tools, 4 write tools unannotated. Contract ratchet cabinet/scripts/tests/test_channel_ack_readonly_contracts.py (7 tests, CI-collected); triggers.sh safety-net header rewritten; schg post-tool-use.sh comment fix routed to the germline addendum. Live channel processes still run the old code — contract engages per officer on natural relaunch (fleet LIVE, no forced restarts)."
     last_update: "2026-07-07"
+  - id: "AUD-12-R1"
+    title: "trigger retention corrective amendment — officer restart preserves the stable redis-trigger-channel consumer and its unACKed PEL instead of XGROUP DELCONSUMER deleting ownership"
+    class: "additive"
+    lane: "captain-gated"
+    wave: "CG"
+    status: "captain-gated"
+    gate_cmd: "python3.12 -m pytest cabinet/scripts/tests/test_channel_ack_readonly_contracts.py cabinet/scripts/tests/test_triggers_stream_durability.py -q && ! grep -q DELCONSUMER cabinet/scripts/start-officer-mac.sh && bash cabinet/scripts/germline-lock.sh verify && ls -lO cabinet/scripts/start-officer-mac.sh | grep -q schg"
+    note: "Recorded 2026-07-16 as a corrective follow-up; AUD-12 history remains done and unaltered. Confirmed P1: the schg launcher deletes consumer channel during restart, which deletes all PEL ownership and defeats AUD-12 startup recovery. Read-only live proof at ~2026-07-16T12:45Z: cabinet:triggers:cos / officer-cos had pending=16, range 1784117039686-0..1784199575321-0, all owned by channel; current restart would make those 16 receipts unclaimable through the normal ID-0 channel path. Exact diff, isolated Redis teeth test, observe-only restart proof, ceremony, and safe rollback: docs/proposals/germline-amendment-trigger-retention-2026-07-16.md. Self-ratified for preparation per 2026-07-07 full-autonomy grant and current Captain-approved 72-hour observe-only readiness goal; application remains Captain-gated because start-officer-mac.sh is schg and needs unlock/relock. Done requires the same pending receipt ID to survive a real officer restart, be re-delivered with increased delivery count, ACK exactly once, and leave zero unexplained PEL loss before the soak clock starts."
+    last_update: "2026-07-16"
   # --- ORG-SENSES rows (2026-07-07, cabinet-doctor wave): the org's raw sensory
   #     record — officer transcripts, the Redis trigger stream, Chair DMs — is
   #     currently write-only exhaust; nothing digests it into cabinet memory.
