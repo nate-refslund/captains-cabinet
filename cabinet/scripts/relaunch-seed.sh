@@ -296,21 +296,32 @@ fi
 
 [ -d "$OLD_ROOT" ] || { echo "relaunch-seed.sh: --old-root '$OLD_ROOT' is not a directory" >&2; exit 1; }
 OLD_ROOT="$(abs_path "$OLD_ROOT")"
-# --dry-run must write NOTHING, not even an empty directory: only mkdir the
-# runtime root ahead of abs_path when this is a real run. abs_path's own
-# not-yet-existing-leaf fallback (see its "else" branch above) still
-# resolves the common case correctly without it (the default
-# ~/.cabinet/runtime is built from $HOME, which is always already
-# absolute), and resolve_for_compare's containment guard walks up to the
-# deepest existing ancestor on its own regardless.
-[ "$DRY_RUN" = "1" ] || mkdir -p "$RUNTIME_ROOT"
-RUNTIME_ROOT="$(abs_path "$RUNTIME_ROOT")"
+# Absolutize RUNTIME_ROOT WITHOUT touching the filesystem — no mkdir yet.
+# The containment guards below must run before ANY write, including the
+# mkdir that used to sit here unconditionally on a real run: review found
+# it fires before the guards, so a refused invocation still created an
+# empty directory (proven inside the live tree via three path shapes —
+# direct, through a symlink, and through a lexical `..`) before exiting 64.
+# Purely lexical: prefix a relative path with $PWD, then collapse
+# '.'/'..'/'//'. resolve_for_compare (used inside the guards) already
+# walks up to the deepest EXISTING ancestor and realpath-resolves it on its
+# own, so it does not need RUNTIME_ROOT to exist yet.
+case "$RUNTIME_ROOT" in
+  /*) ;;
+  *) RUNTIME_ROOT="$PWD/$RUNTIME_ROOT" ;;
+esac
+RUNTIME_ROOT="$(lex_norm_path "$RUNTIME_ROOT")"
 
-# ---- containment guards (must run BEFORE any write below) -----------------
+# ---- containment guards (must run BEFORE any write below, including the
+# mkdir a few lines down) ----------------------------------------------------
 refuse_if_nested "--runtime-root"                "$RUNTIME_ROOT"            "$LIVE_TREE"
 refuse_if_nested "--archive-path's directory"    "$(dirname "$ARCHIVE_PATH")" "$LIVE_TREE"
 refuse_if_nested "--runtime-root"                "$RUNTIME_ROOT"            "$OLD_ROOT"
 refuse_if_nested "--archive-path's directory"    "$(dirname "$ARCHIVE_PATH")" "$OLD_ROOT"
+
+# Guards passed — only now is it safe to create/resolve the runtime root.
+[ "$DRY_RUN" = "1" ] || mkdir -p "$RUNTIME_ROOT"
+RUNTIME_ROOT="$(abs_path "$RUNTIME_ROOT")"
 
 # Officer buckets are DISCOVERED from old-root's actual instance/memory/
 # tier2/ directory listing, never a hardcoded roster — cabinet/scripts/ is
