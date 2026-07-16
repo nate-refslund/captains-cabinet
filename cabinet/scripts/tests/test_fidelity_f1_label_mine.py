@@ -6,7 +6,8 @@ canary to WEEKLY LABEL MINE:
 
   * cabinet/services.yml carries the fidelity-f1 cron row on a WEEKLY
     (weekday) calendar with the Captain-authorized D1 knobs ON in the row env
-    (F1_WITH_INTENT=1, F1_EMIT_SCORED=1) and an explicit F1_ROLES roster;
+    (F1_WITH_INTENT=1, F1_EMIT_SCORED=1, F1_GATHER=1) and an explicit
+    F1_ROLES roster;
   * the row still renders through generate-plists.py (INSTALL SOURCE);
   * the stale "MONTHLY because a batch is expensive" cost-canary framing is
     gone from the wrapper (docs-track-code rule);
@@ -18,8 +19,13 @@ Run: python3 -m pytest cabinet/scripts/tests/test_fidelity_f1_label_mine.py -q
 from __future__ import annotations
 
 import importlib.util
+import os
+import plistlib
+import shutil
+import subprocess
 from pathlib import Path
 
+import pytest
 import yaml
 
 _SCRIPTS_DIR = Path(__file__).resolve().parent.parent
@@ -50,6 +56,8 @@ def test_row_is_weekly_with_label_mine_knobs() -> None:
     env = svc.get("env") or {}
     assert env.get("F1_WITH_INTENT") == "1", "D1 knob with_intent OFF in manifest"
     assert env.get("F1_EMIT_SCORED") == "1", "D1 knob emit_scored OFF in manifest"
+    assert env.get("F1_GATHER") == "1", (
+        "scheduled F1 is context-starved — gather-first behavior is not tested")
     assert env.get("F1_ROLES"), "no lane roster — F1_ROLES must be explicit"
 
 
@@ -65,9 +73,10 @@ def test_row_renders_through_generate_plists() -> None:
         "weekly schedule did not render to launchd Weekday")
     assert all("Day" not in e for e in entries)
     env = rendered.get("EnvironmentVariables", {})
-    assert env.get("F1_WITH_INTENT") == "1" and env.get("F1_EMIT_SCORED") == "1", (
-        "row env knobs missing from the rendered plist — what launchd runs "
-        "must be manifest-visible")
+    for knob in ("F1_WITH_INTENT", "F1_EMIT_SCORED", "F1_GATHER"):
+        assert env.get(knob) == "1", (
+            f"row env knob {knob} missing from the rendered plist — what "
+            "launchd runs must be manifest-visible")
 
 
 def test_wrapper_lost_the_cost_canary_framing() -> None:
@@ -83,11 +92,82 @@ def test_wrapper_lost_the_cost_canary_framing() -> None:
         "wrapper default for with_intent flipped off")
     assert 'F1_EMIT_SCORED="${F1_EMIT_SCORED:-1}"' in text, (
         "wrapper default for emit_scored flipped off")
+    assert 'F1_GATHER="${F1_GATHER:-1}"' in text, (
+        "wrapper default fell back to the context-starved arm")
+    assert "F1_EMIT_SCORED=0" in text, (
+        "context-starved diagnostics may bank indistinguishable labels")
+
+
+def _wrapper_harness(tmp_path: Path) -> tuple[Path, Path, Path, dict[str, str]]:
+    root = tmp_path / "repo"
+    scripts = root / "cabinet/scripts"
+    (scripts / "lib").mkdir(parents=True)
+    wrapper = scripts / WRAPPER.name
+    shutil.copy2(WRAPPER, wrapper)
+    shutil.copy2(_SCRIPTS_DIR / "lib/personal-env.sh",
+                 scripts / "lib/personal-env.sh")
+    capture = tmp_path / "env.txt"
+    fake_python = tmp_path / "python"
+    fake_python.write_text(
+        "#!/bin/bash\n"
+        "printf '%s|%s|%s|%s\\n' \"$F1_GATHER\" \"$F1_WITH_INTENT\" "
+        "\"$F1_EMIT_SCORED\" \"$*\" > \"$F1_TEST_CAPTURE\"\n"
+    )
+    fake_python.chmod(0o755)
+    env = {
+        "HOME": str(tmp_path),
+        "PATH": os.environ["PATH"],
+        "CABINET_PYTHON": str(fake_python),
+        "CABINET_SHARED_ENV": str(tmp_path / "absent.env"),
+        "F1_ROLES": "cos",
+        "F1_CASES": "1",
+        "F1_TEST_CAPTURE": str(capture),
+    }
+    return root, wrapper, capture, env
+
+
+@pytest.mark.parametrize(
+    ("gather", "emit_scored", "expected_gather", "expected_emit"),
+    [(None, None, "1", "1"), ("0", "0", "0", "0")],
+)
+def test_wrapper_runtime_gather_contract(
+        tmp_path: Path, gather: str | None, emit_scored: str | None,
+        expected_gather: str, expected_emit: str) -> None:
+    """Default is gather-first; 0/0 is the explicit safe diagnostic."""
+    root, wrapper, capture, env = _wrapper_harness(tmp_path)
+    if gather is not None:
+        env["F1_GATHER"] = gather
+    if emit_scored is not None:
+        env["F1_EMIT_SCORED"] = emit_scored
+    result = subprocess.run(
+        ["bash", str(wrapper)], cwd=root, env=env,
+        capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    assert capture.read_text().strip() == (
+        f"{expected_gather}|1|{expected_emit}|framework/fidelity/run_f1.py cos 1")
+    assert f"gather={expected_gather}" in result.stdout
+
+
+def test_wrapper_refuses_starved_scored_run_before_python(tmp_path: Path) -> None:
+    root, wrapper, capture, env = _wrapper_harness(tmp_path)
+    env["F1_GATHER"] = "0"
+    result = subprocess.run(
+        ["bash", str(wrapper)], cwd=root, env=env,
+        capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode == 64
+    assert not capture.exists(), "invalid combination still launched Python"
+    assert "refusing context-starved scored run" in result.stderr
 
 
 def test_checked_in_plist_matches_weekly_label_mine() -> None:
-    text = PLIST.read_text()
-    assert "<key>Weekday</key>" in text
-    assert "<key>Day</key>" not in text, "checked-in plist still monthly"
-    for knob in ("F1_ROLES", "F1_WITH_INTENT", "F1_EMIT_SCORED"):
-        assert knob in text, f"checked-in plist lost env knob {knob}"
+    payload = plistlib.loads(PLIST.read_bytes())
+    calendar = payload["StartCalendarInterval"]
+    assert "Weekday" in calendar
+    assert "Day" not in calendar, "checked-in plist still monthly"
+    env = payload["EnvironmentVariables"]
+    for knob in ("F1_ROLES", "F1_WITH_INTENT", "F1_EMIT_SCORED", "F1_GATHER"):
+        expected = "cos" if knob == "F1_ROLES" else "1"
+        assert env.get(knob) == expected, (
+            f"checked-in plist has wrong env value for {knob}")

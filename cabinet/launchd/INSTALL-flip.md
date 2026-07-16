@@ -150,7 +150,7 @@ without it — there is no second hidden knob).
 | `com.cabinet.probe-github` | 5 min | B2.3 PR outcomes (merged/reverted/held) joined by the `Cabinet-Proposal-Id` trailer (`run-probes.sh github`). |
 | `com.cabinet.probe-vercel` | 10 min | B2.4 deploy outcomes (deploy_ready/rolled_back/deploy_error), meta-stamp join with commit-trailer fallback (`run-probes.sh vercel`). |
 | `com.cabinet.probe-sentry` | 15 min | B2.5 error-budget outcomes (within_budget/regressed); frozen feed reads unknown, never ok (`run-probes.sh sentry`). |
-| `com.cabinet.fidelity-f1` | monthly (1st 06:30) | F1 fidelity batch (`run-fidelity-f1.sh` → `framework/fidelity/run_f1.py`): asserts the clone still beats the 0.083 generic-assistant baseline — the slow decay canary. |
+| `com.cabinet.fidelity-f1` | weekly (Monday 06:30) | Gather-first F1 fidelity batch (`run-fidelity-f1.sh` → `framework/fidelity/run_f1.py`): mines scored labels and asserts the context-aware clone still beats the 0.083 generic-assistant baseline. |
 | `com.cabinet.regression-corpus` | daily 04:30 | Regression-corpus refresh — **script ships with another lane of this wave**; install only after `cabinet/scripts/build-regression-corpus.py` exists. |
 | `com.cabinet.graduation-transitions` | hourly | Cell promote/demote/hold transition emitter — **script ships with another lane of this wave**; install only after `cabinet/scripts/emit-graduation-transitions.py` exists. |
 
