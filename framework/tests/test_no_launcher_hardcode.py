@@ -5,7 +5,8 @@ De-Nate foundation build: framework/ is the universal base shared by every
 preset and every deployment, so it may not hardcode THIS launcher's captain
 (``Nate``), home path (``/Users/nate``), org domains (``stepnetwork`` / ``jfm``
 / ``jfmedier`` / ``step.dk``), Monday board ids (``50xxxxxxxx``), or a specific
-PRODUCT/lane name (``polads`` / ``stephie`` and their ``-ceo`` officer forms).
+PRODUCT/lane name (``polads`` / ``stephie`` / ``sensed`` and their ``-ceo``
+officer forms).
 The one sanctioned way for framework code to address the captain is
 ``framework.env.captain_name()`` (resolved from ``instance/config/platform.yml``);
 the one sanctioned way to find the repo is ``CABINET_ROOT`` / a file-relative
@@ -52,8 +53,9 @@ over five literal families:
   * ``50`` + 8 digits (a 10-digit Monday BOARD id) flags an instance board id.
     Anchored to exactly ten digits so it does not match inside a longer number
     (ms timestamps, item ids) and does not match non-``50`` Monday item ids.
-  * ``polads`` / ``stephie`` (case-insensitive, word-bounded — added PCA-P1,
-    Captain directive 2026-07-14) flag a hardcoded PRODUCT/lane identity.
+  * ``polads`` / ``stephie`` / ``sensed`` (case-insensitive, word-bounded —
+    added PCA-P1, Captain directive 2026-07-14; ``sensed`` added
+    final-residual-scrub 2026-07-16) flag a hardcoded PRODUCT/lane identity.
     Word-bounding still catches the ``-ceo`` officer forms and the ``.eu``
     domain form because ``-``/``.`` are non-word characters (a boundary exists
     on either side of the bare token), the same mechanism ``jfm`` relies on
@@ -107,7 +109,7 @@ _NATE = re.compile(r"\bNate\b")                       # case-sensitive display n
 _HOME_PATH = re.compile(r"/(?:Users|home)/[A-Za-z0-9._-]+")  # absolute home dir
 _ORG_DOMAIN = re.compile(r"\b(?:stepnetwork|jfmedier|jfm|step\.dk)\b", re.IGNORECASE)
 _BOARD_ID = re.compile(r"\b50\d{8}\b")                # 10-digit Monday board id
-_PRODUCT_TOKEN = re.compile(r"\b(?:polads|stephie)\b", re.IGNORECASE)  # PCA-P1
+_PRODUCT_TOKEN = re.compile(r"\b(?:polads|stephie|sensed)\b", re.IGNORECASE)  # PCA-P1 + final-residual-scrub
 # master-clean-screenpipe-personal (2026-07-15): the framework SEAM must name
 # no concrete personal-source adapter and no bare owner-name variant the
 # case-sensitive _NATE above doesn't already cover. See module docstring.
@@ -601,14 +603,16 @@ class TestScannerEngine:
     def test_flags_product_token_literals(self, tmp_path):
         # Both bare tokens and their hyphenated -ceo/.eu forms must trip the
         # check (word-bounding, not whole-token matching — mirrors how `jfm`
-        # is still caught inside `jfmedier` above).
+        # is still caught inside `jfmedier` above). 'sensed' (final-residual-
+        # scrub, 2026-07-16) is the third product/lane token in the family.
         self._write(tmp_path / "pkg" / "m.py",
-                    "OFFICER = 'polads-ceo'\nLANE = \"Stephie\"\nURL = 'stephie.dk'\n")
+                    "OFFICER = 'polads-ceo'\nLANE = \"Stephie\"\nURL = 'stephie.dk'\n"
+                    "PROJECT = 'Sensed'\n")
         v = scan_tree(tmp_path, files_allowlist={}, lines_allowlist={})
         reasons = " ".join(r[2] for r in v)
-        assert len(v) == 3
+        assert len(v) == 4
         assert "product/lane token" in reasons
-        assert "polads" in reasons and "Stephie" in reasons
+        assert "polads" in reasons and "Stephie" in reasons and "Sensed" in reasons
 
     def test_flags_screenpipe_and_obsidian_tokens(self, tmp_path):
         # Case-insensitive, word-bounded — catches the capitalized runtime
