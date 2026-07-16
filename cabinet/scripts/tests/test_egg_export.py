@@ -393,6 +393,7 @@ def test_proposals_non_amendments_archived_amendments_kept(export: Path):
         "germline-amendment-source-adapter-2026-07-05.md",
         "germline-amendment-sovereign-posture-2026-07-05.md",
         "germline-amendment-task-create-2026-07-03.md",
+        "germline-amendment-trigger-retention-2026-07-16.md",
         "germline-amendment-trust-inversion-2026-07-04.md",
         "germline-amendment-war-room-census-2026-07-10.md",
     ], amendments

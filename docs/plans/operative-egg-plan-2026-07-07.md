@@ -342,6 +342,8 @@ germline-locked one-liners (#2, #4-hook-half, #8–#14, #20, #3b) do NOT get row
 `docs/proposals/germline-window-addendum-2026-07-07.md` into tonight's unlock window instead.
 **Superseded finding recorded:** audit #6 (flip fleet to Fable-5) is SUPERSEDED by the Captain ruling 2026-07-07 pinning
 `claude-opus-4-8[1m]`; AUD-2 keeps only the fallback-chain + loud-fallback half.
+`AUD-12-R1` was appended 2026-07-16 as a second Captain-gated corrective row; this
+supersedes only the row-range/class-count description above, not the original rows or their history.
 
 | id | item | class | lane · wave | status | notes | gate_cmd (read-only) | rollback |
 |----|------|-------|-------------|--------|-------|----------------------|----------|
@@ -357,6 +359,7 @@ germline-locked one-liners (#2, #4-hook-half, #8–#14, #20, #3b) do NOT get row
 | AUD-10 | named-session continuity + CronCreate (audit #29+#30) | additive | alpha-additive · AUD | todo | `claude -n officer-<role>` / `--resume` per officer (NOT `--continue` — shared cwd bleeds sessions); session crons replace per-need /loop checks; /loop stretch gated on AUD-7. | relaunch resumes named session, no dialog scrape; session_crons readable in Stop hook | revert launch line |
 | AUD-11 | `--json-schema` judges (audit #31) | additive | alpha-additive · AUD | done | Structured judge output; kills oauth_llm.py:102-117 parse-retry. Keep OAuth-only auth — NO `--bare` (refuted half). | judge path uses --json-schema; fidelity suite green | git revert |
 | AUD-12 | consumer-side trigger ACK (audit #32) | additive | alpha-additive · AUD | done | ACK after processing, not on emit — crash between deliver and wake must not lose the trigger. `readOnlyHint` on library-mcp's 6 reads. | kill-between test keeps trigger; hints annotated | git revert |
+| AUD-12-R1 | trigger retention corrective amendment; preserve stable `channel` consumer + unACKed PEL across officer restart | additive | captain-gated · CG | captain-gated | Corrective follow-up only; AUD-12 history stays done. Live read-only proof found 16 `cos` receipts owned by `channel` that the current immutable launcher's `XGROUP DELCONSUMER` would make unclaimable. Prepared per 2026-07-07 full-autonomy grant + Captain-approved 72-hour observe-only readiness goal; application still requires Captain unlock/relock. Exact diff and evidence: `docs/proposals/germline-amendment-trigger-retention-2026-07-16.md`. | two focused tests green; launcher has no channel DELCONSUMER; relock verified; same receipt ID survives live restart, re-delivers, and ACKs exactly once | stop officer with kill switch active; preserve Redis; source-revert only after PEL=0 and a new unlock/relock ceremony |
 
 ## 11. Addendum — GENESIS / migration rows (A13 parity, appended 2026-07-07)
 

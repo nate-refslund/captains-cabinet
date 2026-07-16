@@ -276,3 +276,69 @@ def test_xadd_failure_returns_nonzero_and_does_not_wake(tmp_path: Path):
     assert result.returncode != 0
     assert "trigger NOT queued" in result.stderr
     assert not wake_log.exists()
+
+
+def test_restart_keeps_same_consumer_pending_recoverable_and_delconsumer_has_teeth(
+    redis_port: int,
+):
+    """AUD-12-R1 (2026-07-16 corrective amendment): proves both halves of the
+    trigger-retention fix in one isolated Redis instance — (1) the retained
+    stable `channel` consumer identity lets a restarted reader recover its own
+    still-pending entry via ID `0` and ACK it exactly once, and (2) as a
+    negative control, the retired `XGROUP DELCONSUMER` cleanup this replaces
+    really does destroy that recoverability (proving the assertion above has
+    teeth, not just that Redis can re-deliver)."""
+    token = uuid.uuid4().hex[:8]
+    stream = f"cabinet:triggers:restart-{token}"
+    group = f"officer-restart-{token}"
+    message_id = _redis_cli(
+        redis_port, "XADD", stream, "*", "message", "survives-restart"
+    ).stdout.strip()
+    assert _redis_cli(redis_port, "XGROUP", "CREATE", stream, group, "0").returncode == 0
+
+    first = _redis_cli(
+        redis_port, "XREADGROUP", "GROUP", group, "channel", "COUNT", "1",
+        "STREAMS", stream, ">",
+    )
+    assert message_id in first.stdout
+    before = _redis_cli(redis_port, "XPENDING", stream, group, "-", "+", "10")
+    assert before.stdout.strip().splitlines()[-1] == "1"
+
+    # Replacement process, same stable consumer: index.ts processPending()
+    # reads ID 0 before new entries. Redis re-delivers the owned receipt.
+    restarted = _redis_cli(
+        redis_port, "XREADGROUP", "GROUP", group, "channel", "COUNT", "1",
+        "STREAMS", stream, "0",
+    )
+    assert message_id in restarted.stdout
+    assert "survives-restart" in restarted.stdout
+    after = _redis_cli(redis_port, "XPENDING", stream, group, "-", "+", "10")
+    assert after.stdout.strip().splitlines()[-1] == "2"
+    assert _redis_cli(redis_port, "XACK", stream, group, message_id).stdout.strip() == "1"
+    assert _redis_cli(redis_port, "XACK", stream, group, message_id).stdout.strip() == "0"
+
+    # Negative control: the retired launcher command destroys ownership.
+    doomed_stream = f"cabinet:triggers:doomed-{token}"
+    doomed_group = f"officer-doomed-{token}"
+    doomed_id = _redis_cli(
+        redis_port, "XADD", doomed_stream, "*", "message", "doomed-by-delete"
+    ).stdout.strip()
+    assert _redis_cli(
+        redis_port, "XGROUP", "CREATE", doomed_stream, doomed_group, "0"
+    ).returncode == 0
+    assert doomed_id in _redis_cli(
+        redis_port, "XREADGROUP", "GROUP", doomed_group, "channel", "COUNT", "1",
+        "STREAMS", doomed_stream, ">",
+    ).stdout
+    assert _redis_cli(
+        redis_port, "XGROUP", "DELCONSUMER", doomed_stream, doomed_group, "channel"
+    ).stdout.strip() == "1"
+    cannot_recover = _redis_cli(
+        redis_port, "XREADGROUP", "GROUP", doomed_group, "channel", "COUNT", "1",
+        "STREAMS", doomed_stream, "0",
+    )
+    assert doomed_id not in cannot_recover.stdout
+    assert _redis_cli(redis_port, "XPENDING", doomed_stream, doomed_group).stdout.splitlines()[0] == "0"
+    assert doomed_id in _redis_cli(
+        redis_port, "XRANGE", doomed_stream, doomed_id, doomed_id
+    ).stdout

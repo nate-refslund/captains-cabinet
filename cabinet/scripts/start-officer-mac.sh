@@ -725,7 +725,8 @@ if [ "$HAS_TELEGRAM" = "true" ]; then
   sleep 1   # let the token's getUpdates lock release before the new plugin claims it
 fi
 
-# Reap orphaned redis-trigger-channel processes + their stale group consumers.
+# Reap orphaned redis-trigger-channel processes while retaining the stable
+# group consumer and its pending-entry list across restarts.
 # Same class of bug as the telegram reap above, on the OTHER delivery path:
 # each officer runs a `bun run .../redis-trigger-channel/index.ts` MCP that
 # joins the Redis consumer group `officer-<officer>` as consumer `channel` and
@@ -737,7 +738,8 @@ fi
 # tmux pane, but it can detach/reparent to PID 1 on crash, and a broken launch
 # path that failed to expand $OFFICER_NAME leaked 15 zombies on a junk
 # `cabinet:triggers:${OFFICER_NAME}` stream (observed 2026-06-25). The
-# invariant we enforce here: exactly ONE live `channel` consumer per officer.
+# invariant we enforce here: exactly ONE live `channel` process per officer,
+# using the stable `channel` consumer identity across restarts.
 #
 # 1) Kill any existing channel process for THIS officer (env OFFICER_NAME=<o>).
 #    We are restarting, so any pre-existing one is stale by definition.
@@ -749,11 +751,11 @@ for _ch_pid in $(pgrep -f 'redis-trigger-channel/index.ts' 2>/dev/null); do
       && echo "start-officer-mac.sh: reaped stale redis-trigger-channel pid=$_ch_pid (OFFICER_NAME='$_ch_off')" >&2 || true
   fi
 done
-# 2) Drop the stale `channel` group consumer so the new MCP registers clean and
-#    inherits no other consumer's pending. Idempotent (no-op if absent). The
-#    `worker` consumer (post-tool-use safety net) is intentionally left intact.
-redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" \
-  XGROUP DELCONSUMER "cabinet:triggers:$OFFICER" "officer-$OFFICER" channel > /dev/null 2>&1 || true
+# 2) Keep the `channel` consumer and its PEL intact. The replacement channel
+#    calls processPending() with ID 0 before reading new entries, so the first
+#    50 unACKed receipts are re-delivered at startup; the post-tool-use safety
+#    net drains any overflow. Deleting the consumer would delete those ownership
+#    records and violate AUD-12's consumer-side ACK contract.
 # 3) Best-effort cleanup of the junk stream from the unexpanded-variable leak.
 redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" \
   DEL 'cabinet:triggers:${OFFICER_NAME}' > /dev/null 2>&1 || true
