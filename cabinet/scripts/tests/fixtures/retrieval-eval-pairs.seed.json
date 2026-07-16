@@ -22,12 +22,12 @@
     },
     {
       "query": "[success] Bakery-site supplier-onboarding routing + Sam Miller vendor routing (48h sensing cycle) Standing",
-      "expected_ref": "2026-07-10-front-desk-officer-1783665312-99188",
+      "expected_ref": "2026-07-10-front-desk-officer-1001-42",
       "source_type": "experience_record"
     },
     {
       "query": "[success] Absence prod-eyes reflection (CoS-nudged) Produced: checkout-regression triage+G4, ops read-grant",
-      "expected_ref": "2026-07-11-bakery-ceo-1783776884-76284",
+      "expected_ref": "2026-07-11-bakery-ceo-1002-43",
       "source_type": "experience_record"
     },
     {
@@ -57,7 +57,7 @@
     },
     {
       "query": "[success] Fix stale storefront-banner e2e as a Chair-green-lit held draft PR One-line selector fix (mode-manual -",
-      "expected_ref": "2026-07-09-newsletter-ceo-1783589420-80342",
+      "expected_ref": "2026-07-09-newsletter-ceo-1003-44",
       "source_type": "experience_record"
     },
     {
@@ -71,7 +71,7 @@
       "source_type": "product_spec"
     },
     {
-      "query": "Checkout VAT/tax — customer-type-based inclusion (2026-06-25) DECISION: For pro ord_0000000000000000000001",
+      "query": "Checkout VAT/tax — customer-type-based inclusion (2026-06-25) DECISION: For pro ord_00001",
       "expected_ref": "2026-06-25-checkout-vat-tax-customer-type-based-inclusion",
       "source_type": "captain_decision"
     },

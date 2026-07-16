@@ -386,7 +386,7 @@ tmux capture-pane -t officer-bakery-ceo -p | grep -i scheduled
 Officers run unattended with full host shell access, so they self-install
 plugins/MCPs via the `claude plugin` / `claude mcp` CLI. The only things they
 *can't* do alone are inherently-interactive auth prompts — `gh auth login`
-(needed once for private plugin marketplaces like STEP-Network/dev-tasks),
+(needed once for private plugin marketplaces, e.g. a Monday-integration plugin),
 `claude /login` if you're not using an API key, OAuth device-code pastes.
 
 Do those once by attaching to a live officer session and typing as the user:
