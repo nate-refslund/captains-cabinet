@@ -18,7 +18,8 @@
 #      or set in the environment. VARIABLE NAMES ONLY — values are never read
 #      into this script and never printed.
 #   4. every .claude/skills/*/SKILL.md frontmatter parses (and the file STARTS
-#      with the `---` fence — no leading bytes; the brain-audit regression).
+#      with the `---` fence — no leading bytes; a past skill-registration
+#      regression traced to exactly this).
 #   5. every cabinet/mcp-scope.yml grant (agents + universal) is registered in
 #      some config layer (repo MCP layers, ~/.claude.json user servers,
 #      enabled-plugin basenames). claude.ai profile connectors that cannot be
@@ -316,8 +317,8 @@ import glob, yaml
 for p in sorted(glob.glob(".claude/skills/*/SKILL.md")):
     try:
         raw = open(p, "rb").read()
-        # THE load-bearing check (brain-audit regression, audit #7): any byte
-        # before the fence makes CC register the skill with a junk description.
+        # THE load-bearing check (audit #7): any byte before the fence makes
+        # CC register the skill with a junk description.
         if not raw.startswith(b"---\n") and not raw.startswith(b"---\r\n"):
             print(f"{p}\tDEAD\tLEADING-BYTES (file must START with the --- frontmatter fence)")
             continue

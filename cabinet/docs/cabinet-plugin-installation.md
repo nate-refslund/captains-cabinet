@@ -50,14 +50,17 @@ The plugin manifest (`.claude-plugin/plugin.json`) declares (counts corrected 20
   stay in `presets/work/agents/` where the preset loader picks them up when
   that preset is active. (The manifest previously registered the retired
   cos/cto/cpo/cro/coo work fleet on every install.)
-- **21 skills** — 10 cabinet-specific (cabinet-task, cabinet-route-tasks,
+- **20 skills** — 9 cabinet-specific (cabinet-task, cabinet-route-tasks,
   cabinet-work-graph-complete, cabinet-init, org-status, mission-compile,
-  ovi-publish, capability-gap, extend-cabinet, brain-audit) +
+  ovi-publish, capability-gap, extend-cabinet) +
   10 lifted foundation skills (holistic-thinking, production-quality-ownership,
   telegram-communication, cross-officer-retro, evolution-loop,
   individual-reflection, agent-team-workflow, deploy-and-verify,
   engineering-development-loop, spec-quality-gate) +
-  cabinet-intro (`.claude-plugin/skills/`)
+  cabinet-intro (`.claude-plugin/skills/`). (A `brain-audit` skill dir also
+  lives under `.claude/skills/` in a live checkout, but it is this
+  deployment's instance-only memory-curator runbook — excluded from the
+  packaged/exported egg by the manifest, R168 — so it is not counted here.)
 - **6 slash commands** — 2 parent (activate-project, role-eval) + 4
   cabinet-prefixed (cabinet-backup, cabinet-briefing, cabinet-research-sweep,
   cabinet-retro). The five former command/skill same-name pairs
