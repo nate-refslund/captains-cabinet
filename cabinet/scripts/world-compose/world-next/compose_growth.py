@@ -1129,13 +1129,13 @@ def build_today():
                                                             int(31.5 * T))
         gd.rectangle([fx, fy2, fx + frng2.ri(3, 7), fy2], fill=FOAM_C + (170,))
 
-    # reef-buoy (retired stepnetwork anchor)
+    # reef-buoy (retired example-org anchor)
     sc.ent(red_buoy(), 23.7, 31.4)
     gd.rectangle([int(23.4 * T), int(32.5 * T), int(23.4 * T) + 10,
                   int(32.5 * T)], fill=FOAM_C + (150,))
 
     # ONE product isle offshore SE — IN HAZE (distance made honest)
-    isle_cells = isle_blob(sc, 36, 31, 44, 34, "td-isle-polads")
+    isle_cells = isle_blob(sc, 36, 31, 44, 34, "td-isle-widgets")
     sc.ent(U.sh(U.P("Henhouse")), 38.2, 32.5)
     sc.ent(U.sh(U.P("Chicken_Coop")), 41.4, 33.0, bias=-0.1)
     sc.ent(U.tree("oakS"), 40.0, 31.7, bias=-0.05)
@@ -1724,8 +1724,8 @@ def build_grown():
             sc.gpaste(U.sh(U.CS("Grass_Tufts_Flowers_16x16_%d" % tr.ri(1, 11))),
                       hx, hy)
 
-    # polads SE — LARGEST (r2 town)
-    ip = isle_blob(sc, 92, 54, 113, 68, "gr-isle-polads")
+    # widgets SE — LARGEST (r2 town)
+    ip = isle_blob(sc, 92, 54, 113, 68, "gr-isle-widgets")
     texture_isle(ip, "gr-ptex")
     ipaths = U.carve_path([(96, 62), (101, 61), (106, 60), (109, 59)])
     for (tx, ty) in sorted(ipaths):
@@ -1754,8 +1754,8 @@ def build_grown():
     sc.ent(U.sh(U.BOAT), 99.6, 69.6)
     officer(sc, 5, "walk", "right", 101.5, 61.0)
 
-    # stephie SW — medium (r1-r2)
-    isb = isle_blob(sc, 12, 56, 28, 66, "gr-isle-stephie")
+    # acme SW — medium (r1-r2)
+    isb = isle_blob(sc, 12, 56, 28, 66, "gr-isle-acme")
     texture_isle(isb, "gr-stex")
     px_, py_ = sc.ent(wt, 15, 59.2, bias=-0.2)
     sc.shadow_blob(px_ + wt.width // 2, int(60.2 * T) - 4, wt.width - 10, 26)
@@ -1785,22 +1785,22 @@ def build_grown():
     officer(sc, 14, "idle", "left", 102.6, 18.4)    # rowboat crew raising r1
 
     # ============ sea lanes + ships (§2.4 two-signal shipping)
-    sea_lane(gd, (52 * T, 43 * T), (97 * T, 60 * T), "gr-lane-polads", 9)
-    sea_lane(gd, (50 * T + 8, 43 * T + 8), (96 * T, 61 * T), "gr-lane-polads2", 11)
-    sea_lane(gd, (30 * T, 43 * T), (20 * T, 64 * T), "gr-lane-stephie", 9)
+    sea_lane(gd, (52 * T, 43 * T), (97 * T, 60 * T), "gr-lane-widgets", 9)
+    sea_lane(gd, (50 * T + 8, 43 * T + 8), (96 * T, 61 * T), "gr-lane-widgets2", 11)
+    sea_lane(gd, (30 * T, 43 * T), (20 * T, 64 * T), "gr-lane-acme", 9)
     sea_lane(gd, (66 * T, 43 * T), (103 * T, 23 * T), "gr-lane-new", 10)
-    # cargo ships UNDER WAY to polads (milestones sailed; wakes astern)
+    # cargo ships UNDER WAY to widgets (milestones sailed; wakes astern)
     ship1 = cargo_boat("down")
     px_, py_ = sc.ent(ship1, 68.0, 50.2)
     sc.vfx(boat_wake("up"), px_ - 4, py_ - 16)
     ship1b = cargo_boat("down")
     px_, py_ = sc.ent(ship1b, 80.6, 54.8)
     sc.vfx(boat_wake("up"), px_ - 4, py_ - 16)
-    # second ship arriving off polads roadstead
+    # second ship arriving off widgets roadstead
     ship3 = cargo_boat("down")
     px_, py_ = sc.ent(ship3, 90.4, 57.8)
     sc.vfx(boat_wake("up"), px_ - 4, py_ - 16)
-    # packet AT ANCHOR off stephie (holding for the verdict — honest wait)
+    # packet AT ANCHOR off acme (holding for the verdict — honest wait)
     ship2 = U.sh(U.BOAT)
     px_, py_ = sc.ent(ship2, 23.6, 52.4)
     gd.rectangle([px_ + 7, py_ + ship2.height + 2, px_ + 7,
@@ -1811,7 +1811,7 @@ def build_grown():
     sc.ent(U.sh(U.BOAT), 96.4, 26.0)
     px_, py_ = sc.ent(U.sh(U.BOAT), 21.0, 47.6)
     sc.vfx(boat_wake("up"), px_ - 4, py_ - 16)
-    # reef-buoy at the retired stepnetwork anchor (due south, honest dormant)
+    # reef-buoy at the retired example-org anchor (due south, honest dormant)
     sc.ent(red_buoy(), 45.7, 56.4)
     gd.rectangle([int(45.4 * T), int(57.5 * T), int(45.4 * T) + 10,
                   int(57.5 * T)], fill=FOAM_C + (150,))

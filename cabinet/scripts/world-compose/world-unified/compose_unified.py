@@ -555,9 +555,9 @@ def build_scene():
             if (hx, hy) in cells and irng.rf() < 0.5:
                 sc.gpaste(gv2[irng.ri(0, 3)], hx, hy)
         return cells
-    # stephie isle SW / polads isle SE (polads bigger: more shipped there)
-    isle_s = isle(3, 36, 9, 39, "isle-stephie")
-    isle_p = isle(39, 36, 47, 39, "isle-polads")
+    # acme isle SW / widgets isle SE (widgets bigger: more shipped there)
+    isle_s = isle(3, 36, 9, 39, "isle-acme")
+    isle_p = isle(39, 36, 47, 39, "isle-widgets")
 
     # ============ rocky headland SW shore (palette-native: grass + rocks + foam) ==
     # grass runs to the waterline; foam scallops + boulders instead of foreign sand
@@ -969,9 +969,9 @@ def build_scene():
     sc.ent(sh(BENCH), 36.8, 28.8, prop="prop")
 
     # --- berths: chalk frames + cleats + LANE-GROUPED cargo (6 active outcomes)
-    # sys W of the road mouth; polads + stephie run E as one cargo waterfront
-    berth_xs = [(18.5, "sys", 3), (21.5, "sys", 2), (36.5, "polads", 4),
-                (39.8, "polads", 5), (43.6, "stephie", 3), (46.9, "stephie", 3)]
+    # sys W of the road mouth; widgets + acme run E as one cargo waterfront
+    berth_xs = [(18.5, "sys", 3), (21.5, "sys", 2), (36.5, "widgets", 4),
+                (39.8, "widgets", 5), (43.6, "acme", 3), (46.9, "acme", 3)]
     chalk = (226, 230, 238, 190)
     for i, (bx_, lane, stg) in enumerate(berth_xs):
         by_ = 28.1 if i % 2 == 0 else 28.4
@@ -991,7 +991,7 @@ def build_scene():
         stk = berth_stack3(stg, "berth%d" % i)
         px_, py_ = sc.ent(stk, bx_, by_ + 1.6, prop="prop")
         sc.shadow_blob(px_ + stk.width//2, int((by_ + 2.6)*T) - 6, 28 + 2*stg, 26)
-    # officer working at a crate-desk beside the polads berths
+    # officer working at a crate-desk beside the widgets berths
     sc.ent(sh(P("Crate_Brown_Empty")), 38.6, 30.7, prop="prop")
     px_, py_ = sc.ent(c_idle(10, "up"), 38.7, 31.5)
     sc.shadow_blob(px_ + 8, int(32.5*T) - 2, 12, 34)
@@ -1104,11 +1104,11 @@ def build_scene():
     gd.rectangle([int(28.4*T), int(37.5*T), int(28.4*T) + 10, int(37.5*T)], fill=(222, 232, 244, 150))
 
     # isle dressing: hut silhouettes + tree + jetty stub per isle
-    # stephie isle SW: one hut
+    # acme isle SW: one hut
     sc.ent(sh(P("Henhouse")), 5.2, 37.4, prop=None)
     sc.ent(tree("pineS"), 7.4, 37.0, bias=-0.05, prop=None)
     sc.ground.paste(plank, (6*T, 39*T))
-    # polads isle SE: two huts + crates (more has shipped there)
+    # widgets isle SE: two huts + crates (more has shipped there)
     sc.ent(sh(P("Henhouse")), 41.2, 37.5, prop=None)
     sc.ent(sh(P("Chicken_Coop")), 44.4, 38.0, bias=-0.1, prop=None)
     sc.ent(tree("oakS"), 43.0, 36.7, bias=-0.05, prop=None)
