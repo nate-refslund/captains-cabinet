@@ -386,3 +386,56 @@ def test_get_source_binds_screenpipe_source(monkeypatch):
         assert isinstance(src, PersonalSource)
     finally:
         fs._reset_cache()
+
+
+# ---------------------------------------------------------------------------
+# Estate-path fallback (2026-07-16 regression) — available() proves the estate
+# exists ON DISK, not that it is importable: in a fresh process with no server
+# injected and no prior flavor_a.acting / screenpipe_dispatch import, the
+# lib-fallback branches' bare imports raised ModuleNotFoundError on every
+# action-lane run ("gather: open_commitments failed (No module named
+# 'commitments_lib') — section empty"). The methods now call
+# _ensure_estate_path() first. Proven in a SUBPROCESS (a genuinely fresh
+# interpreter, the exact action-lane condition; also keeps the fake
+# commitments_lib out of THIS process's sys.modules).
+# ---------------------------------------------------------------------------
+_FALLBACK_DRIVER = r"""
+import json, sys
+pkg_parent, pipes_dir = sys.argv[1], sys.argv[2]
+sys.path.insert(0, pkg_parent)
+from flavor_a.screenpipe_source import ScreenpipeSource
+src = ScreenpipeSource(pipes_dir=pipes_dir)   # no server injected
+assert src.available() is True, "fixture estate should probe available"
+rows = src.open_commitments("owed_by_captain")
+print(json.dumps(rows))
+"""
+
+
+def test_open_commitments_fallback_imports_off_probed_root(tmp_path):
+    import json
+    import subprocess
+    shared = tmp_path / "pipes" / "_shared"
+    shared.mkdir(parents=True)
+    # available() probes _shared/draft_lib.py; the fallback imports
+    # commitments_lib — both live in the fixture estate.
+    (shared / "draft_lib.py").write_text("", encoding="utf-8")
+    (shared / "commitments_lib.py").write_text(
+        "def load_all():\n"
+        "    return {\n"
+        "        'c1': {'direction': 'owed_by_nate', 'status': 'open',\n"
+        "               'text': 'reply to k'},\n"
+        "        'c2': {'direction': 'owed_by_nate', 'status': 'done',\n"
+        "               'text': 'closed row'},\n"
+        "    }\n", encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, "-c", _FALLBACK_DRIVER, str(_PKG_PARENT),
+         str(tmp_path / "pipes")],
+        capture_output=True, text=True)
+    assert result.returncode == 0, (
+        "fallback import failed in a fresh interpreter (the action-lane "
+        "condition):\n" + result.stderr)
+    rows = json.loads(result.stdout)
+    # open row returned, closed row filtered, direction remapped to contract
+    assert len(rows) == 1
+    assert rows[0]["direction"] == "owed_by_captain"
+    assert rows[0]["text"] == "reply to k"

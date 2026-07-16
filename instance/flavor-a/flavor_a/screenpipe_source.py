@@ -163,13 +163,30 @@ class ScreenpipeSource:
         self._vault_search = vault_search
         # Acting surface (flavor_a.acting), lazily resolved on first acting call.
         self._acting_mod = acting_mod
-        # Liveness-probe root ONLY (available()). The method bodies get their own
-        # ~/.screenpipe paths onto sys.path from the libs / acting module they use.
+        # Liveness-probe root AND the import root the lib-fallback branches
+        # resolve off (they call _ensure_estate_path() before their bare
+        # imports, so probe root and import root can never disagree).
         self._pipes_dir = pipes_dir or os.path.expanduser("~/.screenpipe/pipes")
 
     # -- lazy backends -------------------------------------------------------
+    def _ensure_estate_path(self) -> None:
+        """Put the probed pipes root + its ``_shared`` dir on ``sys.path``
+        (idempotent) BEFORE a lib-fallback bare import. ``available()`` only
+        proves the estate exists ON DISK — it says nothing about importability:
+        with no server injected and no prior ``flavor_a.acting`` /
+        ``screenpipe_dispatch`` import in the process, the bare imports below
+        raised ModuleNotFoundError on every action-lane run
+        ("gather: open_commitments failed (No module named 'commitments_lib')
+        — section empty", fixed 2026-07-16). Same superset the dispatch
+        module's ``_ensure_shared_path()`` inserts, but bound to
+        ``self._pipes_dir`` so an injected root is honored."""
+        for _p in (self._pipes_dir, os.path.join(self._pipes_dir, "_shared")):
+            if _p not in sys.path:
+                sys.path.insert(0, _p)
+
     def _ctx(self):
         if self._context_lib is None:
+            self._ensure_estate_path()
             import context_lib  # brain bridge dep (resolved on sys.path)
             self._context_lib = context_lib
         return self._context_lib
@@ -230,6 +247,7 @@ class ScreenpipeSource:
     def person_intel(self, slug):
         if self._server is not None:
             return self._server.person_intel(slug)
+        self._ensure_estate_path()
         import draft_lib
         return draft_lib.person_intel(slug)
 
@@ -247,6 +265,7 @@ class ScreenpipeSource:
         if self._server is not None:
             rows = self._server.open_commitments(internal)
         else:
+            self._ensure_estate_path()
             import commitments_lib
             all_rows = commitments_lib.load_all()
             _closed = {"closed", "done", "resolved", "dropped", "cancelled",
@@ -263,6 +282,7 @@ class ScreenpipeSource:
     def voice_profile(self):
         if self._server is not None:
             return self._server.voice_profile()
+        self._ensure_estate_path()
         import draft_lib
         return draft_lib.voice_profile()
 
@@ -276,6 +296,7 @@ class ScreenpipeSource:
         # signal). me_signal wraps it in the PRIVATE fence.
         if self._server is not None:
             return self._server.nate_model_patterns()
+        self._ensure_estate_path()
         import me_signal
         return me_signal.nate_model("patterns")
 
@@ -297,6 +318,7 @@ class ScreenpipeSource:
         if self._server is not None:
             raw = self._server.drafting_lessons()
         else:
+            self._ensure_estate_path()
             import draft_lib
             raw = (draft_lib.LESSONS_FILE.read_text(errors="replace")
                    if draft_lib.LESSONS_FILE.exists() else "")
