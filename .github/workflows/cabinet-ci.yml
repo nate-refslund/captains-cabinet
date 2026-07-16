@@ -487,8 +487,15 @@ jobs:
       # via __init__.py so it does not basename-collide; verified 2026-07-16.)
       - name: Cabinet task-adapter tests
         if: ${{ !cancelled() }}
-        # 26 tests pinning the CanonicalTask/TaskAdapter seam
-        # (cabinet/scripts/task_adapters/base.py).
+        # CanonicalTask/TaskAdapter seam pins (test_base.py) + the adapter
+        # CONFORMANCE gate (test_conformance.py, adapter kit 2026-07-17):
+        # ADAPTER_REGISTRY is auto-discovered, so registering an
+        # implemented adapter without a passing conformance fixture — or
+        # dropping an unregistered adapter module into task_adapters/ — is
+        # a red build BY DESIGN. Calibration anchors run here too: the
+        # in-memory reference adapter must pass everything, the _template
+        # scaffold must fail everything. All transports are faked
+        # in-process (no network, no real gh).
         run: python -m pytest cabinet/scripts/task_adapters/tests -q
 
       - name: Cabinet world-aesthetic tests

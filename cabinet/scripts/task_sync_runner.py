@@ -1,7 +1,13 @@
 """Task sync runner — orchestrates one sync cycle between Cabinet and external task system.
 
 Phase 5 of the convergence plan. Invoked by `cabinet/cron/task-sync.sh`
-(every 5 min via launchd).
+every 15 minutes via the cabinet/services.yml `task-sync` row
+(interval_s: 900 — the manifest is the cadence truth; the old 5-min header
+claim matched nothing and was corrected 2026-07-17).
+
+Pull-only Phase 5 stub: the PUSH half needs the Phase 6 canonical-store
+reader (see run_sync body). The nightly task-sync-drift falsifier
+(cabinet/scripts/task-sync-drift-falsifier.py) watches the mirror claim.
 """
 
 from __future__ import annotations
@@ -20,6 +26,7 @@ if _FRAMEWORK_ROOT not in sys.path:
     sys.path.insert(0, _FRAMEWORK_ROOT)
 
 from cabinet.scripts.task_adapters.base import get_adapter, SyncResult, CanonicalTask
+from framework.env import active_context
 from framework.events.emitter import emit
 
 try:
@@ -30,20 +37,33 @@ except ImportError:
 
 
 def _active_project_config(cabinet_root: str | None = None) -> dict[str, Any]:
-    """Read instance/config/projects/<active>.yml based on active-project.txt."""
+    """Read instance/config/projects/<slug>.yml for the resolved task context.
+
+    Context resolution is the shared preset-aware chain
+    (``framework.env.active_context`` — twin of ``lib/lanes.sh
+    cabinet_resolve_context``): ``CABINET_CONTEXT`` env >
+    ``instance/config/active-project.txt`` > preset-derived (single declared
+    lane, else the declared ``lane_default``). The runner is deployment-scoped
+    (no officer identity), so on a multi-lane preset deployment it needs
+    ``CABINET_CONTEXT`` in its launchd/cron env (one runner per lane) or a
+    declared ``lane_default`` — resolution failure is LOUD with that remedy,
+    never a crash-loop on a missing file that the deployment shape simply
+    doesn't write. The resolver shape-gates every slug
+    (``[a-z0-9][a-z0-9-]{0,31}``), so the path join below is traversal-safe.
+    """
     if cabinet_root is None:
         cabinet_root = os.environ.get(
             "CABINET_ROOT",
             str(Path(__file__).parent.parent.parent),
         )
-    active_file = Path(cabinet_root) / "instance" / "config" / "active-project.txt"
-    if not active_file.exists():
-        raise FileNotFoundError(
-            "instance/config/active-project.txt missing — set active project first"
-        )
-    slug = active_file.read_text().strip()
+    slug = active_context(root=cabinet_root)
     if not slug:
-        raise ValueError("active-project.txt is empty")
+        raise FileNotFoundError(
+            "cannot resolve a task context — set CABINET_CONTEXT in the "
+            "runner's env, write instance/config/active-project.txt, or "
+            "declare instance/config/contexts/<lane>.yml plus a lane_default "
+            "in instance/config/platform.yml"
+        )
 
     proj_file = Path(cabinet_root) / "instance" / "config" / "projects" / f"{slug}.yml"
     if not proj_file.exists():

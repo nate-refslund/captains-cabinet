@@ -73,6 +73,12 @@ delete instance/config/signals.yml
 # missing live file as the ratified default (soak), so a fresh egg behaves
 # correctly without it.
 delete instance/config/memory-supersession.yml
+# R120-class: task-watch.yml is THIS deployment's /tasks watchdog card-rule
+# posture (memory-supersession.yml precedent directly above). The .example
+# twin ships; task-events-watch.py treats a missing live file as the
+# ratified default (blocked_card ON), so a fresh egg behaves correctly
+# without it.
+delete instance/config/task-watch.yml
 # R120: enforced egress is deployment policy. The live file is intentionally
 # fail-closed for this Captain; a fresh commercial egg receives only the
 # documented .example twin and must apply its own allowlist during hatch.
@@ -277,6 +283,7 @@ expect-present instance/config/sources.yml.example
 expect-present instance/config/role-registry.md.example
 expect-present instance/config/signals.yml.example
 expect-present instance/config/memory-supersession.yml.example
+expect-present instance/config/task-watch.yml.example
 expect-present instance/config/egress.yml.example
 # R166: the synthetic template for the UNTRACKED captain-specific publish-scan
 # pattern file must ship — egg-side cabinet-feedback.sh reads the live twin

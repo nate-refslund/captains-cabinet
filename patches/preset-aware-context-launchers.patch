@@ -1,0 +1,67 @@
+diff --git a/cabinet/scripts/start-officer-mac.sh b/cabinet/scripts/start-officer-mac.sh
+index 281328b..7cf5c80 100644
+--- a/cabinet/scripts/start-officer-mac.sh
++++ b/cabinet/scripts/start-officer-mac.sh
+@@ -386,22 +386,47 @@ export CABINET_OFFICER="$OFFICER"
+ # lane of the F+A cell tuple (officer, lane, action_type). The Mac officer is
+ # single-project-per-LaunchAgent (no --project flag), so its lane source is
+ # instance/config/active-project.txt (the same active-context machinery the
+-# Linux script's legacy mode uses). Read defensively + whitespace-strip, then
+-# validate against the slug allowlist (mirrors start-officer.sh FW-073 regex) so
+-# a malformed active-project.txt cannot inject into the exported value. Export
+-# ONLY when a valid slug exists — an empty CABINET_LANE would shadow PROJECT in
+-# resolve_lane; omitting it lets resolve_lane fall through to PROJECT then None
+-# (fail-safe → unmeasured cell, propose-only at the gate).
++# Linux script's legacy mode uses), with the PRESET-AWARE fallback below for
++# deployments that declare lanes via instance/config/contexts/ and never
++# write that file (the config-split fix, 2026-07-17). Read defensively +
++# whitespace-strip, then validate against the slug allowlist (mirrors
++# start-officer.sh FW-073 regex) so a malformed source cannot inject into the
++# exported value. Export ONLY when a valid slug exists — an empty
++# CABINET_LANE would shadow PROJECT in resolve_lane; omitting it lets
++# resolve_lane fall through to PROJECT then None (fail-safe → unmeasured
++# cell, propose-only at the gate).
+ CABINET_LANE_SLUG=""
+ if [ -f "$REPO_ROOT/instance/config/active-project.txt" ]; then
+   CABINET_LANE_SLUG=$(tr -d '[:space:]' < "$REPO_ROOT/instance/config/active-project.txt" 2>/dev/null)
+ fi
++if [ -z "$CABINET_LANE_SLUG" ]; then
++  # Preset-aware fallback (config-split fix 2026-07-17): resolve this
++  # officer's lane through the shared chain in lib/lanes.sh — the SAME
++  # resolver my-tasks.sh / task_sync_runner / the dashboard use:
++  # CABINET_CONTEXT env (a sanctioned per-officer LaunchAgent override) >
++  # active-project.txt (absent here) > officer→lane derivation from
++  # instance/config/contexts/*.yml (exact slug, else longest '<lane>-'
++  # prefix) > single-declared-lane > platform.yml lane_default. Resolver
++  # output is shape-gated ([a-z0-9][a-z0-9-]{0,31}) and re-checked by the
++  # FW-073 regex below anyway; a resolver miss leaves the slug empty (the
++  # existing fail-safe leg).
++  # shellcheck source=lib/lanes.sh
++  . "$REPO_ROOT/cabinet/scripts/lib/lanes.sh"
++  CABINET_LANE_SLUG="$(cabinet_resolve_context "$OFFICER" 2>/dev/null)" || CABINET_LANE_SLUG=""
++fi
+ if [ -n "$CABINET_LANE_SLUG" ] && [[ "$CABINET_LANE_SLUG" =~ ^[a-z0-9][a-z0-9-]*$ ]] && [ "${#CABINET_LANE_SLUG}" -le 32 ]; then
+   export CABINET_LANE="$CABINET_LANE_SLUG"
++  # The tasks-context twin of the lane export (config-split fix 2026-07-17):
++  # my-tasks.sh, the /tasks dashboard and task-sync read CABINET_CONTEXT, so
++  # the officer session gets the SAME slug on both dimensions (in this repo
++  # the lane enum IS the context enum — instance/config/contexts/*.yml).
++  export CABINET_CONTEXT="$CABINET_LANE_SLUG"
+ else
+   # Scrub any inherited/stale value so a non-conforming active-project.txt or a
+-  # poisoned parent env can't silently shadow PROJECT/None in resolve_lane.
++  # poisoned parent env can't silently shadow PROJECT/None in resolve_lane —
++  # and can't hand my-tasks.sh a stale context either.
+   unset CABINET_LANE
++  unset CABINET_CONTEXT
+   CABINET_LANE_SLUG=""
+ fi
+ 
+@@ -665,6 +690,7 @@ if [ "${CABINET_MAC_DRY_RUN:-0}" = "1" ]; then
+   # no line → resolve_lane falls through, fail-safe).
+   if [ -n "${CABINET_LANE:-}" ]; then
+     echo "CABINET_LANE=$CABINET_LANE"
++    echo "CABINET_CONTEXT=${CABINET_CONTEXT:-}"
+   fi
+   rm -f "$SANDBOX_PROFILE"
+   exit 0

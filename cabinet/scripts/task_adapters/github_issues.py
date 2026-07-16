@@ -1,14 +1,34 @@
 """GitHub Issues adapter — fully implemented via `gh` CLI.
 
 Phase 5.2 of the convergence plan. This is the only adapter shipped with a
-real, working implementation; the other four (Monday, Jira, Linear, Asana)
-are skeletons until Captain provides credentials for those systems.
+real, working implementation; the others (Jira, Linear, Asana) are skeletons
+until Captain provides credentials for those systems (Monday is
+plugin-routed — see base.get_adapter).
 
 GitHub Issues was chosen for the first working implementation because:
   - `gh` CLI is already installed on Captain's Mac (verified by setup-mac.sh)
   - Authentication via `gh auth login` — no environment-variable token needed
   - The Cabinet's own framework backlog already lives in GitHub Issues
     (per CLAUDE.md), so this adapter has immediate first-party utility.
+
+Transport discipline (authoring-kit conformance, 2026-07-17): every gh call
+goes through `_gh()` — subprocess ARGV LISTS only (task text rides as single
+argv elements; `shell=True` is forbidden by the conformance source scan),
+rate-limit replies classify into RateLimitedError and writes retry through
+`TaskAdapter._with_backoff`. Conflict DETECTION is not implemented: the gh
+CLI transport is stateless (no last-write snapshot survives between sync
+cycles), so out-of-band operator edits cannot be told apart from canonical
+updates — canonical still WINS (push overwrites title/body/labels/state
+unconditionally); the gap is declared in this adapter's conformance fixture,
+not hidden.
+
+Label fidelity (2026-07-17 review): updates strip STALE MANAGED labels
+(`officer:*`, `priority:*`, and exact `wip`/`blocked`) that the new push no
+longer carries — else a priority downgrade or role reassignment leaves the
+old label behind and the next pull() resurrects the stale value (canonical
+must win on labels too; conformance C2 pins it). User tags pass through
+untouched, and the wip/blocked reservation is EXACT-match only: a user tag
+like `wip-cleanup` is ordinary data that must round-trip.
 
 Mapping:
   CanonicalTask                     GitHub Issue
@@ -32,7 +52,15 @@ import json
 import subprocess
 from typing import Any
 
-from cabinet.scripts.task_adapters.base import CanonicalTask, TaskAdapter
+from cabinet.scripts.task_adapters.base import CanonicalTask, RateLimitedError, TaskAdapter
+
+#: gh stderr fragments that mean "slow down" (secondary rate limits included)
+_RATE_LIMIT_MARKERS = (
+    "API rate limit exceeded",
+    "HTTP 429",
+    "was submitted too quickly",
+    "secondary rate limit",
+)
 
 
 class GitHubIssuesAdapter(TaskAdapter):
@@ -45,31 +73,43 @@ class GitHubIssuesAdapter(TaskAdapter):
         if not self.repo:
             raise ValueError(
                 "github-issues adapter requires tasks.config.repo "
-                "(e.g. 'nate-refslund/captains-cabinet')"
+                "(e.g. 'example-org/example-repo')"
             )
+
+    # ----- transport -----
+
+    def _gh(self, argv: list[str], *, timeout: int,
+            check: bool = True) -> subprocess.CompletedProcess:
+        """ONE door to the gh CLI. Argv list only — never a shell; untrusted
+        issue text is always a single argv element. Rate-limit stderr raises
+        RateLimitedError (callers wrap in _with_backoff); other failures
+        keep the historical check=True CalledProcessError semantics."""
+        result = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+        if result.returncode != 0:
+            stderr = result.stderr or ""
+            if any(marker in stderr for marker in _RATE_LIMIT_MARKERS):
+                op = " ".join(argv[1:3]) if len(argv) > 2 else "gh"
+                # message carries the OPERATION only — never issue text/tokens
+                raise RateLimitedError(f"gh rate-limited during {op}")
+            if check:
+                raise subprocess.CalledProcessError(
+                    result.returncode, argv, result.stdout, result.stderr
+                )
+        return result
 
     # ----- lifecycle -----
 
     def health_check(self) -> bool:
         """Verify gh is authenticated and can hit the repo."""
         try:
-            subprocess.run(
-                ["gh", "auth", "status"],
-                check=True,
-                capture_output=True,
-                timeout=5,
-            )
-        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+            self._gh(["gh", "auth", "status"], timeout=5)
+        except (subprocess.CalledProcessError, FileNotFoundError,
+                subprocess.TimeoutExpired, RateLimitedError):
             return False
 
         try:
-            subprocess.run(
-                ["gh", "repo", "view", self.repo, "--json", "name"],
-                check=True,
-                capture_output=True,
-                timeout=10,
-            )
-        except subprocess.CalledProcessError:
+            self._gh(["gh", "repo", "view", self.repo, "--json", "name"], timeout=10)
+        except (subprocess.CalledProcessError, RateLimitedError):
             return False
 
         return True
@@ -78,18 +118,18 @@ class GitHubIssuesAdapter(TaskAdapter):
 
     def pull(self) -> list[CanonicalTask]:
         """List open + recently-closed issues in the configured repo."""
-        result = subprocess.run(
-            [
-                "gh", "issue", "list",
-                "--repo", self.repo,
-                "--state", "all",
-                "--limit", str(self.adapter_config.get("pull_limit", 100)),
-                "--json", "number,title,body,state,labels,url,createdAt,updatedAt,closedAt",
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=30,
+        result = self._with_backoff(
+            lambda: self._gh(
+                [
+                    "gh", "issue", "list",
+                    "--repo", self.repo,
+                    "--state", "all",
+                    "--limit", str(self.adapter_config.get("pull_limit", 100)),
+                    "--json", "number,title,body,state,labels,url,createdAt,updatedAt,closedAt",
+                ],
+                timeout=30,
+            ),
+            op="issue-list",
         )
         issues = json.loads(result.stdout or "[]")
 
@@ -105,7 +145,11 @@ class GitHubIssuesAdapter(TaskAdapter):
                 status=self._gh_state_to_status(issue["state"], label_names),
                 assigned_role=self._extract_role(label_names),
                 priority=self._extract_priority(label_names),
-                tags=[l for l in label_names if not l.startswith(("cabinet:", "officer:", "priority:", "wip", "blocked"))],
+                # wip/blocked are EXACT-match status markers — a user tag
+                # merely prefixed with them ('wip-cleanup') must round-trip
+                tags=[l for l in label_names
+                      if not l.startswith(("cabinet:", "officer:", "priority:"))
+                      and l not in ("wip", "blocked")],
                 external_id=str(issue["number"]),
                 external_url=issue["url"],
                 metadata={
@@ -121,12 +165,13 @@ class GitHubIssuesAdapter(TaskAdapter):
 
     def push(self, task: CanonicalTask) -> str:
         """Upsert: if canonical_id label exists on an issue, edit; else create."""
-        existing_number = self._find_by_canonical_id(task.canonical_id)
+        existing = self._find_by_canonical_id(task.canonical_id)
         labels = self._task_labels(task)
 
-        if existing_number:
+        if existing:
             # Update title + body + labels + state in one go via gh issue edit
-            self._update_issue(existing_number, task, labels)
+            existing_number, current_labels = existing
+            self._update_issue(existing_number, task, labels, current_labels)
             return existing_number
 
         # Create
@@ -138,7 +183,8 @@ class GitHubIssuesAdapter(TaskAdapter):
         ]
         for label in labels:
             cmd += ["--label", label]
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=30)
+        result = self._with_backoff(
+            lambda: self._gh(cmd, timeout=30), op="issue-create")
         # gh prints the URL on stdout; parse the issue number
         # https://github.com/owner/repo/issues/N
         url = result.stdout.strip()
@@ -151,19 +197,25 @@ class GitHubIssuesAdapter(TaskAdapter):
 
     def delete(self, external_id: str) -> None:
         """Close the issue (gh has no hard-delete for non-admins)."""
-        subprocess.run(
-            ["gh", "issue", "close", external_id, "--repo", self.repo,
-             "--reason", "not planned"],
-            check=True, capture_output=True, timeout=15,
+        self._with_backoff(
+            lambda: self._gh(
+                ["gh", "issue", "close", external_id, "--repo", self.repo,
+                 "--reason", "not planned"],
+                timeout=15,
+            ),
+            op="issue-close",
         )
 
     def link(self, canonical_id: str, external_id: str) -> None:
         """Add the cabinet:<canonical_id> label to the existing issue."""
-        subprocess.run(
-            ["gh", "issue", "edit", external_id,
-             "--repo", self.repo,
-             "--add-label", f"cabinet:{canonical_id}"],
-            check=True, capture_output=True, timeout=15,
+        self._with_backoff(
+            lambda: self._gh(
+                ["gh", "issue", "edit", external_id,
+                 "--repo", self.repo,
+                 "--add-label", f"cabinet:{canonical_id}"],
+                timeout=15,
+            ),
+            op="issue-link",
         )
 
     # ----- internals -----
@@ -213,21 +265,31 @@ class GitHubIssuesAdapter(TaskAdapter):
                 labels.append(tag)
         return labels
 
-    def _find_by_canonical_id(self, canonical_id: str) -> str | None:
-        """Look up an issue by its cabinet:<id> label."""
-        result = subprocess.run(
-            ["gh", "issue", "list",
-             "--repo", self.repo,
-             "--label", f"cabinet:{canonical_id}",
-             "--state", "all",
-             "--limit", "1",
-             "--json", "number"],
-            check=True, capture_output=True, text=True, timeout=15,
+    def _find_by_canonical_id(self, canonical_id: str) -> tuple[str, list[str]] | None:
+        """Look up an issue by its cabinet:<id> label → (number, label names).
+
+        Labels ride in the SAME lookup so the updating push can strip stale
+        managed labels without a second read."""
+        result = self._with_backoff(
+            lambda: self._gh(
+                ["gh", "issue", "list",
+                 "--repo", self.repo,
+                 "--label", f"cabinet:{canonical_id}",
+                 "--state", "all",
+                 "--limit", "1",
+                 "--json", "number,labels"],
+                timeout=15,
+            ),
+            op="issue-lookup",
         )
         items = json.loads(result.stdout or "[]")
-        return str(items[0]["number"]) if items else None
+        if not items:
+            return None
+        label_names = [l["name"] for l in (items[0].get("labels") or [])]
+        return str(items[0]["number"]), label_names
 
-    def _update_issue(self, number: str, task: CanonicalTask, labels: list[str]) -> None:
+    def _update_issue(self, number: str, task: CanonicalTask, labels: list[str],
+                      current_labels: list[str]) -> None:
         """Edit title/body/labels and adjust state."""
         # Title + body + labels
         cmd = [
@@ -238,25 +300,42 @@ class GitHubIssuesAdapter(TaskAdapter):
         ]
         for label in labels:
             cmd += ["--add-label", label]
-        # Strip transient state labels not in the new set
-        for transient in ("wip", "blocked"):
-            if transient not in labels:
-                cmd += ["--remove-label", transient]
-        subprocess.run(cmd, check=True, capture_output=True, timeout=15)
+        # Canonical wins on labels too: strip stale MANAGED labels (status
+        # markers, officer:*, priority:*) the new push no longer carries —
+        # else a priority downgrade / role reassignment leaves the old label
+        # and the next pull() resurrects it (conformance C2 pins this).
+        # cabinet:<id> is the upsert key (never stale by construction); user
+        # tags are passthrough and never stripped; wip/blocked match EXACTLY
+        # so a user tag like 'wip-cleanup' survives.
+        stale = [
+            l for l in current_labels
+            if (l.startswith(("officer:", "priority:")) or l in ("wip", "blocked"))
+            and l not in labels
+        ]
+        for label in stale:
+            cmd += ["--remove-label", label]
+        self._with_backoff(lambda: self._gh(cmd, timeout=15), op="issue-edit")
 
         # State transitions
         if task.status in ("done", "cancelled"):
             self._close_issue(number, task.status)
         elif task.status in ("open", "in_progress", "blocked"):
-            # Reopen if needed
-            subprocess.run(
-                ["gh", "issue", "reopen", number, "--repo", self.repo],
-                capture_output=True, timeout=15,
+            # Reopen if needed (check=False: reopening an already-open issue
+            # errors and that is fine — rate limits still back off)
+            self._with_backoff(
+                lambda: self._gh(
+                    ["gh", "issue", "reopen", number, "--repo", self.repo],
+                    timeout=15, check=False,
+                ),
+                op="issue-reopen",
             )
 
     def _close_issue(self, number: str, status: str) -> None:
         reason = "completed" if status == "done" else "not planned"
-        subprocess.run(
-            ["gh", "issue", "close", number, "--repo", self.repo, "--reason", reason],
-            check=True, capture_output=True, timeout=15,
+        self._with_backoff(
+            lambda: self._gh(
+                ["gh", "issue", "close", number, "--repo", self.repo, "--reason", reason],
+                timeout=15,
+            ),
+            op="issue-close",
         )

@@ -799,7 +799,11 @@ services:
       (docs/runbooks/mini-hatch-tonight-2026-07-07.md §Flight recorder).
       Since 2026-07-15 additionally probes the retrieval-eval nightly
       verdict ledger (check 11 — floor breach / >48h staleness = WARN,
-      credless box = SKIP) via retrieval-eval-nightly.sh --probe.
+      credless box = SKIP) via retrieval-eval-nightly.sh --probe. Since
+      2026-07-17 also probes the task-sync drift falsifier verdict ledger
+      (check 12 — drift/stale = WARN/AMBER + self-heal hint; the captain
+      card on a persisted breach is filed by the falsifier organ, never by
+      this read-only probe) via task-sync-drift-falsifier.py --probe.
 
   # ── ORG-SENSES-1 transcript-digest organ (armed 2026-07-07) ────────────────
   - name: memory-contradictions
@@ -1061,3 +1065,48 @@ services:
       E1's break-through banner. Tests: cabinet/scripts/tests/
       test_world_chronicle.py (determinism, zero-leak injection, cursor
       resume, rollover, write fence).
+
+  # ── Task-system sync + drift falsifier (adapter kit, 2026-07-17) ──────────
+  # THE task-sync cadence truth. Before this row the story was three-way
+  # inconsistent: runner + cron headers claimed "every 5 min via launchd",
+  # the hand-kept template plist said 900s, and NOTHING was scheduled
+  # anywhere. The headers now cite this row; the orphaned
+  # com.cabinet.task-sync.template.plist was DELETED (install source =
+  # generate-plists.py pipeline, same as memory-reconcile). Same
+  # missing/uninstalled posture as regression-corpus: flip `disabled: true`
+  # + regenerate rather than letting a broken row thrash.
+  - name: task-sync
+    label: com.cabinet.task-sync
+    kind: cron
+    command: bash cabinet/cron/task-sync.sh
+    schedule: { interval_s: 900 }   # every 15 min — the template-plist-era truth, now manifest-owned
+    expected: "one summary line/run. On THIS deployment (plugin-routed lanes, no tasks block) every run is the loud-degrade INFO 'no external task system to sync' + exit 0 — crash-looping or silence is the failure mode, the no-op is correct; with a configured adapter: pulled/pushed counts, exit 1 on sync errors"
+    sunset: "retire if the canonical work store drops external mirrors entirely (PM-decoupling end state) or the Phase 6 canonical-store reader moves sync into the org runtime proper"
+    notes: >-
+      Pull-only Phase 5 stub (task_sync_runner.py owns the honesty note:
+      the push half is Phase 6 canonical-store work). Plugin-routed /
+      block-less projects are a clean NoOpTaskAdapter no-op by design —
+      scheduling the row keeps the seam warm and WATCHED (manifest-derived
+      log-freshness floor) instead of rotting unscheduled. New tracker?
+      Adapter authoring kit: cabinet/runbooks/task-adapter-authoring.md +
+      task_adapters/_template.py + the conformance suite CI gate.
+  - name: task-sync-drift
+    label: com.cabinet.task-sync-drift
+    kind: cron
+    command: python3.12 cabinet/scripts/task-sync-drift-falsifier.py
+    schedule: { calendar: [{hour: 4, minute: 20}] }   # nightly 04:20 local — after the 04:10 transcript-digest, before the 04:30 regression-corpus; the 07:10 cabinet-doctor reads tonight's verdict
+    expected: "one verdict JSONL line/night appended to cabinet/logs/task-sync-drift.jsonl (runtime, gitignored via cabinet/logs/*): while every adapter is NoOp/skeleton — today's live shape — an HONEST no-adapters-configured line + exit 0 (loud-degrade, never a fake green); with a configured adapter, N sampled canonical↔mirror comparisons, drift/error exit 1 so launchd surfaces it; a breach persisting across two nightly DATES makes the falsifier (never the read-only doctor) file ONE captain card via the attention gateway"
+    sunset: "retire with the task-sync row above (a falsifier without a claim to falsify is theater)"
+    notes: >-
+      Sync-drift falsifier (falsifier-report.py sibling discipline):
+      append-only flock JSONL; canonical side = ONE constant read-only
+      SELECT over officer_tasks via psql json_agg (untrusted titles ride
+      inside JSON string escaping, never TSV; conn string from
+      NEON_CONNECTION_STRING else cabinet/.env, value never logged) or the
+      TASK_SYNC_DRIFT_CANONICAL_JSON seam; mirror side = the configured
+      adapter's pull(). Task text is scrubbed (printable-only, capped)
+      before it enters the ledger and NEVER reaches the captain-card argv.
+      cabinet-doctor check 12 reads the verdict via --probe (pure file
+      inspection) — drift/stale = WARN/AMBER with the self-heal hint,
+      never DEAD. Tests:
+      cabinet/scripts/tests/test_task_sync_drift_falsifier.py.

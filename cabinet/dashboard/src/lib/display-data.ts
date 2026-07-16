@@ -7,16 +7,15 @@
  *   - listClaudeNativeTasks / countDrift              (@/lib/claude-native-tasks)
  *   - redis.keys / redis.get                          (@/lib/redis)
  *   - dockerExec                                       (@/lib/docker, for OVI/events CLI)
- *   - getActiveProjectSlug                             (@/lib/config)
+ *   - resolveActiveContextOrNull                       (@/lib/active-context)
+ *   - getActiveProjectSlug                             (@/lib/config, fallback)
  *
  * Hard rule for a wall display: NEVER throw. Every source is wrapped in
  * try/catch and degrades to a safe default ("—" / null / []) so the page
  * always renders. A blank screen in the office is worse than a stale number.
  */
 
-import path from 'node:path'
-import { readFile } from 'node:fs/promises'
-import { cabinetRoot } from '@/lib/cabinet-root'
+import { resolveActiveContextOrNull } from '@/lib/active-context'
 import { getAllOfficerBoards, getBoardStats, WIP_CAP, type OfficerTask } from '@/lib/tasks'
 import { listClaudeNativeTasks, countDrift } from '@/lib/claude-native-tasks'
 import { dockerExec } from '@/lib/docker'
@@ -81,18 +80,14 @@ export interface DisplayData {
 
 const OFFLINE_THRESHOLD_MS = 15 * 60 * 1000
 
-/** Resolve the active context slug. Mirrors /tasks page precedence
- *  (env > active-project.txt) but NEVER throws — falls back to config
- *  getActiveProjectSlug(), then 'demo', so the display always has a context. */
+/** Resolve the active context slug. Uses the shared preset-aware resolver
+ *  (@/lib/active-context: env > active-project.txt > single-declared-lane >
+ *  lane_default — same chain as /tasks page + my-tasks.sh) but NEVER throws —
+ *  falls back to config getActiveProjectSlug(), then 'demo', so the display
+ *  always has a context. */
 async function resolveActiveContext(): Promise<string> {
-  if (process.env.CABINET_CONTEXT?.trim()) return process.env.CABINET_CONTEXT.trim()
-  const activeFile = path.join(cabinetRoot(), 'instance/config/active-project.txt')
-  try {
-    const txt = (await readFile(activeFile, 'utf-8')).trim()
-    if (txt) return txt
-  } catch {
-    // fall through to config reader
-  }
+  const shared = await resolveActiveContextOrNull()
+  if (shared) return shared
   try {
     return getActiveProjectSlug()
   } catch {

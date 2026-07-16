@@ -31,6 +31,11 @@ TRIG_REDIS_HOST="${TRIG_REDIS_HOST:-127.0.0.1}"
 TRIG_REDIS_PORT="${REDIS_PORT:-6379}"
 TRIG_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CABINET_ROOT="${CABINET_ROOT:-$(cd "$TRIG_LIB_DIR/../../.." && pwd)}"
+# The tree that carries framework/ — derived from THIS lib's location, never
+# from $CABINET_ROOT (callers legitimately point CABINET_ROOT at an instance
+# root that has no framework/, e.g. tests; the envelope validator must still
+# import from the checkout this lib rides in).
+TRIG_FRAMEWORK_ROOT="$(cd "$TRIG_LIB_DIR/../../.." && pwd)"
 
 # Compute (stream, group, ids_file) for a given target officer based on the
 # caller's CABINET_ACTIVE_PROJECT. Echoes "<stream>|<group>|<ids_file>" —
@@ -431,4 +436,158 @@ trigger_ids_path() {
   keys=$(_trigger_keys "$officer")
   IFS='|' read -r _stream _group ids_file <<< "$keys"
   echo "$ids_file"
+}
+
+# ---------------------------------------------------------------------------
+# /tasks board events — durable, A6-enveloped (see cabinet/docs/tasks-board.md)
+# ---------------------------------------------------------------------------
+# task_event_emit <actor> <context_slug> <task_id> <old_status> <new_status>
+#
+# Durable data-plane sibling of my-tasks.sh's thin `cabinet:tasks:updated`
+# pub/sub broadcast (which stays byte-identical for the dashboard SSE): every
+# REAL task transition also lands ONE entry on the $TASK_EVENTS_STREAM Redis
+# stream so consumers (watchdogs, officers) can react to task changes without
+# polling Postgres. Envelope law (ledger rows A6/A12) applies because this is
+# a NEW typed surface — never grandfathered:
+#   * the entry carries a TYPED envelope built + judged through
+#     framework/triggers/envelope.py: report_only() census BESIDE the XADD
+#     (fail-open) and enforce() as the GATE before it (fail-CLOSED: a typed
+#     envelope that fails validate() is refused — no XADD, loud stderr).
+#   * payload rides as flat argv field pairs (never shell-interpolated):
+#     task_id, old_status, new_status, actor, context_slug, ts.
+#   * task TITLES / reasons / free text stay OUT of the event BY DESIGN —
+#     untrusted and unnecessary; the id suffices for any consumer that needs
+#     detail (join on officer_tasks).
+# Closed-set input guards keep garbage off the bus even if a caller's parsing
+# drifts: task_id must be numeric; statuses must come from the board's
+# vocabulary ('' old_status = row creation). old_status/new_status express the
+# EFFECTIVE state: the `blocked` boolean overlay surfaces as status 'blocked'.
+#
+# Consumer contract: at-least-once (XREADGROUP redelivery) — dedupe on the
+# envelope id (envelope.ReplayWindow) or process idempotently. The exemplar
+# consumer is cabinet/scripts/task-events-watch.py (group $TASK_EVENTS_GROUP);
+# additional consumers create their OWN groups. Stream is not MAXLEN-capped
+# (MAXLEN is unsafe under consumer groups — see _trigger_trim_processed_prefix);
+# trimming is a consumer/ops concern.
+#
+# Fail directions: missing redis-cli/python3.12, refused envelope, or XADD
+# error → WARN on stderr + return 1 (mirror trigger_send's fail-loud stance).
+# Callers whose mutation already committed treat this best-effort (`|| true`).
+TASK_EVENTS_STREAM="cabinet:tasks:events"
+TASK_EVENTS_GROUP="task-watch"
+
+task_event_emit() {
+  local actor="${1:-}" ctx="${2:-}" task_id="${3:-}" old_status="${4:-}" new_status="${5:-}"
+
+  if [ -z "$actor" ] || [ -z "$ctx" ]; then
+    echo "task_event_emit WARN: actor + context_slug required — event NOT queued" >&2
+    return 1
+  fi
+  if ! [[ "$task_id" =~ ^[0-9]+$ ]]; then
+    echo "task_event_emit WARN: non-numeric task_id — event NOT queued" >&2
+    return 1
+  fi
+  case "$old_status" in
+    ""|queue|wip|blocked) : ;;
+    *) echo "task_event_emit WARN: unknown old_status — event NOT queued" >&2; return 1 ;;
+  esac
+  case "$new_status" in
+    queue|wip|blocked|done|cancelled) : ;;
+    *) echo "task_event_emit WARN: unknown new_status — event NOT queued" >&2; return 1 ;;
+  esac
+  if ! command -v redis-cli >/dev/null 2>&1; then
+    echo "task_event_emit WARN: redis-cli missing — task event NOT queued (task_id=$task_id)" >&2
+    return 1
+  fi
+  if ! command -v python3.12 >/dev/null 2>&1; then
+    # Typed surface, fail-closed: no validator → no send (never XADD unjudged).
+    echo "task_event_emit WARN: python3.12 missing — task event NOT queued (task_id=$task_id)" >&2
+    return 1
+  fi
+
+  # Build the typed envelope and judge it (report_only BESIDE + enforce GATE).
+  # All values cross into python via TE_* env vars — never interpolated into
+  # code. Output on success: line 1 = envelope JSON, line 2 = event ts.
+  local _emit_out
+  _emit_out=$(TE_ACTOR="$actor" TE_CTX="$ctx" TE_TASK_ID="$task_id" \
+    TE_OLD="$old_status" TE_NEW="$new_status" \
+    TE_STREAM="$TASK_EVENTS_STREAM" TE_FW_ROOT="$TRIG_FRAMEWORK_ROOT" \
+    python3.12 - <<'TASK_EVENT_PY'
+import json
+import os
+import sys
+import time
+
+root = os.environ["TE_FW_ROOT"]
+if root not in sys.path:
+    sys.path.insert(0, root)
+from framework.triggers import envelope
+
+# ULID: 48-bit ms timestamp + 80-bit randomness, Crockford base32 (matches
+# envelope.ULID_RE — no I, L, O, U).
+_CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+_ms = int(time.time() * 1000) & ((1 << 48) - 1)
+_n = (_ms << 80) | int.from_bytes(os.urandom(10), "big")
+_ulid = "".join(_CROCKFORD[(_n >> (5 * i)) & 31] for i in range(25, -1, -1))
+
+actor = os.environ["TE_ACTOR"]
+ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+env_payload = {
+    "id": _ulid,
+    "from": actor,          # judged by validate() — oversize/garbage is REFUSED
+    "to": "task-watchers",
+    "kind": "evidence",     # a transition report cites its source (taint.sources)
+    "provenance": "cabinet/scripts/my-tasks.sh -> triggers.sh task_event_emit",
+    "taint": {"tier": "officer", "sources": ["officer_tasks", "cabinet/scripts/my-tasks.sh"]},
+    "budget": 0,
+}
+fields = {
+    "envelope": json.dumps(env_payload, ensure_ascii=False),
+    "task_id": os.environ["TE_TASK_ID"],
+    "old_status": os.environ["TE_OLD"],
+    "new_status": os.environ["TE_NEW"],
+    "actor": actor,
+    "context_slug": os.environ["TE_CTX"],
+    "ts": ts,
+}
+# A6 census BESIDE (fail-open, never blocks); A12 enforce as the GATE.
+envelope.report_only("triggers.task_event_emit", os.environ["TE_STREAM"], fields)
+blocked, _verdict, reasons = envelope.enforce(fields)
+if blocked:
+    print("task_event_emit BLOCKED by envelope law: " + "; ".join(reasons), file=sys.stderr)
+    sys.exit(3)
+sys.stdout.write(fields["envelope"] + "\n" + ts + "\n")
+TASK_EVENT_PY
+)
+  local _rc=$?
+  if [ $_rc -ne 0 ] || [ -z "$_emit_out" ]; then
+    echo "task_event_emit WARN: envelope build/validation failed (rc=$_rc) — task event NOT queued (task_id=$task_id)" >&2
+    return 1
+  fi
+  local _env_json _ts
+  _env_json=$(printf '%s\n' "$_emit_out" | head -n 1)
+  _ts=$(printf '%s\n' "$_emit_out" | sed -n '2p')
+
+  # Ensure the exemplar consumer group exists from the FIRST event (offset 0
+  # + MKSTREAM), mirroring trigger_send's group bootstrap.
+  redis-cli -h "$TRIG_REDIS_HOST" -p "$TRIG_REDIS_PORT" \
+    XGROUP CREATE "$TASK_EVENTS_STREAM" "$TASK_EVENTS_GROUP" 0 MKSTREAM > /dev/null 2>&1
+
+  # Fail LOUD on XADD error (same stance + shape as trigger_send).
+  local _xadd_err
+  _xadd_err=$(redis-cli -h "$TRIG_REDIS_HOST" -p "$TRIG_REDIS_PORT" \
+    XADD "$TASK_EVENTS_STREAM" '*' \
+    envelope "$_env_json" \
+    task_id "$task_id" \
+    old_status "$old_status" \
+    new_status "$new_status" \
+    actor "$actor" \
+    context_slug "$ctx" \
+    ts "$_ts" \
+    2>&1 > /dev/null)
+  if [ $? -ne 0 ] || [ -n "$_xadd_err" ]; then
+    echo "task_event_emit WARN: XADD to $TASK_EVENTS_STREAM failed (${_xadd_err:-redis unreachable?}) — task event NOT queued (task_id=$task_id)" >&2
+    return 1
+  fi
+  return 0
 }

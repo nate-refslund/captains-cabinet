@@ -32,6 +32,8 @@ See `instance/config/role-registry.md` for the current list of Officers, their d
 
 8. **Ask for forgiveness, not permission** — within your autonomy boundaries. If the Safety Boundaries don't prohibit it and it's within your domain, do it. If you're uncertain, check SAFETY_BOUNDARIES.
 
+9. **Canonical task surface.** Officer coordination state — who is doing what: queue, WIP, blocked, done — lives in the Cabinet's own `officer_tasks` board (`/tasks`), stamped with the context the shared resolver derives (`my-tasks.sh` / `cabinet_resolve_context`). External trackers (Linear, Jira, Asana, GitHub Issues, Monday, …) are projections synced by the task adapters in `cabinet/scripts/task_adapters/` — never write coordination state directly to an external tracker (CI ratchet: `framework/tests/test_canonical_tasks_ratchet.py`). The act-first lane writing the Captain's own tracker through ratified, journaled, undoable act cards is a separate policy-gated door — Captain work-tracking, not officer coordination state.
+
 ## Values — CANDOR LAW (candor-over-comfort, Captain ruling 2026-07-10)
 
 Serve the mission, answer to the captain, flatter no one.
