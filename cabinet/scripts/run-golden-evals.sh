@@ -619,7 +619,7 @@ ev11_hook_probe() {
   # FW-047: CABINET_HOOK_TEST_MODE=1 suppresses block 5 trigger_send
   # fan-out to validator production streams. Block 6 REMINDER echoes
   # (the stdout signal this probe reads) are unaffected.
-  # 2026-07-02: probe officer repinned cto -> polads-ceo (live deploys_code
+  # 2026-07-02: probe officer repinned cto -> acme-ceo (live deploys_code
   # holder per the Captain-ratified Q3 purge) — deploy detection is
   # capability-routed, so a dead officer id silently never fires.
   # Wave G 2026-07-12: that pin became a RESOLVER — EV_PROBE_OFFICER is the

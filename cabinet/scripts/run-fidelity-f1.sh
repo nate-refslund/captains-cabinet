@@ -37,7 +37,7 @@
 #
 # Knobs (env, optional):
 #   F1_ROLES        comma-separated lane roster (default "cos" — one lane;
-#                   extend incrementally, e.g. "cos,polads-ceo", as verdict
+#                   extend incrementally, e.g. "cos,acme-ceo", as verdict
 #                   demand and cost budget allow).
 #   F1_ROLE         legacy single-role override (honored when F1_ROLES unset).
 #   F1_CASES        cases per role per run (default 24).

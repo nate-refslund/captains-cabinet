@@ -9,7 +9,7 @@
 # Usage:
 #   bash cabinet/scripts/bootstrap-project.sh <repo-url> <project-slug> [--workspace DIR]
 #   bash cabinet/scripts/bootstrap-project.sh \
-#        https://github.com/owner/repo.git polads
+#        https://github.com/owner/repo.git acme
 #
 # What it does (in order):
 #   1. Clones the repo to $WORKSPACE/<slug>/ (default: ~/work/projects/<slug>/)

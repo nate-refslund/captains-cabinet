@@ -287,7 +287,7 @@ NOW_EPOCH=$(date -u +%s)
 # reset — resume your active-task") and trigger echoes that mention "session
 # limit reset" — from ever being treated as a banner. Those lines have no
 # clock after "reset", so RESET_RE rejects them outright (observed false-arm
-# source 2026-06-25: a polads-ceo pane echoing a prior "session limit reset"
+# source 2026-06-25: an acme-ceo pane echoing a prior "session limit reset"
 # trigger). Detection still only ARMS; the now>=reset gate guards the wake.
 LIMIT_RE='(hit|reached|approaching|exceeded)[^.]{0,40}(session|usage|message|rate)?[[:space:]]*limit'
 RESET_RE='reset[s]?[[:space:]]*(at[[:space:]]*)?[0-9]{1,2}([:.][0-9]{2})?[[:space:]]*([ap]\.?[[:space:]]*m\.?)?'

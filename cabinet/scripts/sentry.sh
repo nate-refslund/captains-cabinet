@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# sentry.sh — Sentry query helper for Cabinet officers (esp. the PolAds CEO).
+# sentry.sh — Sentry query helper for Cabinet officers (esp. a product CEO).
 #
 # Lets officers investigate production errors in Sentry directly, without a
 # Sentry MCP. Officers are hook-blocked from reading cabinet/.env, but they
@@ -21,8 +21,8 @@
 #   SENTRY_STATS_PERIOD Stats window for `issues` (default: 14d).
 #
 # Examples:
-#   sentry.sh issues sentry-step-polads
-#   sentry.sh issues sentry-step-polads "Unexpected token"
+#   sentry.sh issues sentry-step-acme
+#   sentry.sh issues sentry-step-acme "Unexpected token"
 #   sentry.sh event 11857079
 
 set -euo pipefail
