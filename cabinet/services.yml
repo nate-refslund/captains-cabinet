@@ -765,7 +765,7 @@ services:
     label: com.cabinet.memory-contradictions
     kind: cron
     command: python3.12 cabinet/scripts/memory-contradictions.py
-    schedule: { calendar: [{weekday: 0, hour: 5, minute: 30}] }   # Sundays 05:30 local — apply organ follows 05:45
+    schedule: { calendar: [{hour: 5, minute: 30}] }   # DAILY 05:30 local (Captain, 2026-07-16: daily from day one, soak included — the soak gate is time+reversal-based and cue cards are per-pair deduped, so daily = 7x the soak evidence at one read-only SELECT/day; was Sundays) — apply organ follows 05:45
     expected: "one summary line/run (rows= proposals= new=); supersession candidates land status=proposed in shared/interfaces/memory-supersession-proposals.jsonl — NEVER applied by this organ (the memory-supersede-apply row consumes them 15 min later)"
     sunset: "retire if cabinet_memory moves off superseded_by versioning"
     notes: >-
@@ -783,7 +783,7 @@ services:
     label: com.cabinet.memory-supersede-apply
     kind: cron
     command: python3.12 cabinet/scripts/memory-supersede-apply.py
-    schedule: { calendar: [{weekday: 0, hour: 5, minute: 45}] }   # Sundays 05:45 local — after the 05:30 detect pass
+    schedule: { calendar: [{hour: 5, minute: 45}] }   # DAILY 05:45 local — after the 05:30 detect pass (Captain, 2026-07-16: daily cadence from day one; was Sundays)
     expected: "one summary line/run (state= pending= consumed= would_apply= applied= cue_cards= refused= blocked=); every consumed proposal gains a per-row consumed stamp in memory-supersession-proposals.jsonl and a decision entry in memory-supersession-soak.jsonl; applied>0 ONLY once state=armed (>=14d soak with zero unresolved reversals) — near-dup class plus Captain-approved cue cards (binder grant); one soak-halfway Captain card on the needs ledger per soak window, whose veto BINDS (state=held-by-captain-veto, no arming, until the Captain re-rules that card)"
     sunset: "retire if cabinet_memory moves off superseded_by versioning; hold auto-apply forever via instance/config/memory-supersession.yml auto_apply: hold"
     notes: >-
