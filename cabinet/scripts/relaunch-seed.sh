@@ -356,17 +356,25 @@ do_archive() {
   fi
 
   if [ "$DRY_RUN" = "1" ]; then
-    echo "  [dry-run] would tar -czf $ARCHIVE_PATH -C \"$OLD_ROOT\" instance$( [ "$has_env" = 1 ] && printf ' cabinet/.env' )$( [ "$has_appsupport" = 1 ] && printf ' -C "%s" cabinet' "$HOME/Library/Application Support" )"
+    echo "  [dry-run] would tar -czf $ARCHIVE_PATH -C \"$OLD_ROOT\" instance$( [ "$has_env" = 1 ] && printf ' cabinet/.env' )$( [ "$has_appsupport" = 1 ] && printf ' -C "%s" "Application Support/cabinet"' "$HOME/Library" )"
     return 0
   fi
 
   mkdir -p "$(dirname "$ARCHIVE_PATH")"
+  # The Application Support half is archived under its OWN "Application
+  # Support/cabinet" member prefix (via -C "$HOME/Library", never bare
+  # "cabinet" via -C ".../Application Support") — a bare "cabinet" member
+  # name collides with, and merges into, the OLD_ROOT "cabinet/.env"
+  # member's own "cabinet/" prefix inside the same tar (review finding #2:
+  # extraction produced one merged 297M cabinet/ dir mixing repo .env with
+  # ~5,848 Application Support files). Two similarly-named source dirs,
+  # kept namespaced apart in the archive on purpose.
   if [ "$has_env" = 1 ] && [ "$has_appsupport" = 1 ]; then
-    tar -czf "$ARCHIVE_PATH" -C "$OLD_ROOT" instance cabinet/.env -C "$HOME/Library/Application Support" cabinet
+    tar -czf "$ARCHIVE_PATH" -C "$OLD_ROOT" instance cabinet/.env -C "$HOME/Library" "Application Support/cabinet"
   elif [ "$has_env" = 1 ]; then
     tar -czf "$ARCHIVE_PATH" -C "$OLD_ROOT" instance cabinet/.env
   elif [ "$has_appsupport" = 1 ]; then
-    tar -czf "$ARCHIVE_PATH" -C "$OLD_ROOT" instance -C "$HOME/Library/Application Support" cabinet
+    tar -czf "$ARCHIVE_PATH" -C "$OLD_ROOT" instance -C "$HOME/Library" "Application Support/cabinet"
   else
     tar -czf "$ARCHIVE_PATH" -C "$OLD_ROOT" instance
   fi

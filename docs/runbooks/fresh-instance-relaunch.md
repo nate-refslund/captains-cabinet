@@ -260,11 +260,25 @@ Identical to `dev-runtime-split-cutover.md` Step 5: repoint launchd back
 at `/Users/nate/captains-cabinet` (the old dev tree, never modified by any
 step above), using the same three mechanisms in reverse. Then, if you also
 want the OLD instance data back exactly as it was (not just the code
-path): the Step 2 archive is the full, unfiltered `instance/` tree plus
-the real (unrotated) `cabinet/.env` — `tar -xzf <archive>` restores it
-byte-for-byte. Nothing above ever deleted or modified the original, so in
-the common case rollback is just "repoint launchd" — the archive is the
-belt-and-suspenders extra, not something you should need.
+path): the Step 2 archive holds **two** components under two distinct
+prefixes (`instance` + `cabinet/.env` from the repo; `Application
+Support/cabinet` from the Mac-level state) — restore each to its own real
+location with its own `tar -xzf`, never both with a single `-C`, or the
+Application Support half lands nested inside the repo checkout instead of
+`~/Library/Application Support/`:
+
+```bash
+tar -xzf <archive-path> -C /Users/nate/captains-cabinet instance cabinet/.env
+tar -xzf <archive-path> -C "$HOME/Library" "Application Support/cabinet"
+```
+
+(the second line is a no-op if `--skip-appsupport-archive` was passed at
+Step 2, or `~/Library/Application Support/cabinet` simply didn't exist on
+this host at archive time — the archive won't have that member, and
+`tar -xzf` skips restoring what isn't there). Nothing above ever deleted or
+modified the original, so in the common case rollback is just "repoint
+launchd" — the archive is the belt-and-suspenders extra, not something you
+should need.
 
 ## 3. After relaunch — what's different
 
@@ -331,6 +345,8 @@ bash "$RUNTIME/current/cabinet/scripts/cabinet-doctor.sh"
 # Step 8 — verify: follow docs/runbooks/dev-runtime-split-cutover.md Step 4 verbatim
 
 # Step 9 — rollback, only if Step 8 is red: follow docs/runbooks/dev-runtime-split-cutover.md
-# Step 5 verbatim; restore old instance data from the Step 2 archive only if truly needed:
-#   tar -xzf <archive-path> -C /Users/nate/captains-cabinet
+# Step 5 verbatim; restore old instance data from the Step 2 archive only if truly needed
+# (two components, two distinct prefixes — restore each separately, never one -C for both):
+#   tar -xzf <archive-path> -C /Users/nate/captains-cabinet instance cabinet/.env
+#   tar -xzf <archive-path> -C "$HOME/Library" "Application Support/cabinet"
 ```
