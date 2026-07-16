@@ -98,7 +98,15 @@
 # --runtime-root or --archive-path directory that resolves to/under
 # --old-root itself, so a sandbox rehearsal against a scratch old-root
 # fixture is protected from the same class of self-inflicted mistake, not
-# only the hardcoded production path.
+# only the hardcoded production path. THE REVERSE NESTING IS ALSO REFUSED
+# (review finding #3): --old-root resolving to, or nesting under,
+# --runtime-root. Without this, a sandbox fixture with old-root inside
+# runtime-root (e.g. old-root == runtime-root/shared) makes a seed
+# function's src_dir and dst_dir the SAME path — proven to destroy data:
+# seed_officer_memory's idempotent converge-by-delete
+# (`find "$dst_dir" ... -delete` before the copy) deleted the read-only
+# source's file before it was ever read, and shared/cabinet.env was
+# written inside --old-root, breaking the read-only-source contract.
 #
 # IDEMPOTENT (the seed half): re-running with the same arguments converges
 # — directory leaves are written via `rsync -a --delete` or an equivalent
@@ -318,6 +326,10 @@ refuse_if_nested "--runtime-root"                "$RUNTIME_ROOT"            "$LI
 refuse_if_nested "--archive-path's directory"    "$(dirname "$ARCHIVE_PATH")" "$LIVE_TREE"
 refuse_if_nested "--runtime-root"                "$RUNTIME_ROOT"            "$OLD_ROOT"
 refuse_if_nested "--archive-path's directory"    "$(dirname "$ARCHIVE_PATH")" "$OLD_ROOT"
+# Reverse direction (review finding #3): --old-root must never resolve to,
+# or nest under, --runtime-root — see the CONTAINMENT header note above for
+# the data-destroying converge-delete failure this prevents.
+refuse_if_nested "--old-root"                    "$OLD_ROOT"                "$RUNTIME_ROOT"
 
 # Guards passed — only now is it safe to create/resolve the runtime root.
 [ "$DRY_RUN" = "1" ] || mkdir -p "$RUNTIME_ROOT"
