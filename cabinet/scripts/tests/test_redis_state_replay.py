@@ -475,6 +475,53 @@ def test_v3_redis_8_array_sparse_state_survives_replay(
     _assert_equal(before, after)
 
 
+def test_v3_redis_8_array_distinguishes_unset_and_terminal_insert_cursor(
+    tmp_path: Path, redis_factory
+):
+    redis = redis_factory(appendonly=False)
+    info = redis.cli("--json", "COMMAND", "INFO", "ARSET").stdout
+    if info.strip() in {"[null]", "[]"}:
+        pytest.skip("Redis built-in array type requires Redis 8.8+")
+
+    redis.cli("ARSET", "array", "0", "same-value")
+    assert redis.cli("--json", "ARNEXT", "array").stdout.strip() == "0"
+    unset = tmp_path / "array-unset-cursor.state"
+    redis.fingerprint(unset)
+
+    redis.cli("ARSEEK", "array", "18446744073709551615")
+    assert redis.cli("--json", "ARNEXT", "array").stdout.strip() == "null"
+    terminal = tmp_path / "array-terminal-cursor.state"
+    redis.fingerprint(terminal)
+
+    with pytest.raises(redis_state.FingerprintError, match="durable state differs"):
+        _assert_equal(unset, terminal)
+
+
+@pytest.mark.parametrize("appendonly", [False, True], ids=["rdb", "aof"])
+def test_v3_redis_8_array_terminal_insert_cursor_survives_replay(
+    tmp_path: Path, redis_factory, appendonly: bool
+):
+    redis = redis_factory(appendonly=appendonly)
+    info = redis.cli("--json", "COMMAND", "INFO", "ARSET").stdout
+    if info.strip() in {"[null]", "[]"}:
+        pytest.skip("Redis built-in array type requires Redis 8.8+")
+
+    redis.cli("ARSET", "array", "0", "value")
+    redis.cli("ARSEEK", "array", "18446744073709551615")
+    assert redis.cli("--json", "ARNEXT", "array").stdout.strip() == "null"
+    before = tmp_path / f"array-terminal-{appendonly}-before.state"
+    redis.fingerprint(before)
+
+    _finish_persistence(redis)
+    redis.stop()
+    redis.start()
+
+    assert redis.cli("--json", "ARNEXT", "array").stdout.strip() == "null"
+    after = tmp_path / f"array-terminal-{appendonly}-after.state"
+    redis.fingerprint(after)
+    _assert_equal(before, after)
+
+
 def test_v3_capture_has_no_dump_and_rejects_unknown_types_by_construction():
     source = SHELL_LIB.read_text(encoding="utf-8")
     v3 = source.split("-- cabinet-redis-state-v3", 1)[1]
