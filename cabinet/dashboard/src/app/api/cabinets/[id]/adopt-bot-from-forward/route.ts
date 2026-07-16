@@ -95,7 +95,7 @@ export async function POST(
         message:
           'No valid bot token found in the message. ' +
           'Expected format: forward the message BotFather sent after creating a bot. ' +
-          'It should contain a token like: 123456789:ABCdef...',
+          'It should contain a token like: 12345678:ABCdef...',
       },
       { status: 422 }
     )

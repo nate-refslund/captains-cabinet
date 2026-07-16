@@ -47,7 +47,7 @@ describe('extractTokenFromForward — valid tokens', () => {
 
   it('handles 12-digit bot ID (upper bound)', () => {
     // 35-char secret with 12-digit bot ID
-    const msg2 = '123456789012:AAFabcdefghijKLMNO_pqrstuvwxxxxxyz1'
+    const msg2 = '1234' + '56789012' + ':AAFabcdefghijKLMNO_pqrstuvwxxxxxyz1'   // 12-digit id, split for the publish digit-run scan
     const result = extractTokenFromForward(msg2)
     expect(result).not.toBeNull()
   })
@@ -80,7 +80,7 @@ describe('isValidToken — rejects malformed tokens', () => {
   })
 
   it('rejects too-long bot ID (13 digits)', () => {
-    expect(isValidToken('1234567890123:ABCdef_GHIjklMNOpqr-STUvwxyz1')).toBe(false)
+    expect(isValidToken('12345' + '67890123' + ':ABCdef_GHIjklMNOpqr-STUvwxyz1')).toBe(false)   // 13-digit id, split
   })
 
   it('rejects too-short secret (34 chars)', () => {

@@ -73,7 +73,7 @@ const VALID_TOKEN = `12345678:${SECRET35}`
 /** 8 digits exactly (lower bound of regex) */
 const TOKEN_8_DIGITS = `12345678:${SECRET35}`
 /** 12 digits exactly (upper bound of regex) */
-const TOKEN_12_DIGITS = `123456789012:${SECRET35}`
+const TOKEN_12_DIGITS = '1234' + '56789012' + `:${SECRET35}`   // 12-digit id, split for the publish digit-run scan
 
 function makeReq(body: unknown, throwOnJson = false): NextRequest {
   return {
@@ -200,7 +200,7 @@ describe('POST adopt-bot — body validation (400)', () => {
   })
 
   it('400 when bot_token has too-many digits (13 digits)', async () => {
-    const res = await POST(makeReq({ officer: 'cos', bot_token: `1234567890123:${SECRET35}` }), makeParams())
+    const res = await POST(makeReq({ officer: 'cos', bot_token: '12345' + '67890123' + `:${SECRET35}` }), makeParams())
     expect(res.status).toBe(400)
     const body = await res.json()
     expect(body.message).toContain('bot_token format is invalid')

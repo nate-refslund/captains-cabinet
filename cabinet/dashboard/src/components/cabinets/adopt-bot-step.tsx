@@ -233,7 +233,7 @@ function SlotCard({
               type="password"
               value={slot.pendingToken}
               onChange={(e) => onTokenInput(slot.role, e.target.value)}
-              placeholder="1234567890:ABCDEFabcdef..."
+              placeholder="12345678:ABCDEFabcdef..."
               autoComplete="off"
               spellCheck={false}
               disabled={isAdopting}
