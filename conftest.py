@@ -29,7 +29,20 @@ fixture) fences:
   * the sibling durable surfaces with the same fallback shape:
       - the undo journal (framework/frontdoor/action_undo.py, CABINET_UNDO_DIR),
       - the consequence ledger (framework/fidelity/consequence.py, which
-        honours CABINET_EVENT_LOG_DIR like the emitter does).
+        honours CABINET_EVENT_LOG_DIR like the emitter does),
+      - the attention feed (framework/attention/feed.py, CABINET_FEED_DIR —
+        2026-07-16: fixture-less acting tests (test_actfirst_gate.py) wrote
+        demote rows into the live feed via the same unset-env fallback),
+      - the attention state dir (queue.py/verdicts.py/t2.py/gate.py/…,
+        CABINET_ATTENTION_DIR — OVERWRITTEN files like queue.json, so a
+        leak here corrupts live org state rather than accreting rows),
+      - the draft queue (framework/acting/draft_queue.py,
+        CABINET_DRAFT_QUEUE_DIR) and the evidence store
+        (framework/evidence/recorder.py, CABINET_EVIDENCE_DIR) — same
+        fallback shape, fenced 2026-07-16 before a third incident: both
+        prior leaks (events 2026-07-04, feed 2026-07-16) began as a
+        production write path added later, driven by an existing
+        fixture-less test.
 
 Per-test isolation is NOT this file's job — suites keep their own
 tmp_path/monkeypatch fixtures, which run later and take precedence. This is
@@ -48,10 +61,11 @@ when PYTEST_CURRENT_TEST is set and CABINET_EVENT_LOG_DIR is unset. That
 layer catches any pytest invocation this conftest cannot see (e.g. a future
 out-of-tree ini that re-cuts confcutdir). Keep both.
 
-The purge of the already-leaked rows is a separate, Captain-gated one-shot:
-cabinet/scripts/ledger-purge-testrows.sh — it REFUSES to run unless this
-fence file exists (purging before the fence lands just invites the same rows
-straight back).
+The purge of already-leaked rows is a separate, Captain-gated one-shot per
+family: cabinet/scripts/ledger-purge-testrows.sh (events + consequence,
+2026-07-04) and cabinet/scripts/feed-purge-testrows.sh (attention feed,
+2026-07-16) — each REFUSES to run unless this fence covers its env var
+(purging before the fence lands just invites the same rows straight back).
 """
 
 from __future__ import annotations
@@ -70,6 +84,10 @@ _SESSION_SANDBOX = tempfile.mkdtemp(prefix="cabinet-pytest-session-")
 # value would defeat the fence (officer sessions export the LIVE path).
 os.environ["CABINET_EVENT_LOG_DIR"] = os.path.join(_SESSION_SANDBOX, "events")
 os.environ["CABINET_UNDO_DIR"] = os.path.join(_SESSION_SANDBOX, "undo")
+os.environ["CABINET_FEED_DIR"] = os.path.join(_SESSION_SANDBOX, "feed")
+os.environ["CABINET_ATTENTION_DIR"] = os.path.join(_SESSION_SANDBOX, "attention")
+os.environ["CABINET_DRAFT_QUEUE_DIR"] = os.path.join(_SESSION_SANDBOX, "draft-queue")
+os.environ["CABINET_EVIDENCE_DIR"] = os.path.join(_SESSION_SANDBOX, "evidence")
 
 # Bare-root collection sweep guard (2026-07-07): officers/ holds gitignored
 # runtime officer mirror checkouts (full-repo copies) — collecting them

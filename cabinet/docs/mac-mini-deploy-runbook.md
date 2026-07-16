@@ -490,9 +490,11 @@ machinery). The pieces:
 - **Ledger-hygiene backups are separate** from this daily job: the one-shot
   purge tools (`cabinet/scripts/ledger-purge-testrows.sh` for the JSONL
   event families, `cabinet/scripts/purge-sqlite-mirror.py` for the
-  org-runtime SQLite Store mirror) each take their own verified pre-mutation
-  snapshot (`ledger-backups/` sibling dir / `cabinet/cache/mirror-backups/`)
-  — see each script's header for the gate + rollback contract.
+  org-runtime SQLite Store mirror, `cabinet/scripts/feed-purge-testrows.sh`
+  for the attention feed journal) each take their own verified pre-mutation
+  snapshot (`ledger-backups/` sibling dir / `cabinet/cache/mirror-backups/`
+  / `feed-backups/` sibling dir) — see each script's header for the gate +
+  rollback contract.
 
 ## 11. Verification — 72h soak
 
