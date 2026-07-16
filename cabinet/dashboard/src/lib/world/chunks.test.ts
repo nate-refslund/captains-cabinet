@@ -103,7 +103,7 @@ describe('authored geography', () => {
       expect([site.cx, site.cy]).toEqual([slot.cx, slot.cy])
     }
   })
-  it('instance-test lane → reef-buoy even with achieved outcomes (sensed law)', () => {
+  it('instance-test lane → reef-buoy even with achieved outcomes (instance-test law)', () => {
     const geo = buildWorldGeo({
       orgEventsTotal: 1000,
       lanes: { bakery: { ever: 5, active: 3, achieved: 2, retired: 0, instanceTest: true } },

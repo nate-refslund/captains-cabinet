@@ -29,12 +29,28 @@ import path from 'node:path'
 import yaml from 'js-yaml'
 import type { LaneRecord } from './era-engine'
 
-/** Instance-only test lanes (Captain ruling 2026-07-09: 'sensed' is an
- * instance-test app, never foundation — reef-buoy render). Instance data
- * pending its own config field — tracked as ledger row R164
- * (instance_test_lanes -> instance config, read fail-honest to the EMPTY
- * set); kept verbatim from the engine route it moved out of. */
-const INSTANCE_TEST_LANES = new Set(['sensed'])
+/** Instance-only test lanes (Captain ruling 2026-07-09: an instance may mark
+ * one of its own lanes as an instance-test app, never foundation — reef-buoy
+ * render regardless of outcomes). R164: read from instance config
+ * (`instance_test_lanes` in instance/config/platform.yml, sibling of
+ * `lane_default`) — fail-honest to the EMPTY set on any missing/malformed
+ * config, so shared code never bakes in a real lane name. */
+function instanceTestLanes(root: string): Set<string> {
+  try {
+    const raw = fs.readFileSync(
+      path.join(root, 'instance', 'config', 'platform.yml'),
+      'utf8'
+    )
+    const doc = (yaml.load(raw, { schema: yaml.JSON_SCHEMA }) ?? {}) as {
+      instance_test_lanes?: unknown
+    }
+    const list = doc.instance_test_lanes
+    if (!Array.isArray(list)) return new Set()
+    return new Set(list.filter((v): v is string => typeof v === 'string'))
+  } catch {
+    return new Set() // honest absence: nothing is instance-test
+  }
+}
 
 interface OutcomeRow {
   id?: string
@@ -62,6 +78,7 @@ export interface OutcomeLanes {
  * from the engine route — Wave G, so the fold is import-testable). */
 export function outcomeLanes(root: string): OutcomeLanes {
   const lanes: Record<string, LaneRecord> = {}
+  const testLanes = instanceTestLanes(root)
   let achieved = 0
   let active = 0
   let activeSystemSelf = 0
@@ -83,7 +100,7 @@ export function outcomeLanes(root: string): OutcomeLanes {
         active: 0,
         achieved: 0,
         retired: 0,
-        instanceTest: INSTANCE_TEST_LANES.has(lane),
+        instanceTest: testLanes.has(lane),
       })
       rec.ever += 1
       if (status === 'active') {
