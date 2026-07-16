@@ -72,7 +72,7 @@ def captain_name(default: str = "Captain") -> str:
 
     Reads ``captain_name`` from ``instance/config/platform.yml`` (portfolio /
     live deployments), else ``instance/config/product.yml`` (single-product
-    ``work`` deployments), per CLAUDE.md → "Addressing the Captain". Any
+    ``work`` deployments), per CLAUDE.md → "Talking to the Captain". Any
     absence / parse failure falls back to ``default`` ("Captain") — a generic
     deployment stays generic, never crashes, and never leaks another
     launcher's name. Framework code that greets/represents the Captain calls

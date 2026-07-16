@@ -528,7 +528,7 @@ step_init_instance_dirs() {
 
   # FW-082 adversary P1-D: write CAPTAIN_NAME (and other product seeds) to
   # instance/config/product.yml so addressing-by-name works on first session
-  # per CLAUDE.md "Addressing the Captain" rule. If --captain-name was not
+  # per CLAUDE.md "Talking to the Captain" (by-name rule). If --captain-name was not
   # provided, leave the field empty — officer fallback to "Captain" applies.
   local product_yml="$cabinet_dir/instance/config/product.yml"
   if [ ! -f "$product_yml" ]; then

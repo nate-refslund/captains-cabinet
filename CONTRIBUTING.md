@@ -97,7 +97,7 @@ fix root causes, never bypass a red gate:
 
 ## Docs must track the code
 
-Repo law (see `CLAUDE.md` → "Docs Must Track the Code"): if you rename, move,
+Repo law (see `CLAUDE.md` → "Do the work" › docs track code): if you rename, move,
 add, or delete a script, config, skill, command, MCP server, or feature,
 **update every doc that names it in the same change** — runbooks, READMEs,
 count claims in `.claude-plugin/*.json`, and skill bodies. Grep the old name
