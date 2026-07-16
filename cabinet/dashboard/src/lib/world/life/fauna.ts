@@ -305,7 +305,7 @@ export function faunaCard(kind: FaunaKind): FaunaCard {
       decorative: true,
     },
     dog: {
-      what: 'Pippin the dog.',
+      what: 'The cabinet dog.',
       now: joy,
       proof: 'Decorative by law (bestiary v1a). Exactly one dog, forever.',
       decorative: true,

@@ -924,7 +924,7 @@ def build_scene():
     sc.ent(sh(BLUE), 34.4, 22.6, prop="prop")
     lamp2 = sh(LAMP)
     sc.ent(lamp2, 23.6, 22.3, dx=-6, prop="prop")
-    # Pippin asleep below the noticeboard (charm near, never occluding,
+    # the dog asleep below the noticeboard (charm near, never occluding,
     # the Captain surface)
     dgs = dog_sleep(0)
     px_, py_ = sc.ent(dgs, 24.6, 21.9)

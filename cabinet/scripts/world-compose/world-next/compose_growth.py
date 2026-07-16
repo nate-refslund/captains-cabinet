@@ -1560,7 +1560,7 @@ def build_grown():
     for i, py0 in enumerate(range(17, 36, 6)):
         px_, py_ = sc.ent(lp, 44.9, py0)
 
-    # crossroads (mailbox + noticeboard + kiosk + Pippin)
+    # crossroads (mailbox + noticeboard + kiosk + dog)
     mb = U.mailbox(True, pips=3)
     px_, py_ = sc.ent(mb, 44.6, 27.6, bias=0.1, prop="prop")
     sc.shadow_blob(px_ + 8, int(28.6 * T) - 6, 14, 30)
