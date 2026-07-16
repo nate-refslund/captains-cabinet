@@ -41,7 +41,13 @@ NEVER_PROJECTED = frozenset({
 })
 # Deliberately bare JWT (three base64url segments): the writer must redact
 # it, the verify-time scan must NOT flag it (stored v1 rows keep verifying).
-BARE_JWT = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJvZmZpY2VyLWNvcyJ9.QWJjZGVmZ2hpamtsbW5vcA"
+# Built at runtime so no JWT-shaped literal sits in the tree (the PR #139
+# redaction-belt lesson; keeps gitleaks/egg-export scans clean) — the joined
+# value is a provably fake vector: header {alg:HS256}, payload
+# {sub:officer-cos}, signature = base64("Abcdefghijklmnop").
+BARE_JWT = ".".join(
+    ("eyJhbGciOiJIUzI1NiJ9", "eyJzdWIiOiJvZmZpY2VyLWNvcyJ9",
+     "QWJjZGVmZ2hpamtsbW5vcA"))
 
 
 def _schema() -> dict:

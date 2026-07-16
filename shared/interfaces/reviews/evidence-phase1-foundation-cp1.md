@@ -109,6 +109,13 @@ env-provenance-untrusted.
    raises `HarnessError` (fail-closed property preserved, now matching the
    repo's real reviewable shape). After: 14/14 harness tests, self-test
    12/12 checks green.
+3. **gitleaks red on the PR head (vocab test vector).** `BARE_JWT` in
+   `test_vocabulary_v11.py` — a provably fake three-segment JWT proving the
+   writer redacts bare JWTs in reserved keys — tripped the CI `jwt` rule.
+   Fixed per the documented house convention (the PR #139 lesson): the
+   vector is built at runtime (no JWT-shaped literal in HEAD), and the
+   introducing commit is fingerprinted in `.gitleaksignore` with the
+   provably-fake rationale. Runtime behavior of the test is unchanged.
 
 ## Reviewed-and-accepted (not defects)
 
