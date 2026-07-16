@@ -516,19 +516,23 @@ services:
     kind: cron
     command: bash cabinet/scripts/run-fidelity-f1.sh
     schedule: { calendar: [{weekday: 1, hour: 6, minute: 30}] }   # weekly, Monday 06:30 local (W3 label-mine 2026-07-09; was monthly day-1)
-    env: { F1_ROLES: "cos", F1_WITH_INTENT: "1", F1_EMIT_SCORED: "1" }
-    expected: "one weekly batch summary in log; per scored case one fidelity-case-scored consequence event (the LABEL — emit_scored on); exit nonzero + assert message if the clone stops beating the 0.083 generic-assistant baseline (fidelity-decay canary)"
+    env: { F1_ROLES: "cos", F1_WITH_INTENT: "1", F1_EMIT_SCORED: "1", F1_GATHER: "1" }
+    expected: "one weekly gather-first batch summary in log; per scored case one fidelity-case-scored consequence event (the LABEL — emit_scored on); exit nonzero + assert message if the context-aware clone stops beating the 0.083 generic-assistant baseline (fidelity-decay canary)"
     notes: >-
       F1 end-to-end fidelity batch, reframed 2026-07-09 (W3/§4.3-5) from cost
       canary to LABEL MINE: weekly cadence, D1 knobs ON (with_intent +
       emit_scored — Captain-authorized 2026-06-20, run_f1.run_batch
-      docstring), F1_ROLES lane roster extendable incrementally (start 1 lane
-      = cos; widen as verdict demand + cost budget allow). Labels are
+      docstring), plus F1_GATHER=1 so the scheduled canary measures the
+      leak-guarded gather-first behavior the runtime actually depends on.
+      F1_ROLES lane roster is extendable incrementally (start 1 lane = cos;
+      widen as verdict demand + cost budget allow). Labels are
       calibration INPUT for the D5/judge-calibration chain, never promotion
       fuel — the label floor and CG-10 stay fail-closed. Cost bounded
       (~24 officer drives/role/run) and watched on cabinet:cost:tokens:daily
       (cost ledger revived 2026-07-07). Weekday calendar rows get an 8-day
-      watchdog floor (registry.py::_floor_for_entry).
+      watchdog floor (registry.py::_floor_for_entry). The frozen regression-
+      corpus cadence below proves corpus integrity only; it is not evidence
+      that this context-aware behavior ran.
   - name: regression-corpus
     label: com.cabinet.regression-corpus
     kind: cron

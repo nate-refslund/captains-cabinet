@@ -39,9 +39,9 @@ def run_batch(officer_role: str = "cos", n_cases: int = 24, people_dir=None,
               emit_scored: bool = False) -> dict:
     """Drive -> score -> aggregate over the reply cell.
 
-    Three knobs, all default OFF -> the F1 (surface-only) path is byte-for-byte
-    unchanged. Captain-authorized 2026-06-20 (D1, docs/overnight-integration-
-    drafts.md):
+    Three knobs, all default OFF -> the F1 (surface-only) officer-drive path is
+    unchanged; the returned summary always names the active context arm.
+    Captain-authorized 2026-06-20 (D1, docs/overnight-integration-drafts.md):
     - ``gather`` (None): pass ``officer_runner.gather_cutoff_context`` for the
       F4 leak-guarded gather arm; threaded into the runner so the officer
       decides WITH as-of-cutoff context.
@@ -59,16 +59,31 @@ def run_batch(officer_role: str = "cos", n_cases: int = 24, people_dir=None,
 
     scores, n_leaked = [], 0
     for case in cases:
+        case_gather = gather
+        if gather is not None and with_intent:
+            # The officer drive and intent judge must see the SAME fenced
+            # context. Without this per-case cache the two enabled knobs each
+            # gathered independently, doubling source reads and allowing an
+            # unstable retrieval ranking to judge context the officer never saw.
+            gathered_ctx = {}
+
+            def gather_once(target, *args, _cache=gathered_ctx,
+                            _gather=gather, **kwargs):
+                if "value" not in _cache:
+                    _cache["value"] = _gather(target, *args, **kwargs)
+                return _cache["value"]
+
+            case_gather = gather_once
         try:
             decision = runner(case, officer_role, emit_events=emit_events,
-                              gather=gather)
+                              gather=case_gather)
         except leakguard.LeakageDetectedError:
             n_leaked += 1  # hard-failed + leak event already emitted in run_case
             continue
         baseline_draft = baseline_llm(_baseline_payload(case), BASELINE_SYSTEM) or ""
         intent_ctx = None
         if with_intent:
-            ctx = (gather or gather_cutoff_context)(case)
+            ctx = (case_gather or gather_cutoff_context)(case)
             intent_ctx = {"reconstructed_intent": getattr(case, "intent", "") or "",
                           "full_cutoff_context": ctx}
         cs = scorer_fn(case, decision, baseline_draft, centroids,
@@ -97,6 +112,7 @@ def run_batch(officer_role: str = "cos", n_cases: int = 24, people_dir=None,
         "divergent_rate": round(_rate(scores, "divergent"), 4),
         "style_win_rate": round(style_win, 4),
         "mechanics_fail_rate": round(mechanics_fail, 4),
+        "context_arm": "gather-first" if gather is not None else "context-starved",
         "beats_baseline": match_rate > BASELINE_MATCH_RATE,
         "baseline": BASELINE_MATCH_RATE,
         "scores": [s.__dict__ for s in scores],
@@ -117,6 +133,15 @@ def _env_flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _gather_from_env():
+    """Resolve the scheduled context arm; kept callable so the final
+    env-to-runtime seam is testable without executing a live batch."""
+    if not _env_flag("F1_GATHER"):
+        return None
+    from framework.fidelity.officer_runner import gather_cutoff_context
+    return gather_cutoff_context
+
+
 if __name__ == "__main__":
     import json
     import sys
@@ -131,13 +156,11 @@ if __name__ == "__main__":
     #   F1_EMIT_SCORED=1  -> persist fidelity-case-scored consequence events
     #                        (labels for calibration input; graduation bar FED).
     #   F1_GATHER=1       -> F4 leak-guarded gather arm for the officer drive.
-    # All default OFF -> bare invocation stays byte-for-byte the old F1 path.
+    # All default OFF -> bare invocation keeps the old context-starved officer
+    # drive (the summary now names that arm explicitly).
     with_intent = _env_flag("F1_WITH_INTENT")
     emit_scored = _env_flag("F1_EMIT_SCORED")
-    gather = None
-    if _env_flag("F1_GATHER"):
-        from framework.fidelity.officer_runner import gather_cutoff_context
-        gather = gather_cutoff_context
+    gather = _gather_from_env()
     result = run_batch(officer_role=role, n_cases=n, gather=gather,
                        with_intent=with_intent, emit_scored=emit_scored)
     print(json.dumps({k: v for k, v in result.items() if k != "scores"}, indent=2))

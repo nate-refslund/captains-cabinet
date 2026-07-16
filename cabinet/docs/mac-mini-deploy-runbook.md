@@ -526,8 +526,25 @@ After everything is in place:
    ```
 4. Send a test Captain DM via Telegram → verify your officer replies + voice fires (if enabled).
 5. Force-kill an officer: `pkill -9 -f 'claude.*officer.cos'` → supervisor should restart within 30s.
-6. Power-cycle the Mac → all officers should come back up automatically; Captain should receive a "Cabinet is back online" DM.
-7. Wait 72 hours. Re-run `cabinet-doctor.sh` + check OVI snapshot count via:
+6. Record the exact non-reboot recovery drill before a physical power cycle:
+   ```bash
+   bash cabinet/scripts/test-recovery.sh --dry-run
+   bash cabinet/scripts/test-recovery.sh \
+     --evidence-dir "$HOME/.cabinet-readiness/$(date -u +%Y%m%dT%H%M%SZ)/recovery"
+   ```
+   This is an exact equality gate, not a minimum-process-count smoke test. It
+   derives the only restartable labels from enabled `cabinet/services.yml`
+   rows plus the deployment roster, refuses any loaded disabled/legacy label,
+   leaves the separately attested egress proxy running, tears down the exact
+   roster tmux sessions, and requires labels, sessions, active kill switch,
+   observe posture, egress attestation, Redis, and Cabinet Doctor's semantic
+   result to match the pre-state. Its failure trap only restores allowlisted
+   labels; it never globs installed `com.cabinet.*` plists.
+7. Power-cycle the Mac → all enabled services and roster officers should come
+   back up automatically; Captain should receive a "Cabinet is back online"
+   DM. Re-run `test-recovery.sh --dry-run` to verify the exact
+   post-power-cycle state without another teardown.
+8. Wait 72 hours. Re-run `cabinet-doctor.sh` + check OVI snapshot count via:
    ```bash
    python3 framework/ovi/compute.py --from-events --window-days 7
    ```

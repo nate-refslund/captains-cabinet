@@ -44,7 +44,11 @@
 #   F1_WITH_INTENT  default 1 here (label mine); set 0 to revert to
 #                   decision-only scoring.
 #   F1_EMIT_SCORED  default 1 here (labels persisted); set 0 for a dry run.
-#   F1_GATHER       default 0 (the F4 gather arm stays opt-in).
+#   F1_GATHER       default 1 here: the scheduled canary exercises the real
+#                   gather-first reply path. Set 0 only for the explicit
+#                   context-starved diagnostic arm, together with
+#                   F1_EMIT_SCORED=0: scored rows do not carry an arm marker,
+#                   so a diagnostic must not bank starved labels.
 #
 # Reversible:
 #   launchctl bootout gui/$(id -u)/com.cabinet.fidelity-f1 \
@@ -76,13 +80,29 @@ export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
 # them too, so what launchd runs is manifest-visible).
 export F1_WITH_INTENT="${F1_WITH_INTENT:-1}"
 export F1_EMIT_SCORED="${F1_EMIT_SCORED:-1}"
+export F1_GATHER="${F1_GATHER:-1}"
+
+# Scored consequence rows do not carry the context-arm marker. Refuse every
+# context-starved + emit-scored combination BEFORE a Python drive so a manual
+# diagnostic cannot silently bank arm-ambiguous labels. Truthiness mirrors
+# framework.fidelity.run_f1._env_flag (portable to macOS Bash 3.2).
+_f1_truthy() {
+  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|on) return 0 ;;
+    *)             return 1 ;;
+  esac
+}
+if ! _f1_truthy "$F1_GATHER" && _f1_truthy "$F1_EMIT_SCORED"; then
+  echo "fidelity-f1: refusing context-starved scored run; set F1_EMIT_SCORED=0 with F1_GATHER=0" >&2
+  exit 64
+fi
 
 ROLES="${F1_ROLES:-${F1_ROLE:-cos}}"
 CASES="${F1_CASES:-24}"
 
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] fidelity-f1: starting weekly label-mine batch" \
      "(roles=${ROLES}, cases/role=${CASES}, with_intent=${F1_WITH_INTENT}," \
-     "emit_scored=${F1_EMIT_SCORED}, gather=${F1_GATHER:-0})"
+     "emit_scored=${F1_EMIT_SCORED}, gather=${F1_GATHER})"
 
 rc=0
 IFS=',' read -ra _ROLE_ARR <<< "$ROLES"

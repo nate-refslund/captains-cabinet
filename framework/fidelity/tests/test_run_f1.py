@@ -51,6 +51,7 @@ class TestRunBatch:
         assert res["decision_match_rate"] == pytest.approx(0.8)
         assert res["beats_baseline"] is True
         assert res["baseline"] == 0.083
+        assert res["context_arm"] == "context-starved"
 
     def test_leaked_cases_excluded_not_scored(self, monkeypatch):
         cases = [_case("c0"), _case("c1")]
@@ -107,6 +108,38 @@ class TestRunBatch:
         scored = [r for r in read_ledger() if r.get("action") == "fidelity-case-scored"]
         assert len(scored) == 1
         assert scored[0]["review"]["verdict"] == "confirmed"
+
+    def test_gather_first_reuses_identical_context_for_drive_and_judge(
+            self, monkeypatch):
+        cases = [_case("c0")]
+        monkeypatch.setattr(run_f1, "build_cases",
+                            lambda lane="send-1to1-reply", decision_type="reply",
+                            n=24, window=None, people_dir=None: cases)
+        monkeypatch.setattr(run_f1, "author_centroid",
+                            lambda exclude_keys=None: {"msgraph": [1.0]})
+        calls, seen = [], {}
+
+        def gather(case):
+            calls.append(case.case_id)
+            return {"vault_hits": [{"id": len(calls)}], "thread": []}
+
+        def runner(case, role, emit_events=True, gather=None):
+            seen["drive_ctx"] = gather(case)
+            return OfficerDecision("Ja.", "", [])
+
+        def scorer_fn(case, decision, baseline_draft, centroids,
+                      intent_ctx=None):
+            seen["judge_ctx"] = intent_ctx["full_cutoff_context"]
+            return CaseScore(case.case_id, True, "match", [], False, 1.0, {})
+
+        result = run_f1.run_batch(
+            runner=runner, scorer_fn=scorer_fn,
+            baseline_llm=lambda *args, **kwargs: "Generic.", gather=gather,
+            with_intent=True,
+        )
+        assert calls == ["c0"]
+        assert seen["drive_ctx"] is seen["judge_ctx"]
+        assert result["context_arm"] == "gather-first"
 
     def test_assert_beats_baseline_raises_when_below(self):
         with pytest.raises(AssertionError):
