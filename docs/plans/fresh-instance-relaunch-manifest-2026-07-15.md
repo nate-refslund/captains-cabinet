@@ -281,11 +281,19 @@ capability config → KEEP).
   plus the relevant `~/Library/Application Support/cabinet/` state, before
   cutover — this is the rollback safety net regardless of what this
   manifest seeds forward. Not executed by this pass (inventory only).
-- **Kill-switch**: `cabinet:killswitch` is ACTIVE in the shared Redis right
-  now (verified independently by the concurrent `dev-runtime-split-build`
-  workflow, not re-verified here). The new instance inherits it as-is;
-  clearing it is a named Captain-only step (`kill-switch.sh deactivate`),
-  never done by an agent.
+- **Kill-switch**: `cabinet:killswitch` was ACTIVE in the shared Redis on
+  2026-07-15 (verified independently by the concurrent
+  `dev-runtime-split-build` workflow, not re-verified here at the time).
+  **Update, 2026-07-16 fresh recheck (this pass):** `bash cabinet/scripts/
+  kill-switch.sh status` now reports INACTIVE — a real change since
+  2026-07-15, presumed Captain-side, not caused by either build session
+  (neither touches it). This is exactly the kind of live-boundary state
+  that changes across sessions; treat both timestamps as historical, not
+  as the state on actual relaunch day. Whatever it reads at execution
+  time, the new instance inherits it as-is and an agent never touches it
+  either direction — clearing it (if ON) is a named Captain-only step
+  (`kill-switch.sh deactivate`), and confirming its state first (`status`)
+  costs nothing either way.
 - **Telegram token rotation**: a value-level edit inside `cabinet/.env`
   (§1d), done by the Captain via BotFather at relaunch — not a path this
   manifest drops, since the chat id and the rest of the file carry over.

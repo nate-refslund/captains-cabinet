@@ -63,12 +63,14 @@ prompt. **[CAPTAIN + ME]** = we run it together, live-fleet impact.
 ### Step 1 — Quiesce the old fleet **[CAPTAIN + ME]**
 
 Nothing should be writing to the old instance while we archive and seed
-from it. The kill switch already blocks officers from taking further
-actions (verified ACTIVE independently — see §6), but that alone doesn't
-guarantee a mid-flight officer has finished writing to disk. Stop each
-officer's LaunchAgent outright (the same stop primitive
-`dev-runtime-split-cutover.md` Step 3 already uses, just without a
-re-bootstrap at the old path yet):
+from it. If the kill switch is ON at this point (check fresh — see Step
+7.1's note; the manifest's own §5 records it was ACTIVE on 2026-07-15 and
+INACTIVE on a 2026-07-16 recheck, so don't assume either way), it already
+blocks officers from taking further actions, but that alone doesn't
+guarantee a mid-flight officer has finished writing to disk — so stop each
+officer's LaunchAgent outright regardless of kill-switch state (the same
+stop primitive `dev-runtime-split-cutover.md` Step 3 already uses, just
+without a re-bootstrap at the old path yet):
 
 ```bash
 launchctl list | grep com.cabinet.officer   # see what's actually loaded
@@ -209,10 +211,19 @@ These are steps nobody but the Captain does — some are literally
 impossible for an agent to do (a physical BotFather conversation), others
 are deliberately reserved so a mistake can't cascade unattended.
 
-1. **Clear the kill switch.** It's currently ON (verified independently,
-   not something this relaunch turned on) and stays on straight through
-   Steps 1–6 above — an agent never touches it either direction. Once
-   you're satisfied the new instance is healthy:
+1. **Clear the kill switch, if it's on.** Check its LIVE state fresh —
+   don't trust this doc or any prior session's note, since this is exactly
+   the kind of boundary state that changes across sessions (it was
+   observed ACTIVE on 2026-07-15 while this build was staged, and INACTIVE
+   on a fresh 2026-07-16 recheck — Captain-side activity unrelated to this
+   relaunch, not something either build session touched):
+   ```bash
+   bash cabinet/scripts/kill-switch.sh status
+   ```
+   Whatever its state, it stays exactly as-is straight through Steps 1–6
+   above — an agent never touches it either direction, in either build
+   session or on relaunch day. Once you're satisfied the new instance is
+   healthy, if it's ON:
    ```bash
    bash cabinet/scripts/kill-switch.sh deactivate
    ```
