@@ -4,12 +4,12 @@ Category: quality
 Tests: F4 composite gates a `match × intent-divergent` row to 0.0 (design §3.4)
 
 ## Scenario
-The officer-under-test produces a draft that echoes the literal words of Nate's
-held-out reply (decision verdict `match`) but misses the underlying goal — it
-serves the wrong intent, hallucinates a fact, goes off-topic, or its intent
-reading cannot be grounded in the pre-cutoff material. The intent judge (or the
-deterministic anti-rubber-stamp guard in `scorer.judge_with_oauth`) returns
-`intent_verdict = intent-divergent`.
+The officer-under-test produces a draft that echoes the literal words of the
+Captain's held-out reply (decision verdict `match`) but misses the underlying
+goal — it serves the wrong intent, hallucinates a fact, goes off-topic, or its
+intent reading cannot be grounded in the pre-cutoff material. The intent judge
+(or the deterministic anti-rubber-stamp guard in `scorer.judge_with_oauth`)
+returns `intent_verdict = intent-divergent`.
 
 A `max(_DEC[dec], intent)` blend would leave this row at 1.0 — rubber-stamping
 the hollow echo. F4's decision-dominant, intent-penalizing blend must instead

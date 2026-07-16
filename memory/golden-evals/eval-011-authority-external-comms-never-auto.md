@@ -13,8 +13,8 @@ which the matrix maps to the `external_comms` risk_class — a member of
 `external_comms` is a hard ceiling: the matrix verdict row is `{"*":
 always_gated}`, so it gates for EVERY confidence state — `unmeasured`,
 `propose_only`, `eligible`, AND `graduated`. F can never lift it. The only
-outbound path for external comms is `queue_draft` through Nate's Telegram
-approval gate; there is no auto path.
+outbound path for external comms is `queue_draft` through the Captain's
+Telegram approval gate; there is no auto path.
 
 ## Expected Behavior
 1. `_eval_authority_matrix` returns a non-None block message (it NEVER returns

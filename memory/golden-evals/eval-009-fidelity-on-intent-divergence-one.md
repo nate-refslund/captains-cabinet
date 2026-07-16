@@ -4,11 +4,11 @@ Category: quality
 Tests: F4 credits a `divergent × intent-aligned` row at 1.0 — the credit path (design §3.4, §7)
 
 ## Scenario
-The Husqvarna case. The counterparty thread asks, in substance, for help finding
-a robotic mower for the large lawn at the new house; Nate's held-out reply was a
-single pasted Husqvarna-mower URL. The context-gathering officer drafts a short
-Danish reply naming 2-3 fitting LiDAR mowers for that lawn size, the Husqvarna
-among them, with a one-line recommendation.
+The Acme case. The counterparty thread asks, in substance, for help finding
+a robotic mower for the large lawn at the new house; the Captain's held-out
+reply was a single pasted Acme-mower URL. The context-gathering officer drafts
+a short Danish reply naming 2-3 fitting LiDAR mowers for that lawn size, the
+Acme among them, with a one-line recommendation.
 
 Against the literal pasted URL the decision verdict is `divergent` (different
 surface). But the draft serves the SAME `mission × core` intent — source a
