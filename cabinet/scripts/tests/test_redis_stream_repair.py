@@ -40,7 +40,7 @@ def test_stream_repair_parser_is_strict_and_privacy_safe(tmp_path: Path):
     key = b"stream secret\x00\xff"
     group = b"group secret\x00"
     consumer = b"consumer secret\xff"
-    stream_id = b"1700" + b"000000000-4"
+    stream_id = b"17000" + b"00000000-4"
     path = tmp_path / "repair.manifest"
     path.write_text(
         _manifest(
