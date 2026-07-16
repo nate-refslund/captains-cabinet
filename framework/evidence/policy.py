@@ -11,6 +11,13 @@ class RepairRequest:
     Evidence can motivate a proposal; it can never supply authority.  These
     fields must be established outside untrusted log content by the authority
     gate and an independent verifier.
+
+    The six danger dimensions (``external_effect`` through
+    ``governance_changing``) default to ``True``: a danger fact nobody
+    established is presumed present, so an incomplete request routes to the
+    Captain instead of auto-repair.  ``auto_repair`` requires explicitly
+    attesting every danger dimension ``False``.  The safety preconditions
+    carry no defaults at all and must always be stated.
     """
 
     internal_change: bool
@@ -19,12 +26,12 @@ class RepairRequest:
     regression_tests: bool
     rollback_plan: bool
     independent_verification: bool
-    external_effect: bool = False
-    irreversible: bool = False
-    security_sensitive: bool = False
-    authority_changing: bool = False
-    audit_changing: bool = False
-    governance_changing: bool = False
+    external_effect: bool = True
+    irreversible: bool = True
+    security_sensitive: bool = True
+    authority_changing: bool = True
+    audit_changing: bool = True
+    governance_changing: bool = True
 
 
 def repair_verdict(request: RepairRequest) -> dict[str, object]:

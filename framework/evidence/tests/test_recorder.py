@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,7 @@ import jsonschema
 
 from framework.evidence import EvidenceError, EvidenceRecorder, RepairRequest, repair_verdict
 from framework.evidence.__main__ import main as evidence_cli
+from framework.evidence.recorder import _canonical, _digest
 from framework.evidence.verifier import verify_store, verify_trial
 
 
@@ -267,18 +269,238 @@ def test_retention_enforcement_is_captain_only_verified_and_leaves_signed_receip
     assert verify_store(tmp_path)["ok"] is True
 
 
+def test_recover_interrupted_fabricates_nothing_for_inflight_trace(tmp_path: Path):
+    """A healthy non-terminal trace with no pending write gets NO synthetic events.
+
+    The journey calls recover_interrupted before every action; fabricating
+    interrupted/recovered events onto a live in-flight trace would write
+    false history into the very record the Captain reviews (findings #10/#15).
+    """
+    recorder = EvidenceRecorder(tmp_path)
+    append_started(recorder)  # latest status "started": in flight, not crashed
+    assert not (tmp_path / "trials" / "DOGFOOD-001" / "pending.json").exists()
+    assert recorder.recover_interrupted("DOGFOOD-001") == []
+    assert recorder.recover_interrupted("DOGFOOD-001") == []  # every-action call stays a no-op
+    statuses = [event["status"] for event in recorder.read_events("DOGFOOD-001")]
+    assert statuses == ["started"]
+    assert verify_trial(tmp_path, "DOGFOOD-001")["ok"] is True
+
+
+def test_restart_construction_heals_crashed_trial_before_any_verify(tmp_path: Path, monkeypatch):
+    """A crash between ledger write and anchor write must heal on plain restart.
+
+    Without construction-time recovery the stale anchor makes the verifier
+    report the trial (and store) as tamper-FAIL forever (finding #13).
+    """
+    recorder = EvidenceRecorder(tmp_path)
+    append_started(recorder)
+    monkeypatch.setattr(
+        recorder, "_anchor",
+        lambda event: (_ for _ in ()).throw(OSError("simulated power loss")),
+    )
+    with pytest.raises(OSError):
+        recorder.append(
+            context(recorder), phase="execution", status="started",
+            actor={"kind": "system", "id": "onboarding-core"},
+            component={"name": "onboarding-core", "version": "1"},
+        )
+    trial_dir = tmp_path / "trials" / "DOGFOOD-001"
+    assert (trial_dir / "pending.json").exists()
+    assert verify_store(tmp_path)["ok"] is False  # ledger is ahead of the anchor
+
+    healed = EvidenceRecorder(tmp_path)  # plain restart; no explicit recovery call
+    assert verify_store(tmp_path)["ok"] is True
+    assert not (trial_dir / "pending.json").exists()
+    events = healed.read_events("DOGFOOD-001")
+    # exactly-once: the interrupted write is reconciled once, then truthfully marked
+    assert [event["sequence"] for event in events] == [1, 2, 3, 4]
+    assert [event["status"] for event in events] == ["started", "started", "interrupted", "recovered"]
+    assert events[2]["trace_id"] == events[1]["trace_id"]
+
+
+def test_purge_append_race_cannot_ghost_a_trial_dir(tmp_path: Path, monkeypatch):
+    """An appender pre-empted mid-lock while a purge completes must not
+    re-create a ghost trial dir that fails verification forever (finding #14)."""
+    import framework.evidence.recorder as recorder_module
+
+    recorder = EvidenceRecorder(tmp_path)
+    append_started(recorder)
+    trial_dir = tmp_path / "trials" / "DOGFOOD-001"
+
+    real_secure_dir = recorder_module._secure_dir
+    appender_ready = threading.Event()
+    purge_done = threading.Event()
+    armed = {"on": True}
+    outcome: dict[str, object] = {}
+
+    def append_racer() -> None:
+        try:
+            outcome["event"] = append_started(recorder)
+        except EvidenceError as exc:
+            outcome["error"] = exc.code
+
+    thread = threading.Thread(target=append_racer)
+
+    def gated_secure_dir(path: Path) -> None:
+        # Park the appender exactly where the trial dir would be (re)created,
+        # until the purge has fully completed (or, with the surviving lock,
+        # until the timeout proves the purge is serialized behind us).
+        if armed["on"] and path == trial_dir and threading.current_thread() is thread:
+            armed["on"] = False
+            appender_ready.set()
+            purge_done.wait(timeout=3)
+        real_secure_dir(path)
+
+    monkeypatch.setattr(recorder_module, "_secure_dir", gated_secure_dir)
+    thread.start()
+    assert appender_ready.wait(timeout=10)
+    try:
+        receipt = recorder.purge_trial(
+            "DOGFOOD-001", confirmation="PURGE DOGFOOD-001", actor="captain",
+        )
+    finally:
+        purge_done.set()
+    thread.join(timeout=30)
+    assert not thread.is_alive()
+    assert receipt["status"] == "completed"
+    # the race must end in a typed refusal or a recorded-then-purged event — never a ghost
+    assert outcome.get("error") in (None, "trial_purged")
+    assert not trial_dir.exists()
+    assert verify_store(tmp_path)["ok"] is True
+
+
+def test_construction_sweeps_ghost_dir_of_purged_trial_and_retention_survives(tmp_path: Path):
+    """A ghost dir left behind by the historical append/purge race heals on
+    restart instead of bricking verify_store and enforce_retention forever."""
+    recorder = EvidenceRecorder(tmp_path)
+    append_started(recorder)
+    recorder.purge_trial("DOGFOOD-001", confirmation="PURGE DOGFOOD-001", actor="captain")
+    ghost = tmp_path / "trials" / "DOGFOOD-001"
+    ghost.mkdir()  # what the pre-fix race left behind
+    assert verify_store(tmp_path)["ok"] is False
+
+    recorder = EvidenceRecorder(tmp_path)  # plain restart
+    assert not ghost.exists()
+    assert verify_store(tmp_path)["ok"] is True
+    recorder.configure(actor="captain", retention_days=1, diagnostic_mode=False)
+    result = recorder.enforce_retention(actor="captain")  # must not raise over ghosts
+    assert result["ok"] is True
+    assert result["purged"] == []
+
+
+def test_retention_exclude_protects_live_referenced_trial(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    """enforce_retention(exclude=...) must keep a live-referenced trial
+    recordable even when it is age-expired, and purge the rest (finding #5)."""
+    recorder = EvidenceRecorder(tmp_path)
+    monkeypatch.setattr(
+        "framework.evidence.recorder._utc_now",
+        lambda: "2020-01-01T00:00:00.000000Z",
+    )
+    for trial in ("expired-old", "live-journey"):
+        recorder.append(
+            recorder.trace(
+                trial, surface="test", trace_id=f"trace-{trial}",
+                action_id=f"action-{trial}", correlation_id=f"corr-{trial}",
+            ),
+            phase="outcome", status="succeeded",
+            actor={"kind": "system", "id": "test"},
+            component={"name": "test", "version": "1"},
+        )
+    monkeypatch.undo()
+    recorder.configure(actor="captain", retention_days=1, diagnostic_mode=False)
+    result = recorder.enforce_retention(actor="captain", exclude={"live-journey"})
+    assert len(result["purged"]) == 1
+    assert not (tmp_path / "trials" / "expired-old").exists()
+    assert (tmp_path / "trials" / "live-journey").exists()
+    assert verify_store(tmp_path)["ok"] is True
+    # the excluded trial keeps recording real actions afterwards
+    recorder.append(
+        recorder.trace(
+            "live-journey", surface="test", trace_id="trace-after",
+            action_id="action-after", correlation_id="corr-after",
+        ),
+        phase="outcome", status="succeeded",
+        actor={"kind": "system", "id": "test"},
+        component={"name": "test", "version": "1"},
+    )
+    assert verify_trial(tmp_path, "live-journey")["ok"] is True
+
+
+def test_canonicalization_failure_is_typed_and_canonical_bytes_are_stable():
+    """Payloads that slip past sanitization fail as typed EvidenceErrors, and
+    the canonical (hashed == stored) byte form never changes for good input
+    (finding #12, recorder defense half)."""
+    assert _canonical({"b": 1, "a": ["x", 2]}) == b'{"a":["x",2],"b":1}'
+    circular: dict = {}
+    circular["self"] = circular
+    for hostile in ({"x": "\ud800"}, {"x": object()}, circular):
+        with pytest.raises(EvidenceError) as err:
+            _digest(hostile)
+        assert err.value.code == "payload_unserializable"
+
+
+def test_reader_and_verifier_agree_on_unicode_line_separators(tmp_path: Path, monkeypatch):
+    """An event payload holding U+2028/U+2029 must stay readable: the writer
+    frames rows with \\n only, so the reader must split on \\n only. Losing
+    the event (verify healthy, read bricked) would erase real history
+    (finding #6, recorder half)."""
+    recorder = EvidenceRecorder(tmp_path)
+    # Simulate a payload that slipped past the sanitize boundary.
+    monkeypatch.setattr(
+        "framework.evidence.recorder.sanitize", lambda value: (value, []),
+    )
+    recorder.append(
+        context(recorder), phase="intent", status="started",
+        actor={"kind": "system", "id": "core"},
+        component={"name": "core", "version": "1"},
+        detail={"note": "line1\u2028line2", "para": "a\u2029b"},
+    )
+    monkeypatch.undo()
+    assert verify_trial(tmp_path, "DOGFOOD-001")["ok"] is True
+    events = recorder.read_events("DOGFOOD-001")
+    assert [event["status"] for event in events] == ["started"]
+    assert events[0]["detail"]["note"] == "line1\u2028line2"
+    assert events[0]["detail"]["para"] == "a\u2029b"
+    assert recorder.cabinet_projection("DOGFOOD-001")["records"][0]["sequence"] == 1
+    assert recorder.export_bundle("DOGFOOD-001")["ok"] is True
+
+
+def test_malformed_ledger_row_raises_typed_error_not_bare_crash(tmp_path: Path):
+    """A corrupt ledger line surfaces as EvidenceError('ledger_invalid'),
+    never as a bare json.JSONDecodeError (finding #6, reader hardening)."""
+    recorder = EvidenceRecorder(tmp_path)
+    append_started(recorder)
+    trial_dir = tmp_path / "trials" / "DOGFOOD-001"
+    with (trial_dir / "events.jsonl").open("a", encoding="utf-8") as handle:
+        handle.write("{not json}\n")
+    with pytest.raises(EvidenceError) as err:
+        EvidenceRecorder._rows(trial_dir)
+    assert err.value.code == "ledger_invalid"
+
+
 def test_self_repair_is_fail_closed_on_every_hard_ceiling_and_missing_receipt():
-    safe = RepairRequest(True, True, True, True, True, True)
+    # Danger dimensions default True (fail-closed): auto-repair requires
+    # explicitly attesting every one of them False.
+    no_danger = {
+        "external_effect": False,
+        "irreversible": False,
+        "security_sensitive": False,
+        "authority_changing": False,
+        "audit_changing": False,
+        "governance_changing": False,
+    }
+    safe = RepairRequest(True, True, True, True, True, True, **no_danger)
     assert repair_verdict(safe)["verdict"] == "auto_repair"
-    for field in (
-        "external_effect", "irreversible", "security_sensitive",
-        "authority_changing", "audit_changing", "governance_changing",
-    ):
-        request = RepairRequest(True, True, True, True, True, True, **{field: True})
+    for field in no_danger:
+        request = RepairRequest(
+            True, True, True, True, True, True, **{**no_danger, field: True}
+        )
         assert repair_verdict(request) == {
             "verdict": "captain_gated", "reason": "hard_ceiling", "gates": [field]
         }
-    assert repair_verdict(RepairRequest(True, True, True, False, True, True)) == {
+    assert repair_verdict(RepairRequest(True, True, True, False, True, True, **no_danger)) == {
         "verdict": "captain_gated",
         "reason": "missing_precondition",
         "missing": ["regression_tests"],

@@ -1,8 +1,9 @@
 #!/bin/bash
 # deploy-mac.sh — Orchestrate Mac native Cabinet deployment.
 #
-# Substitutes envsubst variables against plist templates in cabinet/launchd/,
-# writes them to ~/Library/LaunchAgents/, then bootstraps via launchctl.
+# Renders roster officers from the officer template and enabled services from
+# cabinet/services.yml, writes them to ~/Library/LaunchAgents/, then reconciles
+# launchd to that exact set.
 #
 # Usage:
 #   bash cabinet/scripts/deploy-mac.sh --officer <officer>     # deploy one officer
@@ -10,10 +11,10 @@
 #   bash cabinet/scripts/deploy-mac.sh --daemon <name>         # deploy one template-based non-officer service
 #                                                              #   (any cabinet/launchd/com.cabinet.<name>.template.plist)
 #   bash cabinet/scripts/deploy-mac.sh --officer X --daemon Y  # both in one invocation
-#   bash cabinet/scripts/deploy-mac.sh --all                   # roster officers + the services.yml-backed
-#                                                              #   template daemons (limit-reset-watchdog, dashboard);
-#                                                              #   the rest of the fleet is manifest-owned — see
-#                                                              #   cabinet/services.yml + generate-plists.py
+#   bash cabinet/scripts/deploy-mac.sh --all                   # reconcile to EXACTLY roster officers + every
+#                                                              #   enabled services.yml row; disabled/legacy agents
+#                                                              #   are booted out and parked; the separately managed
+#                                                              #   egress proxy is preserved
 #   bash cabinet/scripts/deploy-mac.sh --dry-run               # show what would be done, don't execute
 #   bash cabinet/scripts/deploy-mac.sh --officer X --force     # override the consultant guard
 #   bash cabinet/scripts/deploy-mac.sh --stop <name|all>       # bootout installed com.cabinet.* LaunchAgents
@@ -41,6 +42,12 @@ export CABINET_ROOT="$REPO_ROOT"
 LAUNCHD_DIR="$HOME/Library/LaunchAgents"
 LOGS_DIR="$HOME/Library/Logs/cabinet"
 TEMPLATES_DIR="$REPO_ROOT/cabinet/launchd"
+GENERATED_DIR="$TEMPLATES_DIR/generated"
+LAUNCHCTL="${CABINET_LAUNCHCTL:-launchctl}"
+BOOTOUT_DELAY_S="${CABINET_DEPLOY_BOOTOUT_DELAY_S:-0.2}"
+DEPLOY_TMP=""
+EXPECTED_LABELS_FILE=""
+ALLOWED_LABELS_FILE=""
 
 OFFICER=""
 DAEMON=""
@@ -68,7 +75,14 @@ if [ -n "$STOP" ] && { [ "$ALL" = true ] || [ -n "$OFFICER" ] || [ -n "$DAEMON" 
   exit 64
 fi
 
-mkdir -p "$LAUNCHD_DIR" "$LOGS_DIR"
+if ! $DRY_RUN && [ -z "$STOP" ]; then
+  mkdir -p "$LAUNCHD_DIR" "$LOGS_DIR"
+fi
+
+cleanup() {
+  [ -z "$DEPLOY_TMP" ] || rm -rf "$DEPLOY_TMP"
+}
+trap cleanup EXIT
 
 # Populate .claude/agents/ from preset before LaunchAgent boots officers.
 # start-officer-mac.sh probes for $REPO_ROOT/.claude/agents/$OFFICER.md to gate
@@ -77,13 +91,80 @@ mkdir -p "$LAUNCHD_DIR" "$LOGS_DIR"
 # connection yet — sync-agents.sh is the agent-only step that runs unconditionally.
 # Idempotent; safe to re-run. Skipped on --dry-run: a dry run must not mutate
 # anything, including the generated .claude/agents/ directory.
-if $DRY_RUN; then
-  echo "deploy-mac.sh: --dry-run — skipping sync-agents.sh (no writes)"
-elif [ -n "$STOP" ]; then
-  : # --stop is teardown-only — agent sync belongs to the deploy legs
-elif ! bash "$REPO_ROOT/cabinet/scripts/sync-agents.sh" 2>&1; then
-  echo "deploy-mac.sh: sync-agents.sh failed — officers will boot without --agent flag" >&2
-fi
+sync_agents() {
+  if $DRY_RUN; then
+    echo "deploy-mac.sh: --dry-run — skipping sync-agents.sh (no writes)"
+  elif ! bash "$REPO_ROOT/cabinet/scripts/sync-agents.sh" 2>&1; then
+    echo "deploy-mac.sh: sync-agents.sh failed — refusing to boot a fleet with incomplete officer identities" >&2
+    return 2
+  fi
+}
+
+ensure_deploy_tmp() {
+  if [ -z "$DEPLOY_TMP" ]; then
+    DEPLOY_TMP="$(mktemp -d "${TMPDIR:-/tmp}/cabinet-deploy.XXXXXX")"
+  fi
+}
+
+wait_for_unloaded() {
+  local label="$1" attempt=0
+  while "$LAUNCHCTL" print "gui/$(id -u)/$label" >/dev/null 2>&1; do
+    attempt=$((attempt + 1))
+    [ "$attempt" -lt 20 ] || return 1
+    sleep "$BOOTOUT_DELAY_S"
+  done
+  return 0
+}
+
+# Replace and reload one plist with a per-service rollback. If the new job
+# cannot bootstrap, restore the previous installed plist and (when it was
+# loaded before) restore that previous job before returning failure.
+install_plist_file() {
+  local source="$1" final="$2" label="$3"
+  local staged backup had_final=false was_loaded=false
+  ensure_deploy_tmp
+  backup="$DEPLOY_TMP/backup.$label.plist"
+  staged="$final.tmp.$$"
+  if [ -e "$final" ]; then
+    cp "$final" "$backup"
+    had_final=true
+  fi
+  if "$LAUNCHCTL" print "gui/$(id -u)/$label" >/dev/null 2>&1; then
+    was_loaded=true
+  fi
+
+  cp "$source" "$staged"
+  chmod 644 "$staged"
+  mv -f "$staged" "$final"
+
+  if [ "$was_loaded" = true ]; then
+    "$LAUNCHCTL" bootout "gui/$(id -u)" "$final" 2>/dev/null || true
+    if ! wait_for_unloaded "$label"; then
+      echo "deploy-mac.sh: bootout failed for $label; installed plist restored" >&2
+      [ "$had_final" != true ] || cp "$backup" "$final"
+      return 2
+    fi
+  fi
+
+  if "$LAUNCHCTL" bootstrap "gui/$(id -u)" "$final"; then
+    echo "deployed: $label"
+    return 0
+  fi
+
+  echo "deploy-mac.sh: bootstrap failed for $label — attempting per-service rollback" >&2
+  if [ "$had_final" = true ]; then
+    cp "$backup" "$final"
+    if [ "$was_loaded" = true ]; then
+      "$LAUNCHCTL" bootstrap "gui/$(id -u)" "$final" || {
+        echo "deploy-mac.sh: ROLLBACK FAILED for $label; manual recovery required" >&2
+        return 3
+      }
+    fi
+  else
+    /bin/rm -f "$final"
+  fi
+  return 2
+}
 
 render_template() {
   local template="$1"
@@ -125,20 +206,28 @@ deploy_plist() {
     return 0
   fi
 
-  echo "$rendered" > "$final"
-  chmod 644 "$final"
+  ensure_deploy_tmp
+  local staged="$DEPLOY_TMP/rendered.$label.plist"
+  echo "$rendered" > "$staged"
+  chmod 644 "$staged"
+  install_plist_file "$staged" "$final" "$label"
+}
 
-  # If already loaded, bootout first (idempotent)
-  if launchctl print "gui/$(id -u)/$label" >/dev/null 2>&1; then
-    launchctl bootout "gui/$(id -u)" "$final" 2>/dev/null || true
-    sleep 1
+# Install a plist already rendered and linted by generate-plists.py. The
+# installed copy is replaced atomically before launchd sees it.
+deploy_generated_plist() {
+  local source="$1" label final
+  label="$(basename "$source" .plist)"
+  final="$LAUNCHD_DIR/$label.plist"
+
+  if $DRY_RUN; then
+    echo "=== WOULD-WRITE $final (generated from enabled services.yml row) ==="
+    cat "$source"
+    echo "=== WOULD-BOOTSTRAP $label ==="
+    return 0
   fi
 
-  launchctl bootstrap "gui/$(id -u)" "$final" || {
-    echo "deploy-mac.sh: bootstrap failed for $label" >&2
-    return 2
-  }
-  echo "deployed: $label"
+  install_plist_file "$source" "$final" "$label"
 }
 
 # Officer deployment
@@ -205,16 +294,186 @@ deploy-mac.sh: instance/config/roster.yml not found — cannot derive the office
 EOF
     exit 2
   fi
-  # Parser contract (mirrors bootstrap-roles.sh): top-level `roster:` opens the
-  # section; role slugs are 2-space-indented keys (hyphens allowed); 4-space
-  # lines are per-role fields and are skipped.
-  awk '
-    /^roster:[[:space:]]*$/ { in_roster=1; next }
-    in_roster && /^[^[:space:]#]/ { exit }
-    in_roster && /^  [a-z0-9-]+:[[:space:]]*$/ {
-      slug=$1; sub(/:$/,"",slug); print slug
+  local py
+  py="$(python_for_generator)" || return 2
+  # Shared abstraction: Cabinet Doctor and the recovery drill use these same
+  # synthesized rows. Validate the label before returning a shell token.
+  "$py" - "$REPO_ROOT" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+sys.path.insert(0, str(root / "cabinet" / "scripts"))
+import lib_roster
+
+for row in lib_roster.officer_service_rows(root):
+    label = str(row["label"])
+    match = re.fullmatch(r"com\.cabinet\.officer\.([a-z0-9-]+)", label)
+    if not match:
+        raise SystemExit(f"deploy-mac.sh: unsafe roster-derived officer label: {label!r}")
+    print(match.group(1))
+PY
+}
+
+python_for_generator() {
+  local candidate="${CABINET_PYTHON:-/opt/homebrew/bin/python3.12}"
+  if command -v "$candidate" >/dev/null 2>&1; then
+    printf '%s\n' "$candidate"
+  elif command -v python3.12 >/dev/null 2>&1; then
+    command -v python3.12
+  elif command -v python3 >/dev/null 2>&1; then
+    command -v python3
+  else
+    echo "deploy-mac.sh: Python 3 is required to render services.yml" >&2
+    return 1
+  fi
+}
+
+# Validate and render the complete desired fleet before changing launchd.
+# The expected-label file is also the reconciliation allowlist. The egress
+# proxy is intentionally allowlisted, not installed: egress-guard.sh owns its
+# lifecycle and a fleet deploy must never create a moment without enforcement.
+prepare_exact_fleet() {
+  local py render_dir duplicate
+  ensure_deploy_tmp
+  EXPECTED_LABELS_FILE="$DEPLOY_TMP/expected-labels"
+  ALLOWED_LABELS_FILE="$DEPLOY_TMP/allowed-labels"
+  : > "$EXPECTED_LABELS_FILE"
+
+  py="$(python_for_generator)" || return 2
+  OFFICERS_LIST="$(roster_officers)" || return 2
+  [ -n "$OFFICERS_LIST" ] || {
+    echo "deploy-mac.sh: roster.yml missing or parsed to an empty officer list — refusing." >&2
+    return 2
+  }
+  local o
+  for o in $OFFICERS_LIST; do
+    guard_consultant "$o"
+    printf 'com.cabinet.officer.%s\n' "$o" >> "$EXPECTED_LABELS_FILE"
+  done
+
+  if $DRY_RUN; then
+    render_dir="$DEPLOY_TMP/generated"
+  else
+    render_dir="$GENERATED_DIR"
+  fi
+  "$py" "$REPO_ROOT/cabinet/scripts/generate-plists.py" \
+    --output-dir "$render_dir"
+
+  local p
+  for p in "$render_dir"/com.cabinet.*.plist; do
+    [ -e "$p" ] || continue
+    basename "$p" .plist >> "$EXPECTED_LABELS_FILE"
+  done
+
+  duplicate="$(sort "$EXPECTED_LABELS_FILE" | uniq -d | head -n 1)"
+  if [ -n "$duplicate" ]; then
+    echo "deploy-mac.sh: duplicate desired launchd label: $duplicate — refusing before mutation" >&2
+    return 2
+  fi
+  sort -o "$EXPECTED_LABELS_FILE" "$EXPECTED_LABELS_FILE"
+  if grep -qxF "com.cabinet.egress-proxy" "$EXPECTED_LABELS_FILE"; then
+    echo "deploy-mac.sh: services.yml/roster claims reserved label com.cabinet.egress-proxy — egress-guard.sh owns it" >&2
+    return 2
+  fi
+  cp "$EXPECTED_LABELS_FILE" "$ALLOWED_LABELS_FILE"
+  printf '%s\n' "com.cabinet.egress-proxy" >> "$ALLOWED_LABELS_FILE"
+  sort -u -o "$ALLOWED_LABELS_FILE" "$ALLOWED_LABELS_FILE"
+  EXACT_RENDER_DIR="$render_dir"
+}
+
+is_allowed_label() {
+  grep -qxF "$1" "$ALLOWED_LABELS_FILE"
+}
+
+# Remove every installed/loaded Cabinet job outside the manifest+roster set.
+# Installed plists are parked beside the live file with a .disabled suffix so
+# the rollback evidence remains available but launchd cannot rediscover it.
+reconcile_unexpected_agents() {
+  local candidates="$DEPLOY_TMP/candidate-labels" label plist target
+  : > "$candidates"
+
+  for plist in "$LAUNCHD_DIR"/com.cabinet.*.plist; do
+    [ -e "$plist" ] || continue
+    basename "$plist" .plist >> "$candidates"
+  done
+  if command -v "$LAUNCHCTL" >/dev/null 2>&1; then
+    "$LAUNCHCTL" list 2>/dev/null | awk '$3 ~ /^com\.cabinet\./ {print $3}' >> "$candidates" || {
+      if ! $DRY_RUN; then
+        echo "deploy-mac.sh: launchctl list failed — cannot prove exact fleet" >&2
+        return 2
+      fi
     }
-  ' "$roster"
+  elif ! $DRY_RUN; then
+    echo "deploy-mac.sh: launchctl not found — cannot reconcile exact fleet" >&2
+    return 2
+  fi
+  sort -u -o "$candidates" "$candidates"
+
+  while IFS= read -r label; do
+    [ -n "$label" ] || continue
+    case "$label" in
+      *[!a-z0-9.-]*)
+        echo "deploy-mac.sh: unsafe launchd label from runtime inventory: $label" >&2
+        return 2
+        ;;
+    esac
+    is_allowed_label "$label" && continue
+    plist="$LAUNCHD_DIR/$label.plist"
+    target="$plist.disabled"
+    if $DRY_RUN; then
+      echo "=== WOULD-BOOTOUT unexpected $label ==="
+      [ ! -e "$plist" ] || echo "=== WOULD-PARK $plist -> $target ==="
+      continue
+    fi
+
+    if [ -e "$plist" ]; then
+      "$LAUNCHCTL" bootout "gui/$(id -u)" "$plist" 2>/dev/null || true
+    else
+      "$LAUNCHCTL" bootout "gui/$(id -u)/$label" 2>/dev/null || true
+    fi
+    if ! wait_for_unloaded "$label"; then
+      echo "deploy-mac.sh: unexpected job $label remained loaded after bootout" >&2
+      return 2
+    fi
+    if [ -e "$plist" ]; then
+      mv -f "$plist" "$target"
+      echo "parked unexpected plist: $target"
+    else
+      echo "booted out unexpected loaded job: $label"
+    fi
+  done < "$candidates"
+}
+
+verify_exact_fleet() {
+  local label candidates="$DEPLOY_TMP/post-labels"
+  while IFS= read -r label; do
+    [ -n "$label" ] || continue
+    if ! "$LAUNCHCTL" print "gui/$(id -u)/$label" >/dev/null 2>&1; then
+      echo "deploy-mac.sh: post-reconcile verification missing expected job $label" >&2
+      return 2
+    fi
+    if [ ! -f "$LAUNCHD_DIR/$label.plist" ]; then
+      echo "deploy-mac.sh: post-reconcile verification missing expected plist $label.plist" >&2
+      return 2
+    fi
+  done < "$EXPECTED_LABELS_FILE"
+
+  : > "$candidates"
+  "$LAUNCHCTL" list 2>/dev/null | awk '$3 ~ /^com\.cabinet\./ {print $3}' >> "$candidates" || return 2
+  for label in "$LAUNCHD_DIR"/com.cabinet.*.plist; do
+    [ -e "$label" ] || continue
+    basename "$label" .plist >> "$candidates"
+  done
+  sort -u -o "$candidates" "$candidates"
+  while IFS= read -r label; do
+    [ -n "$label" ] || continue
+    if ! is_allowed_label "$label"; then
+      echo "deploy-mac.sh: post-reconcile verification found unexpected job/plist $label" >&2
+      return 2
+    fi
+  done < "$candidates"
 }
 
 # --stop leg (Wave D / D2 — DESIGN-companion-2026-07-10 §3). Acts on RUNTIME
@@ -276,51 +535,29 @@ if [ -n "$STOP" ]; then
   exit 0
 fi
 if [ "$ALL" = true ]; then
-  OFFICERS_LIST=$(roster_officers)
-  [ -n "$OFFICERS_LIST" ] || { echo "deploy-mac.sh: roster.yml parsed to an empty officer list — refusing." >&2; exit 2; }
-  for o in $OFFICERS_LIST; do guard_consultant "$o"; deploy_officer "$o"; done
-  # Daemon leg (corrected 2026-07-04, lane/config-0705). cabinet/services.yml
-  # is THE fleet manifest (F0.4): daemon/watchdog plists are rendered from it
-  # by cabinet/scripts/generate-plists.py (render-only by security contract —
-  # it never calls launchctl). The previous hardcoded 12-daemon list here
-  # installed TEN services absent from both services.yml AND the live fleet
-  # (heartbeat-watchdog, cost-summary, worktree-listener, mission-supervisor,
-  # task-sync, role-evals-weekly, outbox-relay, ovi-weekly,
-  # self-improvement-loop, chrome-profile) — the same wrong-fleet-redeploy
-  # hazard F0.2 fixed for officers, and mission-supervisor in particular would
-  # resurrect 5-min push routing against the Captain's pull-only ruling (see
-  # .claude/skills/cabinet-route-tasks/). --all now installs only the
-  # manifest-backed template daemons; the retired templates stay on disk and
-  # remain individually deployable via an explicit `--daemon <name>` (a
-  # deliberate operator act, not a default).
-  #
-  # TODO(F0.4 follow-up — full reconcile): teach deploy-mac.sh to bootstrap
-  # cabinet/launchd/generated/*.plist (run generate-plists.py, then
-  # launchctl bootstrap each non-officer service) so --all installs the FULL
-  # manifest fleet — including replacing the invalid-XML limit-reset-watchdog
-  # template render, which services.yml notes should be superseded by its
-  # generated plist at next deploy. Deferred here: new launchctl machinery on
-  # the LIVE fleet needs its own tested change, not a docs/CI lane rider.
-  for d in \
-    limit-reset-watchdog \
-    dashboard; do
-    deploy_daemon "$d"
+  # Fail-before-mutation: validate the roster, consultant policy, the whole
+  # manifest and every generated plist before syncing agents or touching
+  # launchd. Then park retired authority, install the deterministic services,
+  # and boot officers only after their supporting fleet is present.
+  prepare_exact_fleet
+  sync_agents
+  reconcile_unexpected_agents
+  for p in "$EXACT_RENDER_DIR"/com.cabinet.*.plist; do
+    [ -e "$p" ] || continue
+    deploy_generated_plist "$p"
   done
-  cat >&2 <<'EOF'
-deploy-mac.sh: NOTE — --all installs officers (roster-derived) plus the two
-  manifest-backed template daemons (limit-reset-watchdog, dashboard). The rest
-  of the daemon/watchdog fleet is owned by cabinet/services.yml: render with
-  `python3.12 cabinet/scripts/generate-plists.py` and bootstrap the generated
-  plists deliberately (per-plist header comments carry the install commands).
-  Legacy templates (heartbeat-watchdog, cost-summary, worktree-listener,
-  mission-supervisor, task-sync, role-evals-weekly, outbox-relay, ovi-weekly,
-  self-improvement-loop, chrome-profile) are NOT in the manifest and are no
-  longer auto-installed; use --daemon <name> only if you mean it.
-EOF
-  # dashboard-kiosk is OPT-IN (needs a physical monitor on the Mac mini).
-  # Office-display deployments add it explicitly:
-  #   bash cabinet/scripts/deploy-mac.sh --daemon dashboard-kiosk
-  # Headless servers skip it; the dashboard server above binds
+  for o in $OFFICERS_LIST; do deploy_officer "$o"; done
+  if ! $DRY_RUN; then verify_exact_fleet; fi
+  if $DRY_RUN; then
+    echo "deploy-mac.sh: dry-run plan complete ($(wc -l < "$EXPECTED_LABELS_FILE" | tr -d ' ') manifest+roster jobs); no runtime changes; egress untouched"
+  else
+    echo "deploy-mac.sh: exact fleet reconciled ($(wc -l < "$EXPECTED_LABELS_FILE" | tr -d ' ') manifest+roster jobs); egress proxy preserved"
+  fi
+
+  # dashboard-kiosk is intentionally outside services.yml, so exact --all
+  # parks it. Installing it with --daemon is diagnostic-only and makes Doctor
+  # red until it is removed or promoted into the manifest. The dashboard server
+  # in services.yml binds
   # CABINET_DASHBOARD_HOST (default 127.0.0.1 — loopback-only since the
   # CC-LOOP ruling, 2026-07-12) so it is NOT reachable over the tailnet by
   # default. Remote reach: front it with `tailscale serve` (the blessed
@@ -328,6 +565,7 @@ EOF
   # a live box that needs plain http://<host>:3100 reach sets that BEFORE
   # this flip deploys; see cabinet/docs/mac-mini-deploy-runbook.md.
 else
+  sync_agents
   # --officer and --daemon are independent selectors and may be combined in
   # one invocation (previously the elif chain silently dropped --daemon
   # whenever --officer was present).

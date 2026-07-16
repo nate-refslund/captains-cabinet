@@ -861,6 +861,256 @@ def test_cli_snapshot_and_action_are_json_only(tmp_path):
     assert json.loads(bad.stdout)["code"] == "action_unknown"
 
 
+def test_tombstoned_live_trial_is_reminted_and_journey_keeps_recording(tmp_path):
+    """PR#140 finding #5: retention/CLI purge of the LIVE evidence trial must
+    not wedge every act() into a permanent evidence_unavailable refusal."""
+    source = estate(tmp_path, "software-product")
+    proposed = propose(tmp_path, source)
+    old_trial = proposed["state"]["evidence_trial_id"]
+    recorder = EvidenceRecorder(tmp_path / journey.EVIDENCE_REL)
+    recorder.purge_trial(old_trial, confirmation=f"PURGE {old_trial}", actor="captain")
+
+    ratified = ratify(tmp_path, proposed)  # pre-fix: evidence_unavailable forever
+    fresh_trial = ratified["state"]["evidence_trial_id"]
+    assert fresh_trial != old_trial
+    assert ratified["evidence"]["trial_id"] == fresh_trial
+    assert journey.snapshot(tmp_path)["state"]["evidence_trial_id"] == fresh_trial
+
+    rows = recorder.read_events(fresh_trial)
+    genesis = rows[0]
+    tombstone = hashlib.sha256(old_trial.encode("utf-8")).hexdigest()
+    assert genesis["phase"] == "system"
+    assert genesis["status"] == "recovered"
+    assert genesis["detail"]["purged_trial_id_hash"] == tombstone
+    assert f"evidence-tombstone:{tombstone}" in genesis["links"]
+    ratify_phases = {row["phase"] for row in rows if row["action_id"] == "ratify-1"}
+    assert {"intent", "policy", "execution", "verification", "receipt", "outcome"} <= ratify_phases
+    assert verify_trial(recorder.root, fresh_trial)["ok"] is True
+
+    # The journey also stays deletable after the tombstone.
+    purged = journey.act(
+        {"action": "purge", "action_id": "purge-after-tombstone", "surface": "dashboard", "confirmation": "PURGE"},
+        tmp_path,
+    )
+    assert purged["purged"] is True
+    receipt = purged["receipt"]
+    assert receipt["purged_evidence_trial_id_hash"] == hashlib.sha256(fresh_trial.encode("utf-8")).hexdigest()
+    assert "pending_evidence_trial_id" not in receipt
+
+
+def test_tombstoned_live_trial_observe_remints_and_still_records(tmp_path):
+    """PR#140 finding #5 (observe path): surface observations survive a
+    tombstoned live trial instead of refusing forever."""
+    source = estate(tmp_path, "software-product")
+    proposed = propose(tmp_path, source)
+    old_trial = proposed["state"]["evidence_trial_id"]
+    recorder = EvidenceRecorder(tmp_path / journey.EVIDENCE_REL)
+    recorder.purge_trial(old_trial, confirmation=f"PURGE {old_trial}", actor="captain")
+
+    out = journey.observe(
+        {"phase": "ui", "status": "succeeded", "surface": "world", "action_id": "ui-after-tombstone"},
+        tmp_path,
+    )  # pre-fix: evidence_unavailable forever
+    assert out["ok"] is True
+    fresh_trial = out["evidence"]["trial_id"]
+    assert fresh_trial != old_trial
+    assert journey.snapshot(tmp_path)["state"]["evidence_trial_id"] == fresh_trial
+    rows = recorder.read_events(fresh_trial)
+    assert rows[0]["phase"] == "system" and rows[0]["status"] == "recovered"
+    assert any(row["action_id"] == "ui-after-tombstone" and row["phase"] == "ui" for row in rows)
+
+
+def test_corrupt_evidence_ledger_never_blocks_typed_purge(tmp_path):
+    """PR#140 finding #26: one corrupt ledger byte must not make onboarding
+    source-derived data undeletable; the evidence failure is recorded in the
+    purge receipt and the pending marker survives for a later force purge."""
+    source = estate(tmp_path, "software-product")
+    ratified = ratify(tmp_path, propose(tmp_path, source))
+    trial_id = ratified["state"]["evidence_trial_id"]
+    ledger = tmp_path / journey.EVIDENCE_REL / "trials" / trial_id / "events.jsonl"
+    data = bytearray(ledger.read_bytes())
+    data[10] ^= 0xFF
+    ledger.write_bytes(bytes(data))
+
+    # The typed confirmation is still required even with a broken ledger.
+    with pytest.raises(journey.JourneyError) as refused:
+        journey.act({"action": "purge", "action_id": "purge-noconf", "surface": "dashboard"}, tmp_path)
+    assert refused.value.code == "purge_confirmation"
+
+    purged = journey.act(
+        {"action": "purge", "action_id": "purge-corrupt", "surface": "dashboard", "confirmation": "PURGE"},
+        tmp_path,
+    )  # pre-fix: JourneyError evidence_integrity — undeletable
+    assert purged["purged"] is True
+    assert purged["state"]["stage"] == "purged"
+    assert purged["evidence_purge"]["status"] == "pending"
+    receipt = purged["receipt"]
+    assert receipt["evidence_purge_status"] == "pending"
+    assert receipt["evidence_purge_error"] == "verification_failed"
+    assert receipt["evidence_append_error"] == "ledger_integrity"
+    # The pending marker survives so recovery / a Captain force purge can
+    # finish the evidence side; journey never deletes unverified evidence.
+    assert receipt["pending_evidence_trial_id"] == trial_id
+    assert (tmp_path / journey.EVIDENCE_REL / "trials" / trial_id).is_dir()
+    # Onboarding source-derived data is gone.
+    assert not (tmp_path / journey.DATA_REL / journey.CHARTER_NAME).exists()
+    assert not (tmp_path / journey.DATA_REL / journey.MANIFEST_NAME).exists()
+    # And later loads never wedge on the still-broken pending trial.
+    snap = journey.snapshot(tmp_path)
+    assert snap["state"]["stage"] == "purged"
+
+
+def test_pending_evidence_purge_over_broken_trial_never_wedges_loads(tmp_path):
+    """PR#140 finding #26 (recovery half): a receipt-pending evidence purge
+    over an integrity-failed trial must not raise a raw EvidenceError out of
+    every snapshot()/act()."""
+    source = estate(tmp_path, "software-product")
+    out = ratify(tmp_path, propose(tmp_path, source))
+    trial_id = out["state"]["evidence_trial_id"]
+    ledger = tmp_path / journey.EVIDENCE_REL / "trials" / trial_id / "events.jsonl"
+    data = bytearray(ledger.read_bytes())
+    data[10] ^= 0xFF
+    ledger.write_bytes(bytes(data))
+
+    # Model the crash window where the onboarding purge committed its receipt
+    # but the evidence-side purge never ran (the core does not touch evidence).
+    journey._act_core(
+        {"action": "purge", "action_id": "purge-direct", "surface": "test", "confirmation": "PURGE"},
+        tmp_path,
+    )
+
+    snap = journey.snapshot(tmp_path)  # pre-fix: raw EvidenceError verification_failed
+    assert snap["state"]["stage"] == "purged"
+    receipts = sorted((tmp_path / journey.PURGE_RECEIPTS_REL).glob("purge-*.json"))
+    receipt = json.loads(receipts[0].read_text())
+    assert receipt.get("pending_evidence_trial_id") == trial_id
+    assert (tmp_path / journey.EVIDENCE_REL / "trials" / trial_id).is_dir()
+
+
+def test_malformed_caller_ids_cannot_fork_canonical_and_evidence_planes(tmp_path):
+    """PR#140 finding #27: an id the evidence plane rejects must never ride
+    into the canonical event via setdefault — the two planes carry the SAME
+    ids or the action is refused."""
+    source = estate(tmp_path, "software-product")
+    out = journey.act(
+        {
+            "action": "propose_window",
+            "action_id": "fork-probe-1",
+            "trace_id": ".dot-trace",
+            "correlation_id": ".dot-corr",
+            "surface": "dashboard",
+            "source": str(source),
+            "purpose": "Find one release risk.",
+            "relationship_destination": "reversible",
+        },
+        tmp_path,
+    )
+    assert out["event"]["trace_id"] == out["evidence"]["trace_id"]
+    assert out["event"]["correlation_id"] == out["evidence"]["correlation_id"]
+    assert out["event"]["trace_id"] != ".dot-trace"
+    assert out["event"]["correlation_id"] != ".dot-corr"
+    recorder = EvidenceRecorder(tmp_path / journey.EVIDENCE_REL)
+    rows = recorder.read_events(out["state"]["evidence_trial_id"])
+    evidence_traces = {row["trace_id"] for row in rows if row["action_id"] == "fork-probe-1"}
+    assert evidence_traces == {out["event"]["trace_id"]}
+    canonical = journey._read_events(tmp_path)[-1]
+    assert canonical["trace_id"] == out["event"]["trace_id"]
+    assert canonical["correlation_id"] == out["event"]["correlation_id"]
+
+    # A malformed action id is refused deterministically (it must not be
+    # silently re-minted: that would break idempotent replay) and no
+    # canonical event can commit under it.
+    with pytest.raises(journey.JourneyError) as exc:
+        journey.act({"action": "pause", "action_id": ".dot-action", "surface": "dashboard"}, tmp_path)
+    assert exc.value.code == "action_id_invalid"
+    assert all(row.get("action_id") != ".dot-action" for row in journey._read_events(tmp_path))
+    rows = recorder.read_events(out["state"]["evidence_trial_id"])
+    assert any(
+        row["status"] == "refused" and row["detail"].get("error_code") == "action_id_invalid"
+        for row in rows
+    )
+
+
+def test_lone_surrogate_purpose_is_scrubbed_and_recorded_not_crashed(tmp_path):
+    """PR#140 finding #12: a lone UTF-16 surrogate in the purpose must not
+    escape act() as a raw UnicodeEncodeError — the action records, scrubbed."""
+    source = estate(tmp_path, "software-product")
+    out = journey.act(
+        {
+            "action": "propose_window",
+            "action_id": "surrogate-purpose",
+            "surface": "dashboard",
+            "source": str(source),
+            "purpose": "Fix the \ud800 encoding",
+            "relationship_destination": "reversible",
+        },
+        tmp_path,
+    )  # pre-fix: UnicodeEncodeError from journey's own charter hashing
+    assert out["state"]["stage"] == "charter_pending"
+    assert out["state"]["purpose"] == "Fix the � encoding"
+    payload = out["state"]["charter"]["payload"]
+    assert payload["purpose"] == "Fix the � encoding"
+    # Stored bytes equal hashed bytes: the persisted charter re-hashes cleanly.
+    assert out["state"]["charter"]["hash"] == journey._hash(payload)
+    assert journey.snapshot(tmp_path)["state"]["purpose"] == "Fix the � encoding"
+    recorder = EvidenceRecorder(tmp_path / journey.EVIDENCE_REL)
+    assert verify_trial(recorder.root, out["state"]["evidence_trial_id"])["ok"] is True
+
+
+def test_lone_surrogate_action_and_observation_record_instead_of_crashing(tmp_path):
+    """PR#140 finding #12: free text journey feeds into evidence (action name,
+    observation comments) is scrubbed so the attempt is recorded, never a
+    raw UnicodeEncodeError."""
+    with pytest.raises(journey.JourneyError) as exc:
+        journey.act({"action": "pur\ud800ge", "action_id": "surrogate-action", "surface": "dashboard"}, tmp_path)
+    assert exc.value.code == "action_unknown"
+    state = journey.snapshot(tmp_path)["state"]
+    recorder = EvidenceRecorder(tmp_path / journey.EVIDENCE_REL)
+    rows = recorder.read_events(state["evidence_trial_id"])
+    assert any(
+        row["status"] == "refused" and row["detail"].get("error_code") == "action_unknown"
+        for row in rows
+    )
+
+    out = journey.observe(
+        {
+            "phase": "feedback",
+            "status": "corrected",
+            "surface": "world",
+            "action_id": "surrogate-comment",
+            "detail": {"feedback_rating": "wrong", "comment": "bad \ud800 char"},
+        },
+        tmp_path,
+    )  # pre-fix: UnicodeEncodeError from evidence canonicalization
+    assert out["ok"] is True
+    rows = recorder.read_events(state["evidence_trial_id"])
+    feedback = next(row for row in rows if row["action_id"] == "surrogate-comment")
+    assert feedback["detail"]["comment"] == "bad � char"
+
+
+def test_unencodable_source_path_is_a_clean_refusal(tmp_path):
+    """PR#140 finding #12: a source path holding surrogate-escaped bytes can
+    be neither hashed nor faithfully persisted — refuse cleanly, never crash."""
+    bad = tmp_path / "bad-\udcff-name"
+    try:
+        bad.mkdir()
+    except (OSError, UnicodeEncodeError):
+        pytest.skip("this filesystem refuses undecodable directory names")
+    with pytest.raises(journey.JourneyError) as exc:
+        journey.act(
+            {
+                "action": "propose_window",
+                "action_id": "surrogate-source",
+                "surface": "test",
+                "source": str(bad),
+                "purpose": "test",
+                "relationship_destination": "reversible",
+            },
+            tmp_path,
+        )
+    assert exc.value.code == "source_unencodable"
+
+
 def test_three_persona_evaluation_harness_is_executable():
     proc = subprocess.run(
         [sys.executable, "-m", "framework.onboarding.evaluate_personas"],

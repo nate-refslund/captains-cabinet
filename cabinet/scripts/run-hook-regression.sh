@@ -37,6 +37,7 @@ HARNESSES=(
   "germline-readonly.sh"
   "germline-bash-write.sh"
   "evidence-access.sh"
+  "evidence-pathnorm.sh"
 )
 
 OVERALL_FAIL=0

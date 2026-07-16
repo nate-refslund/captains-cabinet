@@ -190,7 +190,9 @@ claude
 # 4. Credentials
 cp cabinet/.env.example cabinet/.env       # fill in tokens; chmod 600
 
-# 5. Deploy the fleet (LaunchAgents from templates; --dry-run to inspect)
+# 5. Reconcile the fleet to the roster + every enabled services.yml row.
+#    Dry-run shows installs and disabled/legacy jobs that would be parked.
+#    The separately managed egress proxy is preserved.
 bash cabinet/scripts/deploy-mac.sh --all --dry-run
 bash cabinet/scripts/deploy-mac.sh --all
 ```
