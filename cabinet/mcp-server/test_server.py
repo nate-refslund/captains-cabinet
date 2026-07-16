@@ -604,11 +604,11 @@ def test_cost_project_filter() -> None:
     import server as srv
     orig = srv._redis_hgetall
     srv._redis_hgetall = lambda key: {
-        "cto_sensed_cost_micro": "5000000",
-        "cto_sensed_input": "1000",
-        "cto_sensed_output": "400",
-        "cto_sensed_cache_write": "0",
-        "cto_sensed_cache_read": "0",
+        "cto_acme_cost_micro": "5000000",
+        "cto_acme_input": "1000",
+        "cto_acme_output": "400",
+        "cto_acme_cache_write": "0",
+        "cto_acme_cache_read": "0",
         "cto_cabinet_cost_micro": "500000",
         "cto_cabinet_input": "100",
         "cto_cabinet_output": "50",
@@ -616,16 +616,16 @@ def test_cost_project_filter() -> None:
         "cto_cabinet_cache_read": "0",
     }
     try:
-        result = srv.tool_cost_summary({"date": "2026-04-29", "project": "sensed"})
+        result = srv.tool_cost_summary({"date": "2026-04-29", "project": "acme"})
         projects = list(result.get("by_project", {}).keys())
-        if projects == ["sensed"]:
-            ok("cost T-4: project filter → only 'sensed' in by_project")
+        if projects == ["acme"]:
+            ok("cost T-4: project filter → only 'acme' in by_project")
         else:
             fail("cost T-4: project filter", f"got {projects}")
         # project=None (no filter) should return both
         result2 = srv.tool_cost_summary({"date": "2026-04-29"})
         p2 = set(result2.get("by_project", {}).keys())
-        if "sensed" in p2 and "cabinet" in p2:
+        if "acme" in p2 and "cabinet" in p2:
             ok("cost T-4: no project filter → all projects present")
         else:
             fail("cost T-4: no project filter", f"got {p2}")
@@ -759,13 +759,13 @@ def test_cost_malformed_field() -> None:
     orig = srv._redis_hgetall
     srv._redis_hgetall = lambda key: {
         "cto_BAD!_cost_micro": "999999",   # invalid dim name mid-token
-        "cto_sensed_NOTADIM": "777",       # unknown dim
+        "cto_acme_NOTADIM": "777",       # unknown dim
         "just_one_part": "111",            # too short (only 1 part if split by _)
-        "cto_sensed_cost_micro": "2000000",  # valid pool field
-        "cto_sensed_input": "500",
-        "cto_sensed_output": "200",
-        "cto_sensed_cache_write": "0",
-        "cto_sensed_cache_read": "0",
+        "cto_acme_cost_micro": "2000000",  # valid pool field
+        "cto_acme_input": "500",
+        "cto_acme_output": "200",
+        "cto_acme_cache_write": "0",
+        "cto_acme_cache_read": "0",
     }
     try:
         result = srv.tool_cost_summary({"date": "2026-04-28"})
