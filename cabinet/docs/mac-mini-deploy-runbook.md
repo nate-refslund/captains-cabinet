@@ -40,7 +40,7 @@ This document is opinionated and idempotent — every step can be re-run safely.
 ```bash
 mkdir -p ~/work
 cd ~/work
-git clone https://github.com/nate-refslund/captains-cabinet.git
+git clone <your-fork-url> captains-cabinet
 cd captains-cabinet
 git checkout claude/convergence-v2    # OR master once this branch is merged
 ```
@@ -211,7 +211,7 @@ verified recovery point. This does not stash, reset, fetch, stop services, or
 print secrets:
 
 ```bash
-bash cabinet/scripts/pre-dogfood-snapshot.sh --root /Users/nate/captains-cabinet
+bash cabinet/scripts/pre-dogfood-snapshot.sh --root /Users/<captain>/captains-cabinet
 ```
 
 The mode-700 destination contains a verified all-refs Git bundle, exact dirty
@@ -386,7 +386,7 @@ tmux capture-pane -t officer-bakery-ceo -p | grep -i scheduled
 Officers run unattended with full host shell access, so they self-install
 plugins/MCPs via the `claude plugin` / `claude mcp` CLI. The only things they
 *can't* do alone are inherently-interactive auth prompts — `gh auth login`
-(needed once for private plugin marketplaces like STEP-Network/dev-tasks),
+(needed once for private plugin marketplaces, e.g. a Monday-integration plugin),
 `claude /login` if you're not using an API key, OAuth device-code pastes.
 
 Do those once by attaching to a live officer session and typing as the user:

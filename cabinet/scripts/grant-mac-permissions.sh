@@ -10,19 +10,23 @@
 #   2. Tell the Captain which apps need Allow
 #   3. Verify (where tools support a check) before moving on
 #
-# Permissions needed for the Captain-layer:
+# Permissions needed for the Captain-layer (framework-required tools only —
+# these run on every deployment, opt-in sensor layer or not):
 #
-#   - Screen Recording        : screenpipe + cua-driver + (Cabinet Chrome to
-#                                screenshot itself if you ever want it to)
-#   - Accessibility           : cua-driver (clicks/types via AX API),
-#                                screenpipe (window/app context)
-#   - Microphone              : screenpipe (audio transcription)
-#   - Input Monitoring        : screenpipe (optional — keyboard/clipboard
-#                                events for activity timeline)
+#   - Screen Recording        : cua-driver + (Cabinet Chrome to screenshot
+#                                itself if you ever want it to)
+#   - Accessibility           : cua-driver (clicks/types via AX API)
 #   - Automation              : cua-driver (cross-app scripting hooks)
 #   - Full Disk Access        : Backup script (cabinet/scripts/backup.sh)
 #                                if it needs to read ~/Library/Application Support
 #                                of other apps; OPTIONAL.
+#
+# If you also opted into the built-in screenpipe personal-source adapter
+# (instance/config/sources.yml names it — see instance/flavor-a/README.md),
+# that adapter needs ITS OWN Screen Recording / Accessibility / Microphone /
+# Input Monitoring grants — walked through in that same README, not here
+# (R168, 2026-07-16: this script no longer names a specific personal-
+# productivity tool a fresh Captain hasn't necessarily chosen).
 
 set -uo pipefail
 
@@ -56,28 +60,18 @@ echo "  capability macOS will prompt you — click Allow and re-run this"
 echo "  script."
 echo ""
 
-# 1) Screen Recording — screenpipe + cua-driver
-echo "[1/5] Screen Recording (screenpipe + cua-driver)"
+# 1) Screen Recording — cua-driver
+echo "[1/3] Screen Recording (cua-driver)"
 open_pane "ScreenCapture"
-pause_for_captain "Grant Screen Recording to: Terminal (or iTerm), screenpipe, cua-driver, Google Chrome"
+pause_for_captain "Grant Screen Recording to: Terminal (or iTerm), cua-driver, Google Chrome"
 
-# 2) Accessibility — cua-driver clicks/types, screenpipe window context
-echo "[2/5] Accessibility (cua-driver + screenpipe)"
+# 2) Accessibility — cua-driver clicks/types
+echo "[2/3] Accessibility (cua-driver)"
 open_pane "Accessibility"
-pause_for_captain "Grant Accessibility to: cua-driver, screenpipe, Terminal (so launched processes inherit)"
+pause_for_captain "Grant Accessibility to: cua-driver, Terminal (so launched processes inherit)"
 
-# 3) Microphone — screenpipe audio capture
-echo "[3/5] Microphone (screenpipe audio transcription)"
-open_pane "Microphone"
-pause_for_captain "Grant Microphone to: screenpipe"
-
-# 4) Input Monitoring — screenpipe optional keyboard/clipboard events
-echo "[4/5] Input Monitoring (screenpipe — OPTIONAL, captures keystroke timeline)"
-open_pane "ListenEvent"
-pause_for_captain "If you want keyboard/clipboard timeline: grant Input Monitoring to screenpipe. (Skip with Enter if not.)"
-
-# 5) Automation — cua-driver scripting cross-app
-echo "[5/5] Automation (cua-driver cross-app scripting)"
+# 3) Automation — cua-driver scripting cross-app
+echo "[3/3] Automation (cua-driver cross-app scripting)"
 open_pane "Automation"
 pause_for_captain "Grant Automation entries that say 'Terminal/cua-driver wants to control X' as they appear"
 
@@ -97,13 +91,9 @@ else
   warn "cua-driver not installed — skipping verification (run install-mac-tools.sh first)"
 fi
 
-# Verify screenpipe (if running)
-if pgrep -f screenpipe >/dev/null 2>&1; then
-  ok "screenpipe process detected"
-else
-  warn "screenpipe not running — start it via: brew services start screenpipe"
-fi
-
+echo ""
+echo "  (If you opted into the screenpipe personal-source adapter, verify"
+echo "  and grant its permissions separately per instance/flavor-a/README.md.)"
 echo ""
 echo "==========================================="
 echo "  Permissions step complete."

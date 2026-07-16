@@ -1,6 +1,6 @@
 #!/bin/bash
 # FW-076 pool-mode harness: generalized /workspace/<slug>/ write-gate coverage
-# Exercises 3 representative slugs (sensed, step-network, a1) across 9 attack
+# Exercises 3 representative slugs (sensed, acme-org, a1) across 9 attack
 # classes + 12 ALLOW probes (false-positive guards).
 #
 # 27 BLOCK probes (3 slugs × 9 attack classes: redirect, sed-i, tee, cp-last,
@@ -44,19 +44,19 @@ probe "sensed P8 perl -i"            'perl -i -pe "s/x/y/" /workspace/sensed/fil
 probe "sensed P9 tar -C"             'tar -xf archive.tar -C /workspace/sensed/'                   BLOCK
 
 # ------------------------------------------------------------------
-# SLUG: step-network (hyphenated slug — validates [a-z0-9-]* accepts hyphens)
+# SLUG: acme-org (hyphenated slug — validates [a-z0-9-]* accepts hyphens)
 # ------------------------------------------------------------------
 echo ""
-echo "=== BLOCK: slug=step-network (must BLOCK for non-CTO) ==="
-probe "step-net P1 redirect"         'echo x > /workspace/step-network/README.md'                  BLOCK
-probe "step-net P2 sed -i"           'sed -i "s/x/y/" /workspace/step-network/src/app.ts'          BLOCK
-probe "step-net P3 tee"              'tee /workspace/step-network/log.md'                           BLOCK
-probe "step-net P4 cp last-arg"      'cp /tmp/x /workspace/step-network/dst'                       BLOCK
-probe "step-net P5 cp -t"            'cp -t /workspace/step-network/ /tmp/src'                     BLOCK
-probe "step-net P6 cp --target-dir"  'cp --target-directory=/workspace/step-network/ /tmp/src'     BLOCK
-probe "step-net P7 patch"            'patch /workspace/step-network/foo < fix.patch'               BLOCK
-probe "step-net P8 perl -i"          'perl -i -pe "s/x/y/" /workspace/step-network/file.ts'       BLOCK
-probe "step-net P9 tar -C"           'tar -xf archive.tar -C /workspace/step-network/'            BLOCK
+echo "=== BLOCK: slug=acme-org (must BLOCK for non-CTO) ==="
+probe "acme-org P1 redirect"         'echo x > /workspace/acme-org/README.md'                  BLOCK
+probe "acme-org P2 sed -i"           'sed -i "s/x/y/" /workspace/acme-org/src/app.ts'          BLOCK
+probe "acme-org P3 tee"              'tee /workspace/acme-org/log.md'                           BLOCK
+probe "acme-org P4 cp last-arg"      'cp /tmp/x /workspace/acme-org/dst'                       BLOCK
+probe "acme-org P5 cp -t"            'cp -t /workspace/acme-org/ /tmp/src'                     BLOCK
+probe "acme-org P6 cp --target-dir"  'cp --target-directory=/workspace/acme-org/ /tmp/src'     BLOCK
+probe "acme-org P7 patch"            'patch /workspace/acme-org/foo < fix.patch'               BLOCK
+probe "acme-org P8 perl -i"          'perl -i -pe "s/x/y/" /workspace/acme-org/file.ts'       BLOCK
+probe "acme-org P9 tar -C"           'tar -xf archive.tar -C /workspace/acme-org/'            BLOCK
 
 # ------------------------------------------------------------------
 # SLUG: a1 (minimal valid slug — single char + digit, validates [a-z0-9] first-char)

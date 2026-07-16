@@ -3,7 +3,7 @@
 # Preset validation gate. Run by cabinet-spawn.sh BEFORE any container
 # starts. Non-zero exit aborts spawn.
 #
-# Mirrors the pattern in presets/work/validate.sh / presets/step-network/validate.sh.
+# Mirrors the pattern in presets/work/validate.sh.
 # Checks required files, addenda content, preset.yml schema, and agent role-defs.
 # Note: agents/_lane-ceo.md.template is an archetype (not *.md) — the role-def
 # loop intentionally skips it; generated lane CEOs live in instance/agents/.

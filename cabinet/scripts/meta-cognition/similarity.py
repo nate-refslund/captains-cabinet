@@ -33,7 +33,7 @@ STOP = set(
     these those we you i they our your their not no do does did can will shall
     should would could about into over under than from at by per via vs so just
     only also any all each new rule when before after onto every always never
-    officer cabinet captain nate must may make made get got use used""".split()
+    officer cabinet captain must may make made get got use used""".split()
 )
 
 

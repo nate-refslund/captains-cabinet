@@ -2,10 +2,11 @@
 # Portfolio preset — one persistent Chair + per-lane CEO officers, for a
 # Captain running a PORTFOLIO of products/ventures (lanes) under one Cabinet.
 #
-# Differs from `work` (five functional officers on one product) and from
-# `step-network` (functional officers pooled across projects): the portfolio
-# roster is ORGANIZATIONAL, not functional. One Chair coordinates; one CEO
-# officer owns each lane end-to-end. Functional depth comes from HATS
+# Differs from `work` (five functional officers on one product) and from a
+# pooled-functional shape (functional officers pooled across multiple
+# projects): the portfolio roster is ORGANIZATIONAL, not functional. One
+# Chair coordinates; one CEO officer owns each lane end-to-end. Functional
+# depth comes from HATS
 # (framework/roles/lifecycle.py assign_hat + framework/roles/hat_graduation.py
 # graduation on usage evidence), not from extra fulltime officers, and from
 # Sonnet crew subagents for execution + fresh-context review.

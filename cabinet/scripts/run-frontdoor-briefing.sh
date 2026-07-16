@@ -86,7 +86,7 @@ export CABINET_SENTRY_PROJECT="${CABINET_SENTRY_PROJECT:-$(_env_key CABINET_SENT
 # launchd hands us a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin) that EXCLUDES
 # Homebrew. The intake module's stdlib backend shells out to `redis-cli`, which
 # lives in /opt/homebrew/bin — without this the briefing crashes at enqueue with
-# `FileNotFoundError: redis-cli` and NO briefing reaches Nate (observed
+# `FileNotFoundError: redis-cli` and NO briefing reaches the Captain (observed
 # 2026-06-23 07:30). Prepend Homebrew bin so redis-cli (and the brew python)
 # resolve. Matches this script's existing /opt/homebrew/bin/python3.12 default.
 export PATH="/opt/homebrew/bin:$PATH"
@@ -107,7 +107,7 @@ cd "$ROOT" || exit 1
 # Wake-race guard (observed 2026-06-30 + 07-01): launchd fires this briefing when
 # the Mac WAKES from overnight sleep, before the network stack is ready — so
 # channel.send fails "telegram transport error: URLError" and NO briefing reaches
-# Nate until a manual re-run. Wait until Telegram's API is actually reachable (up
+# the Captain until a manual re-run. Wait until Telegram's API is actually reachable (up
 # to ~3 min) before composing/sending, so the cron self-heals the wake race.
 # Transient blips DURING the send are still caught by channel.send's transport
 # retry; anything still missed stays pending and is recovered by the next run's
