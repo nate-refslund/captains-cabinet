@@ -73,6 +73,28 @@ add_section() {
   fi
 }
 
+# BC boot-pack (memwave3 2026-07-15, CG-gated germline patch — amendment doc
+# docs/proposals/germline-session-start-digest-addendum-2026-07-15.md): if
+# the distilled per-topic captain-law digest exists, inject it IN FULL and
+# FIRST. The digest reaches this path ONLY via memory-distill.py --apply
+# after Captain review (default runs write a .proposal.md that is never
+# injected), and the same ceremony adds the digest to the captain-law write
+# guards (pre-tool-use.sh §5/§5c + officer-sandbox.sh deny) — what boots
+# here is reviewed content officers cannot rewrite. The tail-40 ledger
+# sections below STAY — they carry the newest law; the digest restores boot
+# visibility of everything OLDER than the tails. Captain-side kill switch:
+# delete captain-law-digest.md (officer sessions cannot — rm is guarded).
+# Backslashes are doubled because $context flows through printf %b at the
+# bottom of this hook: doubling makes the %b expansion a byte-exact no-op
+# for digest content (digest text can never be %b-mangled), and the
+# unchanged jq -Rs envelope below handles all JSON quoting exactly as
+# before — digest content structurally cannot break hookSpecificOutput.
+if [ -f "$TRIPLET_DIR/captain-law-digest.md" ]; then
+  body="$(cat "$TRIPLET_DIR/captain-law-digest.md" 2>/dev/null)"
+  body="${body//\\/\\\\}"
+  add_section "Captain Law Digest (distilled index — full ledgers remain authoritative)" "$body"
+fi
+
 if [ -f "$TRIPLET_DIR/captain-patterns.md" ]; then
   # W8 (agi-wires dead-wire #8): patterns/intents are APPEND-ONLY ledgers —
   # the freshest encoded preferences live at the TAIL. The old `head -100`

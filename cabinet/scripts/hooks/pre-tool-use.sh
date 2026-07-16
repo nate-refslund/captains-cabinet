@@ -1287,8 +1287,20 @@ if [ "$TOOL_NAME" = "Edit" ] || [ "$TOOL_NAME" = "Write" ]; then
     # memory/skills/evolved/ review — Captain-applied, per the audit.
     # KEEP IN LOCKSTEP with CAPLAW_PATH_RE in §5c below — a path added here
     # without §5c reopens the bash-redirect write bypass for it.
-    *"shared/interfaces/captain-patterns.md"|*"shared/interfaces/captain-intents.md"|*"shared/interfaces/captain-decisions.md"|*"memory/skills/"*)
-      echo "BLOCKED: Captain-law file — officer-authored text may not become standing law via direct Write/Edit (no provenance). Append to captain-patterns / captain-intents / captain-decisions through the sanctioned interface: cabinet/scripts/append-interface.sh <target> with the entry on stdin (append-only, provenance-stamped). memory/skills/ and append-interface.sh itself are Captain-applied only — propose the change to the Captain." >&2
+    # BC BOOT-PACK (2026-07-15, ceremony addendum docs/proposals/germline-
+    # session-start-digest-addendum-2026-07-15.md): captain-law-digest.md
+    # joins the plane — session-start injects it IN FULL and FIRST, so an
+    # officer-writable digest would reopen the exact injection-persistence
+    # channel this arm closes for the ledgers. Its ONLY sanctioned writer is
+    # cabinet/scripts/memory-distill.py --apply (Captain-reviewed, run from
+    # an unsandboxed Captain/CoS context; the invocation carries no
+    # write-shaped token so it passes §5c). The distiller script itself is
+    # guarded too — same doorway protection as append-interface.sh. The
+    # .proposal.md review file is DELIBERATELY outside the plane: --apply
+    # refuses unless it byte-matches a fresh ledger render, so tampering it
+    # can never reach boot.
+    *"shared/interfaces/captain-patterns.md"|*"shared/interfaces/captain-intents.md"|*"shared/interfaces/captain-decisions.md"|*"shared/interfaces/captain-law-digest.md"|*"memory/skills/"*|*"cabinet/scripts/memory-distill.py")
+      echo "BLOCKED: Captain-law file — officer-authored text may not become standing law via direct Write/Edit (no provenance). Append to captain-patterns / captain-intents / captain-decisions through the sanctioned interface: cabinet/scripts/append-interface.sh <target> with the entry on stdin (append-only, provenance-stamped). captain-law-digest.md is the machine-promoted boot index: regenerate via python3.12 cabinet/scripts/memory-distill.py, Captain review, then --apply — never hand-edit it or the distiller. memory/skills/ and append-interface.sh itself are Captain-applied only — propose the change to the Captain." >&2
       exit 2
       ;;
     *"cabinet/.env"*)
@@ -1736,8 +1748,14 @@ if [ "$TOOL_NAME" = "Bash" ]; then
   # Fallback to the un-normalized copy if python3 is unavailable.
   CMD_SQ=$(printf '%s' "$CMD_SQ" | python3 -c 'import os,re,sys; _n=lambda t:(lambda p:p+"/" if t.endswith("/") and not p.endswith("/") else p)(os.path.normpath(t)); sys.stdout.write(re.sub(r"[^\s;|&<>()\x22\x27\x60]+",lambda m:_n(m.group(0)),sys.stdin.read()))' 2>/dev/null || printf '%s' "$CMD_SQ")
   # The captain-law plane: 3 append-only ledgers + the skills dir + the
-  # sanctioned appender itself. KEEP IN LOCKSTEP with the §5 CAPTAIN-LAW arm.
-  CAPLAW_PATH_RE='shared/interfaces/captain-(patterns|intents|decisions)\.md|memory/skills/|cabinet/scripts/append-interface\.sh'
+  # sanctioned appender itself + (BC boot-pack 2026-07-15) the boot-injected
+  # captain-law-digest.md and its sanctioned writer memory-distill.py
+  # (doorway protection, same as the appender). Bare distiller invocations —
+  # `python3.12 cabinet/scripts/memory-distill.py [--apply|--check]` — match
+  # no write arm below and stay ALLOWED; the .proposal.md review file is
+  # deliberately outside the plane (its \.md anchor cannot match the
+  # .proposal.md suffix). KEEP IN LOCKSTEP with the §5 CAPTAIN-LAW arm.
+  CAPLAW_PATH_RE='shared/interfaces/captain-(patterns|intents|decisions|law-digest)\.md|memory/skills/|cabinet/scripts/append-interface\.sh|cabinet/scripts/memory-distill\.py'
   if printf '%s' "$CMD_SQ" | grep -qE "$CAPLAW_PATH_RE"; then
     CAPLAW_TGT="[\"']?[^[:space:];|&<>\"']*($CAPLAW_PATH_RE)[^[:space:];|&<>\"']*"
     ANCH='(^|[;&|`([:space:]])'
@@ -1772,7 +1790,7 @@ if [ "$TOOL_NAME" = "Bash" ]; then
     #    working), so removal of a ledger/skill/the appender is write-shaped
     CAPLAW_WRITE_RE="${CAPLAW_WRITE_RE}|${ANCH}(rm|rmdir|unlink|shred)[[:space:]]+([^;|&]*[[:space:]])?${CAPLAW_TGT}"
     if printf '%s' "$CMD_SQ" | grep -qE "$CAPLAW_WRITE_RE"; then
-      echo "BLOCKED: Captain-law file — officer-authored text may not become standing law via a direct write (no provenance). This Bash command contains a write-shaped operation targeting captain-patterns/captain-intents/captain-decisions, memory/skills/, or the append interface (reads like cat/grep/less are allowed). Append to the three ledgers through the sanctioned interface: cabinet/scripts/append-interface.sh <target> with the entry on stdin (append-only, provenance-stamped). memory/skills/ and append-interface.sh itself are Captain-applied only — propose the change to the Captain." >&2
+      echo "BLOCKED: Captain-law file — officer-authored text may not become standing law via a direct write (no provenance). This Bash command contains a write-shaped operation targeting captain-patterns/captain-intents/captain-decisions, captain-law-digest (boot-injected index), memory/skills/, the append interface, or the digest distiller (reads like cat/grep/less are allowed). Append to the three ledgers through the sanctioned interface: cabinet/scripts/append-interface.sh <target> with the entry on stdin (append-only, provenance-stamped). captain-law-digest.md regenerates only via python3.12 cabinet/scripts/memory-distill.py + Captain review + --apply. memory/skills/, append-interface.sh and memory-distill.py themselves are Captain-applied only — propose the change to the Captain." >&2
       exit 2
     fi
   fi

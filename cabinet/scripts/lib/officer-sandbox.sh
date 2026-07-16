@@ -112,8 +112,14 @@ officer_sandbox_write_profile() {
     fi
     # Kernel-enforced Captain-law plane.  This catches redirects, interpreters,
     # split variables, symlinks, and any future tool that ultimately writes the
-    # same vnode.
-    for _ledger in captain-patterns.md captain-intents.md captain-decisions.md; do
+    # same vnode.  captain-law-digest.md (BC boot-pack 2026-07-15, ceremony
+    # addendum docs/proposals/germline-session-start-digest-addendum-
+    # 2026-07-15.md) is the boot-injected distilled law index: sandboxed
+    # officers never write or unlink it — its only sanctioned writer,
+    # memory-distill.py --apply (Captain-reviewed), runs from an unsandboxed
+    # Captain/CoS context.  The .proposal.md review sibling stays writable
+    # (harmless: --apply refuses on any divergence from a fresh render).
+    for _ledger in captain-patterns.md captain-intents.md captain-decisions.md captain-law-digest.md; do
       printf '(deny file-write* (literal "%s/shared/interfaces/%s"))\n' "$_quoted_root" "$_ledger"
       printf '(deny file-write-unlink (literal "%s/shared/interfaces/%s"))\n' "$_quoted_root" "$_ledger"
     done
