@@ -68,8 +68,10 @@ marker fails closed and refuses new officer boots.
 - Overlong `reply_current` text and unsupported reactions fail with zero
   Telegram requests; arbitrary/new-message sends remain blocked.
 - The authority resolver reports `earn_up`; spend caps are non-zero.
-- Evidence projection, Cabinet Doctor, fidelity, backup restore, and rollback
-  drills are green and recorded before the 72-hour clock begins.
+- Evidence projection, Cabinet Doctor, the bounded F1 canary with
+  `F1_GATHER=1`, backup restore, and rollback drills are green and recorded
+  before the 72-hour clock begins. The frozen regression-corpus fingerprint
+  is an integrity check only; it does not prove the gather-first behavior ran.
 - A synthetic trigger is delivered with an observe-only receipt, its exact
   `cabinet/scripts/hooks/observe-ack.sh <id>` command succeeds, pending returns
   to zero, and replaying the same receipt is an idempotent `already_clear`

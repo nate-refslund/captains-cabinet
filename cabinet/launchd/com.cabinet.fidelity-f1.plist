@@ -8,10 +8,12 @@
      the 0.083 baseline — the fidelity-decay canary. Exit nonzero + assert
      message in the log on regression. Leaked cases are counted + EXCLUDED,
      never silently scored. D1 knobs ON via the wrapper defaults + the
-     services.yml row env (F1_WITH_INTENT=1, F1_EMIT_SCORED=1): every scored
-     case persists a fidelity-case-scored consequence event — labels for the
-     D5/judge-calibration chain, never promotion fuel (label floor + CG-10
-     stay fail-closed). Lanes extend via F1_ROLES (default cos).
+     services.yml row env (F1_WITH_INTENT=1, F1_EMIT_SCORED=1,
+     F1_GATHER=1): every scored case persists a fidelity-case-scored
+     consequence event and the officer uses the leak-guarded gather-first
+     path — labels for the D5/judge-calibration chain, never promotion fuel
+     (label floor + CG-10 stay fail-closed). Lanes extend via F1_ROLES
+     (default cos).
 
      No CABINET_PROBES_ENABLED here: F1 is an eval batch, not an outcome probe;
      installing this plist is itself the deliberate scheduling act.
@@ -51,6 +53,8 @@
     <key>F1_WITH_INTENT</key>
     <string>1</string>
     <key>F1_EMIT_SCORED</key>
+    <string>1</string>
+    <key>F1_GATHER</key>
     <string>1</string>
   </dict>
   <key>StartCalendarInterval</key>
