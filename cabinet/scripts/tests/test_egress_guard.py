@@ -21,7 +21,9 @@ from __future__ import annotations
 
 import os
 import plistlib
+import re
 import shutil
+import site
 import socket
 import subprocess
 import sys
@@ -46,6 +48,12 @@ LAUNCHD_TEMPLATE = REPO / "cabinet" / "launchd" / "com.cabinet.egress-proxy.temp
 
 # --------------------------------------------------------------- helpers ----
 def _run(args, root: Path, state: Path, extra_env=None):
+    # Redirecting HOME hides user-site packages, but adding the complete
+    # sys.path to PYTHONPATH is unsafe: it promotes the stdlib directory ahead
+    # of the interpreter's bootstrap paths and can make even `import io` fail.
+    # Carry only site-package locations so PyYAML remains available without
+    # changing Python's standard-library resolution.
+    site_paths = [*site.getsitepackages(), site.getusersitepackages()]
     env = {
         **os.environ,
         "CABINET_ROOT": str(root),
@@ -53,7 +61,7 @@ def _run(args, root: Path, state: Path, extra_env=None):
         "CABINET_PYTHON": sys.executable,   # yaml-bearing interpreter parity
         # HOME is intentionally redirected below, which would otherwise hide
         # this interpreter's user-site PyYAML on macOS system Python.
-        "PYTHONPATH": os.pathsep.join(path for path in sys.path if path),
+        "PYTHONPATH": os.pathsep.join(dict.fromkeys(path for path in site_paths if path)),
         "HOME": str(root),                  # keep any fallback under tmp
         # Unit tests own their subprocess lifetime directly. Production macOS
         # resolves auto -> launchd; pin child here so the hermetic suite never
@@ -436,6 +444,17 @@ def test_enable_disable_roundtrip(tmp_path, stop_guard):
     state = tmp_path / "state"
     stop_guard.append((root, state))
     inst = root / "instance" / "config" / "egress.yml"
+    seeded_default = root / "framework" / "defaults" / "egress.yml"
+    seed = seeded_default.read_text(encoding="utf-8")
+    seed = re.sub(
+        r"^proxy_port:.*$",
+        f"proxy_port: {_free_port()}",
+        seed,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    seeded_default.write_text(seed, encoding="utf-8")
+    assert not inst.exists(), "enable must exercise fresh-config materialization"
 
     en = _run(["enable"], root, state)
     assert en.returncode == 0, en.stderr
