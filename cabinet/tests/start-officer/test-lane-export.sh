@@ -9,7 +9,7 @@
 # that scopes the session. This test pins that contract.
 #
 # Asserts (Linux start-officer.sh, via CABINET_TEST_DRY_RUN=1):
-#   - pool mode (--project sensed) exports CABINET_LANE=sensed in EXPORT_VARS
+#   - pool mode (--project acme) exports CABINET_LANE=acme in EXPORT_VARS
 #   - CABINET_LANE matches CABINET_ACTIVE_PROJECT (same machinery, one source)
 #   - legacy mode (no active-project.txt) does NOT leak a CABINET_LANE export
 #     (so resolve_lane falls through to PROJECT/None — fail-safe to unmeasured)
@@ -54,39 +54,39 @@ export CABINET_MCP_SCOPE_FILE="$TEST_SCOPE"
 # assertions below are identical under both bash versions.
 export TELEGRAM__TOKEN="x-test-token-bash32-fallback"
 
-# R061 (instance-split) removed cabinet/env/sensed.env from the repo — only
-# _template.env ships; per-project env is provisioned per deployment. Pool
-# mode hard-requires the file, so provision a SCRATCH fixture from the
-# template and clean it on ANY exit (crash included). Guard: never clobber a
-# genuinely provisioned file on a live box.
-SENSED_ENV="$ROOT/cabinet/env/sensed.env"
-SENSED_CREATED=0
-if [ ! -f "$SENSED_ENV" ]; then
-  cp "$ROOT/cabinet/env/_template.env" "$SENSED_ENV"
-  SENSED_CREATED=1
+# R061 (instance-split) removed per-project cabinet/env/<slug>.env files from
+# the repo — only _template.env ships; per-project env is provisioned per
+# deployment. Pool mode hard-requires the file, so provision a SCRATCH
+# fixture from the template and clean it on ANY exit (crash included). Guard:
+# never clobber a genuinely provisioned file on a live box.
+FIXTURE_ENV="$ROOT/cabinet/env/acme.env"
+FIXTURE_CREATED=0
+if [ ! -f "$FIXTURE_ENV" ]; then
+  cp "$ROOT/cabinet/env/_template.env" "$FIXTURE_ENV"
+  FIXTURE_CREATED=1
 fi
 cleanup() {
   rm -f "$TEST_SCOPE"
-  if [ "$SENSED_CREATED" -eq 1 ]; then rm -f "$SENSED_ENV"; fi
+  if [ "$FIXTURE_CREATED" -eq 1 ]; then rm -f "$FIXTURE_ENV"; fi
 }
 trap cleanup EXIT
 
 # ----------------------------------------------------------------------------
 # L1: Pool mode exports CABINET_LANE=<slug> (derived from --project).
 # ----------------------------------------------------------------------------
-output=$(bash "$SCRIPT" cto --project sensed 2>&1)
+output=$(bash "$SCRIPT" cto --project acme 2>&1)
 rc=$?
 if [ "$rc" -ne 0 ]; then
   fail "L1: pool mode exited rc=$rc — $output"
 else
-  if echo "$output" | grep -q 'CABINET_LANE=sensed'; then
-    pass "L1: pool mode exports CABINET_LANE=sensed (resolve_lane's load-bearing source)"
+  if echo "$output" | grep -q 'CABINET_LANE=acme'; then
+    pass "L1: pool mode exports CABINET_LANE=acme (resolve_lane's load-bearing source)"
   else
-    fail "L1: pool mode missing CABINET_LANE=sensed export — $(echo "$output" | grep '^EXPORT_VARS=')"
+    fail "L1: pool mode missing CABINET_LANE=acme export — $(echo "$output" | grep '^EXPORT_VARS=')"
   fi
   # The lane MUST be derived from the same machinery as CABINET_ACTIVE_PROJECT.
-  if echo "$output" | grep -q 'CABINET_ACTIVE_PROJECT=sensed' \
-    && echo "$output" | grep -q 'CABINET_LANE=sensed'; then
+  if echo "$output" | grep -q 'CABINET_ACTIVE_PROJECT=acme' \
+    && echo "$output" | grep -q 'CABINET_LANE=acme'; then
     pass "L1b: CABINET_LANE tracks CABINET_ACTIVE_PROJECT (one source of truth)"
   else
     fail "L1b: CABINET_LANE/CABINET_ACTIVE_PROJECT diverged"
