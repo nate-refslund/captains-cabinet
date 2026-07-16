@@ -45,6 +45,13 @@
 #      Exists-without-schg = boundary gap (DEAD); absent = legal (SKIP —
 #      lock itself skips absent paths). Read-only: stat/find only, never
 #      chflags, never sudo.
+#  11. retrieval-eval nightly verdict (refinement gate, 2026-07-15): latest
+#      line of cabinet/logs/retrieval-eval-history.jsonl via
+#      retrieval-eval-nightly.sh --probe (pure file+env inspection — no DB,
+#      no network). Floor breach or >48h-stale verdict = WARN/AMBER (quality
+#      regression ≠ dead config — the services section already DEADs an
+#      unloaded row); credless box (clean-room/CI) = SKIP; staleness honors
+#      the post-wake grace below, one severity rung lower than stale_verdict.
 #
 # OUTPUT: one line per finding (OK / WARN / WAIVED / SKIP / DEAD), then either
 #   CABINET_DOCTOR GREEN (checks=N warn=N waived=N)
@@ -603,9 +610,29 @@ fi
 # stamped cabinet_embedding_meta row. Keys are regex-extracted, NEVER sourced
 # and NEVER printed (same discipline as the mcp env check above).
 # ============================================================
-ES_PROVIDER="${EMBED_PROVIDER:-voyage}"
-ES_MODEL="${EMBED_MODEL:-voyage-4-large}"
-ES_DIMS="${EMBED_DIMS:-1024}"
+# Configured-seam side resolves env > cabinet/.env > compiled default (review
+# fix 2026-07-15) — the SAME chain memory.sh uses at stamp/search time. The
+# launchd doctor job carries no EMBED_* env, so a seam configured in
+# cabinet/.env must resolve here too, or the dims-drift compare below runs
+# against the compiled default: a permanent spurious WARN after a legitimate
+# switch+re-embed, or default-vs-default masking a real drift. Same
+# grep-extract discipline as ES_VKEY/ES_NEON below; these are plain labels,
+# never secrets.
+ES_PROVIDER="${EMBED_PROVIDER:-}"
+ES_MODEL="${EMBED_MODEL:-}"
+ES_DIMS="${EMBED_DIMS:-}"
+if [ -z "$ES_PROVIDER" ] && [ -f "$REPO_ROOT/cabinet/.env" ]; then
+  ES_PROVIDER="$(grep -E '^EMBED_PROVIDER=' "$REPO_ROOT/cabinet/.env" | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")"
+fi
+if [ -z "$ES_MODEL" ] && [ -f "$REPO_ROOT/cabinet/.env" ]; then
+  ES_MODEL="$(grep -E '^EMBED_MODEL=' "$REPO_ROOT/cabinet/.env" | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")"
+fi
+if [ -z "$ES_DIMS" ] && [ -f "$REPO_ROOT/cabinet/.env" ]; then
+  ES_DIMS="$(grep -E '^EMBED_DIMS=' "$REPO_ROOT/cabinet/.env" | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")"
+fi
+ES_PROVIDER="${ES_PROVIDER:-voyage}"
+ES_MODEL="${ES_MODEL:-voyage-4-large}"
+ES_DIMS="${ES_DIMS:-1024}"
 ES_VKEY="${VOYAGE_API_KEY:-}"
 if [ -z "$ES_VKEY" ] && [ -f "$REPO_ROOT/cabinet/.env" ]; then
   ES_VKEY="$(grep -E '^VOYAGE_API_KEY=' "$REPO_ROOT/cabinet/.env" | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")"
@@ -616,24 +643,103 @@ else
   warn "embed-seam — no VOYAGE_API_KEY resolvable: memory_search DEGRADED to keyless LEXICAL-ONLY (conceptual recall of law/knowledge reduced; rerank off). Set VOYAGE_API_KEY to restore hybrid+rerank retrieval."
 fi
 unset ES_VKEY
-# Best-effort dims-drift check — never fails the doctor. If the store is
-# reachable AND stamped, compare its stamped dims to the configured seam; an
-# unstamped store (no row) is silently skipped (not every deploy is stamped).
+# Dims-drift check — tri-state, never fails the doctor (worst = WARN). Since
+# the 2026-07-15 R4 follow-up, 046-embedding-meta.sql rides both apply lists
+# and load-preset.sh/cabinet-bootstrap.sh stamp-if-absent right after it, so
+# a stamped store is the NORM — and because a deploy never overwrites an
+# existing row (the first stamp is provenance; re-stamping is reserved for
+# the re-embed organ / a captain after a verified full backfill), a config
+# flip keeps WARNing here across officer restarts until the store is
+# genuinely re-embedded: match -> OK, mismatch -> WARN (a dims change without
+# a full re-embed backfill corrupts vector search). An estate that predates
+# the wiring reports SKIP "not yet stamped" until its next load-preset run;
+# no resolvable store / unreachable store stays a clean SKIP (a DB-less hatch
+# is a valid deliberate state — same discipline as the germline absent-path
+# skips). The connection string is never printed.
 ES_NEON="${NEON_CONNECTION_STRING:-}"
 if [ -z "$ES_NEON" ] && [ -f "$REPO_ROOT/cabinet/.env" ]; then
   ES_NEON="$(grep -E '^NEON_CONNECTION_STRING=' "$REPO_ROOT/cabinet/.env" | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")"
 fi
-if [ -n "$ES_NEON" ] && command -v psql >/dev/null 2>&1; then
-  ES_META_DIMS="$(PGCONNECT_TIMEOUT=5 psql "$ES_NEON" -tAc "SELECT dims FROM cabinet_embedding_meta WHERE id=1;" 2>/dev/null | tr -d '[:space:]')"
-  if [ -n "$ES_META_DIMS" ]; then
-    if [ "$ES_META_DIMS" = "$ES_DIMS" ]; then
-      ok "embed-seam — store stamped dims=$ES_META_DIMS matches configured EMBED_DIMS"
-    else
-      warn "embed-seam — DIMS DRIFT: store stamped dims=$ES_META_DIMS but EMBED_DIMS=$ES_DIMS — a full re-embed backfill is required before the switch takes effect"
-    fi
+if [ -z "$ES_NEON" ]; then
+  skip "embed-seam dims-drift — no NEON_CONNECTION_STRING resolvable (env or cabinet/.env); store provenance not checkable"
+elif ! command -v psql >/dev/null 2>&1; then
+  skip "embed-seam dims-drift — psql not on PATH; store provenance not checkable"
+elif ES_META_RAW="$(PGCONNECT_TIMEOUT=5 psql "$ES_NEON" -tAc "SELECT dims FROM cabinet_embedding_meta WHERE id=1;" 2>/dev/null)"; then
+  ES_META_DIMS="$(printf '%s' "$ES_META_RAW" | tr -d '[:space:]')"
+  if [ -z "$ES_META_DIMS" ]; then
+    skip "embed-seam dims-drift — store reachable but not yet stamped (no cabinet_embedding_meta row); the next load-preset.sh run stamps it"
+  elif [ "$ES_META_DIMS" = "$ES_DIMS" ]; then
+    ok "embed-seam — store stamped dims=$ES_META_DIMS matches configured EMBED_DIMS"
+  else
+    warn "embed-seam — DIMS DRIFT: store stamped dims=$ES_META_DIMS but EMBED_DIMS=$ES_DIMS — a full re-embed backfill is required before the switch takes effect"
   fi
+else
+  skip "embed-seam dims-drift — store unreachable or cabinet_embedding_meta absent (psql probe failed); not checkable this run"
 fi
-unset ES_NEON
+unset ES_NEON ES_META_RAW ES_META_DIMS
+
+# ============================================================
+# N2. captain-law-digest freshness (BC boot-pack, 2026-07-15)
+# The promoted digest (shared/interfaces/captain-law-digest.md) is
+# boot-injected IN FULL by the Captain-gated session-start patch, but the
+# source ledgers keep growing — a stale digest silently returns the fleet to
+# "older law is boot-invisible", masked by an authoritative-looking section.
+# memory-distill.py --check is READ-ONLY: it compares the digest's recorded
+# per-ledger sha256s to the live ledgers. Exit 0 fresh / 3 stale / 4 not in
+# use (no promoted digest — a sanctioned state incl. the kill switch, so no
+# noise) / 2 nothing to distill. Stale is WARN/AMBER, never DEAD: content is
+# a deterministic derivation and regeneration is Captain-gated (review +
+# --apply, standing handback) — the doctor's job is the loud tell, the
+# cross-officer retro's Part 5 owns acting on it.
+# ============================================================
+MD_SCRIPT="$REPO_ROOT/cabinet/scripts/memory-distill.py"
+if [ -f "$MD_SCRIPT" ]; then
+  "$PY" "$MD_SCRIPT" --check >/dev/null 2>&1
+  MD_RC=$?
+  case "$MD_RC" in
+    0) ok "captain-law-digest — fresh (recorded ledger hashes match live)" ;;
+    3) warn "captain-law-digest — STALE vs live captain-law ledgers: sessions boot an outdated law index. Regenerate: python3.12 cabinet/scripts/memory-distill.py → Captain review → --apply (docs/proposals/germline-session-start-digest-addendum-2026-07-15.md)" ;;
+    2|4) : ;;  # not in use / nothing to distill — silent by design
+    *) warn "captain-law-digest — --check probe failed rc=$MD_RC (distiller unrunnable?)" ;;
+  esac
+fi
+
+# ============================================================
+# 11. retrieval-eval nightly verdict — the refinement gate (2026-07-15)
+# The 03:50 retrieval-eval services row appends one verdict line/night to
+# cabinet/logs/retrieval-eval-history.jsonl, running the recall@k + MRR
+# floors in BOTH arms (production hybrid+rerank AND --no-rerank blended
+# order — rerank rescues pool damage, so only the blended arm catches a
+# weight/pool regression). This check reads ONLY that ledger through the
+# wrapper's --probe mode: pure file+env inspection, no DB, no network, no
+# secret values (creds resolvability is a NAME check, same discipline as
+# the mcp env probe above). Verdict ladder: floor breach / unmeasurable /
+# stale >48h = WARN (AMBER — retrieval quality regressed or the gate
+# stopped running; a consolidation/supersession/ranking wave must HOLD the
+# floors), never DEAD (quality regression ≠ dead config; the services
+# section above already DEADs an unloaded row). Credless boxes SKIP clean.
+# Staleness-class findings honor the same post-wake grace as stale_verdict
+# (the sleep-missed nightly coalesces within minutes of wake), one severity
+# rung lower: WARN outside the grace window, OK-with-note inside it.
+# ============================================================
+re_stale_verdict() { # staleness-class finding for the eval verdict ledger
+  if [ "$SECS_SINCE_WAKE" -lt "$WAKE_GRACE_S" ]; then
+    ok "$1 (post-wake grace: woke ${SECS_SINCE_WAKE}s ago < ${WAKE_GRACE_S}s — coalesced nightly should land shortly)"
+  else
+    warn "$1"
+  fi
+}
+RE_PROBE="$(bash cabinet/scripts/retrieval-eval-nightly.sh --probe 2>/dev/null)"
+case "$RE_PROBE" in
+  OK*)      ok "retrieval-eval — latest nightly verdict passed (${RE_PROBE#OK })" ;;
+  NOCREDS*) skip "retrieval-eval — no NEON_CONNECTION_STRING resolvable (clean-room/CI box; the gate is store-local by design — CI gates the ranking fingerprint instead)" ;;
+  BREACH*)  warn "retrieval-eval — FLOOR BREACH in latest nightly verdict (${RE_PROBE#BREACH }) — retrieval ranking regressed (weights/rerank/consolidation wave?); run bash cabinet/scripts/retrieval-eval-nightly.sh and root-cause before the next memory wave" ;;
+  NOTOK*)   warn "retrieval-eval — latest nightly verdict unmeasurable (${RE_PROBE#NOTOK }) — young store or setup error; see cabinet/logs/retrieval-eval-history.jsonl" ;;
+  NOFILE*)  re_stale_verdict "retrieval-eval — creds resolvable but no verdict ledger yet (03:50 nightly never ran — services row not installed?)" ;;
+  STALE*)   re_stale_verdict "retrieval-eval — latest verdict stale (${RE_PROBE#STALE }) — the nightly gate is not running" ;;
+  BADLINE*) warn "retrieval-eval — latest verdict line unparseable (ledger corrupt? see cabinet/logs/retrieval-eval-history.jsonl)" ;;
+  *)        warn "retrieval-eval — probe output unparseable: $RE_PROBE" ;;
+esac
 
 # ============================================================
 # verdict + heartbeat

@@ -62,8 +62,13 @@ it carries, in dependency order: `cabinet_memory.sql`,
 `cabinet-id-neon-phase1b.sql`, `session-memories-context-slug.sql`,
 `2026-04-17-spec-034-provisioning-schema.sql`, `038-officer-tasks.sql`,
 `041-tasks-due-at.sql`, `039-linear-to-tasks-schema.sql`,
-`045-org-runtime-slice.sql`. The only deliberate `cabinet/sql/` omissions
-are the three LOCAL-postgres schemas (`cabinet-id-phase1*.sql`,
+`045-org-runtime-slice.sql`, `046-embedding-meta.sql` (embed-seam provenance
+singleton — bootstrap and `load-preset.sh` call
+`memory_embedding_stamp --if-absent` right after it lands, so the
+cabinet-doctor dims-drift probe reports from day one; the first stamp is
+provenance and deploys never overwrite it, so a config flip keeps the drift
+WARN alive until a real re-embed; wired 2026-07-15). The only deliberate
+`cabinet/sql/` omissions are the three LOCAL-postgres schemas (`cabinet-id-phase1*.sql`,
 `contexts-cabinet-phase1.sql`) — anything else unlisted makes the
 warn-only self-check fire, and that WARN is a real alarm.
 
@@ -114,6 +119,29 @@ interview) emits the instance layer:
   path is `cabinet/scripts/append-interface.sh <ledger>` with the entry on
   stdin (provenance-stamped, append-only). captain-decisions H2 ingestion
   feeds `cabinet_memory` with `trust=captain` rows.
+- **Captain-law digest (review-then-promote distiller):**
+  `python3.12 cabinet/scripts/memory-distill.py` renders a deterministic
+  per-topic index of ALL ledger entries (the tail-40 boot injection only
+  carries the newest law — the digest is the boot-pack for everything
+  older, wired in by the Captain-gated three-file patch, see
+  `docs/proposals/germline-session-start-digest-addendum-2026-07-15.md`).
+  Default run writes ONLY the review surface
+  `shared/interfaces/captain-law-digest.proposal.md` (never
+  boot-injected); `--apply` (after Captain review — standing handback)
+  refuses unless the proposal byte-matches a fresh ledger render, then
+  promotes the boot surface `shared/interfaces/captain-law-digest.md`
+  (write-guarded captain-law plane post-ceremony; both files
+  runtime/untracked) and queues per-topic `captain_law_summary` rows with
+  `trust=reflection` — never `trust=captain`: summaries are not law.
+  `--check` is the read-only staleness tell (recorded ledger sha256s vs
+  live): `cabinet-doctor` probes it daily (stale → WARN/AMBER) and the
+  cross-officer retro's Part 5 acts on it — regeneration is never
+  automatic.
+- **Consolidated beliefs:** both retro skills
+  (`memory/skills/individual-reflection.md`, `cross-officer-retro.md`)
+  terminate by queueing 3–5 distilled beliefs (incl. failure-patterns) as
+  `consolidated_belief` / `trust=reflection` rows — experience compresses
+  into recallable beliefs instead of accreting as raw records.
 
 ## 4. Services — the standing organs (`cabinet/services.yml`)
 
@@ -122,6 +150,7 @@ interview) emits the instance layer:
 | `memory-worker` | keepalive daemon | drains `cabinet:memory:embed_queue` → embeds → upserts `cabinet_memory` (needs `NEON_CONNECTION_STRING` + `VOYAGE_API_KEY` names from `cabinet/.env`) |
 | `memory-reconcile` | nightly 03:30 (after the 03:00 backup, before the 03:45 apoptosis sweep) | re-hashes the watch list, queue-embeds hook-missed / hash-drifted files; summary line in the service log (generated-plist convention `~/Library/Logs/cabinet/memory-reconcile.log`; hq's pre-fix 2026-07-07 install writes `~/.cabinet/logs/memory-reconcile.log`) — installed via the §4 generate-plists pattern like self-improvement-loop |
 | `falsifier-daily` | daily 08:05 | daily line carries the per-source_type **memory-ingestion liveness** object + ALERT lines (the observability half over the best-effort hooks) |
+| `retrieval-eval` | nightly 03:50 (after the 03:30 reconcile settles the store, before the 07:10 doctor) | the **refinement gate** (§7): recall@k + MRR floors over `memory_search` in BOTH arms (hybrid+rerank AND `--no-rerank` blended order); one verdict JSONL line/night in `cabinet/logs/retrieval-eval-history.jsonl` (runtime, gitignored); exit 1 on breach |
 | `self-improvement-loop` | every 6h, **`REPORT_ONLY: "1"`** | see §6 — propose+validate runs, apply/promote/graduate withheld until first weekly review |
 
 Install/reload pattern for manifest rows (used for self-improvement-loop,
@@ -153,6 +182,12 @@ is the deliberate step.
    memory-reconcile service log (path per the §4 table) with plausible
    checked/queued/current counts.
 7. **Self-improvement soak proof:** see §6 verification block.
+8. **Refinement-gate proof (§7):** next morning,
+   `bash cabinet/scripts/retrieval-eval-nightly.sh --probe` prints
+   `OK age=...` (fresh, passing, both arms), and cabinet-doctor check 11
+   reads `OK retrieval-eval — latest nightly verdict passed`. On a young
+   store the first nights may print `NOTOK status=no-pairs` — expected
+   until the harvester finds enough durable-knowledge rows.
 
 ## 6. Self-improvement loop — REPORT_ONLY soak (audit-ratified)
 
@@ -199,3 +234,59 @@ events carry `report_only: true` + `would_apply` in the JSONL ledger and
 Store mirror; zero new files in `memory/skills/evolved/` and
 `instance/roles/proposals/` (the 06:34Z pre-change run had auto-promoted a
 draft — exactly the behavior the soak now withholds).
+
+## 7. Retrieval refinement gate — the floors every memory wave must hold
+
+Shipped 2026-07-15 (Lane D). The R1 retrieval eval (recall@k + MRR,
+`cabinet/scripts/retrieval-eval.sh`) landed @960d4c4d gating nothing; this
+section is its standing wiring. **The rule: any consolidation, supersession,
+re-embed, or ranking wave against `cabinet_memory` must HOLD the floors —
+a breach the morning after your wave is your regression.**
+
+**Two arms, because rerank rescues damage.** The Voyage rerank stage sits on
+top of the blended ranking (0.60 vec + 0.25 lex + 0.15 recency, 0.45 vec
+floor) and can mask a damaged pool order — proven live: a blended
+weight-swap passed the eval while rerank was on. So the gate runs BOTH:
+
+- **rerank arm** — the production path officers actually query;
+- **no-rerank arm** — `retrieval-eval.sh --no-rerank` exports
+  `CABINET_MEMORY_RERANK=off` (a seam in `lib/memory.sh:memory_rerank`) and
+  measures the BLENDED order directly. A blended-arm breach is a REAL
+  finding even when the rerank arm passes.
+
+**Nightly service** (`retrieval-eval`, 03:50 — after the 03:30 reconcile so
+it measures the post-consolidation store; before the 07:10 doctor):
+`cabinet/scripts/retrieval-eval-nightly.sh` self-harvests ~12 pairs from
+this cabinet's own high-signal rows (`harvest-retrieval-eval.sh` — portable
+to any instance), runs both arms with floors recall ≥ 0.60 and MRR ≥ 0.50
+(`RE_FLOOR` / `RE_MRR_FLOOR` / `RE_BLENDED_MRR_FLOOR` env-overridable;
+calibrated live 2026-07-15: rerank MRR 0.958 / blended 0.736 vs ~0.10 for an
+order-inverted mutant), and appends ONE verdict JSONL line to
+`cabinet/logs/retrieval-eval-history.jsonl` (runtime, gitignored). Floor
+breach → exit 1 (launchd surfaces it).
+
+**Doctor coverage:** cabinet-doctor check 11 reads the latest verdict via
+`retrieval-eval-nightly.sh --probe` (pure file+env inspection — no DB/network):
+breach or >48h-stale verdict = WARN/AMBER; credless clean-room/CI box =
+SKIP; staleness honors the post-wake grace window.
+
+**Ranking-change guard (runs IN CI, no store needed).** The gate itself is
+store-local — GitHub CI cannot query `cabinet_memory`. CI instead pins a
+fingerprint: `cabinet/scripts/tests/fixtures/memory-ranking.fingerprint`
+must equal the sha256 of the `RANKING-BLOCK` marker regions of
+`cabinet/scripts/lib/memory.sh` (blended weights, vec floor, pool order,
+rerank stage, no-rerank seam —
+`cabinet/scripts/tests/test_retrieval_eval_gate.py`). Editing ranking code
+therefore reds the build until you re-stamp — and the ONLY sanctioned
+re-stamp is a store-local run that holds both arms' floors:
+
+```bash
+bash cabinet/scripts/retrieval-eval-nightly.sh --stamp   # refuses on a breach
+```
+
+Commit the refreshed fingerprint WITH the ranking change. This is a cheap
+honesty ratchet, not cryptography: the stamper refuses to stamp on a breach,
+and a hand-edited hex is visible in review. Offline behavior locks (mutant
+negative controls, probe matrix, seam unit tests) live in
+`cabinet/scripts/tests/test_retrieval_eval_gate.py` and
+`cabinet/scripts/lib/tests/test_memory_rerank_toggle.py`.

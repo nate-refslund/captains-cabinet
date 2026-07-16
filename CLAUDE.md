@@ -151,8 +151,8 @@ Action owners should respond within 4 hours: "adopting", "parking", or "not rele
 
 **Principle — improve via nested loops, fastest-signal-first.** The Cabinet improves at several cadences at once; the fastest loop that can catch a signal owns it, so nothing waits for a slower cycle. Each completed task produces an experience record (a task isn't done without one — `record-experience.sh`); check `memory/skills/` before starting work. The full mechanics live in the loop skills (load on-trigger) — CLAUDE.md carries the principle + pointers, not the procedures:
 
-- **Per-task / event-triggered reflection** (each officer): `memory/skills/individual-reflection.md` — fires on work (compaction, completion milestone, CoS nudge), not a clock; skip when idle. Catches own patterns; 3+ repeats → draft skill to `memory/skills/evolved/`.
-- **Cross-officer retro** (CoS, event-triggered at 5 reflections / 48h floor): `memory/skills/cross-officer-retro.md` — handoff quality, trigger responsiveness, opportunity scan, one focused kaizen, intent-ledger scan (5th loop).
+- **Per-task / event-triggered reflection** (each officer): `memory/skills/individual-reflection.md` — fires on work (compaction, completion milestone, CoS nudge), not a clock; skip when idle. Catches own patterns; 3+ repeats → draft skill to `memory/skills/evolved/`. Terminates in consolidation: 3–5 distilled beliefs (incl. failure-patterns) queued to Cabinet Memory as `consolidated_belief` / `trust: reflection`.
+- **Cross-officer retro** (CoS, event-triggered at 5 reflections / 48h floor): `memory/skills/cross-officer-retro.md` — handoff quality, trigger responsiveness, opportunity scan, one focused kaizen, intent-ledger scan (5th loop). Terminates in Part 5 consolidation: 3–5 distilled cross-officer beliefs (incl. failure-patterns) as `consolidated_belief` / `trust: reflection`.
 - **Evolution / skill promotion** (CoS, 24h): `memory/skills/evolution-loop.md` — validate + promote draft skills, role-amendment proposals, golden-eval refresh.
 - **The universal L1/L2/L3 lens** sits over all of them: `memory/skills/holistic-thinking.md`.
 

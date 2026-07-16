@@ -132,9 +132,53 @@ This reads real streams (tool-call volume by officer, stuck-loop repeats, hook-f
     redis-cli -h "${REDIS_HOST:-localhost}" -p "${REDIS_PORT:-6379}" SET "cabinet:schedule:last-run:cos:retrospective" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     ```
 
+### Part 5: Consolidation — distilled beliefs (terminal step, NEW)
+
+12. **Distill the retro into durable cross-officer beliefs (grow by distillation, not accretion):**
+    The retro reads dozens of records and reflections; without this step that reading
+    evaporates when the session ends. Close every retro by emitting **3–5 distilled
+    beliefs** — durable, transferable rules about how THIS cabinet coordinates ("X
+    because Y"), not meeting minutes. At least ONE must be a **failure-pattern
+    belief**: a cross-officer error pattern to AVOID, stated contrastively ("handing
+    off X without Y fails — do Z instead"). Failure-patterns are the retro's unique
+    yield — individual reflections see their own errors, only the retro sees the
+    errors that live BETWEEN officers. Queue each through the memory seam:
+    ```bash
+    . "${CABINET_ROOT:-/opt/founders-cabinet}/cabinet/scripts/lib/memory.sh"
+    BELIEF="$(cat <<'BELIEF_EOF'
+    <ONE belief — the durable coordination rule + why, 1–3 sentences>
+    BELIEF_EOF
+    )"
+    META=$(jq -nc --arg trust "reflection" --arg writer "cos" \
+      --arg kind "failure-pattern" --arg via "cross-officer-retro" \
+      '{trust: $trust, writer: $writer, kind: $kind, via: $via}')  # kind: success-pattern | failure-pattern
+    memory_queue_embed "consolidated_belief" \
+      "cb-cos-$(date -u +%Y-%m-%d)-<kebab-slug-naming-the-belief>" \
+      "cos" "" "$BELIEF" "$META"
+    ```
+    Rules: belief text enters ONLY via the quoted heredoc (data, never command text —
+    `memory_queue_embed` forwards it through `jq --arg`). `trust` is ALWAYS
+    `reflection` — **NEVER `captain`**: a retro-distilled belief is the cabinet's own
+    inference and must never masquerade as Captain law. Stable `source_id`
+    (role+day+slug) makes re-emission an upsert, not a duplicate. Fewer than 3 real
+    beliefs → emit only the real ones; padded beliefs poison recall.
+
+13. **Boot-pack freshness tell (only when the captain-law digest is in use):**
+    ```bash
+    python3.12 "${CABINET_ROOT:-/opt/founders-cabinet}/cabinet/scripts/memory-distill.py" --check
+    ```
+    Read-only; exit 0 = fresh, 4 = not in use (skip silently), 3 = STALE — the
+    boot-injected law index no longer matches the grown ledgers, so older law is
+    going boot-invisible again. On stale: run the distiller's DEFAULT pass (writes
+    `shared/interfaces/captain-law-digest.proposal.md` only) and hand the proposal
+    to the Captain for review — promotion is `--apply` AFTER that review (standing
+    handback; never self-ratify). Detection is this retro's job; scheduling any
+    automatic regeneration stays a Captain decision. cabinet-doctor runs the same
+    tell daily (WARN/AMBER) — this step is what ACTS on it.
+
 ## Expected Outcome
 
-Cross-Officer coordination problems caught within 24h. Opportunities for improvement surfaced proactively. One process challenged per cycle. CRO research effectiveness tracked. The Cabinet gets measurably better — not just by fixing failures, but by finding better ways to work.
+Cross-Officer coordination problems caught within 24h. Opportunities for improvement surfaced proactively. One process challenged per cycle. CRO research effectiveness tracked. The Cabinet gets measurably better — not just by fixing failures, but by finding better ways to work. Every retro terminates in 3–5 `consolidated_belief` rows (success- AND failure-patterns) in Cabinet Memory, so what the retro learned is recallable by every future session instead of buried in records.
 
 ## Known Pitfalls
 
@@ -144,6 +188,9 @@ Cross-Officer coordination problems caught within 24h. Opportunities for improve
 - Over-engineering the "smarter" section — keep it to one focused question, not a redesign
 - Proposing changes without validation scenarios
 - Running the retro mechanically — if there are no patterns, say so and move on
+- Ending the retro without Part 5 consolidation — an undistilled retro is accretion, not learning
+- Distilling only what worked — the failure-pattern belief (what to avoid) is mandatory, not optional
+- Stamping a distilled belief `trust: captain` — forbidden; retro inferences stay `trust: reflection`
 
 ## Validation Scenarios
 
@@ -156,3 +203,6 @@ Cross-Officer coordination problems caught within 24h. Opportunities for improve
 ## Origin
 
 Foundation skill — evolved per Captain directive 2026-04-04. Added: Opportunity Scan (Part 2), "How Could We Do This Smarter?" (Part 3), CRO research effectiveness review (step 9).
+2026-07-15 (memwave3 lane BC): Consolidation (Part 5) added — every retro terminates by
+distilling 3–5 durable beliefs (incl. failure-patterns) into Cabinet Memory as
+`consolidated_belief` / `trust: reflection` rows.
