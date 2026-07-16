@@ -904,6 +904,32 @@ services:
       rows in cabinet_memory); outbound turns are hash-only in the feed
       journal by design — archiving their text would be NEW capture, which
       this row is not.
+  - name: evidence-anchor
+    label: com.cabinet.evidence-anchor
+    kind: cron
+    command: python3.12 cabinet/scripts/evidence-anchor.py
+    schedule: { calendar: [{hour: 5, minute: 20}] }   # daily 05:20 local — after the 04:40 exhaust-archive so the trigger archive is fresh when digested
+    disabled: true
+    disabled_reason: "staged: evidence-program Phase 1 ships dark; the Captain ceremony enables it (remove this flag, generate-plists, load). Read-only job — zero runtime behavior until enabled."
+    expected: "one summary line/day (evidence-anchor: date= trials= digest_event= findings= exported= telegram=); one digest-anchor event/day appended to instance/evidence/v1 trial evt-digest-anchor-<yyyymmdd>; one anchor JSONL line appended+committed in the configured private meta repo; a plain-English Telegram receipt to the Captain via the front-door channel"
+    sunset: "supersede when the store moves behind an OS-user boundary with its own attestation (HP-1) or a Phase-2+ anchoring producer replaces the cron"
+    notes: >-
+      Evidence program Phase 1, items 5+6 (whole-cabinet evidence design
+      2026-07-16; D3 = both surfaces). Read-only daily export of the store's
+      tamper-evidence surface — trial tip hashes, verifier watermarks,
+      control digest, purge-receipt manifest, Captain-label digests — to TWO
+      off-store Captain-owned surfaces (private meta repo file + Telegram
+      receipt), closing the verifier's documented anti-rollback residual: a
+      store copy restored to an earlier state is not provable locally but IS
+      caught against yesterday's exported anchor (FATAL line + exit 2 pages
+      via the error-marker floor). Also appends the daily digest-anchor
+      trial (checksums of the org-events day file, consequence-ledger day
+      file, trigger-archive manifest) so the weaker breadth ledgers become
+      tamper-evident estate-wide without touching an emitter (R-13).
+      Credless-safe: unconfigured surfaces skip cleanly; bindings live in
+      instance/config/evidence-anchor.yml (see .example). Telegram rides
+      framework/frontdoor/channel.py — the ONE sanctioned door; no raw
+      poster, no hardcoded chat id.
   - name: transcript-digest
     label: com.cabinet.transcript-digest
     kind: cron
