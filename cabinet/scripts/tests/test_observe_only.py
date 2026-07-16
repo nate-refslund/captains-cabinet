@@ -24,12 +24,28 @@ def _root(tmp_path: Path, marker: str | None = "active\n") -> Path:
 
 
 def _hook(root: Path, tool: str, tool_input: dict, env: dict | None = None):
+    # The hook's kill-switch probe is intentionally global in production. Unit
+    # tests must not inherit the workstation's live Redis posture, so provide a
+    # hermetic redis-cli that reports a reachable control plane with no active
+    # kill switch. Tests that need another Redis behavior can still override
+    # PATH through env.
+    fake_bin = root / ".test-bin"
+    fake_bin.mkdir(exist_ok=True)
+    fake_redis = fake_bin / "redis-cli"
+    fake_redis.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fake_redis.chmod(0o755)
+    hook_env = {
+        **os.environ,
+        "CABINET_ROOT": str(root),
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        **(env or {}),
+    }
     return subprocess.run(
         ["/bin/bash", str(HOOK)],
         input=json.dumps({"tool_name": tool, "tool_input": tool_input}),
         text=True,
         capture_output=True,
-        env={**os.environ, "CABINET_ROOT": str(root), **(env or {})},
+        env=hook_env,
         timeout=20,
     )
 
