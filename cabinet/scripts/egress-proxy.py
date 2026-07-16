@@ -45,6 +45,7 @@ import argparse
 import http.client
 import os
 import select
+import signal
 import socket
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -55,6 +56,45 @@ HOP_BY_HOP = {
     "connection", "proxy-connection", "keep-alive", "transfer-encoding",
     "te", "trailer", "upgrade", "proxy-authenticate", "proxy-authorization",
 }
+
+
+def atomic_write(path: str, text: str) -> None:
+    """Publish a small runtime marker atomically, mode 0600, same directory.
+
+    A launchd crash restart may race stale files from the prior PID; readers
+    must see either the complete old marker or the complete new one, never a
+    truncated intermediate file.
+    """
+    parent = os.path.dirname(path) or "."
+    os.makedirs(parent, mode=0o700, exist_ok=True)
+    tmp = "%s.tmp.%d" % (path, os.getpid())
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+        os.chmod(path, 0o600)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def remove_marker_if_owned(path: str, expected: str) -> None:
+    """Remove only this process's marker; never erase a restart successor's."""
+    if not path:
+        return
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            current = handle.read()
+        if current == expected:
+            os.unlink(path)
+    except OSError:
+        pass
 
 
 def load_allowlist(path, env_val=None):
@@ -101,19 +141,24 @@ def host_allowed(host, allow):
 
 
 def parse_ports(spec):
-    """Parse a comma/space-separated port spec into a set of ints. Invalid or
-    out-of-range tokens are dropped; an empty/garbage spec falls back to {443}
-    (the HTTPS port) so CONNECT is never accidentally opened to every port and
-    never accidentally closed to all of them."""
+    """Strictly parse a comma/space-separated CONNECT-port contract.
+
+    The guard canonicalises this input before launch, but the backend also
+    rejects malformed/direct invocation rather than silently dropping a token
+    and running with a policy different from the Captain-reviewed arguments.
+    """
+    tokens = (spec or "").replace(",", " ").split()
+    if not tokens:
+        raise ValueError("CONNECT port list is empty")
     ports = set()
-    for tok in (spec or "").replace(",", " ").split():
-        try:
-            p = int(tok)
-        except ValueError:
-            continue
-        if 0 < p <= 65535:
-            ports.add(p)
-    return ports or {443}
+    for tok in tokens:
+        if not tok.isascii() or not tok.isdigit():
+            raise ValueError("invalid CONNECT port: %s" % tok)
+        p = int(tok, 10)
+        if not 0 < p <= 65535:
+            raise ValueError("CONNECT port out of range: %s" % tok)
+        ports.add(p)
+    return ports
 
 
 def split_authority(authority):
@@ -306,13 +351,16 @@ def main(argv=None):
     ap.add_argument("--connect-ports",
                     default=os.environ.get("EGRESS_CONNECT_PORTS", "443"),
                     help="comma/space-separated ports CONNECT tunnels may target "
-                         "(default 443; empty/garbage falls back to 443)")
+                         "(default 443; malformed values are rejected)")
     ap.add_argument("--check", default="",
                     help="print ALLOW/BLOCK for HOST against the allowlist and exit")
     args = ap.parse_args(argv)
 
     allow = load_allowlist(args.allow_file, os.environ.get("EGRESS_ALLOW_HOSTS"))
-    connect_ports = parse_ports(args.connect_ports)
+    try:
+        connect_ports = parse_ports(args.connect_ports)
+    except ValueError as exc:
+        ap.error(str(exc))
 
     if args.check:
         ok = host_allowed(args.check, allow)
@@ -328,24 +376,35 @@ def main(argv=None):
         return 1
     httpd.daemon_threads = True
     bound_port = httpd.server_address[1]
-    if args.pid_file:
-        try:
-            with open(args.pid_file, "w", encoding="utf-8") as fh:
-                fh.write("%d\n" % os.getpid())
-        except OSError:
-            pass
-    if args.ready_file:
-        try:
-            with open(args.ready_file, "w", encoding="utf-8") as fh:
-                fh.write("READY %d\n" % bound_port)
-        except OSError:
-            pass
+    own_pid = os.getpid()
+    pid_token = "%d" % own_pid
+    pid_marker = "%s\n" % pid_token
+    ready_marker = "READY %d PID %s\n" % (bound_port, pid_token)
+    try:
+        if args.pid_file:
+            atomic_write(args.pid_file, pid_marker)
+        if args.ready_file:
+            atomic_write(args.ready_file, ready_marker)
+    except OSError as exc:
+        sys.stderr.write("egress-proxy: state publication failed: %s\n" % exc)
+        httpd.server_close()
+        remove_marker_if_owned(args.pid_file, pid_marker)
+        remove_marker_if_owned(args.ready_file, ready_marker)
+        return 1
+
+    def terminate(_signum, _frame):
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGTERM, terminate)
+    signal.signal(signal.SIGINT, terminate)
     try:
         httpd.serve_forever(poll_interval=0.2)
     except KeyboardInterrupt:
         pass
     finally:
         httpd.server_close()
+        remove_marker_if_owned(args.pid_file, pid_marker)
+        remove_marker_if_owned(args.ready_file, ready_marker)
     return 0
 
 

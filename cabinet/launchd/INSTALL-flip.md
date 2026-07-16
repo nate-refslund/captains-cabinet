@@ -105,7 +105,7 @@ loading rule:
 | Label | Cadence | What it fixes |
 | --- | --- | --- |
 | `com.cabinet.retro-trigger` | hourly | REGENERATED with `PATH` (the old hand-made plist had none; launchd's minimal PATH → `redis-cli: command not found` → FATAL hourly since ~Jul 3). Logs move to `~/Library/Logs/cabinet/retro-trigger.{log,err}`. |
-| `com.cabinet.backup` | daily 03:00 | Daily checksum-verified state backup to `~/Cabinet-Backups` (topology-preserved filesystem, configured Postgres, fresh Redis RDB or fsynced/restore-tested AOF fallback, 14-day retention). Drill: `bash cabinet/scripts/restore-drill.sh`. |
+| `com.cabinet.backup` | daily 03:00 | Daily checksum-verified state backup to `~/Cabinet-Backups` (topology-preserved filesystem, configured Postgres, fresh Redis RDB or AOF-converted RDB fallback, 14-day retention). Under `CLIENT PAUSE WRITE`, fallback waits for a bounded global AOF drain (buffer length 0, pending bio fsync 0, last write OK, no rewrite), then replays the copy in a disposable Redis, repairs known Streams operational omissions from an identifier-only manifest, and exactly proves v3 logical state. It converts the result to RDB and exactly re-proves it in a second disposable before publication with `aof-converted` provenance; this does not claim global fsync. Unsupported types fail closed; the blocking source fingerprint has a 55-second deadline inside the 60-second write pause; old v2 snapshots remain strict and require a fresh v3 after any mismatch. Drill: `bash cabinet/scripts/restore-drill.sh`. |
 
 ```sh
 cp cabinet/launchd/com.cabinet.retro-trigger.plist ~/Library/LaunchAgents/
@@ -121,8 +121,15 @@ One hardening step is deliberately left open as a recorded Captain decision
 `cabinet/services.yml` backup row (rendered into the backup plist header) and
 the `cabinet/scripts/backup.sh` header: an off-machine backup copy (e.g. a
 post-backup rsync to a host you control). Redis AOF is the live durability
-layer and backup.sh now uses it as a verified fallback when fresh RDB capture
-is unavailable.
+layer. When fresh RDB capture is unavailable, backup.sh pauses writes, waits
+for the bounded global drain described above, then copies and replays the AOF
+in a disposable Redis. It repairs known Streams operational omissions from an
+identifier-only manifest, exactly proves v3 logical state, converts the result
+to RDB, and exactly re-proves that RDB in a second disposable before publishing
+it with `aof-converted` provenance. That exact v3 logical-state proof—not the
+drain—is the authoritative completeness gate. This is not a global-fsync claim. Fresh and
+AOF-converted RDB validation share the same canonical logical-state v3
+comparator; no raw Redis key or value is written to the proof file.
 
 ## Verdict-supply engine (lane-supply 2026-07-05) — THE keystone wave
 

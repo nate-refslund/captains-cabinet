@@ -51,8 +51,9 @@
 enforce: false
 
 # Local forward-proxy bind port (always 127.0.0.1). Only consulted when
-# enforce: true. Change if 8899 collides on your box. A value of 0 asks the OS
-# to pick a free port (the resolved port is reported by `egress-guard status`).
+# enforce: true. Change if 8899 collides on your box. macOS requires a fixed
+# 1–65535 value because launchd crash/login restarts must preserve the endpoint
+# already projected to officers. Value 0 is legacy child/test mode only.
 proxy_port: 8899
 
 # Auto-include the captain's OWN product hosts, resolved generically from THIS

@@ -23,7 +23,7 @@ cabinet/scripts/egress-guard.sh dry-run    # what WOULD be allowed/blocked (inst
 cabinet/scripts/egress-guard.sh enable     # Captain unlock window only
 cabinet/scripts/egress-guard.sh disable    # Captain unlock window only
 cabinet/scripts/egress-guard.sh apply      # reconcile runtime to egress.yml (boot/launchd verb)
-cabinet/scripts/egress-guard.sh stop       # tear down the proxy regardless of config
+cabinet/scripts/egress-guard.sh stop       # stop runtime proxy/env; policy unchanged
 ```
 
 The generic framework default is **allow all**. This deployment pins
@@ -69,15 +69,61 @@ parser before boot. On macOS, the launcher also generates a Seatbelt profile
 that rejects direct external TCP/UDP and permits localhost, making the verified
 proxy the only officer path to a remote host. No persistent sudo.
 
-Before reuse, the guard attests that runtime state files are owned regular
-files (never symlinks), the live PID command names the reviewed proxy with the
-exact allow/ready paths, and the allowlist and proxy env match resolved policy.
+On macOS, `apply` safely renders the tracked
+`cabinet/launchd/com.cabinet.egress-proxy.template.plist`, installs it at
+`~/Library/LaunchAgents/com.cabinet.egress-proxy.plist`, and bootstraps the
+proxy itself into the user launchd domain. This ownership boundary is
+load-bearing: a proxy merely backgrounded by a one-shot officer LaunchAgent is
+killed with that wrapper's process group when the wrapper exits, even under
+`nohup`. The persistent job survives caller exit, is restarted by launchd after
+a crash, and returns at login. `stop`/disable boots it out and removes the
+installed plist, preventing a disabled policy from returning later.
+Linux/Docker retains the detached-child path and still requires its external
+process/network supervisor.
 
-**Fail-closed.** If the proxy cannot be installed or verified, the guard prints
-`FAIL-CLOSED …`, exits non-zero, and writes **no** proxy env — it never silently
-leaves egress open when a captain asked to enforce. A boot/launchd caller must
-treat a non-zero `apply` as fatal (do not launch officers with egress believed-
-restricted-but-actually-open).
+The macOS job is deliberately registered in `gui/$(id -u)`. Run `apply` as
+the logged-in console user (including over SSH only while that user's GUI
+domain exists). A headless/pre-login host has no such domain: `bootstrap`
+fails closed and officers must remain stopped. `launchctl print` exit 113 is
+the only canonical "service absent" result; other query failures are treated
+as unknown ownership, not success. A future truly headless deployment needs a
+separately reviewed system-domain design, not a flag change.
+
+macOS requires a fixed `proxy_port` from 1–65535. An OS-chosen port (`0`) is
+valid only for the legacy child/test mode: after a crash or login restart it
+could change while already-configured officers still point at the old port.
+
+Before reuse, the guard attests that runtime state files and the installed
+plist are owned regular files (never symlinks), the installed plist exactly
+matches the tracked template plus resolved paths/policy, launchd's job PID
+equals the atomically published proxy PID/ready markers, the live command names
+the reviewed proxy with the exact arguments, and the allowlist and proxy env
+match resolved policy.
+Before either launch path opens it, the guard also requires `proxy.log` to be a
+user-owned regular file and normalises it to mode `0600`; a symlinked log fails
+closed rather than letting the supervisor append through an attacker-chosen
+path.
+
+`EGRESS_CONNECT_PORTS` is validated and canonicalised as an explicit list of
+ports in the range 1–65535; empty, malformed, or mixed-validity values fail
+instead of being partially ignored. The backend independently rejects the
+same invalid forms.
+
+**Fail-closed.** If a new proxy cannot be installed or verified, the guard
+prints `FAIL-CLOSED …`, exits non-zero, and publishes no new proxy env. If an
+old owner cannot be safely stopped, its PID/ready/env markers deliberately
+remain as dirty forensic evidence; they do not attest against changed policy,
+so new officer launch still fails. The guard never silently leaves egress open
+when a captain asked to enforce. A boot/launchd caller must treat a non-zero
+`apply` as fatal (do not launch officers with egress believed-restricted-but-
+actually-open).
+
+`status` is an operational assertion, not a cosmetic report: it returns
+nonzero when enforcement is requested but any runtime artifact, process,
+supervisor, or fixed port fails attestation. Run `apply` and `status`
+sequentially under the normal launcher path; a concurrent status read during
+an apply/stop transition can observe the intentionally unpublished env and
+return transiently nonzero.
 
 ### Officer wiring and restart semantics
 
@@ -143,6 +189,22 @@ Coverage differs by deployment target.
   to close it; plain HTTP does not have this gap.
 - **Unsandboxed services.** The proxy and other host daemons are outside the
   officer sandbox. Their own input validation is part of the boundary.
+- **Same-UID installed-plist window.** Repository source and template are
+  germline-locked, and every launcher attests the rendered plist exactly. The
+  installed user LaunchAgent remains writable by the same host user, so a
+  same-UID attacker could alter it between login execution and the next
+  attestation. This is detected and officer launch fails closed, but preventing
+  pre-attestation execution needs a root/system ownership design.
+- **PID identity TOCTOU.** Child-mode teardown compares exact argv fields and
+  state-file paths before signalling, but a narrow process-exit/PID-reuse race
+  remains on hosts without a supervisor identity. macOS launchd teardown uses
+  the exact service label and does not trust the PID file.
+- **Fixed-port crash loop.** If another process persistently occupies the
+  configured port, KeepAlive retries under launchd's throttle while runtime
+  attestation stays red. The reviewed plist uses `Umask=0077`; verify the
+  installed plist and proxy log are user-only, inspect only host-level error
+  text, free the port, then re-`apply`. Never widen or randomise the port as a
+  recovery shortcut.
 
 ### Stronger / complementary controls
 
@@ -210,8 +272,21 @@ Only add the ones you actually run. Subdomains of a listed host are covered.
 
 - **`apply`/`enable` exits non-zero with `FAIL-CLOSED`.** The proxy could not
   bind or come up (port in use? bad `proxy_port`? python missing?). Egress was
-  **not** restricted and no proxy env was written — safe, but enforcement is
-  off. Fix the cause (try `proxy_port: 0` to let the OS pick), then re-run.
+  not newly claimed — safe, but officers stay stopped. A prior env/marker may
+  remain only when its owner could not be safely reconciled; that is evidence,
+  not a green runtime. Fix the cause (port in use? invalid template? python
+  missing?), then re-run. Keep a fixed port on macOS; `proxy_port: 0` is
+  intentionally rejected.
+- **macOS says the proxy is not supervisor-owned.** Inspect
+  `launchctl print gui/$(id -u)/com.cabinet.egress-proxy`, then re-run `apply`.
+  Also run `plutil -lint ~/Library/LaunchAgents/com.cabinet.egress-proxy.plist`
+  and compare it with the tracked template contract. Do not hand-edit the
+  installed plist; `apply` owns it.
+  Do not substitute a shell-backgrounded proxy: it will die when the one-shot
+  launcher exits and the next officer boot will correctly fail closed.
+- **`status` exits nonzero.** Treat it as a gate failure, even though it still
+  prints diagnostic state. If an `apply` is actively reconciling, wait for that
+  command to finish and retry once; repeated failure is real drift.
 - **An officer suddenly can't reach a service.** Its host is not on the
   allowlist. `dry-run` to confirm, add the host to `instance/config/egress.yml`,
   re-`apply`.
