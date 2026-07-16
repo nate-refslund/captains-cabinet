@@ -9,18 +9,27 @@
 # variable — a caller that exports an explicit NEON_CONNECTION_STRING (scratch
 # DB, test harness, second cabinet) but no CABINET_ID must never have its
 # connection string silently replaced by the live .env value, or scratch
-# embeds/searches land in the live cabinet_memory.
+# embeds/searches land in the live cabinet_memory. The same caller-wins rule
+# covers the EMBED-SEAM triple (review fix 2026-07-15): pre-set
+# EMBED_PROVIDER/EMBED_MODEL/EMBED_DIMS are restored after the source, so this
+# conditional back-fill can never clobber an explicitly configured seam.
+MEMORY_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CABINET_ROOT="${CABINET_ROOT:-$(cd "$MEMORY_LIB_DIR/../../.." && pwd)}"
 if [ -z "${NEON_CONNECTION_STRING:-}" ] || [ -z "${CABINET_ID:-}" ]; then
-  MEMORY_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  CABINET_ROOT="${CABINET_ROOT:-$(cd "$MEMORY_LIB_DIR/../../.." && pwd)}"
   _mem_pre_neon="${NEON_CONNECTION_STRING:-}"
   _mem_pre_cid="${CABINET_ID:-}"
+  _mem_pre_eprov="${EMBED_PROVIDER:-}"
+  _mem_pre_emodel="${EMBED_MODEL:-}"
+  _mem_pre_edims="${EMBED_DIMS:-}"
   set -a
   source "$CABINET_ROOT/cabinet/.env" 2>/dev/null || true
   set +a
   if [ -n "$_mem_pre_neon" ]; then NEON_CONNECTION_STRING="$_mem_pre_neon"; fi
   if [ -n "$_mem_pre_cid" ]; then CABINET_ID="$_mem_pre_cid"; fi
-  unset _mem_pre_neon _mem_pre_cid
+  if [ -n "$_mem_pre_eprov" ]; then EMBED_PROVIDER="$_mem_pre_eprov"; fi
+  if [ -n "$_mem_pre_emodel" ]; then EMBED_MODEL="$_mem_pre_emodel"; fi
+  if [ -n "$_mem_pre_edims" ]; then EMBED_DIMS="$_mem_pre_edims"; fi
+  unset _mem_pre_neon _mem_pre_cid _mem_pre_eprov _mem_pre_emodel _mem_pre_edims
 fi
 
 MEM_REDIS_HOST="${REDIS_HOST:-redis}"
@@ -41,6 +50,25 @@ MEM_QUEUE_KEY="cabinet:memory:embed_queue"
 # silent wrong-endpoint call. Adding a provider = add an arm below + a one-off
 # re-embed backfill (a dims change re-embeds every row — deliberately NOT an
 # auto-organ; see cabinet/sql/046-embedding-meta.sql + the doctor probe).
+#
+# RESOLUTION IS DETERMINISTIC (review fix 2026-07-15): caller env >
+# cabinet/.env > compiled default, for exactly the stamped triple. The
+# conditional back-fill above only runs when NEON_CONNECTION_STRING or
+# CABINET_ID is missing, so without this pass a .env-configured seam was
+# honored or ignored depending on which UNRELATED vars the caller happened to
+# export — the stamp and every search would then disagree with the
+# cabinet-doctor probe, which resolves its compare side through this same
+# three-step chain (spurious or masked dims-drift). grep-extract, never a
+# second source: only the three named lines are read, one quote layer is
+# stripped, and values are consumed exclusively as psql -v parameters / curl
+# JSON fields — never interpolated into SQL or shell program text.
+for _mem_evar in EMBED_PROVIDER EMBED_MODEL EMBED_DIMS; do
+  if [ -z "${!_mem_evar:-}" ] && [ -f "$CABINET_ROOT/cabinet/.env" ]; then
+    _mem_eval="$(grep -E "^${_mem_evar}=" "$CABINET_ROOT/cabinet/.env" | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")"
+    if [ -n "$_mem_eval" ]; then printf -v "$_mem_evar" '%s' "$_mem_eval"; fi
+  fi
+done
+unset _mem_evar _mem_eval
 EMBED_PROVIDER="${EMBED_PROVIDER:-voyage}"
 EMBED_MODEL="${EMBED_MODEL:-voyage-4-large}"
 EMBED_DIMS="${EMBED_DIMS:-1024}"
@@ -122,17 +150,61 @@ memory_get_embedding() {
 # read path (that would add a write to every search). Self-sufficient: creates
 # the table if absent, so a captain can stamp an existing estate in one call.
 # Requires a writable NEON_CONNECTION_STRING.
+#
+# TWO MODES (review fix 2026-07-15 — the drift gate must not erase itself):
+#   --if-absent  INSERT ... ON CONFLICT (id) DO NOTHING. The DEPLOY mode:
+#                only an unstamped store gains a row; an existing row is
+#                PROVENANCE (what the vectors were actually built with) and is
+#                never overwritten — an unconditional upsert here would let
+#                any routine officer restart re-bless a config flip and erase
+#                the doctor's DIMS DRIFT WARN before it is ever seen.
+#                WIRED CALLERS (R4 follow-up, 2026-07-15): load-preset.sh
+#                (every deploy of an existing cabinet) + cabinet-bootstrap.sh
+#                step_apply_schemas (fresh hatch — empty store, so the first
+#                insert IS the provenance); both fail-soft in a subshell right
+#                after the 046 DDL applies.
+#   (no arg)     INSERT ... ON CONFLICT (id) DO UPDATE (upsert). The RE-STAMP
+#                mode for genuine provenance changes only: the future auto
+#                re-embed organ (EMBED-SEAM ledger residual) and a captain
+#                manually closing a drift WARN after a verified full re-embed
+#                backfill. Deploy paths must NOT call this mode.
+# Any other argument returns 2 loudly — a typo must never silently re-stamp.
+# The mode selects one of two FIXED SQL heredocs; SQL text is never assembled.
 # =============================================================
 memory_embedding_stamp() {
+  local _mode="${1:-}"
+  case "$_mode" in
+    ''|--if-absent) : ;;
+    *)
+      echo "memory.sh: memory_embedding_stamp unknown mode '$_mode' (only --if-absent) — refusing" >&2
+      return 2
+      ;;
+  esac
   if [ -z "${NEON_CONNECTION_STRING:-}" ]; then
     echo "memory.sh: no NEON_CONNECTION_STRING — cannot stamp cabinet_embedding_meta" >&2
     return 1
   fi
-  psql "$NEON_CONNECTION_STRING" -q \
-    -v provider="${EMBED_PROVIDER:-voyage}" \
-    -v model="${EMBED_MODEL:-voyage-4-large}" \
-    -v dims="${EMBED_DIMS:-1024}" \
-    <<'SQLEOF'
+  if [ "$_mode" = "--if-absent" ]; then
+    psql "$NEON_CONNECTION_STRING" -q \
+      -v provider="${EMBED_PROVIDER:-voyage}" \
+      -v model="${EMBED_MODEL:-voyage-4-large}" \
+      -v dims="${EMBED_DIMS:-1024}" \
+      <<'SQLEOF'
+CREATE TABLE IF NOT EXISTS cabinet_embedding_meta (
+  id INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  provider TEXT NOT NULL, model TEXT NOT NULL, dims INT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+INSERT INTO cabinet_embedding_meta (id, provider, model, dims, updated_at)
+VALUES (1, :'provider', :'model', (:'dims')::int, NOW())
+ON CONFLICT (id) DO NOTHING;
+SQLEOF
+  else
+    psql "$NEON_CONNECTION_STRING" -q \
+      -v provider="${EMBED_PROVIDER:-voyage}" \
+      -v model="${EMBED_MODEL:-voyage-4-large}" \
+      -v dims="${EMBED_DIMS:-1024}" \
+      <<'SQLEOF'
 CREATE TABLE IF NOT EXISTS cabinet_embedding_meta (
   id INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
   provider TEXT NOT NULL, model TEXT NOT NULL, dims INT NOT NULL,
@@ -146,6 +218,7 @@ ON CONFLICT (id) DO UPDATE SET
   dims     = EXCLUDED.dims,
   updated_at = NOW();
 SQLEOF
+  fi
 }
 
 # =============================================================
@@ -287,7 +360,9 @@ memory_queue_embed() {
 # memory_rerank then reorders that pool with a Voyage cross-encoder and cuts
 # to top-k. Fail-soft — keyless/error yields the blended top-k unchanged. The
 # 8-column output contract is identical either way (only intra-top-k order and
-# which pool rows make the cut can change).
+# which pool rows make the cut can change). CABINET_MEMORY_RERANK=off skips
+# the rerank stage entirely (blended-order cut) — the retrieval-eval
+# no-rerank arm's measurement seam, see memory_rerank below.
 #
 # Tenant scoping: results are fenced to this cabinet's rows —
 # cabinet_id = memory_cabinet_scope() OR 'main' (legacy transition rows);
@@ -380,6 +455,12 @@ candidates AS (
   ORDER BY m.embedding <=> :'embedding'::vector
   LIMIT GREATEST((:'limit')::int * 5, 50)
 ),
+-- RANKING-BLOCK-BEGIN retrieval-eval fingerprint scope: blended weights,
+-- vec floor, pool order. NOTE for editors: this comment lives inside a
+-- bash-3.2 command substitution, so keep it free of quote characters and
+-- parens. Any edit between these markers requires a passing store-local
+-- eval re-stamp via retrieval-eval-nightly.sh --stamp, or the CI
+-- ranking-change guard goes red.
 scored AS (
   SELECT c.*,
     CASE WHEN c.source_created_at IS NULL THEN 0.5
@@ -414,6 +495,7 @@ FROM final
 WHERE vec_sim >= (:'min_score')::float8
 ORDER BY final_score DESC
 LIMIT (:'pool')::int;
+-- RANKING-BLOCK-END
 SQLEOF
 )
 
@@ -438,6 +520,11 @@ SQLEOF
 # Args: query, topk, pool_rows (newline-separated; 9 tab columns each, the 9th
 #       = rerank_text). Emits <=topk rows of the 8-column contract.
 # =============================================================
+# RANKING-BLOCK-BEGIN (retrieval-eval fingerprint scope: the rerank stage,
+# the blended top-k cut, and the no-rerank seam. Any edit between these
+# markers requires a passing store-local eval re-stamp:
+# bash cabinet/scripts/retrieval-eval-nightly.sh --stamp — otherwise CI's
+# ranking-change guard goes red.)
 _memory_blended_topk() {
   # stdin: pool rows (9 tab cols). $1: topk. Emits <=topk rows, columns 1-8.
   local topk="$1" line count=0
@@ -460,6 +547,20 @@ memory_rerank() {
   done <<< "$rows"
   local _n=${#_pool[@]}
   [ "$_n" -eq 0 ] && return 0
+
+  # NO-RERANK SEAM (retrieval-eval no-rerank arm, 2026-07-15):
+  # CABINET_MEMORY_RERANK in off|0|no|false (case-insensitive) forces the
+  # blended-order top-k cut and never calls the rerank endpoint. The seam
+  # exists so the nightly eval can measure BLENDED ranking with the rerank
+  # rescue disabled — rerank hides pool/weight damage (the R1 landing's
+  # named residual: a blended weight-swap passed the eval while rerank was
+  # live). Any other value (or unset) = rerank on, today's behavior.
+  case "$(printf '%s' "${CABINET_MEMORY_RERANK:-on}" | tr '[:upper:]' '[:lower:]')" in
+    off|0|no|false)
+      printf '%s\n' "${_pool[@]}" | _memory_blended_topk "$topk"
+      return 0
+      ;;
+  esac
 
   # Fail-soft arm 1 (keyless): no rerank possible → blended top-k. In practice
   # memory_search already degraded to lexical before reaching here when the key
@@ -510,6 +611,7 @@ memory_rerank() {
     fi
   done <<< "$_order"
 }
+# RANKING-BLOCK-END
 
 # =============================================================
 # DEGRADED SEARCH: lexical-only arm (no embedding available)
