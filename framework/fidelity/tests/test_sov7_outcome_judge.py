@@ -52,7 +52,7 @@ def _mower_case_dict(case_id="mower12345"):
              "date": "2026-05-05T08:00:00+00:00", "source": "msgraph",
              "text": "Vil du have hjaelp til at finde en robotplaeneklipper?"},
         ],
-        "real_reply": "Her er en Husqvarna-link HEMMELIGT-SVAR.",
+        "real_reply": "Her er en Acme-link HEMMELIGT-SVAR.",
     }
 
 
@@ -273,7 +273,7 @@ class TestForcedGuards:
         guard. Pins that the candidates never became the haystack."""
         out = self._judge(monkeypatch, {
             "outcome_winner": "tie", "outcome_rationale": "",
-            "outcome_grounded_fact": ("From Ada at 2026-05-06: Husqvarna "
+            "outcome_grounded_fact": ("From Ada at 2026-05-06: Acme "
                                       "link HEMMELIGT SVAR."),
         }, clone_draft=_ONTOPIC_DRAFT)
         assert out["outcome_verdict"] == "incomparable"

@@ -40,7 +40,7 @@ def _mower_case_dict():
              "date": "2026-05-05T08:00:00+00:00", "source": "msgraph",
              "text": "Vil du have hjaelp til at finde en robotplaeneklipper?"},
         ],
-        "real_reply": "Her er en Husqvarna-link HEMMELIGT-SVAR.",
+        "real_reply": "Her er en Acme-link HEMMELIGT-SVAR.",
     }
 
 
@@ -341,7 +341,7 @@ class TestCompositeBlend:
         assert scorer.composite("match", "intent-divergent") == 0.0
 
     def test_divergent_intent_aligned_is_one(self):
-        # The Husqvarna credit path: different surface, same intent -> 1.0.
+        # The Acme credit path: different surface, same intent -> 1.0.
         assert scorer.composite("divergent", "intent-aligned") == 1.0
 
     def test_intent_error_falls_back(self):

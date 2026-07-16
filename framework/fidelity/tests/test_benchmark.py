@@ -77,8 +77,8 @@ class TestBuildCases:
 
 def _mower_rc():
     """A retro-case dict whose thread is about a robotic mower for the new
-    house, with a held-out real_reply that pastes a Husqvarna URL. The reply
-    carries a token ('husqvarna') that does NOT appear anywhere in the thread,
+    house, with a held-out real_reply that pastes an Acme URL. The reply
+    carries a token ('acme') that does NOT appear anywhere in the thread,
     so a benchmark intent contaminated by real_reply is detectable."""
     return {
         "case_id": "mower1", "reply_key": "k", "slug": "alex", "person": "Alex",
@@ -92,7 +92,7 @@ def _mower_rc():
              "who": "Alex <l@x>", "source": "msgraph",
              "text": "Kan du anbefale en robotplæneklipper uden afgraensningskabel?"},
         ],
-        "real_reply": "https://www.husqvarna.com/dk/robotplaeneklippere/automower/",
+        "real_reply": "https://www.acme.com/dk/robotplaeneklippere/automower/",
     }
 
 
@@ -120,7 +120,7 @@ class TestBenchmarkIntent:
         c = self._build_one(monkeypatch, rc)
         intent_lc = c.intent.lower()
         # A token unique to the held-out reply must NOT leak into the intent.
-        assert "husqvarna" not in intent_lc
+        assert "acme" not in intent_lc
         assert "automower" not in intent_lc
         # A token from the pre-cutoff thread SHOULD ground the intent.
         assert "robotpl" in intent_lc or "alex" in intent_lc
@@ -225,7 +225,7 @@ class TestScoreableFilter:
         assert not benchmark.is_scoreable(_case(reply, _CLEAN_THREAD))
 
     def test_bare_url_dump_excluded(self):
-        url = "https://www.husqvarna.com/dk/robotplaeneklippere/automower/"
+        url = "https://www.acme.com/dk/robotplaeneklippere/automower/"
         assert not benchmark.is_scoreable(_case(url, _CLEAN_THREAD))
 
     def test_mostly_url_reply_excluded(self):
