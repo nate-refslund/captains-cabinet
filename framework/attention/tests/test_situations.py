@@ -106,7 +106,7 @@ class TestLifecycle(unittest.TestCase):
 
     def test_captain_decision_closes(self):
         key = situation_key([REF], "s")
-        view = derive(ledger=[prop_row(TS0, decision="approve",
+        view = derive(ledger=[prop_row(TS0, decision="approved",
                                        outcome={"status": "ok",
                                                 "evidence": "sent"})])
         self.assertEqual(view[key]["state"], "decided")
@@ -126,7 +126,7 @@ class TestLifecycle(unittest.TestCase):
     def test_closure_feed_row_resolves(self):
         key = situation_key([REF], "s")
         view = derive(
-            ledger=[prop_row(TS0, decision="skip")],
+            ledger=[prop_row(TS0, decision="rejected")],
             feed=[{"seq": 2, "ts": TS2, "direction": "in", "kind": "closure",
                    "situation_key": key}])
         self.assertEqual(view[key]["state"], "resolved")
@@ -225,7 +225,7 @@ class TestStandingMapAndCensus(unittest.TestCase):
         view = derive(ledger=[
             prop_row(TS2, "b", ["cmt-bbbbbbbbbbbb"]),
             prop_row(TS0, "a", ["cmt-aaaaaaaaaaaa"]),
-            prop_row(TS1, "closed", ["cmt-cccccccccccc"], decision="skip"),
+            prop_row(TS1, "closed", ["cmt-cccccccccccc"], decision="rejected"),
         ])
         live = situations.live_situations(view)
         self.assertEqual([s["subject"] for s in live], ["a", "b"])

@@ -63,7 +63,13 @@ DEMOTE_PATH = ("ping-now", "standing-card", "briefing", "weekly-rollup",
 # Demotions at/past this index park the situation (dormant — census-only).
 _PARK_TIER = len(DEMOTE_PATH) - 1
 
-_CAPTAIN_DECISIONS = frozenset({"approve", "edit", "skip"})
+# The ledger ``proposal.decision`` values a real Captain verdict writes — the
+# PAST-TENSE forms from framework.acting.loop._VERDICT (approve→"approved",
+# edit→"edited", skip→"rejected"), NOT the imperative reply verbs. Pinned to
+# that source by test_queue's drift guard. (Was wrongly the imperative
+# {"approve","edit","skip"}, so no real verdict ever matched — a proposal the
+# Captain decided never counted as decided and its expiry streak never reset.)
+_CAPTAIN_DECISIONS = frozenset({"approved", "edited", "rejected"})
 
 
 # ---------------------------------------------------------------------------
