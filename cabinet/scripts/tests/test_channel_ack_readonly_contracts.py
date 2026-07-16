@@ -26,6 +26,7 @@ REPO = Path(__file__).resolve().parents[3]
 TRIGGER_CHANNEL = REPO / "cabinet/channels/redis-trigger-channel/index.ts"
 LIBRARY_MCP = REPO / "cabinet/channels/library-mcp/index.ts"
 TRIGGERS_LIB = REPO / "cabinet/scripts/lib/triggers.sh"
+MAC_LAUNCHER = REPO / "cabinet/scripts/start-officer-mac.sh"
 
 READ_TOOLS = [
     "library_list_spaces",
@@ -82,6 +83,24 @@ class TestConsumerSideAck:
             "behavior — update the trigger_read_safety_net comment"
         )
         assert "trigger_ack()" in src  # the consumer-side ACK path itself
+
+    def test_mac_restart_never_deletes_channel_consumer_or_its_pel(self):
+        # AUD-12-R1 (2026-07-16 corrective amendment): the Mac officer
+        # launcher used to run XGROUP DELCONSUMER on every restart, deleting
+        # the stable `channel` consumer's pending-entry list along with it —
+        # silently destroying delivered-but-unacked ownership records and
+        # defeating both the consumer-side ACK contract above and the
+        # post-tool-use XAUTOCLAIM safety net (it claims from the group's PEL,
+        # which DELCONSUMER erases). See docs/proposals/
+        # germline-amendment-trigger-retention-2026-07-16.md for the full
+        # evidence and ceremony.
+        src = MAC_LAUNCHER.read_text()
+        assert "DELCONSUMER" not in src, (
+            "officer restart must preserve every consumer PEL: DELCONSUMER "
+            "deletes unACKed receipts and violates AUD-12"
+        )
+        assert "processPending() with ID 0" in src
+        assert "consumer-side ACK contract" in src
 
 
 def _tool_blocks(src: str) -> dict[str, str]:

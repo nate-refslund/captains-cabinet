@@ -74,6 +74,12 @@ marker fails closed and refuses new officer boots.
   `cabinet/scripts/hooks/observe-ack.sh <id>` command succeeds, pending returns
   to zero, and replaying the same receipt is an idempotent `already_clear`
   success.
+- Restart retention is proved before the soak: with one synthetic trigger left
+  pending under consumer `channel`, restart that officer without widening the
+  kill switch, observe-only posture, spend cap, or egress policy. The same
+  receipt ID must be re-delivered by startup ID-0 recovery, then exact-ID ACK
+  must return 1 and pending must return to zero. Any PEL drop before XACK is a
+  failed gate; never use `XGROUP DELCONSUMER` as restart cleanup.
 
 ## Honest residuals
 
