@@ -62,6 +62,63 @@ from typing import NamedTuple
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
+
+
+# ── Captain-DM capture seam (fixed 2026-07-16) ───────────────────────────────
+# The germline capture/encoder/retrieval hooks (capture-captain-dm.sh,
+# captain-rule-encoder.sh, pre-captain-dm.sh) fire on UserPromptSubmit ONLY when
+# the prompt carries a <channel source="telegram" ... chat_id="<captain>"> tag —
+# the shape the Claude Code Channels plugin emitted. This poller SUPERSEDED that
+# plugin (it stalled at the prompt) but relayed plain lines, so every inbound
+# Captain DM silently failed capture from 2026-06-23 until this fix. We now emit
+# the tag the hooks already parse, sourcing chat_id from the SAME config they read
+# so the match holds for the generated/sane config format.
+def _neutralize_channel_tag(s: str) -> str:
+    """Defang any literal ``<channel …>`` opener/closer in human-facing prefix
+    text (the reply-preview / binder note) by swapping its ASCII ``<`` for ‹
+    (U+2039). The germline hooks use FIRST-match regexes, so a channel tag the
+    Captain merely QUOTED (an officer-echoed example) would otherwise pre-empt the
+    real body tag below and get captured instead. Visually near-identical; the
+    real tag is built from ASCII ``<`` and is unaffected."""
+    return re.sub(r'<(/?)channel\b', r'‹\1channel', s) if s else s
+
+
+def build_captain_channel_relay(chat_id: str, mid: int, text: str,
+                                *, note: str = "", quoted: str = "") -> str:
+    """The officer-pane relay line for one inbound Captain DM.
+
+    The Captain's raw ``text`` is wrapped in the plugin-compatible
+    ``<channel source="telegram" chat_id=… message_id=…>…</channel>`` tag the
+    germline capture hooks gate on (chat_id match) and extract the body from
+    (clean text between the tags — the 📩 prefix and reply-note stay OUTSIDE so
+    they never pollute the captured message). The prefix fields are run through
+    ``_neutralize_channel_tag`` so a quoted/echoed tag can't pre-empt the real
+    one. Pure + module-level so the poller↔hook contract test can pin the shape."""
+    reply = f' [↩ replying to: “{_neutralize_channel_tag(quoted)}”]' if quoted else ""
+    tag = (f'<channel source="telegram" chat_id="{chat_id}" '
+           f'message_id="{mid}">{text}</channel>')
+    return f"\U0001F4E9 Captain DM (Telegram){_neutralize_channel_tag(note)}{reply}: {tag}"
+
+
+def resolve_hook_chat_id(repo_root: str = _REPO_ROOT) -> str:
+    """The ``captain_telegram_chat_id`` the germline capture hooks read — from
+    ``instance/config/product.yml`` THEN ``platform.yml``, first match wins (the
+    exact file order + precedence capture-captain-dm.sh / pre-captain-dm.sh use:
+    ``grep … product.yml platform.yml | head -1``). Emitted verbatim in the
+    channel tag so the hooks' ``chat_id="…"`` gate matches for the sane/generated
+    config format (double-quoted value, no inline comment — what assemble-config
+    emits). Returns "" when unset in both, whereupon the hooks default-deny."""
+    cfg = os.path.join(repo_root, "instance", "config")
+    for name in ("product.yml", "platform.yml"):
+        try:
+            with open(os.path.join(cfg, name), encoding="utf-8") as fh:
+                for line in fh:
+                    m = re.match(r'\s*captain_telegram_chat_id:\s*["\']?([^"\'#\s]+)', line)
+                    if m:
+                        return m.group(1)
+        except OSError:
+            continue
+    return ""
 try:
     from framework.triggers.firing import fire_due_triggers
 except Exception:
@@ -587,6 +644,21 @@ def main() -> int:
     if not captain:
         log("FATAL: CAPTAIN_TELEGRAM_ID not set"); return 1
 
+    # Capture-seam chat_id (2026-07-16): emit the value the germline hooks gate
+    # on (instance/config product.yml→platform.yml) so their chat_id match holds
+    # by construction; env CAPTAIN_TELEGRAM_ID is the from.id relay gate (same
+    # number in practice). Warn on any drift so this seam cannot silently re-break.
+    hook_chat_id = resolve_hook_chat_id()
+    tag_chat_id = hook_chat_id or captain
+    if hook_chat_id and str(hook_chat_id) != str(captain):
+        log(f"WARNING capture-seam: instance/config captain_telegram_chat_id "
+            f"({hook_chat_id}) != CAPTAIN_TELEGRAM_ID env ({captain}); emitting "
+            f"{hook_chat_id} in the channel tag (hooks gate on the yml value).")
+    elif not hook_chat_id:
+        log("WARNING capture-seam: instance/config/{product,platform}.yml has no "
+            "captain_telegram_chat_id — the germline capture hooks default-deny, "
+            "so Captain DMs will NOT be captured until it is set.")
+
     os.makedirs(state_dir, exist_ok=True)
     offset_file = os.path.join(state_dir, "inbound-offset.txt")
     try:
@@ -735,19 +807,18 @@ def main() -> int:
         time.sleep(0.5)
         subprocess.run(["tmux", "send-keys", "-t", session, "C-m"], timeout=10)
 
-    def deliver(text: str, quoted: str = "", binder_note: str = "") -> None:
+    def deliver(text: str, quoted: str = "", binder_note: str = "", mid: int = 0) -> None:
         """Idle-gate, then inject the Captain DM into the officer pane as a turn.
         `quoted` is the message the Captain REPLIED TO (Telegram reply-threading) — prefixed
         so the officer sees the exact draft / proposal / message being answered, with
         no need to ask 'which one'. `binder_note` (F0.5) is the mechanical binder
         wire's outcome — when present, recording+delivery ALREADY happened; the
-        Chair must harvest lessons only and never double-deliver."""
+        Chair must harvest lessons only and never double-deliver. The raw Captain
+        text is wrapped in the <channel source="telegram" …> tag the germline
+        capture hooks require (build_captain_channel_relay)."""
         note = f" [⚙ {binder_note}]" if binder_note else ""
-        if quoted:
-            relay = f"\U0001F4E9 Captain DM (Telegram){note} [↩ replying to: “{quoted}”]: {text}"
-        else:
-            relay = f"\U0001F4E9 Captain DM (Telegram){note}: {text}"
-        raw_inject(relay)
+        raw_inject(build_captain_channel_relay(tag_chat_id, mid, text,
+                                               note=note, quoted=quoted))
 
     while True:
         try:
@@ -875,7 +946,7 @@ def main() -> int:
                         "telegram_message_id": mid, "file_kind": att["kind"]})
                     err_line = (f"[tg-file-error name={sanitize_filename(att.get('name', '?'))} "
                                 f"kind={att['kind']} reason=too-large-20mb]")
-                    deliver(f"{err_line} {caption}".strip(), quoted, "")
+                    deliver(f"{err_line} {caption}".strip(), quoted, "", mid=mid)
                 elif frm == str(captain) and att is not None:
                     # Inbound file (photo/document/voice/audio): download to the inbox
                     # and relay its local path + any caption (was text-only before —
@@ -900,7 +971,7 @@ def main() -> int:
                         body = format_file_line(local, att.get("name", ""), att["kind"])
                     else:
                         body = f"[tg-file kind={att['kind']} download=failed]"
-                    deliver(f"{body} {caption}".strip(), quoted, "")
+                    deliver(f"{body} {caption}".strip(), quoted, "", mid=mid)
                 elif frm == str(captain) and text:
                     log(f"captain msg update_id={uid} ({len(text)} chars{', reply' if quoted else ''}) -> relaying")
                     mid = int(msg.get("message_id", 0))
@@ -955,7 +1026,7 @@ def main() -> int:
                         except Exception as e:
                             log(f"binder wire unavailable (passthrough preserved): {e}")
                     fa({"direction": "in", "kind": "message", "telegram_message_id": mid})
-                    deliver(text, quoted, binder_note)
+                    deliver(text, quoted, binder_note, mid=mid)
                 else:
                     log(f"skip update_id={uid} from={frm or '?'} (not captain or empty)")
             offset = max(offset, uid)

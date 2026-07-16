@@ -266,7 +266,9 @@ def expiry_streaks(ledger_rows: Iterable) -> dict:
         decision = (row.get("proposal") or {}).get("decision")
         if decision == "expired":
             streaks[action] = streaks.get(action, 0) + 1
-        elif decision in ("approve", "edit", "skip"):
+        elif decision in sit_view._CAPTAIN_DECISIONS:
+            # A real Captain verdict (approved/edited/rejected — the shared
+            # constant, NOT the imperative reply verbs) resets the streak.
             streaks[action] = 0
     return streaks
 

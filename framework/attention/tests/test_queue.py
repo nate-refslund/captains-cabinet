@@ -125,7 +125,10 @@ class TestH5DemoteWiring(unittest.TestCase):
 
     def test_streaks_and_reset(self):
         self.assertEqual(q.expiry_streaks(self._rows(3)), {"action-card": 3})
-        self.assertEqual(q.expiry_streaks(self._rows(3, "approve")),
+        # a REAL recorded verdict (loop._VERDICT past-tense: "approved"), not
+        # the imperative reply verb, resets the streak — this is what the
+        # ledger actually writes in production.
+        self.assertEqual(q.expiry_streaks(self._rows(3, "approved")),
                          {"action-card": 0})
 
     def test_demoted_kinds_wires_charter_budget(self):
@@ -135,8 +138,26 @@ class TestH5DemoteWiring(unittest.TestCase):
         self.assertEqual(q.demoted_kinds(self._rows(4), charter), set())
         self.assertEqual(q.demoted_kinds(self._rows(5), charter),
                          {"action-card"})
-        # a Captain verdict resets the streak — the class un-demotes
-        self.assertEqual(q.demoted_kinds(self._rows(5, "skip"), charter), set())
+        # a Captain verdict resets the streak — the class un-demotes ("rejected"
+        # is what skip records; the imperative "skip" is never a ledger decision)
+        self.assertEqual(q.demoted_kinds(self._rows(5, "rejected"), charter), set())
+
+    def test_reset_vocabulary_matches_ledger_writer(self):
+        """DRIFT GUARD (2026-07-16): the decisions that reset an expiry streak
+        MUST be exactly the proposal.decision values the ledger WRITER
+        (loop._VERDICT) emits for a real Captain verdict. The original bug had
+        queue + situations comparing the recorded PAST-TENSE decision
+        (approved/edited/rejected) against the imperative reply verbs
+        (approve/edit/skip) — so no real verdict ever matched, streaks never
+        reset, and decided proposals never counted as decided. If loop's
+        vocabulary drifts, fail loud here rather than silently re-break."""
+        from framework.acting import loop
+        from framework.attention import situations
+        written = frozenset(spec["decision"] for spec in loop._VERDICT.values())
+        self.assertEqual(situations._CAPTAIN_DECISIONS, written)
+        # queue.expiry_streaks consumes this SAME constant (one source, no copy)
+        self.assertFalse(situations._CAPTAIN_DECISIONS & {"approve", "edit", "skip"},
+                         "reset set must be the recorded decisions, not reply verbs")
 
 
 def _sit(key="sit-1", **kw):
