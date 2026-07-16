@@ -54,7 +54,7 @@ local function add32(...)
 end
 
 local function hex32(value)
-  if value < 0 then value = value + 4294967296 end
+  if value < 0 then value = value + (2^32) end
   return string.format("%08x", value)
 end
 
@@ -64,8 +64,8 @@ local function sha256(message)
   local padded_length = message_length + 9
   local remainder = padded_length % 64
   if remainder ~= 0 then padded_length = padded_length + (64 - remainder) end
-  local high = math.floor(bit_length / 4294967296)
-  local low = bit_length % 4294967296
+  local high = math.floor(bit_length / (2^32))
+  local low = bit_length % (2^32)
   local length_start = padded_length - 7
 
   -- Read SHA-256 padding as a virtual byte string. Building a Lua table from

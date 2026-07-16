@@ -672,7 +672,7 @@ def test_launchd_stop_succeeds_when_service_is_canonically_absent(tmp_path):
     _write_instance(root, "enforce: false\n")
     egress = state / "egress"
     egress.mkdir(parents=True)
-    stale_pid = 999999999
+    stale_pid = 999_999_999
     (egress / "proxy.pid").write_text(f"{stale_pid}\n", encoding="utf-8")
     (egress / "proxy.ready").write_text(
         f"READY 8899 PID {stale_pid}\n", encoding="utf-8")

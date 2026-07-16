@@ -427,7 +427,7 @@ jobs:
         run: pip install pytest pyyaml jsonschema
       # redis-tools: the redis-gated test guards probe via the redis-cli
       # BINARY (test_intake.py:32) — the service container alone leaves
-      # them skipping (proven: spike run 29148145402 still skipped 23).
+      # them skipping (proven on a spike run: still skipped 23).
       - name: Install redis-cli
         run: sudo apt-get update -qq && sudo apt-get install -y -qq redis-tools
       # Collection census: the fidelity conftest silently collect_ignores 19

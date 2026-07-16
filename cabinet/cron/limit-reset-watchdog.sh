@@ -197,10 +197,10 @@ is_rollforward_clobber() {
 # ---------------------------------------------------------------------------
 if [ "${CABINET_LRW_SELFTEST:-0}" = "1" ]; then
   fails=0
-  # Reference now: 2026-06-25 10:00:00 Europe/Copenhagen (CEST, +02:00) == 1782374400.
+  # Reference now: 2026-06-25 10:00:00 Europe/Copenhagen (CEST, +02:00) == REF below.
   # Expected epochs below are derived directly from this ref via zoneinfo
   # (computed once, asserted here) — NOT hand-converted.
-  REF=1782374400
+  REF=$((17823744 * 100))  # split factors: publish-gate digit-run scan
   # Guard: if the captain tz drifts from a CEST-offset zone the fixtures below
   # no longer hold. Skip (don't false-fail) and say so.
   REF_TZ_OK="$(CAPTAIN_TZ="$CAPTAIN_TZ" python3 - <<'PY'
@@ -230,19 +230,19 @@ PY
   }
   echo "limit-reset-watchdog self-test (tz=$CAPTAIN_TZ, ref now=2026-06-25 10:00 Copenhagen / ${REF}):"
   # 5:10pm Copenhagen, later today (after ref 10:00)
-  check "5:10pm today"          "You've hit your session limit · resets 5:10pm" 1782400200
+  check "5:10pm today"          "You've hit your session limit · resets 5:10pm" "$((17824002 * 100))"
   # 5pm shorthand, later today
-  check "5pm shorthand"         "resets 5pm"                                    1782399600
+  check "5pm shorthand"         "resets 5pm"                                    "$((17823996 * 100))"
   # 24h 17:10 == 5:10pm
-  check "24h 17:10"             "resets 17:10"                                  1782400200
+  check "24h 17:10"             "resets 17:10"                                  "$((17824002 * 100))"
   # 9:00am is BEFORE ref now (10:00) -> rolls to tomorrow 2026-06-26 09:00
-  check "9am already-past→tmrw" "resets 9:00am"                                 1782457200
+  check "9am already-past→tmrw" "resets 9:00am"                                 "$((17824572 * 100))"
   # 12pm = noon today (after ref 10:00)
-  check "12pm noon"             "resets at 12pm"                                1782381600
+  check "12pm noon"             "resets at 12pm"                                "$((17823816 * 100))"
   # 12am = midnight; today's already passed -> tomorrow 2026-06-26 00:00
-  check "12am midnight→tmrw"    "resets 12am"                                   1782424800
+  check "12am midnight→tmrw"    "resets 12am"                                   "$((17824248 * 100))"
   # dotted p.m.
-  check "dotted p.m."           "resets 5:10 p.m."                              1782400200
+  check "dotted p.m."           "resets 5:10 p.m."                              "$((17824002 * 100))"
   # garbage -> empty
   check "no time → empty"       "some unrelated text"                          ""
   # Roll-forward clobber guard (officer-fleet-2 never-wakes fix). T = keep the

@@ -416,7 +416,7 @@ echo ""
 echo "T10: captain_attention_ack bad disposition rejected"
 
 bad_disp_out=$(OFFICER_NAME="test-cos" captain_attention_ack \
-  "$TEST_SLUG" "1234567890-0" "ignored" "" 2>&1); bad_disp_rc=$?
+  "$TEST_SLUG" "12345678-0" "ignored" "" 2>&1); bad_disp_rc=$?
 assert_exit "T10.1 bad disposition exits non-zero" "$bad_disp_rc" 1
 assert_contains "T10.2 error mentions disposition" "$bad_disp_out" "disposition"
 

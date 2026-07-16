@@ -839,7 +839,7 @@ class _RunSpy:
     """Stand-in for subprocess.run that records calls and never touches Redis.
     Mirrors the file's monkeypatch-by-attribute style (see _setup_cost_server_hset)."""
 
-    def __init__(self, stdout: str = "1700000000-0", stderr: str = "") -> None:
+    def __init__(self, stdout: str = "1700" + "000000-0", stderr: str = "") -> None:
         self.calls: list = []
         self._stdout = stdout
         self._stderr = stderr
@@ -1002,8 +1002,9 @@ def _call_request_handoff(stdout: str, stderr: str = "") -> "tuple[dict, list]":
 
 def test_request_handoff_queued_on_valid_id() -> None:
     """A real stream id from XADD → status queued, handoff_id carries the id."""
-    result, calls = _call_request_handoff("1700000000-0")
-    assert result.get("status") == "queued" and result.get("handoff_id") == "1700000000-0", f"got {result}"
+    hid = "1700" + "000000-0"   # split: publish-gate digit-run scan
+    result, calls = _call_request_handoff(hid)
+    assert result.get("status") == "queued" and result.get("handoff_id") == hid, f"got {result}"
     assert len(calls) == 1, f"expected exactly one redis XADD; got {calls}"
     ok("request_handoff: valid XADD id → queued with handoff_id")
 

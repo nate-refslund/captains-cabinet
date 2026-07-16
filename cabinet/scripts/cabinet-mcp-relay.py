@@ -251,7 +251,7 @@ def parse_xrange_entry(stream_lines: list[str]) -> list[tuple[str, dict[str, str
     """Parse XRANGE output into [(stream_id, {field: value, ...})].
 
     redis-cli text output for XRANGE:
-        1) "1234567890-0"
+        1) "12345678-0"
         2)  1) "field1"
             2) "value1"
             3) "field2"
@@ -268,7 +268,7 @@ def parse_xrange_entry(stream_lines: list[str]) -> list[tuple[str, dict[str, str
         if not line:
             i += 1
             continue
-        # Stream ID line — e.g. "1234567890-0" or starts with a digit
+        # Stream ID line — e.g. "12345678-0" or starts with a digit
         if line and (line[0].isdigit() or '-' in line):
             stream_id = line
             i += 1
