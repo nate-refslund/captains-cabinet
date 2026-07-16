@@ -290,7 +290,10 @@ log "Assembled safety boundaries → $RUNTIME_DIR/safety-boundaries.md"
 # Track the Code): 037 + 044 alter library_records after library.sql creates
 # it; 041 alters officer_tasks after 038. R098: 044 is the sole DDL adding
 # embedded_at, which cabinet/dashboard/src/lib/library.ts INSERTs — omitting
-# it broke library record create/update on fresh-hatch DBs.
+# it broke library record create/update on fresh-hatch DBs. 046 (embed-seam
+# provenance singleton) runs last; memory_embedding_stamp --if-absent writes
+# its one row right after the loop — first deploy only, an existing stamp is
+# never overwritten (R4 follow-up wiring, 2026-07-15).
 if [ -n "${NEON_CONNECTION_STRING:-}" ]; then
   for schema in \
     "$CABINET_ROOT/cabinet/sql/cabinet_memory.sql" \
@@ -305,7 +308,8 @@ if [ -n "${NEON_CONNECTION_STRING:-}" ]; then
     "$CABINET_ROOT/cabinet/sql/038-officer-tasks.sql" \
     "$CABINET_ROOT/cabinet/sql/041-tasks-due-at.sql" \
     "$CABINET_ROOT/cabinet/sql/039-linear-to-tasks-schema.sql" \
-    "$CABINET_ROOT/cabinet/sql/045-org-runtime-slice.sql"; do
+    "$CABINET_ROOT/cabinet/sql/045-org-runtime-slice.sql" \
+    "$CABINET_ROOT/cabinet/sql/046-embedding-meta.sql"; do
     if [ -f "$schema" ]; then
       if psql "$NEON_CONNECTION_STRING" -q -f "$schema" > /dev/null 2>&1; then
         log "Applied framework schema (neon): $(basename "$schema")"
@@ -314,6 +318,25 @@ if [ -n "${NEON_CONNECTION_STRING:-}" ]; then
       fi
     fi
   done
+
+  # EMBED-SEAM stamp (R4 follow-up, 2026-07-15 — ends 046's dormant-ship):
+  # ensure cabinet_embedding_meta records the provider/model/dims the store
+  # was built with, so cabinet-doctor's dims-drift probe has a stamped row to
+  # compare against. --if-absent: only an unstamped store gains a row (first
+  # deploy after the wiring / fresh estate); an existing stamp is PROVENANCE
+  # and is never overwritten here — this runs at EVERY officer start, so an
+  # unconditional upsert would re-bless a config flip and silently erase the
+  # doctor's DIMS DRIFT WARN (re-stamping belongs to the re-embed organ, or a
+  # captain after a verified full backfill). Values ride the stamp's
+  # parameterized psql -v seam. Subshell isolation keeps memory.sh's .env
+  # back-fill out of the loader's environment (caller-set values win inside
+  # it). Fail-soft like the schema arms above — never blocks preset load.
+  if ( source "$CABINET_ROOT/cabinet/scripts/lib/memory.sh" > /dev/null 2>&1 && \
+       memory_embedding_stamp --if-absent > /dev/null 2>&1 ); then
+    log "Ensured cabinet_embedding_meta stamp (first deploy inserts; existing provenance preserved)"
+  else
+    log "WARN: failed to stamp cabinet_embedding_meta — doctor dims-drift probe reports SKIP until stamped (next run retries)"
+  fi
 
   # Preset-specific schemas (Neon)
   if [ -f "$PRESET_DIR/schemas.sql" ]; then

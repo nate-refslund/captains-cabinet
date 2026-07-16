@@ -19,6 +19,11 @@ Retro deliverables:
 - Skill promotion candidates (validated drafts → foundation)
 - Role evolution proposals (with Captain ratification required before apply)
 - Process-improvement proposals for Captain approval
+- Part 5 consolidation (MANDATORY terminal step): 3–5 distilled cross-officer
+  beliefs — at least one failure-pattern — queued to Cabinet Memory as
+  `consolidated_belief` / `trust: reflection` rows (never `trust: captain`);
+  plus the boot-pack freshness tell (`memory-distill.py --check`) when the
+  captain-law digest is in use
 
 Read `memory/skills/cross-officer-retro.md` (or the lifted skill
 `.claude/skills/cross-officer-retro/`) for the full procedure before running.
