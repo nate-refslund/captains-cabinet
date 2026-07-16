@@ -373,6 +373,25 @@ def test_apply_refuses_unapproved_need(wired_root):
     assert not _grants_file(wired_root).exists()
 
 
+@pytest.mark.parametrize(
+    "status", ["denied", "snoozed", "expired", "superseded", "granted"])
+def test_apply_refuses_denied_need(wired_root, status):
+    """Every non-approved status refuses at the layer that MINTS authority.
+
+    The deny path was already pinned at the binder-verb layer (deny marks
+    denied + 90d suppression) and the refile layer, but not HERE — a mutant
+    widening load_checked()'s status gate to also accept "denied" survived
+    the whole suite (mutant M1, 2026-07-16). An explicitly denied need must
+    never arm; nor may any other non-approved_pending_apply status."""
+    nid = _file_need()
+    assert needs.mark(nid, status, by="captain:binder") is not None
+    res = _run_apply(wired_root, nid, "--ceiling-ack")
+    assert res.returncode == 3, (res.returncode, res.stderr)
+    assert "approved_pending_apply" in res.stderr
+    assert not _grants_file(wired_root).exists()  # no GRANT row minted
+    assert _status(nid) == status                 # need not flipped to granted
+
+
 def test_apply_refuses_bad_id_shape(wired_root):
     assert _run_apply(wired_root, "NEED-GGGGGGGG").returncode == 2
     assert _run_apply(wired_root, "12345678").returncode == 2

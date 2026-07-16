@@ -765,20 +765,75 @@ services:
     label: com.cabinet.memory-contradictions
     kind: cron
     command: python3.12 cabinet/scripts/memory-contradictions.py
-    schedule: { calendar: [{weekday: 0, hour: 5, minute: 30}] }   # Sundays 05:30 local
-    expected: "one summary line/run (rows= proposals= new=); supersession candidates land status=proposed in shared/interfaces/memory-supersession-proposals.jsonl — NEVER applied by this organ"
-    sunset: "supersede when a measured-precision apply organ (post-soak Captain ruling) replaces propose-only; retire if cabinet_memory moves off superseded_by versioning"
+    schedule: { calendar: [{weekday: 0, hour: 5, minute: 30}] }   # Sundays 05:30 local — apply organ follows 05:45
+    expected: "one summary line/run (rows= proposals= new=); supersession candidates land status=proposed in shared/interfaces/memory-supersession-proposals.jsonl — NEVER applied by this organ (the memory-supersede-apply row consumes them 15 min later)"
+    sunset: "retire if cabinet_memory moves off superseded_by versioning"
     notes: >-
-      §4.2 belief invalidation (2026-07-09): superseded_by plumbing is live
-      (schema, reconcile filters, drift repair) but nothing ever set it from
-      SEMANTIC conflict — contradictory beliefs both feed recall forever.
-      Deterministic propose-only pass (near-duplicate Jaccard>=0.75;
-      contradiction-cue >=0.35 + cue in the newer row only), bounded
-      per-source_type buckets, one constant read-only SELECT (falsifier
-      psql discipline). False-positive supersession is memory loss, so
-      apply stays OFF until precision is measured — same REPORT_ONLY soak
-      pattern as the self-improvement loop; propose-not-apply matches the
-      brain-build grant's conservative-defaults term.
+      §4.2 belief invalidation, the DETECT half (2026-07-09; consumer row
+      memory-supersede-apply added 2026-07-15, per 2026-07-15 Captain
+      ratification of memory Wave 3). Deterministic propose-only pass
+      (near-duplicate Jaccard>=0.75; contradiction-cue >=0.35 + cue in
+      the newer row only), bounded per-source_type buckets, one constant
+      read-only SELECT (falsifier psql discipline). ONE command per row:
+      the generated-plist wrapper `exec`s the command, so a `&&` chain
+      dies at the first program (paid 2026-07-15) — the apply organ is
+      the SEPARATE memory-supersede-apply row below, which also keeps
+      reopened-item processing alive when a detect pass fails.
+  - name: memory-supersede-apply
+    label: com.cabinet.memory-supersede-apply
+    kind: cron
+    command: python3.12 cabinet/scripts/memory-supersede-apply.py
+    schedule: { calendar: [{weekday: 0, hour: 5, minute: 45}] }   # Sundays 05:45 local — after the 05:30 detect pass
+    expected: "one summary line/run (state= pending= consumed= would_apply= applied= cue_cards= refused= blocked=); every consumed proposal gains a per-row consumed stamp in memory-supersession-proposals.jsonl and a decision entry in memory-supersession-soak.jsonl; applied>0 ONLY once state=armed (>=14d soak with zero unresolved reversals) — near-dup class plus Captain-approved cue cards (binder grant); one soak-halfway Captain card on the needs ledger per soak window, whose veto BINDS (state=held-by-captain-veto, no arming, until the Captain re-rules that card)"
+    sunset: "retire if cabinet_memory moves off superseded_by versioning; hold auto-apply forever via instance/config/memory-supersession.yml auto_apply: hold"
+    notes: >-
+      §4.2 belief invalidation, the SOAK+APPLY half (added 2026-07-15,
+      per 2026-07-15 Captain ratification of memory Wave 3; own row
+      because the generated-plist wrapper `exec`s a single command — a
+      `&&` chain after the detector would never run). SOAK: consumes the
+      proposals file (per-row consumed stamps, O_APPEND — never
+      rewrites), re-validates every pair against the LIVE store view
+      (same source_type, both rows live, recomputed Jaccard>=0.75,
+      timestamp order; rows absent from the detector's 90-day window are
+      settled by a windowless by-id probe — provably superseded/gone
+      refuses for good, an UNREACHABLE probe leaves the pair OPEN as
+      blocked-db so aged-out live pairs are never silently dropped), and
+      records would-apply/refusal/cue decisions to
+      shared/interfaces/memory-supersession-soak.jsonl for 14 days from
+      first entry; at half-soak it files ONE Captain heads-up card on
+      the needs ledger (arming date + counts) so arming is never
+      observation-free — approve lets the soak arm, veto BINDS the gate
+      (state held-by-captain-veto, read from the live needs row every
+      run; a captain-veto-hold marker records it and a later binder
+      grant on the same card lifts it). APPLY: after a clean soak —
+      >=14d AND zero unresolved reversals AND config flag not hold AND
+      no halfway veto — the newer row
+      supersedes the older via one guarded parameterized psycopg2 UPDATE
+      (superseded_by pointer only; a row already touched by an apply
+      this run defers its other pairs to next run — an equal-timestamp
+      reciprocal pair can never supersede BOTH rows; max 50 applies/run;
+      reversible via --undo, which appends a reversal and re-blocks
+      arming until a Captain ruling is recorded with
+      --resolve-reversals "note"; driver missing degrades to a loud
+      blocked-db decision, never a crash). Contradiction-cue pairs never
+      auto-apply on similarity: each files a one-tap Captain decision
+      card on the needs ledger (attention queue renders it), retried
+      every run until a need id is recorded — a guardian-dark window
+      delays a card, never drops it; a Captain-APPROVED card (binder
+      grant marks the need approved_pending_apply — for these decision
+      cards that approval IS the ruling; grant-apply.sh applies
+      standing_grant kinds only, so nothing else ever writes granted
+      for them) is executed by this organ's next pass once armed (same
+      guarded path, via captain-grant — the approval waives only the
+      Jaccard bar), and the organ then closes the need with the granted
+      receipt (a moot pair closes it superseded, so the approved set
+      never grows unbounded); a pair-card veto simply never approves.
+      --report prints the digest summary block.
+      Never hand-edit the soak ledger (consumed-but-open pairs reopen
+      from their proposals-file stamps, but the ruling verb is the
+      supported path). False-positive supersession is memory loss —
+      instance/config/memory-supersession.yml auto_apply: hold keeps
+      propose-only forever.
   - name: preference-pairs
     label: com.cabinet.preference-pairs
     kind: cron

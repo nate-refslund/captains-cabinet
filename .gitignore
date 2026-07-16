@@ -204,6 +204,7 @@ shared/interfaces/action-lessons.yml
 shared/interfaces/charter-shadow-series.jsonl
 shared/interfaces/golden-eval-scalar.jsonl
 shared/interfaces/memory-supersession-proposals.jsonl
+shared/interfaces/memory-supersession-soak.jsonl
 shared/interfaces/needs-ledger.jsonl
 shared/interfaces/prediction-calibration.jsonl
 shared/interfaces/preference-pairs.jsonl
