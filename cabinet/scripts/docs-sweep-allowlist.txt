@@ -63,6 +63,22 @@ instance/memory/*
 # above it earns no entry until a real reference appears.
 shared/interfaces/captain-decisions.md
 shared/interfaces/captain-intents.md
+# retro-loop runtime ledgers (same gitignore family) — referenced by the
+# cross-officer-retro skill body, which ships verbatim in
+# packs/doctrine-pack (copy⇄canonical parity pinned by
+# test_memory_distill.py; the references entered sweep scope 2026-07-16
+# when the stale pack copy was refreshed to the full canonical body).
+# anomaly-ledger: written by the retro's Part 1b anomaly-seeking step;
+# meta-cognition-proposals: written by the retro's meta-cognition step.
+shared/interfaces/anomaly-ledger.md
+shared/interfaces/meta-cognition-proposals.md
+# captain-law digest REVIEW surface — written by the memory-distill.py
+# default run (BC boot-pack 2026-07-15); the retro's Part 5 step 13 names
+# it as the regenerate-on-stale output. Runtime by design (gitignored
+# shared/interfaces/**/*.md); the promoted captain-law-digest.md sibling
+# has no path-shaped living-doc reference yet, so per the RULE above it
+# earns no entry until one appears.
+shared/interfaces/captain-law-digest.proposal.md
 # runtime interface doc, same gitignore family.
 shared/interfaces/tech-radar.md
 # root-apply watch ledger — born at the first Captain-armed apply
@@ -72,6 +88,15 @@ shared/interfaces/gate-apply-watch.jsonl
 shared/interfaces/world-chronicle.jsonl
 # dated world chronicle files (docs cite the chronicle-YYYY-MM-DD.jsonl shape).
 shared/interfaces/world/*
+
+# --- memory/skills runtime drafts ----------------------------------------
+# evolution-loop DRAFT skill, officer-written at runtime under
+# memory/skills/evolved/ (gitignored); named as a worked example by the
+# cross-officer-retro body, which ships verbatim in packs/doctrine-pack
+# (entered sweep scope with the 2026-07-16 pack-copy refresh, same as the
+# retro ledgers above). Enumerated, not evolved/*: promoted skills become
+# TRACKED files whose death the sweep must keep catching.
+memory/skills/evolved/principle-harvester.md
 
 # --- other runtime-created ----------------------------------------------
 # written by the very runbook step that references it

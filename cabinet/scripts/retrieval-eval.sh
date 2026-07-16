@@ -20,18 +20,34 @@
 # retrieval-eval-pairs.seed.json) or a fresh self-generated set from
 # harvest-retrieval-eval.sh (portable to any instance).
 #
+# TWO ARMS (no-rerank arm added 2026-07-15 — closes the R1 landing's named
+# residual "rerank rescues pool damage"):
+#   rerank (default)   the production path — blended pool + Voyage rerank.
+#   --no-rerank        exports CABINET_MEMORY_RERANK=off so memory_rerank
+#       short-circuits to the BLENDED-order top-k cut: the same floors then
+#       measure the blended weights (0.60/0.25/0.15 + vec floor) directly.
+#       While rerank is live it can rescue a damaged pool order, so a
+#       weight-swap passes the rerank arm — only this arm catches it. A
+#       blended-arm breach is a REAL finding even when the rerank arm passes.
+#       The JSON verdict carries arm: "rerank"|"no-rerank" (derived from the
+#       EFFECTIVE env, so an inherited CABINET_MEMORY_RERANK=off is labeled
+#       honestly).
+#
 # Usage:
 #   retrieval-eval.sh [--pairs FILE] [--k K] [--floor F] [--mrr-floor M]
-#                     [--limit L] [--min-score S] [--json] [--quiet]
+#                     [--limit L] [--min-score S] [--no-rerank] [--json]
+#                     [--quiet]
 # Defaults: --pairs seed, --k from the pairs file (.recall_k, else 10),
 #           --floor 0.70, --mrr-floor 0.50 (seed baseline MRR ~0.925; an
 #           order-inverted ranker scores ~0.10, so 0.50 has margin both ways),
 #           --limit = k, --min-score = memory_search default.
 # Exit: 0 if recall@k >= floor AND MRR >= mrr-floor; 1 if either gate fails;
 #       2 on usage/setup error.
-# Requires NEON_CONNECTION_STRING (+ VOYAGE_API_KEY for the hybrid+rerank path;
-# keyless degrades to lexical and still scores). Secrets used by the lib, never
-# printed.
+# Requires NEON_CONNECTION_STRING (+ VOYAGE_API_KEY for the hybrid+rerank path
+# AND for the --no-rerank arm's query embeddings; keyless degrades to lexical
+# and still scores). Secrets used by the lib, never printed.
+# Nightly both-arm gate + verdict ledger: cabinet/scripts/retrieval-eval-nightly.sh
+# (services.yml row `retrieval-eval`, 03:50).
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -48,6 +64,7 @@ LIMIT=""
 MIN_SCORE=""
 JSON=0
 QUIET=0
+NO_RERANK=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --pairs) PAIRS="$2"; shift 2 ;;
@@ -56,12 +73,23 @@ while [ $# -gt 0 ]; do
     --mrr-floor) MRR_FLOOR="$2"; shift 2 ;;
     --limit) LIMIT="$2"; shift 2 ;;
     --min-score) MIN_SCORE="$2"; shift 2 ;;
+    --no-rerank) NO_RERANK=1; shift ;;
     --json) JSON=1; shift ;;
     --quiet) QUIET=1; shift ;;
     -h|--help) grep -E '^# ' "$0" | sed 's/^# //'; exit 0 ;;
     *) echo "retrieval-eval.sh: unknown arg: $1" >&2; exit 2 ;;
   esac
 done
+
+# Arm selection: --no-rerank exports the memory_rerank seam off. The arm LABEL
+# is derived from the EFFECTIVE env after that export — an inherited
+# CABINET_MEMORY_RERANK=off without the flag still labels "no-rerank", never
+# a mislabeled rerank verdict.
+[ "$NO_RERANK" = 1 ] && export CABINET_MEMORY_RERANK=off
+case "$(printf '%s' "${CABINET_MEMORY_RERANK:-on}" | tr '[:upper:]' '[:lower:]')" in
+  off|0|no|false) ARM="no-rerank" ;;
+  *) ARM="rerank" ;;
+esac
 
 [ -f "$PAIRS" ] || { echo "retrieval-eval.sh: pairs file not found: $PAIRS" >&2; exit 2; }
 if ! jq -e . "$PAIRS" >/dev/null 2>&1; then
@@ -117,16 +145,16 @@ if [ "$JSON" = 1 ]; then
   jq -nc --argjson recall "$RECALL" --argjson mrr "$MRR" --argjson k "$K" \
     --argjson floor "$FLOOR" --argjson mrr_floor "$MRR_FLOOR" \
     --argjson hits "$HITS" --argjson total "$TOTAL" \
-    --argjson pass "$PASS" \
-    '{recall_at_k:$recall, mrr:$mrr, k:$k, floor:$floor, mrr_floor:$mrr_floor, hits:$hits, total:$total, pass:($pass==1)}'
+    --argjson pass "$PASS" --arg arm "$ARM" \
+    '{arm:$arm, recall_at_k:$recall, mrr:$mrr, k:$k, floor:$floor, mrr_floor:$mrr_floor, hits:$hits, total:$total, pass:($pass==1)}'
 else
   echo ""
-  echo "retrieval-eval: recall@${K} = ${RECALL} (${HITS}/${TOTAL})   MRR = ${MRR}   floors: recall >= ${FLOOR}, mrr >= ${MRR_FLOOR}"
+  echo "retrieval-eval [arm=${ARM}]: recall@${K} = ${RECALL} (${HITS}/${TOTAL})   MRR = ${MRR}   floors: recall >= ${FLOOR}, mrr >= ${MRR_FLOOR}"
   if [ "$PASS" = 1 ]; then
     echo "PASS — recall@${K} >= ${FLOOR} AND MRR >= ${MRR_FLOOR}"
   else
-    [ "$RECALL_PASS" = 0 ] && echo "FAIL — recall@${K} ${RECALL} < floor ${FLOOR} (pool regression: eviction/weights?)"
-    [ "$MRR_PASS" = 0 ] && echo "FAIL — MRR ${MRR} < mrr-floor ${MRR_FLOOR} (order regression: rerank/weights?)"
+    [ "$RECALL_PASS" = 0 ] && echo "FAIL [arm=${ARM}] — recall@${K} ${RECALL} < floor ${FLOOR} (pool regression: eviction/weights?)"
+    [ "$MRR_PASS" = 0 ] && echo "FAIL [arm=${ARM}] — MRR ${MRR} < mrr-floor ${MRR_FLOOR} (order regression: rerank/weights?)"
   fi
 fi
 
