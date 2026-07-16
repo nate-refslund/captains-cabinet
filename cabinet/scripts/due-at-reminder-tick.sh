@@ -13,7 +13,7 @@
 #               memory/logs/due-at-reminder-tick.log 2>&1
 #
 # Connection string: reads CONN > NEON_CONNECTION_STRING > DATABASE_URL.
-# In Work Cabinet, NEON_CONNECTION_STRING points at the Sensed Neon (where
+# In Work Cabinet, NEON_CONNECTION_STRING points at the tasks Neon (where
 # officer_tasks lives — same DB the dashboard reads). Personal Cabinet
 # points at its own postgres. Each Cabinet runs its own cron entry.
 #

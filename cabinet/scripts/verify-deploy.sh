@@ -19,7 +19,7 @@ else
 fi
 
 GITHUB_TOKEN=$(cd /workspace/product && git remote get-url origin | sed 's|https://\(.*\)@github.com.*|\1|')
-REPO="STEP-Network/Sensed"
+REPO=$(cd /workspace/product && git remote get-url origin | sed 's|.*github.com/||; s|\.git$||')
 MAX_ATTEMPTS=20
 POLL_INTERVAL=15
 

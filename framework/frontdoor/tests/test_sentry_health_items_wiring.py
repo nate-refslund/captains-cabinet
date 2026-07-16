@@ -29,7 +29,7 @@ def _health(issues: list[dict]) -> dict:
 
 
 def _items(health, **kw):
-    return ms.sentry_health_items(org="step-network", project="sentry-step-acme",
+    return ms.sentry_health_items(org="example-org", project="sentry-step-acme",
                                   health=health, now=NOW, **kw)
 
 

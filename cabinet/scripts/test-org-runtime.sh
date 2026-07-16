@@ -45,7 +45,7 @@ fi
 # packaging — only the generic contexts/_default.yml ships. Mirror the
 # active-project.txt pattern above: no lane contexts = clean/egg checkout ->
 # pass-with-note, never a hard fail. When present, the check is lane-
-# agnostic (INSTANCE-SENSED-CLEANUP: foundation never names instance lanes):
+# agnostic (INSTANCE-LANE-CLEANUP: foundation never names instance lanes):
 # every lane declaration must carry an EXPLICIT `active: true|false` state —
 # the fail-safe activation invariant the old per-lane checks asserted. An
 # optional trailing `# comment` is tolerated; a glued `false# x` stays

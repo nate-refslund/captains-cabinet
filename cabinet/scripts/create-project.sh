@@ -517,7 +517,7 @@ acquire_lock() {
 # ---------------------------------------------------------------------------
 # FW-082 hotfix-7 (CoS field report msg 2274 substrate-gap fold #1): hardcoded
 # /opt/founders-cabinet default broke create-project when run from inside a
-# spawned cabinet (e.g. /opt/founders-cabinet/spawned-cabinets/step-network-
+# spawned cabinet (e.g. /opt/founders-cabinet/spawned-cabinets/example-org-
 # cabinet/cabinet/scripts/). Detect CABINET_ROOT from script location: this
 # file lives at <CABINET_ROOT>/cabinet/scripts/create-project.sh, so walk up
 # 2 levels. Explicit env var still overrides.

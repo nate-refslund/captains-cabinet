@@ -760,7 +760,7 @@ def _parse_cost_hset(raw: dict[str, str], officer_filter: str | None, project_fi
 
     Field shapes (from stop-hook.sh FW-072):
       Legacy (no project):  <officer>_<dim>            e.g. cto_cost_micro
-      Pool   (with project): <officer>_<project>_<dim>  e.g. cto_sensed_cost_micro
+      Pool   (with project): <officer>_<project>_<dim>  e.g. cto_acme_cost_micro
 
     Returns dict with keys:
       by_officer_project: { "<officer>:<project|null>": {dim: int, ...} }
@@ -779,8 +779,8 @@ def _parse_cost_hset(raw: dict[str, str], officer_filter: str | None, project_fi
         #   Shapes:
         #     Legacy:  <officer>_<dim1>               e.g. cto_input         (2 parts)
         #              <officer>_<dim1>_<dim2>         e.g. cto_cost_micro    (3 parts)
-        #     Pool:    <officer>_<project>_<dim1>      e.g. cto_sensed_input  (3 parts)
-        #              <officer>_<project>_<dim1>_<dim2> e.g. cto_sensed_cost_micro (4 parts)
+        #     Pool:    <officer>_<project>_<dim1>      e.g. cto_acme_input  (3 parts)
+        #              <officer>_<project>_<dim1>_<dim2> e.g. cto_acme_cost_micro (4 parts)
         #
         # We try to match dim suffix as 2-token compound first, then 1-token.
         # Remaining prefix determines officer (and optional project).
@@ -1085,7 +1085,7 @@ TOOLS: list[dict[str, Any]] = [
                 },
                 "project": {
                     "type": "string",
-                    "description": "Filter to single project slug (e.g. 'sensed'). Omit for all projects.",
+                    "description": "Filter to single project slug (e.g. 'acme'). Omit for all projects.",
                 },
                 "days": {
                     "type": "integer",

@@ -676,7 +676,7 @@ else
     for cmd in \
       "git push origin main" \
       "git push main" \
-      "git push https://x-access-token:FAKE@github.com/STEP-Network/Sensed main" \
+      "git push https://x-access-token:FAKE@github.com/example-org/example-app main" \
       "git push origin master" \
       "git push origin HEAD:main" \
       "git push origin main; echo done" \
@@ -917,7 +917,7 @@ else
       "git push origin refs/heads/main" \
       "git push origin main; echo done" \
       "git push origin master" \
-      "git push https://x-access-token:FAKE@github.com/STEP-Network/Sensed main" \
+      "git push https://x-access-token:FAKE@github.com/example-org/example-app main" \
       "sudo git push origin main" \
       "env FOO=bar git push origin main" \
       "env A=1 B=2 git push origin main" \

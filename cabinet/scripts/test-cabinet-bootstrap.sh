@@ -101,7 +101,7 @@ out=$(bash "$BOOTSTRAP" "" --preset work 2>&1); rc=$?
 assert_exit "T1.5 empty slug exits non-zero" "$rc" 1
 
 # Hyphenated slug is valid
-out=$(bash "$BOOTSTRAP" "step-network" --preset work --dry-run 2>&1); rc=$?
+out=$(bash "$BOOTSTRAP" "example-org" --preset work --dry-run 2>&1); rc=$?
 assert_exit "T1.6 hyphenated slug is valid" "$rc" 0
 
 # ---------------------------------------------------------------------------

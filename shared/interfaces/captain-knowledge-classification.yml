@@ -2,7 +2,7 @@
 #
 # Per Captain msg 2179: every existing captain-knowledge entry classified by
 # applies_to scope. Three values:
-#   - sensed: product-specific (UI/copy/launch/design-bar/mobile)
+#   - <product-slug>: product-specific (UI/copy/launch/design-bar/mobile)
 #   - cabinet-repo: framework-specific (specs/hooks/officer-system/infra/process)
 #   - all: truly universal (Captain Posture, autonomy, security, comms register)
 #

@@ -48,7 +48,7 @@ if command -v docker >/dev/null 2>&1; then
   mkdir -p "$(dirname "$LOG")" 2>/dev/null || LOG=/dev/stderr
   echo "=== $(date -u +%FT%TZ) — restart-fleet (docker) fired ===" >> "$LOG"
   # Container names are INSTANCE config, never hardcoded here
-  # (INSTANCE-SENSED-CLEANUP): pass them space-separated via
+  # (INSTANCE-LANE-CLEANUP): pass them space-separated via
   # CABINET_OFFICER_CONTAINERS when arming the cron line.
   if [ -z "${CABINET_OFFICER_CONTAINERS:-}" ]; then
     echo "no CABINET_OFFICER_CONTAINERS configured — nothing to restart" >> "$LOG"
