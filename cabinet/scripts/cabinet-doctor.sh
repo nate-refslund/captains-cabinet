@@ -6,7 +6,9 @@
 #
 # WHAT IT CHECKS (all read-only; the only writes are its own log lines on
 # stdout and one Redis heartbeat key at the end):
-#   1. every cabinet/services.yml row  ↔ launchd job loaded ↔ fresh log
+#   1. exact launchd fleet: every enabled cabinet/services.yml row + roster
+#      officer ↔ launchd job loaded ↔ fresh log, and no unexpected Cabinet
+#      job/plist is present (the separately managed egress proxy is allowed);
 #      (freshness window derived from the row's schedule; log paths read from
 #      the INSTALLED plist's StandardOutPath/StandardErrorPath — the fleet has
 #      two log-name conventions, the installed plist is the truth);
@@ -220,6 +222,35 @@ while IFS=$'\t' read -r name label kind sched age installed; do
     fi
   fi
 done <<< "$SVC_TSV"
+
+# Exact-set honesty: checking every expected row is not enough — an old loaded
+# mission-supervisor or disabled draft-lane can coexist with a green expected
+# set and quietly restore retired authority. Treat the union of installed
+# plists and loaded com.cabinet jobs as runtime truth. Egress is the sole
+# out-of-manifest allowlist because egress-guard.sh independently owns it and
+# a fleet deploy must preserve enforcement.
+EXPECTED_FLEET_LABELS="$(printf '%s\n' "$SVC_TSV" | awk -F'\t' '$4 != "disabled" {print $2}')"
+EXPECTED_FLEET_LABELS="${EXPECTED_FLEET_LABELS}"$'\n'"com.cabinet.egress-proxy"
+while IFS= read -r label; do
+  [ -n "$label" ] || continue
+  if printf '%s\n' "$EXPECTED_FLEET_LABELS" | grep -qxF "$label"; then
+    continue
+  fi
+  loaded="no"
+  installed="no"
+  printf '%s\n' "$LAUNCHCTL_SNAPSHOT" | awk -F'\t' -v l="$label" '$2==l {found=1} END {exit !found}' \
+    && loaded="yes"
+  [ ! -f "$HOME/Library/LaunchAgents/$label.plist" ] || installed="yes"
+  dead "service-set — unexpected Cabinet launchd label $label (loaded=$loaded installed=$installed); disabled/legacy jobs must be parked"
+done < <(
+  {
+    printf '%s\n' "$LAUNCHCTL_SNAPSHOT" | awk -F'\t' 'NF >= 2 {print $2}'
+    for plist in "$HOME"/Library/LaunchAgents/com.cabinet.*.plist; do
+      [ -e "$plist" ] || continue
+      basename "$plist" .plist
+    done
+  } | sort -u
+)
 
 # ============================================================
 # 2. settings hooks → executables exist   (+ statusLine block)

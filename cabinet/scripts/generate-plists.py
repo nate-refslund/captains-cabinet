@@ -29,8 +29,12 @@ Security contract (Corridor-reviewed, binding):
     at runtime by the command wrapper.
 
 Modes:
-  (default)  render all daemon/watchdog services to cabinet/launchd/generated/
-             and plutil -lint each output.
+  (default)  render all enabled daemon/watchdog/cron services to
+             cabinet/launchd/generated/
+             and plutil -lint each output; stale plist outputs are pruned only
+             after the complete current set has rendered and linted.
+  --output-dir renders to an operator/test staging directory without pruning;
+             ~/Library/LaunchAgents is explicitly refused.
   --check    additionally diff generated vs ~/Library/LaunchAgents installed
              copies (functional keys: Label present, schedule match, command
              script referenced). Unparseable installed plists (two live ones
@@ -46,6 +50,7 @@ import plistlib
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import yaml
@@ -69,7 +74,61 @@ def repo_root() -> Path:
 
 def load_services(root: Path):
     data = yaml.safe_load((root / "cabinet" / "services.yml").read_text())
+    if not isinstance(data, dict) or not isinstance(data.get("services"), list):
+        raise SystemExit("generate-plists: cabinet/services.yml must contain a services list")
     return data["services"]
+
+
+def validate_services(services) -> None:
+    """Validate the whole manifest before writing any output.
+
+    Deployment reconciliation is intentionally fail-before-mutation: duplicate
+    labels/names or an unknown kind must not leave a plausible-looking partial
+    generated fleet behind for deploy-mac.sh to install.
+    """
+    rendered_kinds = ("daemon", "watchdog", "cron")
+    valid_kinds = rendered_kinds + ("officer",)
+    names = []
+    labels = []
+    for index, svc in enumerate(services):
+        if not isinstance(svc, dict):
+            raise SystemExit(f"generate-plists: services[{index}] must be a mapping")
+        name = svc.get("name")
+        label = svc.get("label")
+        kind = svc.get("kind")
+        if not isinstance(name, str) or not NAME_RE.fullmatch(name):
+            raise SystemExit(
+                f"generate-plists: invalid service name {name!r} "
+                "(must match ^[a-z0-9-]+$)"
+            )
+        if (
+            not isinstance(label, str)
+            or not LABEL_RE.fullmatch(label)
+            or not label.startswith("com.cabinet.")
+        ):
+            raise SystemExit(
+                f"generate-plists: invalid label for service {name!r} "
+                "(must start com.cabinet. and match ^[a-z0-9.-]+$)"
+            )
+        if kind not in valid_kinds:
+            raise SystemExit(
+                f"generate-plists: unknown kind on service {name!r}: {kind!r} — "
+                f"valid kinds: officer|{'|'.join(rendered_kinds)} "
+                "(unknown kinds hard-error so a row can never be silently "
+                "un-rendered again)"
+            )
+        names.append(name)
+        labels.append(label)
+
+    duplicate_names = sorted({name for name in names if names.count(name) > 1})
+    duplicate_labels = sorted({label for label in labels if labels.count(label) > 1})
+    if duplicate_names or duplicate_labels:
+        parts = []
+        if duplicate_names:
+            parts.append(f"duplicate names={duplicate_names}")
+        if duplicate_labels:
+            parts.append(f"duplicate labels={duplicate_labels}")
+        raise SystemExit("generate-plists: manifest identity collision: " + "; ".join(parts))
 
 
 def _schedule_keys(svc):
@@ -208,23 +267,22 @@ def main() -> int:
 
     root = repo_root()
     home = Path.home()
-    out_dir = Path(args.output_dir) if args.output_dir else root / "cabinet" / "launchd" / "generated"
-    out_dir.mkdir(parents=True, exist_ok=True)
-
+    canonical_out_dir = root / "cabinet" / "launchd" / "generated"
+    out_dir = Path(args.output_dir) if args.output_dir else canonical_out_dir
+    launch_agents_dir = home / "Library" / "LaunchAgents"
+    if out_dir.resolve() == launch_agents_dir.resolve():
+        raise SystemExit(
+            "generate-plists: refusing --output-dir ~/Library/LaunchAgents — "
+            "render to cabinet/launchd/generated and install with deploy-mac.sh"
+        )
     services = load_services(root)
+    validate_services(services)
     # STRICT kind gate (lane-ops 2026-07-04): daemon/watchdog/cron render;
     # officer is deploy-mac.sh's; anything ELSE is a manifest typo and must
     # fail LOUDLY — the old `in ("daemon","watchdog")` filter silently dropped
     # the `kind: cron` retro-trigger row, which is how its hand-made plist
     # missed the PATH env and FATAL'd hourly under launchd's minimal PATH.
     RENDERED_KINDS = ("daemon", "watchdog", "cron")
-    unknown = [s["name"] for s in services
-               if s.get("kind") not in RENDERED_KINDS + ("officer",)]
-    if unknown:
-        raise SystemExit(
-            f"generate-plists: unknown kind on service(s) {unknown} — "
-            f"valid kinds: officer|{'|'.join(RENDERED_KINDS)} (unknown kinds "
-            f"hard-error so a row can never be silently un-rendered again)")
     disabled = [s["name"] for s in services
                 if s.get("kind") in RENDERED_KINDS and s.get("disabled")]
     if disabled:
@@ -235,28 +293,53 @@ def main() -> int:
     if skipped:
         print(f"officers (deploy-mac.sh template path owns these): {', '.join(skipped)}")
 
-    failures = 0
+    out_dir.parent.mkdir(parents=True, exist_ok=True)
     rows = []
-    for svc in daemons:
-        pl = render(svc, root, home)
-        dest = out_dir / f"{svc['label']}.plist"
-        with open(dest, "wb") as f:
-            plistlib.dump(pl, f)
-        ok = lint(dest)
-        if not ok:
-            failures += 1
-        line = f"rendered {dest.name}  lint={'OK' if ok else 'FAIL'}"
-        if args.check:
-            status, note = check(svc, pl, home / "Library" / "LaunchAgents")
-            line += f"  check={status} ({note})"
-            rows.append((svc["name"], status, note))
-        print(line)
+    expected_names = {f"{svc['label']}.plist" for svc in daemons}
+
+    # Render and lint the complete fleet in a sibling staging directory. Only
+    # after every plist passes do we publish it and prune stale generated
+    # outputs. A broken manifest can therefore never leave a partial fleet that
+    # looks deployable.
+    with tempfile.TemporaryDirectory(prefix=".generate-plists-", dir=out_dir.parent) as tmp:
+        staged = Path(tmp)
+        rendered = []
+        for svc in daemons:
+            pl = render(svc, root, home)
+            dest = staged / f"{svc['label']}.plist"
+            with open(dest, "wb") as f:
+                plistlib.dump(pl, f)
+            if not lint(dest):
+                raise SystemExit(f"generate-plists: plutil lint failed: {dest.name}")
+            rendered.append((svc, pl, dest))
+
+        out_dir.mkdir(parents=True, exist_ok=True)
+        for svc, pl, staged_path in rendered:
+            dest = out_dir / staged_path.name
+            staged_path.replace(dest)
+            line = f"rendered {dest.name}  lint=OK"
+            if args.check:
+                status, note = check(svc, pl, home / "Library" / "LaunchAgents")
+                line += f"  check={status} ({note})"
+                rows.append((svc["name"], status, note))
+            print(line)
+
+        # Stale pruning belongs only to this script's canonical generated
+        # directory. A custom output may be a fixture or operator-owned staging
+        # area; never delete Cabinet plists there.
+        if out_dir.resolve() == canonical_out_dir.resolve():
+            for stale in sorted(out_dir.glob("com.cabinet.*.plist")):
+                if stale.name not in expected_names:
+                    stale.unlink()
+                    print(f"pruned stale generated plist: {stale.name}")
+        elif args.output_dir:
+            print("custom output dir: stale-prune skipped")
 
     if args.check and rows:
         drift = [r for r in rows if r[1] != "MATCH"]
         print(f"\n--check summary: {len(rows) - len(drift)}/{len(rows)} MATCH"
               + (f"; drift/missing: {[r[0] for r in drift]}" if drift else ""))
-    return 1 if failures else 0
+    return 0
 
 
 if __name__ == "__main__":

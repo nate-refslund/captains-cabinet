@@ -230,69 +230,75 @@ checkout/Postgres capture fails and must be repeated from a quiescent state.
 Never attach `runtime-secrets.tgz` to the shareable dogfood evidence bundle.
 
 ```bash
+CABINET_ROOT="$(pwd)" bash cabinet/scripts/deploy-mac.sh --all --dry-run
 CABINET_ROOT="$(pwd)" bash cabinet/scripts/deploy-mac.sh --all
 ```
 
-This `envsubst`-substitutes paths into the plist templates in `cabinet/launchd/` and registers them in `~/Library/LaunchAgents/` (list corrected 2026-07-04 to match `deploy-mac.sh --all` after its prune to the `cabinet/services.yml` manifest):
+`--all` is an exact reconciliation, not an additive installer. It validates
+the entire manifest before changing launchd, renders and lints every enabled
+daemon/watchdog/cron row, and installs:
 
 - `com.cabinet.officer.<slug>.plist` — one per officer, fleet **derived from
   `instance/config/roster.yml`** (F0.2; no roster file ⇒ refuse, never a preset
   default). Example portfolio roster: `cos`, `bakery-ceo`, `newsletter-ceo`,
   `comms-officer`.
-- `com.cabinet.limit-reset-watchdog.plist` (auto-resume after account session-limit reset)
-- `com.cabinet.dashboard.plist` (control panel + office-display server on `:3100`).
-  Port/bind config (Wave D app-feel): `CABINET_DASHBOARD_PORT` (default 3100)
-  and `CABINET_DASHBOARD_HOST` (default `127.0.0.1` — loopback-only since
-  the CC-LOOP / OC-LOOPBACK ruling, 2026-07-12); explicit env
-  (launchd plist) > `cabinet/.env` > default. Remote reach is explicit:
-  front the dashboard with `tailscale serve` (the blessed path), or opt out
-  with `CABINET_DASHBOARD_HOST=0.0.0.0` in the mini's `cabinet/.env` for
-  plain tailnet/LAN reach at `http://<host>:3100`.
-  **Migration step (pre-existing in this runbook; operative now the flip
-  is ruled)**: a box that must keep plain tailnet http reach adds
-  `CABINET_DASHBOARD_HOST=0.0.0.0` to its `cabinet/.env` BEFORE deploying
-  the flip (or fronts the dashboard with `tailscale serve`) — no silent
-  loss of documented reach.
+- every non-disabled row in `cabinet/services.yml` (including
+  `com.cabinet.limit-reset-watchdog.plist` and `com.cabinet.dashboard.plist`).
 
-Everything else in the daemon/watchdog fleet is **owned by `cabinet/services.yml`**
-(the F0.4 fleet manifest): render with `python3.12 cabinet/scripts/generate-plists.py`
-(render-only) and bootstrap the generated plists deliberately — each live plist's
-header comment carries its install commands. The legacy templates
-(`heartbeat-watchdog`, `cost-summary`, `worktree-listener`, `mission-supervisor`,
-`task-sync`, `role-evals-weekly`, `outbox-relay`, `ovi-weekly`,
-`self-improvement-loop`, `chrome-profile`) are **not** in the manifest and are no
-longer auto-installed by `--all` — `mission-supervisor` in particular would
-resurrect push routing against the Captain's pull-only ruling (see
-`.claude/skills/cabinet-route-tasks/`). Install one only as a deliberate act:
+Installed or loaded `com.cabinet.*` jobs outside that exact set are booted out
+and their plist is parked as `.plist.disabled`; this includes rows marked
+`disabled: true`, retired templates, and previous roster officers. The
+launchd-owned `com.cabinet.egress-proxy` is the sole preserved out-of-manifest
+job because `egress-guard.sh` owns it; fleet deployment never creates an
+unenforced interval. Each service replacement has a local rollback: if the new
+job cannot bootstrap, the previous plist/job is restored and the deploy exits
+non-zero. `cabinet/launchd/generated/` is also pruned to exactly the current
+enabled manifest outputs.
+
+`com.cabinet.dashboard.plist` is the control panel + office-display server on
+`:3100`. Port/bind config (Wave D app-feel): `CABINET_DASHBOARD_PORT` (default
+3100) and `CABINET_DASHBOARD_HOST` (default `127.0.0.1` — loopback-only since
+the CC-LOOP / OC-LOOPBACK ruling, 2026-07-12); explicit env (launchd plist) >
+`cabinet/.env` > default. Remote reach is explicit: front the dashboard with
+`tailscale serve` (the blessed path), or opt out with
+`CABINET_DASHBOARD_HOST=0.0.0.0` in the mini's `cabinet/.env` for plain
+tailnet/LAN reach at `http://<host>:3100`. **Migration step (pre-existing in
+this runbook; operative now the flip is ruled)**: a box that must keep plain
+tailnet http reach adds `CABINET_DASHBOARD_HOST=0.0.0.0` to its `cabinet/.env`
+BEFORE deploying the flip (or fronts the dashboard with `tailscale serve`) —
+no silent loss of documented reach.
+
+A template outside the manifest can still be installed as a deliberate,
+single-service diagnostic act, but it is not a production-ready state: Doctor
+will stay red until the extra is removed or promoted into `services.yml`, and
+the next exact `--all` will park it again:
 
 ```bash
 bash cabinet/scripts/deploy-mac.sh --daemon <name>
 ```
 
-`com.cabinet.dashboard-kiosk.plist` is **opt-in** (needs a physical monitor) — deploy it separately on the office Mac mini:
+`com.cabinet.dashboard-kiosk.plist` is therefore not part of the Doctor-gated
+fleet today. Do not install it for the observe-only dogfood; promote it to an
+enabled manifest row with matching tests before treating kiosk mode as ready.
+
+Verify the declared set, absence of extras, loaded state, and service freshness:
 
 ```bash
-bash cabinet/scripts/deploy-mac.sh --daemon dashboard-kiosk
+bash cabinet/scripts/cabinet-doctor.sh
 ```
 
-Verify all registered + running:
-
-```bash
-bash cabinet/scripts/verify-launchagents.sh
-```
-
-Exit 0 = pass. Re-deploy if any fail. (The verifier treats the legacy templates
-as OPTIONAL — checked only if installed.)
+Exit 0 = pass. An unexpected loaded job or installed `.plist` is a hard Doctor
+failure; a parked `.plist.disabled` is retained evidence and is not active.
 
 > **Portfolio-preset note.** A **portfolio** deployment (one persistent Chair
 > `cos` + domain officers, e.g. `comms-officer` + one `<lane>-ceo` per lane) is
 > what `--all` deploys when the roster says so; its daemons (e.g.
 > `com.cabinet.intake-surface`, `com.cabinet.frontdoor-briefing`,
-> `com.cabinet.officer-supervisor-mac`) are manifest rows registered by `cp`-ing
-> each plist into `~/Library/LaunchAgents/` and `launchctl load -w`-ing it — the
-> install commands are in each plist's header comment. (Historical: `--all` used
-> to hardcode the retired `work`-preset `cos cto cpo cro coo` fleet — fixed by
-> F0.2 roster derivation + the 2026-07-04 daemon prune.)
+> `com.cabinet.officer-supervisor-mac`) are enabled manifest rows installed by
+> the same exact reconcile. (Historical: `--all` used to hardcode the retired
+> `work`-preset `cos cto cpo cro coo` fleet, and later installed only two
+> manifest services — both gaps are closed by roster derivation + exact
+> manifest reconciliation.)
 >
 > **TEMPORARY backstop (`com.cabinet.status-sweep`).** A 30-min `StartInterval`
 > cron (`run-status-sweep.sh`) that pushes a STATUS-SWEEP trigger to the Chair
@@ -510,9 +516,9 @@ After everything is in place:
      captain_ratified: true
    EOF
    ```
-2. Verify all officers running:
+2. Verify the exact fleet and all service freshness floors:
    ```bash
-   bash cabinet/scripts/verify-launchagents.sh
+   bash cabinet/scripts/cabinet-doctor.sh
    ```
 3. Verify mission flow:
    ```bash
@@ -521,7 +527,7 @@ After everything is in place:
 4. Send a test Captain DM via Telegram → verify your officer replies + voice fires (if enabled).
 5. Force-kill an officer: `pkill -9 -f 'claude.*officer.cos'` → supervisor should restart within 30s.
 6. Power-cycle the Mac → all officers should come back up automatically; Captain should receive a "Cabinet is back online" DM.
-7. Wait 72 hours. Re-run verify-launchagents.sh + check OVI snapshot count via:
+7. Wait 72 hours. Re-run `cabinet-doctor.sh` + check OVI snapshot count via:
    ```bash
    python3 framework/ovi/compute.py --from-events --window-days 7
    ```
@@ -537,7 +543,7 @@ If all checks pass: the Cabinet is deployed.
 | OVI snapshot returns all zeros | Event ledger empty (no work yet) | Expected on cold start; populates as officers work |
 | Tailscale SSH refuses connection | Tailscale not started on Mac Mini | `tailscale up`; check status with `tailscale status` |
 | Redis trigger delivery silent | `REDIS_HOST` not set to `127.0.0.1` | Officer env or hook missing default; check `.env` and Phase 3 hooks |
-| `verify-launchagents.sh` shows agent missing | `deploy-mac.sh` skipped or failed | Re-run deploy; check `launchctl bootstrap gui/$(id -u) <plist>` directly |
+| `cabinet-doctor.sh` reports a service missing or unexpected | `deploy-mac.sh` skipped/failed, or a legacy/diagnostic plist is still installed | Re-run exact `deploy-mac.sh --all`; inspect the named label and parked `.plist.disabled` evidence |
 
 ## Captain-readable summary
 
