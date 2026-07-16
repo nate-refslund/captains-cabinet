@@ -1094,7 +1094,7 @@ def build_scene():
         fx = frng2.ri(52*T, int(58.5*T)); fy2 = frng2.ri(int(32.5*T), int(36.5*T))
         gd.rectangle([fx, fy2, fx + frng2.ri(3, 7), fy2], fill=(222, 232, 244, 170))
 
-    # reef-buoy at the retired stepnetwork anchor (mid-ring, honest dormant)
+    # reef-buoy at the retired example-org anchor (mid-ring, honest dormant)
     buoy = Image.new("RGBA", (8, 12), (0, 0, 0, 0))
     bd2 = ImageDraw.Draw(buoy)
     bd2.polygon([(1, 11), (6, 11), (5, 5), (2, 5)], fill=(198, 50, 40, 255))
