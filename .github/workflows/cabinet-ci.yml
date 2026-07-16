@@ -313,8 +313,21 @@ jobs:
         # allow force-push/delete on master. See test-pre-push-hook.sh.
         run: bash /opt/founders-cabinet/cabinet/scripts/test-pre-push-hook.sh
 
-      - name: Python tests — ETL transforms (FW-023)
+      - name: Python tests — cabinet/scripts/lib/tests (full lib suite)
         if: ${{ !cancelled() }}
+        # Collects the ENTIRE cabinet/scripts/lib/tests directory — every
+        # test file in it, no per-suite list here (a stale enumeration is
+        # exactly how the old name rotted); 185 tests as of 2026-07-16.
+        # The FW-023 ETL-transform tests this step was originally named for
+        # were carved OUT of this directory to the Spec-039 set in f855ae96
+        # (R073); of the ETL modules only etl-common.py remains in lib/,
+        # covered here via test_library_mcp_client.py. The stale "ETL
+        # transforms (FW-023)" step name misled a 2026-07-16 CI census into
+        # concluding cabinet/scripts/lib/tests was collected by NO CI step.
+        # Kept SEPARATE from the framework/ + cabinet/scripts/tests pytest
+        # invocations: lib/tests imports as top-level package `tests` (lib/
+        # has no __init__.py) and basename-collides under one pytest run
+        # (59 collection errors, reproduced 2026-07-16; ledger row R165).
         run: |
           cd /opt/founders-cabinet/cabinet/scripts/lib
           python3 -m pytest tests/ -v
@@ -443,15 +456,40 @@ jobs:
         env:
           REDIS_HOST: localhost
 
-      # Run SEPARATELY from framework/ — cabinet/scripts/*/tests all use the
-      # basename `tests`, which collides under one pytest invocation (known
-      # un-packaged module-name clash). This step exists so the ledger-purge
+      # Run SEPARATELY from framework/ — cabinet/scripts/tests, like
+      # cabinet/scripts/lib/tests, imports as an un-packaged top-level module
+      # tree named `tests` (no parent __init__.py), so combining those dirs
+      # in one pytest invocation collides (59 collection errors, reproduced
+      # 2026-07-16; ledger row R165). This step exists so the ledger-purge
       # criteria-parity pins (test_ledger_purge_testrows.py + test_purge_sqlite_
       # mirror.py — closure wave 2026-07-05) actually gate: without it, drift in
       # either purge script's drop criteria would merge unnoticed.
       - name: Cabinet script tests (purge parity + generate-instance)
         if: ${{ !cancelled() }}
         run: python -m pytest cabinet/scripts/tests -q
+
+      # CI-census close (2026-07-16): the two steps below cover the ONLY
+      # pytest directories in the repo that previously ran in no CI step —
+      # cabinet/scripts/task_adapters/tests and
+      # cabinet/scripts/world-aesthetic/tests. Both are hermetic (stdlib +
+      # pytest imports only; no yaml/redis/network) and run as separate
+      # invocations so failures stay step-attributable, mirroring the
+      # per-dir pattern above. (task_adapters/tests is package-qualified
+      # via __init__.py so it does not basename-collide; verified 2026-07-16.)
+      - name: Cabinet task-adapter tests
+        if: ${{ !cancelled() }}
+        # 26 tests pinning the CanonicalTask/TaskAdapter seam
+        # (cabinet/scripts/task_adapters/base.py).
+        run: python -m pytest cabinet/scripts/task_adapters/tests -q
+
+      - name: Cabinet world-aesthetic tests
+        if: ${{ !cancelled() }}
+        # 92 tests for the world-render gate: palette, label overlap, scale
+        # lint, judge, PNG codec, edge continuity, clustering, runner,
+        # connectivity, entrypoint. 5 of them skip whenever the gitignored
+        # render corpus is absent — always true on a fresh CI checkout, so
+        # expect 87 passed + 5 skipped here.
+        run: python -m pytest cabinet/scripts/world-aesthetic/tests -q
 
       # Docs-track-code sweep (G6, hardening loop 2026-07-11): dead repo-path
       # refs + dead relative links in LIVING docs fail CI — the repo rule

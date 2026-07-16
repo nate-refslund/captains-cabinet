@@ -26,14 +26,18 @@ bucket (the O(n²) pair walk stays small), content window 90 days.
 Output: proposals appended to
 ``shared/interfaces/memory-supersession-proposals.jsonl`` — one line per
 (old,new) pair, stable sha8 id, skip-known on re-run, status "proposed".
-A reviewer (Captain or a post-soak apply organ) consumes the file; this
-script's ONLY writes are that append + stdout. The SELECT is constant and
+``memory-supersede-apply.py`` (the post-soak apply organ, added
+2026-07-15) consumes the file and stamps rows consumed; this script's
+ONLY writes are that append + stdout. The SELECT is constant and
 read-only (same psql/NEON_CONNECTION_STRING discipline as
 falsifier-report.py — the connection VALUE is argv-only, never printed).
 
 Run: python3.12 cabinet/scripts/memory-contradictions.py [--dry-run] [--json]
 Scheduled via the services.yml row ``memory-contradictions`` (weekly, Sun
-05:30).
+05:30). The apply organ runs on its OWN row ``memory-supersede-apply``
+(Sun 05:45) — one command per row, because the generated-plist wrapper
+``exec``s the command and a ``&&`` chain would never reach the second
+program.
 """
 from __future__ import annotations
 
