@@ -39,17 +39,17 @@ export async function switchProject(slug: string): Promise<{ success: boolean; e
 export async function getActiveProject(): Promise<string> {
   if (!(await requireDashboardAuth())) return ''
   if (IS_MOCK) {
-    return 'sensed'
+    return 'widgets'
   }
   try {
     const redisValue = await redis.get('cabinet:active-project')
     if (redisValue) return redisValue
     const { stdout } = await dockerExec(
-      `cat ${cabinetPath('instance/config/active-project.txt')} 2>/dev/null || echo sensed`
+      `cat ${cabinetPath('instance/config/active-project.txt')} 2>/dev/null || echo widgets`
     )
-    return stdout.trim() || 'sensed'
+    return stdout.trim() || 'widgets'
   } catch {
-    return 'sensed'
+    return 'widgets'
   }
 }
 
@@ -57,7 +57,7 @@ export async function getProjects(): Promise<ProjectInfo[]> {
   if (!(await requireDashboardAuth())) return []
   if (IS_MOCK) {
     return [
-      { slug: 'sensed', name: 'Sensed', active: true },
+      { slug: 'widgets', name: 'Widgets', active: true },
       { slug: 'demo-project', name: 'Demo Project', active: false },
     ]
   }
@@ -87,11 +87,11 @@ export async function getProjects(): Promise<ProjectInfo[]> {
       })
 
     if (projects.length === 0) {
-      return [{ slug: 'sensed', name: 'Sensed', active: true }]
+      return [{ slug: 'widgets', name: 'Widgets', active: true }]
     }
 
     return projects
   } catch {
-    return [{ slug: 'sensed', name: 'Sensed', active: true }]
+    return [{ slug: 'widgets', name: 'Widgets', active: true }]
   }
 }

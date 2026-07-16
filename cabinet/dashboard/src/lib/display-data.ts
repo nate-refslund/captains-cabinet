@@ -83,7 +83,7 @@ const OFFLINE_THRESHOLD_MS = 15 * 60 * 1000
 
 /** Resolve the active context slug. Mirrors /tasks page precedence
  *  (env > active-project.txt) but NEVER throws — falls back to config
- *  getActiveProjectSlug(), then 'sensed', so the display always has a context. */
+ *  getActiveProjectSlug(), then 'demo', so the display always has a context. */
 async function resolveActiveContext(): Promise<string> {
   if (process.env.CABINET_CONTEXT?.trim()) return process.env.CABINET_CONTEXT.trim()
   const activeFile = path.join(cabinetRoot(), 'instance/config/active-project.txt')
@@ -96,7 +96,7 @@ async function resolveActiveContext(): Promise<string> {
   try {
     return getActiveProjectSlug()
   } catch {
-    return 'sensed'
+    return 'demo'
   }
 }
 
