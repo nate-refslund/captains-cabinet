@@ -106,6 +106,36 @@ memory/skills/evolved/principle-harvester.md
 # docs/runbooks/evidence-recorder-v1.md, so the docs must name the live
 # path. Remove this entry if the mirror's degradation writer dies.
 cabinet/logs/evidence-mirror-degradations.jsonl
+# fuel-integrity shadow report — appended at runtime by
+# framework/evidence_fuel_integrity.py write_report() (Phase 4,
+# report-only); gitignored under cabinet/logs like the degradation ledger
+# above. docs/runbooks/fuel-integrity.md names it BY DESIGN as the one
+# Captain-facing output surface (nothing downstream reads it — shadow law).
+# Remove this entry if the checker's report writer dies.
+cabinet/logs/fuel-integrity-report.jsonl
+# tamper game-day drill outcome ledger — one row per drill run appended by
+# cabinet/scripts/evidence-tamper-drill.py (Phase 4, design §2.4 rehearsal);
+# gitignored under cabinet/logs; docs/runbooks/tamper-drill.md names the
+# live path. Remove this entry if the drill's report writer dies.
+cabinet/logs/tamper-drills.jsonl
+# judging-frozen marker — written at runtime by framework/evidence_freeze
+# (freeze narrowing; Captain-token captain_clear deletes it); gitignored
+# (instance/state/), absent at HEAD by design. docs/runbooks/tamper-drill.md
+# names the live path in the freeze-status and Captain-clear steps. Remove
+# this entry if the freeze writer dies.
+instance/state/evidence-judging-freeze.json
+# Phase-4 shadow-detector findings journal — appended at runtime by
+# framework/evidence_detectors.py append_report() (one JSON line per run);
+# gitignored under shared/interfaces (see .gitignore). Named by
+# docs/runbooks/evidence-recorder-v1.md's shadow-judge section as the one
+# Captain-facing detector surface. Remove if the detector's writer dies.
+shared/interfaces/evidence-shadow-findings.jsonl
+# Phase-4 shadow-calibration Captain report + run series — written at
+# runtime by framework/evidence_calibration.py run() under cabinet/logs
+# (gitignored runtime dir); docs/runbooks/evidence-recorder-v1.md names
+# both live paths. Remove these entries if the calibration writer dies.
+cabinet/logs/evidence-calibration-report.md
+cabinet/logs/evidence-calibration.jsonl
 
 # --- platform-radar / workaround-retest runtime surfaces -----------------
 # Referenced by docs/runbooks/platform-adoption-gating.md (living doc).

@@ -1054,6 +1054,41 @@ services:
       tolerate a duplicated transition); an unreachable control plane
       carries prior state, never a fabricated change. Append-only recording
       — soak-safe under observe-only (design D8).
+  - name: evidence-shadow-detectors
+    label: com.cabinet.evidence-shadow-detectors
+    kind: cron
+    command: python3.12 cabinet/scripts/evidence-shadow-detectors.py
+    schedule: { calendar: [{hour: 5, minute: 50}] }   # daily 05:50 local — after the 05:20 evidence-anchor and 05:35 judge-calibration so the day's integrity surfaces are settled before clustering
+    disabled: true
+    disabled_reason: "staged: evidence-program Phase 4 ships dark (shadow law — detect, never act); the Captain ceremony enables it (remove this flag, generate-plists, load; uncomment the evidence-* ids in instance/config/watchdog.yml in the same step). Read-only toward the store — zero runtime behavior until enabled."
+    expected: "one JSON line/run appended to shared/interfaces/evidence-shadow-findings.jsonl (Captain-facing shadow findings: failure clusters + fail-open triage verdicts, counts only — never rates, never actor-keyed aggregates); a single 'frozen — refusing to run' line + exit 0 while the judging-freeze marker instance/state/evidence-judging-freeze.json is present; exit 2 + FATAL stderr line on measurement error (pages the Chair via the watchdog error-marker floor)"
+    sunset: "supersede when Phase-5 wiring turns detector findings into repair-gate RepairRequests (whole-cabinet evidence design §3 Phase 5) — the shadow journal stays as the audit trail"
+    notes: >-
+      Evidence program Phase 4 item 1 (whole-cabinet evidence design
+      2026-07-16 §3): read-only failure/anomaly clustering over the Phase-3
+      query plane — the eval-pattern-detector shape reused via its R-12
+      evidence-input seam (framework/measurement/eval_pattern_detector.py
+      detect_evidence_patterns; one detector, one threshold set) — plus
+      recorded-failure triage on the signal-discriminator FAIL-OPEN law:
+      NOISE only with affirmative degradation-ledger attribution
+      (cabinet/logs/evidence-mirror-degradations.jsonl), else INCONCLUSIVE
+      and the finding passes through. SHADOW LAW: every output is a
+      Captain-facing report; nothing downstream may consume findings to
+      gate, block, score, or act — the enforce flip is a later Captain-only
+      narrowing. Never-a-score: findings are counts keyed by
+      component/phase/failure-class, never actor-keyed, never rates; the
+      journal is a gitignored runtime series outside the store and outside
+      every officer surface (no org events, no projection, no doorway; the
+      module path contains 'framework.evidence' so the officer hook screen
+      blocks officer-context execution by construction). Store reads ride
+      the germline query/verify APIs only — the sole sanctioned store
+      byte-change is the verifier's first-verify watermark advance. Honest
+      claim (stamped on every report row): the integrity surface detects
+      retroactive single-plane tamper and INCONSISTENT forgery only;
+      consistent same-user dual-plane forgery stays open until HP-1.
+      Weak-signal doctrine (B9): cluster findings are weak signals — the
+      evidence-plane watchdog expectations ground in invariants, never in
+      these patterns.
   - name: transcript-digest
     label: com.cabinet.transcript-digest
     kind: cron

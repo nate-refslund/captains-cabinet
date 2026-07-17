@@ -227,6 +227,11 @@ shared/interfaces/workaround-retire-proposals.jsonl
 # shared/interfaces/**/*.md rule above.
 shared/interfaces/governance-labels.jsonl
 
+# Phase-4 shadow-detector findings journal (evidence Phase 4, shadow law) —
+# one JSON line per run appended by cabinet/scripts/evidence-shadow-detectors.py
+# (staged dark); Captain-facing runtime series, never committed
+shared/interfaces/evidence-shadow-findings.jsonl
+
 # Cabinet World runtime read-model outputs (world-census E0a / world-chronicle
 # E0b — append-only replay history; instance data, never committed)
 shared/interfaces/world-chronicle.jsonl

@@ -133,6 +133,15 @@ class RealProbe(Probe):
         except OSError:
             return None
 
+    def listdir(self, path: str) -> Optional[list[str]]:
+        # None = not observable (missing dir / permission), [] = exists and
+        # empty — the tri-state the evidence-store facts verify needs to
+        # distinguish "plane absent" (skip) from an affirmative observation.
+        try:
+            return sorted(os.listdir(path))
+        except OSError:
+            return None
+
     def redis_get(self, key: str) -> str:
         v = _redis("GET", key)
         return "" if v in ("", "(nil)") else v
