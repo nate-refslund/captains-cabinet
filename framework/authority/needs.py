@@ -52,7 +52,13 @@ DENY_SUPPRESS_DAYS = 90  # a denied need is a no-op to re-file for 90d
 SNOOZE_DAYS = 7          # binder `later|snooze` hides the need for 7d
 
 # status → emitted event (subset — only lifecycle verbs with an FI-3 event).
+# approved_pending_apply added 2026-07-17 (evidence R-1 Batch B): the
+# Captain's Telegram `grant NEED-x` verb IS the authority decision moment and
+# was previously event-silent — only the later root ceremony's `granted`
+# emitted. need_approved (decision) and need_granted (applied) are DISTINCT
+# verbs on one need_id; consumers must never treat them as duplicates.
 _STATUS_EVENTS = {
+    "approved_pending_apply": "need_approved",
     "granted": "need_granted",
     "denied": "need_denied",
     "snoozed": "need_snoozed",

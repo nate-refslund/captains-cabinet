@@ -62,6 +62,19 @@ def _ts() -> str:
     return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+# Batch B (evidence plane): freeze this daemon's producer identity ONCE at
+# process start — explicit constants, never payload/env-derived — so the
+# sweep's outcome receipts (action_reconcile._record_outcome_receipt) carry
+# the attested actor. Attestation trouble only means receipts fall back to
+# the fixed module actor; the sweep itself NEVER blocks on it, and the
+# Monday-key + read-only pre-flight guards below stay ahead of any sweeping.
+try:
+    from framework.evidence import identity as _ev_identity
+    _ev_identity.attest_process_identity("system", "undo-sweep", "undo-sweep")
+except Exception as _e:  # noqa: BLE001 — identity is additive, never a gate
+    print(f"[{_ts()}] undo-sweep: WARN evidence identity attestation "
+          f"unavailable ({_e})", file=sys.stderr)
+
 # Belt-and-braces env load (same non-clobbering loader the live executor uses),
 # in case the shell source above was skipped (e.g. a moved .env).
 action_exec._load_shared_env()

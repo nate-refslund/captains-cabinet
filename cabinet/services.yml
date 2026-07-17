@@ -598,6 +598,31 @@ services:
       Downstream of verifier+probes: they supply the verdict rows whose cell
       crossings this emitter surfaces. Same missing-file posture as
       regression-corpus (flip disabled rather than thrash).
+  - name: officer-lifecycle-transitions
+    label: com.cabinet.officer-lifecycle-transitions
+    kind: cron
+    command: python3.12 cabinet/scripts/emit-officer-lifecycle-transitions.py
+    schedule: { interval_s: 600 }
+    disabled: true
+    disabled_reason: "staged: evidence program Phase 2 Batch B ships dark; the Batch B Captain ceremony enables it (remove this flag, generate-plists, load). Observe-only state-diff sweep — zero runtime behavior until enabled."
+    expected: "one JSON summary line per sweep; officer_session_started/officer_session_ended/officer_session_compacted org events on TRANSITIONS only (a quiet sweep emits nothing — transitions-only is the design, not staleness)"
+    notes: >-
+      Evidence program Phase 2 Batch B (whole-cabinet evidence design
+      2026-07-16 §3 Phase 2 item 2d) — the zero-germline officer-session
+      lifecycle observer, cloned from the emit-graduation-transitions.py
+      idiom: the session hooks (cabinet/scripts/hooks/) are schg-locked and
+      their generic session_started/session_ended classes are pinned
+      exhaust (never mirrored), so lifecycle receipts are detected by this
+      UNLOCKED sweep diffing tmux officer sessions + Redis
+      liveness/terminated stamps + tier2 .session-state.json captured_at
+      (JSON field, never mtime) against its own state file, and emitted as
+      NEW officer-scoped transition classes the org->evidence mirror signs.
+      First run seeds a baseline without emitting; a probe error never
+      reads as a state change; per-officer daily emit cap guards
+      crash-loop storms; at-least-once (consumers tolerate a duplicated
+      transition). Restart receipts come from heartbeat-watchdog.sh (the
+      actor that kickstarts) and limit wakes from limit-reset-watchdog.sh —
+      this sweep deliberately does not double-record those verbs.
   - name: judge-calibration
     label: com.cabinet.judge-calibration
     kind: cron
@@ -975,6 +1000,33 @@ services:
       instance/config/evidence-anchor.yml (see .example). Telegram rides
       framework/frontdoor/channel.py — the ONE sanctioned door; no raw
       poster, no hardcoded chat id.
+  - name: authority-transitions
+    label: com.cabinet.authority-transitions
+    kind: cron
+    command: python3.12 cabinet/scripts/emit-authority-transitions.py
+    schedule: { interval_s: 300 }
+    disabled: true
+    disabled_reason: "staged: evidence-program Phase 2 Batch B ships with the recording wave; the enable is a deploy step (remove this flag, generate-plists, load). Read-only observer + org-event appends — zero runtime behavior until enabled."
+    expected: "one summary JSON line per sweep (ts/observed/transitions/emitted); org events ONLY on control-plane transitions (kill_switch_activated/deactivated, germline_unlock_observed/germline_relock_observed, posture_changed) — a quiet sweep emits nothing"
+    notes: >-
+      Evidence program Phase 2 Batch B — R-1 authority/control-plane
+      producer (whole-cabinet evidence design 2026-07-16 §7 R-1). Unlocked
+      state-diff observer in the emit-graduation-transitions.py idiom: the
+      kill-switch and germline-lock scripts are germline-locked emergency
+      brakes that must never grow a python/evidence dependency (a tightening
+      is never evidence-gated, §2.6), so the transition detector lives in
+      this unlocked sweep. Diffs (a) redis cabinet:killswitch (read-only
+      GET, kill-switch.sh REDIS_URL parity), (b) germline lock state — the
+      FILES/DIRS set parsed read-only from germline-lock.sh, probed via
+      posture.py's canonical attestation backends with an off-platform
+      "unobservable, never phantom-unlocked" guard, and (c) the effective
+      posture resolution (file_needs=False), against its own state file
+      (~/Library/Application Support/cabinet/state/authority-transitions.json)
+      and emits registered + mirror-allow-listed org events on TRANSITION
+      only. First run seeds silently; at-least-once delivery (consumers
+      tolerate a duplicated transition); an unreachable control plane
+      carries prior state, never a fabricated change. Append-only recording
+      — soak-safe under observe-only (design D8).
   - name: transcript-digest
     label: com.cabinet.transcript-digest
     kind: cron

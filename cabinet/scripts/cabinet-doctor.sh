@@ -1107,4 +1107,20 @@ redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" SET cabinet:doctor:heartbeat \
   fi
 } 2>/dev/null || true
 
+# Evidence receipt (evidence program Phase 2 Batch B): ONE doctor_verdict
+# org event per run — system-health COUNTS only, never per-officer content
+# (never-a-score) — which the org→evidence mirror (Batch A) signs.
+# MODULE-exec on the house interpreter from the repo root (we cd'd at the
+# top) is load-bearing: path-exec (`python3 framework/events/emitter.py`)
+# leaves the repo root off sys.path and the mirror silently never fires.
+# The typed lens seam (framework/watchdog/receipts.py) pins the actor and
+# refuses foreign classes. Best-effort by contract: a broken evidence
+# plane never changes the doctor's verdict, output, or exit code — mirror
+# degradation stays loud via the doctor-readable marker ledger
+# (cabinet/logs/evidence-mirror-degradations.jsonl) + the
+# evidence_mirror_degraded org event.
+"$PY" -m framework.watchdog.receipts doctor_verdict \
+  "{\"verdict\":\"$VERDICT\",\"dead\":${#DEAD[@]},\"warn\":$N_WARN,\"waived\":$N_WAIVED,\"skip\":$N_SKIP,\"total\":$TOTAL}" \
+  >/dev/null 2>&1 || true
+
 [ ${#DEAD[@]} -eq 0 ] && exit 0 || exit 1
