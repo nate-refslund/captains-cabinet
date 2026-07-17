@@ -1,5 +1,7 @@
 /**
- * VaultMarkdown.tsx — the SAFE markdown renderer for the /vault browser.
+ * VaultMarkdown.tsx — the SAFE markdown renderer for the Library (/library),
+ * the read-only vault reader (Captain naming ruling 2026-07-17; /vault
+ * redirects to /library).
  *
  * A pure, synchronous component: it takes an ALREADY-PREPROCESSED markdown
  * string (wikilinks rewritten to internal links upstream) and renders it with
@@ -15,10 +17,11 @@
  *     on href.
  *   - react-markdown's default urlTransform independently strips dangerous URL
  *     protocols — double coverage on `[text](javascript:…)`.
- *   - anchors render through a hardened InternalAnchor: internal /vault links
- *     use next/link; the unresolved-wikilink sentinel renders inert; external
- *     http(s)/mailto open with rel="noopener noreferrer nofollow"; anything
- *     else renders as inert text.
+ *   - anchors render through a hardened InternalAnchor: internal /library
+ *     (and legacy /vault, which 307s to /library) links use next/link; the
+ *     unresolved-wikilink sentinel renders inert; external http(s)/mailto
+ *     open with rel="noopener noreferrer nofollow"; anything else renders as
+ *     inert text.
  */
 
 import Link from 'next/link'
@@ -47,9 +50,17 @@ function InternalAnchor({
   if (!h || h === VAULT_UNRESOLVED_HREF) {
     return <span className="wikilink-unresolved">{children}</span>
   }
-  // App-internal vault link → client-side nav via next/link. Match the route
-  // exactly or a path under it — NOT a sibling like `/vaultfoo`.
-  if (h === '/vault' || h.startsWith('/vault/')) {
+  // App-internal Library link → client-side nav via next/link. Match the
+  // route exactly or a path under it — NOT a sibling like `/libraryfoo`.
+  // `/vault/...` stays recognized as internal: that route is a permanent
+  // redirect alias to `/library/...` (Captain naming ruling 2026-07-17), and
+  // older notes may carry literal `/vault/...` markdown links.
+  if (
+    h === '/library' ||
+    h.startsWith('/library/') ||
+    h === '/vault' ||
+    h.startsWith('/vault/')
+  ) {
     return (
       <Link href={h} className="wikilink-resolved">
         {children}

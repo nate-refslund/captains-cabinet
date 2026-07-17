@@ -76,6 +76,10 @@ remain storable, but only the cabinet_memory mirror is maintained.
 
 * Semantic: `memory_search "<query>"` (memory.sh) — Library rows carry
   `source_type=library_record`.
+* Dashboard/world: the Library search box on `/library` (and the consumer
+  card) hits `GET /api/library/search` — the same cabinet_memory engine,
+  org-knowledge classes only. Contract:
+  `docs/runbooks/library-search-2026-07-17.md`.
 * Exact: grep the vault archive frontmatter for
   `provenance: "library_record:<id>"`.
 * SQL archaeology: the tables are still there (below) — plain read-only
@@ -135,3 +139,16 @@ dummy `VOYAGE_API_KEY` plus stubbed curl/fetch — so a resurrected embed
 call fails loudly instead of no-opping on a missing key. If you need
 vectors on Library-shaped data, the answer is cabinet_memory, not a
 resurrected second store.
+
+## Follow-up — the READER returned (2026-07-17)
+
+Captain naming ruling, 2026-07-17: *"keep the name Library — it fits the
+world; the vault is where it's kept, the Library is where you read."* One day
+after this retirement, `/library` became the **read-only vault reader** (the
+phase-1 vault browser moved there from `/vault`, which now redirects), plus a
+filesystem-backed wikilink graph at `/library/graph` and per-note backlinks.
+Nothing above is reversed: the editable STORE stays retired, the route tree
+stays **zero-DB** (pinned by the superseded `library-route.test.ts` contract),
+and the dormant tables stay dormant. The full-page retirement notice became a
+collapsible **History** note on the Library root. Details:
+`docs/runbooks/vault-browser-2026-07-17.md`.

@@ -20,7 +20,11 @@ describe('ADVANCED_NAV — static shape', () => {
     //  verification-first trial browser next to Receipts)
     // 2026-07-17: Vault added (/vault — read-only filesystem browser over the
     //  org vault/ corpus, Advanced-only).
-    expect(ADVANCED_NAV).toHaveLength(20)
+    // 2026-07-17 (later, Captain naming ruling): the separate Vault entry
+    //  DROPPED again — /library IS the reader now ("the vault is where it's
+    //  kept, the Library is where you read"); /vault redirects to /library.
+    //  Evidence (parallel wave) +1, Vault entry dropped (naming ruling) → 19.
+    expect(ADVANCED_NAV).toHaveLength(19)
   })
 
   it('every link has an href and a label', () => {
@@ -52,15 +56,23 @@ describe('ADVANCED_NAV — static shape', () => {
     expect(labels).toContain('Integrations')
     expect(labels).toContain('Costs')
     expect(labels).toContain('Crons')
-    expect(labels).toContain('Vault')
     expect(labels).toContain('Library')
     expect(labels).toContain('Terminal')
   })
 
-  it('Vault is an internal advanced-only link, absent from consumer nav', () => {
-    const vault = ADVANCED_NAV.find(l => l.label === 'Vault')
-    expect(vault).toEqual({ href: '/vault', label: 'Vault' })
-    expect(CONSUMER_NAV.some(l => l.href === '/vault')).toBe(false)
+  it('Library is the reader at /library in BOTH navs; no separate Vault entry remains', () => {
+    // Captain naming ruling 2026-07-17: keep the name Library; the /vault
+    // ROUTE lives on as a redirect alias, but the NAV shows one entry.
+    expect(ADVANCED_NAV.find(l => l.label === 'Library')).toEqual({
+      href: '/library',
+      label: 'Library',
+    })
+    expect(CONSUMER_NAV.find(l => l.label === 'Library')).toEqual({
+      href: '/library',
+      label: 'Library',
+    })
+    expect(ADVANCED_NAV.some(l => l.href === '/vault' || l.label === 'Vault')).toBe(false)
+    expect(CONSUMER_NAV.some(l => l.href === '/vault' || l.label === 'Vault')).toBe(false)
   })
 
   it('Terminal is the only external link (target=_blank affordance)', () => {

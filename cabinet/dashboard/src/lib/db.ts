@@ -14,6 +14,48 @@ declare global {
   var __pgPool: Pool | undefined
 }
 
+/**
+ * SSL posture for the pool (review fix 2026-07-17). This used to hardcode
+ * `ssl: { rejectUnauthorized: false }`, which breaks any store that cannot
+ * speak SSL at all: a local `postgres://…@localhost/…` works under psql
+ * (sslmode=prefer silently falls back to plaintext) but node-pg does no such
+ * fallback — every query failed with "The server does not support SSL
+ * connections". Mirror psql's decision statically from the connection string
+ * (never logged; hosts/paths only, no credentials touched):
+ *   - explicit `sslmode=disable`                → no TLS
+ *   - explicit require / verify-* / no-verify   → TLS (legacy posture:
+ *     rejectUnauthorized:false, unchanged for every managed store)
+ *   - otherwise ("prefer"): loopback host       → no TLS (local plaintext
+ *     postgres); any remote host incl. *.neon.tech → TLS (legacy posture)
+ * Unparseable strings keep the legacy TLS posture (fail toward the old
+ * behavior, never toward silently downgrading a remote connection).
+ * Exported for unit tests (db.test.ts) only.
+ */
+export function resolvePoolSsl(
+  connectionString: string
+): { rejectUnauthorized: boolean } | undefined {
+  const LEGACY_TLS = { rejectUnauthorized: false }
+  let host: string
+  let sslmode: string
+  try {
+    const u = new URL(connectionString)
+    host = u.hostname.toLowerCase()
+    sslmode = (u.searchParams.get('sslmode') ?? '').toLowerCase()
+  } catch {
+    return LEGACY_TLS
+  }
+  if (sslmode === 'disable') return undefined
+  if (['require', 'verify-ca', 'verify-full', 'no-verify'].includes(sslmode)) {
+    return LEGACY_TLS
+  }
+  const isLoopback =
+    host === '' || // no host = local socket / default
+    host === 'localhost' ||
+    host === '[::1]' ||
+    /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)
+  return isLoopback ? undefined : LEGACY_TLS
+}
+
 function createPool(): Pool {
   const connectionString = process.env.NEON_CONNECTION_STRING
   if (!connectionString) {
@@ -24,7 +66,7 @@ function createPool(): Pool {
     max: 5,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 5_000,
-    ssl: { rejectUnauthorized: false },
+    ssl: resolvePoolSsl(connectionString),
   })
 }
 

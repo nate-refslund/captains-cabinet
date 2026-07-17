@@ -1,8 +1,11 @@
 /**
- * Library layout — passthrough since the Library retirement (2026-07-16).
- * The Spec 037 A4 sidebar (spaces + per-space record tree) is gone with the
- * editable UI; /library/* now renders only the retirement notice and
- * redirect stubs, so the layout does no data fetching.
+ * Library layout — passthrough. Since the Captain's 2026-07-17 naming ruling
+ * the Library IS the read-only vault reader (/library/[[...path]] browser +
+ * /library/graph); each page carries its own container and all data flows
+ * through lib/vault.ts / lib/vault-graph.ts (filesystem, confined, DB-free),
+ * so the layout fetches nothing. The pre-retirement Spec 037 sidebar stays
+ * gone — the editable STORE is retired (2026-07-16); only the reader
+ * returned.
  */
 
 import type { ReactNode } from 'react'

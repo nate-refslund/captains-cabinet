@@ -189,3 +189,25 @@ describe('determinism replay — same props + ticks => byte-identical frames', (
     expect(first).not.toMatch(/"kind"/)
   })
 })
+
+describe('COMMISSIONING vocabulary (Captain ruling 3, 2026-07-17)', () => {
+  it('exports the six-stage display ladder in ceremony order', async () => {
+    const { COMMISSIONING_STAGES } = await import('./hatch-dialog')
+    expect(COMMISSIONING_STAGES).toEqual([
+      'keel-laying',
+      'launch',
+      'christening',
+      'sea trials',
+      'commissioning',
+      'maiden voyage',
+    ])
+  })
+
+  it('machine identifiers stay frozen (display-copy-only ruling)', async () => {
+    // DialogMode 'hatching' + the HatchButton set are MACHINE ids — the
+    // ruling renames what humans read, never what routes/gates key on.
+    const mod = await import('./hatch-dialog')
+    expect(mod.gateButtons({ mode: 'hatching' }).length).toBeGreaterThan(0)
+    expect(mod.HATCH_BUTTON_ORDER).toContain('Sign')
+  })
+})

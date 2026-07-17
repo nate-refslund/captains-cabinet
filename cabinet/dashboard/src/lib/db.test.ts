@@ -9,8 +9,12 @@
 //    build-time page-data collection where NEON_CONNECTION_STRING is unset)
 //  - getDbPool()/query() throw when NEON_CONNECTION_STRING is missing
 //  - Second call returns the same Pool (globalThis cache)
-//  - Pool is created with max:5, ssl rejectUnauthorized:false, 5s connect
-//    timeout — values that the production footprint relies on
+//  - Pool is created with max:5, 5s connect timeout, and an ssl posture
+//    resolved per store by resolvePoolSsl (review fix 2026-07-17): legacy
+//    rejectUnauthorized:false for remote/managed stores, plaintext for
+//    loopback or sslmode=disable — psql-prefer parity, so a local no-SSL
+//    postgres stops 500ing every query while Neon keeps the production
+//    footprint unchanged
 //  - query<T>() returns result.rows, not the full result object
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
@@ -89,7 +93,73 @@ describe('db — lazy pool creation', () => {
     expect(opts.max).toBe(5)
     expect(opts.idleTimeoutMillis).toBe(30_000)
     expect(opts.connectionTimeoutMillis).toBe(5_000)
+    // Remote host, no sslmode → legacy TLS posture (unchanged behavior)
     expect(opts.ssl).toEqual({ rejectUnauthorized: false })
+  })
+
+  it('Pool against a loopback store is created WITHOUT forced TLS', () => {
+    process.env.NEON_CONNECTION_STRING =
+      'postgresql://cabinet@localhost:5432/cabinet'
+    mod.getDbPool()
+    expect(poolCtorCalls[0].ssl).toBeUndefined()
+  })
+})
+
+describe('db — resolvePoolSsl (psql-prefer parity; review fix 2026-07-17)', () => {
+  const LEGACY_TLS = { rejectUnauthorized: false }
+
+  it('local plaintext store (localhost, no sslmode) → no TLS', () => {
+    expect(
+      mod.resolvePoolSsl('postgresql://cabinet@localhost:5432/cabinet')
+    ).toBeUndefined()
+  })
+
+  it('loopback variants → no TLS', () => {
+    expect(mod.resolvePoolSsl('postgres://u@127.0.0.1:5432/db')).toBeUndefined()
+    expect(mod.resolvePoolSsl('postgres://u@[::1]:5432/db')).toBeUndefined()
+  })
+
+  it('managed Neon host (no sslmode) keeps the legacy TLS posture', () => {
+    expect(
+      mod.resolvePoolSsl(
+        'postgres://u:p@ep-x-1.eu-central-1.aws.neon.tech/neondb'
+      )
+    ).toEqual(LEGACY_TLS)
+  })
+
+  it('any remote host (no sslmode) keeps the legacy TLS posture', () => {
+    expect(mod.resolvePoolSsl('postgres://u:p@db.internal:5432/db')).toEqual(
+      LEGACY_TLS
+    )
+  })
+
+  it('explicit sslmode=require/verify-* wins over loopback (TLS on localhost)', () => {
+    expect(
+      mod.resolvePoolSsl('postgres://u@localhost:5432/db?sslmode=require')
+    ).toEqual(LEGACY_TLS)
+    expect(
+      mod.resolvePoolSsl('postgres://u@localhost:5432/db?sslmode=verify-full')
+    ).toEqual(LEGACY_TLS)
+  })
+
+  it('explicit sslmode=disable wins over a remote host (plaintext)', () => {
+    expect(
+      mod.resolvePoolSsl('postgres://u:p@ep-x.neon.tech/db?sslmode=disable')
+    ).toBeUndefined()
+  })
+
+  it('sslmode=prefer behaves like the default (host decides)', () => {
+    expect(
+      mod.resolvePoolSsl('postgres://u@localhost/db?sslmode=prefer')
+    ).toBeUndefined()
+    expect(
+      mod.resolvePoolSsl('postgres://u@db.remote/db?sslmode=prefer')
+    ).toEqual(LEGACY_TLS)
+  })
+
+  it('unparseable connection string fails toward the legacy TLS posture', () => {
+    expect(mod.resolvePoolSsl('not a url at all')).toEqual(LEGACY_TLS)
+    expect(mod.resolvePoolSsl('')).toEqual(LEGACY_TLS)
   })
 })
 

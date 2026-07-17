@@ -16,10 +16,13 @@ export type NavLink = {
  * Advanced (all items, zero regression from the pre-Spec-032 nav):
  *   Dashboard / Orientation / Needs You / World / Project / Cabinets / Officers / Tasks /
  *   Capability Gaps / Health / Settings / Governance / Receipts / Evidence /
- *   Integrations / Costs / Crons / Vault / Library / Terminal (external)
+ *   Integrations / Costs / Crons / Library / Terminal (external)
  *
- * Vault (read-only filesystem browser over the org vault/ corpus) is an
- * Advanced-only power tool; it is intentionally NOT in CONSUMER_NAV.
+ * Library (/library) is the READ-ONLY reader over the org vault/ corpus —
+ * Captain naming ruling 2026-07-17: "keep the name Library — the vault is
+ * where it's kept, the Library is where you read." The separate Vault entry
+ * was dropped the same day (/vault now redirects to /library), so ONE nav
+ * item covers the reader in both modes.
  *
  * Receipts (perfect-cabinet Wave B): read-only browser over the undo
  * journal — the what/why/cost/undo receipt surface, next to Governance.
@@ -54,7 +57,6 @@ export const ADVANCED_NAV: NavLink[] = [
   { href: '/integrations', label: 'Integrations' },
   { href: '/costs', label: 'Costs' },
   { href: '/crons', label: 'Crons' },
-  { href: '/vault', label: 'Vault' },
   { href: '/library', label: 'Library' },
   { href: 'https://terminal.example.com', label: 'Terminal', external: true },
 ]
