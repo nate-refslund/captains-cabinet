@@ -19,10 +19,13 @@ Also ratcheted here (docs track the code):
   * CLAUDE.md + docs/templates/CLAUDE-egg.md (the egg template BECOMES the
     public egg's CLAUDE.md at export) route Cabinet knowledge to the vault +
     memory_search — never to the deregistered Library MCP;
-  * no non-germline agent frontmatter grants the retired mcp__library tool
-    (germline grant surfaces — .claude/settings.json allow-list,
-    cabinet/mcp-scope.yml — keep dangling-but-harmless entries until the
-    ceremony; see the runbook's follow-ups);
+  * NO agent frontmatter grants the retired mcp__library tool, AND the two
+    germline grant surfaces (.claude/settings.json allow-list,
+    cabinet/mcp-scope.yml grant lists + universal:) stay library-free — the
+    CG-29 danglers landed on master (git side; the schg live inode syncs at
+    the Captain window via checkout-from-master, per the CG-27/CG-31
+    precedent), so those surfaces are now ratcheted against re-grant instead
+    of carried-until-ceremony;
   * the retire-library-export.py archive dirs stay gitignored (runtime-only —
     exported DB-derived records must never ride a commit into the egg);
   * the staged comment-only ceremony patch for schg-locked
@@ -174,10 +177,11 @@ AGENT_GRANT_ROOTS = ("instance/agents", "presets")
 def test_no_agent_frontmatter_grants_the_retired_library_tool():
     """The server is deregistered from both .mcp.json layers, so a tools:
     grant is a dangling no-op — but new agent files are written by copying
-    existing ones, and a dangler invites resurrection-by-copy. Germline
+    existing ones, and a dangler invites resurrection-by-copy. The germline
     grant surfaces (.claude/settings.json allow-list, cabinet/mcp-scope.yml)
-    are schg-locked and deliberately NOT scanned — they carry their entries
-    until the ceremony (runbook follow-ups)."""
+    are covered separately by test_germline_grant_surfaces_stay_library_free
+    — the CG-29 danglers landed on master, so those surfaces are ratcheted
+    clean rather than carried until a ceremony."""
     offenders = []
     for root in AGENT_GRANT_ROOTS:
         base = REPO / root
@@ -194,6 +198,50 @@ def test_no_agent_frontmatter_grants_the_retired_library_tool():
     assert offenders == [], (
         "agent files still grant the retired mcp__library tool: "
         + ", ".join(sorted(offenders)))
+
+
+MCP_SCOPE = REPO / "cabinet/mcp-scope.yml"
+SETTINGS_JSON = REPO / ".claude/settings.json"
+
+
+def test_germline_grant_surfaces_stay_library_free():
+    """The CG-29 danglers (the two germline grant surfaces) landed on master
+    — cabinet/mcp-scope.yml dropped `library` from every officer/scaffold
+    grant list and from `universal:`, and .claude/settings.json dropped the
+    `mcp__library` permissions.allow entry. The schg LIVE inodes sync at the
+    Captain window via checkout-from-master (CG-29 gate_cmd; the CG-27/CG-31
+    precedent), so on master these surfaces are CLEAN and this ratchet guards
+    them against re-grant.
+
+    Only the STRUCTURED grant lists are checked: mcp-scope.yml's `rationale:`
+    prose mentions 'Library' freely (e.g. 'Library for SOP records'), so a
+    substring scan would false-positive — parse the YAML and inspect the
+    `mcps:`/`universal:` lists alone."""
+    import json
+    import yaml
+
+    scope = yaml.safe_load(MCP_SCOPE.read_text())
+    offenders = []
+    for section in ("agents", "scaffolds"):
+        for officer, spec in (scope.get(section) or {}).items():
+            mcps = (spec or {}).get("mcps") or []
+            if any(str(m).strip().lower() == "library" for m in mcps):
+                offenders.append(f"{section}.{officer}.mcps")
+    if any(str(m).strip().lower() == "library"
+           for m in (scope.get("universal") or [])):
+        offenders.append("universal")
+    assert offenders == [], (
+        "cabinet/mcp-scope.yml re-grants the retired `library` MCP: "
+        + ", ".join(offenders) + " — Library retired 2026-07-16; drop it "
+        "from the grant list (the server is deregistered, so the grant is a "
+        "resurrection-bait no-op)")
+
+    allow = json.loads(SETTINGS_JSON.read_text()).get(
+        "permissions", {}).get("allow", [])
+    assert "mcp__library" not in allow, (
+        ".claude/settings.json permissions.allow re-grants mcp__library — "
+        "the Library MCP is deregistered from both .mcp.json layers "
+        "(docs/runbooks/library-retirement-2026-07-16.md)")
 
 
 def test_library_archive_export_dirs_are_gitignored():

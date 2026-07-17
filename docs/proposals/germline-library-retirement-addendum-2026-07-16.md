@@ -2,9 +2,11 @@
 
 **Date:** 2026-07-16 (durable-surface + lock-state rev 2026-07-17, same
 lane) · **Author:** library-retire lane (scratch clone off the GitHub
-master tip; fix pass off `1cd84459`) · **Ledger row:** not yet assigned — a
-CG row is required before the unlock window (integrator files it) ·
-**Targets (ONE ceremony, three germline surfaces):** `cabinet/mcp-scope.yml`,
+master tip; fix pass off `1cd84459`) · **Ledger row:** CG-29 (filed;
+ROUTING REVISED 2026-07-17 to MASTER-FIRST — the git-side content lands on
+master, the schg live inode syncs in the window via checkout-from-master,
+per the CG-27 / CG-31 precedent; see "Ceremony items" below) ·
+**Targets (three germline surfaces):** `cabinet/mcp-scope.yml`,
 `.claude/settings.json`, `cabinet/scripts/start-officer-mac.sh` (all three
 in `cabinet/scripts/germline-lock.sh`'s list; schg-locked on the live box) ·
 **Patch artifact:**
@@ -13,10 +15,13 @@ FILE directly under `docs/proposals/` BY CONTRACT: the egg exporter's
 `t_proposals_archive` `rm -f`'s each entry under `set -e`, so a
 subdirectory here aborts the export (both package files carry
 `expect-absent` manifest rows and archive out of the egg like every other
-non-amendment proposal) · **Provenance:** no locked file was ever edited —
-the patch was built against pristine copies in a disjoint scratch tree and
+non-amendment proposal); it is kept as the comment-only PROOF (superseded
+as an apply step by the master checkout) · **Provenance:** no schg live
+inode is touched by the git-side land — the tree files (`mcp-scope.yml` /
+`settings.json` / `start-officer-mac.sh`) are NOT schg in a clone, and
 `cabinet/scripts/tests/test_library_retirement_ratchet.py::test_staged_ceremony_patch_stays_appliable_and_comment_only`
-re-verifies it on every CI run without touching the locks.
+re-verifies the reference patch's comment-only-ness on every CI run (until
+the mark lands, then it skips) without touching the locks.
 
 ## Why
 
@@ -26,35 +31,52 @@ The Library retirement (Captain-ratified 2026-07-16;
 non-germline `mcp__library` grant. Three germline surfaces still carry
 dangling `library` references — harmless while the server is unregistered
 (an unregistered server grants nothing; a comment misleads but executes
-nothing), but they are resurrection bait and stale doctrine, and they can
-only be cleaned inside a Captain sudo unlock window.
+nothing), but they are resurrection bait and stale doctrine. The git-side
+cleanup lands on master with the danglers diff; the schg LIVE inodes are
+brought into line inside a Captain sudo unlock window.
 
-## Ceremony items (one window, relock the same day)
+## What lands on master (git side, no lock touched)
 
-1. **`cabinet/mcp-scope.yml`** — remove `library` from every officer grant
-   list and from `universal:`. Hygiene, not behavior.
-2. **`.claude/settings.json`** — remove the `"mcp__library"` entry from
+The danglers diff removes the three dangling references from the TRACKED
+files — none of which is schg in a clone:
+
+1. **`cabinet/mcp-scope.yml`** — `library` dropped from every officer /
+   scaffold grant list and from `universal:`. Hygiene, not behavior.
+2. **`.claude/settings.json`** — the `"mcp__library"` entry dropped from
    `permissions.allow`. Hygiene, not behavior.
-3. **`cabinet/scripts/start-officer-mac.sh`** — apply the staged
-   comment-only patch (the MCP deep-merge comment's example list
-   "notion/linear/neon/library" names the deregistered `library` and the
-   long-deleted `linear`; the new text names living servers and records the
-   deregistration date):
+3. **`cabinet/scripts/start-officer-mac.sh`** — the stale MCP deep-merge
+   comment ("notion/linear/neon/library" named the deregistered `library`
+   and the long-deleted `linear`) replaced by living-server text carrying
+   the deregistration date. Comment-only — the ratchet enforces non-comment
+   lines byte-identical and `bash -n` clean.
 
-   ```bash
-   # inside the unlock window, from the repo root:
-   git apply --3way docs/proposals/germline-library-retirement-2026-07-16.patch
-   ```
+Landing is functionally inert: LIB-RETIRE-1 already deregistered the server
+from both `.mcp.json` layers, so the grants/comment were no-ops. Post-land,
+the two grant surfaces are ratcheted clean by
+`test_germline_grant_surfaces_stay_library_free` (they are no longer
+carried-until-ceremony).
 
-   Zero executable-line changes — the ratchet test enforces comment-only
-   (non-comment lines byte-identical) and `bash -n` cleanliness against a
-   copy on every run.
+## Ceremony — live-inode sync (one Captain sudo window, relock same day)
 
-After the window: relock (`cabinet/scripts/germline-lock.sh lock`), re-run
-`python3.12 -m pytest cabinet/scripts/tests/test_library_retirement_ratchet.py -q`
-(the staged-patch test detects the landed state and skips; everything else
-stays green — germline surfaces are deliberately not scanned), and tick the
-ceremony follow-up in the runbook.
+The window does NOT patch or commit; it syncs the schg live inodes to the
+already-landed master content (the CG-27 / CG-31 checkout-from-master
+precedent):
+
+```bash
+# Captain sudo window, from the repo root, relock the SAME session:
+git fetch origin
+sudo cabinet/scripts/germline-lock.sh unlock
+git checkout origin/master -- cabinet/mcp-scope.yml \
+    .claude/settings.json cabinet/scripts/start-officer-mac.sh
+git diff --quiet origin/master -- cabinet/mcp-scope.yml \
+    .claude/settings.json cabinet/scripts/start-officer-mac.sh   # blob-verify
+sudo cabinet/scripts/germline-lock.sh lock
+cabinet/scripts/germline-lock.sh status && cabinet/scripts/germline-lock.sh verify
+python3.12 -m pytest cabinet/scripts/tests/test_library_retirement_ratchet.py -q
+```
+
+The staged-patch test detects the landed mark and skips; the grant-surface
+ratchet stays green. Then flip CG-29 → done and tick the runbook follow-up.
 
 ## Lock-state provenance
 
@@ -65,8 +87,8 @@ mid-window unlocked state, which is expected inside a ceremony and resolved
 by the relock). Germline etiquette still applies: re-verify lock state
 fresh (`germline-lock.sh status` / `verify`, `ls -lO`) IMMEDIATELY before
 the ceremony — never trust this paragraph over a live check, and never
-apply the patch outside a Captain window even if a path happens to be
-writable.
+sync the live inode (checkout from master) outside a Captain window even if
+a path happens to be writable.
 
 ## Also noted (not in this ceremony)
 

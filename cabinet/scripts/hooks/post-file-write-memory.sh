@@ -15,6 +15,13 @@
 # content time is derivable we pass "" (memory_queue_embed — lib-owned — stamps
 # queue time for an empty arg; at hook-fire time that IS the edit observation
 # time, an honest capture clock).
+#
+# Vault wave (2026-07-17; Captain-ratified 2026-07-16): the org corpus is the
+# cabinet VAULT — */vault/*.md is watched (legacy */product-brain/*.md kept as
+# an alias), and the docs/ tree joined the memory index as
+# source_type=framework_doc, ROOTED under CABINET_ROOT. Watch-list parity:
+# memory-reconcile.sh walks the same surfaces nightly (hook⊆reconcile,
+# pinned by cabinet/scripts/tests/test_bootstrap_memory_chain.py).
 
 # ---------------------------------------------------------------
 # Shared functions (pfwm_ = post-file-write-memory)
@@ -50,8 +57,14 @@ pfwm_source_type() {
     */memory/skills/*.md|*/memory/skills/evolved/*.md)
       echo "skill"
       ;;
+    */vault/*.md)
+      echo "product_brain"  # the cabinet vault (org corpus, any depth) — whole-file embed; the source_type name predates the 2026-07-16 vault rename (row-identity continuity)
+      ;;
+    "${CABINET_ROOT:-}"/docs/*.md)
+      echo "framework_doc"  # framework docs tree (plans/proposals/runbooks/specs) — ROOTED under the deployment root so a foreign repo's docs/ never ingests
+      ;;
     */product-brain/*.md)
-      echo "product_brain"  # org's own product corpus (any depth) — whole-file embed
+      echo "product_brain"  # legacy pre-rename corpus path (un-migrated checkout / externally relocated corpus) — same type
       ;;
     */framework/constitution-base.md|*/framework/safety-boundaries-base.md)
       echo "framework_file"

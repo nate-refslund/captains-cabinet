@@ -15,7 +15,6 @@
       "mcp__neon",
       "mcp__vercel",
       "mcp__plugin_telegram_telegram",
-      "mcp__library",
       "mcp__redis-trigger-channel",
       "mcp__make"
     ],

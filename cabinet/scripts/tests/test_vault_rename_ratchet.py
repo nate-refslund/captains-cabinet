@@ -70,8 +70,8 @@ ALLOWED = {
         "next unlock window (see the 2026-07-17 vault hook-watch ceremony note)",
     "cabinet/scripts/hooks/post-file-write-memory.sh":
         "schg germline — keeps the legacy */product-brain/*.md watch arm; "
-        "vault/docs patterns land via "
-        "patches/germline-vault-hook-watch-2026-07-17.patch",
+        "vault/docs patterns landed on master 2026-07-17 (CG-30; the live "
+        "inode syncs at the Captain checkout window)",
     "cabinet/scripts/memory-reconcile.sh":
         "walks the legacy product-brain/ dir for un-migrated checkouts",
     "cabinet/scripts/backfill-memory.sh":
