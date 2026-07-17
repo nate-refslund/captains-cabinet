@@ -1044,9 +1044,19 @@ def test_watchdog_select_expectations_filters_and_never_blinds():
     assert [e.id for e in reg._select_expectations(reg._CATALOG, ["zzz"])] == all_ids
 
 
-def test_watchdog_this_deployment_enables_full_catalog():
-    """The committed instance config enables all five catalog rows in catalog
-    order — the module-level EXPECTATIONS the checker sweeps is unchanged by
-    the R017 data move (test_full_run_with_fake_probe pins checked == 5)."""
-    assert [e.id for e in reg.EXPECTATIONS] == [e.id for e in reg._CATALOG]
+def test_watchdog_this_deployment_enables_original_rows_phase4_dark():
+    """The committed instance config enables the five original catalog rows in
+    catalog order — the module-level EXPECTATIONS the checker sweeps stays at
+    5 (test_full_run_with_fake_probe pins checked == 5). The Phase-4
+    evidence-plane rows ship in the catalog but STAGED DARK on this
+    deployment (shadow law — whole-cabinet evidence design 2026-07-16 §3
+    Phase 4): commented in the instance enable-list until the Captain
+    ceremony arms them alongside the evidence-shadow-detectors service."""
+    enabled = [e.id for e in reg.EXPECTATIONS]
+    catalog = [e.id for e in reg._CATALOG]
+    assert enabled == catalog[:5]
     assert len(reg.EXPECTATIONS) == 5
+    phase4 = {"evidence-store-invariants", "evidence-anchor-export-fresh",
+              "evidence-shadow-detector-liveness"}
+    assert phase4 <= set(catalog)          # shipped in the framework catalog
+    assert not (phase4 & set(enabled))     # dark on this deployment (shadow)

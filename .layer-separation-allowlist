@@ -55,6 +55,19 @@
 #   with the same provenance.
 #     policy_engine.py — instance/config/policies/ + instance/config/
 #                        active-preset (policy layering, D8 floor-only)
+#   2026-07-17 — evidence Phase 4 judging-frozen marker (+1, self-ratified
+#   per the 2026-07-07 full-autonomy grant; ordered as the sanctioned fix
+#   by the Phase-4 drill adversarial review, precedent-consistent with the
+#   posture.py/grants.py/needs.py/actfirst_canary.py runtime-state class):
+#   framework/evidence_freeze.py owns the ONE truth for the judging-frozen
+#   marker instance/state/evidence-judging-freeze.json — deployment-local
+#   RUNTIME STATE under an explicit repo-root argument (never env-steered),
+#   deliberately OUTSIDE the byte-stable evidence store (instance/evidence/)
+#   and outside framework/. A marker read (fail-closed is_frozen) + write
+#   (freeze narrowing / Captain-token captain_clear), never an import.
+#     evidence_freeze.py — instance/state/evidence-judging-freeze.json
+#                          (Phase-4 shadow services' self-restraint gate;
+#                          design 2026-07-16 §2.4 tamper response)
 framework/acting/run_action_lane.py:FRAMEWORK_PATH_INSTANCE
 framework/acting/tests/test_sov4_posture_routing.py:FRAMEWORK_PATH_INSTANCE
 framework/authority/policy_engine.py:FRAMEWORK_PATH_INSTANCE
@@ -65,6 +78,7 @@ framework/authority/tests/test_golden_evals_sovereign.py:FRAMEWORK_PATH_INSTANCE
 framework/authority/tests/test_grants.py:FRAMEWORK_PATH_INSTANCE
 framework/authority/tests/test_needs.py:FRAMEWORK_PATH_INSTANCE
 framework/authority/tests/test_posture.py:FRAMEWORK_PATH_INSTANCE
+framework/evidence_freeze.py:FRAMEWORK_PATH_INSTANCE
 framework/frontdoor/actfirst_canary.py:FRAMEWORK_PATH_INSTANCE
 framework/frontdoor/action_exec.py:FRAMEWORK_PATH_INSTANCE
 framework/frontdoor/tests/test_sov6_binder_grant.py:FRAMEWORK_PATH_INSTANCE

@@ -178,6 +178,16 @@ class Probe:
         that as unverifiable-skip, never as failure. Real impl in check.py."""
         return {}
 
+    def listdir(self, path: str) -> Optional[list[str]]:
+        """Sorted entries of a directory, or None when NOT OBSERVABLE
+        (missing dir, permission error, an older Probe stub). Defaults to
+        None — the same deliberate degrade-safe choice as launchctl_list:
+        a stub without this method self-disables the evidence-store facts
+        scan instead of crashing the sweep. Verifies MUST treat None as
+        unverifiable-skip, never as failure; [] means the directory exists
+        and is empty (an affirmative observation). Real impl in check.py."""
+        return None
+
     def trigger_chair(self, message: str) -> bool:  # pragma: no cover
         """Push a trigger to cabinet:triggers:cos (the ONLY side-effect a
         verify/auto_fix may cause). Returns True on a confirmed enqueue."""
@@ -994,6 +1004,238 @@ def verify_pipes_fresh(probe: "Probe") -> CheckResult:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Evidence-plane expectations (Phase 4 — whole-cabinet evidence design
+# 2026-07-16 §3 item 1).
+#
+# WEAK-SIGNAL DOCTRINE (design B9, binding): these expectations ground ONLY
+# in INVARIANTS over cheap independent file facts — freshness-class
+# (future-dated mtimes), growth (per-trial event cap), continuity-adjacent
+# sidecar sanity, and service-outcome liveness. Evidence-PATTERN matches
+# (the cluster findings framework/evidence_detectors.py reports) are WEAK
+# SIGNALS: they may appear in the Captain report, but they are NEVER
+# expectation ground truth here and NEVER all-clear evidence — a watchdog
+# whose expectations derive from officer-produced evidence patterns becomes
+# an imitable target.
+#
+# COMPOSE, DON'T DUPLICATE: hash-chain/signature verification is NOT
+# re-derived here (registry survival contract — stdlib-only, never import
+# framework.evidence, the watched system included): the daily cabinet-doctor
+# evidence probes spot-check the newest trial's chain and the evidence-anchor
+# job owns store-wide anti-rollback; these rows read only the cheap facts
+# around them. The per-trial event cap is PARSED from cabinet-doctor.sh's
+# EV_CAP_DEFAULT line (the constant's home, sync-pinned by
+# framework/tests/test_evidence_doctor_probes.py) — reused, never minted
+# twice; unparseable → that sub-check skips.
+#
+# STAGED DARK (shadow posture): the shipped instance/config/watchdog.yml
+# enable-list deliberately omits these ids — the Captain ceremony that arms
+# the Phase-4 services uncomments them there in the same step.
+# ─────────────────────────────────────────────────────────────────────────────
+_EV_SKEW_S = 900  # future-mtime tolerance (clock-skew grace, not a power bar)
+
+# Deployment-relative surfaces this block watches. Mirrored single-string
+# RELs, NOT imports: the survival contract above forbids importing the
+# watched plane, and every owning module (framework/onboarding/journey.py
+# EVIDENCE_REL, framework/evidence_detectors.py FREEZE_MARKER_REL /
+# JOURNAL_REL) imports framework.evidence at module scope — so the values
+# are mirrored here and SYNC-PINNED by framework/tests/
+# test_evidence_detectors.py (the EV_CAP_DEFAULT pattern: reuse by pinned
+# mirror where an import is structurally barred, never a drifting second
+# source). The instance/-resident paths are Captain-owned runtime surfaces
+# read as config-class facts (mtime/listing/text), never code deps.
+_EV_STORE_REL = "instance/evidence/v1"  # = journey.EVIDENCE_REL (A10: never the recorder's env fallback — the env seam is untrusted for watchers)
+_EV_ANCHOR_CFG_REL = "instance/config/evidence-anchor.yml"  # = the anchor CLI's binding file
+_EV_FREEZE_MARKER_REL = "instance/state/evidence-judging-freeze.json"  # = evidence_detectors.FREEZE_MARKER_REL
+_EV_JOURNAL_REL = "shared/interfaces/evidence-shadow-findings.jsonl"  # = evidence_detectors.JOURNAL_REL
+
+
+def _ev_store_root() -> Path:
+    """Doctor parity: $REPO_ROOT/instance/evidence/v1 pinned via the mirrored
+    ``_EV_STORE_REL`` — never the recorder's env fallback (A10: the env seam
+    is untrusted for watchers)."""
+    return _cabinet_root() / _EV_STORE_REL
+
+
+def _ev_doctor_cap(probe: "Probe") -> Optional[int]:
+    """The recorder's per-trial event cap, REUSED from cabinet-doctor.sh's
+    ``EV_CAP_DEFAULT=<n>`` line. None (sub-check skips) when unparseable."""
+    text = probe.read_text(str(_cabinet_root() / "cabinet" / "scripts"
+                               / "cabinet-doctor.sh"))
+    m = re.search(r"^EV_CAP_DEFAULT=(\d+)", text or "", re.M)
+    return int(m.group(1)) if m else None
+
+
+def _ev_manifest_entry(probe: "Probe", name: str) -> Optional[dict]:
+    """The services.yml row for ``name`` via the existing narrow parser."""
+    for entry in _parse_services_manifest(probe.read_text(SERVICES_MANIFEST)):
+        if entry.get("name") == name:
+            return entry
+    return None
+
+
+def verify_evidence_store_invariants(probe: "Probe") -> CheckResult:
+    eid = "evidence-store-invariants"
+    store = _ev_store_root()
+    trials_dir = store / "trials"
+    trial_names = probe.listdir(str(trials_dir))
+    sidecar_text = probe.read_text(str(store / ".verify-watermarks.json"))
+
+    if trial_names is None:
+        # Not observable (store absent / probe degraded) — plane not
+        # activated on this box, or unverifiable: skip, never fail.
+        return CheckResult(eid, True,
+                           "evidence store not observable (absent or probe "
+                           "degraded) — invariants not applicable",
+                           skipped=True)
+    if not trial_names:
+        if sidecar_text.strip():
+            # BOTH observations succeeded: an empty trials dir under a
+            # surviving watermark sidecar is the affirmative orphan smell
+            # (store contents removed while the sidecar survived).
+            return CheckResult(eid, False,
+                               "watermark sidecar present but the trials dir "
+                               "is EMPTY — continuity sidecar orphaned (store "
+                               "contents removed?)")
+        return CheckResult(eid, True,
+                           "evidence plane empty (no trials yet) — "
+                           "invariants not applicable", skipped=True)
+
+    problems: list[str] = []
+    now_epoch = probe.now().timestamp()
+
+    # Freshness-class invariant: ledger mtimes never sit in the future.
+    # (Staleness itself is deliberately NOT paged here — the daily doctor
+    # owns it AMBER-max with wake-grace; a kill-switched-quiet store is a
+    # legitimate state, not an outcome failure.)
+    for name in trial_names:
+        mtime = probe.file_mtime(str(trials_dir / name / "events.jsonl"))
+        if mtime is not None and mtime > now_epoch + _EV_SKEW_S:
+            problems.append(f"future-dated ledger mtime in {name} "
+                            f"(+{int(mtime - now_epoch)}s)")
+
+    # Growth invariant: today's/yesterday's day-bounded trials stay within
+    # the recorder's enforced per-trial event cap (a breach means the cap
+    # failed — segments should have chained instead).
+    cap = _ev_doctor_cap(probe)
+    if cap:
+        now_dt = probe.now()
+        days = {now_dt.strftime("%Y%m%d"),
+                (now_dt - _dt.timedelta(days=1)).strftime("%Y%m%d")}
+        for name in trial_names:
+            if name[-8:] in days:
+                ledger_text = probe.read_text(str(trials_dir / name
+                                                  / "events.jsonl"))
+                events = ledger_text.count("\n")
+                if events > cap:
+                    problems.append(f"{name} holds {events} events > "
+                                    f"per-trial cap {cap} (recorder growth "
+                                    "invariant breached)")
+
+    # Continuity-adjacent sanity: a PRESENT sidecar must parse as a JSON
+    # object (a corrupted sidecar degrades anti-rollback protection). Chain
+    # verification itself composes with the doctor/anchor jobs (above).
+    if sidecar_text.strip():
+        try:
+            if not isinstance(json.loads(sidecar_text), dict):
+                problems.append("watermark sidecar is not a JSON object — "
+                                "anti-rollback protection degraded")
+        except ValueError:
+            problems.append("watermark sidecar unparseable — anti-rollback "
+                            "protection degraded")
+
+    if problems:
+        return CheckResult(eid, False,
+                           "evidence-store invariant violation: "
+                           + "; ".join(problems[:4]))
+    return CheckResult(eid, True,
+                       f"evidence store facts sane ({len(trial_names)} "
+                       "trials; no future mtimes, day trials within cap, "
+                       "sidecar parseable)")
+
+
+def verify_evidence_anchor_fresh(probe: "Probe") -> CheckResult:
+    eid = "evidence-anchor-export-fresh"
+    # Narrow stdlib parse of the instance binding (survival contract: no
+    # PyYAML) — mirrors evidence-anchor.py's own credless-safe posture:
+    # unconfigured surfaces skip cleanly.
+    anchor_dir = ""
+    for raw in probe.read_text(str(_cabinet_root()
+                                   / _EV_ANCHOR_CFG_REL)).splitlines():
+        m = re.match(r"^anchor_dir:\s*(.+?)\s*$", raw.strip())
+        if m:
+            anchor_dir = m.group(1).split("#", 1)[0].strip().strip("'\"")
+            break
+    if not anchor_dir:
+        return CheckResult(eid, True,
+                           "anchor_dir unconfigured — external anchoring not "
+                           "bound on this deployment", skipped=True)
+    entry = _ev_manifest_entry(probe, "evidence-anchor")
+    if entry is None or entry.get("disabled"):
+        return CheckResult(eid, True,
+                           "evidence-anchor service staged dark — no export "
+                           "floor applies yet (Captain ceremony enables it)",
+                           skipped=True)
+    anchors = (Path(os.path.expandvars(anchor_dir)).expanduser()
+               / "evidence-anchors.jsonl")
+    floor = _floor_for_entry(entry) or 26 * 3600
+    mtime = probe.file_mtime(str(anchors))
+    if mtime is None:
+        return CheckResult(eid, False,
+                           f"anchor export missing: {anchors} absent while "
+                           "the evidence-anchor service is enabled — the "
+                           "external anti-rollback anchor is not landing")
+    age = probe.now().timestamp() - mtime
+    if age > floor:
+        return CheckResult(eid, False,
+                           f"anchor export stale: {anchors} is "
+                           f"{int(age / 3600)}h old > floor "
+                           f"{int(floor / 3600)}h — the external "
+                           "anti-rollback anchor is not landing")
+    return CheckResult(eid, True,
+                       f"anchor export fresh ({int(age / 3600)}h old, floor "
+                       f"{int(floor / 3600)}h)")
+
+
+def verify_evidence_detector_liveness(probe: "Probe") -> CheckResult:
+    """Detector-service OUTCOME liveness — did the shadow detector's report
+    actually land, not just that its job ran. Reads the journal's mtime
+    ONLY; finding CONTENTS are never read here (shadow law: nothing
+    downstream consumes detector output — liveness is about the service,
+    never the findings)."""
+    eid = "evidence-shadow-detector-liveness"
+    entry = _ev_manifest_entry(probe, "evidence-shadow-detectors")
+    if entry is None or entry.get("disabled"):
+        return CheckResult(eid, True,
+                           "evidence-shadow-detectors staged dark (shadow "
+                           "law) — liveness floor not armed", skipped=True)
+    # §2.4 freeze respect: while the judging-freeze marker is present the
+    # detector REFUSES to run by contract — a quiet journal is the correct
+    # outcome, not a failure (the freeze path already paged the Chair).
+    marker = _cabinet_root() / _EV_FREEZE_MARKER_REL
+    if probe.file_mtime(str(marker)) is not None:
+        return CheckResult(eid, True,
+                           "judging-freeze marker present — detector refusal "
+                           "is the correct outcome", skipped=True)
+    journal = _cabinet_root() / _EV_JOURNAL_REL
+    floor = _floor_for_entry(entry) or 26 * 3600
+    mtime = probe.file_mtime(str(journal))
+    if mtime is None:
+        return CheckResult(eid, False,
+                           "evidence-shadow-detectors is enabled but its "
+                           f"findings journal ({journal}) has never been "
+                           "appended — the shadow report is not landing")
+    age = probe.now().timestamp() - mtime
+    if age > floor:
+        return CheckResult(eid, False,
+                           f"shadow findings journal stale ({int(age / 3600)}h "
+                           f"old > floor {int(floor / 3600)}h) — the detector "
+                           "service is enabled but its report is not landing")
+    return CheckResult(eid, True,
+                       f"shadow findings journal fresh ({int(age / 3600)}h "
+                       f"old, floor {int(floor / 3600)}h)")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # THE CATALOG — every outcome expectation this framework ships. Add an outcome
 # to watch = append one Expectation row here (and, if instance/config/
 # watchdog.yml narrows `expectations:`, enable its id there too).
@@ -1045,6 +1287,45 @@ _CATALOG: list[Expectation] = [
         cadence_s=3 * 3600,
         tier=Tier.ESCALATE_CHAIR,
         verify=verify_pipes_fresh,
+    ),
+    # ── Phase-4 evidence-plane rows (STAGED DARK — see the doctrine block
+    # above the verifies; the shipped instance enable-list omits these ids
+    # until the Captain ceremony arms them). All ESCALATE_CHAIR: evidence-
+    # plane rot needs judgment, and P-Alerts-To-Chair means the Chair
+    # absorbs it — never the Captain directly (§2.4).
+    Expectation(
+        id="evidence-store-invariants",
+        what="Evidence-store facts stay invariant-sane: no future-dated "
+             "ledger mtimes, day trials within the recorder's per-trial "
+             "event cap (cap parsed from cabinet-doctor.sh, never minted "
+             "twice), watermark sidecar parseable and never orphaned. "
+             "Grounded in invariants only — evidence-pattern matches are "
+             "weak signals and never expectation ground truth (B9); chain "
+             "verification composes with the daily doctor probe + anchor "
+             "job.",
+        cadence_s=24 * 3600,
+        tier=Tier.ESCALATE_CHAIR,
+        verify=verify_evidence_store_invariants,
+    ),
+    Expectation(
+        id="evidence-anchor-export-fresh",
+        what="The daily external evidence anchor actually LANDED (anchors "
+             "file fresh in the configured Captain-owned surface) — the "
+             "anti-rollback residual stays closed, not just scheduled. "
+             "Skips while unconfigured or staged dark.",
+        cadence_s=24 * 3600,
+        tier=Tier.ESCALATE_CHAIR,
+        verify=verify_evidence_anchor_fresh,
+    ),
+    Expectation(
+        id="evidence-shadow-detector-liveness",
+        what="The Phase-4 shadow detector's Captain-facing findings journal "
+             "keeps landing while its service is enabled (outcome liveness "
+             "only — finding contents are never read; shadow law). Skips "
+             "while staged dark or judging-frozen.",
+        cadence_s=24 * 3600,
+        tier=Tier.ESCALATE_CHAIR,
+        verify=verify_evidence_detector_liveness,
     ),
 ]
 

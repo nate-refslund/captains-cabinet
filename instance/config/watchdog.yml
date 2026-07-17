@@ -61,3 +61,11 @@ expectations:
   - captain-decisions-logged
   - no-silent-cron-failure
   - pipes-fresh
+  # Phase-4 evidence-plane rows ship STAGED DARK (shadow law — whole-cabinet
+  # evidence design 2026-07-16 §3 Phase 4): present in the framework catalog
+  # (framework/watchdog/registry.py), deliberately NOT enabled here. The
+  # Captain ceremony that arms the evidence-shadow-detectors service row in
+  # cabinet/services.yml uncomments these ids in the same step.
+  # - evidence-store-invariants
+  # - evidence-anchor-export-fresh
+  # - evidence-shadow-detector-liveness

@@ -241,15 +241,61 @@ SURFACES: list[dict[str, Any]] = [
         "globs": ["cabinet/scripts/governance-review.py"],
     },
     {
+        "id": "shadow-detectors",
+        "kind": "infra",
+        # Phase 4 item 1 (2026-07-17, SHADOW LAW): read-only detectors over
+        # the query plane — clustering + fail-open triage feeding a
+        # Captain-facing report file ONLY. Never a producer (zero store
+        # writes, zero org events; the first-verify watermark advance is the
+        # verifier's own sanctioned side effect, not a producer seam).
+        # Enumerated infra so the evidence-import detector maps here instead
+        # of tripping drift; deliberately NOT an act surface — nothing
+        # downstream may consume its output to gate/block/score/act.
+        "design": "Ph4 item 1 — shadow detectors (read-only, report-only)",
+        "globs": ["framework/evidence_detectors.py"],
+    },
+    {
+        "id": "evidence-calibration-shadow",
+        "kind": "infra",
+        # Phase 4 (2026-07-17): SHADOW per-stratum calibration — report-only,
+        # ZERO consumers (a repo grep pins that; this enumeration row is the
+        # one sanctioned classification-only reference).  It reads the store
+        # via the recorder/verifier APIs (hence the evidence_import detector
+        # hit) and takes no actions, so kind=infra: never counted in the
+        # N-of-M action-surface line, and enumeration grants no power.
+        # Exact path on purpose — a future framework/evidence_*.py sibling
+        # must still trip the drift catch and be enumerated + reviewed here.
+        "design": "Ph4 shadow per-stratum calibration — report-only, zero consumers",
+        "globs": ["framework/evidence_calibration.py"],
+    },
+    {
         "id": "evidence-plane-tooling",
         "kind": "infra",
         "design": "recorder package + bounded doorway + mirror engine + coverage/bench tooling",
         "globs": [
             "framework/evidence/**",
             "framework/evidence_mirror.py",
+            # Phase 4 (2026-07-17): the judging-frozen marker module — its
+            # Captain-token unfreeze lazily imports the framework.evidence
+            # CLI gate (an import seam, not a producer; the marker itself
+            # lives outside the store). Enumerated per this gate's own
+            # DRIFT remediation.
+            "framework/evidence_freeze.py",
             "cabinet/scripts/evidence-*.py",
             "cabinet/scripts/evidence-*.sh",
         ],
+    },
+    {
+        "id": "fuel-integrity-shadow",
+        "kind": "infra",
+        # Ph4 item 2 (2026-07-17): report-only fuel-integrity shadow checker —
+        # reads both planes via the recorder/query/verifier APIs and appends a
+        # Captain-facing JSONL OUTSIDE the store (docs/runbooks/
+        # fuel-integrity.md).  Nothing consumes its output (shadow law); this
+        # census row names the module PATH only so the evidence_import
+        # detector hit maps somewhere — enumeration is not consumption.
+        "design": "Ph4 item 2 — fuel-integrity shadow check (report-only)",
+        "globs": ["framework/evidence_fuel_integrity.py"],
     },
 ]
 

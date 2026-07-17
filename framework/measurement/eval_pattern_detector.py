@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -122,6 +123,103 @@ def detect_patterns(
         })
 
     flagged.sort(key=lambda p: (-p["count"], p["role_slug"], p["failure_type"]))
+    return flagged
+
+
+# Day-bounded evidence trial ids end in -YYYYMMDD (e.g. evt-consequence-20260716,
+# chained segments evt-consequence-b-20260716). Used only to derive coarse
+# first/last-seen days for a cluster — never to build a path.
+_TRIAL_DAY_RE = re.compile(r"-(\d{8})$")
+
+
+def _trial_day(trial_id: str) -> str | None:
+    """The YYYYMMDD day token of a day-bounded trial id, else None."""
+    m = _TRIAL_DAY_RE.search(trial_id or "")
+    if not m:
+        return None
+    try:
+        datetime.strptime(m.group(1), "%Y%m%d")
+    except ValueError:
+        return None
+    return m.group(1)
+
+
+def detect_evidence_patterns(
+    rows: list[dict[str, Any]],
+    min_occurrences: int = _DEFAULT_MIN_OCCURRENCES,
+) -> list[dict[str, Any]]:
+    """Cluster evidence-plane failure/anomaly rows — the evidence-input seam.
+
+    R-12 (whole-cabinet evidence design 2026-07-16 §7.4): ONE detector shape,
+    evidence-seamed — this sibling function lives in the same module as
+    ``detect_patterns`` so the eval plane and the evidence plane share one
+    clustering contract and ONE threshold set (``_DEFAULT_WINDOW_DAYS`` /
+    ``_DEFAULT_MIN_OCCURRENCES``; never a sibling clusterer file, never a
+    second number).
+
+    Same contract as ``detect_patterns``: pure read → cluster → return list;
+    the CALLER (framework/evidence_detectors.py in Phase 4 shadow) does any
+    flagging, triage, and reporting. This function performs zero I/O and
+    emits nothing.
+
+    ``rows`` are REDACTED officer-projection records served by the Phase-3
+    query plane (``framework.evidence.query``), already verification-gated,
+    each tagged by the caller with the ``trial_id`` it was served from. Row
+    text is UNTRUSTED OBSERVATION data — this function only groups and
+    counts on structural keys; it never interprets free text.
+
+    Cluster key = (component.name, phase, status, detail.result_code or "").
+    Returns pattern dicts sorted by count descending, shaped like
+    ``detect_patterns`` output with evidence-plane keys::
+
+        {"component", "phase", "status", "result_code", "failure_type",
+         "count", "trials" (≤5 sample ids), "trial_count",
+         "first_seen_day", "last_seen_day"}
+
+    ``first/last_seen_day`` are coarse YYYYMMDD tokens derived from
+    day-bounded trial ids (projection records deliberately carry no
+    wall-clock timestamp); None when no trial id in the cluster is
+    day-bounded.
+    """
+    groups: dict[tuple[str, str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        component = row.get("component")
+        name = component.get("name") if isinstance(component, dict) else None
+        phase = row.get("phase")
+        status = row.get("status")
+        if not (isinstance(name, str) and name and isinstance(phase, str)
+                and isinstance(status, str)):
+            continue
+        detail = row.get("detail") if isinstance(row.get("detail"), dict) else {}
+        result_code = detail.get("result_code")
+        key = (name, phase, status,
+               result_code if isinstance(result_code, str) else "")
+        groups[key].append(row)
+
+    flagged: list[dict[str, Any]] = []
+    for (name, phase, status, result_code), events in groups.items():
+        if len(events) < min_occurrences:
+            continue
+        trial_ids = sorted({
+            str(e.get("trial_id")) for e in events if e.get("trial_id")
+        })
+        days = sorted({d for d in (_trial_day(t) for t in trial_ids) if d})
+        flagged.append({
+            "component": name,
+            "phase": phase,
+            "status": status,
+            "result_code": result_code,
+            "failure_type": "/".join(x for x in (phase, status, result_code) if x),
+            "count": len(events),
+            "trials": trial_ids[:5],
+            "trial_count": len(trial_ids),
+            "first_seen_day": days[0] if days else None,
+            "last_seen_day": days[-1] if days else None,
+        })
+
+    flagged.sort(key=lambda p: (-p["count"], p["component"], p["failure_type"]))
     return flagged
 
 

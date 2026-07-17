@@ -700,3 +700,123 @@ Captain decision (design §5 Q8 / D9).
   same-day unlock→checkout→relock block in
   `docs/proposals/germline-amendment-evidence-phase3-2026-07-17.md`; review
   artifact `shared/interfaces/reviews/evidence-phase3-review-surface-cp1.md`.
+
+## Machine judge in shadow (Phase 4, 2026-07-17 — detect, never act)
+
+**SHADOW LAW (binding for this whole tier):** every Phase-4 output is a
+report — a Captain-facing file, a weekly-review line, or a doctor/watchdog
+AMBER. Nothing downstream consumes detector, calibration, or fuel-integrity
+output to gate, block, score, or act (each module carries a repo-grep proof
+pinning zero consumers). The enforce flip is a LATER Captain-only narrowing
+ceremony, not part of this batch. Everything ships **staged dark**: the one
+service row is `disabled: true` and the three watchdog ids are commented
+out; enabling both is the same single Captain step.
+
+### Shadow detectors (failure clustering + fail-open triage)
+
+`framework/evidence_detectors.py`, scheduled (dark) via
+`cabinet/scripts/evidence-shadow-detectors.py` (services row
+`evidence-shadow-detectors`, daily 05:50 after the anchor + calibration
+jobs). Read-only over the Phase-3 query plane (`selector_projection`
+by-status, verification-gated, redacted): clusters failure/absence records
+through the ONE clustering seam
+(`framework/measurement/eval_pattern_detector.py detect_evidence_patterns`
+— R-12, shared thresholds), then triages each cluster on the
+signal-discriminator FAIL-OPEN law — **NOISE only with affirmative
+evidence** (an exact-component, in-window row in
+`cabinet/logs/evidence-mirror-degradations.jsonl`), else **INCONCLUSIVE
+and the finding passes through**. Output: one JSON line per run appended to
+`shared/interfaces/evidence-shadow-findings.jsonl` (gitignored,
+Captain-facing, outside the store). Weak-signal doctrine (B9): cluster
+findings are weak signals — the evidence-plane watchdog expectations
+(`evidence-store-invariants`, `evidence-anchor-export-fresh`,
+`evidence-shadow-detector-liveness` in `framework/watchdog/registry.py`)
+ground exclusively in invariants (freshness/growth/continuity file facts),
+never in these patterns.
+
+### Fuel-integrity check (report-only) — and its honest claim
+
+`framework/evidence_fuel_integrity.py` (CLI:
+`python3.12 -m framework.evidence_fuel_integrity`, Captain/launchd context
+only). For every consequence row that would mint graduation fuel it
+re-derives six preconditions out-of-band (verified recorder mirror,
+consequence↔evidence sha consistency, third-leg presence per HP-2 —
+anchored Captain label or independent recomputation, attestation mode,
+purge-overlap, per-cell closure floor + unknown-rate ceiling with floors
+imported from `judge_calibration` — R-8/R-11) and appends verdict rows
+(`grounded` / `ungrounded:*` / `unknown:*`, plus an informational
+`would_withhold`) to `cabinet/logs/fuel-integrity-report.jsonl`. The weekly
+line is the design's "graduations grounded: N/M verified" — counts, never
+rates. **THE HONEST CLAIM (mandatory wording, stamped on every report
+row):** this check detects retroactive single-plane tamper and
+INCONSISTENT forgery only; consistent same-user forgery of both planes
+stays open until HP-1 (OS-user/key isolation) lands — necessary, not
+sufficient. Full runbook: `docs/runbooks/fuel-integrity.md`.
+
+### Per-stratum calibration (shadow — no stratum grants power)
+
+`framework/evidence_calibration.py` (CLI:
+`python3.12 -m framework.evidence_calibration`). Pairs the machine leg
+(detector findings journal rows — the G1↔G3 join reads the findings'
+`trials` sample ids; triage verdicts map inconclusive⇒flag, noise⇒pass)
+with the Captain leg (`shared/interfaces/governance-labels.jsonl` digests)
+per stratum (component × failure-class), re-verifying every counted pair
+against the store (B1: verify green + digest event hashes present).
+Constants are IMPORTED from `framework/fidelity/judge_calibration.py`
+(`JUDGE_HARD_BAR`, `MIN_PAIRS`, `STATUS_MAX_AGE_DAYS`) and applied per
+stratum — never a second number, never argv-loosenable (R-11). States:
+`uncalibrated` / `calibrated-below-bar` / `calibrated-at-bar`; an
+uncalibrated stratum grants no power there — **and in this batch NO
+stratum grants any power at all** (the status file is calibration data for
+a later Captain-only Phase-5 admission decision). Surfaces (Captain-facing
+only): status at `$CABINET_EVENT_LOG_DIR/evidence-calibration-status.json`,
+report + series at `cabinet/logs/evidence-calibration-report.md` and
+`cabinet/logs/evidence-calibration.jsonl`. All-uncalibrated is the
+expected launch state while label volume is thin; pooling strata or
+lowering floors are the named wrong moves.
+
+### Tamper game-day drill + the judging-freeze marker
+
+`cabinet/scripts/evidence-tamper-drill.py` rehearses the §2.4 tamper
+response against a SACRIFICIAL scratch store only (there is deliberately no
+`--store` option): whole-store restore-to-earlier is invisible to
+`verify_store` (the blindness exhibit) but caught by the external-anchor
+check, then the drill sets the judging-freeze marker and (test mode)
+reports WOULD-PAGE for the Chair — `--mode live --confirm-live` really
+pages the Chair and freezes the REAL repo root. Outcomes:
+`cabinet/logs/tamper-drills.jsonl` + a rendered doc under
+`shared/interfaces/tamper-drills/tamper-drill-<stamp>.md`.
+
+The marker (`framework/evidence_freeze.py`,
+`instance/state/evidence-judging-freeze.json`) is FAIL-CLOSED — any
+presence, garbage included, reads FROZEN — and freezing is a pure
+narrowing any process may perform; **clearing is Captain-only**
+(`evidence-tamper-drill.py unfreeze`, token-gated via the existing
+capability mechanism, or the manual steps in
+`docs/runbooks/tamper-drill.md`). While the marker is present all three
+shadow services refuse to run with one plain line and rc 0 (detectors,
+calibration, fuel-integrity — the composed refusal is pinned by
+`framework/tests/test_evidence_phase4_seams.py`).
+
+### Phase-4 invariants (the gate this batch passed)
+
+- Read-only toward the store on every new code path: all reads ride the
+  recorder/query/verifier public APIs; the store tree is byte-stable
+  modulo the sanctioned first-verify watermark advance (two-pass composed
+  proof in the seam tests); every report file lives OUTSIDE the store.
+- Never-a-score: no evidence-derived aggregate is officer-visible —
+  weekly lines carry counts, the journals/status files sit outside every
+  officer surface, EVAL-025 stays green, and each module's zero-consumers
+  grep proof pins the shadow state.
+- Weak signals stay weak: watchdog expectations ground in invariants;
+  triage classifies NOISE only with affirmative attribution, else
+  INCONCLUSIVE passes through.
+- Calibration reuses `judge_calibration`'s bar and MIN_PAIRS per stratum;
+  an uncalibrated stratum grants no power (and shadow grants none anywhere).
+- **Zero germline diff — the headline:** every Phase-4 module is a
+  non-germline sibling (`framework/evidence_*.py`,
+  `cabinet/scripts/evidence-*.py`) that READS germline surfaces through
+  public APIs; the schg lock set is untouched, so this phase needed **no
+  ceremony and no amendment doc** (verified against `germline-lock.sh`
+  FILES[] + DIRS[] at integration). Review artifact:
+  `shared/interfaces/reviews/evidence-phase4-shadow-judge-cp1.md`.
