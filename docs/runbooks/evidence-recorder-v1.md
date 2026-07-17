@@ -478,10 +478,11 @@ path, and the org/consequence domain writes are never blocked.
   untouched by Batch A.
 - **Coverage line (A2, mechanical):**
   `python3.12 cabinet/scripts/evidence-coverage.py` reconciles producers
-  vs enumerated action-taking surfaces. At this pin: *evidence covers 4 of
-  13 action-taking surfaces* — wired: the two chokepoint mirrors,
-  the onboarding journey, the digest-anchor; everything else is an honest
-  named KNOWN-GAP (Batch B). An UNENUMERATED producer exits 1 (drift
+  vs enumerated action-taking surfaces. At the Batch A pin: *evidence
+  covers 4 of 13 action-taking surfaces* — wired: the two chokepoint
+  mirrors, the onboarding journey, the digest-anchor; everything else was
+  an honest named KNOWN-GAP (superseded by Batch B — current line in the
+  act-class tier section below). An UNENUMERATED producer exits 1 (drift
   catch); `--strict` turns any gap into a failure and is the Phase-2-end
   gate. Shell invocations of the evidence CLI are detector-only, never
   producer wiring.
@@ -490,3 +491,70 @@ path, and the org/consequence domain writes are never blocked.
   `CABINET_EVIDENCE_MIRROR_MARKER` overrides — consulted ONLY under
   pytest; production store resolution never reads the environment (A10)
   and reuses the one canonical journey `EVIDENCE_REL` constant.
+
+## Act-class producer tier (Phase 2 Batch B, 2026-07-17 — evidence-before-action)
+
+Batch B wires the design's direct producers (§3 Phase 2 items 2+3 and
+refinement R-1) — the surfaces where act semantics matter — and enforces
+the per-class recording contract as written law:
+
+- **The contract:** ACT-CLASS producers (the moment BEFORE an effect) use
+  `framework/evidence/lifecycle.py` `ActLifecycle` with
+  evidence-before-action FAIL-CLOSED semantics — if the evidence plane
+  cannot record, the ACTION DOES NOT RUN (typed refusal, e.g.
+  `GateEvidenceError` / the lane's refusal path; a designed behavior
+  change on the broken-plane branch ONLY — the happy path is
+  domain-stable). TELEMETRY receipts (something ALREADY happened) ride the
+  Batch A mirror: degrade LOUD (stderr WARN + marker sidecar +
+  `evidence_mirror_degraded` org event), never block the domain write.
+  When genuinely ambiguous, prefer receipts and say so in code — nothing
+  is silently fail-closed. Tightenings (freeze/veto/kill-switch) are NEVER
+  evidence-gated: their receipts are best-effort AFTER the durable domain
+  write.
+- **Act-class producers wired:** the act-first action lane
+  (`framework/frontdoor/action_exec.py` + `framework/acting/
+  run_action_lane.py` — full signed lifecycle trials; the hourly
+  reconciler `framework/frontdoor/action_reconcile.py` lands machine
+  outcome labels as verification/outcome events linked to the undo-journal
+  row) and the learning/gate machinery recording itself
+  (`framework/learning/gate.py` verdict trials, `framework/learning/
+  apply_watch.py` apply-watch decision trials; the apply arm is
+  fail-closed, brake/receipt arms degrade loud).
+- **Receipt-class producers wired:** watchdog/doctor verdicts through the
+  typed lens `framework/watchdog/receipts.py` (`watchdog_outcome_failed`
+  cooldown-bounded, `doctor_verdict` 1/day, `officer_restarted` capped,
+  `officer_limit_wake` exactly-once) invoked by `check.py`,
+  `cabinet-doctor.sh` and the cron watchdogs; officer-session lifecycle
+  transitions from the unlocked state-diff observer
+  `cabinet/scripts/emit-officer-lifecycle-transitions.py`
+  (`officer_session_started/ended/compacted`, per-officer daily cap,
+  transitions only); and the R-1 authority/control-plane —
+  `binder_wire.py` posture-cap verb receipts
+  (`posture_cap_narrowed/cleared`), `needs.py` `need_approved` (the
+  Captain's grant-verb DECISION moment, distinct from the applied
+  ceremony's `need_granted`), `action_undo.py` `kind_frozen` (freeze/lift
+  symmetry), `veto_registry.py` structured `veto-scope:` consequence refs,
+  and the unlocked sweep `cabinet/scripts/emit-authority-transitions.py`
+  (`posture_changed`, `germline_unlock_observed`/`germline_relock_observed`,
+  kill-switch transitions; first run seeds silently; at-least-once).
+  Both sweeps ship in `cabinet/services.yml` as `disabled: true` — the
+  enable is a deploy step (generate-plists + load), soak-safe (D8).
+- **One recording path per event class (R-13):** act surfaces record
+  signed lifecycle trials directly and their org events stay OFF the
+  mirror allow-list; each receipt class has exactly one emit site (the
+  lifecycle sweep deliberately does not re-emit the watchdogs' restart/
+  wake verbs). Both sweeps self-check their classes against
+  `MIRRORED_ORG_EVENT_TYPES` at run start — LOUD, never blocking.
+- **Never recorded:** trigger/heartbeat/delivery exhaust, healthy
+  passes, per-poll sweep rows, generic session/subagent exhaust (~94% of
+  live org volume — pinned out via `NEVER_MIRRORED_EXHAUST`).
+- **Coverage line (A2, mechanical) at the Batch B pin:**
+  `evidence covers 9 of 13 action-taking surfaces; named gaps:
+  attention-hygiene, probes-verification, roles-missions-lifecycle,
+  ops-consequence-scripts` — the named gaps are future waves;
+  UNKNOWN-not-health, the Act layer is frozen over them (§2.4).
+- **Germline ceremony:** the 8 schg files this batch changes are listed
+  (exact union + same-day unlock→checkout→relock block) in
+  `docs/proposals/germline-amendment-evidence-phase2b-2026-07-17.md`;
+  review artifact
+  `shared/interfaces/reviews/evidence-phase2-batch-b-cp1.md`.

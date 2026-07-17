@@ -1076,6 +1076,23 @@ def main() -> int:
         return 0
     _load_env()
 
+    # Batch B (evidence plane): freeze this daemon's producer identity ONCE at
+    # process start (framework/evidence/identity.py — explicit constants,
+    # never payload- or env-derived), so the executor's act-class evidence
+    # events carry the attested actor instead of the fixed module fallback.
+    # NEVER raises and prints only to stderr on trouble (an identity_conflict
+    # in a shared test process, an unimportable plane): the lane keeps its
+    # exact stdout contract — flag-off summary bytes stay byte-identical and
+    # the dark lane still touches nothing the propose-only lane didn't
+    # (attestation is process-local memory; no store read or write).
+    try:
+        from framework.evidence import identity as _ev_identity
+        _ev_identity.attest_process_identity(
+            "system", "action-lane", "action-lane")
+    except Exception as e:
+        print(f"evidence-identity: attestation unavailable ({e}) — evidence "
+              "events fall back to the fixed executor actor", file=sys.stderr)
+
     now = dt.datetime.now(dt.timezone.utc)
     budget = MAX_PER_RUN
 
