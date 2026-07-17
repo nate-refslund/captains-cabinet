@@ -33,6 +33,12 @@ GUARANTEES
 * No loss: the update offset is advanced only AFTER a message is delivered (or
   deliberately skipped); a crash mid-deliver re-delivers on restart rather than
   dropping. Offset persisted to ``TELEGRAM_STATE_DIR/inbound-offset.txt``.
+* Durable inbound archive (2026-07-17): every relayed Captain utterance (and
+  onboarding-routed Captain DMs) is appended VERBATIM, dm_id-stamped, to
+  ``CABINET_CAPTAIN_INBOUND_DIR`` day files (default
+  ``~/Library/Application Support/cabinet/captain-inbound``) — see
+  ``archive_captain_dm``. LOUD on failure (ARCHIVE-GAP) but never blocks
+  delivery. The 30-entry redis ring remains a Chair nicety only.
 * No mid-turn corruption: delivery is idle-gated — it waits for the pane to be
   at its prompt before injecting.
 * Secret hygiene: the bot token is read from env and never logged.
@@ -431,6 +437,98 @@ def feed_append_in(row: dict, log=log) -> None:
         feed.append_event(row)
     except Exception as exc:
         log(f"JOURNAL-GAP: feed.append_event failed ({type(exc).__name__}: {exc})")
+
+
+def captain_inbound_archive_dir() -> str:
+    """Resolve the durable captain-inbound archive dir — same env-override
+    contract as the feed/events/undo family (CABINET_CAPTAIN_INBOUND_DIR;
+    default under ~/Library/Application Support/cabinet/). The repo-root
+    conftest fences the env var so pytest can never write the live archive."""
+    return os.environ.get("CABINET_CAPTAIN_INBOUND_DIR") or os.path.expanduser(
+        "~/Library/Application Support/cabinet/captain-inbound")
+
+
+# In-process idempotency for archive appends (one poller per BOT TOKEN —
+# 409-reaping is per token, so a second telegram-voice officer would be a
+# second writer; the row's ``officer`` field keeps their day-file rows
+# attributable). Cleared past a sane bound — a duplicate row after a clear
+# (or a crash-mid-deliver restart, which re-runs the whole update) is
+# HARMLESS by contract: rows are verbatim-identical and readers key on
+# dm_id. Bound chosen far above any realistic poller lifetime.
+_ARCHIVED_DM_IDS: set = set()
+_ARCHIVE_DEDUP_MAX = 4096
+
+
+def archive_captain_dm(chat_id, message_id, text, *, kind="text", update_id=0,
+                       tg_date=0, quoted="", file_kind="", file_name="",
+                       officer="", log=log) -> str:
+    """Append one Captain utterance VERBATIM to the durable inbound archive.
+
+    THE 30-ring (cabinet:captain:recent-msgs) is a Chair nicety with a ~30-msg
+    half-life and 280-char truncation — by 2026-07-16, 8 of 26 traced Captain
+    messages were unrecoverable verbatim. This archive is the truth surface the
+    captain-message-effect design builds on (Tier-2 case ledger source, every
+    metric's denominator): append-only day files
+    ``inbound-YYYY-MM-DD.jsonl`` (UTC) under ``captain_inbound_archive_dir()``,
+    one JSON row per utterance, ``ensure_ascii=False`` so Danish text stays
+    verbatim, fsync'd (captain-DM rates make that free).
+
+    dm_id = ``tg-<chat_id>-<message_id>`` — message_id is chat-scoped in
+    Telegram, so callers MUST pass the CHAT id (``msg["chat"]["id"]``), not
+    the sender id, for the pair to be globally stable. READERS DEDUP BY
+    dm_id: the receive loop re-delivers a whole update after a
+    crash-mid-deliver restart (poller header contract), so the same utterance
+    MAY append twice with identical content; the in-process set above only
+    trims the common case.
+
+    KNOWN EXCLUSIONS (deliberate): callback taps / reactions / poll votes are
+    decisions, not utterances — they are feed-journaled instead. Unsupported
+    media kinds (video/sticker/…) are not relayed (pre-existing) and not
+    archived — the archive records what the officer actually saw.
+    Onboarding-routed Captain DMs ARE archived (kind="onboarding") even
+    though they bypass the relay — they are Tier-0 anchor source material.
+
+    Degrade-safe but LOUD: an archive failure never blocks delivery (a Captain
+    message must reach the officer even with a broken disk), but it logs an
+    ``ARCHIVE-GAP`` marker — unlike the ring's silent pass — because a gap in
+    a truth surface must be visible. A failed append is NOT marked deduped, so
+    the crash-before-offset-save replay retries it; once delivery succeeds and
+    the offset advances, a missed row is a permanent, log-visible gap
+    (accepted: delivery outranks the journal). Returns the dm_id either way."""
+    dm_id = f"tg-{_sanitize_id(str(chat_id))}-{int(message_id)}"
+    if dm_id in _ARCHIVED_DM_IDS:
+        return dm_id
+    row = {
+        "v": 1,                            # row schema version
+        "dm_id": dm_id,
+        "chat_id": _sanitize_id(str(chat_id)),
+        "message_id": int(message_id),
+        "update_id": int(update_id),
+        "officer": officer or "",          # receiving bot's officer (multi-writer attribution)
+        "kind": kind,                      # text | file | file-error | onboarding
+        "text": text or "",               # the utterance, UNTRUNCATED
+        "quoted": quoted or "",           # reply-to context, UNTRUNCATED
+        "file_kind": file_kind or "",
+        "file_name": sanitize_filename(file_name) if file_name else "",
+        "tg_date": int(tg_date or 0),      # Telegram's own timestamp
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    try:
+        d = captain_inbound_archive_dir()
+        os.makedirs(d, exist_ok=True)
+        path = os.path.join(
+            d, "inbound-" + time.strftime("%Y-%m-%d", time.gmtime()) + ".jsonl")
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        if len(_ARCHIVED_DM_IDS) >= _ARCHIVE_DEDUP_MAX:
+            _ARCHIVED_DM_IDS.clear()
+        _ARCHIVED_DM_IDS.add(dm_id)
+    except Exception as exc:
+        log(f"ARCHIVE-GAP: captain-inbound append failed for {dm_id} "
+            f"({type(exc).__name__}: {exc}) — delivery unaffected")
+    return dm_id
 
 
 def resolve_inbound_file(msg: dict, *, max_bytes: int = 20 * 1024 * 1024) -> dict | None:
@@ -875,6 +973,21 @@ def main() -> int:
                     # No source path, purpose, or callback data in logs. The
                     # route already sent the canonical reply and recorded its
                     # surface evidence; advancing the offset is the ACK.
+                    # Captain MESSAGE-updates routed here still archive
+                    # (kind="onboarding") — onboarding answers are Tier-0
+                    # anchor source material and part of the archive's
+                    # every-utterance contract; taps stay excluded (not
+                    # utterances). Best-effort like the whole archive.
+                    ob_msg = upd.get("message") or {}
+                    ob_frm = str((ob_msg.get("from") or {}).get("id", ""))
+                    ob_text = str(ob_msg.get("text") or ob_msg.get("caption") or "")
+                    if ob_frm == str(captain) and ob_text:
+                        chat_dm = str((ob_msg.get("chat") or {}).get("id") or ob_frm)
+                        ob_mid = int(ob_msg.get("message_id", 0))
+                        archive_captain_dm(chat_dm, ob_mid, ob_text,
+                                           kind="onboarding", update_id=uid,
+                                           tg_date=ob_msg.get("date", 0),
+                                           officer=officer)
                     log(f"onboarding update_id={uid} routed to canonical local skin")
                     offset = max(offset, uid)
                     save_offset(offset)
@@ -942,6 +1055,11 @@ def main() -> int:
                     mid = int(msg.get("message_id", 0))
                     set_last_captain_msg_id(mid)
                     record_recent_msg(mid, caption)   # ring: file msgs resolvable by caption/id too
+                    chat_dm = str((msg.get("chat") or {}).get("id") or frm)
+                    archive_captain_dm(chat_dm, mid, caption, kind="file-error",
+                                       update_id=uid, tg_date=msg.get("date", 0),
+                                       quoted=quoted_full, file_kind=att["kind"],
+                                       file_name=att.get("name", ""), officer=officer)
                     fa({"direction": "in", "kind": "file-error",
                         "telegram_message_id": mid, "file_kind": att["kind"]})
                     err_line = (f"[tg-file-error name={sanitize_filename(att.get('name', '?'))} "
@@ -958,6 +1076,11 @@ def main() -> int:
                     react(mid, pick_reaction(mid, classify_inbound(caption, has_attachment=True)))
                     set_last_captain_msg_id(mid)
                     record_recent_msg(mid, caption)   # ring: file msgs resolvable by caption/id too
+                    chat_dm = str((msg.get("chat") or {}).get("id") or frm)
+                    archive_captain_dm(chat_dm, mid, caption, kind="file",
+                                       update_id=uid, tg_date=msg.get("date", 0),
+                                       quoted=quoted_full, file_kind=att["kind"],
+                                       file_name=att.get("name", ""), officer=officer)
                     fa({"direction": "in", "kind": "file", "telegram_message_id": mid,
                         "file_kind": att["kind"]})
                     local = None
@@ -978,6 +1101,10 @@ def main() -> int:
                     react(mid, pick_reaction(mid, classify_inbound(text)))  # deterministic read-ack
                     set_last_captain_msg_id(mid)   # id the Chair threads replies onto
                     record_recent_msg(mid, text)   # ring: Chair can target THIS msg later by content
+                    chat_dm = str((msg.get("chat") or {}).get("id") or frm)
+                    archive_captain_dm(chat_dm, mid, text, kind="text",
+                                       update_id=uid, tg_date=msg.get("date", 0),
+                                       quoted=quoted_full, officer=officer)
                     # CHAIR-REPLY-WIRE (2026-07-07, one-bot migration hardening):
                     # a reply threaded onto a Chair message carrying the
                     # ⟦sp:<prompt_id>⟧ marker is a screenpipe pipe-prompt answer —
