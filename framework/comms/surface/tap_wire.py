@@ -27,6 +27,16 @@ is MECHANICAL input on engine-minted ids — nothing about it needs judgment:
   ``source:"telegram-tap"``). On success ``engine.report_outcome`` flips the
   card ✅/✗ in place; on a RITUAL/STALE denial the card re-renders its
   canonical open face from census truth (self-heals a stale button face).
+* NEEDS verbs (``ndg``/``ndl``/``ndd`` — the captain-reminder one-tap card's
+  ✓ Done / ⏰ Later / ✗ Drop buttons) compose the CANONICAL typed binder line
+  (``grant/later/deny NEED-<hex8>``) and route it through the SAME door the
+  Captain's typed replies use — ``binder_wire.handle_captain_update`` with
+  its own gates (CABINET_NEEDS_WIRED, captain_verified, stale-id
+  fail-closed). The arg is re-validated as exactly the 8-hex fingerprint
+  tail BEFORE composing, so a hostile callback payload can never splice
+  grammar; the tapped card's keyboard swaps to one inert receipt row. The
+  due-at tick's reconcile pass finishes the loop (grant → close, later →
+  due_at +7d bump via the guarded 041 path).
 * ``edit`` / ``undo`` verbs still relay to the Chair — an edit needs typed
   text; an undo rides the acted-registry reply grammar.
 
@@ -42,6 +52,8 @@ bracket-line relay on ANY exception from here).
 """
 from __future__ import annotations
 
+import re
+import sys
 from datetime import datetime, timezone
 
 #: Instant-ack toasts by (verb, arg); (verb, None) is the verb-wide default.
@@ -61,10 +73,16 @@ _TOASTS: dict = {
     ("stop", None): "✅ Done for now",
     ("all", None): "Showing everything waiting",
     ("top1", None): "Top one only",
+    ("ndg", None): "✓ Done — recording…",
+    ("ndl", None): "⏰ Snoozed 7d",
+    ("ndd", None): "✗ Dropping…",
 }
 
 #: Batch-control receipt labels for the tapped card's swapped keyboard.
 _MARK_LABELS = {"brief": DEFER_TOAST, "snz": "😴 Snoozed", "now": "▶ Triage open"}
+
+#: Needs-verb receipt labels (the reminder card's swapped keyboard).
+_NEED_MARK_LABELS = {"ndg": "✓ Done", "ndl": "⏰ Snoozed 7d", "ndd": "✗ Dropped"}
 
 #: Door-denial codes that CONCLUDE the tap mechanically (no Chair relay):
 #: ritual → the card re-renders its typed-sign-off face; decided → the next
@@ -228,6 +246,67 @@ def _apply_decision(verb: str, arg: str, *, now, census, adapter, ch,
     return out
 
 
+#: The canonical typed binder line each needs-verb tap composes. The tap IS
+#: the typed verb (equal-authority-door law): it rides binder_wire's own
+#: NEED grammar, gates (CABINET_NEEDS_WIRED + captain_verified) and ledger
+#: mark — a tap can never do more than the Captain typing the same words.
+_NEED_VERB_TEXT = {
+    "ndg": "grant {nid}",
+    "ndl": "later {nid}",
+    "ndd": "deny {nid}: dropped from a card tap (✗ Drop)",
+}
+
+_NEED_ARG_RE = re.compile(r"[0-9a-f]{8}\Z")
+
+
+def _default_need_wire(text: str, quoted: str) -> dict:
+    from framework.frontdoor import binder_wire
+    return binder_wire.handle_captain_update(
+        text, quoted, log=lambda m: print(f"[tap-wire] {m}", file=sys.stderr))
+
+
+def _apply_need(verb: str, arg: str, data: str, *, message_id, wire,
+                edit_markup) -> dict:
+    """ndg / ndl / ndd → the SAME binder door the Captain's typed
+    grant/later/deny NEED-<hex> replies use (captain-reminder one-tap cards).
+
+    The arg is re-validated as EXACTLY the 8-hex fingerprint tail before any
+    text is composed — a malformed/oversized/uppercase arg fails closed to
+    the Chair relay, so hostile callback payloads can never splice binder
+    grammar. On a marked need the tapped card's keyboard swaps to one inert
+    receipt row; the due-at tick's reconcile pass then closes (grant) or
+    due_at-bumps (later) the reminder row — no new state machine here."""
+    mode = f"need:{verb}"
+    if not _NEED_ARG_RE.fullmatch(arg or ""):
+        return {"handled": False, "relay": True, "mode": mode,
+                "summary": "malformed need id — relayed to the Chair"}
+    nid = f"NEED-{arg}"
+    text = _NEED_VERB_TEXT[verb].format(nid=nid)
+    res = (wire or _default_need_wire)(text, "") or {}
+    if not (res.get("handled") and res.get("need")):
+        # needs plane dark / unknown-stale id / door refusal — the typed-verb
+        # door already fail-closes; surface the same refusal to the Chair.
+        return {"handled": False, "relay": True, "mode": mode,
+                "item_id": nid,
+                "summary": f"needs door refused: "
+                           f"{str(res.get('reason') or res.get('summary') or 'not handled')[:120]}"}
+    out = {"handled": True, "relay": False, "mode": mode, "item_id": nid,
+           "outcome": str(res.get("need")),
+           "summary": str(res.get("summary") or f"{nid} → {res.get('need')}")[:200]}
+    if edit_markup is not None and message_id:
+        # Receipt on the TAPPED card: swap the buttons for one inert state
+        # row (idempotent re-tap re-fires the same verb — the ledger mark is
+        # last-write-wins on the same status, a no-op).
+        try:
+            edit_markup(int(message_id),
+                        [[{"text": _NEED_MARK_LABELS[verb],
+                           "callback_data": str(data)[:64]}]])
+            out["marked"] = True
+        except Exception:
+            out["marked"] = False   # receipt UX only — never un-handle the tap
+    return out
+
+
 def apply_tap(data: str, *, message_id: "int | None" = None,
               now: "datetime | None" = None, census: "dict | None" = None,
               adapter=None, ch=None, edit_markup=None, wire=None,
@@ -254,6 +333,10 @@ def apply_tap(data: str, *, message_id: "int | None" = None,
             # Typed follow-up / acted-registry grammar — the Chair's lane.
             return {"handled": False, "relay": True, "mode": f"chair:{verb}",
                     "summary": "needs the Chair (typed follow-up)"}
+        if verb in ("ndg", "ndl", "ndd"):
+            # captain-reminder one-tap card → the typed NEED-verb door.
+            return _apply_need(verb, arg, data, message_id=message_id,
+                               wire=wire, edit_markup=edit_markup)
         if verb in ("later", "tri", "more", "stop", "all", "top1"):
             return _apply_pacing(verb, arg, data, message_id=message_id,
                                  now=now, census=census, adapter=adapter,

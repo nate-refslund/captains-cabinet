@@ -96,7 +96,13 @@ if [ $PW_RC -ne 0 ] || [ -z "$DUE_UTC" ]; then
 fi
 
 # --- resolve context_slug (mirror my-tasks.sh: flag / env / active-project) ---
-CABINET_ROOT="${CABINET_ROOT:-/opt/founders-cabinet}"
+# Resolve the repo root from THIS script's own location so a direct run works
+# on the Mac box, a fresh clone, or any checkout path — never the
+# convergence-era absolute /opt path, which exists on no live box and made
+# every env-less run fail the context lookup (mirrors
+# due-at-reminder-tick.sh / memory-reconcile.sh). An explicit CABINET_ROOT
+# still wins (test harnesses point it at a tmp runtime root).
+CABINET_ROOT="${CABINET_ROOT:-$(cd "$HERE/../.." && pwd)}"
 if [ -z "$CONTEXT_SLUG" ] && [ -n "${CABINET_CONTEXT:-}" ]; then
   CONTEXT_SLUG="$CABINET_CONTEXT"
 fi
@@ -108,7 +114,9 @@ if [ -z "$CONTEXT_SLUG" ]; then
   exit 1
 fi
 if [ ! -f "$CABINET_ROOT/instance/config/contexts/$CONTEXT_SLUG.yml" ]; then
-  echo "ERROR: context '$CONTEXT_SLUG' has no YAML at instance/config/contexts/$CONTEXT_SLUG.yml." >&2
+  # Name the RESOLVED path: the old relative message hid WHICH root was
+  # consulted — exactly how the dead /opt default went unnoticed.
+  echo "ERROR: context '$CONTEXT_SLUG' has no YAML at $CABINET_ROOT/instance/config/contexts/$CONTEXT_SLUG.yml." >&2
   exit 1
 fi
 

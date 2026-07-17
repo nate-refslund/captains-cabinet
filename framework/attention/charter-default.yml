@@ -47,7 +47,15 @@ quiet_hours:
   # before the next briefing (the gate's timing check), not a prose word.
   # ASYMMETRY (§4.10.4): a chair amendment may only SHRINK this floor
   # (quieter); ADDING a class is louder and needs Captain provenance.
-  floor_classes: [infra-page, security-alert]
+  # captain-reminder is on the floor WITH that provenance — Captain ruling
+  # 2026-07-17: "the time of day is set by the captain → push instantly."
+  # A reminder's fire time is the Captain's OWN chosen instant, so delivering
+  # it at 03:00 is obeying him, not waking him; the class is kind-matched
+  # (minted only by the due-at reminder organ at fire time, never by a
+  # keyword on captured text) and floor placement also keeps it exempt from
+  # the adaptive quieting layers (H5 expiry-streak demotion, escalation
+  # paperwork) — a standing Captain law must not decay into a briefing fold.
+  floor_classes: [infra-page, security-alert, captain-reminder]
 
 # First matching class wins (top-to-bottom). Match order: kind, then keyword
 # in title/situation, then lane. An item matching none → the `default` class.
@@ -82,6 +90,22 @@ classes:
     silent: false
     reaction: ["🚨"]
     show_injection_banner: true   # the ONE class that shows the taint banner
+
+  - id: captain-reminder
+    # The Captain's OWN due-at reminders (remind-captain.sh → due-at tick →
+    # captain-reminder-arm push_card). Kind-matched only: the arm mints this
+    # kind exclusively at the row's fire time, so class membership is a
+    # producer attestation that the Captain chose this instant — the ruling
+    # provenance lives on the floor_classes comment above. The arm also
+    # stamps a real deadline_iso=due_at, so even under an instance charter
+    # missing this class the gate's structural deadline pierce still fires.
+    matchers: {kinds: ["captain-reminder"]}
+    route: direct-now
+    silent: false
+    reaction: ["⏰", "👀"]
+    sla_minutes: 10
+    fallback: mechanical-with-marker
+    show_injection_banner: false
 
   # --- standing-card classes: one editable card per situation ---
   - id: action-card

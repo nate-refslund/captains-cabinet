@@ -5,15 +5,17 @@
 `cabinet/scripts/due-at-reminder-tick.sh`, which claims due rows and fires a
 `task_reminder` to the **owning officer's** Redis stream. A **Captain** reminder
 has no officer stream, so the Captain-arm routes it to the Captain's one-tap
-card surface (the needs ledger → the frontdoor briefing digest + attention
-drain → the Captain's Telegram).
+card surface: an **instant attention-gate push at fire time** (quiet-hours
+floor, Captain provenance 2026-07-17) with inline `[✓ Done] [⏰ Later 7d]
+[✗ Drop]` buttons, backed by the needs ledger → the frontdoor briefing
+digest as the durable fallback.
 
 ## The pieces
 
 | Piece | What it does |
 |---|---|
 | `cabinet/scripts/remind-captain.sh` | CREATE: files one captain-owned `officer_tasks` reminder row (`type='reminder'`, `status='queue'`, a `due_at`). |
-| `cabinet/scripts/captain-reminder-arm.py` | The organ: `parse-when`, `owner-slug`, `file-card`, `reconcile`. No DB — needs-ledger + when-parsing only. |
+| `cabinet/scripts/captain-reminder-arm.py` | The organ: `parse-when`, `owner-slug`, `file-card` (needs card **+ instant attention-gate push with tap buttons**), `reconcile`. No DB — needs-ledger, gate submit + when-parsing only. |
 | `cabinet/scripts/due-at-reminder-tick.sh` | DELIVER: claims due rows → captain row → card; officer row → trigger (041 behavior). Then RECONCILE the Captain's verdicts every tick. |
 | `cabinet/sql/042-tasks-reminder-kind.sql` | Widens `officer_tasks.type` to admit `'reminder'`. |
 | `framework/env.py` `captain_slug()` | Resolves the captain owner slug (default `captain`; `CABINET_CAPTAIN_SLUG` / `instance/config/platform.yml: captain_slug`). |
@@ -49,20 +51,51 @@ lands at the right instant across a DST boundary.
 
 ## Delivery + the Captain's verbs
 
-When the row comes due, the tick files a one-tap card on the needs ledger. It
-renders in the **🙋 NEEDS** leg of the frontdoor briefing digest and via the
-attention drain to the Captain's Telegram (the sanctioned Captain-facing
-surface; this is internal, not external comms). The card body leads with the
-verb legend, then the due time, then the reminder text.
+When the row comes due, the tick files a one-tap card on the needs ledger
+**and pushes one Telegram card at fire time** (Captain ruling 2026-07-17:
+*"the time of day is set by the captain → push instantly"*):
 
-The Captain replies with the standard needs-binder verbs (the digest footer
-shows the exact `NEED-<id>` to use):
+1. **Instant push** — `captain-reminder-arm.py push_card` submits ONE
+   `kind="captain-reminder"` item through the attention gate
+   (`framework.attention.gate.submit`). The charter default carries a
+   kind-matched `captain-reminder` **floor class** (route `direct-now`), so
+   the card reaches the Captain **at the fire instant, including inside
+   quiet hours** — the §4.10.4 asymmetry is satisfied by the Captain
+   provenance recorded on the charter's floor comment. Floor placement also
+   keeps the class exempt from the adaptive quieting layers (H5
+   expiry-streak demotion, escalation paperwork): a standing Captain law
+   must not decay into a briefing fold. Belt: the item also stamps a real
+   `deadline_iso=due_at` + `urgency=ping-now`, so even under an instance
+   charter missing the class the gate's structural deadline pierce still
+   delivers at fire time. Kind-matched only — the arm mints the kind
+   exclusively at fire time; a keyword on captured text can never reach this
+   class. A push failure degrades to one stderr line; the needs card below
+   is the durable fallback.
+2. **Digest fallback** — the needs card renders in the **🙋 NEEDS** leg of
+   the frontdoor briefing digest (the pre-existing surface; this is
+   internal, not external comms). The card body leads with the verb legend,
+   then the due time, then the reminder text.
 
-| Verb | Reminder meaning | Mechanism |
+The instant card carries **inline tap buttons** — `[✓ Done] [⏰ Later 7d]
+[✗ Drop]`. A tap is mechanical (no LLM): the poller verifies the tapper is
+the Captain, then `tap_wire` re-validates the callback arg as exactly the
+8-hex need fingerprint and composes the CANONICAL typed binder line
+(`grant/later/deny NEED-<hex8>`), routed through the SAME authority door as
+a typed reply (`binder_wire.handle_captain_update`, with its own
+CABINET_NEEDS_WIRED + stale-id fail-closed gates). Callback payloads are the
+fixed verb enum + the need id's hex tail ONLY (`cv2|ndg/ndl/ndd|<hex8>`) —
+reminder text never rides a button. On success the card's keyboard swaps to
+one inert receipt row.
+
+The Captain can equally reply with the standard needs-binder verbs (the
+digest footer and the card's situation line show the exact `NEED-<id>` to
+use):
+
+| Verb (tap ≡ typed) | Reminder meaning | Mechanism |
 |---|---|---|
-| `grant NEED-<id>` | **done / acknowledged** | The tick's reconcile closes the need `granted` (mirrors `grant-apply.sh`'s mark phase). No refire. |
-| `later NEED-<id>` (or `snooze`) | **remind me again in 7 days** | The binder snoozes the need 7d; the tick bumps the reminder's `due_at` by +7 days with ONE guarded `psql -v` UPDATE. The 041 re-arm trigger clears `reminder_fired_at` on the `due_at` change, so the card refires in 7 days. |
-| `deny NEED-<id>: <why>` | **dismiss / drop** | The binder marks the need `denied` and suppresses re-files for 90 days. |
+| `[✓ Done]` / `grant NEED-<id>` | **done / acknowledged** | The tick's reconcile closes the need `granted` (mirrors `grant-apply.sh`'s mark phase). No refire. |
+| `[⏰ Later 7d]` / `later NEED-<id>` (or `snooze`) | **remind me again in 7 days** | The binder snoozes the need 7d; the tick bumps the reminder's `due_at` by +7 days with ONE guarded `psql -v` UPDATE. The 041 re-arm trigger clears `reminder_fired_at` on the `due_at` change, so the card refires — and **pushes again** — in 7 days (the push's situation key includes the fire instant, so a bumped `due_at` mints a fresh card instead of silently editing the old one). |
+| `[✗ Drop]` / `deny NEED-<id>: <why>` | **dismiss / drop** | The binder marks the need `denied` and suppresses re-files for 90 days. |
 
 **Snooze semantics (no new state machine):** the bump UPDATE is *guarded* — it
 only touches a still-overdue, already-fired row — so a card that stays snoozed
@@ -109,9 +142,10 @@ the Captain-surface sugar (owner = the captain slug, `type='reminder'`).
 
 ## Known residual
 
-- **Immediate at-fire-time Telegram push** is not built. A due reminder surfaces
-  through the existing briefing digest + attention drain (≈5-minute drain
-  cadence; twice-daily briefing) — the sanctioned, pacing/quiet-hours-aware
-  Captain surface. An ad-hoc DM at an arbitrary fire time would bypass that
-  gating, so it is deliberately left to the existing surface rather than
-  inventing a new comms path.
+- ~~Immediate at-fire-time Telegram push is not built.~~ **Built 2026-07-17**
+  (Captain ruling: *"the time of day is set by the captain → push
+  instantly"*) — see *Delivery* above. The push rides the attention gate
+  (never an ad-hoc DM path): the charter-default `captain-reminder` floor
+  class with recorded Captain provenance, plus the structural
+  `deadline_iso` pierce as the belt. The briefing-digest needs leg remains
+  the durable fallback when the push cannot deliver.

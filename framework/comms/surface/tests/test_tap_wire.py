@@ -242,6 +242,113 @@ def test_tap_journal_stamps_telegram_tap_provenance(monkeypatch):
     assert seen["source"] == "telegram-tap"
 
 
+# ---------------------------------------------------------------------------
+# ndg / ndl / ndd — the captain-reminder card's one-tap needs verbs
+# (equal-authority door: the tap composes the CANONICAL typed binder line)
+# ---------------------------------------------------------------------------
+
+HEX = "a1b2c3d4"
+
+
+def _need_wire_ok(calls, need="approved_pending_apply"):
+    def _wire(text, quoted):
+        calls.append((text, quoted))
+        return {"handled": True, "need": need, "need_id": f"NEED-{HEX}",
+                "summary": f"need NEED-{HEX} → {need}"}
+    return _wire
+
+
+def test_classify_need_verb_toasts():
+    assert tap_wire.classify(f"cv2|ndg|{HEX}")[0] == "ndg"
+    assert "✓" in tap_wire.classify(f"cv2|ndg|{HEX}")[2]
+    assert "⏰" in tap_wire.classify(f"cv2|ndl|{HEX}")[2]
+    assert "✗" in tap_wire.classify(f"cv2|ndd|{HEX}")[2]
+
+
+def test_done_tap_composes_canonical_grant_line():
+    calls, marks = [], []
+    res = tap_wire.apply_tap(f"cv2|ndg|{HEX}", message_id=88, now=NOW,
+                             wire=_need_wire_ok(calls),
+                             edit_markup=lambda mid, kb: marks.append((mid, kb)))
+    assert calls == [(f"grant NEED-{HEX}", "")]      # the typed verb, exactly
+    assert res["handled"] is True and res["relay"] is False
+    assert res["mode"] == "need:ndg"
+    assert res["item_id"] == f"NEED-{HEX}"
+    assert res["outcome"] == "approved_pending_apply"
+    # the tapped card's keyboard swapped for ONE inert receipt row
+    assert marks == [(88, [[{"text": "✓ Done",
+                             "callback_data": f"cv2|ndg|{HEX}"}]])]
+    assert res["marked"] is True
+
+
+def test_later_tap_composes_canonical_later_line():
+    calls = []
+    res = tap_wire.apply_tap(f"cv2|ndl|{HEX}", message_id=89, now=NOW,
+                             wire=_need_wire_ok(calls, need="snoozed"))
+    assert calls == [(f"later NEED-{HEX}", "")]
+    assert res["outcome"] == "snoozed"
+    assert res["handled"] is True and res["relay"] is False
+
+
+def test_drop_tap_composes_canonical_deny_line_with_provenance():
+    calls = []
+    res = tap_wire.apply_tap(f"cv2|ndd|{HEX}", message_id=90, now=NOW,
+                             wire=_need_wire_ok(calls, need="denied"))
+    assert len(calls) == 1
+    text, quoted = calls[0]
+    assert text.startswith(f"deny NEED-{HEX}:")
+    assert "card tap" in text                        # honest provenance
+    assert quoted == ""
+    assert res["outcome"] == "denied"
+
+
+def test_need_tap_malformed_args_fail_closed_wire_never_fires():
+    """The 8-hex fullmatch is the injection gate: anything else NEVER reaches
+    the binder text composer — a hostile callback payload cannot splice
+    grammar (deny NEED-x: <smuggled>) or bind a wider id."""
+    calls = []
+    wire = _need_wire_ok(calls)
+    for bad in ("A1B2C3D4",            # uppercase — not ledger form
+                "a1b2c3d4e5f6",        # 12 hex — wrong width
+                "a1b2c3",              # short
+                "..bbccdd",            # path chars
+                "aabbccd:",            # grammar splice attempt
+                ""):                   # empty
+        res = tap_wire.apply_tap(f"cv2|ndg|{bad}", message_id=1, now=NOW,
+                                 wire=wire)
+        assert res["handled"] is False and res["relay"] is True, bad
+    assert calls == []                               # gate held every time
+
+
+def test_need_tap_door_refusal_relays_to_chair():
+    """Stale/unknown id or a dark needs plane: the door refuses (its own
+    fail-closed law) and the tap relays to the Chair instead of pretending."""
+    res = tap_wire.apply_tap(
+        f"cv2|ndg|{HEX}", message_id=2, now=NOW,
+        wire=lambda t, q: {"handled": False,
+                           "reason": f"unknown-need-id (NEED-{HEX})"})
+    assert res["handled"] is False and res["relay"] is True
+    assert "unknown-need-id" in res["summary"]
+
+
+def test_need_tap_markup_failure_never_unhandles():
+    def _boom(_mid, _kb):
+        raise RuntimeError("edit failed")
+    res = tap_wire.apply_tap(f"cv2|ndl|{HEX}", message_id=3, now=NOW,
+                             wire=_need_wire_ok([], need="snoozed"),
+                             edit_markup=_boom)
+    assert res["handled"] is True and res["marked"] is False
+
+
+def test_need_tap_wire_exception_fails_open_to_relay():
+    def _explode(_t, _q):
+        raise RuntimeError("binder down")
+    res = tap_wire.apply_tap(f"cv2|ndg|{HEX}", message_id=4, now=NOW,
+                             wire=_explode)
+    assert res["handled"] is False and res["relay"] is True
+    assert res["mode"].startswith("error:")
+
+
 def test_apply_tap_never_raises(monkeypatch, adapter):
     """A broken sibling import must degrade to relay, never to an exception
     reaching the poller's receive loop."""

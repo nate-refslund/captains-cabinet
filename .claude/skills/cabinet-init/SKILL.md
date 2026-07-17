@@ -128,6 +128,40 @@ Collect:
   a secret; the bot TOKEN never goes in config). If unknown, it can be
   read from any incoming message's `chat_id` after the bot exists —
   leave it for a re-run rather than guessing.
+- **Quiet hours** — a silent default is an invisible feature (Captain
+  insight 2026-07-17): PRESENT it, never assume the captain knows a
+  quiet time exists. Render the question from the LIVE framework
+  default — never hardcode the times; if the default changes, the
+  question follows:
+
+  ```bash
+  python3.12 -m framework.onboarding.quiet_hours question
+  ```
+
+  It reads `framework/attention/charter-default.yml` and asks, e.g.:
+  "Quiet hours are 21:00–07:00: outside pings are held for the morning
+  briefing except infrastructure pages and security alerts. Keep,
+  change, or disable?" Ask it verbatim, then map the captain's answer
+  onto EXACTLY one verb — conversational free text never reaches the
+  command line (fixed enum + 24h HH:MM only; anything else refuses
+  loudly and writes nothing, so just re-ask):
+
+  ```bash
+  python3.12 -m framework.onboarding.quiet_hours apply --choice keep
+  python3.12 -m framework.onboarding.quiet_hours apply --choice change --start 22:00 --end 06:00
+  python3.12 -m framework.onboarding.quiet_hours apply --choice disable
+  ```
+
+  `keep` (or an unclear answer) writes NOTHING — the framework default
+  already rules; on a re-run it refuses (never silently reverts) when
+  the deployment already carries a different ruling. `change`/`disable`
+  materialize the deployment override at
+  `instance/config/comms-charter.yml` through the charter system's own
+  amend path (chair provenance + amendment-ledger row, schema-validated
+  fail-closed BEFORE any write; `disable` is the zero-length window the
+  attention gate treats as never-active). The quiet-hours floor — the
+  classes that may still ping at night — is carried unchanged: this
+  question can never widen it.
 
 ### 2. Lanes
 

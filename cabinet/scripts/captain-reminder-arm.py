@@ -48,6 +48,23 @@ Subcommands:
       JSON ledger data, never executed. Prints the need id (empty when the
       needs plane is dark). Never raises.
 
+      INSTANT PUSH (Captain ruling 2026-07-17 — "the time of day is set by
+      the captain → push instantly"): after the needs card files, ONE
+      ``kind="captain-reminder"`` item is submitted through the attention
+      gate (``push_card``), so the reminder reaches the Captain's Telegram AT
+      fire time — including inside quiet hours. Mechanism: the charter
+      default carries a kind-matched ``captain-reminder`` FLOOR class (the
+      §4.10.4 louder-needs-Captain-provenance path — floor placement also
+      exempts the class from H5 expiry-streak demotion and escalation
+      paperwork, so the standing ruling cannot decay into a briefing fold);
+      belt: the item also stamps ``deadline_iso=due_at`` + urgency ping-now,
+      so under an instance charter missing the class the gate's structural
+      deadline pierce still delivers at fire time. The card carries one row
+      of inline tap buttons (✓ Done / ⏰ Later / ✗ Drop) whose callback data
+      is verb-enum + the need id's hex tail ONLY — never free text. A push
+      failure is one stderr line; the briefing digest remains the fallback
+      surface (never raises, never blocks the tick).
+
   reconcile
       Reads the needs ledger and applies the Captain's verdicts to
       captain-reminder cards:
@@ -310,6 +327,128 @@ def file_card(task_id: int, due_iso: str, title: str, *,
         return None
 
 
+# ---------------------------------------------------------------------------
+# push_card — the instant at-fire-time Telegram push through the attention
+# gate (Captain ruling 2026-07-17: "the time of day is set by the captain →
+# push instantly"). The needs card (briefing digest leg) is the durable
+# fallback; THIS is the fire-time surface.
+# ---------------------------------------------------------------------------
+
+def _title_for_card(title: str, cap: int = 160) -> str:
+    """The untrusted title as CARD DATA: U+00B7 stripped (the binder pid-
+    marker char — same forgery defense as the needs writer), newlines/tabs
+    collapsed to spaces (one-line subject), clipped. Never touches shell,
+    SQL, or the callback payload."""
+    flat = " ".join((title or "").replace("·", "").split())
+    flat = flat.strip() or "(no text)"
+    return flat[:cap]
+
+
+def _due_utc_iso(due_iso: str) -> Optional[str]:
+    """Normalize the tick's due_at (psql timestamptz text or ISO) to a UTC
+    ISO instant for ``deadline_iso``; None when unparseable (the floor class
+    still pierces — the belt just doesn't arm)."""
+    try:
+        d = dt.datetime.fromisoformat(str(due_iso).strip().replace("Z", "+00:00"))
+        if d.tzinfo is None:
+            d = d.replace(tzinfo=_UTC)
+        return _to_utc_iso(d)
+    except (ValueError, TypeError):
+        return None
+
+
+def reminder_buttons(nid: str) -> Optional[list]:
+    """One row of inline tap buttons for need ``nid`` (``NEED-<hex8>``).
+
+    Callback payloads are the FIXED verb enum + the need id's hex tail ONLY
+    (``cv2|ndg/ndl/ndd|<hex8>``, built by the allowlisted decision_card.cb
+    minter, ≤64 bytes) — the untrusted reminder title NEVER rides a button.
+    Returns None when the id is not the canonical fingerprint shape or the
+    surface module is unavailable (card ships button-less; typed verbs and
+    the digest legend still work)."""
+    tail = str(nid or "")
+    if not tail.startswith("NEED-"):
+        return None
+    tail = tail[len("NEED-"):]
+    if not re.fullmatch(r"[0-9a-f]{8}", tail):
+        return None
+    try:
+        from framework.comms.surface import decision_card as _dc
+        return [[{"text": "✓ Done", "data": _dc.cb("ndg", tail)},
+                 {"text": f"⏰ Later {_snooze_days()}d", "data": _dc.cb("ndl", tail)},
+                 {"text": "✗ Drop", "data": _dc.cb("ndd", tail)}]]
+    except Exception:  # noqa: BLE001 — a button must never cost the card
+        return None
+
+
+def build_push_item(task_id: int, due_iso: str, title: str, nid: str,
+                    *, tz=None) -> dict:
+    """The attention-gate item for one fire of reminder ``task_id`` (pure).
+
+    * ``kind="captain-reminder"`` — the charter-default FLOOR class (Captain
+      provenance on the floor comment, §4.10.4), so it delivers inside quiet
+      hours and is exempt from adaptive quieting.
+    * ``deadline_iso`` + ``urgency=ping-now`` — the belt: a real Captain-set
+      instant, so the gate's structural deadline pierce fires even under an
+      instance charter that lacks the class.
+    * evidence = ONE deterministic uuid5 of (task, fire instant): the same
+      fire re-submitted (crash-before-mark re-file) lands on the SAME
+      situation key and suppresses/edits instead of re-pinging, while a
+      snooze-bumped due_at mints a NEW key so the re-arm PUSHES again.
+    * The untrusted title is card DATA only (see _title_for_card); the NEED
+      id rides the situation line so the typed grant/later/deny verbs work
+      without the buttons."""
+    import uuid
+    tz = tz or _captain_tz()
+    due_norm = _due_utc_iso(due_iso)
+    fire_key = str(uuid.uuid5(uuid.NAMESPACE_URL,
+                              f"cabinet:captain-reminder:{task_id}:"
+                              f"{due_norm or str(due_iso).strip()}"))
+    item = {
+        "kind": "captain-reminder",
+        "subject": f"Reminder: {_title_for_card(title)}",
+        "situation": (f"due {_local_display(due_iso, tz)} — tap a button or "
+                      f"reply: grant/later/deny {nid}"),
+        "evidence": [fire_key],
+        "urgency": "ping-now",
+        "state": "open",
+    }
+    if due_norm:
+        item["deadline_iso"] = due_norm
+    buttons = reminder_buttons(nid)
+    if buttons:
+        item["buttons"] = buttons
+    return item
+
+
+def push_card(task_id: int, due_iso: str, title: str, nid: str, *,
+              submit_fn=None, tz=None) -> bool:
+    """Submit the instant fire-time card through the attention gate; True on
+    a delivered/held decision, False on any failure. NEVER raises — a broken
+    gate/channel costs one stderr line, not the tick, and the needs card
+    already filed (the briefing digest is the fallback surface)."""
+    try:
+        item = build_push_item(task_id, due_iso, title, nid, tz=tz)
+        if submit_fn is None:
+            from framework.attention import gate
+            submit_fn = gate.submit
+        res = submit_fn(item) or {}
+        action = str(((res.get("decision") or {}).get("action")) or "")
+        if action in ("suppress", "briefing"):
+            # The gate HELD it deliberately (same-fire dedup / charter law) —
+            # governed behavior, not a delivery failure.
+            return True
+        result = res.get("result") or {}
+        # send/edit: True only when the TRANSPORT confirmed (blocked-dev /
+        # token-less shells honestly report not-delivered; the digest is the
+        # fallback surface).
+        return bool(result.get("sent")) or bool(result.get("message_ids"))
+    except Exception as e:  # noqa: BLE001 — push is best-effort by contract
+        print(f"[captain-reminder-arm] instant push failed task_id={task_id}: "
+              f"{type(e).__name__}", file=sys.stderr)
+        return False
+
+
 def _cmd_file_card(args) -> int:
     try:
         task_id = int(args.task_id)
@@ -321,6 +460,13 @@ def _cmd_file_card(args) -> int:
     nid = file_card(task_id, args.due_at or "", title)
     if nid:
         print(nid)
+        # Instant fire-time push (Captain ruling 2026-07-17). Only when the
+        # needs card filed: the buttons/verbs bind that need id — with the
+        # needs plane dark there is nothing a tap could mark.
+        if not push_card(task_id, args.due_at or "", title, nid):
+            print(f"[captain-reminder-arm] instant push not delivered "
+                  f"task_id={task_id} — briefing digest remains the surface",
+                  file=sys.stderr)
     return 0
 
 
