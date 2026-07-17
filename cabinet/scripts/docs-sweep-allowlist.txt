@@ -98,6 +98,15 @@ shared/interfaces/world/*
 # TRACKED files whose death the sweep must keep catching.
 memory/skills/evolved/principle-harvester.md
 
+# --- evidence-plane runtime ledgers --------------------------------------
+# telemetry-mirror degradation marker ledger — written at runtime by
+# framework/evidence_mirror.py (_write_marker) when a chokepoint mirror
+# degrades (Phase 2 Batch A); gitignored under cabinet/logs. Probed by
+# cabinet-doctor.sh check 12 and named as the doctor-readable join in
+# docs/runbooks/evidence-recorder-v1.md, so the docs must name the live
+# path. Remove this entry if the mirror's degradation writer dies.
+cabinet/logs/evidence-mirror-degradations.jsonl
+
 # --- other runtime-created ----------------------------------------------
 # written by the very runbook step that references it
 # (cabinet/docs/mac-mini-setup.md CUA driver pin: mkdir -p + echo > it).

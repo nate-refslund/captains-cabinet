@@ -29,7 +29,17 @@ plus the act-class laws this package enforces for producers:
   action, a broken evidence plane degrades (the failure is surfaced through
   :attr:`ActLifecycle.degraded_evidence` for the producer's receipt) instead
   of raising: a broken evidence plane must never make producer data
-  undeletable.
+  undeletable.  Since Phase 2 the degradation FLIP is LOUD: one content-free,
+  id-validated marker line is appended best-effort to the store-root
+  ``degradations.jsonl`` sidecar (:data:`DEGRADATION_SIDECAR`) plus a
+  rate-limited stderr warning, and an optional producer ``on_degrade``
+  callback fires with the marker record.  The sidecar is NOT evidence — it
+  is unsigned and unhashed (a broken plane cannot sign its own distress) and
+  it never reaches an officer surface.  Nothing consumes it yet; it is the
+  durable fuel-suspension marker the Phase-4 fuel-integrity check reads per
+  affected cell, and non-germline health probes (doctor) may read for
+  escalation.  Loudness is strictly additive: the ``degraded_evidence``
+  shape is unchanged and the flip still never raises.
 - **One duration per terminal branch.** ``duration_ms`` is computed once per
   branch and the same rounded value rides every event in that branch's tail.
 
@@ -46,13 +56,108 @@ timestamps, trust) remain impossible to supply from here.
 from __future__ import annotations
 
 import hashlib
+import json
+import os
+import sys
 import time
 from contextlib import AbstractContextManager
 from typing import Any, Callable
 
 from .recorder import ID_RE, EvidenceError, EvidenceRecorder, TraceContext
 
-__all__ = ["ActLifecycle", "append_event", "remint_trial", "valid_id_or_none"]
+__all__ = [
+    "ActLifecycle",
+    "DEGRADATION_SIDECAR",
+    "append_event",
+    "remint_trial",
+    "valid_id_or_none",
+]
+
+# Store-root sidecar holding one line per degradation FLIP (never per
+# suppressed event).  Deliberately OUTSIDE any trial directory: the verifier
+# checks named trial paths only, so the sidecar can never fail a trial, and
+# it must never be surfaced through the officer read path or become an
+# officer-visible metric (never-a-score).
+DEGRADATION_SIDECAR = "degradations.jsonl"
+_DEGRADATION_SCHEMA = "cabinet.evidence-degradation/v1"
+# The stderr signal is rate-limited per process; the marker line is not —
+# every flip lands one durable line even when the signal stays quiet.
+_DEGRADATION_SIGNAL_WINDOW_S = 60.0
+_last_degradation_signal_monotonic: float | None = None
+
+
+def _safe_marker_field(value: Any) -> str:
+    """Return an id-alphabet-safe marker field; payload text never leaks.
+
+    ``None`` (an unknown error code) reads ``unknown``; anything that is not
+    a recorder-alphabet id string reads ``invalid``.  The marker stays
+    content-free by construction — identifiers and enum-like codes only.
+    """
+    if value is None:
+        return "unknown"
+    if isinstance(value, str) and ID_RE.fullmatch(value):
+        return value
+    return "invalid"
+
+
+def _note_degradation(
+    recorder: EvidenceRecorder,
+    *,
+    trial_id: Any,
+    component_name: Any,
+    phase: Any,
+    error_code: Any,
+) -> dict[str, str]:
+    """Make one degradation flip LOUD without ever raising.
+
+    Appends one content-free marker line to the store-root
+    :data:`DEGRADATION_SIDECAR` (best-effort ``O_APPEND`` owner-only write —
+    the evidence plane is broken by hypothesis, and a broken plane must
+    still never block deletion) and emits a rate-limited stderr warning.
+    The marker is unsigned and is NOT evidence; it is the fuel-suspension
+    record Phase 4 reads for affected cells.  Returns the marker record for
+    the producer's optional ``on_degrade`` callback.
+    """
+    record = {
+        "schema": _DEGRADATION_SCHEMA,
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "trial_id": _safe_marker_field(trial_id),
+        "component": _safe_marker_field(component_name),
+        "phase": _safe_marker_field(phase),
+        "error_code": _safe_marker_field(error_code),
+    }
+    try:
+        line = json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n"
+        fd = os.open(
+            recorder.root / DEGRADATION_SIDECAR,
+            os.O_WRONLY | os.O_CREAT | os.O_APPEND | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
+        try:
+            os.write(fd, line.encode("utf-8"))
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    except Exception:
+        pass
+    global _last_degradation_signal_monotonic
+    try:
+        now = time.monotonic()
+        if (
+            _last_degradation_signal_monotonic is None
+            or now - _last_degradation_signal_monotonic
+            >= _DEGRADATION_SIGNAL_WINDOW_S
+        ):
+            _last_degradation_signal_monotonic = now
+            print(
+                "evidence-lifecycle: WARN evidence recording degraded during "
+                f"{record['phase']} (error_code={record['error_code']}); "
+                f"marker appended to <store-root>/{DEGRADATION_SIDECAR}",
+                file=sys.stderr,
+            )
+    except Exception:
+        pass
+    return record
 
 
 def valid_id_or_none(value: Any) -> str | None:
@@ -181,8 +286,13 @@ class ActLifecycle:
       itself was purged (purge finality).
     - ``degrade_on_failure`` is True ONLY for the producer's destructive
       purge action: evidence failures then set :attr:`degraded_evidence`
-      (``{"error_code", "phase"}``) and recording goes silent instead of
-      raising, so a broken evidence plane never blocks deletion.
+      (``{"error_code", "phase"}``) and recording stops instead of raising,
+      so a broken evidence plane never blocks deletion.  The flip itself is
+      LOUD (marker line + rate-limited stderr; see :func:`_note_degradation`).
+    - ``on_degrade`` (optional) is called best-effort at the degradation
+      FLIP with a copy of the content-free marker record, so a producer can
+      add its own loudness without touching this module; a raising callback
+      is swallowed — loudness must never block the purge.
     """
 
     def __init__(
@@ -199,6 +309,7 @@ class ActLifecycle:
         remint: Callable[[str], str],
         producer_purged_code: str,
         degrade_on_failure: bool = False,
+        on_degrade: Callable[[dict[str, str]], None] | None = None,
     ) -> None:
         self.recorder = recorder
         self.trial_id = trial_id
@@ -214,7 +325,29 @@ class ActLifecycle:
         self._remint = remint
         self._producer_purged_code = producer_purged_code
         self._degrade_on_failure = degrade_on_failure
+        self._on_degrade = on_degrade
         self._started_monotonic_ns: int | None = None
+
+    def _degrade(self, error_code: Any, phase: str) -> None:
+        """Flip to degraded AND go loud, exactly once per action.
+
+        The ``degraded_evidence`` dict shape is pinned by producer receipts
+        — loudness is a separate side effect (marker + signal + callback),
+        never new dict keys, and never an exception.
+        """
+        self.degraded_evidence = {"error_code": error_code, "phase": phase}
+        record = _note_degradation(
+            self.recorder,
+            trial_id=self.trial_id,
+            component_name=self._component.get("name"),
+            phase=phase,
+            error_code=error_code,
+        )
+        if self._on_degrade is not None:
+            try:
+                self._on_degrade(dict(record))
+            except Exception:
+                pass
 
     # ------------------------------------------------------------------
     # Pre-flight: evidence before action.
@@ -238,10 +371,7 @@ class ActLifecycle:
                 self.trial_id = self._remint(self.trial_id)
                 self.reminted = True
             elif self._degrade_on_failure:
-                self.degraded_evidence = {
-                    "error_code": exc.code,
-                    "phase": "recover_interrupted",
-                }
+                self._degrade(exc.code, "recover_interrupted")
             else:
                 raise self._integrity_error() from exc
 
@@ -333,18 +463,15 @@ class ActLifecycle:
                         return None
                     if not self._degrade_on_failure:
                         raise
-                    self.degraded_evidence = {
-                        "error_code": getattr(retry_exc.__cause__, "code", None)
+                    self._degrade(
+                        getattr(retry_exc.__cause__, "code", None)
                         or getattr(retry_exc, "code", None),
-                        "phase": phase,
-                    }
+                        phase,
+                    )
                     return None
             if not self._degrade_on_failure:
                 raise
-            self.degraded_evidence = {
-                "error_code": cause_code or getattr(exc, "code", None),
-                "phase": phase,
-            }
+            self._degrade(cause_code or getattr(exc, "code", None), phase)
             return None
 
     def _append(

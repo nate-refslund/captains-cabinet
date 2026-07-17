@@ -31,6 +31,13 @@ VALID_EVENT_TYPES = frozenset({
     "captain_outcome_ratified",
     "captain_decision_logged",
     "captain_boundary_set",
+    # Registered 2026-07-17 (evidence Phase 2 Batch A): the attention gate
+    # (framework/attention/escalation.py) has emitted this since the gate
+    # shipped, but the type was never registered — emit() raised ValueError
+    # which the call site's blanket except swallowed, so the durable
+    # captain-gate-bounce record silently never landed. Additive,
+    # observation-only vocabulary fix; the R-1 authority mirror selects it.
+    "captain_gate_bounced",
 
     # Role lifecycle
     "role_created",
@@ -150,6 +157,12 @@ VALID_EVENT_TYPES = frozenset({
     "kill_switch_deactivated",
     "spending_limit_reached",
 
+    # Evidence plane (Phase 2 telemetry mirrors — observation-only): emitted
+    # best-effort when the org->evidence mirror loses the recorder (see
+    # framework/evidence_mirror.py). MUST never join the mirror allow-list —
+    # mirroring the degradation signal of a dead recorder would recurse.
+    "evidence_mirror_degraded",
+
     # Outbox (cross-system writes)
     "outbox_queued",
     "outbox_dispatched",
@@ -201,6 +214,29 @@ def emit(
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
+    # Evidence mirror reservation (Phase 2, observation-only). For classes
+    # on the explicit allow-list (framework/evidence_mirror.py — telemetry
+    # receipts, degrade-loud-never-block) stamp the deterministic day-trial
+    # id into a COPY of the payload (forward correlation org->evidence; the
+    # payload is the only field all three sinks carry whole, and org rows
+    # are immutable post-emit). ImportError = path-exec CLI producers (repo
+    # root not on sys.path) — their classes are exhaust and never mirrored.
+    evidence_mirror = None
+    mirror_slot = None
+    try:
+        from framework import evidence_mirror  # type: ignore
+        mirror_slot = evidence_mirror.reserve_org(event_type)
+        if mirror_slot:
+            event["payload"] = {
+                **event["payload"],
+                evidence_mirror.PAYLOAD_KEY: {"trial_id": mirror_slot["trial_id"]},
+            }
+    except ImportError:
+        pass
+    except Exception as exc:  # reservation must never block the domain emit
+        mirror_slot = None
+        print(f"event-emitter: WARN evidence mirror reserve failed: {exc}", file=sys.stderr)
+
     # Always write to the local event log (append-only JSONL)
     _write_to_log(event)
 
@@ -210,6 +246,17 @@ def emit(
     # F3: mirror to org_runtime.Store so dashboard + claude-task-bridge + CLI
     # see the same events as framework code (the unification fix).
     _write_to_store(event)
+
+    # Evidence mirror receipt — strictly AFTER every domain sink. The mirror
+    # is a receipt about an already-happened event: a recorder outage
+    # degrades LOUD inside the module (stderr + doctor marker + best-effort
+    # evidence_mirror_degraded org event, rate-limited) and never blocks
+    # this emit or any bare call site.
+    if mirror_slot and evidence_mirror is not None:
+        try:
+            evidence_mirror.mirror_org_event(event, mirror_slot)
+        except Exception as exc:  # pragma: no cover — module degrades internally
+            print(f"event-emitter: WARN evidence mirror failed: {exc}", file=sys.stderr)
 
     return event
 
@@ -442,6 +489,7 @@ _AGGREGATE_MAP: dict[str, tuple[str, str]] = {
     "captain_outcome_ratified":   ("captain",     "outcome_id"),
     "captain_decision_logged":    ("captain",     "decision_id"),
     "captain_boundary_set":       ("captain",     "boundary_id"),
+    "captain_gate_bounced":       ("captain",     "subject"),
     "policy_evaluated":           ("policy",      "policy_id"),
     "policy_blocked":             ("policy",      "policy_id"),
     "policy_updated":             ("policy",      "policy_id"),
@@ -470,6 +518,7 @@ _AGGREGATE_MAP: dict[str, tuple[str, str]] = {
     "kill_switch_activated":      ("system",      "killswitch_id"),
     "kill_switch_deactivated":    ("system",      "killswitch_id"),
     "spending_limit_reached":     ("system",      "limit_id"),
+    "evidence_mirror_degraded":   ("system",      "chokepoint"),
 }
 
 

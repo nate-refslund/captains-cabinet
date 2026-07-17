@@ -6,6 +6,13 @@ became a policy decision, execution, verification, receipt, error, undo, and
 outcome across product surfaces.
 """
 
+from .identity import (
+    attest_process_identity,
+    attestation_detail,
+    attested_actor,
+    attested_component,
+    is_attested,
+)
 from .lifecycle import ActLifecycle, remint_trial, valid_id_or_none
 from .policy import RepairRequest, repair_verdict
 from .recorder import (
@@ -25,6 +32,11 @@ __all__ = [
     "EvidenceRecorder",
     "RepairRequest",
     "TraceContext",
+    "attest_process_identity",
+    "attestation_detail",
+    "attested_actor",
+    "attested_component",
+    "is_attested",
     "new_action_id",
     "new_correlation_id",
     "new_trace_id",

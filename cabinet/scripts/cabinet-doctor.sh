@@ -55,6 +55,23 @@
 #      regression ≠ dead config — the services section already DEADs an
 #      unloaded row); credless box (clean-room/CI) = SKIP; staleness honors
 #      the post-wake grace below, one severity rung lower than stale_verdict.
+#  12. evidence-plane health (Evidence program Phase 2 Batch A, 2026-07-17):
+#      freshness (newest trial ledger/anchor mtime vs 48h), growth (store
+#      size vs the measured ceiling + today's day-bounded trials vs 80% of
+#      the per-trial event cap), chain continuity (read-only verifier
+#      spot-check of the newest trial via python3.12 -m framework.evidence),
+#      and degradation markers (the telemetry-mirror ledger
+#      cabinet/logs/evidence-mirror-degradations.jsonl written by
+#      framework/evidence_mirror.py, probed even when the store is absent,
+#      + the act-class lifecycle sidecar <store>/degradations.jsonl).
+#      All probes are AMBER-max: WARN/SKIP, never DEAD, never crash (Phase-2
+#      observation-only law; pinned by
+#      framework/tests/test_evidence_doctor_probes.py). Absent store = clean
+#      SKIP. Caveat to "all read-only": the verifier may advance its own
+#      signed anti-rollback watermark sidecar on a clean spot-check —
+#      protective and best-effort by design; evidence bytes are never
+#      written. Ceilings: docs/runbooks/evidence-recorder-v1.md
+#      ("Measured envelope", cabinet/scripts/evidence-bench.py).
 #
 # OUTPUT: one line per finding (OK / WARN / WAIVED / SKIP / DEAD), then either
 #   CABINET_DOCTOR GREEN (checks=N warn=N waived=N)
@@ -772,6 +789,191 @@ case "$RE_PROBE" in
   BADLINE*) warn "retrieval-eval — latest verdict line unparseable (ledger corrupt? see cabinet/logs/retrieval-eval-history.jsonl)" ;;
   *)        warn "retrieval-eval — probe output unparseable: $RE_PROBE" ;;
 esac
+
+# ---- EVIDENCE-PLANE SECTION BEGIN ----
+# ============================================================
+# 12. evidence plane — freshness / growth / chain continuity
+# (Evidence program Phase 2 Batch A, 2026-07-17 — observation-only.)
+# Read-only probes against the pinned production store
+# $REPO_ROOT/instance/evidence/v1 (journey.py EVIDENCE_REL). The store root
+# is deliberately NOT read from the CABINET_EVIDENCE_DIR env fallback —
+# that is the recorder's untrusted env seam (A10) and a doctor that
+# honored it could be pointed at a decoy store. All three probes are
+# bounded and degrade to WARN/AMBER or SKIP: they NEVER dead() the doctor
+# (Phase-2 observation-only law — a red evidence plane needs a human, not
+# a fleet halt; framework/tests/test_evidence_doctor_probes.py pins this)
+# and never crash it. Chain continuity verifies ONLY the newest trial
+# (single-trial spot-check, measured ~32ms at cap depth; store-wide
+# verification is the evidence-anchor job's department). The verifier's
+# watermark advance on a clean pass is best-effort and protective by
+# design (verifier.py _watermark_check — a read-only store skips it
+# silently); the evidence bytes themselves are never written. Ceilings
+# come from the measured envelope in docs/runbooks/evidence-recorder-v1.md
+# ("Measured envelope", cabinet/scripts/evidence-bench.py): keep
+# EV_CAP_DEFAULT in sync with the recorder's enforced per-trial event cap.
+# ============================================================
+# ---- EVIDENCE-PLANE PURE PROBES BEGIN ----
+# Pure helpers: no doctor globals/counters, echo exactly one verdict line
+# ("OK ..." | "WARN ..." | "SKIP ...") and always return 0. They are
+# extracted verbatim and sourced by
+# framework/tests/test_evidence_doctor_probes.py — keep them
+# self-contained (standard tools + the interpreter argument only).
+evidence_probe_freshness() { # $1=store-root  $2=max-age-secs (default 172800 = 48h)
+  local store="$1" max_age="${2:-172800}" newest="" now age
+  [ -d "$store" ] || { echo "SKIP no-store ($store absent — evidence plane not activated)"; return 0; }
+  [ -d "$store/trials" ] || { echo "SKIP no-trials (store present, no trials dir)"; return 0; }
+  newest="$(find "$store/trials" -mindepth 2 -maxdepth 2 \( -name events.jsonl -o -name anchor.json \) -type f -print0 2>/dev/null \
+    | xargs -0 stat -f '%m' 2>/dev/null | sort -nr | head -1)"
+  if [ -z "$newest" ]; then # GNU stat fallback (Linux CI)
+    newest="$(find "$store/trials" -mindepth 2 -maxdepth 2 \( -name events.jsonl -o -name anchor.json \) -type f -print0 2>/dev/null \
+      | xargs -0 stat -c '%Y' 2>/dev/null | sort -nr | head -1)"
+  fi
+  case "$newest" in ''|*[!0-9]*) echo "SKIP no-trials (no trial ledgers yet)"; return 0 ;; esac
+  now="$(date +%s)"
+  age=$((now - newest))
+  if [ "$age" -gt "$max_age" ]; then
+    echo "WARN stale age_s=$age limit_s=$max_age (no evidence append in $((age / 3600))h — producers and daily digest-anchor quiet)"
+  else
+    echo "OK age_s=$age limit_s=$max_age"
+  fi
+  return 0
+}
+evidence_probe_growth() { # $1=store-root  $2=max-store-kb (default 262144 = 256MB)  $3=per-trial event cap (default 500 = recorder MAX_TRIAL_EVENTS)
+  local store="$1" max_kb="${2:-262144}" cap="${3:-500}" kb warn_at biggest=0 today n t
+  [ -d "$store" ] || { echo "SKIP no-store ($store absent)"; return 0; }
+  kb="$(du -sk "$store" 2>/dev/null | awk '{print $1}')"
+  case "$kb" in ''|*[!0-9]*) kb=0 ;; esac
+  today="$(date -u +%Y%m%d)"
+  warn_at=$((cap * 8 / 10))
+  for t in "$store/trials"/evt-*-"$today"; do
+    [ -f "$t/events.jsonl" ] || continue
+    n="$(wc -l < "$t/events.jsonl" 2>/dev/null | tr -d '[:space:]')"
+    case "$n" in ''|*[!0-9]*) continue ;; esac
+    [ "$n" -gt "$biggest" ] && biggest="$n"
+  done
+  if [ "$kb" -gt "$max_kb" ]; then
+    echo "WARN size kb=$kb max_kb=$max_kb biggest_day_trial_events=$biggest (store past the measured ceiling — check retention + anchor job)"
+  elif [ "$biggest" -ge "$warn_at" ]; then
+    echo "WARN cap-approach biggest_day_trial_events=$biggest cap=$cap warn_at=$warn_at kb=$kb (today's day-bounded trial nearing the per-trial event cap)"
+  else
+    echo "OK kb=$kb max_kb=$max_kb biggest_day_trial_events=$biggest cap=$cap"
+  fi
+  return 0
+}
+evidence_probe_chain() { # $1=store-root  $2=python interpreter (default python3.12); caller cwd must be the repo root
+  local store="$1" py="${2:-python3.12}" newest lines out rc count
+  [ -d "$store/trials" ] || { echo "SKIP no-store ($store/trials absent)"; return 0; }
+  newest="$(ls -1t "$store/trials" 2>/dev/null | head -1)"
+  [ -n "$newest" ] || { echo "SKIP no-trials"; return 0; }
+  command -v "$py" >/dev/null 2>&1 || { echo "SKIP no-interpreter ($py not on PATH; chain spot-check needs the house python3.12)"; return 0; }
+  "$py" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null \
+    || { echo "SKIP interpreter-too-old ($py < 3.11 cannot import framework.evidence)"; return 0; }
+  if [ ! -f "$store/trials/$newest/events.jsonl" ]; then
+    echo "SKIP no-ledger (trial $newest has no events.jsonl yet)"
+    return 0
+  fi
+  lines="$(wc -l < "$store/trials/$newest/events.jsonl" 2>/dev/null | tr -d '[:space:]')"
+  case "$lines" in ''|*[!0-9]*) lines=0 ;; esac
+  if [ "$lines" -gt 10000 ]; then
+    echo "WARN oversized trial=$newest events=$lines (>10000 — spot-check skipped to stay bounded; the growth envelope is breached)"
+    return 0
+  fi
+  out="$("$py" -m framework.evidence --store "$store" verify --trial "$newest" 2>&1)"
+  rc=$?
+  count="$(printf '%s' "$out" | sed -n 's/.*"event_count": *\([0-9][0-9]*\).*/\1/p' | head -1)"
+  case "$rc" in
+    0) echo "OK trial=$newest events=${count:-?} (hash chain + signatures + anchor verified)" ;;
+    4) echo "WARN verify-failed trial=$newest events=${count:-?} — $(printf '%s' "$out" | head -c 300)" ;;
+    *) echo "WARN probe-error rc=$rc trial=$newest — $(printf '%s' "$out" | head -c 200)" ;;
+  esac
+  return 0
+}
+evidence_probe_degradations() { # $1=degradation marker ledger (append-only JSONL)  $2=recent window secs (default 86400 = 24h)
+  # Reads BOTH marker formats: the telemetry-mirror ledger written by
+  # framework/evidence_mirror.py _write_marker ({ts, chokepoint, reason,
+  # message}) and the act-class lifecycle sidecar written by
+  # framework/evidence/lifecycle.py _note_degradation ({schema, ts,
+  # trial_id, component, phase, error_code}). Recency = file mtime (both
+  # ledgers are append-only, so mtime IS the last degradation). Absent
+  # file = never degraded = OK.
+  local marker="$1" window="${2:-86400}" total mtime now age ck rs
+  [ -f "$marker" ] || { echo "OK no-marker (no degradations recorded; $marker absent)"; return 0; }
+  total="$(wc -l < "$marker" 2>/dev/null | tr -d '[:space:]')"
+  case "$total" in ''|*[!0-9]*) total=0 ;; esac
+  [ "$total" -gt 0 ] || { echo "OK empty-marker (0 rows in $marker)"; return 0; }
+  mtime="$(stat -f '%m' "$marker" 2>/dev/null || stat -c '%Y' "$marker" 2>/dev/null)"
+  case "$mtime" in ''|*[!0-9]*) echo "WARN marker-unreadable rows=$total (cannot stat $marker)"; return 0 ;; esac
+  now="$(date +%s)"
+  age=$((now - mtime))
+  ck="$(tail -1 "$marker" 2>/dev/null | sed -n 's/.*"chokepoint": *"\([^"]*\)".*/\1/p' | head -1)"
+  rs="$(tail -1 "$marker" 2>/dev/null | sed -n 's/.*"reason": *"\([^"]*\)".*/\1/p' | head -1)"
+  [ -n "$ck" ] || ck="$(tail -1 "$marker" 2>/dev/null | sed -n 's/.*"component": *"\([^"]*\)".*/\1/p' | head -1)"
+  [ -n "$rs" ] || rs="$(tail -1 "$marker" 2>/dev/null | sed -n 's/.*"error_code": *"\([^"]*\)".*/\1/p' | head -1)"
+  if [ "$age" -le "$window" ]; then
+    echo "WARN degraded rows=$total age_s=$age window_s=$window last=${ck:-?}/${rs:-?} (recent evidence-recording degradation — see $marker)"
+  else
+    echo "OK quiet rows=$total age_s=$age window_s=$window last=${ck:-?}/${rs:-?} (historical degradations only)"
+  fi
+  return 0
+}
+# ---- EVIDENCE-PLANE PURE PROBES END ----
+ev_stale_verdict() { # staleness-class finding, AMBER-max: WARN outside wake grace, OK-note inside
+  if [ "$SECS_SINCE_WAKE" -lt "$WAKE_GRACE_S" ]; then
+    ok "$1 (post-wake grace: woke ${SECS_SINCE_WAKE}s ago < ${WAKE_GRACE_S}s)"
+  else
+    warn "$1"
+  fi
+}
+EV_STORE="$REPO_ROOT/instance/evidence/v1"
+EV_CAP_DEFAULT=500        # = the recorder's ENFORCED MAX_TRIAL_EVENTS (provisional; the bench's measured recommendation is 512 — both recorded in runbook "Measured envelope"; retuning is a ceremony follow-up, never a silent edit). Sync pinned by framework/tests/test_evidence_doctor_probes.py.
+EV_MAX_KB_DEFAULT=262144  # 256 MB ≈ 7x the measured worst-case 90-day projection (36.2 MB); runbook "Measured envelope"
+EV_MIRROR_MARKER="$REPO_ROOT/cabinet/logs/evidence-mirror-degradations.jsonl"
+# Mirror degradation marker (framework/evidence_mirror.py degrades LOUD by
+# appending here — the doctor-readable join). Probed OUTSIDE the store-dir
+# guard: a mirror degradation with NO store present is exactly the loud
+# case that must surface.
+EV_MIRROR_DEG="$(evidence_probe_degradations "$EV_MIRROR_MARKER")"
+case "$EV_MIRROR_DEG" in
+  OK*)   ok "evidence-plane mirror-degradations — ${EV_MIRROR_DEG#OK }" ;;
+  SKIP*) skip "evidence-plane mirror-degradations — ${EV_MIRROR_DEG#SKIP }" ;;
+  WARN*) warn "evidence-plane mirror-degradations — ${EV_MIRROR_DEG#WARN }" ;;
+  *)     warn "evidence-plane mirror-degradations — probe output unparseable: $EV_MIRROR_DEG" ;;
+esac
+if [ ! -d "$EV_STORE" ]; then
+  skip "evidence-plane — store absent ($EV_STORE; evidence plane not yet activated on this box)"
+else
+  EV_FRESH="$(evidence_probe_freshness "$EV_STORE")"
+  case "$EV_FRESH" in
+    OK*)   ok "evidence-plane freshness — ${EV_FRESH#OK }" ;;
+    SKIP*) skip "evidence-plane freshness — ${EV_FRESH#SKIP }" ;;
+    WARN*) ev_stale_verdict "evidence-plane freshness — ${EV_FRESH#WARN }" ;;
+    *)     warn "evidence-plane freshness — probe output unparseable: $EV_FRESH" ;;
+  esac
+  EV_GROW="$(evidence_probe_growth "$EV_STORE" "$EV_MAX_KB_DEFAULT" "$EV_CAP_DEFAULT")"
+  case "$EV_GROW" in
+    OK*)   ok "evidence-plane growth — ${EV_GROW#OK }" ;;
+    SKIP*) skip "evidence-plane growth — ${EV_GROW#SKIP }" ;;
+    WARN*) warn "evidence-plane growth — ${EV_GROW#WARN }" ;;
+    *)     warn "evidence-plane growth — probe output unparseable: $EV_GROW" ;;
+  esac
+  EV_CHAIN="$(evidence_probe_chain "$EV_STORE" "$PY")"
+  case "$EV_CHAIN" in
+    OK*)   ok "evidence-plane chain — ${EV_CHAIN#OK }" ;;
+    SKIP*) skip "evidence-plane chain — ${EV_CHAIN#SKIP }" ;;
+    WARN*) warn "evidence-plane chain — ${EV_CHAIN#WARN }" ;;
+    *)     warn "evidence-plane chain — probe output unparseable: $EV_CHAIN" ;;
+  esac
+  # Act-class lifecycle degradation sidecar (framework/evidence/lifecycle.py
+  # writes <store-root>/degradations.jsonl at every purge-degradation FLIP).
+  EV_ACT_DEG="$(evidence_probe_degradations "$EV_STORE/degradations.jsonl")"
+  case "$EV_ACT_DEG" in
+    OK*)   ok "evidence-plane act-degradations — ${EV_ACT_DEG#OK }" ;;
+    SKIP*) skip "evidence-plane act-degradations — ${EV_ACT_DEG#SKIP }" ;;
+    WARN*) warn "evidence-plane act-degradations — ${EV_ACT_DEG#WARN }" ;;
+    *)     warn "evidence-plane act-degradations — probe output unparseable: $EV_ACT_DEG" ;;
+  esac
+fi
+# ---- EVIDENCE-PLANE SECTION END ----
 
 # ============================================================
 # verdict + heartbeat
