@@ -201,7 +201,7 @@ question, only when `org_shape: functional`:
 > yes, the OPTIONAL **developer** preset is the software product-kind
 > kit — the work roster plus day-1 connector declarations (GitHub MCP,
 > Playwright, read-only Neon; Vercel by REST+probes; Sentry armed when
-> keys exist) and a Product Brain starter Space
+> keys exist) and a Product Journal starter Space
 > (`presets/developer/README.md`). Default is work — say "developer" to
 > opt in.
 
