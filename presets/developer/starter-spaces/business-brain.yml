@@ -1,0 +1,213 @@
+# presets/developer/starter-spaces/business-brain.yml
+# Starter Space — Business Brain (developer preset; byte-twin of the work
+# preset's Space — the developer preset is a flat copy of work, and both
+# converge on the SAME 'Business Brain' Space by natural key)
+#
+# Seeded by: bash cabinet/scripts/seed-library.sh --preset developer
+# Space name is the natural key (library_spaces.name UNIQUE); records are
+# matched by (space, title) — re-running the seeder never duplicates,
+# never overwrites, never resurrects records the Captain edited or deleted.
+#
+# Template quality rules: generic org content only — no personal data,
+# no real customer or colleague names. Fill the <placeholders> per deployment.
+#
+# Schema mirrors cabinet/starter-spaces/business-brain.json (legacy space-only
+# JSON template) so both paths converge on the same Space; access_rules here
+# deliberately widen write to "*" — every officer lands durable facts per the
+# loop-prompt synthesis ritual (a write-list that denies most officers would
+# make that ritual a no-op).
+
+name: Business Brain
+description: >-
+  Strategic context of the operation — vision, brand, pricing, positioning,
+  target users, competitive landscape, principles. The Captain's accumulated
+  thinking, always-on reference for every Officer. Officers land durable
+  business/product/customer facts here during synthesis (search first;
+  extend or supersede, never duplicate).
+starter_template: business_brain
+schema_json:
+  fields:
+    - name: category
+      type: select
+      options:
+        - Vision
+        - Mission
+        - Brand
+        - Positioning
+        - Pricing
+        - Target Users
+        - Value Proposition
+        - Competitive Landscape
+        - Principles
+        - North Star Metrics
+        - Business Model
+        - Go-to-Market
+        - Product Strategy
+        - Research Insights
+        - Other
+      description: High-level bucket for navigation. Not enforced — records can shift category as thinking evolves.
+    - name: status
+      type: select
+      options: [Draft, Active, Superseded, Archived]
+      default: Active
+    - name: effective_from
+      type: date
+      description: When this thinking became current. Older records stay searchable but are informational, not directional.
+    - name: last_reviewed
+      type: date
+      description: Last time the Captain reviewed or revised. Used to surface stale strategic docs.
+    - name: notion_page_id
+      type: text
+      description: Original Notion page ID if migrated. Used for idempotent migration and round-trip reference.
+    - name: notion_url
+      type: text
+      description: Deep link to the original Notion page (if kept as mirror).
+access_rules:
+  read: ["*"]
+  write: ["*"]
+  comment: ["*"]
+
+# Seed record stubs. [[Wikilinks]] reference records by exact title — the
+# dashboard renders them and indexes backlinks on its write path (the seed
+# path inserts content only; the link index builds when a record is next
+# saved via the dashboard).
+records:
+  - title: Business Brain — Start Here
+    labels: [seed, index]
+    schema_data:
+      category: Other
+      status: Active
+    content_markdown: |
+      # Business Brain — Start Here
+
+      This Space is the org's durable business memory: what we're building,
+      for whom, and why we decided what we decided. Every Officer reads it;
+      every Officer writes to it when a durable fact surfaces.
+
+      ## Seeded index pages
+
+      - [[Product Overview]] — what the product is and where it stands
+      - [[Customers & Segments]] — who it serves and what they need
+      - [[Decisions Index]] — durable decisions with their WHY
+      - [[Operating Principles]] — how this org works
+
+      ## How to write here
+
+      1. **Search first** (`library_search`) — extend or supersede an existing
+         record instead of creating a near-duplicate.
+      2. One durable fact or theme per record; link related records with
+         `[[Title]]` wikilinks.
+      3. Facts that are really decisions belong in [[Decisions Index]] with
+         their WHY; customer evidence belongs in a Customer Insights Space
+         record, linked from [[Customers & Segments]].
+      4. Updates create a new version (full history preserved) — never fear
+         editing; supersession is the mechanism, duplication is the defect.
+
+  - title: Product Overview
+    labels: [seed, product]
+    schema_data:
+      category: Product Strategy
+      status: Draft
+    content_markdown: |
+      # Product Overview
+
+      > Seed stub — replace the placeholders with this deployment's product
+      > reality. Keep this page current; it is the first page an Officer
+      > reads before product work.
+
+      ## What we're building
+
+      <one-paragraph product statement — the problem, the wedge, the shape of v1>
+
+      ## Who it's for
+
+      Primary users: <segment> (see [[Customers & Segments]]).
+
+      ## Value proposition
+
+      <the one sentence a happy user would say to a peer>
+
+      ## Current state
+
+      - Stage: <idea | building | beta | live>
+      - Live surfaces: <URLs / apps / APIs>
+      - North-star metric: <metric> (current: <value>)
+
+      ## Related
+
+      - Decisions shaping the product: [[Decisions Index]]
+      - Principles constraining the build: [[Operating Principles]]
+
+  - title: Customers & Segments
+    labels: [seed, customers]
+    schema_data:
+      category: Target Users
+      status: Draft
+    content_markdown: |
+      # Customers & Segments
+
+      > Seed stub — describe segments generically here; keep identifiable
+      > customer evidence in the Customer Insights Space and link it.
+
+      | Segment | Who they are | Primary need | Status |
+      |---------|--------------|--------------|--------|
+      | <segment-a> | <description> | <need> | <target / active / parked> |
+      | <segment-b> | <description> | <need> | <target / active / parked> |
+
+      ## What we believe (and how confident we are)
+
+      - <belief about the customer> — confidence: <high/medium/low>, source: <interview / data / hypothesis>
+
+      ## Related
+
+      - Product answer to these needs: [[Product Overview]]
+      - Pricing and packaging decisions: [[Decisions Index]]
+
+  - title: Decisions Index
+    labels: [seed, decisions]
+    schema_data:
+      category: Other
+      status: Active
+    content_markdown: |
+      # Decisions Index
+
+      Durable decisions with their WHY — the principle a future Officer should
+      apply, not just the letter of the call. One line per decision, newest
+      first, each linking a full record (in this Space or a Decisions Log
+      Space) that carries context, alternatives, and reversibility.
+
+      | Date | Decision | Why (one line) | Record |
+      |------|----------|----------------|--------|
+      | <YYYY-MM-DD> | <what was decided> | <the principle behind it> | [[<record title>]] |
+
+      ## Conventions
+
+      - The Captain-decision trail in `shared/interfaces/captain-decisions.md`
+        stays the git-backed mirror; land the durable, reusable WHYs here so
+        they are searchable next to the rest of the business brain.
+      - A reversed decision is superseded, not deleted — link the newer record.
+
+  - title: Operating Principles
+    labels: [seed, principles]
+    schema_data:
+      category: Principles
+      status: Draft
+    content_markdown: |
+      # Operating Principles
+
+      > Seed stub — starter principles every Cabinet inherits; edit, extend,
+      > or supersede to match how this org actually operates.
+
+      1. **Gather, then decide.** Assemble the full picture (thread, history,
+         data) before proposing or acting — never act from a stale view.
+      2. **Write it where it's canonical.** A fact that lives only in a chat
+         message or working memory is a fact the org will lose.
+      3. **Supersede, don't duplicate.** Update the existing record; version
+         history keeps the trail.
+      4. **Sequence by dependency, not calendar.** The bottleneck is a
+         decision, a datum, or a validation — never engineering velocity.
+
+      ## Related
+
+      - [[Business Brain — Start Here]] — how to write in this Space
+      - [[Decisions Index]] — where principle-setting decisions land

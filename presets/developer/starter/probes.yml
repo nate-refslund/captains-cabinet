@@ -1,0 +1,38 @@
+# =============================================================
+# presets/developer/starter/probes.yml — developer-kit starter config
+# =============================================================
+# Copy to instance/config/probes.yml and map YOUR products (README step 4):
+#
+#   cp presets/developer/starter/probes.yml instance/config/probes.yml
+#
+# Placeholder twin of instance/config/probes.yml.example, pre-shaped for
+# the software kit's verdict supply (probe-github / probe-vercel /
+# probe-sentry service rows in cabinet/services.yml). Every entry below is
+# a placeholder — no real org, repo, or path ships in this file.
+#
+# Read by framework/probes/runner.py (the probe __main__ shell). A
+# wrong/missing entry makes the probe SKIP that product with a printed
+# reason (fail-closed: no verdict, never a fabricated observation). No
+# secrets belong here: tokens live in your deployment's .env files and
+# reach the probes via environment only (cabinet/scripts/run-probes.sh
+# sources them) — GITHUB_PAT (GH_TOKEN fallback), VERCEL_API_KEY +
+# VERCEL_TEAM_ID, SENTRY_AUTH_TOKEN.
+#
+# WHY checkout is required per product: the probes' freshness guard and
+# the trailer fallback read LOCAL git (commit messages carry
+# Cabinet-Proposal-Id) — the runner chdirs there before each probe cycle.
+# A missing checkout = that product is skipped this run.
+
+github:
+  - repo: <your-org>/<your-product>
+    checkout: /path/to/your/product-checkout
+
+vercel:
+  - app: <your-vercel-app-name>
+    checkout: /path/to/your/product-checkout
+
+sentry:
+  org: <your-sentry-org-slug>
+  projects:
+    - project: <your-sentry-project-slug>
+      checkout: /path/to/your/product-checkout

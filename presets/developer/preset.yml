@@ -1,0 +1,93 @@
+# presets/developer/preset.yml
+# Developer preset — the SOFTWARE product-kind kit for founders and
+# developers shipping a software / web / app product.
+#
+# Family note (Captain-clarified intent, 2026-07-17): Flavor B is a GENERAL
+# product org — any product kind. This preset is the SOFTWARE product-kind
+# kit, the FIRST OF A FAMILY under that general shape; e-commerce/physical
+# and services kits are later siblings. The slug stays audience-neutral
+# ("developer" — no ship vocabulary); display/marketing names are free.
+#
+# OPTIONAL always: activating this preset is an explicit deployment choice
+# (echo developer > instance/config/active-preset). It is never a default
+# flip — the fallback preset stays `work`.
+
+name: developer
+description: >
+  Software product-kind kit (first of a family under the general product-org
+  shape). Product-team officers as domain owners (First Mate (CoS), CTO, CPO,
+  CRO, COO), Linear-or-Library backlog, Library product brain, product repo
+  mounted as workspace — plus day-1 connector declarations (GitHub MCP,
+  Playwright, read-only Neon; Vercel by REST+probes; Sentry armed when keys
+  exist) so a fresh software deployment does not start bare. Declarations
+  only: env-var NAMES and server URLs — no secrets, no scope auto-grants.
+
+# Naming convention for agents in this preset (Captain decision 2026-04-16).
+# At hire-time the hiring CoS proposes 3 name options per archetype and the
+# Captain picks or overrides. This field sets the default FLAVOR of those
+# proposals for this preset.
+#
+#   functional     — "Operations Officer", "Compliance Officer" (recommended for developer preset)
+#   role-initials  — "Ops", "Comp", "EA" (terse)
+#   personal       — "Alex", "Ava" (personal-Cabinet flavor)
+naming_style: functional
+
+# Agent archetypes shipped with this preset. Captains can add, remove, or
+# rename via instance/agents/ overlays. Three SCAFFOLD archetypes
+# (operations-officer, compliance-officer, executive-assistant) are NOT
+# hired by default — hire via cabinet/scripts/create-officer.sh when the
+# Captain has greenlit work that needs them.
+#
+# Default-hire guidance for a software product: CoS + CTO day-0 (the
+# coordination spine plus the build surface), CPO staged once real specs
+# queue up; CRO/COO when research volume / deploy validation warrant them.
+agent_archetypes:
+  - cos   # First Mate — orchestration, briefings, self-improvement
+  - cto   # Chief Technology Officer — engineering, code, deploys
+  - cpo   # Chief Product Officer — specs, backlog, prioritization
+  - cro   # Chief Research Officer — market research, competitive intel, trends
+  - coo   # Chief Operating Officer — deployment validation, uptime, operations
+  # Scaffolded (not hired) — role defs exist in presets/developer/agents/, hire on demand:
+  # - operations-officer   # Business ops: vendors, procurement, internal processes
+  # - compliance-officer   # Regulatory + privacy + platform policy
+  # - executive-assistant  # Captain-facing: scheduling, correspondence, logistics
+
+# Default terminology for this preset. See terminology.yml for the full mapping.
+terminology:
+  agent_role: officer
+  work_unit: task
+  output_store: shared_interfaces
+  backlog: linear_or_library
+
+# Default autonomy level for Officers in this preset.
+# Higher = more execution without Captain check-in.
+# Personal preset overrides to lower (consent-gated).
+autonomy_level: execution_high
+
+# Where this preset expects the workspace (instance config overrides).
+workspace_mount: /workspace/product
+
+# Telegram bot mode default for projects provisioned under this preset.
+# Same default as the work preset (multi_officer, predating the single_ceo
+# collapse in AC #62); other presets may use single_ceo.
+# Override per-project in instance/config/projects/<slug>.yml `telegram.bot_mode`.
+telegram_bot_mode: multi_officer  # multi_officer (legacy) | single_ceo (one bot per project)
+
+# Onboarding defaults — consumed by framework/onboarding
+# (plan.load_preset_defaults). The framework hardcodes no plugin/MCP names:
+# a preset without this block onboards lanes with EMPTY defaults (fail-closed).
+# Personal-source tooling (e.g. corridor, brain) is deployment-specific: it
+# belongs to instance overlays (instance/config/extensions.yml,
+# instance/agents/), never to a shipped preset.
+onboarding:
+  # Plugins beyond what a lane's repo already ships. Empty by design — no
+  # plugin is cabinet-universal; deployments add their own per lane (gated
+  # install proposals / instance overlays).
+  cabinet_default_plugins: []
+  # Base MCP scope for a generated lane-CEO (stack-detected MCPs are added
+  # on top from the repo research profile, e.g. neon/vercel). library and
+  # telegram are cabinet-native (framework/constitution-base.md); github,
+  # playwright, and neon-ro are the software-kit day-1 surfaces declared in
+  # the root .mcp.json (env-var NAMES only — grants stay Captain-applied
+  # via cabinet/mcp-scope.yml, which this preset NEVER writes).
+  lane_mcps: [library, telegram, github, playwright, neon-ro]
