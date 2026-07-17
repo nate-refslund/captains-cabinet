@@ -318,7 +318,7 @@ jobs:
         if: ${{ !cancelled() }}
         # Collects the ENTIRE cabinet/scripts/lib/tests directory — every
         # test file in it, no per-suite list here (a stale enumeration is
-        # exactly how the old name rotted); 191 tests as of 2026-07-17.
+        # exactly how the old name rotted); 236 tests as of 2026-07-17.
         # The FW-023 ETL-transform tests this step was originally named for
         # were carved OUT of this directory to the Spec-039 set in f855ae96
         # (R073); of the ETL modules only etl-common.py remains in lib/,

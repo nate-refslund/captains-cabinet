@@ -479,7 +479,9 @@ def archive_captain_dm(chat_id, message_id, text, *, kind="text", update_id=0,
     dm_id: the receive loop re-delivers a whole update after a
     crash-mid-deliver restart (poller header contract), so the same utterance
     MAY append twice with identical content; the in-process set above only
-    trims the common case.
+    trims the common case. The matching reader is
+    ``cabinet/scripts/lib/captain_inbound.py`` (CLI:
+    ``cabinet/scripts/captain-inbound.py latest|get|search [--semantic]``).
 
     KNOWN EXCLUSIONS (deliberate): callback taps / reactions / poll votes are
     decisions, not utterances — they are feed-journaled instead. Unsupported

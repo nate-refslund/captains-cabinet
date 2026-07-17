@@ -445,7 +445,7 @@ The Cabinet's durable state lives in three places:
 |---|---|---|
 | **Postgres (Neon)** | event ledger, role entities, work graph, OVI snapshots | Neon's built-in continuous backup (free tier: 7 days PITR) |
 | **Filesystem** | `shared/interfaces/captain-*.md`, `instance/roles/active/*.yml`, `memory/skills/evolved/*.md`, `memory/tier3/experience-records/` (canonical store since 2026-07-04 — both `.jsonl` and `.md` records) | Daily `rsync` to local NAS OR S3 |
-| **Filesystem (out-of-repo)** | `~/Library/Application Support/cabinet/` — audit events, attention feed, undo journal, evidence store, and `captain-inbound/` (the durable verbatim Captain-DM archive, 2026-07-17 — a truth surface: the case ledger source and every attention metric's denominator) | ⚠ NOT yet in any backup set (pre-existing gap the archive inherits) — add to the manifest-owned backup job |
+| **Filesystem (out-of-repo)** | `~/Library/Application Support/cabinet/` — audit events, attention feed, undo journal, evidence store, and `captain-inbound/` (the durable verbatim Captain-DM archive, 2026-07-17 — a truth surface: the case ledger source and every attention metric's denominator; read it with `cabinet/scripts/captain-inbound.py latest\|get\|search [--semantic]`, never the redis ring) | ⚠ NOT yet in any backup set (pre-existing gap the archive inherits) — add to the manifest-owned backup job |
 | **Redis** | Heartbeat, cost counters, trigger streams | Bounded fresh RDB; healthy multipart AOF fallback is drained, replayed, repaired, exactly proved, converted to RDB, and exactly re-proved if BGSAVE is stuck |
 
 **The backup job is manifest-owned (lane-ops 2026-07-04)** — do NOT hand-roll
