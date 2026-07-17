@@ -11,6 +11,8 @@
  * Full story: docs/runbooks/library-retirement-2026-07-16.md
  */
 
+import Link from 'next/link'
+
 export const dynamic = 'force-static'
 
 export default function LibraryRetiredPage() {
@@ -45,6 +47,17 @@ export default function LibraryRetiredPage() {
           </li>
           <li>
             Database tables remain in place, dormant — no data was dropped.
+          </li>
+          <li>
+            Browse the vault:{' '}
+            <Link href="/vault" className="text-blue-300 underline hover:text-blue-200">
+              open the read-only vault browser
+            </Link>{' '}
+            to read the markdown corpus (including{' '}
+            <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-xs text-zinc-300">
+              vault/library-archive/
+            </code>
+            ) note-by-note in your browser.
           </li>
         </ul>
         <p className="mt-4 text-xs text-zinc-600">

@@ -113,6 +113,21 @@ ALLOWED = {
     "docs/runbooks/library-retirement-2026-07-16.md":
         "documents the dual-root export target contract (living runbook, "
         "not archived history)",
+    # --- vault-browse dashboard view (2026-07-17): faithful TS mirror of
+    # --- org_vault_dir() — the mirror MUST carry the same legacy arms as
+    # --- framework/env.py above, or the dashboard and the framework resolve
+    # --- different corpora on un-migrated deployments ---------------------
+    "cabinet/dashboard/src/lib/vault.ts":
+        "org_vault_dir() TS mirror for the read-only /vault browser: legacy "
+        "CABINET_PRODUCT_BRAIN_DIR env alias, legacy product_brain_dir "
+        "platform key, legacy <repo>/product-brain dir arm (same seam as "
+        "framework/env.py — drop them together)",
+    "cabinet/dashboard/src/lib/vault.test.ts":
+        "pins the TS mirror's legacy env-alias/key/dir matrix (same class "
+        "as test_gather_corpus.py)",
+    "docs/runbooks/vault-browser-2026-07-17.md":
+        "documents the /vault root-resolution arms incl. the legacy aliases "
+        "(living runbook, not archived history)",
     # --- docs that deliberately document the legacy aliases ----------------
     "vault/README.md":
         "documents the rename, the legacy aliases, and the ref-namespace call",
