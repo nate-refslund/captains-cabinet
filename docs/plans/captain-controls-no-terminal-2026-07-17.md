@@ -65,6 +65,14 @@ the same card/tap/verb shapes).
   the newest `kill_switch_*` audit row; cleared-without-a-row → re-arm +
   one captain notification ("the emergency stop was cleared by something
   that didn't sign its name — I re-armed it").
+  *As built (2026-07-17, per 2026-07-07 full-autonomy grant): the verdict
+  keys on PROVENANCE, not row order — newest arm of any provenance vs
+  newest SANCTIONED deactivation (`payload.via="kill-switch.sh"`) at/after
+  it — because the staged authority-transitions sweep emits OBSERVED
+  `kill_switch_deactivated` rows (actor `authority-watch`, no `via`) that
+  merely describe a raw clear; the literal newest-row rule would let that
+  sweep mask every clear it observes
+  (`cabinet/scripts/killswitch-watchdog.py`).*
 - Teeth: golden-eval/pytest pins — officer-side deactivate stays
   hook-refused (EVAL-001b unchanged); the tap door rejects out-of-enum
   verbs; the watchdog's re-arm proven against a disposable redis.
