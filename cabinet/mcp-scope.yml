@@ -51,7 +51,7 @@ cabinet: main
 
 agents:
   cos:
-    mcps: [notion, library, telegram, brain, exa, brave-search, perplexity, claude-in-chrome, cua, cua-driver]
+    mcps: [notion, telegram, brain, exa, brave-search, perplexity, claude-in-chrome, cua, cua-driver]
     rationale: >
       Coordination and briefings. Not code; CoS does not touch Neon or
       Vercel directly — that's CTO/COO. Library for Phase 1 inbox and
@@ -79,7 +79,7 @@ agents:
   # broadcast only — lane CEOs are Telegram-dark (no bot, no Captain DM;
   # attention routes via the Chair's captain-attention queue).
   polads-ceo:
-    mcps: [neon, vercel, make, library, telegram, brain, corridor, monday]
+    mcps: [neon, vercel, make, telegram, brain, corridor, monday]
     rationale: >
       Lane CEO — engineering-grade scope for the lane plus
       brain for gather-then-decide and the queue_draft outbound gate.
@@ -87,7 +87,7 @@ agents:
       ceiling) regardless of scope.
 
   stephie-ceo:
-    mcps: [neon, vercel, make, library, telegram, brain, corridor, monday]
+    mcps: [neon, vercel, make, telegram, brain, corridor, monday]
     rationale: >
       Lane CEO — engineering-grade scope for the lane plus
       brain for gather-then-decide and the queue_draft outbound gate.
@@ -97,7 +97,7 @@ agents:
   # Comms Officer (portfolio/hq) — owns Nate's Outlook + Teams comms.
   # Telegram-dark: surfaces ONLY through the Chair. Captain-approved (2026-06-24).
   comms-officer:
-    mcps: [make, brain, library, telegram, monday]
+    mcps: [make, brain, telegram, monday]
     rationale: >
       make: Graph-proxy folder-WRITE edit (3902068) + filing/archiving mailbox
       MOVES through the Make proxy — never a human-bound send. brain:
@@ -108,13 +108,13 @@ agents:
 # Scaffolded agents (not hired, scope reserved):
 scaffolds:
   operations-officer:
-    mcps: [notion, library, telegram]
+    mcps: [notion, telegram]
     rationale: >
       Back-office vendor management and SOPs. Notion for process docs;
       Library for SOP records. No Neon/Vercel — infra vendors are CTO/COO.
 
   compliance-officer:
-    mcps: [notion, library, telegram]
+    mcps: [notion, telegram]
     rationale: >
       Regulatory monitoring, policy drafting, compliance register. Notion
       for policy docs; Library for compliance findings. No Neon/Vercel —
@@ -122,7 +122,7 @@ scaffolds:
       deployment access.
 
   executive-assistant:
-    mcps: [notion, library, telegram]
+    mcps: [notion, telegram]
     rationale: >
       Captain logistics (scheduling, correspondence, research-on-request).
       Notion for captain-preferences + research results; Library for
@@ -130,7 +130,7 @@ scaffolds:
       Vercel (no production access).
 
   physical-coach:
-    mcps: [library, telegram]
+    mcps: [telegram]
     rationale: >
       Personal-capacity. Longitudinal tracking of sleep, training, recovery.
       Library writes to personal Spaces only; no Notion (work business-brain
@@ -139,7 +139,7 @@ scaffolds:
       handoffs when Captain crosses capacity contexts mid-conversation.
 
   mindfulness-coach:
-    mcps: [library, telegram]
+    mcps: [telegram]
     rationale: >
       Personal-capacity. Reflection and emotional-awareness work. Narrowest
       MCP surface by design — Captain DM + Library for personal-capacity
@@ -166,4 +166,4 @@ scaffolds:
 #   ONE DOOR to the Captain: routes through framework.attention.gate + the
 #   bound ChannelAdapter, so it cannot bypass the charter/quiet-hours/floor.
 #   Inert until the server is registered in instance/config/extensions.yml.
-universal: [telegram, library, redis-trigger-channel, cabinet-comms]
+universal: [telegram, redis-trigger-channel, cabinet-comms]

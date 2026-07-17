@@ -19,10 +19,12 @@ with the reason, not as a silent zero-recall outage on the next deployment:
   * the post-file-write memory hook watches the org knowledge corpus (the
     cabinet vault — vault/, formerly product-brain/) so org knowledge written
     by officers is embedded as it lands; the hook lives in the schg-locked
-    germline hooks dir, so its vault/ + docs/ patterns land via
-    patches/germline-vault-hook-watch-2026-07-17.patch while the nightly
-    reconcile (unlocked) walks vault/, legacy product-brain/, and docs/**/*.md
-    directly as the coverage netting;
+    germline hooks dir — its vault/ + docs/ patterns LANDED on master
+    2026-07-17 (CG-30 master-first; the LIVE schg inode syncs at the Captain
+    checkout window; patches/germline-vault-hook-watch-2026-07-17.patch stays
+    as the ceremony reference) while the nightly reconcile (unlocked) walks
+    vault/, legacy product-brain/, and docs/**/*.md directly as the coverage
+    netting;
   * the hook and reconcile watch lists stay in sync BY DESIGN — the
     hook⊆reconcile direction is pinned here so a hook pattern can never
     exist without its nightly-netting twin.
@@ -298,4 +300,40 @@ def test_captain_decisions_exception_stays_documented():
         "memory-reconcile.sh lost the documented captain-decisions.md "
         "exception note — the hook watches it, reconcile deliberately skips "
         "it (append-interface wave owns entry-level ingest)"
+    )
+
+
+# ---------------------------------------------------------------------------
+# post-file-write-memory.sh — vault-wave patterns (these locks landed on
+# master WITH the hook edit itself in the CG-30 landing commit — master-first;
+# patches/germline-vault-hook-watch-2026-07-17.patch stays as the ceremony
+# reference, and the LIVE schg inode syncs at the Captain checkout window)
+# ---------------------------------------------------------------------------
+
+def test_post_file_write_hook_watches_the_vault_pattern():
+    text = PFWM_HOOK.read_text()
+    assert _on_a_live_line(r"\*/vault/\*\.md", text), (
+        "post-file-write-memory.sh must watch */vault/*.md — the cabinet "
+        "vault (renamed from product-brain/) must embed at write time"
+    )
+
+
+def test_post_file_write_hook_watches_rooted_docs():
+    text = PFWM_HOOK.read_text()
+    assert _on_a_live_line(r'"\$\{CABINET_ROOT[^}"]*\}"/docs/\*\.md', text), (
+        "post-file-write-memory.sh must watch the docs/ tree ROOTED under "
+        "CABINET_ROOT (an unrooted */docs/*.md would ingest any foreign "
+        "repo's docs an officer edits)"
+    )
+    assert _on_a_live_line(r"framework_doc", text), (
+        "docs/ writes must land as source_type=framework_doc"
+    )
+
+
+def test_post_file_write_hook_keeps_the_legacy_corpus_alias():
+    text = PFWM_HOOK.read_text()
+    assert _on_a_live_line(r"\*/product-brain/\*\.md", text), (
+        "the legacy */product-brain/*.md watch arm must stay until "
+        "deliberately dropped — un-migrated checkouts and externally "
+        "relocated corpora still use the old dir name"
     )

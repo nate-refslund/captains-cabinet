@@ -177,7 +177,8 @@ fi
 # MCP config — Mac base + (if drives_computer) overlay
 # ===========================================================
 # Per Spec 061 v1.1 CTO #1 CRITICAL: jq DEEP-MERGE preserving framework mcpServers.
-# Shallow merge would silently overwrite notion/linear/neon/library with overlay-only.
+# Shallow merge would silently overwrite framework servers (notion/neon/make)
+# with overlay-only. (library deregistered 2026-07-16 — Library retirement.)
 # Audit-fix 2026-05-23: base is .mcp.json.mac-native (Mac-resolved paths + localhost
 # Redis), NOT .mcp.json (which has Docker DNS + /opt paths from Hetzner). Mac-side
 # always uses the .mac-native base. Audit-fix: umask 077 on /tmp output (secret hygiene).
