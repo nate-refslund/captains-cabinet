@@ -61,4 +61,4 @@ Quality problems are caught before they compound. Officers get timely feedback. 
 
 ## Origin
 
-Foundation skill — ships with the Founder's Cabinet.
+Foundation skill — ships with the Captain's Cabinet.

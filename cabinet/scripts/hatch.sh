@@ -818,7 +818,7 @@ app_feel() {
     echo "           then open $DASH_URL — no bookmark dropped for a server that isn't running."
     return 0
   fi
-  webloc="$HOME/Applications/Founder's Cabinet.webloc"
+  webloc="$HOME/Applications/Captain's Cabinet.webloc"
   if mkdir -p "$HOME/Applications" \
      && printf '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n<dict>\n\t<key>URL</key>\n\t<string>%s</string>\n</dict>\n</plist>\n' "$DASH_URL" > "$webloc.tmp" \
      && plutil -lint "$webloc.tmp" >/dev/null \
