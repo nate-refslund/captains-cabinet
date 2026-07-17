@@ -68,6 +68,11 @@ DEFAULT_LABEL_FILES = (
     "shared/interfaces/captain-decisions.md",
     "shared/interfaces/captain-patterns.md",
     "shared/interfaces/captain-intents.md",
+    # Phase 3 (2026-07-17): per-label digests + session markers written by the
+    # weekly governance review (cabinet/scripts/governance-review.py) — the
+    # HP-3 precursor's actual label journal. Content-free lines: trial ids,
+    # event ids/hashes, verdicts; never note text.
+    "shared/interfaces/governance-labels.jsonl",
 )
 
 

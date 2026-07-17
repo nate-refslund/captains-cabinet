@@ -29,9 +29,10 @@
 # HP-3 precursor: label digests land off-store daily, so later label
 # authentication has an external anchor to check against). Repo-relative or
 # absolute; absent files are recorded as null digests. Default: the four
-# Captain-law ledgers below.
+# Captain-law ledgers plus the governance-review label journal below.
 #captain_label_files:
 #  - shared/interfaces/captain-vetoes.yml
 #  - shared/interfaces/captain-decisions.md
 #  - shared/interfaces/captain-patterns.md
 #  - shared/interfaces/captain-intents.md
+#  - shared/interfaces/governance-labels.jsonl

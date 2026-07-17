@@ -230,6 +230,17 @@ SURFACES: list[dict[str, Any]] = [
         ],
     },
     {
+        "id": "governance-review-labels",
+        "kind": "producer",
+        # Phase 3 item 3 (2026-07-17): the weekly governance-review ritual —
+        # Captain-token-gated, TTY-only labeling that lands verdict_human
+        # verification/outcome events on the judged trial via the recorder
+        # API (the phase's ONE designed write; per-label digests ride the
+        # daily external anchor). Never officer-invokable, never scheduled.
+        "design": "Ph3 item 3 — Captain governance-review labels (verdict_human)",
+        "globs": ["cabinet/scripts/governance-review.py"],
+    },
+    {
         "id": "evidence-plane-tooling",
         "kind": "infra",
         "design": "recorder package + bounded doorway + mirror engine + coverage/bench tooling",
