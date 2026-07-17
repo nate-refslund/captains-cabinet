@@ -1019,3 +1019,78 @@ class TestLaneDefault:
         monkeypatch.setenv("CABINET_ROOT", str(tmp_path))  # empty tmp — no config
         env._lane_default_cache = None
         assert env.lane_default() == ""
+
+
+class TestActiveContext:
+    """active_context() — the preset-aware tasks/coordination context chain
+    (config-split fix 2026-07-17). Full rung matrix + bash-twin PARITY lives
+    in cabinet/scripts/lib/tests/test_resolve_context_sh.py; this class pins
+    the env.py-local contract: root-injectability, uncached-ness, the shape
+    gate, and never-raise fail-safe."""
+
+    @staticmethod
+    def _seed(tmp_path, contexts, platform_yml=None, active_project=None):
+        # NB: single "instance/config" path literal (not split segments) so the
+        # layer-separation gate's bare-"instance" heuristic doesn't flag this
+        # test — the _write_cfg idiom above, same form env.py itself uses.
+        cfg = tmp_path / "instance/config"
+        (cfg / "contexts").mkdir(parents=True, exist_ok=True)
+        for name, body in contexts.items():
+            (cfg / "contexts" / name).write_text(body, encoding="utf-8")
+        if platform_yml is not None:
+            (cfg / "platform.yml").write_text(platform_yml, encoding="utf-8")
+        if active_project is not None:
+            (cfg / "active-project.txt").write_text(
+                active_project, encoding="utf-8")
+        return tmp_path
+
+    def test_env_var_wins(self, tmp_path, monkeypatch):
+        self._seed(tmp_path, {"bakery.yml": "slug: bakery\n"},
+                   active_project="bakery\n")
+        monkeypatch.setenv("CABINET_CONTEXT", "testburg-hq")
+        assert env.active_context(root=tmp_path) == "testburg-hq"
+
+    def test_malformed_env_var_skipped_never_returned(self, tmp_path, monkeypatch):
+        """Shape gate: an injection-shaped env value falls through as
+        unresolved data — it is never the return value."""
+        self._seed(tmp_path, {"bakery.yml": "slug: bakery\n"})
+        monkeypatch.setenv("CABINET_CONTEXT", "../../etc; $(rm -rf .)")
+        assert env.active_context(root=tmp_path) == "bakery"
+
+    def test_officer_lane_derivation_longest_prefix(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("CABINET_CONTEXT", raising=False)
+        self._seed(tmp_path, {"bakery.yml": "slug: bakery\n",
+                              "bakery-site.yml": "slug: bakery-site\n"})
+        assert env.active_context(officer="bakery-site-ceo",
+                                  root=tmp_path) == "bakery-site"
+
+    def test_lane_default_only_when_declared(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("CABINET_CONTEXT", raising=False)
+        self._seed(tmp_path, {"bakery.yml": "slug: bakery\n",
+                              "newsletter.yml": "slug: newsletter\n"},
+                   platform_yml="lane_default: ghost-lane\n")
+        assert env.active_context(officer="cos", root=tmp_path) == ""
+        (tmp_path / "instance/config" / "platform.yml").write_text(
+            "lane_default: newsletter\n", encoding="utf-8")
+        assert env.active_context(officer="cos", root=tmp_path) == "newsletter"
+
+    def test_uncached_across_roots_and_config_flips(self, tmp_path, monkeypatch):
+        """Deliberately UNCACHED (unlike lanes()/lane_default()): the same
+        process must see a different root — and a config flip — immediately."""
+        monkeypatch.delenv("CABINET_CONTEXT", raising=False)
+        a = self._seed(tmp_path / "a", {"bakery.yml": "slug: bakery\n"})
+        b = self._seed(tmp_path / "b", {"newsletter.yml": "slug: newsletter\n"})
+        assert env.active_context(root=a) == "bakery"
+        assert env.active_context(root=b) == "newsletter"
+        (a / "instance/config" / "active-project.txt").write_text(
+            "newsletter\n", encoding="utf-8")
+        # flip lands without any cache reset — but the slug must be declared?
+        # No: R2 is the operator's explicit file, honored verbatim (shape-gated).
+        assert env.active_context(root=a) == "newsletter"
+
+    def test_never_raises_and_defaults_empty(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("CABINET_CONTEXT", raising=False)
+        assert env.active_context(root=tmp_path / "missing") == ""
+        assert env.active_context(officer="anyone",
+                                  root=tmp_path / "missing",
+                                  default="sentinel") == "sentinel"

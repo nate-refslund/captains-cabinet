@@ -9,10 +9,7 @@
  * as the app-level pre-check. Keeps contract consistent regardless of write path.
  */
 
-import path from 'node:path'
-import { readFile } from 'node:fs/promises'
 import { NextRequest, NextResponse } from 'next/server'
-import { cabinetRoot } from '@/lib/cabinet-root'
 import {
   getAllOfficerBoards,
   startTask,
@@ -22,17 +19,12 @@ import {
   type LinkedKind,
 } from '@/lib/tasks'
 import { getLinearFounderActions } from '@/lib/linear-tasks'
+// Shared preset-aware resolver (config-split fix 2026-07-17): env >
+// active-project.txt > single-declared-lane > lane_default. Same chain as
+// /tasks page.tsx, my-tasks.sh and framework.env.active_context().
+import { resolveActiveContext } from '@/lib/active-context'
 
 export const dynamic = 'force-dynamic'
-
-/** Resolve active context from env > active-project.txt. Matches page.tsx. */
-async function resolveActiveContext(): Promise<string> {
-  if (process.env.CABINET_CONTEXT?.trim()) return process.env.CABINET_CONTEXT.trim()
-  const txt = await readFile(path.join(cabinetRoot(), 'instance/config/active-project.txt'), 'utf-8')
-  const slug = txt.trim()
-  if (!slug) throw new Error('active-project.txt is empty')
-  return slug
-}
 
 export async function GET(req: NextRequest) {
   try {

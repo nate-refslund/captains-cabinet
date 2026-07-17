@@ -1,5 +1,5 @@
 #!/bin/bash
-# my-tasks.sh — Officer CLI for /tasks board state (Spec 038 Phase A v1.2).
+# my-tasks.sh — Officer CLI for /tasks board state (Spec 038 Phase A v1.3).
 #
 # Transitions the caller's rows in the `officer_tasks` table and broadcasts
 # on Redis pub/sub so the /tasks SSE stream pushes a live update.
@@ -10,6 +10,20 @@
 #           blocked + blocked_reason (the trigger's CHECK enforces this).
 #   038.9 — every transaction SETs LOCAL app.cabinet_officer = :'slug' so the
 #           officer_task_history AFTER trigger records the actual actor.
+#
+# v1.3 delta — durable task events (cabinet/docs/tasks-board.md):
+#   Every REAL transition ALSO emits one A6-enveloped entry on the Redis
+#   stream cabinet:tasks:events via lib/triggers.sh task_event_emit (id,
+#   old_status→new_status, actor, context_slug, ts — titles/reasons NEVER
+#   ride the event). The thin cabinet:tasks:updated pub/sub broadcast below
+#   is UNCHANGED byte-for-byte (dashboard SSE contract). Emission is
+#   best-effort: the DB row is the source of truth, so an emit failure warns
+#   on stderr but never fails the mutation. Idempotent re-runs that change
+#   nothing (unblock on an unblocked row, block on an already-blocked row)
+#   emit NO event. done/block/unblock/cancel capture the pre-update state
+#   atomically via an UPDATE..FROM self-join (RETURNING machine fields FIRST,
+#   untrusted title LAST; parsing anchors on the first '^<digits>|' line so a
+#   title containing a newline+fake row can never spoof the id).
 #
 # Usage:
 #   my-tasks.sh start "<title>" [--linked-url X] [--linked-kind linear|github|library] [--linked-id Y] [--context SLUG]
@@ -35,9 +49,13 @@
 #
 # Context isolation (Spec 038 v1.1 AC #21 — context_slug is NOT NULL):
 #   --context <slug>            (overrides everything)
-#   $CABINET_CONTEXT env var    (session-scoped)
-#   instance/config/active-project.txt (deployment default)
-# If none resolves, the script errors before touching the DB.
+#   cabinet_resolve_context     (lib/lanes.sh — the shared preset-aware chain):
+#     $CABINET_CONTEXT env > instance/config/active-project.txt >
+#     officer-lane derivation from instance/config/contexts/*.yml (exact slug,
+#     else longest '<lane>-' prefix — e.g. a portfolio '<lane>-ceo' officer) >
+#     single-declared-lane > platform.yml lane_default (must be a declared lane)
+# If none resolves, the script errors before touching the DB. Slugs are
+# CLI-validated ([a-z0-9][a-z0-9-]*, ≤32 — Spec 038 §4.8) before any use.
 #
 # Requires: psql in PATH, $NEON_CONNECTION_STRING. Redis pub is optional
 # (silent skip if redis-cli missing — SSE fallback polling still works).
@@ -121,17 +139,34 @@ if [ -z "${NEON_CONNECTION_STRING:-}" ]; then
 fi
 
 CABINET_ROOT="${CABINET_ROOT:-/opt/founders-cabinet}"
-if [ -z "$CONTEXT_SLUG" ] && [ -n "${CABINET_CONTEXT:-}" ]; then
-  CONTEXT_SLUG="$CABINET_CONTEXT"
-fi
-if [ -z "$CONTEXT_SLUG" ] && [ -f "$CABINET_ROOT/instance/config/active-project.txt" ]; then
-  CONTEXT_SLUG="$(tr -d '[:space:]' < "$CABINET_ROOT/instance/config/active-project.txt")"
+
+# Preset-aware context resolution (config-split fix, 2026-07-17): every rung
+# below --context lives in lib/lanes.sh cabinet_resolve_context — the SAME
+# chain the dashboard, task_sync_runner.py and the (staged) officer launchers
+# resolve, so a portfolio deployment with no active-project.txt still lands
+# each officer's tasks in its lane: $CABINET_CONTEXT env >
+# active-project.txt > officer-lane derivation from contexts/*.yml >
+# single-declared-lane > platform.yml lane_default.
+# shellcheck source=lib/lanes.sh
+. "$(cd "$(dirname "$0")" && pwd)/lib/lanes.sh"
+if [ -z "$CONTEXT_SLUG" ]; then
+  CONTEXT_SLUG="$(cabinet_resolve_context "$OFFICER_SLUG")" || CONTEXT_SLUG=""
 fi
 
 # Spec 038 v1.1 AC #21: context_slug is NOT NULL at DB level. Fail fast with
 # a readable message rather than letting psql report a CHECK violation.
 if [ -z "$CONTEXT_SLUG" ]; then
-  echo "ERROR: context_slug required. Pass --context <slug>, set \$CABINET_CONTEXT, or write instance/config/active-project.txt." >&2
+  echo "ERROR: context_slug required. Pass --context <slug>, set \$CABINET_CONTEXT, write instance/config/active-project.txt, or declare your lane in instance/config/contexts/ (cabinet_resolve_context printed the full chain above)." >&2
+  exit 1
+fi
+
+# Spec 038 §4.8: the CLI validates slug shape FIRST (the dashboard maps a
+# malformed slug to 503 "shouldn't happen — CLI validates first"; this is
+# that gate). Also keeps the contexts/<slug>.yml existence probe below
+# path-traversal-proof — resolver-derived slugs already conform, this guards
+# the --context flag path with the same FW-073 shape.
+if ! [[ "$CONTEXT_SLUG" =~ ^[a-z0-9][a-z0-9-]*$ ]] || [ "${#CONTEXT_SLUG}" -gt 32 ]; then
+  echo "ERROR: context '$CONTEXT_SLUG' is invalid — slugs match [a-z0-9][a-z0-9-]* (max 32 chars)." >&2
   exit 1
 fi
 
@@ -158,6 +193,24 @@ broadcast() {
   redis-cli -h "${REDIS_HOST:-redis}" -p "${REDIS_PORT:-6379}" \
     PUBLISH cabinet:tasks:updated \
     "{\"officer_slug\":\"$OFFICER_SLUG\",\"timestamp\":\"$ts\"}" >/dev/null 2>&1 || true
+}
+
+# Durable task events (v1.3): task_event_emit lives in lib/triggers.sh — the
+# house trigger-bus emit path, so the A6/A12 envelope law (validate + enforce
+# BEFORE the XADD) applies to this producer like every other bus producer.
+MY_TASKS_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib"
+if [ -f "$MY_TASKS_LIB_DIR/triggers.sh" ]; then
+  # shellcheck source=lib/triggers.sh
+  . "$MY_TASKS_LIB_DIR/triggers.sh"
+fi
+
+# emit_event <task_id> <old_status> <new_status> — best-effort durable event.
+# The DB mutation already committed when this runs: a lost event must warn
+# (task_event_emit is fail-loud on stderr) but NEVER fail the verb. Missing
+# lib (deployment skew) degrades to a no-op, same stance as broadcast().
+emit_event() {
+  type task_event_emit >/dev/null 2>&1 || return 0
+  task_event_emit "$OFFICER_SLUG" "$CONTEXT_SLUG" "$@" || true
 }
 
 # --- commands ----------------------------------------------------------------
@@ -206,28 +259,43 @@ SQL
       exit 1
     fi
     echo "$OUTPUT" | grep -E '^[0-9]+\|' | tail -1 | awk -F'|' '{print "STARTED id="$1" title="$2}'
+    # Event id anchors on the FIRST '^<digits>|' line (the real RETURNING row —
+    # a title embedding "\n99|fake" cannot spoof it; display above is cosmetic).
+    NEW_ID=$(printf '%s\n' "$OUTPUT" | grep -E '^[0-9]+\|' | head -1)
+    NEW_ID="${NEW_ID%%|*}"
+    [ -n "$NEW_ID" ] && emit_event "$NEW_ID" "" "wip"
     broadcast
     ;;
 
   done)
     [ -z "$TARGET_ID" ] && { echo "ERROR: task id required (use 'my-tasks.sh list' to find yours)" >&2; exit 2; }
+    # v1.3: UPDATE..FROM self-join returns the PRE-update state (o.*) in the
+    # same atomic statement — machine fields first, untrusted title LAST.
     OUTPUT=$(psql_q -v slug="$OFFICER_SLUG" -v id="$TARGET_ID" <<'SQL'
 BEGIN;
 SELECT set_config('app.cabinet_officer', :'slug', true);
-UPDATE officer_tasks
+UPDATE officer_tasks t
    SET status = 'done', completed_at = NOW(), blocked = false, blocked_reason = NULL
- WHERE id = :'id'::bigint
-   AND officer_slug = :'slug'
-   AND status = 'wip'
-RETURNING id, title;
+  FROM officer_tasks o
+ WHERE o.id = t.id
+   AND t.id = :'id'::bigint
+   AND t.officer_slug = :'slug'
+   AND t.status = 'wip'
+RETURNING t.id, o.status, o.blocked, t.title;
 COMMIT;
 SQL
 )
-    if [ -z "$OUTPUT" ] || ! echo "$OUTPUT" | grep -qE '^[0-9]+'; then
+    ROW=$(printf '%s\n' "$OUTPUT" | grep -E '^[0-9]+\|' | head -1)
+    if [ -z "$ROW" ]; then
       echo "ERROR: task id=$TARGET_ID not found, not in WIP, or wrong officer" >&2
       exit 1
     fi
-    echo "$OUTPUT" | awk -F'|' '{print "DONE id="$1" title="$2}'
+    TASK_ID=$(printf '%s\n' "$ROW" | awk -F'|' '{print $1}')
+    OLD_STATUS=$(printf '%s\n' "$ROW" | awk -F'|' '{print $2}')
+    WAS_BLOCKED=$(printf '%s\n' "$ROW" | awk -F'|' '{print $3}')
+    printf '%s\n' "$ROW" | awk -F'|' '{print "DONE id="$1" title="$4}'
+    [ "$WAS_BLOCKED" = "t" ] && OLD_STATUS="blocked"
+    emit_event "$TASK_ID" "$OLD_STATUS" "done"
     broadcast
     ;;
 
@@ -239,20 +307,31 @@ SQL
     OUTPUT=$(psql_q -v slug="$OFFICER_SLUG" -v id="$TARGET_ID" -v reason="$REASON" <<'SQL'
 BEGIN;
 SELECT set_config('app.cabinet_officer', :'slug', true);
-UPDATE officer_tasks
+UPDATE officer_tasks t
    SET blocked = true, blocked_reason = :'reason'
- WHERE id = :'id'::bigint
-   AND officer_slug = :'slug'
-   AND status IN ('queue', 'wip')
-RETURNING id, title;
+  FROM officer_tasks o
+ WHERE o.id = t.id
+   AND t.id = :'id'::bigint
+   AND t.officer_slug = :'slug'
+   AND t.status IN ('queue', 'wip')
+RETURNING t.id, o.status, o.blocked, t.title;
 COMMIT;
 SQL
 )
-    if [ -z "$OUTPUT" ] || ! echo "$OUTPUT" | grep -qE '^[0-9]+'; then
+    ROW=$(printf '%s\n' "$OUTPUT" | grep -E '^[0-9]+\|' | head -1)
+    if [ -z "$ROW" ]; then
       echo "ERROR: task id=$TARGET_ID not found, not in queue/WIP, or wrong officer" >&2
       exit 1
     fi
-    echo "$OUTPUT" | awk -F'|' '{print "BLOCKED id="$1" title="$2}'
+    TASK_ID=$(printf '%s\n' "$ROW" | awk -F'|' '{print $1}')
+    OLD_STATUS=$(printf '%s\n' "$ROW" | awk -F'|' '{print $2}')
+    WAS_BLOCKED=$(printf '%s\n' "$ROW" | awk -F'|' '{print $3}')
+    printf '%s\n' "$ROW" | awk -F'|' '{print "BLOCKED id="$1" title="$4}'
+    # Event only when the row ENTERS blocked — re-blocking an already-blocked
+    # row (reason refresh) is a no-op transition and emits nothing.
+    if [ "$WAS_BLOCKED" != "t" ]; then
+      emit_event "$TASK_ID" "$OLD_STATUS" "blocked"
+    fi
     broadcast
     ;;
 
@@ -265,22 +344,33 @@ SQL
     OUTPUT=$(psql_q -v slug="$OFFICER_SLUG" -v id="$TARGET_ID" <<'SQL'
 BEGIN;
 SELECT set_config('app.cabinet_officer', :'slug', true);
-UPDATE officer_tasks
+UPDATE officer_tasks t
    SET blocked = false, blocked_reason = NULL
- WHERE id = :'id'::bigint
-   AND officer_slug = :'slug'
-   AND status IN ('queue', 'wip')
-RETURNING id, title;
+  FROM officer_tasks o
+ WHERE o.id = t.id
+   AND t.id = :'id'::bigint
+   AND t.officer_slug = :'slug'
+   AND t.status IN ('queue', 'wip')
+RETURNING t.id, o.status, o.blocked, t.title;
 COMMIT;
 SQL
 )
-    if [ -z "$OUTPUT" ] || ! echo "$OUTPUT" | grep -qE '^[0-9]+'; then
+    ROW=$(printf '%s\n' "$OUTPUT" | grep -E '^[0-9]+\|' | head -1)
+    if [ -z "$ROW" ]; then
       # Row genuinely not found / wrong owner / not active — NOT the
       # "already unblocked" case (that matched and no-op'd).
       echo "ERROR: task id=$TARGET_ID not found, not in queue/WIP, or wrong officer" >&2
       exit 1
     fi
-    echo "$OUTPUT" | awk -F'|' '{print "UNBLOCKED id="$1" title="$2}'
+    TASK_ID=$(printf '%s\n' "$ROW" | awk -F'|' '{print $1}')
+    OLD_STATUS=$(printf '%s\n' "$ROW" | awk -F'|' '{print $2}')
+    WAS_BLOCKED=$(printf '%s\n' "$ROW" | awk -F'|' '{print $3}')
+    printf '%s\n' "$ROW" | awk -F'|' '{print "UNBLOCKED id="$1" title="$4}'
+    # Idempotent no-op (already unblocked) emits nothing; a real unblock
+    # returns the row to its underlying queue/wip status.
+    if [ "$WAS_BLOCKED" = "t" ]; then
+      emit_event "$TASK_ID" "blocked" "$OLD_STATUS"
+    fi
     broadcast
     ;;
 
@@ -304,6 +394,9 @@ SQL
     RC=$?
     [ $RC -ne 0 ] && { echo "$OUTPUT" >&2; exit 1; }
     echo "$OUTPUT" | awk -F'|' '{print "QUEUED id="$1" title="$2}'
+    NEW_ID=$(printf '%s\n' "$OUTPUT" | grep -E '^[0-9]+\|' | head -1)
+    NEW_ID="${NEW_ID%%|*}"
+    [ -n "$NEW_ID" ] && emit_event "$NEW_ID" "" "queue"
     broadcast
     ;;
 
@@ -312,20 +405,28 @@ SQL
     OUTPUT=$(psql_q -v slug="$OFFICER_SLUG" -v id="$TARGET_ID" <<'SQL'
 BEGIN;
 SELECT set_config('app.cabinet_officer', :'slug', true);
-UPDATE officer_tasks
+UPDATE officer_tasks t
    SET status = 'cancelled', blocked = false, blocked_reason = NULL
- WHERE id = :'id'::bigint
-   AND officer_slug = :'slug'
-   AND status NOT IN ('done','cancelled')
-RETURNING id, title;
+  FROM officer_tasks o
+ WHERE o.id = t.id
+   AND t.id = :'id'::bigint
+   AND t.officer_slug = :'slug'
+   AND t.status NOT IN ('done','cancelled')
+RETURNING t.id, o.status, o.blocked, t.title;
 COMMIT;
 SQL
 )
-    if [ -z "$OUTPUT" ] || ! echo "$OUTPUT" | grep -qE '^[0-9]+'; then
+    ROW=$(printf '%s\n' "$OUTPUT" | grep -E '^[0-9]+\|' | head -1)
+    if [ -z "$ROW" ]; then
       echo "ERROR: task id=$TARGET_ID not found, already closed, or wrong officer" >&2
       exit 1
     fi
-    echo "$OUTPUT" | awk -F'|' '{print "CANCELLED id="$1" title="$2}'
+    TASK_ID=$(printf '%s\n' "$ROW" | awk -F'|' '{print $1}')
+    OLD_STATUS=$(printf '%s\n' "$ROW" | awk -F'|' '{print $2}')
+    WAS_BLOCKED=$(printf '%s\n' "$ROW" | awk -F'|' '{print $3}')
+    printf '%s\n' "$ROW" | awk -F'|' '{print "CANCELLED id="$1" title="$4}'
+    [ "$WAS_BLOCKED" = "t" ] && OLD_STATUS="blocked"
+    emit_event "$TASK_ID" "$OLD_STATUS" "cancelled"
     broadcast
     ;;
 

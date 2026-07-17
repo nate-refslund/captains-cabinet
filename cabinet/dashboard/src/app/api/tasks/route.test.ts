@@ -10,6 +10,8 @@
 //     - query ?context= bypasses env + file fallback
 //     - CABINET_CONTEXT env wins over file fallback (no query)
 //     - active-project.txt fallback when no query + no env
+//     - single-declared-lane fallback (preset deployments — the shared
+//       @/lib/active-context chain; full rung matrix in active-context.test.ts)
 //     - empty active-project.txt → 500 (error path)
 //     - response shape {boards, captain, context_slug}
 //     - Promise.all parallelism (both fetches triggered)
@@ -41,6 +43,7 @@ const {
   mockCoerce,
   mockGetLinearFounderActions,
   mockReadFile,
+  mockReaddir,
 } = vi.hoisted(() => ({
   mockGetAllOfficerBoards: vi.fn(),
   mockStartTask: vi.fn(),
@@ -48,6 +51,7 @@ const {
   mockCoerce: vi.fn(),
   mockGetLinearFounderActions: vi.fn(),
   mockReadFile: vi.fn(),
+  mockReaddir: vi.fn(),
 }))
 
 // Keep the real WipCapExceededError class so handler's `instanceof` works.
@@ -68,6 +72,7 @@ vi.mock('@/lib/linear-tasks', () => ({
 
 vi.mock('node:fs/promises', () => ({
   readFile: mockReadFile,
+  readdir: mockReaddir,
 }))
 
 // Import real class AFTER mocks so tests can `throw new WipCapExceededError(...)`.
@@ -91,6 +96,7 @@ beforeEach(() => {
   mockCoerce.mockReset()
   mockGetLinearFounderActions.mockReset()
   mockReadFile.mockReset()
+  mockReaddir.mockReset()
   delete process.env.CABINET_CONTEXT
   delete process.env.CABINET_ROOT
 })
@@ -143,6 +149,24 @@ describe('GET /api/tasks — context resolution', () => {
     await GET(makeGetReq('http://localhost/api/tasks'))
     expect(mockReadFile).toHaveBeenCalledTimes(1)
     expect(mockGetAllOfficerBoards).toHaveBeenCalledWith('from-file')
+  })
+
+  it('falls back to the single declared lane on preset deployments (no query, no env, no active-project.txt)', async () => {
+    // config-split fix 2026-07-17: the shared @/lib/active-context chain —
+    // active-project.txt missing → contexts/*.yml enum has one lane → use it.
+    mockReadFile.mockImplementation(async (p: unknown) => {
+      if (String(p).endsWith('active-project.txt')) throw new Error('ENOENT')
+      if (String(p).endsWith('bakery.yml')) return 'slug: bakery\n'
+      throw new Error(`ENOENT: ${p}`)
+    })
+    mockReaddir.mockResolvedValueOnce(['bakery.yml', '_default.yml'])
+    mockGetAllOfficerBoards.mockResolvedValueOnce([])
+    mockGetLinearFounderActions.mockResolvedValueOnce({ items: [] })
+    const res = await GET(makeGetReq('http://localhost/api/tasks'))
+    expect(res.status).toBe(200)
+    expect(mockGetAllOfficerBoards).toHaveBeenCalledWith('bakery')
+    const body = await res.json()
+    expect(body.context_slug).toBe('bakery')
   })
 
   it('CABINET_ROOT env overrides default path for active-project.txt', async () => {

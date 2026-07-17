@@ -16,6 +16,7 @@ already honours ``CABINET_EVENT_LOG_DIR``, which the runtime launch sets from
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 _DEV = "dev"
@@ -942,6 +943,145 @@ def active_preset(default: str = "work") -> str:
     except Exception:
         pass
     return default
+
+
+# The tasks/coordination context-slug shape gate (FW-073 launcher allowlist +
+# my-tasks.sh CLI gate, Spec 038 §4.8): [a-z0-9][a-z0-9-]*, max 32 chars.
+# Compiled once; static pattern (no dynamic construction, no ReDoS surface).
+_CONTEXT_SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,31}")
+
+
+def _context_slug_ok(val: str) -> bool:
+    """True when ``val`` is a well-formed context slug. Config values are
+    UNTRUSTED data — a non-conforming candidate is treated as unresolved (its
+    rung is skipped), never returned, so ``../``, ``$(...)``, ``;`` etc. can
+    never reach a path join, a psql var, or an env export."""
+    return bool(val) and _CONTEXT_SLUG_RE.fullmatch(val) is not None
+
+
+def active_context(officer: "str | None" = None, default: str = "",
+                   root: "Path | str | None" = None) -> str:
+    """The tasks/coordination context slug for this session — the resolver
+    that fixes the CONFIG SPLIT (audit 2026-07-16): the tasks subsystem keyed
+    off ``instance/config/active-project.txt`` alone, but preset deployments
+    (e.g. the portfolio shape) declare lanes via ``instance/config/contexts/``
+    and never write that file, so ``officer_tasks`` was structurally unusable
+    there. Twin of ``cabinet/scripts/lib/lanes.sh cabinet_resolve_context``
+    (keep rung-for-rung parity — test-pinned by
+    ``cabinet/scripts/lib/tests/test_resolve_context_sh.py``) and of the
+    dashboard's ``src/lib/active-context.ts`` (which has no officer rung).
+
+    Rungs — first candidate passing :func:`_context_slug_ok` wins; a
+    non-conforming value skips its rung (never returned):
+
+      1. ``CABINET_CONTEXT`` env (session/launchd scope)
+      2. ``instance/config/active-project.txt`` (single-product deployments)
+      3. officer→lane derivation (``officer`` given): exact slug match in the
+         declared-lane enum, else the LONGEST lane ``L`` with
+         ``officer == "L-<anything>"`` (portfolio ``<lane>-ceo`` officers —
+         no suffix literal is hardcoded, so any preset's per-lane officer
+         naming resolves)
+      4. the single declared lane, when the enum has exactly one
+      5. the Captain-ruled ``lane_default`` (platform.yml / product.yml),
+         only when it IS a declared lane
+
+    The declared-lane enum is the first top-level ``slug:`` scalar per
+    ``instance/config/contexts/*.yml`` — the SAME minimal line-scan as
+    :func:`lanes` / ``run_action_lane._context_slugs`` (re-implemented here
+    rather than called so this resolver is ``root``-injectable and UNCACHED:
+    ``active-project.txt`` / env can change under a long-lived process, and
+    the lanes() process cache would pin the first fixture a test resolved).
+    Preset-awareness is via the preset's MATERIALIZED shape (contexts enum +
+    roster naming), never by parsing ``presets/`` — framework stays
+    layer-clean and product-agnostic.
+
+    No resolution falls back to ``default`` — the EMPTY string — and every
+    consumer fails LOUD at its own seam with a remedy naming the rungs
+    (``officer_tasks.context_slug`` is NOT NULL; a silent invented context
+    would misfile coordination state). Never raises. ``root`` overrides
+    ``_cabinet_root()`` for tests/embedders."""
+    base = Path(root).expanduser() if root else _cabinet_root()
+
+    # R1 — session env (whitespace-stripped, shape-gated).
+    cand = "".join((os.environ.get("CABINET_CONTEXT") or "").split())
+    if _context_slug_ok(cand):
+        return cand
+
+    # R2 — active-project.txt (whitespace-stripped, shape-gated).
+    try:
+        p = base / "instance/config/active-project.txt"
+        if p.is_file():
+            cand = "".join(p.read_text(encoding="utf-8").split())
+            if _context_slug_ok(cand):
+                return cand
+    except Exception:
+        pass
+
+    # R3–R5 — preset-derived, all off the declared-lane enum.
+    slugs: set = set()
+    try:
+        for f in sorted((base / "instance/config/contexts").glob("*.yml")):
+            try:
+                for line in f.read_text(encoding="utf-8", errors="ignore").splitlines():
+                    s = line.strip()
+                    if s.startswith("slug:"):
+                        val = s.split(":", 1)[1].strip().strip('"').strip("'").lower()
+                        if val:
+                            slugs.add(val)
+                        break
+            except OSError:
+                continue
+    except OSError:
+        pass
+    lanes_enum = sorted(slugs)
+    if lanes_enum:
+        if officer:
+            best = ""
+            for lane in lanes_enum:
+                if not _context_slug_ok(lane):
+                    continue
+                if officer == lane:
+                    best = lane
+                    break
+                if officer.startswith(lane + "-") and len(lane) > len(best):
+                    best = lane
+            if best:
+                return best
+        if len(lanes_enum) == 1 and _context_slug_ok(lanes_enum[0]):
+            return lanes_enum[0]
+        cand = _lane_default_uncached(base)
+        if _context_slug_ok(cand) and cand in lanes_enum:
+            return cand
+    return default
+
+
+def _lane_default_uncached(base: Path) -> str:
+    """Root-injectable, uncached read of the ``lane_default`` scalar —
+    :func:`active_context`'s R5 source. Same key logic as
+    :func:`lane_default` (platform.yml, else product.yml, top-level or nested
+    under ``product:``) but bypasses that resolver's process cache and fixed
+    root, for the same reasons active_context itself is uncached. Absence /
+    parse failure ⇒ ``""`` (the rung is skipped); never raises."""
+    try:
+        import yaml  # local: keep env.py import-light for the safety switches
+        for rel in ("instance/config/platform.yml", "instance/config/product.yml"):
+            p = base / rel
+            try:
+                if not p.exists():
+                    continue
+                data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+            except Exception:
+                continue
+            if not isinstance(data, dict):
+                continue
+            val = data.get("lane_default")
+            if val is None and isinstance(data.get("product"), dict):
+                val = data["product"].get("lane_default")   # product.yml nests it
+            if val is not None and str(val).strip():
+                return str(val).strip()
+    except Exception:
+        pass
+    return ""
 
 
 # Cache: org_vault_dir is read once per process (same lifecycle as

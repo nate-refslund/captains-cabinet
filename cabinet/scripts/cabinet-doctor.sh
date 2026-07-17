@@ -55,6 +55,14 @@
 #      regression ≠ dead config — the services section already DEADs an
 #      unloaded row); credless box (clean-room/CI) = SKIP; staleness honors
 #      the post-wake grace below, one severity rung lower than stale_verdict.
+#  12. task-sync drift falsifier verdict (adapter kit, 2026-07-17): latest
+#      line of cabinet/logs/task-sync-drift.jsonl via the falsifier's
+#      --probe (pure file inspection — no DB, no network, no adapter
+#      imports). Drift/stale/error = WARN/AMBER with a self-heal hint
+#      (re-run one sync cycle); a breach persisting to the next nightly is
+#      escalated to a captain card BY THE FALSIFIER organ, never by this
+#      read-only probe. Honest no-op deployments (no adapter configured)
+#      print OK — the loud-degrade line is the healthy state.
 #
 # OUTPUT: one line per finding (OK / WARN / WAIVED / SKIP / DEAD), then either
 #   CABINET_DOCTOR GREEN (checks=N warn=N waived=N)
@@ -771,6 +779,53 @@ case "$RE_PROBE" in
   STALE*)   re_stale_verdict "retrieval-eval — latest verdict stale (${RE_PROBE#STALE }) — the nightly gate is not running" ;;
   BADLINE*) warn "retrieval-eval — latest verdict line unparseable (ledger corrupt? see cabinet/logs/retrieval-eval-history.jsonl)" ;;
   *)        warn "retrieval-eval — probe output unparseable: $RE_PROBE" ;;
+esac
+
+# ============================================================
+# 12. task-sync drift falsifier verdict (adapter kit, 2026-07-17)
+# The 04:20 task-sync-drift services row appends one canonical↔mirror
+# verdict line/night to cabinet/logs/task-sync-drift.jsonl (honest
+# no-adapters-configured lines while every adapter is NoOp/skeleton —
+# today's live shape). This check reads ONLY that ledger via the script's
+# --probe mode: pure file inspection — no DB, no network, no adapter
+# imports, no secret values. ESCALATION LADDER (documented here, executed
+# by the FALSIFIER — the doctor is read-only by contract and never sends):
+#   drift verdict #1          → AMBER below with the self-heal hint: run
+#                               one sync cycle (bash cabinet/cron/
+#                               task-sync.sh) then re-run the falsifier —
+#                               a fresh passing line clears the AMBER the
+#                               same day;
+#   drift again on the NEXT   → self-heal failed: the falsifier itself
+#   nightly (distinct date)     files ONE captain card via the attention
+#                               gateway (attention-submit.sh; the gate
+#                               dedups + quiet-hours it) and stamps
+#                               `escalated` on the verdict line — the card
+#                               reaches the Captain from that organ, NEVER
+#                               from this probe.
+# Never DEAD: a drifting mirror is a quality finding, not dead config (the
+# services section above already DEADs an unloaded row). Staleness rides
+# the same post-wake grace as retrieval-eval (re_stale_verdict).
+# NOSYNC sub-cases (2026-07-17 review): canonical-unreadable means NOT
+# CONFIGURED only (an adapter exists but this box has no Postgres client/
+# conn string and no JSON seam) — a CONFIGURED canonical store that FAILS
+# to read (credential rot, dead DB) is status=error → the ERROR/AMBER arm
+# below, never a green NOSYNC; the falsifier enforces the split at the
+# source. (Prose here says "Postgres client" on purpose: the retrieval-eval
+# purity scan asserts the literal client-binary token never appears between
+# check 11 and the heartbeat.)
+# ============================================================
+TSD_PROBE="$("$PY" cabinet/scripts/task-sync-drift-falsifier.py --probe 2>/dev/null)"
+case "$TSD_PROBE" in
+  OK*)      ok "task-sync-drift — latest nightly verdict passed (${TSD_PROBE#OK })" ;;
+  "NOSYNC status=canonical-unreadable"*) ok "task-sync-drift — honest no-op (${TSD_PROBE#NOSYNC }); an adapter is configured but this box has no canonical task store to read (no Postgres client/conn string, no JSON seam) — a configured store that FAILS reads surfaces as ERROR, never here" ;;
+  NOSYNC*)  ok "task-sync-drift — honest no-op (${TSD_PROBE#NOSYNC }); no external tracker configured to drift, loud-degrade line fresh" ;;
+  "DRIFT n=1 "*) warn "task-sync-drift — MIRROR DRIFT in latest nightly verdict (${TSD_PROBE#DRIFT }) — self-heal: bash cabinet/cron/task-sync.sh, then python3.12 cabinet/scripts/task-sync-drift-falsifier.py (a passing line clears this AMBER); if the NEXT nightly still drifts the falsifier files the captain card" ;;
+  DRIFT*)   warn "task-sync-drift — drift PERSISTED across nightly verdicts (${TSD_PROBE#DRIFT }) — self-heal failed; the falsifier files/filed the captain card (see the needs ledger + the escalated stamp in cabinet/logs/task-sync-drift.jsonl); root-cause the adapter before trusting the external board" ;;
+  ERROR*)   warn "task-sync-drift — latest falsifier run errored (${TSD_PROBE#ERROR }) — adapter/canonical infrastructure broke; see cabinet/logs/task-sync-drift.jsonl" ;;
+  NOFILE*)  re_stale_verdict "task-sync-drift — no verdict ledger yet (04:20 nightly never ran — services row not installed?)" ;;
+  STALE*)   re_stale_verdict "task-sync-drift — latest verdict stale (${TSD_PROBE#STALE }) — the nightly falsifier is not running" ;;
+  BADLINE*) warn "task-sync-drift — latest verdict line unparseable (ledger corrupt? see cabinet/logs/task-sync-drift.jsonl)" ;;
+  *)        warn "task-sync-drift — probe output unparseable: $TSD_PROBE" ;;
 esac
 
 # ============================================================

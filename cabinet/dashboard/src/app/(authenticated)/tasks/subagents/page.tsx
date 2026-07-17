@@ -14,9 +14,10 @@
  */
 
 import Link from 'next/link'
-import path from 'node:path'
-import { readFile } from 'node:fs/promises'
-import { cabinetRoot } from '@/lib/cabinet-root'
+// Shared preset-aware context resolver (config-split fix 2026-07-17):
+// env > active-project.txt > single-declared-lane > lane_default; null on
+// miss (this page renders context-free rather than failing).
+import { resolveActiveContextOrNull } from '@/lib/active-context'
 import {
   listClaudeNativeTasks,
   countDrift,
@@ -25,18 +26,6 @@ import {
 } from '@/lib/claude-native-tasks'
 
 export const dynamic = 'force-dynamic'
-
-async function resolveActiveContext(): Promise<string | null> {
-  if (process.env.CABINET_CONTEXT?.trim()) return process.env.CABINET_CONTEXT.trim()
-  const activeFile = path.join(cabinetRoot(), 'instance/config/active-project.txt')
-  try {
-    const txt = await readFile(activeFile, 'utf-8')
-    const slug = txt.trim()
-    return slug || null
-  } catch {
-    return null
-  }
-}
 
 function relTime(iso: string): string {
   try {
@@ -140,7 +129,7 @@ function TaskRow({ task }: { task: ClaudeNativeTask }) {
 }
 
 export default async function SubagentsPage() {
-  const productSlug = (await resolveActiveContext()) || undefined
+  const productSlug = (await resolveActiveContextOrNull()) || undefined
   const tasks = await listClaudeNativeTasks({ productSlug, limit: 100 })
 
   const driftCount = countDrift(tasks)
