@@ -63,6 +63,14 @@
 #      escalated to a captain card BY THE FALSIFIER organ, never by this
 #      read-only probe. Honest no-op deployments (no adapter configured)
 #      print OK — the loud-degrade line is the healthy state.
+#  13. dependency-radar (RADAR-OBSERVE, 2026-07-17): dependency-radar.py
+#      --probe (pure LOCAL file+PATH inspection — no network, no fetch).
+#      The claude binary failing to resolve on the plists' service PATH =
+#      DEAD (RED) with the registry's remedy line — the 2026-07-16
+#      officer-boot incident class, carded BEFORE boots fail. Last completed
+#      sweep >48h stale / never ran = WARN (AMBER, post-wake grace honored);
+#      unusable registry = WARN. Registry: cabinet/config/dependency-radar.yml;
+#      runbook: docs/runbooks/dependency-radar.md.
 #
 # OUTPUT: one line per finding (OK / WARN / WAIVED / SKIP / DEAD), then either
 #   CABINET_DOCTOR GREEN (checks=N warn=N waived=N)
@@ -826,6 +834,41 @@ case "$TSD_PROBE" in
   STALE*)   re_stale_verdict "task-sync-drift — latest verdict stale (${TSD_PROBE#STALE }) — the nightly falsifier is not running" ;;
   BADLINE*) warn "task-sync-drift — latest verdict line unparseable (ledger corrupt? see cabinet/logs/task-sync-drift.jsonl)" ;;
   *)        warn "task-sync-drift — probe output unparseable: $TSD_PROBE" ;;
+esac
+
+# ============================================================
+# 13. dependency-radar liveness + claude binary/PATH probe (RADAR-OBSERVE)
+# The 04:20 dependency-radar services row sweeps the tracked registry
+# cabinet/config/dependency-radar.yml nightly (observe-only; fetched
+# changelog text is UNTRUSTED and stored fenced as data — see
+# docs/runbooks/dependency-radar.md). This check calls the script's
+# --probe mode: pure LOCAL inspection (registry parse, live binary/PATH
+# probe, state-sidecar sweep age) — no network, no fetch, no secrets.
+# Ladder: PROBEFAIL = DEAD (RED — `claude` does not resolve on the
+# plists' service PATH, the 2026-07-16 officer-boot incident class; the
+# line carries the registry's remedy verbatim, so the fix is one read
+# away). STALE >48h / NOFILE = the nightly sweep is not completing —
+# WARN (AMBER) with the same post-wake grace as retrieval-eval (a
+# sleep-missed 04:20 coalesces within minutes of wake). BADREG = WARN
+# (config rot in the tracked registry, never a crash). Staleness reads
+# the state sidecar's last_sweep_completed stamp, NOT the delta JSONL
+# mtime — a quiet upstream week must not page as a dead radar.
+# ============================================================
+radar_stale() { # staleness-class finding for the radar sweep stamp
+  if [ "$SECS_SINCE_WAKE" -lt "$WAKE_GRACE_S" ]; then
+    ok "$1 (post-wake grace: woke ${SECS_SINCE_WAKE}s ago < ${WAKE_GRACE_S}s — coalesced nightly should land shortly)"
+  else
+    warn "$1"
+  fi
+}
+DR_PROBE="$(python3.12 cabinet/scripts/dependency-radar.py --probe 2>/dev/null)"
+case "$DR_PROBE" in
+  OK*)        ok "dependency-radar — ${DR_PROBE#OK }" ;;
+  PROBEFAIL*) dead "dependency-radar — ${DR_PROBE#PROBEFAIL } (officer boots will FATAL when launchd's PATH cannot resolve the claude binary — the 2026-07-16 incident class, carded here BEFORE boots fail)" ;;
+  STALE*)     radar_stale "dependency-radar — ${DR_PROBE#STALE } — the 04:20 nightly sweep is not completing" ;;
+  NOFILE*)    radar_stale "dependency-radar — ${DR_PROBE#NOFILE } (04:20 nightly never completed on this box — services row not installed?)" ;;
+  BADREG*)    warn "dependency-radar — registry unusable: ${DR_PROBE#BADREG } — fix cabinet/config/dependency-radar.yml (python3.12 cabinet/scripts/dependency-radar.py --validate-registry)" ;;
+  *)          warn "dependency-radar — probe output unparseable: $DR_PROBE" ;;
 esac
 
 # ============================================================

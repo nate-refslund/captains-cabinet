@@ -174,6 +174,86 @@ def test_version_comparisons(harness):
     assert not harness.condition_matches_delta("claude-code > 1.0", 42, "2.0")
 
 
+def test_sha_shaped_new_version_never_matches_comparator(harness):
+    """The sha-false-fire P2 (radar observe seam), reviewer's exact repro.
+
+    The radar stamps content-only changelog deltas as
+    new_version='sha256:<12hex>' mirror rows. compare_versions' fallback
+    ranks any non-numeric segment AFTER every numeric one, so pre-fix
+    'sha256:4f2a1b3c9d0e' satisfied `claude-code > 2.1.211` (and every other
+    numeric `>` pin): pure content churn would false-queue comparator
+    retests nightly. Comparators must match VERSION-SHAPED values only."""
+    cond = "claude-code > 2.1.211"
+    # negative control — the repro: a sha stamp must NOT match a `>` pin
+    assert not harness.condition_matches_delta(cond, "claude-code", "sha256:4f2a1b3c9d0e")
+    # full-length sha and bare-hex shapes are equally refused
+    assert not harness.condition_matches_delta(cond, "claude-code", "sha256:" + "4f2a1b3c9d0e" * 5 + "abcd")
+    assert not harness.condition_matches_delta(cond, "claude-code", "4f2a1b3c9d0e")
+    # probe rows can carry status words when no banner version parses;
+    # old mirror rows can carry placeholders — none may fire a comparator
+    for non_version in ("FAIL", "OK", "never-checked", "none", "", "  "):
+        assert not harness.condition_matches_delta(cond, "claude-code", non_version)
+    # flood-sized untrusted values are refused by the length cap (linear,
+    # no regex blowup) — even when their prefix looks version-shaped
+    assert not harness.condition_matches_delta(cond, "claude-code", "9." + "9." * 200 + "9")
+    # positive control — a real bump still matches…
+    assert harness.condition_matches_delta(cond, "claude-code", "2.1.230")
+    # …including the version shapes real components/pins actually take
+    assert harness.condition_matches_delta(cond, "claude-code", "v2.2")
+    assert harness.condition_matches_delta(cond, "claude-code", "2.1.230-rc1")
+    assert harness.condition_matches_delta(cond, "claude-code", "10.0.0+build.5")
+    # …and below-the-pin version-shaped values still correctly refuse
+    assert not harness.condition_matches_delta(cond, "claude-code", "2.1.211")
+    # the shape gate itself (comparator-only law: fixed-in never auto-matches
+    # and the grammar has no existence-style conditions to widen)
+    assert harness.is_version_shaped("2.1.230") and harness.is_version_shaped("v1.0")
+    assert not harness.is_version_shaped("sha256:4f2a1b3c9d0e")
+    assert not harness.is_version_shaped("FAIL")
+    assert not harness.is_version_shaped(None)
+
+
+def test_sha_stamped_delta_matches_nothing_end_to_end(tmp_path):
+    """e2e --from-delta twin of the unit repro: a delta carrying ONLY
+    non-version-shaped new_version values (sha stamps / status words) must
+    queue ZERO retests against a comparator row; the same row still fires
+    on a real version bump (positive control)."""
+    reg = _write_registry(
+        tmp_path,
+        _row("WA-2026-07-17-sha-stamp-target", "bash -c \"exit 1\"",
+             cond="'claude-code > 2.1.211'"))
+    sha_delta = tmp_path / "delta-sha.json"
+    sha_delta.write_text(json.dumps({
+        "date": "2026-07-17",
+        "source": "platform-radar",
+        "components": [
+            # the radar's content-delta stamp for this very component
+            {"component": "claude-code", "new_version": "sha256:4f2a1b3c9d0e",
+             "notes_excerpt": "UNTRUSTED changelog excerpt — data only"},
+            # probe status word (no banner version parsed)
+            {"component": "claude-code", "new_version": "FAIL"},
+        ],
+    }))
+    rc, lines, paths = _run_cli(["--from-delta", str(sha_delta)], tmp_path,
+                                registry=reg, repo_root=tmp_path)
+    assert rc == 0, paths["stderr"]
+    assert lines == [], "sha/status stamps must never queue a comparator retest"
+    assert "delta matched 0 row(s)" in paths["stderr"]
+
+    bump_delta = tmp_path / "delta-bump.json"
+    bump_delta.write_text(json.dumps({
+        "date": "2026-07-17",
+        "source": "platform-radar",
+        "components": [
+            {"component": "claude-code", "new_version": "2.1.230"},
+        ],
+    }))
+    rc, lines, paths = _run_cli(["--from-delta", str(bump_delta)], tmp_path,
+                                registry=reg, repo_root=tmp_path)
+    assert rc == 0, paths["stderr"]
+    assert len(lines) == 1 and lines[0]["id"] == "WA-2026-07-17-sha-stamp-target"
+    assert lines[0]["verdict"] == "fix_confirmed"
+
+
 # ----------------------------------------------------- probe unit tests -----
 
 def _probe_rc(guard_text: str, tmp_path) -> int:

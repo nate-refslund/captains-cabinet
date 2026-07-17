@@ -100,9 +100,11 @@ memory/skills/evolved/principle-harvester.md
 
 # --- platform-radar / workaround-retest runtime surfaces -----------------
 # Referenced by docs/runbooks/platform-adoption-gating.md (living doc).
-# Daily delta files written at runtime by the radar observe lane and read
-# by the triage skill + retest runner; dated, absent at HEAD by design
-# (cabinet/logs/* is gitignored runtime state).
+# Daily delta files written at runtime by the radar observe half
+# (cabinet/scripts/dependency-radar.py, RADAR-OBSERVE) and read by the
+# triage skill + retest runner; dated, absent at HEAD by design
+# (cabinet/logs/* is gitignored runtime state). One entry serves both
+# lanes — the observe lane's twin glob was deduped into this one at landing.
 cabinet/logs/platform-radar/*
 # Verdict journal appended by cabinet/scripts/workaround-retest.py on every
 # retest run (same gitignored cabinet/logs family).

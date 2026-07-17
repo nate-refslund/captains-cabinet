@@ -129,9 +129,15 @@ lane (consumer). Shape:
 ```
 
 Only `component` + `new_version` are consumed mechanically (string-compared).
-Everything else is fenced context for the officer's judgment. Absent file =
-nothing to triage (the observe lane may not have run) — fail soft, never
-fabricate a delta.
+Comparator `version_condition` rows additionally match only VERSION-SHAPED
+`new_version` values (optional `v` prefix + dotted numerals + optional
+`-rc1`-style qualifiers, length-capped): the radar stamps content-only
+changelog deltas as `sha256:<12hex>` strings and probe rows can carry status
+words like `FAIL` — none of these ever satisfy a comparator (the
+sha-false-fire guard; without it, segment-numeric comparison ranks any
+non-numeric string above every numeric pin). Everything else is fenced
+context for the officer's judgment. Absent file = nothing to triage (the
+observe lane may not have run) — fail soft, never fabricate a delta.
 
 ### Runtime outputs (all gitignored)
 

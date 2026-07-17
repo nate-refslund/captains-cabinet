@@ -1,0 +1,157 @@
+# =============================================================
+# cabinet/config/dependency-radar.yml — dependency-radar registry
+# (RADAR-OBSERVE, 2026-07-17)
+# =============================================================
+# The TRACKED list of upstream surfaces the nightly dependency radar watches
+# (cabinet/scripts/dependency-radar.py, services row `dependency-radar`,
+# 04:20 local). Observe-only: the radar fetches/hashes/diffs and appends
+# delta REPORTS (runtime JSONL + daily fenced file under ~/.cabinet/, plus
+# the per-day triage-seam mirror cabinet/logs/platform-radar/delta-<date>.json
+# the gated triage lane consumes) — nothing here is ever auto-acted-on.
+#
+# LAWS (enforced by --validate-registry + cabinet/scripts/tests/
+# test_dependency_radar.py):
+#   * This file describes WHAT to watch, never what was seen: per-entry
+#     last_seen/content_sha runtime state lives ONLY in the runtime sidecar
+#     ~/.cabinet/state/dependency-radar.json (outside the repo, never
+#     tracked). Runtime keys in this file are a validation error.
+#   * Fetch sources are https:// only. Fetched changelog/release text is
+#     UNTRUSTED DATA — the radar stores it provenance-fenced (json-escaped
+#     JSONL + sha256-keyed fences in the daily report); it is never executed
+#     or interpolated into program text, and the triage reader must apply
+#     the same injection screen. See docs/runbooks/dependency-radar.md.
+#   * Every entry carries `notes:` saying WHY the surface is watched.
+#   * binary-probe entries are constrained (bare binary name + flag-shaped
+#     version_args only) so this registry can never become an
+#     arbitrary-command launcher.
+#
+# SCHEMA (per entry):
+#   id:        ^[a-z0-9][a-z0-9-]*$, unique
+#   kind:      changelog-url | api-probe | binary-probe
+#   source:    https URL (changelog-url: normalized+hashed whole;
+#              api-probe: JSON parsed with the json module, `track` paths
+#              canonicalized+hashed) — or the bare binary name (binary-probe)
+#   track:     api-probe only — dotted JSON key paths to hash
+#   service_path / version_args / remedy: binary-probe only
+#   component: optional slug — the platform-component name the gated triage
+#              lane's workaround version_condition rows match on (defaults
+#              to the entry id); rides into the per-day triage mirror
+#              cabinet/logs/platform-radar/delta-<date>.json
+#   notes:     required — why this surface is watched
+#
+# Add a surface: append an entry, run
+#   python3.12 cabinet/scripts/dependency-radar.py --validate-registry
+# then python3.12 -m pytest cabinet/scripts/tests/test_dependency_radar.py -q
+# (docs/runbooks/dependency-radar.md §"Adding a surface").
+
+version: 1
+
+defaults:
+  timeout_seconds: 20     # curl -m per source (fail-soft on breach)
+  excerpt_chars: 480      # delta excerpt cap (stored as DATA)
+
+entries:
+  - id: claude-code-changelog
+    kind: changelog-url
+    source: https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md
+    component: claude-code
+    notes: >-
+      The official changelog for the installed Claude Code CLI — every
+      officer session and hook rides this binary, so release notes are the
+      earliest signal for behavior changes (hook contracts, model routing,
+      PATH/install layout moves). Pairs with the claude-code-binary probe
+      below: the changelog says what shipped, the probe says whether THIS
+      box still boots.
+
+  - id: claude-code-binary
+    kind: binary-probe
+    source: claude
+    component: claude-code
+    version_args: ["--version"]
+    service_path: "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+    remedy: >-
+      Restore a `claude` resolvable inside the plists' service PATH
+      (/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin) —
+      e.g. re-link the installer's binary into /opt/homebrew/bin — or
+      regenerate + redeploy the fleet plists with the new install dir on
+      PATH (python3.12 cabinet/scripts/generate-plists.py, then
+      deploy-mac.sh). Verify:
+      PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+      command -v claude.
+    notes: >-
+      The 2026-07-16 fleet incident class: a Claude Code update moved the
+      binary outside the launchd plists' PATH and officer boots died. This
+      probe cards it BEFORE boots fail — (a) installed version via
+      `claude --version` (a version CHANGE with stable status is also a
+      delta, feeding the triage lane's version_condition retests), (b)
+      resolves-in-service-PATH check against the exact PATH the plist
+      GENERATOR carries (generate-plists.py PATH_ENV — the value above is
+      cross-pinned to it by test_dependency_radar.py, so neither surface
+      can drift silently; installed plists rendered before a PATH_ENV
+      change need a regenerate+redeploy, per the remedy). FAIL surfaces
+      RED in cabinet-doctor #13 with the remedy above.
+
+  - id: anthropic-models-docs
+    kind: changelog-url
+    source: https://docs.anthropic.com/en/docs/about-claude/models/overview.md
+    notes: >-
+      Anthropic models overview (Mintlify markdown mirror — cleaner hash
+      than the HTML app shell; if the vendor drops the .md route this entry
+      fail-softs to one WARN line, swap to https://docs.anthropic.com/llms.txt).
+      New/renamed/retired model ids land here first — officer fleet model
+      pins (opus/fable ids) and deprecation windows depend on it.
+
+  - id: voyage-models-docs
+    kind: changelog-url
+    source: https://docs.voyageai.com/docs/embeddings
+    notes: >-
+      Voyage embeddings model catalog — cabinet memory embeddings ride a
+      pinned voyage model; a new generation or a deprecation notice here
+      means re-embed planning. HTML page: the radar's normalize strips
+      script/style noise before hashing, and any residual deploy churn
+      costs one benign delta row, never a failed sweep.
+
+  - id: neon-changelog
+    kind: changelog-url
+    source: https://neon.com/docs/changelog/rss.xml
+    notes: >-
+      Neon serverless Postgres changelog (RSS) — cabinet_memory and the
+      retrieval-eval gate live on Neon; connection/pooler/extension changes
+      show up here before they bite the nightly jobs.
+
+  - id: monday-graphql-changelog
+    kind: changelog-url
+    source: https://developer.monday.com/api-reference/changelog
+    notes: >-
+      monday.com GraphQL API changelog + deprecation announcements — task
+      adapters sync work items through this API; versioned-API sunsets and
+      breaking field changes are announced here months ahead. Watching the
+      page beats discovering a 410 in a nightly sync.
+
+  - id: homebrew-redis
+    kind: api-probe
+    source: https://formulae.brew.sh/api/formula/redis.json
+    track: ["versions.stable", "versions.bottle", "revision", "deprecated", "disabled"]
+    notes: >-
+      Homebrew redis formula — the org bus (streams, heartbeats, veto wire)
+      is a brew-installed Redis; a stable-version bump, revision, or a
+      deprecation flag flip here is the earliest upgrade/migration signal.
+      api-probe: only the tracked JSON fields are canonicalized + hashed,
+      so analytics noise in the formula blob never fakes a delta.
+
+  - id: bun-releases
+    kind: changelog-url
+    source: https://github.com/oven-sh/bun/releases.atom
+    notes: >-
+      Bun release feed — the dashboard/appshell toolchain uses bun where
+      present; release cadence is high and regressions in installers/lockfile
+      handling have bitten builds before. Atom feed hashes cleanly.
+
+  - id: screenpipe-releases
+    kind: changelog-url
+    source: https://github.com/mediar-ai/screenpipe/releases.atom
+    notes: >-
+      screenpipe release feed — flavor-a relevance only (deployments that
+      run the screenpipe sensor stack beside the cabinet); other flavors
+      simply ignore these delta rows. Kept in the shared registry because
+      the radar is observe-only and a spare row costs one fetch/night.

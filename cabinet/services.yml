@@ -1010,6 +1010,53 @@ services:
       ~/.cabinet/logs. The cabinet-doctor manifest probe + outcome-watchdog
       registry derive coverage from THIS row (26h daily floor).
 
+  - name: dependency-radar
+    label: com.cabinet.dependency-radar
+    kind: cron
+    command: python3.12 cabinet/scripts/dependency-radar.py
+    schedule: { calendar: [{hour: 4, minute: 20}] }   # daily 04:20 local — after the 04:10 transcript-digest, alongside the 04:20 task-sync-drift (concurrent by design, disjoint surfaces), before the 04:30 regression-corpus and 04:40 exhaust-archive (slot justification in notes)
+    expected: "one heartbeat line/night appended to ~/.cabinet/logs/dependency-radar.log (stamped ONLY after a completed sweep — dead-man semantics); new upstream deltas append to ~/.cabinet/logs/dependency-radar/delta-report.jsonl + the daily radar-deltas-<date>.md AND mirror into cabinet/logs/platform-radar/delta-<date>.json (gitignored; the gated triage lane's intake — absent file = no deltas that night); PROBE status lines for the claude binary/PATH check in the service log"
+    sunset: "retire if a first-class supply-chain/dependency-intelligence organ supersedes per-URL hash-diffing, or when every watched surface gains a structured feed the triage lane consumes directly — evidence bar: 60 days where no delta row led to any triage action"
+    notes: >-
+      RADAR-OBSERVE (dependency radar, deterministic half — observe ONLY: no
+      LLM in this path, nothing auto-acted-on). Nightly sweep of the tracked
+      registry cabinet/config/dependency-radar.yml (vendor changelogs,
+      release feeds, model-doc pages + the local claude binary/PATH probe):
+      curl -m 20 https-only fail-soft fetches (a dead source is ONE WARN
+      line, never a failed run), deterministic LINEAR-TIME normalize +
+      sha256 (single-pass markup strips — a hostile open-flood inside the
+      5MB cap cannot stall the sweep; test-pinned), diff against the runtime
+      sidecar ~/.cabinet/state/dependency-radar.json (last_seen NEVER lives
+      in the tracked registry). SECURITY LAW: fetched changelog/release text
+      is UNTRUSTED — stored provenance-fenced as DATA (json-escaped JSONL
+      rows + sha256-keyed fences with an injection screen in the daily
+      report), never executed, never shell/SQL-interpolated, never treated
+      as instructions; the triage reader must re-apply the same screen
+      (docs/runbooks/dependency-radar.md). The claude-code binary/PATH probe
+      cards the 2026-07-16 fleet incident class (a CLI update moved the
+      binary off the plists' service PATH and officer boots died) BEFORE
+      boots fail — its service_path is cross-pinned by test to
+      generate-plists.py PATH_ENV so probe and plists can't drift apart —
+      and an installed-version bump (stable status) is itself a delta;
+      cabinet-doctor #13 mirrors a probe FAIL as DEAD/RED with the remedy
+      and a stale sweep (>48h) as WARN/AMBER. TRIAGE SEAM: every delta also
+      lands as a component entry in the per-day mirror
+      cabinet/logs/platform-radar/delta-<date>.json (gitignored runtime
+      path; {date, source, components[]} — the intake contract of the gated
+      platform-radar triage lane, whose skill/runner/gating runbook land
+      with the radar-triage-gating lane), so the same-morning senses/triage
+      chain reads tonight's deltas mechanically, not yesterday's. Slot:
+      04:20 rides the quiet pre-dawn org-senses window — after the 04:10
+      transcript-digest, CONCURRENT with the 04:20 task-sync-drift
+      falsifier by design (launchd fires same-minute calendar siblings
+      concurrently; there is no exclusivity contract to lean on, and the
+      two share no files or locks — the radar writes ~/.cabinet/* plus the
+      platform-radar mirror, the falsifier its own verdict JSONL), ahead
+      of the 04:30 regression-corpus and 04:40 exhaust-archive and WELL
+      before the 05:30 transcript-detect pass. Heartbeat log rides the
+      same hygiene/apoptosis rotation class over ~/.cabinet/logs as its
+      transcript-digest neighbor.
+
   # ── Cabinet World (observer-class read-model organs; kickoff 2026-07-07) ──
   # docs/plans/cabinet-world-build-kickoff-2026-07-07.md — the world is a pure
   # read-model over org ledgers (renderer-never-writes doctrine). These rows

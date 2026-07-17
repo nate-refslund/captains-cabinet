@@ -49,7 +49,11 @@ SAFETY MODEL — three honest layers, no false guarantee:
 UNTRUSTED-DATA MODEL (--from-delta): the radar delta file is fetched-content
 derived and therefore UNTRUSTED. It is parsed with the json module only;
 component names are compared by plain string equality against registry
-version_condition components; versions are compared segment-numerically.
+version_condition components; versions are compared segment-numerically, and
+only VERSION-SHAPED new_version values (optional v prefix + dotted numerals
++ optional dot/dash/plus alphanumeric qualifiers, <=120 chars) can match a
+comparator condition — the radar's sha256:<hash> content stamps and probe
+status words never do (the sha-false-fire guard; see is_version_shaped).
 NOTHING from the delta file is ever interpolated into a command line,
 executed, or evaluated — delta text can only ever appear json-encoded inside
 verdict/evidence output. The command executed for a matched row is always the
@@ -161,6 +165,34 @@ _FIND_FLAG_VERBS_RE = re.compile(
 _VC_COMPARATOR_RE = re.compile(
     r"^\s*([A-Za-z0-9._-]+)\s*(>=|<=|==|!=|>|<)\s*([A-Za-z0-9._+-]+)\s*$"
 )
+
+# UNTRUSTED new_version gate for comparator conditions (the sha-false-fire
+# P2). The radar's observe half stamps content-only changelog deltas as
+# new_version="sha256:<12hex>" mirror rows, and probe rows can carry status
+# words ("FAIL", "never-checked") when no banner version parses.
+# compare_versions()'s fallback ranks ANY non-numeric segment AFTER every
+# numeric one, so without this gate such strings would satisfy
+# `<component> > <pin>` for EVERY numeric pin — pure content churn would
+# false-queue comparator retests nightly. Comparator conditions therefore
+# only ever match VERSION-SHAPED delta values: the shape registry pins and
+# real component versions actually take (2.1.230, v2.2, 1.2.3-beta.1,
+# 1.2.3+build.5) — optional v/V prefix, dotted numerals, then optional
+# dot/dash/plus-joined alphanumeric qualifiers. `fixed-in:` rows are never
+# auto-matched at all and the grammar has no existence-style conditions, so
+# a non-version-shaped delta value simply never matches anything.
+# Length-cap BEFORE the regex: the value rides an untrusted delta file and
+# the anchored scan must stay trivially linear even on flood-sized strings
+# (same bounded-input discipline as the radar's 120-char banner cap).
+_VERSION_SHAPED_MAX_LEN = 120
+_VERSION_SHAPED_RE = re.compile(r"^[vV]?\d+(?:\.\d+)*(?:[.+-][A-Za-z0-9]+)*$")
+
+
+def is_version_shaped(value) -> bool:
+    """True when an (untrusted) delta version string is version-shaped."""
+    if not isinstance(value, str):
+        return False
+    v = value.strip()
+    return 0 < len(v) <= _VERSION_SHAPED_MAX_LEN and bool(_VERSION_SHAPED_RE.match(v))
 
 # --------------------------------------------------------------------------
 # Secret scrubbing (probe stdout/stderr is DATA and may hold a read secret)
@@ -336,6 +368,9 @@ def condition_matches_delta(cond: str, component: str, new_version: str) -> bool
 
     ``component`` / ``new_version`` come from the UNTRUSTED delta file: they
     are only ever string-compared here — never executed, never interpolated.
+    Comparators additionally require a VERSION-SHAPED ``new_version`` (see
+    ``is_version_shaped``): the radar's sha256:<hash> content stamps and
+    probe status words must never false-fire a version pin.
     """
     parsed = parse_version_condition(cond)
     if not parsed or parsed[0] != "comparator":
@@ -344,6 +379,12 @@ def condition_matches_delta(cond: str, component: str, new_version: str) -> bool
     if not isinstance(component, str) or not isinstance(new_version, str):
         return False
     if component.strip().lower() != comp.lower():
+        return False
+    if not is_version_shaped(new_version):
+        # sha256:<hash> content stamps, probe status words ("FAIL"), and any
+        # other non-version-shaped delta value NEVER match a comparator —
+        # compare_versions' string fallback would otherwise rank them above
+        # every numeric pin (the sha-false-fire P2).
         return False
     try:
         c = compare_versions(new_version, pinned)

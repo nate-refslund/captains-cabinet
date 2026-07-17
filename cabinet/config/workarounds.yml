@@ -24,7 +24,12 @@
 #   version_condition When a retest becomes worth queueing. Two shapes:
 #                       "<component> <op> <version>"  op in > >= == != <= <
 #                         — auto-matched against radar delta components
-#                           (e.g. "claude-code > 2.1.211").
+#                           (e.g. "claude-code > 2.1.211"). Only
+#                           VERSION-SHAPED delta values match (optional v
+#                           prefix + dotted numerals + optional -rc1-style
+#                           qualifiers): the radar's sha256:<hash> content
+#                           stamps and probe status words never satisfy a
+#                           comparator (sha-false-fire guard, test-pinned).
 #                       "fixed-in: <free text>"
 #                         — not auto-matchable; retested via explicit id or
 #                           --all (repo-side fixes land by PR, not by radar).
