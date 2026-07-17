@@ -34,6 +34,15 @@ any future demo-stamped row.)
 Also GCs undo-journal files older than the 30-day retention floor and computes
 the per-cell human-revert-rate for TI-7 / the retro to consume.
 
+Batch B (whole-cabinet Evidence program): each verdict ALSO lands as
+verification+outcome receipt events on the act's evidence trial — the journal
+row's ``evidence_trial_id``, stamped by the executor at write-ahead time —
+with detail {outcome, source, jid} and an ``undo-journal:<jid>`` link.
+RECEIPT-class per the per-class recording contract: the label observes an
+already-happened outcome, so a broken evidence plane degrades LOUD (stderr +
+store-root degradations sidecar) and NEVER blocks the acted_verdict_event
+supersede. Rows without the key (pre-evidence journals) are an honest gap.
+
 Stdlib-only, importable under system Python 3.9.6 (``from __future__`` + Optional
 annotations). Fully fixtured: the journal rows, the Monday probe, the ledger
 reader, and the emit are all injected callables — no live API is ever reached in
@@ -41,7 +50,10 @@ a test. All subprocess (via the injected probe's transport) is arg-list only.
 """
 from __future__ import annotations
 
+import json
+import os
 import re
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -155,6 +167,143 @@ def _past_ttl(row: dict, now: str) -> bool:
     return bool(exp) and str(exp) < str(now)   # ISO strings sort lexicographically
 
 
+# --- evidence receipts (Batch B: machine outcome labels on the act's trial) --
+#
+# RECEIPT-class by the per-class recording contract: the sweep's ttl_ok /
+# silent_revert labels OBSERVE an outcome that already happened, so a broken
+# evidence plane degrades LOUD and NEVER blocks the acted_verdict_event
+# supersede (the domain write) — fail-closed recording here would let a dead
+# evidence plane block the consequence ledger, inverting the brake. Rows
+# without an ``evidence_trial_id`` (pre-evidence journals) are an honest gap,
+# skipped silently. All evidence imports are LAZY so this module stays
+# importable under system Python 3.9 (the evidence plane itself runs 3.12 —
+# run-undo-sweep.sh pins CABINET_PYTHON).
+
+_DEGRADATION_SIDECAR = "degradations.jsonl"   # lifecycle.DEGRADATION_SIDECAR
+_MARKER_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+
+
+def _evidence_store_root(explicit: Optional[Any]) -> Optional[Path]:
+    """The evidence store root, or None when recording is disabled.
+
+    An EXPLICIT root (tests / callers) always wins. Under pytest recording is
+    OFF unless ``CABINET_ACTION_EVIDENCE_STORE`` names a scratch store — the
+    evidence_mirror pytest fence (2026-07-04 leak lesson: a suite run must
+    never touch the live signed store). Production resolution is repo-derived
+    (explicit-constructor-arg law), never env-derived (A10)."""
+    if explicit is not None:
+        return Path(explicit)
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        override = os.environ.get("CABINET_ACTION_EVIDENCE_STORE")
+        return Path(override) if override else None
+    # Production resolution rides the journey producer's EVIDENCE_REL — the
+    # ONE canonical store constant (evidence_mirror._production_store_root
+    # idiom); imported lazily so this module stays 3.9-importable.
+    from framework.onboarding.journey import EVIDENCE_REL
+    return Path(__file__).resolve().parents[2] / EVIDENCE_REL
+
+
+def _marker_field(value: Any) -> str:
+    s = str(value)
+    return s if _MARKER_ID_RE.fullmatch(s) else "invalid"
+
+
+def _note_receipt_degradation(root: Optional[Path], trial_id: Any,
+                              code: Any) -> None:
+    """Make one receipt degradation LOUD without ever raising: a stderr
+    warning plus one content-free, unsigned marker line appended to the
+    store-root degradations sidecar (the lifecycle marker shape — a broken
+    plane cannot sign its own distress; the doctor may read the sidecar)."""
+    try:
+        print("undo-sweep: WARN evidence outcome receipt degraded "
+              f"(trial={_marker_field(trial_id)} code={_marker_field(code)}) — "
+              "the ledger supersede already landed; the trial is missing its "
+              "outcome label", file=sys.stderr)
+    except Exception:
+        pass
+    if root is None:
+        return
+    try:
+        line = json.dumps({
+            "schema": "cabinet.evidence-degradation/v1",
+            "ts": _now(),
+            "trial_id": _marker_field(trial_id),
+            "component": "undo-sweep",
+            "phase": "receipt",
+            "error_code": _marker_field(code),
+        }, sort_keys=True) + "\n"
+        fd = os.open(root / _DEGRADATION_SIDECAR,
+                     os.O_WRONLY | os.O_CREAT | os.O_APPEND
+                     | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        try:
+            os.write(fd, line.encode("utf-8"))
+        finally:
+            os.close(fd)
+    except Exception:
+        pass
+
+
+def _record_outcome_receipt(row: dict, *, outcome: str, source: Optional[str],
+                            result_code: str,
+                            store: Optional[Any],
+                            counts: Dict[str, int]) -> None:
+    """Append the sweep's machine label to the ACT's evidence trial
+    (verification + outcome events on the trial named by the journal row's
+    ``evidence_trial_id``), linked back to the undo-journal row. Never raises;
+    never precedes or blocks the consequence emit."""
+    trial_id = row.get("evidence_trial_id")
+    if not trial_id:
+        counts["skipped"] += 1                 # pre-evidence row — honest gap
+        return
+    root = _evidence_store_root(store)
+    if root is None:
+        counts["skipped"] += 1                 # recording fenced off (pytest)
+        return
+    jid = str(row.get("jid") or "")
+    try:
+        from framework.evidence import identity
+        from framework.evidence.lifecycle import valid_id_or_none
+        from framework.evidence.recorder import EvidenceRecorder
+
+        if valid_id_or_none(str(trial_id)) is None:
+            counts["skipped"] += 1             # forged/garbled id — never append
+            return
+        recorder = EvidenceRecorder(root)
+        context = recorder.trace(
+            str(trial_id), surface="system",
+            correlation_id=valid_id_or_none(str(row.get("cid") or "")))
+        if identity.is_attested():
+            actor = identity.attested_actor()
+            component = identity.attested_component()
+            stamp = identity.attestation_detail()
+        else:
+            actor = {"kind": "system", "id": "undo-sweep"}
+            component = {"name": "undo-sweep", "version": "1+evidence-v1"}
+            stamp = {}
+        detail = dict(stamp)
+        detail.update({"action": "undo_sweep_reconcile", "outcome": outcome,
+                       "result_code": result_code, "jid": jid})
+        if source:
+            detail["source"] = source          # verdict_judge | verdict_human
+        links = ["undo-journal:" + jid] if jid else []
+        recorder.append(context, phase="verification",
+                        status="verified" if outcome == "ok" else "unverified",
+                        actor=actor, component=component,
+                        detail=detail, links=links)
+        recorder.append(context, phase="outcome",
+                        status="succeeded" if outcome == "ok" else "failed",
+                        actor=actor, component=component,
+                        detail=detail, links=links)
+        counts["recorded"] += 1
+    except Exception as exc:
+        if getattr(exc, "code", None) == "trial_purged":
+            counts["skipped"] += 1             # retention won — a legal state
+            return
+        counts["degraded"] += 1
+        _note_receipt_degradation(
+            root, trial_id, getattr(exc, "code", None) or type(exc).__name__)
+
+
 # --- the sweep ---------------------------------------------------------------
 
 def run_sweep(*, now: Optional[str] = None,
@@ -164,10 +313,18 @@ def run_sweep(*, now: Optional[str] = None,
               emit: Optional[Callable[..., Any]] = None,
               gc: bool = True,
               journal_dir: Optional[str] = None,
-              retention_days: int = action_undo.JOURNAL_RETENTION_D) -> Dict[str, Any]:
+              retention_days: int = action_undo.JOURNAL_RETENTION_D,
+              evidence_store: Optional[Any] = None) -> Dict[str, Any]:
     """One reconciliation pass. Emits a superseding ttl_ok / silent_revert event
     per eligible past-TTL step (idempotent via the outcome=unknown gate), then
-    computes the human-revert-rate and (optionally) GCs old journal files."""
+    computes the human-revert-rate and (optionally) GCs old journal files.
+
+    Batch B: AFTER each verdict emit, the machine label also lands as
+    verification+outcome receipt events on the act's evidence trial (the
+    journal row's ``evidence_trial_id``) — RECEIPT-class: degrade LOUD, never
+    block the ledger supersede. ``evidence_store`` points the receipts at an
+    explicit store root (tests inject a scratch store; default is the
+    repo-derived production store behind the pytest fence)."""
     now = now or _now()
     read_ledger_fn = read_ledger_fn or read_ledger
     emit = emit or emit_consequence
@@ -177,6 +334,7 @@ def run_sweep(*, now: Optional[str] = None,
     ttl_ok: List[str] = []
     reverts: List[str] = []
     skipped = 0
+    ev_counts: Dict[str, int] = {"recorded": 0, "skipped": 0, "degraded": 0}
     for r in rows:
         # canary rows are the guard's own probe traffic; demo rows are
         # synthetic (demo: true) — neither is a real act, so neither may mint
@@ -198,13 +356,21 @@ def run_sweep(*, now: Optional[str] = None,
         if verdict == "ttl_ok":
             emit(**acted_verdict_event(rec, "ttl_ok", reviewed_at=now))
             ttl_ok.append(r.get("jid"))
+            # receipt AFTER the domain write, never blocking it (Batch B).
+            _record_outcome_receipt(r, outcome="ok", source=None,
+                                    result_code="ttl_ok",
+                                    store=evidence_store, counts=ev_counts)
         else:
             emit(**acted_verdict_event(rec, "silent_revert", source=source,
                                        evidence=evidence, reviewed_at=now))
             reverts.append(r.get("jid"))
+            _record_outcome_receipt(r, outcome="failed", source=source,
+                                    result_code="silent_revert",
+                                    store=evidence_store, counts=ev_counts)
 
     result: Dict[str, Any] = {
         "ttl_ok": ttl_ok, "silent_reverts": reverts, "skipped": skipped,
+        "evidence_receipts": ev_counts,
         "human_revert_rates": human_revert_rates(read_ledger_fn()),
     }
     if gc:

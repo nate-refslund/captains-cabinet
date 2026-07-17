@@ -30,6 +30,14 @@ Stage pipeline (short-circuit on first failure):
   S5 verdict  — pass/fail evidence pack JSON. `applies_nothing` is stamped
                 into every pack as a structural reminder.
 
+Evidence plane (Phase 2 Batch B): every ratify additionally appends ONE
+signed verdict receipt to the tamper-evident evidence store
+(`instance/evidence/v1`, day-bounded trial `evt-learning-gate-<yyyymmdd>`),
+citing pack_id/sha256/stage statuses — RECEIPT-class: degrade LOUD, never
+block (the pack write, the org emits, and the pack bytes stay identical).
+The gate's org classes stay pinned mirror-EXHAUST, so this direct producer
+is the one signed path for gate verdicts (no double-recording).
+
 `run_gate_review()` is the D16 fuel producer: it stamps
 `review={verdict: confirmed, source: verdict_gate}` (via the ONE superseding
 builder, `binder_wire.acted_verdict_event`) onto acted consequence rows that
@@ -116,6 +124,153 @@ def _emit_org(event_type: str, payload: dict[str, Any], actor: str) -> None:
         emit(event_type, actor=actor, payload=payload)
     except Exception:
         pass
+
+
+# ---------------------------------------------------------------------------
+# Evidence receipt — Phase 2 Batch B direct producer (design §3 Ph2 item 2b)
+# ---------------------------------------------------------------------------
+# RECEIPT-CLASS by named choice: ratify() applies nothing (the act is the
+# DARK apply lane), so its verdict is an observation about an already-made
+# decision — it degrades LOUD and never blocks the pack write or the org
+# emits.  The gate's org classes (eval_run_started/eval_passed/eval_failed)
+# are pinned NEVER_MIRRORED_EXHAUST in framework/evidence_mirror.py (they are
+# shared with role-eval volume), so the ONLY honest signed coverage for gate
+# verdicts is this direct producer; the org emits stay byte-identical beside
+# it — one class, one path, no double-recording.
+
+# Store root is explicit: <cabinet root>/ + the journey producer's
+# EVIDENCE_REL — the ONE canonical store constant, imported lazily at the
+# recorder seam (the evidence_mirror._production_store_root idiom; keeps
+# this module 3.9-importable and the layer boundary in one place) — never
+# CABINET_EVIDENCE_DIR-derived (A10).
+_EVIDENCE_SURFACE = "system"
+# Process-constant fallback identity (the evidence-mirror fixed-identity
+# pattern): never payload-derived, never env-derived.  When the hosting
+# process attested via framework.evidence.identity the attested identity
+# wins and the events carry ``attestation_mode: process``.
+_EVIDENCE_ACTOR = {"kind": "system", "id": "learning-gate"}
+_EVIDENCE_COMPONENT = {"name": "learning-gate", "version": "1", "commit": "unset"}
+_VERDICT_STATUS = {"pass": "verified", "fail": "failed", "refused": "refused"}
+
+
+class GateEvidenceError(RuntimeError):
+    """Evidence-plane refusal raised by this module's recording seams."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
+def _evidence_identity() -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+    """(actor, component, attestation detail) for this producer's events."""
+    try:
+        from framework.evidence import identity
+        if identity.is_attested():
+            return (identity.attested_actor(), identity.attested_component(),
+                    identity.attestation_detail())
+    except Exception:
+        pass
+    return dict(_EVIDENCE_ACTOR), dict(_EVIDENCE_COMPONENT), {}
+
+
+def _evidence_lifecycle(trial_id: str, root: str | Path | None, *,
+                        degrade: bool):
+    """Recorder + ActLifecycle on the explicit store root (lazy import — the
+    sanctioned producer seam; framework/evidence is Ring-0)."""
+    if os.geteuid() == 0:
+        # Root-ownership poisoning guard (the grant-apply sudo -u law): a
+        # root-minted store/trial file breaks every later user-context
+        # append.  Refused BEFORE any store byte exists — the fail-closed
+        # arm refuses, receipt arms degrade loud.
+        raise GateEvidenceError(
+            "evidence_root_refused",
+            "evidence appends never run as root — drop to the invoking user")
+    from framework.evidence.lifecycle import ActLifecycle
+    from framework.evidence.recorder import EvidenceRecorder
+    from framework.onboarding.journey import EVIDENCE_REL
+    recorder = EvidenceRecorder(_root(root) / EVIDENCE_REL)
+    actor, component, attest = _evidence_identity()
+
+    def _remint(purged: str) -> str:
+        # Deterministic trial naming has no producer state to CAS a fresh
+        # trial onto: a purged live trial refuses (fail-closed arm) or
+        # degrades loud (receipt arm) — never a silent fork.
+        raise GateEvidenceError(
+            "evidence_trial_purged",
+            f"evidence trial {purged} was tombstoned mid-action")
+
+    lifecycle = ActLifecycle(
+        recorder,
+        trial_id=trial_id,
+        surface=_EVIDENCE_SURFACE,
+        actor_policy=lambda phase: dict(actor),
+        component=component,
+        producer_error=GateEvidenceError,
+        unavailable_error=lambda: GateEvidenceError(
+            "evidence_unavailable", "the evidence plane cannot record"),
+        integrity_error=lambda: GateEvidenceError(
+            "evidence_integrity", "the evidence chain needs review"),
+        remint=_remint,
+        producer_purged_code="gate-producer-never-purged",
+        degrade_on_failure=degrade,
+    )
+    return lifecycle, attest
+
+
+def _evidence_day(ts: str) -> str:
+    day = (ts or "")[:10].replace("-", "")
+    if len(day) == 8 and day.isdigit():
+        return day
+    return datetime.now(timezone.utc).strftime("%Y%m%d")
+
+
+def _record_verdict_evidence(pack: dict[str, Any],
+                             root: str | Path | None) -> None:
+    """Append ONE signed verdict receipt per ratify (degrade LOUD, never
+    raises — ratify's never-raises contract and the pack write must survive
+    a dead evidence plane).
+
+    The receipt cites the SAME refs the gate writes today: pack_id, the
+    diff sha256, proposal/gap/lane, the per-stage STATUS summary (statuses
+    only — never counts, never scores: never-a-score), and the S0 need id
+    when one was filed.  Day-bounded taxonomy trial
+    ``evt-learning-gate-<yyyymmdd>`` (retention-classed, volume-bounded).
+    """
+    try:
+        from framework.evidence.lifecycle import valid_id_or_none
+        lifecycle, attest = _evidence_lifecycle(
+            f"evt-learning-gate-{_evidence_day(str(pack.get('ts') or ''))}",
+            root, degrade=True)
+        lifecycle.recover_interrupted()
+        lifecycle.begin()
+        detail: dict[str, Any] = {
+            "action": "gate_ratify",
+            "pack_id": pack.get("pack_id"),
+            "sha256": pack.get("sha256"),
+            "verdict": pack.get("verdict"),
+            "stages": {
+                str(s.get("stage")): str(s.get("status"))
+                for s in (pack.get("stages") or []) if isinstance(s, dict)
+            },
+            **attest,
+        }
+        for key in ("proposal_id", "gap_id", "lane", "need_id"):
+            if pack.get(key):
+                detail[key] = pack[key]
+        links: list[str] = []
+        for ref in (f"gate-pack:{pack.get('pack_id')}",
+                    f"cabinet-need:{pack.get('need_id')}" if pack.get("need_id") else None):
+            if ref and valid_id_or_none(ref):
+                links.append(ref)
+        lifecycle.record(
+            phase="verification",
+            status=_VERDICT_STATUS.get(str(pack.get("verdict")), "failed"),
+            detail=detail,
+            links=links,
+        )
+    except Exception as exc:  # noqa: BLE001 — degrade LOUD, never block
+        print(f"learning-gate: WARN gate verdict evidence not recorded "
+              f"({type(exc).__name__}: {exc})", file=sys.stderr)
 
 
 # ---------------------------------------------------------------------------
@@ -457,6 +612,9 @@ def ratify(
             json.dumps(pack, indent=2, default=str))
     except OSError:
         pass
+    # Phase 2 Batch B: one signed verdict receipt per ratify (degrade LOUD,
+    # never blocks — the pack on disk and the org emits stay byte-identical).
+    _record_verdict_evidence(pack, rootp)
     _emit_org("eval_passed" if pack["verdict"] == "pass" else "eval_failed",
               {"kind": "gate_ratify", "pack_id": pack["pack_id"],
                "verdict": pack["verdict"]}, actor)
@@ -712,6 +870,15 @@ def run_gate_review(
 
 def main(argv: list[str] | None = None) -> int:  # pragma: no cover - thin CLI
     import argparse
+    try:
+        # Daemon-writer identity, fixed at process start from constants —
+        # never payload-derived, never env-derived (A6/A10).  Best-effort:
+        # a host that already attested keeps its own identity.
+        from framework.evidence import identity as _identity
+        _identity.attest_process_identity(
+            "system", "learning-gate", "learning-gate")
+    except Exception:
+        pass
     parser = argparse.ArgumentParser(
         description="Evidence Gate — ratify a self-improvement diff "
                     "(evidence only) or run the D16 gate review.")

@@ -384,9 +384,32 @@ for o in ${OFFICERS[@]+"${OFFICERS[@]}"}; do
     # the idle pane. The officer then reads its active-task flag and resumes.
     MSG="Session limit reset — resume your active-task. The account session limit window has elapsed; pick up exactly where the limited turn left off (read cabinet:active-task:$o and continue per the never-stop loop). gather-then-decide; surface to the Chair; never DM the Captain directly."
     if bash "$REPO_ROOT/cabinet/scripts/notify-officer.sh" "$o" "$MSG" >/dev/null 2>&1; then
+      NOTIFY_OK=true
       echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) limit-reset-watchdog: FIRED wake for $o (reset $CLAIMED reached) + cleared key" >&2
     else
+      NOTIFY_OK=false
       echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) limit-reset-watchdog: notify-officer FAILED for $o (reset $CLAIMED) — key already cleared, will re-arm on next banner detect" >&2
+    fi
+
+    # Evidence receipt (evidence program Phase 2 Batch B): one
+    # officer_limit_wake org event per fired reset — the GETDEL claim above
+    # makes this exactly-once per armed key, so it needs no extra dedup.
+    # RECEIPT class: records the STATE TRANSITION (limit-blocked → woken)
+    # only — never the trigger_send/tmux delivery mechanics (trigger and
+    # delivery exhaust are never recorded). MODULE-exec from the repo root
+    # via the typed lens seam (framework/watchdog/receipts.py) so the
+    # org→evidence mirror signs it; best-effort by contract — a broken
+    # evidence plane never blocks or delays the wake. Per-tick banner
+    # detections (ARMED) are re-parses of the same state, not transitions,
+    # and are deliberately not recorded.
+    if command -v jq >/dev/null 2>&1; then
+      LRW_PAYLOAD=$(jq -nc --arg o "$o" --argjson reset "$CLAIMED" \
+          --argjson ok "$NOTIFY_OK" \
+          '{officer:$o, reset_epoch:$reset, notify_ok:$ok}' 2>/dev/null || echo "")
+      if [ -n "$LRW_PAYLOAD" ]; then
+        ( cd "$REPO_ROOT" && python3.12 -m framework.watchdog.receipts \
+            officer_limit_wake "$LRW_PAYLOAD" ) >/dev/null 2>&1 || true
+      fi
     fi
   fi
 done

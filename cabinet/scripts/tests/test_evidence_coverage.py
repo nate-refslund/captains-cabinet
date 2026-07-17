@@ -228,10 +228,13 @@ def test_real_repo_json_shape_stable():
     for row in report["surfaces"]:
         assert set(row) == {"id", "kind", "design", "status", "producers"}
         assert row["status"] in {"WIRED", "KNOWN-GAP", "INFRA"}
-    # Post-Batch-A truth: the two Phase-1 producers AND the two chokepoint
-    # mirrors are wired (G1's producers are LIVE); the act surfaces remain
-    # honest KNOWN-GAP rows (Batch B), including the doctor — its read-only
-    # chain spot-check is not a producer.
+    # Post-Batch-B truth: the two Phase-1 producers, the two chokepoint
+    # mirrors AND the five Batch B act surfaces are wired (design §3 Phase 2
+    # items 2a–2d + §7 R-1).  The doctor's read-only chain spot-check is
+    # still not a producer — watchdog-doctor's wiring is the typed lens
+    # seam (framework/watchdog/receipts.py).  The four remaining act
+    # surfaces stay honest KNOWN-GAP rows (future waves — the Captain line
+    # must SAY so, never imply completeness).
     by_id = {row["id"]: row for row in report["surfaces"]}
     assert by_id["onboarding-journey"]["status"] == "WIRED"
     assert by_id["digest-anchor"]["status"] == "WIRED"
@@ -241,10 +244,34 @@ def test_real_repo_json_shape_stable():
     assert by_id["consequence-mirror"]["producers"] == [
         "framework/fidelity/consequence.py"
     ]
-    for act_surface in ("act-first-lane", "learning-gate", "watchdog-doctor",
-                        "officer-session-lifecycle"):
-        assert by_id[act_surface]["status"] == "KNOWN-GAP", act_surface
-        assert act_surface in report["gaps"]
+    batch_b_producers = {
+        "act-first-lane": [
+            "framework/acting/run_action_lane.py",
+            "framework/frontdoor/action_exec.py",
+            "framework/frontdoor/action_reconcile.py",
+        ],
+        "learning-gate": [
+            "framework/learning/apply_watch.py",
+            "framework/learning/gate.py",
+        ],
+        "authority-control-plane": [
+            "cabinet/scripts/emit-authority-transitions.py",
+        ],
+        "watchdog-doctor": [
+            "framework/watchdog/receipts.py",
+        ],
+        "officer-session-lifecycle": [
+            "cabinet/scripts/emit-officer-lifecycle-transitions.py",
+        ],
+    }
+    for act_surface, producers in batch_b_producers.items():
+        assert by_id[act_surface]["status"] == "WIRED", act_surface
+        assert by_id[act_surface]["producers"] == producers, act_surface
+        assert act_surface not in report["gaps"]
+    for gap_surface in ("attention-hygiene", "probes-verification",
+                        "roles-missions-lifecycle", "ops-consequence-scripts"):
+        assert by_id[gap_surface]["status"] == "KNOWN-GAP", gap_surface
+        assert gap_surface in report["gaps"]
     # The mirror engine itself is enumerated infra, never counted in N-of-M.
     assert by_id["evidence-plane-tooling"]["status"] == "INFRA"
     assert (

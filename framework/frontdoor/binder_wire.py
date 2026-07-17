@@ -952,6 +952,38 @@ def _write_narrow_cap(word: str) -> None:
             pass
 
 
+def _emit_posture_cap_receipt(event_type: str, prior_cap: Optional[str],
+                              cap: Optional[str],
+                              log: Callable[[str], None]) -> None:
+    """Best-effort org receipt for a SUCCESSFUL Captain posture-cap verb
+    (evidence program R-1, Phase 2 Batch B). RECEIPT class by the per-class
+    law: the cap-file write above IS the safety action and has already
+    happened — a dead event plane must never block or fail the verb, so
+    every failure lands in the wire log only. The class is on the
+    evidence-mirror allow-list, so the signed receipt rides the org-event
+    chokepoint (framework/evidence_mirror.py); no direct evidence import
+    here. Actor is the fixed surface constant "captain:binder" — the verb is
+    reachable only captain_verified (handle_captain_update gate), never
+    payload-derived. Payload carries the §2.5 join: prior_cap -> cap plus
+    the now-effective resolution (file_needs=False — a receipt read never
+    files a need)."""
+    try:
+        from framework.authority import posture
+        from framework.events.emitter import emit
+        try:
+            effective = posture.resolve_posture(file_needs=False)
+        except Exception:
+            effective = "unknown"
+        emit(event_type, actor="captain:binder", payload={
+            "posture": effective,
+            "cap": cap,
+            "prior_cap": prior_cap,
+            "surface": "binder",
+        })
+    except Exception as e:
+        log(f"binder-wire: posture cap receipt emit failed: {e!r}")
+
+
 def _route_posture_command(text: str, *, present: Callable[[str], Any],
                            log: Callable[[str], None]) -> Optional[dict]:
     """The AX-7 posture verb, or None when the reply is not one. TERMINAL on
@@ -971,6 +1003,7 @@ def _route_posture_command(text: str, *, present: Callable[[str], Any],
             log(f"binder-wire: posture receipt present failed: {e!r}")
 
     if word == "clear":
+        prior_cap = posture.narrow_cap(None)   # read BEFORE the mutation
         try:
             posture.narrow_cap_path(None).unlink(missing_ok=True)
         except OSError as e:
@@ -981,10 +1014,13 @@ def _route_posture_command(text: str, *, present: Callable[[str], Any],
         _say("⚠️ WARNING: narrow cap cleared — this RESTORES the attested "
              "posture level (the locked ruling / env caps still apply). "
              + _effective_posture_line())
+        if prior_cap is not None:   # clear-of-nothing changed no state — no receipt
+            _emit_posture_cap_receipt("posture_cap_cleared", prior_cap, None, log)
         return {"handled": True, "posture_verb": "clear",
                 "summary": "posture narrow cap cleared (attested level restored)"}
 
     if word in posture._NARROW_CAPS:
+        prior_cap = posture.narrow_cap(None)   # read BEFORE the mutation
         try:
             _write_narrow_cap(word)
         except OSError as e:
@@ -996,6 +1032,7 @@ def _route_posture_command(text: str, *, present: Callable[[str], Any],
         _say(f"🛡 Narrow cap set: {word} (posture-narrow file). "
              f"{_effective_posture_line()} Undo with `posture clear` "
              "(restores the attested level).")
+        _emit_posture_cap_receipt("posture_cap_narrowed", prior_cap, word, log)
         return {"handled": True, "posture_verb": "narrow", "cap": word,
                 "summary": f"posture narrow cap set: {word}"}
 

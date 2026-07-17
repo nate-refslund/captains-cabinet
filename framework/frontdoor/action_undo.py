@@ -963,6 +963,19 @@ def freeze(kind: str, reason: str, *,
     except Exception:
         pass                                # durable mirror is authoritative
     try:
+        # kind_frozen receipt (evidence R-1 Batch B, 2026-07-17): symmetric
+        # to the lift's kind_unfrozen — the freeze is a first-class
+        # demotion moment (including the binder-undo reversal-failure path)
+        # and previously recorded only the JSONL mirror row. Best-effort,
+        # strictly AFTER the durable mirror write: a dead event plane never
+        # blocks the brake (a tightening is never evidence-gated).
+        from framework.events.emitter import emit
+        emit("kind_frozen", actor="action_undo." + source,
+             payload={"kind": str(kind), "reason": str(reason)[:200],
+                      "source": source})
+    except Exception:
+        pass
+    try:
         (file_need_fn or _default_file_need)(
             kind="unfreeze", action_type=str(kind),
             why="kind frozen (" + source + "): " + str(reason)[:200],
