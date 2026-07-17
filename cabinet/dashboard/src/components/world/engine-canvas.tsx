@@ -107,7 +107,8 @@ import {
 import { baseTile, landAt, shoreMask, shoreVariant } from '@/lib/world/chunks'
 import { buildOutdoorDressing } from '@/lib/world/outdoor-dressing'
 import { chickenAnimOf } from '@/lib/world/life/fauna'
-import { roadPoint, type WorldGeo } from '@/lib/world/world-geo'
+import { CHART_TABLE_LOCAL, roadPoint, toWorld, type WorldGeo } from '@/lib/world/world-geo'
+import type { LaneCourse, VoyageRender } from '@/lib/world/course'
 import type { WorldBuilding } from '@/lib/world/world-buildings'
 import {
   LOD_RULES,
@@ -137,7 +138,7 @@ const VEIL: Record<DayBucket, { colors: readonly number[]; coverage: number } | 
 }
 
 export interface EngineTarget {
-  kind: 'officer' | 'building' | 'lane' | 'mailbox' | 'site' | 'ground'
+  kind: 'officer' | 'building' | 'lane' | 'mailbox' | 'chart_table' | 'site' | 'ground'
   id: string
 }
 
@@ -153,6 +154,14 @@ export interface EngineCanvasProps {
   tick: number
   killswitch: boolean
   clockHour: number | null
+  /** Direction surface (grammar v4): the chart table renders only when
+   * directions exist on this deployment (honest-absent otherwise). */
+  chartTable?: boolean
+  /** Per-lane course states (chart_table_view / voyage law) — hue+shape
+   * dual-coded course lines; NO text ever reaches the canvas. */
+  courses?: Record<string, LaneCourse> | null
+  /** Voyage fold (pure, server-data-driven): moored vs on-the-line boat. */
+  voyage?: VoyageRender | null
   onPrimary: (target: EngineTarget | null) => void
   onSecondary: (target: EngineTarget | null) => void
   onIssues?: (issues: string[]) => void
@@ -667,8 +676,28 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         }
         const boatTex = texFor(STREET_PROPS.boat)
         if (boatTex) {
-          const bx = (geo.quayCenter.x + 3.1) * TILE
-          const by = (geo.quayCenter.y + 3.4) * TILE
+          // voyage law (show-grammar v4 / morphology harbor_boat_voyage):
+          // position is a pure function of course state + last port call —
+          // moored at the quay unless a lane is TACKING, then out-and-back
+          // along the plotted course (progress arrives as server data via
+          // the engine payload; the render never reads a clock). The boat's
+          // SIZE/vocab stay the harbor_boat ladder's (dual-view D7).
+          let bx = (geo.quayCenter.x + 3.1) * TILE
+          let by = (geo.quayCenter.y + 3.4) * TILE
+          const voy = p.voyage
+          if (voy?.underway && voy.lane) {
+            const site = p.geo.laneSites.find((s) => s.lane === voy.lane)
+            if (site) {
+              // out at progress ≤ 0.5, back at > 0.5 (triangle fold); stop
+              // short of the isle center so the bow meets the dock, not land.
+              const t =
+                0.9 * (voy.progress <= 0.5 ? voy.progress * 2 : (1 - voy.progress) * 2)
+              const x0 = geo.quayCenter.x + 3.1
+              const y0 = geo.quayCenter.y + 3.4
+              bx = (x0 + (site.cx - x0) * t) * TILE
+              by = (y0 + (site.cy - y0) * t) * TILE
+            }
+          }
           const sp = new PIXI.Sprite(boatTex)
           sp.anchor.set(0.5, 1)
           sp.position.set(bx, by)
@@ -677,6 +706,48 @@ export default function EngineCanvas(props: EngineCanvasProps) {
             ringG.rect(bx + d.x, by - 8 + d.y, d.len, d.h).fill(d.color)
           }
         }
+        // ── direction surface (grammar v4): plotted course lines + port-call
+        // chalk stamps. State-pure statics (staticsKey carries the course
+        // signature); hue + shape dual-coded — amber(0xffc890, verified
+        // in-bin warm) = adrift ONLY, grey stays unmeasured-only, red never;
+        // NO text in world-space (dates live on the authed card).
+        const courseG = new PIXI.Graphics()
+        const qx = geo.quayCenter.x * TILE
+        const qy = (geo.quayCenter.y + 2) * TILE
+        for (const site of p.geo.laneSites) {
+          const course = site.lane ? p.courses?.[site.lane] : undefined
+          if (!course) continue
+          const tx = site.cx * TILE
+          const ty = site.cy * TILE
+          const dx = tx - qx
+          const dy = ty - qy
+          const steps = Math.max(10, Math.floor(Math.hypot(dx, dy) / 12))
+          // dash cadence + hue dual-code the state (shape carries alone too)
+          const every =
+            course.state === 'tacking' ? 1 : course.state === 'docked_refitting' ? 2 : 3
+          const color =
+            course.state === 'adrift'
+              ? 0xffc890
+              : course.state === 'tacking'
+                ? PLANK_BROWN
+                : FOOT_SLATE_2
+          for (let i = 1; i < steps; i++) {
+            if (i % every !== 0) continue
+            const f = i / steps
+            // an adrift course line hangs SLACK (sag = the second coding)
+            const sag = course.state === 'adrift' ? Math.sin(Math.PI * f) * 10 : 0
+            courseG.rect(qx + dx * f - 1, qy + dy * f + sag - 1, 3, 3).fill({ color })
+          }
+          // port-call chalk count-marks at the berth (dates: card-only)
+          const stamps = Math.min(course.portCallDates.length, 12)
+          const offY = site.cy < 100 ? -20 : 14
+          for (let k = 0; k < stamps; k++) {
+            courseG
+              .rect(tx - 12 + (k % 6) * 4, ty + offY + Math.floor(k / 6) * 4, 2, 3)
+              .fill({ color: FOAM_WHITE })
+          }
+        }
+        terrainLayer.addChild(courseG)
         terrainLayer.addChild(ringG)
         // GROWTH-FOG horizon band (§2.4 "mist beyond" — engine port of the
         // egg compositor's mist_band): dithered opaque mist across the
@@ -884,6 +955,26 @@ export default function EngineCanvas(props: EngineCanvasProps) {
           propLayer.addChild(sp)
           drawShadow(staticShadowG, 'mailbox', mx, my, 12)
         }
+        // the chart table (direction surface, grammar v4 manor_chart_table;
+        // mailbox precedent: small bound prop, read-only card). Renders ONLY
+        // when directions exist — honest-absent otherwise. Derived own-pixel
+        // composition in proven corpus hues (no pack ships a chart table —
+        // the audited fish-precedent class, never a wrong-object sprite).
+        if (p.chartTable) {
+          const w = toWorld(CHART_TABLE_LOCAL.x, CHART_TABLE_LOCAL.y)
+          const px = w.x * TILE
+          const py = w.y * TILE
+          const cg = new PIXI.Graphics()
+          cg.rect(px + 2, py + 8, 2, 6).fill({ color: INK_BLACK }) // legs
+          cg.rect(px + 12, py + 8, 2, 6).fill({ color: INK_BLACK })
+          cg.rect(px, py + 4, 16, 5).fill({ color: PLANK_BROWN }) // table top
+          cg.rect(px + 2, py + 2, 12, 5).fill({ color: FOAM_WHITE }) // the chart
+          cg.rect(px + 4, py + 4, 3, 1).fill({ color: FOOT_SLATE }) // course marks
+          cg.rect(px + 8, py + 5, 4, 1).fill({ color: FOOT_SLATE })
+          cg.zIndex = py + 14
+          propLayer.addChild(cg)
+          drawShadow(staticShadowG, 'chart-table', px + 8, py + 14, 14)
+        }
       }
 
       function buildFootprints(p: EngineCanvasProps) {
@@ -910,7 +1001,18 @@ export default function EngineCanvas(props: EngineCanvasProps) {
         const bKey = p.buildings.map((b) => `${b.id}:${b.rungName}`).join('|')
         // dressing inputs beyond buildings: lantern-post ladder rungs
         const posts = `${p.resolution?.elements.lantern_posts?.rungName ?? ''}·${p.resolution?.elements.posts_lit?.rungName ?? ''}`
-        return `${fp}·${geoKey}·${bKey}·${posts}`
+        // direction surface: course lines / stamps / the voyage boat are
+        // STATE-pure statics — a payload change rebuilds them (no per-tick
+        // motion; the arrival is what replay renders).
+        const courseKey = Object.entries(p.courses ?? {})
+          .map(([l, c]) => `${l}:${c.state}:${c.portCallDates.length}`)
+          .sort()
+          .join(',')
+        const voyKey = p.voyage?.underway
+          ? `voy:${p.voyage.lane}:${p.voyage.progress.toFixed(3)}`
+          : 'moored'
+        const ct = p.chartTable ? 'ct1' : 'ct0'
+        return `${fp}·${geoKey}·${bKey}·${posts}·${ct}·${courseKey}·${voyKey}`
       }
 
       function rebuildStatics(p: EngineCanvasProps) {
@@ -1437,6 +1539,14 @@ export default function EngineCanvas(props: EngineCanvasProps) {
           Math.abs(wy - p.geo.crossroads.y) < 1.6
         ) {
           return { kind: 'mailbox', id: 'mailbox' }
+        }
+        // the chart table (direction surface — read-only card, never an
+        // actuator; the killswitch lever stays THE one actuator, D2)
+        if (p.chartTable) {
+          const ctw = toWorld(CHART_TABLE_LOCAL.x, CHART_TABLE_LOCAL.y)
+          if (Math.abs(wx - (ctw.x + 0.5)) < 1.1 && Math.abs(wy - (ctw.y + 0.5)) < 1.2) {
+            return { kind: 'chart_table', id: 'chart-table' }
+          }
         }
         // buildings by bbox (footprints hit the same boxes at far LOD)
         for (const b of p.buildings) {

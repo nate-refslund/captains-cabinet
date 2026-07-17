@@ -42,7 +42,18 @@
 # are byte-untouched; the v2 scenes: block is kept for back-compat until the
 # T1 one-continuous-world cutover (supersession §0.5). Growth surfaces bind
 # in morphology.yml; rung truth lives in cabinet/world/growth-ladders.yml.
-version: 3
+#
+# v4 delta (THE DIRECTION SURFACE, per Captain ratifications 2026-07-17 +
+# full-autonomy grant 2026-07-07; design record
+# docs/plans/world-direction-surface-2026-07-17.md): appends the
+# chart_table_view (read-only direction-chart card — mailbox_view law) and
+# voyage (port-call arrival + course/stall-state render law — construction's
+# pure-function T0 pattern) blocks. All v1/v2/v3 entries above are
+# byte-untouched. The dashboard's grammar.ts parses only the v1/v2 blocks
+# and ignores unknown top-level keys (additive-safe, per the v3 parser-law
+# note above) — these blocks are consumed by dedicated lib modules
+# (lib/world/directions.ts + course.ts), the v3 weather precedent.
+version: 4
 
 vocab:
   salience: { 0: ambient, 1: minor, 2: notable, 3: important, 4: captain-attention, 5: breaking }
@@ -366,3 +377,32 @@ roof_cutaway:            # D3 amended — this PR carries the doctrine amendment
     represents: "Universal single-active roof-cutaway: the interior reveals in place (props + officers y-sorted inside, night tint + lamp pools apply indoors too), the world ticks on around the open room, and officers are revealed mid-verb — never teleported (the director stages interior stations whether or not a roof hides them). Same bounded-complexity spirit as the old wardroom-only line, universal scope; the v2 scenes: enum above is kept untouched for back-compat until the T1 one-continuous-world cutover (supersession §0.5)."
     mechanism_path: "docs/plans/world-unified-spec-v2-2026-07-09.md"
     day0: "one cottage, one roof — nothing to hide yet"
+
+# ---------------------------------------------------------------------------
+# v4 blocks (THE DIRECTION SURFACE, per Captain ratifications 2026-07-17 +
+# full-autonomy grant 2026-07-07). Parser law unchanged: closed enums,
+# fail-closed on malformed, codex REQUIRED on every entry; unknown top-level
+# keys are ignorable by older loaders (additive-safe).
+# ---------------------------------------------------------------------------
+
+chart_table_view:        # mailbox_view law clone: read-only, always
+  interaction: read_only # navigate / inspect / deep-link ONLY — never actuate
+  click: "opens the direction-chart card (apex mission verbatim + per-lane course rows + dated port calls + the grey drift gauge) and deep-links via the ?sel= URL param on the authed dashboard route — no actuation, no state change, ever (the killswitch lever stays THE ONE actuator, D2)"
+  flag_binding: "morphology manor_chart_table (grep over instance/config/directions.yml — the table renders when directions exist; a deployment without the org: block gets an honest 'uncharted' card)"
+  codex:
+    represents: "The chart table is the world's face of the Captain's direction layer: apex mission + one plotted course per direction lane + dated port calls + the drift gauge (grey unmeasured — no per-lane work-distribution signal exists yet). Free text (apex mission, lane names, dates) lives ONLY in the authed card response, never world-space (in-canvas world text = none). Read-only forever: the ONE actuator in the world is the killswitch lever — the chart table is explicitly NOT one (D2)."
+    mechanism_path: "instance/config/directions.yml"
+    day0: "bare table, uncharted card — an egg has no directions yet"
+
+voyage:                  # port-call arrival law (construction's pure-function T0 pattern)
+  tacking_window_days: 14  # an achieved flip younger than this + an active successor = tacking
+  arrival: "a NEW dated port call renders the harbor boat sailing the plotted course to the lane isle and back — T0 = the artifact's flip date, progress a pure function of (T0, server-stamped today), out at progress<=0.5 / back at >0.5; replay renders the arrival, never the wake"
+  stall_states:
+    docked_refitting: "boat moored at the quay — an ACTIVE outcome window is open (refit dressing only; a ledger claim, never a work claim)"
+    tacking: "boat ON the course line within the 14d window (dated port call + active successor)"
+    adrift: "empty berth + slack course line — direction present, zero active outcomes, not retired (amber is legal here: reserved-palette amber = blocked/drift ONLY, dual-coded with the slack-line shape; grey stays unmeasured-only; red never)"
+  motion: "no random motion — position is seeded and state-pure (f(course state, last port call, server-stamped today)); the render never reads a wall clock"
+  codex:
+    represents: "The harbor boat's position tells the course story the outcomes ledger can honestly tell: moored while a window is open, on the line just after a port call, an empty berth when a direction has no live course (the renewal-loop gap made visible). Dual-view D7 cross-link: the boat's SIZE/vocab stay morphology harbor_boat ladder truth; THIS block binds position/dressing only. The 'is crew actually sailing it this week' axis is UNMEASURED (no per-lane work signal) and renders grey on the card — the boat never claims it."
+    mechanism_path: "cabinet/scripts/world-port-calls.py"
+    day0: "rowboat at its jetty — nowhere sailed yet"

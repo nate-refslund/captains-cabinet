@@ -38,7 +38,23 @@
 # law (weather, commute, construction, fauna, apprentices, portrait rail,
 # mailbox view, killswitch lever, roof cutaway) lives in show-grammar.yml v3
 # per the live_overlay law line below.
-version: 3
+#
+# v4 delta (THE DIRECTION SURFACE, per Captain ratifications 2026-07-17 +
+# full-autonomy grant 2026-07-07; design record
+# docs/plans/world-direction-surface-2026-07-17.md): appends the org
+# direction-surface entries — the Charter-Hall chart table (apex direction +
+# plotted courses; NO new civic anchor: the manor anchor is law above and the
+# great_house element IS the manor structure — civic_anchor_exception budget
+# stays 0/3), the quay port-call stamps (dates from outcomes.yml git history
+# via cabinet/scripts/world-port-calls.py), the per-lane course state
+# (ledger-state semantics ONLY — the reduced honest set; the work-drift axis
+# is UNMEASURED and renders grey), and the harbor-boat voyage surface
+# (dual-view of the harbor_boat ladder, D7 — rung/vocab untouched). The law:
+# block and every v1/v2/v3 entry are byte-untouched. growth-ladders.yml is
+# deliberately NOT edited (no new ladder keys, no schema change). Behavior/
+# overlay law for the chart-table view + voyage render lives in
+# show-grammar.yml v4.
+version: 4
 
 law:
   tiering: "tier_i = clamp(floor(log2(S_i / base_i + 1)), 0, 7); bases are cadence-justified per surface, never anchored to flatter today's cabinet; every base/curve change is a PR gated by day-3/30/365 fixture renders (E2)"
@@ -373,3 +389,51 @@ entries:
       represents: "pending_captain_items (Redis snapshot int, live-verified 0 on 2026-07-09) — flag up while > 0. DARK until P1 lands the field on the census keyframe/SSE snapshot AND the source-of-record call resolves (spec §14 open call #5: dashboard decision-queue vs Chair binder queue — one truth, one place). Click behavior is show-grammar mailbox_view law: READ-only render of the decision queue + deep-link, NO actuation ever (Captain ruling 2026-07-09; the ONE actuator is the killswitch lever)."
       mechanism_path: "cabinet/dashboard/src/app/api/world/stream/route.ts"
       day0: "flag down, empty box"
+
+  # --------------------------------------------------------------------------
+  # v4 entries — THE DIRECTION SURFACE (per Captain ratifications 2026-07-17
+  # + full-autonomy grant 2026-07-07; design record
+  # docs/plans/world-direction-surface-2026-07-17.md). Validator green
+  # required (read-only sandbox, live bindings). No civic anchor minted; no
+  # growth-ladders.yml change.
+  # --------------------------------------------------------------------------
+  - id: manor_chart_table
+    represents: "Charter-Hall chart table in the Captain structure's curtilage — the org's direction surface: apex direction + one plotted course per direction lane (no civic anchor minted: the manor anchor is law above; great_house IS the manor structure)"
+    source_binding: "grep -c -e 'mission:' instance/config/directions.yml"
+    scope: org-global
+    tier: T0
+    replay: git
+    codex:
+      represents: "Captain-authored directions in instance/config/directions.yml (the org: apex block + per-lane missions — the grep counts mission blocks: 4 today = apex + 3 lanes). The chart-table render folds this same directions.yml plus outcomes.yml course data; direction NAMES and mission text live ONLY in the authed inspect card, never world-space (in-canvas world text = none, spec §12 typography law). A deployment whose untracked instance overlay lacks the org: block degrades to an honest 'uncharted' card — never an invented apex."
+      mechanism_path: "instance/config/directions.yml"
+      day0: "bare table — an egg has no charted courses (directions are Captain-authored after commissioning)"
+  - id: harbor_port_calls
+    represents: "Dated port-call stamps at the quay — one per achieved outcome flip, dates from outcomes.yml git history"
+    source_binding: "jq -r '.port_calls_total' shared/interfaces/world/port-calls.json"
+    scope: org-global
+    tier: T0
+    replay: git
+    codex:
+      represents: "The first git-history date each outcome id's status flipped to achieved — extracted by cabinet/scripts/world-port-calls.py (the calibrated backtest's proven git-log/git-show pattern) into the gitignored shared/interfaces/world/ runtime read-model. Rebuildable purely from git: regenerate-and-diff IS the replay, so the replay stance is git (lane_reef_buoys precedent). Chalk count-marks render at the berth; DATES render only on the authed card, with the artifact's generated_at + source_git_head as the honest as-of line."
+      mechanism_path: "cabinet/scripts/world-port-calls.py"
+      day0: "no stamps — no lane has ever made port"
+  - id: lane_course_state
+    represents: "Per-lane course state: docked_refitting | tacking | adrift — ledger-state semantics ONLY (the reduced honest set)"
+    source_binding: "grep -c -e 'status: active' instance/config/outcomes.yml"
+    scope: org-global
+    tier: T0
+    replay: git
+    codex:
+      represents: "The honest reduction, declared outright: docked_refitting = >=1 active outcome (an OPEN WINDOW in the ledger — a ledger claim, never a work claim); adrift = the lane holds a direction in directions.yml with zero active outcomes and is not retired (exactly the renewal-loop gap the directions contract header names); tacking = an achieved flip within TACKING_WINDOW_DAYS=14 (port-calls artifact) with an active successor window. Whether crew is ACTUALLY working the lane this week is UNMEASURED — no per-lane work signal exists (org_events.product_slug carries only captains-cabinet|default) — so the drift gauge renders grey unmeasured on the card, never a course state."
+      mechanism_path: "instance/config/outcomes.yml"
+      day0: "open water — no courses, no states"
+  - id: harbor_boat_voyage
+    represents: "The harbor boat elevated to the voyage surface: moored/underway position a pure function of course state + last port call (dual-view cross-link to the harbor_boat ladder, whose rung/vocab are untouched — D7)"
+    source_binding: "jq -r '.last_port_call_date' shared/interfaces/world/port-calls.json"
+    scope: org-global
+    tier: T0
+    replay: git
+    codex:
+      represents: "Voyage position semantics (render law in show-grammar v4 voyage): a port call within the 14-day tacking window puts the boat ON the plotted course line — progress a pure function of the flip date + the server-stamped today (out to the lane isle and back); otherwise the boat sits moored at the quay. The boat's SIZE and sprite vocabulary stay the harbor_boat ladder's (growth-ladders.yml untouched — this entry binds position only, dual-view D7)."
+      mechanism_path: "cabinet/scripts/world-port-calls.py"
+      day0: "rowboat at its jetty — nowhere sailed yet"

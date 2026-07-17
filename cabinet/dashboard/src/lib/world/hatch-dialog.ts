@@ -18,6 +18,25 @@
 export const REVEAL_CHARS_PER_TICK = 2
 
 /**
+ * COMMISSIONING vocabulary (Captain ruling 3, 2026-07-17; recorded in
+ * captain-decisions.md): the DISPLAY ladder for the world-layer birth
+ * ceremony — keel-laying → launch → christening → sea trials →
+ * commissioning → maiden voyage. Display copy ONLY: "egg" keeps naming the
+ * export artifact and every machine identifier stays frozen (DialogMode
+ * 'hatching', the HatchButton set, hatch.sh / egg-* script + ledger +
+ * manifest names, hatch route paths). UI surfaces that narrate the ceremony
+ * read their stage names from here.
+ */
+export const COMMISSIONING_STAGES = [
+  'keel-laying',
+  'launch',
+  'christening',
+  'sea trials',
+  'commissioning',
+  'maiden voyage',
+] as const
+
+/**
  * Dialog mode — the H-2 seam.
  *   living   — a read-only living-world dialog: NO buttons, deep-link only
  *              (room ruling 2026-07-09; the living mailbox never actuates).

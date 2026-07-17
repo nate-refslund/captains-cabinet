@@ -108,7 +108,7 @@ export default function HatchDialog({
           <button
             onClick={onClose}
             className="ml-2 rounded px-2 py-0.5 text-xs text-zinc-400 hover:bg-zinc-800"
-            aria-label="close hatch dialog"
+            aria-label="close commissioning dialog"
           >
             esc
           </button>
@@ -135,7 +135,7 @@ export default function HatchDialog({
               value={frame.inputValue}
               onChange={(e) => onInputChange?.(e.target.value)}
               className="w-full rounded border border-zinc-600 bg-zinc-950 px-2 py-1 font-mono text-[13px] text-zinc-100 outline-none focus:border-zinc-400"
-              aria-label="hatch dialog input"
+              aria-label="commissioning dialog input"
             />
           </div>
         ) : null}
