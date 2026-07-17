@@ -23,12 +23,32 @@ REDIS_PORT=$(echo "$REDIS_URL" | sed 's|redis://||' | cut -d: -f2)
 
 ACTION="${1:?Usage: kill-switch.sh activate|deactivate|status}"
 
+# AUDIT TRAIL (2026-07-17 amendment, Wave-1 e2): every VERIFIED flip of the
+# emergency stop leaves a ledger row (kill_switch_activated/_deactivated), so
+# the switch's history is attributable — the incident: the 2026-07-15 lockdown
+# read INACTIVE on 07-16 and no record could say which actor cleared it.
+# Fail-quiet BY DESIGN: the ledger must never block, slow, or fail the
+# emergency surface itself (`|| true`, output discarded — mirrors
+# on-subagent-stop.sh). Emits only on the VERIFIED branches: an unverified
+# flip is already a loud failure, and a false "activated" row would be worse
+# than none. Direct redis-cli flips bypass this by nature — the sanctioned
+# surfaces are this script and the Chair path that shells to it.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+CABINET_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+emit_flip_event() {
+  python3 "$CABINET_ROOT/framework/events/emitter.py" "$1" \
+    "${CABINET_OFFICER:-captain}" \
+    '{"killswitch_id":"cabinet:killswitch","via":"kill-switch.sh"}' \
+    > /dev/null 2>&1 || true
+}
+
 case "$ACTION" in
   activate)
     if redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" SET cabinet:killswitch active > /dev/null 2>&1 \
        && [ "$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" GET cabinet:killswitch 2>/dev/null)" = "active" ]; then
       echo "$(date -u '+%Y-%m-%d %H:%M:%S UTC') — KILL SWITCH ACTIVATED (verified by read-back)"
       echo "All Officer operations will halt on their next tool invocation."
+      emit_flip_event kill_switch_activated
     else
       echo "$(date -u '+%Y-%m-%d %H:%M:%S UTC') — KILL SWITCH ACTIVATION FAILED: control plane at ${REDIS_HOST}:${REDIS_PORT} unreachable or write unverified." >&2
       echo "Officers are NOT provably halted. Escalate: stop launchd jobs directly (launchctl bootout) or fix Redis, then re-run." >&2
@@ -41,6 +61,7 @@ case "$ACTION" in
        && redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" PING > /dev/null 2>&1; then
       echo "$(date -u '+%Y-%m-%d %H:%M:%S UTC') — KILL SWITCH DEACTIVATED (verified by read-back)"
       echo "Officers will resume normal operation."
+      emit_flip_event kill_switch_deactivated
     else
       echo "$(date -u '+%Y-%m-%d %H:%M:%S UTC') — KILL SWITCH DEACTIVATION UNVERIFIED: control plane at ${REDIS_HOST}:${REDIS_PORT} unreachable." >&2
       echo "The switch may still be ACTIVE. Fix Redis, then re-run." >&2
