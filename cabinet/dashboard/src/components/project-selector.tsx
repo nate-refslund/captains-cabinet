@@ -190,7 +190,7 @@ export default function ProjectSelector({
           >
             <h3 className="text-lg font-bold text-white">Create a New Project</h3>
             <p className="mt-3 text-sm text-zinc-400">
-              DM your <span className="font-medium text-white">Chief of Staff</span> on Telegram:
+              DM your <span className="font-medium text-white">First Mate</span> on Telegram:
             </p>
             <div
               className="mt-4 rounded-lg border border-zinc-700 bg-zinc-800 font-mono text-sm text-emerald-400"
@@ -199,7 +199,7 @@ export default function ProjectSelector({
               Create a new project called [name]
             </div>
             <p className="mt-4 text-xs text-zinc-500">
-              CoS will automatically set up Notion, Neon, Linear, GitHub, and all config files.
+              Your First Mate will automatically set up Notion, Neon, Linear, GitHub, and all config files.
               The only manual step is creating a Telegram group and adding the officer bots.
             </p>
             <button

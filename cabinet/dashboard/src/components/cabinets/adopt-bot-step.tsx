@@ -37,7 +37,7 @@ import { generateQrSvg } from '@/lib/qr-inline'
 export interface OfficerSlotDef {
   /** Officer role slug e.g. 'cos', 'cto' */
   role: string
-  /** Human-readable title e.g. 'Chief of Staff' */
+  /** Human-readable title e.g. 'First Mate' */
   title: string
 }
 

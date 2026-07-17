@@ -143,7 +143,7 @@ describe('Provisioning flow state transitions', () => {
       capacity: 'personal',
       cabinetId: 'cab_test123',
       officers: [
-        { role: 'cos', title: 'Chief of Staff', adopted: false },
+        { role: 'cos', title: 'First Mate', adopted: false },
         { role: 'cto', title: 'CTO', adopted: false },
       ],
       currentOfficerIndex: 0,
@@ -172,7 +172,7 @@ describe('Provisioning flow state transitions', () => {
       capacity: 'personal',
       cabinetId: 'cab_test123',
       officers: [
-        { role: 'cos', title: 'Chief of Staff', adopted: false },
+        { role: 'cos', title: 'First Mate', adopted: false },
         { role: 'cto', title: 'CTO', adopted: false },
       ],
       currentOfficerIndex: 0,
@@ -446,7 +446,7 @@ describe('Token extraction', () => {
       name: 'my-cabinet',
       capacity: 'personal',
       cabinetId: 'cab_test123',
-      officers: [{ role: 'cos', title: 'Chief of Staff', adopted: true }],
+      officers: [{ role: 'cos', title: 'First Mate', adopted: true }],
       currentOfficerIndex: 0,
       pendingToken: { token: TOKEN_2, lastFour: TOKEN_2.slice(-4), officer: 'cos' },
       updatedAt: new Date().toISOString(),

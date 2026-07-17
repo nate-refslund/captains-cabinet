@@ -29,7 +29,7 @@
     "situation_key": "(never shown)",
     "standing card": "this message",
     "standing message": "this message",
-    "t2": "the Chair asked you",
+    "t2": "the First Mate asked you",
     "undo-rate": "(hide it)",
     "untitled situation": "(no title)",
     "verdict": "your decision",
@@ -53,7 +53,7 @@
     ],
     "escalation": [
       "I'll decide",
-      "Ask the Chair"
+      "Ask the First Mate"
     ],
     "need": [
       "Yes, allow",
@@ -69,16 +69,16 @@
   "consequence_templates": {
     "approve": "{risk} If you confirm, I go ahead: {what}",
     "approve:draft-outbound": "{risk} If you confirm, the message goes out exactly as drafted. Haven't read it? It's on this item's Telegram card — open that first.",
-    "approve:escalation": "Nothing runs yet — this marks it as yours to decide. The Chair brings it to you in Telegram to settle.",
+    "approve:escalation": "Nothing runs yet — this marks it as yours to decide. The First Mate brings it to you in Telegram to settle.",
     "approve:need": "{risk} If you confirm, the cabinet gets this permission.",
     "later": "Nothing happens now — it comes back at the next briefing.",
     "no": "Nothing happens — I record the no and stop suggesting it.",
     "no:draft-outbound": "The message is not sent.",
-    "no:escalation": "The Chair settles it and tells you what it chose.",
+    "no:escalation": "The First Mate settles it and tells you what it chose.",
     "no:need": "The cabinet does not get this permission."
   },
   "copy": {
-    "answer_telegram": "Answer in Telegram (HQ Chair).",
+    "answer_telegram": "Answer in Telegram (First Mate).",
     "confirm_back": "Back",
     "confirm_no": "Yes, I'm sure",
     "confirm_yes": "Yes, do it",
@@ -98,7 +98,7 @@
     "no_buttons": "To decide this one, answer on its Telegram message.",
     "no_title": "(no title)",
     "open_telegram": "Open in Telegram ↗",
-    "overflow_note": "more waiting — I've asked the Chair to sort them out.",
+    "overflow_note": "more waiting — I've asked the First Mate to sort them out.",
     "ritual_hint": "To say yes, sign it off in Telegram — tap 'Open in Telegram'.",
     "updated_prefix": "Updated",
     "working": "Working…"
@@ -121,7 +121,7 @@
     "escalation": {
       "approve": "I'll decide",
       "later": "Later",
-      "no": "Ask the Chair"
+      "no": "Ask the First Mate"
     },
     "need": {
       "approve": "Yes, allow",
@@ -167,7 +167,7 @@
   ],
   "results": {
     "approved": "Approved — done.",
-    "approved_delivery_failed": "Your approval is recorded, but the follow-through hit an error — the Chair will finish it.",
+    "approved_delivery_failed": "Your approval is recorded, but the follow-through hit an error — the First Mate will finish it.",
     "approved_underway": "Approved — under way.",
     "declined": "Noted — I won't do it.",
     "deferred": "Parked — it comes back at the next briefing.",
@@ -176,7 +176,7 @@
   "risk_default": "If you approve, I go ahead with it.",
   "risk_default_ceiling": "This is a high-caution change — double-check before saying yes.",
   "risk_sentences": {
-    "a Chair judgment lands without you": "If you don't answer, the Chair will decide this one.",
+    "a Chair judgment lands without you": "If you don't answer, the First Mate will decide this one.",
     "a capability/resource is granted": "This gives the cabinet a new tool or access.",
     "a ceiling-class artifact ships (prod/secret/net)": "This touches production or secrets — highest caution.",
     "a message reaches a human outside the machine": "This sends a message to a real person outside.",
@@ -184,7 +184,7 @@
     "a standing grant widens org authority": "This gives the cabinet a lasting new permission.",
     "a wrong approve amends the germline plane": "This changes the cabinet's own core rules — hardest to undo.",
     "money leaves the org": "This spends money.",
-    "the Chair is holding a judgment open": "The Chair is waiting on you for this.",
+    "the Chair is holding a judgment open": "The First Mate is waiting on you for this.",
     "unclassified chain — treated as low, gated": "I couldn't sort this one, so it waits for you. Low risk."
   },
   "ritual_kinds": [

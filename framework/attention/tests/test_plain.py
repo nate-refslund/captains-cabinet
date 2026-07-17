@@ -164,13 +164,13 @@ class TestSummaryShape(unittest.TestCase):
         # An either/or headline must never get a generic [✓ Approve].
         btns = plain.door_buttons("escalation")
         self.assertEqual(btns["approve"], "I'll decide")
-        self.assertEqual(btns["no"], "Ask the Chair")
+        self.assertEqual(btns["no"], "Ask the First Mate")
         c = {"kind": "escalation",
              "what": "Two officers disagree: ship the beta, or hold it"}
         approve = plain.consequence_for(c, "approve")
         self.assertIn("Nothing runs yet", approve)
         self.assertNotIn("I go ahead", approve)
-        self.assertIn("The Chair settles it", plain.consequence_for(c, "no"))
+        self.assertIn("The First Mate settles it", plain.consequence_for(c, "no"))
 
 
 class TestLinterBites(unittest.TestCase):
