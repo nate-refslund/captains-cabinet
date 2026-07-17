@@ -94,21 +94,32 @@ interview) emits the instance layer:
   officers real query-driven recall with no personal-sensing estate.
   **On THIS hq box the live binding stays `ScreenpipeSource` — do not flip
   it**; OrgSource is registered but not bound here.
-- **`instance/config/platform.yml`** — gains the `product_brain_dir:` key,
-  READ at runtime by `framework.env.product_brain_dir()` (resolution:
-  `CABINET_PRODUCT_BRAIN_DIR` env override → this key, relative values
-  against `CABINET_ROOT`, existence-gated → in-repo `<root>/product-brain`
+- **`instance/config/platform.yml`** — gains the `org_vault_dir:` key
+  (only when absent, and never over a hand-edited legacy
+  `product_brain_dir:` key), READ at runtime by
+  `framework.env.org_vault_dir()` (resolution: `CABINET_ORG_VAULT_DIR` env
+  override → legacy `CABINET_PRODUCT_BRAIN_DIR` alias → this key → legacy
+  `product_brain_dir:` key, relative values against `CABINET_ROOT`,
+  existence-gated → in-repo `<root>/vault` → legacy `<root>/product-brain`
   → fail-closed empty). Relocating the corpus = editing this key (or the
-  env override). The `product-brain/` directory is the per-product
-  knowledge corpus the gather step folds into its corpus section.
+  env override). The `vault/` directory is the cabinet's knowledge vault
+  (Captain-ratified 2026-07-16; see `vault/README.md`) the gather step
+  folds into its corpus section.
 
 ## 3. Hooks — capture + recall
 
 - **Capture:** `cabinet/scripts/hooks/post-file-write-memory.sh` watches
-  knowledge writes (including `product-brain/` and `shared/interfaces/`)
+  knowledge writes (including the vault corpus and `shared/interfaces/`)
   and queue-embeds them onto Redis `cabinet:memory:embed_queue` for the
   memory-worker. Best-effort exit-0 by design — the nightly reconcile
-  (§4) is the repair half.
+  (§4) is the repair half. NOTE (vault wave 2026-07-17): the hook lives in
+  the schg-locked germline hooks dir, so its `vault/` + `docs/` watch
+  patterns land via `patches/germline-vault-hook-watch-2026-07-17.patch`
+  (ceremony: `docs/proposals/germline-vault-hook-watch-addendum-2026-07-17.md`);
+  until that ceremony the hook still matches only legacy `product-brain/`
+  paths and the nightly reconcile — which walks `vault/`, legacy
+  `product-brain/`, and `docs/**/*.md` (`framework_doc`) directly — is the
+  coverage netting.
 - **Recall:** `cabinet/scripts/hooks/pre-captain-dm.sh` injects memory
   recall before Captain-facing DMs under a **2s hard budget** (`timeout`/
   `gtimeout`); a budget loss is counted on Redis

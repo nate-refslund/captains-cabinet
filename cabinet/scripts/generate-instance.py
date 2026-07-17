@@ -23,18 +23,22 @@ Generated (org_shape: portfolio):
                                                 regenerated; sovereign amendment 2026-07-05)
   instance/config/sources.yml                   personal-sensing seam binding — see the
                                                 emission rule below
-  instance/config/platform.yml                  also gains a `product_brain_dir:` key
-                                                (only when absent) defaulting to
-                                                `product-brain` — RELATIVE to the
-                                                deployment root, i.e. <root>/product-brain
-                                                (never an absolute machine path: generated
-                                                config stays relocatable + launcher-free).
+  instance/config/platform.yml                  also gains an `org_vault_dir:` key
+                                                (only when absent, and only when no
+                                                legacy `product_brain_dir:` key already
+                                                carries a hand-edited value) defaulting
+                                                to `vault` — RELATIVE to the deployment
+                                                root, i.e. <root>/vault (never an
+                                                absolute machine path: generated config
+                                                stays relocatable + launcher-free).
                                                 Canonical resolver:
-                                                framework.env.product_brain_dir(), which
-                                                honors CABINET_PRODUCT_BRAIN_DIR, then
+                                                framework.env.org_vault_dir(), which
+                                                honors CABINET_ORG_VAULT_DIR (legacy
+                                                CABINET_PRODUCT_BRAIN_DIR alias), then
                                                 THIS key (relative → resolved against
-                                                CABINET_ROOT, existence-gated), then the
-                                                in-repo <root>/product-brain directory
+                                                CABINET_ROOT, existence-gated; legacy
+                                                product_brain_dir key honored after it),
+                                                then the in-repo <root>/vault directory
 
   instance/config/active-project.txt            the first lane's slug (only when
                                                 absent — an existing deployment's
@@ -201,18 +205,23 @@ POSTURE_TARGETS = frozenset({"guardian", "sovereign"})
 # framework/sources/ is one of its two trusted module trees.
 ORG_SOURCE_ADAPTER = "framework.sources.org:OrgSource"
 
-# platform.yml key naming the org's product-brain corpus dir. Canonical
-# resolver: framework.env.product_brain_dir() (CABINET_PRODUCT_BRAIN_DIR env
-# override, else THIS platform.yml key — relative values resolve against the
-# repo root, existence-gated — else the in-repo <root>/product-brain
-# directory, else ""). The generator stamps the key (only when absent) so the
+# platform.yml key naming the org's knowledge-corpus dir — the cabinet VAULT
+# (vault/, Captain-ratified 2026-07-16; formerly product-brain/). Canonical
+# resolver: framework.env.org_vault_dir() (CABINET_ORG_VAULT_DIR env override,
+# legacy CABINET_PRODUCT_BRAIN_DIR alias, else THIS platform.yml key — relative
+# values resolve against the repo root, existence-gated; the legacy
+# product_brain_dir key is honored after it — else the in-repo <root>/vault
+# directory, else the legacy <root>/product-brain, else ""). The generator
+# stamps the key (only when absent, and never when a legacy product_brain_dir
+# key already exists — a hand-edited legacy value must keep winning) so the
 # deployment's corpus location is declared in config alongside state_dir and
 # the captain keys, and a captain relocates the corpus by editing it.
-# The stamped VALUE is relative to the deployment root ("product-brain" ⇒
-# <root>/product-brain, the resolver's own default) — never an absolute
+# The stamped VALUE is relative to the deployment root ("vault" ⇒
+# <root>/vault, the resolver's own default) — never an absolute
 # machine path, so generated config stays relocatable and launcher-free.
-PRODUCT_BRAIN_KEY = "product_brain_dir"
-PRODUCT_BRAIN_DEFAULT = "product-brain"
+ORG_VAULT_KEY = "org_vault_dir"
+ORG_VAULT_DEFAULT = "vault"
+LEGACY_ORG_VAULT_KEY = "product_brain_dir"   # pre-rename key, suppression-checked
 
 # The presets tree location, repo-root-relative. The CABINET layer owns this
 # knowledge (same as load-preset.sh): framework code must not hardcode where
@@ -753,7 +762,7 @@ def _set_top_level_key_if_absent(text: str, key: str, value: str, comment: str =
     """Append `key: value` at top level ONLY when no such key exists yet.
 
     Unlike ``_set_top_level_key`` this never replaces: it is used for keys the
-    generator has no answers-file source for (e.g. ``product_brain_dir``), so a
+    generator has no answers-file source for (e.g. ``org_vault_dir``), so a
     captain's hand-edited value must survive every re-run."""
     if re.search(rf"^{re.escape(key)}:", text, re.MULTILINE):
         return text
@@ -791,21 +800,26 @@ def _yaml_free(value: str) -> str:
 
 
 def render_platform(existing: str, answers: dict, lanes: list, org_shape: str,
-                    product_brain: str) -> str:
+                    org_vault: str) -> str:
     captain = answers["captain"]
     text = existing
     text = _set_top_level_key(text, "captain_name", _yaml_str(str(captain["name"])))
     text = _set_top_level_key(text, "captain_timezone", str(captain["timezone"]))
     text = _set_top_level_key(text, "captain_telegram_chat_id", f'"{captain["telegram_chat_id"]}"')
-    # Org product-brain corpus dir (only when absent — a hand-edited value
-    # survives). Value is RELATIVE to the deployment root. Canonical resolver:
-    # framework.env.product_brain_dir() (CABINET_PRODUCT_BRAIN_DIR env
-    # override, else THIS key — existence-gated — else <root>/product-brain).
-    text = _set_top_level_key_if_absent(
-        text, PRODUCT_BRAIN_KEY, f'"{product_brain}"',
-        comment="# org corpus dir, relative to CABINET_ROOT — read by "
-                "framework.env.product_brain_dir() (CABINET_PRODUCT_BRAIN_DIR overrides)",
-    )
+    # Org vault (knowledge corpus) dir — only when absent, and only when no
+    # legacy product_brain_dir key is already present (the resolver honors the
+    # legacy key AFTER the new one, so stamping org_vault_dir above a
+    # hand-edited legacy value would silently override that curation). Value
+    # is RELATIVE to the deployment root. Canonical resolver:
+    # framework.env.org_vault_dir() (CABINET_ORG_VAULT_DIR env override,
+    # legacy CABINET_PRODUCT_BRAIN_DIR alias, else THIS key — existence-gated
+    # — else <root>/vault, else the legacy <root>/product-brain).
+    if not re.search(rf"^{re.escape(LEGACY_ORG_VAULT_KEY)}:", text, re.MULTILINE):
+        text = _set_top_level_key_if_absent(
+            text, ORG_VAULT_KEY, f'"{org_vault}"',
+            comment="# org vault (knowledge corpus) dir, relative to CABINET_ROOT — read "
+                    "by framework.env.org_vault_dir() (CABINET_ORG_VAULT_DIR overrides)",
+        )
 
     if org_shape != "portfolio":
         return text
@@ -1251,7 +1265,7 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
     outputs.append((
         platform_path,
         render_platform(existing_platform, answers, lanes, org_shape,
-                        product_brain=PRODUCT_BRAIN_DEFAULT), "yaml",
+                        org_vault=ORG_VAULT_DEFAULT), "yaml",
     ))
 
     # Personal-sensing seam binding (module-docstring emission rule): an

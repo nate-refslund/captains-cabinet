@@ -250,7 +250,11 @@ Every action class sits at a dispatcher level: **L0** auto + audit trail · **L1
 
 ### One synthesis destination
 
-Everything the org learns, derives, or synthesizes is born in **one knowledge corpus** — flavor A: the personal vault; flavor B: the product-brain corpus (architecture, incidents, decisions, support KB, deploy history) — as markdown with provenance and content timestamps, indexed for hybrid semantic search. External tools are not synthesis destinations. The historical alternative — synthesis scattered across a PM tool, chat threads, and six decision stores — produced two-hop staleness and split-brain truth; the ruling (2026-07-02) ended it: **the corpus is the one synthesis destination; every other system keeps only its own function.**
+Everything the org learns, derives, or synthesizes is born in **one knowledge corpus** — flavor A: the captain's personal vault; flavor B: the cabinet vault, `vault/` in the repo (architecture, incidents, decisions, support KB, deploy history — the directory formerly named product-brain; Captain-ratified rename 2026-07-16) — as markdown with provenance and content timestamps, indexed for hybrid semantic search. External tools are not synthesis destinations. The historical alternative — synthesis scattered across a PM tool, chat threads, and six decision stores — produced two-hop staleness and split-brain truth; the ruling (2026-07-02) ended it: **the corpus is the one synthesis destination; every other system keeps only its own function.**
+
+### Where a document lives
+
+Knowledge, designs, plans — any captain/org document — go in **`vault/`** (plain markdown, `[[wikilinks]]` welcome, Obsidian-compatible but never required; local git history only — no remote or account needed). Framework reference — specs, plans/proposals, Captain-ceremony runbooks — lives in **`docs/`**. **Officer-executable procedures live in `memory/skills/`; Captain ceremonies stay runbooks** — a runbook whose steps an officer actually runs graduates to the skill library with a pointer stub left behind. Deployment-specific config and captain-personal material live in **`instance/`**. The full placement one-pager is in [`vault/README.md`](./vault/README.md).
 
 ### Memory vs source of truth
 

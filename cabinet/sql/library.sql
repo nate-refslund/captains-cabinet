@@ -4,6 +4,13 @@
 -- different surface. Library records also get indexed into cabinet_memory
 -- on create/update via the post-file-write-memory hook equivalent.
 --
+-- LIBRARY RETIREMENT (2026-07-16, Captain-ratified): the app layer no longer
+-- writes the embedding column — records insert vector-free and only the
+-- cabinet_memory mirror is maintained. This schema (embedding column, hnsw
+-- index, 044 trigger) stays IN PLACE, dormant — deliberately no destructive
+-- DDL here. Content archive + follow-up drop plan:
+-- docs/runbooks/library-retirement-2026-07-16.md.
+--
 -- Target: Neon PostgreSQL (or any PG >= 15 with pgvector >= 0.5.0).
 -- Idempotent — safe to re-run.
 --

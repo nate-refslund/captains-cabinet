@@ -127,6 +127,65 @@ class TestCaptainRole:
         env._captain_role_cache = None
         assert env.captain_role() == "Head-of-Tech"
 
+
+@pytest.fixture
+def isolated_slug_cache():
+    """Clear the process-wide captain-slug cache for the test, then restore the
+    original so sibling tests are untouched (mirrors isolated_role_cache)."""
+    saved = env._captain_slug_cache
+    env._captain_slug_cache = None
+    try:
+        yield
+    finally:
+        env._captain_slug_cache = saved
+
+
+class TestCaptainSlug:
+    """The captain_slug() resolver — the officer_tasks OWNER slug that marks a
+    row as the Captain's (the reminder arm routes it to the needs-card surface).
+    A ROLE token, never a display name: the generic default is the literal
+    ``captain`` (the /tasks ETL + events-schema convention), config-overridable,
+    fail-closed to generic — never a leaked launcher name."""
+
+    def test_absent_config_falls_back_to_captain(self, tmp_path, monkeypatch,
+                                                 isolated_slug_cache):
+        monkeypatch.delenv("CABINET_CAPTAIN_SLUG", raising=False)
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))  # empty tmp — no config
+        env._captain_slug_cache = None
+        assert env.captain_slug() == "captain"
+
+    def test_env_override_wins(self, tmp_path, monkeypatch, isolated_slug_cache):
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "platform.yml", "captain_slug: skipper\n")
+        monkeypatch.setenv("CABINET_CAPTAIN_SLUG", "helm")
+        env._captain_slug_cache = None
+        assert env.captain_slug() == "helm"   # env beats config
+
+    def test_reads_slug_from_platform_yml(self, tmp_path, monkeypatch,
+                                          isolated_slug_cache):
+        monkeypatch.delenv("CABINET_CAPTAIN_SLUG", raising=False)
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "platform.yml", "captain_slug: skipper\n")
+        env._captain_slug_cache = None
+        assert env.captain_slug() == "skipper"
+
+    def test_reads_nested_slug_from_product_yml(self, tmp_path, monkeypatch,
+                                                isolated_slug_cache):
+        monkeypatch.delenv("CABINET_CAPTAIN_SLUG", raising=False)
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "product.yml", "product:\n  captain_slug: skipper\n")
+        env._captain_slug_cache = None
+        assert env.captain_slug() == "skipper"
+
+    def test_never_leaks_a_personal_name_by_default(self, tmp_path, monkeypatch,
+                                                    isolated_slug_cache):
+        """The default is a generic role token — never captain_name()'s value."""
+        monkeypatch.delenv("CABINET_CAPTAIN_SLUG", raising=False)
+        monkeypatch.setenv("CABINET_ROOT", str(tmp_path))
+        _write_cfg(tmp_path, "platform.yml", "captain_name: Wendy Wanderlust\n")
+        env._captain_slug_cache = None
+        assert env.captain_slug() == "captain"   # name never becomes the slug
+
     def test_result_is_cached_process_wide(self, tmp_path, monkeypatch,
                                            isolated_role_cache):
         """First resolution wins for the process (a restart re-reads)."""
@@ -960,3 +1019,78 @@ class TestLaneDefault:
         monkeypatch.setenv("CABINET_ROOT", str(tmp_path))  # empty tmp — no config
         env._lane_default_cache = None
         assert env.lane_default() == ""
+
+
+class TestActiveContext:
+    """active_context() — the preset-aware tasks/coordination context chain
+    (config-split fix 2026-07-17). Full rung matrix + bash-twin PARITY lives
+    in cabinet/scripts/lib/tests/test_resolve_context_sh.py; this class pins
+    the env.py-local contract: root-injectability, uncached-ness, the shape
+    gate, and never-raise fail-safe."""
+
+    @staticmethod
+    def _seed(tmp_path, contexts, platform_yml=None, active_project=None):
+        # NB: single "instance/config" path literal (not split segments) so the
+        # layer-separation gate's bare-"instance" heuristic doesn't flag this
+        # test — the _write_cfg idiom above, same form env.py itself uses.
+        cfg = tmp_path / "instance/config"
+        (cfg / "contexts").mkdir(parents=True, exist_ok=True)
+        for name, body in contexts.items():
+            (cfg / "contexts" / name).write_text(body, encoding="utf-8")
+        if platform_yml is not None:
+            (cfg / "platform.yml").write_text(platform_yml, encoding="utf-8")
+        if active_project is not None:
+            (cfg / "active-project.txt").write_text(
+                active_project, encoding="utf-8")
+        return tmp_path
+
+    def test_env_var_wins(self, tmp_path, monkeypatch):
+        self._seed(tmp_path, {"bakery.yml": "slug: bakery\n"},
+                   active_project="bakery\n")
+        monkeypatch.setenv("CABINET_CONTEXT", "testburg-hq")
+        assert env.active_context(root=tmp_path) == "testburg-hq"
+
+    def test_malformed_env_var_skipped_never_returned(self, tmp_path, monkeypatch):
+        """Shape gate: an injection-shaped env value falls through as
+        unresolved data — it is never the return value."""
+        self._seed(tmp_path, {"bakery.yml": "slug: bakery\n"})
+        monkeypatch.setenv("CABINET_CONTEXT", "../../etc; $(rm -rf .)")
+        assert env.active_context(root=tmp_path) == "bakery"
+
+    def test_officer_lane_derivation_longest_prefix(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("CABINET_CONTEXT", raising=False)
+        self._seed(tmp_path, {"bakery.yml": "slug: bakery\n",
+                              "bakery-site.yml": "slug: bakery-site\n"})
+        assert env.active_context(officer="bakery-site-ceo",
+                                  root=tmp_path) == "bakery-site"
+
+    def test_lane_default_only_when_declared(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("CABINET_CONTEXT", raising=False)
+        self._seed(tmp_path, {"bakery.yml": "slug: bakery\n",
+                              "newsletter.yml": "slug: newsletter\n"},
+                   platform_yml="lane_default: ghost-lane\n")
+        assert env.active_context(officer="cos", root=tmp_path) == ""
+        (tmp_path / "instance/config" / "platform.yml").write_text(
+            "lane_default: newsletter\n", encoding="utf-8")
+        assert env.active_context(officer="cos", root=tmp_path) == "newsletter"
+
+    def test_uncached_across_roots_and_config_flips(self, tmp_path, monkeypatch):
+        """Deliberately UNCACHED (unlike lanes()/lane_default()): the same
+        process must see a different root — and a config flip — immediately."""
+        monkeypatch.delenv("CABINET_CONTEXT", raising=False)
+        a = self._seed(tmp_path / "a", {"bakery.yml": "slug: bakery\n"})
+        b = self._seed(tmp_path / "b", {"newsletter.yml": "slug: newsletter\n"})
+        assert env.active_context(root=a) == "bakery"
+        assert env.active_context(root=b) == "newsletter"
+        (a / "instance/config" / "active-project.txt").write_text(
+            "newsletter\n", encoding="utf-8")
+        # flip lands without any cache reset — but the slug must be declared?
+        # No: R2 is the operator's explicit file, honored verbatim (shape-gated).
+        assert env.active_context(root=a) == "newsletter"
+
+    def test_never_raises_and_defaults_empty(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("CABINET_CONTEXT", raising=False)
+        assert env.active_context(root=tmp_path / "missing") == ""
+        assert env.active_context(officer="anyone",
+                                  root=tmp_path / "missing",
+                                  default="sentinel") == "sentinel"

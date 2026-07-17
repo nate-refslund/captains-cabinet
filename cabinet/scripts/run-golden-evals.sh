@@ -44,6 +44,29 @@ fi
 # the suite-side default fixed above.
 export REDIS_HOST REDIS_PORT
 
+# SANDBOX (2026-07-17): the resolved endpoint above is the LIVE Redis on the
+# Mac — and this suite SETs/DELs cabinet:killswitch (EVAL-001 + the cleanup
+# trap), so every FW-025 pre-push run armed and then silently cleared the
+# fleet emergency stop, including a deliberately-armed one. Unless the
+# caller declares the endpoint disposable (CI's redis:7 service container
+# sets CABINET_EVALS_REDIS_DISPOSABLE=1), the suite now runs against an
+# ephemeral localhost redis-server and REFUSES to run at all if that
+# sandbox cannot start — tests must never touch the emergency stop.
+# The sandbox re-exports REDIS_HOST/REDIS_PORT/REDIS_URL, so every child
+# hook probe follows it.
+# shellcheck source=lib/evals-redis-sandbox.sh
+if ! source "$CABINET_ROOT/cabinet/scripts/lib/evals-redis-sandbox.sh" \
+    || ! evals_redis_sandbox_start; then
+  echo "REFUSED: golden evals run against a Redis endpoint not declared" >&2
+  echo "disposable, and the ephemeral sandbox could not start. This suite" >&2
+  echo "sets/clears cabinet:killswitch — it must NEVER touch a live Redis." >&2
+  echo "Fix: install redis-server (macOS: brew install redis; Debian:" >&2
+  echo "apt-get install redis-server), or set" >&2
+  echo "CABINET_EVALS_REDIS_DISPOSABLE=1 ONLY if the endpoint is a" >&2
+  echo "throwaway (as CI's service container does)." >&2
+  exit 1
+fi
+
 # Wave G (lane-name instance-split, 2026-07-12): the deploy-probe officer for
 # EVAL-006 / EVAL-011 / EVAL-013 is INSTANCE DATA — resolved from
 # cabinet/officer-capabilities.conf (first deploys_code holder) via lanes.sh,
@@ -85,6 +108,10 @@ cleanup() {
   done
   redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" DEL "cabinet:cost:tokens:evaltest" > /dev/null 2>&1
   rm -f "/tmp/eval-transcript-$$.jsonl" 2>/dev/null
+  # Last: tear down the ephemeral sandbox redis (no-op when the endpoint
+  # was declared disposable). The key DELs above ran against the sandbox
+  # in that mode — harmless, and still correct in disposable mode.
+  evals_redis_sandbox_stop
 }
 trap cleanup EXIT
 VERBOSE=""
@@ -1028,8 +1055,12 @@ else
     local cmd="$1"
     local json
     json=$(jq -cn --arg cmd "$cmd" '{tool_name:"Bash",tool_input:{command:$cmd}}')
-    redis-cli -h redis -p 6379 DEL cabinet:layer1:cto:reviewed > /dev/null 2>&1
-    redis-cli -h redis -p 6379 DEL cabinet:layer1:cto:ci-green > /dev/null 2>&1
+    # Resolved endpoint (= the sandbox), NEVER a hardcoded host: the old
+    # `-h redis` Docker-DNS literal was a silent no-op on Mac/CI but would
+    # delete LIVE layer-1 gate-ACK keys in any Docker-DNS deployment —
+    # the exact tests-touch-live class the sandbox exists to end.
+    redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" DEL cabinet:layer1:cto:reviewed > /dev/null 2>&1
+    redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" DEL cabinet:layer1:cto:ci-green > /dev/null 2>&1
     echo "$json" | OFFICER_NAME=cto bash "$EV14_HOOK" > /dev/null 2>&1
     return $?
   }

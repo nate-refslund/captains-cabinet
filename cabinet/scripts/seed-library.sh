@@ -25,10 +25,11 @@
 #     as "exists").
 #
 # Writes go through the Library's own path (cabinet/scripts/lib/library.sh
-# library_create_space / library_create_record): parameterized psql -v binds,
-# inline voyage-4-large embedding with a NULL + ILIKE fallback when Voyage is
-# unavailable (idx_lr_pending_embed marks rows for a later re-embed pass), and
-# a best-effort cabinet_memory queue via memory_queue_embed. INSERT-only —
+# library_create_space / library_create_record): parameterized psql -v binds
+# and a best-effort cabinet_memory queue via memory_queue_embed. Since the
+# Library retirement (2026-07-16) records are inserted VECTOR-FREE — no
+# voyage embed, embedding column stays NULL (see
+# docs/runbooks/library-retirement-2026-07-16.md). INSERT-only —
 # nothing here updates or deletes.
 
 set -euo pipefail

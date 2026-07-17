@@ -16,6 +16,7 @@ already honours ``CABINET_EVENT_LOG_DIR``, which the runtime launch sets from
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 _DEV = "dev"
@@ -151,6 +152,67 @@ def captain_role(default: str = "the Captain") -> str:
         role = default
     _captain_role_cache = role
     return role
+
+
+# Cache: captain_slug is read once per process (same lifecycle as captain_name).
+# None ⇒ unresolved — the role token "captain" is a VALID resolved default (not a
+# personal name), so the sentinel is None, never "".
+_captain_slug_cache: "str | None" = None
+
+
+def captain_slug(default: str = "captain") -> str:
+    """The OWNER slug that marks a row (an ``officer_tasks`` row) as the
+    Captain's — the resolver the reminder arm uses to route a Captain-owned
+    due row to the needs-ledger card surface instead of an officer's Redis
+    stream, WITHOUT hardcoding a personal name (product/captain-agnostic law).
+
+    The value is a ROLE token, not a display name: the generic default is the
+    literal ``captain`` — the SAME slug the /tasks ETL already stamps on
+    founder rows (``cabinet/scripts/lib/etl-common.py`` — "caller checks slug
+    == 'captain'") and the events schema uses for the Captain actor
+    (``framework/events/schema.sql``). It is deliberately distinct from
+    ``captain_name()`` (which is the DISPLAY name shown to the Captain): a slug
+    is an identity key that lives in a DB column and must stay stable + generic.
+
+    Resolution order: the env override ``CABINET_CAPTAIN_SLUG`` (an explicit
+    per-process override, mirroring ``tasks_board``'s ``CABINET_TASKS_BOARD``) →
+    ``captain_slug`` in ``instance/config/platform.yml`` (else ``product.yml`` /
+    nested ``product.captain_slug``) → the generic ``default`` (``"captain"``).
+    Any absence / parse failure falls back to ``default`` — a generic
+    deployment resolves ``captain``, never crashes, never leaks a launcher's
+    name. NB: the FIRST call's resolution — fallback included — is cached for
+    the process, so every caller must pass a uniform ``default``."""
+    global _captain_slug_cache
+    if _captain_slug_cache is not None:
+        return _captain_slug_cache
+    env_override = (os.environ.get("CABINET_CAPTAIN_SLUG") or "").strip()
+    if env_override:
+        _captain_slug_cache = env_override
+        return env_override
+    slug = str(default)
+    try:
+        import yaml  # local: keep env.py import-light for the safety switches
+        root = _cabinet_root()
+        for rel in ("instance/config/platform.yml", "instance/config/product.yml"):
+            p = root / rel
+            try:
+                if not p.exists():
+                    continue
+                data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+            except Exception:
+                continue
+            if not isinstance(data, dict):
+                continue
+            val = data.get("captain_slug")
+            if val is None and isinstance(data.get("product"), dict):
+                val = data["product"].get("captain_slug")   # product.yml nests it
+            if isinstance(val, str) and val.strip():
+                slug = val.strip()
+                break
+    except Exception:
+        slug = str(default)
+    _captain_slug_cache = slug
+    return slug
 
 
 # Cache: org_domains is read once per process (same lifecycle as captain_name;
@@ -883,47 +945,200 @@ def active_preset(default: str = "work") -> str:
     return default
 
 
-# Cache: product_brain_dir is read once per process (same lifecycle as
+# The tasks/coordination context-slug shape gate (FW-073 launcher allowlist +
+# my-tasks.sh CLI gate, Spec 038 §4.8): [a-z0-9][a-z0-9-]*, max 32 chars.
+# Compiled once; static pattern (no dynamic construction, no ReDoS surface).
+_CONTEXT_SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,31}")
+
+
+def _context_slug_ok(val: str) -> bool:
+    """True when ``val`` is a well-formed context slug. Config values are
+    UNTRUSTED data — a non-conforming candidate is treated as unresolved (its
+    rung is skipped), never returned, so ``../``, ``$(...)``, ``;`` etc. can
+    never reach a path join, a psql var, or an env export."""
+    return bool(val) and _CONTEXT_SLUG_RE.fullmatch(val) is not None
+
+
+def active_context(officer: "str | None" = None, default: str = "",
+                   root: "Path | str | None" = None) -> str:
+    """The tasks/coordination context slug for this session — the resolver
+    that fixes the CONFIG SPLIT (audit 2026-07-16): the tasks subsystem keyed
+    off ``instance/config/active-project.txt`` alone, but preset deployments
+    (e.g. the portfolio shape) declare lanes via ``instance/config/contexts/``
+    and never write that file, so ``officer_tasks`` was structurally unusable
+    there. Twin of ``cabinet/scripts/lib/lanes.sh cabinet_resolve_context``
+    (keep rung-for-rung parity — test-pinned by
+    ``cabinet/scripts/lib/tests/test_resolve_context_sh.py``) and of the
+    dashboard's ``src/lib/active-context.ts`` (which has no officer rung).
+
+    Rungs — first candidate passing :func:`_context_slug_ok` wins; a
+    non-conforming value skips its rung (never returned):
+
+      1. ``CABINET_CONTEXT`` env (session/launchd scope)
+      2. ``instance/config/active-project.txt`` (single-product deployments)
+      3. officer→lane derivation (``officer`` given): exact slug match in the
+         declared-lane enum, else the LONGEST lane ``L`` with
+         ``officer == "L-<anything>"`` (portfolio ``<lane>-ceo`` officers —
+         no suffix literal is hardcoded, so any preset's per-lane officer
+         naming resolves)
+      4. the single declared lane, when the enum has exactly one
+      5. the Captain-ruled ``lane_default`` (platform.yml / product.yml),
+         only when it IS a declared lane
+
+    The declared-lane enum is the first top-level ``slug:`` scalar per
+    ``instance/config/contexts/*.yml`` — the SAME minimal line-scan as
+    :func:`lanes` / ``run_action_lane._context_slugs`` (re-implemented here
+    rather than called so this resolver is ``root``-injectable and UNCACHED:
+    ``active-project.txt`` / env can change under a long-lived process, and
+    the lanes() process cache would pin the first fixture a test resolved).
+    Preset-awareness is via the preset's MATERIALIZED shape (contexts enum +
+    roster naming), never by parsing ``presets/`` — framework stays
+    layer-clean and product-agnostic.
+
+    No resolution falls back to ``default`` — the EMPTY string — and every
+    consumer fails LOUD at its own seam with a remedy naming the rungs
+    (``officer_tasks.context_slug`` is NOT NULL; a silent invented context
+    would misfile coordination state). Never raises. ``root`` overrides
+    ``_cabinet_root()`` for tests/embedders."""
+    base = Path(root).expanduser() if root else _cabinet_root()
+
+    # R1 — session env (whitespace-stripped, shape-gated).
+    cand = "".join((os.environ.get("CABINET_CONTEXT") or "").split())
+    if _context_slug_ok(cand):
+        return cand
+
+    # R2 — active-project.txt (whitespace-stripped, shape-gated).
+    try:
+        p = base / "instance/config/active-project.txt"
+        if p.is_file():
+            cand = "".join(p.read_text(encoding="utf-8").split())
+            if _context_slug_ok(cand):
+                return cand
+    except Exception:
+        pass
+
+    # R3–R5 — preset-derived, all off the declared-lane enum.
+    slugs: set = set()
+    try:
+        for f in sorted((base / "instance/config/contexts").glob("*.yml")):
+            try:
+                for line in f.read_text(encoding="utf-8", errors="ignore").splitlines():
+                    s = line.strip()
+                    if s.startswith("slug:"):
+                        val = s.split(":", 1)[1].strip().strip('"').strip("'").lower()
+                        if val:
+                            slugs.add(val)
+                        break
+            except OSError:
+                continue
+    except OSError:
+        pass
+    lanes_enum = sorted(slugs)
+    if lanes_enum:
+        if officer:
+            best = ""
+            for lane in lanes_enum:
+                if not _context_slug_ok(lane):
+                    continue
+                if officer == lane:
+                    best = lane
+                    break
+                if officer.startswith(lane + "-") and len(lane) > len(best):
+                    best = lane
+            if best:
+                return best
+        if len(lanes_enum) == 1 and _context_slug_ok(lanes_enum[0]):
+            return lanes_enum[0]
+        cand = _lane_default_uncached(base)
+        if _context_slug_ok(cand) and cand in lanes_enum:
+            return cand
+    return default
+
+
+def _lane_default_uncached(base: Path) -> str:
+    """Root-injectable, uncached read of the ``lane_default`` scalar —
+    :func:`active_context`'s R5 source. Same key logic as
+    :func:`lane_default` (platform.yml, else product.yml, top-level or nested
+    under ``product:``) but bypasses that resolver's process cache and fixed
+    root, for the same reasons active_context itself is uncached. Absence /
+    parse failure ⇒ ``""`` (the rung is skipped); never raises."""
+    try:
+        import yaml  # local: keep env.py import-light for the safety switches
+        for rel in ("instance/config/platform.yml", "instance/config/product.yml"):
+            p = base / rel
+            try:
+                if not p.exists():
+                    continue
+                data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+            except Exception:
+                continue
+            if not isinstance(data, dict):
+                continue
+            val = data.get("lane_default")
+            if val is None and isinstance(data.get("product"), dict):
+                val = data["product"].get("lane_default")   # product.yml nests it
+            if val is not None and str(val).strip():
+                return str(val).strip()
+    except Exception:
+        pass
+    return ""
+
+
+# Cache: org_vault_dir is read once per process (same lifecycle as
 # vault_dir). None ⇒ unresolved — the EMPTY string is a VALID resolved value
 # (a deployment with no org corpus), so the sentinel is None, never "".
-_product_brain_dir_cache: "str | None" = None
+_org_vault_dir_cache: "str | None" = None
 
 
-def product_brain_dir(default: str = "") -> str:
-    """The ORG's product-brain markdown corpus directory — the flavor-B twin of
-    ``vault_dir()``. Where the vault is the captain's PERSONAL brain (absent on
-    clean-room org boxes, where ``vault_dir()`` fail-closes to ``""`` and the
-    lane gathers zero vault sections), the product-brain corpus is the ORG's
-    OWN knowledge (architecture, decisions, incidents, deploy notes — the
-    plan-B B4.14 corpus), written by officers via normal file writes and
-    gathered by ``run_action_lane.gather_signals``'s corpus sections.
+def org_vault_dir(default: str = "") -> str:
+    """The cabinet's VAULT — the org's own knowledge-corpus directory
+    (``vault/``, Captain-ratified 2026-07-16 as the default vault; the
+    directory and this resolver were formerly named product-brain).
 
-    Resolution order: the env override ``CABINET_PRODUCT_BRAIN_DIR`` (an
-    explicit per-process override, mirroring ``vault_dir``'s
-    ``CABINET_VAULT_DIR``) → the ``product_brain_dir`` key in
-    ``instance/config/platform.yml`` (else ``product.yml``) IF the directory it
-    names exists — the key generate-instance.py stamps; relative values resolve
-    against the repo root, absolute/``~`` values are honored as-is, so a
-    captain relocates the corpus by editing config (review fix 2026-07-07: the
-    stamped key used to be dead config that nothing read) → ``<repo>/
-    product-brain`` IF that directory exists (the corpus ships in-repo, so any
-    checkout that carries it resolves it with zero config) → the generic
-    ``default`` (``""``). A non-empty value is ``~``-expanded. Every non-env
-    arm is existence-gated, so a deployment with NO corpus (or a configured
-    path that does not exist) resolves ``""``/the next arm — the caller then
-    treats the corpus sections as empty (fail-closed: no corpus ⇒ no
-    sections), never crashes, and never scans another launcher's paths."""
-    global _product_brain_dir_cache
-    if _product_brain_dir_cache is not None:
-        return _product_brain_dir_cache
-    env_override = (os.environ.get("CABINET_PRODUCT_BRAIN_DIR") or "").strip()
-    if env_override:
-        _product_brain_dir_cache = os.path.expanduser(env_override)
-        return _product_brain_dir_cache
+    Where ``vault_dir()`` above resolves the captain's PERSONAL brain (an
+    external notes vault, absent on clean-room org boxes), this resolver names
+    the ORG's OWN knowledge — architecture, decisions, incidents, deploy
+    notes, designs, plans, any captain/org doc (see ``vault/README.md``) —
+    written by officers via normal file writes and gathered by
+    ``run_action_lane.gather_signals``'s corpus sections. The DISTINCT name is
+    deliberate: reusing ``vault_dir`` for the org corpus would have silently
+    repointed the personal-vault seam (fidelity Decisions corpus, flavor-A
+    gather) at the in-repo corpus.
+
+    Resolution order:
+      1. env ``CABINET_ORG_VAULT_DIR`` (explicit per-process override,
+         mirroring ``vault_dir``'s ``CABINET_VAULT_DIR``; honored verbatim)
+      2. env ``CABINET_PRODUCT_BRAIN_DIR`` — the pre-rename alias, still
+         honored so existing deployments/launchers keep resolving
+      3. the ``org_vault_dir`` key in ``instance/config/platform.yml`` (else
+         ``product.yml``) IF the directory it names exists — the key
+         generate-instance.py stamps; relative values resolve against the
+         repo root, absolute/``~`` values are honored as-is, so a captain
+         relocates the corpus by editing config
+      4. the legacy ``product_brain_dir`` key — same semantics, still honored
+         so a hand-edited pre-rename config keeps working
+      5. ``<repo>/vault`` IF that directory exists (the corpus ships in-repo,
+         so any checkout that carries it resolves with zero config)
+      6. legacy ``<repo>/product-brain`` IF it exists (un-migrated checkout)
+      7. the generic ``default`` (``""``).
+    A non-empty value is ``~``-expanded. Every non-env arm is existence-gated,
+    so a deployment with NO corpus (or a configured path that does not exist)
+    resolves ``""``/the next arm — the caller then treats the corpus sections
+    as empty (fail-closed: no corpus ⇒ no sections), never crashes, and never
+    scans another launcher's paths."""
+    global _org_vault_dir_cache
+    if _org_vault_dir_cache is not None:
+        return _org_vault_dir_cache
+    for env_name in ("CABINET_ORG_VAULT_DIR", "CABINET_PRODUCT_BRAIN_DIR"):
+        env_override = (os.environ.get(env_name) or "").strip()
+        if env_override:
+            _org_vault_dir_cache = os.path.expanduser(env_override)
+            return _org_vault_dir_cache
     resolved = default
     try:
         root = _cabinet_root()
-        # platform.yml / product.yml key (stamped by generate-instance.py).
+        # platform.yml / product.yml key (stamped by generate-instance.py);
+        # the new key name wins, the legacy key is honored after it.
         try:
             import yaml  # local: keep env.py import-light for the safety switches
             for rel in ("instance/config/platform.yml", "instance/config/product.yml"):
@@ -936,27 +1151,44 @@ def product_brain_dir(default: str = "") -> str:
                     continue
                 if not isinstance(data, dict):
                     continue
-                val = data.get("product_brain_dir")
-                if val is None and isinstance(data.get("product"), dict):
-                    val = data["product"].get("product_brain_dir")
+                val = None
+                for key in ("org_vault_dir", "product_brain_dir"):
+                    cand_val = data.get(key)
+                    if cand_val is None and isinstance(data.get("product"), dict):
+                        cand_val = data["product"].get(key)
+                    if isinstance(cand_val, str) and cand_val.strip():
+                        val = cand_val
+                        break
                 if isinstance(val, str) and val.strip():
                     cand_str = os.path.expanduser(val.strip())
                     cand_path = Path(cand_str)
                     if not cand_path.is_absolute():
                         cand_path = root / cand_str
                     if cand_path.is_dir():
-                        _product_brain_dir_cache = str(cand_path)
-                        return _product_brain_dir_cache
+                        _org_vault_dir_cache = str(cand_path)
+                        return _org_vault_dir_cache
                     break  # key set but dir absent → fall through (fail-closed)
         except Exception:
             pass
-        cand = root / "product-brain"
-        if cand.is_dir():
-            resolved = str(cand)
+        for rel_default in ("vault", "product-brain"):
+            cand = root / rel_default
+            if cand.is_dir():
+                resolved = str(cand)
+                break
     except Exception:
         resolved = default
-    _product_brain_dir_cache = os.path.expanduser(resolved) if resolved else resolved
-    return _product_brain_dir_cache
+    _org_vault_dir_cache = os.path.expanduser(resolved) if resolved else resolved
+    return _org_vault_dir_cache
+
+
+def product_brain_dir(default: str = "") -> str:
+    """DEPRECATED pre-2026-07-16 name of :func:`org_vault_dir` — a working
+    alias, kept because the schg-locked germline acting lane
+    (``framework/acting/run_action_lane.py``) imports this symbol and can only
+    be modernized in a Captain unlock window (and out-of-tree scripts may
+    still call it). New code calls ``org_vault_dir()``; resolution — including
+    the legacy ``CABINET_PRODUCT_BRAIN_DIR`` env alias — is identical."""
+    return org_vault_dir(default)
 
 
 def comms_charter_path() -> Path:

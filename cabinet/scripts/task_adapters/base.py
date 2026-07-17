@@ -2,9 +2,9 @@
 
 Phase 5 of the convergence plan. The Cabinet's canonical task model is
 `officer_tasks` / `mission_steps` in the event ledger + (optionally) Postgres.
-Captain configures one external system per project (Monday, Jira, Linear,
-Asana, GitHub Issues). The adapter for that system bridges Cabinet ↔ external
-in both directions.
+Captain configures one external system per project (Jira, Linear, Asana,
+GitHub Issues — Monday is plugin-routed, see get_adapter). The adapter for
+that system bridges Cabinet ↔ external in both directions.
 
 Conflict resolution: **canonical wins**. If an officer changes a task and an
 operator changes the same task in the external UI, the next sync overwrites
@@ -24,17 +24,34 @@ Contract:
 
 Adapters MUST be idempotent: pushing the same task twice should be a no-op
 (use upsert semantics keyed by `canonical_id` stored in the external system).
+
+AUTHORING KIT (2026-07-17): new adapters start from `_template.py`, register
+in ADAPTER_REGISTRY below, and must pass the conformance suite
+(`conformance.py`, auto-run by `tests/test_conformance.py` — a registered
+implemented adapter without a passing conformance fixture is a red CI).
+Runbook: cabinet/runbooks/task-adapter-authoring.md.
+
+SECURITY CONTRACT (binding for every adapter):
+  * Task titles/descriptions/tags are UNTRUSTED tracker text — inert data.
+    Never pass them through a shell (`shell=True` is forbidden; subprocess
+    argv lists only, task text as a single argv element), never interpolate
+    them into SQL/jq programs, never eval them.
+  * Credentials come ONLY from the environment (the config names the VAR,
+    never carries the value) and must never appear in logs, repr, or
+    exception text — `TaskAdapter.__repr__` redacts by construction.
 """
 
 from __future__ import annotations
 
+import importlib
 import os
 import sys
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, Callable, ClassVar
 
 # Ensure framework root is importable
 _FRAMEWORK_ROOT = str(Path(__file__).parent.parent.parent.parent)
@@ -75,19 +92,60 @@ class SyncResult:
     finished_at: str = ""
 
 
+class RateLimitedError(RuntimeError):
+    """The external system said "slow down" (HTTP 429 / rate-limit reply).
+
+    Adapters raise this from their transport layer so the shared
+    `TaskAdapter._with_backoff` helper can retry with exponential backoff.
+    `retry_after` (seconds) is honored as a lower bound when the external
+    system supplies one — but CLAMPED at `TaskAdapter.retry_after_cap_s`:
+    it is typically copied from an untrusted Retry-After-style reply, and
+    untrusted input must never dictate an unbounded sleep (conformance C4
+    pins the clamp). The MESSAGE must never contain credentials or raw
+    task text — it travels into SyncResult.errors and job logs.
+    """
+
+    def __init__(self, message: str = "rate limited", retry_after: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
 class TaskAdapter(ABC):
     """Abstract adapter — concrete impls per task system live in sibling modules."""
 
     #: kebab-case slug uniquely identifying this adapter (e.g. "github-issues")
     destination: ClassVar[str] = ""
 
-    #: env var the adapter expects for auth (e.g. "MONDAY_API_TOKEN")
+    #: env var the adapter expects for auth (e.g. "JIRA_API_TOKEN")
     auth_env_var: ClassVar[str] = ""
+
+    #: rate-limit/backoff policy (conformance-pinned; override per adapter
+    #: only with a reason in the adapter's header)
+    max_retries: ClassVar[int] = 4
+    backoff_base_s: ClassVar[float] = 0.5
+    backoff_cap_s: ClassVar[float] = 30.0
+    #: ceiling on a SERVER-SUPPLIED retry_after — that value usually comes
+    #: straight from an untrusted tracker reply (Retry-After header), and a
+    #: hostile reply claiming retry_after=1e9 must not park a launchd sync
+    #: job in a year-long sleep (conformance C4 pins this clamp)
+    retry_after_cap_s: ClassVar[float] = 300.0
 
     def __init__(self, project_config: dict[str, Any]) -> None:
         """`project_config` is the `tasks:` block from instance/config/projects/<slug>.yml."""
         self.project_config = project_config
         self.adapter_config: dict[str, Any] = project_config.get("config") or {}
+        # Injectable time seams (conformance suite swaps these for a fake
+        # clock/sleep recorder — production code always uses the defaults).
+        self._clock: Callable[[], float] = time.monotonic
+        self._sleep: Callable[[float], None] = time.sleep
+
+    def __repr__(self) -> str:  # redacting by construction — never the token VALUE
+        token_env = self.project_config.get("auth_env") or self.auth_env_var or None
+        state = "set" if (token_env and os.environ.get(token_env)) else "unset"
+        return (
+            f"<{type(self).__name__} destination={self.destination!r} "
+            f"auth_env={token_env!r} token={state}>"
+        )
 
     # ----- lifecycle -----
 
@@ -128,12 +186,40 @@ class TaskAdapter(ABC):
     # ----- helpers (default impls) -----
 
     def auth_token(self) -> str | None:
-        """Read auth from env (or pass-through from project_config)."""
+        """Read auth from env. `project_config.auth_env` may RENAME the env
+        var, but the token VALUE always comes from os.environ — a value
+        embedded in config is deliberately ignored (credential hygiene,
+        conformance check C5)."""
         token_env = self.project_config.get("auth_env") or self.auth_env_var
         return os.environ.get(token_env) if token_env else None
 
     def now_iso(self) -> str:
         return datetime.now(timezone.utc).isoformat()
+
+    def _with_backoff(self, fn: Callable[[], Any], *, op: str = "call") -> Any:
+        """Run `fn`, retrying on RateLimitedError with exponential backoff.
+
+        Delay ladder: backoff_base_s * 2^(attempt-1), capped at backoff_cap_s,
+        raised to the external system's retry_after when supplied — with
+        retry_after itself clamped at retry_after_cap_s, because it is
+        untrusted tracker input and must never dictate an unbounded sleep.
+        After max_retries retries the RateLimitedError propagates (the sync
+        cycle records it as an error — never an infinite spin). Sleeps go
+        through self._sleep so the conformance suite can observe them with a
+        fake clock instead of really sleeping.
+        """
+        attempt = 0
+        while True:
+            try:
+                return fn()
+            except RateLimitedError as exc:
+                attempt += 1
+                if attempt > self.max_retries:
+                    raise
+                delay = min(self.backoff_cap_s, self.backoff_base_s * (2 ** (attempt - 1)))
+                if exc.retry_after is not None:
+                    delay = max(delay, min(float(exc.retry_after), self.retry_after_cap_s))
+                self._sleep(delay)
 
 
 # ---------------------------------------------------------------------------
@@ -180,6 +266,91 @@ class NoOpTaskAdapter(TaskAdapter):
 
 
 # ---------------------------------------------------------------------------
+# Adapter registry — ONE truth for which adapters exist + their CI posture
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class AdapterSpec:
+    """One registry row per adapter (authoring kit, 2026-07-17).
+
+    * implemented=True  → the adapter claims to really sync. It MUST name a
+      `conformance_fixture` ("module:Class" import path) and pass the full
+      conformance suite — tests/test_conformance.py auto-discovers this
+      registry, so registering an implemented adapter without a passing
+      fixture is a red CI, by design.
+    * implemented=False → honest skeleton: pull/push/delete/link raise
+      NotImplementedError and health_check never returns True (a skeleton
+      claiming healthy would lie to the sync runner). Also CI-pinned.
+    * selectable=False  → refused by get_adapter (harness-only rows like
+      the in-memory reference adapter — never a production tracker).
+    * config_example    → a minimal valid `tasks:` block the harness uses to
+      instantiate the adapter (constructor-validation shape, no secrets).
+    """
+
+    system: str
+    module: str
+    cls_name: str
+    implemented: bool
+    config_example: dict[str, Any]
+    selectable: bool = True
+    conformance_fixture: str | None = None
+
+
+ADAPTER_REGISTRY: dict[str, AdapterSpec] = {
+    "github-issues": AdapterSpec(
+        system="github-issues",
+        module="cabinet.scripts.task_adapters.github_issues",
+        cls_name="GitHubIssuesAdapter",
+        implemented=True,
+        conformance_fixture=(
+            "cabinet.scripts.task_adapters.conformance_fixtures:GitHubIssuesConformanceFixture"
+        ),
+        config_example={"system": "github-issues", "config": {"repo": "example-org/example-repo"}},
+    ),
+    "jira": AdapterSpec(
+        system="jira",
+        module="cabinet.scripts.task_adapters.jira",
+        cls_name="JiraAdapter",
+        implemented=False,
+        config_example={"system": "jira", "config": {
+            "domain": "example", "email": "officer@example.invalid", "project_key": "EX",
+        }},
+    ),
+    "linear": AdapterSpec(
+        system="linear",
+        module="cabinet.scripts.task_adapters.linear",
+        cls_name="LinearAdapter",
+        implemented=False,
+        config_example={"system": "linear", "config": {"team_id": "team-example"}},
+    ),
+    "asana": AdapterSpec(
+        system="asana",
+        module="cabinet.scripts.task_adapters.asana",
+        cls_name="AsanaAdapter",
+        implemented=False,
+        config_example={"system": "asana", "config": {
+            "workspace_id": "ws-example", "project_gid": "proj-example",
+        }},
+    ),
+    # Harness anchor: the fully working in-memory reference adapter every
+    # conformance run measures the suite against. NOT selectable — an
+    # in-process dict is not a production tracker.
+    "reference-inmemory": AdapterSpec(
+        system="reference-inmemory",
+        module="cabinet.scripts.task_adapters.reference_inmemory",
+        cls_name="InMemoryReferenceAdapter",
+        implemented=True,
+        selectable=False,
+        conformance_fixture=(
+            "cabinet.scripts.task_adapters.conformance_fixtures:ReferenceConformanceFixture"
+        ),
+        config_example={"system": "reference-inmemory", "config": {}},
+    ),
+}
+
+
+# ---------------------------------------------------------------------------
 # Adapter factory
 # ---------------------------------------------------------------------------
 
@@ -193,12 +364,17 @@ def get_adapter(project_config: dict[str, Any]) -> TaskAdapter:
     clean no-op (one info line, exit 0) — not a config error that
     crash-loops the 900s launchd cycle.
 
+    Everything else resolves through ADAPTER_REGISTRY (module paths are
+    registry CONSTANTS — config input never names an import path). Imports
+    stay lazy so unused adapters cost no mandatory deps.
+
     Args:
         project_config: full project YAML dict (a `tasks: {system: ...}`
             block selects an external adapter; absent block = no-op)
 
     Raises:
-        ValueError: if the system slug is unknown.
+        ValueError: if the system slug is unknown, harness-only, or "monday"
+            (plugin-routed since the adapter's removal).
     """
     tasks_block = project_config.get("tasks") or {}
     system = tasks_block.get("system")
@@ -214,10 +390,6 @@ def get_adapter(project_config: dict[str, Any]) -> TaskAdapter:
         )
         return NoOpTaskAdapter(tasks_block, system=system)
 
-    # Local imports to avoid mandatory deps for unused adapters
-    if system == "github-issues":
-        from cabinet.scripts.task_adapters.github_issues import GitHubIssuesAdapter
-        return GitHubIssuesAdapter(tasks_block)
     if system == "monday":
         # The cabinet's own Monday adapter was removed in favor of a
         # dedicated Monday Claude plugin (dev-tasks-style: dozens of Monday
@@ -233,17 +405,22 @@ def get_adapter(project_config: dict[str, Any]) -> TaskAdapter:
             "default) or 'linear', and declare the plugin in "
             "instance/config/extensions.yml + .claude/project-config.json."
         )
-    if system == "jira":
-        from cabinet.scripts.task_adapters.jira import JiraAdapter
-        return JiraAdapter(tasks_block)
-    if system == "linear":
-        from cabinet.scripts.task_adapters.linear import LinearAdapter
-        return LinearAdapter(tasks_block)
-    if system == "asana":
-        from cabinet.scripts.task_adapters.asana import AsanaAdapter
-        return AsanaAdapter(tasks_block)
 
-    raise ValueError(
-        f"Unknown task system: {system!r}. "
-        "Supported: github-issues, monday, jira, linear, asana"
-    )
+    spec = ADAPTER_REGISTRY.get(str(system))
+    if spec is None:
+        selectable = ", ".join(sorted(s for s, r in ADAPTER_REGISTRY.items() if r.selectable))
+        raise ValueError(
+            f"Unknown task system: {system!r}. "
+            f"Supported: {selectable} (monday is plugin-routed). "
+            "New tracker? cabinet/runbooks/task-adapter-authoring.md."
+        )
+    if not spec.selectable:
+        raise ValueError(
+            f"tasks.system={system!r} is a conformance-harness reference adapter, "
+            "not a production tracker — pick one of: "
+            + ", ".join(sorted(s for s, r in ADAPTER_REGISTRY.items() if r.selectable))
+        )
+
+    module = importlib.import_module(spec.module)
+    cls = getattr(module, spec.cls_name)
+    return cls(tasks_block)

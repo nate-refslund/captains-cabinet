@@ -55,10 +55,11 @@ jobs:
       # pre-compact.sh, stop-hook.sh, run-golden-evals.sh read REDIS_HOST directly.
       REDIS_HOST: 127.0.0.1
       REDIS_PORT: 6379
-      # pre-tool-use.sh + post-tool-use.sh derive host/port from REDIS_URL — the
-      # REDIS_HOST/PORT above would otherwise be ignored, and redis-cli attempts
-      # to resolve the (non-existent on GH runner) `redis` service hostname.
-      # First CI run (2485561…) failed EVAL-001/008/015/016 for exactly this.
+      # pre-tool-use.sh + post-tool-use.sh PREFER REDIS_HOST/PORT and fall
+      # back to deriving host/port from REDIS_URL; set the full triple so no
+      # resolution path can reach the (non-existent on GH runner) `redis`
+      # Docker-DNS default. First CI run (2485561…) failed
+      # EVAL-001/008/015/016 on exactly this endpoint-resolution class.
       REDIS_URL: redis://127.0.0.1:6379
 
     steps:
@@ -317,7 +318,7 @@ jobs:
         if: ${{ !cancelled() }}
         # Collects the ENTIRE cabinet/scripts/lib/tests directory — every
         # test file in it, no per-suite list here (a stale enumeration is
-        # exactly how the old name rotted); 185 tests as of 2026-07-16.
+        # exactly how the old name rotted); 191 tests as of 2026-07-17.
         # The FW-023 ETL-transform tests this step was originally named for
         # were carved OUT of this directory to the Spec-039 set in f855ae96
         # (R073); of the ETL modules only etl-common.py remains in lib/,
@@ -368,6 +369,14 @@ jobs:
         # EVAL-023 (FW-047) runs under CABINET_HOOK_TEST_MODE=1 so trigger_send
         # fan-out is suppressed. This step also exercises the full hook-probe
         # surface end-to-end.
+        # CABINET_EVALS_REDIS_DISPOSABLE=1: this job's redis:7 SERVICE
+        # container is a throwaway, so the suite may use it directly — the
+        # declaration is what lets it skip the ephemeral-sandbox spawn it
+        # now requires everywhere else (the suite sets/clears
+        # cabinet:killswitch and must never touch a live Redis; the runner
+        # image also has no redis-server binary to sandbox with).
+        env:
+          CABINET_EVALS_REDIS_DISPOSABLE: "1"
         run: bash /opt/founders-cabinet/cabinet/scripts/run-golden-evals.sh
 
       - name: Captain-rules retrieval eval
@@ -478,8 +487,15 @@ jobs:
       # via __init__.py so it does not basename-collide; verified 2026-07-16.)
       - name: Cabinet task-adapter tests
         if: ${{ !cancelled() }}
-        # 26 tests pinning the CanonicalTask/TaskAdapter seam
-        # (cabinet/scripts/task_adapters/base.py).
+        # CanonicalTask/TaskAdapter seam pins (test_base.py) + the adapter
+        # CONFORMANCE gate (test_conformance.py, adapter kit 2026-07-17):
+        # ADAPTER_REGISTRY is auto-discovered, so registering an
+        # implemented adapter without a passing conformance fixture — or
+        # dropping an unregistered adapter module into task_adapters/ — is
+        # a red build BY DESIGN. Calibration anchors run here too: the
+        # in-memory reference adapter must pass everything, the _template
+        # scaffold must fail everything. All transports are faked
+        # in-process (no network, no real gh).
         run: python -m pytest cabinet/scripts/task_adapters/tests -q
 
       - name: Cabinet world-aesthetic tests

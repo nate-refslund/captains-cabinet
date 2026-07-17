@@ -73,6 +73,12 @@ delete instance/config/signals.yml
 # missing live file as the ratified default (soak), so a fresh egg behaves
 # correctly without it.
 delete instance/config/memory-supersession.yml
+# R120-class: task-watch.yml is THIS deployment's /tasks watchdog card-rule
+# posture (memory-supersession.yml precedent directly above). The .example
+# twin ships; task-events-watch.py treats a missing live file as the
+# ratified default (blocked_card ON), so a fresh egg behaves correctly
+# without it.
+delete instance/config/task-watch.yml
 # R120: enforced egress is deployment policy. The live file is intentionally
 # fail-closed for this Captain; a fresh commercial egg receives only the
 # documented .example twin and must apply its own allowlist during hatch.
@@ -277,6 +283,7 @@ expect-present instance/config/sources.yml.example
 expect-present instance/config/role-registry.md.example
 expect-present instance/config/signals.yml.example
 expect-present instance/config/memory-supersession.yml.example
+expect-present instance/config/task-watch.yml.example
 expect-present instance/config/egress.yml.example
 # R166: the synthetic template for the UNTRACKED captain-specific publish-scan
 # pattern file must ship — egg-side cabinet-feedback.sh reads the live twin
@@ -296,6 +303,10 @@ expect-present instance/config/posture-presets/org-macmini.yml
 expect-present instance/config/policies/README.md
 expect-present cabinet/fixtures/testburg/README.md
 expect-present cabinet/fixtures/testburg/generate.py
+# Vault wave (2026-07-17): the egg ships the org vault scaffold — a fresh
+# captain's default knowledge corpus; vault/README.md carries the
+# doc-placement one-pager the onboarding flow points at.
+expect-present vault/README.md
 expect-present cabinet/mcp-overlays/cua-driver.mcp.json
 expect-present shared/interfaces/captain-vetoes.yml
 expect-present shared/interfaces/captain-rules-index.yaml
@@ -344,6 +355,12 @@ expect-absent docs/proposals/sovereign-posture-activation-2026-07-09.md
 # would abort the export under set -e) is instance history: archived out.
 expect-absent docs/proposals/germline-session-start-digest-addendum-2026-07-15.md
 expect-absent docs/proposals/germline-session-start-digest-2026-07-15.patch
+# Library retirement (2026-07-16): staged ceremony package for the germline
+# danglers (mcp-scope.yml grants, settings.json allow entry, comment-only
+# start-officer-mac.sh patch) — same flat-file contract as the BC package
+# above; instance ceremony history, archived out of the egg.
+expect-absent docs/proposals/germline-library-retirement-addendum-2026-07-16.md
+expect-absent docs/proposals/germline-library-retirement-2026-07-16.patch
 expect-present cabinet/scripts/hatch.sh
 expect-present cabinet/scripts/null-hatch.sh
 expect-present bin/.gitkeep

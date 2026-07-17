@@ -378,6 +378,7 @@ def test_proposals_non_amendments_archived_amendments_kept(export: Path):
         "germline-amendment-cabinet-axes-2026-07-05.md",
         "germline-amendment-candor-2026-07-10.md",
         "germline-amendment-constitution-retirement-2026-07-07.md",
+        "germline-amendment-context-resolver-2026-07-17.md",
             "germline-amendment-cosmetic-batch-2026-07-07.md",
             "germline-amendment-de-nate-2026-07-05.md",
             "germline-amendment-egress-launchd-owner-2026-07-15.md",
@@ -411,7 +412,12 @@ def test_proposals_non_amendments_archived_amendments_kept(export: Path):
                  # subdirectory would crash t_proposals_archive's rm -f loop
                  # under set -e (leftover pin below also enforces no-subdir).
                  "germline-session-start-digest-addendum-2026-07-15.md",
-                 "germline-session-start-digest-2026-07-15.patch"):
+                 "germline-session-start-digest-2026-07-15.patch",
+                 # Library-retirement ceremony package (2026-07-16): same
+                 # shape — flat addendum doc + .patch under docs/proposals/,
+                 # archived out of the egg as instance ceremony history.
+                 "germline-library-retirement-addendum-2026-07-16.md",
+                 "germline-library-retirement-2026-07-16.patch"):
         assert not (proposals / gone).exists(), f"R167: non-amendment proposal must not ship: {gone}"
     # nothing else remains beyond the stub + the 20 amendments
     leftover = sorted(p.name for p in proposals.iterdir())

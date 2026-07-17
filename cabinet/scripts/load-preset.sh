@@ -288,10 +288,11 @@ log "Assembled safety boundaries → $RUNTIME_DIR/safety-boundaries.md"
 # Dependency order mirrors cabinet-bootstrap.sh schema_apply_list (the
 # ordering source of truth — mirror list additions in BOTH scripts, Docs Must
 # Track the Code): 037 + 044 alter library_records after library.sql creates
-# it; 041 alters officer_tasks after 038. R098: 044 is the sole DDL adding
-# embedded_at, which cabinet/dashboard/src/lib/library.ts INSERTs — omitting
-# it broke library record create/update on fresh-hatch DBs. 046 (embed-seam
-# provenance singleton) runs last; memory_embedding_stamp --if-absent writes
+# it; 041 alters officer_tasks after 038; 042 widens officer_tasks.type after
+# 039 (adds the 'reminder' kind the Captain-arm stamps). R098: 044 is the sole
+# DDL adding embedded_at, which cabinet/dashboard/src/lib/library.ts INSERTs —
+# omitting it broke library record create/update on fresh-hatch DBs. 046
+# (embed-seam provenance singleton) runs last; memory_embedding_stamp --if-absent writes
 # its one row right after the loop — first deploy only, an existing stamp is
 # never overwritten (R4 follow-up wiring, 2026-07-15).
 if [ -n "${NEON_CONNECTION_STRING:-}" ]; then
@@ -308,6 +309,7 @@ if [ -n "${NEON_CONNECTION_STRING:-}" ]; then
     "$CABINET_ROOT/cabinet/sql/038-officer-tasks.sql" \
     "$CABINET_ROOT/cabinet/sql/041-tasks-due-at.sql" \
     "$CABINET_ROOT/cabinet/sql/039-linear-to-tasks-schema.sql" \
+    "$CABINET_ROOT/cabinet/sql/042-tasks-reminder-kind.sql" \
     "$CABINET_ROOT/cabinet/sql/045-org-runtime-slice.sql" \
     "$CABINET_ROOT/cabinet/sql/046-embedding-meta.sql"; do
     if [ -f "$schema" ]; then

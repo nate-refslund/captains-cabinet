@@ -8,9 +8,7 @@
  * Live refresh via SSE handled by TasksClientRefresh (client component).
  */
 
-import path from 'node:path'
-import { readFile } from 'node:fs/promises'
-import { cabinetRoot } from '@/lib/cabinet-root'
+import { resolveActiveContext } from '@/lib/active-context'
 import { getAllOfficerBoards, getBoardStats, WIP_CAP } from '@/lib/tasks'
 import { getLinearFounderActions } from '@/lib/linear-tasks'
 import redis from '@/lib/redis'
@@ -22,23 +20,10 @@ import { BoardStatStrip } from '@/components/tasks/board-stat-strip'
 
 export const dynamic = 'force-dynamic'
 
-/** Resolve the active context slug for this deployment. Follows the same
- *  precedence as my-tasks.sh: env > active-project.txt. Throws on miss —
- *  /tasks without a context can't render a per-(context,officer) WIP board. */
-async function resolveActiveContext(): Promise<string> {
-  if (process.env.CABINET_CONTEXT?.trim()) return process.env.CABINET_CONTEXT.trim()
-  const activeFile = path.join(cabinetRoot(), 'instance/config/active-project.txt')
-  try {
-    const txt = await readFile(activeFile, 'utf-8')
-    const slug = txt.trim()
-    if (!slug) throw new Error('active-project.txt is empty')
-    return slug
-  } catch (err) {
-    throw new Error(
-      `/tasks: cannot resolve active context. Set $CABINET_CONTEXT or write ${activeFile}. (${(err as Error).message})`
-    )
-  }
-}
+// Context resolution: the shared preset-aware chain in @/lib/active-context
+// (same precedence as my-tasks.sh / framework.env.active_context: env >
+// active-project.txt > single-declared-lane > lane_default). Throws on miss —
+// /tasks without a context can't render a per-(context,officer) WIP board.
 
 const OFFLINE_THRESHOLD_MS = 15 * 60 * 1000
 

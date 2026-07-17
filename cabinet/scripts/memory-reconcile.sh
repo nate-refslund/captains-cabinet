@@ -26,9 +26,22 @@
 # NULL — re-queues update in place, never duplicate.
 #
 # WATCH LIST — parity with post-file-write-memory.sh (grep it before
-# extending either): tech-radar.md, product-specs/*.md, shared/backlog.md,
-# tier2 working-notes.md + reflections/*.md, memory/skills (evolved/
-# included), framework/constitution-base.md + safety-boundaries-base.md.
+# extending either; the two lists stay in sync BY DESIGN, and
+# test_bootstrap_memory_chain.py pins the hook⊆reconcile direction):
+# tech-radar.md, product-specs/*.md, shared/backlog.md, tier2
+# working-notes.md + reflections/*.md, memory/skills (evolved/ included),
+# framework/constitution-base.md + safety-boundaries-base.md, the org vault
+# corpus vault/**/*.md (source_type product_brain — the DB taxonomy name
+# predates the 2026-07-16 vault rename; the legacy product-brain/ dir is
+# still walked for un-migrated checkouts), and docs/**/*.md
+# (source_type framework_doc — the docs tree joined the memory index
+# 2026-07-17, vault wave).
+#   NOTE — the hook twin lives in the schg-locked germline hooks dir: its
+#   vault/ + docs/ watch patterns land via
+#   patches/germline-vault-hook-watch-2026-07-17.patch (Captain unlock
+#   ceremony; see docs/proposals/germline-vault-hook-watch-addendum-
+#   2026-07-17.md). Until that ceremony THIS nightly walk is the coverage
+#   netting for vault/ and docs/ writes.
 #   DELIBERATE EXCEPTION — shared/interfaces/captain-decisions.md is NOT
 #   reconciled here (2026-07-07): its entry-level ingest moved to the
 #   captain-law append-interface wave, which stamps provenance-rich rows
@@ -93,7 +106,8 @@ if ! psql "$NEON_CONNECTION_STRING" -X -q -t -A -F $'\t' -c "
   WHERE superseded_by IS NULL
     AND source_id IS NOT NULL
     AND source_type IN ('tech_radar','product_spec','working_note',
-                        'reflection','skill','framework_file')
+                        'reflection','skill','framework_file',
+                        'product_brain','framework_doc')
 " > "$SNAP_TSV" 2>/dev/null; then
   log "cabinet_memory snapshot query failed — aborting (nothing queued)"
   exit 1
@@ -172,6 +186,20 @@ while IFS= read -r f; do reconcile_file skill "$f"; done \
 while IFS= read -r f; do reconcile_file framework_file "$f"; done \
   < <(ls "$CABINET_ROOT"/framework/constitution-base.md \
         "$CABINET_ROOT"/framework/safety-boundaries-base.md 2>/dev/null)
+
+# Org vault corpus (the cabinet vault; legacy product-brain/ still walked for
+# un-migrated checkouts). source_type stays product_brain — the cabinet_memory
+# row taxonomy predates the vault rename and renaming it would orphan every
+# existing row's (source_type, source_id) upsert identity.
+while IFS= read -r f; do reconcile_file product_brain "$f"; done \
+  < <(find "$CABINET_ROOT/vault" "$CABINET_ROOT/product-brain" \
+        -type f -name '*.md' 2>/dev/null)
+
+# Framework docs tree (plans/proposals/runbooks/specs) — joined the memory
+# index 2026-07-17 (vault wave): officers must be able to recall the org's
+# own reference docs, not only re-read them by path.
+while IFS= read -r f; do reconcile_file framework_doc "$f"; done \
+  < <(find "$CABINET_ROOT/docs" -type f -name '*.md' 2>/dev/null)
 
 # =============================================================
 # 4. Summary (one line/night — the services.yml expected floor)

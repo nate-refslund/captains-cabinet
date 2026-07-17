@@ -175,3 +175,142 @@ cabinet_org_domains() {
   done
   return 1
 }
+
+# Context-slug shape gate shared by the resolver below: [a-z0-9][a-z0-9-]*,
+# max 32 chars (the FW-073 launcher allowlist + my-tasks.sh CLI gate, Spec 038
+# §4.8). Config values are UNTRUSTED data — a non-conforming candidate is
+# treated as unresolved (the rung is skipped), never emitted, so `../`,
+# `$(...)`, `;` etc. can never reach a path join, a psql var, or an export.
+_cabinet_context_slug_ok() {
+  case "${1:-}" in
+    "" | -* | *[!a-z0-9-]*) return 1 ;;
+  esac
+  [ "${#1}" -le 32 ] || return 1
+  return 0
+}
+
+# lane_default — bash twin of framework.env.lane_default(): the Captain-ruled
+# default lane, `lane_default:` in instance/config/platform.yml, else
+# product.yml (top-level, or nested directly under `product:`). First
+# non-empty cleaned value wins; none => empty + rc 1 (consumers skip the
+# rung — never an invented default). SAME stricter-only divergence as
+# cabinet_org_domains: the python twin's yaml.safe_load also accepts exotic
+# YAML forms; this line-scan resolves only the plain `lane_default: <slug>`
+# scalar both live files declare.
+cabinet_lane_default() {
+  local rel p out
+  for rel in "instance/config/platform.yml" "instance/config/product.yml"; do
+    p="$CABINET_ROOT/$rel"
+    [ -f "$p" ] && [ -r "$p" ] || continue
+    out=$(LC_ALL=C awk '
+      function clean(v) {
+        sub(/[ \t]+#.*$/, "", v)
+        gsub(/^[ \t]+|[ \t\r]+$/, "", v)
+        gsub(/^"+|"+$/, "", v)
+        gsub(/^'\''+|'\''+$/, "", v)
+        return v
+      }
+      /^[^ \t#]/ { in_prod = ($0 ~ /^product:[ \t\r]*$/) ? 1 : 0 }
+      /^lane_default:/ {
+        v = clean(substr($0, index($0, ":") + 1)); if (v != "") { print v; exit }
+      }
+      in_prod && /^[ \t]+lane_default:/ {
+        v = clean(substr($0, index($0, ":") + 1)); if (v != "") { print v; exit }
+      }
+    ' "$p" 2>/dev/null)
+    if [ -n "$out" ]; then
+      printf '%s\n' "$out"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# cabinet_resolve_context [officer_slug] — THE tasks/coordination context
+# resolver (config-split fix, 2026-07-17). Bash twin of
+# framework.env.active_context() (keep rung-for-rung parity — test-pinned by
+# cabinet/scripts/lib/tests/test_resolve_context_sh.py) and of the dashboard's
+# src/lib/active-context.ts (no officer rung there). Consumers: my-tasks.sh,
+# the staged launcher patch (patches/preset-aware-context-launchers.patch),
+# and anything else that must stamp officer_tasks.context_slug (NOT NULL).
+#
+# Rungs, first conforming value wins (every candidate passes
+# _cabinet_context_slug_ok or the rung is skipped):
+#   R1  $CABINET_CONTEXT                 (session/launchd env)
+#   R2  instance/config/active-project.txt   (single-product deployments)
+#   R3  officer→lane derivation ($1 given): exact slug match in the
+#       cabinet_lanes enum, else the LONGEST lane L where $1 = "L-*"
+#       (portfolio "<lane>-ceo" officers; no suffix literal is hardcoded)
+#   R4  the single declared lane, when the enum has exactly one
+#   R5  cabinet_lane_default, only when it IS a declared lane
+#   else: rc 1 + a one-line remedy on stderr (fail-LOUD, never a default).
+#
+# Preset-awareness is via the preset's MATERIALIZED shape (the contexts enum
+# + roster naming), never by parsing presets/ — so any preset that declares
+# instance/config/contexts/<lane>.yml resolves, and framework/scripts stay
+# product-agnostic.
+cabinet_resolve_context() {
+  local officer="${1:-}"
+  local candidate=""
+
+  # R1 — session env (whitespace-stripped, shape-gated).
+  candidate="$(printf '%s' "${CABINET_CONTEXT:-}" | tr -d '[:space:]')"
+  if _cabinet_context_slug_ok "$candidate"; then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+
+  # R2 — active-project.txt (whitespace-stripped, shape-gated).
+  local f="$CABINET_ROOT/instance/config/active-project.txt"
+  if [ -f "$f" ] && [ -r "$f" ]; then
+    candidate="$(tr -d '[:space:]' < "$f" 2>/dev/null)"
+    if _cabinet_context_slug_ok "$candidate"; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  fi
+
+  # R3–R5 — preset-derived, all off the declared-lane enum.
+  local lanes=""
+  lanes="$(cabinet_lanes)" || lanes=""
+  if [ -n "$lanes" ]; then
+    if [ -n "$officer" ]; then
+      local lane best=""
+      while IFS= read -r lane; do
+        [ -n "$lane" ] || continue
+        _cabinet_context_slug_ok "$lane" || continue
+        if [ "$officer" = "$lane" ]; then
+          best="$lane"
+          break
+        fi
+        case "$officer" in
+          "$lane"-*)
+            if [ "${#lane}" -gt "${#best}" ]; then best="$lane"; fi
+            ;;
+        esac
+      done <<CABINET_LANES_EOF
+$lanes
+CABINET_LANES_EOF
+      if [ -n "$best" ]; then
+        printf '%s\n' "$best"
+        return 0
+      fi
+    fi
+    if [ "$(printf '%s\n' "$lanes" | grep -c .)" -eq 1 ]; then
+      candidate="$(printf '%s\n' "$lanes" | head -n 1)"
+      if _cabinet_context_slug_ok "$candidate"; then
+        printf '%s\n' "$candidate"
+        return 0
+      fi
+    fi
+    candidate="$(cabinet_lane_default)" || candidate=""
+    if _cabinet_context_slug_ok "$candidate" \
+      && printf '%s\n' "$lanes" | grep -qxF -- "$candidate"; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  fi
+
+  echo "cabinet_resolve_context: no context resolved — set CABINET_CONTEXT, write instance/config/active-project.txt, declare your lane in instance/config/contexts/<lane>.yml (officer '${officer:-<none>}' must match a lane or '<lane>-*'), or set a declared lane_default in instance/config/platform.yml." >&2
+  return 1
+}

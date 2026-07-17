@@ -1,0 +1,32 @@
+# instance/config/task-watch.yml — rules for the /tasks event-stream watchdog
+# (cabinet/scripts/task-events-watch.py, the exemplar consumer of the durable
+# cabinet:tasks:events stream; producer = my-tasks.sh via lib/triggers.sh
+# task_event_emit — see cabinet/docs/tasks-board.md "Reacting to task events").
+#
+# rules.blocked_card:
+#   on  — DEFAULT: when a task ENTERS 'blocked', file ONE fingerprint-deduped
+#         Captain card on the needs ledger (the same one-tap surface every
+#         other org ask rides; re-blocks of the same task bump the existing
+#         card's count instead of spamming new cards). Default ON is
+#         deliberate: the Captain asked for task-change monitoring, and
+#         enters-blocked is the one transition that stalls an officer's WIP
+#         slot until a human or peer acts. Filing still respects the needs
+#         seam — under guardian posture needs.file_need is a no-op unless
+#         needs are wired (framework/authority/needs.py needs_enabled()).
+#   off — the watchdog still processes + ACKs events but files no card.
+#
+# Fail directions (mirrors memory-supersession.yml's stance):
+#   * a MISSING file or key means ON (the ratified default);
+#   * an EXISTING file whose value is unrecognized, or that cannot be read,
+#     fails safe to OFF with a stderr warning — a Captain's disarm attempt
+#     (typo included) is never steamrolled back to ON;
+#   * a YAML inline comment after the value is honored ('off  # disarmed
+#     2026-07-17' reads as off) and matched quotes unwrap; a value left
+#     EMPTY after comment-stripping ('blocked_card:' bare) is unrecognized
+#     → OFF + warn — only a truly missing file or key takes the ON default.
+#
+# Adding a new card rule = a new key here + a matching clause in
+# task-events-watch.py process_entries (keep card text to validated tokens
+# only — event free text and task titles never reach a Captain surface).
+rules:
+  blocked_card: on

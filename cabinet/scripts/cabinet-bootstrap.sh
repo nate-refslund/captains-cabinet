@@ -980,6 +980,9 @@ COMPOSE
 #     three run after library.sql (their base tables).
 #   - 041-tasks-due-at.sql alters officer_tasks — after 038-officer-tasks.sql
 #     (its DDL is NOT folded into 038; it ships as a lockstep add-on).
+#   - 042-tasks-reminder-kind.sql widens officer_tasks.type — after
+#     039-linear-to-tasks-schema.sql (which adds the type column + its CHECK;
+#     042 adds the 'reminder' value the Captain-arm stamps).
 #   - 045-org-runtime-slice.sql is self-contained (creates its own pgcrypto
 #     extension) — after the library/officer DDL, mirroring load-preset.sh's
 #     Neon list position.
@@ -1007,6 +1010,7 @@ cabinet/sql/2026-04-17-spec-034-provisioning-schema.sql
 cabinet/sql/038-officer-tasks.sql
 cabinet/sql/041-tasks-due-at.sql
 cabinet/sql/039-linear-to-tasks-schema.sql
+cabinet/sql/042-tasks-reminder-kind.sql
 cabinet/sql/045-org-runtime-slice.sql
 cabinet/sql/046-embedding-meta.sql
 LIST

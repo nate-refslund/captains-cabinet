@@ -45,7 +45,9 @@
 # the FW-025b layer-separation gate, AND the FW-025 golden-eval gate. Use
 # only when you're fixing a
 # broken stop-hook/eval that is itself blocking the fix push, or when
-# Redis is down and the eval suite cannot run. Document the usage in
+# the eval suite's redis sandbox cannot start (redis-server binary
+# absent — the suite no longer needs a RUNNING redis; it spawns its
+# own throwaway, see lib/evals-redis-sandbox.sh). Document the usage in
 # shared/force-push-log.md anyway so the team knows why the normal
 # safeties were bypassed. `--no-verify` is a bigger hammer than
 # FORCE_PUSH_ANNOUNCED (which only bypasses force-push refusal) — reach
@@ -192,12 +194,14 @@ done <<< "$REFS_INPUT"
 # get evaluated when merged and pushed to master).
 #
 # Concurrency: flock on $EVAL_LOCK_FILE serializes eval runs across
-# officers sharing the tree. EVAL-008 uses shared Redis keys
-# (evaltest_*) under a fixed OFFICER_NAME=evaltest; concurrent runs
-# would cross-contaminate HINCRBY accumulation and yield spurious
-# failures OR mask real failures (peer's correct write covers for
-# broken local stop-hook). Serializing is cheap relative to the risk —
-# full 26-eval suite measures ~74s on the live Mac (2026-07-07).
+# officers sharing the tree. Historically this protected EVAL-008's
+# shared evaltest_* Redis keys from cross-contamination; in sandbox
+# mode (2026-07-17) each run has a PRIVATE ephemeral redis, so that
+# hazard only remains where the endpoint is declared disposable (CI).
+# Serialization is still wanted either way: the suite appends to shared
+# non-Redis surfaces (scalar jsonl, /tmp transcripts) and one eval run
+# at a time keeps FW-025 failures attributable. Cheap relative to the
+# risk — full 26-eval suite measures ~74s on the live Mac (2026-07-07).
 run_golden_evals_gate() {
   local eval_script="$REPO_ROOT/cabinet/scripts/run-golden-evals.sh"
   if [ ! -x "$eval_script" ]; then

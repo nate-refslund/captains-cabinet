@@ -39,13 +39,17 @@ LOG_DIR="$HOME/Library/Logs/cabinet"
 # headless servers intentionally skip it.
 #
 # 2026-07-04 (lane/config-0705, in sync with the deploy-mac.sh --all prune):
-# the ten LEGACY templates below are absent from cabinet/services.yml (THE
+# the LEGACY templates below are absent from cabinet/services.yml (THE
 # fleet manifest, F0.4) and from the live fleet — deploy-mac.sh --all no
 # longer auto-installs them (mission-supervisor would even resurrect push
 # routing against the Captain's pull-only ruling). They stay OPTIONAL here:
 # not required anywhere, but still verified if an operator deliberately
 # installed one via `deploy-mac.sh --daemon <name>`. Drops on sight when the
 # TODO(F0.4 follow-up) reconcile derives both scripts from services.yml.
+# 2026-07-17 (adapter kit): com.cabinet.task-sync LEFT this set — its
+# orphaned template plist was deleted and the service is manifest-owned
+# (services.yml `task-sync` row, generate-plists.py install source), so the
+# template scan below no longer discovers it and no entry is needed here.
 OPTIONAL_PLISTS=(
   "com.cabinet.dashboard-kiosk"
   # legacy, non-manifest (see note above):
@@ -53,7 +57,6 @@ OPTIONAL_PLISTS=(
   "com.cabinet.cost-summary"
   "com.cabinet.worktree-listener"
   "com.cabinet.mission-supervisor"
-  "com.cabinet.task-sync"
   "com.cabinet.role-evals-weekly"
   "com.cabinet.outbox-relay"
   "com.cabinet.ovi-weekly"

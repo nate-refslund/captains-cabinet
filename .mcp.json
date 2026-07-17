@@ -25,11 +25,6 @@
       "args": ["${CLAUDE_PROJECT_DIR}/framework/comms/mcp/server.py"],
       "env": { "COMMS_MCP_TRANSPORT": "stdio" }
     },
-    "library": {
-      "command": "bun",
-      "args": ["run", "${CLAUDE_PROJECT_DIR}/cabinet/channels/library-mcp/index.ts"],
-      "env": { "OFFICER_NAME": "${OFFICER_NAME:-captain-session}" }
-    },
     "make": {
       "type": "http",
       "url": "https://eu2.make.com/mcp/stateless",

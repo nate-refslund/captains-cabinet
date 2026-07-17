@@ -107,6 +107,20 @@ memory/skills/evolved/principle-harvester.md
 # path. Remove this entry if the mirror's degradation writer dies.
 cabinet/logs/evidence-mirror-degradations.jsonl
 
+# --- platform-radar / workaround-retest runtime surfaces -----------------
+# Referenced by docs/runbooks/platform-adoption-gating.md (living doc).
+# Daily delta files written at runtime by the radar observe lane and read
+# by the triage skill + retest runner; dated, absent at HEAD by design
+# (cabinet/logs/* is gitignored runtime state).
+cabinet/logs/platform-radar/*
+# Verdict journal appended by cabinet/scripts/workaround-retest.py on every
+# retest run (same gitignored cabinet/logs family).
+cabinet/logs/workaround-retests.jsonl
+# Propose-only retirement-proposals ledger (needs-ledger pattern) appended
+# by cabinet/scripts/workaround-retest.py on fix_confirmed verdicts;
+# gitignored alongside the other shared/interfaces runtime ledgers.
+shared/interfaces/workaround-retire-proposals.jsonl
+
 # --- other runtime-created ----------------------------------------------
 # written by the very runbook step that references it
 # (cabinet/docs/mac-mini-setup.md CUA driver pin: mkdir -p + echo > it).
