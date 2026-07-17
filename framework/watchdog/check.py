@@ -249,6 +249,47 @@ class RealProbe(Probe):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Evidence receipt for ROUTED failures (evidence program Phase 2 Batch B —
+# receipt-class: the failure + routing already happened). The checker's
+# independence law (stdlib-only, imports NOTHING it watches) holds: the
+# receipt is a subprocess MODULE-exec of the typed lens emitter
+# (framework/watchdog/receipts.py) from the repo root, so the org→evidence
+# mirror signs it inside the child process (path-exec never mirrors —
+# repo root off sys.path silently skips the mirror). Emitted ONLY when a
+# routed action actually FIRED: cooldown-skipped repeats, all-green sweeps,
+# and the heartbeat stamp are exhaust and never recorded, so volume is
+# bounded by the same 3h cooldown that bounds triggers (typ. 0-5/day).
+# Best-effort by contract: never raises, never blocks routing — a broken
+# evidence plane must not stop the Chair escalation.
+# ─────────────────────────────────────────────────────────────────────────────
+OUTCOME_RECEIPT_EVENT = "watchdog_outcome_failed"
+
+
+def _emit_outcome_receipt(eid: str, tier: str, action: str, detail: str) -> None:
+    try:
+        payload = json.dumps({
+            "expectation_id": eid,
+            "tier": tier,
+            "action": action,
+            "detail": str(detail)[:200],
+        }, ensure_ascii=False)
+        subprocess.run(
+            [sys.executable, "-m", "framework.watchdog.receipts",
+             OUTCOME_RECEIPT_EVENT, payload],
+            capture_output=True, text=True, timeout=15, cwd=str(_REPO_ROOT),
+        )
+    except Exception:
+        pass  # receipt is best-effort; the routed action already happened
+
+
+def _receipts_allowed(probe) -> bool:
+    """True only for a live probe with side effects enabled. RealProbe sets
+    ``_allow`` (False under --dry-run); test stubs without the attribute get
+    False, so no test ever spawns an emit subprocess by accident."""
+    return getattr(probe, "_allow", False) is True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Router — given a CheckResult + its Expectation, take the tier's action with
 # anti-thrash dedup. Returns a one-line "what I did" string for the run report.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -274,6 +315,9 @@ def route_failure(probe: RealProbe, exp, result: CheckResult) -> str:
             # NEXT cycle (autofix on cooldown) falls through and double-pings the
             # Chair with a second message for the same failure (review MINOR).
             probe.set_cooldown(exp.id, esc)
+            if _receipts_allowed(probe):
+                _emit_outcome_receipt(exp.id, tier.value, "auto_fix_fired",
+                                      result.detail)
             return f"AUTO-FIX fired → Chair re-trigger: {result.detail}"
         # Auto-fix declined/failed → fall back to a plain Chair escalation so the
         # failure is never silently dropped.
@@ -283,6 +327,10 @@ def route_failure(probe: RealProbe, exp, result: CheckResult) -> str:
                 f"{result.detail}. Please handle (gather-then-decide; do not DM {cap}).")
             if ok:
                 probe.set_cooldown(exp.id, esc)
+                if _receipts_allowed(probe):
+                    _emit_outcome_receipt(exp.id, tier.value,
+                                          "auto_fix_declined_escalated",
+                                          result.detail)
                 return f"auto-fix declined → ESCALATED to Chair: {result.detail}"
         return f"auto-fix declined, escalation on cooldown — {result.detail}"
 
@@ -300,6 +348,9 @@ def route_failure(probe: RealProbe, exp, result: CheckResult) -> str:
         ok = probe.trigger_chair(msg)
         if ok:
             probe.set_cooldown(exp.id, esc)
+            if _receipts_allowed(probe):
+                _emit_outcome_receipt(exp.id, tier.value, "escalated",
+                                      result.detail)
             return f"ESCALATED to Chair: {result.detail}"
         return f"escalation FAILED to enqueue — {result.detail}"
 
@@ -319,6 +370,9 @@ def route_failure(probe: RealProbe, exp, result: CheckResult) -> str:
         ok = probe.emit_drift_proposal(title, body)
         if ok:
             probe.set_cooldown(exp.id, dr)
+            if _receipts_allowed(probe):
+                _emit_outcome_receipt(exp.id, tier.value, "drift_note",
+                                      result.detail)
             return f"DRIFT note → meta-cognition-proposals.md: {result.detail}"
         return f"drift-note FAILED to write — {result.detail}"
 

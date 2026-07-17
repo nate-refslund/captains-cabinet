@@ -138,6 +138,17 @@ DETAIL_FIELD_CLASSIFICATION = MappingProxyType({key: PRODUCER_ASSERTED for key i
     # attestation ceremony exists (R2 honesty caveat; Phase 6 hard-requires
     # it); deliberately NOT officer-projected.
     "attestation_mode",
+    # Phase-2 Batch B action-lane producer vocabulary
+    # (framework/frontdoor/action_exec.py act-class trials + the undo-sweep
+    # receipts in framework/frontdoor/action_reconcile.py).  ``jid`` is the
+    # undo-journal row id (uuid4 hex — the trial<->journal join);
+    # ``pid_sha256`` carries the non-id-alphabet proposal id as a digest
+    # only; ``outcome``/``source`` are the reconciler's machine-label
+    # vocabulary (ok|failed, verdict_judge|verdict_human).  All stay OUT of
+    # the officer projection (never-a-score; recorder.PROJECTION_ALLOWED_DETAIL
+    # unchanged).
+    "lane", "step_index", "steps_total", "act_first", "jid", "pid_sha256",
+    "outcome", "source",
 )})
 
 
