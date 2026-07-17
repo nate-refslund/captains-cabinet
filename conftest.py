@@ -42,7 +42,10 @@ fixture) fences:
         fallback shape, fenced 2026-07-16 before a third incident: both
         prior leaks (events 2026-07-04, feed 2026-07-16) began as a
         production write path added later, driven by an existing
-        fixture-less test.
+        fixture-less test,
+      - the captain-inbound archive (cabinet/scripts/
+        officer-inbound-poller.py::archive_captain_dm,
+        CABINET_CAPTAIN_INBOUND_DIR — fenced at birth, 2026-07-17).
 
 Per-test isolation is NOT this file's job — suites keep their own
 tmp_path/monkeypatch fixtures, which run later and take precedence. This is
@@ -88,6 +91,8 @@ os.environ["CABINET_FEED_DIR"] = os.path.join(_SESSION_SANDBOX, "feed")
 os.environ["CABINET_ATTENTION_DIR"] = os.path.join(_SESSION_SANDBOX, "attention")
 os.environ["CABINET_DRAFT_QUEUE_DIR"] = os.path.join(_SESSION_SANDBOX, "draft-queue")
 os.environ["CABINET_EVIDENCE_DIR"] = os.path.join(_SESSION_SANDBOX, "evidence")
+os.environ["CABINET_CAPTAIN_INBOUND_DIR"] = os.path.join(
+    _SESSION_SANDBOX, "captain-inbound")
 
 # Bare-root collection sweep guard (2026-07-07): officers/ holds gitignored
 # runtime officer mirror checkouts (full-repo copies) — collecting them
