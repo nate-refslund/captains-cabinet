@@ -390,6 +390,7 @@ def test_proposals_non_amendments_archived_amendments_kept(export: Path):
         "germline-amendment-golden-evals-prune-2026-07-07.md",
         "germline-amendment-host-grant-removal-2026-07-07.md",
         "germline-amendment-instance-extract-2026-07-05.md",
+        "germline-amendment-killswitch-events-2026-07-17.md",
             "germline-amendment-manifest-sunset-2026-07-07.md",
             "germline-amendment-officer-security-boundary-2026-07-15.md",
             "germline-amendment-policy-engine-pulldown-2026-07-07.md",
