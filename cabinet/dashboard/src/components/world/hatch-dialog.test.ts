@@ -70,7 +70,10 @@ describe('base close button (ui-pack law: close is always allowed, mode-independ
     // Close is the pre-existing base button H-2 adds its set "on top of" — it
     // is correctly NOT gated on hatching mode, but IS gated on the handler.
     expect(DIALOG).toMatch(/onClose \?/)
-    expect(DIALOG).toMatch(/aria-label="close hatch dialog"/)
+    // COMMISSIONING vocabulary (Captain ruling 2026-07-17): display strings
+    // say "commissioning"; machine identifiers (DialogMode 'hatching',
+    // HatchButton, file/route names) stay frozen.
+    expect(DIALOG).toMatch(/aria-label="close commissioning dialog"/)
   })
 })
 
