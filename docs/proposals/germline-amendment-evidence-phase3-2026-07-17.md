@@ -84,7 +84,7 @@ artifact for the run).
 
 The complete set of schg-locked paths whose content this branch changes —
 verified mechanically against `germline-lock.sh` `FILES[]` + `DIRS[]` over
-the composed diff (3 of 27 changed paths; no other germline path is
+the composed diff (3 of 32 changed paths; no other germline path is
 touched; `cabinet/scripts/evidence-read.sh` is byte-identical):
 
 1. `framework/evidence/__main__.py` (modified — `DIRS[]` cover

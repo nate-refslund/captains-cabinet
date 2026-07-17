@@ -1,7 +1,8 @@
 # Checkpoint review — feat/evidence-phase3-review-surface cp1 (integration)
 
 **Date:** 2026-07-17 · **Reviewer:** evidence Phase-3 integrator (Fable 5) ·
-**Scope:** the composed three-group batch off `91dcdc75` (28 files) —
+**Scope:** the composed three-group batch off `91dcdc75` (32 files: 24
+unique paths from the three patches + 8 integrator seam/docs files) —
 groups `read-plane` (G1), `dashboard` (G2), `digest-ritual` (G3), each
 adversarially reviewed per-group before integration; this checkpoint
 reviews the COMPOSITION and the integrator's seam work.
@@ -120,6 +121,7 @@ per-job run is the authority for it.
 - Germline: 3 changed paths, all under the existing `framework/evidence`
   DIRS cover; `FILES[]`/`DIRS[]`, `immutable-core.yml`, and the
   pre-tool-use screen byte-identical (no boundary extension).
-- Portability: the one new shell-probe pattern in this batch's scripts is
-  GNU-stat-first where stat is used; no `stat` calls were added by the
-  integration seams (verified by grep over the composed diff).
+- Portability: the batch adds NO shell `stat` probes at all (verified by
+  grep over the composed diff + the new files), so the GNU-stat-first rule
+  has no new call sites; no bare `python3` invocations added —
+  `python3.12` pinned throughout.
