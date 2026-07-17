@@ -38,7 +38,34 @@ def test_no_defaults_is_fail_closed_empty():
     pl = plan.build_lane_plan(ACME, slug="acme")   # no preset defaults declared
     sources = {p["source"] for p in pl["plugin_manifest"]}
     assert sources <= {"repo"}                     # no cabinet-default rows appear
-    assert pl["lane_mcps"] == ["neon", "vercel"]   # stack-derived only, no base scope
+    # stack/profile-derived only, no base scope (ACME has a repo_url → github)
+    assert pl["lane_mcps"] == ["neon", "vercel", "github"]
+
+
+def test_repo_lane_gets_github_mcp():
+    """A lane with a repo_url (or github in stack) maps the github MCP."""
+    pl = plan.build_lane_plan(ACME, slug="acme")           # repo_url present
+    assert "github" in pl["lane_mcps"]
+    stack_only = {**ACME, "repo_url": None, "stack": ["github"]}
+    assert "github" in plan.build_lane_plan(stack_only, slug="acme")["lane_mcps"]
+
+
+def test_no_repo_no_github_mcp():
+    """No repo_url and no github in stack → no github mapping (fail-closed)."""
+    bare = {**ACME, "repo_url": None, "stack": ["neon"]}
+    pl = plan.build_lane_plan(bare, slug="acme")
+    assert "github" not in pl["lane_mcps"]
+    assert pl["lane_mcps"] == ["neon"]
+
+
+def test_github_in_base_not_duplicated():
+    """A preset base scope already carrying github (developer preset) dedups."""
+    d = {"cabinet_default_plugins": [],
+         "lane_mcps": ["library", "telegram", "github", "playwright", "neon-ro"]}
+    pl = plan.build_lane_plan(ACME, slug="acme", defaults=d)
+    assert pl["lane_mcps"].count("github") == 1
+    assert pl["lane_mcps"] == ["neon", "vercel", "github",
+                               "library", "telegram", "playwright", "neon-ro"]
 
 
 def test_missing_plugin_is_gated_not_executed():

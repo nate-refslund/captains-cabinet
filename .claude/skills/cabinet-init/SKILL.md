@@ -192,6 +192,29 @@ A **lane** is a product/venture/area the Cabinet works (see
 - **custom**: contexts + projects only; the captain authors roles by
   hand (see `presets/_template/`).
 
+### 3b. Preset (OPTIONAL — ask only for the functional shape)
+
+The functional shape defaults to the `work` preset. One follow-up
+question, only when `org_shape: functional`:
+
+> Is the product you're shipping a **software / web / app product**? If
+> yes, the OPTIONAL **developer** preset is the software product-kind
+> kit — the work roster plus day-1 connector declarations (GitHub MCP,
+> Playwright, read-only Neon; Vercel by REST+probes; Sentry armed when
+> keys exist) and a Product Brain starter Space
+> (`presets/developer/README.md`). Default is work — say "developer" to
+> opt in.
+
+Map the answer onto the fixed slug enum — `work` (default) |
+`developer` — and record it as `cabinet.preset` in
+`cabinet-init.answers.yml` ONLY when the captain opted in (absent =
+default; the choice is opt-in, never a default flip; conversational free
+text never becomes a slug). The generator validates the slug shape and
+uses it solely in the printed activation step. If the captain chose
+`developer`, also add its extra env-var NAMES — `NEON_API_KEY`,
+`VERCEL_API_KEY`, `VERCEL_TEAM_ID` — to `integrations.mcp_env_names` so
+`setup-env.sh` walks them (values still go only in `cabinet/.env`).
+
 ### 4. Autonomy posture — GUARDIAN at init; sovereign is a post-init Captain ratification
 
 (Superseded 2026-07-05 by the sovereign-posture amendment, apply token
@@ -350,7 +373,9 @@ placeholders only:
      purpose: <one sentence>                    #  the generator IGNORES this key
      success_90d: <one sentence>                #  (pinned by test) — only genesis
      never_touch: []                            #  reads it, to condition proposals
-   cabinet: {id, mode: single|multi, org_shape: portfolio|functional|custom, officer_model}
+   cabinet: {id, mode: single|multi, org_shape: portfolio|functional|custom, officer_model,
+             preset}                             # preset OPTIONAL (§3b) — slug only,
+                                                 #  e.g. developer; absent = shape default
    lanes:
      - {name, slug, repos: [], task_system, boards: [],
         neon_project, vercel_project,            # NAMES only
@@ -419,7 +444,8 @@ placeholders only:
 Relay the generator's printed list, expanded:
 
 1. `echo <preset> > instance/config/active-preset` (portfolio /
-   work / custom preset slug).
+   work / developer / custom preset slug — developer is the OPTIONAL
+   software product-kind kit, §3b).
 2. **Germline edits (propose to the captain; the captain applies):**
    add each `<slug>-ceo` under `agents:` in `cabinet/mcp-scope.yml`
    and add its capability rows to `cabinet/officer-capabilities.conf`.

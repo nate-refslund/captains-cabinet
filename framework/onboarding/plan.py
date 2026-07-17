@@ -81,6 +81,12 @@ def _lane_mcps(profile: dict, base: list) -> list:
         mcps.append("neon")
     if "vercel" in stack or "nextjs" in stack:
         mcps.append("vercel")
+    if profile.get("repo_url") or "github" in stack:
+        # A lane with a repo works its PRs/issues through the declared
+        # github MCP (first-party remote; auth = GITHUB_PAT env NAME).
+        # Same stack-detection posture as neon/vercel above; the grant
+        # itself stays Captain-applied via the mcp_scope_diff.
+        mcps.append("github")
     mcps += [m for m in base if m not in mcps]
     return mcps
 
