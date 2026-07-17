@@ -41,6 +41,14 @@ GUARANTEES
   delivery. The 30-entry redis ring remains a Chair nicety only.
 * No mid-turn corruption: delivery is idle-gated — it waits for the pane to be
   at its prompt before injecting.
+* /killswitch is MECHANICAL (captain-controls plan 2026-07-17): the Captain's
+  /killswitch text is answered from THIS process with the standing
+  emergency-stop card (fresh status + Halt/Resume taps through the
+  allowlisted verb door); the taps execute cabinet/scripts/kill-switch.sh
+  via the poller-only ``ks_exec`` seam with CABINET_OFFICER=captain-telegram,
+  so the script's own audit row carries telegram provenance. The Chair is
+  never in that loop — the card must work precisely when officers are halted
+  (EVAL-001b stays an officer-session refusal, a different door).
 * Secret hygiene: the bot token is read from env and never logged.
 
 ENV: TELEGRAM_<OFFICER>_TOKEN (or TELEGRAM_BOT_TOKEN), CAPTAIN_TELEGRAM_ID,
@@ -408,6 +416,87 @@ def format_file_line(path: str, name: str, kind: str) -> str:
     return f"[tg-file path={path} name={sanitize_filename(name)} kind={kind}]"
 
 
+# ---------------------------------------------------------------------------
+# /killswitch — the emergency-stop control card (captain-controls plan,
+# ratified 2026-07-17, Phase 1). MECHANICAL by necessity: when the switch is
+# ACTIVE every officer is halted (EVAL-001), so the card must come from THIS
+# process — the poller is the captain-held Telegram factor's door. Execution
+# always rides the sanctioned script (audit rows + read-back verification are
+# ITS contract); this file never touches the redis key directly.
+# ---------------------------------------------------------------------------
+KILLSWITCH_CMD_RE = re.compile(r"^\s*/killswitch(?:@\w{1,64})?\s*$",
+                               re.IGNORECASE)
+KILL_SWITCH_SCRIPT = os.path.join(_REPO_ROOT, "cabinet", "scripts",
+                                  "kill-switch.sh")
+#: The audit-row actor for taps/commands arriving on the captain's Telegram —
+#: kill-switch.sh records ${CABINET_OFFICER:-captain}, so this is how a flip
+#: from the phone stays distinguishable from a terminal flip in the ledger.
+KS_TELEGRAM_ACTOR = "captain-telegram"
+_KS_ACTIONS = frozenset({"activate", "deactivate", "status"})
+KS_SCRIPT_TIMEOUT_S = 30
+
+
+def is_killswitch_command(text: str) -> bool:
+    """True for the bare /killswitch bot command (optional @botname suffix).
+    Anchored — the word inside a sentence is conversation for the Chair,
+    never a control command."""
+    return bool(KILLSWITCH_CMD_RE.match(text or ""))
+
+
+def run_kill_switch(action: str, *, script: "str | None" = None,
+                    actor: str = KS_TELEGRAM_ACTOR,
+                    timeout: int = KS_SCRIPT_TIMEOUT_S,
+                    env: "dict | None" = None) -> "tuple[int, str]":
+    """Execute ONE sanctioned kill-switch.sh action → ``(rc, output)``.
+
+    The ONLY place this file shells to the emergency surface. ``action`` is a
+    closed set (activate | deactivate | status — anything else raises: taps
+    map verbs to fixed strings, so an open string here would be a bug, not
+    input). ``CABINET_OFFICER`` is set to ``actor`` so the SCRIPT's own audit
+    row (kill_switch_activated/_deactivated) records telegram provenance —
+    the audit trail belongs to the script, never to this caller. Output is
+    stdout+stderr combined verbatim (the card quotes the script's own words).
+    Never raises on execution failure — a broken/missing/timed-out script
+    returns a LOUD non-zero tuple so the card can say so (an exception here
+    would degrade to the generic relay floor and hide the failure)."""
+    if action not in _KS_ACTIONS:
+        raise ValueError(f"unsanctioned kill-switch action: {action!r}")
+    run_env = dict(os.environ if env is None else env)
+    run_env["CABINET_OFFICER"] = actor
+    try:
+        p = subprocess.run(["bash", script or KILL_SWITCH_SCRIPT, action],
+                           capture_output=True, text=True, timeout=timeout,
+                           env=run_env)
+    except Exception as exc:  # noqa: BLE001 — loud tuple beats an exception
+        return 1, (f"kill-switch.sh did not run ({type(exc).__name__}) — "
+                   "NOT verified")
+    out = (p.stdout or "").strip()
+    err = (p.stderr or "").strip()
+    combined = out + ("\n" + err if err else "")
+    return p.returncode, combined.strip()
+
+
+def killswitch_command_reply(*, api_post, chat_id, ks_run=run_kill_switch,
+                             log=log) -> bool:
+    """Answer /killswitch with the standing control card — a FRESH status
+    read + Halt/Resume buttons minted through the allowlisted verb enum
+    (killswitch_card → decision_card.cb). Returns True when the card was
+    sent; False lets the caller fall open to the Chair relay so the
+    Captain's command is never silently consumed."""
+    try:
+        from framework.comms.surface import killswitch_card as kc
+        rc, out = ks_run("status")
+        face = kc.render(rc, out)
+        api_post("sendMessage", {
+            "chat_id": int(chat_id), "text": face["text"],
+            "reply_markup": {"inline_keyboard": face["keyboard"]}})
+        return True
+    except Exception as exc:  # noqa: BLE001 — fail-open to the Chair relay
+        log(f"killswitch card send failed (falling back to relay): "
+            f"{type(exc).__name__}: {exc}")
+        return False
+
+
 def _first_reaction_emoji(reactions) -> str:
     """First emoji from a ``new_reaction`` list (``[{type:'emoji', emoji:'👍'}]``)."""
     for r in reactions or []:
@@ -489,6 +578,9 @@ def archive_captain_dm(chat_id, message_id, text, *, kind="text", update_id=0,
     archived — the archive records what the officer actually saw.
     Onboarding-routed Captain DMs ARE archived (kind="onboarding") even
     though they bypass the relay — they are Tier-0 anchor source material.
+    /killswitch commands likewise archive (kind="killswitch") despite the
+    mechanical card reply — an emergency-stop request is exactly the
+    utterance whose verbatim record must survive.
 
     Degrade-safe but LOUD: an archive failure never blocks delivery (a Captain
     message must reach the officer even with a broken disk), but it logs an
@@ -507,7 +599,7 @@ def archive_captain_dm(chat_id, message_id, text, *, kind="text", update_id=0,
         "message_id": int(message_id),
         "update_id": int(update_id),
         "officer": officer or "",          # receiving bot's officer (multi-writer attribution)
-        "kind": kind,                      # text | file | file-error | onboarding
+        "kind": kind,                      # text | file | file-error | onboarding | killswitch
         "text": text or "",               # the utterance, UNTRUNCATED
         "quoted": quoted or "",           # reply-to context, UNTRUNCATED
         "file_kind": file_kind or "",
@@ -790,7 +882,12 @@ def main() -> int:
         """The poller's live tap_wire binding: mechanical apply + the tapped
         card's keyboard receipt (editMessageReplyMarkup — content-preserving,
         same transport class as the poller's receipt reactions; journaled by
-        the caller's feed row). Recipient is ALWAYS the Captain's chat."""
+        the caller's feed row). Recipient is ALWAYS the Captain's chat.
+        Kill-switch seams (2026-07-17): ``edit_text`` repaints the standing
+        /killswitch card in place; ``ks_exec`` is THE poller-only door to
+        kill-switch.sh (telegram-provenance audit actor) — tap_wire refuses
+        kill-switch verbs without it, so no other importer inherits the
+        flip."""
         from framework.comms.surface import tap_wire
 
         def _mark(mid2: int, kb: list) -> None:
@@ -798,7 +895,15 @@ def main() -> int:
                 "chat_id": int(captain), "message_id": int(mid2),
                 "reply_markup": {"inline_keyboard": kb}})
 
-        return tap_wire.apply_tap(data, message_id=message_id, edit_markup=_mark)
+        def _edit_text(mid2: int, text2: str, kb: list) -> None:
+            api_post("editMessageText", {
+                "chat_id": int(captain), "message_id": int(mid2),
+                "text": text2,
+                "reply_markup": {"inline_keyboard": kb}})
+
+        return tap_wire.apply_tap(data, message_id=message_id,
+                                  edit_markup=_mark, edit_text=_edit_text,
+                                  ks_exec=run_kill_switch)
 
     def get_json(path: str, params: dict) -> dict:
         """GET a Bot API method (e.g. getFile) and parse the JSON body."""
@@ -1097,6 +1202,29 @@ def main() -> int:
                     else:
                         body = f"[tg-file kind={att['kind']} download=failed]"
                     deliver(f"{body} {caption}".strip(), quoted, "", mid=mid)
+                elif frm == str(captain) and is_killswitch_command(text):
+                    # /killswitch → the mechanical emergency-stop card from
+                    # THIS process (captain-controls plan 2026-07-17). Never
+                    # routed through the Chair: with the switch ACTIVE the
+                    # officer is halted, so a relayed command would answer
+                    # exactly when it matters least. Card-send failure falls
+                    # OPEN to the status-quo Chair relay below — the command
+                    # is never silently consumed.
+                    log(f"captain /killswitch update_id={uid} -> control card")
+                    mid = int(msg.get("message_id", 0))
+                    set_last_captain_msg_id(mid)
+                    record_recent_msg(mid, text)
+                    chat_dm = str((msg.get("chat") or {}).get("id") or frm)
+                    archive_captain_dm(chat_dm, mid, text, kind="killswitch",
+                                       update_id=uid, tg_date=msg.get("date", 0),
+                                       quoted=quoted_full, officer=officer)
+                    sent = killswitch_command_reply(api_post=api_post,
+                                                    chat_id=captain, log=log)
+                    fa({"direction": "in", "kind": "killswitch-command",
+                        "telegram_message_id": mid,
+                        "card": "sent" if sent else "send-failed"})
+                    if not sent:
+                        deliver(text, quoted, "", mid=mid)
                 elif frm == str(captain) and text:
                     log(f"captain msg update_id={uid} ({len(text)} chars{', reply' if quoted else ''}) -> relaying")
                     mid = int(msg.get("message_id", 0))
