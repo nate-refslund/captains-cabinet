@@ -166,8 +166,17 @@ def test_fixtures_carry_both_polarities_and_evidence():
                   for r in scenario.get("responses") or []}
         assert {"PASS", "FAIL"} <= labels, (
             f"{path.name}: scenario must carry both PASS and FAIL responses")
-        assert scenario.get("evidence"), (
-            f"{path.name}: scenario carries no contradicting evidence refs")
+        if scenario.get("kind") == "no-contradiction":
+            # PROPORTIONAL CANDOR inverted arm (harness.py, constitution
+            # clause 5, 2026-07-17): the defining property of this kind is
+            # an EXPLICITLY EMPTY evidence list — the key must be present
+            # and honestly empty, never absent and never fabricated.
+            assert "evidence" in scenario and scenario["evidence"] == [], (
+                f"{path.name}: no-contradiction scenario must carry an "
+                f"explicit empty evidence list")
+        else:
+            assert scenario.get("evidence"), (
+                f"{path.name}: scenario carries no contradicting evidence refs")
         assert scenario.get("proposal"), (
             f"{path.name}: scenario carries no captain-favoring proposal")
 
