@@ -74,7 +74,7 @@ Modes:
 
 Runbook: docs/runbooks/dependency-radar.md
 Scheduled: cabinet/services.yml row ``dependency-radar`` (nightly 04:20).
-Doctor coverage: cabinet-doctor.sh check #13.
+Doctor coverage: cabinet-doctor.sh check #14.
 Tests: python3.12 -m pytest cabinet/scripts/tests/test_dependency_radar.py -q
 """
 

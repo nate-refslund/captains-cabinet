@@ -13,7 +13,7 @@ observes; acting is someone else's, gated, job.
 | Registry (tracked) | `cabinet/config/dependency-radar.yml` |
 | Script | `cabinet/scripts/dependency-radar.py` (python3.12) |
 | Services row | `cabinet/services.yml` → `dependency-radar` (nightly 04:20 local) |
-| Doctor check | `cabinet/scripts/cabinet-doctor.sh` #13 |
+| Doctor check | `cabinet/scripts/cabinet-doctor.sh` #14 |
 | State sidecar (runtime) | `~/.cabinet/state/dependency-radar.json` |
 | Delta JSONL (runtime) | `~/.cabinet/logs/dependency-radar/delta-report.jsonl` |
 | Daily delta file (runtime) | `~/.cabinet/logs/dependency-radar/radar-deltas-<UTC date>.md` |
@@ -157,7 +157,7 @@ deltas (no deltas ⇒ no file — the consumer treats an absent day file as
   parser whenever that runner exists in the tree; the tests pin its exact
   path).
 
-## Doctor coverage (#13)
+## Doctor coverage (#14)
 
 `cabinet-doctor.sh` runs `python3.12 cabinet/scripts/dependency-radar.py
 --probe` — pure local inspection, no network:

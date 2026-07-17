@@ -5,7 +5,7 @@ Batch: dependency radar, deterministic observe half (RADAR-OBSERVE).
 New organ: `cabinet/scripts/dependency-radar.py` + tracked registry
 `cabinet/config/dependency-radar.yml` (9 surfaces: vendor changelogs /
 release feeds / model-doc pages + the claude binary/PATH probe), nightly
-04:20 `services.yml` row, cabinet-doctor check #13 (`--probe` ladder),
+04:20 `services.yml` row, cabinet-doctor check #14 (`--probe` ladder),
 runbook `docs/runbooks/dependency-radar.md`, radar suite (48 tests),
 comparator version-shape gate in `cabinet/scripts/workaround-retest.py`
 `condition_matches_delta()` + repro tests, ledger RADAR-OBSERVE row +
@@ -69,6 +69,20 @@ only in the runtime sidecar, never the tracked registry.
   in the batch. Live-tree dirty overlap = stale RADAR-1-era staging on
   an older master (d9f09bb8); this landing rides a clean worktree off
   origin/master.
+
+## Race at landing (resolved in the merge commit)
+
+Origin/master advanced ff7e0ae0 → a8f1f74a (PR #155, evidence Phase 2
+Batch A) between worktree cut and push. File overlap: cabinet-doctor.sh
++ docs-sweep-allowlist.txt. Textual merge was clean but SEMANTICALLY
+inverted the doctor numbering: PR #155 inserted evidence-plane as check
+#12 and renumbered task-sync-drift to #13 — colliding with this batch's
+radar check #13. Resolution in the merge commit: radar check renumbered
+to #14 across every surface (doctor header + section banner,
+services.yml note, registry remedy, script docstring, runbook table +
+heading, ledger note, plan row, this artifact). Allowlist glob merged
+to a single `cabinet/logs/platform-radar/*` entry. Full gate battery
+re-run green post-merge (results above re-verified; see commit).
 
 Verdict: **SHIP** — deliberate residuals (unchanged from the lane):
 generate-plists + deploy-mac install of `com.cabinet.dependency-radar`

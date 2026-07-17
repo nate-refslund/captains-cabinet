@@ -89,7 +89,7 @@ entries:
       cross-pinned to it by test_dependency_radar.py, so neither surface
       can drift silently; installed plists rendered before a PATH_ENV
       change need a regenerate+redeploy, per the remedy). FAIL surfaces
-      RED in cabinet-doctor #13 with the remedy above.
+      RED in cabinet-doctor #14 with the remedy above.
 
   - id: anthropic-models-docs
     kind: changelog-url

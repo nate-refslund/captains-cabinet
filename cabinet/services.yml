@@ -1038,7 +1038,7 @@ services:
       boots fail — its service_path is cross-pinned by test to
       generate-plists.py PATH_ENV so probe and plists can't drift apart —
       and an installed-version bump (stable status) is itself a delta;
-      cabinet-doctor #13 mirrors a probe FAIL as DEAD/RED with the remedy
+      cabinet-doctor #14 mirrors a probe FAIL as DEAD/RED with the remedy
       and a stale sweep (>48h) as WARN/AMBER. TRIAGE SEAM: every delta also
       lands as a component entry in the per-day mirror
       cabinet/logs/platform-radar/delta-<date>.json (gitignored runtime
