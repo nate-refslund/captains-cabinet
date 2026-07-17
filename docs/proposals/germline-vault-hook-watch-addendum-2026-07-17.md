@@ -1,18 +1,22 @@
 # Germline addendum — vault/docs watch patterns for post-file-write-memory.sh
 
-- **Date:** 2026-07-17 (vault wave)
+- **Date:** 2026-07-17 (vault wave; ceremony block revised to MASTER-FIRST
+  the same day — ledger row CG-30)
 - **Provenance:** Captain-ratified 2026-07-16 — `product-brain/` becomes the
   cabinet's default VAULT (`vault/`), and the `docs/` tree joins the memory
   index. Landed per the 2026-07-07 full-autonomy grant; THIS file is the
   ceremony note for the one schg-locked piece.
-- **Staged patch:** `patches/germline-vault-hook-watch-2026-07-17.patch`
+- **Reference patch:** `patches/germline-vault-hook-watch-2026-07-17.patch`
+  — kept as the ceremony proof; SUPERSEDED as an apply step by the master
+  checkout (the CG-27/CG-31 checkout-from-master precedent).
 - **Why a ceremony:** `cabinet/scripts/hooks/` is a germline DIR
-  (`germline-lock.sh` DIRS list, locked `-R` with schg). The vault-rename lane
-  deliberately shipped ZERO edits inside it — a merge must never touch
-  germline paths. The hook's watch list is the only rename surface that lives
-  there.
+  (`germline-lock.sh` DIRS list, locked `-R` with schg) — on the LIVE box the
+  hook inode cannot change outside a Captain sudo window. The git-side
+  content (tree files are NOT schg in a clean worktree) landed on master
+  2026-07-17 in the CG-30 landing commit; the window's only job is syncing
+  the live inode to that already-reviewed master content.
 
-## What the patch does
+## What landed on master (git side, no lock touched)
 
 `cabinet/scripts/hooks/post-file-write-memory.sh` (`pfwm_source_type`):
 
@@ -27,9 +31,9 @@
 
 Plus the hook-side test additions in
 `cabinet/scripts/tests/test_bootstrap_memory_chain.py` (they assert the new
-patterns, so they can only land WITH the hook change).
+patterns and landed WITH the hook change in the same commit).
 
-## Interim state (until the ceremony) — already covered
+## Interim state (live box, until the sync window) — already covered
 
 - The nightly `memory-reconcile` (03:30) walks `vault/`, legacy
   `product-brain/`, and `docs/**/*.md` DIRECTLY (landed unlocked in the same
@@ -39,19 +43,21 @@ patterns, so they can only land WITH the hook change).
 - The only ceremony delta is INSTANT (same-session) embedding of vault/docs
   writes via the hook.
 
-## Apply ceremony (Captain sudo window — relock the SAME day)
+## Live-inode sync ceremony (Captain sudo window — relock the SAME day)
+
+The window does NOT patch or commit — the content is already on master; it
+syncs the schg live inode via checkout-from-master (CG-27/CG-31 precedent):
 
 ```bash
 cd "$CABINET_ROOT"
+git fetch origin
 sudo bash cabinet/scripts/germline-lock.sh unlock cabinet/scripts/hooks
-git apply --3way patches/germline-vault-hook-watch-2026-07-17.patch
+git checkout origin/master -- cabinet/scripts/hooks/post-file-write-memory.sh
+git diff --quiet origin/master -- cabinet/scripts/hooks/post-file-write-memory.sh  # blob-verify
 bash -n cabinet/scripts/hooks/post-file-write-memory.sh
-python3.12 -m pytest cabinet/scripts/tests/test_bootstrap_memory_chain.py -q
-git add -- cabinet/scripts/hooks/post-file-write-memory.sh \
-           cabinet/scripts/tests/test_bootstrap_memory_chain.py
-git commit   # normal trailer; push per the multi-writer protocol
 sudo bash cabinet/scripts/germline-lock.sh lock
-bash cabinet/scripts/germline-lock.sh status
+bash cabinet/scripts/germline-lock.sh status && bash cabinet/scripts/germline-lock.sh verify
+python3.12 -m pytest cabinet/scripts/tests/test_bootstrap_memory_chain.py -q
 ```
 
 ## Same-window optional cleanup (text-only, recorded here so it isn't lost)

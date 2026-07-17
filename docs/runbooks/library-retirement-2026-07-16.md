@@ -22,8 +22,8 @@ remain storable, but only the cabinet_memory mirror is maintained.
 | `cabinet/scripts/lib/library.sh` | `library_create_record` / `library_update_record` no longer call `memory_get_embedding` or write the `embedding` column (rows insert vector-free). The `memory_queue_embed` cabinet_memory mirror stays — search continuity path. `library_search` still ranks over **legacy** vectors where present, ILIKE fallback otherwise. |
 | `cabinet/dashboard/src/lib/library.ts` | `getEmbedding` (Voyage) + direct-vector write removed from `createRecord`/`updateRecord`; `queueLibraryRecordInMemory` stays. `searchRecords` is keyword-only (ILIKE title). |
 | `.mcp.json` + `.mcp.json.mac-native` | `library` MCP server **deregistered** (both layers lockstep). The server code stays at `cabinet/channels/library-mcp/` and runs standalone for archaeology. |
-| `cabinet/mcp-scope.yml` (germline, schg) | **Not touched.** The `library` grants there are dangling-but-harmless — an unregistered server grants nothing. Remove them at the next germline ceremony (staged patch + Captain sudo window). |
-| Agent `tools:` grants | `mcp__library` removed from every **non-germline** agent frontmatter: `instance/agents/cos.md`, `presets/work/agents/{cos,cto,cpo,coo,cro}.md`, `presets/portfolio/agents/cos.md`, `presets/portfolio/agents/_lane-ceo.md.template` (ratcheted — resurrection-by-copy guard). The germline `.claude/settings.json` `permissions.allow` entry stays until the ceremony (below). |
+| `cabinet/mcp-scope.yml` (germline, schg) | **Git-side content lands on master** in the CG-29 danglers diff — `library` dropped from every officer/scaffold grant + `universal:` (tree file, not schg in a clone; the grants were dangling-but-harmless since an unregistered server grants nothing). The schg LIVE inode syncs at the Captain window via checkout-from-master (CG-29 gate_cmd). |
+| Agent `tools:` grants | `mcp__library` removed from every **non-germline** agent frontmatter: `instance/agents/cos.md`, `presets/work/agents/{cos,cto,cpo,coo,cro}.md`, `presets/portfolio/agents/cos.md`, `presets/portfolio/agents/_lane-ceo.md.template` (ratcheted — resurrection-by-copy guard). The germline `.claude/settings.json` `permissions.allow` entry drops in the same CG-29 danglers diff (git side); the live inode syncs at the window (below). |
 | `CLAUDE.md` + `docs/templates/CLAUDE-egg.md` | "Systems each own one job" no longer routes Cabinet knowledge to the Library MCP: knowledge = the vault (`product-brain/`), recall = `memory_search` (ratcheted; the egg template becomes the public egg's `CLAUDE.md` at export). |
 | Dashboard `/library` | Landing page is a read-only retirement notice; space/record/graph deep-links redirect to it. `/api/library/*` routes remain (records still storable; search is keyword-only). |
 | `cabinet/scripts/retire-library-export.py` | NEW one-shot export (below). |
@@ -97,20 +97,23 @@ remain storable, but only the cabinet_memory mirror is maintained.
   `embedding` + hnsw index, then (much later, Captain call) the tables
   themselves. Ship as its own reviewed migration; never bundle with app
   changes.
-* [ ] Germline ceremony — ONE Captain sudo window (schg unlock, relock same
-  day) covering all three dangling germline surfaces: (1) remove `library`
-  from `cabinet/mcp-scope.yml` grants + `universal:`; (2) remove the
-  `"mcp__library"` entry from `.claude/settings.json` `permissions.allow`;
-  (3) apply the staged cosmetic patch for
-  `cabinet/scripts/start-officer-mac.sh` (stale "notion/linear/neon/library"
-  merge-comment; zero behavior change). Durable deliverables, in-repo:
+* [ ] Germline live-inode sync — ledger row **CG-29** (filed). The git-side
+  cleanup of all three dangling germline surfaces lands on master in the
+  CG-29 danglers diff: (1) `library` dropped from `cabinet/mcp-scope.yml`
+  grants + `universal:`; (2) the `"mcp__library"` entry dropped from
+  `.claude/settings.json` `permissions.allow`; (3) the stale
+  "notion/linear/neon/library" merge-comment in
+  `cabinet/scripts/start-officer-mac.sh` replaced (comment-only, zero
+  behavior change). ONE Captain sudo window (schg unlock, relock same day)
+  then SYNCS the live inodes to master via `git checkout origin/master --`
+  the three files — NOT an in-window patch/commit (the CG-27/CG-31
+  checkout-from-master precedent). Durable deliverables, in-repo:
   `docs/proposals/germline-library-retirement-addendum-2026-07-16.md`
-  (ceremony note) +
-  `docs/proposals/germline-library-retirement-2026-07-16.patch` (kept
-  appliable by the ratchet suite until the window lands it). A CG ledger
-  row is required before the window (integrator files it). The `library`
-  entry in `cabinet/scripts/lib/officer-env.py`'s per-server env map
-  (germline too) is likewise dangling-but-harmless (the server never
+  (ceremony note, master-first) +
+  `docs/proposals/germline-library-retirement-2026-07-16.patch` (kept as
+  the comment-only proof; the ratchet skips it once the mark lands). The
+  `library` entry in `cabinet/scripts/lib/officer-env.py`'s per-server env
+  map (germline too) is likewise dangling-but-harmless (the server never
   boots) — drop it whenever that map is next touched.
 
 ## Ratchet
@@ -120,9 +123,12 @@ no new record-vector write path (no `memory_get_embedding` in library.sh
 create/update, no Voyage/`getEmbedding` in dashboard `library.ts`, no
 `embedding` column in `INSERT INTO library_records` outside the dormant SQL
 DDL), the MCP registration stays retired, `CLAUDE.md`/`CLAUDE-egg.md` keep
-routing knowledge to the vault + `memory_search`, no non-germline agent
-frontmatter grants `mcp__library`, the archive dirs stay gitignored, and
-the staged ceremony patch stays appliable. The functional suites
+routing knowledge to the vault + `memory_search`, no agent frontmatter
+grants `mcp__library`, the two germline grant surfaces stay library-free
+(`cabinet/mcp-scope.yml` grant lists + `universal:` and
+`.claude/settings.json` `permissions.allow` — the CG-29 danglers landed on
+master), the archive dirs stay gitignored, and the staged ceremony patch
+stays appliable until its mark lands (then skips). The functional suites
 (`cabinet/scripts/lib/tests/test_library_sh_retirement.py`, dashboard
 `library.retirement.test.ts`) run the write paths with ARMED tripwires — a
 dummy `VOYAGE_API_KEY` plus stubbed curl/fetch — so a resurrected embed
