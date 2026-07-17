@@ -243,6 +243,21 @@ def test_missing_events_dir_is_a_loud_failsafe_noop(sandbox_redis, tmp_path):
     assert _redis_get(sandbox_redis) == ""                # untouched
 
 
+def test_unreachable_redis_is_a_loud_failsafe_noop(tmp_path):
+    """Probe-listed invariant: a dead control plane → WARN + fail-safe
+    no-op, rc 0 (everything else already treats unreachable as ACTIVE; a
+    guessed re-arm proves nothing). Port 9 refuses instantly; a missing
+    redis-cli binary lands on the same None branch, so no redis marker."""
+    events = tmp_path / "events"
+    events.mkdir()
+    state = tmp_path / "state.json"
+    proc = _run_watchdog(9, events, state)
+    assert proc.returncode == 0, proc.stderr
+    assert _summary(proc)["action"] == "noop-unobservable-redis"
+    assert "WARN" in proc.stderr and "unreachable" in proc.stderr
+    assert not state.exists()                             # nothing written
+
+
 @needs_redis
 def test_dry_run_reports_but_never_acts(sandbox_redis, tmp_path):
     events = tmp_path / "events"
@@ -258,6 +273,38 @@ def test_dry_run_reports_but_never_acts(sandbox_redis, tmp_path):
     assert not state.exists()                             # no state write
     assert _redis_get(sandbox_redis) == ""
     assert len(_events(events)) == 1
+
+
+@needs_redis
+def test_dry_run_never_rearms_even_past_grace(sandbox_redis, tmp_path):
+    """Mutation pin: deleting the ``not args.dry_run`` guard on the re-arm
+    branch must fail a test. Anomaly state pre-seeded past the grace (keyed
+    to the REAL arm row, decide()'s key fallback mirrored): the verdict is
+    REPORTED as re-arm, but dry-run performs no SET, no rearm_rc, no
+    notification, no state write."""
+    events = tmp_path / "events"
+    state = tmp_path / "state.json"
+    assert _run_switch("activate", sandbox_redis, events).returncode == 0
+    subprocess.run(["redis-cli", "-p", str(sandbox_redis), "DEL",
+                    "cabinet:killswitch"], capture_output=True, check=True)
+    arm = _events(events)[0]
+    arm_key = str(arm.get("id") or arm.get("created_at") or "")
+    state.write_text(json.dumps({
+        "updated_at": "2026-07-01T00:00:00Z",
+        "state": {"anomaly": {"key": arm_key,
+                              "first_seen": "2026-07-01T00:00:00Z"}}}),
+        encoding="utf-8")
+    before = state.read_text(encoding="utf-8")
+    proc = _run_watchdog(sandbox_redis, events, state, grace_s=1,
+                         args=("--dry-run",))
+    assert proc.returncode == 0, proc.stderr
+    summary = _summary(proc)
+    assert summary["action"] == "re-arm"                  # verdict reported…
+    assert "rearm_rc" not in summary                      # …never executed
+    assert "notified" not in summary
+    assert _redis_get(sandbox_redis) == ""                # no SET
+    assert len(_events(events)) == 1                      # no new audit row
+    assert state.read_text(encoding="utf-8") == before    # no state write
 
 
 # ---------------------------------------------------------------------------
@@ -357,6 +404,35 @@ def test_decide_rearm_only_past_grace_same_episode():
     assert past["action"] == "re-arm"
 
 
+def test_rearm_timeout_lands_on_the_fatal_path(tmp_path, monkeypatch, capsys):
+    """A kill-switch.sh hang past rearm()'s 30s timeout must land on the
+    same FATAL contract as a nonzero exit: FATAL line, rc 1, anomaly KEPT
+    so the next tick retries — never a raw traceback."""
+    rows = [_row("arm-a", "kill_switch_activated", _ts(0), sanctioned=True)]
+    state = tmp_path / "state.json"
+    state.write_text(json.dumps({
+        "updated_at": "2026-07-01T00:00:00Z",
+        "state": {"anomaly": {"key": "arm-a",
+                              "first_seen": "2026-07-01T00:00:00Z"}}}),
+        encoding="utf-8")
+    monkeypatch.setattr(ksw, "observe_killswitch", lambda: "inactive")
+    monkeypatch.setattr(ksw, "read_kill_switch_rows", lambda _d: rows)
+
+    def _hang():
+        raise subprocess.TimeoutExpired(cmd="kill-switch.sh", timeout=30)
+
+    monkeypatch.setattr(ksw, "rearm", _hang)
+    rc = ksw.main(["--state-file", str(state), "--grace-s", "1"])
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "FATAL" in captured.err and "timeout" in captured.err
+    summary = json.loads(captured.out.strip().splitlines()[-1])
+    assert summary["action"] == "re-arm"
+    assert summary["rearm_rc"] == "timeout"
+    doc = json.loads(state.read_text(encoding="utf-8"))
+    assert doc["state"]["anomaly"]["key"] == "arm-a"      # retry next tick
+
+
 def test_watchdog_only_ever_activates():
     """E-stop asymmetry pin: the watchdog's source must never call the
     deactivate verb — halting is its only power."""
@@ -368,13 +444,23 @@ def test_watchdog_only_ever_activates():
 
 def test_service_row_is_manifested():
     """The clock lives in cabinet/services.yml (fleet-manifest law): row
-    present, 60s cadence, watchdog kind, staged-disabled with a reason."""
-    manifest = (REPO / "cabinet/services.yml").read_text(encoding="utf-8")
-    assert "name: killswitch-watchdog" in manifest
-    assert "com.cabinet.killswitch-watchdog" in manifest
-    block = manifest.split("name: killswitch-watchdog", 1)[1]
-    block = block.split("\n  - name:", 1)[0]
-    assert "python3.12 cabinet/scripts/killswitch-watchdog.py" in block
-    assert "interval_s: 60" in block
-    assert "disabled: true" in block
-    assert "disabled_reason:" in block
+    present, 60s cadence, watchdog kind. The disabled pin is CONDITIONAL —
+    the test_cron_officer_targets W10 convention: `disabled: true` is
+    allowed ONLY alongside a non-empty `disabled_reason`, so the documented
+    enable ceremony (remove the flag, generate-plists, load) never turns
+    this test red the day the safety organ is armed."""
+    import yaml
+    services = yaml.safe_load(
+        (REPO / "cabinet/services.yml").read_text(encoding="utf-8"))["services"]
+    row = {s.get("name"): s for s in services}.get("killswitch-watchdog")
+    assert row, "killswitch-watchdog row missing from cabinet/services.yml"
+    assert row.get("label") == "com.cabinet.killswitch-watchdog"
+    assert row.get("kind") == "watchdog"
+    assert row.get("command") == (
+        "python3.12 cabinet/scripts/killswitch-watchdog.py")
+    assert row.get("schedule", {}).get("interval_s") == 60
+    if row.get("disabled"):
+        reason = str(row.get("disabled_reason") or "").strip()
+        assert reason, (
+            "killswitch-watchdog disabled WITHOUT a disabled_reason — "
+            "silent unscheduling is the W10 regression class")

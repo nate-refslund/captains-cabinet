@@ -50,8 +50,9 @@ FAIL-SAFE INVARIANTS:
     sanctioned resume would fight the Captain (the one law's hard-off side).
     Never a guessed re-arm.
   * No activation on record (cold deployment, empty ledger) → NO-OP.
-  * Re-arm failure (kill-switch.sh nonzero) → FATAL line + exit 1 so launchd
-    surfaces it; the anomaly state is KEPT so the next tick retries.
+  * Re-arm failure (kill-switch.sh nonzero, or hung past its 30s timeout) →
+    FATAL line + exit 1 so launchd surfaces it; the anomaly state is KEPT so
+    the next tick retries.
   * The captain notification is best-effort AFTER the verified re-arm — a
     dead Telegram door never unwinds or blocks the safety action (the
     evidence-anchor _send_receipt idiom).
@@ -460,9 +461,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     new_state = verdict["state"]
 
     if verdict["action"] == "re-arm" and not args.dry_run:
-        proc = rearm()
-        summary["rearm_rc"] = proc.returncode
-        if proc.returncode == 0:
+        try:
+            proc: Optional[subprocess.CompletedProcess] = rearm()
+        except subprocess.TimeoutExpired:
+            proc = None
+        if proc is not None and proc.returncode == 0:
+            summary["rearm_rc"] = 0
             # Verified by kill-switch.sh's own read-back; audit row written
             # by the script (actor = killswitch-watchdog via CABINET_OFFICER).
             new_state.pop("anomaly", None)
@@ -473,11 +477,18 @@ def main(argv: Optional[List[str]] = None) -> int:
                 f"sign its name — I re-armed it. ({_iso(now)})")
             new_state["last_rearm"]["notified"] = summary["notified"]
         else:
-            # Keep the anomaly so the next tick retries; loud so launchd
-            # surfaces it.
-            detail = (proc.stderr or proc.stdout or "").strip()[:200]
-            print(f"{_LOG_PREFIX}: FATAL re-arm failed "
-                  f"(rc={proc.returncode}): {detail}", file=sys.stderr)
+            # The FATAL path — a hung kill-switch.sh (>30s TimeoutExpired)
+            # lands here alongside the nonzero exits: keep the anomaly so
+            # the next tick retries; loud so launchd surfaces it.
+            if proc is None:
+                summary["rearm_rc"] = "timeout"
+                detail = "kill-switch.sh hung past its 30s timeout"
+            else:
+                summary["rearm_rc"] = proc.returncode
+                detail = (f"rc={proc.returncode}: "
+                          f"{(proc.stderr or proc.stdout or '').strip()[:200]}")
+            print(f"{_LOG_PREFIX}: FATAL re-arm failed ({detail})",
+                  file=sys.stderr)
             rc = 1
 
     if not args.dry_run and new_state != prev:
