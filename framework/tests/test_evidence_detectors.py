@@ -595,9 +595,29 @@ _REFERENCE_ALLOWLIST = {
 
 
 def _tracked_files() -> list[str]:
-    out = subprocess.run(["git", "ls-files", "-z"], cwd=str(REPO_ROOT),
-                         capture_output=True, check=True)
-    return [p for p in out.stdout.decode().split("\0") if p]
+    try:
+        out = subprocess.run(["git", "ls-files", "-z"], cwd=str(REPO_ROOT),
+                             capture_output=True, check=True)
+        return [p for p in out.stdout.decode().split("\0") if p]
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        # Exported tree (null-hatch runs the suite from a .git-less export):
+        # walk the shipped files instead. Runtime-only paths (gitignored in
+        # the dev repo, absent from a fresh export) are excluded so both
+        # modes prove the same shipped-file set.
+        skip_dirs = {".git", "node_modules", "__pycache__", ".next",
+                     ".venv", "dist", "build"}
+        skip_prefixes = ("cabinet/logs/", "instance/evidence/",
+                         "instance/state/")
+        rels: list[str] = []
+        for root, dirs, files in os.walk(REPO_ROOT):
+            dirs[:] = [d for d in dirs if d not in skip_dirs]
+            for name in files:
+                rel = os.path.relpath(os.path.join(root, name), REPO_ROOT)
+                rel = rel.replace(os.sep, "/")
+                if rel.startswith(skip_prefixes):
+                    continue
+                rels.append(rel)
+        return rels
 
 
 def test_shadow_grep_proof_no_officer_surface_reads_detector_output():
