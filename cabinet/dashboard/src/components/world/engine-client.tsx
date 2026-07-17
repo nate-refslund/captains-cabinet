@@ -79,6 +79,7 @@ import InspectCard, { type InspectTarget } from './inspect-card'
 import PortraitRail from './portrait-rail'
 import KillswitchLever from './killswitch-lever'
 import DecisionQueueCard from './decision-queue-card'
+import LibraryCard from './library-card'
 import type { EngineTarget } from './engine-canvas'
 
 const EngineCanvas = dynamic(() => import('./engine-canvas'), { ssr: false })
@@ -146,6 +147,7 @@ export default function EngineClient({ canActuate = false }: { canActuate?: bool
   const [at, setAt] = useState<string | null>(null)
   const [inspect, setInspect] = useState<InspectTarget | null>(null)
   const [mailboxOpen, setMailboxOpen] = useState(false)
+  const [libraryOpen, setLibraryOpen] = useState(false)
   const [legendOpen, setLegendOpen] = useState(false)
   const [connected, setConnected] = useState(false)
   const [renderIssues, setRenderIssues] = useState<string[]>([])
@@ -612,6 +614,7 @@ export default function EngineClient({ canActuate = false }: { canActuate?: bool
       if (ev.key === 'Escape') {
         setInspect(null)
         setMailboxOpen(false)
+        setLibraryOpen(false)
       }
       const pan = 3 / cameraRef.current.z
       if (ev.key === 'w' || ev.key === 'ArrowUp') setCamera((c) => ({ ...c, y: c.y - pan }))
@@ -635,6 +638,15 @@ export default function EngineClient({ canActuate = false }: { canActuate?: bool
       }
       const tier = lodTier(camera.z)
       if (tier === 'close' || tier === 'mid') {
+        // The Library building's primary interaction = ENTER it: the reading
+        // surface opens as chrome over the live canvas (spec v2 §5.2 [v3] /
+        // P6). One continuous world — the camera, canvas, and tick are
+        // untouched; NEVER a scene swap. Secondary still cites the era×rung
+        // card (Legend Law).
+        if (target.kind === 'building' && target.id === 'library') {
+          setLibraryOpen(true)
+          return
+        }
         openInspect(target)
         return
       }
@@ -944,6 +956,11 @@ export default function EngineClient({ canActuate = false }: { canActuate?: bool
 
       {/* ── mailbox: READ-only pending decision-queue view (ruling) ── */}
       {mailboxOpen && <DecisionQueueCard onClose={() => setMailboxOpen(false)} />}
+
+      {/* ── the Library: READ-only browse/read/search over the org vault
+           (spec v2 §5.2 Memory Library + §9.2 query dialog; chrome over the
+           live canvas — the world keeps ticking, never a scene swap) ── */}
+      {libraryOpen && <LibraryCard onClose={() => setLibraryOpen(false)} />}
 
       {/* ── inspect card ── */}
       {inspect && (
