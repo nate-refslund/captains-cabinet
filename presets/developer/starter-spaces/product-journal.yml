@@ -1,5 +1,5 @@
-# presets/developer/starter-spaces/product-brain.yml
-# Starter Space — Product Brain (developer preset)
+# presets/developer/starter-spaces/product-journal.yml
+# Starter Space — Product Journal (developer preset)
 #
 # Seeded by: bash cabinet/scripts/seed-library.sh --preset developer
 # Space name is the natural key (library_spaces.name UNIQUE); records are
@@ -14,14 +14,14 @@
 # here per the loop-prompt synthesis ritual — a write-list that denies
 # most officers would make that ritual a no-op.
 
-name: Product Brain
+name: Product Journal
 description: >-
   The software product's durable memory — what is being built, what
   shipped, what broke, and what users said. The always-on reference for
   every Officer working the product. Officers land durable
   product/release/incident/customer facts here during synthesis (search
   first; extend or supersede, never duplicate).
-starter_template: product_brain
+starter_template: product_journal
 schema_json:
   fields:
     - name: category
@@ -56,13 +56,13 @@ access_rules:
 # path inserts content only; the link index builds when a record is next
 # saved via the dashboard).
 records:
-  - title: Product Brain — Start Here
+  - title: Product Journal — Start Here
     labels: [seed, index]
     schema_data:
       category: Other
       status: Active
     content_markdown: |
-      # Product Brain — Start Here
+      # Product Journal — Start Here
 
       This Space is the software product's durable memory: what we're
       building, what shipped, what broke, and what users told us. Every

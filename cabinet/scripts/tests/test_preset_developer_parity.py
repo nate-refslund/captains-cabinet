@@ -78,7 +78,7 @@ NO_TWIN = {
     "connectors/posthog.md",
     "connectors/resend.md",
     "starter/probes.yml",
-    "starter-spaces/product-brain.yml",
+    "starter-spaces/product-journal.yml",
 }
 
 
@@ -236,9 +236,10 @@ _RESIDUE = re.compile(
 # residue (names/products/paths).
 _CORRIDOR = re.compile(r"\bcorridor\b", re.IGNORECASE)
 
-# 'brain' hand-check split: 'Product Brain'/'Business Brain' Space naming
-# (incl. product_brain/business_brain template slugs) is legitimate; the
-# brain PLUGIN id is not.
+# 'brain' hand-check split: 'Business Brain' Space naming (incl. the
+# business_brain template slug) is legitimate; the brain PLUGIN id is not.
+# (The software kit's own Space is 'Product Journal' — renamed off the
+# vault-ratcheted product-compound token, test_vault_rename_ratchet.py.)
 _BRAIN_OK_LINE = re.compile(
     r"(product|business)[ \-_]brain|brain[- ]?plugin[- ]?id", re.IGNORECASE)
 _BRAIN = re.compile(r"\bbrain\b", re.IGNORECASE)

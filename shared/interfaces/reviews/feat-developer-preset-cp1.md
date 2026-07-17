@@ -69,6 +69,26 @@
    work overlap — the 2026-04-16 "3+ presets share structure" revisit
    trigger; BACKLOG note goes to the orchestrator meta-workspace.
 
+7. **FIXED — full-suite run caught a vault-rename ratchet collision
+   (cp2).** `cabinet/scripts/tests` full run flagged
+   `test_vault_rename_ratchet.py::test_no_undeclared_product_brain_references`:
+   the spec's `product-brain.yml` Space filename/template is a NEW
+   `product[-_]brain` compound, forbidden since the Captain-ratified
+   2026-07-16 vault rename (product-brain/ → vault/; shrink-only
+   allowlist, "any NEW file mentioning product-brain reds the build").
+   Reality-wins deviation from the work order: shipped as
+   `starter-spaces/product-journal.yml`, Space **Product Journal**,
+   template `product_journal` — same 5 seed records, zero ratchet
+   allowlist growth; all references (preset README, presets/README, pack
+   README/SKILL, parity test, ledger + plan-doc rows) updated in the same
+   commit. The ratchet matches compounds only, so the work preset's
+   'Business Brain' and prose like "business brain" are unaffected.
+   Also from the same full run:
+   `test_evidence_seam_bypass_replay.py::test_shipped_catalog_harness_still_green[evidence-access.sh]`
+   fails identically on the PRISTINE origin/master baseline @2e04642e
+   (verified in a scratch checkout — pre-existing, unrelated to this
+   diff; reported upward, not papered over).
+
 ## Gate evidence at review time (all run in the worktree, python3.12)
 
 - `bash presets/developer/validate.sh` — PASSED (8 checks incl. the two

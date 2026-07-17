@@ -15,7 +15,7 @@ fallback preset stays `work`.
 - **Referenced, NOT copied:** the preset payload itself —
   `presets/developer/` (preset.yml, agents/, terminology.yml,
   constitution/safety addenda, schemas.sql, validate.sh, connectors/,
-  starter-spaces/product-brain.yml, starter/probes.yml, the day-1
+  starter-spaces/product-journal.yml, starter/probes.yml, the day-1
   README runbook). It ships with the core `captains-cabinet` plugin /
   repo clone. Installing this pack alone does NOT put the preset on
   disk.
@@ -30,7 +30,7 @@ fallback preset stays `work`.
    the optional preset question for the functional shape) or
    `echo developer > instance/config/active-preset` (manual) — the full
    day-1 path (env names, the 2-minute Captain scope-grant step, probes
-   install, Product Brain seed) is `presets/developer/README.md`.
+   install, Product Journal seed) is `presets/developer/README.md`.
 
 Governed path for deployments: declare the pack under `plugins:` in
 `instance/config/extensions.yml` and run

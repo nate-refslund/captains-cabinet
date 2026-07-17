@@ -6,7 +6,7 @@ ratified 2026-07-17): Flavor B is a **general** product org — any product
 kind; this preset is its **software** kit, the **first of a family**
 (e-commerce/physical and services kits are later siblings). It is a flat
 copy of `presets/work` (flat only, no inheritance — presets/README.md)
-plus software-kit deltas: connector declarations, a product-brain starter
+plus software-kit deltas: connector declarations, a Product Journal starter
 Space, a probes starter config, and this runbook.
 
 **Optional, always.** Activating this preset is an explicit deployment
@@ -95,14 +95,14 @@ which lethal-trifecta leg it opens: `connectors/*.md`.
    key or checkout skips fail-closed — no verdict, never a fabricated
    observation.
 
-5. **Seed the product brain**
+5. **Seed the Product Journal**
 
    ```bash
    bash cabinet/scripts/seed-library.sh --preset developer --dry-run   # preview
    bash cabinet/scripts/seed-library.sh --preset developer
    ```
 
-   Seeds the `Product Brain` Space (start-here, product overview, release
+   Seeds the `Product Journal` Space (start-here, product overview, release
    log, incident index, customer feedback) — generic `<placeholders>`,
    idempotent, never overwrites edits.
 
@@ -129,7 +129,7 @@ Same layout as `presets/work` (see presets/README.md) plus:
 
 - `connectors/` — 8 capability-first one-pagers (github, playwright,
   neon, vercel, sentry, stripe, posthog, resend)
-- `starter-spaces/product-brain.yml` — Library starter Space + seeds
+- `starter-spaces/product-journal.yml` — Library starter Space + seeds
 - `starter/probes.yml` — placeholder twin of
   `instance/config/probes.yml.example`
 - `terminology.yml` — carries `coordinator_title: First Mate`

@@ -43,9 +43,9 @@ captains-cabinet plugin / repo clone at `presets/developer/`:
   (`lane_mcps: [library, telegram, github, playwright, neon-ro]`)
 - `agents/` — the five officer role defs + three scaffolds
 - `README.md` — the day-1 runbook (activation → env names → Captain
-  scope grant → probes → Product Brain seed → hiring)
+  scope grant → probes → Product Journal seed → hiring)
 - `connectors/` — 8 capability-first one-pagers
-- `starter-spaces/product-brain.yml`, `starter/probes.yml`,
+- `starter-spaces/product-journal.yml`, `starter/probes.yml`,
   `terminology.yml`, constitution/safety addenda, `schemas.sql`,
   `validate.sh`
 
