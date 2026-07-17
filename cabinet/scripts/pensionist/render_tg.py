@@ -111,7 +111,7 @@ for label, text, buttons in PANELS:
   <div class="panel">
     <div class="cap">{html.escape(label)}</div>
     <div class="msg">
-      <div class="bubble"><span class="sender">HQ Chair</span>
+      <div class="bubble"><span class="sender">First Mate</span>
         <pre>{html.escape(text)}</pre>
         <span class="time">09:12</span>
       </div>

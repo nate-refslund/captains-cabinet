@@ -2,7 +2,7 @@
 
 A **preset** is a configuration overlay that adapts the Captain's Cabinet framework for a particular mode of operation. Presets define:
 
-- Which agent archetypes pre-scaffold (work: CoS, CTO, CPO, CRO, COO; personal: coaches)
+- Which agent archetypes pre-scaffold (work: First Mate (CoS), CTO, CPO, CRO, COO; personal: coaches)
 - Terminology defaults ("officer" vs "coach", "sprint" vs "cycle")
 - Constitution and safety addenda specific to the use case
 - Additional database schema beyond the framework base
@@ -15,8 +15,8 @@ A preset is **not** a separate codebase, a fork, or an alternate framework. It's
 
 | Preset | Status | Description |
 |--------|--------|-------------|
-| `work/` | Active | Product-team shape: CoS / CTO / CPO / CRO / COO, Linear-or-Library backlog, Notion-or-Library business brain, product repo workspace. |
-| `portfolio/` | Active | Portfolio shape: one persistent Chair (id `cos`, single Telegram bot) + one on-demand CEO officer per lane, generated from `agents/_lane-ceo.md.template` into `instance/agents/`. Functional depth via hats + hat graduation and Sonnet crew, not extra fulltime officers. |
+| `work/` | Active | Product-team shape: First Mate (CoS) / CTO / CPO / CRO / COO, Linear-or-Library backlog, Notion-or-Library business brain, product repo workspace. |
+| `portfolio/` | Active | Portfolio shape: one persistent First Mate (id `cos`, single Telegram bot) + one on-demand CEO officer per lane, generated from `agents/_lane-ceo.md.template` into `instance/agents/`. Functional depth via hats + hat graduation and Sonnet crew, not extra fulltime officers. |
 | `personal/` | Placeholder | Coaching / life-operator shape. Empty until Phase 2 of the Cabinet v2 arc populates it. |
 | `_template/` | Template | Skeleton for creating a new preset. Copy to `presets/<your-name>/` and customize. |
 
@@ -84,7 +84,7 @@ seeded 'Business Brain' Space via the library MCP `library_create_record`.
 
 `instance/config/active-preset` — a flat file whose only content is the preset slug (e.g. `work`). The loader reads this at container start.
 
-Default: `work`. Forkers who don't change this get the default work-preset behavior (a product-team cabinet: CoS/CTO/CPO/CRO/COO).
+Default: `work`. Forkers who don't change this get the default work-preset behavior (a product-team cabinet: First Mate (CoS)/CTO/CPO/CRO/COO).
 
 ## Switching presets
 

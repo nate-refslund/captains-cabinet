@@ -24,7 +24,7 @@ naming_style: functional
 # that are NOT hired by default — hire via cabinet/scripts/create-officer.sh
 # when Captain has greenlit work that needs them.
 agent_archetypes:
-  - cos   # Chief of Staff — orchestration, briefings, self-improvement
+  - cos   # First Mate — orchestration, briefings, self-improvement
   - cto   # Chief Technology Officer — engineering, code, deploys
   - cpo   # Chief Product Officer — specs, backlog, prioritization
   - cro   # Chief Research Officer — market research, competitive intel, trends
