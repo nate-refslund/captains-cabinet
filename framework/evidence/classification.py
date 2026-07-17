@@ -132,6 +132,12 @@ DETAIL_FIELD_CLASSIFICATION = MappingProxyType({key: PRODUCER_ASSERTED for key i
     "egress_approval_ref",
     "input_tokens", "output_tokens", "cost_usd", "resource_kind",
     "model_id", "effort_tier", "skill_revision",
+    # Phase-2 producer-identity attestation (framework/evidence/identity.py):
+    # value "process" = identity frozen at process start, never
+    # payload/env-derived.  Producer-asserted until an out-of-process broker
+    # attestation ceremony exists (R2 honesty caveat; Phase 6 hard-requires
+    # it); deliberately NOT officer-projected.
+    "attestation_mode",
 )})
 
 

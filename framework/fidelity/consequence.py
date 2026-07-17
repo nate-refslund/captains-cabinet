@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -461,8 +462,40 @@ def emit_consequence(
     if _sim_mode():
         event["sim"] = True
 
+    # Evidence mirror reservation (Phase 2, observation-only). Live
+    # lifecycle rows (proposal/outcome/review present, no sim marker — see
+    # framework/evidence_mirror.py doctrine) get ONE namespaced ref
+    # ('evidence-trial:<day-trial-id>') appended here at the chokepoint —
+    # never at call sites — so superseding enrichment rows, rebuilt fresh
+    # from action records, re-carry the reverse-correlation ref. The ref is
+    # identity-free for attention canonical_refs and never equals
+    # DIRECT_DEMOTE_REF. The domain validate + write below KEEP raising:
+    # act lanes rely on ledger-first fail-closed order.
+    evidence_mirror = None
+    mirror_slot = None
+    try:
+        from framework import evidence_mirror  # type: ignore
+        mirror_slot = evidence_mirror.reserve_consequence(event)
+        if mirror_slot:
+            event["refs"] = list(event.get("refs") or []) + [mirror_slot["ref"]]
+    except ImportError:
+        pass
+    except Exception as exc:  # reservation must never block the domain write
+        mirror_slot = None
+        print(f"consequence: WARN evidence mirror reserve failed: {exc}", file=sys.stderr)
+
     validate_consequence(event)  # raises before any write
     _write_to_log(event)
+
+    # Evidence mirror receipt — strictly AFTER the domain append succeeded,
+    # so refused rows (validation error, SimQuarantineError inside
+    # _write_to_log) are never mirrored. Receipts are telemetry: recorder
+    # failure degrades LOUD inside the module and never blocks this return.
+    if mirror_slot and evidence_mirror is not None:
+        try:
+            evidence_mirror.mirror_consequence(event, mirror_slot)
+        except Exception as exc:  # pragma: no cover — module degrades internally
+            print(f"consequence: WARN evidence mirror failed: {exc}", file=sys.stderr)
     return event
 
 

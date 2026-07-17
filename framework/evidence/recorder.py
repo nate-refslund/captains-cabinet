@@ -65,6 +65,27 @@ TERMINAL_STATUSES = frozenset({
     "missed", "skipped", "expired",
 })
 
+# Per-trial event envelope (Phase 2 safety envelope, R-8: measured in
+# Phase 1, enforced in Phase 2).  Every append re-verifies the WHOLE trial
+# before writing, so an unbounded trial makes append cost O(n^2) in trial
+# length — a runaway producer could deny evidence recording store-wide.
+# The cap refuses NEW mints only, as a typed ``trial_event_cap`` error
+# raised before any byte (write-ahead or ledger) is produced: already-signed
+# write-ahead events always reconcile (the exactly-once crash-recovery
+# guarantee) and legacy over-cap trials keep verifying and reading (stored
+# bytes == hashed bytes; v1 and v1.1 events still verify).
+#
+# PROVISIONAL value pending the Phase-2 measured p95/append-volume evidence
+# wave; sized from observed volume with headroom: the heaviest legitimate
+# act-class trial today is the 15-scenario onboarding dogfood at 74
+# events/trial, day-bounded telemetry-mirror taxonomy trials project
+# ~50-100 events/day, and recovery/re-mint tails add at most a few events —
+# 500 leaves >5x headroom over all of them.  Code-constant law: NEVER
+# env-derived (no environment variable may bear behavior) and never a
+# control.json dial (a runtime-widenable envelope would become a governance
+# surface).
+MAX_TRIAL_EVENTS = 500
+
 # Officer-visible detail keys for cabinet_projection().  Fail-closed: any
 # detail key not listed here is silently dropped from the officer view.
 # Additions are governance-changing (design §2.6) and ceremony-gated.  The
@@ -688,6 +709,17 @@ class EvidenceRecorder:
                     raise EvidenceError("ledger_integrity", "Evidence continuity failed; no new event was written.")
             rows = self._rows(trial)
             sequence = len(rows) + 1
+            if sequence > MAX_TRIAL_EVENTS:
+                # Refuse BEFORE the event is built, hashed, signed, or
+                # written ahead: a refused mint leaves zero bytes behind and
+                # the trial keeps verifying exactly as it was.  Recovery
+                # paths deliberately skip this check (see MAX_TRIAL_EVENTS).
+                raise EvidenceError(
+                    "trial_event_cap",
+                    "The evidence trial is at its per-trial event envelope; "
+                    "no new event was written. Continue on a fresh trial "
+                    "(day-bounded taxonomy trials roll over naturally).",
+                )
             previous_hash = rows[-1]["event_hash"] if rows else ZERO_HASH
             event: dict[str, Any] = {
                 "schema": EVENT_SCHEMA,

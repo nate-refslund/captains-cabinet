@@ -317,3 +317,176 @@ daily anchor job closes it from outside:
   surfaces skip cleanly — bindings live in the deployment-local
   `evidence-anchor.yml`; start from the committed template
   `instance/config/evidence-anchor.yml.example`.
+
+## Measured envelope (Phase 2 Batch A, 2026-07-17)
+
+Design R-8: envelope numbers are **measured, then enforced** — never
+invented. Source harness: `cabinet/scripts/evidence-bench.py`
+(scratch-store only; it refuses anything under `instance/evidence` and
+never consults `CABINET_EVIDENCE_DIR`). Re-run:
+
+```bash
+python3.12 cabinet/scripts/evidence-bench.py --output /tmp/evidence-bench.json
+```
+
+Run of record: 2026-07-17 (UTC 2026-07-16T23:28Z), macOS 26.6 arm64
+(Apple Silicon), Python 3.12.13, APFS. Workload: 990 appends — 20
+journey-shaped 8-event act trials, one 150-event mirror day trial
+(`evt-benchorgmirror-<yyyymmdd>`), one 48-event consequence-mirror day
+trial, a 512-event long-trial sweep, 120 single-event trials (watermark
+axis). Final scratch store: 143 trials, 1,234,439 bytes; `verify_store`
+green.
+
+**Append latency** (`append` re-verifies the whole trial per write —
+O(n²) total per trial; fsync-dominated at small depths):
+
+| shape (depth) | p50 | p95 | max |
+|---|---|---|---|
+| journey (8-event act trial) | 1.43 ms | 1.78 ms | 2.09 ms |
+| consequence day trial (48) | 2.77 ms | 4.39 ms | 6.80 ms |
+| mirror day trial (150) | 6.33 ms | 10.67 ms | 11.32 ms |
+| sweep trial (to 512) | 18.07 ms | 33.91 ms | 35.91 ms |
+| overall (990 appends) | 6.93 ms | 31.72 ms | 35.91 ms |
+
+Sweep p95 by depth: 1–8: 1.76 ms · 9–64: 5.46 ms · 65–128: 9.67 ms ·
+129–256: 17.71 ms · 257–384: 26.23 ms · 385–512: 34.76 ms — linear
+per-append growth ≈ +0.065 ms/event; a full 512-event day trial costs
+≈ 9.3 s of cumulative append time spread across the day.
+
+**Store growth**: ~1.2 KB/event stored (journey 1211 B, mirror 1203 B,
+sweep 1190 B — anchors, locks and watermark churn amortized). Projected
+against the live volumes measured in recon (2026-07-14..16: org events
+1,313–2,372/day of which ~94 % excluded exhaust; mirrored org-signal
+tens–142/day; consequence 1–48/day; 20 acts/day assumed):
+
+| scenario | events/day | MB/day | MB/90d |
+|---|---|---|---|
+| org-signal typical | 80 | 0.09 | 8.3 |
+| org-signal worst measured | 142 | 0.16 | 14.7 |
+| consequence worst | 48 | 0.06 | 5.0 |
+| journey acts (20×8) | 160 | 0.19 | 16.6 |
+| combined worst day | 350 | 0.40 | 36.2 |
+
+**Watermark axis** (the second growth axis — every append rewrites the
+store-wide signed anti-rollback index, O(#trials) per append; bounded by
+day-rolling + retention, **not** by the per-trial cap): 120 trials →
+27,192 B index; single-event append p95 1.07 ms (early) vs 1.13 ms
+(late) — flat at this scale. State the envelope claim precisely: the
+per-trial cap bounds per-append verify cost, the taxonomy + retention
+bound the watermark axis.
+
+**Verification cost** (doctor bounded-runtime basis): whole-store verify
+(143 trials / 990 events) = 0.172 s; single-trial verify at 512-event cap
+depth = 0.032 s.
+
+**Measured recommendation: `512` · Enforced constant: `MAX_TRIAL_EVENTS
+= 500` (provisional).** Both numbers are recorded here deliberately
+(Batch-A seam reconciliation). The bench's measured recommendation is 512:
+smallest candidate ≥ 3.0× the worst simulated day-bounded mirror trial
+(150 events; live worst measured org-signal day ≈ 142), with p95 append at
+depth 385–512 = 34.8 ms — well inside the 250 ms budget — and headroom
+absorbing crash-recovery tails (+2), re-mint genesis (+1) and journey
+completion tails (+5). The ENFORCED value in
+`framework/evidence/recorder.py` stays the provisional `500` that landed
+with the germline envelope wave (sized from the live recon volumes with
+5–10× headroom; a code constant, never env- or `control.json`-derived).
+Retuning 500 → 512 is a follow-up germline ceremony with this measured
+basis — never a silent edit. The telemetry-mirror module aligns its own
+per-segment constant to the enforced value
+(`framework/evidence_mirror.py MAX_MIRROR_EVENTS_PER_TRIAL = 500`) and
+chains suffixed day segments (`evt-orgmirror-b-<yyyymmdd>`, up to 6) before
+the recorder cap can refuse. Day-bounded taxonomy trials are the primary
+envelope; the cap is the backstop, and a cap hit on a mirror trial degrades
+loud + re-mints a chained trial (suffix inside the class segment) rather
+than blocking any domain emit.
+
+**Doctor thresholds derived from this run**
+(`cabinet-doctor.sh` check 12, AMBER-max): freshness 48 h; growth ceiling
+256 MB ≈ 7× the projected 90-day worst case (36.2 MB); cap-approach warn
+at 80 % of the enforced 500 (= 400 events in one day trial;
+`EV_CAP_DEFAULT` tracks `MAX_TRIAL_EVENTS` — sync pinned by
+`framework/tests/test_evidence_doctor_probes.py`); chain continuity =
+read-only single-newest-trial verifier spot-check (~32 ms at cap depth);
+degradation markers = mtime-recency probes over the telemetry-mirror
+ledger `cabinet/logs/evidence-mirror-degradations.jsonl` (probed even when
+the store is absent) and the act-class lifecycle sidecar
+`<store>/degradations.jsonl` (24 h window).
+
+Caveat: latency numbers are per-machine (fsync-dominated) — re-run the
+bench on the deployment target (Mac Mini) before tightening any
+threshold; growth numbers scale with the mirrored-class allow-list, so
+re-measure when classes are added.
+
+## Telemetry mirror tier (Phase 2 Batch A, 2026-07-17 — observation-only)
+
+Batch A adds the first whole-cabinet producers: telemetry MIRRORS at the two
+breadth-plane chokepoints. Recording is purely observational — receipts
+about already-happened events; no downstream consumer changes its read
+path, and the org/consequence domain writes are never blocked.
+
+- **Chokepoints:** `framework/events/emitter.py` (org events) and
+  `framework/fidelity/consequence.py` (consequence rows) call the
+  non-germline mirror engine `framework/evidence_mirror.py` at emit time
+  (`from framework import evidence_mirror` — the code-level import seam;
+  there is no emit CLI/API).
+- **Allow-list law (the 59%-plumbing lesson):** only classes in
+  `MIRRORED_ORG_EVENT_TYPES` mirror (Captain/role/mission/graduation/
+  trust/safety/needs signal — a strict subset of `VALID_EVENT_TYPES`,
+  pinned by test). Nervous-system trigger delivery/ACK/heartbeat exhaust
+  structurally never reaches the chokepoints and must never join the list;
+  session/notification/outbox/`policy_evaluated`/eval-run exhaust is pinned
+  out via `NEVER_MIRRORED_EXHAUST` (disjointness is a test tripwire).
+  Consequence rows mirror on live lifecycle presence (proposal/outcome/
+  review); rows carrying `sim:true` and refused rows never mirror.
+- **Trials:** day-bounded taxonomy trials (`evt-orgmirror-<yyyymmdd>` /
+  `evt-consequence-<yyyymmdd>`), per-segment constant
+  `MAX_MIRROR_EVENTS_PER_TRIAL = 500` (aligned with the recorder's
+  enforced `MAX_TRIAL_EVENTS`), chained suffix segments inside the class
+  token (`evt-orgmirror-b-<yyyymmdd>`, ≤ 6 segments) before loud skip.
+- **Correlation both directions:** forward, the emitter stamps
+  `payload["evidence_mirror"]["trial_id"]` into a COPY of the payload
+  (org) and the consequence chokepoint appends one namespaced
+  `evidence-trial:<trial-id>` ref; reverse, each receipt's
+  `correlation_id` is the org event id / the canonical row sha256, and
+  `detail` carries join keys only (ids and digests, never payload copies).
+- **Degradation contract:** mirrors degrade LOUD and NEVER block the
+  domain emit — one stderr WARN per (chokepoint, reason) per process, one
+  marker line per 900 s window appended to the runtime ledger
+  `cabinet/logs/evidence-mirror-degradations.jsonl` (doctor check 12 probes
+  its recency, even when the store is absent), and a best-effort
+  `evidence_mirror_degraded` org event (registered in the emitter
+  vocabulary; never itself mirrored — no recursion). An integrity-red
+  trial is tamper evidence: degraded loud, never auto-reminted (the day
+  boundary recovers). Act-class producers (fail-closed
+  evidence-before-action) are Batch B, not this tier.
+- **Producer identity (A6):** fixed module constants
+  (`org-event-mirror` / `consequence-mirror`); the mirrored row's own
+  claimed actor is DATA in `detail`, never the evidence `actor`. The
+  germline `framework/evidence/identity.py` seam is the Batch-A
+  attestation primitive: `attest_process_identity()` freezes one validated
+  identity per process (idempotent identical re-attest; typed
+  `identity_conflict` refusal; fail-closed accessors; never env-derived,
+  and explicit version/commit values keep the recorder's env provenance
+  fallback unconsulted). Attested events carry the producer-asserted
+  `attestation_mode: "process"` detail stamp — audit/fuel-integrity
+  vocabulary, deliberately NOT officer-projected. Out-of-process broker
+  attestation is a later ceremony; Phase 6 hard-requires it (HP-1).
+- **Officer surface: NONE.** No CLI, no read API; the mirror join keys are
+  not in `PROJECTION_ALLOWED_DETAIL`, so the fail-closed officer
+  projection drops them (never-a-score by construction).
+  `cabinet/scripts/evidence-read.sh` remains the ONLY officer path and is
+  untouched by Batch A.
+- **Coverage line (A2, mechanical):**
+  `python3.12 cabinet/scripts/evidence-coverage.py` reconciles producers
+  vs enumerated action-taking surfaces. At this pin: *evidence covers 4 of
+  13 action-taking surfaces* — wired: the two chokepoint mirrors,
+  the onboarding journey, the digest-anchor; everything else is an honest
+  named KNOWN-GAP (Batch B). An UNENUMERATED producer exits 1 (drift
+  catch); `--strict` turns any gap into a failure and is the Phase-2-end
+  gate. Shell invocations of the evidence CLI are detector-only, never
+  producer wiring.
+- **Pytest fence:** under `PYTEST_CURRENT_TEST` the mirror is disabled
+  unless the test supplies scratch `CABINET_EVIDENCE_MIRROR_STORE` /
+  `CABINET_EVIDENCE_MIRROR_MARKER` overrides — consulted ONLY under
+  pytest; production store resolution never reads the environment (A10)
+  and reuses the one canonical journey `EVIDENCE_REL` constant.
