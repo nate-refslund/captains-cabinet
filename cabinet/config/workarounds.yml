@@ -1,0 +1,125 @@
+# cabinet/config/workarounds.yml — the WORKAROUNDS REGISTRY (tracked).
+#
+# Every standing workaround the fleet is carrying gets ONE machine-readable
+# row here, so the platform-radar triage loop can answer "did upstream fix
+# this yet?" mechanically instead of by folklore. Consumed by:
+#   * cabinet/scripts/workaround-retest.sh  — sandboxed retest runner
+#     (screens every retest_cmd, executes read-only probes, emits
+#     {id, still_needed|fix_confirmed|inconclusive} verdict lines, and on
+#     fix_confirmed files a PROPOSE-ONLY retirement proposal to
+#     shared/interfaces/workaround-retire-proposals.jsonl).
+#   * memory/skills/platform-radar-triage.md — the officer triage skill
+#     (cross-references daily platform deltas against these rows).
+# Doctrine: docs/runbooks/platform-adoption-gating.md (adoption gates —
+# observe/triage/propose only; nothing in this file authorizes an apply).
+#
+# SCHEMA (all fields required per row):
+#   id                WA-YYYY-MM-DD-<slug>  (date = when the workaround was
+#                     recorded; slug lowercase kebab). Ids are permanent —
+#                     rows retire via a fix_confirmed proposal + reviewed PR,
+#                     never by silent deletion.
+#   symptom           What breaks, observably, when the workaround is absent.
+#   cause             Root cause (file:behavior), honest and specific.
+#   workaround        What we actually do today to live with it.
+#   version_condition When a retest becomes worth queueing. Two shapes:
+#                       "<component> <op> <version>"  op in > >= == != <= <
+#                         — auto-matched against radar delta components
+#                           (e.g. "claude-code > 2.1.211").
+#                       "fixed-in: <free text>"
+#                         — not auto-matchable; retested via explicit id or
+#                           --all (repo-side fixes land by PR, not by radar).
+#   retest_cmd        A SAFE read-only probe/simulation. Contract:
+#                       exit 0 -> defect still present  -> still_needed
+#                       exit 1 -> defect absent         -> fix_confirmed
+#                       else / timeout                  -> inconclusive
+#                     The runner SCREENS this command (read-only first-token
+#                     allowlist + mutation-verb blocklist incl. path-qualified
+#                     verbs + no redirection) as a drift/typo filter, then on
+#                     macOS EXECUTES it under an OS sandbox (deny file-write/
+#                     network/signal) — the real containment. Probes must
+#                     never mutate fleet state. Longer probes live as files
+#                     under cabinet/scripts/workaround-probes/.
+#   owner_surface     The tracked repo file that owns the defect (where the
+#                     real fix lands).
+#   recorded          ISO date the workaround entered service.
+#
+# Registry text is repo-reviewed config — that reviewed-PR gate is the FIRST
+# trust boundary. On top of it the runner adds a fast screen (drift/typo
+# filter, NOT a complete security boundary — a value handed to `bash -c` can
+# reassemble a verb at runtime a string scan can't see) and, on macOS, a real
+# OS execution sandbox (deny file-write/network/signal) that contains even a
+# screen-bypassing verb. See cabinet/scripts/workaround-retest.py header.
+
+version: 1
+
+workarounds:
+  - id: WA-2026-07-16-memory-redis-host-docker-default
+    symptom: >-
+      Interactive / Captain-run invocations of queue-touching memory tools
+      fail silently: redis-cli targets host `redis`, which only resolves
+      inside the docker network (observed: a memory-distill --apply run
+      failed 48/48 queue writes with no error surfaced until re-run with
+      REDIS_HOST=localhost).
+    cause: >-
+      cabinet/scripts/lib/memory.sh defaults MEM_REDIS_HOST to the
+      docker-compose service hostname (`${REDIS_HOST:-redis}`); launchd
+      plist wrappers inject REDIS_HOST=localhost, which masks the bad
+      default for services — only interactive shells hit it.
+    workaround: >-
+      Export REDIS_HOST=localhost in any interactive/Captain-run shell
+      before invoking queue-touching memory tools (memory_queue_embed
+      consumers, memory-distill --apply, backfill).
+    version_condition: >-
+      fixed-in: cabinet/scripts/lib/memory.sh resolves the default from
+      cabinet/.env or defaults to localhost (docker overrides via env)
+    retest_cmd: "grep -E 'REDIS_HOST:-redis' cabinet/scripts/lib/memory.sh"
+    owner_surface: cabinet/scripts/lib/memory.sh
+    recorded: "2026-07-16"
+
+  - id: WA-2026-07-16-claude-binary-homebrew-path-bridge
+    symptom: >-
+      Every officer boot dies at check-deps (`claude`/`bun` not found)
+      AFTER winning the egress apply lock; err.log reads like an egress
+      failure while the real refusal is in out.log.
+    cause: >-
+      Claude Code's native installer migrated `claude` to ~/.local/bin
+      (bun lives in ~/.bun/bin) on 2026-07-16, while
+      cabinet/scripts/generate-plists.py pins
+      PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+      for every launchd service — the pinned service PATH no longer
+      resolves the officer runtime.
+    workaround: >-
+      User-owned symlinks /opt/homebrew/bin/{claude,bun} -> the real install
+      locations (survives plist regen; verified against the plists' exact
+      PATH with claude 2.1.211 + bun 1.3.14).
+    version_condition: "claude-code > 2.1.211"
+    retest_cmd: >-
+      bash -c 'PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin;
+      p=$(command -v claude) || exit 0; if [ -L "$p" ]; then
+      t=$(readlink "$p"); case "$t" in /opt/homebrew/*) exit 1;; *) exit 0;;
+      esac; fi; exit 1'
+    owner_surface: cabinet/scripts/generate-plists.py
+    recorded: "2026-07-16"
+
+  - id: WA-2026-07-16-egress-apply-lock-livelock
+    symptom: >-
+      During boot storms (4-6 KeepAlive launchd labels retrying every 30s)
+      apply-lock losers fail closed forever — "egress-guard: FAIL-CLOSED —
+      could not acquire runtime apply lock" — while the winner holds the
+      lock through a long apply; the herd makes every fresh theory
+      pattern-match a symptom instead of the cause.
+    cause: >-
+      acquire_apply_lock() in cabinet/scripts/egress-guard.sh waits
+      100 x 0.1s = 10s while a guard apply can hold the lock ~50s
+      worst-case (acquire timeout << hold), and the bare `kill -0` owner
+      check is pid-reuse-prone.
+    workaround: >-
+      Operational: isolate ONE contender (boot the other labels out) until
+      a boot succeeds — the herd self-dissolves once successful boots stop
+      contending. No repo-side mitigation is in place yet.
+    version_condition: >-
+      fixed-in: cabinet/scripts/egress-guard.sh acquire timeout > worst-case
+      apply hold (retry-with-jitter or flock) + identity-checked lock owner
+    retest_cmd: "python3.12 cabinet/scripts/workaround-probes/egress-apply-lock-timing.py"
+    owner_surface: cabinet/scripts/egress-guard.sh
+    recorded: "2026-07-16"

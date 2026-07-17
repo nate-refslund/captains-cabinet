@@ -208,6 +208,9 @@ shared/interfaces/memory-supersession-soak.jsonl
 shared/interfaces/needs-ledger.jsonl
 shared/interfaces/prediction-calibration.jsonl
 shared/interfaces/preference-pairs.jsonl
+# workaround-retirement proposals (needs-ledger pattern) — appended by
+# cabinet/scripts/workaround-retest.py on fix_confirmed verdicts; never commit
+shared/interfaces/workaround-retire-proposals.jsonl
 
 # Cabinet World runtime read-model outputs (world-census E0a / world-chronicle
 # E0b — append-only replay history; instance data, never committed)
