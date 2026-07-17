@@ -45,6 +45,14 @@ describe('/library landing page — static retirement notice', () => {
   it('offers no create/edit affordances', () => {
     expect(source).not.toMatch(/CreateSpaceForm|CreateRecordForm|RecordEditor/)
   })
+
+  it('links onward to the read-only /vault browser (additive, 2026-07-17)', () => {
+    // The notice points people at where the archive landed; the vault browser
+    // is the read-only way to read it. Link must stay, and must NOT reintroduce
+    // a DB import or a create affordance (covered above + here).
+    expect(source).toContain('/vault')
+    expect(source).toContain("import Link from 'next/link'")
+  })
 })
 
 describe('/library layout — passthrough, no data fetching', () => {
