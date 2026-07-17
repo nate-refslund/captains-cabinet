@@ -122,6 +122,11 @@ cabinet/logs/workaround-retests.jsonl
 # by cabinet/scripts/workaround-retest.py on fix_confirmed verdicts;
 # gitignored alongside the other shared/interfaces runtime ledgers.
 shared/interfaces/workaround-retire-proposals.jsonl
+# Content-free per-label digests + session markers appended by the weekly
+# governance review (cabinet/scripts/governance-review.py, evidence Phase 3);
+# Captain-owned runtime ledger, anchored daily by evidence-anchor.py,
+# gitignored alongside the other shared/interfaces runtime ledgers.
+shared/interfaces/governance-labels.jsonl
 
 # --- other runtime-created ----------------------------------------------
 # written by the very runbook step that references it

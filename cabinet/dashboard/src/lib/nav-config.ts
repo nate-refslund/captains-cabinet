@@ -15,11 +15,15 @@ export type NavLink = {
  *
  * Advanced (all items, zero regression from the pre-Spec-032 nav):
  *   Dashboard / Orientation / Needs You / World / Project / Cabinets / Officers / Tasks /
- *   Capability Gaps / Health / Settings / Governance / Receipts /
+ *   Capability Gaps / Health / Settings / Governance / Receipts / Evidence /
  *   Integrations / Costs / Crons / Library / Terminal (external)
  *
  * Receipts (perfect-cabinet Wave B): read-only browser over the undo
  * journal — the what/why/cost/undo receipt surface, next to Governance.
+ *
+ * Evidence (whole-cabinet evidence Phase 3): read-only, verification-first
+ * browser over the evidence store — verified/UNVERIFIED trials with basis
+ * tags, next to Receipts.
  *
  * Terminal-to-Advanced per CoS plan review 2026-04-17 — a raw-shell utility
  * doesn't fit the consumer "check in" intent.
@@ -43,6 +47,7 @@ export const ADVANCED_NAV: NavLink[] = [
   { href: '/settings', label: 'Settings' },
   { href: '/governance', label: 'Governance' },
   { href: '/receipts', label: 'Receipts' },
+  { href: '/evidence', label: 'Evidence' },
   { href: '/integrations', label: 'Integrations' },
   { href: '/costs', label: 'Costs' },
   { href: '/crons', label: 'Crons' },

@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   mockVerify,
+  mockReadEvidence,
   mockCheckPassword,
   mockCreateSession,
   mockDestroySession,
@@ -35,6 +36,7 @@ const {
   mockRedisDel: vi.fn(),
   mockRedirect: vi.fn(),
   mockReadJournal: vi.fn(),
+  mockReadEvidence: vi.fn(),
 }))
 
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
@@ -53,6 +55,10 @@ vi.mock('@/components/receipts/journal', () => ({
   readJournal: mockReadJournal,
   shapeReceipt: vi.fn(),
 }))
+vi.mock('@/lib/evidence/read', () => ({
+  readEvidence: mockReadEvidence,
+  EVIDENCE_SHOW_CAP: 100,
+}))
 
 import { updateProductConfig, updateLinearConfig } from './config'
 import { updateProjectConfig } from './project-config'
@@ -63,6 +69,7 @@ import { updateRoleDefinition, updateLoopPrompt } from './files'
 import { readGovernanceFile, readAllGovernanceFiles, updateGovernanceFile } from './governance'
 import { getPresets, getPresetOfficers } from './cabinets'
 import { listReceipts } from './receipts'
+import { listEvidence } from './evidence'
 import { login, logout } from './auth'
 
 beforeEach(() => {
@@ -145,6 +152,14 @@ describe('operational-data reads refuse the unauthenticated caller (no data leak
     expect(res.error).toBe('Unauthorized')
     expect(mockReadJournal).not.toHaveBeenCalled()
   })
+
+  it('evidence store is not read, returns an empty payload with an honest error', async () => {
+    const res = await listEvidence()
+    expect(res.rows).toEqual([])
+    expect(res.unverified).toEqual([])
+    expect(res.error).toBe('Unauthorized')
+    expect(mockReadEvidence).not.toHaveBeenCalled()
+  })
 })
 
 describe('authenticated caller proceeds', () => {
@@ -169,6 +184,20 @@ describe('authenticated caller proceeds', () => {
     const res = await listReceipts()
     expect(res.error).toBeNull()
     expect(mockReadJournal).toHaveBeenCalledOnce()
+  })
+
+  it('evidence.listEvidence reads the real store for an authed caller', async () => {
+    const empty = {
+      rows: [], unverified: [], totalTrials: 0, verifiedCount: 0, unverifiedCount: 0,
+      matchedCount: 0, skippedLines: 0, skippedFiles: 0, storeOk: true, storeErrors: [],
+      missingDir: true, error: null, filterError: null, filters: {},
+      storeDir: '/tmp/testburg-store', cap: 100,
+    }
+    mockReadEvidence.mockResolvedValue(empty)
+    const res = await listEvidence({ status: 'failed' })
+    expect(res.error).toBeNull()
+    expect(mockReadEvidence).toHaveBeenCalledOnce()
+    expect(mockReadEvidence).toHaveBeenCalledWith({ status: 'failed' })
   })
 })
 

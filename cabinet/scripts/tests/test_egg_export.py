@@ -365,7 +365,7 @@ def test_framework_docs_dated_snapshots_archived(export: Path):
 
 def test_proposals_non_amendments_archived_amendments_kept(export: Path):
     """R167 (personal-clean wave, 2026-07-15): fills the gap R146 named but
-    never implemented — the 21 docs/proposals/germline-amendment-*.md
+    never implemented — the 22 docs/proposals/germline-amendment-*.md
     FOUNDING AMENDMENTS (R031/R146: ratified, frozen constitutional record)
     ship verbatim; every other file (addenda/activation runbooks, no
     ratified ship requirement) archives with an ARCHIVED-NOTE.md stub."""
@@ -385,6 +385,7 @@ def test_proposals_non_amendments_archived_amendments_kept(export: Path):
             "germline-amendment-evidence-phase1-2026-07-16.md",
             "germline-amendment-evidence-phase2a-2026-07-17.md",
             "germline-amendment-evidence-phase2b-2026-07-17.md",
+            "germline-amendment-evidence-phase3-2026-07-17.md",
             "germline-amendment-evidence-recorder-hardening-2026-07-15.md",
             "germline-amendment-evidence-recorder-v1-2026-07-15.md",
             "germline-amendment-gather-rewire-2026-07-07.md",

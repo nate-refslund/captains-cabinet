@@ -118,6 +118,17 @@ that can read the signing key can re-derive the token, so full closure comes
 from the separate-UID deployment boundary plus the officer hook layer that
 structurally blocks importing the recorder modules.
 
+The SAME token also gates Captain labeling (evidence Phase 3): the weekly
+governance review (`cabinet/scripts/governance-review.py`, see
+`docs/runbooks/governance-review.md`) refuses every mode without it, and
+lands Captain verdicts as verification/outcome events on the judged trial
+via the recorder API — `actor {kind: captain}`, `detail.source =
+verdict_human`, `detail.action = governance_review_label`. Of the label's
+detail keys, exactly the allow-listed pair `action` + `result_code` surfaces
+in the officer projection (a landed label is an ordinary record); `source`,
+`basis`, `jid`, `session` and the note stay redacted. Per-label digests ride
+the daily external anchor (`evidence-anchor.py` `captain_labels`).
+
 ### Read-only (no token)
 
 Verify one live trial or the whole store:
@@ -558,3 +569,134 @@ the per-class recording contract as written law:
   `docs/proposals/germline-amendment-evidence-phase2b-2026-07-17.md`;
   review artifact
   `shared/interfaces/reviews/evidence-phase2-batch-b-cp1.md`.
+
+## Review & monitoring surface (Phase 3, 2026-07-17 — humans judge first)
+
+Phase 3 is PURE READ-ONLY additions with exactly ONE designed write: Captain
+labels through the token-gated governance-review harness. No machine
+judgment exists (that is Phase 4); no new officer write surface exists.
+
+### Cross-trial query plane (the `project` verb, extended)
+
+`project` now accepts either a trial id or ONE reserved cross-trial selector
+token (selectors take precedence over trial ids; the namespace `by-<name>:`
+is refused for unknown names, never retried as a trial):
+
+```bash
+python3.12 -m framework.evidence --store instance/evidence/v1 project by-actor:cos
+python3.12 -m framework.evidence --store instance/evidence/v1 project by-actor:officer:cos
+python3.12 -m framework.evidence --store instance/evidence/v1 project by-component:action-lane
+python3.12 -m framework.evidence --store instance/evidence/v1 project by-status:failed
+python3.12 -m framework.evidence --store instance/evidence/v1 project by-time:20260701-20260715 --limit 100
+```
+
+- **Officer doorway unchanged:** a selector is one bounded
+  `[A-Za-z0-9._:-]` token, so `cabinet/scripts/evidence-read.sh
+  by-status:failed` works through the SAME byte-identical doorway script —
+  it remains the only officer read path.
+- **Fail-closed display:** every served trial passes full verification
+  first; a failing trial renders as an explicit UNVERIFIED stub (id + error
+  codes, zero content) — never silently included, never silently dropped.
+- **Redaction inherited:** served records come verbatim from the
+  single-trial projection (allow-listed detail keys, per-record
+  `trust: untrusted_observation`, the UNTRUSTED OBSERVATIONS banner).
+- **Never-a-score:** output is filtered records plus honest counts
+  (`trials_scanned/served/unverified`, `records`, `truncated`) — no rates,
+  no rankings, no aggregates (EVAL-025 and
+  `framework/evidence/tests/test_query_plane.py` pin this).
+- Bounded: at most 50 verified trials per query (code constant
+  `MAX_QUERY_TRIALS`) and `--limit` records (clamped 1..1000);
+  `counts.truncated` reports every early stop.
+
+### Dashboard evidence page (Captain-facing, auth-gated, read-only)
+
+`/evidence` on the dashboard (nav: Evidence) lists trials from the SAME
+fixed store (`instance/evidence/v1`), through the receipts read-model
+discipline: one read-only server action (`listEvidence`), auth-gated,
+honest skipped-row counts, zero caller-controlled paths, no label verb (the
+page can never write). Every trial passes the REAL Python verifier (spawned
+fixed-argv `python3.12 -m framework.evidence verify`) or renders an explicit
+red UNVERIFIED row; filters never hide unverified rows.
+
+**Evidence-basis tag on every row** (§2.5 B6 — weak greens rendered as
+exactly what they are): `human-verified` (a captain-attributed
+verification/outcome/feedback leg or recorded `verdict_human`) ·
+`independently-recomputed` (`verdict_judge`) · `self-asserted` (producer
+vouching for itself) · `persistence-only` (nothing beyond integrity +
+persistence, incl. reconciler `ttl_ok`) · `unknown` (verified but bytes not
+captured in this read). The page states honestly that stored fields are
+producer-asserted; authenticated-captain provenance comes from the
+token-gated label path plus external anchoring, not from this projection.
+
+**One validation truth:** the page's filter grammar (actor / component /
+status / time) mirrors the query plane's rules byte-for-byte — pinned by
+`cabinet/scripts/tests/test_evidence_read_lockstep.py` plus the shared case
+vector `cabinet/scripts/tests/fixtures/evidence-filter-cases.json`, which
+BOTH suites (pytest + vitest) run. The page's single documented input alias
+is the single-day time form `yyyymmdd` ≡ `yyyymmdd-yyyymmdd`.
+
+### The weekly governance review (how to RUN the first one)
+
+The ritual is a named Phase-3 deliverable — full runbook:
+`docs/runbooks/governance-review.md`. First run, end to end:
+
+```bash
+# 1. Mint your capability token once (if you have not already):
+python3.12 -m framework.evidence --store instance/evidence/v1 \
+  grant-token --output ~/.cabinet/captain-evidence.token
+export CABINET_CAPTAIN_TOKEN_FILE=~/.cabinet/captain-evidence.token
+
+# 2. Inspect the plan (writes nothing, needs no TTY):
+python3.12 cabinet/scripts/governance-review.py --dry-run
+
+# 3. Run the ritual from a live terminal (~10 min, 5 stations, hard cap
+#    8 labels/session — quality over coverage):
+python3.12 cabinet/scripts/governance-review.py
+
+# 4. Anchor the label digests off-box (or let the daily job run):
+python3.12 cabinet/scripts/evidence-anchor.py --json
+```
+
+Labels land as verification/outcome events on the judged trial (the Phase-4
+calibration ground truth) and appear immediately on every read surface:
+`project by-actor:captain`, the trial's projection, and the dashboard row
+flipping to `human-verified` — the join is pinned end-to-end by
+`cabinet/scripts/tests/test_evidence_label_join.py` (CLI + query plane) and
+`cabinet/dashboard/src/lib/evidence/label-join.e2e.test.ts` (page
+read-model through the real verifier).
+
+### Digest citations
+
+Act-then-tell digests now cite the evidence trial for ACTED items whose
+journal row carries the Batch-B `evidence_trial_id` stamp — a bare trial id
+(`— evidence: <trial-id>`) appended to the numbered headline, context for
+`evidence-read.sh <trial-id>` / the dashboard. Rows without the stamp render
+byte-identically (an honest gap, never a fabricated citation);
+`framework/frontdoor/tests/test_digest_evidence_citation.py` pins the
+grammar against the evidence id alphabet.
+
+### Command Deck sensor feeds (enumerated ONLY — the port stays a Captain call)
+
+Phase 3 enumerates, and deliberately does not build, the deck's sensor
+feeds: verifier green (store verify), anchor freshness (evidence-anchor
+receipts), breaker states, doctor verdict, and the coverage line
+(evidence-coverage.py). Porting them into a Command Deck remains a separate
+Captain decision (design §5 Q8 / D9).
+
+### Phase-3 invariants (the gate this batch passed)
+
+- Every served trial ANYWHERE (CLI projection, doorway, dashboard) passes
+  verification first or renders explicitly UNVERIFIED.
+- The officer doorway stayed byte-identical; raw ledgers and the signing
+  key stay off the officer tool surface; the untrusted-observations banner
+  is on every served view.
+- No evidence-derived aggregate is officer-visible (EVAL-025 green).
+- The ONE write in the whole phase is the Captain-token label append; every
+  read leaves the store tree byte-identical (the verifier's anti-rollback
+  watermark advance on a trial's first verify is the same sanctioned side
+  effect `verify` has always had, and is byte-stable at tip).
+- **Germline ceremony:** the 3 schg paths this batch changes (all inside
+  the already-locked `framework/evidence/` dir cover) are listed with the
+  same-day unlock→checkout→relock block in
+  `docs/proposals/germline-amendment-evidence-phase3-2026-07-17.md`; review
+  artifact `shared/interfaces/reviews/evidence-phase3-review-surface-cp1.md`.
