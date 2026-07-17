@@ -33,6 +33,8 @@ import {
   type OutcomeLanes,
 } from '@/lib/world/instance-lanes'
 import { berthLanes } from '@/lib/world/world-geo'
+import { readDirections, readPortCalls } from '@/lib/world/directions'
+import { laneCourseState } from '@/lib/world/course'
 import type { WeatherSignals } from '@/lib/world/weather'
 import { loadLifeGrammar } from '@/lib/world/life/life-grammar'
 import type { WorkSite } from '@/lib/world/life/sites'
@@ -183,6 +185,23 @@ export async function GET(_req: NextRequest) {
   const ladders = loadGrowthLadders()
   const census = readCensus()
   const outcomes = outcomeLanes(repoRoot())
+  const declared = declaredLanes(repoRoot())
+
+  // ── direction surface (grammar v4, Captain ratifications 2026-07-17) ─────
+  // Fail-honest folds: no directions.yml → uncharted; no port-calls
+  // artifact → no stamps, moored boat. todayISO is server data (this route
+  // is a sanctioned wall-clock DOOR, like the heartbeat age above) — the
+  // render path itself never reads a clock.
+  const directions = readDirections(repoRoot())
+  const portCalls = readPortCalls(repoRoot())
+  const todayISO = new Date().toISOString().slice(0, 10)
+  const courses = laneCourseState({
+    directionLanes: Object.keys(directions.lanes),
+    outcomeLanes: outcomes.lanes,
+    declaredLanes: declared,
+    portCalls: portCalls?.lanes ?? null,
+    todayISO,
+  })
 
   // ── live signals (best-effort; every failure degrades to honest null) ────
   let killswitch = false
@@ -255,9 +274,16 @@ export async function GET(_req: NextRequest) {
     // = the fold's key order) that is a declared context lane. Undeclared
     // pseudo-lanes and system-self (the main island) never berth. Empty
     // config ⇒ all-null ⇒ mist — honest absence, never invented names.
-    berths: berthLanes(Object.keys(outcomes.lanes), declaredLanes(repoRoot())),
+    berths: berthLanes(Object.keys(outcomes.lanes), declared),
     // Lanes with a probes.yml row (isle why-string provenance).
     probeWiredLanes: probeWiredLanes(repoRoot()),
+    // ── direction surface (grammar v4): apex + per-lane courses + port
+    // calls. Free text (missions, dates) is legal HERE — this is the authed
+    // card's data door; the canvas renders none of it (no world-space text).
+    directions,
+    portCalls,
+    courses,
+    todayISO,
     // T2 LIFE feed (grammar-gated fail-closed: absent blocks → behavior OFF)
     life: {
       grammar: loadLifeGrammar(),

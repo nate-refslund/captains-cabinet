@@ -34,6 +34,17 @@ export interface InspectTarget {
    * — the canvas renders only the pin squares; the words live here.
    */
   headlines?: string[]
+  /**
+   * NOW rows for non-officer bound surfaces (grammar v4 chart table):
+   * label/value text rows; grey = reserved unmeasured styling ONLY (the
+   * drift gauge — never data). Free text is legal here (authed card).
+   */
+  nowRows?: { label: string; value: string; grey?: boolean }[]
+  /**
+   * PROOF lines for artifact-backed surfaces (port-call dates + the
+   * generated_at/source_git_head as-of provenance line).
+   */
+  proofLines?: string[]
 }
 
 export default function InspectCard({
@@ -130,7 +141,14 @@ export default function InspectCard({
         )}
         {tab === 'NOW' && !target.decorative && (
           <div className="space-y-1 font-mono text-[11px]">
-            {target.presence ? (
+            {target.nowRows && target.nowRows.length > 0 ? (
+              target.nowRows.map((r, i) => (
+                <div key={i} className={r.grey ? 'text-zinc-500' : undefined}>
+                  <span className="text-zinc-400">{r.label}: </span>
+                  {r.value}
+                </div>
+              ))
+            ) : target.presence ? (
               <>
                 <div>present: {String(target.presence.present)}</div>
                 {target.presence.verb ? (
@@ -160,7 +178,15 @@ export default function InspectCard({
         )}
         {tab === 'PROOF' && !target.decorative && (
           <div className="space-y-2">
-            {target.proof ? (
+            {target.proofLines && target.proofLines.length > 0 ? (
+              <ul className="space-y-1 rounded bg-zinc-950 p-2 font-mono text-[10px] text-zinc-300">
+                {target.proofLines.map((l, i) => (
+                  <li key={i} className="break-all">
+                    {l}
+                  </li>
+                ))}
+              </ul>
+            ) : target.proof ? (
               <>
                 <p className="text-zinc-400">
                   latest chronicle record touching this object (PII-scrubbed

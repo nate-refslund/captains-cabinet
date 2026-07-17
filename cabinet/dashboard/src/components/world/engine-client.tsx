@@ -67,6 +67,12 @@ import {
 } from '@/lib/world/life/life'
 import type { LifeGrammar } from '@/lib/world/life/life-grammar'
 import type { WorkSite } from '@/lib/world/life/sites'
+import type { DirectionsDoc, PortCallsArtifact } from '@/lib/world/directions'
+import {
+  buildChartTableCard,
+  voyageRender,
+  type LaneCourse,
+} from '@/lib/world/course'
 import { layoutLabels } from '@/lib/world/labels'
 import { STAGED_VOCAB_ELEMENTS } from '@/lib/world/sprites-outdoor'
 import InspectCard, { type InspectTarget } from './inspect-card'
@@ -107,6 +113,14 @@ interface EnginePayload {
     siteEntries: WorkSite[]
     productLanes: string[]
   }
+  /** Direction surface (grammar v4 — Captain ratifications 2026-07-17):
+   * apex + lane directions, port-call artifact, per-lane course states.
+   * All fail-honest server folds; absent ⇒ uncharted card / moored boat. */
+  directions?: DirectionsDoc | null
+  portCalls?: PortCallsArtifact | null
+  courses?: Record<string, LaneCourse>
+  /** Server-stamped YYYY-MM-DD (the engine route's sanctioned clock door). */
+  todayISO?: string
 }
 
 function parseUrlState(search: string): { camera: EngineCamera; sel: string | null; at: string | null } {
@@ -382,6 +396,15 @@ export default function EngineClient({ canActuate = false }: { canActuate?: bool
   )
   dressingRef.current = dressing
 
+  // ── direction surface (grammar v4): courses + voyage + chart table ──────
+  const courses = useMemo(() => engine?.courses ?? null, [engine])
+  const voyage = useMemo(() => voyageRender(courses ?? {}), [courses])
+  const chartTable = !!(
+    engine?.directions &&
+    (engine.directions.apex !== null ||
+      Object.keys(engine.directions.lanes).length > 0)
+  )
+
   const presenceBySlug = useMemo(() => {
     const m: Record<string, OfficerPresence> = {}
     for (const o of snapshot?.officers ?? []) m[o.slug] = o.presence
@@ -442,6 +465,33 @@ export default function EngineClient({ canActuate = false }: { canActuate?: bool
       }
       if (target.kind === 'mailbox') {
         setMailboxOpen(true)
+        return
+      }
+      if (target.kind === 'chart_table') {
+        // read-only direction-chart card (show-grammar v4 chart_table_view):
+        // WHAT = the manor_chart_table codex (grammar law), NOW = apex
+        // verbatim + per-lane course rows + the grey drift gauge, PROOF =
+        // dated port calls + the artifact's as-of line. Free text lives
+        // ONLY here (authed card), never world-space. Never an actuator.
+        const card = buildChartTableCard(
+          engine?.directions ?? null,
+          engine?.courses ?? {},
+          engine?.portCalls ?? null
+        )
+        const codex =
+          (g?.morphology?.entries ?? []).find((e) => e.id === 'manor_chart_table')
+            ?.codex ?? null
+        setInspect({
+          kind: 'station',
+          id: 'chart-table',
+          title: card.title,
+          codex,
+          nowRows: card.nowRows,
+          proofLines: card.proofLines,
+          presence: null,
+          proof: null,
+        })
+        setSel('chart-table') // deep-link: ?sel=chart-table (opaque fixed id)
         return
       }
       if (target.kind === 'site') {
@@ -513,7 +563,7 @@ export default function EngineClient({ canActuate = false }: { canActuate?: bool
         proof: null,
       })
     },
-    [buildings, geo, officersBySlug, resolution]
+    [buildings, geo, officersBySlug, resolution, engine]
   )
 
   // Deep-link: ?sel=<handle> restores the officer card post-connect.
@@ -523,6 +573,14 @@ export default function EngineClient({ canActuate = false }: { canActuate?: bool
     if (o) openInspect({ kind: 'officer', id: o.slug })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sel, snapshot])
+
+  // Deep-link: ?sel=chart-table restores the direction-chart card once the
+  // engine payload (directions/courses/port calls) has arrived.
+  useEffect(() => {
+    if (sel !== 'chart-table' || inspect || !engine) return
+    openInspect({ kind: 'chart_table', id: 'chart-table' })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sel, engine])
 
   // ── camera controls: CONTINUOUS zoom + pan (no scene swap, ever) ─────────
   const onWheel = useCallback((ev: React.WheelEvent) => {
@@ -681,6 +739,9 @@ export default function EngineClient({ canActuate = false }: { canActuate?: bool
           tick={tick}
           killswitch={snapshot?.killswitch ?? false}
           clockHour={snapshot?.clock?.hour ?? null}
+          chartTable={chartTable}
+          courses={courses}
+          voyage={voyage}
           onPrimary={onPrimary}
           onSecondary={onSecondary}
           onIssues={(issues) => setRenderIssues(issues)}

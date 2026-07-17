@@ -97,6 +97,19 @@ export const ROAD_SPINE_LOCAL: ReadonlyArray<readonly [number, number]> = [
 export const CROSSROADS_LOCAL = { x: 30, y: 26 } as const
 
 /**
+ * Chart-table tile (main-island local) — the direction surface's authored
+ * anchor in the great_house curtilage (grammar v4 manor_chart_table; per
+ * Captain ratifications 2026-07-17). layout_fold law: fixed at birth, never
+ * moves. NE curtilage corner: east of the manor bbox (lx 26–32), north of
+ * the east hedge line (dressing hedges anchor at ly 11.6+ — a live render
+ * probe showed they overdraw ly 10, the first-pick tile), clear of the
+ * library lot (lx 35+, staged corner barrier at lx 34) and the journal
+ * desk (33,13) — no civic anchor minted: the manor anchor is morphology
+ * law and the great_house element IS the manor structure.
+ */
+export const CHART_TABLE_LOCAL = { x: 33, y: 8 } as const
+
+/**
  * Path spurs (cozy pass 2026-07-09 — mockup path logic: every lived-in
  * door connects to the street; v1a cottages floated beside the road).
  * Local polylines from the fixed building anchors (world-buildings law
