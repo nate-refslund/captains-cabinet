@@ -352,6 +352,19 @@ def _audit(emit: Optional[Callable[..., Any]], *, action: str, vid: str,
     evidence = f"{vid} scope={scope}"
     if verbatim:
         evidence = f"{evidence} «{verbatim[:200]}»"
+    # §2.5 join enrichment (evidence R-1 Batch B, 2026-07-17): the veto's
+    # cell fields ride as STRUCTURED refs next to the id ref so Phase 4 can
+    # join cell↔veto without parsing the evidence prose. ``veto-scope:`` is a
+    # namespaced non-identity scheme (the ``evidence-trial:`` precedent): no
+    # attention canonical_refs extractor matches it and it never equals
+    # consequence.DIRECT_DEMOTE_REF. The ROW still carries no ``action_type``
+    # (the deliberate legal absence above) — it can never land in a
+    # graduation cell.
+    refs = [f"veto:{vid}"]
+    for field in ("action_type", "lane"):
+        value = scope.get(field)
+        if value:
+            refs.append(f"veto-scope:{field}={str(value)[:64]}")
     try:
         fn(ts=ts,
            actor={"kind": "officer", "id": "veto-registry"},
@@ -359,7 +372,7 @@ def _audit(emit: Optional[Callable[..., Any]], *, action: str, vid: str,
            action=action,
            subject=f"veto:{vid}",
            outcome={"status": "ok", "evidence": evidence[:500]},
-           refs=[f"veto:{vid}"])
+           refs=refs)
     except Exception:
         pass
 

@@ -157,6 +157,25 @@ VALID_EVENT_TYPES = frozenset({
     "kill_switch_deactivated",
     "spending_limit_reached",
 
+    # Authority/control-plane observations (R-1, evidence Phase 2 Batch B —
+    # registered 2026-07-17). RECEIPT class by law: every one describes a
+    # control-plane state change that ALREADY happened; none may ever gate,
+    # block, or fail the verb/brake it describes. Emitters: the Captain's
+    # narrow-only posture verb (framework/frontdoor/binder_wire.py
+    # _route_posture_command) emits the cap pair at the verb; the UNLOCKED
+    # state-diff sweep cabinet/scripts/emit-authority-transitions.py (the
+    # emit-graduation-transitions.py idiom) emits posture_changed +
+    # germline_*_observed + the pre-registered kill_switch_* classes on
+    # TRANSITION only — never per-poll rows (59%-plumbing law). The
+    # germline/kill-switch window timestamps are sweep-cadence quantized and
+    # delivery is at-least-once (consumers must tolerate a duplicated
+    # transition, same contract as graduation_transition).
+    "posture_cap_narrowed",      # Captain `posture guardian|earn_up` wrote the narrow cap
+    "posture_cap_cleared",       # Captain `posture clear` removed the narrow cap
+    "posture_changed",           # observed effective posture resolution changed
+    "germline_unlock_observed",  # germline path(s) observed leaving the locked state
+    "germline_relock_observed",  # germline path(s) observed returning to the locked state
+
     # Evidence plane (Phase 2 telemetry mirrors — observation-only): emitted
     # best-effort when the org->evidence mirror loses the recorder (see
     # framework/evidence_mirror.py). MUST never join the mirror allow-list —
@@ -170,6 +189,12 @@ VALID_EVENT_TYPES = frozenset({
 
     # Sovereign posture kernel (SOV-1) — needs ledger [FI-3] + brakes [FI-5]
     "need_filed",
+    # R-1 Batch B (2026-07-17): the Captain's Telegram `grant NEED-x` verb
+    # sets approved_pending_apply (the DECISION moment) — previously silent;
+    # only the later root ceremony's granted emitted. Consumers must treat
+    # need_approved (decision) and need_granted (applied) as DISTINCT verbs
+    # on one need_id, never duplicates.
+    "need_approved",
     "need_granted",
     "need_denied",
     "need_snoozed",
@@ -177,6 +202,34 @@ VALID_EVENT_TYPES = frozenset({
     "need_escalated",
     "cap_alarm",       # sovereign: daily cap reached ⇒ alarm + proceed (D11)
     "kind_unfrozen",   # unfreeze primitive lifted a frozen kind (D11/SOV-5)
+    # R-1 Batch B (2026-07-17): symmetry fix — freeze() engaged the brake
+    # with only the frozen-kinds.jsonl mirror row; the lift had an event but
+    # the (more important) demotion moment did not. Best-effort AFTER the
+    # durable mirror write; a dead event plane never blocks the brake.
+    "kind_frozen",
+
+    # Watchdog / doctor / officer-session lifecycle receipts (evidence
+    # program Phase 2 Batch B, 2026-07-17 — receipt-class, mirror-signed).
+    # Deliberately NEW officer-scoped TRANSITION classes: the generic
+    # session_started/session_ended/subagent_completed families are ~94% of
+    # live org volume, pinned OUT of the evidence mirror forever
+    # (framework/evidence_mirror.py NEVER_MIRRORED_EXHAUST), and must never
+    # be widened into it. These classes carry meaningful transitions ONLY —
+    # a routed watchdog failure (cooldown-bounded), the daily doctor
+    # verdict, fleet-officer session start/end/compaction, capped restart
+    # attempts, exactly-once limit wakes — never per-poll sweeps, healthy
+    # passes, heartbeats, or trigger/delivery mechanics (59%-plumbing law).
+    # Emitters: framework/watchdog/check.py + cabinet-doctor.sh +
+    # cabinet/cron/{heartbeat,limit-reset}-watchdog.sh (all via
+    # `-m framework.watchdog.receipts`, the typed lens seam) and
+    # cabinet/scripts/emit-officer-lifecycle-transitions.py (observer).
+    "watchdog_outcome_failed",
+    "doctor_verdict",
+    "officer_session_started",
+    "officer_session_ended",
+    "officer_session_compacted",
+    "officer_restarted",
+    "officer_limit_wake",
 })
 
 
@@ -519,6 +572,24 @@ _AGGREGATE_MAP: dict[str, tuple[str, str]] = {
     "kill_switch_deactivated":    ("system",      "killswitch_id"),
     "spending_limit_reached":     ("system",      "limit_id"),
     "evidence_mirror_degraded":   ("system",      "chokepoint"),
+    # Phase 2 Batch B receipts (watchdog/doctor + officer lifecycle)
+    "watchdog_outcome_failed":    ("watchdog",    "expectation_id"),
+    "doctor_verdict":             ("system",      "verdict"),
+    "officer_session_started":    ("officer",     "officer"),
+    "officer_session_ended":      ("officer",     "officer"),
+    "officer_session_compacted":  ("officer",     "officer"),
+    "officer_restarted":          ("officer",     "officer"),
+    "officer_limit_wake":         ("officer",     "officer"),
+    # R-1 authority/control-plane observations (Batch B). need_approved maps
+    # on the need id (its need_* siblings predate the map and stay
+    # prefix-derived); kind_frozen is deliberately UNMAPPED like its sibling
+    # kind_unfrozen (prefix-derived "kind") so the pair aggregates alike.
+    "posture_cap_narrowed":       ("system",      "posture"),
+    "posture_cap_cleared":        ("system",      "posture"),
+    "posture_changed":            ("system",      "posture"),
+    "germline_unlock_observed":   ("system",      "boundary_id"),
+    "germline_relock_observed":   ("system",      "boundary_id"),
+    "need_approved":              ("need",        "need_id"),
 }
 
 

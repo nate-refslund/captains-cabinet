@@ -215,13 +215,44 @@ MIRRORED_ORG_EVENT_TYPES = frozenset({
     "spending_limit_reached",
     "cap_alarm",
     "kind_unfrozen",
-    # Sovereign needs ledger
+    "kind_frozen",
+    # Authority/control-plane observations (R-1 Batch B, 2026-07-17):
+    # Captain posture-cap verb receipts (binder_wire) + the
+    # emit-authority-transitions.py state-diff sweep (posture resolution,
+    # germline unlock/relock windows; kill-switch transitions ride the
+    # kill_switch_* classes above). All per-decision / per-transition —
+    # the sweep never emits per-poll rows.
+    "posture_cap_narrowed",
+    "posture_cap_cleared",
+    "posture_changed",
+    "germline_unlock_observed",
+    "germline_relock_observed",
+    # Sovereign needs ledger (need_approved = the Captain's grant-verb
+    # DECISION moment; need_granted stays the applied ceremony — distinct
+    # verbs on one need_id)
     "need_filed",
+    "need_approved",
     "need_granted",
     "need_denied",
     "need_snoozed",
     "need_expired",
     "need_escalated",
+    # Watchdog / doctor / officer-session lifecycle (Phase 2 Batch B, G3 —
+    # receipt-class, transitions only). NEW officer-scoped classes on
+    # purpose: the generic session/subagent exhaust families in
+    # NEVER_MIRRORED_EXHAUST below stay out forever. Volume is bounded at
+    # the producers — routed watchdog failures ride the 3h cooldown dedup,
+    # doctor verdicts are 1/day, restart receipts fire on first-attempt +
+    # cap-crossing per officer-hour, limit wakes are exactly-once per armed
+    # reset, and the lifecycle observer emits state-diff transitions with a
+    # per-officer daily cap.
+    "watchdog_outcome_failed",
+    "doctor_verdict",
+    "officer_session_started",
+    "officer_session_ended",
+    "officer_session_compacted",
+    "officer_restarted",
+    "officer_limit_wake",
 })
 
 #: Hard exhaust: classes that must NEVER enter the allow-list above (the

@@ -141,8 +141,20 @@ SURFACES: list[dict[str, Any]] = [
     {
         "id": "authority-control-plane",
         "kind": "act",
-        "design": "R-1 — authority/control-plane verbs (needs, matrix, policy)",
-        "globs": ["framework/authority/**"],
+        # Batch B: the kill-switch/germline-lock scripts stay untouched
+        # emergency brakes (a tightening is never evidence-gated, §2.6); the
+        # live producer is the unlocked authority-transitions state-diff
+        # sweep, which imports the mirror allow-list for its signed-classes
+        # self-check and emits in-process.  The Captain posture-cap verbs
+        # (binder_wire) and the kind-freeze brake (action_undo) emit from
+        # framework/frontdoor/** and are enumerated under act-first-lane;
+        # need_approved emits from needs.py through the same chokepoint.
+        "design": "R-1 — authority/control-plane verbs (needs, posture, "
+                  "germline/kill-switch windows)",
+        "globs": [
+            "framework/authority/**",
+            "cabinet/scripts/emit-authority-transitions.py",
+        ],
     },
     {
         "id": "attention-hygiene",
@@ -160,16 +172,28 @@ SURFACES: list[dict[str, Any]] = [
         "id": "watchdog-doctor",
         "kind": "act",
         "design": "Ph2 item 2c — watchdog checks and doctor verdicts",
+        # Batch B: framework/watchdog/** joined — receipts.py is the typed
+        # lens seam (module-exec org emits whose receipts the mirror signs)
+        # and honestly carries the surface's producer wiring; check.py stays
+        # stdlib-only (subprocess emit, no import seam) by independence law.
         "globs": [
             "cabinet/scripts/cabinet-doctor.sh",
             "cabinet/scripts/*watchdog*",
+            "framework/watchdog/**",
         ],
     },
     {
         "id": "officer-session-lifecycle",
         "kind": "act",
+        # Batch B: the germline hooks stay enumerated (their generic session
+        # classes are pinned exhaust); the live producer is the unlocked
+        # state-diff observer, which imports the mirror allow-list for its
+        # signed-classes self-check and emits in-process.
         "design": "Ph2 item 2d — session start/end/compaction/handoff hooks",
-        "globs": ["cabinet/scripts/hooks/**"],
+        "globs": [
+            "cabinet/scripts/hooks/**",
+            "cabinet/scripts/emit-officer-lifecycle-transitions.py",
+        ],
     },
     {
         "id": "roles-missions-lifecycle",

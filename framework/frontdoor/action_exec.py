@@ -76,8 +76,10 @@ import os
 import re
 import subprocess
 import sys
+import time
 import urllib.parse
 import urllib.request
+import uuid
 from pathlib import Path
 from typing import Any, Callable
 
@@ -1520,6 +1522,223 @@ def _emit_acted_consequence(enriched_row: dict, step: dict, rec: dict) -> None:
     emit_consequence(**ev)
 
 
+# --- act-class evidence recording (whole-cabinet Evidence program, Batch B) ---
+#
+# ``deliver_action`` is the ONE choke both action-lane callers flow through
+# (the binder's Captain-approved dispatch AND the act-first lane), so the
+# evidence-before-action law lands HERE: one ActLifecycle per execution
+# (trial ``actlane-<uuid4hex>``), intent + policy/proposed appended BEFORE any
+# precondition/mutation, a per-step execution/verification/receipt record, and
+# one terminal outcome.  FAIL-CLOSED by design (Evidence design §3 Phase 2
+# item 3): when the evidence plane cannot record, the ACTION DOES NOT RUN —
+# the refusal rides the lane's EXISTING return shapes (act-first: the
+# propose_only downgrade dict; approved: the ok:False error dict), never a new
+# shape.  NAMED DOCTRINE TENSION: this deliberately inverts the module's
+# "post-verdict side effects are best-effort" rule ON THE BROKEN-EVIDENCE-
+# PLANE BRANCH ONLY — the happy path (recording succeeds) is byte-stable:
+# same guards, same mutations, same journal rows (plus one additive
+# ``evidence_trial_id`` key), same returns.  ``dry_run`` records NOTHING (the
+# contractually side-effect-free inverse-spec probe) and the edit→re-card
+# branch executes nothing (not act-class — its proposal event is mirror
+# territory).  Under pytest the store resolves through the same fence
+# framework/evidence_mirror.py codes for the 2026-07-04 leak lesson: OFF
+# unless the test injects ``evidence_store=`` or points
+# ``CABINET_ACTION_EVIDENCE_STORE`` at a scratch store — a suite run can
+# never touch the live signed store.  Production resolution is repo-derived
+# (the explicit-constructor-arg law), never env-derived (A10).
+
+_EVIDENCE_STORE_REL = ("instance", "evidence", "v1")
+_EVIDENCE_COMPONENT = {"name": "action-executor", "version": "1+evidence-v1"}
+_ACT_TRIAL_PREFIX = "actlane"
+
+
+class ActionEvidenceError(RuntimeError):
+    """Typed evidence-plane refusal for the action lane (act-class law)."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
+def _evidence_unavailable() -> ActionEvidenceError:
+    return ActionEvidenceError(
+        "evidence_unavailable",
+        "the evidence plane could not preserve a trustworthy record "
+        "(evidence-before-action)")
+
+
+def _evidence_integrity() -> ActionEvidenceError:
+    return ActionEvidenceError(
+        "evidence_integrity",
+        "the action evidence chain needs review before another action can run")
+
+
+def _evidence_store_root(explicit=None) -> Path | None:
+    """The evidence store root, or None when recording is disabled.
+
+    An EXPLICIT root (tests / callers) always wins.  Under pytest recording
+    is OFF unless ``CABINET_ACTION_EVIDENCE_STORE`` names a scratch store —
+    the evidence_mirror pytest fence (2026-07-04 leak lesson).  Production is
+    repo-derived, never env-derived.
+    """
+    if explicit is not None:
+        return Path(explicit)
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        override = os.environ.get("CABINET_ACTION_EVIDENCE_STORE")
+        return Path(override) if override else None
+    return Path(__file__).resolve().parents[2].joinpath(*_EVIDENCE_STORE_REL)
+
+
+def _evidence_actor(phase: str) -> dict:
+    """The producer actor: process-attested when the hosting daemon attested
+    at start (run_action_lane / the undo-sweep runner / the binder host), else
+    the fixed module constant.  NEVER derived from the stored record or the
+    journal row — a payload actor is DATA (A6) and rides the ledger/journal,
+    not the evidence ``actor`` field."""
+    from framework.evidence import identity
+    if identity.is_attested():
+        return identity.attested_actor()
+    return {"kind": "system", "id": "action-executor"}
+
+
+def _evidence_component() -> dict:
+    from framework.evidence import identity
+    if identity.is_attested():
+        return identity.attested_component()
+    return dict(_EVIDENCE_COMPONENT)
+
+
+def _evidence_detail(detail: dict) -> dict:
+    """Merge the attestation stamp (when the process attested) into detail."""
+    from framework.evidence import identity
+    if identity.is_attested():
+        return {**identity.attestation_detail(), **detail}
+    return detail
+
+
+def _begin_act_evidence(store_root, *, pid: str, rec: dict, lane, steps: list,
+                        act_first: bool):
+    """Mint the recorder + ONE ActLifecycle for this delivery and append the
+    fail-closed pre-flight (intent + policy/proposed) BEFORE anything runs.
+
+    Raises (``ActionEvidenceError``, or ``EvidenceError`` from recorder
+    construction on an unwritable store) when the plane cannot record — the
+    caller refuses the whole delivery through the existing return shapes."""
+    from contextlib import nullcontext
+
+    from framework.evidence.lifecycle import (
+        ActLifecycle, remint_trial, valid_id_or_none)
+    from framework.evidence.recorder import EvidenceRecorder
+
+    recorder = EvidenceRecorder(store_root)
+
+    def _remint(purged: str) -> str:
+        # Trial-per-execution: a purge landing between two appends of a
+        # seconds-old trial is degenerate but lawful — re-mint a fresh trial
+        # whose genesis event links the tombstone hash (lineage never forks;
+        # there is no purgeable producer state, so purge finality has nothing
+        # to refuse here).
+        return remint_trial(
+            recorder, purged, surface="system",
+            state_lock=nullcontext,
+            swap_live_trial=lambda _p: (
+                f"{_ACT_TRIAL_PREFIX}-{uuid.uuid4().hex}", True),
+            actor_policy=_evidence_actor, component=_evidence_component(),
+            unavailable_error=_evidence_unavailable)
+
+    recording = ActLifecycle(
+        recorder,
+        trial_id=f"{_ACT_TRIAL_PREFIX}-{uuid.uuid4().hex}",
+        surface="system",
+        actor_policy=_evidence_actor,
+        component=_evidence_component(),
+        producer_error=ActionEvidenceError,
+        unavailable_error=_evidence_unavailable,
+        integrity_error=_evidence_integrity,
+        remint=_remint,
+        producer_purged_code="action_lane_purged",
+        # act-class: never degrade — the degrade carve-out is ONLY for a
+        # producer's own destructive purge, and the lane has none.
+        degrade_on_failure=False,
+    )
+    recording.recover_interrupted()          # no-op on a fresh trial
+    rec_cid = str(rec.get("cid") or "")
+    recording.begin(correlation_id=valid_id_or_none(rec_cid))
+    recording.intent(detail=_evidence_detail({
+        "action": "deliver_action",
+        "lane": str(lane),
+        "steps_total": len(steps),
+        "act_first": bool(act_first),
+        # pid = loop.proposal_id (pipes / free subject text) is NOT a legal
+        # recorder id — it rides detail as a digest only.
+        "pid_sha256": hashlib.sha256(str(pid).encode("utf-8")).hexdigest(),
+    }))
+    recording.proposed(detail=_evidence_detail({
+        "action": "deliver_action",
+        "reason_code": "precondition_ladder_started",
+        "authority_effect": "none",
+    }))
+    return recording
+
+
+def _evidence_refusal(act_first: bool, lane, executed: list, exc: Exception, *,
+                      held: list | None = None, step: str = "") -> dict:
+    """The DESIGNED fail-closed refusal — the lane's EXISTING shapes only:
+    act-first rides the propose_only downgrade dict (byte-shaped like the
+    write-ahead-journal-failure branch), the approved path rides the
+    ok:False error dict (the step-failure shape)."""
+    why = ("evidence recording unavailable — evidence-before-action: "
+           + str(exc)[:120])
+    if step:
+        why = f"{step} {why}"
+    if act_first:
+        return {"ok": False, "gate": "propose_only", "via": "action-lane",
+                "dest": lane, "executed": executed, "held": held or [],
+                "reasons": [why]}
+    return {"ok": False, "via": "action-lane", "dest": lane,
+            "executed": executed, "error": why[:300]}
+
+
+def _evidence_tail_refused(recording, *, error_code: str, reason_code: str,
+                           detail: dict | None = None) -> None:
+    """Best-effort refusal tail on an EXISTING refusal return.  The refusal
+    already fails closed to not-acting, so an unrecordable refusal is
+    reported loudly on stderr, never converted into a new failure mode
+    (order between the two fail-closed branches cannot open the perimeter)."""
+    if recording is None:
+        return
+    try:
+        base = {"action": "deliver_action", "error_code": error_code,
+                "reason_code": reason_code}
+        if detail:
+            base.update(detail)
+        recording.refused(
+            refusal_detail=_evidence_detail(base),
+            outcome_detail=_evidence_detail(
+                {"action": "deliver_action", "error_code": error_code}))
+    except Exception:
+        print("action-evidence: WARN could not record the refusal tail "
+              f"({error_code}) — the refusal itself stands", file=sys.stderr)
+
+
+def _evidence_tail_failed(recording, *, error_code: str,
+                          detail: dict | None = None) -> None:
+    """Best-effort unexpected-error tail (error/failed + outcome/failed)."""
+    if recording is None:
+        return
+    try:
+        base = {"action": "deliver_action", "error_code": error_code}
+        if detail:
+            base.update(detail)
+        recording.failed(
+            error_detail=_evidence_detail(base),
+            outcome_detail=_evidence_detail(
+                {"action": "deliver_action", "error_code": error_code}))
+    except Exception:
+        print("action-evidence: WARN could not record the failure tail "
+              f"({error_code}) — the failure return stands", file=sys.stderr)
+
+
 def deliver_action(pid: str, override_text: str = "", *,
                    redis_get: Callable[[str], str] | None = None,
                    monday_post: Callable | None = None,
@@ -1530,7 +1749,8 @@ def deliver_action(pid: str, override_text: str = "", *,
                    posture: str | None = None,
                    redis_set: Callable[[str, str, int | None], None] | None = None,
                    redis_incr: Callable[[str, int], None] | None = None,
-                   telegram_send: Callable[[str], None] | None = None) -> dict:
+                   telegram_send: Callable[[str], None] | None = None,
+                   evidence_store: str | Path | None = None) -> dict:
     """Execute the stored action chain for a card. deliver_draft-shaped return:
     {ok, via, dest, executed: [...], error?}. Injectable transports for tests;
     production defaults resolve lazily.
@@ -1567,7 +1787,16 @@ def deliver_action(pid: str, override_text: str = "", *,
     (delegate held every posture; sovereign non-ceiling mission adopt;
     sovereign investigation hold-drop), and the D13 sovereign second
     injection pass. The approved path ignores it entirely — as does the
-    edit→re-card path above, which executes nothing in any posture."""
+    edit→re-card path above, which executes nothing in any posture.
+
+    ``evidence_store`` (Batch B; default None = the repo-derived production
+    store, pytest-fenced) points the act-class evidence trial at an explicit
+    store root — tests inject a scratch store. Recording is FAIL-CLOSED on
+    BOTH paths: an evidence-plane failure refuses the delivery (or the
+    remaining steps) through the existing propose_only / ok:False shapes —
+    the ONE designed inversion of this module's best-effort rule, on the
+    broken-evidence-plane branch only (see the Batch B block above
+    ``ActionEvidenceError``)."""
     # RECONCILE 2026-07-05: kept both HEAD override_text/_recard_edited doc
     # (edit re-card, g-exec) + sovereign posture= SOV-4 threading doc — the
     # signature already carries both params; docstring paragraphs merged.
@@ -1649,6 +1878,25 @@ def deliver_action(pid: str, override_text: str = "", *,
         return {"ok": False, "error": "stored action has no steps"}
     lane = rec.get("lane", "?")
 
+    # ACT-CLASS EVIDENCE (Batch B): one trial per execution, minted as soon
+    # as the stored record parses; intent + policy/proposed land BEFORE the
+    # precondition ladder so every refusal below carries its evidence tail.
+    # FAIL-CLOSED: a plane that cannot record refuses the delivery through
+    # the EXISTING shapes. dry_run stays contractually side-effect-free
+    # (recording skipped entirely — no trial, no store touch).
+    recording = None
+    ev_started_ns = None
+    if not dry_run:
+        ev_root = _evidence_store_root(evidence_store)
+        if ev_root is not None:
+            try:
+                recording = _begin_act_evidence(
+                    ev_root, pid=pid, rec=rec, lane=lane, steps=steps,
+                    act_first=act_first)
+                ev_started_ns = time.monotonic_ns()
+            except Exception as e:
+                return _evidence_refusal(act_first, lane, [], e)
+
     # TOCTOU (both paths): if the record carries a steps fingerprint stamped at
     # card time, refuse on a mismatch — a payload swapped in cabinet:action:<pid>
     # between decision and execution never runs.
@@ -1659,11 +1907,15 @@ def deliver_action(pid: str, override_text: str = "", *,
     # records; a swapper who strips the field must not bypass the re-check.
     expected_sha = rec.get("steps_sha256")
     if act_first and not expected_sha:
+        _evidence_tail_refused(recording, error_code="toctou_stamp_missing",
+                               reason_code="precondition_refused")
         return {"ok": False, "toctou": True, "gate": "propose_only",
                 "via": "action-lane", "dest": lane, "executed": [],
                 "error": "act-first record lacks its steps_sha256 stamp — "
                          "refusing (TOCTOU: stamp required on the unattended path)"}
     if expected_sha and _canonical_sha(steps) != expected_sha:
+        _evidence_tail_refused(recording, error_code="toctou_sha_mismatch",
+                               reason_code="precondition_refused")
         return {"ok": False, "toctou": True, "via": "action-lane", "dest": lane,
                 "executed": [],
                 "error": "payload fingerprint mismatch — steps changed since the "
@@ -1675,6 +1927,8 @@ def deliver_action(pid: str, override_text: str = "", *,
     if not dry_run:
         ks = _killswitch_state(redis_get or _redis_get_strict)
         if ks != "clear":
+            _evidence_tail_refused(recording, error_code="killswitch",
+                                   reason_code="precondition_refused")
             return {"ok": False, "halted": "killswitch", "via": "action-lane",
                     "dest": lane, "executed": [],
                     "error": "execution halted — killswitch %s" % ks}
@@ -1689,6 +1943,8 @@ def deliver_action(pid: str, override_text: str = "", *,
         # act-first delivery with journaling disabled would act with NO undo
         # handle BY CONSTRUCTION — the whole card downgrades to a proposal.
         if not journal:
+            _evidence_tail_refused(recording, error_code="journal_disabled",
+                                   reason_code="act_first_perimeter")
             return {"ok": False, "gate": "propose_only", "via": "action-lane",
                     "dest": lane, "executed": [], "held": [],
                     "reasons": ["journaling disabled on the act-first path — "
@@ -1697,6 +1953,8 @@ def deliver_action(pid: str, override_text: str = "", *,
         decision, held_map = _gate_chain(steps, lane=lane, redis_get=rget,
                                          surfaces=surfaces, posture=posture)
         if decision is not None:
+            _evidence_tail_refused(recording, error_code="perimeter_downgrade",
+                                   reason_code="act_first_perimeter")
             return decision
 
     _load_shared_env()
@@ -1733,6 +1991,9 @@ def deliver_action(pid: str, override_text: str = "", *,
         try:
             _assert_payload_keys(kind, payload)
         except PayloadKeyError as e:
+            _evidence_tail_refused(recording, error_code="payload_key_rejected",
+                                   reason_code="step_refused",
+                                   detail={"step_index": i})
             return {"ok": False, "via": "action-lane", "dest": lane,
                     "executed": executed,
                     "error": f"step {i}/{len(steps)} ({kind}) rejected: {e}"[:300]}
@@ -1764,6 +2025,14 @@ def deliver_action(pid: str, override_text: str = "", *,
                 inverse=action_undo.inverse_for(kind, backend, payload, {}, prestate),
                 executed_at=None, jid=jid)
             wa_row["payload_sha256"] = payload_sha   # TOCTOU fingerprint on the row
+            if recording is not None:
+                # Correlation, both directions (Batch B): the row carries the
+                # trial id (additive key — survives _validate_row and the
+                # last-write-wins jid collapse; the enriched row spreads
+                # wa_row so it rides automatically), while the trial's receipt
+                # links carry undo-journal:<jid> back. The reconcile sweep
+                # reads this key to land its outcome labels on THIS trial.
+                wa_row["evidence_trial_id"] = recording.trial_id
             if act_first:
                 # FAIL-CLOSED on the act-first path (checkpoint 2026-07-04
                 # condition 1 / KILLED #2): a write-ahead journal failure means
@@ -1774,6 +2043,9 @@ def deliver_action(pid: str, override_text: str = "", *,
                 try:
                     action_undo.journal_step(wa_row)
                 except Exception as e:
+                    _evidence_tail_refused(
+                        recording, error_code="journal_write_failed",
+                        reason_code="step_refused", detail={"step_index": i})
                     return {"ok": False, "gate": "propose_only",
                             "via": "action-lane", "dest": lane,
                             "executed": executed, "held": held,
@@ -1788,13 +2060,35 @@ def deliver_action(pid: str, override_text: str = "", *,
 
         # re-check the fingerprint right before the mutation (TOCTOU).
         if not _verify_payload_unchanged(payload, payload_sha):
+            _evidence_tail_refused(recording, error_code="toctou_payload_changed",
+                                   reason_code="step_refused",
+                                   detail={"step_index": i})
             return {"ok": False, "toctou": True, "via": "action-lane", "dest": lane,
                     "executed": executed,
                     "error": f"step {i}/{len(steps)} ({kind}) payload changed after "
                              "journal — refusing (TOCTOU)"}
+        if recording is not None:
+            # EVIDENCE BEFORE THE STEP (fail-closed): the step's mutation runs
+            # only after its execution evidence is preserved — an append
+            # failure here means THIS step (and, per the chain rule, the rest
+            # of the card) does not run; already-acted steps are reported.
+            try:
+                recording.record(
+                    phase="execution", status="started",
+                    detail=_evidence_detail({
+                        "action": str(kind), "step_index": i,
+                        "steps_total": len(steps), "jid": jid}))
+            except Exception as e:
+                # any evidence-plane failure (the typed refusal OR an
+                # unexpected recorder error) = the step does not run.
+                return _evidence_refusal(
+                    act_first, lane, executed, e, held=held,
+                    step=f"step {i}/{len(steps)} ({kind}):")
         try:
             out = _exec_step(kind, payload, mp, osa, act_first, posture)
         except Exception as e:  # stop the chain; report what DID run
+            _evidence_tail_failed(recording, error_code="step_failed",
+                                  detail={"step_index": i})
             return {"ok": False, "via": "action-lane", "dest": lane,
                     "executed": executed,
                     "error": f"step {i}/{len(steps)} ({kind}) failed: {e}"[:300]}
@@ -1819,6 +2113,37 @@ def deliver_action(pid: str, override_text: str = "", *,
             if act_first:
                 _best_effort(lambda: _emit_acted_consequence(enriched, step, rec))
 
+        if recording is not None:
+            # Post-mutation step evidence: verification (the TOCTOU re-check
+            # held) + the receipt whose links join this trial to the undo
+            # journal row and the proposal's correlation id. An append failure
+            # AFTER the mutation cannot un-run the step — it stops the CHAIN
+            # (fail-closed for every later step) through the same existing
+            # refusal shapes, with the already-acted steps reported.
+            try:
+                recording.record(
+                    phase="verification", status="verified",
+                    detail=_evidence_detail({
+                        "action": str(kind), "step_index": i,
+                        "verification": "payload_sha256_reverified",
+                        "jid": jid}))
+                journaled_step = bool(journal and wa_row is not None)
+                links = ["undo-journal:" + jid] if journaled_step else []
+                if rec_cid:
+                    from framework.probes import correlation
+                    if correlation.is_cid(rec_cid):
+                        links.append(correlation.ref_for(rec_cid))
+                recording.record(
+                    phase="receipt", status="succeeded",
+                    detail=_evidence_detail({
+                        "action": str(kind), "step_index": i,
+                        "receipt_id": jid if journaled_step else "unjournaled"}),
+                    links=links)
+            except Exception as e:
+                return _evidence_refusal(
+                    act_first, lane, executed, e, held=held,
+                    step=f"step {i}/{len(steps)} ({kind}):")
+
     if dry_run:
         return {"ok": True, "via": "action-lane", "dest": lane, "executed": executed}
     # one-shot execution: clear the record so a re-delivered approve no-ops
@@ -1832,6 +2157,22 @@ def deliver_action(pid: str, override_text: str = "", *,
     # caps (act-first path only; held steps never counted).
     if act_first and executed:
         _best_effort(lambda: _caps_record([e["kind"] for e in executed], rincr))
+    if recording is not None:
+        # Terminal outcome (one duration for the branch). The mutations all
+        # landed and are journaled/undoable — an unpreservable outcome still
+        # refuses through the existing shapes (designed fail-closed branch;
+        # the acted steps are reported, nothing is silently half-done).
+        try:
+            recording.record(
+                phase="outcome", status="succeeded",
+                detail=_evidence_detail({
+                    "action": "deliver_action", "result_code": "succeeded",
+                    "steps_total": len(steps)}),
+                duration_ms=(round((time.monotonic_ns() - ev_started_ns)
+                                   / 1_000_000, 3)
+                             if ev_started_ns is not None else None))
+        except Exception as e:
+            return _evidence_refusal(act_first, lane, executed, e, held=held)
     out = {"ok": True, "via": "action-lane", "dest": lane, "executed": executed}
     if held:
         out["held"] = held

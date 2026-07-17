@@ -126,6 +126,31 @@ if [ "${#FULLTIME_OFFICERS[@]}" -eq 0 ]; then
   fi
 fi
 
+# Evidence receipt (evidence program Phase 2 Batch B): officer_restarted
+# org events at TRANSITIONS only — the FIRST restart attempt of an hourly
+# window and the cap-crossing — via the typed lens seam
+# framework/watchdog/receipts.py (MODULE-exec from the repo root; path-exec
+# never reaches the org→evidence mirror). RECEIPT class, named choice: a
+# broken evidence plane must never block a restart — fail-closed recording
+# on the recovery path would self-deadlock the org (evidence down → no
+# restarts → nobody can repair evidence); restarts-as-act-class is the
+# design's D7/Phase-6 lane. Healthy 5-min passes and liveness reads are
+# exhaust and never recorded.
+emit_restart_receipt() {
+  local officer="$1" reason="$2" attempt="$3" capped="$4" rc="$5"
+  command -v jq >/dev/null 2>&1 || return 0
+  [[ "$attempt" =~ ^[0-9]+$ ]] || attempt=0
+  [[ "$rc" =~ ^-?[0-9]+$ ]] || rc=null
+  local payload
+  payload=$(jq -nc --arg o "$officer" --arg r "$reason" \
+      --argjson a "$attempt" --argjson c "$capped" --argjson rc "$rc" \
+      '{officer:$o, reason:$r, attempt:$a, capped:$c, kickstart_rc:$rc}' 2>/dev/null) || return 0
+  [ -n "$payload" ] || return 0
+  ( cd "$REPO_ROOT" && python3.12 -m framework.watchdog.receipts \
+      officer_restarted "$payload" ) >/dev/null 2>&1 || true
+  return 0
+}
+
 restart_officer() {
   local o="$1" reason="$2" alert_now="${3:-1}"
   # alert_now=1 → send Telegram alert text; alert_now=0 → restart silently
@@ -143,6 +168,11 @@ restart_officer() {
   if [ "$cnt" -gt "$RESTART_CAP_PER_HOUR" ]; then
     # Cap exceeded — escalate via Telegram (only if dedup window allows) and
     # skip the restart so we don't spin.
+    # Receipt at the cap-CROSSING only (cnt == cap+1), never per suppressed
+    # attempt — the crossing is the transition, the rest is exhaust.
+    if [ "$cnt" = "$((RESTART_CAP_PER_HOUR + 1))" ]; then
+      emit_restart_receipt "$o" "$reason" "$cnt" true null
+    fi
     if [ "$alert_now" = "1" ]; then
       local MSG="🛑 [HEARTBEAT] $o stuck after $RESTART_CAP_PER_HOUR restart attempts in last hour ($reason). Restart loop suppressed — manual intervention required: \`launchctl print gui/\$(id -u)/com.cabinet.officer.$o\`"
       bash "$REPO_ROOT/cabinet/scripts/send-to-group.sh" "$MSG" 2>/dev/null || \
@@ -161,6 +191,12 @@ restart_officer() {
     rc=0
   else
     rc=$?
+  fi
+
+  # Receipt on the FIRST attempt of the window only (cnt==1) — later
+  # attempts inside the same hour are the same incident, not a transition.
+  if [ "$cnt" = "1" ]; then
+    emit_restart_receipt "$o" "$reason" "$cnt" false "$rc"
   fi
 
   if [ "$alert_now" = "1" ]; then
