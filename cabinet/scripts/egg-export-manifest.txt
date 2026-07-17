@@ -348,6 +348,12 @@ expect-absent docs/proposals/sovereign-posture-activation-2026-07-09.md
 # would abort the export under set -e) is instance history: archived out.
 expect-absent docs/proposals/germline-session-start-digest-addendum-2026-07-15.md
 expect-absent docs/proposals/germline-session-start-digest-2026-07-15.patch
+# Library retirement (2026-07-16): staged ceremony package for the germline
+# danglers (mcp-scope.yml grants, settings.json allow entry, comment-only
+# start-officer-mac.sh patch) — same flat-file contract as the BC package
+# above; instance ceremony history, archived out of the egg.
+expect-absent docs/proposals/germline-library-retirement-addendum-2026-07-16.md
+expect-absent docs/proposals/germline-library-retirement-2026-07-16.patch
 expect-present cabinet/scripts/hatch.sh
 expect-present cabinet/scripts/null-hatch.sh
 expect-present bin/.gitkeep

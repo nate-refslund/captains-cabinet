@@ -238,3 +238,10 @@ cabinet/scripts/world-aesthetic/corpus/*
 cabinet/scripts/world-aesthetic/goldens/*
 !cabinet/scripts/world-aesthetic/goldens/manifest.json
 cabinet/scripts/world-aesthetic/judge/runs/
+
+# Library retirement (2026-07-16): retire-library-export.py writes DB-derived
+# officer/instance knowledge here — runtime-only, NEVER committed (product-
+# brain/ is tracked and ships in the public egg; the archive must not).
+# Both candidate roots covered: pre- and post-vault-rename trees.
+product-brain/library-archive/
+vault/library-archive/

@@ -6,7 +6,15 @@
  * read/write Library Spaces and Records via tool calls.
  *
  * Strategy: delegate to library.sh via child_process.exec — reuses
- * all validated Bash logic including SQL injection safety and embedding.
+ * all validated Bash logic including SQL injection safety and the
+ * cabinet_memory mirror queue.
+ *
+ * LIBRARY RETIREMENT (2026-07-16, Captain-ratified): this server is
+ * DEREGISTERED from .mcp.json / .mcp.json.mac-native — no session boots it
+ * by default. The code stays runnable standalone (see README) for
+ * archaeology; record writes are vector-free (mirror queue only) and
+ * search is semantic only over legacy vectors, with ILIKE fallback.
+ * See docs/runbooks/library-retirement-2026-07-16.md.
  *
  * Usage: OFFICER_NAME=cos bun run index.ts
  * Or via .mcp.json as an MCP server.
@@ -275,7 +283,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "library_create_record",
       description:
-        "Create a new record in a Space. Accepts either a space id (numeric) or space name. Generates a voyage-4-large embedding for semantic search.",
+        "Create a new record in a Space. Accepts either a space id (numeric) or space name. The record is mirrored into cabinet_memory (async embed queue) for cross-system search; no per-record vector is written (Library retirement, 2026-07-16).",
       inputSchema: {
         type: "object",
         properties: {
@@ -362,7 +370,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "library_search",
       description:
-        "Semantic search across Library Records using voyage-4-large embeddings. Returns top-K records ordered by cosine similarity.",
+        "Search across Library Records — cosine over LEGACY vectors where they exist, ILIKE title fallback otherwise. New/edited records no longer receive vectors (Library retirement, 2026-07-16); prefer memory_search for cross-system recall.",
       inputSchema: {
         type: "object",
         properties: {
@@ -462,7 +470,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           spaceId, title, content_markdown, schema_data, labels,
         ]);
         const id = raw.trim();
-        if (!id) throw new Error("Record creation failed — ensure title is non-empty and embedding service is available");
+        if (!id) throw new Error("Record creation failed — ensure title is non-empty and the database is reachable");
         return {
           content: [{ type: "text", text: JSON.stringify({ id, version: 1 }) }],
         };

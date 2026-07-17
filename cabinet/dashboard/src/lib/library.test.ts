@@ -13,8 +13,39 @@
 // Spec reference: Spec 037 §12, AC #16 (v3.2).
 
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { STATUS_TRANSITIONS, type RecordStatus } from './library'
+
+// Library retirement (2026-07-16) — source ratchet: the Voyage embed client
+// and the record-vector write must not resurface in this module. Behavior
+// twins live in library.retirement.test.ts; repo-wide ratchet in
+// cabinet/scripts/tests/test_library_retirement_ratchet.py.
+describe('library.ts — retirement source ratchet', () => {
+  const source = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), 'library.ts'),
+    'utf-8'
+  )
+
+  it('no Voyage client, no getEmbedding, no embedded_at write', () => {
+    expect(source).not.toContain('voyageai')
+    expect(source).not.toContain('getEmbedding')
+    expect(source).not.toContain('embedded_at')
+  })
+
+  it('every library_records INSERT is vector-free', () => {
+    for (const match of source.matchAll(/INSERT INTO library_records[\s\S]{0,400}/g)) {
+      expect(match[0]).not.toMatch(/\bembedding\b/)
+    }
+  })
+
+  it('the cabinet_memory mirror queue stays', () => {
+    expect(source).toContain('queueLibraryRecordInMemory')
+    expect(source).toContain('cabinet:memory:embed_queue')
+  })
+})
 
 const ALL_STATUSES: RecordStatus[] = [
   'draft',

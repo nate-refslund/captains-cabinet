@@ -14,8 +14,11 @@ if [ -z "${NEON_CONNECTION_STRING:-}" ]; then
   set +a
 fi
 
-# Reuse memory.sh's embedding function — same Voyage model, same semantics
-if ! declare -f memory_get_embedding > /dev/null; then
+# memory.sh provides memory_queue_embed (cabinet_memory mirror queue) and the
+# query-side memory_get_embedding used by library_search over LEGACY vectors.
+# Library retirement (2026-07-16, Captain-ratified): create/update no longer
+# write per-record vectors — see docs/runbooks/library-retirement-2026-07-16.md.
+if ! declare -f memory_queue_embed > /dev/null; then
   source "$CABINET_ROOT/cabinet/scripts/lib/memory.sh" 2>/dev/null
 fi
 
@@ -221,24 +224,21 @@ library_create_record() {
     labels_pg="{$labels_csv}"
   fi
 
-  # Compute embedding from title + content + schema_data summary
-  local embed_text="$title"
-  [ -n "$content" ] && embed_text="$embed_text"$'\n\n'"$content"
+  # Library retirement (2026-07-16): no per-record vector is computed or
+  # written anymore — library_records.embedding stays NULL for new rows
+  # (dormant column, 044 trigger left in place). Cross-system search
+  # continuity rides the cabinet_memory mirror queue below.
+  # Whitespace-refusal keeps the pre-retirement gate semantics: title +
+  # content + schema_data summary must contain SOME substance.
+  local record_text="$title"
+  [ -n "$content" ] && record_text="$record_text"$'\n\n'"$content"
   local schema_preview
   schema_preview=$(printf '%s' "$schema_data" | jq -r '[to_entries[] | "\(.key): \(.value | tostring)"] | join(", ")' 2>/dev/null)
-  [ -n "$schema_preview" ] && [ "$schema_preview" != "" ] && embed_text="$embed_text"$'\n\n'"$schema_preview"
+  [ -n "$schema_preview" ] && [ "$schema_preview" != "" ] && record_text="$record_text"$'\n\n'"$schema_preview"
 
   # Refuse whitespace-only content (matches memory.sh pattern)
-  if [ -z "$(printf '%s' "$embed_text" | tr -d '[:space:]')" ]; then
+  if [ -z "$(printf '%s' "$record_text" | tr -d '[:space:]')" ]; then
     return 1
-  fi
-
-  # Get embedding — if Voyage fails, warn and proceed with NULL (resilient fallback)
-  local embedding
-  embedding=$(memory_get_embedding "$embed_text")
-  if [ -z "$embedding" ] || [ "$embedding" = "null" ]; then
-    echo "library: Voyage embedding unavailable — inserting record with embedding=NULL (ILIKE fallback active)" >&2
-    embedding=""
   fi
 
   local record_id
@@ -248,18 +248,16 @@ library_create_record() {
     -v content="$content" \
     -v schema_data="$schema_data" \
     -v labels="$labels_pg" \
-    -v embedding="${embedding}" \
     -v officer="$officer" \
     -v source_created_at="$source_created_at" \
     2>/dev/null <<'SQLEOF'
-INSERT INTO library_records (space_id, title, content_markdown, schema_data, labels, embedding, created_by_officer, created_at)
+INSERT INTO library_records (space_id, title, content_markdown, schema_data, labels, created_by_officer, created_at)
 VALUES (
   :'space_id'::bigint,
   :'title',
   :'content',
   :'schema_data'::jsonb,
   :'labels'::text[],
-  CASE WHEN :'embedding' = '' THEN NULL ELSE :'embedding'::vector END,
   NULLIF(:'officer', ''),
   COALESCE(NULLIF(:'source_created_at', '')::timestamptz, NOW())
 )
@@ -327,21 +325,13 @@ SQLEOF
     fi
   fi
 
-  # Embed the new version (do this before opening the transaction so we don't
-  # hold a row lock across a network call to Voyage)
-  local embed_text="$title"
-  [ -n "$content" ] && embed_text="$embed_text"$'\n\n'"$content"
+  # Library retirement (2026-07-16): the new version gets NO vector — the
+  # cabinet_memory mirror queue below is the search-continuity path.
+  local record_text="$title"
+  [ -n "$content" ] && record_text="$record_text"$'\n\n'"$content"
 
-  if [ -z "$(printf '%s' "$embed_text" | tr -d '[:space:]')" ]; then
+  if [ -z "$(printf '%s' "$record_text" | tr -d '[:space:]')" ]; then
     return 1
-  fi
-
-  # Get embedding — if Voyage fails, warn and proceed with NULL (resilient fallback)
-  local embedding
-  embedding=$(memory_get_embedding "$embed_text")
-  if [ -z "$embedding" ] || [ "$embedding" = "null" ]; then
-    echo "library: Voyage embedding unavailable — updating record with embedding=NULL (ILIKE fallback active)" >&2
-    embedding=""
   fi
 
   # Do version lookup + INSERT + UPDATE atomically. FOR UPDATE locks the old row
@@ -354,7 +344,6 @@ SQLEOF
     -v content="$content" \
     -v schema_data="$schema_data" \
     -v labels="$labels_pg" \
-    -v embedding="${embedding}" \
     -v officer="$officer" \
     2>/dev/null <<'SQLEOF'
 BEGIN;
@@ -365,14 +354,13 @@ WITH locked AS (
   FOR UPDATE
 ),
 inserted AS (
-  INSERT INTO library_records (space_id, title, content_markdown, schema_data, labels, embedding, created_by_officer, version)
+  INSERT INTO library_records (space_id, title, content_markdown, schema_data, labels, created_by_officer, version)
   SELECT
     locked.space_id,
     :'title',
     :'content',
     :'schema_data'::jsonb,
     :'labels'::text[],
-    CASE WHEN :'embedding' = '' THEN NULL ELSE :'embedding'::vector END,
     NULLIF(:'officer', ''),
     locked.version + 1
   FROM locked

@@ -53,6 +53,9 @@ HISTORICAL_PREFIXES = (
     "docs/proposals/",
     "docs/launch/",
     "patches/",
+    # FW-019 checkpoint-review artifacts: dated records of a batch as it was
+    # reviewed (the vault wave's own reviews necessarily NAME the rename).
+    "shared/interfaces/reviews/",
 )
 
 # The deliberate survivors: path -> why the token stays. SHRINK-ONLY.
@@ -94,6 +97,22 @@ ALLOWED = {
         "docstring provenance: names the pre-rename key it superseded",
     "cabinet/scripts/tests/test_vault_rename_ratchet.py":
         "this ratchet",
+    # --- library-retirement dual-root seams (same wave, landed after the
+    # --- rename): the export must also serve un-migrated deployment roots
+    # --- whose external corpus still carries the old dir name ------------
+    ".gitignore":
+        "library-archive ignore rules cover BOTH candidate roots — the "
+        "DB-derived archive must never be committed from either tree shape",
+    "cabinet/scripts/retire-library-export.py":
+        "export target resolves <root>/vault/ first, legacy "
+        "<root>/product-brain/ fallback for un-migrated deployment roots",
+    "cabinet/scripts/tests/test_retire_library_export.py":
+        "pins the vault-then-product-brain target resolution order",
+    "cabinet/scripts/tests/test_library_retirement_ratchet.py":
+        "pins the dual-root ignore rules + fallback contract",
+    "docs/runbooks/library-retirement-2026-07-16.md":
+        "documents the dual-root export target contract (living runbook, "
+        "not archived history)",
     # --- docs that deliberately document the legacy aliases ----------------
     "vault/README.md":
         "documents the rename, the legacy aliases, and the ref-namespace call",

@@ -44,7 +44,7 @@ Each starter is a single JSON file at `cabinet/starter-spaces/<name>.json`:
 | `boolean` | JSONB true/false | Checkbox in UI |
 | `relation` | JSONB `{space, record_id}` | FK to another record |
 
-**Access rules:** officer abbreviations (e.g., `cos`, `cto`) or `*` for anyone. `read`, `write`, `comment` are independent. Rules are enforced on all `library.sh` operations and the Library MCP server. Captain (`OFFICER_NAME=captain`) always bypasses access_rules. Dashboard API routes run as captain context and are not subject to officer access checks.
+**Access rules:** officer abbreviations (e.g., `cos`, `cto`) or `*` for anyone. `read`, `write`, `comment` are independent. Rules are enforced on all `library.sh` operations and the Library MCP server (retired 2026-07-16 — deregistered from both `.mcp.json` layers, runs standalone only; see `docs/runbooks/library-retirement-2026-07-16.md`). Captain (`OFFICER_NAME=captain`) always bypasses access_rules. Dashboard API routes run as captain context and are not subject to officer access checks.
 
 ## Adding a new starter
 
