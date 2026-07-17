@@ -923,13 +923,13 @@ function buildDefaultOfficers(preset: string): OfficerSlot[] {
   // Default officer sets per well-known preset
   const presetOfficers: Record<string, OfficerSlot[]> = {
     personal: [
-      { role: 'cos', title: 'Chief of Staff', adopted: false },
+      { role: 'cos', title: 'First Mate', adopted: false },
       { role: 'cto', title: 'CTO', adopted: false },
       { role: 'cpo', title: 'CPO', adopted: false },
       { role: 'cro', title: 'CRO', adopted: false },
     ],
     work: [
-      { role: 'cos', title: 'Chief of Staff', adopted: false },
+      { role: 'cos', title: 'First Mate', adopted: false },
       { role: 'cto', title: 'CTO', adopted: false },
       { role: 'cpo', title: 'CPO', adopted: false },
       { role: 'cro', title: 'CRO', adopted: false },
@@ -938,7 +938,7 @@ function buildDefaultOfficers(preset: string): OfficerSlot[] {
   }
 
   return presetOfficers[preset] ?? [
-    { role: 'cos', title: 'Chief of Staff', adopted: false },
+    { role: 'cos', title: 'First Mate', adopted: false },
     { role: 'cto', title: 'CTO', adopted: false },
     { role: 'cpo', title: 'CPO', adopted: false },
     { role: 'cro', title: 'CRO', adopted: false },

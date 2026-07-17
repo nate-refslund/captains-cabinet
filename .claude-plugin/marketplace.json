@@ -14,7 +14,7 @@
         "repo": "nate-refslund/captains-cabinet",
         "ref": "master"
       },
-      "description": "Full Captains Cabinet plugin: framework + presets (work, portfolio, personal) + 21 skills + 6 slash commands + 6 MCP servers. The officer fleet is roster-derived (instance/config/roster.yml) — the work preset ships 8 role archetypes, the portfolio preset ships the Chair plus generated lane CEOs.",
+      "description": "Full Captains Cabinet plugin: framework + presets (work, portfolio, personal, developer) + 21 skills + 6 slash commands + 6 MCP servers. The officer fleet is roster-derived (instance/config/roster.yml) — the work and developer presets ship 8 role archetypes each, the portfolio preset ships the Chair plus generated lane CEOs.",
       "category": "ai-organization",
       "tags": ["ai-organization", "officers", "autonomous", "event-sourced"]
     },
@@ -88,6 +88,18 @@
       "description": "Personal preset orientation + activation guide (coaching-focused, consent-gated autonomy). References the presets/personal payload shipped with the core plugin — install captains-cabinet first.",
       "category": "ai-organization",
       "tags": ["ai-organization", "preset", "personal", "coaching"]
+    },
+    {
+      "name": "preset-developer-pack",
+      "source": {
+        "source": "github",
+        "repo": "nate-refslund/captains-cabinet",
+        "ref": "master",
+        "path": "packs/preset-developer-pack"
+      },
+      "description": "Developer preset orientation + activation guide — the OPTIONAL software product-kind kit (work roster + day-1 connector declarations: GitHub MCP, Playwright, read-only Neon, Vercel by REST+probes, Sentry when keys exist). References the presets/developer payload shipped with the core plugin — install captains-cabinet first.",
+      "category": "ai-organization",
+      "tags": ["ai-organization", "preset", "developer", "software", "product"]
     },
     {
       "name": "lighthouse-log-pack",

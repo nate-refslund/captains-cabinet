@@ -34,6 +34,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from . import query
 from .recorder import EvidenceError, EvidenceRecorder
 from .verifier import verify_store, verify_trial
 
@@ -61,7 +62,15 @@ def _parser() -> argparse.ArgumentParser:
     verify = commands.add_parser("verify")
     verify.add_argument("--trial")
 
-    project = commands.add_parser("project")
+    project = commands.add_parser(
+        "project",
+        description=(
+            "Read-only redacted projection. Pass a trial id, or ONE reserved "
+            "cross-trial selector token (selectors take precedence over trial "
+            "ids): by-actor:<id|kind:id> | by-component:<name> | "
+            "by-status:<status> | by-time:<yyyymmdd>-<yyyymmdd>."
+        ),
+    )
     project.add_argument("trial")
     project.add_argument("--limit", type=int, default=200)
 
@@ -269,7 +278,10 @@ def main(argv: list[str] | None = None) -> int:
         else:
             recorder = EvidenceRecorder(args.store)
             if args.command == "project":
-                result = recorder.cabinet_projection(args.trial, limit=args.limit)
+                if query.is_selector_token(args.trial):
+                    result = query.selector_projection(recorder, args.trial, limit=args.limit)
+                else:
+                    result = recorder.cabinet_projection(args.trial, limit=args.limit)
             elif args.command == "grant-token":
                 result = _grant_token(recorder, args.output)
             elif args.command == "export":

@@ -2,7 +2,7 @@
 
 A **preset** is a configuration overlay that adapts the Captain's Cabinet framework for a particular mode of operation. Presets define:
 
-- Which agent archetypes pre-scaffold (work: CoS, CTO, CPO, CRO, COO; personal: coaches)
+- Which agent archetypes pre-scaffold (work: First Mate (CoS), CTO, CPO, CRO, COO; personal: coaches)
 - Terminology defaults ("officer" vs "coach", "sprint" vs "cycle")
 - Constitution and safety addenda specific to the use case
 - Additional database schema beyond the framework base
@@ -15,8 +15,9 @@ A preset is **not** a separate codebase, a fork, or an alternate framework. It's
 
 | Preset | Status | Description |
 |--------|--------|-------------|
-| `work/` | Active | Product-team shape: CoS / CTO / CPO / CRO / COO, Linear-or-Library backlog, Notion-or-Library business brain, product repo workspace. |
-| `portfolio/` | Active | Portfolio shape: one persistent Chair (id `cos`, single Telegram bot) + one on-demand CEO officer per lane, generated from `agents/_lane-ceo.md.template` into `instance/agents/`. Functional depth via hats + hat graduation and Sonnet crew, not extra fulltime officers. |
+| `work/` | Active | Product-team shape: First Mate (CoS) / CTO / CPO / CRO / COO, Linear-or-Library backlog, Notion-or-Library business brain, product repo workspace. |
+| `portfolio/` | Active | Portfolio shape: one persistent First Mate (id `cos`, single Telegram bot) + one on-demand CEO officer per lane, generated from `agents/_lane-ceo.md.template` into `instance/agents/`. Functional depth via hats + hat graduation and Sonnet crew, not extra fulltime officers. |
+| `developer/` | Active | OPTIONAL software product-kind kit (first of a family under the general product org): the work roster flat-copied + day-1 connector declarations (GitHub MCP, Playwright, read-only Neon; Vercel by REST+probes; Sentry armed when keys exist), Product Journal starter Space, probes starter config, day-1 runbook. Declarations only — env-var NAMES, no secrets, no scope auto-grants. |
 | `personal/` | Placeholder | Coaching / life-operator shape. Empty until Phase 2 of the Cabinet v2 arc populates it. |
 | `_template/` | Template | Skeleton for creating a new preset. Copy to `presets/<your-name>/` and customize. |
 
@@ -75,7 +76,9 @@ unavailable), best-effort `cabinet_memory` queue.
 
 Shipped: `work/starter-spaces/business-brain.yml` (Business Brain: start-here
 index, product overview, customers & segments, decisions index, operating
-principles).
+principles); `developer/starter-spaces/` adds `product-journal.yml` (Product
+Journal: start-here, product overview, release log, incident index, customer
+feedback) alongside the business-brain twin.
 The officer loop-prompts' reflection ritual (`cabinet/loop-prompts/*.txt`)
 instructs officers to land durable business/product/customer facts into the
 seeded 'Business Brain' Space via the library MCP `library_create_record`.
@@ -84,7 +87,7 @@ seeded 'Business Brain' Space via the library MCP `library_create_record`.
 
 `instance/config/active-preset` — a flat file whose only content is the preset slug (e.g. `work`). The loader reads this at container start.
 
-Default: `work`. Forkers who don't change this get the default work-preset behavior (a product-team cabinet: CoS/CTO/CPO/CRO/COO).
+Default: `work`. Forkers who don't change this get the default work-preset behavior (a product-team cabinet: First Mate (CoS)/CTO/CPO/CRO/COO).
 
 ## Switching presets
 
@@ -125,6 +128,14 @@ echo my-new-preset > instance/config/active-preset
 ```
 
 See `memory/skills/evolved/create-preset.md` for the full skill.
+
+`developer/` is the worked example of this flow at product-kind scale: a
+flat copy of `work/` plus software-kit deltas (connector declarations,
+starter Space, probes starter, runbook) — the first product-kind kit of a
+family; later siblings (e-commerce, services) follow the same copy+delta
+pattern. Twin drift vs `work/` is pinned by
+`cabinet/scripts/tests/test_preset_developer_parity.py` (allowlisted
+deltas only).
 
 ## Inheritance / composition
 

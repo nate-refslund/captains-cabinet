@@ -1,0 +1,38 @@
+# presets/developer/terminology.yml
+# Term mappings for the developer preset (software product-kind kit).
+# Other presets (e.g. personal) remap "agent" → "coach", "Captain" → "client", etc.
+
+agent_role: officer
+agents: officers
+
+# Display title for the coordinating officer (2026-07-17 First Mate ruling).
+# TERMINOLOGY LAYER ONLY: machine ids stay frozen — the role id is `cos`
+# everywhere code/config addresses it (agents/cos.md frontmatter, mcp-scope,
+# capabilities, launchd labels). Note the terminology engine is currently
+# UNWIRED (no framework code reads this file yet); this key records the
+# ruling so the wire-up has one source of truth.
+coordinator_title: First Mate
+
+captain_title: Captain
+captain_context: leadership
+
+crew_title: Crew
+crew_context: agent team
+
+# The generic "work unit" — what a ticket/issue/task is called in this preset
+work_unit: task
+work_units: tasks
+
+# What the long-running body of work is called
+work_body: product
+alternate_work_bodies:  # acceptable synonyms when the Captain's work is broader
+  - operation
+  - program
+  - practice
+  - engagement
+
+# What we call the authoritative backlog surface
+backlog: Linear (or the Library Issues Space after Phase 0+)
+
+# What we call the authoritative business-context surface
+business_brain: Notion Business Brain (or the Library Business Brain Space after Phase 0+)

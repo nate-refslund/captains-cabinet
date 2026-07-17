@@ -122,20 +122,20 @@ warroom:
   chat_id_env: TELEGRAM_HQ_CHAT_ID   # value lives in cabinet/.env (TOKEN-TBD)
 
 # -------------------------------------------------------------
-# Telegram — single-bot Chair surface (portfolio preset default)
+# Telegram — single-bot First Mate surface (portfolio preset default)
 # -------------------------------------------------------------
-# TOKEN-TBD: the Captain provides ONE new BotFather bot for the HQ Chair (do NOT
-# reuse the Mini's tokens — two pollers on one token steal each other's
+# TOKEN-TBD: the Captain provides ONE new BotFather bot for the First Mate (do
+# NOT reuse the Mini's tokens — two pollers on one token steal each other's
 # updates). Username goes here once created; the token goes ONLY in
 # cabinet/.env under the env var name listed. bot_mode single_ceo with
-# ceo_officer cos means only the Chair's bot polls Telegram; lane CEOs are
-# Telegram-dark and route Captain attention via the Chair
+# ceo_officer cos means only the First Mate's bot polls Telegram; lane CEOs are
+# Telegram-dark and route Captain attention via the First Mate
 # (captain-attention queue), surfaced in DMs with attribution and in the
 # warroom.
 telegram:
   bot_mode: single_ceo
-  ceo_officer: cos                   # the Chair (id-reuse)
-  ceo_bot: ""                        # TOKEN-TBD — HQ Chair bot username
+  ceo_officer: cos                   # the First Mate (id-reuse)
+  ceo_bot: ""                        # TOKEN-TBD — First Mate bot username
   bot_token_envs:
     cos: TELEGRAM_COS_TOKEN          # TOKEN-TBD in cabinet/.env (canonical
     # TELEGRAM_<OFFICER_UPPER>_TOKEN — the name start-officer-mac.sh

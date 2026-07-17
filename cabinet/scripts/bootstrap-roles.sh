@@ -33,7 +33,7 @@
 #                      key, 4-space fields):
 #                        roster:
 #                          cos:
-#                            title: Chair
+#                            title: First Mate
 #                            type: fulltime        # or consultant (default fulltime)
 #                            model: claude-fable-5
 #                            capabilities: [cap1, cap2]
@@ -236,8 +236,8 @@ seed_role() {
   # ---- (2) instance/roles/active/<slug>.yml ----
   # New slugs are written fresh; existing slugs are UPDATED IN PLACE: the
   # roster owns title/model/capabilities/authority_level/officer_type and
-  # refreshes them on every run (fixes split-brain like org "Chair" vs a
-  # stale yml "Chief of Staff"); created_at is preserved.
+  # refreshes them on every run (fixes split-brain like org "First Mate" vs
+  # a stale yml "Chief of Staff"); created_at is preserved.
   local yml="$ACTIVE_DIR/$slug.yml"
   local created_at existed=0
   created_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -375,7 +375,7 @@ if [ -n "$ROSTER_FILE" ]; then
 else
   # ---- DEFAULT PATH: built-in functional seed (unchanged; all fulltime) ----
   # Officer slug | Title                       | Model               | Capabilities                                                                                | Authority level
-  seed_role cos "Chief of Staff"               claude-fable-5       "logs_captain_decisions,reviews_specs,reviews_implementations,validates_deployments"        captain_proxy
+  seed_role cos "First Mate"                   claude-fable-5       "logs_captain_decisions,reviews_specs,reviews_implementations,validates_deployments"        captain_proxy
   seed_role cto "Chief Technology Officer"     claude-fable-5       "deploys_code,reviews_implementations,engineering_execution"                                 mission_executor
   seed_role cpo "Chief Product Officer"        claude-fable-5       "reviews_specs,product_strategy,backlog_management"                                          mission_executor
   seed_role cro "Chief Research Officer"       claude-sonnet-4-6    "reviews_research,market_intelligence,research_sweep"                                        mission_executor

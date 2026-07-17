@@ -35,7 +35,7 @@ echo "=== Durable adaptive role eval ==="
 
 ROLE_JSON="$(python3 "$ORG" roles define \
   --role cos \
-  --name "Chief of Staff" \
+  --name "First Mate" \
   --charter "Own outcome translation, mission orchestration, and Cabinet learning loops" \
   --current-focus "Durable adaptive role runtime" \
   --authority-level mission_orchestrator \

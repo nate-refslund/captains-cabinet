@@ -219,6 +219,14 @@ shared/interfaces/preference-pairs.jsonl
 # cabinet/scripts/workaround-retest.py on fix_confirmed verdicts; never commit
 shared/interfaces/workaround-retire-proposals.jsonl
 
+# Weekly governance-review label digests (evidence Phase 3, RAMP-2 ritual) —
+# content-free per-label lines + session markers appended by
+# cabinet/scripts/governance-review.py; Captain-owned runtime data, anchored
+# off-box daily (evidence-anchor.py), never committed. Session transcripts
+# land in shared/interfaces/governance-reviews/*.md, already covered by the
+# shared/interfaces/**/*.md rule above.
+shared/interfaces/governance-labels.jsonl
+
 # Cabinet World runtime read-model outputs (world-census E0a / world-chronicle
 # E0b — append-only replay history; instance data, never committed)
 shared/interfaces/world-chronicle.jsonl

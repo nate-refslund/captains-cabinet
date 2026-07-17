@@ -30,9 +30,11 @@ The same framework ships in two configurations. They share the governance core (
 |---|---|---|
 | Runs on | Your daily machine (MacBook) | A dedicated Mac Mini |
 | Senses | screenpipe capture + a personal knowledge vault | Product telemetry: CI, deploys, PRs, error budgets, support threads |
-| Mission | Act as the Captain's clone across email, chat, commitments, briefings | Own one software product end-to-end: build, deploy, operate, support |
+| Mission | Act as the Captain's clone across email, chat, commitments, briefings | Own one product or service end-to-end: design, build, operate, market, support |
 | Ground truth | **Human verdicts** (approve / edit / skip) — the only honest signal for "is this what I would do" | **Machine probes** as primary verdict supply, human judgment reserved for what machines can't check |
 | External dependencies | The personal sensing stack | **None required** — no screenpipe, no external PM tool; work tracking is a local board, PM tools are optional mirror adapters |
+
+Flavor B is a general product org — any kind of product or service. Software is the richest machine-evidence example and ships as the first optional preset.
 
 Asymmetry is expected and correct: flavor B's machine-verifiable action classes graduate in weeks at product-traffic volume; judgment classes (tone, prioritization, compliance wording) stay Captain-gated far longer in both flavors. That is the evidence engine working, not a defect.
 
@@ -108,7 +110,7 @@ Open **Orientation** in Dashboard or World, or send `/onboard` in Telegram.
 On a loopback-only Mac deployment, the sole Telegram `getUpdates` poller
 forwards only `/onboard` commands and `onboard:*` taps to the same authenticated
 local onboarding route; if that route is unavailable, the message remains
-visible through the Chair relay instead of being dropped. Public webhook
+visible through the First Mate relay instead of being dropped. Public webhook
 deployments use the same route and `TELEGRAM_WEBHOOK_SECRET` directly.
 Choose one specific folder and a purpose. The Cabinet shows a hash-bound,
 read-only Charter before inspecting anything, then returns one deterministic

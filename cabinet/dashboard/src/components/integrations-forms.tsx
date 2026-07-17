@@ -152,13 +152,13 @@ const KEY_META: Record<string, KeyMeta> = {
     tier: 'recommended', section: 'Models & Memory',
     signup: 'https://dash.voyageai.com/',
     description: 'Voyage AI key for cabinet_memory embeddings (voyage-4-large, 1024d). Without this the semantic recall layer is dark — keyword retrieval still works.',
-    usedBy: 'CoS (Captain DM recall), CRO (research)',
+    usedBy: 'First Mate (Captain DM recall), CRO (research)',
   },
   NOTION_API_KEY: {
     tier: 'recommended', section: 'Models & Memory',
     signup: 'https://www.notion.so/my-integrations',
     description: 'Notion internal integration token. Cabinet reads strategy/brand/vision + writes research briefs + specs here.',
-    usedBy: 'CoS (briefings), CRO (research), CPO (specs)',
+    usedBy: 'First Mate (briefings), CRO (research), CPO (specs)',
   },
   // Task systems — pick one
   LINEAR_API_KEY: {

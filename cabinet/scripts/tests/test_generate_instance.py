@@ -426,6 +426,47 @@ class TestShapesAndExample:
         gi.generate(cab_root, path)  # full pass on the documented example
         assert (cab_root / "instance/config/roster.yml").is_file()
 
+    # ---- optional cabinet.preset answer (developer-preset wave 2026-07-17) --
+
+    def test_explicit_preset_answer_shapes_next_steps(self, cab_root, capsys):
+        answers = acme_answers()
+        answers["cabinet"]["org_shape"] = "functional"
+        answers["cabinet"]["preset"] = "developer"
+        run_gen(cab_root, answers)
+        out = capsys.readouterr().out
+        assert "echo developer > instance/config/active-preset" in out
+        # explicit choice suppresses the opt-in hint (nothing to surface)
+        assert "OPTIONAL developer preset" not in out
+
+    def test_functional_default_stays_work_and_surfaces_developer_hint(
+            self, cab_root, capsys):
+        answers = acme_answers()
+        answers["cabinet"]["org_shape"] = "functional"
+        run_gen(cab_root, answers)
+        out = capsys.readouterr().out
+        # OPT-IN, never a default flip: the default stays work...
+        assert "echo work > instance/config/active-preset" in out
+        # ...and the developer choice is surfaced as optional.
+        assert "OPTIONAL developer preset" in out
+
+    def test_portfolio_shape_gets_no_developer_hint(self, cab_root, capsys):
+        run_gen(cab_root, acme_answers())      # org_shape: portfolio
+        out = capsys.readouterr().out
+        assert "echo portfolio > instance/config/active-preset" in out
+        assert "OPTIONAL developer preset" not in out
+
+    def test_preset_answer_bad_slug_refused(self, cab_root):
+        answers = acme_answers()
+        answers["cabinet"]["preset"] = "../../evil"
+        with pytest.raises(gi.GenerationError, match="cabinet.preset"):
+            run_gen(cab_root, answers)
+
+    def test_preset_answer_template_refused(self, cab_root):
+        answers = acme_answers()
+        answers["cabinet"]["preset"] = "_template"   # leading _ fails SLUG_RE
+        with pytest.raises(gi.GenerationError, match="cabinet.preset"):
+            run_gen(cab_root, answers)
+
 
 # ---------------------------------------------------------------------------
 # sources.yml emission (org flavor → OrgSource) + org_vault_dir stamping

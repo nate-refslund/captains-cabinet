@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "preset-developer-pack",
+  "displayName": "Cabinet Developer Preset Pack",
+  "version": "0.1.0",
+  "description": "Developer preset orientation: the software product-kind kit (first of a family under the general product-org shape) — work roster plus day-1 connector declarations (GitHub MCP, Playwright, read-only Neon; Vercel by REST+probes; Sentry armed when keys exist). This pack REFERENCES the presets/developer payload shipped with the core captains-cabinet plugin (it copies none of it) and adds the activation guide skill. Requires the core plugin.",
+  "author": {
+    "name": "Captain's Cabinet contributors"
+  },
+  "license": "MIT",
+  "keywords": [
+    "ai-organization",
+    "preset",
+    "developer",
+    "software",
+    "product"
+  ],
+  "skills": [
+    "./skills/"
+  ]
+}

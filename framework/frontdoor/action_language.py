@@ -101,6 +101,7 @@ __all__ = [
     "render_receipt",
     "receipt",
     "digest_with_why",
+    "digest_with_evidence",
     "stamp_journal_why",
 ]
 
@@ -438,6 +439,83 @@ def digest_with_why(text: Optional[str],
             clause = tell_surface._clip(_compact(why_map[idx]), _WHY_CAP_DIGEST)
             if clause:
                 lines[i] = lines[i] + " — why: " + clause
+        return "\n".join(lines)
+    except Exception:
+        return text                 # decoration must never cost the digest
+
+
+# --- digest decoration: the evidence-trial citation ------------------------------
+
+# The evidence plane's ONE id alphabet (verifier.TRIAL_ID_RE /
+# action_reconcile._MARKER_ID_RE), duplicated as a literal so this module
+# stays importable under the system 3.9 interpreter with zero evidence-plane
+# imports.  The charset admits no whitespace, no newline, and no reserved
+# ``·`` marker char, so a validated id is safe to splice into a Captain-facing
+# line by construction; anything else renders NOTHING (never a garbled or
+# forged citation).  test_digest_evidence_citation.py pins the two regexes
+# against each other.
+_EVIDENCE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+_EVIDENCE_CLAUSE = " — evidence: "
+
+
+def digest_with_evidence(text: Optional[str],
+                         acted_rows: Optional[List[Dict[str, Any]]]) -> str:
+    """``text`` (a rendered act-then-tell digest) with each ACTED item whose
+    journal row carries the Batch-B ``evidence_trial_id`` stamp gaining a
+    compact ``— evidence: <trial-id>`` citation on its numbered headline line
+    (evidence design §3 Phase 3 item 4: digests cite the trial the acted
+    receipt's evidence lives on). Called by the unlocked ``tell_digest``
+    orchestrator right after ``digest_with_why`` — same decoration pattern,
+    same discipline, because ``tell_surface._acted_section`` is
+    germline-locked.
+
+    Discipline (inherited from ``digest_with_why``, each rule load-bearing):
+    surgery is scoped to the ✅ ACTED section; ONLY numbered headline lines
+    are appended to; matching keys on the server-minted ``undo_index`` NEVER
+    list position (positional matching can bind the citation to the WRONG
+    line); a row without the stamp — every pre-evidence journal row — gains
+    no clause and renders byte-identically (an honest gap, never a fabricated
+    citation); an id that fails the evidence-plane alphabet renders nothing
+    (never a garbled id); the decoration is idempotent (a line already
+    carrying the clause is skipped, so a future germline renderer can absorb
+    the grammar without double-rendering); any internal error returns the
+    text unchanged — decoration never costs the digest.
+
+    The citation is a bare trial id — context for the Captain's own
+    ``evidence-read.sh <trial-id>`` / dashboard lookup. It is not an
+    aggregate, not a score, and carries no evidence CONTENT (never-a-score
+    and untrusted-observations doctrines are untouched)."""
+    if not text or not acted_rows:
+        return text or ""
+    try:
+        id_map: Dict[int, str] = {}
+        for r in acted_rows:
+            if not isinstance(r, dict) or r.get("quiet"):
+                continue
+            idx = r.get("undo_index")
+            trial = r.get("evidence_trial_id")
+            if isinstance(idx, int) and idx > 0 \
+                    and isinstance(trial, str) \
+                    and _EVIDENCE_ID_RE.fullmatch(trial):
+                id_map[idx] = trial
+        if not id_map:
+            return text
+        lines = text.split("\n")
+        start = next((i for i, ln in enumerate(lines)
+                      if ln.startswith(_ACTED_SECTION_HEAD)), None)
+        if start is None:
+            return text
+        end = start + 1
+        while end < len(lines) and lines[end] != "":
+            end += 1
+        for i in range(start + 1, end):
+            m = _ACTED_ITEM_HEAD_RE.match(lines[i])
+            if not m:
+                continue
+            idx = int(m.group(1))
+            if idx not in id_map or _EVIDENCE_CLAUSE in lines[i]:
+                continue
+            lines[i] = lines[i] + _EVIDENCE_CLAUSE + id_map[idx]
         return "\n".join(lines)
     except Exception:
         return text                 # decoration must never cost the digest

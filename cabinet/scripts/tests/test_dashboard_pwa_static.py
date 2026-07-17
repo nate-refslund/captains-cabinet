@@ -156,7 +156,7 @@ def test_middleware_matcher_is_exactly_the_five_exclusions():
 def test_manifest_ts_field_literals():
     text = (_APP / "manifest.ts").read_text(encoding="utf-8")
     for literal in (
-        "name: \"Founder's Cabinet\"",
+        "name: \"Captain's Cabinet\"",
         "short_name: 'Cabinet'",
         "id: '/'",
         "start_url: '/'",

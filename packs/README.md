@@ -21,6 +21,7 @@ bash cabinet/scripts/validate-extension.sh packs/<pack-name>
 | `agent-teams-pack` | agent-team-workflow | **Copied** from `.claude/skills/` |
 | `preset-portfolio-pack` | Portfolio-preset activation guide skill + README | Payload **referenced** at `presets/portfolio/` (core plugin/repo) |
 | `preset-personal-pack` | Personal-preset activation guide skill + README | Payload **referenced** at `presets/personal/` (core plugin/repo) |
+| `preset-developer-pack` | Developer-preset (software product-kind kit) activation guide skill + README | Payload **referenced** at `presets/developer/` (core plugin/repo) |
 | `lighthouse-log-pack` | daily-lighthouse-log — the day's keeper's log, composed from the world chronicle into the officer's own tier2 note | **Original — authored in the pack** (no core copy, no `sunset:` line; also the running exemplar for `docs/authoring-a-pack.md`) |
 
 The `work` preset stays CORE payload (it ships inside the `captains-cabinet`

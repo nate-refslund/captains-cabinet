@@ -7,14 +7,20 @@ import { describe, it, expect } from 'vitest'
 import { ADVANCED_NAV, CONSUMER_NAV, navForMode } from './nav-config'
 
 describe('ADVANCED_NAV — static shape', () => {
-  it('has 18 items (17 internal + 1 external Terminal)', () => {
+  it('has 19 items (18 internal + 1 external Terminal)', () => {
     // 2026-07-02: Library page added in the June work without this pin updating
     // 2026-07-07: World added (Cabinet World E1 Wardroom — /world, observer-class)
     // 2026-07-10: Receipts added (perfect-cabinet Wave B — read-only undo-journal browser)
     // 2026-07-10: Needs You added (/queue — the classic war-room skin, read-only)
     // (Receipts + Needs You landed in parallel branches, each claiming 16 — the
     //  2026-07-10 merge union is 17.)
-    expect(ADVANCED_NAV).toHaveLength(18)
+    // (Evidence + Vault landed in parallel branches, each claiming 19 — the
+    //  2026-07-17 merge union is 20.)
+    // 2026-07-17: Evidence added (whole-cabinet evidence Phase 3 — read-only,
+    //  verification-first trial browser next to Receipts)
+    // 2026-07-17: Vault added (/vault — read-only filesystem browser over the
+    //  org vault/ corpus, Advanced-only).
+    expect(ADVANCED_NAV).toHaveLength(20)
   })
 
   it('every link has an href and a label', () => {
@@ -42,11 +48,19 @@ describe('ADVANCED_NAV — static shape', () => {
     expect(labels).toContain('Settings')
     expect(labels).toContain('Governance')
     expect(labels).toContain('Receipts')
+    expect(labels).toContain('Evidence')
     expect(labels).toContain('Integrations')
     expect(labels).toContain('Costs')
     expect(labels).toContain('Crons')
+    expect(labels).toContain('Vault')
     expect(labels).toContain('Library')
     expect(labels).toContain('Terminal')
+  })
+
+  it('Vault is an internal advanced-only link, absent from consumer nav', () => {
+    const vault = ADVANCED_NAV.find(l => l.label === 'Vault')
+    expect(vault).toEqual({ href: '/vault', label: 'Vault' })
+    expect(CONSUMER_NAV.some(l => l.href === '/vault')).toBe(false)
   })
 
   it('Terminal is the only external link (target=_blank affordance)', () => {

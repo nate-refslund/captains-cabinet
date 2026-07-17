@@ -5,7 +5,7 @@ description: Captain's Cabinet plugin orientation — what this plugin installs 
 
 # Captain's Cabinet — Plugin Orientation
 
-You are operating inside a Claude Code session that has the **Captain's Cabinet** plugin installed. This plugin ships an autonomous, self-improving AI organization framework — Captain (the founder) plus officers (Chief of Staff, CTO, CPO, CRO, COO) with event-sourced missions, a durable role registry, OVI (Outcome Value Index) measurement, and a pattern-learning ledger.
+You are operating inside a Claude Code session that has the **Captain's Cabinet** plugin installed. This plugin ships an autonomous, self-improving AI organization framework — Captain (the founder) plus officers (First Mate, CTO, CPO, CRO, COO) with event-sourced missions, a durable role registry, OVI (Outcome Value Index) measurement, and a pattern-learning ledger.
 
 ## What the plugin contributes
 

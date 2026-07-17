@@ -642,6 +642,17 @@ def enqueue_digest(*, now: Optional[str] = None,
         text = action_language.digest_with_why(text, acted)
     except Exception:
         pass
+    # EVIDENCE CITATIONS (evidence Phase 3, 2026-07-17): ACTED items whose
+    # journal row carries the Batch-B ``evidence_trial_id`` stamp
+    # (action_exec write-ahead) cite their evidence trial on the same
+    # headline — design §3 Phase 3 item 4. Same unlocked-decoration pattern
+    # and belt-and-braces wrap as the why clause above; rows without the
+    # stamp (every pre-evidence journal row) render byte-identically — an
+    # honest gap, never a fabricated citation.
+    try:
+        text = action_language.digest_with_evidence(text, acted)
+    except Exception:
+        pass
     readout_text = render_loop_readout(readout)
     if text and readout_text:
         # Below the footer, not inside a tell_surface section — the germline

@@ -1,5 +1,5 @@
 # =============================================================
-# Founder's Cabinet — Spending Limits (framework defaults)
+# Captain's Cabinet — Spending Limits (framework defaults)
 # =============================================================
 # Per-officer and cabinet-wide daily caps on Anthropic API spend.
 # These values ship with the framework and protect forkers from

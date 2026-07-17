@@ -1,0 +1,23 @@
+# manifest.yml — Cabinet extension manifest for the developer preset pack.
+# Schema: framework/schemas/extension-manifest.schema.json; validated by
+#   bash cabinet/scripts/validate-extension.sh packs/preset-developer-pack
+# instance/config/extensions.yml is the governed path that points officers at
+# this pack (see cabinet/docs/cabinet-plugin-installation.md § Capability packs).
+# Orientation-only bundle: the preset PAYLOAD stays at presets/developer/ in
+# the core repo/plugin (referenced, not copied — see README.md). flavor
+# declares BOTH values (unlike preset-portfolio-pack's [org]): the developer
+# preset runs on the org flavor by default but nothing in it binds the
+# sensing flavor — a personal-flavor deployment shipping software may use it.
+name: preset-developer-pack
+version: "0.1.0"
+kind: skill
+action_types: []
+risk_classes: []
+undo_contract: none
+axis_compat:
+  autonomy_level: [earn_up, guardian, sovereign]
+  flavor: [personal, org]
+  deployment_target: [macbook, mac_mini, docker]
+entrypoints:
+  skill_preset_developer: skills/preset-developer/SKILL.md
+  readme: README.md

@@ -39,11 +39,18 @@ from framework.comms.surface import links as _links
 CB_PREFIX = "cv2"
 CB_VERBS = ("ok", "edit", "skip", "later", "undo",     # per-card decisions
             "tri", "more", "stop", "all", "top1",      # pacing controls
-            "ndg", "ndl", "ndd")   # needs-card verbs: grant / later / deny —
+            "ndg", "ndl", "ndd",   # needs-card verbs: grant / later / deny —
                                    # arg is the NEED-<hex8> fingerprint tail
                                    # ONLY (tap_wire re-validates fullmatch
                                    # [0-9a-f]{8}); rides the typed binder
                                    # grammar door (captain-reminder cards)
+            "ksh", "ksr")          # kill-switch card verbs: Halt / Resume
+                                   # (killswitch_card) — NO payload by design
+                                   # (tap_wire refuses any arg fail-closed);
+                                   # execution is the POLLER's seam-injected
+                                   # kill-switch.sh door, never an officer
+                                   # session (captain-controls plan
+                                   # 2026-07-17, EVAL-001b distinction)
 
 
 def handle_of(item_id: str) -> str:

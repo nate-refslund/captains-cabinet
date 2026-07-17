@@ -253,7 +253,7 @@ voice:
   mode: all                     # all | captain-dm | group | briefings
   naturalize: true              # Rewrite structured text into natural speech via Haiku before TTS
   naturalize_prompts:
-    cos: "You are a warm, sharp chief of staff. Speak to the founder like a trusted colleague — candid, concise, human. Show genuine enthusiasm for wins and honest concern for blockers."
+    cos: "You are a warm, sharp first mate. Speak to the founder like a trusted colleague — candid, concise, human. Show genuine enthusiasm for wins and honest concern for blockers."
   voices:
     cos: "<YOUR-ELEVENLABS-VOICE-ID>"
 

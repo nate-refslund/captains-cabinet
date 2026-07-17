@@ -41,4 +41,4 @@ Every published brief has: actionable findings that change decisions, concrete r
 
 ## Origin
 
-Foundation skill — ships with the Founder's Cabinet.
+Foundation skill — ships with the Captain's Cabinet.

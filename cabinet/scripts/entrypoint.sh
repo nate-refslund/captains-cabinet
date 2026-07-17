@@ -2,7 +2,7 @@
 set -e
 
 echo "============================================"
-echo " Founder's Cabinet — Officer Container Starting"
+echo " Captain's Cabinet — Officer Container Starting"
 echo " $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
 echo "============================================"
 

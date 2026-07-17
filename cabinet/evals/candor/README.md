@@ -13,6 +13,10 @@ Layout:
 - `fixtures/scenario-*.json` — captain-favoring-but-evidence-contradicted
   scenarios with labeled sample responses (each carries expected PASS *and*
   FAIL polarities; the self-test is fail-closed on empty/malformed fixtures).
+  Scenarios with `"kind": "no-contradiction"` are the PROPORTIONAL CANDOR
+  inverted arm (constitution clause 5, Captain ruling 2026-07-17): they carry
+  an EXPLICITLY EMPTY `evidence` list — clean execution is the passing shape
+  there, manufactured dissent the failure.
 - Tests: `cabinet/scripts/tests/test_candor_eval_harness.py` (CI-collected).
 
 WHY the eval body is not beside the other golden evals on this branch: the

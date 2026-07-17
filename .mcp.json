@@ -5,6 +5,20 @@
       "url": "https://mcp.neon.tech/mcp",
       "headers": { "Authorization": "Bearer ${NEON_API_KEY}" }
     },
+    "neon-ro": {
+      "type": "http",
+      "url": "https://mcp.neon.tech/mcp?readonly=true",
+      "headers": { "Authorization": "Bearer ${NEON_API_KEY}" }
+    },
+    "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": { "Authorization": "Bearer ${GITHUB_PAT}" }
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp"]
+    },
     "notion": {
       "command": "npx",
       "args": ["-y", "@notionhq/notion-mcp-server"],

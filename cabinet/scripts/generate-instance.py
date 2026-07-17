@@ -305,6 +305,20 @@ def load_answers(path: Path) -> dict:
     org_shape = str(cabinet.get("org_shape", "portfolio"))
     if org_shape not in ORG_SHAPES:
         raise GenerationError(f"cabinet.org_shape must be one of {ORG_SHAPES}, got {org_shape!r}")
+    # OPTIONAL preset choice (2026-07-17, developer-preset wave). Never a
+    # default flip: absent → the org_shape default (portfolio/work) in the
+    # printed next steps. Shape-validated only — the preset rail accepts
+    # free slugs (framework.env.active_preset / load-preset.sh), so shipped
+    # names (work, portfolio, developer, personal) and custom slugs both
+    # pass; SLUG_RE already refuses path segments and `_template` (leading
+    # underscore). Used ONLY in the printed activation step — no file writes.
+    preset_choice = cabinet.get("preset")
+    if preset_choice is not None:
+        if not SLUG_RE.match(str(preset_choice)):
+            raise GenerationError(
+                f"cabinet.preset {preset_choice!r} must be a preset slug "
+                f"(kebab-case, e.g. work | portfolio | developer | personal)"
+            )
     cab_id = str(cabinet.get("id", "main"))
     if not SLUG_RE.match(cab_id):
         raise GenerationError(f"cabinet.id {cab_id!r} must match {SLUG_RE.pattern}")
@@ -1348,9 +1362,20 @@ def generate(root: Path, answers_path: Path, dry_run: bool = False, force: bool 
     # ---- next steps ----
     tg = integrations.get("telegram") or {}
     token_env = str(tg.get("bot_token_env") or "TELEGRAM_COS_TOKEN")
-    preset = "portfolio" if org_shape == "portfolio" else ("work" if org_shape == "functional" else "<your-preset>")
+    # An explicit (validated) cabinet.preset answer wins; else the org_shape
+    # default. The developer preset stays OPT-IN — surfaced as a choice for
+    # the functional shape below, never substituted as the default.
+    explicit_preset = cabinet.get("preset")
+    preset = (str(explicit_preset) if explicit_preset
+              else "portfolio" if org_shape == "portfolio"
+              else ("work" if org_shape == "functional" else "<your-preset>"))
     print("\nNext steps (in order):")
     print(f"  1. echo {preset} > instance/config/active-preset")
+    if org_shape == "functional" and not explicit_preset:
+        print("     (work is the default. Shipping a software/web/app product? The")
+        print("      OPTIONAL developer preset is the software product-kind kit —")
+        print("      presets/developer/README.md; activate with")
+        print("      echo developer > instance/config/active-preset)")
     if org_shape == "portfolio":
         print("  2. PROPOSE germline edits to the Captain (Captain applies):")
         print("     - cabinet/mcp-scope.yml: list each lane CEO under agents:")

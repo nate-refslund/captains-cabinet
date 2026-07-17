@@ -1,0 +1,196 @@
+# presets/developer/starter-spaces/product-journal.yml
+# Starter Space — Product Journal (developer preset)
+#
+# Seeded by: bash cabinet/scripts/seed-library.sh --preset developer
+# Space name is the natural key (library_spaces.name UNIQUE); records are
+# matched by (space, title) — re-running the seeder never duplicates,
+# never overwrites, never resurrects records the Captain edited or deleted.
+#
+# Template quality rules: generic org content only — no personal data,
+# no real customer or colleague names. Fill the <placeholders> per deployment.
+#
+# Software-kit sibling of the work preset's Business Brain Space (same
+# access posture): every officer lands durable product/engineering facts
+# here per the loop-prompt synthesis ritual — a write-list that denies
+# most officers would make that ritual a no-op.
+
+name: Product Journal
+description: >-
+  The software product's durable memory — what is being built, what
+  shipped, what broke, and what users said. The always-on reference for
+  every Officer working the product. Officers land durable
+  product/release/incident/customer facts here during synthesis (search
+  first; extend or supersede, never duplicate).
+starter_template: product_journal
+schema_json:
+  fields:
+    - name: category
+      type: select
+      options:
+        - Product Strategy
+        - Release
+        - Incident
+        - Customer Feedback
+        - Architecture
+        - Engineering
+        - Metrics
+        - Other
+      description: High-level bucket for navigation. Not enforced — records can shift category as thinking evolves.
+    - name: status
+      type: select
+      options: [Draft, Active, Superseded, Archived]
+      default: Active
+    - name: effective_from
+      type: date
+      description: When this record became current. Older records stay searchable but are informational, not directional.
+    - name: last_reviewed
+      type: date
+      description: Last time the Captain reviewed or revised. Used to surface stale product docs.
+access_rules:
+  read: ["*"]
+  write: ["*"]
+  comment: ["*"]
+
+# Seed record stubs. [[Wikilinks]] reference records by exact title — the
+# dashboard renders them and indexes backlinks on its write path (the seed
+# path inserts content only; the link index builds when a record is next
+# saved via the dashboard).
+records:
+  - title: Product Journal — Start Here
+    labels: [seed, index]
+    schema_data:
+      category: Other
+      status: Active
+    content_markdown: |
+      # Product Journal — Start Here
+
+      This Space is the software product's durable memory: what we're
+      building, what shipped, what broke, and what users told us. Every
+      Officer reads it; every Officer writes to it when a durable fact
+      surfaces.
+
+      ## Seeded index pages
+
+      - [[Product Overview]] — what the product is and where it stands
+      - [[Release Log]] — what shipped, when, and with what outcome
+      - [[Incident Index]] — what broke, why, and what changed after
+      - [[Customer Feedback]] — what users say, routed to decisions
+
+      ## How to write here
+
+      1. **Search first** (`library_search`) — extend or supersede an
+         existing record instead of creating a near-duplicate.
+      2. One durable fact or theme per record; link related records with
+         `[[Title]]` wikilinks.
+      3. Releases land in [[Release Log]] the day they ship; incidents
+         land in [[Incident Index]] with their fix and follow-up; raw
+         user quotes land under [[Customer Feedback]] with their source.
+      4. Updates create a new version (full history preserved) — never
+         fear editing; supersession is the mechanism, duplication is the
+         defect.
+
+  - title: Product Overview
+    labels: [seed, product]
+    schema_data:
+      category: Product Strategy
+      status: Draft
+    content_markdown: |
+      # Product Overview
+
+      > Seed stub — replace the placeholders with this deployment's
+      > product reality. Keep this page current; it is the first page an
+      > Officer reads before product work.
+
+      ## What we're building
+
+      <one-paragraph product statement — the problem, the wedge, the shape of v1>
+
+      ## Who it's for
+
+      Primary users: <segment>.
+
+      ## Value proposition
+
+      <the one sentence a happy user would say to a peer>
+
+      ## Current state
+
+      - Stage: <idea | building | beta | live>
+      - Live surfaces: <URLs / apps / APIs>
+      - Repo: <org/name>
+      - North-star metric: <metric> (current: <value>)
+
+      ## Related
+
+      - What shipped so far: [[Release Log]]
+      - What users are saying: [[Customer Feedback]]
+
+  - title: Release Log
+    labels: [seed, releases]
+    schema_data:
+      category: Release
+      status: Active
+    content_markdown: |
+      # Release Log
+
+      One line per release, newest first — what shipped, when, and the
+      verdict once it exists (deploy state, error budget). Detail lives
+      in a linked record when a release warrants one.
+
+      | Date | Release / version | What shipped (one line) | Verdict |
+      |------|-------------------|-------------------------|---------|
+      | <YYYY-MM-DD> | <v0.0.0 / deploy id> | <the change users can see> | <deploy_ready / rolled_back / within_budget / regressed> |
+
+      ## Conventions
+
+      - The verdict column mirrors the probe outcomes (deploy + error
+        budget) — record what the machines observed, not what we hoped.
+      - A rolled-back release stays in the log with its rollback linked —
+        the log is history, not marketing.
+
+  - title: Incident Index
+    labels: [seed, incidents]
+    schema_data:
+      category: Incident
+      status: Active
+    content_markdown: |
+      # Incident Index
+
+      One line per incident, newest first, each linking a full record
+      that carries: impact, timeline, root cause, the fix, and what
+      changed so it cannot recur.
+
+      | Date | Incident (one line) | Impact | Root cause | Follow-up landed? |
+      |------|---------------------|--------|------------|-------------------|
+      | <YYYY-MM-DD> | <what broke> | <who/what was affected, how long> | <the principle-level why> | <yes/no — link> |
+
+      ## Conventions
+
+      - An incident without a follow-up row is OPEN regardless of whether
+        the fire is out.
+      - Blameless: record causes as system properties, never as names.
+
+  - title: Customer Feedback
+    labels: [seed, customers]
+    schema_data:
+      category: Customer Feedback
+      status: Draft
+    content_markdown: |
+      # Customer Feedback
+
+      > Seed stub — route raw user signal here with its source; keep
+      > identifiable detail generic (segment, not name) unless the
+      > deployment's own policy allows more.
+
+      | Date | Source | Segment | What they said (verbatim gist) | Routed to |
+      |------|--------|---------|--------------------------------|-----------|
+      | <YYYY-MM-DD> | <interview / support / review / usage data> | <segment> | <the quote or observation> | <spec / backlog item / decision — link> |
+
+      ## What we believe (and how confident we are)
+
+      - <belief about the user> — confidence: <high/medium/low>, source: <interview / data / hypothesis>
+
+      ## Related
+
+      - Product answer to these needs: [[Product Overview]]
+      - What shipped in response: [[Release Log]]

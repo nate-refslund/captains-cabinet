@@ -14,12 +14,12 @@
 # SCHEMA
 #   github:   list of {repo: <owner/name gh slug>, checkout: <abs local path>}
 #   vercel:   list of {app: <vercel app name>, checkout: <abs local path>}
-#             (CAVEAT — team scoping is load-bearing and currently HARDCODED to
-#              the launcher's Vercel team in framework/probes/probe_vercel.py
-#              TEAM_ID; repoint that constant for YOUR deployment until the
-#              hardcode is lifted, or vercel probes query the wrong team and
-#              degrade to skips. The v9 projects list truncates ids, so probes
-#              query by app name within that team.)
+#             (Team scoping is load-bearing and ENV-DRIVEN: probe_vercel.py
+#              reads VERCEL_API_KEY + VERCEL_TEAM_ID from the environment —
+#              set both for YOUR deployment (run-probes.sh sources .env), or
+#              vercel probes query the wrong/default team and degrade to
+#              skips. The v9 projects list truncates ids, so probes query by
+#              app name within that team.)
 #   sentry:   {org: <sentry org slug>, projects: [{project, checkout}]}
 #
 # WHY checkout is required per product: the probes' freshness guard and the
