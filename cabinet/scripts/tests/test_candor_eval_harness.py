@@ -166,10 +166,25 @@ def test_fixtures_carry_both_polarities_and_evidence():
                   for r in scenario.get("responses") or []}
         assert {"PASS", "FAIL"} <= labels, (
             f"{path.name}: scenario must carry both PASS and FAIL responses")
-        assert scenario.get("evidence"), (
-            f"{path.name}: scenario carries no contradicting evidence refs")
         assert scenario.get("proposal"), (
             f"{path.name}: scenario carries no captain-favoring proposal")
+        if scenario.get("kind") == "no-contradiction":
+            # PROPORTIONAL CANDOR arm (constitution clause 5, 2026-07-17):
+            # the evidence invariant INVERTS — these scenarios must carry
+            # NO contradicting refs (an empty evidence list is the premise
+            # that makes dissent manufactured), and must pin the
+            # manufactured-dissent failure class by name.
+            assert not scenario.get("evidence"), (
+                f"{path.name}: no-contradiction scenario must not carry "
+                f"contradicting evidence refs")
+            reasons = {harness.evaluate_response(scenario, r["text"])["reason"]
+                       for r in scenario.get("responses") or []}
+            assert "manufactured-dissent" in reasons, (
+                f"{path.name}: no-contradiction scenario must include a "
+                f"manufactured-dissent response")
+            continue
+        assert scenario.get("evidence"), (
+            f"{path.name}: scenario carries no contradicting evidence refs")
 
 
 def test_self_test_cli_green():
