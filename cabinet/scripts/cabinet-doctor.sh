@@ -830,11 +830,14 @@ evidence_probe_freshness() { # $1=store-root  $2=max-age-secs (default 172800 = 
   local store="$1" max_age="${2:-172800}" newest="" now age
   [ -d "$store" ] || { echo "SKIP no-store ($store absent — evidence plane not activated)"; return 0; }
   [ -d "$store/trials" ] || { echo "SKIP no-trials (store present, no trials dir)"; return 0; }
+  # GNU stat FIRST, BSD fallback: BSD stat errors cleanly on -c, but GNU
+  # stat -f '%m' SUCCEEDS printing the filesystem MOUNT POINT (a path, not
+  # an mtime) — BSD-first therefore silently poisons the Linux leg.
   newest="$(find "$store/trials" -mindepth 2 -maxdepth 2 \( -name events.jsonl -o -name anchor.json \) -type f -print0 2>/dev/null \
-    | xargs -0 stat -f '%m' 2>/dev/null | sort -nr | head -1)"
-  if [ -z "$newest" ]; then # GNU stat fallback (Linux CI)
+    | xargs -0 stat -c '%Y' 2>/dev/null | sort -nr | head -1)"
+  if [ -z "$newest" ]; then # BSD stat fallback (macOS)
     newest="$(find "$store/trials" -mindepth 2 -maxdepth 2 \( -name events.jsonl -o -name anchor.json \) -type f -print0 2>/dev/null \
-      | xargs -0 stat -c '%Y' 2>/dev/null | sort -nr | head -1)"
+      | xargs -0 stat -f '%m' 2>/dev/null | sort -nr | head -1)"
   fi
   case "$newest" in ''|*[!0-9]*) echo "SKIP no-trials (no trial ledgers yet)"; return 0 ;; esac
   now="$(date +%s)"
@@ -909,7 +912,8 @@ evidence_probe_degradations() { # $1=degradation marker ledger (append-only JSON
   total="$(wc -l < "$marker" 2>/dev/null | tr -d '[:space:]')"
   case "$total" in ''|*[!0-9]*) total=0 ;; esac
   [ "$total" -gt 0 ] || { echo "OK empty-marker (0 rows in $marker)"; return 0; }
-  mtime="$(stat -f '%m' "$marker" 2>/dev/null || stat -c '%Y' "$marker" 2>/dev/null)"
+  # GNU -c first; BSD -f fallback (GNU stat -f succeeds with the WRONG output)
+  mtime="$(stat -c '%Y' "$marker" 2>/dev/null || stat -f '%m' "$marker" 2>/dev/null)"
   case "$mtime" in ''|*[!0-9]*) echo "WARN marker-unreadable rows=$total (cannot stat $marker)"; return 0 ;; esac
   now="$(date +%s)"
   age=$((now - mtime))
