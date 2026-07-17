@@ -59,10 +59,16 @@ telegram_bot_mode: multi_officer  # multi_officer (legacy) | single_ceo (one bot
 # (plan.load_preset_defaults). The framework hardcodes no plugin/MCP names:
 # a preset without this block onboards lanes with EMPTY defaults (fail-closed).
 # work is also the fallback preset when instance/config/active-preset is unset,
-# so these keep the cabinet-standard onboarding defaults on bare deployments.
+# so bare/fresh deployments get cabinet-NATIVE defaults only. Personal-source
+# tooling (e.g. corridor, brain) is deployment-specific: it belongs to
+# instance overlays (instance/config/extensions.yml, instance/agents/), never
+# to a shipped preset.
 onboarding:
-  # Plugins every lane-CEO generally needs beyond what its repo already ships.
-  cabinet_default_plugins: [corridor, brain]
+  # Plugins beyond what a lane's repo already ships. Empty by design — no
+  # plugin is cabinet-universal; deployments add their own per lane (gated
+  # install proposals / instance overlays).
+  cabinet_default_plugins: []
   # Base MCP scope for a generated lane-CEO (stack-detected MCPs are added
-  # on top from the repo research profile, e.g. neon/vercel).
-  lane_mcps: [library, telegram, brain]
+  # on top from the repo research profile, e.g. neon/vercel). library and
+  # telegram are cabinet-native (framework/constitution-base.md).
+  lane_mcps: [library, telegram]
